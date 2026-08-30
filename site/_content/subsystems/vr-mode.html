@@ -1,24 +1,20 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; VR mode</div>
   <h1>VR mode (WebXR)</h1>
-  <p class="lede">Walk around Legaia's world in a VR headset.
-  The site's three WebGL2 scene pages - the <a href="../world-overview.html">world overview</a> (the three kingdom continents), the assembled full-map view (<a href="../viewer.html">asset viewer</a> + <a href="../world.html">game world</a>), and the <a href="../play.html">play page</a> - can present their scene to a headset via WebXR: stereo rendering through the <code>XRWebGLLayer</code>, head tracking, and thumbstick locomotion through the world.
-  Plug in a headset, load a disc, and the <strong>VR</strong> button next to the canvas arms as <strong>Enter VR</strong>.
-  <strong>This is an enhancement retail never had, and it is opt-in</strong> - the 1998 game has no stereo path, and VR sits alongside the port's other explicit, default-off toggles (dynamic lighting, free-angle movement, the debug orbit camera) rather than reproducing anything on the disc.
-  Behavioural fidelity to retail stays the baseline for game logic; nothing here changes simulation.</p>
+  <p class="lede">Walk around Legaia's world in a VR headset. The site's three WebGL2 scene pages - the <a href="../world-overview.html">world overview</a>, the assembled full-map view and the <a href="../play.html">play page</a> - can present their scene to a headset via WebXR: stereo rendering, head tracking, thumbstick locomotion. Plug in a headset, load a disc, and the <strong>VR</strong> button arms as <strong>Enter VR</strong>. This is an opt-in enhancement retail never had; nothing here changes simulation.</p>
 </header>
 
 <section class="doc-section" id="at-a-glance">
   <h2>At a glance</h2>
   <dl class="kv">
-    <dt>Where</dt><dd>The browser's three WebGL2 scene pages: world overview, full-map view, play page. Native <code>play-window</code> has no VR path</dd>
-    <dt>What forks</dt><dd>Only the framebuffer/viewport and the view-projection matrix. Geometry, shaders and draw order are the flat renderer's, untouched</dd>
-    <dt>Scale</dt><dd>One number, units per metre: <code>2000</code> for the continent diorama, <code>~76</code> for human scale in a town; the grips rescale live</dd>
-    <dt>Modes</dt><dd>Play page: Spectator / First-person (what Vahn sees, walking through the engine's own collision). World overview: Diorama / On the ground</dd>
-    <dt>Retail</dt><dd>None of this exists on the disc. VR is an opt-in enhancement; game logic is unchanged</dd>
+    <dt>Where</dt><dd>The browser's three WebGL2 scene pages; native <code>play-window</code> has no VR path</dd>
+    <dt>What forks</dt><dd>Only the framebuffer / viewport and the view-projection matrix - geometry, shaders and draw order are the flat renderer's, untouched</dd>
+    <dt>Scale</dt><dd>One number, world units per metre: <code>2000</code> for the continent diorama, <code>~76</code> for human scale in a town; grips rescale live</dd>
+    <dt>Modes</dt><dd>Play page: Spectator / First-person (what Vahn sees). World overview: Diorama / On the ground</dd>
+    <dt>Retail</dt><dd>None of this exists on the disc - VR sits alongside the port's other explicit toggles</dd>
   </dl>
   <figure class="overlay-strip">
-    <svg viewBox="0 0 880 170" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="vr-title">
+    <svg viewBox="0 0 880 170" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="vr-title" width="100%" style="max-width: 880px;">
       <title id="vr-title">Per-frame VR fork: the page's draw closure is unchanged; each XR frame binds the XRWebGLLayer framebuffer, then for each eye scissors to that eye's viewport, swaps the view-projection builder for the eye's projection times inverse view times the world transform W, and calls the same draw closure</title>
       <style>
         .vr-box { fill: var(--bg-card); stroke: var(--accent); stroke-width: 1.3; }
@@ -30,7 +26,7 @@
       <defs><marker id="vr-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--text-muted)"/></marker></defs>
       <rect x="20" y="55" width="150" height="56" class="vr-box"/>
       <text x="95" y="78" class="vr-t">XR frame</text>
-      <text x="95" y="96" class="vr-s">bind layer framebuffer</text>
+      <text x="95" y="96" class="vr-s">bind framebuffer</text>
       <rect x="210" y="20" width="200" height="56" class="vr-soft"/>
       <text x="310" y="43" class="vr-t">left eye</text>
       <text x="310" y="61" class="vr-s">scissor + viewport shadow</text>
@@ -39,161 +35,102 @@
       <text x="310" y="136" class="vr-s">scissor + viewport shadow</text>
       <rect x="450" y="55" width="200" height="56" class="vr-box"/>
       <text x="550" y="78" class="vr-t">vp = P &middot; V&#8315;&#185; &middot; W</text>
-      <text x="550" y="96" class="vr-s">buildWorldOrbitVp shadowed</text>
+      <text x="550" y="96" class="vr-s">VP builder shadowed</text>
       <rect x="690" y="55" width="170" height="56" class="vr-box"/>
       <text x="775" y="78" class="vr-t">renderAssembled</text>
-      <text x="775" y="96" class="vr-s">unchanged draw closure</text>
+      <text x="775" y="96" class="vr-s">unchanged draw</text>
       <path d="M170,83 L208,50" class="vr-edge"/>
       <path d="M170,83 L208,120" class="vr-edge"/>
       <path d="M410,48 L448,78" class="vr-edge"/>
       <path d="M410,123 L448,90" class="vr-edge"/>
       <path d="M650,83 L688,83" class="vr-edge"/>
     </svg>
-    <figcaption>The fork lives <em>around</em> the page's draw, not inside it. Per eye the loop confines the clear with a scissor rect, hands the renderer the device's matrices through the shadowed VP builder, and calls the same closure the flat page calls.</figcaption>
+    <figcaption>The fork lives <em>around</em> the page's draw, not inside it: per eye, scissor the clear, hand the renderer the device's matrices, call the same closure the flat page calls.</figcaption>
   </figure>
 </section>
 
 <section class="doc-section" id="fork">
   <h2>Where the render path forks</h2>
-  <p>The surprising fact is how little VR touches. Putting on a headset does not load a different renderer; it asks the existing one to draw the same scene twice, once per eye, through matrices the device supplies.</p>
-  <p>Nothing about the flat (non-VR) path changes: a browser with no <code>immersive-vr</code> device runs exactly the render code it ran before - no global is shadowed, no GL context attribute is altered - but the button still renders, as <em>VR unavailable</em>, and hover / click explain the specific reason (see <a href="#availability">availability</a> below).</p>
-  <p>The flat renderer stays the single source of geometry. <code>TmdRenderer</code> is untouched: VR uploads no mesh, compiles
-  no shader and reorders no draw. Exactly two things fork, and both fork <em>around</em> <code>renderAssembled</code> rather
-  than inside it.</p>
-  <p><strong>The framebuffer + viewport.</strong> The XR frame loop binds the <code>XRWebGLLayer</code>'s framebuffer, then
-  draws the scene once per <code>XRView</code>. <code>renderAssembled</code> sets its own full-canvas viewport and issues an
-  unconditional <code>gl.clear</code>, so per eye the VR loop scissors to that eye's <code>layer.getViewport(view)</code> rect
-  (which is what confines the <em>clear</em>, so the second eye does not wipe the first), shadows <code>gl.viewport</code> on
-  the context instance for the duration of the call, and then invokes the page's normal draw closure. Both shadows are removed
-  in a <code>finally</code>.</p>
-  <p><strong>The view-projection matrix.</strong> <code>renderAssembled</code> builds its VP from the page's orbit camera by
-  calling the global <code>buildWorldOrbitVp</code>. Because that is a top-level function declaration in a classic script it
-  lives on the global object, and the renderer's reference to it resolves through the global scope <em>at call time</em> - so
-  VR mode replaces the property with a pass-through that returns the XR matrix while an eye is drawing and delegates to the
-  original otherwise. The shadow is installed on the first <strong>Enter VR</strong> press and is inert whenever no session is
-  running. Per eye:</p>
-<pre><code>vp = view.projectionMatrix &middot; view.transform.inverse.matrix &middot; W</code></pre>
-  <p>The renderer multiplies that by each draw's model matrix exactly as it always has.</p>
+  <p>Putting on a headset does not load a different renderer; it asks the existing one to draw the same scene twice, once per eye, through matrices the device supplies. <code>TmdRenderer</code> is untouched: VR uploads no mesh, compiles no shader, reorders no draw. A browser with no VR device runs exactly the flat code it always ran. Two things fork, both <em>around</em> the page's draw closure:</p>
+  <ul class="bullets">
+    <li><strong>Framebuffer + viewport.</strong> The XR loop binds the <code>XRWebGLLayer</code> framebuffer and draws once per eye, scissored to that eye's viewport rect - the scissor is what confines the page's unconditional clear, so the second eye does not wipe the first. The viewport is shadowed on the context for the duration of the call; both shadows are removed in a <code>finally</code>.</li>
+    <li><strong>View-projection.</strong> The page's VP builder is a top-level function on the global object, resolved at call time - so VR replaces it with a pass-through that returns <code>P &middot; V&#8315;&#185; &middot; W</code> while an eye is drawing and delegates to the original otherwise. The renderer multiplies by each draw's model matrix exactly as it always has.</li>
+  </ul>
 </section>
 
 <section class="doc-section" id="transform">
   <h2>The world &rarr; XR transform</h2>
-  <p>Legaia measures its world in arbitrary units; a headset measures in metres. One matrix converts between them, and the single number inside it - units per metre - is what decides whether you are standing in a village or looking down at a continent on a table.</p>
-  <p>The renderer works in retail world units (<code>+Y</code> up, after the per-placement <code>diag(1, -1, 1)</code> flip of
-  the PSX <code>+Y</code>-down frame). WebXR works in metres. <code>W</code> is the bridge, for a viewer standing at world point
-  <code>p</code> facing <code>yaw</code> with <code>u</code> world units per metre:</p>
-<pre><code>W = MirrorX &middot; RotY(-yaw) &middot; Scale(1/u) &middot; Translate(-p)</code></pre>
-  <p>The XR reference space is <code>local-floor</code> when the device offers it, so the XR origin sits on the physical floor
-  and the headset reports itself ~1.6 m above it. That falls out of <code>W</code> as <code>1.6 &middot; u</code> world units
-  above the scene's floor - which is the whole trick: the <em>only</em> thing that decides whether you stand in a town or tower
-  over a continent is <code>u</code>.</p>
-  <p><strong>Why the world is mirrored.</strong> Both flat projections mirror screen X - the retail horizontal flip - and the
-  fragment shader compensates with a hardcoded <code>u_normal_sign = -1</code>, because that mirror flips the handedness of the
-  screen-space derivatives it builds its shading normal from. An XR view-projection <em>cannot</em> mirror: the projection and
-  view matrices come from the device. So the mirror moves into the world transform instead. That keeps the shading correct (the
-  net world &rarr; clip determinant sign matches the flat path) and keeps the VR image oriented like the page the user just
-  pressed the button on. Stereo is unaffected: both eyes view the same mirrored scene from their true XR positions, so depth and
-  parallax are exactly as the device intends.</p>
+  <p>Legaia measures its world in arbitrary units; a headset measures in metres. One matrix converts, for a viewer at world point <code>p</code> facing <code>yaw</code> with <code>u</code> world units per metre:</p>
+  <pre><code>W = MirrorX &middot; RotY(-yaw) &middot; Scale(1/u) &middot; Translate(-p)</code></pre>
+  <p>The XR reference space is <code>local-floor</code>, so the headset reports itself ~1.6 m above the physical floor - which becomes <code>1.6 &middot; u</code> world units above the scene's floor. The <em>only</em> thing deciding whether you stand in a town or tower over a continent is <code>u</code>.</p>
+  <details class="disclosure">
+    <summary>Why the world is mirrored</summary>
+    <div class="disclosure-body"><p>Both flat projections mirror screen X - the retail horizontal flip - and the fragment shader compensates with a hardcoded <code>u_normal_sign = -1</code>, because the mirror flips the handedness of the screen-space derivatives it builds its shading normal from. An XR view-projection <em>cannot</em> mirror (the matrices come from the device), so the mirror moves into the world transform. That keeps the net world&rarr;clip determinant sign matching the flat path, and keeps the VR image oriented like the page. Stereo is unaffected: both eyes view the same mirrored scene from their true positions, so depth and parallax are exactly as the device intends.</p></div>
+  </details>
 </section>
 
 <section class="doc-section" id="scale">
-  <h2>World scale, and what it means to &quot;be there&quot;</h2>
-  <table class="data-table">
-    <thead><tr><th>Page</th><th>Units/metre</th><th>What that makes the scene</th></tr></thead>
+  <h2>World scale and viewing modes</h2>
+  <table>
+    <thead><tr><th>Page</th><th>Mode</th><th>Units/m</th><th>What it is</th></tr></thead>
     <tbody>
-      <tr><td>World overview</td><td><code>2000</code></td><td>A 16320-unit continent becomes an ~8 m diorama; the 1.6 m eye height puts you 3200 world units above the sea plane, looking down at the kingdom laid out around you.</td></tr>
-      <tr><td>Full-map view / play</td><td><code>76</code></td><td>Human scale. You stand in the town.</td></tr>
+      <tr><td rowspan="2">World overview</td><td>Diorama</td><td>2000</td><td>A 16320-unit continent becomes an ~8 m tabletop model; eye height puts you 3200 world units above the sea.</td></tr>
+      <tr><td>On the ground</td><td>76</td><td>Human scale <strong>on</strong> the terrain: a bilinear sampler over the walk heightfield snaps the rig's floor to the surface every frame; you walk up hills and down to the coast.</td></tr>
+      <tr><td rowspan="2">Play</td><td>Spectator</td><td>~76</td><td>Free-flying camera in the running world, spawned where the follow camera sits.</td></tr>
+      <tr><td>First-person</td><td>live</td><td><em>What Vahn sees.</em> The rig's floor is pinned to the player's feet each frame, read back <em>after</em> the engine tick - the engine, not the headset, owns the walk. The left stick routes into the engine's collision-checked movement controller, aimed along your gaze; trigger / A map to Cross, B to Circle, so NPC dialogue works from inside the world. The player mesh is dropped from the eye draws.</td></tr>
     </tbody>
   </table>
-  <p>The field figure is anchored on the character mesh: the field-form player model stands ~130 world units tall, so a 1.7 m
-  human puts a metre at ~76 units - which independently makes the 128-unit walkability tile a believable 1.7 m stride and a
-  village house a believable 8 m.</p>
-  <p>Scale is not fixed. The grip buttons rescale the world live (clamped to 8..20000 units/metre), around the <em>head</em>
-  rather than the feet so the scene does not lurch through you. Squeeze the world overview down to 76 and you walk onto the world
-  map at human height; squeeze a town up and it becomes a model on a table.</p>
-</section>
-
-<section class="doc-section" id="modes">
-  <h2>Viewing modes: first-person</h2>
-  <p>Two of the pages let you choose <em>who</em> you are in VR: a floating spectator, or Vahn himself, walking the streets at eye level with the game's own collision keeping you out of walls.</p>
-  <p>The play page and the world-overview page each offer two viewing modes, cycled by a <code>VR: &lt;mode&gt;</code> button next to <strong>Enter VR</strong> (usable before entry and mid-session - a live session is re-placed at the new mode's scale on the spot). A page attaches them as a <code>modes</code> list on the shared handle; each mode may override the world scale, the spawn and the locomotion contract. Pages with a single framing attach no modes.</p>
-  <table class="data-table">
-    <thead><tr><th>Page</th><th>Mode</th><th>What it is</th></tr></thead>
-    <tbody>
-      <tr><td rowspan="2">Play</td><td>Spectator</td><td>Free-flying camera in the running world, spawned where the follow camera sits.</td></tr>
-      <tr><td>First-person</td><td><em>What Vahn sees.</em> The rig's floor origin is pinned to the player actor's feet every XR frame (read back <em>after</em> the engine tick - the engine, not the headset, owns the walk). Scale is derived live from the posed player mesh: <code>units/metre = standing height / 1.7 m</code> (~132 units tall in the field, so ~78 units/m; under 90 units falls back to the 130-unit anchor). The left stick is routed into the engine's free-movement controller - the same collision-checked path the keyboard uses - with the camera azimuth pointed along the gaze, so "stick forward" walks where you look. The player mesh is dropped from the eye draws; trigger / A map to Cross, B to Circle, so NPC dialogue works from inside the world.</td></tr>
-      <tr><td rowspan="2">World overview</td><td>Diorama</td><td>The 2000 units/m tabletop continent.</td></tr>
-      <tr><td>On the ground</td><td>Human scale (76 units/m) standing <strong>on</strong> the continent terrain: a bilinear sampler over the walk heightfield snaps the rig's floor to the surface under it every frame, the spawn drops onto the terrain under the framing centre, and the altitude axis is disabled - you walk up hills and down to the coast. Off-terrain samples fall back to the sea plane.</td></tr>
-    </tbody>
-  </table>
-</section>
-
-<section class="doc-section" id="spawn">
-  <h2>Spawn placement</h2>
-  <p>A field scene spawns at the <strong>component-wise median of the placed objects</strong> - not the framing AABB centre. A
-  field map is a 128&times;128-tile grid whose town usually occupies a corner of it, so the AABB centre lands on empty ground
-  with the buildings a hundred metres away; the median lands in the village. Y comes from the same set, because a placement's
-  world Y <em>is</em> the floor tile it stands on (terrain tiles are excluded - they tile the whole grid and would drag the
-  median back to the centre). The world overview spawns at the framing centre on the sea plane; the play page spawns where its
-  third-person follow camera sits, so entering VR keeps the frame you were already looking at.</p>
+  <p>The human-scale figure is anchored on the character mesh: the field-form player stands ~130 world units tall, so a 1.7 m human puts a metre at ~76 units - which independently makes the 128-unit walkability tile a believable stride and a village house a believable 8 m. First-person derives it live from the posed mesh height. Modes are cycled by a <code>VR: &lt;mode&gt;</code> button, usable before entry and mid-session; grips rescale the world live (clamped 8..20000 units/m), around the <em>head</em> so the scene does not lurch through you.</p>
+  <p><strong>Spawn placement:</strong> a field scene spawns at the component-wise <em>median</em> of the placed objects, not the bounding-box centre - a town usually occupies one corner of its 128&times;128-tile map, so the box centre lands on empty ground while the median lands in the village. Y comes from the same set, because a placement's world Y <em>is</em> its floor tile. The world overview spawns at the framing centre; the play page where its follow camera sits.</p>
 </section>
 
 <section class="doc-section" id="controls">
   <h2>Locomotion + controls</h2>
-  <p>Smooth locomotion on the left stick, comfort-first turning on the right. There is no teleport arc: the browser pages carry
-  no collision or ground-height query (the walkability grid lives in the engine, not in the viewer's assembled draw list), so a
-  teleport marker could not be validated against the floor - free flight is both honest about that and the right tool for a
-  diorama.</p>
-  <table class="data-table">
+  <table>
     <thead><tr><th>Input</th><th>Effect</th></tr></thead>
     <tbody>
       <tr><td>Left stick</td><td>Walk / fly horizontally, relative to where you are looking.</td></tr>
       <tr><td>Right stick X</td><td>Snap turn, 30&deg; per flick (latched - no continuous rotation).</td></tr>
-      <tr><td>Right stick Y</td><td>Altitude.</td></tr>
-      <tr><td>Trigger (either hand)</td><td>4&times; speed.</td></tr>
+      <tr><td>Right stick Y</td><td>Altitude (disabled in the on-the-ground and first-person modes).</td></tr>
+      <tr><td>Trigger (either)</td><td>4&times; speed.</td></tr>
       <tr><td>Grip, left / right</td><td>Shrink / grow the world.</td></tr>
       <tr><td>A / X (right hand)</td><td>Return to the entry pose.</td></tr>
     </tbody>
   </table>
+  <p>There is no teleport arc: the browser pages carry no collision or ground-height query (the walkability grid lives in the engine, not the viewer's draw list), so a teleport marker could not be validated against the floor - free flight is honest about that and the right tool for a diorama.</p>
 </section>
 
 <section class="doc-section" id="availability">
-  <h2>Availability + diagnostics</h2>
-  <p>The VR button is always rendered on a 3D page's control bar - availability only changes what it says and what a click
-  does. With <code>immersive-vr</code> supported and a scene loaded it is the working <strong>Enter VR</strong>; while the
-  scene is still loading a click says so; and in every unavailable state it reads <strong>VR unavailable</strong> with the
-  specific diagnostic on hover and, on click, in a dismissible note (a click also re-runs the check). The probe re-runs on the
-  <code>XRSystem</code>'s <code>devicechange</code> event, so starting SteamVR or plugging the headset in <em>after</em> page
-  load arms the button without a reload.</p>
-  <p>The diagnostics name the three real-world failure modes. <strong>No <code>navigator.xr</code>:</strong> WebXR only exists
-  in a secure context - a page served over plain <code>http://</code> from a LAN IP (e.g. <code>python3 -m http.server</code>
-  browsed from another machine) has no WebXR at all; reach the site via <code>http://localhost</code> (an SSH port-forward
-  works) or https. In a secure context this instead means the browser has no WebXR (Firefox's is effectively dead) - use
-  Chrome or Edge. <strong><code>isSessionSupported</code> answers no:</strong> the browser has WebXR but no usable VR runtime -
-  start SteamVR and set it as the active OpenXR runtime (SteamVR settings &rarr; OpenXR). <strong>The check never
-  settles:</strong> a browser can expose <code>navigator.xr</code> with no backing runtime and leave the promise pending
-  forever; the probe is raced against a timeout and reports "XR device check timed out".</p>
-</section>
-
-<section class="doc-section" id="lifecycle">
-  <h2>Session lifecycle</h2>
-  <p><code>navigator.xr.isSessionSupported('immersive-vr')</code> is probed at script load and re-probed on
-  <code>devicechange</code> / an unavailable-button click. Only when it answers yes does the
-  module install its <code>getContext</code> hook, which adds <code>xrCompatible: true</code> to WebGL context creation from
-  then on - so contexts built after the probe never need the retro-fit <code>makeXRCompatible()</code> call, which is allowed to
-  drop the context when it has to move to another GPU adapter. Contexts that predate the probe still get the retro-fit call,
-  raced against a timeout: the promise is specified to settle, but a browser with <code>navigator.xr</code> and no backing XR
-  runtime can leave it pending forever, and a hung await would wedge the button.</p>
-  <p>The host pauses its own <code>requestAnimationFrame</code> loop on entry - the XR frame loop drives the draw, and on the
-  play page also the engine tick, so NPCs keep moving and the keyboard still steers the character - and resumes it on exit with
-  the flat camera restored. A live session survives a scene swap on pages that keep one canvas (the game-world page's town
-  navigator, a door transition on the play page): same GL context, same renderer, so the viewer is simply re-placed in the new
-  map.</p>
+  <h2>Availability + session lifecycle</h2>
+  <p>The VR button is always rendered - availability only changes what it says. With WebXR supported and a scene loaded it is the working <strong>Enter VR</strong>; otherwise it reads <strong>VR unavailable</strong> with the specific diagnostic on hover and click. The probe re-runs on the device-change event, so starting SteamVR after page load arms the button without a reload.</p>
+  <table>
+    <thead><tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr></thead>
+    <tbody>
+      <tr><td>No <code>navigator.xr</code></td><td>WebXR needs a secure context - plain <code>http://</code> from a LAN IP has none. In a secure context: the browser has no WebXR.</td><td>Browse via <code>localhost</code> (SSH port-forward) or https; use Chrome / Edge.</td></tr>
+      <tr><td>"Session not supported"</td><td>WebXR present, but no usable VR runtime.</td><td>Start SteamVR; set it as the active OpenXR runtime.</td></tr>
+      <tr><td>"XR device check timed out"</td><td>A browser can expose <code>navigator.xr</code> with no backing runtime and leave the probe pending forever; it is raced against a timeout.</td><td>Install / start a runtime, click to re-check.</td></tr>
+    </tbody>
+  </table>
+  <p>On entry the host pauses its own animation loop - the XR frame loop drives the draw, and on the play page also the engine tick, so NPCs keep moving and the keyboard still steers. On exit the flat camera is restored. A live session survives a scene swap on pages that keep one canvas (a door transition, the town navigator): same GL context, same renderer, the viewer is simply re-placed.</p>
+  <details class="disclosure">
+    <summary>Deep dive: context compatibility</summary>
+    <div class="disclosure-body"><p>Only after the support probe answers yes does the module install its <code>getContext</code> hook, adding <code>xrCompatible: true</code> to WebGL context creation from then on - contexts built after the probe never need the retro-fit <code>makeXRCompatible()</code> call, which is allowed to drop the context when it must move to another GPU adapter. Contexts predating the probe get the retro-fit call raced against a timeout, since a runtime-less browser can leave the promise pending forever and a hung await would wedge the button.</p></div>
+  </details>
 </section>
 
 <section class="doc-section" id="verification">
-  <h2>Verification</h2>
-  <p>Headless Chromium has no XR runtime, so the VR path is exercised against an injected mock <code>navigator.xr</code> that reports <code>immersive-vr</code> supported and hands back synthetic <code>XRFrame</code>s with two eye views; the mock layer's <code>framebuffer = null</code> makes the "eyes" rasterise side-by-side into the page canvas, where the drawing buffer can be sampled. That pins: both eye rects rasterise and the second clear does not wipe the first; the halves differ, and diverge hugely at an absurd IPD (each eye really uses its own view matrix); a stick push moves the viewer along the synthetic head's facing, and a 90&deg; head yaw rotates it by 90&deg;; the snap turn is exactly 30&deg;; the engine keeps ticking under the XR loop; and in first-person the rig sits at the player's feet, the scale equals mesh height over 1.7 m, and a stick push moves the <em>engine's</em> player (<code>window.__vrDebug()</code>).</p>
+  <h2>How it is verified</h2>
+  <p>Headless Chromium has no XR runtime, so the VR path is exercised against an injected mock <code>navigator.xr</code> that hands back synthetic frames with two eye views rasterising side-by-side into the page canvas. The mock pins:</p>
+  <ul class="bullets">
+    <li>Both eye rects rasterise and the second clear does not wipe the first; the halves differ, and diverge hugely at an absurd IPD (each eye really uses its own view matrix).</li>
+    <li>A stick push moves the viewer along the synthetic head's facing; a 90&deg; head yaw rotates it 90&deg;; the snap turn is exactly 30&deg;.</li>
+    <li>The engine keeps ticking under the XR loop; in first-person the rig sits at the player's feet, the scale equals mesh height over 1.7 m, and a stick push moves the <em>engine's</em> player (<code>window.__vrDebug()</code>).</li>
+  </ul>
+  <p class="hint">Full write-up: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/vr-mode.md" target="_blank" rel="noopener"><code>docs/subsystems/vr-mode.md</code></a>.</p>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="world-overview-viewer.html">World-overview viewer</a>

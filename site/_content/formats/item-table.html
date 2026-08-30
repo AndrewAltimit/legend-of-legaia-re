@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; item table</div>
   <h1>Item-name table <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">Every item's display name and shop price - weapons, armor, accessories, consumables, key items - lives in one static 256-entry table baked into <code>SCUS_942.54</code>, the game's main executable on the disc. Each item is a single byte-sized id, <code>0x00..=0xFF</code>, and that one id space is shared everywhere: when dialog text prints an item name (the game's MES text engine has substitution codes <code>0xC2 XX</code> / <code>0xC4 XX</code> that index this table), when a monster's <code>drop_item</code> byte says what it drops, and when the <a href="steal-table.html">steal table</a> says what can be stolen. The price halfword in each record is what the buy/sell UI actually charges - so this table, not any per-shop data, is where an item's price lives.</p>
+  <p class="lede">Every item's display name, description and shop price - weapons, armor, accessories, consumables, key items - lives in one static 256-entry table baked into <code>SCUS_942.54</code>, the game's main executable. An item is a single byte-sized id, and that one id space is shared everywhere: dialog text substitutions, monster drops, the <a href="steal-table.html">steal table</a>, the shop UI. The price halfword here is what the buy/sell screen actually charges - there is no per-shop price data.</p>
 </header>
 
 <section class="doc-section" id="at-a-glance">
@@ -9,51 +9,84 @@
   <dl class="kv">
     <dt>Magic</dt><dd>none - static data in <code>SCUS_942.54</code></dd>
     <dt>Where</dt><dd><code>DAT_80074368</code>, 12-byte stride, 256 ids; name pointers read as <code>PTR_DAT_8007436C[id*3]</code></dd>
+    <dt>Id range</dt><dd><code>0x00..=0xFF</code>; <code>id 0</code> = "no item"</dd>
     <dt>Parser</dt><dd><code>legaia_asset::item_names::ItemNameTable</code></dd>
-    <dt>Confidence</dt><dd>Confirmed - the index form is read off the MES <code>0xC2</code>/<code>0xC4</code> substitution dispatch; prices verified live; disc-gated <code>item_names_real</code></dd>
+    <dt>Confidence</dt><dd>Confirmed - index form read off the MES substitution dispatch; prices verified live; disc-gated <code>item_names_real</code></dd>
     <dt>Used by</dt><dd><a href="../monsters.html">Enemy table</a> (drop / steal names), <a href="../shops.html">Shops page</a>, <a href="../subsystems/shop.html">Shop subsystem</a>, <a href="../subsystems/inventory.html">Inventory</a></dd>
   </dl>
 </section>
 
 <section class="doc-section" id="table-layout">
-  <h2>Table base + record layout</h2>
-  <p>(<code>DAT_80xxxxxx</code> / <code>PTR_DAT_80xxxxxx</code> are Ghidra names - labels the disassembler assigns to fixed RAM addresses. The table is static data, so those addresses map one-to-one back to bytes in the <code>SCUS_942.54</code> file on the disc. "Stride" is the size of one record.)</p>
-  <table>
-  <thead><tr><th>Field</th><th>Value</th></tr></thead>
+  <h2>Record layout</h2>
+  <p class="hint"><code>DAT_80xxxxxx</code> / <code>PTR_DAT_80xxxxxx</code> are Ghidra labels for fixed RAM addresses; the table is static data, so each maps one-to-one back to bytes in the <code>SCUS_942.54</code> file on the disc.</p>
+  <figure class="overlay-strip">
+    <svg viewBox="0 0 880 100" width="100%" style="max-width:880px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="One 12-byte item record: kind, per-kind index, price, name pointer, description pointer">
+      <style>
+        .it-seg { font: 12px 'Inter', sans-serif; fill: currentColor; text-anchor: middle; }
+        .it-off { font: 10px 'JetBrains Mono', monospace; fill: var(--accent); text-anchor: middle; }
+        .it-note { font: 11px 'Inter', sans-serif; fill: var(--text-muted); text-anchor: middle; }
+        .it-box { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.2; }
+      </style>
+      <rect x="20"  y="30" width="110" height="34" class="it-box"/>
+      <rect x="130" y="30" width="130" height="34" class="it-box"/>
+      <rect x="260" y="30" width="160" height="34" class="it-box"/>
+      <rect x="420" y="30" width="220" height="34" class="it-box"/>
+      <rect x="640" y="30" width="220" height="34" class="it-box"/>
+      <text x="75"  y="51" class="it-seg" dominant-baseline="middle">kind</text>
+      <text x="195" y="51" class="it-seg" dominant-baseline="middle">index</text>
+      <text x="340" y="51" class="it-seg" dominant-baseline="middle">price (u16)</text>
+      <text x="530" y="51" class="it-seg" dominant-baseline="middle">name_ptr (u32)</text>
+      <text x="750" y="51" class="it-seg" dominant-baseline="middle">desc_ptr (u32)</text>
+      <text x="75"  y="20" class="it-off">+0</text>
+      <text x="195" y="20" class="it-off">+1</text>
+      <text x="340" y="20" class="it-off">+2</text>
+      <text x="530" y="20" class="it-off">+4</text>
+      <text x="750" y="20" class="it-off">+8</text>
+      <text x="440" y="88" class="it-note">one record per item id, 12 bytes, 256 records from DAT_80074368</text>
+    </svg>
+    <figcaption>One item record. The MES text engine indexes the table 4 bytes in, at the name pointer.</figcaption>
+  </figure>
+  <table class="layout">
+  <thead><tr><th>Offset</th><th>Type</th><th>Field</th><th>Meaning</th></tr></thead>
   <tbody>
-    <tr><td>Record base</td><td><code>DAT_80074368</code></td></tr>
-    <tr><td>Name-pointer view</td><td><code>PTR_DAT_8007436C</code> (= record base <code>+4</code>); the MES dispatch reads <code>PTR_DAT_8007436C[id*3]</code> (three u32 words per record)</td></tr>
-    <tr><td>Stride</td><td><code>0xC</code> bytes</td></tr>
-    <tr><td>Id range</td><td><code>0x00..=0xFF</code> (256 ids; <code>id 0</code> = "no item")</td></tr>
+    <tr><td><code>+0</code></td><td>u8</td><td>kind</td><td><code>1</code> = equipment, <code>2</code> = item / consumable / key</td></tr>
+    <tr><td><code>+1</code></td><td>u8</td><td>per-kind index</td><td>equipment (kind <code>1</code>): index into the <a href="equipment-table.html">stat-bonus table</a>; items (kind <code>2</code>): effect subtype into the <a href="item-effect-table.html">item-effect table</a>, which also carries the <a href="accessory-passive-table.html">accessory-passive</a> index</td></tr>
+    <tr><td><code>+2</code></td><td>u16</td><td><strong>shop price</strong></td><td>gold the buy/sell UI charges; <code>0</code> = quest / found-only item the shop never prices</td></tr>
+    <tr><td><code>+4</code></td><td>u32</td><td><code>name_ptr</code></td><td>pointer to the NUL-terminated display name</td></tr>
+    <tr><td><code>+8</code></td><td>u32</td><td><code>desc_ptr</code></td><td>pointer to the info-window <strong>description</strong> the pause menu prints below the name; consumables carry an effect sentence, accessories their class word, many equipment ids share an empty / <code>Best:</code>-class slot</td></tr>
   </tbody>
   </table>
-  <table>
-  <thead><tr><th>Offset</th><th>Type</th><th>Field</th></tr></thead>
-  <tbody>
-    <tr><td><code>+0</code></td><td>u8</td><td>kind (<code>1</code> = equipment, <code>2</code> = item / consumable / key)</td></tr>
-    <tr><td><code>+1</code></td><td>u8</td><td>per-kind index byte - equipment (kind <code>1</code>): index into the <a href="equipment-table.html">stat-bonus table</a>; items (kind <code>2</code>): effect subtype into the <a href="item-effect-table.html">item-effect table</a>, which also carries the <a href="accessory-passive-table.html">accessory-passive</a> index</td></tr>
-    <tr><td><code>+2</code></td><td>u16</td><td><strong>shop price</strong> in gold - what the buy/sell UI charges; <code>0</code> = quest / found-only item the shop never prices</td></tr>
-    <tr><td><code>+4</code></td><td>u32</td><td><code>name_ptr</code> - pointer to the NUL-terminated display name</td></tr>
-    <tr><td><code>+8</code></td><td>u32</td><td>secondary pointer (a shared "type" / description string for some classes)</td></tr>
-  </tbody>
-  </table>
-  <p>The shop price at <code>+2</code> is verified live (War God Band = 21000, Healing Leaf = 100, Ra-Seru / quest items = 0). The table's extent is found by reading until the <code>name_ptr</code> words leave the PSX-EXE data segment.</p>
+  <ul class="bullets">
+    <li>The record proper starts at <code>DAT_80074368</code>; the MES <code>0xC2</code>/<code>0xC4</code> substitution indexes by the <em>name pointer</em> at <code>+4</code>, which is why the name view reads <code>PTR_DAT_8007436C[id*3]</code>.</li>
+    <li>The price at <code>+2</code> is decisive - verified live: War God Band = 21000, Healing Leaf = 100, Ra-Seru / quest items = 0.</li>
+    <li>The table's extent is found by reading until the <code>name_ptr</code> words leave the PSX-EXE data segment.</li>
+  </ul>
 </section>
 
 <section class="doc-section" id="name-strings">
-  <h2>Name strings</h2>
-  <p>The display strings carry the same control prefixes as every other in-game string (MES, the game's text markup): a leading <code>0x01</code> icon escape and <code>0xCE XX</code> colour-control bytes. The parser strips control bytes (keeping printable ASCII) and trims whitespace. A handful of ids (<code>0x00</code>, <code>0x12</code>, <code>0x1A</code>, <code>0x52</code>, <code>0xB9</code>, <code>0xFD</code>) have empty names - reserved / gap slots.</p>
+  <h2>Name and description strings</h2>
+  <p>The strings carry the same control prefixes as every other in-game string (MES, the game's text markup): a leading <code>0x01</code> icon escape and <code>0xCE XX</code> colour-control bytes. Descriptions use the MES <code>0x7C</code> line-break token, decoded to <code>'\n'</code> by the parser. The parser strips control bytes (keeping printable ASCII) and trims whitespace. A handful of ids (<code>0x00</code>, <code>0x12</code>, <code>0x1A</code>, <code>0x52</code>, <code>0xB9</code>, <code>0xFD</code>) have empty names - reserved / gap slots.</p>
 </section>
 
-<section class="doc-section" id="parser">
-  <h2>Provenance + parser</h2>
-  <p><code>PTR_DAT_8007436C</code> and the <code>*3</code>-word index form are read straight from the MES <code>0xC2</code>/<code>0xC4</code> substitution dispatch. <code>legaia_asset::item_names::ItemNameTable</code> resolves the table from a <code>SCUS_942.54</code> image at runtime (PSX-EXE <code>t_addr</code> &rarr; file-offset map); the disc-gated <code>item_names_real</code> test pins a span of ids against the real executable. Consumers: the web viewer's enemy table joins drop ids to names through it; the shop randomizer reads <code>price_slot</code> (<code>legaia_asset::item_names</code> / <code>legaia_patcher::item_price</code>) to drop quest items from the for-sale pool and price chest-found equipment.</p>
+<section class="doc-section" id="how-we-know">
+  <h2>How we know</h2>
+  <table>
+    <thead><tr><th>Evidence</th><th>Address / test</th><th>What it proves</th></tr></thead>
+    <tbody>
+      <tr><td>MES substitution dispatch</td><td><code>0xC2</code>/<code>0xC4</code> opcode handlers</td><td>The <code>PTR_DAT_8007436C[id*3]</code> index form - table base, stride, and that this is the game's own name lookup.</td></tr>
+      <tr><td>Item info-window renderer</td><td><code>FUN_801D0F1C</code> (menu overlay); <code>funcs/overlay_menu_801d0f1c.txt</code></td><td>Draws the <code>+4</code> name at the window origin and the <code>+8</code> string one text row below (<code>WY + 0x10</code>) - <code>+8</code> is the description pointer.</td></tr>
+      <tr><td>Live price checks</td><td>buy/sell UI captures</td><td>The <code>+2</code> halfword is the charged price.</td></tr>
+      <tr><td>Disc-gated test</td><td><code>item_names_real</code></td><td>Pins a span of ids against the real executable through <code>ItemNameTable</code>'s PSX-EXE <code>t_addr</code> &rarr; file-offset resolver.</td></tr>
+    </tbody>
+  </table>
+  <p>Consumers in the project: the web viewer's enemy table joins drop ids to names through the parser; the shop randomizer reads the price slot (<code>legaia_asset::item_names::price_slot</code> / <code>legaia_patcher::item_price</code>) to drop quest items from the for-sale pool and price chest-found equipment.</p>
 </section>
 
 <section class="doc-section" id="see-also">
   <h2>See also</h2>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
+    <a href="item-effect-table.html">Item-effect table</a>
     <a href="equipment-table.html">Equipment stat-bonus table</a>
     <a href="steal-table.html">Steal-item table</a>
     <a href="spell-table.html">Spell table</a>

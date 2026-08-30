@@ -15,6 +15,34 @@
       <tr><td><a href="re-do-not-re-walk.html">Do not re-walk</a></td><td>Falsified hypotheses, reasoning intact</td><td>A reading of the bytes looks obvious and you want to check nobody has already spent a week disproving it.</td></tr>
     </tbody>
   </table>
+  <figure class="overlay-strip">
+    <svg viewBox="0 0 860 190" width="100%" style="max-width:860px;font-family:var(--font-mono);font-size:12px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Thread lifecycle: open, partial, mostly resolved, then settled threads; a disproved reading leaves for do not re-walk">
+      <g fill="var(--bg-raised)" stroke="var(--accent)" stroke-width="1.5">
+        <rect x="20" y="30" width="120" height="46" rx="6"/>
+        <rect x="180" y="30" width="120" height="46" rx="6"/>
+        <rect x="340" y="30" width="170" height="46" rx="6"/>
+      </g>
+      <g fill="var(--bg-raised)" stroke="var(--border)" stroke-width="1.5">
+        <rect x="550" y="30" width="190" height="46" rx="6"/>
+        <rect x="340" y="118" width="170" height="46" rx="6"/>
+      </g>
+      <g fill="currentColor" text-anchor="middle" dominant-baseline="middle">
+        <text x="80" y="53">open</text>
+        <text x="240" y="53">partial</text>
+        <text x="425" y="53">mostly resolved</text>
+        <text x="645" y="47">settled threads<tspan x="645" dy="15" font-size="11" fill="var(--text-muted)">graded by evidence</tspan></text>
+        <text x="425" y="135">do not re-walk<tspan x="425" dy="15" font-size="11" fill="var(--text-muted)">reasoning kept</tspan></text>
+      </g>
+      <g stroke="var(--text-muted)" stroke-width="1.5" fill="var(--text-muted)">
+        <line x1="140" y1="53" x2="172" y2="53"/><polygon points="172,49 180,53 172,57"/>
+        <line x1="300" y1="53" x2="332" y2="53"/><polygon points="332,49 340,53 332,57"/>
+        <line x1="510" y1="53" x2="542" y2="53"/><polygon points="542,49 550,53 542,57"/>
+        <line x1="425" y1="76" x2="425" y2="110"/><polygon points="421,110 425,118 429,110"/>
+      </g>
+      <text x="440" y="98" font-size="11" fill="var(--text-muted)">reading disproved</text>
+    </svg>
+    <figcaption>A thread narrows left to right and leaves this page for one of two terminal registers.</figcaption>
+  </figure>
   <p>A falsified row is kept forever with its reasoning, because the reasoning <em>is</em> the deliverable - "the world-map slot-4 bodies are coastline wireframes" is a very plausible reading of those bytes, and knowing why it is wrong is worth more than the row it occupies.</p>
   <p>Nothing on any of the three pages counts ports, tests or coverage. Detailed captures and decompiler dumps live in the linked pages and under <code>ghidra/scripts/funcs/</code>.</p>
 </section>
@@ -71,8 +99,8 @@
 </section>
 
 <section class="doc-section" id="recently-corrected" data-doc="recently-corrected">
-  <h2>Corrected on the last audit</h2>
-  <p>Claims the last audit wave overturned. They are listed here rather than filed silently into the settled page, because a claim that was wrong once is the cheapest place to look for a claim that is still wrong. Each now stands corrected on <a href="re-settled-threads.html">settled threads</a> or <a href="re-do-not-re-walk.html">do not re-walk</a>.</p>
+  <h2>Corrected claims</h2>
+  <p>Claims that stood on these pages and were overturned. They stay listed - a claim that was wrong once is the cheapest place to look for a claim that is still wrong - and each stands corrected on <a href="re-settled-threads.html">settled threads</a> or <a href="re-do-not-re-walk.html">do not re-walk</a>.</p>
   <details class="disclosure"><summary>History: the overturned claims</summary><div class="disclosure-body">
     <ul class="bullets">
       <li><strong>Debug flag <code>_DAT_8007B8C2</code> had its branch sense backwards</strong>, and one arm was named for the wrong loader. Every site reads the flag with <code>lh</code> and takes the <strong>zero</strong> arm to the debug-station host trap, the <strong>non-zero</strong> arm to the index resolver. Settled on that polarity, writer and all.</li>
@@ -102,7 +130,9 @@
       <tr><td>Coplanar residual tail: same-position curved-shell stacks</td><td><span class="tag tag-partial">partial</span> - the curved-shell half is answered; the sliver half remains</td><td><a href="#d-coplanar">details &darr;</a></td></tr>
     </tbody>
   </table>
-  <p>Recently closed here: Rim Elm's south gate. Neither of its two walk-on bands was the mechanism the symptom suggested - the exit record is ungated and the other record is five inert bytes; what holds a player in is a collision row the gate object's own script paints. See <a href="re-settled-threads.html">settled threads &sect; Rim Elm's south gate</a>, and the force-walk reading it falsified on <a href="re-do-not-re-walk.html#f-force-walk">do not re-walk</a>.</p>
+  <details class="disclosure"><summary>History: Rim Elm's south gate (closed)</summary><div class="disclosure-body">
+    <p>Neither of the gate's two walk-on bands holds the player in - the exit record is ungated and the other is five inert bytes; a collision row painted by the gate object's own script does. Answer on <a href="re-settled-threads.html">settled threads</a>; the falsified force-walk reading is on <a href="re-do-not-re-walk.html#f-force-walk">do not re-walk</a>.</p>
+  </div></details>
 
   <h3 id="d-region-gate-families">Region story-flag gate families</h3>
   <p><em>Status:</em> structure resolved and settled; residual = play-order confirmation for the dungeons the capture corpus never walked.</p>
@@ -209,7 +239,7 @@
 
 <section class="doc-section" id="audio" data-doc="audio--bgm">
   <h2>Audio / BGM</h2>
-  <p>No open threads. The most recent one - field-VM op-<code>0x35</code> sub-op <code>0xA</code>, the "unhalt-pause toggle" - resolved as the track-swap <strong>commit</strong> and moved to <a href="re-settled-threads.html">settled threads</a>.</p>
+  <p>No open threads. The last one - field-VM op-<code>0x35</code> sub-op <code>0xA</code> - closed as the track-swap <strong>commit</strong>; see <a href="re-settled-threads.html">settled threads</a>.</p>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="../subsystems/audio.html">Audio subsystem</a>
@@ -219,7 +249,7 @@
 
 <section class="doc-section" id="title-boot-overlays" data-doc="title--boot--overlays">
   <h2>Title / boot / overlays</h2>
-  <p>No open threads. The last one - the identity of PROT 0968, the one slot-B cluster entry without a residency capture - closed by capture.</p>
+  <p>No open threads. The last one - the identity of PROT 0968 - closed by capture.</p>
   <details class="disclosure"><summary>History: how PROT 0968 closed</summary><div class="disclosure-body">
     <p>The <code>cort_evolved_battle_first_menu</code> PCSX-Redux state (first command menu of the evolved-Cort fight, before any cast) shows the loader-B tracker <code>0x8007BC4C</code> reading <code>0x49</code> and entry 968 100% byte-resident at <code>0x801F69D8</code> over its own <code>0xA28</code> extent, with the field-side ladder states bracketing the page-in to the battle load. See <a href="re-settled-threads.html">settled threads &sect; PROT 0968</a>; the instrument is <code>scripts/mednafen/check-0968-residency.py</code>, which reads either emulator's states (dispatched on file extension).</p>
   </div></details>

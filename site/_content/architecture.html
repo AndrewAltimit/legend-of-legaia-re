@@ -131,7 +131,7 @@
 <section class="doc-section" id="vms">
   <h2>The runtime VMs</h2>
   <p>When you talk to a villager, watch a cutscene, throw a Tactical Art or open the shop, no hand-written code for that moment is running. Instead the game's engine interprets small programs stored with the data: the villager's dialogue is a script, the art is a move record, the shop window is a widget program. The five interpreters below share one <em>actor</em> model - the same records describe your character, an NPC, a monster and a spark of a spell - and each has its own page. Four are classic bytecode dispatchers; the effect VM is a per-slot state machine that plays the same role with a different shape.</p>
-  <p class="hint">"Five VMs" is the orientation, not the census: the field VM's menu sub-dispatcher, the move VM's overlay extension, and the battle, world-map and tile-board state machines are separate dispatchers with their own tables. The <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/vm-inventory.md">VM inventory</a> lists every one, with what is decoded, ported and actually reached by a live caller.</p>
+  <p class="hint">"Five VMs" is the orientation, not the census: the field VM's menu sub-dispatcher, the move VM's overlay extension, and the battle, world-map and tile-board state machines are separate dispatchers with their own tables. The <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/vm-inventory.md">VM inventory</a> lists every one.</p>
 
   <div class="vm-grid">
     <a class="vm-card" href="subsystems/actor-vm.html" title="Details, including the driver function, on the actor-VM subsystem page">
@@ -153,7 +153,7 @@
         <dt>Where</dt>       <dd>Executable, plus a 61-sub-op extension in the town overlay</dd>
         <dt>Opcodes</dt>     <dd>71 + 61 sub-ops</dd>
         <dt>Operands</dt>    <dd>u16 stream</dd>
-        <dt>Status</dt>      <dd><span class="tag tag-done">ported</span> - the extension is ported but nothing live calls it yet</dd>
+        <dt>Status</dt>      <dd><span class="tag tag-done">ported</span> - extension ported, reached only from the town overlay</dd>
       </dl>
     </a>
     <a class="vm-card" href="subsystems/motion-vm.html" title="Details, including the driver function, on the motion-VM subsystem page">
@@ -206,51 +206,47 @@
   <p>The field VM drives the scene. When it needs an actor to perform something, it stages a move record into that actor, and the per-frame actor tick steps the move VM through it. One move-VM opcode escapes into an overlay-resident extension dispatcher that exists only while the town overlay is loaded, so battle-side move records can never reach it. The motion VMs run independently per actor for pathing and camera follow. The effect VM is battle-only, but every effect is bound to a master-slot actor that the script VM and the battle state machine can reference - the same actor model throughout. Driver addresses and traces are on the linked subsystem pages.</p>
 
   <figure class="vm-graph">
-    <svg viewBox="0 0 880 460" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="vm-graph-title">
-      <title id="vm-graph-title">Runtime VM call graph</title>
+    <svg viewBox="0 0 880 500" width="100%" style="max-width:880px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Runtime VM call graph: the field VM stages move records into actors, the per-actor tick steps the move VM, which can escape into an overlay extension; the actor, motion and effect VMs run independently on the same actor records">
+      <title>Runtime VM call graph</title>
       <defs>
         <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-          <path d="M0,0 L10,5 L0,10 z" fill="#58c4b3"/>
-        </marker>
-        <marker id="arrow-soft" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-          <path d="M0,0 L10,5 L0,10 z" fill="#636b76"/>
+          <path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/>
         </marker>
       </defs>
       <style>
-        .vm-box { fill: #131922; stroke: #58c4b3; stroke-width: 1.5; rx: 4; ry: 4; }
-        .vm-box-soft { fill: #131922; stroke: #2a323e; stroke-width: 1.2; rx: 4; ry: 4; }
-        .vm-title { font: 600 13px 'JetBrains Mono', monospace; fill: #c9d1d9; }
-        .vm-sub   { font: 11px 'JetBrains Mono', monospace; fill: #8b949e; }
-        .vm-edge  { stroke: #58c4b3; stroke-width: 1.5; fill: none; }
-        .vm-edge-soft { stroke: #636b76; stroke-width: 1.2; fill: none; stroke-dasharray: 4 3; }
-        .vm-label { font: 11px 'Inter', sans-serif; fill: #c9d1d9; }
-        .vm-band  { font: 10px 'Inter', sans-serif; fill: #636b76; letter-spacing: 0.06em; text-transform: uppercase; }
+        .vm-box { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.5; rx: 4; ry: 4; }
+        .vm-box-soft { fill: var(--bg-raised); stroke: var(--border); stroke-width: 1.2; rx: 4; ry: 4; }
+        .vm-title { font: 600 13px var(--font-mono), monospace; fill: currentColor; }
+        .vm-sub   { font: 11px var(--font-mono), monospace; fill: var(--text-muted); }
+        .vm-edge  { stroke: var(--accent); stroke-width: 1.5; fill: none; }
+        .vm-label { font: 11px var(--font-body), sans-serif; fill: currentColor; }
+        .vm-band  { font: 10px var(--font-body), sans-serif; fill: var(--text-muted); letter-spacing: 0.06em; text-transform: uppercase; }
       </style>
 
       <text x="20" y="22" class="vm-band">Per-frame scene tick</text>
       <rect x="280" y="36" width="320" height="58" class="vm-box"/>
       <text x="296" y="58" class="vm-title">Field / event VM</text>
       <text x="296" y="76" class="vm-sub">43 opcodes - town / field overlay</text>
-      <text x="296" y="89" class="vm-sub">drives NPC movement, dialog, story flags</text>
+      <text x="296" y="89" class="vm-sub">NPC movement, dialog, story flags</text>
 
       <path class="vm-edge" d="M440 94 L440 156" marker-end="url(#arrow)"/>
-      <text x="448" y="120" class="vm-label">EXEC_MOVE</text>
-      <text x="448" y="135" class="vm-label">→ stages a move record into the actor</text>
+      <text x="452" y="120" class="vm-label">EXEC_MOVE</text>
+      <text x="452" y="135" class="vm-label">stages a move record into the actor</text>
 
       <text x="20" y="180" class="vm-band">Per-actor frame tick</text>
       <rect x="280" y="156" width="320" height="58" class="vm-box"/>
       <text x="296" y="178" class="vm-title">Actor tick</text>
-      <text x="296" y="196" class="vm-sub">physics + animation, once per actor per frame</text>
+      <text x="296" y="196" class="vm-sub">physics + animation, once per actor</text>
       <text x="296" y="209" class="vm-sub">steps the move VM each frame</text>
 
       <path class="vm-edge" d="M440 214 L440 274" marker-end="url(#arrow)"/>
-      <text x="448" y="240" class="vm-label">step move VM for active actor</text>
+      <text x="452" y="248" class="vm-label">step the active actor's move VM</text>
 
       <text x="20" y="298" class="vm-band">Per-actor opcode dispatch</text>
       <rect x="200" y="274" width="280" height="58" class="vm-box"/>
       <text x="216" y="296" class="vm-title">Move-table VM</text>
       <text x="216" y="314" class="vm-sub">71 opcodes - executable</text>
-      <text x="216" y="327" class="vm-sub">drives Tactical Arts, summons, props</text>
+      <text x="216" y="327" class="vm-sub">Tactical Arts, summons, props</text>
 
       <path class="vm-edge" d="M480 303 L520 303" marker-end="url(#arrow)"/>
       <rect x="520" y="274" width="280" height="58" class="vm-box"/>
@@ -258,24 +254,24 @@
       <text x="536" y="314" class="vm-sub">61 sub-ops - town overlay only</text>
       <text x="536" y="327" class="vm-sub">reached via the escape opcode</text>
 
-      <text x="20" y="370" class="vm-band">Independent per-actor / per-slot drivers</text>
-      <rect x="40" y="384" width="240" height="58" class="vm-box-soft"/>
-      <text x="56" y="406" class="vm-title">Actor / sprite VM</text>
-      <text x="56" y="424" class="vm-sub">13 opcodes - menu overlay</text>
-      <text x="56" y="437" class="vm-sub">window widgets: shop, pause menu</text>
+      <text x="20" y="374" class="vm-band">Independent drivers - same actor records</text>
+      <rect x="40" y="388" width="250" height="58" class="vm-box-soft"/>
+      <text x="56" y="410" class="vm-title">Actor / sprite VM</text>
+      <text x="56" y="428" class="vm-sub">13 opcodes - menu overlay</text>
+      <text x="56" y="441" class="vm-sub">window widgets: shop, pause</text>
 
-      <rect x="320" y="384" width="240" height="58" class="vm-box-soft"/>
-      <text x="336" y="406" class="vm-title">Motion VMs</text>
-      <text x="336" y="424" class="vm-sub">22 + 32 opcodes - executable</text>
-      <text x="336" y="437" class="vm-sub">NPC pathing, camera follow, cutscenes</text>
+      <rect x="315" y="388" width="250" height="58" class="vm-box-soft"/>
+      <text x="331" y="410" class="vm-title">Motion VMs</text>
+      <text x="331" y="428" class="vm-sub">22 + 32 opcodes - executable</text>
+      <text x="331" y="441" class="vm-sub">NPC pathing, camera, cutscenes</text>
 
-      <rect x="600" y="384" width="240" height="58" class="vm-box-soft"/>
-      <text x="616" y="406" class="vm-title">Effect VM</text>
-      <text x="616" y="424" class="vm-sub">per-slot walker - battle overlay</text>
-      <text x="616" y="437" class="vm-sub">32 master + 128 child slots</text>
+      <rect x="590" y="388" width="250" height="58" class="vm-box-soft"/>
+      <text x="606" y="410" class="vm-title">Effect VM</text>
+      <text x="606" y="428" class="vm-sub">per-slot walker - battle overlay</text>
+      <text x="606" y="441" class="vm-sub">32 master + 128 child slots</text>
 
-      <path class="vm-edge-soft" d="M280 413 L320 413" marker-end="url(#arrow-soft)"/>
-      <text x="284" y="408" class="vm-label" style="font-size:9px;fill:#636b76">share actor model</text>
+      <line x1="40" y1="468" x2="840" y2="468" stroke="var(--border)" stroke-width="1" stroke-dasharray="4 3"/>
+      <text x="440" y="486" class="vm-label" text-anchor="middle">all three read and write the same actor records as the chain above</text>
     </svg>
     <figcaption>The field VM drives the scene; per-actor ticks step the move VM; the move VM can jump into an overlay extension. Actor, motion and effect VMs run independently but bind to the same actor records.</figcaption>
   </figure>

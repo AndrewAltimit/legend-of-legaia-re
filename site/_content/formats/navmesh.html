@@ -1,54 +1,94 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; per-scene primitive scratch buffer</div>
-  <h1>The navmesh that wasn't: the scratch buffer at <code>0x80108EA4</code> <span class="tag tag-partial">Inferred</span></h1>
-  <p class="lede">Does Legend of Legaia keep a navmesh - a table of walkable-area records - in RAM? An early reading said yes: a 1700-byte cluster at <code>0x80108EA4..0x80109550</code> that changes on every area load looked like a table of 24-byte records. That reading is <strong>falsified</strong>. The window is a per-scene scratch buffer the renderer fills with assembled GPU primitive data on scene entry; its shape varies by scene because it holds whatever that scene's billboard / decoration / sprite pre-fill writes. This page records the falsification so nobody re-derives the navmesh reading from the same evidence.</p>
+  <h1>The navmesh that wasn't <span class="tag tag-partial">Inferred</span></h1>
+  <p class="lede">Does Legend of Legaia keep a navmesh - a table of walkable-area records - in RAM? No. The 1700-byte cluster that changes on every area load, which reads plausibly as a table of 24-byte records, is a per-scene scratch buffer the renderer fills with assembled GPU primitive data on scene entry. This page records the falsification, and where the game's real pathing data lives, so nobody re-derives the navmesh reading from the same evidence.</p>
 </header>
 
 <section class="doc-section" id="at-a-glance">
   <h2>At a glance</h2>
   <dl class="kv">
     <dt>What it is</dt><dd>A negative finding: the RAM window <code>0x80108EA4..0x80109550</code> is a renderer scratch buffer, not a navmesh table</dd>
-    <dt>Where the real pathing data is</dt><dd>The per-scene walkability grid at <code>*(_DAT_1f8003ec)+0x4000</code> (<a href="../subsystems/field-locomotion.html">field locomotion</a>), the MAN region boxes, and the tile-board grid for the puzzle mode</dd>
+    <dt>Where the real pathing data is</dt><dd>The per-scene walkability grid (<a href="../subsystems/field-locomotion.html">field locomotion</a>), the MAN region boxes, and the tile-board grid for the puzzle mode - <a href="#actual-pathing">table below</a></dd>
     <dt>Parser</dt><dd>none (nothing to parse); reproduction via <code>mednafen-state extract</code> + <code>scripts/mednafen/pointer-hunt.py</code></dd>
     <dt>Confidence</dt><dd>Inferred - zero pointers into the window across three save states; the contents match GP0 packet shapes</dd>
   </dl>
   <p>Falsified readings across the whole project are collected on <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>; this page keeps the full reasoning for the one that looked most like real data.</p>
 </section>
 
-<section class="doc-section" id="negative-finding">
-  <h2>Why this entry exists</h2>
-  <p>The 24-byte-stride "navmesh" reading was structural inference from a single pair of mednafen save-state diffs (comparing emulator RAM snapshots before and after an area load). Broader inspection across three separate save states (<code>mc1</code> / <code>mc2</code> / <code>mc3</code>) falsifies it - and negative findings are worth writing down, because the same diff evidence would suggest the same wrong conclusion to the next person.</p>
+<section class="doc-section" id="why-no-consumer">
+  <h2>The decisive test: nothing points at it</h2>
+  <p>A real navmesh table would be consulted through a stable base-pointer cell somewhere in RAM. A pointer-hunt over the full 2 MiB of main RAM, for any u32 pointing into the window, returns <strong>zero</strong> hits in all three save states (<code>mc1</code> field, <code>mc2</code> battle, <code>mc3</code> field). No overlay slot, SCUS data segment, kernel stack or runtime heap holds the table base. The buffer is consumed by code that knows its address as a compiled-in constant (a MIPS LUI+ADDIU immediate pair inside the renderer), not via indirection.</p>
+  <figure class="overlay-strip">
+    <svg viewBox="0 0 880 190" width="100%" style="max-width:880px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Pointer hunt over main RAM: six pointers reach structures adjacent to the window, zero reach the window itself">
+      <style>
+        .nv-seg { font: 12px 'Inter', sans-serif; fill: currentColor; text-anchor: middle; }
+        .nv-note { font: 11px 'Inter', sans-serif; fill: var(--text-muted); text-anchor: middle; }
+        .nv-addr { font: 10px 'JetBrains Mono', monospace; fill: var(--accent); text-anchor: middle; }
+        .nv-box { fill: var(--bg-raised); stroke: var(--border); stroke-width: 1.2; }
+        .nv-hot { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.6; }
+        .nv-arrow { stroke: currentColor; stroke-width: 1.2; fill: none; }
+        .nv-none { stroke: var(--text-muted); stroke-width: 1.2; fill: none; stroke-dasharray: 4 4; }
+      </style>
+      <rect x="30" y="55" width="200" height="70" class="nv-box"/>
+      <text x="130" y="82" class="nv-seg">rest of main RAM</text>
+      <text x="130" y="102" class="nv-note">(2 MiB scanned)</text>
+      <rect x="360" y="30" width="220" height="54" class="nv-box"/>
+      <text x="470" y="50" class="nv-seg">adjacent structures</text>
+      <text x="470" y="70" class="nv-note">sprite-batcher data</text>
+      <rect x="360" y="110" width="220" height="54" class="nv-hot"/>
+      <text x="470" y="130" class="nv-seg">"navmesh" window</text>
+      <text x="470" y="150" class="nv-addr">0x80108EA4..0x80109550</text>
+      <path d="M 230 72 L 352 57" class="nv-arrow"/>
+      <path d="M 344 54 L 352 57 L 345 63" class="nv-arrow"/>
+      <text x="288" y="42" class="nv-note">6 pointers</text>
+      <path d="M 230 112 L 352 137" class="nv-none"/>
+      <text x="288" y="152" class="nv-note">0 pointers</text>
+      <rect x="660" y="110" width="190" height="54" class="nv-box"/>
+      <text x="755" y="130" class="nv-seg">renderer code</text>
+      <text x="755" y="150" class="nv-note">LUI+ADDIU constant</text>
+      <path d="M 660 137 L 588 137" class="nv-arrow"/>
+      <path d="M 596 133 L 588 137 L 596 141" class="nv-arrow"/>
+    </svg>
+    <figcaption>Only compiled-in constants reach the window; the six real pointers target its neighbours.</figcaption>
+  </figure>
 </section>
 
 <section class="doc-section" id="what-the-data-actually-looks-like">
-  <h2>What the data actually looks like</h2>
-  <p>Three shapes appear across the captures, none matching a navmesh table:</p>
+  <h2>What the bytes actually are</h2>
+  <p>Three shapes appear across the captures, none matching a record table:</p>
   <ul class="bullets">
-    <li><strong>Repeating constant runs.</strong> In <code>mc1</code> (<code>map01</code>), the same 1700-byte window holds <code>0c 00 0c 00 0c 00 ... 0d 00 0d 00 ... 0e 00 ...</code> - a uniform u16 sequence with no record structure.</li>
-    <li><strong>GPU-packet shapes.</strong> In <code>mc2</code> and <code>mc3</code>, 12-byte runs that mirror the GP0 packet header + RGB-color + delta-position layout the PSX renderer emits (GP0 packets are the raw draw commands sent to the PlayStation GPU). Bytes like <code>80 80 80 7E</code> / <code>80 80 80 76</code> are the canonical TMD primitive flag/mode/code/ilen quartet; bytes like <code>c1 c1 c1</code> / <code>cc cc cc</code> / <code>f7 f7 f7</code> are RGB color triplets; signed <code>0xff</code> deltas appear at the i16 positions.</li>
-    <li><strong>Cross-save residency.</strong> <code>mc1</code>, <code>mc2</code>, and <code>mc3</code> all show different shapes at the same offset. A real navmesh would carry stable per-scene records that other code reads through a known base pointer; this region is overwritten wholesale on scene entry.</li>
+    <li><strong>Repeating constant runs.</strong> In the <code>map01</code> field state, the window holds a uniform u16 sequence (<code>0c 00</code> repeated, then <code>0d 00</code>, then <code>0e 00</code>) with no record structure.</li>
+    <li><strong>GPU-packet shapes.</strong> In the other two states, 12-byte runs mirror the GP0 packet header + RGB-colour + delta-position layout the PSX renderer emits (GP0 packets are the raw draw commands sent to the PlayStation GPU): the canonical TMD primitive flag/mode/code/ilen quartet, RGB colour triplets, and signed byte deltas at the i16 positions.</li>
+    <li><strong>Overwritten wholesale.</strong> All three states show <em>different</em> shapes at the same offset. Stable per-scene records would persist; a working buffer is refilled on scene entry.</li>
   </ul>
-</section>
-
-<section class="doc-section" id="why-no-consumer">
-  <h2>The smoking gun: nothing points at it</h2>
-  <p>A <code>mednafen-state</code> pointer-hunt over the full 2 MiB main-RAM window for any u32 value pointing into <code>0x80108EA4..0x80109550</code> returns <strong>zero</strong> hits in <code>mc1</code>, <code>mc2</code>, or <code>mc3</code>. There is no RAM cell anywhere - overlay slot, SCUS data segment, kernel stack, or runtime heap - that holds the table base. A real navmesh table would be consulted through a stable base-pointer cell; this buffer is consumed by code that knows its address as a compiled-in constant (a MIPS LUI+ADDIU immediate pair inside the renderer), not via indirection.</p>
-  <p>The wider window <code>0x80108000..0x8010A000</code> does have 6 external pointers (in <code>mc1</code>), but they target neighbouring offsets (<code>0x80108398</code>, <code>0x80108BC8</code>, <code>0x80108C2C</code>, <code>0x80108C38</code>) - that's the pre-fill / sprite-batcher reading from data structures adjacent to this scratch region, not the scratch region itself.</p>
 </section>
 
 <section class="doc-section" id="actual-pathing">
-  <h2>So where IS the pathing data?</h2>
-  <p>Real per-scene region / event-trigger data for actor pathing is not in this RAM window. The actual systems:</p>
-  <ul>
-    <li><strong>General town/field free-movement locomotion + collision</strong> is <code>FUN_801d01b0</code> (player controller) + <code>FUN_801cfe4c</code> (collision), which sample a per-scene walkability tile map through the base pointer <code>_DAT_1f8003ec</code> (grid at <code>+0x4000</code>, 4 sub-cell wall bits per byte, one byte per 128-unit tile). See <a href="../subsystems/field-locomotion.html">field locomotion</a>. This is the resolved answer to "where is the collision data" - a nibble grid keyed on the player tile, not a RAM table in this window.</li>
-    <li>A <strong>tile-board grid</strong> (cell <code>2</code> = wall) is installed inline in the field-VM event script by op <code>0x49</code>, but that drives the puzzle / board minigame mode, not general locomotion.</li>
-    <li>Per-scene <strong>region / zone boxes</strong> are 18-byte records at the MAN control block <code>_DAT_801c6ea4 + 0x4</code>, queried by player tile via <code>FUN_801dba20</code> (bbox in <code>bytes[1..4]</code>; <code>bytes[5..17]</code> is the region's <a href="encounter.html#camera-region-table">camera preset</a>, not pathing data).</li>
-    <li>The <strong>encounter-record pointer</strong> lives in actor records at <code>actor[+0x94]</code> - see <a href="encounter.html">encounter record format</a> and the <a href="../subsystems/world-map.html">world-map subsystem</a> for that flow.</li>
-  </ul>
+  <h2>Where the pathing data really lives</h2>
+  <table>
+    <thead><tr><th>System</th><th>Data</th><th>Details</th></tr></thead>
+    <tbody>
+      <tr><td>Town / field locomotion + collision</td><td>Per-scene walkability tile grid: one byte per 128-unit tile, 4 sub-cell wall bits, reached through a scratchpad base pointer</td><td><a href="../subsystems/field-locomotion.html">Field locomotion</a></td></tr>
+      <tr><td>Puzzle / board minigame</td><td>Tile-board grid (cell <code>2</code> = wall), installed inline by field-VM op <code>0x49</code></td><td><a href="../subsystems/script-vm.html">Field/event VM</a></td></tr>
+      <tr><td>Per-scene region / zone boxes</td><td>18-byte records in the MAN control block, queried by player tile; the payload is a camera preset, not pathing data</td><td><a href="encounter.html#camera-region-table">Camera-region table</a></td></tr>
+      <tr><td>Encounter arming</td><td>Record pointer in the actor slot <code>+0x94</code></td><td><a href="encounter.html">Encounter record</a>, <a href="../subsystems/world-map.html">world map</a></td></tr>
+    </tbody>
+  </table>
 </section>
 
-<section class="doc-section" id="reproducing">
-  <h2>Reproducing the negative finding</h2>
+<section class="doc-section" id="how-we-know">
+  <h2>How we know</h2>
+  <table>
+    <thead><tr><th>Evidence</th><th>Instrument</th><th>What it shows</th></tr></thead>
+    <tbody>
+      <tr><td>Zero inbound pointers</td><td><code>pointer-hunt.py into-window</code> over three save states</td><td>No RAM cell holds the window's base - a table nobody indexes is not a table.</td></tr>
+      <tr><td>Six adjacent pointers</td><td>Same hunt widened to <code>0x80108000..0x8010A000</code></td><td>Pointers target neighbouring offsets (<code>0x80108398</code>, <code>0x80108BC8</code>, <code>0x80108C2C</code>, <code>0x80108C38</code>) - the sprite-batcher's own structures, not the scratch region.</td></tr>
+      <tr><td>Byte shapes</td><td><code>mednafen-state extract</code> RAM dumps</td><td>Contents match GP0 draw-packet layout, and differ wholesale across scenes.</td></tr>
+    </tbody>
+  </table>
+  <details class="disclosure">
+    <summary>Reproducing the negative finding</summary>
+    <div class="disclosure-body">
 <pre><code>./target/release/mednafen-state extract &lt;mc1.mc1&gt; --start 0x80000000 --end 0x80200000 --out /tmp/ram_mc1.bin
 ./target/release/mednafen-state extract &lt;mc3.mc3&gt; --start 0x80000000 --end 0x80200000 --out /tmp/ram_mc3.bin
 
@@ -56,7 +96,15 @@ python3 scripts/mednafen/pointer-hunt.py into-window /tmp/ram_mc1.bin \
     --target-lo 0x80108EA4 --target-hi 0x80109550 --exclude-self
 python3 scripts/mednafen/pointer-hunt.py into-window /tmp/ram_mc3.bin \
     --target-lo 0x80108EA4 --target-hi 0x80109550 --exclude-self</code></pre>
-  <p>Both invocations return zero hits. The narrow <code>--target-lo</code>/<code>--target-hi</code> bounds match the original reading; widen to <code>0x80108000..0x8010A000</code> to surface the adjacent sprite-batcher pointers.</p>
+      <p>Both invocations return zero hits. The narrow bounds match the original navmesh reading; widen to <code>0x80108000..0x8010A000</code> to surface the adjacent sprite-batcher pointers.</p>
+    </div>
+  </details>
+  <details class="disclosure">
+    <summary>History: how the navmesh reading arose</summary>
+    <div class="disclosure-body">
+      <p>The cluster was spotted by diffing two area-load save states: 1700 bytes differed, which is how scene-resident data shows up - but also how any working buffer repopulated on scene entry shows up. A leading id / kind record interpretation fit one state's bytes and broke on the other two. Structural inference from a single diff pair is the trap; the pointer hunt is the test that settles it.</p>
+    </div>
+  </details>
 </section>
 
 <section class="doc-section" id="see-also">

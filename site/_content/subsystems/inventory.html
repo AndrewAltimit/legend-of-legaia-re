@@ -1,140 +1,128 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; inventory</div>
-  <h1>Inventory - one array, an active window, and the &ldquo;split bag&rdquo;</h1>
-  <p class="lede">Legaia keeps one shared 256-slot inventory in a single flat array. Every accessor is bounded by an <strong>active window</strong> that collapses to one 128-slot half whenever a character travels alone - which is the whole story behind the &ldquo;divided&rdquo; inventory players describe, and behind the folklore &ldquo;72-slot&rdquo; bound.</p>
+  <h1>Inventory - one bag, one active window</h1>
+  <p class="lede">Legaia keeps the whole party&rsquo;s items in a single 256-slot bag. Every read and write of that bag is fenced by an <strong>active window</strong> that shrinks to one 128-slot half whenever a character travels alone. That one rule explains the &ldquo;divided&rdquo; inventory players notice during solo segments - and why the folklore &ldquo;72-slot&rdquo; limit is a display page, not a bound.</p>
 </header>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Where</dt><dd>Main RAM <code>0x80085958</code>; save block offset <code>+0x1818</code> (rides verbatim into every memory-card save)</dd>
+    <dt>Size</dt><dd>256 slots &times; 2 bytes: <code>[item id][count]</code>; id <code>0</code> = free; stacks cap at 99</dd>
+    <dt>Window</dt><dd>Three halfwords <code>gp[+0x2D2]</code> start, <code>gp[+0x2D4]</code> end, <code>gp[+0x2D6]</code> span - one writer</dd>
+    <dt>Accessors</dt><dd>Five <code>SCUS_942.54</code> helpers (add / consume / capacity / reserve / normalize); nothing touches the array raw</dd>
+    <dt>Engine</dt><dd><code>engine-core</code> inventory kernel (<code>apply_battle_loot</code>, <code>buy_from_shop</code>, field-VM <code>GIVE_ITEM</code>)</dd>
+    <dt>Confidence</dt><dd>Confirmed - disassembly of every helper plus a live three-member window read</dd>
+    <dt>Used by</dt><dd><a href="field-menu.html">Field menu</a>, <a href="shop.html">Shop</a>, <a href="script-vm.html">Field script VM</a>, <a href="battle.html#inventory">Battle item use</a></dd>
+  </dl>
+</section>
 
 <section class="doc-section" id="what-players-see">
   <h2>What players see</h2>
-  <p>Open the menu and the bag looks like a handful of tabbed pages. Play a segment where one character is alone and the bag seems to have been cut in half - items the party had are gone, and what the loner picks up never shows up once everyone is back together. Both impressions come from the same thing: there is <strong>one</strong> 256-slot array, and every read and write of it is fenced by a window the game re-computes from who is in the party. The pages are views; the halves are access rules; nothing is ever physically moved.</p>
+  <p>Open the menu and the bag looks like a handful of tabbed pages. Play a segment where one character is alone and the bag seems cut in half: items the party had are gone, and what the loner picks up never shows up once everyone regroups. Both impressions come from one array and one window. The pages are views; the halves are access rules; nothing is ever physically moved.</p>
   <figure class="overlay-strip">
-    <svg viewBox="0 0 880 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="inv-window-title" style="font-family: var(--font-mono); font-size: 12px;">
+    <svg viewBox="0 0 880 200" width="100%" style="max-width: 880px; font-family: var(--font-mono); font-size: 12px;" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="inv-window-title">
       <title id="inv-window-title">The inventory array and its three possible active windows</title>
       <text x="20" y="22" fill="var(--text-muted)">0x80085958 - 256 slots x [id][count]</text>
-      <rect x="20" y="32" width="840" height="36" fill="var(--bg-card)" stroke="var(--border)"/>
+      <rect x="20" y="32" width="840" height="36" fill="var(--bg-raised)" stroke="var(--border)"/>
       <line x1="440" y1="32" x2="440" y2="68" stroke="var(--border)" stroke-dasharray="3 3"/>
-      <text x="230" y="55" text-anchor="middle" fill="currentColor">slots 0 .. 127</text>
-      <text x="650" y="55" text-anchor="middle" fill="currentColor">slots 128 .. 255</text>
+      <text x="230" y="50" text-anchor="middle" dominant-baseline="middle" fill="currentColor">slots 0 .. 127</text>
+      <text x="650" y="50" text-anchor="middle" dominant-baseline="middle" fill="currentColor">slots 128 .. 255</text>
       <g stroke="var(--accent)" stroke-width="3" fill="none">
-        <line x1="20" y1="96" x2="860" y2="96"/>
-        <line x1="20" y1="128" x2="440" y2="128"/>
-        <line x1="440" y1="160" x2="860" y2="160"/>
+        <line x1="20" y1="100" x2="860" y2="100"/>
+        <line x1="20" y1="136" x2="440" y2="136"/>
+        <line x1="440" y1="172" x2="860" y2="172"/>
       </g>
       <g fill="var(--text-muted)">
-        <text x="20" y="90">party of 2+ (or story flag 20 set): window [0, 256)</text>
-        <text x="20" y="122">Vahn alone: window [0, 128)</text>
-        <text x="440" y="154">any other lone character: window [128, 256)</text>
+        <text x="20" y="92">party of 2+ (or story flag 20 set): window [0, 256)</text>
+        <text x="20" y="128">Vahn alone: window [0, 128)</text>
+        <text x="440" y="164">any other lone character: window [128, 256)</text>
       </g>
-      <text x="20" y="188" fill="var(--text-muted)">gp[+0x2D2] = start, gp[+0x2D4] = end, gp[+0x2D6] = span - written only by FUN_8004313C</text>
     </svg>
-    <figcaption>The five inventory helpers only ever look between <code>start</code> and <code>end</code>. A lone character gets one half; a party gets the whole array. The cheat-code &ldquo;72 slots&rdquo; is a menu page, not any of these bounds.</figcaption>
+    <figcaption>The five inventory helpers only ever look between <code>start</code> and <code>end</code>. A lone character gets one half; a party gets the whole array.</figcaption>
   </figure>
 </section>
 
-<section class="doc-section doc-summary" id="summary">
-  <h2>Summary</h2>
-  <ul class="bullets">
-    <li><strong>Storage.</strong> <code>0x80085958</code>, 256 slots &times; 2 bytes <code>[item id][count]</code>. Id <code>0</code> = free; stacks cap at 99. The array is SC block <code>+0x1818</code> inside the live game-state block at <code>0x80084140</code>, so it rides verbatim into every memory-card save.</li>
-    <li><strong>Access.</strong> Nothing indexes the array raw. Every producer and consumer goes through five <code>SCUS_942.54</code> helpers that scan and bound-check only inside the active window.</li>
-    <li><strong>Window.</strong> Three <code>gp</code>-relative halfwords - <code>gp[+0x2D2]</code> start, <code>gp[+0x2D4]</code> end, <code>gp[+0x2D6]</code> span - written by exactly one function, <code>FUN_8004313C</code>, from the party roster: <code>[0, 256)</code> with two or more members, <code>[0, 128)</code> for Vahn alone, <code>[128, 256)</code> for any other lone character.</li>
-    <li><strong>Consequence.</strong> A solo character has an isolated pocket of the bag: they can neither see nor spend the party&rsquo;s items, and what they pick up alone never reaches the party inventory. Storage is never physically partitioned - only access is.</li>
-    <li><strong>Quirk.</strong> The add helper stores the item id before it bound-checks, so a completely full window leaks the id one slot past <code>end</code>. Only the count store is guarded.</li>
-  </ul>
-</section>
-
 <section class="doc-section" id="storage">
-  <h2>Storage</h2>
+  <h2>Storage and access</h2>
+  <p>Nothing indexes the array directly. The pause menu, chests and scripts (the field VM&rsquo;s <code>GIVE_ITEM</code> op), battle rewards, shops and the equip swap-back all go through the same small helper family, passing item ids or helper-returned slot numbers. There is no raw-index sort or swap primitive anywhere in retail.</p>
   <table class="data-table">
-    <thead><tr><th>Item</th><th>Value</th></tr></thead>
+    <thead><tr><th>Helper</th><th>What it does</th></tr></thead>
     <tbody>
-      <tr><td>Array</td><td><code>0x80085958</code></td></tr>
-      <tr><td>Slots</td><td>256, 2 bytes each, <code>[id][count]</code></td></tr>
-      <tr><td>In the save block</td><td>SC <code>+0x1818</code> (= <code>0x80084140 + 0x1818</code>)</td></tr>
-      <tr><td>Free slot</td><td><code>id == 0</code>; occupancy keys on the id alone, so a live id with a zero count still survives compaction</td></tr>
-      <tr><td>Stack cap</td><td>99</td></tr>
-      <tr><td>New-game seed</td><td><code>FUN_80034A6C</code> writes exactly one slot: <code>(0x77 Healing Leaf, &times;5)</code>; both callers pre-zero the whole range first</td></tr>
+      <tr><td>add</td><td>find a matching id, else the first free slot in the window</td></tr>
+      <tr><td>consume</td><td>decrement by id; zeroes an emptied id in place, never compacts</td></tr>
+      <tr><td>capacity / reserve</td><td>paired before adds in the equip swap-back path</td></tr>
+      <tr><td>normalize</td><td>re-installs the window, merges duplicate stacks (cap 99), pulls occupied slots down into holes</td></tr>
+      <tr><td>window setup</td><td>the sole writer of the three window halfwords</td></tr>
     </tbody>
   </table>
-  <p>Cheat databases call this region <em>Have 99 Items</em> / <em>Item Modifier</em>. The <em>Have 99 Items</em> code covers <code>0x80085958..0x800859E8</code> - 72 slots - which is the size of the general-items <strong>display page</strong> that code happened to target, not an engine bound.</p>
-</section>
-
-<section class="doc-section" id="accessors">
-  <h2>Accessors</h2>
-  <p>A sweep of all 129 functions in the pause-menu overlay finds <strong>zero</strong> direct array writes: its 17 inventory operations all call into a small SCUS helper family, passing item ids or helper-returned slot numbers. The field VM&rsquo;s <code>GIVE_ITEM</code> op (<code>0x39</code>, chests and scripts), battle rewards (<code>FUN_8004E568</code>), shops, and the equip swap-back take the same road. There is no raw-index sort or swap primitive anywhere in retail.</p>
-  <table class="data-table">
-    <thead><tr><th>Helper</th><th>Role</th></tr></thead>
-    <tbody>
-      <tr><td><code>FUN_800421D4</code></td><td>add - find a matching id, else the first free slot</td></tr>
-      <tr><td><code>FUN_80042310</code></td><td>consume by id - zeroes the emptied id in place; never compacts on its own</td></tr>
-      <tr><td><code>FUN_80042EE0</code></td><td>capacity check - paired with reserve before adds in the equip swap-back path</td></tr>
-      <tr><td><code>FUN_80043048</code></td><td>reserve - second half of the capacity / reserve pair</td></tr>
-      <tr><td><code>FUN_800423E0</code></td><td>normalize - calls window setup first, merges duplicate stacks (cap 99), pulls occupied slots down into holes</td></tr>
-      <tr><td><code>FUN_8004313C</code></td><td>window setup - the sole SCUS writer of <code>gp[+0x2D2 / +0x2D4 / +0x2D6]</code></td></tr>
-    </tbody>
-  </table>
+  <p>A new game seeds exactly one slot - five Healing Leaves - after pre-zeroing the whole range. Occupancy keys on the id alone, so a live id with a zero count survives compaction.</p>
 </section>
 
 <section class="doc-section" id="window">
   <h2>The active window</h2>
-  <p>The helpers never see &ldquo;256 slots&rdquo;. They see <code>[start, end)</code> in three <code>gp</code>-relative halfwords, and <code>FUN_8004313C</code> is the only function in <code>SCUS_942.54</code> that writes them (11 call sites; an overlay writer has not been excluded). It picks the window from the party roster: member count at <code>0x80084594</code>, roster id bytes at <code>0x80084598</code>.</p>
+  <p>The helpers never see &ldquo;256 slots&rdquo;; they see <code>[start, end)</code>. Window setup picks the bounds from the party roster - member count and the first roster id - every time normalize runs.</p>
   <table class="data-table">
-    <thead><tr><th>Members (<code>0x80084594</code>)</th><th>Story flag 20</th><th>First roster byte</th><th>Window installed</th></tr></thead>
+    <thead><tr><th>Party members</th><th>Story flag 20</th><th>First roster member</th><th>Window installed</th></tr></thead>
     <tbody>
-      <tr><td><code>0</code></td><td>-</td><td>-</td><td>none - the previous window stays</td></tr>
-      <tr><td><code>1</code></td><td>set (<code>FUN_8003CE64(0x14)</code>)</td><td>-</td><td><code>[0, 256)</code></td></tr>
-      <tr><td><code>1</code></td><td>clear</td><td><code>0</code> (Vahn)</td><td><code>[0, 128)</code></td></tr>
-      <tr><td><code>1</code></td><td>clear</td><td><code>&ne; 0</code></td><td><code>[128, 256)</code></td></tr>
-      <tr><td><code>&ge; 2</code></td><td>not tested</td><td>not tested</td><td><code>[0, 256)</code></td></tr>
+      <tr><td>0</td><td>-</td><td>-</td><td>none - the previous window stays</td></tr>
+      <tr><td>1</td><td>set</td><td>-</td><td><code>[0, 256)</code></td></tr>
+      <tr><td>1</td><td>clear</td><td>Vahn</td><td><code>[0, 128)</code></td></tr>
+      <tr><td>1</td><td>clear</td><td>anyone else</td><td><code>[128, 256)</code></td></tr>
+      <tr><td>2 or more</td><td>not tested</td><td>not tested</td><td><code>[0, 256)</code></td></tr>
     </tbody>
   </table>
-  <p>The span also lands in <code>gp[+0x2D6]</code>, so <code>gp[+0x2D4]</code> is only ever <code>128</code> or <code>256</code>. Slots outside the window exist in RAM but are out of bounds to add, consume, capacity and normalize alike.</p>
-  <p><strong>Live cross-check</strong> on a mid-game battle state: party count 3, window <code>(0, 256, 256)</code>, 160 contiguous occupied slots - a bag any 72-slot model truncates.</p>
-  <p><strong>Folklore check - the &ldquo;72-slot inventory&rdquo;.</strong> 72 is not an engine bound; it is the size of the general-items display page the <em>Have 99 Items</em> GameShark code happened to target. The accessors bound on <code>gp[+0x2D4]</code>, which is only ever 128 or 256. Any arithmetic built on a 72-slot bag - including the old ACE out-of-bounds ceilings - is void.</p>
-</section>
-
-<section class="doc-section" id="design-intent">
-  <h2>Design intent</h2>
-  <p>The game has story segments where the party splits and the player controls one character alone. The window gives that character an isolated pocket of the bag. Vahn owns the lower half because the game opens with Vahn alone: the early-game bag simply <em>is</em> <code>[0, 128)</code> until the party forms. Once two or more members are present the full 256 opens and the halves stop mattering.</p>
+  <ul class="bullets">
+    <li><strong>Consequence.</strong> A solo character has an isolated pocket of the bag: they can neither see nor spend the party&rsquo;s items, and what they pick up alone never reaches the party inventory.</li>
+    <li><strong>Design intent.</strong> Vahn owns the lower half because the game opens with Vahn alone - the early-game bag simply <em>is</em> <code>[0, 128)</code> until the party forms. Once two members are present the full 256 opens.</li>
+    <li><strong>Bounds.</strong> <code>end</code> is only ever 128 or 256. Slots outside the window exist in RAM but are invisible to add, consume, capacity and normalize alike.</li>
+  </ul>
 </section>
 
 <section class="doc-section" id="adjacent-divisions">
-  <h2>Adjacent divisions people conflate with the halves</h2>
-  <p>When someone says Legaia&rsquo;s inventory is &ldquo;divided&rdquo;, they may be looking at one of three unrelated boundaries. Only the first is the window mechanic.</p>
+  <h2>Three &ldquo;divisions&rdquo; that are not the window</h2>
   <table class="data-table">
-    <thead><tr><th>Division</th><th>Where</th><th>What it is</th></tr></thead>
+    <thead><tr><th>Division</th><th>Where it lives</th><th>What it is</th></tr></thead>
     <tbody>
-      <tr><td>The window halves</td><td><code>FUN_8004313C</code>, <code>gp[+0x2D2..+0x2D6]</code></td><td>Runtime bounds over one shared array, keyed on party composition. Storage is never partitioned - only access is.</td></tr>
-      <tr><td>Per-character gear</td><td><code>0x80084708 + n&middot;0x414</code>, equip bytes <code>+0x196..+0x19D</code></td><td>Equipped weapon, armor and Goods live inside each character&rsquo;s <a href="../formats/save-record.html"><code>0x414</code>-byte record</a>, not in the bag. Equipping refunds the displaced item through the add helper; once worn, it belongs to the record.</td></tr>
-      <tr><td>Menu pages</td><td>consumables <code>0x77..0x8E</code>, equipment below, books &amp; key items above</td><td>The pause menu&rsquo;s tabs filter the one array by item-id band. A page is a view, not a second store - and the 72-slot figure is a page size.</td></tr>
+      <tr><td>The window halves</td><td>the three <code>gp</code> halfwords</td><td>Runtime bounds over one shared array, keyed on party composition. Storage is never partitioned - only access is.</td></tr>
+      <tr><td>Per-character gear</td><td>each <a href="../formats/save-record.html">character record</a>, equip bytes <code>+0x196..+0x19D</code></td><td>Worn weapon, armor and Goods are not in the bag. Equipping refunds the displaced item through the add helper.</td></tr>
+      <tr><td>Menu pages</td><td>consumables <code>0x77..0x8E</code>, equipment below, books and key items above</td><td>The pause menu&rsquo;s tabs filter the one array by item-id band. The &ldquo;72-slot&rdquo; figure is the general-items page size.</td></tr>
     </tbody>
   </table>
 </section>
 
 <section class="doc-section" id="off-by-one">
   <h2>The add helper&rsquo;s off-by-one</h2>
-  <p><code>FUN_800421D4</code> scans for a matching id, then for the first free slot. Its id store precedes the bound check: on a completely full window the scan exits at <code>i == end</code> and the id byte lands one slot past the window, at <code>0x80085958 + gp[+0x2D4]&middot;2</code> - <code>0x80085A58</code> (<code>end = 128</code>) or <code>0x80085B58</code> (<code>end = 256</code>). Only the count store is guarded.</p>
-  <p>This off-by-one is the core of the still-open arbitrary-code-execution reachability thread (<a href="../reference/open-rev-eng-threads.html">open threads</a>). Closing the question needs a bag genuinely filled to <code>end</code> (256 with a multi-member party) with the hit shown to land past the guard. One caution: an exec probe at <code>pc = 0x800422BC</code> fires on <strong>every</strong> successful add, before the guard, so a hit there is not out-of-bounds evidence by itself.</p>
+  <p>The add helper stores the item id <em>before</em> it bound-checks. On a completely full window the scan exits at <code>i == end</code> and the id byte lands one slot past the window; only the count store is guarded. This is the core of the open arbitrary-code-execution reachability thread - see <a href="#how-we-know">How we know</a> for the exact addresses.</p>
+  <details class="disclosure">
+    <summary>Details: reaching the leak, and the probe trap</summary>
+    <div class="disclosure-body">
+      <p>The stray id lands at <code>0x80085958 + end&middot;2</code>: <code>0x80085A58</code> when <code>end = 128</code>, <code>0x80085B58</code> when <code>end = 256</code>. Demonstrating it needs a bag genuinely filled to <code>end</code> (256 slots with a multi-member party) with the hit shown to land past the guard. An execution probe at <code>pc = 0x800422BC</code> fires on <strong>every</strong> successful add, before the guard, so a hit there is not out-of-bounds evidence by itself. Status: <a href="../reference/open-rev-eng-threads.html">open RE threads</a>.</p>
+    </div>
+  </details>
   <details class="disclosure">
     <summary>History: the 72-slot ACE ceiling</summary>
-    <div class="disclosure-body"><p>The earlier reading &ldquo;<code>0x800859E8</code> = SC <code>+0x18A8</code>, the first key-item slot&rdquo; rested on the 72-slot display page being the window. It is not - the accessors bound on <code>gp[+0x2D4]</code>, which is only ever 128 or 256 - so every out-of-bounds ceiling derived from a 72-slot bag is void. See <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p></div>
+    <div class="disclosure-body"><p>The earlier ceiling &ldquo;<code>0x800859E8</code> = first key-item slot&rdquo; assumed the 72-slot display page was the window. The accessors bound on <code>end</code>, which is only ever 128 or 256, so every out-of-bounds figure derived from a 72-slot bag is void. See <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p></div>
   </details>
 </section>
 
-<section class="doc-section" id="function-map">
-  <h2>Function map</h2>
+<section class="doc-section" id="how-we-know">
+  <h2>How we know</h2>
   <table class="data-table">
-    <thead><tr><th>Function</th><th>Role</th><th>Notes</th></tr></thead>
+    <thead><tr><th>Function</th><th>Address</th><th>What it proves</th></tr></thead>
     <tbody>
-      <tr><td><code>FUN_8004313C</code></td><td>window setup</td><td>sole SCUS writer of <code>gp[+0x2D2 / +0x2D4 / +0x2D6]</code>; 11 callers; branches on party count, story flag 20, first roster byte</td></tr>
-      <tr><td><code>FUN_800421D4</code></td><td>add (find-or-insert)</td><td>id store precedes the bound check (the off-by-one); count store is guarded</td></tr>
-      <tr><td><code>FUN_80042310</code></td><td>consume by id</td><td>zeroes the emptied id in place; never compacts on its own</td></tr>
-      <tr><td><code>FUN_80042EE0</code></td><td>capacity check</td><td>paired with reserve before adds in the equip swap-back path</td></tr>
-      <tr><td><code>FUN_80043048</code></td><td>reserve</td><td>second half of the capacity / reserve pair</td></tr>
-      <tr><td><code>FUN_800423E0</code></td><td>normalize (merge + squeeze)</td><td>calls window setup first; merges duplicate stacks (cap 99); pulls occupied slots down into holes; occupancy = <code>id &ne; 0</code> alone</td></tr>
-      <tr><td><code>FUN_80034A6C</code></td><td>new-game seed</td><td>writes exactly slot 0 = <code>(0x77 Healing Leaf, &times;5)</code>; both callers pre-zero the whole range first</td></tr>
+      <tr><td>window setup</td><td><code>FUN_8004313C</code></td><td>sole SCUS writer of <code>gp[+0x2D2 / +0x2D4 / +0x2D6]</code>; 11 callers; branches on party count (<code>0x80084594</code>), story flag 20 (<code>FUN_8003CE64(0x14)</code>), first roster byte (<code>0x80084598</code>)</td></tr>
+      <tr><td>add</td><td><code>FUN_800421D4</code></td><td>id store precedes the bound check; count store guarded</td></tr>
+      <tr><td>consume</td><td><code>FUN_80042310</code></td><td>zeroes the emptied id in place</td></tr>
+      <tr><td>capacity / reserve</td><td><code>FUN_80042EE0</code> / <code>FUN_80043048</code></td><td>the pair the equip swap-back calls before adding</td></tr>
+      <tr><td>normalize</td><td><code>FUN_800423E0</code></td><td>calls window setup first; occupancy = <code>id &ne; 0</code></td></tr>
+      <tr><td>new-game seed</td><td><code>FUN_80034A6C</code></td><td>writes slot 0 = (<code>0x77</code> Healing Leaf, &times;5)</td></tr>
+      <tr><td>battle rewards</td><td><code>FUN_8004E568</code></td><td>loot grants go through the add helper</td></tr>
+      <tr><td>menu overlay sweep</td><td>PROT 0899, all 129 functions</td><td>zero direct array writes; 17 inventory operations, all via the helpers</td></tr>
+      <tr><td>live read</td><td>three-member mid-game state</td><td>window <code>(0, 256, 256)</code>, 160 contiguous occupied slots - more than any 72-slot model allows</td></tr>
     </tbody>
   </table>
-  <p>Provenance: Ghidra-traced disassembly of <code>SCUS_942.54</code> plus live emulator cross-checks (a three-member mid-game battle state for the window read; a menu-overlay sweep of all 129 functions for the no-raw-writes claim). Addresses and structure only - no game data.</p>
+  <p>Cheat-device names (<em>Have 99 Items</em>, <em>Item Modifier</em>) are third-party anchors on the same region; the <em>Have 99 Items</em> range covers 72 slots because that is the page it targeted. Per-cell detail: <a href="../reference/memory-map.html">memory map</a>.</p>
 </section>
 
 <section class="doc-section" id="see-also">

@@ -1,189 +1,196 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; world-overview viewer</div>
   <h1>World-overview viewer</h1>
-  <p class="lede">The <a href="../world-overview.html"><code>/world-overview/</code></a> page on this site lets you fly a camera over each of Legaia's three kingdom overworlds, assembled in your browser from a disc image you supply - terrain, landmarks, animated ocean, retail fog. This page is the reverse-engineering provenance behind it: how the viewer reconstructs what the running game shows from disc bytes alone, with no emulator and no save state. The engine-runtime side (top-view toggle, controller, render pipeline, bulk-terrain emit mechanism) lives on the <a href="world-map.html">world-map subsystem</a> page.</p>
+  <p class="lede">The <a href="../world-overview.html">world-overview page</a> lets you fly a camera over each of Legaia's three kingdom overworlds, assembled in your browser from a disc image you supply: terrain, landmarks, animated ocean, retail fog. This page is how the viewer rebuilds what the running game shows from disc bytes alone, with no emulator and no save state. What the retail engine does at runtime - the controller, the top-view toggle, the terrain emit mechanism - is on <a href="world-map.html">world map</a>.</p>
 </header>
 
 <section class="doc-section" id="at-a-glance">
   <h2>At a glance</h2>
   <dl class="kv">
-    <dt>Input</dt><dd>A disc image in the browser tab. No emulator, no save state for the textured view; save-state captures only refine camera anchors and fog colour</dd>
-    <dt>Layers, back to front</dt><dd>Ocean backdrop quad &rarr; continent heightfield (walk <code>.MAP</code> floor grid, atlas-textured per cell) &rarr; decoration stamps (trees, mountains) &rarr; placed landmarks (towers, bridges) &rarr; distance-cue fog</dd>
-    <dt>Ocean shimmer</dt><dd>A static 4bpp tile whose first 16 palette entries are rewritten every step from a 13-frame table - the kingdom bundle's slot-5 CLUT-walk table, the same one the live engine steps</dd>
-    <dt>Fog</dt><dd>Retail's 2048-entry per-Z scalar LUT (found by content scan in <code>SCUS_942.54</code>) mixed toward a per-kingdom haze colour</dd>
-    <dt>Camera</dt><dd>Perspective orbit; "lock to retail top-view" snaps to the captured dev-menu anchor</dd>
-    <dt>Not resolved statically</dt><dd>MAN placements at the <code>0x7F</code> sentinel and global-pool meshes - positioned by the field VM at runtime, so they come from RAM captures or placeholders</dd>
+    <dt>Input</dt><dd>A disc image in the browser tab. Save-state captures only refine camera anchors, the fog colour and the script-placed actors</dd>
+    <dt>Kingdom bundles</dt><dd>PROT 0086 Drake / 0245 Sebucus / 0392 Karisto; the walk <code>.MAP</code> is the entry two slots before each block (a fixed <code>0x12000</code>-byte footprint)</dd>
+    <dt>Ocean</dt><dd>A static 4bpp tile at VRAM <code>(768, 256)</code> whose first 16 palette entries at row <code>(0, 506)</code> are rewritten from a 13-frame table</dd>
+    <dt>Fog</dt><dd>Retail's 2048-entry per-Z scalar LUT, found by content scan in <code>SCUS_942.54</code>, mixed toward a per-kingdom haze colour</dd>
+    <dt>Code</dt><dd><code>legaia_web_viewer::{build_walk_ground, build_walk_placements, ocean, sentinel_placements, scene_export}</code>; <code>site/js/world-overview-app.js</code>, <code>webgl-tmd.js</code>, <code>webgl-math.js</code></dd>
+    <dt>Confidence</dt><dd>Heightfield, stamps, ocean and fog LUT: Confirmed against the engine and save-state VRAM. Unplaced-mesh layout and global-pool placeholders are viewer conventions, not retail</dd>
+    <dt>Used by</dt><dd><a href="../world-overview.html">World overview</a> &middot; <a href="vr-mode.html">VR mode</a> &middot; <a href="../viewer.html">Asset viewer</a> (full-map mode)</dd>
   </dl>
   <figure class="overlay-strip">
-    <svg viewBox="0 0 880 150" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="wo-layers-title">
-      <title id="wo-layers-title">Render passes of the world-overview viewer in draw order: ocean backdrop, continent heightfield, decoration stamps, placed landmarks, then the fog mix applied in the fragment shader; the CLUT row at VRAM (0, 506) feeds both the ocean quad and every water cell of the heightfield</title>
-      <style>
-        .wl-box { fill: var(--bg-card); stroke: var(--accent); stroke-width: 1.3; }
-        .wl-soft { fill: var(--bg-card); stroke: var(--border); stroke-width: 1.2; stroke-dasharray: 4 3; }
-        .wl-t { font: 600 11px 'Inter', sans-serif; fill: var(--text); text-anchor: middle; }
-        .wl-s { font: 10px 'JetBrains Mono', monospace; fill: var(--text-muted); text-anchor: middle; }
-        .wl-edge { fill: none; stroke: var(--text-muted); stroke-width: 1.3; marker-end: url(#wl-ah); }
-      </style>
-      <defs><marker id="wl-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--text-muted)"/></marker></defs>
-      <rect x="20" y="30" width="150" height="54" class="wl-box"/><text x="95" y="52" class="wl-t">ocean backdrop</text><text x="95" y="70" class="wl-s">flat quad, y = 0</text>
-      <rect x="195" y="30" width="150" height="54" class="wl-box"/><text x="270" y="52" class="wl-t">heightfield</text><text x="270" y="70" class="wl-s">walk .MAP floor grid</text>
-      <rect x="370" y="30" width="150" height="54" class="wl-box"/><text x="445" y="52" class="wl-t">decorations</text><text x="445" y="70" class="wl-s">trees, mountains</text>
-      <rect x="545" y="30" width="150" height="54" class="wl-box"/><text x="620" y="52" class="wl-t">placed landmarks</text><text x="620" y="70" class="wl-s">towers, bridges</text>
-      <rect x="720" y="30" width="140" height="54" class="wl-box"/><text x="790" y="52" class="wl-t">fog mix</text><text x="790" y="70" class="wl-s">lut[z] toward haze</text>
-      <path d="M170,57 L193,57" class="wl-edge"/><path d="M345,57 L368,57" class="wl-edge"/><path d="M520,57 L543,57" class="wl-edge"/><path d="M695,57 L718,57" class="wl-edge"/>
-      <rect x="110" y="105" width="150" height="34" class="wl-soft"/><text x="185" y="127" class="wl-s">CLUT row (0, 506), 13 frames</text>
-      <path d="M150,105 L110,84" class="wl-edge"/><path d="M220,105 L250,84" class="wl-edge"/>
+    <svg viewBox="0 0 900 170" width="100%" style="max-width: 900px; font-family: var(--font-mono); font-size: 12px;" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="wo-layers-title">
+      <title id="wo-layers-title">Render passes of the world-overview viewer in draw order: ocean backdrop, continent heightfield, decoration stamps, placed landmarks, then the fog mix in the fragment shader; one CLUT row feeds both the ocean quad and every water cell</title>
+      <defs><marker id="wl-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/></marker></defs>
+      <g fill="var(--bg-raised)" stroke="var(--border)">
+        <rect x="20" y="30" width="150" height="54" rx="4"/><rect x="200" y="30" width="150" height="54" rx="4"/><rect x="380" y="30" width="150" height="54" rx="4"/><rect x="560" y="30" width="150" height="54" rx="4"/><rect x="740" y="30" width="140" height="54" rx="4"/>
+      </g>
+      <g fill="currentColor" text-anchor="middle">
+        <text x="95" y="52">ocean backdrop</text><text x="95" y="70" fill="var(--text-muted)">flat quad, y = 0</text>
+        <text x="275" y="52">heightfield</text><text x="275" y="70" fill="var(--text-muted)">walk .MAP floors</text>
+        <text x="455" y="52">decorations</text><text x="455" y="70" fill="var(--text-muted)">trees, mountains</text>
+        <text x="635" y="52">landmarks</text><text x="635" y="70" fill="var(--text-muted)">towers, bridges</text>
+        <text x="810" y="52">fog mix</text><text x="810" y="70" fill="var(--text-muted)">lut[z] to haze</text>
+      </g>
+      <g fill="none" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#wl-ah)">
+        <path d="M170 57 L198 57"/><path d="M350 57 L378 57"/><path d="M530 57 L558 57"/><path d="M710 57 L738 57"/>
+      </g>
+      <rect x="100" y="120" width="170" height="36" rx="4" fill="var(--bg-raised)" stroke="var(--border)" stroke-dasharray="4 3"/>
+      <text x="185" y="142" fill="var(--text-muted)" text-anchor="middle">CLUT row (0, 506), 13 frames</text>
+      <g fill="none" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#wl-ah)">
+        <path d="M140 120 L110 88"/><path d="M230 120 L260 88"/>
+      </g>
     </svg>
-    <figcaption>Draw order of the assembled view. One palette-row rewrite per animation step shimmers both the sea and every water cell of the continent, because they sample the same 16 CLUT entries.</figcaption>
+    <figcaption>Draw order of the assembled view. One palette-row rewrite per step shimmers both the sea and every water cell, because they sample the same 16 entries.</figcaption>
   </figure>
 </section>
 
 <section class="doc-section" id="overview">
-  <h2>Why a separate page</h2>
-  <p>The world-map subsystem documents what the retail engine does at runtime. The viewer faces a different problem: assemble the same scene end-to-end <em>without</em> running the engine.
-  Retail leaves a lot to runtime code - each kingdom's bundle ships a pack of landmark meshes ("slot-1 TMDs"; TMD is the game's 3D-mesh format) that the scene's MAN (its script/placement container) only partly positions, with the rest placed by the field VM, the game's script interpreter.
-  Reconstruction therefore requires (a) layout heuristics for the slot-1 TMDs the MAN table doesn't pin, (b) a WebGL-shader approximation of the runtime's distance-cue fog pass, (c) a Rust-side resolver for actor placements that retail only computes via the field VM, (d) disc-side extraction of the ocean tile + its 13-frame CLUT animation (a CLUT is a 16- or 256-colour palette stored as a row of video-memory pixels; cycling its entries animates the water without changing the texture), and (e) hand-tuned camera anchors that match the retail dev-menu top-view.
-  Each item below documents a piece of that reconstruction.
-  (As everywhere on this site, <code>FUN_80xxxxxx</code> names are RAM addresses of functions in our disassembler trace of the retail code.)</p>
-</section>
-
-<section class="doc-section" id="unplaced-layout">
-  <h2>Layout engine for unplaced slot-1 TMDs</h2>
-  <p>Each kingdom ships more landmark meshes than its placement table positions - the rest are dropped into the world by scripts at run time. The viewer can't run those scripts, so it offers to lay the leftovers out in labelled rows beside the continent for inspection.</p>
-  <p>The MAN placement table pins a small subset of each kingdom's slot-1 TMD pack at world coordinates (5 / 6 / 17 slots for Drake / Sebucus / Karisto). The remaining slots are positioned at runtime by the field VM via actor-mesh chains and don't carry a static world coord. The viewer's <em>show unplaced slot-1 TMDs</em> toggle drops those onto a canonical layout grid, classified by <code><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/site/world-overview/slot1_classification.toml" target="_blank" rel="noopener">site/world-overview/slot1_classification.toml</a></code>:</p>
-  <ul class="bullets">
-    <li><strong>landmark</strong> - row south of the kingdom bounds, sorted by slot.</li>
-    <li><strong>decoration</strong> - row north of the kingdom bounds.</li>
-    <li><strong>ground_tile</strong> - grid west of the kingdom (the runtime tiles them via the overlay-routed dispatch table; see the <a href="world-map.html#bulk-continent-terrain-emit-mechanism-pinned">bulk-terrain emit mechanism</a>).</li>
-    <li><strong>npc_token</strong> - hidden (reused generic actor bases; the count is reported in the status line).</li>
-    <li><strong>unknown</strong> - grid east of the kingdom.</li>
-  </ul>
-  <p>Two per-mesh transforms keep the layout legible:</p>
-  <ol>
-    <li><strong>AABB-centroid anchor</strong> - each unplaced TMD is drawn so its AABB centroid sits at the assigned grid slot, instead of its TMD-local origin (which can be far from the visual centre and shift the mesh out of frame).</li>
-    <li><strong>Class-conditional footprint normalisation</strong> - per-class target footprints in world units (landmark ~600, decoration ~200, ground_tile ~1200, unknown ~600). Each mesh's larger XZ extent maps to the target via a per-placement scale so the row reads at a consistent size regardless of the TMD's native scale.</li>
-  </ol>
-  <p>The <em>normalize unplaced</em> toggle disables both transforms (falls back to the legacy constant scale + TMD-local-origin pivot) so the user can ground-truth against retail.</p>
+  <h2>What the viewer has to rebuild</h2>
+  <p>Retail leaves a lot to runtime code. Each kingdom's bundle ships a pack of landmark meshes (the "slot-1 TMDs"; TMD is the game's mesh format) that the scene's MAN - its script-and-placement container - only partly positions; the rest are placed by the field VM, the game's script interpreter. Five pieces close that gap:</p>
+  <table class="data-table">
+    <thead><tr><th>Piece</th><th>Source</th><th>Section</th></tr></thead>
+    <tbody>
+      <tr><td>Continent ground</td><td>Walk <code>.MAP</code> floor grid, generated the way the game does</td><td><a href="#walk-heightfield">heightfield</a></td></tr>
+      <tr><td>Landmarks and decorations</td><td>Walk-map per-cell records</td><td><a href="#walk-placements">stamps</a></td></tr>
+      <tr><td>Fog</td><td>SCUS LUT + per-kingdom haze colour</td><td><a href="#fog-pass">fog</a>, <a href="#fog-color">colour</a></td></tr>
+      <tr><td>Ocean</td><td>Kingdom bundle slot 0 tile + 13-frame CLUT table</td><td><a href="#ocean-tile">ocean</a></td></tr>
+      <tr><td>Script-placed actors</td><td>Save-state captures (the disc cannot say where they rest)</td><td><a href="#sentinel-placements">sentinels</a>, <a href="#camera-anchors">anchors</a></td></tr>
+    </tbody>
+  </table>
 </section>
 
 <section class="doc-section" id="walk-heightfield">
   <h2>Continent ground heightfield</h2>
-  <p>The green-and-brown ground you fly over is not a mesh on the disc. It is generated from the walkability map's floor heights, one cell at a time, exactly as the game builds it on entry to the overworld.</p>
-  <p>The viewer draws the kingdom's full continent terrain the same way the native engine's world-map render does: a procedural <strong>heightfield surface</strong> built from the walk <code>.MAP</code> floor grid, per-cell-textured from a terrain-type-keyed multi-page atlas - the bulk ground (grass / mountain / water / forest), distinct from the sparse slot-1 landmark meshes layered on top. The surface math is <code>legaia_asset::field_objects::build_walk_heightfield</code> (the <code>FUN_80019278</code> bilinear floor sampler); the model and per-cell texturing are pinned on the <a href="world-map.html">world-map page</a>.</p>
-  <p>The WASM viewer builds the same surface from the raw <code>PROT.DAT</code> it already holds (<code>legaia_web_viewer::build_walk_ground</code>): the walk <code>.MAP</code> is the entry two slots before the kingdom block start (<code>prot_base - 2</code>, identified by its <code>0x12000</code> extended footprint - the universal field-map resolution), and the floor-height LUT is <code>man[+0x02..+0x22]</code> (16 <code>s16</code> LE) from the kingdom bundle's MAN slot.</p>
+  <p>The green-and-brown ground is not a mesh on the disc. It is generated from the walkability map's floor heights, one cell at a time, exactly as the game builds it on entry to the overworld: a heightfield in the <code>col &times; 128</code> world frame, textured per cell from a terrain-type-keyed atlas (grass, mountain, water, forest). The floor-height LUT is 16 signed halfwords at the start of the kingdom's MAN; the surface math is the engine's bilinear floor sampler, shared with the native world-map render.</p>
+  <p>Code: <code>legaia_asset::field_objects::build_walk_heightfield</code>, wrapped for the browser by <code>legaia_web_viewer::build_walk_ground</code>. The model and per-cell texturing are pinned on <a href="world-map.html">world map</a>.</p>
 </section>
 
 <section class="doc-section" id="walk-placements">
-  <h2>Walk-frame placed landmarks + decorations</h2>
-  <p>Towers, castles and bridges are stamped onto specific tiles; forests and mountain ranges are the same few small meshes stamped dozens of times. Both layers come straight from the walk map's per-cell records.</p>
-  <p>Two sparse slot-1 pack-mesh layers draw on top of the heightfield in the same <code>col*128</code> world frame as the ground: the <strong>placed landmarks</strong> (the <code>flags &amp; 0x4</code> objects <code>FUN_8003A55C</code> stamps on occupied tiles - towers, castles, bridges) and the <strong>decoration layer</strong> - walk-visible cells whose record stamps a nonzero <code>+0x10</code> mesh with the mesh-drawn flag bit <code>0x2</code> and no placed flag: the crossed-quad billboard trees (a forest cluster stamps one tree mesh from dozens of cells), mountain groups, and small props (<code>legaia_asset::field_objects::parse_walk_decorations</code>; ~295 / ~240 / ~210 cells for Drake / Sebucus / Karisto). Cells with a nonzero <code>+0x10</code> but no <code>0x2</code> bit (the riverbank/system record 408 family, identical across all three kingdoms) are NOT decorations - stamping them tiles a wall mesh down every river.</p>
-  <p><code>legaia_web_viewer::build_walk_placements</code> resolves both layers from the raw <code>PROT.DAT</code>: <code>parse_placements</code> + <code>parse_walk_decorations</code> on the walk <code>.MAP</code>, mesh = the record's <code>+0x10</code> field (a slot into the kingdom's slot-1 TMD pack), world Y = <code>-lut[floor_nibble] + y_off</code> so each stamp sits on the heightfield. Each stamp also carries the record's authored <strong>yaw</strong> (<code>+0x0a</code>, PSX 4096-per-rev - the field <code>FUN_8003A55C</code> copies into the actor rotation triple <code>+0x24/+0x26/+0x28</code>): the Sebucus island bridges' quarter-turn orientations (<code>0x400</code>/<code>0xC00</code>) and the decoration trees' variety. The JS converts with <code>rotY = -(rot &amp; 0xFFF) &middot; &pi;/2048</code> because retail's pure-Y matrix (<code>FUN_80026988</code>) maps local <code>+Z</code> to <code>(sin, 0, cos)</code>, the opposite yaw sense of <code>placementModelScaledY</code>. The JS draw <strong>negates that anchor Y</strong> before handing it to <code>placementModelScaledY</code>: the model flips only the mesh-local geometry, while the ground bakes <code>-lut</code> into its vertices and lands at <code>+lut</code> (up) under the shared <code>(1, -1, 1)</code> flip - an un-negated anchor mirrors the stamp below the surface by <code>2*(lut - y_off)</code>, burying whole cave entrances on Drake's mountain cells. The fragment shader's PSX cutout rule (BGR555 <code>0</code> with STP <code>0</code> discards) makes the tree quads read as foliage; the <code>u_no_discard</code> silhouette fallback stays off in the assembled path - the kingdom's real VRAM image is uploaded and CLUTs resolve like retail. The disc-gated <code>walk_placements_parity.rs</code> asserts the viewer's resolved placements equal the engine's <code>Scene::walk_object_placements</code> + <code>Scene::walk_decoration_placements</code> for all three kingdoms.</p>
-  <p>One authored exception (<code>WALK_STAMP_SUPPRESS</code> in <code>world-overview-app.js</code>): placed objects are script-managed - <code>FUN_8003A55C</code> gates each spawn on a MAN interaction record (the cell-keyed table at walk-<code>.MAP</code> + <code>0x10000</code>, fallback <code>+0x12000</code>) and runs the script's leading ops inline, so a placed record's resting position isn't necessarily its grid cell. The static viewer can't run MAN scripts, so stamps known from retail not to rest at their grid cell are suppressed by <code>(mesh, world x, world z)</code> - the one entry is Drake's record-349 golden bridge, whose grid cell sits over the river at <code>(10688, 5312)</code> while retail shows the single bridge at the record-441 road crossing <code>(12224, 6336)</code>. <code>window.__woWalkStamps</code> exposes the stamp list actually queued per render (headless-verification hook, like <code>__woCam</code>).</p>
+  <h2>Landmarks and decorations</h2>
+  <p>Towers, castles and bridges are stamped onto specific tiles; forests and mountain ranges are the same few small meshes stamped dozens of times. Both layers come straight from the walk map's per-cell records and draw in the same world frame as the ground.</p>
+  <table class="data-table">
+    <thead><tr><th>Layer</th><th>Record rule</th><th>Count (Drake / Sebucus / Karisto)</th></tr></thead>
+    <tbody>
+      <tr><td>Placed landmarks</td><td>Objects with the placed flag <code>0x4</code>, stamped on occupied tiles</td><td>5 / 6 / 17</td></tr>
+      <tr><td>Decorations</td><td>Walk-visible cells with a nonzero mesh slot at <code>+0x10</code>, the mesh-drawn bit <code>0x2</code> and no placed flag</td><td>~295 / ~240 / ~210</td></tr>
+      <tr><td>Not decorations</td><td>Nonzero mesh slot without the <code>0x2</code> bit (the riverbank record family, identical across kingdoms) - stamping them tiles a wall down every river</td><td>-</td></tr>
+    </tbody>
+  </table>
+  <ul class="bullets">
+    <li><strong>Height.</strong> World Y = <code>&minus;lut[floor_nibble] + y_off</code>, so each stamp sits on the heightfield. The JS negates that anchor before handing it to the model builder: the ground bakes <code>&minus;lut</code> into its vertices and lands at <code>+lut</code> under the shared <code>(1, &minus;1, 1)</code> flip, so an un-negated anchor buries a stamp by <code>2 &times; (lut &minus; y_off)</code> - whole cave entrances vanish on Drake's mountain cells.</li>
+    <li><strong>Yaw.</strong> Each record carries an authored yaw (4096 per turn) that retail copies into the actor's rotation triple; the Sebucus island bridges' quarter turns and the trees' variety come from it. Retail's pure-Y matrix maps local <code>+Z</code> to <code>(sin, 0, cos)</code>, the opposite sense of the JS helper, hence <code>rotY = &minus;(rot &amp; 0xFFF) &middot; &pi; / 2048</code>.</li>
+    <li><strong>Cutout.</strong> The PSX rule (BGR555 zero with STP clear discards) makes the crossed-quad tree billboards read as foliage; the kingdom's real VRAM image is uploaded and CLUTs resolve like retail.</li>
+    <li><strong>One suppressed stamp.</strong> Placed objects are script-managed - retail gates each spawn on a MAN interaction record and runs its leading ops inline, so a record's resting position is not always its grid cell. Drake's record-349 golden bridge sits over the river in the grid but retail shows the one bridge at the record-441 road crossing; <code>WALK_STAMP_SUPPRESS</code> drops it by <code>(mesh, x, z)</code>.</li>
+  </ul>
+  <p>Code: <code>legaia_web_viewer::build_walk_placements</code> over <code>parse_placements</code> + <code>parse_walk_decorations</code>. The disc-gated <code>walk_placements_parity.rs</code> asserts the viewer's placements equal the engine's for all three kingdoms; <code>window.__woWalkStamps</code> exposes the queued stamp list for headless checks.</p>
 </section>
 
 <section class="doc-section" id="fog-pass">
-  <h2>Distance-cue fog pass</h2>
-  <p>Far-off terrain on the retail overworld fades into a coloured haze - blue-grey over Drake, different tints elsewhere. The viewer reproduces that from the game's own fog lookup table and a per-kingdom haze colour.</p>
-  <p>The viewer's <em>fog</em> toggle approximates the retail world-map fog: the diffuse term fades toward a per-kingdom haze colour with distance. The math splits into two pieces the runtime keeps separate, and the WebGL port mirrors that split:</p>
-  <ul class="bullets">
-    <li>The <strong>LUT</strong> at <code>gp-0x2BC</code> (2048 u16 entries that climb from <code>0x0000</code> at near-Z to <code>~0x01FF</code> at far-Z) is a <em>per-Z scalar</em>, not a colour ramp. The retail overlay leaves at <code>0x801F7644..0x801F8690</code> <code>lh</code> the LUT entry, shift it left by 16, and add it to the high half of vertex SXY+offset words via <code>sw s1, 0x8(t1)</code> / <code>0xC(t1)</code> / <code>0x10(t1)</code>. The visible effect on flat triangles is a per-vertex screen-Y nudge proportional to <code>Z &gt;&gt; 5</code>.</li>
-    <li>The <strong>haze colour</strong> is set per-kingdom via the GTE <code>FAR_COLOR</code> control register (loaded via <code>ctc2</code> during world-map enter, not surfaced by the <code>lwc2 t0, -0x2dc(t2)</code> load - that field is the <code>IR0</code> depth-cue factor).</li>
-  </ul>
-  <p>The WebGL port runs this in a vertex + fragment shader:</p>
-  <ul class="bullets">
-    <li>Per-vertex: <code>Z_far = exp2(-zShift) * dist(world, camera_origin)</code>, clamped to <code>[0, far_ref]</code> and normalised to <code>v_fog_t in [0..1]</code>. Approximates the runtime's <code>Z_far = Z &gt;&gt; shift</code> against the top-down camera origin.</li>
-    <li>Per-fragment: sample <code>lut[clamp(v_fog_t * 2047, 0, 2047)]</code> as a scalar u16; normalise to <code>factor = lut_word / 511</code>; then <code>mix(lit, u_fog_color, factor)</code> with <code>u_fog_color</code> = the per-kingdom haze tint from <code>KINGDOM_FOG_TINT</code>. This produces the fade-toward-haze visual.</li>
-  </ul>
-  <p class="note">Two misreadings to avoid: the <code>lwc2 t0, -0x2dc(t2)</code> field is the <code>IR0</code> depth-cue factor, not the fog colour (the haze colour arrives via <code>ctc2</code> into <code>FAR_COLOR</code>); and the LUT entries are per-Z scalars mixed toward the haze tint, not RGB tints - treating them as tints produces "richer textures", not fog.</p>
-  <p>The shader supports two LUT sources, in priority order:</p>
-  <ol>
-    <li><strong>Disc-extracted LUT (default)</strong> - the WASM viewer locates the 4 KiB (2048 u16) LUT inside <code>SCUS_942.54</code> via the <code>fog_lut::find</code> content-scan (monotone non-decreasing ramp with leading zero entries + saturating tail) and auto-uploads it on disc load. No file picker; one disc upload = full functionality. On the retail USA build the LUT sits at SCUS offset <code>0x05FCC0</code> (vaddr <code>0x8006FCC0</code>); the content scan handles regional variants without hardcoding.</li>
-    <li><strong>Kingdom-tinted fallback</strong> - when SCUS extraction doesn't surface a LUT (raw PROT.DAT load, regional variant with shifted SCUS, modded disc), the shader falls back to using <code>v_fog_t</code> directly as the mix factor, still toward the kingdom haze tint.</li>
-  </ol>
-  <p>The per-vertex math diverges from retail in one place: retail samples Z from the GTE's screen-space pipeline after <code>rtpt</code>, while the WebGL2 path uses XZ-plane distance to the fog origin (<code>fog_origin = worldCam centre</code> by default). For a top-down ortho camera the two quantities are equivalent up to a constant; for the orbit-camera mesh inspector the fog toggle is hidden because it doesn't carry over.</p>
-</section>
-
-<section class="doc-section" id="sentinel-placements">
-  <h2>Bulk-terrain placement resolver (MAN <code>0x7F</code> sentinels)</h2>
-  <p>Some placement records carry no real coordinate at all - a sentinel that means "a script will put me somewhere". Those positions can only be read back from a running game, so they are captured from save states rather than decoded from the disc.</p>
-  <p>MAN-record placements where <code>(x_enc, z_enc) == (0x7F, 0x7F)</code> static-decode to the literal world coordinate <code>(16320, 16320)</code> (the world's NE corner, outside any visible kingdom). Those actors are positioned at runtime by the FieldVM prescript embedded in the record's trailing bytes, dispatched from <code>FUN_8003A1E4</code> (the MAN placement walker in SCUS): if <code>script[PC]</code> is opcode <code>0x24</code> or <code>0x25</code> the walker enters a <code>FUN_801DE840</code> loop that writes <code>actor[+0x14] / actor[+0x18]</code> (X / Z position) from per-record state. The resolved position therefore differs from the literal MAN-record decode.</p>
-  <p>Static resolution without running the FieldVM is not covered by the asset extractor - the prescript is a per-record bytecode that branches on actor type, story-flag state, and overlay-resident lookup tables. The practical alternative is a runtime snapshot capture:</p>
-  <ul class="bullets">
-    <li><code>scripts/mednafen/resolve_bulk_terrain.py</code> extracts the post-resolve placements out of mednafen save states. It walks every actor list head, captures each actor's live <code>+0x14 / +0x18</code> coords plus its mesh chain at <code>+0x44</code> (resolved back to the kingdom TMD pack via reverse-magic-search), and tags each placement <code>kind: 'bulk_terrain'</code> when <code>actor[+0x90]</code> is outside the MAN buffer or <code>'man_actor'</code> otherwise.</li>
-    <li><code>scripts/asset-investigation/extract-world-placements.py</code> merges the result into <code>site/world-overview.json</code> under <code>bulk_terrain_placements</code> per kingdom (alongside the existing <code>placements</code> and <code>live_placements</code> fields). The world-overview viewer renders both layers in the same scene; the regression digest hashes only <code>placements</code> so live captures don't perturb it.</li>
-    <li><code>crates/web-viewer::sentinel_placements</code> is the Rust port of the RAM-side resolver (record parser, actor-list walker, TMD-pack reverse lookup) for downstream callers; the Python script is the end-to-end driver.</li>
-  </ul>
-</section>
-
-<section class="doc-section" id="global-pool-placeholders">
-  <h2>Global-pool placement placeholders</h2>
-  <p>MAN-record placements with <code>tmd_slot &ge; 0xF0</code> reference the global TMD pool (<code>DAT_8007C018</code>) rather than the kingdom-local slot-1 pack. The disc-side global mesh pool is not yet bundled into <code>site/world-overview.json</code>; until that pipeline lands, the viewer stamps the kingdom pack's slot 0 mesh (typically a ground tile) at the decoded world coordinates and tags the draw record <code>kind: 'global_pool'</code>. The snapshot panel surfaces both the underlying <code>global TMD refs</code> count and the <code>+ N global-pool placeholders</code> rendered count, so the gap stays visible without dropping the placements silently.</p>
+  <h2>Distance-cue fog</h2>
+  <p>Far-off terrain fades into a coloured haze. Retail keeps two things separate and the shader mirrors the split: a <strong>per-Z scalar LUT</strong> (2048 halfwords climbing from 0 at near-Z to ~<code>0x1FF</code> at far-Z) and a <strong>haze colour</strong> loaded per kingdom into the GTE's far-colour registers.</p>
+  <table class="data-table">
+    <thead><tr><th>Stage</th><th>Retail</th><th>WebGL</th></tr></thead>
+    <tbody>
+      <tr><td>Depth term</td><td><code>Z &gt;&gt; shift</code> from the GTE screen-space pipeline</td><td><code>exp2(&minus;zShift) &times; dist(world, camera)</code>, clamped and normalised to <code>[0, 1]</code></td></tr>
+      <tr><td>Scalar</td><td><code>lut[z]</code>, applied by the overlay as a per-vertex nudge</td><td><code>lut[t &times; 2047] / 511</code></td></tr>
+      <tr><td>Colour</td><td>Far colour via <code>ctc2</code> at world-map entry</td><td><code>mix(lit, haze, factor)</code></td></tr>
+      <tr><td>LUT source</td><td>SCUS, offset <code>0x05FCC0</code> on the USA build</td><td><code>fog_lut::find</code> content scan (monotone ramp, leading zeros, saturating tail) - regional variants need no hardcoding; without a hit the mix factor is the depth term itself</td></tr>
+    </tbody>
+  </table>
+  <p>For a top-down camera the two depth terms agree up to a constant; the orbit-camera mesh inspector hides the fog toggle because they do not.</p>
+  <details class="disclosure">
+    <summary>History: two misreadings of the fog registers</summary>
+    <div class="disclosure-body"><p>The <code>lwc2</code> load beside the LUT is the <code>IR0</code> depth-cue factor, not the fog colour - the colour arrives through <code>ctc2</code>. And the LUT entries are per-Z scalars, not RGB tints; treating them as tints produces "richer textures", not fog.</p></div>
+  </details>
 </section>
 
 <section class="doc-section" id="fog-color">
   <h2>Per-kingdom fog colour</h2>
-  <p>The haze colour is not a constant in the executable; a small per-kingdom script feeds it to an "atmosphere" actor every frame, and that actor writes it into the GTE's far-colour registers.</p>
-  <p>The atmospheric-tick actor (<code>actor[+0x0C] == FUN_801E3E00</code> at <code>0x801E3E00</code>) interpolates the per-kingdom haze RGB into its <code>+0x74</code> field per frame. That u32 is the input to <code>FUN_80043390</code>'s three <code>ctc2</code> writers to the GTE <code>FAR_COLOR</code> control regs (<code>$21 / $22 / $23</code>): <code>FUN_8001ADA4</code> case 5 calls <code>FUN_80043390(prim_ptr, actor[+0x74], actor[+0x78])</code>; inside the dispatcher each RGB byte is extracted with <code>andi/srl</code>, shifted left by 4 to scale 8-bit &rarr; 12-bit, and <code>ctc2</code>'d to the GTE control register.</p>
-  <p>The script that drives <code>actor[+0x74]</code> lives in <code>FUN_801E3E00</code> and reads its R/G/B bytes from <code>script[PC + 7/+8/+9]</code>. The script source is a per-kingdom blob at <code>actor[+0x94]</code>. When <code>scripts/mednafen/resolve_bulk_terrain.py</code> finds an actor with <code>tick == 0x801E3E00</code> and <code>actor[+0x74] != 0</code>, it surfaces the live RGB as <code>fog_color</code> per kingdom in <code>site/world-overview.json</code>. The world-overview viewer reads that field at priority above the hand-eyeballed <code>KINGDOM_FOG_TINT</code> fallback; world-map saves that don't have an active atmospheric tick fall back to the hardcoded table.</p>
+  <p>The haze colour is not a constant in the executable. An "atmosphere" actor runs a small per-kingdom script every frame that interpolates the haze RGB into the actor's colour word; the primitive dispatcher then splits that word into bytes, scales 8-bit to 12-bit and writes the three GTE far-colour registers. The capture script surfaces the live RGB of any actor running that tick as <code>fog_color</code> in <code>site/world-overview.json</code>; the viewer prefers it over the hand-tuned <code>KINGDOM_FOG_TINT</code> fallback.</p>
 </section>
 
 <section class="doc-section" id="ocean-tile">
-  <h2>Ocean tile - disc-side asset + 13-frame CLUT animation</h2>
-  <p>Why does the sea shimmer? The water texture never changes - its palette does. Sixteen colours are swapped through thirteen frames, and a bright peak walks across them, so the same pixels read as rolling waves.</p>
-  <p>The world-map ocean is a <strong>static 4bpp tile</strong> + <strong>CLUT cycling</strong> animation, both shipped on disc:</p>
-  <ul class="bullets">
-    <li><strong>Texture:</strong> PSX TIM image at VRAM (PS1 video memory) coordinates <code>(768, 256)</code>, 64 halfwords &times; 256 rows (= 256 &times; 256 logical pixels in 4bpp), inside slot 0 (TIM_LIST) of each world-map kingdom bundle (PROT 0086 Drake / 0245 Sebucus / 0392 Karisto - the bundle entry, one past the block's prescript). The kingdom-specific TIM is the one with CLUT block fb_xy <code>(0, 506)</code> and image block fb_xy <code>(768, 256)</code>. Texture bytes vary per kingdom (each ships its own variant).</li>
-    <li><strong>Wave-ramp region:</strong> ocean data fills the <strong>top-left 96 &times; 96 logical pixels</strong> of the 256 &times; 256 page; the rest is shared with other tile prims in 4bpp mode and reads as CLUT-entry-0 padding at world-map entry. Confirmed by walking non-zero byte density across every row and byte column of the decompressed image; the prim-trace POLY_FT4 cluster UVs for the <code>clut=0x7E80 tpage=0x001C</code> family land entirely inside this envelope (UVs from <code>(0,0)</code> to <code>(95,95)</code>).</li>
-    <li><strong>Base CLUT:</strong> 256-entry BGR555 row at VRAM <code>(0, 506)</code> (same TIM as the texture). The first 16 entries are the ones the runtime overwrites per frame; entries 16..255 stay fixed and belong to other tiles sharing the row.</li>
-    <li><strong>Animation table:</strong> <strong>13 frames &times; 16 BGR555 entries = 416 bytes</strong>, byte-identical across all three retail kingdoms (SHA-256 <code>dfc6dd263a71152c40ab7726193d79e9658efc04402f4280f5f49f392e32071f</code>). Located by signature scan in each kingdom's decompressed slot 0; the disc wraps each frame in a 532-byte "CLUT-only TIM" record at TIM_LIST slots 3-5 (Sebucus/Karisto) or 10-15 (Drake), with the first frame starting <code>0x54</code> bytes into the record.</li>
-  </ul>
-  <p>The runtime copies one frame at a time onto VRAM <code>(0, 506)</code> (a 16&times;1 CLUT-cell <code>MoveImage</code> from the frame strip parked elsewhere in VRAM, stepped by the kingdom bundle's slot-5 CLUT-walk table - <strong>not</strong> the script-driven CLUT-cell family, which only carries the row-498 park one-shots; see the <a href="world-map.html">world-map page</a>), overwriting the first 16 CLUT entries; the wave peak (<code>0x3D05</code> bright blue) propagates through indices 0..7 over the 13-frame cycle, creating the horizontal rolling-wave appearance visible in retail.</p>
-  <p><code>crates/web-viewer::ocean::find_ocean_assets</code> decompresses the kingdom bundle's slot 0, locates the ocean TIM by VRAM coords, and signature-scans the slot for the animation table. The disc-gated test <code>crates/web-viewer/tests/ocean_assets.rs</code> verifies extraction across all three kingdoms. The WebGL ocean shader (<code>site/js/webgl-tmd.js</code>) samples the 4bpp texture + animated 16-entry CLUT, advancing the frame counter on a wall-clock timer. Before the disc is loaded the renderer falls back to a solid ocean tint sourced from <code>world-overview.json[kingdom].ocean_color</code> (CLUT-sampled from save state via <code>scripts/mednafen/resolve_bulk_terrain.py::pick_ocean_color</code>).</p>
+  <h2>Ocean tile and its 13-frame palette animation</h2>
+  <p>The water texture never changes - its palette does. Sixteen colours cycle through thirteen frames and a bright peak walks across them, so the same pixels read as rolling waves.</p>
+  <table class="layout">
+    <thead><tr><th>Asset</th><th>Where</th><th>Detail</th></tr></thead>
+    <tbody>
+      <tr><td>Texture</td><td>Kingdom bundle slot 0 (TIM list), image at VRAM <code>(768, 256)</code></td><td>4bpp, 256 &times; 256 logical pixels; the wave ramp fills the top-left 96 &times; 96, the rest is shared page padding. Bytes differ per kingdom</td></tr>
+      <tr><td>Base CLUT</td><td>Same TIM, row <code>(0, 506)</code></td><td>256 BGR555 entries; only the first 16 are animated, the rest belong to other tiles on the row</td></tr>
+      <tr><td>Animation table</td><td>Slot 0, CLUT-only TIM records (slots 3-5 Sebucus / Karisto, 10-15 Drake), first frame <code>0x54</code> bytes in</td><td>13 frames &times; 16 entries = 416 bytes, byte-identical across the three kingdoms; the peak <code>0x3D05</code> walks indices 0..7</td></tr>
+      <tr><td>Cadence</td><td>Kingdom bundle slot-5 CLUT-walk table</td><td>A 16 &times; 1 copy onto <code>(0, 506)</code> every 9 vsyncs; the viewer uses 0.1 s per frame on a wall clock</td></tr>
+    </tbody>
+  </table>
+  <p>The stepping table is the slot-5 CLUT-walk table the live engine steps directly - <em>not</em> the script-driven CLUT-cell family, which only carries the row-498 park one-shots. Code: <code>legaia_web_viewer::ocean::find_ocean_assets</code> (disc-gated test <code>ocean_assets.rs</code> across all three kingdoms). Before a disc is loaded the sea is a solid tint from <code>ocean_color</code>, CLUT-sampled out of a save state.</p>
 </section>
 
 <section class="doc-section" id="shader-plumbing">
-  <h2>Web-overview shader plumbing</h2>
-  <p>How the browser actually draws the water and the camera: one palette write per step, a backdrop quad for the horizon, and a real perspective orbit - because the retail world map is genuinely 3D.</p>
-  <p>The viewer animates the water the way retail does: each animation step writes the frame's 16 BGR555 entries <strong>into the VRAM texture at <code>(0, 506)</code></strong> - the CLUT row the continent heightfield's water cells sample (CBA <code>0x7E80</code>; the retail per-frame ocean DMA target, same mechanism as the live engine's <code>advance_ocean_animation</code>). Every water prim in the scene shimmers from that single CLUT write, so terrain-embedded water and the open sea stay phase-locked as one layer. The wall-clock cadence (6 sim ticks at 60&nbsp;Hz = 0.1&nbsp;s/frame) approximates the disc-derived retail head cadence - a 16&times;1 copy every 9 vsyncs on the overworld, from the kingdom-bundle slot-5 CLUT-walk table (<code>legaia_asset::clut_walk</code>) the live engine steps directly - and advances even when the backdrop pass is toggled off.</p>
-  <p>The ocean <em>backdrop</em> is a flat quad at <code>y=0</code> extending past the continent so the sea reaches the horizon under the orbit camera; its shader samples the same 4bpp texture through a 16-entry CLUT texture updated from the same frame counter. The plane is drawn before the bulk-terrain meshes so depth-test handles occlusion; the "ocean" checkbox toggles only this backdrop pass.</p>
-  <p>The assembled world view renders through a <strong>perspective orbit camera</strong> (<code>buildWorldOrbitVp</code> in <code>site/js/webgl-math.js</code>) - the retail world map is genuinely 3D (GTE <code>RTPT</code> perspective; confirmed by moving the retail camera with GameShark). The eye orbits a ground-plane target on <code>(yaw, pitch)</code> spherical angles (<code>pitch = 0</code> = straight-down); zoom keeps its orthographic meaning (the <code>halfWidth</code>/<code>halfHeight</code> window at the target plane sets the orbit distance), so wheel zoom and pan speed behave identically at any tilt. Left-drag pans through the yaw-rotated ground basis, right-drag or shift+drag orbits, wheel zooms; <em>lock to retail top-view</em> flattens the pitch on the captured spawn anchor. Both camera paths keep the retail screen basis (map rotated 180&deg; + horizontally mirrored); the ortho <code>buildTopDownVp</code> remains for <code>renderAssembled</code> callers whose camera record has no <code>yaw</code> field (the asset viewer's full-scene map mode).</p>
-  <p>The procedural-tint fallback pipeline: <code>pick_ocean_color</code> walks every POLY_FT4 cluster reported by <code>mednafen-state prim-trace</code>, samples each cluster's representative tile via its CLUT + tpage out of the save's VRAM, and ranks blue-dominant clusters by <code>hits &times; blue_dominance</code>; the winner's average RGB lands as <code>site/world-overview.json[kingdom].ocean_color</code> and drives the viewer's fallback colour before the textured pipeline loads.</p>
+  <h2>Shader and camera</h2>
+  <ul class="bullets">
+    <li><strong>One palette write per step.</strong> Each animation step writes the frame's 16 entries into the VRAM texture at <code>(0, 506)</code> - the row every water cell of the heightfield samples - so open sea and terrain-embedded water shimmer phase-locked as one layer. It advances even with the backdrop pass off.</li>
+    <li><strong>Backdrop.</strong> A flat quad at <code>y = 0</code> extending past the continent, drawn first so the depth test occludes it; the "ocean" checkbox toggles only this pass.</li>
+    <li><strong>Perspective orbit.</strong> The retail world map is genuinely 3D (GTE perspective, confirmed by moving the camera with GameShark). <code>buildWorldOrbitVp</code> orbits a ground-plane target on yaw and pitch; zoom keeps its orthographic meaning so wheel and pan behave the same at any tilt. Left-drag pans, right- or shift-drag orbits, "lock to retail top-view" flattens the pitch on the captured anchor. Both camera paths keep the retail screen basis: the map rotated 180&deg; and mirrored horizontally.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="sentinel-placements">
+  <h2>Script-placed actors</h2>
+  <p>Some MAN placement records carry no real coordinate: the encoded pair <code>(0x7F, 0x7F)</code> decodes to the world's north-east corner and means "a script will put me somewhere". Retail's placement walker sees a leading op <code>0x24</code> / <code>0x25</code> in the record's trailing bytes and enters a field-VM loop that writes the actor's position from per-record state - bytecode that branches on actor type, story flags and overlay tables, so it is not resolved statically.</p>
+  <table class="data-table">
+    <thead><tr><th>Tool</th><th>Role</th></tr></thead>
+    <tbody>
+      <tr><td><code>scripts/mednafen/resolve_bulk_terrain.py</code></td><td>Walks every actor list in a save state, captures live positions and the mesh chain, resolves the mesh back to the kingdom pack by reverse magic search; tags <code>bulk_terrain</code> vs <code>man_actor</code></td></tr>
+      <tr><td><code>scripts/asset-investigation/extract-world-placements.py</code></td><td>Merges the result into <code>site/world-overview.json</code> as <code>bulk_terrain_placements</code>; the regression digest hashes only the static <code>placements</code></td></tr>
+      <tr><td><code>crates/web-viewer::sentinel_placements</code></td><td>Rust port of the RAM-side resolver for downstream callers</td></tr>
+      <tr><td><code>scripts/pcsx-redux/resolve_actor_tmds.py</code></td><td>Drake's 12 live actor placements (gates, bridge towers, the small castle) into <code>site/world-overview-live.json</code></td></tr>
+    </tbody>
+  </table>
+  <p id="global-pool-placeholders"><strong>Global-pool placeholders.</strong> Placements with <code>tmd_slot &ge; 0xF0</code> reference the global mesh pool rather than the kingdom pack. That pool is not bundled, so the viewer stamps the pack's slot-0 mesh at the decoded coordinate, tags it <code>global_pool</code>, and reports both the reference count and the placeholder count so the gap stays visible.</p>
+  <p id="unplaced-layout"><strong>Unplaced slot-1 meshes.</strong> Each kingdom ships more landmark meshes than its table positions. The "show unplaced" toggle lays the leftovers out beside the continent by class (<code>slot1_classification.toml</code>): landmarks in a row to the south, decorations to the north, ground tiles in a grid to the west, unknowns to the east, NPC tokens hidden. Each mesh is anchored on its bounding-box centroid and scaled to a per-class footprint so the rows read at one size; "normalize unplaced" turns both transforms off for ground-truthing.</p>
 </section>
 
 <section class="doc-section" id="camera-anchors">
   <h2>Camera anchors</h2>
-  <p>Where the camera starts when you open a kingdom, and where "lock to retail top-view" snaps, both come from the running game's own map-origin globals.</p>
-  <p>Per-kingdom camera centres + zoom anchors live in two tables and a JSON override:</p>
-  <ul class="bullets">
-    <li><strong><code>KINGDOM_CAM</code></strong> - walk-view spawn anchors (load-time map-origin coords from <code>_DAT_80089118</code> / <code>_DAT_80089120</code>, decoded by <code>mednafen-state world-map-camera --table &lt;save&gt;</code>). Default view when a kingdom tab is opened.</li>
-    <li><strong><code>KINGDOM_TOPVIEW_CAM</code></strong> - hardcoded fallback for the <em>lock to retail top-view</em> button.</li>
-    <li><strong><code>world-overview.json[kingdom].topview_cam</code></strong> - per-kingdom capture preferred over <code>KINGDOM_TOPVIEW_CAM</code> when present. <code>resolve_bulk_terrain.py::capture_topview_cam</code> writes this from <code>mednafen-state world-map-camera</code> against the user-supplied save state for each kingdom.</li>
-  </ul>
-  <p>The captured anchor is the load-time map origin (<code>-_DAT_80089118</code> / <code>-_DAT_80089120</code>). Top-view dev-menu captures (<code>DAT_801F2B94 != 0</code>) would refine this with an interactively-scrolled centre + a refined <code>zoom</code>; walk-view captures match the spawn anchor, which is good enough as a "lock" target since the dev-menu top-view also enters from this anchor before user input scrolls it.</p>
+  <table class="data-table">
+    <thead><tr><th>Table</th><th>Source</th><th>Used for</th></tr></thead>
+    <tbody>
+      <tr><td><code>KINGDOM_CAM</code></td><td>Load-time map-origin globals, decoded by <code>mednafen-state world-map-camera</code></td><td>Default view when a kingdom tab opens</td></tr>
+      <tr><td><code>world-overview.json[kingdom].topview_cam</code></td><td>Per-kingdom capture written by <code>resolve_bulk_terrain.py</code></td><td>"Lock to retail top-view", preferred</td></tr>
+      <tr><td><code>KINGDOM_TOPVIEW_CAM</code></td><td>Hand-tuned</td><td>Fallback for the lock</td></tr>
+    </tbody>
+  </table>
+  <p>The captured anchor is the spawn origin the dev-menu top-view also enters from before any scrolling, which is why a walk-view capture is a good enough lock target.</p>
+  <details class="disclosure" id="placement-extraction">
+    <summary>Details: how the static placement lists are captured</summary>
+    <div class="disclosure-body">
+      <ol>
+        <li>Read the active CDNAME label at <code>0x80084548</code> and confirm the kingdom (<code>map01</code> / <code>map02</code> / <code>map03</code>).</li>
+        <li>Walk the seven actor-list heads at <code>0x8007C34C..0x8007C36C</code>, chaining on each actor's <code>+0x00</code> next pointer.</li>
+        <li>Read position as three <code>i16</code> at <code>+0x14</code>, flags at <code>+0x10</code>, the id byte at <code>+0x50</code>.</li>
+        <li>Drop zero-position entries (system actors not placed in world space).</li>
+      </ol>
+    </div>
+  </details>
 </section>
-
-<section class="doc-section" id="placement-extraction">
-  <h2>Static placement data - how it was captured</h2>
-  <p>The 2D scatter and assembled-scene actor lists are baked into <code>site/world-overview.json</code> at build time, parsed from each kingdom's MAN asset and live-RAM actor pool. Drake additionally surfaces 12 live-RAM actor placements (gates, bridge towers, the small castle) via <code><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/pcsx-redux/resolve_actor_tmds.py" target="_blank" rel="noopener">scripts/pcsx-redux/resolve_actor_tmds.py</a></code>: each world-map actor's <code>mesh_head[+0x44]</code> chain is walked to find the containing TMD via backward magic-word search, then mapped to a slot index. The result is baked into <code>site/world-overview-live.json</code>; the viewer overlays those placements on top of the MAN entities.</p>
-  <p>Top-view capture is performed against mednafen save states - the same view that <a href="world-map.html#controller"><code>FUN_801E76D4</code></a> enters when the debug toggle fires. Steps the extraction performs against each save state's main RAM:</p>
-  <ol class="overview-steps">
-    <li>Read the active CDNAME label as ASCII at <code>0x80084548</code> and confirm it matches the expected kingdom (<code>map01</code> / <code>map02</code> / <code>map03</code>).</li>
-    <li>Walk the seven linked-list heads at <code>0x8007C34C..0x8007C36C</code>: each list starts at <code>*head_ptr</code> and chains via the actor's <code>+0x00</code> next-pointer.</li>
-    <li>For each actor, read <code>(X, Y, Z)</code> as three <code>i16</code> at <code>+0x14</code>, <code>flags</code> at <code>+0x10</code>, and the actor's id byte at <code>+0x50</code>.</li>
-    <li>Filter out zero-position entries (system actors that aren't placed in world-space).</li>
-  </ol>
-</section>
-<style>
-.overview-steps { margin: 0.5rem 0 0.5rem 1.5rem; padding: 0; }
-.overview-steps li { margin: 0.35rem 0; }
-</style>
 
 <section class="doc-section" id="glb-export">
   <h2>Continent <code>.glb</code> export</h2>
-  <p>Everything on screen can be saved as a standard glTF model for Blender or a game engine, textures baked out of PS1 video memory into an ordinary atlas.</p>
-  <p>The page's &ldquo;Download .glb&rdquo; button bakes the assembled world view - the continent ground heightfield plus every walk-frame landmark / decoration stamp on screen - into a single binary glTF, via the WASM <code>scene_export_*</code> session (<code>legaia_web_viewer::scene_export</code>, bake in <code>legaia_asset::scene_gltf</code>).</p>
-  <p>The page hands the exporter the same mesh buffers it uploads to WebGL and the same per-draw <code>(translation, rotY, scale)</code> triples it builds model matrices from, so the file matches the render. The PSX VRAM+CLUT texture indirection is baked out into one RGBA atlas: one 256x256 tile per distinct <code>(cba, tsb-page)</code> pair the vertices sample, NEAREST-sampled, with <code>MASK</code> alpha for the PSX word-0 cutout rule.</p>
-  <p>The animated ocean backdrop is a screen effect, not geometry, and is excluded. The asset-viewer page's full-map (town) and single-TMD exports ride the same session; the enemy table's monster export is the sibling <code>monster_gltf::export_glb</code>, which additionally carries action animations.</p>
+  <p>"Download .glb" bakes the assembled view - heightfield plus every stamp on screen - into one binary glTF through the shared <code>scene_export</code> session (bake in <code>legaia_asset::scene_gltf</code>). The exporter receives the same mesh buffers and <code>(translation, rotY, scale)</code> triples the page renders with, so the file matches the screen. The PSX VRAM + CLUT indirection is baked into one RGBA atlas, a 256 &times; 256 tile per distinct <code>(cba, page)</code> pair, nearest-sampled, with alpha for the cutout rule. The ocean is a screen effect and is excluded. The asset viewer's town export rides the same session; the monster export is the sibling <code>monster_gltf</code>, which also carries animations.</p>
+</section>
+
+<section class="doc-section" id="how-we-know">
+  <h2>How we know</h2>
+  <table class="data-table">
+    <thead><tr><th>Function</th><th>Address</th><th>What it proves</th><th>Dump / probe</th></tr></thead>
+    <tbody>
+      <tr><td>Floor sampler</td><td><code>FUN_80019278</code></td><td>Bilinear floor height from the walk grid - the heightfield surface</td><td><code>ghidra/scripts/funcs/80019278.txt</code></td></tr>
+      <tr><td>Placement stamper</td><td><code>FUN_8003A55C</code></td><td>Placed-flag objects, yaw copy into the rotation triple, MAN-gated spawns</td><td><code>8003a55c.txt</code></td></tr>
+      <tr><td>MAN placement walker</td><td><code>FUN_8003A1E4</code></td><td>The <code>0x7F</code> sentinel and the field-VM prescript loop</td><td><code>8003a1e4.txt</code></td></tr>
+      <tr><td>Pure-Y rotation</td><td><code>FUN_80026988</code></td><td>Yaw sense (local <code>+Z</code> to <code>(sin, 0, cos)</code>)</td><td><code>80026988.txt</code></td></tr>
+      <tr><td>Fog LUT apply</td><td>overlay <code>0x801F7644..0x801F8690</code></td><td>Per-vertex scalar nudge from the 2048-entry LUT at <code>gp&minus;0x2BC</code></td><td>world-map overlay dump</td></tr>
+      <tr><td>Far colour</td><td><code>FUN_80043390</code> / <code>FUN_801E3E00</code></td><td>Three <code>ctc2</code> writes; the atmosphere actor's per-frame RGB</td><td><code>80043390.txt</code>, <code>overlay_801e3e00.txt</code></td></tr>
+      <tr><td>Ocean CLUT step</td><td>slot-5 CLUT-walk table</td><td>16 &times; 1 copy onto <code>(0, 506)</code> every 9 vsyncs</td><td><code>legaia_asset::clut_walk</code>; prim-trace <code>clut=0x7E80</code> cluster</td></tr>
+      <tr><td>Camera origin</td><td><code>_DAT_80089118</code> / <code>_DAT_80089120</code></td><td>Spawn anchor per kingdom</td><td><code>mednafen-state world-map-camera</code></td></tr>
+    </tbody>
+  </table>
 </section>
 
 <section class="doc-section" id="see-also">
@@ -192,6 +199,7 @@
     <span class="see-also-label">Reference</span>
     <a href="world-map.html">World map</a>
     <a href="../formats/world-map-overlay.html">World-map overlay</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/field-map.md">Field map</a>
     <a href="../formats/tim.html">PSX TIM (CLUTs)</a>
     <a href="renderer.html">Renderer</a>
     <a href="vr-mode.html">VR mode</a>

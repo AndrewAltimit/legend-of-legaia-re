@@ -115,14 +115,31 @@ let move_descriptor = s.move_descriptor()?; // type_byte = 0x05</code></pre>
       Other dissolved readings: <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p>
     </div>
   </details>
-  <h3 id="parse-caveat">Caveat: <code>MoveBuffer::parse</code> over-reads the offset table</h3>
-  <p>Real per-scene buffers use far fewer than 1024 ids (most 8-30) and pack record data densely right after the
-  real table end, so <code>MoveBuffer::parse</code> keeps reading record bytes as offsets. Most of those point past the
-  buffer and are counted as <code>bogus_offsets</code>, which makes the strict <code>fitness()</code> score
-  (<code>used - 2*bogus</code>) strongly negative for valid retail data. Use <code>MoveBuffer::looks_like_move_buffer()</code>
-  instead - it requires <code>records.len() &gt; 0 &amp;&amp; used &gt; bogus</code>, which real per-scene buffers pass while
-  random data fails - and <code>classify()</code>'s <code>OffsetTableLayout</code> verdict routes through it, so the CLI reports
-  the same shape the engine accepts.</p>
+  <details class="disclosure" id="parse-caveat">
+    <summary>Caveat: <code>MoveBuffer::parse</code> over-reads the offset table</summary>
+    <div class="disclosure-body">
+      <p>Real per-scene buffers use far fewer than 1024 ids (most 8-30) and pack record data densely right after the
+      real table end, so <code>MoveBuffer::parse</code> keeps reading record bytes as offsets. Most of those point past the
+      buffer and are counted as <code>bogus_offsets</code>, which makes the strict <code>fitness()</code> score
+      (<code>used - 2*bogus</code>) strongly negative for valid retail data. Use <code>MoveBuffer::looks_like_move_buffer()</code>
+      instead - it requires <code>records.len() &gt; 0 &amp;&amp; used &gt; bogus</code>, which real per-scene buffers pass while
+      random data fails - and <code>classify()</code>'s <code>OffsetTableLayout</code> verdict routes through it, so the CLI reports
+      the same shape the engine accepts.</p>
+    </div>
+  </details>
+</section>
+
+<section class="doc-section" id="how-we-know">
+  <h2>How we know</h2>
+  <table>
+    <thead><tr><th>Function</th><th>Address</th><th>What it proves</th><th>Dump</th></tr></thead>
+    <tbody>
+      <tr><td>Move-table consumer</td><td><code>FUN_800204F8</code></td><td>Offset-table indexing, record header fields, playhead clamp / advance, the MOVE / MOVE2 / alternate-base routing</td><td><code>funcs/800204f8.txt</code></td></tr>
+      <tr><td>Move-VM dispatcher</td><td><code>FUN_80023070</code></td><td>The per-frame data is bytecode for the 71-opcode move VM</td><td><code>funcs/80023070.txt</code></td></tr>
+      <tr><td>Per-scene source</td><td><code>_DAT_8007B888</code> diffs (dolk / suimon / map01 saves)</td><td>The MOVE base is refilled per scene from slot-4 of the scene's asset table</td><td><a href="../tooling/mednafen-automation.html">mednafen automation</a></td></tr>
+      <tr><td>MOVE2 base</td><td><code>_DAT_8007B840</code></td><td>Zero across every observed save state - the alternate table is rare or unused</td><td>save-state corpus</td></tr>
+    </tbody>
+  </table>
 </section>
 
 <section class="doc-section" id="cli">

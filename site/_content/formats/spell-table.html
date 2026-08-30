@@ -1,52 +1,81 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; spell table</div>
   <h1>Spell table <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">Cast Gimard and the banner names it, 10 MP drain away, and one enemy takes the hit. All three
-  facts - name, cost, target - come from one static table in <code>SCUS_942.54</code>: 190 records of 12 bytes,
-  one shared numbering that covers unnamed enemy-attack tiers, named monster attacks, the party's Seru magic and
-  the Ra-Seru summons. Enemies are named from the very same rows. The one thing the table does <strong>not</strong>
-  carry is a damage number: a spell's magnitude is computed from battle state at cast time.</p>
+  <p class="lede">Cast Gimard and the banner names it, 10 MP drain away, and one enemy takes the hit. Name, cost and target all come from one static table inside the game executable: 190 records of 12 bytes, one shared numbering that covers enemy attacks, the party's Seru magic and the Ra-Seru summons. The one thing the table does <strong>not</strong> carry is a damage number - a spell's magnitude is computed from battle state at cast time.</p>
 </header>
 
 <section class="doc-section" id="at-a-glance">
   <h2>At a glance</h2>
   <dl class="kv">
-    <dt>In the game</dt><dd>every cast - the name on the banner, the MP deducted, who gets hit; the pause menu's magic descriptions</dd>
-    <dt>Magic / marker</dt><dd>none - a fixed table in <code>SCUS_942.54</code></dd>
-    <dt>Lives in</dt><dd>SCUS VA <code>DAT_800754C8</code>, <strong>190 records</strong> (ids <code>0x00..=0xBD</code>), stride <code>0xC</code>; ends where the description-pointer table <code>0x80075DB0</code> begins</dd>
-    <dt>Retail readers</dt><dd>battle-action SM <code>FUN_801E295C</code> states <code>0x28</code> / <code>0x3C</code>; AI picker <code>FUN_801E9FD4</code>; menu info window <code>FUN_801D2E74</code></dd>
+    <dt>Where</dt><dd><code>SCUS_942.54</code>, RAM <code>DAT_800754C8</code>; the name pointers are read through the shifted base <code>DAT_800754D0</code> (= stats base + 8)</dd>
+    <dt>Size</dt><dd>190 records (ids <code>0x00..=0xBD</code>), 12 bytes each. Ends exactly where the description-pointer table <code>0x80075DB0</code> begins</dd>
     <dt>Parser</dt><dd><code>legaia_asset::spell_names</code> (<code>SPELL_COUNT = 190</code>); CLI <code>asset spell-names &lt;SCUS&gt; [--json]</code>; engine mirror <code>engine-core::retail_magic</code></dd>
     <dt>Confidence</dt><dd>Confirmed - readers traced in the battle and menu overlays; the curated magic chart joins byte-exact on MP</dd>
+    <dt>Used by</dt><dd><a href="../subsystems/battle-action.html">Battle-action SM</a> (cast + banner), <a href="../subsystems/field-menu.html">field menu</a> (descriptions), <a href="../tooling/randomizer.html#spell-cost">spell-cost slider</a>, <a href="../magic.html">Magic viewer</a></dd>
   </dl>
 </section>
 
 <section class="doc-section" id="table-layout">
-  <h2>Table base + record layout</h2>
-  <p>The table is viewed through two interleaved base pointers over the same records: <code>DAT_800754C8</code> (the stats base, read for MP + class + target) and <code>DAT_800754D0</code> (the same base shifted <code>+8</code>, read for the name pointer). Both step <code>0xC</code> per spell id, so record <code>id</code> sits at <code>DAT_800754C8 + id*0xC</code>.</p>
-  <table>
-  <thead><tr><th>Field</th><th>Value</th></tr></thead>
-  <tbody>
-    <tr><td>Stats base</td><td><code>DAT_800754C8</code></td></tr>
-    <tr><td>Name-pointer base</td><td><code>DAT_800754D0</code> (= stats base <code>+8</code>)</td></tr>
-    <tr><td>Stride</td><td><code>0xC</code> bytes</td></tr>
-    <tr><td>Extent</td><td><strong>190 records, ids <code>0x00..=0xBD</code></strong> - record <code>0xBD</code>'s last word ends exactly where the description-pointer table <code>0x80075DB0</code> begins, so the extent is pinned by its neighbour</td></tr>
-  </tbody>
-  </table>
+  <h2>Record layout</h2>
+  <p>Record <code>id</code> sits at <code>base + id &times; 12</code>. Every record has the same shape:</p>
+  <figure class="overlay-strip">
+    <svg viewBox="0 0 760 120" width="100%" style="max-width:760px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Byte layout of one 12-byte spell record: class, sub-index, target, MP, description index, three padding bytes, then a 4-byte name pointer">
+      <style>
+        .sp-box { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.3; }
+        .sp-pad { fill: var(--bg-raised); stroke: var(--border); stroke-width: 1.1; stroke-dasharray: 3 3; }
+        .sp-lab { font: 12px sans-serif; fill: currentColor; }
+        .sp-off { font: 11px monospace; fill: var(--text-muted); }
+      </style>
+      <!-- 12 bytes, 60 px each, starting at x=10 -->
+      <rect class="sp-box" x="10"  y="30" width="60" height="44"/>
+      <rect class="sp-box" x="70"  y="30" width="60" height="44"/>
+      <rect class="sp-box" x="130" y="30" width="60" height="44"/>
+      <rect class="sp-box" x="190" y="30" width="60" height="44"/>
+      <rect class="sp-box" x="250" y="30" width="60" height="44"/>
+      <rect class="sp-pad" x="310" y="30" width="180" height="44"/>
+      <rect class="sp-box" x="490" y="30" width="240" height="44"/>
+      <text class="sp-lab" x="40"  y="48" text-anchor="middle">class</text>
+      <text class="sp-lab" x="100" y="48" text-anchor="middle">sub</text>
+      <text class="sp-lab" x="160" y="48" text-anchor="middle">target</text>
+      <text class="sp-lab" x="220" y="48" text-anchor="middle">MP</text>
+      <text class="sp-lab" x="280" y="48" text-anchor="middle">desc</text>
+      <text class="sp-lab" x="400" y="48" text-anchor="middle">padding (zero)</text>
+      <text class="sp-lab" x="610" y="48" text-anchor="middle">name pointer</text>
+      <text class="sp-off" x="40"  y="66" text-anchor="middle">u8</text>
+      <text class="sp-off" x="100" y="66" text-anchor="middle">u8</text>
+      <text class="sp-off" x="160" y="66" text-anchor="middle">u8</text>
+      <text class="sp-off" x="220" y="66" text-anchor="middle">u8</text>
+      <text class="sp-off" x="280" y="66" text-anchor="middle">u8</text>
+      <text class="sp-off" x="400" y="66" text-anchor="middle">3 bytes</text>
+      <text class="sp-off" x="610" y="66" text-anchor="middle">u32 &rarr; C string</text>
+      <text class="sp-off" x="10"  y="20">+0</text>
+      <text class="sp-off" x="70"  y="20">+1</text>
+      <text class="sp-off" x="130" y="20">+2</text>
+      <text class="sp-off" x="190" y="20">+3</text>
+      <text class="sp-off" x="250" y="20">+4</text>
+      <text class="sp-off" x="310" y="20">+5</text>
+      <text class="sp-off" x="490" y="20">+8</text>
+      <text class="sp-off" x="730" y="20" text-anchor="end">+12</text>
+      <text class="sp-off" x="10"  y="100">stats base DAT_800754C8 reads +0..+4</text>
+      <text class="sp-off" x="730" y="100" text-anchor="end">name base DAT_800754D0 reads +8</text>
+    </svg>
+    <figcaption>One 12-byte record. The stats reader and the name reader use two base pointers 8 bytes apart over the same rows.</figcaption>
+  </figure>
   <table class="layout">
   <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
   <tbody>
-    <tr><td><code>+0</code></td><td>1</td><td>cast class</td><td><code>0x32</code> player summon, <code>0x14</code> plain cast, <code>0x63</code> (<code>'c'</code>) capture-class (<a href="#cast-classes">below</a>)</td></tr>
-    <tr><td><code>+1</code></td><td>1</td><td>sub-index</td><td>within the class; for capture-class records the module index (PROT <code>935 + sub</code>)</td></tr>
-    <tr><td><code>+2</code></td><td>1</td><td>target shape</td><td>side / scope bits (<a href="#target-shape">below</a>)</td></tr>
-    <tr><td><code>+3</code></td><td>1</td><td><strong>MP cost</strong></td><td>deducted from actor <code>+0x150</code> in state <code>0x28</code></td></tr>
-    <tr><td><code>+4</code></td><td>1</td><td>description index</td><td>into the <code>u32 string_ptr[]</code> array at <code>0x80075DB0</code>; <code>0</code> = none</td></tr>
-    <tr><td><code>+5</code></td><td>3</td><td>padding</td><td>zero on every record</td></tr>
-    <tr><td><code>+8</code></td><td>4</td><td><code>name_ptr</code></td><td>pointer to the display-name C-string, which carries a leading MES colour-control prefix (<code>0xCE</code>, an element-colour byte, a space) before the ASCII name</td></tr>
+    <tr><td><code>+0</code></td><td>u8</td><td>cast class</td><td><code>0x32</code> player summon, <code>0x14</code> plain cast, <code>0x63</code> (<code>'c'</code>) capture-class module (<a href="#cast-classes">below</a>)</td></tr>
+    <tr><td><code>+1</code></td><td>u8</td><td>sub-index</td><td>Within the class; for capture-class records the module index (PROT <code>935 + sub</code>)</td></tr>
+    <tr><td><code>+2</code></td><td>u8</td><td>target shape</td><td>Side / scope bits (<a href="#target-shape">below</a>)</td></tr>
+    <tr><td><code>+3</code></td><td>u8</td><td><strong>MP cost</strong></td><td>Deducted from the caster when the cast starts</td></tr>
+    <tr><td><code>+4</code></td><td>u8</td><td>description index</td><td>Into the pause-menu description pointer array; <code>0</code> = none</td></tr>
+    <tr><td><code>+5</code></td><td>3</td><td>padding</td><td>Zero on every record - there is no power byte hiding here</td></tr>
+    <tr><td><code>+8</code></td><td>u32</td><td><code>name_ptr</code></td><td>Display-name C string, prefixed by a colour-control code (<code>0xCE</code>, element colour, space)</td></tr>
   </tbody>
   </table>
-  <div class="notice">
-    <div class="notice-title">Why the extent matters</div>
-    <p>The 12-byte walk does not stop at record <code>0xBD</code>; nothing bounds it but the reader. Any tool that sweeps "every spell id" up to 255 walks straight into the neighbouring tables, and a <em>write</em> at those coordinates corrupts them - a spell-cost patch that assumed 256 records would overwrite the description-pointer and arts-name tables on the patched disc. <code>SPELL_COUNT</code> is 190 (<a href="#past-the-extent">reading past the extent</a>).</p>
+  <div class="notice warn">
+    <div class="notice-title">The extent is 190, and nothing enforces it</div>
+    <p>The 12-byte walk does not stop at record <code>0xBD</code>; only the reader bounds it. A tool that sweeps ids up to 255 walks straight into the neighbouring tables, and a <em>write</em> there corrupts the description pointers and the arts-name table on a patched disc. <code>SPELL_COUNT</code> is 190 (<a href="#past-the-extent">reading past the extent</a>).</p>
   </div>
 </section>
 
@@ -55,17 +84,16 @@
   <table>
   <thead><tr><th>Ids</th><th>Contents</th></tr></thead>
   <tbody>
-    <tr><td><code>0x00..=0x24</code></td><td>internal enemy-attack tiers - MP / element / target populated, empty name pointers, description index <code>0</code></td></tr>
-    <tr><td><code>0x25..=0x7F</code></td><td>named monster attacks (Fire Breath <code>0x25</code>, Tail Fire <code>0x27</code>, &hellip;) + capture-class spells (<code>'c'</code> at <code>+0</code>)</td></tr>
-    <tr><td><code>0x80</code></td><td>boundary entry below the player block (MP and description both 0), not part of the sequential set</td></tr>
-    <tr><td><code>0x81..=0x8B</code></td><td>first 11 <strong>player Seru-magic</strong> spells - the engine-pinned block <code>retail_magic::SERU_MAGIC</code></td></tr>
-    <tr><td><code>0x8C..=0x95</code></td><td>the rest of the player Seru magic: the named block runs <code>0x81..=0x95</code>, the 21 curated <code>seru</code>-family entries (Gimard &hellip; Gilium), every MP byte-exact</td></tr>
-    <tr><td><code>0x9A..=0xA0</code></td><td><strong>Ra-Seru summons</strong> - Palma, Mule, Horn, Jedo, Meta, Terra, Ozma (the hidden 8th, Juggernaut, is outside this contiguous region)</td></tr>
-    <tr><td><code>0xA1..=0xBD</code></td><td>boss cinematic casts and late capture-class spells (Dead End Crisis <code>0xA1</code> &hellip; Jugger Power <code>0xBA</code>)</td></tr>
+    <tr><td><code>0x00..=0x24</code></td><td>Internal enemy-attack tiers - MP / target populated, empty name, no description</td></tr>
+    <tr><td><code>0x25..=0x7F</code></td><td>Named monster attacks (Fire Breath <code>0x25</code>, Tail Fire <code>0x27</code>, &hellip;) and capture-class spells</td></tr>
+    <tr><td><code>0x80</code></td><td>Boundary entry (MP and description both 0)</td></tr>
+    <tr><td><code>0x81..=0x95</code></td><td><strong>Player Seru magic</strong>, Gimard &hellip; Gilium. The first 11 (<code>0x81..=0x8B</code>) are the engine-pinned block <code>retail_magic::SERU_MAGIC</code></td></tr>
+    <tr><td><code>0x9A..=0xA0</code></td><td><strong>Ra-Seru summons</strong> - Palma, Mule, Horn, Jedo, Meta, Terra, Ozma (the hidden eighth, Juggernaut, sits outside this run)</td></tr>
+    <tr><td><code>0xA1..=0xBD</code></td><td>Boss cinematic casts and late capture-class spells (Dead End Crisis <code>0xA1</code> &hellip; Jugger Power <code>0xBA</code>)</td></tr>
   </tbody>
   </table>
   <h3 id="player-block">Player Seru-magic block (<code>0x81..=0x8B</code>)</h3>
-  <p>MP + target shape byte-exact from the executable; element from the curated <a href="../reference/gamedata.html">gamedata</a> chart (every MP value matches). Id <code>0x81</code> = Gimard also matches the save-state pin in <code>capture_observations::seru_capture</code>.</p>
+  <p>MP and target are byte-exact from the executable; element comes from the curated <a href="../reference/gamedata.html">game-data chart</a>, which matches on every MP value.</p>
   <table>
   <thead><tr><th>Id</th><th>Name</th><th>Element</th><th>MP</th><th>Target</th></tr></thead>
   <tbody>
@@ -82,98 +110,12 @@
     <tr><td><code>0x8B</code></td><td>Nova</td><td>wind</td><td>48</td><td>one enemy</td></tr>
   </tbody>
   </table>
-  <p>The whole player block shares <code>class = 0x32, sub = 0</code>: the table cannot even distinguish Gimard from Nova, which is the first sign that damage lives elsewhere. The Seru that teach these ids are wired in <code>engine-core::seru_learning::SeruRegistry::retail</code>.</p>
-</section>
-
-<section class="doc-section" id="enemy-casts">
-  <h2>How an enemy's cast lands in the same id space</h2>
-  <p>An enemy is named exactly like a party caster, through two selection mechanisms that both end in the actor's <code>+0x1DF</code> action byte:</p>
-  <div class="flow">
-    <div class="num">1</div><div class="layer">Record array</div><div class="desc">The AI picker <code>FUN_801E9FD4</code> (battle overlay, extraction 0898) reads a <strong>global</strong> spell id from the monster record's magic-attack array at <code>+0x21..=+0x23</code> (values <code>&gt; 1</code> live).</div><div class="crate"><code>monster_archive</code></div>
-    <div class="num">2</div><div class="layer">Special-cast switch</div><div class="desc">The picker's tail runs a hardcoded <code>switch</code> on the <strong>formation monster id</strong> (<code>DAT_8007BD0C[slot]</code>, ~30 cases at <code>0x801EB0xx..0x801EBD24</code>) queuing boss- and species-specific casts, gated on HP fraction, MP, the round counter (<code>ctx+0x28A</code>), RNG cadence, the not-charmed check (<code>+0x16E &amp; 0x380 == 0</code>) and per-slot chain cells at <code>DAT_801C8FE0[slot+4]</code>.</div><div class="crate"><code>engine-vm</code></div>
-    <div class="num">3</div><div class="layer">Queue</div><div class="desc">The chosen id is written to the live actor at <code>+0x1DF</code>.</div><div class="crate"><code>battle-action</code></div>
-    <div class="num">4</div><div class="layer">Print</div><div class="desc">The battle-action SM reads <code>&amp;DAT_800754D0 + id*0xC</code> - the same row a party cast would use (<code>0x27</code> &rarr; Tail Fire).</div><div class="crate"><code>spell_names</code></div>
-  </div>
-  <p>The monster archive's local <code>+0x4C</code> entry ids (<code>0x0C..=0x1F</code>) only gate action cost - they are <strong>not</strong> this table's id space. Verified live: the Zeto mid-cast states hold <code>+0x1DF = 0x55/0x56</code> while the record's array still reads its disc value. Notable switch cases:</p>
-  <div class="table-scroll">
-  <table>
-  <thead><tr><th>Formation id</th><th>Casts queued</th><th>Trigger shape</th></tr></thead>
-  <tbody>
-    <tr><td><code>0x4B</code> Zeto</td><td>Call Wave <code>0x55</code> &rarr; chain-cell &rarr; Big Wave <code>0x56</code></td><td>40% + MP &ge; 100; the cell arms the follow-up</td></tr>
-    <tr><td><code>0x8B</code> Xain</td><td>Bull Charge <code>0x5E</code> &rarr; chain-cell &rarr; Terio Punch <code>0x5D</code></td><td>rand%3; Bloody Horns <code>0x5C</code> comes from the <code>+0x21</code> array</td></tr>
-    <tr><td><code>0xA2..0xA4</code> Gi/Che/Lu Delilas</td><td>id &minus; <code>0x29</code> = Blazing Slash / Megaton Press / Plasma Strike</td><td>every 3rd round (<a href="#delilas-arm">below</a>)</td></tr>
-    <tr><td><code>0xA6</code> Sim-Seru Gaza</td><td>Neo Star Slash <code>0xA6</code></td><td>odd rounds, MP &ge; 200</td></tr>
-    <tr><td><code>0xA8</code> Rogue</td><td>Element Change <code>0xAF</code>; then Rogue Wind/Thunder/Flame via <code>DAT_801C8FE4 &minus; 0x50</code></td><td>element-cycling counter</td></tr>
-    <tr><td><code>0xB3</code> Songi (Seru-Kai)</td><td>Genocidal Cannon <code>0xB3</code></td><td>two-turn charge latched in record <code>+0x1C</code></td></tr>
-    <tr><td><code>0xB4</code> / <code>0xB5</code> / <code>0xB6</code> Cort forms</td><td>ESM <code>0xAD</code> / Mystic Circle <code>0xB7</code> / Mystic Shield <code>0xAC</code>; Ultra Charge <code>0xA5</code> &rarr; Final Crisis <code>0xB4</code>, Doomsday <code>0xB6</code>; the <code>0xA2..0xA5</code> &rarr; Dead End Crisis <code>0xA1</code> ladder</td><td>round-scripted</td></tr>
-    <tr><td>species bands (<code>0x43+</code>, <code>0x54+</code>, <code>0x59+</code>, <code>0x62+</code>, <code>0x6B+</code>, <code>0x99..0xA1</code>, &hellip;)</td><td>Steal <code>0x51</code>, Power Up <code>0x52</code>, White Shield <code>0x60</code>, Rolling Flare <code>0x5A</code>, Power Charge <code>0x72</code>, Void Accessories <code>0x73</code>, Paralyzing Wave <code>0x75</code>, Death Game <code>0x76</code>, Thunder Storm <code>0x77</code>, Stone Circle <code>0xB9</code>, Chaos Breath <code>0x4E</code>, Jugger Power <code>0xBA</code>, Lapis Wave <code>0xB5</code>, &hellip;</td><td>HP-fraction / cadence gates</td></tr>
-  </tbody>
-  </table>
-  </div>
-  <p>No case queues Curse All <code>0x53</code> or Curse <code>0x40</code> - with neither mechanism sourcing them, both are <strong>casterless</strong> in retail. Two id spaces collide on <code>0xB5</code> (spell = Lapis Wave, formation = Cort); a branch at <code>0x801E6D04</code> that looked like a spell test is a formation test - see <a href="../reference/re-do-not-re-walk.html#c-0xb5">do-not-re-walk</a>.</p>
-  <h3 id="delilas-arm">The Delilas arm: three ids, one body, an arithmetic cast id</h3>
-  <p><code>0xA2</code>, <code>0xA3</code> and <code>0xA4</code> are three consecutive jump-table slots pointing at the same arm <code>0x801EB7C0</code>, which names no spell of its own - it computes one from the formation id:</p>
-<pre><code>801eb7cc  lbu   a0,0x28a(v0)     ; the round counter
-801eb7d0  lui   v0,0xaaaa
-801eb7d4  ori   v0,v0,0xaaab     ; 0xAAAAAAAB - the divide-by-3 reciprocal
-801eb7d8  multu a0,v0
-  ...                            ; a0 = round % 3
-801eb7f8  bne   a0,v0,0x801ebdac ; fire only on round % 3 == 2
-801eb800  addiu v0,v0,-0x42f4    ; DAT_8007BD0C
-801eb804  addu  v0,s7,v0         ; + the formation slot
-801eb808  sb    a0,0x1de(s4)     ; actor[+0x1DE] = 2, the Magic category
-801eb80c  lbu   v0,0x0(v0)       ; the formation monster id
-801eb814  addiu v0,v0,-0x29      ; the whole mapping
-801eb81c  _sb   v0,0x1df(s4)     ; actor[+0x1DF] = id - 0x29</code></pre>
-  <p>Monsters 162 / 163 / 164 resolve to spells <code>0x79</code> / <code>0x7A</code> / <code>0x7B</code>, and the entire mapping is one literal, <code>0x2442FFD7</code> at PROT 0898 file offset <code>0x1CFFC</code> (VA <code>0x801EB814</code>). Which cast fires is a function of the id the formation seats; the banner name then comes from this table at that id.</p>
-</section>
-
-<section class="doc-section" id="cast-classes">
-  <h2>Cast classes (<code>+0</code>) and the capture-class modules</h2>
-  <p>The class byte selects which battle-action band executes the cast (<code>FUN_801E295C</code> state <code>0x28</code>, dump <code>overlay_battle_action_801e295c.txt</code> at <code>0x801E44CC</code> / <code>0x801E4614</code>):</p>
-  <table>
-  <thead><tr><th><code>+0</code></th><th>Class</th><th>Flow</th></tr></thead>
-  <tbody>
-    <tr><td><code>0x32</code> (<code>'2'</code>)</td><td>Player summon</td><td>Summon band <code>0x32..0x38</code>; pages the per-summon overlay <code>FUN_8003EC70(id - 0x79)</code> (PROT 903..); damage attributed to the slot-7 cast body.</td></tr>
-    <tr><td><code>0x14</code></td><td>Plain cast</td><td>Ordinary magic band <code>0x28..0x2E</code>, caster-anim playout (Tail Fire <code>0x27</code>, Astral Wave <code>0x6A</code>, &hellip;).</td></tr>
-    <tr><td><code>0x63</code> (<code>'c'</code>)</td><td>Capture-class</td><td>Routes <code>0x28 &rarr; 0x6E..0x71</code>; pages the per-spell module <code>FUN_8003EC70(record[+1] + 0x28)</code> (PROT <code>935..966</code>) and starts the XA cue <code>FUN_8003EAE4(0, record[+1])</code>. Covers Seru capture, the item-capture Amulet, and the boss cinematic casts. The module carries its own baked damage constants; anatomy on the <a href="../subsystems/battle-formulas.html">battle-formulas</a> and battle-action pages.</td></tr>
-  </tbody>
-  </table>
-  <h3 id="module-index">Capture-class module index (PROT <code>0935..0966</code>)</h3>
-  <p>The <code>+1</code> sub-id of a capture-class record is a module index: the cast pages extraction entry <code>935 + sub_id</code> into the slot-B overlay buffer (loader arithmetic <code>extraction = param + 0x37F</code>). Because the sub-id is static spell-table data, the identity of the whole module band is readable straight out of <code>SCUS_942.54</code> (<code>spell_names::capture_class_records</code> / <code>capture_module_prot</code>). Modules are shared: a multi-spell cell dispatches per spell id at the module-head switch.</p>
-  <div class="table-scroll">
-  <table>
-  <thead><tr><th>PROT</th><th>Spells</th><th>PROT</th><th>Spells</th></tr></thead>
-  <tbody>
-    <tr><td>935</td><td><code>0x4A</code> Earthquake</td><td>951</td><td><code>0x36</code> Chaos Flare; <code>0x5B</code> Scythe Wind</td></tr>
-    <tr><td>936</td><td><code>0x4B</code> Hyper Crush</td><td>952</td><td><code>0x5C</code> Bloody Horns; <code>0xB8</code> Astral Slash</td></tr>
-    <tr><td>937</td><td><code>0x4C</code> Hyper Lightning</td><td>953</td><td><code>0x5D</code> Terio Punch; <code>0x5E</code> Bull Charge</td></tr>
-    <tr><td>938</td><td><code>0x4E</code> Chaos Breath; <code>0xB7</code> Mystic Circle</td><td>954</td><td><code>0x5F</code> Fatal Decision</td></tr>
-    <tr><td>939</td><td><code>0x4F</code> Spore Gas</td><td>955</td><td><code>0x60</code> White Shield; <code>0x6E</code> Kiss of Death; <code>0x6F</code> Melt Spray; <code>0x70</code> Terror Scream; <code>0x72</code> Power Charge; <code>0x73</code> Void Accessories</td></tr>
-    <tr><td>940</td><td><code>0x3C</code> Glare; <code>0x50</code> Divide; <code>0xAC</code> Mystic Shield; <code>0xAE</code> Clone</td><td>956</td><td><code>0x71</code> Water Hazard; <code>0x75</code> Paralyzing Wave</td></tr>
-    <tr><td>941</td><td><code>0x51</code> Steal; <code>0xB9</code> Stone Circle</td><td>957</td><td><code>0x76</code> Death Game; <code>0x77</code> Thunder Storm</td></tr>
-    <tr><td>942</td><td><code>0x52</code> Power Up; <code>0xAA</code> Dark Typhoon</td><td>958</td><td><code>0x79</code> Blazing Slash</td></tr>
-    <tr><td>943</td><td><code>0x40</code> Curse; <code>0xB5</code> Lapis Wave</td><td>959</td><td><code>0x7A</code> Megaton Press</td></tr>
-    <tr><td>944</td><td><code>0x37</code> Guilty Cross; <code>0x53</code> Curse All</td><td>960</td><td><code>0x7B</code> Plasma Strike; <code>0xA6</code> Neo Star Slash</td></tr>
-    <tr><td>945</td><td><code>0x54</code> Water Column; <code>0xBA</code> Jugger Power</td><td>961</td><td><code>0xA1</code> Dead End Crisis; <code>0xB4</code> Final Crisis</td></tr>
-    <tr><td>946</td><td><code>0x55</code> Call Wave; <code>0x56</code> Big Wave</td><td>962</td><td><code>0xA2</code> Blade Breath; <code>0xA3</code> Thunder Needle; <code>0xA4</code> Gigaton Press; <code>0xA5</code> Ultra Charge</td></tr>
-    <tr><td>947</td><td><code>0x57</code> V-Windhash; <code>0xA7</code> Neo Windhash</td><td>963</td><td><code>0xB3</code> Genocidal Cannon</td></tr>
-    <tr><td>948</td><td><code>0x58</code> Cross Beam</td><td>964</td><td><code>0xAF</code> Element Change; <code>0xB0</code> Rogue Wind; <code>0xB1</code> Rogue Thunder; <code>0xB2</code> Rogue Flame</td></tr>
-    <tr><td>949</td><td><code>0x59</code> Water Crystals</td><td>965</td><td><code>0xB6</code> Doomsday</td></tr>
-    <tr><td>950</td><td><code>0x5A</code> Rolling Flare; <code>0xAB</code> Shadow Break</td><td>966</td><td><code>0xAD</code> Evil Seru Magic</td></tr>
-  </tbody>
-  </table>
-  </div>
-  <p>The sub-id space covers <code>0935..=0966</code> exactly - no orphan slots - and agrees with every independently pinned leg: the six capture-pinned boss stagers (938 / 940 / 944 / 961 / 962 / 966), the playtest-pinned Delilas trio (958 / 959 / 960) and Xain pair (952 / 953), and the per-module damage-wrapper census (the status-only modules 940, 954, 955 are exactly the cells with no damage spells). 0957 heads with Death Game's roulette outcome labels, and 0965 is the Doomsday module.</p>
-  <details class="disclosure">
-    <summary>History: the 0965 attribution</summary>
-    <div class="disclosure-body"><p>0965 was once read as a shifted sibling of the battle-tutorial overlay 0967 - an entry-size over-read artifact (entry size is the gap to the next entry; see <a href="prot.html">PROT</a>). The corrected entries share no content. Catalogued on <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p></div>
-  </details>
+  <p>The whole player block shares <code>class = 0x32, sub = 0</code>: the table cannot tell Gimard from Nova, which is the first sign that damage lives elsewhere. Which Seru teaches which id is wired in <code>engine-core::seru_learning::SeruRegistry::retail</code>.</p>
 </section>
 
 <section class="doc-section" id="target-shape">
   <h2>Target shape (<code>+2</code>)</h2>
-  <p>Two independent bits over a side/scope pair: bit <code>0x02</code> = ally side (clear = enemy side; equivalently the low nibble is <code>_4</code> for enemy, <code>_6</code> for ally), bit <code>0x20</code> = all targets on that side (clear = single).</p>
+  <p>Two independent bits: <code>0x02</code> = ally side (clear = enemy side), <code>0x20</code> = every target on that side (clear = single).</p>
   <table>
   <thead><tr><th>Value</th><th>Shape</th></tr></thead>
   <tbody>
@@ -181,54 +123,143 @@
     <tr><td><code>0x64</code></td><td>all enemies</td></tr>
     <tr><td><code>0x06</code></td><td>one ally</td></tr>
     <tr><td><code>0x26</code></td><td>all allies</td></tr>
+    <tr><td><code>0x04</code></td><td>one enemy (the internal enemy-attack tiers)</td></tr>
   </tbody>
   </table>
-  <p>The model holds across the whole named player block and the six offensive Ra-Seru summons. One documented exception: the revive Ra-Seru Horn ("Resurrector", <code>0x9C</code>) carries an enemy-side <code>0x24</code> byte even though it revives all allies - the summon projects toward the enemy field and the revive is special-cased by spell id. Decoded by <code>SpellEntry::target_shape</code>; the <code>legaia-gamedata</code> <code>magic_vs_disc</code> oracle joins the curated chart by name and verifies MP (byte-exact for all 21 Seru + 7 Ra-Seru; it corrected one curated target, Mushura / "Crazy Driver" = single-enemy) plus target shape, checking the Horn exception explicitly.</p>
+  <p>One exception: the revive summon Horn ("Resurrector", <code>0x9C</code>) carries an enemy-side <code>0x24</code> even though it revives all allies - the summon projects toward the enemy field and the revive is special-cased by spell id. Decoder <code>SpellEntry::target_shape</code>.</p>
   <details class="disclosure">
     <summary>History: the "bit 0x40 = enemies" reading</summary>
-    <div class="disclosure-body"><p>Equivalent for the four player-block values but misclassifies the internal enemy-attack tiers, whose byte is <code>0x04</code>: <code>0x40</code> clear yet enemy-targeting. The <code>0x02</code>-bit / low-nibble reading classifies <code>0x04</code> as enemy-side, matching their role.</p></div>
+    <div class="disclosure-body"><p>Equivalent for the four player-block values but wrong for the internal enemy-attack tiers, whose byte is <code>0x04</code>: bit <code>0x40</code> clear yet enemy-targeting. The <code>0x02</code>-bit reading classifies them correctly. The curated chart's one target error (Mushura / "Crazy Driver" = single enemy) was corrected from this byte.</p></div>
+  </details>
+</section>
+
+<section class="doc-section" id="cast-classes">
+  <h2>Cast classes (<code>+0</code>)</h2>
+  <p>The class byte chooses which band of the <a href="../subsystems/battle-action.html">battle-action state machine</a> runs the cast:</p>
+  <table>
+  <thead><tr><th><code>+0</code></th><th>Class</th><th>What happens</th></tr></thead>
+  <tbody>
+    <tr><td><code>0x32</code></td><td>Player summon</td><td>Summon band; pages a per-summon overlay (PROT 903..) that spawns the Ra-Seru body and applies damage</td></tr>
+    <tr><td><code>0x14</code></td><td>Plain cast</td><td>Ordinary magic band with the caster's animation (Tail Fire, Astral Wave, &hellip;)</td></tr>
+    <tr><td><code>0x63</code></td><td>Capture-class</td><td>Pages the per-spell <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/cast-module.md" target="_blank" rel="noopener">cast module</a> PROT <code>935 + sub</code> and starts its voice cue. Covers Seru capture, the Amulet, and the boss cinematic casts; the module carries its own baked damage constants</td></tr>
+  </tbody>
+  </table>
+  <p>Because the sub-index is static table data, the identity of every capture-class module is readable from the executable alone (<code>spell_names::capture_class_records</code>). The 32 modules (PROT 935..966) are shared: a multi-spell module dispatches per spell id at its head.</p>
+  <details class="disclosure">
+    <summary>Capture-class module index (PROT 935..966)</summary>
+    <div class="disclosure-body">
+    <div class="table-scroll">
+    <table>
+    <thead><tr><th>PROT</th><th>Spells</th><th>PROT</th><th>Spells</th></tr></thead>
+    <tbody>
+      <tr><td>935</td><td><code>0x4A</code> Earthquake</td><td>951</td><td><code>0x36</code> Chaos Flare; <code>0x5B</code> Scythe Wind</td></tr>
+      <tr><td>936</td><td><code>0x4B</code> Hyper Crush</td><td>952</td><td><code>0x5C</code> Bloody Horns; <code>0xB8</code> Astral Slash</td></tr>
+      <tr><td>937</td><td><code>0x4C</code> Hyper Lightning</td><td>953</td><td><code>0x5D</code> Terio Punch; <code>0x5E</code> Bull Charge</td></tr>
+      <tr><td>938</td><td><code>0x4E</code> Chaos Breath; <code>0xB7</code> Mystic Circle</td><td>954</td><td><code>0x5F</code> Fatal Decision</td></tr>
+      <tr><td>939</td><td><code>0x4F</code> Spore Gas</td><td>955</td><td><code>0x60</code> White Shield; <code>0x6E</code> Kiss of Death; <code>0x6F</code> Melt Spray; <code>0x70</code> Terror Scream; <code>0x72</code> Power Charge; <code>0x73</code> Void Accessories</td></tr>
+      <tr><td>940</td><td><code>0x3C</code> Glare; <code>0x50</code> Divide; <code>0xAC</code> Mystic Shield; <code>0xAE</code> Clone</td><td>956</td><td><code>0x71</code> Water Hazard; <code>0x75</code> Paralyzing Wave</td></tr>
+      <tr><td>941</td><td><code>0x51</code> Steal; <code>0xB9</code> Stone Circle</td><td>957</td><td><code>0x76</code> Death Game; <code>0x77</code> Thunder Storm</td></tr>
+      <tr><td>942</td><td><code>0x52</code> Power Up; <code>0xAA</code> Dark Typhoon</td><td>958</td><td><code>0x79</code> Blazing Slash</td></tr>
+      <tr><td>943</td><td><code>0x40</code> Curse; <code>0xB5</code> Lapis Wave</td><td>959</td><td><code>0x7A</code> Megaton Press</td></tr>
+      <tr><td>944</td><td><code>0x37</code> Guilty Cross; <code>0x53</code> Curse All</td><td>960</td><td><code>0x7B</code> Plasma Strike; <code>0xA6</code> Neo Star Slash</td></tr>
+      <tr><td>945</td><td><code>0x54</code> Water Column; <code>0xBA</code> Jugger Power</td><td>961</td><td><code>0xA1</code> Dead End Crisis; <code>0xB4</code> Final Crisis</td></tr>
+      <tr><td>946</td><td><code>0x55</code> Call Wave; <code>0x56</code> Big Wave</td><td>962</td><td><code>0xA2</code> Blade Breath; <code>0xA3</code> Thunder Needle; <code>0xA4</code> Gigaton Press; <code>0xA5</code> Ultra Charge</td></tr>
+      <tr><td>947</td><td><code>0x57</code> V-Windhash; <code>0xA7</code> Neo Windhash</td><td>963</td><td><code>0xB3</code> Genocidal Cannon</td></tr>
+      <tr><td>948</td><td><code>0x58</code> Cross Beam</td><td>964</td><td><code>0xAF</code> Element Change; <code>0xB0</code> Rogue Wind; <code>0xB1</code> Rogue Thunder; <code>0xB2</code> Rogue Flame</td></tr>
+      <tr><td>949</td><td><code>0x59</code> Water Crystals</td><td>965</td><td><code>0xB6</code> Doomsday</td></tr>
+      <tr><td>950</td><td><code>0x5A</code> Rolling Flare; <code>0xAB</code> Shadow Break</td><td>966</td><td><code>0xAD</code> Evil Seru Magic</td></tr>
+    </tbody>
+    </table>
+    </div>
+    <p>The sub-id space covers <code>935..=966</code> with no orphan slots. The status-only modules (940, 954, 955) are exactly the cells with no damage spells. An older attribution of 965 as a sibling of the battle-tutorial overlay was an entry-size over-read (<a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>).</p>
+    </div>
+  </details>
+</section>
+
+<section class="doc-section" id="enemy-casts">
+  <h2>How an enemy's cast lands in the same id space</h2>
+  <p>An enemy is named exactly like a party caster. Two selection mechanisms both end in the same byte on the live actor, and the banner reads the row that byte names:</p>
+  <div class="flow">
+    <div class="num">1</div><div class="layer">Record array</div><div class="desc">The AI picker reads a global spell id from the monster record's three-slot magic-attack array.</div><div class="crate"><code>monster_archive</code></div>
+    <div class="num">2</div><div class="layer">Special-cast switch</div><div class="desc">The picker's tail runs a hardcoded switch on the monster's formation id - about 30 boss and species cases gated on HP fraction, MP, round counter, RNG cadence and a not-charmed check.</div><div class="crate"><code>engine-vm</code></div>
+    <div class="num">3</div><div class="layer">Queue</div><div class="desc">The chosen id is written to the actor's action byte.</div><div class="crate"><code>battle-action</code></div>
+    <div class="num">4</div><div class="layer">Banner</div><div class="desc">The action SM reads this table at that id - the same row a party cast would use.</div><div class="crate"><code>spell_names</code></div>
+  </div>
+  <p>The monster archive's own local action ids (<code>0x0C..=0x1F</code>) only gate action cost - they are <strong>not</strong> this table's id space. Two spells, Curse <code>0x40</code> and Curse All <code>0x53</code>, are sourced by neither mechanism and are casterless in retail.</p>
+  <details class="disclosure">
+    <summary>Notable special-cast switch cases</summary>
+    <div class="disclosure-body">
+    <div class="table-scroll">
+    <table>
+    <thead><tr><th>Formation id</th><th>Casts queued</th><th>Trigger</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x4B</code> Zeto</td><td>Call Wave <code>0x55</code> &rarr; Big Wave <code>0x56</code> via a chain cell</td><td>40% + MP &ge; 100</td></tr>
+      <tr><td><code>0x8B</code> Xain</td><td>Bull Charge <code>0x5E</code> &rarr; Terio Punch <code>0x5D</code>; Bloody Horns <code>0x5C</code> from the record array</td><td>rand % 3</td></tr>
+      <tr><td><code>0xA2..0xA4</code> Gi / Che / Lu Delilas</td><td>spell = formation id &minus; <code>0x29</code> (Blazing Slash / Megaton Press / Plasma Strike)</td><td>every third round</td></tr>
+      <tr><td><code>0xA6</code> Sim-Seru Gaza</td><td>Neo Star Slash <code>0xA6</code></td><td>odd rounds, MP &ge; 200</td></tr>
+      <tr><td><code>0xA8</code> Rogue</td><td>Element Change <code>0xAF</code>, then Rogue Wind / Thunder / Flame</td><td>element-cycling counter</td></tr>
+      <tr><td><code>0xB3</code> Songi (Seru-Kai)</td><td>Genocidal Cannon <code>0xB3</code></td><td>two-turn charge</td></tr>
+      <tr><td><code>0xB4..0xB6</code> Cort forms</td><td>Evil Seru Magic / Mystic Circle / Mystic Shield; Ultra Charge &rarr; Final Crisis, Doomsday; the Dead End Crisis ladder</td><td>round-scripted</td></tr>
+      <tr><td>species bands</td><td>Steal, Power Up, White Shield, Rolling Flare, Power Charge, Void Accessories, Paralyzing Wave, Death Game, Thunder Storm, Stone Circle, Chaos Breath, Jugger Power, Lapis Wave, &hellip;</td><td>HP-fraction / cadence gates</td></tr>
+    </tbody>
+    </table>
+    </div>
+    <p>The three Delilas jump-table slots share one arm that computes the spell id arithmetically from the formation id; the whole mapping is the single instruction word <code>0x2442FFD7</code> (<code>addiu v0,v0,-0x29</code>) at PROT 0898 file offset <code>0x1CFFC</code>. Two id spaces collide on <code>0xB5</code> (spell Lapis Wave, formation Cort); the branch at <code>0x801E6D04</code> is a formation test, not a spell test - <a href="../reference/re-do-not-re-walk.html#c-0xb5">do-not-re-walk</a>.</p>
+    </div>
   </details>
 </section>
 
 <section class="doc-section" id="description-index">
-  <h2>Description index (<code>+4</code>) and the name field</h2>
-  <p>The pause menu's spell info window (<code>FUN_801D2E74</code>, menu overlay - <a href="../subsystems/field-menu.html">field menu</a>) reads the <code>+4</code> byte and indexes a flat <code>u32 string_ptr[]</code> array at <code>0x80075DB0</code>; index <code>0</code> means no description. The strings use the MES <code>0x7C</code> line-break; the player block's shape is a title line then an effect line. Parser <code>SpellEntry::desc</code>.</p>
-  <p>The <code>+8</code> name pointer names a string followed by a run of NUL bytes before the next object - the record's whole edit budget, and it is <strong>word alignment, not a fixed slot</strong>: every extent is <code>4 * ceil((len + 1) / 4)</code>, so a 13-byte name has three spare bytes and a 15-byte name one. <code>spell_names::name_field</code> measures the run and returns <code>(file_offset, len, budget)</code>. Reaching a name through its record's pointer is the only safe way to rewrite one - <strong>these names nest</strong> (a text search for one name finds the longer name that contains it), so a search-and-replace is one row away from corrupting a neighbour. <code>legaia_art::arts_table::name_field</code> is the same accessor for the <a href="art-data.html">arts-name table</a>, since a rename that must stay consistent across party and enemy paths touches both.</p>
-  <details class="disclosure">
-    <summary>History: "+4 is an animation id"</summary>
-    <div class="disclosure-body"><p>The <code>+4</code> byte was once recorded as an animation id. The summon effect / animation is dispatched by <code>spell_id - 0x81</code>, and the menu decompile pins <code>+4</code> as the description index.</p></div>
-  </details>
+  <h2>Descriptions and names</h2>
+  <p>The pause menu's spell info window reads the <code>+4</code> byte and indexes a flat pointer array at <code>0x80075DB0</code>; index 0 means no description. Player-block strings are a title line, a line break, then an effect line. Parser <code>SpellEntry::desc</code>.</p>
+  <p>Each name string is followed by NUL bytes up to the next word boundary - that padding is the whole edit budget for a rename, and it is <strong>word alignment, not a fixed slot</strong> (a 13-byte name has three spare bytes, a 15-byte name one). Names nest - a text search for one finds the longer name that contains it - so the only safe way to rewrite one is through its record's pointer (<code>spell_names::name_field</code>).</p>
   <h3 id="past-the-extent">Reading past the extent</h3>
-  <p>An id above <code>0xBD</code> resolves into whatever static data follows, and on the retail disc that is two known tables:</p>
+  <p>Both neighbouring tables start on exact multiples of the 12-byte stride, so an over-read lands on whole words:</p>
   <table>
   <thead><tr><th>Ids</th><th>What the walk lands in</th></tr></thead>
   <tbody>
-    <tr><td><code>0xBE..=0xD4</code></td><td>the description-pointer table <code>0x80075DB0</code></td></tr>
-    <tr><td><code>0xD5..</code></td><td>the <a href="art-data.html">arts-name table</a> <code>0x80075EC4</code></td></tr>
+    <tr><td><code>0xBE..=0xD4</code></td><td>the description-pointer table</td></tr>
+    <tr><td><code>0xD5..</code></td><td>the <a href="art-data.html">arts-name table</a> (20-byte stride, name pointer at <code>+0xC</code>)</td></tr>
   </tbody>
   </table>
-  <p>Both boundaries fall on exact multiples of the stride (<code>0x80075DB0 &minus; 0x800754C8 = 0xBE &times; 0xC</code>, <code>0x80075EC4 &minus; 0x800754C8 = 0xD5 &times; 0xC</code>), so an over-read reads whole neighbouring words. The arts table's stride is <code>0x14</code> with its name pointer at <code>+0xC</code>, which coincides with the spell record's <code>+8</code> whenever the arts index is <code>1 mod 3</code> - so spell <code>0xD7</code>'s name-pointer word and arts record 1's are the same four bytes at <code>0x80075EE4</code> (Burning Flare; spell <code>0xDC</code> / arts record 4 is the next pair, Cyclone). A rename through either coordinate is one write, not two - a trap for anything that enumerates every id up to 255. <code>asset spell-names</code> still sweeps 256 ids for inspection, so the aliased rows (Tactical Art names read through the wrong table) appear above <code>0xD4</code>; the table's own extent is <code>SPELL_COUNT = 190</code>, and the patcher's spell-cost edits stop there.</p>
-</section>
-
-<section class="doc-section" id="no-power-scalar">
-  <h2>No per-spell power scalar</h2>
-  <p>The table carries <strong>no magic-power field</strong> - bytes <code>+5..+8</code> are zero on every record, state <code>0x28</code> of the action SM reads only <code>+3</code> (MP), <code>+0</code> (the <code>'c'</code> flag) and the name pointer, and the static attack-vs-defence kernel <code>FUN_801ec3e4</code> is melee / arts only (it returns early unless the queue head is in <code>0xC..=0x1F</code>). Summon magnitude is battle-state-derived, applied by the paired <strong>stager</strong> overlays (PROT 0903..0915) in the same function that spawns the summon body parts:</p>
-  <ul class="bullets">
-    <li><strong>Damage summons</strong> (PROT 0904 / 0912 / 0914, plus 0915's second arm) roll via the shared kernel <code>FUN_801dd0ac</code>: attacker <code>rand % (summon_AGL + 1) + summon_HP + caster_AGL&times;2</code> against a defender roll, then element-affinity (the 8&times;8 matrix at <code>0x801F53E8</code>) / status-weaken / magic-power scaling in <code>FUN_801dd864</code>, and the finisher <code>FUN_801ddb30</code> (resistance bits, <code>rand % 9 + 8</code> floor, 9999 cap, gauge fill, popup, MP drain). Stages 1-2 are ported as pure kernels in <code>engine-vm::battle_formulas</code>.</li>
-    <li><strong>Heal summons</strong> (PROT 0903 / 0905 / 0910 / 0911 / 0913, plus 0915's first arm) compute <code>(power_byte &lt;&lt; 5) + 0xE0</code> inline, with <code>power_byte</code> fetched from the caster's character record (spell-id match at <code>+0x705</code>, power byte at <code>+0x729</code>).</li>
-    <li>The per-summon effect / animation is dispatched by <code>(spell_id - 0x81)</code>: state <code>0x29</code> indexes <code>PTR_s_re_check_801f6734</code> and calls <code>func_0x8003ec70(spell_id - 0x79, 0)</code>.</li>
-    <li>The genuine per-move power scalar that <em>does</em> exist - the 26-byte-stride table at overlay VA <code>0x801F4F5C</code>, reached through the 128-byte id &rarr; index map at <code>0x801F4E63</code> - feeds the arts / physical branch and shares this table's id space: power records for move ids <code>0x25..=0x74</code> are the named monster special-attacks, <code>0x04..=0x1F</code> the unnamed tiers. See the <a href="move-power.html">move-power table</a>.</li>
-  </ul>
-  <p>The <code>base_power</code> figures in <code>engine-core::retail_magic</code> stay MP-scaled placeholders until the summon roll is wired into a live battle context.</p>
+  <p>Whenever the arts index is <code>1 mod 3</code>, the arts name pointer and a phantom spell record's name pointer are the same four bytes (spell <code>0xD7</code> = arts record 1, Burning Flare). A rename through either coordinate is one write. <code>asset spell-names</code> sweeps 256 ids for inspection, so the aliased rows show above <code>0xD4</code>; the patcher stops at 190.</p>
   <details class="disclosure">
-    <summary>History: the summon jump-table hypothesis</summary>
-    <div class="disclosure-body"><p>"The magnitude is in the summon jump table" is falsified: the JT at <code>0x801F69D8</code> (<code>FUN_801f2d68</code>, <code>state &lt; 7</code>) resolves into the resident render overlay (PROT 0900) - staggered entry points into one per-frame routine that lerps anim banks and emits GPU packets, with no multiply, no HP write, no power read. The <code>0xC5</code> MES substitution table at <code>DAT_80075EC4</code>, once mistaken for a spell-name source, is the <a href="art-data.html">Tactical Arts name table</a>. See <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p></div>
+    <summary>History: "+4 is an animation id"</summary>
+    <div class="disclosure-body"><p>The <code>+4</code> byte was once recorded as an animation id. The summon animation is dispatched by <code>spell_id - 0x81</code>, and the menu overlay's info window pins <code>+4</code> as the description index.</p></div>
   </details>
 </section>
 
-<section class="doc-section" id="parser">
-  <h2>Parser + engine consumption</h2>
-  <p><code>legaia_asset::spell_names</code> resolves the table from a <code>SCUS_942.54</code> image (PSX-EXE <code>t_addr</code> &rarr; file-offset map); CLI <code>asset spell-names &lt;SCUS&gt; [--json]</code>. The engine sources the player Seru-magic catalog's MP + target from the user's executable via <code>engine-core::retail_magic::seru_magic_catalog_from_scus</code>, falling back to the pinned <code>retail_seru_magic_catalog</code> on disc-free builds; the disc-gated <code>spell_catalog_disc</code> test confirms all 11 pinned targets + MP byte-for-byte. The <a href="../tooling/randomizer.html#spell-cost">spell-cost slider</a> edits the <code>+3</code> byte in place across the 190 records. Source of record: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/spell-table.md" target="_blank" rel="noopener"><code>docs/formats/spell-table.md</code></a>.</p>
+<section class="doc-section" id="no-power-scalar">
+  <h2>Where the damage comes from</h2>
+  <p>The table carries <strong>no power field</strong>. The cast state reads only MP, the class byte and the name pointer; the static attack-vs-defence kernel is melee / arts only. Magnitude is computed at cast time by whichever overlay runs the spell:</p>
+  <ul class="bullets">
+    <li><strong>Damage summons</strong> (PROT 0904 / 0912 / 0914 and one arm of 0915) roll <code>rand % (summon AGL + 1) + summon HP + caster AGL &times; 2</code> against a defender roll, then apply element affinity, status weakening and the 9999 cap - the kernels on the <a href="../subsystems/battle-formulas.html">battle-formulas</a> page, ported in <code>engine-vm::battle_formulas</code>.</li>
+    <li><strong>Heal summons</strong> (PROT 0903 / 0905 / 0910 / 0911 / 0913) compute <code>(power_byte &lt;&lt; 5) + 0xE0</code>, with the power byte read from the caster's character record.</li>
+    <li><strong>Capture-class casts</strong> carry baked constants in their <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/cast-module.md" target="_blank" rel="noopener">cast module</a>.</li>
+    <li>The per-move power scalar that <em>does</em> exist - the <a href="move-power.html">move-power table</a> - feeds the arts / physical branch and shares this id space (<code>0x25..=0x74</code> are the named monster attacks).</li>
+  </ul>
+  <p>The <code>base_power</code> figures in <code>engine-core::retail_magic</code> are MP-scaled placeholders until the summon roll runs in a live battle context.</p>
+  <details class="disclosure">
+    <summary>History: the summon jump-table hypothesis</summary>
+    <div class="disclosure-body"><p>"The magnitude is in the summon jump table" is falsified: the table at <code>0x801F69D8</code> resolves into the resident render overlay - staggered entry points into one per-frame routine that blends animation banks and emits GPU packets, with no multiply and no HP write. The <code>0xC5</code>-entry substitution table at <code>DAT_80075EC4</code>, once mistaken for a spell-name source, is the Tactical Arts name table. See <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p></div>
+  </details>
+</section>
+
+<section class="doc-section" id="how-we-know">
+  <h2>How we know</h2>
+  <table>
+    <thead><tr><th>Function</th><th>Address</th><th>What it proves</th><th>Dump</th></tr></thead>
+    <tbody>
+      <tr><td>Battle-action SM, cast states <code>0x28</code> / <code>0x3C</code></td><td><code>FUN_801E295C</code> (PROT 0898)</td><td>MP at <code>+3</code>, class at <code>+0</code>, name via <code>DAT_800754D0 + id*0xC</code>; no power read</td><td><code>overlay_battle_action_801e295c.txt</code></td></tr>
+      <tr><td>Enemy AI picker</td><td><code>FUN_801E9FD4</code> (PROT 0898)</td><td>Record array + formation switch both write the actor action byte; Delilas arm at <code>0x801EB7C0</code></td><td><code>overlay_battle_action_801e9fd4.txt</code></td></tr>
+      <tr><td>Menu spell info window</td><td><code>FUN_801D2E74</code> (PROT 0899)</td><td><code>+4</code> indexes the description pointers at <code>0x80075DB0</code></td><td><code>overlay_menu_801d2e74.txt</code></td></tr>
+      <tr><td>Melee kernel</td><td><code>FUN_801EC3E4</code></td><td>Returns early unless the queued action is a physical id - magic never reaches it</td><td><code>overlay_battle_action_801ec3e4.txt</code></td></tr>
+      <tr><td>Summon damage kernels</td><td><code>FUN_801DD0AC</code> / <code>FUN_801DD864</code> / <code>FUN_801DDB30</code></td><td>Summon magnitude is battle-state-derived</td><td><code>overlay_battle_action_801dd0ac.txt</code> + siblings</td></tr>
+      <tr><td>Overlay pager</td><td><code>FUN_8003EC70</code></td><td>Capture-class <code>sub + 0x28</code> and summon <code>id - 0x79</code> resolve to PROT 935.. / 903..</td><td><code>8003ec70.txt</code></td></tr>
+      <tr><td>Disc-gated tests</td><td><code>spell_catalog_disc</code>, <code>magic_vs_disc</code></td><td>All 11 pinned targets + MP byte-exact; curated chart joins on MP for 21 Seru + 7 Ra-Seru</td><td><code>crates/engine-core</code>, <code>crates/gamedata</code></td></tr>
+    </tbody>
+  </table>
+  <p>Source of record: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/spell-table.md" target="_blank" rel="noopener"><code>docs/formats/spell-table.md</code></a>.</p>
 </section>
 
 <section class="doc-section" id="see-also">
@@ -243,6 +274,7 @@
     <a href="steal-table.html">Steal table</a>
     <a href="../subsystems/battle-formulas.html">Battle formulas</a>
     <a href="../subsystems/battle-action.html">Battle-action SM</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/cast-module.md" target="_blank" rel="noopener">Cast modules</a>
     <a href="../subsystems/field-menu.html">Field menu</a>
     <a href="../reference/gamedata.html">Game-data tables</a>
     <a href="../reference/re-do-not-re-walk.html">Do not re-walk</a>

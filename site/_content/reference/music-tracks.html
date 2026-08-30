@@ -6,11 +6,15 @@
 
 <section class="doc-section" id="at-a-glance">
   <h2>At a glance</h2>
-  <ul class="bullets">
-    <li><strong>What it is:</strong> an 81-row table compiled by Stann0x, one row per debug sound-test slot, with the Japanese working title, its romaji and gloss, where the cue plays, the OST title (where one exists) and a relocalization title.</li>
-    <li><strong>Why it matters:</strong> retail has no track-name table at all - a scene script starts music by number. This table is the human-readable label layer for those numbers, the way the <a href="gamedata.html">curated game-data tables</a> label items and enemies.</li>
-    <li><strong>The disc join:</strong> global BGM id <code>2000 + i</code> plays sound-test track <code>i</code>, and track <code>i</code> lives in the <code>music_01</code> bank - but that bank is <strong>piecewise</strong> in extraction space: entries <code>988 + i</code> for <code>i &le; 67</code>, <code>990 + i</code> for <code>i &ge; 68</code>, with a two-entry gap at <code>1056</code>/<code>1057</code>. Not a flat base.</li>
-  </ul>
+  <dl class="kv">
+    <dt>What it is</dt><dd>An 81-row cross-reference, one row per debug sound-test slot, compiled by Stann0x.</dd>
+    <dt>Why it exists</dt><dd>Retail has no track-name table - a scene script starts music by number. This is the label layer for those numbers, the way the <a href="gamedata.html">curated game-data tables</a> label items and enemies.</dd>
+    <dt>Naming spaces</dt><dd>Debug sound-test ID + title &middot; in-game context &middot; official OST title &middot; proposed relocalization.</dd>
+    <dt>Disc join</dt><dd>Global BGM id <code>2000 + i</code> plays sound-test track <code>i</code>.</dd>
+    <dt>Bank layout</dt><dd>Piecewise: extraction entry <code>988 + i</code> for tracks <code>0..=67</code>, <code>990 + i</code> for <code>68..=80</code>, two-entry gap at <code>1056</code>/<code>1057</code>.</dd>
+    <dt>Resolver</dt><dd><code>legaia_engine_core::music_labels</code> - the engine HUD and viewers name tracks through it.</dd>
+    <dt>Confidence</dt><dd><span class="tag tag-partial">Inferred</span>; OST columns <span class="tag tag-done">Confirmed</span> against the published listing.</dd>
+  </dl>
 </section>
 
 <section class="doc-section" id="why">
@@ -33,37 +37,49 @@
 
 <section class="doc-section" id="disc-join">
   <h2>The disc-side join: the <code>music_01</code> bank in sound-test order</h2>
-  <p>When a scene script starts music it uses a number, not a name. A field-VM op-<code>0x35</code> BGM id <code>&ge; 2000</code> resolves through the global pool (<code>FUN_800243F0</code>, see <a href="../subsystems/script-vm.html">script VM</a>), and the pool order <strong>is</strong> the debug sound-test order, so <strong>global id <code>2000 + i</code> plays sound-test track <code>i</code></strong>. That id-space join is proven by the per-scene op-<code>0x35</code> census (<code>engine-core/tests/scene_bgm_labels_disc.rs</code>): <code>town01</code> starts <code>2016</code> = <code>M14B</code> "Rim Elm theme", the three kingdom maps start <code>2000</code>/<code>2001</code> = <code>M01</code>/<code>M02</code> overworld pair, <code>bylon</code> starts <code>2019</code> = <code>M17</code> "Byron Monastery", Sol's floors start <code>M16</code> casino / <code>M23</code> bar / <code>M100</code> Sol / <code>M112</code> disco, <code>geremi</code> starts <code>2047</code> = <code>M102</code> "Jeremi", the Bio-Castle interiors start <code>2013</code> = <code>M13</code>.</p>
+  <p>When a scene script starts music it uses a number, not a name. A script BGM id <code>&ge; 2000</code> resolves through the global pool, and the pool order <strong>is</strong> the debug sound-test order: <strong>global id <code>2000 + i</code> plays sound-test track <code>i</code></strong>. Reading every scene's own scripts and joining each started id against this table lands the right label across the board (evidence in <a href="#how-we-know">how we know</a>):</p>
+  <table>
+    <thead><tr><th>Scene</th><th>Script starts</th><th>Track it names</th></tr></thead>
+    <tbody>
+      <tr><td><code>town01</code> (Rim Elm)</td><td><code>2016</code></td><td>#16 <code>M14B</code> - Rim Elm theme</td></tr>
+      <tr><td>The three kingdom overworlds</td><td><code>2000</code> / <code>2001</code></td><td>#0 <code>M01</code> / #1 <code>M02</code> - the misty / mist-free overworld pair</td></tr>
+      <tr><td><code>bylon</code></td><td><code>2019</code></td><td>#19 <code>M17</code> - Byron Monastery</td></tr>
+      <tr><td>Sol's floors</td><td>per floor</td><td><code>M16</code> casino, <code>M23</code> bar, <code>M100</code> Sol, <code>M112</code> disco</td></tr>
+      <tr><td><code>geremi</code></td><td><code>2047</code></td><td>#47 <code>M102</code> - Jeremi</td></tr>
+      <tr><td>Bio-Castle interiors</td><td><code>2013</code></td><td>#13 <code>M13</code> - Bio-Castle</td></tr>
+    </tbody>
+  </table>
   <h3>The bank is piecewise, not a flat base</h3>
   <p>The <em>physical</em> <code>music_01</code> bank is not a single linear PROT run. Sound-test index maps onto two contiguous extraction ranges with a two-entry gap between them:</p>
   <figure class="overlay-strip">
     <svg viewBox="0 0 880 150" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="music-bank-title" style="width:100%;height:auto;font-family:'JetBrains Mono',monospace">
       <title id="music-bank-title">Sound-test index to extraction PROT entry: two runs with a two-entry gap</title>
-      <rect x="20" y="30" width="600" height="40" rx="4" fill="none" stroke="var(--accent)" stroke-width="1.5"/>
-      <text x="320" y="48" text-anchor="middle" font-size="12" fill="currentColor">tracks 0..=67</text>
-      <text x="320" y="63" text-anchor="middle" font-size="11" fill="var(--text-muted)">extraction 988 + i  (988..=1055)</text>
-      <rect x="628" y="30" width="60" height="40" rx="4" fill="none" stroke="var(--text-muted)" stroke-width="1.5" stroke-dasharray="4 3"/>
+      <rect x="20" y="30" width="580" height="40" rx="4" fill="none" stroke="var(--accent)" stroke-width="1.5"/>
+      <text x="310" y="48" text-anchor="middle" font-size="12" fill="currentColor">tracks 0..=67</text>
+      <text x="310" y="63" text-anchor="middle" font-size="11" fill="var(--text-muted)">extraction 988 + i  (988..=1055)</text>
+      <rect x="612" y="30" width="92" height="40" rx="4" fill="none" stroke="var(--text-muted)" stroke-width="1.5" stroke-dasharray="4 3"/>
       <text x="658" y="48" text-anchor="middle" font-size="11" fill="var(--text-muted)">gap</text>
       <text x="658" y="63" text-anchor="middle" font-size="10" fill="var(--text-muted)">1056, 1057</text>
-      <rect x="696" y="30" width="164" height="40" rx="4" fill="none" stroke="var(--accent)" stroke-width="1.5"/>
-      <text x="778" y="48" text-anchor="middle" font-size="12" fill="currentColor">tracks 68..=80</text>
-      <text x="778" y="63" text-anchor="middle" font-size="11" fill="var(--text-muted)">990 + i  (1058..=1070)</text>
+      <rect x="716" y="30" width="150" height="40" rx="4" fill="none" stroke="var(--accent)" stroke-width="1.5"/>
+      <text x="791" y="48" text-anchor="middle" font-size="12" fill="currentColor">tracks 68..=80</text>
+      <text x="791" y="63" text-anchor="middle" font-size="11" fill="var(--text-muted)">990 + i  (1058..=1070)</text>
       <text x="20" y="100" font-size="11" fill="var(--text-muted)">988 = the first two entries whose filename label reads "monster_test" (CDNAME +2 skew)</text>
       <text x="20" y="120" font-size="11" fill="var(--text-muted)">1056 = a VAB-only sound bank, no score; 1057 = an entry not in the sound-test list</text>
       <text x="20" y="140" font-size="11" fill="var(--text-muted)">1066..=1069 = the four placeholder-filled slots = dev-leftover rows #76..=79</text>
     </svg>
     <figcaption>Global BGM id <code>2000 + i</code> is one flat id space; the files behind it are two runs.</figcaption>
   </figure>
-  <p>The low range starts at extraction <strong>988</strong>, not 990: the first two tracks (<code>M01</code>/<code>M02</code>) live in the entries whose <code>prot-extract</code> filename label reads <code>monster_test</code>, because the <code>music_01</code> CDNAME <code>#define</code> number is a <em>raw</em> TOC index and the named content sits two entries earlier (<a href="../formats/cdname.html">the +2 filename skew</a>). Pinned by on-disc SEQ residency (<code>engine-core/tests/music_bank_residency_disc.rs</code>):</p>
-  <ul class="bullets">
-    <li><strong>Pochi alignment</strong>: the four placeholder-filled slots (extraction <code>1066..=1069</code>) land exactly on the four dev-leftover rows (#76..=79 - the M13 flute, <code>M117</code>, <code>MPIANO</code> and the <code>獸衣</code> row whose romaji is <code>LEVELUP</code>), still holding their sound-test slots in the retail NA disc.</li>
-    <li><strong>Battle-bank copies</strong>: the ten <code>sound_data2</code> boot/battle-bank SEQ copies (extraction <code>877..886</code>) resolve, under this map, to exactly the ten battle/boss themes (#26 Battle 1, #27 Battle 2, #28 Boss 1, #30 Songi, #31 Cort 1, #32 Boss 2, #51 Koru 2, #61 Juggernaut final, #67 Vahn-Saryu, #73 Wild Arms) - a coherent battle bank only when the low range is based at 988. (The title #65 is at extraction <code>1053</code>; it is <strong>not</strong> in the battle bank.)</li>
-  </ul>
-  <p>Scenes carry <strong>no local SEQ data</strong> - every SEQ stream on the disc lives in this bank + the <code>sound_data2</code> banks (+ the <code>monster_test</code> dev bank and <code>teien</code>'s scene-local copy of <code>M01</code>) - so the scene-local id space (<code>&lt; 2000</code>) is the rare exception. The engine's resolver is <code>legaia_engine_core::music_labels</code> (<code>prot_entry_for_bgm_id</code> / <code>label_for_bgm_id</code> / <code>label_for_prot_entry</code>), which owns the piecewise map; the play-window HUD names the playing track and the asset-viewer <code>seq</code> command names a bank slot's file.</p>
-  <details class="disclosure">
-    <summary>How the join was corroborated at runtime</summary>
+  <p>The low range starts at extraction <strong>988</strong>: the first two tracks (<code>M01</code>/<code>M02</code>) live in the entries whose extraction filename reads <code>monster_test</code>, because CDNAME <code>#define</code> numbers are raw TOC indices and the named content sits two entries earlier (<a href="../formats/cdname.html">the +2 filename skew</a>).</p>
+  <p>Scenes carry <strong>no local SEQ data</strong>: apart from a dev bank and one scene-local copy of <code>M01</code>, every music sequence on the disc lives in this bank plus the boot/battle banks, so the scene-local id space (<code>&lt; 2000</code>) is the rare exception. The engine's resolver <code>legaia_engine_core::music_labels</code> owns the piecewise map; the play-window HUD names the playing track and the asset-viewer <code>seq</code> command names a bank slot's file through it.</p>
+  <details class="disclosure" id="how-we-know">
+    <summary>How we know: script census, on-disc residency, runtime corroboration</summary>
     <div class="disclosure-body">
-      <p>Poll-tier playthrough captures corroborate the same join in the cases where the scene name itself names the track: the BGM global reads <code>2022</code> in <code>doman</code> (#22 <code>M21</code>, "Doctor Doman's laboratory"), <code>2054</code> in <code>nilboa</code> (#54 <code>M111</code>, "Nivora"), <code>2021</code> in <code>dolk2</code> (#21 <code>M20</code>, "Dolk Castle revived") against <code>2010</code> in mist-era <code>dolk</code> (#10 <code>M10</code>, "mist outbreak"), <code>2063</code> in <code>opdeene</code> (#63 <code>M118</code>, opening act 1), and <code>2038</code> in <code>taiku</code> after the Soren-flight FMV hand-off (#38 <code>M39</code>). Each live id lands on the track whose debug title describes that scene - independent of the script census, since these are the played values, not the op operands.</p>
+      <ul class="bullets">
+        <li><strong>Script census.</strong> The global pool resolves through <code>FUN_800243F0</code> (<a href="../subsystems/script-vm.html">script VM</a>). Walking every scene's field-VM op-<code>0x35</code> starts and joining each id against this table lands the right label across the corpus (<code>engine-core/tests/scene_bgm_labels_disc.rs</code>).</li>
+        <li><strong>Pochi alignment.</strong> The four placeholder-filled slots (extraction <code>1066..=1069</code>) land exactly on the four dev-leftover rows (#76..=79 - the M13 flute, <code>M117</code>, <code>MPIANO</code> and the row whose romaji is <code>LEVELUP</code>), still holding their sound-test slots on the retail NA disc.</li>
+        <li><strong>Battle-bank copies.</strong> The ten boot/battle-bank SEQ copies (extraction <code>877..886</code>) resolve, under this map, to exactly the ten battle/boss themes (#26, #27, #28, #30, #31, #32, #51, #61, #67, #73) - a coherent battle bank only when the low range is based at 988. The title theme #65 sits at extraction <code>1053</code> and is <strong>not</strong> in the battle bank. Pinned by on-disc SEQ residency (<code>engine-core/tests/music_bank_residency_disc.rs</code>).</li>
+        <li><strong>Runtime corroboration.</strong> Playthrough captures show the live BGM global agreeing with the join wherever the scene name itself names the track: <code>2022</code> in <code>doman</code> (#22 "Doctor Doman's laboratory"), <code>2054</code> in <code>nilboa</code> (#54 "Nivora"), <code>2021</code> in <code>dolk2</code> (#21 "Dolk Castle revived") against <code>2010</code> in mist-era <code>dolk</code> (#10 "mist outbreak"), <code>2063</code> in <code>opdeene</code> (#63 opening act 1), <code>2038</code> in <code>taiku</code> (#38 Soren flight). These are played values, independent of the script census.</li>
+      </ul>
     </div>
   </details>
   <div class="see-also">

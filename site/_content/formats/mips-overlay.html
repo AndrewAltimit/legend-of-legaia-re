@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; mips overlay code</div>
   <h1>MIPS overlay code <span class="tag tag-partial">Inferred</span></h1>
-  <p class="lede">Some entries of <code>PROT.DAT</code> (the disc's main asset archive) contain not game assets but <em>code</em>: overlays, chunks of MIPS machine code the game loads into RAM on demand because the whole engine doesn't fit in memory at once. Most of Legaia's game logic actually lives in overlays rather than the main executable. This page covers how the project detects the smaller specialised code blobs in the <code>0901..=0969_xxx_dat</code> PROT range - distinct from the major full-scene overlays (title / town / battle / options). They all load into the overlay window at <code>0x801C0000+</code>, the RAM region reserved for swappable code.</p>
+  <p class="lede">Some entries of <code>PROT.DAT</code> (the disc's main asset archive) contain not game assets but <em>code</em>: overlays, chunks of MIPS machine code the game loads into RAM on demand because the whole engine does not fit in memory at once. Most of Legaia's game logic lives in overlays rather than the main executable. This page covers how the project recognises the smaller specialised code blobs in the <code>0901..=0969_xxx_dat</code> range - distinct from the big full-mode overlays (title / town / battle / options). All of them load into the overlay window, the RAM region reserved for swappable code.</p>
 </header>
 
 <section class="doc-section" id="at-a-glance">
@@ -11,26 +11,50 @@
     <dt>Magic / marker</dt><dd>No header - the blob begins with a MIPS function prologue (<code>addiu sp, sp, -X</code> = <code>0x27BDFFxx</code>)</dd>
     <dt>Lives in</dt><dd><a href="prot.html">PROT.DAT</a> entries in the <code>0901..=0969</code> range (extraction index), 14-37 KB each; loads into the overlay window <code>0x801C0000..0x80200000</code></dd>
     <dt>Parser</dt><dd><code>legaia_asset::mips_overlay::detect</code> (<code>crates/asset/src/mips_overlay.rs</code>); category <code>mips_overlay</code> in the categorize pipeline</dd>
-    <dt>Confidence</dt><dd>Inferred - a shape heuristic (zero false positives over the corpus), not a loader trace; the per-blob load base still comes from the asset chain that pulls each one in.</dd>
+    <dt>Confidence</dt><dd>Inferred - a shape heuristic with zero false positives over the corpus, not a loader trace; each blob's load base comes from the asset chain that pulls it in.</dd>
+    <dt>Used by</dt><dd><a href="../tooling/static-overlay-pipeline.html">Static overlay pipeline</a>, <a href="../tooling/overlay-capture.html">Overlay capture</a></dd>
   </dl>
-</section>
-
-<section class="doc-section" id="overview">
-  <h2>Overview</h2>
-  <p>Nothing on the disc labels these entries as code - they look like any other binary blob. The detector below identifies them by a fingerprint every compiled MIPS function starts with. Implementation: <code>crates/asset/src/mips_overlay.rs</code>.</p>
 </section>
 
 <section class="doc-section" id="layout">
   <h2>Layout</h2>
+  <p>Nothing on the disc labels these entries as code - they look like any other binary blob. Every compiled MIPS function opens by moving the stack pointer down to make room for its locals, so a blob that <em>begins</em> with that instruction is a code image whose entry function starts at byte 0.</p>
+
+  <figure class="overlay-strip">
+    <svg viewBox="0 0 760 132" width="100%" style="max-width: 760px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A MIPS overlay blob: the first word is the stack adjust addiu sp, sp, -X, the second word is a prologue follow-up such as sw ra, and the rest is code">
+      <style>
+        .mo-box  { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.3; }
+        .mo-soft { fill: var(--bg-raised); stroke: var(--border); stroke-width: 1.1; stroke-dasharray: 4 3; }
+        .mo-lab  { font: 12px sans-serif; fill: currentColor; }
+        .mo-sub  { font: 11px monospace; fill: var(--text-muted); }
+        .mo-off  { font: 11px monospace; fill: var(--accent); }
+      </style>
+      <text class="mo-off" x="16" y="18">+0x00</text>
+      <text class="mo-off" x="216" y="18">+0x04</text>
+      <text class="mo-off" x="416" y="18">+0x08</text>
+      <rect class="mo-box" x="16" y="26" width="200" height="64" rx="3"/>
+      <text class="mo-lab" x="116" y="52" text-anchor="middle">stack adjust</text>
+      <text class="mo-sub" x="116" y="72" text-anchor="middle">addiu sp, sp, -X</text>
+      <rect class="mo-box" x="216" y="26" width="200" height="64" rx="3"/>
+      <text class="mo-lab" x="316" y="52" text-anchor="middle">prologue follow-up</text>
+      <text class="mo-sub" x="316" y="72" text-anchor="middle">sw ra / addiu / lui / lw</text>
+      <rect class="mo-soft" x="416" y="26" width="328" height="64" rx="3"/>
+      <text class="mo-lab" x="580" y="52" text-anchor="middle">code (14-37 KB)</text>
+      <text class="mo-sub" x="580" y="72" text-anchor="middle">position-dependent on load base</text>
+      <text class="mo-sub" x="16" y="118">0x27BDFFxx</text>
+      <text class="mo-sub" x="216" y="118">0xAFB?00xx or similar</text>
+    </svg>
+    <figcaption>The detector reads only the first two words; everything after them is the overlay body.</figcaption>
+  </figure>
+
   <table class="layout">
     <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
     <tbody>
       <tr><td><code>+0x00</code></td><td>4</td><td>first instruction</td><td><code>0x27BDFFxx</code> - <code>addiu sp, sp, -X</code>, the negative stack adjust that opens a compiled function</td></tr>
       <tr><td><code>+0x04</code></td><td>4</td><td>prologue follow-up</td><td><code>sw ra/s*</code> (<code>0xAFB?_00XX</code>), or another <code>addiu</code> / <code>lui</code> / <code>lw</code> / R-type - the second instruction of the entry function's prologue</td></tr>
-      <tr><td><code>+0x08</code></td><td>rest</td><td>code</td><td>The rest of the overlay code blob, position-dependent on its load base</td></tr>
+      <tr><td><code>+0x08</code></td><td>rest</td><td>code</td><td>The overlay body, position-dependent on its load base</td></tr>
     </tbody>
   </table>
-  <p>The first instruction of a standard compiled MIPS function is a stack-pointer adjustment (the function "prologue") - so a blob that <em>begins</em> with one is very likely a code image whose entry function starts at byte 0.</p>
 </section>
 
 <section class="doc-section" id="detection">
@@ -41,21 +65,6 @@
     <li><code>(u32_le[0] &amp; 0xFF) ∈ [0x80, 0xF8]</code> - only accept reasonable stack adjustments (8 to 128 bytes).</li>
     <li><code>u32_le[1]</code>'s 6-bit MIPS opcode field is one of the common function-prologue follow-ups (<code>sw</code>, <code>addiu</code>, <code>lui</code>, <code>lw</code>, R-type, ldc/sdc).</li>
   </ol>
-</section>
-
-<section class="doc-section" id="cluster-anatomy">
-  <h2>Cluster anatomy</h2>
-  <p>All matches cluster in the <code>0901..=0969</code> PROT range - sized 14 KB to 37 KB (one outlier at 163 KB for <code>0969_xxx_dat.BIN</code>). The <code>find-overlay</code> heuristic ranks these as MIPS-code-shape candidates; this detector formalises that ranking into the categorize pipeline (the sweep that classifies every archive entry by format).</p>
-  <p>Each entry can be imported into Ghidra (the disassembler this project uses) via <a href="../tooling/overlay-capture.html"><code>scripts/ghidra-analysis/bulk-import-overlays.sh</code></a> once a base address is determined. The overlay window is <code>0x801C0000</code>–<code>0x80200000</code>; each blob loads at a specific offset within that range, determinable from the asset chain that pulls it in.</p>
-</section>
-
-<section class="doc-section" id="likely-subsystems">
-  <h2>Likely subsystems</h2>
-  <p>Based on size and the <code>xxx_dat</code> clustering: cutscenes, world-map, menu screens, mini-games, or per-scene specialised code that doesn't fit in the main town-field overlay.</p>
-</section>
-
-<section class="doc-section" id="reading-the-format">
-  <h2>Reading the format</h2>
 <pre><code>use legaia_asset::mips_overlay;
 
 if let Some(m) = mips_overlay::detect(buf) {
@@ -64,14 +73,50 @@ if let Some(m) = mips_overlay::detect(buf) {
 }</code></pre>
 </section>
 
-<section class="doc-section" id="address-attestation">
-  <h2>Address attestation in overlay dumps</h2>
-  <p>A dumped function's <em>printed</em> addresses are trustworthy only when the dump's link base was recovered correctly; a filename prefix is not evidence of the base. Two failure modes recur across the battle / minigame overlay dumps and disqualify most raw addresses from being documented at their printed VA. The byte-match arbiter (<code>scripts/ghidra-analysis/classify-worklist.py --explain &lt;addr&gt;</code>) resolves the true image per address; trust its <code>image=</code> verdict, not the dump filename.</p>
+<section class="doc-section" id="cluster-anatomy">
+  <h2>Where they sit and what they do</h2>
   <ul class="bullets">
-    <li><strong>Mis-recovered base.</strong> The <code>bat_back_dat</code> (PROT 0896) dump family splits across <strong>two</strong> imports, neither at a runtime base (0896's link base is unrecovered): an untagged batch at <code>0x801C0000</code>, whose prints above 0896's own <code>0x9000</code> bytes read <em>through</em> into the field (0897) and battle-action (0898) overlays, and a batch tagged <code>[overlay_0896 base=0x801C5818]</code> (the phantom jal-recovered base). The arbiter resolves most 0896 entries to field / battle bodies or interior / shared-tail fragments, never to a standalone <code>bat_back_dat</code> function at the printed VA. Per-program re-key law: <code>docs/reference/overlay-va-aliases.md</code>.</li>
-    <li><strong>Relocation-duplicate re-images.</strong> The debug-menu (0971), minigame (0977 / 0978) and menu (0899) overlays re-image a shared render / minigame library at a different base per game-mode context - the same <code>0900</code>&harr;<code>0901</code> / <code>0965</code>&harr;<code>0967</code> re-imaging pattern noted in <a href="../reference/functions.html">functions</a>. Their bodies are byte-identical modulo relocation to already-dumped bodies in debug_menu (0970) / the minigame base slot (0972) / menu (0899); the arbiter reports each such address as a <code>DUPLICATE</code> of the canonical VA.</li>
+    <li><strong>Range.</strong> Every match is in the <code>0901..=0969</code> extraction range, 14 KB to 37 KB, with one 163 KB outlier at <code>0969_xxx_dat.BIN</code>.</li>
+    <li><strong>Load base.</strong> The overlay window is <code>0x801C0000..0x80200000</code>; each blob loads at a fixed offset inside it, determined by the asset chain that pulls it in. Recovered bases are committed in <code>crates/asset/data/static-overlays.toml</code>.</li>
+    <li><strong>Likely jobs.</strong> From size and the <code>xxx_dat</code> clustering: cutscenes, world map, menu screens, minigames, and per-scene special code that does not fit in the main town-field overlay.</li>
+    <li><strong>Importing.</strong> Once a base is known, <a href="../tooling/overlay-capture.html"><code>scripts/ghidra-analysis/bulk-import-overlays.sh</code></a> loads the blob into Ghidra (the disassembler this project uses) at that base.</li>
   </ul>
-  <p>Name these by extraction index, not by minigame. The CDNAME block <code>other_game</code> (<code>#define other_game 974</code>) opens at extraction <strong>0972</strong> and its names inherit forward to <strong>0977</strong>, so every slot in that span wears one label while the slots do different jobs - 0977 is the Muscle Dome arena's door/init slot, not a fishing overlay. Extraction <strong>0978</strong> is outside the block entirely; it opens <code>monster_test</code>. A CDNAME label is a hint, not a verdict (<a href="cdname.html">CDNAME numbering</a>). Only <code>REAL</code> self-entry bodies at a recovered base attest a distinct function at their printed address.</p>
+</section>
+
+<section class="doc-section" id="address-attestation">
+  <h2>Trusting an address from an overlay dump</h2>
+  <p>A dumped function's <em>printed</em> address is only as good as the base the dump was made at; a filename prefix is not evidence of the base. Before citing an overlay address, run the byte-match arbiter (<code>scripts/ghidra-analysis/classify-worklist.py --explain &lt;addr&gt;</code>) and trust its <code>image=</code> verdict. Only a <code>REAL</code> self-entry body at a recovered base attests a distinct function at its printed address.</p>
+  <table>
+    <thead><tr><th>Failure mode</th><th>Where it bites</th><th>What the arbiter reports</th></tr></thead>
+    <tbody>
+      <tr><td>Mis-recovered base</td><td>The <code>bat_back_dat</code> (PROT 0896) dump family, whose link base is unrecovered</td><td>Field / battle bodies or interior fragments - never a standalone 0896 function at the printed VA</td></tr>
+      <tr><td>Relocation duplicate</td><td>Debug-menu (0971), minigame (0977 / 0978) and menu (0899) overlays re-image a shared library at a different base per mode</td><td><code>DUPLICATE</code> of the canonical VA in 0970 / 0972 / 0899</td></tr>
+      <tr><td>Inherited CDNAME label</td><td>The <code>other_game</code> block opens at extraction 0972 and its name carries forward to 0977</td><td>Name by extraction index: 0977 is the Muscle Dome door/init slot, not a fishing overlay; 0978 opens <code>monster_test</code></td></tr>
+    </tbody>
+  </table>
+  <details class="disclosure">
+    <summary>Details: the two 0896 imports and the re-image pairs</summary>
+    <div class="disclosure-body">
+      <ul class="bullets">
+        <li>PROT 0896 is dumped twice, neither at a runtime base: an untagged batch at <code>0x801C0000</code>, whose prints above 0896's own <code>0x9000</code> bytes read <em>through</em> into the field (0897) and battle-action (0898) overlays, and a batch tagged <code>[overlay_0896 base=0x801C5818]</code> - a phantom base recovered from a <code>jal</code>. No dump in this family can be cited by its printed address. Per-program re-key law: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/overlay-va-aliases.md"><code>docs/reference/overlay-va-aliases.md</code></a>.</li>
+        <li>The re-image pattern is the same one <a href="../reference/functions.html">functions</a> records for <code>0900</code>&harr;<code>0901</code> and <code>0965</code>&harr;<code>0967</code>: bodies byte-identical modulo relocation to an already-dumped body.</li>
+        <li>A CDNAME label is a hint, not a verdict - see <a href="cdname.html">CDNAME numbering</a>.</li>
+      </ul>
+    </div>
+  </details>
+</section>
+
+<section class="doc-section" id="how-we-know">
+  <h2>How we know</h2>
+  <table>
+    <thead><tr><th>Claim</th><th>Evidence</th><th>Where</th></tr></thead>
+    <tbody>
+      <tr><td>Prologue shape identifies code</td><td>Zero false positives over every PROT entry; every match disassembles as MIPS from byte 0</td><td><code>crates/asset/src/mips_overlay.rs</code>, categorize sweep</td></tr>
+      <tr><td>Overlay window <code>0x801C0000..0x80200000</code></td><td>Load targets of the overlay loader; RAM map</td><td><a href="../reference/memory-map.html">Memory map</a>, <a href="../subsystems/boot.html">Boot sequence</a></td></tr>
+      <tr><td>Per-blob load bases</td><td>Statically recovered from the loader constants and cross-checked against captures</td><td><code>crates/asset/data/static-overlays.toml</code>, <a href="../tooling/static-overlay-pipeline.html">static overlay pipeline</a></td></tr>
+      <tr><td>Address attestation rules</td><td>Byte-match of each dumped body against every image</td><td><code>scripts/ghidra-analysis/classify-worklist.py</code>, <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/dump-corpus-integrity.md"><code>docs/tooling/dump-corpus-integrity.md</code></a></td></tr>
+    </tbody>
+  </table>
 </section>
 
 <section class="doc-section" id="see-also">

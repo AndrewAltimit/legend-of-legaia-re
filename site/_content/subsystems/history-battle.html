@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; <a href="battle.html">battle</a> &middot; capture notes</div>
   <h1>Battle: capture notes</h1>
-  <p class="lede">The save-state diffs and watchpoint captures that pinned parts of the <a href="battle.html">battle subsystem</a>. These are the measurements, kept for anyone re-deriving a claim; the conclusions they support are stated on the main page. Falsified readings live on <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p>
+  <p class="lede">The save-state diffs and watchpoint captures behind the <a href="battle.html">battle subsystem</a>'s claims. These are the measurements, kept for anyone re-deriving a claim; the conclusions live on the main page and the struct tables on <a href="battle-internals.html">battle internals</a>. Falsified readings live on <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p>
 </header>
 
 <section class="doc-section" id="encounter-diff">
@@ -31,7 +31,7 @@
       <tr><td><code>0x801FFCA0..0x801FFFFE</code></td><td>~600 B</td><td>CD I/O state slice; rewires while the battle bundle is paged in.</td></tr>
     </tbody>
   </table>
-  <p>The pair is <strong>post-load</strong> by design - both save frames resolve to a state where the loader function has already returned. The loader function (which reads PROT entry <code>0x05C4</code> + sibling Seru blobs and populates the battle bundle) lives in an overlay slice that is not directly visible in either snapshot. Pinning it requires a mid-execution capture between the field&rarr;battle game-mode flip and this residency state.</p>
+  <p>The pair is <strong>post-load</strong> by design - both save frames resolve to a state where the loader function has already returned. The loader itself (which reads PROT entry <code>0x05C4</code> + sibling Seru blobs and populates the battle bundle) lives in an overlay slice not visible in either snapshot; only a mid-execution capture between the field&rarr;battle mode flip and this residency state could pin it directly.</p>
   <p>Codified as <code>engine_core::capture_observations::battle_init_overlay</code>; disc-gated test <code>battle_init_overlay_pair_pins_battle_bundle_window_and_actor_tick_wiring</code>.</p>
 </section>
 
@@ -46,7 +46,7 @@
       <tr><td>Actor pool slots 0..4</td><td>per-frame motion deltas</td><td>3 party + 2 monsters (count-2 formation). Slots 5..7 stay zero across the pair.</td></tr>
     </tbody>
   </table>
-  <p>The captured pair uses a <strong>Healing Leaf</strong> (consumable HP-restore) - not Fire Book I (a spell-learn item). The pair therefore pins the residency window of the item-use battle-event handler without lifting the Fire Book-specific writer to the displayed-skills array at <code>+0x185</code>. A second save pair specifically capturing Fire Book I use is required to lift that writer.</p>
+  <p>The captured pair uses a <strong>Healing Leaf</strong> (consumable HP-restore), not a spell-learn item, so it pins the residency window of the item-use battle-event handler but says nothing about the spell-learn writer to the displayed-skills array at <code>+0x185</code> - that writer needs its own capture pair.</p>
   <p>Codified as <code>engine_core::capture_observations::item_use_battle_event</code>; disc-gated test <code>item_use_pair_pins_field_pack_base_flip_and_script_vm_ctx_shift</code>.</p>
 </section>
 

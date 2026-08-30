@@ -1,233 +1,181 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; field-pack format</div>
   <h1>Field-pack format <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">Rim Elm is the first town a player walks around, and the entries that carry it on the disc are unusual: a handful of them open with a scene-shaped script table, then a magic number, then a 97-slot offset table (the "schema") and the ~91 KB block it indexes. That block turns out to be <strong>byte-identical in every file that carries it</strong> - a shared template, not per-scene data - and the magic itself is decorative: nothing in the game's code ever checks it. The real per-scene payload is the <em>preamble</em> in front of the block. This page is as much about what the format is <em>not</em> as what it is; the detector is solid, the interpretation is bracketed. Detector + dispatch: <code>crates/asset/src/field_pack.rs</code>.</p>
+  <p class="lede">Rim Elm is the first town a player walks around, and the disc entries that carry it are unusual: they
+  open with a scene-shaped script table, then a magic number, then a 97-slot offset table (the "schema") and the ~91 KB
+  block it indexes. That block is <strong>byte-identical in every file that carries it</strong> - a shared template, not
+  per-scene data - and no game code ever checks the magic. The real per-scene payload is the preamble in front.</p>
 </header>
 
 <section class="doc-section" id="at-a-glance">
   <h2>At a glance</h2>
   <dl class="kv">
-    <dt>In the game</dt><dd>The Rim Elm field entries (<code>town01</code> / <code>town0b</code> / <code>town0c</code>) and the game-over data - the scene the player sees first.</dd>
-    <dt>Magic / marker</dt><dd><code>0x01059B84</code> - present raw in only four of the eight schema carriers, and referenced by no code</dd>
-    <dt>Lives in</dt><dd>Eight <a href="prot.html">PROT.DAT</a> entries: <code>0002_gameover_data</code>, <code>0003</code>/<code>0004</code>/<code>0005_town01</code> (stamped) and <code>0020_town0b</code>, <code>0021</code>/<code>0022</code>/<code>0023_town0c</code> (unstamped); extraction-index names</dd>
-    <dt>Retail reader</dt><dd>No magic-checked loader. The scene loader chain is <code>FUN_801D6704</code> (overlay 0897) &rarr; <code>FUN_8001F7C0</code> &rarr; <code>FUN_80020224</code> &rarr; <code>FUN_8001F05C</code>; slots are read at static offsets</dd>
-    <dt>Parser</dt><dd><code>legaia_asset::field_pack::FieldPack</code> + <code>CANONICAL_SCHEMA</code>; CLI <code>asset field-pack</code> / <code>asset field-pack-scan</code></dd>
-    <dt>Confidence</dt><dd>Confirmed as a detector and for the "global constant block" finding (byte scan of the corpus, disc-gated <code>field_pack_real.rs</code>); per-slot meaning is <em>inferred</em> from size clustering only.</dd>
+    <dt>Where</dt><dd>Eight <a href="prot.html">PROT.DAT</a> entries (extraction names): <code>0002_gameover_data</code>, <code>0003</code> / <code>0004</code> / <code>0005_town01</code>, <code>0020_town0b</code>, <code>0021</code> / <code>0022</code> / <code>0023_town0c</code></dd>
+    <dt>Magic</dt><dd><code>0x01059B84</code> - raw in only four of the eight carriers, referenced by no code</dd>
+    <dt>Size / stride</dt><dd>Schema: 97 &times; u32 (388 bytes), slots <code>0x60..0x16651</code>; block ~91 KB</dd>
+    <dt>Parser</dt><dd><code>legaia_asset::field_pack::FieldPack</code> + <code>CANONICAL_SCHEMA</code>; CLI <code>asset field-pack</code> / <code>field-pack-scan</code></dd>
+    <dt>Confidence</dt><dd>Confirmed as a detector and for the constant-block finding (corpus byte scan, disc-gated <code>field_pack_real.rs</code>); per-slot meaning is Inferred from size clustering only</dd>
+    <dt>Used by</dt><dd><a href="scene-bundles.html">scene bundles</a>, <a href="../subsystems/asset-loader.html">asset loader</a>, <a href="../world.html">world viewer</a></dd>
   </dl>
 </section>
 
 <section class="doc-section" id="layout">
   <h2>Layout</h2>
+  <figure class="overlay-strip">
+    <svg viewBox="0 0 880 90" width="100%" style="max-width:880px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A field-pack carrier: per-scene preamble, optional magic stamp, constant schema and constant block, then assets">
+      <style>
+        .fp-var  { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.4; }
+        .fp-const{ fill: var(--bg-raised); stroke: var(--border); stroke-width: 1.1; stroke-dasharray: 4 3; }
+        .fp-seg  { font: 11px 'Inter', sans-serif; fill: currentColor; text-anchor: middle; }
+        .fp-sub  { font: 10px 'JetBrains Mono', monospace; fill: var(--text-muted); text-anchor: middle; }
+      </style>
+      <rect x="20" y="20" width="270" height="34" class="fp-var"/><text x="155" y="41" class="fp-seg">preamble (per scene)</text>
+      <rect x="290" y="20" width="60" height="34" class="fp-const"/><text x="320" y="41" class="fp-seg">magic</text>
+      <rect x="350" y="20" width="110" height="34" class="fp-const"/><text x="405" y="41" class="fp-seg">schema 388 B</text>
+      <rect x="460" y="20" width="220" height="34" class="fp-const"/><text x="570" y="41" class="fp-seg">~91 KB constant block</text>
+      <rect x="680" y="20" width="180" height="34" class="fp-var"/><text x="770" y="41" class="fp-seg">TIMs / TMDs (some)</text>
+      <text x="155" y="74" class="fp-sub">0 - 234 KB</text>
+      <text x="320" y="74" class="fp-sub">4 of 8</text>
+      <text x="570" y="74" class="fp-sub">identical everywhere</text>
+      <text x="770" y="74" class="fp-sub">0 - 250 KB</text>
+    </svg>
+    <figcaption>Solid outline = per-scene content; dashed = a shared template the build tool stamped into each carrier. <code>0005_town01</code> and <code>0023_town0c</code> are the template alone: block at offset 0, no preamble, no assets.</figcaption>
+  </figure>
   <table class="layout">
-    <thead><tr><th>Region</th><th>Size</th><th>Content</th><th>Varies per scene?</th></tr></thead>
+    <thead><tr><th>Region</th><th>Size</th><th>Content</th><th>Varies?</th></tr></thead>
     <tbody>
-      <tr><td>preamble</td><td>0 - 234 KB</td><td>Per-scene payload: <code>u16 count</code> + ascending <code>u16</code> offset table + records - the <a href="scene-bundles.html#scene-event-scripts-prescript-only"><code>scene_event_scripts</code></a> prescript shape</td><td><strong>yes</strong></td></tr>
-      <tr><td>magic</td><td>4</td><td><code>0x01059B84</code> (u32 LE) - only 4 of the 8 carriers</td><td>stamp only</td></tr>
-      <tr><td>schema</td><td>388</td><td>97 x u32 LE slot offsets, anchored on <code>slots[0] == 0x60</code> and <code>slots[96] == 0x16651</code>; byte-identical everywhere (MD5 <code>edcfdf1575889d63d2077c396089d7f3</code>)</td><td>no</td></tr>
-      <tr><td>schema-indexed region</td><td>~91 KB</td><td>The block the slots point into - a <strong>global constant</strong> (FNV/SHA <code>c85d6a44d742...</code> in every full-length carrier)</td><td>no</td></tr>
-      <tr><td>asset region</td><td>0 - 250 KB</td><td>Packed TIMs / TMDs, in some files</td><td>yes</td></tr>
+      <tr><td>preamble</td><td>0 - 234 KB</td><td><code>u16 count</code> + ascending <code>u16</code> offsets + records: the <a href="scene-bundles.html#scene-event-scripts-prescript-only">scene_event_scripts</a> prescript shape</td><td><strong>yes</strong></td></tr>
+      <tr><td>magic</td><td>4</td><td><code>0x01059B84</code>, in 4 of 8 carriers</td><td>stamp only</td></tr>
+      <tr><td>schema</td><td>388</td><td>97 &times; u32 slot offsets; <code>slots[0] = 0x60</code>, <code>slots[96] = 0x16651</code>; MD5 <code>edcfdf15…</code> everywhere</td><td>no</td></tr>
+      <tr><td>block</td><td>~91 KB</td><td>The slots' target; hash <code>c85d6a44…</code> in every full-length carrier</td><td>no</td></tr>
+      <tr><td>assets</td><td>0 - 250 KB</td><td>Packed TIMs / TMDs, in some files</td><td>yes</td></tr>
     </tbody>
   </table>
-
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 880 150" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="fp-fig-title">
-      <title id="fp-fig-title">A field-pack carrier: per-scene preamble, optional magic stamp, constant schema and constant block, then assets</title>
-      <style>
-        .fp-lab  { font: 11px 'Inter', sans-serif; fill: var(--text-muted); }
-        .fp-var  { fill: var(--bg-card); stroke: var(--accent); stroke-width: 1.4; }
-        .fp-const{ fill: var(--bg-card); stroke: var(--border); stroke-width: 1.1; stroke-dasharray: 4 3; }
-        .fp-seg  { font: 10px 'Inter', sans-serif; fill: var(--text-muted); text-anchor: middle; }
-      </style>
-      <rect x="20" y="30" width="300" height="34" class="fp-var"/><text x="170" y="51" class="fp-seg">preamble - per-scene prescript (varies)</text>
-      <rect x="320" y="30" width="40" height="34" class="fp-const"/><text x="340" y="51" class="fp-seg">magic</text>
-      <rect x="360" y="30" width="80" height="34" class="fp-const"/><text x="400" y="51" class="fp-seg">schema 388 B</text>
-      <rect x="440" y="30" width="240" height="34" class="fp-const"/><text x="560" y="51" class="fp-seg">~91 KB block - identical in every carrier</text>
-      <rect x="680" y="30" width="180" height="34" class="fp-var"/><text x="770" y="51" class="fp-seg">TIMs / TMDs (some files)</text>
-      <text x="20" y="100" class="fp-lab">solid outline = per-scene content; dashed = a shared template the build tool stamped into each carrier</text>
-      <text x="20" y="122" class="fp-lab">0005_town01 / 0023_town0c are the template alone: block at offset 0, no preamble, no assets</text>
-    </svg>
-    <figcaption>The eight carriers share the dashed middle byte-for-byte; only the solid ends differ.</figcaption>
-  </figure>
 </section>
 
 <section class="doc-section" id="corrected">
-  <h2>What varies and what does not</h2>
-  <p>Scope from a raw PROT scan, pinned by <code>crates/asset/tests/field_pack_real.rs</code>: the magic appears <strong>raw in exactly four PROT entries</strong>, the 97-entry schema <em>signature</em> in <strong>eight</strong> (the other four carry it <strong>without</strong> the magic prefix), and the ~91 KB schema-indexed region is byte-identical across town01 <strong>and</strong> town0c. Two facts fall out:</p>
+  <h2>The eight carriers</h2>
+  <table>
+    <thead><tr><th>PROT</th><th>magic?</th><th>preamble</th><th>block</th><th>TIMs / TMDs</th></tr></thead>
+    <tbody>
+      <tr><td><code>0002_gameover_data</code></td><td>yes</td><td>234 KB</td><td>5.7 KB (truncated)</td><td>2 TIMs + TMDs</td></tr>
+      <tr><td><code>0003_town01</code></td><td>yes</td><td>233 KB</td><td>full</td><td>5 TIMs + 2 TMDs</td></tr>
+      <tr><td><code>0004_town01</code></td><td>yes</td><td>227 KB</td><td>full</td><td>5 TIMs + 1 TMD</td></tr>
+      <tr><td><code>0005_town01</code></td><td>yes</td><td>0</td><td>full</td><td>none</td></tr>
+      <tr><td><code>0020_town0b</code></td><td>no</td><td>222 KB</td><td>5.8 KB (truncated)</td><td>-</td></tr>
+      <tr><td><code>0021_town0c</code></td><td>no</td><td>222 KB</td><td>full</td><td>-</td></tr>
+      <tr><td><code>0022_town0c</code></td><td>no</td><td>213 KB</td><td>full</td><td>-</td></tr>
+      <tr><td><code>0023_town0c</code></td><td>no</td><td>0</td><td>full</td><td>-</td></tr>
+    </tbody>
+  </table>
   <ul class="bullets">
-    <li><strong>The ~91 KB region is a global constant.</strong> A block that is byte-identical across unrelated scenes is a shared template / default asset, not the scene's own field data. (<code>0002</code> and <code>0020</code> carry only a ~5.7 KB head of it.)</li>
-    <li><strong>The magic is decorative.</strong> The identical block ships with the magic in town01 and without it in town0c; combined with the word having <a href="#why-the-magic-isn-t-load-bearing">zero runtime references</a>, <code>0x01059B84</code> is a build-tool stamp, not a parser anchor. <code>0005</code>/<code>0023</code> are the same "template-only" entry, one stamped and one not.</li>
+    <li><strong>The block is a global constant.</strong> A region byte-identical across unrelated scenes is a shared template, not the scene's own field data.</li>
+    <li><strong>The magic is decorative.</strong> The same block ships stamped in town01 and unstamped in town0c, and no code references the word. <code>0005</code> / <code>0023</code> are the same template-only entry, one stamped and one not.</li>
+    <li><strong>The preamble is the scene.</strong> In <code>0003_town01</code> it opens with 63 records: record 0 a fixed 768-byte dispatch table, records 1.. word-aligned actor / event stager records (<code>0xFFFF 0x0000</code> lead, <code>0x0008</code> terminator) - not field-VM bytecode. Field files that carry no block at all open with the same prescript.</li>
   </ul>
-  <h3 id="what-the-four-entries-look-like">The eight schema carriers</h3>
-<table>
-<thead><tr>
-<th>PROT</th>
-<th>magic?</th>
-<th>preamble</th>
-<th>region (~91 KB)</th>
-<th>TIMs / TMDs</th>
-</tr></thead>
-<tbody>
-<tr><td><code>0002_gameover_data</code></td><td>yes</td><td>234 KB</td><td>5.7 KB (truncated)</td><td>2 TIMs + TMDs</td></tr>
-<tr><td><code>0003_town01</code></td><td>yes</td><td>233 KB</td><td>full <code>c85d6a44...</code></td><td>5 TIMs + 2 TMDs</td></tr>
-<tr><td><code>0004_town01</code></td><td>yes</td><td>227 KB</td><td>full <code>c85d6a44...</code></td><td>5 TIMs + 1 TMD</td></tr>
-<tr><td><code>0005_town01</code></td><td>yes</td><td>0 B</td><td>full <code>c85d6a44...</code></td><td>none</td></tr>
-<tr><td><code>0020_town0b</code></td><td><strong>no</strong></td><td>222 KB</td><td>5.8 KB (truncated)</td><td>-</td></tr>
-<tr><td><code>0021_town0c</code></td><td><strong>no</strong></td><td>222 KB</td><td>full <code>c85d6a44...</code></td><td>-</td></tr>
-<tr><td><code>0022_town0c</code></td><td><strong>no</strong></td><td>213 KB</td><td>full <code>c85d6a44...</code></td><td>-</td></tr>
-<tr><td><code>0023_town0c</code></td><td><strong>no</strong></td><td>0 B</td><td>full <code>c85d6a44...</code></td><td>-</td></tr>
-</tbody>
-</table>
-  <h3 id="preamble">The per-scene payload is the preamble</h3>
-  <p>What actually varies per scene is the <strong>preamble</strong> before the block. In <code>0003_town01</code> it opens with a record count (<code>0x3F</code> = 63) + an ascending <code>u16</code> offset table (<code>0x80, 0x380, 0x3c2, ...</code>) + variable-length records - exactly the <a href="scene-bundles.html#scene-event-scripts-prescript-only"><code>scene_event_scripts</code></a> prescript shape. Record 0 is a fixed 768-byte dispatch table; records <code>1..</code> are word-aligned actor/event command records (<code>0xFFFF 0x0000</code> header sentinel, <code>0x0008</code> terminator) - <strong>not</strong> field-VM bytecode. The town0b/town0c field files that carry <strong>no</strong> field-pack block at all (<code>0012_town0b</code>, ...) open with the <strong>same</strong> prescript, confirming the preamble - not the constant block - is the scene's field data.</p>
   <details class="disclosure">
     <summary>History: "124 entries, slots filled per scene"</summary>
     <div class="disclosure-body">
-      <p>The earlier reading - "124 PROT entries share the schema, the preamble fills the slots per-scene" - does not survive a byte scan of the corpus, and the long-open "preamble to schema-slot mapping" question rested on a false premise: the slots are a fixed template, there is nothing per-scene to project into them, and the per-scene structure is the already-parsed <code>scene_event_scripts</code> prescript. Retired readings are collected on <a href="../reference/re-do-not-re-walk.html">do not re-walk</a>.</p>
+      <p>An earlier reading had 124 PROT entries sharing the schema with the preamble filling the slots per scene. It does not survive a byte scan of the corpus: the slots are a fixed template, there is nothing per-scene to project into them, and the per-scene structure is the already-parsed prescript. See <a href="../reference/re-do-not-re-walk.html">do not re-walk</a>.</p>
     </div>
   </details>
 </section>
 
 <section class="doc-section" id="slot-size-clusters">
-  <h2>Slot-size clusters</h2>
-  <p>Because the schema is byte-identical across every instance, slots that share the same <code>slot[i+1] - slot[i]</code> are the <strong>same kind of record</strong>. Run <code>asset field-pack &lt;PATH&gt; --groups</code> to surface the clusters; the bucket structure on the canonical schema is:</p>
-<table>
-<thead><tr>
-<th>Bucket size (bytes)</th>
-<th>Count</th>
-<th>Likely interpretation</th>
-</tr></thead>
-<tbody>
-<tr><td><code>0x2088</code> (8328)</td><td>5</td><td>Large blobs (TIM-page-like) at slots 1, 2, 3, 30, 41 - matches the 5-TIM count in <code>0003_town01</code> / <code>0004_town01</code></td></tr>
-<tr><td><code>0x1010</code> (4112)</td><td>2</td><td>Medium records at slots 42, 43</td></tr>
-<tr><td><code>0x810</code> (2064)</td><td>1</td><td>One large record at slot 94</td></tr>
-<tr><td><code>0x610</code> (1552)</td><td>1</td><td>Slot 57</td></tr>
-<tr><td><code>0x510</code> (1296)</td><td>1</td><td>Slot 91</td></tr>
-<tr><td><code>0x490</code> (1168)</td><td>1</td><td>Slot 83</td></tr>
-<tr><td><code>0x410</code> (1040)</td><td>6</td><td>Medium-records cluster at slots 4, 32, 44, 45, 61, 66</td></tr>
-<tr><td><code>0x340</code> (832)</td><td>1</td><td>Slot 26</td></tr>
-<tr><td><code>0x310</code> (784)</td><td>2</td><td>Slots 35, 72</td></tr>
-<tr><td><code>0x218</code> (536)</td><td>21</td><td>NPC-record cluster at slots 5..25 (uniform stride; strong signal of a tabular array)</td></tr>
-<tr><td><code>0x210</code> (528)</td><td>12</td><td>Smaller record cluster</td></tr>
-<tr><td><code>0x190</code> (400)</td><td>1</td><td>Slot 70</td></tr>
-<tr><td><code>0x150</code> (336)</td><td>1</td><td>Slot 80</td></tr>
-<tr><td><code>0x130</code> (304)</td><td>2</td><td>Slots 54, 82</td></tr>
-<tr><td><code>0x110</code> (272)</td><td>17</td><td>Dialog-trigger / event-region cluster</td></tr>
-<tr><td><code>0x100</code> (256)</td><td>3</td><td>Slots 56, 65, 67</td></tr>
-<tr><td><code>0xD0</code> (208)</td><td>2</td><td>Slots 29, 89</td></tr>
-<tr><td><code>0x90</code> (144)</td><td>16</td><td>Collision-box-sized cluster</td></tr>
-<tr><td><code>0x1</code></td><td>1</td><td>Slot 0 - likely a single-byte flag/type marker</td></tr>
-</tbody>
-</table>
-  <p>The three big clusters (21 x 0x218, 17 x 0x110, 16 x 0x90) are arrays of fixed-size records - exactly the shape a field scene uses for NPC slots, event triggers, and hit regions. Five 0x2088 blobs match the empirical TIM count in the two town variants.</p>
-</section>
-
-<section class="doc-section" id="why-the-magic-isn-t-load-bearing">
-  <h2>Why the magic isn't load-bearing</h2>
-  <p>A scan of <code>SCUS_942.54</code> (the game's main executable) and every captured overlay (chunks of MIPS code the game loads into RAM on demand - dialog, town, battle action, menu, the 0896 / 0897 / battle-action clusters) for either the <code>LUI</code>+<code>ADDIU/ORI</code> immediate pair that synthesises <code>0x01059B84</code> or the byte sequence <code>84 9B 05 01</code> returns zero hits. The runtime never compares against this magic.</p>
-  <p>That rules out a magic-checked format loader. The most likely interpretation is that field-pack is a build-time layout artefact - the schema describes the in-RAM shape that per-scene code reads at hard-coded slot offsets, and the magic is a sanity marker the disc mastering left behind (or the dev tooling stamped) rather than a runtime parser anchor.</p>
-  <p>Per-slot interpretation therefore depends on locating the consumer - per-scene code in a field/town overlay that reads from the slot offsets. See <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/ghidra/scripts/find_field_pack_magic.py"><code>ghidra/scripts/find_field_pack_magic.py</code></a> for the scan that established the magic isn't referenced, and <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/ghidra/scripts/find_field_pack_consumers.py"><code>ghidra/scripts/find_field_pack_consumers.py</code></a> for the consumer-search complement.</p>
+  <h2>What the slots look like</h2>
+  <p>Because the schema is identical everywhere, slots with the same <code>slot[i+1] - slot[i]</code> are the same kind of record. Three uniform-stride runs dominate - the shape a field scene uses for NPC slots, event triggers and hit regions - and five 8 KB slots match the TIM count in the town01 files. <code>asset field-pack &lt;PATH&gt; --groups</code> prints the clusters; <code>SlotKind</code> in the parser is derived from them.</p>
+  <table>
+    <thead><tr><th>Slot size</th><th>Count</th><th>Slots</th><th>Likely kind</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x2088</code></td><td>5</td><td>1, 2, 3, 30, 41</td><td>TIM-page-sized blobs</td></tr>
+      <tr><td><code>0x218</code></td><td>21</td><td>5..25</td><td>NPC-record array</td></tr>
+      <tr><td><code>0x110</code></td><td>17</td><td>-</td><td>Dialog-trigger / event-region array</td></tr>
+      <tr><td><code>0x90</code></td><td>16</td><td>-</td><td>Collision-box-sized array</td></tr>
+      <tr><td><code>0x210</code></td><td>12</td><td>-</td><td>Smaller records</td></tr>
+      <tr><td><code>0x410</code></td><td>6</td><td>4, 32, 44, 45, 61, 66</td><td>Medium records</td></tr>
+      <tr><td><code>0x1010</code></td><td>2</td><td>42, 43</td><td>Medium blobs</td></tr>
+      <tr><td><code>0x1</code></td><td>1</td><td>0</td><td>Single-byte type / flag marker</td></tr>
+      <tr><td>other</td><td>17</td><td>26, 29, 35, 54, 56, 57, 65, 67, 70, 72, 80, 82, 83, 89, 91, 94 (+ slot 96 open-ended)</td><td>Singletons (<code>0x100..0x810</code>)</td></tr>
+    </tbody>
+  </table>
 </section>
 
 <section class="doc-section" id="loader-chain">
-  <h2>Loader chain</h2>
-  <p>Tracing a <code>town01</code> field capture (CDNAME <code>town01</code>, scene <code>0x03</code>) through the captured overlays + <code>SCUS_942.54</code> pins the runtime path that brings a field-pack file into RAM:</p>
+  <h2>How it reaches RAM</h2>
+  <p>No loader checks the magic. A scene change copies the new name into the scene-name table and raises a pending-transition bit; the field overlay's transition orchestrator then calls the field-asset loader, which streams the file and dispatches its descriptors by type.</p>
   <div class="flow">
-    <span class="num">1</span><span class="layer"><code>FUN_8001FD44(scene_name, sub_index)</code></span><span class="desc">Scene change requested: copies the new name into <code>0x80084548</code>, the previous name into <code>0x80084558</code>, sets the <code>0x40</code> pending-transition bit in <code>_DAT_1F800394</code></span><span class="crate">SCUS</span>
-    <span class="num">2</span><span class="layer"><code>FUN_801D6704</code></span><span class="desc">Scene-transition orchestrator; calls the loader with <code>a0 = _DAT_1F8003EC</code>, <code>a1 = 0x80084548</code>, <code>a2 = _DAT_80084540</code> (<code>801d6ae8</code>)</span><span class="crate">overlay 0897</span>
-    <span class="num">3</span><span class="layer"><code>FUN_8001F7C0</code></span><span class="desc">Builds <code>DATA\FIELD\&lt;scene&gt;</code>, loads it via <code>FUN_8003E6BC</code>; builds <code>h:\PROT\FIELD\&lt;scene&gt;\efect.dat</code>, loads it at <code>buffer + 0x12800</code> and stores that address in <code>_DAT_8007B8D0</code></span><span class="crate">SCUS</span>
-    <span class="num">4</span><span class="layer"><code>FUN_80020224</code> &rarr; <code>FUN_8001F05C</code></span><span class="desc">Descriptor-pair walker (<code>801d6b0c</code>) iterates the asset descriptor table at <code>_DAT_8007B85C</code> and dispatches each entry through the asset-type dispatcher</span><span class="crate">SCUS</span>
+    <div class="num">1</div><div class="layer">Scene change</div><div class="desc">New name into <code>0x80084548</code>, previous into <code>0x80084558</code>, bit <code>0x40</code> in <code>_DAT_1F800394</code>.</div><div class="crate">SCUS</div>
+    <div class="num">2</div><div class="layer">Orchestrator</div><div class="desc">Calls the loader with the scene buffer <code>*(0x1F8003EC)</code>, the name table and the scene index.</div><div class="crate">overlay 0897</div>
+    <div class="num">3</div><div class="layer">Field-asset loader</div><div class="desc">Loads <code>DATA\FIELD\&lt;scene&gt;</code> by path; loads <code>efect.dat</code> at <code>buffer + 0x12800</code> and records that address in <code>_DAT_8007B8D0</code>.</div><div class="crate">SCUS</div>
+    <div class="num">4</div><div class="layer">Descriptor walk</div><div class="desc">Iterates the static descriptor table at <code>_DAT_8007B85C</code> and dispatches each entry through the <a href="asset-type.html">asset-type dispatcher</a>.</div><div class="crate">SCUS</div>
   </div>
-  <p>Dialog-overlay handlers like <code>FUN_801D1344</code> call <code>FUN_8001FD44</code> directly when a story event needs to warp - e.g. the <code>town01</code> warp requires <code>_DAT_1F800394 &amp; 0x04000000 != 0</code> plus a couple of menu-state flags. <code>buffer_ptr</code> is read from scratchpad cell <code>0x1F8003EC</code> (the heap-resident scene asset buffer pointer); per-scene values vary because the loader allocates from a pool. The asset descriptor table at <code>_DAT_8007B85C = 0x8015CBD0</code> is <strong>statically allocated</strong> and identical across captured saves; its entries point into the per-scene region.</p>
-  <p>The 97-slot field-pack data is consumed at <strong>static offsets</strong> - there is no slot-iteration loop in the captured code. The byte-identical schema confirms it: the consumer treats the buffer as a fixed in-RAM layout template and reads NPC/event/collision slots by hard-coded index, not by walking the offset table. Per-NPC and per-event slot handlers are called indirectly through the descriptor table; their specific entry points require capturing a full scene-init execution trace (not yet available in the overlay dumps).</p>
+  <p>The 97 slots are consumed at <strong>static offsets</strong> - there is no slot-iteration loop in any captured code. The consumer treats the buffer as a fixed in-RAM template and reads by hard-coded index; the specific per-NPC / per-event handlers need a scene-init execution trace to pin.</p>
+  <p>The field-file RAM base is <code>_DAT_8007B8D0 - 0x12800</code> in any save (<code>capture_observations::field_pack_load::recover_base</code>): <code>0x80139530</code> in a town01 capture, <code>0x800A25F0</code> in a town0c one.</p>
 </section>
 
-<section class="doc-section" id="per-scene-runtime-ram-base">
-  <h2>Per-scene runtime RAM base</h2>
-  <p>The active field-file RAM base is recoverable from any save by reading <code>_DAT_8007B8D0</code> and subtracting <code>0x12800</code>. The constants and a <code>recover_base()</code> helper live in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-core/src/capture_observations.rs"><code>crates/engine-core/src/capture_observations.rs</code></a> under <code>field_pack_load</code>.</p>
-<table>
-<thead><tr>
-<th>Capture</th>
-<th>CDNAME</th>
-<th>scene <code>0x80084540</code></th>
-<th><code>_DAT_8007B8D0</code></th>
-<th>Field-file RAM base</th>
-</tr></thead>
-<tbody>
-<tr><td>town capture</td><td><code>town01</code></td><td><code>0x03</code></td><td><code>0x8014BD30</code></td><td><code>0x80139530</code></td></tr>
-<tr><td>second capture</td><td><code>town0c</code></td><td><code>0x15</code></td><td><code>0x800B4DF0</code></td><td><code>0x800A25F0</code></td></tr>
-</tbody>
-</table>
-  <p>The 75 KB region between the base and <code>_DAT_8007B8D0</code> (<code>base..base + 0x12800</code>) holds the loaded field asset, and <code>efect.dat</code> lands immediately after.</p>
-  <h3 id="loader-order-of-operations">Loader order-of-operations</h3>
-  <p>A save captured mid-transition between <code>town01</code> (intro Rim Elm) and <code>town0c</code> (Rim Elm normal entry) pins the loader's order-of-operations. The mid-transition snapshot has these properties simultaneously:</p>
-  <ul class="bullets">
-    <li>The scene-bundle pool at <code>0x80084540</code> already carries the <strong>destination</strong> scene name (<code>town0c</code>) - both pool slots <code>+0x08</code> and <code>+0x18</code> flip together.</li>
-    <li><code>_DAT_8007B8D0</code> still reads the <strong>previous</strong> scene's value (<code>0x8014BD30</code>, town01's <code>efect.dat</code> base).</li>
-    <li>The destination scene's region at the canonical town0c base (<code>0x800A25F0..0x800B4DF0</code>) is partially populated.</li>
-    <li>The previous scene's region at <code>0x80139530</code> is zeroed.</li>
-    <li>The static asset descriptor table at <code>0x8015CBD0</code> is bit-identical between the pre- and mid-transition snapshots (4 KB SHA-256 match).</li>
-  </ul>
-  <p>That sequencing pins the loader as: <strong>(1)</strong> write new scene name into the bundle pool, <strong>(2)</strong> zero the previous region, <strong>(3)</strong> populate the destination region at its canonical base, <strong>(4)</strong> flip <code>_DAT_8007B8D0</code> last. Mid-transition, the engine can detect a scene swap is in flight by checking that the pool slot's CDNAME label disagrees with the base implied by <code>_DAT_8007B8D0</code>: <code>legaia_engine_core::capture_observations::field_pack_intra_transition::detect_mid_transition(main_ram)</code>.</p>
-  <details class="disclosure">
-    <summary>History: the "runtime layout differs from on-disc schema" reading</summary>
+<section class="doc-section" id="how-we-know">
+  <h2>How we know</h2>
+  <table>
+    <thead><tr><th>Function / evidence</th><th>Address</th><th>What it proves</th><th>Dump</th></tr></thead>
+    <tbody>
+      <tr><td>Magic reference scan</td><td><code>SCUS_942.54</code> + every captured overlay</td><td>Zero hits for the <code>LUI</code>+<code>ADDIU/ORI</code> pair or bytes <code>84 9B 05 01</code>: the runtime never compares the magic</td><td><code>ghidra/scripts/find_field_pack_magic.py</code>, <code>find_field_pack_consumers.py</code></td></tr>
+      <tr><td>Scene-change packet</td><td><code>FUN_8001FD44</code></td><td>Name-table writes and pending bit; called directly by dialog handlers such as <code>FUN_801D1344</code></td><td><code>funcs/8001fd44.txt</code></td></tr>
+      <tr><td>Transition orchestrator</td><td><code>FUN_801D6704</code> (call at <code>0x801D6AE8</code>, walker call at <code>0x801D6B0C</code>)</td><td>Loader arguments; descriptor walk after load</td><td><code>funcs/overlay_0897_801d6704.txt</code></td></tr>
+      <tr><td>Field-asset loader</td><td><code>FUN_8001F7C0</code> &rarr; <code>FUN_8003E6BC</code></td><td>Path build, <code>efect.dat</code> at <code>+0x12800</code>, <code>_DAT_8007B8D0</code> store</td><td><code>funcs/8001f7c0.txt</code></td></tr>
+      <tr><td>Descriptor walker + dispatcher</td><td><code>FUN_80020224</code> &rarr; <code>FUN_8001F05C</code></td><td>Table at <code>_DAT_8007B85C = 0x8015CBD0</code>, static across saves</td><td><code>funcs/80020224.txt</code></td></tr>
+      <tr><td>Corpus scan</td><td><code>field_pack_real.rs</code></td><td>4 stamped / 8 schema carriers; block hash identical across town01 and town0c</td><td>disc-gated test</td></tr>
+      <tr><td>Save diffs</td><td><code>real_saves.rs</code></td><td>Active scene label + RAM base; town01 vs town0c heap deltas</td><td><code>crates/mednafen/tests</code></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="deep-dive">
+  <h2>Deep dive</h2>
+  <details class="disclosure" id="loader-order-of-operations">
+    <summary>Loader order of operations (mid-transition capture)</summary>
     <div class="disclosure-body">
-      <p>Reading the town capture at <code>base + 0x60</code> - where on-disc slot 0 was <em>assumed</em> to sit - yields post-processed GP0 GPU primitive packets rather than the raw records the disc bytes encode, and an earlier section concluded that the loader <em>transforms</em> per-scene preamble bytes into the runtime slots. That premise does not hold: the schema-indexed region is a disc-side global constant, so there is nothing per-scene to project into it; and <code>base</code> is the <strong>field-file buffer base</strong>, while the loader places the field-asset region at <code>buffer + 0x12000</code>, so <code>base + 0x60</code> is the field file's own object/primitive region, not schema slot 0. The GP0 packets are most likely the scene's primitive scratch. The runtime-projection claim is unresolved and not worth re-walking without a mid-load capture.</p>
+      <p>A save captured between <code>town01</code> and <code>town0c</code> shows, at once: the bundle pool at <code>0x80084540</code> already naming the destination; <code>_DAT_8007B8D0</code> still holding the previous scene's value; the destination region partially populated at its canonical base; the previous region zeroed; the descriptor table bit-identical. So the loader (1) writes the new name, (2) zeroes the previous region, (3) populates the destination, (4) flips <code>_DAT_8007B8D0</code> last. <code>field_pack_intra_transition::detect_mid_transition(main_ram)</code> detects the in-flight state by that disagreement.</p>
     </div>
   </details>
-</section>
-
-<section class="doc-section" id="mednafen-state-diff-observations">
-  <h2>Save-state diff observations</h2>
-  <p>A save-state diff over the engine RAM range <code>0x801C0000..0x80200000</code> lights up a 9 KB region at <code>0x801F69D8..0x801F8F02</code> that toggles between two different MIPS-code overlays - different scenes load different per-area code into the same slot. The first 16 bytes match the standard PSX function-prologue shape (<code>addiu sp,sp,-N</code>, <code>sw s1,N(sp)</code>, <code>lui s1,0x801F</code>, <code>ori s1,s1,...</code>), confirming the slot is a MIPS overlay rather than a data buffer (the slot-B stager window on the <a href="overlay-ptr-table.html">overlay pointer-table</a> page).</p>
-  <h3>Town01 vs town0c diff (two field captures, full main RAM)</h3>
-<table>
-<thead><tr>
-<th>Region</th>
-<th>Bytes changed</th>
-<th>Interpretation</th>
-</tr></thead>
-<tbody>
-<tr><td><code>0x800C505C..0x80139527</code></td><td>~402 KB</td><td>Shared scene-asset pool; ends just before town01's field-file base</td></tr>
-<tr><td><code>0x801853F5..0x801B93D0</code></td><td>~205 KB</td><td>Heap-resident sibling region (<code>0x80185000..0x801B9000</code>)</td></tr>
-<tr><td><code>0x8015CBD0..0x80184C89</code></td><td>~152 KB</td><td>Asset descriptor table contents (base = <code>0x8015CBD0</code>)</td></tr>
-<tr><td><code>0x80098900..0x800BE5FC</code></td><td>~132 KB</td><td>Other heap-resident scene buffers</td></tr>
-<tr><td><code>0x80084140..0x80084398</code></td><td>526 B</td><td>Scene-bundle metadata (pre-<code>SCENE_NAME_TABLE</code>)</td></tr>
-<tr><td><code>0x801F3488..0x801F69D8</code></td><td>7.6 KB</td><td>Just-before the 9 KB MIPS-overlay slot - post-overlay scratch</td></tr>
-</tbody>
-</table>
-  <p>The pinned residency window (9 KB MIPS overlay at <code>0x801F69D8..0x801F8F02</code>) does NOT change between the two captures - both are town-resident saves and share a town overlay there. Engine-relevant residency differences live in the ~933 KB of heap-pool deltas above. The disc-gated tests <code>town01_field_pack_save_documents_active_scene_and_ram_base</code> and <code>town01_vs_town0c_diff_lights_up_field_pack_pool</code> (in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/mednafen/tests/real_saves.rs"><code>crates/mednafen/tests/real_saves.rs</code></a>) exercise both against the user's actual saves.</p>
-</section>
-
-<section class="doc-section" id="tooling">
-  <h2>Tooling</h2>
+  <details class="disclosure" id="mednafen-state-diff-observations">
+    <summary>Save-state diff observations</summary>
+    <div class="disclosure-body">
+      <table>
+        <thead><tr><th>Region</th><th>Bytes changed</th><th>Interpretation</th></tr></thead>
+        <tbody>
+          <tr><td><code>0x800C505C..0x80139527</code></td><td>~402 KB</td><td>Shared scene-asset pool; ends just before town01's field-file base</td></tr>
+          <tr><td><code>0x801853F5..0x801B93D0</code></td><td>~205 KB</td><td>Heap-resident sibling region</td></tr>
+          <tr><td><code>0x8015CBD0..0x80184C89</code></td><td>~152 KB</td><td>Descriptor table contents</td></tr>
+          <tr><td><code>0x80098900..0x800BE5FC</code></td><td>~132 KB</td><td>Other heap-resident scene buffers</td></tr>
+          <tr><td><code>0x80084140..0x80084398</code></td><td>526 B</td><td>Scene-bundle metadata</td></tr>
+          <tr><td><code>0x801F3488..0x801F69D8</code></td><td>7.6 KB</td><td>Scratch just before the 9 KB slot-B overlay window</td></tr>
+        </tbody>
+      </table>
+      <p>The 9 KB MIPS overlay at <code>0x801F69D8..0x801F8F02</code> (the slot-B stager window, <a href="overlay-ptr-table.html">overlay pointer table</a>) is identical between the two town captures - both are town-resident.</p>
+    </div>
+  </details>
+  <details class="disclosure">
+    <summary>History: "runtime layout differs from on-disc schema"</summary>
+    <div class="disclosure-body">
+      <p>Reading a town capture at <code>base + 0x60</code>, where slot 0 was assumed to sit, yields GP0 GPU primitive packets, and an earlier section concluded the loader transforms preamble bytes into the slots. The premise fails twice: the block is a disc-side constant, and <code>base</code> is the field-file buffer while the loader places the field-asset region at <code>buffer + 0x12000</code>, so <code>base + 0x60</code> is the file's own primitive region. Not worth re-walking without a mid-load capture.</p>
+    </div>
+  </details>
+  <details class="disclosure" id="tooling">
+    <summary>CLI and Rust API</summary>
+    <div class="disclosure-body">
 <pre><code>asset field-pack &lt;PATH&gt;                # show schema + slot sizes
 asset field-pack &lt;PATH&gt; --all-slots    # all 97 slot offsets/sizes
-asset field-pack &lt;PATH&gt; --groups       # cluster slots by size (semantic index)
+asset field-pack &lt;PATH&gt; --groups       # cluster slots by size
 asset field-pack-scan &lt;DIR&gt;            # find every field-pack in a PROT dir</code></pre>
-  <h3>Rust API</h3>
-  <p><code>legaia_asset::field_pack::FieldPack</code> exposes typed accessors over a parsed file:</p>
-<pre><code>// Classify a slot by index.
-let kind: Option&lt;SlotKind&gt; = fp.slot_kind(i);
-
-// Iterate all 97 slots with structural classification + bytes.
-// Bytes are non-empty only when magic_offset == 0 (entry 0005_town01).
-for (kind, bytes) in fp.iter_slots(buf) {
-    // kind: SlotKind::{TypeFlag, TimPage, NpcRecord, EventTrigger,
-    //                   CollisionBox, CompactRecord, MediumRecord,
-    //                   SingleRecord, LastSlot}
-}</code></pre>
-  <p>For static schema enumeration without holding a file:</p>
 <pre><code>use legaia_asset::field_pack::{CANONICAL_SCHEMA, canonical_slot, iter_canonical_slots};
-
-// 97-element static array of u32 LE schema offsets.
 assert_eq!(CANONICAL_SCHEMA[0], 0x60);
-
-// Per-slot accessor: returns (offset, size) where size is None for slot 96.
-let (off, size) = canonical_slot(5).unwrap();
-
-// Iterate (index, kind, offset, size) over the canonical schema.
-for (i, kind, off, size) in iter_canonical_slots() { /* ... */ }</code></pre>
-  <p><code>SlotKind</code> is derived from the slot's byte size and covers the major structural clusters identified in the size table above. <code>legaia_engine_core::capture_observations::field_pack_load::recover_base(main_ram)</code> pins the heap-allocated RAM base from a saved main-RAM image. The detector is reliable for classification; per-slot interpretation beyond size-clustering is bracketed by the cluster table and pending a per-scene loader trace.</p>
+let (off, size) = canonical_slot(5).unwrap();          // size is None for slot 96
+for (i, kind, off, size) in iter_canonical_slots() { /* SlotKind per cluster */ }
+// On a parsed file: fp.slot_kind(i), fp.iter_slots(buf)
+// (bytes are non-empty only when the block sits at offset 0, e.g. 0005_town01).</code></pre>
+    </div>
+  </details>
+  <p>Source of record: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/field-pack.md" target="_blank" rel="noopener"><code>docs/formats/field-pack.md</code></a>.</p>
 </section>
 
 <section class="doc-section" id="see-also">

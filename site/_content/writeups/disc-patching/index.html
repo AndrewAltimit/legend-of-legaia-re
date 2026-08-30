@@ -1,120 +1,137 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../../index.html">home</a> &middot; <a href="../index.html">write-ups</a> &middot; disc patching</div>
   <h1>Patching a sealed disc</h1>
-  <p class="lede">The <a href="../../tooling/randomizer.html">randomizer</a> rewrites a retail Legaia disc with no source, no SDK, and no extension points - the game ships as a sealed black box and ships only a <em>decoder</em>. Every mod is one of a handful of <strong>injection techniques</strong>, and they form a ladder: from same-size byte edits, through editing inside compression and rewriting bytecode, up to hand-assembled MIPS hosted in a resident overlay's dead space. This series walks the ladder one technique at a time, reversing first. The mods are the worked examples; the techniques are the point.</p>
+  <p class="lede">A randomizer seed changes what a chest holds, what a monster drops, where a door leads and what a shop sells - on a retail disc that ships no source, no SDK and no extension points. Every one of those changes is one of six <strong>injection techniques</strong>, and the techniques form a ladder: from same-size byte edits, through editing inside compression and rewriting bytecode, up to hand-assembled MIPS hosted in an overlay's dead space. This series walks the ladder one rung per page.</p>
 </header>
 
-<section class="doc-section" id="reading-order">
-  <h2>Read in order</h2>
-  <p>Six pages, one technique each, in the order the reversing had to happen. Each rung is worth reading on its own, but the later ones assume the earlier ones' machinery. If you only read one, read tier B - it is where "we can only overwrite bytes in place" stops being a limitation.</p>
-  <table>
-    <thead><tr><th>Tier</th><th>Page</th><th>What it is about</th><th>Why a fan might care</th></tr></thead>
-    <tbody>
-      <tr><td><strong>A</strong></td><td><a href="a-static-tables.html">Static-table overwrites</a></td><td>The executable's fixed-width stat tables - steal items, spell costs, element affinities, prices, casino prizes - and how a same-size write plus an EDC/ECC recompute is a complete patch.</td><td>The simplest way anything on the disc changes, and where every randomizer starts.</td></tr>
-      <tr><td><strong>B</strong></td><td><a href="b-lzs-slots.html">Editing inside LZS</a></td><td>Monster records live compressed inside fixed slots. Writing an LZS encoder the retail decoder accepts is what lets a monster's drops, stats and weapon specialty change at all.</td><td>Why "edit the monster" needed a compressor before it needed an editor.</td></tr>
-      <tr><td><strong>C</strong></td><td><a href="c-field-vm-operands.html">Rewriting field-VM bytecode</a></td><td>Chests, shops, random encounters and house doors are operands in each scene's script. Finding the ops and swapping their arguments without moving a byte.</td><td>How a chest in Rim Elm can hold something it never held, with the rest of the script untouched.</td></tr>
-      <tr><td><strong>D</strong></td><td><a href="d-man-relocation.html">Variable-length relocation</a></td><td>A door carries its destination's name inline, so re-pointing it resizes the record. Rebuilding the decompressed script and fixing every disturbed offset.</td><td>The door randomizer and the high-capacity starting bag - edits that change a byte count.</td></tr>
-      <tr><td><strong>E</strong></td><td><a href="e-rodata-gap-code.html">Code injection via the rodata gap</a></td><td>Hand-assembled MIPS detoured into reclaimed space in the executable: bonus equipment drops, run-away EXP.</td><td>New behaviour, not just new data - and the R3000 traps that bite the first time you try it.</td></tr>
-      <tr><td><strong>F</strong></td><td><a href="f-overlay-dead-region.html">Overlay dead-region injection</a></td><td>Hosting a new system in a resident overlay's dead space: the in-shop Seru-trading vendor. Also the roadmap rung for battle assist, Seru racing, Muscle Dome betting and Blood Moon.</td><td>Where genuinely new features come from.</td></tr>
-    </tbody>
-  </table>
-</section>
+<div class="notice">
+  <div class="notice-title">The idea in one box</div>
+  The disc is never resized. Almost every edit overwrites bytes <strong>in place</strong> and re-encodes the sector's error-correction fields, so no file offset or table of contents ever moves. Where an edit's meaning forces a length change (a door name), the scene's script is rebuilt and recompressed into the <em>same</em> footprint - or the scene is skipped. New behaviour is hand-written MIPS parked in bytes the game never reads, reached by a two-instruction detour.
+</div>
 
-<section class="doc-section" id="foundation">
-  <h2>Three capabilities the preservation track never needed</h2>
-  <p>The asset-preservation half of the project only ever <em>reads</em> the disc. Writing one back required three new pieces, and every mod in this series stands on them:</p>
-  <ol>
-    <li><strong>An LZS encoder</strong> (<code>legaia_lzs::compress</code>). Retail ships only the decoder <code>FUN_8001A55C</code>; there was no way to produce a stream it accepts. Greedy LZSS, weaker than Sony's packer but always accepted - see <a href="../../formats/lzs.html">Legaia LZS</a>.</li>
-    <li><strong>Mode 2/2352 sector write-back</strong> (<code>legaia_iso::write</code>). Overwriting a sector's 2048-byte payload also means recomputing its 4-byte EDC and 276-byte P/Q ECC, or the sector reads as corrupt - see <a href="../../formats/disc.html">PSX disc geometry</a>.</li>
-    <li><strong>A disc bridge</strong> (<code>disc::DiscPatcher</code>) tying the editing primitives to the sector write-back through the <a href="../../formats/prot.html">PROT.DAT TOC</a>.</li>
-  </ol>
-</section>
-
-<section class="doc-section" id="editing-model">
-  <h2>The editing model: same-size, except when it can't be</h2>
-  <p>Almost every edit overwrites bytes <strong>in place</strong> and never changes a byte count, so no LBA, PROT TOC, or ISO&nbsp;9660 directory record ever moves - the patch is a pure byte-overwrite plus EDC/ECC recompute. That works because each target sits in a fixed slot with slack (the monster archive's <code>0x14000</code>-byte records) or is a fixed-width table field. The exception is when an edit's <em>meaning</em> forces a length change - a scene-transition door carries its destination's name inline, so re-pointing it resizes the record. Those go through the <a href="../../formats/man-relocation.html">MAN relocation engine</a>, which rebuilds the decompressed script, fixes every disturbed offset, and keeps the recompressed stream inside the asset's on-disc footprint (or skips the scene). The disc's total size never changes either way.</p>
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Tool</dt><dd><code>legaia-patcher</code> (CLI) and the <a href="../../tooling/rom-patcher.html">browser ROM patcher</a> - same code, nothing uploaded</dd>
+    <dt>Input / output</dt><dd>Your own USA disc image &rarr; a shareable PPF patch (no Sony bytes) and an optional patched copy</dd>
+    <dt>Three foundations</dt><dd>LZS encoder <code>legaia_lzs::compress</code> &middot; sector write-back <code>legaia_iso::write</code> &middot; PROT-entry bridge <code>disc::DiscPatcher</code></dd>
+    <dt>Edit classes</dt><dd><em>in-place</em> (same-size) for tiers A, B, C, E, F; <em>relocate</em> (footprint-bounded) for tier D</dd>
+    <dt>Confidence</dt><dd><span class="tag tag-done">Shipped</span> - every mod has a disc-gated oracle test that re-decodes the patched image</dd>
+    <dt>Full reference</dt><dd><a href="../../tooling/randomizer.html">Randomizer / disc patcher</a> (every flag, every hook)</dd>
+  </dl>
 </section>
 
 <section class="doc-section" id="ladder">
   <h2>The technique ladder</h2>
-  <p>Six techniques, in ascending order of what they let you change - and of how much reversing they demand before the first byte can move. Each rung has its own page.</p>
+  <p>Six techniques in ascending order of what they let you change - and of how much reverse engineering each demands before the first byte can move.</p>
   <figure class="overlay-strip">
-    <svg viewBox="0 0 880 470" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="ladder-title">
-      <title id="ladder-title">The disc-patching technique ladder, tier A (simplest) up to tier F (most advanced)</title>
+    <svg viewBox="0 0 880 470" width="100%" style="max-width:880px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The disc-patching technique ladder: tier A static-table overwrites at the bottom, up through LZS editing, field-VM bytecode, variable-length relocation and rodata-gap code, to tier F overlay dead-region injection at the top">
+      <title>The disc-patching technique ladder, tier A (simplest) up to tier F (most advanced)</title>
       <style>
-        .ld-badge { fill: #58c4b3; stroke: none; rx: 5; ry: 5; }
-        .ld-bid   { font: 700 18px 'JetBrains Mono', monospace; fill: #0d1117; text-anchor: middle; }
-        .ld-card  { fill: #1a2430; stroke: #34404e; stroke-width: 1.3; rx: 4; ry: 4; }
-        .ld-title { font: 700 14px 'JetBrains Mono', monospace; fill: #eef3f8; }
-        .ld-ex    { font: 11.5px 'Inter', sans-serif; fill: #a3b1bd; }
-        .ld-tag   { font: 10px 'Inter', sans-serif; fill: #7c8893; text-anchor: end; letter-spacing: 0.04em; }
-        .ld-axis  { fill: none; stroke: #3a4654; stroke-width: 1.2; }
-        .ld-axlab { font: 10px 'Inter', sans-serif; fill: #8b949e; letter-spacing: 0.06em; text-transform: uppercase; }
+        .ld-badge { fill: var(--accent); stroke: none; }
+        .ld-bid   { font: 700 18px var(--font-mono), monospace; fill: var(--bg-raised); text-anchor: middle; dominant-baseline: middle; }
+        .ld-card  { fill: var(--bg-raised); stroke: var(--border); stroke-width: 1.3; }
+        .ld-title { font: 700 14px var(--font-mono), monospace; fill: currentColor; }
+        .ld-ex    { font: 11.5px var(--font-body), sans-serif; fill: var(--text-muted); }
+        .ld-tag   { font: 10px var(--font-body), sans-serif; fill: var(--text-muted); text-anchor: end; letter-spacing: 0.04em; }
+        .ld-axis  { fill: none; stroke: var(--border); stroke-width: 1.2; }
+        .ld-axlab { font: 10px var(--font-body), sans-serif; fill: var(--text-muted); letter-spacing: 0.06em; text-transform: uppercase; }
       </style>
-
       <line x1="34" y1="56" x2="34" y2="430" class="ld-axis"/>
-      <path d="M34 56 l-5 9 h10 z" fill="#3a4654"/>
+      <path d="M34 56 l-5 9 h10 z" fill="var(--border)"/>
       <text x="50" y="44" class="ld-axlab">More advanced - more reversing</text>
 
-      <!-- F (top) -->
-      <rect x="54" y="56" width="34" height="48" class="ld-badge"/>
-      <text x="71" y="86" class="ld-bid">F</text>
-      <rect x="100" y="56" width="760" height="48" class="ld-card"/>
+      <rect x="54" y="56" width="34" height="48" rx="5" class="ld-badge"/>
+      <text x="71" y="80" class="ld-bid">F</text>
+      <rect x="100" y="56" width="760" height="48" rx="4" class="ld-card"/>
       <text x="116" y="78" class="ld-title">Overlay dead-region injection</text>
-      <text x="116" y="95" class="ld-ex">Seru-trading vendor &middot; (roadmap: battle assist, seru racing, Muscle Dome betting, Blood Moon)</text>
+      <text x="116" y="95" class="ld-ex">Seru-trading vendor &middot; roadmap: battle assist, Seru racing, dome betting, Blood Moon</text>
       <text x="844" y="84" class="ld-tag">new systems</text>
 
-      <!-- E -->
-      <rect x="54" y="116" width="34" height="48" class="ld-badge"/>
-      <text x="71" y="146" class="ld-bid">E</text>
-      <rect x="100" y="116" width="760" height="48" class="ld-card"/>
+      <rect x="54" y="116" width="34" height="48" rx="5" class="ld-badge"/>
+      <text x="71" y="140" class="ld-bid">E</text>
+      <rect x="100" y="116" width="760" height="48" rx="4" class="ld-card"/>
       <text x="116" y="138" class="ld-title">Code injection via the rodata gap</text>
-      <text x="116" y="155" class="ld-ex">Bonus equipment drops &middot; run-away EXP</text>
-      <text x="844" y="144" class="ld-tag">new behavior</text>
+      <text x="116" y="155" class="ld-ex">Bonus equipment drops &middot; run-away EXP &middot; enemy ally &middot; shiny Seru</text>
+      <text x="844" y="144" class="ld-tag">new behaviour</text>
 
-      <!-- D -->
-      <rect x="54" y="176" width="34" height="48" class="ld-badge"/>
-      <text x="71" y="206" class="ld-bid">D</text>
-      <rect x="100" y="176" width="760" height="48" class="ld-card"/>
+      <rect x="54" y="176" width="34" height="48" rx="5" class="ld-badge"/>
+      <text x="71" y="200" class="ld-bid">D</text>
+      <rect x="100" y="176" width="760" height="48" rx="4" class="ld-card"/>
       <text x="116" y="198" class="ld-title">Variable-length relocation</text>
       <text x="116" y="215" class="ld-ex">Doors (scene transitions) &middot; high-capacity starting bag</text>
       <text x="844" y="204" class="ld-tag">resize + fix-ups</text>
 
-      <!-- C -->
-      <rect x="54" y="236" width="34" height="48" class="ld-badge"/>
-      <text x="71" y="266" class="ld-bid">C</text>
-      <rect x="100" y="236" width="760" height="48" class="ld-card"/>
+      <rect x="54" y="236" width="34" height="48" rx="5" class="ld-badge"/>
+      <text x="71" y="260" class="ld-bid">C</text>
+      <rect x="100" y="236" width="760" height="48" rx="4" class="ld-card"/>
       <text x="116" y="258" class="ld-title">Rewriting field-VM bytecode</text>
       <text x="116" y="275" class="ld-ex">Treasure chests &middot; town shops &middot; random encounters &middot; house doors</text>
       <text x="844" y="264" class="ld-tag">operand rewrite</text>
 
-      <!-- B -->
-      <rect x="54" y="296" width="34" height="48" class="ld-badge"/>
-      <text x="71" y="326" class="ld-bid">B</text>
-      <rect x="100" y="296" width="760" height="48" class="ld-card"/>
+      <rect x="54" y="296" width="34" height="48" rx="5" class="ld-badge"/>
+      <text x="71" y="320" class="ld-bid">B</text>
+      <rect x="100" y="296" width="760" height="48" rx="4" class="ld-card"/>
       <text x="116" y="318" class="ld-title">Editing inside LZS</text>
       <text x="116" y="335" class="ld-ex">Monster drops &middot; monster combat stats &middot; weapon specialty</text>
       <text x="844" y="324" class="ld-tag">decompress / repack</text>
 
-      <!-- A (bottom) -->
-      <rect x="54" y="356" width="34" height="48" class="ld-badge"/>
-      <text x="71" y="386" class="ld-bid">A</text>
-      <rect x="100" y="356" width="760" height="48" class="ld-card"/>
+      <rect x="54" y="356" width="34" height="48" rx="5" class="ld-badge"/>
+      <text x="71" y="380" class="ld-bid">A</text>
+      <rect x="100" y="356" width="760" height="48" rx="4" class="ld-card"/>
       <text x="116" y="378" class="ld-title">Static-table overwrites</text>
       <text x="116" y="395" class="ld-ex">Steal items &middot; spell costs &middot; element affinity &middot; prices &middot; casino</text>
       <text x="844" y="384" class="ld-tag">same-size data</text>
 
       <text x="50" y="428" class="ld-axlab">Foundational - same-size data edits</text>
     </svg>
-    <figcaption>Each rung is a page in this series. Variants (a <code>GIVE_ITEM</code> splice, a new-game seed stamp, a string injection, an engine-facing config blob) are specializations of a parent tier and are tagged in the catalog below rather than given their own rung.</figcaption>
+    <figcaption>Each rung is a page in this series. Variants (a <code>GIVE_ITEM</code> splice, a new-game seed stamp, a string injection, an engine-facing config blob) are specialisations of a parent tier and are tagged in the catalog below rather than given their own rung.</figcaption>
   </figure>
+</section>
+
+<section class="doc-section" id="reading-order">
+  <h2>Read in order</h2>
+  <p>Later rungs assume the earlier ones' machinery. If you read only one, read tier B - it is where "we can only overwrite bytes in place" stops being a limitation.</p>
+  <table>
+    <thead><tr><th>Tier</th><th>Page</th><th>What it is about</th><th>Why a player might care</th></tr></thead>
+    <tbody>
+      <tr><td><strong>A</strong></td><td><a href="a-static-tables.html">Static-table overwrites</a></td><td>Fixed-width stat tables in the executable - steal items, spell costs, element affinities, prices, casino prizes.</td><td>The simplest way anything on the disc changes, and where every randomizer starts.</td></tr>
+      <tr><td><strong>B</strong></td><td><a href="b-lzs-slots.html">Editing inside LZS</a></td><td>Monster records live compressed inside fixed slots; an encoder the retail decoder accepts is what makes them editable.</td><td>Why "edit the monster" needed a compressor before it needed an editor.</td></tr>
+      <tr><td><strong>C</strong></td><td><a href="c-field-vm-operands.html">Rewriting field-VM bytecode</a></td><td>Chests, shops, encounters and house doors are operands in each scene's script.</td><td>How a chest in Rim Elm can hold something it never held.</td></tr>
+      <tr><td><strong>D</strong></td><td><a href="d-man-relocation.html">Variable-length relocation</a></td><td>A door carries its destination's name inline, so re-pointing it resizes the record.</td><td>The door randomizer and the high-capacity starting bag.</td></tr>
+      <tr><td><strong>E</strong></td><td><a href="e-rodata-gap-code.html">Code injection via the rodata gap</a></td><td>Hand-assembled MIPS detoured into reclaimed space in the executable.</td><td>New behaviour, not just new data - and the traps that bite the first time.</td></tr>
+      <tr><td><strong>F</strong></td><td><a href="f-overlay-dead-region.html">Overlay dead-region injection</a></td><td>A whole new screen hosted in a menu overlay's dead space: the Seru-trading vendor.</td><td>Where genuinely new features come from.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="foundation">
+  <h2>Three capabilities the preservation track never needed</h2>
+  <p>The asset-preservation half of the project only <em>reads</em> the disc. Writing one back needs three pieces, and every mod stands on them.</p>
+  <table>
+    <thead><tr><th>Capability</th><th>Module</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr><td>LZS encoder</td><td><code>legaia_lzs::compress</code></td><td>Retail ships only a decoder. Greedy LZSS, slightly looser than Sony's packer, always accepted - <a href="../../formats/lzs.html">Legaia LZS</a>.</td></tr>
+      <tr><td>Sector write-back</td><td><code>legaia_iso::write</code></td><td>A CD sector carries error-correction fields over its payload; overwrite the payload and they must be recomputed or the sector reads as damaged - <a href="../../formats/disc.html">disc geometry</a>.</td></tr>
+      <tr><td>Disc bridge</td><td><code>disc::DiscPatcher</code></td><td>Maps a "PROT entry N, offset K" edit to the sector it lives in through the <a href="../../formats/prot.html">PROT.DAT table of contents</a>.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="editing-model">
+  <h2>The editing model: same-size, except when it can't be</h2>
+  <ul>
+    <li><strong>In place.</strong> Each target sits in a fixed slot with slack (a monster's <code>0x14000</code>-byte slot) or is a fixed-width table field, so the patch is a byte overwrite plus a sector re-encode. No offset anywhere moves.</li>
+    <li><strong>Relocate.</strong> When the edit itself changes a byte count, the <a href="../../formats/man-relocation.html">MAN relocation engine</a> rebuilds the decompressed script, fixes every disturbed offset, and recompresses into the asset's original footprint - or leaves the scene vanilla.</li>
+    <li><strong>Either way the disc's total size never changes</strong>, which is what makes a PPF patch a complete description of the edit.</li>
+  </ul>
 </section>
 
 <section class="doc-section" id="catalog">
   <h2>Mod catalog</h2>
-  <p>Every current mod, grouped by the technique it uses, plus the roadmap. This table is <strong>generated</strong> from <code>site/_content/writeups/disc-patching/mods.toml</code> at build time, so it never drifts: adding a mod is one row there. The <strong>Gap</strong> column flags the mods that share the executable's reclaimed rodata region (a finite resource - the contention that <a href="f-overlay-dead-region.html">tier F</a> exists to escape). <strong>Edit</strong> is in-place (same-size) or relocate (footprint-bounded). Each shipped mod is backed by a disc-gated oracle test.</p>
+  <p>Every current mod grouped by technique, plus the roadmap. The table is <strong>generated</strong> from <code>site/_content/writeups/disc-patching/mods.toml</code> at build time. <strong>Gap</strong> flags mods that share the executable's reclaimed rodata region - a finite resource, and the contention that <a href="f-overlay-dead-region.html">tier F</a> exists to escape. <strong>Edit</strong> is in-place (same-size) or relocate (footprint-bounded).</p>
   <!--DISC_PATCHING_TABLE-->
-  <p class="hint">Planned rows are on the roadmap and concentrate at the top of the ladder, where system-level changes live.</p>
+  <p class="hint">Planned rows concentrate at the top of the ladder, where system-level changes live.</p>
 </section>
 
 <section class="doc-section" id="see-also">

@@ -1,60 +1,85 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; equipment table</div>
   <h1>Equipment stat-bonus table <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">The numbers behind every weapon, armor piece, helmet, and boot: a static table in
-  <code>SCUS_942.54</code> (the game's main executable on the disc) giving each equippable item its stat
-  bonuses, the characters allowed to equip it, and which of the four equip slots it fills. Eight bytes per item
-  cover all of it - five bonus bytes, a character mask, and a slot/flag byte. It hangs off the shared <a
-  href="item-table.html">item property table</a>: an item whose <code>kind</code> byte is <code>1</code>
-  (equipment) uses its <code>+1</code> byte as the index into this table. One detail walkthroughs get wrong: the
-  two "defense numbers" listed for boots are actually a small attack bump plus lower-defense - and no equipment
-  in the game touches AGL at all (see <a href="#superseded">superseded readings</a>).</p>
+  <p class="lede">The numbers behind every weapon, armor piece, helmet and boot: a static table in
+  <code>SCUS_942.54</code>, the game's main executable, giving each equippable item its stat bonuses, the
+  characters allowed to equip it, and which of the four equip slots it fills. Eight bytes per item cover all of
+  it. One detail walkthroughs get wrong: the two "defense numbers" listed for boots are really a small attack
+  bump plus lower-defense - and no equipment in the game touches AGL at all.</p>
 </header>
 
 <section class="doc-section" id="at-a-glance">
   <h2>At a glance</h2>
   <dl class="kv">
     <dt>Magic</dt><dd>none - static data in <code>SCUS_942.54</code></dd>
-    <dt>Where</dt><dd><code>DAT_80074F68</code> (file offset <code>0x64F68</code>), 8-byte stride, indexed by the item property table's <code>+1</code> byte for <code>kind == 1</code> items</dd>
+    <dt>Where</dt><dd><code>DAT_80074F68</code> (file offset <code>0x65768</code>), 8-byte stride, indexed by the <a href="item-table.html">item property table</a>'s <code>+1</code> byte for <code>kind == 1</code> items</dd>
     <dt>Parser</dt><dd><code>legaia_asset::equip_stats</code>; engine <code>engine-core::equipment::DiscEquipInfo</code>; patcher <code>legaia_patcher</code> equipment feature</dd>
-    <dt>Confidence</dt><dd>Confirmed - stat targets pinned from the aggregator <code>FUN_801CF650</code>'s five accumulators; <code>+1</code>/<code>+2</code>/<code>+3</code> byte-exact against the curated gamedata; <code>+0</code>/<code>+4</code> targets fixed, magnitudes not externally cross-checked</dd>
+    <dt>Confidence</dt><dd>Confirmed - stat targets pinned from the aggregator's five accumulators (<a href="#how-we-know">how we know</a>); <code>+1</code>/<code>+2</code>/<code>+3</code> byte-exact against curated gamedata; <code>+0</code>/<code>+4</code> targets fixed, magnitudes not externally cross-checked</dd>
     <dt>Used by</dt><dd><a href="../subsystems/battle-formulas.html">Battle formulas</a> (half of one slot folds into ATK at swing time), <a href="../shops.html">Shops page</a>, <a href="../characters.html">Characters page</a>, <a href="../tooling/rom-patcher.html">ROM patcher</a></dd>
   </dl>
 </section>
 
-<section class="doc-section" id="indexing">
-  <h2>Indexing (Ghidra-traced)</h2>
-  <p>The chain below is read out of the game's own code with Ghidra, the disassembler this project uses (<code>FUN_80xxxxxx</code> names are traced functions, <code>DAT_80xxxxxx</code> fixed RAM addresses - static data, so each maps straight back to file bytes in <code>SCUS_942.54</code>). From the equip-effect aggregator <code>FUN_801CF650</code> (in the menu overlay - a chunk of code loaded into RAM on demand), which walks a character's five equipment slots and sums their bonuses into the equip-screen preview:</p>
-  <pre><code>kind        = item_table[id].byte(+0)            ; DAT_80074368[id*0xC]; 1 = equipment
-bonus_index = item_table[id].byte(+1)            ; DAT_80074369[id*0xC]
-record      = (&amp;DAT_80074F68)[bonus_index * 8]   ; stride-8 record
-; applied only when kind == 1; record[+0..+4] sum into five stat accumulators</code></pre>
-</section>
-
 <section class="doc-section" id="record-layout">
-  <h2>Record layout (8 bytes, stride <code>0x8</code>)</h2>
-  <table>
-  <thead><tr><th>Field</th><th>Value</th></tr></thead>
+  <h2>Record layout</h2>
+  <p>An item whose <code>kind</code> byte in the <a href="item-table.html">item property table</a> is <code>1</code> (equipment) uses its <code>+1</code> byte as the index into this table:</p>
+  <pre><code>kind        = item_table[id].byte(+0)            ; 1 = equipment
+bonus_index = item_table[id].byte(+1)
+record      = (&amp;DAT_80074F68)[bonus_index * 8]   ; stride-8 record</code></pre>
+  <figure class="overlay-strip">
+    <svg viewBox="0 0 880 100" width="100%" style="max-width:880px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="One 8-byte equipment record: five stat-bonus bytes, a passive slot, an equip mask, and a slot byte">
+      <style>
+        .eq-seg { font: 12px 'Inter', sans-serif; fill: currentColor; text-anchor: middle; }
+        .eq-off { font: 10px 'JetBrains Mono', monospace; fill: var(--accent); text-anchor: middle; }
+        .eq-note { font: 11px 'Inter', sans-serif; fill: var(--text-muted); text-anchor: middle; }
+        .eq-box { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.2; }
+        .eq-dim { fill: var(--bg-raised); stroke: var(--border); stroke-width: 1.1; }
+      </style>
+      <rect x="20"  y="30" width="100" height="34" class="eq-box"/>
+      <rect x="120" y="30" width="100" height="34" class="eq-box"/>
+      <rect x="220" y="30" width="100" height="34" class="eq-box"/>
+      <rect x="320" y="30" width="100" height="34" class="eq-box"/>
+      <rect x="420" y="30" width="100" height="34" class="eq-box"/>
+      <rect x="520" y="30" width="110" height="34" class="eq-dim"/>
+      <rect x="630" y="30" width="110" height="34" class="eq-box"/>
+      <rect x="740" y="30" width="120" height="34" class="eq-box"/>
+      <text x="70"  y="51" class="eq-seg" dominant-baseline="middle">INT</text>
+      <text x="170" y="51" class="eq-seg" dominant-baseline="middle">ATK</text>
+      <text x="270" y="51" class="eq-seg" dominant-baseline="middle">UDF</text>
+      <text x="370" y="51" class="eq-seg" dominant-baseline="middle">LDF</text>
+      <text x="470" y="51" class="eq-seg" dominant-baseline="middle">SPD</text>
+      <text x="575" y="51" class="eq-seg" dominant-baseline="middle">passive</text>
+      <text x="685" y="51" class="eq-seg" dominant-baseline="middle">who</text>
+      <text x="800" y="51" class="eq-seg" dominant-baseline="middle">slot</text>
+      <text x="70"  y="20" class="eq-off">+0</text>
+      <text x="170" y="20" class="eq-off">+1</text>
+      <text x="270" y="20" class="eq-off">+2</text>
+      <text x="370" y="20" class="eq-off">+3</text>
+      <text x="470" y="20" class="eq-off">+4</text>
+      <text x="575" y="20" class="eq-off">+5</text>
+      <text x="685" y="20" class="eq-off">+6</text>
+      <text x="800" y="20" class="eq-off">+7</text>
+      <text x="270" y="88" class="eq-note">five bonus bytes - never AGL</text>
+      <text x="690" y="88" class="eq-note">character mask + slot/Ra-Seru byte</text>
+    </svg>
+    <figcaption>One 8-byte record per equippable item. The <code>+5</code> passive slot is <code>0x40</code> (no passive) on every retail row.</figcaption>
+  </figure>
+  <table class="layout">
+  <thead><tr><th>Offset</th><th>Type</th><th>Field</th><th>Meaning</th></tr></thead>
   <tbody>
-    <tr><td>Record base</td><td><code>DAT_80074F68</code> (file offset <code>0x64F68</code> in <code>SCUS_942.54</code>)</td></tr>
-    <tr><td>Stride</td><td><code>0x8</code> bytes</td></tr>
-    <tr><td>Index</td><td>item property <code>+1</code> byte (per equippable id)</td></tr>
+    <tr><td><code>+0</code></td><td>u8</td><td><strong>INT</strong> bonus</td><td>head gear sets it</td></tr>
+    <tr><td><code>+1</code></td><td>u8</td><td><strong>ATK</strong> bonus</td><td>weapons' only field; boots also add a small amount</td></tr>
+    <tr><td><code>+2</code></td><td>u8</td><td><strong>UDF</strong> (defense-up) bonus</td><td>body armor + head gear</td></tr>
+    <tr><td><code>+3</code></td><td>u8</td><td><strong>LDF</strong> (defense-down) bonus</td><td>body armor + boots</td></tr>
+    <tr><td><code>+4</code></td><td>u8</td><td><strong>SPD</strong> bonus</td><td>only footwear sets it</td></tr>
+    <tr><td><code>+5</code></td><td>u8</td><td>passive-effect index</td><td><code>0x40</code> (the no-passive sentinel) on every retail row (<a href="#plus5-two-readers">details</a>)</td></tr>
+    <tr><td><code>+6</code></td><td>u8</td><td><strong>equip character mask</strong></td><td>bit <code>1</code> Vahn/Meta, <code>2</code> Noa/Terra, <code>4</code> Gala/Ozma; <code>7</code> = any</td></tr>
+    <tr><td><code>+7</code></td><td>u8</td><td><strong>slot type</strong></td><td><code>&amp; 0x60</code>: <code>0x00</code> body, <code>0x20</code> head, <code>0x40</code> weapon, <code>0x60</code> footwear; bit <code>0x01</code> = Ra-Seru</td></tr>
   </tbody>
   </table>
-  <table>
-  <thead><tr><th>Offset</th><th>Type</th><th>Field</th></tr></thead>
-  <tbody>
-    <tr><td><code>+0</code></td><td>u8</td><td><strong>intelligence</strong> (INT) bonus - head gear sets it</td></tr>
-    <tr><td><code>+1</code></td><td>u8</td><td><strong>attack</strong> (ATK) bonus - weapons' only field; boots also add a small amount</td></tr>
-    <tr><td><code>+2</code></td><td>u8</td><td><strong>defense-up</strong> (UDF) bonus - body armor + head gear</td></tr>
-    <tr><td><code>+3</code></td><td>u8</td><td><strong>defense-down</strong> (LDF) bonus - body armor + boots</td></tr>
-    <tr><td><code>+4</code></td><td>u8</td><td><strong>speed</strong> (SPD) bonus - only footwear sets it</td></tr>
-    <tr><td><code>+5</code></td><td>u8</td><td>passive-effect index slot - <code>0x40</code> (the no-passive sentinel) on every retail row; read by the <code>kind == 1</code> arm of the passive aggregator <code>FUN_80042558</code></td></tr>
-    <tr><td><code>+6</code></td><td>u8</td><td><strong>equip character mask</strong>: bit <code>1</code> Vahn/Meta, <code>2</code> Noa/Terra, <code>4</code> Gala/Ozma; <code>7</code> = any</td></tr>
-    <tr><td><code>+7</code></td><td>u8</td><td><strong>slot type</strong> (<code>&amp; 0x60</code>: <code>0x00</code> body, <code>0x20</code> head, <code>0x40</code> weapon, <code>0x60</code> footwear) + bit <code>0x01</code> = Ra-Seru</td></tr>
-  </tbody>
-  </table>
-  <p>Each byte's stat target is pinned by tracing the aggregator's five accumulators back to the live character-record stat block (AGL, ATK, UDF, LDF, SPD, INT at record <code>+0x110..+0x11B</code>): <code>+0</code> &rarr; INT, <code>+1</code> &rarr; ATK, <code>+2</code> &rarr; UDF, <code>+3</code> &rarr; LDF, <code>+4</code> &rarr; SPD. Equipment never modifies AGL - the AGL accumulator takes no equipment add. The <code>+1</code>/<code>+2</code>/<code>+3</code> magnitudes are additionally byte-exact against the curated gamedata; the <code>+0</code>/<code>+4</code> magnitudes have no external cross-check, but the disc-gated test asserts the slot invariant (INT only on head gear, SPD only on footwear).</p>
+  <ul class="bullets">
+    <li>Each byte's stat target is pinned by tracing the equip-screen aggregator's five accumulators back to the live character-record stat block (<a href="#how-we-know">how we know</a>). Equipment never modifies AGL - the AGL accumulator takes no equipment add.</li>
+    <li>The <code>+1</code>/<code>+2</code>/<code>+3</code> magnitudes are byte-exact against the curated gamedata; <code>+0</code>/<code>+4</code> have no external cross-check, but the disc-gated test asserts the slot invariant (INT only on head gear, SPD only on footwear).</li>
+  </ul>
 </section>
 
 <section class="doc-section" id="slot-model">
@@ -69,28 +94,44 @@ record      = (&amp;DAT_80074F68)[bonus_index * 8]   ; stride-8 record
     <tr><td><code>0x60</code></td><td>footwear</td><td>16 = 16</td><td>every greave / shoe</td></tr>
   </tbody>
   </table>
-  <p>The disc "head" bucket is exactly the gamedata helmet set - no helmet-vs-ring-vs-accessory collision. None of the accessories ("Goods") appear in this table at all: accessories are <code>kind == 2</code> items whose descriptor byte indexes the separate 64-slot passive-effect space (see <code>legaia_asset::accessory_passive</code>). Weapon is the only non-1:1 category because the disc enumerates the upgradeable Ra-Seru weapon as per-tier entries the curated table collapses.</p>
+  <ul class="bullets">
+    <li>The disc "head" bucket is exactly the gamedata helmet set - no helmet-vs-ring-vs-accessory collision.</li>
+    <li>Accessories ("Goods") do not appear in this table at all: they are <code>kind == 2</code> items whose descriptor byte indexes the separate 64-slot <a href="accessory-passive-table.html">passive-effect space</a>.</li>
+    <li>Weapon is the only non-1:1 category because the disc enumerates the upgradeable Ra-Seru weapon as per-tier entries the curated table collapses.</li>
+  </ul>
 </section>
 
 <section class="doc-section" id="parser">
   <h2>Parser + engine consumption</h2>
-  <p><code>legaia_asset::equip_stats::EquipStatTable::from_scus</code> resolves the property + bonus tables from a <code>SCUS_942.54</code> image (PSX-EXE <code>t_addr</code> &rarr; file-offset map). <code>EquipBonus::equips_party_slot(party_slot)</code> maps a party slot (<code>0</code> Vahn, <code>1</code> Noa, <code>2</code> Gala) to the mask bit <code>1 &lt;&lt; party_slot</code>, matching the retail equip-screen gate. The disc-gated <code>equip_stats_real</code> test pins attack / defense bytes, equip masks, and slot types against the real executable and curated gamedata.</p>
-  <p>In the engine, <code>legaia_engine_core::equipment::DiscEquipInfo</code> lifts the <code>+6</code> mask and <code>+7</code> category keyed by real item ids; the equip session filters each character's per-slot item list on it, so a Vahn-only weapon never appears in Noa's weapon picker. The disc-gated <code>equip_modifiers_disc</code> test drives the whole chain on the real executable.</p>
+  <p><code>legaia_asset::equip_stats::EquipStatTable::from_scus</code> resolves the property + bonus tables from a <code>SCUS_942.54</code> image (PSX-EXE <code>t_addr</code> &rarr; file-offset map). <code>EquipBonus::equips_party_slot</code> maps a party slot (<code>0</code> Vahn, <code>1</code> Noa, <code>2</code> Gala) to its mask bit, matching the retail equip-screen gate.</p>
+  <p>In the engine, <code>DiscEquipInfo</code> lifts the <code>+6</code> mask and <code>+7</code> category keyed by real item ids; the equip session filters each character's per-slot item list on it, so a Vahn-only weapon never appears in Noa's weapon picker.</p>
 </section>
 
 <section class="doc-section" id="plus5-two-readers">
-  <h2>The <code>+5</code> byte has two readers, and both find the sentinel</h2>
-  <p>Besides the passive aggregator, the menu overlay's item-detail renderer <code>FUN_801D5AE8</code> (shop window 39, the sell list's panel) reads the byte directly: at <code>0x801D5C90..0x801D5CA0</code> it takes the item property record's <code>+0</code> class byte and, on class <code>1</code>, indexes the same stride-8 record (<code>lbu a0,0x5(v0)</code> with <code>v1 = 0x80074F68</code>), bounds it with <code>slti ...,0x40</code>, then indexes the passive name / description table at <code>0x8007625C</code>. Class <code>2</code> takes the item-effect record's <code>+3</code> instead.</p>
-  <p>Two things follow. The byte is <strong>row</strong>-keyed, not item-id-keyed. And because every retail row carries <code>0x40</code>, the class-<code>1</code> arm never produces a passive on an unmodified disc - a reader who finds the chain and not the data will go looking for equipment passives that are not missing. <code>equip_stats_real</code> pins the column at the sentinel across all rows. Parser side: <code>EquipBonus::passive_index</code> / <code>has_passive</code>, mirrored at <code>DiscEquipInfo::row_passive_index</code>.</p>
+  <h2>The <code>+5</code> byte: a passive slot nothing uses</h2>
+  <p>Two retail readers reach the byte - the passive aggregator's equipment arm, and the shop sell-panel's item-detail renderer, which bounds it below <code>0x40</code> before indexing the passive name table. Because every retail row carries the <code>0x40</code> sentinel, that arm never produces a passive on an unmodified disc: a reader who finds the chain and not the data will go looking for equipment passives that are not missing. The byte is <strong>row</strong>-keyed, not item-id-keyed - several item ids resolve to one bonus row. Parser side: <code>EquipBonus::passive_index</code> / <code>has_passive</code>, mirrored at <code>DiscEquipInfo::row_passive_index</code>.</p>
 </section>
 
-<section class="doc-section" id="superseded">
-  <h2>History</h2>
+<section class="doc-section" id="how-we-know">
+  <h2>How we know</h2>
+  <table>
+    <thead><tr><th>Function</th><th>Address</th><th>What it proves</th><th>Dump</th></tr></thead>
+    <tbody>
+      <tr><td>Equip-effect aggregator</td><td><code>FUN_801CF650</code> (menu overlay)</td><td>The index chain (item <code>+1</code> byte &rarr; stride-8 record, gated on <code>kind == 1</code>) and the five add-backs. The <code>+0</code> add lands on the <em>last</em> accumulator, out of sequence with <code>+1..+4</code> - the detail that pins INT and rules out an in-order guess. No store to the AGL accumulator exists in the function.</td><td><code>funcs/overlay_menu_801cf650.txt</code></td></tr>
+      <tr><td>Accumulator pre-loader</td><td><code>FUN_801CF5D0</code></td><td>Loads the five accumulators from the character record's live-stat block (<code>+0x110..+0x11B</code>: AGL, ATK, UDF, LDF, SPD, INT), fixing each equip byte's stat target.</td><td><code>funcs/overlay_shop_save_801cf5d0.txt</code></td></tr>
+      <tr><td>Passive aggregator (equip arm)</td><td><code>FUN_80042558</code></td><td>The <code>kind == 1</code> arm reads <code>+5</code> as a passive index.</td><td><code>funcs/80042558.txt</code></td></tr>
+      <tr><td>Item-detail renderer</td><td><code>FUN_801D5AE8</code>, reads at <code>0x801D5C90..A0</code></td><td>Second <code>+5</code> reader: row-keyed lookup, <code>&lt; 0x40</code> bound, passive name table at <code>0x8007625C</code>.</td><td><code>funcs/overlay_menu_801d5ae8.txt</code></td></tr>
+      <tr><td>Disc-gated tests</td><td><code>equip_stats_real</code>, <code>equip_modifiers_disc</code>, <code>equip_slots_vs_disc</code></td><td>Bytes, masks and slot types against the real executable + curated gamedata; the <code>+5</code> sentinel across all rows; the engine equip-gate chain end to end.</td><td>-</td></tr>
+    </tbody>
+  </table>
+  <p>The per-instruction walkthrough of the five adds is in the <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/equipment-table.md#the-five-adds-in-instruction-order" target="_blank" rel="noopener">source doc</a>.</p>
   <details class="disclosure"><summary>History: the "agility / speed pair" reading</summary>
-    <ul class="bullets">
-      <li>The earlier "agility / speed pair" reading of <code>+0</code>/<code>+4</code> is falsified: <code>+0</code> is the INT bonus (head gear), <code>+4</code> is the SPD bonus (footwear), and no equipment byte touches AGL.</li>
-      <li>Boots/shoes spread bonuses across <code>+1</code> (small attack bump), <code>+3</code> (LDF), and <code>+4</code> (SPD) - a walkthrough listing only "two defense numbers" for a boot is reading <code>+1</code> and <code>+3</code>, not <code>+2</code>/<code>+3</code>.</li>
-    </ul>
+    <div class="disclosure-body">
+      <ul class="bullets">
+        <li>An "agility / speed pair" reading of <code>+0</code>/<code>+4</code> is falsified: <code>+0</code> is the INT bonus (head gear), <code>+4</code> is the SPD bonus (footwear), and no equipment byte touches AGL.</li>
+        <li>Boots/shoes spread bonuses across <code>+1</code> (small attack bump), <code>+3</code> (LDF), and <code>+4</code> (SPD) - a walkthrough listing only "two defense numbers" for a boot is reading <code>+1</code> and <code>+3</code>, not <code>+2</code>/<code>+3</code>.</li>
+      </ul>
+    </div>
   </details>
 </section>
 
@@ -99,6 +140,7 @@ record      = (&amp;DAT_80074F68)[bonus_index * 8]   ; stride-8 record
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="item-table.html">Item property / name table</a>
+    <a href="item-effect-table.html">Item-effect table</a>
     <a href="steal-table.html">Steal-item table</a>
     <a href="accessory-passive-table.html">Accessory passives</a>
     <a href="battle-data-pack.html">Player battle files</a>

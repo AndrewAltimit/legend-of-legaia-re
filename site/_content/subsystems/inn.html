@@ -1,145 +1,116 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; inn</div>
   <h1>Inn</h1>
-  <p class="lede">What happens when you pay to rest at an inn - the "spend some gold, restore the party's HP and MP" flow. The headline finding: <strong>retail Legaia has no inn system at all</strong>. There is no inn overlay (no dedicated chunk of loadable code) and no inn cost table anywhere on the disc. Each inn is just an ordinary dialogue in its town's script - the innkeeper's conversation checks your gold, deducts the price, restores the party, and hands off to the dream sequence, all as plain script instructions - and the price is a literal number embedded in that script.</p>
+  <p class="lede">Pay the innkeeper, the screen fades, and the party wakes with full HP and MP. Retail Legaia has no inn <em>system</em> behind that: no dedicated code, no price table, no "this is an inn" flag. Every inn is an ordinary conversation in its town's script, and the price is a number typed into that script. That is what makes the stay portable and editable - and what makes finding a price a byte scan rather than a table lookup. <span class="tag tag-done">Fully ported</span></p>
 </header>
-
-<section class="doc-section" id="what-is-this">
-  <h2>What this page covers</h2>
-  <p>Every town's dialogue, doors and triggers run as bytecode in the <a href="script-vm.html">field/event VM</a> (a small interpreter for per-scene scripts), and each scene ships its script in a container called the <strong>MAN</strong> (the scene's script + data sub-asset). An inn stay is nothing more than one such script: a gold check, a debit, a restore, a dream. Because the price is data inside the script rather than a row in a table, finding "what does this inn charge?" means <em>scanning the script bytes</em> - which is exactly what the clean-room engine does at scene load.</p>
-  <p>The clean-room engine runs that script rather than reimplementing it: walking up to an innkeeper and answering &ldquo;Yes&rdquo; steps the innkeeper's own record through the ported field VM, and the gold that leaves your purse and the HP that comes back are the script's own instructions doing it. See <a href="#trigger">The trigger</a>.</p>
-  <p>There is <em>also</em> an engine-side <code>InnSession</code> prompt (<code>engine-core::inn</code>, with its own cost window) which nothing on that path opens - see <a href="#open-items">Open items</a>.</p>
-</section>
 
 <section class="doc-section" id="at-a-glance">
   <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Where</dt><dd>Inside each scene's <strong>MAN</strong> (the scene's script-and-data bundle, asset type <code>0x03</code>) - the innkeeper's own dialogue record.</dd>
+    <dt>Runs on</dt><dd>The <a href="script-vm.html">field / event script VM</a>, field overlay PROT <code>0897</code>. No inn overlay, no menu sub-screen.</dd>
+    <dt>Price</dt><dd>A u16 literal in a gold-compare instruction, repeated as the magnitude of a debit a few bytes later.</dd>
+    <dt>Restore</dt><dd>One heal instruction per party slot (<code>4C 82 &lt;slot&gt;</code>) - the only inn-specific opcode in the game.</dd>
+    <dt>Parser</dt><dd><code>legaia_asset::inn_costs</code> (price scan); engine path <code>engine-core::inline_dialogue</code> over <code>engine-vm::field</code>.</dd>
+    <dt>Confidence</dt><dd>Confirmed - disassembly + disc sweep + disc-gated engine test (<a href="#how-we-know">how we know</a>).</dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="flow">
+  <h2>One stay, six script steps</h2>
   <div class="flow">
-    <span class="num">1</span><span class="layer">Talk</span><span class="desc">the innkeeper's record greets, quotes the price, asks the question</span><span class="crate">0x1F pages</span>
-    <span class="num">2</span><span class="layer">Yes / No</span><span class="desc">a 2-option picker whose Yes jump lands on the gold gate</span><span class="crate">op 0x2A</span>
-    <span class="num">3</span><span class="layer">Gate</span><span class="desc">if gold &lt; cost, skip to the can't-afford line</span><span class="crate">op 0x4E sub-3</span>
-    <span class="num">4</span><span class="layer">Debit</span><span class="desc">subtract the literal cost from the purse</span><span class="crate">op 0x3A</span>
-    <span class="num">5</span><span class="layer">Sleep</span><span class="desc">BGM release, fade, waits</span><span class="crate">ops 0x35 / 0x34 / 0x4A</span>
-    <span class="num">6</span><span class="layer">Restore</span><span class="desc">one heal op per party slot - the only inn-specific opcode in the engine</span><span class="crate">4C 82 &lt;slot&gt;</span>
+    <span class="num">1</span><span class="layer">Talk</span><span class="desc">the innkeeper greets, quotes the price, asks the question</span><span class="crate">text pages</span>
+    <span class="num">2</span><span class="layer">Yes / No</span><span class="desc">a 2-option picker; the Yes entry jumps straight to the gold gate</span><span class="crate">op 0x2A</span>
+    <span class="num">3</span><span class="layer">Gate</span><span class="desc">if gold &lt; price, skip to the can't-afford line</span><span class="crate">op 0x4E sub-3</span>
+    <span class="num">4</span><span class="layer">Debit</span><span class="desc">subtract the price from the purse</span><span class="crate">op 0x3A</span>
+    <span class="num">5</span><span class="layer">Sleep</span><span class="desc">release the music, fade, wait</span><span class="crate">ops 0x35 / 0x34 / 0x4A</span>
+    <span class="num">6</span><span class="layer">Restore</span><span class="desc">refill HP and MP, one op per party slot; some inns then warp to a dream scene</span><span class="crate">4C 82 &lt;slot&gt;</span>
   </div>
-  <p>Every step is an ordinary field-VM instruction; the price is a number inside the script, so two inns in two towns differ only in that literal.</p>
+  <p>Every step is a plain script instruction, so two inns in two towns differ only in the price literal. The No answer and the can't-afford skip both land on refusal lines inside the same record; a stay never leaves the script VM.</p>
 </section>
 
 <section class="doc-section" id="trigger">
-  <h2>The trigger: the picker's own jump table</h2>
-  <p>There is no &ldquo;is this dialogue an inn?&rdquo; test anywhere - no opcode, no flag, no table of innkeepers. The hand-off from the offer to the restore is the <strong>option picker's per-option jump</strong>: each menu entry is a signed relative displacement, and the innkeeper's record is laid out so the <em>Yes</em> entry points at the gold gate. Answering the question <em>is</em> the trigger.</p>
-  <p>The shape, read off the <code>retock</code> innkeeper's record (the one carrying that scene's scanned charge):</p>
+  <h2>The trigger is the picker's jump</h2>
+  <p>Nothing marks a dialogue as an inn. The hand-off from the offer to the restore is the option picker's per-option relative jump: the record is laid out so that answering <em>Yes</em> lands on the gold gate. Two details of that layout trip up a port - either alone makes every inn unreachable.</p>
+  <table>
+    <thead><tr><th>Detail</th><th>What it is</th><th>What goes wrong if misread</th></tr></thead>
+    <tbody>
+      <tr><td>Menu open byte <code>0x2A</code></td><td>A 2-option picker that animates the box first and clamps (does not wrap) the cursor. Handled by the same arm as <code>0x27..0x29</code>.</td><td>A decoder that stops at <code>0x29</code> finds no inn menu - and misses a large share of the game's other menus.</td></tr>
+      <tr><td><code>A2 F8 &lt;clip&gt;</code> / <code>AC F8 08</code> / <code>AD F8 08</code></td><td>"Play a clip on the <em>player</em>, clear the end latch, spin until it re-latches." Bit 8 of the actor's clip-control word is the end flag; <code>F8</code> retargets the player.</td><td>Treating the spin as "conversation over" stops one instruction into the Yes branch, before the gate.</td></tr>
+    </tbody>
+  </table>
+  <p>In the port, <code>World::trigger_field_interact</code> steps the innkeeper's record through the field VM; the gate reads the live purse, the debit is the record's own <code>ADD_MONEY</code>, and the restore is its own <code>4C 82</code> ops. The runner parks on the clip spin until the player's clip cursor latches the end by itself.</p>
+  <details class="disclosure">
+    <summary>Record layout, as read off the <code>retock</code> innkeeper</summary>
+    <div class="disclosure-body">
 <pre><code>1F &lt;greeting&gt; 00  1F &lt;price line&gt; 00  1F &lt;offer question&gt; 00
 2A &lt;rel16 yes&gt; &lt;rel16 no&gt; 24        ; 2-option picker + post-page continue
 1F &lt;"yes" label&gt; 00  1F &lt;"no" label&gt; 00
   ; yes-jump target:
-A2 F8 &lt;clip&gt;  AC F8 08  AD F8 08    ; play a player clip, clear its end
-                                    ;   latch, spin until it re-latches
+A2 F8 &lt;clip&gt;  AC F8 08  AD F8 08    ; play a player clip, clear its end latch, spin
 ... 26 &lt;rel16&gt;                      ; -&gt; the gate
 4E &lt;pp&gt; 30 &lt;cost u16&gt; &lt;skip u16&gt;    ; if gold &lt; cost, skip to the refusal
 3A &lt;sext24(-cost)&gt;                  ; take the money
 1F &lt;thank-you&gt; 00 1F &lt;good night&gt; 00
 35 / 34 / 4A / 36                   ; BGM release, fade, waits, cue
 4C 82 00  4C 82 01  4C 82 02        ; the restore, one op per party slot</code></pre>
-  <p>The <em>No</em> jump lands on the decline line and the gate's skip lands on the can't-afford line, both inside the same record - so a stay never leaves the field VM.</p>
-  <p>Two details of that layout are easy to get wrong, and either one alone makes the inn unreachable in a port:</p>
-  <ul>
-    <li><strong>The menu open byte is <code>0x2A</code>, not <code>0x27</code>.</strong> <code>FUN_80038050</code> - the handler that applies the chosen option's jump - treats <code>0x27</code>, <code>0x28</code>, <code>0x29</code> and <code>0x2A</code> in one arm. On the pager side <code>0x2A</code> enters state <code>0x11</code> where <code>0x27</code> enters <code>0x13</code>, and the shared cursor handler at <code>0x801D941C</code> reads the option count off the <em>active</em> state (<code>0x18</code> = 4, <code>0x16</code> = 3, otherwise 2). So <code>0x2A</code> is a <strong>2-option</strong> menu that animates the box geometry first, and its cursor clamps instead of wrapping. A decoder that stops at <code>0x29</code> finds no inn menu at all - and misses a large share of the field corpus's other menus with it.</li>
-    <li><strong><code>AD F8 08</code> is a spin, not an end.</strong> <code>0x2D</code> tests a bit of the clip-control word <code>actor+0x62</code>, and bit 8 is the &ldquo;end&rdquo; flag the actor tick <code>FUN_800204F8</code> latches when a clip finishes - so <code>A2 F8 &lt;clip&gt;</code> / <code>AC F8 08</code> / <code>AD F8 08</code> means &ldquo;play it, clear the latch, wait for it&rdquo;. Retail's dialog state machine returns there every frame and re-enters until the latch lands. Reading that halt as &ldquo;the conversation is over&rdquo; stops one instruction into the Yes branch, before the gate.</li>
-  </ul>
-  <p>Engine path: <code>World::trigger_field_interact</code> &rarr; <code>World::drive_inline_dialogue</code> &rarr; <code>World::step_inline_dialogue</code> &rarr; <code>legaia_engine_vm::field::step</code>. The runner parks on the clip-end spin and latches the tested bit once the cued player clip finishes; the gate reads the live purse through <code>FieldHost::party_bank_value</code>, and the debit and the restore are the record's own <code>ADD_MONEY</code> and <code>4C 82 &lt;slot&gt;</code> ops. Disc-gated oracle: <code>crates/engine-core/tests/inn_stay_field_vm_disc.rs</code>, which drives the real record from the interact call and checks the gold delta and the party pools on the Yes, No and can't-afford branches.</p>
+      <p>The full Yes gesture is the door-swing shape aimed at the player: un-hold, poke the clip, clear + spin, un-clamp, wait, re-clamp, clear + spin again, then hand the player back to the locomotion move. Every operand is an animation bit of the player's <code>+0x62</code> word, not a local flag of the record.</p>
+    </div>
+  </details>
 </section>
 
 <section class="doc-section" id="cost-source">
-  <h2>Retail cost source (field-VM script literals)</h2>
-  <p>An inn stay is a scripted <strong>gold-gate + debit pair</strong> inline in the scene MAN (asset type <code>0x03</code>),
-  the same place the town gold-shop stock lives (see <a href="shop.html#stock-source">Shop</a>). In the disassembly below,
-  each line is one script instruction: an opcode byte (<code>0x4E</code>, <code>0x3A</code>) followed by its operands:</p>
-<pre><code>0x4E &lt;pp&gt; 0x30 &lt;cost u16&gt; &lt;skip u16&gt;   ; if gold &lt; cost, jump +skip
-...                                    ;   (the "can't afford" reply)
-0x3A &lt;sext24(-cost)&gt;                   ; ADD_MONEY: gold -= cost</code></pre>
-  <p>Op <code>0x4E</code> <strong>sub-op 3</strong> (operand byte 1, high nibble) loads the party gold <code>_DAT_8008459C</code>
-  and compares it against the u16 literal at operand <code>+2</code> (low nibble <code>0</code> = jump when gold &lt; literal -
-  the can't-afford branch); sub-op 10 is the 32-bit sibling (literal lo16 at <code>+2</code> / hi16 at <code>+6</code>, 9 bytes)
-  used where a price can exceed 65535 (the casino gold-to-coin counter). Provenance: the op-<code>0x4E</code> inner jump table
-  (the array of handler addresses the interpreter jumps through) at field-overlay VA <code>0x801CEE30</code> (12 entries) - the sub-3 arm at <code>0x801E0AEC</code> loads
-  <code>_DAT_8008459C</code>, sub-2 at <code>0x801E0AC0</code> loads a per-character level byte (<code>+0x130</code>), sub-9 at
-  <code>0x801E0B34</code> loads the casino coin bank <code>_DAT_800845A4</code> (see
-  <code>ghidra/scripts/funcs/overlay_0897_801de840.txt</code>; the decompiled-C case labels collapse these arms - the
-  disassembly + jump-table words are ground truth). Op <code>0x3A</code> (<code>ADD_MONEY</code>, see the
-  <a href="script-vm.html">field/event VM</a>) applies the signed 24-bit delta.</p>
-  <p>After the debit the same script continues in-line: the innkeeper's thank-you text, per-party-slot <code>0x4C</code> records
-  on slots 0/1/2 (the restore), and a <code>0x3F</code> transition whose destination name is <code>DREAM@@</code> - the inn dream
-  sequences. So cost prompt, gate, debit, restore, and dream hand-off are all one field-VM dialogue; no menu-overlay sub-screen
-  is involved in retail.</p>
-  <p>The shared scanner is <code>legaia_asset::inn_costs</code>: a byte scan (robust to the dialogue-picker jump tables that
-  desync a linear walk) for a gold compare whose literal reappears as the magnitude of a negative <code>ADD_MONEY</code> within a
-  few ops of the gate (retail sites sit 7..~16 bytes apart). Swept disc-wide by
-  <code>crates/asset/tests/inn_costs_disc.rs</code>: the pair resolves in the inn / paid-lodging scenes (e.g. the 200 G
-  innkeeper sites in the <code>ropeway</code> and <code>balden</code> blocks, <code>rayman2</code>'s 200 G stay,
-  <code>retock</code>'s 240 G stay), the paid tours and the 3,000 G <code>station3</code> train ticket (sub-3, u16 costs), and
-  the casino gold-to-coin counters (<code>koin*</code>; <code>koin4</code> carries the only sub-10 u32 sites, 8,500..90,000 G).
-  Free rests (Rim Elm's bed, Biron) simply have no gate + debit pair in their scripts.</p>
-</section>
-
-<section class="doc-section" id="flow">
-  <h2>Flow</h2>
-  <p>This section describes the port's <strong>alternative</strong> presentation - a menu session with its own cost window - which nothing on the reachable path opens (see <a href="#open-items">Open items</a>). The in-game stay is the field-VM record above.</p>
+  <h2>Where the price lives</h2>
+  <p>The price is a <strong>gold-gate + debit pair</strong>: op <code>0x4E</code> sub-op 3 compares the party's gold against a u16 literal and skips when gold is short; op <code>0x3A</code> (<code>ADD_MONEY</code>) then applies the negative of that literal. A 32-bit sibling (sub-op 10) exists for prices above 65,535 and is used only by the casino's gold-to-coin counters.</p>
+  <p><code>legaia_asset::inn_costs</code> finds the pair by byte scan - a literal in a gold compare that reappears as a debit within a few instructions - which survives the picker jump tables that desync a linear walk. The engine runs that scan at scene load. Free rests (Rim Elm's bed, Biron) have no pair at all.</p>
   <table>
-    <thead><tr><th>Phase</th><th>State</th><th>Description</th></tr></thead>
+    <thead><tr><th>Scene family</th><th>Charge</th><th>Form</th></tr></thead>
     <tbody>
-      <tr><td>Cost prompt</td><td><code>InnConfirm</code></td><td>Shows cost for one stay and a Yes / No cursor.</td></tr>
-      <tr><td>Rest fade</td><td><code>InnSleep</code></td><td>Transient screen that plays the rest fade after a Yes, then closes.</td></tr>
-      <tr><td>Commit</td><td>-</td><td>Deducts gold; restores all active party members&rsquo; HP and MP to their current maxima.</td></tr>
+      <tr><td><code>ropeway</code>, <code>balden</code>, <code>rayman2</code> inns</td><td>200 G</td><td>sub-3, u16</td></tr>
+      <tr><td><code>retock</code> inn</td><td>240 G</td><td>sub-3, u16</td></tr>
+      <tr><td><code>station3</code> train ticket, paid tours</td><td>up to 3,000 G</td><td>sub-3, u16</td></tr>
+      <tr><td><code>koin*</code> casino counters</td><td>8,500..90,000 G</td><td><code>koin4</code> carries the only sub-10 u32 sites</td></tr>
     </tbody>
   </table>
-  <p>On commit: <code>InnSession::can_afford(world_money)</code> gates the transaction. If affordable, gold is deducted (<code>World::money -= cost</code>) and each of the first <code>World::party_count</code> actor slots whose <code>active</code> flag is set gets <code>battle.hp = battle.max_hp</code> and <code>battle.mp</code> restored to the roster record&rsquo;s <code>mp_max</code>; inactive slots and the reserve bench are untouched. <code>save_party()</code> is called to sync the roster records.</p>
-  <p>The menu state machine (<code>engine-vm::menu</code>) routes the prompt: <code>InnConfirm</code> Yes (slot 0) commits the rest and routes to the transient <code>InnSleep</code> fade, which auto-advances to the menu&rsquo;s <code>Closing</code> state after <code>transient_hold_frames</code>; No (slot 1) and Triangle route straight to <code>Closing</code>. Either way the inn session is cleared.</p>
 </section>
 
-<section class="doc-section" id="session">
-  <h2>InnSession</h2>
-  <p><code>InnSession { cost: u32 }</code> is installed on <code>MenuRuntime</code> by <code>open_scene_inn(&amp;SceneHost)</code> (resolves the loaded scene's scanned cost and enters <code>InnConfirm</code>; returns <code>None</code> and installs nothing for free-rest scenes) or directly by <code>open_inn(cost)</code>. <code>can_afford(world_money: i32) -&gt; bool</code> checks <code>world_money &ge; cost</code>. Neither entry has a production caller - see <a href="#open-items">Open items</a>.</p>
+<section class="doc-section" id="engine-session">
+  <h2>The engine's spare prompt</h2>
+  <p>The port also carries <code>InnSession</code> (<code>engine-core::inn</code>): a menu-style cost window with <code>InnConfirm</code> / <code>InnSleep</code> sub-screens and its own commit kernel. Nothing on the playable path opens it - retail has no such screen, so wiring it in would replace the innkeeper's real dialogue with an invented panel. It remains a direct entry for tests and tooling; the <code>DREAM</code> warp some inns append after the restore is not reached by the port yet.</p>
 </section>
 
-<section class="doc-section" id="open-items">
-  <h2>Open items</h2>
-  <ul>
-    <li><strong>No cost table exists.</strong> A per-scene cost table in the menu overlay's DATA segment looks plausible; there is none -
-    every cost is a field-VM script literal in the scene MAN (gate <code>0x4E</code> sub-3 + debit <code>0x3A</code>, see
-    <em>Retail cost source</em> above). In the port, <code>SceneHost::load_scene</code> scans the cached MAN into
-    <code>scene_gold_charges</code> (<code>scene_inn_cost()</code> = the first sub-3 charge). Disc-gated oracle:
-    <code>crates/engine-core/tests/inn_cost_scene_disc.rs</code> (<code>retock</code>'s 240 G stay resolves;
-    free-rest <code>town01</code> opens nothing).</li>
-    <li><strong>Trigger - resolved, wired.</strong> The stay runs as the innkeeper's own field-VM record, reached by walking up and
-    talking (see <a href="#trigger">The trigger</a>). The port had the ops and the cost scan but not the path: the
-    <code>0x2A</code> menu open byte decoded as nothing, the gold gate read an empty purse because the engine had no
-    <code>party_bank_value</code>, and the clip-end spin ended the conversation one instruction into the Yes branch.</li>
-    <li><strong><code>InnSession</code> has no production caller - disclosed, not wired.</strong> <code>MenuRuntime::open_inn</code> /
-    <code>open_scene_inn</code> and the <code>InnConfirm</code> / <code>InnSleep</code> sub-screens are an engine-side prompt with
-    its own cost window and commit kernel. Retail has no such screen and the reachable path does not pass through one, so wiring a
-    host into it would <em>replace</em> faithful innkeeper dialogue with an invented panel rather than fill a gap. It stays as the
-    direct entry for tests and tooling. Deleting it is a legitimate future call; inventing a caller for it is not.</li>
-    <li><strong>The <code>DREAM</code> hand-off is not mirrored.</strong> Some inns append a story-flag-gated tail that warps to a
-    <code>DREAM</code> scene after the restore. The restore runs first and unconditionally, so a stay is complete without it, but the
-    dream scenes themselves are not yet reached.</li>
-  </ul>
-</section>
-
-<section class="doc-section" id="full-reference">
-  <h2>Full reference</h2>
-  <p>Complete flow and provenance at <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/inn.md" target="_blank" rel="noopener"><code>docs/subsystems/inn.md</code></a>. Source: <code>crates/engine-core/src/inn.rs</code>, scanner <code>legaia_asset::inn_costs</code>.</p>
+<section class="doc-section" id="how-we-know">
+  <h2>How we know</h2>
+  <table>
+    <thead><tr><th>Function / data</th><th>Address</th><th>What it proves</th><th>Dump</th></tr></thead>
+    <tbody>
+      <tr><td>Field VM op <code>0x4E</code> inner jump table</td><td><code>0x801CEE30</code> (12 entries)</td><td>Sub-3 arm at <code>0x801E0AEC</code> loads party gold <code>_DAT_8008459C</code>; sub-9 at <code>0x801E0B34</code> loads the casino coin bank <code>_DAT_800845A4</code>. Read from the disassembly - the decompiled C collapses these arms.</td><td><code>overlay_0897_801de840.txt</code></td></tr>
+      <tr><td>Option-jump handler</td><td><code>FUN_80038050</code></td><td><code>0x27..0x2A</code> share one arm: <code>new_pc = O + 1 + index*2 + i16(entry[index])</code>.</td><td><code>80038050.txt</code></td></tr>
+      <tr><td>Picker cursor handler</td><td><code>0x801D941C</code></td><td>Option count comes off the active state (<code>0x18</code> = 4, <code>0x16</code> = 3, else 2); <code>0x2A</code> enters state <code>0x11</code> and clamps.</td><td>field overlay dump</td></tr>
+      <tr><td>Actor tick</td><td><code>FUN_800204F8</code></td><td>Latches bit 8 of <code>actor+0x62</code> when a clip ends - the bit the <code>AD F8 08</code> spin waits on.</td><td><code>800204f8.txt</code></td></tr>
+      <tr><td>Cross-context id resolver</td><td><code>FUN_8003C83C</code></td><td>Id <code>F8</code> short-circuits to the live player object <code>_DAT_8007C364</code>.</td><td><code>8003c83c.txt</code></td></tr>
+      <tr><td>Disc sweep</td><td><code>crates/asset/tests/inn_costs_disc.rs</code></td><td>The gate + debit pair resolves in every inn / paid-lodging scene and nowhere a rest is free.</td><td>-</td></tr>
+      <tr><td>Engine oracle</td><td><code>crates/engine-core/tests/inn_stay_field_vm_disc.rs</code></td><td>Drives the real <code>retock</code> record from the interact call; checks the gold delta and party pools on Yes, No and can't-afford.</td><td>-</td></tr>
+    </tbody>
+  </table>
+  <details class="disclosure">
+    <summary>History: the cost table that does not exist</summary>
+    <div class="disclosure-body"><p>A per-scene cost table in the menu overlay's data segment was the natural first guess; the disc has none. Three port defects hid the real path at once: <code>0x2A</code> decoded as nothing, the gate read an empty purse, and the clip spin was read as the end of the conversation. See <a href="../reference/re-settled-threads.html">settled threads</a>.</p></div>
+  </details>
+  <p class="hint">Full provenance: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/inn.md" target="_blank" rel="noopener"><code>docs/subsystems/inn.md</code></a>. Source: <code>crates/engine-core/src/inn.rs</code>, <code>crates/engine-core/src/inline_dialogue.rs</code>.</p>
 </section>
 
 <section class="doc-section" id="see-also">
   <h2>See also</h2>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
-    <a href="shop.html">Shop UI</a>
     <a href="script-vm.html">Field/event VM</a>
+    <a href="shop.html">Shop</a>
     <a href="save-screen.html">Save screen</a>
     <a href="level-up.html">Level-up</a>
-    <a href="field-menu.html">Field menu (no inn screen)</a>
+    <a href="field-menu.html">Field menu</a>
     <a href="../formats/man-relocation.html">MAN relocation</a>
+    <a href="../formats/mes.html">MES dialog</a>
     <a href="../tooling/rom-patcher.html">ROM patcher</a>
   </div>
 </section>

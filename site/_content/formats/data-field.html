@@ -27,14 +27,14 @@
 <section class="doc-section" id="layout">
   <h2>Layout</h2>
   <figure class="overlay-strip">
-    <svg viewBox="0 0 880 150" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="dfc-title">
+    <svg viewBox="0 0 880 150" width="100%" style="max-width:880px" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="dfc-title">
       <title id="dfc-title">A DATA_FIELD stream: a chain of 4-byte type-and-size headers each followed by raw data, ended by a header whose low 24 bits are zero</title>
       <style>
-        .dfc-box  { fill: var(--bg-card); stroke: var(--accent); stroke-width: 1.3; }
-        .dfc-soft { fill: var(--bg-card); stroke: var(--border); stroke-width: 1.1; stroke-dasharray: 3 3; }
-        .dfc-lab  { font: 12px var(--font-body, sans-serif); fill: var(--text); }
-        .dfc-sub  { font: 10px var(--font-mono, monospace); fill: var(--text-muted); }
-        .dfc-off  { font: 10px var(--font-mono, monospace); fill: var(--accent); }
+        .dfc-box  { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.3; }
+        .dfc-soft { fill: var(--bg-raised); stroke: var(--border); stroke-width: 1.1; stroke-dasharray: 3 3; }
+        .dfc-lab  { font: 12px 'Inter', sans-serif; fill: currentColor; }
+        .dfc-sub  { font: 10px 'JetBrains Mono', monospace; fill: var(--text-muted); }
+        .dfc-off  { font: 10px 'JetBrains Mono', monospace; fill: var(--accent); }
         .dfc-arr  { fill: none; stroke: var(--accent); stroke-width: 1.2; }
       </style>
       <text x="20" y="22" class="dfc-off">+0</text>
@@ -140,6 +140,18 @@ terminator</code></pre>
       <p>A <code>SceneScriptedAssetTable</code> class - a descriptor table found at a sector-aligned offset inside an entry that led with an event prescript - was an artefact of the over-read entry size: every such offset was the next entry's start LBA, i.e. the neighbour's ordinary offset-0 table. Read against their own sectors, the prescript entries classify as event scripts and the 88 bare asset tables stay where they are. See <a href="prot.html#a-entry-offset-pair-is-only-a-coordinate-if-the-offset-is-inside-the-entry">PROT TOC &sect; history of the over-read</a>.</p>
     </div>
   </details>
+</section>
+
+<section class="doc-section" id="how-we-know">
+  <h2>How we know</h2>
+  <table>
+    <thead><tr><th>Evidence</th><th>Address / test</th><th>What it proves</th></tr></thead>
+    <tbody>
+      <tr><td>Retail consumer</td><td><code>FUN_8002541C</code>, the <code>0x14</code> branch</td><td>The chunk walk: header split, <code>(size &amp; ~3) + 4</code> advance, zero-size terminator.</td></tr>
+      <tr><td>Dispatcher hand-off</td><td><code>FUN_8001F05C</code> called with <code>copy_only=1</code></td><td>Chunks are consumed uncompressed, one dispatcher call per chunk.</td></tr>
+      <tr><td>Corpus sweep</td><td><code>asset scan-stream</code> strict validation</td><td>The 34-entry census and the two family shapes above.</td></tr>
+    </tbody>
+  </table>
 </section>
 
 <section class="doc-section" id="see-also">

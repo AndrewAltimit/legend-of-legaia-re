@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; legaia lzs compression</div>
   <h1>Legaia LZS compression <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">Every time the game loads a town, a battle arena, a monster or a menu texture, the first thing it does is unpack it. Almost everything on the disc - meshes, textures, scene scripts, the whole monster archive - is squeezed with one small compressor so that more of the game fits on a single CD and streams off it faster. That compressor is a Legaia-flavoured LZSS: the classic scheme that replaces repeated byte runs with short back-references into a sliding window of recent output. It is reverse-engineered byte-for-byte from the decompressor in the executable, <code>FUN_8001A55C</code>; the clean-room implementation is <code>crates/lzs/src/lib.rs</code>, and it also carries the encoder the disc patcher needs to put edited assets back.</p>
+  <p class="lede">Every time the game loads a town, a battle arena, a monster or a menu texture, the first thing it does is unpack it. Almost everything on the disc - meshes, textures, scene scripts, the whole monster archive - is squeezed with one small compressor so that more of the game fits on a single CD and streams off it faster. That compressor is a Legaia-flavoured LZSS: the classic scheme that replaces repeated byte runs with short back-references into a sliding window of recent output. It is reverse-engineered byte-for-byte from the executable's decompressor (<a href="#how-we-know">how we know</a>); the clean-room implementation also carries the encoder the disc patcher needs to put edited assets back.</p>
 </header>
 
 <section class="doc-section" id="at-a-glance">
@@ -31,7 +31,7 @@
   </ul>
 
   <figure class="overlay-strip">
-    <svg viewBox="0 0 880 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="lzs-fig-title">
+    <svg viewBox="0 0 880 200" width="100%" style="max-width:880px" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="lzs-fig-title">
       <title id="lzs-fig-title">One control byte governs the next eight items; a back-reference copies from the 4 KB ring buffer</title>
       <style>
         .lz-lab  { font: 11px 'Inter', sans-serif; fill: var(--text-muted); }
@@ -59,11 +59,12 @@
       <text x="440" y="121" class="lz-seg">recent output (wraps at 0xFFF)</text>
       <text x="800" y="121" class="lz-seg">zeros at start</text>
       <text x="140" y="152" class="lz-mono">0x000</text>
-      <text x="720" y="152" class="lz-mono">0xFEE = first write</text>
-      <text x="840" y="152" class="lz-mono">0xFFF</text>
+      <text x="740" y="152" class="lz-mono" text-anchor="middle">0xFEE</text>
+      <text x="740" y="168" class="lz-seg">first write</text>
+      <text x="860" y="152" class="lz-mono" text-anchor="end">0xFFF</text>
 
       <path class="lz-arr" d="M320 50 C 320 80, 380 80, 380 100"/>
-      <text x="330" y="80" class="lz-lab">copies len bytes from window[base..]</text>
+      <text x="398" y="82" class="lz-lab">copies len bytes from window[base..]</text>
     </svg>
     <figcaption>Each control byte flags the next eight items as literal or back-reference. A back-reference names an <em>absolute</em> window position, not a distance behind the write cursor.</figcaption>
   </figure>
@@ -133,7 +134,20 @@ while !done {
 
 <section class="doc-section" id="where-lzs-is-consumed">
   <h2>Where LZS is consumed</h2>
-  <p>The asset-type dispatcher (<code>FUN_8001F05C</code> - the routine that routes each loaded asset to its format handler) calls the LZS path when its <code>copy_only</code> flag is zero. See <a href="asset-type.html">asset type dispatcher</a>. Standalone-shaped LZS containers (with the descriptor-pair walker in <a href="asset-descriptor.html">asset descriptor</a>) are also recognised by <code>crates/lzs</code>.</p>
+  <p>The asset-type dispatcher - the routine that routes each loaded asset to its format handler - calls the LZS path when its <code>copy_only</code> flag is zero. See <a href="asset-type.html">asset type dispatcher</a>. Standalone-shaped LZS containers (with the descriptor-pair walker in <a href="asset-descriptor.html">asset descriptor</a>) are also recognised by <code>crates/lzs</code>.</p>
+</section>
+
+<section class="doc-section" id="how-we-know">
+  <h2>How we know</h2>
+  <table>
+    <thead><tr><th>Function</th><th>Address</th><th>What it proves</th><th>Dump</th></tr></thead>
+    <tbody>
+      <tr><td>Retail decoder</td><td><code>FUN_8001A55C</code></td><td>The complete algorithm above - ring size, <code>0xFEE</code> start, control-byte order, token encoding</td><td><code>funcs/8001a55c.txt</code></td></tr>
+      <tr><td>Asset-type dispatcher</td><td><code>FUN_8001F05C</code></td><td>When the LZS path is taken (<code>copy_only == 0</code>)</td><td><code>funcs/8001f05c.txt</code></td></tr>
+      <tr><td>Round-trip validation</td><td><code>crates/lzs</code> disc-gated tests</td><td><code>decompress(compress(x)) == x</code> over the whole PROT corpus; re-packed MANs fit their original spans</td><td>-</td></tr>
+    </tbody>
+  </table>
+  <p>Source of record: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/lzs.md" target="_blank" rel="noopener"><code>docs/formats/lzs.md</code></a>.</p>
 </section>
 
 <section class="doc-section" id="see-also">

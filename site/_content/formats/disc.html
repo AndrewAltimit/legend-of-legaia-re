@@ -9,6 +9,7 @@
   <dl class="kv">
     <dt>Magic</dt><dd>none - a 12-byte sync pattern opens every sector; files are found through ISO9660</dd>
     <dt>Where on disc</dt><dd>the whole <code>.bin</code> image; the Primary Volume Descriptor sits at LBA 16</dd>
+    <dt>Stride</dt><dd>2352 bytes per sector, 2048 of them file content at byte 24</dd>
     <dt>Parser</dt><dd><code>crates/iso</code> (<code>raw.rs</code> sector reader, <code>iso9660.rs</code> walker, <code>write.rs</code> EDC/ECC re-encode, <code>relayout.rs</code>)</dd>
     <dt>Confidence</dt><dd>Confirmed - textbook CD-ROM XA / ECMA-130 geometry; every disc-gated test in the workspace reads through it</dd>
     <dt>Used by</dt><dd><a href="../tooling/extraction.html">extraction pipeline</a>, <a href="../tooling/randomizer.html">disc patcher</a>, <a href="../tooling/rom-patcher.html">in-browser ROM patcher</a></dd>
@@ -17,58 +18,57 @@
 
 <section class="doc-section" id="overview">
   <h2>Overview</h2>
-  <p>A CD image (<code>.bin</code>) is a flat run of sectors, addressed by LBA (logical block address - the sector number, counting from the start of the disc). "Mode2/2352" names the sector flavour PlayStation discs use: mode 2 of the CD-ROM XA standard, stored as full 2352-byte raw sectors rather than pre-stripped 2048-byte ones. Reading a file therefore means knowing which LBA it starts at and peeling the 2048 user-data bytes out of each sector.</p>
-  <p>Two things live on top of that geometry, and the rest of this page covers them in order:</p>
+  <p>A CD image (<code>.bin</code>) is a flat run of sectors addressed by LBA - the logical block address, a sector number counting from the start of the disc. "Mode2/2352" names the sector flavour PlayStation discs use: mode 2 of the CD-ROM XA standard, stored as full 2352-byte raw sectors rather than pre-stripped 2048-byte ones. Reading a file means knowing its start LBA and peeling the 2048 user-data bytes out of each sector.</p>
+  <p>Two things live on top of that geometry:</p>
   <ul class="bullets">
     <li><strong>ISO9660</strong> - the standard CD filesystem that turns sector numbers into the 45 named files on the disc.</li>
-    <li><strong>Relayout</strong> - what it takes to grow a file by whole sectors (the operation the official PAL discs did to fit longer translated dialogue, and what a community language pack needs when its text does not fit in place).</li>
+    <li><strong>Relayout</strong> - growing a file by whole sectors, which the official PAL discs did to fit longer translated dialogue and which a community language pack needs when its text does not fit in place.</li>
   </ul>
-  <p>Implementation: <code>crates/iso/src/raw.rs</code>.</p>
 </section>
 
 <section class="doc-section" id="sector-layout">
   <h2>Sector layout</h2>
   <p>Each sector is 2352 bytes. Only the 2048-byte slice in the middle is file content; the rest is the sync mark and address the drive uses to find the sector, a subheader (meaningful for streamed XA audio and video), and the error-detection and error-correction codes that let a scratched disc still read.</p>
   <figure class="overlay-strip">
-    <svg viewBox="0 0 880 130" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="sec-title">
+    <svg viewBox="0 0 880 118" width="100%" style="max-width: 880px; height: auto;" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="One 2352-byte Mode 2 Form 1 sector: sync, header, subheader, 2048 bytes of user data, then EDC and ECC" aria-labelledby="sec-title">
       <title id="sec-title">One 2352-byte Mode 2 Form 1 sector: sync, header, subheader, 2048 bytes of user data, then EDC and ECC</title>
       <style>
-        .sec-box  { fill: var(--bg-card); stroke: var(--accent); stroke-width: 1.3; }
-        .sec-soft { fill: var(--bg-card); stroke: var(--border); stroke-width: 1.1; stroke-dasharray: 3 3; }
-        .sec-lab  { font: 12px var(--font-body, sans-serif); fill: var(--text); }
+        .sec-box  { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.3; }
+        .sec-soft { fill: var(--bg-raised); stroke: var(--border); stroke-width: 1.1; stroke-dasharray: 3 3; }
+        .sec-lab  { font: 12px var(--font-body, sans-serif); fill: currentColor; }
         .sec-sub  { font: 10px var(--font-mono, monospace); fill: var(--text-muted); }
         .sec-off  { font: 10px var(--font-mono, monospace); fill: var(--accent); }
       </style>
       <text x="20" y="22" class="sec-off">0</text>
       <rect x="20" y="30" width="70" height="44" class="sec-soft"/>
-      <text x="26" y="50" class="sec-lab">sync</text>
-      <text x="26" y="66" class="sec-sub">12 B</text>
+      <text x="55" y="50" class="sec-lab" text-anchor="middle">sync</text>
+      <text x="55" y="66" class="sec-sub" text-anchor="middle">12 B</text>
       <text x="90" y="22" class="sec-off">12</text>
-      <rect x="90" y="30" width="60" height="44" class="sec-soft"/>
-      <text x="96" y="50" class="sec-lab">header</text>
-      <text x="96" y="66" class="sec-sub">4 B MSF</text>
-      <text x="150" y="22" class="sec-off">16</text>
-      <rect x="150" y="30" width="80" height="44" class="sec-soft"/>
-      <text x="156" y="50" class="sec-lab">subheader</text>
-      <text x="156" y="66" class="sec-sub">8 B</text>
-      <text x="230" y="22" class="sec-off">24</text>
-      <rect x="230" y="30" width="500" height="44" class="sec-box"/>
-      <text x="400" y="50" class="sec-lab">user data (file content)</text>
-      <text x="400" y="66" class="sec-sub">2048 B</text>
-      <text x="730" y="22" class="sec-off">2072</text>
-      <rect x="730" y="30" width="40" height="44" class="sec-soft"/>
-      <text x="736" y="50" class="sec-lab">EDC</text>
-      <text x="736" y="66" class="sec-sub">4 B</text>
+      <rect x="90" y="30" width="70" height="44" class="sec-soft"/>
+      <text x="125" y="50" class="sec-lab" text-anchor="middle">header</text>
+      <text x="125" y="66" class="sec-sub" text-anchor="middle">4 B MSF</text>
+      <text x="160" y="22" class="sec-off">16</text>
+      <rect x="160" y="30" width="92" height="44" class="sec-soft"/>
+      <text x="206" y="50" class="sec-lab" text-anchor="middle">subheader</text>
+      <text x="206" y="66" class="sec-sub" text-anchor="middle">8 B</text>
+      <text x="252" y="22" class="sec-off">24</text>
+      <rect x="252" y="30" width="470" height="44" class="sec-box"/>
+      <text x="487" y="50" class="sec-lab" text-anchor="middle">user data (file content)</text>
+      <text x="487" y="66" class="sec-sub" text-anchor="middle">2048 B</text>
+      <text x="722" y="22" class="sec-off">2072</text>
+      <rect x="722" y="30" width="48" height="44" class="sec-soft"/>
+      <text x="746" y="50" class="sec-lab" text-anchor="middle">EDC</text>
+      <text x="746" y="66" class="sec-sub" text-anchor="middle">4 B</text>
       <text x="770" y="22" class="sec-off">2076</text>
       <rect x="770" y="30" width="90" height="44" class="sec-soft"/>
-      <text x="776" y="50" class="sec-lab">ECC</text>
-      <text x="776" y="66" class="sec-sub">276 B</text>
-      <text x="820" y="22" class="sec-off">2352</text>
-      <text x="20" y="108" class="sec-sub">sizes not to scale - the user-data slice is 87% of the sector</text>
+      <text x="815" y="50" class="sec-lab" text-anchor="middle">ECC</text>
+      <text x="815" y="66" class="sec-sub" text-anchor="middle">276 B</text>
+      <text x="860" y="22" class="sec-off" text-anchor="end">2352</text>
+      <text x="20" y="104" class="sec-sub">sizes not to scale - the user-data slice is 87% of the sector</text>
     </svg>
     <figcaption>One raw sector. <code>RawDisc::read_sector(lba)</code> returns only the 2048-byte user-data slice at byte 24.</figcaption>
   </figure>
-  <table>
+  <table class="layout">
     <thead><tr><th>Bytes</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
     <tbody>
       <tr><td><code>0..12</code></td><td>12</td><td>sync</td><td>Sync pattern <code>00 FF FF FF FF FF FF FF FF FF FF 00</code></td></tr>
@@ -78,7 +78,7 @@
       <tr><td><code>2072..2352</code></td><td>280</td><td>EDC + ECC</td><td>error detection + correction (Form 1 only; Form 2 XA audio sectors carry no ECC)</td></tr>
     </tbody>
   </table>
-  <p>The <code>iso</code> crate's <code>RawDisc::read_sector(lba)</code> returns just the user-data slice; <code>read_user_data(lba, count, buf)</code> reads a contiguous run.</p>
+  <p><code>RawDisc::read_sector(lba)</code> returns just the user-data slice; <code>read_user_data(lba, count, buf)</code> reads a contiguous run.</p>
 <pre><code>const SECTOR_SIZE: usize = 2352;
 const USER_DATA_OFFSET: usize = 24;
 const USER_DATA_SIZE: usize = 2048;</code></pre>
@@ -86,17 +86,16 @@ const USER_DATA_SIZE: usize = 2048;</code></pre>
 
 <section class="doc-section" id="iso9660-walk">
   <h2>ISO9660 walk</h2>
-  <p>On top of the sector layer sits ISO9660, the standard CD filesystem - it is what turns "sector 16" into named files and directories. Implementation: <code>crates/iso/src/iso9660.rs</code>. The layout is textbook:</p>
+  <p>On top of the sector layer sits ISO9660, the standard CD filesystem - it turns "sector 16" into named files and directories. The layout is textbook:</p>
   <ul class="bullets">
     <li>Primary Volume Descriptor at LBA 16.</li>
     <li>Root directory record at PVD offset 156.</li>
     <li>Each directory record begins with a length byte; records pad to even lengths.</li>
   </ul>
-  <p>The walker is iterative (not recursive) and yields stable-sorted file paths. The Legend of Legaia (USA) disc produces 45 files:</p>
+  <p>The walker (<code>crates/iso/src/iso9660.rs</code>) is iterative and yields stable-sorted file paths. The Legend of Legaia (USA) disc produces 45 files:</p>
 <pre><code>CDNAME.TXT  DMY.DAT  PROT.DAT  SCUS_942.54  SYSTEM.CNF
 MOV/MV1.STR ... MV6.STR
 XA/XA1.XA  ... XA34.XA</code></pre>
-  <p>Almost everything interesting lives in just a few of these:</p>
   <table>
     <thead><tr><th>File</th><th>What it is</th><th>Page</th></tr></thead>
     <tbody>
@@ -111,23 +110,23 @@ XA/XA1.XA  ... XA34.XA</code></pre>
   <details class="disclosure">
     <summary>History: the XA "non-standard interleave"</summary>
     <div class="disclosure-body">
-      <p>Early tooling reported that the on-disc XA files used a non-standard interleave. They do not: what looked like a bespoke muxing scheme was damage from reading Form 2 sectors through a Form 1 (2048-byte) truncation. The demuxer reads the raw 2352-byte sectors and the interleave is the standard one; see <a href="xa.html">XA audio</a> for the full account.</p>
+      <p>Early tooling reported a bespoke XA interleave. The interleave is the standard one; the apparent muxing scheme was damage from reading Form 2 sectors through a Form 1 (2048-byte) truncation. The demuxer reads raw 2352-byte sectors - see <a href="xa.html">XA audio</a>.</p>
     </div>
   </details>
 </section>
 
 <section class="doc-section" id="full-iso-relayout">
   <h2>Full-ISO relayout</h2>
-  <p>Growing a file by whole sectors - specifically <code>PROT.DAT</code>, which the official PAL discs did at mastering to fit longer localized dialogue - means every file after it moves, and every on-disc reference to those files has to be rewritten. The good news is that Legaia's disc makes this a small, well-bounded edit. Implemented in <code>legaia_iso::relayout</code> (generic ISO9660 + ECMA-130; embeds no game bytes).</p>
+  <p>Growing a file by whole sectors - <code>PROT.DAT</code>, which the official PAL discs grew at mastering to fit longer localized dialogue - moves every file after it, so every on-disc reference to those files has to be rewritten. Legaia's disc makes this a small, well-bounded edit. Implementation: <code>legaia_iso::relayout</code> (generic ISO9660 + ECMA-130; embeds no game bytes).</p>
 
   <h3 id="the-lba-reference-graph">The LBA reference graph</h3>
-  <p>Two facts make the relayout safe, both proven by diffing the USA disc against all three PAL discs (which are themselves a per-entry +1-sector relayout of the same structure):</p>
+  <p>Two facts make the relayout safe (<a href="#how-we-know">how we know</a>):</p>
   <ol>
-    <li><strong><code>PROT.DAT</code>'s internal TOC is PROT.DAT-relative, not absolute disc LBAs.</strong> Entry 0's TOC start LBA is identical on every disc even though <code>PROT.DAT</code> sits at a different disc LBA per region. Growing an interior entry needs only an internal-TOC start-LBA shift (see <a href="prot.html">PROT.DAT TOC</a>), not a disc-wide cascade.</li>
-    <li><strong>No file is located by a hardcoded absolute LBA in the executable.</strong> Every file is found by ISO9660 name/directory lookup (<code>PROT.DAT</code> via <code>FUN_8003E4E8</code>, STR/XA via the path opener) - no post-<code>PROT.DAT</code> file's disc LBA appears as a little-endian literal in any USA or PAL executable.</li>
+    <li><strong><code>PROT.DAT</code>'s internal TOC is PROT.DAT-relative, not absolute disc LBAs.</strong> Entry 0's TOC start LBA is identical on every region's disc even though <code>PROT.DAT</code> sits at a different disc LBA per region. Growing an interior entry needs only an internal-TOC shift (<a href="prot.html">PROT.DAT TOC</a>), not a disc-wide cascade.</li>
+    <li><strong>No file is located by a hardcoded absolute LBA in the executable.</strong> Every file is found by ISO9660 name lookup; no post-<code>PROT.DAT</code> file's disc LBA appears as a literal in any USA or PAL executable.</li>
   </ol>
   <p>When <code>PROT.DAT</code> grows by <code>G</code> sectors the cascade reduces to one rule: <strong>every ISO9660 LBA value <code>&gt; prot_lba</code> gains <code>+G</code>; <code>PROT.DAT</code>'s directory-record size gains <code>+G*2048</code>; the PVD volume-space size gains <code>+G</code>.</strong></p>
-  <table>
+  <table class="layout">
     <thead><tr><th>Structure</th><th>Location</th><th>Edit</th></tr></thead>
     <tbody>
       <tr><td>PVD volume space</td><td>LBA 16, off 80 (LE) + 84 (BE)</td><td><code>+= G</code></td></tr>
@@ -136,11 +135,35 @@ XA/XA1.XA  ... XA34.XA</code></pre>
       <tr><td>PROT internal TOC</td><td><code>PROT.DAT</code> byte <code>8+(j+2)*4</code></td><td>entries after a grown one <code>+= cumulative G</code> (PROT-relative)</td></tr>
     </tbody>
   </table>
-  <p>Subdirectory extents that live <em>after</em> <code>PROT.DAT</code> (on the retail disc <code>MOV</code> and <code>XA</code>) relocate too, so their self <code>.</code> record and file records are patched at the extent's new position.</p>
+  <p>Subdirectory extents that live <em>after</em> <code>PROT.DAT</code> (<code>MOV</code> and <code>XA</code> on the retail disc) relocate too, so their self <code>.</code> record and file records are patched at the extent's new position.</p>
 
-  <h3 id="per-sector-mechanics">Per-sector mechanics</h3>
-  <p>Every sector after <code>PROT.DAT</code> is relocated <code>+G</code>: its 12-byte sync + 4-byte header are rewritten so the stored MSF address is <code>BCD(lba+150)</code> for the new position. Form 1 EDC/ECC are computed with the header treated as zero (see <code>crates/iso/src/write.rs</code>), so a <strong>pure relocation needs no EDC/ECC recompute</strong> - only the MSF header changes. Form 2 (XA) sectors carry no ECC. EDC/ECC are recomputed only for sectors whose 2048-byte user data changes: the rebuilt <code>PROT.DAT</code> payload, the PVD, path tables and the directory extents.</p>
-  <p>The disc-level operation preserves the PROT entry index space (no entries added or removed), so index-keyed same-size edits still resolve after a relayout. Consumers: <code>DiscPatcher::grow_prot_entries</code> and the <code>translate import --allow-relayout</code> localization path (see <a href="../tooling/translation.html">translation tooling</a>).</p>
+  <details class="disclosure">
+    <summary>Per-sector mechanics of a relocation</summary>
+    <div class="disclosure-body">
+      <ul class="bullets">
+        <li>Every sector after <code>PROT.DAT</code> moves <code>+G</code>: its 12-byte sync + 4-byte header are rewritten so the stored MSF address is <code>BCD(lba+150)</code> for the new position.</li>
+        <li>Form 1 EDC/ECC are computed with the header treated as zero (<code>crates/iso/src/write.rs</code>), so a <strong>pure relocation needs no EDC/ECC recompute</strong> - only the MSF header changes. Form 2 (XA) sectors carry no ECC.</li>
+        <li>EDC/ECC are recomputed only for sectors whose user data changes: the rebuilt <code>PROT.DAT</code> payload, the PVD, path tables and the directory extents.</li>
+        <li>The PROT entry index space is preserved (no entries added or removed), so index-keyed same-size edits still resolve after a relayout.</li>
+      </ul>
+      <p>Consumers: <code>DiscPatcher::grow_prot_entries</code> and the <code>translate import --allow-relayout</code> localization path (<a href="../tooling/translation.html">translation tooling</a>).</p>
+    </div>
+  </details>
+</section>
+
+<section class="doc-section" id="how-we-know">
+  <h2>How we know</h2>
+  <table>
+    <thead><tr><th>Evidence</th><th>Address / source</th><th>What it proves</th></tr></thead>
+    <tbody>
+      <tr><td>ECMA-130 / CD-ROM XA</td><td>public standard</td><td>Sector geometry, EDC/ECC polynomial, MSF encoding</td></tr>
+      <tr><td><code>PROT.DAT</code> opener</td><td><code>FUN_8003E4E8</code></td><td>The archive is found by ISO9660 name lookup, not by a hardcoded LBA</td></tr>
+      <tr><td>STR / XA path opener</td><td>SCUS path-open helper</td><td>Movies and audio are opened by path; no absolute LBA literal in any USA or PAL executable</td></tr>
+      <tr><td>USA vs PAL diff</td><td><code>SCES_019.44/.45/.46</code></td><td>The PAL discs are a per-entry +1-sector relayout of the same structure; PROT TOC entry 0 is identical across regions (PROT-relative)</td></tr>
+      <tr><td>Disc-gated round trips</td><td><code>crates/iso</code>, <code>crates/patcher/tests/*_real.rs</code></td><td>Every rewritten sector stays EDC/ECC-valid; relayout preserves the entry index space</td></tr>
+    </tbody>
+  </table>
+  <p>Full page: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/disc.md">docs/formats/disc.md</a>.</p>
 </section>
 
 <section class="doc-section" id="see-also">

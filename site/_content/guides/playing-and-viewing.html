@@ -46,7 +46,7 @@
     <li><kbd>F1</kbd> shows the engine's diagnostic text rows (off by default); <kbd>F2</kbd> mutes audio; <kbd>F3</kbd> swaps the field camera for the wide debug orbit.</li>
     <li><kbd>F4</kbd> toggles the camera-occlusion fade (on by default: walls between the camera and your character dissolve to a dither so you can always see yourself; <code>--no-occlusion-fade</code> starts with it off).</li>
   </ul>
-  <p class="hint">No window toggle sits on a key the pad table can bind, and that is not cosmetic: a window key arm runs <strong>before</strong> the pad lookup, so one parked on a bindable key deletes that button from the keyboard entirely. The bindable vocabulary is the table above plus <kbd>C</kbd>, <kbd>V</kbd>, <kbd>D</kbd> and <kbd>E</kbd>; every window toggle is either an F-key or a letter outside that vocabulary (<kbd>I</kbd>, <kbd>R</kbd>, <kbd>T</kbd>, <kbd>Y</kbd>, and the minigame keys below), so no rebinding can collide with one.</p>
+  <p class="hint">Window toggles and pad bindings cannot collide: every toggle lives on an F-key or a letter outside the bindable vocabulary (the table above plus <kbd>C</kbd>, <kbd>V</kbd>, <kbd>D</kbd>, <kbd>E</kbd>), so no rebinding can silently delete a button.</p>
   <h3>Flags</h3>
   <ul>
     <li><code>--boot-ui</code> starts at the title screen &rarr; save-select flow instead of jumping into the scene.</li>
@@ -124,7 +124,7 @@
 <section class="doc-section" id="audio">
   <h2>5 &middot; What you hear</h2>
   <p>Both hosts decode their audio from the disc you supply - no samples ship with the engine or the site. Music is a SEQ played through the clean-room SPU against the scene's own sound bank; sound effects come from the executable's descriptor table plus the resident program bank, and both hosts key them into the <strong>same</strong> SPU the music uses, so a cue shares the voice pool exactly as it does on hardware.</p>
-  <p>Cue <em>provenance</em> is worth knowing before you judge a sound. Retail fires an effect by writing an id into a ring, and only a handful of those writes have been traced, so a cue is either <code>disc</code> (the id is retail's, at the place retail writes it) or <code>site</code> (retail's id there is unpinned and the port reuses the closest one). The browser page reports the split per event rather than presenting a guess as the game's sound. The footstep is the clearest example: its <em>timing</em> is the retail cadence - a faster walk steps more often, standing still is silent - while the cue id it fires is the port's pick.</p>
+  <p>Before judging a sound, know its <em>provenance</em>: a cue is either <code>disc</code> (the id is retail's, fired where retail fires it) or <code>site</code> (retail's id there is unpinned, so the port reuses the closest one), and the browser page reports the split per event. The footstep is the clearest example - its timing is the retail cadence, while the cue id it fires is the port's pick.</p>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="../subsystems/audio.html">Audio subsystem</a>

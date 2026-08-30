@@ -1,19 +1,19 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> · tooling</div>
   <h1>Tooling</h1>
-  <p class="lede">Two very different kinds of tools live here. Some are for <strong>you</strong>: point them at your own Legend of Legaia disc image and they extract every asset, re-roll the game from a seed, or translate its text - no reverse-engineering knowledge needed. The rest are the project's own <strong>reverse-engineering infrastructure</strong>: the instruments the format docs and the engine port are built with. This page is a map by task - pick the thing you want to do and follow the card.</p>
+  <p class="lede">Two kinds of tools live here. The first are for <strong>you</strong>: point them at your own Legend of Legaia disc and they extract every asset, re-roll the game from a seed, or translate its text. The rest are the project's <strong>reverse-engineering instruments</strong> - the Ghidra, emulator-capture and measurement tools the format docs and engine port are built with. Pick a task below and follow the card.</p>
 </header>
 
 <section class="doc-section" id="orientation">
   <h2>Pick a task</h2>
-  <p>Every tool takes a disc image you supply (the project ships no game data) and reads from the <code>extracted/</code> tree the extraction pipeline produces. The groups below are ordered the way most people arrive: get the assets off the disc first, then either play with the game (patch it) or dig into how it works (Ghidra, emulator capture, measurement).</p>
+  <p>Every tool takes a disc image you supply (the project ships no game data); most read the <code>extracted/</code> tree the extraction pipeline produces. The groups are in arrival order: get the assets off the disc, then either patch the game or dig into how it works.</p>
   <ul class="bullets">
     <li><a href="#extract"><strong>Extract assets</strong></a> - turn the disc into PNGs, meshes and audio; the starting point for everything else.</li>
     <li><a href="#patch"><strong>Patch a disc</strong></a> - randomizer, ROM patcher, language packs. Shipped deliverables, not side effects.</li>
     <li><a href="#ghidra"><strong>Dig in Ghidra</strong></a> - the static path: disassemble the executable, recover the RAM overlays, answer "who calls this?".</li>
     <li><a href="#capture"><strong>Capture the emulator</strong></a> - the dynamic path: watch the retail game run and record what the code actually does.</li>
     <li><a href="#measure"><strong>Measure the port</strong></a> - how much of the game is understood, how much is ported, and whether the port matches retail.</li>
-    <li><a href="#more"><strong>More tooling docs</strong></a> - the gate and triage pages that live only on GitHub.</li>
+    <li><a href="#more"><strong>More tooling docs</strong></a> - CI gates and triage ledgers, on GitHub only.</li>
   </ul>
 </section>
 
@@ -62,7 +62,7 @@
 
 <section class="doc-section" id="ghidra">
   <h2>Dig in Ghidra</h2>
-  <p>The static path. Ghidra runs headlessly in Docker and is driven by scripts; every <code>FUN_80xxxxxx</code> on this site is a function it labelled. The catch that shapes all four pages: most of Legaia's game logic is <em>not</em> in the executable - it lives in overlays, chunks of code the game pages into RAM on demand - so "no static caller" is a question, not an answer.</p>
+  <p>The static path. Ghidra runs headlessly in Docker, driven by scripts; every <code>FUN_80xxxxxx</code> on this site is a function it labelled. One fact shapes all four pages: most of Legaia's game logic lives in <em>overlays</em> - code the game pages into RAM on demand - not in the executable, so "no static caller" is a question, not an answer.</p>
   <div class="card-grid">
     <a class="card" href="ghidra.html">
       <div class="card-title">Ghidra in Docker</div>
@@ -85,7 +85,7 @@
 
 <section class="doc-section" id="capture">
   <h2>Capture the emulator</h2>
-  <p>The dynamic path. When static analysis cannot say which code runs, an emulator can: load a save state, arm a watch or breakpoint, run a few frames, and read back what happened. Two emulators are used for different strengths - PCSX-Redux has a scriptable breakpoint debugger, mednafen has cheap save states whose RAM can be diffed.</p>
+  <p>The dynamic path: load a save state, arm a watch or breakpoint, run a few frames, read back what happened. PCSX-Redux brings a scriptable breakpoint debugger; mednafen brings cheap save states whose RAM can be diffed.</p>
   <div class="card-grid">
     <a class="card" href="overlay-capture.html">
       <div class="card-title">Overlay capture</div>
@@ -93,7 +93,7 @@
     </a>
     <a class="card" href="pcsx-redux-automation.html">
       <div class="card-title">PCSX-Redux automation</div>
-      <div class="card-body">Closed-loop Lua probes: save-state load &rarr; arm probes &rarr; capture N VSyncs &rarr; CSV / snapshot. Quick start, the probe catalogue, and the authoring pattern.</div>
+      <div class="card-body">Closed-loop Lua probes: load a save state, arm breakpoints, run N frames, write CSV or a snapshot. Quick start, probe catalogue, authoring pattern.</div>
     </a>
     <a class="card" href="mednafen-automation.html">
       <div class="card-title">Mednafen automation</div>
@@ -116,7 +116,7 @@
 
 <section class="doc-section" id="measure">
   <h2>Measure the port</h2>
-  <p>Three different questions, each with its own instrument: how much of the game's code is understood and reimplemented (the catalog and disc coverage), whether the reimplementation behaves like retail frame for frame (the differential oracle), and whether it behaves like <em>itself</em> run twice (determinism).</p>
+  <p>Three questions, three instruments: how much of the game is understood and reimplemented (port catalog, disc coverage), whether the port matches retail frame for frame (differential oracle), and whether it matches <em>itself</em> run twice (determinism).</p>
   <div class="card-grid">
     <a class="card" href="port-catalog.html">
       <div class="card-title">Port catalog</div>
@@ -124,7 +124,7 @@
     </a>
     <a class="card" href="disc-coverage.html">
       <div class="card-title">Disc coverage</div>
-      <div class="card-body">The same question with the denominator taken from the <em>disc</em> instead of from our own citations: byte-exact coverage of each image's code, plus PROT format recognition by bytes.</div>
+      <div class="card-body">The same question with the denominator taken from the <em>disc</em>: byte-exact coverage of each code image by dumped functions, plus PROT format recognition by bytes.</div>
     </a>
     <a class="card" href="recomp-differential.html">
       <div class="card-title">Recomp differential oracle</div>
@@ -139,7 +139,7 @@
 
 <section class="doc-section" id="more">
   <h2>More tooling docs (on GitHub)</h2>
-  <p>These pages live in <code>docs/tooling/</code> and are not mirrored on the site. Most are the project's CI gates and triage ledgers - the checks that keep a measurement honest and the per-row verdicts behind the port catalog's numbers.</p>
+  <p>These live in <code>docs/tooling/</code> only: the CI gates that keep a measurement honest and the per-row triage ledgers behind the port catalog.</p>
   <div class="card-grid">
     <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/worklist-classification.md" target="_blank" rel="noopener">
       <div class="card-title">Worklist classification</div>
@@ -163,11 +163,11 @@
     </a>
     <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/dump-corpus-integrity.md" target="_blank" rel="noopener">
       <div class="card-title">Dump-corpus integrity</div>
-      <div class="card-body">A dump's <em>printed addresses</em> are a property of its load base; a filename prefix is not evidence. Census of mis-based and truncated dumps plus the re-runnable checker.</div>
+      <div class="card-body">A dump's <em>printed addresses</em> depend on its load base; only the header tag is evidence. Census of mis-based and truncated dumps plus the checker.</div>
     </a>
     <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/port-provenance.md" target="_blank" rel="noopener">
       <div class="card-title">Port provenance</div>
-      <div class="card-body">Nothing checks that a <code>// PORT:</code> address names the routine the Rust code implements. The ranked worklist for that, and the signal that was built, measured and deleted.</div>
+      <div class="card-body">A <code>// PORT:</code> address can name the wrong routine and no gate catches it; the ranked worklist for checking that by hand.</div>
     </a>
     <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/phantom-print-index.md" target="_blank" rel="noopener">
       <div class="card-title">Phantom print index</div>
@@ -202,7 +202,7 @@
 
 <section class="doc-section" id="quick-pipeline">
   <h2>Disc-gated tests</h2>
-  <p>Everything that touches a real <code>.bin</code> runs only when <code>LEGAIA_DISC_BIN</code> is set; CI runs without disc data and those tests skip cleanly. Release-archive users run the binaries directly; source builds live under <code>target/release/</code>.</p>
+  <p>Tests that touch a real <code>.bin</code> run only when <code>LEGAIA_DISC_BIN</code> is set; without it they skip and pass, which is how CI runs. Source builds put the binaries under <code>target/release/</code>.</p>
   <div class="cli"><code>LEGAIA_DISC_BIN="/path/to/Legend of Legaia (USA).bin" cargo test --workspace</code></div>
   <div class="see-also">
     <span class="see-also-label">Reference</span>

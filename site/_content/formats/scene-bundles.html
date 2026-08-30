@@ -1,310 +1,248 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; scene-prefixed asset bundles</div>
   <h1>Scene-prefixed asset bundles <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">When the game loads a town, dungeon, or battle, it pulls that scene's assets - 3D geometry,
-  textures, sound banks, scripts - out of PROT.DAT (the disc's single big archive; everything except movies and
-  audio streams lives in its numbered entries). This page catalogues the related container shapes those
-  per-scene entries use. All of them lead with a 4-byte chunk0 header in the form <code>(type &lt;&lt; 24) |
-  size</code>, with <code>type = 0x00</code> - the same encoding as a <a href="data-field.html">DATA_FIELD
-  streaming</a> chunk header. But the type byte misleads: the standard streaming walker would interpret
-  <code>type=0x00</code> as the TIM dispatcher slot; specialised loaders in the runtime know to dispatch chunk0
-  differently based on the <em>content</em> magic at offset +4. Two traps run through the whole page: handing an
-  entry to the wrong walker mis-dispatches and crashes (the header packing is identical, the semantics aren't),
-  and the "script" records these bundles carry are <strong>not</strong> field-VM event bytecode, however natural
-  that assumption looks - they're move-VM stager records, animation/motion programs (see <a
-  href="#scene-event-scripts-prescript-only">scene_event_scripts</a>).</p>
+  <p class="lede">When the game loads a town, dungeon or battle it pulls that scene's assets - 3D geometry, textures,
+  sound banks, scripts - out of PROT.DAT, the disc's single big archive. This page catalogues the container shapes
+  those per-scene entries use. They all lead with the same 4-byte <code>(type &lt;&lt; 24) | size</code> chunk word,
+  so they look alike; what tells them apart is the content magic at offset 4, and handing one to the wrong walker
+  crashes.</p>
 </header>
 
 <section class="doc-section" id="at-a-glance">
   <h2>At a glance</h2>
   <dl class="kv">
-    <dt>Magic</dt><dd>None shared - every shape leads with a <code>(type &lt;&lt; 24) | size</code> chunk0 word and is told apart by the content magic at <code>+4</code> (<code>0x80000002</code> TMD, <code>VABp</code>, a descriptor count, a <code>u16</code> record count)</dd>
-    <dt>Where on disc</dt><dd>The per-scene PROT entries every CDNAME scene block seats: <code>[.MAP][.PCH v12 header][prescript][asset bundle]</code> for towns; battle stages as bare-TMD streams; BGM as VAB streams</dd>
+    <dt>Where</dt><dd>The PROT entries every CDNAME scene block seats: <code>[.MAP][.PCH trigger sidecar][prescript][asset bundle]</code> for towns; battle stages as bare-TMD streams; BGM as VAB streams</dd>
+    <dt>Magic</dt><dd>None shared - each shape is told apart by the content at <code>+4</code> (Legaia TMD <code>0x80000002</code>, <code>VABp</code>, a descriptor count, a <code>u16</code> record count)</dd>
     <dt>Parser</dt><dd><code>legaia_asset::{scene_tmd_stream, scene_vab_stream, scene_v12_table, scene_asset_table, scene_event_scripts}</code>; <code>categorize</code> runs the detectors in order</dd>
-    <dt>Confidence</dt><dd>Confirmed - each walker is read off its retail consumer (<code>FUN_8001FE70</code>, <code>FUN_80020224</code>, <code>FUN_800252EC</code>) and the corpus tiling is asserted by disc-gated tests</dd>
+    <dt>Confidence</dt><dd>Confirmed - each walker is read off its retail consumer; corpus tiling asserted by disc-gated tests</dd>
     <dt>Used by</dt><dd><a href="../subsystems/asset-loader.html">Asset loader</a>, <a href="../subsystems/battle.html">Battle scene</a>, <a href="../world.html">Field scene viewer</a></dd>
   </dl>
   <table>
     <thead><tr><th>Shape</th><th>What it carries in the game</th><th>Told apart by</th><th>Entries</th></tr></thead>
     <tbody>
       <tr><td><a href="#scene-tmd-stream-bare-tmd-prefix"><code>scene_tmd_stream</code></a></td><td>A battle-stage backdrop mesh plus its textures and NPC palettes</td><td>Legaia TMD magic at <code>+4</code></td><td>182</td></tr>
-      <tr><td><a href="#scene-vab-stream-vab-prefix"><code>scene_vab_stream</code></a></td><td>A music track: instrument bank then the sequence</td><td><code>VABp</code> at <code>+4</code></td><td>most BGM</td></tr>
+      <tr><td><a href="#scene-vab-stream-vab-prefix"><code>scene_vab_stream</code></a></td><td>A music track: instrument bank, then the sequence</td><td><code>VABp</code> at <code>+4</code></td><td>most BGM</td></tr>
       <tr><td><a href="#scene-v12-table-scene-header-event-script-bundle"><code>scene_v12_table</code></a></td><td>The scene's walk-on trigger tiles (dev name <code>.PCH</code>)</td><td>Three algebraically tied header words; exactly one sector</td><td>97</td></tr>
-      <tr><td><a href="#scene-event-scripts-prescript-only"><code>scene_event_scripts</code></a></td><td>Move-VM stager records for the scene's ambient props</td><td><code>[u16 count][u16 offsets]</code> prescript at 0</td><td>101</td></tr>
+      <tr><td><a href="#scene-event-scripts-prescript-only"><code>scene_event_scripts</code></a></td><td>Move-VM stager records for the scene's ambient props</td><td><code>[u16 count][u16 offsets]</code> at 0</td><td>101</td></tr>
       <tr><td><a href="#scene-asset-table-count-prefixed-asset-bundle"><code>scene_asset_table</code></a></td><td>The town / dungeon bundle: MAN script, meshes, textures</td><td><code>u32 count</code> of 6 or 7 descriptors</td><td>one per scene</td></tr>
       <tr><td><a href="#scene-scripted-asset-table-scripted-prefix-canonical-bundle"><code>scene_scripted_asset_table</code></a></td><td>Nothing - a composite retail does not ship</td><td>Prescript + table at the next sector</td><td>0</td></tr>
-      <tr><td><a href="#tmd-size-prefix-truncated-tmd-prefix"><code>tmd_size_prefix</code></a></td><td>A truncated mesh prefix</td><td>Claimed size larger than the entry</td><td>few</td></tr>
+      <tr><td><a href="#tmd-size-prefix-truncated-tmd-prefix"><code>tmd_size_prefix</code></a></td><td>A truncated mesh prefix</td><td>Claimed size larger than the entry</td><td>34</td></tr>
     </tbody>
   </table>
+  <figure class="overlay-strip">
+    <svg viewBox="0 0 880 180" width="100%" style="max-width:880px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A town scene block: four consecutive PROT entries, and the descriptor layout inside the asset bundle">
+      <style>
+        .sb-box { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.2; }
+        .sb-dim { fill: none; stroke: var(--border); stroke-width: 1.1; stroke-dasharray: 3 3; }
+        .sb-t { font: 12px 'Inter', sans-serif; fill: currentColor; text-anchor: middle; dominant-baseline: middle; }
+        .sb-m { font: 11px 'JetBrains Mono', monospace; fill: var(--text-muted); text-anchor: middle; dominant-baseline: middle; }
+        .sb-lab { font: 11px 'Inter', sans-serif; fill: var(--text-muted); }
+        .sb-arrow { stroke: var(--accent); stroke-width: 1.2; fill: none; }
+      </style>
+      <text x="16" y="34" class="sb-lab">scene block</text>
+      <rect x="110" y="18" width="150" height="34" class="sb-box"/>
+      <text x="185" y="35" class="sb-t">.MAP  (0x12000)</text>
+      <rect x="270" y="18" width="150" height="34" class="sb-box"/>
+      <text x="345" y="35" class="sb-t">.PCH  (1 sector)</text>
+      <rect x="430" y="18" width="150" height="34" class="sb-box"/>
+      <text x="505" y="35" class="sb-t">prescript</text>
+      <rect x="590" y="18" width="270" height="34" class="sb-box"/>
+      <text x="725" y="35" class="sb-t">scene_asset_table bundle</text>
+      <path d="M 725 58 L 725 86" class="sb-arrow"/>
+      <path d="M 719 80 L 725 86 L 731 80" class="sb-arrow"/>
+      <text x="16" y="118" class="sb-lab">bundle</text>
+      <rect x="110" y="100" width="70" height="34" class="sb-box"/>
+      <text x="145" y="117" class="sb-m">count</text>
+      <rect x="180" y="100" width="70" height="34" class="sb-box"/>
+      <text x="215" y="117" class="sb-m">meta1</text>
+      <rect x="250" y="100" width="230" height="34" class="sb-box"/>
+      <text x="365" y="117" class="sb-t">count x (type|size, offset)</text>
+      <rect x="480" y="100" width="380" height="34" class="sb-dim"/>
+      <text x="670" y="117" class="sb-t">LZS payloads: TIMs, TMD pack, MAN, MES, ...</text>
+      <text x="145" y="154" class="sb-m">+0</text>
+      <text x="215" y="154" class="sb-m">+4</text>
+      <text x="365" y="154" class="sb-m">+8, 8 bytes each</text>
+      <text x="670" y="154" class="sb-m">+8 + count*8</text>
+    </svg>
+    <figcaption>A town's scene block is four consecutive PROT entries; the bundle at the end is a count-prefixed descriptor table over LZS-compressed payloads.</figcaption>
+  </figure>
 </section>
 
 <section class="doc-section" id="scene-tmd-stream-bare-tmd-prefix">
   <h2>scene_tmd_stream - bare-TMD prefix</h2>
-  <p>The dominant scene-asset layout: a 3D mesh up front, textures behind it. TMD is the PlayStation's 3D-model format (Legaia uses a custom variant, magic <code>0x80000002</code> - see <a href="tmd.html">tmd</a>); TIM is the PSX image/texture format. Implementation: <code>crates/asset/src/scene_tmd_stream.rs</code>. 182 of the disc's 1233 PROT entries carry it. Walked by <code>FUN_8001FE70</code> (the battle-init custom walker; <code>FUN_80xxxxxx</code> names are Ghidra-traced functions, labelled by RAM address) - <strong>not</strong> by <code>FUN_8002541C</code> / <code>FUN_8001F05C</code> despite the chunk-header packing matching the standard format.</p>
-<pre><code>+0x00          u32 chunk0_header   ; (type=0x00 &lt;&lt; 24) | size
-+0x04          Legaia TMD          ; magic 0x80000002, fills `size` bytes
-+0x04 + size   streaming chunks    ; FUN_8001FE70-style tail until
-                                   ; terminator OR end-of-file</code></pre>
-  <p>Strict structural detection:</p>
-  <ol class="bullets">
-    <li><code>buf.len() &gt;= 32</code>.</li>
-    <li><code>buf[4..8] == 0x80000002</code> (Legaia TMD magic).</li>
-    <li><code>buf[8..12] == 0</code> (TMD on-disc flags; runtime sets to 1 after pointer fixup).</li>
-    <li><code>buf[12..16]</code> = <code>nobj</code>, <code>1 &lt;= nobj &lt;= 64</code>.</li>
-    <li>Chunk0 header at <code>buf[0..4]</code> has type byte 0.</li>
-    <li>TMD body size (low 24 bits of chunk0 header) is 4-aligned and at least <code>12 + nobj * 28</code>; <code>4 + size &lt;= buf.len()</code>.</li>
-    <li>Streaming tail at offset <code>4 + tmd_size</code> walks at least one valid chunk header OR a terminator.</li>
-  </ol>
-
-  <h3>Streaming tail - <code>FUN_8001FE70</code> walker</h3>
-  <p>Past the leading TMD, each chunk is <code>[u32 header][payload]</code> with header packed as <code>(type &lt;&lt; 24) | (size &amp; 0x00FFFFFF)</code>. The retail walker (<code>FUN_8001FE70</code>, called from <code>FUN_800520F0</code> battle scene loader) dispatches:</p>
-  <table>
-    <thead><tr><th>Type byte</th><th>Action</th></tr></thead>
+  <p>The battle-stage layout: a 3D mesh up front, textures behind it. TMD is the PlayStation's model format (Legaia's own variant, see <a href="tmd.html">tmd</a>); TIM is its texture format. The battle loader's custom walker reads it - <strong>not</strong> the standard streaming dispatcher, even though the chunk-header packing is identical.</p>
+  <table class="layout">
+    <thead><tr><th>Offset</th><th>Field</th><th>Meaning</th></tr></thead>
     <tbody>
-      <tr><td><code>0x01</code></td><td>Upload payload as a single PSX TIM via <code>FUN_800198E0</code> (LoadImage).</td></tr>
-      <tr><td><code>0x02</code></td><td>Stop the walk (terminator).</td></tr>
-      <tr><td>any other</td><td>Skip silently (advance to next chunk).</td></tr>
-      <tr><td>size = 0</td><td>Stop the walk (zero-size header is the canonical terminator).</td></tr>
+      <tr><td><code>+0x00</code></td><td><code>u32 chunk0</code></td><td><code>(type 0x00 &lt;&lt; 24) | tmd_size</code></td></tr>
+      <tr><td><code>+0x04</code></td><td>Legaia TMD</td><td>magic <code>0x80000002</code>, flags 0, <code>1..=64</code> objects; fills <code>tmd_size</code> bytes</td></tr>
+      <tr><td><code>+0x04 + size</code></td><td>tail chunks</td><td><code>[u32 header][payload]</code> each; type <code>0x01</code> = one bare TIM upload, type <code>0x02</code> or size 0 = stop, anything else skipped</td></tr>
+      <tr><td>after stop</td><td>zero padding</td><td>to the entry's sector-aligned end</td></tr>
     </tbody>
   </table>
-  <p>The type-byte semantics differ from the standard <code>FUN_8001F05C</code> dispatcher: there <code>type = 0x01</code> means <code>TIM_LIST</code> (a <code>[count + offsets + TIMs]</code> pack), but here it means "single bare TIM". So although the chunk-header packing is identical, calling <code>FUN_8002541C</code> on a <code>scene_tmd_stream</code> entry would mis-dispatch and crash. The runtime knows to use <code>FUN_8001FE70</code> for these entries.</p>
-
-  <h3 id="one-entry-one-stream">One entry, one stream</h3>
-  <p>An entry holds <strong>exactly one</strong> <code>[chunk0 TMD][type-0x01 TIM chunks][terminator]</code> stream, then zero padding to its sector-aligned end. <code>0006_town01.BIN</code> is the canonical example:</p>
-<pre><code>+0x00000  chunk0 = TMD body 0x383c
-+0x03840  type=0x01 TIM chunk             (0x8220 bytes)
-+0x0ba64  type=0x01 TIM chunk             (0x8220 bytes)
-+0x13c88  terminator (zero-size header)
-+0x13c8c..0x13fff: zero padding to the entry's 0x14000 end</code></pre>
-  <p><code>FUN_8001FE70</code> walks that one stream and <strong>returns <code>param_1 + 1</code></strong> (past the terminator). The single static caller <code>FUN_800513F0</code> (battle init) calls it <strong>once</strong>, which is all an entry contains.</p>
-  <p>Across the corrected corpus no entry enumerates more than one sub-stream and none yields a <code>Continuation</code> chunk. <code>scene_tmd_stream::sub_streams</code> returns exactly one block per entry and <code>battle_tim_chunks</code> reports every chunk as <code>WalkSource::Tail</code>; both retain their post-terminator scan as a <strong>regression detector</strong> for a buffer that spans more than one entry. The engine's field-mode loader uses <code>battle_tim_chunks</code> to <strong>skip</strong> these battle-only TIMs (the row-479 NPC palettes aren't field-resident - matching retail).</p>
-
-  <p>Reading:</p>
-  <h3 id="half-shell">The leading TMD is a half shell, and retail draws it twice</h3>
-  <p>Rendered on its own, one of these TMDs looks like half a bowl - a sky dome, a distant mountain ring and a far ground ring, all cut off along a plane through the origin. That is not a truncated parse; the half is what the entry authors. The entry is a <strong>battle-stage backdrop</strong>, and <code>FUN_800513F0</code> registers the TMD once but links <strong>two</strong> background actors to it, the second under a per-stage transform that closes the circle. A viewer that draws the file raw is showing one of the two copies.</p>
-  <p>Measured over object 0 - the shell both copies carry - the half shape is universal: in all 182 entries at most 8% of the shell's X or Z extent lies on the far side of <code>X = 0</code> / <code>Z = 0</code>. The open side is <code>-X</code> in 129 entries, <code>-Z</code> in 49 and <code>+X</code> in 4; none opens toward <code>+Z</code>, the side the party is seated on. Object <strong>1</strong> never draws - the backdrop actor drops it. <code>scene_tmd_stream::shell_shape</code> returns the object-0 AABB plus the open side; the placement is <code>legaia_asset::battle_backdrop</code>, documented in <a href="../subsystems/battle.html">battle</a>. Pinned by <code>every_scene_tmd_stream_backdrop_is_authored_as_a_half_shell</code> in <code>scene_tmd_stream_real.rs</code>.</p>
+  <p>An entry holds <strong>exactly one</strong> stream: the walker returns past the terminator and its single caller (battle init) calls it once. The type-<code>0x01</code> meaning differs from the standard dispatcher, where <code>0x01</code> is a TIM <em>list</em> - the crash trap in the lede. The engine's field loader uses <code>battle_tim_chunks</code> to <em>skip</em> these battle-only TIMs; the row-479 <a href="npc-palette.html">NPC palettes</a> are not field-resident, matching retail.</p>
+  <h3 id="half-shell">The leading TMD is a half shell, drawn twice</h3>
+  <p>Rendered raw, one of these meshes looks like half a bowl - sky dome, mountain ring and far ground cut along a plane through the origin. That is what the entry authors: battle init registers the TMD once but links <strong>two</strong> background actors to it, the second under a per-stage transform that closes the circle. Object 0 is the shell; object 1 never draws. In all 182 entries the open side is <code>-X</code> (129), <code>-Z</code> (49) or <code>+X</code> (4) - never <code>+Z</code>, where the party sits. Placement lives in <code>legaia_asset::battle_backdrop</code> (<a href="../subsystems/battle.html">battle</a>); <code>scene_tmd_stream::shell_shape</code> returns the object-0 box plus its open side.</p>
+  <details class="disclosure">
+    <summary>Detection rules and reading code</summary>
+    <div class="disclosure-body">
+      <ol class="bullets">
+        <li><code>buf.len() &gt;= 32</code>; TMD magic at <code>+4</code>; flags word at <code>+8</code> is 0 (runtime sets it to 1 after pointer fixup); <code>1 &lt;= nobj &lt;= 64</code>.</li>
+        <li>Chunk0 type byte is 0; its size is 4-aligned, at least <code>12 + nobj * 28</code>, and <code>4 + size &lt;= buf.len()</code>.</li>
+        <li>The tail at <code>4 + size</code> walks at least one valid chunk header or a terminator.</li>
+      </ol>
 <pre><code>use legaia_asset::scene_tmd_stream;
 if let Some(s) = scene_tmd_stream::detect(&amp;buf) {
     let tmd = legaia_tmd::parse(&amp;buf[s.tmd_range()])?;  // bare TMD, no wrapper
-    for chunk in &amp;s.tail_chunks {
-        // each chunk is (type, size, payload) per data-field.md
-    }
+    for chunk in &amp;s.tail_chunks { /* (type, size, payload) */ }
 }
-
-// Surface every type-0x01 TIM upload chunk.
 for c in scene_tmd_stream::battle_tim_chunks(&amp;buf) {
-    // c.payload_offset is the inner PSX TIM magic offset.
-    // c.source is Tail (FUN_8001FE70-reachable) for every retail entry;
-    // Continuation means the buffer over-read into the next PROT entry.
+    // c.payload_offset = inner PSX TIM magic offset; c.source is Tail for every retail entry
 }</code></pre>
-  <details class="disclosure">
-    <summary>History: the "two-list" / concatenated sub-streams shape</summary>
-    <div class="disclosure-body">
-  <p>Earlier revisions of this page described a &ldquo;concatenated sub-streams&rdquo; / &ldquo;two-list&rdquo; shape, with <code>0006_town01</code> carrying a second sub-stream at <code>0x14000</code> (own TMD <code>0x2c20</code>, TIMs at <code>0x16c24</code> / <code>0x1ee48</code>). <strong>That reading is falsified</strong> - it was an artifact of the superseded entry-size expression, which over-read every entry into its successor.</p>
-  <p>Entry size is the sector gap to the next entry, so entry 0006 is exactly <code>0x14000</code> bytes and the &ldquo;second sub-stream&rdquo; is PROT entry <strong>0007</strong>: its TOC start is <code>0x14000</code> past entry 0006's, its own leading TMD is <code>0x2c20</code>, and its own tail TIMs sit at <code>0x2c24</code> / <code>0xae48</code> - the stale offsets minus <code>0x14000</code>. The town0b / town0c clusters that appeared to confirm the shape are four-entry clusters of the same layout, so every over-read merely reproduced the artifact.</p>
-      <p>Catalogued with the other falsified readings on <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p>
+      <p><code>sub_streams</code> returns exactly one block per entry; both it and <code>battle_tim_chunks</code> keep a post-terminator scan as a regression detector for a buffer that spans more than one entry (<code>WalkSource::Continuation</code>).</p>
+      <p>History: an earlier reading described "concatenated sub-streams" with <code>0006_town01</code> carrying a second stream at <code>0x14000</code>. That was the over-reading entry-size expression; the "second stream" is PROT entry 0007. See <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p>
     </div>
   </details>
 </section>
 
 <section class="doc-section" id="scene-vab-stream-vab-prefix">
   <h2>scene_vab_stream - VAB-prefix</h2>
-  <p>Same outer wrapper as <code>scene_tmd_stream</code> but the leading chunk carries a Sony VAB (a sound bank: instrument programs + sample data) instead of a TMD. The single largest distributed-VAB carrier in the corpus. Implementation: <code>crates/asset/src/scene_vab_stream.rs</code>. ~17% of all PROT entries match.</p>
-<pre><code>+0x00          u32 chunk0_header  ; LE: type=0x00 in high byte, size=N in low 24 bits
-+0x04          u32 magic          ; 0x56414270 ('VABp' read as LE u32 = 'p' 'B' 'A' 'V')
-+0x08          u32 version        ; 7 in retail (must be ≤ 10)
-+0x0C..        VAB header tail + programs[] + tones[] + VAG offsets
-+0x04 + N      streaming chunks   ; standard DATA_FIELD chunks until terminator
-                                  ; OR end-of-file</code></pre>
-  <p>Strict gate validates the VAB header: <code>version &lt;= 10</code>, <code>program_count &lt;= 128</code>, <code>tone_count &lt;= 128</code>. The <code>chunk0_size</code> low byte is consistently <code>0x20</code> (sector-aligned to 32-byte boundary).</p>
-  <p>Cluster anatomy:</p>
-  <ul class="bullets">
-    <li>119 of 123 entries in the CDNAME <code>vab_01</code> cluster (1072..1194) match - the standard distributed-bank layout.</li>
-    <li>53 entries in <code>sound_data2</code> (878..890), 19 in <code>music_01</code>, 14 in <code>monster_data</code> / <code>battle_data</code>, plus scattered hits in <code>teien</code>, <code>other5</code>, <code>player_data</code>.</li>
-  </ul>
-  <p>Reading:</p>
-<pre><code>use legaia_asset::scene_vab_stream;
-use legaia_vab::parse_header;
-
-if let Some(s) = scene_vab_stream::detect(buf) {
-    let header = parse_header(buf, s.vab_range().start)?;
-    println!("VAB v{} ps={} ts={}", header.version, header.ps, header.ts);
-}</code></pre>
+  <p>Same outer wrapper, but the leading chunk is a Sony VAB (a sound bank: instrument programs plus sample data) and the tail chunks are standard <a href="data-field.html">DATA_FIELD</a> chunks - usually the SEQ that plays on the bank. The single largest VAB carrier on the disc, about 17% of all entries.</p>
+  <table class="layout">
+    <thead><tr><th>Offset</th><th>Field</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>+0x00</code></td><td><code>u32 chunk0</code></td><td>type <code>0x00</code>, size <code>N</code> (low byte always <code>0x20</code>: 32-byte aligned)</td></tr>
+      <tr><td><code>+0x04</code></td><td><code>VABp</code></td><td>magic <code>0x56414270</code></td></tr>
+      <tr><td><code>+0x08</code></td><td>version</td><td>7 in retail; gate accepts <code>&lt;= 10</code>, <code>&lt;= 128</code> programs and tones</td></tr>
+      <tr><td><code>+0x0C..</code></td><td>VAB body</td><td>header tail, programs, tones, VAG offsets (<a href="vab.html">vab</a>)</td></tr>
+      <tr><td><code>+0x04 + N</code></td><td>tail chunks</td><td>standard chunks until terminator or end of file - the SEQ sits here at a non-zero offset (<a href="seq.html">seq</a>)</td></tr>
+    </tbody>
+  </table>
+  <p>Carriers: 119 of the 123 entries in the CDNAME <code>vab_01</code> cluster, 53 in <code>sound_data2</code>, 19 in <code>music_01</code>, 14 across <code>monster_data</code> / <code>battle_data</code>, plus scattered hits. Read with <code>scene_vab_stream::detect</code> then <code>legaia_vab::parse_header(buf, s.vab_range().start)</code>.</p>
 </section>
 
 <section class="doc-section" id="scene-v12-table-scene-header-event-script-bundle">
-  <h2>scene_v12_table - the per-scene <code>.PCH</code> walk-on trigger sidecar</h2>
-  <p>When you step onto a doorway tile or the edge of a map, something has to know that tile is special. This is that table: a scene-named four-kind sub-table directory carrying the scene's walk-on tile-trigger records - dev filename <code>DATA\FIELD\&lt;scene&gt;.PCH</code>. Implementation: <code>crates/asset/src/scene_v12_table.rs</code>. 97 PROT entries match - one per scene. Detailed reference: <a href="scene-v12-table.html">scene-v12-table</a>.</p>
-  <table>
+  <h2>scene_v12_table - the <code>.PCH</code> walk-on trigger sidecar</h2>
+  <p>When you step onto a doorway tile, something has to know that tile is special. This one-sector entry is that table: a four-kind sub-table directory whose only populated kind holds the scene's walk-on trigger records. One per scene, 97 on the disc; full field semantics on <a href="scene-v12-table.html">scene-v12-table</a>.</p>
+  <table class="layout">
     <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
     <tbody>
-      <tr><td><code>+0x000</code></td><td>u16</td><td><code>N + 4</code></td><td>Directory end-of-table offset</td></tr>
-      <tr><td><code>+0x002</code></td><td>u16</td><td><code>0x0012</code></td><td>Kind-0 sub-table offset (empty in retail)</td></tr>
-      <tr><td><code>+0x004</code></td><td>u16</td><td><code>0</code></td><td>Kind-0 count</td></tr>
-      <tr><td><code>+0x006</code></td><td>u16</td><td><code>0x0014</code></td><td>Kind-1 sub-table offset (= the records)</td></tr>
-      <tr><td><code>+0x008</code></td><td>u16</td><td><code>param</code></td><td>Kind-1 count (0..=192 in retail)</td></tr>
-      <tr><td><code>+0x00A</code></td><td>u16</td><td><code>N</code></td><td>Kind-2 sub-table offset (empty)</td></tr>
-      <tr><td><code>+0x00C</code></td><td>u16</td><td><code>0</code></td><td>Kind-2 count</td></tr>
-      <tr><td><code>+0x00E</code></td><td>u16</td><td><code>N + 2</code></td><td>Kind-3 sub-table offset (empty)</td></tr>
-      <tr><td><code>+0x010</code></td><td>u32</td><td><code>0</code></td><td>Kind-3 count + pad to 0x14</td></tr>
-      <tr><td><code>+0x014</code></td><td><code>param</code> &times; 4</td><td>records</td><td>Kind-1 trigger records</td></tr>
-      <tr><td><code>+0x14 + 4*param</code></td><td>-</td><td>empty bodies</td><td>Kind-2/3 sub-table bodies at <code>+N</code>, <code>+N+2</code>, <code>+N+4</code> - zero on disc</td></tr>
-      <tr><td>.. <code>0x800</code></td><td>-</td><td>padding</td><td>Zero padding; <strong>the entry ends at <code>0x800</code></strong></td></tr>
+      <tr><td><code>+0x00</code></td><td>u16</td><td><code>N + 4</code></td><td>directory end offset</td></tr>
+      <tr><td><code>+0x02</code></td><td>u16 &times; 2</td><td><code>0x0012</code>, <code>0</code></td><td>kind-0 offset + count (empty)</td></tr>
+      <tr><td><code>+0x06</code></td><td>u16 &times; 2</td><td><code>0x0014</code>, <code>param</code></td><td>kind-1 offset + count (<code>0..=192</code>) - the records</td></tr>
+      <tr><td><code>+0x0A</code></td><td>u16 &times; 2</td><td><code>N</code>, <code>0</code></td><td>kind-2 (empty)</td></tr>
+      <tr><td><code>+0x0E</code></td><td>u16 + u32</td><td><code>N + 2</code>, <code>0</code></td><td>kind-3 (empty) + pad</td></tr>
+      <tr><td><code>+0x14</code></td><td><code>param &times; 4</code></td><td>records</td><td>trigger records, grouped by byte 2 into regions; byte 3 always <code>0x01</code></td></tr>
+      <tr><td>&hellip; <code>0x800</code></td><td></td><td>padding</td><td>the entry ends at <code>0x800</code>; the prescript that follows is the <strong>next PROT entry</strong></td></tr>
     </tbody>
   </table>
-  <p>The header's <code>u16[0]</code>, <code>u16[5]</code>, <code>u16[7]</code> are algebraically tied to a single per-scene constant <code>N</code>: <code>u16[0] = N + 4</code>, <code>u16[5] = N</code>, <code>u16[7] = N + 2</code>, and <code>N = 4 * param + 22</code> (the byte distance from the file head to the first empty sub-table body). Strict structural checks combine the three constant words, the algebraic ties, and the <code>N/param</code> algebra. Across the 1233-entry PROT corpus this matches <strong>97</strong> entries with zero false positives.</p>
-  <p><strong>The entry is exactly one <code>0x800</code>-byte sector, in all 97 cases</strong>, so <code>0x800</code> is one past its end rather than a field inside it. The <a href="#scene-event-scripts-prescript-only">scene_event_scripts</a> prescript that appears to sit there is the <strong>next PROT entry</strong>; parse it with <code>legaia_asset::scene_v12_table::parse_prescript_entry</code> against the successor's own bytes. Those records are move-VM (<code>FUN_80023070</code>) stager records, <strong>not</strong> field-VM (<code>FUN_801DE840</code>) bytecode.</p>
-  <p>The record table at <code>+0x14</code> is per-scene trigger metadata: <code>param</code> records of 4 bytes each, grouped by the third byte (<code>b2</code>) into 1..N scene regions; the last byte is always <code>0x01</code>. See <a href="scene-v12-table.html">scene-v12-table</a> for the per-byte semantics and the CDNAME position law (<code>.PCH</code> at raw TOC index <code>define + 1</code>). Each scene block therefore carries a <code>.PCH</code> entry and, in the very next slot, its <code>scene_event_scripts</code> sibling. The genuine per-scene field-VM scripts live elsewhere - in the scene MAN sub-asset (<code>FUN_8003A1E4</code> &rarr; <code>FUN_801DE840</code>; see <a href="../subsystems/script-vm.html">script VM</a>).</p>
+  <p>The three tied words (<code>N = 4 * param + 22</code>) make the detector exact: 97 hits, zero false positives. The scene's real field-VM scripts are not here - they live in the scene MAN (<a href="../subsystems/script-vm.html">script VM</a>).</p>
   <details class="disclosure">
     <summary>History: "prescript at +0x800 of the v12 entry"</summary>
-    <div class="disclosure-body"><p>This page once described the v12 entry as a "scene header + event-script bundle" with the prescript at sector offset <code>0x800</code>, and every match "parsing cleanly as a prescript at <code>+0x800</code>". That was the superseded over-read entry size appending the neighbour: the prescript is the next PROT entry. See <a href="prot.html">prot &sect; History</a> and <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p></div>
+    <div class="disclosure-body"><p>This page once described the entry as a "scene header + event-script bundle" with the prescript at <code>0x800</code>. That was the over-read entry size appending the neighbour. See <a href="prot.html">prot</a> and <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p></div>
   </details>
 </section>
 
 <section class="doc-section" id="scene-asset-table-count-prefixed-asset-bundle">
-  <h2>scene_asset_table - count-prefixed asset bundle</h2>
-  <p>The on-disc form of the scene asset table that the field loader reads when entering a town/dungeon. Implementation: <code>crates/asset/src/scene_asset_table.rs</code>.</p>
-<pre><code>+0x00   u32  count                  ; descriptor count (6 or 7)
-+0x04   u32  meta1                  ; varies - purpose unknown
-+0x08   count × (u32 type_size, u32 data_offset)
-                                    ; each pair packs `(type&lt;&lt;24)|size`
-+H      asset payload region        ; LZS-compressed in some entries, raw in the rest
-        (H = 8 + count*8: 0x40 for count 7, 0x38 for count 6)</code></pre>
-  <p>The table is <strong><code>count</code>-prefixed</strong>, not fixed-7: the runtime walker <code>FUN_80020224</code> reads <code>count</code> from <code>+0x00</code> and loops that many descriptors, calling the dispatcher <code>FUN_8001F05C</code> with <code>source = table_base + descriptor.data_offset</code>. Two <code>count</code> values appear:</p>
-  <ul class="bullets">
-    <li><strong><code>count = 7</code></strong> - kingdom-bundle scenes (first descriptor <code>TimList</code>); first <code>data_offset</code> = <code>0x40</code>.</li>
-    <li><strong><code>count = 6</code></strong> - early standalone towns (<code>town01</code> = Rim Elm, <code>town0c</code>, …); first <code>data_offset</code> = <code>0x38</code>. Their table sits in the block's 2nd PROT entry (<code>town01</code> = entry 4, MAN at descriptor 1; <code>town0c</code> = entry 22, MAN at descriptor 2), so a strict <code>count==7 &amp;&amp; first_offset==0x40</code> detector misses it - the source of the old &ldquo;no MAN in the static bundle&rdquo; reading. Pinned via a runtime write-watchpoint on the MAN buffer <code>_DAT_8007b898</code> (<code>autorun_man_source.lua</code>) and byte-verified against the live RAM MAN.</li>
-  </ul>
-  <p>Each descriptor is <code>(type_size, data_offset)</code>:</p>
-  <ul class="bullets">
-    <li><code>type_size</code> packs <code>(type_byte &lt;&lt; 24) | (size &amp; 0x00FF_FFFF)</code> - the same packing the <a href="asset-type.html">asset-type dispatcher</a> accepts directly.</li>
-    <li><code>data_offset</code> is a file-relative byte position of that descriptor's own LZS stream (LZS is Legaia's LZSS-style compression - see <a href="lzs.html">lzs</a>), addressed against the bundle entry's <strong>extended on-disc footprint</strong>, <em>not</em> the TOC-indexed sub-region. Descriptor 0's offset is the header end <code>8 + count*8</code>; later descriptors frequently fall past the indexed end into the trailing-overlay sectors the per-PROT TOC crops off. <code>size</code> is the <strong>decompressed</strong> byte count.</li>
-  </ul>
-  <p>The <strong><code>Tmd</code> descriptor (type 2)</strong> carries the scene's <strong>environment geometry</strong> - an <code>asset::pack</code> of Legaia TMDs (terrain, buildings, props) inside that descriptor's LZS stream (<code>town01</code> = 121 meshes, &asymp;8041 verts). Because the meshes are LZS-packed, a raw-only TMD scan misses them; the engine's <code>SceneResources</code> walks each entry's LZS-decompressed sections (<code>tmd_scan::scan_entry</code>) to load them, then renders the field with every TIM uploaded (<code>upload_all_tims</code>, matching retail's field loader). The per-mesh world placement + mesh selection for this static geometry come from the field map file's object table (<code>FUN_8003a55c</code>; parser <code>legaia_asset::field_objects</code>, which resolves each object's <code>pack_index</code> into this pack) - see <a href="../subsystems/field-locomotion.html">field-locomotion</a>; <code>legaia-engine play-window</code> renders the town from it, and the <a href="../viewer.html">asset viewer</a>'s <em>full map</em> mode assembles the same draws in the browser (shared kernel <code>engine-core::field_env</code>).</p>
-  <p><code>Scene::load</code> fetches <code>SceneAssetTable</code> <strong>and <code>lzs_container</code></strong> entries at their <strong>extended footprint</strong> (<code>ProtIndex::entry_bytes_extended</code>) so the sweep reaches the streams past the TOC-indexed end. The <code>lzs_container</code> case is the dungeon shape: a v12-family dungeon ships its environment pack as a standalone LZS container (<code>rikuroa</code> = extraction 156, 77 TMDs) whose streams <em>start</em> inside the TOC window but <em>run into</em> the trailing sectors - truncated at the indexed end, every stream fails to decode and the scene resolves zero environment meshes.</p>
-
-  <p><strong>Some dungeon scenes carry the whole asset table inside their <a href="scene-v12-table.html">scene_v12_table</a> entry</strong>, at file offset <code>0x1000</code> - not as a first-class <code>SceneAssetTable</code> / <code>SceneScriptedAssetTable</code> sibling. The v12 runtime-fixup header wins the classifier at offset 0, so the standalone detector never probes <code>0x1000</code>. <code>find_bundle</code> adds a v12 fallback that scans a <code>SceneV12Table</code> entry's 0x800-aligned offsets for the first <code>scene_asset_table</code> carrying a type-3 (MAN) descriptor and returns it as <code>BundleSource::V12Embedded { table_offset: 0x1000 }</code>; extraction resolves <code>0x1000 + data_offset</code> against the extended footprint exactly as for the scripted variant. The v12-family dungeons (<code>rikuroa</code>, <code>dolk2</code>) have <strong>no</strong> MAN-bearing bundle at all: their base+3 table is the MAN-less <code>count=4</code> form, and the scene MAN is the type-3 chunk of the block's standalone <code>data_field_streaming</code> entry (<code>rikuroa</code> extraction 157, partitions <code>[13, 29, 64]</code>; <code>dolk2</code> extraction 70, <code>[29, 73, 17]</code>) - resolved by the engine's <code>field_man_payload</code> streaming fallback. (The historical &ldquo;v12 entry 164 / 76 embeds the MAN at <code>0x1000</code>&rdquo; reading decoded the NEXT block's bundle through the CDNAME-shifted scene window plus the extended-footprint over-read; see <a href="scene-v12-table.html#embedded-man-over-read">scene-v12-table &sect; over-read</a>.) Disc-gated coverage: <code>crates/engine-core/tests/v12_bundle_man_disc.rs</code>.</p>
-
-  <p>The seven canonical slots are the scene's asset kinds: <code>TimList</code> (textures), <code>Tmd</code> (3D meshes), <code>Man</code> (the scene's map data file - encounter tables, actor placements, field scripts), <code>Mes</code> (dialog text), <code>Move</code> (animation programs, see <a href="mdt.html">mdt</a>), <code>Anm</code> (actor animations), <code>Vdf</code>. Type-sequence variants (count=7 unless noted):</p>
-<table>
-<thead><tr>
-<th>Tuple</th>
-<th>Notes</th>
-</tr></thead>
-<tbody>
-<tr>
-<td><code>(1, 2, 3, 4, 5, 6, 7)</code></td>
-<td>Standard count-7 bundle: <code>(TimList, Tmd, Man, Mes, Move, Anm, Vdf)</code>.</td>
-</tr>
-<tr>
-<td><code>(1, 3, 4, 5, 6, 7, 0x14)</code></td>
-<td>Skips Tmd; trailing <code>0x14 = Flag(0x14)</code> sentinel.</td>
-</tr>
-<tr>
-<td><code>(2, 3, 4, 5, 6, 7, 0x14)</code></td>
-<td>Skips TimList.</td>
-</tr>
-<tr>
-<td><code>(10, 2, 3, 4, 5, 6, 7)</code></td>
-<td>Leading <code>Flag(0xA)</code> sentinel.</td>
-</tr>
-<tr>
-<td><code>(1, 2, 3, 4, 6, 7, 0x14)</code></td>
-<td>Skips Move.</td>
-</tr>
-<tr>
-<td><code>(2, 3, 5, 6, 7, 0x14)</code></td>
-<td><strong>count-6</strong> early-town variant (<code>town01</code>): MAN at index 1.</td>
-</tr>
-<tr>
-<td><code>(10, 2, 3, 5, 6, 7)</code></td>
-<td><strong>count-6</strong> early-town variant (<code>town0c</code>): leading <code>Flag(0xA)</code>, MAN at index 2.</td>
-</tr>
-</tbody>
-</table>
-  <p>All scene-named (<code>izumi</code>, <code>cave01</code>, <code>bylon</code>, <code>dolk</code>, <code>vell</code>, <code>urudre1</code>, <code>chitei2</code>, <code>nilboa</code>, <code>keikoku</code>, <code>concnow</code>, <code>jouina/b/c/e</code>, …). Sizes ~60 KB to ~452 KB.</p>
-  <p>In the <strong>world-map kingdom bundles</strong> (PROT 0086/0245/0392) the type-6 slot (<strong>slot 5</strong>) is not a field-actor ANM pack: it is the <strong>CLUT-walk animation table</strong> - an LZS-compressed 516-byte table, byte-identical across the three kingdoms, of eight 16&times;1 <code>MoveImage</code> walker entries (ocean head + shoreline/terrain shimmer cells) that dispatcher case 6 installs at <code>DAT_8007B7C8</code> and the SCUS actor walker <code>FUN_8001ADA4</code> case 0xB steps per game tick. Format + runtime semantics on the <a href="../subsystems/world-map.html">world-map subsystem page</a>; parser <code>legaia_asset::clut_walk</code>. Those bundles&apos; slot-0 TIM_LIST also interleaves <strong>non-TIM raw CLUT-block records</strong> (<code>[u32, u32]</code> prefix + a bare TIM CLUT block, no <code>0x10</code> magic) - the walk&apos;s parked source strips at VRAM rows 498/499/502..505, which plain TIM walkers skip (<code>clut_walk::park_strips</code>).</p>
-  <h3>Slot&rarr;asset mapping (the runtime walk)</h3>
-  <p>The mapping is <strong>positional + offset-based</strong> - there is no separate indirection table; the descriptor's <code>data_offset</code> field <em>is</em> the indirection. The runtime walker <code>FUN_80020224</code> reads <code>count = *base</code>, then for each <code>slot</code> dispatches <code>asset_type_dispatch(base + descriptor[slot].data_offset, type_size, …)</code> with descriptors at <code>base + 8 + slot*8</code>. So slot <code>i</code> is the <code>i</code>-th 8-byte descriptor; its payload starts at <code>base + data_offset</code> and its handler is keyed by <code>type_size &gt;&gt; 24</code>. The full chain (buffer alloc at <code>FUN_8001E1B4</code> &rarr; file load at <code>FUN_8001F7C0</code> &rarr; walk at <code>FUN_80020224</code> &rarr; dispatch at <code>FUN_8001F05C</code>) is pinned under the <a href="../subsystems/asset-loader.html">asset-loader subsystem</a>.</p>
-  <p><code>scene_asset_table::resolve</code> returns the table plus the base it is relative to, covering the bare variant (base 0) and, for diagnostics only, the phantom prescript-prefixed composite (base at the post-prescript 0x800-aligned offset); <code>SceneAssetTable::slots</code> reproduces the positional walk and <code>payload_range(slot, base)</code> resolves a slot's payload span:</p>
-<pre><code>use legaia_asset::scene_asset_table;
-if let Some(r) = scene_asset_table::resolve(buf) {
-    for s in r.table.slots() {
-        let span = r.table.payload_range(s.slot, r.table_base).unwrap();
-        println!("slot {}: {} size={} payload@{:#x}..{:#x}",
-                 s.slot, s.asset_type.name(), s.size, span.start, span.end);
-    }
-}</code></pre>
-  <p>A disc-gated corpus test (<code>scene_asset_table_walk_real</code>) verifies this walk against every classified entry (every one a bare table at offset 0 - the "scripted" composite is a phantom, see below): the first slot anchors at <code>base + header_end</code> and every slot's type is a legal dispatcher type. The file relocation into the asset buffer (<code>_DAT_8007b85c</code>) and the exact base the walker receives for the scripted variant are runtime values (capture-blocked); the static <code>resolve</code> reconstructs the base structurally.</p>
+  <h2>scene_asset_table - the town / dungeon bundle</h2>
+  <p>The bundle the field loader reads when entering a scene: a count-prefixed descriptor table, then one LZS-compressed payload per descriptor (LZS is Legaia's compression, see <a href="lzs.html">lzs</a>).</p>
+  <table class="layout">
+    <thead><tr><th>Offset</th><th>Field</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>+0x00</code></td><td><code>u32 count</code></td><td>6 or 7 descriptors</td></tr>
+      <tr><td><code>+0x04</code></td><td><code>u32 meta1</code></td><td>varies; purpose unknown</td></tr>
+      <tr><td><code>+0x08</code></td><td><code>count &times; (u32 type_size, u32 data_offset)</code></td><td><code>type_size = (type &lt;&lt; 24) | decompressed_size</code>, the packing the <a href="asset-type.html">asset-type dispatcher</a> takes directly; <code>data_offset</code> is file-relative</td></tr>
+      <tr><td><code>+8 + count*8</code></td><td>payloads</td><td>descriptor 0 starts here; later ones often run past the TOC-indexed end into the trailing sectors</td></tr>
+    </tbody>
+  </table>
+  <p>Slot <code>i</code> is the <code>i</code>-th descriptor; there is no separate indirection table. The runtime walker reads <code>count</code>, then dispatches each payload by <code>type_size &gt;&gt; 24</code> (chain pinned under <a href="../subsystems/asset-loader.html">asset loader</a>). The seven canonical kinds: <code>TimList</code> (textures), <code>Tmd</code> (meshes), <code>Man</code> (the scene's map data - encounter tables, actor placements, field scripts), <code>Mes</code> (dialog), <code>Move</code> (animation programs), <code>Anm</code>, <code>Vdf</code>.</p>
+  <table>
+    <thead><tr><th>Type tuple</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td><code>(1, 2, 3, 4, 5, 6, 7)</code></td><td>Standard count-7 bundle</td></tr>
+      <tr><td><code>(1, 3, 4, 5, 6, 7, 0x14)</code></td><td>Skips Tmd; trailing <code>Flag(0x14)</code> sentinel</td></tr>
+      <tr><td><code>(2, 3, 4, 5, 6, 7, 0x14)</code></td><td>Skips TimList</td></tr>
+      <tr><td><code>(10, 2, 3, 4, 5, 6, 7)</code></td><td>Leading <code>Flag(0xA)</code> sentinel</td></tr>
+      <tr><td><code>(1, 2, 3, 4, 6, 7, 0x14)</code></td><td>Skips Move</td></tr>
+      <tr><td><code>(2, 3, 5, 6, 7, 0x14)</code></td><td>count-6 early town (<code>town01</code>): MAN at index 1</td></tr>
+      <tr><td><code>(10, 2, 3, 5, 6, 7)</code></td><td>count-6 early town (<code>town0c</code>): MAN at index 2</td></tr>
+    </tbody>
+  </table>
   <h3 id="mesh-pool-descriptor-walk">The mesh pool is the descriptor walk</h3>
-  <p>The runtime TMD pointer table <code>DAT_8007C018</code> is populated by exactly two of the dispatcher's cases, and the walk above is the only thing that reaches them: <strong>type <code>0x02</code> (TMD)</strong> - <code>FUN_8001F05C</code> LZS-decodes the payload to an <a href="pack.html"><code>asset::pack</code></a> and calls <code>FUN_80026B4C(buf + offsets[i] * 4)</code> per member, so the pool gains one slot per pack member in pack order; and <strong>type <code>0x09</code> (TMD2)</strong> - one bare mesh handed straight to <code>FUN_80026B4C</code>. <code>FUN_80026B4C</code> only <em>checks</em> the magic (a member without it logs an error and is registered anyway), so the pool size is the pack's declared count. Parser <code>legaia_asset::scene_asset_table::mesh_pool</code>.</p>
-  <p>A scene's own pack starts past the resident head - the five party / savepoint meshes at <code>DAT_8007C018[0..=4]</code> (<a href="character-mesh.html">character-mesh</a>), pinned independently as the prefix <code>DAT_8007b6f8</code> that <code>FUN_80020f88</code> adds to every placement's mesh id (<code>FIELD_ACTOR_PACK_BIAS</code>). Rim Elm is head 5 + pack 114 = a 119-slot pool. <strong>A byte sweep for TMD magic is not a substitute:</strong> a scene block's bytes carry meshes the walk never registers, so a sweep over-collects by an amount that depends on how far each entry is read - it agreed with the live pool only while the entry size was over-read (two errors cancelling). The engine walks the descriptors (<code>scene_resources</code>, disc-gated <code>scene_mesh_pool_walk_disc</code>) and keeps the sweep only for the v12-family dungeons whose environment geometry is a standalone <code>lzs_container</code>.</p>
+  <p>The <code>Tmd</code> descriptor is an <a href="pack.html"><code>asset::pack</code></a> of every static mesh in the scene (<code>town01</code>: 121 meshes). The runtime mesh pool gains one slot per pack member, in pack order, after the five resident party / save-point meshes - Rim Elm is 5 + 114 = 119 slots. Placement of those meshes comes from the field map object table (<a href="../subsystems/field-locomotion.html">field locomotion</a>). A byte sweep for TMD magic is <em>not</em> a substitute: a scene block's bytes carry meshes the walk never registers. Parser <code>scene_asset_table::mesh_pool</code>.</p>
+  <details class="disclosure">
+    <summary>Extended footprint, v12-embedded tables, and the kingdom bundles</summary>
+    <div class="disclosure-body">
+      <p><strong>Extended footprint.</strong> Descriptor offsets address the bundle's on-disc footprint including the trailing sectors the per-PROT TOC crops off, so <code>Scene::load</code> fetches bundle and <code>lzs_container</code> entries with <code>ProtIndex::entry_bytes_extended</code>. The <code>lzs_container</code> case is the dungeon shape: <code>rikuroa</code> ships its environment pack as a standalone container (extraction 156, 77 TMDs) whose streams start inside the TOC window and run into the trailing sectors.</p>
+      <p><strong>v12-embedded tables.</strong> Some dungeon scenes carry a whole asset table inside their <code>scene_v12_table</code> entry at <code>0x1000</code>. <code>find_bundle</code> scans a v12 entry's <code>0x800</code>-aligned offsets for the first table with a MAN descriptor (<code>BundleSource::V12Embedded</code>). The v12-family dungeons <code>rikuroa</code> and <code>dolk2</code> have no MAN-bearing bundle at all: their scene MAN is the type-3 chunk of the block's standalone <code>data_field_streaming</code> entry (extraction 157 / 70), resolved by <code>field_man_payload</code>. Coverage: <code>engine-core/tests/v12_bundle_man_disc.rs</code>.</p>
+      <p><strong>Kingdom bundles</strong> (PROT 0086 / 0245 / 0392). Slot 5 (type 6) is not a field-actor ANM pack but the <strong>CLUT-walk animation table</strong>: a 516-byte LZS table, identical across the three kingdoms, of eight 16&times;1 walker entries (ocean head + shoreline shimmer) - <a href="../subsystems/world-map.html">world map</a>, parser <code>clut_walk</code>. Their slot-0 TIM list also interleaves non-TIM raw CLUT-block records (<code>[u32, u32]</code> prefix + a bare CLUT, no <code>0x10</code> magic) - the walk's parked strips at VRAM rows 498..505 (<code>clut_walk::park_strips</code>).</p>
+      <p><strong>Reading code.</strong> <code>scene_asset_table::resolve(buf)</code> returns the table plus its base; <code>slots()</code> reproduces the positional walk and <code>payload_range(slot, base)</code> resolves a slot's span. Verified against every classified entry by <code>scene_asset_table_walk_real</code>; the runtime mesh pool by <code>scene_mesh_pool_walk_disc</code>.</p>
+      <p>History: a strict <code>count == 7</code> detector missed the count-6 towns, producing the "no MAN in the static bundle" reading; a runtime write-watchpoint on the MAN buffer settled it. The "v12 entry embeds the MAN at <code>0x1000</code>" reading for rikuroa/dolk2 decoded the next block through the over-read; see <a href="scene-v12-table.html#embedded-man-over-read">scene-v12-table</a>.</p>
+    </div>
+  </details>
 </section>
 
 <section class="doc-section" id="scene-scripted-asset-table-scripted-prefix-canonical-bundle">
   <h2>scene_scripted_asset_table - a shape retail does not have</h2>
-  <p>A composite that pairs a <code>[u16 count][u16 offsets[count]]</code> script prescript at offset 0 with a canonical 7-asset scene table at the next 0x800 sector boundary. Implementation: <code>crates/asset/src/scene_scripted_asset_table.rs</code>.</p>
-  <p><strong>It matches no retail entry.</strong> The real layout is a scene block seating the prescript and the bundle as <strong>separate entries</strong>: <code>[.MAP][v12 header][prescript][bundle]</code>. The detector and the class stay, pinned at zero by <code>crates/extract/tests/validation_suite.rs</code>, so a reader regression that resurrects the phantom fails a test rather than silently re-appearing. The prescript carriers classify as <a href="#scene-event-scripts-prescript-only">scene_event_scripts</a>.</p>
+  <p>A composite pairing a prescript at offset 0 with a 7-asset table at the next sector boundary. <strong>It matches no retail entry</strong>: the real layout seats the prescript and the bundle as separate entries. The detector stays, pinned at zero matches by <code>extract/tests/validation_suite.rs</code>, so a reader regression fails a test instead of resurrecting the phantom.</p>
   <details class="disclosure">
     <summary>History: the composite that ~6% of entries once matched</summary>
-    <div class="disclosure-body">
-      <p>Every historical match was an over-read: the "table at the next 0x800 boundary" sat at a sector that is the <em>next PROT entry's start LBA</em>, so it was that neighbour's ordinary offset-0 table read through a window that ran past the entry (<a href="prot.html">prot &sect; History</a>). The two-level gate the detector still implements:</p>
-      <ol class="bullets">
-        <li><code>u16[0]</code> is the record count (<code>1..=4096</code>).</li>
-        <li><code>u16[1]</code> algebraically ties to the count: <code>offsets[0] = 2 + count*2</code>.</li>
-        <li>All offsets monotonic, in-bounds.</li>
-        <li>Past the last record offset, the next <code>0x800</code>-aligned position carries <code>u32 count = 7</code> plus a valid <code>scene_asset_table</code> header (first descriptor at <code>+0x40</code>, all type bytes <code>&lt;= 0x14</code>).</li>
-      </ol>
-      <p>The prescript half is a per-scene move-VM stager table (<code>[i16 model_sel][u16 flags][move-VM bytecode]</code>, the <code>0xFFFF 0x0000</code> lead = <code>model_sel = -1</code> transform node), installed by the field VM via <code>FUN_800252EC</code> and run by the move VM <code>FUN_80023070</code> - the same records the scene_event_scripts section documents.</p>
-    </div>
+    <div class="disclosure-body"><p>Every historical match was an over-read: the "table at the next 0x800 boundary" was the next PROT entry's ordinary offset-0 table seen through a window that ran past the entry (<a href="prot.html">prot</a>). The detector's gate: <code>u16[0]</code> count in <code>1..=4096</code>, <code>offsets[0] = 2 + count*2</code>, monotonic in-bounds offsets, and a valid count-7 table at the next <code>0x800</code>-aligned position.</p></div>
   </details>
 </section>
 
 <section class="doc-section" id="tmd-size-prefix-truncated-tmd-prefix">
   <h2>tmd_size_prefix - truncated TMD-prefix</h2>
-  <p>Sister to <code>scene_tmd_stream</code> for the <em>truncated</em> case: same outer shape (<code>[u32 prefix][TMD magic at +4][zero flags][nobj]</code>), but the on-disc payload is <strong>shorter than the prefix claims</strong>. Implementation: <code>crates/asset/src/tmd_size_prefix.rs</code>. ~3% of all PROT entries match.</p>
-<pre><code>+0x00   u32  total_size       ; claimed total in-memory size, &gt; on-disc len
-+0x04   u32  0x80000002       ; Legaia TMD magic
-+0x08   u32  0x00000000       ; TMD flags (on-disc; runtime sets to 1)
-+0x0C   u32  nobj             ; small (typically 2 or 4)
-+0x10   object_table[nobj]    ; 28 bytes per object (PsyQ TMD layout)
-+0x10 + nobj*0x1C             ; primitive data (truncated at sector boundary)</code></pre>
-  <p>All object pointers (<code>vert_top</code>, <code>norm_top</code>, <code>prim_top</code>) point <strong>within the prefix-claimed total size</strong> - so the on-disc file is genuinely a prefix of a larger logical resource, not a malformed header.</p>
-  <p>Strict structural checks:</p>
-  <ol class="bullets">
-    <li>TMD magic at <code>+4</code>, flags == 0 at <code>+8</code>, <code>1 &lt;= nobj &lt;= 8</code>.</li>
-    <li><code>claimed_total &gt; buf.len()</code> - distinguishes from <code>scene_tmd_stream</code> which catches the complete case.</li>
-    <li>Object table fits on disc.</li>
-    <li>Each object's vert / normal / primitive ranges fit within the claimed total.</li>
-  </ol>
-  <p>The 34 hits are all 12 KB files (6 sectors). The runtime consumer hasn't been located; likely the loader allocates <code>claimed_total</code> bytes of RAM and either (a) zero-fills the missing tail, or (b) streams the remainder from another PROT entry.</p>
+  <p>Sister of <code>scene_tmd_stream</code> for the truncated case: same header, but the claimed total size is larger than the on-disc payload. All object pointers fall inside the claimed size, so the file is a genuine prefix of a larger resource, not a broken header. 34 entries, all 12 KB (6 sectors), 2 or 4 objects each.</p>
+  <table class="layout">
+    <thead><tr><th>Offset</th><th>Field</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>+0x00</code></td><td><code>u32 total_size</code></td><td>claimed in-memory size, larger than the entry</td></tr>
+      <tr><td><code>+0x04</code></td><td>TMD header</td><td>magic, flags 0, <code>1..=8</code> objects, 28-byte object table</td></tr>
+      <tr><td>after table</td><td>primitives</td><td>truncated at the sector boundary</td></tr>
+    </tbody>
+  </table>
+  <p>Confidence: the shape is Confirmed, the consumer Unknown - the loader probably allocates <code>total_size</code> and either zero-fills the tail or streams the rest from another entry.</p>
 </section>
 
 <section class="doc-section" id="scene-event-scripts-prescript-only">
-  <h2>scene_event_scripts - prescript-only</h2>
-  <p>The prescript entry a scene block seats between its v12 header and its bundle: a <code>[u16 count][u16 offsets]</code> table at offset 0 whose records stage the scene's ambient props (a swaying sign, a spinning windmill) for the move VM. Implementation: <code>crates/asset/src/scene_event_scripts.rs</code>. ~20 PROT entries match.</p>
-<pre><code>+0x00              u16  count             ; 2..=4096 (retail: 2..=71)
-+0x02              u16  offsets[count]    ; offsets[0] = 2 + count*2,
-                                          ; monotonically non-decreasing,
-                                          ; all &lt;= file size
-+offsets[i]        record               ; word-aligned (16-bit) command
-                                          ; record; the bulk open with the
-                                          ; `0xFFFF 0x0000` header sentinel
-                                          ; and terminate with a `0x0008` word
-...                                       ; records to the entry's end;
-                                          ; the scene's asset bundle is the
-                                          ; NEXT PROT entry, not a tail here</code></pre>
-  <p>Detection comes in two tiers, because the frame-opener rate is a <strong>quality</strong> signal and not an identity one. <code>detect</code> is the high-confidence read every consumer of the parsed records uses:</p>
-  <ol class="bullets">
-    <li>Prescript shape valid (count <code>3..=4096</code>, <code>offsets[0] == 2 + count*2</code>, monotonic, in-bounds).</li>
-    <li><strong>Frame-opener rate ≥ 45 %</strong> of records start with the <code>0xFFFF 0x0000</code> record header sentinel.</li>
-  </ol>
-  <p><code>detect_structural</code> is the format's own boundary: the same table with <code>count &gt;= 2</code>, every offset word-aligned, and the last record non-empty. Across the 1233-entry PROT corpus that matches <strong>101</strong> entries with zero false positives - 100 at slot 2 of a CDNAME block, the exception being <code>other4 + 1</code>. The count floor is where the shape stops degenerating: at <code>count == 1</code> the anchor <code>offsets[0] == 2 + count*2</code> collapses to “the second <code>u16</code> is 4”, byte-identical to a <code>bse_bank</code> header.</p>
-  <p>23 of the 101 carriers sit under the rate floor, <code>geremi</code> / <code>tunnela</code> / <code>tunnelb</code> / <code>edson</code> at a rate of <strong>zero</strong> - they carry no transform-node record at all. A gate that drops a fifth of a format's members is not a definition of the format, which is why the categorizer runs the structural tier as a last resort.</p>
-  <p class="hint"><strong>These records are NOT field-VM (<code>FUN_801DE840</code>) bytecode</strong>, however natural that assumption looks. Running the field-VM disassembler over them yields a 65–88% decode-error rate; the bytes are 16-bit <strong>word-aligned</strong> (low byte = opcode, high byte 0 on ~83% of body words), framed records terminate with a <code>0x0008</code> word, and the opcodes sit mostly below the field VM's <code>0x22</code> opcode floor. They are <strong>move-VM (<code>FUN_80023070</code>) records in the summon-stager format</strong> - <code>[i16 model_sel][u16 flags][move-VM bytecode]</code>, byte-identical in shape to the per-summon stagers (<code>legaia_asset::summon_overlay</code>): the <code>0xFFFF 0x0000</code> lead is <code>model_sel = -1</code> (a transform/pivot node, the dominant kind) + <code>flags = 0</code>, and the <code>0x0008</code> terminator is move-VM opcode <code>0x08</code> (Halt). Record 0 on towns is a fixed 768-byte run of 8-byte spawn rows - the scene's <em>master ambient stager</em>, not a separate table (see the consumer census below).</p>
-  <p>Runtime chain: the per-scene field VM (<code>FUN_801DE840</code>) installs a record by id via the installer <code>FUN_800252EC</code> (<code>record = bundle_base + offsets[id]</code>, bundle base = <code>_DAT_8007b8d0</code> = the field scratch <code>_DAT_1f8003ec + 0x12800</code>) &rarr; the part-stager <code>FUN_80021B04</code> (<code>actor[+0x48] = record</code>, tick fn <code>FUN_80021DF4</code>) &rarr; the move VM <code>FUN_80023070</code> runs <code>record+4</code> each frame. So the prescript is the <em>per-scene</em> sibling of the summon stagers - same record format, same consumer. Pinned by the disc-gated <code>scene_event_records_word_aligned_real</code> + <code>prescript_move_stager_records_real</code> tests (the latter: 78 entries / 1855 records, 100% valid stager-kind leads); <code>legaia_asset::scene_event_scripts::move_stager_records</code> parses the records (as <code>summon_overlay::SummonPart</code>) and <code>record_words</code> surfaces the raw word stream. The genuine per-scene field-VM <em>scripts</em> live in the scene MAN sub-asset (see <a href="../subsystems/script-vm.html">script VM</a>); this prescript is the move-VM <em>stager</em> table those scripts spawn from.</p>
-  <p><strong>The consumer census.</strong> Walking every scene MAN's scripts for op-<code>0x34</code> sub-3 (the literal-id install op) shows the bundle has <strong>one</strong> consumer - every record is a move-VM stager. Partition-1 carries dedicated <strong>effect-actor</strong> records (Shift-JIS-named "effect"; whole script = install + infinite loop) staging the ambience on entry - most scenes install <strong>record 0</strong> this way, the master ambient record. Partition-2 cutscene timelines install the per-shot effect ids. Installer id = record index: retail relocates the bundle to RAM as <code>[u16 count][u16 offsets[count]]</code> at <code>_DAT_8007b8d0</code> (<code>FUN_800252EC</code> reads <code>base + 2 + id*2</code>), live-pinned against the file bundle in a town01 field state. There is no field-VM consumer of prescript bytes. Census + pin: <code>engine-core/tests/scene_prescript_consumer_census_disc.rs</code>; scanner: <code>man_field_scripts::scene_stager_installs</code>.</p>
-  <p>The rate-gated tier runs after <code>scene_scripted_asset_table</code> and <code>scene_asset_table</code>, so any composite layouts those detectors recognize claim their entries first; the shape-only tier runs last of all the named detectors, after <code>bse_bank</code> in particular.</p>
+  <h2>scene_event_scripts - the prescript</h2>
+  <p>The entry a scene block seats between its <code>.PCH</code> sidecar and its bundle: a <code>[u16 count][u16 offsets[count]]</code> table whose records stage the scene's ambient props - a swaying sign, a spinning windmill - for the <a href="../subsystems/move-vm.html">move VM</a>. 101 entries, 100 of them at slot 2 of a CDNAME block.</p>
+  <table class="layout">
+    <thead><tr><th>Offset</th><th>Field</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>+0x00</code></td><td><code>u16 count</code></td><td>retail <code>2..=71</code></td></tr>
+      <tr><td><code>+0x02</code></td><td><code>u16 offsets[count]</code></td><td><code>offsets[0] = 2 + count*2</code>, non-decreasing, in-bounds</td></tr>
+      <tr><td><code>+offsets[i]</code></td><td>record</td><td>16-bit-word-aligned move-VM stager: <code>[i16 model_sel][u16 flags][bytecode]</code>; most open <code>0xFFFF 0x0000</code> (a transform node) and end with the <code>0x0008</code> Halt word</td></tr>
+    </tbody>
+  </table>
+  <p class="hint"><strong>These records are not field-VM bytecode</strong>, however natural that looks. They are the per-scene sibling of the per-summon stagers (<code>legaia_asset::summon_overlay</code>): same record format, same consumer. Record 0 on towns is the scene's <em>master ambient stager</em> - a fixed 768-byte run of 8-byte spawn rows. The scene's field-VM scripts live in the MAN.</p>
+  <p>The runtime chain: a MAN script installs a record by id through the stager installer, which reads <code>base + 2 + id*2</code> from the bundle relocated to RAM; the part-stager attaches it to an actor; the move VM runs <code>record + 4</code> each frame. Walking every scene MAN for the install op shows this is the bundle's <strong>only</strong> consumer: partition-1 effect actors install record 0 on entry, partition-2 cutscene timelines install per-shot ids.</p>
+  <details class="disclosure">
+    <summary>Detection tiers and evidence</summary>
+    <div class="disclosure-body">
+      <p><code>detect</code> (the read every consumer uses) requires the table shape with <code>count &gt;= 3</code> and at least 45% of records opening with the <code>0xFFFF 0x0000</code> sentinel. <code>detect_structural</code> is the format's true boundary: <code>count &gt;= 2</code>, word-aligned offsets, non-empty last record - 101 hits, zero false positives. At <code>count == 1</code> the anchor collapses to "the second u16 is 4", byte-identical to a <code>bse_bank</code> header, so the floor is 2. Twenty-three carriers sit under the rate floor (<code>geremi</code>, <code>tunnela</code>, <code>tunnelb</code>, <code>edson</code> carry no transform node at all), which is why the categorizer runs the structural tier last, after <code>bse_bank</code>.</p>
+      <p>Running the field-VM disassembler over these records yields a 65-88% decode-error rate; the words are 16-bit aligned with the high byte zero on about 83% of body words, and the opcodes sit below the field VM's <code>0x22</code> floor. Pinned by <code>scene_event_records_word_aligned_real</code>, <code>prescript_move_stager_records_real</code> (78 entries / 1855 records, all valid stager leads) and the consumer census <code>scene_prescript_consumer_census_disc.rs</code>; parser <code>scene_event_scripts::move_stager_records</code>, scanner <code>man_field_scripts::scene_stager_installs</code>.</p>
+    </div>
+  </details>
+</section>
+
+<section class="doc-section" id="how-we-know">
+  <h2>How we know</h2>
+  <table>
+    <thead><tr><th>Function</th><th>Address</th><th>What it proves</th></tr></thead>
+    <tbody>
+      <tr><td>Battle backdrop walker</td><td><code>FUN_8001FE70</code>, caller <code>FUN_800513F0</code></td><td>Tail chunk dispatch (type 1 = single TIM via <code>FUN_800198E0</code>, type 2 / size 0 = stop); called once per entry; two background actors on one TMD</td></tr>
+      <tr><td>Standard streaming dispatcher</td><td><code>FUN_8001F05C</code> / <code>FUN_8002541C</code></td><td>Type 1 = TIM list here - the mis-dispatch trap</td></tr>
+      <tr><td>Scene bundle walker</td><td><code>FUN_80020224</code> (chain <code>FUN_8001E1B4</code> &rarr; <code>FUN_8001F7C0</code> &rarr; <code>FUN_8001F05C</code>)</td><td>Reads <code>count</code> at <code>+0</code>, dispatches <code>base + data_offset</code> per descriptor</td></tr>
+      <tr><td>Mesh registrar</td><td><code>FUN_80026B4C</code>; pool <code>DAT_8007C018</code>; bias <code>DAT_8007B6F8</code> via <code>FUN_80020F88</code></td><td>Pool = pack members in order after the five resident meshes; magic checked, not gated</td></tr>
+      <tr><td>MAN buffer watchpoint</td><td><code>_DAT_8007B898</code> (<code>autorun_man_source.lua</code>)</td><td>count-6 town bundles carry the MAN at descriptor 1 / 2</td></tr>
+      <tr><td>Stager installer / part stager / move VM</td><td><code>FUN_800252EC</code> &rarr; <code>FUN_80021B04</code> (tick <code>FUN_80021DF4</code>) &rarr; <code>FUN_80023070</code>; bundle at <code>_DAT_8007B8D0</code></td><td>Prescript records are move-VM stagers, installed by id</td></tr>
+      <tr><td>Field-VM dispatcher</td><td><code>FUN_801DE840</code>, via <code>FUN_8003A1E4</code></td><td>Field scripts come from the MAN, never the prescript</td></tr>
+      <tr><td>CLUT-walk stepper</td><td><code>FUN_8001ADA4</code> case 0xB; table at <code>DAT_8007B7C8</code></td><td>Kingdom slot 5 is the ocean / shoreline animation table</td></tr>
+    </tbody>
+  </table>
+  <p>Dumps: <code>ghidra/scripts/funcs/&lt;addr&gt;.txt</code>. Source of record: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/scene-bundles.md" target="_blank" rel="noopener"><code>docs/formats/scene-bundles.md</code></a>.</p>
 </section>
 
 <section class="doc-section" id="see-also">

@@ -1,157 +1,144 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; level-up</div>
   <h1>Level-Up</h1>
-  <p class="lede">How characters grow: the post-battle XP split, the per-level stat gains, and the "LEVEL UP!" banner. The numbers turn out to be tidy - the entire XP curve is the closed form
-    <code>&lfloor;n&sup2;/4&rfloor; + 1</code> per level, and every stat's growth is a normalised curve that lands each character exactly on their level-99 ceiling. Retail applies XP, stat growth, and the
-    level bump in one function, <code>FUN_801E9504</code> (Ghidra's name for the traced routine at that address; it lives in a battle overlay - code loaded into RAM on demand - but reads two static tables
-    baked into <code>SCUS_942.54</code>, the game's main executable). The clean-room engine extracts both tables from the user's own executable at boot and drives them through
-    <code>engine-core::levelup::LevelUpTracker</code>.</p>
+  <p class="lede">The last enemy falls, the spoils window counts out EXP and gold, and sometimes a second window announces that someone's level went up. Underneath, the game splits the EXP among the survivors, compares each one against a threshold curve, and grows eight stats per level crossed. The numbers are tidy: the whole XP curve is a closed form, and every stat's growth is a normalised curve that lands each character exactly on their level-99 ceiling. <span class="tag tag-done">Fully ported</span></p>
 </header>
 
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Applier</dt><dd><code>FUN_801E9504</code> in the battle overlay (PROT <code>0898</code>) - XP, stat growth and the level bump in one routine, called once per surviving party member.</dd>
+    <dt>Tables</dt><dd>Three static tables in <code>SCUS_942.54</code>: per-level XP deltas, three growth curves, and a per-character parameter block (<a href="#how-we-know">addresses</a>).</dd>
+    <dt>Record fields</dt><dd>Cumulative XP <code>+0x004</code>, stat window <code>+0x11C..+0x12D</code>, displayed level <code>+0x130</code> in the 0x414-byte <a href="../formats/save-record.html">character record</a>.</dd>
+    <dt>Parser / engine</dt><dd><code>legaia_asset::level_up_tables</code> reads the tables from the user's executable at boot; <code>engine-core::levelup::LevelUpTracker</code> applies them.</dd>
+    <dt>Confidence</dt><dd>Confirmed - disassembly, byte-exact against a single-level capture.</dd>
+    <dt>Used by</dt><dd><a href="battle.html">Battle</a>, <a href="field-menu.html">Status screen</a>, <a href="../tooling/rom-patcher.html">ROM patcher</a> (starting level, EXP scale).</dd>
+  </dl>
+</section>
+
 <section class="doc-section" id="what-players-see">
-  <h2>What players see</h2>
-  <p>The last enemy drops, the spoils window reports the EXP and gold, and sometimes a second window announces that someone's level went up. Behind that: the monster EXP pool is scaled and split among the <em>living</em> party members, each member's cumulative XP is compared against a threshold curve, and for every threshold crossed the game grows eight stats by a per-character curve. Two things surprise people: a level-up raises your <strong>maximum</strong> HP and MP but does <strong>not</strong> heal you, and one big award can jump several levels at once.</p>
+  <h2>From victory to banner</h2>
   <div class="flow">
-    <span class="num">1</span><span class="layer">Victory</span><span class="desc">the 0x5A end-of-action gate sees no living monster</span><span class="crate">FUN_801E295C</span>
-    <span class="num">2</span><span class="layer">Spoils</span><span class="desc">EXP summed x3/4, gold halved twice, drop rolls; XP split evenly among survivors</span><span class="crate">FUN_8004E568</span>
-    <span class="num">3</span><span class="layer">Threshold check</span><span class="desc">cumulative XP vs the scaled curve; loop while threshold &lt;= XP</span><span class="crate">FUN_801E9504</span>
-    <span class="num">4</span><span class="layer">Stat growth</span><span class="desc">per crossed level: HP max, MP max and six stats grow along the character's curve, jittered</span><span class="crate">DAT_800769CC / DAT_80076918</span>
-    <span class="num">5</span><span class="layer">Record update</span><span class="desc">cumulative XP +0x0, next threshold +0x4, level byte +0x130 - the three fields the Status menu draws</span><span class="crate">save record</span>
+    <span class="num">1</span><span class="layer">Victory</span><span class="desc">the end-of-action gate sees no living monster</span><span class="crate">battle action SM</span>
+    <span class="num">2</span><span class="layer">Spoils</span><span class="desc">EXP summed x3/4, gold halved twice, drop rolls; XP split evenly among survivors</span><span class="crate">reward resolver</span>
+    <span class="num">3</span><span class="layer">Threshold</span><span class="desc">cumulative XP vs the scaled curve; loop while threshold &lt;= XP</span><span class="crate">applier</span>
+    <span class="num">4</span><span class="layer">Growth</span><span class="desc">per crossed level: HP max, MP max and six stats grow along the character's curve, with jitter</span><span class="crate">applier</span>
+    <span class="num">5</span><span class="layer">Record</span><span class="desc">cumulative XP, next threshold and level byte written - the three fields the Status menu draws</span><span class="crate">save record</span>
     <span class="num">6</span><span class="layer">Banner</span><span class="desc">"&lt;name&gt;'s level increased!" window above the spoils window</span><span class="crate">engine-ui</span>
   </div>
+  <p>Two things surprise players: a level-up raises <strong>maximum</strong> HP and MP but does not heal you, and one big award can jump several levels at once. Dead party members get no XP.</p>
 </section>
 
 <section class="doc-section" id="xp-table">
-  <h2>XP curve <span class="tag tag-done">Confirmed</span></h2>
-  <p>The retail XP-to-next-level curve is a <strong>static <code>SCUS_942.54</code> table plus a scaling formula</strong>, applied by <code>FUN_801E9504</code> (the victory-path level-up applier; overlay-resident, dumped as <code>overlay_battle_action_801e9504</code>). The battle reward resolver <code>FUN_8004E568</code> calls it once per surviving party member after dividing the monster XP pool by the alive-party count.</p>
-  <ul>
-    <li><strong>Per-level XP-delta table <code>DAT_80076AF4</code></strong> (u16 entries; static SCUS data, below the <code>0x801C0000</code> overlay boundary). The 98 entries are exactly the closed form <code>delta(n) = &lfloor;n&sup2;/4&rfloor; + 1</code> (1, 2, 3, 5, 7, 10, &hellip;, 2402), so the whole curve is derivable arithmetic. The current-level threshold is the running sum <code>&Sigma; DAT_80076AF4[0..level]</code>.</li>
-    <li><strong>Scaling formula</strong>: <code>threshold = (sum &times; 9&#8239;999&#8239;999) / 0x140FE</code> for <code>level &lt; 0x11</code>, else <code>sum &times; 0x79</code>.</li>
-    <li><strong>Per-character correction</strong> for party slots 1 / 2 (Noa subtracts, Gala adds): <code>(threshold &times; 0x14) / divisor</code>, where the divisor is an <code>i16</code> read at <code>0x80070A2C + level &times; 0x28</code> - a static SCUS table (the head of the GTE sin LUT sampled at a <code>0x28</code> stride, doubling as a divisor curve: 125, 251, 376, &hellip; so the correction shrinks from ~16% at L1 toward ~0.5% mid-game).</li>
-    <li><strong>Level-up loop</strong>: a <code>do &hellip; while (threshold &le; cumulative XP)</code> bumps the record level and applies one round of stat growth per crossed threshold, so one large award can advance several levels.</li>
-  </ul>
-  <p>The only readers of <code>DAT_80076AF4</code> in the corpus are the aliases of <code>FUN_801E9504</code>, confirming it as the canonical curve. The engine ships it twice, cross-validating itself: <code>legaia_save::RETAIL_XP_CUMULATIVE</code> / <code>retail_xp_table()</code> carry the <em>derived</em> base curve (121, 365, 730, 1338, 2190, &hellip;, 9&#8239;646&#8239;483 - closed-form deltas plus the applier arithmetic, no table bytes copied), and <code>legaia_asset::level_up_tables::xp_thresholds_from_scus</code> (+ <code>xp_correction_divisors_from_scus</code>) re-reads the same values from the user's <code>SCUS_942.54</code> at boot (<code>BootSession</code> &rarr; <code>LevelUpTracker::xp_table</code> / <code>threshold_for</code>). Empirically validated against the record next-level-threshold word (<code>+0x4</code>) across the save-state library, including the Noa/Gala corrections (New Game: Vahn/Terra 121, Noa 102, Gala 140 - the Status menu draws <code>+0x0</code>/<code>+0x4</code> verbatim as Experience / Next Level; L99 carries 0).</p>
+  <h2>XP curve</h2>
+  <p>The per-level XP delta is <code>&lfloor;n&sup2;/4&rfloor; + 1</code> (1, 2, 3, 5, 7, 10, &hellip;, 2402 over 98 levels); the base threshold for a level is the running sum of those deltas. The applier then scales that sum and, for Noa and Gala, corrects it.</p>
+  <table>
+    <thead><tr><th>Step</th><th>Rule</th></tr></thead>
+    <tbody>
+      <tr><td>Base sum</td><td><code>sum(level) = &Sigma; delta[0..level]</code></td></tr>
+      <tr><td>Scale, level &lt; 17</td><td><code>threshold = sum &times; 9,999,999 / 0x140FE</code> (about &times;121.69)</td></tr>
+      <tr><td>Scale, level &ge; 17</td><td><code>threshold = sum &times; 121</code></td></tr>
+      <tr><td>Party-slot correction</td><td>Noa subtracts and Gala adds <code>threshold &times; 20 / divisor(level)</code>; the divisor curve runs 125, 251, 376, &hellip; so the correction shrinks from ~16% at L1 to ~0.5% mid-game.</td></tr>
+      <tr><td>Loop</td><td><code>do { level++; grow stats } while (threshold &le; XP)</code> - several levels per award are possible.</td></tr>
+    </tbody>
+  </table>
+  <p>Worked example - the level-2 thresholds a New Game Status screen shows: Vahn and Terra 121, Noa 102, Gala 140. The base curve continues 365, 730, 1338, 2190, &hellip; 9,646,483 at level 99. The engine carries the closed-form curve in <code>legaia_save::retail_xp_table()</code> and re-reads the same values from the user's executable at boot, so the two cross-check each other.</p>
 </section>
 
 <section class="doc-section" id="stat-gains">
-  <h2>Stat gains <span class="tag tag-done">Confirmed</span></h2>
-  <p>Per-character stat growth is also <code>FUN_801E9504</code>'s job, from two static SCUS tables. Each level-up iteration grows <strong>eight stats</strong> (HP, MP, then the six battle stats) in the record window <code>+0x11C..+0x12D</code>:</p>
-  <ul>
-    <li><strong>Growth curves at <code>DAT_800769CC</code></strong>: 3 rows, stride <code>0x62</code> (= 98 = <code>MAX_LEVEL&minus;1</code>), each a monotonic ramp settling to a <code>0x40</code> plateau at high levels.</li>
-    <li><strong>Per-character parameter block at <code>DAT_80076918</code></strong>: stride <code>0x3C</code>, one record per Vahn / Noa / Gala, each <strong>8 contiguous 6-byte sub-records <code>{u16 start, u16 max, u8 jitter, u8 row}</code></strong>. <code>start</code> is the stat's level-1 base (validated against the new-game starting template - Gala matches on all 8 stats), <code>max</code> the level-99 ceiling, <code>row</code> selects a curve, <code>jitter</code> the spread.</li>
-  </ul>
-  <p>Per-level gain per stat: <code>max(1, (max&minus;start) &times; curve[row][level&minus;1] / 0x24C0 + rand()&nbsp;%&nbsp;(2&times;jitter+1) &minus; jitter)</code>, then caps (HP &le; 9999, MP &le; 999, SP &le; <code>0x118</code>). The divisor <code>0x24C0</code> is the <strong>curve normalizer</strong>: each of the 3 curves sums to exactly <code>0x24C0</code>, so the per-level term accumulates to exactly <code>(max&minus;start)</code> over all 98 levels, landing each stat on its <code>max</code> at L99. The formula is <strong>validated byte-exact</strong> against a single-level capture (Noa, growth slot 1, L2&rarr;L3: HP +39, MP +5, six stats +2/+4/+4/+3/+4/+3 - every delta within the core &plusmn; jitter band; HP core = <code>(4500&minus;150)&times;82/9408 = 37</code>, jitter half-range 4). Parser + check: <code>legaia_asset::level_up_tables::GrowthTables::char_params</code> / <code>level_gain_core</code> (disc-gated test).</p>
-  <p>Per-character semantics pinned from the capture corpus: <strong>Noa gains +40 SP_max per level</strong> at <code>+0x10E</code> (Seru-magic user), <strong>Gala gains 0 SP_max</strong> (physical Tactical Arts user), and the <code>+0x120</code> u16 field is a <strong>per-stat cap constant 100</strong>, not SP_max.</p>
-</section>
-
-<section class="doc-section" id="engine-wiring">
-  <h2>Engine wiring <span class="tag tag-done">Confirmed</span></h2>
-  <p>The deterministic core is <strong>wired, all 8 stats</strong>: <code>StatGain</code> carries HP/MP plus the six battle stats, <code>LevelUpTracker::with_growth_tables</code> builds per-character <code>StatGrowthCurve::PerLevel</code> from the parsed SCUS tables, and <code>BootSession</code> installs it from the user's <code>SCUS_942.54</code> at boot alongside the XP curve. <code>apply_to_record</code> grows the record-side stat window then mirrors it into the live window, matching the applier's write-then-mirror. Disc-gated tests pin the port: a boot test and <code>crates/engine-core/tests/growth_curve_disc.rs</code> (installed curve <code>start</code> values vs the new-game seed + Noa's L2&rarr;L3 core, HP 37 / MP 6). <code>StatGain::default()</code> (flat +10 HP / +5 MP) survives only as the disc-less fallback; <code>seru_stats.rs</code> is the legacy Seru-roster convenience path. No per-level character stat table exists in <code>crates/gamedata</code>, so the ground truth is the new-game seed plus the single-level capture.</p>
-  <p><strong>Jitter is modeled as an opt-in layer.</strong> <code>LevelUpTracker::with_level_up_jitter(seed)</code> seeds a faithful PSX BIOS-rand LCG (<code>BiosRand</code>: <code>seed = seed&times;0x41C6_4E6D + 0x3039; (seed&gt;&gt;16)&amp;0x7FFF</code>) and draws one <code>rand()</code> per stat per level in the applier's stat order - including the draw when <code>jitter == 0</code> - applying the spread to the unfloored core before the <code>max(1,&hellip;)</code> floor, exactly as <code>FUN_801E9504</code>. It is off by default so every replay / determinism oracle stays bit-identical; a bit-exact reproduction of a specific retail roll would additionally need the BIOS-rand state at that moment (runtime, not on disc).</p>
+  <h2>Stat gains</h2>
+  <p>Each level crossed grows eight stats - HP max, MP max and the six battle stats - from two tables: three growth <em>curves</em> (one byte per level, each ramp settling to a plateau) and a per-character block of eight <code>{start, max, jitter, row}</code> entries, one per stat.</p>
+  <table>
+    <thead><tr><th>Term</th><th>Rule</th></tr></thead>
+    <tbody>
+      <tr><td>Core gain</td><td><code>(max &minus; start) &times; curve[row][level&minus;1] / 0x24C0</code></td></tr>
+      <tr><td>Jitter</td><td><code>+ rand() % (2&times;jitter + 1) &minus; jitter</code>, one BIOS <code>rand()</code> per stat per level</td></tr>
+      <tr><td>Floor and caps</td><td><code>max(1, core + jitter)</code>; then HP &le; 9999, MP &le; 999, SP &le; 280, others &le; 999</td></tr>
+      <tr><td>Why <code>0x24C0</code></td><td>Every curve sums to exactly 9408, so the gains accumulate to exactly <code>max &minus; start</code> over 98 levels: each stat lands on its ceiling at level 99.</td></tr>
+    </tbody>
+  </table>
+  <p>Worked example - Noa, L2 to L3, HP: <code>(4500 &minus; 150) &times; 82 / 9408 = 37</code>, jitter &plusmn;4; the capture shows +39. Every one of her eight deltas that battle (MP +5, stats +2/+4/+4/+3/+4/+3) sits inside its core &plusmn; jitter band. Two per-character facts from the captures: Noa also gains +40 max Spirit per level, Gala gains none.</p>
 </section>
 
 <section class="doc-section" id="record-fields">
-  <h2>Character-record fields</h2>
-  <table>
-    <thead><tr><th>Offset</th><th>Field</th></tr></thead>
+  <h2>What a level-up writes</h2>
+  <table class="layout">
+    <thead><tr><th>Offset</th><th>Field</th><th>Note</th></tr></thead>
     <tbody>
-      <tr><td><code>+0x004</code></td><td>Cumulative XP (the value the threshold loop compares against).</td></tr>
-      <tr><td><code>+0x11C..+0x12D</code></td><td>Record-side stat window (9 u16: HP_max, MP_max, the 100 cap at <code>+0x120</code>, six stats). Grown by the applier, then mirrored to the live window <code>+0x104..+0x11B</code>.</td></tr>
-      <tr><td><code>+0x120</code></td><td>Per-stat cap constant <code>100</code> (u16) - constant across every captured save and character.</td></tr>
-      <tr><td><code>+0x130</code></td><td><strong>Displayed character level.</strong> The byte the status screen reads as "LV" and the <code>Level 99</code> GameShark code targets - boot-confirmed: the shown level is read from <code>+0x130</code> directly, not re-derived from XP (the new-game seed writes it). The retail applier maintains it by incrementing <code>+1</code> per level-up <em>event</em>, so it can momentarily lag the XP-derived level after a rare multi-level grant; for single-level play it equals the level. Whether the adjacent <code>+0x131</code> is a separate magic-rank byte is unconfirmed.</td></tr>
+      <tr><td><code>+0x004</code></td><td>Cumulative XP</td><td>The value the threshold loop compares against; the Status menu draws it as Experience.</td></tr>
+      <tr><td><code>+0x11C..+0x12D</code></td><td>Record-side stat window</td><td>9 u16: HP max, MP max, a constant 100 at <code>+0x120</code>, six stats. Grown first, then mirrored to the live window <code>+0x104..+0x11B</code>.</td></tr>
+      <tr><td><code>+0x120</code></td><td>Per-stat cap constant 100</td><td>Constant across every captured save; not Spirit max. The runtime 999 clamp is a code constant.</td></tr>
+      <tr><td><code>+0x130</code></td><td>Displayed level</td><td>The byte the Status screen reads as LV and the "Level 99" cheat targets. Incremented once per level-up event, never re-derived from XP.</td></tr>
     </tbody>
   </table>
-  <p>The engine port tracks its own level at <code>+0x100</code> (always zero in retail, where the live byte is <code>+0x130</code>) - self-consistent for the port's own LGSF saves, a deliberate divergence from the retail byte rather than a mirror of it.</p>
+  <p><strong>A level-up is not a heal.</strong> The applier stores to eleven addresses and every one is a maximum, a stat or a level; current HP and MP appear nowhere in it, and its only call is the BIOS <code>rand</code>. The capture agrees: Noa enters her L2-to-L3 fight at 164/182 HP and settles at 164/221 - ceiling up, wound unchanged.</p>
 </section>
 
-<section class="doc-section" id="battle-actor-struct">
-  <h2>Battle-actor stat struct <span class="tag tag-done">Confirmed</span></h2>
-  <p>The in-battle actor is a runtime struct <strong>distinct from the character record</strong>: <code>DAT_801C9370[slot]</code> (<code>slot*4</code>) is a pointer to it, 8 slots (party 0..2, monsters 3..7). It is not the char-record <code>+0xF4..+0x13D</code> window the ability aggregator <code>FUN_80042558</code> builds. Party actors are stat-initialised by <code>FUN_80053cb8</code> (copies the char-record <em>live</em>-stat window <code>+0x104..+0x11A</code>), monsters by <code>FUN_80054cb0</code> (copies the monster-archive record); both write the identical <code>+0x14C..+0x176</code> layout. Stats use <strong>working / base pairs</strong> - an even-offset working copy that buffs and damage mutate, plus a <code>+2</code> base copy the applier keeps for un-buff / percentage math.</p>
-  <table>
-    <thead><tr><th>Offset</th><th>Field</th></tr></thead>
-    <tbody>
-      <tr><td><code>+0x14C / +0x14E</code></td><td>HP current / HP max (party: char live <code>+0x106 / +0x104</code>; monster HP)</td></tr>
-      <tr><td><code>+0x150 / +0x152</code></td><td>MP current / MP max (party: char live <code>+0x10A / +0x108</code>; monster MP)</td></tr>
-      <tr><td><code>+0x154 / +0x156</code></td><td>AGL working / base (char live <code>+0x110</code>)</td></tr>
-      <tr><td><code>+0x158 / +0x15A</code></td><td>ATK working / base (char live <code>+0x112</code>)</td></tr>
-      <tr><td><code>+0x15C / +0x15E</code></td><td>UDF (physical def) working / base (char live <code>+0x114</code> + equip-def bonus)</td></tr>
-      <tr><td><code>+0x160 / +0x162</code></td><td>LDF (magical def) working / base (char live <code>+0x116</code> + equip bonus)</td></tr>
-      <tr><td><code>+0x164 / +0x166</code></td><td>SPD working / base (char live <code>+0x118</code> + equip bonus)</td></tr>
-      <tr><td><code>+0x168 / +0x16A</code></td><td>INT working / base (char live <code>+0x11A</code>)</td></tr>
-      <tr><td><code>+0x16C</code></td><td>AI turn-eligibility gate (<code>FUN_801E9FD4</code> skips actor when 0)</td></tr>
-      <tr><td><code>+0x16E</code></td><td>Side / element bit-field (char <code>+0x12E</code>; the charm hook sets <code>| 0x380</code>; <code>FUN_801E7320</code> retarget reads it)</td></tr>
-      <tr><td><code>+0x170</code></td><td>Spirit gauge / SP (party: char live <code>+0x10E</code>; monster: const 100)</td></tr>
-      <tr><td><code>+0x172 / +0x174</code></td><td>HP / MP battle-start snapshots (copies of <code>+0x14C / +0x150</code>)</td></tr>
-      <tr><td><code>+0x176</code></td><td>Per-action transient, cleared to 0 on action-state entry (<code>0x801E490C</code>)</td></tr>
-    </tbody>
-  </table>
-  <p>Provenance: <code>ghidra/scripts/funcs/80053cb8.txt</code> (party init), <code>.../80054cb0.txt</code> (monster init), <code>.../overlay_0898_801e9fd4.txt</code> (AI reads), <code>.../overlay_0898_801e295c.txt</code> (action SM).</p>
-</section>
-
-<section class="doc-section" id="flow">
-  <h2>Level-up flow (engine port)</h2>
-  <p>The clean-room engine mirrors the ladder above as pure state on <code>World</code>. After <code>BattleEndCause::MonsterWipe</code>:</p>
-  <ol>
-    <li>Engine calls <code>World::apply_battle_xp(xp_reward)</code>.</li>
-    <li><code>apply_battle_xp</code> enumerates surviving party members (slots whose <code>BattleActor::hp &gt; 0</code>) and divides <code>xp_reward</code> equally among them (integer divide, remainder dropped). Dead members receive zero XP.</li>
-    <li>For each surviving slot, calls <code>LevelUpTracker::grant_xp(char_id, share)</code>; <code>grant_xp</code> accumulates XP and checks the retail threshold table. Multi-level jumps collapse into one <code>LevelUpResult</code> with summed HP/MP gains.</li>
-    <li><code>LevelUpTracker::apply_to_record(result, record)</code> grows the record-side stat window, mirrors it to live, and writes <code>result.new_level</code> to the record's <code>+0x100</code> byte via <code>CharacterRecord::set_level</code>. Current HP / MP are deliberately untouched &mdash; see below.</li>
-    <li><code>BattleEvent::LevelUp { char_id, new_level, hp_gained, mp_gained }</code> is pushed to <code>World::battle_events</code>.</li>
-    <li><code>World::current_level_up_banner</code> is set for the last character who levelled up.</li>
-  </ol>
-  <p><strong>Hydration on load.</strong> <code>World::load_full</code> syncs <code>LevelUpTracker::level[]</code> from each loaded character record's <code>+0x100</code> byte. Without this, a reloaded party would keep the tracker's default <code>1</code> per slot even when the saved records hold the party at level 30; the next XP grant would then roll the party back to level 1 + N.</p>
-
-  <h3>A level-up is not a heal</h3>
-  <p><code>FUN_801E9504</code> stores to exactly eleven addresses, and every one is a maximum, a stat, or a level: the record window's <code>hp_max</code> / <code>mp_max</code> (<code>+0x6E4</code> / <code>+0x6E6</code>, capped <code>0x270F</code> / <code>0x3E7</code>), the six battle stats at <code>+0x6EA..+0x6F4</code>, the displayed-level byte <code>+0x6F8</code> (= <code>+0x130</code>) with its actor-table mirror, and two globals. Current HP (<code>+0x106</code>) and current MP (<code>+0x10A</code>) appear nowhere in it, and the routine's only <code>jal</code> is the BIOS <code>rand</code>, so no helper writes them either.</p>
-  <p>The captures agree, and they are the decisive half, because those cells <em>are</em> written near a level-up &mdash; by the battle-end resync, not by a grant. The single-level <code>noa_levelup_*</code> triplet reads Noa at <code>164/182</code> HP and <code>16/16</code> MP going into the fight and <code>164/221</code> HP / <code>16/21</code> MP once the L2&rarr;L3 level-up has settled: both maxima move, both currents stand still. Crossing a threshold mid-dungeon raises the ceiling and leaves you exactly as hurt as you were.</p>
-</section>
-
-<section class="doc-section" id="banner">
-  <h2>Level-up banner</h2>
-  <p><code>LevelUpBanner</code> carries <code>char_id</code>, <code>new_level</code>, <code>hp_gained</code>, <code>mp_gained</code>, and <code>frames_remaining</code> (default 180 = 3 s at 60 Hz). <code>World::tick</code> decrements the counter and clears the banner at zero.</p>
-  <p><code>level_up_draws_for(banner, world)</code> in <code>engine-render</code> returns two text draw calls: a yellow &ldquo;LEVEL UP! (char N &rarr; Lv M)&rdquo; line and a green &ldquo;HP +X  MP +Y&rdquo; line. Wired into <code>PlayWindowApp::build_text_overlay</code> at anchor <code>(8, 60)</code>.</p>
-</section>
-
-<section class="doc-section" id="capture-provenance">
-  <h2>Capture provenance</h2>
-  <p>The formulas above are grounded in mednafen save-state captures; the details live in disclosures because they are provenance, not behaviour.</p>
-  <details class="disclosure">
-    <summary>Per-character level-up write footprints (phase split)</summary>
-    <p>Three per-character multi-level observations are codified in <code>engine_core::levelup::observations</code> (<code>vahn_4_level_jump</code> / <code>noa_4_level_jump</code> / <code>gala_4_level_jump</code>); each is a settled pre&rarr;post diff over the character record window at battle scene <code>map01</code>. The level-up event splits the record write across frames - Noa's triplet pins three phases:</p>
-    <table>
-      <thead><tr><th>Phase</th><th>Window</th><th>Writes</th></tr></thead>
-      <tbody>
-        <tr><td>Record write</td><td>pre &rarr; mid&#x2081;</td><td><code>+0x11C..+0x12D</code> (record stats), <code>+0x004</code> (XP), <code>+0x130</code> (displayed level +1)</td></tr>
-        <tr><td>Live copy</td><td>mid&#x2081; &rarr; mid&#x2082;</td><td><code>+0x104..+0x11B</code> (HP_max, MP_max, six u16 live stats)</td></tr>
-        <tr><td>Settle</td><td>mid&#x2082; &rarr; post</td><td><code>+0x106 / +0x10A / +0x10E</code> (live HP_cur / MP_cur / AP_cur settle - the battle-end resync, <em>not</em> a refill)</td></tr>
-      </tbody>
-    </table>
-    <p>Gala's runs in two phases (live copy + settle collapsed). Per-character record bases (Vahn <code>0x80084708</code>, Noa <code>0x80084B1C</code>, Gala <code>0x80084F30</code>, slot 3 <code>0x80085344</code>, stride <code>0x414</code>) are documented in <code>engine_core::capture_observations::char_level_up</code>; disc-gated tests in <code>crates/mednafen/tests/real_saves.rs</code> exercise both triplets. NB the multi-level captures are unreliable for <em>per-level</em> growth rates (their stated HP deltas are impossible under the validated ~38/level rate); the single-level Noa L2&rarr;L3 pair is the arithmetic oracle. Slot indices rotate with the corpus (<code>scripts/scenarios.toml</code>).</p>
-  </details>
-  <details class="disclosure">
-    <summary>Fire Book I write footprint (displayed-skills list) + negative table search</summary>
-    <p><strong>Fire Book I.</strong> A pre/post save pair (Fire Book I used on Vahn in battle) pins exactly one record-internal write region at <code>+0x185..+0x188</code>: a count-prefixed list <code>[u8 count at +0x185][u8 ids[N] at +0x186..]</code> growing by a head-insert. The only reader is a menu-overlay cluster at <code>0x801D4440..0x801D44A4</code> (inside <code>0x801D33D8</code>) that matches the ids against the menu spell table at <code>0x801E472C</code> (stride <code>0x14</code>) - so the values are skill-table indices (the menu's displayed-skill roster), not action-queue constants. Typed accessor: <code>legaia_save::character::CharacterRecord::displayed_skills</code>. No <code>sb</code>/<code>sh</code> writer to <code>+0x185</code> exists in any captured overlay - the learn-write path is in an undumped overlay. Disc-gated test: <code>fire_book_use_diff_pins_vahn_record_write</code>.</p>
-    <p><strong>Negative finding.</strong> A grep across <code>PROT.DAT</code> for u8 sequences matching the observed stat-delta tuples surfaces only per-effect animation curves (ramp-up-peak-ramp-down byte runs at offset <code>0x033E9000</code>) - the grant tables are not in PROT.DAT at all; they are the static-SCUS pair <code>DAT_800769CC</code> / <code>DAT_80076918</code> above.</p>
-  </details>
-  <p class="note">Two look-alikes to avoid: the 98-entry slice at <code>0x80070A2C</code> looks like an XP table but is GTE sin-LUT data (the applier samples it only as the correction divisor above) - the real L2 threshold is 121, as a New Game Status screen shows; and the Seru-struct <code>+0x74</code> reads are the actor&rsquo;s colour word, which <code>FUN_800480D8</code> stamps with the 24-bit mid-grey <code>0x00808080</code> under the mask <code>0x00FFFFFF</code> - not a growth grant, and not a <code>0x80808080</code> flag. Full history: <code>docs/subsystems/level-up.md</code>.</p>
-</section>
-
-<section class="doc-section" id="open-items">
-  <h2>Open items</h2>
+<section class="doc-section" id="engine-wiring">
+  <h2>The port</h2>
   <ul>
-    <li><strong><code>+0x120</code> stat-cap field.</strong> Captures pin the per-stat cap constant 100 at <code>+0x120</code> (u16 LE);
-      <code>+0x11A</code> is the live INT stat (mutated by level-up, typed as <code>LiveStats::int</code>). The
-      <code>legaia_save::character::CharacterRecord::stat_cap</code> accessor reads/writes <code>+0x120</code> - the same field as
-      <code>RecordStats::cap_constant</code> (aliasing pinned by <code>character::tests::stat_cap_aliases_record_cap_constant</code>).
-      The runtime <code>999</code> clamp in <code>FUN_80042558</code> is a code constant (<code>legaia_save::STAT_CAP</code>), not this
-      record field.</li>
-    <li><strong>Overlay display.</strong> Retail shows per-stat increments (STR, INT, VIT, &hellip;) with animated counters; the port renders only the HP/MP banner lines.</li>
+    <li><code>World::apply_battle_xp</code> splits the reward among survivors (integer divide) and calls <code>LevelUpTracker::grant_xp</code> per slot; multi-level jumps collapse into one <code>LevelUpResult</code>.</li>
+    <li><code>apply_to_record</code> grows the record window, mirrors it live, and leaves current HP / MP alone. The port keeps its own level byte at <code>+0x100</code> (always zero in retail) and hydrates the tracker from it on load.</li>
+    <li>Jitter is opt-in (<code>with_level_up_jitter(seed)</code>, a faithful BIOS-rand LCG) so replay and determinism oracles stay bit-identical; it is off by default.</li>
+    <li>The banner (<code>LevelUpBanner</code>, 180 frames) and the spoils report are retail's two framed windows, drawn from geometry measured off a capture. Two known gaps: only the last character's banner is shown, and both windows draw over the returned field scene rather than over the battle.</li>
   </ul>
 </section>
 
-<section class="doc-section" id="full-reference">
-  <h2>Full reference</h2>
-  <p>Full write-up at <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/level-up.md" target="_blank" rel="noopener"><code>docs/subsystems/level-up.md</code></a> - which also records the Fire Book I write footprint and its resolved reader, and what the port draws between the last enemy dying and the field returning (retail's own pair of framed windows). Applier dump: <code>ghidra/scripts/funcs/overlay_battle_action_801e9504.txt</code>. Source: <code>crates/engine-core/src/levelup.rs</code>, parser <code>crates/asset/src/level_up_tables.rs</code>.</p>
+<section class="doc-section" id="how-we-know">
+  <h2>How we know</h2>
+  <table>
+    <thead><tr><th>Function / data</th><th>Address</th><th>What it proves</th><th>Dump</th></tr></thead>
+    <tbody>
+      <tr><td>Level-up applier</td><td><code>FUN_801E9504</code></td><td>Threshold scaling, the do-while loop, the growth formula, the eleven stores (no current-HP write).</td><td><code>overlay_battle_action_801e9504.txt</code></td></tr>
+      <tr><td>Reward resolver</td><td><code>FUN_8004E568</code></td><td>Calls the applier once per surviving member after dividing the EXP pool.</td><td><code>8004e568.txt</code></td></tr>
+      <tr><td>XP delta table</td><td><code>DAT_80076AF4</code></td><td>98 u16 entries equal to <code>&lfloor;n&sup2;/4&rfloor;+1</code>; the applier's aliases are its only readers.</td><td>SCUS data</td></tr>
+      <tr><td>Correction divisor</td><td><code>0x80070A2C + level &times; 0x28</code></td><td>The head of the GTE sine table sampled at stride 0x28 - a look-alike of an XP table, but only ever used as the Noa / Gala divisor.</td><td>SCUS data</td></tr>
+      <tr><td>Growth curves</td><td><code>DAT_800769CC</code></td><td>3 rows, stride <code>0x62</code>, each summing to <code>0x24C0</code>.</td><td>SCUS data</td></tr>
+      <tr><td>Per-character block</td><td><code>DAT_80076918</code></td><td>Stride <code>0x3C</code>: 8 &times; <code>{u16 start, u16 max, u8 jitter, u8 row}</code> per Vahn / Noa / Gala; <code>start</code> matches the <a href="../formats/new-game-table.html">new-game template</a>.</td><td>SCUS data</td></tr>
+      <tr><td>Single-level capture</td><td>Noa L2&rarr;L3 triplet</td><td>Byte-exact check of the growth formula; the three-phase write order (record, live copy, battle-end settle).</td><td><code>crates/mednafen/tests/real_saves.rs</code></td></tr>
+      <tr><td>Engine oracles</td><td><code>crates/engine-core/tests/growth_curve_disc.rs</code></td><td>Installed curve <code>start</code> values vs the new-game seed; Noa's L2&rarr;L3 core HP 37 / MP 6.</td><td>-</td></tr>
+    </tbody>
+  </table>
+  <details class="disclosure">
+    <summary>Capture footprints and look-alikes</summary>
+    <div class="disclosure-body">
+      <table>
+        <thead><tr><th>Phase</th><th>Window</th><th>Writes</th></tr></thead>
+        <tbody>
+          <tr><td>Record write</td><td>pre &rarr; mid&#x2081;</td><td><code>+0x11C..+0x12D</code>, <code>+0x004</code>, <code>+0x130</code> (+1)</td></tr>
+          <tr><td>Live copy</td><td>mid&#x2081; &rarr; mid&#x2082;</td><td><code>+0x104..+0x11B</code> (HP max, MP max, six live stats)</td></tr>
+          <tr><td>Settle</td><td>mid&#x2082; &rarr; post</td><td><code>+0x106 / +0x10A / +0x10E</code> - the battle-end resync, not a refill</td></tr>
+        </tbody>
+      </table>
+      <p>Multi-level captures (<code>vahn_4_level_jump</code> and siblings, codified in <code>engine_core::levelup::observations</code>) pin write regions but not per-level rates; the single-level Noa pair is the arithmetic oracle. A Fire Book I use writes one region, <code>+0x185..+0x188</code>: a count-prefixed list of displayed-skill ids read only by the menu's status renderer (<code>CharacterRecord::displayed_skills</code>). The Seru-struct <code>+0x74</code> reads are the actor's colour word (<code>FUN_800480D8</code> stamps <code>0x00808080</code>), not a growth grant. The grant tables are not in <code>PROT.DAT</code> at all.</p>
+    </div>
+  </details>
+  <details class="disclosure">
+    <summary>Battle-actor stat struct (runtime, distinct from the record)</summary>
+    <div class="disclosure-body">
+      <p><code>DAT_801C9370[slot]</code> points at the in-battle actor (8 slots: party 0..2, monsters 3..7). Party actors are initialised by <code>FUN_80053cb8</code> from the record's live window, monsters by <code>FUN_80054cb0</code> from the monster archive; both write the same layout. Stats are working / base pairs - the working copy takes buffs and damage, the <code>+2</code> base copy serves un-buff and percentage math.</p>
+      <table class="layout">
+        <thead><tr><th>Offset</th><th>Field</th></tr></thead>
+        <tbody>
+          <tr><td><code>+0x14C / +0x14E</code></td><td>HP current / max (party: live <code>+0x106 / +0x104</code>)</td></tr>
+          <tr><td><code>+0x150 / +0x152</code></td><td>MP current / max (party: live <code>+0x10A / +0x108</code>)</td></tr>
+          <tr><td><code>+0x154 / +0x156</code></td><td>AGL working / base</td></tr>
+          <tr><td><code>+0x158 / +0x15A</code></td><td>ATK working / base</td></tr>
+          <tr><td><code>+0x15C / +0x15E</code></td><td>UDF (physical defence) working / base, plus equip bonus</td></tr>
+          <tr><td><code>+0x160 / +0x162</code></td><td>LDF (magical defence) working / base, plus equip bonus</td></tr>
+          <tr><td><code>+0x164 / +0x166</code></td><td>SPD working / base, plus equip bonus</td></tr>
+          <tr><td><code>+0x168 / +0x16A</code></td><td>INT working / base</td></tr>
+          <tr><td><code>+0x16C</code></td><td>AI turn-eligibility gate (<code>FUN_801E9FD4</code> skips the actor when 0)</td></tr>
+          <tr><td><code>+0x16E</code></td><td>Side / element bit-field (record <code>+0x12E</code>; the charm hook ORs <code>0x380</code>)</td></tr>
+          <tr><td><code>+0x170</code></td><td>Spirit gauge (party: live <code>+0x10E</code>; monster: constant 100)</td></tr>
+          <tr><td><code>+0x172 / +0x174</code></td><td>HP / MP battle-start snapshots</td></tr>
+          <tr><td><code>+0x176</code></td><td>Per-action transient, cleared on action-state entry</td></tr>
+        </tbody>
+      </table>
+      <p>Dumps: <code>80053cb8.txt</code>, <code>80054cb0.txt</code>, <code>overlay_0898_801e9fd4.txt</code>, <code>overlay_0898_801e295c.txt</code>.</p>
+    </div>
+  </details>
+  <p class="hint">Full write-up: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/level-up.md" target="_blank" rel="noopener"><code>docs/subsystems/level-up.md</code></a>. Source: <code>crates/engine-core/src/levelup.rs</code>, <code>crates/asset/src/level_up_tables.rs</code>.</p>
 </section>
 
 <section class="doc-section" id="see-also">
@@ -160,11 +147,11 @@
     <span class="see-also-label">Reference</span>
     <a href="battle.html">Battle scene</a>
     <a href="battle-formulas.html">Battle formulas</a>
-    <a href="shop.html">Shop UI</a>
     <a href="field-menu.html">Field menu (Status page)</a>
     <a href="../formats/save-record.html">Save record</a>
     <a href="../formats/new-game-table.html">New-game template</a>
     <a href="history-battle.html#captured-stat-growth">Captured stat-growth deltas</a>
     <a href="../reference/gamedata.html">Game-data tables</a>
+    <a href="../tooling/rom-patcher.html">ROM patcher</a>
   </div>
 </section>

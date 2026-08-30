@@ -1,202 +1,230 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; battle action FSM</div>
   <h1>Battle action state machine</h1>
-  <p class="lede">The layer between &ldquo;the player picked Attack&rdquo; and &ldquo;the actor's body has finished swinging the sword and HP has been deducted.&rdquo; A battle action takes many frames to play out - windup, strike, damage, recovery - so the game tracks it as a two-level finite state machine: each frame it checks what the current action is waiting on and, when the condition is met, advances to the next state. It lives in the battle overlay (<code>0898</code> - an overlay is a chunk of code the game loads into RAM on demand, this one at <code>0x801C0000+</code> during fights); the driver is <code>FUN_801E295C</code> (Ghidra's name for the traced function at that address; ~16 KB / 4099 instructions, the largest function in the battle overlay).</p>
+  <p class="lede">The layer between &ldquo;the player picked Attack&rdquo; and &ldquo;the sword has landed and HP has been deducted&rdquo;. An action takes many frames - turn, run in, swing, damage pop, walk back - so the game tracks it as one state byte advanced once per frame, with a band of states per command category. Tactical Arts are not a separate band: they run through the ordinary attack states and only differ in which power byte each swing stages.</p>
 </header>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Where</dt><dd>Battle overlay (PROT 0898, resident at slot A during fights); driver <code>FUN_801E295C</code>, the overlay&rsquo;s largest function</dd>
+    <dt>State</dt><dd>One byte, <code>ctx[7]</code> in the battle context at <code>0x800EB654</code>, dispatched through a 256-entry jump table with no default arm</dd>
+    <dt>Band key</dt><dd>The actor&rsquo;s category byte <code>+0x1DE</code>, read once at the seed state <code>0x0C</code></dd>
+    <dt>Damage</dt><dd>Not in the state bodies - one power byte per animation hit event, through the <a href="battle-formulas.html">battle formulas</a></dd>
+    <dt>Turn end</dt><dd>Done band <code>0x50..0x52</code>, then the end gate <code>0x5A</code>, which also detects a party or monster wipe</dd>
+    <dt>Port</dt><dd><code>engine-vm::battle_action</code> (<code>ActionState</code>, <code>step</code>, <code>BattleActionHost</code>); composed by <code>engine-core::World</code></dd>
+    <dt>Confidence</dt><dd>Confirmed - every state body read from the disassembly; queue, summon loads and trigger tables capture-validated</dd>
+    <dt>Used by</dt><dd><a href="battle.html">battle loader</a>, <a href="../arts.html">Arts browser</a>, <a href="../tooling/rom-patcher.html">ROM patcher</a> battle tuning</dd>
+  </dl>
+</section>
 
 <section class="doc-section" id="how-it-works">
   <h2>How it works</h2>
-  <p>Pick <em>Attack</em> and the hero turns to face the target, runs in, swings, the number pops, and they walk back. None of that is one function call - it is one <strong>state per frame</strong>, and this machine is what advances the state. Every command category (Attack, Arts, Magic, Item, Spirit, Run) owns a contiguous band of state numbers; a Tactical Art is <em>not</em> a separate band - it runs through the ordinary attack band and only differs in which byte the strike loop stages.</p>
-  <h3 id="at-a-glance">At a glance</h3>
-  <table>
-    <thead><tr><th>Question</th><th>Short answer</th></tr></thead>
-    <tbody>
-      <tr><td>What is the state?</td><td>One byte, <code>ctx[7]</code>, dispatched through a 256-entry jump table with no default arm.</td></tr>
-      <tr><td>What picks the band?</td><td>The actor's action category byte <code>+0x1DE</code>, read once at the seed state <code>0x0C</code>.</td></tr>
-      <tr><td>Where is damage applied?</td><td>Not by the state bodies - one power byte per animation hit event, through the roll wrappers on <a href="battle-formulas.html">battle formulas</a>.</td></tr>
-      <tr><td>How does a turn end?</td><td>Done band <code>0x50..0x52</code>, then the end-of-action gate <code>0x5A</code>, which also detects a party or monster wipe.</td></tr>
-      <tr><td>What can hang it?</td><td>Two known parks: the <code>0x51</code> HP-bar settle gate and the <code>0x19</code> attack-approach range poll (both in the full document).</td></tr>
-    </tbody>
-  </table>
   <figure class="overlay-strip">
-    <svg viewBox="0 0 880 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="ba-bands-title" style="font-family: var(--font-mono); font-size: 12px;">
-      <title id="ba-bands-title">Battle action state bands</title>
-      <defs><marker id="ba-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/></marker></defs>
-      <g fill="var(--bg-card)" stroke="var(--accent)">
-        <rect x="20" y="110" width="120" height="60" rx="4"/>
+    <svg viewBox="0 0 960 340" width="100%" style="max-width: 960px; font-family: var(--font-mono); font-size: 12px;" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="ba-bands-title">
+      <title id="ba-bands-title">Battle action state bands: the seed state fans out into one band per command category, every band funnels into the Done band and the end gate, and the end gate hands the turn to the next combatant</title>
+      <defs><marker id="ba-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+      <g fill="var(--bg-raised)" stroke="var(--border)">
+        <rect x="20" y="120" width="140" height="60" rx="4" stroke="var(--accent)"/>
+        <rect x="240" y="10" width="220" height="40" rx="4"/>
+        <rect x="240" y="60" width="220" height="40" rx="4"/>
+        <rect x="240" y="110" width="220" height="40" rx="4"/>
+        <rect x="240" y="160" width="220" height="40" rx="4"/>
+        <rect x="240" y="210" width="220" height="40" rx="4"/>
+        <rect x="240" y="260" width="220" height="40" rx="4"/>
+        <rect x="560" y="120" width="140" height="60" rx="4" stroke="var(--accent)"/>
+        <rect x="780" y="120" width="160" height="60" rx="4" stroke="var(--accent)"/>
       </g>
-      <text x="80" y="134" text-anchor="middle" fill="currentColor" font-weight="600">Seed</text>
-      <text x="80" y="152" text-anchor="middle" fill="var(--text-muted)">0x00 / 0x0A..0x0C</text>
-      <g fill="var(--bg-card)" stroke="var(--border)">
-        <rect x="220" y="10" width="200" height="40" rx="4"/>
-        <rect x="220" y="58" width="200" height="40" rx="4"/>
-        <rect x="220" y="106" width="200" height="40" rx="4"/>
-        <rect x="220" y="154" width="200" height="40" rx="4"/>
-        <rect x="220" y="202" width="200" height="40" rx="4"/>
-        <rect x="220" y="250" width="200" height="40" rx="4"/>
-      </g>
-      <g fill="currentColor">
-        <text x="230" y="27">Attack / Arts</text><text x="230" y="43" fill="var(--text-muted)">0x14..0x20  (+0x1DE = 3 / 0)</text>
-        <text x="230" y="75">Magic / Item</text><text x="230" y="91" fill="var(--text-muted)">0x28..0x2E  (+0x1DE = 2 / 1)</text>
-        <text x="230" y="123">Summon</text><text x="230" y="139" fill="var(--text-muted)">0x32..0x38  (spell 0x81..0x95)</text>
-        <text x="230" y="171">Spirit</text><text x="230" y="187" fill="var(--text-muted)">0x3C..0x40, 0x46..0x48</text>
-        <text x="230" y="219">Run / capture-fail</text><text x="230" y="235" fill="var(--text-muted)">0x64..0x6B  (+0x1DE = 5)</text>
-        <text x="230" y="267">Capture module</text><text x="230" y="283" fill="var(--text-muted)">0x6E..0x71  (class 'c' spell)</text>
+      <g fill="currentColor" text-anchor="middle" dominant-baseline="middle">
+        <text x="90" y="142">Seed</text>
+        <text x="90" y="160" fill="var(--text-muted)">0x0A..0x0C</text>
+        <text x="350" y="24">Attack / Arts</text><text x="350" y="40" fill="var(--text-muted)">0x14..0x20, cat 3 / 0</text>
+        <text x="350" y="74">Magic / Item</text><text x="350" y="90" fill="var(--text-muted)">0x28..0x2E, cat 2 / 1</text>
+        <text x="350" y="124">Summon</text><text x="350" y="140" fill="var(--text-muted)">0x32..0x38, spell 0x81+</text>
+        <text x="350" y="174">Spirit</text><text x="350" y="190" fill="var(--text-muted)">0x3C..0x40, 0x46..0x48</text>
+        <text x="350" y="224">Run</text><text x="350" y="240" fill="var(--text-muted)">0x64..0x67, cat 5</text>
+        <text x="350" y="274">Capture</text><text x="350" y="290" fill="var(--text-muted)">0x6E..0x71, class c</text>
+        <text x="630" y="142">Done</text>
+        <text x="630" y="160" fill="var(--text-muted)">0x50..0x52</text>
+        <text x="860" y="142">End gate</text>
+        <text x="860" y="160" fill="var(--text-muted)">0x5A, wipe scans</text>
       </g>
       <g fill="none" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#ba-arrow)">
-        <path d="M140 140 C180 140 180 30 220 30"/><path d="M140 140 C180 140 180 78 220 78"/><path d="M140 140 L220 126"/>
-        <path d="M140 140 C180 140 180 174 220 174"/><path d="M140 140 C180 140 180 222 220 222"/><path d="M140 140 C180 140 180 270 220 270"/>
+        <path d="M160 150 C200 150 200 30 238 30"/>
+        <path d="M160 150 C200 150 200 80 238 80"/>
+        <path d="M160 150 C200 150 200 130 238 130"/>
+        <path d="M160 150 C200 150 200 180 238 180"/>
+        <path d="M160 150 C200 150 200 230 238 230"/>
+        <path d="M160 150 C200 150 200 280 238 280"/>
       </g>
       <g fill="none" stroke="var(--text-muted)" stroke-width="1.2" marker-end="url(#ba-arrow)">
-        <path d="M420 30 C470 30 470 140 520 140"/><path d="M420 78 C470 78 470 140 520 140"/><path d="M420 126 L520 140"/>
-        <path d="M420 174 C470 174 470 140 520 140"/><path d="M420 222 C470 222 470 140 520 140"/><path d="M420 270 C470 270 470 140 520 140"/>
+        <path d="M460 30 C510 30 510 150 558 150"/>
+        <path d="M460 80 C510 80 510 150 558 150"/>
+        <path d="M460 130 C510 130 510 150 558 150"/>
+        <path d="M460 180 C510 180 510 150 558 150"/>
+        <path d="M460 230 C510 230 510 150 558 150"/>
+        <path d="M460 280 C510 280 510 150 558 150"/>
       </g>
-      <rect x="520" y="110" width="150" height="60" rx="4" fill="var(--bg-card)" stroke="var(--accent)"/>
-      <text x="595" y="134" text-anchor="middle" fill="currentColor" font-weight="600">Done</text>
-      <text x="595" y="152" text-anchor="middle" fill="var(--text-muted)">0x50..0x52</text>
-      <path d="M670 140 L720 140" fill="none" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#ba-arrow)"/>
-      <rect x="720" y="110" width="140" height="60" rx="4" fill="var(--bg-card)" stroke="var(--accent)"/>
-      <text x="790" y="134" text-anchor="middle" fill="currentColor" font-weight="600">End gate</text>
-      <text x="790" y="152" text-anchor="middle" fill="var(--text-muted)">0x5A  wipe scans</text>
-      <path d="M790 170 L790 230 L80 230 L80 170" fill="none" stroke="var(--text-muted)" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#ba-arrow)"/>
-      <text x="435" y="222" text-anchor="middle" fill="var(--text-muted)">next combatant (recompute_battle_order) or 0xFD / 0xFF round boundary</text>
+      <path d="M700 150 L778 150" fill="none" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#ba-arrow)"/>
+      <path d="M860 180 L860 312 L90 312 L90 182" fill="none" stroke="var(--text-muted)" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#ba-arrow)"/>
+      <text x="475" y="330" text-anchor="middle" fill="var(--text-muted)">next combatant, or 0xFD / 0xFF at a round boundary</text>
     </svg>
-    <figcaption>One byte, <code>ctx[7]</code>, walks a band per command category and always funnels through the Done band and the <code>0x5A</code> end-of-action gate, which counts survivors on both sides before handing the turn on.</figcaption>
+    <figcaption>One byte walks a band per command category and always funnels through Done and the <code>0x5A</code> end gate, which counts survivors on both sides before handing the turn on.</figcaption>
   </figure>
-  <h3>The three keys</h3>
-  <p><code>FUN_801E295C</code> runs every frame from the <a href="battle.html">battle main dispatcher</a>. It picks the global battle context (<code>_DAT_8007BD24</code>, a pointer to the live struct at <code>0x800EB654</code>), resolves the active actor (the live record for one combatant, party member or monster) via the <a href="battle.html">8-slot actor pointer table at <code>0x801C9370</code></a>, and pumps the action through three nested keys:</p>
+  <p>The driver runs every frame from the <a href="battle.html">battle main dispatcher</a>. It resolves the active combatant through the 8-slot actor pointer table and pumps the action through three keys:</p>
+  <table class="data-table">
+    <thead><tr><th>Key</th><th>Field</th><th>Values</th></tr></thead>
+    <tbody>
+      <tr><td>Action category</td><td><code>actor[+0x1DE]</code></td><td>0 Tactical Arts, 1 Item, 2 Magic, 3 Attack, 4 Spirit, 5 Run / Defend</td></tr>
+      <tr><td>Execution phase</td><td><code>ctx[7]</code></td><td>the bands in the figure, plus terminal <code>0xFD</code> / <code>0xFF</code>; any unhandled byte falls to the shared epilogue as a no-op</td></tr>
+      <tr><td>Per-actor sub-state</td><td><code>actor[+0x1DC]</code> + scratch</td><td>flag bits; <code>+0x1D9</code> current anim, <code>+0x1DA</code> queued anim, <code>+0x1DF..+0x1F2</code> the action-parameter byte stream</td></tr>
+    </tbody>
+  </table>
   <ul class="bullets">
-    <li><strong>Action category</strong> - <code>actor[+0x1DE]</code>: <code>0=Tactical Arts</code>, <code>1=Item</code>, <code>2=Magic</code>, <code>3=Attack</code>, <code>4=Spirit</code>, <code>5=Run/Defend</code>. Read at the action-start case (<code>ctx[7] == 0xC</code>) and used to seed the next state.</li>
-    <li><strong>Execution phase</strong> - <code>ctx[7]</code>: the handled states are organised in contiguous bands (Attack <code>0x14&ndash;0x20</code>, Magic/Item <code>0x28&ndash;0x2E</code>, Summon <code>0x32&ndash;0x38</code>, Spirit <code>0x3C&ndash;0x40</code> + <code>0x46&ndash;0x48</code>, Done <code>0x50&ndash;0x52</code>/<code>0x5A</code>, Run/Capture <code>0x64&ndash;0x6B</code>, Magic-capture <code>0x6E&ndash;0x71</code>, terminal <code>0xFD</code>/<code>0xFF</code>). The dispatch is a 256-entry <code>jr</code> jump table at <code>0x801CED44</code> with <strong>no <code>default</code></strong>; any byte value outside the handled set indexes a slot that falls straight to the shared post-switch epilogue - an inert no-op advance, not a crash (state <code>0x67</code> is the one written-but-inert value, set by case <code>0x66</code>).</li>
-    <li><strong>Per-actor sub-state</strong> - <code>actor[+0x1DC]</code> (flag bits) plus several scratch fields (<code>+0x1DA</code> queued anim, <code>+0x1D9</code> current anim, <code>+0x1DF..+0x1F2</code> action-parameter byte stream).</li>
+    <li><strong>Not a bytecode VM.</strong> No opcode table, no program counter. Each state body waits on a per-actor condition - animation matched, timer expired, range check passed - and writes the next state when ready.</li>
+    <li><strong>Run band.</strong> <code>0x65</code> branches on the roll: a failed run returns to <code>0x50</code> (turn consumed, battle continues); a success enters <code>0x66</code>, which stages a 64-frame black-to-white fade, sets the battle-end signal <code>DAT_8007BD71 = 0xFE</code> and parks in <code>0x67</code>. Engine: <code>ActionState::RunEscape</code> &rarr; <code>BattleEndCause::Escaped</code>.</li>
+    <li><strong>Wipe arm.</strong> The <code>0x5A</code> victory arm stages the win pose off the acting actor&rsquo;s party slot, re-picking a living member only when the actor is dead. Retail is safe because the wipe scan and the scheduler share one liveness predicate; the randomizer&rsquo;s enemy-ally charm widens that mask and breaks it (<a href="battle.html#status-effects">charm softlock</a>).</li>
+    <li><strong>Effects are indirect.</strong> The machine calls the UI-element spawner with an element id (<code>0x07</code>, <code>0x0F</code>, <code>0x34</code>, &hellip;) and the <a href="effect-vm.html">effect VM</a> resolves it to sprite spawns. That path draws the 2D layer; the 3D summon is a separate mechanism below.</li>
+    <li><strong>Two known parks.</strong> The <code>0x51</code> HP-bar settle gate and the <code>0x19</code> attack-approach range poll can wait forever under the wrong seeding; both are dissected in the <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/battle-action.md" target="_blank" rel="noopener">full doc</a> and the <a href="../writeups/gaza-orbit-softlock.html">Gaza write-up</a>.</li>
   </ul>
-  <p>It is <em>not</em> a bytecode VM. There is no opcode table, no PC stride. Each <code>case ctx[7]</code> body waits on a per-actor condition (animation matched, timer expired, distance check passed) and writes the next <code>ctx[7]</code> value when ready. Actions that need multiple frames do nothing on the frames where their condition isn't met yet.</p>
-
-  <p><strong>Run band (<code>0x64&ndash;0x67</code>): state <code>0x66</code> is the successful-escape teardown, not a failed run.</strong> The <code>0x65</code> wait branches on the run outcome: a <em>failed</em> run routes back to <code>0x50</code> (Done band - the action is consumed, the battle continues), a <em>successful</em> escape routes to <code>0x66</code>, which stages a <code>0x40</code>-frame black&rarr;white screen fade through the fade-primitive spawner (<code>FUN_80024E80</code> + the <code>FUN_80020B00</code> fade-state loader, 10.6 fixed-point ramp), sets the battle-end signal <code>DAT_8007BD71 = 0xFE</code> (the same byte the <code>0x5A</code> wipe gate sets), and parks in the <code>0x67</code> terminal hold. Engine: <code>ActionState::RunEscape</code> &rarr; <code>BattleEndCause::Escaped</code> (no loot, no defeat) + the <code>engine_core::fade</code> kernel.</p>
-  <p><strong>The <code>0x5A</code> monster-wipe victory arm</strong> stages the win pose off the acting actor's party slot, re-picking a living party member only when the acting actor is dead (the alive-skip at <code>0x801E6690</code>). Retail is safe because the wipe scan and the scheduler share the <code>+0x14C != 0 &amp;&amp; !(+0x16E &amp; 0x4)</code> standing predicate, so an alive acting actor is always a party member - the randomizer's enemy-ally charm widens that mask to <code>0x384</code> and breaks the invariant. Full chain + the engine and disc-side fixes: <a href="battle.html#charm-softlock">battle &sect; charm softlock</a>.</p>
   <details class="disclosure">
-    <summary>History: the 0x66 "run failed" reading</summary>
-    <div class="disclosure-body"><p>An earlier reading labelled state <code>0x66</code> &ldquo;run failed, battle continues&rdquo;. It is falsified by the battle-end signal byte the state writes (<code>DAT_8007BD71 = 0xFE</code>): <code>0x66</code> is the successful-escape teardown, and the failed run is the <code>0x65</code> branch back to <code>0x50</code>.</p></div>
+    <summary>History: the 0x66 &ldquo;run failed&rdquo; reading</summary>
+    <div class="disclosure-body"><p>State <code>0x66</code> was once labelled &ldquo;run failed, battle continues&rdquo;. The battle-end signal it writes falsifies that: <code>0x66</code> is the successful-escape teardown, and the failed run is the <code>0x65</code> branch back to <code>0x50</code>.</p></div>
   </details>
-  <p>Effect spawning is <em>indirect</em>: the state machine doesn't call the <a href="effect-vm.html">effect VM</a> directly - it calls <code>FUN_801D8DE8(ui_element_id, mode)</code> (the hottest battle helper, ~30 sites), which fans out through the effect cluster. The state machine knows UI element IDs (<code>0x07</code>/<code>0x0F</code>/<code>0x34</code>/<code>0x43</code>/<code>0x4C</code>/<code>0x52</code>/<code>0x66</code>); the effect VM resolves them to actual sprite-anim spawns. That path drives the <strong>2D UI/sprite</strong> layer (<code>FUN_801DFDF8</code> emits <code>POLY_FT4</code> billboard quads); the 3D summon model is a separate mechanism (below).</p>
 </section>
 
 <section class="doc-section" id="summon-overlay">
-  <h2>Seru-magic summon-overlay dispatch</h2>
-  <p>When a character casts a Seru spell, the creature that appears is not part of the battle overlay: the game pages a small per-summon code overlay off the disc while the cast band waits. This is why every summon has its own PROT entry and why a mid-cast save state holds an extra chunk of code resident.</p>
-  <p>The 3D visual of a player Seru-magic cast - the summoned Seru and its attack mesh, e.g. Gimard's <em>Burning Attack</em> flame (the player summon; the enemy boss move <em>Fire Tail</em> is distinct) - is <strong>not</strong> spawned by an opcode and does <strong>not</strong> live in <code>befect_data</code>. It is a <strong>per-summon code overlay</strong> paged in on demand. In outer state <strong>case <code>0x29</code></strong>, when the queued action's spell id <code>actor[+0x1df]</code> falls in the player Seru-magic block <code>0x81..0x8b</code>:</p>
-<pre><code>_DAT_8007bd24[7] = 0x32;                                   // advance to the cast band
-_DAT_8007ba2c = (&amp;PTR_s_re_check_801f6734)[id - 0x81];     // per-summon effect-data pointer
-FUN_8003ec70(id - 0x79, 0);                                // overlay loader B: PROT (id - 0x79 + 0x381)</code></pre>
-  <p><code>FUN_8003EC70(param)</code> (overlay loader B) loads raw TOC index <code>param + 0x381</code> into <strong>slot B</strong> - the second overlay window at <code>*DAT_80010390</code> = <code>0x801F69D8</code>, sitting above the resident battle overlay (0898) in slot A. That raw index is <strong>extraction entry <code>param + 0x37F</code></strong>, two below the raw value (see <a href="../formats/prot.html">PROT &sect; In-RAM TOC</a>). So the player summons map to <strong>extraction PROT 903..913</strong> (Gimard <em>Burning Attack</em> <code>0x81</code> &rarr; param <code>8</code> &rarr; <strong>PROT 903</strong>). The capture-class (<code>'c'</code>) spell branch loads from a different base: <code>FUN_8003EC70(spell_record[+1] + 0x28)</code>. <strong>The whole block is capture-pinned</strong>: every spell id <code>0x81..=0x8B</code> was observed mid-cast loading its arithmetic slot, zero exceptions.</p>
-  <p>The same loader serves the neighbouring blocks. The evolved-Seru block <code>0x8C..=0x95</code> continues the run to extraction <strong>914..923</strong> (stager-shaped; eight of ten legs capture-pinned mid-cast - <code>0x8C..=0x8F</code>/<code>0x92..=0x95</code>, only <code>0x90</code>/<code>0x91</code> still predicted). <strong>Enemy boss specials ride their own stagers through the same loader</strong>: the final-boss Cort mid-cast corpus lands every leg on the same arithmetic, byte-resident at slot B - Mystic Circle <code>0x2B</code> &rarr; <strong>938</strong>, Mystic Shield <code>0x2D</code> &rarr; <strong>940</strong>, Guilty Cross <code>0x31</code> &rarr; <strong>944</strong>, evolved-form Final Crisis / Ultra Charge <code>0x42</code>/<code>0x43</code> &rarr; <strong>961/962</strong>, and Cort's Evil Seru Magic <code>0x47</code> &rarr; <strong>966</strong> - distinct from the player-side Juggernaut stager 0927: the player and enemy arms of the same spell ship separate stagers. PROT 0907 on the <code>0x85</code> slot is <strong>Nighto's stager</strong>; its head title "Hell's Music" is the attack's display name (the SCUS spell table carries the same string). See <a href="../tooling/static-overlay-pipeline.html">static overlay pipeline</a>.</p>
+  <h2>Seru-magic summons</h2>
+  <p>When a character casts a Seru spell, the creature that appears is not in the battle overlay: the cast state pages a small <strong>per-summon code overlay</strong> off the disc into slot B (<code>0x801F69D8</code>, above the resident battle overlay) while the cast band waits. That is why every summon has its own PROT entry and why a mid-cast save state holds an extra chunk of code.</p>
+  <table class="data-table">
+    <thead><tr><th>Cast</th><th>Spell ids</th><th>Loader argument</th><th>Extraction entries</th></tr></thead>
+    <tbody>
+      <tr><td>Player Seru magic</td><td><code>0x81..0x8B</code></td><td><code>id &minus; 0x79</code></td><td>903..913 (Gimard <code>0x81</code> &rarr; 903; Nighto <code>0x85</code> &rarr; 907)</td></tr>
+      <tr><td>Evolved Seru</td><td><code>0x8C..0x95</code></td><td>same arithmetic</td><td>914..923</td></tr>
+      <tr><td>Capture-class spells</td><td>class <code>c</code></td><td><code>record[+1] + 0x28</code></td><td>the <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/cast-module.md">cast modules</a></td></tr>
+      <tr><td>Enemy specials</td><td>move id</td><td><code>id + 895</code></td><td>Delilas 958 / 959 / 960, Zeto 946, Cort 938 / 940 / 944 / 961 / 962 / 966</td></tr>
+    </tbody>
+  </table>
+  <p>The loader resolves its argument in the raw TOC (<code>+ 0x381</code>), which is extraction entry <code>+ 0x37F</code> (<a href="../formats/prot.html">PROT</a>). The player and enemy arms of the same spell ship separate stagers. What a stager contains:</p>
+  <ul class="bullets">
+    <li><strong>No mesh geometry.</strong> The meshes are the separately loaded 30-entry model library <code>etmd.dat</code> (extraction 0871) that the battle loader registers at battle init; the flame atlas <code>etim.dat</code> is 0870 (<a href="../formats/effect.html#befect-cluster">effect cluster</a>).</li>
+    <li><strong>Part records</strong> - <code>[i16 model_sel][u16 flags][move-VM bytecode]</code> - handed to the executable&rsquo;s part-stager, which spawns a part-actor per record: <code>model_sel &ge; 0</code> seats a library mesh, <code>-1</code> is a transform node, <code>0x4000</code> / <code>0x4001</code> are special render modes. Parser <code>legaia_asset::summon_overlay</code>.</li>
+    <li><strong>Motion is geometric.</strong> Gimard&rsquo;s flame is eight RNG-seeded part-actors moving; the palette is byte-identical across animation-distinct frames.</li>
+    <li><strong>The player summon draws as an ordinary battle actor</strong> through the TRS-keyframe pipeline; the engine renders it that way (<code>monster_archive::battle_render_mesh</code> + <code>MonsterAnimPlayer</code>) and keeps the part records as the on-disc stager model.</li>
+  </ul>
+  <details class="disclosure">
+    <summary>Details: stager internals, enemy stagers, the record-table trim</summary>
+    <div class="disclosure-body">
+      <p>Case <code>0x29</code> of the outer machine performs the load when the queued spell id is in the player block: it advances to <code>0x32</code>, stores the per-summon effect-data pointer <code>(&amp;PTR_s_re_check_801f6734)[id - 0x81]</code> into <code>_DAT_8007BA2C</code>, and calls overlay loader B with <code>id - 0x79</code>. Every player id <code>0x81..=0x8B</code> and eight of ten evolved ids are capture-pinned mid-cast (<code>0x90</code> / <code>0x91</code> predicted).</p>
+      <p>Stagers spawn through <code>FUN_80021B04(world_pos, render_slots, record_ptr, 0x1000)</code>, directly or via the pool wrapper <code>FUN_80050ED4</code> (stores the actor in the 0x60-slot pool at <code>DAT_801C90F0</code>). In the spell-<code>0x83</code> slot (extraction 905), <code>FUN_801F16A0</code> phase 0 loops eight spawns with <code>rand()</code>-seeded actor fields (<code>+0xB4 = rng % 15 + 16</code>, <code>+0xB6 = rng % 255 + 512</code>); the record pointers resolve to file <code>0x180C..0x1E00</code> under the slot-B base. The <code>jal</code> into the move VM lives in the executable&rsquo;s stager, not the overlay.</p>
+      <p>A live Gimard cast shows the overlay&rsquo;s own scene-graph entry at 0 calls while the battle per-actor draw runs 35-64 times per frame into the TRS-keyframe decoder - the player summon is a battle actor. The active flame is library mesh <code>DAT_8007C018[26]</code>, one of ten fire-textured meshes (CLUT row 478), drawn Gouraud-textured off the resident <code>etim</code> page at (832, 256). The enemy Fire Tail is a single move-VM part-actor over a record in the battle overlay&rsquo;s effect-prototype table (<code>0x801F6324</code>, 61 pointers &rarr; 54 unique records); PROT 0900&rsquo;s screen-widget family stays dormant outside the ending scenes.</p>
+      <p><strong>Trim before counting.</strong> Extraction <code>.BIN</code>s for stagers over-read into their neighbours; an entry&rsquo;s own content is <code>(next_start_lba &minus; start_lba) &times; 0x800</code> bytes (<code>unique_content_len</code>; Cort mid-cast saves pin 0938 &rarr; <code>0x1800</code>, 0940 / 0944 / 0961 &rarr; <code>0x2000</code>, 0962 &rarr; <code>0x2800</code>, 0966 &rarr; <code>0x4000</code>). Trimmed, every record&rsquo;s first word is <code>-1</code>, a small mesh index, or <code>0x4000</code>. The <code>0x4000</code> render-mode records sit in five player stagers (Palma 0928, Mule 0929, Jedo 0931, Aluru 0916, Iota 0921); no live capture has seated one, so those render modes&rsquo; draw behaviour is open.</p>
+    </div>
+  </details>
   <details class="disclosure">
     <summary>History: superseded readings</summary>
     <div class="disclosure-body">
       <ul class="bullets">
-        <li>An earlier mapping placed the summon block at "extraction 905..915 / Gimard &rarr; 905" - that was the <code>+ 0x381</code> raw-vs-extraction off-by-2; the loader constant is raw-TOC space and the extraction entry is <code>param + 0x37F</code>.</li>
-        <li>PROT 0907's "Hell's Music" head string was read as a Disco King dance song; refuted - the dance overlay 0980 has no slot-B loader callsite, and the string is the Nighto attack's display name.</li>
-        <li>A wrong link base produced "records beyond the <code>0x5800</code> file / no move VM in the stager" readings; under the correct slot-B base <code>0x801F69D8</code> every part-record pointer resolves in-file, and the <code>jal 0x80023070</code> (move VM) lives in the SCUS stager <code>FUN_80021B04</code>.</li>
-        <li>A reported <code>0x1000</code>/<code>0x8000</code>-class population of record-first-word "sentinels" was over-read contamination from untrimmed extraction files; trimmed stagers carry only <code>-1</code>, small mesh indices, or <code>0x4000</code>.</li>
-        <li>The Gimard flame flicker was read as CLUT/palette animation; falsified - the CLUT band is byte-identical across two animation-distinct capture frames while the framebuffer differs ~21%, so the motion is the spawned part-actors moving.</li>
+        <li>&ldquo;Gimard &rarr; extraction 905&rdquo; was the raw-vs-extraction off-by-2; the loader constant is raw-TOC space.</li>
+        <li>PROT 0907&rsquo;s &ldquo;Hell&rsquo;s Music&rdquo; string is Nighto&rsquo;s attack name, not a dance song; the dance overlay has no slot-B loader call.</li>
+        <li>&ldquo;Records beyond the file / no move VM in the stager&rdquo; came from a wrong link base; under <code>0x801F69D8</code> every pointer resolves in-file.</li>
+        <li>The <code>0x1000</code> / <code>0x8000</code> &ldquo;sentinel&rdquo; population was over-read contamination from untrimmed files.</li>
+        <li>The flame flicker is not CLUT animation - see <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</li>
       </ul>
-      <p>More on <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p>
     </div>
   </details>
-
-  <h3>Inside a summon stager (reference: the spell-<code>0x83</code> slot, extraction PROT 905)</h3>
-  <p>The deep-dive below reads one representative stager file - extraction 905, the <strong>spell-<code>0x83</code> slot</strong>; every stager in the block (including Gimard's <code>0x81</code> &rarr; 903) parses identically under the same link base. The live-capture findings (flame mesh <code>DAT_8007C018[26]</code>, part-actor motion) are capture-derived and independent of which file is dissected. Parse counts quoted for any stager must come from the entry <strong>trimmed to its TOC-gap footprint</strong> - the entry's own content is only the first <code>(next_start_lba - start_lba) * 0x800</code> bytes (<code>unique_content_len</code>); the extraction <code>.BIN</code>s over-read into the neighbouring stagers and inflate the spawn-site/record census.</p>
-  <p>The summon overlay carries <strong>no embedded TMD geometry</strong> (no <code>0x80000002</code> magic). The summon's meshes are the separately-loaded <code>DAT_8007C018</code> model library: <strong>extraction entry 0871</strong> (<code>etmd.dat</code>), a 30-entry <code>asset::pack</code> of Legaia TMDs that the battle scene loader <code>FUN_800520F0</code> pulls at battle init (case <code>0xb</code>, raw TOC index <code>0x369</code>, retail dev path <code>h:\prot\battle\etmd.dat</code>) and registers via <code>FUN_80026B4C</code>, populating <code>DAT_8007C018[3..32]</code> (<code>[0..2]</code> are the party battle meshes). Its extraction filename label says <code>sound_data</code> (the <a href="../formats/cdname.html#numbering-space">+2 label shift</a>; the retail define block is <code>befect_data</code>); its texture sibling <code>etim.dat</code> = extraction 0870 (the flame atlas) loads via loader case <code>0x8</code> - see <a href="../formats/effect.html#befect-cluster">effect &sect; battle effect cluster</a>. The overlay spawns and animates part-actors over those meshes. <strong>Decompiled</strong> (PROT 905 imported raw at base <code>0x801F0000</code>, <code>ghidra/scripts/dump_summon_overlay.py</code>):</p>
-  <ul class="bullets">
-    <li>The overlay spawns part-actors via the SCUS part-stager <code>FUN_80021B04(world_pos, render_slots, record_ptr, 0x1000)</code> (<code>param_1</code> = world position &rarr; <code>actor[+0x14..0x18]</code>, <code>param_3</code> = a part record, allocated from the effect pool <code>DAT_8007062c</code>) - either directly, or through the thin pool wrapper <code>FUN_80050ED4</code> (stores the spawned actor pointer in the 0x60-slot pool at <code>DAT_801C90F0</code>, then forwards the same arguments; the dominant call form in the high-summon and enemy boss stagers). <code>record[+0]</code> (<code>model_sel</code>) drives the spawn-time render seat: <code>&ge; 0</code> &rarr; library mesh <code>DAT_8007C018[model_sel + gp[0x754]]</code> (<code>actor[+0x5A] = 1</code>), any negative value (<code>-1</code> canonical) = no-mesh transform/pivot node (<code>actor[+0x56] = 0</code>, <code>+0x5A = 0</code>), <code>0x4000</code>/<code>0x4001</code> = special render-mode nodes (<code>actor[+0x5A] = 3</code> / <code>5</code>).</li>
-    <li>Three staging functions drive the spawn: <code>FUN_801F16A0</code> (phase 0 = a <code>do { FUN_80021B04(...) } while(&lt; 8)</code> loop spawning <strong>8</strong> flame parts, each with <code>rand()</code>-seeded actor params <code>actor[+0x84]</code> / <code>+0xb4 = rng%15+16</code> / <code>+0xb6 = rng%255+512</code> / <code>+0x28</code>; phase 1 = 1 more), <code>FUN_801F36A0</code>, <code>FUN_801F4DD0</code>. The per-frame motion is the standard actor-tick consuming those RNG-seeded fields.</li>
-    <li><strong>Part records are in-file move-VM bytecode:</strong> under the slot-B link base <code>0x801F69D8</code> each <code>FUN_80021B04</code> record pointer resolves to PROT 905 file <code>0x180C..0x1E00</code> - <code>[i16 model_sel][u16 flags][move-VM bytecode @+4]</code>, recovered by <code>legaia_asset::summon_overlay</code> (disc-gated). The <code>jal 0x80023070</code> (move VM) lives in the SCUS stager <code>FUN_80021B04</code>, not the overlay.</li>
-    <li><strong>But the scene-graph is NOT the player render path (live trace):</strong> a player Gimard <em>Burning Attack</em> cast shows <code>FUN_801F7088</code> = 0&times;, move VM = 2-3&times; (noise), and the battle per-actor draw <code>FUN_80048A08</code> = 35-64&times;/frame &rarr; TRS-keyframe decoder <code>FUN_8004998C</code> &rarr; cluster-A <code>FUN_80043390</code>. The <strong>player</strong> summon is drawn as an ordinary battle actor; the faithful path is <code>engine-vm/anim_vm.rs</code>. The engine drives the move-VM records as a stand-in only. Scope: the <strong>enemy</strong> Gimard <em>Fire Tail</em> mid-cast holds PROT 0900 resident but its screen-widget family is <strong>dormant</strong> (zero live widgets - the widget path stays exclusive to the 8 ending scenes); the live effect is a single move-VM part-actor ticked by the SCUS render-tail <code>FUN_80021DF4</code> over a <code>[model_sel][flags][bytecode]</code> record in the <strong>battle overlay (0898)</strong> data (below the 0900 link base), not a 0900 record - so Fire Tail does <strong>not</strong> drive the widget path.</li>
-  </ul>
-  <p>The flame renders as Gouraud-textured (<code>POLY_GT3</code>/<code>POLY_GT4</code>) prims sampling the resident <code>etim</code> page (832,256) 4bpp; <code>cba</code>/<code>tsb</code> are applied at render time. In a live mid-cast Gimard capture (<code>battle_gimard_tail_fire_a</code>) the summon library occupies <code>DAT_8007C018[3..32]</code>; ten of those (<code>[23..32]</code>) are fire-textured meshes (cba row 478 <code>0x778B</code> baked), and the <strong>active Gimard flame is <code>DAT_8007C018[26]</code></strong> - the only rendered model baking <code>etim</code>, with both rendering actors carrying <code>actor[+0x64]=26</code> and <code>actor[+0x56]=5</code> (full-TMD mode &rarr; <code>FUN_8002735C</code>).</p>
-  <aside class="notice">
-    <div class="notice-title">The flame motion is geometric (spawned part-actors), not palette animation</div>
-    <p>Each individual flame mesh is <strong>static geometry</strong>; the visible fire motion is the <strong>spawned part-actors</strong> moving (the 8 RNG-seeded parts above), <strong>not</strong> CLUT cycling - the entire CLUT band is byte-identical across two animation-distinct <code>battle_gimard_tail_fire_a/_b</code> frames while the framebuffer differs ~21%. The PROT 905 <code>LoadImage</code> (<code>FUN_800583C8</code>) CLUT uploads target VRAM row <code>481+</code> (the character/party-CLUT region), conditionally, not the flame's row 478. The faithful <strong>player</strong> render is wired - the summon spawns its namesake <code>battle_data</code> creature through the ordinary battle TRS-keyframe pipeline (<code>monster_archive::battle_render_mesh</code> + <code>MonsterAnimPlayer</code>); the part records stay as the on-disc stager model. The <strong>enemy</strong> <em>Fire Tail</em> path (see the scope note above): a single move-VM part-actor (render-tail <code>FUN_80021DF4</code>) over a record in the battle overlay (0898), with the PROT 0900 screen-widget path dormant. Enemy-special move-FX records are the effect-prototype table <code>0x801F6324</code> (PROT 0898) entries - 61 pointers &rarr; 54 unique summon-format records, all validated to execute through the move VM (<code>move_fx_records_vm_exec_disc</code>).</p>
-  </aside>
-
-  <h3>Enemy boss stagers + the record-table trim</h3>
-  <p>The six final-boss Cort special-attack stagers (extraction PROT <strong>0938</strong> Mystic Circle / <strong>0940</strong> Mystic Shield / <strong>0944</strong> Guilty Cross / <strong>0961</strong> Final Crisis / <strong>0962</strong> Ultra Charge / <strong>0966</strong> Evil Seru Magic) parse as summon stagers under the same <code>0x801F69D8</code> link base and record format as the player block (<code>summon_overlay::ENEMY_BOSS_STAGER_PROT</code>; disc-gated <code>enemy_stager_real</code>), spawning dominantly through the <code>FUN_80050ED4</code> pool wrapper. <strong>Stager extraction entries are over-read windows</strong>: each <code>.BIN</code> runs past the next entry's start LBA, so only the first <code>(next_start_lba - start_lba) * 0x800</code> bytes are the entry's own content (<code>unique_content_len</code>) - a boundary the Cort mid-cast saves pin byte-exactly against the slot-B resident image (0938 &rarr; <code>0x1800</code>, 0940/0944/0961 &rarr; <code>0x2000</code>, 0962 &rarr; <code>0x2800</code>, 0966 &rarr; <code>0x4000</code>).</p>
-  <p><strong>The enemy-cast stager path is not Cort-specific.</strong> Mid-cast captures of ordinary bosses pin the same mechanism on the universal <code>extraction = id + 895</code> arithmetic (loader-B id at <code>0x8007BC4C</code>, byte-resident at slot B; disc+library-gated <code>enemy_stager_binding</code>): the Delilas brothers - Gi / Blazing Slash <code>0x3F &rarr; 0958</code>, Che / Megaton Press <code>0x40 &rarr; 0959</code>, Lu / Plasma Strike <code>0x41 &rarr; 0960</code> - and Zeto, whose Call Wave and Big Wave are one logical attack over two turns and so share a single stager (<code>0x33 &rarr; 0946</code>). None of these four carries a <code>0x4000</code> render-mode record, and at the captured instants the part pool <code>DAT_801C90F0</code> is empty, so the render-mode draw still has no live exerciser.</p>
-  <p>That trim resolves the record-first-word "sentinel" question: across every trimmed stager (player 0903..0913, the evolved-Seru block 0914..0923, high 0927..0934, the six Cort entries) the first word is only ever <code>-1</code> (transform node, dominant), a small library-mesh index, or <code>0x4000</code> - matching <code>FUN_80021B04</code>'s own dispatch. The <code>0x4000</code> render-mode records live in <strong>five</strong> stagers: the Sim-Seru trio Palma 0928 (4) / Mule 0929 / Jedo 0931, plus two evolved-Seru casts - <code>0x8E</code> &rarr; 0916 (4, Aluru) and <code>0x93</code> &rarr; 0921 (6, Iota). All five are <strong>player</strong> casts (both evolved carriers are now capture-pinned mid-cast), so none seats a live render-mode part. Live correlation: every live pooled part-actor in the Cort states carries <code>actor[+0x48]</code> pointing at a <code>-1</code> record inside the trimmed table, with the spawn-time <code>+0x56</code>/<code>+0x5A</code> zeros rebound post-spawn by the move-VM ops (<code>+0x56 = 4</code> / <code>+0x5A = 2</code> dominate mid-cast). No <code>0x4000</code>/<code>0x4001</code> part-actor was live in these captures, so those render modes' draw behaviour stays open.</p>
 </section>
 
-<section class="doc-section" id="pool-helpers">
-  <h2>Actor-pool leaf helpers</h2>
-  <p>Small routines the machine calls to answer questions like &ldquo;who is the nearest living monster?&rdquo; or &ldquo;which way is the target?&rdquo;.</p>
-  <p>Small self-contained routines the SM and its round driver call over the 8-slot battle-actor pool (<code>&amp;DAT_801C9370</code>) and the ctx target queue - each ported as a pure function in <code>engine-vm::battle_action</code> (<code>pool_ops</code>), transcribed from the disassembly dumps:</p>
-  <ul class="bullets">
-    <li><code>FUN_801DB9C4</code> - end-of-action flag scrub: AND-masks the <code>+0x8</code> flag word of pool slots 0..=6 with <code>0x7CFFFFFF</code> (the state-<code>0x5A</code> per-actor anim-flag clear).</li>
-    <li><code>FUN_801DB318</code> - formation span-normalise + recentre: when the included slots' X/Z extent exceeds <code>0x800</code> it rescales every included coordinate (and the matching camera-focus accumulator), then subtracts the centroid from every included slot.</li>
-    <li><code>FUN_801D8A88</code> - attack target-queue builder: counts live monsters into <code>ctx[+0x244]</code>, takes the acting actor's <code>+0x1DD</code> current target as the wrap slot <code>+0x245</code>, and appends the three nearest alive non-target monster slots to <code>+0x246..</code> ordered by bearing offset from the current-target direction.</li>
-    <li><code>FUN_801D8D00</code> - target-cycle accessor: locates the current target inside that ring and steps next / previous with wrap.</li>
-    <li><code>FUN_801DB8B4</code> - first live monster slot: scans slots 3..6 for a non-zero <code>+0x14C</code> liveness halfword, else <code>7</code>.</li>
-    <li><code>FUN_801DBA04</code> / <code>FUN_801DB81C</code> - selectable-participant scans: same three predicates (action-state byte <code>!= 4</code>, alive, no can't-select ailment <code>+0x16E &amp; 0xF84</code>); one starts at slot 0 (first selectable target), the other after the current actor (next participant).</li>
-    <li><code>FUN_80019B28</code> - 12-bit bearing (atan2): folds the displacement into a quadrant by sign, divides the shorter leg into the longer, indexes the retail arctan LUT at <code>0x8006F4C8</code>, and adds the per-octant base (<code>0x000</code> = <code>-Z</code>, <code>0x400</code> = <code>+X</code>). Ported as <code>bearing_12bit</code> with the LUT caller-supplied - Sony data, no table bytes embedded.</li>
-    <li><code>FUN_801DB124</code> - dead-target redirect roll: when a queued action's chosen target is dead and the category qualifies (Attack always; Magic and Item conditionally), re-rolls a living slot on the same side until alive.</li>
-  </ul>
+<section class="doc-section" id="arts-trigger">
+  <h2>The action queue and Tactical Arts triggers</h2>
+  <p>What the player types on the D-pad becomes a flat list of action bytes before the machine sees it: the per-actor byte stream at <code>actor[+0x1DF..+0x1F2]</code>. Miracle Arts and Super Arts are pattern matches on that list, which is why the right arrows in the right order &ldquo;upgrade&rdquo; a chain into a named combo. The queue builder runs both passes, in this order, when the seed state commits the turn:</p>
+  <ol class="bullets">
+    <li><strong>Miracle Art match.</strong> If the command string equals the character&rsquo;s Miracle string (Vahn&rsquo;s Craze: <code>R D L U L U R D L</code>), the whole queue becomes the replacement string: four directions, the <code>SpecialStarter</code> byte, then the arts.</li>
+    <li><strong>Super Art tail replace.</strong> For each chained art the builder walks the character&rsquo;s five Super <code>find</code> patterns; a match on the queue tail is replaced by the <code>replace</code> tail ending in the finisher. The match needs the find&rsquo;s last art to be the queue&rsquo;s last action, and every participating art to have paid AP.</li>
+  </ol>
+  <table class="data-table">
+    <thead><tr><th>Resident table (battle overlay)</th><th>Address</th><th>Layout</th></tr></thead>
+    <tbody>
+      <tr><td>Miracle replacement strings</td><td><code>0x801F64F4</code> + <code>(char &minus; 1) &times; 0x10</code></td><td>three strings, 16 bytes each</td></tr>
+      <tr><td>Super <code>find</code></td><td><code>0x801F6524</code></td><td>15 entries, 13-byte stride: Vahn &times;5, Noa &times;5, Gala &times;5</td></tr>
+      <tr><td>Super <code>replace</code></td><td><code>0x801F65E8</code></td><td>15 entries, 16-byte stride, zero-padded</td></tr>
+      <tr><td>Byte codes</td><td>-</td><td><code>0x0C</code> / <code>0x0D</code> / <code>0x0E</code> / <code>0x0F</code> = Left / Right / Down / Up; <code>0x19</code> art starter; <code>0x1A</code> SpecialStarter</td></tr>
+    </tbody>
+  </table>
+  <p>Every string is capture-validated byte for byte against <code>legaia_art</code>&rsquo;s tables, and a Vahn Tri-Somersault capture&rsquo;s queue tail <code>19 27 0F 19 1F 0E 1A 2B 2B 2B</code> equals its modelled <code>replace</code>. Ports: <code>MiracleMatcher</code> / <code>SuperMatcher</code> in <code>legaia_art</code>, run to fixpoint by <code>battle_action::resolve_action_queue</code>.</p>
+  <p><strong>In the live Arts submenu</strong> (<code>engine-core::battle_arts</code>) an art is a saved directional chain. A Miracle is recognised by exact string match; a Super by tokenising the chain into named arts and tail-matching the art ordering, because the connector direction after each art is per-combo data (Vahn&rsquo;s <code>0x27</code> is followed by <code>0F</code> in Tri-Somersault but <code>0E</code> in Power Slash) that a saved chain does not carry. Both flag the menu row with the combo name and resolve the strike profile from the replacement queue.</p>
+  <p><strong>Strikes.</strong> In the attack chain (state <code>0x1A</code>) the host receives <code>apply_art_strike(ArtStrikeInfo)</code> - per-strike power byte, damage timing, hit cue, status effect - alongside <code>apply_damage</code>. <code>engine-core::art_strike</code> folds it into an HP delta, a status flag and scheduled SFX cues; <code>World::fold_battle_event</code> applies HP / status and queues the cues, which the host plays through the scene VAB at the cue&rsquo;s frame delay.</p>
+  <details class="disclosure">
+    <summary>History: the ctx[+0x274] queue hypothesis</summary>
+    <div class="disclosure-body"><p>The queue was once placed at <code>ctx[+0x274]</code>. A capture showed that word is the turn-order active-actor index; the queue is the per-actor stream at <code>actor[+0x1DF..+0x1F2]</code>, confirmed by the Noa Miracle and Vahn Tri-Somersault captures (<a href="../tooling/index.html">super-art queue capture</a>).</p></div>
+  </details>
+  <h3 id="spirit-run-live-menu">Spirit and Run in the live command menu</h3>
+  <p>The engine&rsquo;s command menu carries all six commands. <strong>Spirit</strong> charges the caster&rsquo;s AP gauge (+5) and raises a guard stance - the engine model of the pending-action byte <code>+0x1DE == 4</code> that the damage finisher&rsquo;s guard-halve reads - until that actor&rsquo;s next turn. <strong>Run</strong> arms the run band; success tears the battle down as <code>Escaped</code> (no loot, downed members floored at 1 HP), failure consumes the turn.</p>
+  <table class="data-table">
+    <thead><tr><th>Escape roll</th><th>Rule</th></tr></thead>
+    <tbody>
+      <tr><td>party score</td><td>sum over slots (downed included) of <code>(SPD &times; 3) &gt;&gt; 1 + missingHP &gt;&gt; 4</code></td></tr>
+      <tr><td>enemy score</td><td>sum of <code>SPD + missingHP &gt;&gt; 5</code></td></tr>
+      <tr><td>outcome</td><td>two BIOS-rand draws modulo each score; caught iff <code>roll_p &lt; roll_e</code>, or the scripted no-escape flag <code>ctx+0x287</code> is set</td></tr>
+      <tr><td>Chicken Heart (passive <code>0x34</code>)</td><td>party roll &times;1.5, from living members only</td></tr>
+      <tr><td>Chicken King (passive <code>0x37</code>)</td><td>forces a tie - assured escape, still blocked by <code>ctx+0x287</code>, hence &ldquo;non-boss&rdquo;</td></tr>
+    </tbody>
+  </table>
+  <p>Ported as <code>battle_formulas::escape_roll</code>, rolled by <code>World::roll_battle_escape</code>.</p>
 </section>
 
 <section class="doc-section" id="engine-port">
   <h2>Engine port</h2>
-  <p>The clean-room engine keeps the same shape - one enum value per retail state byte - so a transition trace from the port lines up against a retail capture line by line.</p>
-  <p><code>crates/engine-vm/src/battle_action.rs</code> ports the state graph as a per-frame edge-triggered state machine. Surface:</p>
-  <ul class="bullets">
-    <li><code>ActionState</code> - symbolic enum for every named state byte; <code>from_byte</code> returns <code>None</code> for unmapped values (so the dispatcher surfaces them as <code>StepOutcome::UnknownState</code> for engine logging).</li>
-    <li><code>ActionCategory</code> - symbolic enum for the action-category byte at <code>actor[+0x1DE]</code>.</li>
-    <li><code>BattleActor</code> - the per-actor fields the state machine reads or writes. Field names mirror the <code>+0xNNN</code> byte offsets so the link to the decompile stays explicit.</li>
-    <li><code>BattleActionCtx</code> - the subset of the live ctx struct (<code>_DAT_8007BD24</code>-pointed) the state machine touches: <code>action_state</code>, <code>active_actor</code>, the <code>+0x6D8</code> countdown timer, etc.</li>
-    <li><code>BattleActionHost</code> - engine callbacks for every cited helper (<code>FUN_801D5854</code> &rarr; <code>pose</code>, <code>FUN_801D8DE8</code> &rarr; <code>ui_element</code>, <code>FUN_8004E2F0</code> &rarr; <code>range_check</code>, <code>FUN_801DABA4</code> &rarr; <code>recompute_battle_order</code>, <code>FUN_801EFE44</code> &rarr; <code>camera_bounds</code>, <code>FUN_801EED1C</code> / <code>FUN_801E7320</code> &rarr; <code>party_setup</code> / <code>monster_setup</code>, <code>func_0x80056798</code> &rarr; <code>rng</code>, ...). All methods have default impls so a minimal host compiles.</li>
-    <li><code>step(host, ctx) -&gt; StepOutcome</code> - runs one frame's worth of dispatch; returns <code>Stay</code> (still waiting on a precondition), <code>Transition { from, to }</code>, <code>BattleComplete</code> (terminal), or <code>UnknownState { state }</code>.</li>
-    <li><code>validate_action(host, arm, sub_case, slot, validity_bits) -&gt; bool</code> - the 18-arm action validator (<code>FUN_8003FB10</code>, SCUS-resident): the gate the menu / battle UI runs against a candidate slot before committing an action (heal/revive/MP targets, status presence, stat-below-cap checks, out-of-battle flag gates). <code>ActionValidatorHost</code> abstracts the per-slot <code>(hp, hp_max, mp, mp_max)</code> quad, status words, record stats, and flag banks; <code>validity_bits</code> models the retail per-slot validity byte at <code>gp + 0x9A8</code> with the per-arm clear/set/overwrite discipline intact. Its arm-<code>0x82</code> leaf callee <code>FUN_80046898</code> (inventory count below the 224-slot cap) is ported alongside as <code>item_count_gate</code>.</li>
-  </ul>
-  <p><code>crates/engine-core/src/world.rs</code> composes this with the actor VM, move VM, and effect VM into a single <code>World</code> struct that engines drive via <code>World::tick</code>.</p>
-</section>
-
-<section class="doc-section" id="arts-trigger">
-  <h2>Action queue and Tactical Arts trigger ordering</h2>
-  <p>What the player types on the D-pad becomes a flat list of action bytes before the machine ever sees it. Miracle Arts and Super Arts are pattern matches on that list - which is why entering the right arrows in the right order &ldquo;upgrades&rdquo; a chain into a named combo.</p>
-  <p>Before <code>FUN_801E295C</code> reaches the inner-state machinery, the battle code resolves the player's command-input sequence into a flat <strong>action queue</strong> of <code>ActionConstant</code> bytes. The queue is built incrementally from directional inputs and accumulated arts; once the player commits, the runtime applies two trigger passes in order:</p>
-  <ol class="bullets">
-    <li><strong>Miracle Art match.</strong> If the input command sequence equals the character's Miracle Art command string (<code>R D L U L U R D L</code> for Vahn's Craze, etc.), the entire queue is replaced with the Miracle Art's replacement string (<code>L</code>/<code>R</code>/<code>D</code>/<code>U</code> &times; 4 &rarr; <code>SpecialStarter</code> &rarr; <code>art1, art2, &hellip;</code>). The first 4 directional bytes carry the on-disc MSB-set quirk and are masked to <code>0x0C..=0x0F</code>.</li>
-    <li><strong>Super Art find/replace at tail.</strong> For each chained art the runtime walks all the character's Super Art <code>find</code> patterns and replaces the matched tail with a <code>replace</code> tail ending in the Super Art's finisher action constant. Triggers require: the last art of <code>find</code> is the last action in the queue, and all participating arts paid AP.</li>
-  </ol>
-  <p>Both passes are clean-room ports in <code>legaia_art::MiracleMatcher</code> / <code>legaia_art::SuperMatcher</code>. The engine-vm <code>BattleActionHost</code> exposes an <code>art_record(char_id, art_id)</code> callback so the SM can fetch the <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/art-data.md" target="_blank" rel="noopener">art record</a> for power-byte resolution, hit timing, and status-effect application during the <code>0x14..0x20</code> Attack chain.</p>
-  <p>The reusable helper is <code>legaia_engine_vm::battle_action::resolve_action_queue(character, command_input, chained_arts)</code> - runs Miracle then Super to fixpoint. Returns an <code>ActionQueue</code> ready to feed into <code>ctx.queued_action</code>.</p>
-  <p>Retail runs both passes inside the <strong>queue-builder <code>FUN_801EED1C</code></strong> (battle overlay, called from ActionSeed state <code>0x0C</code> at <code>0x801E2C7C</code>): it normalizes the saved arrow chain seeded at <code>actor[+0x1DF..]</code> by <code>FUN_801DA34C</code> (char record <code>+0x76F</code>/<code>+0x77F</code>) into art constants (row index + <code>0x18</code> at <code>0x801EF6F0</code>), validates each art against the learned list (<code>FUN_801EFBFC</code>), pays AP (<code>+0x170</code>), copies the Miracle replacement from <code>0x801F64F4 + (char-1)*0x10</code> inline (<code>0x801EF4E8..0x801EF524</code>), then calls the Super applier <code>FUN_801EF9E4</code> - find at <code>0x801F6524</code> (13-byte stride) matched against the queue tail, replace from <code>0x801F65E8</code> (16-byte stride, write at <code>0x801EFB7C</code>).</p>
-  <h3>Miracle / Super in the live player-driven Arts submenu</h3>
-  <p>The player-driven battle Arts submenu (<code>legaia_engine_core::battle_arts</code>) models an art as a saved <strong>directional chain</strong> (<code>SavedChainRecord</code>, raw command bytes), not an in-gauge buffered input. The two trigger paths interact with that model differently:</p>
-  <ul>
-    <li><strong>Miracle Arts are wired.</strong> A Miracle Art's trigger is an exact directional-string match, so <code>battle_arts::miracle_for_chain</code> recognises a saved chain whose command string equals the caster's Miracle Art and flags the menu row (<code>ArtRow::miracle = Some(name)</code>). <code>World::build_battle_arts_rows</code> resolves the row's per-strike profile from the Miracle's finisher-replacement queue via <code>resolve_action_queue</code>: each art constant contributes its staged <code>ArtRecord</code> power, or one tier-0 (<code>x12</code>) synthetic strike when that art's record isn't loaded. The native <code>play-window</code> HUD shows the Miracle name on the row.</li>
-    <li><strong>Super Arts are wired, with the queue connectors abstracted.</strong> A Super fires when the player chains several named arts ending on a known combination. <code>legaia_art::recognize_art_sequence</code> tokenizes a saved chain's flat directional string into its ordered named arts (each identified by its own <code>ArtRecord::commands</code>, greedy longest-match), and <code>SuperMatcher::trigger_by_art_sequence</code> tail-matches that ordering against each Super's <code>SuperArt::art_sequence()</code> - the <code>find</code> pattern projected to its art constants only (<code>[0x27, 0x1F, 0x27]</code> for Tri-Somersault), with the <code>0x19</code> starters and the interleaved connector directions stripped. <code>battle_arts::super_for_chain</code> / <code>World::build_battle_arts_rows</code> flag the row (<code>ArtRow::super_art = Some(name)</code>) and resolve the <code>SuperArt::replace</code>-queue strike profile through the same helper the Miracle path uses; the <code>play-window</code> HUD shows the Super name. Super is checked after Miracle (retail order). The match is <strong>connector-abstracted</strong>: the connector direction after each art is combo-specific (Vahn's <code>0x27</code> is followed by <code>0F</code> in Tri-Somersault but <code>0E</code> in Power Slash), so it can't be derived from each art's commands - the connectors are per-combo <em>data</em> in the battle overlay's <strong>resident trigger table</strong>, and the live menu matches on the named-art ordering because a saved chain carries no connector bytes, not because the byte-exact strings are unknown. <strong>All 15 Supers' <code>find</code>/<code>replace</code> strings are capture-validated</strong>, read out of live battle RAM: <code>0x801F64F4</code>/<code>0x801F6504</code>/<code>0x801F6514</code> hold the three Miracle-Art replacement strings, <code>0x801F6524</code> the 15 Super <code>find</code> entries (fixed 13-byte stride, <code>super_art.rs</code> table order: Vahn &times;5, Noa &times;5, Gala &times;5), <code>0x801F65E8</code> the 15 <code>replace</code> strings (16-byte stride, zero-padded) - every resident string byte-identical to <code>super_art.rs</code>'s modeled fields, and every replace preserving its find minus the final <code>[19, art]</code> pair then appending <code>[1A, finisher&hellip;]</code>. The runtime effect is capture-validated too: the queue is the per-actor action-parameter byte stream at <code>actor[+0x1DF..+0x1F2]</code>, a Noa Miracle Art capture matches the engine's modeled replacement string byte-exact, and a Vahn <strong>Tri-Somersault</strong> capture's queue tail <code>19 27 0F 19 1F 0E 1A 2B 2B 2B</code> is byte-identical to <code>super_art.rs</code>'s <code>Tri-Somersault</code> <code>replace</code> (validating that combo's connectors <code>0x27 &rarr; 0F</code>, <code>0x1F &rarr; 0E</code> and the finisher tail; dequeue at pc <code>0x801D89D8</code>). Direction/connector bytes encode as <code>0x0C/0x0D/0x0E/0x0F</code> = Left/Right/Down/Up and <code>0x1A</code> = <code>SpecialStarter</code>. The byte-exact matcher (<code>SuperMatcher::try_trigger_at_tail</code>) is also ported and exercised by <code>resolve_action_queue</code>'s tail pass.</li>
-  </ul>
-  <p>When the active actor's <code>chosen_art</code> is set and <code>art_record</code> returns a record, <code>attack_chain</code> (state <code>0x1A</code>) calls a second host hook <code>apply_art_strike(ArtStrikeInfo)</code> alongside the existing <code>apply_damage</code>. <code>ArtStrikeInfo</code> carries the strike-indexed power byte, dmg_timing, hit cue, and the art's flat status effect. Engines drive HP deduction, status application, sound-effect scheduling, and visual hit-cue dispatch off this struct.</p>
-  <p>The engine-side translator at <code>crates/engine-core/src/art_strike.rs</code> (<code>apply_art_strike(attack, defense, info) -&gt; ArtStrikeOutcome</code>) folds an <code>ArtStrikeInfo</code> into a concrete HP delta + status flag + scheduled SFX cues using <code>art_strike_damage</code> in <code>legaia_engine_vm::battle_formulas</code>. The world's <code>BattleActionHost::apply_art_strike</code> impl resolves per-slot weapon attack from <code>World::battle_attack</code> and the right defense (UDF or LDF, picked from <code>World::battle_defense_split</code>) before calling the translator, then emits a <code>BattleEvent::ApplyArtStrike</code> with the resolved outcome. Engines apply each strike's <code>damage</code> / <code>enemy_effect</code> / <code>cues</code> through their runtime path for HP / status / SFX dispatch.</p>
-  <p><code>World::fold_battle_event</code> folds the <code>ApplyArtStrike</code> outcome: HP / status into the target, and the outcome's <strong>sound cues</strong> (<code>cue.is_sound()</code>, the <code>HitCue::kind</code> SfxBank ids - distinct from the move-power <code>+0x0d</code> <code>FUN_8004fcc8</code> namespace) into a per-frame <code>BattleSfxCue</code> queue the host drains via <code>World::drain_battle_sfx_cues</code> (the audio sibling of <code>drain_battle_hit_fx</code>). The host plays each through <code>SfxBank::play_one_shot</code> at the cue's <code>timing_frames</code> delay. The live battle loop wires this end to end: the SFX bank is decoded from the user's executable at boot (<code>SfxTable::from_scus</code> &rarr; <code>SfxBank::from_descriptors</code>) and the cues key on through the per-scene VAB, driven once per simulation tick by the BGM director's SFX scheduler.</p>
-
-  <details class="disclosure">
-    <summary>History: the ctx[+0x274] queue hypothesis</summary>
-    <div class="disclosure-body"><p>The action queue was once placed at <code>ctx[+0x274]</code>. A capture showed that word is the turn-order active-actor index written by <code>recompute_battle_order</code>; the queue is the per-actor byte stream at <code>actor[+0x1DF..+0x1F2]</code>, confirmed byte-exact by the Noa Miracle Art and Vahn Tri-Somersault captures above. Capture runbook: <a href="../tooling/index.html">tooling</a> &rarr; super-art queue capture.</p></div>
+  <p>The port keeps one enum value per retail state byte, so a transition trace from the engine lines up against a retail capture line by line.</p>
+  <table class="data-table">
+    <thead><tr><th>Item</th><th>Role</th></tr></thead>
+    <tbody>
+      <tr><td><code>ActionState</code> / <code>ActionCategory</code></td><td>every named state byte and category; <code>from_byte</code> returns <code>None</code> for unmapped values, surfaced as <code>StepOutcome::UnknownState</code></td></tr>
+      <tr><td><code>BattleActor</code> / <code>BattleActionCtx</code></td><td>the per-actor and context fields the machine touches; names mirror the <code>+0xNNN</code> offsets</td></tr>
+      <tr><td><code>BattleActionHost</code></td><td>callbacks for every cited helper (<code>pose</code>, <code>ui_element</code>, <code>range_check</code>, <code>recompute_battle_order</code>, <code>camera_bounds</code>, <code>party_setup</code> / <code>monster_setup</code>, <code>rng</code>, <code>art_record</code>); all default so a minimal host compiles</td></tr>
+      <tr><td><code>step(host, ctx)</code></td><td>one frame of dispatch: <code>Stay</code>, <code>Transition</code>, <code>BattleComplete</code> or <code>UnknownState</code></td></tr>
+      <tr><td><code>validate_action</code></td><td>the 18-arm action validator from the executable: heal / revive / MP targets, status presence, stat caps, the per-slot validity byte discipline; its 224-slot inventory gate is <code>item_count_gate</code></td></tr>
+      <tr><td><code>pool_ops</code></td><td>pure ports of the actor-pool leaf helpers (below)</td></tr>
+    </tbody>
+  </table>
+  <details class="disclosure" id="pool-helpers">
+    <summary>Details: actor-pool leaf helpers</summary>
+    <div class="disclosure-body">
+      <table class="data-table">
+        <thead><tr><th>Function</th><th>Does</th></tr></thead>
+        <tbody>
+          <tr><td><code>FUN_801DB9C4</code></td><td>end-of-action flag scrub: ANDs slots 0..=6&rsquo;s <code>+0x8</code> word with <code>0x7CFFFFFF</code></td></tr>
+          <tr><td><code>FUN_801DB318</code></td><td>formation span-normalise + recentre when the X/Z extent exceeds <code>0x800</code></td></tr>
+          <tr><td><code>FUN_801D8A88</code></td><td>attack target ring: live-monster count into <code>ctx[+0x244]</code>, current target as the wrap slot, three nearest others by bearing</td></tr>
+          <tr><td><code>FUN_801D8D00</code></td><td>target-cycle accessor with wrap</td></tr>
+          <tr><td><code>FUN_801DB8B4</code></td><td>first live monster slot (3..6 by the <code>+0x14C</code> liveness halfword), else 7</td></tr>
+          <tr><td><code>FUN_801DBA04</code> / <code>FUN_801DB81C</code></td><td>selectable-participant scans: action byte <code>!= 4</code>, alive, no <code>+0x16E &amp; 0xF84</code> ailment; from slot 0 / after the current actor</td></tr>
+          <tr><td><code>FUN_80019B28</code></td><td>12-bit bearing (atan2) over the arctan LUT at <code>0x8006F4C8</code>; ported as <code>bearing_12bit</code> with the LUT caller-supplied</td></tr>
+          <tr><td><code>FUN_801DB124</code></td><td>dead-target redirect: re-rolls a living slot on the same side (Attack always; Magic / Item conditionally)</td></tr>
+        </tbody>
+      </table>
+    </div>
   </details>
-  <h3 id="spirit-run-live-menu">Spirit / Run in the live command menu</h3>
-  <p>The live player-driven command menu (<code>legaia_engine_core::battle_input::BattleCommand</code>) carries all six commands: Attack (target cursor + physical strike), Arts / Magic / Item (host-submenu hand-offs), <strong>Spirit</strong> and <strong>Run</strong>. Spirit resolves without a target: the live loop charges the caster's AP gauge (<code>ApGauge::charge_spirit</code>, the retail Square-press +5) and raises a per-slot guard stance - the engine model of the retail pending-action byte <code>+0x1DE == 4</code> that the damage finisher's guard-halve stage reads (<code>DamageFinish::defender_guarding</code>, <code>over &gt;&gt;= 1</code>) - held until that actor's next turn starts. Run arms the ported run band (<code>Begin</code> &rarr; category 5 &rarr; <code>RunBegin</code>/<code>RunWait</code>/<code>RunEscape</code>) with the roll outcome staged on <code>multi_cast_gate</code>; a success tears the battle down <code>Escaped</code> (no loot, downed members floored alive at 1 HP), a failure consumes the turn through the Done band. The escape <em>probability</em> is the retail roll <code>FUN_801E791C</code> - the writer of the <code>_DAT_8007726C</code> outcome pointer states <code>0x64</code>/<code>0x65</code> test, decoded from its overlay dump: party score = per-slot <code>(SPD*3)&gt;&gt;1 + missingHP&gt;&gt;4</code> (downed members included), enemy score = <code>SPD + missingHP&gt;&gt;5</code>, two BIOS-rand draws modulo the scores, caught iff <code>roll_p &lt; roll_e</code> (strict) or the scripted no-escape flag <code>ctx+0x287</code> is set. The two Chicken accessory bits fold from the <em>living</em> party members' second ability word: Escape Boost (passive <code>0x34</code>, Chicken Heart) scales the party roll x1.5, Great Escape (<code>0x37</code>, Chicken King) forces the compare to a tie - assured escape, but still blocked by <code>ctx+0x287</code>, which is why it's "non-boss". Ported as <code>battle_formulas::escape_roll</code>, rolled live by <code>World::roll_battle_escape</code>.</p>
 </section>
 
-<section class="doc-section" id="full-reference">
-  <h2>What the full document adds</h2>
-  <p>The full per-state table (every <code>ctx[7]</code> case body, what it runs, and which state it transitions to next) lives at <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/battle-action.md" target="_blank" rel="noopener"><code>docs/subsystems/battle-action.md</code></a>, citing <code>ghidra/scripts/funcs/overlay_battle_action_801e295c.txt</code> at the line level. It also covers, beyond this page:</p>
-  <ul class="bullets">
-    <li>The <strong>turn cursor</strong> <code>ctx[+0x1A]</code> - a context field (not per-actor) counting how many entries of the round's battle order have been consumed, and the three bytes its bound is built from.</li>
-    <li>The <strong><code>0x51</code> exit gate</strong>: the done-band countdown only decrements once <code>FUN_801E7250</code> reports the party HP bars settled, and the two seeding conventions that can leave that check never satisfied.</li>
-    <li>The <strong><code>0x19</code> attack-approach park</strong> - a second softlock class, caught from ordinary play on the Gaza 2 fight, rooted in the walk-tag fallback of state <code>0x14</code> and a stale <code>+0x1DC</code> bit.</li>
-    <li>Why <strong>a Tactical Art is an ordinary attack-band action</strong>: the queue builder, the strike loop that stages one byte per swing, and damage as one power byte per animation hit event.</li>
-    <li>The <strong>escape roll</strong> <code>FUN_801E791C</code>, the <code>_DAT_8007B910</code> audio duck, and the battle voice cues (the XA30 grunt vs the per-character XA arts shout).</li>
-    <li>The Magic arm's class-byte discriminator, the Item arm's summon override, and which half of a cast the SM owns in the port.</li>
-  </ul>
+<section class="doc-section" id="how-we-know">
+  <h2>How we know</h2>
+  <table class="data-table">
+    <thead><tr><th>Function</th><th>Address</th><th>What it proves</th><th>Dump</th></tr></thead>
+    <tbody>
+      <tr><td>action driver</td><td><code>FUN_801E295C</code></td><td>the 256-entry <code>jr</code> table at <code>0x801CED44</code>, every band body, the <code>0x66</code> end signal</td><td><code>overlay_battle_action_801e295c.txt</code></td></tr>
+      <tr><td>queue builder</td><td><code>FUN_801EED1C</code> (called at <code>0x801E2C7C</code>)</td><td>arrow chain &rarr; art constants, AP paid at <code>+0x170</code>, Miracle copy inline, Super applier <code>FUN_801EF9E4</code></td><td>-</td></tr>
+      <tr><td>queue location</td><td><code>actor[+0x1DF..+0x1F2]</code></td><td>Noa Miracle and Vahn Tri-Somersault captures byte-exact; dequeue at <code>0x801D89D8</code></td><td>super-art queue capture</td></tr>
+      <tr><td>summon load</td><td>case <code>0x29</code> &rarr; <code>FUN_8003EC70</code></td><td>loader-B id at <code>0x8007BC4C</code>; every player id observed mid-cast at its arithmetic slot</td><td>mid-cast save corpus</td></tr>
+      <tr><td>stager records</td><td>PROT 905 at base <code>0x801F0000</code></td><td>spawn loops, record format, in-file pointers under <code>0x801F69D8</code></td><td><code>dump_summon_overlay.py</code></td></tr>
+      <tr><td>flame identity</td><td><code>DAT_8007C018[26]</code></td><td>the only rendered model baking <code>etim</code>; CLUT band identical across frames</td><td><code>battle_gimard_tail_fire_a / _b</code></td></tr>
+      <tr><td>escape roll</td><td><code>FUN_801E791C</code></td><td>score formulas, strict compare, the two Chicken passives</td><td>-</td></tr>
+      <tr><td>UI-element spawner</td><td><code>FUN_801D8DE8</code></td><td>~30 call sites; fans out through the effect cluster</td><td>-</td></tr>
+      <tr><td>action validator</td><td><code>FUN_8003FB10</code> / <code>FUN_80046898</code></td><td>18 arms over the validity byte at <code>gp + 0x9A8</code>; item cap</td><td>-</td></tr>
+      <tr><td>victory arm</td><td><code>0x801E6690</code></td><td>the alive-skip that assumes the acting actor is a party member</td><td>-</td></tr>
+    </tbody>
+  </table>
+  <p>The full per-state table - every case body, what it runs and where it goes next - is in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/battle-action.md" target="_blank" rel="noopener"><code>docs/subsystems/battle-action.md</code></a>, along with the turn cursor <code>ctx[+0x1A]</code>, the two park analyses, the Magic arm&rsquo;s class discriminator and the battle voice cues.</p>
 </section>
 
 <section class="doc-section" id="see-also">
@@ -205,6 +233,7 @@ FUN_8003ec70(id - 0x79, 0);                                // overlay loader B: 
     <span class="see-also-label">Reference</span>
     <a href="battle.html">Battle scene loader</a>
     <a href="battle-formulas.html">Damage / accuracy formulas</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/cast-module.md">Cast modules</a>
     <a href="move-vm.html">Move-table VM</a>
     <a href="effect-vm.html">Effect VM</a>
     <a href="../formats/art-data.html">Art records</a>
@@ -213,5 +242,6 @@ FUN_8003ec70(id - 0x79, 0);                                // overlay loader B: 
     <a href="arts-command-gauge.html">Arts command gauge</a>
     <a href="../arts.html">Arts browser</a>
     <a href="../magic.html">Magic browser</a>
+    <a href="../writeups/gaza-orbit-softlock.html">Gaza softlock write-up</a>
   </div>
 </section>

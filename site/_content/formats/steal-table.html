@@ -35,11 +35,35 @@
     <tr><td><code>+1</code></td><td>u8</td><td><code>steal_item_id</code> - stolen item id in the <a href="item-table.html">item-name table</a>'s id space; <code>0</code> = none</td></tr>
   </tbody>
   </table>
+  <figure class="overlay-strip">
+    <svg viewBox="0 0 700 130" width="100%" style="max-width:700px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The steal pair is chance-first; the monster record's drop pair is item-first">
+      <style>
+        .st-lab { font: 12px 'Inter', sans-serif; fill: var(--text-muted); }
+        .st-seg { font: 12px 'Inter', sans-serif; fill: currentColor; text-anchor: middle; }
+        .st-off { font: 10px 'JetBrains Mono', monospace; fill: var(--accent); text-anchor: middle; }
+        .st-box { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.2; }
+      </style>
+      <text x="10" y="42" class="st-lab">steal table (SCUS)</text>
+      <rect x="220" y="20" width="110" height="34" class="st-box"/>
+      <rect x="330" y="20" width="110" height="34" class="st-box"/>
+      <text x="275" y="41" class="st-seg">chance %</text>
+      <text x="385" y="41" class="st-seg">item id</text>
+      <text x="275" y="68" class="st-off">+0</text>
+      <text x="385" y="68" class="st-off">+1</text>
+      <text x="10" y="106" class="st-lab">drop pair (monster record)</text>
+      <rect x="220" y="84" width="110" height="34" class="st-box"/>
+      <rect x="330" y="84" width="110" height="34" class="st-box"/>
+      <text x="275" y="105" class="st-seg">item id</text>
+      <text x="385" y="105" class="st-seg">chance %</text>
+      <text x="500" y="105" class="st-lab">&#8592; reversed order</text>
+    </svg>
+    <figcaption>Two bytes per monster, chance first - the reverse of the drop pair in the monster record.</figcaption>
+  </figure>
   <p><strong>Field order is chance-then-item</strong> - the reverse of the drop fields in the monster record (<code>+0x48</code> item / <code>+0x49</code> chance). Reading the table with the record's item-first order shifts every chance by one monster. A chance of <code>0</code> (or item <code>0</code>) means the enemy can't be stolen from; a raw steal id resolves to a name the same way a drop id does (<code>0x8A</code> &rarr; Incense).</p>
 </section>
 
-<section class="doc-section" id="provenance">
-  <h2>Provenance</h2>
+<section class="doc-section" id="how-we-know">
+  <h2>How we know</h2>
   <p>Pinned from a live player-steal RAM capture (Evil God Icon equipped): the Skeleton (monster id <code>13</code>) entry at <code>0x80077842</code> is <code>1e 8a</code> = <strong>30% Incense</strong>, exactly the steal the in-battle banner shows. Base, stride, and the <code>[chance, item]</code> order are confirmed byte-exact against the complete published steal table - item <em>and</em> chance columns - across every resolvable monster id, zero mismatches. The table is static rodata, resident in RAM identical to the file bytes.</p>
   <details class="disclosure"><summary>Why the monster record has no steal field</summary>
     <p>An exhaustive offset scan of the decoded monster record (extraction entry 0867 / raw TOC index <code>0x365</code> - a numbered entry of PROT.DAT, the disc's single big archive - the <code>battle_data</code> monster archive), correlated against ground-truth steal data, finds no steal field there: the reward block at <code>+0x44..+0x49</code> holds only gold / exp / drop. Every record-only search for the steal item was structurally doomed - the data was never in the archive.</p>

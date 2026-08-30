@@ -4,37 +4,43 @@
   <p class="lede">How much of the game's own bytes the project can account for, measured against the disc rather than against the project's own notes. This is where the byte-denominated figures on the <a href="../index.html#progress">landing page</a> come from - and the one instrument that can say how much of the game is <em>left</em>.</p>
 </header>
 
-<section class="doc-section" id="why">
-  <h2>What this solves</h2>
-  <p>The <a href="port-catalog.html">port catalog</a> tracks <em>dumped</em>, <em>documented</em> and <em>ported</em> over the set of addresses this project <strong>cites</strong>. That is the right instrument for steering work - it answers "what is left on the list". It cannot answer "how much of the game is left", because its denominator is the citation graph: a subsystem nobody has cited is invisible to it, and the catalog can read as near-complete while that subsystem sits outside the measurement entirely.</p>
-  <p><code>scripts/ci/disc-coverage.py</code> takes the denominator from the disc. Reach for it when you want to know what code nobody has looked at yet (it prints a dump worklist derived from the bytes), or when you want a progress figure that cannot flatter itself.</p>
-  <p>The distinction runs in both directions. A citation graph with nothing left says nothing about bytes nobody cited; and closing a byte-denominated gap <em>widens</em> the citation graph, because a newly dumped and documented function becomes a row on the port worklist. A rising port worklist after a dump pass is the measurement getting wider, not the work going backwards.</p>
-</section>
-
 <section class="doc-section" id="at-a-glance">
   <h2>At a glance</h2>
-  <ul class="bullets">
-    <li><strong>Two halves, two meanings.</strong> The <em>code</em> figure is byte-exact (a byte is inside a dumped function or it is not); the <em>data</em> figure is format recognition (an entry's class is known) and is an upper bound.</li>
-    <li><strong>Code gaps are classified by shape</strong>, and only one of six shapes is work - padding, return tails, BIOS-thunk delay slots and linker stamps persist however much is dumped.</li>
-    <li><strong>Overlays share load addresses</strong>, so a dump is credited to an image only where the bytes themselves place it; rows too ambiguous to place read <em>not meaningful</em> and stay out of the ratchet.</li>
-    <li><strong>The gate ratchets</strong> against a committed baseline, skips without disc data, and lists the largest un-dumped code runs as a worklist.</li>
-  </ul>
+  <dl class="kv">
+    <dt>Tool</dt><dd><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/ci/disc-coverage.py"><code>scripts/ci/disc-coverage.py</code></a>; attribution sweep <code>scripts/ghidra-analysis/attribute-dump-extents.py</code></dd>
+    <dt>Two halves</dt><dd><em>Code</em> is byte-exact (a byte is inside a dumped function or it is not); <em>data</em> is format recognition, an upper bound</dd>
+    <dt>Inputs</dt><dd>Ghidra dump corpus (<code>ghidra/scripts/funcs/</code>) + <code>extracted/PROT/categorize.json</code> - both gitignored, disc-derived</dd>
+    <dt>Gate</dt><dd><code>--check</code> ratchets against <code>scripts/ci/disc-coverage-baseline.json</code>; skips and passes without disc data</dd>
+    <dt>By-product</dt><dd>The largest un-dumped code runs, listed as a dump worklist derived from the bytes</dd>
+    <dt>Sibling</dt><dd><a href="port-catalog.html">Port catalog</a> - the same questions denominated in what the project <em>cites</em></dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="why">
+  <h2>What this solves</h2>
+  <p>The <a href="port-catalog.html">port catalog</a> tracks <em>dumped</em>, <em>documented</em> and <em>ported</em> over the set of addresses this project cites - the right instrument for steering work, but blind to a subsystem nobody has cited. <code>disc-coverage.py</code> takes the denominator from the disc instead. Reach for it when you want to know what code nobody has looked at yet, or when you want a progress figure that cannot flatter itself.</p>
+  <p>The distinction runs in both directions: closing a byte-denominated gap <em>widens</em> the citation graph, because a newly dumped and documented function becomes a row on the port worklist. A rising port worklist after a dump pass is the measurement getting wider, not the work going backwards.</p>
+  <div class="flow">
+    <span class="num">1</span><span class="layer">Dump headers</span><span class="desc">each Ghidra dump names its entry VA + byte length - a real interval</span><span class="crate">dump_header.py</span>
+    <span class="num">2</span><span class="layer">Merge + subtract</span><span class="desc">merged intervals subtracted from each image's extent leave the un-dumped remainder</span><span class="crate">disc-coverage.py</span>
+    <span class="num">3</span><span class="layer">Classify gaps</span><span class="desc">code vs data, then by shape - only one of six shapes is work</span><span class="crate">opcode/pointer statistics</span>
+    <span class="num">4</span><span class="layer">Attribute overlays</span><span class="desc">shared load addresses: credit an image only where its bytes hold the dump</span><span class="crate">dump-extent-attribution.csv</span>
+    <span class="num">5</span><span class="layer">Ratchet + worklist</span><span class="desc">coverage may only rise; the biggest code gaps become the dump worklist</span><span class="crate">--check</span>
+  </div>
 </section>
 
 <section class="doc-section" id="quick-start">
   <h2>Quick start</h2>
-  <div class="cli"><code>python3 scripts/ci/disc-coverage.py --md</code></div>
 <pre><code>python3 scripts/ci/disc-coverage.py              # report -> target/disc-coverage/
 python3 scripts/ci/disc-coverage.py --md         # markdown to stdout as well
 python3 scripts/ci/disc-coverage.py --check      # ratchet against the baseline
 python3 scripts/ci/disc-coverage.py --update-baseline</code></pre>
-  <p>The data half reads <code>extracted/PROT/categorize.json</code>. That file is a <strong>cache</strong>, not something the script derives - it is written by <code>asset categorize</code> and never regenerated automatically, so a tree whose detectors have moved on keeps reporting the classification from when the file was last written. The gate passes either way. Regenerate it before trusting a data figure, and before taking a baseline:</p>
+  <p>The data half reads <code>extracted/PROT/categorize.json</code>. That file is a <strong>cache</strong> written by <code>asset categorize</code> and never regenerated automatically, so a tree whose detectors have moved on keeps reporting a stale classification - and the gate passes either way. Regenerate before trusting a data figure or taking a baseline:</p>
   <div class="cli"><code>./target/release/asset categorize extracted/PROT</code></div>
 </section>
 
 <section class="doc-section" id="two-halves">
   <h2>The two halves measure different things</h2>
-  <p>This is the one thing to carry away before quoting a figure from this page.</p>
   <table>
     <thead><tr><th></th><th>Kind</th><th>What a percentage means</th></tr></thead>
     <tbody>
@@ -42,81 +48,64 @@ python3 scripts/ci/disc-coverage.py --update-baseline</code></pre>
       <tr><td><strong>Data</strong></td><td>format recognition</td><td>an entry's format class is known; its bytes are not individually accounted for</td></tr>
     </tbody>
   </table>
-  <p>The data figure is an <strong>upper bound</strong>. Knowing an entry is a <code>scene_vab_stream</code> is not the same as consuming every byte inside it, and no parser in the tree reports consumed-versus-unconsumed bytes. Having each parser return its consumed extent is what would put the data half on the same footing as the code half.</p>
-  <h3>The data denominator counts some disc bytes more than once</h3>
-  <p>The data half weights each entry by the size of its extracted <code>.BIN</code>, and that size is <code>max(indexed_size_sectors, footprint_sectors)</code>. Only the footprint is an entry's real extent - the footprints tile <code>PROT.DAT</code> exactly and the runtime's own resolver uses them - while <code>indexed_size_sectors</code> measures a span of <em>neighbouring</em> entries (see <a href="../formats/prot.html">PROT TOC</a>). Where the wrong formula is larger, the same disc bytes are weighed again under each entry that overlaps them: the totals this page reports run to roughly 2.5&times; the archive's real size. This distorts the byte <em>counts</em> far more than the shares, because the over-long buffer usually still opens with the entry's real header and lands in the right class. Quote the shares, not the totals; and when a single entry's weight makes some residue look significant, check its footprint first - a large "unexplained" entry is often a small entry with a long tail of somebody else's data.</p>
+  <p>The data figure is an <strong>upper bound</strong>: knowing an entry is a <code>scene_vab_stream</code> is not the same as consuming every byte inside it, and no parser in the tree reports consumed-versus-unconsumed extents. The data denominator also counts some disc bytes more than once - entry weights use <code>max(indexed_size_sectors, footprint_sectors)</code>, and only the footprint is an entry's real extent (see <a href="../formats/prot.html">PROT TOC</a>) - so the totals run to roughly 2.5&times; the archive's real size. <strong>Quote the shares, not the totals</strong>; when a single entry's weight makes a residue look significant, check its footprint first.</p>
   <h3>A statistical class is not a verdict</h3>
-  <p><code>asset categorize</code> ends in a statistical fallback: entries no structural detector claimed are bucketed by zero fraction and entropy into <code>mostly_zeros</code>, <code>unknown_low_entropy</code>, <code>unknown_high_entropy</code>, <code>unknown_other</code>. Those names describe <strong>byte statistics</strong>, and the report then reads a judgement into one of them: <code>mostly_zeros</code> counts under "documented placeholder / padding", on the theory that a mostly-zero entry is a reserved-but-unpopulated slot. When reading the per-class table:</p>
+  <p><code>asset categorize</code> ends in a statistical fallback that buckets unclaimed entries by zero fraction and entropy (<code>mostly_zeros</code>, <code>unknown_low_entropy</code>, ...). When reading the per-class table:</p>
   <ul class="bullets">
-    <li>A <strong>statistical</strong> class name is the absence of a finding, never a finding. <code>mostly_zeros</code> means "sparse and unclaimed", not "empty".</li>
-    <li>The <strong>placeholder</strong> column is only as trustworthy as the detectors that ran before the fallback. A format with no detector is invisible to it in exactly the way an uncited subsystem is invisible to the port catalog.</li>
-    <li>Entries of an <strong>identical, exact size</strong> are the cheapest lead: a size repeating across a hundred entries is a fixed-layout format whatever its statistics look like. Group unclaimed entries by size and by slot position within the CDNAME block.</li>
-    <li>A statistical class can swallow content by <strong>dilution</strong>: a printable-ASCII ratio over a whole buffer misses an overlay <em>data</em> image that is mostly bss with its literals in the first sector. Structure at a known offset beats a whole-buffer ratio.</li>
+    <li>A statistical class name is the absence of a finding, never a finding - <code>mostly_zeros</code> means "sparse and unclaimed", not "empty".</li>
+    <li>The placeholder column is only as trustworthy as the detectors that ran before the fallback; a format with no detector is invisible to it.</li>
+    <li>Entries of an identical, exact size are the cheapest lead: a size repeating across a hundred entries is a fixed-layout format whatever its statistics look like.</li>
+    <li>A statistical class can swallow content by dilution - a whole-buffer printable-ASCII ratio misses an image that is mostly bss with its literals in the first sector. Structure at a known offset beats a whole-buffer ratio.</li>
   </ul>
   <details class="disclosure">
     <summary>History: the field maps that hid inside "placeholder"</summary>
     <div class="disclosure-body">
-      <p>Every scene's <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/field-map.md">field map</a> - collision grid, floor heights, object placements, door triggers - is a sparse <code>0x12000</code>-byte blob whose two 128&times;128 grids leave most of the entry at zero on a small map. Before the <code>field_map</code> detector existed those entries scattered across <code>mostly_zeros</code>, <code>unknown_low_entropy</code> and <code>unknown_other</code> by nothing but how crowded each scene happened to be, and the largest single block of them sat inside the "explained placeholder" column. That is the inference being wrong at scale, and the reason the bullets above are phrased as they are.</p>
+      <p>Every scene's <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/field-map.md">field map</a> - collision grid, floor heights, object placements, door triggers - is a sparse <code>0x12000</code>-byte blob mostly zero on a small map. Before the <code>field_map</code> detector existed, those entries scattered across the statistical classes by nothing but how crowded each scene happened to be, and the largest single block of them sat inside the "explained placeholder" column. That is the inference being wrong at scale, and the reason the bullets above are phrased as they are.</p>
     </div>
   </details>
 </section>
 
 <section class="doc-section" id="code">
   <h2>How code coverage is computed</h2>
-  <p>Every Ghidra dump header carries an entry address and a byte length:</p>
-<pre><code>== FUN_800402f4 800402f4 (entry=800402f4) ==
-size=7904 bytes, 1976 instructions</code></pre>
-  <p>so the dumped functions are real intervals over an image's address space. The script merges them, subtracts them from the image's extent, and is left with the genuinely un-dumped remainder. The header is parsed by <code>scripts/ghidra-analysis/dump_header.py</code>, shared with the attribution sweep.</p>
-  <p>That remainder is then split into <strong>code</strong> and <strong>data</strong>, because a PS-X EXE's text segment carries its read-only data inside the same span, and counting string tables and jump tables as "un-decompiled code" would understate coverage badly. Each gap is classified statistically over its whole length - the share of words decoding to a plausible MIPS I primary opcode, and the density of <code>0x80xxxxxx</code> words that betrays a pointer table. Gaps shorter than eight words are inter-function alignment and count as code. The classifier is checked against a control: a region known to be code profiles at ~94% plausible opcodes and ~0% pointer density, and the large gaps reported as code match that signature while the head of the segment (mostly printable ASCII) does not.</p>
+  <p>Every Ghidra dump header carries an entry address and a byte length (<code>== FUN_800402f4 ... size=7904 bytes, 1976 instructions ==</code>), so the dumped functions are real intervals over an image's address space. The script merges them, subtracts them from the image's extent, and splits the remainder into <strong>code</strong> and <strong>data</strong> - a PS-X EXE's text segment carries read-only data in the same span, and counting string tables as "un-decompiled code" would understate coverage badly. Each gap is classified statistically (share of plausible MIPS opcodes, density of <code>0x80xxxxxx</code> pointer words), checked against a known-code control region.</p>
   <h3>A code gap is not automatically un-analysed code</h3>
-  <p>The obvious reading of the remainder - "routines nobody has looked at" - is right for most of the bytes and wrong for the tail. The report classifies each code gap by <em>shape</em>, and only one of the six is work:</p>
+  <p>The report classifies each code gap by <em>shape</em>, and only one of six is work:</p>
   <table>
     <thead><tr><th>Shape</th><th>What it is</th></tr></thead>
     <tbody>
-      <tr><td><code>code</code></td><td>genuinely un-dumped instructions</td></tr>
+      <tr><td><code>code</code></td><td>genuinely un-dumped instructions - the work</td></tr>
       <tr><td><code>padding</code></td><td>every word is <code>nop</code>: inter-function alignment</td></tr>
       <tr><td><code>return_tail</code></td><td>a <code>jr ra</code> (+ <code>nop</code>) the preceding routine's analysed body stops short of</td></tr>
       <tr><td><code>bios_thunk_slot</code></td><td>the delay slot of a <code>jr $t2</code> PSX BIOS-call thunk</td></tr>
-      <tr><td><code>psyq_lib_stamp</code></td><td>an 8-byte <code>Ps</code> + id + word record: the PSY-Q librarian's version stamp between link modules</td></tr>
-      <tr><td><code>constant_table</code></td><td>every word one repeated non-<code>nop</code> constant: a data table resident in the text segment</td></tr>
+      <tr><td><code>psyq_lib_stamp</code></td><td>an 8-byte librarian version stamp between link modules</td></tr>
+      <tr><td><code>constant_table</code></td><td>one repeated non-<code>nop</code> constant: a data table resident in the text segment</td></tr>
     </tbody>
   </table>
-  <p>The first three non-<code>code</code> shapes are properties of <strong>where a function body ends</strong>, so they persist however much is dumped: a BIOS-call thunk is <code>addiu $t2, $zero, 0xA0; jr $t2; addiu $t1, $zero, N</code>, and because the jump target is a register the analysed body ends at the <code>jr</code> with the delay slot outside it. The last two are <strong>data the linker left inside the text segment</strong>, riding the tiny-gap rule; creating a Ghidra function over one would assert an entry point the bytes do not support. <code>SCUS_942.54</code> carries three <code>Ps</code> stamps in its code band and one <code>constant_table</code> (<code>crt0</code>'s stack-pointer table at <code>0x80026CD4</code>), documented per-window in the runtime-libs function reference. Together they are why the figure asymptotes short of 100%. The shapes are <strong>reported, not subtracted</strong>, so the ratcheted figure stays comparable across changes to the classifier.</p>
-  <h3>Dump exclusions are a census, not a count</h3>
-  <p>The dump corpus spells every header field more than one way, so the report names each reject class and separates two populations a single number merges:</p>
-  <table>
-    <thead><tr><th>Kind</th><th>Classes</th><th>Why it is excluded</th></tr></thead>
-    <tbody>
-      <tr><td><strong>answer</strong></td><td><code>pointer_stub</code>, <code>nofunc_record</code>, <code>data_window</code>, <code>not_a_dump</code></td><td>the corpus recording a result, not a dump. Not defective, and not work.</td></tr>
-      <tr><td><strong>defect</strong></td><td><code>zero_insns</code>, <code>gapped_stream</code>, <code>no_extent</code>, <code>empty_dump</code></td><td>a dump that cannot evidence its own extent.</td></tr>
-    </tbody>
-  </table>
-  <p>A pointer stub is the corpus doing the <em>right</em> thing with a mid-function address, so counting it as a missing dump penalises the handling that avoids the defect. <code>zero_insns</code> - a dump reading <code>size=1 bytes, 0 instructions</code> - is Ghidra's "bad instruction data": it decoded nothing, so the window is data being asked for as code, and it is excluded rather than credited.</p>
-  <details class="disclosure">
-    <summary>History: an instrument's private header regex is a claim about the corpus</summary>
-    <div class="disclosure-body">
-      <p>Reading the header looked like the trivial part of this measurement, and it was the part that was wrong. The corpus was written by a dozen dump scripts: the VA appears bare and <code>0x</code>-prefixed, the entry as <code>(entry=…)</code>, <code>(entry=0x…)</code>, <code>(entry=…, label=…)</code>, <code>(entry …)</code> or not at all, the size line with or without an instruction count or as a <code>min=</code>/<code>max=</code> pair. Each instrument grew its own regex for one subset, silently rejected a different set of real dumps as unparseable, and reported the rejects as a corpus deficiency - explained, plausibly and wrongly, as "the ones that report <code>0 instructions</code>". Not one of them did; the files that did were passing and being credited. Sharing one parser (<code>dump_header.py</code>) across every instrument is the fix, and the census above is the honest form. The general lesson is on <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/dump-corpus-integrity.md">dump-corpus-integrity</a>.</p>
-    </div>
-  </details>
+  <p>The middle three are properties of where a function body ends, so they persist however much is dumped; the last two are data the linker left inside the text segment. Together they are why the figure asymptotes short of 100%. The shapes are <strong>reported, not subtracted</strong>, so the ratcheted figure stays comparable across classifier changes.</p>
   <h3>What the executable's gap turned out to be</h3>
-  <p>Working the <code>SCUS_942.54</code> gap list until it stopped yielding produced on the order of a hundred function entries. A five-form reference sweep (<a href="address-reference-scan.html">address-reference scan</a>) over every one of them splits them three ways:</p>
+  <p>Working the <code>SCUS_942.54</code> gap list until it stopped yielding produced on the order of a hundred function entries. A five-form reference sweep (<a href="address-reference-scan.html">address-reference scan</a>) over them splits three ways:</p>
   <table>
     <thead><tr><th></th><th>Share</th><th>Why it had no dump</th></tr></thead>
     <tbody>
-      <tr><td><strong>no reference of any form, anywhere</strong></td><td>about three quarters</td><td>Ghidra creates functions from the call graph. A routine nothing references gets no function record, so no dump, so no citation - invisible to any citation-denominated instrument.</td></tr>
-      <tr><td>referenced from <code>SCUS_942.54</code></td><td>about a fifth</td><td>mostly reached through the entry-stub / init path, or from a body whose own analysis was incomplete.</td></tr>
-      <tr><td>referenced only from an overlay</td><td>a few</td><td>the routine is live, and the call comes from an image the SCUS-only analysis never sees - the standing "zero static callers is not dead" trap, showing up as a coverage gap.</td></tr>
+      <tr><td><strong>no reference of any form</strong></td><td>~3/4</td><td>Ghidra creates functions from the call graph; a routine nothing references gets no function record, no dump, no citation - invisible to any citation-denominated instrument.</td></tr>
+      <tr><td>referenced from <code>SCUS_942.54</code></td><td>~1/5</td><td>mostly reached through the entry-stub / init path, or from a body whose own analysis was incomplete.</td></tr>
+      <tr><td>referenced only from an overlay</td><td>a few</td><td>live code whose caller lives in an image the SCUS-only analysis never sees - "zero static callers is not dead", showing up as a coverage gap.</td></tr>
     </tbody>
   </table>
-  <p>The first row is the point: <strong>the bytes find the class the citation graph structurally cannot</strong>, and as a majority of what was left. Two cautions: "no reference exists" is still a statement about <em>static</em> references, so a computed target or a caller in a never-extracted overlay would not appear; and an unreferenced routine is not automatically dead code in the interesting sense - much of this band is linked-in library material the game does not call.</p>
+  <p>The first row is the point: <strong>the bytes find the class the citation graph structurally cannot</strong>. Caution: "no reference exists" is a statement about <em>static</em> references, and much of that band is linked-in library material the game does not call.</p>
+  <details class="disclosure">
+    <summary>Dump exclusions: a census, not a count</summary>
+    <div class="disclosure-body">
+      <p>The dump corpus spells every header field more than one way, so the report names each reject class and separates two populations: <strong>answers</strong> (<code>pointer_stub</code>, <code>nofunc_record</code>, <code>data_window</code>, <code>not_a_dump</code> - the corpus recording a result, not defective and not work) and <strong>defects</strong> (<code>zero_insns</code>, <code>gapped_stream</code>, <code>no_extent</code>, <code>empty_dump</code> - a dump that cannot evidence its own extent). A pointer stub is the corpus doing the right thing with a mid-function address; <code>zero_insns</code> is Ghidra's "bad instruction data" - a data window asked for as code, excluded rather than credited.</p>
+      <p>Reading the header looked like the trivial part and was the part that went wrong: a dozen dump scripts each spell the header differently, and each instrument once grew its own regex, silently rejecting a different set of real dumps and reporting them as a corpus deficiency. Sharing one parser (<code>scripts/ghidra-analysis/dump_header.py</code>) across every instrument is the fix; the general lesson is on <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/dump-corpus-integrity.md">dump-corpus-integrity</a>.</p>
+    </div>
+  </details>
 </section>
 
 <section class="doc-section" id="overlays">
   <h2>Why overlay rows can read "not meaningful"</h2>
-  <p><code>SCUS_942.54</code> is the only image with an unambiguous answer: one load image, one fixed base, no aliasing.</p>
-  <p>Overlays are different. Several are loaded at the same base (<code>0x801CE818</code>), so a dump whose entry lands in that band <strong>cannot be attributed to one image by address alone</strong> - the same address belongs to the battle overlay, the menu overlay and the field overlay at different moments. Rather than publish a number that quietly double-counts, each overlay row carries the share of its extents that could not be placed. Above 50% the coverage figure is replaced by <em>not meaningful</em>, and such rows are excluded from the ratchet baseline. That is also why the landing page's decompilation bar quotes the executable alone.</p>
-  <h3>Byte-level attribution</h3>
-  <p>The ambiguity is resolved where the bytes can resolve it. <code>scripts/ghidra-analysis/attribute-dump-extents.py</code> disassembles each extracted image at its <code>static-overlays.toml</code> base and asks which images actually hold a dump's bytes at the VA it prints. Its verdict per extent is committed as <code>scripts/ghidra-analysis/dump-extent-attribution.csv</code>, which the gate applies:</p>
+  <p><code>SCUS_942.54</code> is the only image with an unambiguous answer: one load image, one fixed base. Several overlays load at the same base (<code>0x801CE818</code>), so a dump whose entry lands in that band cannot be attributed to one image by address alone. Rather than publish a number that quietly double-counts, each overlay row carries the share of its extents that could not be placed; above 50% the figure is replaced by <em>not meaningful</em> and the row leaves the ratchet baseline. That is also why the landing page's decompilation bar quotes the executable alone.</p>
+  <p>The ambiguity is resolved where the bytes can resolve it: <code>attribute-dump-extents.py</code> disassembles each extracted image at its <code>static-overlays.toml</code> base and asks which images actually hold a dump's bytes at the VA it prints. Its per-extent verdict is committed as <code>scripts/ghidra-analysis/dump-extent-attribution.csv</code>:</p>
   <table>
     <thead><tr><th>Verdict</th><th>Meaning</th><th>What the gate does</th></tr></thead>
     <tbody>
@@ -127,32 +116,37 @@ size=7904 bytes, 1976 instructions</code></pre>
       <tr><td><code>short</code> / <code>unresolved</code> / <code>no_disassembly</code></td><td>the window cannot sign it</td><td>residue: stays ambiguous</td></tr>
     </tbody>
   </table>
-  <p>The key is <code>(entry, bytes)</code> - the <strong>extent</strong>, not the dump filename - so the file does not rot when a dump lands, is renamed, or is re-dumped. Most of what was being counted against the two measured overlays belongs to images the gate does not measure at all (the field overlay, the minigame overlays, the gameover overlay); those extents leave the row rather than inflating it. The inner of two nested spans - the menu overlay's lies wholly inside the battle overlay's - <em>starts</em> at total ambiguity by construction, and can never be resolved <em>by address</em>; byte attribution then places most of its extents in one image or the other. Attribution is optional: without the CSV every overlay extent stays ambiguous, which is the honest upper bound, just a looser one.</p>
-  <h3>What the residue is decides what closes it</h3>
-  <table>
-    <thead><tr><th>Shape</th><th>What would close it</th></tr></thead>
-    <tbody>
-      <tr><td>a few-instruction window no image's own content reproduces at that VA</td><td>nothing cheap - too short to search for elsewhere without inviting a coincidental hit.</td></tr>
-      <tr><td>bytes in no extracted image at any VA</td><td>an <strong>extraction</strong>, not a dump: most were dumped from live RAM captures of overlays never statically extracted. The <a href="static-overlay-pipeline.html">static overlay pipeline</a>'s job.</td></tr>
-      <tr><td>two dumps at one extent resolving to different images</td><td>already answered: several routines share the range. A finding, not a gap.</td></tr>
-    </tbody>
-  </table>
-  <p>The sweep asks two questions of a dump's opening window with opposite sensitivities to its length - <em>does this image reproduce the window at this VA</em> (a fixed-offset test between a handful of candidates) and <em>do these bytes appear anywhere</em> (a search over millions of positions). The at-VA test runs at a three-instruction floor and the search at eight; <code>--validate-short-floor</code> sets the relaxation from its own control. A confidence floor belongs to a question, not to an instrument.</p>
-  <p>The code table carries two counts that do not agree and says which is which: <strong>dumps</strong> is per dump <em>file</em>; <strong>VA-ambiguous</strong> is per <strong>distinct extent</strong>, because one extent can back dozens of dump files and weighting by how often the same bytes were dumped measures the corpus rather than the image. The per-file reading lands far lower on both rows for no reason except that the mis-based batches are large - that is the number not to quote.</p>
+  <p>The key is the <strong>extent</strong> <code>(entry, bytes)</code>, not the dump filename, so the file does not rot when a dump lands or is renamed. Attribution is optional: without the CSV every overlay extent stays ambiguous - the honest upper bound, just a looser one.</p>
+  <details class="disclosure">
+    <summary>What the residue is, and which count to quote</summary>
+    <div class="disclosure-body">
+      <table>
+        <thead><tr><th>Residue shape</th><th>What would close it</th></tr></thead>
+        <tbody>
+          <tr><td>a few-instruction window no image reproduces at that VA</td><td>nothing cheap - too short to search for elsewhere without inviting a coincidental hit</td></tr>
+          <tr><td>bytes in no extracted image at any VA</td><td>an <strong>extraction</strong>, not a dump - live-RAM captures of overlays never statically extracted; the <a href="static-overlay-pipeline.html">static overlay pipeline</a>'s job</td></tr>
+          <tr><td>two dumps at one extent resolving to different images</td><td>already answered: several routines share the range - a finding, not a gap</td></tr>
+        </tbody>
+      </table>
+      <p>The sweep asks two questions with opposite sensitivities to window length - <em>does this image reproduce the window at this VA</em> (fixed-offset test, three-instruction floor) and <em>do these bytes appear anywhere</em> (a search over millions of positions, eight-instruction floor); <code>--validate-short-floor</code> sets the relaxation from its own control. The code table carries two counts: <strong>dumps</strong> is per dump <em>file</em>; <strong>VA-ambiguous</strong> is per distinct extent, because one extent can back dozens of dump files - weighting by how often the same bytes were dumped measures the corpus, not the image. The per-file reading is the number not to quote.</p>
+    </div>
+  </details>
   <details class="disclosure">
     <summary>History: the starting point mistaken for the limit</summary>
     <div class="disclosure-body">
-      <p>This page previously carried the conclusion that the inner nested span could never be measured at all, and that no amount of dumping moved it. That reading is <strong>falsified</strong>, and worth recording because the reasoning was seductive and the error general: address ambiguity is total for the inner span, byte attribution then places most of its extents, and the row reports. What is structural is that it cannot be resolved by <em>address</em> - a statement about one method, not about the image. A second earlier claim, that the residue is mostly repaired by re-dumping, is also not supported by the numbers; see the residue table above. Both are logged in <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>. Companion pages: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/dump-corpus-integrity.md">dump-corpus-integrity</a> and <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/phantom-print-index.md">phantom-print-index</a>.</p>
+      <p>This page once concluded that the inner of two nested overlay spans could never be measured at all. That reading is <strong>falsified</strong>: address ambiguity is total for the inner span, but byte attribution then places most of its extents - what is structural is that it cannot be resolved by <em>address</em>, a statement about one method, not about the image. A second earlier claim, that the residue is mostly repaired by re-dumping, is also unsupported. Both are logged in <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>; companions <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/dump-corpus-integrity.md">dump-corpus-integrity</a> and <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/phantom-print-index.md">phantom-print-index</a>.</p>
     </div>
   </details>
 </section>
 
 <section class="doc-section" id="gate">
   <h2>Gate behaviour</h2>
-  <p>Both inputs - the Ghidra dump corpus and the <code>extracted/</code> tree - are gitignored, so a clone without disc data has nothing to measure. The tool <strong>exits 0 and reports SKIPPED</strong> in that case, following the same skip-and-pass convention as the <code>LEGAIA_DISC_BIN</code> tests. CI therefore passes without disc data, and the ratchet only has teeth on a machine that has the disc.</p>
-  <p><code>--check</code> compares against the committed <code>scripts/ci/disc-coverage-baseline.json</code>. Coverage may only go up, within a tolerance of half a percentage point. If a dump is legitimately removed, re-run with <code>--update-baseline</code> and say why in the commit message - a baseline moving down is a claim that needs a reason.</p>
-  <p>A useful side effect: the report lists the largest un-dumped <strong>code</strong> runs in <code>SCUS_942.54</code> by size. That is a dump worklist derived from the bytes rather than from what anyone happened to cite - the one worklist the citation graph structurally cannot produce.</p>
-  <p>Tool: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/ci/disc-coverage.py"><code>scripts/ci/disc-coverage.py</code></a>. The landing-page figures are refreshed by <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/ci/update-progress-metrics.py"><code>scripts/ci/update-progress-metrics.py</code></a> and committed, because the site is built where the disc is not.</p>
+  <ul class="bullets">
+    <li>Both inputs are gitignored, so a clone without disc data <strong>exits 0 and reports SKIPPED</strong> - the same skip-and-pass convention as the <code>LEGAIA_DISC_BIN</code> tests. The ratchet only has teeth on a machine with the disc.</li>
+    <li><code>--check</code> compares against the committed baseline; coverage may only go up, within half a percentage point. A baseline moving down is a claim that needs a reason in the commit message (<code>--update-baseline</code>).</li>
+    <li>The report lists the largest un-dumped code runs in <code>SCUS_942.54</code> by size - the one dump worklist the citation graph structurally cannot produce.</li>
+    <li>The landing-page figures are refreshed by <code>scripts/ci/update-progress-metrics.py</code> and committed, because the site is built where the disc is not.</li>
+  </ul>
 </section>
 
 <section class="doc-section" id="see-also">

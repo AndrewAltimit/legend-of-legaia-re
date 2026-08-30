@@ -1,53 +1,91 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; port catalog</div>
   <h1>Port catalog</h1>
-  <p class="lede">The project's progress ledger, kept at function granularity. Reverse-engineering the game means walking each retail function from disassembly to documentation to a clean-room Rust reimplementation - and the port catalog is the tool that says where every function stands, derived from the tree itself rather than from a hand-maintained checklist. You only need this page if you are contributing to the decompilation or engine tracks.</p>
+  <p class="lede">The project's progress ledger, kept at function granularity. Reverse-engineering the game means walking each retail function from disassembly to documentation to a clean-room Rust reimplementation - the port catalog measures where every function stands, derived from the tree itself rather than from a hand-maintained checklist. You only need this page if you are contributing to the decompilation or engine tracks.</p>
 </header>
-
-<section class="doc-section" id="when">
-  <h2>What this solves</h2>
-  <p>Reach for it when you are picking up work and want a real worklist: which retail functions are understood but not yet ported, which are ported but undocumented, which nobody has looked at, and which ports exist but nothing in the engine ever calls. A status table in a doc rots the day after it is written; the catalog <strong>measures</strong> each column live from the Ghidra dump corpus, the docs, and the <code>// PORT:</code> tags in Rust source, so if you port a function and tag it, the next run knows.</p>
-  <div class="cli"><code>python3 scripts/ci/port-catalog.py --dashboard</code></div>
-  <p>That one command prints the open work as a single page (<code>target/port-catalog/open-work.md</code>).</p>
-</section>
 
 <section class="doc-section" id="at-a-glance">
   <h2>At a glance</h2>
-  <ul class="bullets">
-    <li><strong>One row per retail function address</strong>, with independent yes/no signals: <em>dumped</em>, <em>documented</em>, <em>ported</em>, <em>live</em> (opt-in), <em>ignored</em>.</li>
-    <li><strong>The cross-cuts are the worklists</strong>: dumped + documented but not ported is the port worklist; cited but not dumped is the dump worklist; ported but undocumented is a provenance gap.</li>
-    <li><strong><code>// PORT:</code> is the only signal trusted for "ported"</strong>; <code>// REF:</code> marks a citation that is not a port claim; a <code>NOT WIRED:</code> note discloses a port nothing calls yet.</li>
-    <li><strong><code>ported</code> and <code>live</code> are different axes.</strong> A tag says a Rust function implements a retail one; <code>--live</code> asks whether any host entry point can reach it.</li>
-    <li><strong>The figures are ratcheted</strong> against a committed baseline in the pre-commit hook, so a wave cannot silently widen a worklist or drop a tag.</li>
-    <li><strong>The denominator is what the project cites.</strong> Code nobody has cited is invisible here; <a href="disc-coverage.html">disc coverage</a> measures against the game's own bytes instead.</li>
-  </ul>
+  <dl class="kv">
+    <dt>Tool</dt><dd><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/ci/port-catalog.py"><code>scripts/ci/port-catalog.py</code></a>; drift checker <code>scripts/ci/check-port-tags.py</code></dd>
+    <dt>Unit</dt><dd>One row per retail function address, with independent signals: <em>dumped</em>, <em>documented</em>, <em>ported</em>, <em>live</em> (opt-in), <em>ignored</em></dd>
+    <dt>Inputs</dt><dd>Ghidra dumps under <code>ghidra/scripts/funcs/</code>, citations under <code>docs/</code>, <code>// PORT:</code> tags under <code>crates/</code></dd>
+    <dt>Outputs</dt><dd><code>target/port-catalog/</code>: <code>catalog.csv</code>/<code>.md</code>, <code>open-work.md</code> dashboard, <code>live-audit.md</code></dd>
+    <dt>Gate</dt><dd><code>--check</code> ratchets every figure against <code>scripts/ci/port-catalog-baseline.json</code> in the pre-commit hook</dd>
+    <dt>Denominator</dt><dd>What the project cites; <a href="disc-coverage.html">disc coverage</a> is the sibling measure denominated in the game's own bytes</dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="when">
+  <h2>What this solves</h2>
+  <p>Reach for it when you are picking up work and want a real worklist: which retail functions are understood but not yet ported, which are ported but undocumented, which nobody has looked at, and which ports exist but nothing in the engine ever calls. A status table in a doc rots the day after it is written; the catalog <strong>measures</strong> each column live, so if you port a function and tag it, the next run knows.</p>
+  <div class="cli"><code>python3 scripts/ci/port-catalog.py --dashboard</code></div>
+  <figure class="overlay-strip">
+    <svg viewBox="0 0 860 210" width="100%" style="max-width:860px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Three inputs - Ghidra dumps, docs citations, and PORT tags in Rust source - feed port-catalog.py, which emits worklists, the open-work dashboard, and the ratcheted baseline check">
+      <style>
+        .pc-box { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.3; }
+        .pc-soft { fill: var(--bg-raised); stroke: var(--border); stroke-width: 1.1; }
+        .pc-lab { font: 12px sans-serif; fill: currentColor; }
+        .pc-sub { font: 10px monospace; fill: var(--text-muted); }
+        .pc-arr { fill: none; stroke: var(--text-muted); stroke-width: 1.2; marker-end: url(#pc-head); }
+      </style>
+      <defs><marker id="pc-head" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="var(--text-muted)"/></marker></defs>
+      <rect x="20" y="15" width="200" height="46" class="pc-soft"/>
+      <text x="120" y="34" text-anchor="middle" class="pc-lab">Ghidra dump corpus</text>
+      <text x="120" y="51" text-anchor="middle" class="pc-sub">ghidra/scripts/funcs/</text>
+      <rect x="20" y="82" width="200" height="46" class="pc-soft"/>
+      <text x="120" y="101" text-anchor="middle" class="pc-lab">Doc citations</text>
+      <text x="120" y="118" text-anchor="middle" class="pc-sub">docs/**/*.md</text>
+      <rect x="20" y="149" width="200" height="46" class="pc-soft"/>
+      <text x="120" y="168" text-anchor="middle" class="pc-lab">Port tags in Rust</text>
+      <text x="120" y="185" text-anchor="middle" class="pc-sub">// PORT: FUN_&lt;addr&gt;</text>
+      <path d="M220,38 L300,38 L300,90" class="pc-arr"/>
+      <path d="M220,105 L298,105" class="pc-arr"/>
+      <path d="M220,172 L300,172 L300,120" class="pc-arr"/>
+      <rect x="302" y="80" width="180" height="50" class="pc-box"/>
+      <text x="392" y="101" text-anchor="middle" class="pc-lab">port-catalog.py</text>
+      <text x="392" y="118" text-anchor="middle" class="pc-sub">status matrix</text>
+      <path d="M482,105 L560,105 L560,38 L578,38" class="pc-arr"/>
+      <path d="M482,105 L578,105" class="pc-arr"/>
+      <path d="M482,105 L560,105 L560,172 L578,172" class="pc-arr"/>
+      <rect x="580" y="15" width="260" height="46" class="pc-soft"/>
+      <text x="710" y="34" text-anchor="middle" class="pc-lab">Worklists</text>
+      <text x="710" y="51" text-anchor="middle" class="pc-sub">--missing-ports --missing-dumps</text>
+      <rect x="580" y="82" width="260" height="46" class="pc-soft"/>
+      <text x="710" y="101" text-anchor="middle" class="pc-lab">Open-work dashboard</text>
+      <text x="710" y="118" text-anchor="middle" class="pc-sub">open-work.md</text>
+      <rect x="580" y="149" width="260" height="46" class="pc-soft"/>
+      <text x="710" y="168" text-anchor="middle" class="pc-lab">Ratchet gate</text>
+      <text x="710" y="185" text-anchor="middle" class="pc-sub">--check vs baseline.json</text>
+    </svg>
+    <figcaption>Three independent evidence sources join into one status matrix; the cross-cuts are the worklists.</figcaption>
+  </figure>
 </section>
 
 <section class="doc-section" id="columns">
   <h2>The status matrix</h2>
-  <p>Each catalog row is one retail function address. The columns are independent signals across the decompilation and engine-port tracks, plus an axis for scope-excluded addresses (statically-linked PsyQ SDK code - Sony's standard PSX library - which the clean-room port maps to native equivalents rather than porting line by line).</p>
+  <p>Each row is one retail function address. The columns are independent signals, plus an axis for scope-excluded addresses (statically-linked PsyQ SDK code - Sony's standard PSX library - which the clean-room port maps to native equivalents rather than porting line by line).</p>
   <table>
     <thead><tr><th>Column</th><th>Source of truth</th></tr></thead>
     <tbody>
       <tr><td><strong>dumped</strong></td><td>A Ghidra decompiler dump exists under <code>ghidra/scripts/funcs/</code> (gitignored - regenerable from the Ghidra project).</td></tr>
       <tr><td><strong>documented</strong></td><td>The address is cited from at least one file under <code>docs/</code> (<code>FUN_&lt;addr&gt;</code> or <code>0x&lt;addr&gt;</code>, case-insensitive).</td></tr>
       <tr><td><strong>ported</strong></td><td>A Rust source under <code>crates/</code> carries a <code>// PORT: FUN_&lt;addr&gt;</code> tag for that address.</td></tr>
-      <tr><td><strong>live</strong></td><td>The Rust symbol carrying that tag is reachable, through non-test code, from a host entry point. Opt-in (<code>--live</code>); see <a href="#reachability">reachability</a>.</td></tr>
-      <tr><td><strong>ignored</strong></td><td>The address is listed in <code>scripts/ci/port-catalog-ignore.toml</code> as a non-port-site (BIOS thunk / libc shim / libgte / libgs / libgpu / libcd / libsnd / libspu / libapi / libetc). Excluded from <code>--missing-ports</code> by default.</td></tr>
+      <tr><td><strong>live</strong></td><td>The tagged Rust symbol is reachable, through non-test code, from a host entry point. Opt-in (<code>--live</code>); see <a href="#reachability">reachability</a>.</td></tr>
+      <tr><td><strong>ignored</strong></td><td>Listed in <code>scripts/ci/port-catalog-ignore.toml</code> as a non-port-site (BIOS thunk, libgte, libsnd, ... - see <a href="#ignore-list">ignore list</a>).</td></tr>
     </tbody>
   </table>
-  <p>The point of the table is to make the cross-cuts cheap to read:</p>
+  <p>The point of the matrix is that the cross-cuts are the worklists:</p>
   <table>
     <thead><tr><th>Cross-cut</th><th>Meaning</th><th>What to do</th></tr></thead>
     <tbody>
       <tr><td><code>dumped + documented, not ported, not ignored</code></td><td><strong>Port worklist.</strong> Understood, not yet implemented, not PsyQ infra.</td><td>Sort by citation count to find high-leverage helpers first.</td></tr>
       <tr><td><code>cited but not dumped</code></td><td><strong>Dump worklist.</strong> Some dump references this address but no dump exists for it.</td><td>Add to <code>ghidra/scripts/dump_funcs.py</code> <code>TARGETS</code>.</td></tr>
-      <tr><td><code>ported but not documented</code></td><td><strong>Provenance gap.</strong> A tag was added without any doc mentioning the source function.</td><td>Backfill the doc, or remove the tag if the attribution was wrong.</td></tr>
+      <tr><td><code>ported but not documented</code></td><td><strong>Provenance gap.</strong> A tag with no doc mentioning the source function.</td><td>Backfill the doc, or remove a wrong tag.</td></tr>
       <tr><td><code>ported but not dumped</code></td><td><strong>Provenance gap</strong>, opposite axis.</td><td>Dump it, or question the tag.</td></tr>
       <tr><td><code>ported but not live</code></td><td><strong>Inert port.</strong> Implemented, but no host reaches it.</td><td>Wire it, or disclose it with <code>NOT WIRED:</code>.</td></tr>
     </tbody>
   </table>
-  <p>Tool: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/ci/port-catalog.py"><code>scripts/ci/port-catalog.py</code></a>. Reuses helpers from <code>scripts/ci/function-coverage.py</code> and shares the same code-range filter (SCUS <code>0x80010000-0x8006FFFF</code>, overlays <code>0x801C0000-0x8020FFFF</code>).</p>
 </section>
 
 <section class="doc-section" id="port-tag">
@@ -57,156 +95,110 @@
     <thead><tr><th>Tag</th><th>Claim</th><th>Sets "ported"?</th></tr></thead>
     <tbody>
       <tr><td><code>// PORT: FUN_&lt;addr&gt;</code></td><td>This Rust item implements that retail function.</td><td>Yes - the only signal trusted.</td></tr>
-      <tr><td><code>// REF: FUN_&lt;addr&gt;</code></td><td>This file cites that function (callee, cross-reference, "inspired by") without claiming to port it.</td><td>No; suppresses drift-checker warnings.</td></tr>
+      <tr><td><code>// REF: FUN_&lt;addr&gt;</code></td><td>This file cites that function (callee, cross-reference) without claiming to port it.</td><td>No; suppresses drift-checker warnings.</td></tr>
       <tr><td><code>NOT WIRED:</code> (in the tag's own doc block, or <code>//! NOT WIRED</code> opening a module doc)</td><td>The port exists but nothing in a host reaches it yet. Read by <code>--live-audit</code>.</td><td>n/a - a disclosure, not a status.</td></tr>
       <tr><td><code>WIRED:</code> (own doc block)</td><td>Opts one item out of a module-level <code>NOT WIRED</code> blanket.</td><td>n/a</td></tr>
     </tbody>
   </table>
-  <h3>The <code>// PORT:</code> tag</h3>
 <pre><code>// PORT: FUN_801dd35c                       // single address
 // PORT: FUN_801dd35c, FUN_801cf244         // multiple on one line
 // PORT: FUN_801dd35c (sub-mode jump table) // trailing context allowed
 //! PORT: FUN_801dd35c                      // inside `//!` module doc
 /// PORT: FUN_801dd35c                      // inside `///` outer doc</code></pre>
-  <p>The tag may appear as plain <code>//</code>, doc <code>//!</code>, or outer-doc <code>///</code> - putting it in the doc block keeps the provenance co-located with the rustdoc description and makes it visible in generated docs. Rules:</p>
-  <ul class="bullets">
-    <li>Plain mentions of <code>FUN_&lt;addr&gt;</code> in comments are ignored - they show up in many contexts that don't imply a port and would noisily inflate the column.</li>
-    <li>Address must be lowercase hex in the SCUS / overlay code range. Match is line-local.</li>
-    <li>One Ghidra function can be ported into more than one crate (a formula shared between <code>engine-vm::battle_formulas</code> and a helper in <code>engine-core</code>); the catalog lists every crate that tags the address.</li>
-    <li>Add the tag once, on the Rust function that <em>implements</em> the behaviour. Don't tag every caller.</li>
-    <li><strong>Prefer a <code>///</code> tag on the function to a <code>//!</code> tag on the module.</strong> A module tag anchors the address to the whole file, which is coarse enough to report the address wired on the strength of any other function in the same file. Same for a tag on a plain data struct: tag the function that computes the value, and let the struct carry a <code>REF:</code>.</li>
-  </ul>
-  <h3>The <code>// REF:</code> tag</h3>
-<pre><code>//! PORT: FUN_801E30E4
-//! REF: FUN_801E7320, FUN_801CF098  -- callees, not yet ported</code></pre>
-  <p>Same comment shapes and multi-address syntax as <code>PORT:</code>. <code>port-catalog.py</code> ignores REF tags, but the drift checker treats them as equivalent to PORT for warning suppression.</p>
-</section>
-
-<section class="doc-section" id="drift-checker">
-  <h2>Tag drift checker</h2>
-  <p><code>scripts/ci/check-port-tags.py</code> walks <code>crates/engine-*/src/**.rs</code> and warns when a <code>FUN_&lt;addr&gt;</code> citation lacks a matching <code>// PORT:</code> or <code>// REF:</code> tag <em>in the same file</em> - the "I ported X but forgot the tag" pattern.</p>
+  <details class="disclosure">
+    <summary>Tag placement rules</summary>
+    <div class="disclosure-body">
+      <ul class="bullets">
+        <li>Plain mentions of <code>FUN_&lt;addr&gt;</code> in comments are ignored - they show up in many contexts that don't imply a port and would noisily inflate the column.</li>
+        <li>Address must be lowercase hex in the SCUS / overlay code range (SCUS <code>0x80010000-0x8006FFFF</code>, overlays <code>0x801C0000-0x8020FFFF</code>). Match is line-local.</li>
+        <li>One retail function can be ported into more than one crate (a formula shared between <code>engine-vm::battle_formulas</code> and an <code>engine-core</code> helper); the catalog lists every crate that tags the address.</li>
+        <li>Add the tag once, on the Rust function that <em>implements</em> the behaviour. Don't tag every caller.</li>
+        <li><strong>Prefer a <code>///</code> tag on the function to a <code>//!</code> tag on the module.</strong> A module tag anchors the address to the whole file, which is coarse enough to report the address wired on the strength of any other function in the same file. Same for a plain data struct: tag the function that computes the value, and let the struct carry a <code>REF:</code>.</li>
+        <li><code>// REF:</code> takes the same comment shapes and multi-address syntax as <code>PORT:</code>.</li>
+      </ul>
+    </div>
+  </details>
+  <details class="disclosure">
+    <summary>Tag drift checker: <code>check-port-tags.py</code></summary>
+    <div class="disclosure-body">
+      <p><code>scripts/ci/check-port-tags.py</code> walks <code>crates/engine-*/src/**.rs</code> and warns when a <code>FUN_&lt;addr&gt;</code> citation lacks a matching <code>// PORT:</code> or <code>// REF:</code> tag <em>in the same file</em> - the "I ported X but forgot the tag" pattern.</p>
 <pre><code>python3 scripts/ci/check-port-tags.py                  # default = --staged
 python3 scripts/ci/check-port-tags.py --scan-all       # full audit
 python3 scripts/ci/check-port-tags.py --strict         # exit 1 on warning
 python3 scripts/ci/check-port-tags.py --addr 80019b28  # drill-down
 python3 scripts/ci/check-port-tags.py --backfill-refs  # one-shot grandfather pass</code></pre>
-  <ul class="bullets">
-    <li><strong>Scope rule:</strong> only files that already carry a <code>// PORT:</code> tag are checked. Pure-docs files are reference-only and skipped.</li>
-    <li><strong>Backfill:</strong> <code>--backfill-refs</code> rewrites in place, inserting a <code>//! REF: ...</code> block after the leading module-doc comment of each port-bearing file with untagged citations.</li>
-    <li><strong>Pre-commit:</strong> the shipped hook runs <code>--staged --quiet</code> after <code>cargo clippy</code>, <strong>warn-only</strong> - drift prints but never blocks a commit. CI can tighten with <code>--strict</code>.</li>
-  </ul>
+      <ul class="bullets">
+        <li><strong>Scope rule:</strong> only files that already carry a <code>// PORT:</code> tag are checked; pure-docs files are skipped.</li>
+        <li><strong>Backfill:</strong> <code>--backfill-refs</code> rewrites in place, inserting a <code>//! REF: ...</code> block after the leading module doc of each port-bearing file with untagged citations.</li>
+        <li><strong>Pre-commit:</strong> the shipped hook runs <code>--staged --quiet</code> after <code>cargo clippy</code>, <strong>warn-only</strong>; CI can tighten with <code>--strict</code>.</li>
+      </ul>
+    </div>
+  </details>
 </section>
 
 <section class="doc-section" id="usage">
   <h2>Usage</h2>
 <pre><code>python3 scripts/ci/port-catalog.py                       # global catalog -> target/port-catalog/
 python3 scripts/ci/port-catalog.py --missing-ports       # dumped + documented, not ported (excludes ignore-list)
-python3 scripts/ci/port-catalog.py --missing-ports --include-ignored   # include ignore-list entries
 python3 scripts/ci/port-catalog.py --missing-dumps       # cited but not dumped
-python3 scripts/ci/port-catalog.py --ported-only         # show only ported addresses
-python3 scripts/ci/port-catalog.py --ignored-only        # show only ignore-list entries
 python3 scripts/ci/port-catalog.py --addr 801dd35c       # drill-down on one address
-python3 scripts/ci/port-catalog.py --md                  # markdown to stdout
-python3 scripts/ci/port-catalog.py --list-features       # list features in features.toml
 python3 scripts/ci/port-catalog.py --feature title-screen   # BFS from a feature's roots
 python3 scripts/ci/port-catalog.py --dashboard           # open-work rollup -> open-work.md
 python3 scripts/ci/port-catalog.py --live                # add the reachability column
 python3 scripts/ci/port-catalog.py --not-live            # ported but unreachable from any host root
 python3 scripts/ci/port-catalog.py --live-audit          # reachability vs `NOT WIRED:` disclosures
-python3 scripts/ci/port-catalog.py --check --live        # ratchet every baselined figure
-python3 scripts/ci/port-catalog.py --check --allow-uncompared   # fast pass, skips the disclosure gap
-python3 scripts/ci/port-catalog.py --live --update-baseline</code></pre>
-  <p>Output is written to <code>target/port-catalog/</code> (gitignored):</p>
-  <ul class="bullets">
-    <li><code>catalog.csv</code> / <code>catalog.md</code> - every tracked address, machine-readable + markdown.</li>
-    <li><code>&lt;feature&gt;.csv</code> / <code>&lt;feature&gt;.md</code> - per-feature subset when <code>--feature</code> is used.</li>
-    <li><code>open-work.md</code> - the single-page dashboard (below).</li>
-    <li><code>live-audit.md</code> - reachability verdicts checked against the source's own <code>NOT WIRED:</code> disclosures, when <code>--live-audit</code> is used.</li>
-  </ul>
+python3 scripts/ci/port-catalog.py --check --live        # ratchet every baselined figure</code></pre>
+  <p>Further flags: <code>--md</code> (markdown to stdout), <code>--ported-only</code>, <code>--ignored-only</code>, <code>--include-ignored</code>, <code>--list-features</code>, <code>--dashboard-top N</code>, <code>--allow-uncompared</code>, <code>--update-baseline</code>, <code>--selftest</code>. Output lands in <code>target/port-catalog/</code> (gitignored).</p>
 </section>
 
 <section class="doc-section" id="features">
-  <h2>Feature views (BFS from roots)</h2>
-  <p>A <em>feature</em> is a named set of seed retail function addresses (<code>roots</code>) plus an optional list of <code>stop_at</code> boundaries. <code>--feature &lt;name&gt;</code> filters the catalog to the addresses reachable from those roots via the citation graph (one edge per "this dump cites that address"). Features live in <code>scripts/ci/features.toml</code>:</p>
-<pre><code>[title-screen]
-description = "Title overlay tick + boot UI"
-roots = ["801dd35c"]
-# Optional boundaries kept in the result but not recursed past.
-stop_at = ["801de840", "801e295c"]
-# Optional BFS depth cap.
-max_depth = 2</code></pre>
-  <p>The citation graph only has edges between <em>dumped</em> functions - undumped helpers have no outgoing edges, so the frontier widens as more dumps land. That is intentional: start tight and widen as you dig in. Use feature views to find unported helpers in scope of one feature (<code>--feature X --missing-ports</code>), confirm a port is reachable from the feature root, or spot shared-infrastructure spillover that wants a <code>stop_at</code> entry.</p>
-</section>
-
-<section class="doc-section" id="dashboard">
-  <h2>Open-work dashboard</h2>
-  <p><code>--dashboard</code> emits <code>target/port-catalog/open-work.md</code>, a single regenerable page that answers "what's left to port, in what scope" at a glance. It combines:</p>
-  <ol class="bullets">
-    <li><strong>Global counts</strong> - dumped / documented / ported / ignored / remaining port worklist.</li>
-    <li><strong>Per-feature status table</strong> - for each feature: reachable, ported, port share, missing (ignore-list excluded), ignored.</li>
-    <li><strong>Per-feature top-N missing-ports</strong> - the highest-citation-count helpers reachable from each feature's roots that don't yet carry a tag, sorted high-leverage first. Cap is <code>--dashboard-top N</code> (default 10).</li>
-    <li><strong>Ignore-list summary</strong> - count per category.</li>
-    <li><strong>Provenance gaps</strong> - tagged addresses missing a dump or doc citation (shown only when nonzero).</li>
-  </ol>
-  <p>Re-run after landing a batch of ports to see which helpers are now top-of-list. The question-level companion - open <em>hunts</em> rather than per-function status - is <a href="../reference/open-rev-eng-threads.html">open RE threads</a>.</p>
+  <h2>Feature views and the dashboard</h2>
+  <p>A <em>feature</em> is a named set of seed addresses (<code>roots</code>) in <code>scripts/ci/features.toml</code>, plus optional <code>stop_at</code> boundaries and a depth cap. <code>--feature &lt;name&gt;</code> filters the catalog to addresses reachable from the roots via the citation graph (one edge per "this dump cites that address"). Use it to find unported helpers in scope of one feature (<code>--feature X --missing-ports</code>) or to spot shared-infrastructure spillover that wants a <code>stop_at</code> entry. The graph only has edges between <em>dumped</em> functions, so the frontier widens as dumps land - start tight, widen as you dig in.</p>
+  <p><code>--dashboard</code> emits <code>open-work.md</code>, a single regenerable page: global counts, a per-feature status table, each feature's top-N missing ports sorted by citation count (high-leverage first), the ignore-list summary, and any provenance gaps. The question-level companion - open <em>hunts</em> rather than per-function status - is <a href="../reference/open-rev-eng-threads.html">open RE threads</a>.</p>
 </section>
 
 <section class="doc-section" id="reachability">
   <h2>Reachability: the <code>live</code> axis</h2>
-  <p>A <code>// PORT:</code> tag is a provenance marker: it records that a Rust function implements a retail function. It says nothing about whether anything ever calls that Rust function. <code>--live</code> adds the missing column by building a call graph over <code>crates/**/src/**.rs</code> and asking, for each tag, whether the symbol it attaches to can be reached from a declared host entry point. The pass parses every Rust file in the workspace, so it is markedly slower and stays opt-in.</p>
-  <h3>Roots</h3>
-  <p>The BFS starts from these, and nothing else - a <code>pub fn</code> no host reaches is exactly the inert-port case the axis exists to find, so being public is not a root:</p>
+  <p>A <code>// PORT:</code> tag records that a Rust function implements a retail one; it says nothing about whether anything ever calls that Rust function. <code>--live</code> adds the missing column by building a call graph over every Rust file in the workspace and asking, per tag, whether its symbol is reachable from a host entry point. The pass is markedly slower and stays opt-in.</p>
   <table>
     <thead><tr><th>Root family</th><th>What it covers</th></tr></thead>
     <tbody>
-      <tr><td><code>fn main</code> in a <code>[[bin]]</code> target</td><td>Every CLI subcommand across the tool binaries, plus each GUI binary's command dispatch and window-loop <em>setup</em>.</td></tr>
-      <tr><td><code>#[wasm_bindgen]</code> exports in the WASM crates</td><td>The browser's entry points into this site's viewer, play and patcher pages.</td></tr>
-      <tr><td>Methods of an <code>impl ApplicationHandler for T</code> block</td><td>The whole per-frame native GUI surface - redraw, input, HUD build - and everything in <code>engine-core</code> / <code>engine-vm</code> those reach. winit calls these back from outside the tree, so without them the BFS stops at <code>run_app</code>. The trait set is <code>EXTERNAL_DISPATCH_TRAITS</code>; add to it when another externally-dispatched callback trait appears.</td></tr>
+      <tr><td><code>fn main</code> in a <code>[[bin]]</code> target</td><td>Every CLI subcommand, plus each GUI binary's dispatch and window-loop setup.</td></tr>
+      <tr><td><code>#[wasm_bindgen]</code> exports</td><td>The browser's entry points into this site's viewer, play and patcher pages.</td></tr>
+      <tr><td><code>impl ApplicationHandler for T</code> methods</td><td>The per-frame native GUI surface - winit calls these back from outside the tree. The trait set is <code>EXTERNAL_DISPATCH_TRAITS</code>.</td></tr>
     </tbody>
   </table>
-  <p>Test code is excluded on purpose (<code>tests/</code>, <code>benches/</code>, <code>examples/</code>, <code>#[cfg(test)]</code>, <code>#[test]</code>): "called only by a unit test" is precisely the condition a <code>NOT WIRED:</code> tag reports.</p>
-  <h3>Anchors</h3>
-  <p>A tag is resolved to the symbol it sits on, most precise form first:</p>
-  <table>
-    <thead><tr><th>Tag form</th><th>Anchor</th><th>Live when</th></tr></thead>
-    <tbody>
-      <tr><td><code>///</code> / <code>//</code> above a <code>fn</code></td><td>that function</td><td>the function is reachable</td></tr>
-      <tr><td>above a <code>struct</code> / <code>enum</code> / <code>impl</code></td><td>that type</td><td>any method in the type's <code>impl</code> blocks is reachable, or - when the file gives that type no <code>impl</code> at all - any non-test <code>fn</code> in the file is</td></tr>
-      <tr><td>above a <code>const</code> / <code>static</code> / <code>type</code> alias / <code>macro_rules!</code></td><td>that item</td><td>a reachable non-test <code>fn</code> body references the item's name</td></tr>
-      <tr><td><code>//</code> inside a function body</td><td>the enclosing function</td><td>that function is reachable</td></tr>
-      <tr><td><code>//! PORT:</code> (module doc)</td><td>the file, widened to its submodule subtree when the file declares no functions of its own</td><td>any non-test function in scope is reachable</td></tr>
-    </tbody>
-  </table>
-  <p>A <code>///</code> doc block resolves to the item it documents - the first item after the block, however long the block is. Module scope belongs to <code>//!</code> blocks only. Module-level tags are the coarse case and the main source of over-reporting: a <code>//!</code> block on a crate root claims the whole crate, so one wired function in it reports every address on that block as live. Disclosure is also resolved per anchor: the tag's own block saying <code>NOT WIRED</code> discloses it; failing that, a <code>//! NOT WIRED</code> opening the module doc discloses every anchor in the file; an anchor whose own doc block opens a line with <code>WIRED:</code> opts out of that blanket. <code>port-catalog.py --selftest</code> runs the anchor-kind and disclosure-precedence cases on a synthetic corpus.</p>
-  <h3>Precision, and which direction to trust</h3>
-  <p>The graph resolves calls by <strong>name</strong>, not by type: qualified calls against in-tree types and module stems, method calls against every in-tree method of that name, bare calls against every function of that name. No type inference, no trait-impl selection. The consequences are asymmetric, and the asymmetry is what makes the axis usable:</p>
-  <ul class="bullets">
-    <li><strong>False positives on <code>live</code> are expected.</strong> Method-name collisions (<code>.tick()</code>, <code>.step()</code>, <code>.push()</code>) link callers to every same-named method in the workspace.</li>
-    <li><strong>False negatives are rare</strong>, because every ambiguity resolves <em>toward</em> reachability (one deliberate exception: an unresolved qualifier such as <code>Vec::new</code> falls back to free functions only, never to methods).</li>
-  </ul>
-  <p>So <code>--not-live</code> is the trustworthy direction: read <code>live</code> as an upper bound on what runs and <code>not-live</code> as a hard floor on what does not. Two things the axis structurally cannot see make a <em>live</em> verdict weaker than it looks: <strong>runtime gates</strong> (a function called every frame behind a flag never set is statically reachable and behaviourally dead) and <strong>partial ports</strong> (reachability is a property of the entry symbol, not its body).</p>
-  <h3>The audit</h3>
-  <p><code>--live-audit</code> writes <code>target/port-catalog/live-audit.md</code>, comparing the reachability verdict against the <code>NOT WIRED:</code> disclosures written in the source:</p>
-  <table>
-    <thead><tr><th>Section</th><th>Meaning</th></tr></thead>
-    <tbody>
-      <tr><td>Tagged <code>NOT WIRED</code> but analysed live</td><td>Tag and analysis disagree. Needs a human: the port got wired and the tag stayed; a method-name collision; a runtime gate; or anchor granularity (a module tag claims the file while the note disclaims one function). Only the first is a stale tag.</td></tr>
-      <tr><td>Undisclosed inert ports</td><td>Unreachable, no tag. Either a wiring gap or a missing disclosure - the reason this mode exists.</td></tr>
-      <tr><td>Disclosed inert ports</td><td>Unreachable, and the source says so. The declared wiring worklist, working as intended.</td></tr>
-    </tbody>
-  </table>
-  <p>Comparison is per <strong>anchor</strong>, not per address: a formula ported into both <code>engine-vm</code> and <code>engine-core</code> has two anchors and can legitimately be wired in one and not the other. The audit reads the stale-<code>NOT WIRED</code> test off a <em>second</em>, receiver-gated graph so a name collision does not fire on unambiguous names, while <code>live</code> / <code>--not-live</code> stay on the permissive graph - two graphs, because sharpening the shared one would trade the hard floor away.</p>
+  <p>Nothing else is a root: a <code>pub fn</code> no host reaches is exactly the inert-port case the axis exists to find. Test code is excluded on purpose - "called only by a unit test" is precisely the condition a <code>NOT WIRED:</code> tag reports.</p>
+  <p>The graph resolves calls by <strong>name</strong>, not by type, and every ambiguity resolves <em>toward</em> reachability. The asymmetry is what makes the axis usable: false positives on <code>live</code> are expected (method-name collisions like <code>.tick()</code> link callers to every same-named method), false negatives are rare. So read <code>live</code> as an upper bound on what runs and <code>--not-live</code> as a hard floor on what does not. Two things the axis structurally cannot see make a <em>live</em> verdict weaker than it looks: <strong>runtime gates</strong> (a function called every frame behind a flag never set) and <strong>partial ports</strong> (reachability is a property of the entry symbol, not its body).</p>
+  <p><code>--live-audit</code> writes <code>live-audit.md</code>, comparing the reachability verdict against the <code>NOT WIRED:</code> disclosures written in the source: <em>tagged NOT WIRED but analysed live</em> (tag and analysis disagree - needs a human), <em>undisclosed inert ports</em> (a wiring gap or a missing disclosure - the reason this mode exists), and <em>disclosed inert ports</em> (the declared wiring worklist, working as intended).</p>
+  <details class="disclosure">
+    <summary>Anchor resolution: which symbol a tag binds to</summary>
+    <div class="disclosure-body">
+      <table>
+        <thead><tr><th>Tag form</th><th>Anchor</th><th>Live when</th></tr></thead>
+        <tbody>
+          <tr><td><code>///</code> / <code>//</code> above a <code>fn</code></td><td>that function</td><td>the function is reachable</td></tr>
+          <tr><td>above a <code>struct</code> / <code>enum</code> / <code>impl</code></td><td>that type</td><td>any method in the type's <code>impl</code> blocks is reachable, or - when the file gives the type no <code>impl</code> at all - any non-test <code>fn</code> in the file is</td></tr>
+          <tr><td>above a <code>const</code> / <code>static</code> / <code>type</code> alias / <code>macro_rules!</code></td><td>that item</td><td>a reachable non-test <code>fn</code> body references the item's name</td></tr>
+          <tr><td><code>//</code> inside a function body</td><td>the enclosing function</td><td>that function is reachable</td></tr>
+          <tr><td><code>//! PORT:</code> (module doc)</td><td>the file, widened to its submodule subtree when the file declares no functions of its own</td><td>any non-test function in scope is reachable</td></tr>
+        </tbody>
+      </table>
+      <p>A <code>///</code> doc block resolves to the item it documents. Module-level tags are the coarse case and the main source of over-reporting: a <code>//!</code> block on a crate root claims the whole crate. Disclosure resolves per anchor: the tag's own block saying <code>NOT WIRED</code> discloses it; failing that, a <code>//! NOT WIRED</code> module doc discloses every anchor in the file; an anchor whose own doc block opens a line with <code>WIRED:</code> opts out of the blanket. <code>--selftest</code> runs the anchor-kind and disclosure-precedence cases on a synthetic corpus.</p>
+      <p>The audit compares per <strong>anchor</strong>, not per address: a formula ported into both <code>engine-vm</code> and <code>engine-core</code> has two anchors and can legitimately be wired in one and not the other. The stale-<code>NOT WIRED</code> test reads off a <em>second</em>, receiver-gated graph so a name collision does not fire on unambiguous names, while <code>live</code> / <code>--not-live</code> stay on the permissive graph - sharpening the shared one would trade the hard floor away.</p>
+    </div>
+  </details>
   <details class="disclosure">
     <summary>History: analysis defects the audit itself turned up</summary>
     <div class="disclosure-body">
-      <p>Two dispatch shapes the graph could not model each hid a whole tree of live code: trait default methods (now counted as methods of their trait) and winit's <code>ApplicationHandler</code> callbacks (now a root family). Both halves of the anchor rule were once violated too - a bounded forward walk demoted long <code>NOT WIRED:</code> disclosure blocks to module scope, and a tag above a <code>const</code> had no item arm to land on - each producing its own false audit rows. A <code>#[cfg(test)]</code> helper is still a caller node: a test helper with a common name (<code>step</code>, <code>tables</code>, <code>new</code>) collects every same-named edge and marks its own module live, which reads as a stale tag on a module nothing calls; give test helpers distinctive names. The lesson that generalises: a dispatch edge that leaves the tree and comes back is invisible until something names it. Per-row verdicts live in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/live-audit-triage.md">live-audit-triage</a> and <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/stale-not-wired-triage.md">stale-not-wired-triage</a>.</p>
+      <p>Two dispatch shapes the graph could not model each hid a whole tree of live code: trait default methods (counted as methods of their trait) and winit's <code>ApplicationHandler</code> callbacks (a root family). A <code>#[cfg(test)]</code> helper is still a caller node: a test helper with a common name (<code>step</code>, <code>tables</code>, <code>new</code>) collects every same-named edge and marks its own module live, which reads as a stale tag on a module nothing calls - give test helpers distinctive names. Per-row verdicts live in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/live-audit-triage.md">live-audit-triage</a> and <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/stale-not-wired-triage.md">stale-not-wired-triage</a>.</p>
     </div>
   </details>
 </section>
 
 <section class="doc-section" id="ratchet">
   <h2>The ratchet</h2>
-  <p>The catalog's figures reach this site's landing page through <code>scripts/ci/progress-metrics.json</code>, so a run that could silently move a published number needed a failure mode. <code>--check</code> compares against the committed <code>scripts/ci/port-catalog-baseline.json</code> and is a hard pre-commit gate; the same step runs in CI, where it reports <code>SKIPPED</code> because the <code>dumped</code> column reads the gitignored Ghidra corpus - the hook is the only place these figures are ever compared.</p>
+  <p>The catalog's figures reach this site's landing page through <code>scripts/ci/progress-metrics.json</code>, so a run that could silently move a published number needed a failure mode. <code>--check</code> compares against the committed baseline and is a hard pre-commit gate (CI reports <code>SKIPPED</code> there, because the <code>dumped</code> column reads the gitignored Ghidra corpus - the hook is the only place these figures are compared).</p>
   <table>
     <thead><tr><th>Figure</th><th>Direction</th></tr></thead>
     <tbody>
@@ -218,42 +210,38 @@ max_depth = 2</code></pre>
       <tr><td><code>totals/ported</code></td><td>may not shrink</td></tr>
     </tbody>
   </table>
-  <p>Everything ratcheted is a property of the tags, the docs and the dump corpus. Nothing read off the receiver-gated graph is baselined, because its numbers move with graph resolution rather than with the work. <code>live/disclosure_gap</code> is sound because the permissive graph <em>over</em>-reports reachability: a port it still calls inert really is inert. Three rules follow from a figure that needs <code>--live</code>: <code>--check</code> fails on an uncompared figure unless the caller says <code>--allow-uncompared</code>; the hook spends the slow pass when the commit stages <code>crates/</code>; and <code>--update-baseline</code> carries forward figures its run did not compute rather than dropping them.</p>
-  <p><strong>Validate a surprise against rows, never against the count</strong> - a regression report is a prompt to open <code>--missing-ports</code> and <code>--live-audit</code>.</p>
+  <p>Everything ratcheted is a property of the tags, the docs and the dump corpus; nothing read off the receiver-gated graph is baselined, because its numbers move with graph resolution rather than with the work. Three rules protect figures that need <code>--live</code>: <code>--check</code> fails on an uncompared figure unless the caller says <code>--allow-uncompared</code>; the hook spends the slow pass when the commit stages <code>crates/</code>; and <code>--update-baseline</code> carries forward figures its run did not compute rather than dropping them. <strong>Validate a surprise against rows, never against the count</strong> - a regression report is a prompt to open <code>--missing-ports</code> and <code>--live-audit</code>.</p>
   <details class="disclosure">
     <summary>History: why "every headline number was an instrument artifact"</summary>
     <div class="disclosure-body">
-      <p>More than one wave found the count moving for a reason inside the measurement rather than inside the tree. The disclosure gap was baselined at zero while the hook ran <code>--check</code> without <code>--live</code>; the run printed <code>NOT COMPARED THIS RUN</code>, exited 0, and the figure drifted with every gate green - printing a line is not a comparison. A <code>--update-baseline</code> run without <code>--live</code> wrote a snapshot carrying only the figures it produced and deleted the whole <code>live</code> block in one command. And sharpening the shared call graph to fix name collisions was tried and reverted more than once, because it traded the hard <code>not-live</code> floor for a fix to the opposite error - which is why the tool now builds two graphs. The per-address companions: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/port-provenance.md">port-provenance</a> (nothing checks that a <code>// PORT:</code> address names the routine the Rust code implements - a live port once wore the casino prize list's address with every gate green) and <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/worklist-classification.md">worklist-classification</a> (whether a <code>--missing-ports</code> row is a portable function entry at all).</p>
+      <p>More than one wave found the count moving for a reason inside the measurement rather than inside the tree. The disclosure gap was baselined at zero while the hook ran <code>--check</code> without <code>--live</code>; the run printed <code>NOT COMPARED THIS RUN</code>, exited 0, and the figure drifted with every gate green - printing a line is not a comparison. A <code>--update-baseline</code> run without <code>--live</code> once deleted the whole <code>live</code> block in one command. And sharpening the shared call graph to fix name collisions was tried and reverted more than once, because it traded the hard <code>not-live</code> floor for a fix to the opposite error - which is why the tool builds two graphs. The per-address companions: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/port-provenance.md">port-provenance</a> (nothing checks that a <code>// PORT:</code> address names the routine the Rust code implements - a live port once wore the casino prize list's address with every gate green) and <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/worklist-classification.md">worklist-classification</a> (whether a <code>--missing-ports</code> row is a portable function entry at all).</p>
     </div>
   </details>
 </section>
 
 <section class="doc-section" id="ignore-list">
   <h2>Ignore list</h2>
-  <p><code>scripts/ci/port-catalog-ignore.toml</code> lists addresses the catalog treats as out-of-scope for engine porting - statically-linked PsyQ kernel / runtime / SDK code. The clean-room port maps these clusters to native equivalents (Rust stdlib, wgpu, cpal) rather than reimplementing the PSX wrappers, so they shouldn't pollute the port worklist.</p>
-<pre><code>[bios]
-"80056678" = "EnterCriticalSection (syscall(0), a0=1)"
-"80056688" = "ExitCriticalSection (syscall(0), a0=2)"
-
-[libgte]
+  <p><code>scripts/ci/port-catalog-ignore.toml</code> lists addresses out-of-scope for engine porting - statically-linked PsyQ kernel / runtime / SDK code the clean-room port maps to native equivalents (Rust stdlib, wgpu, cpal). Categories are organisational (one TOML table per cluster: <code>bios</code>, <code>libgte</code>, <code>libsnd</code>, ...); each entry is an address plus a one-line factual reason naming the PsyQ function.</p>
+<pre><code>[libgte]
 "8005ba1c" = "GTE sqrt / normalise (mtc2 0xF000 / mfc2 0xF800)"
 
 [libsnd]
 "80062340" = "SsSeqOpen (slot-bitmap walk + load)"</code></pre>
-  <p>Categories are organisational (one TOML table per cluster); the tool treats every entry the same way. Provenance for each entry lives in <a href="../reference/functions.html">functions</a> and the audio / save-screen subsystem docs. Adding an entry: copy the address into the appropriate category table with a one-line factual reason naming the PsyQ function and (where known) the BIOS vector.</p>
   <ul class="bullets">
-    <li><code>--missing-ports</code> excludes ignored entries and breaks the count down (<code>of which ignored / remaining port worklist</code>); <code>--include-ignored</code> opts back in; <code>--ignored-only</code> lists the ignore-list itself.</li>
-    <li>One section is not PsyQ infrastructure: <code>unreferenced</code> holds <strong>retail-unreachable entry points</strong> - real routines nothing on the disc reaches in any reference form, so a port of one could only be inert. The evidence is the <a href="address-reference-scan.html">address-reference scan</a>. Being unreferenced is <em>not by itself</em> a reason to exclude: a row moves to the ignore list on its subject matter (drive transport, runtime-lib tiers the port replaces wholesale), never on its reference count.</li>
+    <li>One section is not PsyQ infrastructure: <code>unreferenced</code> holds <strong>retail-unreachable entry points</strong> - real routines nothing on the disc reaches in any reference form, per the <a href="address-reference-scan.html">address-reference scan</a>. A row moves there on its subject matter, never on its reference count alone.</li>
+    <li>The port worklist is not zero and should not be: <a href="disc-coverage.html">disc coverage</a> keeps surfacing routines no citation-denominated worklist could list, and documenting one <em>raises</em> the worklist. That is the two measurements composing correctly - never hold the number down by declining to document a function, and never park one in the ignore list to hide it.</li>
   </ul>
-  <h3>Settling a row whose blocker is "no caller"</h3>
-  <p>A worklist row often stalls on "what consumes this?". Two of the ways this engine reaches code are invisible to a call-graph sweep - a function-pointer table or actor-template word, and a <code>lui</code>+<code>addiu</code> pair Ghidra's reference manager does not resolve - so "no <code>jal</code> targets it" is not yet a finding, and "no SCUS caller" is never "dead". Run the address through the <a href="address-reference-scan.html">address-reference scan</a> first: a table or template word means the row is real work; nothing anywhere means the address is linked but unreached (document the negative and file it under <code>unreferenced</code>); branch sites but no call sites means an intra-function label, not an entry.</p>
-  <h3>Why this worklist is not zero, and should not be</h3>
-  <p>The port worklist is denominated in addresses this project cites, so it can only see code something already pointed at. <a href="disc-coverage.html">Disc coverage</a> takes its denominator from the game's own bytes and surfaces routines no reference of any form reaches - which means Ghidra built no function record, nothing cited them, and no citation-denominated worklist could ever list them. Documenting one moves it into <code>dumped + documented, not ported</code> and the worklist rises. That is the two measurements composing correctly. Never hold the number down by declining to document a function, and never park one in the ignore list to hide it.</p>
+  <details class="disclosure">
+    <summary>Settling a row whose blocker is "no caller"</summary>
+    <div class="disclosure-body">
+      <p>Two of the ways this engine reaches code are invisible to a call-graph sweep - a function-pointer table or actor-template word, and a <code>lui</code>+<code>addiu</code> address pair Ghidra's reference manager does not resolve - so "no <code>jal</code> targets it" is not yet a finding, and "no SCUS caller" is never "dead". Run the address through the <a href="address-reference-scan.html">address-reference scan</a> first: a table or template word means the row is real work; nothing anywhere means the address is linked but unreached (document the negative and file it under <code>unreferenced</code>); branch sites but no call sites means an intra-function label, not an entry.</p>
+    </div>
+  </details>
 </section>
 
 <section class="doc-section" id="runtime-denominator">
   <h2>The runtime denominator</h2>
-  <p>Everything above is a static graph answering <em>could this be reached</em>. It cannot answer <em>was it reached</em>. <code>scripts/ci/replay-port-coverage.py</code> supplies the missing denominator by joining <code>cargo llvm-cov</code> output for the pad-only replay ladders against the catalog's address &rarr; <code>(file, line)</code> anchors. It reports four sets:</p>
+  <p>Everything above is a static graph answering <em>could this be reached</em>. It cannot answer <em>was it reached</em>. <code>scripts/ci/replay-port-coverage.py</code> supplies the missing denominator by joining <code>cargo llvm-cov</code> output for the pad-only replay ladders against the catalog's address &rarr; <code>(file, line)</code> anchors.</p>
   <table>
     <thead><tr><th>Set</th><th>Meaning</th></tr></thead>
     <tbody>
@@ -263,6 +251,9 @@ max_depth = 2</code></pre>
       <tr><td><strong>not observable (const)</strong></td><td>Item anchors with no executed attributable reference.</td></tr>
     </tbody>
   </table>
+  <details class="disclosure">
+    <summary>Running it: the ladder union, and why it stays manual</summary>
+    <div class="disclosure-body">
 <pre><code>cargo llvm-cov clean --workspace
 scripts/ci/replay-port-coverage.py --list-ladders | while read -r t pkg; do
     cargo llvm-cov clean --profraw-only
@@ -270,32 +261,37 @@ scripts/ci/replay-port-coverage.py --list-ladders | while read -r t pkg; do
     cargo llvm-cov report --json --output-path "target/cov-$t.json"
 done
 scripts/ci/replay-port-coverage.py</code></pre>
-  <p>The denominator is a <strong>union of ladders</strong>, not one binary - the world spine, the pause menu + save UI, the minigame doors, the cold-boot field anchor, the browser draw-composition ladder and the native-window ladder each reach content the others do not, and the canonical membership is <code>CANONICAL_LADDERS</code> in the script (<code>--list-ladders</code>). A bare invocation globs <code>target/cov-*.json</code>, and the report names any member whose export is absent. No <code>--release</code>: an optimised build inlines small functions and leaves their coverage record at zero, indistinguishable from never-called. Two of the ladders are rendering hosts - the headless <code>BootSession</code> ladders construct no draw list, so the browser composition ladder (<code>web-viewer/tests/play_compose_ladder.rs</code>) and the spawned-<code>play-window</code> ladder (<code>engine-shell/tests/w5_native_minigame_ladder.rs</code>) are what execute the draw-list builders. Each export is an instrumented build plus a full disc-gated run, so this stays a manual step. Per-address verdicts for the live-but-never-entered set are in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/reach-triage.md">reach-triage</a>.</p>
+      <p>The denominator is a <strong>union of ladders</strong>, not one binary - the world spine, the pause menu + save UI, the minigame doors, the cold-boot field anchor, the browser draw-composition ladder and the native-window ladder each reach content the others do not; canonical membership is <code>CANONICAL_LADDERS</code> in the script. A bare invocation globs <code>target/cov-*.json</code> and names any member whose export is absent. No <code>--release</code>: an optimised build inlines small functions and leaves their coverage record at zero, indistinguishable from never-called. The headless <code>BootSession</code> ladders construct no draw list, so the browser composition ladder (<code>web-viewer/tests/play_compose_ladder.rs</code>) and the spawned-<code>play-window</code> ladder (<code>engine-shell/tests/w5_native_minigame_ladder.rs</code>) are what execute the draw-list builders. Each export is an instrumented build plus a full disc-gated run, so this stays a manual step. Per-address verdicts for the live-but-never-entered set are in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/reach-triage.md">reach-triage</a>.</p>
+    </div>
+  </details>
 </section>
 
 <section class="doc-section" id="caveats">
   <h2>Caveats</h2>
   <ul class="bullets">
     <li><strong>The citation graph is dump-local.</strong> An undumped helper has no outgoing edges; the frontier widens only as dumps land.</li>
-    <li><strong><code>documented</code> is broader than the curated <a href="../reference/functions.html">functions</a> directory.</strong> Any doc page that mentions the address counts; which docs are authoritative stays a judgement call per topic.</li>
-    <li><strong>One <code>// PORT:</code> tag does not guarantee semantic equivalence.</strong> The tag is a provenance link, not a correctness proof; tests and retail comparison do that job, and <code>--live</code> answers only whether the code is <em>reached</em>, not whether it is right.</li>
-    <li><strong>The ignore-list is curated, not exhaustive.</strong> Newly-dumped PsyQ helpers surface in <code>--missing-ports</code> until added. Treat unfamiliar 16-byte thunks in <code>0x8005xxxx</code> / <code>0x8006xxxx</code> as likely ignore candidates.</li>
+    <li><strong><code>documented</code> is broader than the curated <a href="../reference/functions.html">functions</a> directory.</strong> Any doc page that mentions the address counts.</li>
+    <li><strong>One <code>// PORT:</code> tag does not guarantee semantic equivalence.</strong> The tag is a provenance link, not a correctness proof; tests and retail comparison do that job.</li>
+    <li><strong>The ignore-list is curated, not exhaustive.</strong> Newly-dumped PsyQ helpers surface in <code>--missing-ports</code> until added; treat unfamiliar 16-byte thunks in <code>0x8005xxxx</code> / <code>0x8006xxxx</code> as likely candidates.</li>
   </ul>
 </section>
 
 <section class="doc-section" id="more-docs">
   <h2>Companion pages (on GitHub)</h2>
-  <p>The catalog has grown a family of per-row triage and integrity pages; they live in <code>docs/tooling/</code> and are not mirrored on this site.</p>
-  <ul class="bullets">
-    <li><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/worklist-classification.md">worklist-classification</a> - whether a <code>--missing-ports</code> row is a portable function entry at all (<code>REAL</code> / <code>INTERIOR</code> / <code>SHARED_TAIL</code> / <code>DUPLICATE</code> / <code>VA_ALIASED</code> / ...).</li>
-    <li><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/live-audit-triage.md">live-audit-triage</a> - per-anchor verdicts for the audit's undisclosed-inert rows.</li>
-    <li><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/stale-not-wired-triage.md">stale-not-wired-triage</a> - per-row verdicts for "tagged <code>NOT WIRED</code> but analysed live", and the fix each mechanism takes.</li>
-    <li><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/reach-triage.md">reach-triage</a> - verdicts for the live-but-never-entered set, and what a pad-only headless ladder structurally cannot execute.</li>
-    <li><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/port-provenance.md">port-provenance</a> - the ungated question of whether a tag names the <em>right</em> routine.</li>
-    <li><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/call-target-integrity.md">call-target-integrity</a> - why a decoded <code>jal</code> target is a property of the bytes, not the load base, and the one dump window whose targets are untrustworthy.</li>
-    <li><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/dump-corpus-integrity.md">dump-corpus-integrity</a> - a dump's printed addresses are a property of its load base; only the header tag is evidence.</li>
-    <li><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/phantom-print-index.md">phantom-print-index</a> - for every printed <code>0x801C****</code> / <code>0x801D****</code> address, the image and VA its bytes really occupy.</li>
-  </ul>
+  <p>The catalog has a family of per-row triage and integrity pages in <code>docs/tooling/</code>, not mirrored on this site.</p>
+  <table>
+    <thead><tr><th>Page</th><th>Question it answers</th></tr></thead>
+    <tbody>
+      <tr><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/worklist-classification.md">worklist-classification</a></td><td>Is a <code>--missing-ports</code> row a portable function entry at all (<code>REAL</code> / <code>INTERIOR</code> / <code>SHARED_TAIL</code> / <code>DUPLICATE</code> / <code>VA_ALIASED</code> / ...)?</td></tr>
+      <tr><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/live-audit-triage.md">live-audit-triage</a></td><td>Per-anchor verdicts for the audit's undisclosed-inert rows.</td></tr>
+      <tr><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/stale-not-wired-triage.md">stale-not-wired-triage</a></td><td>Per-row verdicts for "tagged <code>NOT WIRED</code> but analysed live".</td></tr>
+      <tr><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/reach-triage.md">reach-triage</a></td><td>Verdicts for the live-but-never-entered set.</td></tr>
+      <tr><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/port-provenance.md">port-provenance</a></td><td>Does a tag name the <em>right</em> routine? (Ungated.)</td></tr>
+      <tr><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/call-target-integrity.md">call-target-integrity</a></td><td>Why a decoded <code>jal</code> target belongs to the bytes, not the load base.</td></tr>
+      <tr><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/dump-corpus-integrity.md">dump-corpus-integrity</a></td><td>A dump's printed addresses are a property of its load base; only the header tag is evidence.</td></tr>
+      <tr><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/phantom-print-index.md">phantom-print-index</a></td><td>For each printed <code>0x801C****</code> / <code>0x801D****</code> address, the image and VA its bytes really occupy.</td></tr>
+    </tbody>
+  </table>
 </section>
 
 <section class="doc-section" id="see-also">

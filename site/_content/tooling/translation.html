@@ -1,180 +1,243 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; translation</div>
   <h1>Translation / language packs</h1>
-  <p class="lede">Legend of Legaia only ever shipped in English, French, German, Italian and Japanese. A language pack lets a community translate the game's text - item and spell names, menus, dialogue - into any Latin-script language and play it on the retail disc. The pack is a plain YAML file you edit in any text editor; the patch that applies it never changes the size of anything on the disc.</p>
+  <p class="lede">Legend of Legaia shipped in English, French, German, Italian and Japanese. A language pack lets a community translate the game's text - item and spell names, menus, dialogue - into any Latin-script language and play it on the retail disc. The pack is a plain YAML file you edit in any text editor; applying it never changes the size of anything on the disc.</p>
 </header>
 
 <section class="doc-section" id="glance">
   <h2>At a glance</h2>
-  <ul class="bullets">
-    <li><strong>What you get</strong> - a translated game on your own disc, applied in the <a href="rom-patcher.html">browser patcher</a> (pick a shipped pack or import your own) or with the <code>legaia-patcher translate</code> CLI. It composes with every randomizer option.</li>
-    <li><strong>What is covered</strong> - the name tables (items, spells, arts, accessory passives, party names), the whole NPC / cutscene / narration dialogue corpus, and the pause-menu, shop and battle system labels. Not covered: text baked into textures, and accented or non-Latin scripts, which the retail font has no glyphs for.</li>
-    <li><strong>The one rule</strong> - every edit is same-size in place. A translation has a byte <em>budget</em>; a line over budget is reported and left English rather than corrupting the disc.</li>
-    <li><strong>Sharing</strong> - a pack is safe to publish only once its <code>source:</code> text is stripped; what remains is your new text keyed by disc coordinates, and carries none of the original script.</li>
-    <li><strong>Already own a PAL disc?</strong> The official French / German / Italian text can be <a href="#official-pal">lifted onto the USA disc</a> - in the browser, from your own two discs.</li>
-  </ul>
+  <dl class="kv">
+    <dt>What you get</dt><dd>A translated game on your own disc, applied in the <a href="rom-patcher.html">browser patcher</a> or with <code>legaia-patcher translate</code>. Composes with every randomizer option.</dd>
+    <dt>Covered</dt><dd>Name tables (items, spells, arts, accessory passives, party names), the whole NPC / cutscene / narration dialogue corpus, pause-menu / shop / battle system labels.</dd>
+    <dt>Not covered</dt><dd>Text baked into textures; accented and non-Latin scripts (the retail font has no glyphs for them).</dd>
+    <dt>The one rule</dt><dd>Every edit is same-size in place. Each line has a byte <em>budget</em>; a line over budget is reported and left English.</dd>
+    <dt>Sharing</dt><dd>A pack is safe to publish once its <code>source:</code> text is stripped - what remains is your text keyed by disc coordinates.</dd>
+    <dt>Code</dt><dd><code>crates/patcher/src/translation/</code>; writes go through <code>DiscPatcher</code> (EDC/ECC re-encoded, no LBA moves).</dd>
+    <dt>Own a PAL disc?</dt><dd>Its official French / German / Italian text can be <a href="#official-pal">lifted onto the USA disc</a> from your own two discs.</dd>
+  </dl>
 </section>
 
 <section class="doc-section" id="workflow">
   <h2>Workflow</h2>
-  <p>Six steps take a disc to a distributable pack. Only the first needs the disc; the middle ones are pure text editing.</p>
-  <div class="flow">
-    <span class="num">1</span><span class="layer">export</span><span class="desc">dump the disc's own text into a <em>working</em> pack (local only - it holds the game script)</span><span class="crate">translate export</span>
-    <span class="num">2</span><span class="layer">init</span><span class="desc">make a skeleton for your language; <code>--resume</code> seeds it from an already-published pack</span><span class="crate">translate init</span>
-    <span class="num">3</span><span class="layer">fill</span><span class="desc">write the <code>translation:</code> fields - editor, script or AI draft; <code>--chunk</code> / <code>merge</code> split the work</span><span class="crate">any editor</span>
-    <span class="num">4</span><span class="layer">stats</span><span class="desc">check coverage, encodability and budgets; add <code>--input</code> to dry-run against a real disc</span><span class="crate">translate stats</span>
-    <span class="num">5</span><span class="layer">strip</span><span class="desc">drop the source text - the result is the shareable, committable pack</span><span class="crate">translate strip</span>
-    <span class="num">6</span><span class="layer">import</span><span class="desc">apply to a scratch copy and/or emit a PPF patch</span><span class="crate">translate import</span>
-  </div>
-<pre><code># 1. Dump the source text into a working pack (once).
-legaia-patcher translate export --input "Legend of Legaia (USA).bin" -o legaia_en.yaml
-
-# 2. Make a skeleton for your language (fr de es it pl pt-BR ja ru zh ko ...).
-legaia-patcher translate init --lang fr --from legaia_en.yaml \
-    --contributor "you" [--resume site/lang/fr.yaml] -o legaia_fr.yaml
-
-# 3. Fill `translation:` fields. --chunk N splits the skeleton into N-entry
-#    files for a parallel bulk fill; recombine them with `translate merge`.
-
-# 4. Check coverage + encodability/budget (--input dry-runs against a disc).
-legaia-patcher translate stats --pack legaia_fr.yaml [--input DISC.bin]
-
-# 5. Publish: strip the source to make the distributable pack.
-legaia-patcher translate strip --pack legaia_fr.yaml -o site/lang/fr.yaml
-
-# 6. Apply to a scratch copy (and/or emit a shareable PPF).
-legaia-patcher translate import --input "Legend of Legaia (USA).bin" \
-    --pack legaia_fr.yaml --output legaia_fr.bin --patch legaia_fr.ppf</code></pre>
-  <p>A partially filled pack is always playable: entries with an empty <code>translation:</code> are left byte-identical. Import is idempotent (re-running the same pack over a patched image applies nothing) and incremental (fill more entries, re-import onto a fresh copy). When a scene's dialogue no longer recompresses into its footprint, import rolls back that scene's longest lines one at a time rather than dropping the whole scene; <code>stats</code> and <code>import</code> summarise skipped entries per reason and <code>--verbose</code> prints the per-key list.</p>
-
-  <h3>What may / may not be committed</h3>
+  <figure class="overlay-strip">
+    <svg viewBox="0 0 900 120" width="100%" style="max-width: 900px; font-family: var(--font-mono); font-size: 12px;" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Translation pipeline: your disc, export, working pack, fill and stats, strip, shipped pack, import back onto a disc copy">
+      <g fill="var(--bg-raised)" stroke="var(--accent)" stroke-width="1.5">
+        <rect x="8" y="30" width="112" height="52" rx="6"/>
+        <rect x="138" y="30" width="112" height="52" rx="6"/>
+        <rect x="268" y="30" width="112" height="52" rx="6"/>
+        <rect x="398" y="30" width="112" height="52" rx="6"/>
+        <rect x="528" y="30" width="112" height="52" rx="6"/>
+        <rect x="658" y="30" width="112" height="52" rx="6"/>
+        <rect x="788" y="30" width="104" height="52" rx="6"/>
+      </g>
+      <g fill="currentColor" text-anchor="middle" dominant-baseline="middle">
+        <text x="64" y="56">your disc</text>
+        <text x="194" y="49">export<tspan x="194" dy="15">to YAML</tspan></text>
+        <text x="324" y="49">working pack<tspan x="324" dy="15">(local only)</tspan></text>
+        <text x="454" y="49">fill + stats<tspan x="454" dy="15">(any editor)</tspan></text>
+        <text x="584" y="49">strip<tspan x="584" dy="15">source text</tspan></text>
+        <text x="714" y="49">shipped pack<tspan x="714" dy="15">(committable)</tspan></text>
+        <text x="840" y="49">import<tspan x="840" dy="15">to copy</tspan></text>
+      </g>
+      <g stroke="var(--text-muted)" stroke-width="1.5" fill="var(--text-muted)">
+        <line x1="120" y1="56" x2="134" y2="56"/><polygon points="134,52 140,56 134,60"/>
+        <line x1="250" y1="56" x2="264" y2="56"/><polygon points="264,52 270,56 264,60"/>
+        <line x1="380" y1="56" x2="394" y2="56"/><polygon points="394,52 400,56 394,60"/>
+        <line x1="510" y1="56" x2="524" y2="56"/><polygon points="524,52 530,56 524,60"/>
+        <line x1="640" y1="56" x2="654" y2="56"/><polygon points="654,52 660,56 654,60"/>
+        <line x1="770" y1="56" x2="784" y2="56"/><polygon points="784,52 790,56 784,60"/>
+      </g>
+      <g fill="var(--text-muted)" font-size="11" text-anchor="middle">
+        <text x="324" y="104">holds the game script - never share</text>
+        <text x="714" y="104">coordinates + your text only</text>
+      </g>
+    </svg>
+    <figcaption>Only the first and last steps need a disc; everything in between is text editing.</figcaption>
+  </figure>
+  <table>
+    <thead><tr><th>Step</th><th>Command</th><th>Does</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td><code>translate export --input DISC.bin -o legaia_en.yaml</code></td><td>Dumps the disc's own text into a working pack (once).</td></tr>
+      <tr><td>2</td><td><code>translate init --lang fr --from legaia_en.yaml --contributor you -o legaia_fr.yaml</code></td><td>Skeleton for your language; <code>--resume site/lang/fr.yaml</code> seeds it from a published pack.</td></tr>
+      <tr><td>3</td><td><code>translate merge --base legaia_fr.yaml --pack part1.yaml --pack part2.yaml -o legaia_fr.yaml</code></td><td>Fill the <code>translation:</code> fields with any editor; <code>init --chunk N</code> splits the work, <code>merge</code> recombines it.</td></tr>
+      <tr><td>4</td><td><code>translate stats --pack legaia_fr.yaml [--input DISC.bin]</code></td><td>Coverage, encodability and budgets; <code>--input</code> dry-runs against a real disc.</td></tr>
+      <tr><td>5</td><td><code>translate strip --pack legaia_fr.yaml -o site/lang/fr.yaml</code></td><td>Drops the source text - the result is the shareable pack.</td></tr>
+      <tr><td>6</td><td><code>translate import --input DISC.bin --pack legaia_fr.yaml --output out.bin --patch out.ppf</code></td><td>Applies to a scratch copy and/or emits a PPF patch.</td></tr>
+    </tbody>
+  </table>
+  <p>Every disc argument takes a <code>.bin</code> or a <code>.cue</code>. A partially filled pack is always playable: empty entries stay byte-identical. Import is idempotent and incremental. <code>stats</code> and <code>import</code> summarise skipped entries per reason; <code>--verbose</code> lists every key.</p>
   <ul class="bullets">
-    <li><strong>Distributable packs may be committed</strong> - they are new authored text plus a coordinate table; the shipped <code>site/lang/*.yaml</code> packs are tracked, and a disc-free test fails the build if any tracked pack still carries a <code>source:</code> field.</li>
-    <li><strong>Working packs must not</strong> - they carry the game's script. <code>/translations/</code> and <code>legaia_*.yaml</code> stay gitignored.</li>
-    <li>No disc / exe / asset bytes, ever.</li>
+    <li><strong>Commit</strong> distributable packs (<code>site/lang/*.yaml</code>) - new authored text plus a coordinate table. A disc-free test fails the build if a tracked pack still carries <code>source:</code>.</li>
+    <li><strong>Never commit</strong> working packs - they carry the game's script. <code>/translations/</code> and <code>legaia_*.yaml</code> are gitignored.</li>
   </ul>
-
-  <h3>On the site</h3>
-  <p>The in-browser <a href="rom-patcher.html">ROM patcher</a> offers the shipped packs from a language dropdown (default <strong>None</strong>), plus <em>import my own pack</em>, <em>export a starter pack from my disc</em>, and <em>official translation from my own PAL disc</em>. It validates a chosen pack against your disc before patching, applies it in two phases around the randomizer passes, and shows a per-section coverage report afterwards - applied / skipped counts plus a skip-reason breakdown (over budget, scene does not recompress, not on this disc, not encodable). Nothing is uploaded; the packs are static assets fetched from <code>site/lang/</code>.</p>
+  <p>The in-browser <a href="rom-patcher.html">ROM patcher</a> does the same from a language dropdown (default <strong>None</strong>): shipped packs, your own pack, a starter export, or a PAL lift - validated against your disc, with a per-section coverage report. Nothing is uploaded.</p>
 </section>
 
 <section class="doc-section" id="pack-shapes">
   <h2>Two pack shapes</h2>
-  <p>A pack comes in two shapes that share one schema. The difference is whether it still carries the game's own text.</p>
   <table>
     <thead><tr><th>Shape</th><th><code>source:</code></th><th>Holds</th><th>Lives</th></tr></thead>
     <tbody>
-      <tr><td><strong>working</strong></td><td>yes</td><td>the disc's own text (for the translator to read)</td><td>your machine only - never redistributed</td></tr>
-      <tr><td><strong>distributable</strong></td><td>no</td><td>only the <em>new</em> translated text, keyed by disc coordinates</td><td>shareable / committable</td></tr>
+      <tr><td><strong>working</strong></td><td>yes</td><td>the disc's own text, for the translator to read</td><td>your machine only</td></tr>
+      <tr><td><strong>distributable</strong></td><td>no</td><td>only the <em>new</em> text, keyed by disc coordinates</td><td>shareable / committable</td></tr>
     </tbody>
   </table>
-  <p><code>translate strip</code> turns a filled working pack into a distributable one: it drops every <code>source:</code> and <code>context:</code> field and every unfilled entry, leaving a pure <code>key &rarr; translation</code> lookup plus the byte-budget hint. The key (<code>scus:str:0x&lt;va&gt;</code>, <code>scus:party:&lt;n&gt;</code>, <code>man:&lt;prot&gt;:0x&lt;off&gt;</code>, <code>raw:&lt;prot&gt;:0x&lt;off&gt;</code>, <code>ui:&lt;prot&gt;:0x&lt;va&gt;</code>) is a disc coordinate, not text, so a distributable pack carries none of the original script. <strong>That is the only shape it is safe to commit or publish.</strong></p>
-  <p>A distributable pack has no source to self-check against, so its <code>budget</code> is only a hint: <code>import</code> (and <code>translate stats --input</code>) re-measures every target on the disc being patched and rejects any entry that does not fit, or whose on-disc length disagrees with the hint. Same-size in place is enforced from the disc, never from the pack.</p>
-</section>
-
-<section class="doc-section" id="ordering">
-  <h2>Ordering: dialogue before the randomizer, names after</h2>
-  <p>A pack and a randomizer run can share one patch. Because some randomizer passes move bytes around and one of them reads item <em>names</em>, the pack is applied in two phases:</p>
-  <ul class="bullets">
-    <li><strong>Dialogue sections (<code>man:</code> / <code>raw:</code> keys) go first.</strong> A dialogue edit is same-size <em>inside the decompressed MAN</em>, keyed by a byte offset into it, whereas the door, location-rename and starting-bag passes <strong>relocate</strong> records - moving every byte after the splice. Applied first, the translated text simply rides along with any later relocation.</li>
-    <li><strong>Name sections (<code>scus:</code> and <code>ui:</code> keys) go last.</strong> The equipment-bonus-drop pass classifies gear by matching the disc's item names against curated English names; with the item table already translated its pool comes back empty and the pass aborts. Nothing in the randomizer relocates a SCUS or overlay string, so translating the name tables after every pass is always safe.</li>
-  </ul>
-  <p>The randomizer otherwise reads structure - records, tables, item <strong>ids</strong> - never text, so translated strings never perturb it. A standalone <code>translate import</code> applies everything in one pass.</p>
+  <p><code>strip</code> drops every <code>source:</code> and <code>context:</code> field and every unfilled entry. The key is a disc coordinate, not text, so a distributable pack carries none of the original script. Its <code>budget</code> is only a hint: <code>import</code> re-measures every target on the disc it patches and rejects anything that does not fit. Same-size is enforced from the disc, never from the pack.</p>
 </section>
 
 <section class="doc-section" id="yaml-schema">
-  <h2>YAML schema</h2>
-  <p>A working pack, the shape a translator edits:</p>
+  <h2>What a pack contains</h2>
 <pre><code>format: 'legaia-text-pack-v1'
 language: 'fr'
 game: 'Legend of Legaia (USA) SCUS-94254'
 contributors: ['...']
-notes: '...'
 sections:
-  items:               # one list per section, fixed order
-  - key: 'scus:str:0x80012260'   # stable provenance key
-    context: 'item 0x79'          # human context, not machine-read
-    source: 'Healing Berry'       # US text, markup form
+  items:                          # one list per section, fixed order
+  - key: 'scus:str:0x80012260'    # disc coordinate
+    context: 'item 0x79'          # human hint, not machine-read
+    source: 'Healing Berry'       # US text (working pack only)
     translation: ''               # fill me
-    budget: 13                    # max encoded bytes for the translation</code></pre>
-  <p>A distributable pack is the same document with <code>source:</code> and <code>context:</code> removed and only filled entries kept. Each section maps to one place on the disc and one patch mechanism:</p>
-  <table>
-    <thead><tr><th>Section</th><th>Contents</th><th>Key shape</th><th>Mechanism</th></tr></thead>
+    budget: 13                    # max encoded bytes</code></pre>
+  <table class="layout">
+    <thead><tr><th>Section</th><th>Contents</th><th>Key</th><th>Patch mechanism</th></tr></thead>
     <tbody>
-      <tr><td><code>items</code></td><td>item names (MES <code>{c2:xx}</code>/<code>{c4:xx}</code> substitutions)</td><td><code>scus:str:0x&lt;va&gt;</code></td><td>overwrite the NUL-terminated string in <code>SCUS_942.54</code> in place, re-terminate</td></tr>
-      <tr><td><code>item_types</code></td><td>shared item "type" strings</td><td><code>scus:str:0x&lt;va&gt;</code></td><td>same</td></tr>
-      <tr><td><code>spells</code></td><td>spell/magic names (<code>{c3:xx}</code>)</td><td><code>scus:str:0x&lt;va&gt;</code></td><td>same</td></tr>
-      <tr><td><code>arts</code></td><td>Tactical Arts names (<code>{c5:xx}</code>)</td><td><code>scus:str:0x&lt;va&gt;</code></td><td>same</td></tr>
-      <tr><td><code>accessory_passives</code></td><td>Goods-menu passive names + descriptions</td><td><code>scus:str:0x&lt;va&gt;</code></td><td>same</td></tr>
-      <tr><td><code>party_names</code></td><td>new-game roster names</td><td><code>scus:party:&lt;n&gt;</code></td><td>fixed 10-byte NUL-padded field (9-byte budget)</td></tr>
-      <tr><td><code>scene_dialog</code></td><td>NPC/event dialogue in the scene-bundle MANs</td><td><code>man:&lt;prot&gt;:0x&lt;off&gt;</code></td><td>edit the <code>0x1F</code>-segment inside the LZS-decompressed MAN, recompress, must fit the original compressed footprint</td></tr>
-      <tr><td><code>inline_text</code></td><td>dialogue/narration in raw carriers</td><td><code>raw:&lt;prot&gt;:0x&lt;off&gt;</code></td><td>space-padded same-size overwrite directly in the PROT entry</td></tr>
-      <tr><td><code>ui_menu</code></td><td>overlay-resident UI strings: pause-menu / options / shop / equip / status labels + in-battle system messages</td><td><code>ui:&lt;prot&gt;:0x&lt;va&gt;</code></td><td>overwrite the NUL-terminated string in the PROT overlay entry in place at <code>file offset = va - base_va</code></td></tr>
+      <tr><td><code>items</code></td><td>item names</td><td><code>scus:str:0x&lt;va&gt;</code></td><td>overwrite the string in <code>SCUS_942.54</code> in place, re-terminate</td></tr>
+      <tr><td><code>item_types</code></td><td>shared item "type" strings</td><td><code>scus:str:…</code></td><td>same</td></tr>
+      <tr><td><code>spells</code></td><td>spell / magic names</td><td><code>scus:str:…</code></td><td>same</td></tr>
+      <tr><td><code>arts</code></td><td>Tactical Arts names</td><td><code>scus:str:…</code></td><td>same</td></tr>
+      <tr><td><code>accessory_passives</code></td><td>Goods-menu passive names + descriptions</td><td><code>scus:str:…</code></td><td>same</td></tr>
+      <tr><td><code>party_names</code></td><td>new-game roster names</td><td><code>scus:party:&lt;n&gt;</code></td><td>fixed 10-byte field, 9-byte budget</td></tr>
+      <tr><td><code>scene_dialog</code></td><td>NPC / event dialogue in scene MANs</td><td><code>man:&lt;prot&gt;:0x&lt;off&gt;</code></td><td>edit inside the decompressed MAN, recompress into the original footprint</td></tr>
+      <tr><td><code>inline_text</code></td><td>dialogue / narration in raw carriers</td><td><code>raw:&lt;prot&gt;:0x&lt;off&gt;</code></td><td>space-padded same-size overwrite in the PROT entry</td></tr>
+      <tr><td><code>ui_menu</code></td><td>pause-menu / shop / status labels, battle messages</td><td><code>ui:&lt;prot&gt;:0x&lt;va&gt;</code></td><td>overwrite in the overlay entry at <code>va - base_va</code></td></tr>
     </tbody>
   </table>
-  <p>Strings pointer-shared by several table slots export once; interior pointers clamp the <code>budget</code>. The SCUS name pools are 4-byte aligned, so each string's <code>budget</code> also claims the 0..3 bytes of zero padding after its terminator - about 1.5 extra bytes on average, which is what lets the tightest name tables translate at all. The dialogue sections are <em>line-granular</em>: the pager packs up to three consecutive segments into one box (<a href="../formats/mes.html">MES</a>), so consecutive entries in the pack are consecutive rows on screen - translate them as a group and keep each row inside its own budget.</p>
+  <p>Dialogue sections are line-granular: the pager packs up to three consecutive segments into one box (<a href="../formats/mes.html">MES</a>), so consecutive pack entries are consecutive rows on screen. Translate them as a group, each row inside its own budget.</p>
+  <details class="disclosure">
+    <summary>Details: shared strings, alignment padding, duplicates</summary>
+    <div class="disclosure-body">
+      <ul class="bullets">
+        <li>Strings pointer-shared by several table slots export once; the <code>context</code> lists the referencing ids, and interior pointers clamp the budget.</li>
+        <li>The SCUS name pools are 4-byte aligned, so each budget also claims the 0..3 zero bytes after the terminator (verified zero, never past another string) - about 1.5 extra bytes on average, which is what lets the tightest tables translate at all.</li>
+        <li>Duplicate PROT TOC entries over the same disc bytes are deduplicated by LBA.</li>
+        <li><code>ui_menu</code> pools are pinned by VA windows in the menu (PROT 0899) and battle (PROT 0898) overlays; see <a href="../subsystems/field-menu.html">field menu</a>. Short writes zero-fill the old span.</li>
+      </ul>
+    </div>
+  </details>
 </section>
 
 <section class="doc-section" id="markup-encoding">
   <h2>Text markup + encoding</h2>
-  <p>Game text is mostly plain letters with a few control tokens for names, colours and line breaks. The glyph atlas is indexed by byte with <code>0x20..=0x7E</code> as plain ASCII (<a href="../formats/dialog-font.html">dialog font</a>), so a pack's markup is mostly literal text:</p>
-  <ul class="bullets">
-    <li>printable ASCII maps to itself; <code>|</code> is the in-game newline glyph (<code>0x7C</code>);</li>
-    <li><code>{xx:yy}</code> is a 2-byte token: <code>{c1:00}</code> = character-name substitution, <code>{c2:79}</code> = item-name substitution, <code>{c3:..}</code> magic, <code>{c5:..}</code> art, <code>{cf:0n}</code> colour change, <code>{ce:..}</code> spacing/icon escape - keep these in the translation wherever the source has them;</li>
-    <li><code>{xx}</code> is a bare byte (<code>{01}</code> item-icon prefix, high glyph tiles); literal braces are written <code>{7b}</code> / <code>{7d}</code>.</li>
-  </ul>
-  <p><code>encode</code> (string &rarr; game bytes) is the exact inverse of the exporter's decode and reports <strong>per-character</strong> errors: anything outside printable ASCII is not in the retail glyph set. Common typographic lookalikes (smart quotes, en/em dashes, ellipsis, NBSP) are folded automatically. <strong>Accented Latin, Cyrillic and CJK are not encodable</strong> - the retail font simply has no such glyphs. A full non-Latin translation needs a font patch (new glyph tiles + width table), which this pipeline does not attempt; French/Italian/etc. must be written unaccented (<code>Epee</code> not <code>&Eacute;p&eacute;e</code>).</p>
+  <p>Game text is plain ASCII plus a few control tokens (<a href="../formats/dialog-font.html">dialog font</a>). Keep every token where the source has it.</p>
+  <table class="layout">
+    <thead><tr><th>Markup</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>A-Z a-z 0-9 …</code></td><td>printable ASCII maps to itself</td></tr>
+      <tr><td><code>|</code></td><td>in-game newline</td></tr>
+      <tr><td><code>{c1:00}</code></td><td>character-name substitution</td></tr>
+      <tr><td><code>{c2:79}</code> <code>{c3:..}</code> <code>{c5:..}</code></td><td>item / magic / art name substitution</td></tr>
+      <tr><td><code>{cf:0n}</code> <code>{ce:..}</code></td><td>colour change; spacing / icon escape</td></tr>
+      <tr><td><code>{xx}</code></td><td>bare byte (<code>{01}</code> item-icon prefix); literal braces are <code>{7b}</code> / <code>{7d}</code></td></tr>
+    </tbody>
+  </table>
+  <p>Encoding reports <strong>per-character</strong> errors. Smart quotes, dashes, ellipsis and NBSP fold automatically. <strong>Accented Latin, Cyrillic and CJK are not encodable</strong> - the retail font has no such glyphs, so French or Italian must be written unaccented (<code>Epee</code>, not <code>&Eacute;p&eacute;e</code>). Lifting that limit needs a font patch, which is a separate effort.</p>
 </section>
 
 <section class="doc-section" id="budgets">
-  <h2>Budgets (the same-size constraint)</h2>
-  <p>Nothing on the disc moves, so a translation's <em>encoded</em> length is capped by its <code>budget</code>. What that budget is depends on where the text lives:</p>
-  <ul class="bullets">
-    <li><strong>SCUS strings</strong>: the original string's byte span (shorter is fine - the string is re-terminated).</li>
-    <li><strong>Dialogue segments</strong>: same-size in place is the fast default - shorter translations are space-padded so the <code>0x1F ... 0x00</code> framing never moves. When a line overflows its own span, the importer tries the <strong>generalised rewriter</strong>: it grows every filled segment in that scene MAN to full length and relocates all crossing references, verified as the same program by re-walking both buffers. The budget then becomes the MAN's own footprint, not each string. See <a href="../formats/man-relocation.html">MAN relocation</a>.</li>
-    <li>A whole scene's edits must additionally recompress into the MAN's original LZS footprint at the same LBA. Text compresses well, and the repack falls back to an optimal-parse LZS encoder when the fast greedy parse just misses. The retail scene entries are sector-aligned with <strong>zero compressed slack</strong>, though, so a scene that still overflows falls back to same-size and rolls back its longest lines one at a time, each with a per-key diagnostic - shorten the reported lines and re-run.</li>
-  </ul>
-  <p><code>translate stats</code> checks all of this offline. On import each target is also verified against the pack's <code>source</code>; a mismatch (wrong disc revision, or a conflicting randomizer patch that moved the text) skips the entry with a per-key warning rather than writing blind.</p>
-
-  <h3>The dialogue-carrier gate (<code>raw:</code> writes)</h3>
-  <p>The <code>0x1F &lt;text&gt; 0x00</code> dialogue framing is short enough to occur <strong>by coincidence</strong> all over the disc's binary asset banks: sequenced music, VAB sample banks, the battle-character mesh/animation packs, monster archives, and every scene's first ANM slot all contain runs that read as a two- or three-letter "segment". Overwriting such a coincidental hit corrupts the asset with a same-size write that passes every framing/budget check yet freezes the game. Both <strong>export</strong> and <strong>import</strong> therefore gate every <code>raw:</code> write on a per-entry <strong>dialogue-carrier</strong> check: a PROT entry is a real raw text carrier only if it carries enough multi-word prose segments. Across the retail disc the two populations separate with a wide margin, so the gate keeps every real carrier and refuses every binary bank. Import re-runs the check on the disc it is patching and skips a non-carrier entry with a per-key diagnostic. SCUS name-table (<code>scus:</code>), scene-MAN (<code>man:</code>) and overlay (<code>ui:</code>) writes are unaffected - those targets are structurally addressed, not scanned.</p>
+  <h2>Budgets: the same-size rule</h2>
+  <table>
+    <thead><tr><th>Target</th><th>Budget</th></tr></thead>
+    <tbody>
+      <tr><td>SCUS / overlay strings</td><td>the original string's span; shorter is fine</td></tr>
+      <tr><td>Dialogue line</td><td>its own span, space-padded when shorter; an overflowing line triggers the MAN rewriter, which grows the line and relocates everything after it (<a href="../formats/man-relocation.html">MAN relocation</a>)</td></tr>
+      <tr><td>Whole scene</td><td>the rewritten MAN must recompress into its original LZS footprint - retail scenes have <strong>zero compressed slack</strong></td></tr>
+    </tbody>
+  </table>
+  <p>When a scene still overflows, import rolls back its longest lines one at a time with a per-key diagnostic - shorten those and re-run. The CLI's <code>import --allow-relayout</code> instead grows the scene by whole sectors (an <code>--output</code> image only, never a PPF). Each target is also checked against the pack's <code>source</code>; a mismatch skips the entry rather than writing blind.</p>
+  <details class="disclosure">
+    <summary>Details: the dialogue-carrier gate on <code>raw:</code> writes</summary>
+    <div class="disclosure-body">
+      <p>The <code>0x1F &lt;text&gt; 0x00</code> dialogue framing is short enough to occur by coincidence in binary banks - music, sample banks, mesh packs, monster archives, animation slots. A same-size write into one passes every budget check and freezes the game. Both export and import therefore accept a <code>raw:</code> target only when its PROT entry carries at least <code>MIN_CARRIER_PROSE</code> multi-word segments; real carriers and binary banks separate by a wide margin. <code>scus:</code>, <code>man:</code> and <code>ui:</code> targets are structurally addressed and unaffected.</p>
+    </div>
+  </details>
+  <details class="disclosure">
+    <summary>Details: ordering next to the randomizer</summary>
+    <div class="disclosure-body">
+      <p>Combined with a randomizer run, a pack is applied in two phases. <strong>Dialogue (<code>man:</code> / <code>raw:</code>) goes first</strong>, because the door, location-rename and starting-bag passes relocate MAN records, and text applied earlier rides along. <strong>Names (<code>scus:</code> / <code>ui:</code>) go last</strong>, because the equipment-bonus-drop pass classifies gear by matching English item names; nothing in the randomizer relocates a SCUS or overlay string. The randomizer otherwise reads ids, never text.</p>
+    </div>
+  </details>
 </section>
 
 <section class="doc-section" id="coverage">
-  <h2>Coverage + limitations</h2>
-  <p><strong>Covered:</strong> the SCUS name tables (items, item types, spells, Tactical Arts, accessory passives, party names); the <code>0x1F</code>-segment dialogue corpus (scene bundles + raw event-script carriers) - NPC dialogue, cutscene dialogue and narration, picker labels, chest flavour text; and the overlay-resident UI strings (<code>ui_menu</code>): the pause-menu / options / shop / equip / status command labels and the in-battle system messages, which are NUL-terminated C strings in the menu (PROT 0899) and battle (PROT 0898) overlay data segments, pinned by disc-coordinate VA windows (menu pool <code>0x801CE81C..</code>, battle pool <code>0x801F4B98..</code>, both under load base <code>0x801CE818</code>; see <a href="../subsystems/field-menu.html">field menu</a>). Those pools are tight - a short label can be shorter than English but rarely much longer - and the in-battle <code>Attack</code> / <code>Arts</code> / <code>Magic</code> / <code>Item</code> command ring is drawn as icon sprites, so there is no string to translate there.</p>
-  <p><strong>Not covered:</strong> textures with baked-in text (<a href="#baked-text">below</a>), and dialogue lines the conservative segment scanner declines to export (they simply stay English). Junk entries the scanner does export (dev-debug strings) are harmless: leave them untranslated. The dialogue exports raw source lines including substitution escapes, so translations must keep grammatical agreement working around the substituted names.</p>
+  <h2>Coverage + limits</h2>
+  <ul class="bullets">
+    <li><strong>Covered:</strong> every SCUS name table; NPC, cutscene and narration dialogue, picker labels, chest flavour text; overlay UI labels and battle system messages.</li>
+    <li><strong>Tight:</strong> the overlay label pools - a short label can be shorter than English but rarely longer.</li>
+    <li><strong>No string exists:</strong> the in-battle <code>Attack / Arts / Magic / Item</code> ring is icon sprites.</li>
+    <li><strong>Stays English:</strong> lines the conservative segment scanner declines to export. Junk entries it does export (dev-debug strings) are harmless - leave them blank.</li>
+  </ul>
 </section>
 
 <section class="doc-section" id="official-pal">
   <h2>Official PAL translations</h2>
-  <p>Sony shipped French, German and Italian discs (<code>SCES_019.44</code> / <code>.45</code> / <code>.46</code>). If you own one, its official text can be lifted onto the USA disc's coordinates and applied like any other pack - from your own two discs, in the browser or on the CLI. The official text is yours; it is never bundled with this site.</p>
-  <p>The PAL discs are structurally 1:1 with the USA disc (same 1233 PROT entries, same block boundaries), and their name tables and dialogue corpus align id-for-id and line-for-line. <code>translate lift-official --from PAL.bin --target USA.bin -o pack.yaml</code> detects the source language from the disc, locates each name table, and re-keys the text positionally into a filled working pack. <code>--fold-accents</code> (the browser default) folds the PAL accent glyphs onto plain ASCII (<code>&eacute;</code> &rarr; <code>e</code>, <code>&szlig;</code> &rarr; <code>ss</code>), because the USA font has no cells for them - unfolded accents encode fine but draw blank until the font is patched.</p>
-  <p><strong>Not all of it fits, and the reason is sector alignment, not string length.</strong> The USA scene entries are packed to the sector with zero compressed slack, so any line that grows overflows; the PAL discs solved this at mastering by giving most scene entries one extra sector. In place, roughly a third of the dialogue corpus lands (name tables 36-60%, dialogue lines about half per-string); the rest is reported as over-budget or non-recompressing rather than dropped quietly. The CLI's <code>--allow-relayout</code> import grows the image to close that residual (an <code>--output</code> image only - a relayout is not a same-size PPF); the browser never relays out. The overlay-resident <code>ui_menu</code> labels are not lifted either - the PAL overlays place their pools elsewhere - so those stay English.</p>
-  <p>Measurement tools: <code>translate diff-disc</code> (alignment counts between two discs) and <code>translate fit-report</code> (per-string vs per-MAN fit), both text-free. Recommended path to a distributable pack: lift &rarr; fit-report &rarr; import with relayout &rarr; font patch (separate deliverable) &rarr; <code>strip</code> to <code>site/lang/&lt;lang&gt;.yaml</code>. Full structure, encoding tables and fit numbers: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/pal-localizations.md" target="_blank" rel="noopener"><code>tooling/pal-localizations.md</code></a>.</p>
+  <p>Sony shipped French, German and Italian discs (<code>SCES_019.44</code> / <code>.45</code> / <code>.46</code>). They are structurally 1:1 with the USA disc, so their text lifts onto USA coordinates id-for-id and line-for-line - from your own two discs, in the browser or on the CLI. The official text is never bundled with this site.</p>
+  <table>
+    <thead><tr><th>Command</th><th>Does</th></tr></thead>
+    <tbody>
+      <tr><td><code>translate lift-official --from PAL.bin --target USA.bin -o pack.yaml</code></td><td>Detects the language, re-keys every table and line into a filled working pack. <code>--fold-accents</code> (browser default) maps <code>&eacute;</code>&rarr;<code>e</code>, <code>&szlig;</code>&rarr;<code>ss</code>.</td></tr>
+      <tr><td><code>translate diff-disc</code></td><td>Alignment counts between two discs, text-free.</td></tr>
+      <tr><td><code>translate fit-report</code></td><td>Per-string vs per-MAN fit, text-free.</td></tr>
+    </tbody>
+  </table>
+  <p><strong>Not all of it fits, because of sector alignment:</strong> USA scenes are packed with zero slack, so a longer line overflows. Roughly a third of the dialogue lands in place; the rest is reported, not dropped quietly. <code>import --allow-relayout</code> closes the residual on the CLI.</p>
+  <details class="disclosure">
+    <summary>Details: fit numbers and the recommended path</summary>
+    <div class="disclosure-body">
+      <p>The PAL discs gave most scene entries one extra sector at mastering. In place, name tables land 36-60% and dialogue about half per string. Overlay <code>ui_menu</code> labels are not lifted - the PAL overlays place their pools elsewhere. Recommended path: lift &rarr; <code>fit-report</code> &rarr; import with relayout &rarr; font patch &rarr; <code>strip</code> to <code>site/lang/&lt;lang&gt;.yaml</code>. Full layout, accent map and fit numbers: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/pal-localizations.md" target="_blank" rel="noopener"><code>pal-localizations.md</code></a>.</p>
+    </div>
+  </details>
 </section>
 
 <section class="doc-section" id="baked-text">
-  <h2>Textures with baked-in text</h2>
-  <p>Some UI text is not a string at all - it is pixels in a texture. Replacing one means authoring new glyph art at the <strong>exact same TIM footprint</strong> (identical width / height / bpp / CLUT layout) so the same-size in-place write applies; the <a href="rom-patcher.html">ROM patcher</a>'s texture replacement and the <code>tim</code> crate's PNG encoder make that mechanically possible. The blocker is art authoring (and, for logos, rights), not the pipeline.</p>
+  <h2>Text baked into textures</h2>
+  <p>Some UI text is pixels in a texture, not a string. Replacing one means new art at the <strong>exact same TIM footprint</strong> so the same-size write applies; the <a href="rom-patcher.html">ROM patcher</a>'s texture replacement makes that possible. The blocker is art, not the pipeline.</p>
+  <details class="disclosure">
+    <summary>Details: the text-bearing textures and their footprints</summary>
+    <div class="disclosure-body">
   <table>
     <thead><tr><th>Texture</th><th>Baked text</th><th>Notes</th></tr></thead>
     <tbody>
-      <tr><td>Title wordmark (PROT 0888)</td><td>logo, <code>PRESS START BUTTON</code>, copyright bands</td><td>bands are sub-rects of one 256&times;256 TIM; the prompt is a candidate for a same-footprint band swap, copyright bands must stay</td></tr>
-      <tr><td>Title menu <code>NEW GAME</code> / <code>CONTINUE</code></td><td>drawn at runtime from the glyph atlas</td><td>real text, but in the title overlay the pipeline does not address by coordinate</td></tr>
-      <tr><td>Save/load UI (PROT 0899 + gap TIMs)</td><td><code>SLOT n</code> pill, the <code>Load</code> panel wordmark</td><td>small 4bpp TIMs at fixed offsets; a same-footprint swap is feasible (<a href="../subsystems/save-screen.html">save screen</a>)</td></tr>
-      <tr><td>Config-screen chrome (PROT 0899)</td><td>option-screen chrome</td><td>the labels themselves are <code>ui_menu</code> strings, already translatable</td></tr>
-      <tr><td>In-battle command ring</td><td><code>Attack</code> / <code>Arts</code> / <code>Magic</code> / <code>Item</code></td><td>icon sprites, not text; a worded localisation needs new icon art</td></tr>
+      <tr><td>Title wordmark (PROT 0888)</td><td>logo, <code>PRESS START BUTTON</code>, copyright bands</td><td>bands are sub-rects of one 256&times;256 TIM; copyright bands must stay</td></tr>
+      <tr><td>Title menu <code>NEW GAME</code> / <code>CONTINUE</code></td><td>drawn from the glyph atlas</td><td>real text in a region the pipeline does not address by coordinate</td></tr>
+      <tr><td>Save / load UI (PROT 0899)</td><td><code>SLOT n</code> pill, <code>Load</code> panel</td><td>small 4bpp TIMs; a same-footprint swap is feasible (<a href="../subsystems/save-screen.html">save screen</a>)</td></tr>
+      <tr><td>In-battle command ring</td><td><code>Attack / Arts / Magic / Item</code></td><td>icon sprites; a worded localisation needs new icon art</td></tr>
       <tr><td>Boot / publisher logos (PROT 0895)</td><td>brand marks</td><td><strong>do not alter</strong> - trademark art</td></tr>
       <tr><td>Opening prologue caption</td><td>a baked caption under the crawl</td><td>the crawl narration itself is dialogue and is covered</td></tr>
     </tbody>
   </table>
-  <p>A font patch - new glyph tiles + width table in the menu glyph atlas (see <a href="../subsystems/boot.html">boot</a> and <a href="../formats/dialog-font.html">dialog font</a>) - is the separate, larger effort that would lift the printable-ASCII-only limitation across <em>all</em> text. The official PAL discs already carry such an atlas, with the accent cells laid out CP437-style.</p>
+    </div>
+  </details>
 </section>
 
 <section class="doc-section" id="ai-packs">
   <h2>AI example packs</h2>
-  <p>Machine-translated packs built with this pipeline are <strong>examples / starting points only</strong> - the tooling exists so communities can produce and iterate on real human translations. Prefer community packs; treat any AI-filled pack as a draft to correct, and credit editors in <code>contributors</code>.</p>
+  <p>Machine-translated packs are <strong>starting points only</strong>. Prefer community packs, treat any AI-filled pack as a draft to correct, and credit editors in <code>contributors</code>.</p>
+</section>
+
+<section class="doc-section" id="how-we-know">
+  <h2>How we know</h2>
+  <table>
+    <thead><tr><th>Component</th><th>Where</th><th>What it proves</th></tr></thead>
+    <tbody>
+      <tr><td>Exporter / importer</td><td><code>crates/patcher/src/translation/{export,import}.rs</code></td><td>Same-size writes, source check, per-scene rollback, two-phase ordering.</td></tr>
+      <tr><td>Markup codec</td><td><code>translation/markup.rs</code></td><td>Byte-exact decode&harr;encode; per-character encodability errors.</td></tr>
+      <tr><td>Carrier gate</td><td><code>translation/segments.rs</code> (<code>is_dialog_carrier</code>), test <code>translation_carrier_gate_real.rs</code></td><td>Binary banks and real carriers separate on the retail disc.</td></tr>
+      <tr><td>Overlay UI pools</td><td><code>translation/ui.rs</code>, test <code>translation_ui_menu_real.rs</code></td><td>Menu / battle label windows at their disc coordinates.</td></tr>
+      <tr><td>MAN rewriter</td><td><code>legaia_asset::man_edit</code> (<code>apply_text_edits</code>, <code>text_edits_preserve_scripts</code>)</td><td>A grown line leaves the scene script identical when re-walked.</td></tr>
+      <tr><td>PAL lift + fit</td><td><code>translation/{lift,diff,fit}.rs</code>, tests <code>translate_lift_official_real.rs</code>, <code>translate_relayout_import_real.rs</code></td><td>1:1 alignment; the fit numbers above.</td></tr>
+      <tr><td>Shipped-pack hygiene</td><td>test <code>translation_shipped_packs.rs</code></td><td>No tracked pack carries <code>source:</code>.</td></tr>
+    </tbody>
+  </table>
 </section>
 
 <section class="doc-section" id="see-also">

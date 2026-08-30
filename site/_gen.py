@@ -506,6 +506,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("subsystems/motion-vm.html",  "Motion VM (camera / NPC)",      "subsystems/motion-vm",       "subsystems/motion-vm.html"),
     ("subsystems/effect-vm.html",  "Effect VM",                     "subsystems/effect-vm",       "subsystems/effect-vm.html"),
     ("subsystems/battle.html",     "Battle",                        "subsystems/battle",          "subsystems/battle.html"),
+    ("subsystems/battle-internals.html","Battle: internals",       "subsystems/battle-internals","subsystems/battle-internals.html"),
     ("subsystems/battle-action.html","Battle action state machine", "subsystems/battle-action",   "subsystems/battle-action.html"),
     ("subsystems/history-battle.html","Battle: capture notes",      "subsystems/history-battle",  "subsystems/history-battle.html"),
     ("subsystems/battle-formulas.html","Battle formulas",            "subsystems/battle-formulas", "subsystems/battle-formulas.html"),
@@ -523,6 +524,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("subsystems/inn.html",        "Inn",                           "subsystems/inn",             "subsystems/inn.html"),
     ("subsystems/level-up.html",   "Level-up",                      "subsystems/level-up",        "subsystems/level-up.html"),
     ("subsystems/cutscene.html",   "Cutscene (STR mode)",           "subsystems/cutscene",        "subsystems/cutscene.html"),
+    ("subsystems/cutscene-internals.html","Cutscene: internals",     "subsystems/cutscene-internals","subsystems/cutscene-internals.html"),
     ("subsystems/engine.html",     "Engine reimplementation",       "subsystems/engine",          "subsystems/engine.html"),
     ("formats/index.html",         "Formats",                       "formats/index",              "formats/index.html"),
     # Per-format pages (mirrored from docs/formats/)
@@ -589,6 +591,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("tooling/spine-flag-writers-capture.html","Spine flag-writers capture","tooling/spine-flag-writers-capture","tooling/spine-flag-writers-capture.html"),
     ("tooling/determinism-replay.html","Determinism + replay",      "tooling/determinism-replay", "tooling/determinism-replay.html"),
     ("tooling/randomizer.html",    "Randomizer / disc patcher",     "tooling/randomizer",         "tooling/randomizer.html"),
+    ("tooling/randomizer-internals.html","Randomizer: internals",   "tooling/randomizer-internals","tooling/randomizer-internals.html"),
     ("tooling/translation.html",   "Translation / language packs",  "tooling/translation",        "tooling/translation.html"),
     ("tooling/port-catalog.html",  "Port catalog",                  "tooling/port-catalog",       "tooling/port-catalog.html"),
     ("tooling/disc-coverage.html","Disc coverage",                 "tooling/disc-coverage",      "tooling/disc-coverage.html"),

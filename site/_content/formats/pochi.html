@@ -17,6 +17,26 @@
 
 <section class="doc-section" id="layout">
   <h2>Byte layout</h2>
+  <figure class="overlay-strip">
+    <svg viewBox="0 0 760 96" width="100%" style="max-width:760px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="One 2048-byte sector: pochi fill, an EOF byte, then scratch tail">
+      <style>
+        .po-seg { font: 12px 'Inter', sans-serif; fill: currentColor; text-anchor: middle; }
+        .po-off { font: 10px 'JetBrains Mono', monospace; fill: var(--accent); }
+        .po-box { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.2; }
+        .po-dim { fill: none; stroke: var(--border); stroke-width: 1.1; stroke-dasharray: 3 3; }
+      </style>
+      <rect x="10" y="20" width="620" height="34" class="po-box"/>
+      <rect x="630" y="20" width="24" height="34" class="po-box"/>
+      <rect x="654" y="20" width="96" height="34" class="po-dim"/>
+      <text x="320" y="41" class="po-seg">ASCII "pochipochipochi..."</text>
+      <text x="642" y="41" class="po-seg" style="font-size:10px">EOF</text>
+      <text x="702" y="41" class="po-seg">tail</text>
+      <text x="10" y="72" class="po-off">+0x000</text>
+      <text x="614" y="72" class="po-off">+0x786</text>
+      <text x="750" y="72" class="po-off" text-anchor="end">0x800</text>
+    </svg>
+    <figcaption>One sector, nothing else: 1926 bytes of fill, a DOS EOF byte <code>0x1A</code>, scratch to the sector end.</figcaption>
+  </figure>
   <table class="layout">
     <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
     <tbody>

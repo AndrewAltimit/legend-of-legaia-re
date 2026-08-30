@@ -1,0 +1,325 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; <a href="battle.html">battle</a> &middot; internals</div>
+  <h1>Battle internals</h1>
+  <p class="lede">The field-level companion to the <a href="battle.html">battle subsystem</a>: the roster pointer table and actor struct, the battle context, the character and monster records the loader reads, the exact camera, the heap ledger that bounds a formation, the status bits and the party-wipe hand-off. Read the main page first; this one assumes its vocabulary and is mostly tables.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Roster</dt><dd>8 &times; u32 actor pointers at <code>0x801C9370</code>; slots 0..2 party, 3..7 monsters</dd>
+    <dt>Context</dt><dd>One struct at <code>0x800EB654</code>, reached through the global pointer <code>0x8007BD24</code></dd>
+    <dt>Formation</dt><dd>Four monster-id cells at <code>0x8007BD0C</code>, a 3-byte party roster at <code>0x8007BD10</code>, per-battle flags byte <code>0x8007BD60</code></dd>
+    <dt>Character record</dt><dd><code>0x414</code> bytes per member at <code>0x80084708 + n*0x414</code> (the save-file block)</dd>
+    <dt>Monster record</dt><dd>Decoded archive slot (PROT 867), stat head at <code>+0x00</code>, mesh at <code>+0x04</code>, texture pool at <code>+0x08</code></dd>
+    <dt>Heap</dt><dd>One ~1.23 MB best-fit heap; ~145 KB workable for distinct monster blocks</dd>
+    <dt>Engine</dt><dd><code>engine-core</code> (<code>BattleActor</code>, <code>battle_seats</code>, <code>MonsterMesh</code>), <code>engine-vm::battle_action</code>, <code>legaia_asset::monster_archive</code></dd>
+    <dt>Confidence</dt><dd>Roster, context cursors, seats, camera, heap ledger, wipe path: Confirmed. A few actor-struct fields (<code>+0x3C/+0x40</code> mid-battle role, status timers): Inferred</dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="actor-struct">
+  <h2>Roster and actor struct</h2>
+  <figure class="overlay-strip">
+    <svg viewBox="0 0 900 260" width="100%" style="max-width: 900px; font-family: var(--font-mono); font-size: 12px;" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The 8-slot battle actor pointer table: slots 0 to 2 are the party, 3 to 7 the monsters; the context byte at offset 0x13 names the acting slot, whose pointer leads to one actor struct">
+      <defs><marker id="bi-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/></marker></defs>
+      <text x="20" y="24" fill="var(--text-muted)">0x801C9370 - 8 x u32 pointers</text>
+      <g stroke="var(--border)" fill="var(--bg-raised)">
+        <rect x="20" y="36" width="60" height="40"/><rect x="80" y="36" width="60" height="40"/><rect x="140" y="36" width="60" height="40"/>
+        <rect x="200" y="36" width="60" height="40"/><rect x="260" y="36" width="60" height="40"/><rect x="320" y="36" width="60" height="40"/><rect x="380" y="36" width="60" height="40"/><rect x="440" y="36" width="60" height="40"/>
+      </g>
+      <g fill="currentColor" text-anchor="middle" dominant-baseline="middle">
+        <text x="50" y="56">0</text><text x="110" y="56">1</text><text x="170" y="56">2</text>
+        <text x="230" y="56">3</text><text x="290" y="56">4</text><text x="350" y="56">5</text><text x="410" y="56">6</text><text x="470" y="56">7</text>
+      </g>
+      <path d="M20 86 L200 86" stroke="var(--accent)" stroke-width="2"/><text x="110" y="104" fill="var(--accent)" text-anchor="middle">party (formation order)</text>
+      <path d="M200 86 L500 86" stroke="var(--text-muted)" stroke-width="2"/><text x="350" y="104" fill="var(--text-muted)" text-anchor="middle">monsters (up to 5)</text>
+      <path d="M230 76 L230 150 L560 150" fill="none" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#bi-arrow)"/>
+      <text x="250" y="140" fill="var(--text-muted)">table[ctx+0x13] = the acting actor</text>
+      <rect x="570" y="36" width="310" height="210" fill="var(--bg-raised)" stroke="var(--accent)"/>
+      <text x="586" y="58" fill="currentColor" font-weight="600">actor struct</text>
+      <g fill="var(--text-muted)">
+        <text x="586" y="82">+0x07   state byte</text>
+        <text x="586" y="102">+0x34 / +0x38   world X / Z</text>
+        <text x="586" y="122">+0x14C..  HP / MP / AGL pairs</text>
+        <text x="586" y="142">+0x16E  status halfword</text>
+        <text x="586" y="162">+0x1DD  target slot</text>
+        <text x="586" y="182">+0x1DE  action category</text>
+        <text x="586" y="202">+0x1DF..+0x1F2  action queue</text>
+        <text x="586" y="222">+0x230  mesh pointer</text>
+      </g>
+    </svg>
+    <figcaption>The pointer table is the battle's roster; a slot number is a combatant's identity for the whole fight.</figcaption>
+  </figure>
+  <p>Every combatant is one actor struct. Slots are filled at setup in formation order; empty seats hold a null pointer. The fields other routines read:</p>
+  <table class="layout">
+    <thead><tr><th>Offset</th><th>Type</th><th>Field</th></tr></thead>
+    <tbody>
+      <tr><td>+0x07</td><td>u8</td><td>Per-actor state byte; drives the action state machine</td></tr>
+      <tr><td>+0x1F</td><td>u8</td><td>Hit-radius / size byte read by the range check (party sizes from a static table, monster size from the record)</td></tr>
+      <tr><td>+0x34 / +0x38</td><td>i16</td><td>Live world X / Z (Y in the adjacent halfwords, 0 on the flat stage)</td></tr>
+      <tr><td>+0x3C / +0x40</td><td>i16</td><td>Authored seat, stamped at setup and copied into the live position; the b-actor position for the range check. Its mid-battle role is Inferred</td></tr>
+      <tr><td>+0x4A / +0x4C</td><td>u8 / ptr</td><td>Action-entry count and entry pointer array (each entry: id byte first, AGL cost at <code>+0x74</code>)</td></tr>
+      <tr><td>+0x58</td><td>u8</td><td>Monster size <code>&lt;&lt; 5</code></td></tr>
+      <tr><td>+0x14C / +0x150 / +0x154</td><td>u16 pairs</td><td>HP, MP, AGL (cur, max); mirrored at <code>+0x172..+0x174</code></td></tr>
+      <tr><td>+0x158 / +0x15C / +0x160</td><td>u16</td><td>ATK, DEF-high, DEF-low</td></tr>
+      <tr><td>+0x164 / +0x168 / +0x16C</td><td>u16</td><td>SPD, INT, initiative key for the current round</td></tr>
+      <tr><td>+0x16E</td><td>u16</td><td>Status halfword (<a href="#status-effects">below</a>)</td></tr>
+      <tr><td>+0x1BC</td><td>ptr</td><td>Name string</td></tr>
+      <tr><td>+0x1DA / +0x1DC</td><td>u8</td><td>Staged animation channel and its restage counter - every clip goes through this one channel</td></tr>
+      <tr><td>+0x1DD / +0x1DE</td><td>u8</td><td>Target slot; action category (0 Arts, 1 Item, 2 Magic, 3 Attack, 4 Spirit, 5 Run)</td></tr>
+      <tr><td>+0x1DF..+0x1F2</td><td>u8[]</td><td>Action queue: chosen action id first (also the <a href="../formats/move-power.html">move-power</a> index), then per-action parameters</td></tr>
+      <tr><td>+0x1EF..+0x1F3</td><td>u8[5]</td><td>Hit-reaction clip slots (flinch, knockdown, get-up, block), filled from the record's tagged entries</td></tr>
+      <tr><td>+0x1FA</td><td>u8</td><td>Caster's spell iterator, cleared by the renderer at magic sustain</td></tr>
+      <tr><td>+0x230</td><td>ptr</td><td>Battle-model TMD (from record <code>+0x04</code>), walked as a <code>0x1C</code>-stride object table</td></tr>
+    </tbody>
+  </table>
+  <p>The range check between two slots is a euclidean distance from the live positions plus the sum of both size bytes, clamped to a per-actor cap. Slot pointers are the only way any battle routine names a combatant.</p>
+</section>
+
+<section class="doc-section" id="ctx-struct">
+  <h2>Battle context struct</h2>
+  <p>One struct describes the fight in progress. Two byte cursors inside it hand the round back and forth: the <strong>menu machine</strong> walks <code>+0x06</code>, the <strong>action machine</strong> walks <code>+0x07</code>. Only the first 32 bytes vary between captures; beyond <code>+0x40</code> is text-rendering scratch.</p>
+  <table class="layout">
+    <thead><tr><th>Offset</th><th>Type</th><th>Field</th></tr></thead>
+    <tbody>
+      <tr><td>+0x00 / +0x01</td><td>u8</td><td>Party count / monster count (the seat-table row selectors)</td></tr>
+      <tr><td>+0x06</td><td>u8</td><td>Command-flow byte: <code>0x0A</code> intro, <code>0x1E</code> Begin / Run, <code>0x28</code> command ring, <code>0x3C</code> item, <code>0x46</code> magic, <code>0x50</code> arts, <code>0x5A</code> target, <code>0x78</code> Auto / Command, <code>0x6E</code> then <code>0xFE</code> committed</td></tr>
+      <tr><td>+0x07</td><td>u8</td><td>Action-state byte the action machine switches on (<code>0xFF</code> idle); bands on <a href="battle-action.html">battle action</a></td></tr>
+      <tr><td>+0x09</td><td>u8</td><td>Round counter</td></tr>
+      <tr><td>+0x13</td><td>u8</td><td>Acting slot index into the roster table</td></tr>
+      <tr><td>+0x14..+0x1B</td><td>u8[8]</td><td>Per-action parameters (target slot, sub-action, direction / element, second target)</td></tr>
+      <tr><td>+0x1D</td><td>u8</td><td>Action context: <code>3</code> for summon and capture, else <code>0</code></td></tr>
+      <tr><td>+0x26</td><td>u8</td><td>Boss phase counter (bumped by the Cort form-change arm)</td></tr>
+      <tr><td>+0x29..+0x2D</td><td>bytes</td><td>Active spell / move icon glyph escape</td></tr>
+      <tr><td>+0x269</td><td>u8</td><td>Captured Seru id, set by the capture roll</td></tr>
+      <tr><td>+0x279</td><td>u8</td><td>Cast-module phase byte (<a href="#cast-modules">below</a>)</td></tr>
+      <tr><td>+0x287</td><td>u8</td><td>No-escape flag, copied from the per-battle flags byte</td></tr>
+      <tr><td>+0x28A</td><td>u8</td><td>Battle mode - the boss multi-phase gate the AI reads</td></tr>
+      <tr><td>+0xA9..+0xEC</td><td>text</td><td>Battle message buffer</td></tr>
+      <tr><td>+0x6D6 / +0x6D8 / +0x6DA</td><td>u16</td><td>Intro timer, Done-band countdown, drifting camera yaw</td></tr>
+    </tbody>
+  </table>
+  <h3 id="formation-cells">Formation cells</h3>
+  <p>Three small globals beside the context carry the formation from the trigger to every later stage:</p>
+  <table class="layout">
+    <thead><tr><th>Address</th><th>Size</th><th>Field</th></tr></thead>
+    <tbody>
+      <tr><td>0x8007BD0C</td><td>u8[4]</td><td>Monster ids per seat, copied from the encounter row by the entity confirm state. Only the first occurrence of an id streams a record; the setup routine shuffles species order on a 50% coin flip</td></tr>
+      <tr><td>0x8007BD10</td><td>u8[3]</td><td>Party roster (character ids per party slot) - the win-pose staging indexes it by acting slot</td></tr>
+      <tr><td>0x8007BD60</td><td>u8</td><td>Per-battle flags. Bit <code>0x80</code> does double duty: set from the row's header byte it selects the alternate seat family, the particle intro and the no-escape flag; during the fight it is the party-survived latch (<a href="#wipe-path">below</a>)</td></tr>
+      <tr><td>0x8007B64A</td><td>u8</td><td>Stage id: <code>0</code> for every retail fight except Tetsu (1) and Cort (2, then 3 once the first form dies). Non-zero pages a code overlay at extraction <code>966 + id</code></td></tr>
+      <tr><td>0x8007B7FC</td><td>u8</td><td>Forced-battle id. Has no writer anywhere on the disc: dev-harness residue that would seed the cells from the id and exit to the debug menu</td></tr>
+    </tbody>
+  </table>
+  <details class="disclosure">
+    <summary>Details: the species-order rebuild and why three species is unsafe</summary>
+    <div class="disclosure-body">
+      <p>Before any monster streams, setup classifies the cells into "the first species" and "the other species", holding the other in a single register, then on a coin flip rebuilds the array as <code>[other &times; n, first &times; m]</code>. With two species this is an exact swap. With three, the register is overwritten by each later species, so <code>[a, b, c]</code> rebuilds as <code>[c, c, a]</code>: the middle species vanishes and the last is duplicated - on the other half of the flip all three stream verbatim, which turns an over-budget trio into a probabilistic load hang. The randomizer caps every formation at two distinct species for this reason.</p>
+    </div>
+  </details>
+</section>
+
+<section class="doc-section" id="heap-budget">
+  <h2>The heap ledger</h2>
+  <p>Everything the loader places lives in one best-fit heap of ~1.23 MB (arena <code>0x80091800..0x801C6000</code>). The malloc wrapper returns NULL on exhaustion and the monster streamer copies through that pointer unchecked, so an over-budget formation writes a decoded block over kernel RAM and the machine locks. Neither VRAM (each seat owns its own texture column) nor the AI bounds a formation - the heap does.</p>
+  <table class="data-table">
+    <thead><tr><th>Allocation</th><th>Bytes</th><th>Note</th></tr></thead>
+    <tbody>
+      <tr><td>Scene asset buffer</td><td><code>0x62C00</code></td><td>The resident field scene</td></tr>
+      <tr><td>GPU packet double buffer</td><td><code>0x64000</code></td><td><code>0x32000</code> &times; 2</td></tr>
+      <tr><td>Enemy stager working buffer</td><td><code>0x2E390</code></td><td>Fixed size, independent of party count</td></tr>
+      <tr><td>Battle context</td><td><code>0x7A34</code></td><td></td></tr>
+      <tr><td>Party-mesh decode temp</td><td><code>0x19000</code></td><td>Transient, freed in-loop</td></tr>
+      <tr><td>One block per distinct monster</td><td><code>block[+0x08]</code> each</td><td>Stats + name + TMD + action entries + animation streams; the texture pool decodes into GPU staging, not the heap</td></tr>
+      <tr><td>Post-monster tail</td><td>~19.5 KB</td><td><code>0x1800</code> + <code>0x3100</code> + small nodes</td></tr>
+    </tbody>
+  </table>
+  <p>About 164 KB remains at the first monster allocation and the tail needs ~19.5 KB, so the workable budget for distinct monster blocks is <strong>~145 KB</strong>. Retail's largest authored formation costs 124.3 KB; the three Delilas blocks cost 81-84 KB each, so any two together overshoot - which is why the Delilas Challenge fields them one per round. Instruments: <code>autorun_delilas_battle_load.lua</code> (allocator breakpoints + free-ring walk), <code>battle-heap-walk.py</code> (offline from a save-state).</p>
+</section>
+
+<section class="doc-section" id="camera">
+  <h2>Camera and seats</h2>
+  <p>The orbit camera (game mode <code>0x15</code>) projects a world vertex as <code>screen = H &middot; (R &middot; v + TR) / Z</code>, with the constants below. The base matrix holds <code>16384 &middot; I</code> - a 4x uniform world scale composed under each actor, which is what makes the small battle meshes project at retail size against the same deep translation the backdrop uses at 1x.</p>
+  <table class="layout">
+    <thead><tr><th>Constant</th><th>Value</th><th>Note</th></tr></thead>
+    <tbody>
+      <tr><td>pitch</td><td>32</td><td>12-bit angle, 4096 = 360&deg;</td></tr>
+      <tr><td>yaw</td><td><code>0x8007B792</code></td><td>Orbit azimuth; idles at &minus;4 units per frame</td></tr>
+      <tr><td>TR</td><td>(0, 1280, 7680)</td><td>Fixed translation; target = world origin</td></tr>
+      <tr><td>H</td><td>256</td><td>GTE projection register</td></tr>
+      <tr><td>base matrix</td><td><code>0x8007BF10</code> = 16384 &middot; I</td><td>4x world scale (GTE 4096 = 1.0)</td></tr>
+      <tr><td>ground grid</td><td>28 &times; 28 cells, pitch <code>0x200</code></td><td>GTE-rasterised flat plane, not a mesh</td></tr>
+      <tr><td>dome</td><td>two actors from one half-shell mesh</td><td>Half turn about Y by default; X mirror for stages listed at <code>0x80078B50</code></td></tr>
+    </tbody>
+  </table>
+  <p>Seats are two static tables of <code>[i16 x, y, z, pad]</code> entries selected by combatant count (party table <code>0x800775C8</code>, stride <code>0x18</code>; monster table <code>0x80077608</code>, stride <code>0x20</code>, alternate family four rows up). The values are on the <a href="battle.html#battle-background">main page</a>; engine mirror <code>engine-core::battle_seats</code>.</p>
+</section>
+
+<section class="doc-section" id="character-record">
+  <h2>Character record (battle fields)</h2>
+  <p>The party side of the roster is the persistent per-character record - the same <code>0x414</code>-byte block the save file stores. Battle reads stats, equipment and learned spells from it and writes HP / MP back when the fight ends. The full layout is on <a href="../formats/save-record.html">save record</a>; the battle-relevant fields:</p>
+  <table class="layout">
+    <thead><tr><th>Offset</th><th>Field</th></tr></thead>
+    <tbody>
+      <tr><td>+0xC9 / +0xCA</td><td>Current AP / bonus AP</td></tr>
+      <tr><td>+0xF4..+0x100</td><td>Active-abilities block, OR'd each frame into the global ability bitmask at <code>0x80074358</code></td></tr>
+      <tr><td>+0x104..+0x110</td><td>HP / MP / AP pairs (live)</td></tr>
+      <tr><td>+0x11A</td><td>Stat cap field (clamped to 999)</td></tr>
+      <tr><td>+0x11C..+0x122</td><td>Six stat bytes, incremented on level-up</td></tr>
+      <tr><td>+0x13C / +0x13D..+0x160</td><td>Spell count / spell ids (up to 36)</td></tr>
+      <tr><td>+0x161..+0x184</td><td>Parallel spell-level array</td></tr>
+      <tr><td>+0x185..+0x195</td><td>Displayed-skills list (count-prefixed, head-insert on item use)</td></tr>
+      <tr><td>+0x196..+0x19D</td><td>Eight equipment slot bytes</td></tr>
+      <tr><td>+0x2A7..+0x2B0</td><td>NUL-padded display name (9 bytes)</td></tr>
+      <tr><td>+0x2B0..+0x37F</td><td>Active spell-slot array, stride <code>0x14</code></td></tr>
+      <tr><td>+0x6F6</td><td>Persistent status word, seeded into actor <code>+0x16E</code> at battle start and mirrored back per frame</td></tr>
+    </tbody>
+  </table>
+  <p>A per-frame aggregator caps each member's stats at 999 and ORs the abilities block into the global bitmask that every other system reads through one bit-test helper - accessories work by flipping bits, not by editing stats.</p>
+</section>
+
+<section class="doc-section" id="monster-record">
+  <h2>Monster record</h2>
+  <p>Each species is one LZS slot of <code>0x14000</code> bytes in the monster archive at <code>(id &minus; 1) &times; 0x14000</code>. The decoded block opens on a stat head; the loader copies stats into the actor and keeps the block pointer in a side table at <code>0x801C9348</code> so the spoils routine reads rewards without copying them.</p>
+  <figure class="overlay-strip">
+    <svg viewBox="0 0 900 120" width="100%" style="max-width: 900px; font-family: var(--font-mono); font-size: 12px;" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Decoded monster block layout: stat head, name string, Legaia TMD mesh, action entries, then the texture pool">
+      <g fill="var(--bg-raised)" stroke="var(--border)">
+        <rect x="20" y="30" width="150" height="50"/><rect x="170" y="30" width="110" height="50"/><rect x="280" y="30" width="200" height="50"/><rect x="480" y="30" width="190" height="50"/><rect x="670" y="30" width="210" height="50"/>
+      </g>
+      <g fill="currentColor" text-anchor="middle" dominant-baseline="middle">
+        <text x="95" y="49">stat head</text><text x="95" y="66" fill="var(--text-muted)">+0x00</text>
+        <text x="225" y="49">name</text><text x="225" y="66" fill="var(--text-muted)">NUL string</text>
+        <text x="380" y="49">Legaia TMD</text><text x="380" y="66" fill="var(--text-muted)">head +0x04</text>
+        <text x="575" y="49">action entries</text><text x="575" y="66" fill="var(--text-muted)">head +0x4C list</text>
+        <text x="775" y="49">texture pool</text><text x="775" y="66" fill="var(--text-muted)">head +0x08</text>
+      </g>
+      <text x="20" y="104" fill="var(--text-muted)">pool: 15 x 16 BGR555 CLUTs (0x1E0 bytes), then a 4bpp page 128 or 256 texels wide x 256 rows</text>
+    </svg>
+    <figcaption>One decoded archive slot. The mesh and pool offsets are block-relative and fixed up at load.</figcaption>
+  </figure>
+  <table class="layout">
+    <thead><tr><th>Offset</th><th>Field</th><th>Destination</th></tr></thead>
+    <tbody>
+      <tr><td>+0x00</td><td>Name offset (a <code>^</code>+letter prefix is the element badge: A Fire, B Thunder, C Wind, D Water, E Earth, F Light, G Dark, H Evil)</td><td>actor <code>+0x1BC</code></td></tr>
+      <tr><td>+0x04</td><td>Battle-model TMD offset</td><td>actor <code>+0x230</code></td></tr>
+      <tr><td>+0x08</td><td>Texture / CLUT pool offset (also the block's heap cost)</td><td>VRAM via the loader</td></tr>
+      <tr><td>+0x0C / +0x0E / +0x10</td><td>HP / AGL / MP</td><td>actor <code>+0x14C</code> / <code>+0x154</code> / <code>+0x150</code></td></tr>
+      <tr><td>+0x12 / +0x14 / +0x16</td><td>ATK / DEF-high / DEF-low</td><td>actor <code>+0x158</code> / <code>+0x15C</code> / <code>+0x160</code></td></tr>
+      <tr><td>+0x18 / +0x1A</td><td>INT / SPD</td><td>actor <code>+0x168</code> / <code>+0x164</code></td></tr>
+      <tr><td>+0x1D</td><td>Element byte</td><td>Affinity matrix row</td></tr>
+      <tr><td>+0x21..+0x23</td><td>Three global spell ids the AI may cast (live when <code>&gt; 1</code>)</td><td>AI picker</td></tr>
+      <tr><td>+0x3E / +0x3F</td><td>Seru id / catch-rate percent</td><td>Capture roll</td></tr>
+      <tr><td>+0x44 / +0x46</td><td>Gold / EXP</td><td>Victory spoils</td></tr>
+      <tr><td>+0x48 / +0x49</td><td>Drop item id / drop chance percent</td><td>Per-enemy drop roll</td></tr>
+      <tr><td>+0x4A / +0x4C</td><td>Action-entry count / entry offset array</td><td>actor <code>+0x4A</code> / <code>+0x4C</code></td></tr>
+    </tbody>
+  </table>
+  <ul class="bullets">
+    <li><strong>Action entries.</strong> Each entry's first byte is a tag: <code>2/3/4/5/0xB</code> are the hit-reaction clips (their slot indices land in actor <code>+0x1EF..+0x1F3</code>), <code>0x0C..0x1F</code> are castable attacks, <code>0x23</code> is special; the AGL cost sits at entry <code>+0x74</code>. The three global ids at <code>+0x21</code> are what appear on screen; the local entry ids only gate the pose.</li>
+    <li><strong>Texture pool.</strong> Uploaded to CLUT row <code>484 + seat</code> and page column <code>(320 + seat &times; 64, 256)</code>; the on-disc CBA / TSB words are nominal and relocated per seat. Width is 128 texels unless the wide flag is set: <code>width = (pool_len &minus; 0x1E0) / 256 &times; 2</code>.</li>
+    <li><strong>Steal data</strong> is <em>not</em> here - it is a static SCUS table (<a href="../formats/steal-table.html">steal table</a>). The <a href="../monsters.html">monster viewer</a> and the engine's <code>MonsterMesh::battle_render_mesh</code> reproduce the same relocation.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="status-effects">
+  <h2>Status bits</h2>
+  <p>Every ailment is a bit in the actor's status halfword. Two overlay legs set them - the hit leg (kind byte at art descriptor <code>+0x7A</code>) and the cast leg (spell descriptor byte <code>+0x0A</code>) - sharing one kind-to-bit map. Per-status timers live in the actor around <code>+0x130</code>; their layout is Inferred.</p>
+  <table class="data-table">
+    <thead><tr><th>Status</th><th>Kind byte</th><th>Retail effect</th><th>Engine note</th></tr></thead>
+    <tbody>
+      <tr><td>Toxic</td><td>1</td><td>Drains <code>min(max_hp/16, 256)</code> per round, never kills; rolls &times;7/10; suppresses Venom's tick</td><td>4 turns (clean-room duration)</td></tr>
+      <tr><td>Numb</td><td>2</td><td>Cannot act; clears when hit</td><td>3 turns</td></tr>
+      <tr><td>Venom</td><td>3</td><td>Drains <code>min(max_hp/32, 128)</code> per round, never kills; rolls &times;9/10</td><td>6 turns</td></tr>
+      <tr><td>Sleep</td><td>4</td><td>Cannot act; wakes when hit</td><td>3 turns</td></tr>
+      <tr><td>Confuse</td><td>5</td><td>Random target on the opposite side; a confused party member is delegated to the AI resolver</td><td>Party-side auto-strike is an engine stand-in</td></tr>
+      <tr><td>Curse</td><td>6</td><td>Blocks Magic</td><td>4 turns</td></tr>
+      <tr><td>Stone</td><td>7</td><td>Cannot act or be damaged, counts as defeated; a successful escape restores it (the run band floors 0-HP members at 1)</td><td>Whole battle</td></tr>
+      <tr><td>Faint</td><td>8</td><td>KO at 0 HP; revive only</td><td>Until cured</td></tr>
+    </tbody>
+  </table>
+  <p>Bit <code>0x400</code> has no setter on the disc - every write that touches it is a clear (accessory cure, the per-round waker, item cures, the on-hit strip, battle exit). It is a latent status with a full consumer lifecycle and no infliction path. Rot (kind 5 in the art-record space) sets one random bit of <code>0x38</code>, greying out the rolled limb's attack command. Full writer inventory: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/battle.md#the-0x16e-status-halfword---retail-writer-inventory" target="_blank" rel="noopener">battle.md</a>.</p>
+</section>
+
+<section class="doc-section" id="cast-modules">
+  <h2>Capture-class cast modules</h2>
+  <p>A spell whose class byte is <code>'c'</code> is too elaborate for the battle overlay to choreograph itself. The action machine pages a small dedicated module - one PROT entry from 0935..0966, chosen by the record's <code>+1</code> sub-id - into the side overlay window and re-enters it every frame until it reports done.</p>
+  <table class="data-table">
+    <thead><tr><th>Aspect</th><th>Mechanism</th></tr></thead>
+    <tbody>
+      <tr><td>Paging</td><td>Action phase <code>0x28</code> routes the action to <code>0x6E..0x71</code>; the module loads at slot-B base <code>0x801F69D8</code>. Phase <code>0x70</code> ticks it and advances only on a zero return - no timer, so an exit gate that cannot pass is a softlock</td></tr>
+      <tr><td>Phase machine</td><td>The tick switches on context <code>+0x279</code> (<code>0..~0x11</code>, <code>0xFF</code> = done) - a second phase space under action phase <code>0x70</code></td></tr>
+      <tr><td>Tick ABI</td><td>Caster = <code>table[ctx+0x13]</code>, victim = <code>table[caster+0x1DD]</code>; clips staged through actor <code>+0x1DA</code> / <code>+0x1DC</code></td></tr>
+      <tr><td>Damage</td><td>One call per hit into the guard-bypassing roll wrapper with a baked power constant; the victim load is hardcoded to seat 0 at every apply site</td></tr>
+      <tr><td>Exemplars</td><td>PROT 958 Blazing Slash (Gi), 959 Megaton Press (Che), 960 Plasma Strike (Lu)</td></tr>
+    </tbody>
+  </table>
+  <p>Module anatomy and the patcher mirror are on <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/cast-module.md" target="_blank" rel="noopener">cast-module.md</a>.</p>
+</section>
+
+<section class="doc-section" id="wipe-path">
+  <h2>The party-wipe path</h2>
+  <p>The battle always exits the same way - into MAIN INIT - and the wipe fork lives one mode later. Three latches decide where MAIN INIT sends the game:</p>
+  <div class="flow">
+    <span class="num">1</span><span class="layer">Detect</span><span class="desc">The end-of-action gate counts living, non-petrified party members; none sets the end signal <code>0xFE</code> and wipe cause <code>5</code>, and clears the survived latch</span><span class="crate">FUN_801E295C 0x5A</span>
+    <span class="num">2</span><span class="layer">Exit</span><span class="desc">The exit selector writes <code>game_mode = 2</code> (MAIN INIT) wipe or no wipe, with the back-from-battle marker set; it never reads the wipe cause</span><span class="crate">FUN_80046A20</span>
+    <span class="num">3</span><span class="layer">Fork</span><span class="desc">With the survived latch clear and story-flag 0 clear, MAIN INIT writes <code>game_mode = 0x16</code> (CARD) with entry context <code>1</code>: the title screen with the cursor on Continue</span><span class="crate">FUN_8003AEB0</span>
+  </div>
+  <table class="data-table">
+    <thead><tr><th>Latch</th><th>Set by</th><th>Cleared by</th><th>Role</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x8007BD60</code> bit <code>0x80</code></td><td>Battle load; victory reward path; successful escape</td><td>The end-of-action wipe scans</td><td>Party-survived - a wipe is the only battle end that leaves it clear</td></tr>
+      <tr><td>Story flag 0 (<code>0x80085758</code> bit <code>0x80</code>)</td><td>The scene script, before a scripted-loss battle (the Rim Elm ambush)</td><td>MAIN INIT on every back-from-battle pass, unconditionally</td><td>Scripted-loss latch: the wipe returns to the field like a win</td></tr>
+      <tr><td>Story flag 1 (bit <code>0x40</code>)</td><td>MAIN INIT on the survived path</td><td>MAIN INIT on the wipe path</td><td>Script-readable battle outcome, tested by post-battle scene scripts</td></tr>
+    </tbody>
+  </table>
+  <p>Scripts reach the same hand-off directly through a helper twin of the gate body, called by the field-VM op <code>4C EA</code>. The mode-18/19 game-over artwork overlay (PROT 0902, 29 TIMs) has no static writer and exits to the debug menu: a dev harness around dev art. Nothing on the reachable path draws "GAME OVER".</p>
+  <details class="disclosure">
+    <summary>Details: the port's hand-off and the unseeded-party trap</summary>
+    <div class="disclosure-body">
+      <p>The port carries the scan faithfully, and it can represent a state retail cannot: a party that was never seated. <code>BattleActor::liveness</code> defaults to 0, and 0 means dead, so a world built without the roster projection would wipe on its first gate. <code>BattleActionHost::slot_seated</code> gates the wipe arm on <code>party_seated &gt; 0</code>; monster wipe still resolves so a port-only state can terminate (<code>unseeded_battle_wipe_guard.rs</code>). A real wipe raises <code>World::game_over</code>, which both hosts route to the title screen through <code>GameOverSession</code> - drawing nothing and reading no button, as retail does.</p>
+    </div>
+  </details>
+</section>
+
+<section class="doc-section" id="how-we-know">
+  <h2>How we know</h2>
+  <table class="data-table">
+    <thead><tr><th>Function</th><th>Address</th><th>What it proves</th><th>Dump / probe</th></tr></thead>
+    <tbody>
+      <tr><td>Stage setup + seats</td><td><code>FUN_800513F0</code></td><td>Seat tables, seat-to-actor copy, size byte, dome as two actors</td><td><code>ghidra/scripts/funcs/800513f0.txt</code></td></tr>
+      <tr><td>Monster init</td><td><code>FUN_80054CB0</code></td><td>Record-to-actor field map, reaction-clip slots</td><td><code>80054cb0.txt</code></td></tr>
+      <tr><td>Monster streamer</td><td><code>FUN_800542C8</code></td><td>Archive slot arithmetic, unchecked copy through the heap pointer</td><td><code>800542c8.txt</code>; <code>autorun_monster_record_source.lua</code></td></tr>
+      <tr><td>Texture pool upload</td><td><code>FUN_80055468</code></td><td>Pool layout, CLUT row and page column per seat</td><td><code>80055468.txt</code></td></tr>
+      <tr><td>Battle setup</td><td><code>FUN_80055B6C</code></td><td>Formation cells, species rebuild, stage-id override, forced-battle-id reader</td><td><code>80055b6c.txt</code>; <code>autorun_formation_cell_writers.lua</code></td></tr>
+      <tr><td>Heap</td><td><code>FUN_8002B3D4</code> / <code>FUN_80017888</code></td><td>Best-fit heap, NULL on exhaustion, the measured ledger</td><td><code>8002b3d4.txt</code>; <code>autorun_delilas_battle_load.lua</code></td></tr>
+      <tr><td>Orbit camera</td><td><code>FUN_80026988</code> / <code>FUN_80026F50</code></td><td>Projection constants and base matrix</td><td><code>80026988.txt</code>; <code>autorun_battle_render_capture.lua</code></td></tr>
+      <tr><td>Range check</td><td><code>FUN_8004E2F0</code></td><td>Distance + size-byte hit radius</td><td><code>8004e2f0.txt</code></td></tr>
+      <tr><td>Stat aggregator</td><td><code>FUN_80042558</code></td><td>999 cap, ability bitmask OR</td><td><code>80042558.txt</code></td></tr>
+      <tr><td>Status ticker + appliers</td><td><code>FUN_801E752C</code> / <code>FUN_801EC3E4</code> / <code>FUN_801E09F8</code></td><td>Poison tick formulas; the kind-to-bit map on both legs</td><td><code>overlay_0898_801e752c.txt</code>, <code>overlay_0898_801ec3e4.txt</code>, <code>overlay_0898_801e09f8.txt</code></td></tr>
+      <tr><td>Cast-module tick</td><td>PROT 958..960 at <code>0x801F69D8</code></td><td>Phase byte, tick ABI, seat-0 victim</td><td><code>8004ad80.txt</code> (materialiser); <code>autorun_delilas_enemy_cast_watch.lua</code>; <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/cast-module.md" target="_blank" rel="noopener">cast-module.md</a></td></tr>
+      <tr><td>Exit selector + wipe gate</td><td><code>FUN_80046A20</code> / <code>FUN_8003AEB0</code></td><td>Always MAIN INIT; the CARD fork and its three latches</td><td><code>80046a20.txt</code>, <code>8003aeb0.txt</code>; <code>autorun_gameover_mode_writer.lua</code></td></tr>
+      <tr><td>Forced-battle id</td><td><code>0x8007B7FC</code></td><td>No store or materialised address in SCUS or any static overlay</td><td>capstone store sweep; <code>autorun</code> boss-entry captures</td></tr>
+    </tbody>
+  </table>
+  <p>The save-state diffs behind the roster window and residency claims are on <a href="history-battle.html">capture notes</a>.</p>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="battle.html">Battle subsystem</a>
+    <a href="battle-action.html">Battle action SM</a>
+    <a href="battle-formulas.html">Battle formulas</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/cast-module.md" target="_blank" rel="noopener">Cast modules (doc)</a>
+    <a href="history-battle.html">Capture notes</a>
+    <a href="../formats/encounter.html">Encounter record</a>
+    <a href="../formats/save-record.html">Save record</a>
+    <a href="../formats/monster-animation.html">Monster animation</a>
+    <a href="../formats/steal-table.html">Steal table</a>
+    <a href="../formats/tmd.html">Legaia TMD</a>
+    <a href="../monsters.html">Monster viewer</a>
+    <a href="../reference/re-do-not-re-walk.html">Do not re-walk</a>
+  </div>
+</section>

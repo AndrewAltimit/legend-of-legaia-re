@@ -6,13 +6,8 @@
 
 <section class="doc-section" id="overview">
   <h2>The shape of the engine</h2>
-  <p>Everything on these pages comes from tracing the original PS1 code with a disassembler (Ghidra) and then reimplementing the behaviour in Rust. Names like <code>FUN_8002735c</code> are RAM addresses of functions in that trace - the game shipped without symbols, so the address <em>is</em> the name. When a page cites one, it is pointing at a specific traced routine you can find in the project's function dumps.</p>
-  <p>Legaia is a fairly typical late-90s PSX RPG engine, but with a twist: most of the gameplay logic doesn't live in the main executable.
-  <code>SCUS_942.54</code> (the game's main executable on the disc) contains the boot path, low-level I/O, the asset dispatcher, the move-table VM, the motion VM, and the audio / renderer libraries - about half the runtime.
-  The other half lives in <strong>RAM overlays</strong> - chunks of MIPS code the game streams from the disc into RAM on demand, one at a time, into one shared window.
-  There are fewer of them than the subsystem list suggests: the <em>slot-A family</em> (field/town <code>0897</code>, battle <code>0898</code>, menu <code>0899</code>, cutscene/STR <code>0970</code>, and the minigames) all load at the same base and are mutually exclusive, while the world map, save, shop, level-up, and options are <em>subsystems inside</em> the field and menu overlays, not separate ones.
-  Two of the runtime VMs (the field/event VM and the effect VM) live in these overlays - which is why "zero callers in the executable" never means "dead code" here.</p>
-
+  <p>Every page here comes from tracing the original PlayStation code with a disassembler and reimplementing the behaviour in Rust. The game shipped without symbols, so a routine's RAM address is its name: <code>FUN_8002735c</code> points at one specific traced function you can find in the project's dumps.</p>
+  <p>Half the runtime lives in the main executable <code>SCUS_942.54</code>: boot, disc I/O, the asset dispatcher, two of the VMs, the audio and rendering libraries. The other half is <strong>RAM overlays</strong> - chunks of code streamed from the disc into one shared window on demand, one at a time. Field, battle, menu, cutscene and minigame each load into that window and never coexist; the world map, save, shop, level-up and options screens are subsystems <em>inside</em> the field and menu overlays, not overlays of their own.</p>
   <figure class="overlay-strip">
     <svg viewBox="0 0 880 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="overlay-strip-title">
       <title id="overlay-strip-title">Overlay residency in the 0x801C0000 window</title>
@@ -74,14 +69,9 @@
       <rect x="40" y="290" width="800" height="22" class="ov-scus"/>
       <text x="56" y="306" class="ov-sub">SCUS_942.54: boot path, asset dispatcher, move VM, motion VM, battle setup, libsnd / libspu / libcd / libapi</text>
     </svg>
-    <figcaption>The slot-A family loads at <code>0x801CE818</code> and never coexists: battle loads on top of the field overlay, the menu on top of either.
-    The <strong>title overlay</strong> is the tail of PROT entry 899 - the same entry whose head is the options bundle - streamed raw at boot (see <a href="boot.html#title-overlay-source">boot</a>). PROT 0971 is the dev <em>debug-menu</em> overlay.
-    Several &ldquo;subsystems&rdquo; are <strong>not</strong> separate overlays: the <strong>world map</strong> is a mode of the field overlay (0897, with PROT 0981 swapped over its head for the display tick), and <strong>save / shop / level-up / options</strong> live inside the menu overlay (0899).
-    The <strong>minigames</strong> have their own <a href="../minigames.html">playable page</a>.
-    The randomizer injects a whole new vendor screen into 0899's dead space - see the <a href="../writeups/disc-patching/f-overlay-dead-region.html">overlay dead-region write-up</a>.</figcaption>
+    <figcaption>The slot-A family loads at <code>0x801CE818</code> and never coexists: battle loads on top of the field overlay, the menu on top of either. The title overlay is the tail of PROT entry 899 (see <a href="boot.html#title-overlay-source">boot</a>); PROT 0971 is the dev debug-menu overlay. Minigames have their own <a href="../minigames.html">playable page</a>; the randomizer's injected vendor screen lives in 0899's dead space (<a href="../writeups/disc-patching/f-overlay-dead-region.html">write-up</a>).</figcaption>
   </figure>
 
-  <p>The cards below group subsystems by what layer of the engine they sit at.</p>
 </section>
 
 <section class="doc-section" id="bootstrap">
@@ -206,7 +196,7 @@
 
 <section class="doc-section" id="vms">
   <h2>The runtime VMs</h2>
-  <p>Legaia's runtime is driven by a handful of small bytecode interpreters that execute scripts stored in the game's data files, so designers could author behaviour without recompiling the engine. They all talk to one shared actor model, serve different layers, and were almost certainly written by different members of the team. Four are clean bytecode dispatchers; the effect VM is a per-slot state machine - a different shape with the same architectural role.</p>
+  <p>Most in-game behaviour is authored as scripts in the data files and run by a handful of small bytecode interpreters, so designers could change behaviour without recompiling. Four are clean opcode dispatchers; the effect VM is a per-slot state machine with the same role.</p>
   <table>
     <thead><tr><th>VM</th><th>Drives</th><th>Lives in</th><th>Ops</th></tr></thead>
     <tbody>
@@ -217,7 +207,6 @@
       <tr><td><a href="effect-vm.html">Effect VM</a></td><td>Battle effect spawns</td><td>Battle overlay 0898</td><td>state machine</td></tr>
     </tbody>
   </table>
-  <p class="hint">A card for the move-table VM: <a href="move-vm.html">Move-table VM</a> - 71 opcodes in the main executable plus 61 sub-opcodes reached through its <code>0x2F</code> overlay extension.</p>
 </section>
 
 <section class="doc-section" id="port">

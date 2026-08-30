@@ -7,30 +7,60 @@
 <section class="doc-section" id="at-a-glance">
   <h2>At a glance</h2>
   <dl class="kv">
-    <dt>Magic</dt><dd><code>VABp</code> at the bank's own offset 0 - which is usually <em>not</em> the PROT entry's offset 0 (see the wrapper below)</dd>
+    <dt>Magic</dt><dd><code>VABp</code> at the bank's own offset 0 - usually <em>not</em> the PROT entry's offset 0 (see the wrapper figure)</dd>
     <dt>Where on disc</dt><dd>424 banks across 219 <code>PROT.DAT</code> entries. The <code>vab_01</code> cluster (extraction 1072..1194) holds one bank per entry; <code>0891_level_up</code> is the single multi-bank archive (206 banks); most music banks ride inside <a href="scene-bundles.html">scene streaming containers</a></dd>
+    <dt>Stride</dt><dd>32-byte header, 16-byte program slots, 32-byte tones, 8-byte-unit sample sizes</dd>
     <dt>Parser</dt><dd><code>crates/vab</code> (header + extractor + SPU-ADPCM decoder); playback side <code>engine-audio::VabBank</code></dd>
-    <dt>Confidence</dt><dd>Confirmed - standard Sony layout; the Legaia-specific laws are pinned by <code>FUN_80068D94</code> / <code>FUN_80068B98</code> and disc-gated corpus tests (<code>real_vab_program_mapping</code>, <code>real_vab_tone_attributes</code>, <code>corpus_vag_spacer</code>)</dd>
+    <dt>Confidence</dt><dd>Confirmed - standard Sony layout; the Legaia-specific rules are pinned by the bank-open and program-change routines (<a href="#how-we-know">how we know</a>) and disc-wide corpus tests</dd>
     <dt>Used by</dt><dd><a href="../subsystems/audio.html">Audio stack</a>, <a href="../media.html">Media player</a>, <a href="../viewer.html">Asset viewer</a></dd>
   </dl>
 </section>
 
 <section class="doc-section" id="overview">
   <h2>What trips up a stock VAB reader</h2>
-  <p>The format itself is documented in the PsyQ SDK, so this page only covers the parts that are Legaia-specific - the things that make a generic VAB extractor return nonsense on this disc.</p>
+  <p>The format itself is documented in the PsyQ SDK, so this page covers only the parts that are Legaia-specific - the things that make a generic VAB extractor return nonsense on this disc.</p>
   <ul class="bullets">
-    <li><strong>The bank is usually wrapped.</strong> The dominant on-disc carrier is the <a href="scene-bundles.html">scene-VAB-prefixed streaming</a> shape: a 4-byte chunk header, then the VAB body, then a second chunk header and the SEQ. So the <code>VABp</code> magic is not at offset 0 of the entry; <code>crates/vab::parse_header(buf, offset)</code> takes a starting offset for that reason.</li>
-    <li><strong>Don't trust the filename.</strong> Extraction filename labels carry the <a href="cdname.html#numbering-space">+2 CDNAME numbering shift</a>, so a block name is a hint, not a verdict. Trust the <code>VABp</code> magic and the loader constant.</li>
-    <li><strong>Program numbers are not tone-page indices.</strong> The tone pages are packed by <em>used</em> program, so a program resolves to its page by rank. Details in the next section - it is the single most consequential fact on this page.</li>
-    <li><strong>The VAG size table is 1-indexed.</strong> Its slot 0 is a spacer that is <code>0</code> in every retail bank; it is <em>not</em> a pitch or sample-rate field.</li>
-    <li><strong>Sample rate lives in <code>center</code>.</strong> A body recorded at 22.05 kHz is authored with its <code>center</code> key an octave above where it should sound. A port that also multiplies by 22050/44100 plays everything an octave low.</li>
+    <li><strong>The bank is usually wrapped.</strong> The dominant carrier is the <a href="scene-bundles.html">scene streaming</a> shape: a 4-byte chunk header, the VAB body, a second chunk header, then the SEQ. <code>crates/vab::parse_header(buf, offset)</code> takes a starting offset for that reason.</li>
+    <li><strong>Don't trust the filename.</strong> Extraction labels carry the <a href="cdname.html#numbering-space">+2 CDNAME numbering shift</a>; a block name is a hint. Trust the <code>VABp</code> magic and the loader constant.</li>
+    <li><strong>Program numbers are not tone-page indices.</strong> Tone pages are packed by <em>used</em> program, so a program finds its page by rank. This is the single most consequential fact on this page.</li>
+    <li><strong>The VAG size table is 1-indexed.</strong> Slot 0 is a spacer, <code>0</code> in every retail bank; it is not a pitch or sample-rate field.</li>
+    <li><strong>Sample rate lives in <code>center</code>.</strong> A 22.05 kHz body is authored with its <code>center</code> key an octave high. A port that also scales by 22050/44100 plays everything an octave low.</li>
   </ul>
+
+  <figure class="overlay-strip">
+    <svg viewBox="0 0 880 112" width="100%" style="max-width: 880px; height: auto;" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A scene streaming entry: 4-byte chunk header, VAB bank, 4-byte chunk header, SEQ track" aria-labelledby="vabwrap-title">
+      <title id="vabwrap-title">How a music bank sits inside a scene streaming container</title>
+      <style>
+        .vw-box  { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.3; }
+        .vw-soft { fill: var(--bg-raised); stroke: var(--border); stroke-width: 1.1; stroke-dasharray: 3 3; }
+        .vw-lab  { font: 12px var(--font-body, sans-serif); fill: currentColor; }
+        .vw-sub  { font: 10px var(--font-mono, monospace); fill: var(--text-muted); }
+        .vw-off  { font: 10px var(--font-mono, monospace); fill: var(--accent); }
+      </style>
+      <text x="20" y="22" class="vw-off">+0</text>
+      <rect x="20" y="30" width="96" height="48" class="vw-soft"/>
+      <text x="68" y="50" class="vw-lab" text-anchor="middle">chunk hdr</text>
+      <text x="68" y="66" class="vw-sub" text-anchor="middle">4 bytes</text>
+      <text x="126" y="22" class="vw-off">+4 = VAB offset 0</text>
+      <rect x="126" y="30" width="330" height="48" class="vw-box"/>
+      <text x="291" y="50" class="vw-lab" text-anchor="middle">VAB bank</text>
+      <text x="291" y="66" class="vw-sub" text-anchor="middle">VABp - ProgAtr - tone pages - sizes - VAG bodies</text>
+      <rect x="466" y="30" width="96" height="48" class="vw-soft"/>
+      <text x="514" y="50" class="vw-lab" text-anchor="middle">chunk hdr</text>
+      <text x="514" y="66" class="vw-sub" text-anchor="middle">4 bytes</text>
+      <rect x="572" y="30" width="288" height="48" class="vw-box"/>
+      <text x="716" y="50" class="vw-lab" text-anchor="middle">SEQ track</text>
+      <text x="716" y="66" class="vw-sub" text-anchor="middle">pQES - events - FF 2F</text>
+      <text x="20" y="102" class="vw-sub">[chunk header][VAB][chunk header][SEQ] - parse_header(buf, 4) skips the wrapper.</text>
+    </svg>
+    <figcaption>Most retail BGM is a wrapped pair - bank first, sequence second - inside a scene's streaming entry. <code>SceneAssets::seq_in_stream_entries</code> and <code>bgm_seq_offset</code> slice past the wrappers.</figcaption>
+  </figure>
 </section>
 
 <section class="doc-section" id="layout">
   <h2>Layout</h2>
   <p>A bank is a fixed 32-byte header, a 128-slot program table, a packed run of 16-tone pages, a 256-entry sample-size table, and then the sample bodies.</p>
-  <table>
+  <table class="layout">
     <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
     <tbody>
       <tr><td><code>+0x00</code></td><td>4</td><td><code>magic</code></td><td><code>VABp</code></td></tr>
@@ -41,72 +71,75 @@
       <tr><td><code>+0x14</code></td><td>u16</td><td><code>ts</code></td><td>Total tone count</td></tr>
       <tr><td><code>+0x16</code></td><td>u16</td><td><code>vs</code></td><td>Number of VAG sample bodies</td></tr>
       <tr><td><code>+0x18</code></td><td>u8 &times; 4</td><td>master vol / pan, attr</td><td>Bank-wide mix defaults</td></tr>
-      <tr><td><code>+0x20</code></td><td>128 &times; 16</td><td><code>ProgAtr[128]</code></td><td>One slot per program number; <code>tones</code> byte, vol, pan, and reserved words retail reuses at open time</td></tr>
+      <tr><td><code>+0x20</code></td><td>128 &times; 16</td><td><code>ProgAtr[128]</code></td><td>One slot per program number: <code>tones</code> byte, vol, pan, and reserved words retail reuses at open time</td></tr>
       <tr><td><code>+0x820</code></td><td><code>ps</code> &times; 16 &times; 32</td><td><code>VagAtr</code> pages</td><td>Packed: one 16-tone page per used program, in slot order</td></tr>
       <tr><td>after pages</td><td>256 &times; u16</td><td><code>vag_size[]</code></td><td>1-indexed sizes in 8-byte units; <code>[0]</code> is the spacer</td></tr>
       <tr><td>after table</td><td>-</td><td>VAG bodies</td><td>SPU-ADPCM sample data, back to back</td></tr>
     </tbody>
   </table>
-
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 880 110" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="vabwrap-title">
-      <title id="vabwrap-title">How a music bank sits inside a scene streaming container</title>
-      <style>
-        .vw-box  { fill: var(--bg-card); stroke: var(--accent); stroke-width: 1.3; }
-        .vw-soft { fill: var(--bg-card); stroke: var(--border); stroke-width: 1.1; stroke-dasharray: 3 3; }
-        .vw-lab  { font: 12px var(--font-body, sans-serif); fill: var(--text); }
-        .vw-sub  { font: 10px var(--font-mono, monospace); fill: var(--text-muted); }
-        .vw-off  { font: 10px var(--font-mono, monospace); fill: var(--accent); }
-      </style>
-      <text x="20" y="22" class="vw-off">+0</text>
-      <rect x="20" y="30" width="90" height="48" class="vw-soft"/>
-      <text x="28" y="50" class="vw-lab">chunk hdr</text>
-      <text x="28" y="66" class="vw-sub">4 bytes</text>
-      <text x="120" y="22" class="vw-off">+4 = VAB offset 0</text>
-      <rect x="120" y="30" width="330" height="48" class="vw-box"/>
-      <text x="130" y="50" class="vw-lab">VAB bank</text>
-      <text x="130" y="66" class="vw-sub">VABp ... ProgAtr ... tone pages ... sizes ... VAG bodies</text>
-      <rect x="460" y="30" width="90" height="48" class="vw-soft"/>
-      <text x="468" y="50" class="vw-lab">chunk hdr</text>
-      <text x="468" y="66" class="vw-sub">4 bytes</text>
-      <rect x="560" y="30" width="300" height="48" class="vw-box"/>
-      <text x="570" y="50" class="vw-lab">SEQ track</text>
-      <text x="570" y="66" class="vw-sub">pQES ... events ... FF 2F</text>
-      <text x="20" y="100" class="vw-sub">The dominant on-disc shape: [chunk header][VAB][chunk header][SEQ]. parse_header(buf, 4) skips the wrapper.</text>
-    </svg>
-    <figcaption>Most retail BGM is a wrapped pair - bank first, sequence second - inside a scene's streaming entry. <code>SceneAssets::seq_in_stream_entries</code> and <code>bgm_seq_offset</code> slice past the wrappers.</figcaption>
-  </figure>
 </section>
 
 <section class="doc-section" id="program-slots-vs-tone-pages">
   <h2>Program slots vs packed tone pages</h2>
-  <p>A SEQ ProgramChange (or an SFX descriptor) names a <strong>program number</strong>, which indexes the 128-slot <code>ProgAtr</code> table directly. But the tone pages that follow are <em>packed</em>: there is one 16-tone page per program whose <code>tones</code> byte is non-zero, <code>ps</code> pages in total, in slot order. A program therefore finds its page by its <strong>rank among the used slots</strong>, not by its own number.</p>
-  <p>Retail builds that rank map once, at bank open: <code>FUN_80068D94</code> (<code>SsVabOpenHead</code>) walks the whole <code>ProgAtr</code> table writing the running used-program count into each entry's <code>+8</code> reserved word, and the program-change handler <code>FUN_80068B98</code> reads it back as the page index. The open also stashes each VAG's SPU address <code>&gt;&gt;3</code> into the <code>+0xC</code> / <code>+0xE</code> reserved slots.</p>
-  <p>This matters on this disc: 66 of the 218 wrapped PROT-entry banks - 43 of the 77 <code>music_01</code> banks - use <em>sparse</em> program sets, so indexing pages with the raw program number mis-tones or silently drops most of their instruments. The engine expands pages into slot space at upload (<code>VabBank::upload</code>); the law is asserted corpus-wide by <code>engine-audio/tests/real_vab_program_mapping.rs</code>.</p>
-  <h3 id="unused-slot-alias">The unused-slot alias</h3>
-  <p>Retail stores the rank counter <em>before</em> the used check increments it, so a program-change to an unused slot borrows the <em>next</em> used slot's page (keeping its own mvol/mpan). Real BGM exercises this - <code>music_01</code> PROT 868 program 5 and PROT 996 program 19 select gap slots retail plays via the alias - and the engine reproduces it (<code>real_seq_program_change_coverage.rs</code> pins the census). The one case not reproduced is a change past the last used slot, where retail reads garbage beyond the tone region: the engine leaves those silent.</p>
+  <p>A SEQ ProgramChange (or an SFX descriptor) names a <strong>program number</strong>, which indexes the 128-slot <code>ProgAtr</code> table directly. The tone pages that follow are <em>packed</em>: one 16-tone page per program whose <code>tones</code> byte is non-zero, <code>ps</code> pages in total, in slot order. A program finds its page by its <strong>rank among the used slots</strong>, not by its own number.</p>
+  <ul class="bullets">
+    <li>Retail builds the rank map once, at bank open: the open routine writes the running used-program count into each slot's <code>+8</code> reserved word, and the program-change handler reads it back as the page index (<a href="#how-we-know">how we know</a>).</li>
+    <li>The open also stashes each VAG's SPU address <code>&gt;&gt; 3</code> into the <code>+0xC</code> / <code>+0xE</code> reserved slots.</li>
+    <li>66 of the 218 wrapped banks - 43 of the 77 <code>music_01</code> banks - use <em>sparse</em> program sets, so indexing pages by the raw program number mis-tones or silently drops most of their instruments.</li>
+    <li>The engine expands pages into slot space at upload (<code>VabBank::upload</code>).</li>
+  </ul>
+  <details class="disclosure">
+    <summary>The unused-slot alias</summary>
+    <div class="disclosure-body">
+      <p>Retail stores the rank counter <em>before</em> the used check increments it, so a program-change to an unused slot borrows the <em>next</em> used slot's page while keeping its own mvol/mpan. Real BGM exercises this - <code>music_01</code> PROT 868 program 5 and PROT 996 program 19 select gap slots that play through the alias - and the engine reproduces it (<code>real_seq_program_change_coverage.rs</code> pins the census). A change past the last used slot reads garbage beyond the tone region in retail; the engine leaves those voices silent.</p>
+    </div>
+  </details>
 </section>
 
 <section class="doc-section" id="tone-attributes">
-  <h2>Tone attributes: which fields retail actually uses</h2>
-  <p>Each 32-byte tone (<code>VagAtr</code>) carries the standard Sony fields. A disc-wide census of every tone (<code>real_vab_tone_attributes.rs</code>) fixes which of them the retail data populates:</p>
-  <ul class="bullets">
-    <li><strong>Used by playback:</strong> <code>vol</code>/<code>pan</code> (mix), <code>center</code>/<code>shift</code> (key to pitch), <code>min</code>/<code>max</code> (note range picks the tone), <code>adsr1</code>/<code>adsr2</code> (envelope), and <code>pbmin</code>/<code>pbmax</code> - the per-tone pitch-bend range in semitones. The common value is 2 (the GM default), with a few tones at 4/12/24/40; a <code>(0, 0)</code> tone does not bend. The sequencer scales a <code>0xEn</code> wheel event by the <em>sounding tone's</em> range (<code>VabBank::pitch_bend_range</code>).</li>
-    <li><strong>Always zero in retail:</strong> vibrato (<code>vibw</code>/<code>vibt</code>) and portamento (<code>porw</code>/<code>port</code>), so the clean-room voice model needs no LFO.</li>
-  </ul>
-  <h3 id="center-shift-is-the-whole-pitch"><code>center</code> / <code>shift</code> are the whole of the pitch, sample rate included</h3>
-  <p><code>center</code> is the key at which the tone plays at <strong>unity</strong> - SPU pitch <code>0x1000</code>, 44.1 kHz - and <code>shift</code> raises it by <code>shift/128</code> of a semitone. The header carries no per-sample rate and the size table's spacer is not one either, so a 22.05 kHz body is authored with <code>center</code> twelve semitones above the key it should sound at. The full key-on law is in <a href="../subsystems/audio.html">audio &sect; key-on pitch law</a>. <code>crates/vab</code>'s WAV writer hard-codes 22050 for the standalone-extraction case, which is a separate question from playback.</p>
+  <h2>Tone attributes: which fields retail uses</h2>
+  <p>Each 32-byte tone (<code>VagAtr</code>) carries the standard Sony fields. A disc-wide census of every tone fixes which of them the retail data populates:</p>
+  <table>
+    <thead><tr><th>Field</th><th>Role in playback</th><th>Retail data</th></tr></thead>
+    <tbody>
+      <tr><td><code>vol</code> / <code>pan</code></td><td>Per-tone mix</td><td>Used</td></tr>
+      <tr><td><code>center</code> / <code>shift</code></td><td>Key to pitch - the whole of it, sample rate included</td><td>Used</td></tr>
+      <tr><td><code>min</code> / <code>max</code></td><td>Note range that selects the tone</td><td>Used</td></tr>
+      <tr><td><code>adsr1</code> / <code>adsr2</code></td><td>Envelope</td><td>Used</td></tr>
+      <tr><td><code>pbmin</code> / <code>pbmax</code></td><td>Pitch-bend range in semitones; the sequencer scales a <code>0xEn</code> wheel event by the <em>sounding tone's</em> range (<code>VabBank::pitch_bend_range</code>)</td><td>Mostly 2 (GM default); a few tones at 4 / 12 / 24 / 40; <code>(0, 0)</code> does not bend</td></tr>
+      <tr><td><code>vibw</code> / <code>vibt</code></td><td>Vibrato</td><td>Always zero - no LFO needed</td></tr>
+      <tr><td><code>porw</code> / <code>port</code></td><td>Portamento</td><td>Always zero</td></tr>
+    </tbody>
+  </table>
+  <h3 id="center-shift-is-the-whole-pitch"><code>center</code> / <code>shift</code> carry the sample rate</h3>
+  <p><code>center</code> is the key at which the tone plays at <strong>unity</strong> - SPU pitch <code>0x1000</code>, 44.1 kHz - and <code>shift</code> raises it by <code>shift/128</code> of a semitone. The header has no per-sample rate, so a 22.05 kHz body is authored with <code>center</code> twelve semitones above the key it should sound at. Full key-on law: <a href="../subsystems/audio.html">audio &sect; key-on pitch law</a>. <code>crates/vab</code>'s WAV writer hard-codes 22050 for standalone extraction, a separate question from playback.</p>
 </section>
 
 <section class="doc-section" id="vag-size-table">
   <h2>The VAG size table is 1-indexed</h2>
-  <p>The trailing table is 256 &times; <code>u16</code>; <code>vag_table[1..=vs]</code> hold each sample's size in 8-byte units, so <code>vag_table[0]</code> is a leading spacer. It is <code>0</code> in all 424 retail banks (disc-gated <code>corpus_vag_spacer</code>), and no pitch offset is derived from it - <code>VabReport::vag_table_spacer</code> surfaces the raw byte only.</p>
+  <p>The trailing table is 256 &times; <code>u16</code>; <code>vag_table[1..=vs]</code> hold each sample's size in 8-byte units, so <code>vag_table[0]</code> is a leading spacer. It is <code>0</code> in all 424 retail banks, and no pitch offset is derived from it - <code>VabReport::vag_table_spacer</code> surfaces the raw byte only.</p>
   <details class="disclosure">
     <summary>History: the "three multi-bank archives" and the 1191-header count</summary>
     <div class="disclosure-body">
-      <p>Earlier corpus figures - 1191 <code>VABp</code> headers across 239 entries, with <code>0889_sound_data2</code> (207 banks) and <code>0890_sound_data2</code> (203) alongside <code>0891</code> as multi-bank archives, and 120 <code>vab_01</code> carriers - were counted through the superseded over-read entry window (<a href="prot.html">prot &sect; History</a>). That window spans the two small entries into <code>0891</code>'s 6 MB archive; on their own sectors <code>0889</code> and <code>0890</code> hold one and zero banks. Exactly one multi-bank archive exists. The old-window numbers reproduce only under the old formula. See <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p>
+      <p>Counts of 1191 <code>VABp</code> headers across 239 entries, with <code>0889</code> / <code>0890_sound_data2</code> as multi-bank archives, came from the superseded over-read entry window (<a href="prot.html">prot &sect; History</a>), which spans those two small entries into <code>0891</code>'s 6 MB archive. On their own sectors they hold one and zero banks; exactly one multi-bank archive exists. See <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p>
     </div>
   </details>
+</section>
+
+<section class="doc-section" id="how-we-know">
+  <h2>How we know</h2>
+  <table>
+    <thead><tr><th>Function / test</th><th>Address</th><th>What it proves</th><th>Source</th></tr></thead>
+    <tbody>
+      <tr><td><code>SsVabOpenHead</code></td><td><code>FUN_80068D94</code></td><td>Rank map built at open into <code>ProgAtr+8</code>; VAG SPU address into <code>+0xC</code>/<code>+0xE</code></td><td><code>ghidra/scripts/funcs/80068d94.txt</code></td></tr>
+      <tr><td>Program-change handler</td><td><code>FUN_80068B98</code></td><td>Reads the rank byte back as the tone-page index; the unused-slot alias</td><td><code>ghidra/scripts/funcs/80068b98.txt</code></td></tr>
+      <tr><td><code>real_vab_program_mapping</code></td><td>-</td><td>Sparse program sets across the corpus; slot-space expansion is required</td><td><code>crates/engine-audio/tests/</code> (disc-gated)</td></tr>
+      <tr><td><code>real_vab_tone_attributes</code></td><td>-</td><td>Which tone fields retail populates; vibrato / portamento always zero</td><td><code>crates/engine-audio/tests/</code> (disc-gated)</td></tr>
+      <tr><td><code>corpus_vag_spacer</code></td><td>-</td><td><code>vag_table[0] == 0</code> in 424 / 424 banks</td><td><code>crates/vab/tests/</code> (disc-gated)</td></tr>
+      <tr><td><code>real_seq_program_change_coverage</code></td><td>-</td><td>Census of program changes that hit unused slots in real BGM</td><td><code>crates/engine-audio/tests/</code> (disc-gated)</td></tr>
+    </tbody>
+  </table>
+  <p>Full spec with every field: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/vab.md">docs/formats/vab.md</a>.</p>
 </section>
 
 <section class="doc-section" id="api">

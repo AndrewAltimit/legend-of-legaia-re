@@ -1,115 +1,153 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; summon.dat / readef.DAT</div>
   <h1>summon.dat / readef.DAT streaming slots <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">When a character casts a Seru summon or performs an art, the game doesn't have those assets in memory - it streams them off the CD <em>while the cast animation plays</em>. <code>\data\battle\summon.dat</code> and <code>\data\battle\readef.DAT</code> are the two files that feed this side-band stream (CDNAME block <code>bat_back_dat</code>): per-special-attack texture pages and palettes bound for VRAM (the console's video memory), summon-creature actor records (mesh + textures - mostly reused enemy meshes from the monster archive), and the player art-animation archives, all in fixed <code>0x10800</code>-byte (33-sector) slots so any slot can be seeked directly. Byte-verified RAM&harr;disc and VRAM&harr;disc in a mid-cast battle save state.</p>
+  <p class="lede">When a character summons a Seru or performs an Art, the assets are not in memory - the game streams them off the CD <em>while the cast animation plays</em>. Two files feed that side-band stream: per-attack texture pages and palettes bound for video memory, the summon creature's mesh and animation, and the player art-animation archives, all in fixed 33-sector slots so any slot can be seeked directly.</p>
 </header>
 
 <section class="doc-section" id="at-a-glance">
   <h2>At a glance</h2>
   <dl class="kv">
-    <dt>Magic</dt><dd>none - fixed <code>0x10800</code>-byte slots addressed by <code>slot &times; 0x10800</code>; slot classes carry their own markers (a <code>u32 mode</code> for texture slots, <code>'M' 'E'</code> for art archives)</dd>
-    <dt>Where on disc</dt><dd><code>summon.dat</code> = extraction PROT 893 (raw TOC <code>0x37F</code>, 103 slots); <code>readef.DAT</code> = extraction PROT 894 (raw TOC <code>0x380</code>, 78 slots); CDNAME block <code>bat_back_dat</code></dd>
+    <dt>In the game</dt><dd>Every Seru summon and every Art's mid-cast textures; the seven big summons' bespoke creatures</dd>
+    <dt>Where</dt><dd><code>summon.dat</code> = extraction PROT 893 (raw TOC <code>0x37F</code>); <code>readef.DAT</code> = extraction PROT 894 (raw TOC <code>0x380</code>); CDNAME block <code>bat_back_dat</code></dd>
+    <dt>Size / stride</dt><dd>Fixed <code>0x10800</code>-byte slots: 103 in summon.dat, 78 in readef.DAT, both tiling their entry exactly. No magic; texture slots start with a <code>u32 mode</code>, art archives with <code>'M' 'E'</code></dd>
     <dt>Parser</dt><dd><code>legaia_asset::summon_readef</code> (+ <code>summon_creatures</code>, <code>me_archive</code>); CLI <code>asset summon-readef</code></dd>
-    <dt>Confidence</dt><dd>Confirmed - byte-verified RAM&harr;disc and VRAM&harr;disc in a mid-cast battle save state; slot math read from <code>FUN_801E295C</code> case <code>0x32</code>; disc-gated <code>summon_readef_real</code></dd>
-    <dt>Used by</dt><dd><a href="../subsystems/battle-action.html">Battle action SM</a>, <a href="../magic.html">Seru magic &amp; summons page</a>, <a href="../arts.html">Arts page</a></dd>
+    <dt>Confidence</dt><dd>Confirmed - slot math read from the battle-action state machine; a mid-cast save state's stream buffer and VRAM byte-match the disc (<a href="#how-we-know">how we know</a>)</dd>
+    <dt>Used by</dt><dd><a href="../subsystems/battle-action.html">battle action SM</a>, <a href="../magic.html">Seru magic &amp; summons</a>, <a href="../arts.html">Arts</a></dd>
   </dl>
-  <div class="flow">
-    <div class="num">1</div><div class="layer">Cast begins</div><div class="desc">Battle-action SM case <code>0x32</code> turns the action id into a base slot byte; bit 7 picks the file</div><div class="crate">FUN_801E295C</div>
-    <div class="num">2</div><div class="layer">Transfer SM</div><div class="desc">Opens the file by raw TOC index, seeks <code>slot &times; 0x10800</code>, reads one slot into <code>*0x8007BD74</code></div><div class="crate">FUN_801F17F8</div>
-    <div class="num">3</div><div class="layer">Applier SM</div><div class="desc">Consumes each arriving slot: CLUT rows + texture pages go to VRAM, the actor record becomes a battle actor</div><div class="crate">FUN_801F12D0 / FUN_801F19EC</div>
-    <div class="num">4</div><div class="layer">Draw</div><div class="desc">The summon animates through the ordinary rigid-TRS battle draw from the per-part keyframe streams</div><div class="crate">FUN_8004998C</div>
-  </div>
 </section>
 
 <section class="doc-section" id="prot-entries">
-  <h2>PROT entries + index spaces</h2>
-  <p>Despite the file-path names, both files live inside <code>PROT.DAT</code> (the disc's single big archive) like almost everything else. The battle overlay's streaming handler <code>FUN_801F17F8</code> opens both files through the file-open shim <code>FUN_800558FC(path, 0, 0, prot_index)</code>. In the retail build the ISO9660 open is a trap stub, so the dev path string is ignored and the fourth argument goes straight to <code>FUN_8003E8A8</code> as a <strong>raw PROT TOC index</strong>. The in-RAM TOC copy at <code>0x801C70F0</code> keeps PROT.DAT's 8-byte header, while the extraction pipeline strips it - so a raw TOC index maps to the extraction-space entry <strong>minus 2</strong>:</p>
-  <table>
-  <thead><tr><th>File</th><th>Raw TOC index</th><th>Extraction entry</th><th>Footprint</th><th>Slots</th></tr></thead>
-  <tbody>
-    <tr><td><code>summon.dat</code></td><td><code>0x37F</code></td><td><strong>893</strong></td><td>6&#8201;961&#8201;152 B</td><td>exactly 103 &times; <code>0x10800</code></td></tr>
-    <tr><td><code>readef.DAT</code></td><td><code>0x380</code></td><td><strong>894</strong></td><td>5&#8201;271&#8201;552 B</td><td>exactly 78 &times; <code>0x10800</code></td></tr>
-  </tbody>
-  </table>
-  <p>The same <code>idx + 2</code> arithmetic applies to every <code>FUN_8003E8A8</code> consumer, so CDNAME <code>#define</code> numbers live in the raw TOC space, not the extraction space. Verified byte-for-byte: a mid-cast save state's full 67584-byte stream buffer at <code>*0x8007BD74</code> equals extraction entry 894 at offset <code>1 &times; 0x10800</code>, and slot 0's CLUT row + texture page match the same state's VRAM exactly.</p>
+  <h2>How a cast reaches the disc</h2>
+  <div class="flow">
+    <div class="num">1</div><div class="layer">Cast begins</div><div class="desc">The battle-action state machine turns the action id into a base slot byte; bit 7 picks the file.</div><div class="crate">battle overlay</div>
+    <div class="num">2</div><div class="layer">Transfer</div><div class="desc">Opens the file by raw PROT TOC index, seeks <code>slot &times; 0x10800</code>, reads one slot into the stream buffer.</div><div class="crate">transfer SM</div>
+    <div class="num">3</div><div class="layer">Apply</div><div class="desc">Each arriving slot is consumed: palette rows and texture pages go to VRAM, the actor record becomes a battle actor.</div><div class="crate">applier SM</div>
+    <div class="num">4</div><div class="layer">Draw</div><div class="desc">The summon animates through the ordinary rigid-transform battle draw from its per-part keyframe streams.</div><div class="crate">monster animation decoder</div>
+  </div>
+  <p>Both files live inside <code>PROT.DAT</code> like everything else. The dev path strings are ignored - the retail file-open shim is a stub, and the fourth argument goes straight to the PROT reader as a raw TOC index. The in-RAM TOC keeps PROT.DAT's 8-byte header while the extraction strips it, so raw index = extraction entry + 2 (<a href="cdname.html#numbering-space">CDNAME numbering</a>).</p>
 </section>
 
 <section class="doc-section" id="slot-math">
-  <h2>Action id &rarr; slot math</h2>
-  <p>Two coupled state machines in the battle context stream slots on demand: a transfer SM (opens the file, seeks <code>slot &times; 0x10800</code> past the entry start, reads one slot into <code>*0x8007BD74</code>) and an applier SM (<code>FUN_801F12D0</code>, consumes arriving slots; for readef groups it stops after <code>base+1</code>). Three sites feed them: the initiative scheduler <code>FUN_801DABA4</code> seeds the acting entity's group base <strong>per turn</strong> (party: <code>3&times;(char&minus;1)</code>; enemy: <code>3 &times; monster_record[+0x1C]</code>, each monster record's readef group byte - leaving the character's main "ME" archive resident for the turn), the battle-end win-pose staging requests slot <code>3&times;char+2</code> (the base "ME" archive) directly - the victory arm re-rolls the win-pose pick onto a living party member <strong>only when the acting actor is dead</strong>; a living acting actor skips the re-pick at <code>0x801E6690</code> (the hole behind the enemy-ally charm softlock) - and the cast sequence computes the base slot byte in the battle-action SM <code>FUN_801E295C</code> (case <code>0x32</code>) from the actor's action id (<code>actor + 0x1DF</code>):</p>
-  <pre><code>id &lt;  0x9A:  base = 3 * (id - 1)    (mod 256)
-id &ge; 0x9A:  base = 4 * id + 0x63   (mod 256)</code></pre>
-  <p>Both forms are the byte-truncated result - the instructions compute something that looks different but is congruent mod 256. <code>readef.DAT</code> sequences stop after the second slot (the applier resets unless bit 7 is set or <code>base == 0x36</code>, the one readef id with a four-slot group); the second texture upload is also skipped for <code>base &lt; 0x0C</code> and <code>base 0x37..=0x41</code>.</p>
-  <p>Bit 7 of <code>base</code> selects the file (set &rarr; <code>summon.dat</code>, clear &rarr; <code>readef.DAT</code>); <code>base &amp; 0x7F</code> is the starting slot. The id bands tile both files exactly:</p>
+  <h2>Action id to slot</h2>
+  <p>The cast sequence computes a base slot byte from the actor's action id. Bit 7 selects the file (set = <code>summon.dat</code>, clear = <code>readef.DAT</code>); <code>base &amp; 0x7F</code> is the first slot of the group.</p>
+<pre><code>id &lt;  0x9A:  base = 3 * (id - 1)    (mod 256)
+id &gt;= 0x9A:  base = 4 * id + 0x63   (mod 256)</code></pre>
   <table>
-  <thead><tr><th>Action ids</th><th>File</th><th>Group shape</th><th>Slots</th></tr></thead>
-  <tbody>
-    <tr><td><code>0x01..=0x1A</code></td><td><code>readef.DAT</code></td><td>3 slots <code>[texture, aux, aux]</code></td><td>26 &times; 3 = 78</td></tr>
-    <tr><td><code>0x81..=0x99</code></td><td><code>summon.dat</code></td><td>3 slots <code>[texture, texture, actor record]</code></td><td>25 &times; 3 = 75</td></tr>
-    <tr><td><code>0x9A..=0xA0</code></td><td><code>summon.dat</code></td><td>4 slots <code>[texture, texture, raw CLUT+texture+part pool, actor record]</code></td><td>7 &times; 4 = 28</td></tr>
-  </tbody>
+    <thead><tr><th>Action ids</th><th>File</th><th>Group shape</th><th>Slots</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x01..=0x1A</code></td><td><code>readef.DAT</code></td><td>3 slots <code>[texture, aux, aux]</code></td><td>26 &times; 3 = 78</td></tr>
+      <tr><td><code>0x81..=0x99</code></td><td><code>summon.dat</code></td><td>3 slots <code>[texture, texture, actor record]</code></td><td>25 &times; 3 = 75</td></tr>
+      <tr><td><code>0x9A..=0xA0</code></td><td><code>summon.dat</code></td><td>4 slots <code>[texture, texture, raw pool, actor record]</code></td><td>7 &times; 4 = 28</td></tr>
+    </tbody>
   </table>
-  <p>Summon group 0 (spell id <code>0x81</code>, Gimard) carries the "Burning Attack" actor record - consistent with the spell table's player Seru-magic block.</p>
+  <p>The bands tile both files exactly. Group 0 of summon.dat (spell id <code>0x81</code>, Gimard) carries the "Burning Attack" record, matching the <a href="spell-table.html">spell table</a>'s player Seru-magic block.</p>
+  <figure class="overlay-strip">
+    <svg viewBox="0 0 900 150" width="100%" style="max-width:900px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="One summon group: two texture slots, an optional raw pool slot for big summons, and an actor-record slot, each 0x10800 bytes">
+      <style>
+        .sr-box { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.2; }
+        .sr-opt { fill: none; stroke: var(--accent); stroke-width: 1.2; stroke-dasharray: 4 3; }
+        .sr-seg { font: 12px 'Inter', sans-serif; fill: currentColor; text-anchor: middle; dominant-baseline: middle; }
+        .sr-sub { font: 11px 'JetBrains Mono', monospace; fill: var(--accent); text-anchor: middle; }
+        .sr-lab { font: 12px 'Inter', sans-serif; fill: var(--text-muted); }
+      </style>
+      <text x="16" y="52" class="sr-lab">group</text>
+      <rect x="80" y="30" width="190" height="44" class="sr-box"/><text x="175" y="45" class="sr-seg">texture slot</text><text x="175" y="61" class="sr-seg">CLUT (0,488) + page (512,0)</text>
+      <rect x="280" y="30" width="190" height="44" class="sr-box"/><text x="375" y="45" class="sr-seg">texture slot</text><text x="375" y="61" class="sr-seg">CLUT (0,490) + page (640,0)</text>
+      <rect x="480" y="30" width="190" height="44" class="sr-opt"/><text x="575" y="45" class="sr-seg">raw pool slot</text><text x="575" y="61" class="sr-seg">big summons only</text>
+      <rect x="680" y="30" width="200" height="44" class="sr-box"/><text x="780" y="45" class="sr-seg">actor record</text><text x="780" y="61" class="sr-seg">name, TMD, textures, clips</text>
+      <text x="175" y="98" class="sr-sub">base + 0</text>
+      <text x="375" y="98" class="sr-sub">base + 1</text>
+      <text x="575" y="98" class="sr-sub">base + 2</text>
+      <text x="780" y="98" class="sr-sub">last slot</text>
+      <text x="16" y="132" class="sr-lab">each slot = 0x10800 bytes (33 sectors); readef.DAT groups stop after base + 1</text>
+    </svg>
+    <figcaption>VRAM targets are positional: the group's first texture slot and second texture slot always land on the same rows and pages.</figcaption>
+  </figure>
 </section>
 
 <section class="doc-section" id="slot-formats">
   <h2>Slot formats</h2>
-  <p><strong>Texture slot</strong> (<code>u32 mode</code> &isin; {0, 1, 2}):</p>
-  <table>
+  <h3>Texture slot</h3>
+  <table class="layout">
     <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
     <tbody>
       <tr><td><code>+0x000</code></td><td>u32</td><td><code>mode</code></td><td>0, 1 or 2 - selects CLUT row count and page width</td></tr>
-      <tr><td><code>+0x004</code></td><td>256 &times; u16 per row</td><td>CLUT rows</td><td>BGR555; mode 1 carries 2 rows, modes 0/2 one row</td></tr>
-      <tr><td><code>+0x204</code> / <code>+0x404</code></td><td><code>0x8000</code> / <code>0x10000</code></td><td>texture page</td><td>4bpp, 256 rows tall; mode 0 is 64 halfwords wide, modes 1/2 are 128</td></tr>
+      <tr><td><code>+0x004</code></td><td>256 &times; u16 per row</td><td>CLUT rows</td><td>BGR555; mode 1 carries 2 rows, modes 0 / 2 one</td></tr>
+      <tr><td><code>+0x204</code> / <code>+0x404</code></td><td><code>0x8000</code> / <code>0x10000</code></td><td>texture page</td><td>4bpp, 256 rows; mode 0 is 64 halfwords wide, modes 1 / 2 are 128</td></tr>
     </tbody>
   </table>
-  <p>VRAM targets are positional: the group's first texture slot &rarr; CLUT at <code>(0, 488)</code> + page at <code>(512, 0)</code>; the second &rarr; CLUT at <code>(0, 490)</code> + page at <code>(640, 0)</code>.</p>
-  <p><strong>Big-summon raw slot</strong> (3rd slot of the <code>0x9A..=0xA0</code> groups) is consumed headerless; the three regions tile the slot exactly (<code>0x1E0 + 0x8000 + 0x8620 = 0x10800</code>): a 240-entry BGR555 CLUT &rarr; VRAM <code>(0, 486)</code>, a 64&times;256-halfword texture page &rarr; VRAM <code>(448, 256)</code>, and a <code>0x8620</code>-byte part pool for the summon creature.</p>
-  <p><strong>Actor-record slot</strong> (last slot of a group), consumed in place by <code>FUN_801F19EC</code> (slot-relative offsets):</p>
-  <table>
+  <h3>Actor-record slot</h3>
+  <p>Consumed in place, slot-relative offsets. The TMD and texture pool route through the same installer the monster archive uses, and the creature is staged as a battle actor.</p>
+  <table class="layout">
     <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
     <tbody>
       <tr><td><code>+0x00</code></td><td>u32</td><td>name offset</td><td>NUL-terminated attack-name string</td></tr>
-      <tr><td><code>+0x04</code></td><td>u32</td><td>TMD offset</td><td>Legaia TMD, magic <code>0x80000002</code></td></tr>
+      <tr><td><code>+0x04</code></td><td>u32</td><td>TMD offset</td><td><a href="tmd.html">Legaia TMD</a></td></tr>
       <tr><td><code>+0x08</code></td><td>u32</td><td>texture-pool offset</td><td>Monster-style CLUT region + page</td></tr>
-      <tr><td><code>+0x1D</code></td><td>u8</td><td>element</td><td>The summon's element byte (used to pin the seven big summons)</td></tr>
+      <tr><td><code>+0x1D</code></td><td>u8</td><td>element</td><td>The summon's element</td></tr>
       <tr><td><code>+0x4A</code></td><td>u8</td><td>part count</td><td></td></tr>
-      <tr><td><code>+0x4C</code></td><td>u32[parts]</td><td>per-part offsets</td><td>Plus indirection fixups; relative base differs by band (below)</td></tr>
+      <tr><td><code>+0x4C</code></td><td>u32[parts]</td><td>per-part offsets</td><td>Animation entries; base differs by band (<a href="#animation">below</a>)</td></tr>
     </tbody>
   </table>
-  <p>The TMD + texture pool route through <code>FUN_80055468</code> - the same mesh/texture installer the monster archive uses - and the summon creature is staged as a battle actor. For the base + evolved-Seru summons (<code>0x81..=0x95</code>) the actor-record TMD is <strong>byte-identical</strong> to a record in the monster archive (extraction entry 867): the summon reuses an ordinary enemy creature's mesh (map in <code>legaia_asset::summon_creatures</code>). The seven big summons <code>0x9A..=0xA0</code> instead carry a bespoke mesh that matches no archive record, so the creature-id route resolves nothing for them - their model is still the actor record's own TMD, but their texture pool and their per-part animation entries live in the group's raw slot instead.</p>
+  <h3>Big-summon raw slot</h3>
+  <p>The third slot of the four-slot groups is headerless; three regions tile it exactly (<code>0x1E0 + 0x8000 + 0x8620</code>): a 240-entry CLUT to VRAM <code>(0, 486)</code>, a 64&times;256-halfword page to <code>(448, 256)</code>, and a part pool for the creature's animation. Those targets are monster battle slot 2's, so a big summon installs over slot 2 and the ordinary relocation reproduces its placement.</p>
 </section>
 
 <section class="doc-section" id="animation">
-  <h2>Per-part animation entries</h2>
-  <p>The <code>+0x4A</code> count and <code>+0x4C</code> offset table are the same shape as the monster archive's spell-offset array, and each entry they point at is a per-action record with a packed keyframe stream at entry <code>+0x8C</code>: <code>[u8 parts][u8 frames]</code> followed by <code>frames &times; parts</code> nine-byte TRS records in the same 12-bit field layout <code>FUN_8004998C</code> unpacks, with the playback-rate byte at <code>+0x78</code>. That is why a summon's cast animates through the ordinary battle rigid-TRS draw and needs no decoder of its own.</p>
-  <p>What the offsets are <em>relative to</em> differs by band, and that is the detail that hides the seven big summons from anyone who assumes one rule. For the three-slot groups (<code>0x81..=0x99</code>) they are relative to the <strong>actor-record slot itself</strong>, and the streams tile it contiguously - each entry's stream ends exactly where the next begins, and the last ends exactly at the record's texture-pool offset. For the four-slot big-summon groups they are relative to the <strong>raw slot's part pool</strong> at <code>+0x81E0</code> (the "off-band fixup arm"), which the streams tile the same way.</p>
-  <p>The raw slot's first two regions are a monster texture pool byte-for-byte - <code>0x1E0</code> is exactly the 15-palette CLUT region, and the page is the usual 256-row 4bpp block. Their VRAM targets pin the slot as well: CLUT row 486 and page origin <code>(448, 256)</code> are <code>484 + slot</code> and <code>((5 + slot) &times; 64, 256)</code> for <strong>slot 2</strong>, so a big summon installs over monster battle slot 2 and the ordinary relocation reproduces its placement exactly.</p>
+  <h2>Creature meshes and animation</h2>
+  <ul class="bullets">
+    <li><strong>Ordinary summons (<code>0x81..=0x99</code>)</strong> reuse an enemy: the actor-record TMD is byte-identical to a record in the monster archive (extraction 867). Map in <code>legaia_asset::summon_creatures</code>.</li>
+    <li><strong>Big summons (<code>0x9A..=0xA0</code>)</strong> carry a bespoke mesh matching no archive record; their texture pool and animation entries live in the group's raw slot.</li>
+    <li>Each per-part entry is a <a href="monster-animation.html">monster-animation</a> record: a packed keyframe stream at entry <code>+0x8C</code>, <code>[u8 parts][u8 frames]</code> then nine-byte TRS records, playback rate at <code>+0x78</code>. No decoder of its own is needed.</li>
+    <li>Offsets are relative to the <strong>actor-record slot</strong> for three-slot groups and to the <strong>raw slot's part pool</strong> (<code>+0x81E0</code>) for four-slot groups; in both cases the streams tile contiguously.</li>
+  </ul>
   <h3 id="big-summons">The seven big summons</h3>
-  <p>Each id is pinned by two independent reads of its own actor record - the inline attack-name string at <code>rec[0]</code>, and the element byte at <code>+0x1D</code> - and both agree with the curated summon table, which is what makes the labelling a measurement rather than an ordering assumption.</p>
+  <p>Each id is pinned by two independent reads of its own record - the inline attack-name string and the element byte - both agreeing with the curated summon table.</p>
   <table>
-  <thead><tr><th>Spell id</th><th>Summon</th><th>Attack name</th><th>Element byte</th></tr></thead>
-  <tbody>
-    <tr><td><code>0x9A</code></td><td>Palma</td><td>Meteor Cluster</td><td>0 earth</td></tr>
-    <tr><td><code>0x9B</code></td><td>Mule</td><td>Deep Avalanche</td><td>1 water</td></tr>
-    <tr><td><code>0x9C</code></td><td>Horn</td><td>Resurrector</td><td>5 light</td></tr>
-    <tr><td><code>0x9D</code></td><td>Jedo</td><td>Deadly Promise</td><td>6 dark</td></tr>
-    <tr><td><code>0x9E</code></td><td>Meta</td><td>Inferno</td><td>2 fire</td></tr>
-    <tr><td><code>0x9F</code></td><td>Terra</td><td>Queen Twister</td><td>3 wind</td></tr>
-    <tr><td><code>0xA0</code></td><td>Ozma</td><td>Voltagor</td><td>4 thunder</td></tr>
-  </tbody>
+    <thead><tr><th>Spell id</th><th>Summon</th><th>Attack name</th><th>Element byte</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x9A</code></td><td>Palma</td><td>Meteor Cluster</td><td>0 earth</td></tr>
+      <tr><td><code>0x9B</code></td><td>Mule</td><td>Deep Avalanche</td><td>1 water</td></tr>
+      <tr><td><code>0x9C</code></td><td>Horn</td><td>Resurrector</td><td>5 light</td></tr>
+      <tr><td><code>0x9D</code></td><td>Jedo</td><td>Deadly Promise</td><td>6 dark</td></tr>
+      <tr><td><code>0x9E</code></td><td>Meta</td><td>Inferno</td><td>2 fire</td></tr>
+      <tr><td><code>0x9F</code></td><td>Terra</td><td>Queen Twister</td><td>3 wind</td></tr>
+      <tr><td><code>0xA0</code></td><td>Ozma</td><td>Voltagor</td><td>4 thunder</td></tr>
+    </tbody>
   </table>
-  <p>All seven are playable in the browser on the <a href="../magic.html">Seru magic &amp; summons</a> page, decoded from your own disc.</p>
+  <p>All seven play in the browser on the <a href="../magic.html">Seru magic &amp; summons</a> page, decoded from your own disc.</p>
 </section>
 
 <section class="doc-section" id="me-archives">
-  <h2>Art stream archives</h2>
-  <p><strong>Art "ME" stream-archive slots</strong>: the aux slots of <code>readef.DAT</code> groups 0..3 (slots <code>3&times;char + 1</code> / <code>3&times;char + 2</code> for Vahn / Noa / Gala / Terra) carry the player art-animation keyframe-stream archives - magic <code>'M' 'E'</code>, <code>u8 count</code>, <code>u16 entry_sizes[count]</code> (bit 15 = compressed), concatenated bodies - each decompressing through the channel-delta codec into a packed <code>[u8 parts][u8 frames][9-byte TRS]</code> stream (see <a href="battle-data-pack.html">player battle files</a>). Parser <code>legaia_asset::me_archive</code>. The main-vs-base pick is per battle phase (turn staging vs the battle-end win-pose staging - see the slot math above). The aux slots of the higher readef groups (enemy-special bands) are still unattributed as content, though their selection is pinned to the monster record's group byte <code>+0x1C</code>.</p>
+  <h2>Art "ME" archives</h2>
+  <p>The aux slots of readef.DAT groups 0..3 (slots <code>3&times;char + 1</code> / <code>+ 2</code> for Vahn / Noa / Gala / Terra) hold the player art-animation archives: magic <code>'M' 'E'</code>, <code>u8 count</code>, <code>u16 entry_sizes[count]</code> (bit 15 = compressed), then concatenated bodies. Each decompresses through the channel-delta codec into the same packed TRS stream (see <a href="battle-data-pack.html">player battle files</a>). Parser <code>legaia_asset::me_archive</code>.</p>
+  <details class="disclosure">
+    <summary>Which slot is resident when</summary>
+    <div class="disclosure-body">
+      <ul class="bullets">
+        <li>The initiative scheduler seeds the acting entity's group base per turn: party <code>3 &times; (char - 1)</code>; enemy <code>3 &times; monster_record[+0x1C]</code>. The character's main ME archive stays resident for the turn.</li>
+        <li>Battle-end win-pose staging requests slot <code>3 &times; char + 2</code> (the base archive) directly. The win-pose pick is re-rolled onto a living party member only when the acting actor is dead - the hole behind the enemy-ally charm softlock.</li>
+        <li>readef groups stop after <code>base + 1</code> unless bit 7 is set or <code>base == 0x36</code>, the one readef id with a four-slot group; the second texture upload is skipped for <code>base &lt; 0x0C</code> and <code>0x37..=0x41</code>.</li>
+        <li>The aux slots of the higher readef groups (enemy-special bands) are unattributed as content; their selection is pinned to the monster record's group byte.</li>
+      </ul>
+    </div>
+  </details>
 </section>
 
-<section class="doc-section" id="parser">
-  <h2>Parser + tooling</h2>
-  <p>Parser: <code>legaia_asset::summon_readef</code> (slot classification, texture layouts, action-id &rarr; <code>(file, slot)</code> resolution, and <code>parse_cast</code> - one spell's mesh, texture pool, element, attack name, keyframe clips and FX texture slots, which is what the site's summon viewer runs on). CLI: <code>asset summon-readef &lt;entry.BIN&gt;</code> lists every slot's class and attack-name string; <code>--texture-png-dir</code> decodes texture pages to PNG; <code>--action-id</code> resolves an action id to its stream target. The disc-gated <code>summon_readef_real</code> test asserts the raw-TOC-to-extraction mapping and slot tiling; <code>summon_creature_tmd_map_real</code> byte-validates the spell &rarr; creature mesh map. The attack-name sequence across the <code>summon.dat</code> actor records follows the spell-id order exactly, independently corroborating the case-<code>0x32</code> banding. Provenance: <code>ghidra/scripts/funcs/overlay_battle_801f17f8.txt</code>, <code>overlay_muscle_dome_801f12d0.txt</code>, <code>overlay_muscle_dome_801f19ec.txt</code>, <code>overlay_battle_action_801daba4.txt</code>, <code>800558fc.txt</code>, <code>8003e8a8.txt</code>.</p>
+<section class="doc-section" id="how-we-know">
+  <h2>How we know</h2>
+  <table>
+    <thead><tr><th>Function</th><th>Address</th><th>What it proves</th><th>Dump</th></tr></thead>
+    <tbody>
+      <tr><td>Battle-action SM, case <code>0x32</code></td><td><code>FUN_801E295C</code></td><td>Action id &rarr; base slot byte; bit 7 file select</td><td><code>funcs/overlay_battle_801e295c.txt</code></td></tr>
+      <tr><td>Transfer SM</td><td><code>FUN_801F17F8</code></td><td>Opens by raw TOC index via <code>FUN_800558FC</code> / <code>FUN_8003E8A8</code>; seeks <code>slot &times; 0x10800</code>; reads into <code>*0x8007BD74</code></td><td><code>funcs/overlay_battle_801f17f8.txt</code></td></tr>
+      <tr><td>Applier SM</td><td><code>FUN_801F12D0</code>, record consumer <code>FUN_801F19EC</code></td><td>Slot classes, VRAM targets, actor-record offsets, readef stop rule</td><td><code>funcs/overlay_muscle_dome_801f12d0.txt</code>, <code>_801f19ec.txt</code></td></tr>
+      <tr><td>Initiative scheduler</td><td><code>FUN_801DABA4</code></td><td>Per-turn group base; win-pose re-pick at <code>0x801E6690</code></td><td><code>funcs/overlay_battle_action_801daba4.txt</code></td></tr>
+      <tr><td>Mesh / texture installer</td><td><code>FUN_80055468</code></td><td>Shared with the monster archive</td><td><code>funcs/80055468.txt</code></td></tr>
+      <tr><td>Mid-cast save state</td><td>stream buffer + VRAM</td><td>67 584-byte buffer equals extraction 894 at <code>1 &times; 0x10800</code>; slot 0's CLUT row and page match VRAM</td><td><code>summon_readef_real</code>, <code>summon_creature_tmd_map_real</code></td></tr>
+    </tbody>
+  </table>
+  <p id="parser">CLI: <code>asset summon-readef &lt;entry.BIN&gt;</code> lists every slot's class and attack name; <code>--texture-png-dir</code> decodes pages to PNG; <code>--action-id</code> resolves an id to its stream target. Source of record: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/summon-readef.md" target="_blank" rel="noopener"><code>docs/formats/summon-readef.md</code></a>.</p>
 </section>
 
 <section class="doc-section" id="see-also">

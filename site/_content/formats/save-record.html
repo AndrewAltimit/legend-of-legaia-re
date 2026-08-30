@@ -14,14 +14,53 @@
     <dt>In the game</dt><dd>the status / equip / magic screens, level-ups, and every memory-card save</dd>
     <dt>Magic / marker</dt><dd>none - a fixed RAM layout; the save block is a verbatim dump of it</dd>
     <dt>Lives in</dt><dd>RAM <code>0x80084708 + slot &times; 0x414</code> (slots 0..3); on the card at <code>block + 0x5C8 + n &times; 0x414</code></dd>
-    <dt>Retail readers</dt><dd><code>FUN_80042558</code> (per-frame stat aggregator), <code>FUN_800431D0</code> (ability bitmap), <code>FUN_80042DBC</code> (spell-list pop), <code>FUN_801E9504</code> (level-up applier)</dd>
+    <dt>Size / stride</dt><dd><code>0x414</code> bytes per record, 4 contiguous records</dd>
     <dt>Parser</dt><dd><code>legaia_save::CharacterRecord</code> (typed accessors + round-trip); <code>Party::from_retail_sc_block</code></dd>
     <dt>Confidence</dt><dd>Confirmed for every offset in the layout table - each cross-referenced against at least two of: a Ghidra-dumped function, a captured save-state observation, a labelled GameShark cheat</dd>
+    <dt>Used by</dt><dd><a href="../subsystems/level-up.html">level-up</a>, <a href="../subsystems/field-menu.html">field menu</a>, <a href="../subsystems/save-screen.html">save screen</a>, <a href="../subsystems/battle-formulas.html">battle formulas</a></dd>
   </dl>
 </section>
 
 <section class="doc-section" id="bases">
-  <h2>Per-character bases</h2>
+  <h2>The record and where it lives</h2>
+  <figure class="overlay-strip">
+    <svg viewBox="0 0 880 120" width="100%" style="max-width:880px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Byte layout of the 0x414-byte character record">
+      <style>
+        .sr-seg { font: 11px 'Inter', sans-serif; fill: currentColor; text-anchor: middle; }
+        .sr-off { font: 10px 'JetBrains Mono', monospace; fill: var(--accent); }
+        .sr-box { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.2; }
+        .sr-dim { fill: none; stroke: var(--border); stroke-width: 1.1; stroke-dasharray: 3 3; }
+      </style>
+      <rect x="10" y="30" width="80" height="34" class="sr-box"/>
+      <rect x="90" y="30" width="120" height="34" class="sr-dim"/>
+      <rect x="210" y="30" width="130" height="34" class="sr-box"/>
+      <rect x="340" y="30" width="120" height="34" class="sr-box"/>
+      <rect x="460" y="30" width="110" height="34" class="sr-box"/>
+      <rect x="570" y="30" width="90" height="34" class="sr-box"/>
+      <rect x="660" y="30" width="90" height="34" class="sr-dim"/>
+      <rect x="750" y="30" width="60" height="34" class="sr-box"/>
+      <rect x="810" y="30" width="60" height="34" class="sr-dim"/>
+      <text x="50" y="47" class="sr-seg"><tspan x="50" dy="0">XP +</tspan><tspan x="50" dy="12">threshold</tspan></text>
+      <text x="150" y="47" class="sr-seg"><tspan x="150" dy="0">stat block,</tspan><tspan x="150" dy="12">ability bits</tspan></text>
+      <text x="275" y="47" class="sr-seg"><tspan x="275" dy="0">live stats</tspan><tspan x="275" dy="12">(per frame)</tspan></text>
+      <text x="400" y="47" class="sr-seg"><tspan x="400" dy="0">record stats</tspan><tspan x="400" dy="12">+ level</tspan></text>
+      <text x="515" y="47" class="sr-seg"><tspan x="515" dy="0">magic +</tspan><tspan x="515" dy="12">summons</tspan></text>
+      <text x="615" y="47" class="sr-seg"><tspan x="615" dy="0">arts +</tspan><tspan x="615" dy="12">equipment</tspan></text>
+      <text x="705" y="47" class="sr-seg">unmapped</text>
+      <text x="780" y="47" class="sr-seg"><tspan x="780" dy="0">name +</tspan><tspan x="780" dy="12">spells</tspan></text>
+      <text x="840" y="47" class="sr-seg">tail</text>
+      <text x="10" y="88" class="sr-off">+0x000</text>
+      <text x="192" y="88" class="sr-off">+0x104</text>
+      <text x="322" y="88" class="sr-off">+0x11C</text>
+      <text x="442" y="88" class="sr-off">+0x13C</text>
+      <text x="552" y="88" class="sr-off">+0x185</text>
+      <text x="642" y="88" class="sr-off">+0x19E</text>
+      <text x="732" y="88" class="sr-off">+0x2A7</text>
+      <text x="812" y="88" class="sr-off">+0x380</text>
+      <text x="850" y="106" class="sr-off">0x414</text>
+    </svg>
+    <figcaption>One record, <code>0x414</code> bytes. Solid regions are mapped; dashed regions are unmapped or partially mapped.</figcaption>
+  </figure>
   <table>
     <thead><tr><th>Slot</th><th>Base</th><th>Owner</th></tr></thead>
     <tbody>
@@ -31,23 +70,30 @@
       <tr><td>3</td><td><code>0x80085344</code></td><td>Terra (the <a href="new-game-table.html">New Game template</a>'s 4th roster entry; never a savable battle-party member)</td></tr>
     </tbody>
   </table>
-  <p>The display name sits at <code>+0x2A7</code> (9 bytes, NUL-padded), bounded by the active-spell table at <code>+0x2B0</code>. Slot 3's footprint runs into the global story-flag bitmap (RAM <code>0x80085600</code>, record offset <code>+0x2BC</code>) and the inventory, so only its leading fields (name, live stats, record stats) are exclusive; the tail aliases the globals. This is benign - Terra is never saved as an active member.</p>
+  <p>Slot 3's footprint runs into the global story-flag bitmap and the inventory, so only its leading fields
+  are exclusive; the tail aliases the globals. Benign - Terra is never saved as an active member.</p>
   <h3 id="save-block">On the memory card</h3>
-  <p>The save block is a verbatim dump of this resident region: record <code>n</code>'s base is <code>block + 0x5C8 + n&times;0x414</code> (<code>game_data + 0x3C8</code>), so the name surfaces at <code>block + 0x86F + n&times;0x414</code>. "Verbatim" is true of the bytes, not of the whole block: editing a record also invalidates the additive checksum at <code>block + 0x1FFC</code>, which retail compares before it will accept the save - a stale word captions the slot "Damaged data." and the record never reaches RAM. <code>legaia_save::card::restamp_sc_block_checksum</code> is the fix-up, applied by <code>write_retail_char_records</code>; see the <a href="../subsystems/save-screen.html">save screen</a>.</p>
+  <p>The save block dumps this region verbatim: record <code>n</code> sits at <code>block + 0x5C8 + n&times;0x414</code>.
+  "Verbatim" is true of the bytes, not the whole block: editing a record also invalidates the additive checksum at
+  <code>block + 0x1FFC</code>, which retail compares before accepting the save - a stale word captions the slot
+  "Damaged data." and the record never reaches RAM. <code>legaia_save::card::restamp_sc_block_checksum</code> is the
+  fix-up; see the <a href="../subsystems/save-screen.html">save screen</a>.</p>
 </section>
 
 <section class="doc-section" id="layout">
   <h2>Layout</h2>
-  <p>Stats come in pairs: the <code>_live</code> copies are the effective values the aggregator rebuilds every frame (equipment and buffs applied), while the <code>_record</code> copies are the base stats the level-up system maintains. The quoted names are the GameShark cheat labels that pinned each offset.</p>
+  <p>Stats come in pairs: the <code>_live</code> copies are the effective values the aggregator rebuilds every frame
+  (equipment and buffs applied), while the <code>_record</code> copies are the base stats the level-up system
+  maintains. The quoted names are the GameShark cheat labels that pinned each offset.</p>
   <div class="table-scroll">
   <table class="layout">
     <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
     <tbody>
       <tr><td><code>+0x000</code></td><td>4</td><td><code>xp_cumulative</code></td><td>cumulative experience - "Max Exp" target; what the level-up applier compares against the threshold</td></tr>
-      <tr><td><code>+0x004</code></td><td>4</td><td><code>xp_next_threshold</code></td><td>next-level XP threshold - the status screen's "next" readout; seeded per character to <code>reach(L2)</code></td></tr>
+      <tr><td><code>+0x004</code></td><td>4</td><td><code>xp_next_threshold</code></td><td>next-level XP threshold - the status screen's "next" readout (<a href="#xp-fields">note</a>); seeded per character to <code>reach(L2)</code></td></tr>
       <tr><td><code>+0x008</code></td><td>8</td><td>header tail</td><td>unmapped</td></tr>
-      <tr><td><code>+0x010</code></td><td>228</td><td>stat block</td><td>partially mapped via <code>FUN_80042558</code></td></tr>
-      <tr><td><code>+0x0F4</code></td><td>16</td><td><code>ability_bits</code></td><td>OR'd into <code>0x80074358</code> by the per-frame aggregator (<a href="accessory-passive-table.html">accessory passives</a>)</td></tr>
+      <tr><td><code>+0x010</code></td><td>228</td><td>stat block</td><td>partially mapped via the per-frame stat aggregator</td></tr>
+      <tr><td><code>+0x0F4</code></td><td>16</td><td><code>ability_bits</code></td><td>OR'd into the shared ability bitfield by the per-frame aggregator (<a href="accessory-passive-table.html">accessory passives</a>)</td></tr>
       <tr><td><code>+0x104</code></td><td>2</td><td><code>hp_max_live</code></td><td>effective max, aggregator-rebuilt</td></tr>
       <tr><td><code>+0x106</code></td><td>2</td><td><code>hp_curr_live</code></td><td>"Infinite HP"; walk-regen bumps it, clamping at <code>+0x104</code></td></tr>
       <tr><td><code>+0x108</code> / <code>+0x10A</code></td><td>2+2</td><td><code>mp_max_live</code> / <code>mp_curr_live</code></td><td>"Max MP"; each pair is (max, cur)</td></tr>
@@ -59,14 +105,14 @@
       <tr><td><code>+0x118</code></td><td>2</td><td><code>spd_live</code></td><td>"Max SPD"</td></tr>
       <tr><td><code>+0x11A</code></td><td>2</td><td><code>int_live</code></td><td>"Max INT"; clamped at <code>0x3E7</code></td></tr>
       <tr><td><code>+0x11C</code> / <code>+0x11E</code></td><td>2+2</td><td><code>hp_max_record</code> / <code>mp_max_record</code></td><td>"Max HP" / "Max MP" record copies</td></tr>
-      <tr><td><code>+0x120</code></td><td>2</td><td><code>stat_cap_constant</code></td><td>always <code>100</code> in captured saves (<a href="#cap-constant">below</a>)</td></tr>
+      <tr><td><code>+0x120</code></td><td>2</td><td><code>stat_cap_constant</code></td><td>always <code>100</code> in captured saves (<a href="#cap-constant">note</a>)</td></tr>
       <tr><td><code>+0x122</code> .. <code>+0x12C</code></td><td>6&times;2</td><td><code>agl/atk/udf/ldf/spd/int_record</code></td><td>record copies, same order as the live block</td></tr>
-      <tr><td><code>+0x12E</code></td><td>2</td><td><code>battle_status_flags</code></td><td>the packed ailment word, mirrored from battle actor <code>+0x16E</code> (<a href="#status-word">below</a>)</td></tr>
-      <tr><td><code>+0x130</code></td><td>1</td><td><code>level_displayed</code></td><td>the displayed character level - "Level 99" target (<a href="#level-byte">below</a>)</td></tr>
+      <tr><td><code>+0x12E</code></td><td>2</td><td><code>battle_status_flags</code></td><td>the packed ailment word, mirrored from the battle actor (<a href="#status-word">note</a>)</td></tr>
+      <tr><td><code>+0x130</code></td><td>1</td><td><code>level_displayed</code></td><td>the displayed character level - "Level 99" target (<a href="#level-byte">note</a>)</td></tr>
       <tr><td><code>+0x131</code></td><td>1</td><td>magic-rank candidate</td><td>unconfirmed; the new-game seed inits it to 1. <code>+0x132..+0x13B</code> unmapped</td></tr>
-      <tr><td><code>+0x13C</code></td><td>1</td><td><code>learned_spell_count</code></td><td>length byte of the id list below - "Magic Slot Activator" writes <code>0x24</code> here (<a href="#spell-count">below</a>)</td></tr>
+      <tr><td><code>+0x13C</code></td><td>1</td><td><code>learned_spell_count</code></td><td>length byte of the id list below - "Magic Slot Activator" writes <code>0x24</code> here (<a href="#spell-count">note</a>)</td></tr>
       <tr><td><code>+0x13D</code> / <code>+0x149</code> / <code>+0x155</code></td><td>3&times;12</td><td><code>magic_group_0..2</code></td><td>"Magic Modifier 1..12" - three copies of the slot</td></tr>
-      <tr><td><code>+0x161</code></td><td>16</td><td><code>summon_levels</code></td><td>"All Summons Level 9" - one byte per summon id (<a href="#summon-levels">below</a>); <code>+0x179..+0x184</code> unmapped</td></tr>
+      <tr><td><code>+0x161</code></td><td>16</td><td><code>summon_levels</code></td><td>"All Summons Level 9" - one byte per summon id (<a href="#summon-levels">note</a>); <code>+0x179..+0x184</code> unmapped</td></tr>
       <tr><td><code>+0x185</code></td><td>1</td><td><code>displayed_skill_count</code></td><td>menu-overlay art roster count</td></tr>
       <tr><td><code>+0x186</code></td><td>16</td><td><code>displayed_skill_ids</code></td><td>"Has all Arts"; head insert on item-use learn. Fifteen arts per character, so the 16th slot <code>+0x195</code> is never reached - the patcher's <code>--show-super-arts</code> keeps its performed-Super mask there</td></tr>
       <tr><td><code>+0x196</code></td><td>1</td><td><code>armor_id</code></td><td>"Armor Modifier" / "Best Equipment"</td></tr>
@@ -82,51 +128,52 @@
   </div>
 </section>
 
-<section class="doc-section" id="cheat-citations">
-  <h2>Cheat-database citations</h2>
-  <p>Every named offset is an empirical write target in the GameShark database under <a href="../reference/cheats.html"><code>data/cheats/</code></a>. Vahn's addresses; Noa (<code>+0x414</code>) and Gala (<code>+0x828</code>) shift each by one stride:</p>
-  <div class="table-scroll">
-  <table>
-    <thead><tr><th>Cheat</th><th>Address (Vahn)</th><th>Offset</th><th>Field</th></tr></thead>
-    <tbody>
-      <tr><td>100 AP</td><td><code>0x80084816</code></td><td><code>+0x10E</code></td><td>sp_curr_live</td></tr>
-      <tr><td>Max HP</td><td><code>0x8008480C</code> / <code>0E</code> / <code>0x80084824</code></td><td><code>+0x104</code> / <code>+0x106</code> / <code>+0x11C</code></td><td>hp live max / cur / record</td></tr>
-      <tr><td>Max MP</td><td><code>0x80084810</code> / <code>12</code> / <code>0x80084826</code></td><td><code>+0x108</code> / <code>+0x10A</code> / <code>+0x11E</code></td><td>mp live max / cur / record</td></tr>
-      <tr><td>Max AGL .. Max INT</td><td><code>0x80084818..22</code> / <code>0x8008482A..34</code></td><td><code>+0x110..+0x11A</code> / <code>+0x122..+0x12C</code></td><td>live / record stat pairs</td></tr>
-      <tr><td>Level 99</td><td><code>0x80084838</code></td><td><code>+0x130</code></td><td>level_displayed</td></tr>
-      <tr><td>Magic Slot Activator</td><td><code>0x80084844</code></td><td><code>+0x13C</code></td><td>learned_spell_count</td></tr>
-      <tr><td>Magic Modifier 1</td><td><code>0x80084845</code> / <code>51</code> / <code>5D</code></td><td><code>+0x13D</code> / <code>+0x149</code> / <code>+0x155</code></td><td>three magic-group copies</td></tr>
-      <tr><td>All Summons Level 9</td><td><code>0x80084869..86</code></td><td><code>+0x161..+0x178</code></td><td>summon_levels</td></tr>
-      <tr><td>Has all Arts</td><td><code>0x8008488D..9A</code></td><td><code>+0x185..+0x192</code></td><td>displayed_skill_count + ids</td></tr>
-      <tr><td>Best Equipment</td><td><code>0x8008489E</code> / <code>A0</code> / <code>A2</code></td><td><code>+0x196</code> / <code>+0x198</code> / <code>+0x19A</code></td><td>armor / weapon / leg gear</td></tr>
-      <tr><td>Activate Meta at Lv9</td><td><code>0x800848A1</code></td><td><code>+0x199</code></td><td>accessory_or_seru_lock</td></tr>
-      <tr><td>Accessory 1 Modifier</td><td><code>0x800848A3</code></td><td><code>+0x19B</code></td><td>accessory_1_id</td></tr>
-      <tr><td>Max Exp</td><td><code>0x80084708</code> / <code>0A</code></td><td><code>+0x000</code> / <code>+0x002</code></td><td>xp_cumulative (combined u32)</td></tr>
-    </tbody>
-  </table>
-  </div>
-</section>
-
 <section class="doc-section" id="contradictions">
   <h2>Field notes</h2>
   <h3 id="status-word"><code>+0x12E</code> is the battle status word</h3>
-  <p>The halfword mirrors battle actor <code>+0x16E</code>, the packed ailment flags. <code>FUN_80047430</code> copies it verbatim every frame a party actor ticks (<code>lhu 0x16e(actor)</code> then <code>sh</code> at <code>0x80047680</code> and <code>0x80048040</code>), so the record carries the live in-battle condition. The battle HUD reads the same halfword through a second base: the status element selector <code>FUN_8002C2E4</code> indexes <code>0x80084140 + slot &times; 0x414</code>, and <code>0x80084140 + 0x5C8 == 0x80084708</code>, so its <code>+0x6F6</code> is this <code>+0x12E</code>, its <code>+0x6CE</code> is <code>+0x106</code> and its <code>+0x6F8</code> is <code>+0x130</code>. The per-bit map and the accessory-guard clear masks are on the <a href="accessory-passive-table.html">accessory-passive page</a>; engine mirror <code>engine-vm::status_effects::display_flags</code>.</p>
+  <p>The halfword mirrors the battle actor's packed ailment flags, copied verbatim every frame a party actor
+  ticks - the record carries the live in-battle condition. The battle HUD reads the same halfword through a
+  second base (details in <a href="#how-we-know">How we know</a>); the per-bit map is on the
+  <a href="accessory-passive-table.html">accessory-passive page</a>, engine mirror
+  <code>engine-vm::status_effects::display_flags</code>.</p>
 
   <h3 id="level-byte"><code>+0x130</code> is the displayed character level</h3>
-  <p>The status screen reads <code>+0x130</code> as "LV" and the Level 99 cheat sets it to <code>0x63</code>. Boot-confirmed via the starting-level randomizer: a New Game record with level-10 experience, level-10 stats and the right threshold but <code>+0x130 == 1</code> still displays LV 1, and <code>+0x130 = 10</code> displays LV 10 - the shown level is read from this byte, not re-derived from XP. The level-up applier maintains it by incrementing <code>+1</code> per level-up <em>event</em> (the captured Noa / Gala four-level jumps bumped it once), so it can momentarily lag after a rare multi-level jump; for single-level play and the new-game seed it equals the level. Whether a separate magic-rank byte lives at <code>+0x131</code> is unconfirmed. The accessor <code>legaia_save::CharacterRecord::magic_rank()</code> reads <code>+0x130</code> - the level byte under a legacy name; <code>level()</code> reads <code>+0x100</code>, always zero in retail (the engine's own internal cell).</p>
+  <p>The status screen reads it as "LV" directly; the shown level is <em>not</em> re-derived from XP. The
+  level-up applier bumps it once per level-up <em>event</em>, so it can momentarily lag after a rare
+  multi-level jump. The accessor <code>CharacterRecord::magic_rank()</code> reads this byte - the level byte
+  under a legacy name; <code>level()</code> reads <code>+0x100</code>, always zero in retail.</p>
 
   <h3 id="xp-fields"><code>+0x000</code> is cumulative XP; <code>+0x004</code> is the next-level threshold</h3>
-  <p><code>+0x000</code> is the "Max Exp" target, the "Experience" readout and the value the applier compares; <code>+0x004</code> is the "next" readout. Confirmed live: a randomized ROM that wrote a level-10 XP value into <code>+0x004</code> showed "next level: 11195" while experience stayed 0 - so the starting-level randomizer seeds <code>+0x000</code>, not <code>+0x004</code>. The u16 that appeared to move by an XP-shaped delta at <code>+0x004</code> in the Noa / Gala level-up triplets is the <strong>low half of the threshold word</strong>, which the applier rewrites on every level change. <code>CharacterRecord::cumulative_xp</code> reads the u32 at <code>+0x000</code>; no <code>xp_low_word_alt</code> field exists.</p>
+  <p><code>+0x000</code> is the "Experience" readout and the value the applier compares; <code>+0x004</code> is
+  the "next" readout, rewritten on every level change. The starting-level randomizer seeds <code>+0x000</code>,
+  not <code>+0x004</code>.</p>
 
   <h3 id="spell-count"><code>+0x13C</code> is the learned-spell count - which is why the cheat works</h3>
-  <p>The database calls it "Magic Slot Activator" and prescribes writing <code>0x24</code>, which reads as an enable byte. Two menu-overlay readers say it is a plain length: the per-character list screen <code>FUN_801DA2A0</code> reads <code>+0x13C</code> as the Ra-Seru-gated learned-spell count before walking the ids, and the window-7 character prompt substitutes <code>record[+0x13D + sel]</code> - the <code>sel</code>-th entry of that list (<a href="../subsystems/field-menu.html">field menu</a>). "Activating" the list is just declaring it 36 entries long. Treat <code>+0x13C</code> as a count when writing it: a value past the real id run displays uninitialised slots rather than granting spells.</p>
+  <p>The database calls it "Magic Slot Activator", but two menu-overlay readers treat it as a plain length byte
+  for the id list at <code>+0x13D</code>. "Activating" the list is just declaring it 36 entries long. Treat it as
+  a count when writing: a value past the real id run displays uninitialised slots rather than granting spells.</p>
 
   <h3 id="summon-levels"><code>+0x161..+0x178</code> is the summon-level array, not spell levels</h3>
-  <p>The All Summons Level 9 cheat stamps <code>0x09</code> into 16 bytes at <code>+0x161..+0x178</code> - one per summon id, not per spell. Any per-spell levels sit in the magic-group window at <code>+0x13D..+0x160</code> where the database has 12 named modifiers. The accessor is <code>summon_levels()</code>; the older <code>SpellList::levels</code> is preserved for compatibility only.</p>
+  <p>One byte per summon id, stamped <code>0x09</code> by the All Summons Level 9 cheat. Any per-spell levels sit
+  in the magic-group window at <code>+0x13D..+0x160</code>. Accessor <code>summon_levels()</code>; the older
+  <code>SpellList::levels</code> is kept for compatibility only.</p>
 
-  <h3 id="cap-constant">The <code>+0x120</code> cap constant</h3>
-  <p>Across every captured save, <code>+0x120</code> reads as <code>100</code>; the level-up overlay writes it on every level-up event regardless of character or stat, and the <a href="new-game-table.html">new-game seed</a> writes the same literal into <code>+0x10C</code> and <code>+0x120</code> for every roster slot. It is the hard ceiling the record-side stats clamp against; the runtime then re-projects through <code>FUN_80042558</code>'s <code>0x3E7</code> clamp on the live copy, so equipment and buffs can push past it up to 999 in battle. Accessors: <code>stat_cap()</code> / <code>set_stat_cap()</code> (the same field as <code>RecordStats::cap_constant</code>).</p>
+  <h3 id="cap-constant"><code>+0x120</code> is the record-stat cap constant</h3>
+  <p>Always <code>100</code>: the hard ceiling record-side stats clamp against, rewritten by the level-up
+  overlay on every level-up. The live copies then clamp at <code>0x3E7</code>, so equipment and buffs can push
+  past it up to 999 in battle. Accessors <code>stat_cap()</code> / <code>set_stat_cap()</code>.</p>
 
+  <details class="disclosure">
+    <summary>Evidence for each note</summary>
+    <div class="disclosure-body">
+      <ul class="bullets">
+        <li><strong>Status word.</strong> <code>FUN_80047430</code> copies battle actor <code>+0x16E</code> verbatim (<code>lhu 0x16e(actor)</code> then <code>sh</code> at <code>0x80047680</code> and <code>0x80048040</code>). The HUD's status element selector <code>FUN_8002C2E4</code> indexes <code>0x80084140 + slot &times; 0x414</code>; since <code>0x80084140 + 0x5C8 == 0x80084708</code>, its <code>+0x6F6</code> is this <code>+0x12E</code>, its <code>+0x6CE</code> is <code>+0x106</code>, its <code>+0x6F8</code> is <code>+0x130</code>.</li>
+        <li><strong>Level byte.</strong> Boot-confirmed via the starting-level randomizer: a New Game record with level-10 XP, stats and threshold but <code>+0x130 == 1</code> displays LV 1; setting <code>+0x130 = 10</code> displays LV 10. The captured Noa / Gala four-level jumps bumped the byte once.</li>
+        <li><strong>XP vs threshold.</strong> A randomized ROM that wrote a level-10 XP value into <code>+0x004</code> showed "next level: 11195" while experience stayed 0. The u16 that appeared to move by an XP-shaped delta at <code>+0x004</code> in the level-up triplets is the low half of the threshold word, which the applier rewrites on every level change.</li>
+        <li><strong>Spell count.</strong> The per-character list screen <code>FUN_801DA2A0</code> reads <code>+0x13C</code> as the Ra-Seru-gated learned-spell count before walking the ids; the window-7 character prompt substitutes <code>record[+0x13D + sel]</code> (<a href="../subsystems/field-menu.html">field menu</a>).</li>
+      </ul>
+    </div>
+  </details>
   <details class="disclosure">
     <summary>History: superseded readings</summary>
     <div class="disclosure-body">
@@ -140,9 +187,48 @@
   </details>
 </section>
 
-<section class="doc-section" id="parser">
-  <h2>Parser + provenance</h2>
-  <p>Offsets are pinned by a fusion of three sources: decompiled function dumps under <code>ghidra/scripts/funcs/</code> (notably <code>FUN_80042558</code>, <code>FUN_800431D0</code>, <code>FUN_80042DBC</code> and the level-up overlay applier); captured save-state observations in <code>engine_core::capture_observations::char_level_up</code> and the <code>levelup::observations::{noa,gala}_4_level_jump</code> triplets; and the GameShark database, whose every effect is a labelled <code>(addr, value)</code> write. <code>legaia_save::character::CharacterRecord</code> is the typed accessor + round-trip layer; <code>Party::from_retail_sc_block</code> lifts a real SC block into a typed party. Source of record: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/save-record.md" target="_blank" rel="noopener"><code>docs/formats/save-record.md</code></a>.</p>
+<section class="doc-section" id="how-we-know">
+  <h2>How we know</h2>
+  <p>Each offset is cross-referenced against at least two of three independent sources:</p>
+  <table>
+    <thead><tr><th>Source</th><th>Anchor</th><th>What it proves</th></tr></thead>
+    <tbody>
+      <tr><td>Per-frame stat aggregator</td><td><code>FUN_80042558</code></td><td>live-stat block layout, the <code>0x3E7</code> live clamp</td></tr>
+      <tr><td>Ability-bitmap reader</td><td><code>FUN_800431D0</code></td><td><code>+0x0F4</code> ability bits OR'd into <code>0x80074358</code></td></tr>
+      <tr><td>Spell-list pop</td><td><code>FUN_80042DBC</code></td><td>the <code>+0x13C</code> count / <code>+0x13D</code> id-list pairing</td></tr>
+      <tr><td>Level-up applier</td><td><code>FUN_801E9504</code> (overlay)</td><td>record-stat writes, threshold rewrite, level byte tick, <code>+0x120</code> constant</td></tr>
+      <tr><td>Ailment mirror</td><td><code>FUN_80047430</code>, HUD selector <code>FUN_8002C2E4</code></td><td><code>+0x12E</code> status word and the second HUD base</td></tr>
+      <tr><td>Save-state captures</td><td><code>capture_observations::char_level_up</code>, <code>levelup::observations::{noa,gala}_4_level_jump</code></td><td>which bytes move on a level-up event</td></tr>
+      <tr><td>GameShark database</td><td><a href="../reference/cheats.html"><code>data/cheats/</code></a></td><td>a labelled <code>(addr, value)</code> write per named field</td></tr>
+    </tbody>
+  </table>
+  <details class="disclosure">
+    <summary>Cheat-database citation table (address per field)</summary>
+    <div class="disclosure-body">
+      <p>Vahn's addresses; Noa (<code>+0x414</code>) and Gala (<code>+0x828</code>) shift each by one stride.</p>
+      <div class="table-scroll">
+      <table>
+        <thead><tr><th>Cheat</th><th>Address (Vahn)</th><th>Offset</th><th>Field</th></tr></thead>
+        <tbody>
+          <tr><td>100 AP</td><td><code>0x80084816</code></td><td><code>+0x10E</code></td><td>sp_curr_live</td></tr>
+          <tr><td>Max HP</td><td><code>0x8008480C</code> / <code>0E</code> / <code>0x80084824</code></td><td><code>+0x104</code> / <code>+0x106</code> / <code>+0x11C</code></td><td>hp live max / cur / record</td></tr>
+          <tr><td>Max MP</td><td><code>0x80084810</code> / <code>12</code> / <code>0x80084826</code></td><td><code>+0x108</code> / <code>+0x10A</code> / <code>+0x11E</code></td><td>mp live max / cur / record</td></tr>
+          <tr><td>Max AGL .. Max INT</td><td><code>0x80084818..22</code> / <code>0x8008482A..34</code></td><td><code>+0x110..+0x11A</code> / <code>+0x122..+0x12C</code></td><td>live / record stat pairs</td></tr>
+          <tr><td>Level 99</td><td><code>0x80084838</code></td><td><code>+0x130</code></td><td>level_displayed</td></tr>
+          <tr><td>Magic Slot Activator</td><td><code>0x80084844</code></td><td><code>+0x13C</code></td><td>learned_spell_count</td></tr>
+          <tr><td>Magic Modifier 1</td><td><code>0x80084845</code> / <code>51</code> / <code>5D</code></td><td><code>+0x13D</code> / <code>+0x149</code> / <code>+0x155</code></td><td>three magic-group copies</td></tr>
+          <tr><td>All Summons Level 9</td><td><code>0x80084869..86</code></td><td><code>+0x161..+0x178</code></td><td>summon_levels</td></tr>
+          <tr><td>Has all Arts</td><td><code>0x8008488D..9A</code></td><td><code>+0x185..+0x192</code></td><td>displayed_skill_count + ids</td></tr>
+          <tr><td>Best Equipment</td><td><code>0x8008489E</code> / <code>A0</code> / <code>A2</code></td><td><code>+0x196</code> / <code>+0x198</code> / <code>+0x19A</code></td><td>armor / weapon / leg gear</td></tr>
+          <tr><td>Activate Meta at Lv9</td><td><code>0x800848A1</code></td><td><code>+0x199</code></td><td>accessory_or_seru_lock</td></tr>
+          <tr><td>Accessory 1 Modifier</td><td><code>0x800848A3</code></td><td><code>+0x19B</code></td><td>accessory_1_id</td></tr>
+          <tr><td>Max Exp</td><td><code>0x80084708</code> / <code>0A</code></td><td><code>+0x000</code> / <code>+0x002</code></td><td>xp_cumulative (combined u32)</td></tr>
+        </tbody>
+      </table>
+      </div>
+    </div>
+  </details>
+  <p>Source of record: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/save-record.md" target="_blank" rel="noopener"><code>docs/formats/save-record.md</code></a>.</p>
 </section>
 
 <section class="doc-section" id="see-also">

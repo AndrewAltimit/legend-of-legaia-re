@@ -1,36 +1,33 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; move-table VM</div>
   <h1>Move-table opcode VM</h1>
-  <p class="lede">The interpreter that plays out a combat move's choreography. When a Tactical Arts input resolves to a move, what actually happens on screen - the actor stepping forward, the swing
-    animation, the tween back to idle - is a small bytecode program (a "move record") executed one instruction at a time by this VM. It drives per-actor animation, motion, and state for every animated
-    actor (an actor being the engine's record for one on-screen entity - a party member, an enemy, an NPC). Distinct from the <a href="script-vm.html">field/event VM</a> and the <a
-    href="actor-vm.html">actor / sprite VM</a>: this one lives in <code>SCUS_942.54</code> (the game's main executable on the disc - always resident, unlike the on-demand overlays), runs on each actor's
-    "move buffer", and is invoked every frame from the actor tick. <strong>71 opcodes</strong> in the main exe, plus <strong>61 sub-opcodes</strong> in a town-overlay extension reachable via opcode
-    <code>0x2F</code>.</p>
+  <p class="lede">The interpreter that plays out a combat move's choreography. When a Tactical Arts input resolves to a move, everything you see - the actor stepping forward, the swing, the tween back to idle - is a small bytecode program executed one instruction at a time by this VM, once per frame, per actor. It lives in the always-resident main executable and drives animation, motion and state for every animated actor on screen.</p>
 </header>
 
-<section class="doc-section" id="how-it-works">
-  <h2>How it works</h2>
-  <p>If the <a href="actor-vm.html">actor VM</a> is the menu-window choreographer and the <a href="script-vm.html">field VM</a> is the cutscene / NPC scripter, the move VM is the layer underneath both - a tiny per-actor animation engine. Every actor (a party member, an enemy, an NPC) has a "move buffer" and a PC (program counter - the current read position) into it. Every frame, the actor tick calls into the move VM and runs opcodes until something forces it to pause (a HALT, a wait timer, or running out of buffer).</p>
-
-  <p>The move VM is what reads <a href="../formats/mdt.html">MDT</a> (move-table) records and turns them into world-space motion, render-bank writes, animation-bank selection, tween setup, and per-actor flag manipulation. It's the bytecode that drives Tactical Arts execution - when a Tactical Arts directional input maps to a move ID, the move VM is what plays out the move record one opcode at a time.</p>
-
-  <p>One quirk worth noting: <strong>operands are 16-bit, not 8-bit.</strong> The PC counts in u16 units. Each handler returns its size also in u16 units, which the dispatcher epilogue adds to the PC. Coming from byte-stream VMs (the actor VM and field VM both use byte streams), this is easy to misread.</p>
-
-  <p>Opcode <code>0x2F</code> is the <strong>overlay-extension escape</strong>. It calls into a separate dispatcher inside the town overlay (an overlay is a chunk of code the game loads into RAM on demand), which has its own 61-entry jump table (the array of handler addresses a dispatcher jumps through). So the actual opcode count is "71 + 61 sub-ops accessible through opcode 0x2F". The town-overlay sub-handlers are scene-specific, which is why they live in the overlay rather than in the always-resident exe.</p>
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Driver</dt><dd><code>FUN_80023070</code> in <code>SCUS_942.54</code> (the main executable - always resident, unlike overlays)</dd>
+    <dt>Opcodes</dt><dd>71 (<code>0x00..0x46</code>), plus 61 sub-ops in an overlay extension via op <code>0x2F</code></dd>
+    <dt>Program</dt><dd>Per-actor "move buffer" at <code>actor+0x48</code>, program counter at <code>actor+0x70</code></dd>
+    <dt>Operand width</dt><dd><strong>u16 stream</strong> - PC and sizes count in 16-bit units, not bytes</dd>
+    <dt>Fed by</dt><dd>Field-VM op <code>0x22 EXEC_MOVE</code>; records come from <a href="../formats/mdt.html">MDT move tables</a></dd>
+    <dt>Engine port</dt><dd><code>crates/engine-vm/src/move_vm.rs</code> - all 71 outer + 61 extension ops, host callbacks via <code>MoveHost</code></dd>
+    <dt>Confidence</dt><dd>Confirmed - full per-case disassembly (<a href="#how-we-know">how we know</a>)</dd>
+  </dl>
 </section>
 
 <section class="doc-section" id="vm-family">
   <h2>The runtime VM family</h2>
-  <p>Legaia runs <strong>five</strong> bytecode / state VMs that share the actor model. Confusing them is the classic mistake in this corpus, so each page states plainly which one it is. Five is an orientation, not a census: the <code>0x2F</code> extension dispatcher, the field VM's <code>0x4C</code> sub-dispatcher, and the battle-action / world-map / tile-board state machines are separate dispatchers with their own tables - the full list, with what is decoded, ported and actually reached by a live caller, is the <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/vm-inventory.md" target="_blank" rel="noopener">VM inventory</a>. This table is the shared orientation; the per-VM pages carry the detail. ("Driver" is the interpreter's main function - <code>FUN_80xxxxxx</code> names are Ghidra's labels for traced routines at those RAM addresses.)</p>
+  <p>Legaia runs <strong>five</strong> bytecode / state VMs that share the actor model (an actor is the engine's record for one on-screen entity - a party member, an enemy, a menu window). Confusing them is the classic mistake in this corpus. Five is an orientation, not a census - the full list is the <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/vm-inventory.md" target="_blank" rel="noopener">VM inventory</a>.</p>
   <table>
-    <thead><tr><th>VM</th><th>Driver</th><th>Where</th><th>Opcodes</th><th>Operand width</th></tr></thead>
+    <thead><tr><th>VM</th><th>Driver</th><th>Where</th><th>Opcodes</th><th>Operands</th></tr></thead>
     <tbody>
-      <tr><td><a href="actor-vm.html">Actor / sprite VM</a></td><td><code>FUN_801D6628</code></td><td>Menu overlay, PROT 0899 (slot-A base <code>0x801CE818</code>) - it choreographs the shop / pause-menu / save windows, not sprites</td><td>13</td><td>byte stream</td></tr>
-      <tr><td><strong>Move VM</strong></td><td><code>FUN_80023070</code></td><td><code>SCUS_942.54</code></td><td>71 (<code>0x00..0x46</code>) + 61 sub-ops via <code>0x2F</code></td><td>u16 stream</td></tr>
-      <tr><td><a href="motion-vm.html">Motion VMs</a> (two)</td><td><code>FUN_8003774C</code> (pursue / patrol / face-target) and <code>FUN_80038158</code> (scripted motion + flag writes)</td><td><code>SCUS_942.54</code></td><td>see page</td><td>byte stream w/ high-bit target</td></tr>
-      <tr><td><a href="script-vm.html">Field / event VM</a></td><td><code>FUN_801DE840</code></td><td>Town / field overlay (0897)</td><td>43 (<code>0x21..0x4F</code> with gaps) + <code>0x5x/6x/7x</code> default-route</td><td>byte stream</td></tr>
-      <tr><td><a href="effect-vm.html">Effect VM</a></td><td><code>FUN_801E0088</code> (per-frame walker)</td><td>Battle overlay (0898)</td><td>per-slot SM (no opcode table)</td><td>inline state tokens</td></tr>
+      <tr><td><a href="actor-vm.html">Window-widget VM</a></td><td><code>FUN_801D6628</code></td><td>Menu overlay (PROT 0899)</td><td>13</td><td>byte stream</td></tr>
+      <tr><td><strong>Move VM</strong> (this page)</td><td><code>FUN_80023070</code></td><td><code>SCUS_942.54</code></td><td>71 + 61 via <code>0x2F</code></td><td>u16 stream</td></tr>
+      <tr><td><a href="motion-vm.html">Motion VMs</a> (two)</td><td><code>FUN_8003774C</code> / <code>FUN_80038158</code></td><td><code>SCUS_942.54</code></td><td>see page</td><td>byte stream</td></tr>
+      <tr><td><a href="script-vm.html">Field / event VM</a></td><td><code>FUN_801DE840</code></td><td>Field overlay (0897)</td><td>43 + default routes</td><td>byte stream</td></tr>
+      <tr><td><a href="effect-vm.html">Effect VM</a></td><td><code>FUN_801E0088</code></td><td>Battle overlay (0898)</td><td>per-slot SM</td><td>state tokens</td></tr>
     </tbody>
   </table>
   <div class="flow">
@@ -39,188 +36,120 @@
     <span class="num">3</span><span class="layer">Move VM</span><span class="desc">runs opcodes until HALT / WAIT / end of buffer; u16 operands</span><span class="crate">FUN_80023070</span>
     <span class="num">4</span><span class="layer">Op 0x2F</span><span class="desc">escapes to the overlay extension dispatcher (61 sub-ops, field overlay only)</span><span class="crate">FUN_801D362C</span>
   </div>
-  <p>How the move VM wires to the others:</p>
-  <ul class="bullets">
-    <li>Field-VM op <code>0x22 EXEC_MOVE</code> calls <code>FUN_800204F8</code>, which finds the move record for <code>move_id</code> and stages it into the actor at <code>actor[+0x48]</code> (buffer base) / <code>actor[+0x70]</code> (PC).</li>
-    <li>Actor tick (<code>FUN_80021DF4</code>, per frame) and actor spawn (<code>FUN_80021B04</code>, one-shot) both call <code>FUN_80023070(actor)</code> to step the move buffer.</li>
-    <li>Move-VM opcode <code>0x2F</code> calls <code>FUN_801D362C(actor, opcode_ptr)</code> for overlay-defined extension opcodes. The same dispatcher exists in many overlays (town, world-map and its variants, dialog, cutscene) at the same RAM address; each overlay supplies its own JT contents.</li>
-    <li>The motion VM runs alongside but doesn't share opcodes - it consumes a separate per-actor "motion buffer" through the <code>0xF8</code>/<code>0xFB</code> system-channel idiom.</li>
-  </ul>
+  <p>The extension dispatcher exists in many overlays (town, world-map, dialog, cutscene) at the same RAM address; each overlay supplies its own jump-table contents. The <a href="motion-vm.html">motion VMs</a> run alongside but consume a separate per-actor motion buffer - no shared opcodes.</p>
 </section>
 
 <section class="doc-section" id="signature">
-  <h2>Function signature &amp; dispatch</h2>
-  <pre><code>int FUN_80023070(int actor);</code></pre>
-  <p>No PC argument: the PC lives on the actor at <code>+0x70</code>. The function loops, executing opcodes until one clears the loop flag (e.g. opcode <code>0x08</code> HALT). Each handler updates <code>actor[+0x70]</code> by writing its size into a register the loop epilogue commits.</p>
-
+  <h2>Dispatch and control flow</h2>
   <pre><code>short* op = (short*)(actor[+0x48] + actor[+0x70] * 2);   // u16-aligned PC
-short  v1 = op[0];
-if (v1 &gt;= 0x47) goto epilogue;                            // out-of-range &rarr; end loop
-v0 = jt[v1];                                              // JT at 0x80010778
-goto v0;                                                  // computed jump</code></pre>
-
-  <dl class="kv">
-    <dt>Buffer base</dt><dd><code>actor[+0x48]</code> (<code>_DAT_8007B888</code> = MOVE root, <code>_DAT_8007B840</code> = MOVE2)</dd>
-    <dt>PC</dt><dd><code>actor[+0x70]</code> (i16, in u16 units)</dd>
-    <dt>Jump table</dt><dd><code>0x80010778</code> in <code>SCUS_942.54</code> - 71 entries &times; 4 bytes</dd>
-  </dl>
+if (op[0] &gt;= 0x47) goto exit;                             // out-of-range = end of buffer
+goto jump_table[op[0]];                                   // JT at 0x80010778</code></pre>
+  <p>The interpreter loops: read the opcode at the PC, dispatch, add the handler's size (in u16 units) to the PC, continue - until an op clears the loop flag. Three things break the loop:</p>
+  <ul class="bullets">
+    <li><strong><code>0x08</code> HALT</strong> - sets flag bit <code>0x8</code> and exits without advancing.</li>
+    <li><strong><code>0x09</code> WAIT_SET</strong> - arms the wait timer at <code>+0x54</code>; the actor tick counts it down across frames before re-entering.</li>
+    <li><strong>End of buffer</strong> - any opcode value <code>&ge; 0x47</code> reads as "done", not "unknown opcode".</li>
+  </ul>
+  <div class="notice">
+    <p class="notice-title">The u16 trap</p>
+    <p>Operands, sizes and the PC all count in <strong>16-bit units</strong>. The other Legaia VMs use byte streams, so a disassembler that assumes bytes here decodes garbage from the second instruction on. Handlers that look like NOPs in decompiled C still advance the PC - the increment hides in a MIPS branch-delay slot.</p>
+  </div>
 </section>
 
 <section class="doc-section" id="actor-state">
-  <h2>Actor-side state</h2>
-  <p>The move VM rewrites a wide swath of the actor struct. Selected fields:</p>
-  <table>
-    <thead><tr><th>Offset</th><th>Type</th><th>Use</th></tr></thead>
+  <h2>What the opcodes touch</h2>
+  <p>The move VM rewrites a wide swath of the actor struct. The important fields, with the ops that write them:</p>
+  <table class="layout">
+    <thead><tr><th>Offset</th><th>Field</th><th>Written by</th></tr></thead>
     <tbody>
-      <tr><td><code>+0x10</code></td><td>u32</td><td>Actor flag word. Bit <code>0x8</code> set by op <code>0x08</code>; <code>0x2/0x1000/0x10000/0x40000000</code> toggled by various opcodes.</td></tr>
-      <tr><td><code>+0x14/16/18</code></td><td>u16</td><td>World X / Y / Z (op <code>0x07</code> absolute set, op <code>0x01</code> add, op <code>0x03</code> rotate-add).</td></tr>
-      <tr><td><code>+0x22</code></td><td>u16</td><td>Y-rotation (per-frame ramp by op <code>0x2D / 0x35 / 0x37</code>).</td></tr>
-      <tr><td><code>+0x24/26/28</code></td><td>u16</td><td>Camera/render slots.</td></tr>
-      <tr><td><code>+0x3C/3E/40</code></td><td>u16</td><td>Animation bank (op <code>0x00</code>: <code>[v &lt;&lt; 3]</code>).</td></tr>
-      <tr><td><code>+0x54</code></td><td>u16</td><td>Wait/timer (op <code>0x09</code> set; ticked down by <code>FUN_80021DF4</code>).</td></tr>
-      <tr><td><code>+0x62</code></td><td>u16</td><td>Local flag bank (16 bits). AND/OR by ops <code>0x31 / 0x32</code>.</td></tr>
-      <tr><td><code>+0x70</code></td><td>i16</td><td><strong>The move-VM PC</strong> (in u16 units).</td></tr>
-      <tr><td><code>+0x90/92/94</code></td><td>u16</td><td>Tween source (op <code>0x35 / 0x37</code> absolute / increment).</td></tr>
-      <tr><td><code>+0x96/98/9A</code></td><td>u16</td><td>Tween scale (op <code>0x2E</code>, <code>[v &lt;&lt; 3]</code>).</td></tr>
-      <tr><td><code>+0x9C..+0xC8</code></td><td>mixed</td><td>Tween/keyframe block (op <code>0x34</code> 9-word setup; op <code>0x2C</code> configures per-frame slots).</td></tr>
+      <tr><td><code>+0x10</code></td><td>Actor flag word</td><td><code>0x08</code> HALT (bit 8); <code>0x3A/0x3B</code> set / clear bit 2</td></tr>
+      <tr><td><code>+0x14/16/18</code></td><td>World X / Y / Z</td><td><code>0x07</code> set, <code>0x01</code> add, <code>0x03</code> rotate-add (sin/cos table)</td></tr>
+      <tr><td><code>+0x22</code></td><td>Y-rotation</td><td>per-frame ramps (<code>0x2D / 0x35 / 0x37</code> family)</td></tr>
+      <tr><td><code>+0x24/26/28</code></td><td>Render-bank slots</td><td><code>0x05</code> add, <code>0x39</code> set</td></tr>
+      <tr><td><code>+0x3C/3E/40</code></td><td>Animation bank</td><td><code>0x00</code> ANIM_BANK_SET (<code>value &lt;&lt; 3</code>)</td></tr>
+      <tr><td><code>+0x54</code></td><td>Wait timer</td><td><code>0x09</code> WAIT_SET; ticked down by the actor tick</td></tr>
+      <tr><td><code>+0x62</code></td><td>Local 16-bit flag bank</td><td><code>0x31</code> AND / <code>0x32</code> OR</td></tr>
+      <tr><td><code>+0x70</code></td><td><strong>The PC</strong> (u16 units)</td><td>the dispatcher epilogue</td></tr>
+      <tr><td><code>+0x90..+0xC8</code></td><td>Tween / keyframe block</td><td><code>0x34</code> setup (9 operands), <code>0x2C</code> buffer alloc, <code>0x2E</code> scale, <code>0x36</code> duration</td></tr>
     </tbody>
   </table>
-</section>
-
-<section class="doc-section" id="opcode-reference">
-  <h2>Opcode reference (highlights)</h2>
-  <p>Sizes are in <strong>u16 units</strong>. The full per-case reference is in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/move-vm.md" target="_blank" rel="noopener">docs/subsystems/move-vm.md</a>; this is the highlight reel.</p>
-
-  <h3>World motion / position</h3>
-  <table>
-    <thead><tr><th>Op</th><th>Mnemonic</th><th>Size</th><th>Effect</th></tr></thead>
-    <tbody>
-      <tr><td><code>0x01</code></td><td>WORLD_ADD</td><td>4</td><td><code>actor[+0x14] += v1; +0x16 += v2; +0x2A += v2; +0x18 += v3</code></td></tr>
-      <tr><td><code>0x03</code></td><td>WORLD_ROTATE_ADD</td><td>2</td><td>Adds rotated <code>v1</code> into world X/Z using sin/cos table indexed by <code>actor[+0x96] &amp; 0xFFF</code>.</td></tr>
-      <tr><td><code>0x07</code></td><td>WORLD_SET</td><td>4</td><td>Absolute <code>actor[+0x14..+0x18] = v1..v3</code>.</td></tr>
-      <tr><td><code>0x2D</code></td><td>WORLD_INC_VARIANT</td><td>4</td><td><code>actor[+0x90] += v1; +0x92 += v2; +0x94 += v3</code>.</td></tr>
-      <tr><td><code>0x37</code></td><td>WORLD_SET_VARIANT2</td><td>3</td><td><code>actor[+0x90] = v1; +0x92 = v2</code>.</td></tr>
-    </tbody>
-  </table>
-
-  <h3>Animation banks &amp; render</h3>
-  <table>
-    <thead><tr><th>Op</th><th>Mnemonic</th><th>Size</th><th>Effect</th></tr></thead>
-    <tbody>
-      <tr><td><code>0x00</code></td><td>ANIM_BANK_SET</td><td>4</td><td><code>actor[+0x3C..+0x40] = v1..v3 &lt;&lt; 3</code></td></tr>
-      <tr><td><code>0x04</code></td><td>ANIM_BANK_2</td><td>4</td><td><code>actor[+0x80..+0x84] = v1..v3 &lt;&lt; 3</code></td></tr>
-      <tr><td><code>0x05</code></td><td>RENDER_BANK_ADD</td><td>4</td><td><code>actor[+0x24..+0x28] += v1..v3</code></td></tr>
-      <tr><td><code>0x39</code></td><td>RENDER_BANK_SET</td><td>4</td><td>Absolute <code>actor[+0x24..+0x28] = v1..v3</code></td></tr>
-    </tbody>
-  </table>
-
-  <h3>Control flow</h3>
-  <table>
-    <thead><tr><th>Op</th><th>Mnemonic</th><th>Effect</th></tr></thead>
-    <tbody>
-      <tr><td><code>0x08</code></td><td>HALT</td><td><code>actor[+0x10] |= 0x8</code>. Sets <code>bVar3 = false</code> so the dispatcher exits without advancing PC.</td></tr>
-      <tr><td><code>0x09</code></td><td>WAIT_SET</td><td><code>actor[+0x54] = v1 &lt;&lt; 3</code>. Wait timer; <code>FUN_80021DF4</code> ticks it down each frame.</td></tr>
-      <tr><td><code>0x16</code></td><td>STUB</td><td>Calls <code>FUN_80024C80</code> - body is a pure <code>jr ra</code>. Pure no-op.</td></tr>
-      <tr><td><code>0x2F</code></td><td>OVERLAY_EXT</td><td>Escape to <code>FUN_801D362C</code>: 16-bit sub-opcode, JT at <code>0x801CE868</code>, 61 entries. Dispatcher resides in many overlays (town, world-map, dialog, cutscene) at the same RAM address; each supplies its own JT contents.</td></tr>
-    </tbody>
-  </table>
-
-  <h3>Flag banks &amp; tween setup</h3>
-  <table>
-    <thead><tr><th>Op</th><th>Mnemonic</th><th>Effect</th></tr></thead>
-    <tbody>
-      <tr><td><code>0x31 / 0x32</code></td><td>LFLAG_AND / LFLAG_OR</td><td>16-bit per-actor local flag bank at <code>+0x62</code>.</td></tr>
-      <tr><td><code>0x33</code></td><td>CLEAR_BIT_40000000</td><td><code>actor[+0x74] &amp;= ~0x40000000</code>.</td></tr>
-      <tr><td><code>0x34</code></td><td>TWEEN_SETUP</td><td>Loads 8 i16 operands into <code>actor[+0xAC..+0xC8]</code>. 9-u16 instruction.</td></tr>
-      <tr><td><code>0x36</code></td><td>TWEEN_DURATION_SET</td><td><code>+0x98 = v1 &lt;&lt; 3; +0x9A = v2 &lt;&lt; 3; +0xB8 = 0</code>.</td></tr>
-      <tr><td><code>0x3A / 0x3B</code></td><td>FLAG_2_SET / FLAG_2_CLEAR</td><td><code>actor[+0x10] |= 2</code> / <code>&amp;= ~2</code>.</td></tr>
-    </tbody>
-  </table>
-</section>
-
-<section class="doc-section" id="control-flow">
-  <h2>Control flow</h2>
-  <p>The interpreter loops: read opcode at <code>actor[+0x70]</code>, dispatch, write the new PC <code>actor[+0x70] += param_3</code>, then either continue or break depending on <code>bVar3</code>. Break opcodes:</p>
-  <ul class="bullets">
-    <li><strong><code>0x08</code> HALT</strong> - clears the loop flag.</li>
-    <li><strong><code>0x09</code> WAIT_SET</strong> - wait timer is set; further opcodes deferred to next frame.</li>
-    <li>A few epilogue cases (e.g. <code>0x30</code> KEY_BUFFER_FREE) jump to the epilogue without advancing.</li>
-  </ul>
-  <p>After the loop exits, the function returns; the caller (<code>FUN_80021B04</code> or <code>FUN_80021DF4</code>) gets a "tick complete for this actor" signal. The next frame's <code>FUN_80021DF4</code> updates physics, then re-enters from the saved PC.</p>
+  <p>The full per-opcode reference (all 71, with sizes and exact stores) is in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/move-vm.md" target="_blank" rel="noopener"><code>docs/subsystems/move-vm.md</code></a>.</p>
 </section>
 
 <section class="doc-section" id="ext-dispatcher">
-  <h2>Extension dispatcher (<code>0x2F</code>) - ported sub-ops</h2>
-  <p>Op <code>0x2F</code> reads <code>op[1]</code> as a 16-bit sub-opcode (range <code>0x00..0x3C</code>) and dispatches via the JT at <code>0x801CE868</code>. The sub-opcode is <strong>bounds-checked before the indirect jump</strong> (<code>sltiu sub_op, 0x3D</code> gates the <code>jr</code>; the operand is loaded <code>lh</code> = sign-extended, so the unsigned compare also rejects negative values, sending them to the dispatcher's plain <code>size = 1</code> return) - so this overlay escape has <strong>no out-of-bounds-jump path</strong> even though the move buffer is partly attacker-influenceable via the self-modifying sub-ops. <code>crates/engine-vm/src/move_vm.rs</code> ports all 61 sub-opcodes (mirroring the guarded return with a <code>_ =&gt; default_arm()</code> catch-all); the highlights:</p>
+  <h2>The overlay extension (opcode 0x2F)</h2>
+  <p>Op <code>0x2F</code> reads a 16-bit sub-opcode and dispatches through a 61-entry jump table inside the field overlay. The sub-opcode is bounds-checked <em>before</em> the indirect jump, so this escape has no out-of-bounds path even though some sub-ops write into the move buffer itself. The extension is where the scene-specific tricks live:</p>
   <ul class="bullets">
-    <li><strong>Slot table at <code>&amp;DAT_801F3498</code></strong> - 16 slots &times; 8 bytes, shared across actors. Sub-ops <code>0x25/0x26</code> round-trip world coords; <code>0x27/0x28</code> the tween-source triple at <code>+0x90</code> (with <code>&gt;&gt; 12</code> fixed-point + <code>[-0xFF, 0xFF]</code> clamp on read); <code>0x31/0x32</code> the render-bank section at <code>+0x24..+0x2C</code>; <code>0x34/0x35</code> the byte at <code>actor[+0x72]</code>.</li>
-    <li><strong>Globals.</strong> <code>DAT_801F22F4</code> is a u32 predicate (sub-ops <code>0x08/0x09</code> set/clear, <code>0x0A/0x0B</code> test). <code>DAT_801F22F6</code> is a u16 counter mod 16: <code>0x0F</code> clears, <code>0x10</code> reads-and-increments, capturing the low byte into <code>actor.field_86</code>; <code>0x11</code> then writes world coords to <code>slot_table[field_86 &amp; 0xFF]</code>.</li>
-    <li><strong>World-position lerp.</strong> <code>0x24</code> / <code>0x2A</code> share <code>axis = base + ((target - base) * t) &gt;&gt; 12</code>. The Y axis always lerps toward the player Y; X / Z target the fixed map origin (<code>0x24</code>) or the player position (<code>0x2A</code>). <code>0x06</code> / <code>0x07</code> are bbox-vs-player gate variants on the canonicalised box <code>[xa..xb] &times; [za..zb]</code>.</li>
-    <li><strong>Midpoint blends.</strong> <code>0x0E</code> / <code>0x12</code> back the <code>FUN_801E45BC</code> "midpoint to actor world" idiom. <code>0x36/0x37</code> are axis predicates against <code>0x8E - DAT_8007C348</code>; <code>0x38/0x39</code> are squared-distance gates around the player. <code>0x23</code> is the anim-bank lerp toward operand world coords using the scratchpad ramp ratio at <code>_DAT_1F800393</code>.</li>
-    <li><strong>Self-modifying bytecode.</strong> <code>0x04</code> writes actor world XYZ into <code>buffer[pc + op[2] + 3..]</code>; <code>0x1E</code> is read-modify-write on a single u16 (<code>buffer[pc + op[2] + 4] += op[3]</code>); <code>0x1B</code> is an in-bytecode copy loop. The <code>MoveHost::move_bytecode_{read,write}_u16</code> callbacks expose the actor's move buffer to these ops.</li>
-    <li><strong>HSV ramps.</strong> <code>0x1F</code> / <code>0x20</code> ramp a packed 24-bit RGB color stored in <code>actor[+0xA0..+0xA3]</code> / <code>actor[+0xA4..+0xA7]</code>: decompose, RGB&rarr;HSV via the SCUS algorithm at <code>FUN_8001A78C</code>, add <code>op[2..4]</code> per channel (H wraps mod <code>0x168</code>, S/V clamp), HSV&rarr;RGB via <code>FUN_8001A8DC</code>, re-pack. Both are size-1 by design - the operand stream re-interprets as the next outer opcode (a bytecode-density trick that simultaneously seeds the anim-block update). <code>crates/engine-vm</code> ships clean-room <code>rgb_to_hsv</code> / <code>hsv_to_rgb</code> mirroring the SCUS algorithms exactly.</li>
-    <li><strong>Fourth flag bank.</strong> <code>0x13</code> / <code>0x14</code> predicate, <code>0x1C</code> / <code>0x1D</code> set / clear - backed by the same <code>DAT_80085758</code> bitfield the field VM's <code>0x5x/0x6x/0x7x</code> default routes touch. <code>engine-core::World</code> exposes it as a single lazily-grown <code>system_flags: Vec&lt;u8&gt;</code> with MSB-first bit ordering (<code>0x80 &gt;&gt; (idx &amp; 7)</code>, mirroring <code>FUN_8003CE08</code>). The field VM's idx encoding ranges over <code>0..=0x87FF</code>, so the bank can't be a fixed-size array.</li>
+    <li><strong>A 16-slot shared scratch table</strong> that actors use to hand positions and render banks to each other.</li>
+    <li><strong>World-position lerps and gates</strong> - glide an actor toward the player or a map origin; bounding-box and squared-distance predicates around the player.</li>
+    <li><strong>Self-modifying bytecode</strong> - ops that write the actor's world position, or arithmetic results, back into the move buffer a few instructions ahead.</li>
+    <li><strong>HSV colour ramps</strong> - cycle a packed RGB colour through hue/saturation/value space (the ambient "pulsating flesh" and lightning effects idle on these).</li>
+    <li><strong>The fourth flag bank</strong> - conditional branches on the same system bitfield the field VM's story flags live in.</li>
   </ul>
-</section>
-
-<section class="doc-section" id="ext-doc">
-  <h2>The extension dispatcher in full</h2>
-  <p>The 61 sub-opcodes have their own page in the repository: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/move-vm-overlay-ext.md" target="_blank" rel="noopener"><code>docs/subsystems/move-vm-overlay-ext.md</code></a> - per-sub-op semantics, the slot table, the branch encodings (<code>0x13</code>/<code>0x14</code> are conditional branches on the fourth flag bank, and a negative delta onto a preceding wait forms the spin-wait idiom the ambient lightning cyclers idle on), and the fact that one copy of the dispatcher lives in the field overlay (0897) only, so battle-side move records cannot reach it.</p>
-  <h3 id="tile-board">A sibling that is not the move VM: the tile-board grid</h3>
-  <p>Puzzle rooms and board minigames run a discrete <strong>tile-board mode</strong> in the same field overlay: a <code>width &times; height</code> byte-cell array installed inline in the field-VM script by op <code>0x49</code> sub-op <code>0x05</code> (global <code>_DAT_8007b450</code>), where cell value <code>2</code> is a wall and each accepted d-pad press moves the player exactly one cell; the walk state machine is <code>overlay_0897_801ef2b0</code>. It is <em>not</em> general town locomotion (that is the free-movement controller on <a href="field-locomotion.html">field locomotion</a>) - it was once mistaken for it because both live in overlay 0897 and read the pad. Full layout: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/tile-board.md" target="_blank" rel="noopener"><code>docs/subsystems/tile-board.md</code></a>.</p>
-</section>
-
-<section class="doc-section" id="cross-refs">
-  <h2>Connection to other crates</h2>
-  <ul class="bullets">
-    <li><strong>crates/mdt</strong> - parses the <a href="../formats/mdt.html">MDT format</a>. The per-frame data inside an MDT record is exactly the move-VM bytecode this VM consumes. With the move-VM opcode set documented, <code>crates/mdt</code> can grow a disassembler.</li>
-    <li><strong>crates/engine-vm</strong> - clean-room Rust port lives at <code>crates/engine-vm/src/move_vm.rs</code>. All 71 outer opcodes plus all 61 inner ext sub-ops are ported; the <code>MoveHost</code> trait abstracts every actor-side callback. <code>actor_tick</code> mirrors the per-frame entry gate at <code>FUN_80021DF4 + 0x80022B94</code>.</li>
-    <li><strong>Field VM op <code>0x22</code></strong> (<code>EXEC_MOVE</code>) - the gateway from script-VM into move-VM; calls <code>FUN_800204F8</code> to set up the per-actor buffer.</li>
-  </ul>
-</section>
-
-<section class="doc-section" id="quirks">
-  <h2>Decompile quirks worth knowing</h2>
-  <ul class="bullets">
-    <li><strong>Operand units are u16</strong>, not bytes. <code>op[1]</code> is the 16-bit operand at offset 2 from the opcode word.</li>
-    <li><strong>PC is also in u16 units.</strong> <code>actor[+0x70] &times; 2</code> is the byte offset.</li>
-    <li><strong><code>param_3</code> is the size in u16 units</strong>, not bytes. The dispatcher epilogue does <code>actor[+0x70] += param_3</code>.</li>
-    <li><strong><code>0x47</code>-bound check</strong>: <code>sltiu v0, v1, 0x47</code>. Out-of-range opcodes silently fall through to the loop-exit. Treat any opcode <code>&ge; 0x47</code> as "end of move buffer" rather than "unknown opcode".</li>
-    <li><strong>Cases that "look like NOPs" in the C decompile</strong> still advance the PC via <code>param_3</code> - the increment is set in MIPS branch-delay slots and is invisible at the C level (same pattern as the field VM).</li>
-  </ul>
-</section>
-
-<section class="doc-section" id="summon-interpolation">
-  <h2>Summon part position glide (engine-interpreted tween)</h2>
-  <p>The engine's summon scene-graph driver (<code>engine-core::summon</code>) applies a render-side <strong>translation glide</strong> to each move-VM part-actor: an interpreted per-part tween, <em>not</em> a port of a retail summon function. The retail function once cited here, <code>FUN_801F811C</code>, is the <strong>2D screen-mask (iris) widget handler</strong> - kind 1 of the PROT 0900 <a href="#screen-fx-widgets">screen-effect widget family</a> below; its faithful port is <code>engine-core::screen_fx::MaskWidget</code>. <code>summon::apply_translation_update</code> keeps the tween <em>shape</em> only (documented as interpreted in <code>summon.rs</code>):</p>
-  <ul class="bullets">
-    <li>Each frame the part's tween time (<code>actor+0x9C</code>) advances toward its duration (<code>actor+0x9E</code>) by the per-frame delta (<code>_DAT_1F800393</code> in retail terms).</li>
-    <li>The world position (<code>+0x14/16/18</code>) interpolates toward the move-VM anim-bank target (<code>anim_3c/3e/40</code>, set by op <code>0x00 ANIM_BANK_SET</code> as <code>v &lt;&lt; 3</code>) via the <code>FUN_801DE4C8</code> mode-1 fixed-point lerp (<code>(target - cur) * t / dur + cur</code>, truncating integer divide) plus the sized-store helper <code>FUN_801DE648</code>.</li>
-    <li>On the frame the tween time reaches the duration, the position latches exactly to the target and <code>+0x9E</code> is cleared. The anim banks are summon-local, so the engine adds the cast origin to seat the part in world space.</li>
-  </ul>
-  <p>The retail <strong>player</strong> summon render is a different path entirely: the summon is drawn as an ordinary battle actor through the per-object rigid-TRS keyframe pipeline (<code>FUN_80048A08</code> &rarr; decoder <code>FUN_8004998C</code> &rarr; the per-prim TMD dispatcher <code>FUN_80043390</code>), exactly like an enemy monster body - see <a href="battle-action.html#summon-overlay">battle action &sect; summon-overlay dispatch</a>.</p>
   <details class="disclosure">
-    <summary>How the provenance was pinned (live captures)</summary>
+    <summary>Deep dive: extension sub-op groups, addresses and encodings</summary>
     <div class="disclosure-body">
-      <p>A live PCSX-Redux trace of a player Gimard <em>Burning Attack</em> cast resolved the render path: the battle per-actor draw <code>FUN_80048A08</code> fires 35-64&times;/frame into the TRS-keyframe decoder <code>FUN_8004998C</code>, while the earlier render candidate <code>FUN_801F7088</code> fires 0 times (its only static dumps are the world-map top-view tile renderer aliasing the same address). A full static decode of PROT 0900 at the slot-B link base <code>0x801F69D8</code> then resolved <code>FUN_801F811C</code> as the screen-mask widget handler: its four tweened channels (<code>+0x3c/3e/40/42</code> targets vs <code>+0x14/16/18/1a</code> current) are the left / top / right / bottom edges of a screen rectangle, and its "4 render quads" are the black border bands framing that rectangle - not summon-part positions.</p>
+      <p>Dispatcher <code>FUN_801D362C</code>, JT at <code>0x801CE868</code>, sub-op range <code>0x00..0x3C</code>; <code>sltiu sub_op, 0x3D</code> gates the <code>jr</code>, and the sign-extended <code>lh</code> load means negatives also fail the unsigned compare and fall to the plain <code>size = 1</code> return. The port mirrors the guard with a <code>_ =&gt; default_arm()</code> catch-all.</p>
+      <ul class="bullets">
+        <li><strong>Slot table <code>&amp;DAT_801F3498</code></strong> - 16 &times; 8 bytes. <code>0x25/0x26</code> round-trip world coords; <code>0x27/0x28</code> the tween-source triple at <code>+0x90</code> (<code>&gt;&gt; 12</code> fixed-point, <code>[-0xFF, 0xFF]</code> clamp on read); <code>0x31/0x32</code> the render-bank section; <code>0x34/0x35</code> the byte at <code>actor+0x72</code>.</li>
+        <li><strong>Globals.</strong> <code>DAT_801F22F4</code>: u32 predicate (<code>0x08/0x09</code> set/clear, <code>0x0A/0x0B</code> test). <code>DAT_801F22F6</code>: u16 counter mod 16 (<code>0x0F</code> clear, <code>0x10</code> read-and-increment into <code>actor.field_86</code>, <code>0x11</code> write world coords to the indexed slot).</li>
+        <li><strong>Lerps.</strong> <code>0x24</code>/<code>0x2A</code> share <code>axis = base + ((target - base) * t) &gt;&gt; 12</code>; Y always lerps toward the player, X/Z toward the map origin (<code>0x24</code>) or the player (<code>0x2A</code>). <code>0x06/0x07</code>: bbox-vs-player gates on the canonicalised box. <code>0x23</code>: anim-bank lerp using the scratchpad ramp ratio at <code>_DAT_1F800393</code>. <code>0x38/0x39</code>: squared-distance gates.</li>
+        <li><strong>Self-modification.</strong> <code>0x04</code> writes actor XYZ into <code>buffer[pc + op[2] + 3..]</code>; <code>0x1E</code> is read-modify-write on one u16; <code>0x1B</code> an in-bytecode copy loop. <code>MoveHost::move_bytecode_{read,write}_u16</code> expose the buffer to these.</li>
+        <li><strong>HSV ramps.</strong> <code>0x1F/0x20</code> decompose the packed RGB at <code>actor+0xA0</code> / <code>+0xA4</code>, convert via the SCUS RGB&harr;HSV pair (<code>FUN_8001A78C</code> / <code>FUN_8001A8DC</code>), add per-channel deltas (H wraps mod <code>0x168</code>, S/V clamp), re-pack. Both are size-1 by design: the operand stream re-interprets as the next outer opcode - a density trick that simultaneously seeds the anim-block update.</li>
+        <li><strong>Fourth flag bank.</strong> <code>0x13/0x14</code> predicate branches, <code>0x1C/0x1D</code> set/clear - the <code>DAT_80085758</code> bitfield, MSB-first (<code>0x80 &gt;&gt; (idx &amp; 7)</code>); idx ranges over <code>0..=0x87FF</code>, so the engine grows it lazily. A negative branch delta onto a preceding wait forms the spin-wait idiom the ambient cyclers idle on.</li>
+      </ul>
+      <p>Per-sub-op semantics: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/move-vm-overlay-ext.md" target="_blank" rel="noopener"><code>docs/subsystems/move-vm-overlay-ext.md</code></a>. Only the field overlay carries this dispatcher, so battle-side move records cannot reach it.</p>
     </div>
   </details>
+  <p class="hint">A sibling that is <em>not</em> the move VM: puzzle rooms run a discrete <strong>tile-board mode</strong> in the same overlay - a byte-cell grid where each d-pad press moves exactly one cell. It reads the pad too, which is how it was once mistaken for town locomotion (that is <a href="field-locomotion.html">field locomotion</a>). See <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/tile-board.md" target="_blank" rel="noopener"><code>tile-board.md</code></a>.</p>
 </section>
 
 <section class="doc-section" id="screen-fx-widgets">
   <h2>Screen-effect widget family (PROT 0900)</h2>
-  <p>The resident slot-B overlay PROT 0900 (link base <code>0x801F69D8</code>) hosts a four-kind family of 2D screen widgets - the cutscene-style presentation layer. Widgets are actors on the generic effect-actor list (<code>_DAT_8007C34C</code>): SCUS <code>FUN_80020DE0(descriptor, list)</code> allocates one and binds the per-frame handler at <code>actor+0xc</code>. Engine port: <code>engine-core::screen_fx</code>.</p>
+  <p>The resident slot-B overlay PROT 0900 hosts a four-kind family of 2D screen widgets - the cutscene-style presentation layer of iris wipes, letterboxes and tweened panels. Widgets are ordinary actors on the effect-actor list, spawned with a per-frame handler bound at <code>actor+0xC</code>. Engine port: <code>engine-core::screen_fx</code>.</p>
   <table>
-    <thead><tr><th>kind</th><th>handler</th><th>per-frame behaviour</th><th>spawn / control API</th></tr></thead>
+    <thead><tr><th>Kind</th><th>Handler</th><th>Per-frame behaviour</th></tr></thead>
     <tbody>
-      <tr><td>sprite</td><td><code>FUN_801F7A9C</code></td><td>widget-script-driven tweened 2D sprite (GP0 <code>0x64</code> SPRT)</td><td><code>FUN_801F8004(record)</code></td></tr>
-      <tr><td>mask</td><td><code>FUN_801F811C</code></td><td>4-edge rect tween + 4 black border quads (the iris)</td><td><code>FUN_801F8D4C(l,t,r,b,dur)</code></td></tr>
-      <tr><td>panel</td><td><code>FUN_801F849C</code></td><td>five-channel tween + 1-2 textured 15bpp quads</td><td><code>FUN_801F88FC(rec)</code> / <code>FUN_801F8E6C(x,y,scale,dur)</code></td></tr>
-      <tr><td>letterbox</td><td><code>FUN_801F8A34</code></td><td>two solid black bands + two gradient feather strips</td><td><code>FUN_801F8F28(block)</code></td></tr>
+      <tr><td>sprite</td><td><code>FUN_801F7A9C</code></td><td>Widget-script-driven tweened 2D sprite</td></tr>
+      <tr><td>mask</td><td><code>FUN_801F811C</code></td><td>4-edge rectangle tween + 4 black border quads (the iris)</td></tr>
+      <tr><td>panel</td><td><code>FUN_801F849C</code></td><td>Five-channel tween + 1-2 textured quads</td></tr>
+      <tr><td>letterbox</td><td><code>FUN_801F8A34</code></td><td>Two solid black bands + two gradient feather strips</td></tr>
     </tbody>
   </table>
-  <p>Consumers: field-VM op <code>0x43</code> sub-ops <code>0x10</code>/<code>0x11</code>/<code>0x13</code>/<code>0x14</code>/<code>0x15</code> - on disc, only the eight ending-sequence scenes' cutscene-timeline scripts invoke them; battle casts (including the enemy Fire Tail) leave the family dormant. All tweens share the <code>FUN_801DE4C8</code> interpolator (four easing modes, ported as <code>screen_fx::interp</code>). Full tables in <code>docs/subsystems/move-vm.md</code>.</p>
-  <p>The family is live in the engine: the op-0x43 handlers route to the aggregate widget host (<code>screen_fx::ScreenFxHost</code> on <code>World::screen_fx</code>), one tick per Field/Cutscene frame publishes <code>World::screen_fx_frame</code>, and <code>play-window</code> composites the frame above the 3D scene (solid border/band quads on the colour pipeline; panel + sprite quads VRAM-sampled, depth-layered per the retail OT slots). The letterbox gradient feather strips need the subtractive blend mode and are skipped for now.</p>
+  <p>On disc, only the eight ending-sequence scenes invoke the family (field-VM op <code>0x43</code> sub-ops); battle casts leave it dormant. All tweens share one four-mode interpolator, ported as <code>screen_fx::interp</code>. The engine ticks the family per Field/Cutscene frame and composites it above the 3D scene; the letterbox's gradient feather strips need the subtractive blend mode and are skipped for now.</p>
+  <details class="disclosure">
+    <summary>Summon part glide, and how the mask widget was mis-filed as a summon renderer</summary>
+    <div class="disclosure-body">
+      <p>The engine's summon driver (<code>engine-core::summon</code>) applies an <em>interpreted</em> translation glide to each move-VM part-actor - the tween shape only, not a port of a retail function: tween time at <code>actor+0x9C</code> advances toward the duration at <code>+0x9E</code>; world position lerps toward the anim-bank target (<code>(target - cur) * t / dur + cur</code>, truncating divide); on completion the position latches and the duration clears. The anim banks are summon-local, so the engine adds the cast origin to seat the part in world space.</p>
+      <p>The retail player-summon render is a different path entirely: the summon draws as an ordinary battle actor through the rigid-TRS keyframe pipeline (<code>FUN_80048A08</code> &rarr; decoder <code>FUN_8004998C</code> &rarr; TMD dispatcher <code>FUN_80043390</code>) - see <a href="battle-action.html#summon-overlay">battle action</a>. A live capture of a Gimard <em>Burning Attack</em> cast pinned this: the keyframe decoder fires 35-64&times;/frame while the earlier render candidate <code>FUN_801F7088</code> fires zero times. A full static decode of PROT 0900 then resolved <code>FUN_801F811C</code> - once read as a summon-part renderer - as the screen-<em>mask</em> widget: its four tweened channels are the edges of a screen rectangle, and its "4 render quads" are the black border bands.</p>
+    </div>
+  </details>
+</section>
+
+<section class="doc-section" id="cross-refs">
+  <h2>Where the pieces live</h2>
+  <ul class="bullets">
+    <li><strong><code>crates/mdt</code></strong> parses the <a href="../formats/mdt.html">MDT format</a>; the per-frame data inside an MDT record is exactly this VM's bytecode.</li>
+    <li><strong><code>crates/engine-vm/src/move_vm.rs</code></strong> is the clean-room port - all 71 outer + 61 extension ops, actor callbacks behind the <code>MoveHost</code> trait, and an <code>actor_tick</code> mirroring the retail per-frame entry gate.</li>
+    <li><strong>Field-VM op <code>0x22 EXEC_MOVE</code></strong> is the gateway in: it resolves a move id to a record and stages the buffer + PC on the actor.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="how-we-know">
+  <h2>How we know</h2>
+  <table>
+    <thead><tr><th>Function</th><th>Address</th><th>What it proves</th><th>Dump</th></tr></thead>
+    <tbody>
+      <tr><td>Dispatcher</td><td><code>FUN_80023070</code></td><td>u16 PC at <code>+0x70</code>, JT at <code>0x80010778</code>, the <code>&lt; 0x47</code> bound, loop-exit ops.</td><td><code>ghidra/scripts/funcs/80023070.txt</code></td></tr>
+      <tr><td>Actor tick</td><td><code>FUN_80021DF4</code></td><td>Per-frame entry, wait-timer countdown, physics-before-bytecode order.</td><td><code>80021df4.txt</code></td></tr>
+      <tr><td>Move stager</td><td><code>FUN_800204F8</code></td><td>How field-VM op <code>0x22</code> resolves a move id into buffer + PC.</td><td><code>800204f8.txt</code></td></tr>
+      <tr><td>Extension dispatcher</td><td><code>FUN_801D362C</code></td><td>61-entry JT at <code>0x801CE868</code>; bounds check before the <code>jr</code>; field overlay only.</td><td><code>overlay_0897</code> dumps</td></tr>
+      <tr><td>HSV pair</td><td><code>FUN_8001A78C</code> / <code>FUN_8001A8DC</code></td><td>The exact RGB&harr;HSV algorithms the colour-ramp ops call.</td><td><code>8001a78c.txt</code></td></tr>
+      <tr><td>Widget family</td><td><code>FUN_801F7A9C..FUN_801F8A34</code></td><td>Four widget kinds, spawn APIs, shared interpolator; static decode of PROT 0900 at link base <code>0x801F69D8</code>.</td><td><code>overlay_0900</code> dumps</td></tr>
+      <tr><td>Summon render path</td><td><code>FUN_80048A08</code> / <code>FUN_8004998C</code></td><td>Live PCSX-Redux capture: keyframe pipeline draws the summon; <code>FUN_801F7088</code> never fires.</td><td>capture CSVs</td></tr>
+    </tbody>
+  </table>
+  <p class="hint">Full opcode-by-opcode reference: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/move-vm.md" target="_blank" rel="noopener"><code>docs/subsystems/move-vm.md</code></a> and <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/move-vm-overlay-ext.md" target="_blank" rel="noopener"><code>move-vm-overlay-ext.md</code></a>.</p>
 </section>
 
 <section class="doc-section" id="see-also">
@@ -230,10 +159,10 @@ goto v0;                                                  // computed jump</code
     <a href="../formats/mdt.html">Move table (MDT)</a>
     <a href="motion-vm.html">Motion VM</a>
     <a href="battle-action.html">Battle action SM</a>
-    <a href="actor-vm.html">Actor VM</a>
-      <a href="../formats/mdt.html">MDT move table</a>
+    <a href="actor-vm.html">Window-widget VM</a>
+    <a href="script-vm.html">Field VM</a>
     <a href="../formats/art-data.html">Art data</a>
     <a href="field-locomotion.html">Field locomotion</a>
     <a href="../arts.html">Arts browser</a>
-</div>
+  </div>
 </section>

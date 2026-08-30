@@ -1,19 +1,26 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; arts command gauge</div>
   <h1>Arts command gauge - weapon-specialty arm width</h1>
-  <p class="lede">When a character's turn opens the Arts command input, the battle UI draws an <strong>action gauge</strong>: a fixed AP pool the player spends by inputting directional commands (High /
-    Low / the two <strong>arm</strong> swings). Each command costs AP, and the cost of the <strong>arm</strong> command depends on the equipped weapon's class versus the character's favored class. Equip
-    off-class and the arm command costs more - the "longer arm input" players see. Two myths fall on this page: the off-class penalty is <strong>not the flat &times;2</strong> the community wisdom says
-    (it escalates - off-class is &times;1.4 over base, and only the Astral Sword pays the full double penalty), and the cost is <strong>not computed at runtime at all</strong> - it is per-(character,
-    weapon) data baked into each character's battle file on the disc, copied verbatim at battle load. That makes it a data table you can edit, which is exactly what the randomizer's weapon-specialty
-    shuffle does.</p>
+  <p class="lede">When a character's turn opens the Arts input, the battle UI draws an <strong>action gauge</strong>: a fixed AP pool the player spends by pressing directional commands. The weapon-hand swing costs more with an off-class weapon - the "longer arm input" players see. Two myths fall on this page: the off-class penalty is <strong>not a flat &times;2</strong>, and the cost is <strong>not computed at runtime at all</strong> - it is per-(character, weapon) data on the disc, which is what makes it editable.</p>
 </header>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Cost byte</dt><dd>Runtime command record <code>DAT_801C9360[char][cmd] + 0x74</code> - one byte is both the AP price and the pennant width</dd>
+    <dt>Budget</dt><dd>The character's <strong>AGL</strong> stat seeds the turn pool at <code>ctx+0x6DC</code>; input ends when the next command would not fit</dd>
+    <dt>Disc source</dt><dd>The equipped weapon's section in the character's <a href="../formats/battle-data-pack.html">player battle file</a> (extraction 863..866), copied verbatim at battle load</dd>
+    <dt>Tiers</dt><dd>30 favored / 42 off-class / 54 far tier - authored data, no class comparison in code</dd>
+    <dt>Editor</dt><dd>The <a href="../tooling/rom-patcher.html">ROM patcher</a>'s equipment editor and the randomizer's <code>--weapon-specialty</code> rewrite these bytes in place</dd>
+    <dt>Confidence</dt><dd>Confirmed - live-pinned and byte-validated against the disc; "command <code>0x0C</code> = the arm" is Inferred (<a href="#how-we-know">how we know</a>)</dd>
+  </dl>
+</section>
 
 <section class="doc-section" id="what-the-bar-does">
   <h2>What the AP bar does</h2>
-  <p>On your turn the Arts bar fills with a row of pennants, one per direction you press, and stops accepting input when the next pennant would not fit. That bar is a budget - your <strong>AGL</strong> stat - and every direction has a price. Three of the four prices never change. The fourth, the weapon-hand swing, is authored per weapon: swing the class your character favours and it costs the base 30; swing off-class and it costs 42; the far tier costs 54. Because the price is also the pennant's width, an off-class weapon <em>looks</em> wider and <em>fits</em> fewer commands in the same turn.</p>
+  <p>On your turn the Arts bar fills with a row of pennants, one per direction you press, and stops accepting input when the next pennant would not fit. Every direction has a price; three of the four never change. The fourth - the weapon-hand swing - is authored per weapon, and because the price is also the pennant's width, an off-class weapon <em>looks</em> wider and <em>fits</em> fewer commands in the same turn.</p>
   <figure class="overlay-strip">
-    <svg viewBox="0 0 880 150" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="acg-pennant-title" style="font-family: var(--font-mono); font-size: 12px;">
+    <svg viewBox="0 0 880 150" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="acg-pennant-title" width="100%" style="max-width: 880px; font-family: var(--font-mono); font-size: 12px;">
       <title id="acg-pennant-title">Arm pennant width by weapon class tier</title>
       <g fill="var(--text-muted)"><text x="20" y="30">favored  (30)</text><text x="20" y="75">off-class (42)</text><text x="20" y="120">far tier  (54)</text></g>
       <g fill="var(--bg-card)" stroke="var(--accent)" stroke-width="1.5">
@@ -29,9 +36,9 @@
       <line x1="790" y1="8" x2="790" y2="140" stroke="var(--border)" stroke-dasharray="4 3"/>
       <text x="798" y="76" fill="var(--text-muted)" font-size="11">AGL budget</text>
     </svg>
-    <figcaption>Same AGL, three weapons. Only the weapon-hand arm changes width (<code>cost - 6</code> px); the wider it is, the fewer commands the turn admits before the bar runs out.</figcaption>
+    <figcaption>Same AGL, three weapons. Only the weapon-hand arm changes width; the wider it is, the fewer commands the turn admits.</figcaption>
   </figure>
-  <table class="data-table">
+  <table>
     <thead><tr><th>Tier</th><th>Arm cost</th><th>Over base</th><th>Who lands here</th></tr></thead>
     <tbody>
       <tr><td>Favored class</td><td>30</td><td>-</td><td>Vahn with a sword, Noa with a claw, Gala with a club</td></tr>
@@ -39,157 +46,53 @@
       <tr><td>Far tier</td><td>54</td><td>+24 (&times;1.8)</td><td>Noa with any club or axe; Vahn's Astral Sword</td></tr>
     </tbody>
   </table>
-</section>
-
-<section class="doc-section doc-summary" id="summary">
-  <h2>Summary</h2>
-  <ol class="bullets">
-    <li>Each of the four direction commands on the Arts bar carries an 8-bit <strong>AP cost</strong>. The gauge builder uses that one byte both as the command&rsquo;s price and as the width of the pennant drawn for it (<code>cost &minus; 6</code> px wide, next pennant <code>cost</code> px later). A larger button and a more expensive command are the same value. The pennant is a text window and its label has to fit: 30 (retail&rsquo;s floor) is the lowest clean width, 24 is still legible, below that the label smears into fragments (an emulator sweep of <code>+0x74</code> injections; the patcher refuses costs below 24).</li>
-    <li>Only the command that swings the <strong>weapon hand</strong> depends on equipment - Left (<code>0x0C</code>) for Vahn and Gala, Right (<code>0x0D</code>) for Noa. It takes one of three authored values: 30 favored class, 42 off-class, 54 far off-class. The Ra-Seru arm and the two leg commands are always 30.</li>
-    <li>The game performs <strong>no class comparison</strong> at runtime. The cost is authored per (character, weapon) inside each character&rsquo;s player battle file and copied into RAM unchanged at battle load.</li>
-    <li>The turn budget is the character&rsquo;s <strong>AGL</strong> stat. A turn admits commands until the next one would exceed what is left, then the input ends by itself.</li>
-    <li>The Astral Sword is Vahn&rsquo;s only weapon authored at 54. It is not a special case in code; it sits on the tier Noa reaches with any club or axe.</li>
-  </ol>
-</section>
-
-<section class="doc-section" id="not-a-flat-double">
-  <h2>Not a flat double</h2>
-  <p>The mechanic is usually described as "an off-class weapon <em>doubles</em> the arm command." Byte-for-byte it is a <strong>base cost plus an escalating class penalty</strong>, not a flat &times;2. Reading the arm command's cost for the <em>same</em> character with different weapons isolates it exactly:</p>
-  <table class="data-table">
-    <thead><tr><th>Equip</th><th>Class vs character</th><th>Arm (<code>0x0C</code>) cost</th></tr></thead>
-    <tbody>
-      <tr><td>Gala + Ra-Seru Club</td><td>favored (club user, club weapon)</td><td><code>0x1E</code> (30)</td></tr>
-      <tr><td>Gala + Nail Glove</td><td>off-class (club user, claw weapon)</td><td><code>0x2A</code> (42)</td></tr>
-      <tr><td>Vahn + Astral Sword</td><td>always-double exception</td><td><code>0x36</code> (54)</td></tr>
-    </tbody>
-  </table>
-  <p>The other commands (<code>0x0D</code>/<code>0x0E</code>/<code>0x0F</code>) hold a constant <code>0x1E</code>. So: base <code>0x1E</code>, <strong><code>+0x0C</code> for an off-class weapon, <code>+0x18</code> for the Astral Sword</strong>. The Astral penalty is twice the off-class penalty - the source of the "double" shorthand - but the off-class case itself is <code>+0x0C</code> over base (&times;1.4), not &times;2.</p>
-</section>
-
-<section class="doc-section" id="where-the-cost-lives">
-  <h2>Where the cost lives</h2>
-  <p>The per-command cost is a runtime field, not a static table row. (Names like <code>DAT_801C9360</code> / <code>FUN_801D388C</code> are Ghidra's labels for traced data and functions at those RAM addresses; the battle code lives in overlay <code>0898</code>, a chunk of code the game loads into RAM for battles.)</p>
-  <ul class="bullets">
-    <li><code>DAT_801C9360</code> - per-character <strong>command-data pointer table</strong> (one pointer per active party member), in battle bss. Each entry points into the <strong>loaded player battle data</strong> (the <a href="../formats/battle-data-pack.html"><code>battle_data</code> block</a>, extraction 863..866).</li>
-    <li><code>DAT_801C9360[char]</code> - that character's array of per-command struct pointers, indexed by <strong>command code</strong> (<code>cmd * 4</code>).</li>
-    <li><code>&hellip;[cmd] + 0x74</code> - the <strong>arm width / AP cost</strong> byte. Full access: <code>*(u8*)( *(u32*)( *(u32*)(DAT_801C9360 + char*4) + cmd*4 ) + 0x74 )</code>.</li>
-  </ul>
-  <p>The default 4-command display uses command codes <code>DAT_801F4B8C = [0x0C 0x0F 0x0E 0x0D]</code> (overlay <code>0898</code> rodata) with an icon-base sibling <code>DAT_801F4B94 = [0x0D 0x10 0x11 0x0C]</code>. Command <strong><code>0x0C</code> is the arm command</strong> whose <code>+0x74</code> tracks the weapon; the others stay constant.</p>
+  <p>Only the <strong>weapon hand</strong> depends on equipment - Left for Vahn and Gala, Right for Noa. The Ra-Seru arm and the two leg commands are always 30. The "off-class doubles the arm" folklore counts <em>penalties</em>: the Astral penalty (+24) is twice the off-class penalty (+12); the cost itself is &times;1.4, not &times;2.</p>
 </section>
 
 <section class="doc-section" id="how-the-gauge-consumes-it">
   <h2>How the gauge consumes it</h2>
-  <p>The gauge is assembled by <code>FUN_801D388C</code> (the battle action/animation event handler, driven by the <a href="battle-action.html">battle main dispatcher <code>FUN_801D0748</code></a>). Its <strong>case <code>9</code>/<code>0x2C</code></strong> reads the cost; <strong>case <code>0xB</code></strong> spends it against the remaining AP at <code>ctx + 0x6DC</code>:</p>
-<pre><code>// case 9 / 0x2C  (gauge build)
-bVar3 = *(u8*)( *(u32*)(DAT_801C9360[char][cmd]) + 0x74 );  // arm width / AP cost
-ctx[slot + 0x14] = bVar3;                                    // per-slot AP cost
-gauge_slot.icon_pos = bVar3 - 6;                             // visual width on the bar
+  <p>The gauge is assembled by the battle action handler; one case reads the cost, another spends it:</p>
+<pre><code>// gauge build (case 9 / 0x2C)
+cost = command_record[cmd] + 0x74;    // the arm width / AP cost byte
+gauge_slot.width = cost - 6;          // visual width on the bar
 
-// case 0xB  (spend)
-if (ctx[0x6DC] &lt; ctx[slot + 0x14]) return;                  // not enough AP
-ctx[0x6DC] -= ctx[slot + 0x14];                             // consume the command</code></pre>
-  <p>A higher <code>+0x74</code> widens the gauge slot (<code>bVar3 - 6</code>) <em>and</em> drains more of the AP pool, so an off-class arm both looks wider and lets fewer total commands fit.</p>
-  <p>The same case-<code>9</code>/<code>0xB</code> machinery also deals and spends the <strong>Muscle Dome hand</strong>: a dome card is one of the four direction commands (<code>0xC..=0xF</code>, the deck table <code>DAT_801f4b8c</code>), its cost is this same <code>+0x74</code> byte, and the commit debits the same <code>ctx+0x6DC</code> pool - see the <a href="../minigames.html">minigames page</a> and the <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-muscle-dome.md">Muscle Dome write-up</a>.</p>
-  <p>The <strong>enemy analogue</strong> is the AGL action-budget in <code>FUN_801E9FD4</code>: a monster fills its per-turn action queue by rolling candidate moves and paying each move's <code>+0x74</code> cost out of the per-round AGL gauge (<code>actor[+0x154]</code>) - the same "wider cost = fewer commands" mechanic on the AI side (see <a href="battle-action.html">battle action</a>).</p>
-  <aside class="notice"><p>A separate <code>+2</code> in the same case (<code>icon = DAT_801F4B94[i] + 2</code>, gated on an <em>empty</em> equip slot, <code>equip[cmd] == 0</code>) is an empty-slot icon tweak, <strong>not</strong> the class penalty - a fully-equipped off-class character still widens via the <code>+0x74</code> cost above.</p></aside>
-</section>
-
-<section class="doc-section" id="status-limb-gating">
-  <p><strong>Two budgets, not one.</strong> The AP pool bounds a turn by <em>cost</em>, but the committed command buffer <code>actor[+0x1DF..+0x1EE]</code> bounds it by <em>count</em>: sixteen bytes, a cap the cancel wipe, the preseed <code>FUN_801DA34C</code> and the Super applier <code>FUN_801EF9E4</code> all share. A plain direction press is one byte; a matched art keeps its leading arrows and replaces its last one with the two-byte <code>[0x19 starter][art id]</code> pair, so an N-arrow art occupies N&nbsp;+&nbsp;1 bytes, and a Super / Miracle tail-replaces the buffer with its own finisher bytes. At retail costs the pool binds long before sixteen tokens do; a mod that prices commands low enough that <code>pool / cost</code> passes sixteen hits the buffer instead.</p>
-
-  <h2>Status limb gating</h2>
-  <p>A <strong>Rot</strong> (or similar limb-disable) status grays individual command arrows and refuses their input. The gauge-input arm <code>FUN_801D0748</code> state <code>0x50</code> (<code>overlay_battle_action_801d0748.txt:3311-3360</code>) reads the active actor's <code>+0x16E</code> status halfword; the gray-draw pass and the input gate agree bit-for-bit:</p>
-  <table class="data-table">
-    <thead><tr><th><code>+0x16E</code> bit</th><th>Arrow grayed (draw pos)</th><th>Blocks command</th></tr></thead>
-    <tbody>
-      <tr><td><code>0x08</code> (limb 0)</td><td>LEFT (<code>0xb3 - w/2, 0x42</code>)</td><td>Square <code>0x8000</code> / dir 0</td></tr>
-      <tr><td><code>0x10</code> (limb 1)</td><td>RIGHT (<code>0xe5 + w/2, 0x42</code>)</td><td>Circle <code>0x2000</code> / dir 3</td></tr>
-      <tr><td><code>0x20</code> (limb 2)</td><td>UP (<code>0xcc, 0x22</code>) <strong>and</strong> DOWN (<code>0xcc, 0x62</code>)</td><td>Triangle <code>0x1000</code> / dir 1 <strong>and</strong> Cross <code>0x4000</code> / dir 2</td></tr>
-      <tr><td><code>0x1000</code> (<strong>Curse</strong>)</td><td>the whole MAGIC command (<code>FUN_801dbec4(0xf8, 0x42)</code>)</td><td>Magic</td></tr>
-    </tbody>
-  </table>
-  <p>With all three limb bits set (<code>0x38</code>) the whole Arm command is skipped and Attack is unusable. Note the retail assignment: Left = <code>0x08</code>, Right = <code>0x10</code>, and Up + Down together = <code>0x20</code> (a single bit grays two arrows) - not one bit per arrow. Rot rolls exactly one of these three bits (<code>1 &lt;&lt; (rand%3 + 3)</code>); see <a href="battle-formulas.html">battle formulas &sect; status application</a>.</p>
-</section>
-
-<section class="doc-section" id="weapon-classes">
-  <h2>Weapon classes and favored mapping</h2>
-  <p>"Off-class" is the equipped weapon's <strong>class</strong> versus the character's favored class. The class is legible from the static item-property records (<code>DAT_80074368 + id*12</code>): the description pointer (<code>+8</code>) is <strong>shared per class</strong>, and the description carries a <code>Best:&lt;character&gt;</code> token. Universal weapons (equip-mask <code>0b111</code>) partition cleanly:</p>
-  <table class="data-table">
-    <thead><tr><th>Class</th><th>"Best" character</th><th>Example universal weapons</th></tr></thead>
-    <tbody>
-      <tr><td>knife / sword</td><td>Vahn</td><td>Survival Knife, Battle Knife, Short Sword</td></tr>
-      <tr><td>claw</td><td>Noa</td><td>Nail Glove, Crimson Nails, Fighter Claw, Bloody Claw</td></tr>
-      <tr><td>club / axe</td><td>Gala</td><td>Survival Club, Red Club, Survival Axe, Battle Axe</td></tr>
-    </tbody>
-  </table>
-  <p>Character-specific weapons (Ra-Seru Blade / Fangs / Club, etc.) are locked to one owner by the equip-character mask (equip-record <code>+6</code>) and are always favored for that owner. The <strong>Astral Sword</strong> (<code>0xBA</code>) has its own description pointer, matches no character, and takes the maximum penalty. Favored mapping: <strong>knife/sword &rarr; Vahn, claw &rarr; Noa, club/axe &rarr; Gala</strong>.</p>
-</section>
-
-<section class="doc-section" id="execution-path">
-  <h2>Execution path</h2>
-  <p>Once a combo is committed it is replayed by the <strong>Arms execution resolver <code>FUN_801EC3E4</code></strong> (overlay <code>0898</code>), <strong>called from <code>SCUS_942.54</code> at <code>0x800478A0</code></strong> (<code>jal 0x801EC3E4</code>) - the execution driver is the static side, which is why the resolver has no caller inside the overlay. It advances the input cursor (<code>actor + 0x1F4</code>) one step per recorded command and dispatches per-command sub-handlers through <code>PTR_801CF4B4[(actor + 0x1D9) - 0xC]</code>. Those sub-handlers read the equipped weapon again to fold it into the damage calculation - a read distinct from the gauge-build cost above.</p>
-
-  <h3>The execution-time weapon fold</h3>
-  <p>The dispatch is bounded at <strong>six arms</strong> (<code>(command - 0x0C) &lt; 6</code>, commands <code>0x0C..=0x11</code>), and the head admission gate is a <em>different</em> band read from a <em>different</em> place: it tests the caller's command-record byte with <code>(cmd - 0x0C) &lt; 0x14</code> (<code>0x0C..=0x1F</code>). A command in <code>0x12..=0x1F</code> is admitted and then folds nothing.</p>
-  <p>Each arm resolves one or more of the character record's five equipment slots (<code>+0x196..+0x19B</code>) through the two-hop lookup item property record <code>DAT_80074368 + id*0xC</code> byte <code>+1</code> &rarr; equipment stat row <code>DAT_80074F68 + row*8</code> byte <code>+1</code> (the <strong>attack</strong> bonus), and adds it into the actor's <strong>ATK working</strong> halfword <code>+0x158</code>:</p>
-  <div class="table-scroll">
-  <table>
-    <thead><tr><th>command</th><th>equipment slots</th><th>fold into <code>+0x158</code></th></tr></thead>
-    <tbody>
-      <tr><td><code>0x0C</code></td><td>2</td><td><code>atk[2] &gt;&gt; 1</code></td></tr>
-      <tr><td><code>0x0D</code></td><td>3</td><td><code>atk[3] &gt;&gt; 1</code></td></tr>
-      <tr><td><code>0x0E</code> / <code>0x0F</code></td><td>4</td><td><code>atk[4] &gt;&gt; 1</code></td></tr>
-      <tr><td><code>0x10</code></td><td>none</td><td>nothing</td></tr>
-      <tr><td><code>0x11</code></td><td>0,1,2,3,4</td><td><code>(sum of all five) &gt;&gt; 1</code></td></tr>
-    </tbody>
-  </table>
+// press (case 0xB)
+if (pool &lt; cost) return;              // not enough AP - input ends
+pool -= cost;                         // ctx+0x6DC, seeded from AGL</code></pre>
+  <p>One byte is both price and width - a larger button and a more expensive command are the same value. The pennant is a text window and its label has to fit: 30 is retail's floor, 24 is still legible, below that the label smears (the patcher refuses costs below 24). Two neighbours share the machinery:</p>
+  <ul class="bullets">
+    <li>The <strong>Muscle Dome hand</strong> deals and spends the same records: a dome card is a direction command, its cost is the same byte, the commit debits the same pool (<a href="../minigames.html">minigames</a>).</li>
+    <li>The <strong>enemy analogue</strong>: a monster fills its per-turn action queue by paying each move's <code>+0x74</code> cost out of its per-round AGL gauge - the same "wider cost = fewer commands" mechanic on the AI side (<a href="battle-action.html">battle action</a>).</li>
+  </ul>
+  <div class="notice">
+    <p class="notice-title">Two budgets, not one</p>
+    <p>The AP pool bounds a turn by <em>cost</em>; the committed command buffer (<code>actor+0x1DF..+0x1EE</code>) bounds it by <em>count</em> - sixteen bytes. A plain press is one byte; a matched art replaces its last arrow with a two-byte starter pair, so an N-arrow art occupies N+1 bytes. At retail costs the pool binds long before sixteen tokens do; a mod that prices commands low enough hits the buffer instead.</p>
   </div>
-  <p><code>0x0E</code> and <code>0x0F</code> share a jump-table arm, and <code>0x10</code>'s slot is the same address the bounds check bails to - a live table entry that folds nothing. Retail applies no empty-slot test and no <code>kind == 1</code> item-class guard here.</p>
-  <p>This is the counterpart to the battle-load asymmetry: the seeder <code>FUN_80053CB8</code> folds the equipment table's UDF / LDF / SPD bytes and folds <strong>neither</strong> INT nor ATK, so a weapon's attack bonus never reaches the actor's ATK <strong>base</strong> (<code>+0x15A</code>). It reaches ATK <strong>working</strong> here instead, per committed command - the seeder's omission is correct, not a gap.</p>
 </section>
 
 <section class="doc-section" id="who-writes-it">
-  <h2>Who writes the cost</h2>
-  <p>The cost is <strong>not</strong> computed by a runtime favored-class comparison. It is written once at battle load (the <code>game_mode 0x14 &rarr; 0x15</code> transition) as a <strong>verbatim copy</strong> out of the assembled battle-character buffer:</p>
-  <ul class="bullets">
-    <li>The writer is <code>FUN_800557B8</code> (the per-command-struct copy routine in <code>SCUS_942.54</code>): a fixed 43-word block copy from source <code>a1</code> to the runtime struct <code>a0</code> (<code>lw v0,(a1)</code> &rarr; <code>sw v0,(a0)</code>; the cost word at struct <code>+0x74</code> lands inside that block). There is <strong>no arithmetic on the cost value</strong> between load and store - confirmed by a live write-watch on the field through a field&rarr;battle transition, where the only write fires here at <code>pc = 0x80055810</code>.</li>
-    <li>It is called from the <strong>battle character-assembly chain</strong> (<code>FUN_80052770</code> &hellip; the call site at <code>0x80053330</code>), which splices the equipped item's section into the per-character battle buffer.</li>
-  </ul>
-  <p>So the arm cost originates in the <strong>equipped weapon's section of the per-character <a href="../formats/battle-data-pack.html">player battle file</a></strong> (extraction 863..866) and is carried verbatim into the runtime struct. The "off-class penalty" is therefore <strong>per-(character, weapon) data baked into those files</strong> - favored-class weapons carry a low arm cost in that character's file and off-class weapons a higher one - not a class comparison the engine performs. The same weapon yields different costs in different characters' files (a claw is cheap in Noa's file, expensive in Gala's).</p>
-</section>
-
-<section class="doc-section" id="disc-location">
-  <h2>Disc location</h2>
-  <p>Inside the <a href="../formats/battle-data-pack.html">player battle file</a>, the cost sits in the weapon's section, reached through the section's <strong>swing-action record</strong>:</p>
-<pre><code>section (decoded)
-  +0x04  u32 swing_rec_a   ; offset (within the section) to the swing/arm command record
-  ...
-  swing_rec_a + 0x74       ; u8 arm cost  &larr; the weapon-specialty byte</code></pre>
-  <p>The descriptor table keys sections by equippable item id, so each weapon has its own section and swing record. Decoding the four player files (863..866; <code>asset battle-data-pack &lt;file&gt; --out</code>) and reading <code>section[+0x04] + 0x74</code> per weapon gives a byte-exact picture - favored-class weapons carry <code>0x1E</code> (30), off-class weapons higher costs that scale with class distance:</p>
-  <table class="data-table">
-    <thead><tr><th>character (file)</th><th>favored &rarr; <code>0x1E</code></th><th>off-class &rarr; <code>0x2A</code></th><th>far off-class &rarr; <code>0x36</code></th></tr></thead>
+  <h2>Where the cost comes from</h2>
+  <p>The game performs <strong>no class comparison</strong>. The cost is written once at battle load as a verbatim 43-word block copy out of the assembled battle-character buffer - no arithmetic between load and store, confirmed by a live write-watch across a field&rarr;battle transition. The source is the equipped weapon's section of the character's player battle file:</p>
+  <pre><code>section (LZS-decoded)
+  +0x04  u32 swing_rec   ; offset to the swing/arm command record
+  swing_rec + 0x74       ; u8 arm cost  &larr; the weapon-specialty byte</code></pre>
+  <p>The descriptor table keys sections by item id, so each weapon has its own swing record <em>per character's file</em> - a claw is cheap in Noa's file and expensive in Gala's. Decoding all four files gives the byte-exact picture:</p>
+  <table>
+    <thead><tr><th>Character (file)</th><th>Favored &rarr; 30</th><th>Off-class &rarr; 42</th><th>Far &rarr; 54</th></tr></thead>
     <tbody>
-      <tr><td>Vahn (863)</td><td>blade / knife / sword / fist</td><td>claw, axe</td><td>-</td></tr>
+      <tr><td>Vahn (863)</td><td>blade / knife / sword / fist</td><td>claw, axe</td><td>Astral Sword only</td></tr>
       <tr><td>Noa (864)</td><td>claw / feral / fang (+ knife)</td><td>sword / blade</td><td>club / axe</td></tr>
       <tr><td>Gala (865)</td><td>club / axe / mace</td><td>claw, knife</td><td>-</td></tr>
     </tbody>
   </table>
-  <p>Cross-checked against live RAM: Gala + Nail Glove reads <code>0x2A</code>, Gala + Ra-Seru Club reads <code>0x1E</code> - matching that file's <code>0x28</code> and <code>0x21</code> sections. The cost lives inside the section's <strong>LZS-compressed</strong> stream, so an editor decompresses the section, rewrites the byte at <code>swing_rec_a + 0x74</code>, recompresses, and writes back within the slot footprint.</p>
-</section>
-
-<section class="doc-section" id="confidence">
-  <h2>Confidence</h2>
-  <ul class="bullets">
-    <li><span class="tag tag-done">Confirmed</span> (live-pinned + byte-validated against the disc) the cost field <code>DAT_801C9360[char][0x0C] + 0x74</code>, its values, the case-<code>9</code> read / case-<code>0xB</code> spend in <code>FUN_801D388C</code>, the resolver call site, the <strong>writer</strong> (<code>FUN_800557B8</code>, verbatim copy from the LZS-decoded equipment section at battle load), and the <strong>disc location</strong> (<code>section[+0x04]</code> swing record <code>+0x74</code> in the player battle files, tabulated above).</li>
-    <li><span class="tag tag-partial">Inferred</span> that command <code>0x0C</code> is "the arm" (it is the only command whose cost tracks the weapon).</li>
-  </ul>
-  <p>The mechanic is therefore a fully editable data table: rewrite a character's favored-class arm costs up / another class's down to reassign their specialty - which is exactly what the <a href="../tooling/randomizer.html">randomizer</a>'s <code>--weapon-specialty</code> does, permuting the three favored families among the characters by rewriting these bytes in place.</p>
+  <p>Cross-checked live: Gala + Nail Glove reads 42, Gala + Ra-Seru Club reads 30, matching his file's sections. The cost lives inside an LZS-compressed stream, so an editor decompresses the section, rewrites one byte, recompresses, and writes back within the slot footprint.</p>
+  <p>"Off-class" itself is legible from the static item records: the description pointer is shared per weapon class and carries a <code>Best:&lt;character&gt;</code> token - knife/sword &rarr; Vahn, claw &rarr; Noa, club/axe &rarr; Gala. The Astral Sword has its own description, matches no character, and simply sits on the tier Noa reaches with any club.</p>
 </section>
 
 <section class="doc-section" id="every-weapon">
   <h2>Every weapon, every character</h2>
-  <p>Weapon-hand swing cost read from each character&rsquo;s player file; all other direction commands read 30. A dash means the file has no section for the weapon (the equip mask stops them equipping it anyway). Classes are finer than blade / claw / club: Gala swings a Short Sword at 30 but a knife at 42; Vahn swings the light clubs at 30 but the Power Club and every axe at 42; Noa is the only character with a 54 on ordinary gear.</p>
-  <table class="data-table">
+  <p>Weapon-hand swing cost from each character's file; all other commands read 30. A dash means the file has no section for the weapon (the equip mask stops them equipping it anyway). Classes are finer than blade / claw / club: Gala swings a Short Sword at 30 but a knife at 42; Vahn swings light clubs at 30 but the Power Club and every axe at 42.</p>
+  <table>
     <thead><tr><th>Weapon</th><th>Vahn (Left)</th><th>Noa (Right)</th><th>Gala (Left)</th></tr></thead>
     <tbody>
       <tr><td>Survival Knife, Battle Knife</td><td>30</td><td>30</td><td>42</td></tr>
@@ -198,104 +101,91 @@ ctx[0x6DC] -= ctx[slot + 0x14];                             // consume the comma
       <tr><td>Nail Glove, Crimson Nails, Fighter Claw, Bloody Claw</td><td>42</td><td>30</td><td>42</td></tr>
       <tr><td>Survival Club, Red Club</td><td>30</td><td>54</td><td>30</td></tr>
       <tr><td>Power Club, Survival Axe, Battle Axe, Great Axe</td><td>42</td><td>54</td><td>30</td></tr>
-      <tr><td>Astral Sword (<code>0xBA</code>)</td><td>54</td><td>-</td><td>-</td></tr>
+      <tr><td>Astral Sword</td><td>54</td><td>-</td><td>-</td></tr>
       <tr><td>Character-locked gear (Ra-Seru weapons, Feral / Hard Beat / Heavy Strike, Holy / Golden Claw, Mace)</td><td>30</td><td>30</td><td>30</td></tr>
     </tbody>
   </table>
+  <details class="disclosure">
+    <summary>If the Astral Sword is forced onto another character</summary>
+    <div class="disclosure-body"><p>The value 54 exists in exactly one place on the disc - the Astral section of Vahn's file - and the other files have no section for that id. Forced into Noa's slot by a cheat, the section selector finds no match and takes the id-0 default entry: default mesh, default swing record, cost 30. She swings at the favored price and does not visibly hold the sword; the attack bonus still applies, because attack folds in at execution from the static equipment table, keyed by item id alone. A mod that wants the penalty to travel would have to add a section, and there is no room - every player file ends flush against its last slot. The in-place knob is the default record's own cost, which the ROM patcher's equipment editor exposes per section (not yet confirmed with a live capture of an edited save).</p></div>
+  </details>
 </section>
 
-<section class="doc-section" id="astral-forced">
-  <h2>If the Astral Sword is forced onto another character</h2>
-  <p>Would the wide command follow the sword if a cheat placed it in Noa&rsquo;s or Gala&rsquo;s weapon slot? Expected answer: no. The value 54 exists in exactly one place on the disc - the <code>0xBA</code> section of Vahn&rsquo;s file - and the other files contain no section for <code>0xBA</code>. At battle load the section selector matches the record&rsquo;s equipment byte against the ids in the corresponding section and, when nothing matches, takes that section&rsquo;s id-0 default entry: default mesh, default swing record, cost 30. She would swing at the favored price and not visibly hold the sword. The 97 attack still applies, because attack is folded in at execution from the static equipment table, keyed by item id alone. The equip mask is enforced only in the menu. A mod that wants the penalty to travel with the sword would have to add an <code>0xBA</code> section to the other files, and there is no room: every player file ends flush against its last slot. The one in-place knob is the default record&rsquo;s own cost, which the <a href="../tooling/rom-patcher.html">ROM patcher&rsquo;s equipment editor</a> exposes as a Default row per section (<code>CHAR:default=COST</code>, <code>raseru</code>, <code>feet</code> / <code>feet:up</code>) and reports whenever an owner edit creates such a combination; the same editor reprices the other three commands through their own sections - the Ra-Seru arm&rsquo;s record and the footwear section&rsquo;s Down (<code>+0x04</code>) and Up (<code>+0x08</code>) records, all 30 in retail. Not yet confirmed with a live capture of an edited save.</p>
+<section class="doc-section" id="status-limb-gating">
+  <h2>Status limb gating</h2>
+  <p>A <strong>Rot</strong>-class status grays individual command arrows and refuses their input. The gray-draw pass and the input gate read the same status bits, bit-for-bit - and the retail assignment is not one bit per arrow:</p>
+  <table>
+    <thead><tr><th>Status bit</th><th>Grays</th><th>Blocks</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x08</code> (limb 0)</td><td>LEFT arrow</td><td>Square / dir 0</td></tr>
+      <tr><td><code>0x10</code> (limb 1)</td><td>RIGHT arrow</td><td>Circle / dir 3</td></tr>
+      <tr><td><code>0x20</code> (limb 2)</td><td>UP <strong>and</strong> DOWN</td><td>Triangle and Cross</td></tr>
+      <tr><td><code>0x1000</code> (Curse)</td><td>the whole MAGIC command</td><td>Magic</td></tr>
+    </tbody>
+  </table>
+  <p>With all three limb bits set, Attack is unusable. Rot rolls exactly one of the three limb bits per application.</p>
+</section>
+
+<section class="doc-section" id="execution-path">
+  <h2>At execution: a different weapon read</h2>
+  <p>Once a combo is committed, the execution resolver replays it one command per step and folds <em>half the equipment slot's attack</em> into the working ATK per swing - a read distinct from the gauge cost, covered in full on <a href="battle-formulas.html#physical-damage">battle formulas</a>. The battle loader deliberately folds no ATK at load; the fold happens here, per committed command.</p>
+  <details class="disclosure">
+    <summary>Deep dive: dispatch bounds and the admission gate</summary>
+    <div class="disclosure-body"><p>The resolver <code>FUN_801EC3E4</code> advances the input cursor at <code>actor+0x1F4</code> and dispatches through <code>PTR_801CF4B4[(actor+0x1D9) - 0xC]</code>, bounded at six arms (commands <code>0x0C..=0x11</code>). The head admission gate tests a different band from a different place - <code>(cmd - 0x0C) &lt; 0x14</code> - so a command in <code>0x12..=0x1F</code> is admitted and then folds nothing. <code>0x0E</code>/<code>0x0F</code> share an arm; <code>0x10</code>'s slot is the same address the bounds check bails to - a live table entry that folds nothing. Retail applies no empty-slot test here. The call comes from <code>SCUS_942.54</code> at <code>0x800478A0</code>, which is why the resolver has no caller inside the overlay.</p></div>
+  </details>
 </section>
 
 <section class="doc-section" id="misconceptions">
   <h2>Common misconceptions</h2>
-  <table class="data-table">
+  <table>
     <thead><tr><th>Claim</th><th>What the bytes say</th></tr></thead>
     <tbody>
-      <tr><td>&ldquo;An off-class weapon doubles the arm command.&rdquo;</td><td>Off-class is 30 &rarr; 42 (&times;1.4); the far tier is 30 &rarr; 54 (&times;1.8). The &ldquo;double&rdquo; most likely counts penalties: +24 is twice +12.</td></tr>
-      <tr><td>&ldquo;The game checks the weapon&rsquo;s class against the character.&rdquo;</td><td>No comparison exists; the value is authored data. The equipment stat, item property and accessory tables were each checked and none carries the cost.</td></tr>
-      <tr><td>&ldquo;The cost is recalculated when equipment changes.&rdquo;</td><td>Changing equipment alters only the id bytes in the character record. The cost is read from the disc at the next battle load.</td></tr>
-      <tr><td>&ldquo;The Astral Sword has a unique penalty.&rdquo;</td><td>Its value, 54, is the far-off-class tier Noa receives from any club or axe.</td></tr>
-      <tr><td>&ldquo;The AP shown next to an art is what the bar charges.&rdquo;</td><td>Two different gauges: a named art is paid from the Spirit gauge (<code>actor+0x170</code>).</td></tr>
+      <tr><td>"An off-class weapon doubles the arm command."</td><td>Off-class is 30 &rarr; 42 (&times;1.4); the far tier is 30 &rarr; 54 (&times;1.8). The "double" counts penalties: +24 is twice +12.</td></tr>
+      <tr><td>"The game checks the weapon's class against the character."</td><td>No comparison exists; the value is authored data. The equipment, item-property and accessory tables were each checked - none carries the cost.</td></tr>
+      <tr><td>"The cost is recalculated when equipment changes."</td><td>Changing equipment alters only id bytes in the character record; the cost is read from the disc at the next battle load.</td></tr>
+      <tr><td>"The Astral Sword has a unique penalty."</td><td>Its 54 is the same far tier Noa receives from any club or axe.</td></tr>
+      <tr><td>"The AP shown next to an art is what the bar charges."</td><td>Two different gauges: a named art is paid from the <em>Spirit</em> gauge (<code>actor+0x170</code>), not the bar's pool.</td></tr>
     </tbody>
   </table>
 </section>
 
-<section class="doc-section" id="more-in-doc">
-  <h2>What the full document adds</h2>
-  <p><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/arts-command-gauge.md" target="_blank" rel="noopener"><code>docs/subsystems/arts-command-gauge.md</code></a> also covers: re-arming the gauge at art start, where the gauge <em>pool</em> comes from (the AGL seed and the Spirit refill), what a named art costs in AP and where that charge actually lands (a separate gauge from the bar - <code>actor+0x170</code>), the arts AP override hook the ROM patcher installs, and the port's input session with its remaining divergences.</p>
-</section>
-
-<section class="doc-section" id="address-reference">
-  <h2>Address reference</h2>
-  <p>Every address on this page in one place (USA release, main-RAM virtual addresses; the battle overlay, PROT 0898, is based at <code>0x801CE818</code>).</p>
-  <h3>Character records</h3>
-  <table class="data-table">
-    <thead><tr><th>Character</th><th>Record base</th><th>Armor <code>+0x196</code></th><th>Head <code>+0x197</code></th><th>Index 2 <code>+0x198</code></th><th>Index 3 <code>+0x199</code></th><th>Legs <code>+0x19A</code></th><th>Name <code>+0x2A7</code></th></tr></thead>
+<section class="doc-section" id="how-we-know">
+  <h2>How we know</h2>
+  <table>
+    <thead><tr><th>Function / data</th><th>Address</th><th>What it proves</th></tr></thead>
     <tbody>
-      <tr><td>Vahn</td><td><code>0x80084708</code></td><td><code>0x8008489E</code></td><td><code>0x8008489F</code></td><td><code>0x800848A0</code> weapon</td><td><code>0x800848A1</code> Ra-Seru Meta</td><td><code>0x800848A2</code></td><td><code>0x800849AF</code></td></tr>
-      <tr><td>Noa</td><td><code>0x80084B1C</code></td><td><code>0x80084CB2</code></td><td><code>0x80084CB3</code></td><td><code>0x80084CB4</code> Ra-Seru Terra</td><td><code>0x80084CB5</code> weapon</td><td><code>0x80084CB6</code></td><td><code>0x80084DC3</code></td></tr>
-      <tr><td>Gala</td><td><code>0x80084F30</code></td><td><code>0x800850C6</code></td><td><code>0x800850C7</code></td><td><code>0x800850C8</code> weapon</td><td><code>0x800850C9</code> Ra-Seru Ozma</td><td><code>0x800850CA</code></td><td><code>0x800851D7</code></td></tr>
-      <tr><td>Terra (slot 3)</td><td><code>0x80085344</code></td><td colspan="6">same layout; the tail overlaps the story-flag bitmap at <code>0x80085600</code></td></tr>
+      <tr><td>Gauge build + press</td><td><code>FUN_801D388C</code> (overlay 0898)</td><td>Case 9 / <code>0x2C</code> reads <code>+0x74</code> (store at <code>0x801D3B3C</code>); case <code>0xB</code> debits <code>ctx+0x6DC</code>; one byte is width and price.</td></tr>
+      <tr><td>Command menu SM</td><td><code>FUN_801D0748</code></td><td>State <code>0x50</code> Arts input; limb-bit gray and gate agree bit-for-bit.</td></tr>
+      <tr><td>Load-time writer</td><td><code>FUN_800557B8</code> (SCUS)</td><td>Verbatim 43-word copy; the single cost write fires at <code>0x80055810</code> under a live write-watch.</td></tr>
+      <tr><td>Character assembly</td><td><code>FUN_80052770</code> / <code>FUN_80052FA0</code></td><td>Section selection from the record's equip bytes; swing-record splice; id-0 default fallback.</td></tr>
+      <tr><td>Execution resolver</td><td><code>FUN_801EC3E4</code></td><td>Per-command fold into working ATK; called from SCUS <code>0x800478A0</code>.</td></tr>
+      <tr><td>Enemy budget</td><td><code>FUN_801E9FD4</code></td><td>The AI pays the same <code>+0x74</code> costs from its AGL gauge.</td></tr>
+      <tr><td>Disc bytes</td><td>PROT 863..866</td><td><code>asset battle-data-pack</code> decode of every weapon section's <code>swing_rec + 0x74</code> - the tier tables above.</td></tr>
+      <tr><td>Live RAM</td><td><code>DAT_801C9360[char][cmd]+0x74</code></td><td>Gala + Nail Glove = 42, + Ra-Seru Club = 30, matching the file bytes.</td></tr>
     </tbody>
   </table>
-  <p>Index 2 and 3 hold the weapon and the Ra-Seru in the order the character&rsquo;s player battle file expects; the cheat-database label &ldquo;weapon = <code>+0x198</code>&rdquo; is Vahn&rsquo;s and Gala&rsquo;s layout. Accessories follow at <code>+0x19B..+0x19D</code>.</p>
-  <h3>Battle globals and the runtime command record</h3>
-  <table class="data-table">
-    <thead><tr><th>Address</th><th>Type</th><th>Meaning</th></tr></thead>
-    <tbody>
-      <tr><td><code>0x8007BD24</code></td><td>u32</td><td>Pointer to the battle context struct (<code>0x800EB654</code> in captured battles; <code>0</code> in the field)</td></tr>
-      <tr><td><code>0x8007BD10</code></td><td>u8[]</td><td>Per-seat character id, 1-based (1 Vahn, 2 Noa, 3 Gala)</td></tr>
-      <tr><td><code>0x801C9370</code></td><td>u32[8]</td><td>Battle-actor pointer table (party seats 0..2, monsters 3..)</td></tr>
-      <tr><td><code>0x801C9360</code></td><td>u32[3]</td><td>Per-party-member pointer to that member&rsquo;s command-record pointer array; <code>[char][cmd] + 0x74</code> is the cost byte</td></tr>
-      <tr><td><code>0x801F4B8C</code> / <code>0x801F4B94</code></td><td>u8[4]</td><td>Displayed command codes <code>0C 0F 0E 0D</code> / icon bases <code>0D 10 11 0C</code></td></tr>
-      <tr><td><code>0x800846D0</code> / <code>0x800846D4</code></td><td>u16</td><td>Confirm / cancel pad masks the input state tests</td></tr>
-    </tbody>
-  </table>
-  <h3>Battle context (<code>ctx = *0x8007BD24</code>) and actor (<code>0x801C9370[slot]</code>) fields</h3>
-  <table class="data-table">
-    <thead><tr><th>Field</th><th>Type</th><th>Meaning</th></tr></thead>
-    <tbody>
-      <tr><td><code>ctx+0x06</code></td><td>u8</td><td>Command-menu flow byte (<code>0x50</code> Arts input, <code>0x5A</code> review, <code>0x6E</code> Begin / Reselect, <code>0x78</code> attack-mode prompt)</td></tr>
-      <tr><td><code>ctx+0x13</code></td><td>u8</td><td>Active actor slot</td></tr>
-      <tr><td><code>ctx+0x14..+0x17</code></td><td>u8[4]</td><td>Per-command AP cost for the current input</td></tr>
-      <tr><td><code>ctx+0x19</code></td><td>u8</td><td>Commands committed in the current input</td></tr>
-      <tr><td><code>ctx+0x6DC</code></td><td>u16</td><td>The turn pool: seeded from the actor&rsquo;s AGL, debited per press</td></tr>
-      <tr><td><code>actor+0x154</code></td><td>u16</td><td>AGL, current (pool seed)</td></tr>
-      <tr><td><code>actor+0x158</code></td><td>u16</td><td>Working ATK; half the weapon&rsquo;s attack bonus is folded in per command at execution</td></tr>
-      <tr><td><code>actor+0x16E</code></td><td>u16</td><td>Status word; bits <code>0x08</code> / <code>0x10</code> / <code>0x20</code> disable Left / Right / Up+Down</td></tr>
-      <tr><td><code>actor+0x170</code></td><td>u16</td><td>Spirit gauge - where a named art&rsquo;s cost is charged</td></tr>
-      <tr><td><code>actor+0x1DF..+0x1EE</code></td><td>u8[16]</td><td>The committed command buffer</td></tr>
-      <tr><td><code>actor+0x224</code></td><td>u8</td><td>Accumulated art cost, subtracted from Spirit once in the cleanup arm</td></tr>
-    </tbody>
-  </table>
-  <h3>Functions</h3>
-  <table class="data-table">
-    <thead><tr><th>Function</th><th>Image</th><th>Role</th></tr></thead>
-    <tbody>
-      <tr><td><code>FUN_801D388C</code></td><td>battle overlay (0898)</td><td>Gauge build (case 9 / <code>0x2C</code>) reads <code>+0x74</code>, cost store at <code>0x801D3B3C</code>; press (case <code>0xB</code>) debits <code>ctx+0x6DC</code>; pool seeds at <code>0x801D3A30</code>, <code>0x801D4E18</code>, <code>0x801D5068</code>, <code>0x801D5364</code></td></tr>
-      <tr><td><code>FUN_801D0748</code></td><td>battle overlay (0898)</td><td>Command-menu state machine; state <code>0x50</code> is the Arts input (auto-end <code>0x801D2054..</code>, confirm <code>0x801D207C..</code>, cancel <code>0x801D20EC..</code>)</td></tr>
-      <tr><td><code>FUN_800557B8</code></td><td>SCUS</td><td>Swing-record copy at battle load; the single write to the cost field is at <code>0x80055810</code></td></tr>
-      <tr><td><code>FUN_80052770</code> / <code>FUN_80052FA0</code></td><td>SCUS</td><td>Battle character assembly: section selection from the record&rsquo;s <code>+0x196..</code> bytes, and the swing-record splice into slots <code>0x0C..0x0F</code></td></tr>
-      <tr><td><code>FUN_8001A55C</code></td><td>SCUS</td><td>LZS decoder; fills the character buffer the copy reads from</td></tr>
-      <tr><td><code>FUN_801EC3E4</code></td><td>battle overlay (0898)</td><td>Arms execution resolver; called from SCUS <code>0x800478A0</code></td></tr>
-      <tr><td><code>FUN_801EED1C</code></td><td>battle overlay (0898)</td><td>Party arts queue builder; computes a named art&rsquo;s Spirit cost</td></tr>
-      <tr><td><code>FUN_801E9FD4</code></td><td>battle overlay (0898)</td><td>Enemy action-queue filler; spends move <code>+0x74</code> costs from the monster&rsquo;s AGL</td></tr>
-    </tbody>
-  </table>
-  <h3>Static tables and disc</h3>
-  <table class="data-table">
-    <thead><tr><th>Location</th><th>Contents</th></tr></thead>
-    <tbody>
-      <tr><td><code>0x80074368</code> (12-byte stride)</td><td>Item property records; <code>+1</code> equipment-row index, <code>+8</code> description pointer (the Astral Sword&rsquo;s is <code>0x80011710</code>)</td></tr>
-      <tr><td><code>0x80074F68</code> (8-byte stride)</td><td>Equipment stat-bonus rows; <code>+1</code> attack, <code>+6</code> equip-character mask, <code>+7</code> slot type</td></tr>
-      <tr><td><code>0x80075EC4</code> (<code>0x14</code> stride)</td><td>Arts-name table; <code>+2</code> is the menu&rsquo;s displayed art AP</td></tr>
-      <tr><td>PROT 863 / 864 / 865</td><td>Player battle files for Vahn / Noa / Gala; the cost byte is at weapon section <code>[+0x04] + 0x74</code> inside the LZS stream</td></tr>
-      <tr><td>PROT 898</td><td>Battle overlay; the cost store is at file offset <code>0x5324</code></td></tr>
-    </tbody>
-  </table>
+  <details class="disclosure">
+    <summary>Address appendix: records, context fields, static tables</summary>
+    <div class="disclosure-body">
+      <p>Character records (stride <code>0x414</code> from <code>0x80084708</code>): equip slots at <code>+0x196..+0x19A</code> (body, head, index 2, index 3, footwear), name at <code>+0x2A7</code>, accessories at <code>+0x19B..+0x19D</code>. Index 2 / 3 hold the weapon and Ra-Seru in the order the character's file expects: weapon in slot 2 for Vahn and Gala, slot 3 for Noa - the cheat-database "weapon = <code>+0x198</code>" label is Vahn's and Gala's layout.</p>
+      <table>
+        <thead><tr><th>Address / field</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td><code>0x8007BD24</code></td><td>Pointer to the battle context struct</td></tr>
+          <tr><td><code>0x801C9360</code></td><td>Per-party-member pointer to the command-record pointer array; <code>[char][cmd] + 0x74</code> is the cost byte</td></tr>
+          <tr><td><code>0x801F4B8C</code> / <code>0x801F4B94</code></td><td>Displayed command codes <code>0C 0F 0E 0D</code> / icon bases <code>0D 10 11 0C</code>; <code>0x0C</code> is the arm whose cost tracks the weapon</td></tr>
+          <tr><td><code>ctx+0x06</code> / <code>+0x13</code> / <code>+0x14..17</code> / <code>+0x19</code></td><td>Menu flow byte; active slot; per-command AP costs; commands committed</td></tr>
+          <tr><td><code>ctx+0x6DC</code></td><td>Turn pool, seeded from actor AGL (<code>+0x154</code>)</td></tr>
+          <tr><td><code>actor+0x158</code> / <code>+0x16E</code> / <code>+0x170</code></td><td>Working ATK; status word (limb bits); Spirit gauge (where a named art's cost lands, via the accumulator at <code>+0x224</code>)</td></tr>
+          <tr><td><code>0x80074368</code> (12-byte stride)</td><td>Item property records; <code>+1</code> equipment-row index, <code>+8</code> shared per-class description pointer</td></tr>
+          <tr><td><code>0x80074F68</code> (8-byte stride)</td><td>Equipment stat rows; <code>+1</code> attack, <code>+6</code> equip-character mask</td></tr>
+          <tr><td><code>0x80075EC4</code> (<code>0x14</code> stride)</td><td>Arts-name table; <code>+2</code> is the menu's displayed art AP (the Spirit charge)</td></tr>
+        </tbody>
+      </table>
+      <p>An emulator sweep of injected <code>+0x74</code> values established the pennant legibility floor (24). A separate <code>+2</code> in the build case is an empty-slot icon tweak, not the class penalty.</p>
+    </div>
+  </details>
+  <p class="hint">The full doc adds the gauge pool's AGL seed and Spirit refill, what a named art costs and where it is charged, the arts-AP override hook, and the port's input session: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/arts-command-gauge.md" target="_blank" rel="noopener"><code>docs/subsystems/arts-command-gauge.md</code></a>.</p>
 </section>
 
 <section class="doc-section" id="see-also">

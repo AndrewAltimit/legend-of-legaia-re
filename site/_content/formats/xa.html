@@ -30,12 +30,12 @@
   </table>
 
   <figure class="overlay-strip">
-    <svg viewBox="0 0 880 190" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="xa-fig-title">
+    <svg viewBox="0 0 880 190" width="100%" style="max-width:880px" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="xa-fig-title">
       <title id="xa-fig-title">Consecutive sectors of one XA file belong to different channels; the demuxer sorts them by (file_no, ch_no) into per-channel streams</title>
       <style>
         .xa-lab  { font: 11px 'Inter', sans-serif; fill: var(--text-muted); }
-        .xa-sec  { fill: var(--bg-card); stroke: var(--border); stroke-width: 1.1; }
-        .xa-hl   { fill: var(--bg-card); stroke: var(--accent); stroke-width: 1.3; }
+        .xa-sec  { fill: var(--bg-raised); stroke: var(--border); stroke-width: 1.1; }
+        .xa-hl   { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.3; }
         .xa-seg  { font: 10px 'JetBrains Mono', monospace; fill: var(--text-muted); text-anchor: middle; }
         .xa-arr  { stroke: var(--accent); stroke-width: 1.1; fill: none; }
       </style>
@@ -54,7 +54,7 @@
       <rect x="200" y="114" width="80" height="30" class="xa-hl"/><text x="240" y="133" class="xa-seg">2304 B</text>
       <rect x="282" y="114" width="80" height="30" class="xa-hl"/><text x="322" y="133" class="xa-seg">2304 B</text>
       <rect x="364" y="114" width="80" height="30" class="xa-hl" style="stroke-dasharray: 3 3"/><text x="404" y="133" class="xa-seg">...</text>
-      <text x="200" y="172" class="xa-lab">each 2304 B payload = 18 sound groups x 128 B; every group decodes to 224 samples (4-bit) or 112 (8-bit)</text>
+      <text x="20" y="172" class="xa-lab">each 2304 B payload = 18 sound groups x 128 B; a group decodes to 224 samples (4-bit)</text>
     </svg>
     <figcaption>The interleave is what lets the drive stream several voice channels at a fixed read speed; it also means a naive 2048-byte file copy shreds the audio (see the history note under <em>Demuxing</em>).</figcaption>
   </figure>
@@ -144,10 +144,8 @@ prev2   = prev1;  prev1 = value     // history is the UNCLAMPED, UNROUNDED value
   </ul>
 </section>
 
-<section class="doc-section" id="provenance">
-  <details class="disclosure">
-    <summary>Provenance (sources)</summary>
-    <div class="disclosure-body">
+<section class="doc-section" id="how-we-know">
+  <h2>How we know</h2>
 <table>
 <thead><tr><th>Subject</th><th>Source</th></tr></thead>
 <tbody>
@@ -158,8 +156,6 @@ prev2   = prev1;  prev1 = value     // history is the UNCLAMPED, UNROUNDED value
 <tr><td>Form-1-truncation diagnosis</td><td>direct comparison: 90 % of 128-byte groups in the Form-1-truncated <code>extracted/XA/*.XA</code> bytes fail the <code>bytes 8..16 == bytes 0..8</code> invariant.</td></tr>
 </tbody>
 </table>
-    </div>
-  </details>
 </section>
 
 <section class="doc-section" id="see-also">

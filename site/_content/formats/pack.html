@@ -23,7 +23,33 @@
 
 <section class="doc-section" id="layout">
   <h2>Layout</h2>
-  <table>
+  <figure class="overlay-strip">
+    <svg viewBox="0 0 760 110" width="100%" style="max-width:760px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Pack layout: count, word-offset table, then members back to back">
+      <style>
+        .pk-seg { font: 12px 'Inter', sans-serif; fill: currentColor; text-anchor: middle; }
+        .pk-off { font: 10px 'JetBrains Mono', monospace; fill: var(--accent); }
+        .pk-box { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.2; }
+        .pk-dim { fill: var(--bg-raised); stroke: var(--border); stroke-width: 1.1; }
+      </style>
+      <rect x="10" y="20" width="90" height="34" class="pk-box"/>
+      <rect x="100" y="20" width="180" height="34" class="pk-box"/>
+      <rect x="280" y="20" width="160" height="34" class="pk-dim"/>
+      <rect x="440" y="20" width="160" height="34" class="pk-dim"/>
+      <rect x="600" y="20" width="150" height="34" class="pk-dim"/>
+      <text x="55" y="41" class="pk-seg">count</text>
+      <text x="190" y="41" class="pk-seg">word_offset[count]</text>
+      <text x="360" y="41" class="pk-seg">member 0</text>
+      <text x="520" y="41" class="pk-seg">member 1</text>
+      <text x="675" y="41" class="pk-seg">...</text>
+      <text x="10" y="74" class="pk-off">+0x00</text>
+      <text x="100" y="74" class="pk-off">+0x04</text>
+      <text x="280" y="74" class="pk-off">offset[0] * 4</text>
+      <text x="440" y="74" class="pk-off">offset[1] * 4</text>
+      <text x="750" y="74" class="pk-off" text-anchor="end">chunk end</text>
+    </svg>
+    <figcaption>No magic: a count, a table of 4-byte-word offsets, then the members back to back.</figcaption>
+  </figure>
+  <table class="layout">
     <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
     <tbody>
       <tr><td><code>+0x00</code></td><td>u32</td><td><code>count</code></td><td>number of sub-assets</td></tr>
@@ -69,6 +95,18 @@ offset[1]:       8b 20 00 00    word offset 0x208B -&gt; byte 0x822C (= start of
       <tr><td>member <code>i</code> at</td><td><code>word_offset[i] * 4</code></td><td><code>word_index[i] * 4 + 4</code></td></tr>
     </tbody>
   </table>
+</section>
+
+<section class="doc-section" id="how-we-know">
+  <h2>How we know</h2>
+  <table>
+    <thead><tr><th>Function</th><th>Address</th><th>What it proves</th><th>Dump</th></tr></thead>
+    <tbody>
+      <tr><td>Chunk dispatcher</td><td><code>FUN_8001F05C</code> (type-<code>0x02</code> arm)</td><td>Walks the count + word-offset table and hands each member to the TMD handler</td><td><code>funcs/8001f05c.txt</code></td></tr>
+      <tr><td>Per-member handler</td><td><code>FUN_80026B4C</code></td><td>Consumes one member at <code>word_offset[i] * 4</code>, no <code>+4</code> constant</td><td><code>funcs/80026b4c.txt</code></td></tr>
+    </tbody>
+  </table>
+  <p>Source of record: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/pack.md" target="_blank" rel="noopener"><code>docs/formats/pack.md</code></a>.</p>
 </section>
 
 <section class="doc-section" id="see-also">

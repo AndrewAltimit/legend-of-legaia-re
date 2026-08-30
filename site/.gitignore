@@ -93,8 +93,10 @@
 /subsystems/audio.html
 /subsystems/battle-action.html
 /subsystems/battle-formulas.html
+/subsystems/battle-internals.html
 /subsystems/battle.html
 /subsystems/boot.html
+/subsystems/cutscene-internals.html
 /subsystems/cutscene.html
 /subsystems/effect-vm.html
 /subsystems/engine.html
@@ -125,6 +127,7 @@
 /tooling/overlay-capture.html
 /tooling/pcsx-redux-automation.html
 /tooling/port-catalog.html
+/tooling/randomizer-internals.html
 /tooling/randomizer.html
 /tooling/recomp-differential.html
 /tooling/rom-patcher.html
