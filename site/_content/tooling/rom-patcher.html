@@ -312,7 +312,7 @@
     </details>
 
     <!-- ---- Prices & names (structured editors over the disc's own tables) ---- -->
-    <details class="rom-group" id="rom-values-group">
+    <details class="rom-group" id="rom-values-group" open>
       <summary>Prices &amp; names <span class="rom-summary-note">fishing prizes, location names, Earth Egg</span></summary>
       <div class="rom-group-body">
         <p class="rom-edit-note" id="rom-tables-status">Choose your disc image above and the current values appear here, read from your own disc. Leave a box empty to keep the disc's value.</p>
@@ -321,14 +321,14 @@
           <h4 class="rom-edit-title">Fishing prize prices
             <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>The fishing exchanges at Buma and Vidna sell these prizes for fishing points. The price is also the &ldquo;appears once you can afford it&rdquo; gate, so a cheaper prize shows up sooner.</p><p>The prize list itself is fixed on the disc - rows can be repriced, not added, removed or swapped. A prize sold at both venues is one row; the new price applies to both.</p></span></span>
           </h4>
-          <div id="rom-fish-rows" class="rom-edit-rows"><p class="rom-edit-empty">Waiting for a disc image ...</p></div>
+          <div id="rom-fish-rows" class="rom-edit-rows rom-edit-scroll"><p class="rom-edit-empty">Waiting for a disc image ...</p></div>
         </div>
 
         <div class="rom-edit-block">
           <h4 class="rom-edit-title">Location names
             <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Renames a place <strong>everywhere the game shows it</strong>: the Door-of-Wind list, the label over the world map, and the banner on entering the scene (which is also the save-screen location row).</p><p>Plain ASCII, up to 23 characters. The list covers the 16 quick-travel destinations plus the places that only have a world-map label. Matching is exact, so renaming &ldquo;Conkram&rdquo; leaves &ldquo;Conkram (Past)&rdquo; alone. <a href="randomizer.html#location-names">Details</a>.</p></span></span>
           </h4>
-          <div id="rom-loc-rows" class="rom-edit-rows rom-loc-grid"><p class="rom-edit-empty">Waiting for a disc image ...</p></div>
+          <div id="rom-loc-rows" class="rom-edit-rows rom-edit-scroll"><p class="rom-edit-empty">Waiting for a disc image ...</p></div>
         </div>
 
         <div class="rom-edit-block">
@@ -961,10 +961,18 @@
   .rom-form .rom-edit-row input[type=number] { width: 6.5em; padding: 0.25rem 0.4rem; background: var(--bg-code); color: var(--text); border: 1px solid var(--border); border-radius: 4px; font: inherit; }
   .rom-edit-unit { color: var(--text-dim); font-size: 0.85em; }
   /* Location renames: two-up grid of current-name / new-name pairs. */
-  .rom-loc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 0.3rem 0.6rem; }
-  .rom-loc-grid .rom-edit-row { flex-direction: column; align-items: stretch; gap: 0.15rem; }
-  .rom-loc-grid .rom-edit-name { min-width: 0; }
-  .rom-form .rom-loc-grid input[type=text] { max-width: none; padding: 0.3rem 0.45rem; font-size: 0.95em; }
+  /* Fishing-prize and location-name editors: a table in a height-capped
+     scroll box (the equipment editor's shape) so long lists cost no height. */
+  .rom-edit-scroll { max-height: 18rem; overflow: auto; border: 1px solid var(--border); border-radius: 6px; }
+  .rom-edit-scroll .rom-edit-empty { padding: 0.4rem 0.5rem; }
+  .rom-edit-table { width: 100%; }
+  /* The row class carries the flex card look for the free-standing editors; inside a table it must stay a table row. */
+  .rom-edit-table tr.rom-edit-row { display: table-row; padding: 0; border: 0; border-radius: 0; background: transparent; }
+  .rom-edit-table .rom-edit-name { min-width: 0; }
+  .rom-edit-table .rom-edit-cur { color: var(--text-dim); font-size: 0.9em; white-space: normal; }
+  .rom-edit-cell { display: inline-flex; align-items: center; gap: 0.3rem; margin: 0; }
+  .rom-form .rom-edit-table input[type=number] { width: 6.5em; padding: 0.2rem 0.4rem; background: var(--bg-code); color: var(--text); border: 1px solid var(--border); border-radius: 4px; font: inherit; }
+  .rom-form .rom-edit-table input[type=text] { width: 100%; max-width: 16em; padding: 0.2rem 0.4rem; font-size: 0.95em; }
   .rom-earth-row { display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap; }
   .rom-form .rom-earth-row input[type=number] { width: 10em; padding: 0.3rem 0.45rem; background: var(--bg-code); color: var(--text); border: 1px solid var(--border); border-radius: 4px; font: inherit; }
 
