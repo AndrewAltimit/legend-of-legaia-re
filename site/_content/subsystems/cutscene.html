@@ -159,7 +159,7 @@
 
 <section class="doc-section" id="playback">
   <h2>The engine player</h2>
-  <p><code>legaia-engine play-str</code> is the clean-room player on its own. It decodes the video (and, from a disc image, the audio) up front, stages the PCM on the first redraw so cursor and picture start together, and on each redraw shows the frame due at the current position. The movie plays at its real rate, not the display refresh rate. Inside a game session <code>play-window</code> uses the same <code>cutscene_av</code> module: it pauses the scene BGM, suspends world ticks, shows one frame per redraw, then calls <code>finish_cutscene()</code>.</p>
+  <p><code>legaia-engine play-str</code> is the from-scratch player on its own. It decodes the video (and, from a disc image, the audio) up front, stages the PCM on the first redraw so cursor and picture start together, and on each redraw shows the frame due at the current position. The movie plays at its real rate, not the display refresh rate. Inside a game session <code>play-window</code> uses the same <code>cutscene_av</code> module: it pauses the scene BGM, suspends world ticks, shows one frame per redraw, then calls <code>finish_cutscene()</code>.</p>
   <pre class="cli"><code># Frame inventory + detected frame rate
 mdec scan-str cutscene.str
 

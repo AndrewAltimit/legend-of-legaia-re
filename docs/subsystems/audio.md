@@ -14,7 +14,7 @@ separate retail chunks.
 **Where it lives.** All SCUS-resident: the SsAPI sequencer at the
 `0x80061-0x80067` cluster, libspu / SPU control at `0x80068-0x8006D`.
 
-**Port counterpart.** `crates/engine-audio` - a clean-room SPU plus an
+**Port counterpart.** `crates/engine-audio` - a from-scratch SPU plus an
 SsAPI-shaped `Sequencer`, mixed through cpal. `crates/vab`, `crates/seq` and
 `crates/xa` parse the formats; `mednafen-state spu` is the parity oracle.
 
@@ -36,7 +36,7 @@ with `SceneAssets::seq_in_stream_entries` / `bgm_seq_offset`.
 - [BGM dispatch](#bgm-dispatch) · [global-pool BGM (`music_01`)](#global-pool-bgm-the-music_01-bank)
 - [SsAPI sequencer](#ssapi-sequencer-0x80061-0x80067-cluster) - [globals](#globals) · [public SEQ API](#public-seq-api) · [SEQ internals](#seq-internals) · [voice / mixer](#voice--mixer-audible-output-critical-path) · [VAB attr accessors](#vab-attribute-accessors--utility-note-triggers) · [key-on pitch law](#the-key-on-pitch-law---note-against-the-tones-center) · [SPU command shims](#spu-command-shims-0x81-scaling--0127--016383) · [per-channel event handlers](#per-channel-event-handlers-over-_dat_801cd2c0-the-0x80060a1c0x80061bf8-family) · [further libsnd leaves](#further-libsnd--libspu-leaves) · [renderer-citation correction](#renderer-citation-correction)
 - [libspu / SPU control](#libspu--spu-control-0x80068-0x8006d-cluster) - [SPU globals](#spu-globals) · [primitives](#libspu-primitives) · [init / reset / key](#spu-init--reset--key-registers) · [DMA transfer engine](#spu-dma-transfer-engine) · [reverb model](#reverb-model-engine-audio) · [Gaussian resampler](#voice-resampler---4-point-gaussian-interpolation-engine-audio) · [SsApi seq-management layer](#ssapi-seq-management-layer-above-libspu)
-- [Engine-audio: Sequencer port](#engine-audio-model---sequencer-port) · [clean-room SPU port](#engine-audio-model---clean-room-spu-port) · [SFX bank + scheduler](#sfx-bank--scheduler) · [XA-ADPCM](#xa-adpcm)
+- [Engine-audio: Sequencer port](#engine-audio-model---sequencer-port) · [from-scratch SPU port](#engine-audio-model---from-scratch-spu-port) · [SFX bank + scheduler](#sfx-bank--scheduler) · [XA-ADPCM](#xa-adpcm)
 - [Battle arts-voice shout path](#battle-arts-voice-shout-path-engine) · [Audio-trace parity oracle](#audio-trace-parity-oracle) · [What's left](#whats-left)
 
 ## Path-string cluster
@@ -66,7 +66,7 @@ Bulk scan finds 1191 `VABp` headers across 239 PROT entries. Multi-bank archives
 
 `actor[+0xac]` (sound ID) and `actor[+0xb0]` (voice) are written by move-VM and field-VM opcodes; the move-VM tick in `FUN_80021DF4` re-fires the SFX whenever the trigger flag at `actor[+0xb4]` is set.
 
-The static `&DAT_8006F198` table is **100 8-byte descriptors** (sound ids `0x00..=0x63`); the `< 0x200` runtime check is a bound, not the size (id `0x64` onward is the `\PSX.EXE` dev-path rodata). Besides `FUN_800250D4` above, the cue-ring drainer `FUN_80016B6C` reads it and programs each voice via `FUN_80065034` (the libsnd `SpuSetVoiceAttr` analogue). Each entry decodes as `[+0 program][+1 tone/region base][+2 note-level][+3 voice-count + sustained bit 0x20][+4 channel]`; full layout + provenance on [`docs/formats/sfx-table.md`](../formats/sfx-table.md). Parser `legaia_asset::sfx_table` (disc-decoded, byte-exact vs live save-state RAM); the SPU programming itself is libsnd, out of clean-room scope.
+The static `&DAT_8006F198` table is **100 8-byte descriptors** (sound ids `0x00..=0x63`); the `< 0x200` runtime check is a bound, not the size (id `0x64` onward is the `\PSX.EXE` dev-path rodata). Besides `FUN_800250D4` above, the cue-ring drainer `FUN_80016B6C` reads it and programs each voice via `FUN_80065034` (the libsnd `SpuSetVoiceAttr` analogue). Each entry decodes as `[+0 program][+1 tone/region base][+2 note-level][+3 voice-count + sustained bit 0x20][+4 channel]`; full layout + provenance on [`docs/formats/sfx-table.md`](../formats/sfx-table.md). Parser `legaia_asset::sfx_table` (disc-decoded, byte-exact vs live save-state RAM); the SPU programming itself is libsnd, outside the port boundary.
 
 ## VAB slots - one installer, twelve records
 
@@ -270,7 +270,7 @@ cross-fade; BGM transitions no longer use it.
 
 Every real music track on the disc lives in the **`music_01` bank**, not in scene-local slots - scenes carry no SEQ of their own (see [`reference/music-tracks.md`](../reference/music-tracks.md) for the sound-test join). A global-pool id (`>= 2000`) is `2000 + slot`, and each bank entry is one self-contained `[VAB][SEQ]` pair (a chunk-header, a `pBAV` VAB body, then a `pQES` score). The bank is **piecewise** in extraction space (`988 + i` for index `i <= 67`, `990 + i` for `i >= 68`, a 2-entry gap at `1056`/`1057`); `music_labels::prot_entry_for_bgm_id` owns that map. Playing one means uploading **that entry's own VAB** into SPU RAM and driving the sequencer against it, rather than the scene VAB the field path stages.
 
-The site's minigame pages take exactly this path per game (`crates/web-viewer/src/minigames.rs`): `render_music01_bgm` / `render_music01_loop` split the pair, `VabBank::upload` the VAB, and render through the clean-room `Spu` + `Sequencer` - the same components the live `AudioBgmDirector` uses. Minigame BGM sources are disc-pinned extraction constants (base-independent): the Baka Fighter init loads extraction 1043 (#55 `M112` "Sol disco fever"); the dance overlay loads extraction 1048/1054 (#60/#66, the Sol disco finals, mode-selected, see [`minigame-dance.md`](minigame-dance.md)); the slot machine and fishing/Muscle Dome start **no** track and inherit their host scene's op-`0x35` BGM. The `music01_bgm_render` WASM surface renders any bank slot for the dance's Sol-disco jukebox.
+The site's minigame pages take exactly this path per game (`crates/web-viewer/src/minigames.rs`): `render_music01_bgm` / `render_music01_loop` split the pair, `VabBank::upload` the VAB, and render through the from-scratch `Spu` + `Sequencer` - the same components the live `AudioBgmDirector` uses. Minigame BGM sources are disc-pinned extraction constants (base-independent): the Baka Fighter init loads extraction 1043 (#55 `M112` "Sol disco fever"); the dance overlay loads extraction 1048/1054 (#60/#66, the Sol disco finals, mode-selected, see [`minigame-dance.md`](minigame-dance.md)); the slot machine and fishing/Muscle Dome start **no** track and inherit their host scene's op-`0x35` BGM. The `music01_bgm_render` WASM surface renders any bank slot for the dance's Sol-disco jukebox.
 
 ## SsAPI sequencer (`0x80061-0x80067` cluster)
 
@@ -682,7 +682,7 @@ Sits underneath the SsAPI sequencer and drives the SPU hardware directly. PsyQ `
 
 ### SPU init / reset / key registers
 
-The bottom of the libspu stack: cold init, the SPU-RAM transfer reset, and the raw KON/KOFF register writer. All are direct SPU MMIO or global-state resets - documented, not ported (the clean-room `Spu` models the KON/KOFF masks and the reset at the register-value level, never the hardware poke).
+The bottom of the libspu stack: cold init, the SPU-RAM transfer reset, and the raw KON/KOFF register writer. All are direct SPU MMIO or global-state resets - documented, not ported (the from-scratch `Spu` models the KON/KOFF masks and the reset at the register-value level, never the hardware poke).
 
 | Function | PsyQ shape | Notes |
 |---|---|---|
@@ -713,7 +713,7 @@ Sits between the SsApi seq layer and the libspu register primitives. This is the
 
 The retail SPU implements reverb as a same-side / different-side IIR reflection pair feeding a 4-tap comb early-echo and two all-pass stages, run at 22050 Hz over a work buffer at the top of SPU RAM (`mBASE = 0x80000 - work_size`). The 9 standard libspu modes (`Room` / `StudioA-C` / `Hall` / `Space` / `Echo` / `Delay` / `Pipe`) plus `Off` each select a 32-register set (work-area size + IIR/comb/all-pass coefficients + tap addresses).
 
-The `engine-audio` clean-room port reproduces that network register-for-register in [`spu::reverb`](../../crates/engine-audio/src/spu/reverb.rs): each [`ReverbMode`](../../crates/engine-audio/src/spu/reverb.rs) loads the standard libspu preset (public PSX hardware-reference constants - the same tables every open SPU emulator ships, not Sony game data) into a recirculating `i16` work buffer sized to that mode's work area. Address-type registers are in 8-byte units, taps wrap within the work area, and the reverb multiply is `(sample * coeff) / 0x8000` (signed Q15, so a `0x8000` coefficient inverts phase exactly as the hardware does).
+The `engine-audio` from-scratch port reproduces that network register-for-register in [`spu::reverb`](../../crates/engine-audio/src/spu/reverb.rs): each [`ReverbMode`](../../crates/engine-audio/src/spu/reverb.rs) loads the standard libspu preset (public PSX hardware-reference constants - the same tables every open SPU emulator ships, not Sony game data) into a recirculating `i16` work buffer sized to that mode's work area. Address-type registers are in 8-byte units, taps wrap within the work area, and the reverb multiply is `(sample * coeff) / 0x8000` (signed Q15, so a `0x8000` coefficient inverts phase exactly as the hardware does).
 
 Per-voice routing is opt-in: `Voice::reverb_send = true` (libspu `SpuSetVoiceReverb` analogue) sums the voice's pre-master output into the reverb send bus; the wet output is mixed back into the master in `Spu::tick`.
 
@@ -948,9 +948,9 @@ that override pinned playback at the 240 BPM placeholder (~3x too fast).
 See [`crates/engine-audio/src/sequencer.rs`](../../crates/engine-audio/src/sequencer.rs)
 for the implementation; tests use synthetic SEQs + a stubbed `VabBank`.
 
-## Engine-audio model - clean-room SPU port
+## Engine-audio model - from-scratch SPU port
 
-`crates/engine-audio` ports the SPU side of the audio stack as a clean-room model. No Sony bytes; the spec is this file plus the libspu API surface and the standard PSX SPU register layout. Surface:
+`crates/engine-audio` ports the SPU side of the audio stack as a from-scratch model. No Sony bytes; the spec is this file plus the libspu API surface and the standard PSX SPU register layout. Surface:
 
 | Module | Maps to |
 |---|---|

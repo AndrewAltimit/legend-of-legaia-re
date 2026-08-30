@@ -17,7 +17,7 @@
     <dt>Edit class</dt><dd>In place, same size; consumes reclaimed rodata - a finite, shared resource</dd>
     <dt>Mods</dt><dd><code>--equipment-drops</code> &middot; <code>--flee-exp</code> &middot; <code>--enemy-ally</code> &middot; <code>--shiny-seru</code></dd>
     <dt>Guards</dt><dd>Hook-site words must match the USA build; every target must be all-zero; no target may overlap a catalogued table; routine VAs must be word-aligned</dd>
-    <dt>Confidence</dt><dd><span class="tag tag-done">Confirmed</span> - byte/disassembly oracles plus emulator playtests; no engine runtime oracle (the clean-room engine cannot execute injected MIPS)</dd>
+    <dt>Confidence</dt><dd><span class="tag tag-done">Confirmed</span> - byte/disassembly oracles plus emulator playtests; no engine runtime oracle (the from-scratch engine cannot execute injected MIPS)</dd>
     <dt>Oracles</dt><dd><code>equipment_drops_real.rs</code> &middot; <code>flee_exp_real.rs</code> &middot; <code>enemy_ally_real.rs</code> &middot; <code>shiny_seru_real.rs</code></dd>
   </dl>
 </section>
@@ -178,7 +178,7 @@
       <li><strong>Jump alignment.</strong> <code>j</code> drops the target's low two bits, so a routine placed at an unaligned zero-run start jumps into the middle of a word. Every routine VA is rounded up to a word boundary; only byte-addressed data may sit unaligned.</li>
       <li><strong>Capturable set at patch time.</strong> No retail field says "this enemy is a Seru", so the shiny allowlist is built from the disc's own monster names - every enemy named after a player Seru-magic - and baked into a bitmap the setup routine indexes by id.</li>
     </ul>
-    <p>The clean-room engine pays none of this: there the same feature is a set of <code>(character, spell)</code> pairs and a <code>&times;1.35</code> in the damage kernel.</p>
+    <p>The from-scratch engine pays none of this: there the same feature is a set of <code>(character, spell)</code> pairs and a <code>&times;1.35</code> in the damage kernel.</p>
   </div>
 </details>
 

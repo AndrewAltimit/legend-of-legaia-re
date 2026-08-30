@@ -13,6 +13,7 @@
       <tr><td>Textures as PNG</td><td><code>asset tim-scan</code> + <code>tim convert-dir</code></td><td><a href="#textures">Textures</a></td></tr>
       <tr><td>Field / battle meshes as OBJ</td><td><code>asset tmd-scan</code> + <code>tmd dump-obj</code></td><td><a href="#models">3D models</a></td></tr>
       <tr><td>A monster with its animations, in Blender</td><td><code>asset monster-archive --glb</code></td><td><a href="#monsters-gltf">Monsters</a></td></tr>
+      <tr><td>A whole town in Unity / VRChat / Blender</td><td><code>legaia-engine export-glb</code></td><td><a href="#scenes-gltf">Whole scenes</a></td></tr>
       <tr><td>Voice lines and ambience as WAV</td><td><code>xa demux-disc-all</code></td><td><a href="#xa-audio">Streamed audio</a></td></tr>
       <tr><td>Instrument samples and sound effects</td><td><code>vab extract --wav</code></td><td><a href="#vab-banks">Sound banks</a></td></tr>
       <tr><td>The music sequences</td><td><code>seq find</code> / <code>seq info</code></td><td><a href="#seq-bgm">Background music</a></td></tr>
@@ -78,6 +79,21 @@
     <a href="../formats/battle-data-pack.html">Battle-data pack</a>
     <a href="../formats/monster-animation.html">Monster animation</a>
     <a href="../monsters.html">Monster viewer</a>
+  </div>
+</section>
+
+<section class="doc-section" id="scenes-gltf">
+  <h2>Whole scenes &rarr; glTF (Unity / VRChat / Blender)</h2>
+  <p>One command bakes an entire town or field map into portable glTF: the assembled world (ground, terrain, buildings - textured from the scene's real VRAM, placed exactly as the game places them), one animated <code>.glb</code> per NPC with its clips, the animated props (Rim Elm's windmills, doors), and a <code>manifest.json</code> that records where everything stands:</p>
+  <div class="cli"><code>./legaia-engine export-glb --scene town01 --out glb-export</code></div>
+  <div class="cli"><code>./legaia-engine export-glb --all-scenes --out glb-export</code></div>
+  <div class="cli"><code>./legaia-engine export-glb --items --out glb-export</code></div>
+  <p><code>--items</code> adds every equipment item - all four characters' weapons, Ra-Seru, armour, headgear and footwear - as animated <code>.glb</code>s: an item-alone cut with its grip repaired (a grabbable prop) and the exact palette cut with its host limb, the same two files the <a href="../characters.html">characters page</a> offers per download.</p>
+  <p>The world <code>.glb</code> drags into Blender like the monster export above. For building the scene as a <em>private</em> VRChat world - colliders on the retail walk surface, villagers looping their idle clips, a spawn in the village centre - the repo ships a Unity kit with a manifest-driven scene builder and a step-by-step guide in <code>scripts/vrchat-world/</code>. As with everything on this page, the output is decoded from your own disc: keep it local, keep uploads private.</p>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../tooling/index.html">Tooling index</a>
+    <a href="../world.html">Field-scene viewer</a>
   </div>
 </section>
 

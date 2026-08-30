@@ -181,7 +181,7 @@
 </section>
 
 <section class="doc-section" id="live-gameplay-loop">
-  <h2>The clean-room port</h2>
+  <h2>The from-scratch port</h2>
   <p>The engine keeps the battle simulation renderer-free in <code>engine-core</code> and drives it from one per-frame <code>World::tick</code>, so walking, being ambushed, fighting and returning to the field all happen from a single call. Both hosts (native <code>play-window</code> and the browser play page) arm it through the same kernel, <code>World::arm_live_loop</code>.</p>
   <table class="data-table">
     <thead><tr><th>Piece</th><th>Module</th><th>Retail counterpart</th></tr></thead>
@@ -197,7 +197,7 @@
     </tbody>
   </table>
   <p>Per frame the battle tick folds art-strike damage into HP, marks the dead, retires two animation gates retail's renderer would clear (advance-done at recovery, the caster's spell iterator at sustain), and re-arms the next attacker at the end-of-action gate. On completion it writes post-battle HP / MP into the character records <em>before</em> restoring the field snapshot - otherwise the fight's damage is thrown away. The loop flag gates only the encounter roll: once the world is in battle, however it got there, the tick always drives it to a result.</p>
-  <p>Player-driven battles are the default on both hosts; <code>--no-live-loop</code> turns the encounter roll off and <code>--no-player-battle</code> auto-attacks each party turn. Post-battle Seru learning banks capture points per Seru and party slot; the per-monster Seru attachment table is a clean-room approximation (<code>SeruRegistry::vanilla</code>), Inferred, not Confirmed.</p>
+  <p>Player-driven battles are the default on both hosts; <code>--no-live-loop</code> turns the encounter roll off and <code>--no-player-battle</code> auto-attacks each party turn. Post-battle Seru learning banks capture points per Seru and party slot; the per-monster Seru attachment table is an engine-side approximation (<code>SeruRegistry::vanilla</code>), Inferred, not Confirmed.</p>
   <details class="disclosure">
     <summary>Details: the two host-simulated gates, and the loop-flag regression</summary>
     <div class="disclosure-body">

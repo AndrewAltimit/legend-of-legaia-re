@@ -2074,7 +2074,7 @@ but the code is in `engine-ui`, and the distinction is the point of the split:
 `engine-ui` is the renderer-agnostic, wgpu-free leaf, which is what lets the
 browser play page build these same menus without linking wgpu.
 
-The clean-room engine parses the window-descriptor table from the user's
+The from-scratch engine parses the window-descriptor table from the user's
 disc at boot (`legaia_asset::menu_windows`; the play-window falls back to a
 pinned mirror of the same rects) and frames each screen's window set with
 the reusable 9-slice primitive `engine-ui::menu_window_chrome_draws_for`

@@ -110,7 +110,7 @@ What the raised bit then changes is tabulated under [the per-battle flags byte](
 - The random-encounter path enters that state via the `FUN_801D9E1C` roll (state 0); a *scripted* arm relies on the scene bytecode having authored `[count @ +3][ids @ +4..]` after the halt opcode on such an entity's context.
 - The general-purpose scripted arm is the interact op **`0x3E` with `op0 = 0xFF`** (`3E FF <row>`): the retail case-0x3E handler sets `entity[+0x8A] = 1` and installs `entity[+0x94] = ctrl[+0x20] + row * ctrl[+0x5D] + 1` - pointing the record slot at MAN formation-table row `row` directly (full arm + disc sites in [battle.md](../subsystems/battle.md#scripted-battle-entry-3e-ff-row): garmel rows 8/9 = Songi/Zeto, rikuroa row 17 = Caruban; boss rows sit outside every region's rollable `[base, base+count)` slice). Other per-scene shapes (an inline `[count][ids]` authored after a halt op) still occur; which shape a fight uses remains a per-scene bytecode fact.
 
-**Engine port.** The clean-room field VM mirrors this discriminator split:
+**Engine port.** The from-scratch field VM mirrors this discriminator split:
 
 - The bare arm-encounter op (`0x37`/`0x41`) calls `FieldHost::is_scripted_encounter_armed()` and, only when armed, hands `FieldHost::install_scripted_encounter()` the bounded record window overlaying the opcode (`[opcode][op1][op2][count][≤4 ids]`).
 - The engine consumer (`World`) parses that window as an `EncounterRecord`, registers the formation, and forces the next `on_field_step` roll (`World::install_scripted_encounter` / `arm_scripted_encounter`); a successful install disarms (fire-once, matching the retail `entity[+0x94]` clear).
@@ -304,7 +304,7 @@ install on this specific entity still needs a mid-interaction RAM capture; the
 field-VM control flow from the menu branch to the formation-index install is the
 remaining open step.
 
-The clean-room engine reaches this fight faithfully through the same indexed
+The from-scratch engine reaches this fight faithfully through the same indexed
 table: a cold boot loads town01's MAN formations (with the monster archive's real
 stats merged at scene entry), and `World::install_man_formation(RIM_ELM_TRAINING_FORMATION_ID)`
 (`= 4`, in [`encounter_record.rs`](../../crates/engine-core/src/encounter_record.rs))
@@ -371,7 +371,7 @@ disassembly here, not the decompile. The three cases:
 | in a bespoke band | `[id, 0, 0, 0]` |
 | any other non-zero | `[id, id, id, 0]` |
 
-Ported clean-room as `legaia_engine_core::encounter_record::expand_battle_id`,
+Ported from-scratch as `legaia_engine_core::encounter_record::expand_battle_id`,
 alongside the `actor[+0x94]` record path it is the alternate of.
 
 `DAT_8007b7fc` is a **transient** parameter: it is `0` in every captured Tetsu
@@ -398,7 +398,7 @@ retail encounter carries the boss id in a **count-1 entity record**, not the
 The mid-battle cell `[0x4B,0,0,0]` matches the earlier `zeto_*_mid_cast` states
 byte-for-byte; those captures pinned the id, not the mechanism, and their `jou`
 scene attribution is superseded by the live forward-play (runtime scene buffer
-`0x8007050C` reads `garmel` through the whole fight). The clean-room engine
+`0x8007050C` reads `garmel` through the whole fight). The from-scratch engine
 enters the fight through the MAN formation row selected by the beat record's
 `3E FF <row>` op (`World::trigger_scripted_battle`), producing the same
 `[0x4B]` cell from the disc bytes.
@@ -540,7 +540,7 @@ flag, so a single reader serves both paths.
 
 #### Engine port (region-keyed roll)
 
-The roll above is ported clean-room as
+The roll above is ported from-scratch as
 [`region_encounter`](../../crates/engine-core/src/region_encounter.rs)
 (`PORT: FUN_801D9E1C`). `RegionEncounterTable` preserves each region's
 tile-AABB + rate increment + formation slice (built from the MAN via

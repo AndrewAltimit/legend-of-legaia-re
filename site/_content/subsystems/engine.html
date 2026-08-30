@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; engine reimplementation</div>
   <h1>Engine reimplementation</h1>
-  <p class="lede">A clean-room Rust port of Legend of Legaia in the ScummVM / OpenRCT2 mould: the original PlayStation code is traced with a disassembler, documented, and rewritten fresh - never recompiled. You supply your own disc image; the engine reads every asset from it and plays the game. Retail behaviour is the measured ground truth, provable against parity oracles, and enhancements ride on top as toggles with a retail-faithful mode always one flip away.</p>
+  <p class="lede">A from-scratch Rust port of Legend of Legaia in the ScummVM / OpenRCT2 mould: the original PlayStation code is traced with a disassembler, documented, and rewritten fresh - never recompiled. You supply your own disc image; the engine reads every asset from it and plays the game. Retail behaviour is the measured ground truth, provable against parity oracles, and enhancements ride on top as toggles with a retail-faithful mode always one flip away.</p>
 </header>
 
 <section class="doc-section" id="at-a-glance">
@@ -112,7 +112,7 @@
       <tr><td><code>engine-core</code></td><td>engine-vm + parser crates</td><td><code>World</code>, scene host, <code>Vfs</code> (dir / disc / memory), menus, sessions, minigame rules</td></tr>
       <tr><td><code>engine-ui</code></td><td>asset, tim, font</td><td>renderer-agnostic draw lists (<code>TextDraw</code> / <code>SpriteDraw</code>); the wgpu-free leaf the browser links</td></tr>
       <tr><td><code>engine-render</code></td><td>engine-ui, asset, tim, font</td><td>wgpu renderer with a software PSX VRAM (1024&times;512, CLUT decode in the fragment shader)</td></tr>
-      <tr><td><code>engine-audio</code></td><td>xa, vab, seq, prot</td><td>cpal output, clean-room 24-voice SPU, SsAPI-shaped sequencer; <code>WebAudioOut</code> on WASM</td></tr>
+      <tr><td><code>engine-audio</code></td><td>xa, vab, seq, prot</td><td>cpal output, from-scratch 24-voice SPU, SsAPI-shaped sequencer; <code>WebAudioOut</code> on WASM</td></tr>
       <tr><td><code>engine-shell</code></td><td>all of the above</td><td>the <code>legaia-engine</code> binary: <code>BootSession</code>, subcommands, parity oracles</td></tr>
     </tbody>
   </table>
@@ -121,9 +121,9 @@
 
 <section class="doc-section" id="goal-non-goals">
   <h2>Goal and non-goals</h2>
-  <p><strong>Goal:</strong> a playable port of the NA release on modern systems via Rust + wgpu, with a WASM target; JP / EU follow once NA is solid. &ldquo;Playable port&rdquo; is grounded in retail, not bound by it: the decompilation and oracles pin what the original does, the faithful mode reproduces it provably, and that is a measuring stick rather than a ceiling.</p>
+  <p><strong>Goal:</strong> a playable port of the NA release on modern systems via Rust + wgpu, with a WASM target; JP / EU follow once NA is solid. &ldquo;Playable port&rdquo; is grounded in retail, not bound by it: the Ghidra-traced dumps and oracles pin what the original does, the faithful mode reproduces it provably, and that is a measuring stick rather than a ceiling.</p>
   <ul class="bullets">
-    <li><strong>No static recompilation.</strong> Every line is fresh Rust from format docs and decompile-then-rewrite logic. The decompiled C under <code>ghidra/scripts/funcs/</code> is reference material, never pasted; per-opcode tests use synthetic bytecode.</li>
+    <li><strong>Not a decompilation.</strong> No byte-matching recompile is attempted; every line is fresh Rust written from format docs and the Ghidra-traced dumps. The decompiled C under <code>ghidra/scripts/funcs/</code> is reference material, never pasted; per-opcode tests use synthetic bytecode.</li>
     <li><strong>Never lose retail.</strong> Departures live behind toggles; the oracles keep &ldquo;faithful&rdquo; a testable claim. A quirk is preserved in the faithful mode and fair game to improve outside it.</li>
     <li><strong>No re-authored assets.</strong> Every texture, mesh, sample and sequence comes off your own disc at runtime.</li>
     <li><strong>Deterministic simulation.</strong> Seeded RNG, fixed timestep - the precondition for record / replay and TAS-style verification.</li>
@@ -196,7 +196,7 @@
       <tr><td>Items + inventory</td><td><code>items.rs</code>, <code>inventory_use.rs</code></td><td>typed <code>ItemEffect</code> resolver; the pick-item / pick-target flow shared by field menu and battle</td></tr>
       <tr><td>Title + save</td><td><code>title::TitleSession</code>, <code>save_select</code>, <code>save/src/ext.rs</code></td><td>real title sheet (PROT 0890); LGSF container, versioned v1..v4 with sentinel-guarded extensions; memory-card writeback</td></tr>
       <tr><td>Audio</td><td><code>AudioBgmDirector</code>, <code>sfx.rs</code></td><td>30-frame cross-fades; cue catalog decoded from the executable, frame-accurate scheduler through the scene VAB</td></tr>
-      <tr><td>Cutscenes</td><td><code>play-str</code>, <code>mdec</code></td><td>STR video through the clean-room MDEC decoder with XA audio in sync (<a href="cutscene.html">cutscene</a>)</td></tr>
+      <tr><td>Cutscenes</td><td><code>play-str</code>, <code>mdec</code></td><td>STR video through the from-scratch MDEC decoder with XA audio in sync (<a href="cutscene.html">cutscene</a>)</td></tr>
     </tbody>
   </table>
   <h3>The browser host</h3>

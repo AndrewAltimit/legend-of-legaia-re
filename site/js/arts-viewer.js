@@ -187,7 +187,7 @@
         if (this.els.glbBtn) this.els.glbBtn.disabled = false;
         /* Sound: render the strike cue off the same disc bytes (SCUS -> the
          * SFX descriptor table, PROT 869 -> the class-2 sound bank, through
-         * the clean-room SPU). Non-blocking, and a no-op on a raw PROT.DAT
+         * the from-scratch SPU). Non-blocking, and a no-op on a raw PROT.DAT
          * load (no SCUS to read the descriptors from). */
         if (window.LegaiaSfx) LegaiaSfx.init(mod, buf);
       } catch (err) {

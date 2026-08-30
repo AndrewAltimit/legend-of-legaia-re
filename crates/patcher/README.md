@@ -62,7 +62,7 @@ Four patching families share that machinery:
   is a TIM at all ([`battle_texture`](#battle-character-art-battle_texture-module),
   [`monster_texture`](#monster-battle-skins-monster_texture-module)).
 
-It is Track-1-adjacent tooling - it does **not** touch the clean-room engine -
+It is Track-1-adjacent tooling - it does **not** touch the from-scratch engine -
 and it ships only code: no game bytes are embedded or committed, and every
 test that needs real data is disc-gated.
 
@@ -537,7 +537,7 @@ fully **deterministic from the seed**.
 - Cadence: the `0x80084570` counter ticks ~per-frame, so the handler divides by
   `RESEED_PERIOD_FRAMES` (≈9 min/bucket; full cycle ≈9.6 h). The engine track also
   uses a `SeruTradeConfig` blob (`apply::enable_seru_trades`) for its own
-  clean-room trade UI off the same kernel.
+  from-scratch trade UI off the same kernel.
 
 ## Chests
 

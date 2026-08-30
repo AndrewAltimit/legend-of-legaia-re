@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; port catalog</div>
   <h1>Port catalog</h1>
-  <p class="lede">The project's progress ledger, kept at function granularity. Reverse-engineering the game means walking each retail function from disassembly to documentation to a clean-room Rust reimplementation - the port catalog measures where every function stands, derived from the tree itself rather than from a hand-maintained checklist. You only need this page if you are contributing to the decompilation or engine tracks.</p>
+  <p class="lede">The project's progress ledger, kept at function granularity. Reverse-engineering the game means walking each retail function from disassembly to documentation to a from-scratch Rust reimplementation - the port catalog measures where every function stands, derived from the tree itself rather than from a hand-maintained checklist. You only need this page if you are contributing to the reverse-engineering or engine tracks.</p>
 </header>
 
 <section class="doc-section" id="at-a-glance">
@@ -64,7 +64,7 @@
 
 <section class="doc-section" id="columns">
   <h2>The status matrix</h2>
-  <p>Each row is one retail function address. The columns are independent signals, plus an axis for scope-excluded addresses (statically-linked PsyQ SDK code - Sony's standard PSX library - which the clean-room port maps to native equivalents rather than porting line by line).</p>
+  <p>Each row is one retail function address. The columns are independent signals, plus an axis for scope-excluded addresses (statically-linked PsyQ SDK code - Sony's standard PSX library - which the from-scratch port maps to native equivalents rather than porting line by line).</p>
   <table>
     <thead><tr><th>Column</th><th>Source of truth</th></tr></thead>
     <tbody>
@@ -221,7 +221,7 @@ python3 scripts/ci/port-catalog.py --check --live        # ratchet every baselin
 
 <section class="doc-section" id="ignore-list">
   <h2>Ignore list</h2>
-  <p><code>scripts/ci/port-catalog-ignore.toml</code> lists addresses out-of-scope for engine porting - statically-linked PsyQ kernel / runtime / SDK code the clean-room port maps to native equivalents (Rust stdlib, wgpu, cpal). Categories are organisational (one TOML table per cluster: <code>bios</code>, <code>libgte</code>, <code>libsnd</code>, ...); each entry is an address plus a one-line factual reason naming the PsyQ function.</p>
+  <p><code>scripts/ci/port-catalog-ignore.toml</code> lists addresses out-of-scope for engine porting - statically-linked PsyQ kernel / runtime / SDK code the from-scratch port maps to native equivalents (Rust stdlib, wgpu, cpal). Categories are organisational (one TOML table per cluster: <code>bios</code>, <code>libgte</code>, <code>libsnd</code>, ...); each entry is an address plus a one-line factual reason naming the PsyQ function.</p>
 <pre><code>[libgte]
 "8005ba1c" = "GTE sqrt / normalise (mtc2 0xF000 / mfc2 0xF800)"
 

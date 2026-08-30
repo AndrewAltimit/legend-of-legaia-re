@@ -19,7 +19,7 @@ python3 scripts/ci/port-catalog.py --dashboard
 
 ## The columns
 
-Signals across the decompilation and engine-port tracks, plus an axis for
+Signals across the reverse-engineering and engine-port tracks, plus an axis for
 scope-excluded addresses (statically-linked PsyQ library code the engine maps to
 native equivalents rather than porting line-by-line):
 
@@ -475,7 +475,7 @@ Use feature views to:
 
 `scripts/ci/port-catalog-ignore.toml` lists addresses that the catalog should
 treat as out-of-scope for engine porting - statically-linked PsyQ kernel /
-runtime / SDK code. The clean-room port maps these clusters to native
+runtime / SDK code. The from-scratch port maps these clusters to native
 equivalents (Rust stdlib, wgpu, cpal) rather than reimplementing the
 PSX wrappers, so they shouldn't pollute the port worklist.
 

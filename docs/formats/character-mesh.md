@@ -151,7 +151,7 @@ each get their own mesh swap; the toggle is a single bit ("weapon-bearing
 group is on / off") and item identity is conveyed by the character's
 [texture atlas](#textures-field-form), not by mesh changes.
 
-`legaia_asset::character_pack::equipment_swap::apply` is the clean-room
+`legaia_asset::character_pack::equipment_swap::apply` is the from-scratch
 equivalent: given a slot's disc-form TMD bytes, a [`PatchSlot`], and the
 character's equipment toggle byte, it returns the patched TMD buffer.
 
@@ -479,7 +479,7 @@ by palette column where there is a boundary, shipped with the limb it came
 from as separately named and separately posed nodes, and graded by how
 cleanly the two parted
 ([`battle-data-pack.md`](battle-data-pack.md#the-item-is-still-separable---by-palette-not-by-geometry)).
-The clean-room engine assembles the real thing:
+The from-scratch engine assembles the real thing:
 `legaia-engine play-window` splices each party member from their player file
 (`battle_char_assembly`, equipped ids from the roster record), applies the
 registration-time TSB/CBA relocation (`relocate_tsb_cba`), decodes the same
@@ -635,7 +635,7 @@ TSB word's 5-bit texpage index to `0x18 + 2*slot` when the authoring page is
 The **assembled player-file meshes** all author at texpages `0x15`/`0x16` =
 `(320, 256)`/`(384, 256)` and CLUT row 480, so on them the pass is a uniform
 `+3` texpage / `+0x40` CLUT-id rewrite - exactly the residual delta between
-the disc assembly and the live registered blob. Clean-room port:
+the disc assembly and the live registered blob. From-scratch port:
 [`legaia_asset::battle_char_assembly::relocate_tsb_cba`](../../crates/asset/src/battle_char_assembly.rs)
 (dump `ghidra/scripts/funcs/80053a28.txt`;
 disc-gated `battle_char_assembly_real::relocates_each_character_into_its_runtime_band`).
@@ -753,7 +753,7 @@ argument is an **output-byte budget** (decremented once per literal *and* once p
 match-copied byte; loop runs `while budget > 0`). A decoder that ignores the
 budget runs off the stream into the next record. `legaia_lzs::decompress` already
 honors this (`while out.len() < size`), so the port is just one
-`decompress(stream, budget)` per record. Clean-room parser:
+`decompress(stream, budget)` per record. From-scratch parser:
 [`legaia_asset::battle_char_palette`].
 
 **Where the player files load from (traced).** Each party member's CLUTs live in

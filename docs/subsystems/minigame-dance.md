@@ -334,7 +334,7 @@ Parser: [`legaia_asset::dance_chart`](../../crates/asset/src/dance_chart.rs) dec
 
 Engine port:
 [`legaia_engine_core::dance`](../../crates/engine-core/src/dance.rs) is the
-clean-room rules engine driven by that parsed chart + [scoring
+from-scratch rules engine driven by that parsed chart + [scoring
 tables](#the-rival-dancers-score-for-real) - the beat clock (`FUN_801cf470`),
 the per-dancer handler (`FUN_801d1358`: latch decay, chain-cursor reset,
 combo-slot banking, the CPU auto-feed), the timing-window hit judge

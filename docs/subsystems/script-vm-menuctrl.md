@@ -29,7 +29,7 @@ The 0x4C dispatcher's **outer high nibble** of `op0` selects 16 sub-dispatchers:
 | E | 0xE0..0xEF | Misc scene writes + emitter helpers (3-way state write, variable-length text balloon, FMV trigger, camera teleport/animate/zoom, XP add). All non-`P` cells in the matrix above are now ported. Full body: [nibble-E misc scene writes + emitter helpers](#0x4c-nibble-0xe00xef---misc-scene-writes--emitter-helpers). |
 | F | 0xF0..0xFF | Only `op0 == 0xFF` valid (pass-through); other sub-ops print `"SUB_CMD_0F_ERROR"` |
 
-The full per-sub-op table is in the field-VM dump (`overlay_0897_801de840.txt`). The clean-room port mirrors the dispatcher shape with host hooks per sub-cluster - see [`crates/engine-vm/src/field.rs`](../../crates/engine-vm/src/field.rs). The side-effect-free disassembler (`legaia_asset::field_disasm`) carries the same per-sub widths for **all sixteen outer nibbles** so linear census walks stay in sync (nibble `B` is genuinely undefined in retail - no `case 0xb` exists - and decodes as an error).
+The full per-sub-op table is in the field-VM dump (`overlay_0897_801de840.txt`). The from-scratch port mirrors the dispatcher shape with host hooks per sub-cluster - see [`crates/engine-vm/src/field.rs`](../../crates/engine-vm/src/field.rs). The side-effect-free disassembler (`legaia_asset::field_disasm`) carries the same per-sub widths for **all sixteen outer nibbles** so linear census walks stay in sync (nibble `B` is genuinely undefined in retail - no `case 0xb` exists - and decodes as an error).
 
 #### 0x4C nibble 0x70..0x7F - collision-grid rectangular wall paint
 
@@ -281,4 +281,4 @@ LoadImage(rect, buf16);    // FUN_800583c8 - write 16 u16 pixels back
 return iVar47 + 6;
 ```
 
-`FUN_8005842c` / `FUN_800583c8` / `FUN_80058104` carry the string constants `s_StoreImage` / `s_LoadImage` / `s_DrawSync` respectively. The 16-element u16 buffer lives on the dispatcher's stack and is *not* present in the bytecode - it's pixels read from VRAM at runtime. The host hooks `op4c_n_d_sub_4_vram_stp_set(x, y)` / `op4c_n_d_sub_5_vram_stp_clear(x, y)` receive only the rect origin; a clean-room renderer that maintains its own framebuffer can emulate the read-modify-write itself.
+`FUN_8005842c` / `FUN_800583c8` / `FUN_80058104` carry the string constants `s_StoreImage` / `s_LoadImage` / `s_DrawSync` respectively. The 16-element u16 buffer lives on the dispatcher's stack and is *not* present in the bytecode - it's pixels read from VRAM at runtime. The host hooks `op4c_n_d_sub_4_vram_stp_set(x, y)` / `op4c_n_d_sub_5_vram_stp_clear(x, y)` receive only the rect origin; a from-scratch renderer that maintains its own framebuffer can emulate the read-modify-write itself.

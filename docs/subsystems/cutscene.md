@@ -3,13 +3,13 @@
 Pre-rendered cutscene playback combines PSX STR video (MDEC hardware decoder)
 with the XA-ADPCM audio interleaved in the same CD-XA sectors. The engine drives
 it through game modes 26 and 27 (`StrInit` / `StrMode`), which map to
-`SceneMode::Cutscene` in the clean-room port.
+`SceneMode::Cutscene` in the from-scratch port.
 
 **Where it lives.** The playback engine is split: an STR overlay (master dispatch
 `FUN_801CEA3C`, play loop `FUN_801CF098`) over the SCUS-resident `St` streaming
 library. The FMV dispatch table is at `0x801D0A6C`.
 
-**Port counterpart.** `crates/mdec` (the clean-room decoder) plus the
+**Port counterpart.** `crates/mdec` (the from-scratch decoder) plus the
 `legaia-engine play-str` loop; `legaia_asset::fmv_dispatch` reads the table.
 
 **The two things that catch people out:**
@@ -45,7 +45,7 @@ library. The FMV dispatch table is at `0x801D0A6C`.
 | 27 | `STR MODE` (`StrMode`) | `0x000` | `ConfigInit` |
 
 `StrInit` (index 26) bootstraps the cutscene: opens the STR stream, initialises the MDEC hardware
-(or the clean-room decoder), starts the XA audio. `StrMode` (index 27) runs the per-frame loop:
+(or the from-scratch decoder), starts the XA audio. `StrMode` (index 27) runs the per-frame loop:
 reads the next batch of sectors, decodes a frame, blits it full-screen, and advances the audio
 position. When the stream ends, the mode chain transitions to `ConfigInit` (index 1).
 
@@ -240,7 +240,7 @@ and what forces the wrap handling when a frame doesn't fit before the ring end.
 
 ### Engine port - `legaia_mdec::st_ring`
 
-[`StRing`](../../crates/mdec/src/st_ring.rs) is the clean-room port of the ring and its
+[`StRing`](../../crates/mdec/src/st_ring.rs) is the from-scratch port of the ring and its
 per-sector state machine, minus the CD/DMA register pokes: `set_ring` / `set_stream` / `set_mask`
 / `deliver_sector` / `get_next` / `free_ring`, with the demuxer's own trace codes surfaced as
 `StStatus` (ring full, sequence break, end frame, wrap-stop, wrap-blocked, accepted). It is the
@@ -355,7 +355,7 @@ register and dump the DMA/FIFO state on timeout (`FUN_801D0248` - the `MDEC_in_s
 `MDEC_out_sync` strings that identify the overlay); `FUN_801CFEE0` is the reset
 (`MDEC_rest:bad option(%d)`).
 
-Those five are the clean-room boundary of this subsystem, and they are the only part of the
+Those five are the port boundary of this subsystem, and they are the only part of the
 STR overlay's decode path that is **not** ported. Everything above them - the play loop, the ring
 and stream setup, the frame pump, the slice callback, the output control word - has a
 [`crates/mdec`](../../crates/mdec/README.md) counterpart in the table above, because each is a
@@ -382,7 +382,7 @@ to something the game does.
 
 #### Remaining MDEC / St helpers
 
-Four more overlay helpers sit on that same clean-room boundary and carry no port site:
+Four more overlay helpers sit on that same port boundary and carry no port site:
 `FUN_801CFAD4` is the MDEC-decode watchdog - it spins up to `0x800000` iterations on the
 decode-done flag `ctx+0x34` and, on timeout, prints `time out in decoding` and force-flips
 the code buffer (`ctx+0x28`); `FUN_801CFE00` is an 8-instruction thunk to the DMA-0 code
@@ -450,7 +450,7 @@ distinguishing trait: the per-block DC and quantization scale are **not** in the
 - they live in a separate LZSS-compressed lookup table right after the frame header, and the
 bitstream carries only AC coefficients. (STRv2 would put a per-frame qscale in the header and each
 block's DC inside the bitstream; Legaia overwrites STRv2's header qscale/version fields with the
-frame width/height, which is what a strict STRv2 parser rejects.) Clean-room port; sources:
+frame width/height, which is what a strict STRv2 parser rejects.) From-scratch port; sources:
 PSX-SPX BS-compression pages + jPSXdec's `PlayStation1_STR_format.txt` (format docs only).
 
 ### 1. Frame header (10 bytes)
@@ -858,7 +858,7 @@ Each page is framed `0x1F <printable ASCII> 0x00` - `0x1F` (ASCII Unit Separator
 
 A sibling **static title-card op** `[0xCC 0xF8 0x89 b1 b2]` carries the same `0x1F`/`0x00` page framing (after an optional short placement word) but presents differently: the pages show **simultaneously**, centered, while the parent script **continues**; a later card block whose pages are blank clears the card. `map01`'s fly-in uses it for the "twilight of humanity" title card + its blank-page clear. The parser distinguishes the two as [`NarrationKind::Crawl`](../../crates/asset/src/cutscene_text.rs) (`op0 = 0x80`) vs [`NarrationKind::Card`](../../crates/asset/src/cutscene_text.rs) (`op0 = 0x89`); the engine surfaces the card via `World::cutscene_card`.
 
-`opdeene`'s timeline carries two crawl blocks: a 14-page creation prologue and an 8-page Seru-history block (22 pages total). The clean-room parser is [`legaia_asset::cutscene_text`](../../crates/asset/src/cutscene_text.rs) (`parse_narration` / `narration_pages`); it locates the introducing op and the page framing structurally and decodes the runtime disc bytes (no narration text is baked into the repo). Inspect it with:
+`opdeene`'s timeline carries two crawl blocks: a 14-page creation prologue and an 8-page Seru-history block (22 pages total). The from-scratch parser is [`legaia_asset::cutscene_text`](../../crates/asset/src/cutscene_text.rs) (`parse_narration` / `narration_pages`); it locates the introducing op and the page framing structurally and decodes the runtime disc bytes (no narration text is baked into the repo). Inspect it with:
 
 ```bash
 legaia-engine man-scripts --scene opdeene --disc "<disc>.bin" \
@@ -912,7 +912,7 @@ The spawner and the crawl-geometry config are two distinct sub-ops of field-VM o
 A prior model - "one caption per page, 120 frames each, killing its predecessor, drawn at `Y = 180` / mid-screen" - described the separate **`4C E1` single-balloon op** (spawner `FUN_8003C764`, handler `FUN_801DA7F0`, dispatcher case at `0x801E30B8`/`C8`). That op is real but it is **not the crawl**.
 The *"It was the Seru."* caption appears between `opdeene`'s two crawls, as a centered line over the villager-tableau shot (between the creation crawl's last page and the Seru-history crawl's first). It is **not a text balloon at all** and **not any live-rendered font string**: it is a **pre-rendered image**. The caption is a baked **112×32 4bpp TIM** (two CLUT palettes - the fade steps) in the `opdeene` geometry pack **PROT entry 0749** at LZS-decoded offset `0x01EC30`, VRAM `fb=(384,0)`, sitting among that pack's scene textures (the cloth grades, the Genesis-tree flame, the foliage; `tim-scan extracted/PROT/0749_opdeene.BIN`). The scene renderer draws it as a screen-space textured quad; there is no font string to source.
 
-**Clean-room port.** The engine blits that scene texture rather than rendering text. On entering `opdeene`, [`cutscene_caption::decode_opdeene_caption`](../../crates/engine-core/src/cutscene_caption.rs) locates the 112×32 4bpp TIM in PROT 0749's LZS sections and decodes it to RGBA (its background palette entry is `0x0000`, so [`legaia_tim::decode_rgba8`] gives it alpha 0 - only the glyphs are opaque), stored on `World::cutscene_caption`.
+**From-scratch port.** The engine blits that scene texture rather than rendering text. On entering `opdeene`, [`cutscene_caption::decode_opdeene_caption`](../../crates/engine-core/src/cutscene_caption.rs) locates the 112×32 4bpp TIM in PROT 0749's LZS sections and decodes it to RGBA (its background palette entry is `0x0000`, so [`legaia_tim::decode_rgba8`] gives it alpha 0 - only the glyphs are opaque), stored on `World::cutscene_caption`.
 
 [`World::tick`](../../crates/engine-core/src/world/frame_tick.rs) fades `cutscene_caption_alpha` in while the caption is target-visible - after the first crawl block scrolls out (`cutscene_narration_seq == 1` and narration inactive) - and back out; the host uploads the image once as a sprite atlas and emits one centered, alpha-tinted `SpriteDraw`. The caption is bounded to a retail-like ~2 s beat (`CAPTION_HOLD_FRAMES`) so the engine's currently-longer inter-crawl timeline gap doesn't leave it frozen; it also fades on the second crawl opening, whichever comes first. Disc-gated oracle: `crates/engine-core/tests/opdeene_caption_playback.rs`.
 
@@ -1584,7 +1584,7 @@ ambient) as it grows.
 to the generic per-prim dispatcher. All projection, culling, depth cue and OT linking happen
 inside the SCUS dispatch handler, which the engine already models
 (`engine-vm::prim_dispatch` + `engine-ui::gte`). So "the packet assembly stays at the
-clean-room boundary" is the wrong frame for this style - the boundary it actually sits behind
+port boundary" is the wrong frame for this style - the boundary it actually sits behind
 is a dispatcher that is already ported.
 
 The synthetic object's group header carries `flags = 0x22`, i.e. dispatch kind

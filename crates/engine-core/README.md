@@ -1,6 +1,6 @@
 # legaia-engine-core
 
-The simulation half of the clean-room engine: virtual filesystem, asset
+The simulation half of the from-scratch engine: virtual filesystem, asset
 cache, frame timing, world state, and the rules engines. Everything here
 is renderer-agnostic.
 
@@ -174,7 +174,7 @@ HP/MP/SPD mirrors), resolve via `party_roster_slot`; persisted through
 - `ap_gauge` - per-character Action-Point gauge. Charges +5 on
   Spirit-press, refills per turn; backs the Spirit command and the AP
   override hook, **not** the Arts input's swing budget.
-- `battle_stats` - equipment-aware stat aggregator (clean-room port of
+- `battle_stats` - equipment-aware stat aggregator (from-scratch port of
   `FUN_80042558`). Sums per-item modifiers, ORs ability bits, folds
   status-effect modifiers (Toxic -ATK/-DEF, Confuse halves accuracy,
   Numb / Sleep / Stone / Faint zero evasion, Curse / Faint block Magic).
@@ -235,7 +235,7 @@ HP/MP/SPD mirrors), resolve via `party_roster_slot`; persisted through
   into a single state machine. Owns the action SM during the `Resolve`
   phase: on `commit_turn` it builds a per-slot `ResolveDriver` queue,
   arms `world.battle_ctx`, calls `world.tick` once per `BattleSession::tick`,
-  applies clean-room formula damage on `AttackChain → AttackRecovery`
+  applies from-scratch formula damage on `AttackChain → AttackRecovery`
   transitions, and advances to the next attacker on `EndOfAction`. The
   `Resolve → RoundOutro → Victory / Defeat` transition observes the
   routed `BattleEnd` event. See `docs/subsystems/battle.md#battlesession-resolve-driver`.
@@ -353,6 +353,20 @@ each scene actually uploads, rather than blanket-loading the block.
 `FIELD_SHARED_BLOCKS` names the blocks that stay resident across a scene
 transition - the player TMD lives here, which is why the party mesh
 survives a door without a reload.
+
+`scene_assembly` is the shared full-scene assembly kernel over those
+resources: `assemble_field_scene` resolves the env pack, the `.MAP`
+placement/terrain draws (object binds included, so each placed draw
+carries its posing clip), the walk-ground heightfield and the coplanar
+lifts - the one build the browser field-scene page and the native
+`export-glb` path both read. `packet_color` carries the hybrid
+textured/vertex-colour side channel, `npc_catalog` the MAN placement
+walk, and `glb_export` composes all of it (plus per-NPC and animated-prop
+bakes through `legaia_asset::{scene,character}_gltf`) into the
+`legaia-engine export-glb` artifact set, `--items` included
+(`export_equipment_item_glbs` over the shared
+`battle_char_assembly::loadout` kernel) - see
+[`docs/tooling/vrchat-world-export.md`](../../docs/tooling/vrchat-world-export.md).
 
 ## Dialogue, save/load, and loot
 
@@ -504,4 +518,4 @@ presentation left to the host:
 ## See also
 
 - [`docs/subsystems/engine.md`](../../docs/subsystems/engine.md) - the
-  clean-room boundary and architecture for the engine track.
+  port boundary and architecture for the engine track.

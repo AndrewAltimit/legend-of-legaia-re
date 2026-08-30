@@ -130,7 +130,7 @@ goto jump_table[op[0]];                                   // JT at 0x80010778</c
   <h2>Where the pieces live</h2>
   <ul class="bullets">
     <li><strong><code>crates/mdt</code></strong> parses the <a href="../formats/mdt.html">MDT format</a>; the per-frame data inside an MDT record is exactly this VM's bytecode.</li>
-    <li><strong><code>crates/engine-vm/src/move_vm.rs</code></strong> is the clean-room port - all 71 outer + 61 extension ops, actor callbacks behind the <code>MoveHost</code> trait, and an <code>actor_tick</code> mirroring the retail per-frame entry gate.</li>
+    <li><strong><code>crates/engine-vm/src/move_vm.rs</code></strong> is the from-scratch port - all 71 outer + 61 extension ops, actor callbacks behind the <code>MoveHost</code> trait, and an <code>actor_tick</code> mirroring the retail per-frame entry gate.</li>
     <li><strong>Field-VM op <code>0x22 EXEC_MOVE</code></strong> is the gateway in: it resolves a move id to a record and stages the buffer + PC on the actor.</li>
   </ul>
 </section>

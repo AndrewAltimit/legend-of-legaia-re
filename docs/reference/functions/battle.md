@@ -375,11 +375,11 @@ resets it to `-1`. `see ghidra/scripts/funcs/8004da00.txt`.
 
 **Party-character battle-mesh assembler + CLUT decode** (SCUS). For each active party member (`DAT_8007bd10[char] != 0`) allocates a `0x19000` work buffer and LZS-decodes `record[0]` + the 5 equipment-selected player-file sections into it.
 
-- **Palette half**: STP-copies the embedded CLUT structs to VRAM rows `481 + slot` via `FUN_80053B9C` (CLUTs are `[u16 base][u16 count][BGR555]` at `record[0]+4`/`+8` and each flagged sub-record's trailing offset; clean-room port `legaia_asset::battle_char_palette`, byte-exact vs live battle VRAM).
+- **Palette half**: STP-copies the embedded CLUT structs to VRAM rows `481 + slot` via `FUN_80053B9C` (CLUTs are `[u16 base][u16 count][BGR555]` at `record[0]+4`/`+8` and each flagged sub-record's trailing offset; from-scratch port `legaia_asset::battle_char_palette`, byte-exact vs live battle VRAM).
 - **Mesh half**: builds the character's **merged battle TMD** at `ctx+0x50` (`ctx = *(0x801C9360 + slot*4)`) - writes magic `0x80000002` at `blob+0x18`, `nobj = 0` at `blob+0x20`, then calls `FUN_800536BC` once per section.
 - **`FUN_800536BC` (the object splice)**: appends the section's 7-word TMD object entries with vertex/normal/prim offsets relocated into the merged pool, copies the data words, `nobj += section_nobj`, and writes one bone-id byte per object at `blob+0` from the section's attach list - surplus objects tagged `0xFF`/`0xFE` = the equipment visual meshes.
 - **`FUN_80053898` (post-pass)**: retags `0xFF`→200/201, `0xFE`→100+, records each extra's attach bone at `blob+nobj`, selection-sorts the object table so extras land last. `FUN_800513F0` then registers `blob+0x18` into `DAT_8007C018[slot]`.
-- **`FUN_80053a28` (TSB/CBA relocation)**: called by `FUN_800513F0` per party slot right after the registration - rewrites every textured prim's CLUT row to `481 + slot` (column preserved) and texpage index to `0x18/0x19 + 2*slot` (the runtime band `x ∈ [512, 896), y = 256`). Clean-room port `legaia_asset::battle_char_assembly::relocate_tsb_cba`; see [`formats/character-mesh.md` § Battle render](../../formats/character-mesh.md#battle-render-load-time-tsbcba-relocation).
+- **`FUN_80053a28` (TSB/CBA relocation)**: called by `FUN_800513F0` per party slot right after the registration - rewrites every textured prim's CLUT row to `481 + slot` (column preserved) and texpage index to `0x18/0x19 + 2*slot` (the runtime band `x ∈ [512, 896), y = 256`). From-scratch port `legaia_asset::battle_char_assembly::relocate_tsb_cba`; see [`formats/character-mesh.md` § Battle render](../../formats/character-mesh.md#battle-render-load-time-tsbcba-relocation).
 
 Byte-verified against the full-party battle save (`nobj=17`, bone bytes `[0..14,200,201]`, attach `[5,8]`; every vertex pool matches its equipment section). See [`formats/character-mesh.md` § Battle form](../../formats/character-mesh.md#battle-form---assembled-from-the-player-files).
 
@@ -417,7 +417,7 @@ Callers - battle-loot reward writer `FUN_8004F0E8`, table item-give `FUN_8004AD8
 
 The full set of unchecked call sites (each a candidate full-bag trigger) is catalogued as `legaia_save::retail_inventory::AddHelperCaller`: battle-loot reward `FUN_8004E568` (adds at `0x8004F380`/`0x8004F608`), shop buy-confirm `FUN_801C36B0` (variable quantity, catalog id `rec+8`), captured-monster pay `FUN_801F138C` (`actor[+0x1DF]`), one-shot minigame reward `FUN_801D0F60` (fixed id `0xCD`), and equip swap-back refund `FUN_8020E748`/`FUN_801E01F0`.
 
-The clean-room model surfaces the full-bag case as `AddOutcome::OobIdWrite { oob_target, written_id }`; the written byte is the added id and is **independent of quantity** (only the count store is guarded). Live confirmation probe: `scripts/pcsx-redux/autorun_inventory_oob_writer.lua` (watches `0x800859E8` for a store from the id-store PC `0x800422BC`).
+The from-scratch model surfaces the full-bag case as `AddOutcome::OobIdWrite { oob_target, written_id }`; the written byte is the added id and is **independent of quantity** (only the count store is guarded). Live confirmation probe: `scripts/pcsx-redux/autorun_inventory_oob_writer.lua` (watches `0x800859E8` for a store from the id-store PC `0x800422BC`).
 
 ### `8004E568`
 

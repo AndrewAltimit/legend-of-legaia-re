@@ -909,7 +909,7 @@ that half is disclosed at its tag and waived by the drift gate.
 | `shout.rs` | 1 | (a) | arts-swing | `8004c140` |
 
 The ten `seq_calc` / `seq_events` addresses are the SsAPI per-frame calc tier.
-`Sequencer` is the engine's clean-room replacement and drives playback on its
+`Sequencer` is the engine's from-scratch replacement and drives playback on its
 own clock, so nothing on the audio output path calls these kernels; their host
 is the `note-trace` differential CLI, which is what makes a divergence localise
 to one kernel. That is stated at their own tags, and it makes them (d) rather

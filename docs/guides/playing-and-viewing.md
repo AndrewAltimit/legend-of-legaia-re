@@ -1,6 +1,6 @@
 # Playing and viewing
 
-`legaia-engine` is the clean-room engine reimplementation: point it at your
+`legaia-engine` is the from-scratch engine reimplementation: point it at your
 disc and it boots a scene, renders it, and takes pad input.
 `asset-viewer` is its museum-mode sibling for browsing individual assets. Both
 ship in the release archive; commands use the bare `./tool` form (source
@@ -177,7 +177,7 @@ placeholder can overlap the count beside it.
 ## 5. What you hear
 
 Both hosts decode their audio from the disc you supply - no samples ship with
-the engine or the site. Music is a SEQ played through the clean-room SPU against
+the engine or the site. Music is a SEQ played through the from-scratch SPU against
 the scene's own sound bank; sound effects come from the executable's descriptor
 table plus the resident program bank, and both hosts key them into the **same**
 SPU the music uses, so a cue shares the voice pool exactly as it does on
@@ -298,7 +298,7 @@ stale bundle looks exactly like a fix that had no effect. See
 
 ## Related docs
 
-- [engine.md](../subsystems/engine.md) - the engine's architecture and clean-room boundaries.
+- [engine.md](../subsystems/engine.md) - the engine's architecture and port boundaries.
 - [shipped-bundle-freshness.md](../tooling/shipped-bundle-freshness.md) - why `site/wasm/` is generated, not committed.
 - [renderer.md](../subsystems/renderer.md) - what "retail-faithful rendering" means here.
 - [determinism-replay.md](../tooling/determinism-replay.md) - the replay format.

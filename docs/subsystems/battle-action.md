@@ -2719,7 +2719,7 @@ Before `FUN_801E295C` reaches the inner-state machinery, the battle code resolve
 1. **Miracle Art match** - if the input command sequence equals the character's Miracle Art command string, the entire queue is replaced with the Miracle Art's replacement string (`L`/`R`/`D`/`U` × 4 → `SpecialStarter` → `art1, art2, ...`). The first 4 directional bytes carry the on-disc MSB-set quirk and are masked to `0x0C..=0x0F`.
 2. **Super Art find/replace at tail** - for each chained art the runtime walks all the character's Super Art `find` patterns and replaces the matched tail with a `replace` tail ending in the Super Art's finisher action constant. Triggers require: the last art of `find` is the last action in the queue, and all participating arts paid AP.
 
-Both passes are clean-room ports in `legaia_art::MiracleMatcher` / `legaia_art::SuperMatcher`, applied together by `legaia_engine_vm::battle_action::resolve_action_queue`. The engine-vm `BattleActionHost` exposes an `art_record(char_id, art_id)` callback so the SM can fetch the [art record](../formats/art-data.md) for power-byte resolution, hit timing, and status-effect application during the `0x14..0x20` Attack chain.
+Both passes are from-scratch ports in `legaia_art::MiracleMatcher` / `legaia_art::SuperMatcher`, applied together by `legaia_engine_vm::battle_action::resolve_action_queue`. The engine-vm `BattleActionHost` exposes an `art_record(char_id, art_id)` callback so the SM can fetch the [art record](../formats/art-data.md) for power-byte resolution, hit timing, and status-effect application during the `0x14..0x20` Attack chain.
 
 ### Miracle / Super in the live player-driven Arts submenu
 

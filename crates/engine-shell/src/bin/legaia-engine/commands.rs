@@ -37,6 +37,8 @@ use legaia_prot::cdname;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+#[path = "commands/export_glb.rs"]
+mod export_glb;
 #[path = "commands/info.rs"]
 mod info;
 #[path = "commands/replay.rs"]
@@ -50,6 +52,7 @@ mod trace;
 #[path = "commands/vram.rs"]
 mod vram;
 
+pub(crate) use export_glb::*;
 pub(crate) use info::*;
 pub(crate) use replay::*;
 pub(crate) use run::*;

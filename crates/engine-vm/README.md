@@ -1,6 +1,6 @@
 # legaia-engine-vm
 
-Clean-room Rust ports of Legaia's runtime VMs, one module each. Every one is
+From-scratch Rust ports of Legaia's runtime VMs, one module each. Every one is
 written from the decompiled source in `ghidra/scripts/funcs/<addr>.txt` plus
 the format notes in `docs/subsystems/`, with no static-recompiled bytes from
 the original executable. The sections below cover the VMs proper; the rest of

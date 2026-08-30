@@ -15,7 +15,7 @@ filename is not evidence about its contents.
 
 ## PSX runtime / standard libraries
 
-Statically-linked PsyQ glue. Trivial to stub in a clean-room port.
+Statically-linked PsyQ glue. Trivial to stub in a from-scratch port.
 
 | Address | Role |
 |---|---|
@@ -211,7 +211,7 @@ binary. Its state block starts at `0x800797D8` (`+0x0` system-enabled halfword,
 `0x80079810`). Four pointers hold the hardware registers the tier touches:
 `0x8007A864` → I_STAT, `0x8007A868` → I_MASK, `0x8007A86C` → DPCR,
 `0x8007A89C` → DICR, with the DMA channel-register base at `0x8007A8C0`.
-Nothing here is game logic - a clean-room port replaces the whole band with its
+Nothing here is game logic - a from-scratch port replaces the whole band with its
 host's frame and audio callbacks.
 
 The base address is worth stating twice, because every routine below rebuilds it
@@ -489,7 +489,7 @@ in [`field-menu.md`](../../subsystems/field-menu.md#window-descriptor-table).
 
 ## Stub helpers
 -
-These are 2-instruction `jr ra` / nop bodies - likely retail-disabled debug hooks where the dev gate lives in the caller. Listed for completeness so a clean-room port can implement them as no-ops without further investigation.
+These are 2-instruction `jr ra` / nop bodies - likely retail-disabled debug hooks where the dev gate lives in the caller. Listed for completeness so a from-scratch port can implement them as no-ops without further investigation.
 
 | Address | Role |
 |---|---|

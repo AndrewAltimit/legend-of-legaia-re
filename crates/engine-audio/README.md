@@ -3,7 +3,7 @@
 `cpal`-backed audio output for the engine reimplementation track. Two
 layers:
 
-1. A clean-room PSX **SPU** model - 24 voices, 512 KB SPU RAM, ADSR
+1. A from-scratch PSX **SPU** model - 24 voices, 512 KB SPU RAM, ADSR
    envelopes, libspu-shaped transfer engine.
 2. An `AudioOut` handle that owns one cpal output stream and ticks the
    SPU at 44.1 kHz internal rate, resampling linearly to the host device

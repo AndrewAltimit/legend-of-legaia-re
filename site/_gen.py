@@ -55,7 +55,7 @@ THEME_COLOR = "#0d1117"
 # Site-wide fallback description (also the home page's og:description).
 DEFAULT_DESCRIPTION = (
     "Legend of Legaia (PSX, 1998) reverse engineered end to end: play the "
-    "clean-room engine port in your browser via WebAssembly, browse every "
+    "from-scratch engine port in your browser via WebAssembly, browse every "
     "asset, patch your disc with the randomizer, and read byte-level format "
     "docs. Bring your own disc image - no Sony data is distributed."
 )
@@ -65,7 +65,7 @@ DEFAULT_DESCRIPTION = (
 # is the FULL title (no suffix appended), so it can lead with the game name.
 TITLE_OVERRIDES: dict[str, str] = {
     "home": "Legend of Legaia Reverse Engineering - Playable Engine Port, Asset Viewers & Randomizer",
-    "play": "Play Legend of Legaia in the Browser - Clean-Room WASM Engine Port",
+    "play": "Play Legend of Legaia in the Browser - WASM Engine Port",
     "viewer": "Legend of Legaia Asset Viewer - Textures, Models & Sound (WASM)",
     "media": "Legend of Legaia Media Browser - Music, FMVs & Voice (WASM)",
     "monsters": "Legend of Legaia Enemy Table - Stats, Drops & 3D Models",
@@ -86,7 +86,7 @@ TITLE_OVERRIDES: dict[str, str] = {
 DESCRIPTIONS: dict[str, str] = {
     "home": DEFAULT_DESCRIPTION,
     "play": (
-        "Play Legend of Legaia in your browser: a clean-room WebAssembly "
+        "Play Legend of Legaia in your browser: an in-progress WebAssembly "
         "engine port with retail movement, NPC dialogue, menus, and memory-"
         "card saves, running from your own disc image. Works flat or in VR "
         "(WebXR)."
@@ -155,7 +155,7 @@ DESCRIPTIONS: dict[str, str] = {
     ),
     "architecture": (
         "How the Legend of Legaia RE project stacks from raw PSX disc "
-        "sectors to a running clean-room engine: formats, parsers, "
+        "sectors to a running from-scratch engine: formats, parsers, "
         "subsystems, and the WASM port."
     ),
     "writeups/index": (
@@ -1246,9 +1246,9 @@ def build_progress_meter() -> str:
     # via the strip's single "How these are measured" link, and the per-track
     # detail survives as the tile's title (hover) text.
     compact = {
-        "decompilation": ("{pct:.1f}<small>%</small>", "of the executable's code decompiled"),
+        "decompilation": ("{pct:.1f}<small>%</small>", "of the executable's code traced in Ghidra"),
         "formats": ("{pct:.1f}<small>%</small>", "of disc bytes resolve to a documented format"),
-        "port": ("{count}", "retail functions ported to clean-room Rust"),
+        "port": ("{count}", "retail functions reimplemented in Rust"),
         "wiring": ("{pct:.1f}<small>%</small>", "of ported code wired into the live engine"),
     }
     rows = []

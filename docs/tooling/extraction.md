@@ -1,6 +1,6 @@
 # Asset extraction
 
-Tools for extracting assets from a user-supplied disc image. Per the project's clean-room model, no Sony bytes ship in this repo - the user runs the extraction tools against their own disc.
+Tools for extracting assets from a user-supplied disc image. Per the project's from-scratch model, no Sony bytes ship in this repo - the user runs the extraction tools against their own disc.
 
 ## Top-level pipeline
 

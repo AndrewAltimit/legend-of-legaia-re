@@ -10,7 +10,7 @@
     <li><strong>Almost everything is in one file.</strong> <code>PROT.DAT</code> is the game's archive: 1233 numbered entries holding every scene, monster, tune and menu. The executable only carries the tables that tie them together.</li>
     <li><strong>Each layer has one owner.</strong> One Rust crate reads the disc, one splits the archive, one sorts entries by format, and one small crate per format decodes it. That is what lets the browser pages and the native tools share code.</li>
     <li><strong>The game runs on scripts.</strong> Towns, cutscenes, battle moves, menus and NPC pathing are bytecode interpreted by a family of small virtual machines. The engine port reimplements those VMs rather than emulating the CPU.</li>
-    <li><strong>Two tracks, one repo.</strong> <em>Preservation</em> (extract and document every asset) and <em>reimplementation</em> (a clean-room engine) feed each other: the docs are the spec the engine is built from, and the engine is the test that the docs are right.</li>
+    <li><strong>Two tracks, one repo.</strong> <em>Preservation</em> (extract and document every asset) and <em>reimplementation</em> (a from-scratch engine) feed each other: the docs are the spec the engine is built from, and the engine is the test that the docs are right.</li>
   </ul>
 </section>
 
@@ -93,7 +93,7 @@
       </div>
       <div class="layer-body">
         <div class="layer-crate">engine-core / engine-vm / engine-ui / engine-render / engine-audio / engine-shell</div>
-        <div class="layer-desc">The clean-room Rust port: world and scene state, the script VMs, the menus, a software PSX video memory drawn through wgpu, and a recreated sound chip. One native window and one WebAssembly build share the same simulation - the <a href="play.html">play page</a> is the engine itself, not a second implementation.</div>
+        <div class="layer-desc">The from-scratch Rust port: world and scene state, the script VMs, the menus, a software PSX video memory drawn through wgpu, and a recreated sound chip. One native window and one WebAssembly build share the same simulation - the <a href="play.html">play page</a> is the engine itself, not a second implementation.</div>
       </div>
     </a>
   </div>
@@ -120,7 +120,7 @@
       </tr>
       <tr>
         <td><strong>Reimplementation</strong></td>
-        <td>A playable engine built from those specs plus decompiled-and-rewritten logic - never a static recompile of Sony's executable. Retail behaviour is the measured ground truth; enhancements (dynamic lighting, see-through walls, free-angle movement, VR) are toggles that leave the faithful mode bit-identical when off.</td>
+        <td>A playable engine built from those specs plus logic traced in Ghidra and rewritten fresh - never a decompilation or static recompile of Sony's executable. Retail behaviour is the measured ground truth; enhancements (dynamic lighting, see-through walls, free-angle movement, VR) are toggles that leave the faithful mode bit-identical when off.</td>
         <td><code>engine-core</code>, <code>engine-vm</code>, <code>engine-ui</code>, <code>engine-render</code>, <code>engine-audio</code>, <code>engine-shell</code>, and the <code>asset-viewer</code> / <code>web-viewer</code> front ends.</td>
       </tr>
     </tbody>

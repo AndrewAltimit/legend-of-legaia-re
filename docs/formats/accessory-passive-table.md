@@ -252,7 +252,7 @@ curated accessory effect class against its decoded index. CLI:
 
 ## Engine consumers
 
-The clean-room engine consumes the table through
+The from-scratch engine consumes the table through
 `legaia_engine_core::accessory_passives::AccessoryPassives` (item id →
 passive index + party-wide scope flags, built from the same parse at boot).
 `World::refresh_party_ability_bits` is the port of the aggregator's bitfield

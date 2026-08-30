@@ -14,7 +14,7 @@ unless the format doc is correct down to the byte.
 or when you want to check that a format the docs claim to understand really is
 understood.
 
-**It does not touch the clean-room engine** - it edits the disc, and the retail
+**It does not touch the from-scratch engine** - it edits the disc, and the retail
 game (or the port) plays the result. The one exception is
 [Seru trading](#seru-trading), which embeds a config the engine reads because
 retail has no trade UI to hook.
@@ -215,7 +215,7 @@ legaia-patcher randomize --input DISC.bin --seed gear --drops shuffle --equipmen
 legaia-patcher randomize --input DISC.bin --seed flee --encounters shuffle --flee-exp     # +5% experience on a successful escape
 legaia-patcher randomize --input DISC.bin --seed pal --enemy-ally                         # 20% chance an enemy fights on your side
 legaia-patcher randomize --input DISC.bin --seed pal --shiny-seru                         # 2% chance a capturable enemy is shiny (+35% stats / captured-Seru damage)
-legaia-patcher randomize --input DISC.bin --seed swap --seru-trade                        # vendors trade seru-for-seru (clean-room engine UI)
+legaia-patcher randomize --input DISC.bin --seed swap --seru-trade                        # vendors trade seru-for-seru (from-scratch engine UI)
 legaia-patcher randomize --input DISC.bin --seed fair --jewel-fix                         # boss cinematic casts respect elemental guards
 legaia-patcher randomize --input DISC.bin --seed fair --approach-softlock-fix              # dead approach animations re-stage instead of wedging
 legaia-patcher randomize --input DISC.bin --seed fair --delilas-challenge                  # Muscle Dome option: fight all three Delilas at once
@@ -478,7 +478,7 @@ doubles as a cross-check of the curated tables against the real executable. Abou
 150 of the ~155 curated equipment names resolve; the stray in-range consumable
 *Honey* is correctly excluded.
 
-> The clean-room engine can't execute injected MIPS, so - unlike the data-edit
+> The from-scratch engine can't execute injected MIPS, so - unlike the data-edit
 > randomizers - this feature has no engine runtime oracle. It is verified by the
 > byte/disassembly checks in `equipment_drops_real` (the detour + routine + table
 > decode as the hand-assembled code, the edit is surgical, the build guard
@@ -699,7 +699,7 @@ words matching the known US build and on the routine region being all-zero dead
 space, refusing a differently-laid-out image rather than corrupting it. On by
 default in the web Balanced / Full Chaos presets.
 
-> The clean-room engine can't execute injected MIPS, so - like the equipment drop
+> The from-scratch engine can't execute injected MIPS, so - like the equipment drop
 > - this has no engine runtime oracle. It is verified by the byte/disassembly
 > checks in `flee_exp_real` (the real disc's hook site **is** the expected
 > displaced pair; the detour + routine decode as the hand-assembled code; each
@@ -751,7 +751,7 @@ boss the lone enemy turns on itself. (Side effect: while on, a vanilla
 *confuse*-on-an-enemy - which also sets `0x380` - likewise stops counting toward
 "enemies remaining".) On by default in the web Balanced / Full Chaos presets.
 
-> Like the other code hooks, the clean-room engine can't execute injected MIPS, so
+> Like the other code hooks, the from-scratch engine can't execute injected MIPS, so
 > this has no engine runtime oracle. It is verified by the byte/disassembly checks
 > in `enemy_ally_real` (the real disc's hook site **is** `lui v1,0x8008` /
 > `lbu v1,-0x42f4(v1)` and the victory site **is** `andi v0,v0,0x4`; the detour +
@@ -767,7 +767,7 @@ deals **+35% damage** on every future cast (on top of its normal abilities),
 permanently (`shiny_seru` module). Two cosmetics ride along: on a shiny cast the
 summoned creature renders semi-transparent and a "+35% DMG!" caption is shown one
 glyph line **below** the native "Magic effect:" announcement box (so they stack
-instead of overlapping). This mirrors the clean-room engine implementation
+instead of overlapping). This mirrors the from-scratch engine implementation
 (`legaia_engine_core::seru_learning`'s shiny set + `SHINY_DAMAGE_BONUS_PCT`).
 
 "Capturable" is decided by indexing the **first-monster id global**
@@ -871,7 +871,7 @@ indexed table) is rejected rather than corrupting the disc. On by default in the
 captured *after* patching** - the shiny byte is set at the (post-patch) capture,
 so a Seru already captured on an unpatched save isn't retroactively shiny.
 
-> Like the other code hooks, the clean-room engine can't execute injected MIPS,
+> Like the other code hooks, the from-scratch engine can't execute injected MIPS,
 > so the disc path has no engine runtime oracle - it's verified by the
 > byte/disassembly checks in `shiny_seru_real` (all nine hooks match the known
 > US build, every detour becomes `j routine` + nop, the injection is surgical and
@@ -935,7 +935,7 @@ all-zero dead space. The swap rewrites the chosen owner's spell list in place
 > and the full schedule cycles in ~9.6 h. The kernel's seconds-based
 > `SECONDS_PER_RESEED` is the engine-facing constant.
 
-**Engine mirror (clean-room track).** The same kernel feeds the engine's own
+**Engine mirror (from-scratch track).** The same kernel feeds the engine's own
 trade UI: `World::install_seru_trade_config` reads a 24-byte
 [`SeruTradeConfig`] blob (enabled + seed) that `apply::enable_seru_trades` can
 write, and `World::open_seru_trade` / `apply_seru_trade` render + apply the swap
@@ -4404,7 +4404,7 @@ offsets above that loop's range, so it survives regardless.
 `region_unlocks_all_warps` / `scus_unlocks_all_warps` read the bitmask back, and
 `StartingInventory::from_scus` replays both regions to recover the full bag.
 
-The clean-room engine seeds every forced item (Door of Wind, Incense, and the
+The from-scratch engine seeds every forced item (Door of Wind, Incense, and the
 accessories) through the same `World::seed_starting_inventory` path as any other
 starting item (covered by the runtime oracle); the Incense and accessory paths
 have their own disc round-trip oracles (`incense_round_trips_on_disc`,
@@ -4816,7 +4816,7 @@ scene MAN / `battle_data` archive / steal table is resident in RAM the moment
 you're in the room / battle (or as soon as the executable loads), so a state
 captured on a patched disc still serves the original from the cached RAM copy;
 the patched value is only seen after a fresh scene / battle / executable load
-re-streams it off disc. The clean-room engine sidesteps that cache by decoding
+re-streams it off disc. The from-scratch engine sidesteps that cache by decoding
 straight from disc bytes and running the actual grant / spawn / warp path, so it
 observes the patch a savestate would mask.
 

@@ -425,7 +425,7 @@ over-read tail - mode 0 actually loads the debug-menu overlay PROT 971. See [`sc
 
 ## Engine port
 
-[`legaia_engine_core::slot_machine`](../../crates/engine-core/src/slot_machine.rs) is the clean-room rules engine over this page. The **Confirmed** kernels are ported directly:
+[`legaia_engine_core::slot_machine`](../../crates/engine-core/src/slot_machine.rs) is the from-scratch rules engine over this page. The **Confirmed** kernels are ported directly:
 
 - the slot LCG (`SlotRng`, `x*5+1` + 16-bit fold; `FUN_801d30cc`);
 - **both** 20-slot strips per reel, built in retail's interleaved draw order (`build_reel` / `build_strip`: mod-`0x14` draw + `+0xd` / `+1` probe, values `slot/2` and `slot/2 + 0x10`; `FUN_801cf0d8` case 0);

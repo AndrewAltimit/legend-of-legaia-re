@@ -86,7 +86,7 @@ title = "String injection into a reserved zero gap"
 
 [[variant]]
 id = "J"
-title = "Config blob consumed by the clean-room engine"
+title = "Config blob consumed by the from-scratch engine"
 
 # ---------------------------------------------------------------------------
 # Tier A - static-table overwrites

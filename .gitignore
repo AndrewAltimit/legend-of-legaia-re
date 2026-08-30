@@ -4,6 +4,10 @@
 
 # Disc-extracted Sony bytes. NEVER commit (see CLAUDE.md, NOTICE).
 /extracted/
+# `legaia-engine export-glb` output (Sony-derived geometry/textures for
+# local Unity/VRChat world building) - same rule.
+/glb-export/
+glb-export/
 
 # Translation language packs (`legaia-patcher translate export/init`): exported
 # packs carry the game's dialog/name strings (Sony-derived). NEVER commit.

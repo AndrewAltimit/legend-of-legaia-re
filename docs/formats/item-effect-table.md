@@ -221,7 +221,7 @@ Beyond the static field/battle bits, the session also models the retail
 from it. `FUN_8003043c` walks the live party (`+0x458` class byte) calling the
 shared relevance/validity predicate `FUN_8003fb10(class, tier, target)` per
 member - returning "usable" if any member's current state makes the effect do
-something. The clean-room equivalent (`inventory_use::item_has_valid_target` ->
+something. The from-scratch equivalent (`inventory_use::item_has_valid_target` ->
 `effect_benefits_target`) greys a heal when every living ally is at full HP, a
 cure when nobody carries the matching status, and a revive when nobody has
 fallen, re-implementing the item-relevance arms of the retail predicate

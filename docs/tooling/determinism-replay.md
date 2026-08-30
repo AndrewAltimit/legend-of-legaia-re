@@ -353,5 +353,5 @@ contain no warp" is not.
 
 ## See also
 
-- [`docs/subsystems/engine.md`](../subsystems/engine.md) - the clean-room engine the record/replay loop drives.
+- [`docs/subsystems/engine.md`](../subsystems/engine.md) - the from-scratch engine the record/replay loop drives.
 - [`docs/subsystems/script-vm.md`](../subsystems/script-vm.md) - the field/event VM whose pad-driven state the trace captures.

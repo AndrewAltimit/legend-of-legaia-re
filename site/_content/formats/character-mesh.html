@@ -114,7 +114,7 @@
       <tr><td>2</td><td>Gala</td><td>5</td><td><code>+0x19B</code></td><td>group 11</td><td>group 10</td></tr>
     </tbody>
   </table>
-  <p>The swap is binary and never changes the object count; item identity in the field comes from the texture atlas, not the mesh. Clean-room port: <code>character_pack::equipment_swap::apply</code>.</p>
+  <p>The swap is binary and never changes the object count; item identity in the field comes from the texture atlas, not the mesh. From-scratch port: <code>character_pack::equipment_swap::apply</code>.</p>
 
   <h3 id="animation">Rest pose (&sect;1)</h3>
   <p>The field TMDs' vertices are <strong>object-local</strong> - each group models one body part about its own joint - so drawing a character needs a per-object rigid transform. That comes from the locomotion ANM bundle in section 1 (23 records: three 7-record character banks + savepoint + aux). Bank slot 1 is the standing idle; <strong>frame 0 of that clip is the field rest pose</strong>. Bone <em>i</em> drives group <em>i</em> one-to-one, which is why the 10-group cap matters: 12 disc groups minus 2 templates leaves exactly the 10 objects the 10-bone clips animate. Each 8-byte (bone, frame) entry decodes to a flat <code>R&middot;v + T</code>.</p>

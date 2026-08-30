@@ -1,6 +1,6 @@
 /* Shared seamless-loop BGM helper for the minigame pages.
  *
- * Renders a global-pool BGM id (2000 + sound-test slot) through the clean-room
+ * Renders a global-pool BGM id (2000 + sound-test slot) through the from-scratch
  * SPU + sequencer on the WASM side (`api.music01_bgm_render`), then plays it
  * as a WebAudio `AudioBufferSourceNode` whose `loopStart` / `loopEnd` are set
  * to exactly one SEQ loop period. That makes the repeat seamless, instead of

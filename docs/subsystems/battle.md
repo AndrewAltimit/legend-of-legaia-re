@@ -3,7 +3,7 @@
 The battle overlay (`0898_xxx_dat`) carries the battle scene loader, the per-actor state machine, and the effect VM cluster. Loaded at RAM `0x801CE818` (same load slot as the town overlay; battle and town never coexist).
 
 This is a large page covering both the retail reverse-engineering and the
-clean-room engine systems. Use the contents below to jump to a section.
+from-scratch engine systems. Use the contents below to jump to a section.
 
 ## Contents
 
@@ -17,7 +17,7 @@ clean-room engine systems. Use the contents below to jump to a section.
 - [Battle context struct](#battle-context-struct)
 - [Stage seats (`FUN_800513F0` placement tables)](#stage-seats-fun_800513f0-placement-tables)
 - [Range / line-of-sight (`FUN_8004E2F0`)](#range--line-of-sight-fun_8004e2f0)
-- [Monster init (`FUN_80054CB0`)](#monster-init-fun_80054cb0) - [record layout](#monster-record-source-layout) · [archive (PROT 867)](#monster-archive-prot-entry-867) · [mesh](#monster-mesh-record-0x04) · [native bridge](#native-renderer-bridge-clean-room-engine) · [browser battle render](#browser-play-page-battle-render) · [AI](#monster-ai-fun_801e9fd4-action-picker--fun_801e7320-target-resolver) · [charm at the end-of-action gate](#enemy-ally-charm-at-the-end-of-action-gate-the-charm-battle-softlock)
+- [Monster init (`FUN_80054CB0`)](#monster-init-fun_80054cb0) - [record layout](#monster-record-source-layout) · [archive (PROT 867)](#monster-archive-prot-entry-867) · [mesh](#monster-mesh-record-0x04) · [native bridge](#native-renderer-bridge-from-scratch-engine) · [browser battle render](#browser-play-page-battle-render) · [AI](#monster-ai-fun_801e9fd4-action-picker--fun_801e7320-target-resolver) · [charm at the end-of-action gate](#enemy-ally-charm-at-the-end-of-action-gate-the-charm-battle-softlock)
 - [Stat aggregator (`FUN_80042558`)](#stat-aggregator-fun_80042558)
 - [Battle archive (`FUN_80052FA0` / `FUN_800542C8`)](#battle-archive-fun_80052fa0--fun_800542c8)
 - [Character record layout](#character-record-layout) - [why the pair order is `(max, cur)`](#why-the-pair-order-is-max-cur)
@@ -25,7 +25,7 @@ clean-room engine systems. Use the contents below to jump to a section.
 - [Per-frame actor maintenance (`FUN_8004CE2C`)](#per-frame-actor-maintenance-fun_8004ce2c)
 - [Additional SCUS battle-band helpers](#additional-scus-battle-band-helpers)
 
-**Clean-room engine systems**
+**From-scratch engine systems**
 - [Inventory (page-banked)](#inventory-cratesasset-page-banked-layout) · [Status effects](#status-effects) · [AP / Spirit gauge](#ap--spirit-gauge) · [Battle stat aggregator](#battle-stat-aggregator) · [Item catalog](#item-catalog)
 - [Battle round lifecycle](#battle-round-lifecycle) · [command runner](#battle-command-runner) · [BattleSession Resolve driver](#battlesession-resolve-driver) · [HUD model](#battle-hud-model) · [screen chrome](#battle-screen-chrome-packet-pinned) · [widget-class table](#the-widget-class-table---where-every-chrome-sprite-comes-from) · [SFX bank](#sfx-bank--scheduler)
 - [Inventory item-use session](#inventory-item-use-session) · [Encounter system](#encounter-system) · [target picker](#battle-target-picker)
@@ -1785,9 +1785,9 @@ and `monster_texture_{indices,palette_rgba,dims}` accessors feed the in-browser
 WebGL viewer on the enemy-table site page, which textures the model with the
 index→palette lookup the PSX GPU does in VRAM.
 
-### Native renderer bridge (clean-room engine)
+### Native renderer bridge (from-scratch engine)
 
-The clean-room engine renders the decoded monster directly through its standard
+The from-scratch engine renders the decoded monster directly through its standard
 PSX-VRAM texture path rather than the site's index→palette shortcut.
 `MonsterMesh::battle_render_mesh(slot, &mut vram)` reproduces the loader's
 per-slot relocation: it writes the CLUT region to VRAM row `484 + slot` and the
@@ -1898,7 +1898,7 @@ Retail monster AI is two routines in the battle overlay:
   `ghidra/scripts/funcs/overlay_battle_action_801e9fd4.txt`,
   `overlay_battle_action_801e7320.txt`.
 
-The clean-room engine ports it across `engine-core`:
+The from-scratch engine ports it across `engine-core`:
 
 - `World::pick_monster_action` is the action picker's **generic core** (real
   RNG, real `magic_attacks`, spell-shape targeting through the catalog's
@@ -1921,7 +1921,7 @@ The clean-room engine ports it across `engine-core`:
 The picker drives the live loop's monster turns, folding a chosen cast through
 `cast_spell_on_slots` (the shared player/monster cast path) and parking the SM at
 `EndOfAction`. Scripted casts emit retail spell ids; they fold when the active
-catalog knows the id (the disc spell table, or the clean-room monster block in
+catalog knows the id (the disc spell table, or the from-scratch monster block in
 `SpellCatalog::vanilla`) and otherwise degrade to a physical strike.
 
 **Faithful default = uniform-random single target.** Retail's `OneEnemy` /
@@ -2058,7 +2058,7 @@ Per-frame helper that walks the 3 active party members (stride `0x414` - see [ch
 2. ORs the character's "active abilities" 16-byte block at `+0xF4..0x100` into a global 4×u32 bitmask at `0x80074358..0x80074368`. This is the "currently-active accessory effects" register read by every other game system.
 3. For each character, calls `FUN_800432BC` / `FUN_80042DBC` to add/remove temporary spells per the active spell-slot layout at `+0x2B0`.
 
-The 4-u32 global ability bitmask is what tells the renderer to draw "auto-counter" / "regen" / "magic up" indicators and what tells the battle dispatcher to apply post-hit effects. The read-side primitive is `FUN_800431D0(bit_id) -> bool` - `(&DAT_80074358)[bit_id >> 5] & (1 << (bit_id & 0x1F))`. It's a 6-instruction hot helper cited from most damage / status code paths (the action validator `FUN_8003FB10` does **not** call it - see [battle-action.md](battle-action.md#action-validator-fun_8003fb10)), so a clean-room port models it as `BattleState::ability_active(u8) -> bool`.
+The 4-u32 global ability bitmask is what tells the renderer to draw "auto-counter" / "regen" / "magic up" indicators and what tells the battle dispatcher to apply post-hit effects. The read-side primitive is `FUN_800431D0(bit_id) -> bool` - `(&DAT_80074358)[bit_id >> 5] & (1 << (bit_id & 0x1F))`. It's a 6-instruction hot helper cited from most damage / status code paths (the action validator `FUN_8003FB10` does **not** call it - see [battle-action.md](battle-action.md#action-validator-fun_8003fb10)), so a from-scratch port models it as `BattleState::ability_active(u8) -> bool`.
 
 `FUN_800349EC` and `FUN_80035EA8` are the HP / MP threshold UI classifiers - given a character index they compare current vs max and return one of `2` (dead/zero) / `6` (low) / `7` (warn) / `9` (healthy). The dialog renderer keys text colour on the result.
 
@@ -2451,9 +2451,9 @@ The page-banked inventory state lives in the 512-byte region at `[0x80085718 .. 
 
 Per-actor status conditions inflicted by enemy attacks or art `enemy_effect` bytes. The retail engine stores per-status timers and tick-damage values in the battle-actor struct around `+0x130`; the layout is per-flag and not captured in any single overlay dump.
 
-Conditions are named with the game's in-game ailment terms (the `enemy_effect` byte is the on-disc art-record value). The `Retail effect` column is the published behaviour from the Legaia wiki status pages. The poison **tick formulas are pinned** from the per-round DoT ticker `FUN_801E752C` (see [battle-formulas](battle-formulas.md) § "Per-round status DoT ticker"); the `Default duration` values remain clean-room approximations (no retail per-status duration table is in any single overlay dump). The `Engine` column flags where this port diverges from retail.
+Conditions are named with the game's in-game ailment terms (the `enemy_effect` byte is the on-disc art-record value). The `Retail effect` column is the published behaviour from the Legaia wiki status pages. The poison **tick formulas are pinned** from the per-round DoT ticker `FUN_801E752C` (see [battle-formulas](battle-formulas.md) § "Per-round status DoT ticker"); the `Default duration` values remain engine-side approximations (no retail per-status duration table is in any single overlay dump). The `Engine` column flags where this port diverges from retail.
 
-| Status | byte | Default duration (clean-room) | Retail effect (wiki) | Engine |
+| Status | byte | Default duration (from-scratch) | Retail effect (wiki) | Engine |
 |---|---|---|---|---|
 | Toxic | `1` | 4 turns | "Deadly Poison": HP drains faster than Venom AND attack/defense drop | `min(max_hp/16, 256)` tick, never kills (bottoms at 1 HP), suppresses Venom's tick while active (`FUN_801E752C`); combat rolls ×7/10 (`FUN_801DD864` bit 2), mirrored as ATK & DEF ×0.7 |
 | Numb | `2` | 3 turns | Paralysis: cannot act; clears on being hit or after some turns | full block + clear-on-hit (enforced, same shape as Sleep) |
@@ -2596,7 +2596,7 @@ Implementation: [`crates/engine-core::ap_gauge`](../../crates/engine-core/src/ap
 
 ## Battle stat aggregator
 
-Clean-room port of `FUN_80042558`. Walks the 8 equipment slots, sums modifiers into the actor's resolved attack / UDF / LDF / accuracy / evasion, ORs equipment ability bits into the global 4×u32 mask, then folds in status-effect modifiers (Toxic reduces ATK + both defenses by ~12.5%, Confuse halves accuracy, Numb / Sleep / Stone / Faint zero evasion and block actions, Curse / Faint block Magic).
+From-scratch port of `FUN_80042558`. Walks the 8 equipment slots, sums modifiers into the actor's resolved attack / UDF / LDF / accuracy / evasion, ORs equipment ability bits into the global 4×u32 mask, then folds in status-effect modifiers (Toxic reduces ATK + both defenses by ~12.5%, Confuse halves accuracy, Numb / Sleep / Stone / Faint zero evasion and block actions, Curse / Faint block Magic).
 
 Implementation: [`crates/engine-core::battle_stats`](../../crates/engine-core/src/battle_stats.rs). The pure function `compute_battle_stats(record, table, statuses, modifiers) -> BattleStats` is deterministic and side-effect-free - engines call it once per turn-start.
 
@@ -2663,7 +2663,7 @@ Each `BattleSession::tick` during `Resolve`:
    "recovery anim finished" edge the session simulates inline since it
    doesn't render).
 5. On `Transition { from: AttackChain, to: AttackRecovery }`, applies a
-   clean-room formula strike against the attacker's `active_target`:
+   from-scratch formula strike against the attacker's `active_target`:
    reads `atk` + `udf` + `acc` + `eva` off `BattleRound::stats`, rolls
    accuracy via `accuracy_roll`, folds variance via `psyq_rand_step`,
    writes the result back through `BattleActor::hp` and emits
@@ -3686,7 +3686,7 @@ Retail decides a capture inside the arms execution resolver `FUN_801EC3E4`
    spell `seru_id + 0x80`.
 
 The engine port's missing-HP-fraction model (`World::resolve_capture`) is a
-clean-room approximation of the same "reliable only on a weakened Seru" feel;
+engine-side approximation of the same "reliable only on a weakened Seru" feel;
 retail's actual condition is the killing blow plus the flat per-monster
 percent. The catch-rate byte is the `--seru-catch-rate` randomizer target
 ([randomizer.md](../tooling/randomizer.md#seru-catch-rate)).
@@ -3864,7 +3864,7 @@ Capturing a monster (magic capture roll or a capture item) downs it and logs its
 - `World::tick` advances the banner one frame per call and clears it when the session reaches `Done`, so it plays out over the field after the battle ends. The session's `current_banner()` yields the active line (`"Captured: <Seru>!"` then per-learn `"<char> learned <spell>!"`); the play-window renders it via `legaia_engine_render::capture_banner_draws_for`.
 - `resolve_captures` always drains `battle_captures`; with an empty `World::seru_registry` (the default) it banks nothing - the monster is still downed, but no Seru is learned.
 - Capture-point progress (including sub-threshold totals) persists through `World::save_full` / `load_full` as `(seru_id, points)` pairs in each `CharSaveExt::seru_captures`; reload restores the points and, with the registry installed, re-marks any over-threshold Seru as learned.
-- The `MonsterDef::seru_id` mapping + `learn_threshold` / `capture_points` values are clean-room approximations (`SeruRegistry::vanilla`); pinning the real per-monster Seru attachments and capture arithmetic is gated on the still-uncaptured stat-grant table loader (see [`crate::capture_observations::battle_init_overlay`]).
+- The `MonsterDef::seru_id` mapping + `learn_threshold` / `capture_points` values are engine-side approximations (`SeruRegistry::vanilla`); pinning the real per-monster Seru attachments and capture arithmetic is gated on the still-uncaptured stat-grant table loader (see [`crate::capture_observations::battle_init_overlay`]).
 
 ### What the loop flag does and does not gate
 
@@ -3938,7 +3938,7 @@ The spine began as physical-attack-only, single-formation; the Arts / Magic / It
 1. **Boot** - load an `LGSF` `SaveFile` (party + story flags + money + inventory) into a fresh `World` via `load_full`. `load_full` hydrates the `LevelUpTracker` per-slot level from each record's `+0x100` byte so reloads don't roll the tracker back to L1.
 2. **Field walk** - switch to `SceneMode::Field`, install an `EncounterSession` keyed to `vanilla_formation_table` at saturated trigger rate, step until `EncounterPhase::Triggered`.
 3. **Encounter** - drain the formation roll, populate monster slots 3..N from the `MonsterCatalog`, flip mode to `SceneMode::Battle`.
-4. **Battle SM** - drive `World::tick` while applying clean-room formula damage on every `AttackChain → AttackRecovery` transition until the action SM resolves to `BattleEndCause::MonsterWipe`.
+4. **Battle SM** - drive `World::tick` while applying from-scratch formula damage on every `AttackChain → AttackRecovery` transition until the action SM resolves to `BattleEndCause::MonsterWipe`.
 5. **Rewards** - call `World::apply_battle_loot` to credit the per-character XP / gold split, fire drop rolls, and trigger per-character level-ups; assert at least one party slot crossed a threshold.
 6. **Save round-trip** - `world.save_full().write() → SaveFile::parse() → load_full()` into a fresh `World`; assert HP/MP, level, money, story flags, and inventory survived intact.
 

@@ -1,7 +1,7 @@
 <header class="page-header visually-hidden-header" id="top" style="display:none">
   <h1>Legend of Legaia RE</h1>
   <p class="lede">
-    <em>Legend of Legaia</em> (PSX, 1998) reverse engineered end to end: play the clean-room engine port in your browser, browse every asset on the disc, patch your disc with the randomizer, and read byte-level format docs. Bring your own disc image - no Sony data is distributed.
+    <em>Legend of Legaia</em> (PSX, 1998) reverse engineered end to end: play the from-scratch engine port in your browser, browse every asset on the disc, patch your disc with the randomizer, and read byte-level format docs. Bring your own disc image - no Sony data is distributed.
   </p>
 </header>
 
@@ -10,9 +10,10 @@
     <div class="hero-eyebrow">PSX &middot; SCUS-94254 &middot; 1998</div>
     <h1>Legend of Legaia, taken apart and running again.</h1>
     <p class="hero-sub-line">A fan project that pulls the 1998 PlayStation RPG apart piece by piece and
-    puts it back together: play a clean-room rewrite of the engine, look at every model, texture and
+    puts it back together: play a from-scratch rewrite of the engine, look at every model, texture and
     tune on the disc, mod your own copy, and read how the game really works underneath. All in your
-    browser.</p>
+    browser. The engine port is a work in progress; for a polished playthrough today, the
+    <a href="tooling/rom-patcher.html">ROM patcher</a>'s mods run on your own emulator or console.</p>
     <span class="legal-pill">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6z"/><path d="M9 12l2 2 4-4.5"/></svg>
       Zero Sony bytes shipped &mdash; bring your own disc
@@ -96,7 +97,7 @@
         </div>
         <div class="tile-body">
           <h3>Play the port</h3>
-          <p>The clean-room engine running the real game &mdash; flat or in VR.</p>
+          <p>The from-scratch engine running the real game &mdash; flat or in VR.</p>
         </div>
       </a>
       <a class="tile lg" href="minigames.html">
@@ -248,7 +249,7 @@
     <div class="group-head"><h2>Read how it works</h2><span class="rule"></span><span class="count">docs zone</span></div>
     <p>The project runs on two tracks that feed each other. <strong>Preservation</strong> gets every
     asset off the disc and writes down each file format, with every claim traced back to the game's
-    own code. <strong>Reimplementation</strong> is a clean-room rewrite of the engine in Rust, built
+    own code. <strong>Reimplementation</strong> is a from-scratch rewrite of the engine in Rust, built
     from those documents rather than from Sony's executable - so it can run the game faithfully and
     also go beyond it (dynamic lighting, see-through walls, VR) with the retail look one toggle away.
     The docs below are the shared ground truth for both.</p>

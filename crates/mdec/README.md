@@ -1,6 +1,6 @@
 # legaia-mdec
 
-PSX MDEC clean-room decoder (Iki bitstream variant) and PSX STR video-sector parser.
+PSX MDEC from-scratch decoder (Iki bitstream variant) and PSX STR video-sector parser.
 
 ## Scope
 
@@ -17,7 +17,7 @@ PSX MDEC clean-room decoder (Iki bitstream variant) and PSX STR video-sector par
 
 Legaia movies use the PSX **"Iki"** bitstream, not STRv2 - the per-block DC and quant scale live in
 an LZSS-compressed table after the header, and the entropy bitstream carries only AC coefficients.
-Clean-room port; sources: PSX-SPX BS-compression pages + jPSXdec's `PlayStation1_STR_format.txt`
+From-scratch port; sources: PSX-SPX BS-compression pages + jPSXdec's `PlayStation1_STR_format.txt`
 (format docs only). See [`docs/subsystems/cutscene.md`](../../docs/subsystems/cutscene.md#mdec-decoder-iki-bitstream).
 
 1. 10-byte frame header: `u16 mdec_code_count, u16 0x3800, u16 width, u16 height, u16 lzss_size`.

@@ -1,10 +1,10 @@
 # legend-of-legaia-re
 
-Reverse engineering and reimplementation of the PSX game **Legend of Legaia** (1998, Sony, NA SCUS-94254). The disc's formats are documented byte-by-byte with provenance back to Ghidra-traced functions, Rust parsers extract every asset, and a clean-room engine runs the game's own scenes, scripts and menus - natively on wgpu, and in your browser via WebAssembly. On top of that sit a disc randomizer, a translation toolchain, and a project site full of interactive viewers that run entirely off your own disc image.
+A playable port and modding hub for the PSX game **Legend of Legaia** (1998, Sony, NA SCUS-94254), standing on Ghidra-traced reverse engineering of the retail disc. The disc's formats are documented byte-by-byte with provenance back to traced retail functions, Rust parsers extract every asset, and a from-scratch engine runs the game's own scenes, scripts and menus - natively on wgpu, and in your browser via WebAssembly. On top of that sit a disc randomizer, a translation toolchain, and a project site full of interactive viewers that run entirely off your own disc image.
 
-The repo name `-re` is in both senses: **r**everse-**e**ngineering and **r**e-implementation. Same legal model as [ScummVM](https://www.scummvm.org/), [OpenRCT2](https://github.com/openrct2/OpenRCT2), [OpenMW](https://github.com/OpenMW/openmw), [OpenLara](https://github.com/XProger/OpenLara): this repo is code and documentation only - you bring your own disc image, and nothing Sony owns is ever committed or distributed.
+The repo name `-re` is in both senses: **r**everse-**e**ngineering and **r**e-implementation. This is **not a decompilation project**: nothing aims at a byte-matching recompile of the executable, and the engine is fresh Rust written from the project's own reverse-engineering record - Ghidra-traced function dumps and live emulator probes - never auto-translated MIPS. Same legal model as [ScummVM](https://www.scummvm.org/), [OpenRCT2](https://github.com/openrct2/OpenRCT2), [OpenMW](https://github.com/OpenMW/openmw), [OpenLara](https://github.com/XProger/OpenLara): this repo is code and documentation only - you bring your own disc image, and nothing Sony owns is ever committed or distributed.
 
-Retail behaviour is the measured ground truth: the decompilation and parity oracles reproduce the original's arithmetic and quirks exactly, and a retail-faithful mode keeps that testable. The port itself is not bound by it - enhancements the original never had, like dynamic lighting, free-angle movement and [VR](docs/subsystems/vr-mode.md), plus features first proven out through the [disc patcher](docs/tooling/randomizer.md), land as engine toggles, enabled by default where they are clearly better, with retail always one flip away. See [`docs/subsystems/engine.md`](docs/subsystems/engine.md#fidelity-and-enhancements).
+Retail behaviour is the measured ground truth: the traced dumps and parity oracles reproduce the original's arithmetic and quirks exactly, and a retail-faithful mode keeps that testable. The port itself is not bound by it - enhancements the original never had, like dynamic lighting, free-angle movement and [VR](docs/subsystems/vr-mode.md), plus features first proven out through the [disc patcher](docs/tooling/randomizer.md), land as engine toggles, enabled by default where they are clearly better, with retail always one flip away. See [`docs/subsystems/engine.md`](docs/subsystems/engine.md#fidelity-and-enhancements).
 
 **Project site:** [andrewaltimit.github.io/legend-of-legaia-re](https://andrewaltimit.github.io/legend-of-legaia-re/)
 
@@ -12,7 +12,7 @@ Retail behaviour is the measured ground truth: the decompilation and parity orac
 
 https://github.com/user-attachments/assets/aff19b4f-312c-44e2-bd44-3e6d99de2b03
 
-The clean-room engine booting a real scene, plus the asset viewers. ([direct link](site/assets/legend-of-legaia-re-demo.mp4) · [on the project site](https://andrewaltimit.github.io/legend-of-legaia-re/))
+The from-scratch engine booting a real scene, plus the asset viewers. ([direct link](site/assets/legend-of-legaia-re-demo.mp4) · [on the project site](https://andrewaltimit.github.io/legend-of-legaia-re/))
 
 ## What's here
 
@@ -209,7 +209,7 @@ Start at **[`docs/overview.md`](docs/overview.md)** - the elevator pitch plus ho
   - Battle: [battle](docs/subsystems/battle.md), [battle action SM](docs/subsystems/battle-action.md), [battle formulas](docs/subsystems/battle-formulas.md).
   - World + field: [world map](docs/subsystems/world-map.md), [field locomotion](docs/subsystems/field-locomotion.md), [field menu](docs/subsystems/field-menu.md).
   - Minigames: [fishing](docs/subsystems/minigame-fishing.md), [slot machine](docs/subsystems/minigame-slot-machine.md), [Baka Fighter](docs/subsystems/minigame-baka-fighter.md), [dance](docs/subsystems/minigame-dance.md), [Muscle Dome](docs/subsystems/minigame-muscle-dome.md).
-  - [Engine reimplementation](docs/subsystems/engine.md) - the clean-room boundaries.
+  - [Engine reimplementation](docs/subsystems/engine.md) - the port's boundaries.
 - **[`docs/tooling/`](docs/tooling/)** - how to drive the repo: [extraction CLIs](docs/tooling/extraction.md), [Ghidra setup](docs/tooling/ghidra.md), [overlay capture](docs/tooling/overlay-capture.md), [mednafen automation](docs/tooling/mednafen-automation.md), [PCSX-Redux automation](docs/tooling/pcsx-redux-automation.md), [randomizer](docs/tooling/randomizer.md), [translation](docs/tooling/translation.md), [port catalog](docs/tooling/port-catalog.md).
 - **[`docs/reference/`](docs/reference/)** - [key Ghidra-traced functions](docs/reference/functions.md), [RAM map + globals](docs/reference/memory-map.md), [region + build data](docs/reference/builds.md), [curated game-data tables](docs/reference/gamedata.md), [open RE threads](docs/reference/open-rev-eng-threads.md) (the live hunts), [settled threads](docs/reference/re-settled-threads.md) (the answers, each with an evidence grade), and [do not re-walk](docs/reference/re-do-not-re-walk.md) (falsified hypotheses worth not re-deriving).
 
@@ -250,18 +250,18 @@ legend-of-legaia-re/
 │   ├── anm/                      # ANM animation container parser
 │   ├── save/                     # Character record + memory-card walker + engine saves
 │   ├── font/                     # Dialog font extraction + atlas / layout API
-│   ├── mdec/                     # PSX MDEC clean-room decoder (Iki bitstream → RGBA8)
+│   ├── mdec/                     # PSX MDEC from-scratch decoder (Iki bitstream → RGBA8)
 │   ├── extract/                  # Top-level pipeline driver
 │   ├── mednafen/                 # Mednafen save-state parser + VRAM / SPU parity oracles
 │   ├── pcsxr/                    # PCSX-Redux save-state main-RAM reader
 │   ├── gamedata/                 # Curated walkthrough-mined tables (ground-truth labels)
 │   ├── cheats/                   # GameShark / Mednafen cheat-database parser + classifier
 │   ├── patcher/                  # Randomizer / translation / content mods (Delilas swap, custom models) for a user-supplied .bin
-│   │   # Track 2 - engine reimplementation (clean-room Rust)
+│   │   # Track 2 - engine reimplementation (from-scratch Rust)
 │   ├── engine-core/              # World, scene host, camera, menu runtime, save round-trip
 │   ├── engine-ui/                # Renderer-agnostic UI draw-list builders
 │   ├── engine-render/            # winit + wgpu, software PSX VRAM emulation, text overlay
-│   ├── engine-audio/             # cpal mixer + clean-room SPU + SEQ sequencer
+│   ├── engine-audio/             # cpal mixer + from-scratch SPU + SEQ sequencer
 │   ├── engine-vm/                # Actor / field / effect / move / motion VMs + battle SM
 │   ├── engine-shell/             # `legaia-engine` driver + BootSession + BGM director
 │   ├── asset-viewer/             # Combined viewer: TIM, TMD, stage, VAB, SEQ, field, battle
@@ -288,7 +288,7 @@ These licenses apply *only* to the code and documentation in this repository. **
 
 - **Public community research on unused content and builds** - developer attribution (Prokion / Contrail), debug-flag addresses, the catalog of 14 known builds.
 - [**Sam Ste's PROT.DAT unpacker**](https://github.com/SamSteProjects/LegendOfLegaia_.Dat_unpacker) - early Python proof-of-concept that pointed at the right TOC slots and the TIM-pack heuristic.
-- [**PSXRecomp**](https://github.com/mstan/psxrecomp) (mstan / [SamSteProjects](https://github.com/SamSteProjects)) - a PlayStation 1 static recompiler (MIPS R3000A -> C -> native, recompiled SCPH1001 BIOS as the kernel, no HLE), and its [Legaia-specific fork](https://github.com/SamSteProjects/psxrecomp/tree/codex/legaia-recompile-fixes) whose runtime work carries the game from boot through field, battle, and the CD/XA cutscene path. We run it as a live cross-reference oracle - a second, independent execution of the retail code to validate the clean-room port against (GTE registers, overlay identity, render-dispatch and sound-driver behaviour) - never as a source of Sony bytes. Built on the [N64Recomp](https://github.com/N64Recomp/N64Recomp) static-recompilation model (RT64 team).
+- [**PSXRecomp**](https://github.com/mstan/psxrecomp) (mstan / [SamSteProjects](https://github.com/SamSteProjects)) - a PlayStation 1 static recompiler (MIPS R3000A -> C -> native, recompiled SCPH1001 BIOS as the kernel, no HLE), and its [Legaia-specific fork](https://github.com/SamSteProjects/psxrecomp/tree/codex/legaia-recompile-fixes) whose runtime work carries the game from boot through field, battle, and the CD/XA cutscene path. We run it as a live cross-reference oracle - a second, independent execution of the retail code to validate the from-scratch port against (GTE registers, overlay identity, render-dispatch and sound-driver behaviour) - never as a source of Sony bytes. Built on the [N64Recomp](https://github.com/N64Recomp/N64Recomp) static-recompilation model (RT64 team).
 - [**ZetaPhoenix's "Legaia Arts Data" spreadsheet**](https://docs.google.com/spreadsheets/d/1_U_AKdEncylFwE0lXkvPG-OhMWpNXgUdoaSGZ6vSUg0/edit?usp=drive_link) - public Google Sheets catalog of the Tactical Arts / Miracle Arts / Super Arts trigger strings and finisher replacements. The `legaia-art` `MiracleMatcher` / `SuperMatcher` tables (`crates/art/src/miracle.rs`, `super_art.rs`) cross-reference and validate against it. His damage-formula analysis - the Offense Value / Defense Value shape, the per-command equipment selection and halving, and the Vahn vs Evil Fly worked example - organises [`docs/subsystems/battle-formulas.md`](docs/subsystems/battle-formulas.md), where each claim is checked against the disassembly.
 - [**Meth962's "Legend of Legaia 100% Walkthrough"** (GameFAQs)](https://gamefaqs.gamespot.com/ps/197766-legend-of-legaia/faqs/53721) and his damage-formula threads on the old legendoflegaia.net forums (archived [thread 800](https://web.archive.org/web/20161205053304/https://www.legendoflegaia.net/forums/viewtopic.php?f=66&t=800&sid=b9049876cd2bcdd56c9eb66fe8614cf4&start=30), [thread 941](https://web.archive.org/web/20161203095801/https://www.legendoflegaia.net/forums/viewtopic.php?f=66&t=941&sid=10471c996f5bab205174f85853bf65e7)) - the original community damage analysis, and the v1.10 "all Enemy stats section" + Seru-magic + magic-leveling tables ground three layers of `legaia-gamedata`:
   - `enemies.toml` carries Meth's per-enemy HP / MP / EXP / Gold / ATK / SPD / UDF / LDF / INT / AGL / element columns for every entry (extracted from in-RAM memory, so fan-recorded values rather than retail-binary-extracted constants - useful as labels for the binary monster records `crates/asset/src/monster_archive.rs` decodes from PROT 0867).

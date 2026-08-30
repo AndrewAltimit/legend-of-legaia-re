@@ -25,7 +25,7 @@ Retail quirk, reproduced: the rank counter is stored *before* the used check inc
 Each 32-byte tone (`VagAtr`) carries the standard Sony fields. A disc-wide census of every tone (424 banks, ~23k tones; `engine-audio/tests/real_vab_tone_attributes.rs`) fixes which the retail data actually populates:
 
 - **Used by playback:** `vol`/`pan` (mix), `center`/`shift` (key → pitch), `min`/`max` (note range → tone select), `adsr1`/`adsr2` (envelope), and **`pbmin`/`pbmax`** - the per-tone pitch-bend range in semitones (`pbmin` down, `pbmax` up). Only some tones carry a non-zero range; the common value is 2 (the GM-default ±2 semitones), with a few at 4/12/24/40. The sequencer scales a `0xEn` wheel event by the **sounding tone's** range (`VabBank::pitch_bend_range`), so a `(0, 0)` tone does not bend - see [`subsystems/audio.md`](../subsystems/audio.md).
-- **Always zero in retail (no consumer needed):** `vibw`/`vibt` (vibrato) and `porw`/`port` (portamento) are zero on every tone, so the clean-room voice model needs no LFO.
+- **Always zero in retail (no consumer needed):** `vibw`/`vibt` (vibrato) and `porw`/`port` (portamento) are zero on every tone, so the from-scratch voice model needs no LFO.
 
 #### `center` / `shift` are the whole of the pitch, rate included
 

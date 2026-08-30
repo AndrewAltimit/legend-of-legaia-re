@@ -129,7 +129,7 @@ Two dispatcher cases register into the runtime TMD pointer table `DAT_8007C018`,
 
 Many character meshes reference CLUT rows that live in **different PROT entries** from their TMD source. The runtime asset chain stitches them together - the loader puts the relevant TIMs into VRAM before the TMD is rendered.
 
-Engines that drive a clean-room scene loop call [`SceneResources::build_targeted`](../../crates/engine-core/src/scene_resources.rs) once per scene transition. The builder:
+Engines that drive a from-scratch scene loop call [`SceneResources::build_targeted`](../../crates/engine-core/src/scene_resources.rs) once per scene transition. The builder:
 
 1. Builds the scene's mesh pool from the descriptor walk (above), and the shared blocks' contribution from the `player_data` character pack - the 5-mesh head. Blocks with no asset table (the v12-family dungeons' standalone `lzs_container`) fall back to a TMD-magic sweep of their entries.
 2. Collects the union of all prim-target rectangles (CLUT rows + texture-page UV bboxes the meshes will sample).
