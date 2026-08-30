@@ -1,6 +1,6 @@
 # Format Reference
 
-Byte-level specifications for every format on the Legend of Legaia disc. Each page gives a layout, the Ghidra-traced function that reads the format at runtime, and the clean-room Rust parser that reimplements it.
+Byte-level specifications for every format on the Legend of Legaia disc. Each page gives a layout, the Ghidra-traced function that reads the format at runtime, and the from-scratch Rust parser that reimplements it.
 
 **Read the page for a format before writing a parser against it.** Several of these look like their standard PSX counterparts and are not: the TMD variant uses its own magic and primitive grouping, the SEQ meta-event encoding omits MIDI's length field, and three unrelated containers are all called "pack".
 
@@ -126,6 +126,6 @@ The dispatch chain *into* these formats is fully traced. The byte-level layout o
 
 `MOV/MV*.STR` files are PSX MDEC video streams. Legaia's are the **Iki** bitstream (LZSS-compressed per-block qscale/DC table + an AC-only entropy stream, 16-bit-LE MSB-first, column-major macroblocks) rather than STRv2.
 
-[`crates/mdec`](../../crates/mdec/README.md) is a clean-room decoder for it: `mdec decode-str` writes frames to disk, and `legaia-engine play-str` plays a movie back in a window with synced XA audio. See [`subsystems/cutscene.md`](../subsystems/cutscene.md) for the decode algorithm and the A/V sync path.
+[`crates/mdec`](../../crates/mdec/README.md) is a from-scratch decoder for it: `mdec decode-str` writes frames to disk, and `legaia-engine play-str` plays a movie back in a window with synced XA audio. See [`subsystems/cutscene.md`](../subsystems/cutscene.md) for the decode algorithm and the A/V sync path.
 
 For the audio side, `XA/XA*.XA` files are XA-ADPCM streams in standard CD-XA Mode 2 Form 2. The decoder in `crates/xa` is spec-correct, and the [`xa demux-disc`](../../crates/xa/src/bin/xa.rs) subcommand reads raw 2352-byte sectors directly off the `.bin`, parses each `(file_no, ch_no)` subheader, and emits one WAV per channel. The earlier "non-standard interleave" framing was Form-1-truncation damage, not a bespoke Legaia muxing scheme - see [`xa.md`](xa.md).

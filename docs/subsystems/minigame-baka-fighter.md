@@ -883,7 +883,7 @@ sound-test index 55, see [`../reference/music-tracks.md`](../reference/music-tra
 
 The minigames page plays exactly these cues, decoded from the visitor's disc in
 the browser: SCUS → the descriptor table, PROT 869 → the VAB, each descriptor →
-a one-shot through the clean-room SPU (`crates/web-viewer/src/sfx_view.rs`,
+a one-shot through the from-scratch SPU (`crates/web-viewer/src/sfx_view.rs`,
 `site/js/legaia-sfx.js`). The page fires cues by *event name*, so the ids stay
 next to their provenance in Rust; the two events retail leaves silent but the
 page sounds anyway - a round-start sting and a match-loss sting, reusing the
@@ -1039,7 +1039,7 @@ half of the field VM's op-`0x49` submode - the enter half is `FUN_801f1278`
 It indexes the 52-entry handler table `PTR_FUN_801f33b4` by the actor's
 `+0x50` word.
 
-The whole family is ported clean-room as `engine-vm::baka_hub_actors`, hosted
+The whole family is ported from-scratch as `engine-vm::baka_hub_actors`, hosted
 by `engine-core::field_submode_screen`.
 
 ### The `0x801f` band belongs to the field overlay
@@ -1185,7 +1185,7 @@ exist under the sibling hub overlays).
 
 ## Engine port
 
-The fight rules run clean-room as `legaia_engine_core::baka_fighter`
+The fight rules run from-scratch as `legaia_engine_core::baka_fighter`
 (`BakaFight`): the exchange resolver (`FUN_801d3a14` - settle timer, special
 priority, the 2>1/3>2/1>3 relation), the damage kernel (`FUN_801d3b18` -
 HP-tiered ATK/DEF, combo bonus, crit override, the special's keyframe-gated
@@ -1216,7 +1216,7 @@ timer `DAT_801DBF88` against `0xB5` - the fight resolution SM and the actor tick
 are what advance it - while the port's cabinet has no sibling driving it and so
 advances it itself. The threshold and everything it gates are retail's.
 
-The **cabinet shell** (`FUN_801cf388`) runs clean-room as
+The **cabinet shell** (`FUN_801cf388`) runs from-scratch as
 `engine-core::baka_cabinet::BakaCabinet`, and `BakaFight` owns one, stepping it
 once per tick alongside the chrome. Retail has the nesting the other way up -
 the cabinet SM owns the frame and the fight resolution runs under it - but the

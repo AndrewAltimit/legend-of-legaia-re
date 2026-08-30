@@ -18,7 +18,7 @@
  *     0x202/0x203/0x205, start 0x201) out of its efect.dat descriptor
  *     block (PROT 1228) + sample VAB (PROT 1231), plus the direct-keyed
  *     good-step stings (`FUN_801d3d78`: rand()%3 picks a paired voice),
- *     and the BGM is the real SEQ+VAB pair rendered through the clean-room
+ *     and the BGM is the real SEQ+VAB pair rendered through the from-scratch
  *     SPU.
  *
  * The dancers are the retail cast: the overlay's spawner (FUN_801d0190)
@@ -516,7 +516,7 @@ window.MgDance = (function () {
     let bgmSrc = null;
 
     /* Render + start the selected BGM as a seamless loop (SEQ+VAB through the
-     * clean-room SPU, one true loop period repeated). Rendering ~40 s of SPU
+     * from-scratch SPU, one true loop period repeated). Rendering ~40 s of SPU
      * output blocks for a moment, so the caller shows a status line first and
      * calls this from a timeout. */
     function startBgm(seconds) {

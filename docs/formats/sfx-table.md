@@ -80,7 +80,7 @@ above it:
   category (`+4`).
 
 The SPU programming itself (`FUN_80065034` → `SpuSetVoiceAttr`) is libsnd and out
-of clean-room scope - the engine has its own SPU. What is portable is the static
+of from-scratch scope - the engine has its own SPU. What is portable is the static
 **data**.
 
 ### The ring is two arrays, aged by one function and drained by another
@@ -284,7 +284,7 @@ bytes 1:1 (`0x20` → tone 0 / note 60, `0x21` → tone 1 / note 61, `0x23` → 
 tone 5, note 64, against a `[65,65]` window - which is the clearest single
 illustration of why the fire path indexes the tone directly.
 
-Two things follow for anyone rendering these through a clean-room SPU, and both
+Two things follow for anyone rendering these through a from-scratch SPU, and both
 are settled.
 
 **Retail does pitch them down.** That program's `center` bytes sit at `79..=88`
@@ -458,7 +458,7 @@ the duel fire, so every descriptor those two contexts use resolves in it.
 
 The site's cue player (`crates/web-viewer/src/sfx_view.rs`) walks SCUS → this
 table, then PROT → **the bank each cue's category names**, then descriptor → a
-one-shot through the clean-room SPU. So the duel hit `0x09` renders out of
+one-shot through the from-scratch SPU. So the duel hit `0x09` renders out of
 PROT 0869 and the shared UI blips `0x20` / `0x21` / `0x37` and the strike `0x1A`
 out of PROT 0868, even though the same duel overlay writes all of them.
 

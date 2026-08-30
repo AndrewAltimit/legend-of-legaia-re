@@ -98,7 +98,7 @@ shared leaf:
   ordering-table walk either host consumes.
 - `gte` - fixed-point GTE arithmetic (`q3.12` rotation, `q19.12`
   translation, the UNR divide, NCLIP/AVSZ, register-transfer + memory ops,
-  the clean-room `psx_sin` / `psx_cos` trig LUT).
+  the from-scratch `psx_sin` / `psx_cos` trig LUT).
 - `vram_capture` - quantising an RGBA8 frame readback to BGR555 and blitting
   it into a `legaia_tim::Vram` rect, plus the transition's capture-rect
   constants.

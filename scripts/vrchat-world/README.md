@@ -9,7 +9,7 @@ world. Companion to the battle diorama transport in
 **Legal first.** The exported `.glb` files contain Sony-derived geometry and
 textures decoded from *your* disc. They are for your own local use: never
 commit them, never redistribute them, and keep any VRChat upload **private**
-(the default for a fresh world). This directory ships only clean-room
+(the default for a fresh world). This directory ships only from-scratch
 tooling - scripts and a guide - no game data.
 
 ```

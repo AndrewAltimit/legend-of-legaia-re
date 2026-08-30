@@ -62,6 +62,6 @@ Save-state pipeline:
 
 Any in-game save state works; the font tile-page is byte-identical across captures - and byte-identical to what `--disc` reads from the on-disc TIM, which is why the two modes are interchangeable.
 
-## Clean-room status
+## No Sony bytes shipped
 
 Atlas pixels and widths are derived from a Sony executable + VRAM dump and are tracked in the gitignored `extracted/` tree, never checked in. This crate ships as code only; loading the runtime artifacts is a deployment concern.

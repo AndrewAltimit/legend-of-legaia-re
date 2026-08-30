@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; audio</div>
   <h1>Audio</h1>
-  <p class="lede">How Legaia makes sound. The town theme that starts when you step through a gate, the clang of a sword hit and the shout a character gives when an art lands each take a different road to the PlayStation's sound chip: music is a MIDI-like score played through a sampled instrument bank, effects are one-shot samples keyed on a voice, and voices and cutscene audio are streamed straight off the CD. This page follows the three roads and shows how the clean-room engine rebuilds the stack.</p>
+  <p class="lede">How Legaia makes sound. The town theme that starts when you step through a gate, the clang of a sword hit and the shout a character gives when an art lands each take a different road to the PlayStation's sound chip: music is a MIDI-like score played through a sampled instrument bank, effects are one-shot samples keyed on a voice, and voices and cutscene audio are streamed straight off the CD. This page follows the three roads and shows how the from-scratch engine rebuilds the stack.</p>
 </header>
 
 <section class="doc-section" id="at-a-glance">
@@ -12,7 +12,7 @@
     <dt>Effects</dt><dd>100 static descriptors at <code>DAT_8006F198</code>; the descriptor's category byte names which of twelve VAB slots the cue plays from</dd>
     <dt>Voices</dt><dd>CD-XA streams: arts shouts from <code>XA2 / XA4 / XA6</code>, the melee grunt from <code>XA30</code>, victory lines from the tail of <code>monster.snd</code></dd>
     <dt>Libraries</dt><dd>PsyQ libsnd (SsAPI sequencer, <code>0x80061..0x80067</code>) and libspu (<code>0x80068..0x8006D</code>), statically linked and traceable</dd>
-    <dt>Port</dt><dd><code>crates/engine-audio</code>: clean-room SPU (ADSR, ADPCM, reverb network), sample-locked <code>Sequencer</code>, SFX bank + scheduler, XA mixing; WebAudio backend for the browser</dd>
+    <dt>Port</dt><dd><code>crates/engine-audio</code>: from-scratch SPU (ADSR, ADPCM, reverb network), sample-locked <code>Sequencer</code>, SFX bank + scheduler, XA mixing; WebAudio backend for the browser</dd>
     <dt>Oracle</dt><dd><code>legaia-engine audio-trace</code> - per-frame voice activity against save states and PCSX-Redux captures</dd>
     <dt>Confidence</dt><dd>Confirmed for dispatch, banks, cues and the sequencer; the <code>bse.dat</code> record columns are Unknown</dd>
   </dl>
@@ -235,7 +235,7 @@
 
 <section class="doc-section" id="engine-spu">
   <h2>Engine port</h2>
-  <p><code>crates/engine-audio</code> ports the stack as a clean-room model from this page, the libspu API surface and the public SPU register layout. No Sony bytes.</p>
+  <p><code>crates/engine-audio</code> ports the stack as a from-scratch model from this page, the libspu API surface and the public SPU register layout. No Sony bytes.</p>
   <table class="data-table">
     <thead><tr><th>Module</th><th>Models</th></tr></thead>
     <tbody>

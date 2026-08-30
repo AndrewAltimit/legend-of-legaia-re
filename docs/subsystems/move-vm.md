@@ -161,7 +161,7 @@ When `op[1] == 0` the loop additionally arms a reset per slot: `actor[+0xA0 + i*
 
 ### 0x16 - `STUB` (size 2)
 
-Calls `FUN_80024C80(actor, op[1])`. The body is a pure `jr ra` / nop - the opcode is a no-op. A clean-room port can implement it as PC-advance only; see `ghidra/scripts/funcs/80024c80.txt`.
+Calls `FUN_80024C80(actor, op[1])`. The body is a pure `jr ra` / nop - the opcode is a no-op. A from-scratch port can implement it as PC-advance only; see `ghidra/scripts/funcs/80024c80.txt`.
 
 ### 0x2C - `KEY_BUFFER_ALLOC` (size 5)
 
@@ -564,7 +564,7 @@ deliberate non-port, so the leaf would be unreachable.
 
 **Port boundary (deliberate).** `FUN_80021DF4` is a host-emission-heavy
 dispatcher (GP0 packets, SPU SE triggers, libgpu VRAM copies, and ~30 part-struct
-fields the clean-room engine abstracts), so it is **not** transcribed wholesale -
+fields the from-scratch engine abstracts), so it is **not** transcribed wholesale -
 that would be a fake port. The renderer-agnostic surface that *is* ported is the
 **render-mode classification** (`engine-core::summon::RenderMode` -
 `from_model_sel`: `0x4000 → Particle`, `0x4001 → SoundEmitter`), which
@@ -591,7 +591,7 @@ executable engine code.
 ## Connection to other crates
 
 - **`crates/mdt`** - parses the [MDT format](../formats/mdt.md). The per-frame data inside an MDT record is exactly the move-VM bytecode this VM consumes. With the move-VM opcode set documented, `crates/mdt` can grow a disassembler.
-- **`crates/engine-vm`** - clean-room Rust port lives in `move_vm.rs`. The dispatcher (`step` / `run_until_break`), every opcode handler, and the `MoveHost` callback trait live there. Per-frame entry is `move_vm::actor_tick`, which mirrors the gate at `FUN_80021DF4 + 0x80022B94..0x80022BBC`: skip when `wait_timer >= 0`, otherwise step the VM and report `Halted` if the post-call `flags & 0x8` bit is set. `decrement_wait_timer` is the matching pre-tick helper.
+- **`crates/engine-vm`** - from-scratch Rust port lives in `move_vm.rs`. The dispatcher (`step` / `run_until_break`), every opcode handler, and the `MoveHost` callback trait live there. Per-frame entry is `move_vm::actor_tick`, which mirrors the gate at `FUN_80021DF4 + 0x80022B94..0x80022BBC`: skip when `wait_timer >= 0`, otherwise step the VM and report `Halted` if the post-call `flags & 0x8` bit is set. `decrement_wait_timer` is the matching pre-tick helper.
 - **Field VM op `0x22`** (`EXEC_MOVE`) - the gateway from script-VM into move-VM; calls `FUN_800204F8` to set up the per-actor buffer.
 
 ## Decompile quirks worth knowing

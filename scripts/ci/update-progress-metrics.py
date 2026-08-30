@@ -82,7 +82,7 @@ def build(scus, data, cat):
     if scus:
         tracks.append({
             "key": "decompilation",
-            "label": "Decompilation",
+            "label": "Ghidra tracing",
             "pct": round(scus["pct"], 1),
             "headline": "%.1f%% of SCUS_942.54's code" % scus["pct"],
             "detail": "Share of the main executable's code bytes that sit inside a "
@@ -116,7 +116,7 @@ def build(scus, data, cat):
             "pct": round(100.0 * ported / identified, 1) if identified else 0.0,
             "headline": "%d functions ported" % ported,
             "detail": "Of the retail functions identified as port sites, the share "
-                      "carrying a clean-room Rust implementation. %d remain on the "
+                      "carrying a from-scratch Rust implementation. %d remain on the "
                       "worklist. Measured against what the project has identified, "
                       "not against the whole game." % worklist,
             "denominator": "identified port sites",

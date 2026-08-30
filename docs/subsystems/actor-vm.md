@@ -117,7 +117,7 @@ the floor-3 cadence and (on the first frame) fading to `0x101010`, it loops
 (RotTransPers-class), applies `>>1` velocity nudges scaled by the tick byte
 `DAT_1F800393`, and screen-clips to `X in [-8,0x148)`, `Y in [-8,0xF8)` before
 linking the packet into the OT. It is a direct GTE/GPU-packet emitter, not a
-draw-list builder, so it is documented rather than ported into the clean-room
+draw-list builder, so it is documented rather than ported into the from-scratch
 render path.
 
 Two worklist addresses in this overlay band are VA-aliased and not
@@ -248,11 +248,11 @@ Diffing the actor pool (`0x801C9594..0x801C9F7F`, 0x60-byte stride per anim slot
 | `FUN_800495C8` (animation envelope sampler) | Reads `*(int *)(actor + 0x4C) + 4` as a per-bone curve walker (4-byte header skip; per-record byte ranges describe interpolation envelopes). |
 | `FUN_8003A1E4` (foreground actor spawner) and `FUN_801DE840` (field VM) | Both read `*(ushort *)(actor[+0x4C] + 2)` as an animation-period u16 (modulo target for the current frame index). Matches the case-`0x06` writer's `puVar15[2..3] = 1`. |
 
-### Implications for the clean-room port
+### Implications for the from-scratch port
 
 1. **The actor VM at `FUN_801D6628` is *not* a consumer of `actor[+0x4C]`.** That function is a per-frame command-list interpreter walking an *external* 4-byte-stride bytecode stream (passed in as `param_1`); it dispatches each command through a 13-entry jump table at `0x801CED70` and routes side-effects to actor records *looked up by the slot byte* (`param_1[+1]`), not by following `actor[+0x4C]`.
 2. **No PC-bootstrap entry is needed.** The earlier framing - "the actor VM starts by resetting PC to 0 of the spawn record" - doesn't apply: VDF-spawned actors are driven by the vertex-pool render pipeline (`actor[+0x90]`), not by ticking their `+0x4C` body bytes as actor-VM opcodes.
-3. **`Actor::spawn_record` in `legaia_engine_core` is a retention/observation slot.** Mirroring the retail `actor[+0x4C] = VDF_body_ptr` write keeps the bytes alive for diagnostic inspection but doesn't need to be fed back into any clean-room VM tick. The downstream consumer that *would* matter is the per-actor vertex-pool allocator (mirror of `FUN_801D77F4`'s second pass) - already wired in the host hook, with the "stride mystery" (12-byte first-pass cursor vs `vertex_count*8` second-pass cursor) still open.
+3. **`Actor::spawn_record` in `legaia_engine_core` is a retention/observation slot.** Mirroring the retail `actor[+0x4C] = VDF_body_ptr` write keeps the bytes alive for diagnostic inspection but doesn't need to be fed back into any from-scratch VM tick. The downstream consumer that *would* matter is the per-actor vertex-pool allocator (mirror of `FUN_801D77F4`'s second pass) - already wired in the host hook, with the "stride mystery" (12-byte first-pass cursor vs `vertex_count*8` second-pass cursor) still open.
 4. **`legaia_engine_vm::actor` does *not* need an `entry_with_spawn_record` constructor.** The 13-opcode dispatcher consumes an external command list, not the VDF body. The host hook already mirrors the retail spawn-time writes; no further VM-side dispatch on the VDF body bytes happens in retail.
 
 ### VDF body header (Q2 from the actor-spawn handoff)

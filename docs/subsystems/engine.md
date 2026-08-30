@@ -1,20 +1,20 @@
 # Engine reimplementation
 
-The clean-room Rust port of the Legend of Legaia engine. End-user model: the engine is a binary; the user supplies a disc image; the engine extracts the assets at first run and plays the game using clean-room ports of every runtime subsystem.
+The from-scratch Rust port of the Legend of Legaia engine, written from the project's own reverse-engineering record - Ghidra-traced function dumps and live emulator probes. End-user model: the engine is a binary; the user supplies a disc image; the engine extracts the assets at first run and plays the game using from-scratch ports of every runtime subsystem.
 
 ## Goal
 
 A playable port of Legend of Legaia (NA SCUS-94254) on modern systems via Rust + wgpu, with an optional WASM/web target. JP/EU regions land after NA is solid.
 
-"Playable port" is grounded in retail, not bound by it. The decompilation, the format docs and the parity oracles pin down exactly what the original does - damage arithmetic, RNG, script pacing, save-record layout - and the engine reproduces it, provably, in its retail-faithful mode. That ground truth is a measuring stick, not a ceiling: the port is free to add features, mechanics, rendering and audio the original never had, exposed as toggles so a retail-faithful mode stays one flip away wherever a faithful mode makes sense. The split is described in [Fidelity and enhancements](#fidelity-and-enhancements).
+"Playable port" is grounded in retail, not bound by it. The Ghidra-traced dumps, the format docs and the parity oracles pin down exactly what the original does - damage arithmetic, RNG, script pacing, save-record layout - and the engine reproduces it, provably, in its retail-faithful mode. That ground truth is a measuring stick, not a ceiling: the port is free to add features, mechanics, rendering and audio the original never had, exposed as toggles so a retail-faithful mode stays one flip away wherever a faithful mode makes sense. The split is described in [Fidelity and enhancements](#fidelity-and-enhancements).
 
 ## Non-goals
 
-- **Static recompilation of `SCUS_942.54`.** The engine is **clean-room from documented specs and decompile-then-rewrite logic** - not auto-translated MIPS. This is the boundary the whole [legal posture](#legal-posture) rests on.
+- **Decompilation or static recompilation of `SCUS_942.54`.** No byte-matching decompile is attempted, and nothing is auto-translated from the MIPS. The engine is **fresh Rust written from documented specs and the Ghidra-traced dumps** - the boundary the whole [legal posture](#legal-posture) rests on.
 - **Losing retail.** The port departs from retail freely - new features, mechanics, rendering, audio - but never silently: departures live behind toggles, and the oracles keep "faithful" a testable claim about the retail mode. A quirk is behaviour to preserve in the faithful mode, and fair game to improve outside it.
 - **Re-authoring the game's assets.** Every texture, mesh, sample and sequence comes off the user's own disc at runtime. Nothing is upscaled, redrawn, or bundled.
 
-Modding and translation are conspicuously *not* on that list. The [randomizer](../tooling/randomizer.md) and [language packs](../tooling/translation.md) are shipped, deliberately-designed parts of this repo, described below rather than disclaimed. Both are disc-patching tools that operate on a user-supplied `.bin` rather than engine features - the randomizer does not touch the clean-room engine at all. The separation is not a wall, though: what the patcher proves out against retail - randomizer logic, softlock fixes, tuning sliders - is expected to graduate into engine features and toggles. A mod that works on the disc has no reason not to become a mode of the port.
+Modding and translation are conspicuously *not* on that list. The [randomizer](../tooling/randomizer.md) and [language packs](../tooling/translation.md) are shipped, deliberately-designed parts of this repo, described below rather than disclaimed. Both are disc-patching tools that operate on a user-supplied `.bin` rather than engine features - the randomizer does not touch the from-scratch engine at all. The separation is not a wall, though: what the patcher proves out against retail - randomizer logic, softlock fixes, tuning sliders - is expected to graduate into engine features and toggles. A mod that works on the disc has no reason not to become a mode of the port.
 
 ## Fidelity and enhancements
 
@@ -57,12 +57,14 @@ It is not free, because retail does not have one exit to port. Each of the five 
 
 The "user brings their own disc" model is the same one ScummVM, OpenRCT2, OpenMW, OpenLara, OpenJK, etc. use. As long as:
 - Zero Sony bytes ship in the repo or in any released binary.
-- All code is clean-room Rust written from format docs + decompiled-C reference (not derived assemblies, not auto-translated MIPS).
+- All code is from-scratch Rust written from format docs + decompiled-C reference (not derived assemblies, not auto-translated MIPS).
 - Disc-dependent tests skip without the user's disc.
 
 …the legal pattern is well-established. CI enforces this for every track.
 
 The boundary to respect: **the decompiled C in `ghidra/scripts/funcs/*.txt` is reference material, not committable engine code.** A handler implementation in `crates/engine-vm/` is a fresh Rust function written *from* the decompile, not the decompile itself.
+
+The project deliberately does not describe this as "clean-room": the same people read the Ghidra output and write the Rust, which is not the two-team firewall that term formally means. The boundary actually enforced is narrower and checkable - the dumps stay reference material, no Sony-derived bytes are ever committed, and no code is mechanically translated.
 
 ## Crate layering
 
@@ -171,7 +173,7 @@ Every VM is a handler-by-handler translation: the opcode handler is dumped from 
 
   The Tactical-Arts strike band reads per-strike power bytes, hit timing, status effects and hit cues from `BattleActionHost::art_record`, surfacing them through the `apply_art_strike(ArtStrikeInfo)` host hook when the active actor's `chosen_art` is set. HP deduction and SFX scheduling are the host's to wire off that. See [battle action](battle-action.md).
 - **Title-overlay sub-mode dispatcher** - `crates/engine-vm/src/title_overlay.rs`. 25-entry JT at `0x801CF244` (the per-frame `FUN_801DD35C` tick), state-struct field offsets, observed `state[+0x204] = N` transitions. Four modes are semantically labelled (`Init`, `Idle`, `AttractIdle`, `AttractDelay`); the other 21 carry `Phase0xNN` placeholders. Standout pin: `Phase06` writes `_DAT_8007B83C = 0x02` at `0x801DFC00` - the title-screen → main-game master-mode transition, exported as `MASTER_GAME_MODE_FIELD_LAUNCH` + `PHASE06_LAUNCH_GAME_PC`. See [boot](boot.md#sub-mode-dispatcher).
-- **SCUS sprite-emit primitives** - `crates/engine-vm/src/title_prim.rs`. Clean-room ports of the three SCUS helpers the title tick calls into: `FUN_80058298` (`ClearImage` fill-rect), `FUN_80058490` (`MoveImage` VRAM-copy), `FUN_800198E0` (sprite-descriptor dispatcher with tag-`0x11` + alpha-OR pre-pass + width-divisor variants). `PrimHost` abstracts the four engine callbacks (`queue_clear_rect`, `queue_move_image`, `emit_sprite`, `alpha_or_gate_set`). The overlay-side helpers (`FUN_801E1C1C` and friends, shared across the menu / battle / shop / save UI overlays) are a separate port.
+- **SCUS sprite-emit primitives** - `crates/engine-vm/src/title_prim.rs`. From-scratch ports of the three SCUS helpers the title tick calls into: `FUN_80058298` (`ClearImage` fill-rect), `FUN_80058490` (`MoveImage` VRAM-copy), `FUN_800198E0` (sprite-descriptor dispatcher with tag-`0x11` + alpha-OR pre-pass + width-divisor variants). `PrimHost` abstracts the four engine callbacks (`queue_clear_rect`, `queue_move_image`, `emit_sprite`, `alpha_or_gate_set`). The overlay-side helpers (`FUN_801E1C1C` and friends, shared across the menu / battle / shop / save UI overlays) are a separate port.
 
 `crates/engine-core/src/world.rs` is where they meet. `World` owns the actor table, battle ctx, effect pool, field-VM ctx + bytecode + PC, per-actor move-VM bytecode buffers and RNG state, and implements every per-VM `Host` trait by routing through itself. `World::tick` runs the effect pool, then per-actor move-VM ticks for active actors with bytecode loaded, then the mode-specific top-level VM: the battle-action state machine in `Battle`, a field-VM step in `Field` / `Cutscene`. Hosts reuse this instead of maintaining four parallel VM-state tables.
 
@@ -209,7 +211,7 @@ The writer emits the highest version any populated field requires; readers accep
 `engine-render` and `engine-audio` are leaf presentation crates - the shell composes them with the core, and neither depends on `engine-core`.
 
 - **`crates/engine-render`** - `Renderer` (wgpu device + surface + textured-quad pipeline + flat / textured-mesh pipelines + lines pipeline), aspect-preserving letterbox, and software PSX VRAM emulation (1024×512 R16Uint, per-prim CBA/TSB + 4/8/15bpp + CLUT decoded in the fragment shader). See [renderer](renderer.md).
-- **`crates/engine-audio`** - `AudioOut` (cpal-backed, F32 / I16 / U16 device formats) over a clean-room model of the 24-voice PSX SPU in `src/spu/`: streaming ADPCM decoder, ADSR envelope, 512 KB SPU RAM, libspu-shaped transfer engine. `src/vab_bind.rs` bridges parsed VAB banks (`legaia_vab::VabReport`) into the SPU via `VabBank::upload` + `play_note`. See [audio](audio.md#engine-audio-model---clean-room-spu-port).
+- **`crates/engine-audio`** - `AudioOut` (cpal-backed, F32 / I16 / U16 device formats) over a from-scratch model of the 24-voice PSX SPU in `src/spu/`: streaming ADPCM decoder, ADSR envelope, 512 KB SPU RAM, libspu-shaped transfer engine. `src/vab_bind.rs` bridges parsed VAB banks (`legaia_vab::VabReport`) into the SPU via `VabBank::upload` + `play_note`. See [audio](audio.md#engine-audio-model---from-scratch-spu-port).
 - **Cutscene audio** - `legaia-engine play-str` decodes a PSX STR's interleaved XA track off the disc and plays it through `AudioOut` in sync with the MDEC video. The track decodes up front rather than through an incremental streaming voice in `engine-audio`. See [cutscene](cutscene.md).
 
 **Smooth shading.** `legaia_tmd::mesh::tmd_to_vram_mesh` emits a per-vertex normal stream by accumulating face normals into per-position bins (weighted by triangle area), so connected geometry shades smoothly. The VRAM-mesh shader reads the normal at vertex location 3 and falls back to `dpdx`/`dpdy` only for unbinned positions. Those normals are what the opt-in [dynamic light](#fidelity-and-enhancements) reads; retail's own render uses none of them. Per-prim normal indices in the TMD format itself remain unparsed - a separate RE task.
@@ -254,7 +256,7 @@ Two responsibilities fall to any host that enters a scene without a door to arri
 
 The decompiled C dumps under `ghidra/scripts/funcs/` are reference material. Engine code in `crates/engine-vm/` is fresh Rust written *from* the decompile - never paste, always rewrite from the documented spec.
 
-Per-opcode tests live next to the port; they use synthetic bytecode (no Sony bytes) so the test suite stays clean-room.
+Per-opcode tests live next to the port; they use synthetic bytecode, so the test suite ships no Sony bytes.
 
 ## Engine integration scenarios
 

@@ -187,7 +187,7 @@ cp LICENSE-MIT "$STAGE/LICENSE-MIT"
     printf '    art             Tactical Arts data inspector\n'
     printf '    font-extract    dialog font -> glyph atlas + widths\n'
     printf 'Play + view\n'
-    printf '    legaia-engine   the clean-room engine: play-window, play-str, record/replay\n'
+    printf '    legaia-engine   the from-scratch engine: play-window, play-str, record/replay\n'
     printf '    asset-viewer    windowed viewer: textures, meshes, audio, scenes\n'
     printf 'Mod + translate\n'
     printf '    legaia-patcher    disc patcher: randomizer, "translate" language packs, manual edits\n'

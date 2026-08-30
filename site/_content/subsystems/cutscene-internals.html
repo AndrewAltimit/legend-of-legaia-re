@@ -79,7 +79,7 @@
       <tr><td>Feed</td><td>DMA-0 into the MDEC; an out-slice callback blits each 32-px strip into the slot's VRAM rect; sync waiters spin on a <code>0x100000</code>-iteration budget</td></tr>
     </tbody>
   </table>
-  <p>The five MDEC register/DMA helpers (feed, reset, two sync waiters, timeout dump) are the clean-room boundary: they describe the chip, so the port has no counterpart for them. Everything above them - loop, ring, pump, slice callback, output control word - is a decision about the bitstream and has a <code>crates/mdec</code> counterpart.</p>
+  <p>The five MDEC register/DMA helpers (feed, reset, two sync waiters, timeout dump) are the port boundary: they describe the chip, so the port has no counterpart for them. Everything above them - loop, ring, pump, slice callback, output control word - is a decision about the bitstream and has a <code>crates/mdec</code> counterpart.</p>
   <details class="disclosure">
     <summary>The STRv2/v3 path (dev slots only)</summary>
     <div class="disclosure-body">

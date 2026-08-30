@@ -19,7 +19,7 @@ below to jump within this page.
 - [Key functions](#key-functions) - [top-view controller `FUN_801E76D4`](#fun_801e76d4---top-view-debug-controller-9320-bytes) · [debug-menu renderer `FUN_801EAD98`](#fun_801ead98---world-map-debug-menu-renderer-7280-bytes) · [entity tick `FUN_801DA51C`](#fun_801da51c---world-map-entity-tick)
 
 **Entity / encounter SM**
-- [Encounter-record installation](#encounter-record-installation) · [clean-room port](#clean-room-port---both-overworld-and-field) · [NPC dialogue text source](#npc-dialogue-text-source)
+- [Encounter-record installation](#encounter-record-installation) · [from-scratch port](#from-scratch-port---both-overworld-and-field) · [NPC dialogue text source](#npc-dialogue-text-source)
 
 **Overworld player + scenes**
 - [Player movement + region-keyed encounters](#overworld-player-movement--region-keyed-encounters) · [collision / walkability](#overworld-collision--walkability) · [not one walk component](#the-overworld-is-not-one-walk-component) · [camera-relative movement remap](#camera-relative-movement-remap) · [axis convention](#overworld-axis-convention) · [boot-path seeding](#boot-path-seeding)
@@ -893,10 +893,10 @@ at `0x8007BD0C` is the input to the battle-scene loader (`FUN_800520F0`); the
 adjacent byte at `0x8007BD11` is a battle-data PROT-id selector that picks
 between PROT entries `0x367` and `0x36D`.
 
-#### Clean-room port - both overworld and field
+#### From-scratch port - both overworld and field
 
 The same SM serves overworld entities **and** field-resident carriers. The
-clean-room port ([`legaia_engine_vm::world_map::step`]) is host-driven, so
+from-scratch port ([`legaia_engine_vm::world_map::step`]) is host-driven, so
 `legaia_engine_core::World` ticks it in two modes:
 
 - `SceneMode::WorldMap` via `tick_world_map` (roaming-encounter zones / town
@@ -917,7 +917,7 @@ clean-room port ([`legaia_engine_vm::world_map::step`]) is host-driven, so
   MAN actor-placement partition, and the field-VM bytecode that advances its
   state, remain open (see [`reference/open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md)).
 
-The clean-room engine ports this SM as `legaia_engine_vm::world_map::step`
+The from-scratch engine ports this SM as `legaia_engine_vm::world_map::step`
 (host trait `WorldMapEntityHost`). `legaia_engine_core::World` drives one
 `WorldMapEntityCtx` per installed overworld entity each `SceneMode::WorldMap`
 tick: the Idle state's encounter (countdown reaches zero with encounters
@@ -933,7 +933,7 @@ via `install_world_map_entities_with_configs`):
 - `EncounterZone { formation_id }` - the entity spawns its own formation when
   it fires, instead of the map-wide shared one.
 - `MinigameDoor { sub_id }` - engaging the entity
-  (`World::engage_world_map_entity`, the clean-room stand-in for retail's
+  (`World::engage_world_map_entity`, the from-scratch stand-in for retail's
   player-position-in-zone trigger) drives the SM to its transition state, whose
   arm arms the **mode-24 minigame door warp** (`World::arm_minigame_warp` +
   `pending_minigame_warp`) exactly as the field-VM `0x3E` arm and the walk-touch
@@ -1007,7 +1007,7 @@ lock) and `World::tick`'s world-map arm steps the timeline whenever one is activ
 
 Several more `+0x54`-keyed actor state machines share the world-map / field
 overlay band (all `ctx[+0x54]` = SM phase, `ctx[+0x9e]` = a vsync accumulator,
-`ctx[+0x10] |= 8` = retire). They are dumped but not clean-room ported - each
+`ctx[+0x10] |= 8` = retire). They are dumped but not from-scratch ported - each
 is interwoven with menu-prompt, warp, or GTE-render infrastructure that does
 not factor into `engine-vm` cleanly:
 
@@ -1202,7 +1202,7 @@ roll. `tick_world_map` walks the player actor from the held d-pad
 `World::WORLD_MAP_PLAYER_SPEED` units/frame) and, on each 128-unit tile the
 player crosses (`World::live_world_map_tick`, mirroring the field
 `live_field_tick`), rolls the scene's region-keyed encounter table
-(`World::set_world_map_regions`). That table is the clean-room port of
+(`World::set_world_map_regions`). That table is the from-scratch port of
 `FUN_801D9E1C` ([`region_encounter`](../formats/encounter.md#engine-port-region-keyed-roll)):
 the player's tile selects the first region whose AABB contains it, the region's
 rate increment depletes a step counter, and a `<= 0` counter rolls a formation
@@ -2288,7 +2288,7 @@ surfaces the [`FieldEvent::WorldMapTransition`] with the portal's target map and
 the host loads the destination. Only `Idle` portals are engaged (a portal fires
 once per visit; standing on the tile doesn't re-trigger). NPCs are **not**
 auto-engaged - they are talk-to, driven by the SM's idle-interact path, not
-walk-onto. The clean-room stand-in for retail's per-entity
+walk-onto. The from-scratch stand-in for retail's per-entity
 player-position-in-zone check; the region table (the random-encounter driver)
 is the other half of overworld gameplay, fully boot-path seeded.
 
@@ -2428,7 +2428,7 @@ The persisted angle (`_DAT_801F3518`) is stored **before** the loop, so it
 advances only by `tick * step` per call - the per-row `+= 0x10` is loop
 scratch and never written back.
 
-Ported clean-room as `legaia_engine_vm::world_map_horizon::emit_horizon`,
+Ported from-scratch as `legaia_engine_vm::world_map_horizon::emit_horizon`,
 driven from the world-map controller's gate consumer
 (`WorldMapController::run_horizon_emitter`).
 
@@ -2615,7 +2615,7 @@ runs a different switch - on `actor[+0x56]` (render mode `1..0xB`):
     from the 6692-byte motion bytecode VM `FUN_80038158`). The **multi-
     primitive** default shape: walks the source record and emits a batch of
     gouraud/textured `POLY` packets (`0x24`-word stride) into the prim pool.
-    Large GTE/GP0 emitter; document-only for the same clean-room reason.
+    Large GTE/GP0 emitter; document-only for the same port-boundary reason.
 - **case 5** (full TMD). Iterates the mesh chain at `actor[+0x44]`
   (`puVar5[0]` = count, `puVar5[1..n]` = mesh pointers) and per
   entry calls:
@@ -2684,7 +2684,7 @@ overlay's `FUN_801D7EA0` and the 0897 field overlay's
 
 The `/world-overview/` page in the static site renders each kingdom's
 landmark layer in real-time WebGL 3D from a disc image. Its docs live
-in a sibling file because the viewer is a clean-room deliverable
+in a sibling file because the viewer is a from-scratch deliverable
 distinct from the retail subsystem analysis above:
 
 - [`world-overview-viewer.md`](world-overview-viewer.md) - layout

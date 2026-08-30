@@ -13,7 +13,7 @@
     <dt>Code hosts</dt><dd>SCUS rodata gap <code>0x8007AB38</code> (1028 B), the SCUS arena (652 B in four regions), reference-free dead runs inside overlays 0898 / 0899 / 0958, the <code>DMY.DAT</code> annex</dd>
     <dt>Detour shape</dt><dd>Two words at the hook site become <code>j routine</code> + <code>nop</code>; the routine replays the two displaced instructions and jumps back</dd>
     <dt>Guards</dt><dd>Every hook word must match the US build; every landing zone must be all-zero, outside every known table, and read-watch-verified unreferenced</dd>
-    <dt>Confidence</dt><dd>Confirmed: disc oracles pin every byte; the MIPS hooks are additionally verified by emulator playtest (the clean-room engine cannot execute them)</dd>
+    <dt>Confidence</dt><dd>Confirmed: disc oracles pin every byte; the MIPS hooks are additionally verified by emulator playtest (the from-scratch engine cannot execute them)</dd>
   </dl>
 </section>
 
@@ -248,7 +248,7 @@
     <tbody>
       <tr><td>Disc-free unit tests</td><td><code>crates/lzs</code>, <code>crates/iso</code>, <code>crates/patcher</code></td><td>The encoder round-trips; sector encoding is idempotent and address-independent; the planner is seed-deterministic; hook stubs behave under <code>mips_sim</code>; a synthetic disc round-trips through the disc &rarr; ISO &rarr; PROT chain.</td></tr>
       <tr><td>Disc round-trip oracles</td><td><code>crates/patcher/tests/*_real.rs</code></td><td>Patch a feature onto a scratch copy of a real disc, re-decode off the patched image, assert the multiset or invariant is preserved, every touched sector is EDC/ECC-valid, neighbours are untouched, and a fixed seed is byte-deterministic. For code hooks: the stock words match, the detour and routine decode as the hand-assembled bytes, and the build guard refuses an unknown layout.</td></tr>
-      <tr><td>Runtime oracles</td><td><code>crates/engine-core/tests/*_randomizer_runtime_e2e.rs</code></td><td>Drive the clean-room engine's own grant / spawn / warp kernel over the patched bytes - chest, drop, encounter, steal, door - so a patch a savestate would mask (the scene or archive already resident in RAM) is observed. The engine cannot execute injected MIPS, so hook features are covered by the disc oracle plus an emulator playtest instead.</td></tr>
+      <tr><td>Runtime oracles</td><td><code>crates/engine-core/tests/*_randomizer_runtime_e2e.rs</code></td><td>Drive the from-scratch engine's own grant / spawn / warp kernel over the patched bytes - chest, drop, encounter, steal, door - so a patch a savestate would mask (the scene or archive already resident in RAM) is observed. The engine cannot execute injected MIPS, so hook features are covered by the disc oracle plus an emulator playtest instead.</td></tr>
     </tbody>
   </table>
   <details class="disclosure">

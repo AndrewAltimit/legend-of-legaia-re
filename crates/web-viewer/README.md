@@ -86,7 +86,7 @@ sim-tick clip cadence, and the opening-chain staging below.
 
 ## Scene BGM (`runtime`)
 
-The play page plays the scene's music through the clean-room SPU + sequencer,
+The play page plays the scene's music through the from-scratch SPU + sequencer,
 the browser twin of the native `AudioBgmDirector`. `audio_init()` opens a
 `legaia_engine_audio::WebAudioOut` (must run inside a user gesture - browser
 autoplay policy) and stages the scene's VAB bank; every `tick_frame()` then
@@ -734,7 +734,7 @@ queue that yields to the orbit view between items.
 `LegaiaMinigames` is a standalone `#[wasm_bindgen]` class (its own
 `load_disc`, no canvas) that runs all five of the game's side-games in the
 browser for `site/minigames.html`. It is a thin JSON shell over the
-clean-room rules engines in `legaia-engine-core` - the beat clock + judge
+from-scratch rules engines in `legaia-engine-core` - the beat clock + judge
 (`dance`), the rock-paper-scissors duel (`baka_fighter`), the reel state
 machine + payout eval (`slot_machine`), the cast/tension/catch loop
 (`fishing`), and the dome's four-turn deal/commit/resolve (`muscle_dome`). It
@@ -798,7 +798,7 @@ windows with the pose blits replayed (`dance_face_rgba`; dancer 0 = Noa's
 field atlas, PROT 0874 §2), the SFX cue bank (PROT 1228 descriptors +
 the PROT 1231 sample VAB - a TOC-tail entry) plus the direct-keyed hit
 stings (`dance_sting_pcm`), and the real BGM pair rendered through the
-clean-room SPU (`dance_bgm_pcm_i16`). Consumed by
+from-scratch SPU (`dance_bgm_pcm_i16`). Consumed by
 `site/js/minigame-dance.js`; see `docs/subsystems/minigame-dance.md`.
 Disc-gated oracle: `tests/minigames_dance_api.rs`.
 

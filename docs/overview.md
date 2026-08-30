@@ -1,13 +1,13 @@
 # Overview
 
-Legend of Legaia is a 1998 PlayStation 1 RPG by Contrail / Prokion / SCEI. This repository is a clean-room reverse-engineering project covering the disc, every asset format, the runtime engine, and a Rust reimplementation that runs the game from a user-supplied disc image.
+Legend of Legaia is a 1998 PlayStation 1 RPG by Contrail / Prokion / SCEI. This repository is a playable port and modding hub for the game, standing on Ghidra-traced reverse engineering of the retail disc: the disc, every asset format and the runtime engine are documented, and a from-scratch Rust engine runs the game from a user-supplied disc image.
 
 The work runs on two coordinated tracks under one repo (`-re` = both *reverse-engineering* and *reimplementation*):
 
 1. **Asset preservation + format docs.** Extract every asset on the disc, document every format with Ghidra-traced provenance, build round-trip parsers.
-2. **Engine reimplementation.** Clean-room Rust port of the engine - render via winit + wgpu, audio via the existing XA + VAB decoders, optional WASM target. End-user model: ship the engine binary, the user supplies the disc image, the engine extracts and runs.
+2. **Engine reimplementation.** From-scratch Rust port of the engine - render via winit + wgpu, audio via the existing XA + VAB decoders, optional WASM target. End-user model: ship the engine binary, the user supplies the disc image, the engine extracts and runs.
 
-The reimplementation is **clean-room from documented specs and decompile-then-rewrite logic** - not a static recompilation of `SCUS_942.54`. Sony IP (the executable, ROM contents, asset bytes) is **never** committed to this repo; `extracted/` is gitignored and disc-gated tests skip when `LEGAIA_DISC_BIN` is unset. See the root [`README.md`](../README.md#you-bring-the-disc) for the full legal position.
+The reimplementation is **fresh Rust written from the format docs and the Ghidra-traced dumps** - not a decompilation project, and not a static recompilation of `SCUS_942.54`. Sony IP (the executable, ROM contents, asset bytes) is **never** committed to this repo; `extracted/` is gitignored and disc-gated tests skip when `LEGAIA_DISC_BIN` is unset. See the root [`README.md`](../README.md#you-bring-the-disc) for the full legal position.
 
 ## How the layers stack
 

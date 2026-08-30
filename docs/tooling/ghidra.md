@@ -199,7 +199,7 @@ Every script needs the `# @runtime Jython` header line (with `# @category Legaia
 
 | Script | Purpose |
 |---|---|
-| `apply_known_symbols.py` | Re-apply this project's pinned function names to a fresh import of `SCUS_942.54`. Reads the curated `(address, name, role-comment)` table in `known_symbols.py` and names each function + sets a one-line PLATE comment, so the asset/loader/CD/dispatch cluster is readable immediately instead of a wall of `FUN_xxxxxxxx`. The clean-room counterpart to a PsyQ FidDB pass (replays our own RE labels, no external SDK). SCUS-resident (`0x80010000..0x8007C000`) only - RAM overlays alias by address, so naming them blind would mislabel. Run with `-process SCUS_942.54 -noanalysis -postScript /scripts/apply_known_symbols.py`. |
+| `apply_known_symbols.py` | Re-apply this project's pinned function names to a fresh import of `SCUS_942.54`. Reads the curated `(address, name, role-comment)` table in `known_symbols.py` and names each function + sets a one-line PLATE comment, so the asset/loader/CD/dispatch cluster is readable immediately instead of a wall of `FUN_xxxxxxxx`. The from-scratch counterpart to a PsyQ FidDB pass (replays our own RE labels, no external SDK). SCUS-resident (`0x80010000..0x8007C000`) only - RAM overlays alias by address, so naming them blind would mislabel. Run with `-process SCUS_942.54 -noanalysis -postScript /scripts/apply_known_symbols.py`. |
 
 **Per-function dumps**
 

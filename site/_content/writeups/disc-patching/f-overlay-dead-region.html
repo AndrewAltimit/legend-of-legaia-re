@@ -15,7 +15,7 @@
     <dt>Host</dt><dd>Menu overlay, PROT 0899, load base <code>0x801CE818</code>; dead region <code>0x801E74E0</code>&ndash;<code>0x801E83E0</code></dd>
     <dt>Picker edits</dt><dd>Row clamp 3&rarr;4, box height <code>0x26</code>&rarr;<code>0x34</code>, a label-draw detour, a confirm-dispatch detour, a per-frame entry detour</dd>
     <dt>The swap</dt><dd>Character record Seru id at <code>+0x13D</code>, level at <code>+0x161</code>; records at <code>0x80084708</code>, stride <code>0x414</code>; count never changes</dd>
-    <dt>Offers</dt><dd>64-bucket schedule, a pure function of the seed; kernel <code>legaia_asset::seru_trade</code> shared with the clean-room engine</dd>
+    <dt>Offers</dt><dd>64-bucket schedule, a pure function of the seed; kernel <code>legaia_asset::seru_trade</code> shared with the from-scratch engine</dd>
     <dt>Edit class</dt><dd>In place, same size, entirely inside 0899 plus a 24-byte engine-facing config blob</dd>
     <dt>Confidence</dt><dd><span class="tag tag-done">Confirmed</span> - hardware-confirmed render &rarr; slide &rarr; cursor &rarr; confirm &rarr; swap</dd>
     <dt>Oracle</dt><dd><code>seru_trade_real.rs</code></dd>
@@ -104,7 +104,7 @@
     <li><code>vendor_offset</code> is derived from the armed shop record (stock count + ids + name bytes, mod 64), so every merchant shows its own offer while sharing one on-disc schedule.</li>
     <li>The bucket expands to one line per member who owns the wanted Seru, excluding anyone who already owns the give-back. Ids are the player Seru-magic block <code>0x81..=0x95</code>.</li>
   </ul>
-  <p>The same kernel feeds the clean-room engine through a 24-byte <code>SeruTradeConfig</code> blob in the executable (variant J) - the bridge from the disc patcher to the <a href="../../subsystems/engine.html">reimplementation</a>, and inert on real hardware.</p>
+  <p>The same kernel feeds the from-scratch engine through a 24-byte <code>SeruTradeConfig</code> blob in the executable (variant J) - the bridge from the disc patcher to the <a href="../../subsystems/engine.html">reimplementation</a>, and inert on real hardware.</p>
 </section>
 
 <section class="doc-section" id="how-we-know">

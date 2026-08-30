@@ -433,7 +433,7 @@ name entry). So the driver holds `_DAT_8007B458 = 0` (selecting the accept
 option, equivalent to navigating to it) and pulses CROSS. The opening then plays
 ~1300 more frames, the engaged flag clears, and the driver checkpoints first
 free-roam in `town01`. Catalogued as `s3_rimelm_freeroam`; re-decode/resume via
-`run_probe.sh --scenario s3_rimelm_freeroam`. (The clean-room mirror of this
+`run_probe.sh --scenario s3_rimelm_freeroam`. (The from-scratch mirror of this
 screen is `legaia_engine_core::name_entry`.) Encounter timing (S5) is
 RNG-sensitive - keep it a short standalone segment.
 

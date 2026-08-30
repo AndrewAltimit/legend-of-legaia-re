@@ -70,7 +70,7 @@ the images can settle:
 - an **address** claim - *no routine begins at this VA*: `worklist_interior`,
   `worklist_phantom`, `worklist_data`, `worklist_shared_tail`,
   `worklist_duplicate`, `worklist_misbased_print`, `worklist_uncertain`;
-- a **scope** claim - *the routine is real, and the clean-room port covers it
+- a **scope** claim - *the routine is real, and the from-scratch port covers it
   another way*: every unprefixed section, from `libgte` and `bios` through
   `prim_builder`, `mesh_submit`, `noop_frame` and `noop_stubs`;
 - a **reachability** claim - *the routine is real, the port does not cover it,

@@ -275,7 +275,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     Legaia has five minigames - <strong>the Vidna casino slot machine, Noa's dance in Sol Tower,
     Baka Fighter, fishing at the Buma and Vidna ponds, and the Muscle Dome arena</strong>. All
     five are <a href="#play">playable right here in your browser</a>: the game's own rules,
-    rewritten clean-room, playing against the real tables read out of your disc. Below the
+    rewritten from-scratch, playing against the real tables read out of your disc. Below the
     player is a fan's guide to Sol Tower, its prize counters and its side-quests.
   </p>
 </header>
@@ -948,7 +948,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   <h2>How these run</h2>
   <p>
     Each minigame's runtime - per-frame state machine, scoring math, data tables - is traced
-    from the game's overlay code and rewritten clean-room in Rust. The same engine runs
+    from the game's overlay code and rewritten from-scratch in Rust. The same engine runs
     natively in <code>play-window</code> (dance <code>K</code>, fishing <code>L</code>, slot
     machine <code>O</code>, Baka Fighter <code>B</code>, Muscle Dome <code>M</code>) and here
     in the browser as WebAssembly. What each one is, in one line:
@@ -1040,7 +1040,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
    * disc-pinned: the duel overlay starts music_01 slot 55 ("Sol disco
    * fever") itself via FUN_801CF00C, and the slot machine starts nothing -
    * it inherits the casino floor's "Sol casino" track (koin1's op-0x35 BGM
-   * 2018). Both render once per game through the clean-room SPU + sequencer
+   * 2018). Both render once per game through the from-scratch SPU + sequencer
    * off the visitor's disc, then loop as a WebAudio buffer (the render
    * window is shorter than either song). Muting or leaving the game's tab
    * stops the loop. */
@@ -1058,7 +1058,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
      *  - slot: the overlay starts nothing; it inherits the casino floor
      *    (0543_koin1 op-0x35 BGM 2018 = slot 18, "Sol casino"). 2018 is read
      *    straight off the scene script, so it is already in id space.
-     * Both render through the clean-room SPU and loop seamlessly (MgBgm2). The
+     * Both render through the from-scratch SPU and loop seamlessly (MgBgm2). The
      * dance carries its own jukebox inside js/minigame-dance.js. */
     /* Muscle Dome reuses the battle engine, so it plays a battle theme: global
      * BGM 2026 = music_01 slot 26 (M26B1, the standard random-battle theme;
@@ -1162,7 +1162,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
           'than beeping at you. ') +
       (danceR.bgmOk()
         ? 'The <b>music</b> is the overlay’s own SEQ+VAB entry, rendered through the ' +
-          'clean-room SPU and looped; the <b>Track</b> selector is a jukebox over the same ' +
+          'from-scratch SPU and looped; the <b>Track</b> selector is a jukebox over the same ' +
           '<code>music_01</code> bank. '
         : 'The BGM entry did not decode from this image, so the run plays without music. ') +
       (danceR.bodyOk()
@@ -1384,7 +1384,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
    *
    * Every cue is decoded from the visitor's disc: the SFX descriptor table
    * out of SCUS, the class-2 sound bank out of PROT 869 (the same bank the
-   * duel overlay's init loads), rendered through the clean-room SPU. The
+   * duel overlay's init loads), rendered through the from-scratch SPU. The
    * duel's four cue ids are the ones the retail overlay writes into the
    * cue ring `_DAT_8007B6D8` - hit (`FUN_801D3B18`), the menu blips and the
    * tally tick (`FUN_801D239C`). The page names events; the ids + their
@@ -2060,7 +2060,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
           '(PROT&nbsp;1198). '
         : 'The machine’s <b>sound did not decode</b> from this image, so the page is silent ' +
           'rather than beeping at you. ') +
-      'The <b>music</b> is the casino floor’s own track, mixed through the clean-room SPU off ' +
+      'The <b>music</b> is the casino floor’s own track, mixed through the from-scratch SPU off ' +
       'your disc and looped from the first spin. ' +
       '<br><br><b>Measured rather than read:</b> the cabinet body (its emitter is still ' +
       'unpinned — it is <em>not</em> the casino room’s geometry — so its edges and colours are ' +

@@ -314,7 +314,7 @@ wait-op instead reads its flag operand as an **i16**, whose sign-extended
 negatives reach down to `0x80085758 - 0x1000 = 0x80084758`. Neither window
 includes `0x8007B8C2` (it lies below both lower bounds) - there is no
 out-of-bounds flag-index path from script bytecode to the build-mode selector or
-the debug-menu enable. A clean-room engine should treat both as build-time
+the debug-menu enable. A from-scratch engine should treat both as build-time
 constants and keep its flag-bank writes bounded.
 
 ## PSX scratchpad (`0x1F800000-0x1F8003FF`)

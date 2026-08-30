@@ -738,7 +738,7 @@ interpretation is falsified). The WASM exports
 `slot4_wireframe_bounds`) remain available to re-enable a slot-4 draw
 if a future RE pass identifies the correct interpretation.
 
-**Live-engine inspection overlay.** The clean-room engine decodes slot 4
+**Live-engine inspection overlay.** The from-scratch engine decodes slot 4
 for every world-map scene onto `SceneResources::world_map_slot4` (resolved
 only for `SceneLoadKind::WorldMap`; `None` everywhere else). When
 `LEGAIA_WORLDMAP_SLOT4=1` is set, `legaia-engine play-window` builds a

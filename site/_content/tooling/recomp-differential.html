@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; recomp differential</div>
   <h1>Recomp differential oracle</h1>
-  <p class="lede">When the engine's camera swings a beat late or an NPC turns the wrong way, "it looks off" is not a bug report. This harness turns it into one: the retail game (run natively as a <strong>static recomp</strong>) and the clean-room engine both write the same per-frame state trace in retail units, and a diff names the <em>first frame</em> on which any channel - camera pose, player position, an NPC's heading - departs from retail. A note-level variant does the same for music.</p>
+  <p class="lede">When the engine's camera swings a beat late or an NPC turns the wrong way, "it looks off" is not a bug report. This harness turns it into one: the retail game (run natively as a <strong>static recomp</strong>) and the from-scratch engine both write the same per-frame state trace in retail units, and a diff names the <em>first frame</em> on which any channel - camera pose, player position, an NPC's heading - departs from retail. A note-level variant does the same for music.</p>
 </header>
 
 <section class="doc-section" id="at-a-glance">
@@ -21,7 +21,7 @@
   <h2>What this solves</h2>
   <p>The emulator harnesses (<a href="pcsx-redux-automation.html">PCSX-Redux</a>, <a href="mednafen-automation.html">mednafen</a>) observe retail through breakpoints and save-state diffs: precise, but slow and one address at a time. The recomp path reads a dozen retail globals every frame at full speed, so hundreds of aligned frames from both sides cost seconds. Reach for it when a scene <em>plays</em> differently in the engine and you need the first diverging quantity and frame.</p>
   <figure class="overlay-strip">
-    <svg viewBox="0 0 860 210" width="100%" style="max-width:860px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Two lanes: the retail recomp and the clean-room engine each emit a JSONL trace in retail units, and trace_diff.py aligns them on the first camera cut and reports the first divergent frame per channel">
+    <svg viewBox="0 0 860 210" width="100%" style="max-width:860px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Two lanes: the retail recomp and the from-scratch engine each emit a JSONL trace in retail units, and trace_diff.py aligns them on the first camera cut and reports the first divergent frame per channel">
       <style>
         .rd-box { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.3; }
         .rd-soft { fill: var(--bg-raised); stroke: var(--border); stroke-width: 1.1; }
@@ -34,7 +34,7 @@
       <text x="105" y="52" text-anchor="middle" class="rd-lab">Retail recomp</text>
       <text x="105" y="70" text-anchor="middle" class="rd-sub">TCP debug server</text>
       <rect x="20" y="130" width="170" height="52" class="rd-box"/>
-      <text x="105" y="152" text-anchor="middle" class="rd-lab">Clean-room engine</text>
+      <text x="105" y="152" text-anchor="middle" class="rd-lab">From-scratch engine</text>
       <text x="105" y="170" text-anchor="middle" class="rd-sub">BootSession</text>
       <path d="M190,56 L260,56" class="rd-arr"/>
       <path d="M190,156 L260,156" class="rd-arr"/>

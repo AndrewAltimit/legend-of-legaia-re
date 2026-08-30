@@ -440,7 +440,7 @@ Two properties of the map are **not observable on the retail disc**, so no disc-
 
 ## Engine playback
 
-The clean-room engine plays this stream for battle actors. At battle entry the
+The from-scratch engine plays this stream for battle actors. At battle entry the
 shell decodes each monster's idle clip (`idle_animation`, action 0) into a
 `legaia_engine_core::battle_anim::MonsterAnimPlayer` - an 8.8 fixed-point loop
 cursor whose `tick()` interpolates the keyframes (translation linear, rotation

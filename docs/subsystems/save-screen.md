@@ -464,7 +464,7 @@ The message strings live contiguously at `0x801CF3B4..`
 (`write error` / `open ok` / `Format End` / `Format No Card` /
 `Format Error`). This is memory-card-hardware orchestration - it drives
 the libcd read / write / format lifecycle through `FUN_801E3294` - so it
-is documented, not ported: the clean-room engine persists through the
+is documented, not ported: the from-scratch engine persists through the
 `legaia_save` LGSF path, not a PSX card op sequencer.
 
 ### The `bu` file-I/O layer under the sequencer
@@ -809,7 +809,7 @@ and that Start stays inert in a battle.
 
 The memory-card write calls through `_DAT_8007B44C` (PSX LibC card handle set
 from `DAT_801C6EA0`). The in-engine LGSF format (`legaia_save::SaveFile` with
-`SaveExt`) is the clean-room counterpart. The `crates/save` constants
+`SaveExt`) is the from-scratch counterpart. The `crates/save` constants
 `RETAIL_STORY_FLAGS_OFFSET`, `RETAIL_INVENTORY_OFFSET`, and `SAVE_GAME_DATA_RAM_BASE`
 expose all confirmed offsets; use `read_retail_story_flags` / `read_retail_inventory`
 to slice them from a raw SC block.

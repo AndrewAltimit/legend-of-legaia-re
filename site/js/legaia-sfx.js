@@ -7,7 +7,7 @@
  * PROT -> the VAB each cue's own `+4` category names (slot 0 = the PROT 868
  * system bank behind the shared UI blips, slot 2 = the PROT 869 class-2 bank
  * behind the battle / duel hits), then each cue's descriptor through the
- * clean-room SPU into PCM. Nothing ships with the site; nothing is uploaded.
+ * from-scratch SPU into PCM. Nothing ships with the site; nothing is uploaded.
  *
  * This module is the browser half: it owns one AudioContext, caches an
  * AudioBuffer per cue, and plays a cue by *event name* so pages never

@@ -236,7 +236,7 @@ seq json    <PATH>    # full parse as JSON
 ```
 
 Playback is the engine side: `legaia_engine_audio::Sequencer` consumes
-a parsed `Seq` + a loaded `VabBank` and drives the clean-room SPU
+a parsed `Seq` + a loaded `VabBank` and drives the from-scratch SPU
 model. See `docs/subsystems/audio.md` → "Engine-audio model".
 
 ## See also

@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; legaia lzs compression</div>
   <h1>Legaia LZS compression <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">Every time the game loads a town, a battle arena, a monster or a menu texture, the first thing it does is unpack it. Almost everything on the disc - meshes, textures, scene scripts, the whole monster archive - is squeezed with one small compressor so that more of the game fits on a single CD and streams off it faster. That compressor is a Legaia-flavoured LZSS: the classic scheme that replaces repeated byte runs with short back-references into a sliding window of recent output. It is reverse-engineered byte-for-byte from the executable's decompressor (<a href="#how-we-know">how we know</a>); the clean-room implementation also carries the encoder the disc patcher needs to put edited assets back.</p>
+  <p class="lede">Every time the game loads a town, a battle arena, a monster or a menu texture, the first thing it does is unpack it. Almost everything on the disc - meshes, textures, scene scripts, the whole monster archive - is squeezed with one small compressor so that more of the game fits on a single CD and streams off it faster. That compressor is a Legaia-flavoured LZSS: the classic scheme that replaces repeated byte runs with short back-references into a sliding window of recent output. It is reverse-engineered byte-for-byte from the executable's decompressor (<a href="#how-we-know">how we know</a>); the from-scratch implementation also carries the encoder the disc patcher needs to put edited assets back.</p>
 </header>
 
 <section class="doc-section" id="at-a-glance">

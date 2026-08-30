@@ -93,7 +93,7 @@
   <details class="disclosure" id="relocation-sentinel">
     <summary>The <code>flags</code> word as relocation sentinel</summary>
     <div class="disclosure-body">
-      <p>The pointer-fixup routine early-returns when <code>flags == 1</code> and sets <code>flags = 1</code> before walking the object table, so re-registering an already-relocated TMD is a no-op. Retail depends on this: an actor's per-object render table can be rebuilt from a TMD that may or may not have been relocated yet. A <code>1</code> on disc would make the game skip a relocation the mesh still needs. The clean-room port parses to typed offsets instead of patching in place, so it does not reimplement the fixup.</p>
+      <p>The pointer-fixup routine early-returns when <code>flags == 1</code> and sets <code>flags = 1</code> before walking the object table, so re-registering an already-relocated TMD is a no-op. Retail depends on this: an actor's per-object render table can be rebuilt from a TMD that may or may not have been relocated yet. A <code>1</code> on disc would make the game skip a relocation the mesh still needs. The from-scratch port parses to typed offsets instead of patching in place, so it does not reimplement the fixup.</p>
     </div>
   </details>
 </section>

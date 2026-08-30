@@ -28,7 +28,7 @@ Representative confusables (each dumped under several non-dome overlays, so **sh
 Two entries are dumped **only** under `overlay_muscle_dome`, both render-track and
 both dome-vs-shared unconfirmed. `FUN_801f2410` (593 instructions, 31 GPU-primitive
 builds, reads the shared battle ctx `_DAT_8007bd24`) is a **HUD/number emitter** -
-documented-not-ported by the clean-room policy, its status unconfirmed precisely
+documented-not-ported by the port boundary, its status unconfirmed precisely
 because the context it draws from is the shared battle one. `FUN_801f2e10` is an
 **oriented-quad "beam" emitter** (see [Key functions](#key-functions)); it
 references no dome ctx at all, so its status is likewise open. The genuinely
@@ -990,7 +990,7 @@ The deck tables are decoded from the battle-overlay rodata (parser
 
 ## Engine port
 
-The match rules run clean-room as `legaia_engine_core::muscle_dome`
+The match rules run from-scratch as `legaia_engine_core::muscle_dome`
 (`MuscleDomeSession`): the four-direction deal (deck command ids +
 per-fighter AP costs), the budget-gated commit into the `+0x1df`-model queue
 (`FUN_801d388c` case `0xb` accounting: reject overspend, debit `ctx+0x6dc`,

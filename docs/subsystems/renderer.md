@@ -1,6 +1,6 @@
 # Renderer (Legaia TMD)
 
-How the game draws its 3D meshes, and how the clean-room port reproduces that.
+How the game draws its 3D meshes, and how the from-scratch port reproduces that.
 
 **Retail side.** The renderer is `FUN_8002735C` - 60 GTE ops, driven by a
 per-mode descriptor table at `DAT_8007326C` that says how each primitive group
@@ -278,7 +278,7 @@ GTE transform.
 ## Other SCUS-band emitters (documented, not ported)
 
 Beyond the two 3D TMD renderers and the gradient-tile primitive, the SCUS render
-band carries a set of smaller GTE/GPU emitters. The clean-room engine reproduces
+band carries a set of smaller GTE/GPU emitters. The from-scratch engine reproduces
 all of these through its own wgpu path, so they are **documented, not ported** -
 their per-address roles live in
 [`reference/functions.md` § Renderer / GPU primitives](../reference/functions/renderer.md#renderer--gpu-primitives):
@@ -374,7 +374,7 @@ waiting on a caller.
 ## Per-primitive TMD render helpers (`FUN_8002735C` family)
 
 Three helpers hang off the main TMD renderer `FUN_8002735C`, documented but not
-ported (the clean-room engine projects and rasterises through wgpu):
+ported (the from-scratch engine projects and rasterises through wgpu):
 
 - **`FUN_80027C6C`** - the per-primitive GTE emitter. Loads a group's vertices
   into the GTE (`lwc2`), runs `RTPT` (`cop2 0x280030`), reads the group mode byte
@@ -1702,7 +1702,7 @@ including `SZ3 == 0`) the quotient saturates to `0x1FFFF` and the divide-overflo
 FLAG bit (17) is set instead of dividing; elsewhere the reciprocal diverges from
 an exact divide by ±1 (up to a couple of units for extreme numerators near the
 overflow boundary). The seed table is *computed* from the published algorithm
-(no$psx "GTE Division Inaccuracy"), not copied Sony data — the same clean-room
+(no$psx "GTE Division Inaccuracy"), not copied Sony data — the same from-scratch
 provenance class as the SPU Gaussian / reverb tables. These sites hold MAC/IR in
 q19.12 (4096× the hardware IR/SZ scale) and reduce with a `>>12` before the
 divide.

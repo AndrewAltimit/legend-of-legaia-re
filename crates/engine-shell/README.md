@@ -1,6 +1,6 @@
 # legaia-engine-shell
 
-Top-level driver for the clean-room engine reimplementation (Track 2). This
+Top-level driver for the from-scratch engine reimplementation (Track 2). This
 is the crate that turns extracted-disc bytes into a running, rendered scene:
 it composes the per-crate primitives - `legaia-engine-core` (world / scene
 host / camera), `legaia-engine-render` (wgpu + software PSX VRAM), and
@@ -97,7 +97,7 @@ to a toggle costs the player that pad button (`V` is Square in the default
 table, which is what an earlier mute binding took away).
 
 In `play-window`, five minigames run as suspending scene modes driven by their
-clean-room rules engines. Each shows its own HUD and restores the interrupted
+from-scratch rules engines. Each shows its own HUD and restores the interrupted
 scene when it ends; press the same key again to quit.
 
 | Key | Minigame | Rules engine | Table source | Controls |
@@ -117,7 +117,7 @@ Dome win credits the reward Seru through the capture kernel.
 In `play-window`, when the booted disc was randomized with `--seru-trade`,
 talking to a shop merchant (the field-VM op-`0x49` trigger) shows a top-level
 **Buy / Sell / Trade / Exit** menu; the **Trade** row opens that vendor's
-seru-for-seru offers (pick an offer, confirm yes/no) - the clean-room UI for the
+seru-for-seru offers (pick an offer, confirm yes/no) - the from-scratch UI for the
 randomizer's swaps, keyed to the shop you're standing in.
 
 ### Binary source layout
@@ -142,7 +142,7 @@ See the disc-gated-test note in the top-level `CLAUDE.md`.
 
 ## See also
 
-- [`docs/subsystems/engine.md`](../../docs/subsystems/engine.md) - clean-room
+- [`docs/subsystems/engine.md`](../../docs/subsystems/engine.md) - from-scratch
   engine architecture and boundaries.
 - [`docs/subsystems/boot.md`](../../docs/subsystems/boot.md) - the retail
   boot sequence this mirrors.

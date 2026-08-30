@@ -19,7 +19,7 @@ The sub-opcode is bounds-checked before the indirect jump:
 - `lh v1, 0x2(s3)` loads it sign-extended, then `sltiu v1, 0x3D` gates the `jr` - out-of-range values branch to the dispatcher's plain return (`size = 1`).
 - Because the compare is *unsigned*, the sign-extended `lh` also rejects negative sub-opcodes (they read as huge unsigned values).
 
-So this overlay-escape, despite being an indirect-jump-table dispatch on a bytecode-supplied operand, has **no out-of-bounds-jump path** - a relevant property given the move buffer is partly attacker-influenceable (the self-modifying sub-ops `0x04`/`0x1B`/`0x1E` below write into it). The clean-room port mirrors the guarded return with a `_ => default_arm()` catch-all for any sub-opcode `>= 0x3D`.
+So this overlay-escape, despite being an indirect-jump-table dispatch on a bytecode-supplied operand, has **no out-of-bounds-jump path** - a relevant property given the move buffer is partly attacker-influenceable (the self-modifying sub-ops `0x04`/`0x1B`/`0x1E` below write into it). The from-scratch port mirrors the guarded return with a `_ => default_arm()` catch-all for any sub-opcode `>= 0x3D`.
 
 ### Overlay residency - one copy, in the field overlay only
 
@@ -151,7 +151,7 @@ Both are ordinary **5-halfword** instructions: `[2F][1F|20][dH][dS][dV]`. The si
 
 The earlier reading - that the size-1 return is intentional, and `op[2..]` is deliberately re-read as outer opcode `0x1F` / `0x20` to seed an anim-block update in the same instruction - is **falsified**. It came from the decompiled C, where the exit renders as a label-call and the delay-slot `li` disappears; the same artifact had already produced a wrong size for `0x1E`. There is no density trick here, and the three operand words are the H/S/V deltas rather than a second instruction.
 
-The re-pack is a full 32-bit `sw` (`sw v1,0x0(s0)` at `0x801D3F84`), so the packed word's top byte is cleared rather than preserved. `crates/engine-vm` ships the clean-room `rgb_to_hsv` / `hsv_to_rgb` pair that mirrors the SCUS algorithms exactly.
+The re-pack is a full 32-bit `sw` (`sw v1,0x0(s0)` at `0x801D3F84`), so the packed word's top byte is cleared rather than preserved. `crates/engine-vm` ships the from-scratch `rgb_to_hsv` / `hsv_to_rgb` pair that mirrors the SCUS algorithms exactly.
 
 ### Fourth flag bank (shared with the field VM)
 

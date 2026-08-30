@@ -123,7 +123,7 @@
 
 <section class="doc-section" id="audio">
   <h2>5 &middot; What you hear</h2>
-  <p>Both hosts decode their audio from the disc you supply - no samples ship with the engine or the site. Music is a SEQ played through the clean-room SPU against the scene's own sound bank; sound effects come from the executable's descriptor table plus the resident program bank, and both hosts key them into the <strong>same</strong> SPU the music uses, so a cue shares the voice pool exactly as it does on hardware.</p>
+  <p>Both hosts decode their audio from the disc you supply - no samples ship with the engine or the site. Music is a SEQ played through the from-scratch SPU against the scene's own sound bank; sound effects come from the executable's descriptor table plus the resident program bank, and both hosts key them into the <strong>same</strong> SPU the music uses, so a cue shares the voice pool exactly as it does on hardware.</p>
   <p>Before judging a sound, know its <em>provenance</em>: a cue is either <code>disc</code> (the id is retail's, fired where retail fires it) or <code>site</code> (retail's id there is unpinned, so the port reuses the closest one), and the browser page reports the split per event. The footstep is the clearest example - its timing is the retail cadence, while the cue id it fires is the port's pick.</p>
   <div class="see-also">
     <span class="see-also-label">Reference</span>

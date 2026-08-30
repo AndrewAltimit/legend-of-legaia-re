@@ -309,7 +309,7 @@ position differs from the literal MAN-record decode.
 **Statically resolving these without running the FieldVM is not
 covered by the asset extractor.** The MAN prescript is a per-record
 bytecode that picks a position based on actor type, story-flag state,
-overlay-resident lookup tables. A full clean-room port would need
+overlay-resident lookup tables. A full from-scratch port would need
 the engine-vm field VM driving real actor records.
 
 The practical alternative is a **runtime snapshot capture**:

@@ -1,7 +1,7 @@
 # Recomp differential oracle
 
 A frame-tagged differential harness between the static recomp of the retail
-game and the clean-room engine. Both sides emit the same canonical JSONL
+game and the from-scratch engine. Both sides emit the same canonical JSONL
 state-trace shape in retail units, so a per-channel diff pinpoints the first
 frame where the engine's camera pose, player position, or an NPC's heading
 departs from retail behaviour - the measurement layer for parity work on
