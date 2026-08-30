@@ -83,6 +83,23 @@ separately; `--anim` lists the decoded actions. Formats:
 [battle-data-pack.md](../formats/battle-data-pack.md),
 [monster-animation.md](../formats/monster-animation.md).
 
+## Whole scenes → glTF (Unity / VRChat / Blender)
+
+`legaia-engine export-glb` bakes an entire scene - assembled world map with
+its VRAM-derived texture atlas, one animated `.glb` per NPC, animated props
+(windmills, doors), and a placement manifest:
+
+```bash
+./legaia-engine export-glb --scene town01 --out glb-export
+./legaia-engine export-glb --all-scenes --out glb-export
+```
+
+The files open in Blender or import into Unity; a full VRChat-world kit +
+guide lives in [`scripts/vrchat-world/`](../../scripts/vrchat-world/README.md).
+Reference: [vrchat-world-export.md](../tooling/vrchat-world-export.md). As
+with everything on this page, the output is decoded from your disc - keep
+it local.
+
 Enemy stats are **not** LZS-compressible text you can spot in a hex editor,
 and they are **not** in the player-battle files `0865`/`0866`. A `.BIN` for
 either of those extracted before the entry-size expression was corrected ends
