@@ -156,7 +156,10 @@ behind `legaia-patcher monster-model`.
 
 All three `.glb` exporters share one vertex-colour convention, defined once in
 `gltf_color`: a textured prim's packet word rides `COLOR_0` as the
-`texel * colour / 128` blend factor, an untextured prim's as a `/255` fill, and
+`texel * colour / 128` blend factor, an untextured prim's as a `/255` fill -
+both **sRGB-linearized**, because a glTF viewer multiplies `COLOR_0` in linear
+light while retail multiplies display bytes, and the raw ratio washes dark
+shading out toward gray - and
 materials declare `KHR_materials_unlit` because retail applies no light source.
 The floats exceed 1.0 for words above `0x80` - deliberately; the module doc has
 the reasoning, and `gltf_color::glb_probe` reads an exported `.glb` back so the

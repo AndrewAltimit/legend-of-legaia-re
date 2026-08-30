@@ -155,13 +155,21 @@ under the one convention in `legaia_asset::gltf_color`:
 
 | prim | attribute | over |
 |---|---|---|
-| textured | `colour / 128` | `baseColorTexture` (the atlas) |
-| untextured | `colour / 255` | a white base (the fill) |
+| textured | `srgb_to_linear(colour / 128)` | `baseColorTexture` (the atlas) |
+| untextured | `srgb_to_linear(colour / 255)` | a white base (the fill) |
 
-Two consequences worth stating outright. The divisor differs between the
+Three consequences worth stating outright. The divisor differs between the
 halves, so reading one array for both is a real defect in both directions -
-halving a textured model or doubling an untextured one. And a faithful
-modulation factor **exceeds 1.0** (`0xFF / 128 = 1.99`), which the normalized
+halving a textured model or doubling an untextured one. The ratio goes
+through the sRGB EOTF because retail (and the site's WebGL canvas) multiplies
+in **display space** while a glTF viewer multiplies in linear light after
+sRGB-decoding the texture - handing a viewer the raw ratio renders
+`texel * (colour/128)^(1/2.2)`, washing dark packet words out toward gray
+(dark clothing at ~x0.79 instead of x0.59); the linearized factor cancels the
+viewer's round trip, exactly for untextured fills and to within a few 8-bit
+steps for textured prims. And a faithful
+modulation factor **exceeds 1.0** (`0xFF / 128 = 1.99` display, ~4.9 linear),
+which the normalized
 integer `COLOR_0` encodings cannot express, so the accessors are float; the
 PSX clamps the *product* at 255, exactly where an LDR renderer clamps its own
 output, so an unclamped float is equal-or-closer to the canvas than a

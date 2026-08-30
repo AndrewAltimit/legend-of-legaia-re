@@ -528,17 +528,21 @@ fn monster_glb_carries_the_packet_colour_words() {
                 .as_u64()
                 .expect("every primitive carries COLOR_0") as usize;
             for row in glb_probe::floats(&root, bin, acc).expect("COLOR_0 floats") {
+                let enc = legaia_asset::gltf_color::linear_to_srgb_ratio;
                 got.push([
-                    (row[0] * 128.0).round() as u32,
-                    (row[1] * 128.0).round() as u32,
-                    (row[2] * 128.0).round() as u32,
+                    (enc(row[0]) * 128.0).round() as u32,
+                    (enc(row[1]) * 128.0).round() as u32,
+                    (enc(row[2]) * 128.0).round() as u32,
                 ]);
             }
         }
     }
     want.sort_unstable();
     got.sort_unstable();
-    assert_eq!(got, want, "every exported colour is its packet word / 128");
+    assert_eq!(
+        got, want,
+        "every exported colour re-encodes to its packet word / 128"
+    );
 }
 
 /// Spell-entry effect/aux offsets resolve through the per-block effect-offset

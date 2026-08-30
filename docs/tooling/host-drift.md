@@ -728,6 +728,18 @@ the stream the canvas uploads. And the encoding has to admit the over-bright
 tail - `0xFF / 128` is `1.99`, which a normalized-ubyte attribute cannot hold,
 so the accessors are float. Convention + reasoning: `legaia_asset::gltf_color`.
 
+The hole had a second, subtler layer: **colour space**. The canvas multiplies
+display bytes; a glTF viewer sRGB-decodes the texture, multiplies `COLOR_0`
+in linear light, and re-encodes - so shipping the raw display-space ratio
+rendered every dark packet word a gamma stop too bright (near-black `0x18`
+clothing fills drew as mid-gray, ~50/255 of error on dark words), while the
+site viewers beside it stayed dark. The same value-level tests that catch a
+dropped stream did not catch this, because both sides carried the same
+numbers - the defect was in what the number *meant* to the consumer. The
+exporters therefore bake `COLOR_0` through the sRGB EOTF
+(`gltf_color::srgb_ratio_to_linear`), and the probes decode with the inverse
+before comparing words.
+
 ### The monster bestiary is a viewer, and says so
 
 `site/_content/monsters.html` carries its **own** WebGL program with a

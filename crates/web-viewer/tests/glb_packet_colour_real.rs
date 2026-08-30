@@ -19,9 +19,11 @@
 //!    `COLOR_0` accessor, and across the model the values are not all 1.0
 //!    (a stream of neutral words would pass a presence-only assertion while
 //!    losing everything).
-//! 2. **Value** - each exported vertex colour equals its mesh packet word
-//!    divided by 128, vertex for vertex, against the same stream the canvas
-//!    uploads.
+//! 2. **Value** - each exported vertex colour, re-encoded through the sRGB
+//!    OETF, equals its mesh packet word divided by 128, vertex for vertex,
+//!    against the same stream the canvas uploads (the file stores the
+//!    linearized ratio so a linear-space glTF viewer lands on the canvas
+//!    product - see `legaia_asset::gltf_color`).
 //! 3. **Non-vacuity** - the cast under test really does carry strongly
 //!    non-neutral words, so the value check has something to catch.
 //!
@@ -63,9 +65,10 @@ fn exported_color0(glb: &[u8]) -> Vec<[f32; 4]> {
     out
 }
 
-/// Round the way a `f32` from the file compares against `word / 128`.
+/// Round the way a `f32` from the file compares against `word / 128`: the
+/// file carries the sRGB-linearized ratio, so re-encode it first.
 fn to_word(v: f32) -> u32 {
-    (v * 128.0).round() as u32
+    (legaia_asset::gltf_color::linear_to_srgb_ratio(v) * 128.0).round() as u32
 }
 
 #[test]
@@ -122,7 +125,7 @@ fn exported_summon_glb_carries_the_canvas_packet_colours() {
         "words above 0x80 export above 1.0"
     );
 
-    // (2) value: the exported multiset is exactly the canvas words / 128.
+    // (2) value: the exported multiset re-encodes to the canvas words / 128.
     let mut want: Vec<[u32; 3]> = words
         .iter()
         .map(|w| [w[0].into(), w[1].into(), w[2].into()])
@@ -136,7 +139,10 @@ fn exported_summon_glb_carries_the_canvas_packet_colours() {
         .collect();
     want.sort_unstable();
     got.sort_unstable();
-    assert_eq!(got, want, "every exported colour is its packet word / 128");
+    assert_eq!(
+        got, want,
+        "every exported colour re-encodes to its packet word / 128"
+    );
 }
 
 /// The same law across the whole cast list: no export may come back white

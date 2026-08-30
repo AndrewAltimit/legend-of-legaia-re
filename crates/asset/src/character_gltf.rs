@@ -18,7 +18,8 @@
 //!
 //! Shading is retail on **both** primitive kinds, through the one `COLOR_0`
 //! convention in [`crate::gltf_color`]: a textured prim carries its packet
-//! word as the modulation factor `colour / 128` against the atlas, an
+//! word as the modulation factor `colour / 128` (sRGB-linearized for the
+//! viewer's linear-space multiply) against the atlas, an
 //! untextured one carries it as a fill. Dropping the textured half is not a
 //! subtle loss - it is what turned a summon's flame-tinted sword blade into a
 //! flat white one, because the blade is a near-white texture ramp whose whole
@@ -54,7 +55,8 @@ struct ObjectGeom {
     uvs: Vec<[f32; 2]>,
     /// Per-vertex `COLOR_0`, one entry per position: the packet word as a
     /// **modulation** factor on textured verts (`colour / 128`, so it may
-    /// exceed 1.0) and as a **fill** on untextured ones (`colour / 255`).
+    /// exceed 1.0) and as a **fill** on untextured ones (`colour / 255`),
+    /// both sRGB-linearized ([`crate::gltf_color`]).
     /// See [`crate::gltf_color`] - the two halves read different arrays,
     /// which is the trap this field exists to keep straight.
     colors: Vec<[f32; 4]>,
@@ -564,7 +566,8 @@ mod tests {
     }
 
     /// The defect this module's COLOR_0 stream exists for: a textured prim's
-    /// packet word must reach the file as `colour / 128`, not as white. A
+    /// packet word must reach the file as its modulation ratio `colour / 128`
+    /// (sRGB-linearized), not as white. A
     /// near-white texel tinted `(248, 128, 0)` is a summon's flame-gradient
     /// sword blade; without the stream it exports as the bare pale texel.
     #[test]
@@ -596,9 +599,11 @@ mod tests {
                 crate::gltf_color::glb_probe::floats(&root, bin, acc).expect("COLOR_0 floats")
             {
                 for (k, w) in want.iter().enumerate() {
+                    // The file carries the sRGB-linearized ratio; re-encoding
+                    // for display recovers word / 128.
                     assert!(
-                        (row[k] - w / 128.0).abs() < 1e-6,
-                        "object {obj} channel {k}: {row:?} != {want:?} / 128"
+                        (crate::gltf_color::linear_to_srgb_ratio(row[k]) - w / 128.0).abs() < 1e-5,
+                        "object {obj} channel {k}: {row:?} !~ EOTF({want:?} / 128)"
                     );
                 }
                 assert_eq!(row[3], 1.0);
@@ -639,14 +644,20 @@ mod tests {
             .as_u64()
             .unwrap() as usize;
         let c0 = &crate::gltf_color::glb_probe::floats(&root, bin, a0).expect("COLOR_0 floats")[0];
-        assert!((c0[0] - 0x30 as f32 / 128.0).abs() < 1e-6, "{c0:?}");
+        assert!(
+            (crate::gltf_color::linear_to_srgb_ratio(c0[0]) - 0x30 as f32 / 128.0).abs() < 1e-5,
+            "{c0:?}"
+        );
         assert_ne!(c0[0], 1.0, "textured vert must not export white");
-        // Object 1 (untextured): the shading fill / 255.
+        // Object 1 (untextured): the shading fill / 255, linearized.
         let a1 = root["meshes"][1]["primitives"][0]["attributes"]["COLOR_0"]
             .as_u64()
             .unwrap() as usize;
         let c1 = &crate::gltf_color::glb_probe::floats(&root, bin, a1).expect("COLOR_0 floats")[0];
-        assert!((c1[0] - 0x77 as f32 / 255.0).abs() < 1e-6, "{c1:?}");
+        assert!(
+            (crate::gltf_color::linear_to_srgb_ratio(c1[0]) - 0x77 as f32 / 255.0).abs() < 1e-5,
+            "{c1:?}"
+        );
     }
 
     #[test]
