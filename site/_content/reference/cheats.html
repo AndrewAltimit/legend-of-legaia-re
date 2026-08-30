@@ -1,22 +1,30 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">reference</a> &middot; cheat databases</div>
   <h1>Cheat databases</h1>
-  <p class="lede">A GameShark (or Pro Action Replay) is a 90s cheat cartridge: each code it applies is literally a RAM address plus a value to write there every frame. That makes twenty-year-old community cheat lists an unusually rich source of ground-truth RAM addresses - "Infinite HP (Vahn)" only works if its target address really is where Vahn's HP lives, so every published code is a memory-layout fact someone verified on real hardware. This page documents the code encoding, the parser, the notable addresses the corpus pinned, and the runtime applier wired into <code>legaia-engine play-window --cheat-file</code>.</p>
+  <p class="lede">A GameShark (or Pro Action Replay) is a 90s cheat cartridge: each code it applies is literally a RAM address plus a value to write there every frame. That makes twenty-year-old community cheat lists an unusually rich source of ground-truth RAM addresses - "Infinite HP (Vahn)" only works if its target address really is where Vahn's HP lives, so every published code is a memory-layout fact someone verified on real hardware. This page explains where the corpus came from, how the codes are encoded, what they pinned, and how the engine replays them to check its own memory map.</p>
 </header>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <ul class="bullets">
+    <li><strong>What it is:</strong> two public NTSC-U cheat lists, one in GameShark text form and one in Mednafen <code>.cht</code> form, committed under <code>data/cheats/</code>. They contain no Sony bytes - only labelled <code>(address, value)</code> pairs published since the late 1990s.</li>
+    <li><strong>Why it matters:</strong> each code anchors a RAM offset independently of our own disassembly. The per-character record, the inventory array, the battle-actor pool and a handful of script-VM globals were confirmed this way.</li>
+    <li><strong>What we built:</strong> <code>crates/cheats</code> parses both formats, classifies every address into a RAM region, and <code>legaia-engine play-window --cheat-file</code> applies the codes to the engine's own state - a cheat that stops applying is a sign the engine's memory map drifted.</li>
+  </ul>
+</section>
 
 <section class="doc-section" id="files">
   <h2>Data files</h2>
-  <p>The corpus lives at <code>data/cheats/</code> in the repo:</p>
   <ul class="bullets">
-    <li><code>legaia-ntsc-u.gs.txt</code> - GameShark text dump format (one effect per line).</li>
+    <li><code>legaia-ntsc-u.gs.txt</code> - GameShark text dump format (one write per line).</li>
     <li><code>legaia-ntsc-u.cht</code> - Mednafen <code>.cht</code> format (TOML-shaped triples; multi-write effects join codes with <code>+</code>).</li>
   </ul>
-  <p>Both files describe the same effects in different on-disk encodings; round-trip between them is part of the test suite.</p>
+  <p>Both files describe the same effects in different on-disk encodings; <code>cheat-tool diff</code> compares them.</p>
 </section>
 
 <section class="doc-section" id="format">
-  <h2>GameShark code prefix table</h2>
-  <p>The high byte of the address is the operation prefix:</p>
+  <h2>How a code is encoded</h2>
+  <p>A GameShark code is eight hex digits of address and four of value. The high byte of the address is not part of the address at all - it is the <strong>operation prefix</strong>:</p>
   <table>
     <thead><tr><th>Prefix</th><th>Operation</th><th>Example</th></tr></thead>
     <tbody>
@@ -26,46 +34,137 @@
       <tr><td><code>0xE0</code></td><td>conditional: if <code>mem16 != value</code>, execute next</td><td><code>E007B83C 0003</code></td></tr>
     </tbody>
   </table>
+  <h3>GameShark text dump</h3>
+  <p>Each line of <code>legaia-ntsc-u.gs.txt</code> is one write, as a row of fixed columns:</p>
+  <table>
+    <thead><tr><th>Column</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>R</code></td><td>read/write classifier (always R - a cheat is a write)</td></tr>
+      <tr><td><code>I</code></td><td>encoding flag (always I)</td></tr>
+      <tr><td><code>1</code> / <code>2</code> / <code>4</code></td><td>width in bytes</td></tr>
+      <tr><td><code>L</code></td><td>endianness (little)</td></tr>
+      <tr><td><code>0</code></td><td>compression group (always 0)</td></tr>
+      <tr><td><code>80084816</code></td><td>address, 8 hex digits, no <code>0x</code></td></tr>
+      <tr><td><code>64</code></td><td>value, hex</td></tr>
+      <tr><td>rest of line</td><td>description</td></tr>
+    </tbody>
+  </table>
+  <p>When the prefix is <code>0x80</code> the parser uses the width column as ground truth (1 / 2 / 4) and rewrites the prefix accordingly - user-edited dumps occasionally desync the prefix from the column value.</p>
+  <h3>Mednafen <code>.cht</code></h3>
+  <p>Each effect is one indexed triplet - <code>cheatN_desc</code>, <code>cheatN_code</code>, <code>cheatN_enable</code>. Multi-write effects join their codes with <code>+</code>; conditional codes use the same <code>D0</code> / <code>E0</code> prefix encoding.</p>
 </section>
 
 <section class="doc-section" id="parser">
   <h2>Parser + classifier</h2>
-  <p>The <code>crates/cheats</code> crate exposes <code>parse_gs_text</code>, <code>parse_mednafen_cht</code>, and <code>classify_address</code>. The companion <code>cheat-tool</code> CLI:</p>
-  <pre><code>cargo run -p legaia-cheats --bin cheat-tool -- parse data/cheats/legaia-ntsc-u.cht
-cargo run -p legaia-cheats --bin cheat-tool -- classify data/cheats/legaia-ntsc-u.gs.txt --dedupe
-cargo run -p legaia-cheats --bin cheat-tool -- diff data/cheats/legaia-ntsc-u.gs.txt data/cheats/legaia-ntsc-u.cht
-cargo run -p legaia-cheats --bin cheat-tool -- extract-offsets data/cheats/legaia-ntsc-u.cht
-cargo run -p legaia-cheats --bin cheat-tool -- offset-table data/cheats/legaia-ntsc-u.cht</code></pre>
-  <p>Categories the classifier emits: <code>CharacterRecord</code>, <code>PartyMoney</code>, <code>Inventory</code>, <code>BattleActor</code>, <code>ScriptVmGlobal</code>, <code>CameraGlobal</code>, <code>PadInput</code>, <code>WorldStoryFlag</code>, <code>Minigame</code>, <code>FieldVmCollision</code>, <code>ScratchActiveActor</code>, <code>CodePatch</code>, <code>Unknown</code>.</p>
-  <p><code>taxonomy::classify_writes(addrs)</code> rolls a set of <em>changed</em> RAM addresses up into per-region buckets (the classification half of a gameplay-driven write tracer), flagging writes that land outside every known data region or in the <code>0x8007Bxxx</code> script-VM / build-flag scratch. Wired end-to-end as <code>mednafen-state write-taxonomy LEFT RIGHT</code>, which diffs two save states at byte granularity and prints the per-region roll-up + attack-surface candidates.</p>
+  <p><code>crates/cheats</code> exposes:</p>
+  <table>
+    <thead><tr><th>Item</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>parse_gs_text</code></td><td>GameShark text &rarr; <code>Database</code></td></tr>
+      <tr><td><code>parse_mednafen_cht</code></td><td>Mednafen <code>.cht</code> &rarr; <code>Database</code></td></tr>
+      <tr><td><code>Database::dedupe_identical</code></td><td>Drop the "Have 99 Items &times; 70" duplicate sprawl</td></tr>
+      <tr><td><code>classify_address</code></td><td>Map one address to a <code>Category</code> + detail label</td></tr>
+      <tr><td><code>Category</code></td><td>Coarse buckets, in enum order: CharacterRecord / PartyMoney / Inventory / BattleActor / ScriptVmGlobal / PadInput / CameraGlobal / WorldStoryFlag / Minigame / FieldVmCollision / ScratchActiveActor / CodePatch / Unknown</td></tr>
+      <tr><td><code>classify_writes</code></td><td>Roll a set of <strong>changed</strong> RAM addresses up into per-region buckets - the classification half of a gameplay-driven write tracer</td></tr>
+    </tbody>
+  </table>
+  <h3>Write taxonomy</h3>
+  <p><code>taxonomy::classify_writes(addrs)</code> buckets a set of changed RAM addresses by the region they fall in, de-duped and with per-bucket sample classifications. It flags writes that land <strong>outside</strong> every known data region (<code>Unknown</code>) or in the <code>0x8007Bxxx</code> script-VM / build-flag scratch (<code>ScriptVmGlobal</code> - the band holding the <code>0x8007B8C2</code> build-mode selector and the debug-menu enable) - the anomalies a write tracer exists to surface. Pure and capture-free, so it is unit-tested with synthetic deltas. Wired end-to-end as <code>mednafen-state write-taxonomy LEFT RIGHT</code>, which diffs two save states at byte granularity and prints the per-region roll-up + attack-surface candidates.</p>
+  <h3>The <code>cheat-tool</code> CLI</h3>
+  <div class="cli"><code>cheat-tool parse data/cheats/legaia-ntsc-u.cht</code></div>
+  <div class="cli"><code>cheat-tool list data/cheats/legaia-ntsc-u.gs.txt</code></div>
+  <div class="cli"><code>cheat-tool classify data/cheats/legaia-ntsc-u.gs.txt --dedupe</code></div>
+  <div class="cli"><code>cheat-tool diff data/cheats/legaia-ntsc-u.gs.txt data/cheats/legaia-ntsc-u.cht</code></div>
+  <div class="cli"><code>cheat-tool extract-offsets data/cheats/legaia-ntsc-u.cht</code></div>
+  <div class="cli"><code>cheat-tool offset-table data/cheats/legaia-ntsc-u.cht</code></div>
+  <p class="hint">In the release archive the built-in databases are embedded, so <code>cheat-tool list</code> / <code>classify</code> / <code>extract-offsets</code> need no path at all (<a href="../guides/modding-and-translation.html#cheats">modding guide</a>).</p>
 </section>
 
 <section class="doc-section" id="citations">
-  <h2>Notable citations the cheat database pinned</h2>
+  <h2>What the corpus pinned, per category</h2>
+  <p>Each bucket below is one RAM region the classifier knows. The interesting part is what the cheats in it tell us about the game's memory layout.</p>
+
+  <h3>CharacterRecord</h3>
+  <p>Per-character <code>0x414</code>-byte record at <code>0x80084708 + slot * 0x414</code>. Every offset is named on the <a href="../formats/save-record.html">save record</a> page; the classifier's detail strings drop in via the field-name table there.</p>
+
+  <h3>Inventory</h3>
+  <p>Inventory array at <code>0x80085958</code>, 2-byte stride alternating <code>(id, count)</code>. The "Have 99 Items" cheat stamps <code>0x63</code> into every count byte across its <strong>72-slot general-item page</strong> - the 72 is the cheat's span, not an engine bound; the live inventory window is 128 or 256 slots (<a href="memory-map.html">RAM map</a>, <a href="../subsystems/inventory.html">inventory subsystem</a>). "Have Max Items" stamps <code>0xFF</code>; "Item Modifier" zeroes the id byte.</p>
+
+  <h3>BattleActor</h3>
+  <p>Per-actor battle record at <code>0x800EC9E8 + n * 0x2D4</code>. Pinned offsets:</p>
+  <table>
+    <thead><tr><th>Offset</th><th>Field</th><th>Cheat</th></tr></thead>
+    <tbody>
+      <tr><td><code>+0x14C</code></td><td><code>hp_curr</code></td><td>"Infinite HP" (per character)</td></tr>
+      <tr><td><code>+0x14E</code></td><td><code>hp_max</code></td><td>(read by reader at battle init)</td></tr>
+      <tr><td><code>+0x150</code></td><td><code>mp_curr</code></td><td>"Infinite MP"</td></tr>
+      <tr><td><code>+0x152</code></td><td><code>mp_max</code></td><td></td></tr>
+      <tr><td><code>+0x172</code></td><td><code>hp_max_settled</code></td><td>"Infinite HP" second site</td></tr>
+      <tr><td><code>+0x174</code></td><td><code>mp_max_settled</code></td><td>"Infinite MP" second site</td></tr>
+    </tbody>
+  </table>
+  <p>The "second site" pair at <code>+0x172 / +0x174</code> is the engine's record copy that survives <code>FUN_80042558</code>'s per-frame stat aggregation clamp. Cheats target both sites to keep the value pinned across clamping.</p>
+
+  <h3>ScriptVmGlobal</h3>
+  <table>
+    <thead><tr><th>Address</th><th>Cheat</th><th>Engine semantic</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x8007B450</code></td><td>"Status Modifier Menu", "Save Anywhere", "Shop Modifier", "End of Game Stat Page"</td><td>Menu-request register the menu overlay polls each frame</td></tr>
+      <tr><td><code>0x8007B5FC</code></td><td>"No Random Battles"</td><td>Encounter step counter (cheat sets it to <code>0x377</code> to force or suppress a trigger)</td></tr>
+      <tr><td><code>0x8007B6A8</code></td><td>"Save Anywhere (Press Select+X)"</td><td>Save-anywhere allow flag</td></tr>
+      <tr><td><code>0x8007B7C0</code></td><td>(condition gate in many cheats)</td><td>Pad state register the <code>D0</code> / <code>E0</code> codes read</td></tr>
+      <tr><td><code>0x8007B83C</code></td><td>"Press R2 For Debug Menu"</td><td>Next game-mode register; <code>FUN_801E30E4</code> sets <code>0x1A</code> for FMV</td></tr>
+    </tbody>
+  </table>
+
+  <h3>CameraGlobal</h3>
+  <p><code>0x8007B6F4</code> is the camera mode word. "Control Camera" and "Small Maps" cheats target it.</p>
+
+  <h3>PartyMoney</h3>
+  <p>The party-wide globals between the inventory header and the per-character records: <code>0x80084540</code> scene-name pool slot, <code>0x80084570</code> game time (u32), <code>0x80084594</code> party-member count, <code>0x80084598..0x8008459A</code> member ids and the Noa / Gala join gates, <code>0x8008459C</code> gold (u32), <code>0x800845A4</code> / <code>0x800845A6</code> casino coins, <code>0x800845DC</code> scene-name mirror.</p>
+
+  <h3>WorldStoryFlag</h3>
+  <p>A region bucket for the story-flag block at <code>0x80085600..0x80085800</code> - outside the per-character records and outside the inventory window. <strong>No cheat in the shipped corpus lands in it.</strong> The one candidate, "Access All Towns When You Use Door of Wind" at <code>0x8008575C</code> / <code>0x8008575E</code> (a 32-bit visited-towns bitmask), is claimed first by the script-VM-global arm, which names those two cells <code>story_flag_door_of_wind_lo</code> / <code>_hi</code>, so <code>cheat-tool list</code> reports it as <code>ScriptVmGlobal</code>. That is arm ordering inside <code>classify_address</code>, not a statement about the cheat.</p>
+
+  <h3>Minigame</h3>
+  <p>Mini-game scratch RAM. Fishing uses <code>0x801D9168 / 0x801D9274 / 0x801D9298 / 0x801D91CC</code> for tension / casting power / life / fish id; Baka Fighter <code>0x801DBFC4 / 0x801DBFF0 / 0x801DC06C</code>; dance points <code>0x801D53CC</code>; slot machine <code>0x801D3CAC</code>. These are recorded as citations only - the engine's minigame ports do not consume them.</p>
+
+  <h3>FieldVmCollision</h3>
+  <p>The "Walk Thru Walls" cheat patches four collision-state cells in the field overlay: <code>0x801D078C / 0x801D071C / 0x801D065C / 0x801D06BC</code>. Each is a 1-byte gate the field VM consults during movement; setting them all to <code>0x06</code> disables the collision check.</p>
+
+  <h3>ScratchActiveActor</h3>
+  <p><code>0x8007A6BC</code> is shared scratch for the currently-acting character. Every "Infinite HP / MP" cheat hits this cell first - the runtime reads it during the per-actor frame tick before applying back to the per-record copy. Useful to know when chasing post-battle stat-leak issues.</p>
+
+  <h3>CodePatch</h3>
+  <p>A handful of cheats patch running code rather than a RAM cell. Three write <code>0x2400</code> to an instruction's <strong>upper</strong> halfword (<code>addr % 4 == 2</code>), rendering it <code>addiu $zero, $zero, imm</code> - the GameShark <code>nop</code> idiom:</p>
   <ul class="bullets">
-    <li><strong>Inventory layout</strong>: <code>0x80085958</code>, 2-byte stride alternating <code>(id, count)</code>. Pinned by the "Have 99 Items" / "Have Max Items" / "Item Modifier" cheat triplet - but note the "Have 99 Items" span of 72 slots is the <em>cheat's</em> general-item page, not an engine bound; the live inventory window is 128 or 256 slots (see <a href="memory-map.html">RAM map</a>).</li>
-    <li><strong>Battle actor pool stride</strong>: <code>0x800EC9E8</code> + <code>0x2D4</code> per party slot. Vahn HP at <code>+0x14C</code> / Noa at base+<code>0x2D4</code>+<code>0x14C</code> = <code>0x800ECE08</code>. The "Infinite HP/MP" cheats target both the live (<code>+0x14C/+0x150</code>) and settled (<code>+0x172/+0x174</code>) sites.</li>
-    <li><strong>Story flag bitmap</strong>: <code>0x80085600..0x80085800</code> holds town-visited / Door of Wind state. "Access All Towns" writes <code>0xF77F / 0xF8FF</code> at <code>0x8008575C/E</code>.</li>
-    <li><strong>Code-patch sites</strong>: cheats writing <code>0x2400</code> (MIPS <code>nop</code>) flag specific instructions: inventory-add (<code>0x800422F4</code>), count-decrement (<code>0x8004309E</code>), Vahn chest draw (<code>0x80043910</code>), HP-write branch (<code>0x8007EA96</code>). Useful Ghidra anchors.</li>
+    <li><code>0x8004309E</code> - "Infinite Items All Slots" nops the count-decrement instruction.</li>
+    <li><code>0x8004390E</code> - "Remove Vahn's Chest" nops a draw-call site.</li>
+    <li><code>0x8007EA96</code> - "Maxed HP for All Characters". <strong>This address is past the end of the <code>SCUS_942.54</code> image</strong> (text spans <code>0x80010000..0x8007B800</code>), so whatever it patches is not SCUS code, even though the bucket is <code>CodePatch</code>.</li>
   </ul>
+  <p>One is a different shape and does not write <code>0x2400</code> at all: <code>0x800422F4</code> - "Bought Any Item / Find Items You Will Get 99 Quantity" writes <code>0001</code>. The word there is <code>bne r2, r0, +2</code> inside the inventory-add clamp (<code>slti r2,r2,100</code> / <code>addiu r3,99</code> / <code>sb</code>); shortening the displacement makes the clamp always run. All of these are useful Ghidra anchors: the patched instruction addresses give callsite hints the LUI+ADDIU resolver wouldn't.</p>
 </section>
 
 <section class="doc-section" id="applier">
   <h2>Runtime applier</h2>
-  <p><code>legaia-engine play-window --cheat-file &lt;PATH&gt;</code> parses the file, applies every entry through the <code>legaia_engine_core::ram_map</code> registry, and logs per-entry status:</p>
+  <p><code>legaia-engine play-window --cheat-file &lt;PATH&gt;</code> parses the file via <code>legaia_cheats</code>, applies every entry <strong>once at boot</strong> via <code>legaia_engine_core::cheat_applier::apply</code>, and dispatches each write through the <code>ram_map</code> registry to the appropriate <code>World</code> / <code>CharacterRecord</code> field. Conditional codes are treated as always-true by default (<code>--cheat-strict</code> honours them, which skips every cheat that gates on a button press the engine doesn't emulate).</p>
   <pre><code>Cheat report (49 entries, 96 writes; 71 applied, 25 unmapped, 0 unknown):
   ok    Infinite HP (Vahn)............... 4/4 writes
   ok    Infinite Gold (Never Glitchy).... 1/1 writes
   skip  Walk Thru Walls.................. 0/4 writes
   ...</code></pre>
   <p>A <code>skip</code> line means every write in the entry landed in a RAM region the <code>ram_map</code> registry does not map onto engine state (for Walk Thru Walls that region is <code>FieldVmCollision</code>); <code>part</code> marks a mixed entry.</p>
-  <p>Conditional codes are treated as always-true by default. Pass <code>--cheat-strict</code> to honour them, which will skip every cheat that gates on a button press the engine doesn't emulate.</p>
+  <p>Use this to validate that a code change keeps the same set of cheats applying. If a previously-applying cheat starts failing, either the engine field it targets was renamed (update <code>ram_map</code>), the engine no longer exposes the field (update <code>WorldField</code>), or the cheat database had stale data (update the citation in the format doc).</p>
 </section>
 
 <section class="doc-section" id="see-also">
   <h2>See also</h2>
-  <ul class="bullets">
-    <li><a href="../formats/save-record.html">Per-character save record format</a> - full <code>0x414</code>-byte offset table the cheat citations anchor.</li>
-    <li><a href="memory-map.html">PSX RAM map</a> - globals pinned by the cheat database.</li>
-  </ul>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../formats/save-record.html">Per-character save record</a>
+    <a href="memory-map.html">PSX RAM map</a>
+    <a href="../subsystems/inventory.html">Inventory</a>
+    <a href="../subsystems/battle.html">Battle actor table</a>
+    <a href="../guides/modding-and-translation.html#cheats">cheat-tool in the modding guide</a>
+  </div>
 </section>

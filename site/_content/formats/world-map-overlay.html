@@ -2,7 +2,22 @@
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; slot-4 records</div>
   <h1>Slot-4 records (world-map mesh library) <span class="tag tag-partial">Inferred</span></h1>
   <p class="lede">Each of Legaia's three overworld continents (Drake, Sebucus, Karisto) ships as a "kingdom bundle" - a per-continent asset bundle whose numbered slots hold the map's textures, meshes, and data. Slot 4 is this page's subject: <strong>a per-kingdom library of small object-local 3D meshes</strong>, rendered as PSX triangles and quads by the world-map renderer. Fair warning before you chase the obvious idea: the tempting reading - that these records are 2D map data, the continent's <em>coastline wireframe</em> or the dev-menu top-view outline - is <strong>falsified</strong>. Rendering every body on every projection plane produces no map silhouette in any kingdom; see <a href="#falsified">Falsified readings</a> before re-opening that thread.</p>
-  <p class="lede">What the records actually are: 3D vertices. The container layout below is byte-verified
+</header>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Magic</dt><dd>none - slot 4 of the kingdom bundle (type byte <code>0x05</code>); every sub-body carries the constant marker <code>0x080C</code> at <code>+4</code></dd>
+    <dt>Where on disc</dt><dd>Kingdom bundles PROT <code>0086</code> (Drake, <code>map01</code>), <code>0245</code> (Sebucus, <code>map02</code>), <code>0392</code> (Karisto, <code>map03</code>), slot 4 of each</dd>
+    <dt>Parser</dt><dd><code>legaia_asset::world_map_overlay</code> (bodies + GTE vertex records); viewer <a href="../world-overview.html">world overview</a></dd>
+    <dt>Confidence</dt><dd>Inferred - container layout and RAM placement are byte-verified and the consumer <code>FUN_80044c14</code> is pinned reading records in place as GTE vertices; the <code>kind</code> / <code>attr</code> semantics are characterised, not decoded</dd>
+    <dt>Used by</dt><dd><a href="../subsystems/world-map.html">World map</a>, <a href="../subsystems/world-overview-viewer.html">World-overview viewer</a></dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="overview">
+  <h2>Overview</h2>
+  <p>What the records actually are: 3D vertices. The container layout below is byte-verified
   against live RAM, the consumer is pinned, and the per-record semantic is decoded: each 8-byte record is a GTE
   vertex (the GTE is the PlayStation's geometry coprocessor - all 3D transforms go through its registers) - the
   cluster-A prim handler <code>FUN_80044c14</code> (a Ghidra-traced function; <code>FUN_80xxxxxx</code> names
@@ -13,44 +28,57 @@
   slot-4 body is read <strong>in place, per frame</strong>, by the world-map renderer (<code>ra
   0x801F78D4</code>) - there is <strong>no record &rarr; working-buffer transcode</strong>. See <a
   href="#consumer">Consumer call sites</a>.</p>
-  <p class="lede">The bulk continent terrain itself - the ~4300 POLY_FT4 prims that tile the kingdom continent in the dev-menu top-view - is <em>not</em> sourced from slot 4. It comes from the same kingdom slot-1 TMD pack the landmarks draw from, routed through <code>FUN_80043390</code>&apos;s overlay-mode dispatch table at <code>0x801F8968</code> whose eight high-mode renderers replace the SCUS variants when the world-map overlay is paged in. See <a href="../subsystems/world-map.html#bulk-continent-terrain-emit-mechanism-pinned">subsystems / world-map - bulk continent terrain emit mechanism</a>.</p>
-</header>
+  <p>The bulk continent terrain itself - the ~4300 POLY_FT4 prims that tile the kingdom continent in the dev-menu top-view - is <em>not</em> sourced from slot 4. It comes from the same kingdom slot-1 TMD pack the landmarks draw from, routed through <code>FUN_80043390</code>&apos;s overlay-mode dispatch table at <code>0x801F8968</code> whose eight high-mode renderers replace the SCUS variants when the world-map overlay is paged in. See <a href="../subsystems/world-map.html#bulk-continent-terrain-emit-mechanism-pinned">subsystems / world-map - bulk continent terrain emit mechanism</a>.</p>
 
-<section class="doc-section" id="overview">
-  <h2>Overview</h2>
   <p>Slot 4 of each world-map (kingdom) bundle decompresses to a fixed-size buffer that the runtime loads verbatim into RAM. (PROT.DAT is the disc's single big archive; the "PROT index" is the bundle's entry number in it. CDNAME is the disc's name map, which is where the <code>map01..03</code> labels come from.) Three carriers:</p>
   <table>
     <thead><tr><th>Bundle</th><th>PROT index</th><th>CDNAME label</th><th>Decoded size</th></tr></thead>
     <tbody>
-      <tr><td>Drake</td><td>0085</td><td><code>map01</code></td><td>32304</td></tr>
-      <tr><td>Sebucus</td><td>0244</td><td><code>map02</code></td><td>26964</td></tr>
-      <tr><td>Karisto</td><td>0391</td><td><code>map03</code></td><td>24444</td></tr>
+      <tr><td>Drake</td><td>0086</td><td><code>map01</code></td><td>32304</td></tr>
+      <tr><td>Sebucus</td><td>0245</td><td><code>map02</code></td><td>26964</td></tr>
+      <tr><td>Karisto</td><td>0392</td><td><code>map03</code></td><td>24444</td></tr>
     </tbody>
   </table>
+  <details class="disclosure">
+    <summary>History: PROT 0085 / 0244 / 0391</summary>
+    <div class="disclosure-body"><p>The bundles were once cited as PROT <code>0085</code> / <code>0244</code> / <code>0391</code>, with the 7-asset table "at <code>0x1800</code> of the prescript entry". That named the entry the superseded over-read window started in; the table is at offset 0 of the next entry. See <a href="prot.html">prot &sect; History</a>.</p></div>
+  </details>
   <p>The 7-asset bundle is the standard <a href="scene-bundles.html#scene-asset-table-count-prefixed-asset-bundle">scene_asset_table</a> shape with type sequence <code>(1, 2, 3, 4, 5, 6, 7)</code>. Slot 4&apos;s type byte is <code>0x05</code> per <a href="asset-type.html">asset-type</a> - the standard table calls this &quot;MOVE&quot;, but the kingdom-bundle consumer interprets each body as an object-local mesh (8-byte header + GTE vertex pool + command stream), not a move table (see <a href="#per-record-semantic">Per-record semantic</a> below).</p>
 </section>
 
 <section class="doc-section" id="container">
   <h2>Container layout (confirmed)</h2>
   <h3 id="outer-pack">Outer pack</h3>
-<pre><code>+0x00   u32  count                ; number of sub-bodies
-+0x04   u32  byte_offsets[count]  ; absolute byte offset into the
-                                  ; decoded payload (NOT word offsets,
-                                  ; unlike the slot-1 TMD pack)
-+offset bodies[count]             ; contiguous sub-bodies</code></pre>
+  <table>
+    <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>+0x00</code></td><td>u32</td><td><code>count</code></td><td>Number of sub-bodies</td></tr>
+      <tr><td><code>+0x04</code></td><td>u32 &times; count</td><td><code>byte_offsets[]</code></td><td>Absolute <em>byte</em> offsets into the decoded payload (not word offsets, unlike the slot-1 TMD pack)</td></tr>
+      <tr><td><code>+offset</code></td><td>-</td><td><code>bodies[]</code></td><td>Contiguous sub-bodies</td></tr>
+    </tbody>
+  </table>
 
   <h3 id="sub-body-header">Sub-body header (8 bytes)</h3>
-<pre><code>+0x00   u8   count_a              ; records per group
-+0x01   u8   flag_a               ; usually 0; 1 for kind=4 bodies
-+0x02   u8   count_b              ; number of groups
-+0x03   u8   flag_b               ; usually 0
-+0x04   u16  marker               ; constant 0x080C across all bodies
-+0x06   u16  kind                 ; 1, 2, or 4 (body class/scope tag)</code></pre>
+  <table>
+    <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>+0x00</code></td><td>u8</td><td><code>count_a</code></td><td>Records per group</td></tr>
+      <tr><td><code>+0x01</code></td><td>u8</td><td><code>flag_a</code></td><td>Usually 0; 1 for kind=4 bodies</td></tr>
+      <tr><td><code>+0x02</code></td><td>u8</td><td><code>count_b</code></td><td>Number of groups</td></tr>
+      <tr><td><code>+0x03</code></td><td>u8</td><td><code>flag_b</code></td><td>Usually 0</td></tr>
+      <tr><td><code>+0x04</code></td><td>u16</td><td><code>marker</code></td><td>Constant <code>0x080C</code> across all bodies</td></tr>
+      <tr><td><code>+0x06</code></td><td>u16</td><td><code>kind</code></td><td>1, 2 or 4 (body class / scope tag)</td></tr>
+    </tbody>
+  </table>
 
   <h3 id="body-payload">Body payload</h3>
-<pre><code>+0x08   record[count_a * count_b] ; each record is 8 bytes
-                                  ; ( i16 x, i16 y, i16 z, i16 attr )
-+...    trailer (8 bytes)         ; always 8 zero bytes</code></pre>
+  <table>
+    <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>+0x08</code></td><td>8 &times; <code>count_a * count_b</code></td><td><code>record[]</code></td><td>Each record is a GTE vertex <code>(i16 x, i16 y, i16 z, i16 attr)</code></td></tr>
+      <tr><td>after</td><td>8</td><td>trailer</td><td>Always 8 zero bytes</td></tr>
+    </tbody>
+  </table>
   <p>Total body size is always <code>8 + count_a * count_b * 8 + 8</code>. The math fits every body in all three kingdoms exactly.</p>
 
   <h3 id="per-record-semantic">Per-record semantic - each record is a GTE vertex (decoded)</h3>
@@ -127,9 +155,9 @@ copFunction(2, 0x1400006);             // NCLIP - backface cull</code></pre>
   <table>
     <thead><tr><th>Kingdom</th><th>bundle</th><th>resident base</th><th>end (excl.)</th><th>bytes</th><th>bodies matched</th></tr></thead>
     <tbody>
-      <tr><td>Drake</td><td><code>map01</code> / 0085</td><td><code>0x8011A624</code></td><td><code>0x80122454</code></td><td>32304</td><td>15/15</td></tr>
-      <tr><td>Sebucus</td><td><code>map02</code> / 0244</td><td><code>0x80119CE4</code></td><td><code>0x80120638</code></td><td>26964</td><td>16/16</td></tr>
-      <tr><td>Karisto</td><td><code>map03</code> / 0391</td><td><code>0x80108D84</code></td><td><code>0x8010ED00</code></td><td>24444</td><td>16/16</td></tr>
+      <tr><td>Drake</td><td><code>map01</code> / 0086</td><td><code>0x8011A624</code></td><td><code>0x80122454</code></td><td>32304</td><td>15/15</td></tr>
+      <tr><td>Sebucus</td><td><code>map02</code> / 0245</td><td><code>0x80119CE4</code></td><td><code>0x80120638</code></td><td>26964</td><td>16/16</td></tr>
+      <tr><td>Karisto</td><td><code>map03</code> / 0392</td><td><code>0x80108D84</code></td><td><code>0x8010ED00</code></td><td>24444</td><td>16/16</td></tr>
     </tbody>
   </table>
   <p>Body 0&apos;s records start <code>0x40</code> past the base (after the 4-byte count and 15&ndash;16 &times; 4-byte offsets). No runtime fixup is applied. Because the base is not constant, a probe that arms breakpoints on the slot-4 RAM window <strong>must locate the base for that kingdom first</strong>.</p>
@@ -138,7 +166,11 @@ copFunction(2, 0x1400006);             // NCLIP - backface cull</code></pre>
 
 <section class="doc-section" id="falsified">
   <h2>Falsified readings</h2>
-  <p>Three encoding interpretations are falsified by visual inspection (PNG renders of every body &times; every projection plane &times; every topology mode) - do not re-open them without new evidence:</p>
+  <p>The "coastline wireframe" family of readings is falsified by visual inspection and is catalogued on <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>. The detail is kept here, folded away, for anyone tempted to re-open it.</p>
+  <details class="disclosure">
+    <summary>History: the three falsified encodings and the superseded probe readings</summary>
+    <div class="disclosure-body">
+<p>Three encoding interpretations are falsified by visual inspection (PNG renders of every body &times; every projection plane &times; every topology mode) - do not re-open them without new evidence:</p>
   <ol>
     <li><strong>Top-down dev-menu wireframe / continent coastline</strong> (body 12 = coastline, body 13 = world boundary frame). Projecting all 15 bodies onto <code>xz</code> produces no recognizable map silhouette in any kingdom, and no render matches the dev-menu top-view captured from PCSX-Redux save states.</li>
     <li><strong><code>count_a &times; count_b</code> heightfield grid.</strong> Rendering Drake body 12 as a coarse 10 &times; 120 grid quad-mesh wireframe produces the wrong silhouette; pair-wise edge interpretation (<code>(r0,r1) (r2,r3) ...</code>) likewise yields no coastline-like contour.</li>
@@ -150,6 +182,8 @@ copFunction(2, 0x1400006);             // NCLIP - backface cull</code></pre>
     <li><strong>"Sebucus shows no render reads."</strong> A wrong-base assumption - re-read against the byte-verified Sebucus base, 171 of 177 reads land inside the slot-4 window.</li>
     <li><strong>"Mid-load table entries past the walker counter are content."</strong> Historical "non-TMD entry classification" passes sampled stale pointers past <code>DAT_8007BB38</code>; those characterisations were out-of-bounds reads, not table contents.</li>
   </ul>
+    </div>
+  </details>
 </section>
 
 <section class="doc-section" id="consumer">
@@ -455,5 +489,9 @@ DAT_8007B824 : per-pack count (set by case 2 to *pack_header[0])</code></pre>
     <a href="../subsystems/world-map.html">World map</a>
     <a href="../subsystems/world-overview-viewer.html">World-overview viewer</a>
     <a href="tmd.html">Legaia TMD</a>
+    <a href="scene-bundles.html#scene-asset-table-count-prefixed-asset-bundle">Kingdom bundle (scene_asset_table)</a>
+    <a href="asset-type.html">Asset-type dispatch</a>
+    <a href="../world-overview.html">World overview (3D viewer)</a>
+    <a href="../reference/re-do-not-re-walk.html">Do-not-re-walk</a>
   </div>
 </section>

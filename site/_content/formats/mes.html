@@ -4,6 +4,49 @@
   <p class="lede">MES is the container format for Legaia's dialog text - every line an NPC speaks lives in one of these. The text is not plain ASCII: it is a bytecode stream of font-tile indices (each byte names a glyph in the dialog font) interleaved with substitution opcodes that splice in live data - the hero's name, an item name, an art name - at display time. Two on-disc variants share an offset table + bytecode tail; the interpreter is statically linked into <code>SCUS_942.54</code> (the game's main executable - unusually, since most game logic lives in RAM-loaded overlays).</p>
 </header>
 
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Magic</dt><dd>Compact: first u32 <code>0x00000404</code>. Records: recurring <code>0x44 0x78</code> marker pairs (no fixed header)</dd>
+    <dt>Where on disc</dt><dd>Inline in scene MANs (each town / dungeon's per-scene file) as the actors' interaction scripts, in <code>dataattle\efect.dat</code>-style bundles, and as the type-4 asset in <a href="asset-type.html">the type dispatcher</a></dd>
+    <dt>Parser</dt><dd><code>crates/mes</code> (binary <code>mes</code>); box packing <code>legaia_mes::dialog_box</code>; engine <code>engine_core::dialog</code> + <code>inline_dialogue</code></dd>
+    <dt>Confidence</dt><dd>Confirmed - the four interpreter functions are statically linked in <code>SCUS_942.54</code> (<code>FUN_8003CA38</code> / <code>FUN_80036044</code> / <code>FUN_80036888</code> / <code>FUN_80036514</code>); the pager and pickers are traced in the dialog overlay and pinned on real disc bytes (<code>field_dialog_boxpack_disc</code>)</dd>
+    <dt>Used by</dt><dd><a href="../subsystems/script-vm.html">Field/event VM</a>, <a href="../tooling/translation.html">Translation packs</a>, <a href="../npcs.html">NPC browser</a></dd>
+  </dl>
+  <figure class="overlay-strip">
+    <svg viewBox="0 0 880 120" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="mesline-title">
+      <title id="mesline-title">Anatomy of one dialog line</title>
+      <style>
+        .ml-box  { fill: var(--bg-card); stroke: var(--accent); stroke-width: 1.3; }
+        .ml-soft { fill: var(--bg-card); stroke: var(--border); stroke-width: 1.1; stroke-dasharray: 3 3; }
+        .ml-lab  { font: 12px var(--font-body, sans-serif); fill: var(--text); }
+        .ml-sub  { font: 10px var(--font-mono, monospace); fill: var(--text-muted); }
+        .ml-off  { font: 10px var(--font-mono, monospace); fill: var(--accent); }
+      </style>
+      <rect x="20" y="30" width="70" height="48" class="ml-soft"/>
+      <text x="28" y="50" class="ml-lab">lead</text>
+      <text x="28" y="66" class="ml-sub">0x1F</text>
+      <rect x="100" y="30" width="200" height="48" class="ml-box"/>
+      <text x="110" y="50" class="ml-lab">glyphs</text>
+      <text x="110" y="66" class="ml-sub">1 byte each = font tile</text>
+      <rect x="310" y="30" width="170" height="48" class="ml-box"/>
+      <text x="320" y="50" class="ml-lab">substitution</text>
+      <text x="320" y="66" class="ml-sub">0xC1 XX = hero's name</text>
+      <rect x="490" y="30" width="200" height="48" class="ml-box"/>
+      <text x="500" y="50" class="ml-lab">more glyphs</text>
+      <text x="500" y="66" class="ml-sub">0xCE XX = spacing</text>
+      <rect x="700" y="30" width="70" height="48" class="ml-soft"/>
+      <text x="708" y="50" class="ml-lab">end</text>
+      <text x="708" y="66" class="ml-sub">0x00</text>
+      <rect x="780" y="30" width="80" height="48" class="ml-soft"/>
+      <text x="788" y="50" class="ml-lab">control</text>
+      <text x="788" y="66" class="ml-sub">0x24 / 0x25</text>
+      <text x="20" y="105" class="ml-sub">A line is glyph indices with 2-byte escapes; up to three lines pack into one box, then a control byte says what happens on the button press.</text>
+    </svg>
+    <figcaption>What the pager sees: a <code>0x1F</code>-lead segment of glyph bytes and escapes, a terminator, and the control byte that chains the next box or opens a choice menu.</figcaption>
+  </figure>
+</section>
+
 <section class="doc-section" id="variants">
   <h2>Variants</h2>
   <p>Two shapes of MES container appear on the disc, told apart by their first bytes:</p>
@@ -27,24 +70,25 @@
 </tbody>
 </table>
   <p>Both share a header → offset table → bytecode body shape.</p>
-  <h3>Compact variant - fixed header layout</h3>
-<pre><code>+0x00   u32 LE = 0x00000404       ; magic
-+0x04   ...                        ; unused padding (0x24 bytes)
-+0x28   u32  back_ptr             ; runtime pointer (patched on load)
-+0x2C   u32  forward_ptr          ; runtime pointer
-+0x30   u32  expanded_size        ; byte count of the expanded blob
-+0x34   u32  count                ; number of messages in the offset table
-+0x38   i16[8]                    ; per-line metrics array (16 bytes)
-+0x48   ...                        ; additional header fields (16 bytes)
-+0x58   u16  ?                    ; pre-table header word
-+0x5A   u32  ?                    ; pre-table header dword
-+0x5E   u16  ?                    ; pre-table header word
-+0x60   u16  ?                    ; pre-table header word
-+0x62   u24 LE [N]                ; offset table - 3 bytes per entry, up to 0x56 entries
-...
-+0xC8   bytecode region starts here</code></pre>
+  <h3 id="compact-header">Compact variant - fixed header layout</h3>
+  <table>
+    <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>+0x00</code></td><td>u32</td><td><code>magic</code></td><td><code>0x00000404</code></td></tr>
+      <tr><td><code>+0x04</code></td><td>0x24</td><td>-</td><td>Unused padding</td></tr>
+      <tr><td><code>+0x28</code></td><td>u32</td><td><code>back_ptr</code></td><td>Runtime pointer, patched on load</td></tr>
+      <tr><td><code>+0x2C</code></td><td>u32</td><td><code>forward_ptr</code></td><td>Runtime pointer</td></tr>
+      <tr><td><code>+0x30</code></td><td>u32</td><td><code>expanded_size</code></td><td>Byte count of the expanded blob</td></tr>
+      <tr><td><code>+0x34</code></td><td>u32</td><td><code>count</code></td><td>Number of messages in the offset table</td></tr>
+      <tr><td><code>+0x38</code></td><td>i16[8]</td><td>metrics</td><td>Per-line metrics array</td></tr>
+      <tr><td><code>+0x48</code></td><td>16</td><td>-</td><td>Additional header fields</td></tr>
+      <tr><td><code>+0x58</code></td><td>u16, u32, u16, u16</td><td>?</td><td>Pre-table header words (unknown)</td></tr>
+      <tr><td><code>+0x62</code></td><td>u24 &times; N</td><td>offset table</td><td>3 bytes per entry, up to 0x56 entries; offsets from <code>0xC8</code></td></tr>
+      <tr><td><code>+0xC8</code></td><td>-</td><td>bytecode</td><td>Message bodies</td></tr>
+    </tbody>
+  </table>
   <p><code>count</code> gives the number of messages; the offset table spans <code>0x62..0xC8</code> (maximal extent = 0x56 u24 entries = 86 messages at this point in the structure). Each offset is a byte offset from <code>0xC8</code> to the start of that message's bytecode.</p>
-  <h3>Records variant</h3>
+  <h3 id="records-variant">Records variant</h3>
   <p>The Records format has no fixed header. The parser identifies record boundaries by scanning for recurring <code>0x44 0x78</code> marker pairs (at least 4 hits required). Each marker starts a variable-stride record; the inter-record contents are the bytecode and any embedded header fields. Full per-record structure is not yet reversed - capture a town or field overlay to observe how the runtime parses this variant.</p>
 </section>
 
@@ -224,7 +268,11 @@ O+1 .. O+N*2                          N option entries, 2 bytes each (i16 LE)
 O+N*2+1                               continuation byte (0x24/0x25/0x48/0x4C 0xFF)
 [ optional 0x4C 0xFF terminate ]
 N * [ 0x1F label segment 0x00 ]       the on-screen option labels</code></pre>
-  <p>The on-screen <strong>option labels are standard <code>0x1F</code>-lead glyph segments located after the continuation byte</strong> (the pager render loop measures each with <code>FUN_8003CA38</code> and draws it with <code>FUN_80036888</code>). An earlier note that "the labels are the 2-byte entries between the open byte and the continuation" is <strong>falsified</strong> - those 2-byte entries are the per-option <strong>jump table</strong>.</p>
+  <p>The on-screen <strong>option labels are standard <code>0x1F</code>-lead glyph segments located after the continuation byte</strong> (the pager render loop measures each with <code>FUN_8003CA38</code> and draws it with <code>FUN_80036888</code>). Those 2-byte entries are the per-option <strong>jump table</strong>.</p>
+  <details class="disclosure">
+    <summary>History: labels between the open byte and the continuation</summary>
+    <div class="disclosure-body"><p>An earlier note read the 2-byte entries between the open byte and the continuation as the option labels. That is falsified - they are the jump table, and the labels are the <code>0x1F</code> segments after the continuation byte. See <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p></div>
+  </details>
   <p>Each 2-byte entry is a <strong>signed 16-bit little-endian relative jump</strong>. The inline-script control handler <code>FUN_80038050</code> (the per-actor <code>actor[+0x90]</code> script stepper, distinct from the pager) applies it on confirm: it reads the cursor at <code>DAT_801C6EA4+0xC</code> and sets the script PC <code>actor[+0x9E]</code> to <code>new_pc = (O + 1 + index*2) + i16_LE(entry[index])</code> - relative to the start of that option's own entry. Pinned empirically: across the four story-branch re-emissions of the <code>izumi</code> book menu, all four option entries shift by an identical per-emission delta (-518 / -564 / -549), and every decoded option across the field corpus jumps to a byte inside its own script. Parser <code>legaia_mes::picker</code>; disc-gated regression <code>field_dialog_pickers_disc</code>.</p>
 
   <h3>Engine consumer</h3>
@@ -261,5 +309,9 @@ mes stats-all  &lt;PATH&gt;             # event-type histogram across every mess
     <span class="see-also-label">Reference</span>
     <a href="dialog-font.html">Dialog font</a>
     <a href="../subsystems/script-vm.html">Field/event VM</a>
+    <a href="man-relocation.html">MAN relocation</a>
+    <a href="../tooling/translation.html">Translation packs</a>
+    <a href="../npcs.html">NPC browser</a>
+    <a href="../play.html">Play in the browser</a>
   </div>
 </section>

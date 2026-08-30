@@ -5,7 +5,9 @@
 </header>
 
 <section class="doc-section" id="orientation">
-  <h2>Which table do you want?</h2>
+  <h2>How to read this section</h2>
+  <p>The rest of the site explains how the game works; this section is where the raw facts are filed. Most pages open with a short on-ramp - what a <code>FUN_</code> address is, what an overlay is, where a table came from - and then get dense on purpose: every row carries the function, capture or cheat code that pinned it. If a claim on any other page looks surprising, the row behind it is in here.</p>
+  <h3>Which table do you want?</h3>
   <ul class="bullets">
     <li>You have an <strong>address or a <code>FUN_</code> symbol</strong> and want to know what it does &rarr; <a href="functions.html">key functions</a>, then <a href="memory-map.html">the RAM map</a> for globals.</li>
     <li>You have a <strong>binary record</strong> and want to know what the values mean &rarr; <a href="gamedata.html">curated game-data tables</a> are the ground-truth labels; <a href="cheats.html">cheat databases</a> anchor the RAM offsets.</li>
@@ -21,11 +23,11 @@
   <div class="card-grid">
     <a class="card" href="functions.html">
       <div class="card-title">Key functions</div>
-      <div class="card-body">A directory of the game's traced functions, grouped by subsystem - the <code>FUN_80xxxxxx</code> names are the disassembler's labels for code at those RAM addresses. Boot, asset loader, the runtime VMs, BIOS thunks, audio libraries, the battle and effect systems.</div>
+      <div class="card-body">The who's-who of the game's traced functions, grouped by subsystem, with an on-ramp for the <code>FUN_80xxxxxx</code> naming and the overlay-window trap. Boot, asset loader, the runtime VMs, cutscenes, renderer, battle, menus, audio, world map, BIOS thunks - plus the index of the per-subsystem directory pages.</div>
     </a>
     <a class="card" href="memory-map.html">
       <div class="card-title">PSX RAM map</div>
-      <div class="card-body">2 MB main RAM. Where SCUS_942.54 loads, where overlays live, where the global game state lives, where the actor table is, where the scratchpad is.</div>
+      <div class="card-body">The 2 MB main RAM as a picture and an interactive map: where <code>SCUS_942.54</code> loads, where the overlays go, where the party's records, story flags and inventory live - and why the 1 KB scratchpad at <code>0x1F800000</code> is not in the picture at all.</div>
     </a>
     <a class="card" href="cheats.html">
       <div class="card-title">Cheat databases</div>
@@ -37,7 +39,7 @@
     </a>
     <a class="card" href="music-tracks.html">
       <div class="card-title">Music-track disambiguation</div>
-      <div class="card-body">Every BGM cue cross-referenced across its four naming spaces: the debug sound-test ID + working title, the in-game context it plays in, the official OST album title, and a proposed relocalization title. The human-readable label layer for the extracted SEQ/BGM tracks. Curated reference (Stann0x).</div>
+      <div class="card-body">Every BGM cue cross-referenced across its four naming spaces: the debug sound-test ID + working title, the in-game context it plays in, the official OST album title, and a proposed relocalization title (curated by Stann0x). Also the disc join - global id <code>2000 + i</code>, and the piecewise <code>music_01</code> bank map behind it.</div>
     </a>
     <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/builds.md" target="_blank" rel="noopener">
       <div class="card-title">Builds + region differences</div>
@@ -49,11 +51,11 @@
     </a>
     <a class="card" href="re-settled-threads.html">
       <div class="card-title">Settled RE threads</div>
-      <div class="card-body">The questions that have an answer, and how firmly each one is pinned. Every row is graded by what its own evidence rests on - instructions, a runtime capture, Ghidra's decompiled C, or inference - so you can tell a byte-pinned fact from one nobody has checked against the disassembly yet.</div>
+      <div class="card-body">The questions that have an answer, and how firmly each one is pinned. An at-a-glance table up top, then per-area verdicts with the full analysis collapsed under each. Every thread is graded by what its evidence rests on - instructions, a runtime capture, Ghidra's decompiled C, or inference.</div>
     </a>
     <a class="card" href="re-do-not-re-walk.html">
       <div class="card-title">Do not re-walk</div>
-      <div class="card-body">Falsified hypotheses with their reasoning intact. Each is a plausible reading of the bytes that turned out wrong; knowing <em>why</em> is worth more than the row it occupies. Check here before committing to a reading that looks obvious.</div>
+      <div class="card-body">Falsified hypotheses with their reasoning intact: a table of every reading that looked right and what is actually true, with the "why it looked right, and what killed it" narrative collapsed under each. Check here before committing to a reading that looks obvious.</div>
     </a>
   </div>
 </section>
@@ -72,4 +74,16 @@
     <li>The PSX scene generally - Sony PsyQ documentation, Martin Korth's <a href="https://problemkaputt.de/psx-spx.htm" target="_blank" rel="noopener">PSX-SPX</a>, and decades of accumulated TIM / TMD / SPU documentation.</li>
     <li>Reference projects whose legal pattern this repo follows: <a href="https://www.scummvm.org/" target="_blank" rel="noopener">ScummVM</a>, <a href="https://github.com/OpenRCT2/OpenRCT2" target="_blank" rel="noopener">OpenRCT2</a>, <a href="https://github.com/OpenMW/openmw" target="_blank" rel="noopener">OpenMW</a>, <a href="https://github.com/XProger/OpenLara" target="_blank" rel="noopener">OpenLara</a>.</li>
   </ul>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../formats/index.html">Format specs</a>
+    <a href="../subsystems/index.html">Subsystems</a>
+    <a href="../tooling/port-catalog.html">Port catalog</a>
+    <a href="../tooling/ghidra.html">Ghidra tooling</a>
+    <a href="../guides/getting-started.html">Getting started</a>
+  </div>
 </section>

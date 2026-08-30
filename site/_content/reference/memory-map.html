@@ -50,15 +50,51 @@
 </style>-->
 
 <header class="page-header">
-  <div class="breadcrumb"><a href="../index.html">home</a> · <a href="index.html">reference</a> · PSX RAM map</div>
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">reference</a> &middot; PSX RAM map</div>
   <h1>PSX RAM map</h1>
-  <p class="lede">The PSX has exactly 2 MB of main RAM, at addresses <code>0x80000000-0x801FFFFF</code>, and everything the running game is - its code, the party's stats, the loaded scene, the story flags - lives somewhere in that window. This map says what lives where. Click any region to see the details.</p>
+  <p class="lede">The PlayStation has exactly 2 MB of main RAM, and everything the running game <em>is</em> - its code, the party's stats, the loaded scene, the story flags, the item bag - lives somewhere in that window. This map says what lives where: the big regions first, then the globals that matter, each with the function or cheat code that pinned it.</p>
 </header>
 
-<section class="doc-section">
-  <h2>Interactive map</h2>
-  <p>Order: low addresses on top. Hover for a one-liner, click for full detail. Three landmarks orient everything else: <code>SCUS_942.54</code> (the game's main executable) loads at <code>0x80010000</code> and its data segment holds the persistent game state; the region above <code>0x801C0000</code> is the <em>overlay window</em>, where the game swaps in per-mode code (title / town / battle / menu) on demand; and the addresses quoted across this site's docs and cheat tables all point into this map.</p>
+<section class="doc-section" id="how-to-read">
+  <h2>How to read an address</h2>
+  <p>Every address on this site is a PSX <em>virtual</em> address: main RAM starts at <code>0x80000000</code>, so <code>0x80084708</code> is byte <code>0x84708</code> into the 2 MB. A name like <code>DAT_8007B83C</code> is Ghidra's automatic label for data at that address, the way <code>FUN_8003E4E8</code> labels a function (see <a href="functions.html">key functions</a>). Three things to know before you look one up:</p>
+  <ul class="bullets">
+    <li><strong>The game executable is only the bottom of the picture.</strong> <code>SCUS_942.54</code> loads at <code>0x80010000</code> and its data segment holds the persistent game state - character records, story flags, inventory. Most game <em>logic</em>, though, lives in overlays.</li>
+    <li><strong>An address in the overlay window <code>0x801C0000+</code> is ambiguous on its own.</strong> Overlays are chunks of code the game streams off the disc into that window per game mode - field, battle, menu, title - and only one is resident at a time. The same address means different things in different modes, so rows in that range say which overlay they belong to.</li>
+    <li><strong><code>0x1F800000</code> is not main RAM.</strong> It is the 1 KB PSX scratchpad, and Legaia keeps hot per-frame state there - including the field-VM's transient flag word - so a flag a script tests may not be in the 2 MB map at all.</li>
+  </ul>
+  <p>Rows carry their provenance: a <code>FUN_</code> address, a <code>ghidra/scripts/funcs/</code> dump path, or the cheat code that pinned them. Where a global's semantics are only partly understood the row says so - "exact semantics <strong>open</strong>" is a real value here, not an omission. The full row-by-row table is <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/memory-map.md" target="_blank" rel="noopener"><code>docs/reference/memory-map.md</code></a>; this page carries the regions and the globals that anchor an explanation.</p>
+</section>
 
+<section class="doc-section" id="region-map">
+  <h2>Region map</h2>
+  <figure class="overlay-strip">
+    <svg viewBox="0 0 880 170" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="ram-bar-title" style="width:100%;height:auto;font-family:'JetBrains Mono',monospace">
+      <title id="ram-bar-title">The 2 MB PSX main RAM as Legaia lays it out</title>
+      <!-- 2 MB = 860 px; 1 px ~ 2.44 KB -->
+      <rect x="10" y="40" width="26" height="44" fill="var(--border)" stroke="currentColor" stroke-width="1"/>
+      <rect x="36" y="40" width="394" height="44" fill="none" stroke="var(--accent)" stroke-width="1.5"/>
+      <rect x="430" y="40" width="323" height="44" fill="none" stroke="var(--text-muted)" stroke-width="1.5"/>
+      <rect x="753" y="40" width="107" height="44" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="5 3"/>
+      <text x="233" y="58" text-anchor="middle" font-size="12" fill="currentColor">SCUS_942.54 code + data</text>
+      <text x="233" y="74" text-anchor="middle" font-size="10" fill="var(--text-muted)">0x80010000 .. 0x800FFFFF (~960 KB)</text>
+      <text x="591" y="58" text-anchor="middle" font-size="12" fill="currentColor">runtime data buffers</text>
+      <text x="591" y="74" text-anchor="middle" font-size="10" fill="var(--text-muted)">0x80100000 .. 0x801BFFFF</text>
+      <text x="806" y="58" text-anchor="middle" font-size="12" fill="currentColor">overlay window</text>
+      <text x="806" y="74" text-anchor="middle" font-size="10" fill="var(--text-muted)">0x801C0000+ (256 KB)</text>
+      <text x="23" y="100" text-anchor="middle" font-size="9" fill="var(--text-muted)">BIOS</text>
+      <text x="10" y="32" font-size="10" fill="var(--text-muted)">0x80000000</text>
+      <text x="860" y="32" text-anchor="end" font-size="10" fill="var(--text-muted)">0x801FFFFF</text>
+      <!-- game state callouts -->
+      <line x1="300" y1="84" x2="300" y2="112" stroke="var(--text-muted)" stroke-width="1"/>
+      <text x="300" y="126" text-anchor="middle" font-size="10" fill="var(--text-muted)">0x80084708 character records, 0x80085600 story flags, 0x80085958 inventory (SCUS .bss)</text>
+      <line x1="806" y1="84" x2="806" y2="140" stroke="var(--text-muted)" stroke-width="1"/>
+      <text x="806" y="154" text-anchor="end" font-size="10" fill="var(--text-muted)">field 0897 / battle 0898 / menu 0899 - one resident at a time</text>
+    </svg>
+    <figcaption>Low addresses on the left. The overlay window is where the per-mode code goes; the scratchpad at <code>0x1F800000</code> is a separate 1 KB and is not drawn to scale here.</figcaption>
+  </figure>
+  <h3>Interactive map</h3>
+  <p>Order: low addresses on top. Hover for a one-liner, click for full detail.</p>
   <div class="memmap" id="memmap">
     <div class="memmap-section-head">BIOS / OS area</div>
     <div class="memmap-row" data-key="bios">
@@ -138,6 +174,12 @@
       <span class="memmap-label">Extended overlay region (used by 256 KB town overlay)</span>
     </div>
 
+    <div class="memmap-section-head">Not main RAM: the scratchpad</div>
+    <div class="memmap-row" data-key="scratchpad">
+      <span class="memmap-addr">0x1F800000 - 0x1F8003FF</span>
+      <span class="memmap-label">1 KB PSX scratchpad: per-frame tick byte, the field-VM transient flag word, the primitive write cursor, tile-flag bitmap base</span>
+    </div>
+
     <div class="memmap-section-head">Stack</div>
     <div class="memmap-row" data-key="stack">
       <span class="memmap-addr">~0x801FFF00 (top, grows down)</span>
@@ -148,25 +190,6 @@
   <div class="memmap-detail" id="memmap-detail">
     <p class="empty">Click any row above to see details.</p>
   </div>
-</section>
-
-<section class="doc-section">
-  <h2>Notes</h2>
-  <ul>
-    <li>The overlay window holds <em>different code</em> depending on which game mode is active. Static analysis only sees what's loaded at the time of capture. The repo has separate overlay imports for: title screen, town (PROT 0897), battle (PROT 0898), and the menu/options overlay (PROT 0899).</li>
-    <li>Several globals that look like data ("DAT_xxxxx" in Ghidra) are actually pointers to runtime structs. The battle context at <code>0x8007BD24</code> is the canonical example - Ghidra types it as <code>int*</code>, code accesses it as <code>(*ptr)[N]</code>.</li>
-    <li>The PROT TOC at <code>0x801C70F0</code> is loaded from disc at boot. The entry size formula is <code>size = toc[p+5] - toc[p+3] + 4</code>, where <code>p</code> is the entry's word offset in the raw TOC. See the <a href="../formats/prot.html">PROT.DAT format page</a>.</li>
-  </ul>
-  <details class="disclosure">
-    <summary>Superseded readings (do not re-walk)</summary>
-    <div class="disclosure-body">
-      <ul class="bullets">
-        <li>"PROT 0896 @ <code>0x801C5818</code>" as a menu-overlay base is refuted - that base was an over-read artifact; the menu overlay is PROT 0899 at <code>0x801CE818</code>, and live field captures hold an ISO9660 directory cache at <code>0x801C5818</code>.</li>
-      </ul>
-    </div>
-  </details>
-</section>
-
 <script>
 const DETAILS = {
   'bios': {
@@ -239,6 +262,10 @@ const DETAILS = {
     title: 'Extended overlay region',
     body: `<p>Used by the town overlay when imported at 256 KB instead of 192 KB. Some helper functions cite addresses in this range that aren't reachable from a plain 192 KB import.</p>`
   },
+  'scratchpad': {
+    title: 'PSX scratchpad',
+    body: `<p>Not part of the 2 MB map at all - 1 KB of fast on-chip RAM the game uses for hot per-frame state. <code>0x1F800393</code> is the per-frame tick byte every timer subtracts; <code>0x1F800394</code> is the field-VM <em>transient</em> flag word (set/clear/test by ops <code>0x2E/0x2F/0x30</code>, lower 16 bits re-seeded on every mode switch - distinct from the saved story-flag bitmap at <code>0x80085600</code>); <code>0x1F8003A0</code> is the active primitive write cursor the <code>POLY_*</code> emitters allocate from; <code>0x1F8003EC</code> is the walkability tile-flag bitmap base. See the <a href="#scratchpad">scratchpad table</a> below.</p>`
+  },
   'stack': {
     title: 'CPU stack',
     body: `<p>Standard PSX convention: stack grows down from near the top of RAM. SP is initialized at boot.</p>`
@@ -260,13 +287,152 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 </script>
+</section>
+
+<section class="doc-section" id="game-mode">
+  <h2>Game-mode state machine</h2>
+  <p>The game is a loop over a <em>mode</em> - title, field, battle, FMV, menu - and one cell picks which mode runs next frame. These are the companions of the 28-entry &times; 24-byte mode-dispatch table at <code>0x8007078C</code> (the table itself is on the <a href="../subsystems/boot.html">boot</a> page).</p>
+  <table>
+    <thead><tr><th>Address</th><th>Type</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x8007B83C</code></td><td>u16</td><td><strong>Next game-mode index</strong> (master mode selector). Drives the per-frame mode dispatcher: <code>0x02</code> field-launch, <code>0x03</code> field-run, <code>0x15</code> battle, <code>0x1A</code> STR FMV. Title-attract underflow writes <code>0x1A</code>. Also indexes the mode table, whose <code>+0x14</code> param seeds the lower 16 bits of the field-VM flag word <code>0x1F800394</code> on each mode switch (<code>FUN_8001DCF8</code>).</td></tr>
+      <tr><td><code>0x8007B87C</code></td><td>index</td><td>Mode index rendered on the dev CONFIG / test screen; indexes the <code>0x8007078C</code> table at stride 24 bytes (independently re-confirms the entry stride). Provenance <code>ghidra/scripts/funcs/800188c8.txt</code>.</td></tr>
+      <tr><td><code>0x8007B7AC</code></td><td>mode</td><td>Reads as the <strong>outgoing / previous</strong> game mode: the mode-entry prologue <code>FUN_80016230</code> gates its whole field-state snapshot on <code>== 3</code> (MAIN MODE) - "only preserve field state when the mode being left is the field". An inference from the guard's purpose, not a pinned writer; a write-watchpoint across a field&rarr;battle transition closes it.</td></tr>
+    </tbody>
+  </table>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../subsystems/boot.html">Boot sequence + mode table</a>
+    <a href="../subsystems/cutscene.html">Cutscene (mode 0x1A)</a>
+    <a href="../subsystems/save-screen.html">Save screen</a>
+  </div>
+</section>
+
+<section class="doc-section" id="static-globals">
+  <h2>Static (SCUS-resident) globals</h2>
+  <p>These live in the executable's data segment and are the same in every mode. The persistent game state - the values a save file is composed from - is all here.</p>
+  <table>
+    <thead><tr><th>Address</th><th>Type</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x80084708 + n*0x414</code></td><td>u8[0x414]</td><td>Per-character record (4 slots; display name at <code>+0x2A7</code>). Slot 3 (Terra) runs into the story-flag bitmap at <code>0x80085600</code>, so its tail aliases the globals. Layout: <a href="../formats/save-record.html">save record</a>.</td></tr>
+      <tr><td><code>0x80085600..0x80085800</code></td><td>u8[512]</td><td>Story-flag bitmap window (Door of Wind, town-visited markers).</td></tr>
+      <tr><td><code>0x80085758</code></td><td>u8[]</td><td><strong>Fourth flag bank</strong> - bitfield accessed via SET / CLEAR / TEST <code>(idx &gt;&gt; 3, 0x80 &gt;&gt; (idx &amp; 7))</code> (<code>FUN_8003CE08/_CE34/_CE64</code>). The opcode encoding spans <code>idx = 0x000..=0xFFF</code> plus <code>0x8000..=0x8FFF</code>, so it is <strong>not</strong> a fixed 256-bit array.</td></tr>
+      <tr><td><code>0x80085958</code></td><td>u8[]</td><td><strong>Item inventory</strong> (= save block <code>+0x1818</code>), 2-byte stride <code>(id, count)</code>. The active window is 128 or 256 slots, installed only by <code>FUN_8004313C</code> - never 72 (that is the "Have 99 Items" cheat's page span). Mechanism: <a href="../subsystems/inventory.html">inventory</a>.</td></tr>
+      <tr><td><code>0x80084540</code></td><td>u16</td><td>Current map / scene PROT base index (also "Map Modifier"; <code>View Credits</code> writes <code>0x030C</code>).</td></tr>
+      <tr><td><code>0x80084570</code></td><td>u32</td><td>Game-time play counter - advances per frame (~60/s), <em>not</em> per second; the save screen divides it down for <code>HH:MM:SS</code>.</td></tr>
+      <tr><td><code>0x80084594</code> / <code>0x80084598</code></td><td>u8 / u8[]</td><td>Party member count / member ids (sorted insertion, cap 4). <code>0x80084599</code> / <code>0x8008459A</code> are the Noa / Gala join gates.</td></tr>
+      <tr><td><code>0x8008459C</code></td><td>u32</td><td>Party gold.</td></tr>
+      <tr><td><code>0x800845A4</code></td><td>u32</td><td>Casino coin bank.</td></tr>
+      <tr><td><code>0x800845B4</code></td><td>u32</td><td><strong>Point Card counter</strong> (unmapped by every public cheat archive). The shop buy commit <code>FUN_801db7f4</code> accrues <code>price/20 * qty</code> when item <code>0xFE</code> is held, capped at 9,999,999.</td></tr>
+      <tr><td><code>0x80077828</code></td><td>u8[]</td><td><strong>Per-monster steal table</strong>, 1-based id at <code>+id*2</code>, each entry <code>[chance, item]</code> (chance first). Not in the PROT 867 record. <a href="../formats/steal-table.html">Steal table</a>.</td></tr>
+      <tr><td><code>0x80074358..0x80074367</code></td><td>4&times;u32</td><td>Active-ability bitmask; <code>FUN_80042558</code> ORs the party's per-character ability blocks into it each frame.</td></tr>
+      <tr><td><code>0x8007A6BC</code></td><td>u16</td><td>Shared "currently-acting character" HP/MP scratch - every "Infinite HP/MP" cheat hits this first.</td></tr>
+      <tr><td><code>0x8007B450</code></td><td>u16</td><td>Menu-request register the menu overlay polls each frame.</td></tr>
+      <tr><td><code>0x8007B5FC</code></td><td>u16</td><td>Encounter step counter ("No Random Battles" writes <code>0x0377</code>).</td></tr>
+      <tr><td><code>0x8007B6A8</code></td><td>u16</td><td>Save-anywhere allow flag.</td></tr>
+      <tr><td><code>0x8007B6F4</code> / <code>0x8007B790</code></td><td>u16</td><td>Camera mode word / camera zoom-state register.</td></tr>
+      <tr><td><code>0x8007BB80..0x8007BBA0</code></td><td>u32 / i32</td><td>Menu list-kernel state cluster: window-slide latch, pad-edge word, selected-row payload, scroll top, mode/result, selected row, class nibble, row count. Consumed by <code>FUN_80032A44</code> and the pause-menu sub-screens (<a href="../subsystems/field-menu.html">field menu</a>).</td></tr>
+      <tr><td><code>0x8007BD24</code> &rarr; <code>0x800EB654</code></td><td>ptr</td><td>Pointer to the active battle context struct; bytes <code>+0x06</code>/<code>+0x07</code> are the monster / party action ids the <a href="../subsystems/battle-action.html">battle-action SM</a> keys on.</td></tr>
+      <tr><td><code>0x800EC9E8 + n*0x2D4</code></td><td>u8[0x2D4]</td><td>Battle actor pool; HP at <code>+0x14C</code>, settled copies at <code>+0x172/+0x174</code>. <a href="cheats.html">Cheat citations</a>.</td></tr>
+      <tr><td><code>0x801C9370</code></td><td>ptr[8]</td><td>Battle 8-actor pointer table (party 0-2, monsters 3-7).</td></tr>
+      <tr><td><code>0x801C70F0</code></td><td>TOC</td><td>In-RAM <code>PROT.DAT</code> TOC, loaded at boot by <code>FUN_8003E4E8</code>. An entry's size is the sector gap to the next entry - <code>toc[p+3] - toc[p+2]</code>, retail's own <code>FUN_8003E68C</code> - see <a href="../formats/prot.html">PROT.DAT</a>.</td></tr>
+    </tbody>
+  </table>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="cheats.html">Cheat databases</a>
+    <a href="../formats/save-record.html">Save record</a>
+    <a href="../subsystems/inventory.html">Inventory</a>
+    <a href="../subsystems/battle.html">Battle actor table</a>
+    <a href="../formats/prot.html">PROT.DAT</a>
+  </div>
+</section>
+
+<section class="doc-section" id="audio-globals">
+  <h2>Sound + audio path</h2>
+  <p>The sound subsystem keeps a small cluster of path strings and state words in BSS - what tells the loader to look under <code>sound\</code>, which bank is resident, and the handshake that swaps one BGM for another.</p>
+  <table>
+    <thead><tr><th>Address</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x8007B380..0x8007B3DC</code></td><td>Per-extension flag/mode table plus the path-string cluster (<code>"sound\"</code>, <code>".spk"</code>, <code>".LZS"</code>, <code>"bse.dat"</code>, <code>".dpk"</code>, <code>".MAP"</code>, <code>".PCH"</code>, <code>".pac"</code>, <code>"STR"</code>). <code>0x8007B3A4</code> in the middle is <em>not</em> sound data - it is the equipment-swap selector table for <code>FUN_8001EBEC</code> (<a href="../formats/character-mesh.html">character mesh</a>).</td></tr>
+      <tr><td><code>0x8007B750</code></td><td>Sound flag word coordinating the BGM track-swap handshake (bit 1 pause, bit 3 load settled, bit 4 release ack) - <a href="../subsystems/audio.html">audio</a>.</td></tr>
+      <tr><td><code>0x8007B8D0</code></td><td><code>bse.dat</code> master bank pointer (<code>0x1800</code>-byte buffer) - <a href="../formats/sound-driver.html">sound driver files</a>.</td></tr>
+      <tr><td><code>0x8007BAC8</code> / <code>0x8007BC64</code></td><td>BGM id written by field-VM op <code>0x35</code> sub-1 / global BGM pool base for ids &ge; 2000 (<a href="music-tracks.html">music tracks</a>).</td></tr>
+      <tr><td><code>0x8007BD30</code> / <code>0x8007BD5C</code></td><td>Effect-runtime pool (16-byte head + 128 child + 32 master slots) / effect 2-pack wrapper buffer pointer - <a href="../subsystems/effect-vm.html">effect VM</a>.</td></tr>
+      <tr><td><code>0x8007B7F8</code> / <code>0x8007B81C</code></td><td>Pointers to the cosine / sine views of the shared trig LUT (<code>4096 * sin</code> over 5120 <code>i16</code> entries at <code>0x80070A2C</code>, one revolution plus the quarter turn cosine needs - which is why consumers mask the angle with <code>0xFFF</code>).</td></tr>
+      <tr><td><code>0x8007B824</code></td><td>Party base index into the global TMD table <code>DAT_8007C018</code>, read by <code>FUN_8001EBEC</code> for the three active-party battle-TMD pointers.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="scratchpad">
+  <h2>PSX scratchpad (<code>0x1F800000-0x1F8003FF</code>)</h2>
+  <p>The PSX has 1 KB of fast on-chip RAM here. Legaia uses the high end for per-frame state:</p>
+  <table>
+    <thead><tr><th>Address</th><th>Type</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x1F800314</code></td><td>i16[]</td><td>Inverted-Y mirror table (op <code>0x4C</code> nibble-9 sub-E writes <code>-words[i]</code> here).</td></tr>
+      <tr><td><code>0x1F800393</code></td><td>u8</td><td>Per-frame tick byte - the global frame-time scalar read by op <code>0x4A</code> <code>WAIT_FRAMES</code>, subtracted from the title-attract countdown, and exposed as <code>World::tick_move_vms_with_delta</code> in the port.</td></tr>
+      <tr><td><code>0x1F800394</code></td><td>u32</td><td><strong>Field-VM transient flag word</strong> - not persisted, distinct from the saved story-flag bitmap at <code>0x80085600</code>. Set/clear/tested by ops <code>0x2E/0x2F/0x30</code>; lower 16 bits re-seeded on every mode switch by <code>FUN_8001DCF8</code>. Bit <code>0x40</code> is set by the scene-change packet <code>FUN_8001FD44</code> - a scene-transition-pending flag, not a "dialog active" lock.</td></tr>
+      <tr><td><code>0x1F8003A0</code></td><td>ptr</td><td>Active primitive/packet write cursor the <code>POLY_*</code> emitters allocate from and link through <code>FUN_8003D2C4</code>.</td></tr>
+      <tr><td><code>0x1F8003E8</code></td><td>u32</td><td>Render-config block (op <code>0x46</code>).</td></tr>
+      <tr><td><code>0x1F8003EC</code></td><td>u8[]</td><td>Tile-flag bitmap base used by op <code>0x4C</code> nibble-7 and the walkability grid at <code>+0x4000</code> (<a href="../subsystems/field-locomotion.html">field locomotion</a>).</td></tr>
+      <tr><td><code>0x1F8003F8</code> / <code>0x1F8003FA</code></td><td>i16</td><td>Camera-scroll values used by the op <code>0x23</code> player path.</td></tr>
+    </tbody>
+  </table>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../subsystems/script-vm.html">Field / event VM</a>
+    <a href="../subsystems/field-locomotion.html">Field locomotion</a>
+    <a href="../subsystems/renderer.html">Renderer</a>
+  </div>
+</section>
+
+<section class="doc-section" id="overlays">
+  <h2>Overlay window (<code>0x801C0000+</code>)</h2>
+  <p>The 256 KB overlay window is shared between several runtime overlays - only one is loaded at any time. Static analysis only sees what was loaded at the time of capture, which is why the repo keeps a separate import per overlay.</p>
+  <table>
+    <thead><tr><th>RAM range</th><th>Overlay</th><th>Subsystems</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x801C0000+</code></td><td>Title screen</td><td>Menu window-widget interpreter (<code>FUN_801D6628</code>); title-overlay tick <code>FUN_801DD35C</code></td></tr>
+      <tr><td><code>0x801CE818+</code></td><td>Town / field / dialog (PROT <code>0897</code>)</td><td>Field VM (<code>FUN_801DE840</code>), MES renderer, inventory hub, MAIN INIT</td></tr>
+      <tr><td><code>0x801CE818+</code></td><td>Battle (PROT <code>0898</code>)</td><td>Per-actor state machine, battle main dispatcher, effect VM cluster</td></tr>
+      <tr><td><code>0x801CE818+</code></td><td>Options / pause / save / shop menu (PROT <code>0899</code>)</td><td>In-game menu UI</td></tr>
+      <tr><td><code>0x801EF018</code></td><td>Title-overlay state struct</td><td><code>+0x154</code> = attract countdown (init <code>0x8000</code>, underflow &rarr; mode <code>0x1A</code> &rarr; <code>MV1.STR</code>); <code>+0x158</code> = title frame counter</td></tr>
+      <tr><td><code>0x801F0000+</code></td><td>Battle effect helpers</td><td><code>0x801F5D90</code>, <code>0x801F5CF8</code> (effect-id specials), <code>0x801F8004 / 88FC / 8D4C / 8E6C / 8F28</code> (particle / emitter cluster)</td></tr>
+    </tbody>
+  </table>
+  <p>Each mini-game likewise gets its own slab of upper RAM, loaded fresh when entered; the cheat-pinned cells (fishing tension at <code>0x801D9168</code>, dance points at <code>0x801D53CC</code>, and so on) are listed on the <a href="cheats.html#citations">cheats page</a>.</p>
+  <details class="disclosure">
+    <summary>History: the "PROT 0896 @ 0x801C5818" menu-overlay base</summary>
+    <div class="disclosure-body">
+      <p>An earlier attribution placed the menu overlay at PROT 0896, base <code>0x801C5818</code>. That base was an over-read artifact of the superseded entry-size expression: the menu overlay is PROT 0899 at <code>0x801CE818</code>, and live field captures hold an ISO9660 directory cache at <code>0x801C5818</code>. Catalogued in <a href="re-do-not-re-walk.html">do not re-walk</a>.</p>
+    </div>
+  </details>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../tooling/overlay-capture.html">Overlay capture</a>
+    <a href="../tooling/static-overlay-pipeline.html">Static overlay pipeline</a>
+    <a href="../subsystems/boot.html">Which overlay loads when</a>
+  </div>
+</section>
+
+<section class="doc-section" id="notes">
+  <h2>Notes</h2>
+  <ul class="bullets">
+    <li>Several globals that look like data (<code>DAT_xxxxx</code> in Ghidra) are actually pointers to runtime structs. The battle context at <code>0x8007BD24</code> is the canonical example - Ghidra types it as <code>int*</code>, code accesses it as <code>(*ptr)[N]</code>.</li>
+    <li>The doc's <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/memory-map.md" target="_blank" rel="noopener">full table</a> also covers the world-map render pipeline and TMD/actor tables, the debug-flag cluster (including the <code>0x8007B8C2</code> dev/retail build-mode selector), and the runtime PROT TOC + asset chain globals - see the <a href="../subsystems/world-map.html">world map</a> and <a href="../subsystems/asset-loader.html">asset loader</a> pages for the mechanisms behind them.</li>
+  </ul>
+</section>
 
 <section class="doc-section" id="see-also">
   <h2>See also</h2>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
-    <a href="functions.html">Functions</a>
+    <a href="functions.html">Key functions</a>
+    <a href="cheats.html">Cheat databases</a>
     <a href="../subsystems/boot.html">Boot sequence</a>
+    <a href="../formats/save-record.html">Save record</a>
     <a href="../tooling/ghidra.html">Ghidra tooling</a>
   </div>
 </section>

@@ -11,7 +11,7 @@
 
 <section class="doc-section" id="how-it-works">
   <h2>How it works</h2>
-  <p>If the <a href="actor-vm.html">actor VM</a> is the title-screen sprite walker and the <a href="script-vm.html">field VM</a> is the cutscene / NPC scripter, the move VM is the layer in between - a tiny per-actor animation engine. Every actor (a party member, an enemy, an NPC) has a "move buffer" and a PC (program counter - the current read position) into it. Every frame, the actor tick calls into the move VM and runs opcodes until something forces it to pause (a HALT, a wait timer, or running out of buffer).</p>
+  <p>If the <a href="actor-vm.html">actor VM</a> is the menu-window choreographer and the <a href="script-vm.html">field VM</a> is the cutscene / NPC scripter, the move VM is the layer underneath both - a tiny per-actor animation engine. Every actor (a party member, an enemy, an NPC) has a "move buffer" and a PC (program counter - the current read position) into it. Every frame, the actor tick calls into the move VM and runs opcodes until something forces it to pause (a HALT, a wait timer, or running out of buffer).</p>
 
   <p>The move VM is what reads <a href="../formats/mdt.html">MDT</a> (move-table) records and turns them into world-space motion, render-bank writes, animation-bank selection, tween setup, and per-actor flag manipulation. It's the bytecode that drives Tactical Arts execution - when a Tactical Arts directional input maps to a move ID, the move VM is what plays out the move record one opcode at a time.</p>
 
@@ -22,17 +22,23 @@
 
 <section class="doc-section" id="vm-family">
   <h2>The runtime VM family</h2>
-  <p>Legaia runs <strong>five</strong> distinct bytecode / state VMs. Confusing them is the classic mistake in this corpus, so each page states plainly which one it is. This table is the shared orientation; the per-VM pages carry the detail. ("Driver" is the interpreter's main function - <code>FUN_80xxxxxx</code> names are Ghidra's labels for traced routines at those RAM addresses.)</p>
+  <p>Legaia runs <strong>five</strong> bytecode / state VMs that share the actor model. Confusing them is the classic mistake in this corpus, so each page states plainly which one it is. Five is an orientation, not a census: the <code>0x2F</code> extension dispatcher, the field VM's <code>0x4C</code> sub-dispatcher, and the battle-action / world-map / tile-board state machines are separate dispatchers with their own tables - the full list, with what is decoded, ported and actually reached by a live caller, is the <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/vm-inventory.md" target="_blank" rel="noopener">VM inventory</a>. This table is the shared orientation; the per-VM pages carry the detail. ("Driver" is the interpreter's main function - <code>FUN_80xxxxxx</code> names are Ghidra's labels for traced routines at those RAM addresses.)</p>
   <table>
     <thead><tr><th>VM</th><th>Driver</th><th>Where</th><th>Opcodes</th><th>Operand width</th></tr></thead>
     <tbody>
-      <tr><td><a href="actor-vm.html">Actor / sprite VM</a></td><td><code>FUN_801D6628</code></td><td>Title-screen overlay (unindexed <code>PROT.DAT</code> gap after entry 0899; PROT 0971 is the debug-menu overlay)</td><td>13</td><td>byte stream</td></tr>
+      <tr><td><a href="actor-vm.html">Actor / sprite VM</a></td><td><code>FUN_801D6628</code></td><td>Menu overlay, PROT 0899 (slot-A base <code>0x801CE818</code>) - it choreographs the shop / pause-menu / save windows, not sprites</td><td>13</td><td>byte stream</td></tr>
       <tr><td><strong>Move VM</strong></td><td><code>FUN_80023070</code></td><td><code>SCUS_942.54</code></td><td>71 (<code>0x00..0x46</code>) + 61 sub-ops via <code>0x2F</code></td><td>u16 stream</td></tr>
       <tr><td><a href="motion-vm.html">Motion VMs</a> (two)</td><td><code>FUN_8003774C</code> (pursue / patrol / face-target) and <code>FUN_80038158</code> (scripted motion + flag writes)</td><td><code>SCUS_942.54</code></td><td>see page</td><td>byte stream w/ high-bit target</td></tr>
       <tr><td><a href="script-vm.html">Field / event VM</a></td><td><code>FUN_801DE840</code></td><td>Town / field overlay (0897)</td><td>43 (<code>0x21..0x4F</code> with gaps) + <code>0x5x/6x/7x</code> default-route</td><td>byte stream</td></tr>
       <tr><td><a href="effect-vm.html">Effect VM</a></td><td><code>FUN_801E0088</code> (per-frame walker)</td><td>Battle overlay (0898)</td><td>per-slot SM (no opcode table)</td><td>inline state tokens</td></tr>
     </tbody>
   </table>
+  <div class="flow">
+    <span class="num">1</span><span class="layer">Field VM op 0x22</span><span class="desc">EXEC_MOVE stages a move record into the actor (+0x48 buffer, +0x70 PC)</span><span class="crate">FUN_800204F8</span>
+    <span class="num">2</span><span class="layer">Actor tick</span><span class="desc">every frame, per actor: physics, then step the move buffer</span><span class="crate">FUN_80021DF4</span>
+    <span class="num">3</span><span class="layer">Move VM</span><span class="desc">runs opcodes until HALT / WAIT / end of buffer; u16 operands</span><span class="crate">FUN_80023070</span>
+    <span class="num">4</span><span class="layer">Op 0x2F</span><span class="desc">escapes to the overlay extension dispatcher (61 sub-ops, field overlay only)</span><span class="crate">FUN_801D362C</span>
+  </div>
   <p>How the move VM wires to the others:</p>
   <ul class="bullets">
     <li>Field-VM op <code>0x22 EXEC_MOVE</code> calls <code>FUN_800204F8</code>, which finds the move record for <code>move_id</code> and stages it into the actor at <code>actor[+0x48]</code> (buffer base) / <code>actor[+0x70]</code> (PC).</li>
@@ -153,8 +159,15 @@ goto v0;                                                  // computed jump</code
     <li><strong>Midpoint blends.</strong> <code>0x0E</code> / <code>0x12</code> back the <code>FUN_801E45BC</code> "midpoint to actor world" idiom. <code>0x36/0x37</code> are axis predicates against <code>0x8E - DAT_8007C348</code>; <code>0x38/0x39</code> are squared-distance gates around the player. <code>0x23</code> is the anim-bank lerp toward operand world coords using the scratchpad ramp ratio at <code>_DAT_1F800393</code>.</li>
     <li><strong>Self-modifying bytecode.</strong> <code>0x04</code> writes actor world XYZ into <code>buffer[pc + op[2] + 3..]</code>; <code>0x1E</code> is read-modify-write on a single u16 (<code>buffer[pc + op[2] + 4] += op[3]</code>); <code>0x1B</code> is an in-bytecode copy loop. The <code>MoveHost::move_bytecode_{read,write}_u16</code> callbacks expose the actor's move buffer to these ops.</li>
     <li><strong>HSV ramps.</strong> <code>0x1F</code> / <code>0x20</code> ramp a packed 24-bit RGB color stored in <code>actor[+0xA0..+0xA3]</code> / <code>actor[+0xA4..+0xA7]</code>: decompose, RGB&rarr;HSV via the SCUS algorithm at <code>FUN_8001A78C</code>, add <code>op[2..4]</code> per channel (H wraps mod <code>0x168</code>, S/V clamp), HSV&rarr;RGB via <code>FUN_8001A8DC</code>, re-pack. Both are size-1 by design - the operand stream re-interprets as the next outer opcode (a bytecode-density trick that simultaneously seeds the anim-block update). <code>crates/engine-vm</code> ships clean-room <code>rgb_to_hsv</code> / <code>hsv_to_rgb</code> mirroring the SCUS algorithms exactly.</li>
-    <li><strong>Fourth flag bank.</strong> <code>0x13</code> / <code>0x14</code> predicate, <code>0x1C</code> / <code>0x1D</code> set / clear - backed by the same <code>DAT_80086D70</code> bitfield the field VM's <code>0x5x/0x6x/0x7x</code> default routes touch. <code>engine-core::World</code> exposes it as a single lazily-grown <code>system_flags: Vec&lt;u8&gt;</code> with MSB-first bit ordering (<code>0x80 &gt;&gt; (idx &amp; 7)</code>, mirroring <code>FUN_8003CE08</code>). The field VM's idx encoding ranges over <code>0..=0x87FF</code>, so the bank can't be a fixed-size array.</li>
+    <li><strong>Fourth flag bank.</strong> <code>0x13</code> / <code>0x14</code> predicate, <code>0x1C</code> / <code>0x1D</code> set / clear - backed by the same <code>DAT_80085758</code> bitfield the field VM's <code>0x5x/0x6x/0x7x</code> default routes touch. <code>engine-core::World</code> exposes it as a single lazily-grown <code>system_flags: Vec&lt;u8&gt;</code> with MSB-first bit ordering (<code>0x80 &gt;&gt; (idx &amp; 7)</code>, mirroring <code>FUN_8003CE08</code>). The field VM's idx encoding ranges over <code>0..=0x87FF</code>, so the bank can't be a fixed-size array.</li>
   </ul>
+</section>
+
+<section class="doc-section" id="ext-doc">
+  <h2>The extension dispatcher in full</h2>
+  <p>The 61 sub-opcodes have their own page in the repository: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/move-vm-overlay-ext.md" target="_blank" rel="noopener"><code>docs/subsystems/move-vm-overlay-ext.md</code></a> - per-sub-op semantics, the slot table, the branch encodings (<code>0x13</code>/<code>0x14</code> are conditional branches on the fourth flag bank, and a negative delta onto a preceding wait forms the spin-wait idiom the ambient lightning cyclers idle on), and the fact that one copy of the dispatcher lives in the field overlay (0897) only, so battle-side move records cannot reach it.</p>
+  <h3 id="tile-board">A sibling that is not the move VM: the tile-board grid</h3>
+  <p>Puzzle rooms and board minigames run a discrete <strong>tile-board mode</strong> in the same field overlay: a <code>width &times; height</code> byte-cell array installed inline in the field-VM script by op <code>0x49</code> sub-op <code>0x05</code> (global <code>_DAT_8007b450</code>), where cell value <code>2</code> is a wall and each accepted d-pad press moves the player exactly one cell; the walk state machine is <code>overlay_0897_801ef2b0</code>. It is <em>not</em> general town locomotion (that is the free-movement controller on <a href="field-locomotion.html">field locomotion</a>) - it was once mistaken for it because both live in overlay 0897 and read the pad. Full layout: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/tile-board.md" target="_blank" rel="noopener"><code>docs/subsystems/tile-board.md</code></a>.</p>
 </section>
 
 <section class="doc-section" id="cross-refs">
@@ -218,5 +231,9 @@ goto v0;                                                  // computed jump</code
     <a href="motion-vm.html">Motion VM</a>
     <a href="battle-action.html">Battle action SM</a>
     <a href="actor-vm.html">Actor VM</a>
-  </div>
+      <a href="../formats/mdt.html">MDT move table</a>
+    <a href="../formats/art-data.html">Art data</a>
+    <a href="field-locomotion.html">Field locomotion</a>
+    <a href="../arts.html">Arts browser</a>
+</div>
 </section>

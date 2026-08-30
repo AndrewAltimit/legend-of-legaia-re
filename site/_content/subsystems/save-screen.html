@@ -4,6 +4,19 @@
   <p class="lede">Everything that happens between "Save" on the menu and bytes landing on the PSX memory card: the slot list, the "Now checking. Do not remove MEMORY CARD" beat, the overwrite confirm, and the actual card write. One structural surprise up front: the retail save UI is <strong>two-stage in two different id spaces</strong> - the SLOT 1 / SLOT 2 pills pick a memory-card <em>port</em>, and the 5&times;3 preview grid then picks one of that card's 15 save <em>blocks</em>. Conflating the two is the easy mistake.</p>
 </header>
 
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <p>Pick <em>Save</em>, choose a memory-card slot, wait through &ldquo;Now checking&rdquo;, pick one of fifteen blocks, confirm the overwrite, and the card light blinks. That is five screens and one asynchronous CD-library conversation, all driven by one small state machine in the menu overlay. The saved bytes are a straight copy of the live game-state block in RAM with an additive checksum stamped on - which is why retail re-sums the block on load and a memory-card editor only needs the layout, not a cipher.</p>
+  <div class="flow">
+    <span class="num">1</span><span class="layer">Entry</span><span class="desc">the 9-state driver decodes the entry-context pointer and picks a sub-screen</span><span class="crate">FUN_801DC6B4</span>
+    <span class="num">2</span><span class="layer">Port pick</span><span class="desc">SLOT 1 / SLOT 2 pills choose a memory-card port</span><span class="crate">FUN_801D6B20</span>
+    <span class="num">3</span><span class="layer">Card check</span><span class="desc">"Now checking" - the libcd I/O state machine reads the card's directory</span><span class="crate">FUN_801E3294</span>
+    <span class="num">4</span><span class="layer">Block pick</span><span class="desc">the 5x3 preview grid chooses one of 15 save blocks; shared list-cursor navigator</span><span class="crate">FUN_801D688C</span>
+    <span class="num">5</span><span class="layer">Confirm + write</span><span class="desc">overwrite prompt, checksum, then the write with "saving in progress"</span><span class="crate">FUN_801DAFD4 / FUN_801E38D8</span>
+    <span class="num">6</span><span class="layer">Return</span><span class="desc">fade-out states 3..5, back to the pause menu or title</span><span class="crate">FUN_801DC6B4</span>
+  </div>
+</section>
+
 <section class="doc-section" id="how-it-works">
   <h2>How it works</h2>
   <p>The whole flow lives inside the <strong>menu overlay</strong> - a chunk of code the game streams into RAM on demand, the same binary that carries the shop, inn, and status screens (it is not an overlay of its own). We traced it with a disassembler (Ghidra); the <code>FUN_80xxxxxx</code> names below are RAM addresses in that trace. Three layers: an outer 9-state dispatcher (<code>FUN_801DC6B4</code>), a sub-screen function-pointer table, and a state machine over libcd (Sony's CD/memory-card library) that does the actual card I/O.</p>
@@ -237,7 +250,7 @@ local_34 = iVar4 + 0x18a;   // panel chrome top-y</code></pre>
 
 <section class="doc-section" id="full-reference">
   <h2>Full reference</h2>
-  <p>Complete state-machine and sub-screen tables with Ghidra provenance live at <code>docs/subsystems/save-screen.md</code> in the repo. Function dumps: <code>ghidra/scripts/funcs/overlay_menu_801dc6b4.txt</code>, <code>overlay_menu_801daef4.txt</code>, <code>overlay_menu_801dafd4.txt</code>, <code>overlay_save_ui_select_801e1c1c.txt</code>, <code>overlay_save_ui_select_801e08d8.txt</code>. Capture sources: the <code>overlay_save_ui_select.bin</code> / <code>overlay_save_ui_saving.bin</code> mednafen captures (slot-select and writing-in-progress states), both confirmed as the menu overlay by function-address identity.</p>
+  <p>Complete state-machine and sub-screen tables with Ghidra provenance live at <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/save-screen.md" target="_blank" rel="noopener"><code>docs/subsystems/save-screen.md</code></a> - which also carries the retail SC block layout, the live game-state window at <code>DAT_80084140</code> the block is composed from, the globals list, the debug character-parameter editor, and sub-screen <code>0x15</code>. Function dumps: <code>ghidra/scripts/funcs/overlay_menu_801dc6b4.txt</code>, <code>overlay_menu_801daef4.txt</code>, <code>overlay_menu_801dafd4.txt</code>, <code>overlay_save_ui_select_801e1c1c.txt</code>, <code>overlay_save_ui_select_801e08d8.txt</code>. Capture sources: the <code>overlay_save_ui_select.bin</code> / <code>overlay_save_ui_saving.bin</code> mednafen captures (slot-select and writing-in-progress states), both confirmed as the menu overlay by function-address identity.</p>
 </section>
 
 <section class="doc-section" id="see-also">
@@ -247,5 +260,9 @@ local_34 = iVar4 + 0x18a;   // panel chrome top-y</code></pre>
     <a href="../formats/save-record.html">Save record</a>
     <a href="inn.html">Inn</a>
     <a href="shop.html">Shop UI</a>
+    <a href="field-menu.html">Field menu</a>
+    <a href="actor-vm.html">Actor / sprite VM (window choreography)</a>
+    <a href="../formats/window-script.html">Window scripts</a>
+    <a href="../reference/cheats.html">Cheat database (RAM offsets)</a>
   </div>
 </section>

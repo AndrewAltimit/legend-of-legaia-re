@@ -1,18 +1,38 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; dialog font (proportional latin)</div>
   <h1>Dialog font (proportional Latin) <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">The proportional sans-serif font used by the dialog box, the field menu, and most in-game UI text - proportional meaning each letter has its own width (an &ldquo;i&rdquo; is 3 pixels, a &ldquo;W&rdquo; is 9), unusual polish for a PSX RPG. The glyph images live in VRAM (the console's 1024&times;512 video memory) at runtime, and every text-drawing primitive the game emits references them there.</p>
+  <p class="lede">Every line an NPC speaks, every menu label and every "learned a new Art" banner is drawn one letter at a time from a single 256-glyph sheet. It is a proportional sans-serif - each letter has its own width (an &ldquo;i&rdquo; is 3 pixels, a &ldquo;W&rdquo; is 9), unusual polish for a PSX RPG - and it is the reason a translation pack can only use characters the sheet already has. The glyph images live in VRAM (the console's 1024&times;512 video memory) at runtime, and every text-drawing primitive the game emits references them there.</p>
 </header>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>In the game</dt><dd>The dialog box, the pause menu, shop and battle text - every proportional-width line of Latin text.</dd>
+    <dt>Magic / marker</dt><dd>The glyph sheet is a plain PSX <a href="tim.html">TIM</a> (<code>0x00000010</code>) whose framebuffer destination is <code>(896, 0)</code>; the metrics are bare tables in the executable</dd>
+    <dt>Lives in</dt><dd>Glyph TIM at <code>PROT.DAT</code> file offset <code>0x7F40</code> (the unindexed head gap before the first entry); width table at SCUS <code>0x80073F1C</code>; escape table at SCUS <code>0x80074050</code></dd>
+    <dt>Retail reader</dt><dd><code>FUN_80036888</code> (single-line renderer), <code>FUN_8003CC98</code> (multi-line), <code>FUN_80036044</code> (word wrap)</dd>
+    <dt>Parser</dt><dd><code>crates/font</code> - <code>Font::from_disc_tim_and_scus</code>, layout API, CLI <code>font-extract</code></dd>
+    <dt>Confidence</dt><dd>Confirmed - width/escape tables and packet shape traced in <code>80036888.txt</code>; the disc TIM byte-matches the save-state VRAM extraction.</dd>
+  </dl>
+</section>
 
 <section class="doc-section" id="overview">
   <h2>Overview</h2>
-  <p>The font has three pieces of static data, all in <code>SCUS_942.54</code> (the game's main executable on the disc):</p>
+  <p>The font has three pieces of static data:</p>
   <ol class="bullets">
-    <li>A <strong>256-byte width table</strong> at <code>0x80073F1C</code>, indexed by character byte.</li>
-    <li>A <strong>38-entry escape-sequence table</strong> at <code>0x80074050</code>, indexed by the byte that follows a <code>0xCE</code> runtime escape.</li>
-    <li>The <strong>glyph bitmaps</strong>, which sit in VRAM at <code>(896, 0)..(960, 256)</code> (a 4bpp tile-page - 4 bits per pixel, 16 colours - covering 256×256 source pixels). They're loaded from disc into VRAM by an overlay-resident routine; the on-disc PROT entry that carries them has not yet been classified by the static categorizer.</li>
+    <li>A <strong>256-byte width table</strong> at <code>0x80073F1C</code> in <code>SCUS_942.54</code> (the game's main executable), indexed by character byte.</li>
+    <li>A <strong>38-entry escape-sequence table</strong> at <code>0x80074050</code> in the executable, indexed by the byte that follows a <code>0xCE</code> runtime escape.</li>
+    <li>The <strong>glyph bitmaps</strong>, which sit in VRAM at <code>(896, 0)..(960, 256)</code> (a 4bpp tile-page - 4 bits per pixel, 16 colours - covering 256×256 source pixels).</li>
   </ol>
-  <p>Here is the odd part: the metrics are in the executable, the pixels are visible in any VRAM dump - but the <strong>on-disc source of those pixels has never been found</strong>. An exhaustive search of every archive entry, raw and decompressed, returns zero hits (see <a href="#what-s-still-open">what's still open</a>). Extraction therefore reads the live bitmaps out of an emulator save state instead of off the disc.</p>
+  <h3 id="on-disc-carrier">On-disc carrier</h3>
+  <p>The glyph tile-page is a plain PSX TIM at <strong><code>PROT.DAT</code> file offset <code>0x7F40</code></strong>: a 4bpp image whose framebuffer is <code>(896, 0)</code>, 64 halfwords wide x 256 tall (= 256x256 4bpp pixels), with a 16-entry CLUT block declaring destination <code>(0, 510)</code>. The font page uses only three palette indices: <code>0</code> = transparent background, <code>14</code> = the <code>(32,32,32)</code> drop-shadow, <code>15</code> = the glyph fill. It sits in the same unindexed head gap of <code>PROT.DAT</code> as the <a href="tim.html#multi-row-clut">system-UI sheets</a> - after the table of contents, before the first numbered entry's data - which is why a per-entry walk never sees it.</p>
+  <p>This means the font is decodable <strong>straight from the disc, no save state required</strong>: <code>legaia_font::Font::from_disc_tim_and_scus</code> reads this TIM plus the SCUS width table and produces the same whitewashed atlas the save-state extraction (<code>font-extract</code>) yields. Pinned by a PROT.DAT-wide TIM scan for that framebuffer (constant <code>legaia_font::FONT_TIM_PROT_DAT_OFFSET</code>), byte-verified against the extracted atlas (<code>font::disc_font_matches_extracted_artifacts</code>).</p>
+  <details class="disclosure">
+    <summary>History: the "carrier never found" search</summary>
+    <div class="disclosure-body">
+      <p>Before the head-gap TIM was pinned, the bitmap was reachable only from a save-state VRAM dump. <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/asset-investigation/find-font-carrier.py"><code>scripts/asset-investigation/find-font-carrier.py</code></a> searched every PROT <em>entry</em> three ways (direct slice match, glyph-row signature match, and both re-run over LZS-decompressed bytes) and returned zero hits across <code>PROT.DAT</code>, <code>DMY.DAT</code> and <code>SCUS_942.54</code> - correctly, because the font lives in the unindexed gap <em>between</em> the TOC and the first entry, which a per-entry walk cannot reach. The flat sector scan (<a href="tim.html#catalog">TIM catalog</a>) is what found it.</p>
+    </div>
+  </details>
 </section>
 
 <section class="doc-section" id="glyph-layout-in-vram">
@@ -30,7 +50,9 @@ V = (c &amp; 0xF0) - 0x20</code></pre>
   <p>256 bytes, indexed by character byte. The advance for character <code>c</code> is computed as:</p>
 <pre><code>advance = widths[c] + DAT_800740E8 + 1</code></pre>
   <p>where <code>DAT_800740E8</code> is a per-string padding override that's normally zero (and is reset to zero at the end of each render call). The trailing <code>+1</code> is a fixed inter-character gap.</p>
-  <p>Bytes <code>widths[0x00..=0x1F]</code> overlap with three actor-name strings ("Meta", "Terra", "Ozma") that live at <code>0x80073F24..0x80073F3B</code>; only entries <code>0x20..=0xFF</code> are meaningful for glyph advance.</p>
+  <p>The advance is applied by the <strong>common tail</strong> of <code>FUN_80036888</code>'s per-byte loop (body <code>0x80036B9C</code>), which every byte reaches except the four control bytes <code>0x00</code> / <code>0x7C</code> / <code>0xCE</code> / <code>0xCF</code>. The space byte <code>0x20</code> branches around the sprite emit only - it still takes the advance, so a run of spaces measures <code>n * (widths[0x20] + 1)</code>. The table is addressed in biased form (<code>0x80073F3C</code> indexed by <code>c</code>, loaded at <code>-0x20</code>), which is the same <code>0x80073F1C + c</code>.</p>
+  <p>Consequence for measurement: a whole line's pixel width is exactly the sum of its per-byte advances, with no per-line fudge term. The save screen's memory-card warning line measures <strong>164 px</strong>; the engine asserts that number against a disc-decoded font in <code>engine-shell/tests/dialog_font_metrics.rs</code>.</p>
+  <p>Bytes <code>widths[0x00..=0x1F]</code> overlap with three short actor-name strings that live at <code>0x80073F24..0x80073F3B</code>; only entries <code>0x20..=0xFF</code> are meaningful for glyph advance.</p>
   <p>Sample widths from the table:</p>
 <table>
 <thead><tr>
@@ -156,7 +178,7 @@ VRAM (96 + 16*i, 510)   // CLUT i - colored variants for status text, system pro
 <td>36,34,35,37</td>
 <td>12</td>
 <td>0</td>
-<td><strong>Active actor name</strong> - string IDs 34/35/36/37 align with the in-SCUS actor name strings ("Meta"/"Terra"/"Ozma"/...)</td>
+<td><strong>Active actor name</strong> - string IDs 34/35/36/37 align with the in-SCUS actor name strings</td>
 </tr>
 <tr>
 <td><code>0x14..=0x1C</code></td>
@@ -317,7 +339,7 @@ VRAM (96 + 16*i, 510)   // CLUT i - colored variants for status text, system pro
 <section class="doc-section" id="what-s-still-open">
   <h2>What's still open</h2>
   <ul class="bullets">
-    <li><strong>On-disc carrier of the glyph bitmap.</strong> The bitmap is reachable only from a save-state VRAM dump. <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/asset-investigation/find-font-carrier.py"><code>scripts/asset-investigation/find-font-carrier.py</code></a> searches every PROT entry three ways (direct slice match, glyph-row signature match, and both re-run over LZS-decompressed bytes) and returns zero hits across <code>PROT.DAT</code>, <code>DMY.DAT</code>, and <code>SCUS_942.54</code> - the font is neither raw nor LZS-resident in the static asset corpus. The remaining unblock paths (tracing the GP0 0xA0 <code>LoadImage</code> upload to <code>(896, 0)</code> back to its source entry, or save-state diffing across the boot sequence) are detailed in <code>dialog-font.md</code>.</li>
+    <li><strong>The upload routine.</strong> The head-gap TIM is pinned (see <a href="#on-disc-carrier">on-disc carrier</a>), but the boot-time routine that issues the GP0 <code>0xA0</code> <code>LoadImage</code> of it to <code>(896, 0)</code> is not yet named - it sits somewhere between the PROT TOC loader <code>FUN_8003E4E8</code> and the first dialog open, SCUS-resident or in the title overlay.</li>
     <li><strong>String IDs in the escape table.</strong> Entries <code>0x00..=0x07</code> (advance 16, <code>y_offset = -2</code>) likely render multi-character icon strings from the same string pool that backs <code>FUN_8002C488</code>. The pool itself isn't yet decoded - its index 34..37 entries match the SCUS-resident actor name strings, suggesting the pool's first ~150 entries are mostly UI strings + actor names.</li>
     <li><strong><code>0xCC</code> opcode.</strong> The text-actor renderer at <code>FUN_80031D00</code> recognises a small handful of single-byte ops (<code>0xCC..=0xCF</code>) inside its glyph stream that are distinct from the dialog renderer's <code>0xCE/0xCF</code>. They're outside the dialog font's scope and tracked under the <a href="../subsystems/script-vm.html">field script VM</a> docs.</li>
   </ul>
@@ -363,11 +385,31 @@ VRAM (96 + 16*i, 510)   // CLUT i - colored variants for status text, system pro
   <p>Save-state parsing locates VRAM by searching for the <code>&amp;GPURAM[0][0]</code> variable header (mednafen uses a <code>u8 name_len; bytes name; u32 size; bytes data;</code> record format inside each section); no MDFNSVST section walk is required.</p>
 </section>
 
+<section class="doc-section" id="font-patch-feasibility">
+  <h2>Accented / non-Latin glyphs (font-patch feasibility)</h2>
+  <p>The <a href="../tooling/translation.html">translation pipeline</a> writes only bytes the retail font can already draw - printable ASCII <code>0x20..=0x7E</code> - so the community Spanish / French / German / Italian / Polish packs are <strong>ASCII-folded</strong> (<code>e</code> for <code>é</code>, <code>ss</code> for <code>ß</code>, <code>l</code> for <code>ł</code>). Adding real accented or non-Latin glyphs is a <strong>font patch</strong>, not a translation-pack change. A new glyph needs three things:</p>
+  <ol class="bullets">
+    <li><strong>A free byte slot.</strong> Not a 2-byte opcode (<code>0x5E</code>, <code>0xC0..=0xCF</code>, <code>0xFF</code>), not a terminator (<code>0x00..=0x1F</code>), and not already used by a string. Sweeping the exported corpus, roughly a hundred single-byte slots at <code>0x80..=0xFF</code> are unused by any string, about half of them currently zero-width blank cells - comfortably enough for the ~35 accented Latin code points the European packs need.</li>
+    <li><strong>A glyph bitmap in that cell</strong> - a 14x15 drawing in the 32 KB tile-page. With the on-disc TIM pinned at <code>PROT.DAT</code> offset <code>0x7F40</code>, this is a same-size in-place edit through the <a href="tim.html#encoding">TIM encoder</a>, the same mechanism as any texture replacement.</li>
+    <li><strong>A width-table entry</strong> - set <code>widths[byte]</code> so the proportional layout advances correctly: a same-size byte poke into <code>SCUS_942.54</code>, exactly what the translation importer already does.</li>
+  </ol>
+  <p>Accented Latin and Cyrillic (~66 cells) both fit the free slots. <strong>CJK does not</strong>: thousands of glyphs blow past the 224-cell single-page atlas and the byte index space, and would need a second variable-width glyph bank plus a multi-byte encoding in the renderer - a substantially bigger engine change, out of scope for a byte-poke font patch.</p>
+</section>
+
 <section class="doc-section" id="see-also">
   <h2>See also</h2>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="mes.html">MES dialog</a>
+    <a href="tim.html">PSX TIM</a>
     <a href="../subsystems/renderer.html">Renderer</a>
+    <a href="../subsystems/script-vm.html">Field script VM (dialogue)</a>
+    <a href="../subsystems/save-screen.html">Save screen</a>
+  </div>
+  <div class="see-also">
+    <span class="see-also-label">Tooling</span>
+    <a href="../tooling/translation.html">Translation / language packs</a>
+    <a href="../tooling/rom-patcher.html">ROM patcher</a>
+    <a href="../tooling/extraction.html">Extraction pipeline</a>
   </div>
 </section>

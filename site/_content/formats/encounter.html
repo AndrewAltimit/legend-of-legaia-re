@@ -1,38 +1,89 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; encounter record</div>
-  <h1>Encounter record format <span class="tag tag-done">Confirmed shape + reader + install path</span></h1>
-  <p class="lede">How does the game decide which monsters you fight? Every battle - random step-triggered fight
-  or scripted boss - funnels through one tiny structure: the <strong>encounter record</strong>, just <code>[3
-  reserved bytes][count][up to 4 monster ids]</code>, whose ids get copied into a 4-byte <em>formation cell</em>
-  in RAM at battle entry. A record is "armed" by writing a pointer to it onto a field actor at
-  <code>actor[+0x94]</code> (an <em>actor</em> is any live game object - the player, an NPC, a map entity); the
-  entity tick <code>FUN_801DA51C</code> then performs the copy. This page traces the whole chain: the record's
-  shape, the reader, the script opcodes that install the pointer, the per-step random-encounter roll, and the
-  per-scene tables the records live in on disc. Naming used throughout: <code>FUN_80xxxxxx</code> /
-  <code>DAT_80xxxxxx</code> are Ghidra labels (traced functions / fixed RAM addresses); the <em>field VM</em> is
-  the interpreter that runs a scene's event bytecode (<code>FUN_801DE840</code>); a scene's <em>MAN</em> is its
-  map data file; an <em>overlay</em> is a chunk of code the game loads into RAM on demand.</p>
+  <h1>Encounter record format <span class="tag tag-done">Confirmed</span></h1>
+  <p class="lede">Walk a few steps in a dungeon and the screen shatters into a fight; talk to the sparring partner in
+  Rim Elm and the same thing happens on purpose. Both kinds of battle - the random ones and the scripted bosses -
+  reach the battle engine through one tiny structure: the <strong>encounter record</strong>, three header bytes,
+  a monster count, and up to four monster ids. Whatever arms a fight simply points a field actor at one of these
+  records; a single reader copies the ids into the global <em>formation cell</em> the battle loader reads. This
+  page covers the record itself, the reader, the two ways a record gets armed (script and random roll), and the
+  per-scene MAN tables the records live in on the disc.</p>
 </header>
 
-<section class="doc-section" id="confidence">
-  <h2>Confidence</h2>
-  <p><strong>Confirmed (record shape, reader, install path) - Inferred (encoding within scripts).</strong> The reader (<code>FUN_801DA51C</code> body at <code>0x801DA620..0x801DA678</code>) is fully decoded. The install path is the script-VM dispatcher's set of "arm encounter" opcodes (<code>0x37/0x41</code>, <code>0x38</code>, <code>0x43</code>, <code>0x47</code>, <code>0x4C</code>); Ghidra's C decomp of <code>FUN_801de840</code> makes the install value explicit: <code>pbVar43 = (byte *)(param_1 + param_2)</code> - i.e. the <strong>current script-bytecode opcode pointer</strong>. So the encounter-record bytes (count at <code>+0x3</code>, ids at <code>+0x4..</code>) are the trailing operand bytes of the install opcode itself, inlined into the field-VM script for the scene that installs the record. <strong>There is no separate on-disc encounter-record array</strong>; the carriers are the per-scene field-VM script bundles (<a href="scene-v12-table.html">scene-v12-table</a> sister pairs + <a href="scene-bundles.html">scene-bundles</a> <code>scene_event_scripts</code>). The exact opcode encoding (how target / sub-op bytes pack into <code>+0x0..+0x2</code>) varies per opcode and is decoded case-by-case in the dispatcher (see the <a href="../subsystems/script-vm.html">script-VM subsystem</a>).</p>
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>In the game</dt><dd>every battle start - random step-triggered fights and scripted / boss fights alike</dd>
+    <dt>Magic / marker</dt><dd>none - a pointer at <code>actor[+0x94]</code> names the record; no magic word</dd>
+    <dt>Lives in</dt><dd>section 0 of each scene's MAN (formation rows, 8-byte stride) or inline in the scene's field-VM bytecode; the MAN is descriptor index 2 of the scene's <a href="scene-bundles.html">scene_asset_table</a> bundle (extraction-index space)</dd>
+    <dt>Retail reader</dt><dd><code>FUN_801DA51C</code>, body <code>0x801DA620..0x801DA678</code> (world-map / field entity tick)</dd>
+    <dt>Parser</dt><dd><code>legaia_asset::man_section</code> (MAN encounter section), <code>engine-core::encounter_record::EncounterRecord</code> (a record window), <code>engine-core::region_encounter</code> (the roll)</dd>
+    <dt>Confidence</dt><dd>Confirmed for the record shape, the reader and the install path (disassembly + runtime captures); Inferred for how each install opcode packs its three header bytes</dd>
+  </dl>
 </section>
 
 <section class="doc-section" id="layout">
-  <h2>Layout</h2>
-<pre><code>+0x00  u8[3]  reserved             ; cleared to zero by the reader before the copy
-+0x03  u8     monster_count         ; 0..4 inclusive
-+0x04  u8[N]  monster_ids           ; N == monster_count, each id indexes the
-                                    ; monster catalog (the per-scene battle_data
-                                    ; group)
-[possibly more after - fields not consumed by the formation copy]</code></pre>
-  <p>The reader copies <code>monster_ids[0..count]</code> into the global formation cell at <code>0x8007BD0C..0x8007BD0F</code> (a 4-byte array, one byte per slot). Slots beyond <code>count</code> stay zeroed. <code>monster_count == 0</code> clears the formation cell entirely (no monsters spawn this round).</p>
+  <h2>The record</h2>
+  <p>A record is a count followed by the monster ids, with three bytes in front that the formation copy never reads. The reader copies <code>monster_ids[0..count]</code> into the global formation cell at <code>0x8007BD0C..0x8007BD0F</code> (a 4-byte array, one byte per slot). Slots beyond <code>count</code> stay zeroed, and a count of <code>0</code> clears the cell entirely (no monsters spawn this round).</p>
+  <table class="layout">
+    <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>+0x00</code></td><td>1</td><td>header / scripted-fight predicate</td><td>Not copied. Non-zero raises the "scripted fight" bit <code>0x80</code> in the per-battle flags byte (<a href="#flags-byte">below</a>). For an inline arm this byte <em>is</em> the install opcode; for a MAN row it is authored per row.</td></tr>
+      <tr><td><code>+0x01</code></td><td>2</td><td>reserved</td><td>Not consumed by the formation copy (operand bytes of the install opcode, or scratch on a MAN row).</td></tr>
+      <tr><td><code>+0x03</code></td><td>1</td><td><code>monster_count</code></td><td><code>0..=4</code>.</td></tr>
+      <tr><td><code>+0x04</code></td><td><code>count</code></td><td><code>monster_ids[]</code></td><td>Each id indexes the monster catalog (the <a href="../monsters.html">monster archive</a>, PROT 867). Anything after the ids is not consumed by the copy.</td></tr>
+    </tbody>
+  </table>
+  <figure class="overlay-strip">
+    <svg viewBox="0 0 880 150" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="enc-rec-title">
+      <title id="enc-rec-title">An encounter record and its copy into the formation cell</title>
+      <style>
+        .er-lab { font: 11px 'Inter', sans-serif; fill: var(--text-muted); }
+        .er-seg { font: 11px 'Inter', sans-serif; fill: currentColor; text-anchor: middle; }
+        .er-addr { font: 10px 'JetBrains Mono', monospace; fill: var(--accent); text-anchor: middle; }
+        .er-box { fill: var(--bg-card); stroke: var(--accent); stroke-width: 1.2; }
+        .er-dim { fill: none; stroke: var(--border); stroke-width: 1.1; stroke-dasharray: 3 3; }
+        .er-arrow { stroke: var(--accent); stroke-width: 1.2; fill: none; }
+      </style>
+      <text x="20" y="38" class="er-lab">record</text>
+      <rect x="110" y="22" width="60" height="30" class="er-dim"/>
+      <rect x="170" y="22" width="60" height="30" class="er-dim"/>
+      <rect x="230" y="22" width="60" height="30" class="er-dim"/>
+      <rect x="290" y="22" width="80" height="30" class="er-box"/>
+      <rect x="370" y="22" width="80" height="30" class="er-box"/>
+      <rect x="450" y="22" width="80" height="30" class="er-box"/>
+      <rect x="530" y="22" width="80" height="30" class="er-box"/>
+      <rect x="610" y="22" width="80" height="30" class="er-box"/>
+      <text x="140" y="42" class="er-seg">+0</text>
+      <text x="200" y="42" class="er-seg">+1</text>
+      <text x="260" y="42" class="er-seg">+2</text>
+      <text x="330" y="42" class="er-seg">count</text>
+      <text x="410" y="42" class="er-seg">id 0</text>
+      <text x="490" y="42" class="er-seg">id 1</text>
+      <text x="570" y="42" class="er-seg">id 2</text>
+      <text x="650" y="42" class="er-seg">id 3</text>
+      <text x="200" y="66" class="er-addr">not copied</text>
+      <text x="530" y="66" class="er-addr">copied, count bytes</text>
+      <path d="M 490 72 L 490 96" class="er-arrow"/>
+      <path d="M 484 90 L 490 96 L 496 90" class="er-arrow"/>
+      <text x="20" y="124" class="er-lab">formation cell</text>
+      <rect x="370" y="106" width="60" height="30" class="er-box"/>
+      <rect x="430" y="106" width="60" height="30" class="er-box"/>
+      <rect x="490" y="106" width="60" height="30" class="er-box"/>
+      <rect x="550" y="106" width="60" height="30" class="er-box"/>
+      <text x="400" y="126" class="er-seg">slot 0</text>
+      <text x="460" y="126" class="er-seg">slot 1</text>
+      <text x="520" y="126" class="er-seg">slot 2</text>
+      <text x="580" y="126" class="er-seg">slot 3</text>
+      <text x="700" y="126" class="er-addr">0x8007BD0C..0F</text>
+    </svg>
+    <figcaption>The reader zeroes all four slots first, then copies <code>count</code> ids. Trailing slots stay zero.</figcaption>
+  </figure>
 </section>
 
 <section class="doc-section" id="reader">
   <h2>Reader</h2>
-  <p><code>FUN_801DA51C</code> (the world-map / field entity tick, see the <a href="../subsystems/world-map.html">world-map subsystem</a>) at offsets <code>0x801DA620..0x801DA678</code>:</p>
+  <p><code>FUN_801DA51C</code> is the per-frame tick for world-map / field <em>entities</em> - live objects carrying a 5-state state machine at <code>entity[+0x8A]</code> (see the <a href="../subsystems/world-map.html">world-map subsystem</a>). When an entity's SM reaches its encounter-confirm state, the body at <code>0x801DA620..0x801DA678</code> performs the copy:</p>
 <pre><code>801da620  lui v0,0x8008
 801da624  addiu s0,v0,-0x42f4   ; s0 = formation_cell_base = 0x8007BD0C
 801da628  sb zero,0x3(s0)        ; clear monster slot 3 (0x8007BD0F)
@@ -56,198 +107,228 @@
 801da670  slt v0,a0,a1
 801da674  bne v0,zero,0x801da658  ; loop until a0 == monster_count
 801da678  _nop</code></pre>
-  <p>The <code>s1</code> register is the actor record (caller's <code>a0</code> in <code>FUN_801DA51C</code>); <code>+0x94</code> is the encounter-record pointer slot. The clear-then-copy ordering means a <code>monster_count &lt; 4</code> record correctly leaves trailing slots zeroed. After the copy the reader clears <code>entity[+0x94]</code> and advances the entity's 5-state SM (<code>entity[+0x8A]++</code>), so the formation copy fires exactly once per arm. Just before the copy (<code>0x801DA5F8..0x801DA61C</code>) it also reads <code>record[+0]</code> (the <strong>opcode byte</strong> the record overlays) and ORs bit <code>0x80</code> into a battle-setup flag when it is non-zero - always true for a scripted arm, since the install opcodes are themselves non-zero. That byte is the first of the record's three "reserved" bytes (<code>+0x00..+0x02</code> = the install opcode + its two operand bytes).</p>
-
-  <p><strong>Discriminator (relevant to wiring this in an engine).</strong> There is no dedicated "encounter" opcode: the install opcodes are the field VM's generic <strong>halt-acquire</strong> family (<code>0x37/0x41/0x38/0x43/0x47/0x4C</code>), the same ones used for ordinary script yields. What turns a halt into an encounter is the <em>consumer</em>: only world-map / field <strong>entities</strong> ticked by <code>FUN_801DA51C</code> (those carrying the 5-state <code>entity[+0x8A]</code> SM) ever read their <code>+0x94</code> as a formation record, and only once the SM reaches the encounter-confirm state. The random path enters that state via the <code>FUN_801D9E1C</code> roll (state 0); a <em>scripted</em> arm relies on the scene bytecode having authored <code>[count @ +3][ids @ +4..]</code> after the halt opcode on such an entity's context. The general-purpose scripted arm is the interact op <strong><code>0x3E</code> with <code>op0 = 0xFF</code></strong> (<code>3E FF &lt;row&gt;</code>): the retail case-0x3E handler sets <code>entity[+0x8A] = 1</code> and installs <code>entity[+0x94] = ctrl[+0x20] + row * ctrl[+0x5D] + 1</code> &mdash; pointing the record slot at MAN formation-table row <code>row</code> directly (full arm + disc sites in <a href="../subsystems/battle.html#scripted-battle-entry">battle.html</a>: garmel rows 8/9 = Songi/Zeto, rikuroa row 17 = Caruban; boss rows sit outside every region's rollable <code>[base, base+count)</code> slice). Other per-scene shapes (an inline <code>[count][ids]</code> authored after a halt op) still occur; which shape a fight uses remains a per-scene bytecode fact.</p>
-
-  <p><strong>Engine port.</strong> The clean-room field VM mirrors this split: the bare arm-encounter op (<code>0x37</code>/<code>0x41</code>) asks the host <code>is_scripted_encounter_armed()</code> and, only when armed, forwards <code>install_scripted_encounter()</code> the bounded record window overlaying the opcode (<code>[opcode][op1][op2][count][&le;4 ids]</code>). The engine consumer (<code>World</code>) parses it as an encounter record, registers the formation, and forces the next field-step roll; a successful install disarms (fire-once, matching the retail <code>entity[+0x94]</code> clear). The armed flag stands in for "the active entity's <code>FUN_801DA51C</code> SM reached the confirm state" until the per-scene carrier identity is pinned.</p>
+  <p><code>s1</code> is the entity record (the caller's <code>a0</code>); <code>+0x94</code> is the record-pointer slot. After the copy the reader clears <code>entity[+0x94]</code> and advances the SM (<code>entity[+0x8A]++</code>), so the copy fires exactly once per arm. The reader does not check which flag bit armed the record, so one reader serves both the scripted and the random path.</p>
+  <h3 id="flags-byte">The per-battle flags byte (<code>DAT_8007BD60</code>) and the <code>+0</code> predicate</h3>
+  <p>Just before the copy (<code>0x801DA5F8..0x801DA61C</code>) the reader loads <code>record[+0]</code> and, when it is non-zero, ORs bit <code>0x80</code> into the per-battle flags byte at <code>0x8007BD60</code>:</p>
+<pre><code>801da5f8  lw v0,0x94(s1)         ; v0 = encounter_record_ptr = actor[+0x94]
+801da600  lbu v0,0x0(v0)         ; v0 = record[+0]
+801da608  beq v0,zero,0x801da620  ; zero: leave the flags byte alone
+801da60c  _lui v1,0x8008
+801da610  lbu v0,-0x42a0(v1)      ; 0x8007BD60, the per-battle flags byte
+801da618  ori v0,v0,0x80
+801da61c  sb v0,-0x42a0(v1)</code></pre>
+  <p>One byte carries two unrelated things, written by the two halves of the same path:</p>
+  <ul class="bullets">
+    <li><strong>Low bits - the stage id.</strong> The random roll (<code>FUN_801D9E1C</code>) overwrites the whole byte with <code>region[+8] &amp; 0x1F</code>; the backdrop picker reads it back as <code>word[0x80084540] + (byte[0x8007BD60] &amp; 0x7F)</code> to select the battle stage (<code>legaia_asset::battle_backdrop</code>).</li>
+    <li><strong>Bit <code>0x80</code> - "this fight is scripted".</strong> Raised by the confirm state when the armed record's <code>+0</code> is non-zero. The roll writes first and the confirm ORs after, so they never race: a random roll leaves the bit clear unless the row it landed on carries a non-zero header byte. An inline-script arm points at the bytecode overlaying the install opcode, so <code>+0</code> is the opcode - non-zero by construction. A MAN-row arm (<code>3E FF &lt;row&gt;</code> or the random roll) reads the row's own header byte: in <code>rikuroa</code> the two scripted rows 16 and 17 (the Caruban fight) read <code>01 00 00</code>, all sixteen random rows read <code>00 00 00</code>.</li>
+  </ul>
+  <table>
+    <thead><tr><th>Consumer of bit <code>0x80</code></th><th>Effect when set</th></tr></thead>
+    <tbody>
+      <tr><td>Battle-intro style selector <code>FUN_801CE8CC</code></td><td>Selects <code>SpinUpParticles</code> instead of the <code>TileShatter</code> default (or <code>TileShatter</code> sub-style 1 for slot-0 ids <code>0x13..=0x15</code>).</td></tr>
+      <tr><td>Intro transition phase 0 <code>FUN_801CF5BC</code></td><td>Replaces the plain battle-start cue <code>0x1F</code> with <code>0x4D</code> in SFX-ring slot 0 (<a href="../subsystems/cutscene.html">cutscene</a>).</td></tr>
+      <tr><td>Enemy stat-boost profile <code>FUN_80054CB0</code> via <code>ctx[+0x287]</code></td><td>Picks the boost profile (<code>legaia_asset::monster_archive</code>).</td></tr>
+    </tbody>
+  </table>
+  <p>The engine carries the bit as a property of the formation row rather than a global: <code>engine-core::monster_catalog::FormationDef</code> keeps <code>record[+0]</code> as <code>header_flags</code> and derives <code>per_battle_flags()</code> from it.</p>
 </section>
 
-<section class="doc-section" id="writer">
-  <h2>Writer (record-pointer install)</h2>
-  <p>The script-VM dispatcher (<code>FUN_801DE840</code>, see the <a href="../subsystems/script-vm.html">script-VM subsystem</a>) installs the encounter record on an actor with the pattern at <code>0x801DEEDC..0x801DEEEC</code>:</p>
+<section class="doc-section" id="arming">
+  <h2>How a record gets armed</h2>
+  <p>Nothing in the field VM is called "encounter". A record is armed by pointing an entity's <code>+0x94</code> at it, and there are three shapes of pointer:</p>
+  <div class="flow">
+    <div class="num">1</div><div class="layer">Random roll</div><div class="desc"><code>FUN_801D9E1C</code> picks a MAN formation row from the player's current region and points <code>+0x94</code> at it (flag bit <code>0x80000</code>).</div><div class="crate"><code>region_encounter</code></div>
+    <div class="num">2</div><div class="layer">Scripted, by row</div><div class="desc">The interact op <code>3E FF &lt;row&gt;</code> sets <code>entity[+0x8A] = 1</code> and points <code>+0x94</code> at MAN formation row <code>row</code>. This is how retail's bosses are cued (garmel rows 8/9 = Songi / Zeto, rikuroa row 17 = Caruban).</div><div class="crate"><code>World::trigger_scripted_battle</code></div>
+    <div class="num">3</div><div class="layer">Scripted, inline</div><div class="desc">A generic halt-acquire opcode (<code>0x37/0x41</code>, <code>0x38</code>, <code>0x43</code>, <code>0x47</code>, <code>0x4C</code>) points <code>+0x94</code> at its own bytecode, so <code>[count][ids]</code> are the trailing operand bytes (flag bit <code>0x400</code>).</div><div class="crate"><code>engine-vm</code> field VM</div>
+    <div class="num">4</div><div class="layer">Confirm + copy</div><div class="desc">The entity SM reaches its confirm state; <code>FUN_801DA51C</code> copies the ids into <code>0x8007BD0C</code>, clears <code>+0x94</code>, and the battle loads.</div><div class="crate"><code>World</code></div>
+  </div>
+  <p>What turns a halt into an encounter is the <em>consumer</em>: only entities ticked by <code>FUN_801DA51C</code> ever read their <code>+0x94</code> as a formation record, and only once the SM reaches the confirm state. Which shape a given fight uses is a per-scene bytecode fact.</p>
+
+  <h3 id="writer">Inline install sites in the script VM</h3>
+  <p>The dispatcher <code>FUN_801DE840</code> (<a href="../subsystems/script-vm.html">script VM</a>) installs the pointer with the pattern at <code>0x801DEEDC..0x801DEEEC</code>:</p>
 <pre><code>801deedc  lw v0,0x10(s5)
 801deee0  sw s0,0x94(s5)         ; actor[+0x94] = s0 (encounter record pointer)
 801deee4  sh zero,0x54(s5)       ; reset actor sub-state
 801deee8  ori v0,v0,0x400        ; raise "encounter armed" flag (state[0x400])
 801deeec  sw v0,0x10(s5)</code></pre>
-  <p><code>s0</code> is set once at the dispatcher prologue (<code>addu s0, a0, s8</code> at <code>0x801DE858</code>, i.e. <code>s0 = param_1 + param_2 = bytecode_buffer + pc_offset</code>) and is the <strong>current opcode pointer in the field-VM script bytecode</strong>. The Ghidra C decomp surfaces this as <code>pbVar43 = (byte *)(param_1 + param_2)</code>. <code>s5</code> is the resolved target actor - frequently the player context (<code>_DAT_8007C364</code>); when bit 7 of the opcode byte is set, byte +1 routes through the system-channel resolver <code>FUN_8003C83C</code>.</p>
-  <p>Multiple opcodes install the same pointer; each pairs the install with its own pre-install gate (target-actor selector, sub-op switch, etc.) and each advances the PC by a different amount past the opcode:</p>
+  <p><code>s0</code> is set once in the prologue (<code>addu s0, a0, s8</code> at <code>0x801DE858</code>, i.e. <code>bytecode_buffer + pc_offset</code>) and is the <strong>current opcode pointer</strong>; Ghidra's C renders it as <code>pbVar43 = (byte *)(param_1 + param_2)</code>. <code>s5</code> is the resolved target actor - frequently the player context <code>_DAT_8007C364</code>; when bit 7 of the opcode byte is set, byte +1 routes through the system-channel resolver <code>FUN_8003C83C</code>.</p>
   <table>
     <thead><tr><th>Opcode</th><th>Install line</th><th>PC advance</th><th>Notes</th></tr></thead>
     <tbody>
-      <tr><td><code>0x37</code> / <code>0x41</code> (shared case)</td><td><code>0x801DEEDC</code> / <code>0x801DEF08</code></td><td><code>+3</code></td><td>Bare arm-encounter. Second install on <code>param_3</code> if <code>iVar18 == _DAT_8007C364</code>.</td></tr>
-      <tr><td><code>0x38</code></td><td><code>0x801DEFA0</code> / <code>0x801DF038</code></td><td><code>+3</code></td><td>Falls through to the same install clause; first branch reads a halfword table at <code>0x80073F04</code> into <code>actor[+0x26]</code> when low-7-bits of byte +1 are zero.</td></tr>
-      <tr><td><code>0x43</code> (sub-op <code>0/1/A/B</code>)</td><td><code>0x801DF3FC</code> (decomp line 5223)</td><td><code>+3</code></td><td>Movement-target setup follows the install (<code>actor[+0x14..+0x1A]</code> from operand bytes); the encounter arms when the actor reaches the target.</td></tr>
-      <tr><td><code>0x47</code></td><td><code>0x801E1C38</code> (decomp line 5610)</td><td><code>+3</code></td><td></td></tr>
-      <tr><td><code>0x4C</code></td><td><code>0x801E1F44</code> / <code>0x801E21C0</code> / ... (decomp lines 6341 / 6460 / 6556)</td><td><code>+3</code></td><td>Three internal install sites in the same case body - one per inner sub-op.</td></tr>
+      <tr><td><code>0x37</code> / <code>0x41</code> (shared case)</td><td><code>0x801DEEDC</code> / <code>0x801DEF08</code></td><td><code>+3</code></td><td>Bare arm. Second install on <code>param_3</code> if <code>iVar18 == _DAT_8007C364</code>.</td></tr>
+      <tr><td><code>0x38</code></td><td><code>0x801DEFA0</code> / <code>0x801DF038</code></td><td><code>+3</code></td><td>Same install clause; first branch reads a halfword table at <code>0x80073F04</code> into <code>actor[+0x26]</code> when the low 7 bits of byte +1 are zero.</td></tr>
+      <tr><td><code>0x43</code> (sub-op <code>0/1/A/B</code>)</td><td><code>0x801DF3FC</code></td><td><code>+3</code></td><td>Movement-target setup follows (<code>actor[+0x14..+0x1A]</code> from operands); the encounter arms when the actor reaches the target.</td></tr>
+      <tr><td><code>0x47</code></td><td><code>0x801E1C38</code></td><td><code>+3</code></td><td></td></tr>
+      <tr><td><code>0x4C</code></td><td><code>0x801E1F44</code> / <code>0x801E21C0</code> / &hellip;</td><td><code>+3</code></td><td>Three install sites in one case body - one per inner sub-op.</td></tr>
     </tbody>
   </table>
-  <p>All install paths share the same pre-install gate:</p>
+  <p>All install paths share one pre-install gate: the actor already has a record (re-arm) <em>or</em> it is the player context; <em>and</em> the armed flag is clear <em>or</em> the scene allows re-arm:</p>
 <pre><code>if (actor[+0x94] != 0  ||  actor == _DAT_8007C364) &amp;&amp;
    ((actor[+0x10] &amp; 0x400) == 0  ||  *_DAT_801C6EA4[+8] != 0)</code></pre>
-  <p>- the actor already has a record installed (re-arm), OR it's the player context (always allowed); AND the armed flag is clear OR the scene explicitly allows re-arm.</p>
-  <p>Two non-encounter writes to <code>actor[+0x94]</code> also live in the dispatcher (case <code>0x34</code>: <code>pbVar47 + 0xe</code> and <code>pbVar47 + 3</code>). These do <strong>not</strong> raise the <code>0x400</code> flag and pair with <code>actor[+0x9c]</code>/<code>actor[+0x9e]</code> zero-writes; they're a separate "callback" pattern. Only the install sites listed in the table above are encounter-record arms.</p>
-</section>
+  <p>Two other writes to <code>actor[+0x94]</code> live in the dispatcher (case <code>0x34</code>: <code>pbVar47 + 0xe</code> and <code>pbVar47 + 3</code>). They do not raise <code>0x400</code>, pair with <code>actor[+0x9c]</code>/<code>[+0x9e]</code> zero-writes, and are a separate callback pattern - not encounter arms.</p>
+  <p><strong>Engine port.</strong> The clean-room field VM mirrors the split: the bare arm op asks the host <code>is_scripted_encounter_armed()</code> and, only when armed, hands <code>install_scripted_encounter()</code> the bounded window overlaying the opcode (<code>[opcode][op1][op2][count][&le;4 ids]</code>). <code>World</code> parses it as an <code>EncounterRecord</code>, registers the formation and forces the next field-step roll; a successful install disarms (fire-once, matching the retail <code>+0x94</code> clear). A scripted formation always overrides the region roll: <code>on_field_step</code> checks a <code>scripted_formation_pending</code> flag before the region path, which is what lets the Tetsu fight start in a town whose random rate is 0.</p>
 
-<section class="doc-section" id="formation-cell">
-  <h2>Formation cell + battle-data variant selector</h2>
-  <p>Adjacent to the formation cell:</p>
-  <table>
-    <thead><tr><th>Address</th><th>Size</th><th>Role</th></tr></thead>
-    <tbody>
-      <tr><td><code>0x8007BD0C</code></td><td><code>u8[4]</code></td><td>Active formation: monster ids per slot, populated by the reader above.</td></tr>
-      <tr><td><code>0x8007BD11</code></td><td><code>u8</code></td><td>Battle-data PROT-id selector. <code>FUN_800520F0</code> case-4 path reads this byte and chooses PROT entry <strong><code>0x367</code></strong> (raw TOC index; = extraction entry 0869) when it equals the case-1 character index, otherwise <strong><code>0x36D</code></strong> (raw TOC index; = extraction entry 0875). The selected entry is loaded as a kind-2 streaming asset for the battle scene.</td></tr>
-    </tbody>
-  </table>
-  <p>Snapshots of the formation cell across captures (see the <a href="../tooling/mednafen-automation.html"><code>scripts/scenarios.toml</code></a> manifest):</p>
-  <table>
-    <thead><tr><th>Save</th><th><code>0x8007BD0C..0F</code></th><th>Interpretation</th></tr></thead>
-    <tbody>
-      <tr><td><code>mc1</code> (pre-encounter, <code>map01</code>)</td><td><code>01 00 00 00</code></td><td>One-monster record from the previous battle; selector reset to <code>0x01</code>.</td></tr>
-      <tr><td><code>mc2</code> (in-battle, <code>map01</code>)</td><td><code>04 04 00 00</code></td><td>Two-slot encounter, both slots monster id <code>0x04</code>.</td></tr>
-      <tr><td><code>mc3</code> (post-battle, <code>suimon</code>)</td><td><code>0A 0D 00 00</code></td><td>Two-slot encounter, monsters <code>0x0A</code> and <code>0x0D</code>.</td></tr>
-    </tbody>
-  </table>
-
-  <h3>Worked example: the Rim Elm training fight</h3>
-  <p>The game's opening battle - the training fight in Rim Elm (<code>town01</code>) - is a scripted <strong>single-monster</strong> encounter against monster archive id <code>0x4F</code> ("Tetsu", the 999/999 tutorial sparring partner). Reading the formation cell across the training-fight capture corpus shows the install boundary cleanly:</p>
-  <table>
-    <thead><tr><th>Capture phase (<code>town01</code>)</th><th><code>0x8007BD0C..0F</code></th><th>Interpretation</th></tr></thead>
-    <tbody>
-      <tr><td>Pre-battle field (free movement, before the fight)</td><td><code>00 00 00 00</code></td><td>No formation installed - the cell is clear.</td></tr>
-      <tr><td>Battle loading (<code>game_mode 0x15</code>, graphics not yet drawn)</td><td><code>4F 00 00 00</code></td><td>One-monster formation: id <code>0x4F</code> in slot 0.</td></tr>
-      <tr><td>Battle running (graphics / command menu / submenu)</td><td><code>4F 00 00 00</code></td><td>Same lone-monster formation.</td></tr>
-      <tr><td>Post-battle field (back to <code>game_mode 0x03</code>)</td><td><code>4F 00 00 00</code></td><td>Cell retains the last formation until the next install (cleared at the next encounter, not on victory).</td></tr>
-    </tbody>
-  </table>
-  <p>The formation copy happens at battle entry: the cell is empty in the field and carries the lone id <code>0x4F</code> from battle-load onward.</p>
-  <p><strong>The id <code>0x4F</code> is not an inline script literal - it is a per-scene formation index.</strong> Two independent surveys of town01's bytecode find no <code>[count=1][0x4F]</code> install operand anywhere: (1) the <code>scene_event_scripts</code> prescript at PROT entry 3 (the <code>0x4F</code> bytes in the bulk payload are high-entropy asset data, not bytecode); and (2) the scene's <strong>MAN partition-1 field-VM scripts</strong> walked <strong>opcode-aware</strong> with the field-VM disassembler. The walk lands on every <code>0x37</code>/<code>0x41</code> yield byte and decodes the trailing <code>[count][ids]</code> window at each - across 53 records and 71 yield sites, <strong>zero</strong> carry the <code>[1][0x4F]</code> Tetsu signature. Every window that decodes is a <code>count=0</code> artifact from the walker stepping into embedded MES dialog text (the windows are plain ASCII: <code>1F 64 6F 20</code> = "do&nbsp;", <code>1F 56 61</code> = "Va", &hellip;). That is precisely the false positive a naive byte-scan produces; the opcode-aware walk distinguishes a real arm boundary from a dialog byte. See the disc-gated test <code>town01_p1_arm_sites.rs</code> and the <code>legaia-engine man-scripts</code> survey CLI. The lone-<code>0x4F</code> formation is instead <strong>town01 MAN formation index 4</strong>. The per-scene formations load from the scene's MAN asset into a contiguous 8-byte-stride table (<code>[3 reserved][count: 0..4][&le;4 ids]</code>); in the live "talk to Tetsu / Come at me!" save state that table reads <code>[04][07][0a][3f 3e 3e 3e][<strong>4f</strong>][0a 0a][3d 3d]</code> - byte-identical to the engine's MAN parse (which yields exactly these 7 formations, <code>formation_id</code> 4 = <code>[0x4F]</code>). The scripted carrier selects this formation <em>by index</em> (it points <code>actor[+0x94]</code> at the row; <code>FUN_801DA51C</code> copies the count-1 record into the cell on the dialogue-accept), which is why the cell shows the lone <code>0x4F</code> while no inline operand carries it.</p>
-  <p>The clean-room engine reaches this fight through the same indexed table: a cold boot loads town01's MAN formations (with the monster archive's real stats merged at scene entry), and <code>World::install_man_formation(RIM_ELM_TRAINING_FORMATION_ID)</code> (<code>= 4</code>) installs the existing row as the forced next encounter - no re-encoded record, the scene's merged stats stand (Tetsu's HP 999). <code>EncounterRecord::rim_elm_training()</code> remains for the hand-built <code>[count=1][0x4F]</code> window used by the arm-seam path.</p>
-  <h3>The carrier entity</h3>
-  <p>The MAN-placed actor that installs this fight is pinned: town01 partition-1 holds exactly one placement at <strong>tile (76, 65)</strong> with <strong>model byte <code>0x6A</code></strong>, whose interaction record carries a long multi-page dialog block - the sparring talk-menu and its battle-trigger branch. It is the only on-map placement whose inline dialog runs that long (the village's other NPCs are one- or two-line), and it sits adjacent to the town01 spawn. Mirrored as <code>RIM_ELM_SPARRING_CARRIER_TILE</code> / <code>RIM_ELM_SPARRING_CARRIER_MODEL</code> in <code>encounter_record.rs</code> and locked by <code>rim_elm_sparring_carrier.rs</code>.</p>
-  <p>The carrier is identified by its <strong>dialog block</strong>, not by an opcode-decoded selector: a field interaction record is dominated by embedded message text whose bytes alias field-VM opcodes (a literal <code>&gt;</code> is <code>0x3E</code>, the warp/interact opcode; ASCII punctuation hits the <code>0x37</code>/<code>0x41</code> yield bytes), so a linear disassembly desyncs inside the text and reports phantom interact / dialog ops with garbage operands. The dialog text itself is recovered <strong>structurally</strong> - as a run of <code>0x1F</code>-lead / <code>0x00</code>-terminated segments (<code>man_field_scripts::first_inline_dialog_offset</code>) - which is also how every town01 NPC's message renders. Confirming the dialogue-accept &rarr; <code>actor[+0x94]</code> install on this specific entity needs a mid-interaction RAM capture; the field-VM control flow from the menu branch to the formation-index install is the remaining open step.</p>
-  <p>The carrier set the field entity SM acts on is derived <strong>from the MAN itself</strong> rather than hand-built: <code>man_field_scripts::derive_field_carriers</code> walks the partition-1 placements and maps each interactable actor to a <code>FieldCarrierConfig</code> - the pinned sparring partner (<code>is_rim_elm_sparring_carrier</code>, by tile + model) becomes a <code>ScriptedEncounter</code> for formation <code>4</code>, every other talk NPC a plain <code>Npc</code> keyed by its record index; decorative/warp placements carry no carrier. <code>World::install_field_carriers_from_man</code> installs that derived set and returns the sparring carrier's slot; <code>enter_field_scene</code> calls it on every field entry (the counterpart to the MAN encounter-table install), so the carriers are live from the scene's own data. They sit Idle until the carrier is engaged, which advances the actual MAN actor's <code>FUN_801DA51C</code> SM. Engagement is <strong>driven by the field-VM dialogue-accept</strong>, not a manual API: a field-interact op (<code>0x3E</code>, <code>op0 &lt; 100</code>) on the sparring carrier's placement opens its inline dialogue and arms the engage, and accepting the prompt (the dialog-advance dismiss, <code>0x4C</code> n5 sub-4) engages it - so the field-VM bytecode drives the fight. (<code>engage_field_carrier</code> remains the direct entry point the auto-arm and tests call.) Because the sparring dialogue's Yes/No box-selection logic is still undecoded, the engine treats the accept as the dialog dismiss; the tutorial fight is forced, so there is no decline path to gate. The formation <em>index</em> (<code>4</code>) is a pinned constant - the interaction record selects its formation by index, not via an inline <code>[count][ids]</code> literal - but which actor is the carrier, and where it stands, come from the scene data.</p>
-</section>
-
-<section class="doc-section" id="battle-id-path">
-  <h2>Scripted-battle id path (<code>FUN_8005567c</code>)</h2>
-  <p>The <code>actor[+0x94]</code> record path is one of <strong>two</strong> ways the formation cell is populated. The other is a global <strong>battle-id</strong> at <code>DAT_8007b7fc</code> consumed at battle-init by <code>FUN_80055b6c</code>, which calls <code>FUN_8005567c</code> (<code>SCUS_942.54</code>) to expand the id into the cell: a plain id fills slots 0/1/2, while id ranges <code>0x07..0x09</code> / <code>0x49..0x4d</code> / <code>0x88..0x8b</code> / <code>0xa2..0xff</code> get bespoke multi-monster / boss expansions. <code>DAT_8007b7fc</code> is a transient parameter (<code>0</code> in every captured Tetsu frame). The distinguishing signature is the cell <em>shape</em> - <code>FUN_8005567c</code> writes slots 0/1/2 for a plain id (<code>[0x4F,0x4F,0x4F,0]</code>), whereas the Tetsu cell is <code>[0x4F,0,0,0]</code> (slot 0 only), which is the <code>FUN_801DA51C</code> count-1 record path. So the Rim Elm fight uses the indexed-record path; <code>FUN_8005567c</code> is the formation source for battles cued by a battle-id rather than an entity record.</p>
-  <p><strong>Zeto is NOT on this path - it uses the record path in scene <code>garmel</code>.</strong> A live PCSX-Redux firehose capture (three reproducible runs forward-played from the <code>chapter2_garmel_pre_zeto</code> bracket) shows the Zeto fight installs its formation via <code>FUN_801DA51C</code> - the <code>actor[+0x94]</code> entity-record path (<code>count=1</code>, <code>record[4]=0x4B</code>), storing <code>[0x4B,0,0,0]</code> directly into <code>DAT_8007bd0c</code> at the battle-launch tick (writer <code>ra</code> inside <code>FUN_801DA51C</code> body <code>0x801DA620..78</code>). A write-watch armed on <code>0x8007b7fc</code> stayed <strong>silent across the entire fight</strong> (field &rarr; <code>0x08</code> load &rarr; <code>0x15</code> orbit &rarr; back to field), and a mid-battle save-state reads <code>0x8007b7fc = 0</code>. Zeto is monster id <code>0x4B</code> (byte-confirmed from the PROT 867 name table: <code>Zeto</code>, HP 5000, gold 8000, exp 9000). Although <code>0x4B</code> falls in <code>FUN_8005567c</code>'s bespoke <code>0x49..=0x4d</code> boss-expansion band, the retail encounter carries the boss id in a <strong>count-1 entity record</strong>, not the <code>DAT_8007b7fc</code> global - so "boss id in-band &rArr; battle-id path" does <strong>not</strong> hold. The mid-battle cell <code>[0x4B,0,0,0]</code> matches the earlier <code>zeto_*_mid_cast</code> states byte-for-byte; those captures pinned the id, not the mechanism, and their <code>jou</code> scene attribution is superseded by the live forward-play (runtime scene buffer <code>0x8007050C</code> reads <code>garmel</code> through the whole fight). The clean-room engine enters the fight through the MAN formation row selected by the beat record's <code>3E FF &lt;row&gt;</code> op (<code>World::trigger_scripted_battle</code>), producing the same <code>[0x4B]</code> cell from the disc bytes.</p>
-  <p>Mt. Rikuroa's <strong>Caruban</strong> (id 73 = <code>0x49</code>, same band) is a <em>separate</em> boss and uses the <strong>same record path</strong>: its carrier is the rikuroa P1[3] boss-stager placement (park-gated on first-visit flag <code>0x142</code>, <code>3E FF 11</code> &rarr; formation row 17 = lone <code>0x49</code>), which the engine runs on approach (<code>World::run_boss_stager_record</code>). Both bosses are <code>3E FF</code> record-path fights.</p>
-  <p><strong>Open - does any retail battle write <code>DAT_8007b7fc</code>?</strong> Four exhaustive Ghidra sweeps across all 47 loaded programs (SCUS + 46 overlays) - <code>lui</code>+<code>addiu</code> absolute stores, <code>lui</code>+<code>ori</code>, gp-relative (<code>gp = 0x8007B318</code>, validated), and pointer-table occurrences - find only <strong>readers</strong> (<code>FUN_8005567c</code> &times;4, battle-init <code>FUN_80055b6c</code>, and the per-frame post-battle mode gate <code>FUN_80046a20</code>), <strong>zero writers</strong> by any addressing mode. A write-watch at the Zeto trigger cannot catch a writer - that trigger uses the record path and never writes the global. Every capture (Tetsu frames, the <code>pre_zeto</code> bracket, the full Zeto fight) reads <code>DAT_8007b7fc = 0</code>, and battle-init <code>FUN_80055b6c</code> takes its "<code>== 0</code> &rArr; preserve the record formation" branch, so the global may be <strong>always-0 / vestigial in retail</strong> with all battles resolving through <code>FUN_801DA51C</code>. Whether any retail encounter exercises the <code>FUN_8005567c</code> battle-id path at all is the open question; the writer (if one exists) sits outside the static corpus.</p>
-</section>
-
-<section class="doc-section" id="random-encounter">
-  <h2>Random-encounter trigger path</h2>
-  <p>The script-VM install opcodes above describe <strong>scripted</strong> encounter arms. Random encounters use a separate path.</p>
-  <h3>Roll function</h3>
-  <p><code>FUN_801D9E1C</code> (in the world_map overlay; also paged in by dance / fishing / slot-machine / cutscene_mapview / dialog_typing / debug_menu overlays - same code each time) runs once per movement update. It first runs the <a href="#condition-groups">condition walk</a> to pick which slice of the per-scene <strong>region table</strong> at <code>*(_DAT_801C6EA4 + 0x28) + 1</code> is live, then matches the player's <code>(x, y)</code> against each region's AABB at <code>pbVar9[0..3]</code> <strong>within that slice only</strong>. The matching region descriptor supplies:</p>
+  <h3 id="random-encounter">The random roll (<code>FUN_801D9E1C</code>)</h3>
+  <p>The roll lives in the world-map overlay (also paged in by the dance / fishing / slot-machine / cutscene / dialog / debug-menu overlays - same bytes each time) and runs once per movement update:</p>
   <ul class="bullets">
-    <li><code>pbVar9[4]</code>: per-step rate increment.</li>
-    <li><code>pbVar9[6]</code>, <code>pbVar9[7]</code>: base + count of the formation slice the region rolls into.</li>
+    <li>Run the <a href="#condition-groups">condition walk</a> to pick which slice of the scene's region table is live.</li>
+    <li>Match the player's <code>(x, y)</code> tile against each live region's AABB (<code>region[0..3]</code>); the hit supplies a per-step rate increment (<code>region[4]</code>) and a formation slice (<code>region[6]</code> base, <code>region[7]</code> count).</li>
+    <li>Scale the rate by the <a href="#rate-setting">setting byte</a> and four modifiers (<code>0x801da1b8..0x801da200</code>): High Encounter passive (bit <code>0x3B</code>, Bad Luck Bell / Nemesis Gem) <code>&lt;&lt; 2</code>; Low Encounter passive (<code>0x3C</code>, Good Luck Bell / Evil Talisman) <code>&gt;&gt; 1</code>; system flags <code>0x1D</code> / <code>0x1E</code> <code>&lt;&lt; 1</code> / <code>&gt;&gt; 1</code>.</li>
+    <li>Subtract the scaled rate from the step counter at <code>_DAT_8007B5FC</code>; when it reaches <code>&le; 0</code>, two RNG draws pick a formation in <code>[base, base + count)</code> and the roll installs the row.</li>
   </ul>
-  <h3 id="condition-groups">The condition array: story-flag-gated region groups</h3>
-  <p>The region array is not one flat list. The <strong>condition array</strong> partitions it into consecutive groups, one per story state, and exactly one group is live at a time. Each 4-byte condition record is <code>[u16 flag_id][s16 region_count]</code>, and the walk (<code>0x801d9f30..0x801d9fd8</code>) holds a region cursor that starts at region 0 and steps through the conditions in order: <code>flag_id == 0xFFFF</code> stops the walk (this group is the unconditional default); a <code>FUN_8003CE64(flag_id)</code> that reports the story flag <strong>set</strong> stops the walk (this group wins); otherwise the cursor advances by <code>region_count</code> regions and the walk continues. Reaching the end of the condition list without stopping makes the function <strong>return without rolling</strong> - a "no encounter this step" exit, not a fallback to the whole array. The same test makes a zero-length condition array mean "never rolls"; no retail scene has one.</p>
-  <p>Two corpus-wide invariants hold across every retail scene bundle whose MAN decodes: the group lengths <strong>tile the region array exactly</strong>, and the condition list ends with exactly one <code>0xFFFF</code> record and contains no other. Runtime states agree with the disc bytes: reading <code>_DAT_801C6EA4</code>'s three pointers out of a mid-playthrough main-RAM image reproduces the carve (<code>ctrl[+0x24] - ctrl[+0x20] == 1 + formation_count * formation_stride</code>, and likewise for <code>+0x28</code>), and walking the live conditions against the <code>0x80085758</code> flag bank selects the group this page's model predicts - in Drake Castle, the <code>0x0142</code>-gated leading group is skipped and the 14-region unconditional tail is live. A group commonly ends with a whole-map <code>rate 0</code> catch-all (the "outside every named region, roll nothing" row), and a <em>gated</em> group is frequently nothing but such a row - which is how a scene is made silent in one story state and noisy in another. Reading the array flat therefore lands on group 0 and stops on its placeholder row, which is what makes most scenes look encounter-free. <code>asset man --with-encounter</code> prints the regions under the group that owns them.</p>
-  <p>The rate is then scaled by the user-config setting at <code>_DAT_8007B5F8</code> and by four sequential accessory / status modifiers, statically pinned in the same dump: the High Encounter passive (bit <code>0x3B</code>, Bad Luck Bell / Nemesis Gem) shifts the rate <code>&lt;&lt; 2</code>, the Low Encounter passive (<code>0x3C</code>, Good Luck Bell / Evil Talisman) <code>&gt;&gt; 1</code>, and system flags <code>0x1D</code> / <code>0x1E</code> shift <code>&lt;&lt; 1</code> / <code>&gt;&gt; 1</code>. The scaled rate is subtracted from the step counter at <code>_DAT_8007B5FC</code>. When the counter goes &le; 0, two RNG draws pick a formation id in <code>[pbVar9[6], pbVar9[6] + pbVar9[7])</code> and the roll function installs:</p>
 <pre><code>*(short *)(actor + 0x88) = formation_id;
 *(short *)(actor + 0x8a) += 1;
 *(uint  *)(actor + 0x94) = formation_table_base + 1 + formation_id * stride;
 *(uint  *)(_DAT_8007c364 + 0x10) |= 0x80000;
 _DAT_8007b5fc = (RNG % 0x1e7) - ((RNG % 0x1e7) - 0x3ce);</code></pre>
-  <h3 id="rate-setting">The <code>_DAT_8007B5F8</code> setting byte</h3>
-  <p>The scale arm (<code>0x801da198..0x801da1b4</code>) compares the byte against <code>2</code> and against <code>3</code> and does nothing otherwise, so the four values are: <code>0</code> = no roll at all (<code>FUN_801DA51C</code>'s state-0 arm tests the byte at <code>0x801da5a8</code> and skips the call to <code>FUN_801D9E1C</code>, so this is off rather than "rate 0"); <code>1</code> = rate increment used <strong>as-is</strong>, the value retail save states carry; <code>2</code> = rate increment <code>&lt;&lt; 2</code>, four times as many encounters; <code>3</code> = rate increment <code>&gt;&gt; 2</code>, a quarter as many. The only writer in the static corpus is the world-map debug menu's <code>ENCOUNT</code> row (<code>FUN_801EA9B0</code> case 4), which cycles the byte <code>0 &rarr; 1 &rarr; 2 &rarr; 3 &rarr; 0</code>; the boot value is set from outside that corpus, and the runtime captures are what pin it. The engine mirrors the numbering in <code>region_encounter::EncounterRateSetting</code>, whose <code>Default</code> is the <code>1</code> pass-through.</p>
-  <p>Note the install at <code>+0x94</code> uses the same slot the scripted-encounter path uses, but raises a <strong>different flag bit</strong> (<code>0x80000</code>, not <code>0x400</code>). <code>FUN_801DA51C</code> reads <code>actor[+0x94]</code> without checking either flag, so a single reader serves both paths.</p>
-  <p><strong>Engine port (region-keyed roll).</strong> The roll is ported clean-room as <code>region_encounter</code> (<code>PORT: FUN_801D9E1C</code>). <code>RegionEncounterTable</code> preserves each region's tile-AABB + rate increment + formation slice (built from the MAN via <code>region_encounter_table_from_man</code>, the position-routed companion to the aggregated <code>encounter_man::encounter_table_from_man</code>). The table also carries the condition partition as <code>RegionEncounterTable::groups</code> and a selected slice; <code>RegionEncounterTracker::select_group(flag_test)</code> re-runs the condition walk and both roll sites call it once per step from the live system-flag bank, so a flag set mid-scene swaps the region set (and with it the rates, formation ranges and battle backdrop) on the next step. <code>RegionEncounterTracker::on_step(world_x, world_z, rng)</code> reduces the position to a 128-unit tile (<code>coord &gt;&gt; 7</code>), selects the first region <strong>of the active group</strong> whose AABB contains it, subtracts the setting-scaled rate increment from the step counter, and on a <code>&lt;= 0</code> counter rolls a formation uniformly from <code>[base, base + count)</code> with the one-step anti-repeat and the <code>0x3ce + rng%0x1e7 - rng%0x1e7</code> counter reset. The no-trigger path consumes zero RNG, matching retail (replay-safe).</p>
-  <p>Both scene modes route the tracker off the same MAN section. The <strong>overworld</strong> installs it via <code>World::set_world_map_regions</code> (rolled per tile in <code>live_world_map_tick</code>); a <strong>field</strong> scene installs it at scene entry via <code>World::set_field_regions</code>, and <code>World::on_field_step</code> rolls the active region and drives a trigger through the aggregated <code>EncounterSession</code>'s transition / grace SM (<code>EncounterSession::trigger_with</code>) - so the field path varies the rate + formation pick by region instead of using the single mean-rate table, while keeping the same transition bracketing. A field scene whose MAN has no encounter-region section (towns) installs no tracker and falls back to the mean-rate session.</p>
-  <h3>Encounter control block (<code>_DAT_801C6EA4</code>)</h3>
-  <p>A 100-byte block allocated by <code>FUN_8003A024</code> and populated per-scene by <code>FUN_8003A110</code> ("Mesworks set encount group table"). After scene load it carries:</p>
+  <p>Same <code>+0x94</code> slot as the scripted path, different flag bit (<code>0x80000</code>, not <code>0x400</code>).</p>
+  <h4 id="condition-groups">The condition array: story-flag-gated region groups</h4>
+  <p>The region array is not one flat list. The <strong>condition array</strong> partitions it into consecutive groups, one per story state, and exactly one group is live at a time. Each 4-byte condition is <code>[u16 flag_id][s16 region_count]</code>; the walk (<code>0x801d9f30..0x801d9fd8</code>) starts a region cursor at 0 and steps through the conditions in order:</p>
+  <ul class="bullets">
+    <li><code>flag_id == 0xFFFF</code> - stop; this group is the unconditional default.</li>
+    <li><code>FUN_8003CE64(flag_id)</code> non-zero (story flag <strong>set</strong>) - stop; this group wins.</li>
+    <li>otherwise advance the cursor by <code>region_count</code> and continue.</li>
+  </ul>
+  <p>Running off the end of the list <strong>returns without rolling</strong> - "no encounter this step", not a fallback to the whole array. Two corpus-wide invariants hold in every retail MAN that decodes: the group lengths tile the region array exactly, and the list ends with exactly one <code>0xFFFF</code>. Runtime states agree with the disc bytes (the three <code>_DAT_801C6EA4</code> pointers reproduce the carve; in Drake Castle the <code>0x0142</code>-gated leading group is skipped and the 14-region unconditional tail is live). A group commonly ends with a whole-map <code>rate 0</code> catch-all, and a gated group is often nothing but such a row - which is how a scene is silent in one story state and noisy in another. Reading the array flat lands on group 0's placeholder row, which is what makes most scenes look encounter-free. <code>asset man --with-encounter</code> prints regions under the group that owns them.</p>
+  <h4 id="rate-setting">The <code>_DAT_8007B5F8</code> setting byte</h4>
   <table>
-    <thead><tr><th>Offset</th><th>Field</th></tr></thead>
+    <thead><tr><th>Value</th><th>Effect</th></tr></thead>
     <tbody>
-      <tr><td><code>+0x20</code></td><td>Formation table base. Records of stride <code>+0x5d</code>; record at index <code>i</code> lives at <code>base + 1 + i * stride</code> (the <code>+1</code> skips a leading count byte).</td></tr>
-      <tr><td><code>+0x24</code></td><td>Condition table base. Records of stride <code>+0x5e</code>; each is <code>[story flag id][region count]</code> and gates one slice of the region table.</td></tr>
-      <tr><td><code>+0x28</code></td><td>Region table base. Records of stride <code>+0x5f</code> (AABB + rate + formation range), grouped by the condition table.</td></tr>
-      <tr><td><code>+0x5d</code></td><td>Formation record stride.</td></tr>
-      <tr><td><code>+0x5e</code></td><td>Condition record stride.</td></tr>
-      <tr><td><code>+0x5f</code></td><td>Region record stride.</td></tr>
+      <tr><td><code>0</code></td><td>No roll at all - <code>FUN_801DA51C</code>'s state-0 arm tests the byte at <code>0x801da5a8</code> and skips the call.</td></tr>
+      <tr><td><code>1</code></td><td>Rate increment used as-is. The value retail save states carry.</td></tr>
+      <tr><td><code>2</code></td><td>Rate <code>&lt;&lt; 2</code> - four times as many encounters.</td></tr>
+      <tr><td><code>3</code></td><td>Rate <code>&gt;&gt; 2</code> - a quarter as many.</td></tr>
     </tbody>
   </table>
-  <h3>Per-scene MAN file (asset type <code>0x03</code>)</h3>
-  <p>The encounter data lives as the <code>Man</code> asset in each scene's <a href="scene-bundles.html#scene-asset-table-count-prefixed-asset-bundle">scene_asset_table</a> 7-asset bundle, descriptor index 2. The asset dispatcher (<code>FUN_8001F05C</code>) LZS-decompresses the Man payload into a heap buffer addressed by <code>_DAT_8007B898</code>; <code>FUN_8003AEB0</code> (the per-scene MAN walker, called from <code>FUN_801D6704</code> / family scene loaders) then walks the MAN's multi-section header and finally writes the encounter-section pointer into <code>ctrl[+0x20]</code> before calling <code>FUN_8003A110</code>.</p>
-  <p>The MAN multi-section header is byte-exact across all 80 retail <code>scene_asset_table</code> bundles and lives at MAN offset <code>0</code>:</p>
-<pre><code>+0x00..+0x02   u16 LE  status_flags     ; return value; bit 0x400 hints world-map
-                                         ; bulk terrain (set on map01/map02/map03)
-+0x01          u8      low_bit_DAT_8007B6A8         ; secondary flag
-+0x02..+0x22   16 x s16 LE  depth_lut    ; written negated to the GTE scratchpad
-                                         ; (0x1F800314+0x48) for per-scene fog /
-                                         ; depth-of-field
-+0x22..+0x24   s16 LE  N0                ; partition-0 record count (open)
-+0x24..+0x26   s16 LE  N1                ; partition-1 record count (consumed by
-                                         ; FUN_8003A1E4 as the per-scene NPC /
-                                         ; actor placement list)
-+0x26..+0x28   s16 LE  N2                ; partition-2 (open)
-+0x28..+0x2B   u24 LE  u24_28            ; in-table byte offset of section 0's
-                                         ; length prefix within the data region
-                                         ; (relative to records-end)
-+0x2B..+0x2B+3*(N0+N1+N2)  3-byte records   ; concatenated [P0..P1..P2] partitions;
-                                         ; each record is a u24 LE byte offset
-                                         ; into the data region
-+0x2B + 3*(N0+N1+N2)     data region     ; encounter section, actor-placement
-                                         ; payloads, etc.</code></pre>
-  <p>Section 0 (the encounter section) lives at <code>records_end + u24_28</code>. Sections 1..=5 chain via a 3-byte length prefix: each section is <code>[u24 LE length][length payload bytes]</code> and the next section starts at <code>current + 3 + length</code>. Section 5 is universally a zero-length terminator across the retail corpus.</p>
-  <p>The six sections install into different globals (per <code>FUN_8003AEB0</code>):</p>
-  <table>
-    <thead><tr><th>Index</th><th>Install target</th><th>Role</th></tr></thead>
-    <tbody>
-      <tr><td>0</td><td><code>_DAT_801C6EA4[+0x20]</code></td><td>Encounter / formation tables (consumed by <code>FUN_8003A110</code>; see below).</td></tr>
-      <tr><td>1</td><td><code>_DAT_801C6EA4[+0x00]</code></td><td>(Open) - referenced by the field-script context dispatcher; the pointer is advanced past its length prefix immediately after the walk.</td></tr>
-      <tr><td>2</td><td><code>_DAT_801C6EA0</code></td><td>(Open) - same advance-by-3 treatment.</td></tr>
-      <tr><td>3</td><td><code>_DAT_801C6EA4[+0x04]</code></td><td><strong>Camera-region table</strong> - count-prefixed 18-byte records queried by player tile (<code>FUN_801DBA20</code>); the camera-parameter payload split is <a href="#camera-region-table">decoded below</a>.</td></tr>
-      <tr><td>4</td><td><code>DAT_80073ED8</code></td><td>(Open) - advances by 4 (skipping length + 1 byte); the byte at <code>+3</code> is copied into <code>DAT_80073EDC</code>, and a zero terminator there detaches the pointer (<code>DAT_80073ED8 = NULL</code>).</td></tr>
-      <tr><td>5</td><td><code>DAT_80073EE0</code></td><td>Universally a zero-length terminator. Reserved-but-unused sentinel.</td></tr>
-    </tbody>
-  </table>
-  <p>The encounter-section header (consumed by <code>FUN_8003A110</code>) is 4 bytes followed by three count-prefixed record arrays:</p>
-<pre><code>+0x00          u8      formation_stride
-+0x01          u8      condition_stride
-+0x02          u8      region_stride
-+0x03          u8      formation_count
-+0x04          formation_count x formation_stride bytes   ; encounter records
-                   record_i[+0..+2] = reserved (other-path scratch)
-                   record_i[+3]     = monster_count
-                   record_i[+4..]   = monster_ids
-+next          u8 condition_count + condition_count x condition_stride bytes
-                   cond_i[+0..+2]   = story flag id (0xFFFF = unconditional)
-                   cond_i[+2..+4]   = s16 count of regions this condition owns
-+next          u8 region_count + region_count x region_stride bytes
-                   region_j[+0..+3] = (x_min, y_min, x_max, y_max)
-                   region_j[+4]     = rate increment
-                   region_j[+6]     = formation-range base index
-                   region_j[+7]     = formation-range count
-                   region_j[+8..]   = battle-bg variant flags + extras</code></pre>
-  <p>For <code>0086_map01</code> (Drake's kingdom field-scene bundle), the MAN descriptor sits at file offset <code>0x3B238</code> (LZS in 6537 &rarr; out 11274 bytes). The decoded layout is:</p>
-<pre><code>status_flags=0x01B2, N0=12, N1=9, N2=42, u24_28=0x21D8,
-data_region @ 0xE8, section_0 (encounter) @ 0x22C0 len 0x43E
-section_1 @ 0x2701 len 0x15
-section_2 @ 0x2719 len 0x0E
-section_3 @ 0x272A len 0xC7
-section_4 @ 0x27F4 len 0x6F
-section_5 @ 0x2866 (terminator)
+  <p>The only writer in the static corpus is the world-map debug menu's <code>ENCOUNT</code> row (<code>FUN_801EA9B0</code> case 4), cycling <code>0 &rarr; 1 &rarr; 2 &rarr; 3 &rarr; 0</code>; the boot value is set outside that corpus and pinned by the runtime captures. Engine mirror: <code>region_encounter::EncounterRateSetting</code> (default <code>1</code>), modifiers in <code>EncounterRateModifiers</code>.</p>
+  <p><strong>Engine port.</strong> <code>region_encounter</code> (<code>PORT: FUN_801D9E1C</code>) keeps each region's tile-AABB, rate and formation slice plus the condition partition; <code>RegionEncounterTracker::select_group</code> re-runs the walk each step from the live flag bank, and <code>on_step</code> reduces the position to a 128-unit tile, subtracts the scaled rate, and rolls uniformly with the one-step anti-repeat and the <code>0x3ce</code> counter reset. The no-trigger path consumes zero RNG (replay-safe). Overworld and field scenes both route through it (<code>set_world_map_regions</code> / <code>set_field_regions</code>); a MAN with no region section (towns) falls back to the mean-rate session.</p>
+</section>
 
-encounter: formation_stride=8, condition_stride=4, region_stride=12;
-37 formations, 4 conditions, 64 regions.</code></pre>
-  <p>The four conditions own 16 regions each - four story-state variants of the same overworld region layout, differing only in per-region rate and battle backdrop byte, each ending with its own whole-map <code>rate 0</code> catch-all. The <code>0xFFFF</code> variant is last, so a cleared flag bank uses regions <code>48..64</code>.</p>
-  <p>Formation 3 = <code>[00 00 00 02 04 04 00 00]</code> matches <code>mc2</code>'s in-RAM formation cell <code>04 04 00 00</code> byte-for-byte. The <code>legaia_asset::man_section</code> crate exposes this parser plus per-record decoders for formation + region rows.</p>
+<section class="doc-section" id="formation-cell">
+  <h2>The formation cell and its neighbours</h2>
+  <table>
+    <thead><tr><th>Address</th><th>Size</th><th>Role</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x8007BD0C</code></td><td><code>u8[4]</code></td><td>Active formation: monster ids per slot, populated by the reader.</td></tr>
+      <tr><td><code>0x8007BD11</code></td><td><code>u8</code></td><td>Battle-data PROT-id selector. <code>FUN_800520F0</code>'s case-4 path chooses raw TOC index <code>0x367</code> (extraction 0869) when it equals the case-1 character index, otherwise <code>0x36D</code> (extraction 0875), loaded as a kind-2 streaming asset.</td></tr>
+      <tr><td><code>0x8007BD60</code></td><td><code>u8</code></td><td>Per-battle flags byte (<a href="#flags-byte">above</a>).</td></tr>
+    </tbody>
+  </table>
+  <p>Snapshots across the capture corpus (<a href="../tooling/mednafen-automation.html">scenario manifest</a>): a pre-encounter <code>map01</code> state reads <code>01 00 00 00</code> (the previous fight's lone record), an in-battle <code>map01</code> state <code>04 04 00 00</code> (two of monster <code>0x04</code> - byte-identical to map01's MAN formation 3), a post-battle <code>suimon</code> state <code>0A 0D 00 00</code>. The cell keeps the last formation until the next install - it is cleared at the next encounter, not on victory.</p>
+
+  <h3 id="worked-example">Worked example: the Rim Elm training fight</h3>
+  <p>The opening battle in <code>town01</code> is a scripted single-monster fight against archive id <code>0x4F</code> (Tetsu). The cell is <code>00 00 00 00</code> in the pre-battle field and <code>4F 00 00 00</code> from battle-load (<code>game_mode 0x15</code>) onward. The id is <strong>not an inline script literal - it is a per-scene formation index.</strong> Two independent surveys of town01's bytecode find no <code>[1][0x4F]</code> install operand: the <code>scene_event_scripts</code> prescript (PROT entry 3) carries none, and an opcode-aware walk of the MAN partition-1 field-VM scripts (53 records, 71 yield sites) finds zero. Every window that a naive byte-scan "decodes" is a <code>count=0</code> artifact of stepping into embedded dialog text - the false positive the opcode-aware walk exists to reject (disc-gated test <code>town01_p1_arm_sites.rs</code>; survey CLI <code>legaia-engine man-scripts</code>).</p>
+  <p>Instead the lone-<code>0x4F</code> formation is <strong>town01 MAN formation index 4</strong>. The scene's formations load into a contiguous 8-byte-stride table, and the live "Come at me!" save state reads seven rows - byte-identical to the engine's MAN parse (<code>legaia_asset::man_section</code> &rarr; <code>encounter_man::scene_encounter_from_man</code>), with row 4 = <code>[count 1][0x4F]</code>. The carrier selects the row by index and <code>FUN_801DA51C</code> copies it on the dialogue-accept. The engine reaches the fight the same way: <code>World::install_man_formation(RIM_ELM_TRAINING_FORMATION_ID = 4)</code> installs the existing row, so the scene's merged stats stand (Tetsu's HP 999).</p>
+  <h3 id="carrier">The carrier entity</h3>
+  <p>town01 partition-1 holds exactly one placement at <strong>tile (76, 65)</strong> with <strong>model byte <code>0x6A</code></strong> whose interaction record carries a long multi-page dialog block - the sparring talk-menu and its battle branch; every other village NPC is one or two lines. It is pinned as <code>RIM_ELM_SPARRING_CARRIER_TILE</code> / <code>_MODEL</code> in <code>encounter_record.rs</code>. The carrier is identified by its dialog block, not an opcode-decoded selector: message text aliases field-VM opcodes (a literal <code>&gt;</code> is <code>0x3E</code>, punctuation hits the <code>0x37</code>/<code>0x41</code> yield bytes), so linear disassembly desyncs inside it; the text is recovered structurally as <code>0x1F</code>-lead / <code>0x00</code>-terminated segments (<code>man_field_scripts::first_inline_dialog_offset</code>).</p>
+  <p>The engine derives its carrier set from the MAN itself (<code>man_field_scripts::derive_field_carriers</code>): the sparring partner becomes a <code>ScriptedEncounter</code> for formation 4, every other talk NPC a plain <code>Npc</code>. Engagement is driven by the field-VM dialogue-accept (interact op <code>0x3E</code> opens the dialogue, the dismiss <code>0x4C</code> n5 sub-4 engages), so the bytecode drives the fight. Still open: the Yes/No box-selection logic of the sparring dialogue (the engine treats the accept as the dismiss; the fight is forced, so there is no decline path to gate), and a mid-interaction RAM capture confirming the accept &rarr; <code>+0x94</code> install on this specific entity.</p>
+</section>
+
+<section class="doc-section" id="battle-id-path">
+  <h2>The other formation source: the battle-id expander (<code>FUN_8005567c</code>)</h2>
+  <p>The record path is one of <strong>two</strong> ways the cell is populated. The other is a global battle id at <code>DAT_8007b7fc</code>, consumed at battle-init by <code>FUN_80055b6c</code>, which calls <code>FUN_8005567c</code> (<code>SCUS_942.54</code>) to expand it. The store order in the disassembly:</p>
+  <table>
+    <thead><tr><th>Address</th><th>Store</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x80055690</code></td><td><code>sb zero, DAT_8007BD0F</code></td><td>slot 3 cleared</td></tr>
+      <tr><td><code>0x80055698</code></td><td><code>sb v0, DAT_8007BD0C</code></td><td>slot 0 = id</td></tr>
+      <tr><td><code>0x800556A0</code></td><td><code>sb v0, DAT_8007BD0D</code></td><td>slot 1 = id</td></tr>
+      <tr><td><code>0x800556A8</code></td><td><code>sb v0, DAT_8007BD0E</code></td><td>slot 2 = id</td></tr>
+    </tbody>
+  </table>
+  <table>
+    <thead><tr><th>Battle id</th><th>Resulting cell</th></tr></thead>
+    <tbody>
+      <tr><td><code>0</code></td><td><code>[4, 4, 4, 4]</code> - four explicit <code>sb</code>s at <code>0x80055788..0x800557A4</code>, then the boss-transition arm at <code>DAT_8007B64A</code> is cleared</td></tr>
+      <tr><td>bespoke band <code>0x07..0x09</code>, <code>0x49..0x4d</code>, <code>0x88..0x8b</code>, <code>0xa2..0xff</code></td><td><code>[id, 0, 0, 0]</code>; only <code>0xa2</code>/<code>0xa3</code>/<code>0xa4</code> also seed <code>DAT_8007BD10..</code> with <code>1</code> / <code>3</code> / <code>2</code></td></tr>
+      <tr><td>any other non-zero</td><td><code>[id, id, id, 0]</code></td></tr>
+    </tbody>
+  </table>
+  <p>Read the disassembly here, not the decompile: Ghidra's C ends with a synthesized <code>DAT_8007bd0d = DAT_8007bd0e;</code> and shows only three stores in the fallback - both reordering artifacts. Ported as <code>engine-core::encounter_record::expand_battle_id</code>.</p>
+  <p>The distinguishing signature is the cell <em>shape</em>: a plain id through this path gives <code>[id, id, id, 0]</code>, whereas a count-1 record gives <code>[id, 0, 0, 0]</code>. Every pinned retail fight is on the <strong>record path</strong>:</p>
+  <ul class="bullets">
+    <li><strong>Tetsu</strong> - cell <code>[0x4F,0,0,0]</code>, town01 formation row 4 (above).</li>
+    <li><strong>Zeto</strong> (<code>0x4B</code>, scene <code>garmel</code>) - a live PCSX-Redux capture over three forward-played runs shows <code>FUN_801DA51C</code> storing <code>[0x4B,0,0,0]</code> at the launch tick; a write-watch on <code>0x8007b7fc</code> stayed silent for the whole fight. Although <code>0x4B</code> sits in the bespoke band, "boss id in-band &rArr; battle-id path" does <strong>not</strong> hold. The engine enters via the beat record's <code>3E FF &lt;row&gt;</code> op.</li>
+    <li><strong>Caruban</strong> (<code>0x49</code>, Mt. Rikuroa) - the rikuroa P1[3] boss-stager placement (park-gated on first-visit flag <code>0x142</code>, <code>3E FF 11</code> &rarr; row 17 = lone <code>0x49</code>), run on approach by <code>World::run_boss_stager_record</code>.</li>
+  </ul>
+  <p><strong>Open - does any retail battle write <code>DAT_8007b7fc</code>?</strong> Four exhaustive sweeps across SCUS + 46 overlays (<code>lui+addiu</code>, <code>lui+ori</code>, gp-relative with <code>gp = 0x8007B318</code>, pointer tables) find only readers (<code>FUN_8005567c</code> &times;4, <code>FUN_80055b6c</code>, the post-battle mode gate <code>FUN_80046a20</code>) and zero writers. Every capture reads <code>0</code> and battle-init takes its "<code>== 0</code> &rArr; preserve the record formation" branch, so the global may be vestigial in retail. See <a href="../reference/open-rev-eng-threads.html">open threads</a>.</p>
+  <details class="disclosure">
+    <summary>History: how the boss fights were attributed</summary>
+    <div class="disclosure-body">
+      <p>Earlier mid-cast Zeto save states pinned the id <code>0x4B</code> but not the mechanism, and attributed the fight to scene <code>jou</code>; the live forward-play superseded both (the runtime scene buffer <code>0x8007050C</code> reads <code>garmel</code> throughout). The plan to catch a <code>DAT_8007b7fc</code> writer with a write-watch at the Zeto trigger was falsified by the same capture - that trigger never writes the global. Caruban's "re-verify the mechanism" caveat was settled statically once the <code>3E FF</code> arm was decoded. Falsified readings are collected on <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p>
+    </div>
+  </details>
+</section>
+
+<section class="doc-section" id="man-section">
+  <h2>Where the records live: the MAN encounter section</h2>
+  <p>The per-scene encounter data is section 0 of the scene's <code>Man</code> asset (type <code>0x03</code>, descriptor index 2 of the 7-asset <a href="scene-bundles.html#scene-asset-table-count-prefixed-asset-bundle">scene_asset_table</a> bundle). The dispatcher <code>FUN_8001F05C</code> LZS-decompresses it into a heap buffer at <code>_DAT_8007B898</code>; the MAN walker <code>FUN_8003AEB0</code> (from <code>FUN_801D6704</code> and the family scene loaders) walks the multi-section header and writes the encounter-section pointer into the control block before calling <code>FUN_8003A110</code> ("Mesworks set encount group table").</p>
+  <h3 id="control-block">Encounter control block (<code>_DAT_801C6EA4</code>)</h3>
+  <p>A 100-byte block allocated by <code>FUN_8003A024</code>; after scene load it carries:</p>
+  <table class="layout">
+    <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>+0x20</code></td><td>4</td><td>formation table base</td><td>record <code>i</code> at <code>base + 1 + i * stride</code> (the <code>+1</code> skips the count byte)</td></tr>
+      <tr><td><code>+0x24</code></td><td>4</td><td>condition table base</td><td><code>[story flag id][region count]</code> rows gating slices of the region table</td></tr>
+      <tr><td><code>+0x28</code></td><td>4</td><td>region table base</td><td>AABB + rate + formation range, grouped by the conditions</td></tr>
+      <tr><td><code>+0x5d</code></td><td>1</td><td>formation stride</td><td></td></tr>
+      <tr><td><code>+0x5e</code></td><td>1</td><td>condition stride</td><td></td></tr>
+      <tr><td><code>+0x5f</code></td><td>1</td><td>region stride</td><td></td></tr>
+    </tbody>
+  </table>
+  <h3 id="man-header">MAN multi-section header</h3>
+  <p>Byte-exact across all 80 retail <code>scene_asset_table</code> bundles, at MAN offset 0. <code>+0x22</code>/<code>+0x24</code>/<code>+0x26</code> are record <em>counts</em>, and <code>+0x28</code> is a u24 - traced through <code>0x8003B04C..0x8003B120</code>. The header chains <strong>six</strong> sections.</p>
+  <table class="layout">
+    <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>+0x00</code></td><td>2</td><td><code>status_flags</code> (u16)</td><td>return value; bit <code>0x400</code> hints world-map bulk terrain (map01/02/03)</td></tr>
+      <tr><td><code>+0x01</code></td><td>1</td><td>low bit &rarr; <code>DAT_8007B6A8</code></td><td>secondary flag</td></tr>
+      <tr><td><code>+0x02</code></td><td>32</td><td><code>depth_lut</code> (16 &times; s16)</td><td>written negated to the GTE scratchpad (<code>0x1F800314+0x48</code>) for per-scene fog / depth cue</td></tr>
+      <tr><td><code>+0x22</code></td><td>2</td><td><code>N0</code> (s16)</td><td>partition-0 record count (open)</td></tr>
+      <tr><td><code>+0x24</code></td><td>2</td><td><code>N1</code> (s16)</td><td>partition-1 record count - the NPC / actor placement list (<code>FUN_8003A1E4</code>)</td></tr>
+      <tr><td><code>+0x26</code></td><td>2</td><td><code>N2</code> (s16)</td><td>partition-2 record count (open)</td></tr>
+      <tr><td><code>+0x28</code></td><td>3</td><td><code>u24_28</code></td><td>byte offset of section 0's length prefix, relative to records-end</td></tr>
+      <tr><td><code>+0x2B</code></td><td><code>3 &times; (N0+N1+N2)</code></td><td>records</td><td>concatenated P0..P1..P2 partitions; each a u24 offset into the data region</td></tr>
+      <tr><td>records end</td><td>&hellip;</td><td>data region</td><td>encounter section, actor-placement payloads, &hellip;</td></tr>
+    </tbody>
+  </table>
+  <p>Section 0 lives at <code>records_end + u24_28</code>; sections 1..=5 chain by a 3-byte length prefix (<code>[u24 length][payload]</code>, next at <code>current + 3 + length</code>). Section 5 is universally a zero-length terminator. See <a href="man-relocation.html">MAN relocation</a> for what resizing a record touches.</p>
+  <table>
+    <thead><tr><th>Section</th><th>Install target</th><th>Role</th></tr></thead>
+    <tbody>
+      <tr><td>0</td><td><code>_DAT_801C6EA4[+0x20]</code></td><td>Encounter / formation tables (consumed by <code>FUN_8003A110</code>).</td></tr>
+      <tr><td>1</td><td><code>_DAT_801C6EA4[+0x00]</code></td><td>Open - referenced by the field-script context dispatcher; pointer advanced past its length prefix. Its bytecode is the scripted-motion VM's (<a href="../subsystems/motion-vm.html">motion VM</a>).</td></tr>
+      <tr><td>2</td><td><code>_DAT_801C6EA0</code></td><td>Open - same advance-by-3 treatment; also carries the scene's section-2 banner place name.</td></tr>
+      <tr><td>3</td><td><code>_DAT_801C6EA4[+0x04]</code></td><td><strong>Camera-region table</strong> (<a href="#camera-region-table">below</a>).</td></tr>
+      <tr><td>4</td><td><code>DAT_80073ED8</code></td><td>Open - advances by 4; the byte at <code>+3</code> is copied to <code>DAT_80073EDC</code>, and a zero there detaches the pointer.</td></tr>
+      <tr><td>5</td><td><code>DAT_80073EE0</code></td><td>Zero-length terminator (the kingdom MANs trail their 29-record world-map label table after it).</td></tr>
+    </tbody>
+  </table>
+  <h3 id="encounter-section">Encounter section (section 0)</h3>
+  <p>A 4-byte header followed by three count-prefixed record arrays:</p>
+  <table class="layout">
+    <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>+0x00</code></td><td>1</td><td><code>formation_stride</code></td><td>8 in every retail scene</td></tr>
+      <tr><td><code>+0x01</code></td><td>1</td><td><code>condition_stride</code></td><td>4</td></tr>
+      <tr><td><code>+0x02</code></td><td>1</td><td><code>region_stride</code></td><td>12</td></tr>
+      <tr><td><code>+0x03</code></td><td>1</td><td><code>formation_count</code></td><td></td></tr>
+      <tr><td><code>+0x04</code></td><td><code>count &times; stride</code></td><td>formations</td><td>the encounter records above: <code>[+0]</code> scripted predicate, <code>[+1..+2]</code> reserved, <code>[+3]</code> count, <code>[+4..]</code> ids</td></tr>
+      <tr><td>next</td><td><code>1 + count &times; stride</code></td><td>conditions</td><td><code>[u16 flag_id (0xFFFF = unconditional)][s16 region_count]</code></td></tr>
+      <tr><td>next</td><td><code>1 + count &times; stride</code></td><td>regions</td><td><code>[+0..+3]</code> <code>(x_min, y_min, x_max, y_max)</code>; <code>[+4]</code> rate increment; <code>[+6]</code> formation-range base; <code>[+7]</code> formation-range count; <code>[+8..]</code> battle-bg variant flags + extras</td></tr>
+    </tbody>
+  </table>
+  <p>Example - <code>0086_map01</code> (Drake's kingdom bundle; MAN descriptor at file offset <code>0x3B238</code>, LZS 6537 &rarr; 11274 bytes): <code>status_flags=0x01B2, N0=12, N1=9, N2=42, u24_28=0x21D8</code>; section 0 at <code>0x22C0</code> (len <code>0x43E</code>), sections 1-4 at <code>0x2701</code> / <code>0x2719</code> / <code>0x272A</code> / <code>0x27F4</code>, terminator at <code>0x2866</code>; 37 formations, 4 conditions, 64 regions. The four conditions own 16 regions each - four story-state variants of one overworld layout differing only in rate and backdrop byte, each ending in its own <code>rate 0</code> catch-all, with the <code>0xFFFF</code> variant last.</p>
+  <h3 id="random-vs-scripted">Random vs scripted formations</h3>
+  <p>Scripted and boss formations live in the same formation array as the random ones; what separates them is reachability. A region with <code>rate_increment == 0</code> never advances the counter, so it can list formations without ever rolling them. A formation is a <em>random</em> encounter <strong>iff some <code>rate &gt; 0</code> region reaches it</strong>. In town01 the rate-0 regions cover formations 2..=4 but the only rate&gt;0 regions reach 0..=2, so the Tetsu row at index 4 is scripted-only. The <a href="../tooling/randomizer.html#encounters">encounter randomizer</a> relies on this to leave boss fights untouched (<code>legaia_patcher::encounter::random_formation_mask</code>); its optional solo-strong pass thins only random formations, setting <code>count</code> to 1 and zeroing the dropped ids within the fixed stride.</p>
 </section>
 
 <section class="doc-section" id="camera-region-table">
   <h2>MAN section 3: the camera-region table</h2>
-  <p>Section 3 (installed at <code>_DAT_801C6EA4[+0x04]</code>) is the per-scene <strong>camera-region table</strong>: <code>[u8 count]</code> then <code>count × 18-byte</code> records. The per-tile query <code>FUN_801DBA20</code> walks it (<code>tile = (player_pos - 0x40) &gt;&gt; 7</code>, first match wins). The field camera arrival handler <code>FUN_801DBE9C</code> hands the hit to the config loader <strong><code>FUN_801DBC20</code></strong>, which splits <code>bytes[5..17]</code> into the resident camera-parameter globals at <code>0x8007B607..0x8007B627</code> (a query miss loads fixed defaults). The camera-param builder <code>FUN_801DAB90</code> then folds those globals into the same staging-struct slots the script-VM Camera Configure op <code>0x45</code> writes (pitch <code>+0x02</code>, yaw <code>+0x06</code>, eye-space <code>(dx, dy, depth)</code> <code>+0x0E/+0x12/+0x16</code>, GTE H <code>+0x26</code>; see <a href="../subsystems/cutscene.html">cutscene</a> op-<code>0x45</code>) - so a zone record is a per-region camera preset in the op-<code>0x45</code> parameter space.</p>
-  <p>Provenance: loader <code>ghidra/scripts/funcs/overlay_fishing_801dbc20.txt</code> (byte-identical across the fishing / dance / debug_menu / slot_machine captures; the cutscene captures differ only in Ghidra label prefixes - the function sits in the co-resident camera cluster, while the <code>overlay_0897</code> and <code>overlay_baka_fighter</code> captures alias different bytes at this VA). Consumers: <code>overlay_cutscene_dialogue_801dab90.txt</code> (builder) + <code>overlay_cutscene_dialogue_801dbe9c.txt</code> (arrival handler + defaults).</p>
-  <p><strong>Record header (<code>bytes[0..5]</code>):</strong> <code>+0x00</code> u8 <code>kind</code> (<code>0</code> = anchor <code>(rec[1], rec[2])</code> and the player tile both inside the scratch attribute box, <code>1</code> = inclusive tile-bbox match, <code>2..=0x1F</code> = region-type mask bit vs <code>_DAT_8007B8F4</code>); <code>+0x01..+0x04</code> = tile-space bbox <code>[minX, minZ, maxX, maxZ]</code> (kind 1) / anchor (kind 0). For mask kinds with <code>byte[1] != 0</code>, the loader side-copies <code>bytes[3],[4],[1],[2]</code> to scratchpad <code>0x1F8003E8..EB</code> + mirrors <code>0x801F2778/80/7C/84</code> - the writes are Confirmed, the consumer is Unknown.</p>
-  <p><strong>Camera payload <code>bytes[5..17]</code></strong> - <code>byte[5]</code> is stored whole to the camera mode byte <code>DAT_8007B607</code>; its high nibble selects both the loader split and the <code>FUN_801DAB90</code> build branch (low nibble = mode-specific strength). Mode <code>6</code> = keep current camera (the loader writes nothing). <code>s16</code> = signed 16-bit LE via <code>FUN_8003CE9C</code>.</p>
+  <p>Section 3 is the per-scene <strong>camera-region table</strong>: <code>[u8 count]</code> then <code>count &times; 18-byte</code> records. The per-tile query <code>FUN_801DBA20</code> walks it (<code>tile = (player_pos - 0x40) &gt;&gt; 7</code>, first match wins). The field camera arrival handler <code>FUN_801DBE9C</code> hands the hit to the loader <code>FUN_801DBC20</code>, which splits <code>bytes[5..17]</code> into the camera-parameter globals at <code>0x8007B607..0x8007B627</code>; the builder <code>FUN_801DAB90</code> folds those into the same staging-struct slots the script-VM Camera Configure op <code>0x45</code> writes (pitch <code>+0x02</code>, yaw <code>+0x06</code>, eye-space <code>+0x0E/+0x12/+0x16</code>, GTE H <code>+0x26</code>; see <a href="../subsystems/cutscene.html">cutscene</a>). A zone record is a per-region camera preset in the op-<code>0x45</code> parameter space.</p>
+  <p>Provenance: <code>ghidra/scripts/funcs/overlay_fishing_801dbc20.txt</code> (byte-identical across the fishing / dance / debug_menu / slot_machine captures; the <code>overlay_0897</code> and <code>overlay_baka_fighter</code> captures alias different bytes at this VA); consumers <code>overlay_cutscene_dialogue_801dab90.txt</code> and <code>_801dbe9c.txt</code>.</p>
+  <p><strong>Record header (<code>bytes[0..5]</code>):</strong> <code>+0x00</code> <code>kind</code> - <code>0</code> = anchor <code>(rec[1], rec[2])</code> and the player tile both inside the scratch attribute box, <code>1</code> = inclusive tile-bbox match, <code>2..=0x1F</code> = region-type mask bit vs <code>_DAT_8007B8F4</code>; <code>+0x01..+0x04</code> = tile bbox <code>[minX, minZ, maxX, maxZ]</code> (kind 1) / anchor (kind 0). For mask kinds with <code>byte[1] != 0</code>, the loader side-copies <code>bytes[3],[4],[1],[2]</code> to scratchpad <code>0x1F8003E8..EB</code> and mirrors <code>0x801F2778/80/7C/84</code> - the writes are Confirmed, the consumer Unknown.</p>
+  <p><strong>Camera payload <code>bytes[5..17]</code></strong> - <code>byte[5]</code> is stored whole to the mode byte <code>DAT_8007B607</code>; its high nibble selects both the loader split and the build branch (low nibble = strength). Mode <code>6</code> = keep current camera (the loader writes nothing).</p>
   <div class="table-scroll">
   <table>
     <thead><tr><th>offset</th><th>sweep split (every mode but 3/5/6)</th><th>mode 3 split (look-at anchor)</th><th>mode 5 split (fixed shot)</th></tr></thead>
@@ -264,49 +345,63 @@ encounter: formation_stride=8, condition_stride=4, region_stride=12;
     </tbody>
   </table>
   </div>
-  <p>(<code>B6xx</code> = <code>0x8007B6xx</code>. Mode-5 <code>B620</code> is an s8: the loader ORs <code>0xFFFFFF00</code> in when <code>byte[8] &gt;= 0x80</code>.)</p>
+  <p>(<code>B6xx</code> = <code>0x8007B6xx</code>. Mode-5 <code>B620</code> is an s8: the loader ORs <code>0xFFFFFF00</code> in when <code>byte[8] &gt;= 0x80</code>. <code>s16</code> = signed LE via <code>FUN_8003CE9C</code>.)</p>
   <p><strong>Global roles</strong> (consumer <code>FUN_801DAB90</code> unless noted; angles in the 4096 = 360&deg; space, one tile = <code>0x80</code> world units):</p>
   <ul class="bullets">
     <li><code>B607</code> - mode byte. High nibble <code>1</code>/<code>2</code>: anchor-follow with a position-proportional yaw sweep - <code>yaw = B610 &plusmn; (B607 &amp; 0xF) &middot; lerp(player X across the zone attribute box at 0x1F800384/386)</code>, sign by nibble. <code>3</code> = look-at anchor, <code>4</code> = pad-analog yaw (pitch <code>B60C</code>, depth <code>B614</code>), <code>5</code> = fixed scripted shot, <code>6</code> = keep current.</li>
     <li><code>B608</code> - pitch sweep: high nibble <code>1</code>/<code>2</code> = sweep sign about the box Z midpoint (<code>pitch = B60C &plusmn; (B608 &amp; 0xF) &middot; lerp(player Z)</code>); other values pin pitch to <code>0x1B8</code>.</li>
     <li><code>B609</code> - depth sweep: high nibble <code>n &isin; 1..=5</code> anchors the sweep <code>(n&minus;1)/4</code> of the Z span from the box max (<code>depth = B614 + (B609 &amp; 0xF) &middot; lerp(player Z)</code>); else depth = <code>B614</code>.</li>
     <li><code>B60A</code> - heading-coupled pitch adjust: high nibble <code>1..=4</code> &rarr; <code>pitch += (B60A &amp; 0xF) &middot; heading / 4</code>; <code>5</code> &rarr; <code>/ 8</code> plus sin/cos-LUT <code>(dy, depth)</code> compensation from the player facing <code>+0x16</code>. Heading = <code>func_0x80019278(anchor)</code>.</li>
-    <li><code>B60B</code> - high nibble <code>1..=0xB</code>: eye-space <code>dy = 0x200 &minus; heading &middot; (B60B &amp; 0xF)</code>; else <code>dy = 0x200</code>. The same high nibble is the per-frame ease-damping shift in the follow-ease <code>FUN_801DB510</code> (<code>srav</code> by <code>B60B &gt;&gt; 4</code>).</li>
+    <li><code>B60B</code> - high nibble <code>1..=0xB</code>: eye-space <code>dy = 0x200 &minus; heading &middot; (B60B &amp; 0xF)</code>; else <code>dy = 0x200</code>. The same nibble is the per-frame ease-damping shift in the follow-ease <code>FUN_801DB510</code> (<code>srav</code> by <code>B60B &gt;&gt; 4</code>).</li>
     <li><code>B610</code> / <code>B60C</code> - base yaw / base pitch (staging struct <code>+0x06</code> / <code>+0x02</code>).</li>
-    <li><code>B614</code> - eye-space depth (<code>tr_eye.z</code>, staging struct <code>+0x16</code>). Mode 3 treats it as a bias: <code>depth = (dist3D(anchor, player) &middot; ((B607 &amp; 0xF) + 1) &middot; 6 &gt;&gt; 10) + B614 &minus; 0x4000</code>.</li>
+    <li><code>B614</code> - eye-space depth (staging struct <code>+0x16</code>). Mode 3 treats it as a bias: <code>depth = (dist3D(anchor, player) &middot; ((B607 &amp; 0xF) + 1) &middot; 6 &gt;&gt; 10) + B614 &minus; 0x4000</code>.</li>
     <li><code>B618</code> - <strong>GTE H</strong> (projection focal length, staging struct <code>+0x26</code>) in every mode.</li>
-    <li><code>B61C</code> / <code>B624</code> - camera anchor/focus tile X / Z. Mode 3: the look-at target is world <code>(B61C&middot;0x80+0x40, B620&middot;0x20, B624&middot;0x80+0x40)</code> - yaw and pitch are aimed from it at the player. Mode 5: the focus tile - <code>FUN_801DB8EC</code> writes focus <code>&minus;(tile &lt;&lt; 7) &minus; 0x40</code> and <code>FUN_801DB510</code> smooth-scrolls toward it.</li>
+    <li><code>B61C</code> / <code>B624</code> - anchor/focus tile X / Z. Mode 3: look-at target is world <code>(B61C&middot;0x80+0x40, B620&middot;0x20, B624&middot;0x80+0x40)</code>. Mode 5: the focus tile - <code>FUN_801DB8EC</code> writes focus <code>&minus;(tile &lt;&lt; 7) &minus; 0x40</code> and <code>FUN_801DB510</code> smooth-scrolls toward it.</li>
     <li><code>B620</code> - mode 3: anchor height (<code>&times; 0x20</code> world units). Mode 5: s8 height offset rotated by pitch into <code>(dy, depth)</code> via the sin/cos LUTs (<code>_DAT_8007B7F8</code> / <code>_DAT_8007B81C</code>).</li>
   </ul>
-  <p><strong>Query-miss defaults</strong> (<code>FUN_801DBE9C</code>): <code>B607 = 0x10</code> (anchor-follow, sweep strength 0), <code>B608 = 0x10</code>, <code>B609 = 0x30</code>, <code>B60A = 0x51</code>, <code>B60B = 0x20</code>, <code>B610 = 0</code>, <code>B60C = 0x1B8</code>, <code>B614 = 0x4000</code>, <code>B618 = 0x300</code>.</p>
-  <p>Confidence: the three byte splits and the global routing are <strong>Confirmed</strong> (direct disassembly + the builder's consumption); the mask-kind scratchpad side-write consumer is <strong>Unknown</strong>.</p>
+  <p><strong>Query-miss defaults</strong> (<code>FUN_801DBE9C</code>): <code>B607 = 0x10</code>, <code>B608 = 0x10</code>, <code>B609 = 0x30</code>, <code>B60A = 0x51</code>, <code>B60B = 0x20</code>, <code>B610 = 0</code>, <code>B60C = 0x1B8</code>, <code>B614 = 0x4000</code>, <code>B618 = 0x300</code>.</p>
+  <p>Confidence: the three byte splits and the global routing are <strong>Confirmed</strong> (disassembly + the builder's consumption); the mask-kind scratchpad side-write consumer is <strong>Unknown</strong>.</p>
 </section>
 
 <section class="doc-section" id="open-questions">
   <h2>What this doesn't tell us</h2>
   <ul class="bullets">
-    <li><strong>Per-opcode encoding of the trailing operand bytes.</strong> Each install opcode (<code>0x37/0x41</code>, <code>0x38</code>, <code>0x43</code>, <code>0x47</code>, <code>0x4C</code>) packs its first 3 bytes differently (target selector / sub-op / flag bits); the count + ids layout at <code>+0x3..</code> is fixed by the reader but the opcode-header bytes need a per-case decode in the dispatcher to interpret as "encounter trigger from script X at PC Y".</li>
-    <li><strong>Sibling section roles (sections 1, 2, 4).</strong> The MAN multi-section walker pins exact offsets and lengths for every section across all 80 retail scene bundles, and section 3 is decoded (the <a href="#camera-region-table">camera-region table</a>), but the interior layout of sections 1, 2, and 4 (the pointers <code>_DAT_801C6EA4 + 0</code>, <code>_DAT_801C6EA0</code>, and <code>DAT_80073ED8</code> install onto) is still open. The lengths cluster small (often 1 byte, occasionally a few hundred), suggesting per-scene callbacks / inline state rather than record arrays.</li>
-    <li><strong>The pre-encounter live-pointer state.</strong> No save state in the scenario corpus captures an actor with <code>+0x94</code> mid-armed - the corpus's <code>mc0</code> carries a stale value and every other slot is zero or <code>0xFFFFFFFF</code>. Byte-level verification of "the encounter record bytes at the live <code>actor[+0x94]</code> match the parsed Man's formation record" needs a fresh save-state capture taken in the one-frame window between roll and <code>FUN_801DA51C</code> consumption.</li>
+    <li><strong>Per-opcode encoding of the header bytes.</strong> Each inline install opcode packs its first 3 bytes differently (target selector / sub-op / flags); the count + ids at <code>+0x3..</code> are fixed by the reader, but the header needs a per-case decode to read as "encounter from script X at PC Y".</li>
+    <li><strong>Sibling section roles (1, 2, 4).</strong> The walker pins offsets and lengths for every section in all 80 scene bundles, and section 3 is decoded, but the interior layout of sections 1, 2 and 4 beyond what is noted above is open. The lengths cluster small (often 1 byte), suggesting per-scene callbacks / inline state rather than record arrays.</li>
+    <li><strong>The pre-encounter live-pointer state.</strong> No save state in the scenario corpus captures an entity with <code>+0x94</code> mid-armed; byte-level verification of "the bytes at the live <code>actor[+0x94]</code> match the parsed MAN row" needs a capture in the one-frame window between roll and consumption.</li>
   </ul>
+  <details class="disclosure">
+    <summary>History: readings this page replaced</summary>
+    <div class="disclosure-body">
+      <p>Summary tables restated the MAN header as "four s16 section offsets at <code>+0x22..+0x28</code>" and four sections; the byte-level block above (three s16 counts, one u24, six sections) is the one traced through the walker. An earlier reading held that there is "no separate on-disc encounter-record array" and every record is inline in bytecode; the Rim Elm survey showed the scripted fights select MAN formation rows by index, and inline windows are one of two carriers. The Zeto / Caruban attribution history is in the <a href="#battle-id-path">battle-id section</a>. The falsified-reading catalogue is <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p>
+    </div>
+  </details>
 </section>
 
 <section class="doc-section" id="files">
   <h2>Files referencing this format</h2>
   <ul class="bullets">
     <li><code>crates/engine-vm</code> - the field VM dispatcher port reads the operand and writes the actor pointer slot.</li>
-    <li><code>crates/engine-core::encounter</code> - the runtime engine's <code>EncounterRecord</code> parser exposes <code>monster_count</code> / <code>monster_ids</code> from a candidate byte slice.</li>
-    <li><a href="../subsystems/world-map.html">subsystems / world-map</a> - world-map controller integration.</li>
-    <li><a href="../subsystems/script-vm.html">subsystems / script-vm</a> - the dispatcher op-handler family that installs the pointer.</li>
+    <li><code>crates/engine-core::encounter_record</code> - <code>EncounterRecord</code> parser (<code>monster_count</code> / <code>monster_ids</code>), <code>expand_battle_id</code>, the Rim Elm carrier constants.</li>
+    <li><code>crates/engine-core::region_encounter</code> / <code>encounter_man</code> - the region roll and the MAN formation table.</li>
+    <li><code>crates/asset::man_section</code> - the MAN section walker + formation / region row decoders.</li>
+    <li><code>crates/patcher::encounter</code> - the encounter randomizer.</li>
   </ul>
+  <p>The full source-of-record doc is <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/encounter.md" target="_blank" rel="noopener"><code>docs/formats/encounter.md</code></a>.</p>
 </section>
 
 <section class="doc-section" id="see-also">
   <h2>See also</h2>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
+    <a href="../monsters.html">Monster bestiary</a>
+    <a href="steal-table.html">Steal table</a>
+    <a href="scene-bundles.html">Scene bundles</a>
+    <a href="man-relocation.html">MAN relocation</a>
+    <a href="../subsystems/world-map.html">World map</a>
     <a href="../subsystems/battle.html">Battle scene</a>
     <a href="../subsystems/script-vm.html">Field/event VM</a>
-    <a href="../reference/gamedata.html">Game-data tables</a>
+    <a href="../tooling/randomizer.html#encounters">Encounter randomizer</a>
+    <a href="../reference/re-do-not-re-walk.html">Do not re-walk</a>
   </div>
 </section>

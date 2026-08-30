@@ -1,22 +1,52 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; static overlay pipeline</div>
   <h1>Static overlay pipeline</h1>
-  <p class="lede">Most of Legaia's gameplay code lives in RAM <strong>overlays</strong> - chunks of MIPS code the game pages into the
-  <code>0x801C0000+</code> window per game mode (title / field / battle / menu / world-map / cutscene / minigames). The <a
-  href="overlay-capture.html">dynamic capture</a> workflow reverses them from emulator save states; this page is the <strong>static</strong>
-  complement - extract each overlay straight from <code>PROT.DAT</code> (the disc's main archive, where the overlay code ships as ordinary
-  numbered entries) and disassemble it at its load address, with identity attached from the first byte. No emulator, no save state,
-  reproducible from any copy of the disc. It complements the dynamic captures; it does not replace them - and like them, it is maintainer
-  infrastructure: you only need it if you are extending the reverse-engineering itself.</p>
+  <p class="lede">Most of Legaia's gameplay code lives in RAM <strong>overlays</strong> - chunks of MIPS code the game pages into the <code>0x801C0000+</code> window per game mode (title / field / battle / menu / world-map / cutscene / minigames). The <a href="overlay-capture.html">dynamic capture</a> workflow reverses them from emulator save states; this page is the <strong>static</strong> complement: pull each overlay straight out of <code>PROT.DAT</code> (the disc's main archive, where overlay code ships as ordinary numbered entries), work out where in RAM it loads, and disassemble it there - with its identity attached from the first byte. No emulator, no save state, reproducible from any copy of the disc. Like the dynamic captures it is maintainer infrastructure: you only need it if you are extending the reverse-engineering itself.</p>
 </header>
 
 <section class="doc-section" id="why">
+  <h2>What problem this solves, and when to reach for it</h2>
+  <p>A save-state capture answers "what is in RAM right now" - and that is also its weakness. The 256 KB overlay window is a buffer, not a container: a capture holds the overlay that is up <em>plus</em> the tails of whatever was loaded before it, and several overlays load at the very same address, so a bare <code>FUN_801xxxxx</code> can name a battle routine in one capture and a menu routine in another. Reach for the static pipeline when:</p>
+  <ul class="bullets">
+    <li>you want an overlay's <em>clean</em> bytes - exactly one PROT entry, nothing carried over from a previous mode;</li>
+    <li>you need to say <em>which</em> overlay a function belongs to, with the disc entry as the identity rather than a capture label;</li>
+    <li>you want a result anyone can reproduce from their own disc, including overlays nobody has captured live.</li>
+  </ul>
+  <p>It does <strong>not</strong> give you runtime values - filled tables, <code>$gp</code>-relative globals, watchpoint results. For those the <a href="overlay-capture.html">dynamic capture</a> and the <a href="pcsx-redux-automation.html">PCSX-Redux probes</a> stay authoritative.</p>
+
+  <h3>At a glance</h3>
+  <ul class="bullets">
+    <li><strong>An overlay is "PROT entry N at base X".</strong> The committed map <code>crates/asset/data/static-overlays.toml</code> holds one row per overlay: entry, load base, how the base was proved, a sha256 of the as-loaded bytes. No Sony bytes are committed - only hashes.</li>
+    <li><strong>The base is recovered from the overlay's own call graph.</strong> Every internal <code>jal</code> target must land on a function prologue; only the true base makes that work for all of them.</li>
+    <li><strong>Two slots.</strong> Slot A (<code>0x801CE818</code>) is the big scene overlays - field, battle, menu, cutscene, minigames. Slot B (<code>0x801F69D8</code>) is the summon / effect blobs that timeshare one buffer and can only be read cleanly from the disc.</li>
+    <li><strong>Implementation:</strong> <code>legaia_asset::static_overlay</code>, CLI <code>asset overlay &hellip;</code>.</li>
+  </ul>
+
+  <div class="flow">
+    <span class="num">1</span><span class="layer">PROT entry</span><span class="desc">the overlay's on-disc bytes, exactly <code>[entry start, next entry start)</code></span><span class="crate">legaia-prot</span>
+    <span class="num">2</span><span class="layer">Recover the base</span><span class="desc">vote <code>B = jal_target - prologue_offset</code> over the internal call graph; cross-check with an anchor function or self-pointer resolution</span><span class="crate">asset overlay scan</span>
+    <span class="num">3</span><span class="layer">Pin identity</span><span class="desc">row in <code>static-overlays.toml</code>: entry, base, eligibility, sha256 of the as-loaded bytes</span><span class="crate">asset overlay generate / verify</span>
+    <span class="num">4</span><span class="layer">Import into Ghidra</span><span class="desc">each blob at its base, program named <code>overlay_&lt;label&gt;</code>; functions land at their real addresses</span><span class="crate">asset overlay ghidra</span>
+  </div>
+</section>
+
+<section class="doc-section" id="quick-start">
+  <h2>Quick start</h2>
+  <p>Extract every eligible overlay from your own <code>PROT.DAT</code>, check the bytes reproduce the committed fingerprints, and import them into the Ghidra project at their bases:</p>
+  <div class="cli"><code>asset overlay verify extracted/PROT.DAT</code></div>
+  <div class="cli"><code>asset overlay extract extracted/PROT.DAT --out extracted/overlays</code></div>
+  <div class="cli"><code>asset overlay ghidra --out extracted/overlays</code></div>
+  <div class="cli"><code>cp extracted/overlays/*.bin extracted/ &amp;&amp; bash extracted/overlays/import_static_overlays.sh</code></div>
+  <p><code>/data</code> inside the container is <code>./extracted</code> bind-mounted <strong>read-only</strong>, so the blobs reach Ghidra by being placed in <code>extracted/</code> on the host, not by <code>docker compose cp</code>. Run the driver from the repo root. Each overlay imports at its recovered base with the program named <code>overlay_&lt;label&gt;</code>; the generated Jython scripts carry the <code># @runtime Jython</code> / <code># @category Legaia</code> headers and are ASCII-only.</p>
+</section>
+
+<section class="doc-section" id="how-it-works">
   <h2>Why static extraction works</h2>
   <p>PSX overlays are normally <strong>clean copies</strong> of a fixed-VA-linked blob: the loader DMAs the bytes into the overlay window, runs <code>FlushCache</code>, and jumps in - there is no per-load relocation. Legaia's overlay code ships as MIPS-code entries inside <code>PROT.DAT</code> (the <a href="../formats/mips-overlay.html"><code>mips_overlay</code></a> / <a href="../formats/overlay-ptr-table.html"><code>overlay_ptr_table</code></a> detectors flag the small ones; the big scene overlays are raw too, just data-section-first). So the on-disc entry <em>is</em> the loaded code, modulo the runtime-written <code>.bss</code>.</p>
   <p>This is proved two ways:</p>
   <ul class="bullets">
-    <li><strong>Static reproducibility.</strong> The as-loaded bytes extracted from any copy of the disc hash to a committed sha256 (<code>asset overlay verify</code>). No Sony bytes are committed - only the hash.</li>
-    <li><strong>Runtime byte-match</strong> (disc + save-state gated). The on-disc bytes are byte-identical to the resident RAM image over the entire <code>.text</code>+<code>.rodata</code> region. For the battle overlay (PROT 0898) the first <code>0x28800</code> of <code>0x29800</code> bytes match - 100&nbsp;% of code+rodata - with only the trailing <code>.bss</code> diverging. For the menu overlay (PROT 0899) the clean prefix is <code>0x15e8c</code> bytes across six menu-open save states.</li>
+    <li><strong>Static reproducibility.</strong> The as-loaded bytes extracted from any copy of the disc hash to a committed sha256 (<code>asset overlay verify</code>).</li>
+    <li><strong>Runtime byte-match</strong> (disc + save-state gated). The on-disc bytes are byte-identical to the resident RAM image over the entire <code>.text</code>+<code>.rodata</code> region. The battle overlay (PROT 0898 at base <code>0x801CE818</code>) is the clean case: its entry is <code>0x28800</code> bytes and every one of them matches RAM, which is also its committed <code>clean_copy_bytes</code>. Where an entry carries a runtime-written <code>.bss</code> tail (PROT 0899), <code>clean_copy_bytes</code> records the verified prefix and the tail is expected to diverge. Test: <code>crates/mednafen/tests/static_overlay_clean_copy.rs</code>.</li>
   </ul>
 </section>
 
@@ -31,30 +61,48 @@
 
 <section class="doc-section" id="base-recovery">
   <h2>Base recovery</h2>
-  <p>The load base is recovered <strong>statically</strong> from the overlay's own internal <strong><code>jal</code> call graph</strong> - the graph of MIPS <code>jal</code> (jump-and-link, i.e. function-call) instructions recovered from the overlay bytes. For the true base <code>B</code>, every internal call target <code>T</code> maps to file offset <code>T - B</code>, which begins a function prologue (<code>addiu sp, sp, -X</code>). Tallying <code>B = T - prologue_offset</code> over every (distinct-call-target, prologue-offset) pair, the true base wins by a landslide: the field overlay recovers <code>0x801CE818</code> with 60 corroborating call targets; battle with 44.</p>
-  <p>The recovery is decisive enough to pin overlay identity. The options/menu overlay is <strong>PROT 0899</strong> at <code>0x801CE818</code> - found by byte-searching the corpus for <code>FUN_801CF650</code>'s instruction signature, RAM-verified across six menu-open save states. PROT 0899 and the field overlay (0897) are <strong>VA-alias siblings in slot A</strong>: both load at <code>0x801CE818</code> at different times, so <code>0x801CF650</code> is a <code>&quot;Give&quot;</code> string in 0897 but the equip aggregator in 0899. That is the exact aliasing this pipeline exists to disambiguate.</p>
+  <p>The load base is recovered <strong>statically</strong> from the overlay's own internal <strong><code>jal</code> call graph</strong> (<code>static_overlay::recover_base</code>) - the graph of MIPS <code>jal</code> (jump-and-link, i.e. function-call) instructions in the overlay bytes. For the true base <code>B</code>, every internal call target <code>T</code> maps to file offset <code>T - B</code>, which begins a function prologue (<code>addiu sp, sp, -X</code>). Tallying <code>B = T - prologue_offset</code> over every (distinct-call-target, prologue-offset) pair, the true base wins by a landslide: the field overlay recovers <code>0x801CE818</code> with dozens of corroborating call targets, battle likewise. <code>asset overlay scan</code> prints the winning base and its vote count per entry, so the recovery is reproducible from the disc rather than taken on trust.</p>
+  <p>The recovery is decisive enough to pin overlay identity. The options/menu overlay is <strong>PROT 0899</strong> at <code>0x801CE818</code> - found by byte-searching the corpus for <code>FUN_801CF650</code>'s instruction signature (<code>0x801CF650</code> &harr; PROT 0899 file <code>0xe38</code>), corroborated by the captured menu-dump functions aligning as prologues and by jal-recovery, and RAM-verified across six menu-open save states. PROT 0899 and the field overlay (0897) are <strong>VA-alias siblings in slot A</strong>: both load at <code>0x801CE818</code> at different times, so <code>0x801CF650</code> is a <code>&quot;Give&quot;</code> string in 0897 but the equip aggregator in 0899. That is the exact aliasing this pipeline exists to disambiguate.</p>
   <p>Two guard facts bound what the recovery can claim:</p>
   <ul class="bullets">
-    <li><strong>Subtract aliased regions first.</strong> When an entry's on-disc footprint over-reads a known overlay, the carried-in bytes are self-consistent at their own base and can fix the vote <em>by construction</em>. PROT 0896's whole-file recovery returns a convincing base for exactly this reason (the votes come from field-overlay bytes in its over-read tail); restricted to its own head, the recovery yields no landslide, so 0896's true link base is unrecovered.</li>
-    <li><strong>Static loader census.</strong> A full-image scan of both overlay loaders' <code>jal</code> sites finds <strong>no call site that can produce param 0 or 1</strong>, so extraction entries 0895/0896 are unreachable from any static loader call. (An <em>extraction entry</em> is the extraction-output index: the raw in-RAM PROT TOC index minus 2.) Extraction 0895's content is the boot <code>init.pak</code> bundle; 0896 remains an unidentified blob - see <a href="../subsystems/boot.html">boot &middot; game-mode state machine</a> and the <a href="../reference/open-rev-eng-threads.html">open-threads 0896 row</a>.</li>
+    <li><strong>Subtract aliased regions first.</strong> When an image carries bytes of a known overlay - a previous slot occupant in a capture, or a neighbour in an over-read window - those bytes are self-consistent at their <em>own</em> base and fix the vote <em>by construction</em>. Restricted to its own entry, an overlay with a sparse call graph may yield no landslide at all; the map then records a <code>capture</code> or <code>cross_ref</code> base instead.</li>
+    <li><strong>Static loader census.</strong> A full-image scan of both overlay loaders' <code>jal</code> sites finds <strong>no call site that can produce param 0 or 1</strong>, so extraction entries 0895/0896 are unreachable from any static loader call. (An <em>extraction entry</em> is the extraction-output index: the raw in-RAM PROT TOC index minus 2 - see <a href="../formats/cdname.html#numbering-space">cdname</a>.) Extraction 0895's content is the boot <code>init.pak</code> bundle; 0896 remains an unidentified blob - see <a href="../subsystems/boot.html">boot &middot; game-mode state machine</a> and the <a href="../reference/open-rev-eng-threads.html">open-threads 0896 row</a>.</li>
   </ul>
+  <details class="disclosure">
+    <summary>History: the PROT 0896 cautionary tale</summary>
+    <div class="disclosure-body">
+      <p>PROT 0896 (CDNAME <code>bat_back_dat</code>) was once labelled the options/menu overlay. Recovered over the old over-reading PROT window it returned a convincing 60-vote base <code>0x801C5818</code> - but the votes came from the <em>field</em> overlay's bytes carried in 0896's over-read tail from file <code>+0x9000</code>; that code's self-consistency at <code>0x801CE818</code> fixes the result to <code>0x801CE818 - 0x9000</code> by construction. Scanned over its own <code>0x9000</code>-byte entry it yields no landslide, so 0896's true link base is unrecovered. A live mode-24 entry capture refuted the "mode-24 OTHER overlay" reading too: the SCUS-resident OTHER INIT streams each minigame's own overlay directly into slot A, and 0896's bytes appear nowhere in RAM across the window or in any parked library state (probe <code>autorun_minigame_overlay_capture.lua</code> + <code>overlay_residency.py</code>). Moral: when an image carries a known overlay's bytes, subtract the aliased region before trusting a recovered base. Falsified readings are collected on <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p>
+    </div>
+  </details>
 </section>
 
 <section class="doc-section" id="slots">
   <h2>Slot A vs slot B</h2>
-  <p>The overlay loaders manage two independently swappable slots.</p>
+  <p>The overlay loaders manage two independently swappable slots (<code>*DAT_8001038C</code> and <code>*DAT_80010390</code>; see <a href="../formats/prot.html">prot - overlay loaders</a>).</p>
 
   <h3>Slot A - the big scene overlays</h3>
-  <p><strong>Slot A</strong> (<code>~0x801CE818</code>) holds field (0897), battle (0898), menu (0899), the STR/MDEC <strong>cutscene</strong> overlay (0970), and the <strong>minigame</strong> overlays (fishing 0972, slot machine 0975, baka fighter 0976, dance 0980 - the mode-24 door-warp sub-id slots, see <a href="../subsystems/script-vm.html">script-VM &sect; 0x3E WARP</a>). All are VA-alias siblings: same base, resident at different times.</p>
+  <p><strong>Slot A</strong> (<code>~0x801CE818</code>) holds field (0897), battle (0898), menu (0899), the STR/MDEC <strong>cutscene</strong> overlay (0970), the mode-0 <strong>DEBUG MODE</strong> overlay (0971), the <strong>GAME OVER</strong> overlay (0902), and the <strong>minigame</strong> overlays (fishing 0972, slot machine 0975, baka fighter 0976, dance 0980 - the mode-24 door-warp sub-id slots, see <a href="../subsystems/script-vm.html">script-VM &sect; 0x3E WARP</a>). All are VA-alias siblings: same base, resident at different times.</p>
   <ul class="bullets">
-    <li>The field / battle / menu / cutscene rows recover from <code>jal</code> alone.</li>
-    <li>The minigame rows are cross-checked instead by a documented minigame function landing on a prologue at the base (<code>anchor_va</code>), because their footprints over-read each other: one minigame's code is duplicated across consecutive entries at <code>base + N&times;0x800</code>, so <code>jal</code>-recovery can latch a phantom base. The canonical entry is the one recovering <code>0x801CE818</code> - which is also the entry the warp actually streams.</li>
-    <li>The &ldquo;world-map&rdquo;, &ldquo;save&rdquo;, and &ldquo;shop&rdquo; UIs are <strong>not</strong> separate entries: the overworld controller lives in field 0897, and the save + shop sessions live in menu 0899 (each function's signature byte-matches only that entry via <code>find-sig</code>).</li>
+    <li>The field / battle / menu / cutscene rows recover from <code>jal</code> alone (<code>base_source = jal</code>).</li>
+    <li>The minigame rows are cross-checked instead by a documented minigame function landing on a prologue at the base (<code>anchor_va</code>), because one minigame's code is duplicated across consecutive entries at <code>base + N&times;0x800</code>, so <code>jal</code>-recovery can latch a phantom base. The canonical entry is the one recovering <code>0x801CE818</code> - which is also the entry the warp actually streams.</li>
+    <li>The &ldquo;world-map&rdquo;, &ldquo;save&rdquo;, and &ldquo;shop&rdquo; UIs are <strong>not</strong> separate entries: the overworld controller <code>FUN_801E76D4</code> lives in field 0897, and the save + shop sessions live in menu 0899 (each function's signature byte-matches only that entry via <code>find-sig</code>).</li>
   </ul>
 
+  <h3 id="a-small-overlay-does-not-clear-the-slot">A small overlay does not clear the slot</h3>
+  <p>Slot A is a buffer, not a container: a load DMAs <code>size</code> bytes to <code>0x801CE818</code> and nothing zeroes the remainder. An overlay smaller than its predecessor therefore leaves that predecessor's tail resident and executable-looking, and a save state taken while it is up captures a <strong>stack of strata</strong> rather than one overlay. PROT 0971 (<code>debug_menu</code>) is the clear case, because its own content is only <code>0x1800</code> bytes. Resolving every function dump from a DEBUG MODE capture against the extracted images, address-ordered, reads:</p>
+  <table>
+  <thead><tr><th>Capture VA range</th><th>Bytes belong to</th></tr></thead>
+  <tbody>
+  <tr><td><code>0x801CE818</code> .. <code>+0x1800</code></td><td>PROT 0971, the overlay actually loaded</td></tr>
+  <tr><td><code>+0x1800</code> .. <code>+0xB000</code></td><td>PROT 0972 (fishing), a previous load</td></tr>
+  <tr><td><code>+0xB000</code> ..</td><td>PROT 0897 (field), an older load still</td></tr>
+  </tbody>
+  </table>
+  <p>Each boundary is exactly the previous occupant's length, which is what makes the reading structural rather than a guess. Two consequences: a capture's slot-A bytes are not one overlay's, so "this dump came from the DEBUG MODE capture" bounds nothing - resolve the bytes per VA; and the strata are the same mechanism that once made jal-recovery mis-fire (0972's code is self-consistent at <code>0x801CE818</code>, so an image running into it lands on <code>0x801CD018</code>). Scanned over its own entry, 0971 has too sparse a call graph to recover a base at all, which is why the map records <code>base_source = "capture"</code> for it.</p>
+
   <h3>Slot B - summon / effect / minigame-data blobs</h3>
-  <p><strong>Slot B</strong> (link base <code>0x801F69D8</code>) holds the player-summon / effect / minigame-data blobs from the <code>0900..0969</code> PROT cluster. These <strong>timeshare one buffer</strong>, so a save state catches an inseparable <em>mix</em> of two overlays - there is no clean whole-overlay RAM prefix, and most have too sparse a call graph to recover. Their base is cross-checked the slot-B way: a high fraction of the overlay's internal absolute self-pointers (<code>lui 0x801f/0x8020 ; addiu</code>) resolve in-file only at the committed base. This is precisely where static extraction earns its keep: the <em>disc</em> entry disassembles cleanly at the link base even though the <em>runtime</em> buffer is unusable.</p>
-  <p>The cluster is <strong>heterogeneous</strong>. The summon-stager entries follow one loader arithmetic: extraction entry = loader param + <code>0x37F</code>, in extraction space (the extraction-output index space defined above). Both spell blocks are <strong>capture-pinned per spell id, zero exceptions</strong>:</p>
+  <p><strong>Slot B</strong> (link base <code>0x801F69D8</code>, <code>summon_overlay::SUMMON_OVERLAY_LINK_BASE</code>) holds the player-summon / effect / minigame-data blobs from the <code>0900..0969</code> PROT cluster. These <strong>timeshare one buffer</strong>, so a save state catches an inseparable <em>mix</em> of two overlays (in a mid-cast Gimard save the 0900 render overlay has overwritten the stager) - there is no clean whole-overlay RAM prefix, and most have too sparse a call graph to recover. Their base comes from a capture anchor (<code>base_source = capture</code>; the 0900 render region <code>0x801F79D8..0x801F8DD8</code> byte-matches RAM) or a cross-referenced RE result (<code>cross_ref</code>), and is cross-checked the slot-B way: a high fraction of the overlay's internal absolute self-pointers (<code>lui 0x801f/0x8020 ; addiu</code>) must resolve in-file at the committed base (<code>static_overlay::pointer_resolution</code>). This is precisely where static extraction earns its keep: the <em>disc</em> entry disassembles cleanly at the link base even though the <em>runtime</em> buffer is unusable.</p>
+  <p>The cluster is <strong>heterogeneous</strong>. The summon-stager entries follow one loader arithmetic: extraction entry = loader param + <code>0x37F</code>, in extraction space. Both spell blocks are <strong>capture-pinned per spell id, zero exceptions</strong> (every id was observed mid-cast loading its slot; loader-B current id at <code>0x8007BC4C</code>):</p>
   <table>
   <thead><tr>
   <th>Spell id(s)</th>
@@ -67,13 +115,13 @@
   <td><code>0x81..=0x8B</code></td>
   <td>Player Seru magic (Gimard = <code>0x81</code>, &hellip;)</td>
   <td>0903..=0913</td>
-  <td>Capture-pinned per spell id. The deep-dived 38-spawn-call stager file is 0905 (the <code>0x83</code> slot). 0907 is <strong>Nighto's stager</strong> - its head title &ldquo;Hell's Music&rdquo; is the attack's display name (the SCUS spell table carries the same string).</td>
+  <td>Capture-pinned per spell id. The deep-dived 38-spawn-call stager file is 0905 (the <code>0x83</code> slot). 0907 is <strong>Nighto's stager</strong> - its head title is the attack's display name (the SCUS spell table carries the same string).</td>
   </tr>
   <tr>
   <td><code>0x99</code></td>
   <td>Evil Seru Magic (Juggernaut)</td>
   <td>0927</td>
-  <td>&ldquo;Dark Eclipse&rdquo; head title = the attack's display name, the same pattern as Nighto's.</td>
+  <td>Attack-titled head, the same pattern as Nighto's.</td>
   </tr>
   <tr>
   <td><code>0x9A..=0x9D</code></td>
@@ -89,18 +137,20 @@
   </tr>
   </tbody>
   </table>
-  <p>Non-spell residents of the cluster: summon-effect data (0957 - a summon string table, not a dance song) and the rare-Seru flute summons 0924/0925 (<strong>Lippian</strong> / <strong>Spikefish</strong>, capture-pinned; &ldquo;Ultimate Rave&rdquo; is Lippian's failed-kill banner), with 0926 the unused <code>0x98</code> one-sector stub.</p>
-  <p>The <strong>GAME OVER</strong> overlay (0902) is <em>not</em> slot B - its old slot-B row was a <code>pointer_resolution</code> false positive: 44/48 of its pointers are external references to fixed battle-band structures that happen to fall inside the slot-B window, scoring 91% at a base it never loads to. Its true base is slot A <code>0x801CE818</code>, pinned by the mode-18 loader chain and by in-file string anchors (the <code>gameover.pak</code> path, the <code>GAME OVER</code> caption). The hardened check, <code>string_anchor_votes</code>, counts pointers that decode to the start of one of the file's own string literals - a vote only the true base can win - and the reproducibility test fails any anchor-less row the rival slot out-votes.</p>
+  <p>Non-spell residents of the cluster: summon-effect data (0957 - a summon string table, not a dance song), the rare-Seru flute summons 0924/0925 (<strong>Lippian</strong> / <strong>Spikefish</strong>, capture-pinned; 0924's title is Lippian's failed-kill banner), 0926 the unused <code>0x98</code> one-sector stub, and the Delilas <strong>cast modules</strong> <code>0958..0960</code> - RAM-anchored at the slot-B link base, anatomy on <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/cast-module.md"><code>cast-module.md</code></a>, not yet rows in the map. Which action ids drive the attack-titled 0924 / 0927 stagers is the open piece (<a href="../reference/open-rev-eng-threads.html">open threads</a>).</p>
+  <p><strong><code>pointer_resolution</code> is one-sided</strong> and needs its string-anchor counterpart. The metric counts any in-window hit for pointers whose <code>lui</code> half matches the candidate base, so an overlay that densely references fixed structures of a co-resident overlay in the rival slot's VA band can score high at a base it never loads to. The GAME OVER overlay (0902) proved it: 44/48 of its pointers are external references to fixed battle-band structures at <code>0x801F7724..0x801F90FC</code> that fall inside the slot-B window, scoring 91% there - but its true base is slot A <code>0x801CE818</code>, pinned by the mode-18 loader chain (<code>FUN_80025B30</code> = <code>overlay_loader_a(7,0)</code> &rarr; PROT 902, then <code>jal 0x801CE844</code> = file <code>+0x2C</code>, the first prologue) and by in-file string anchors. The hardened check, <code>static_overlay::string_anchor_votes</code>, counts pointers that decode to the <em>start</em> of one of the file's own string literals - a vote only the true base can win - and the reproducibility test fails any anchor-less row the rival slot out-votes. One caveat: a co-resident overlay's head string table can alias onto this file's own head strings at matching small offsets (PROT 0977's arena code does this against the slot-B <code>field_back_read</code> module), so a pinned prologue anchor outranks the raw vote count and exempts the row.</p>
 
   <details class="disclosure">
-    <summary>How the labels were corrected (do not re-walk)</summary>
+    <summary>History: how the slot labels were corrected (do not re-walk)</summary>
     <div class="disclosure-body">
       <ul class="bullets">
-        <li><strong>&ldquo;PROT 0896 = options/menu overlay&rdquo;</strong> - wrong. 0896 (<code>bat_back_dat</code>) is not a menu overlay; the real one is PROT 0899. 0896's convincing 60-vote recovered base came from the field overlay's bytes carried in its over-read tail, and a live mode-24 entry capture ruled out the &ldquo;mode-24 OTHER overlay&rdquo; reading - the SCUS-resident OTHER INIT streams each minigame's own overlay directly into slot A.</li>
         <li><strong>&ldquo;Slot machine = 0973 with a <code>0x4000</code> over-read prefix at <code>0x801CA818</code>&rdquo;</strong> - a phantom base: the same image matched inside 0973's over-read tail. The canonical entry is 0975 (recovers <code>0x801CE818</code>, and is what the warp streams).</li>
         <li><strong>&ldquo;Gimard = 0905&rdquo;</strong> - an off-by-2 from reading the loader index math as <code>param + 0x381</code>. The correct math is <code>param + 0x37F</code> in extraction space; Gimard's stager is 0903, and 0905 is the <code>0x83</code> slot.</li>
-        <li><strong>&ldquo;0907 = Disco King dance song&rdquo;</strong> - refuted. &ldquo;Hell's Music&rdquo; is Nighto's attack display name; the dance overlay (0980) has no slot-B loader callsite - its music is sequenced BGM.</li>
+        <li><strong>&ldquo;0907 = Disco King dance song&rdquo;</strong> - refuted. The head title is Nighto's attack display name; the dance overlay (0980) has no slot-B loader callsite - its music is sequenced BGM via the sound streaming loader.</li>
+        <li><strong>&ldquo;GAME OVER (0902) is a slot-B overlay&rdquo;</strong> - the <code>pointer_resolution</code> false positive dissected above; it is a slot-A row.</li>
+        <li><strong>&ldquo;0957 = a dance song&rdquo;</strong> - its head is a summon string table (effect labels), correcting an earlier <code>overlay-ptr-table</code> reading.</li>
       </ul>
+      <p>The project-wide list of falsified readings is <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p>
     </div>
   </details>
 </section>
@@ -152,21 +202,24 @@
   </tr>
   </tbody>
   </table>
-  <p>The map spans the slot-A scene family (field / battle / menu + cutscene + the minigames) and the pinned slot-B entries (summon render + the capture-pinned stager blocks 903..913 and 927..934, GAME OVER, the attack-titled 0924, summon-effect data).</p>
+  <p>The map spans the slot-A scene family (field / battle / menu + cutscene + debug mode + GAME OVER + the minigames) and the pinned slot-B entries (summon render + the capture-pinned stager blocks 903..913 and 927..934, the attack-titled 0924, summon-effect data).</p>
 </section>
 
 <section class="doc-section" id="cli">
-  <h2>CLI</h2>
+  <h2>CLI reference</h2>
 <pre><code># Inspect the map.
 asset overlay list
 
 # Reconnaissance sweep: recover each entry's base + print its leading dev
 # string (the identity tell). --base filters to one overlay slot.
+asset overlay scan extracted/PROT.DAT --from 895 --to 985
 asset overlay scan extracted/PROT.DAT --from 895 --to 985 --base 0x801CE818
 
-# Locate a function-head signature across the corpus and infer the host
-# overlay's base (the capture-free byte-search that pins an entry).
-asset overlay find-sig extracted/PROT.DAT "1e80043c a046838c" --anchor-va 0x801DC6B4
+# Locate a function-head signature across the corpus and, given the function's
+# VA, infer the host overlay's base (the capture-free byte-search that pins an
+# entry). The signature is the function's first few instructions as
+# little-endian hex.
+asset overlay find-sig extracted/PROT.DAT "1e80043c a046838c e0ffbd27" --anchor-va 0x801DC6B4
 
 # Re-extract from your PROT.DAT and assert every committed fingerprint
 # reproduces (bit-for-bit, from any copy of the disc).
@@ -181,17 +234,26 @@ asset overlay ghidra --out extracted/overlays
 
 # Regenerate map rows (recover bases + hash bytes); review before committing.
 asset overlay generate extracted/PROT.DAT --index 897 --index 898</code></pre>
-  <p>The extracted <code>.bin</code>s are Sony overlay code (gitignored); only the map (PROT index &rarr; base &rarr; label + sha256 hashes) and the docs are committed. A statically-extracted-and-disassembled overlay reproduces the same functions at the same addresses as the captured <code>overlay_&lt;label&gt;_&lt;addr&gt;.txt</code> dumps - asserted against the disc bytes and against live RAM in disc-gated tests.</p>
+  <p>The extracted <code>.bin</code>s are Sony overlay code (gitignored); only the map (PROT index &rarr; base &rarr; label + sha256 hashes) and the docs are committed.</p>
+  <h3>Verification that closes the loop</h3>
+  <p>A statically-extracted-and-disassembled overlay reproduces the same functions at the same addresses as the captured <code>overlay_&lt;label&gt;_&lt;addr&gt;.txt</code> dumps: the field overlay puts <code>FUN_801D6704</code> (MAIN_INIT) at <code>base+0x07eec</code> (a clean prologue) and the field/event VM <code>FUN_801DE840</code> at <code>base+0x10028</code>; the battle overlay puts the per-actor state machine <code>FUN_801E295C</code> at <code>base+0x14144</code>. These anchors are asserted against the disc bytes in <code>crates/asset/tests/static_overlay_extract.rs</code> and against live RAM in the clean-copy test.</p>
 </section>
 
 <section class="doc-section" id="scope-limits">
   <h2>Scope + limits</h2>
-  <p>This is a complement to the dynamic captures, not a replacement. Three limits define where it stops:</p>
+  <p>This is a complement to the dynamic captures, not a replacement. Four limits define where it stops:</p>
   <ul class="bullets">
+    <li><strong>An overlay image is exactly its entry.</strong> <code>Archive::read_entry</code> returns <code>[entry start, next entry start)</code> - <code>size_sectors</code> and nothing belonging to a neighbour (see <a href="../formats/prot.html">prot</a>) - so an extracted image ends where the overlay ends. The entry lengths are the own-content lengths: PROT 0897 owns <code>0x25000</code> (to VA <code>0x801F3818</code>), 0898 <code>0x28800</code>, 0899 <code>0x25000</code>, 0971 <code>0x1800</code>, 0972 <code>0xB000</code>.</li>
     <li><strong>Only clean-copy overlays qualify.</strong> The byte-match catches the exceptions: an overlay whose on-disc bytes do not match the resident image is runtime-relocated or runtime-constructed. Mark it <code>ineligible</code> and keep it on the dynamic path - don't force it static.</li>
-    <li><strong>The fingerprint covers the <code>read_entry</code> footprint.</strong> For a few entries that footprint over-reads adjacent shared sectors past the real overlay, because the on-disc entries overlap. The over-read tail is harmless noise in the disassembly; the real functions still land at their real addresses.</li>
+    <li><strong>The fingerprint covers exactly the entry span</strong>, so it changes if and only if the entry's own bytes change. A small overlay padded out to the next sector boundary still hashes the whole entry; the padding is harmless noise in the disassembly - the real functions land at their real addresses.</li>
     <li><strong>It does not address runtime values.</strong> For <code>gp</code>-relative globals, watchpoint results, and anything the overlay constructs at run time, the <a href="overlay-capture.html">dynamic-capture workflow</a> and the <a href="pcsx-redux-automation.html">PCSX-Redux probes</a> remain essential and authoritative.</li>
   </ul>
+  <details class="disclosure">
+    <summary>History: what the over-reading entry window cost</summary>
+    <div class="disclosure-body">
+      <p>The superseded PROT entry-size expression (<code>toc[p+5] - toc[p+3] + 4</code>, surviving only as the diagnostic <code>read_entry_declared_span</code>) read past each entry into its neighbour. <code>FUN_801F5748</code> was read as the field overlay's inventory hub for a long time: <code>0x801F5748 - 0x801CE818 = 0x26F30</code> is <code>0x1F30</code> past where 0897 ends, so those bytes are PROT 0898's battle dispatcher <code>FUN_801D0748</code> - a real routine at a phantom address. The dump was correctly <em>based</em>; the over-read image simply answered for a VA it does not own. Any function dump or <code>(entry, offset)</code> coordinate taken from an over-read image still carries that flaw - re-derive it from the entry rather than trusting the printed VA. The same mechanism produced the earlier "fingerprint covers the over-read footprint" wording of this page.</p>
+    </div>
+  </details>
 </section>
 
 <section class="doc-section" id="see-also">
@@ -199,8 +261,14 @@ asset overlay generate extracted/PROT.DAT --index 897 --index 898</code></pre>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="overlay-capture.html">Overlay capture (dynamic)</a>
+    <a href="ghidra.html">Ghidra in Docker</a>
+    <a href="pcsx-redux-automation.html">PCSX-Redux automation</a>
+    <a href="address-reference-scan.html">Address-reference scan</a>
     <a href="../formats/mips-overlay.html">MIPS overlay</a>
+    <a href="../formats/overlay-ptr-table.html">Overlay pointer table</a>
     <a href="../formats/prot.html">PROT.DAT TOC</a>
+    <a href="../subsystems/boot.html">Boot</a>
     <a href="../reference/open-rev-eng-threads.html">Open RE threads</a>
+    <a href="../reference/re-do-not-re-walk.html">Do not re-walk</a>
   </div>
 </section>

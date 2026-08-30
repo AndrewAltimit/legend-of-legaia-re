@@ -1,41 +1,60 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; asset descriptor format</div>
   <h1>Asset descriptor format <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">A small table-of-contents layout: a list of <code>(type_size, data_offset)</code> pairs, each pointing at one asset inside a buffer and saying what type it is. The walker that consumes it is <code>FUN_80020224</code> (a Ghidra-traced routine in the game's executable) - and the interesting part is that <em>nothing in the executable ever calls it</em>. It's reached only at runtime, from an overlay (a chunk of MIPS code the game loads into RAM on demand). Implementation: <code>crates/asset/src/lib.rs::parse_player_lzs</code>.</p>
+  <p class="lede">When a town loads, the game pulls one compressed bundle off the disc and has to find the pieces inside it - the meshes, textures and animations that become the scene. This little table of contents is how it does that: a count, then a list of <code>(type_size, data_offset)</code> pairs, each pointing at one asset in the buffer and saying what kind it is. The walker is <code>FUN_80020224</code>, and the interesting part is that <em>nothing in the executable calls it</em> - it is reached only from a runtime overlay. Implementation: <code>crates/asset/src/lib.rs::parse_player_lzs</code>.</p>
 </header>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>In the game</dt><dd>Every field scene load - the town overlay's init walks one of these to install the scene's assets.</dd>
+    <dt>Magic / marker</dt><dd>None - a leading <code>u32 count</code> and a header word, then the pairs.</dd>
+    <dt>Lives in</dt><dd>In RAM, at the head of a decoded buffer; PROT 0874 (<code>player.lzs</code>, extraction-index space) is the three-descriptor instance the <a href="character-mesh.html">character mesh pack</a> is read through.</dd>
+    <dt>Retail reader</dt><dd><code>FUN_80020224</code>, called from <code>FUN_801D6704</code> (town overlay <code>MAIN_INIT</code>) at <code>0x801D6B0C</code>.</dd>
+    <dt>Parser</dt><dd><code>legaia_asset::parse_player_lzs</code> (<code>crates/asset/src/lib.rs</code>).</dd>
+    <dt>Confidence</dt><dd>Confirmed - the walker is disassembled and its overlay caller is traced; the second header word's purpose is still Unknown.</dd>
+  </dl>
+</section>
 
 <section class="doc-section" id="layout">
   <h2>Layout</h2>
-<pre><code>u32 count
-u32 (header word, purpose unknown)
-u32 type_size_0   u32 data_offset_0
-u32 type_size_1   u32 data_offset_1
-...</code></pre>
-  <p>Each descriptor pair is <code>(type_size, data_offset)</code> where <code>data_offset</code> is byte-relative to the buffer start, and <code>type_size</code> packs the <a href="asset-type.html">asset-type byte</a> (the 8-bit tag saying TIM / TMD / MES / &hellip;) in the high byte.</p>
+  <p>The table is a flat array of 8-byte pairs after two header words. <code>data_offset</code> is byte-relative to the buffer start, and <code>type_size</code> packs the <a href="asset-type.html">asset-type byte</a> (the 8-bit tag saying TIM / TMD / MES / &hellip;) in its high byte with the payload size in the low 24 bits. Each payload is an <a href="lzs.html">LZS</a> stream when the container is a <code>player.lzs</code>-style chain.</p>
+  <table class="layout">
+    <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>+0x00</code></td><td>4</td><td><code>count</code></td><td>Number of descriptor pairs that follow.</td></tr>
+      <tr><td><code>+0x04</code></td><td>4</td><td>header word</td><td>Purpose unknown. On PROT 0874 it is <code>0x2CBA0</code>, the offset of a VDF data tail past the LZS payload that the battle loader registers verbatim - see <a href="character-mesh.html#on-disc-layout">character mesh &sect; on-disc layout</a>. Editors must keep it byte-exact.</td></tr>
+      <tr><td><code>+0x08 + 8i</code></td><td>4</td><td><code>type_size_i</code></td><td><code>(type &lt;&lt; 24) | size</code>: asset-type byte in the high byte, size in the low 24 bits.</td></tr>
+      <tr><td><code>+0x0C + 8i</code></td><td>4</td><td><code>data_offset_i</code></td><td>Byte offset of asset <em>i</em> from the buffer start.</td></tr>
+    </tbody>
+  </table>
 </section>
 
 <section class="doc-section" id="how-fun-80020224-got-reached">
   <h2>How <code>FUN_80020224</code> is reached</h2>
-  <p>Static analysis of <code>SCUS_942.54</code> (the game's main executable) finds zero cross-references to the walker - which looks like dead code until you follow the overlays. <code>FUN_801D6704</code> (the town overlay's <code>MAIN_INIT</code>) calls <code>FUN_80020224</code> at <code>0x801D6B0C</code> with <code>a0 = 0</code>. The result is stored at <code>0x80087AF8</code>. So the format IS exercised by retail gameplay - through a runtime overlay rather than the executable's static call graph. (This "zero static callers but alive via overlay" pattern recurs across the whole codebase.)</p>
+  <p>Static analysis of <code>SCUS_942.54</code> (the game's main executable) finds zero cross-references to the walker - which looks like dead code until you follow the overlays. <code>FUN_801D6704</code> (the town overlay's <code>MAIN_INIT</code>) calls <code>FUN_80020224</code> at <code>0x801D6B0C</code> with <code>a0 = 0</code>, and the result is stored at <code>0x80087AF8</code>. So the format is exercised by every field scene load - through a runtime overlay rather than the executable's static call graph. This &ldquo;zero static callers but alive via overlay&rdquo; pattern recurs across the whole codebase; treat a zero-xref result as &ldquo;needs an overlay sweep&rdquo;, never as &ldquo;dead&rdquo;.</p>
+  <p>The same walk is what installs the <a href="character-mesh.html">field-form character meshes</a>: <code>FUN_80020224</code> &rarr; <code>FUN_8001F05C</code> case 2 &rarr; <code>FUN_80026B4C</code> registers PROT 0874 &sect;0's five TMDs into <code>DAT_8007C018[0..=4]</code>.</p>
 </section>
 
 <section class="doc-section" id="strict-scan-against-the-disc">
   <h2>Strict-scan against the disc</h2>
-  <p>Strictly scanning all 1233 PROT entries (the numbered slots of <code>PROT.DAT</code>, the disc's main asset archive) against this format finds zero hits. That's consistent with both "format isn't on disc as a top-level entry" and "format is on disc but indexed differently" (e.g., embedded inside a scene asset table or a compressed payload). The parser is left in place for when a real on-disc consumer surfaces.</p>
+  <p>Strictly scanning all 1233 PROT entries (the numbered slots of <code>PROT.DAT</code>, the disc's main asset archive) against this shape as a <em>top-level</em> entry finds zero hits: the table only exists once an LZS chain such as <code>player.lzs</code> has been opened, and the <a href="data-field.html">DATA_FIELD streaming format</a> carries descriptor-shaped chunks under its own header instead. The parser is kept for the buffers that do carry it.</p>
 </section>
 
 <section class="doc-section" id="note-on-naming">
   <h2>Note on naming</h2>
-  <p>The Rust function is named <code>parse_player_lzs</code> for historical reasons - the format was first encountered while investigating <code>player.lzs</code> chains. The format itself isn't player-specific.</p>
+  <p>The Rust function is named <code>parse_player_lzs</code> for historical reasons - the format was first encountered while investigating <code>player.lzs</code> chains. The format itself is not player-specific.</p>
 </section>
-
 
 <section class="doc-section" id="see-also">
   <h2>See also</h2>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="asset-type.html">Asset-type dispatch</a>
+    <a href="lzs.html">LZS compression</a>
     <a href="data-field.html">DATA_FIELD streaming</a>
+    <a href="pack.html">Pack format</a>
+    <a href="character-mesh.html">Character mesh pack (PROT 0874)</a>
     <a href="../subsystems/asset-loader.html">Asset loader</a>
   </div>
 </section>

@@ -1,17 +1,45 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> · <a href="index.html">reference</a> · functions</div>
   <h1>Key functions</h1>
-  <p class="lede">A directory of the game's traced functions, grouped by subsystem - the who's-who of the code the reverse-engineering has mapped. Each entry names a function and says in one line what it does. This page is the quick orientation; the full per-function reference lives in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/functions.md"><code>docs/reference/functions.md</code></a>, which is a lookup table you grep for an address.</p>
+  <p class="lede">When you play Legaia, a few thousand small routines are doing the work - loading a scene off the disc, stepping the NPC scripts, drawing the party, resolving a hit. This is the who's-who of the ones the reverse-engineering has mapped, grouped by subsystem, each with a one-line job description. It is the quick orientation; the full per-function directory is split across the repo's per-subsystem pages, which you grep for an address.</p>
 </header>
 
 <section class="doc-section" id="how-to-read">
   <h2>How to read an entry</h2>
-  <p>A name like <code>FUN_8003E4E8</code> is Ghidra's (the disassembler's) automatic label for the function whose code starts at RAM address <code>0x8003E4E8</code> - the game shipped no symbol names, so the address <em>is</em> the name, and it is stable across every doc and probe in this project. <code>DAT_</code>/<code>PTR_</code> prefixes mark data and pointer-table addresses the same way; "JT" is a jump table (the array of handler addresses behind a <code>switch</code>).</p>
-  <p><strong>The one thing that catches people out:</strong> functions at <code>0x801C0000+</code> are <strong>RAM-loaded overlays</strong> (code the game pages into RAM per game mode), and several overlays share that address window. One address can therefore name a <em>different function</em> depending on which overlay was resident when the dump was taken. If an entry does not match the code you are reading, check which overlay you have before concluding the entry is wrong - see <a href="../tooling/overlay-capture.html">overlay capture</a>.</p>
+  <p>The game shipped with no symbol names, so a name like <code>FUN_8003E4E8</code> is Ghidra's (the disassembler's) automatic label for the function whose code starts at RAM address <code>0x8003E4E8</code> - the address <em>is</em> the name, and it is stable across every doc and probe in this project. <code>DAT_</code>/<code>PTR_</code> prefixes mark data and pointer-table addresses the same way; "JT" is a jump table (the array of handler addresses behind a <code>switch</code>). Each entry has a Ghidra dump under <code>ghidra/scripts/funcs/&lt;addr&gt;.txt</code> - the canonical disassembly plus decompiled C. The dumps are gitignored (they are Sony-derived) and regenerable from the Ghidra project; see <a href="../tooling/ghidra.html">Ghidra tooling</a>.</p>
+  <h3>Four things that catch people out</h3>
+  <ul class="bullets">
+    <li><strong>Functions at <code>0x801C0000+</code> are RAM-loaded overlays</strong> - code the game pages into RAM per game mode (field, battle, menu, title), dumped as <code>overlay_&lt;label&gt;_&lt;addr&gt;.txt</code>. Several overlays share that address window, so one address can name a <em>different function</em> depending on which overlay was resident when the dump was taken. If an entry does not match the code you are reading, check which overlay you have before concluding the entry is wrong - see <a href="../tooling/overlay-capture.html">overlay capture</a> and the <a href="memory-map.html#overlays">overlay window</a>.</li>
+    <li><strong>"No static caller in <code>SCUS_942.54</code>" does not mean dead.</strong> Most game logic lives in those overlays, so zero callers in the executable means "needs an overlay sweep", not "unused".</li>
+    <li><strong>Some printed addresses are not addresses at all.</strong> A dump can show a real function body beside a virtual address no runtime image ever used, because the printed VA is a property of the import's load base. Before treating an unfamiliar <code>0x801E&hellip;</code>/<code>0x8020&hellip;</code> address as a new function, check <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/overlay-va-aliases.md" target="_blank" rel="noopener">overlay VA aliases</a>.</li>
+    <li><strong>Read the disassembly, not the decompiled C.</strong> Ghidra promotes intra-function labels to fake <code>FUN_</code> calls in large dispatchers, drops register arguments, and reorders stores; the artifact catalogue is on the <a href="../tooling/ghidra.html">Ghidra page</a>.</li>
+  </ul>
+  <p>Not finding an address here does not mean it is unknown - this directory covers the functions that anchor an explanation. The <a href="../tooling/port-catalog.html">port catalog</a> tracks dumped / documented / ported status across the whole corpus.</p>
 </section>
 
-<section class="doc-section">
-  <h2>By subsystem</h2>
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance: the full directory, by page</h2>
+  <p>The complete lookup table lives in the repo as one Markdown page per subsystem. Grep them for your address, read the row, then go to the dump or the linked subsystem page for the real detail. The blocks further down this page are the highlights.</p>
+  <table>
+    <thead><tr><th>Directory page</th><th>Covers</th><th>Site page</th></tr></thead>
+    <tbody>
+      <tr><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/functions/asset-loading.md" target="_blank" rel="noopener"><code>asset-loading.md</code></a></td><td>Asset loading + dispatch; per-stage asset table machinery; disc / loader chain; scene / stage init.</td><td><a href="../subsystems/asset-loader.html">Asset loader</a></td></tr>
+      <tr><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/functions/runtime-libs.md" target="_blank" rel="noopener"><code>runtime-libs.md</code></a></td><td>PSX runtime libraries (libgte, BIOS veneers); CD / file-system; helpers; static actor templates; stub helpers.</td><td><a href="../subsystems/boot.html">Boot</a></td></tr>
+      <tr><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/functions/game-modes.md" target="_blank" rel="noopener"><code>game-modes.md</code></a></td><td>Input + debug; move / animation; the game-mode state machine; the title overlay.</td><td><a href="../subsystems/boot.html">Boot</a>, <a href="../subsystems/move-vm.html">Move VM</a></td></tr>
+      <tr><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/functions/battle.md" target="_blank" rel="noopener"><code>battle.md</code></a></td><td>Battle; on-screen HUD + 2D sprite/effect list; per-frame draw; sparring-tutorial overlay (0967); command-block persistence + target menu (0898); field&rarr;battle transition.</td><td><a href="../subsystems/battle.html">Battle</a>, <a href="../subsystems/battle-action.html">Battle action SM</a></td></tr>
+      <tr><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/functions/script-vms.md" target="_blank" rel="noopener"><code>script-vms.md</code></a></td><td>Script VMs; field-locomotion math helpers.</td><td><a href="../subsystems/script-vm.html">Field VM</a>, <a href="../subsystems/field-locomotion.html">Locomotion</a></td></tr>
+      <tr><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/functions/renderer.md" target="_blank" rel="noopener"><code>renderer.md</code></a></td><td>Renderer; GPU primitives; ANM animation; MES / dialog text interpreter; dialog-overlay actor-frame helpers.</td><td><a href="../subsystems/renderer.html">Renderer</a></td></tr>
+      <tr><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/functions/audio.md" target="_blank" rel="noopener"><code>audio.md</code></a></td><td>The libsnd / libspu stack, SsAPI sequencer, SPU transfer engine, XA streaming.</td><td><a href="../subsystems/audio.html">Audio</a></td></tr>
+      <tr><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/functions/menus.md" target="_blank" rel="noopener"><code>menus.md</code></a></td><td>Records / stats screen; field-overlay status / equip panels (0897); inventory / spell list; shop panels; menu / HUD globals; menu-overlay callees (0899).</td><td><a href="../subsystems/field-menu.html">Field menu</a>, <a href="../subsystems/shop.html">Shop</a></td></tr>
+      <tr><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/functions/world-map.md" target="_blank" rel="noopener"><code>world-map.md</code></a></td><td>World map - controller, dev menu, render pipeline.</td><td><a href="../subsystems/world-map.html">World map</a></td></tr>
+      <tr><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/functions/minigames-debug.md" target="_blank" rel="noopener"><code>minigames-debug.md</code></a></td><td>Minigames; debug-menu overlay (0971); other-game minigame overlay (0977).</td><td><a href="../minigames.html">Minigames</a></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="by-subsystem">
+  <h2>Highlights by subsystem</h2>
+  <p>The functions that anchor an explanation somewhere on this site. Each block ends with the page that owns the mechanism.</p>
 
   <div class="fnref-grid">
     <div class="fnref-block">
@@ -34,6 +62,7 @@
         (MAIN INIT). This is the <code>_DAT_8007B85C</code> staging path described in
         <a href="../subsystems/asset-loader.html">asset loader</a>. See <code>ghidra/scripts/funcs/80021940.txt</code>.</li>
       </ul>
+      <div class="see-also"><span class="see-also-label">Reference</span><a href="../subsystems/boot.html">Boot</a><a href="../subsystems/asset-loader.html">Asset loader</a><a href="../formats/prot.html">PROT.DAT</a></div>
     </div>
 
     <div class="fnref-block">
@@ -62,6 +91,7 @@
         <a href="../subsystems/field-locomotion.html#npc-initial-facing">field locomotion</a>. See
         <code>ghidra/scripts/funcs/8003a1e4.txt</code>.</li>
       </ul>
+      <div class="see-also"><span class="see-also-label">Reference</span><a href="../subsystems/script-vm.html">Field / event VM</a><a href="../subsystems/move-vm.html">Move VM</a><a href="../subsystems/motion-vm.html">Motion VMs</a><a href="../subsystems/actor-vm.html">Window-widget VM</a></div>
     </div>
 
     <div class="fnref-block">
@@ -80,6 +110,7 @@
         <li><code>FUN_801DB8EC</code> - <strong>camera focus + projection setter</strong> (field overlay; disassembled from live overlay RAM in the <code>new_game_cutscene_intro_a</code> save, since the headless Ghidra dump truncates it). Calls <code>FUN_801DAB90(transform_ptr, 0x801F3580)</code> (builds the camera-param struct), sets the GTE <strong>H</strong> register from <code>_DAT_8007B6F4</code> via <code>func_0x8003D254</code> (= <code>setCopControlWord(2,…)</code>), and writes the focus globals <code>_DAT_80089118</code>/<code>_DAT_80089120</code>: when camera-mode byte <code>DAT_8007B607&gt;&gt;4 == 5</code> the focus is tile-derived <code>-(tile&lt;&lt;7)-0x40</code>, otherwise anchor-follow <code>-(anchor+0x14)</code>/<code>-(anchor+0x18)</code>. So this is the focus + FOV setter, <strong>not</strong> an eye-position build - the eye-back depth lives in the op-<code>0x45</code> translation trio's slot 5 (<code>_DAT_800840C0</code>), not here (see <a href="../subsystems/cutscene.html">cutscene</a> op-<code>0x45</code>). Invoked by field-VM op <code>0x4C 0x39</code> and op <code>0x4C 0x3E</code>.</li>
         <li><code>FUN_801DBC20</code> - <strong>camera-zone config loader</strong> (resident camera cluster). Splits the 18-byte camera-region record's <code>bytes[5..17]</code> into the camera globals <code>0x8007B607..0x8007B627</code>, keyed on the mode nibble <code>byte[5] &gt;&gt; 4</code> (<code>3</code> = look-at-anchor split, <code>5</code> = fixed-shot split, <code>6</code> = no-op, else the position-sweep split); consumed by the camera-param builder <code>FUN_801DAB90</code> + follow-ease <code>FUN_801DB510</code>, query miss loads fixed defaults in <code>FUN_801DBE9C</code>. Full byte split: <a href="../formats/encounter.html#camera-region-table">encounter &sect; camera-region table</a>.</li>
       </ul>
+      <div class="see-also"><span class="see-also-label">Reference</span><a href="../subsystems/cutscene.html">Cutscene</a><a href="../formats/str-fmv-table.html">FMV dispatch table</a><a href="../formats/xa.html">CD-XA</a></div>
     </div>
 
     <div class="fnref-block">
@@ -110,6 +141,7 @@
         <li><code>0x801CE868</code> - move-VM extension JT</li>
         <li><code>0x800EB654</code> - battle context struct (pointed to by <code>_DAT_8007BD24</code>)</li>
       </ul>
+      <div class="see-also"><span class="see-also-label">Reference</span><a href="../subsystems/renderer.html">Renderer</a><a href="../formats/tmd.html">Legaia TMD</a><a href="../formats/anm.html">ANM</a><a href="../subsystems/world-map.html">World map</a></div>
     </div>
 
     <div class="fnref-block">
@@ -135,6 +167,7 @@
         <li>PROT <code>0967</code> - battle <strong>sparring-tutorial overlay</strong>, co-resident at <code>0x801F69D8</code> during the Tetsu fight (overlapping overlay 0898's rodata tail); drives the how-to-fight tutorial prompts</li>
         <li><code>0x801C9370</code> - 8-actor pointer table (party 0&ndash;2, monsters 3&ndash;7); actor HP at <code>+0x14C</code></li>
       </ul>
+      <div class="see-also"><span class="see-also-label">Reference</span><a href="../subsystems/battle.html">Battle</a><a href="../subsystems/battle-action.html">Battle action SM</a><a href="../subsystems/battle-formulas.html">Battle formulas</a></div>
     </div>
 
     <div class="fnref-block">
@@ -147,6 +180,7 @@
         <li><code>FUN_801CF650</code> - equipment stat aggregator; reads 5 slots at char <code>+0x196</code>, sums into <code>DAT_801EF08C&ndash;09C</code></li>
         <li><code>FUN_801DD0C0</code> - item category / slot validity check</li>
       </ul>
+      <div class="see-also"><span class="see-also-label">Reference</span><a href="../subsystems/field-menu.html">Field menu</a><a href="../formats/window-script.html">Window scripts</a><a href="../subsystems/save-screen.html">Save screen</a></div>
     </div>
 
     <div class="fnref-block">
@@ -162,6 +196,7 @@
         <li><code>0x80068-0x6D</code> - libspu SPU control cluster</li>
         <li><code>FUN_80069B18</code> - SPU DMA transfer state machine</li>
       </ul>
+      <div class="see-also"><span class="see-also-label">Reference</span><a href="../subsystems/audio.html">Audio</a><a href="../formats/vab.html">VAB</a><a href="../formats/seq.html">SEQ</a></div>
     </div>
 
     <div class="fnref-block">
@@ -181,6 +216,7 @@
         <li><code>FUN_801D8258</code> - 40-byte gate setter; <code>_DAT_801F351C = 1</code> + scale/step/OT-layer params</li>
         <li><code>FUN_801D1344</code> (world_map overlay) + <code>FUN_801C2B2C</code> (0897 field overlay) - 1332-byte gate-arm wrapper (overlay relocation pair). Distinct from the dialog overlay's <code>FUN_801D1344</code> (different code at the same RAM address).</li>
       </ul>
+      <div class="see-also"><span class="see-also-label">Reference</span><a href="../subsystems/world-map.html">World map</a><a href="../formats/world-map-overlay.html">World-map overlay</a></div>
     </div>
 
     <div class="fnref-block">
@@ -195,13 +231,14 @@
         <li><code>0x8005E540</code> - <code>memcpy</code></li>
         <li><code>0x80056698+</code> stride 0x10 - BIOS B-vector thunk cluster</li>
       </ul>
+      <div class="see-also"><span class="see-also-label">Reference</span><a href="../subsystems/boot.html">Boot</a><a href="../tooling/port-catalog.html">Port catalog (ignored PsyQ infra)</a></div>
     </div>
   </div>
 </section>
 
-<section class="doc-section">
+<section class="doc-section" id="full-reference">
   <h2>Full reference</h2>
-  <p>Every function above (and ~50 more) is described in detail with provenance citations in the markdown doc:</p>
+  <p>Every function above, and many more, is described with provenance citations in the per-subsystem directory pages indexed from the markdown doc:</p>
   <p><a class="cta" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/functions.md" target="_blank" rel="noopener">docs/reference/functions.md →</a></p>
   <p>Per-function dumps (Ghidra disassembly + decompile) live under <code>ghidra/scripts/funcs/&lt;addr&gt;.txt</code> in the repo (gitignored - Sony-derived). Overlay-specific dumps are prefixed <code>overlay_&lt;label&gt;_&lt;addr&gt;.txt</code>.</p>
 </section>

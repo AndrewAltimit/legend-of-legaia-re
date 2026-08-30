@@ -4,6 +4,18 @@
   <p class="lede">What can you steal from each enemy, and how often does it work? With the <strong>Evil God Icon</strong> accessory equipped, the answer is a static two-byte-per-monster lookup baked into <code>SCUS_942.54</code>, the game's main executable on the disc: steal chance (percent) and stolen item id. The surprise is <em>where</em> it lives - in the executable, <strong>not</strong> in the monster archive alongside the rest of a monster's battle data. The monster record's reward block carries only gold / exp / drop, so every attempt to find the steal item by scanning monster records was structurally doomed. Second trap: the two bytes are stored chance-first, the <em>reverse</em> of the drop pair in the monster record.</p>
 </header>
 
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Magic</dt><dd>none - static data in <code>SCUS_942.54</code></dd>
+    <dt>Where</dt><dd><code>DAT_80077828</code> (file offset <code>0x68028</code>), 2-byte stride, 1-based monster id; <strong>not</strong> in the PROT 867 monster record</dd>
+    <dt>Parser</dt><dd><code>legaia_asset::steal_table::StealTable</code>; randomizer <code>legaia_patcher::steal</code></dd>
+    <dt>Confidence</dt><dd>Confirmed - pinned from a live steal capture and byte-exact against the complete published steal table (<code>steal_table_real</code>)</dd>
+    <dt>Used by</dt><dd><a href="../monsters.html">Enemy table</a> (steal column), <a href="../tooling/randomizer.html">Randomizer</a>, <a href="../tooling/rom-patcher.html">ROM patcher</a></dd>
+  </dl>
+  <p class="hint"><strong>Field order is <code>[chance, item]</code></strong> - the reverse of the drop pair in the monster record. Read it item-first and every chance shifts by one monster.</p>
+</section>
+
 <section class="doc-section" id="table-layout">
   <h2>Table base + record layout</h2>
   <p>(<code>DAT_80077828</code> is a Ghidra label - the disassembler's name for the fixed RAM address the table occupies. Static data: the address maps directly to a file offset in <code>SCUS_942.54</code> on the disc.)</p>
@@ -49,5 +61,9 @@
     <a href="monster-animation.html">Monster archive / animation</a>
     <a href="../subsystems/battle.html">Battle subsystem</a>
     <a href="../reference/gamedata.html">Curated gamedata</a>
+    <a href="accessory-passive-table.html">Accessory passives (Evil God Icon)</a>
+    <a href="../monsters.html">Enemy table</a>
+    <a href="../tooling/randomizer.html">Randomizer</a>
+    <a href="../tooling/rom-patcher.html">ROM patcher</a>
   </div>
 </section>

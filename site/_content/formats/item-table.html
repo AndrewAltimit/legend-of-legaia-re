@@ -4,6 +4,17 @@
   <p class="lede">Every item's display name and shop price - weapons, armor, accessories, consumables, key items - lives in one static 256-entry table baked into <code>SCUS_942.54</code>, the game's main executable on the disc. Each item is a single byte-sized id, <code>0x00..=0xFF</code>, and that one id space is shared everywhere: when dialog text prints an item name (the game's MES text engine has substitution codes <code>0xC2 XX</code> / <code>0xC4 XX</code> that index this table), when a monster's <code>drop_item</code> byte says what it drops, and when the <a href="steal-table.html">steal table</a> says what can be stolen. The price halfword in each record is what the buy/sell UI actually charges - so this table, not any per-shop data, is where an item's price lives.</p>
 </header>
 
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Magic</dt><dd>none - static data in <code>SCUS_942.54</code></dd>
+    <dt>Where</dt><dd><code>DAT_80074368</code>, 12-byte stride, 256 ids; name pointers read as <code>PTR_DAT_8007436C[id*3]</code></dd>
+    <dt>Parser</dt><dd><code>legaia_asset::item_names::ItemNameTable</code></dd>
+    <dt>Confidence</dt><dd>Confirmed - the index form is read off the MES <code>0xC2</code>/<code>0xC4</code> substitution dispatch; prices verified live; disc-gated <code>item_names_real</code></dd>
+    <dt>Used by</dt><dd><a href="../monsters.html">Enemy table</a> (drop / steal names), <a href="../shops.html">Shops page</a>, <a href="../subsystems/shop.html">Shop subsystem</a>, <a href="../subsystems/inventory.html">Inventory</a></dd>
+  </dl>
+</section>
+
 <section class="doc-section" id="table-layout">
   <h2>Table base + record layout</h2>
   <p>(<code>DAT_80xxxxxx</code> / <code>PTR_DAT_80xxxxxx</code> are Ghidra names - labels the disassembler assigns to fixed RAM addresses. The table is static data, so those addresses map one-to-one back to bytes in the <code>SCUS_942.54</code> file on the disc. "Stride" is the size of one record.)</p>
@@ -49,5 +60,10 @@
     <a href="mes.html">MES dialog format</a>
     <a href="art-data.html">Art records</a>
     <a href="../reference/gamedata.html">Curated gamedata</a>
+    <a href="../subsystems/shop.html">Shop subsystem</a>
+    <a href="../subsystems/inventory.html">Inventory</a>
+    <a href="../monsters.html">Enemy table</a>
+    <a href="../shops.html">Shops page</a>
+    <a href="../tooling/translation.html">Translation packs</a>
   </div>
 </section>

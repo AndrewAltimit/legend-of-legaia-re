@@ -113,7 +113,7 @@
   <div class="breadcrumb"><a href="index.html">home</a> &middot; media</div>
   <h1>Media browser</h1>
   <p class="lede">
-    Hear every sound in <em>Legend of Legaia</em>, and watch every cutscene, straight from your own copy of the game.
+    Hear every tune and voice in <em>Legend of Legaia</em>, and watch every cutscene, straight from your own copy of the game. The music is performed live by a recreation of the console's sound chip; the movies are decoded frame by frame.
   </p>
 </header>
 
@@ -183,44 +183,94 @@
 </section>
 
 <details class="about-data">
-  <summary>About this data — formats, the three tabs, caveats</summary>
+  <summary>About this page - what the three tabs are, how the audio is made, caveats</summary>
   <div class="about-body">
     <p>
-      Load a <code>.bin</code> disc image once and flip between <strong>BGM</strong> music,
-      <strong>FMV</strong> cutscenes, and the <strong>SE</strong> sound-effect and voice banks - all
-      parsed, decoded, and played locally in WebAssembly. Nothing is uploaded; your disc is cached in
-      the browser and shared across pages (<em>Forget</em> clears it).
+      Load a <code>.bin</code> disc image once and flip between <strong>BGM</strong> (the music),
+      <strong>FMV</strong> (the cutscene movies) and <strong>SE</strong> (the streamed voice and
+      sound banks). Everything is parsed, decoded and played locally in WebAssembly by the
+      project's own decoders. Nothing is uploaded; your disc is cached in the browser and shared
+      across pages (<em>Forget</em> on the disc chip clears it).
     </p>
-    <p>
-      Requires the full Mode2/2352 <code>.bin</code> - XA streams live in CD sectors outside <code>PROT.DAT</code>. The browser autoplay policy means BGM will only start after you click <em>Play</em>.
+    <p class="hint">
+      This page needs the full Mode2/2352 <code>.bin</code>: the movies and voice streams are not
+      in the game's archive but in their own CD sectors, and a 2048-byte-sector image has already
+      thrown away the part that carries them. Browsers also refuse to start audio until you click,
+      so the first <em>Play</em> is the one that unlocks sound.
     </p>
     <h3>What each tab is</h3>
-    <ul class="bullets">
-      <li><strong>BGM</strong> - not recorded audio but a score plus instrument bank
-        (<a href="formats/seq.html">SEQ</a> + <a href="formats/vab.html">VAB</a>), performed here by
-        the clean-room <a href="subsystems/audio.html">SPU recreation</a>.</li>
-      <li><strong>FMV</strong> - the <code>MV*.STR</code> cutscenes, decoded with video and audio in
-        sync (<a href="subsystems/cutscene.html">cutscene pipeline</a>).</li>
-      <li><strong>SE</strong> - the <code>XA*.XA</code> banks; each file holds several interleaved
-        voices, so clicking one lists what's inside.</li>
-    </ul>
+    <table>
+      <thead><tr><th>Tab</th><th>What it holds</th><th>How it is played</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>BGM</strong></td>
+          <td>The music - not recordings, but a <em>score</em> plus an <em>instrument bank</em>
+            for each track (<a href="formats/seq.html">SEQ</a> + <a href="formats/vab.html">VAB</a>),
+            the way a MIDI file plus a soundfont works.</td>
+          <td>Performed by the project's clean-room recreation of the PlayStation sound chip and
+            sequencer - the same code the <a href="play.html">engine port</a> uses for in-game
+            music (<a href="subsystems/audio.html">audio subsystem</a>). Rendered ahead in
+            one-minute chunks, so there is no live pause.</td>
+        </tr>
+        <tr>
+          <td><strong>FMV</strong></td>
+          <td>The <code>MV*.STR</code> movies: video frames interleaved with their audio track in one
+            stream.</td>
+          <td>Video decoded frame by frame by the project's MDEC decoder, timed off the audio
+            clock, exactly as the console does (<a href="subsystems/cutscene.html">cutscene
+            pipeline</a>). Longer movies take a few seconds to prepare.</td>
+        </tr>
+        <tr>
+          <td><strong>SE</strong></td>
+          <td>The <code>XA*.XA</code> banks: streamed audio the game plays straight from the CD -
+            battle shouts, cutscene voices, ambience. Each file holds several interleaved voices,
+            so expanding one lists what is inside.</td>
+          <td>Decoded from <a href="formats/xa.html">XA-ADPCM</a>; every voice plays or downloads
+            independently.</td>
+        </tr>
+      </tbody>
+    </table>
+    <h3>Sound Test vs PROT entries</h3>
     <p>
-      <strong>Sound Test</strong> lists the score the way the game's own debug menu does - by track name and sound-test number, from the curated <a href="reference/music-tracks.html">music-track table</a> joined structurally to the <code>music_01</code> bank. <strong>PROT entries</strong> is the raw view: every <code>VAB</code>+<code>SEQ</code> carrier on the disc, including the boot/battle duplicate copies that have no catalogued name. Playback drives the same clean-room SPU + SEQ stack the engine port uses - see <a href="subsystems/audio.html">audio</a>.
+      The BGM tab has two views of the same data. <strong>Sound Test</strong> lists the score the
+      way the game's own hidden debug menu does - by track number and name, with the official
+      soundtrack title beside it where one exists - from the curated
+      <a href="reference/music-tracks.html">music-track table</a>. Slots with no audio on the
+      retail disc still appear, greyed, so the whole sound-test space is visible.
+      <strong>PROT entries</strong> is the raw view: every score-plus-bank pair in the archive,
+      including the duplicate copies the boot and battle code keep for themselves, which carry no
+      catalogued name.
     </p>
+    <details class="disclosure">
+      <summary>How a sound-test number finds its disc entry</summary>
+      <div class="disclosure-body">
+        <p>The join is structural, not by name: in-game music id <code>2000 + i</code> is sound-test
+          track <code>i</code>. Mapping that onto an archive entry is <em>piecewise</em>, though -
+          the music bank has a two-slot gap in the middle, so the entry number steps by two past
+          it rather than following one flat base. The <a href="reference/music-tracks.html">music
+          tracks</a> page has the mapping and the four naming spaces each cue lives in.</p>
+      </div>
+    </details>
     <div id="legal">
-      <h3>Notes</h3>
+      <h3>If something sounds wrong</h3>
       <p>
-        All decoded media stays in your browser. The decoders are the project's own:
-        <a href="formats/vab.html">VAB</a>, <a href="formats/seq.html">SEQ</a>,
-        <a href="formats/xa.html">XA-ADPCM</a>, and the <a href="subsystems/cutscene.html">Iki MDEC</a>
-        cutscene video; the clean-room <abbr title="Sound Processing Unit">SPU</abbr> behind BGM is
-        documented at <a href="subsystems/audio.html">subsystems / audio</a>.
+        The <code>.wav</code> button downloads the raw decoded audio, byte-equal to what the native
+        <code>xa</code> tool writes. If that file sounds right but the browser playback does not,
+        the problem is on the browser's audio side, not in the decoder. Decoded media stays in your
+        browser either way.
       </p>
-      <p>
-        Playback sounding wrong? The <code>.wav</code> button downloads a raw PCM dump, byte-equal to
-        the native <code>xa demux-disc</code> output. If that file sounds correct but the browser
-        doesn't, the disconnect is on the WebAudio side, not in the decoder.
-      </p>
+      <div class="see-also">
+        <span class="see-also-label">Reference</span>
+        <a href="formats/seq.html">SEQ</a>
+        <a href="formats/vab.html">VAB</a>
+        <a href="formats/xa.html">CD-XA</a>
+        <a href="formats/str-fmv-table.html">FMV dispatch table</a>
+        <a href="formats/sfx-table.html">Sound-effect table</a>
+        <a href="subsystems/audio.html">Audio subsystem</a>
+        <a href="subsystems/cutscene.html">Cutscenes</a>
+        <a href="reference/music-tracks.html">Music tracks</a>
+        <a href="guides/extracting-assets.html">Extracting audio natively</a>
+      </div>
     </div>
   </div>
 </details>

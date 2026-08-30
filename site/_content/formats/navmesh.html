@@ -4,6 +4,17 @@
   <p class="lede">Does Legend of Legaia keep a navmesh - a table of walkable-area records - in RAM? An early reading said yes: a 1700-byte cluster at <code>0x80108EA4..0x80109550</code> that changes on every area load looked like a table of 24-byte records. That reading is <strong>falsified</strong>. The window is a per-scene scratch buffer the renderer fills with assembled GPU primitive data on scene entry; its shape varies by scene because it holds whatever that scene's billboard / decoration / sprite pre-fill writes. This page records the falsification so nobody re-derives the navmesh reading from the same evidence.</p>
 </header>
 
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>What it is</dt><dd>A negative finding: the RAM window <code>0x80108EA4..0x80109550</code> is a renderer scratch buffer, not a navmesh table</dd>
+    <dt>Where the real pathing data is</dt><dd>The per-scene walkability grid at <code>*(_DAT_1f8003ec)+0x4000</code> (<a href="../subsystems/field-locomotion.html">field locomotion</a>), the MAN region boxes, and the tile-board grid for the puzzle mode</dd>
+    <dt>Parser</dt><dd>none (nothing to parse); reproduction via <code>mednafen-state extract</code> + <code>scripts/mednafen/pointer-hunt.py</code></dd>
+    <dt>Confidence</dt><dd>Inferred - zero pointers into the window across three save states; the contents match GP0 packet shapes</dd>
+  </dl>
+  <p>Falsified readings across the whole project are collected on <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>; this page keeps the full reasoning for the one that looked most like real data.</p>
+</section>
+
 <section class="doc-section" id="negative-finding">
   <h2>Why this entry exists</h2>
   <p>The 24-byte-stride "navmesh" reading was structural inference from a single pair of mednafen save-state diffs (comparing emulator RAM snapshots before and after an area load). Broader inspection across three separate save states (<code>mc1</code> / <code>mc2</code> / <code>mc3</code>) falsifies it - and negative findings are worth writing down, because the same diff evidence would suggest the same wrong conclusion to the next person.</p>
@@ -54,5 +65,9 @@ python3 scripts/mednafen/pointer-hunt.py into-window /tmp/ram_mc3.bin \
     <span class="see-also-label">Reference</span>
     <a href="../subsystems/field-locomotion.html">Field locomotion</a>
     <a href="scene-bundles.html">Scene bundles</a>
+    <a href="encounter.html">Encounter / region records</a>
+    <a href="../subsystems/renderer.html">Renderer</a>
+    <a href="../reference/re-do-not-re-walk.html">Do-not-re-walk</a>
+    <a href="../tooling/mednafen-automation.html">Mednafen automation</a>
   </div>
 </section>

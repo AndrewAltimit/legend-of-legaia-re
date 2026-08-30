@@ -8,8 +8,54 @@
   Behavioural fidelity to retail stays the baseline for game logic; nothing here changes simulation.</p>
 </header>
 
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Where</dt><dd>The browser's three WebGL2 scene pages: world overview, full-map view, play page. Native <code>play-window</code> has no VR path</dd>
+    <dt>What forks</dt><dd>Only the framebuffer/viewport and the view-projection matrix. Geometry, shaders and draw order are the flat renderer's, untouched</dd>
+    <dt>Scale</dt><dd>One number, units per metre: <code>2000</code> for the continent diorama, <code>~76</code> for human scale in a town; the grips rescale live</dd>
+    <dt>Modes</dt><dd>Play page: Spectator / First-person (what Vahn sees, walking through the engine's own collision). World overview: Diorama / On the ground</dd>
+    <dt>Retail</dt><dd>None of this exists on the disc. VR is an opt-in enhancement; game logic is unchanged</dd>
+  </dl>
+  <figure class="overlay-strip">
+    <svg viewBox="0 0 880 170" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="vr-title">
+      <title id="vr-title">Per-frame VR fork: the page's draw closure is unchanged; each XR frame binds the XRWebGLLayer framebuffer, then for each eye scissors to that eye's viewport, swaps the view-projection builder for the eye's projection times inverse view times the world transform W, and calls the same draw closure</title>
+      <style>
+        .vr-box { fill: var(--bg-card); stroke: var(--accent); stroke-width: 1.3; }
+        .vr-soft { fill: var(--bg-card); stroke: var(--border); stroke-width: 1.2; stroke-dasharray: 4 3; }
+        .vr-t { font: 600 11px 'Inter', sans-serif; fill: var(--text); text-anchor: middle; }
+        .vr-s { font: 10px 'JetBrains Mono', monospace; fill: var(--text-muted); text-anchor: middle; }
+        .vr-edge { fill: none; stroke: var(--text-muted); stroke-width: 1.3; marker-end: url(#vr-ah); }
+      </style>
+      <defs><marker id="vr-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--text-muted)"/></marker></defs>
+      <rect x="20" y="55" width="150" height="56" class="vr-box"/>
+      <text x="95" y="78" class="vr-t">XR frame</text>
+      <text x="95" y="96" class="vr-s">bind layer framebuffer</text>
+      <rect x="210" y="20" width="200" height="56" class="vr-soft"/>
+      <text x="310" y="43" class="vr-t">left eye</text>
+      <text x="310" y="61" class="vr-s">scissor + viewport shadow</text>
+      <rect x="210" y="95" width="200" height="56" class="vr-soft"/>
+      <text x="310" y="118" class="vr-t">right eye</text>
+      <text x="310" y="136" class="vr-s">scissor + viewport shadow</text>
+      <rect x="450" y="55" width="200" height="56" class="vr-box"/>
+      <text x="550" y="78" class="vr-t">vp = P &middot; V&#8315;&#185; &middot; W</text>
+      <text x="550" y="96" class="vr-s">buildWorldOrbitVp shadowed</text>
+      <rect x="690" y="55" width="170" height="56" class="vr-box"/>
+      <text x="775" y="78" class="vr-t">renderAssembled</text>
+      <text x="775" y="96" class="vr-s">unchanged draw closure</text>
+      <path d="M170,83 L208,50" class="vr-edge"/>
+      <path d="M170,83 L208,120" class="vr-edge"/>
+      <path d="M410,48 L448,78" class="vr-edge"/>
+      <path d="M410,123 L448,90" class="vr-edge"/>
+      <path d="M650,83 L688,83" class="vr-edge"/>
+    </svg>
+    <figcaption>The fork lives <em>around</em> the page's draw, not inside it. Per eye the loop confines the clear with a scissor rect, hands the renderer the device's matrices through the shadowed VP builder, and calls the same closure the flat page calls.</figcaption>
+  </figure>
+</section>
+
 <section class="doc-section" id="fork">
   <h2>Where the render path forks</h2>
+  <p>The surprising fact is how little VR touches. Putting on a headset does not load a different renderer; it asks the existing one to draw the same scene twice, once per eye, through matrices the device supplies.</p>
   <p>Nothing about the flat (non-VR) path changes: a browser with no <code>immersive-vr</code> device runs exactly the render code it ran before - no global is shadowed, no GL context attribute is altered - but the button still renders, as <em>VR unavailable</em>, and hover / click explain the specific reason (see <a href="#availability">availability</a> below).</p>
   <p>The flat renderer stays the single source of geometry. <code>TmdRenderer</code> is untouched: VR uploads no mesh, compiles
   no shader and reorders no draw. Exactly two things fork, and both fork <em>around</em> <code>renderAssembled</code> rather
@@ -32,6 +78,7 @@
 
 <section class="doc-section" id="transform">
   <h2>The world &rarr; XR transform</h2>
+  <p>Legaia measures its world in arbitrary units; a headset measures in metres. One matrix converts between them, and the single number inside it - units per metre - is what decides whether you are standing in a village or looking down at a continent on a table.</p>
   <p>The renderer works in retail world units (<code>+Y</code> up, after the per-placement <code>diag(1, -1, 1)</code> flip of
   the PSX <code>+Y</code>-down frame). WebXR works in metres. <code>W</code> is the bridge, for a viewer standing at world point
   <code>p</code> facing <code>yaw</code> with <code>u</code> world units per metre:</p>
@@ -64,6 +111,21 @@
   <p>Scale is not fixed. The grip buttons rescale the world live (clamped to 8..20000 units/metre), around the <em>head</em>
   rather than the feet so the scene does not lurch through you. Squeeze the world overview down to 76 and you walk onto the world
   map at human height; squeeze a town up and it becomes a model on a table.</p>
+</section>
+
+<section class="doc-section" id="modes">
+  <h2>Viewing modes: first-person</h2>
+  <p>Two of the pages let you choose <em>who</em> you are in VR: a floating spectator, or Vahn himself, walking the streets at eye level with the game's own collision keeping you out of walls.</p>
+  <p>The play page and the world-overview page each offer two viewing modes, cycled by a <code>VR: &lt;mode&gt;</code> button next to <strong>Enter VR</strong> (usable before entry and mid-session - a live session is re-placed at the new mode's scale on the spot). A page attaches them as a <code>modes</code> list on the shared handle; each mode may override the world scale, the spawn and the locomotion contract. Pages with a single framing attach no modes.</p>
+  <table class="data-table">
+    <thead><tr><th>Page</th><th>Mode</th><th>What it is</th></tr></thead>
+    <tbody>
+      <tr><td rowspan="2">Play</td><td>Spectator</td><td>Free-flying camera in the running world, spawned where the follow camera sits.</td></tr>
+      <tr><td>First-person</td><td><em>What Vahn sees.</em> The rig's floor origin is pinned to the player actor's feet every XR frame (read back <em>after</em> the engine tick - the engine, not the headset, owns the walk). Scale is derived live from the posed player mesh: <code>units/metre = standing height / 1.7 m</code> (~132 units tall in the field, so ~78 units/m; under 90 units falls back to the 130-unit anchor). The left stick is routed into the engine's free-movement controller - the same collision-checked path the keyboard uses - with the camera azimuth pointed along the gaze, so "stick forward" walks where you look. The player mesh is dropped from the eye draws; trigger / A map to Cross, B to Circle, so NPC dialogue works from inside the world.</td></tr>
+      <tr><td rowspan="2">World overview</td><td>Diorama</td><td>The 2000 units/m tabletop continent.</td></tr>
+      <tr><td>On the ground</td><td>Human scale (76 units/m) standing <strong>on</strong> the continent terrain: a bilinear sampler over the walk heightfield snaps the rig's floor to the surface under it every frame, the spawn drops onto the terrain under the framing centre, and the altitude axis is disabled - you walk up hills and down to the coast. Off-terrain samples fall back to the sea plane.</td></tr>
+    </tbody>
+  </table>
 </section>
 
 <section class="doc-section" id="spawn">
@@ -127,10 +189,19 @@
   the flat camera restored. A live session survives a scene swap on pages that keep one canvas (the game-world page's town
   navigator, a door transition on the play page): same GL context, same renderer, so the viewer is simply re-placed in the new
   map.</p>
+</section>
+
+<section class="doc-section" id="verification">
+  <h2>Verification</h2>
+  <p>Headless Chromium has no XR runtime, so the VR path is exercised against an injected mock <code>navigator.xr</code> that reports <code>immersive-vr</code> supported and hands back synthetic <code>XRFrame</code>s with two eye views; the mock layer's <code>framebuffer = null</code> makes the "eyes" rasterise side-by-side into the page canvas, where the drawing buffer can be sampled. That pins: both eye rects rasterise and the second clear does not wipe the first; the halves differ, and diverge hugely at an absurd IPD (each eye really uses its own view matrix); a stick push moves the viewer along the synthetic head's facing, and a 90&deg; head yaw rotates it by 90&deg;; the snap turn is exactly 30&deg;; the engine keeps ticking under the XR loop; and in first-person the rig sits at the player's feet, the scale equals mesh height over 1.7 m, and a stick push moves the <em>engine's</em> player (<code>window.__vrDebug()</code>).</p>
   <div class="see-also">
-    <span class="see-also-label">Related</span>
+    <span class="see-also-label">Reference</span>
     <a href="world-overview-viewer.html">World-overview viewer</a>
     <a href="renderer.html">Renderer</a>
+    <a href="field-locomotion.html">Field locomotion (the controller first-person drives)</a>
     <a href="engine.html">Engine reimplementation</a>
+    <a href="../play.html">Play page</a>
+    <a href="../world-overview.html">World overview</a>
+    <a href="../world.html">Game world</a>
   </div>
 </section>

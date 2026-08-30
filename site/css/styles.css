@@ -702,6 +702,9 @@ tr.dp-tier:hover td { background: var(--bg-raised); }
 }
 
 /* ---------- Definition list ---------- */
+/* Byte-layout tables: first column is the offset/field key. */
+table.layout td:first-child { font-family: var(--font-mono); white-space: nowrap; }
+
 dl.kv {
   display: grid;
   grid-template-columns: minmax(140px, max-content) 1fr;

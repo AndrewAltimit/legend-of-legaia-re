@@ -1,11 +1,12 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; actor / sprite VM</div>
   <h1>Actor / sprite VM</h1>
-  <p class="lede">The interpreter that choreographs the game's UI windows: when the shop's gold box, vendor plate and Buy/Sell picker slide onto the screen together, that entrance is a tiny script, and this VM is what runs it. It is the simplest of Legaia's <a href="move-vm.html#vm-family">five runtime VMs</a> (bytecode interpreters - each reads a stream of instruction bytes, "opcodes", and runs a handler per byte): just 13 opcodes, fixed 4-byte instructions, no cross-context targeting. The driver function is <code>FUN_801D6628</code> (Ghidra's name for the traced routine at that RAM address); it lives in the menu overlay (PROT <code>0899</code>), the code chunk that hosts the pause menu, shop and save UI. An earlier reading placed it in the title-screen overlay - the menu-overlay base recovery resolved the same image. <span class="tag tag-done">Fully ported</span></p>
+  <p class="lede">The interpreter that choreographs the game's UI windows: when the shop's gold box, vendor plate and Buy/Sell picker slide onto the screen together, that entrance is a tiny script, and this VM is what runs it. It is the simplest of Legaia's <a href="move-vm.html#vm-family">five runtime VMs</a> (bytecode interpreters - each reads a stream of instruction bytes, "opcodes", and runs a handler per byte): just 13 opcodes, fixed 4-byte instructions, no cross-context targeting. The driver function is <code>FUN_801D6628</code> (Ghidra's name for the traced routine at that RAM address); it lives in the menu overlay (PROT <code>0899</code>), the code chunk that hosts the pause menu, shop and save UI. <span class="tag tag-done">Fully ported</span></p>
 </header>
 
 <section class="doc-section" id="how-it-works">
   <h2>How it works</h2>
+  <p><strong>What it is not.</strong> Despite the name it inherited, this is not what moves characters around - NPC pathing is the <a href="motion-vm.html">motion VM</a>, combat choreography is the <a href="move-vm.html">move VM</a>, and the per-frame body animation of every actor is the separate anim tick described <a href="#anm-connection">below</a>. This VM only ever moves <em>windows</em>: the boxes of the pause menu, shop and save screens.</p>
   <p>A caller hands the VM a pointer to a program - a run of fixed 4-byte instructions <code>[opcode][window id][operand u16]</code> ending in a zero opcode - and the VM executes the whole thing in one call. Each instruction names a UI window by its id in the menu overlay's 52-record window descriptor table at <code>0x801E4738</code> (the table behind every pause-menu screen), reads that record's home <code>x</code>/<code>y</code>, and calls the executable's window helpers: look the window up, create it if missing, snap or slide it toward a target, close it, or tick the global window system. The sliding itself happens over the following frames - the VM installs targets; the per-frame window walker animates them.</p>
 
   <p>The whole VM has 13 jump-table slots - the minimum you need for window choreography: open at home, open at a packed position, a style-byte write, close, a global tick, motion-flag clears, slide-to, and a close-reopen-slide-back composite (three slots are no-ops). There is no "switch context" or "call this other script as a subroutine"; a program is a flat command list.</p>
@@ -22,6 +23,10 @@
     <dt>Operand format</dt><dd>Fixed 4-byte instructions: <code>[opcode u8][window id u8][operand u16 LE]</code></dd>
     <dt>Programs</dt><dd>Data in the same overlay image (file <code>0x16260..0x16740</code>) - see <a href="../formats/window-script.html">window widget scripts</a></dd>
   </dl>
+  <details class="disclosure">
+    <summary>History: "lives in the title-screen overlay"</summary>
+    <div class="disclosure-body"><p>An earlier reading placed the driver in the title-screen overlay (an unindexed <code>PROT.DAT</code> gap after entry 0899). Recovering the menu overlay's base resolved the same image as PROT 0899 itself, which is why the shop, pause menu and save UI can all reach it.</p></div>
+  </details>
 </section>
 
 <section class="doc-section" id="opcodes">
@@ -92,7 +97,7 @@
   <p>The legacy <code>anim_vm.rs</code> module continues to wrap <code>AnimPlayer</code> for the keyframe pose decoder and surfaces a <code>Host::on_opaque_record</code> hook for record-level side-effects (sprite swaps, voice cues). The new <code>actor_tick</code> module covers the per-arm physics that's the same for every record kind.</p>
 
   <details class="disclosure">
-    <summary>Provenance: capture signature + superseded framings</summary>
+    <summary>History: capture signature + superseded framings</summary>
     <div class="disclosure-body">
       <p><strong>Mednafen-state diff signature.</strong> Diffing the actor pool (<code>0x801C9594..0x801C9F7F</code>, <code>0x60</code>-byte stride per anim slot) between a battle-intro idle save and an active-art-strike save shows the dispatch byte and the per-record pointer flipping in lockstep - the dispatch byte's lane (record <code>+0x0F</code>/<code>+0x10</code>) carries values like <code>0x04</code> (idle) and <code>0x06</code> (playing) across the same slot. The per-record pointer (<code>+0x00</code> of each anim slot, mirroring <code>actor[+0x4C]</code>) similarly flips between a self-reference (idle / sentinel pose) and a real RAM address that points into the scene-loaded ANM payload.</p>
       <p><strong>Superseded framings.</strong> An earlier reading held that "the actor VM starts by resetting PC to 0 of the spawn record" - it doesn't: VDF-spawned actors are driven by the vertex-pool render pipeline (<code>actor[+0x90]</code>), never by ticking their <code>+0x4C</code> body bytes as actor-VM opcodes. A companion "16-byte VDF body header" framing was off-by-12: the first u32 is the record count and the 12-byte records start 4 bytes in.</p>
@@ -146,5 +151,10 @@
     <a href="motion-vm.html">Motion VM</a>
     <a href="../formats/anm.html">ANM animation</a>
     <a href="../formats/tmd.html">Legaia TMD</a>
-  </div>
+      <a href="field-menu.html">Field menu</a>
+    <a href="shop.html">Shop</a>
+    <a href="save-screen.html">Save screen</a>
+    <a href="../formats/window-script.html">Window scripts</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/vm-inventory.md" target="_blank" rel="noopener">VM inventory (docs)</a>
+</div>
 </section>

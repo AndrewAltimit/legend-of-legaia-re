@@ -12,6 +12,21 @@
   href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/art/README.md"><code>crates/art</code></a>.</p>
 </header>
 
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Magic</dt><dd>none - a <code>0xD0</code>-stride record array indexed by action constant (<code>record = base + (c - 0x10) * 0xD0</code>)</dd>
+    <dt>Where on disc</dt><dd>The matcher's records: <code>record[0]</code> of each <a href="battle-data-pack.html">player battle file</a> (extraction PROT 0863 Vahn / 0864 Noa / 0865 Gala), resident at RAM <code>0x80160EFC</code> / <code>0x80176998</code> / <code>0x8018BA54</code>. The display arrows + AP: the SCUS arts-name table <code>DAT_80075EC4</code>. Two copies, two consumers</dd>
+    <dt>Parser</dt><dd><code>crates/art</code> (<code>parse_record</code>, <code>arts_table</code>, <code>tokenize</code>, Miracle / Super matchers); editors <code>legaia_patcher::arts_power</code> / <code>super_art_power</code></dd>
+    <dt>Confidence</dt><dd>Split by part: the command prefix + <code>0xD0</code> stride, the power byte at <code>+0x24</code>, and the arts-name table are <strong>Confirmed</strong>; the exact offsets of the variable-field tail are <strong>Inferred</strong> from external RE work</dd>
+    <dt>Used by</dt><dd><a href="../subsystems/battle-action.html">Battle action SM</a>, <a href="../subsystems/arts-command-gauge.html">Arts gauge</a>, <a href="../arts.html">Arts page</a>, <a href="../tooling/randomizer.html">Randomizer (arts shuffle)</a></dd>
+  </dl>
+  <div class="notice">
+    <div class="notice-title">The button combos live in TWO places</div>
+    <p>The <strong>matcher</strong> - what actually fires an art - reads the player-file record copy: the <code>1=L,2=R,3=D,4=U</code> byte run at record <code>+0</code>. The <strong>menu</strong> draws the arrows from the SCUS arts-name table's <code>+8</code> glyph string. Editing the glyphs changes what the menu shows but the art still fires on the old combo (proven in two emulator playtests), so a faithful edit changes <em>both</em> - which is what the arts randomizer does.</p>
+  </div>
+</section>
+
 <section class="doc-section" id="where-the-data-lives">
   <h2>Where the data lives</h2>
   <p>(Addresses below are RAM locations - where the tables sit while the game runs. "PROT" is PROT.DAT, the disc's single big archive; everything except movies and audio streams lives in its numbered entries. <code>FUN_80xxxxxx</code> names, where they appear, are functions traced in Ghidra, the disassembler this project uses.)</p>
@@ -51,7 +66,7 @@
 </tr>
 </tbody>
 </table>
-  <p>Confidence: <strong>Inferred</strong> - citation chain comes from external RE work cross-referenced with Meth962's earlier observations; a watchpoint trace pinning the runtime read sites is still pending.</p>
+  <p>Confidence: the tail-field offsets are <strong>Inferred</strong> - their citation chain comes from external RE work cross-referenced with Meth962's earlier observations. The prefix, stride, power byte and name table are Confirmed (see <a href="#at-a-glance">At a glance</a>).</p>
   <p><strong>Where the records actually live.</strong> The "PROT <code>0x05C4</code>" label is historical and cannot be a PROT index (<code>0x05C4</code> = 1476; the TOC has 1234 entries) - it is kept here only because the schema and the <code>legaia_art::parse_record</code> parser were named for it. The <strong>runtime matcher's</strong> combo records (the <code>1=L,2=R,3=D,4=U</code> run at record <code>+0</code>, fixed <code>0xD0</code> stride) load from each character's player-data file <code>record0</code> - canonical extraction entries Vahn <code>0863</code> / Noa <code>0864</code> / Gala <code>0865</code> (the historical "Vahn <code>0861</code>" attribution matched the same bytes through 0861's over-read window) - and byte-match the live RAM tables above. The <em>display</em> copy of each combo is the SCUS arts-name table (<code>DAT_80075EC4</code>) <code>+8</code> glyph string.</p>
 </section>
 
@@ -156,12 +171,20 @@
 <section class="doc-section" id="art-record-layout">
   <h2>Art record layout</h2>
   <p>The layout is <strong>schema-then-walk</strong>: each record begins with a fixed prefix (commands, action constant, anim index), and the remainder is a sequence of variable-width fields whose presence depends on the art. The external RE work this schema derives from captured field positions but did not pin every byte - this page documents the schema; <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/art"><code>crates/art</code></a> ships a strict parser for the prefix and surfaces the unparsed tail for downstream tooling.</p>
-  <h3>Fixed prefix</h3>
-<pre><code>+0x00  u8[]   command sequence - values 1=L, 2=R, 3=D, 4=U; terminated by 0x00
-       u8     action constant (0x1B..=0x32)
-       u8     anim_index (primary)
-       u8[5]  anim_extra (reserved; usually 0; some Hyper Arts chain multiple records)</code></pre>
-  <h3>Variable fields (positions documented, exact byte offsets per art-specific)</h3>
+  <h3 id="fixed-prefix">Fixed prefix</h3>
+  <table>
+    <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>+0x00</code></td><td>u8[]</td><td>command sequence</td><td>values 1=L, 2=R, 3=D, 4=U; terminated by <code>0x00</code>. A Super Art record's field is a one-byte stub (no combo)</td></tr>
+      <tr><td>after</td><td>u8</td><td>action constant</td><td><code>0x1B..=0x32</code></td></tr>
+      <tr><td>after</td><td>u8</td><td><code>anim_index</code></td><td>primary animation</td></tr>
+      <tr><td>after</td><td>u8[5]</td><td><code>anim_extra</code></td><td>reserved; usually 0; some Hyper Arts chain multiple records</td></tr>
+      <tr><td><code>+0x10..+0x24</code></td><td>20</td><td>name</td><td>fixed-width name slot</td></tr>
+      <tr><td><code>+0x24</code></td><td>u8[1..4]</td><td>power bytes</td><td>per-strike power run - <strong>fixed offset, Confirmed</strong> (below)</td></tr>
+      <tr><td><code>+0x7A</code></td><td>u8</td><td>impact-effect class</td><td><code>1..=5</code>, <code>0</code> = none - the art's element sparks / afterimage (below)</td></tr>
+    </tbody>
+  </table>
+  <h3 id="variable-fields">Variable fields (positions documented, exact byte offsets per art-specific)</h3>
 <table>
 <thead><tr>
 <th>Field</th>
@@ -256,6 +279,53 @@
 </tbody>
 </table>
   <p>Concretely: <code>0x1D</code> = LDF × 20, <code>0x19</code> = UDF × 22, <code>0x1F</code> = LDF × 28, <code>0x1A</code> = UDF × 28.</p>
+  <h3 id="power-byte-pinned">Damage power byte - pinned to <code>record0 +0x24</code></h3>
+  <p>The power bytes are <strong>Confirmed</strong> on disc. Each <code>0xD0</code>-stride record carries its 1-4 per-strike power bytes as a contiguous run at a <strong>fixed offset <code>+0x24</code></strong> (after the fixed-width name slot, not name-relative). The read chain: the arts / melee damage kernel <strong><code>FUN_801EC3E4</code></strong> (overlay 0898) reads the current strike's power byte as <code>param_2[actor+0x1F4]</code>, where <code>param_2 = actor[+0x4C]</code> (the materialised art record) and <code>actor+0x1F4</code> is a strike cursor starting at 0 and incrementing per hit (<code>0x801EECE8</code>); <code>FUN_8004AD80</code> materialises an art (staged id <code>&gt;= 0x10</code>) into <code>actor[+0x4C] = *(DAT_801C9360[char] + slot*4)</code>, the runtime copy of <code>record0</code>. Byte-validation across all three player files: every art the name table lists resolves to one record whose <code>+0x24</code> holds power bytes matching its damage tier (weak arts 1 byte, Hyper / Super 4 ascending bytes; Gala's spirit-only Miracle carries none). There is <strong>no</strong> display copy of the power. Editor: <code>legaia_patcher::arts_power</code>.</p>
+  <h3 id="indexed-by-constant">Art records are indexed by action constant</h3>
+  <p>The array is not a packed list of inputtable arts - it is indexed by <strong>action constant</strong>: <code>record_off = art_block_base + (c - 0x10) * 0xD0</code>. Constants <code>0x19</code> / <code>0x1A</code> (the two Art Starters) land on the two records named "Starter", <code>0x1B</code> on the character's Miracle Art, and the regular arts follow at <code>0x1B + display index</code>. The mapping comes off the queue-builder <code>FUN_801EED1C</code>, which emits a matched art's constant as its row <code>+ 0x18</code> (<code>0x801EF6F0</code>). Three consequences:</p>
+  <ul class="bullets">
+    <li><strong>Super Art finishers have records here too</strong>, at <code>0x2B..0x2F</code> (Vahn, Gala) and <code>0x2E..0x32</code> (Noa), named for the Super Art and carrying real power tiers - so a Super Art's damage is ordinary art-record data (<code>legaia_patcher::super_art_power</code>).</li>
+    <li><strong>A Super Art record has no combo</strong> - its <code>+0</code> field is a one-byte stub, which is why a combo-keyed lookup never lands on one.</li>
+    <li><strong>Some records are reachable by neither route</strong>: Vahn's and Gala's <code>0x2A</code>, Noa's <code>0x2C</code>/<code>0x2D</code> carry named records with power bytes but no name-table row and no combo.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="runtime-cue-playout">
+  <h2>Runtime cue playout</h2>
+  <p>The hit sparks, damage numbers and impact freezes you see during an art are not decoded up front - a per-frame driver in the battle overlay (PROT 0898) walks the record's hit run as the animation reaches each frame, with a per-actor cue cursor at <code>actor[+0x1F5]</code>.</p>
+  <ul class="bullets">
+    <li><strong><code>FUN_801dea50</code></strong> - the per-frame hit-cue + damage-marker playout. Reads the hit run at <code>art_record + cursor*8 + 0x14</code> (8-byte entries: <code>+0</code> timing, <code>+1</code> cue code, <code>+2/+4/+6</code> XYZ offsets), places each cue from the actor's position rotated by its facing, and dispatches on the code: high bit set spawns an <a href="effect.html"><code>efect.dat</code></a> billboard (<code>&amp; 0x7F</code> via <code>FUN_801dfdf0</code>); a plain code selects a 3D move-VM prototype from <code>0x801F6324</code>. On the terminator entry it materialises the <a href="move-power.html">move-power</a> record for <code>actor[+0x1DF]</code>. <code>ghidra/scripts/funcs/overlay_battle_action_801dea50.txt</code>.</li>
+    <li><strong><code>FUN_801e22c8</code></strong> - a lighter impact-cue emitter for a single art / anim id, reading the per-art cue table at <code>0x801F6470</code> (5-byte stride: count, then codes).</li>
+    <li><strong><code>FUN_801e09f8</code></strong> - the special-attack sibling of <code>FUN_801dea50</code>; same machinery, damage routed through the summon / move-power kernel <code>FUN_801dd0ac</code>.</li>
+    <li><strong><code>FUN_801e6d84</code></strong> - raises the caster and target <strong>banners</strong> for a committed action (keys on <code>+0x1DD</code> target, <code>+0x1DE</code> category, <code>+0x1DF</code> id; nothing for Run / Defend). <code>FUN_801d8de8</code> is the HUD-element raiser, not a camera command.</li>
+  </ul>
+  <h3 id="impact-effect-class">Impact-effect class (entry <code>+0x7A</code>)</h3>
+  <p>Entry <code>+0x7A</code> carries a <code>1..=5</code> selector (<code>0</code> = none), bounded by <code>FUN_801ec3e4</code>'s <code>sltiu v0,v0,6</code>, stored at <code>actor[+0x21F]</code> with its <code>0x801F53D4</code> row at <code>actor[+0x04]</code>. Two renderers read those and neither consults the cue records: <code>FUN_8004998c</code> streams an element spark along the swing path (<code>efect.dat</code> sprite <code>0x0B</code> for selector 1, <code>0x10</code> for 2), and <code>FUN_80049348</code> draws fading afterimage copies of the character mesh tinted from the per-character table at <code>0x80076908</code>. So this byte, not the cue script, is what makes an art read as its owner's element - of the three 50-AP Hyper Arts only Vahn's Burning Flare sets it (1); Gala's Thunder Punch is 2. The afterimage table's channel order is not settled.</p>
+  <h3 id="cue-tables">The cue tables</h3>
+  <table>
+    <thead><tr><th>Table VA</th><th>Indexed by</th><th>Role</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x801F6418</code></td><td>cue code (1-byte stride)</td><td>CLUT <strong>source x</strong> - a 16-entry palette row copy to VRAM <code>(0xE0, 476)</code> via <code>FUN_80058490</code> (<code>MoveImage</code>); values only <code>0xB0</code> / <code>0xC0</code> / <code>0xD0</code></td></tr>
+      <tr><td><code>0x801F6324</code></td><td>cue code (<code>code*4</code>)</td><td>pointer to the effect-sprite descriptor spawned via <code>FUN_80050ed4</code> (61 entries, unbounded read)</td></tr>
+      <tr><td><code>0x801F6470</code></td><td>art / anim id (5-byte stride)</td><td>per-art cue list read by <code>FUN_801e22c8</code></td></tr>
+    </tbody>
+  </table>
+  <p><strong>No battle effect id plays a sound.</strong> A party Tactical Art's audio is entirely the CD-XA layer - the per-swing cue, the shout pool and the Hyper fanfare fired by <code>FUN_8004AD80</code> (<a href="../subsystems/audio.html">audio</a>). A cue code's high bit is the "spawn a digit" flag, and a plain code past <code>0x3C</code> reads past the prototype table - the spreadsheet's <code>0x4C</code> "hit effect" constant stages a part from a NULL record and names no sound and no authored effect. Per-code specials are tabulated on <a href="../subsystems/battle-action.html">battle-action</a>.</p>
+  <details class="disclosure">
+    <summary>History: <code>0x801F6418</code> as an SFX table</summary>
+    <div class="disclosure-body"><p><code>0x801F6418</code> was long documented as an SFX id issuing a "<code>0x1DC</code> sound packet". The routine the six readers end in is <code>FUN_80058490</code>, whose materialised string is <code>MoveImage</code>, and the 8-byte "packet" is a PsyQ <code>RECT</code> (<code>x = table[code]</code>, <code>y = 0x1DC</code>, <code>w = 0x10</code>, <code>h = 1</code>) - a palette copy, not a cue. No SPU-cue call appears inside <code>FUN_801DEA50</code> or <code>FUN_801E22C8</code>. See <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p></div>
+  </details>
+  <h3 id="target-group">Target-group encoding</h3>
+  <table>
+    <thead><tr><th>Code</th><th>Actor slots <code>[start, end)</code></th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>&lt; 8</code></td><td><code>[code, code+1)</code></td><td>one explicit actor</td></tr>
+      <tr><td><code>8</code></td><td><code>[0, 3)</code></td><td>the party</td></tr>
+      <tr><td><code>9</code></td><td><code>[3, 7)</code></td><td>the enemy row</td></tr>
+      <tr><td><code>0xA</code></td><td><code>[0, 7)</code></td><td>everyone</td></tr>
+    </tbody>
+  </table>
+  <p>Shared by <code>FUN_801dea50</code> (staged value) and <code>FUN_801dceac</code>, which computes a group's centroid / bounding box for area-effect aiming.</p>
 </section>
 
 <section class="doc-section" id="learned-art-constant">
@@ -610,8 +680,10 @@ Replace: 19 27 0F 19 1F 0E 1A 2B 2B 2B
 </table>
   <p>A <code>(99, 99)</code> record named <code>"End"</code> terminates the table. Each character's index <code>0</code> entry is the <strong>Miracle Art</strong> (AP byte <code>99</code>; the name string opens with a <code>0xCE 0x09</code> character-name-substitution control, e.g. <em>"&amp;'s Ark"</em> / Gala's <em>"Biron Rage"</em>).</p>
   <p>The AP costs are byte-exact against the curated <a href="../reference/gamedata.html">gamedata</a> arts table (every matched art agrees), which makes this the on-disc provenance for that table's <code>ap</code> column + the canonical art display order.</p>
+  <h3 id="ap-display-mirror">The AP byte is a display mirror</h3>
+  <p>The <code>+2</code> byte is <strong>not</strong> the value the battle engine spends. Its one reader is <code>lbu a0,0x2(s2)</code> at <code>0x801D4524</code> inside the menu overlay's status-panel renderer <code>FUN_801D33D8</code> (PROT 0899). The battle path computes the cost as <code>multiplier x command_count</code>, the multiplier taken from three code immediates keyed on the art's position in its character's list; retail keeps the two consistent by authoring (all 45 arts agree). A patcher that changes an art's cost has to move both - see <a href="../subsystems/arts-command-gauge.html">arts command gauge</a>.</p>
 
-  <h3>Command-glyph string (<code>+8</code>)</h3>
+  <h3 id="command-glyph-string">Command-glyph string (<code>+8</code>)</h3>
   <p>The <code>+8</code> pointer is the <strong>command-input display string</strong> - the arrow sequence shown in the arts menu, and an independent on-disc source for each art's directional command (the PROT <code>0x05C4</code> art-record command bytes are a best-effort parse pending a watchpoint). Encoding: <code>[count u8]</code> then <code>count</code> two-byte glyph codes. A one-off <code>0xFF XX</code> marker separates the sequence (<code>0xFF06</code> for regular arts, <code>0xFF09</code> for Miracle arts) and is <strong>not</strong> a direction. The arrow glyphs map to physical d-pad directions:</p>
 <table>
 <thead><tr>
@@ -628,7 +700,7 @@ Replace: 19 27 0F 19 1F 0E 1A 2B 2B 2B
 </table>
   <p>The string stores the <strong>physical</strong> direction; the logical action (Arms / Ra-Seru) depends on the character's handedness (Noa's Arms / Ra-Seru are swapped). The codes match the <code>Left=1 / Right=2 / Down=3 / Up=4</code> encoding the PROT records use. Cross-checking against gamedata surfaces at least one walkthrough error (Vahn's <em>Hyper Elbow</em> is <code>L R L</code> on disc, not <code>Arms / Ra-Seru / High</code>). Decoded by <code>legaia_art::arts_table::parse_from_scus</code>; dump it with <code>art arts-table</code>.</p>
 
-  <h3>Validation oracle</h3>
+  <h3 id="validation-oracle">Validation oracle</h3>
   <p>Because the glyph string is byte-exact ground truth, it serves as the validation oracle for the two derived command sources:</p>
   <ul class="bullets">
     <li><strong>The best-effort PROT <code>0x05C4</code> parser</strong> (<code>legaia_art::parse_record</code>). <code>legaia_art::ArtsOracle::by_command(character, &amp;commands)</code> resolves a decoded command sequence back to a named art; the disc-gated contract test <code>crates/art/tests/arts_table_real.rs</code> runs every art's canonical record bytes through <code>parse_record</code> and asserts the decode round-trips through the oracle. This pins the parser's <code>1=L,2=R,3=D,4=U</code> command-byte decode against the executable without needing the (still-unpinned) full record stride.</li>
@@ -638,10 +710,18 @@ Replace: 19 27 0F 19 1F 0E 1A 2B 2B 2B
 
 <section class="doc-section" id="see-also">
   <h2>See also</h2>
-  <ul class="bullets">
-    <li><a href="../subsystems/battle-action.html"><code>docs/subsystems/battle-action.md</code></a> - battle action state machine that consumes the queue and resolves damage.</li>
-    <li><a href="../subsystems/battle-formulas.html"><code>docs/subsystems/battle-formulas.md</code></a> - damage / MP / accuracy / RNG arithmetic kernels that read the power bytes.</li>
-    <li><a href="mdt.html"><code>docs/formats/mdt.md</code></a> - the per-frame <em>animation</em> bytecode for the Tactical Arts move VM, distinct from this art-record layer.</li>
-  </ul>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../subsystems/battle-action.html">Battle action SM</a>
+    <a href="../subsystems/battle-formulas.html">Battle formulas</a>
+    <a href="../subsystems/arts-command-gauge.html">Arts command gauge</a>
+    <a href="battle-data-pack.html">Player battle files</a>
+    <a href="move-power.html">Move-power table</a>
+    <a href="mdt.html">MDT move tables (animation bytecode)</a>
+    <a href="effect.html">Effect bundles</a>
+    <a href="mes.html">MES (0xC5 art-name substitution)</a>
+    <a href="../arts.html">Arts page</a>
+    <a href="../tooling/randomizer.html">Randomizer (arts)</a>
+    <a href="../reference/gamedata.html">Curated gamedata</a>
+  </div>
 </section>
-

@@ -4,6 +4,26 @@
   <p class="lede">Ghidra is the disassembler this project reads the game's machine code with - every <code>FUN_80xxxxxx</code> name on these pages is Ghidra's automatic label for the function at that RAM address. You only need this page if you want to extend the reverse-engineering itself. It covers the static-analysis path: running Ghidra headlessly inside Docker, importing the game executable (<code>SCUS_942.54</code>) and its RAM overlays, the analysis-script catalogue, and the MIPS-specific traps that make naive queries return misleading answers.</p>
 </header>
 
+<section class="doc-section" id="when">
+  <h2>What this solves</h2>
+  <p>Reach for Ghidra when you want to know what a function <em>is</em> - its disassembly, its decompiled C, who calls it. Here Ghidra runs headlessly in Docker and is driven by scripts, not by a GUI: you ask a question, a Jython script answers it into a file on the host, and that file is the per-function dump (<code>ghidra/scripts/funcs/&lt;addr&gt;.txt</code>) the rest of the site cites as provenance.</p>
+  <p>Two things to know before you start:</p>
+  <ul class="bullets">
+    <li><strong>You need extracted disc files first.</strong> The container mounts <code>./extracted</code> read-only, so run the <a href="extraction.html">extraction pipeline</a> before importing anything.</li>
+    <li><strong>Static analysis alone will hit a wall.</strong> Most of Legaia's game logic - the field/event VM, the dialog renderer, the actor / battle / menu VMs - is not in <code>SCUS_942.54</code> at all. It lives in RAM overlays paged in at <code>0x801C0000+</code>, so a function can be heavily used at runtime and have <strong>zero static callers</strong>. When that happens the answer is not here; it is in <a href="overlay-capture.html">overlay capture</a> or the <a href="static-overlay-pipeline.html">static overlay pipeline</a>, and the <a href="address-reference-scan.html">address-reference scan</a> is how "no caller found" becomes "no reference exists".</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="quick-start">
+  <h2>Quick start</h2>
+  <div class="cli"><code>docker compose up -d ghidra</code></div>
+  <p>Once - leave it running. Then one <code>exec</code> per query:</p>
+<pre><code>docker compose exec ghidra /ghidra/support/analyzeHeadless \
+    /projects legaia -process SCUS_942.54 -noanalysis \
+    -postScript /scripts/dump_funcs.py</code></pre>
+  <p>Don't restart the service per command. Dumps land in <code>ghidra/scripts/funcs/&lt;addr&gt;.txt</code> on the host (gitignored: they are Sony-derived). The rest of this page is the detail: <a href="#bringing-the-service-up">setup</a>, <a href="#importing-scus-942-54">importing</a>, the <a href="#the-lui-addiu-gotcha">LUI+ADDIU gotcha</a> you will need the first time a cross-reference search comes back empty, the <a href="#investigation-patterns">investigation patterns</a>, the <a href="#script-catalogue">script catalogue</a>, and the <a href="#decompiler-artifacts">decompiler artifacts</a> that have produced false claims.</p>
+</section>
+
 <section class="doc-section" id="toolchain">
   <h2>Toolchain</h2>
   <ul class="bullets">
@@ -857,13 +877,59 @@ h:\prot\battle\etim.dat
   <p>The <code>h:\</code> prefix indicates a Windows dev box. The runtime doesn't actually open these paths in retail (no real <code>h:\</code> drive on a PSX); the strings are leftover format artefacts that point at where each subsystem's data lives in PROT.</p>
 </section>
 
+<section class="doc-section" id="decompiler-artifacts">
+  <h2>Decompiler artifacts that have produced false claims</h2>
+  <p>Ghidra's C output is a <em>rendering</em> of the instruction stream. Each artifact below has already put a wrong statement into this project's committed docs, which is why the rule is: <strong>port and document from the disassembly</strong>; treat the C as a hint that tells you where to look.</p>
+  <table>
+    <thead><tr><th>Artifact</th><th>What it looks like</th><th>What settles it</th></tr></thead>
+    <tbody>
+      <tr><td>Dropped register arguments</td><td>A call printed <code>f(1)</code> whose callee reads three arguments. Ghidra infers the signature from one call site, so arguments left untouched in <code>a1</code>/<code>a2</code> never appear.</td><td>Read the <code>jal</code> and its delay slot; check whether <code>a1</code>/<code>a2</code> are written between the caller's prologue and the call.</td></tr>
+      <tr><td><code>||</code> rendered as nested <code>if</code>s</td><td>Two siblings that share one branch pair look like they use different operators, inventing a behavioural difference.</td><td>Compare the branch pairs, not the C. De Morgan makes <code>if (w) { if (h) }</code> and <code>w == 0 || h == 0</code> the same predicate.</td></tr>
+      <tr><td>Reordered or dropped stores</td><td>A store hoisted above its neighbours, or omitted - so "field X is copied from field Y" and "only three of four slots are written" both come out wrong.</td><td>Take store order and store count from the instruction stream.</td></tr>
+      <tr><td>Hand-written annotations</td><td>A Ghidra label or plate comment read as fact. It is somebody's earlier guess: <code>FUN_8003E6BC</code> was named <code>path_opener</code>, which reads as a filesystem abstraction; its body is <code>strcpy</code> &rarr; <code>break 0x103</code> &rarr; fseek/fread/fclose, a dev-station host trap.</td><td>Read the body. An annotation is provenance-free.</td></tr>
+      <tr><td><code>size=1 bytes, 0 instructions</code></td><td>A dump with decompiled C but an empty disassembly section - nothing to cross-check the C against. <code>check-dump-base-integrity.py --shape</code> counts them.</td><td>Disassemble from <code>SCUS_942.54</code> directly: text VA <code>0x80010000</code>, file offset <code>0x800 + va - base</code>.</td></tr>
+      <tr><td>Dump-sweep negatives</td><td>"An exhaustive sweep of the dumped corpus finds no reader of X" - but the sweep ran over dumps, some of which have no instructions to sweep. Zero hits either way; the failure is silent.</td><td>Sweep <strong>bytes</strong>, not dumps - word-wise capstone over <code>extracted/SCUS_942.54</code> and the images in <code>extracted/overlays/</code>. State coverage explicitly instead of asserting exhaustiveness.</td></tr>
+      <tr><td>Mis-based dumps</td><td>Printed addresses are a property of the load base a dump was imported at. Get it wrong and every address is off by a constant (often exactly <code>0xE818</code>) while the instruction text stays plausible. A filename prefix is not evidence of base correctness.</td><td>Verify against the extracted image; <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/dump-corpus-integrity.md" target="_blank" rel="noopener">dump-corpus-integrity</a> carries the census and a re-runnable checker.</td></tr>
+      <tr><td><code>unaff_*</code> / <code>in_stack_*</code></td><td>Read as proof the address is a mid-function fragment. But leaf functions legitimately open on <code>lw</code>, <code>unaff_gp</code> is ordinary gp-relative addressing, and a prologue can sit several instructions in.</td><td>A fragment is proven by a missing <code>addiu sp,sp,-N</code> in the <strong>disassembly</strong>, plus callee-saved reads with no matching save.</td></tr>
+      <tr><td>Absolute-only address sweeps</td><td>A "no static writers" claim from a sweep that searched only the absolute <code>lui</code>+offset form. MIPS reaches the same address <code>gp</code>-relative with a different immediate, invisible to that scan. <code>0x8007B8C2</code> was recorded writer-less; the writer is <code>0x80015F08 sh v0,0x5aa(gp)</code>, and three <code>lh 0x5aa(gp)</code> reads were undercounted the same way.</td><td>Resolve <code>gp</code> first (<code>lui gp</code> / <code>addiu gp,gp</code> in the entry stub), then scan <strong>both</strong> forms before asserting anything about writers or reader counts.</td></tr>
+    </tbody>
+  </table>
+  <p>The label-call idiom (intra-function labels promoted to fake <code>FUN_</code> entries) is the eighth member of this family; its catalogue lives on the <a href="../subsystems/script-vm.html">field VM page</a>. A dump can also be defective <em>as a file</em> - truncated bodies, missing headers, mis-based addresses, slices of a larger function - which is a separate axis with its own sweep, <code>scripts/ghidra-analysis/check-dump-base-integrity.py --shape</code>.</p>
+
+  <h3><code>lui</code> plus a negative displacement, transcribed by its literal</h3>
+  <p>Not a decompiler artifact - a <strong>disassembly transcription hazard</strong>. A <code>lui reg,0x8008</code> several instructions above an <code>lw</code>/<code>sw</code> with a <em>negative</em> displacement resolves to a <code>0x8007xxxx</code> address, not a <code>0x8008xxxx</code> one: <code>lui a0,0x8008</code> then <code>sw v0,-0x454c(a0)</code> writes <code>0x8007BAB4</code>. Transcribing the two halves separately, or reading the displacement as positive, lands the name a whole 64 KiB page high - and the wrong name is plausible, because <code>0x8008xxxx</code> is a real RAM region.</p>
+  <p><strong>How to spot it:</strong> any <code>0x8008xxxx</code> global whose cited site loads or stores with a negative displacement. <strong>What counts as evidence:</strong> resolve the pair - <code>(lui_imm &lt;&lt; 16) + sign_extend(displacement)</code> - rather than reading either half alone.</p>
+  <details class="disclosure">
+    <summary>History: the three globals this mis-named</summary>
+    <div class="disclosure-body">
+      <p><code>_DAT_80084500</code> for <code>0x8007BB00</code> and <code>_DAT_8008454C</code> for <code>0x8007BAB4</code> (both in <code>title_overlay.rs</code>, both comment-only, both fixed), and <code>0x800846A8</code> for <code>0x8007B6A8</code> in the pause-menu save gate. All three named globals that other pages then cited.</p>
+      <p>The absolute-only-sweep row above is the one that compounded: "zero writers" became "BSS zero-init establishes the value", which became "retail runs with the flag at 0", which inverted the documented polarity of <code>_DAT_8007B8C2</code> across a dozen pages and two crates. Neither downstream inference was independently checked - and the second was wrong on its own terms, since <code>SCUS_942.54</code>'s PS-X EXE header has <code>b_size = 0</code> and the BIOS therefore clears no BSS here at all. Treat a negative result about writers as a claim needing the same evidence bar as a positive one.</p>
+    </div>
+  </details>
+
+  <h3>Two rules for any negative, code or data</h3>
+  <p>The artifacts above are about misreading what a sweep <em>found</em>. These two are about misreading what a sweep <em>didn't</em> find, and they bite equally on negatives over disc bytes.</p>
+  <ul class="bullets">
+    <li><strong>A negative needs a positive control.</strong> Before reporting "0 hits", run the <em>same scanner and the same validator</em> over a corpus where the thing is known present, and show it finds exactly the known instances. State the control's numbers next to the negative's. The worked example is the <code>"ME"</code> archive negative on the <a href="../formats/battle-data-pack.html">battle-data pack</a> page: the same scanner over <code>readef.DAT</code> accepts exactly one archive per documented slot and rejects the rest, which is what licenses reading the player-file zero as absence.</li>
+    <li><strong>Structural fit is not validation.</strong> Size tables that fit, offsets that align, counts that look plausible survive a shallow check and are the reason a sweep reports a hit it should have rejected. Decompose every near-miss. The mirror case is pool overlap: byte <code>0x48</code> of the PROT 867 monster record agrees with the SCUS steal item far above chance - because it is <code>drop_item</code>, and steal and drop draw from the same consumable pool (see <a href="../formats/steal-table.html">steal table</a>). A rate well above chance is a prompt to explain the mechanism, not evidence of a hit.</li>
+  </ul>
+</section>
+
 <section class="doc-section" id="see-also">
   <h2>See also</h2>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="../reference/functions.html">Functions</a>
     <a href="../reference/memory-map.html">Memory map</a>
-    <a href="port-catalog.html">Port catalog</a>
+    <a href="../reference/re-do-not-re-walk.html">Do not re-walk</a>
+  </div>
+  <div class="see-also">
+    <span class="see-also-label">Tooling</span>
     <a href="extraction.html">Extraction pipeline</a>
+    <a href="overlay-capture.html">Overlay capture</a>
+    <a href="static-overlay-pipeline.html">Static overlay pipeline</a>
+    <a href="address-reference-scan.html">Address-reference scan</a>
+    <a href="port-catalog.html">Port catalog</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/dump-corpus-integrity.md" target="_blank" rel="noopener">Dump-corpus integrity (GitHub)</a>
   </div>
 </section>

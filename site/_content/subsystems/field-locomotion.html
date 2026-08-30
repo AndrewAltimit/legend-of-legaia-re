@@ -4,39 +4,30 @@
   <p class="lede">How walking works: what happens, frame by frame, between holding a d-pad direction and Vahn taking a step in a town or dungeon. The controller reads the pad relative to the camera, advances the player 2 units at a time with per-axis collision against a per-scene walkability grid, and updates facing - all traced from the retail code and reproduced byte-exactly in the clean-room port.</p>
 </header>
 
-<section class="doc-section" id="actor-fields">
-  <h2>Player actor fields</h2>
-  <p>The controller is <code>FUN_801d01b0</code> - a RAM address in our disassembler trace, like every <code>FUN_</code> name below - and it lives in the field <em>overlay</em> (a chunk of code the game streams into RAM when you enter a town or field map), not in the main executable. This is the general locomotion path - <strong>not</strong> the <a href="../formats/navmesh.html">tile-board minigame</a> that shares the overlay.</p>
-  <p>The player actor pointer is the global <code>_DAT_8007c364</code>. Confirmed fields:</p>
-  <table>
-    <thead><tr><th>offset</th><th>meaning</th></tr></thead>
-    <tbody>
-      <tr><td><code>+0x10</code></td><td>flags; bit <code>0x80000</code> = movement disabled (encounter pending / cutscene), bit <code>0x1000000</code> = action/interact requested</td></tr>
-      <tr><td><code>+0x14</code></td><td>world X (<code>s16</code>)</td></tr>
-      <tr><td><code>+0x16</code></td><td>renderer facing angle (<code>s16</code>)</td></tr>
-      <tr><td><code>+0x18</code></td><td>world Z (<code>s16</code>)</td></tr>
-      <tr><td><code>+0x26</code></td><td>heading (8-direction movement angle, set from the pad direction)</td></tr>
-      <tr><td><code>+0x5c</code></td><td>run/dash state counter (<code>&gt; 0</code> switches the walk-animation select)</td></tr>
-      <tr><td><code>+0x72</code></td><td>per-actor speed multiplier (fixed-point, <code>&gt;&gt; 12</code>)</td></tr>
-      <tr><td><code>+0x94</code></td><td>encounter-record pointer</td></tr>
-      <tr><td><code>+0x98</code></td><td>interaction-target actor pointer</td></tr>
-    </tbody>
-  </table>
-  <p>World coordinates are plain <code>s16</code> in 1-unit resolution; one collision tile is <code>0x80</code> (128) units. The field camera derives its origin by negating these.</p>
-</section>
-
-<section class="doc-section" id="spawn">
-  <h2>Spawn position on scene entry</h2>
-  <p>The player's spawn position is set by the per-scene initializer <code>FUN_801D6704</code>, not by the locomotion controller. Two cases, selected by the field-entry mode global <code>_DAT_8007b8b8</code>:</p>
-  <ul>
-    <li><strong>Cold entry (<code>== 0</code>).</strong> The player actor is created at actor coords <strong><code>(0xA40, 0, 0xA40)</code></strong> - the centre of the camera's <code>0x20</code>-tile view window - while the camera is seeded onto the MAN anchor and then follows the player. Cold entry only ever happens for the New Game opening scene (<code>town01</code>, Rim Elm), so this is effectively Vahn's authored opening spawn (byte-checked walkable against town01's base collision grid).</li>
-    <li><strong>Warp entry (<code>== 2</code>).</strong> The spawn carries the sub-tile offset of the saved transition coords <code>_DAT_80084568</code>/<code>_DAT_8008456C</code>, so the player lands at the destination door instead of the window centre.</li>
-  </ul>
-  <p>Engine mirror: <code>FIELD_COLD_SPAWN_XZ</code>, applied in <code>SceneHost::enter_field_scene</code>.</p>
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <p>Hold a direction on the d-pad in a town and Vahn walks. Behind that one action, every frame, the field overlay reads the pad relative to the camera, decides whether a wall should make you slide, works out how far to move this frame, and then inches the player forward two units at a time, checking the scene's collision grid on every inch. Height is handled separately afterwards, and crossing certain tiles fires doors and story beats.</p>
+  <dl class="kv">
+    <dt>Controller</dt><dd><code>FUN_801d01b0</code> in the field overlay (PROT 0897) - Ghidra's label for the traced routine at that RAM address. Not the main executable, and not the tile-board grid mode (puzzle boards) that shares the overlay.</dd>
+    <dt>Collision</dt><dd><code>FUN_801cfe4c</code> against the per-scene walkability grid at <code>*(_DAT_1f8003ec) + 0x4000</code>: one byte per 128-unit tile, four sub-cell wall bits in the high nibble, floor tier in the low nibble.</dd>
+    <dt>Where the grid comes from</dt><dd>Streamed from the scene's <code>.MAP</code> file at load (the fixed <code>0x12000</code>-byte slot 0 of every scene block); story-conditional wall changes are painted on top by the field VM's <code>0x4C</code> nibble-7 op.</dd>
+    <dt>Speed</dt><dd>480 units (3.75 tiles) per second walking, 720 running - counted in vsyncs, so the same on a busy frame as an empty one.</dd>
+    <dt>Port</dt><dd><code>World::step_field_locomotion</code> (engine-core); byte-exact against wall-press captures, with opt-in enhancements (precise movement, edge collision, solid NPCs).</dd>
+  </dl>
+  <div class="flow">
+    <span class="num">1</span><span class="layer">Gate</span><span class="desc">skip everything if movement is disabled (encounter queued, cutscene owns the player) or the action button was pressed</span><span class="crate">player +0x10</span>
+    <span class="num">2</span><span class="layer">Camera remap</span><span class="desc">rotate the held d-pad by the camera's eighth-turn so "up" means "away from the camera"</span><span class="crate">func_0x800467e8</span>
+    <span class="num">3</span><span class="layer">Wall-slide</span><span class="desc">if the wanted direction is blocked, probe along the wall and OR in a perpendicular slide</span><span class="crate">FUN_80046494</span>
+    <span class="num">4</span><span class="layer">Speed</span><span class="desc">base step (8 walk / 12 run) x actor multiplier x frame scalar; halve on slow terrain, trim diagonals</span><span class="crate">DAT_1f800393</span>
+    <span class="num">5</span><span class="layer">Step loop</span><span class="desc">move 2 units per iteration, Z then X, each iteration collision-checked against the grid and nearby actors</span><span class="crate">FUN_801cfe4c</span>
+    <span class="num">6</span><span class="layer">Settle</span><span class="desc">a second controller re-samples the floor height and hops ledges from what the walk left behind</span><span class="crate">FUN_801d1ba0</span>
+    <span class="num">7</span><span class="layer">Triggers</span><span class="desc">entering a new tile checks the trigger block: teleports, door records, story beats, encounters</span><span class="crate">FUN_801D1EC4</span>
+  </div>
 </section>
 
 <section class="doc-section" id="per-frame">
   <h2>Per-frame flow</h2>
+  <p>The controller runs once per game tick with no cadence gate of its own. Steps 1-5 of the ladder above, in detail:</p>
   <ol>
     <li><strong>Disabled gate.</strong> If <code>player.flags &amp; 0x80000</code> is set, skip all movement (an encounter is queued or a cutscene owns the player).</li>
     <li><strong>Action button.</strong> An edge-pad action bit (<code>_DAT_8007b874 &amp; 4</code>) plays the confirm SFX and raises <code>player.flags |= 0x1000000</code> (talk / examine), short-circuiting movement that frame.</li>
@@ -59,6 +50,8 @@ if (dir &amp; 0x2000) and collide(player, scene, 3) == clear:  player.X += 2
 else if (dir &amp; 0x8000) and collide(player, scene, 1) == clear:  player.X -= 2</code></pre>
       <code>collide</code> is <code>FUN_801cfe4c</code>; <code>dir</code>-codes are <code>0 = Z&minus;, 1 = X&minus;, 2 = Z+, 3 = X+</code>. The per-frame delta vector is stored at <code>_DAT_8007bde0</code> (X) / <code>_DAT_8007bde4</code> (Z) for the transform-commit + camera follow. The step loop plays <strong>no SFX</strong> - walking and wall contact are silent; the controller's <code>0x20</code>/<code>0x23</code> cues fire in the pre-movement header (action-button / menu-open accept, and the deny buzz when the menu-open is locked out).</li>
   </ol>
+  <h3>Motion-derived animation</h3>
+  <p>The walk clip is chosen from the motion, not the pad: a committed step selects the walk (or run when <code>+0x5c &gt; 0</code>) clip, no step selects idle. The engine's <code>FieldPlayerAnim</code> does the same off the committed delta.</p>
 </section>
 
 <section class="doc-section" id="frame-denomination">
@@ -85,6 +78,7 @@ else if (dir &amp; 0x8000) and collide(player, scene, 1) == clear:  player.X -= 
 
 <section class="doc-section" id="collision">
   <h2>Collision - FUN_801cfe4c</h2>
+  <p>Why does Vahn stop at a fence but walk around a barrel? Every 2-unit sub-step asks one function whether the tile ahead is a wall and whether an actor is in the way. </p>
   <p><code>FUN_801cfe4c(player, scene, dir)</code> returns <code>0</code> when the move is clear and <code>2</code> when a static wall blocks it (plus bits <code>1</code>/<code>4</code> from the finer <code>FUN_801cfc40</code> actor/edge probe). It samples a <strong>per-scene collision tile map</strong> through the base pointer <code>_DAT_1f8003ec</code>:</p>
   <ul>
     <li>The walkability grid lives at <code>*(_DAT_1f8003ec) + 0x4000</code>.</li>
@@ -110,7 +104,7 @@ else if (dir &amp; 0x8000) and collide(player, scene, 1) == clear:  player.X -= 
   </ul>
 
   <details class="disclosure">
-    <summary>Capture proofs</summary>
+    <summary>How this was proved: wall-press captures</summary>
     <div class="disclosure-body">
       <p>Two cheat-free wall-press captures settle the sub-cell derivation: the <code>X&minus;</code> press validates the 47-unit leading edge at step granularity (the probe reads the wall column's last sub-cell; one 2-unit step shallower reads clear), and the <code>Z&minus;</code> (screen-down) press proves the <code>+2</code> Z bias is authored into the wall bits - the player legally rests at a position whose plain floor-indexed cell is an all-quads wall byte (unreachable under floor indexing), while the biased read places that wall band one tile north, exactly where the press blocks. Driving the engine stepper over each capture's live grid reproduces both retail rest positions byte-exactly (the candidate-centre default walks deeper), and the same presses inside a full <code>BootSession</code> scene entry (resolver-loaded <code>.MAP</code> + engine-executed prescript paints, through the real pad &rarr; camera-remap &rarr; locomotion path) rest at the captured positions byte-exactly too.</p>
       <p>The <code>rimelm_npc_press_tetsu</code> capture (player pressed into the sparring partner) pins the NPC class from live RAM: the mutual <code>+0x98</code> collision link is active in-frame both ways and the NPC's flags carry the <code>0x20000</code> bit - village NPCs take the moving-actor arm, not the static prop arm. The static prop footprint centres are live-verified against four captures' spawned static actors (<code>field_prop_colliders_live.rs</code>). <code>FUN_801d5b5c</code>'s touch-event kernel is decoded from a live overlay image.</p>
@@ -118,9 +112,20 @@ else if (dir &amp; 0x8000) and collide(player, scene, 1) == clear:  player.X -= 
   </details>
 </section>
 
+<section class="doc-section" id="vertical-settle">
+  <h2>Vertical settle + ledge hop - FUN_801d1ba0 / FUN_801d1878</h2>
+  <p>The walk controller only ever writes X and Z. Height - riding a slope, stepping up onto a ledge - belongs to a <strong>second per-frame controller</strong> that runs after the walk commits and reads what the walk left behind.</p>
+  <ul class="bullets">
+    <li><strong>Step-delta globals.</strong> <code>FUN_801d01b0</code> records the last committed sub-step direction into <code>0x8007BDE0</code> (X) / <code>0x8007BDE4</code> (Z) as <code>&plusmn;8</code>, cleared before the direction decode. The magnitude is a <em>probe scale</em>, not a distance; a wall-blocked axis records <code>0</code>, which keeps a hop from being attempted along an axis the walk never moved on.</li>
+    <li><strong>Settle, then trigger.</strong> <code>FUN_801d1ba0</code> re-samples the floor under the new position through <code>FUN_80019278</code> (see <a href="#floor-two-models">floor height</a>), glides the player's Y toward it, and posts the tile-trigger check.</li>
+    <li><strong>Probe and post.</strong> <code>FUN_801d1878</code> samples ahead along the recorded delta and, when the floor rises by a ledge step, starts the scripted hop arc.</li>
+  </ul>
+  <p>Engine: each committed locomotion step snaps <code>world_y</code> to <code>World::sample_field_floor_height</code> when <code>follow_terrain_height</code> is on (default in <code>play-window</code>; <code>--flat-y</code> opts out).</p>
+</section>
+
 <section class="doc-section" id="grid-source">
   <h2>Where the collision grid comes from</h2>
-  <p><code>_DAT_1f8003ec</code> is the base of the <strong>per-scene field buffer</strong> (a scratchpad-resident pointer at <code>0x1F8003EC</code>). Its sub-regions:</p>
+  <p>Nothing in a town's script says "this is a wall". The base walls arrive with the scene as part of a streamed file, and scripts only ever paint story-conditional changes on top. <code>_DAT_1f8003ec</code> is the base of the <strong>per-scene field buffer</strong> (a scratchpad-resident pointer at <code>0x1F8003EC</code>). Its sub-regions:</p>
   <table>
     <thead><tr><th>offset from base</th><th>content</th><th>filled by</th></tr></thead>
     <tbody>
@@ -131,9 +136,22 @@ else if (dir &amp; 0x8000) and collide(player, scene, 1) == clear:  player.X -= 
       <tr><td><code>+0x12000</code></td><td>field-pack region; <code>_DAT_8007b8d0 = base + 0x12800</code>; also the trigger lookup's <strong>fallback window</strong> (first sectors of the next PROT entry, same header shape, pulled in by the contiguous <code>0x28</code>-sector read)</td><td><code>FUN_8001f7c0</code> (scene asset loader)</td></tr>
     </tbody>
   </table>
+  <h3 id="trigger-block">Trigger block: doors, beats and teleports</h3>
+  <p>Crossing onto a tile can teleport you, open a door record, or start a story beat. The <code>+0x10000</code> block is a per-tile lookup with four record kinds (0 = intra-scene teleport, 1 = partition-2 record trigger, 2 = elevation override, 3 = region AABB); <code>FUN_801D5630</code> scans it and falls back to the <code>+0x12000</code> window.</p>
   <p><strong>Engine runtime dispatch.</strong> Both kind-1 gate classes run live in the port. <strong>Gate 1 - walk-on record spawn</strong> (<code>SceneHost::dispatch_walk_on_trigger</code>, the <code>FUN_801D1EC4</code> per-frame tile compare): crossing into a new tile during free-roam (<code>tile = (world &minus; 0x40) &gt;&gt; 7</code>, compared against a last-tile mirror; scene entry marks the compare stale so the arrival tile fires on the first tick, matching retail's stale globals) spawns the referenced partition-2 record when its C1/C2 story-flag gates pass. This is how town exits work - Rim Elm's south-gate tiles reference the record whose script runs the <code>0x3F</code> named scene-change to the overworld - and how walk-on story beats launch. The dispatch runs in <strong>both</strong> field and world-map mode: on the overworld a gate-1 record that IS a portal (carries a <code>0x3F</code>, tested by <code>p2_record_is_portal</code>) is left to the world-map entity SM, and only non-portal <strong>beat</strong> records spawn here - the Drake mist-wall force-walk bands (<code>map01</code> <code>P2[34..36]</code>, <code>C1=[0x482]</code>). <strong>Gate 0 - object binds</strong>: each gate-0 trigger binds its <strong>partition-0</strong> record as a touch object at scene init (<code>FUN_8003A55C</code>; engine <code>World::install_trigger_walk_touch</code>). House doors are these - the record's cross-context <code>0xA3 0xF8</code> teleports the player through the &#xFF29;&#xFF2E;/&#xFF2F;&#xFF35;&#xFF34; pair. Partition-0 records carry their own header form <code>[u8 n][n*2 SJIS name][u8 attr]</code> (<code>pc0 = 1 + n*2 + 1</code>), not the partition-1 shape.</p>
   <p>The partition-2 gate bitmap (<code>DAT_80085758</code>) <strong>is</strong> the field VM's <code>0x50</code>/<code>0x60</code>/<code>0x70</code> system-flag bank - one store shared by the record dispatcher's C1/C2 test and the VM's flag writes, so an opening-timeline <code>set</code> is immediately visible to the next record's gate. It also overlaps the saved story-flag window at byte <code>+0x158</code> (<code>0x80085758 &minus; 0x80085600</code>); the engine save mirrors the bank into that window and reloads seed it back. How a spawned record then <em>executes</em> (natural termination at the record's idle park / resident loop-back, inline dialog boxes, unresolved cross-context targets) is covered under the <a href="cutscene.html#timeline-execution-engine-port">cutscene timeline execution model</a>.</p>
   <p><strong>The C1 one-shot-latch idiom.</strong> A walk-on beat that should play once self-latches: its script <code>0x50 SET</code>s the very flag its C1 lists, so it runs on the crossing that finds C1 clear and its own <code>set</code> blocks every later crossing (C1 = block-if-ANY-set). The <code>town01</code> dinner chain is canonical - <code>P2[4]</code> (<code>C1=[550]</code>, sets 550), <code>P2[5]</code> (<code>C1=[551]</code> <code>C2=[550]</code>, sets 551); <code>step_cutscene_timeline</code> applies those <code>set</code> ops in the system bank as the record runs (550 latches after the beat), so a completed timeline stops its own re-fire. A record with <strong>empty</strong> gates is spawned every crossing and self-manages via an internal <code>0x70 TEST</code>/<code>0x50 SET</code> on a private flag (<code>town01</code> <code>P2[6]</code>: <code>TEST 558 &hellip; SET 558</code>, jumping to its end while the guard is clear - a no-op, not a lock). The overworld mist-wall bands (<code>C1=[0x482]</code>) invert it: no <code>set</code>, live until an external event sets <code>0x482</code>.</p>
+  <h3 id="doorways">Intra-scene doorways: walking into a house</h3>
+  <p>Walking into a town house is <strong>not</strong> a scene change. The scene-name buffers (<code>0x8007050C</code> / <code>0x80084548</code>) are unchanged across the warp: the interior is a sub-area of the same 128&times;128 collision grid, parked in an unused corner, and the door merely repositions the player. There are two door mechanisms, and one house can use one of each:</p>
+  <table>
+    <thead><tr><th>Class</th><th>Mechanism</th><th>Where it lives</th></tr></thead>
+    <tbody>
+      <tr><td>Script door</td><td>A <code>.MAP</code> object whose key tile resolves a gate-0 kind-1 trigger to a MAN record; the record cross-context-teleports the player channel <code>0xF8</code>. Fired by touching the object's contact box.</td><td>MAN partition 0 (the IN / OUT record family)</td></tr>
+      <tr><td>Map door</td><td>The kind-0 intra-scene teleport table: a plain tile carries a destination in half-tiles; crossing onto it repositions the player. No object, no script, no name.</td><td><code>.MAP</code> trigger block</td></tr>
+    </tbody>
+  </table>
+  <p>Map doors are the larger class and where most house <em>exits</em> live - a MAN-only census cannot see them. Rim Elm's Vahn's-house door is the mixed case: script door in, map door out. Three distinct ops move the player from a door record - <code>A3 F8 xb zb</code> (<code>0x23|0x80</code> instant teleport), <code>CC F8 51 xb zb depth mv</code> (<code>0x4C</code> nibble-5 sub-1, teleport + move anim) and <code>C7 F8 xb zb mode</code> (<code>0x47|0x80</code> animated walk-to-tile) - and a decoder that knows only the first misses two thirds of the door surface. Engine: <code>field_regions::IntraSceneTeleport</code> + <code>World::check_field_walk_touch</code>.</p>
+
   <h3>Collision byte: walls + floor height</h3>
   <p>Each <code>+0x4000</code> byte packs two nibbles for its 128-unit tile. The <strong>high nibble</strong> holds the four sub-cell wall bits (sampled by the collision check above). The <strong>low nibble</strong> is a floor-elevation tier: a 4-bit index <code>0..15</code> into a 16-entry <code>short</code> height LUT at scratchpad <code>0x1f80035c</code> (<code>= 0x1f800314 + 0x48</code>). The object/actor spawn iterator <code>FUN_8003a55c</code> reads <code>LUT[byte &amp; 0xf]</code> and adds it to each placed object's Y, so a tile's collision byte also encodes its floor height (raised platforms, multi-level rooms). The LUT is filled at scene entry by <code>FUN_8003aeb0</code> from the MAN asset header (<code>_DAT_8007b898 + 2</code>, 16 negated <code>short</code>s).</p>
 
@@ -148,19 +166,21 @@ else if (dir &amp; 0x8000) and collide(player, scene, 1) == clear:  player.X -= 
   </table>
   <p><strong>Ramps and staircases are the second model, and only the second model.</strong> A ramp tile's collision nibble carries no useful elevation - Rim Elm's two shore ramps sit on nibble-<code>0</code> (sea-level) tiles and hold their entire elevation in the kind-2 records, whose two step fields (<code>-32</code> per whole-tile count, <code>-16</code> per 64-unit sub-cell) are what make a 128-unit tile a <em>staircase</em> rather than a plane. Interpolating a ramp's nibbles instead reads the whole ramp as sea level: an actor walking off the plateau drops the full tier height at the lip and travels <strong>under</strong> the drawn stair mesh. The kind-2 record is not an optional "fast path" layered on the bilinear branch - it replaces it.</p>
   <p><strong>Engine port.</strong> <code>World::sample_field_floor_height</code> carries both branches, reading the per-scene LUT (<code>field_floor_height_lut</code>), the collision grid, the object-grid cell words (<code>field_object_cells</code>, tested against <code>CELL_ELEVATION_OVERRIDE</code>) and the parsed kind-2 records (<code>field_elevation_overrides</code>, module <code>world::field_elevation</code>) - all installed at field entry. With <code>follow_terrain_height</code> set (on by default in <code>play-window</code>; <code>--flat-y</code> opts out) each committed locomotion step snaps the player's <code>world_y</code> to the sample, so the player rides slopes and stairs; field NPCs and props floor-snap through the same sampler.</p>
+  <h3 id="load-chain">Field-buffer load chain</h3>
   <p>The <strong>base walkable grid is streamed from disc</strong>, not authored by scripts. A runtime Write-watchpoint on the live grid during a Drake-Castle &rarr; world-map transition caught a single writer: the CD-DMA channel-3 read primitive <code>FUN_8005D9A0</code>, reached via <code>FUN_8005C2C4</code> from the per-sector streaming poller <code>FUN_8003EF14</code>. That poller DMAs one 2048-byte CD sector per ready-IRQ into the field-buffer destination cursor (<code>gp + 0x940</code>, which held <code>_DAT_1f8003ec + 0x4000</code>), advancing <code>0x800</code> per sector - so the collision grid (<code>+0x4000</code>), object map (<code>+0x8000</code>) and field-pack (<code>+0x12000</code>) are the leading region of a multi-sector streaming read issued at scene load. (The grid changed from 2093 to 6805 wall tiles across the transition while only 6 nibble-7 tile-writes fired.)</p>
   <p>The field VM's <code>0x4C</code> (MENU_CTRL) opcode with outer-nibble 7 (<code>op0</code> &isin; <code>0x70..0x7F</code>, <code>[4C, 0x7s, col0, row0, col1, row1 (, mask)]</code>, handler <code>0x801e1c64</code>) is a rectangular paint over a tile range (<code>col &isin; [col0, col1+1)</code>, <code>row &isin; [row0+1, row1+2)</code> - the row bounds carry an extra <code>+1</code> the column bounds do not; sub-op <code>s</code> = clear-walkable / block-all / clear-mask / set-mask), the sole <em>CPU-store</em> writer of the high-nibble wall bits. Sub-ops <code>0</code>/<code>1</code> ignore the mask and are <strong>6-byte</strong> ops (PC += 6); <code>2</code>/<code>3</code> consume the trailing mask byte and are <strong>7-byte</strong> ops (PC += 7). It layers <strong>story-conditional deltas</strong> on top of the disc-streamed base, not the base itself.</p>
 
   <p><strong>The collision grid is the <code>+0x4000..+0x8000</code> region of the per-scene main field file.</strong> The field-asset loader <code>FUN_8001F7C0(dest, scene_name, field_record)</code> fills the field buffer at <code>dest</code> (the <code>_DAT_1f8003ec</code> base): the leading region (collision <code>+0x4000</code>, object map <code>+0x8000</code>) is the <code>DATA\FIELD\&lt;scene&gt;.MAP</code> file; the field-pack (<code>+0x12000</code>) and <code>efect.dat</code> (<code>+0x12800</code>) are separate files. Retail is the <code>_DAT_8007b8c2 != 0</code> arm: it sets the CD <code>SetLoc</code> from the in-RAM PROT TOC at <code>0x801C70F0</code> (<code>start_lba = toc[field_record + 2]</code>) and streams 40 sectors (<code>0x14000</code> bytes). Both transports converge on shared streaming machinery - <code>FUN_8003E800</code> (generic read entry) &rarr; <code>FUN_8003F128</code> (arm + <code>CdControl(CdlSetloc)</code>) &rarr; <code>FUN_8003EF14</code> per-sector poller &rarr; <code>FUN_8005D9A0</code> CD-DMA - the same writer the watchpoint caught. For the engine: load <code>&lt;scene&gt;.MAP</code> and slice bytes <code>0x4000..0x8000</code>; no script execution is needed for the base walls.</p>
 
   <p><strong>Engine port.</strong> The clean-room engine does exactly this: <code>enter_field_scene</code> resolves the <code>.MAP</code> entry as the slot <strong>two below the scene's CDNAME block start</strong> (<code>define &minus; 2</code>, identified by its <code>0x12000</code> <em>extended</em> on-disc footprint) and copies its <code>+0x4000..+0x8000</code> region into the collision grid. The <code>define &minus; 2</code> rule mirrors the runtime resolution and is universal - the scene PROT clusters overlap, so the first <code>0x12000</code> entry <em>inside</em> a block is the <em>next</em> scene's map (a save-library census pinned it: the live <code>keikoku</code> field buffer matches its <code>define &minus; 2</code> entry with zero diffs while the in-block entry differs by thousands). One footprint caveat: the TOC-<em>indexed</em> payload is only the first <code>0x4000</code> bytes; the grid lives in the entry's trailing-gap sectors, so the engine reads the extended footprint. Verified byte-exact - <code>town01</code>'s map grid equals the live RAM grid in a save state (1297 wall tiles, zero diff), and the ported player stops at real base walls (<code>town01</code> + <code>map03</code>).</p>
+  <h3>Scene-entry script and encounter table</h3>
   <p><strong>Scene-entry script.</strong> On entry the engine runs the scene's <strong>scene-entry system script</strong> (context channel <code>0xFB</code>), not event-script record 0. Record 0 of a per-scene event-script container is a trigger/dispatch table, not linear bytecode, so loading it as the field-VM buffer halts the VM at pc 0 and no entry logic runs. The retail per-frame driver <code>FUN_8003ab2c</code> builds the system script from the MAN asset's partition 1, first record; <code>Scene::field_man_entry_script</code> mirrors that resolve and <code>enter_field_scene</code> loads the MAN slice with the VM PC at the first opcode (<code>World::load_field_script_at</code>), slicing from the script start so the field VM's 16-bit-wrapping relative jumps stay anchored at the slice base (matching retail <code>buffer_base = script_start</code>). Every field/town scene carries its MAN in a <a href="../formats/scene-bundles.html">scene_asset_table</a>: kingdom-bundle scenes use the <code>count = 7</code> form, and the early standalone towns (<code>town01</code> = Rim Elm, <code>town0c</code>, …) use a <code>count = 6</code> form in their block's 2nd PROT entry (<code>town01</code> = entry 4, MAN at descriptor 1). <code>find_bundle</code> resolves both, so the real entry script runs for all of them. The entry script's <code>0x4C</code> nibble-7 wall-paint deltas are gated behind system-flag tests, so they fire only once the world's story flags are seeded to a matching scene-entry state; the base collision grid is independent of which entry script runs. Disc-gated coverage asserts the MAN-backed scenes' field VM advances past pc 0 (<code>town01</code>: 65, <code>map03</code>: 61 distinct PCs).</p>
   <p><strong>Story-conditional wall deltas (map03).</strong> Tracing <code>map03</code>'s entry script pins the gate flags: <code>TEST</code> flag <code>0x6C2</code> (script offset <code>0x2c</code>) routes into a sub-1 "block all" paint over tile (col 66, row 102), and <code>TEST</code> flag <code>0x378</code> (offset <code>0x4f</code>) routes into a contiguous three-paint cluster (sub-0 "clear walls" at <code>0x56</code> / <code>0x5c</code> / <code>0x62</code>). At a fresh boot both flags are clear, so the script skips all four paints and the grid stays at its disc-loaded base - correct, since these are story-conditional terrain changes, not base walls. Seeding the matching system flags (in gameplay: loading a save whose story-flag block has them set; bank base <code>0x80085758</code> = SC offset <code>0x1618</code>) makes the paints fire. The engine's nibble-7 paint matches the retail handler at <code>0x801e1c64</code>: the <strong>row</strong> range is <code>[row0+1, row1+2)</code> and sub-0/1 paints are 6-byte ops.</p>
   <p><strong>Scene encounter table.</strong> The same MAN that supplies the entry script carries the scene's <strong>random-encounter table</strong> in its section 0 (<code>FUN_8003AEB0</code> installs it into <code>_DAT_801C6EA4 + 0x20</code>). Because the <code>count = 6</code> detector now resolves the standalone towns' MAN, the field scene-entry path pulls the disc-resident table for them too: <code>Scene::field_man_encounter_table</code> resolves the MAN through <code>find_bundle</code>, decodes the encounter section via <code>encounter_man::scene_encounter_from_man</code>, and <code>enter_field_scene</code> installs it (<code>World::install_man_encounter</code>) - the per-formation rows become <code>EncounterEntry</code>s keyed by row index, and the matching <code>FormationDef</code>s (row index &rarr; monster-id slots) merge into the formation table so a triggered encounter resolves to a concrete monster set. The MAN holds formation monster-ids but not stat blocks, so the stat catalog is installed separately; scenes with no MAN keep the synthetic-pattern <code>EncounterRegistry</code> fallback. Towns carry real tables too: <code>town01</code>'s MAN declares <strong>7 formations</strong> at a low mean trigger rate (<code>6/256</code>), gated by its region records. Disc-gated coverage: <code>field_man_encounter_disc.rs</code>.</p>
   <p>The <code>+0x8000</code> map is a per-tile object/attribute word: its low 9 bits index the <code>+0x0000</code> object-record table, which <code>FUN_8003a55c</code> walks at scene entry to spawn the NPCs/objects occupying each tile. <code>FUN_8003aeb0</code> (the field/town scene-entry map-init - note its <code>town_mode</code> / <code>baria_mode</code> debug strings) ORs the <code>0x400</code> footprint flag into these cells from the field-pack region records (<code>+0x12000</code>, offset/count at <code>+0x12006</code> / <code>+0x12008</code>).</p>
 
   <h3>Object-record format (<code>+0x0000</code>, 0x20-byte stride)</h3>
-  <p><code>FUN_8003a55c</code> reads each record at <code>field_buffer + idx*0x20</code> (the <code>.MAP</code> file's authored copy; the runtime region is mutated):</p>
+  <p>The houses, fences and props you see are records in this table - each one an anchor tile, a mesh index, and a rotation. <code>FUN_8003a55c</code> reads each record at <code>field_buffer + idx*0x20</code> (the <code>.MAP</code> file's authored copy; the runtime region is mutated):</p>
   <table class="data-table">
     <thead><tr><th>Offset</th><th>Type</th><th>Meaning</th></tr></thead>
     <tbody>
@@ -180,7 +200,7 @@ else if (dir &amp; 0x8000) and collide(player, scene, 1) == clear:  player.X -= 
   <p><strong>The bind poses the mesh.</strong> With <code>actor+0x5C == 0</code> the actor stays at draw kind <code>5</code>, which draws every TMD object with the actor&apos;s single transform - right for a single-object prop. With a nonzero id the anim tick <code>FUN_800204F8</code> binds scene-ANM record <code>anim_id - 1</code> into <code>actor+0x4C</code> and flips the actor to draw kind <code>1</code>, whose walker <code>FUN_8001B964</code> applies the clip&apos;s per-bone rigid transform to each TMD object (and refuses to draw unless bone count == object count). So a multi-object bound prop is <em>posed</em>, not stamped, and the clip&apos;s frame 0 is its rest state - Rim Elm&apos;s searchable cupboard (object <code>230</code>, env mesh <code>15</code>: cabinet + two hinge-authored doors, 3-bone / 30-frame door-swing clip) hangs its doors inside the cabinet and through the floor without it.</p>
 
   <details class="disclosure">
-    <summary>Superseded readings</summary>
+    <summary>History: superseded readings</summary>
     <div class="disclosure-body">
       <ul>
         <li><strong>"No on-disc wall blob; walls authored entirely in the prescript."</strong> Wrong - it came from a static search for CPU stores to <code>+0x4000</code>, which can't see the DMA-load path. The base grid streams from the <code>.MAP</code> file; the <code>0x4C</code> nibble-7 paints are story-conditional deltas only.</li>
@@ -188,6 +208,7 @@ else if (dir &amp; 0x8000) and collide(player, scene, 1) == clear:  player.X -= 
         <li><strong>"<code>+0x8000</code> is a terrain-flag grid."</strong> It is the per-tile object/attribute map (low 9 bits = object-record index, high bits = per-tile flags).</li>
         <li><strong>"The <code>+0x0000</code> table holds NPC / event / trigger spawns, not building meshes"</strong> (inferred from the near-zero <code>+0x08..+0x0c</code> fields). Those fields are not the mesh selector - they are the <strong>rotation triple</strong> (PSX 4096-per-rev; <code>+0x0a</code> = yaw, the Sebucus bridges' quarter-turns), copied into actor <code>+0x24/+0x26/+0x28</code> for the render dispatcher's matrix builder <code>FUN_80026988</code>. The records <em>are</em> the buildings - the mesh comes from <code>+0x10</code> / the pack-index band.</li>
       </ul>
+      <p>Falsified readings across the project are collected on <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p>
     </div>
   </details>
 
@@ -195,27 +216,49 @@ else if (dir &amp; 0x8000) and collide(player, scene, 1) == clear:  player.X -= 
   <p>A field/town scene's environment meshes (terrain, buildings, props) are Legaia TMDs packed inside <strong>LZS streams of the scene_asset_table</strong> PROT entry (<code>town01</code> = entry 4: 121 meshes, &asymp;8041 verts). The clean-room <code>SceneResources</code> TMD pass scans each entry's LZS-decompressed sections (not just raw bytes), so these meshes land in the scene TMD pool; the field build uses <code>SceneLoadKind::Field</code> with <code>upload_all_tims</code>, matching retail's field loader (<code>FUN_8001f7c0</code>), which DMA-uploads every TIM - lifting the town's prim keep ratio from 24% to 95%. Per-mesh world placement + mesh selection come from the object table above (<code>FUN_8003a55c</code> / <code>legaia_asset::field_objects</code>); per-tile world Y = <code>-floorHeightLUT[nibble] + y_off</code> (MAN header <code>+0x02</code>, <code>Scene::field_floor_height_lut</code>). <code>play-window</code> renders the town from it (<code>resolve_field_placement_draws</code>).</p>
 </section>
 
+<section class="doc-section" id="actor-fields">
+  <h2>Player actor fields</h2>
+  <p>The player is one actor record among many; these are the fields the walk touches. <code>FUN_</code> names throughout are RAM addresses from the disassembler trace.</p>
+  <p>The player actor pointer is the global <code>_DAT_8007c364</code>. Confirmed fields:</p>
+  <table>
+    <thead><tr><th>offset</th><th>meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>+0x10</code></td><td>flags; bit <code>0x80000</code> = movement disabled (encounter pending / cutscene), bit <code>0x1000000</code> = action/interact requested</td></tr>
+      <tr><td><code>+0x14</code></td><td>world X (<code>s16</code>)</td></tr>
+      <tr><td><code>+0x16</code></td><td>terrain-conform angle (<code>s16</code>) - <strong>not</strong> the yaw; the drawn heading is <code>+0x26</code></td></tr>
+      <tr><td><code>+0x18</code></td><td>world Z (<code>s16</code>)</td></tr>
+      <tr><td><code>+0x26</code></td><td>heading (8-direction movement angle, set from the pad direction)</td></tr>
+      <tr><td><code>+0x5c</code></td><td>run/dash state counter (<code>&gt; 0</code> switches the walk-animation select)</td></tr>
+      <tr><td><code>+0x72</code></td><td>per-actor speed multiplier (fixed-point, <code>&gt;&gt; 12</code>)</td></tr>
+      <tr><td><code>+0x94</code></td><td>encounter-record pointer</td></tr>
+      <tr><td><code>+0x98</code></td><td>interaction-target actor pointer</td></tr>
+    </tbody>
+  </table>
+  <p>World coordinates are plain <code>s16</code> in 1-unit resolution; one collision tile is <code>0x80</code> (128) units. The field camera derives its origin by negating these.</p>
+  <p class="hint"><strong>Probe trap - read these as 16-bit.</strong> <code>+0x14</code>, <code>+0x16</code> and <code>+0x18</code> are adjacent <code>s16</code> fields, so a 32-bit read of <code>+0x14</code> folds the angle word into the X high half. A headless probe that read them as <code>u32</code> once measured the angle as position drift and concluded the camera-to-pad mapping was dynamic; read as <code>s16</code> the per-room camera is static.</p>
+</section>
+
+<section class="doc-section" id="spawn">
+  <h2>Spawn position on scene entry</h2>
+  <p>The player's spawn position is set by the per-scene initializer <code>FUN_801D6704</code>, not by the locomotion controller. Two cases, selected by the field-entry mode global <code>_DAT_8007b8b8</code>:</p>
+  <ul>
+    <li><strong>Cold entry (<code>== 0</code>).</strong> The player actor is created at actor coords <strong><code>(0xA40, 0, 0xA40)</code></strong> - the centre of the camera's <code>0x20</code>-tile view window - while the camera is seeded onto the MAN anchor and then follows the player. Cold entry only ever happens for the New Game opening scene (<code>town01</code>, Rim Elm), so this is effectively Vahn's authored opening spawn (byte-checked walkable against town01's base collision grid).</li>
+    <li><strong>Warp entry (<code>== 2</code>).</strong> The spawn carries the sub-tile offset of the saved transition coords <code>_DAT_80084568</code>/<code>_DAT_8008456C</code>, so the player lands at the destination door instead of the window centre.</li>
+  </ul>
+  <p>Engine mirror: <code>FIELD_COLD_SPAWN_XZ</code>, applied in <code>SceneHost::enter_field_scene</code>.</p>
+</section>
+
 <section class="doc-section" id="parity">
-  <h2>Town / field parity</h2>
+  <h2>Town / field / overworld parity</h2>
+  <p>Towns, dungeons and the overworld all walk the same way - one controller, one collision function, one grid format. </p>
   <p>The controller is selected by <strong>game mode</strong>: mode <code>0x03</code> loads the field overlay (<code>overlay_0897</code>), which contains the single free-movement controller <code>FUN_801d01b0</code>. <code>FUN_801d01b0</code> was runtime-pinned on a walkable field scene (<code>map03</code>, mode <code>0x03</code>). Rim Elm - scene <code>town01</code> - also runs at game mode <code>0x03</code> (see <code>scripts/scenarios.toml</code>, the <code>v0_1_pre_battle_tetsu</code> anchor), so it loads the same overlay and the same controller. The shared scene-entry init <code>FUN_8003aeb0</code> corroborates this: it has an explicit <code>town_mode</code> debug-string branch and configures the same player actor (<code>_DAT_8007c364</code>: speed mult <code>+0x72 = 0x1000</code>, <code>+0x6a = 8</code>) for both towns and fields.</p>
   <p>The <strong>overworld walk mode</strong> shares it too: the world-map-walk overlay's locomotion is byte-for-byte the same <code>FUN_801d01b0</code> (same collision <code>FUN_801cfe4c</code>, same <code>_DAT_1f8003ec + 0x4000</code> grid). The three kingdom overworld scenes (<code>map01</code>/<code>map02</code>/<code>map03</code>) carry real wall data in that grid (&approx; 7968 / 2283 / 3837 wall sub-cells), so the overworld is bounded by the same tile-wall mechanism as towns - not a separate walkability format.</p>
   <p><strong>Input lock during an opening cutscene.</strong> <code>World::step_field_locomotion</code> is gated on <code>current_dialog</code>, an active tile-board, the per-actor movement-disabled flag (<code>move_state.flags &amp; 0x0008_0000</code>), <em>and</em> an active opening-cutscene timeline (<code>World::cutscene_timeline_active</code>). During the <code>town01</code> opening's establishing sweep the spawned <a href="cutscene.html">cutscene timeline</a> drives the lead actor through its own MoveTo ops, so the pad must not also walk the player out from under the cinematic camera; control returns the frame the timeline drops.</p>
 </section>
 
-<section class="doc-section" id="open">
-  <h2>Open</h2>
-  <p>NPC walkers carry a live heading (<code>World::field_npc_headings</code>, the player's 12-bit <code>render_26</code> convention, derived from each motion-VM step's direction and retained on arrival); the <code>play-window</code> field renderer rotates each NPC model to it and plays the placement's scene-bundle ANM clip per frame (the same posed-rebuild path as the player's idle/walk pair).</p>
-  <ul>
-    <li>The full <code>FUN_801d5b5c</code> post-kernel state (the touch-event handler beyond the decoded entry kernel).</li>
-    <li>Full per-actor field-VM channel execution with story-flag-conditioned branches (the engine loops decoded waypoint lists,
-    and the initial-facing decode takes the fall-through branch - see <a href="#npc-initial-facing">NPC initial facing</a> -
-    rather than evaluating the prologue's <code>0x7x</code> flag-TEST chain against live flags, so a later-chapter branch's
-    facing/position is not selected).</li>
-  </ul>
-</section>
-
 <section class="doc-section" id="npc-initial-facing">
   <h2>NPC initial facing</h2>
+  <p>Why do two villagers spawn facing each other? The placement record has no facing byte; the direction comes from running the first few ops of the NPC's own script at spawn time.</p>
   <p>The placement record carries <strong>no facing byte</strong> - its 4-byte header is <code>[model, anim, tile_x, tile_z]</code> only.
   A never-walked NPC's heading comes from a <strong>spawn-time prologue pre-run</strong>: the placement installer <code>FUN_8003A1E4</code>
   ends by executing the record's leading field-VM ops one at a time through <code>FUN_801DE840</code> when the first opcode is the
@@ -247,10 +290,13 @@ else if (dir &amp; 0x8000) and collide(player, scene, 1) == clear:  player.X -= 
   active-list relink via <code>FUN_800204A4</code>/<code>FUN_80020454</code>, not a bytecode builder). The old glide-speed reading of
   the same byte is a misattribution of the walk-kernel op <code>0x47</code>'s own operand encoding - see the reconcile note under
   NPC glide speed below.</p>
+  <h3>NPC dynamic facing</h3>
+  <p>After spawn, walking <em>snaps</em> the heading to one of eight compass points and the rotate ops <em>ramp</em> it; which you get is a property of the bytecode. Retail resolves conflicts by execution order inside the per-actor tick <code>FUN_8003BC08</code> - the last writer of the frame is the facing that draws. The opcode-level arithmetic is on <a href="motion-vm.html#facing">motion-vm &sect; facing</a>.</p>
 </section>
 
 <section class="doc-section" id="npc-glide-speed">
   <h2>NPC glide speed</h2>
+  <p>Villagers wander at different paces. That pace is not the player's walk step - it is encoded in each NPC's own walk instruction.</p>
   <p>An NPC's per-frame glide is NOT the player's <code>+0x72</code> walk step (that premise is falsified: <code>FUN_8003774C</code> never reads <code>+0x72</code>). Both walk kernels encode the base step <strong>in the walk op's own operands</strong>, on the shared ladder <code>numerator &gt;&gt; (2 + bits)</code> units per frame (base steps 32 / 16 / 8 / 4 / 2 / 1 for <code>bits</code> 0..5 at numerator <code>0x80</code>, floored at 1):</p>
   <ul class="bullets">
     <li><strong>Field-VM yield ops</strong> (<code>FUN_8003774C</code> - scripted glide legs): per-frame magnitude <code>_DAT_1f800393 &times; numerator / (4 &lt;&lt; bits)</code>. <code>bits = (op0&gt;&gt;5 &amp; 4)|(op1&gt;&gt;6)</code> for the axis-glide ops 0x37/0x41, <code>b2 &amp; 7</code> (high nibble = approach mode) for the walk-to-tile op 0x47. The numerator is <code>0x80</code> for 0x37/0x47 but <strong><code>0x40</code> for 0x41</strong> - half speed, the <code>li a1,0x40</code>/<code>li a1,0x80</code> split at <code>0x80037908</code>. <code>_DAT_1f800393</code> is taken at its cold-field value 1.</li>
@@ -262,9 +308,21 @@ else if (dir &amp; 0x8000) and collide(player, scene, 1) == clear:  player.X -= 
   <p>Modelling note (reconcile outcome): the raw <code>4C 51</code> handler pins its byte +3 as <code>[bit7 special-model | facing nibble]</code> with <strong>no speed field</strong> - retail <code>4C 51</code> is a teleport + move-anim start, and the only speed-carrying ops are the walk kernels' own operands (above). The heuristic arm therefore reads a <em>facing nibble</em> as the base-step selector - a stable per-NPC variation with no retail speed semantics - and fires only when no real walk-kernel op decodes.</p>
 </section>
 
-<section class="doc-section" id="how-pinned">
-  <h2>Provenance: how the controller was pinned</h2>
-  <p><code>FUN_801d01b0</code> was found with a runtime write-watchpoint on the player position fields (<code>scripts/pcsx-redux/autorun_player_pos_watch.lua</code>): walking in a field scene fires write hits at the four <code>sh</code> stores <code>0x801D0684 / 06E4 / 0744 / 07B4</code> (player Z&plusmn; / X&plusmn;), all inside <code>FUN_801d01b0</code>. Static analysis alone never surfaced it because the writes are buried in a 1964-byte function and the field overlay only loads at runtime. The cluster previously suspected to be locomotion (<code>801db81c..801dbf9c</code>) turned out to be the field <em>camera</em> system, which only <em>reads</em> the player position.</p>
+<section class="doc-section" id="scripted-actor">
+  <h2>The scripted-scene actor - FUN_801d4a60</h2>
+  <p>Some field actors are not NPCs but small scripted programs - the hop-arc controller, door swings, one-shot scene props. <code>FUN_801d4a60</code> is a 38-state jump-table dispatcher on the actor's <code>+0x54</code> (table at <code>0x801CE960</code>). Its entry state computes <code>+0x54 = (+0x54 + 1) + +0x50 * 10</code>, so <code>+0x50</code> is a <strong>program selector</strong> and the state space is four programs on a stride of ten, entered at 1 / 11 / 21 / 31 - four short programs of 5, 5, 6 and 7 states, not a sparse table of dead slots. Spawner <code>FUN_801D5A24(program)</code>. Port: <code>engine-core::field_actor_program</code>.</p>
+</section>
+
+<section class="doc-section" id="open">
+  <h2>Open</h2>
+  <p>NPC walkers carry a live heading (<code>World::field_npc_headings</code>, the player's 12-bit <code>render_26</code> convention, derived from each motion-VM step's direction and retained on arrival); the <code>play-window</code> field renderer rotates each NPC model to it and plays the placement's scene-bundle ANM clip per frame (the same posed-rebuild path as the player's idle/walk pair).</p>
+  <ul>
+    <li>The full <code>FUN_801d5b5c</code> post-kernel state (the touch-event handler beyond the decoded entry kernel).</li>
+    <li>Full per-actor field-VM channel execution with story-flag-conditioned branches (the engine loops decoded waypoint lists,
+    and the initial-facing decode takes the fall-through branch - see <a href="#npc-initial-facing">NPC initial facing</a> -
+    rather than evaluating the prologue's <code>0x7x</code> flag-TEST chain against live flags, so a later-chapter branch's
+    facing/position is not selected).</li>
+  </ul>
 </section>
 
 <section class="doc-section" id="engine-port">
@@ -278,13 +336,25 @@ else if (dir &amp; 0x8000) and collide(player, scene, 1) == clear:  player.X -= 
   </ul>
 </section>
 
+<section class="doc-section" id="how-pinned">
+  <h2>Provenance: how the controller was pinned</h2>
+  <p>How we found the walk code at all, given that it lives in an overlay the disassembler never sees at rest.</p>
+  <p><code>FUN_801d01b0</code> was found with a runtime write-watchpoint on the player position fields (<code>scripts/pcsx-redux/autorun_player_pos_watch.lua</code>): walking in a field scene fires write hits at the four <code>sh</code> stores <code>0x801D0684 / 06E4 / 0744 / 07B4</code> (player Z&plusmn; / X&plusmn;), all inside <code>FUN_801d01b0</code>. Static analysis alone never surfaced it because the writes are buried in a 1964-byte function and the field overlay only loads at runtime. The cluster previously suspected to be locomotion (<code>801db81c..801dbf9c</code>) turned out to be the field <em>camera</em> system, which only <em>reads</em> the player position.</p>
+</section>
+
 <section class="doc-section" id="see-also">
   <h2>See also</h2>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="script-vm.html">Field/event VM</a>
+    <a href="motion-vm.html">Motion VMs (NPC walking)</a>
     <a href="world-map.html">World map</a>
+    
+    <a href="../formats/scene-bundles.html">Scene bundles</a>
+    <a href="../formats/encounter.html">Encounter record</a>
     <a href="../formats/scene-bundles.html">Scene bundles</a>
     <a href="../formats/scene-v12-table.html">Scene v12 table</a>
+    <a href="../play.html">Play in the browser</a>
+    <a href="../reference/re-do-not-re-walk.html">Do-not-re-walk</a>
   </div>
 </section>

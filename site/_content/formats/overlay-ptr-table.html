@@ -1,8 +1,19 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; overlay pointer-table code</div>
   <h1>Overlay pointer-table code <span class="tag tag-partial">Inferred</span></h1>
-  <p class="lede">Sister format to <a href="mips-overlay.html">MIPS overlay code</a>: the same family of on-disc code blobs (overlays - chunks of MIPS code the game loads into RAM on demand), but instead of starting with a function prologue, these start with a table of function pointers, then the code those pointers reference. 42 PROT entries (entries of <code>PROT.DAT</code>, the disc's main asset archive) match. A few of them open with an ASCII title like <code>Hell's Music</code> - which reads like a song name but is actually the battle special attack the overlay implements.</p>
+  <p class="lede">When a Ra-Seru summon like Nighto's Hell's Music fills the screen, the code choreographing that attack was not in memory a second earlier - it was streamed off the disc into a small "slot" of RAM just for the cast, and thrown away afterwards. These are the blobs that hold such code. Sister format to <a href="mips-overlay.html">MIPS overlay code</a>: the same family of on-disc code blobs (overlays - chunks of MIPS code the game loads into RAM on demand), but instead of starting with a function prologue, these start with a table of function pointers, then the code those pointers reference. 42 PROT entries (entries of <code>PROT.DAT</code>, the disc's main asset archive) match. A few of them open with an ASCII title - which reads like a song name but is actually the battle special attack the overlay implements.</p>
 </header>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>In the game</dt><dd>Per-attack code for summons and special attacks (the slot-B "stagers"), plus other mode-specific modules that expose an entry-point or dispatch table.</dd>
+    <dt>Magic / marker</dt><dd>No header - the first u32 is a pointer into the overlay window <code>0x801C0000..=0x801FFFFF</code>, followed by 4..64 more</dd>
+    <dt>Lives in</dt><dd><a href="prot.html">PROT.DAT</a> entries in the <code>0900..=0968</code> range (extraction index), 14-160 KB; the attack stagers load at slot-B base <code>0x801F69D8</code></dd>
+    <dt>Parser</dt><dd><code>legaia_asset::overlay_ptr_table::detect</code> (<code>crates/asset/src/overlay_ptr_table.rs</code>); load bases in <code>crates/asset/data/static-overlays.toml</code></dd>
+    <dt>Confidence</dt><dd>Inferred as a detector (a shape heuristic with zero overlap against named formats); the individual attack-stager identities are capture-pinned.</dd>
+  </dl>
+</section>
 
 <section class="doc-section" id="overview">
   <h2>Overview</h2>
@@ -11,12 +22,16 @@
 
 <section class="doc-section" id="layout">
   <h2>Layout</h2>
-<pre><code>+0x00   u32  ptr_0      ; address in 0x801C0000..=0x801FFFFF (overlay window)
-+0x04   u32  ptr_1      ; same range
-...
-+N*4    u32  ptr_{N-1}  ; last pointer (still in range)
-+(N+1)*4 ...            ; first non-pointer u32 (typically MIPS code, sometimes
-                        ; a `jr ra; nop` stub or a leading ASCII string)</code></pre>
+  <table class="layout">
+    <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>+0x00</code></td><td>4</td><td>ptr_0</td><td>Address in <code>0x801C0000..=0x801FFFFF</code> (the overlay window)</td></tr>
+      <tr><td><code>+0x04</code></td><td>4</td><td>ptr_1</td><td>Same range</td></tr>
+      <tr><td>...</td><td></td><td></td><td></td></tr>
+      <tr><td><code>+N*4</code></td><td>4</td><td>ptr_{N-1}</td><td>Last pointer (still in range); <code>N</code> is 4..64</td></tr>
+      <tr><td><code>+(N+1)*4</code></td><td>rest</td><td>body</td><td>First non-pointer u32 - typically MIPS code, sometimes a <code>jr ra; nop</code> stub or a leading ASCII string</td></tr>
+    </tbody>
+  </table>
   <p>The overlay window <code>0x801C0000..0x801FFFFF</code> is the RAM region reserved for swappable code - a valid pointer into it is a strong sign the blob expects to live there. The pointer-table length <code>N</code> ranges from 4 to 64. Tables come in three shapes:</p>
   <ul class="bullets">
     <li><strong>Function entry-point tables</strong> - small, monotonic; one slot per public function.</li>
@@ -48,7 +63,13 @@
     <li><strong><code>0924_xxx_dat.BIN</code> "Ultimate Rave"</strong> and <strong><code>0927_xxx_dat.BIN</code> "Dark Eclipse"</strong> - the same attack-titled, stager-shaped family (part-spawn call census matches the pinned stagers); their loader callsites are <em>computed</em> rather than constant, but which action ids drive them is <strong>no longer open</strong> - both are capture-pinned mid-cast off the loader-B current id: 0924 is the rare-Seru flute summon <strong>Lippian</strong> (spell <code>0x96</code>) and 0927 is <strong>Juggernaut</strong> on Evil Seru Magic (spell <code>0x99</code>).</li>
     <li><strong><code>0957_xxx_dat.BIN</code></strong> - a different shape: its head is a summon string table (<code>Dies</code> / <code>Puera</code> / <code>Both</code> / <code>Damage</code> / <code>Recover</code>) followed by an absolute-pointer table and code - the slot-B <code>summon_effect_table</code> overlay.</li>
   </ul>
-  <p>All the attack-titled entries sit in the static overlay map at slot-B base <code>0x801F69D8</code>. The titles look like song names ("Hell's Music" reads like a Disco King dance track) but they are <strong>not</strong>: the dance overlay (0980) contains zero slot-B loader callsites - its music is sequenced BGM. See <a href="../tooling/static-overlay-pipeline.html">static overlay pipeline</a>.</p>
+  <p>All the attack-titled entries sit in the static overlay map at slot-B base <code>0x801F69D8</code>. See <a href="../tooling/static-overlay-pipeline.html">static overlay pipeline</a>.</p>
+  <details class="disclosure">
+    <summary>History: the "Disco King dance-song" reading</summary>
+    <div class="disclosure-body">
+      <p>The titles look like song names, and an earlier reading filed 0907's title as a Disco King dance track. It is refuted: the dance overlay (0980) contains zero slot-B loader callsites - its music is sequenced BGM via the sound streaming loader - while 0907 is capture-pinned as Nighto's summon stager. Retired readings are collected on <a href="../reference/re-do-not-re-walk.html">do not re-walk</a>.</p>
+    </div>
+  </details>
 </section>
 
 <section class="doc-section" id="reading-the-format">
@@ -67,7 +88,15 @@ if let Some(t) = overlay_ptr_table::detect(buf) {
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="mips-overlay.html">MIPS overlay detection</a>
+    <a href="summon-readef.html">summon.dat / readef.DAT slots</a>
+    <a href="spell-table.html">Spell table</a>
     <a href="../reference/functions.html">Functions</a>
     <a href="../reference/memory-map.html">Memory map</a>
+  </div>
+  <div class="see-also">
+    <span class="see-also-label">Demo / tooling</span>
+    <a href="../magic.html">Magic (summons)</a>
+    <a href="../tooling/static-overlay-pipeline.html">Static overlay pipeline</a>
+    <a href="../tooling/overlay-capture.html">Overlay capture</a>
   </div>
 </section>

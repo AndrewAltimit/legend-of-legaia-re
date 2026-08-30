@@ -4,6 +4,22 @@
   <p class="lede">The <a href="../../tooling/randomizer.html">randomizer</a> rewrites a retail Legaia disc with no source, no SDK, and no extension points - the game ships as a sealed black box and ships only a <em>decoder</em>. Every mod is one of a handful of <strong>injection techniques</strong>, and they form a ladder: from same-size byte edits, through editing inside compression and rewriting bytecode, up to hand-assembled MIPS hosted in a resident overlay's dead space. This series walks the ladder one technique at a time, reversing first. The mods are the worked examples; the techniques are the point.</p>
 </header>
 
+<section class="doc-section" id="reading-order">
+  <h2>Read in order</h2>
+  <p>Six pages, one technique each, in the order the reversing had to happen. Each rung is worth reading on its own, but the later ones assume the earlier ones' machinery. If you only read one, read tier B - it is where "we can only overwrite bytes in place" stops being a limitation.</p>
+  <table>
+    <thead><tr><th>Tier</th><th>Page</th><th>What it is about</th><th>Why a fan might care</th></tr></thead>
+    <tbody>
+      <tr><td><strong>A</strong></td><td><a href="a-static-tables.html">Static-table overwrites</a></td><td>The executable's fixed-width stat tables - steal items, spell costs, element affinities, prices, casino prizes - and how a same-size write plus an EDC/ECC recompute is a complete patch.</td><td>The simplest way anything on the disc changes, and where every randomizer starts.</td></tr>
+      <tr><td><strong>B</strong></td><td><a href="b-lzs-slots.html">Editing inside LZS</a></td><td>Monster records live compressed inside fixed slots. Writing an LZS encoder the retail decoder accepts is what lets a monster's drops, stats and weapon specialty change at all.</td><td>Why "edit the monster" needed a compressor before it needed an editor.</td></tr>
+      <tr><td><strong>C</strong></td><td><a href="c-field-vm-operands.html">Rewriting field-VM bytecode</a></td><td>Chests, shops, random encounters and house doors are operands in each scene's script. Finding the ops and swapping their arguments without moving a byte.</td><td>How a chest in Rim Elm can hold something it never held, with the rest of the script untouched.</td></tr>
+      <tr><td><strong>D</strong></td><td><a href="d-man-relocation.html">Variable-length relocation</a></td><td>A door carries its destination's name inline, so re-pointing it resizes the record. Rebuilding the decompressed script and fixing every disturbed offset.</td><td>The door randomizer and the high-capacity starting bag - edits that change a byte count.</td></tr>
+      <tr><td><strong>E</strong></td><td><a href="e-rodata-gap-code.html">Code injection via the rodata gap</a></td><td>Hand-assembled MIPS detoured into reclaimed space in the executable: bonus equipment drops, run-away EXP.</td><td>New behaviour, not just new data - and the R3000 traps that bite the first time you try it.</td></tr>
+      <tr><td><strong>F</strong></td><td><a href="f-overlay-dead-region.html">Overlay dead-region injection</a></td><td>Hosting a new system in a resident overlay's dead space: the in-shop Seru-trading vendor. Also the roadmap rung for battle assist, Seru racing, Muscle Dome betting and Blood Moon.</td><td>Where genuinely new features come from.</td></tr>
+    </tbody>
+  </table>
+</section>
+
 <section class="doc-section" id="foundation">
   <h2>Three capabilities the preservation track never needed</h2>
   <p>The asset-preservation half of the project only ever <em>reads</em> the disc. Writing one back required three new pieces, and every mod in this series stands on them:</p>

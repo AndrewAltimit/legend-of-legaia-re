@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; ROM patcher</div>
   <h1>ROM patcher (in browser)</h1>
-  <p class="lede">Run the <a href="randomizer.html">randomizer</a> on your own Legend of Legaia disc image, entirely in your browser - pick a preset (or fine-tune), choose a seed, and download a patched image. The disc bytes never leave your machine: the patch runs as WebAssembly locally, nothing is uploaded.</p>
+  <p class="lede">Pick a preset or fine-tune the options, choose a seed, and download a re-rolled copy of your own Legend of Legaia disc. Everything runs in this tab as WebAssembly - the disc never leaves your machine and nothing is uploaded. What each option does, in depth: <a href="randomizer.html">the randomizer reference</a>.</p>
 </header>
 
 <section class="doc-section" id="patch">
@@ -23,10 +23,8 @@
       <summary>Language <span class="rom-summary-note">translation patch (optional)</span></summary>
       <div class="rom-group-body">
         <p class="rom-legend-item" style="margin:0 0 .6rem">
-          Off by default; composes with any randomizer options. The retail font is
-          plain ASCII, so the shipped packs are ASCII-folded (accents dropped) and
-          cover the item / magic / arts / menu tables plus recurring system
-          messages - the bulk story dialog is not translated yet.
+          Off by default; composes with every option below.
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>The shipped packs cover the item / magic / arts / menu tables plus recurring system messages; the bulk story dialog is not translated yet. The retail font is plain ASCII, so the packs are accent-folded.</p><p>Packs are community-authored YAML; you can import your own or export a starter pack from your disc to begin one. Full details: <a href="translation.html">translation packs</a>.</p></span></span>
         </p>
         <label class="rom-row">
           <span class="rom-label">Language</span>
@@ -49,16 +47,8 @@
         <!-- ---- Official-localization transfer (second user-supplied disc) ---- -->
         <div class="rom-group-body" id="rom-lang-official-row" hidden>
           <p class="rom-legend-item" style="margin:0 0 .6rem">
-            If you also own an official European release, this transfers <em>its</em>
-            translation onto your USA disc. Both discs are read here in your browser
-            and neither is uploaded - same as the disc above. The official text is
-            yours, from your own disc; it is never bundled with this site.
-          </p>
-          <p class="rom-legend-item" style="margin:0 0 .6rem">
-            <strong>Not all of it will fit.</strong> The USA disc's scenes are packed
-            to the sector with no spare room, so the shorter lines transfer and the
-            rest stay English. The coverage report after patching says exactly how
-            many landed and why the others did not.
+            Transfers the translation from a European disc you own onto your USA disc - read here, never uploaded.
+            <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Both discs are read in your browser; the official text is yours, from your own disc, and is never bundled with this site.</p><p><strong>Not all of it will fit.</strong> The USA disc's scenes are packed to the sector with no spare room, so the shorter lines transfer and the rest stay English. The coverage report after patching says how many landed and why the others did not.</p><p>Full details: <a href="translation.html#official-pal">official PAL translations</a>.</p></span></span>
           </p>
           <label class="rom-row">
             <span class="rom-label">PAL disc image (<code>.bin</code> - French, German or Italian)</span>
@@ -66,8 +56,8 @@
           </label>
           <label class="rom-check-row">
             <input type="checkbox" id="rom-lang-fold" checked>
-            <span>Fold accents to plain ASCII (<code>Epee</code> for <code>&Eacute;p&eacute;e</code>)
-              <span class="rom-hint">- the USA font has no accent glyphs; unfold only if you are also patching the font</span></span>
+            <span>Fold accents to plain ASCII
+              <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><code>Epee</code> for <code>&Eacute;p&eacute;e</code>. The USA font has no accent glyphs, so unfolded accents draw blank - untick only if you are also patching the font.</span></span></span>
           </label>
           <div class="rom-row">
             <button type="button" id="rom-lang-lift" class="rom-button rom-button-ghost">Read the official text from my PAL disc</button>
@@ -102,8 +92,8 @@
 
     <!-- Legend: the one place the two modes are defined. -->
     <p class="rom-legend">
-      <span class="rom-legend-item"><span class="rom-chip rom-chip-shuffle">Shuffle</span> <em>rebalanced</em> - redistributes what's already there (same set, new places - keeps the game's balance).</span>
-      <span class="rom-legend-item"><span class="rom-chip rom-chip-random">Randomize</span> <em>wild</em> - draws fresh from the whole pool (anything can land anywhere - less predictable).</span>
+      <span class="rom-legend-item"><span class="rom-chip rom-chip-shuffle">Shuffle</span> <em>rebalanced</em> - the same set, in new places; keeps the game's balance.</span>
+      <span class="rom-legend-item"><span class="rom-chip rom-chip-random">Randomize</span> <em>wild</em> - fresh draws from the whole pool; anything can land anywhere.</span>
       <span class="rom-legend-item"><span class="rom-tip-cue">?</span> hover or tap for the fine print on any option.</span>
     </p>
 
@@ -117,7 +107,8 @@
       <summary>Items &amp; rewards</summary>
 
       <div class="rom-opt">
-        <span class="rom-opt-label">Monster drops</span>
+        <span class="rom-opt-label">Monster drops
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Reassigns the item each monster drops and its chance. <a href="randomizer.html#equipment">Details</a>.</span></span></span>
         <div class="seg" role="group" aria-label="Monster drops">
           <input type="radio" name="drops" id="drops-none" value="none" checked><label for="drops-none">Off</label>
           <input type="radio" name="drops" id="drops-shuffle" value="shuffle"><label for="drops-shuffle">Shuffle</label>
@@ -126,7 +117,8 @@
       </div>
 
       <div class="rom-opt">
-        <span class="rom-opt-label">Treasure chests</span>
+        <span class="rom-opt-label">Treasure chests
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Reassigns what each chest holds - and the message that announces it. Quest, key and story items stay where they are so progression never breaks. <a href="randomizer.html#chests">Details</a>.</span></span></span>
         <div class="seg" role="group" aria-label="Treasure chests">
           <input type="radio" name="chests" id="chests-none" value="none" checked><label for="chests-none">Off</label>
           <input type="radio" name="chests" id="chests-shuffle" value="shuffle"><label for="chests-shuffle">Shuffle</label>
@@ -135,7 +127,8 @@
       </div>
 
       <div class="rom-opt">
-        <span class="rom-opt-label">Town shops</span>
+        <span class="rom-opt-label">Town shops
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Reassigns what each town store sells. Quest items never appear; chest-only gear gets a price so it can. <a href="randomizer.html#shops">Details</a>.</span></span></span>
         <div class="seg" role="group" aria-label="Town shops">
           <input type="radio" name="shops" id="shops-none" value="none" checked><label for="shops-none">Off</label>
           <input type="radio" name="shops" id="shops-shuffle" value="shuffle"><label for="shops-shuffle">Shuffle</label>
@@ -144,7 +137,8 @@
       </div>
 
       <div class="rom-opt">
-        <span class="rom-opt-label">Casino prizes</span>
+        <span class="rom-opt-label">Casino prizes
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Reassigns the prize-exchange items; each prize keeps its coin price and its progression gate. <a href="randomizer.html#casino">Details</a>.</span></span></span>
         <div class="seg" role="group" aria-label="Casino prizes">
           <input type="radio" name="casino" id="casino-none" value="none" checked><label for="casino-none">Off</label>
           <input type="radio" name="casino" id="casino-shuffle" value="shuffle"><label for="casino-shuffle">Shuffle</label>
@@ -153,7 +147,8 @@
       </div>
 
       <div class="rom-opt">
-        <span class="rom-opt-label">Steal items <span class="rom-opt-note">- chance kept; only the item changes</span></span>
+        <span class="rom-opt-label">Steal items <span class="rom-opt-note">- chance kept; only the item changes</span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Reassigns what each monster yields to the Evil God Icon; the steal chance is always preserved. <a href="randomizer.html#steals">Details</a>.</span></span></span>
         <div class="seg" role="group" aria-label="Steal items">
           <input type="radio" name="steals" id="steals-none" value="none" checked><label for="steals-none">Off</label>
           <input type="radio" name="steals" id="steals-shuffle" value="shuffle"><label for="steals-shuffle">Shuffle</label>
@@ -167,7 +162,8 @@
       <summary>Exploration <span class="rom-summary-note">doors &amp; warps</span></summary>
 
       <div class="rom-opt">
-        <span class="rom-opt-label">Doors / exits</span>
+        <span class="rom-opt-label">Doors / exits
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Reassigns where each scene-transition door leads. A few big overworld hubs whose data cannot grow in place keep their original doors. <a href="randomizer.html#doors">Details</a>.</span></span></span>
         <div class="seg" role="group" aria-label="Doors and exits">
           <input type="radio" name="doors" id="doors-none" value="none" checked><label for="doors-none">Off</label>
           <input type="radio" name="doors" id="doors-shuffle" value="shuffle"><label for="doors-shuffle">Shuffle</label>
@@ -184,8 +180,8 @@
 
       <label class="rom-check-row">
         <input type="checkbox" id="rom-house-doors">
-        <span>House doors (experimental) <span class="rom-opt-note">- shuffle intra-town interior doors</span>
-          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Shuffles intra-town interior/exit door targets. The script op is shared with NPC movement, so some actor positions scramble too.</span></span></span>
+        <span>House doors (experimental) <span class="rom-opt-note">- shuffle doors inside a town</span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Shuffles the interior / exit door warps inside a town, plus the map-data teleports most house exits use. Entries stay entries and exits stay exits, so you can never be trapped indoors.</p><p>The script op is shared with NPC movement, so some actor positions scramble too. <a href="randomizer.html#house-doors">Details</a>.</p></span></span></span>
       </label>
     </details>
 
@@ -194,7 +190,8 @@
       <summary>New game start <span class="rom-summary-note">starting bag &amp; warps</span></summary>
 
       <div class="rom-opt">
-        <span class="rom-opt-label">Starting items</span>
+        <span class="rom-opt-label">Starting items
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Replaces the new game's Healing Leaf &times;5 with that many distinct random consumables. <a href="randomizer.html#starting-items">Details</a>.</span></span></span>
         <select id="rom-starting-items">
           <option value="0" selected>Leave alone (Healing Leaf &times;5)</option>
           <option value="1">1 random item</option>
@@ -208,7 +205,8 @@
       </div>
 
       <div class="rom-opt">
-        <span class="rom-opt-label">Starting level</span>
+        <span class="rom-opt-label">Starting level
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Starts the whole party at the chosen level, with stats and XP thresholds recomputed from the disc's own growth curves - real level-N stats, not a relabel. <a href="randomizer.html#starting-items">Details</a>.</span></span></span>
         <select id="rom-starting-level">
           <option value="0" selected>Level 1 (vanilla)</option>
           <option value="2">Level 2</option>
@@ -223,29 +221,35 @@
 
       <label class="rom-check-row">
         <input type="checkbox" id="rom-door-of-wind">
-        <span>Seed Door of Wind (warp consumable) into the starting bag - count
-          <input type="number" id="rom-door-of-wind-count" min="1" max="99" value="10"></span>
+        <span>Door of Wind in the starting bag - count
+          <input type="number" id="rom-door-of-wind-count" min="1" max="99" value="10">
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">The warp consumable: teleports the party to any town already visited (or any town at all, with the unlock below).</span></span></span>
       </label>
       <label class="rom-check-row">
         <input type="checkbox" id="rom-incense">
-        <span>Seed Incense (lowers the random-encounter rate) into the starting bag - count
-          <input type="number" id="rom-incense-count" min="1" max="99" value="10"></span>
+        <span>Incense in the starting bag - count
+          <input type="number" id="rom-incense-count" min="1" max="99" value="10">
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">A consumable that lowers the random-encounter rate for a while.</span></span></span>
       </label>
       <label class="rom-check-row">
         <input type="checkbox" id="rom-speed-chain">
-        <span>Seed a Speed Chain accessory (always act first in battle) into the starting bag</span>
+        <span>Speed Chain accessory in the starting bag
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Its wearer always acts first in battle.</span></span></span>
       </label>
       <label class="rom-check-row">
         <input type="checkbox" id="rom-chicken-heart">
-        <span>Seed a Chicken Heart accessory (increases the successful-escape rate) into the starting bag</span>
+        <span>Chicken Heart accessory in the starting bag
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Raises the chance that running away succeeds.</span></span></span>
       </label>
       <label class="rom-check-row">
         <input type="checkbox" id="rom-good-luck-bell">
-        <span>Put a Good Luck Bell in the starting bag &mdash; equip it and its Low Encounter passive halves the encounter rate (nothing to do with item drops)</span>
+        <span>Good Luck Bell accessory in the starting bag
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Equip it and its Low Encounter passive halves the encounter rate. Nothing to do with item drops, despite the name.</span></span></span>
       </label>
       <label class="rom-check-row">
         <input type="checkbox" id="rom-all-warps">
-        <span>Unlock every Door-of-Wind destination from the start (teleport to any town) <span class="rom-opt-note">(off in every preset &mdash; it reveals the town list before you get there)</span></span>
+        <span>Unlock every Door-of-Wind destination from the start
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Teleport to any town before you have been there. Off in every preset - it reveals the town list ahead of the story.</span></span></span>
       </label>
     </details>
 
@@ -255,11 +259,13 @@
 
       <label class="rom-check-row">
         <input type="checkbox" id="rom-unused-enemies">
-        <span>Add the unused &ldquo;Comm&rdquo; + Evil Bat enemies to random encounters <span class="rom-opt-note">(needs Randomize encounters)</span></span>
+        <span>Cut enemies in random encounters <span class="rom-opt-note">(needs Randomize encounters)</span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Brings back two monsters the shipped game never places: &ldquo;Comm&rdquo; and the Evil Bat. Only a Randomize encounter roll can introduce a new monster, so Shuffle leaves them out. <a href="randomizer.html#unused-content">Details</a>.</span></span></span>
       </label>
       <label class="rom-check-row">
         <input type="checkbox" id="rom-unused-items">
-        <span>Add the unused &ldquo;Something Good&rdquo; + the &ldquo;Seru Bell&rdquo; accessory to random fills</span>
+        <span>Cut items in random fills
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Adds &ldquo;Something Good&rdquo; and the nameless accessory (named &ldquo;Seru Bell&rdquo; by the patch) to the pool that Randomize drops / chests / steals draw from. <a href="randomizer.html#unused-content">Details</a>.</span></span></span>
       </label>
     </details>
 
@@ -267,25 +273,25 @@
     <details class="rom-group" id="rom-values-group" open>
       <summary>Prices &amp; names <span class="rom-summary-note">fishing prizes, location names, Earth Egg</span></summary>
       <div class="rom-group-body">
-        <p class="rom-edit-note" id="rom-tables-status">Choose your disc image above and the current prices and names appear here, read from your own disc. Leave a box empty to keep the disc's value.</p>
+        <p class="rom-edit-note" id="rom-tables-status">Choose your disc image above and the current values appear here, read from your own disc. Leave a box empty to keep the disc's value.</p>
 
         <div class="rom-edit-block">
           <h4 class="rom-edit-title">Fishing prize prices
-            <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>The fishing exchanges at Buma and Vidna sell these prizes for fishing points. Set a new point price in any row; the price is also the &ldquo;appears once you can afford it&rdquo; gate, so a cheaper prize also shows up sooner.</p><p>The prize list itself is fixed on the disc (which items, and how many rows) - the patcher can only reprice a row, not add, remove or swap prizes. A prize sold at both venues is one row here: the new price applies to both.</p></span></span>
+            <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>The fishing exchanges at Buma and Vidna sell these prizes for fishing points. The price is also the &ldquo;appears once you can afford it&rdquo; gate, so a cheaper prize shows up sooner.</p><p>The prize list itself is fixed on the disc - rows can be repriced, not added, removed or swapped. A prize sold at both venues is one row; the new price applies to both.</p></span></span>
           </h4>
           <div id="rom-fish-rows" class="rom-edit-rows"><p class="rom-edit-empty">Waiting for a disc image ...</p></div>
         </div>
 
         <div class="rom-edit-block">
           <h4 class="rom-edit-title">Location names
-            <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Renames a place <strong>everywhere the game shows it</strong>: the quick-travel / Door-of-Wind list, the label drawn over the world map at that place&rsquo;s position, and the banner that flashes on entering the scene (which is also the save-screen location row).</p><p>Type a new name next to any current one (plain ASCII, up to 23 characters). The list covers the 16 quick-travel destinations plus the 14 places that only have a world-map label - Hunter&rsquo;s Spring, Sol Tower, Snowdrift Cave and the rest.</p><p>Matching is exact, so renaming &ldquo;Conkram&rdquo; leaves &ldquo;Conkram (Past)&rdquo; alone. Handy for matching dungeon names to a re-elemented party - e.g. rename the Ancient Wind Cave to &ldquo;Ancient Fire Cave&rdquo;.</p></span></span>
+            <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Renames a place <strong>everywhere the game shows it</strong>: the Door-of-Wind list, the label over the world map, and the banner on entering the scene (which is also the save-screen location row).</p><p>Plain ASCII, up to 23 characters. The list covers the 16 quick-travel destinations plus the places that only have a world-map label. Matching is exact, so renaming &ldquo;Conkram&rdquo; leaves &ldquo;Conkram (Past)&rdquo; alone. <a href="randomizer.html#location-names">Details</a>.</p></span></span>
           </h4>
           <div id="rom-loc-rows" class="rom-edit-rows rom-loc-grid"><p class="rom-edit-empty">Waiting for a disc image ...</p></div>
         </div>
 
         <div class="rom-edit-block">
           <h4 class="rom-edit-title">Earth Egg coin threshold
-            <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">The Sol Tower &ldquo;Prize Counter&rdquo; offers the Earth Ra-Seru Egg once you hold this many casino coins (retail <code>100000</code>), and debits exactly that many on purchase. It is a hidden scripted exchange, not a row in the casino prize table, so the casino editors can't reach it. Range 1 - 8388608.</span></span>
+            <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">The Sol Tower Prize Counter offers the Earth Ra-Seru Egg once you hold this many casino coins (retail <code>100000</code>) and debits exactly that many. It is a hidden scripted exchange, not a casino prize row, so the casino options cannot reach it. Range 1 - 8388608.</span></span>
           </h4>
           <div class="rom-earth-row">
             <label class="rom-opt-label" for="rom-earth-egg-price">Casino coins required</label>
@@ -296,13 +302,15 @@
         <details class="rom-art-advanced">
           <summary>Advanced: raw <code>id=value</code> lists (CLI syntax)</summary>
           <div class="rom-opt">
-            <label class="rom-opt-label" for="rom-fishing-price">Fishing prize prices</label>
-            <span class="rom-opt-note">One or more <code>item=points</code> pairs, comma-separated - item id in decimal or <code>0xHH</code> (e.g. <code>0x6F=500</code>). The <a href="../reference/gamedata.html">item ids</a> and current prices are what the CLI <code>legaia-patcher fishing</code> lists. Merged with the rows above.</span>
+            <label class="rom-opt-label" for="rom-fishing-price">Fishing prize prices
+              <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><code>item=points</code> pairs, comma-separated; the item id in decimal or <code>0xHH</code> (e.g. <code>0x6F=500</code>). The CLI <code>legaia-patcher fishing</code> lists ids and current prices (also on the <a href="../reference/gamedata.html">gamedata page</a>). Merged with the rows above.</span></span></label>
+            <span class="rom-opt-note">comma-separated <code>item=points</code></span>
             <input type="text" id="rom-fishing-price" placeholder="e.g. 0x6F=500, 0xCD=10000" spellcheck="false" autocomplete="off">
           </div>
           <div class="rom-opt">
-            <label class="rom-opt-label" for="rom-rename-location">Location names</label>
-            <span class="rom-opt-note">One <code>target=name</code> per line (ASCII, up to 23 chars), where <code>target</code> is a quick-travel slot index or the place&rsquo;s current name - e.g. <code>3=Ancient Fire Cave</code> or <code>Sol Tower=Helios Spire</code>. Each line renames all three places the game shows the name. The CLI <code>legaia-patcher locations</code> lists every target. Merged with the rows above.</span>
+            <label class="rom-opt-label" for="rom-rename-location">Location names
+              <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">One <code>target=name</code> per line (ASCII, up to 23 chars); <code>target</code> is a quick-travel slot index or the place's current name - <code>3=Ancient Fire Cave</code>, <code>Sol Tower=Helios Spire</code>. The CLI <code>legaia-patcher locations</code> lists every target. Merged with the rows above.</span></span></label>
+            <span class="rom-opt-note">one <code>target=name</code> per line</span>
             <textarea id="rom-rename-location" rows="3" placeholder="3=Ancient Fire Cave&#10;Sol Tower=Helios Spire" spellcheck="false" autocomplete="off"></textarea>
           </div>
         </details>
@@ -318,7 +326,8 @@
       <summary>Gameplay</summary>
 
       <div class="rom-opt">
-        <span class="rom-opt-label">Random encounters</span>
+        <span class="rom-opt-label">Random encounters
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Reassigns the monsters in each area's random formations. Boss and scripted fights are never touched. <a href="randomizer.html#encounters">Details</a>.</span></span></span>
         <div class="seg" role="group" aria-label="Random encounters">
           <input type="radio" name="encounters" id="enc-none" value="none" checked><label for="enc-none">Off</label>
           <input type="radio" name="encounters" id="enc-shuffle" value="shuffle"><label for="enc-shuffle">Shuffle</label>
@@ -326,7 +335,7 @@
         </div>
       </div>
       <div class="rom-opt rom-sub" id="rom-scope-row">
-        <span class="rom-opt-label">&#8627; Monster pool <span class="rom-opt-note">how far afield enemies are drawn from</span></span>
+        <span class="rom-opt-label">&#8627; Monster pool <span class="rom-opt-note">how far afield enemies come from</span></span>
         <div class="seg" role="group" aria-label="Encounter monster pool">
           <input type="radio" name="encounter_scope" id="scope-scene" value="scene" checked><label for="scope-scene" title="Each area's own monsters">Scene</label>
           <input type="radio" name="encounter_scope" id="scope-kingdom" value="kingdom"><label for="scope-kingdom" title="Any monster from the same kingdom (Drake / Sebucus / Karisto)">Kingdom</label>
@@ -341,36 +350,37 @@
       <label class="rom-check-row" id="rom-flee-exp-row">
         <input type="checkbox" id="rom-flee-exp">
         <span>Experience on the run <span class="rom-opt-note">- fleeing banks 5% of the fight's XP</span>
-          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Successfully running away banks 5% of the fight's experience into the party. Vanilla gives nothing for fleeing.</span></span></span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Successfully running away banks 5% of the fight's experience into the party. Vanilla gives nothing for fleeing. <a href="randomizer.html#flee-exp">Details</a>.</span></span></span>
       </label>
       <label class="rom-check-row" id="rom-enemy-ally-row">
         <input type="checkbox" id="rom-enemy-ally">
         <span>Enemy ally <span class="rom-opt-note">- 20% chance one enemy fights for you</span>
-          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">A 20% chance per battle that one enemy starts the fight in a charmed state and turns on its own side. It is an existing enemy flipped to help you for that battle, not an added or controllable party member. Multi-enemy fights only - single-enemy tutorials and solo bosses are skipped.</span></span></span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">A 20% chance per battle that one enemy starts charmed and turns on its own side - an existing enemy flipped for that battle, not a controllable party member. Multi-enemy fights only, so tutorials and solo bosses are skipped. <a href="randomizer.html#enemy-ally">Details</a>.</span></span></span>
       </label>
 
       <label class="rom-check-row" id="rom-shiny-seru-row">
         <input type="checkbox" id="rom-shiny-seru">
         <span>Shiny Seru <span class="rom-opt-note">- 2% chance of a +35% shiny; its Seru keeps the boost</span>
-          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">A 2% chance per battle that a capturable enemy spawns as a rare shiny variant with +35% stats. The Seru you capture from it keeps a +35% damage boost on every future cast, in addition to its normal abilities; the flag persists in the save and the Seru still levels up normally.</span></span></span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">A 2% chance per battle that a capturable enemy spawns as a translucent shiny with +35% stats. The Seru captured from it keeps a +35% damage boost on every future cast; the flag lives in the save and the Seru levels normally. <a href="randomizer.html#shiny-seru">Details</a>.</span></span></span>
       </label>
 
       <label class="rom-check-row" id="rom-show-super-arts-row">
         <input type="checkbox" id="rom-show-super-arts">
-        <span>Show Super Arts on the in-battle move list <span class="rom-opt-note">- once you have performed one; retail never lists them at all</span>
-          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Lists a character's Super Arts on the Tactical-Arts list the Triangle button opens in battle.</p><p>One appears once you have <strong>performed it</strong> - retail records nothing about a Super Art ever firing, so the patch keeps its own per-character flag byte in a spare slot of the character record (it saves and loads with the rest, and an older save starts with none) - and it shows from the next time the list opens.</p><p>Each row sits <strong>in AP order</strong> among the regular arts (the list runs highest AP first, like retail's) and carries the Super Art's name, the <strong>AP the chain costs</strong> (a Super Art charges nothing of its own) and the <strong>arrows you actually type</strong> - the seven-to-nine inputs the game's own arts recogniser resolves to the trigger, e.g. Tri-Somersault's up-down-up-up-up-down-up, coloured the way a chain reads: blue, yellow where each sub-art ends (as regular arts mark their last arrow), Miracle-Art orange on the Super Art's own trigger.</p><p>The pause menu's Status screen (Left = Moves) lists them the same way, with a description that names the chain. The Triangle prompt's own page thresholds are unchanged, so on a later page the caption can still read "View Hyper Arts list".</p><p>Uses the same injected-code arena as Shiny Seru, the per-art AP overrides and the Delilas Challenge, so only one of those can be enabled at a time - Shiny Seru alone fills 618 of the arena's 652 bytes, so this is an arithmetic limit rather than a policy.</p><p>A Super Art <em>damage</em> row claims none of it and always composes.</p></span></span></span>
+        <span>Show Super Arts on the in-battle move list <span class="rom-opt-note">- once you have performed one</span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Retail never lists a Super Art anywhere. With this on, a Super Art you have <strong>performed</strong> appears on the Triangle arts list in battle and on the pause menu's Moves page, sorted by AP among the regular arts.</p><p>Each row shows its name, the AP its chain costs (a Super Art charges nothing of its own) and the arrows you actually type, coloured the way a chain reads. The performed flag saves with the character, so an older save starts with none.</p><p>Shares the injected-code arena with Shiny Seru, the per-art AP overrides, the Super Arts Pack and the Delilas Challenge - only one of those can be on at a time. <a href="randomizer.html#show-super-arts">Details</a>.</p></span></span></span>
       </label>
 
       <label class="rom-check-row" id="rom-super-arts-pack-row">
         <input type="checkbox" id="rom-super-arts-pack">
         <span>Super Arts Pack <span class="rom-author-pill" title="Community mod: credit and questions go to ZetaPhoenix"><span class="rom-author-pill-k">Mod author</span><span class="rom-author-pill-v">ZetaPhoenix</span></span> <span class="rom-opt-note">- fifteen extra Super Arts, five per character</span>
-          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>A community mod by <strong>ZetaPhoenix</strong>, installed here as a disc patch.</p><p>Each character gains <strong>five Super Arts</strong> on top of the retail five - Ultra Elbow, Somersault Duo, Searing Rush, Criss-Cross and Blazing Typhoon for Vahn; Double Lizard, Falcon Talons, Chilling Smash, Zephyr Swipes and Grand Maelstrom for Noa; Ground Pound, Storm Kick, System Shock, Skyvolt Knee and Raging Bull for Gala - each with its own name banner, hit count and animation, and each triggered by its own arts chain the way the retail Supers are.</p><p>The retail five per character keep their triggers and results, though the mod&rsquo;s animation hook also runs for the seventeen art constants it lists, three of which retail Super Arts share.</p><p>ZetaPhoenix's 3764-byte block is installed byte-for-byte as he wrote it: the patch parks it in unused disc space and streams it into memory at the start of every battle, then makes ten small edits so the game's own Super-Art code reads his tables.</p><p>Uses the same injected-code arena as Shiny Seru, "Show Super Arts on the in-battle move list", the per-art AP overrides and the Delilas Challenge, so only one of those can be enabled at a time.</p></span></span></span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>A community mod by <strong>ZetaPhoenix</strong>, installed here as a disc patch. Each character gains five new Super Arts on top of the retail five, each with its own name banner, hit count and animation, triggered by its own arts chain.</p><p>The mod's block is installed byte-for-byte, parked in unused disc space and streamed into memory at the start of every battle. The retail Super Arts keep their triggers and results.</p><p>Shares the injected-code arena with Shiny Seru, the Super Arts move list, the per-art AP overrides and the Delilas Challenge - only one at a time. <a href="randomizer.html#super-arts-pack">Details</a>.</p></span></span></span>
       </label>
 
       <p id="rom-arena-conflict" class="rom-conflict" role="status" hidden></p>
 
       <div class="rom-opt">
-        <span class="rom-opt-label">Arts button combos <span class="rom-opt-note">- input count kept; Miracle Arts left alone</span></span>
+        <span class="rom-opt-label">Arts button combos <span class="rom-opt-note">- input count kept; Miracle Arts left alone</span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Reassigns the arrow combo that fires each Tactical Art. A 4-input art stays 4 inputs, each character's combos stay unique, and the menu arrows update to match. <a href="randomizer.html#arts-combos">Details</a>.</span></span></span>
         <div class="seg" role="group" aria-label="Arts button combos">
           <input type="radio" name="arts" id="arts-none" value="none" checked><label for="arts-none">Off</label>
           <input type="radio" name="arts" id="arts-shuffle" value="shuffle"><label for="arts-shuffle">Shuffle</label>
@@ -379,7 +389,8 @@
       </div>
 
       <div class="rom-opt">
-        <span class="rom-opt-label">Monster stats <span class="rom-opt-note">- HP / MP / ATK / DEF / INT / SPD</span></span>
+        <span class="rom-opt-label">Monster stats <span class="rom-opt-note">- HP / MP / ATK / DEF / INT / SPD</span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Redistributes each combat stat across the whole roster, so <em>which</em> monster is tanky changes while the total difficulty budget stays. Tutorial enemies and story bosses keep their own stats. <a href="randomizer.html#monster-stats">Details</a>.</span></span></span>
         <div class="seg" role="group" aria-label="Monster stats">
           <input type="radio" name="monster_stats" id="mstats-none" value="none" checked><label for="mstats-none">Off</label>
           <input type="radio" name="monster_stats" id="mstats-shuffle" value="shuffle"><label for="mstats-shuffle">Shuffle</label>
@@ -388,7 +399,8 @@
       </div>
 
       <div class="rom-opt">
-        <span class="rom-opt-label">Special-attack power <span class="rom-opt-note">- enemy specials &amp; Seru magic (not party Arts)</span></span>
+        <span class="rom-opt-label">Special-attack power <span class="rom-opt-note">- enemy specials &amp; Seru magic</span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Redistributes how hard enemy specials and Seru magic hit; party Tactical Arts are not in this table. Animations, effects and sound stay put. <a href="randomizer.html#move-power">Details</a>.</span></span></span>
         <div class="seg" role="group" aria-label="Special-attack power">
           <input type="radio" name="move_power" id="mpow-none" value="none" checked><label for="mpow-none">Off</label>
           <input type="radio" name="move_power" id="mpow-shuffle" value="shuffle"><label for="mpow-shuffle">Shuffle</label>
@@ -397,7 +409,8 @@
       </div>
 
       <div class="rom-opt">
-        <span class="rom-opt-label">Element affinity <span class="rom-opt-note">- which element beats which</span></span>
+        <span class="rom-opt-label">Element affinity <span class="rom-opt-note">- which element beats which</span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Scrambles the 8&times;8 element matrix. Shuffle keeps the same number of weaknesses and resistances, just between different pairs. <a href="randomizer.html#element-affinity">Details</a>.</span></span></span>
         <div class="seg" role="group" aria-label="Element affinity">
           <input type="radio" name="element_affinity" id="eaff-none" value="none" checked><label for="eaff-none">Off</label>
           <input type="radio" name="element_affinity" id="eaff-shuffle" value="shuffle"><label for="eaff-shuffle">Shuffle</label>
@@ -406,7 +419,8 @@
       </div>
 
       <div class="rom-opt">
-        <span class="rom-opt-label">Spell MP costs <span class="rom-opt-note">- named, costed spells</span></span>
+        <span class="rom-opt-label">Spell MP costs
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Redistributes the MP costs of the named, costed spells; free enemy-only entries never gain a cost. <a href="randomizer.html#spell-cost">Details</a>.</span></span></span>
         <div class="seg" role="group" aria-label="Spell MP costs">
           <input type="radio" name="spell_cost" id="scost-none" value="none" checked><label for="scost-none">Off</label>
           <input type="radio" name="spell_cost" id="scost-shuffle" value="shuffle"><label for="scost-shuffle">Shuffle</label>
@@ -415,7 +429,8 @@
       </div>
 
       <div class="rom-opt">
-        <span class="rom-opt-label">Equipment stat bonuses <span class="rom-opt-note">- redistributed within each slot type</span></span>
+        <span class="rom-opt-label">Equipment stat bonuses
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Redistributes gear stat bonuses within each slot type - a weapon's stats only ever land on another weapon. Who can equip what, and accessory passives, never move. <a href="randomizer.html#equip-bonus">Details</a>.</span></span></span>
         <div class="seg" role="group" aria-label="Equipment stat bonuses">
           <input type="radio" name="equip_bonus" id="ebonus-none" value="none" checked><label for="ebonus-none">Off</label>
           <input type="radio" name="equip_bonus" id="ebonus-shuffle" value="shuffle"><label for="ebonus-shuffle">Shuffle</label>
@@ -426,47 +441,47 @@
       <label class="rom-check-row">
         <input type="checkbox" id="rom-equipment-drops">
         <span>Equipment drops <span class="rom-opt-note">- a low chance of one extra random gear drop</span>
-          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">A low per-battle chance (default 5%) to win one extra random weapon / armor / accessory, via an additive code hook, on top of the untouched normal drop.</span></span></span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">A low per-battle chance (default 5%) to win one extra random weapon / armor / accessory on top of the untouched normal drop. <a href="randomizer.html#equipment">Details</a>.</span></span></span>
       </label>
 
       <label class="rom-check-row">
         <input type="checkbox" id="rom-seru-trade">
         <span>Seru trading <span class="rom-opt-note">- a shop vendor swaps learned Seru-magic</span>
-          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">A vendor in shops offers to trade a party member's learned Seru-magic for a different one at a set level. The offer rotates over play time, deterministic from the seed.</span></span></span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Every shop gains a Trade row where a party member swaps a learned Seru-magic for a different one at a set level. Offers rotate over play time, deterministic from the seed. <a href="randomizer.html#seru-trade">Details</a>.</span></span></span>
       </label>
 
       <label class="rom-check-row">
         <input type="checkbox" id="rom-weapon-specialty">
         <span>Weapon specialty <span class="rom-opt-note">- reassign each character's favored weapon class</span>
-          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Reassigns which weapon class each character favors (Vahn blades / Noa claws / Gala clubs by default). An off-class weapon widens the Arms command in an arts combo; the Astral Sword stays always-wide.</span></span></span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Permutes which weapon class each character favors (Vahn blades / Noa claws / Gala clubs by default). An off-class weapon widens the Arms command in an arts combo; the Astral Sword stays always-wide. <a href="randomizer.html#weapon-specialty">Details</a>.</span></span></span>
       </label>
 
       <label class="rom-check-row">
         <input type="checkbox" id="rom-jewel-fix">
         <span>Jewel fix <span class="rom-opt-note">- boss cinematic casts respect elemental guards (bug fix)</span>
-          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">In retail, Xain's Bloody Horns / Terio Punch, Cort's Guilty Cross, and the Delilas trio's signature moves skip the defense check entirely, so Jewels and All Guard do nothing against them. This makes those casts respect elemental guards like every ordinary attack. A bug fix, not a randomization - unaffected by the seed.</span></span></span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">In retail, Xain's Bloody Horns / Terio Punch, Cort's Guilty Cross and the Delilas trio's signature moves skip the defense check, so Jewels and All Guard do nothing against them. This makes those casts respect elemental guards like every ordinary attack. Unaffected by the seed.</span></span></span>
       </label>
 
       <label class="rom-check-row">
         <input type="checkbox" id="rom-approach-fix">
         <span>Approach-softlock fix <span class="rom-opt-note">- stop the endless camera orbit (bug fix)</span>
-          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">When a boss's approach animation dies mid-walk (a summon right before its attack), the battle waits forever while the camera circles the party. With the fix the animation is re-staged and the boss simply resumes walking - healthy fights are untouched. A bug fix, not a randomization - unaffected by the seed; <a href="../writeups/gaza-orbit-softlock.html">full write-up</a>.</span></span></span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">When a boss's approach animation dies mid-walk (a summon right before its attack), retail waits forever while the camera circles the party. With the fix the boss simply resumes walking; healthy fights are untouched. Unaffected by the seed; <a href="../writeups/gaza-orbit-softlock.html">full write-up</a>.</span></span></span>
       </label>
 
       <label class="rom-check-row">
         <input type="checkbox" id="rom-delilas-challenge">
         <span>Delilas Challenge <span class="rom-opt-note">- a new Delilas dome course at the Muscle Dome</span>
-          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>The Muscle Dome enrollment clerk gains a fourth option: the Delilas Challenge - a brand-new dome course where Che and Lu Delilas fight you TOGETHER, then Gi finishes the gauntlet.</p><p>It runs in the real Muscle Dome arena (magic off, fought by the dome's usual fighter), and a full clear pays 5,000 coins. Unlocks after the Koru event in Nivora Ravine. Losing a round returns you to the Sol venue, just like any dome loss - no game over. Repeatable.</p><p>The double-team fits the PS1's battle memory by streaming slimmed copies of the siblings from unused archive slots - the real Che and Lu are untouched everywhere else, and in the arena they keep their signature moves, spaced out on a staggered every-4th-turn rhythm so the double-team stays readable.</p><p>Gi spices his round with two borrowed one-shot moves: Spore Gas, and - once his health drops below half - Divide (he splits in two!). The split trades power for numbers: after dividing, neither Gi can use Blazing Slash again.</p><p>A full clear also awards a Honey on top of the coins - or, with Custom items below, three brand-new items instead - and the venue's award ceremony announces the items you actually won instead of a token count. Unaffected by the seed.</p></span></span></span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>The Muscle Dome clerk gains a fourth option: a new course where Che and Lu Delilas fight you <strong>together</strong>, then Gi finishes the gauntlet. Unlocks after the Koru event in Nivora Ravine; a full clear pays 5,000 coins plus a Honey (or the three custom items, below). Repeatable, and a loss just returns you to Sol.</p><p>Gi brings two borrowed moves - Spore Gas, and Divide once his health drops below half (he splits in two, at the cost of Blazing Slash).</p><p>Unaffected by the seed. <a href="randomizer.html#delilas-challenge">Details</a>.</p></span></span></span>
       </label>
       <label class="rom-check-row">
         <input type="checkbox" id="rom-custom-items">
         <span>Custom items <span class="rom-opt-note">- three brand-new items join the game</span>
-          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Injects three brand-new items into cut item slots: Nature's Elixir (restores full HP and MP in one use), the Ra-Seru Tear (a free cast of the user's own Ra-Seru summon - anyone can shed one), and the Fury Bloom (a party-wide Fury Boost in a single use).</p><p>How you obtain them: with a Random drop / chest / steal mode they join the fill pool like any other item, and with the Delilas Challenge they replace the Honey as the full-clear reward. With neither source enabled the items exist in the game but nothing hands them out.</p><p>Unaffected by the seed.</p></span></span></span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Adds Nature's Elixir (full HP and MP in one use), the Ra-Seru Tear (a free cast of the user's own Ra-Seru summon) and the Fury Bloom (a party-wide Fury Boost) into cut item slots.</p><p>They reach you through a Randomize drop / chest / steal fill, or as the Delilas Challenge's clear reward. With neither source on, the items exist but nothing hands them out. Unaffected by the seed.</p></span></span></span>
       </label>
 
       <div class="rom-opt">
         <label class="rom-opt-label" for="rom-delilas-party">Delilas party swap <span class="tag tag-planned">early preview</span>
-          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Play as the Delilas siblings: Gi, Lu and Che take the party's place in battle, and the story's three Nivora Ravine duels (plus the Muscle Dome Master legs) field Vahn, Noa and Gala instead - each side fights with the other's model under its own moves, so the duels play exactly as before with the fighters exchanged.</p><p>Pick which sibling replaces which hero.</p><p>The swap covers battle models, field walking models, names, the battle grunt voices (resampled from the siblings' own voice banks), the save-file faces (save-select portraits, memory-card icons and the boot load screen show the mapped siblings), and the dialog - lines naming Gi, Lu or Che now name the hero who took that sibling's place, with "Delilas" kept.</p><p>Stats, arts, magic and the story beats are untouched, and party names change on a New Game only (existing saves keep their stored names).</p><p>Each sibling also brings their signature special into the Arts list - Gi's Blazing Slash, Che's Megaton Press, Lu's Plasma Strike, all on the combo Left Right Up Up Down - replacing that hero's 50-AP Hyper Art (Burning Flare, Vulture Blade, Explosive Fist).</p><p>The move plays the sibling's own choreography at its authored length, with their own cast effect instead of the hero's, and on Vahn's slot it also gains a proper swing camera (Burning Flare's retail camera is the one flat framing in the game, which is why that slot looked static).</p><p>The run-in stays the hero's, since it is shared across all of that character's arts. What the heroes' Tactical Arts shout lines become is picked by the Arts voices sub-option below. Unaffected by the seed.</p></span></span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Play as the Delilas siblings: Gi, Lu and Che take the party's place in battle and in the field, and the story's Nivora Ravine duels (plus the Muscle Dome Master legs) field Vahn, Noa and Gala instead. Pick which sibling replaces which hero.</p><p>The swap covers battle and field models, names, battle grunts, save-file faces and the dialog lines that name a sibling. Stats, arts, magic and the story beats are untouched; party names change on a New Game only.</p><p>Each sibling also brings their signature special (Blazing Slash, Megaton Press, Plasma Strike) in place of that hero's 50-AP Hyper Art. Unaffected by the seed. <a href="randomizer.html#delilas-party-swap">Full details</a>.</p></span></span>
         </label>
         <select id="rom-delilas-party">
           <option value="" selected>Off</option>
@@ -480,7 +495,7 @@
       </div>
       <div class="rom-opt rom-sub" id="rom-delilas-arts-voice-row" hidden>
         <label class="rom-opt-label" for="rom-delilas-arts-voice">&#8627; Arts voices
-          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>What the heroes' Tactical Arts voice banks carry once the siblings take their place - both the per-art shouts and the Super / Hyper / Miracle fanfare cues (a Hyper Art has no shout of its own, so its fanfare is its only audio).</p><p>Original (the default) keeps Vahn, Noa and Gala's own shouts playing out of the siblings' bodies. Adjusted re-voices the retail shouts toward each mapped sibling with a tuned pitch and formant map, so the calls keep their timing but sound closer to the Delilas.</p><p>Removed silences the arts shouts entirely - the siblings' own attack grunts remain the audible voice. Unaffected by the seed.</p></span></span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>What the Tactical Arts shouts sound like once the siblings take the heroes' place. <em>Original</em> keeps Vahn, Noa and Gala's own shouts; <em>Adjusted</em> re-voices them toward each sibling with a pitch and formant map; <em>Removed</em> silences the shouts, leaving the siblings' own attack grunts.</p><p>Unaffected by the seed. <a href="randomizer.html#delilas-arts-voice">Details</a>.</p></span></span>
         </label>
         <select id="rom-delilas-arts-voice">
           <option value="original" selected>Original - keep the Vahn / Noa / Gala voices</option>
@@ -490,7 +505,7 @@
       </div>
       <div class="rom-opt rom-sub" id="rom-delilas-moves-row" hidden>
         <label class="rom-opt-label" for="rom-delilas-moves">&#8627; Move set
-          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Which animations the swapped hero's Tactical Arts play. Hybrid (the default) leaves every art exactly as retail authored it and only reskins one Hyper Art into the sibling's signature special.</p><p>Delilas re-authors the character's whole battle-animation archive from the mapped sibling's own monster clips, so every art in the list plays a Delilas motion, renames each surviving art after the clip it performs, and blanks the arts that neither a Super Art nor the Miracle Art needs - a blanked art is never learned, so it never appears in the Moves list.</p><p>Super and Miracle Arts stay reachable either way. Unaffected by the seed.</p></span></span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Which animations the swapped hero's Tactical Arts play. <em>Hybrid</em> keeps every art as retail authored it and only reskins one Hyper Art into the sibling's signature special. <em>Delilas</em> rebuilds the whole kit from the sibling's own clips, renames each surviving art after the motion it plays, and hides the arts no Super or Miracle Art needs.</p><p>Super and Miracle Arts stay reachable either way. Unaffected by the seed. <a href="randomizer.html#delilas-move-set">Details</a>.</p></span></span>
         </label>
         <select id="rom-delilas-moves">
           <option value="hybrid" selected>Hybrid - host arts keep their own animations</option>
@@ -501,7 +516,7 @@
       <label class="rom-check-row">
         <input type="checkbox" id="rom-spirit-ap-on">
         <span>Spirit AP <span class="rom-opt-note">- how much AP the Spirit command charges (retail 32)</span>
-          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Changes how much AP the Spirit command charges into the battle gauge (retail <code>32</code>). At <code>0</code> Spirit becomes a pure defensive stance - the guard boost stays but no AP is gained; at <code>100</code> one press fills the whole gauge.</p><p><strong>Negative values invert it</strong>: Spirit then <em>spends</em> AP, floored at an empty gauge. A manual tuning, unaffected by the seed; the on-screen gauge animation is kept in sync, and a negative setting makes AP-Boost accessories inert.</p></span></span></span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>At <code>0</code> Spirit becomes a pure defensive stance (guard boost, no AP); at <code>100</code> one press fills the whole gauge. The on-screen gauge animation stays in sync.</p><p><strong>Negative values invert it</strong>: Spirit then <em>spends</em> AP, floored at empty, and AP-Boost accessories go inert. Unaffected by the seed. <a href="randomizer.html#ap-gauge-tuning">Details</a>.</p></span></span></span>
       </label>
       <div class="rom-opt rom-sub" id="rom-spirit-ap-row">
         <label class="rom-opt-label" for="rom-spirit-ap">&#8627; AP per Spirit: <output id="rom-spirit-ap-val">32</output></label>
@@ -511,7 +526,7 @@
       <label class="rom-check-row">
         <input type="checkbox" id="rom-damage-ap-on">
         <span>AP from taking damage <span class="rom-opt-note">- gauge gain per hit taken (retail 100)</span>
-          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Changes how much AP a hit charges into the battle gauge, measured per <strong>100% of max HP lost</strong> (retail <code>100</code>: a hit that would empty your HP bar fills the whole gauge, and every hit grants at least 1). At <code>0</code> being hit never feeds the gauge; at <code>200</code> it fills twice as fast.</p><p><strong>Negative values invert it</strong>: taking damage then <em>drains</em> AP, floored at an empty gauge. A manual tuning, unaffected by the seed; a negative setting makes AP-Boost accessories inert.</p></span></span></span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Measured per 100% of max HP lost: at retail <code>100</code> a hit that would empty your HP bar fills the whole gauge, and every hit grants at least 1. At <code>0</code> being hit never feeds the gauge; at <code>200</code> it fills twice as fast.</p><p><strong>Negative values invert it</strong>: taking damage <em>drains</em> AP, floored at empty, and AP-Boost accessories go inert. Unaffected by the seed. <a href="randomizer.html#ap-gauge-tuning">Details</a>.</p></span></span></span>
       </label>
       <div class="rom-opt rom-sub" id="rom-damage-ap-row">
         <label class="rom-opt-label" for="rom-damage-ap">&#8627; AP per 100% max-HP damage: <output id="rom-damage-ap-val">100</output></label>
@@ -520,13 +535,13 @@
 
       <label class="rom-check-row">
         <input type="checkbox" id="rom-enemy-scale-on">
-        <span>Enemy difficulty scale <span class="rom-opt-note">- multiply enemy stats 0.1x-5x; bosses get their own sliders</span>
-          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Multiplies <strong>every enemy's combat stats</strong> (HP, MP, attack, both defenses, INT and speed) by a factor from <code>0.1x</code> to <code>5x</code>. Nothing moves between monsters, so each keeps its own profile and its group shifts together.</p><p>Random encounters and bosses get their own sliders, so you can take the grind down and the set-pieces up in the same run. EXP, gold and drops are untouched, so a hard run is harder, not richer.</p><p><em>Simple</em> scales every stat of a group by one number; <em>Advanced</em> gives each stat of each group its own slider. A manual tuning, unaffected by the seed; the enemy action gauge is left alone, and the unwinnable Rim Elm sparring match stays as shipped.</p></span></span></span>
+        <span>Enemy difficulty scale <span class="rom-opt-note">- multiply enemy stats 0.1x-5x</span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Multiplies every enemy's combat stats (HP, MP, attack, both defenses, INT, speed) by one factor. Nothing moves between monsters, so each keeps its own profile. EXP, gold and drops are untouched: a hard run is harder, not richer.</p><p>Random encounters and bosses get their own sliders; <em>Advanced</em> gives each stat its own. The enemy action gauge and the unwinnable Rim Elm sparring match are left alone. Unaffected by the seed. <a href="randomizer.html#enemy-stat-scale">Details</a>.</p></span></span></span>
       </label>
       <div class="rom-opt rom-sub" id="rom-enemy-scale-row">
         <div class="rom-scale-mode">
           <span class="rom-opt-label">&#8627; Control
-            <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="What counts as a boss">?<span class="tip-pop" role="tooltip">Which enemies count as <strong>bosses</strong> is read off your disc's own encounter tables, not a hard-coded list: a fight the field script starts by name, that no random-encounter roll can produce. Everything the game can throw at you on a step is a <strong>random encounter</strong> - including the opening Rim Elm fights, which stay out of the boss group on purpose.</span></span></span>
+            <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="What counts as a boss">?<span class="tip-pop" role="tooltip">Which enemies count as <strong>bosses</strong> is read off your disc's own encounter tables: a fight the field script starts by name, that no random-encounter roll can produce. Everything that can jump you on a step is a <strong>random encounter</strong> - including the opening Rim Elm fights, on purpose.</span></span></span>
           <div class="seg" role="group" aria-label="Difficulty scale detail">
             <input type="radio" name="enemy_scale_mode" id="enemy-scale-simple" value="simple" checked><label for="enemy-scale-simple">Simple</label>
             <input type="radio" name="enemy_scale_mode" id="enemy-scale-advanced" value="advanced"><label for="enemy-scale-advanced">Advanced</label>
@@ -543,8 +558,8 @@
         </div>
 
         <div id="rom-enemy-scale-advanced-pane" hidden>
-          <p class="rom-opt-note rom-scale-hint">One multiplier per stat, per group; anything left at <code>1.0x</code> keeps its disc value exactly.
-            <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><code>HP 3.0x</code> on its own makes enemies spongy without making them lethal, and a high attack against a low defense makes them glass cannons. Legaia splits defense by attack height - <em>upper</em> resists high attacks, <em>lower</em> resists low ones.</span></span></p>
+          <p class="rom-opt-note rom-scale-hint">One multiplier per stat, per group; <code>1.0x</code> keeps the disc value.
+            <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><code>HP 3.0x</code> on its own makes enemies spongy without making them lethal; a high attack against a low defense makes glass cannons. Legaia splits defense by attack height - <em>upper</em> resists high attacks, <em>lower</em> resists low ones.</span></span></p>
 
           <p class="rom-scale-group-title">Random encounters</p>
           <div class="rom-scale-grid">
@@ -589,7 +604,7 @@
       <label class="rom-check-row">
         <input type="checkbox" id="rom-exp-scale-on">
         <span>Experience multiplier <span class="rom-opt-note">- scale every battle's EXP payout 0.1x-5x</span>
-          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Multiplies <strong>every monster's EXP reward</strong> by a factor from <code>0.1x</code> to <code>5x</code>. The victory payout, its split among living party members, and the flee-EXP grant all read the same per-monster value, so one dial scales them together; gold and item drops are untouched.</p><p>A scaled reward never drops below 1 EXP and caps at 65535. Pairs naturally with the difficulty scale - a hard run can pay better, or a breezy one less. A manual tuning, unaffected by the seed.</p></span></span></span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Multiplies every monster's EXP reward. Wins, the party split and the flee-EXP grant all read the same value; gold and drops are untouched. Never below 1 EXP, capped at 65535.</p><p>Pairs with the difficulty scale - a hard run can pay better, a breezy one less. Unaffected by the seed. <a href="randomizer.html#exp-scale">Details</a>.</p></span></span></span>
       </label>
       <div class="rom-opt rom-sub" id="rom-exp-scale-row">
         <label class="rom-opt-label" for="rom-exp-scale">&#8627; EXP scale: <output id="rom-exp-scale-val">1.0x</output></label>
@@ -599,7 +614,7 @@
       <label class="rom-check-row">
         <input type="checkbox" id="rom-seru-catch-on">
         <span>Seru catch rate <span class="rom-opt-note">- one flat absorb chance for every Seru monster</span>
-          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Sets the chance that a killing blow on a <strong>Seru monster</strong> absorbs its magic to one flat percent, replacing the per-monster retail rates (which run from 80% on an early Gimard down to 1% on the rarest late-game Seru).</p><p>At <code>100</code> every eligible kill absorbs; at <code>0</code> absorption never happens - a challenge run without Seru magic. Only the game's own capturable monsters are affected - nothing new becomes capturable - and the Ivory Book's +30-point bonus still applies on top.</p><p>A manual tuning, unaffected by the seed.</p></span></span></span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Replaces the per-monster retail rates (80% on an early Gimard down to 1% on the rarest late Seru) with one flat percent. <code>100</code> absorbs on every eligible kill; <code>0</code> disables absorption - a challenge run without Seru magic.</p><p>Only the game's own capturable monsters are affected, and the Ivory Book's bonus still applies on top. Unaffected by the seed. <a href="randomizer.html#seru-catch-rate">Details</a>.</p></span></span></span>
       </label>
       <div class="rom-opt rom-sub" id="rom-seru-catch-row">
         <label class="rom-opt-label" for="rom-seru-catch">&#8627; Catch chance: <output id="rom-seru-catch-val">100</output>%</label>
@@ -609,7 +624,7 @@
       <label class="rom-check-row">
         <input type="checkbox" id="rom-attack-count-on">
         <span>Enemy attack count <span class="rom-opt-note">- scale how many hits standard attacks land 0.1x-5x</span>
-          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Scales how many <strong>physical strikes</strong> an enemy's standard attack turn lands.</p><p>The game prices each attack move in AGL and lets a per-round AGL gauge afford as many strikes as fit, so this dial divides each attack's AGL price by the multiplier - at <code>2x</code> a two-hit enemy swings about four times, at <code>0.5x</code> about once.</p><p>AGL itself, spell casts, and every damage number stay retail, so it composes with the difficulty scale; an enemy that attacks in retail always keeps <em>at least one</em> hit per turn, and the engine's own 15-action queue bounds the top end. A manual tuning, unaffected by the seed.</p></span></span></span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>At <code>2x</code> a two-hit enemy swings about four times; at <code>0.5x</code> about once. Damage per hit, spell casts and every stat stay retail, so it composes with the difficulty scale.</p><p>An enemy that attacks in retail always keeps at least one hit per turn. Unaffected by the seed. <a href="randomizer.html#enemy-attack-count">Details</a>.</p></span></span></span>
       </label>
       <div class="rom-opt rom-sub" id="rom-attack-count-row">
         <label class="rom-opt-label" for="rom-attack-count">&#8627; Attack count: <output id="rom-attack-count-val">1.0x</output></label>
@@ -621,27 +636,29 @@
     <details class="rom-group" id="rom-art-overrides" open>
       <summary>Tactical-Art overrides <span class="rom-summary-note">AP cost, AP refund, damage per art</span></summary>
       <div class="rom-group-body">
-        <p class="rom-art-intro">Pick any Tactical Art and change what it costs in AP, make it <em>give</em> AP back, or change its damage. <strong>Super Arts</strong> - the five per-character finishers a chain of arts triggers - are in the same picker, under their own <em>&hellip; &ndash; Super Arts</em> group. A Super Art takes the damage change directly; its <strong>AP is the chain arts' AP</strong>, so the row names them and offers to add their rows for you.
-          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p><strong>AP</strong>: set what an art <em>costs</em> in AP (Spirit), or flip it to <em>give AP back</em> - a giving art becomes usable at any AP level and adds the amount you choose, up to the 100 cap, every time it lands in a combo.</p><p>Either way the amount is 1..100: the injected setting is one signed byte per art and <code>0</code> is its &ldquo;leave alone&rdquo; value, so a completely free art is not offered - use 1.</p><p>AP changes are <strong>per character</strong>, and the pause-menu arts list is rewritten to match; a giving art shows as <strong>0 AP</strong> there - the in-game marker for &ldquo;this one pays you&rdquo;.</p><p><strong>Damage</strong>: pick a per-hit damage tier, or turn its damage off; damage is keyed by the button combo rather than by character, so another character with the same combo changes too (each row's note says which).</p><p><strong>Super Arts and AP</strong>: firing a Super does cost you AP, but none of it is charged to the Super - it is the AP of the chain arts that trigger it, which is why every art in that chain has to be known and paid for first.</p><p>Retail works an art's cost out from its position in the character's arts list, and a Super Art has no position in that list, so there is no per-Super number to edit anywhere.</p><p>The Super Art row therefore names its chain arts and can add a row for each, which is where the AP you actually spend is set.</p><p>Those added rows arrive on <em>Keep original</em> while <strong>Show Super Arts</strong> is ticked, because an AP override and that toggle cannot both be applied - arming one is flagged the moment you do it rather than at the end.</p><p>AP overrides are <strong>mutually exclusive with Shiny Seru</strong> (both use the same injected-code arena).</p></span></span></p>
+        <p class="rom-art-intro">Pick any art and change its AP cost, make it <em>give</em> AP back, or change its damage.
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p><strong>AP</strong>: set what an art costs, or flip it to give AP back - a giving art is usable at any AP level and adds your amount (1..100, capped at 100) each time it lands. AP changes are per character; the pause-menu list is rewritten to match, showing <strong>0 AP</strong> for a giving art.</p><p><strong>Damage</strong>: pick a per-hit damage tier or turn the hits off. Damage is keyed by the button combo, so another character with the same combo changes too - each row's note says which.</p><p><strong>Super Arts</strong> sit in the same picker under their own group. A Super Art takes the damage change directly; its AP is really its <em>chain</em> arts' AP, so its row names them and offers to add their rows.</p><p>AP overrides share the injected-code arena with Shiny Seru, the Super Arts move list, the Super Arts Pack and the Delilas Challenge - one at a time. <a href="randomizer.html#arts-damage-power">Full details</a>.</p></span></span></p>
         <div id="rom-art-rows"></div>
         <button type="button" id="rom-art-add" class="rom-button rom-button-ghost rom-art-add">+ Add an art</button>
 
         <details class="rom-art-advanced">
           <summary>Advanced: raw <code>combo=value</code> lists (CLI syntax)</summary>
           <div class="rom-opt">
-            <label class="rom-opt-label" for="rom-arts-power">Tactical-Art power</label>
-            <span class="rom-opt-note">Rebalance a party Tactical Art's damage ("arts power-down"). One or more <code>combo=value</code> pairs, comma-separated - the combo is the art's input (<code>L/R/D/U</code>, e.g. <code>RDLDL</code> = Vahn's Burning Flare) and <code>value</code> is a power byte: <code>0x0C..0x1F</code> is a damage tier (a defence facet plus one of the multipliers 12/18/20/22/28, so a <em>lower</em> value powers the art down), or <code>0</code> disables its hits. Every per-strike power byte of the matched art is set to <code>value</code>. The CLI <code>legaia-patcher arts</code> lists every art's combo and current power tiers. Merged with the rows above; listing the same art both ways is an error.</span>
+            <label class="rom-opt-label" for="rom-arts-power">Tactical-Art power
+              <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p><code>combo=value</code> pairs, comma-separated. The combo is the art's input in <code>L/R/D/U</code> (<code>RDLDL</code> = Vahn's Burning Flare); <code>value</code> is a power tier <code>0x0C..0x1F</code> (lower = weaker) or <code>0</code> to disable the hits. Every per-strike power byte of the art is set to it.</p><p><code>legaia-patcher arts</code> lists every art's combo and current tiers. Merged with the picker rows; listing the same art both ways is an error.</p></span></span></label>
+            <span class="rom-opt-note">comma-separated <code>combo=tier</code></span>
             <input type="text" id="rom-arts-power" placeholder="e.g. RDLDL=0x16, UDU=0x0C" spellcheck="false" autocomplete="off">
           </div>
           <div class="rom-opt">
-            <label class="rom-opt-label" for="rom-super-art-power">Super Art power</label>
-            <span class="rom-opt-note">The CLI-syntax route to the same thing the <strong>&hellip; &ndash; Super Arts</strong> rows in the picker above do; entries from both are merged. One or more <code>name=value</code> pairs, <strong>comma-separated</strong> (names contain spaces, so spaces do not separate entries); <code>value</code> is the same power byte the field above takes: <code>0x0C..0x1F</code> is a damage tier, <code>0</code> disables the hits. A Super Art is not entered as a button combo and has no row in the game's arts-name table, so it cannot be reached by combo the way a regular art's picker row is - its name is the only key it has. It also costs no AP of its own - the chain arts that trigger it pay that, and their AP is adjustable on their own picker rows - so damage is the knob a Super Art itself carries. Names are matched ignoring case, spaces and punctuation. <code>legaia-patcher arts</code> lists every Super Art with the chain that triggers it.
-              <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>The fifteen names: <strong>Vahn</strong> - Tri-Somersault, Maximum Blow, Fire Tackle, Power Slash, Rolling Combo. <strong>Noa</strong> - Triple Lizard, Super Javelin, Super Tempest, Love You, Dragon Fangs. <strong>Gala</strong> - Back Punch x3, Super Ironhead, Rushing Crush, Heaven's Drop, Neo Static Raising.</p><p>Every per-strike power byte of the named Super Art is set to your value, keeping its hit count, so a four-hit finisher stays four hits.</p></span></span></span>
+            <label class="rom-opt-label" for="rom-super-art-power">Super Art power
+              <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p><code>name=value</code> pairs, <strong>comma-separated</strong> (names contain spaces). Same power byte as above: <code>0x0C..0x1F</code> a tier, <code>0</code> disables the hits; the hit count is kept. Names match ignoring case, spaces and punctuation.</p><p>A Super Art has no button combo of its own, so its name is its only key. <strong>Vahn</strong>: Tri-Somersault, Maximum Blow, Fire Tackle, Power Slash, Rolling Combo. <strong>Noa</strong>: Triple Lizard, Super Javelin, Super Tempest, Love You, Dragon Fangs. <strong>Gala</strong>: Back Punch x3, Super Ironhead, Rushing Crush, Heaven's Drop, Neo Static Raising.</p><p>Merged with the picker's Super Arts rows.</p></span></span></label>
+            <span class="rom-opt-note">comma-separated <code>name=tier</code></span>
             <input type="text" id="rom-super-art-power" placeholder="e.g. Tri-Somersault=0x1A, Heaven's Drop=0x0C" spellcheck="false" autocomplete="off">
           </div>
           <div class="rom-opt">
-            <label class="rom-opt-label" for="rom-arts-ap-grant">Tactical-Art AP-grant</label>
-            <span class="rom-opt-note">Make a party Tactical Art <em>grant</em> AP (Spirit) instead of costing it. One or more <code>[character:]combo=amount</code> pairs, comma-separated - the combo is the art's input (<code>L/R/D/U</code>, e.g. <code>Vahn:RDLDL</code>) and <code>amount</code> (1..100) is the AP added per use; the art becomes castable at any AP level and adds that much, clamped at the 100 cap, without polluting the end-of-turn refund, and its menu AP number is rewritten to <code>0</code>. The setting is keyed by <strong>(character, art row)</strong>, so nothing spills onto another character's art; leave the <code>character:</code> prefix off to hit every character holding that combo, each in its own slot. <code>legaia-patcher arts</code> lists each art's combo. Use the picker rows above for the matching <em>cost</em> side. <strong>Mutually exclusive with Shiny Seru</strong> - both reuse the same verified-dead SCUS regions, so enable only one.</span>
+            <label class="rom-opt-label" for="rom-arts-ap-grant">Tactical-Art AP-grant
+              <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p><code>[character:]combo=amount</code> pairs, comma-separated (<code>Vahn:RDLDL=10</code>). <code>amount</code> (1..100) is the AP the art grants per use instead of costing; it becomes castable at any AP level and its menu number reads <code>0</code>.</p><p>Keyed by (character, art), so nothing spills onto another character; leave the prefix off to hit every character holding that combo. Use the picker rows for the matching <em>cost</em> side. Shares the injected-code arena with Shiny Seru.</p></span></span></label>
+            <span class="rom-opt-note">comma-separated <code>[character:]combo=amount</code></span>
             <input type="text" id="rom-arts-ap-grant" placeholder="e.g. Vahn:RDLDL=10, Gala:LUU=25" spellcheck="false" autocomplete="off">
           </div>
         </details>
@@ -652,8 +669,8 @@
     <details class="rom-group" id="rom-texture-group" open>
       <summary>Texture replacement <span class="rom-summary-note">swap any texture for your own PNG</span></summary>
       <div class="rom-group-body">
-        <p class="rom-art-intro">Replace any texture on the disc with your own image: scan your disc to browse every texture, download one as a PNG, edit it, and upload your edit.
-          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>The replacement must keep the texture's exact pixel size; its color count must fit the texture's palette (or check the fold-colors box); alpha becomes PSX transparency (fully transparent, semi-transparent, opaque). <strong>raw</strong> textures always apply; <strong>lzs</strong> ones live inside compressed data and apply only when your edit re-compresses into the original's footprint - the preview tells you before anything is written. <strong>battle-equip</strong> is the party's in-battle art, one block per equipment variant, and has the tightest budget of all: it re-compresses into that record's own slot, and retail leaves as little as two spare bytes in one.</p><p>Some families can be viewed and exported but not written, and say so when you select one. Everything runs in this tab; the disc never leaves your browser.</p></span></span></p>
+        <p class="rom-art-intro">Scan your disc, download any texture as a PNG, edit it, and upload your edit.
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>The replacement must keep the texture's exact pixel size and fit its palette (or tick the fold-colors box); alpha becomes PSX transparency. The browser shows every texture, including the ones inside compressed data, the save-slot portraits, the party's in-battle art and every monster's battle skin - search by scene, size, equipment name or monster name.</p><p><strong>raw</strong> textures always apply; <strong>lzs</strong> and <strong>battle-equip</strong> ones live inside compressed data and apply only when your edit re-compresses into the original's footprint - the preview tells you before anything is written. Some families can be viewed but not written, and say so.</p><p>A monster sheet is shown through the palettes the model uses and its palettes are never rewritten - repaint with the colors already in the export. <a href="randomizer.html#texture-replacement">Details</a>.</p></span></span></p>
         <div class="rom-row">
           <button type="button" id="rom-tex-scan" class="rom-button rom-button-ghost">Scan my disc for textures</button>
           <span id="rom-tex-scan-note" class="rom-hint"></span>
@@ -674,7 +691,8 @@
           </div>
           <label class="rom-check-row">
             <input type="checkbox" id="rom-tex-quantize">
-            <span>Fold extra colors to the nearest palette color instead of failing (when the image has more colors than the texture's palette allows)</span>
+            <span>Fold extra colors to the nearest palette color instead of failing
+              <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">For when the image has more colors than the texture's palette allows.</span></span></span>
           </label>
           <div class="rom-tex-preview">
             <figure><canvas id="rom-tex-orig"></canvas><figcaption>Original</figcaption></figure>
@@ -689,8 +707,8 @@
         <div id="rom-tex-queue" class="rom-tex-queue"></div>
         <div class="rom-tex-pack">
           <h4>Change packs</h4>
-          <p class="rom-art-intro">Share your edits, or keep them. A pack is a single JSON file holding <em>your</em> images plus a fingerprint of each retail texture they replace - never any of the game's own pixels, so a pack is safe to publish. Importing one checks every entry against your disc and tells you which ones match.
-            <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Each entry records the texture's coordinates and a 64-bit hash of the original. On import, an entry whose hash does not match your disc is reported rather than applied - that happens on a different disc revision, or when you have already patched that texture.</p><p>Your queue is also saved in this browser, so a reload does not lose it. Nothing is uploaded.</p></span></span></p>
+          <p class="rom-art-intro">Share your edits as one JSON file, or import someone else's.
+            <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>A pack holds <em>your</em> images plus a fingerprint of each retail texture they replace - never any of the game's own pixels, so it is safe to publish. Importing checks every entry against your disc; an entry whose fingerprint does not match (a different disc revision, or a texture you already patched) is reported rather than applied.</p><p>Your queue is also saved in this browser, so a reload does not lose it. Nothing is uploaded.</p></span></span></p>
           <div class="rom-row rom-tex-pack-meta">
             <label class="rom-tex-file">Pack name <input type="text" id="rom-tex-pack-name" placeholder="My retexture" spellcheck="false" autocomplete="off"></label>
             <label class="rom-tex-file">Author <input type="text" id="rom-tex-pack-author" placeholder="you" spellcheck="false" autocomplete="off"></label>
@@ -702,7 +720,8 @@
           </div>
           <label class="rom-check-row">
             <input type="checkbox" id="rom-tex-pack-force">
-            <span>Import entries whose fingerprint does not match my disc (use when you have already patched that texture yourself)</span>
+            <span>Import entries whose fingerprint does not match my disc
+              <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Use when you have already patched that texture yourself.</span></span></span>
           </label>
           <div id="rom-tex-pack-status" class="rom-status"></div>
           <div id="rom-tex-pack-report" class="rom-tex-pack-report"></div>
@@ -715,7 +734,7 @@
       <summary>Equipment <span class="rom-summary-note">Arts-bar command costs, who can equip what</span></summary>
       <div class="rom-group-body">
         <h4 class="rom-edit-title">Arts-bar command costs &amp; owners
-          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Values are read from <strong>your</strong> disc. Each of the four Arts-bar commands is priced by the gear that fills it: <em>Left</em> and <em>Right</em> by the weapon and the Ra-Seru arm (Noa&rsquo;s weapon is her Right), <em>Down</em> and <em>Up</em> by the footwear.</p><p>The number is the AP one press charges, and the same byte sets how wide the pennant draws (<code>cost &minus; 6</code> px, and the command label has to fit inside it, so 24 is the floor and 30 is the lowest that reads cleanly).</p><p>Retail prices weapons at 30 favored-class / 42 off-class / 54 far off-class (the Astral Sword is Vahn&rsquo;s one 54) and every Ra-Seru and footwear record at 30; body and head gear price nothing.</p><p>Costs are authored per character in that character&rsquo;s battle file, so a column is that character&rsquo;s price, and a dash means that character cannot equip the item. The <em>V / N / G</em> boxes set who can equip it.</p><p>Tick a weapon on for someone whose file lacks it and the patcher carries the model over from the file that has it (highlighted cell, donor&rsquo;s price until you type another): the three player files are re-packed and the boundaries between them moved to make room, and past that the rebuilt file&rsquo;s records are parked in <code>DMY.DAT</code> (a developer-fixture file retail never loads) with the entry&rsquo;s header left in place - same-size image, still a PPF, room for every weapon on everyone.</p><p>What cannot be carried over: <strong>Ra-Seru forms, body, head and footwear</strong>.</p><p>Those records are the donor&rsquo;s whole re-sculpted limb or torso on the donor&rsquo;s skeleton, not an item that can be seated on someone else, so gear in those slots ticked on without a record uses the slot&rsquo;s <em>Default</em> record (top rows): default look, that row&rsquo;s cost.</p><p>Mechanism: <a href="../subsystems/arts-command-gauge.html">Arts command gauge</a>.</p></span></span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Values are read from <strong>your</strong> disc. Each Arts-bar command is priced by the gear that fills it: <em>Left</em> and <em>Right</em> by the weapon and the Ra-Seru arm, <em>Down</em> and <em>Up</em> by the footwear. The number is the AP one press charges and also sets how wide the pennant draws, so 24 is the floor and 30 the lowest that reads cleanly. Retail prices weapons at 30 favored / 42 off-class / 54 far off-class.</p><p>A column is that character's price; a dash means they cannot equip the item. The <em>V / N / G</em> boxes set who can.</p><p>Tick a weapon on for someone whose file lacks it and the patcher carries the model over from the file that has it (highlighted cell). Ra-Seru forms, body, head and footwear cannot be carried - they use the slot's <em>Default</em> record (top rows) instead.</p><p><a href="randomizer.html#equipment-editor">Full details</a> &middot; mechanism: <a href="../subsystems/arts-command-gauge.html">Arts command gauge</a>.</p></span></span>
         </h4>
         <div class="rom-equip-toolbar">
           <select id="rom-equip-slot" aria-label="Slot">
@@ -737,13 +756,15 @@
         <details class="rom-art-advanced">
           <summary>Advanced: raw token lists (CLI syntax)</summary>
           <div class="rom-opt">
-            <label class="rom-opt-label" for="rom-swing-cost">Command costs</label>
-            <span class="rom-opt-note"><code>CHAR:ITEM[:up]=COST</code>, comma-separated (<code>--swing-cost</code>) - e.g. <code>Vahn:0xBA=30</code>, <code>Gala:0x5E:up=42</code>, <code>Noa:default=42</code>; <code>ITEM</code> may be <code>default</code>, <code>raseru</code> or <code>feet</code>. Merged with the table.</span>
+            <label class="rom-opt-label" for="rom-swing-cost">Command costs
+              <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><code>CHAR:ITEM[:up]=COST</code>, comma-separated (the CLI's <code>--swing-cost</code>) - e.g. <code>Vahn:0xBA=30</code>, <code>Gala:0x5E:up=42</code>, <code>Noa:default=42</code>. <code>ITEM</code> may be <code>default</code>, <code>raseru</code> or <code>feet</code>. Merged with the table.</span></span></label>
+            <span class="rom-opt-note">comma-separated <code>CHAR:ITEM[:up]=COST</code></span>
             <input type="text" id="rom-swing-cost" placeholder="e.g. Vahn:0xBA=30" spellcheck="false" autocomplete="off">
           </div>
           <div class="rom-opt">
-            <label class="rom-opt-label" for="rom-equip-owner">Equip owners</label>
-            <span class="rom-opt-note"><code>ITEM=OWNERS</code> with <code>V</code>/<code>N</code>/<code>G</code>, <code>any</code> or <code>none</code> (<code>--equip-owner</code>) - e.g. <code>0xBA=any</code>. A weapon a new owner&rsquo;s file has no record for gets its model carried over (the summary says from whom, and where the records went); armour, headgear, footwear and Ra-Seru forms keep the default look. Merged with the table.</span>
+            <label class="rom-opt-label" for="rom-equip-owner">Equip owners
+              <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><code>ITEM=OWNERS</code> with <code>V</code>/<code>N</code>/<code>G</code>, <code>any</code> or <code>none</code> (the CLI's <code>--equip-owner</code>) - e.g. <code>0xBA=any</code>. A weapon the new owner's file lacks gets its model carried over; armour, headgear, footwear and Ra-Seru forms keep the default look. Merged with the table.</span></span></label>
+            <span class="rom-opt-note">comma-separated <code>ITEM=OWNERS</code></span>
             <input type="text" id="rom-equip-owner" placeholder="e.g. 0xBA=any" spellcheck="false" autocomplete="off">
           </div>
         </details>
@@ -765,58 +786,31 @@
     <pre id="rom-summary" class="rom-summary"></pre>
   </div>
 
-  <p class="note"><strong>Two files download:</strong> the patched <code>.bin</code> and a matching <code>.cue</code>. Keep them together and point your emulator at the <code>.cue</code>; to reuse your original <code>.cue</code>, rename the patched <code>.bin</code> to match its <code>FILE</code> line.</p>
+  <p class="note"><strong>Two files download:</strong> the patched <code>.bin</code> and a matching <code>.cue</code>. Keep them together and point your emulator at the <code>.cue</code>. A full disc is ~470&nbsp;MB, so patching needs a desktop browser with enough RAM. The patched image contains Sony data - it is for your own local play, <strong>do not redistribute it</strong>; to share a run, share the seed (or a PPF from the <a href="randomizer.html#cli">CLI</a>).</p>
 </section>
-
-<details class="about-data">
-  <summary>About this patcher - what each option does, and the fine print</summary>
-  <div class="about-body">
-
-  <p class="note"><strong>Heads up:</strong> a full disc is ~470&nbsp;MB, so patching needs a desktop browser with enough RAM and the download is the same size. The patched image contains Sony data: it is for your own local play, <strong>do not redistribute it</strong> - sharing a run is what the <a href="randomizer.html">CLI</a>'s seed + PPF patch are for.</p>
 
 <section class="doc-section" id="how">
-  <h3>What it does</h3>
-  <p>This is the same <a href="randomizer.html">randomizer / disc patcher</a> the CLI runs, compiled to WebAssembly. Each option is a deterministic, seeded edit; every randomizable category offers <strong>Shuffle</strong> (redistributes the existing set, difficulty preserved) or <strong>Randomize</strong> (draws fresh from the whole valid pool). Per-feature mechanics, table locations, and the code-injection details live on the <a href="randomizer.html">randomizer page</a>.</p>
-  <ul class="bullets">
-    <li><strong>Monster drops</strong> - reassigns the item each monster drops (and its chance).</li>
-    <li><strong>Random encounters</strong> - reassigns the monster ids in each scene's formations; <strong>Monster pool</strong> sets how wide a net is cast (Scene / Kingdom / World). Boss and scripted fights are never touched, and <strong>Solo strong fights</strong> makes an out-of-area heavy hitter show up alone rather than in a pack.</li>
-    <li><strong>Treasure chests</strong> - reassigns the item each chest gives. Quest / key / story items are kept static so progression items stay where the player expects them.</li>
-    <li><strong>Town shops</strong> - reassigns what each town store sells.</li>
-    <li><strong>Casino prizes</strong> - reassigns prize-exchange items; coin price and progression gate kept.</li>
-    <li><strong>Steal items</strong> - reassigns what each monster yields to the Evil God Icon; the steal chance is always preserved.</li>
-    <li><strong>Arts button combos</strong> - reassigns each Tactical Art's directional combo; input count kept, each character's combos stay unique, Miracle Arts left alone.</li>
-    <li><strong>Monster stats</strong> - redistributes each monster's combat stats (HP / MP / ATK / DEF&uarr; / DEF&darr; / INT / SPD); the AGL action gauge is left alone.</li>
-    <li><strong>Special-attack power</strong> - redistributes the per-move power of enemy specials &amp; Seru magic (not party Arts); animations, effects, and sound stay put.</li>
-    <li><strong>Element affinity</strong> - scrambles the 8&times;8 element matrix; <em>Shuffle</em> keeps the same number of weaknesses &amp; resistances.</li>
-    <li><strong>Spell MP costs</strong> - redistributes the costs of the named, costed spells; free enemy-tier entries never gain a cost.</li>
-    <li><strong>Equipment stat bonuses</strong> - redistributes gear stat bonuses <em>within each slot type</em>; equip restrictions and accessory passives never move.</li>
-    <li><strong>Equipment drops</strong> - a low per-battle chance (default 5%) of one extra random weapon / armor / accessory, via an injected code hook <em>on top of</em> the untouched normal drop.</li>
-    <li><strong>Experience on the run</strong> - a code hook banks 5% of a fled fight's experience into the party (vanilla awards nothing for fleeing).</li>
-    <li><strong>Enemy ally</strong> - a 20% chance per battle that one enemy starts charmed and fights its own side (not a controllable party member); multi-enemy fights only, so scripted solo fights can't softlock. How: <a href="../writeups/disc-patching/e-rodata-gap-code.html">code in the rodata gap</a>.</li>
-    <li><strong>Shiny Seru</strong> - a 2% chance per battle that a capturable enemy spawns as a translucent shiny with +35% stats; the Seru captured from it keeps a permanent +35% damage boost (captures <em>after</em> patching only). How: <a href="../writeups/disc-patching/e-rodata-gap-code.html">code in the rodata gap</a>.</li>
-    <li><strong>Weapon specialty</strong> - permutes which weapon class each character favors; an off-class weapon widens that character's <em>Arms</em> command. The Astral Sword stays always-wide.</li>
-    <li><strong>Equipment editor</strong> - a table of every equippable item read from your disc: set any weapon's Arts-bar swing cost per character (retail 30 favored / 42 off-class / 54 far - the Astral Sword is Vahn's one 54; the same byte is the button's width) and tick who can equip each item. A character given a weapon their battle file has no section for gets the model carried over from the file that has it (into <code>DMY.DAT</code> when the player files are full, so the image keeps its size); body, head, footwear and Ra-Seru forms cannot be carried and fall through to the default look, and the summary says so. Same edits as the CLI's <code>--swing-cost</code> / <code>--equip-owner</code>.</li>
-    <li><strong>Doors / exits</strong> - reassigns where scene-transition doors lead, re-paired (<em>two-way</em>) or independent (<em>one-way</em>). A few big overworld hubs whose data can't grow in place keep their original doors.</li>
-    <li><strong>House doors (experimental)</strong> - shuffles intra-town interior/exit door targets; the op is shared with NPC movement, so some actor positions scramble too.</li>
-    <li><strong>Starting items</strong> - replaces the new game's fixed Healing Leaf &times;5 with distinct random consumables, sharing the seed's slot capacity with the convenience toggles.</li>
-    <li><strong>Starting level</strong> - starts the party at the chosen level (up to 14) with stats and XP thresholds recomputed from the disc's own growth curves - real level-N stats, not a relabel.</li>
-    <li><strong>Tactical-Art overrides</strong> - pick any art by name and change what it does: set what it costs in AP, make it <em>give</em> AP back instead (your amount, 1..100, up to the native 100 cap), set its per-hit damage tier, or turn its damage off. AP changes are per character and update the pause-menu arts list too; damage is keyed by the button combo, so another character with the same combo changes with it - each row's note lists exactly which.</li>
-    <li><strong>Fishing prize prices / location names / Earth Egg threshold</strong> - structured value edits over the disc's own tables: reprice any fishing-exchange prize (the prize list itself is fixed on the disc), rename any of the 16 world-map location slots (31-char ASCII), and set the Sol Tower Earth-Egg coin threshold. Current values are read from your disc, in the browser.</li>
-    <li><strong>Texture replacement</strong> - scan the disc for every texture (the flat TIM catalog, the ones inside LZS-compressed sections, the save-slot portraits, the summon pages, the party's in-battle character art, and every monster's battle skin), download any as a PNG, and patch an edited PNG back: same size / bit depth / palette layout enforced, VRAM placement preserved, alpha mapped to PSX transparency, and compressed textures applied only when the edit re-compresses into the retail footprint. The battle art is searchable by the equipment it dresses - type <em>terra</em> to reach Noa's Ra-Seru armband - and every enemy and boss is searchable by name: type <em>songi</em> for all three of his fights, or <em>songi #179</em> for the transformed one. A monster sheet has no single colouring (each polygon reads its own palette), so it is shown through the palettes the model actually uses and its palettes are never rewritten - repaint with the colors already in the exported sheet. Same coordinates and rules as the CLI's <code>tim-list</code> / <code>tim-export</code> / <code>tim-replace</code>.</li>
-    <li><strong>Unused enemies</strong> - brings back two monsters the shipped game never places, &ldquo;Comm&rdquo; and the Evil Bat; needs <em>Randomize</em> encounters.</li>
-    <li><strong>Unused items</strong> - adds &ldquo;Something Good&rdquo; and the no-name accessory the randomizer calls &ldquo;Seru Bell&rdquo; to <em>Randomize</em> fills.</li>
-  </ul>
-  <p>The same seed always produces the same patched image, and the post-patch summary is spoiler-safe. Edits that can't be re-packed into their original footprint are skipped and reported rather than corrupting the disc.</p>
+  <h2>How it works</h2>
+  <p>This is the same <a href="randomizer.html">randomizer / disc patcher</a> the CLI runs, compiled to WebAssembly. Every option is a deterministic, seeded edit - the same seed and settings always produce the same disc - and the post-patch summary is spoiler-safe. Edits that cannot be re-packed into their original footprint are skipped and reported rather than corrupting the disc.</p>
+  <details class="disclosure">
+    <summary>Presets and modes, briefly</summary>
+    <div class="disclosure-body">
+      <ul class="bullets">
+        <li><strong>Vanilla</strong> leaves everything off. <strong>Item Mix-up</strong> shuffles loot only. <strong>Balanced</strong> shuffles loot, encounters (kingdom pool), arts and gear bonuses, turns on the code-hook extras and both bug fixes, and starts the party at level 5. <strong>Full Chaos</strong> randomizes everything with the world-wide monster pool. Editing any control flips the row to <em>Custom</em>.</li>
+        <li><strong>Shuffle</strong> permutes what is already on the disc, so totals and difficulty are preserved. <strong>Randomize</strong> draws each slot fresh from the valid pool.</li>
+        <li>Several code-hook features share one small arena of unused executable bytes, so only one of Shiny Seru, the Super Arts move list, the Super Arts Pack, the per-art AP overrides and the Delilas Challenge can be on at once; the page flags the conflict as soon as it exists.</li>
+        <li>The language pack is applied around the randomizer passes and validated against your disc first; the coverage report says what landed. Per-feature mechanics, table locations and the code-injection details are on the <a href="randomizer.html">randomizer page</a>.</li>
+      </ul>
+    </div>
+  </details>
 </section>
-
-  </div>
-</details>
 
 <section class="doc-section" id="see-also">
   <h2>See also</h2>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="randomizer.html">Randomizer / disc patcher</a>
+    <a href="translation.html">Translation packs</a>
     <a href="../writeups/disc-patching/index.html">How it works: disc-patching techniques</a>
     <a href="../formats/lzs.html">LZS compression</a>
     <a href="../subsystems/script-vm.html">Field / event script VM</a>

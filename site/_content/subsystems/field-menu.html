@@ -4,6 +4,21 @@
   <p class="lede">How the pause menu is built - the screen you open in the field to check Status, change Equipment, or flip Options. It turns out to be data-driven: a 52-entry <strong>window-descriptor table</strong> on the disc places every screen's bordered windows and names each one's content-renderer function, and the renderers draw window <em>contents</em> only - the gold 9-slice frame (corner/edge/fill tiles stretched to any size) is emitted by the caller. This page pins the table, every screen's layout to the pixel, and the clean-room port that redraws it all.</p>
 </header>
 
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <p>Press the menu button in a town and a set of bordered gold windows slides in from the screen edges: the command list, the money box, the party panel; pick Status and a different set slides in over it. None of those windows is hand-placed in code. Each screen is a <em>list of window ids</em>, each id is a row in one table on the disc giving the window's home rectangle and which function draws its contents, and the sliding is done by the <a href="actor-vm.html">actor / sprite VM</a> running a four-byte-per-instruction script. The renderers only ever draw <em>inside</em> a window; the frame is drawn by whoever opened it.</p>
+  <table>
+    <thead><tr><th>Question</th><th>Short answer</th><th>Section</th></tr></thead>
+    <tbody>
+      <tr><td>Where do the windows come from?</td><td>52 records at menu-overlay VA <code>0x801E4738</code>, one per window, with rect + content renderer.</td><td><a href="#window-table">Window table</a></td></tr>
+      <tr><td>How does a screen get picked?</td><td>A submenu index dispatches through the same sub-screen pointer table the save screen uses.</td><td><a href="#submenu-dispatch">Submenu dispatch</a></td></tr>
+      <tr><td>What does the Status page read?</td><td>The live <code>0x414</code>-byte character record - XP, next threshold, HP / MP, stats, spells, gear.</td><td><a href="#status-layout">Status</a>, <a href="#record-fields">Record fields</a></td></tr>
+      <tr><td>How does "Best Equipment" choose?</td><td>A candidate scan over the bag by slot type and stat delta.</td><td><a href="#equip-screen">Equip</a></td></tr>
+      <tr><td>Where are the options stored?</td><td>The options screen writes the live config words the audio and pad code read.</td><td><a href="#options-screen">Options</a></td></tr>
+    </tbody>
+  </table>
+</section>
+
 <section class="doc-section" id="window-table">
   <h2>Window descriptor table</h2>
   <p>The menu code lives in the <strong>menu overlay</strong> (a chunk of code the game streams into RAM on demand, at base <code>0x801CE818</code>); the <code>FUN_80xxxxxx</code> names below are RAM addresses in our disassembler trace of it. The centrepiece content renderer is <code>FUN_801D33D8</code>, which draws one party member's status / party panel - the page the Status, Magic, Moves, and Skills tabs open. Every position it emits is an offset from the caller-supplied window origin (<code>WX = *(i16*)(a0+0xa)</code>, <code>WY = *(i16*)(a0+0xc)</code>), resolved through the descriptor table.</p>
@@ -114,5 +129,28 @@
   <h2>Engine port</h2>
   <p>Every draw builder named here lives in <code>legaia-engine-ui</code>, not <code>legaia-engine-render</code>. <code>engine-render</code> re-exports the whole crate (<code>pub use legaia_engine_ui::*</code>), so an <code>engine-render::</code> path still compiles &mdash; but the code is in <code>engine-ui</code>, and that split is the point: <code>engine-ui</code> is the renderer-agnostic, wgpu-free leaf, which is what lets the browser play page build these same menus without linking wgpu.</p>
   <p>The clean-room engine parses the window-descriptor table from the user's disc at boot (<code>legaia_asset::menu_windows</code>) and frames each screen's window set with the reusable 9-slice primitive <code>engine-ui::menu_window_chrome_draws_for</code>, placed on the shared 320x240 boot-UI stage via <code>engine-ui::scale_stage_text_draws</code>. The status main panel renders through <code>engine-ui::status_screen_draws_for</code> at the byte-pinned offsets, hung off the id-28 content origin; satellites through <code>status_satellite_draws_for</code>; the top-level list / money box / party panel through <code>field_menu_draws_for</code> + <code>field_menu_info_draws_for</code>. The status page's icon primitives are ported from the <code>0x800732a4</code> UI-icon table records verbatim and pixel-verified against the golden menu captures: the LV / HP / MP labels (CLUT row 1), the AP gauge with its gouraud meter fill and value digits (CLUT row 4, via <code>engine-ui::status_icon_sprites_for</code>; the value feeds from the persistent record <code>+0x10E</code> AP), and the seven equipment-slot pictograms (CLUT row 8; the menu overlay's fixed <code>DAT_801e43f4</code> code array &mdash; fist / helmet / armor / boot / Goods ring). The satellites are sprite-ported at the traced offsets (<code>status_satellite_icon_sprites_for</code>: pointing hand, pager triangles, summary LV + ATR element icons), the title tabs wear the carved plaque via the shared <code>engine-ui::tab_banner_draws</code>, number fields sit on the retail fixed 8-px digit cells, and the parenthesised base/growth groups use the retail teal ink <code>(66,222,222)</code> with body text in the CLUT-7 white <code>(206,206,206)</code>. The Equip screen renders its retail four-window set through <code>equip_screen_draws_for</code> + <code>equip_screen_sprites_for</code> at the traced <code>FUN_801D21C0</code> / <code>FUN_801D2094</code> offsets, and the top-level menu renders the traced row / money-box / party-panel content (<code>field_menu_draws_for</code> + <code>field_menu_info_draws_for</code> + <code>field_menu_icon_sprites_for</code>, with the AP gauge shared through <code>ap_gauge_sprites</code>). The HP / MP number fields ink through the ported health-tier fns (<code>engine-ui::menu_hp_ink</code> / <code>menu_mp_ink</code>, from <code>FUN_800349EC</code> / <code>FUN_80035EA8</code>: red at 0 HP, orange at &le; max/4, gold at &le; max/2, white above &mdash; ink RGBs decoded from the string-CLUT rows at VRAM row 510). The Items and Magic screens render their retail four-window sets too (<code>items_screen_draws_for</code> / <code>magic_screen_draws_for</code> + their sprite builders: command window, 12-row list pages with the PAGE header and page-turn arrows, info windows with the disc-parsed item / spell descriptions, the id-17 renderer's extra widget box, and the caster window's MP <em>cur / max</em> through the tier ink), fed from <code>engine-core::pause_screens</code> with real bag counts and the executable's text tables &mdash; on both the native window and the browser play page. The Use flow's target pick renders the retail window-14 party panel (<code>target_panel_draws_for</code> / <code>target_panel_sprites_for</code> over <code>pause_screens::target_panel_model</code>, with the Water previews), and the Throw Out / Arrange routes run their traced state machines through <code>PauseItemsSession</code>. The two special Use routes that raise a <em>confirm window</em> &mdash; Door of Light (window 10, <code>FUN_801D1DAC</code>) and Incense (window 12, <code>FUN_801D1F10</code>) &mdash; open from the Use list and draw on both hosts through <code>engine-ui::confirm_prompt_draws</code> over <code>SpecialUseSession</code>. Still engine-styled: the Equip item-picker rows. Still unrouted: Door of Wind, whose submenu opens a destination <em>list</em> rather than a prompt.</p>
-  <p class="see-also">See also: <a href="save-screen.html">save screen</a> &middot; <a href="../formats/new-game-table.html">new-game table</a> &middot; <a href="../formats/spell-table.html">spell table</a> &middot; <a href="../formats/item-table.html">item table</a></p>
+</section>
+
+<section class="doc-section" id="more-in-doc">
+  <h2>What the full document adds</h2>
+  <p><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/field-menu.md" target="_blank" rel="noopener"><code>docs/subsystems/field-menu.md</code></a> also pins the live window structs, every submenu's state machine, the Items and Magic screens in full, the prize-exchange (ticket-counter) screen, the dialog reading box, the equip stat-compare panels, the battle readout tint law, the status-element badge, and the overlay-identity / VA-aliasing notes for the menu image. There is <strong>no inn screen</strong> in this overlay - an inn stay is field-VM script, see <a href="inn.html">inn</a>.</p>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="save-screen.html">Save screen</a>
+    <a href="actor-vm.html">Actor / sprite VM</a>
+    <a href="inventory.html">Inventory</a>
+    <a href="shop.html">Shop</a>
+    <a href="level-up.html">Level-up</a>
+    <a href="../formats/window-script.html">Window scripts</a>
+    <a href="../formats/save-record.html">Save record</a>
+    <a href="../formats/new-game-table.html">New-game table</a>
+    <a href="../formats/spell-table.html">Spell table</a>
+    <a href="../formats/item-table.html">Item table</a>
+    <a href="../formats/equipment-table.html">Equipment table</a>
+    <a href="../formats/accessory-passive-table.html">Accessory passives</a>
+  </div>
 </section>

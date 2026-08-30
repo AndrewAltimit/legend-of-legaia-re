@@ -82,7 +82,7 @@ canvas.world-canvas {
   <div class="breadcrumb"><a href="index.html">home</a> &middot; game world</div>
   <h1>Game world</h1>
   <p class="lede">
-    Every town, dungeon, and battlefield in the game, rebuilt in 3D from your own copy of it.
+    Every town, dungeon and battlefield in the game, rebuilt in 3D from your own copy of it.
     Pick a location from the navigator and its full map assembles in your browser - nothing is uploaded.
   </p>
 </header>
@@ -102,7 +102,7 @@ canvas.world-canvas {
 
     <div class="world-viewer" id="world-viewer" style="display: none;">
       <div class="world-nav">
-        <input type="search" id="world-nav-search" class="world-nav-search" placeholder="Filter locations…" autocomplete="off">
+        <input type="search" id="world-nav-search" class="world-nav-search" placeholder="Filter locations&hellip;" autocomplete="off">
         <div class="world-nav-list" id="world-nav-list"></div>
       </div>
       <div class="world-stage">
@@ -122,33 +122,45 @@ canvas.world-canvas {
 </section>
 
 <details class="about-data">
-  <summary>About the map viewer - assembly, controls, VR</summary>
+  <summary>How to use the map viewer - controls, what you are looking at, VR</summary>
   <div class="about-body">
     <p>
-      Pick a location from the navigator and its full map assembles in your browser, textured from
-      reconstructed PlayStation video memory, alongside its enemy roster, bosses, and shops. Nothing is
-      uploaded; your disc image never leaves your machine.
+      In the game you only ever see a location through a fixed camera, one screen at a time. Here the
+      whole map is laid out at once: the ground, the buildings, the props, textured the way the
+      PlayStation would have textured them. The navigator on the left lists every place the disc can
+      draw; the panel under the canvas shows what the walkthroughs say lives there (bosses, enemies,
+      shops, casino, fishing).
     </p>
-    <p>
-      Each location ties back to the short scene label the disc uses internally (like
-      <code>town0d</code>) via the <a href="formats/cdname.html">CDNAME name map</a>.
-    </p>
+    <ul>
+      <li><strong>Drag</strong> to pan, <strong>right-drag</strong> to pivot the camera, <strong>wheel</strong> to zoom.</li>
+      <li>The short code next to each name (<code>town0d</code>, <code>izumi</code>&hellip;) is the label the disc uses internally, via the <a href="formats/cdname.html">CDNAME name map</a>. "assets &rarr;" opens the same location in the <a href="viewer.html">asset viewer</a> piece by piece.</li>
+      <li><strong>.glb</strong> downloads the assembled map, textures included, for Blender or any glTF viewer.</li>
+      <li>Sky domes are hidden - seen from above they would cover the map.</li>
+    </ul>
     <h3>How the map assembles</h3>
     <p>
-      The map is assembled the way the game assembles it, from the scene's mesh pack, object grid, and heightfields - see <a href="formats/scene-bundles.html">scene bundles</a>. Sky domes are hidden (under this camera they'd cover the map). Drag to pan, right-drag to pivot, wheel to zoom.
+      A location is not stored as one model. The disc keeps a pack of small meshes, a grid saying
+      which mesh goes where, and heightfields for the ground; the game stitches them together on
+      entry, and this page does the same in your browser. The container layout is on the
+      <a href="formats/scene-bundles.html">scene bundles</a> page.
     </p>
     <h3>VR</h3>
     <p>
       With a VR headset, the <strong>VR</strong> button lets you step inside the assembled map over
       WebXR (Chrome/Edge with SteamVR as the OpenXR runtime, page served over
       <code>http://localhost</code> or https). If it can't start, the button explains what's missing.
+      Details on <a href="subsystems/vr-mode.html">VR mode</a>.
     </p>
   </div>
 </details>
 
 <section class="doc-section" id="towns">
   <h2>Towns</h2>
-  <p>Visitable settlements - NPC dialog, shops, the inn, and the save crystal. Each entry maps to a <code>town*</code>, <code>izumi</code>, <code>vell</code>, <code>geremi</code>, <code>balden</code>, <code>rayman</code>, <code>conc</code>, <code>station</code>, or <code>deene</code> CDNAME block.</p>
+  <p>
+    Places you walk around in without fighting: houses, shops, an inn, a save point. Each card
+    shows the town's vendors and any casino or fishing spot, and "View the map" loads it in the
+    viewer above (once a disc is open).
+  </p>
   <div class="tile-grid" id="towns-grid">
     <!-- Filled at runtime from world.json + scenes.json. -->
   </div>
@@ -156,22 +168,33 @@ canvas.world-canvas {
 
 <section class="doc-section" id="fields">
   <h2>Field areas &amp; dungeons</h2>
-  <p>Non-town field maps - mountains, caves, castle interiors, dream sequences, and the world-map overworld. Most use the <a href="formats/field-pack.html">field-pack</a> + <a href="formats/scene-bundles.html">scene-bundle</a> containers.</p>
+  <p>
+    Everywhere else: mountains, caves, castle interiors, dream sequences and the three overworld
+    kingdoms. These are where random encounters happen, so each card lists the enemies and bosses
+    found there.
+  </p>
   <div class="tile-grid" id="fields-grid">
     <!-- Filled at runtime. -->
   </div>
 </section>
 
 <section class="doc-section" id="related">
-  <h2>Related</h2>
+  <h2>How to read the cards</h2>
   <p>
-    Cards join the <a href="reference/gamedata.html">curated game-data tables</a> against the <a href="formats/cdname.html">CDNAME map</a>. Walkthrough name &harr; CDNAME label isn't always 1:1 (<code>balden</code> = Vidna, <code>geremi</code> = Jeremi), and a handful of field-pack labels have no walkthrough mapping.
+    Enemy, boss and shop facts come from the <a href="reference/gamedata.html">curated game-data
+    tables</a>; the map itself comes from your disc. Matching the two is a hand-made join: the
+    walkthrough name and the disc label are not always obviously related (<code>balden</code> is
+    Vidna, <code>geremi</code> is Jeremi), and a few disc labels have no walkthrough entry at all -
+    those cards say "CDNAME scene not yet pinned".
   </p>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
+    <a href="world-overview.html">World map in 3D</a>
+    <a href="shops.html">Shops &amp; vendors</a>
     <a href="npcs.html">NPC catalog</a>
+    <a href="formats/cdname.html">CDNAME map</a>
     <a href="formats/scene-bundles.html">Scene bundles</a>
-    <a href="subsystems/world-overview-viewer.html">World-overview viewer</a>
+    <a href="subsystems/field-locomotion.html">Field locomotion</a>
   </div>
 </section>
 

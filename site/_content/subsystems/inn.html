@@ -11,6 +11,19 @@
   <p>There is <em>also</em> an engine-side <code>InnSession</code> prompt (<code>engine-core::inn</code>, with its own cost window) which nothing on that path opens - see <a href="#open-items">Open items</a>.</p>
 </section>
 
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <div class="flow">
+    <span class="num">1</span><span class="layer">Talk</span><span class="desc">the innkeeper's record greets, quotes the price, asks the question</span><span class="crate">0x1F pages</span>
+    <span class="num">2</span><span class="layer">Yes / No</span><span class="desc">a 2-option picker whose Yes jump lands on the gold gate</span><span class="crate">op 0x2A</span>
+    <span class="num">3</span><span class="layer">Gate</span><span class="desc">if gold &lt; cost, skip to the can't-afford line</span><span class="crate">op 0x4E sub-3</span>
+    <span class="num">4</span><span class="layer">Debit</span><span class="desc">subtract the literal cost from the purse</span><span class="crate">op 0x3A</span>
+    <span class="num">5</span><span class="layer">Sleep</span><span class="desc">BGM release, fade, waits</span><span class="crate">ops 0x35 / 0x34 / 0x4A</span>
+    <span class="num">6</span><span class="layer">Restore</span><span class="desc">one heal op per party slot - the only inn-specific opcode in the engine</span><span class="crate">4C 82 &lt;slot&gt;</span>
+  </div>
+  <p>Every step is an ordinary field-VM instruction; the price is a number inside the script, so two inns in two towns differ only in that literal.</p>
+</section>
+
 <section class="doc-section" id="trigger">
   <h2>The trigger: the picker's own jump table</h2>
   <p>There is no &ldquo;is this dialogue an inn?&rdquo; test anywhere - no opcode, no flag, no table of innkeepers. The hand-off from the offer to the restore is the <strong>option picker's per-option jump</strong>: each menu entry is a signed relative displacement, and the innkeeper's record is laid out so the <em>Yes</em> entry points at the gold gate. Answering the question <em>is</em> the trigger.</p>
@@ -114,7 +127,7 @@ A2 F8 &lt;clip&gt;  AC F8 08  AD F8 08    ; play a player clip, clear its end
 
 <section class="doc-section" id="full-reference">
   <h2>Full reference</h2>
-  <p>Complete flow and provenance at <code>docs/subsystems/inn.md</code>. Source: <code>crates/engine-core/src/inn.rs</code>, scanner <code>legaia_asset::inn_costs</code>.</p>
+  <p>Complete flow and provenance at <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/inn.md" target="_blank" rel="noopener"><code>docs/subsystems/inn.md</code></a>. Source: <code>crates/engine-core/src/inn.rs</code>, scanner <code>legaia_asset::inn_costs</code>.</p>
 </section>
 
 <section class="doc-section" id="see-also">
@@ -125,5 +138,8 @@ A2 F8 &lt;clip&gt;  AC F8 08  AD F8 08    ; play a player clip, clear its end
     <a href="script-vm.html">Field/event VM</a>
     <a href="save-screen.html">Save screen</a>
     <a href="level-up.html">Level-up</a>
+    <a href="field-menu.html">Field menu (no inn screen)</a>
+    <a href="../formats/man-relocation.html">MAN relocation</a>
+    <a href="../tooling/rom-patcher.html">ROM patcher</a>
   </div>
 </section>

@@ -1,8 +1,19 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; psx tim (texture)</div>
   <h1>PSX TIM (texture) <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">TIM is the standard PlayStation texture-image format: a small header, an optional palette, and a block of pixels stamped straight into video memory. Every texture in Legend of Legaia - character skins, floors, UI panels, fonts - is a TIM. The format itself is well-documented externally; this page covers how <em>Legaia</em> uses it, including a few habits that break naive tools.</p>
+  <p class="lede">Every surface you see in Legend of Legaia - Vahn's jacket, the cobbles of Rim Elm, the gold border round a menu, the letters of the dialog font - is painted from a texture, and every one of those textures is a TIM. TIM is the standard PlayStation texture-image format: a small header, an optional palette, and a block of pixels stamped straight into video memory. The format itself is well-documented externally; this page covers how <em>Legaia</em> uses it, including a few habits that break naive tools, and the write side that lets a modder swap a texture on the disc.</p>
 </header>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>In the game</dt><dd>Every texture: character skins, floors and walls, the world map, UI panels and cursors, the menu glyphs and dialog font.</dd>
+    <dt>Magic</dt><dd><code>0x00000010</code> as the first u32</dd>
+    <dt>Lives in</dt><dd>Inside <a href="prot.html">PROT.DAT</a> entries (usually behind <a href="lzs.html">LZS</a>), inside <a href="tim-pack.html">TIM-packs</a> and <a href="field-pack.html">field-packs</a>, and a few in the unindexed head gap of <code>PROT.DAT</code> before the first entry</dd>
+    <dt>Parser</dt><dd><code>crates/tim</code> (<code>parse</code>, <code>parse_strict</code>, PNG export, <code>encode</code> PNG-to-TIM); catalogs in <code>legaia_asset::tim_catalog</code> / <code>tim_deep_catalog</code> / <code>tim_labels</code></dd>
+    <dt>Confidence</dt><dd>Confirmed - public format; Legaia's upload habits byte-checked against retail VRAM dumps.</dd>
+  </dl>
+</section>
 
 <section class="doc-section" id="overview">
   <h2>What a TIM is</h2>
@@ -13,6 +24,16 @@ u32  flags       // bits 0..2 = pixel mode (0=4bit, 1=8bit, 2=16bit, 3=24bit)
 [CLUT block if flag bit 3 set]
 [image block]</code></pre>
   <p>Each block has its own header <code>(u32 size, u16 dx, u16 dy, u16 w, u16 h)</code> followed by pixel data - <code>(dx, dy)</code> being the framebuffer position it loads to.</p>
+  <h3 id="header-layout">Byte layout</h3>
+  <table class="layout">
+    <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>+0x00</code></td><td>4</td><td>id</td><td><code>0x00000010</code></td></tr>
+      <tr><td><code>+0x04</code></td><td>4</td><td>flags</td><td>bits 0..2 pixel mode (0 = 4bpp, 1 = 8bpp, 2 = 16bpp, 3 = 24bpp); bit 3 = CLUT block present; bits 4+ must be zero on a real TIM</td></tr>
+      <tr><td><code>+0x08</code></td><td>12 + data</td><td>CLUT block (optional)</td><td><code>u32 size</code> (= 12 + w*h*2), <code>u16 dx, dy</code> (VRAM position), <code>u16 w, h</code>, then <code>w*h</code> BGR555 palette entries; <code>h</code> &gt; 1 = several palette rows</td></tr>
+      <tr><td>after CLUT</td><td>12 + data</td><td>image block</td><td>Same 12-byte header; <code>w</code> is in 16-bit VRAM halfwords (a 4bpp image 256 texels wide has <code>w = 64</code>), then the packed pixels</td></tr>
+    </tbody>
+  </table>
   <p>In the extracted streaming files, all observed TIMs use <strong>type 8</strong> (4-bit indexed with CLUT). They're VRAM-ready textures.</p>
   <p>Most TIMs on the disc live inside <code>PROT.DAT</code> (the disc's single big archive; everything except movies and audio streams lives in its 1233 numbered entries), often behind a layer of <a href="lzs.html">LZS compression</a>. A few interesting ones live <em>outside</em> any numbered entry - more on that below.</p>
 </section>
@@ -76,7 +97,34 @@ asset tim-deep-catalog extracted/PROT.DAT --rollup                 # count + dig
   <h3>Semantic labels</h3>
   <p>The catalog records <em>where</em> each texture lives, not <em>what</em> it is. <code>legaia_asset::tim_labels</code> is a curated label table that answers the &ldquo;what&rdquo;. It is keyed by <strong>content fingerprint</strong> (the FNV-1a-64 the catalogs already record), so a single label propagates to every catalog id sharing those bytes - duplicates and textures aliased across overlapping PROT entries - and one table serves both the raw and the deep tier. Labels show as a <code>label</code> column in the reference TSVs and beside each identified texture in the viewer.</p>
   <p>A label is either a <strong>coarse visual category</strong> assigned by inspecting the decoded thumbnail (<code>environment</code>, <code>terrain</code>, <code>foliage</code>, <code>character</code>, <code>ui-text</code>, <code>effect</code>, <code>other</code>) or a <strong>precise reverse-engineered role</strong> for a texture whose loader site is pinned (the menu-glyph atlas, the main-title sprite sheet, the four <code>init.pak</code> publisher / warning logos, and the load-screen UI sheet + party portraits + empty-slot frame). Both are our own observations - not asset strings or pixel data - so the table ships in the repo, like the ground-truth gamedata tables.</p>
-  <p class="hint">Deriving an &ldquo;NPC palette&rdquo; label <em>structurally</em> from the CLUT load position <code>fb=(0,&nbsp;479)</code> is unsound: nearly every 256&times;256 4bpp scene/field texture page parks its CLUT in that same bottom VRAM band (see <a href="npc-palette.html">NPC palettes</a>), so the rule conflates floors / walls / terrain with NPC colour tables. Labels are content-keyed observations, not a CLUT heuristic.</p>
+  <p>The coarse categories come from reviewing decoded thumbnails: <code>asset tim-render-distinct</code> decodes each distinct texture (deduped by fingerprint) to a local PNG and <code>scripts/asset-investigation/montage_tims.py</code> lays them into contact sheets. Those PNGs are decoded pixel data and stay local - only the fingerprint-to-label table is committed.</p>
+  <details class="disclosure">
+    <summary>History: the structural "NPC palette" label</summary>
+    <div class="disclosure-body">
+      <p>An earlier revision derived an &ldquo;NPC palette&rdquo; label <em>structurally</em> from the CLUT load position <code>fb=(0,&nbsp;479)</code>. That is unsound: nearly every 256&times;256 4bpp scene/field texture page parks its CLUT in that same bottom VRAM band (see <a href="npc-palette.html">NPC palettes</a>), so the rule conflated floors / walls / terrain with NPC colour tables. Labels are content-keyed observations, not a CLUT heuristic. Other retired readings live on <a href="../reference/re-do-not-re-walk.html">do not re-walk</a>.</p>
+    </div>
+  </details>
+</section>
+
+<section class="doc-section" id="encoding">
+  <h2>Encoding: PNG to TIM (texture replacement)</h2>
+  <p>Texture swapping is the most visible kind of mod - a recoloured Vahn, a new sign in a shop - and it only works if the replacement is the <em>same size</em> as the original so it can drop into the same slot on the disc. <code>legaia_tim::encode</code> is the write side of the parser: it builds a TIM whose <strong>structure is copied verbatim from an original</strong> (pixel mode, image and CLUT dimensions, every <code>fb_x</code>/<code>fb_y</code> VRAM placement field on both blocks - the game depends on those coordinates, e.g. the <a href="npc-palette.html">row-479 CLUT sharing</a>) and whose pixels come from caller-supplied RGBA, typically a decoded PNG. This is the encoder behind <code>legaia-patcher tim-replace</code> and the <a href="../tooling/rom-patcher.html">ROM patcher</a> page's texture panel.</p>
+  <h3 id="alpha-stp">Alpha to STP mapping</h3>
+  <p>PSX texels carry a 1-bit STP (semi-transparency) flag, not an alpha channel. The encoder maps 8-bit alpha as:</p>
+  <table class="layout">
+    <thead><tr><th>Alpha</th><th>Encoded texel</th></tr></thead>
+    <tbody>
+      <tr><td><code>0</code></td><td><code>0x0000</code> - transparent black (the GPU skips it; RGB is ignored)</td></tr>
+      <tr><td><code>1..=254</code></td><td>STP set + RGB truncated to 5 bits/channel (semi-transparent when the primitive blends)</td></tr>
+      <tr><td><code>255</code></td><td>STP clear + RGB truncated - <strong>except opaque pure black</strong>, which becomes <code>0x8000</code> (STP-only black; plain <code>0x0000</code> would read back transparent)</td></tr>
+    </tbody>
+  </table>
+  <h3 id="original-colour-reuse">Original-colour reuse and palette fitting</h3>
+  <ul class="bullets">
+    <li>Before the alpha rule applies, the encoder reuses the original wherever the new image asks for a colour the original already displays: a pixel whose position held the same colour keeps its original index / texel verbatim, and other palette hits reuse the first entry that decodes to the colour. Untouched regions keep the original's STP choices, and <code>encode(decode(tim))</code> reproduces the original TIM <strong>byte-for-byte</strong> - a disc-gated regression pins that identity across the entire raw catalog.</li>
+    <li>Indexed modes must fit the palette (16 / 256 distinct 15-bit colours). Colours already in the original palette are free; new colours overwrite slots the new image no longer references. Overflow is a hard error listing the offending pixels, or - behind an explicit quantize opt-in - the least-frequent extras fold to their nearest palette colour.</li>
+    <li>When any palette slot changes, the rebuilt palette is <strong>replicated into every CLUT row</strong> (multi-palette variants would otherwise recolour the new indices with stale rows); an untouched palette keeps the whole original CLUT block byte-identical.</li>
+  </ul>
 </section>
 
 <section class="doc-section" id="vram-emulation-in-the-engine-port">
@@ -92,6 +140,15 @@ asset tim-deep-catalog extracted/PROT.DAT --rollup                 # count + dig
     <a href="tmd.html">Legaia TMD</a>
     <a href="tim-pack.html">TIM-pack</a>
     <a href="npc-palette.html">NPC palettes</a>
+    <a href="field-pack.html">Field-pack bundles</a>
     <a href="../subsystems/renderer.html">Renderer</a>
+    <a href="../subsystems/save-screen.html">Save screen (sprite sources)</a>
+  </div>
+  <div class="see-also">
+    <span class="see-also-label">Demo / tooling</span>
+    <a href="../viewer.html">Asset viewer (TIM catalog)</a>
+    <a href="../tooling/rom-patcher.html">ROM patcher (texture replacement)</a>
+    <a href="../tooling/randomizer.html">Randomizer / disc patcher</a>
+    <a href="../tooling/extraction.html">Extraction pipeline</a>
   </div>
 </section>

@@ -1,13 +1,22 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; guides &middot; getting started</div>
   <h1>Getting started with the release tools</h1>
-  <p class="lede">For anyone who downloaded a release archive from the project's GitHub Releases page: a directory of prebuilt command-line binaries, two license files, and a short README.txt. No Rust toolchain, no source checkout - just your own disc image and a terminal.</p>
+  <p class="lede">You have a copy of <em>Legend of Legaia</em> on a disc, and you want to see what is on it - the textures, the music, the monster models, the scripts. This page gets you from a downloaded release archive to a folder full of readable files in four steps. No Rust toolchain, no source checkout: just your own disc image and a terminal.</p>
 </header>
 
-<section class="doc-section" id="bring-your-own-disc">
-  <h2>Bring your own disc</h2>
-  <p>One rule shapes everything here: <strong>the project ships no Sony-owned bytes.</strong> The archive contains only the project's own compiled tools. Every tool operates on a disc image <em>you</em> supply - a raw Mode 2/2352 <code>.bin</code> dump of your own <em>Legend of Legaia</em> (USA) disc, <code>SCUS-94254</code>. A <code>.cue</code> sheet is accepted anywhere a disc image is: the referenced <code>BINARY</code> track is resolved automatically.</p>
-  <p>Commands on this page use the bare <code>./tool</code> form, as run from inside the unpacked archive directory. If you build from source instead, the same binaries land in <code>target/release/</code> (<code>cargo build --release</code>), so substitute <code>./target/release/tool</code>.</p>
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <div class="flow">
+    <div class="num">1</div><div class="layer">Download + verify the archive</div><div class="desc">One archive per platform, checked against <code>SHA256SUMS</code>.</div><div class="crate">sha256sum</div>
+    <div class="num">2</div><div class="layer">Check your disc image</div><div class="desc">Confirms the dump is the USA build the tools target.</div><div class="crate">disc-extract verify</div>
+    <div class="num">3</div><div class="layer">Extract everything</div><div class="desc">About five seconds, roughly 1.1 GB, one <code>extracted/</code> tree.</div><div class="crate">legaia-extract</div>
+    <div class="num">4</div><div class="layer">Pick a tool</div><div class="desc">Per-format extractors, the engine, the viewer, the patcher.</div><div class="crate">see the tool index</div>
+  </div>
+  <div class="notice">
+    <div class="notice-title">Bring your own disc</div>
+    <p>One rule shapes everything here: <strong>the project ships no Sony-owned bytes.</strong> The archive contains only the project's own compiled tools. Every tool operates on a disc image <em>you</em> supply - a raw Mode 2/2352 <code>.bin</code> dump of your own <em>Legend of Legaia</em> (USA) disc, <code>SCUS-94254</code>. A <code>.cue</code> sheet is accepted anywhere a disc image is: the referenced <code>BINARY</code> track is resolved automatically.</p>
+  </div>
+  <p class="hint">Commands on this page use the bare <code>./tool</code> form, as run from inside the unpacked archive directory. If you build from source instead, the same binaries land in <code>target/release/</code> (<code>cargo build --release</code>), so substitute <code>./target/release/tool</code>.</p>
 </section>
 
 <section class="doc-section" id="download-verify">
@@ -18,26 +27,38 @@
     <li><code>legaia-tools-&lt;version&gt;-aarch64-unknown-linux-gnu.tar.gz</code> (Linux on ARM)</li>
     <li><code>legaia-tools-&lt;version&gt;-x86_64-pc-windows-gnu.zip</code> (Windows)</li>
   </ul>
-<pre><code>sha256sum -c SHA256SUMS --ignore-missing
-tar -xzf legaia-tools-&lt;version&gt;-x86_64-unknown-linux-gnu.tar.gz
-cd legaia-tools-&lt;version&gt;-x86_64-unknown-linux-gnu
-./legaia-extract --version</code></pre>
+  <p>Verify and unpack:</p>
+  <div class="cli"><code>sha256sum -c SHA256SUMS --ignore-missing</code></div>
+  <div class="cli"><code>tar -xzf legaia-tools-&lt;version&gt;-x86_64-unknown-linux-gnu.tar.gz &amp;&amp; cd legaia-tools-&lt;version&gt;-x86_64-unknown-linux-gnu</code></div>
+  <div class="cli"><code>./legaia-extract --version</code></div>
   <p>Every binary answers <code>--version</code> and <code>--help</code>; subcommand help (<code>./asset monster-archive --help</code>) states where each input comes from.</p>
 </section>
 
 <section class="doc-section" id="check-disc">
   <h2>2 &middot; Check your disc image</h2>
-<pre><code>./disc-extract verify "/path/to/Legend of Legaia (USA).bin"</code></pre>
+  <p>The fingerprint check tells you whether the tools will recognise your dump before you spend time on it.</p>
+  <div class="cli"><code>./disc-extract verify "/path/to/Legend of Legaia (USA).bin"</code></div>
   <p>A good USA dump prints:</p>
-<pre><code>[ok] matches: Legend of Legaia (USA) - SCUS-94254</code></pre>
+<pre><code>[ok] matches: Legend of Legaia (USA) - SCUS-94254 - Mode2/2352 .bin</code></pre>
   <p>An unrecognized dump (a PAL disc, a re-track, a bad rip) prints an <code>[unknown]</code> line with the computed SHA-256 instead of failing - the extraction tools still run on it, but the fingerprints, offsets, and the randomizer's patches all target the USA build. A file that is not a Mode 2/2352 image at all is rejected up front with <code>not a Mode2/2352 disc image: &lt;path&gt;</code>.</p>
 </section>
 
 <section class="doc-section" id="one-shot-extract">
   <h2>3 &middot; Extract everything in one shot</h2>
-<pre><code>./legaia-extract "/path/to/Legend of Legaia (USA).bin" --out extracted</code></pre>
-  <p>On a modern machine this takes about five seconds and writes roughly 1.1&nbsp;GB. The pipeline runs eight steps: disc verify, ISO9660 walk (the disc's 45 files), <code>PROT.DAT</code> split (1233 entries, named via <code>CDNAME.TXT</code>), per-entry format categorization, streaming sub-asset extraction, streaming-TIM PNG conversion, the TIM-catalog TSVs, CD-XA demux to per-channel WAVs (316 of them), and finally the dialog-font artifacts. Skip flags exist for each slow or optional step: <code>--skip-verify</code>, <code>--skip-png</code>, <code>--skip-xa</code>, <code>--skip-catalog</code>, <code>--skip-font</code>.</p>
-  <p>What lands where:</p>
+  <div class="cli"><code>./legaia-extract "/path/to/Legend of Legaia (USA).bin" --out extracted</code></div>
+  <p>On a modern machine this takes about five seconds and writes roughly 1.1&nbsp;GB. A disc-fingerprint check runs first, then eight numbered steps, each logged as <code>step N/8</code>:</p>
+  <ol>
+    <li>ISO9660 walk - the disc's 45 files.</li>
+    <li><code>PROT.DAT</code> split - 1233 entries, named via <code>CDNAME.TXT</code>.</li>
+    <li>Per-entry format categorization.</li>
+    <li>Streaming sub-asset extraction.</li>
+    <li>Streaming-container TIMs &rarr; PNG.</li>
+    <li>CD-XA demux &rarr; per-channel WAVs (316 of them).</li>
+    <li>The TIM-catalog TSVs.</li>
+    <li>The dialog-font artifacts.</li>
+  </ol>
+  <p>Skip flags exist for the verify pass and for each slow or optional step: <code>--skip-verify</code>, <code>--skip-png</code>, <code>--skip-xa</code>, <code>--skip-catalog</code>, <code>--skip-font</code>.</p>
+  <h3>What lands where</h3>
 <pre><code>extracted/
 ├── PROT.DAT                 - the game's main archive, raw copy
 ├── CDNAME.TXT               - entry name map
@@ -50,11 +71,19 @@ cd legaia-tools-&lt;version&gt;-x86_64-unknown-linux-gnu
 ├── prot_tim_catalog.tsv     - texture inventory (raw TIMs)
 └── prot_tim_deep_catalog.tsv - texture inventory (TIMs inside LZS)</code></pre>
   <p>The final summary points at the texture path: bulk texture export is a separate two-command step (<code>asset tim-scan</code> + <code>tim convert-dir</code>) covered in <a href="extracting-assets.html">extracting assets</a>. Everything downstream - the <a href="extracting-assets.html">asset scenarios</a>, the <a href="playing-and-viewing.html">engine and viewers</a>, the <a href="modding-and-translation.html">modding tools</a> - reads either this <code>extracted/</code> tree or the disc image directly.</p>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../formats/disc.html">Disc layout</a>
+    <a href="../formats/prot.html">PROT.DAT</a>
+    <a href="../formats/cdname.html">CDNAME.TXT</a>
+    <a href="../tooling/extraction.html">Per-stage pipeline</a>
+  </div>
 </section>
 
 <section class="doc-section" id="tool-index">
   <h2>4 &middot; The tools at a glance</h2>
-  <p>Pipeline and per-format extractors:</p>
+  <p>The archive is a toolbox rather than one program. Three groups: the extractors that turn disc bytes into files, the programs that play or edit the game, and the aids you reach for once you start reverse-engineering yourself.</p>
+  <h3>Pipeline and per-format extractors</h3>
   <table>
     <thead><tr><th>Binary</th><th>What it's for</th></tr></thead>
     <tbody>
@@ -72,7 +101,7 @@ cd legaia-tools-&lt;version&gt;-x86_64-unknown-linux-gnu
       <tr><td><code>font-extract</code></td><td>Dialog-font atlas + width table, straight from the disc.</td></tr>
     </tbody>
   </table>
-  <p>Game-data, playing, and modding:</p>
+  <h3>Game-data, playing, and modding</h3>
   <table>
     <thead><tr><th>Binary</th><th>What it's for</th></tr></thead>
     <tbody>
@@ -84,7 +113,7 @@ cd legaia-tools-&lt;version&gt;-x86_64-unknown-linux-gnu
       <tr><td><code>cheat-tool</code></td><td>GameShark cheat-database parser with the Legaia NTSC-U databases built in.</td></tr>
     </tbody>
   </table>
-  <p>Reverse-engineering aids (useful once you go deeper):</p>
+  <h3>Reverse-engineering aids</h3>
   <table>
     <thead><tr><th>Binary</th><th>What it's for</th></tr></thead>
     <tbody>
@@ -110,5 +139,6 @@ cd legaia-tools-&lt;version&gt;-x86_64-unknown-linux-gnu
     <span class="see-also-label">Reference</span>
     <a href="../formats/index.html">Format specs</a>
     <a href="../tooling/extraction.html">Per-stage pipeline reference</a>
+    <a href="../viewer.html">Browser asset viewer</a>
   </div>
 </section>

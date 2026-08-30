@@ -1,19 +1,37 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; new-game table</div>
   <h1>New-game starting-party table <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">Where a brand-new game comes from: the starting party's stats and names live in a small static
-  table in <code>SCUS_942.54</code> (the game's main executable on the disc) - four 26-byte rows, one each for
-  Vahn, Noa, Gala, and Terra - the later rows are the templates used as each character is introduced, since
-  only Vahn has joined at a true New Game. When the title
-  screen's NEW GAME row is confirmed, the boot chain (<code>FUN_80025B64</code> &rarr;
-  <code>FUN_801D6704</code>; <code>FUN_80xxxxxx</code> names are Ghidra-traced functions) expands these rows
-  into the live per-character records at <code>0x80084708 + n&times;0x414</code>. Two details worth knowing up
-  front: the starting inventory is <em>not</em> a table at all - Healing Leaf &times;5 is hard-coded as
-  instructions (<a href="#inventory">below</a>) - and the level number the game displays is a stored byte, not
-  something recomputed from experience (<a href="#progression">below</a>). The opening scene is
-  <code>town01</code> (Rim Elm) - the executable's default map-name buffer at <code>0x8007050C</code> holds the
-  literal <code>"town01"</code>.</p>
+  <p class="lede">Pick NEW GAME on the title screen and Vahn wakes up in Rim Elm at level 1 with 180 HP, five
+  Healing Leaves and 500 gold. Where does that come from? The stats and names are a tiny static table in
+  <code>SCUS_942.54</code> - four 26-byte rows, one each for Vahn, Noa, Gala and Terra - that the seed routine
+  expands into the live per-character records; the starting inventory and the gold are <em>not</em> table data
+  at all but literals baked into the seed code. Both matter to modders: the starting-level and starting-bag
+  randomizer options edit exactly these bytes.</p>
 </header>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>In the game</dt><dd>the moment NEW GAME is confirmed - the party's opening stats, names, bag and gold</dd>
+    <dt>Magic / marker</dt><dd>none - a fixed table in <code>SCUS_942.54</code> plus literals in the seed routine</dd>
+    <dt>Lives in</dt><dd>table at SCUS VA <code>0x80078C4C</code> (4 &times; 26 bytes); inventory + world-state seeds are instruction immediates in <code>FUN_80034A6C</code> / <code>FUN_800560B4</code></dd>
+    <dt>Retail reader</dt><dd><code>FUN_800560B4</code> (template expander) called from the new-game data-init <code>FUN_80034A6C</code>; boot chain <code>FUN_80025B64</code> &rarr; <code>FUN_801D6704</code></dd>
+    <dt>Parser</dt><dd><code>legaia_asset::new_game</code> (<code>StartingParty</code>, <code>StartingInventory</code>, <code>new_game_seed_words</code>, <code>seed_live_records</code>); CLI <code>asset new-game &lt;SCUS&gt; [--json]</code></dd>
+    <dt>Confidence</dt><dd>Confirmed - byte-search of the executable cross-validated against a live <code>town01</code> save state, with the seed stores read off the disassembly</dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="overview">
+  <h2>What a New Game is made of</h2>
+  <p>Confirming NEW GAME launches the field overlay with a fresh game state. Three separate things make up that state, and only the first is a table:</p>
+  <div class="flow">
+    <div class="num">1</div><div class="layer">Party template</div><div class="desc">Four 26-byte rows at <code>0x80078C4C</code> - stats + name for Vahn, Noa, Gala, Terra. Expanded into the live records at <code>0x80084708 + n&times;0x414</code>.</div><div class="crate"><code>StartingParty</code></div>
+    <div class="num">2</div><div class="layer">Starting bag</div><div class="desc">Code-built, not a table: one <code>(id, count)</code> slot - Healing Leaf &times;5 - written into the owned-item array by <code>FUN_80034A6C</code>.</div><div class="crate"><code>StartingInventory</code></div>
+    <div class="num">3</div><div class="layer">World-state seed</div><div class="desc">Fixed immediates into the save context: 500 gold, party-slot bytes, a cleared story-flag bank.</div><div class="crate"><code>new_game_seed_words</code></div>
+    <div class="num">4</div><div class="layer">Opening scene</div><div class="desc"><code>town01</code> (Rim Elm) - the default map-name buffer at <code>0x8007050C</code>. A dev <code>initmap.txt</code> override in <code>FUN_8001D424</code> is gated off by debug flag <code>_DAT_8007B8C2</code>, which retail boots with set to <code>1</code>.</div><div class="crate"><code>engine-core::new_game</code></div>
+  </div>
+  <p>At a true New Game only Vahn has joined; the other rows are the templates used as each character is introduced.</p>
+</section>
 
 <section class="doc-section" id="table-layout">
   <h2>Table base + record layout</h2>
@@ -25,15 +43,21 @@
     <tr><td>Records</td><td><code>4</code> - Vahn, Noa, Gala, Terra, in roster order</td></tr>
   </tbody>
   </table>
-  <pre><code>+0   u16     hp_max   (also the starting HP)
-+2   u16     mp_max   (also the starting MP)
-+4   u16     agl      (also seeds the spirit-gauge value + stat cap)
-+6   u16     atk
-+8   u16     udf      (upper / physical defence)
-+10  u16     ldf      (lower / magical defence)
-+12  u16     spd      (turn-order initiative seed)
-+14  u16     intel
-+16  u8[10]  display name, NUL-padded</code></pre>
+  <table class="layout">
+  <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code>+0</code></td><td>2</td><td><code>hp_max</code></td><td>also the starting HP</td></tr>
+    <tr><td><code>+2</code></td><td>2</td><td><code>mp_max</code></td><td>also the starting MP</td></tr>
+    <tr><td><code>+4</code></td><td>2</td><td><code>agl</code></td><td>lands in the live agility cells of both stat blocks (<code>+0x110</code> current, <code>+0x122</code> max) - <em>not</em> the cap cells</td></tr>
+    <tr><td><code>+6</code></td><td>2</td><td><code>atk</code></td><td></td></tr>
+    <tr><td><code>+8</code></td><td>2</td><td><code>udf</code></td><td>upper / physical defence</td></tr>
+    <tr><td><code>+10</code></td><td>2</td><td><code>ldf</code></td><td>lower / magical defence</td></tr>
+    <tr><td><code>+12</code></td><td>2</td><td><code>spd</code></td><td>turn-order initiative seed</td></tr>
+    <tr><td><code>+14</code></td><td>2</td><td><code>intel</code></td><td></td></tr>
+    <tr><td><code>+16</code></td><td>10</td><td>display name</td><td>NUL-padded</td></tr>
+  </tbody>
+  </table>
+  <h3 id="decoded-values">Decoded values</h3>
   <table>
   <thead><tr><th>Slot</th><th>Name</th><th>HP</th><th>MP</th><th>AGL</th><th>ATK</th><th>uDEF</th><th>lDEF</th><th>SPD</th><th>INT</th></tr></thead>
   <tbody>
@@ -43,46 +67,91 @@
     <tr><td>3</td><td>Terra</td><td>400</td><td>200</td><td>200</td><td>45</td><td>20</td><td>17</td><td>45</td><td>25</td></tr>
   </tbody>
   </table>
-  <p>At a true New Game only Vahn has joined; the other rows are the templates the game uses as each character is introduced. The <code>+4</code> stat fans out to several live fields at once - cross-validated against an early <code>town01</code> save state, Vahn's <code>100</code> lands in the live record as <code>agl</code>, the stat-cap constant, and the initial spirit-gauge value.</p>
+  <p>The <code>+4</code> stat reads as agility because of the per-character archetypes (Vahn 100, Noa 120, Gala 80). The neighbouring cap cells (<code>+0x10C</code> current, <code>+0x120</code> max) are <strong>not</strong> fed from it: the seed routine writes the literal <code>100</code> into both for every roster slot (<code>800561b8 li v0,0x64</code> / <code>sh v0,0x6d4(s0)</code> / <code>sh v0,0x6e8(s0)</code>, inside the four-iteration loop). Vahn's <code>+4</code> is also 100, so a Vahn-only cross-validation cannot separate the literal from the template field - Noa and Gala can.</p>
+  <details class="disclosure">
+    <summary>History: the "+4 seeds the cap" reading</summary>
+    <div class="disclosure-body"><p>An earlier reading had the <code>+4</code> field fanning out to the stat-cap constant and the spirit-gauge value as well as agility, because a Vahn-only save state shows <code>100</code> in all of them. The disassembly of the seed loop separates the literal from the template field; the cap is a literal. See <a href="save-record.html#cap-constant">the cap constant</a>.</p></div>
+  </details>
 </section>
 
 <section class="doc-section" id="inventory">
   <h2>Starting inventory (code-built, not a table)</h2>
-  <p>The opening inventory is built in code by the new-game data-init <code>FUN_80034A6C</code>, writing a single slot into the live owned-item array at <code>0x80085958</code> (= <code>SC</code> save-context base <code>0x80084140</code> + <code>0x1818</code>; 2 bytes/slot <code>[id: u8][count: u8]</code>, id-<code>0</code> terminator):</p>
+  <p>The new-game data-init <code>FUN_80034A6C</code> writes a single slot into the live owned-item array at <code>0x80085958</code> (= save-context base <code>0x80084140</code> + <code>0x1818</code>; 2 bytes per slot <code>[id: u8][count: u8]</code>, id-<code>0</code> terminator):</p>
   <pre><code>0x80034b0c  addiu $v0, $zero, 0x77    ; item id  = Healing Leaf
 0x80034b10  sb    $v0, 0x1818($s0)    ; inventory[0].id   ($s0 = SC base)
 0x80034b14  addiu $v0, $zero, 5       ; count    = 5
 0x80034b18  sb    $v0, 0x1819($s0)    ; inventory[0].count</code></pre>
-  <p>A vanilla New Game starts with <strong>Healing Leaf &times;5</strong> and nothing else. The array at <code>+0x1818</code> is a single ordered <code>(id, count)</code> owned-item list shared by every item category - the inventory menu only <em>filters</em> it into Items / Goods / Key tabs by item id, so a seeded slot can hold any id regardless of category (the randomizer's starting-bag toggles use this same array). <code>legaia_asset::new_game::StartingInventory</code> decodes the region by replaying its <code>$v0</code>-source stores (<code>addiu</code> <code>0x2402</code> / <code>sb</code> <code>0xA202</code> / <code>sh</code> <code>0xA602</code> top-16 signatures) into an <code>SC</code>-offset &rarr; byte map, so it reads back either the vanilla byte pair or a randomizer-packed halfword store.</p>
+  <p>A vanilla New Game starts with <strong>Healing Leaf &times;5</strong> and nothing else. A 6-instruction loop right after (<code>0x80034b04..</code>, <code>0x80034b1c..0x80034b2b</code>) zeroes the 512 bytes below the inventory, but both callers of <code>FUN_80034A6C</code> (<code>FUN_8001DCF8</code>'s new-game branch, guarded by the flag at <code>0x8007b7ac</code>, and <code>FUN_8001FFA4</code>) <code>memset</code> the whole <code>SC[0..0x1a18)</code> region first, so that loop is redundant - the reclaimable seed region is the 10 instructions at <code>0x80034b04</code> (40 bytes).</p>
+  <p>The array at <code>+0x1818</code> is a <strong>single ordered <code>(id, count)</code> list shared by every item category</strong> - the inventory menu only filters it into Items / Goods / Key tabs by id (verified against a real end-game save: consumables, equipment and accessories all sit in this one list, running to a <code>(0, 0)</code> terminator). A seeded slot can therefore hold any id, which is how the <a href="../tooling/randomizer.html">randomizer's starting-bag toggles</a> seed Door of Wind / Incense and the Speed Chain / Chicken Heart / Good Luck Bell accessories. The bag's runtime bounds are on the <a href="../subsystems/inventory.html">inventory page</a>.</p>
+  <p><code>legaia_asset::new_game::StartingInventory</code> decodes the region by replaying its <code>$v0</code>-source stores into an <code>SC</code>-offset &rarr; byte map, so it reads back either the vanilla <code>sb</code> pair or the randomizer's packed <code>sh</code> halfword (<code>id | (count &lt;&lt; 8)</code> in one instruction):</p>
+  <table>
+  <thead><tr><th>Op</th><th>Top 16 bits</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code>addiu $v0, $zero, imm</code></td><td><code>0x2402</code></td><td>load constant into the source reg</td></tr>
+    <tr><td><code>sb $v0, off($s0)</code></td><td><code>0xA202</code></td><td>byte store at <code>SC + off</code></td></tr>
+    <tr><td><code>sh $v0, off($s0)</code></td><td><code>0xA602</code></td><td>halfword store at <code>SC + off</code></td></tr>
+  </tbody>
+  </table>
 </section>
 
 <section class="doc-section" id="progression">
   <h2>Starting level / XP seed</h2>
-  <p>The seed routine <code>FUN_800560B4</code> also initialises each live record's progression fields:</p>
+  <p>The seed routine <code>FUN_800560B4</code> also initialises each live record's progression fields (offsets on the <a href="save-record.html">save record</a>):</p>
   <table>
   <thead><tr><th>Record offset</th><th>Field</th><th>Vanilla seed</th></tr></thead>
   <tbody>
     <tr><td><code>+0x0</code> (u32)</td><td>cumulative experience</td><td><code>0</code></td></tr>
-    <tr><td><code>+0x4</code> (u32)</td><td>next-level XP threshold</td><td><code>reach(L2)</code>: Vahn/Terra <code>121</code>, Noa <code>102</code>, Gala <code>140</code></td></tr>
-    <tr><td><code>+0x130</code> (u8)</td><td><strong>displayed character level</strong> (what "LV" shows; maintained <code>+1</code> per level-up event)</td><td><code>1</code></td></tr>
+    <tr><td><code>+0x4</code> (u32)</td><td>next-level XP threshold (the status screen's "next")</td><td><code>reach(L2)</code>: Vahn/Terra <code>121</code>, Noa <code>102</code>, Gala <code>140</code></td></tr>
+    <tr><td><code>+0x130</code> (u8)</td><td><strong>displayed character level</strong> ("LV"; the applier maintains it <code>+1</code> per level-up event)</td><td><code>1</code></td></tr>
     <tr><td><code>+0x131</code> (u8)</td><td>second per-character byte the seed inits (magic-rank candidate, unconfirmed)</td><td><code>1</code></td></tr>
   </tbody>
   </table>
-  <p>The shown level is read from <code>+0x130</code> directly, <strong>not</strong> re-derived from experience - confirmed live: a record with level-10 experience + stats but <code>+0x130 == 1</code> still shows LV 1. The per-character <code>+0x4</code> thresholds differ because of the small <code>FUN_801E9504</code> per-slot correction, not because the XP curve is per-character. The starting-level randomizer retargets this seed routine with same-size in-place edits (level byte party-wide, in-band experience + threshold for the growth-capable slots).</p>
+  <p><code>+0x100</code> stays zero and is unrelated to the level (the engine port uses it as its own internal cell). The shown level is read from <code>+0x130</code> directly, <strong>not</strong> re-derived from experience - confirmed live: a record with level-10 experience and stats but <code>+0x130 == 1</code> still shows LV 1. The per-character <code>+0x4</code> values differ because of the small per-slot <code>FUN_801E9504</code> correction, not because the XP curve is per-character (<a href="../subsystems/level-up.html">level-up</a>).</p>
+  <h3 id="starting-level-patch">How the starting-level randomizer retargets the seed</h3>
+  <p>The routine seeds <code>+0x4</code> for each slot by storing one <code>$v0</code> literal and reloading it twice for the per-character values; the patch controls that one register and reclaims the reload sites, seeding the whole growth-capable party (Vahn / Noa / Gala) at level <code>N</code> with same-size edits:</p>
+  <ul class="bullets">
+    <li><strong>Level</strong> - the loop's level literal + stores set <code>+0x130 = N</code> for every record (packed <code>addiu $v0, (1&lt;&lt;8)|N; sh $v0, 0x6f8($s0); nop</code> at <code>0x800561C4</code>/<code>C8</code>/<code>CC</code>, keeping <code>+0x131</code> at 1).</li>
+    <li><strong>Experience</strong> - each growth slot's <code>+0x0</code> gets an in-band level-<code>N</code> value (midpoint of <code>reach(N)..reach(N+1)</code>) via one <code>addiu $t0</code> preload at <code>0x800560FC</code> feeding three <code>sw $t0</code> stores (Vahn <code>0x5c8</code>, Noa <code>0x9dc</code>, Gala <code>0xdf0</code>) written at <code>0x80056100</code>, <code>0x80056108</code> and <code>0x80056118</code> (a redundant second <code>lui $at</code>).</li>
+    <li><strong>Next threshold</strong> - the literal at <code>0x800560F0</code> loads <code>reach(N+1)</code> into <code>$v0</code>; with the two reloads gone, all three <code>sw $v0</code> stores take the same threshold, and the applier re-applies the per-slot correction on the first post-seed level-up.</li>
+    <li><strong>Stats</strong> - each growth slot's template stats are recomputed to level <code>N</code>.</li>
+  </ul>
+  <p>Seeding only slot 0 would leave Noa with an experience readout of 0 and Gala with a stale level-1 threshold of 140 (a spurious early level-up); seeding all three keeps the visible roster coherent.</p>
+</section>
+
+<section class="doc-section" id="world-state">
+  <h2>World-state seed (code literals, not a table)</h2>
+  <p>Before <code>FUN_80034A6C</code> calls the template expander it writes a fixed set of save-context cells from immediates in its own instruction stream. It holds the SC base in <code>$s0</code> for the whole routine (<code>lui $s0, 0x8008</code> / <code>addiu $s0, $s0, 0x4140</code>), so every seed write is an <code>sb</code> or <code>sw</code> at <code>$s0 + off</code>:</p>
+  <table class="layout">
+  <thead><tr><th>SC offset</th><th>Width</th><th>Field</th><th>Value</th></tr></thead>
+  <tbody>
+    <tr><td><code>+0x454</code></td><td>1</td><td>party byte</td><td><code>3</code></td></tr>
+    <tr><td><code>+0x457</code> / <code>+0x458</code></td><td>1</td><td>party bytes</td><td><code>0</code></td></tr>
+    <tr><td><code>+0x459</code> / <code>+0x45A</code> / <code>+0x45B</code></td><td>1</td><td>party-slot bytes</td><td><code>1</code> / <code>2</code> / <code>3</code></td></tr>
+    <tr><td><code>+0x45C</code></td><td>4</td><td><strong>gold</strong></td><td><code>0x1F4</code> = 500</td></tr>
+    <tr><td><code>+0x460</code> / <code>+0x464</code> / <code>+0x470</code> / <code>+0x478</code></td><td>4</td><td>counters</td><td><code>0</code></td></tr>
+    <tr><td><code>+0x590</code> / <code>+0x594</code> / <code>+0x598</code> / <code>+0x59C</code></td><td>4</td><td>words</td><td><code>0x44</code> / <code>0x21</code> / <code>0x10</code> / <code>0x48</code></td></tr>
+  </tbody>
+  </table>
+  <p>Three further <code>sw</code>s are absolute rather than SC-relative and not part of this set: <code>0x80073EF4 = 0xE40</code>, <code>0x80073EF8 = 0x2DC0</code>, <code>0x80073EFC = 0</code>. After the expander returns, the routine writes the starting-item pair at <code>SC + 0x1818</code> and then clears <code>SC + 0x1618..0x1817</code> - <code>0x200</code> bytes of story flags, walked downward by <code>sb $zero, 0x1618($v1)</code>. The Door-of-Wind warp bitmask at <code>SC + 0x161C</code> sits inside that range, which is why any warp preset must be applied <em>after</em> the clear.</p>
+  <p><strong>Widths come from the opcodes, not from Ghidra's naming.</strong> The decompiled body renders these as <code>DAT_</code> / <code>_DAT_</code> globals - a prefix with no width meaning that also hides that the two item stores are <code>$s0</code>-relative. <code>legaia_asset::new_game::new_game_seed_words</code> mirrors the table, and the disc-gated <code>new_game_seed_disc</code> test re-decodes the routine out of the user's own executable and fails on any offset, value or width the port gets wrong.</p>
 </section>
 
 <section class="doc-section" id="parser">
   <h2>Parser + provenance</h2>
-  <p>The table base + stride are pinned by byte-search of <code>SCUS_942.54</code> for Vahn's stat run followed by the <code>"Vahn"</code> name, with every field cross-validated against the live per-character record at <code>0x80084708</code> lifted from an early <code>town01</code> save state. <code>legaia_asset::new_game::StartingParty</code> parses the table from a <code>SCUS_942.54</code> image at runtime (PSX-EXE <code>t_addr</code> &rarr; file-offset map), so the engine seeds a faithful New Game from the user's own disc without committing any Sony bytes. The disc-gated <code>new_game_real</code> test pins the four rows against the real executable. CLI: <code>asset new-game &lt;SCUS&gt; [--json]</code> (dumps the party template + the code-built starting inventory).</p>
+  <p>The table base + stride are pinned by byte-search of <code>SCUS_942.54</code> for Vahn's ATK..INT stat run followed by his name, with every field cross-validated against the live record at <code>0x80084708</code> lifted from an early <code>town01</code> save state. <code>legaia_asset::new_game::StartingParty</code> parses the table from a <code>SCUS_942.54</code> image at runtime (PSX-EXE <code>t_addr</code> &rarr; file-offset map, the same resolver as the <a href="item-table.html">item-name table</a>), so the engine seeds a faithful New Game from the user's own disc without committing any Sony bytes. <code>seed_live_records</code> ports the seed routine's halfword stores and the engine's record builder (<code>engine-core::new_game::starting_record</code>) applies them, so the two cannot drift. The disc-gated <code>new_game_real</code> test pins the four rows against the real executable. CLI: <code>asset new-game &lt;SCUS&gt; [--json]</code>. Source of record: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/new-game-table.md" target="_blank" rel="noopener"><code>docs/formats/new-game-table.md</code></a>.</p>
 </section>
 
 <section class="doc-section" id="see-also">
   <h2>See also</h2>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
-    <a href="item-table.html">Item-name table</a>
     <a href="save-record.html">Per-character save record</a>
+    <a href="item-table.html">Item-name table</a>
+    <a href="../subsystems/save-screen.html">Save screen</a>
     <a href="../subsystems/boot.html">Boot sequence</a>
     <a href="../subsystems/level-up.html">Level-up</a>
+    <a href="../subsystems/inventory.html">Inventory</a>
+    <a href="../tooling/randomizer.html">Randomizer (starting level / items)</a>
+    <a href="../tooling/rom-patcher.html">ROM patcher</a>
   </div>
 </section>

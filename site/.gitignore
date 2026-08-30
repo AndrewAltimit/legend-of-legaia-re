@@ -39,6 +39,7 @@
 /formats/npc-palette.html
 /formats/overlay-ptr-table.html
 /formats/pack.html
+/formats/place-names.html
 /formats/pochi.html
 /formats/prot.html
 /formats/save-record.html
@@ -99,6 +100,8 @@
 /subsystems/engine.html
 /subsystems/field-locomotion.html
 /subsystems/field-menu.html
+/subsystems/history-battle.html
+/subsystems/history-world-map.html
 /subsystems/index.html
 /subsystems/inn.html
 /subsystems/inventory.html

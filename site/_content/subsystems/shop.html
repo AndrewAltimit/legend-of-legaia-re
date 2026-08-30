@@ -7,6 +7,13 @@
 
 <section class="doc-section" id="flow">
   <h2>Flow</h2>
+  <div class="flow">
+    <span class="num">1</span><span class="layer">Talk to the merchant</span><span class="desc">the scene MAN script hits op 0x49 sub-0 carrying [count][item ids][name]</span><span class="crate">field VM</span>
+    <span class="num">2</span><span class="layer">Menu overlay</span><span class="desc">the shop sub-screen opens over the field; stock = the ids just read, prices = the SCUS item table</span><span class="crate">PROT 0899</span>
+    <span class="num">3</span><span class="layer">Buy / Sell / quantity / confirm</span><span class="desc">quantity picker bounded by gold and the 99 stack cap; sell = half price</span><span class="crate">FUN_801DB7F4 / FUN_801DB380</span>
+    <span class="num">4</span><span class="layer">Commit</span><span class="desc">gold moves at _DAT_8008459C, items through the inventory add / consume helpers, Point Card accrues</span><span class="crate">inventory helpers</span>
+    <span class="num">5</span><span class="layer">Quit</span><span class="desc">the op-0x49 tristate flips to Done and the script resumes</span><span class="crate">field VM</span>
+  </div>
   <p>The retail engine enters the shop from the field-VM WARP / shop-trigger opcode. The menu overlay dispatches on a sub-screen ID (pointer table at <code>0x801E4F40</code>, the same table the save screen uses). The five phases are:</p>
   <table>
     <thead><tr><th>Phase</th><th>State</th><th>Description</th></tr></thead>
@@ -120,7 +127,7 @@
   <h2>Open items</h2>
   <ul>
     <li><strong>On-disc item-effect amounts.</strong> The per-item effect <em>descriptor</em> table (<code>DAT_800752C0</code>: effect class + tier + all-party / field / battle usability) is decoded and drives the engine: the field/battle usability flags gate the item menu, and the <code>0x20</code> all-party flag fans a party-wide restorative (Healing Bloom / Fruit) across every living ally in one use. What is still unpinned is the literal restore <em>amount</em> - the <code>(class, tier) -&gt; 200/800/...</code> mapping is a switch in the overlay-resident apply handler (it is <em>not</em> <code>_DAT_8006F198</code>, the SFX descriptor table), so the engine keeps the curated walkthrough amounts for those.</li>
-    <li><strong>Quantity cap.</strong> Retail caps held count at 98 before dimming; the current port allows unlimited stacking.</li>
+    <li><strong>Quantity cap.</strong> Retail's buy picker is bounded <code>max = min(gold / price, 99, 99 - held)</code>, and a stack already at 99 greys the row; the port's stack cap follows the same 99.</li>
   </ul>
 </section>
 
@@ -131,7 +138,7 @@
 
 <section class="doc-section" id="full-reference">
   <h2>Full reference</h2>
-  <p>Complete flow tables and provenance at <code>docs/subsystems/shop.md</code>. Source: <code>crates/engine-core/src/shop.rs</code>.</p>
+  <p>Complete flow tables and provenance at <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/shop.md" target="_blank" rel="noopener"><code>docs/subsystems/shop.md</code></a> - including the Point Card in full, the retail quantity pickers, the item detail / sell panel, and a recipe for reading a town's stock off a disc. Source: <code>crates/engine-core/src/shop.rs</code>.</p>
 </section>
 
 <section class="doc-section" id="see-also">
@@ -142,5 +149,13 @@
     <a href="level-up.html">Level-up</a>
     <a href="save-screen.html">Save screen</a>
     <a href="../reference/gamedata.html">Game-data tables</a>
+    <a href="inventory.html">Inventory</a>
+    <a href="script-vm.html">Field / event VM</a>
+    <a href="field-menu.html">Field menu</a>
+    <a href="../formats/item-table.html">Item table (prices)</a>
+    <a href="../formats/item-effect-table.html">Item effects</a>
+    <a href="../formats/man-relocation.html">MAN relocation</a>
+    <a href="../shops.html">Shops browser</a>
+    <a href="../tooling/rom-patcher.html">ROM patcher (shop shuffle)</a>
   </div>
 </section>

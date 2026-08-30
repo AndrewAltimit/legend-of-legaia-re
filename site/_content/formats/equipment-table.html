@@ -11,6 +11,17 @@
   in the game touches AGL at all (see <a href="#superseded">superseded readings</a>).</p>
 </header>
 
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Magic</dt><dd>none - static data in <code>SCUS_942.54</code></dd>
+    <dt>Where</dt><dd><code>DAT_80074F68</code> (file offset <code>0x64F68</code>), 8-byte stride, indexed by the item property table's <code>+1</code> byte for <code>kind == 1</code> items</dd>
+    <dt>Parser</dt><dd><code>legaia_asset::equip_stats</code>; engine <code>engine-core::equipment::DiscEquipInfo</code>; patcher <code>legaia_patcher</code> equipment feature</dd>
+    <dt>Confidence</dt><dd>Confirmed - stat targets pinned from the aggregator <code>FUN_801CF650</code>'s five accumulators; <code>+1</code>/<code>+2</code>/<code>+3</code> byte-exact against the curated gamedata; <code>+0</code>/<code>+4</code> targets fixed, magnitudes not externally cross-checked</dd>
+    <dt>Used by</dt><dd><a href="../subsystems/battle-formulas.html">Battle formulas</a> (half of one slot folds into ATK at swing time), <a href="../shops.html">Shops page</a>, <a href="../characters.html">Characters page</a>, <a href="../tooling/rom-patcher.html">ROM patcher</a></dd>
+  </dl>
+</section>
+
 <section class="doc-section" id="indexing">
   <h2>Indexing (Ghidra-traced)</h2>
   <p>The chain below is read out of the game's own code with Ghidra, the disassembler this project uses (<code>FUN_80xxxxxx</code> names are traced functions, <code>DAT_80xxxxxx</code> fixed RAM addresses - static data, so each maps straight back to file bytes in <code>SCUS_942.54</code>). From the equip-effect aggregator <code>FUN_801CF650</code> (in the menu overlay - a chunk of code loaded into RAM on demand), which walks a character's five equipment slots and sums their bonuses into the equip-screen preview:</p>
@@ -67,9 +78,15 @@ record      = (&amp;DAT_80074F68)[bonus_index * 8]   ; stride-8 record
   <p>In the engine, <code>legaia_engine_core::equipment::DiscEquipInfo</code> lifts the <code>+6</code> mask and <code>+7</code> category keyed by real item ids; the equip session filters each character's per-slot item list on it, so a Vahn-only weapon never appears in Noa's weapon picker. The disc-gated <code>equip_modifiers_disc</code> test drives the whole chain on the real executable.</p>
 </section>
 
+<section class="doc-section" id="plus5-two-readers">
+  <h2>The <code>+5</code> byte has two readers, and both find the sentinel</h2>
+  <p>Besides the passive aggregator, the menu overlay's item-detail renderer <code>FUN_801D5AE8</code> (shop window 39, the sell list's panel) reads the byte directly: at <code>0x801D5C90..0x801D5CA0</code> it takes the item property record's <code>+0</code> class byte and, on class <code>1</code>, indexes the same stride-8 record (<code>lbu a0,0x5(v0)</code> with <code>v1 = 0x80074F68</code>), bounds it with <code>slti ...,0x40</code>, then indexes the passive name / description table at <code>0x8007625C</code>. Class <code>2</code> takes the item-effect record's <code>+3</code> instead.</p>
+  <p>Two things follow. The byte is <strong>row</strong>-keyed, not item-id-keyed. And because every retail row carries <code>0x40</code>, the class-<code>1</code> arm never produces a passive on an unmodified disc - a reader who finds the chain and not the data will go looking for equipment passives that are not missing. <code>equip_stats_real</code> pins the column at the sentinel across all rows. Parser side: <code>EquipBonus::passive_index</code> / <code>has_passive</code>, mirrored at <code>DiscEquipInfo::row_passive_index</code>.</p>
+</section>
+
 <section class="doc-section" id="superseded">
-  <h2>Superseded readings</h2>
-  <details class="disclosure"><summary>Superseded readings</summary>
+  <h2>History</h2>
+  <details class="disclosure"><summary>History: the "agility / speed pair" reading</summary>
     <ul class="bullets">
       <li>The earlier "agility / speed pair" reading of <code>+0</code>/<code>+4</code> is falsified: <code>+0</code> is the INT bonus (head gear), <code>+4</code> is the SPD bonus (footwear), and no equipment byte touches AGL.</li>
       <li>Boots/shoes spread bonuses across <code>+1</code> (small attack bump), <code>+3</code> (LDF), and <code>+4</code> (SPD) - a walkthrough listing only "two defense numbers" for a boot is reading <code>+1</code> and <code>+3</code>, not <code>+2</code>/<code>+3</code>.</li>
@@ -87,5 +104,10 @@ record      = (&amp;DAT_80074F68)[bonus_index * 8]   ; stride-8 record
     <a href="battle-data-pack.html">Player battle files</a>
     <a href="save-record.html">Character save record</a>
     <a href="../reference/gamedata.html">Curated gamedata</a>
+    <a href="../subsystems/battle-formulas.html">Battle formulas</a>
+    <a href="../subsystems/arts-command-gauge.html">Arts gauge + weapon specialty</a>
+    <a href="../shops.html">Shops page</a>
+    <a href="../characters.html">Characters page</a>
+    <a href="../tooling/rom-patcher.html">ROM patcher</a>
   </div>
 </section>

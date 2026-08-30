@@ -19,6 +19,17 @@
   <p>The on-disc input is the <a href="../formats/effect.html">runtime 2-pack wrapper</a> at PROT entry 873 (<code>data\battle\efect.dat</code>; PROT.DAT is the disc's single big archive, and 873 is one of its numbered entries): pack0 holds 14 sprite-anim records, pack1 holds 33 effect-ID scripts indexed by the public effect ID.</p>
 </section>
 
+<section class="doc-section" id="lifecycle">
+  <h2>One effect's life, frame by frame</h2>
+  <div class="flow">
+    <span class="num">1</span><span class="layer">Spawn</span><span class="desc">the action SM asks for a UI element id; the public spawn API claims a master slot and binds it to the caster actor</span><span class="crate">FUN_801DFDF8</span>
+    <span class="num">2</span><span class="layer">Batch</span><span class="desc">the walker reads the script's next frame batch and claims child slots, one per sprite</span><span class="crate">FUN_801E0088</span>
+    <span class="num">3</span><span class="layer">Tick</span><span class="desc">positions update, timers count down, finished sprites retire</span><span class="crate">pass 1</span>
+    <span class="num">4</span><span class="layer">Render</span><span class="desc">live children become POLY_FT4 billboards over the effect atlas</span><span class="crate">pass 2</span>
+    <span class="num">5</span><span class="layer">Retire</span><span class="desc">when the script's last state token is reached the master slot frees and the SM's wait clears</span><span class="crate">state token</span>
+  </div>
+</section>
+
 <section class="doc-section" id="placement">
   <h2>Where it lives</h2>
   <p>All three functions are in the battle overlay (<code>0898_xxx_dat</code>):</p>
@@ -67,7 +78,8 @@
   <p>The <strong>effect-model library</strong> is extraction 0871 (<code>etmd.dat</code>, raw index <code>0x369</code>): an uncompressed 30-entry TMD pack that retail registers into <code>DAT_8007C018[3..=32]</code> at battle init. The engine seeds the same window at scene entry (<code>engine-core::scene::seed_effect_model_library_from_etmd</code> &rarr; <code>World::global_tmd_pool[3..=32]</code>); Gimard's flame is index 26 (<code>GIMARD_TAIL_FIRE_MODEL_INDEX</code>). <code>World::active_effect_models</code> snapshots each live effect that has a model assigned (<code>EffectModel</code> = global-TMD-pool index + world position + age), and the native host builds a textured VRAM mesh for it through the standard mesh pipeline.</p>
   <p>The <strong>player summon</strong> (e.g. Gimard's <em>Burning Attack</em>) is not spawned by this effect VM and is not in <code>befect_data</code>: a live PCSX-Redux trace of a mid-cast pins the render path as the ordinary <strong>battle per-actor draw</strong> <code>FUN_80048A08</code> (35-64&times;/frame) &rarr; the per-object rigid-TRS keyframe decoder <code>FUN_8004998C</code> - the summon is posed exactly like an enemy monster body, and its flame animation is <strong>geometric</strong>, not palette. The per-summon stager overlays (extraction PROT 903..913, dispatched by the battle SM - see <a href="battle-action.html#summon-overlay">battle action &middot; summon overlay</a>) carry real move-VM part records (<code>legaia_asset::summon_overlay</code>), which the engine drives as a stand-in scene-graph (<code>summon::SummonScene</code>); the trace shows that graph is not the player summon's per-frame render path. Scope: the trace covers the <em>player</em> Burning Attack; the <em>enemy</em> Gimard <em>Fire Tail</em> boss move is untraced.</p>
   <details class="disclosure">
-    <summary>Superseded readings</summary>
+    <summary>History: superseded readings</summary>
+    <div class="disclosure-body">
     <ul>
       <li>The <code>efect.dat</code> atlas value <code>0x7680</code> was read as a page-(0,0) 8bpp tpage - a field-order misread. The atlas entry's <code>+4</code>/<code>+6</code> fields are CLUT (u16) / tpage (byte); <code>0x7680</code> is the CLUT (CBA fb <code>(0,474)</code>). Confirmed from a melee hit-spark capture; the engine's <code>SpriteAtlasEntry</code> reads the fields in the correct order.</li>
       <li>&ldquo;The flame flicker is per-frame CLUT cycling&rdquo; - falsified: two animation-distinct frames have a byte-identical CLUT band (VRAM rows 470..499) while the framebuffer differs ~21%. The motion is geometric.</li>
@@ -75,6 +87,8 @@
       <li><code>FUN_801F7088</code> (the world-map top-view tile renderer, aliasing the same <code>0x801Fxxxx</code> band) fired 0&times; in the summon trace - it is not part of the summon path.</li>
       <li>&ldquo;<code>summon.dat</code> = PROT <code>0x37F</code> is falsified&rdquo; - itself superseded: the loader consumes a <em>raw-TOC</em> index, so <code>0x37F</code>/<code>0x380</code> resolve to extraction entries 893 / 894 (see the streaming section below).</li>
     </ul>
+    <p>More on <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p>
+    </div>
   </details>
 </section>
 
@@ -119,5 +133,8 @@
     <a href="../formats/summon-readef.html">summon.dat / readef.DAT format</a>
     <a href="battle-action.html">Battle action SM</a>
     <a href="move-vm.html">Move-table VM</a>
-  </div>
+    <a href="battle.html">Battle</a>
+    <a href="battle-action.html#summon-overlay">Summon overlays</a>
+    <a href="../magic.html">Magic browser</a>
+</div>
 </section>

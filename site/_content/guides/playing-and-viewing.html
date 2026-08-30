@@ -1,69 +1,205 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; guides &middot; playing + viewing</div>
   <h1>Playing and viewing</h1>
-  <p class="lede"><code>legaia-engine</code> is the clean-room engine reimplementation: point it at your disc and it boots a scene, renders it, and takes pad input. <code>asset-viewer</code> is its museum-mode sibling for browsing individual assets. Both ship in the release archive.</p>
+  <p class="lede">The project's engine is a from-scratch rewrite of the game that reads your own disc: point <code>legaia-engine</code> at the image and it boots Rim Elm, plays the music, runs the NPC scripts, rolls encounters and fights battles. <code>asset-viewer</code> is its museum-mode sibling for browsing one texture, mesh or sound bank at a time. Both ship in the release archive; commands use the bare <code>./tool</code> form (source builds live at <code>target/release/</code>).</p>
 </header>
 
-<section class="doc-section" id="inputs">
-  <h2>Where the data comes from</h2>
-  <p>Every subcommand accepts the disc directly via <code>--disc</code> - no extraction step required to play. Without <code>--disc</code>, tools read an <code>extracted/</code> tree (<code>--extracted-root</code>, default <code>extracted</code>, resolved against the current directory) produced by <code>legaia-extract</code> (<a href="getting-started.html">getting started</a>). Commands use the bare <code>./tool</code> form; source builds live at <code>target/release/</code>.</p>
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <div class="flow">
+    <div class="num">1</div><div class="layer">Boot the engine</div><div class="desc">One command opens Rim Elm from the disc, with the full gameplay loop.</div><div class="crate">play-window</div>
+    <div class="num">2</div><div class="layer">Pick a scene, or a fight</div><div class="desc"><code>--scene</code>, <code>--battle</code>, <code>--party</code>.</div><div class="crate">list-scenes</div>
+    <div class="num">3</div><div class="layer">Play the movies</div><div class="desc">FMV with its XA audio in sync.</div><div class="crate">play-str</div>
+    <div class="num">4</div><div class="layer">Minigames, audio, saves</div><div class="desc">Fishing, dance, slots, Baka Fighter, Muscle Dome from any live scene.</div><div class="crate">play-window keys</div>
+    <div class="num">5</div><div class="layer">Record + replay</div><div class="desc">Deterministic session files that need no disc to play back.</div><div class="crate">record / replay</div>
+    <div class="num">6</div><div class="layer">Browse + read</div><div class="desc">Asset viewer, script disassembler, the browser build.</div><div class="crate">asset-viewer / field-disasm</div>
+  </div>
+  <h3>Where the data comes from</h3>
+  <p>Every subcommand accepts the disc directly via <code>--disc</code> - no extraction step required to play. Without <code>--disc</code>, tools read an <code>extracted/</code> tree (<code>--extracted-root</code>, default <code>extracted</code>, resolved against the current directory) produced by <code>legaia-extract</code> (<a href="getting-started.html">getting started</a>).</p>
 </section>
 
 <section class="doc-section" id="play-window">
   <h2>1 &middot; Boot the engine</h2>
-<pre><code>./legaia-engine play-window --disc "/path/to/Legend of Legaia (USA).bin"</code></pre>
-  <p>This boots the scene <code>town01</code> (Rim Elm) straight off the disc: field rendering, BGM, NPC scripts, dialog. Keyboard defaults: arrows = D-pad, <kbd>Z</kbd> = Cross, <kbd>X</kbd> = Circle, <kbd>C</kbd> = Triangle, <kbd>V</kbd> = Square, <kbd>Esc</kbd> = quit. In-window extras: left-mouse drag orbits the camera, <kbd>T</kbd> cycles the camera-distance preset, <kbd>R</kbd> toggles precise free-angle movement (an opt-in enhancement - retail-style movement is the default), <kbd>F2</kbd> mutes audio, <kbd>F3</kbd> swaps the field camera for the wide debug orbit. Window toggles live on the F-keys because a window key arm runs <em>before</em> the pad lookup - one parked on a bound letter deletes that button from the keyboard, which is how the native window went without Triangle and Square. <code>--boot-ui</code> starts at the title screen &rarr; save-select flow instead of jumping into the scene.</p>
+  <div class="cli"><code>./legaia-engine play-window --disc "/path/to/Legend of Legaia (USA).bin"</code></div>
+  <p>This boots the scene <code>town01</code> (Rim Elm) straight off the disc: field rendering, BGM, NPC scripts, dialog, and the full gameplay loop - walking rolls the scene's own random encounters, a battle opens the command menu, and victory returns you to the field with XP, gold and drops.</p>
+  <h3>Keys</h3>
+  <p>Arrows are the D-pad; the rest of the desktop defaults:</p>
+  <table>
+    <thead><tr><th>Key</th><th>Pad button</th></tr></thead>
+    <tbody>
+      <tr><td><kbd>Z</kbd></td><td>Cross</td></tr>
+      <tr><td><kbd>S</kbd></td><td>Circle</td></tr>
+      <tr><td><kbd>A</kbd></td><td>Triangle</td></tr>
+      <tr><td><kbd>X</kbd></td><td>Square</td></tr>
+      <tr><td><kbd>Q</kbd> / <kbd>W</kbd></td><td>L1 / R1</td></tr>
+      <tr><td><kbd>1</kbd> / <kbd>2</kbd></td><td>L2 / R2</td></tr>
+      <tr><td><kbd>Enter</kbd>, <kbd>Space</kbd></td><td>Start</td></tr>
+      <tr><td><kbd>RShift</kbd></td><td>Select</td></tr>
+    </tbody>
+  </table>
+  <p><kbd>Esc</kbd> quits. The <a href="../play.html">browser play page</a> ships a <em>different</em> default layout (<kbd>X</kbd> is Circle there, <kbd>C</kbd> / <kbd>V</kbd> carry Triangle / Square, and WASD doubles the arrows), so a key that works in the tab is not necessarily the same button in the window. <code>config show</code> prints the desktop table, including any rebinding.</p>
+  <h3>Window toggles</h3>
+  <ul>
+    <li>Left-mouse drag orbits the camera; <kbd>T</kbd> cycles the camera-distance preset.</li>
+    <li><kbd>R</kbd> toggles precise free-angle movement (an opt-in enhancement - retail-style movement is the default).</li>
+    <li><kbd>I</kbd> toggles dynamic lighting (also opt-in; <code>--dynamic-lighting</code> starts with it on).</li>
+    <li><kbd>F1</kbd> shows the engine's diagnostic text rows (off by default); <kbd>F2</kbd> mutes audio; <kbd>F3</kbd> swaps the field camera for the wide debug orbit.</li>
+    <li><kbd>F4</kbd> toggles the camera-occlusion fade (on by default: walls between the camera and your character dissolve to a dither so you can always see yourself; <code>--no-occlusion-fade</code> starts with it off).</li>
+  </ul>
+  <p class="hint">No window toggle sits on a key the pad table can bind, and that is not cosmetic: a window key arm runs <strong>before</strong> the pad lookup, so one parked on a bindable key deletes that button from the keyboard entirely. The bindable vocabulary is the table above plus <kbd>C</kbd>, <kbd>V</kbd>, <kbd>D</kbd> and <kbd>E</kbd>; every window toggle is either an F-key or a letter outside that vocabulary (<kbd>I</kbd>, <kbd>R</kbd>, <kbd>T</kbd>, <kbd>Y</kbd>, and the minigame keys below), so no rebinding can collide with one.</p>
+  <h3>Flags</h3>
+  <ul>
+    <li><code>--boot-ui</code> starts at the title screen &rarr; save-select flow instead of jumping into the scene.</li>
+    <li><code>--no-live-loop</code> stops random encounters from rolling, leaving field VM + locomotion only - the mode to use when you are inspecting a scene rather than playing it. A battle the engine is already in still resolves.</li>
+    <li><code>--no-player-battle</code> auto-attacks each party turn instead of opening the command menu.</li>
+  </ul>
+  <p><strong>Towns have no random encounters, by design.</strong> Rim Elm is one of them, and so are most scenes with a shop in them: their encounter regions carry a zero trigger rate, exactly as on the retail disc. The window says so in the corner (<code>no random encounters in this scene</code>) so a quiet walk does not look like a broken engine - step onto the overworld, or <code>--scene map03</code>, to fight.</p>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../subsystems/engine.html">Engine architecture</a>
+    <a href="../subsystems/field-locomotion.html">Field locomotion</a>
+    <a href="../subsystems/renderer.html">Renderer</a>
+  </div>
 </section>
 
 <section class="doc-section" id="scenes">
-  <h2>2 &middot; Pick a scene</h2>
-<pre><code>./legaia-engine list-scenes --disc "/path/to/disc.bin"
-./legaia-engine play-window --disc "/path/to/disc.bin" --scene town04</code></pre>
+  <h2>2 &middot; Pick a scene, or a fight</h2>
+  <div class="cli"><code>./legaia-engine list-scenes --disc "/path/to/disc.bin"</code></div>
+  <div class="cli"><code>./legaia-engine play-window --disc "/path/to/disc.bin" --scene town04</code></div>
   <p><code>list-scenes</code> prints every scene name the game's file map exposes with the PROT entry range each covers - the same names feed <code>--scene</code>, and a range start is where that scene's files land in <code>extracted/PROT/</code>.</p>
+  <h3>Getting into a battle on purpose</h3>
+  <p>Waiting for a step roll is fine for playing and useless for <em>checking</em> something on the battle screen: the retail counter takes several hundred steps to drain. <code>--battle</code> names the fight instead:</p>
+  <div class="cli"><code>./legaia-engine play-window --disc "$DISC" --scene map03 --battle first</code></div>
+  <div class="cli"><code>./legaia-engine play-window --disc "$DISC" --scene rikuroa --battle 17</code></div>
+  <p><code>first</code> is the scene's lowest formation row that carries monsters; a number is a specific row of the scene's own MAN encounter table (rikuroa row 17 = the lone Caruban boss) - the same id space the region roll produces, so <code>--battle 12</code> fights what walking into that region would have. Unregistered rows are refused with the scene's row list logged.</p>
+  <p>The fight is <strong>armed, not injected</strong>: the row goes into the encounter session's transition state machine exactly as a roll does, so the intro transition, the BGM swap and the battle load are the ordinary ones. It also means the fight opens a beat after boot rather than on frame 0 - allow ~40 ticks when pairing it with a capture. <code>--battle</code> turns the live loop on even under <code>--no-live-loop</code>, because the loop is what drains the transition.</p>
+  <div class="cli"><code>./legaia-engine play-window --disc "$DISC" --scene rikuroa --battle 17 --seed-party --screenshot /tmp/battle.png --screenshot-tick 200</code></div>
+  <h3>Choosing the party</h3>
+  <p><code>--seed-party</code> alone seeds retail's New Game roster, which is <strong>Vahn alone</strong> - correct for the early game, and not enough for a three-member fight. Name the members you want and each one is seeded from its own row of the executable's starting-party template, so it arrives with real level-1 stats and its own name:</p>
+  <div class="cli"><code>./legaia-engine play-window --disc "$DISC" --scene rikuroa --battle 17 --seed-party --party vahn,noa,gala</code></div>
+  <p>The list is in battle order (<code>vahn</code>/<code>noa</code>/<code>gala</code>/<code>terra</code>, or roster indices) and caps at the three on-screen positions. A member whose record already carries stats - a loaded save - is never overwritten.</p>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../formats/encounter.html">Encounter record</a>
+    <a href="../formats/new-game-table.html">New-game template</a>
+    <a href="../subsystems/battle.html">Battle subsystem</a>
+  </div>
 </section>
 
 <section class="doc-section" id="fmv">
   <h2>3 &middot; Play the FMVs</h2>
-<pre><code>./legaia-engine play-str MOV/MV1.STR --disc "/path/to/disc.bin"</code></pre>
-  <p>With <code>--disc</code>, the argument is the movie's path <em>inside</em> the disc image and the interleaved XA audio track plays in sync (the video clock is driven off the audio cursor). Without <code>--disc</code> it plays a raw extracted <code>.STR</code> file (video only). To dump frames as PNGs instead, use <code>mdec</code> (<a href="extracting-assets.html">extracting assets</a>). Background: <a href="../subsystems/cutscene.html">cutscene subsystem</a>.</p>
+  <div class="cli"><code>./legaia-engine play-str MOV/MV1.STR --disc "/path/to/disc.bin"</code></div>
+  <p>With <code>--disc</code>, the argument is the movie's path <em>inside</em> the disc image and the interleaved XA audio track plays in sync (the video clock is driven off the audio cursor). Without <code>--disc</code> it plays a raw extracted <code>.STR</code> file (video only). To dump frames as PNGs instead, use <code>mdec</code> (<a href="extracting-assets.html">extracting assets</a>).</p>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../subsystems/cutscene.html">Cutscene subsystem</a>
+    <a href="../media.html">Media page</a>
+  </div>
+</section>
+
+<section class="doc-section" id="minigames">
+  <h2>4 &middot; Start a minigame from a live scene</h2>
+  <p>Every ported minigame is a <strong>mode suspend</strong> on the running world, not a separate program: the field scene stays loaded underneath and comes back when you leave, so you start one from wherever you happen to be standing.</p>
+  <p>In <code>play-window</code> each is one key, and the same key leaves again:</p>
+  <table>
+    <thead><tr><th>Key</th><th>Minigame</th></tr></thead>
+    <tbody>
+      <tr><td><kbd>L</kbd></td><td>Fishing</td></tr>
+      <tr><td><kbd>K</kbd></td><td>Noa's dance</td></tr>
+      <tr><td><kbd>O</kbd></td><td>Casino slot machine</td></tr>
+      <tr><td><kbd>B</kbd></td><td>Baka Fighter</td></tr>
+      <tr><td><kbd>M</kbd></td><td>Muscle Dome</td></tr>
+    </tbody>
+  </table>
+  <p>Each loads that minigame's overlay off the disc and installs a session, so the rules, tables and scoring all come from the disc rather than from hardcoded numbers.</p>
+  <p>The browser play page carries the fishing entry as a <strong>Fish here</strong> button under the canvas. Cross casts and reels, Square reels harder, Cross recasts once a catch resolves - the same pad the field controller reads. Points bank into the world's persistent pool, so they survive leaving and re-entering, and the prize-exchange rows come off the same overlay with retail availability gating.</p>
+  <p class="hint">One HUD caveat that looks like a bug and is not: the fishing sprite page is the one asset in that chain nobody has decoded, so both hosts draw the HUD's digit and caption rows from the dialog font and skip its glyphs. The captions are engine-side English placeholders at the retail pen positions, so a long placeholder can overlap the count beside it.</p>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../minigames.html">Playable minigames</a>
+    <a href="../writeups/spirit-fish.html">The Spirit fish gate</a>
+  </div>
+</section>
+
+<section class="doc-section" id="audio">
+  <h2>5 &middot; What you hear</h2>
+  <p>Both hosts decode their audio from the disc you supply - no samples ship with the engine or the site. Music is a SEQ played through the clean-room SPU against the scene's own sound bank; sound effects come from the executable's descriptor table plus the resident program bank, and both hosts key them into the <strong>same</strong> SPU the music uses, so a cue shares the voice pool exactly as it does on hardware.</p>
+  <p>Cue <em>provenance</em> is worth knowing before you judge a sound. Retail fires an effect by writing an id into a ring, and only a handful of those writes have been traced, so a cue is either <code>disc</code> (the id is retail's, at the place retail writes it) or <code>site</code> (retail's id there is unpinned and the port reuses the closest one). The browser page reports the split per event rather than presenting a guess as the game's sound. The footstep is the clearest example: its <em>timing</em> is the retail cadence - a faster walk steps more often, standing still is silent - while the cue id it fires is the port's pick.</p>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../subsystems/audio.html">Audio subsystem</a>
+    <a href="../formats/sfx-table.html">SFX table</a>
+    <a href="../reference/music-tracks.html">Music tracks</a>
+  </div>
 </section>
 
 <section class="doc-section" id="config-saves">
-  <h2>4 &middot; Saves and config live next to you</h2>
+  <h2>6 &middot; Saves and config live next to you</h2>
   <p>The engine resolves its files against the <strong>current directory</strong>: key bindings in <code>legaia-input.toml</code>, options (camera preset, movement mode) in <code>legaia-options.toml</code>, and save slots under <code>saves/</code>. Run from the same directory each time - or pass explicit paths where supported (<code>--save-dir</code>, <code>config set --config-file</code>).</p>
   <p>Rebind keys with <code>config</code>:</p>
-<pre><code>./legaia-engine config show
-./legaia-engine config set --binding Space=Cross
-./legaia-engine config set --binding Enter=Start</code></pre>
+  <div class="cli"><code>./legaia-engine config show</code></div>
+  <div class="cli"><code>./legaia-engine config set --binding Space=Cross</code></div>
+  <div class="cli"><code>./legaia-engine config set --binding Enter=Start</code></div>
   <p><code>KEY=BUTTON</code> uses friendly key names (<code>Z</code>, <code>Up</code>, <code>Enter</code>, <code>RShift</code>) and PSX pad button names (<code>Cross</code>, <code>Circle</code>, <code>Start</code>, <code>L1</code>).</p>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../subsystems/save-screen.html">Save screen</a>
+    <a href="../formats/save-record.html">Save record</a>
+  </div>
 </section>
 
 <section class="doc-section" id="record-replay">
-  <h2>5 &middot; Record and replay a session</h2>
-<pre><code>./legaia-engine record --disc "/path/to/disc.bin" --out session.toml
-./legaia-engine replay --input session.toml</code></pre>
-  <p><code>record</code> is <code>play-window</code> plus input capture into a small <code>j-replay-v1</code> TOML file. The file is checkpointed to disk about once a second and finalized on window close (<kbd>Esc</kbd>), so an interrupted session still yields a valid file up to the last checkpoint. <code>replay</code> runs it back headless and deterministic - the same file always produces a bit-identical engine trace, and it needs no disc at all. Details: <a href="../tooling/determinism-replay.html">determinism + replay</a>.</p>
+  <h2>7 &middot; Record and replay a session</h2>
+  <div class="cli"><code>./legaia-engine record --disc "/path/to/disc.bin" --out session.toml</code></div>
+  <div class="cli"><code>./legaia-engine replay --input session.toml</code></div>
+  <p><code>record</code> is <code>play-window</code> plus input capture into a small <code>j-replay-v1</code> TOML file. The file is checkpointed to disk about once a second and finalized on window close (<kbd>Esc</kbd>), so an interrupted session still yields a valid file up to the last checkpoint. <code>replay</code> runs it back headless and deterministic - the same file always produces a bit-identical engine trace, and it needs no disc at all.</p>
   <p><code>legaia-engine --help</code> lists many more subcommands; the <code>COMMAND GROUPS</code> footer separates the player-facing ones above from the development diagnostics (parity oracles, synthetic state drivers) you can ignore.</p>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../tooling/determinism-replay.html">Determinism + replay</a>
+  </div>
 </section>
 
 <section class="doc-section" id="asset-viewer">
-  <h2>6 &middot; Browse assets interactively</h2>
+  <h2>8 &middot; Browse assets interactively</h2>
   <p><code>asset-viewer</code> reads the <code>extracted/</code> tree (there is no <code>--disc</code> here - run <code>legaia-extract</code> first). The <code>field</code> and <code>dialog</code> demos additionally need the dialog font at <code>extracted/font/</code>, which the pipeline writes by default (or <code>font-extract --disc</code> rebuilds).</p>
-<pre><code>./asset-viewer prot extracted/PROT.DAT --cdname extracted/CDNAME.TXT   # archive browser
-./asset-viewer tim  extracted/tim_scan/&lt;entry&gt;/raw_off&lt;HEX&gt;.tim        # one texture
-./asset-viewer tmd  extracted/tmd_scan                                 # cycle 3D meshes
-./asset-viewer vab  extracted/PROT/&lt;entry&gt;.BIN --sample 0              # play a sample
-./asset-viewer field --scene town01                                    # playable field demo</code></pre>
+  <div class="cli"><code>./asset-viewer prot extracted/PROT.DAT --cdname extracted/CDNAME.TXT</code></div>
+  <div class="cli"><code>./asset-viewer tim extracted/tim_scan/&lt;entry&gt;/&lt;tim-file&gt;</code></div>
+  <div class="cli"><code>./asset-viewer tmd extracted/tmd_scan</code></div>
+  <div class="cli"><code>./asset-viewer vab extracted/PROT/&lt;entry&gt;.BIN --sample 0</code></div>
+  <div class="cli"><code>./asset-viewer field town01</code></div>
+  <p>Those are, in order: the archive browser, one texture, a walk through every mesh in a directory, playing one sample from a sound bank, and the playable field demo. The scene name is a positional argument here, not a <code>--scene</code> flag (<code>field</code>, <code>world</code> and <code>dialog</code> all take their subject that way).</p>
   <p>In the PROT browser: <kbd>N</kbd> / <kbd>P</kbd> = next/prev entry, <kbd>PgDn</kbd> / <kbd>PgUp</kbd> = jump 10, <kbd>Esc</kbd> = quit; each entry's format is auto-detected and the first viewable sub-asset is shown. <code>tmd</code> pointed at a directory walks every mesh with the same keys. The <code>tim</code> subcommand also takes <code>extracted/PROT.DAT</code> itself with <code>--offset</code>/<code>--clut</code> for the system-UI textures that live outside any TOC entry.</p>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../viewer.html">Browser asset viewer</a>
+    <a href="../formats/index.html">Format specs</a>
+  </div>
 </section>
 
 <section class="doc-section" id="scripts">
-  <h2>7 &middot; Read the game's scripts</h2>
-  <p>The field/event VM (<a href="../subsystems/script-vm.html">script VM</a>) drives every scene. Its disassembler is a release binary too:</p>
-<pre><code>./field-disasm scan-prot --prot extracted/PROT.DAT     # sweep for event scripts + FMV triggers
-./field-disasm file &lt;extracted-script-body&gt;            # walk one raw script linearly</code></pre>
-  <p>For a specific scene's per-scene scripts (LZS-compressed inside the scene's MAN sub-asset), the engine has the direct path:</p>
-<pre><code>./legaia-engine man-scripts --scene town01 --disc "/path/to/disc.bin"</code></pre>
+  <h2>9 &middot; Read the game's scripts</h2>
+  <p>Every scene - who says what, which door leads where, what a chest holds - is driven by the field/event VM's bytecode. Its disassembler is a release binary too:</p>
+  <div class="cli"><code>./field-disasm scan-prot --prot extracted/PROT.DAT</code></div>
+  <div class="cli"><code>./field-disasm file &lt;extracted-script-body&gt;</code></div>
+  <p><code>scan-prot</code> sweeps the archive for event scripts and FMV triggers; <code>file</code> walks one raw script linearly. For a specific scene's per-scene scripts (LZS-compressed inside the scene's MAN sub-asset), the engine has the direct path:</p>
+  <div class="cli"><code>./legaia-engine man-scripts --scene town01 --disc "/path/to/disc.bin"</code></div>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../subsystems/script-vm.html">Field / event VM</a>
+    <a href="../formats/man-relocation.html">MAN relocation</a>
+  </div>
+</section>
+
+<section class="doc-section" id="browser-build">
+  <h2>10 &middot; Run the browser version locally</h2>
+  <p>The same engine runs in a browser as the static site's <a href="../play.html">play page</a>, sharing the simulation kernels with the native window. That build is <strong>not in the clone</strong> - <code>site/wasm/</code> is generated output. Build it once:</p>
+  <div class="cli"><code>scripts/ci/build-wasm.sh</code></div>
+  <div class="cli"><code>python3 -m http.server -d site</code></div>
+  <p>The first takes around nine minutes cold and needs <code>wasm-pack</code>; then open <code>/play.html</code>. Nothing is uploaded: the disc image you pick stays in the tab.</p>
+  <p>Rebuild after changing anything the page compiles - which is most of the workspace, not just <code>crates/web-viewer</code>. To check whether the bundle you built still matches your sources:</p>
+  <div class="cli"><code>python3 scripts/ci/check-wasm-freshness.py</code></div>
+  <p class="hint">Worth running before concluding a change did or didn't work in the browser: a stale bundle looks exactly like a fix that had no effect. Background: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/shipped-bundle-freshness.md" target="_blank" rel="noopener"><code>tooling/shipped-bundle-freshness.md</code></a>.</p>
 </section>
 
 <section class="doc-section" id="see-also">
@@ -78,6 +214,7 @@
     <span class="see-also-label">Reference</span>
     <a href="../subsystems/engine.html">Engine architecture</a>
     <a href="../subsystems/renderer.html">Renderer</a>
+    <a href="../subsystems/vr-mode.html">VR mode</a>
     <a href="../tooling/determinism-replay.html">Determinism + replay</a>
   </div>
 </section>

@@ -27,7 +27,7 @@
     </a>
     <a class="card" id="prot" href="prot.html">
       <div class="card-title"><span>PROT.DAT TOC</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">The disc's single big asset archive - 1233 numbered entries holding nearly every texture, model, script, sound bank, and code overlay in the game - and the table of contents that indexes it: <code>start_lba = toc[p+2]</code>, <code>size = toc[p+5] - toc[p+3] + 4</code>. Walked at boot by <code>FUN_8003E4E8</code>.</div>
+      <div class="card-body">The disc's single big asset archive - 1233 numbered entries holding nearly every texture, model, script, sound bank, and code overlay in the game - and the table of contents that indexes it: <code>start_lba = toc[p+2]</code>, <code>size = toc[p+3] - toc[p+2]</code> (the gap to the next entry; the 1233 entries tile the file exactly). Loaded raw into RAM at boot by <code>FUN_8003E4E8</code>; the in-RAM index space is +2 from the extraction's.</div>
     </a>
     <a class="card" id="cdname" href="cdname.html">
       <div class="card-title"><span>CDNAME.TXT name map</span> <span class="tag tag-done">Confirmed</span></div>
@@ -97,7 +97,7 @@
     </a>
     <a class="card" id="seq" href="seq.html">
       <div class="card-title"><span>PsyQ SEQ</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">The music sequence format - PsyQ's MIDI-derived <code>pQES</code> container. 13-byte header (PPQN, tempo, time-sig) + delta-time / MIDI events with running status. Drives <code>SsSeqOpen</code> / <code>SsSeqPlay</code>. <code>crates/seq</code> parses + walks.</div>
+      <div class="card-body">The music sequence format - PsyQ's MIDI-derived <code>pQES</code> container. Legaia's 15-byte header variant (u32 BE version, PPQN 480, a placeholder tempo the first body event overrides) + delta-time / MIDI events with running status; meta events carry no length byte. Drives <code>SsSeqOpen</code> / <code>SsSeqPlay</code>. <code>crates/seq</code> parses + walks.</div>
     </a>
     <a class="card" href="xa.html">
       <div class="card-title"><span>XA-ADPCM</span> <span class="tag tag-done">Confirmed</span></div>
@@ -105,7 +105,7 @@
     </a>
     <a class="card" id="mes" href="mes.html">
       <div class="card-title"><span>MES dialog</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">The dialog-text container. Two variants: Compact (<code>0x404</code> magic) and Records (<code>0x44 0x78</code>). Bytecode tokens (Glyph / Op65 / Op4c / Op26 / End). Renderer is overlay-resident.</div>
+      <div class="card-body">The dialog-text container. Two variants: Compact (<code>0x404</code> magic) and Records (<code>0x44 0x78</code>). Message bytes are font-tile indices with <code>0xC0..0xCF</code> two-byte escapes that splice in the hero's name, item and art names at display time. The four interpreter functions are statically linked in <code>SCUS_942.54</code>; the box pager lives in the dialog overlay.</div>
     </a>
     <a class="card" id="dialog-font" href="dialog-font.html">
       <div class="card-title"><span>Dialog font</span> <span class="tag tag-done">Confirmed</span></div>
@@ -133,7 +133,7 @@
     </a>
     <a class="card" id="art-data" href="art-data.html">
       <div class="card-title"><span>Art data - Tactical Arts records</span> <span class="tag tag-partial">Inferred</span></div>
-      <div class="card-body">Per-character art records (Vahn / Noa / Gala; PROT entry <code>0x05C4</code>). 40-field schema: command sequence, action constant, power bytes, hit timing, special / hit effect cues, status effects, repeat-frame replay.</div>
+      <div class="card-body">Per-character art records (Vahn / Noa / Gala) - <code>0xD0</code>-stride records in each player battle file's <code>record[0]</code> (extraction 0863..0865), indexed by action constant: command sequence, power bytes at <code>+0x24</code> (Confirmed), hit-cue timing, impact-effect class. The menu's arrows are a separate SCUS table - two copies, two consumers.</div>
     </a>
     <a class="card" id="save-record" href="save-record.html">
       <div class="card-title"><span>Per-character save record</span> <span class="tag tag-done">Confirmed</span></div>
@@ -160,7 +160,7 @@
     </a>
     <a class="card" href="equipment-table.html">
       <div class="card-title"><span>Equipment stat-bonus table</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">8-byte records at <code>DAT_80074F68</code> per equippable item: attack / defense / agility / speed bonuses, equip-character mask, slot type, Ra-Seru flag. Parser <code>legaia_asset::equip_stats</code>.</div>
+      <div class="card-body">8-byte records at <code>DAT_80074F68</code> per equippable item: INT / ATK / UDF / LDF / SPD bonuses (no equipment touches AGL), equip-character mask, slot type, Ra-Seru flag. Parser <code>legaia_asset::equip_stats</code>.</div>
     </a>
     <a class="card" href="accessory-passive-table.html">
       <div class="card-title"><span>Accessory passive table</span> <span class="tag tag-done">Confirmed</span></div>
@@ -191,11 +191,15 @@
     </a>
     <a class="card" href="scene-bundles.html">
       <div class="card-title"><span>Scene bundles</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">The family of per-scene container shapes - five sister detectors covering ~50% of PROT entries: <code>scene_tmd_stream</code>, <code>scene_vab_stream</code>, <code>scene_asset_table</code>, <code>scene_scripted_asset_table</code>, <code>scene_event_scripts</code>, plus <code>tmd_size_prefix</code>.</div>
+      <div class="card-body">The family of per-scene container shapes, each read off its retail walker: <code>scene_tmd_stream</code> (battle backdrops), <code>scene_vab_stream</code> (BGM), <code>scene_asset_table</code> (town bundles), <code>scene_event_scripts</code> (move-VM stagers), plus <code>tmd_size_prefix</code>; <code>scene_scripted_asset_table</code> is a phantom that matches no retail entry.</div>
     </a>
     <a class="card" href="scene-v12-table.html">
       <div class="card-title"><span>scene_v12_table</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">Per-scene container: runtime-fixup header + inline record table + move-VM stager prescript at sector offset <code>0x800</code>. 97 PROT entries (one per scene); strict header algebra <code>N = 4*param + 22</code>; the field VM installs prescript records via <code>FUN_800252EC</code>, the move VM (<code>FUN_80023070</code>) runs them.</div>
+      <div class="card-body">Per-scene <code>.PCH</code> walk-on trigger sidecar: four-kind sub-table directory + inline 4-byte trigger records, exactly one <code>0x800</code> sector - the stager prescript is the <em>next</em> PROT entry. 97 PROT entries (one per scene); strict header algebra <code>N = 4*param + 22</code>; the field VM installs prescript records via <code>FUN_800252EC</code>, the move VM (<code>FUN_80023070</code>) runs them.</div>
+    </a>
+    <a class="card" href="place-names.html">
+      <div class="card-title"><span>Place names</span> <span class="tag tag-done">Confirmed</span></div>
+      <div class="card-body">One place name, three carriers: the executable's 16 quick-travel cells, the 29-record label table trailing every kingdom MAN, and each scene MAN's section-2 banner name. Parser <code>legaia_asset::place_names</code>.</div>
     </a>
     <a class="card" href="world-map-overlay.html">
       <div class="card-title"><span>World-map slot-4 records</span> <span class="tag tag-partial">Inferred</span></div>
@@ -203,7 +207,7 @@
     </a>
     <a class="card" href="effect.html">
       <div class="card-title"><span>Effect bundles</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">Battle/field visual effects. Magic <code>0x02018B0C</code> (efect.dat). 2-pack wrapper: 14 sprite-anim entries + 33 effect scripts indexed by effect ID.</div>
+      <div class="card-body">The hit sparks and spell flashes of battle. The runtime <code>efect.dat</code> 2-pack (extraction 0873): a sprite atlas, 14 frame-animation batches and 33 spawn scripts indexed by effect id, consumed by the battle overlay; a separate <code>0x02018B0C</code> bundle sits only in <code>init_data</code>.</div>
     </a>
     <a class="card" href="navmesh.html">
       <div class="card-title"><span>Per-scene primitive scratch buffer</span> <span class="tag tag-partial">Inferred</span></div>
@@ -252,11 +256,11 @@
     </a>
     <a class="card" href="sound-driver.html">
       <div class="card-title"><span>Sound-driver path strings</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">The dev filenames the sound driver loads by: 3 SCUS consumers (sound init / streaming-asset loader / mode-aware ext dispatcher), 8 extensions: .MAP, .PCH, .spk, .dpk, etc.</div>
+      <div class="card-body">The dev filename extensions the sound driver appends (<code>.dpk</code>, <code>.spk</code>, <code>.MAP</code>, <code>.PCH</code> ...) and their two SCUS consumers. The per-scene <code>.dpk</code> pack is a type-2-terminated streaming container holding a VAB + SEQ pair; the PsyQ intermediates are not on the disc.</div>
     </a>
     <a class="card" href="pochi.html">
       <div class="card-title"><span>Pochi-filler placeholder slots</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">266 PROT entries are unused placeholders padded with the ASCII word "pochi" (a Japanese dog name - dev fill). The trap: past the padding sits stale mastering scratch that often parses as a complete, valid texture.</div>
+      <div class="card-body">Unused placeholder entries padded with the ASCII word "pochi" (a Japanese dog name - dev fill). Every one is exactly one 2048-byte sector of fill and none carries a parseable TIM; the "stale mastering scratch that parses as a texture" reading was the neighbouring entry seen through the old over-read entry size.</div>
     </a>
   </div>
 </section>

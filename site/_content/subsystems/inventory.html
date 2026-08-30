@@ -4,6 +4,33 @@
   <p class="lede">Legaia keeps one shared 256-slot inventory in a single flat array. Every accessor is bounded by an <strong>active window</strong> that collapses to one 128-slot half whenever a character travels alone - which is the whole story behind the &ldquo;divided&rdquo; inventory players describe, and behind the folklore &ldquo;72-slot&rdquo; bound.</p>
 </header>
 
+<section class="doc-section" id="what-players-see">
+  <h2>What players see</h2>
+  <p>Open the menu and the bag looks like a handful of tabbed pages. Play a segment where one character is alone and the bag seems to have been cut in half - items the party had are gone, and what the loner picks up never shows up once everyone is back together. Both impressions come from the same thing: there is <strong>one</strong> 256-slot array, and every read and write of it is fenced by a window the game re-computes from who is in the party. The pages are views; the halves are access rules; nothing is ever physically moved.</p>
+  <figure class="overlay-strip">
+    <svg viewBox="0 0 880 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="inv-window-title" style="font-family: var(--font-mono); font-size: 12px;">
+      <title id="inv-window-title">The inventory array and its three possible active windows</title>
+      <text x="20" y="22" fill="var(--text-muted)">0x80085958 - 256 slots x [id][count]</text>
+      <rect x="20" y="32" width="840" height="36" fill="var(--bg-card)" stroke="var(--border)"/>
+      <line x1="440" y1="32" x2="440" y2="68" stroke="var(--border)" stroke-dasharray="3 3"/>
+      <text x="230" y="55" text-anchor="middle" fill="currentColor">slots 0 .. 127</text>
+      <text x="650" y="55" text-anchor="middle" fill="currentColor">slots 128 .. 255</text>
+      <g stroke="var(--accent)" stroke-width="3" fill="none">
+        <line x1="20" y1="96" x2="860" y2="96"/>
+        <line x1="20" y1="128" x2="440" y2="128"/>
+        <line x1="440" y1="160" x2="860" y2="160"/>
+      </g>
+      <g fill="var(--text-muted)">
+        <text x="20" y="90">party of 2+ (or story flag 20 set): window [0, 256)</text>
+        <text x="20" y="122">Vahn alone: window [0, 128)</text>
+        <text x="440" y="154">any other lone character: window [128, 256)</text>
+      </g>
+      <text x="20" y="188" fill="var(--text-muted)">gp[+0x2D2] = start, gp[+0x2D4] = end, gp[+0x2D6] = span - written only by FUN_8004313C</text>
+    </svg>
+    <figcaption>The five inventory helpers only ever look between <code>start</code> and <code>end</code>. A lone character gets one half; a party gets the whole array. The cheat-code &ldquo;72 slots&rdquo; is a menu page, not any of these bounds.</figcaption>
+  </figure>
+</section>
+
 <section class="doc-section doc-summary" id="summary">
   <h2>Summary</h2>
   <ul class="bullets">
@@ -86,7 +113,11 @@
 <section class="doc-section" id="off-by-one">
   <h2>The add helper&rsquo;s off-by-one</h2>
   <p><code>FUN_800421D4</code> scans for a matching id, then for the first free slot. Its id store precedes the bound check: on a completely full window the scan exits at <code>i == end</code> and the id byte lands one slot past the window, at <code>0x80085958 + gp[+0x2D4]&middot;2</code> - <code>0x80085A58</code> (<code>end = 128</code>) or <code>0x80085B58</code> (<code>end = 256</code>). Only the count store is guarded.</p>
-  <p>This off-by-one is the core of the still-open arbitrary-code-execution reachability thread. Two cautions: an exec probe at <code>pc = 0x800422BC</code> fires on <strong>every</strong> successful add, before the guard, so a hit there is not out-of-bounds evidence by itself; and the earlier reading &ldquo;<code>0x800859E8</code> = the first key-item slot&rdquo; rested on the 72-slot page being the window, which it is not. Closing the question needs a bag genuinely filled to <code>end</code> (256 with a multi-member party) with the hit shown to land past the guard.</p>
+  <p>This off-by-one is the core of the still-open arbitrary-code-execution reachability thread (<a href="../reference/open-rev-eng-threads.html">open threads</a>). Closing the question needs a bag genuinely filled to <code>end</code> (256 with a multi-member party) with the hit shown to land past the guard. One caution: an exec probe at <code>pc = 0x800422BC</code> fires on <strong>every</strong> successful add, before the guard, so a hit there is not out-of-bounds evidence by itself.</p>
+  <details class="disclosure">
+    <summary>History: the 72-slot ACE ceiling</summary>
+    <div class="disclosure-body"><p>The earlier reading &ldquo;<code>0x800859E8</code> = SC <code>+0x18A8</code>, the first key-item slot&rdquo; rested on the 72-slot display page being the window. It is not - the accessors bound on <code>gp[+0x2D4]</code>, which is only ever 128 or 256 - so every out-of-bounds ceiling derived from a 72-slot bag is void. See <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p></div>
+  </details>
 </section>
 
 <section class="doc-section" id="function-map">
@@ -114,5 +145,11 @@
     <a href="../formats/save-record.html">Character record</a>
     <a href="field-menu.html">Field menu</a>
     <a href="script-vm.html">Field script VM</a>
+    <a href="shop.html">Shop</a>
+    <a href="battle.html#inventory">Battle item use</a>
+    <a href="../formats/item-table.html">Item table</a>
+    <a href="../formats/item-effect-table.html">Item effects</a>
+    <a href="../reference/cheats.html">Cheat database</a>
+    <a href="../reference/open-rev-eng-threads.html">Open RE threads</a>
   </div>
 </section>

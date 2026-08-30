@@ -1,8 +1,19 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; dmy.dat - developer fixtures</div>
   <h1>DMY.DAT - developer fixtures <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede"><strong>This file contains no real game content.</strong> <code>DMY.DAT</code> sits next to <code>PROT.DAT</code> (the disc's main asset archive) at the disc root, and its name suggests "dummy data" or a parallel asset bank - but what's inside is developer test fixtures, shipped on the retail disc and never loaded by the game.</p>
+  <p class="lede">Nothing you see, hear or do in Legend of Legaia comes from this file. <code>DMY.DAT</code> sits beside <code>PROT.DAT</code> at the disc root and its name suggests &ldquo;dummy data&rdquo; or a second asset bank - but what is inside is developer test fixtures, shipped on the retail disc and never loaded by the game. It matters for one reason: it is the disc's spare room, and the patcher uses it.</p>
 </header>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>In the game</dt><dd>Never. No retail code path opens the file.</dd>
+    <dt>Magic / marker</dt><dd>None - a small offset table at the start, then fixtures.</dd>
+    <dt>Lives in</dt><dd>Disc root, next to <code>PROT.DAT</code>: 18,054 Form 1 sectors at the end of the disc (LBA 180228 on the USA image).</dd>
+    <dt>Parser</dt><dd>None needed; <code>crates/prot</code> walks its TOC, the categorize pipeline skips its contents. Patcher side: <code>legaia_patcher::disc::DiscPatcher::annex_blob</code>.</dd>
+    <dt>Confidence</dt><dd>Confirmed - no reference to the file exists in <code>SCUS_942.54</code> or any overlay, and the fixture patterns are visible in the bytes.</dd>
+  </dl>
+</section>
 
 <section class="doc-section" id="contents">
   <h2>Contents</h2>
@@ -12,12 +23,22 @@
     <li>Paired random blobs (used as test inputs for the audio / video pipelines).</li>
     <li>A small offset table at the start.</li>
   </ol>
-  <p>No part of the file is referenced by retail gameplay code; the file is included on disc but never loaded.</p>
+  <p>No part of the file is referenced by retail gameplay code; the file is included on disc but never loaded. This is one of the few &ldquo;dead&rdquo; claims in the project that rests on <em>no reference existing</em> rather than on &ldquo;no static caller&rdquo; - see the <a href="../tooling/address-reference-scan.html">address reference scan</a> for the difference.</p>
 </section>
 
 <section class="doc-section" id="treatment">
   <h2>Treatment</h2>
-  <p>Skipped by the categorize pipeline (the sweep that classifies every archive entry by format). Not interesting for either preservation or the engine port - but knowing it's inert saves anyone else from digging through it.</p>
+  <p>Skipped by the categorize pipeline (the sweep that classifies every archive entry by format). Not interesting for either preservation or the engine port - but knowing it is inert saves anyone else from digging through it, and it keeps the <a href="pochi.html">pochi-fill slots</a> company as the disc's other developer-placeholder pattern.</p>
+</section>
+
+<section class="doc-section" id="annex">
+  <h2>The DMY.DAT annex - spare room for patched discs</h2>
+  <p>Because nothing reads it, <code>DMY.DAT</code> is the largest stretch of the disc a patch can overwrite without breaking anything. The <a href="../tooling/randomizer.html">patcher</a>'s equipment editor uses it: when a rebuilt <a href="battle-data-pack.html#parking-the-records-in-dmydat">player battle file</a> outgrows its <code>PROT.DAT</code> slot - a weapon model transplanted into another character's file, or the Super Arts Pack's animation block - the file's first <code>0x8000</code> bytes (header, <code>record[0]</code>, descriptor table) stay in the PROT entry and the grown slot region is parked here, with the descriptor offsets pointing into <code>DMY.DAT</code>. The retail loader streams by offset from the entry's start LBA and never bounds a file by its TOC span, so it follows the offsets across without modification.</p>
+  <ul class="bullets">
+    <li>A bump-allocator marker (<code>LGAX</code>, version, sectors used) in the file's <strong>last</strong> sector records what an earlier patch already placed, so a second patch of the same disc allocates past the first.</li>
+    <li>The first sector (its own offset table) is left alone so the archive still parses.</li>
+    <li>The image keeps its size, so a PPF carries the annex.</li>
+  </ul>
 </section>
 
 <section class="doc-section" id="see-also">
@@ -26,5 +47,8 @@
     <span class="see-also-label">Reference</span>
     <a href="prot.html">PROT TOC</a>
     <a href="pochi.html">Pochi-fill slots</a>
+    <a href="battle-data-pack.html#parking-the-records-in-dmydat">Player battle files - parking records</a>
+    <a href="../tooling/randomizer.html">Patcher / randomizer</a>
+    <a href="disc.html">Disc layout</a>
   </div>
 </section>

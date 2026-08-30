@@ -1,85 +1,117 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; xa-adpcm streams</div>
   <h1>XA-ADPCM streams <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">XA is the PlayStation's streamed CD audio: compressed sound (ADPCM - adaptive differential PCM, a 4-bits-per-sample codec) read straight off the disc sector by sector, used in Legaia for cutscene voices and streamed BGM tracks. On-disc filenames are <code>XA1.XA</code> / <code>XA2.XA</code> / etc. (one or more per release). This page covers the sector format, the bit-exact decoder, and how to demux every track into WAV files.</p>
+  <p class="lede">The voices in the opening movie, the sung theme, the streamed music under a cutscene, and the shout each character gives when an Art lands - none of that is played from the sound chip's sample memory. It is read straight off the CD, sector by sector, in the PlayStation's streaming audio format, CD-XA. Each <code>.XA</code> file on the disc carries several tracks braided together, compressed with a small 4-bits-per-sample codec (ADPCM - adaptive differential PCM). This page covers the sector format, the bit-exact decoder, and how to demux every track into WAV files.</p>
 </header>
 
-<section class="doc-section" id="non-standard-interleave-what-it-is-and-isn-t">
-  <h2>The trap first: "non-standard interleave" is a myth</h2>
-  <p>Each <code>.XA</code> file is really <em>many</em> audio channels multiplexed together, one channel per sector, tagged by a per-sector <code>(file_no, ch_no)</code> subheader. Truncating each on-disc sector to 2048 bytes (Form 1 mode) - what a naive extractor does - silently:</p>
-  <ol class="bullets">
-    <li><strong>Dropped 276 bytes per sector</strong> of audio (Form 2 user data is 2324 B vs Form 1's 2048 B).</li>
-    <li><strong>Collapsed every channel of the multiplexed stream into a single shuffled byte sequence</strong>, because the per-sector <code>(file_no, ch_no)</code> subheader was discarded.</li>
-  </ol>
-  <p>The result is a stream where only ~10 % of 128-byte sound groups pass the standard XA validation rule <code>bytes 8..16 == bytes 0..8</code>. That is all a "non-standard interleave" reading of these files amounts to - <strong>not</strong> a bespoke Legaia muxing scheme, just Form-1-truncation damage.</p>
-  <p>The correct path lives in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/xa/src/demux.rs"><code>crates/xa/src/demux.rs</code></a> (function <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/xa/src/demux.rs"><code>demux_disc_range</code></a>). It reads raw 2352-byte sectors, parses each subheader, filters to <code>AUDIO + FORM2</code>, and splits the audio data into one buffer per <code>(file_no, ch_no)</code> tuple. After that step the per-channel buffer is a clean concatenation of standard 128-byte sound groups that the 4-bit ADPCM decoder handles directly.</p>
-  <p>The <code>xa demux-disc-all</code> subcommand drives this across the whole disc - it walks the ISO9660 tree, finds every <code>*.XA</code>, and demuxes each at its own per-sector sample rate / channel mode read from the subheaders (no guessed global rate). This is the &ldquo;get the voices and streamed music out&rdquo; command:</p>
-<pre><code>./target/release/xa demux-disc-all \
-    "/path/to/Legend of Legaia (USA).bin" \
-    --out extracted/xa_demux</code></pre>
-  <p>One WAV lands per <code>(file_no, ch_no)</code> channel under <code>extracted/xa_demux/</code>, named <code>&lt;xa-stem&gt;_fileN_chM.wav</code>. The single-file <code>xa demux-disc --lba --size</code> variant remains for targeting one entry by directory offset.</p>
-  <p>Pacing is therefore <strong>data-driven per track</strong> - the whole point. A track that varies channel mode (the NA disc has 16-channel mono voice files like <code>XA4</code>/<code>XA6</code> alongside 8-channel stereo music like <code>XA5</code>/<code>XA7</code>/<code>XA8</code>/<code>XA9</code>) decodes each channel at its real width: the Form-1 <code>convert</code> path read a stereo track as mono and played it at 2&times; speed; the demux path reads <code>coding_info</code> and gets it right. The decoder handles both 4-bit and 8-bit sample widths (the whole NA corpus is 4-bit); any other, unexpected width is skipped with a warning rather than mis-decoded.</p>
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>In the game</dt><dd>Cutscene dialogue and FMV audio, streamed music tracks, and the per-character Art shouts in battle (Vahn's file is <code>XA2</code>, Noa's <code>XA4</code>, Gala's <code>XA6</code>).</dd>
+    <dt>Magic / marker</dt><dd>No file magic - per-sector CD-XA subheader with submode <code>AUDIO | FORM2</code> (<code>0x04 | 0x20</code>)</dd>
+    <dt>Lives in</dt><dd>Top-level disc files <code>XA1.XA</code>, <code>XA2.XA</code>, ... (one or more per release) - not inside <a href="prot.html">PROT.DAT</a>; each file multiplexes up to 16 channels keyed by <code>(file_no, ch_no)</code></dd>
+    <dt>Parser</dt><dd><code>crates/xa</code> - ADPCM decoder (<code>lib.rs</code>), sector demuxer (<code>demux.rs</code>), WAV export; CLI <code>xa demux-disc-all</code></dd>
+    <dt>Confidence</dt><dd>Confirmed - the decoder is bit-exact, sample for sample, against an external lossless reference decode of a real cutscene track (disc-gated oracle <code>xa_pcm_matches_reference</code>).</dd>
+  </dl>
 </section>
 
 <section class="doc-section" id="sector-layout">
   <h2>Sector layout</h2>
-  <p>Each on-disc XA sector is the standard PSX 2352-byte raw layout (a raw CD sector: sync pattern, address header, then the CD-XA extras):</p>
-<pre><code>+0x000  12 B  sync (00 + 10x FF + 00)
-+0x00C   4 B  header (MM SS FF mode)
-+0x010   8 B  CD-XA subheader (4 fields + duplicated copy):
-                  file_no, ch_no, submode, coding_info
-+0x018  2304 B  user data (18 sound groups × 128 B audio)
-              - 0x14 trailing bytes are padding
-+0x92C   4 B  EDC</code></pre>
+  <p>A CD stores 2352 bytes per sector. Data files use 2048 of them and spend the rest on error correction; streaming audio (Mode 2 Form 2) trades most of that correction away for 276 more bytes of payload per sector, because a click in an audio stream matters less than a corrupted byte in a program. Each on-disc XA sector is the standard PSX raw layout:</p>
+  <table class="layout">
+    <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>+0x000</code></td><td>12</td><td>sync</td><td><code>00</code> + 10 x <code>FF</code> + <code>00</code></td></tr>
+      <tr><td><code>+0x00C</code></td><td>4</td><td>header</td><td>MM SS FF mode (mode 2)</td></tr>
+      <tr><td><code>+0x010</code></td><td>8</td><td>CD-XA subheader</td><td><code>file_no, ch_no, submode, coding_info</code> + a duplicated copy</td></tr>
+      <tr><td><code>+0x018</code></td><td>2304</td><td>user data</td><td>18 sound groups x 128 B of ADPCM audio; the trailing 0x14 bytes of the 2324-byte Form 2 payload are padding</td></tr>
+      <tr><td><code>+0x92C</code></td><td>4</td><td>EDC</td><td>Error-detection code</td></tr>
+    </tbody>
+  </table>
+
+  <figure class="overlay-strip">
+    <svg viewBox="0 0 880 190" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="xa-fig-title">
+      <title id="xa-fig-title">Consecutive sectors of one XA file belong to different channels; the demuxer sorts them by (file_no, ch_no) into per-channel streams</title>
+      <style>
+        .xa-lab  { font: 11px 'Inter', sans-serif; fill: var(--text-muted); }
+        .xa-sec  { fill: var(--bg-card); stroke: var(--border); stroke-width: 1.1; }
+        .xa-hl   { fill: var(--bg-card); stroke: var(--accent); stroke-width: 1.3; }
+        .xa-seg  { font: 10px 'JetBrains Mono', monospace; fill: var(--text-muted); text-anchor: middle; }
+        .xa-arr  { stroke: var(--accent); stroke-width: 1.1; fill: none; }
+      </style>
+      <text x="20" y="34" class="xa-lab">disc sectors (2352 B each)</text>
+      <rect x="200" y="18" width="80" height="30" class="xa-hl"/><text x="240" y="37" class="xa-seg">ch 0</text>
+      <rect x="282" y="18" width="80" height="30" class="xa-sec"/><text x="322" y="37" class="xa-seg">ch 1</text>
+      <rect x="364" y="18" width="80" height="30" class="xa-sec"/><text x="404" y="37" class="xa-seg">ch 2</text>
+      <rect x="446" y="18" width="80" height="30" class="xa-sec"/><text x="486" y="37" class="xa-seg">...</text>
+      <rect x="528" y="18" width="80" height="30" class="xa-hl"/><text x="568" y="37" class="xa-seg">ch 0</text>
+      <rect x="610" y="18" width="80" height="30" class="xa-sec"/><text x="650" y="37" class="xa-seg">ch 1</text>
+      <rect x="692" y="18" width="80" height="30" class="xa-sec"/><text x="732" y="37" class="xa-seg">ch 2</text>
+      <rect x="774" y="18" width="80" height="30" class="xa-sec"/><text x="814" y="37" class="xa-seg">...</text>
+      <path class="xa-arr" d="M240 48 L240 110"/>
+      <path class="xa-arr" d="M568 48 C 568 80, 320 80, 320 110"/>
+      <text x="20" y="130" class="xa-lab">channel 0 stream</text>
+      <rect x="200" y="114" width="80" height="30" class="xa-hl"/><text x="240" y="133" class="xa-seg">2304 B</text>
+      <rect x="282" y="114" width="80" height="30" class="xa-hl"/><text x="322" y="133" class="xa-seg">2304 B</text>
+      <rect x="364" y="114" width="80" height="30" class="xa-hl" style="stroke-dasharray: 3 3"/><text x="404" y="133" class="xa-seg">...</text>
+      <text x="200" y="172" class="xa-lab">each 2304 B payload = 18 sound groups x 128 B; every group decodes to 224 samples (4-bit) or 112 (8-bit)</text>
+    </svg>
+    <figcaption>The interleave is what lets the drive stream several voice channels at a fixed read speed; it also means a naive 2048-byte file copy shreds the audio (see the history note under <em>Demuxing</em>).</figcaption>
+  </figure>
+
+  <h3 id="subheader-bits">Subheader bits</h3>
   <p>Submode bits relevant for audio detection:</p>
 <table>
-<thead><tr>
-<th>bit</th>
-<th>meaning</th>
-</tr></thead>
+<thead><tr><th>bit</th><th>meaning</th></tr></thead>
 <tbody>
-<tr>
-<td><code>0x04</code></td>
-<td>AUDIO</td>
-</tr>
-<tr>
-<td><code>0x20</code></td>
-<td>FORM2</td>
-</tr>
+<tr><td><code>0x04</code></td><td>AUDIO</td></tr>
+<tr><td><code>0x20</code></td><td>FORM2</td></tr>
 </tbody>
 </table>
   <p>Coding-info bits:</p>
 <table>
-<thead><tr>
-<th>bits</th>
-<th>meaning</th>
-</tr></thead>
+<thead><tr><th>bits</th><th>meaning</th></tr></thead>
 <tbody>
-<tr>
-<td>0 (<code>0x01</code>)</td>
-<td>stereo (vs mono)</td>
-</tr>
-<tr>
-<td>2..=3</td>
-<td>sample rate (<code>00</code> = 37.8 kHz, <code>01</code> = 18.9 kHz)</td>
-</tr>
-<tr>
-<td>4..=5</td>
-<td>bits/sample (<code>00</code> = 4-bit, <code>01</code> = 8-bit)</td>
-</tr>
+<tr><td>0 (<code>0x01</code>)</td><td>stereo (vs mono)</td></tr>
+<tr><td>2..=3</td><td>sample rate (<code>00</code> = 37.8 kHz, <code>01</code> = 18.9 kHz)</td></tr>
+<tr><td>4..=5</td><td>bits/sample (<code>00</code> = 4-bit, <code>01</code> = 8-bit)</td></tr>
 </tbody>
 </table>
-  <p>The 18 sound groups inside the user data are 128-byte CD-XA ADPCM blocks; see <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/xa/src/lib.rs">the lib doc-comment</a> for the per-block layout (8 sound units, 28 lines × 4 bytes).</p>
+  <p>The 18 sound groups inside the user data are 128-byte CD-XA ADPCM blocks; see <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/xa/src/lib.rs">the lib doc-comment</a> for the per-block layout (8 sound units, 28 lines x 4 bytes).</p>
+</section>
+
+<section class="doc-section" id="demux">
+  <h2>Demuxing: getting the tracks out</h2>
+  <p>Each <code>.XA</code> file is really <em>many</em> audio channels multiplexed together, one channel per sector, tagged by the per-sector <code>(file_no, ch_no)</code> subheader. <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/xa/src/demux.rs"><code>crates/xa/src/demux.rs</code></a> (<code>demux_disc_range</code>) reads raw 2352-byte sectors, parses each subheader, filters to <code>AUDIO + FORM2</code>, and splits the audio data into one buffer per <code>(file_no, ch_no)</code> tuple. After that step the per-channel buffer is a clean concatenation of standard 128-byte sound groups that the ADPCM decoder handles directly.</p>
+  <p>The <code>xa demux-disc-all</code> subcommand drives this across the whole disc - it walks the ISO9660 tree, finds every <code>*.XA</code>, and demuxes each at its own per-sector sample rate / channel mode read from the subheaders (no guessed global rate). This is the &ldquo;get the voices and streamed music out&rdquo; command:</p>
+<pre><code>./target/release/xa demux-disc-all \
+    "/path/to/Legend of Legaia (USA).bin" \
+    --out extracted/xa_demux</code></pre>
+  <p>One WAV lands per <code>(file_no, ch_no)</code> channel under <code>extracted/xa_demux/</code>, named <code>&lt;xa-stem&gt;_fileN_chM.wav</code>. The single-file <code>xa demux-disc --lba --size</code> variant remains for targeting one entry by directory offset. <code>legaia-extract</code> runs the demux automatically and writes the WAVs to <code>extracted/XA_WAV/</code>.</p>
+  <p>Pacing is <strong>data-driven per track</strong> - the whole point. A track that varies channel mode (the NA disc has 16-channel mono voice files like <code>XA4</code>/<code>XA6</code> alongside 8-channel stereo music like <code>XA5</code>/<code>XA7</code>/<code>XA8</code>/<code>XA9</code>) decodes each channel at its real width. Channels report their width via <code>coding_info</code>; the decoder handles both 4-bit and 8-bit, and any other (unexpected) width is skipped with a warning rather than mis-decoded.</p>
+  <details class="disclosure">
+    <summary>History: the "non-standard interleave" reading</summary>
+    <div class="disclosure-body">
+      <p>The earliest extracted-XA tooling truncated each on-disc sector to 2048 bytes (Form 1 mode), which silently <strong>dropped 276 bytes per sector</strong> of audio and <strong>collapsed every channel into a single shuffled byte sequence</strong>, because the per-sector <code>(file_no, ch_no)</code> subheader was discarded. Only ~10 % of 128-byte sound groups in that output passed the standard XA rule <code>bytes 8..16 == bytes 0..8</code>. That is all the "non-standard interleave" shorthand of earlier doc revisions amounted to - <strong>not</strong> a bespoke Legaia muxing scheme, just Form-1-truncation damage. The same truncation made the old <code>convert</code> path read a stereo track as mono and play it at 2x speed. The <code>extracted/XA/*.XA</code> files the disc-extract step still copies are those Form-1-truncated bytes - usable for byte-stable hashing only, never for decoding. More retired readings: <a href="../reference/re-do-not-re-walk.html">do not re-walk</a>.</p>
+    </div>
+  </details>
 </section>
 
 <section class="doc-section" id="sound-group-decode">
   <h2>Sound-group decode (4-bit)</h2>
   <p>Each 128-byte sound group holds 8 sound units of 28 samples. The decode is <strong>bit-exact</strong> against an external lossless reference decode of a real cutscene track (every interleaved sample matches), so the layout below is confirmed, not inferred.</p>
+  <table class="layout">
+    <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>+0</code></td><td>16</td><td>parameter bytes</td><td>One <code>(filter &lt;&lt; 4) | range</code> byte per sound unit, filter 0..=3, range 0..=12, with the redundant copy interleaved <em>within each half</em> (layout below)</td></tr>
+      <tr><td><code>+16</code></td><td>112</td><td>sample nibbles</td><td>28 lines x 4 bytes; unit <code>u</code> reads byte <code>u / 2</code> of each line, low nibble for even <code>u</code>, high nibble for odd</td></tr>
+    </tbody>
+  </table>
   <p><strong>Parameter bytes (0..16).</strong> The redundant copy is interleaved <em>within each half</em>, not appended:</p>
 <pre><code>byte:  0  1  2  3   4  5  6  7   8  9 10 11  12 13 14 15
 unit: p0 p1 p2 p3  p0 p1 p2 p3  p4 p5 p6 p7  p4 p5 p6 p7</code></pre>
-  <p>So unit <code>u</code>'s parameter byte is at <code>u + (if u &lt; 4 { 0 } else { 4 })</code>. Each byte is <code>(filter &lt;&lt; 4) | range</code>, filter &isin; 0..=3, range &isin; 0..=12. (Reading bytes 0..8 as eight sequential params - the "appended mirror" reading - mis-assigns the parameters of units 4..7 and is the classic CD-XA decode trap.)</p>
-  <p><strong>Sample nibbles (16..128).</strong> 28 lines of 4 bytes. Unit <code>u</code> reads byte <code>u / 2</code> of each line, taking the <strong>low</strong> nibble when <code>u</code> is even and the <strong>high</strong> nibble when <code>u</code> is odd:</p>
+  <p>So unit <code>u</code>'s parameter byte is at <code>u + (if u &lt; 4 { 0 } else { 4 })</code>. Reading bytes 0..8 as eight sequential params - the "appended mirror" reading - mis-assigns the parameters of units 4..7 and is the classic CD-XA decode trap.</p>
+  <p><strong>Sample nibbles (16..128).</strong> 28 lines of 4 bytes:</p>
 <pre><code>line byte:  0           1           2           3
 nibble:   lo=unit0     lo=unit2    lo=unit4    lo=unit6
           hi=unit1     hi=unit3    hi=unit5    hi=unit7</code></pre>
@@ -92,16 +124,23 @@ prev2   = prev1;  prev1 = value     // history is the UNCLAMPED, UNROUNDED value
   <p><strong>Stereo de-interleave.</strong> The LEFT channel is the even units (0,2,4,6) and the RIGHT channel is the odd units (1,3,5,7); output is L,R interleaved, pairing <code>(0,1),(2,3),(4,5),(6,7)</code>. Each channel keeps its own <code>(prev1, prev2)</code> history.</p>
 </section>
 
-<section class="doc-section" id="what-the-older-extracted-xa-xa-files-contain">
-  <h2>What the older <code>extracted/XA/*.XA</code> files contain</h2>
-  <p>The <code>extracted/XA/*.XA</code> files copied by the disc-extract step are the Form-1-truncated bytes - usable for byte-stable hashing only, not for decoding. The listenable per-channel WAVs are produced by the demux step; <code>legaia-extract</code> runs it automatically and writes them to <code>extracted/XA_WAV/</code> (or run <code>xa demux-disc-all</code> standalone).</p>
+<section class="doc-section" id="sound-group-decode-8-bit">
+  <h2>Sound-group decode (8-bit)</h2>
+  <p>The 8-bit mode (subheader <code>coding_info</code> bits 4..5 = <code>01</code>) uses the <strong>same 128-byte group</strong> but packs <strong>4 sound units of 28 full-byte samples</strong> instead of 8 nibble units:</p>
+  <ul class="bullets">
+    <li><strong>Parameter bytes (0..16).</strong> The 4 unit params live at bytes 0..4, mirrored three more times at 4..8 / 8..12 / 12..16; the live copy is bytes 0..4. Same <code>(filter &lt;&lt; 4) | range</code> encoding.</li>
+    <li><strong>Sample bytes (16..128).</strong> 28 lines of 4 bytes; unit <code>u</code> reads byte <code>u</code> of each line (one full signed 8-bit sample per byte, <code>0x80</code> = -128).</li>
+    <li><strong>Reconstruction.</strong> Identical filter math, but the sample sits in the top byte of the 16-bit word before the gain shift: <code>shifted = (sign_extend(byte, 8) &lt;&lt; 8) &gt;&gt; range</code>.</li>
+    <li><strong>Stereo de-interleave.</strong> LEFT = even units (0,2), RIGHT = odd units (1,3).</li>
+  </ul>
+  <p>This yields 112 samples/group vs the 4-bit path's 224. Select it with <code>legaia_xa::DecodeOptions { bits: BitsPerSample::Eight, .. }</code> (the demux path maps each channel's reported width automatically; the CLI exposes <code>--bits 8</code>). The whole NA corpus is 4-bit, so 4-bit is the default and the 8-bit path is exercised by synthetic unit tests.</p>
 </section>
 
 <section class="doc-section" id="what-s-still-open">
   <h2>What's still open</h2>
   <ul class="bullets">
-    <li><strong>8-bit ADPCM verification.</strong> The 8-bit path (4 sound units of 28 full-byte samples per group, params at bytes 0..4 mirrored four times) is implemented behind <code>DecodeOptions { bits: BitsPerSample::Eight }</code> / <code>--bits 8</code>, and the demux / cutscene / extract consumers map each channel's reported <code>bits_per_sample</code> automatically. But the NA corpus is <strong>entirely 4-bit, 37.8 kHz</strong> (<code>demux-disc-all</code> reports <code>bits_per_sample = 4</code> for all 316 channels across 34 <code>*.XA</code> files), so nothing on the NA disc exercises 8-bit - it is covered by synthetic unit tests, <strong>not</strong> verified bit-exact against a real 8-bit source.</li>
-    <li><strong>Per-cutscene file-no / ch-no map.</strong> <code>demux-disc</code> emits one WAV per channel keyed by <code>(file_no, ch_no)</code>. The mapping from cutscene name → expected channel pair lives inside the cutscene-overlay's mode driver, which is <a href="../tooling/overlay-capture.html">not yet captured</a>. Until that's reversed, the WAV → cutscene assignment is manual.</li>
+    <li><strong>8-bit ADPCM verification.</strong> The NA corpus is <strong>entirely 4-bit, 37.8 kHz</strong> (<code>demux-disc-all</code> reports <code>bits_per_sample = 4</code> for every channel of every <code>*.XA</code> file), so nothing on the NA disc exercises 8-bit - it is covered by synthetic unit tests, <strong>not</strong> verified bit-exact against a real 8-bit source. A JP/EU build that uses 8-bit would decode without code changes.</li>
+    <li><strong>Per-cutscene file-no / ch-no map.</strong> <code>demux-disc</code> emits one WAV per channel keyed by <code>(file_no, ch_no)</code>. The mapping from cutscene name to expected channel pair lives inside the cutscene-overlay's mode driver, which is <a href="../tooling/overlay-capture.html">not yet captured</a>. Until that is reversed, the WAV-to-cutscene assignment is manual. The Art-shout side is better pinned: <code>crates/art</code>'s <code>arts_voice</code> tables give each character's file and candidate-channel pool.</li>
   </ul>
 </section>
 
@@ -110,31 +149,13 @@ prev2   = prev1;  prev1 = value     // history is the UNCLAMPED, UNROUNDED value
     <summary>Provenance (sources)</summary>
     <div class="disclosure-body">
 <table>
-<thead><tr>
-<th>Subject</th>
-<th>Source</th>
-</tr></thead>
+<thead><tr><th>Subject</th><th>Source</th></tr></thead>
 <tbody>
-<tr>
-<td>Mode 2 / Form 2 sector layout</td>
-<td>PSX BIOS docs + <code>legaia-iso::raw</code></td>
-</tr>
-<tr>
-<td>Subheader interpretation</td>
-<td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/xa/src/demux.rs"><code>crates/xa/src/demux.rs</code></a></td>
-</tr>
-<tr>
-<td>4-bit ADPCM filter coefficients</td>
-<td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/xa/src/lib.rs"><code>crates/xa/src/lib.rs</code></a></td>
-</tr>
-<tr>
-<td>Sound-group decode (param + nibble layout, predictor)</td>
-<td>bit-exact, sample-for-sample, against an external lossless reference decode of a real cutscene track; pinned by the disc-gated <code>xa_pcm_matches_reference</code> oracle in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/xa/tests/pcm_reference.rs"><code>crates/xa/tests/pcm_reference.rs</code></a>.</td>
-</tr>
-<tr>
-<td>Form-1-truncation diagnosis</td>
-<td>direct comparison: 90 % of 128-byte groups in the Form-1-truncated <code>extracted/XA/*.XA</code> bytes fail the <code>bytes 8..16 == bytes 0..8</code> invariant.</td>
-</tr>
+<tr><td>Mode 2 / Form 2 sector layout</td><td>PSX BIOS docs + <code>legaia-iso::raw</code></td></tr>
+<tr><td>Subheader interpretation</td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/xa/src/demux.rs"><code>crates/xa/src/demux.rs</code></a></td></tr>
+<tr><td>4-bit ADPCM filter coefficients</td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/xa/src/lib.rs"><code>crates/xa/src/lib.rs</code></a></td></tr>
+<tr><td>Sound-group decode (param + nibble layout, predictor)</td><td>bit-exact, sample-for-sample, against an external lossless reference decode of a real cutscene track; pinned by the disc-gated <code>xa_pcm_matches_reference</code> oracle in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/xa/tests/pcm_reference.rs"><code>crates/xa/tests/pcm_reference.rs</code></a>.</td></tr>
+<tr><td>Form-1-truncation diagnosis</td><td>direct comparison: 90 % of 128-byte groups in the Form-1-truncated <code>extracted/XA/*.XA</code> bytes fail the <code>bytes 8..16 == bytes 0..8</code> invariant.</td></tr>
 </tbody>
 </table>
     </div>
@@ -146,8 +167,15 @@ prev2   = prev1;  prev1 = value     // history is the UNCLAMPED, UNROUNDED value
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="vab.html">VAB sound bank</a>
+    <a href="str-fmv-table.html">STR FMV table</a>
+    <a href="disc.html">PSX disc geometry</a>
     <a href="../subsystems/cutscene.html">Cutscene / STR</a>
     <a href="../subsystems/audio.html">Audio stack</a>
-    <a href="str-fmv-table.html">STR FMV table</a>
+  </div>
+  <div class="see-also">
+    <span class="see-also-label">Demo / tooling</span>
+    <a href="../media.html">Media player (FMV + XA)</a>
+    <a href="../arts.html">Arts (voice cues)</a>
+    <a href="../tooling/extraction.html">Extraction pipeline</a>
   </div>
 </section>

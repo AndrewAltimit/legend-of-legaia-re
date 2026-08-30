@@ -8,6 +8,19 @@
     <code>engine-core::levelup::LevelUpTracker</code>.</p>
 </header>
 
+<section class="doc-section" id="what-players-see">
+  <h2>What players see</h2>
+  <p>The last enemy drops, the spoils window reports the EXP and gold, and sometimes a second window announces that someone's level went up. Behind that: the monster EXP pool is scaled and split among the <em>living</em> party members, each member's cumulative XP is compared against a threshold curve, and for every threshold crossed the game grows eight stats by a per-character curve. Two things surprise people: a level-up raises your <strong>maximum</strong> HP and MP but does <strong>not</strong> heal you, and one big award can jump several levels at once.</p>
+  <div class="flow">
+    <span class="num">1</span><span class="layer">Victory</span><span class="desc">the 0x5A end-of-action gate sees no living monster</span><span class="crate">FUN_801E295C</span>
+    <span class="num">2</span><span class="layer">Spoils</span><span class="desc">EXP summed x3/4, gold halved twice, drop rolls; XP split evenly among survivors</span><span class="crate">FUN_8004E568</span>
+    <span class="num">3</span><span class="layer">Threshold check</span><span class="desc">cumulative XP vs the scaled curve; loop while threshold &lt;= XP</span><span class="crate">FUN_801E9504</span>
+    <span class="num">4</span><span class="layer">Stat growth</span><span class="desc">per crossed level: HP max, MP max and six stats grow along the character's curve, jittered</span><span class="crate">DAT_800769CC / DAT_80076918</span>
+    <span class="num">5</span><span class="layer">Record update</span><span class="desc">cumulative XP +0x0, next threshold +0x4, level byte +0x130 - the three fields the Status menu draws</span><span class="crate">save record</span>
+    <span class="num">6</span><span class="layer">Banner</span><span class="desc">"&lt;name&gt;'s level increased!" window above the spoils window</span><span class="crate">engine-ui</span>
+  </div>
+</section>
+
 <section class="doc-section" id="xp-table">
   <h2>XP curve <span class="tag tag-done">Confirmed</span></h2>
   <p>The retail XP-to-next-level curve is a <strong>static <code>SCUS_942.54</code> table plus a scaling formula</strong>, applied by <code>FUN_801E9504</code> (the victory-path level-up applier; overlay-resident, dumped as <code>overlay_battle_action_801e9504</code>). The battle reward resolver <code>FUN_8004E568</code> calls it once per surviving party member after dividing the monster XP pool by the alive-party count.</p>
@@ -76,8 +89,8 @@
 </section>
 
 <section class="doc-section" id="flow">
-  <h2>Level-up flow</h2>
-  <p>After <code>BattleEndCause::MonsterWipe</code>:</p>
+  <h2>Level-up flow (engine port)</h2>
+  <p>The clean-room engine mirrors the ladder above as pure state on <code>World</code>. After <code>BattleEndCause::MonsterWipe</code>:</p>
   <ol>
     <li>Engine calls <code>World::apply_battle_xp(xp_reward)</code>.</li>
     <li><code>apply_battle_xp</code> enumerates surviving party members (slots whose <code>BattleActor::hp &gt; 0</code>) and divides <code>xp_reward</code> equally among them (integer divide, remainder dropped). Dead members receive zero XP.</li>
@@ -138,7 +151,7 @@
 
 <section class="doc-section" id="full-reference">
   <h2>Full reference</h2>
-  <p>Full write-up at <code>docs/subsystems/level-up.md</code>. Applier dump: <code>ghidra/scripts/funcs/overlay_battle_action_801e9504.txt</code>. Source: <code>crates/engine-core/src/levelup.rs</code>, parser <code>crates/asset/src/level_up_tables.rs</code>.</p>
+  <p>Full write-up at <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/level-up.md" target="_blank" rel="noopener"><code>docs/subsystems/level-up.md</code></a> - which also records the Fire Book I write footprint and its resolved reader, and what the port draws between the last enemy dying and the field returning (retail's own pair of framed windows). Applier dump: <code>ghidra/scripts/funcs/overlay_battle_action_801e9504.txt</code>. Source: <code>crates/engine-core/src/levelup.rs</code>, parser <code>crates/asset/src/level_up_tables.rs</code>.</p>
 </section>
 
 <section class="doc-section" id="see-also">
@@ -148,6 +161,10 @@
     <a href="battle.html">Battle scene</a>
     <a href="battle-formulas.html">Battle formulas</a>
     <a href="shop.html">Shop UI</a>
+    <a href="field-menu.html">Field menu (Status page)</a>
+    <a href="../formats/save-record.html">Save record</a>
+    <a href="../formats/new-game-table.html">New-game template</a>
+    <a href="history-battle.html#captured-stat-growth">Captured stat-growth deltas</a>
     <a href="../reference/gamedata.html">Game-data tables</a>
   </div>
 </section>

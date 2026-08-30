@@ -1,14 +1,32 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; pochi-filler placeholder slots</div>
   <h1>Pochi-filler placeholder slots <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">266 of the 1233 entries in <code>PROT.DAT</code> (the disc's single big asset archive) are unused placeholder slots, padded with the repeating ASCII word <code>pochi</code> - a common Japanese dog name (<code>ポチ</code>), the kind of fill pattern a developer picks so that uninitialised data is instantly recognisable in a debugger. The game never loads them. The catch is what comes <em>after</em> the padding.</p>
+  <p class="lede">Nothing a player ever sees - and that is the point. 266 of the 1233 entries in <code>PROT.DAT</code> (the disc's single big asset archive) are unused placeholder slots, padded with the repeating ASCII word <code>pochi</code> - a common Japanese dog name (<code>ポチ</code>), the kind of fill pattern a developer picks so that uninitialised data is instantly recognisable in a debugger. Each is exactly one 2048-byte sector of fill and nothing else. The game never loads them; tools must learn to step over them, and the one rendering bug ever blamed on them turned out to belong to the entry next door.</p>
 </header>
 
-<aside class="notice warn">
-  <div class="notice-title">The padding stops after ~2 KB - the rest only looks empty</div>
-  Beyond the <code>pochipochi&hellip;</code> prefix these slots are <strong>not zeros</strong>: they carry stale leftovers from the disc-mastering process, and in most scene blocks that leftover data parses as a <em>complete, valid</em> texture. A slot can look empty, parse as real, and be neither.
-  See <a href="#scratch-tail">the scratch tail</a> below.
-</aside>
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>In the game</dt><dd>Never loaded. Reserved slots a scene's asset block set aside and never filled.</dd>
+    <dt>Magic / marker</dt><dd>ASCII <code>pochi</code> at offset 0 and a DOS end-of-file byte <code>0x1A</code> at <code>+0x786</code></dd>
+    <dt>Lives in</dt><dd>266 <a href="prot.html">PROT.DAT</a> entries, each exactly one 2048-byte sector, clustered at fixed positions inside scene <a href="cdname.html">CDNAME</a> blocks</dd>
+    <dt>Parser</dt><dd>Detection class <code>pochi_filler</code> / <code>Class::PochiFiller</code> in <code>crates/asset/src/categorize.rs</code></dd>
+    <dt>Confidence</dt><dd>Confirmed - measured over the whole corpus and asserted as a test: every slot is one sector, none carries a parseable TIM.</dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="layout">
+  <h2>Byte layout</h2>
+  <table class="layout">
+    <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>+0x000</code></td><td>1926</td><td>fill</td><td>ASCII <code>pochipochi...</code> - 37 lines x 52 bytes + a trailing <code>po</code></td></tr>
+      <tr><td><code>+0x786</code></td><td>1</td><td>EOF</td><td><code>0x1A</code>, the DOS end-of-file marker</td></tr>
+      <tr><td><code>+0x787</code></td><td>to <code>0x800</code></td><td>tail</td><td>Scratch / leftover fill to the end of the single sector - no format, no second sector</td></tr>
+    </tbody>
+  </table>
+  <p>Detection is two checks: <code>buf.starts_with(b"pochi") &amp;&amp; buf[0x786] == 0x1A</code>.</p>
+</section>
 
 <section class="doc-section" id="why-so-many">
   <h2>Why 266 of them exist</h2>
@@ -16,32 +34,28 @@
   <p>Some scene blocks are almost entirely pochi. The <code>edstati3</code> block (likely "ending station 3", possibly cut content) has 36 of ~38 pochi entries.</p>
 </section>
 
-<section class="doc-section" id="scratch-tail">
-  <h2>The scratch tail: a working texture that was never meant to load</h2>
-  <p>The padding runs 1926 bytes and ends with a DOS end-of-file marker; the bytes after it are whatever the mastering tool happened to leave in the sector. A large share of scene-block pochi slots carry a complete, well-formed 256&times;256 4bpp PSX TIM (the PlayStation's standard texture format, here at 4 bits per pixel) - often two, with image blocks destined for framebuffer coordinates <code>(768, 0)</code> and <code>(832, 0)</code> and palettes (CLUTs - colour lookup tables stored as rows of framebuffer pixels) at rows 473 / 479: the block's battle-side character pages, left over from an earlier mastering pass.</p>
-  <p>They parse. They upload. Retail never touches them, because the field loader dispatches the scene's <em>asset table</em> - an explicit list of which entries to load - rather than walking the scene's reserved slots.</p>
-  <p>A reimplementation that instead scans every entry in the scene's block for textures walks straight into the trap. Framebuffer <code>(768, 0)</code> is tpage <code>0x0C</code> (the 64&times;256 slice of video memory starting at framebuffer x=768), and that is exactly where most field scenes put their <strong>ground-tile atlas</strong> (the per-cell page in the <code>.MAP</code> object record's <code>+0x15</code>; see <a href="../subsystems/world-map.html">world-map</a> "Ground texturing"). The stale pochi upload lands last and erases it, and the ground quads then sample character / backdrop texels: Jeremi's floor becomes a grid of grey "tombstones", Mt. Dhini's a repeating vine/crack pattern. Rim Elm escapes only because its sibling slots are all <code>scene_tmd_stream</code>
-    entries, which the field build already excludes.</p>
-</section>
-
-<section class="doc-section" id="layout">
-  <h2>Byte layout</h2>
-<pre><code>+0x000..0x786   ASCII "pochipochi..." (37 lines × 52 bytes + "po" = 1926 bytes)
-+0x786          0x1A (DOS EOF marker)
-+0x787..end     scratch / leftover data (no consistent format)</code></pre>
-  <p>Detection is two checks: <code>buf.starts_with(b"pochi") &amp;&amp; buf[0x786] == 0x1A</code>. Detection class: <code>pochi_filler</code>; detector + class enum in <code>crates/asset/src/categorize.rs</code>.</p>
-</section>
-
 <section class="doc-section" id="how-to-handle">
   <h2>What a contributor must do</h2>
-  <p>Treat these slots as known-empty, whatever their tails parse as:</p>
+  <p>Treat these slots as known-empty:</p>
   <ul class="bullets">
     <li>Don't run format detectors against them.</li>
     <li>Don't include them in TMD/TIM bulk-scan totals.</li>
     <li>Skip them in any "what's still uncategorised" tally.</li>
-    <li>Never upload their textures: any VRAM-building sweep must skip <code>Class::PochiFiller</code> (the categorizer's enum variant for these slots).</li>
+    <li>Size every entry as the sector gap to its successor (<a href="prot.html">PROT TOC</a>) - a pochi slot then has no reach into its neighbour at all.</li>
   </ul>
-  <p>The engine's field VRAM pre-pass does exactly that - it skips <code>Class::PochiFiller</code> entries outright (<code>legaia_engine_core::scene_resources</code>). The disc-gated regression <code>field_ground_texture_pages_disc</code> pins both halves: that the hazard exists on the disc, and that the built VRAM does not contain it.</p>
+  <p>The engine's field VRAM pre-pass skips <code>Class::PochiFiller</code> entries outright (<code>legaia_engine_core::scene_resources</code>). The disc-gated regression <code>field_ground_texture_pages_disc</code> pins both halves: every pochi-filler entry is one sector carrying no TIM, and the built VRAM does not contain the neighbour's page.</p>
+</section>
+
+<section class="doc-section" id="scratch-tail">
+  <h2>The ground-atlas hazard belongs to the next entry</h2>
+  <p>A rendering bug is worth keeping on this page precisely because its symptom points at the wrong entry. Two <code>64 x 256</code> texture pages land at framebuffer <code>(768, 0)</code> and <code>(832, 0)</code> - a scene block's battle-side character pages, CLUT rows 473 / 479 - and fb <code>(768, 0)</code> is tpage <code>0x0C</code>, where most field scenes put their <strong>ground-tile atlas</strong> (the per-cell page in the <code>.MAP</code> object record's <code>+0x15</code>; see <a href="../subsystems/world-map.html">world-map</a> "Ground texturing"). Uploaded last, they erase the atlas and the ground quads sample character / backdrop texels: Jeremi's floor becomes a grid of grey "tombstones", Mt. Dhini's a repeating vine/crack pattern.</p>
+  <p>Those pages are the <strong><code>scene_tmd_stream</code> entry that follows the pochi slot</strong> - its <code>FUN_8001FE70</code> type-<code>0x01</code> chunks. A "scan every entry in the CDNAME block for TIMs" sweep reached them by standing on the pochi slot and reading past its end. Rim Elm escapes because its sibling slots are all <code>scene_tmd_stream</code> entries, which the field build already excludes - which is the same statement about the neighbour, read as a statement about the slot.</p>
+  <details class="disclosure">
+    <summary>History: the "stale scratch that parses as a TIM" reading</summary>
+    <div class="disclosure-body">
+      <p>An earlier reading held that the bytes after the <code>0x1A</code> were mastering leftovers, and that in most scene blocks they parsed as a complete, valid 256x256 4bpp TIM - the pages described above. That reading is <strong>falsified</strong>: every one of the 266 slots is exactly one sector and zero of them carry a parseable TIM. The pages came from the neighbouring entry, reached through the superseded entry-size expression that spanned neighbouring entries (corrected in <a href="prot.html">prot</a>). The symptom was attributed to the slot a sweep was standing on rather than to the entry it over-read into. Catalogued on <a href="../reference/re-do-not-re-walk.html">do not re-walk</a>.</p>
+    </div>
+  </details>
 </section>
 
 <section class="doc-section" id="see-also">
@@ -49,6 +63,14 @@
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="prot.html">PROT TOC</a>
+    <a href="cdname.html">CDNAME name map</a>
     <a href="dmy.html">DMY.DAT</a>
+    <a href="scene-bundles.html">Scene bundles</a>
+    <a href="../reference/re-do-not-re-walk.html">Do not re-walk</a>
+  </div>
+  <div class="see-also">
+    <span class="see-also-label">Tooling</span>
+    <a href="../tooling/disc-coverage.html">Disc coverage</a>
+    <a href="../tooling/extraction.html">Extraction pipeline</a>
   </div>
 </section>

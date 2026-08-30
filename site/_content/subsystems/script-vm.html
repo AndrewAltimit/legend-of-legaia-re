@@ -1,13 +1,76 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; field / event script VM</div>
   <h1>Field / event script VM</h1>
-  <p class="lede">The interpreter that makes Legaia's towns work. Everything that happens outside combat - a villager's dialogue, a door that warps you to the next room, a chest that gives you an item,
-    a cutscene trigger, a story flag flipping so the plot can advance - is a small script, and this VM runs them all. It is a bytecode interpreter: each script is a stream of instruction bytes
-    ("opcodes"), and a central dispatcher reads the byte at the current position and jumps to its handler. It lives in PROT entry <code>0897_xxx_dat</code> - the town/field <strong>overlay</strong>, a
-    chunk of code the game loads into RAM whenever you're walking around (PROT.DAT is the disc's single big archive of numbered entries) - at <code>FUN_801DE840</code>, Ghidra's name for the traced
-    function at that RAM address. It is the largest function in the corpus: ~17.5&nbsp;KB / 4099 instructions / 357 outgoing calls, and the biggest of Legaia's <a href="move-vm.html#vm-family">five
-    runtime VMs</a>. <span class="status-done">All 43 opcodes ported.</span></p>
+  <p class="lede">The interpreter that makes Legaia's towns work. Everything that happens outside combat - a villager's dialogue, a door that warps you to the next room, a chest that gives you an item, a cutscene trigger, a story flag flipping so the plot can advance - is a small script, and this VM runs them all. This page explains what a script is, how the game steps it every frame, what each opcode does, and where the bytes live on the disc. <span class="status-done">All 43 opcodes ported.</span></p>
 </header>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>What it is</dt><dd>A bytecode interpreter: each script is a stream of instruction bytes ("opcodes"); a central dispatcher reads the byte at the current position and jumps to its handler.</dd>
+    <dt>Where it lives</dt><dd>PROT entry <code>0897</code>, the town/field <strong>overlay</strong> (a chunk of code the game streams into RAM whenever you walk around), at <code>FUN_801DE840</code> - Ghidra's name for the traced function at that RAM address. It is the largest function in the corpus (~17.5&nbsp;KB, 4099 instructions, 357 outgoing calls) and the biggest of the <a href="move-vm.html#vm-family">runtime VM family</a>.</dd>
+    <dt>Where scripts come from</dt><dd>Each scene's <strong>MAN</strong> (script + data container) - partition-1 record 0 is the scene's system script, records <code>1..</code> are per-NPC interaction scripts, partition 2 holds cutscene records spawned on demand. Thirteen scenes ship a second, streaming MAN as well.</dd>
+    <dt>Opcode space</dt><dd>43 explicit opcodes <code>0x21</code>-<code>0x4F</code> (gaps at <code>0x27</code>-<code>0x2A</code>), plus a whole range of "wide" flag opcodes whose high nibble is <code>0x5</code>/<code>0x6</code>/<code>0x7</code>. The high bit <code>0x80</code> on any opcode retargets it at another script's context.</dd>
+    <dt>Dialogue</dt><dd>Has <strong>no opcode</strong>. Talking to an NPC is an interaction pipeline that pages the actor's own inline text - see <a href="#dialogue">below</a>.</dd>
+    <dt>Port</dt><dd><code>crates/engine-vm/src/field.rs</code> (executing VM) + <code>legaia_asset::field_disasm</code> (side-effect-free disassembler). Source dump: <code>ghidra/scripts/funcs/overlay_0897_801de840.txt</code>.</dd>
+  </dl>
+  <figure class="overlay-strip">
+    <svg viewBox="0 0 880 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="sv-loop-title">
+      <title id="sv-loop-title">Dispatch loop: every frame the actor lists are walked, each live context runs FUN_801DE840 repeatedly until an opcode yields, halts or fails to advance the PC</title>
+      <style>
+        .sv-box { fill: var(--bg-card); stroke: var(--border); stroke-width: 1.2; }
+        .sv-hi  { fill: var(--bg-card); stroke: var(--accent); stroke-width: 1.5; }
+        .sv-t   { font: 11px var(--font-mono, monospace); fill: var(--text); text-anchor: middle; }
+        .sv-l   { font: 11px sans-serif; fill: var(--text-muted); text-anchor: middle; }
+        .sv-e   { fill: none; stroke: var(--text-muted); stroke-width: 1.2; marker-end: url(#sv-ah); }
+        .sv-back{ fill: none; stroke: var(--accent); stroke-width: 1.2; stroke-dasharray: 4 3; marker-end: url(#sv-ah); }
+      </style>
+      <defs><marker id="sv-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor" style="color: var(--text-muted)"/></marker></defs>
+      <rect x="15" y="20" width="170" height="56" class="sv-box"/>
+      <text x="100" y="42" class="sv-l">once per display frame</text>
+      <text x="100" y="60" class="sv-t">FUN_8002519C walks 5 lists</text>
+      <rect x="15" y="120" width="170" height="56" class="sv-box"/>
+      <text x="100" y="142" class="sv-l">per field actor</text>
+      <text x="100" y="160" class="sv-t">FUN_8003BC08 (+0x10 &amp; 0x100)</text>
+      <rect x="15" y="220" width="170" height="56" class="sv-box"/>
+      <text x="100" y="242" class="sv-l">script slice</text>
+      <text x="100" y="260" class="sv-t">FUN_80039B7C</text>
+      <path d="M100,76 L100,120" class="sv-e"/>
+      <path d="M100,176 L100,220" class="sv-e"/>
+      <path d="M185,248 L250,248" class="sv-e"/>
+      <rect x="250" y="200" width="200" height="96" class="sv-hi"/>
+      <text x="350" y="224" class="sv-l">the VM</text>
+      <text x="350" y="244" class="sv-t">FUN_801DE840(buf, pc, ctx)</text>
+      <text x="350" y="262" class="sv-l">0x80 prefix? retarget ctx</text>
+      <text x="350" y="280" class="sv-l">switch (op &amp; 0x7F)</text>
+      <path d="M450,248 L520,248" class="sv-e"/>
+      <rect x="520" y="200" width="150" height="96" class="sv-box"/>
+      <text x="595" y="224" class="sv-l">handler returns</text>
+      <text x="595" y="244" class="sv-t">new PC</text>
+      <text x="595" y="262" class="sv-l">ctx[+0x9E] = pc</text>
+      <path d="M595,200 C595,120 350,120 350,200" class="sv-back"/>
+      <text x="472" y="150" class="sv-l">again while (op &amp; 0x7F) &gt;= 0x20</text>
+      <text x="472" y="166" class="sv-l">and PC advanced and op != 0x21</text>
+      <rect x="700" y="30" width="165" height="50" class="sv-box"/>
+      <text x="782" y="50" class="sv-l">yield (0x37/41/47)</text>
+      <text x="782" y="68" class="sv-t">park PC in +0x94, HALT</text>
+      <rect x="700" y="100" width="165" height="50" class="sv-box"/>
+      <text x="782" y="120" class="sv-l">wait (0x4A / 0x49)</text>
+      <text x="782" y="138" class="sv-t">PC unchanged, retry next frame</text>
+      <rect x="700" y="170" width="165" height="50" class="sv-box"/>
+      <text x="782" y="190" class="sv-l">text byte &lt; 0x20</text>
+      <text x="782" y="208" class="sv-t">dialogue pager takes over</text>
+      <rect x="700" y="240" width="165" height="50" class="sv-box"/>
+      <text x="782" y="260" class="sv-l">0x21 / back-jump</text>
+      <text x="782" y="278" class="sv-t">frame done, resume next frame</text>
+      <path d="M670,230 L700,60" class="sv-e"/>
+      <path d="M670,240 L700,128" class="sv-e"/>
+      <path d="M670,250 L700,196" class="sv-e"/>
+      <path d="M670,262 L700,266" class="sv-e"/>
+    </svg>
+    <figcaption>One script, one frame. There is no scheduler: every live context gets a slice, and each slice runs the interpreter back-to-back until something stops it. The four exits on the right are what "stops it" - a parked motion op, a wait, a text byte, or the end-of-frame opcode <code>0x21</code>.</figcaption>
+  </figure>
+</section>
 
 <section class="doc-section" id="how-it-works">
   <h2>How it works</h2>
@@ -21,18 +84,21 @@
 
   <p>The decompiled source is at <code>ghidra/scripts/funcs/overlay_0897_801de840.txt</code>. References below to <code>func_0x80xxxxxx</code> are calls into <code>SCUS_942.54</code> (the game's main executable - always resident, unlike the overlays); <code>FUN_801xxxxx</code> are sister functions inside the same 0897 overlay.</p>
 
-  <p>For the full opcode reference, the source markdown has the complete tables. This page summarises the structure; jump to <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/script-vm.md" target="_blank" rel="noopener">docs/subsystems/script-vm.md</a> for the definitive listing.</p>
+  <p>The per-sub-op detail of the biggest opcode (<code>0x4C</code>) and the per-scene flag-writer census live in the source markdown: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/script-vm.md" target="_blank" rel="noopener">docs/subsystems/script-vm.md</a> and <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/script-vm-menuctrl.md" target="_blank" rel="noopener">script-vm-menuctrl.md</a>.</p>
 </section>
 
 <section class="doc-section" id="on-disc-form">
-  <h2>On-disc form: the scene MAN - <em>not</em> <code>scene_event_scripts</code></h2>
+  <h2>Where scripts live on the disc</h2>
+  <p>When you walk into a town, the game streams that scene's asset bundle; one of its members is the <strong>MAN</strong>, the container holding every script and placement for the scene. Nothing about a town's behaviour is in the main executable.</p>
   <p>The on-disc carrier for field-VM bytecode is the <strong>scene MAN</strong> - each scene's script + data container, shipped as a sub-asset (asset type <code>0x03</code>, the third descriptor in each scene's asset-table bundle; see <a href="../formats/man-relocation.html">man-relocation</a> and <code>legaia_asset::man_section</code>). <code>FUN_8003A1E4</code> walks the MAN's partition-1 actor-placement records, installs each actor's script pointer at <code>actor[+0x90]</code>, and runs the field VM (<code>FUN_801DE840</code>) on the body <code>1 + N*2 + 4</code> bytes into the record. Partition-1 record 0 is the scene-entry system script; records <code>1..</code> are per-actor interaction scripts. These decode cleanly as field-VM (~8% linear-walk error on the retail town MANs).</p>
+  <h3>The prescript is not field-VM bytecode</h3>
   <p class="hint"><strong>The <code>scene_event_scripts</code> / <code>scene_v12_table</code> prescript is a move-VM stager table - not field-VM bytecode.</strong> The <code>[u16 count][u16 offsets[count]]</code> prescript (offset 0, or <code>+0x800</code> behind the v12 header) carries <strong>move-VM (<code>FUN_80023070</code>) records in the summon-stager format</strong> <code>[i16 model_sel][u16 flags][move-VM bytecode]</code>: the <code>0xFFFF 0x0000</code> lead is <code>model_sel = -1</code> (a transform/pivot node) + <code>flags = 0</code>, and the <code>0x0008</code> terminator is move-VM Halt.</p>
   <p class="hint">Runtime chain: the field VM itself calls the installer <code>FUN_800252EC(id)</code>, which resolves <code>record = _DAT_8007b8d0 + offsets[id]</code> and hands it to the part-stager <code>FUN_80021B04</code>; the move VM then runs <code>record+4</code> each frame. See <code>legaia_asset::scene_event_scripts</code> (<code>move_stager_records</code>) and the disc-gated <code>prescript_move_stager_records_real</code> test (78 entries / 1855 records, 100% valid stager leads).</p>
 </section>
 
 <section class="doc-section" id="placement-header-model-animation-resolution">
-  <h2>Placement header: model + animation resolution</h2>
+  <h2>Placement header: which model and pose an NPC gets</h2>
+  <p>Each NPC placement record starts with four bytes that say which 3D model to draw and which animation it idles in. This is what makes a villager look like a villager rather than Vahn.</p>
   <p>The 4-byte header after a partition-1 record's locals block is <code>[model][anim_id][bx][bz]</code> (<code>legaia_asset::man_section::ActorPlacement</code>). Runtime-pinned against the town01 field anchor (live actor pool at stride <code>0xD8</code>, 53/53 animated actors byte-consistent):</p>
   <ul class="bullets">
     <li><strong><code>model &lt; 0xF0</code></strong> selects <strong>scene TMD index <code>model</code></strong> - retail registers the party/savepoint head into <code>0x8007C018</code> slots <code>0..5</code> and then the scene's TMD list in scene order from slot 5, so the byte is pool slot <code>model + 5</code>. <strong><code>model &gt;= 0xF0</code></strong> selects global-pool head slot <code>model - 0xF0</code> (<code>0xF0..0xF3</code> = Vahn / Noa / Gala / savepoint).</li>
@@ -43,7 +109,8 @@
 </section>
 
 <section class="doc-section" id="signature">
-  <h2>Function signature</h2>
+  <h2>Calling the VM: signature and per-frame scheduling</h2>
+  <p>The interpreter is a plain function the host calls with a buffer, a program counter and a context; it runs until something makes it stop and hands back the new PC. Understanding <em>when</em> it is called explains why cutscenes pace the way they do.</p>
   <pre><code>int FUN_801DE840(int buffer_base, int pc_offset, int ctx_ptr);</code></pre>
   <ul class="bullets">
     <li><code>buffer_base</code> - bytecode buffer base address.</li>
@@ -60,6 +127,7 @@
 
 <section class="doc-section" id="dispatch">
   <h2>Top-level dispatch</h2>
+  <p>Every instruction goes through the same front door: an optional "target another script" prefix, then a 43-way switch on the low seven bits.</p>
   <pre><code>byte *pc = (byte*)(buffer_base + pc_offset);
 byte *ops = pc + 1;
 
@@ -93,7 +161,7 @@ switch (*pc & 0x7f) {
 
 <section class="doc-section" id="context-struct">
   <h2>Context struct (selected fields)</h2>
-  <p>Per-script state, passed as <code>ctx_ptr</code>. The full table is in the source markdown; the most-cited fields:</p>
+  <p>Every running script - the scene itself, each NPC, each spawned cutscene record - owns one of these records: where it is in the world, where it is in its program, and a few flag words. The full table is in the source markdown; the most-cited fields:</p>
   <table>
     <thead><tr><th>Offset</th><th>Type</th><th>Meaning</th></tr></thead>
     <tbody>
@@ -110,8 +178,21 @@ switch (*pc & 0x7f) {
 </section>
 
 <section class="doc-section" id="opcode-summary">
-  <h2>Opcode groups</h2>
-  <p>The 43 opcodes cluster into themed groups:</p>
+  <h2>Opcode reference</h2>
+  <p>A script author had 43 instructions to work with. Most of a town's scripts are made of a handful of them - flag tests, waits, walks, scene changes - while a few (<code>0x43</code>, <code>0x4C</code>) are sub-dispatchers hiding dozens of sub-ops each. Summary first, then each group.</p>
+  <table>
+    <thead><tr><th>Range</th><th>Theme</th><th>What a player sees</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x21 / 24 / 25 / 48</code></td><td>Shared no-ops</td><td><code>0x21</code> ends the frame's slice</td></tr>
+      <tr><td><code>0x22</code>-<code>0x26</code></td><td>Action and control flow</td><td>an actor plays a move, teleports, a script jumps</td></tr>
+      <tr><td><code>0x2B</code>-<code>0x33</code></td><td>Flag triplets (three banks)</td><td>"have I done this yet" tests that pick a dialogue branch</td></tr>
+      <tr><td><code>0x34</code>-<code>0x36</code></td><td>Effects, music, fades</td><td>sparkles, a new BGM, a fade to black</td></tr>
+      <tr><td><code>0x37</code>-<code>0x42</code></td><td>Yield / walk, RPG state, doors, jumps</td><td>an NPC walks somewhere, you get an item or gold, a door warps you</td></tr>
+      <tr><td><code>0x43</code></td><td>ACTOR_CTRL sub-dispatcher</td><td>actor posing, sounds, camera ramps, screen widgets</td></tr>
+      <tr><td><code>0x44</code>-<code>0x4F</code></td><td>Spawn, camera, waits, animate, MENU_CTRL, compares</td><td>cutscenes start, the camera moves, the name-entry screen, "do you have enough gold"</td></tr>
+      <tr><td><code>0x5x / 0x6x / 0x7x</code></td><td>Wide system-flag ops (default route)</td><td>the story flags that gate chapters</td></tr>
+    </tbody>
+  </table>
 
   <h3>Shared NOPs - <code>0x21 / 0x24 / 0x25 / 0x48</code></h3>
   <p>Four distinct opcode bytes share one handler that just advances PC by 1. Likely reserved/historical.</p>
@@ -173,7 +254,7 @@ switch (*pc & 0x7f) {
       <tr><td><code>0x49</code></td><td>STATE_RESUME</td><td>Multi-frame state machine: tristate (Idle / Armed / Done). Done-state sub-0 walks an inline MES-shape payload (counts bytes <code>&gt; 0x1E</code> with one-byte peek-extension for <code>0xCx</code> prefix bytes) and advances PC by <code>5 + length + walked</code>. The town01 opening's <code>49 03 00</code> (P2[3] <code>+0x02C6</code>) is the name-entry hand-off - see below.</td></tr>
       <tr><td><code>0x4A</code></td><td>WAIT_FRAMES</td><td>Frame timer; ticks <code>ctx[+0x54]</code>.</td></tr>
       <tr><td><code>0x4B</code></td><td>ANIMATE</td><td>Multi-keyframe setup. Sets <code>+0x10</code> bit <code>0x1000</code> (animation flag).</td></tr>
-      <tr><td><code>0x4C</code></td><td>MENU_CTRL</td><td>Outer-nibble-dispatched (16 sub-dispatchers). The biggest single opcode.</td></tr>
+      <tr><td><code>0x4C</code></td><td>MENU_CTRL</td><td>Outer-nibble-dispatched (16 sub-dispatchers). The biggest single opcode - <a href="#menu-ctrl">its own section</a>.</td></tr>
       <tr><td><code>0x4D</code></td><td>BBOX_TEST</td><td>Inside-box advances PC by 7; outside-box jumps via <code>FUN_801E3614</code>.</td></tr>
       <tr><td><code>0x4E</code></td><td>INVENTORY_CMP</td><td>Compare-and-jump across party state. Every sub-op 0..9 shares the 7-byte compare-and-skip shape (raw jump table <code>0x801CEE30</code>): 0/1 = char HP/MP pair (the only scaled form), 2 = char level byte <code>+0x130</code>, 3 = party gold <code>_DAT_8008459C</code> vs u16 - the inn/ticket gold gate, <code>legaia_asset::inn_costs</code>, 4 = BIOS <code>Rand() &amp; 0xFF</code> (a random-chance branch), 5..8 = slot table <code>0x801C6460[sub - 5]</code> (the read side of the <code>4C CA/CB/CC</code> slot writes), 9 = coin bank <code>0x800845A4</code> vs u16. 10/11 are gold/coin u32 compares (9 bytes); 12..=15 fall through. The earlier "sub-5..8 absolute jump" / "sub-4 rand as next PC" readings were the collapsed decomp switch - falsified by the raw loader bodies.</td></tr>
       <tr><td><code>0x4F</code></td><td>SCENE_REGISTER_WRITE</td><td>Writes three <code>u16</code> values to <code>_DAT_801C6EA4 + 0x10/0x12/0x14</code>.</td></tr>
@@ -213,9 +294,48 @@ switch (*pc & 0x7f) {
   builders, and the scripted-clip queue on <code>FieldPlayerAnim</code>.</p>
 </section>
 
+<section class="doc-section" id="menu-ctrl">
+  <h2>0x4C MENU_CTRL - the longest-tail opcode</h2>
+  <p>One opcode byte, sixteen sub-dispatchers. Despite the name it is where most of the "everything else" of a scene lives: wall painting for story-conditional collision, fades, party heals, the FMV trigger, camera teleports, conditional jumps on flag bits. The <strong>high nibble</strong> of the first operand byte picks the sub-dispatcher; the low nibble (or the whole byte) picks the sub-op.</p>
+  <table>
+    <thead><tr><th>Outer nibble</th><th>Theme</th></tr></thead>
+    <tbody>
+      <tr><td><code>0</code></td><td>Party-leader change</td></tr>
+      <tr><td><code>1</code></td><td>Complex sub-switch on the whole byte (menu sub-dispatcher)</td></tr>
+      <tr><td><code>2</code></td><td>Party-view swap</td></tr>
+      <tr><td><code>3</code></td><td>Input lock, no-op cluster, player-resync chain, party-state clear</td></tr>
+      <tr><td><code>4</code></td><td>Immediate-or-ramp writes to ctx slots / globals</td></tr>
+      <tr><td><code>5</code></td><td>Five sub-ops off a 5-entry table: model select, NPC move-to-tile, <strong>TAKE_ITEM</strong> (sub-2 - not a menu poll), the two dialog polls</td></tr>
+      <tr><td><code>6</code></td><td>6-word emitter (<code>func_0x80058490</code>) + 16-byte halt-acquire</td></tr>
+      <tr><td><code>7</code></td><td><strong>Collision-grid rectangular wall paint</strong> (handler <code>0x801e1c64</code>) into the per-scene walkability grid at <code>_DAT_1f8003ec + 0x4000</code> - story-conditional collision <em>deltas</em>, see <a href="field-locomotion.html">field locomotion</a></td></tr>
+      <tr><td><code>8</code></td><td>Large multi-purpose dispatcher: party-slot full heal, conditional jump on <code>+0x68</code>, actor model/anim set, actor-search jumps</td></tr>
+      <tr><td><code>9</code></td><td>Fade family (sub-0..2 via <code>FUN_801DDE34</code>), 16-word table copy (sub-E), fade cancel (sub-F: a retire sweep over the fade handler, not a callback registration)</td></tr>
+      <tr><td><code>A</code></td><td>Conditional jump on a flag bit: sub-0 ctx flags, sub-1 local flags, sub-2 global story word; set = absolute jump from operand[2..4], clear (or sub-3..F) = skip 5</td></tr>
+      <tr><td><code>B</code></td><td>Genuinely undefined in retail (no <code>case 0xb</code>; the default arm halts)</td></tr>
+      <tr><td><code>C</code></td><td>Small per-actor / per-scene writes: slot table, sub-tile broadcast, sound trigger, <code>field_74</code> XOR</td></tr>
+      <tr><td><code>D</code></td><td>Party state + inverted-Y mirror cluster: field SE trigger, linked-list lookup gate, synchronous-spawn actor allocator, party-record search, <a href="#vram-stp">VRAM STP bit edits</a>, <a href="#op4c-d3-timed-flags">timed flags</a></td></tr>
+      <tr><td><code>E</code></td><td>Misc scene writes + emitter helpers: 3-way state write, variable-length text balloon, <strong>FMV trigger</strong> (<code>4C E2 lo hi</code>), camera teleport / animate / zoom, XP add</td></tr>
+      <tr><td><code>F</code></td><td>Only <code>op0 == 0xFF</code> is valid (pass-through); other sub-ops print an error string</td></tr>
+    </tbody>
+  </table>
+  <p>The clean-room port mirrors the dispatcher shape with host hooks per sub-cluster (<code>crates/engine-vm/src/field.rs</code>, <code>menu_ctrl/</code>); the disassembler carries the same per-sub widths for all sixteen nibbles so linear census walks stay in sync. Every sub-op body, and the per-nibble coverage matrix, is in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/script-vm-menuctrl.md" target="_blank" rel="noopener">script-vm-menuctrl.md</a>.</p>
+</section>
+
+<section class="doc-section" id="dialogue">
+  <h2>Field dialogue has no opcode</h2>
+  <p>Press the action button in front of a villager and a text box opens. It is natural to expect a "show dialogue" instruction, and there is none: talking is an <strong>interaction pipeline</strong> that pages the actor's own inline text.</p>
+  <ol>
+    <li><strong>Trigger</strong> - the field-interact op (<code>0x3E</code> with <code>op0 &lt; 100</code>) arms the actor's interaction context: <code>sys_ctx[+0x94]</code> = the actor's interaction-script pointer, <code>sys_ctx[+0x8a] = 1</code>. (<code>0x3E</code> with <code>op0 &gt;= 100</code> is the minigame door-warp; <code>0x3F</code> is the named scene change - neither is dialogue.)</li>
+    <li><strong>Text source</strong> - the actor's own inline interaction-script MES at <code>actor[+0x90] + actor[+0x9e]</code>, the same <code>0x1F</code>-lead glyph stream the placement classifier finds structurally (<code>FUN_80039b7c</code> sets the pager's text pointer <code>_DAT_801f3538</code> from exactly that sum).</li>
+    <li><strong>Display</strong> - the per-frame actor-dialog SM <code>FUN_80039b7c</code> advances <code>actor[+0x9c]</code> through <code>0 &rarr; 1 &rarr; 2</code> in lockstep with the pager state <code>_DAT_801f2734</code>, walking glyph bytes (the <code>0xC0</code>-stride / <code>&lt; 0x20</code>-terminator rule), and feeds the dialog pager <code>FUN_801D84D0</code>.</li>
+  </ol>
+  <p>A partition-1 placement record is a single byte stream carrying <strong>two</strong> consecutive scripts under one cursor - the pre-text prologue (walks, facing) and the conversation - and where the split falls is what decides where an interaction begins. Interaction records are <strong>resident conversation drivers</strong>: a top flag-selector picks the branch for the current story state, and each branch exits via a shared tail that jumps <em>back to the selector</em>; retail parks the context there until the next talk.</p>
+  <p>Engine side: <code>engine_core::inline_dialogue</code> / <code>World::step_inline_dialogue</code> (PORT of <code>FUN_80039b7c</code>) drives the record through the real field VM, pausing at each <code>0x1F</code> segment to show a box, and ends a conversation pass at the loop-back (a backward <code>Advance</code> onto an already-executed PC). <code>play-window</code> has it on by default; <code>--simple-dialogue</code> opts back into the simplified typewriter panel. See <a href="../formats/mes.html">MES</a> for the text format and pager.</p>
+</section>
+
 <section class="doc-section" id="default-route">
-  <h2>The fourth flag bank (default-route)</h2>
-  <p>The default arm of the dispatcher checks <code>*pc &amp; 0x70</code>:</p>
+  <h2>The fourth flag bank: system story flags</h2>
+  <p>"Has the player beaten this boss yet?" "Is the bridge open?" The flags that gate the plot live in a bank the dispatcher reaches through its <em>default</em> arm - any opcode byte whose high nibble is <code>0x5</code>, <code>0x6</code> or <code>0x7</code>. The default arm checks <code>*pc &amp; 0x70</code>:</p>
   <table>
     <thead><tr><th>High nibble</th><th>SCUS dispatcher</th><th>Effect</th></tr></thead>
     <tbody>
@@ -238,14 +358,37 @@ return ((&amp;DAT_80085758)[(int)idx &gt;&gt; 3] &amp; (0x80 &gt;&gt; (idx &amp;
     <li><strong>Save mapping.</strong> In a retail SC save block the bank lives at SC offset <code>0x1618</code>, overlapping the story-flag bitmap (SC <code>0x14C0</code>, 512 bytes) and continuing to the inventory array (SC <code>0x1818</code>); seeding <code>World::system_flags</code> from <code>sc_block[0x1618..0x1818]</code> reproduces the live bank as of the save.</li>
     <li><strong>Collision.</strong> The bank is not sufficient on its own to drive a scene's collision: the <code>0x4C</code> nibble-7 wall paints reached through it are story-conditional collision <em>deltas</em>, not the base walkable grid (see <a href="field-locomotion.html">field locomotion</a>).</li>
     <li><strong>Opcode space.</strong> The effective opcode space is the explicit <code>0x21</code>&ndash;<code>0x4F</code> range <em>plus</em> any byte whose high nibble is <code>0x5</code>, <code>0x6</code>, or <code>0x7</code> (potentially 192 more "wide" opcodes routed to three SCUS dispatchers).</li>
+  </ul>
+
+  <h3>Finding the writers: the flag census</h3>
+  <p>A progress gate usually reads a flag in one scene while the setter lives in a different scene's MAN, so "who sets flag F" is a disc-wide question.</p>
+  <ul class="bullets">
     <li><strong>Census tooling.</strong> A progress gate reads a SYSTEM flag (<code>0x7x</code> TEST) in one scene, but the setter that opens it (<code>0x5x</code> SET) usually lives in a <em>different</em> scene's MAN. <code>man_field_scripts::walk_partition_gflag_sites</code> reports every flag site in a MAN partition (tagged scratchpad-vs-system bank + full flag number + SET/CLEAR/TEST kind), and <code>system_flag_census</code> runs it over every CDNAME scene across all partitions to build <code>flag -&gt; [(scene, partition, record, op, kind)]</code>. CLI: <code>legaia-engine man-scripts --gflag-partition N</code> (one scene) / <code>--system-flag-census</code> (disc-wide).</li>
-    <li><strong>A second script-byte carrier - the streaming variant MAN.</strong> A live whole-playthrough capture (exec-bps on <code>0x8003CE08</code>/<code>0x8003CE34</code>, probe <code>autorun_flag_firehose.lua</code>) shows every story-flag write returning to the dispatcher's own <code>0x5x</code>/<code>0x6x</code> arms (<code>ra 0x801E3598</code>/<code>0x801E35C0</code>); the remaining callers are engine systems touching low indices (<code>0</code>/<code>3</code> entity-SM staging, <code>0x35</code> battle-end victory, <code>0xB</code>/<code>0xC</code>/<code>0x18</code> locks, <code>0xE</code> spawn ops). The executed bytes at the Mt. Rikuroa post-Caruban beat live in a heap-resident carrier that is <strong>not</strong> the scene's asset-table bundle MAN: it is a second, plain MAN shipped as the type-3 chunk of a standalone <code>data_field_streaming</code> PROT entry (the chunk header is the ordinary <code>[u24 size][u8 type=0x03]</code> sub-asset descriptor; the payload parses with <code>legaia_asset::man_section</code> like any MAN). The resident copy byte-matches PROT <code>0157_rikuroa</code>'s chunk, and it carries the story-flag <code>0x142</code> SET (<code>51 42</code>) at four record sites - <code>P1[10..12]</code> plus the post-victory cutscene record <code>P2[50]</code>, whose C1 gate is <code>0x142</code> itself (the self-latching one-shot). The carrier's records also pin <strong>how</strong> <code>P2[50]</code> runs: the boss stager <code>P1[3]</code> SETs the transient marker <code>0x289</code> (<code>52 89</code>) right before its battle-entry op (<code>3E FF 11</code>), and the scene-entry system script <code>P1[0]</code> tests that marker on the post-battle scene re-entry (<code>72 89</code> at <code>+0x13A</code>) - its taken arm (<code>+0x7E6</code>: fade, BGM, <code>44 5C</code>) issues the op-<code>0x44</code> spawn of global record <code>0x5C</code> = <code>P2[50]</code>, C1-gate-checked by the dispatcher. The same shape sits one branch level up: <code>P1[0]</code>'s first-arrival arm spawns <code>P2[43]</code> (<code>44 55</code>) while flag <code>0x2FB</code> is clear, and that record's own <code>52 FB</code> latches it. The clean-room engine executes this chain organically - the host re-runs the entry script on the battle-to-field mode edge (<code>SceneHost::tick</code>) and the spawned record's own script bytes land <code>0x142</code>; disc-gated oracle <code>organic_beat_records_disc.rs</code>. Thirteen retail blocks ship such a <strong>streaming variant MAN</strong> (extraction indices: <code>dolk2</code> 70, <code>rikuroa2</code> 122, <code>rikuroa</code> 157, <code>rayman</code> 201, <code>station</code> 228, <code>balden2</code> 320, <code>ropeway2</code> 339, <code>taiku</code> 373, <code>doman</code> 401, <code>taiku2</code> 427, <code>nilboa2</code> 648, <code>edbalden</code> 792, <code>eddoman</code> 817); for the v12-family dungeons (<code>rikuroa</code>/<code>dolk2</code>, whose own bundle is the MAN-less <code>count=4</code> form) the streaming carrier is the scene's <strong>only</strong> MAN. <code>system_flag_census</code> (and the motion / op-<code>0x49</code> censuses) walk <strong>every</strong> carrier per scene - the bundle MAN plus the streaming variants, enumerated by <code>man_field_scripts::scene_man_carriers</code> - so the variant-resident writers surface: the <code>0x142</code> setters above, the <code>0x63A</code> beat writers. Disc-gated pins: <code>crates/engine-core/tests/man_variant_carrier_census_disc.rs</code>. CLI: <code>legaia-engine man-scripts --scene &lt;name&gt; --variant &lt;entry_idx&gt;</code> targets a variant carrier directly (census rows tag them <code>VARIANT-MAN</code>); <code>--p2-gates</code> prints every partition-2 record's C1/C2 header gate lists + name (the <code>FUN_8003BDE0</code> spawn-condition surface the inline-op censuses cannot see).</li>
+  </ul>
+  <details class="disclosure">
+    <summary>Detail: why a census row can lie (decode-coherence, width blindness, ASCII aliases)</summary>
+    <div class="disclosure-body">
+      <p>The census walks bytecode linearly, and three things desync it. Each has a marker on the row; a marked row means "check the record disassembly", never "discard".</p>
+      <ul class="bullets">
     <li><strong>Decode-coherence flag.</strong> The census walker desyncs inside unframed Shift-JIS dialogue and inline data tables, where text bytes alias the <code>0x50..=0x7F</code> flag ops (the full-width digit run <code>82 54 82 4F</code> aliases <code>SysFlag.Set idx=0x482</code>; a repeating full-width <code>EXIT</code> label table aliases <code>64 82</code> clears). Every census site therefore carries <code>GFlagSite::clean</code>: <code>true</code> only when at least <code>CLEAN_RESYNC_INSNS</code> instructions decoded error-free between the walker's last decode error (or record start) and the site. The CLI prints <code>DESYNCED?</code> on non-clean rows - treat those as byte noise until verified by hand disasm or a live capture. This falsified the earlier "<code>0x482</code> set by the <code>other7</code> pool / cleared by the <code>edbalden</code>/<code>eddoman</code> epilogue variants" reading: all 37 of <code>0x482</code>'s census sites are non-clean text aliases, while the live-confirmed <code>0x142</code> writer arms decode clean.</li>
     <li><strong>Width blindness is the desync's second face.</strong> A missing/wrong sub-op <em>width</em> in the disassembler desyncs the walk even in clean non-dialogue code, and a site hidden that way looks identical to "no writer exists". Flag <code>549</code> (<code>0x225</code>, the Rim Elm opening one-shot) was exactly this: town01 <code>P2[3]</code> SETs it from its own script bytes (<code>52 25</code> at body <code>+0x3</code>, the record its own C1 gates - the <code>P2[50]</code>/<code>0x142</code> self-latch shape), but with no width for the preceding <code>4C ED</code> op (<code>_DAT_8007BA66</code> write, retail <code>param_2 + 3</code>) the walk mis-reads <code>ED 01 52</code> as a phantom Clear and swallows the SET. Runtime-pinned by a reader-watch script-PC capture (SET <code>ra 0x801E3598</code>, <code>vm</code> offset <code>+0xF</code>) and confirmed statically: the whole <code>4C 0xE_</code> sub-op width family is pinned from the retail dispatcher's <code>param_2 + N</code> advances (subs 4/5/7/8/9/A/B/C/D/E), and the last two delay-slot-hidden legs (sub-0/3) from the raw asm: both arms (<code>0x801E306C</code> / <code>0x801E3108</code>, case targets confirmed against the outer-0xE jump table at VA <code>0x801CF008</code>) advance +3 - sub-0 through the <code>addiu s8,s8,0x3</code> entry at <code>0x801E00B8</code>, sub-3 there or in the <code>j 0x801E00BC</code> branch-delay slot. Neither is a halt (the decompile's <code>goto LAB_801e00bc</code> folds both entries into the no-advance label). Anchor <code>flag_549_writer_is_the_rim_elm_p2_3_self_latch</code>. Before trusting any "flag F has no script writer" verdict, confirm the ops <em>around</em> the expected site decode with known widths.</li>
     <li><strong>Width blindness also comes at whole-nibble granularity.</strong> With no decoder at all for a <code>0x4C</code> outer nibble (<code>9</code>/<code>A</code>/<code>C</code>/<code>D</code>/<code>F</code>), every record crossing one (e.g. the <code>CC 06 A1 ..</code> extended nibble-A conditional jumps that pepper the jou-castle door records) desyncs exactly like the <code>4C ED</code> case, hiding thousands of clean flag sites and minting phantom ones from the resync garbage. All sixteen outer nibbles decode (<code>legaia_asset::field_disasm::decode_subops</code>), with widths mirrored from the executing VM's <code>menu_ctrl</code> port (itself pinned from the retail dispatcher's <code>param_2 + N</code> advances); nibble <code>B</code> is genuinely undefined in retail (no <code>case 0xb</code> - the default arm halts) and stays a decode error. The pinned spine-flag verdicts are unchanged under the full-width walk: <code>0x482</code> stays all-alias, and the koin gates <code>0x50A</code>/<code>0x5D6</code> still have no script writer disc-wide.</li>
     <li><strong>Width blindness's third face is a <em>wrong</em> width in an already-decoded arm.</strong> The <code>0x4C</code> nibble-8 sub-widths are pinned from the raw asm of the nibble-8 switch (same overlay, base <code>0x801CE818</code>): sub-1 (actor model+anim set) advances +9 unconditionally (<code>addiu fp,fp,9</code> at <code>0x801E1FC4</code>), sub-3 +7 (<code>0x801E2130</code>), sub-5/E/F +5 on acquire (<code>li s7,5</code> at <code>0x801E21B8</code>, <code>addu fp,fp,s7</code> in the <code>beqz</code> delay slot - only the predicate-failure path halts), sub-6 +15 (<code>0x801E21E8</code>), sub-0 +3, sub-C +4 - matching the executing VM's <code>menu_ctrl/nibble_8.rs</code> port. A sub-1 width one byte over is what the <code>vozz P1[7]</code> <code>.byte 0x05</code> decode error was: each <code>CC 0B 81 ..</code> op swallowed its follower's lead byte, minting a phantom <code>Clear 0x400</code> where the retail stream reads the op's 10-byte extended form followed by a <code>35</code> BGM op / <code>4A</code> WaitFrames. Under the pinned widths those followers decode in place, the phantom rows disappear, and the spine verdicts hold row-identical (<code>549</code>/<code>0x142</code> site sets unchanged; <code>0x482</code> all-alias; <code>0x50A</code>/<code>0x5D6</code> writer-less, <code>0x50A</code> gaining one more clean koin3 TEST reader and still no writer).</li>
     <li><strong>ASCII dialogue aliases survive the <code>clean</code> tag.</strong> The US build's dialogue is plain ASCII, and the wide flag ops land exactly on the letter ranges: <code>Set</code> leads <code>0x53..0x57</code> = <code>S..W</code>, <code>Clear</code> leads <code>0x61..0x67</code> = <code>a..g</code>, <code>Test</code> leads <code>0x71..0x77</code> = <code>q..w</code>. Common English bigrams therefore mint flag ops (<code>ta</code> = <code>Test 0x461</code>, <code>s,</code> = <code>Test 0x32C</code>, <code>Sp</code> = <code>Set 0x370</code>), and because every such 2-byte pair decodes without error, prose keeps the error counter at zero and the sites carry <code>clean=true</code>. Triage rules: a flag whose operand byte is outside printable ASCII cannot be minted by dialogue (its rows are trustworthy - <code>0x382</code>, <code>0x3EF</code>, <code>0x304</code>, <code>0x5DC</code>); a letter/punctuation operand needs the site's context window checked in the record disasm (trust choreography contexts - <code>Camera</code>/<code>WaitFrames</code>/<code>SceneFade</code>/<code>4C</code>-family/<code>JmpRel</code> branch arms - reject neighbours that decode as further letter-pair flag ops); mirrored <code>Set</code>/<code>Clear</code> runs over the same band are self-proving even when tagged <code>DESYNCED?</code>. Hand-checks: <code>0x32C</code>'s and <code>0x461</code>'s "chapter-wide readers" are the <code>s,</code>/<code>ta</code> bigrams (both flags are real but scene-local); Nivora's <code>0x370</code> shows the context-window rule cutting both ways inside one record (<code>doman</code> variant <code>P1[15]</code>): three <code>Sp</code> = <code>53 70</code> sites are the "Time<strong>Sp</strong>ace Bomb" dialogue (rejected), but the fourth, at MAN offset <code>0x06397</code> (<code>+0x3018</code>), sits in a choreography run (<code>WaitFrames</code>/<code>MoveTo</code>/<code>Effect</code>/<code>4C CD</code>) with a loop-back <code>JmpRel</code> to the record's gate-test head - and the head's own <code>Test 0x370 -&gt; +0x301E</code> jump target lands on the very next op after that <code>JmpRel</code>, so both sites decode on the same op grid: this is the genuine writer (the Dr. Usha briefing self-latch; pinned by <code>man_variant_carrier_census_disc.rs::flag_0x370_writer_is_the_doman_p1_15_usha_latch</code> - the earlier "writer-less, the candidate is Space-Bomb prose" verdict predated the nibble-width pinning and adjudicated a prose sibling, not this site); the once-reported <code>Clear 0x400</code> in <code>vozz P1[7]</code> was the nibble-8 sub-1 width bug - under the pinned width the bytes are the op's own operand tail and its BGM follower, and the row disappears entirely.</li>
     <li><strong>The census self-identifies the ASCII prose aliases.</strong> Every site also carries <code>GFlagSite::text_alias</code> (CLI marker <code>TEXT-ALIAS?</code>, on both the census and <code>--gflag-partition</code> rows): <code>true</code> when the site's raw operand byte is printable ASCII <em>and</em> the surrounding <code>TEXT_ALIAS_WINDOW</code> (16 bytes each side) contains a consecutive printable-ASCII run of at least <code>TEXT_ALIAS_MIN_RUN</code> (10) bytes <em>and</em> the window puts two lowercase letters side by side - the sentence signature prose always has and bytecode does not. This mechanizes the triage rules: the <code>ta</code>/<code>Sp</code>/<code>s,</code> bigram rows carry the marker even where they decode error-free (<code>clean=true</code>), while the runtime-pinned real sites with printable operands stay unmarked. The three conditions each carry weight: the town01 <code>P2[3]</code> <code>52 25</code> self-latch and the rikuroa <code>51 42</code>/<code>61 42</code> ladders render as printable byte-streams themselves (<code>R.R.R.QB</code>) but break the run every 1-5 bytes on a non-printable operand (run length beats printable <em>density</em>), and the <code>0x527..0x52E</code> one-hot selector clears (<code>65 27 65 28 ..</code>) sustain a 16-byte printable run but alternate op/operand so they never form an adjacent lowercase pair. Like <code>clean</code>, the marker is triage, not suppression - non-printable operands are alias-immune by construction, mirrored Set/Clear runs stay self-proving, and a marked row means "check the record disasm", not "discard". The split it produces on a mixed flag is the point: <code>0x527</code>'s census population is real one-hot ladder sites (unmarked, clean) <em>plus</em> the <code>e'</code> prose bigram (marked), separated row by row. The advisory direction also occurs: two <strong>runtime-pinned real</strong> <code>0x142</code> sites (the dolk <code>P1[26]</code> Clear and the dolk2 variant-carrier <code>P1[1]</code> Set) sit inside dialogue-adjacent bytecode and carry the marker &mdash; exactly the "check by hand" case, and why the marker never suppresses a row.</li>
+      </ul>
+    </div>
+  </details>
+
+  <h3>A second script carrier: the streaming variant MAN</h3>
+  <p>Thirteen scene blocks ship a second, plain MAN as the type-3 chunk of a standalone <code>data_field_streaming</code> PROT entry, and for the v12-family dungeons it is the scene's <em>only</em> MAN. Story-flag writers that seem to be missing are usually here.</p>
+  <ul class="bullets">
+    <li> A live whole-playthrough capture (exec-bps on <code>0x8003CE08</code>/<code>0x8003CE34</code>, probe <code>autorun_flag_firehose.lua</code>) shows every story-flag write returning to the dispatcher's own <code>0x5x</code>/<code>0x6x</code> arms (<code>ra 0x801E3598</code>/<code>0x801E35C0</code>); the remaining callers are engine systems touching low indices (<code>0</code>/<code>3</code> entity-SM staging, <code>0x35</code> battle-end victory, <code>0xB</code>/<code>0xC</code>/<code>0x18</code> locks, <code>0xE</code> spawn ops). The executed bytes at the Mt. Rikuroa post-Caruban beat live in a heap-resident carrier that is <strong>not</strong> the scene's asset-table bundle MAN: it is a second, plain MAN shipped as the type-3 chunk of a standalone <code>data_field_streaming</code> PROT entry (the chunk header is the ordinary <code>[u24 size][u8 type=0x03]</code> sub-asset descriptor; the payload parses with <code>legaia_asset::man_section</code> like any MAN). The resident copy byte-matches PROT <code>0157_rikuroa</code>'s chunk, and it carries the story-flag <code>0x142</code> SET (<code>51 42</code>) at four record sites - <code>P1[10..12]</code> plus the post-victory cutscene record <code>P2[50]</code>, whose C1 gate is <code>0x142</code> itself (the self-latching one-shot). The carrier's records also pin <strong>how</strong> <code>P2[50]</code> runs: the boss stager <code>P1[3]</code> SETs the transient marker <code>0x289</code> (<code>52 89</code>) right before its battle-entry op (<code>3E FF 11</code>), and the scene-entry system script <code>P1[0]</code> tests that marker on the post-battle scene re-entry (<code>72 89</code> at <code>+0x13A</code>) - its taken arm (<code>+0x7E6</code>: fade, BGM, <code>44 5C</code>) issues the op-<code>0x44</code> spawn of global record <code>0x5C</code> = <code>P2[50]</code>, C1-gate-checked by the dispatcher. The same shape sits one branch level up: <code>P1[0]</code>'s first-arrival arm spawns <code>P2[43]</code> (<code>44 55</code>) while flag <code>0x2FB</code> is clear, and that record's own <code>52 FB</code> latches it. The clean-room engine executes this chain organically - the host re-runs the entry script on the battle-to-field mode edge (<code>SceneHost::tick</code>) and the spawned record's own script bytes land <code>0x142</code>; disc-gated oracle <code>organic_beat_records_disc.rs</code>. Thirteen retail blocks ship such a <strong>streaming variant MAN</strong> (extraction indices: <code>dolk2</code> 70, <code>rikuroa2</code> 122, <code>rikuroa</code> 157, <code>rayman</code> 201, <code>station</code> 228, <code>balden2</code> 320, <code>ropeway2</code> 339, <code>taiku</code> 373, <code>doman</code> 401, <code>taiku2</code> 427, <code>nilboa2</code> 648, <code>edbalden</code> 792, <code>eddoman</code> 817); for the v12-family dungeons (<code>rikuroa</code>/<code>dolk2</code>, whose own bundle is the MAN-less <code>count=4</code> form) the streaming carrier is the scene's <strong>only</strong> MAN. <code>system_flag_census</code> (and the motion / op-<code>0x49</code> censuses) walk <strong>every</strong> carrier per scene - the bundle MAN plus the streaming variants, enumerated by <code>man_field_scripts::scene_man_carriers</code> - so the variant-resident writers surface: the <code>0x142</code> setters above, the <code>0x63A</code> beat writers. Disc-gated pins: <code>crates/engine-core/tests/man_variant_carrier_census_disc.rs</code>. CLI: <code>legaia-engine man-scripts --scene &lt;name&gt; --variant &lt;entry_idx&gt;</code> targets a variant carrier directly (census rows tag them <code>VARIANT-MAN</code>); <code>--p2-gates</code> prints every partition-2 record's C1/C2 header gate lists + name (the <code>FUN_8003BDE0</code> spawn-condition surface the inline-op censuses cannot see).</li>
+  </ul>
+
+  <h3>Flag families that are mechanism, not story</h3>
+  <p>Some story-numbered flags are engine scratch: door mutexes, scene-transition selectors, per-visit lift state. They show up in every census and should be read as traffic, not progress.</p>
+  <ul class="bullets">
     <li><strong>The <code>0x527..0x531</code> scene-transition scratch band.</strong> A story-numbered band that is engine scratch, not story state - the census surfaces it as SETs in nearly every scene, the signature of a shared idiom. Every scene's <code>P1[0]</code> entry script (and many exit-choreography arms) repeats two byte-stereotyped patterns (hand-verified in <code>deene P1[0]</code>): a <strong>one-hot selector</strong> <code>0x527..0x52E</code> (clear all eight, then SET exactly one, ahead of a <code>SceneFade</code>/<code>4C 12</code> fade - a departure-choice latch), and a <strong>fade handshake</strong> <code>0x52F</code>/<code>0x530</code>/<code>0x531</code> (set/test/clear ping-pong around <code>4C CA</code>/<code>4C CB</code> widget open/close). The conc-family entry scripts keep an adjacent private slot in the same style (<code>0x522</code>). Treat census rows in <code>0x522..0x531</code> as mechanism traffic, like the <code>0x00F</code> busy-mutex.</li>
     <li><strong>Drake-castle interior beat band (<code>jouinb</code>).</strong> <code>jouinb P2[6..8]</code> each end in a one-shot latch - <code>0x44E</code>/<code>0x44F</code>/<code>0x450</code> (<code>Camera</code>/<code>WaitFrames</code>/<code>4C CD</code> then <code>Set</code> + park-jump; <code>P2[6]</code> body <code>+0x4A3</code>). <code>P2[8]</code> additionally runs an in-body state machine on <code>0x461</code> (<code>Test</code> at <code>+0xBC</code> skipping to a <code>Clear</code> arm at <code>+0x1BC</code>, <code>Set</code> at <code>+0xBC2</code> in the closing choreography). All four flags are jouinb-local; the census's wide <code>0x461</code> reader list is the <code>ta</code> bigram.</li>
     <li><strong>Door-choreography record families: the <code>0x00F</code> busy-mutex + the jouind per-visit band.</strong> Two partition-2 record shapes in the Drake-castle cluster (<code>jouinc</code> <code>[43,18,60]</code>, <code>jouind</code>) look like story-gate families in the <code>--p2-gates</code> output but are <strong>mechanism state, not story state</strong> (C1 polarity: a C1 flag blocks the record while SET). <em>The <code>0x00F</code> busy-mutex family:</em> <code>jouinc</code> P2[2..59] (SJIS names J01..J58) and <code>jouind</code> P2[0..1]/[6..9] are all gated <code>C1=[0x00F]</code>, and every record's first op SETs <code>0x00F</code> while its last CLEARs it - a mutual-exclusion lock over the door records; bodies are per-door walk-through choreography (an extended nibble-A conditional branches on the door actor's open state, the door animates, the player channel <code>0xF8</code> runs the ExecMove walk-through, and the room transition is a SceneFade pair - an intra-scene reposition, not a <code>0x3F</code> scene change). <em>The jouind per-visit band <code>0x4BE..0x4C2</code>:</em> reset by <code>jouina</code> P1[0] on entry, so per-castle-visit door/lift state, not chapter progress - P2[10]/P2[11] (<code>C1=[0x4C1]</code>) SET <code>0x4BE</code>/<code>0x4BF</code> and share the first-use latch <code>0x4C2</code>; P2[12] (<code>C1=[0x4C0,0x4C1]</code>) one-shots itself via <code>0x4C0</code>; P2[14] SETs <code>0x4C1</code>, retiring the family for the visit; P2[13] re-applies door visuals from <code>0x4BE</code>/<code>0x4BF</code>.</li>
@@ -254,7 +397,7 @@ return ((&amp;DAT_80085758)[(int)idx &gt;&gt; 3] &amp; (0x80 &gt;&gt; (idx &amp;
 
 <section class="doc-section" id="bgm-table">
   <h2>BGM lookup table</h2>
-  <p>There isn't really a "BGM &rarr; file" lookup table. The BGM ID is a PROT-relative offset. From <code>FUN_800243F0</code>:</p>
+  <p>When a script says "play track 2016", how does the game find the music? There isn't really a "BGM &rarr; file" lookup table. The BGM ID is a PROT-relative offset. From <code>FUN_800243F0</code>:</p>
   <pre><code>if (_DAT_8007BAC8 &lt; 2000) {
     _DAT_8007BAB8 = _DAT_80084540 + 6;            // scene-local: current scene PROT base + 6
 } else {
@@ -263,13 +406,14 @@ return ((&amp;DAT_80085758)[(int)idx &gt;&gt; 3] &amp; (0x80 &gt;&gt; (idx &amp;
 _DAT_8007BAB8 = _DAT_8007BAC8 + _DAT_8007BAB8;     // final PROT index</code></pre>
   <ul class="bullets">
     <li><code>bgm_id &lt; 2000</code> - scene-local. Different scenes have different BGM at the same script ID. Rare in retail: scenes carry almost no local SEQ data (<code>teien</code> is the one scene with a local copy).</li>
-    <li><code>bgm_id &ge; 2000</code> - global. The global pool is the <strong><code>music_01</code> bank</strong> (extraction entries 990..=1071), whose slot order is the <strong>debug sound-test order</strong> - so <code>2000 + i</code> plays sound-test track <code>i</code> and every global id resolves to a curated human name (<a href="../reference/music-tracks.html">music-track table</a>). Pinned by a per-scene op-<code>0x35</code> census joining ids to their scenes' known music (<code>town01</code> starts <code>2016</code> = &ldquo;Rim Elm theme&rdquo;). Engine resolver: <code>legaia_engine_core::music_labels</code>.</li>
+    <li><code>bgm_id &ge; 2000</code> - global, at PROT <code>_DAT_8007BC64 + bgm_id - 2000</code> (raw pool base 990). The global pool is the <strong><code>music_01</code> bank</strong>, whose pool order is the <strong>debug sound-test order</strong> - so <code>2000 + i</code> plays sound-test track <code>i</code> and every global id resolves to a curated human name (<a href="../reference/music-tracks.html">music-track table</a>). The physical bank is <strong>piecewise</strong> in extraction space, not a flat base: extraction <code>988 + i</code> for <code>i &lt;= 67</code>, <code>990 + i</code> for <code>i &gt;= 68</code>, with a two-entry gap at 1056/1057; the resolver <code>legaia_engine_core::music_labels::prot_entry_for_bgm_id</code> owns the id-to-entry map. Pinned by a per-scene op-<code>0x35</code> census joining ids to their scenes' known music (<code>town01</code> starts <code>2016</code> = &ldquo;Rim Elm theme&rdquo;). Engine resolver: <code>legaia_engine_core::music_labels</code>.</li>
   </ul>
   <p>The "table" <em>is</em> the <a href="../formats/index.html">CDNAME.TXT name map</a>'s per-scene block layout. There's no separate BGM index in <code>SCUS_942.54</code>.</p>
 </section>
 
 <section class="doc-section" id="helpers">
   <h2>Helper functions</h2>
+  <p>Small pure-arithmetic leaves the dispatcher calls - text-packet measuring, bit tests, little-endian immediates, tile-to-world conversion.</p>
   <p>A set of small leaf helpers in the dispatcher's call graph are pure arithmetic - no globals, no overlay calls - so they get clean-room ports in <code>crates/engine-vm/src/field_helpers.rs</code> rather than host hooks, and the dispatcher arms call into them directly.</p>
   <table>
     <thead><tr><th>Helper</th><th>Original</th><th>Used by</th></tr></thead>
@@ -293,11 +437,13 @@ _DAT_8007BAB8 = _DAT_8007BAC8 + _DAT_8007BAB8;     // final PROT index</code></p
 
 <section class="doc-section" id="vram-stp">
   <h2>0x4C nibble-D sub-4 / sub-5 - VRAM STP-bit set/clear</h2>
+  <p>A script can flip the transparency bit on a strip of texture pixels in video memory - how a scene toggles a see-through detail without a second texture.</p>
   <p>The 6-byte <code>[4C, 0xD4|0xD5, x_lo, x_hi, y_lo, y_hi]</code> operand is a <code>(vram_x, vram_y)</code> pair; the rect is hard-coded to <code>w = 0x10, h = 1</code>. The original runs the PsyQ libgs <code>StoreImage</code> &rarr; per-pixel STP-bit edit &rarr; <code>LoadImage</code> read-modify-write over 16 u16 pixels: sub-4 (op <code>0xD4</code>) sets STP on non-zero pixels, sub-5 (op <code>0xD5</code>) clears STP unless the pixel is already STP-only. The 16-element buffer lives on the dispatcher stack, <em>not</em> in the bytecode - it's pixels read from VRAM at runtime. The host hooks <code>op4c_n_d_sub_4_vram_stp_set(x, y)</code> / <code>op4c_n_d_sub_5_vram_stp_clear(x, y)</code> receive only the rect origin; a clean-room renderer that maintains its own framebuffer can emulate the read-modify-write itself.</p>
 </section>
 
 <section class="doc-section" id="op4c-d3-timed-flags">
   <h2>0x4C nibble-D sub-3 - SCHEDULE_TIMED_FLAGS</h2>
+  <p>The collapsing-dungeon escape timer: a script arms a countdown and two flags that fire when it expires or drops below a threshold.</p>
   <p>A 14-byte timed-flag scheduler: <code>[4C, 0xD3, expiry_flag: u16, below_flag: u16, duration: u32, threshold: u32]</code> writes the flag pair into <code>_DAT_800845C0</code>, the duration into <code>_DAT_800845B8</code>/<code>_DAT_800845A0</code>, the threshold into <code>_DAT_800845BC</code>, and snapshots the clock. The per-tick consumer <code>FUN_801d2ebc</code> (field overlay 0897) decrements by the clock delta, SETs the expiry flag + disarms on expiry, and SETs the below-threshold flag while under it. Retail use: <code>chitei2</code>'s collapsing-dungeon escape timer (flag <code>0x4C7</code>, duration 2400, threshold 910), with disarm records in <code>chitei2</code>/<code>map03</code>. The flag slots live in the <code>0x80084140</code> save-scratch block, so a mid-timer save persists it.</p>
 </section>
 
@@ -305,7 +451,7 @@ _DAT_8007BAB8 = _DAT_8007BAC8 + _DAT_8007BAB8;     // final PROT index</code></p
   <h2>Connection to other crates</h2>
   <ul class="bullets">
     <li><strong>crates/mdt</strong> - opcode <code>0x22 EXEC_MOVE</code> drives the move-table consumer at <code>FUN_800204F8</code>. See <a href="move-vm.html">Move-table VM</a>.</li>
-    <li><strong>crates/mes</strong> - field dialogue has no dedicated opcode: it is the actor's inline interaction-script MES text, shown by the actor-dialog SM <code>FUN_80039b7c</code> + pager <code>FUN_801D84D0</code>, triggered by the field-interact op (<code>0x3E op0&lt;100</code>). The text <code>crates/mes</code> parses is that inline <code>0x1F</code>/glyph stream. (<code>0x3F</code> is the named scene-change - <code>func_0x8001FD44</code> is the scene-change packet, not a dialog opener.) The engine's faithful runner (<code>engine_core::inline_dialogue</code> / <code>World::step_inline_dialogue</code>, PORT of <code>FUN_80039b7c</code>) drives the record through the real field VM, pausing at each <code>0x1F</code> segment to show a box. Interaction records are <strong>resident conversation drivers</strong>: a top flag-selector picks the branch for the current story state (town01's Val record - "hands are full" sets its own one-shot SysFlag, later talks give "(Silence)", then the permanent line), and each branch exits via a shared tail that jumps <em>back to the selector</em>; retail parks the context there until the next talk. The runner ends one conversation pass at that loop-back - a VM <code>Advance</code> jumping backward onto an already-executed PC - rather than replaying the branch forever; the map is cleared on every picker commit so menu records that re-emit their menu by jumping back after a branch reply still cycle.</li>
+    <li><strong>crates/mes</strong> - parses the inline <code>0x1F</code>/glyph stream that <a href="#dialogue">field dialogue</a> pages; there is no dialogue opcode.</li>
     <li><strong>crates/anm</strong> - opcode <code>0x34</code> sub-op 3 plays 3D animations via <code>func_0x800252EC</code>.</li>
     <li><strong>crates/engine-vm</strong> - the clean-room Rust port at <code>crates/engine-vm/src/field.rs</code>. Reuses the same <code>Host</code> trait pattern as the actor VM.</li>
   </ul>
@@ -321,7 +467,6 @@ _DAT_8007BAB8 = _DAT_8007BAC8 + _DAT_8007BAB8;     // final PROT index</code></p
     <li><strong>Relative-jump deltas wrap at 16 bits.</strong> Each script's PC is stored as a signed 16-bit value (<code>*(short*)(ctx + 0x9e)</code>), so every relative branch (<code>0x26</code> JMP_REL, the <code>0x7x</code> flag-TEST conditional jump, <code>0x42</code> COND_JMP, the <code>0x4E</code> compare jumps) computes <code>(base + delta) mod 0x10000</code>. A delta with the high bit set is a <em>backward</em> jump - e.g. <code>0xFFFE</code> = -2, the per-frame "park here" wait-loop idiom (<code>[21] [26 FE FF]</code> ping-pongs two bytes until a story flag flips a guarded TEST). Computing <code>base + delta</code> in a wider int without the 16-bit truncation turns every backward jump into a <code>+0xFFxx</code> forward overrun. The clean-room port models this with a <code>rel_jump(base, lo, hi)</code> helper that wraps in <code>u16</code>.</li>
     <li><strong>Intra-function label catalogue.</strong> Several <code>iVar = FUN_801xxxxx(); return iVar;</code> patterns in the C decompile look like helper calls but are intra-function <code>j</code> targets Ghidra promoted to fake function names - each is a <code>addiu s8, s8, N; j epilogue</code> block supplying a PC delta. Notable entries: <code>0x801df098</code> (PC += 2), <code>0x801df09c</code> (PC unchanged, the epilogue), <code>0x801df8dc</code> (PC += 6), <code>0x801e00b8</code> (PC += 3), <code>0x801e212c</code> (PC += 7), <code>0x801e3614</code> (BBOX outside-box, <code>pc + 5 + skip</code>), <code>0x801e3620</code> (PC += 4). Always cross-check <code>grep -n "0x&lt;addr&gt;" overlay_0897_801de840.txt</code> before treating a <code>FUN_xxxxxxxx</code> reference as a separate function - the misleadingly-named dump file <code>overlay_0897_801e3620.txt</code> actually has entry <code>0x801e3578</code>.</li>
   </ul>
-  <p>For the exhaustive opcode reference and the full <code>0x4C</code> outer-nibble dispatcher table, see <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/script-vm.md" target="_blank" rel="noopener">docs/subsystems/script-vm.md</a> on GitHub.</p>
 </section>
 
 <section class="doc-section" id="field-disasm-tool">
@@ -346,8 +491,8 @@ cargo run -p legaia-engine-vm --bin field-disasm -- scan-prot \
 </section>
 
 <section class="doc-section" id="fmv-trigger-sites">
-  <h2>FMV-trigger sites - exhaustive backward sweep</h2>
-  <p>A grep across every Ghidra dump in the corpus for writes to the global game-mode word <code>_DAT_8007B83C = 0x1A</code> (the <code>StrInit</code> mode that boots the str_fmv overlay) finds only the field-VM op plus the title-attract path (pinned at two PCs in the title overlay). The sites are codified in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-vm/src/cutscene_trigger.rs" target="_blank" rel="noopener"><code>legaia_engine_vm::cutscene_trigger</code></a> as <code>FMV_TRIGGER_SITES</code>:</p>
+  <h2>FMV-trigger sites</h2>
+  <p>Eight scenes start a movie from a script. Which code can switch the game into movie mode at all? A grep across every Ghidra dump in the corpus for writes to the global game-mode word <code>_DAT_8007B83C = 0x1A</code> (the <code>StrInit</code> mode that boots the str_fmv overlay) finds only the field-VM op plus the title-attract path (pinned at two PCs in the title overlay). The sites are codified in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-vm/src/cutscene_trigger.rs" target="_blank" rel="noopener"><code>legaia_engine_vm::cutscene_trigger</code></a> as <code>FMV_TRIGGER_SITES</code>:</p>
   <table>
     <thead><tr><th>Label</th><th>Function</th><th>Mode-write addr</th><th>FMV-id source</th><th>Trigger condition</th></tr></thead>
     <tbody>
@@ -380,7 +525,7 @@ cargo run -p legaia-engine-vm --bin field-disasm -- scan-prot \
 
 <section class="doc-section" id="superseded">
   <details class="disclosure">
-    <summary>Superseded readings</summary>
+    <summary>History: superseded readings</summary>
     <div class="disclosure-body">
       <ul class="bullets">
         <li>The <code>scene_event_scripts</code> prescript was long assumed to carry field-VM scripts because its records open with <code>0xFFFF 0x0000</code>; the records are move-VM stager records (the lead is <code>model_sel = -1</code>).</li>
@@ -388,6 +533,7 @@ cargo run -p legaia-engine-vm --bin field-disasm -- scan-prot \
         <li>The default-route flag-bank base was mislabelled <code>DAT_80086D70</code> by double-counting the <code>0x1618</code> displacement onto <code>0x80085758</code>. The Ghidra symbol <code>DAT_80085758</code> is itself <code>0x80084140 + 0x1618</code>, and the array indexes directly from there.</li>
         <li>The per-scene FMV-trigger bytecode was read as "reconstructed at scene-load time from the field-pack preamble"; the ops are simply LZS-compressed inside each scene's MAN and decode statically.</li>
       </ul>
+      <p>Falsified readings across the project are collected on <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p>
     </div>
   </details>
 </section>
@@ -396,10 +542,16 @@ cargo run -p legaia-engine-vm --bin field-disasm -- scan-prot \
   <h2>See also</h2>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
+    <a href="motion-vm.html">Motion VMs (the walk kernel)</a>
+    <a href="field-locomotion.html">Field locomotion</a>
     <a href="actor-vm.html">Actor VM</a>
     <a href="move-vm.html">Move-table VM</a>
-    <a href="motion-vm.html">Motion VM</a>
     <a href="effect-vm.html">Effect VM</a>
+    <a href="cutscene.html">Cutscenes</a>
+    <a href="../formats/man-relocation.html">MAN relocation</a>
     <a href="../formats/scene-v12-table.html">Scene v12 table</a>
+    <a href="../formats/mes.html">MES dialog</a>
+    <a href="../formats/str-fmv-table.html">FMV dispatch table</a>
+    <a href="../reference/re-do-not-re-walk.html">Do-not-re-walk</a>
   </div>
 </section>

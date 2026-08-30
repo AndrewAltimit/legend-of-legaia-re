@@ -9,6 +9,38 @@
     shuffle does.</p>
 </header>
 
+<section class="doc-section" id="what-the-bar-does">
+  <h2>What the AP bar does</h2>
+  <p>On your turn the Arts bar fills with a row of pennants, one per direction you press, and stops accepting input when the next pennant would not fit. That bar is a budget - your <strong>AGL</strong> stat - and every direction has a price. Three of the four prices never change. The fourth, the weapon-hand swing, is authored per weapon: swing the class your character favours and it costs the base 30; swing off-class and it costs 42; the far tier costs 54. Because the price is also the pennant's width, an off-class weapon <em>looks</em> wider and <em>fits</em> fewer commands in the same turn.</p>
+  <figure class="overlay-strip">
+    <svg viewBox="0 0 880 150" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="acg-pennant-title" style="font-family: var(--font-mono); font-size: 12px;">
+      <title id="acg-pennant-title">Arm pennant width by weapon class tier</title>
+      <g fill="var(--text-muted)"><text x="20" y="30">favored  (30)</text><text x="20" y="75">off-class (42)</text><text x="20" y="120">far tier  (54)</text></g>
+      <g fill="var(--bg-card)" stroke="var(--accent)" stroke-width="1.5">
+        <rect x="180" y="14" width="120" height="24"/><rect x="300" y="14" width="120" height="24"/><rect x="420" y="14" width="120" height="24"/><rect x="540" y="14" width="120" height="24"/><rect x="660" y="14" width="120" height="24"/>
+        <rect x="180" y="59" width="168" height="24"/><rect x="348" y="59" width="120" height="24"/><rect x="468" y="59" width="120" height="24"/><rect x="588" y="59" width="120" height="24"/>
+        <rect x="180" y="104" width="216" height="24"/><rect x="396" y="104" width="120" height="24"/><rect x="516" y="104" width="120" height="24"/><rect x="636" y="104" width="120" height="24"/>
+      </g>
+      <g fill="currentColor" font-size="11">
+        <text x="186" y="31">arm 30</text><text x="306" y="31">high 30</text><text x="426" y="31">low 30</text><text x="546" y="31">arm 30</text><text x="666" y="31">high 30</text>
+        <text x="186" y="76">arm 42</text><text x="354" y="76">high 30</text><text x="474" y="76">low 30</text><text x="594" y="76">arm 30</text>
+        <text x="186" y="121">arm 54</text><text x="402" y="121">high 30</text><text x="522" y="121">low 30</text><text x="642" y="121">arm 30</text>
+      </g>
+      <line x1="790" y1="8" x2="790" y2="140" stroke="var(--border)" stroke-dasharray="4 3"/>
+      <text x="798" y="76" fill="var(--text-muted)" font-size="11">AGL budget</text>
+    </svg>
+    <figcaption>Same AGL, three weapons. Only the weapon-hand arm changes width (<code>cost - 6</code> px); the wider it is, the fewer commands the turn admits before the bar runs out.</figcaption>
+  </figure>
+  <table class="data-table">
+    <thead><tr><th>Tier</th><th>Arm cost</th><th>Over base</th><th>Who lands here</th></tr></thead>
+    <tbody>
+      <tr><td>Favored class</td><td>30</td><td>-</td><td>Vahn with a sword, Noa with a claw, Gala with a club</td></tr>
+      <tr><td>Off-class</td><td>42</td><td>+12 (&times;1.4)</td><td>e.g. Gala holding a claw</td></tr>
+      <tr><td>Far tier</td><td>54</td><td>+24 (&times;1.8)</td><td>Noa with any club or axe; Vahn's Astral Sword</td></tr>
+    </tbody>
+  </table>
+</section>
+
 <section class="doc-section doc-summary" id="summary">
   <h2>Summary</h2>
   <ol class="bullets">
@@ -191,6 +223,11 @@ ctx[0x6DC] -= ctx[slot + 0x14];                             // consume the comma
   </table>
 </section>
 
+<section class="doc-section" id="more-in-doc">
+  <h2>What the full document adds</h2>
+  <p><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/arts-command-gauge.md" target="_blank" rel="noopener"><code>docs/subsystems/arts-command-gauge.md</code></a> also covers: re-arming the gauge at art start, where the gauge <em>pool</em> comes from (the AGL seed and the Spirit refill), what a named art costs in AP and where that charge actually lands (a separate gauge from the bar - <code>actor+0x170</code>), the arts AP override hook the ROM patcher installs, and the port's input session with its remaining divergences.</p>
+</section>
+
 <section class="doc-section" id="address-reference">
   <h2>Address reference</h2>
   <p>Every address on this page in one place (USA release, main-RAM virtual addresses; the battle overlay, PROT 0898, is based at <code>0x801CE818</code>).</p>
@@ -269,5 +306,11 @@ ctx[0x6DC] -= ctx[slot + 0x14];                             // consume the comma
     <a href="battle-action.html">Battle action FSM</a>
     <a href="../formats/battle-data-pack.html">Battle-data pack</a>
     <a href="../formats/move-power.html">Move power table</a>
+    <a href="../formats/equipment-table.html">Equipment table</a>
+    <a href="battle-formulas.html">Battle formulas</a>
+    <a href="battle.html#ap-gauge">Battle: AP / Spirit gauge</a>
+    <a href="../arts.html">Arts browser</a>
+    <a href="../characters.html">Character viewer (equipment)</a>
+    <a href="../tooling/rom-patcher.html">ROM patcher (swing costs)</a>
   </div>
 </section>

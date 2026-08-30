@@ -133,8 +133,9 @@
   <span class="viewer-status" id="viewer-status">No file loaded.</span>
 </div>
 
-<section class="doc-section">
+<section class="doc-section" id="model-browser">
   <h2>3D model browser</h2>
+  <p>Every 3D model in the game's archive, textured the way the console draws it. Pick an entry from the list, spin it, and if it belongs to a town or dungeon press <em>full map</em> to see the whole scene assembled. The <em>.glb</em> button exports what is on screen for Blender.</p>
 
   <div class="viewer-shell">
     <div class="viewer-layout">
@@ -231,7 +232,7 @@
     }
   </style>
   <h2>PROT.DAT TIM catalog</h2>
-  <p class="lede">Every texture in <code>PROT.DAT</code> stored as plain, uncompressed bytes, each with a stable id you can link back to.</p>
+  <p class="lede">Every texture the archive stores as plain bytes - menus, fonts, portraits, many environment sheets - each with a stable id you can link back to.</p>
   <p class="hint">Click any thumbnail to load it full-size; the <strong>CLUT</strong> dropdown switches between an image's palette (<abbr title="Colour Look-Up Table">CLUT</abbr>) variants.</p>
   <div id="catalog-pane" style="display: none;">
     <div id="catalog-grid"></div>
@@ -256,7 +257,7 @@
 
 <section class="doc-section" id="compressed-textures">
   <h2>Compressed textures (LZS-embedded)</h2>
-  <p class="lede">The character and scene textures the catalog above can't see: LZS-compressed inside <code>PROT.DAT</code>, recovered by decompressing every entry and keyed by <code>entry, section, offset</code>.</p>
+  <p class="lede">The character and scene textures the catalog above cannot see, because they sit inside compressed sections of the archive. The page decompresses every entry to find them; each is keyed by the entry, section and offset it came from.</p>
   <p class="hint">Click any thumbnail to load it full-size and switch CLUT variants, as in the catalog above.</p>
   <div id="deep-catalog-pane" style="display: none;">
     <div id="deep-catalog-grid"></div>
@@ -280,67 +281,91 @@
 </section>
 
 <details class="about-data">
-  <summary>About this viewer — what it shows, how to drive it, provenance</summary>
+  <summary>About this viewer - what it shows, how to drive it, how it is checked</summary>
   <div class="about-body">
     <p>
       <strong>You supply the game.</strong> This site ships no game data. Point it at a
-      <code>.bin</code> disc image of your own copy and it is parsed locally in the browser by the
-      project's parsers compiled to WebAssembly - nothing is uploaded.
+      <code>.bin</code> disc image of your own copy and the project's parsers, compiled to
+      WebAssembly, take it apart in your browser - nothing is uploaded.
     </p>
     <p>
-      The page opens the disc's main archive, <code>PROT.DAT</code>, three ways: a
-      <strong>3D browser</strong> for every model, a <a href="#tim-catalog">texture catalog</a> for
-      plain-bytes images, and a <a href="#compressed-textures">compressed textures</a> grid for the
-      rest.
+      Nearly everything in the game lives in one archive on the disc,
+      <a href="formats/prot.html"><code>PROT.DAT</code></a>: a numbered list of <em>entries</em>
+      holding every town, monster, menu and tune. This page opens it three ways:
     </p>
+    <ul class="bullets">
+      <li><strong>3D browser</strong> - every entry that holds a model: buildings, props, monsters,
+        battle stages, party members. Models are Legaia's house variant of the PlayStation
+        <a href="formats/tmd.html">TMD</a> format, textured with standard
+        <a href="formats/tim.html">TIM</a> images through the same paletted shader the native engine
+        uses (switch <em>textured</em> off to see the bare geometry).</li>
+      <li><a href="#tim-catalog"><strong>Texture catalog</strong></a> - the images stored as plain
+        bytes, each with a stable id you can link back to.</li>
+      <li><a href="#compressed-textures"><strong>Compressed textures</strong></a> - the character
+        and scene textures the catalog cannot see, because they sit inside
+        <a href="formats/lzs.html">LZS-compressed</a> sections; the page decompresses every entry to
+        find them.</li>
+    </ul>
     <div id="using-the-viewer">
       <h3>Using the viewer</h3>
-      <p>
-        <a href="formats/prot.html"><code>PROT.DAT</code></a> is a numbered list of <em>entries</em>;
-        the 3D browser lists every entry holding a model - Legaia's house variant of the PlayStation
-        <a href="formats/tmd.html">TMD</a> mesh format, textured with standard
-        <a href="formats/tim.html">TIM</a> images through the same paletted shader the native engine
-        uses (switch <em>textured</em> off for flat shading). Pick from the sidebar or jump to an
-        entry by number.
-      </p>
-      <p>Everything exports. <strong>&#11015; .glb</strong> downloads the current 3D view - single mesh,
-        or the whole assembled town in full-map mode - as a binary
-        <a href="https://www.khronos.org/gltf/">glTF</a> with textures baked from VRAM;
-        <strong>&#11015; PNG</strong> downloads the selected texture in its current palette. In full-map
-        mode a <strong>VR</strong> button presents the town over WebXR
-        (<a href="subsystems/vr-mode.html">VR mode</a>; needs Chrome/Edge with SteamVR and a secure
-        context).</p>
-      <p><strong>Battle stages are not shown raw.</strong> A <code>scene_tmd_stream</code> entry holds
-        half a backdrop shell; the game draws that mesh <em>twice</em>, the second copy either
-        half-turned or reflected, and lays its tiled floor underneath. The viewer places them the same
-        way, and the status line names which transform the executable picked for that stage. Two
-        entries can be the same bowl byte for byte and still be placed differently - the choice is
-        per-stage data the game carries in a table, not something the mesh implies, so a stage that
-        looks rotated against its twin elsewhere is showing you the table
-        (<a href="subsystems/battle.html#battle-background">why</a>).</p>
-      <p class="hint">Sound and cutscene video on disc live on the <a href="media.html">media browser</a>. The native build adds stage geometry and cross-PROT-entry CLUT chains (via <code>--vram-extra-dir</code>):</p>
+      <ul class="bullets">
+        <li><strong>Pick a model</strong> from the sidebar, jump to an entry by number, or use the
+          arrow keys / <kbd>N</kbd> and <kbd>P</kbd> to step through. Entries that belong to a
+          known scene show the scene's name.</li>
+        <li><strong>Drive the camera</strong> - drag to orbit, wheel to zoom, <kbd>WASD</kbd> to pan,
+          <kbd>Space</kbd> to pause the spin, <kbd>R</kbd> or double-click to reset. Zooming past
+          the model's surface flies you inside it, which is how to look around a sky dome.</li>
+        <li><strong>Full map</strong> appears for any entry that belongs to a town or dungeon: it
+          assembles every environment mesh at its authored position with the ground underneath -
+          the same assembly the <a href="world.html">game world</a> page and the
+          <a href="play.html">play page</a> use. In full-map mode a <strong>VR</strong> button
+          presents the town over WebXR (<a href="subsystems/vr-mode.html">VR mode</a>; Chrome or
+          Edge with SteamVR and a secure context).</li>
+        <li><strong>Export.</strong> <strong>&#11015; .glb</strong> downloads the current 3D view -
+          one mesh, or the whole assembled town - as a binary
+          <a href="https://www.khronos.org/gltf/">glTF</a> with textures baked in, ready for
+          Blender or any glTF viewer. <strong>&#11015; PNG</strong> downloads the selected texture
+          in its current palette.</li>
+      </ul>
+      <p><strong>Why a battle stage looks like half a bowl.</strong> A stage entry holds half a
+        backdrop shell; the game draws that mesh <em>twice</em>, the second copy either half-turned
+        or mirrored, and lays a tiled floor underneath. The viewer places them the same way and the
+        status line names which transform the game picked for that stage. Two stages can be the
+        same mesh byte for byte and still be placed differently, because the choice is a per-stage
+        table in the game, not something the mesh implies
+        (<a href="subsystems/battle.html#battle-background">battle backgrounds</a>).</p>
+      <p class="hint">Sound and cutscene video are on the <a href="media.html">media browser</a>.
+        The native desktop viewer adds stage geometry and cross-entry palette chains:</p>
       <div class="cli"><code>./target/release/asset-viewer prot extracted/PROT.DAT</code></div>
     </div>
-    <h3>Texture catalogs — provenance and validation</h3>
+    <h3>How the catalogs are checked</h3>
     <p>
-      The TIM catalog matches <a href="https://github.com/m35/jpsxdec" target="_blank" rel="noopener">jPSXdec</a>'s
-      TIM index exactly (same offsets, dimensions, palette counts) - a useful outside check - and also
-      reaches the archive's unindexed system-UI gap, such as the menu-glyph sheet.
+      The texture catalog is checked against an independent tool,
+      <a href="https://github.com/m35/jpsxdec" target="_blank" rel="noopener">jPSXdec</a>: same
+      offsets, dimensions and palette counts, entry for entry. It also reaches images jPSXdec's
+      index does not, such as the menu-glyph sheet in the archive's unindexed system-UI gap.
     </p>
     <p>
-      In the compressed-textures grid every hit is validated on the <em>output</em> - the decoded
-      bytes must strictly parse as a texture and decode to real pixels, because &ldquo;it
-      decompressed without error&rdquo; proves nothing on its own
-      (<a href="formats/lzs.html">Legaia LZS</a>).
+      In the compressed-textures grid every hit is validated on the <em>output</em>: the decoded
+      bytes must strictly parse as a texture and decode to real pixels. "It decompressed without
+      error" proves nothing on its own, because Legaia's decompressor turns most random input into
+      plausible-looking bytes (<a href="formats/lzs.html">Legaia LZS</a>).
     </p>
     <div id="related">
       <h3>Related</h3>
-      <p>Loaded disc data never leaves your browser - <code>FileReader</code> reads straight into WebAssembly memory, with no network calls for the disc bytes. The project ships zero Sony bytes (bring your own disc).</p>
+      <p>Loaded disc data never leaves your browser: the file is read straight into WebAssembly
+        memory, with no network calls for the disc bytes. The disc is cached locally and shared
+        across pages so it auto-loads on return; <em>Forget</em> on the disc chip clears it.</p>
       <div class="see-also">
         <span class="see-also-label">Reference</span>
-        <a href="subsystems/engine.html">Engine reimplementation</a>
+        <a href="formats/prot.html">PROT.DAT</a>
+        <a href="formats/tmd.html">Legaia TMD</a>
+        <a href="formats/tim.html">PSX TIM</a>
+        <a href="formats/lzs.html">Legaia LZS</a>
+        <a href="formats/scene-bundles.html">Scene bundles</a>
         <a href="subsystems/asset-loader.html">Asset loader</a>
-        <a href="formats/prot.html">PROT.DAT TOC</a>
+        <a href="subsystems/renderer.html">Renderer</a>
+        <a href="guides/extracting-assets.html">Extracting assets natively</a>
       </div>
     </div>
   </div>

@@ -14,6 +14,28 @@
     <li><strong>Damage = Offense &minus; Defense</strong>, capped at 9999. When the defense would win outright the game does not floor the hit at 1 - it rebuilds the attack on top of the defense so a weak attacker still lands a hit that scales with ATK.</li>
     <li><strong>Not in this formula.</strong> Seru magic, monster specials and boss casts use a different, INT-driven kernel with its own finisher; the limb-height "Miss" and blocking are separate mechanics.</li>
   </ul>
+  <figure class="overlay-strip">
+    <svg viewBox="0 0 880 170" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="bf-pipe-title" style="font-family: var(--font-mono); font-size: 12px;">
+      <title id="bf-pipe-title">How one physical hit is computed</title>
+      <defs><marker id="bf-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/></marker></defs>
+      <g fill="var(--bg-card)" stroke="var(--border)">
+        <rect x="10" y="20" width="150" height="60" rx="4"/><rect x="190" y="20" width="170" height="60" rx="4"/><rect x="390" y="20" width="170" height="60" rx="4"/>
+        <rect x="190" y="100" width="170" height="60" rx="4"/><rect x="590" y="20" width="120" height="60" rx="4" stroke="var(--accent)"/><rect x="740" y="20" width="130" height="60" rx="4"/>
+      </g>
+      <g fill="currentColor">
+        <text x="20" y="42" font-weight="600">Base Offense</text><text x="20" y="60" fill="var(--text-muted)">base ATK</text><text x="20" y="74" fill="var(--text-muted)">+ one slot / 2</text>
+        <text x="200" y="42" font-weight="600">Offense</text><text x="200" y="60" fill="var(--text-muted)">x Rnd x Power/16</text><text x="200" y="74" fill="var(--text-muted)">+ HP/256 + juggle + angle</text>
+        <text x="400" y="42" font-weight="600">Multipliers</text><text x="400" y="60" fill="var(--text-muted)">Art x1.3 (War Soul x1.4)</text><text x="400" y="74" fill="var(--text-muted)">element x1.04 / x0.96</text>
+        <text x="200" y="122" font-weight="600">Defense</text><text x="200" y="140" fill="var(--text-muted)">UDF or LDF x Rnd</text><text x="200" y="154" fill="var(--text-muted)">+ distance term; Spirit x3</text>
+        <text x="600" y="42" font-weight="600">Damage</text><text x="600" y="60" fill="var(--text-muted)">Offense - Defense</text><text x="600" y="74" fill="var(--text-muted)">underdog rewrite</text>
+        <text x="750" y="42" font-weight="600">Finisher</text><text x="750" y="60" fill="var(--text-muted)">guard halve, cap 9999</text><text x="750" y="74" fill="var(--text-muted)">spirit gauge fill</text>
+      </g>
+      <g fill="none" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#bf-arrow)">
+        <path d="M160 50 L190 50"/><path d="M360 50 L390 50"/><path d="M560 50 L590 50"/><path d="M710 50 L740 50"/><path d="M360 130 C500 130 520 80 590 62"/>
+      </g>
+    </svg>
+    <figcaption>The attacker's side folds one equipment slot at half strength <em>at swing time</em> (never at battle load), rolls, scales by the move's power, then takes the Art and element multipliers; the defender's side rolls too; the difference is the number that pops.</figcaption>
+  </figure>
 </section>
 
 <section class="doc-section" id="physical-damage">
@@ -108,7 +130,10 @@ actor[+0x1F7] = (frame &lt; record[+0x10]) ? 1 : 0   ; record = that clip's acti
   <p>Total 274 + 283 + 536 = <strong>1086</strong>, matching the in-game figure for that combo. The second hit's juggle 2 is why it out-damages the first from a near-identical base, and the Art takes all three gear ATKs at half and then the &times;1.3 - which is where most of an Art's advantage comes from.</p>
   <h3>Checked against the bytes</h3>
   <p>Each claim in the community analysis was checked against the disassembly of <code>FUN_801EC3E4</code> and its callers (the jump-table arms live in a gap Ghidra's listing skips, so those were read straight from the overlay bytes). Every term above is <strong>confirmed</strong> with one correction and two open magnitudes: the random numbers are the BIOS <code>rand</code>'s 15 bits, not 16 (immaterial after the <code>% (x/8 + 1)</code> reduction); the "2048 from behind" angle value is the fold <em>before</em> the writer's <code>- 0x800</code>, and what the kernel does with the resulting negative halfword has not been captured; and the distance of 30 is runtime scratchpad state rather than a constant in the code. The full claim-by-claim table, register-level stage list and address appendix are in the <a href="#full-reference">full reference</a>.</p>
-  <p class="note"><strong>Engine.</strong> Before this check the port seeded a party member's attack from the <em>menu</em> aggregate (base plus every item's full ATK), over-stating Vahn's first hit above from 237 to 472 before the roll. It now seeds the base and folds the halved slot per command (<code>World::battle_equip_atk</code>, <code>arms_weapon_atk_fold</code>); <code>physical_predamage</code> ports the roll pair, the Art and element passes, the status scales, the underdog rewrite and the chip floor, drawing <code>rand()</code> in retail order.</p>
+  <details class="disclosure">
+    <summary>History: the port once seeded attack from the menu aggregate</summary>
+    <div class="disclosure-body"><p>Before this check the port seeded a party member's attack from the <em>menu</em> aggregate (base plus every item's full ATK), over-stating Vahn's first hit above from 237 to 472 before the roll. It now seeds the base and folds the halved slot per command (<code>World::battle_equip_atk</code>, <code>arms_weapon_atk_fold</code>); <code>physical_predamage</code> ports the roll pair, the Art and element passes, the status scales, the underdog rewrite and the chip floor, drawing <code>rand()</code> in retail order.</p></div>
+  </details>
 </section>
 
 <section class="doc-section" id="damage-primitive">
@@ -234,8 +259,14 @@ else
 </section>
 
 <section class="doc-section" id="full-reference">
-  <h2>Full reference</h2>
-  <p>The full doc with provenance citations is at <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/battle-formulas.md" target="_blank" rel="noopener"><code>docs/subsystems/battle-formulas.md</code></a>.</p>
+  <h2>What the full document adds</h2>
+  <p>The full doc with line-level provenance is <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/battle-formulas.md" target="_blank" rel="noopener"><code>docs/subsystems/battle-formulas.md</code></a>. Beyond this page it decodes:</p>
+  <ul class="bullets">
+    <li>The <strong>summon-magic damage roll</strong> <code>FUN_801DD0AC</code> - the INT-driven kernel behind Seru magic, monster specials and boss casts, which has no static per-spell power scalar (the figure is caster-state derived), and its finisher <code>FUN_801DDB30</code>.</li>
+    <li><strong>Summon spell XP and magic level-up</strong>: the per-spell u32 XP array at record <code>+0x8</code> and the finisher tail that accrues it per hit.</li>
+    <li>The <strong>run / escape roll</strong> <code>FUN_801E791C</code> and the <strong>per-round poison ticker</strong> <code>FUN_801E752C</code> in full.</li>
+    <li>A per-function <strong>address appendix</strong>.</li>
+  </ul>
 </section>
 
 <section class="doc-section" id="see-also">
@@ -247,5 +278,13 @@ else
     <a href="arts-command-gauge.html">Arts command gauge</a>
     <a href="level-up.html">Level-up</a>
     <a href="../reference/gamedata.html">Game-data tables</a>
+    <a href="../formats/move-power.html">Move power table</a>
+    <a href="../formats/equipment-table.html">Equipment table</a>
+    <a href="../formats/accessory-passive-table.html">Accessory passives</a>
+    <a href="../formats/spell-table.html">Spell table</a>
+    <a href="../formats/art-data.html">Art data</a>
+    <a href="../monsters.html">Monster viewer</a>
+    <a href="../arts.html">Arts browser</a>
+    <a href="../tooling/rom-patcher.html">ROM patcher (tuning sliders)</a>
   </div>
 </section>

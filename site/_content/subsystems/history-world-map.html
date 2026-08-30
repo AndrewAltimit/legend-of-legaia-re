@@ -1,0 +1,90 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; <a href="world-map.html">world map</a> &middot; chapter-1 hub sweep</div>
+  <h1>Chapter-1 hub sweep</h1>
+  <p class="lede">The disc-driven survey of every overworld leg reachable from Drake Kingdom's <code>map01</code> in chapter 1: which tile enters which scene, which partition-2 record carries the entrance, and which story flags gate it. Kept as a record of how the <a href="world-map.html#entrances">entrance and gate model</a> was validated; the model itself lives on the world-map page.</p>
+</header>
+
+<section class="doc-section" id="sweep">
+  <h2>Per-leg findings</h2>
+  <p>Each leg was decoded from the disc bytes and then driven in-engine by a disc-gated oracle (<code>chapter1_hub_sweep_oracle.rs</code>, <code>chapter1_hub_depth_oracle.rs</code>, <code>chapter1_hub_breadth_oracle.rs</code>): walk <code>town01 &rarr; map01</code>, step onto the leg's portal tile, and confirm the scene loads with its MAN present.</p>
+  <ul class="bullets">
+    <li><strong>Chapter-1 Drake hub sweep</strong> - past the covered spine (<code>town01 &rarr; map01 &rarr; keikoku</code> and the boss leg
+      <code>map01 &rarr; rikuroa / dolk &rarr; dolk2</code>) the remaining <code>map01</code> interior legs are <code>cave01</code>,
+      <code>vell</code>, <code>vozz</code>, <code>suimon</code>, <code>jou</code>, each decoded + driven straight from disc bytes (no capture) by
+      <code>chapter1_hub_sweep_oracle.rs</code>: driving <code>town01 &rarr; map01</code> and stepping onto the leg's portal tile loads it in
+      <code>Field</code> mode with its MAN present. Portals / entrance records / MAN partitions: <code>cave01</code> tile <code>(37,110)</code>
+      <code>P2[5]</code> <code>[1,13,18]</code>; <code>vell</code> <code>(77,97)</code> <code>P2[6]</code> <code>[8,17,13]</code>;
+      <code>vozz</code> <code>(107,91)</code> <code>P2[8]</code> <code>[4,24,20]</code>; <code>suimon</code> <code>(57,61)</code>
+      <code>P2[19]</code> <code>[10,7,3]</code>; <code>jou</code> <code>(95,23)</code> <code>P2[37]</code> <code>[15,8,7]</code>. Every one lists
+      a single onward <code>0x3F</code> back to <code>map01</code> (<code>jou</code> also warps to its interior variant <code>jouina</code>).
+      <code>dolk2</code> (post-boss variant; its real MAN is the <strong>streaming carrier</strong> extraction 70, partitions
+      <code>[29,73,17]</code>) is a <strong>terminal interior</strong>: its only
+      <code>0x3F</code> leads back to <code>map01</code>. <strong>Gate census:</strong> all five swept entrance records install
+      <strong>unconditionally</strong> (empty C1/C2); the only C1-gated <code>map01</code> entrance is <code>keikoku</code>
+      (<code>C1=[0x193]</code>), the only op-<code>0x70</code> branch is the <code>dolk</code>/<code>dolk2</code> destination switch on flag
+      <code>0x142</code> (a selector in the ungated <code>dolk</code> record), and <code>0x482</code> is a separate no-<code>0x3F</code> band
+      record - so no C1/C2 progression gate stands between a fresh Drake arrival and any of the five legs. <strong>The
+      &ldquo;<code>suimon</code> and <code>dolk2</code> share a MAN&rdquo; identity - dissolved:</strong> both halves were the
+    CDNAME-shifted scene window - <code>dolk2</code>'s unshifted window bled two entries into <code>suimon</code>'s block and picked
+    up suimon's sidecar copy of its own 2345-byte <code>[10,7,3]</code> MAN (<code>rikuroa</code>/<code>geremi</code> aliased the
+    same way; byte comparison + position law in
+    <a href="../formats/scene-v12-table.html#embedded-man-over-read">scene-v12-table &sect; over-read</a>). In the retail frame
+    <code>suimon</code> keeps that MAN (its scripted bundle) and <code>dolk2</code> resolves its own streaming carrier
+    (extraction 70, <code>[29,73,17]</code>). <code>Scene::load</code> converts CDNAME raw-TOC block ranges to the extraction
+    frame (<code>raw - 2</code>), which also dissolves the historical &ldquo;a scene's <code>.MAP</code> is two entries below its
+    block&rdquo; rule - the <code>.MAP</code> is simply the retail block's FIRST entry.</li>
+    <li><strong>Chapter-1 hub depth (vozz + jou &rarr; jouina)</strong> - one level deeper on the two story-load-bearing legs, decoded + driven
+      by <code>chapter1_hub_depth_oracle.rs</code>. <strong><code>vozz</code> is the Ravine unlock:</strong> its <code>0x3F</code> set is
+      <code>{map01}</code> only (exit <code>P2[10]</code>, tiles <code>(60..62, 2)</code>), but the ONLY <code>0x193</code> SET on the disc is
+      <code>vozz</code> <code>P1[7]</code> (<code>51 93</code> at MAN <code>0xDA6</code>, one-shot-guarded on <code>0x2AC</code>); its
+      <code>P2[11..=13]</code> are self-latching one-shots (each record's C1 is the very flag its own script SETs - the canonical one-shot beat
+      idiom). The <code>town01 &rarr; map01 &rarr; vozz &rarr; map01</code> round trip drives clean in-engine. <strong><code>jou</code>'s castle
+      door is chapter-gated:</strong> the <code>jouina</code> warp <code>P2[5]</code> (tiles <code>(93..95, 97)</code>) sits behind
+      <code>C2=[0x44D]</code>, whose only setter is <code>jou</code>'s own opener chain <code>P2[2] &rarr; P2[3] &rarr; P2[4]</code> gated
+      upstream on <code>0x44B</code> (set by <code>izumi</code> P1[15] / <code>noaru</code> P2[31] - the Noa beat). In-engine the gate behaves:
+      fresh walk-on installs nothing; with <code>0x44D</code> set the same walk-on spawns the door record. <strong><code>jouina</code> is not
+      terminal</strong> (destinations <code>{jou, jouinb}</code>, both ungated). <strong>Player-channel handshake (resolved):</strong>
+      <code>jou</code> <code>P2[5]</code>'s door cutscene drives the PLAYER channel
+    (<code>A2 F8 06</code> ExecMove + <code>C3 F8 ...</code> HaltAcquire). The timeline stepper models the handshake (ExecMove arms
+    an in-flight countdown, HaltAcquire parks then steps past by encoded width; see <a href="cutscene.html">cutscene</a>), so the
+    record reaches its trailing <code>0x3F</code> and the oracle drives the <code>jou &rarr; jouina</code> hop to
+    <code>SceneEntered</code>.</li>
+    <li><strong>Chapter-1 hub breadth (cave01 / vell / suimon + the Drake Castle chain)</strong> - the remaining hub legs, one
+    level deep, decoded + driven by the disc-gated <code>chapter1_hub_breadth_oracle.rs</code>.
+    <strong><code>cave01</code> is a two-mouth pass-through</strong> - one named <code>0x3F</code> destination
+    (<code>map01</code>) carried by TWO exit records (<code>P2[0]</code> gate-0 trigger <code>(8,89)</code>, <code>P2[1]</code>
+    gate-1 band <code>(93..94,96)</code>). Nine of 18 <code>P2</code> records are gated: six self-latch one-shots plus the longest
+    ordered beat chain decoded on a hub leg - <code>P2[13]</code> (C1 <code>0x15E</code> / C2 <code>0x15D</code>) &rarr;
+    <code>P2[14]</code> (C1 <code>0x169</code> / C2 <code>0x15E</code>) &rarr; <code>P2[15]</code> (C1 <code>[0x13, 0x142]</code> /
+    C2 <code>0x169</code>; the final beat stops replaying once the Zeto flag sets). Ungated <code>P2[16]</code> SETs the
+    <code>0x15D</code> entry key. The <code>0x15E</code> beat is read cross-scene by <code>urudre1</code> <code>P2[0]</code> (the
+    Uru Mais dream tests the cave beat). <strong><code>vell</code></strong> - single exit <code>P2[10]</code> (band
+    <code>(88..92,7)</code>). <code>P2[11]</code> self-latch C1=[<code>0x2AF</code>] (strictly vell-local Set/Test pair);
+    <code>P2[7]</code> carries <code>C1=[0x63A, 0x7]</code> <strong>byte-identical to vozz <code>P2[7]</code>'s gate</strong>, and
+    <code>0x63A</code> has ZERO script sites disc-wide (no writer anywhere in the MAN corpus - open thread). Also carries a gate-4
+    trigger family (record 53, five scattered tiles) not seen on the other legs. <strong><code>suimon</code> is a pure
+    corridor</strong> - all three <code>P2</code> records are ungated <code>0x3F</code> exits to <code>map01</code>; story
+    variation only via the shared controller <code>P1[0]</code> testing <code>0x142</code>. <strong>The Drake Castle interior is
+    FOUR scenes deep</strong>: <code>jou &rarr; jouina &rarr; jouinb &rarr; jouinc &rarr; jouind</code>. <code>jouinb</code>
+    (<code>[19,7,13]</code>) is fully ungated (no jouina-style <code>C1=[0xF]</code> busy-latch): <code>P2[9]</code> back to
+    <code>jouina</code>, <code>P2[10]</code> deeper to <code>jouinc</code> (<code>[43,18,60]</code>, lists
+    <code>{jouinb, jouind}</code>). Once <code>jou</code>'s <code>0x44D</code> door is passed the deep castle is open. The
+    oracle's part F drives <code>jou &rarr; jouina &rarr; jouinb &rarr; jouinc</code> end-to-end in one session (the door
+    cutscene completes through the player-channel model) - the deepest driven interior chain in the engine.
+    <code>jouinc</code>/<code>jouind</code> decode is an open thread. <strong>Decoder asymmetry (pinned):</strong> the
+    partition-1 destination-table scan under-reports doors carried only by <code>P2</code> records (<code>jouinb</code>'s
+    <code>jouina</code> return door) - the reverse of the <code>jou</code> <code>P2[5]</code> blind spot; the <code>P2</code>
+    walker and the strict portal-site join both see them.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="world-map.html">World map</a>
+    <a href="script-vm.html">Field/event VM</a>
+    <a href="cutscene.html">Cutscenes</a>
+    <a href="../formats/scene-v12-table.html">Scene v12 table</a>
+  </div>
+</section>

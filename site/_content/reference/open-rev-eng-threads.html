@@ -1,12 +1,12 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">reference</a> &middot; open RE threads</div>
   <h1>Open reverse-engineering threads</h1>
-  <p class="lede">The live list of this project's unsolved mysteries. Every row is a reverse-engineering <em>question</em> about Legaia's runtime that is still contested, with the concrete next step that would close it. If you are looking for a way to contribute, this page is the invitation.</p>
+  <p class="lede">The live list of this project's unsolved mysteries. Every row is a reverse-engineering <em>question</em> about how Legaia's runtime works that is still contested, with what is already known and the concrete next step that would close it. If you are looking for a way to contribute, this page is the invitation.</p>
 </header>
 
 <section class="doc-section" id="overview" data-doc="what-this-page-is-for">
   <h2>How to use these three pages</h2>
-  <p>Before starting a hunt, look for it here. If the question is not on this page, it is probably already answered or already disproved - and checking is cheaper than re-deriving.</p>
+  <p>Reverse engineering a sealed game produces three kinds of knowledge: questions still being worked, questions answered, and readings that turned out to be wrong. Each has its own page, and the cheapest thing you can do before starting a hunt is check all three - if the question is not on this page, it is probably already answered or already disproved.</p>
   <table>
     <thead><tr><th>Page</th><th>Holds</th><th>Read it when</th></tr></thead>
     <tbody>
@@ -15,28 +15,49 @@
       <tr><td><a href="re-do-not-re-walk.html">Do not re-walk</a></td><td>Falsified hypotheses, reasoning intact</td><td>A reading of the bytes looks obvious and you want to check nobody has already spent a week disproving it.</td></tr>
     </tbody>
   </table>
-  <p>A falsified row is kept forever with its reasoning intact, because the reasoning <em>is</em> the deliverable - "the world-map slot-4 bodies are coastline wireframes" is a very plausible reading of those bytes, and knowing why it is wrong is worth more than the row it occupies.</p>
-  <p>Nothing on any of the three pages counts ports, tests or coverage. Each row carries a one-line <em>current answer</em>; byte-level detail lives on the linked page, and the full working notes live in <code>docs/reference/open-rev-eng-threads.md</code>. A thread whose answer is complete moves to the <a href="re-settled-threads.html">settled register</a> - which is where most of this page's former residents now live.</p>
+  <p>A falsified row is kept forever with its reasoning, because the reasoning <em>is</em> the deliverable - "the world-map slot-4 bodies are coastline wireframes" is a very plausible reading of those bytes, and knowing why it is wrong is worth more than the row it occupies.</p>
+  <p>Nothing on any of the three pages counts ports, tests or coverage. Detailed captures and decompiler dumps live in the linked pages and under <code>ghidra/scripts/funcs/</code>.</p>
+</section>
+
+<section class="doc-section" id="at-a-glance" data-doc="-">
+  <h2>At a glance</h2>
+  <p>Every live thread on one screen. The areas below carry the full context.</p>
+  <div style="overflow-x:auto">
+  <table>
+    <thead><tr><th>Thread</th><th>Status</th><th>Next step</th></tr></thead>
+    <tbody>
+      <tr><td><a href="#d-region-gate-families">Region story-flag gate families</a></td><td><span class="tag tag-partial">partial</span> - structure settled; a shrunken play-order residual owed</td><td>One flag-firehose session from an early save, walking the four never-visited regions.</td></tr>
+      <tr><td><a href="#d-teien">teien hedge-base ground fill</a></td><td><span class="tag tag-open">open</span> - blocked on one save state</td><td>A <strong>mednafen</strong> field-run state inside <code>teien</code>; join its ground primitives against the live object grid.</td></tr>
+      <tr><td><a href="#d-uru-exit">How the Uru Mais chain and <code>jouine</code> are left</a></td><td><span class="tag tag-open">open</span> - exit mechanism unidentified</td><td>A retail capture of the player leaving one of the five one-way scenes.</td></tr>
+      <tr><td><a href="#d-coplanar">Coplanar residual: sliver tail</a></td><td><span class="tag tag-partial">partial</span> - the curved-shell half is answered; slivers remain</td><td>A second field-run state per <code>jou</code> scene at a different camera would retire the last caveat; <code>chitei2</code> is unmeasured.</td></tr>
+      <tr><td><a href="#d-intro-banner">The battle-intro enemy-name banner</a></td><td><span class="tag tag-mostly">mostly resolved</span> - chrome, seat and frame law captured; record identity owed</td><td>Drive <code>v0_1_battle_loading_tetsu</code> forward and dump RAM on the first frames after the mode flips.</td></tr>
+      <tr><td><a href="#d-tmd-pack-grow">Can a scene TMD pack member be grown in place?</a></td><td><span class="tag tag-open">open</span></td><td>Enumerate what outside the pack holds a byte offset into it (scene-bundle descriptor, scene ANM records).</td></tr>
+      <tr><td><a href="#d-signature-cast">Is any enemy signature-cast choreography data-driven?</a></td><td><span class="tag tag-open">open</span></td><td>Read the hardcoded spawn sites' parameter blocks; decide whether a duplicated block plus one spawn site can be driven from the art path.</td></tr>
+      <tr><td>Audio / BGM</td><td colspan="2"><em>No open threads.</em></td></tr>
+      <tr><td>Title / boot / overlays</td><td colspan="2"><em>No open threads.</em></td></tr>
+    </tbody>
+  </table>
+  </div>
 </section>
 
 <section class="doc-section" id="grades" data-doc="what-an-evidence-grade-means">
   <h2>What an evidence grade means</h2>
-  <p>Grades live on the <a href="re-settled-threads.html">settled threads</a> page. They are explained here because the grade is the first thing to check when a settled fact is load-bearing for live work.</p>
-  <p>Every settled row is graded by what its own stated evidence actually rests on. Where a row cites more than one kind, it is graded by the <strong>weakest load-bearing</strong> claim - the one that breaks the conclusion if it is wrong.</p>
+  <p>When a thread closes it moves to <a href="re-settled-threads.html">settled threads</a> carrying a <em>grade</em>: a label for what kind of evidence its answer actually rests on. Grades are explained here because they are the first thing to check when a settled fact is load-bearing for live work, and because a thread on this page is only closable by evidence of the strongest two kinds.</p>
+  <p>Where a row cites more than one kind, it is graded by the <strong>weakest load-bearing</strong> claim - the one that breaks the conclusion if it is wrong.</p>
   <table>
     <thead><tr><th>Grade</th><th>The row cites</th></tr></thead>
     <tbody>
       <tr><td><span class="tag tag-done">disassembly</span></td><td>Instructions, addresses, opcode encodings, branch or store sequences. The strongest grade.</td></tr>
       <tr><td><span class="tag tag-done">capture</span></td><td>A runtime capture, save state, probe, firehose, or disc-derived oracle.</td></tr>
-      <tr><td><span class="tag tag-partial">decompiled-C</span></td><td>Ghidra's C output, a <code>FUN_x(...)</code> call signature, a Ghidra label, or a claim about store order / store count / a boolean operator with no instruction behind it.</td></tr>
+      <tr><td><span class="tag tag-partial">decompiled-C</span></td><td>Ghidra's C output, a <code>FUN_x(...)</code> call signature, a Ghidra label or plate comment, or a claim about store order / store count / a boolean operator with no instruction behind it.</td></tr>
       <tr><td><span class="tag tag-partial">inference</span></td><td>Reasoning from surrounding facts, corpus absence, or analogy, with no direct evidence cited.</td></tr>
     </tbody>
   </table>
-  <p><strong><code>decompiled-C</code> is the re-audit bucket, not a wrong-answer bucket.</strong> It marks a claim nobody has confirmed against instructions. Most are probably right; the point is that none has been checked, and every claim falsified in the last audit wave would have graded <code>decompiled-C</code>. The C is a rendering: dropped register arguments, <code>||</code> printed as nested <code>if</code>s, reordered or omitted stores, and hand-written annotations read as fact have each already put a wrong statement on these pages.</p>
+  <p><strong><code>decompiled-C</code> is the re-audit bucket, not a wrong-answer bucket.</strong> It marks a claim nobody has confirmed against instructions. Most are probably right; the point is that none has been checked. The C is a rendering: dropped register arguments, <code>||</code> printed as nested <code>if</code>s, reordered or omitted stores, and hand-written Ghidra annotations read as fact have each already put a wrong statement on these pages. The catalogue of rendering artifacts on the <a href="../tooling/ghidra.html">Ghidra tooling</a> page is also the grading rubric. When a <code>decompiled-C</code> row is load-bearing for something you are about to build, re-derive it from the disassembly first.</p>
 </section>
 
 <section class="doc-section" id="status-conventions" data-doc="status-conventions,how-a-thread-is-laid-out">
-  <h2>Status conventions, and how a row is laid out</h2>
+  <h2>Status conventions, and how a thread is laid out</h2>
   <table>
     <thead><tr><th>Status</th><th>Meaning</th></tr></thead>
     <tbody>
@@ -46,87 +67,168 @@
     </tbody>
   </table>
   <p>Many rows qualify the status in parentheses - <em>partial (transcode closed)</em>, <em>open (narrowed)</em> - naming <em>how far</em> it got. Read the parenthetical.</p>
-  <p>Each area below opens with a table of one-line rows. A thread whose write-up outgrows a table cell keeps its one-liner in the table and links to a section immediately after that table via <strong>details &darr;</strong>; the full analysis - every address, capture and falsification - lives in that section, under its own <em>Status:</em> line.</p>
+  <p>Each area below opens with a table of one-line rows. A thread whose write-up outgrows a table cell keeps its one-liner in the table and links to a subsection after it; the full analysis - every address, capture and falsification - lives in that subsection under its own <em>Status</em> line, with the long evidence folded into a disclosure so the page scans.</p>
 </section>
 
 <section class="doc-section" id="recently-corrected" data-doc="recently-corrected">
-  <h2>Recently corrected</h2>
-  <p>Rows the last audit wave overturned. They are listed here rather than filed silently into the settled page, because a claim that was wrong once is the cheapest place to look for a claim that is still wrong.</p>
-  <ul class="bullets">
-    <li><strong>Debug flag <code>_DAT_8007B8C2</code> had its branch sense backwards</strong>, and one arm was named for the wrong loader. Every site reads the flag with <code>lh</code> and takes the <strong>zero</strong> arm to the debug-station host trap, the <strong>non-zero</strong> arm to the index resolver.</li>
-    <li><strong>The VA-aliasing corollary was too narrow.</strong> It read as an <code>0x801Fxxxx</code> problem; <code>801e23ec</code> is a settled casualty in the <code>0x801E</code> band, and its aliased reading had silently dropped all three initiative modifier terms.</li>
-    <li><strong>The op-<code>0x2F</code> "seven byte-identical dumps" shorthand was compressing.</strong> The capture-derived dumps agree with each other; the static 0897 dump is a strict <em>subset</em> of them, not a twin.</li>
-    <li><strong><code>FUN_8001EBEC</code>'s second pose-copy arm loads seven words</strong>, so its range ends at <code>+0x15C</code>, not <code>+0x158</code>.</li>
-    <li><strong>A committed claim can quote a dump statistic the dump no longer reports.</strong> Re-extraction makes dumps longer, and a caveat written against the old one keeps suppressing work - <code>0x8005BA38</code> was recorded "not a function" and is a complete <code>RotTransPers</code>. The class is on <a href="re-do-not-re-walk.html#measurement">do not re-walk &sect; measurement readings</a>.</li>
-    <li><strong>A battle <code>0xB5</code> was read in the wrong id space.</strong> Spell <code>0xB5</code> is Lapis Wave; formation <code>0xB5</code> is Cort. The wrong reading survived because Cort casts Lapis Wave - the two spaces agreeing on the answer is what hid the error.</li>
-    <li><strong>Op-<code>0x35</code> sub-op 9 was recorded as "Queue".</strong> It is a <em>start</em> behind an asset-load barrier, and it is what a <strong>cutscene</strong> changes music with - so a scene-corpus BGM sweep, which only runs prescripts, could not see the difference.</li>
-    <li><strong>"Retail shots rarely roll the camera" was false, and so was the row that replaced it.</strong> Retail authors a non-zero op-<code>0x45</code> slot-2 roll in eight scenes; the two linear censuses that had measured it were each measuring their own decode gate.</li>
-  </ul>
-  <p>Two rows a prior audit flagged as the highest-risk <code>decompiled-C</code> claims - the narration-roller op's operand decode and the item-add OOB store-order claim - have both now been <strong>re-derived from the disassembly and confirmed</strong>. Both live on the <a href="re-settled-threads.html">settled register</a> with the instruction evidence cited.</p>
+  <h2>Corrected on the last audit</h2>
+  <p>Claims the last audit wave overturned. They are listed here rather than filed silently into the settled page, because a claim that was wrong once is the cheapest place to look for a claim that is still wrong. Each now stands corrected on <a href="re-settled-threads.html">settled threads</a> or <a href="re-do-not-re-walk.html">do not re-walk</a>.</p>
+  <details class="disclosure"><summary>History: the overturned claims</summary><div class="disclosure-body">
+    <ul class="bullets">
+      <li><strong>Debug flag <code>_DAT_8007B8C2</code> had its branch sense backwards</strong>, and one arm was named for the wrong loader. Every site reads the flag with <code>lh</code> and takes the <strong>zero</strong> arm to the debug-station host trap, the <strong>non-zero</strong> arm to the index resolver. Settled on that polarity, writer and all.</li>
+      <li><strong>The VA-aliasing corollary was too narrow.</strong> It read as an <code>0x801Fxxxx</code> problem; <code>801e23ec</code> is a settled casualty in the <code>0x801E</code> band, and its aliased reading had silently dropped all three initiative modifier terms.</li>
+      <li><strong>The op-<code>0x2F</code> "seven byte-identical dumps" shorthand was compressing.</strong> The capture-derived dumps agree with each other; the static 0897 dump is a strict <em>subset</em> of them, not a twin.</li>
+      <li><strong><code>FUN_8001EBEC</code>'s second pose-copy arm loads seven words</strong>, so its range ends at <code>+0x15C</code>, not <code>+0x158</code>.</li>
+      <li><strong>A committed claim can quote a dump statistic the dump no longer reports.</strong> Re-extraction makes dumps longer, and a caveat written against the old one keeps suppressing work - <code>0x8005BA38</code> was recorded "not a function, do not open a port row" and is a complete <code>RotTransPers</code>. Checker: <code>scripts/ghidra-analysis/check-dump-stat-drift.py</code>; the class is on <a href="re-do-not-re-walk.html#measurement">do not re-walk &sect; measurement readings</a>.</li>
+      <li><strong>A battle <code>0xB5</code> was read in the wrong id space.</strong> Spell <code>0xB5</code> is Lapis Wave; formation <code>0xB5</code> is Cort. The branch at <code>0x801E6D04</code> reads the formation-id byte, and the wrong reading survived because Cort casts Lapis Wave - the two spaces agreeing on the answer is what hid the error.</li>
+      <li><strong>Op-<code>0x35</code> sub-op 9 was recorded as "Queue".</strong> It is a <em>start</em> behind an asset-load barrier - the arm at <code>0x801E0224</code> waits on <code>_DAT_8007BAB8 == _DAT_8007BA9C</code> and then makes sub-op 1's own <code>_DAT_8007BAC8</code> store. It is what a <strong>cutscene</strong> changes music with, so a scene-corpus BGM sweep (which only runs prescripts, and those emit sub-op 1) could not see the difference. Falsification: <a href="re-do-not-re-walk.html#a-op35">do not re-walk</a>.</li>
+      <li><strong><code>FUN_801D27E0</code> was handed off as "the talk controller that restores party count/leader and drops lock <code>0xD</code>". The disassembly says otherwise.</strong> The function is the three-actor talk's <strong>leader-cycle</strong> state machine (six states off <code>+0x54</code>): state 0 polls system flag <code>0xD</code> and the per-participant flags <code>base+0..2</code>, and a switch trigger fades out, hands control to the next un-talked participant (rewriting <code>0x80084597/98</code> + flags <code>0x10..0x12</code>, parking the old leader's record at <code>0x3F80</code>), and fades back in. It never writes the party count <code>0x80084594</code> and never clears flag <code>0xD</code> - when the <em>script</em> clears the flag, state 5 merely despawns the controller (<code>s4+0x10 &amp;= ~8</code>). Retail's post-talk party membership comes from the scene script's own party ops (the field VM's <code>0x454</code>-offset writers). The engine's restore (<code>World::end_three_actor_talk</code>) therefore keys on the flag-drop trigger and restores an arm-time snapshot, disclosed as such.</li>
+      <li><strong>The quick-travel placement <code>scene_id</code> "unresolvable id space" is resolved.</strong> The u16 at record <code>+2</code> of <code>DAT_80073A98</code> is the destination scene's <strong>raw CDNAME TOC index</strong> - disc values <code>0x55</code>/<code>0xF4</code>/<code>0x187</code> are the <code>map01/02/03</code> kingdom bases and <code>0x162</code>/<code>0x215</code> are <code>son</code>/<code>korout</code> - and the staged copy at <code>0x80084628</code> is the same word the world-map arrival kernel <code>FUN_801EE328</code> matches (record <code>+0xC</code> of the visited-map table) before seating the party at <code>(tile &lt;&lt; 7) + 0x40</code>. Resolver: <code>World::scene_toc_names</code>; drain <code>World::drain_staged_menu_warp</code>.</li>
+      <li><strong>"Retail shots rarely roll the camera" was false, and so was the row that replaced it.</strong> Retail authors a non-zero op-<code>0x45</code> slot-2 roll in eight scenes. The renderer's dropped <code>RotMatrixZ</code> factor was a real divergence, and the two linear censuses that had measured it - one strict, one byte-resuming, plus a raw byte scan quoting a "2 %" figure as fact - were each measuring their own decode gate. Settled by execution on <a href="re-settled-threads.html">settled threads</a>.</li>
+    </ul>
+    <p>Two rows a prior audit flagged as the highest-risk <code>decompiled-C</code> claims on the register - the narration-roller op's operand decode and the item-add OOB store-order claim - have both now been <strong>re-derived from the disassembly and confirmed</strong> (grade <code>disassembly</code>). Both live on the settled register with the instruction evidence cited.</p>
+  </div></details>
 </section>
 
 <section class="doc-section" id="field" data-doc="field--locomotion">
   <h2>Field / locomotion</h2>
+  <p>The field is the game you spend most of your time in - walking towns and dungeons, triggering scripted events, crossing scene boundaries. Its logic lives in the field overlay (PROT 0897) and the 43-opcode script VM, and the open questions here are all about things the scripts do that the corpus of save states has not yet caught in the act.</p>
   <table>
-    <thead><tr><th>Thread</th><th>Status</th><th>Current answer</th><th>Detail</th></tr></thead>
+    <thead><tr><th>Thread</th><th>Status</th><th>What would close it</th></tr></thead>
     <tbody>
-      <tr>
-        <td>Region story-flag gate families (record-header C1/C2 gates)</td>
-        <td><span class="tag tag-partial">partial</span> - structure settled; play order for the un-walked dungeons owed</td>
-        <td>The structure is resolved and settled: every region's C1/C2 gate families - the partition-2 record-header flag lists the spawn evaluator <code>FUN_8003BDE0</code> checks - are decoded across the chapter-2/3 regions and the Rim Elm variants, each family's exact lists pinned by census anchor tests (see the <a href="re-settled-threads.html#field">settled register</a>). What remains is a play-order confirmation for the dungeons the capture corpus never walked. <a href="#d-region-gate-families">details &darr;</a></td>
-        <td><a href="../subsystems/script-vm.html">script-vm</a></td>
-      </tr>
+      <tr><td>Region story-flag gate families (record-header C1/C2 gates)</td><td><span class="tag tag-partial">partial</span> - structure settled; play order capture-confirmed for most spokes, a shrunken residual set still owed</td><td><a href="#d-region-gate-families">details &darr;</a></td></tr>
+      <tr><td>teien hedge-base ground fill (kind-2 tile-trigger cells)</td><td><span class="tag tag-open">open</span> - blocked on one <code>teien</code> field-run mednafen state</td><td><a href="#d-teien">details &darr;</a></td></tr>
+      <tr><td>How a player leaves the Uru Mais chain (<code>uru</code>, <code>urudre1..3</code>) and <code>jouine</code></td><td><span class="tag tag-open">open</span> - the exit mechanism is unidentified; those five are one-way in the port</td><td><a href="#d-uru-exit">details &darr;</a></td></tr>
+      <tr><td>Coplanar residual tail: same-position curved-shell stacks</td><td><span class="tag tag-partial">partial</span> - the curved-shell half is answered; the sliver half remains</td><td><a href="#d-coplanar">details &darr;</a></td></tr>
     </tbody>
   </table>
+  <p>Recently closed here: Rim Elm's south gate. Neither of its two walk-on bands was the mechanism the symptom suggested - the exit record is ungated and the other record is five inert bytes; what holds a player in is a collision row the gate object's own script paints. See <a href="re-settled-threads.html">settled threads &sect; Rim Elm's south gate</a>, and the force-walk reading it falsified on <a href="re-do-not-re-walk.html#f-force-walk">do not re-walk</a>.</p>
 
-  <h3 id="d-region-gate-families">Region story-flag gate families - the residual</h3>
+  <h3 id="d-region-gate-families">Region story-flag gate families</h3>
   <p><em>Status:</em> structure resolved and settled; residual = play-order confirmation for the dungeons the capture corpus never walked.</p>
-  <p>The full structure (Sebucus spokes, Rim Elm opening/revisit/final bands, Uru Mais, Nivora Ravine, Karisto castle depth, Conkram, and the <code>0x7</code>/<code>0xF</code> variant-discriminator pattern) lives on the <a href="re-settled-threads.html#field">settled threads</a> page. The families for the dungeons the capture corpus never walked (<code>taiku</code>/<code>doman</code>/<code>rayman</code>, <code>station</code>, <code>dohaty</code>/<code>retock</code>, the Karisto spokes) are proven as structure, but their in-game play order is not yet confirmed against a live capture. <code>ropeway</code>/<code>ropeway2</code>/<code>jiji</code> are the only spokes walked organically, and Nivora's <code>0x370</code> has one live organic SET confirming its play order. The generic C1/C2 seeder already drives every family, so one dungeon-walk capture per region would close the residual.</p>
+  <p>Every scene's spawn records carry a list of story flags that must be set (or clear) for the record to fire - which is how the game makes a door open only after a boss, or a villager say something new after an event. The per-region families of those lists are decoded and pinned; what is still owed is watching the flags fire <em>in play order</em> in the regions nobody has walked under a probe.</p>
+  <details class="disclosure"><summary>Evidence, residual and the runbook</summary><div class="disclosure-body">
+    <p>The per-region C1/C2 gate families - the partition-2 record-header flag lists the spawn evaluator <code>FUN_8003BDE0</code> checks - are decoded across the chapter-2/3 regions and the Rim Elm variants, with every family's exact lists pinned by census-file anchor tests. The full structure (Sebucus spokes, Rim Elm opening/revisit/final bands, Uru Mais, Nivora Ravine, Karisto castle depth, Conkram, and the <code>0x7</code>/<code>0xF</code> variant-discriminator pattern) lives on <a href="re-settled-threads.html">settled threads &sect; Region story-flag gate families</a>.</p>
+    <p><strong>Residual.</strong> Poll-tier playthrough captures (mined with save-state-load frames screened out by their mode-churn + inventory-rewrite signature) confirm live play order for <code>retona</code>, <code>dohaty</code>, <code>taiku</code>, the Sebucus teien-tower-geremi spine, <code>korb3</code>, the <code>kor5</code> chain head (<code>0x43A</code> to <code>0x436</code>) and the <code>map03</code> hub latch, alongside the earlier organic <code>ropeway</code>/<code>ropeway2</code>/<code>jiji</code> walks and Nivora's <code>0x370</code> SET. Still owed:</p>
+    <ul class="bullets">
+      <li><strong>never walked:</strong> <code>rayman</code>/<code>rayman2</code>, <code>station</code>/<code>station3</code>, and the Karisto spokes <code>bubu2</code> + <code>deroa</code>/<code>chitei2</code>;</li>
+      <li><strong>walked without an organic family SET</strong> (the beats were already latched in the loaded state, or the region was entered mid-arc): <code>retock</code>/<code>retockin</code> (<code>0x502</code> never fired; <code>0x357</code> pre-latched), <code>doman</code> (<code>0x3FB</code> did not fire), <code>nilboa</code>'s entry family, <code>son</code>, and the <code>kor5</code> tail <code>0x6C4</code>.</li>
+    </ul>
+    <p>The generic C1/C2 seeder already drives every family. One more session from an early-enough save (before the retock/doman/nilboa beats) closes the walked-but-latched set; the never-walked set needs the walks themselves.</p>
+    <p><em>What this needs is capture time, not a new instrument.</em> <code>scripts/pcsx-redux/autorun_flag_firehose.lua</code> is already the right probe: an exec breakpoint on the flag SET / CLEAR entry points with the writer's <code>ra</code>, plus a per-VSync scene-name and game-mode poll, so a single play-forward through a region emits the region's own SET order with the scene each write happened in. It is designed for whole-playthrough runs, so the four unwalked regions can be covered in one session.</p>
+    <p>Two operating notes, both already bitten: PCSX-Redux probes <strong>do not exit on their own</strong> - kill on a timeout or the process hangs (<a href="../tooling/pcsx-redux-automation.html">PCSX-Redux automation</a>) - and <code>pgrep -f</code> matches the caller's own command line, which is why the process-matching helpers in <code>scripts/lib/proc.sh</code> exist.</p>
+  </div></details>
+
+  <h3 id="d-teien">teien hedge-base ground fill</h3>
+  <p><em>Status:</em> open - the port is byte-faithful to every pinned draw channel; the question is whether retail has one more.</p>
+  <p>In the garden maze at <code>teien</code>, the cells along the hedge rows are flagged as raised platforms but not as "draw ground here". The port therefore draws no ground under them, and from a free camera that reads as black holes at the hedge bases. Retail's fixed camera may never show those cells - or retail may fill them through a draw channel nobody has pinned yet. One save state would settle it.</p>
+  <details class="disclosure"><summary>Evidence, why the corpus cannot answer yet, and what would</summary><div class="disclosure-body">
+    <p>Under the hedge maze the cells along the hedge rows carry only object-grid bit <code>0x0800</code> (kind-2 tile-trigger presence - the height-override platform records <code>FUN_80019278</code> reads), not the <code>0x1000</code> ground-draw bit, so neither retail's pinned ground-quad emitter (<code>FUN_801f6d48</code>, gate <code>(cell &amp; 0x1000) != 0</code>) nor the port's <code>build_walk_heightfield</code> (same gate, verified byte-exact against retail's load-time recompute in <code>FUN_80017BEC</code> for kor5/teien/town01) emits ground there. If retail really shows grass in those cells, the filler is an <strong>unpinned kind-2-cell draw channel</strong>.</p>
+    <p><strong>The corpus cannot answer this yet, and the reason is precise.</strong> The state index (<code>scripts/mednafen/state-index.py</code>) covers 55 scenes across both emulators and all three state populations, and <code>teien</code> is one of them, but neither of its two states carries a <code>teien</code> field frame. One is <code>battle-init</code>; the other is <code>field-init</code>, and its display list settles what that means: the live ordering table holds 44 packets, three of which are stacked full-screen untextured <code>POLY_F4</code> quads spanning <code>(0,-4)..(320,228)</code> - a scene-transition fade, not a rendered garden. The several hundred packets also present in the pool are stale bytes from the previous frame that no ordering table links, which is why the read walks the OT rather than scanning the pool.</p>
+    <p><strong>What would close it:</strong> one save state in <code>teien</code> at game mode <code>0x03</code> (field-run), captured in <strong>mednafen</strong>, not PCSX-Redux. The emulator choice is load-bearing: the question is per-cell, so answering it means joining the frame's ground primitives against the live object grid at <code>*(_DAT_1F8003EC)</code>, and that pointer lives in the scratchpad. Mednafen states carry <code>ScratchRAM.data8</code>; a PCSX-Redux <code>.sstate</code> carries main RAM only. With such a state the read is <code>mednafen-state display-list &lt;state&gt; --list</code> plus the grid slice (<a href="../tooling/mednafen-automation.html">mednafen automation</a>).</p>
+    <p><strong><code>edteien</code> was tried as a proxy and does not work - do not re-try it.</strong> The emitter is scene-independent shared code, so a ground primitive over an <code>0x0800</code>-only cell in any scene would be a finding about the mechanism. The epilogue garden has three field-run mednafen states and its live object grid holds 400 cells with <code>0x1000</code> and 45 with <code>0x0800</code> only. Two things stop it being an answer. The join cannot be made by <em>count</em>: retail's ground pass is not 1:1 with cells, so the two hypotheses (400 vs 445 packets) predict values no texture family in the frame is near, and a geometric join needs a camera transform that is not pinned. And <code>edteien</code>'s <code>0x0800</code>-only cells are <strong>not hedge bases</strong>: 36 of the 45 form a solid 6x6 block inside the walkable region - a raised platform, which is what the bit means (<code>CELL_ELEVATION_OVERRIDE</code>) and which would legitimately carry its own mesh. The bit pattern matches; the feature does not.</p>
+    <p>Until this is measured in <code>teien</code> itself the engine must not grow a speculative fill.</p>
+  </div></details>
+
+  <h3 id="d-uru-exit">How a player leaves the Uru Mais chain and <code>jouine</code></h3>
+  <p><em>Status:</em> open - the exit mechanism is unidentified; those five scenes are one-way in the port.</p>
+  <p>Five scenes - <code>uru</code>, <code>urudre1..3</code> and <code>jouine</code> - can be entered but, as far as the port can tell, never left. Whatever retail uses to get the player out is neither a walk-on band nor a record run from its own start.</p>
+  <details class="disclosure"><summary>What has been ruled out</summary><div class="disclosure-body">
+    <p><code>chapter1_frontier_ladder</code> establishes the negative on both known shapes: no gate-1 tile in the five fires a transition, no clean per-partition walk finds a <code>0x3F</code> (scene change) in their MANs, and 160 executed record bodies reach no scene change. The four Uru Mais rooms' destinations survive only as destination-<em>table</em> entries. None of the five carries a <strong>variant</strong> MAN, so a second script carrier is not where the exit hides. Nearest known shape is the <code>kor</code>-family warp-pad picker, an interact record; a retail capture of the exit would settle it.</p>
+  </div></details>
+
+  <h3 id="d-coplanar">Coplanar residual tail: same-position curved-shell stacks</h3>
+  <p><em>Status:</em> partial - the same-position curved-shell half is <strong>answered</strong> by a display-list read; the sliver half remains.</p>
+  <p>Two surfaces drawn at exactly the same depth flicker against each other ("z-fighting"). The port's coplanar kernel clears the case that matters - whole floors shimmering as the camera moves - and a small tail of reports remained, dominated by cave walls where two different meshes appear to sit on top of each other. Reading retail's actual display list shows it never draws both.</p>
+  <details class="disclosure"><summary>Evidence and what it does not cover</summary><div class="disclosure-body">
+    <p>After the cross-draw coplanar kernel's per-family lifts and repair pass (<code>engine-core::coplanar_draws</code>; model on <a href="../subsystems/renderer.html">renderer</a>), the corpus sweep (<code>DIAG_ALL=1</code> on <code>engine-core/tests/coplanar_residual_disc.rs</code>) still reports a small tail of two shapes.</p>
+    <p>First, <strong>same-position stacks of curved shells</strong> - two different env TMDs placed at one translation whose curved surfaces coincide (jouine/jouind's flesh-cave walls, chitei2's res41/res45 slope). A per-draw translation cannot separate two coincident curved surfaces everywhere, so the offset API is structurally the wrong tool. <strong>Retail does not draw both copies.</strong> Reading the libgpu ordering table out of field-run save states inside <code>jouine</code> and <code>jouind</code> (<code>mednafen-state display-list --coincident</code>) finds zero screen-coincident groups among surfaces of at least 16 px&sup2; - 1218 packets walked in <code>jouind</code>, 972 in <code>jouine</code>, every surface submitted exactly once. The scripts swap these meshes as state/morph variants rather than stacking them. The one coincidence that does appear is four groups of <strong>three</strong> copies of a single quad in one texture family (<code>clut=0x7F86 tpage=0x001F</code>) - the multi-pass semi-transparency idiom, one mesh drawn three times.</p>
+    <p>Two format properties decide whether such a report means anything. Retail <strong>double-buffers</strong>: ordering tables come in pairs holding frame N and N-1, so merging a pair makes every surface appear stacked with itself (<code>--all-ots</code> does this deliberately; the default walks one). And distant geometry projects to 1-3 pixel slivers that coincide constantly, hence the <code>--min-area</code> floor.</p>
+    <p><strong>What this does not cover.</strong> Each read is one frame, so one camera position. What makes the result load-bearing anyway is the scale of the negative - a stacked shell would double many adjacent surfaces at once, and across the walked packets no surface is submitted twice. A second field-run state per scene at a different camera would retire the caveat, and <strong>the corpus does not contain one</strong>: the curated library's <code>jouine</code>/<code>jouind</code> field-run states are byte-identical backups of the two read here. <code>chitei2</code> is <strong>not</strong> covered by the state corpus, so its slope is asserted only by the two <code>jou</code> scenes' result.</p>
+    <p>Second, <strong>sub-cluster slivers</strong> - wall/kerb strips whose per-plane area inside one mesh falls below the detection floor or fragments across the cluster quantization (koin4 keeps one sub-100-area example the regression test bounds). Neither shape is angle-stable shimmer of a whole floor - the class the kernel exists for and now clears.</p>
+  </div></details>
+
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../subsystems/script-vm.html">Field / event VM</a>
+    <a href="../subsystems/field-locomotion.html">Field locomotion</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/field-map.md" target="_blank" rel="noopener">Field map (.MAP)</a>
+    <a href="../subsystems/renderer.html">Renderer</a>
+    <a href="../tooling/mednafen-automation.html">Mednafen automation</a>
+    <a href="../tooling/pcsx-redux-automation.html">PCSX-Redux automation</a>
+  </div>
 </section>
 
 <section class="doc-section" id="battle-rendering" data-doc="battle--rendering">
   <h2>Battle / rendering</h2>
+  <p>Battles run in their own overlay with their own screen chrome - the enemy-name banner at the top, the party panels, the arts announcements. Most of that chrome is now pinned sprite by sprite; the three questions left are one banner's placement record, and two about how far the disc's data can be bent by a mod.</p>
   <table>
-    <thead><tr><th>Thread</th><th>Status</th><th>Current answer</th><th>Detail</th></tr></thead>
+    <thead><tr><th>Thread</th><th>Status</th><th>What would close it</th></tr></thead>
     <tbody>
-      <tr>
-        <td>The battle-<strong>intro</strong> enemy-name banner - which placement record raises it</td>
-        <td><span class="tag tag-mostly">mostly resolved</span> - chrome, seat and frame law captured; only the record identity is owed</td>
-        <td>The chrome, the seat and the frame arithmetic are captured on the same banner surface mid-fight. What is owed is only which placement record the transient intro instance raises. <a href="#d-intro-banner">details &darr;</a></td>
-        <td><a href="../subsystems/battle.html">battle</a></td>
-      </tr>
-      <tr>
-        <td>Can a scene TMD pack member be grown in place?</td>
-        <td><span class="tag tag-open">open</span></td>
-        <td>Members <code>106</code>/<code>107</code>/<code>108</code> of PROT entry <code>0639</code> are the Delilas siblings' field NPC meshes, and the pack's 112 members tile its declared <code>347476</code>-byte stream with zero internal slack &mdash; so a larger mesh needs the pack rebuilt rather than patched, and the Nivora field-form swap is blocked on that. Closing it means enumerating what outside the pack holds a byte offset <em>into</em> it: placements name a member index, but the scene bundle's descriptor and the scene ANM records are unchecked.</td>
-        <td><a href="../formats/man-relocation.html">man-relocation</a></td>
-      </tr>
-      <tr>
-        <td>Is any of an enemy signature cast's choreography data-driven?</td>
-        <td><span class="tag tag-open">open</span></td>
-        <td>The three Delilas cast modules reach the pool spawner <code>FUN_80050ED4</code> from hardcoded <code>jal</code> sites &mdash; 15 in PROT <code>0958</code>, 41 in <code>0959</code>, 24 in <code>0960</code> &mdash; each passing a module-resident record by absolute pointer. Nothing on that path takes an id, so a player art's eight-record effect script has no way to name one, and the fire / lift / camera of a reskinned signature move stay behind. Closing it means deciding whether a duplicated parameter block plus one reachable spawn site can be driven from the art path.</td>
-        <td><a href="../tooling/randomizer.html">randomizer</a></td>
-      </tr>
+      <tr><td>The battle-<strong>intro</strong> enemy-name banner - which placement record raises it</td><td><span class="tag tag-mostly">mostly resolved</span> - chrome, seat and frame law captured on the same surface mid-fight; only the record identity is owed</td><td><a href="#d-intro-banner">details &darr;</a></td></tr>
+      <tr><td>Can a scene TMD pack member be grown in place?</td><td><span class="tag tag-open">open</span></td><td><a href="#d-tmd-pack-grow">details &darr;</a></td></tr>
+      <tr><td>Is any of an enemy signature cast's choreography data-driven?</td><td><span class="tag tag-open">open</span></td><td><a href="#d-signature-cast">details &darr;</a></td></tr>
     </tbody>
   </table>
 
   <h3 id="d-intro-banner">The battle-intro enemy-name banner</h3>
-  <p><em>Status:</em> mostly resolved - the chrome, the seat and the frame arithmetic are captured. What is owed is only which placement record the intro instance raises.</p>
-  <p>The thread opened as "chrome and seat unknown, blocked on a live frame", on the premise that no manifest state catches the surface. That premise was wrong about the <em>surface</em> rather than about the intro: a corner-sweep of the whole save library finds the battle's <strong>full-width top message banner</strong> live in two states - the mid-battle Seru "captured!" banner, and the level-up banner.</p>
-  <p>Both draw the same thing, and it is the frame the thread described: the widget table's <strong>class-0 9-slice window</strong>, tile-set 0, sub-palette 2 - 4&times;4 corners and 24&times;4 / 4&times;24 edges cut from one 32&times;32 patch at texels <code>(160, 0)</code>, content pen <code>(16, 12)</code>, frame origin <code>(8, 4)</code>, interior 20 tall, top and bottom edges tiled 24 wide from <code>x = 12</code> with the last tile clipped. Every placement record whose kind byte is <code>0x03</code> / <code>0x04</code> / <code>0x44</code> frames itself that way - see <a href="../subsystems/battle.html">the widget-class table</a>.</p>
-  <p>One sub-claim in the old row is <strong>falsified</strong> by those frames: there is no blue interior. Retail draws the border sprites and the glyph run and nothing else - no fill primitive of any kind under the window, so the scene shows through. The blue-marbled 32&times;32 patch that made "gold border over a blue interior" a natural reading is the fill the framed <em>menu</em> windows use.</p>
-  <p>Residual: the intro instance is transient, so which top-seated <code>0x0303</code> record it raises - the candidates park at <code>(16, -24)</code> and live at <code>(16, 14)</code>, and the runtime overwrites the disc width with the measured enemy name - is still capture-owed. Two operating notes apply to any run: PCSX-Redux probes <a href="../tooling/pcsx-redux-automation.html">do not exit on their own</a>, and <code>pgrep -f</code> matches the caller's own command line, so a probe runbook has to kill on a timeout it owns.</p>
-  <p>Recently closed in this area: the <code>+0x0E</code> kind-pair mapping and the element-badge palette selector both fell out of the widget-class table, and the status-element badge sheet <code>0x18..=0x20</code> is pinned cell by cell. Before them, the ground grid's depth-cue far colour and the battle-intro tile shatter's side-face shade page closed by capture. All on the <a href="re-settled-threads.html#battle">settled register</a>.</p>
+  <p><em>Status:</em> the chrome, the seat and the frame arithmetic are captured - on the same banner surface, mid-fight. What is owed is only which placement record the intro instance raises.</p>
+  <p>When a battle starts, a banner across the top of the screen names the enemy. The frame it is drawn in is now fully understood; the last open detail is which of the widget table's records the intro uses, because the intro is over before any save state catches it.</p>
+  <details class="disclosure"><summary>Evidence and the runbook</summary><div class="disclosure-body">
+    <p>The thread opened as "chrome and seat unknown, blocked on a live frame", on the premise that no manifest state catches the surface. That premise was wrong about the surface rather than the intro: a corner-sweep of the whole save library finds the battle's <strong>full-width top message banner</strong> live in two states - <code>rim_elm_gimard_seru_capture_after</code> (the mid-battle Seru "captured!" banner) and <code>noa_levelup_banner</code>.</p>
+    <p>Both draw the same thing: the widget table's <strong>class-0 9-slice window</strong>, tile-set 0, sub-palette 2 - 4x4 corners and 24x4 / 4x24 edges cut from one 32x32 patch at texels <code>(160, 0)</code>, content pen <code>(16, 12)</code>, frame origin <code>(8, 4)</code>, interior 20 tall, top and bottom edges tiled 24 wide from <code>x = 12</code> with the last tile clipped. Every placement record whose kind byte is <code>0x03</code> / <code>0x04</code> / <code>0x44</code> frames itself that way. Table and law on <a href="../subsystems/battle.html">battle</a>.</p>
+    <p>One sub-claim in the old row is <strong>falsified</strong> by those frames: there is no blue interior. Retail draws the border sprites and the glyph run and nothing else (<a href="re-do-not-re-walk.html#b-banner-fill">do not re-walk</a>).</p>
+    <p><strong>Residual:</strong> the intro instance is transient, so which top-seated <code>0x0303</code> record it raises - the candidates park at <code>(16, -24)</code> and live at <code>(16, 14)</code>, and the runtime overwrites the disc width with the measured enemy name - is still capture-owed. Runbook: drive <code>v0_1_battle_loading_tetsu</code> forward under PCSX-Redux and dump main RAM on the first frames after the mode flips. The read-out is mechanical - <code>scripts/mednafen/widget-draw-sweep.py</code> joins any frame's sprites back to the widget records that drew them. The two operating notes above (probes do not exit on their own; <code>pgrep -f</code> self-matches) apply.</p>
+    <p>Recently closed in this area: the <code>+0x0E</code> kind-pair mapping and the element-badge palette selector both fell out of the widget-class table, and the status-element badge sheet <code>0x18..=0x20</code> is pinned cell by cell. Before them, the ground grid's depth-cue far colour and the battle-intro tile shatter's side-face shade page closed by capture. All on <a href="re-settled-threads.html">settled threads &sect; battle</a>.</p>
+  </div></details>
+
+  <h3 id="d-tmd-pack-grow">Can a scene TMD pack member be grown in place?</h3>
+  <p><em>Status:</em> open.</p>
+  <p>A scene's environment meshes ship in one tightly packed TMD pack. Swapping a mesh for a <em>larger</em> one means rebuilding the pack - which already works - and the remaining question is whether anything outside the pack points into it by byte offset and would break.</p>
+  <details class="disclosure"><summary>What is known and what would close it</summary><div class="disclosure-body">
+    <p>Members <code>106</code>/<code>107</code>/<code>108</code> of PROT entry <code>0639</code> are the Delilas siblings' field NPC meshes; the pack's 112 members tile its declared <code>347476</code>-byte stream with zero internal slack, so a larger mesh needs the pack rebuilt rather than patched - which is how the Nivora field-form swap ships (members re-emitted by <code>legaia_patcher::nivora_field</code>, disc oracle <code>nivora_field_real</code>). What keeps this thread open is only the enumeration: placements name a member <em>index</em>, but the scene bundle's descriptor and the scene ANM records are unchecked. The same question for a MAN is answered on <a href="../formats/man-relocation.html">MAN relocation</a>.</p>
+  </div></details>
+
+  <h3 id="d-signature-cast">Is any of an enemy signature cast's choreography data-driven?</h3>
+  <p><em>Status:</em> open.</p>
+  <p>The Delilas siblings' signature attacks - the fire, the lift, the camera - are staged by streamed code modules. Reskinning such a move onto a player art carries the damage but not the show, because nothing on the art path can name the module's effects.</p>
+  <details class="disclosure"><summary>What is known and what would close it</summary><div class="disclosure-body">
+    <p>The three Delilas cast modules reach the pool spawner <code>FUN_80050ED4</code> from hardcoded <code>jal</code> sites - 15 in PROT <code>0958</code>, 41 in <code>0959</code>, 24 in <code>0960</code> - each passing a module-resident record by absolute pointer, the shape <code>summon_overlay::parse</code> already walks. Nothing on that path takes an id, so a player art's eight-record effect script has no way to name one. Closing it means reading the spawn sites' parameter blocks and deciding whether a duplicated parameter block plus one reachable spawn site can be driven from the art path.</p>
+  </div></details>
+
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../subsystems/battle.html">Battle</a>
+    <a href="../subsystems/battle-action.html">Battle action SM</a>
+    <a href="../subsystems/effect-vm.html">Effect VM</a>
+    <a href="../formats/scene-bundles.html">Scene bundles</a>
+    <a href="../formats/man-relocation.html">MAN relocation</a>
+    <a href="../tooling/randomizer.html">Randomizer</a>
+  </div>
 </section>
 
 <section class="doc-section" id="audio" data-doc="audio--bgm">
   <h2>Audio / BGM</h2>
-  <p>No open threads. The most recent one - op-<code>0x35</code> sub-op <code>0xA</code>, the "unhalt-pause toggle" - resolved as the track-swap <strong>commit</strong> and moved to the <a href="re-settled-threads.html#audio">settled register</a>.</p>
+  <p>No open threads. The most recent one - field-VM op-<code>0x35</code> sub-op <code>0xA</code>, the "unhalt-pause toggle" - resolved as the track-swap <strong>commit</strong> and moved to <a href="re-settled-threads.html">settled threads</a>.</p>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../subsystems/audio.html">Audio subsystem</a>
+    <a href="music-tracks.html">Music-track disambiguation</a>
+  </div>
 </section>
 
 <section class="doc-section" id="title-boot-overlays" data-doc="title--boot--overlays">
   <h2>Title / boot / overlays</h2>
-  <p>No open threads. The last one - PROT 0968 identity, the one slot-B cluster entry without a residency capture - closed by capture: a PCSX-Redux state taken at the first command menu of the evolved-Cort fight shows the loader-B tracker <code>0x8007BC4C</code> reading <code>0x49</code> and entry 968 100&nbsp;% byte-resident at <code>0x801F69D8</code> over its own <code>0xA28</code> extent, with the field-side ladder states bracketing the page-in to the battle load. It is the Cort battle-stage overlay; see the <a href="re-settled-threads.html#title-boot-overlays">settled register</a>.</p>
+  <p>No open threads. The last one - the identity of PROT 0968, the one slot-B cluster entry without a residency capture - closed by capture.</p>
+  <details class="disclosure"><summary>History: how PROT 0968 closed</summary><div class="disclosure-body">
+    <p>The <code>cort_evolved_battle_first_menu</code> PCSX-Redux state (first command menu of the evolved-Cort fight, before any cast) shows the loader-B tracker <code>0x8007BC4C</code> reading <code>0x49</code> and entry 968 100% byte-resident at <code>0x801F69D8</code> over its own <code>0xA28</code> extent, with the field-side ladder states bracketing the page-in to the battle load. See <a href="re-settled-threads.html">settled threads &sect; PROT 0968</a>; the instrument is <code>scripts/mednafen/check-0968-residency.py</code>, which reads either emulator's states (dispatched on file extension).</p>
+  </div></details>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../subsystems/boot.html">Boot sequence</a>
+    <a href="../tooling/static-overlay-pipeline.html">Static overlay pipeline</a>
+    <a href="../tooling/overlay-capture.html">Overlay capture</a>
+  </div>
 </section>
 
 <section class="doc-section" id="adding-rows" data-doc="adding-a-thread">
@@ -146,7 +248,10 @@
     <span class="see-also-label">Reference</span>
     <a href="re-settled-threads.html">Settled threads</a>
     <a href="re-do-not-re-walk.html">Do not re-walk</a>
-    <a href="functions.html">Functions</a>
+    <a href="functions.html">Key functions</a>
     <a href="../tooling/port-catalog.html">Port catalog</a>
+    <a href="../tooling/ghidra.html">Ghidra tooling (decompiler artifacts)</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/worklist-classification.md" target="_blank" rel="noopener">Worklist classification</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/vm-inventory.md" target="_blank" rel="noopener">VM inventory</a>
   </div>
 </section>

@@ -227,13 +227,17 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
 <header class="page-header">
   <div class="breadcrumb"><a href="index.html">home</a> · characters</div>
   <h1>Characters</h1>
-  <p class="lede"><strong>Vahn</strong>, <strong>Noa</strong>, and <strong>Gala</strong> in 3D from your own disc image, performing their real in-game clips: the battle idle, every hit reaction and weapon swing, and all of their <strong>Tactical Arts</strong> - on the <strong>battle</strong> model a real battle assembles from what the character is wearing (dress them from every piece of equipment on the disc, or download any piece as its own 3D object), the low-poly <strong>field</strong> model, or the <strong>Baka Fighter</strong> minigame's copy. Nothing is uploaded; the disc never leaves your machine.</p>
+  <p class="lede">In Legaia the party you take into battle is <strong>Vahn</strong>, <strong>Noa</strong> and <strong>Gala</strong>, and what you see of them changes with what they wear: a new sword or robe visibly redraws the fighter. This page rebuilds those models from your own disc image - the detailed <strong>battle</strong> model, dressed from any equipment on the disc; the low-poly <strong>field</strong> model you walk around towns with; and the <strong>Baka Fighter</strong> minigame's copy - and plays their real in-game clips: idle, hit reactions, weapon swings and every Tactical Art. Nothing is uploaded; the disc never leaves your machine.</p>
 </header>
 
 <div class="disc-bar">
   <label for="char-file">Disc:</label>
   <input type="file" id="char-file" accept=".bin,.DAT,.dat">
   <span class="char-status" id="char-status">No file loaded. Provide a <code>.bin</code> Mode2/2352 image (or a raw <code>PROT.DAT</code>).</span>
+</div>
+
+<div class="hint">
+  <strong>How to use it.</strong> Load a disc, pick a hero and a form. The strip under the viewer lists the clips that apply to the shown model - click one to play it. In <em>battle</em> form the side panel's <em>Equipment swap</em> dresses the model from any weapon, armour, headgear, Ra-Seru or footwear on the disc, exactly as a real battle would. <em>Download</em> saves the whole character as a textured <code>.glb</code> with its clips baked in, or the raw mesh as <code>.tmd</code>. Keys: <kbd>Space</kbd> play / pause, <kbd>[</kbd> <kbd>]</kbd> previous / next clip, <kbd>R</kbd> reset the view.
 </div>
 
 <section class="doc-section">
@@ -310,7 +314,7 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
           </label>
         </details>
         <div class="char-info-note">Keys: <kbd>Space</kbd> play / pause · <kbd>[</kbd> <kbd>]</kbd> previous / next clip · <kbd>R</kbd> reset view.</div>
-        <div class="char-info-note">Tactical Arts, AP and command strings for every hero live on the <a href="arts.html">arts page</a>. Forms, the equipment cut and the grip repair are explained under <a href="#about-data">About this data</a>.</div>
+        <div class="char-info-note">Tactical Arts, AP and command strings for every hero live on the <a href="arts.html">arts page</a>. How the forms, the equipment cut and the grip repair work is explained under <a href="#about-data">About this data</a>.</div>
       </div>
     </div>
   </div>
@@ -318,51 +322,89 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
 </section>
 
 <details class="about-data" id="about-data">
-  <summary>About this data — forms, the equipment cut, the grip repair, animation provenance</summary>
+  <summary>About this data - the three forms, how equipment changes the model, the downloads, the animations</summary>
   <div class="about-body">
+  <h3 id="at-a-glance">At a glance</h3>
+  <ul>
+    <li>Each hero ships as a <strong>field</strong> model and a <strong>battle</strong> model; the battle one is assembled at battle load from the equipped gear.</li>
+    <li>Equipment is <strong>not a prop</strong>: a weapon or armour piece is a re-sculpted body part. The page still cuts the item out, using its palette.</li>
+    <li>Every animation clip is the game's own, played through the same per-part posing the game's renderer uses.</li>
+    <li>The models draw with the disc's baked vertex colours and no light source, which is what the console does.</li>
+  </ul>
+
   <h3 id="baka-fighter-meshes">Field form, battle form, Baka Fighter</h3>
-  <p>The game keeps two versions of each hero: a low-poly <strong>field form</strong> that stays loaded everywhere, and a higher-detail <strong>battle form</strong> a real battle assembles piece by piece from the character's equipped gear. The disc also ships a pre-assembled default-gear copy of the battle models for the <strong>Baka Fighter</strong> minigame; that form shows it in the minigame's colours, with the true in-battle palette one toggle away. Assembly chain + provenance: <a href="formats/character-mesh.html">character-mesh format</a>.</p>
+  <p>Walking around a town you see the low-poly <strong>field form</strong>, which stays loaded everywhere. When a fight starts the game builds the higher-detail <strong>battle form</strong> piece by piece from the character's equipped gear, reading each hero's own battle file on the disc. The <strong>Baka Fighter</strong> minigame does not run that assembly: it loads a pre-assembled default-gear copy of the battle models from its own pack. That form shows the minigame's colours, with the true in-battle palette one toggle away.</p>
+  <p>The party members' meshes therefore have three different sources on the disc, and the page picks the right one per form. The assembly chain and how each was pinned are on the character-mesh page.</p>
   <div class="cli"><code>asset character-pack extracted/PROT/0874_befect_data.BIN</code></div>
   <div class="cli"><code>asset battle-char-pack extracted/PROT/1204_other5.BIN --slot 0 --out-tmd vahn_battle.tmd</code></div>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="formats/character-mesh.html">Character mesh format (assembly chain + provenance)</a>
     <a href="formats/battle-data-pack.html">Player battle files</a>
+    <a href="minigames.html#baka-fighter-meshes">Baka Fighter minigame</a>
   </div>
 
   <h3 id="equipment-loadout">Equipment is bone geometry, not a prop</h3>
-  <p>The <strong>battle form</strong> runs the assembly a real battle runs. Each hero's <code>data\battle\PLAYERn</code> file carries a five-section table - body, head, weapon, Ra-Seru, feet, though <em>not in the same order for every character</em> - and each section lists one entry per equippable item. At battle load the game matches those entries against the equip bytes in the save record and splices the winning sections' 3D objects into a single model. Clicking a piece in the equipment panel does exactly that, on your disc, in the browser.</p>
-  <p>What comes out is the finding worth stating plainly: <strong>there is no item object</strong>. Equipping a Survival Knife does not attach a knife - it swaps in a re-authored right-hand object that has a blade built into it (Vahn's hand goes from 40 vertices to 71; a two-hander takes it to 109). Body armour is the same trick and can make an object <em>smaller</em>: it is a re-sculpt, not a layer. A full endgame set re-authors most of the body. So the main <code>.glb</code> download is always the whole character, named for what it is wearing.</p>
+  <p>The <strong>battle form</strong> runs the assembly a real battle runs. Each hero's battle file carries a five-section table - body, head, weapon, Ra-Seru, feet, though <em>not in the same order for every character</em> - and each section lists one entry per equippable item. At battle load the game matches those entries against the equipment in the save record and splices the winning sections' 3D objects into one model. Clicking a piece in the equipment panel does exactly that, on your disc, in the browser.</p>
+  <p>The finding worth stating plainly: <strong>there is no item object</strong>. Equipping a Survival Knife does not attach a knife - it swaps in a re-authored right-hand object with a blade built into it (Vahn's hand goes from 40 vertices to 71; a two-hander takes it to 109). Body armour is the same trick and can make an object <em>smaller</em>: it is a re-sculpt, not a layer. A full endgame set re-authors most of the body. So the main <code>.glb</code> download is always the whole character, named for what it is wearing.</p>
 
-  <h3 id="item-cut">The weapon can still be cut out - by palette, not by geometry</h3>
-  <p>"No separate object" does not mean "inseparable". A weapon is drawn from its <strong>own palette column</strong>, and across all 81 weapon and Ra-Seru records on the disc <strong>no primitive mixes the two</strong> - the item is an exact primitive subset of the hand object, selected by material. So every equipped section gets a record-keeping download in the side panel: for a weapon, that subset plus the limb it was cut from as two named nodes in one file; for anything with no such boundary, the piece as spliced in. The host limb is ground truth, so it is always included.</p>
-  <p>Each piece is labelled by how cleanly it came away, in the same words the glTF root node carries. Four cases occur across the disc's 132 equipment records: it <strong>ships as its own piece</strong> already (6 - retail did the split); it <strong>comes away whole</strong>, sharing no vertex with the hand (21, all Gala's and most of Noa's); it is <strong>welded to the hand at the grip</strong> (53, all of Vahn's); or it is <strong>fused with the host limb</strong> (52 - every armour, headgear and footwear record, plus one Ra-Seru armband). A fused piece exports <em>with</em> the body part it is sculpted onto, because there is no material boundary between them - armour has no surplus object and its palette split is body-versus-trim. The panel says which you got per piece rather than quietly capping a hole or quietly leaving a slot empty; <strong>every equipped section gets a download</strong>, and completeness beats purity.</p>
-  <p>The equipment panel and its <strong>⬇</strong> buttons are the second, deliberately <em>opinionated</em> cut: <strong>the item alone</strong> - the great axe with no hand, the helmet with no face, the robe with no neck. That cut has no exact answer on the disc (nothing in a re-authored hand object says which primitives are the axe), so it is a policy plus a committed per-record rule table: a primitive stays only if it is not the character's own flesh and not an unchanged piece of them - read as <em>colour</em> against the bare limb for held items and headgear (skin, hair and the wrist band are what the bare hand shows), and as <em>geometry-and-colour identity</em> for body and footwear (the default outfit is a real garment, so a dark robe is not "body" just because the default robe is dark). Every card says which reading decided it and whether the rule table has <strong>hand-checked</strong> that record; the <em>preview</em> toggle in the side panel draws exactly what the file will contain. The record-keeping export is unaffected - it stays the exact palette cut with its ground-truth limb.</p>
+  <h3 id="item-cut">Cutting the weapon out - by palette, not by geometry</h3>
+  <p>"No separate object" does not mean "inseparable". A weapon is drawn from its <strong>own palette column</strong>, and across all 81 weapon and Ra-Seru records on the disc <strong>no primitive mixes the two</strong>, so the item is an exact primitive subset of the hand object, selected by material. The side panel offers two cuts per equipped piece:</p>
+  <ul>
+    <li><strong>Record-keeping cut</strong> - the exact palette subset plus the limb it came from, as two named nodes in one file. The host limb is ground truth, so it is always included. Where there is no material boundary (armour, headgear, footwear), you get the piece as spliced in.</li>
+    <li><strong>Item-alone cut</strong> (the equipment panel's ⬇ buttons) - the great axe with no hand, the helmet with no face. This is a deliberate policy plus a hand-checked per-record rule table, because nothing on the disc says which primitives of a re-authored hand are "the axe". The <em>preview</em> toggle draws exactly what the file will contain.</li>
+  </ul>
+  <p><strong>How to read the labels.</strong> Each piece is tagged by how cleanly it came away, and the glTF root node carries the same words. Four cases occur across the disc's 132 equipment records:</p>
+  <table>
+    <thead><tr><th>Label</th><th>Meaning</th><th>Records</th></tr></thead>
+    <tbody>
+      <tr><td>ships as its own piece</td><td>retail already split it off</td><td>6</td></tr>
+      <tr><td>comes away whole</td><td>shares no vertex with the hand (all Gala's, most of Noa's)</td><td>21</td></tr>
+      <tr><td>welded at the grip</td><td>shares the fist with the hand (all Vahn's)</td><td>53</td></tr>
+      <tr><td>fused with the host limb</td><td>every armour, headgear and footwear record, plus one Ra-Seru armband - exports <em>with</em> the body part it is sculpted onto</td><td>52</td></tr>
+    </tbody>
+  </table>
+  <p>The item-alone rule keeps a primitive only if it is not the character's own flesh and not an unchanged piece of them: read as <em>colour</em> against the bare limb for held items and headgear, and as <em>geometry-and-colour identity</em> for body and footwear (the default outfit is a real garment, so a dark robe is not "body" just because the default robe is dark). Every card says which reading decided it and whether the record is hand-checked. Completeness beats purity: every equipped section gets a download rather than a silently empty slot.</p>
 
   <h3 id="grip-repair">The grip is inferred, and the file says so</h3>
-  <p>A welded item leaves the cut with an <strong>open grip</strong>: the part of the shaft inside the closed fist was never modelled - the fingers covered it - so Vahn's Great Axe comes away as an axe head on a stub of haft and a pommel end, each ending in an open ring where it met the fingers. No cutting strategy recovers what was never drawn, but the two rings say what was there: two coaxial polygon loops of similar size, facing each other across a gap the width of a hand, are the two ends of one straight shaft. The item-alone cut therefore <strong>bridges</strong> such pairs - a tube lofted between the rims, textured from one of them - and marks the result <em>grip inferred</em> on the card, in the summary, and in the glTF root name. Nine of the disc's 81 held-item records take a bridge (all Vahn's: the axes, maces and the shorter blades). The rule is narrow on purpose: rims that face <em>away</em> from each other (a Ra-Seru armband, a helmet's neck hole) are never joined, a lone rim is never capped, only rims on the same bone are paired, and the record-keeping export is never touched. Bridging is inference about a stretch of shaft between two ends that both exist; capping would be invention about the item's silhouette.</p>
-  <p>Two readings that look right and are not, in case you try them: <strong>connectivity</strong> alone misses the item case (the weapon is a separate component for Gala and Noa but welded for Vahn), and <strong>"geometry the bare hand lacks"</strong> misses it too, because equipping re-textures the whole object - Vahn's bare fist draws from one palette column and his knife-holding fist from two entirely different ones. And a cross-bone bridge (compared in the rest stance) finds no real grip on this disc - Vahn's swords put the blade on the hand object and the pommel block on the forearm, both closed at the fist - while happily joining the elbow-facing rims of two Ra-Seru arm plates, which is why the same-bone rule is data, not caution.</p>
-  <p>The <strong>diff highlight</strong> toggle answers the other question - what the loadout <em>changed</em>. It dims the geometry the equipped part shares with the unequipped one, brightens what reaches beyond it, and draws the bare geometry the section replaced alongside in blue. That boundary is an approximate radius-envelope test rather than the exact palette cut, and the table underneath reports the per-object counts it is derived from.</p>
+  <p>A welded item leaves the cut with an <strong>open grip</strong>: the part of the shaft inside the closed fist was never modelled, so Vahn's Great Axe comes away as an axe head on a stub of haft and a pommel end, each ending in an open ring where it met the fingers. Two coaxial rings of similar size facing each other across a hand's width are the two ends of one straight shaft, so the item-alone cut <strong>bridges</strong> such pairs with a tube lofted between the rims and marks the result <em>grip inferred</em> on the card, in the summary and in the glTF root name. Nine of the 81 held-item records take a bridge (all Vahn's: the axes, maces and shorter blades).</p>
+  <p>The rule is narrow on purpose: rims facing <em>away</em> from each other (a Ra-Seru armband, a helmet's neck hole) are never joined, a lone rim is never capped, only rims on the same bone are paired, and the record-keeping export is never touched. Bridging is inference about a shaft between two ends that both exist; capping would be invention about the item's silhouette.</p>
+  <p>The <strong>diff highlight</strong> toggle answers a different question - what the loadout <em>changed</em>. It dims the geometry the equipped part shares with the unequipped one, brightens what reaches beyond it, and draws the replaced bare geometry alongside in blue. That boundary is an approximate radius-envelope test rather than the exact palette cut, and the table underneath reports the per-object counts it is derived from.</p>
+  <details class="disclosure">
+    <summary>History: cuts that looked right and were not</summary>
+    <div class="disclosure-body">
+      <p><strong>Connectivity</strong> alone misses the item: the weapon is a separate component for Gala and Noa but welded for Vahn. <strong>"Geometry the bare hand lacks"</strong> misses it too, because equipping re-textures the whole object - Vahn's bare fist draws from one palette column and his knife-holding fist from two entirely different ones. A <strong>cross-bone bridge</strong> (compared in the rest stance) finds no real grip on this disc - Vahn's swords put the blade on the hand object and the pommel block on the forearm, both closed at the fist - while happily joining the elbow-facing rims of two Ra-Seru arm plates, which is why the same-bone rule is data, not caution.</p>
+    </div>
+  </details>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="formats/battle-data-pack.html">Player battle files (section table + assembly + the item cuts)</a>
     <a href="formats/character-mesh.html">Character mesh format</a>
+    <a href="formats/equipment-table.html">Equipment stat table</a>
   </div>
 
-  <h3>The one-byte equipment swap</h3>
-  <p>Each hero's field model carries two pre-baked variants of its weapon-holding part, flipped by a single byte in the save record - that is the entire field-side equipment mechanism, and the field form's toggle performs exactly that swap. Details: <a href="formats/character-mesh.html#10-group-cap--equipment-conditional-swap">equipment-conditional swap</a>.</p>
+  <h3 id="field-equip-swap">The field form's one-byte equipment swap</h3>
+  <p>In towns the game does not re-dress the hero. Each field model carries two pre-baked variants of its weapon-holding part, flipped by a single byte in the save record - that is the entire field-side equipment mechanism, and the field form's toggle performs exactly that swap.</p>
   <div class="cli"><code>asset character-pack &hellip; --slot 0 --equip 1 --out vahn_equipped.tmd</code></div>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="formats/character-mesh.html#10-group-cap--equipment-conditional-swap">Equipment-conditional swap</a>
   </div>
 
-  <h3>The animations are the real in-game clips</h3>
-  <p>Every clip in the Animation panel comes off your disc, and the list is scoped to the shown model. In <strong>field form</strong> the default source is the party's own <strong>locomotion bank</strong> (PROT 0874 §1): the capture-pinned <em>Walk</em> and <em>Idle</em> clips plus the not-yet-pinned rest of each character's 7-clip bank, with the per-scene NPC pools still browsable as a secondary group. In <strong>battle form</strong> the clips come out of the same player battle file as the model - the <em>record[0]</em> action bank plus the four weapon swings, which are spliced from the equipped weapon's section and change with it - and every <strong>Tactical Art</strong> out of the character's <code>readef.DAT</code> keyframe archive, resolved to its record the same way the <a href="arts.html">arts page</a> does (a multi-strike art such as Hurricane Kick plays its consecutive records as one clip). In <strong>Baka Fighter</strong> form it is the character's labeled 9-record battle bank (Idle, the three attacks, Special, the hit reactions, Win). The animation data assembles the character's separate body pieces each frame exactly as the game's renderer does, so playback matches what you see in-game; the transport under the viewer plays at the record's own retail rate (¼× and ½× slow it down), and the keyboard drives it (<kbd>Space</kbd>, <kbd>[</kbd> <kbd>]</kbd>). The <strong>.glb</strong> download bakes the same clips as named glTF animations. Encoding: <a href="formats/anm.html">ANM format</a>.</p>
+  <h3 id="animations">The animations are the real in-game clips</h3>
+  <p>Every clip in the Animation panel comes off your disc, and the list is scoped to the shown model:</p>
+  <ul>
+    <li><strong>Field form</strong> - the party's own locomotion bank: the capture-pinned <em>Walk</em> and <em>Idle</em> clips plus the rest of each character's 7-clip bank, with the per-scene NPC pools browsable as a secondary group.</li>
+    <li><strong>Battle form</strong> - the action bank from the same battle file as the model, the four weapon swings (spliced from the equipped weapon's section, so they change with it), and every <strong>Tactical Art</strong> out of the character's keyframe archive, resolved the same way the <a href="arts.html">arts page</a> does. A multi-strike art such as Hurricane Kick plays its consecutive records as one clip.</li>
+    <li><strong>Baka Fighter</strong> - the character's labelled 9-record bank: Idle, the three attacks, Special, the hit reactions, Win.</li>
+  </ul>
+  <p>The animation data poses the character's separate body pieces each frame exactly as the game's renderer does, so playback matches what you see in-game. The transport plays at the record's own retail rate (¼× and ½× slow it down), and the <code>.glb</code> download bakes the same clips as named glTF animations.</p>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="formats/anm.html">ANM animation format</a>
-    <a href="formats/character-mesh.html">Character mesh format</a>
+    <a href="formats/summon-readef.html">readef.DAT keyframe archives</a>
+    <a href="subsystems/renderer.html">Renderer (retail shading)</a>
+    <a href="arts.html">Tactical Arts viewer</a>
   </div>
   </div>
 </details>

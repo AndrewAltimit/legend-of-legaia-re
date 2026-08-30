@@ -1,280 +1,562 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">reference</a> &middot; do not re-walk</div>
   <h1>Falsified RE readings - do not re-walk</h1>
-  <p class="lede">Hypotheses about Legaia's runtime that were disproved, kept with their reasoning intact. The reasoning is the deliverable: each of these is a <em>plausible</em> reading of the bytes, and knowing why it is wrong is worth more than the row it occupies.</p>
+  <p class="lede">Every reverse-engineering project accumulates readings of the bytes that looked right, were believed, and turned out wrong. This page keeps Legaia's, with the reasoning intact: <em>why</em> each one was convincing, and what finally killed it. Check here before committing to a reading that looks obvious - someone may already have spent a week disproving it.</p>
 </header>
 
 <section class="doc-section" id="overview" data-doc="-">
-  <h2>How to use this page</h2>
-  <p>Check here before committing to a reading that looks obvious. Rows are terminal - if new evidence reopens one, it moves back to <a href="open-rev-eng-threads.html">open RE threads</a> rather than having its verdict edited in place, because the falsification trail is what makes the row useful.</p>
-  <p>Two classes recur often enough to name up front. <strong>VA aliasing</strong>: a bare virtual address is not an identity, because slot-A and slot-B overlays host different code at the same VA, so a dump labelled by address can be a different function entirely. <strong>Ghidra's collapsed switch</strong>: a jump table's arms can render as bare <code>break</code>s or as fake <code>FUN_x</code> calls, inventing opcode semantics the raw table does not have.</p>
+  <h2>What a falsified reading is, and why we keep it</h2>
+  <p>A reverse engineer looks at a routine, a table or a container and forms a story about what it does. Most stories survive contact with the disassembly or a runtime capture. The ones on this page did not - but each was a <em>plausible</em> story, usually backed by real evidence that was being read the wrong way. Deleting the row would throw away the most useful part: the shape of the trap, which tends to recur in other subsystems.</p>
+  <p>Rows here are terminal. If new evidence reopens one, it moves back to <a href="open-rev-eng-threads.html">open RE threads</a> rather than having its verdict edited in place, because the falsification trail is what makes the row worth reading. The answered questions - and how firmly each is pinned - live on <a href="re-settled-threads.html">settled threads</a>.</p>
+  <h3>Two traps that recur often enough to name up front</h3>
+  <ul class="bullets">
+    <li><strong>VA aliasing.</strong> A bare virtual address is not an identity. The game swaps different overlays into the same RAM window (<code>0x801CE818</code> for slot A, <code>0x801F69D8</code> for slot B), so the bytes at one address change with the game mode, and a dump labelled by address can be a different function entirely. See <a href="#overlay-band">no overlay function lives below <code>0x801CE818</code></a>.</li>
+    <li><strong>Ghidra's collapsed switch.</strong> A jump table's arms can render in the decompiled C as bare <code>break</code>s or as fake <code>FUN_x</code> calls, inventing opcode semantics that the raw table does not have. Several rows below were born from exactly this - the cure is always the disassembly, never the C (<a href="../tooling/ghidra.html">Ghidra tooling</a>).</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="at-a-glance" data-doc="-">
+  <h2>At a glance</h2>
+  <p>Every falsified reading on this page, one line each. The left column is the story that looked right; the middle column is what the bytes actually say. Follow the link for the reasoning.</p>
+  <div style="overflow-x:auto">
+  <table>
+    <thead><tr><th>Reading that looked right</th><th>What is actually true</th><th>Area</th></tr></thead>
+    <tbody>
+      <tr><td>A converter turns world-map slot-4 bodies into cluster-A TMDs</td><td>No such converter; the cluster-A pool is filled only from the scene's own TMD packs</td><td><a href="#wm-converter">World map</a></td></tr>
+      <tr><td>Slot-4 bodies are coastline / kingdom-border wireframes</td><td>Small object-local 3D meshes</td><td><a href="#wm-coastline">World map</a></td></tr>
+      <tr><td>Move-VM op <code>0x2F</code> has one extension dispatcher per overlay</td><td>One copy, in the field overlay (0897) only</td><td><a href="#b-op2f">Battle</a></td></tr>
+      <tr><td><code>FUN_801F3894</code> is the spirit/magic damage roll</td><td>A VA-aliased dump of the already-ported damage kernel; the real callee is an audio-cue dispatcher</td><td><a href="#b-801f3894">Battle</a></td></tr>
+      <tr><td>A level-up refills the live HP / MP pools</td><td>Only the maxima move; the "refill" write is the battle-end resync</td><td><a href="#b-levelup-heal">Battle</a></td></tr>
+      <tr><td>A party actor cannot run a streamed signature-attack module because it "has no monster block"</td><td>It has a first-class equivalent; three <em>other</em> blockers were hiding behind the wrong one</td><td><a href="#b-cast-blocker">Battle</a></td></tr>
+      <tr><td>A flat-filming art has the wrong attack-camera <em>arm</em>; pick a better one</td><td>Every arm is timed for a ~20-frame swing and none is spare - re-time, don't retarget</td><td><a href="#b-attack-camera">Battle</a></td></tr>
+      <tr><td>A per-scene navmesh lives at <code>0x80108EA4</code></td><td>Per-scene GPU primitive scratch</td><td><a href="#b-navmesh">Battle</a></td></tr>
+      <tr><td>Field-VM op <code>0x4E</code> sub-ops 4..8 are absolute jumps / random next-PC</td><td>Every sub-op 0..9 is the same 7-byte compare-and-skip</td><td><a href="#b-op4e">Battle</a></td></tr>
+      <tr><td><code>801d58f0</code> / <code>801d63b0</code> are single shared port blockers</td><td>Different code in seven different overlays - a VA-aliasing artifact of the port catalog</td><td><a href="#b-blockers">Battle</a></td></tr>
+      <tr><td>The charm battle softlock is an unbounded reroll in <code>FUN_801E7320</code></td><td>Every reachable state has an exit; the real defect is downstream in the victory arm</td><td><a href="#b-charm">Battle</a></td></tr>
+      <tr><td>Gaza 2's <code>0x51</code> park: clamp asymmetry generates the HP-readout desync</td><td>Amplifier only; the exhibit was a mid-action transient</td><td><a href="#b-gaza2">Battle</a></td></tr>
+      <tr><td>Gaza 2's <code>0x51</code> park: the Final Heal revive lands mid-drain</td><td>12 of 12 revives found the accumulator already drained</td><td><a href="#b-gaza2">Battle</a></td></tr>
+      <tr><td>Muscle Dome is a card battle with a score out of 108</td><td>An ordinary 4-turn battle; the readout is the opponent's HP percentage - and the 4-turn strip belongs to Koru</td><td><a href="#b-muscle-dome">Battle</a></td></tr>
+      <tr><td>Winning a Muscle Dome leg awards a Seru</td><td>A leg pays nothing; a contest pays casino coins (plus one item, once)</td><td><a href="#b-dome-prize">Battle</a></td></tr>
+      <tr><td><code>FUN_801DBC30</code> blits the party panels' name plate</td><td>It draws the red cross-out X from the effect page</td><td><a href="#b-801dbc30">Battle</a></td></tr>
+      <tr><td>The retail party HUD has HP / MP gauge bars</td><td>No bar primitive in either readout</td><td><a href="#b-no-gauge">Battle</a></td></tr>
+      <tr><td>Screen-element kinds <code>0x32</code>/<code>0x33</code> are "the roster panels"</td><td>Naming by seat named the wrong record; the panels are kind <code>0x07</code></td><td><a href="#b-kind-seat">Battle</a></td></tr>
+      <tr><td>The battle message banner is a gold border over a blue interior</td><td>Border only - the scene shows through</td><td><a href="#b-banner-fill">Battle</a></td></tr>
+      <tr><td><code>FUN_801E2524</code> / <code>FUN_801E2650</code> are a full-screen flash ramp</td><td>They are the <strong>Arts announcement banner</strong></td><td><a href="#b-flash-ramp">Battle</a></td></tr>
+      <tr><td>The port never latches the art id (<code>actor[+0x1DB]</code> reads 0)</td><td>It latches the rolled arm swings a basic Attack queues, as retail does</td><td><a href="#b-port-satisfied">Battle</a></td></tr>
+      <tr><td>The port's <code>0x51</code> Done-band residency is unbounded</td><td>Bounded at <code>ctx[+0x6D8] = 0x3C</code>, as retail</td><td><a href="#b-port-satisfied">Battle</a></td></tr>
+      <tr><td>The sparring tutorial reopens the command session so the cursor cannot move</td><td>A waiting prompt box parks the tick; the cursor walks 0..5</td><td><a href="#b-port-satisfied">Battle</a></td></tr>
+      <tr><td>An action returns combatants to their authored formation seats</td><td>Retail leaves them where the action ended</td><td><a href="#b-formation">Battle</a></td></tr>
+      <tr><td><code>FUN_80068D94</code> is <code>SsSepOpen</code> (a SEP / track loader)</td><td>It is the VAB-open head; the "track table" is the program-to-tone-page map</td><td><a href="#a-sepopen">Audio</a></td></tr>
+      <tr><td>The entry with 256 SPU addresses all <code>&gt;= 0x8000</code> is <code>monster.snd</code></td><td>It is <code>summon.dat</code>'s CLUT; <code>monster.snd</code> is a multi-bank VAB two entries away</td><td><a href="#a-clut">Audio</a></td></tr>
+      <tr><td>Field-VM op <code>0x35</code> sub-op 9 queues a BGM track for the next scene</td><td>It starts a track behind an asset-load barrier - what cutscenes change music with</td><td><a href="#a-op35">Audio</a></td></tr>
+      <tr><td><code>_DAT_8007B910</code> is the live screen brightness</td><td>It is the live <strong>audio level</strong></td><td><a href="#a-b910">Audio</a></td></tr>
+      <tr><td>Pochi-fill slots are stale mastering scratch, some parsing as TIMs</td><td>Every slot is one blank sector; the corrupting pages were the <em>next</em> entry</td><td><a href="#c-pochi">Containers</a></td></tr>
+      <tr><td>The kingdom bundle is PROT <code>0085</code> / <code>0244</code> / <code>0391</code></td><td>It is <code>0086</code> / <code>0245</code> / <code>0392</code></td><td><a href="#c-entry-coordinates">Containers</a></td></tr>
+      <tr><td>PROT <code>1204</code> holds seven battle atlases, the last truncated, CLUT row 496 skipped</td><td>Eight whole atlases in PROT <code>1205</code>; 496 is the eighth</td><td><a href="#c-entry-coordinates">Containers</a></td></tr>
+      <tr><td>The title TIM ships three times in PROT <code>0888</code>-<code>0890</code></td><td>Once, in <code>0890</code> at <code>0x14228</code></td><td><a href="#c-entry-coordinates">Containers</a></td></tr>
+      <tr><td>A <code>scene_tmd_stream</code> entry can hold two concatenated sub-streams</td><td>One stream per entry; the "second" is the next PROT entry</td><td><a href="#c-substreams">Containers</a></td></tr>
+      <tr><td>The stage backdrop is half a bowl because bytes are missing</td><td>The half is authored - and retail draws it <strong>twice</strong>, the second copy transformed</td><td><a href="#c-backdrop">Containers</a></td></tr>
+      <tr><td>PROT 0968 is a 4 KB module</td><td>Its own content is 2600 bytes; the tail is stale bytes of 0967</td><td><a href="#c-0968">Containers</a></td></tr>
+      <tr><td>The literal <code>0x801F69D8</code> in SCUS names 0968's loader callsite</td><td>It is the slot-B base constant; the stage-overlay parameter is computed</td><td><a href="#c-slotb">Containers</a></td></tr>
+      <tr><td><code>DAT_8007BD0C == 0xB5</code> tests for the Lapis Wave spell</td><td>It tests the formation <em>monster</em> id - Cort</td><td><a href="#c-0xb5">Containers</a></td></tr>
+      <tr><td>~270 field-overlay functions are undumped</td><td>The list was recomp dispatch entries, not functions</td><td><a href="#f-270">Field</a></td></tr>
+      <tr><td>Rim Elm's south-gate band force-walks the player through the wall</td><td>The record is five inert bytes</td><td><a href="#f-force-walk">Field</a></td></tr>
+      <tr><td>Scene-bundle type-6 descriptors are all small placeholders</td><td>12 are CLUT-walk tables (water shimmer)</td><td><a href="#f-type6">Field</a></td></tr>
+      <tr><td>Move-VM loop op <code>0x19</code> retires past itself and loops to the saved PC</td><td>Both halves inverted by the C: loops while not underflowed, retires with size 1, loops to saved + 2</td><td><a href="#f-op19">Field</a></td></tr>
+      <tr><td>Op <code>4C nE</code> sub-3 syncs an actor to the camera</td><td>Copy direction inverted - it seats the executing actor from the operand actor</td><td><a href="#f-4cne">Field</a></td></tr>
+      <tr><td>The 0874 &sect;2 F-variant pixels come from a pause-menu uploader (or a parked wrap-scroll)</td><td>A one-shot face-frame stamp in town01's opening record</td><td><a href="#f-fvariant">Field</a></td></tr>
+      <tr><td>Op <code>0x43</code> sub-3..6 is a timed sound-register ramp</td><td>A camera-register <em>zone</em> ramp keyed on the player's position</td><td><a href="#f-op43">Field</a></td></tr>
+      <tr><td>The prologue's gold look is a per-node depth-cue crush</td><td>A load-time palette-space collapse</td><td><a href="#f-sepia">Field</a></td></tr>
+      <tr><td><code>FUN_801F12D0</code> can be read from the <code>overlay_0897</code> dump</td><td>That dump is a mid-function fragment; read the muscle-dome one</td><td><a href="#f-801f12d0">Field</a></td></tr>
+      <tr><td>A second stage-id writer lives at <code>0x801FD514</code></td><td>A phantom coordinate of the settled Lost Grail sweep <code>FUN_801E6968</code></td><td><a href="#f-801fd514">Field</a></td></tr>
+      <tr><td><code>0x801D84B4</code> is inter-function padding</td><td>Padding in four overlays; a six-instruction game-over leaf in the field overlay</td><td><a href="#f-801d84b4">Field</a></td></tr>
+      <tr><td><code>FUN_801dfb10</code> is a scripted player-turn state machine</td><td>No routine exists there - a phantom of a base error; the body is the <code>ON RULA</code> travel actor</td><td><a href="#f-801dfb10">Field</a></td></tr>
+      <tr><td>An address in <code>0x801C0164..0x801CE000</code> is an undocumented overlay function</td><td>No extracted overlay contains any VA below <code>0x801CE818</code></td><td><a href="#overlay-band">Overlays</a></td></tr>
+      <tr><td>Op-<code>0x49</code>'s driver actor opens the pause menu itself for context kind <code>0x0D</code></td><td>Dispatch row <code>0x0D</code> is <code>-1</code>; the player's own Start opens it</td><td><a href="#m-op49">Menus</a></td></tr>
+      <tr><td>The "actor VM" is the title screen's sprite-walk interpreter</td><td>It is the menu overlay's window-widget script interpreter</td><td><a href="#m-actor-vm">Menus</a></td></tr>
+      <tr><td colspan="2"><em>Seven claims about the project's own instruments (dump statistics, coverage reports, a "2 % camera roll" figure, a "safe" code cave)</em></td><td><a href="#measurement">Measurement</a></td></tr>
+    </tbody>
+  </table>
+  </div>
 </section>
 
 <section class="doc-section" id="world-map" data-doc="world-map--kingdom-bundles">
   <h2>World map / kingdom bundles</h2>
-  <table>
-    <thead><tr><th>Thread</th><th>Verdict</th><th>Why</th><th>Detail</th></tr></thead>
-    <tbody>
-      <tr>
-        <td>Slot-4 &rarr; cluster-A converter site</td>
-        <td><span class="tag tag-done">falsified</span></td>
-        <td>No converter exists. The cluster-A pool <code>DAT_8007C018</code> is filled exclusively by <code>FUN_80026B4C</code>, reached only from <code>FUN_8001f05c</code> case <code>0x02</code> (TMD pack) and <code>0x09</code> (bare TMD); slot-4's type-<code>0x05</code> case never calls it.</td>
-        <td><a href="../formats/world-map-overlay.html">world-map-overlay</a></td>
-      </tr>
-      <tr>
-        <td>World-map outline / coastline reading</td>
-        <td><span class="tag tag-done">falsified</span></td>
-        <td>The slot-4 bodies are small object-local 3D meshes, not kingdom border / coastline wireframe. Treat any future "kingdom border lines" claim with suspicion.</td>
-        <td><a href="../formats/world-map-overlay.html">world-map-overlay</a></td>
-      </tr>
-    </tbody>
-  </table>
+  <p>The overworld you walk between towns is built from three kingdom bundles, and one slot of each - slot 4 - resisted interpretation for a long time. Two readings of it are dead.</p>
+
+  <h3 id="wm-converter">There is no slot-4 to cluster-A converter</h3>
+  <p><strong>Verdict:</strong> falsified. Slot-4 bytes never become cluster-A TMDs.</p>
+  <details class="disclosure"><summary>Why it looked right, and what killed it</summary><div class="disclosure-body">
+    <p>The cluster-A mesh pool (<code>DAT_8007C018</code>) is filled exclusively by <code>FUN_80026B4C</code>, reached only from the asset dispatcher <code>FUN_8001f05c</code> at <strong>case <code>0x02</code></strong> (TMD pack) and <strong>case <code>0x09</code></strong> (bare TMD). Slot 4's type byte is <strong><code>0x05</code></strong>, whose case merely allocates the MOVE buffer <code>_DAT_8007B888</code> and never calls <code>FUN_80026B4C</code>. So the <code>DAT_8007C018</code> kingdom entries are the scene's own type-<code>0x02</code> field-file TMD pack(s), installed by the single <code>FUN_80020224</code> descriptor walk.</p>
+  </div></details>
+
+  <h3 id="wm-coastline">Slot 4 is not a coastline wireframe</h3>
+  <p><strong>Verdict:</strong> falsified. The bodies are small object-local 3D meshes; treat any future "kingdom border lines" claim with suspicion.</p>
+  <details class="disclosure"><summary>Why it looked right, and what killed it</summary><div class="disclosure-body">
+    <p>Visual inspection plus the slot-4 record-semantic work refuted the "world-map overlay outlines / coastline wireframe" interpretation. Each 8-byte record is a GTE vertex read in place by the renderer; the full layout is on the <a href="../formats/world-map-overlay.html">world-map overlay</a> page.</p>
+  </div></details>
+
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../formats/world-map-overlay.html">World-map overlay (slot 4)</a>
+    <a href="../subsystems/world-map.html">World map subsystem</a>
+    <a href="../formats/asset-type.html">Asset type dispatch</a>
+  </div>
 </section>
 
 <section class="doc-section" id="battle" data-doc="battle--arts--level-up">
   <h2>Battle / arts / level-up</h2>
-  <table>
-    <thead><tr><th>Thread</th><th>Verdict</th><th>Why</th><th>Detail</th></tr></thead>
-    <tbody>
-      <tr>
-        <td>Move-VM op <code>0x2F</code> extension dispatcher &mdash; per-overlay copies?</td>
-        <td><span class="tag tag-done">falsified</span> (one copy, field overlay 0897 only)</td>
-        <td>One copy, field overlay 0897 only. The <em>capture-derived</em> <code>_801d362c</code> dumps are identical to each other (0897 observed under world-map / dialog / cutscene scenario labels); the 0897 <em>static</em> dump is a strict subset of them rather than a byte-identical twin, carrying no address the captures lack. Substance is unchanged: every other mapped slot-A overlay + the title overlay carries unrelated bytes at the fixed call VA and no jump table at <code>0x801CE868</code>, so op <code>0x2F</code> is executable only while 0897 is resident and battle-side move records cannot use it.</td>
-        <td><a href="../subsystems/move-vm.html">move-vm</a></td>
-      </tr>
-      <tr>
-        <td>"<code>FUN_801F3894</code> spirit/magic damage roll" (state-<code>0x3D</code> chain caller)</td>
-        <td><span class="tag tag-done">falsified</span> (VA-aliased dump)</td>
-        <td>The <code>overlay_0897_801f3894</code> dump is <code>FUN_801DD0AC</code> byte-for-byte under a double VA shift (0897's extraction over-reads into 0898; the program maps the file at <code>0x801C0000</code>, not the slot-A base <code>0x801CE818</code>), so the already-ported damage kernel surfaces at a fake entry VA. The real state-<code>0x3D</code> callee <code>FUN_801F3990</code> is a cast audio-cue dispatcher; spirit damage is state <code>0x3E</code>'s inline formula (<code>battle_formulas::spirit_damage</code>). Corollary, widened: every <code>overlay_0897_801Exxxx</code> <em>and</em> <code>801Fxxxx</code> dump is suspect - the band is not just <code>0x801F</code>. Two further casualties are settled: <code>801f0348</code> (escape roll) and <code>801e23ec</code>, whose aliased reading recovered only the base initiative roll and silently dropped all three modifier terms. <code>0x801F1ED4</code>/<code>0x801F45A4</code> remain unverified.</td>
-        <td><a href="../subsystems/battle-formulas.html">battle-formulas</a></td>
-      </tr>
-      <tr>
-        <td>"About 2&nbsp;% of retail camera beats set a non-zero roll"</td>
-        <td><span class="tag tag-done">falsified</span> (the figure was the scan's own filter)</td>
-        <td>The number came from a <strong>byte scan</strong> - decode an op-<code>0x45</code> CONFIGURE at every offset of every scene MAN - which finds 4257 "sites" where control flow reaches 371. Junk sites set a junk roll almost every time, so the scan applied a post-hoc "credible" filter and then measured roll over the survivors: the ratio is a property of that filter. Its sibling strict linear sweep reported the opposite (zero non-zero rolls) by reaching 21 sites and none of the eight real ones. The answer - retail <em>does</em> roll, in eight scenes, up to &minus;58&deg; - came from <strong>executing</strong> the records, not decoding them. Generalises: a measurement instrument has no oracle, so check its explanation against the artifact rather than against its own plausibility.</td>
-        <td><a href="re-settled-threads.html#d-camera-roll">settled threads</a></td>
-      </tr>
-      <tr>
-        <td>Navmesh / per-scene navigation data</td>
-        <td><span class="tag tag-done">falsified</span></td>
-        <td><code>0x80108EA4..0x80109550</code> is per-scene GPU primitive scratch. Real region / event data lives in the field-file preamble (count + <code>u16</code> offset table + records - <strong>not</strong> the field-pack schema slots, a global-constant template); collision is the <code>+0x4000</code> MAP grid.</td>
-        <td><a href="../formats/navmesh.html">navmesh</a></td>
-      </tr>
-      <tr>
-        <td>Op-<code>0x4E</code> sub-ops 4..8 "absolute jump" / "rand &rarr; next PC" readings</td>
-        <td><span class="tag tag-done">falsified</span> (all sub-ops 0..9 are the 7-byte compare-and-skip)</td>
-        <td>Ghidra's collapsed switch invented both. The raw 12-entry jump table at <code>0x801CEE30</code> routes <em>every</em> sub-op 0..9 to a value loader that joins one shared compare-and-skip continuation at <code>0x801E0B40</code>. <a href="#d-op4e">details &darr;</a></td>
-        <td><a href="../subsystems/script-vm.html">script-vm</a></td>
-      </tr>
-      <tr>
-        <td><code>801d58f0</code> / <code>801d63b0</code> as single shared port blockers</td>
-        <td><span class="tag tag-done">falsified</span> (VA-aliasing artifact)</td>
-        <td>The two addresses host different code in different overlays (byte-verified: 80/228/124/308/1 B and 208/1036 B across 0897/baka/cutscene/debug-menu/fishing/slot/dance) - the port-catalog's bare-VA keying aggregated their refs into phantom top blockers. Tracked per-overlay via <code>overlay_&lt;label&gt;_&lt;addr&gt;</code> identities; catalog ignore category <code>va_aliased_overlay_local</code>.</td>
-        <td><a href="../tooling/port-catalog.html">port-catalog</a></td>
-      </tr>
-      <tr>
-        <td>Charm battle softlock = unbounded reroll in <code>FUN_801E7320</code></td>
-        <td><span class="tag tag-done">falsified</span> (cannot spin from any reachable state)</td>
-        <td>The reroll loops are unbounded in isolation, but every reachable caller state has an exit: the scheduler <code>FUN_801DABA4</code> never seeds a dead actor (predicate <code>+0x14C != 0 &amp;&amp; !(+0x16E &amp; 0x4)</code>), the acting <code>0x380</code> monster is itself an in-band self-pick exit (<code>0x801E73E8</code> clears <code>+0x1DE</code>), and a band with zero living members means the previous <code>0x5A</code> already fired the wipe. The real defect is downstream in the <code>0x5A</code> victory arm's roster indexing. Lesson: an unbounded loop hangs only under a reachable all-invalid state - check the predicates feeding it first.</td>
-        <td><a href="../subsystems/battle.html">battle</a></td>
-      </tr>
-      <tr>
-        <td>Gaza 2 <code>0x51</code> park: overkill-clamp asymmetry as a standalone retail generator</td>
-        <td><span class="tag tag-done">falsified</span> (amplifier only)</td>
-        <td>The damage kernel's two overkill clamps (accumulator vs displayed readout, live HP vs itself) can only disagree when the readout already lags live HP at action start - and the previous party-targeted action's own settle wait guarantees it doesn't. The capture that anchored the generator reading (live HP 266, readout 0, zero accumulator) turned out to be <em>phased crediting</em>: a multi-strike action credits the readout per strike while live HP commits once at the end, so mid-action watchpoints see the "absorbing" shape on perfectly healthy fights. Only a mismatch surviving the action's own commit and settle wait counts - none has been captured from retail-only play.</td>
-        <td><a href="../subsystems/battle-action.html">battle-action</a></td>
-      </tr>
-      <tr>
-        <td>Gaza 2 <code>0x51</code> park: the Lost Grail auto-revive lands mid-drain "at the worst possible moment"</td>
-        <td><span class="tag tag-done">falsified</span> (on the Gaza 2 move set; 12/12 revives clean)</td>
-        <td>The revive path's bare accumulator assign is real, but the timing premise fails: readout credits land per strike <em>early</em> in a resolution, the revive state arrives only after the remaining targets and effects wind down, and the quarter-step drain empties any accumulator faster than every observed gap. A three-capture campaign with a Lost-Grail-armed party (no harness writes to any HP, readout, or accumulator field) drove twelve retail auto-revives across cast-path, kernel-path, single-target and party-wide kills: every restore found the accumulator already at zero, margins 143&ndash;280 vsyncs. The surviving question is narrower and lives on the open-threads page.</td>
-        <td><a href="../subsystems/battle-action.html">battle-action</a></td>
-      </tr>
-      <tr>
-        <td>An art whose attack camera films flat has the wrong <strong>arm</strong>, so pick a better-choreographed one</td>
-        <td><span class="tag tag-done">falsified</span> (every arm is timed for a ~20-frame swing, and none is spare)</td>
-        <td>The arms really do differ in shot count &mdash; one commits a single framing for a whole swing while others change shot two or three times &mdash; and 37 of the three dispatch tables' 54 slots point at a bare return, which reads as spare capacity. Both halves fail. Each shot change is an <code>slti</code> immediate against the animation cursor <code>actor[+0x22C][+0x68]</code> in sixteenths of a keyframe, and the thirteen such tests in the whole arm span carry immediates <code>64</code>&hellip;<code>272</code> &mdash; keyframe 4 through 17, sized for a ~20-frame retail swing &mdash; so a 46&ndash;100 frame clip mistimes <em>any</em> arm. And the 37 dead slots all point at one shared epilogue, while the 17 live slots reach 13 distinct arms of which every one is already some art's camera and none is shared across characters: a retarget can only alias an arm another art still uses. The fix is to re-time the arm the art already dispatches to. Generalises: "pick a better one" presumes the candidates differ along the axis the defect lies on, and emptiness in an index is not slack in what it indexes.</td>
-        <td><a href="../tooling/randomizer.html">randomizer</a></td>
-      </tr>
-    </tbody>
-  </table>
+  <p>Battle is where most of the game's logic lives, and most of it sits in RAM overlays that share addresses with other overlays - so it is also where the most readings died. The short rows first, then the ones whose story needs room.</p>
+
+  <h3 id="b-op2f">Move-VM op <code>0x2F</code> has one extension dispatcher, not one per overlay</h3>
+  <p><strong>Verdict:</strong> falsified - one copy, field overlay 0897 only. Battle-side move records cannot use it.</p>
+  <details class="disclosure"><summary>Why it looked right, and what killed it</summary><div class="disclosure-body">
+    <p>The capture-derived <code>_801d362c</code> dumps are identical to each other (0897 observed under world-map / dialog / cutscene scenario labels); the 0897 <em>static</em> dump is a strict subset of them, not a byte-identical twin (Ghidra could not follow the jump-table flow). Every other mapped slot-A overlay and the title overlay carry unrelated bytes at the fixed call VA and no jump table at <code>0x801CE868</code>, so op <code>0x2F</code> is executable only while 0897 is resident. See the <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/move-vm-overlay-ext.md" target="_blank" rel="noopener">move-VM overlay extension</a> doc.</p>
+  </div></details>
+
+  <h3 id="b-801f3894"><code>FUN_801F3894</code> is not the spirit/magic damage roll</h3>
+  <p><strong>Verdict:</strong> falsified - a VA-aliased dump. The real state-<code>0x3D</code> callee <code>FUN_801F3990</code> is a cast <strong>audio-cue dispatcher</strong>; spirit damage is state <code>0x3E</code>'s inline formula.</p>
+  <details class="disclosure"><summary>Why it looked right, and what killed it</summary><div class="disclosure-body">
+    <p>The <code>overlay_0897_801f3894</code> dump is <code>FUN_801DD0AC</code> byte-for-byte under a double VA shift, so the already-ported damage kernel surfaces at a fake entry VA. Corollary, widened: <code>801Exxxx</code> dumps are suspect too, not just the <code>0x801F</code> band - <code>801f0348</code> and <code>801e23ec</code> are settled casualties, the latter's aliased reading having dropped all three initiative modifier terms; <code>0x801F1ED4</code> / <code>0x801F45A4</code> are unverified. See <a href="../subsystems/battle-formulas.html">battle formulas</a>.</p>
+  </div></details>
+
+  <h3 id="b-levelup-heal">A level-up is not a heal</h3>
+  <p><strong>Verdict:</strong> falsified. Levelling up raises HP and MP <em>maxima</em> by the growth amount; the current pools do not move. The "refill" the captures showed is the battle-end resync.</p>
+  <details class="disclosure"><summary>Why it looked right, and what killed it</summary><div class="disclosure-body">
+    <p>The reading came from a <em>multi-level</em> capture triplet whose third frame writes the live current-pool cells (<code>+0x106</code> / <code>+0x10A</code>) right after a level-up, and it was written into <code>capture_observations::char_level_up</code> as "the level-up refill". The port encoded it in <code>LevelUpTracker::apply_to_record</code>, which made every level-up a free full heal.</p>
+    <p>Two independent checks falsify it:</p>
+    <ul class="bullets">
+      <li><strong>Disassembly.</strong> <code>FUN_801E9504</code> stores to exactly eleven addresses: the record window's <code>hp_max</code> / <code>mp_max</code>, its six battle stats, the displayed-level byte and its actor-table mirror, and two globals. No live-window cell is among them, and the routine's only <code>jal</code> is the BIOS <code>rand</code>. Identical in both dumps of the routine.</li>
+      <li><strong>Capture.</strong> The <em>single-level</em> <code>noa_levelup_*</code> triplet reads Noa at 164/182 HP and 16/16 MP going into the fight and 164/221 / 16/21 once the L2 to L3 level-up has settled. Both maxima move; neither current moves.</li>
+    </ul>
+    <p><strong>Generalises to:</strong> a write that lands <em>near</em> an event is not a write <em>by</em> it. A frame-window capture cannot separate the two on its own - only the store set of the routine can.</p>
+  </div></details>
+
+  <h3 id="b-cast-blocker">The cast-module blocker was named wrong</h3>
+  <p><strong>Verdict:</strong> falsified. A party actor <em>can</em> have its animation indices resolved by a streamed signature-attack module; the "no monster block" impossibility hid three real blockers, one of them a silent memory corruption.</p>
+  <details class="disclosure"><summary>Why it looked right, and what killed it</summary><div class="disclosure-body">
+    <p>The reading was that a streamed module "stages the caster's monster-block entries by raw index, and a party actor has no monster block". The second half is false. <code>FUN_8004AD80</code> resolves <code>actor+0x1DA</code> down two arms - monster seats through <code>DAT_801C9348[slot-3]+0x4C</code>, <strong>party seats through <code>DAT_801C9360[slot]</code></strong> - and the indices PROT 960 stages resolve on both. Its one monster-block access is a hardcoded <strong>seat-0</strong> write to a single clip's root-motion field, unrelated to who is casting.</p>
+    <p>Three real blockers were behind it:</p>
+    <ul class="bullets">
+      <li>That seat-0 read walks past <code>magic_count</code> into words the loader never fixed up, so a seat-0 monster with <code>magic_count &lt;= 13</code> (Che Delilas has 12) turns the pointer into a bare offset and the following store lands a halfword in PSX <strong>kernel RAM</strong>. Retail never trips it because the module is only ever reached with Lu (16 entries) in seat 0.</li>
+      <li>Battle state <code>0x70</code> re-enters the module every frame and advances only on a zero return; no timer, no bail-out. One phase gate needs a clip of at least 23 keyframes, which Gala's party index <code>0x0D</code> fails at 17 of 19 equippable section-2 ids.</li>
+      <li>The damage call and both HP writes are hardcoded to actor slot 0, not the chosen target.</li>
+    </ul>
+    <p><strong>Generalises to:</strong> a structural-sounding impossibility ("X has no Y") reads as settled and stops the search, so the actual failures never get enumerated. Full account on the <a href="../tooling/randomizer.html">randomizer</a> page.</p>
+  </div></details>
+
+  <h3 id="b-attack-camera">The attack camera was never an arm choice</h3>
+  <p><strong>Verdict:</strong> falsified. Every attack-camera arm is timed for a ~20-frame swing and none is spare, so an art that films flat cannot be fixed by pointing it at a "better" arm - only by re-timing (or swapping) in place.</p>
+  <details class="disclosure"><summary>Why it looked right, and what killed it</summary><div class="disclosure-body">
+    <p><code>FUN_801D71B8</code> dispatches the per-art attack camera through three per-character jump tables; the arms visibly differ in choreography (one shot for the whole swing vs two or three), and 37 of the tables' 54 slots point at a bare return. So a flat-filming art looked like a poor dispatch, and the fix looked like retargeting its slot.</p>
+    <ul class="bullets">
+      <li><strong>Every arm is timed, not merely shaped.</strong> A shot change is an <code>slti</code> against the animation cursor <code>actor[+0x22C][+0x68]</code> (sixteenths of a keyframe). The arm span carries thirteen such tests with immediates 64 / 97 / 112 / 144 / 160 / 176 / 192 / 224 / 240 / 272 - keyframe 4 through 17, sized for the ~20-frame swings retail authors. Aimed at a 46-100 frame clip, any arm finishes its choreography inside the wind-up and then holds one shot.</li>
+      <li><strong>Not one arm is spare.</strong> The 37 dead slots all point at a single shared epilogue (<code>0x801D828C</code>). The 17 live slots reach 13 distinct arms, no arm is live in more than one character's table, and every one is already some art's camera. A retarget can only alias an arm another art still uses.</li>
+    </ul>
+    <p>What the arms do admit is re-timing in place: scale an arm's immediates and its shots land at the same beats of the longer swing. Where a host art's arm carries no cursor test, the move is a <strong>swap</strong> of two slots inside one character's table. See <a href="../tooling/randomizer.html">Delilas party swap</a> on the randomizer page.</p>
+    <p><strong>Generalises to:</strong> "pick a better one" presumes the candidates differ along the axis the defect lies on. A table that is two-thirds dead slots reads as spare capacity while the things those slots would point at are fully subscribed.</p>
+  </div></details>
+
+  <h3 id="b-navmesh">There is no navmesh at <code>0x80108EA4</code></h3>
+  <p><strong>Verdict:</strong> falsified. <code>0x80108EA4..0x80109550</code> is per-scene GPU primitive scratch, not a 24-byte-stride navmesh.</p>
+  <details class="disclosure"><summary>Why it looked right, and what killed it</summary><div class="disclosure-body">
+    <p>The window differs across area-load saves, which is what a navmesh would do - but pointer hunts find zero RAM cells pointing into it. Real per-scene region / collision / event-trigger data lives in the field-file preamble (a count + <code>u16</code> offset table + records - <strong>not</strong> the <a href="../formats/field-pack.html">field-pack</a> schema slots, which are a global-constant template); the collision grid is the <code>+0x4000</code> MAP region; the encounter-record path lives at <code>actor[+0x94]</code>. Recorded on its own page: <a href="../formats/navmesh.html">navmesh (negative finding)</a>.</p>
+  </div></details>
+
+  <h3 id="b-op4e">Op-<code>0x4E</code> sub-op family - every sub-op 0..9 is a compare</h3>
+  <p><strong>Verdict:</strong> falsified. The "absolute jump" (sub-ops 5..8) and "rand to next PC" (sub-op 4) readings were Ghidra's collapsed switch; all ten sub-ops load a value and join one 7-byte compare-and-skip.</p>
+  <details class="disclosure"><summary>Why it looked right, and what killed it</summary><div class="disclosure-body">
+    <p>The raw 12-entry jump table at <code>0x801CEE30</code> (field overlay, PROT 0897 file <code>+0x618</code>) routes every sub-op 0..9 to a value loader that joins the shared continuation at <code>0x801E0B40</code>:</p>
+    <table>
+      <thead><tr><th>sub</th><th>loader</th><th>state value</th></tr></thead>
+      <tbody>
+        <tr><td>0 / 1</td><td><code>0x801E0A40</code> / <code>0x801E0A70</code></td><td>char-record HP / MP <code>(cur, max)</code> pair - the only scaled form (<code>max * arg &gt;&gt; 8</code>)</td></tr>
+        <tr><td>2</td><td><code>0x801E0AC0</code></td><td>char level byte <code>+0x130</code></td></tr>
+        <tr><td>3</td><td><code>0x801E0AEC</code></td><td>party gold <code>_DAT_8008459C</code></td></tr>
+        <tr><td>4</td><td><code>0x801E0AFC</code></td><td><strong>BIOS <code>Rand() &amp; 0xFF</code></strong> - a random-chance branch</td></tr>
+        <tr><td>5..8</td><td><code>0x801E0B0C</code></td><td><strong>slot table <code>0x801C6460[sub - 5]</code></strong> (s16; the read side of the <code>4C CA/CB/CC</code> slot writes)</td></tr>
+        <tr><td>9</td><td><code>0x801E0B34</code></td><td>coin bank <code>_DAT_800845A4</code></td></tr>
+      </tbody>
+    </table>
+    <p>Sub-ops 10/11 keep the 9-byte u32 gold/coin form; 12..15 fall through (PC += 7). The decompiled bare-<code>break</code> arms for 2..9 were the collapsed switch - each raw loader ends <code>j 0x801e0b40</code> / <code>j 0x801e0b3c</code> with the operand pointer staged in the delay slot. Disassembler + executing VM corrected: <code>field_disasm::decode_subops</code>, <code>engine-vm</code> <code>field/step/flow.rs</code>. cave01's <code>P2[12]</code> spawn gate is the live sub-5 exemplar.</p>
+  </div></details>
+
+  <h3 id="b-blockers"><code>801d58f0</code> / <code>801d63b0</code> are not single shared port blockers</h3>
+  <p><strong>Verdict:</strong> falsified - a VA-aliasing artifact. The two addresses host different code in different overlays.</p>
+  <details class="disclosure"><summary>Why it looked right, and what killed it</summary><div class="disclosure-body">
+    <p>Byte-verified: 80/228/124/308/1 bytes and 208/1036 bytes across 0897 / baka / cutscene / debug-menu / fishing / slot / dance. The port catalog's bare-VA keying aggregated their references into phantom top blockers. Tracked per overlay via <code>overlay_&lt;label&gt;_&lt;addr&gt;</code> identities; catalog ignore category <code>va_aliased_overlay_local</code>. See the <a href="../tooling/port-catalog.html">port catalog</a>.</p>
+  </div></details>
+
+  <h3 id="b-charm">The charm softlock is not an unbounded reroll</h3>
+  <p><strong>Verdict:</strong> falsified. The reroll loops in <code>FUN_801E7320</code> cannot spin from any reachable state; the real defect is downstream in the <code>0x5A</code> victory arm's roster indexing.</p>
+  <details class="disclosure"><summary>Why it looked right, and what killed it</summary><div class="disclosure-body">
+    <p>The loops are unbounded in isolation, but every reachable caller state has an exit: the scheduler <code>FUN_801DABA4</code> never seeds a dead actor (predicate <code>+0x14C != 0 &amp;&amp; !(+0x16E &amp; 0x4)</code>), the acting <code>0x380</code> monster is itself an in-band self-pick exit (<code>0x801E73E8</code> clears <code>+0x1DE</code>), and a band with zero living members means the previous <code>0x5A</code> already fired the wipe. <strong>Lesson:</strong> an unbounded loop hangs only under a reachable all-invalid state - check the predicates feeding it first. See <a href="../subsystems/battle.html">battle</a>.</p>
+  </div></details>
+
+  <h3 id="b-gaza2">Gaza 2 <code>0x51</code> park - the two falsified generators</h3>
+  <p><strong>Verdict:</strong> both first-pass "ordinary play" generators of the HP-readout desync are falsified. What remains is recorded on <a href="re-settled-threads.html">settled threads</a> under the endless camera orbit.</p>
+  <details class="disclosure"><summary>Why it looked right, and what killed it</summary><div class="disclosure-body">
+    <p><strong>Clamp asymmetry as a standalone generator.</strong> The two overkill clamps in <code>FUN_801EC3E4</code> (accumulator vs displayed bar at <code>0x801EDB70</code>, live HP vs itself at <code>0x801EEA10</code>) can only disagree when the bar already lags live HP <em>at action start</em> - and the previous party-targeted action's own <code>0x51</code> settle wait guarantees it does not. The "live HP 266 / bar 0 / zero accumulator" exhibit was per-strike <strong>phased crediting</strong> (paired stores <code>0x801EDB40</code>/<code>0x801EDB58</code> credit per strike while live HP commits once), a transient that closed with a death commit ~90 vsyncs later. A per-frame watchpoint cannot distinguish an absorbing desync from the inside of a healthy multi-strike resolution.</p>
+    <p><strong>The Final Heal revive "at the worst possible moment".</strong> The assigning seed (<code>0x800410BC</code>) is real and the discard arithmetic stands, but the timing premise does not survive measurement: credits land per strike <em>early</em>; state <code>0x50</code> arrives after remaining targets resolve; the quarter-step drain empties any accumulator within ~35 rendered frames. A three-capture campaign (<code>autorun_gaza2_acc_discard.lua</code>, Lost-Grail-armed party, ~84k vsyncs) drove twelve retail <code>FUN_801E6968</code> revives across cast-path, kernel-path, single-target and party-wide kills: every assign hit <code>+0x10 == 0</code>, margins 143-280 vsyncs.</p>
+  </div></details>
+
+  <h3 id="b-muscle-dome">Muscle Dome was never a card battle</h3>
+  <p><strong>Verdict:</strong> falsified. The arena is an ordinary battle whose command string is bounded by AP; the on-screen number is the opponent's HP percentage; and the four-turn strip belongs to the boss Koru, not the dome.</p>
+  <details class="disclosure"><summary>Why it looked right, and what killed it</summary><div class="disclosure-body">
+    <p><strong>"A hand of four cards."</strong> <code>FUN_801d388c</code> case 9 builds four slots in a <code>do { } while (&lt; 4)</code> loop, which reads like a deal. The four slots are the four <strong>d-pad directions</strong>, always command ids <code>0xC..=0xF</code>, each carrying that fighter's own AP cost. Nothing is drawn, discarded or reshuffled.</p>
+    <p><strong>"A score of <code>hp * 0x6C / max</code>."</strong> The compiler renders <code>&times; 100</code> as a shift-add chain: <code>sll 1</code>, <code>addu</code>, <code>sll 3</code>, <code>addu</code>, <code>sll 2</code> at <code>0x801d0f38..0x801d0f4c</code>. Stopping at the fourth instruction yields 25, and folding the wrong pair yields <code>0x6C</code> (108). <strong>A multiplier read off a shift-add chain is only correct if you consume the whole chain</strong> - and Ghidra's own C prints <code>* 100</code>.</p>
+    <p><strong>"Rendered in phase <code>0x6e</code>, per fighter."</strong> The computation lives in the phase-<code>0x14</code> arm; <code>0x6e</code> only re-stamps the two globals. The record it reads is <code>DAT_801c937c</code> - actor-table index 3, the first <strong>enemy</strong> slot - so there is one number on screen. What the arm draws is the <code>Turns Left / HP Left</code> strip: <code>4 - ctx[+0x28a]</code> and the first enemy's HP percentage.</p>
+    <p><strong>"...and four turns is the whole dome leg."</strong> Also wrong. The arm is gated on <code>*(u8*)0x8007BD0C == 0xB6</code>, and that cell is the <strong>monster-id formation cell</strong>, not a battle-type byte. The dome stages its opponents out of a 29-round table topping out at id <code>0xAA</code>, so no dome round can reach it. The strip belongs to monster <code>0xB6</code> - Koru, whose four-turn timed kill the curated boss table records independently. <strong>A byte compared against a small constant is not a mode tag until you have found its writer.</strong></p>
+    <p>A separate widget must not be folded into this one: <code>FUN_801d8de8</code> is the <strong>shared battle status plate</strong>, drawing each fighter's own HP/MP numerals. It computes no percentage and is not dome-specific.</p>
+  </div></details>
+
+  <h3 id="b-dome-prize">The dome victory caption is not a prize</h3>
+  <p><strong>Verdict:</strong> falsified. A won Muscle Dome leg awards nothing; a contest pays casino coins, and the Master-course final fight hands over one item once per save. No Seru is ever captured there.</p>
+  <details class="disclosure"><summary>Why it looked right, and what killed it</summary><div class="disclosure-body">
+    <p><code>FUN_801D8DE8</code> case <code>0x59</code> composes a victory line out of a per-character label from the table at <code>0x801F4DFC</code> plus a spell name from the shared spell-name table at <code>ctx[+0x269] + 0x80</code> - the player Seru-magic block. Read on its own that is a convincing award message, and the port credited a Seru capture on a won leg.</p>
+    <p>The table is <strong>shared</strong>: <code>0x801F4DFC</code> is byte-identical across the battle-action, magic-capture, magic-level-up and dome overlays, and the composer is the ordinary cast-caption builder reached by any cast in any battle. Its presence in the dome overlay is residency, not a dome feature. And the whole reward path in PROT 0977 is <code>FUN_801D0F60</code>: it settles the score tally and, once per save on the Master-course final fight, hands over item <code>0xCD</code>. The tally is paid by the shared minigame-exit routine <code>FUN_80026018</code> into the casino coin bank <code>0x800845A4</code>, saturating at 9,999,999.</p>
+    <p><strong>Lesson:</strong> a caption that names a reward is not a reward. Find the <em>writer</em> of the thing being credited.</p>
+  </div></details>
+
+  <h3 id="b-801dbc30"><code>FUN_801DBC30</code> is not the battle name plate</h3>
+  <p><strong>Verdict:</strong> falsified. Its texture page and CLUT resolve to the effect page's <strong>red cross-out X</strong> - the mark laid over a command chip the actor cannot pick.</p>
+  <details class="disclosure"><summary>Why it looked right, and what killed it</summary><div class="disclosure-body">
+    <p>The blit sits in the battle overlay next to the party-name panel's open and teardown leaves, takes an <code>(x, y)</code>, and lays down one <code>0x40 x 0x10</code> textured quad. A fixed-size strip, drawn at a caller-supplied seat, in the one function group that builds the name buffers - almost irresistible. The port acted on it.</p>
+    <p>The quad's own constants falsify it: <code>tpage 7</code> resolves to VRAM page <code>(448, 0)</code> and CLUT <code>0x7704</code> to <code>(64, 476)</code>. That is the <code>etim</code> effect page, and the texel span <code>(0, 96)</code>-<code>(63, 111)</code> decodes out of a battle VRAM dump as the red X. The real name plates are 3-slice runs off the system-UI sheet's page <code>(896, 256)</code>.</p>
+    <p><strong>Lesson:</strong> a primitive builder is identified by the page and palette it samples, not by the neighbourhood it is compiled into.</p>
+  </div></details>
+
+  <h3 id="b-no-gauge">The party HUD has no gauge bars</h3>
+  <p><strong>Verdict:</strong> falsified. There is no bar primitive in either party readout's packet run - retail shows numerals only. Geometry on the <a href="../subsystems/battle.html">battle</a> page.</p>
+
+  <h3 id="b-kind-seat">A kind named by its seat can name the wrong record</h3>
+  <p><strong>Verdict:</strong> falsified. Screen-element kinds <code>0x32</code>/<code>0x33</code> are not "the roster panels"; the three roster-panel placement records carry kind <code>0x07</code>.</p>
+  <details class="disclosure"><summary>Why it looked right, and what killed it</summary><div class="disclosure-body">
+    <p>Before the <code>+0x0E</code> kind byte was resolved as a table index, the open thread listed undecoded values by the surface each one <em>sat under</em>: <code>0x0303</code> "message rows", <code>0x0404</code> "framed windows", <code>0x2B2B</code> "the status bar", <code>0x32</code>/<code>0x33</code> "the roster panels". Four survive the decode; the panel one does not. <code>0x33</code>/<code>0x34</code>/<code>0x35</code> are sibling kinds that add the level / status marker on top of the same panel chain - their chain walks into the same <code>0x08</code> to <code>0x09</code> plate that <code>0x07</code>'s ends on, so the two draw the same pixels. Only the index arithmetic (<code>0x800732A4 + kind * 0x0C</code>, <code>FUN_8002C69C</code>) separates them. Resolution on <a href="re-settled-threads.html">settled threads</a>.</p>
+  </div></details>
+
+  <h3 id="b-banner-fill">The battle message banner has no interior fill</h3>
+  <p><strong>Verdict:</strong> falsified. The banner is a border and a glyph run; the scene shows through.</p>
+  <details class="disclosure"><summary>Why it looked right, and what killed it</summary><div class="disclosure-body">
+    <p>Two live frames carrying the banner (the mid-battle Seru "captured!" line and the level-up banner) draw the class-0 9-slice border sprites and the glyphs and nothing else - no textured fill, no flat quad, no semi-transparent rect. What made "gold border over blue interior" natural is that the framed-window widget records (<code>0x03</code> / <code>0x04</code> / <code>0x44</code>) carry a 32x32 blue-marbled patch at texels <code>(128, 0)</code>, and the framed <em>menu</em> windows do fill with it. The art exists; the battle banner does not use it.</p>
+  </div></details>
+
+  <h3 id="b-flash-ramp">The flash ramp is the Arts announcement banner</h3>
+  <p><strong>Verdict:</strong> falsified. <code>FUN_801E2524</code> / <code>FUN_801E2650</code> do not fade the screen - they slide the words <code>SUPER ARTS!!</code> / <code>HYPER ARTS!!</code> / <code>MIRACLE ARTS!!</code> / <code>NEW ARTS!!</code> in from opposite sides.</p>
+  <details class="disclosure"><summary>Why it looked right, and what killed it</summary><div class="disclosure-body">
+    <p><code>FUN_801E2650</code> scales a percent into grey, replicates it into RGB, picks GP0 <code>0x2C</code> or <code>0x2E</code>, and emits quads whose extent is driven by a level byte. On the arithmetic alone that is a flash, and it was documented as one.</p>
+    <p>The quads are <strong>textured</strong>. Every arm writes texpage <code>0x27</code> = <code>(448, 0)</code> under CBA <code>0x7703</code>; decoding that page at 4bpp through that sub-palette shows the emitter's three 24-tall rows are the words <code>SUPER</code>, <code>HYPER</code>, <code>MIRACLE</code> + <code>NEW</code>, directly above the <code>DAMAGE</code> / <code>HIT</code> / <code>TOTAL</code> labels on the same sheet; the second quad's fixed texel rect reads <code>ARTS!!</code>. <code>ctx[+0x28C]</code> is the slide's clock, and the four "layers" are a ghost trail behind the moving word.</p>
+    <p><strong>Lesson:</strong> a routine that emits textured primitives is not characterised until its texels are decoded. See <a href="../subsystems/battle-action.html">battle action</a> and the <a href="../formats/effect.html">effect bundle</a> sheet layout.</p>
+  </div></details>
+
+  <h3 id="b-port-satisfied">Three readings the port already satisfied</h3>
+  <p><strong>Verdict:</strong> all three falsified - each described retail behaviour the port was already reproducing.</p>
+  <details class="disclosure"><summary>Why they looked right, and what killed them</summary><div class="disclosure-body">
+    <ul class="bullets">
+      <li><strong>"The port never latches the art id, so <code>actor[+0x1DB]</code> reads 0 all fight."</strong> It latches <code>0x01</code>, then <code>0x0D</code>, then <code>0x0C</code> - the rolled arm swings a basic Attack queues, and a retail mid-swing Attack state reads the same band. <code>0x1A..=0x2D</code>, the per-art camera's band, is reached by action-constant queue bytes, i.e. an arts chain, so the camera not arming on two arm swings is retail.</li>
+      <li><strong>"The port's <code>0x51</code> Done-band residency is unbounded."</strong> Bounded at <code>ctx[+0x6D8] = 0x3C</code>, as retail. The 60-70 frames a sample shows is one action's countdown plus the HP-bar settle freeze; a multi-action sample sums several. Counting frames in a band without splitting them by action reads a per-action budget as a park.</li>
+      <li><strong>"The sparring tutorial reopens the command session, so the cursor cannot move."</strong> The session is reopened only on a rejected resolution; the cursor walks 0..5. What pins it on screen is retail's own <code>ctx[+0x6B2]</code> box guard, which the port reproduces.</li>
+    </ul>
+    <p>Details on <a href="../subsystems/battle-action.html">battle action</a>.</p>
+  </div></details>
+
+  <h3 id="b-formation">An action does not return combatants to their formation seats</h3>
+  <p><strong>Verdict:</strong> falsified. Retail leaves each combatant on the ground the action ended on; the seat is committed from the live position at cleanup.</p>
+  <details class="disclosure"><summary>Why it looked right, and what killed it</summary><div class="disclosure-body">
+    <p>Two library states of one solo fight read the authored formation 1600 apart; two later ones read the same pair ~300 apart and both far off it, with every actor's <code>+0x3C</code>/<code>+0x40</code> pair within ~110 units of its live <code>+0x34</code>/<code>+0x38</code>. The port's walk-home leg is gone; the seat is committed from the live pair at <code>DoneCleanup</code>. See <a href="../subsystems/battle-action.html">battle action</a>.</p>
+  </div></details>
+
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../subsystems/battle.html">Battle</a>
+    <a href="../subsystems/battle-action.html">Battle action SM</a>
+    <a href="../subsystems/battle-formulas.html">Battle formulas</a>
+    <a href="../subsystems/level-up.html">Level-up</a>
+    <a href="../subsystems/move-vm.html">Move VM</a>
+    <a href="../subsystems/script-vm.html">Field / event VM</a>
+    <a href="../formats/effect.html">Effect bundle</a>
+    <a href="../tooling/randomizer.html">Randomizer</a>
+  </div>
 </section>
 
 <section class="doc-section" id="audio" data-doc="audio--sound-driver">
   <h2>Audio / sound driver</h2>
-  <table>
-    <thead><tr><th>Thread</th><th>Verdict</th><th>Why</th><th>Detail</th></tr></thead>
-    <tbody>
-      <tr>
-        <td><code>FUN_80068D94</code> as "<code>SsSepOpen</code> / SEP loader" (with <code>FUN_80068B98</code> as "<code>SsSeqOpen</code>")</td>
-        <td><span class="tag tag-done">falsified</span> (it is the VAB-open head)</td>
-        <td>The plausible part: it validates a magic, reads a count at <code>+0x12</code>, <code>SsSpuMalloc</code>s, and patches a pointer table - the shape of a SEP/track loader, with the magic read as 'VAP'. The disassembly refutes it: the compare is <code>0x564142</code> against <code>word &gt;&gt; 8</code> plus low byte <code>0x70</code> - <code>pBAV</code>, the <strong>VAB</strong> magic - and <code>+0x12</code> is <code>ps</code>. The "per-track pointer table" is the ProgAtr table receiving the program &rarr; packed-tone-page rank map; the mislabel hid that map, and with it the engine's tone collapse on sparse banks. Correct roles: <a href="../subsystems/audio.html">audio</a>.</td>
-        <td><a href="../formats/vab.html">vab</a></td>
-      </tr>
-      <tr>
-        <td>The entry matching "<code>[u32 format == 2][u16 spu_addr[256]]</code>, every address <code>&ge; 0x8000</code>" is <code>monster.snd</code></td>
-        <td><span class="tag tag-done">falsified</span> (it is <code>summon.dat</code>; <code>monster.snd</code> is a multi-bank VAB two entries away)</td>
-        <td><code>0x8000</code> is exactly the boundary an SPU sample address clears once the reserved low region is skipped, so 256 halfwords all above it read as a fully-populated address table - and one PROT entry matched, under a CDNAME label naming the sound cluster. What it matched is <code>summon.dat</code>, whose header word is a mode <code>2</code> and whose next <code>0x200</code> bytes are a BGR555 CLUT with the STP bit forced on every non-zero entry, setting bit 15 of all 256 halfwords for a reason unrelated to addresses. The tell the predicate cannot see: the values <strong>repeat</strong>, and SPU addresses are strictly increasing. <code>monster.snd</code> is a 206-bank multi-VAB archive two extraction slots away, named by its loader's own <code>li v0,0x37d</code>. Generalises to: a threshold over a fixed-size run identifies a shape, never a format - where the shape encodes an ordering, assert the ordering.</td>
-        <td><a href="../formats/summon-readef.html">summon-readef</a></td>
-      </tr>
-    </tbody>
-  </table>
+  <p>The sound side is PsyQ library code plus a thin Legaia layer, and the library's own naming led two readings astray. The other two are about what a global or an opcode <em>does</em> when its behaviour happens to correlate with something more visible.</p>
+
+  <h3 id="a-sepopen"><code>FUN_80068D94</code> is the VAB-open head, not <code>SsSepOpen</code></h3>
+  <p><strong>Verdict:</strong> falsified. The routine validates the <strong>VAB</strong> magic and patches the program-to-tone-page rank map, not a per-track pointer table.</p>
+  <details class="disclosure"><summary>Why it looked right, and what killed it</summary><div class="disclosure-body">
+    <p>The plausible part: it validates a magic, reads a count at <code>+0x12</code>, <code>SsSpuMalloc</code>s, and patches a pointer table - the shape of a SEP/track loader, with the magic read as 'VAP'. The disassembly refutes it: the compare is <code>0x564142</code> against <code>word &gt;&gt; 8</code> plus low byte <code>0x70</code> - <code>pBAV</code>, the VAB magic - and <code>+0x12</code> is <code>ps</code>. The "per-track pointer table" is the ProgAtr table receiving the program-to-packed-tone-page rank map; the mislabel hid that map, and with it the engine's tone collapse on sparse banks. Correct roles on <a href="../subsystems/audio.html">audio</a>; the map on <a href="../formats/vab.html">VAB</a>.</p>
+  </div></details>
+
+  <h3 id="a-clut">The 256-slot SPU-address run that was really a CLUT</h3>
+  <p><strong>Verdict:</strong> falsified. The entry matching "<code>[u32 == 2][u16 x 256] all &gt;= 0x8000</code>" is <code>summon.dat</code>, and the halfwords are a BGR555 palette with the STP bit forced on. <code>monster.snd</code> is extraction 891, a 206-bank multi-VAB archive.</p>
+  <details class="disclosure"><summary>Why it looked right, and what killed it</summary><div class="disclosure-body">
+    <p><code>0x8000</code> is exactly the boundary an SPU sample address clears once the reserved low region is skipped, so "256 halfwords, every one <code>&gt;= 0x8000</code>" reads as a fully-populated address table, and a leading 2 reads as a format word. One PROT entry matched, and its CDNAME label named the sound cluster.</p>
+    <p>What it matched is <code>summon.dat</code> (extraction 893, <a href="../formats/summon-readef.html">summon / readef</a>), whose header word is a mode 2 and whose next <code>0x200</code> bytes are a CLUT with bit 15 set on every non-zero entry. The tell the predicate cannot see: the values <strong>repeat</strong> (<code>0x8000 0x8000 0x8000 0x8000 0x8001 ...</code>), and SPU sample addresses are strictly increasing. The loader says where <code>monster.snd</code> really is: <code>FUN_8003E104</code> does <code>li v0,0x37d</code> (raw TOC <code>0x37D</code> = extraction 891) beside the path string - the same CDNAME <code>+2</code> shift that mislabels other entries (<a href="../formats/cdname.html">CDNAME numbering</a>).</p>
+    <p><strong>Generalises to:</strong> a threshold predicate over a fixed-size run identifies a <em>shape</em>, never a format. Where the shape encodes an ordering, assert the ordering.</p>
+  </div></details>
+
+  <h3 id="a-op35">Op-<code>0x35</code> sub-op 9 was never a queue</h3>
+  <p><strong>Verdict:</strong> falsified. Sub-op 9 is sub-op 1 (start a BGM track) plus a wait on the asynchronous asset load - it is what a <strong>cutscene</strong> changes music with mid-scene.</p>
+  <details class="disclosure"><summary>Why it looked right, and what killed it</summary><div class="disclosure-body">
+    <p>The word "Queue" sat in the sub-op table with no body behind it, and it is a reasonable guess: the op appears next to the pause / resume / stop words, it is never the op a scene's <em>entry</em> script uses, and its arm begins by comparing two globals - which reads as "is a slot free yet?".</p>
+    <p>The arm at <code>0x801E0224</code> compares <code>*0x8007BAB8</code> (the index the resolver produced) against <code>*0x8007BA9C</code> (the index actually loaded); the mismatch branch goes to <code>0x801DEE4C</code>, the dispatcher's restore-PC idiom, so the script re-runs the same instruction next frame. When it clears, <code>sw v0,-0x4538(a1)</code> writes <code>*0x8007BAC8 = id</code> - the identical store sub-op 1 makes. Sub-op 11 (<code>_DAT_8007BA9C = -1</code>) is the barrier's arming half.</p>
+    <p>Two things kept the wrong reading alive: a scene-corpus BGM sweep only runs prescripts, which emit sub-op 1 exclusively, and the recording director folded its start and queue hooks into one list. The audible symptom is narrow: the cutscene plays silent and its score starts over the <em>next</em> scene. Full arm on <a href="../subsystems/script-vm.html">script VM</a>.</p>
+  </div></details>
+
+  <h3 id="a-b910"><code>_DAT_8007B910</code> is the live audio level, not screen brightness</h3>
+  <p><strong>Verdict:</strong> falsified. All 26 dumped read sites end in a volume setter; none ends in a draw primitive.</p>
+  <details class="disclosure"><summary>Why it looked right, and what killed it</summary><div class="disclosure-body">
+    <p>The reading fit the behaviour: the cell ramps down during a summon and back up when the action ends, and a summon visibly dims the screen. The dim rides the separate accumulator <code>_DAT_8007B440</code> (<code>FUN_801ED308</code> to the wipe emitter <code>FUN_8003479C</code>); the two ramp together, which is what made one look like the other. Answer on <a href="re-settled-threads.html">settled threads</a>.</p>
+  </div></details>
+
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../subsystems/audio.html">Audio subsystem</a>
+    <a href="../formats/vab.html">VAB</a>
+    <a href="../formats/summon-readef.html">summon.dat / readef.DAT</a>
+    <a href="../formats/cdname.html">CDNAME numbering</a>
+    <a href="../subsystems/script-vm.html">Script VM</a>
+  </div>
+</section>
+
+<section class="doc-section" id="containers" data-doc="containers--placeholder-slots">
+  <h2>Containers / placeholder slots</h2>
+  <p>Most of the game's data sits inside <code>PROT.DAT</code>, a 1233-entry archive whose table of contents gives each entry only a start sector. An entry's <em>size</em> is the gap to the next entry - and for a long time the project's reader computed it differently, reading past the end of one entry into the next. Four of the rows below are the same root cause wearing different symptoms; the rest are neighbours in the same overlay slot.</p>
+
+  <h3 id="c-entry-coordinates">Assets named by the entry the over-read window started in</h3>
+  <p><strong>Verdict:</strong> falsified. The kingdom bundle is PROT <code>0086</code> / <code>0245</code> / <code>0392</code> (not 0085 / 0244 / 0391); the battle-form atlases are eight whole TIMs in PROT <code>1205</code> (not seven in 1204 with one truncated and CLUT row 496 skipped); the title TIM ships once, in <code>0890</code> at <code>0x14228</code> (not three times). Each asset is where it always was - only its name was wrong.</p>
+  <details class="disclosure"><summary>Why it looked right, and what killed it</summary><div class="disclosure-body">
+    <p>Under the pre-correction entry size a reader positioned on entry <code>N</code> could see entries <code>N+1</code>, <code>N+2</code>... so an asset was recorded as "PROT <code>N</code> offset <code>K</code>" whenever the scan that found it started at <code>N</code>. The coordinate is not wrong about the disc - <code>start_lba(N)*0x800 + K</code> really is where the bytes are - it is wrong about which entry owns them, which is the only thing a correctly-bounded reader can use.</p>
+    <p>Each wrong name came with corroboration:</p>
+    <ul class="bullets">
+      <li>The kingdom bundle "at <code>0x1800</code> of entry 85" had a table there with the right count and the right first descriptor offset. It is entry 86's offset 0 - and the block layout (<code>.MAP</code> / v12 header / prescript / bundle) says entry 85 is the prescript.</li>
+      <li>The battle-pack atlases had a consistent stride from a consistent base, and a truncated last member is a normal thing to find at the end of a container. <code>0x25804</code> is 1204's own length plus 4, i.e. entry 1205 offset 4; the "seven" and the "truncation" were both where the window stopped.</li>
+      <li>The title TIM's three "duplicates" were byte-equal - exactly what a multi-bank duplicate looks like, and also what you get when three arithmetics resolve to one absolute offset.</li>
+    </ul>
+    <p>Two lessons: byte-equality between two <code>(entry, offset)</code> pairs is evidence of duplication only after the pairs are shown to resolve to different absolute offsets; and a container's member count is a property of its <strong>framing</strong>, not of where a buffer happens to end. Corrected coordinates on <a href="../formats/prot.html">PROT.DAT</a>.</p>
+  </div></details>
+
+  <h3 id="c-pochi">Pochi-fill slots are not stale mastering scratch</h3>
+  <p><strong>Verdict:</strong> falsified. Every one of the 266 pochi slots is exactly one 2048-byte sector of fill and none carries a TIM. The pages that corrupted a ground atlas came from the <code>scene_tmd_stream</code> entry <em>after</em> the pochi slot.</p>
+  <details class="disclosure"><summary>Why it looked right, and what killed it</summary><div class="disclosure-body">
+    <p>Reserved-but-unused filler holding leftover bytes from an earlier master is an ordinary thing to find on a PSX disc, and the hazard had a reproducible exhibit: two <code>64x256</code> pages uploading to framebuffer <code>(768,0)</code> and <code>(832,0)</code> erased a ground atlas every run, and the sweep was positioned on a pochi slot when it happened.</p>
+    <p>The over-reading reader made the next entry's bytes look like the current entry's content, so the symptom was attributed to the entry the reader was positioned on. Reproducibility confirmed that <em>something</em> was wrong at that step and said nothing about which entry owned the bytes. What the slots actually hold: <a href="../formats/pochi.html">pochi</a>.</p>
+  </div></details>
+
+  <h3 id="c-substreams">One <code>scene_tmd_stream</code> entry holds one stream</h3>
+  <p><strong>Verdict:</strong> falsified. The "second concatenated sub-stream" was the next PROT entry. 0 of 182 entries hold a second stream.</p>
+  <details class="disclosure"><summary>Why it looked right, and what killed it</summary><div class="disclosure-body">
+    <p>The third shape of the same root cause, and the one that got furthest: here the over-read invented a <strong>structural feature of the format</strong>. <code>0006_town01</code> was read as two concatenated <code>[chunk0 TMD][type-0x01 TIM chunks][terminator]</code> sub-streams, the second at <code>0x14000</code>. Entry 0006 is exactly <code>0x14000</code> bytes, so all of that is PROT entry <strong>0007</strong>, whose own tail chunks sit at the recorded offsets minus 0006's length.</p>
+    <p>The plausible part was unusually good: the second block opened on a sector boundary, was preceded by zero padding, and carried a valid TMD plus two well-formed chunks - because that is what a scene_tmd_stream entry looks like, and the next entry was one. The reading even explained a real fact about the walker (<code>FUN_8001FE70</code> returns <code>param_1 + 1</code>, just past the terminator). And it was "confirmed" against the town0b / town0c clusters - four-entry runs of the same layout, so every over-read spilled into a sibling of the same shape. The replication was the artifact copying itself.</p>
+    <p><strong>Lesson:</strong> a structural feature that only ever appears at the end of a buffer is a claim about the reader's bounds until it is shown somewhere else. <code>sub_streams</code> and <code>WalkSource::Continuation</code> survive in <code>scene_tmd_stream.rs</code> as regression detectors. Corrected layout on <a href="../formats/scene-bundles.html">scene bundles</a>.</p>
+  </div></details>
+
+  <h3 id="c-backdrop">The backdrop shell is authored as a half - and retail draws it twice</h3>
+  <p><strong>Verdict:</strong> two readings falsified. "Bytes are missing, mirror the mesh to recover them" - no: the half shape is authored and nothing is unread. "Therefore nothing completes it and a second copy is a regression" - also no: <code>FUN_800513F0</code> registers the backdrop TMD once and allocates <strong>two</strong> actors from it, the second carrying a per-stage transform.</p>
+  <details class="disclosure"><summary>Why it looked right, and what killed it</summary><div class="disclosure-body">
+    <p>Open any <code>scene_tmd_stream</code> entry in a mesh viewer and you get half a bowl: sky dome, mountain ring and ground ring sheared off along a plane through the origin. Measured over object 0 of all 182 entries, at most 8% of the shell's X or Z extent sits on the far side of the axis; every object's <code>vert_top + n_vert * 8 == normal_top</code> exactly. No unread vertex block, no second primitive list.</p>
+    <p><strong>Why the counterexample misled.</strong> The engine once shipped a <code>Ry(180deg)</code> duplicate, and for <code>town01</code> it planted a second village wall across the open <code>-X</code> side - open sea in retail. But <code>town01</code> (stage id 4) is on the <em>mirror</em> list: retail completes it by reflecting in the YZ plane. A wrong transform on one stage was read as evidence that no transform was wanted anywhere.</p>
+    <p><strong>Why the captures seemed to agree.</strong> A four-angle capture set was quoted as "mountains cover 44-81% of horizon columns, not a ring". Re-measured for <em>presence</em> of a mountain band, the four angles read 98 / 100 / 100 / 100%; the spread was a band-<em>thickness</em> threshold. Projecting <code>map01</code> through each capture's exact camera, one copy covers 100 / 71.9 / 100 / 99.7% of columns against two copies' 100% - three yaws cannot separate the models, and the fourth (yaw 334.7deg) leaves columns 0..89 empty under one copy while retail has a mountain band in all 90.</p>
+    <p><strong>What this is not:</strong> not the <code>+0x10</code> mesh puzzle (walk-visible <code>.MAP</code> cells naming a pack mesh no layer draws - stamping <code>FLAG_MESH_DRAWN</code> on those was separately falsified: it draws a wall down every river), and not the site's assembled field view, which excludes <code>scene_tmd_stream</code> entirely.</p>
+    <p><strong>Lesson:</strong> every number in the falsified version was correct; each measured something other than the question. Before a capture statistic closes a thread, state the reading it would refute and check the samples can tell the two readings apart. Mechanism and per-stage table on <a href="../subsystems/battle.html">battle</a>.</p>
+  </div></details>
+
+  <h3 id="c-0968">PROT 0968 is not a 4 KB module</h3>
+  <p><strong>Verdict:</strong> falsified. Its own content is <code>0x00..0xA28</code> (2600 bytes); the trailing 1496 bytes are 0967's bytes at the same file offsets, cut mid-string at the sector boundary, and nothing in 0968 references them.</p>
+  <details class="disclosure"><summary>Why it looked right, and what killed it</summary><div class="disclosure-body">
+    <p>The entry really is 2 sectors, so the "pointer-table head, 10/11 self-pointers, 2+8 spawn calls" figures were all measured across both modules at once - which is why they never cohered. Full accounting on <a href="re-settled-threads.html">settled threads</a> (PROT 0968, the Cort battle-stage overlay).</p>
+  </div></details>
+
+  <h3 id="c-slotb">The literal <code>0x801F69D8</code> in SCUS is the slot-B base, not a callsite</h3>
+  <p><strong>Verdict:</strong> falsified. It is the SCUS global <code>0x80010390</code> holding the slot-B overlay load address (twin of <code>0x8001038C</code> for slot A), read by <code>FUN_8003EC70</code> and never written.</p>
+  <details class="disclosure"><summary>Why it looked right, and what killed it</summary><div class="disclosure-body">
+    <p>It was the only literal-word hit outside the shared-base band, and therefore the only one an aliasing argument could not dismiss - which made it read as the last live lead. A reference to a shared load base names the <em>slot</em>, not a tenant. The real callsite was never findable that way: the stage-overlay parameter is <strong>computed</strong> (<code>stage_id + 0x47</code>), so the constant <code>0x49</code> occurs nowhere. See the <a href="../tooling/static-overlay-pipeline.html">static overlay pipeline</a>.</p>
+  </div></details>
+
+  <h3 id="c-0xb5">Battle <code>DAT_8007BD0C == 0xB5</code> is the formation monster id, not Lapis Wave</h3>
+  <p><strong>Verdict:</strong> falsified. Two id spaces collide on <code>0xB5</code>: spell <code>0xB5</code> is Lapis Wave, formation <code>0xB5</code> is monster 181, Cort. The byte the branch at <code>0x801E6D04</code> reads is the formation-id array.</p>
+  <details class="disclosure"><summary>Why it looked right, and what killed it</summary><div class="disclosure-body">
+    <p>The guard is an HP-reached-zero test on the first enemy actor - a form-transition trigger, not a cast. The wrong reading was self-consistent because Cort is also the caster of Lapis Wave: the two spaces agreeing on the answer is what hid the error.</p>
+  </div></details>
+
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../formats/prot.html">PROT.DAT</a>
+    <a href="../formats/pochi.html">Pochi-fill slots</a>
+    <a href="../formats/scene-bundles.html">Scene bundles</a>
+    <a href="../formats/cdname.html">CDNAME</a>
+    <a href="../subsystems/battle.html">Battle (backdrop shell)</a>
+    <a href="../tooling/static-overlay-pipeline.html">Static overlay pipeline</a>
+  </div>
 </section>
 
 <section class="doc-section" id="field" data-doc="field--locomotion">
   <h2>Field / locomotion</h2>
-  <table>
-    <thead><tr><th>Thread</th><th>Verdict</th><th>Why</th><th>Detail</th></tr></thead>
-    <tbody>
-      <tr>
-        <td>Scene-bundle type-6 descriptors are "all small placeholders"</td>
-        <td><span class="tag tag-done">falsified</span> (12 are walker tables)</td>
-        <td>Plausible: the modal slot really is a 4-byte <code>count = 0</code> filler (85 of 97 bundles) and the three kingdom tables had been attributed to a "kingdom slot 5" special. But the 80/172/516-byte type-6 payloads (<code>garmel</code>, <code>dohaty</code>, the <code>geremi</code>/<code>rayman</code>/tunnel/<code>son</code>/<code>edson</code> family) parse as the same CLUT-walk table, installed identically for every bundle &mdash; the water/waterfall shimmer. The <code>rayman</code>-family carrier is the count-4 MAN-less table variant the strict detector rejects; resolve the slot <strong>by type byte</strong>.</td>
-        <td><code>docs/subsystems/field-ambient-fx.md</code></td>
-      </tr>
-      <tr>
-        <td>Move-VM loop op <code>0x19</code> "retires past itself (size 2), loops back to the saved PC"</td>
-        <td><span class="tag tag-done">falsified</span> (both halves inverted by the C rendering)</td>
-        <td>Wrong against the raw arm (<code>80023070.txt</code> <code>0x800235DC</code> + the <code>0x80024150</code> epilogue): retail <strong>loops while the decremented count has not underflowed</strong>, retires on underflow with size <strong>1</strong>, and the loop-back lands at <strong>saved&nbsp;+&nbsp;2</strong> (the epilogue adds <code>a2 = 2</code> after the PC store) &mdash; re-running the <code>0x18</code> itself would re-seed the counter forever. jou's 15-instance ambient cycler fan-out is the disc witness. Sibling correction: ext <code>0x1E</code> returns size <strong>4</strong>, hidden behind a <code>func_0x801d4a3c()</code> label-call return.</td>
-        <td><a href="../subsystems/move-vm.html">move-vm</a></td>
-      </tr>
-      <tr>
-        <td>"~270 undumped field-overlay functions" (recomp dispatch-entry seed list)</td>
-        <td><span class="tag tag-done">falsified</span> (not a function inventory gap)</td>
-        <td>Not a function inventory. The recomp capture's seed PCs are interpreter <em>dispatch entries</em> &mdash; return sites, interrupt-resume PCs and <code>jr</code>-table labels &mdash; accumulated across every overlay generation of the session (title / FMV / menu / field) while only the byte snapshot is per-dump. Dozens of listed addresses land in 0897's <em>data</em> head, one source capture's resident bytes match disc 0897 at only ~16%, and only two coincidental hits verify at all (both in the never-resident slot-machine image), the rest being <code>j</code>-target labels rather than function entries. Seed lists need per-hit resident-image resolution before any identity claim.</td>
-        <td><a href="#d-270-functions">details &darr;</a></td>
-      </tr>
-      <tr>
-        <td>Prologue gold grade = per-node <code>+0x74</code>/<code>+0x78</code> depth-cue crush</td>
-        <td><span class="tag tag-done">falsified</span> (grade is a palette-space collapse; the nodes carry no <code>IR0</code>)</td>
-        <td>Plausible because <code>FUN_8002735C</code> really does load per-node DPCS far colour + <code>IR0</code>, and the motion/move VMs carry op <code>0x0C</code> writers of those fields - but the opening never uses them: a live recomp capture reads node <code>+0x78</code> (<code>IR0</code>) = <strong>0 on every node at every beat</strong>, and the <code>opdeene</code> MAN motion section has no op <code>0x0C</code>. The real mechanism is a load-time CLUT/TMD palette collapse <code>L=max(r,g,b) &rarr; (L, max(L-1,0), L&gt;&gt;1)</code>; the far-field crush is that law seen through dark authored gouraud.</td>
-        <td><a href="../subsystems/cutscene.html">cutscene</a></td>
-      </tr>
-    </tbody>
-  </table>
-</section>
-<section class="doc-section" id="containers" data-doc="containers--placeholder-slots">
-  <h2>Containers / entry coordinates</h2>
-  <table>
-    <thead><tr><th>Thread</th><th>Verdict</th><th>Why</th><th>Detail</th></tr></thead>
-    <tbody>
-      <tr>
-        <td>The world-map kingdom bundle is PROT <code>0085</code> / <code>0244</code> / <code>0391</code></td>
-        <td><span class="tag tag-done">falsified</span></td>
-        <td>It is <code>0086</code> / <code>0245</code> / <code>0392</code>. Those indices are the block's <em>prescript</em> entry; the bundle's 7-asset table is at offset 0 of the next entry, which the over-read window saw as "offset <code>0x1800</code>".</td>
-        <td><a href="#d-entry-coordinates">below</a></td>
-      </tr>
-      <tr>
-        <td>The battle-form character pack holds seven atlases inside PROT <code>1204</code>, the last truncated, with CLUT row 496 skipped</td>
-        <td><span class="tag tag-done">falsified</span></td>
-        <td>Eight whole atlases, in PROT <code>1205</code>. Row 496 is the eighth atlas, not a gap; the "seven" and the "truncation" were where the over-read window stopped.</td>
-        <td><a href="#d-entry-coordinates">below</a></td>
-      </tr>
-      <tr>
-        <td>The title TIM ships as three multi-bank duplicates in PROT <code>0888</code> / <code>0889</code> / <code>0890</code></td>
-        <td><span class="tag tag-done">falsified</span></td>
-        <td>One copy, in <code>0890</code> at <code>0x14228</code>. All three <code>(entry, offset)</code> pairs resolve to the same absolute <code>PROT.DAT</code> offset.</td>
-        <td><a href="#d-entry-coordinates">below</a></td>
-      </tr>
-    </tbody>
-  </table>
-</section>
+  <p>Walking around towns and dungeons is driven by the field overlay (PROT 0897) and its 43-opcode script VM. This area collected two kinds of dead reading: opcode semantics inverted by the decompiled C, and functions "found" at addresses that no overlay actually maps.</p>
 
-<section class="doc-section" id="details" data-doc="-">
-  <h2>Details</h2>
+  <h3 id="f-270">"~270 undumped field-overlay functions"</h3>
+  <p><strong>Verdict:</strong> falsified. The list was a recomp's <em>dispatch entries</em> - return sites, interrupt-resume PCs, jump-table labels, mixed across overlay generations - not a function inventory, and the inventory gap it implied does not exist.</p>
+  <details class="disclosure"><summary>Why it looked right, and what killed it</summary><div class="disclosure-body">
+    <p>A PSXRecomp runtime capture of the slot-A window during a boot-to-town session yielded ~312 "call targets", ~270 absent from <code>ghidra/scripts/funcs/</code>. Triaging every address against the disc overlay images falsifies the premise on three axes:</p>
+    <ul class="bullets">
+      <li><strong>They are dispatch entries, not call targets.</strong> Against the resident image only ~1/4 classify as call-shaped; the rest sit mid-function or mid-loop.</li>
+      <li><strong>The PC tables span overlay generations.</strong> One source capture's resident bytes match the disc 0897 image at only ~16% (title-era occupant); dozens of PCs land inside 0897's data head; two "known" entries resolve to the cutscene overlay's STR dispatch and the actor-VM jump <em>table</em>.</li>
+      <li><strong>No image claims them as functions.</strong> Sweeping every mapped slot-A image plus the slot-B field library for prologues / static <code>jal</code> targets yields two coincidental hits and a handful of <code>j</code>-target labels.</li>
+    </ul>
+    <p>Seed lists from a recomp's dispatcher need per-hit resident-image resolution before any identity claim. The real undumped-code question is better served by the <a href="../tooling/port-catalog.html">port catalog</a>.</p>
+  </div></details>
 
-  <h3 id="d-entry-coordinates">Assets named by the entry the over-read window started in</h3>
-  <p><em>Status:</em> falsified - each asset is where it always was; only the <code>(entry, offset)</code> name for it was wrong.</p>
-  <p>Under the pre-correction PROT entry size a reader positioned on entry <code>N</code> could see entries <code>N+1</code>, <code>N+2</code>&hellip;, so an asset got recorded as "PROT <code>N</code> offset <code>K</code>" whenever the scan that found it started at <code>N</code>. The coordinate is not wrong about the disc - <code>start_lba(N)*0x800 + K</code> really is where the bytes are - it is wrong about which entry <em>owns</em> them, which is the only thing a correctly-bounded reader can use. The symptom is a name rather than a corruption, which is why it outlived the reader.</p>
-  <p>Each wrong name came with corroboration, and that is the instructive part. The kingdom bundle's table really was at <code>0x1800</code>, with the right count and the right first descriptor offset. The battle-pack atlases really did sit at a consistent stride from a consistent base, and a truncated last member is an ordinary thing to find at the end of a container. The title TIM's three "duplicates" really were byte-equal.</p>
-  <p>Two transferable lessons. Byte-equality between two <code>(entry, offset)</code> pairs is evidence of <em>duplication</em> only once you have shown the pairs resolve to different absolute offsets - otherwise it is a tautology, the same shape as the falsified "PROT 0900 and 0901 are shifted copies". And a container's member count and a member's size are properties of its <strong>framing</strong> - a chunk chain, a descriptor count in the header - not of where a buffer happens to end; a count derived from "how many fit before the buffer ran out" is measuring the reader, not the disc.</p>
-  <p>Corrected coordinates and the two invariants that keep them honest: <a href="../formats/prot.html#a-entry-offset-pair-is-only-a-coordinate-if-the-offset-is-inside-the-entry">prot &sect; a (entry, offset) pair</a>.</p>
+  <h3 id="f-force-walk">The reachable band's record does not force-walk the player through the wall</h3>
+  <p><strong>Verdict:</strong> falsified in five bytes. Rim Elm's record 10 is <code>21 21 26 FE FF</code> - a no-op and a jump-to-self. There is no walk op and no scene change in it.</p>
+  <details class="disclosure"><summary>Why it looked right, and what killed it</summary><div class="disclosure-body">
+    <p>Record 10 covers the only band a player can stand in, its timeline ran for two frames and moved the player <code>+8</code> in z before ending, and <code>+8</code> is one locomotion step - so the record "must" force-walk the player through the sealed band. The two-frame termination is the choreography-wrap rule doing its job on a park, and the <code>+8</code> is one frame of the player's own pad locomotion, observed only because the modal-timeline install is what stopped it. The <code>0x3F</code> lives in record 0, on the <em>other</em> band, opened by a collision paint rather than crossed by a scripted walk - see <a href="re-settled-threads.html">Rim Elm's south gate</a>.</p>
+    <p><strong>Lesson:</strong> disassemble the record before theorising about the interpreter.</p>
+  </div></details>
 
-  <h3 id="d-op4e">Op-<code>0x4E</code> sub-op family - every sub-op 0..9 is a compare</h3>
-  <p><em>Status:</em> falsified ("absolute jump" 5..8 and "rand &rarr; next PC" 4 were Ghidra's collapsed switch).</p>
-  <p>The raw 12-entry jump table at <code>0x801CEE30</code> (field overlay, PROT 0897 file <code>+0x618</code>) routes <strong>every</strong> sub-op 0..9 to a value loader that joins the shared 7-byte compare-and-skip continuation at <code>0x801E0B40</code>:</p>
-  <table>
-    <thead><tr><th>sub</th><th>loader</th><th>state value</th></tr></thead>
-    <tbody>
-      <tr><td>0 / 1</td><td><code>0x801E0A40</code> / <code>0x801E0A70</code></td><td>char-record HP / MP <code>(cur, max)</code> pair - the only scaled form (<code>max * arg &gt;&gt; 8</code>)</td></tr>
-      <tr><td>2</td><td><code>0x801E0AC0</code></td><td>char level byte <code>+0x130</code></td></tr>
-      <tr><td>3</td><td><code>0x801E0AEC</code></td><td>party gold <code>_DAT_8008459C</code></td></tr>
-      <tr><td>4</td><td><code>0x801E0AFC</code></td><td><strong>BIOS <code>Rand() &amp; 0xFF</code></strong> - a random-chance branch</td></tr>
-      <tr><td>5..8</td><td><code>0x801E0B0C</code></td><td><strong>slot table <code>0x801C6460[sub - 5]</code></strong> (s16; the read side of the <code>4C CA/CB/CC</code> slot writes)</td></tr>
-      <tr><td>9</td><td><code>0x801E0B34</code></td><td>coin bank <code>_DAT_800845A4</code></td></tr>
-    </tbody>
-  </table>
-  <p>Sub-ops 10/11 keep the 9-byte u32 gold/coin form; 12..15 fall through (PC += 7). The decompiled bare-<code>break</code> arms for 2..9 were the collapsed switch - each raw loader ends <code>j 0x801e0b40</code> / <code>j 0x801e0b3c</code> with the operand pointer staged in the delay slot, the same class of trap as the label-call idiom. Disassembler + executing VM corrected: <code>field_disasm::decode_subops</code>, <code>engine-vm</code> <code>field/step/flow.rs</code>. cave01's <code>P2[12]</code> spawn gate is the live sub-5 exemplar.</p>
+  <h3 id="f-type6">Scene-bundle type-6 descriptors are not all placeholders</h3>
+  <p><strong>Verdict:</strong> falsified. 12 of 97 bundles carry a real CLUT-walk table in that slot - the water / waterfall shimmer - installed identically for every bundle.</p>
+  <details class="disclosure"><summary>Why it looked right, and what killed it</summary><div class="disclosure-body">
+    <p>The modal slot really is a 4-byte <code>count = 0</code> filler (85 of 97 bundles), and the three kingdom tables had been attributed to a "kingdom slot 5" special. But the 80/172/516-byte type-6 payloads (<code>garmel</code>, <code>dohaty</code>, the <code>geremi</code>/<code>rayman</code>/tunnel/<code>son</code>/<code>edson</code> family) parse as the same table. The <code>rayman</code>-family carrier is the count-4 MAN-less variant the strict detector rejects; resolve <strong>by type byte</strong>. See <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/field-ambient-fx.md" target="_blank" rel="noopener">field ambient FX</a>.</p>
+  </div></details>
 
-  <h3 id="d-270-functions">"~270 undumped field-overlay functions" - the recomp dispatch-entry seed list</h3>
-  <p><em>Status:</em> falsified (not a function inventory gap).</p>
-  <p>The seed PCs are the recomp interpreter's <em>dispatch entries</em> - return sites, interrupt-resume PCs and <code>jr</code>-table labels - and the capture accumulates them across the whole session (title &rarr; FMV &rarr; menus &rarr; field), so a "field window" list mixes title-overlay, cutscene-overlay (0970) and menu-era PCs with field-era ones. Smoking guns: one source capture's resident bytes match the disc 0897 image at only ~16% (title-era, a different occupant); dozens of listed PCs land inside 0897's <strong>data head</strong> (debug strings + pointer tables, impossible as 0897 code); and two entries the list marked as already-known resolve to the cutscene overlay's STR dispatch <code>FUN_801CEA3C</code> and the actor-VM jump <em>table</em> <code>0x801CED70</code> - a different overlay's function and a data address.</p>
-  <p>Sweeping all mapped slot-A overlay images plus the slot-B field library for prologues / static <code>jal</code> targets at the listed addresses yields only two coincidental hits (both in the never-resident slot-machine image) and a handful of <code>j</code>-target labels. The durable lessons: seed lists from a recomp's interpreter dispatcher need <strong>per-hit resident-image resolution</strong> before any identity claim, and a "new function" claim needs a prologue or a static-call witness in the image that was actually resident. The real undumped-code question for 0897 is better served by the <a href="../tooling/port-catalog.html">port-catalog dashboard</a>.</p>
+  <h3 id="f-op19">Move-VM loop op <code>0x19</code> - both halves inverted by the C</h3>
+  <p><strong>Verdict:</strong> falsified. Retail loops while the decremented count has <em>not</em> underflowed, retires on underflow with size <strong>1</strong>, and the loop-back lands at <strong>saved + 2</strong>.</p>
+  <details class="disclosure"><summary>Why it looked right, and what killed it</summary><div class="disclosure-body">
+    <p>The C rendered "retires past itself (size 2), loops back to the saved PC". The raw arm (<code>80023070.txt</code> at <code>0x800235DC</code> plus the <code>0x80024150</code> epilogue) says the epilogue adds <code>a2 = 2</code> after the PC store - re-running the <code>0x18</code> itself would re-seed the counter forever. jou's 15-instance cycler fan-out is the disc witness. Sibling correction: ext <code>0x1E</code> returns size <strong>4</strong>, hidden behind a <code>func_0x801d4a3c()</code> label-call return. See <a href="../subsystems/move-vm.html">move VM</a>.</p>
+  </div></details>
+
+  <h3 id="f-4cne">Op <code>4C nE</code> sub-3 copies the operand actor <em>into</em> the executing context</h3>
+  <p><strong>Verdict:</strong> falsified - copy direction inverted. It is the seat primitive of every mid-visit crowd swap, not a camera sync.</p>
+  <details class="disclosure"><summary>Why it looked right, and what killed it</summary><div class="disclosure-body">
+    <p>The handler tail (<code>0x801E3178..0x801E31AC</code>) really does refresh the camera-scroll globals - but that tail is a player-ctx-only side path. The op body (<code>0x801E3108</code>) copies the operand-resolved actor's <code>+0x14/16/18</code> position and <code>+0x26</code> facing into the executing ctx (dolk2 <code>P2[11]</code>'s eight <code>CC &lt;crowd&gt; E3 &lt;day&gt;</code> pairs). Reading the tail as the op's purpose inverted the semantics. See <a href="../subsystems/script-vm.html">script VM</a>.</p>
+  </div></details>
+
+  <h3 id="f-fvariant">The 0874 &sect;2 F-variant pixels - falsified twice</h3>
+  <p><strong>Verdict:</strong> not a pause-menu uploader, not a parked wrap-scroll phase. The writer is the town01 opening record's one-shot <code>4C 60</code> face-frame stamp.</p>
+  <details class="disclosure"><summary>Why it looked right, and what killed it</summary><div class="disclosure-body">
+    <p>6/6 pause captures held the variant; then the 3 words equal row 273's content, reading as a +2-row scroll park. But the whole pause walk issues <strong>zero</strong> image transfers (DMA2 chain-walk + GP0 PIO hook) and plain field saves carry the variant - session-history correlation. And the strip is not shift-invariant while the wrap-scroll installer ops never fire across the flip window - the row-273 equality is frame-content coincidence. Settled on <a href="re-settled-threads.html">settled threads</a>.</p>
+  </div></details>
+
+  <h3 id="f-op43">Op-<code>0x43</code> sub-3..6 is a camera-register zone ramp, not a sound ramp</h3>
+  <p><strong>Verdict:</strong> falsified on all four counts. The byte operands are a tile rectangle, the two halfwords are the ramp's endpoints, nothing counts down, and the destinations are field camera registers.</p>
+  <details class="disclosure"><summary>Why it looked right, and what killed it</summary><div class="disclosure-body">
+    <p><code>FUN_8003C6A4</code> scales four byte operands <code>* 0x80 + 0x40</code> and stores two trailing halfwords, which reads as "four targets plus timing"; the destinations are unnamed <code>0x8007Bxxx</code> globals, and the op sits in a sub-dispatcher whose neighbours include sound work.</p>
+    <p>The tick settles it. The descriptor at <code>&amp;DAT_80074304</code> carries handler <code>0x80037018</code>, which reads <code>+0x88</code>/<code>+0xC8</code> and <code>+0x8A</code>/<code>+0xCA</code> as an AABB over the player's position, <code>+0x80</code>/<code>+0x84</code> as two endpoints, and <code>+0x8C</code> as the store width. The register lerps on the player's Z as they cross the zone, and runs backwards when they walk back. All four destinations are camera-configuration registers (<code>B60C</code> pitch, <code>B610</code> yaw, <code>B614</code> eye-space Z, <code>B618</code> GTE <code>H</code>); the <code>0x1B8</code> default of <code>_DAT_8007B60C</code> is the pitch <code>FUN_80025C24</code> seeds at field entry.</p>
+    <p><strong>Why it survived:</strong> the two halves were decoded years apart and each disclosed the other as missing - two <code>NOT WIRED</code> notes pointing at each other read as two separate gaps. See <a href="../subsystems/script-vm.html">script VM</a> and <a href="../subsystems/motion-vm.html">motion VM</a>.</p>
+  </div></details>
+
+  <h3 id="f-sepia">The prologue's gold grade is a palette collapse, not a depth-cue crush</h3>
+  <p><strong>Verdict:</strong> falsified. A live capture reads node <code>+0x78</code> (<code>IR0</code>) = 0 on every node at every beat, and the <code>opdeene</code> MAN motion section has no op <code>0x0C</code>. The grade is a load-time CLUT/TMD collapse <code>L=max(r,g,b) -&gt; (L, max(L-1,0), L&gt;&gt;1)</code>.</p>
+  <details class="disclosure"><summary>Why it looked right, and what killed it</summary><div class="disclosure-body">
+    <p>Plausible because <code>FUN_8002735C</code> really does load per-node DPCS far colour + <code>IR0</code>, and the motion/move VMs carry op <code>0x0C</code> writers of those fields - but the opening never uses them. The far-field crush is the palette law seen through dark authored gouraud. See <a href="../subsystems/cutscene.html">cutscene</a>.</p>
+  </div></details>
+
+  <h3 id="f-801f12d0"><code>FUN_801F12D0</code> cannot be read from the <code>overlay_0897</code> dump</h3>
+  <p><strong>Verdict:</strong> falsified. That dump is a 47-instruction mid-function fragment; the muscle-dome dump (330 instructions, proper prologue) is the function.</p>
+  <details class="disclosure"><summary>Why it looked right, and what killed it</summary><div class="disclosure-body">
+    <p>The fragment opens at <code>lw v1,-0x6c84(v0)</code> with no <code>addiu sp,sp,-N</code> anywhere, yet closes restoring <code>s0</code>-<code>s3</code> and <code>ra</code> from a frame it never established. Callee-saved reads with no matching save, plus a missing prologue, is the fragment test. It contains none of the slot-streaming logic, and its tail <code>jal 0x801daba4</code> is close enough to the real control flow to make a wrong conclusion look plausible. Corpus-wide picture: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/dump-corpus-integrity.md" target="_blank" rel="noopener">dump-corpus integrity</a>.</p>
+  </div></details>
+
+  <h3 id="f-801fd514">There is no second stage-id writer at <code>0x801FD514</code></h3>
+  <p><strong>Verdict:</strong> falsified - the coordinate and the novelty, not the writer. The mid-battle <code>_DAT_8007B64A</code> writer is the tail arm of the settled Lost Grail sweep <code>FUN_801E6968</code> (store at <code>0x801E6D2C</code>).</p>
+  <details class="disclosure"><summary>Why it looked right, and what killed it</summary><div class="disclosure-body">
+    <p>The phantom dump is internally coherent - clean prologue, sane guard logic, real SCUS <code>jal</code> targets - so everything corroborates the wrong address except the overlay-local jumps, which point <code>0x16000</code> below the "function". Reading the body at the phantom coordinate turned the settled sweep (<code>0xE7</code> = the Lost Grail item id) back into an unknown "<code>0xE7</code> record scan". The byte check: the store's word pair <code>24020003 a082b64a</code> occurs in no PROT entry but 0898, at file <code>0x18510</code> = <code>0x801E6D28</code> under the tagged base. Before naming a "new" function in an aliased band, grep the <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/overlay-va-aliases.md" target="_blank" rel="noopener">alias tables</a> for the re-keyed address.</p>
+  </div></details>
+
+  <h3 id="f-801d84b4"><code>0x801D84B4</code> is not padding in the field overlay</h3>
+  <p><strong>Verdict:</strong> falsified for the one image that mattered. In the field overlay it is a six-instruction leaf: store game mode <code>_DAT_8007B83C = 0x16</code> (CARD INIT), raise <code>_DAT_8007BB00 = 1</code>, return - the overlay-local twin of the scripted game-over trigger <code>FUN_8003C7EC</code>.</p>
+  <details class="disclosure"><summary>Why it looked right, and what killed it</summary><div class="disclosure-body">
+    <p>The VA really is padding in the fishing, dance, debug-menu and slot-machine extractions, and the only dump resolving an entry here is interior (<code>entry=801d8308</code>). Read <code>overlay_field_0897.bin</code> at base <code>0x801CE818</code> instead: <code>jr ra</code> at <code>0x801D84AC</code> closes the predecessor and the leaf follows; the field image carries exactly one <code>jal 0x801D84B4</code>. <strong>Lesson:</strong> a padding verdict is per image. Counting how many extractions agree does not make the disagreeing one wrong.</p>
+  </div></details>
+
+  <h3 id="f-801dfb10"><code>FUN_801dfb10</code> does not exist</h3>
+  <p><strong>Verdict:</strong> falsified. The address is a phantom of a <code>+0xE818</code> base error; its bytes are field (0897) <code>0x801EE328</code>, the world-map <code>ON RULA</code> travel-art actor, documented and ported under that VA.</p>
+  <details class="disclosure"><summary>Why it looked right, and what killed it</summary><div class="disclosure-body">
+    <p>The printed VA is interior in every image that covers it. What makes this one durable is that the <em>behaviour</em> attributed to the phantom is accurate - the input lock, the per-frame angle rotation, the story-flag gate - because it was read off a correctly-decoded body. Only the address is fiction. The same routine is printed at <code>0x801E8B10</code> by the <code>overlay_0896</code> batch; two independent phantoms landing on one VA is the check that pins it (<a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/phantom-print-index.md" target="_blank" rel="noopener">phantom print index</a>).</p>
+  </div></details>
+
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../subsystems/script-vm.html">Field / event VM</a>
+    <a href="../subsystems/field-locomotion.html">Field locomotion</a>
+    <a href="../subsystems/move-vm.html">Move VM</a>
+    <a href="../subsystems/motion-vm.html">Motion VM</a>
+    <a href="../subsystems/cutscene.html">Cutscene</a>
+    <a href="../formats/scene-bundles.html">Scene bundles</a>
+    <a href="../tooling/port-catalog.html">Port catalog</a>
+  </div>
 </section>
 
 <section class="doc-section" id="overlay-band" data-doc="no-overlay-function-lives-below-0x801ce818">
   <h2>No overlay function lives below <code>0x801CE818</code></h2>
-  <p><strong>Falsified:</strong> "an undocumented address in the <code>0x801C0164</code>..<code>0x801CE000</code> band is an overlay-resident function awaiting a doc entry."</p>
-  <p>The reading is plausible because the project's own orientation says overlay code lives "at <code>0x801C0000+</code>", and because dumps in that band disassemble cleanly, carry function-shaped prologues and epilogues, and are filed under <code>overlay_&lt;label&gt;_801c&hellip;.txt</code> names. Nothing about them looks wrong.</p>
-  <p>They are not functions. They are <strong>printed addresses from imports based at <code>0x801C0000</code></strong>, and the true VA of every one is <code>printed + delta</code>. The structural argument needs no dump at all: every occupant of the slot-A overlay window bases at <code>0x801CE818</code> and every slot-B occupant at <code>0x801F69D8</code>, so <strong>no extracted overlay image contains any VA below <code>0x801CE818</code></strong>. An address in that band cannot name a function in any overlay, whatever its dump looks like. The measurement agrees: disassembling every extracted image at its mapped base and asking which of those addresses is a <code>jal</code> target, a <code>j</code> target or an instruction boundary returns nothing at all for the whole band.</p>
-  <p>The deltas are constant per import - <code>+0xE818</code> into the field (0897) or menu (0899) overlay, <code>+0xD018</code> into fishing (0972), <code>+0x9818</code> into dance (0980), <code>+0x5818</code> for the <code>overlay_0896_*</code> family - so the whole band resolves mechanically. Worked examples: the "function at <code>0x801C6FEC</code>" is the fishing reel tug-of-war <code>FUN_801D4004</code>; "<code>0x801C56B4</code>" is the hooked-fish handler <code>FUN_801D26CC</code>; "<code>0x801C2704</code>" is menu-overlay <code>FUN_801D0F1C</code>. Each is already documented under its real address.</p>
-  <p>The same failure extends <strong>above</strong> <code>0x801CE818</code>, where it is harder to see because the printed address then falls inside a real overlay's span and cannot be rejected on range alone. There the working test is the same one: resolve the dump's bytes to an image and offset, and separately ask whether the printed VA is a <code>jr ra</code>-preceded boundary in any image. A VA that is only ever a <code>j</code> or branch target is an intra-function label, not a port site.</p>
-  <p><strong>Generalises to:</strong> treat "the dump prints an address" as evidence about the <em>import</em>, never about the game. Which image, which offset, is this a function at all - those are answered from the extracted image at its mapped base, and only from there. The same deltas drive the <a href="../tooling/static-overlay-pipeline.html">static overlay pipeline</a>, which attaches each image's identity from its PROT entry rather than from a filename.</p>
+  <p>The game loads its per-mode code into a RAM window starting at <code>0x801C0000</code>. That is true as orientation and wrong as arithmetic: the overlay <em>images</em> are based higher, and a whole band of "functions" turned out to be a filename artifact.</p>
+  <p><strong>Verdict:</strong> falsified. An address in <code>0x801C0164..0x801CE000</code> cannot name a function in any overlay, whatever its dump looks like.</p>
+  <details class="disclosure"><summary>Why it looked right, and what killed it</summary><div class="disclosure-body">
+    <p>Dumps in that band disassemble cleanly, carry function-shaped prologues and epilogues, and are filed under <code>overlay_&lt;label&gt;_801c....txt</code> names. They are <strong>printed addresses from imports based at <code>0x801C0000</code></strong>, and the true VA of every one is <code>printed + delta</code>. Every occupant of the slot-A window bases at <code>0x801CE818</code> and every slot-B occupant at <code>0x801F69D8</code> (<code>crates/asset/data/static-overlays.toml</code>), so no extracted overlay image contains any VA below <code>0x801CE818</code>. Disassembling every image at its mapped base and asking which of those addresses is a <code>jal</code> target, a <code>j</code> target or an instruction boundary returns nothing for the whole band.</p>
+    <p>The deltas are constant per import: <code>+0xE818</code> into the field (0897) or menu (0899) overlay, <code>+0xD018</code> into fishing (0972), <code>+0x9818</code> into dance (0980), <code>+0x5818</code> for the <code>overlay_0896_*</code> family. Worked examples: the "function at <code>0x801C6FEC</code>" is the fishing reel tug-of-war <code>FUN_801D4004</code>; "<code>0x801C56B4</code>" is the hooked-fish handler <code>FUN_801D26CC</code>; "<code>0x801C2704</code>" is menu-overlay <code>FUN_801D0F1C</code>.</p>
+    <p>The same failure extends <em>above</em> <code>0x801CE818</code>, where it is harder to see because the printed address is then inside a real overlay's span. There the test is: resolve the dump's bytes to an image and offset, and separately ask whether the printed VA is a <code>jr ra</code>-preceded boundary in any image. A VA that is only ever a <code>j</code> or branch target is an intra-function label, not a port site.</p>
+    <p><strong>Generalises to:</strong> treat "the dump prints an address" as evidence about the <em>import</em>, never about the game.</p>
+  </div></details>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../tooling/static-overlay-pipeline.html">Static overlay pipeline</a>
+    <a href="../tooling/overlay-capture.html">Overlay capture</a>
+    <a href="memory-map.html">RAM map</a>
+    <a href="functions.html">Key functions</a>
+  </div>
 </section>
 
 <section class="doc-section" id="menus-ui" data-doc="menus--ui">
   <h2>Menus / UI</h2>
-  <table>
-    <thead><tr><th>Thread</th><th>Verdict</th><th>Why</th></tr></thead>
-    <tbody>
-      <tr>
-        <td>Actor VM = "the title screen's sprite-walk interpreter", with an ANM-trigger opcode</td>
-        <td>falsified (it is the menu overlay's window-widget script interpreter)</td>
-        <td>Two readings fell together. <code>FUN_801D6628</code> is resident in PROT <code>0899</code> (the menu overlay), and its base materialisation <code>lui 0x801e / addiu 0x4738</code> indexes the <strong>window descriptor table</strong> - instruction byte 1 is a window id, not a sprite-actor slot. And no arm of the 13-way dispatch hands off an ANM id; "trigger animation" was a guess from the sprite-VM framing. The programs are overlay-resident data (<a href="../formats/window-script.html">window widget scripts</a>), so "find the per-scene program carrier" was never answerable - there is no per-scene carrier.</td>
-      </tr>
-    </tbody>
-  </table>
+  <p>The pause menu, shops and status screens run in the menu overlay (PROT 0899), which has its own tiny bytecode interpreter for choreographing windows. Both dead readings here mistook that interpreter, or its callers, for something more dramatic.</p>
+
+  <h3 id="m-op49">Op-<code>0x49</code>'s driver actor does not open the pause menu for context kind <code>0x0D</code></h3>
+  <p><strong>Verdict:</strong> falsified. Row <code>0x0D</code> of the dispatch table at <code>0x801F33A4</code> is <code>-1</code>; nothing opens. The player's own Start press enters the menu the context gates.</p>
+  <details class="disclosure"><summary>Why it looked right, and what killed it</summary><div class="disclosure-body">
+    <p>The reading explained why the port could not reach <code>ContextNotice</code> / <code>ContextReady</code> and pointed at a pending-request channel as the fix. But the submode dispatcher indexes a <strong>signed</strong> 14-byte table with the parked operand's first byte and returns on <code>-1</code> (<code>0x801F1468..0x801F1470</code>) <em>before</em> it writes the driver's state or clears <code>_DAT_8007B450</code>. So a <code>0x0D</code> park simply stands. The port's own close-tick fallback for that row was the defect.</p>
+  </div></details>
+
+  <h3 id="m-actor-vm">The "actor VM" is the menu window-widget interpreter</h3>
+  <p><strong>Verdict:</strong> falsified. <code>FUN_801D6628</code> is not the title screen's sprite-walk interpreter and has no ANM-trigger opcode.</p>
+  <details class="disclosure"><summary>Why it looked right, and what killed it</summary><div class="disclosure-body">
+    <p>Two readings fell together. The function is resident in PROT 0899, and its base materialisation <code>lui 0x801e / addiu 0x4738</code> indexes the <strong>window descriptor table</strong> - instruction byte 1 is a window id, not a sprite-actor slot. And no arm of the 13-way dispatch hands off an ANM id; "trigger animation" was a guess from the sprite-VM framing. Programs are overlay-resident data, so "find the per-scene carrier" was never answerable. See <a href="../subsystems/actor-vm.html">actor VM</a> and <a href="../formats/window-script.html">window script</a>.</p>
+  </div></details>
+
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../subsystems/actor-vm.html">Actor VM</a>
+    <a href="../formats/window-script.html">Window script</a>
+    <a href="../subsystems/field-menu.html">Field menu</a>
+  </div>
 </section>
 
 <section class="doc-section" id="measurement" data-doc="measurement-readings">
   <h2>Measurement readings</h2>
-  <p>Falsified claims about the <em>instruments</em>, not about the game. They belong here for the same reason the rest do: each was a plausible reading, each was believed, and each shaped what work looked worth doing.</p>
+  <p>Not every wrong reading is about the game. These are falsified claims about the project's own <em>instruments</em> - coverage reports, dump statistics, sweep figures. They belong here for the same reason the rest do: each was plausible, each was believed, and each shaped what work looked worth doing.</p>
+  <div style="overflow-x:auto">
   <table>
-    <thead><tr><th>Thread</th><th>Verdict</th><th>Why</th></tr></thead>
+    <thead><tr><th>Reading</th><th>Verdict</th><th>What killed it</th></tr></thead>
     <tbody>
-      <tr>
-        <td>The disc-coverage report's excluded dumps are "typically the ones that report <code>0 instructions</code> and hold only decompiled C"</td>
-        <td><span class="tag tag-done">falsified</span> (zero of them reported <code>0 instructions</code>)</td>
-        <td>The files that <em>do</em> report <code>0 instructions</code> were passing the header regex and being credited a byte each. Of the excluded set, three were C-only and four fifths were not dumps at all. The count was real; the sentence attached to it had never been checked against the files.</td>
-      </tr>
-      <tr>
-        <td>The inner of two nested overlay spans "cannot be repaired &hellip; no amount of dumping moves it"</td>
-        <td><span class="tag tag-done">falsified</span></td>
-        <td>Address ambiguity really is total for the inner span. Byte attribution then places most of those extents in one image or the other, and the row reports. The <strong>starting point of a measurement was mistaken for its limit</strong>, and the structural-sounding argument made it read as settled.</td>
-      </tr>
-      <tr>
-        <td>The unattributable residue "is repaired by re-dumping, not by extracting another overlay"</td>
-        <td><span class="tag tag-done">falsified</span></td>
-        <td>Re-dumping repairs almost none of it. The residue had been described from its class names rather than counted from the artifact.</td>
-      </tr>
-      <tr>
-        <td><code>0x8005BA38</code> is "not a function - the dump reports <code>size=1 bytes, 0 instructions</code>"</td>
-        <td><span class="tag tag-done">falsified</span> (it is a complete <code>RotTransPers</code>)</td>
-        <td>The dump was empty when the row was written and is 11 instructions now. Nothing re-reads a caveat when its dump improves, so <strong>a claim quoting a dump statistic decays silently</strong> while still reading as evidence-backed.</td>
-      </tr>
-      <tr>
-        <td>"About 2&nbsp;% of retail camera beats set a non-zero roll"</td>
-        <td><span class="tag tag-done">falsified</span> (the figure was the scan's own filter)</td>
-        <td>The number came from a byte scan that finds 4257 "sites" where control flow reaches 371, then applied a post-hoc "credible" filter and measured the ratio over the survivors. The answer - retail <em>does</em> roll, in eight scenes - came from executing the records, not decoding them.</td>
-      </tr>
-      <tr>
-        <td>An over-strict header regex is one instrument's bug</td>
-        <td><span class="tag tag-done">falsified</span> (every instrument had its own)</td>
-        <td>Each tool over the dump corpus carried a private header regex, and the corpus spells all four header fields several ways, so each silently rejected a different subset of <strong>real dumps</strong> and reported them as a corpus deficiency.</td>
-      </tr>
+      <tr><td>The disc-coverage report's excluded dumps are "typically the ones that report <code>0 instructions</code> and hold only decompiled C"</td><td>falsified (zero of them reported 0 instructions)</td><td>The files that <em>do</em> report 0 instructions were passing the header regex and being credited a byte each. Of the excluded set, three were C-only and four fifths were not dumps at all. The count was real; the sentence attached to it had never been checked against the files.</td></tr>
+      <tr><td>The inner of two nested overlay spans "cannot be repaired ... no amount of dumping moves it"</td><td>falsified</td><td>Address ambiguity really is total for the inner span, but byte attribution then places most extents in one image or the other. The starting point of a measurement was mistaken for its limit.</td></tr>
+      <tr><td>The unattributable residue "is repaired by re-dumping"</td><td>falsified</td><td>Re-dumping repairs almost none of it. What remains is windows no image reproduces at that VA, bytes in no extracted image (which needs an <em>extraction</em>), and extents where two dumps genuinely disagree. The residue had been described from its class names rather than counted.</td></tr>
+      <tr><td><code>0x8005BA38</code> is "not a function - <code>size=1 bytes, 0 instructions</code>"</td><td>falsified (it is a complete <code>RotTransPers</code>)</td><td>The dump was empty when the row was written and is 11 instructions now. Nothing re-reads a caveat when its dump improves, so <strong>a claim quoting a dump statistic decays silently</strong>. Checker: <code>scripts/ghidra-analysis/check-dump-stat-drift.py</code>.</td></tr>
+      <tr><td>"About 2 % of retail camera beats set a non-zero roll"</td><td>falsified (the figure was the scan's own filter)</td><td>A byte scan decoding a CONFIGURE at every offset of every MAN found 4257 "sites" where control flow reaches 371, then measured roll over a post-hoc "credible" filter. The answer - retail <em>does</em> roll, in eight scenes - came from executing the records (<a href="re-settled-threads.html">settled threads</a>).</td></tr>
+      <tr><td>An over-strict header regex is one instrument's bug</td><td>falsified (every instrument had its own)</td><td>Each tool over the dump corpus carried a private header regex, and the corpus spells the header fields several ways, so each silently rejected a different subset of real dumps. Fixed by one shared parser.</td></tr>
+      <tr><td>A zero-reference SCUS function is a safe code cave once the five-form address scan and live probing clear it</td><td>falsified for <code>FUN_800605C8</code> (boot-live)</td><td>The libapi VBlank-tier slot has no static reference and every live probe ran clean with it overwritten - yet a <strong>cold boot</strong> parks at boot mode <code>0x10</code> the moment its body changes, because kernel/libapi init invokes it before any save state's world exists. A claimed cave must also pass a cold-boot watch (<code>scripts/pcsx-redux/autorun_boot_watch.lua</code>). Neighbouring caves <code>FUN_8003EDAC</code> / <code>FUN_8003F210</code> passed it.</td></tr>
     </tbody>
   </table>
-  <p><strong>Generalises to:</strong> a measurement instrument has no oracle, so a number it prints is believed on the strength of its <em>explanation</em>. Check the explanation against the files, not against its own plausibility - most of the rows above are a correct count with a wrong story attached, and the story is what directed effort.</p>
+  </div>
+  <p><strong>Generalises to:</strong> a measurement instrument has no oracle, so a number it prints is believed on the strength of its <em>explanation</em>. Check the explanation against the files, not against its own plausibility - most rows above are a correct count with a wrong story attached, and the story is what directed effort.</p>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../tooling/disc-coverage.html">Disc coverage</a>
+    <a href="../tooling/address-reference-scan.html">Address reference scan</a>
+    <a href="../tooling/port-catalog.html">Port catalog</a>
+    <a href="../tooling/randomizer.html">Randomizer (code caves)</a>
+  </div>
 </section>
 
 <section class="doc-section" id="see-also" data-doc="related-pages">
@@ -283,6 +565,8 @@
     <span class="see-also-label">Reference</span>
     <a href="open-rev-eng-threads.html">Open RE threads</a>
     <a href="re-settled-threads.html">Settled threads</a>
-    <a href="functions.html">Functions</a>
+    <a href="functions.html">Key functions</a>
+    <a href="../tooling/ghidra.html">Ghidra tooling (decompiler artifacts)</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/call-target-integrity.md" target="_blank" rel="noopener">Call-target integrity</a>
   </div>
 </section>
