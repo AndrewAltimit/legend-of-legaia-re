@@ -1,49 +1,44 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; subsystems</div>
   <h1>Subsystems</h1>
-  <p class="lede">How Legend of Legaia's engine actually works under the hood - how the retail PlayStation game boots, loads assets, renders, plays sound, and runs its battles and menus, and how this project's clean-room Rust port reimplements each piece. Each card is a self-contained page on one subsystem: what it does, where its code lives, and how it connects to the rest. Start with <a href="boot.html">Boot path</a> if you're new to the project.</p>
+  <p class="lede">How Legend of Legaia's engine actually works under the hood - what happens when you walk into a door, how a battle turn resolves, why the world-map ocean shimmers, how a cutscene plays - and how this project's clean-room Rust port reimplements each piece. Each card is a self-contained page on one subsystem: what it does in the game, where its code lives, and how it connects to the rest. Start with <a href="boot.html">Boot path</a> if you're new to the project, or <a href="engine.html">Engine reimplementation</a> if you're here for the port.</p>
 </header>
 
 <section class="doc-section" id="overview">
   <h2>The shape of the engine</h2>
-  <p>Everything on these pages comes from tracing the original PS1 code with a disassembler (Ghidra) and then reimplementing the behaviour in Rust. Names like <code>FUN_8002735c</code> are RAM addresses of functions in that trace - the game shipped without symbols, so the address <em>is</em> the name. When a page cites one, it is pointing at a specific traced routine you can find in the project's function dumps.</p>
-  <p>Legaia is a fairly typical late-90s PSX RPG engine, but with a twist: most of the gameplay logic doesn't live in the main executable.
-  <code>SCUS_942.54</code> (the game's main executable on the disc) contains the boot path, low-level I/O, the asset dispatcher, the move-table VM, the motion VM, and the audio / renderer libraries - about half the runtime.
-  The other half lives in <strong>RAM overlays</strong> - chunks of MIPS code the game streams from the disc into RAM on demand, one at a time, into one shared window.
-  There are fewer of them than the subsystem list suggests: the <em>slot-A family</em> (field/town <code>0897</code>, battle <code>0898</code>, menu <code>0899</code>, cutscene/STR <code>0970</code>, and the minigames) all load at the same base and are mutually exclusive, while the world map, save, shop, level-up, and options are <em>subsystems inside</em> the field and menu overlays, not separate ones.
-  Two of the runtime VMs (the field/event VM and the effect VM) live in these overlays.</p>
-
+  <p>Every page here comes from tracing the original PlayStation code with a disassembler and reimplementing the behaviour in Rust. The game shipped without symbols, so a routine's RAM address is its name: <code>FUN_8002735c</code> points at one specific traced function you can find in the project's dumps.</p>
+  <p>Half the runtime lives in the main executable <code>SCUS_942.54</code>: boot, disc I/O, the asset dispatcher, two of the VMs, the audio and rendering libraries. The other half is <strong>RAM overlays</strong> - chunks of code streamed from the disc into one shared window on demand, one at a time. Field, battle, menu, cutscene and minigame each load into that window and never coexist; the world map, save, shop, level-up and options screens are subsystems <em>inside</em> the field and menu overlays, not overlays of their own.</p>
   <figure class="overlay-strip">
     <svg viewBox="0 0 880 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="overlay-strip-title">
       <title id="overlay-strip-title">Overlay residency in the 0x801C0000 window</title>
       <style>
-        .ov-frame { fill: none; stroke: #2a323e; stroke-width: 1.5; }
-        .ov-rail  { fill: none; stroke: #1f2630; stroke-width: 1; stroke-dasharray: 3 3; }
-        .ov-card  { fill: #131922; stroke: #58c4b3; stroke-width: 1.4; rx: 4; ry: 4; }
-        .ov-title { font: 600 12px 'JetBrains Mono', monospace; fill: #c9d1d9; }
-        .ov-sub   { font: 11px 'JetBrains Mono', monospace; fill: #8b949e; }
-        .ov-addr  { font: 11px 'JetBrains Mono', monospace; fill: #58c4b3; }
-        .ov-band  { font: 10px 'Inter', sans-serif; fill: #636b76; letter-spacing: 0.06em; text-transform: uppercase; }
-        .ov-note  { font: 11px 'Inter', sans-serif; fill: #8b949e; }
+        .ov-rail  { fill: none; stroke: var(--border); stroke-width: 1; stroke-dasharray: 3 3; }
+        .ov-card  { fill: var(--bg-card); stroke: var(--accent); stroke-width: 1.4; rx: 4; ry: 4; }
+        .ov-scus  { fill: var(--bg-card); stroke: var(--border); stroke-width: 1.4; rx: 4; ry: 4; }
+        .ov-title { font: 600 12px 'JetBrains Mono', monospace; fill: var(--text); }
+        .ov-sub   { font: 11px 'JetBrains Mono', monospace; fill: var(--text-muted); }
+        .ov-addr  { font: 11px 'JetBrains Mono', monospace; fill: var(--accent); }
+        .ov-band  { font: 10px 'Inter', sans-serif; fill: var(--text-muted); letter-spacing: 0.06em; text-transform: uppercase; }
+        .ov-note  { font: 11px 'Inter', sans-serif; fill: var(--text-muted); }
       </style>
 
       <text x="20" y="22" class="ov-band">RAM overlay window - mutually exclusive at runtime</text>
       <text x="20" y="60" class="ov-addr">0x801C0000</text>
       <text x="20" y="334" class="ov-addr">0x80200000</text>
-      <text x="100" y="60" class="ov-note">~256 KB window. The disc loads exactly one overlay here for the active game mode.</text>
+      <text x="100" y="60" class="ov-note">~256 KB window. The disc loads exactly one slot-A overlay here for the active game mode.</text>
 
       <line x1="20" y1="72" x2="860" y2="72" class="ov-rail"/>
       <line x1="20" y1="320" x2="860" y2="320" class="ov-rail"/>
 
       <rect x="40" y="92" width="180" height="68" class="ov-card"/>
-      <text x="56" y="114" class="ov-title">Title (0899 gap)</text>
-      <text x="56" y="132" class="ov-sub">Actor / sprite VM</text>
-      <text x="56" y="146" class="ov-sub">FUN_801D6628</text>
+      <text x="56" y="114" class="ov-title">Title (0899 tail)</text>
+      <text x="56" y="132" class="ov-sub">Title tick + card manager</text>
+      <text x="56" y="146" class="ov-sub">FUN_801DD35C</text>
 
       <rect x="240" y="92" width="180" height="68" class="ov-card"/>
-      <text x="256" y="114" class="ov-title">Town (0897)</text>
+      <text x="256" y="114" class="ov-title">Field / town (0897)</text>
       <text x="256" y="132" class="ov-sub">Field/event script VM</text>
-      <text x="256" y="146" class="ov-sub">FUN_801DE840 (~190 KB)</text>
+      <text x="256" y="146" class="ov-sub">FUN_801DE840 + world map</text>
 
       <rect x="440" y="92" width="180" height="68" class="ov-card"/>
       <text x="456" y="114" class="ov-title">Battle (0898)</text>
@@ -52,7 +47,7 @@
 
       <rect x="640" y="92" width="200" height="68" class="ov-card"/>
       <text x="656" y="114" class="ov-title">Menu (0899)</text>
-      <text x="656" y="132" class="ov-sub">inventory / equip / status,</text>
+      <text x="656" y="132" class="ov-sub">window-widget VM, status,</text>
       <text x="656" y="146" class="ov-sub">+ save, shop, level-up, options</text>
 
       <rect x="40" y="184" width="180" height="68" class="ov-card"/>
@@ -61,147 +56,166 @@
       <text x="56" y="238" class="ov-sub">game modes 26/27</text>
 
       <rect x="240" y="184" width="200" height="68" class="ov-card"/>
-      <text x="256" y="206" class="ov-title">Minigames</text>
-      <text x="256" y="224" class="ov-sub">fishing 0972 / slot 0975 /</text>
-      <text x="256" y="238" class="ov-sub">baka 0976 / dance 0980</text>
+      <text x="256" y="206" class="ov-title">Minigames (0972..0980)</text>
+      <text x="256" y="224" class="ov-sub">fishing / slot / baka / dance /</text>
+      <text x="256" y="238" class="ov-sub">muscle dome - one per warp sub-id</text>
+
+      <rect x="460" y="184" width="380" height="68" class="ov-scus"/>
+      <text x="476" y="206" class="ov-title">Slot B (0900 / 0901) + side-band streams</text>
+      <text x="476" y="224" class="ov-sub">summon-render pair, battle special-attack + stage bands,</text>
+      <text x="476" y="238" class="ov-sub">summon.dat / readef.DAT slots streamed mid-battle</text>
 
       <text x="20" y="278" class="ov-band">Always resident in 0x80010000-0x800FFFFF</text>
-      <rect x="40" y="290" width="800" height="22" class="ov-card" style="stroke:#2a323e"/>
-      <text x="56" y="306" class="ov-sub">SCUS_942.54: boot path, asset dispatcher, move VM, motion VM, libsnd / libspu / libcd / libapi</text>
+      <rect x="40" y="290" width="800" height="22" class="ov-scus"/>
+      <text x="56" y="306" class="ov-sub">SCUS_942.54: boot path, asset dispatcher, move VM, motion VM, battle setup, libsnd / libspu / libcd / libapi</text>
     </svg>
-    <figcaption>These overlays share one RAM window (the slot-A family loads at <code>0x801CE818</code>): battle loads on top of town's slot, never coexisting.
-    The <strong>title overlay</strong> has no TOC entry of its own - it lives in the unindexed gap between entries 899 and 900 of PROT.DAT, the disc's single big archive - nearly everything except movies and audio streams lives in its 1233 numbered entries.
-    (PROT 0971 is the dev <em>debug-menu</em> overlay; see <a href="boot.html#title-overlay-source">boot</a>.)
-    Several &ldquo;subsystems&rdquo; are <strong>not</strong> separate overlays - the <strong>world map</strong> is a mode of the field overlay (0897), and <strong>save / shop / level-up / options</strong> all live inside the menu overlay (0899).
-    The <strong>minigames</strong> (fishing / slot machine / Baka Fighter / dance) have their own <a href="../minigames.html">top-level page</a>.
-    The randomizer injects a whole new vendor screen into 0899's dead space - see the <a href="../writeups/disc-patching/f-overlay-dead-region.html">overlay dead-region write-up</a> for a zoom into that overlay.</figcaption>
+    <figcaption>The slot-A family loads at <code>0x801CE818</code> and never coexists: battle loads on top of the field overlay, the menu on top of either. The title overlay is the tail of PROT entry 899 (see <a href="boot.html#title-overlay-source">boot</a>); PROT 0971 is the dev debug-menu overlay. Minigames have their own <a href="../minigames.html">playable page</a>; the randomizer's injected vendor screen lives in 0899's dead space (<a href="../writeups/disc-patching/f-overlay-dead-region.html">write-up</a>).</figcaption>
   </figure>
 
-  <p>The list below groups subsystems by what layer of the engine they sit at.</p>
 </section>
 
 <section class="doc-section" id="bootstrap">
-  <h2>Bootstrap and asset plumbing</h2>
+  <h2>Boot, loading, drawing, sound</h2>
+  <p>The plumbing every other subsystem stands on: getting the archive directory into RAM, turning a scene name into meshes and palettes, putting triangles on screen, and getting music out of the speaker.</p>
   <div class="card-grid">
     <a class="card" href="boot.html">
       <div class="card-title">Boot path</div>
-      <div class="card-body">What runs before the title screen. Loads the PROT.DAT TOC into RAM, populates the asset-type dispatcher, and hands control to the 28-mode game-state machine.</div>
+      <div class="card-body">From disc-spin to NEW GAME: the PROT.DAT directory into RAM, the asset-type dispatcher, the 28-slot game-mode state machine, the title screen, and the five-scene opening it launches.</div>
     </a>
     <a class="card" href="asset-loader.html">
       <div class="card-title">Asset loader</div>
-      <div class="card-body">How per-scene asset bundles are stitched together at runtime. Battle, field/town, sound bank, and BGM-lookup loaders each follow the same dev/retail split.</div>
+      <div class="card-body">What "walk through a door" loads: scene-name &rarr; PROT entries &rarr; LZS &rarr; typed handlers. Field, battle, sound and music each have a loader with the same dev / retail split; palettes are stitched from other entries.</div>
+    </a>
+    <a class="card" href="renderer.html">
+      <div class="card-title">Renderer</div>
+      <div class="card-body">How a TMD mesh becomes pixels: the GTE geometry pass, the ordering table, VRAM texture pages and palettes. The port keeps retail's baked shading by default and cleans up the rasterisation.</div>
+    </a>
+    <a class="card" href="audio.html">
+      <div class="card-title">Audio</div>
+      <div class="card-body">Why the music sounds the way it does: SEQ sequences through the libsnd sequencer into the 24-voice SPU, sound banks per scene, monster banks per battle, and the port's clean-room SPU model.</div>
+    </a>
+    <a class="card" href="cutscene.html">
+      <div class="card-title">Cutscenes + movies</div>
+      <div class="card-body">Two kinds of cutscene: the STR movies (MDEC video + XA audio, game modes 26/27) and the scripted in-engine scenes like the opening narration crawl.</div>
+    </a>
+  </div>
+</section>
+
+<section class="doc-section" id="field">
+  <h2>Field, towns + the world map</h2>
+  <p>Where you spend most of the game: walking around, talking to people, triggering events, and crossing the overworld.</p>
+  <div class="card-grid">
+    <a class="card" href="script-vm.html">
+      <div class="card-title">Field / event script VM</div>
+      <div class="card-body">The interpreter behind every NPC line, cutscene beat, door and story flag: 43 opcodes in the field overlay, plus the MENU_CTRL sub-dispatchers that open shops, inns and menus.</div>
+    </a>
+    <a class="card" href="field-locomotion.html">
+      <div class="card-title">Field locomotion</div>
+      <div class="card-body">What happens between "push the stick" and "Vahn moves": camera-relative direction, per-frame speed, 2-unit steps, and per-axis collision against the per-scene walkability grid.</div>
+    </a>
+    <a class="card" href="motion-vm.html">
+      <div class="card-title">Motion VM</div>
+      <div class="card-body">How NPCs wander, follow and turn to face you, and how the camera follows the player: the two per-actor motion interpreters in the main executable.</div>
+    </a>
+    <a class="card" href="world-map.html">
+      <div class="card-title">World map</div>
+      <div class="card-body">The overworld: the walk controller, the encounter / location-entry entity machine, the continent terrain renderer, the fog, and why the ocean shimmers (a palette-walk table, not a script).</div>
+    </a>
+    <a class="card" href="world-overview-viewer.html">
+      <div class="card-title">World-overview viewer</div>
+      <div class="card-body">How the site's 3D world overview assembles each of the three kingdoms into one browsable scene: terrain layout, the retail distance fog, animated ocean water, camera anchors.</div>
+    </a>
+    <a class="card" href="vr-mode.html">
+      <div class="card-title">VR mode (WebXR)</div>
+      <div class="card-body">Put on a headset and stand in Rim Elm: stereo rendering, head tracking and thumbstick locomotion over the world overview, the field viewer and the live play page - same geometry, only the eyes fork.</div>
+    </a>
+  </div>
+</section>
+
+<section class="doc-section" id="battle">
+  <h2>Battle</h2>
+  <p>From "Fight" on the command menu to the damage number: the scene loader, the per-action state machine, and the arithmetic underneath.</p>
+  <div class="card-grid">
+    <a class="card" href="battle.html">
+      <div class="card-title">Battle</div>
+      <div class="card-body">The battle scene: loader, actor table, character record layout, the per-frame stat aggregator, range / line-of-sight, weapon trails, status ticker, AP / Spirit gauge, and the live gameplay loop.</div>
+    </a>
+    <a class="card" href="battle-action.html">
+      <div class="card-title">Battle action FSM</div>
+      <div class="card-body">The 47-state machine between &ldquo;player picked Attack&rdquo; and &ldquo;HP has been deducted&rdquo; - swing timing, Arts chains, Magic, Summons, Spirit, Run and capture.</div>
+    </a>
+    <a class="card" href="battle-formulas.html">
+      <div class="card-title">Battle formulas</div>
+      <div class="card-body">Damage, MP cost, accuracy, escape and the RNG - the exact arithmetic, including how half of one equipment slot folds into attack at swing time.</div>
+    </a>
+    <a class="card" href="arts-command-gauge.html">
+      <div class="card-title">Arts command gauge</div>
+      <div class="card-body">Why one Arts-bar button is wider than the others: the weapon-hand command's AP cost is also its pennant width, authored per character and weapon on the disc - which makes it a randomizer target.</div>
+    </a>
+    <a class="card" href="effect-vm.html">
+      <div class="card-title">Effect VM</div>
+      <div class="card-body">Spell flashes, hit sparks and item-use animations: a per-slot state machine over a 32 master / 128 child pool fed by the effect-script bundle.</div>
+    </a>
+  </div>
+</section>
+
+<section class="doc-section" id="menus">
+  <h2>Menus, shops + progression</h2>
+  <p>Everything that happens in a window: the pause menu, saving, buying, resting, and levelling up. Almost all of it lives in one overlay.</p>
+  <div class="card-grid">
+    <a class="card" href="field-menu.html">
+      <div class="card-title">Field menu (status panel)</div>
+      <div class="card-body">The pause menu's Status, Magic, Moves and Skills tabs: the 52-record window table, the panel renderer, and the options screen.</div>
+    </a>
+    <a class="card" href="actor-vm.html">
+      <div class="card-title">Actor / window-widget VM</div>
+      <div class="card-body">The small fixed-width interpreter (13 opcodes) that choreographs the UI's windows - the shop's slide-in entrance is one of its programs.</div>
+    </a>
+    <a class="card" href="inventory.html">
+      <div class="card-title">Inventory</div>
+      <div class="card-body">One 256-slot bag reached only through five helpers bounded by an active window - the &ldquo;split bag&rdquo; that shrinks to 128 slots for a lone character. The &ldquo;72-slot&rdquo; figure is a cheat's display page, not a bound.</div>
+    </a>
+    <a class="card" href="save-screen.html">
+      <div class="card-title">Save screen</div>
+      <div class="card-body">Save-slot selection and the write flow: the nine-state machine, the live game-state window the block is composed from, and the checksum retail re-sums on load.</div>
+    </a>
+    <a class="card" href="shop.html">
+      <div class="card-title">Shop</div>
+      <div class="card-body">Buy / sell / quantity / confirm. Per-scene stock is inline in the scene's script; prices come from the static item table; selling pays half.</div>
+    </a>
+    <a class="card" href="inn.html">
+      <div class="card-title">Inn</div>
+      <div class="card-body">Rest and restore. There is no inn overlay and no cost table - each inn is an ordinary scripted dialogue and the price is a literal in the scene's script.</div>
+    </a>
+    <a class="card" href="level-up.html">
+      <div class="card-title">Level-up</div>
+      <div class="card-body">Post-battle XP distribution, the per-level stat-gain table, and the banner - the XP curve and growth tables read straight out of the executable.</div>
     </a>
   </div>
 </section>
 
 <section class="doc-section" id="vms">
-  <h2>The five runtime VMs</h2>
-  <p>Legaia's runtime is driven by five independent VMs - small bytecode interpreters that execute scripts stored in the game's data files, so designers could author behaviour without recompiling the engine. All five talk to one shared actor model. Four are clean bytecode dispatchers (actor / move-table / motion / field-event); the fifth (effect) is a per-slot state machine - different shape, same architectural role. They serve different layers of the engine and were almost certainly written by different members of the dev team.</p>
-  <div class="card-grid">
-    <a class="card" href="actor-vm.html">
-      <div class="card-title">Actor / sprite VM</div>
-      <div class="card-body">A small fixed-width VM (13 opcodes) choreographing the UI's windows - the shop's slide-in entrance is one of its programs. Lives in the menu overlay (PROT 0899).</div>
-    </a>
-    <a class="card" href="move-vm.html">
-      <div class="card-title">Move-table VM</div>
-      <div class="card-body">Per-actor animation, motion, and state. 71 opcodes in the main exe plus 61 sub-opcodes in the town overlay extension. Drives Tactical Arts.</div>
-    </a>
-    <a class="card" href="motion-vm.html">
-      <div class="card-title">Motion VM</div>
-      <div class="card-body">Per-actor pursue / patrol / face-target VM at <code>FUN_8003774C</code>. Drives NPC pathing + camera follow + "face the speaker" dialog poses.</div>
-    </a>
-    <a class="card" href="script-vm.html">
-      <div class="card-title">Field / event script VM</div>
-      <div class="card-body">The big one: NPC movement, dialog triggers, cutscene sequencing, story flags. 43 opcodes plus a default-route fourth flag bank.</div>
-    </a>
-    <a class="card" href="effect-vm.html">
-      <div class="card-title">Effect VM</div>
-      <div class="card-body">Per-slot state machine driving battle effect spawns (spell casts, hit sparks, item-use anims). 32 master / 128 child slot pool fed by the effect-script bundle.</div>
-    </a>
-  </div>
-</section>
-
-<section class="doc-section" id="domain">
-  <h2>Per-domain runtime</h2>
-  <div class="card-grid">
-    <a class="card" href="world-map.html">
-      <div class="card-title">World map</div>
-      <div class="card-body">Overworld traversal mode. Controller <code>FUN_801E76D4</code> handles the debug top-view toggle, top-view camera scroll/azimuth/zoom, and normal-walk per-frame update. Entity tick SM (<code>FUN_801DA51C</code>, 5 states) drives encounter and location-entry sequences.</div>
-    </a>
-    <a class="card" href="field-locomotion.html">
-      <div class="card-title">Field locomotion</div>
-      <div class="card-body">Player free movement in towns and fields. Controller <code>FUN_801d01b0</code> remaps the held pad through the camera into direction + facing, steps 2 units at a time, and collides per-axis against the per-scene walkability grid (4 wall bits per 128-unit tile).</div>
-    </a>
-    <a class="card" href="world-overview-viewer.html">
-      <div class="card-title">World-overview viewer</div>
-      <div class="card-body">The static-site WebGL viewer that assembles each of the three kingdom overworld maps into one browsable 3D scene: terrain layout, the retail distance-fog look, animated ocean water, and per-kingdom camera anchors.</div>
-    </a>
-    <a class="card" href="vr-mode.html">
-      <div class="card-title">VR mode (WebXR)</div>
-      <div class="card-body">View and navigate the game world in a headset: stereo rendering through the <code>XRWebGLLayer</code>, head tracking, and thumbstick locomotion over the world overview, the assembled full-map view, and the live play page. The flat renderer stays the single source of geometry - only the framebuffer and the view-projection fork.</div>
-    </a>
-    <a class="card" href="save-screen.html">
-      <div class="card-title">Save screen</div>
-      <div class="card-body">Save-slot selection and write flow. Lives in the menu overlay (not a separate overlay). Outer dispatcher <code>FUN_801DC6B4</code>: 9-state machine, entry-context pointer table at <code>0x801E4F40</code>, slot-select via actor VM, save-block existence scan at <code>DAT_80084140</code>.</div>
-    </a>
-    <a class="card" href="field-menu.html">
-      <div class="card-title">Field menu (status panel)</div>
-      <div class="card-body">Per-character status / party panel renderer <code>FUN_801D33D8</code> - the Status, Magic, Moves, and Skills tabs. Content-only draw (frame is caller-drawn); pixel-pinned field offsets, submenu dispatch, the three shared string / icon / number primitives, and the <code>DAT_8007b454</code> CLUT-staging global.</div>
-    </a>
-    <a class="card" href="shop.html">
-      <div class="card-title">Shop</div>
-      <div class="card-body">Buy / sell / quantity / confirm flow. Lives in the menu overlay. <code>ShopSession</code> tracks pending item, quantity, and buy/sell direction. Sell price = half buy price (min 1). Per-scene stock comes from op-<code>0x49</code> shop records in the scene's script file (MAN); prices from the static SCUS item table.</div>
-    </a>
-    <a class="card" href="inn.html">
-      <div class="card-title">Inn</div>
-      <div class="card-body">HP / MP restore flow. <code>InnSession { cost }</code> gates the stay on affordability, then restores all active party members to full HP/MP.</div>
-    </a>
-    <a class="card" href="level-up.html">
-      <div class="card-title">Level-up</div>
-      <div class="card-body">Post-battle XP distribution and stat gain. XP curve = static-SCUS table <code>DAT_80076AF4</code> + formula, and per-character stat growth = <code>DAT_800769CC</code> / <code>DAT_80076918</code>, both applied by the overlay level-up function <code>FUN_801E9504</code>. <code>LevelUpBanner</code> renders for 180 frames via <code>level_up_draws_for()</code>.</div>
-    </a>
-    <a class="card" href="cutscene.html">
-      <div class="card-title">Cutscene (STR mode)</div>
-      <div class="card-body">PSX STR video decode + XA audio playback. Game modes 26/27 (<code>StrInit</code> / <code>StrMode</code>). MDEC decoder: VLC &rarr; IDCT &rarr; BT.601 YCbCr&rarr;RGBA. Clean-room port in <code>crates/mdec</code>.</div>
-    </a>
-    <a class="card" href="battle.html">
-      <div class="card-title">Battle</div>
-      <div class="card-body">Battle scene loader, the per-action state machine, character record layout, the per-frame stat aggregator, range / line-of-sight, the weapon-trail builder, status-effect ticker, AP / Spirit gauge, equipment-aware stat aggregator, and item-effect catalog.</div>
-    </a>
-    <a class="card" href="battle-action.html">
-      <div class="card-title">Battle action FSM</div>
-      <div class="card-body">The 47-state machine inside <code>FUN_801E295C</code> - the layer between &ldquo;player picked Attack&rdquo; and &ldquo;HP has been deducted.&rdquo; Two-level dispatch: action category (party byte) plus execution phase (ctx byte).</div>
-    </a>
-    <a class="card" href="battle-formulas.html">
-      <div class="card-title">Battle formulas</div>
-      <div class="card-body">Damage / MP-cost / accuracy / RNG arithmetic. Selector dispatch in <code>FUN_800402F4</code>; spirit damage is hard-coded; MP cost is ability-bit modified; engine-vm port lives in <code>battle_formulas.rs</code>.</div>
-    </a>
-    <a class="card" href="arts-command-gauge.html">
-      <div class="card-title">Arts command gauge</div>
-      <div class="card-body">Why one Arts-bar button is wider than the others: the weapon-hand command's cost byte at <code>DAT_801C9360[char][cmd]+0x74</code> is both its AP price and its pennant width, authored per (character, weapon) on the disc (30 favored / 42 off-class / 54 far; the Astral Sword is Vahn's one 54) and spent from the character's AGL. With a full address reference.</div>
-    </a>
-    <a class="card" href="inventory.html">
-      <div class="card-title">Inventory</div>
-      <div class="card-body">One 256-slot bag at <code>0x80085958</code>, reached only through five SCUS helpers bounded by an <em>active window</em> that collapses to one 128-slot half for a lone character - the &ldquo;split bag&rdquo;. The &ldquo;72-slot&rdquo; figure is a cheat&rsquo;s display page, not a bound.</div>
-    </a>
-    <a class="card" href="audio.html">
-      <div class="card-title">Audio</div>
-      <div class="card-body">Sound-driver path strings, three SCUS consumers, the SsAPI sequencer cluster (statically linked PsyQ libsnd), and the libspu DMA engine that moves bytes into SPU RAM.</div>
-    </a>
-    <a class="card" href="renderer.html">
-      <div class="card-title">Renderer</div>
-      <div class="card-body">The Legaia 3D-mesh renderer: 60 operations on the GTE (the PS1's geometry coprocessor) with a per-mode descriptor table. The engine port emulates PSX video memory in a compute-friendly format so multi-page meshes render correctly.</div>
-    </a>
-  </div>
+  <h2>The runtime VMs</h2>
+  <p>Most in-game behaviour is authored as scripts in the data files and run by a handful of small bytecode interpreters, so designers could change behaviour without recompiling. Four are clean opcode dispatchers; the effect VM is a per-slot state machine with the same role.</p>
+  <table>
+    <thead><tr><th>VM</th><th>Drives</th><th>Lives in</th><th>Ops</th></tr></thead>
+    <tbody>
+      <tr><td><a href="script-vm.html">Field / event VM</a></td><td>NPC lines, cutscenes, doors, story flags</td><td>Field overlay 0897</td><td>43 (+ MENU_CTRL sub-dispatch)</td></tr>
+      <tr><td><a href="move-vm.html">Move-table VM</a></td><td>Per-actor animation, motion and Tactical Arts</td><td>SCUS + a 0897 extension</td><td>71 + 61</td></tr>
+      <tr><td><a href="motion-vm.html">Motion VMs</a></td><td>Pursue / patrol / face-target; scripted motion + flag writes</td><td>SCUS</td><td>6</td></tr>
+      <tr><td><a href="actor-vm.html">Window-widget VM</a></td><td>Menu window choreography</td><td>Menu overlay 0899</td><td>13</td></tr>
+      <tr><td><a href="effect-vm.html">Effect VM</a></td><td>Battle effect spawns</td><td>Battle overlay 0898</td><td>state machine</td></tr>
+    </tbody>
+  </table>
 </section>
 
 <section class="doc-section" id="port">
   <h2>The clean-room port</h2>
-  <p>The Rust port lives in its own page - phase plan, crate layering, architectural principles, and the legal posture.</p>
+  <p>The Rust port has its own page - goals, the fidelity / enhancement split, crate layering, the runtime architecture, and the legal posture.</p>
   <div class="card-grid">
     <a class="card" href="engine.html">
       <div class="card-title">Engine reimplementation</div>
-      <div class="card-body">Phase plan + crate layering. Same legal pattern as ScummVM / OpenRCT2 / OpenMW: bring your own disc.</div>
+      <div class="card-body">Same legal pattern as ScummVM / OpenRCT2 / OpenMW: bring your own disc. Retail is the measured ground truth; enhancements are toggles that leave it bit-identical when off. Playable in the browser on the play page.</div>
     </a>
   </div>
 </section>

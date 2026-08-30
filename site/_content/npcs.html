@@ -100,7 +100,7 @@ canvas.npc-canvas:active { cursor: grabbing; }
   <div class="breadcrumb"><a href="index.html">home</a> &middot; npcs</div>
   <h1>NPCs</h1>
   <p class="lede">
-    Every character the game places in a town or dungeon, in 3D from your own disc image: pick a location, click anyone in its cast to spin the field model and play its real idle animation. Nothing is uploaded; the disc never leaves your machine.
+    Every town and dungeon in Legaia is populated by people you can walk up to and talk to - shopkeepers, guards, children, the odd cat. This page lifts all of them out of your own disc image: pick a location, click anyone in its cast to spin the field model and play its real idle animation. Nothing is uploaded; the disc never leaves your machine.
   </p>
 </header>
 
@@ -108,6 +108,10 @@ canvas.npc-canvas:active { cursor: grabbing; }
   <label for="npc-file">Disc:</label>
   <input type="file" id="npc-file" accept=".bin,.DAT,.dat">
   <span class="npc-status" id="npc-status">No file loaded. Provide a <code>.bin</code> Mode2/2352 image (a raw <code>PROT.DAT</code> won't do - scene names come from <code>CDNAME.TXT</code>).</span>
+</div>
+
+<div class="hint">
+  <strong>How to use it.</strong> Load a disc, choose a location, then click a card in the cast grid. Each card is labelled with the first line that character says to you - the game has no other name for most of them. The side panel spins the model, scrubs its idle clip frame by frame, snaps back to the rest pose, and downloads the posed model as a textured <code>.glb</code>.
 </div>
 
 <section class="doc-section">
@@ -155,19 +159,26 @@ canvas.npc-canvas:active { cursor: grabbing; }
 </section>
 
 <details class="about-data">
-  <summary>About this data — how an NPC is put together, naming, provenance</summary>
+  <summary>About this data - how an NPC is put together, naming, what is held back</summary>
   <div class="about-body">
   <h3>How an NPC is put together</h3>
-  <p>
-    There is no "NPC file" on the disc: an NPC is an entry in the scene's placement list - a model in the scene's own mesh pool, an animation clip, a tile, and the script it runs when you talk to it (see the <a href="subsystems/script-vm.html">field script VM</a>). Its only real "name" is the first line it says to you, which is what this page labels them with.
-  </p>
-  <p>
-    The models ship in joint-local pieces that the animation clip assembles - frame&nbsp;0 is the resting stance - exactly as on the console (see the <a href="formats/anm.html">ANM format</a>). Two casts are held back: party members and the save crystal come from a global pool (see the <a href="characters.html">characters page</a>), and a handful of story actors ship no clip to pose them with, so they're counted in the status line rather than shown as a pile of parts.
-  </p>
+  <p>There is no "NPC file" on the disc. An NPC is one entry in a scene's placement list, which points at four things:</p>
+  <ul>
+    <li>a <strong>model</strong> in the scene's own mesh pool, shipped as joint-local pieces;</li>
+    <li>an <strong>animation clip</strong> from the scene's own bundle - frame 0 is the resting stance, and the clip is what assembles the pieces into a body;</li>
+    <li>a <strong>tile</strong> the character stands on;</li>
+    <li>the <strong>script</strong> it runs when you talk to it, in the field script VM.</li>
+  </ul>
+  <p>Its only real "name" is the first line it says to you, which is what this page labels the cards with. The models draw with the disc's baked colours and no light source, as on the console; NPC palettes share one row of video memory across a scene, which is why several townsfolk in one place look like recolours of each other.</p>
+
+  <h3>Who is held back</h3>
+  <p>Two casts are not in the grid. Party members and the save crystal come from a global pool rather than the scene (see the <a href="characters.html">characters page</a>), and a handful of story actors ship no clip to pose them with, so they are counted in the status line rather than shown as a pile of parts.</p>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="subsystems/script-vm.html">Field script VM</a>
-    <a href="formats/anm.html">ANM animation format</a>
+    <a href="formats/anm.html">ANM animation format (per-scene NPC bundle)</a>
+    <a href="formats/npc-palette.html">NPC palette row</a>
+    <a href="formats/scene-bundles.html">Scene bundles</a>
     <a href="formats/character-mesh.html">Character mesh</a>
     <a href="world.html">Game world</a>
   </div>

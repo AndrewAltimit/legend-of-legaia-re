@@ -1,34 +1,103 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">reference</a> &middot; music tracks</div>
   <h1>Music-track disambiguation</h1>
-  <p class="lede">What is this track actually called? Every in-game BGM (background-music) cue, cross-referenced across its four naming spaces: the internal debug sound-test ID + working title, the in-game context it actually plays in, the official OST album title, and a proposed relocalization title. This is the human-readable label layer for the SEQ tracks (the PSX's MIDI-like sequenced-music format) that the preservation tools extract and the engine resolves.</p>
+  <p class="lede">What is this track actually called? The tune that plays in Rim Elm has a working title in the game's own debug sound test, a place it plays, a name on the published soundtrack album, and a proposed English title - and the four do not line up one-to-one. This page is the cross-reference: every BGM cue across all four naming spaces, plus the join that ties the sound-test order to the actual files on the disc.</p>
 </header>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>What it is</dt><dd>An 81-row cross-reference, one row per debug sound-test slot, compiled by Stann0x.</dd>
+    <dt>Why it exists</dt><dd>Retail has no track-name table - a scene script starts music by number. This is the label layer for those numbers, the way the <a href="gamedata.html">curated game-data tables</a> label items and enemies.</dd>
+    <dt>Naming spaces</dt><dd>Debug sound-test ID + title &middot; in-game context &middot; official OST title &middot; proposed relocalization.</dd>
+    <dt>Disc join</dt><dd>Global BGM id <code>2000 + i</code> plays sound-test track <code>i</code>.</dd>
+    <dt>Bank layout</dt><dd>Piecewise: extraction entry <code>988 + i</code> for tracks <code>0..=67</code>, <code>990 + i</code> for <code>68..=80</code>, two-entry gap at <code>1056</code>/<code>1057</code>.</dd>
+    <dt>Resolver</dt><dd><code>legaia_engine_core::music_labels</code> - the engine HUD and viewers name tracks through it.</dd>
+    <dt>Confidence</dt><dd><span class="tag tag-partial">Inferred</span>; OST columns <span class="tag tag-done">Confirmed</span> against the published listing.</dd>
+  </dl>
+</section>
 
 <section class="doc-section" id="why">
   <h2>Four names for one track</h2>
-  <p>A single Legaia track has, in practice, four different names depending on where you read it, and they do not line up one-to-one:</p>
-  <ul class="bullets">
-    <li><strong>Debug sound-test ID</strong> - the internal asset/track identifier the debug sound test exposes (<code>M01</code>, <code>M14A</code>, <code>M26B1</code>, plus a few non-<code>M</code> labels like <code>ALNDRA</code>, <code>JBGM</code>, <code>KANASIMI</code>). The sound-test order attaches <em>structurally</em> to the disc: the <code>music_01</code> PROT bank (extraction entries 990..=1071) holds one track per slot in sound-test order, and a field-VM BGM id <code>&ge; 2000</code> indexes it directly (<code>2000 + i</code> = track <code>i</code>) - pinned by a per-scene script census (<code>town01</code> starts 2016 = &ldquo;Rim Elm theme&rdquo;, the kingdom maps start 2000/2001 = the overworld pair) and by the bank's four placeholder-filled slots landing exactly on the table's four dev-leftover rows (#76-79). The engine names the playing track through this join (<code>legaia_engine_core::music_labels</code>: play-window HUD + asset-viewer <code>seq</code>).</li>
-    <li><strong>Debug sound-test title</strong> - the short Japanese working title shown beside that ID; describes the <em>scene the track was written for</em>.</li>
-    <li><strong>In-game context</strong> - where the track is actually heard (often broader than the debug title; tracks get reused across scenes).</li>
-    <li><strong>Official OST title</strong> - the title the published soundtrack album gives the track, where one exists.</li>
-  </ul>
-  <p>BGM lookup in retail is PROT-relative (there is no literal track-name table in the executable - see <a href="../subsystems/audio.html">audio</a> and <a href="../formats/seq.html">SEQ</a>), so a map between the debug IDs and where each cue plays is the ground-truth labelling that the curated-data tables provide for items and enemies.</p>
+  <ol>
+    <li><strong>Debug sound-test ID</strong> - the internal asset/track identifier the game's debug sound test exposes (<code>M01</code>, <code>M14A</code>, <code>M26B1</code>, plus a few non-<code>M</code> labels like <code>ALNDRA</code>, <code>JBGM</code>, <code>KANASIMI</code>). This is the handle closest to the on-disc track order.</li>
+    <li><strong>Debug sound-test title</strong> - the short Japanese working title shown beside that ID in the debug menu (e.g. "field with mist"). These describe the <em>scene the track was written for</em>, not its mood.</li>
+    <li><strong>In-game context</strong> - where the track is actually heard during play (often broader or different from the debug title - a track written for one scene gets reused elsewhere).</li>
+    <li><strong>Official OST title</strong> - the title the published soundtrack album gives the track, where one exists (many debug entries have no OST counterpart).</li>
+  </ol>
+  <p>BGM lookup in retail is PROT-relative - there is no literal track-name table in the executable (see <a href="../subsystems/audio.html">audio</a> and <a href="../formats/seq.html">SEQ</a>) - so a map between the debug IDs and where each cue plays is the ground-truth labelling for the SEQ/VAB records under reverse engineering.</p>
 </section>
 
 <section class="doc-section" id="provenance">
   <h2>Provenance + confidence</h2>
   <p>Compiled by <strong><a href="https://github.com/Stann0xus" target="_blank" rel="noopener">Henrique Stanke Scandelari (Stann0x)</a></strong> and contributed to this project as a reference. The romaji, English glosses, and proposed relocalization titles are his analysis; the debug-mode IDs/titles and OST titles are factual short labels transcribed from the game's own debug sound test and the published soundtrack listing.</p>
-  <p>Treated here exactly like the other <a href="gamedata.html">curated reference tables</a>: only the <em>factual</em> labels are committed - track IDs, the short scene-name titles, and where each cue plays - as ground-truth labels for the binary SEQ/VAB records under reverse engineering. No Sony-owned bytes (sequence data, sample data, executable) are reproduced; the audio itself is decoded at runtime from the user's own disc.</p>
+  <p>Treated here exactly like the other curated reference tables: only the <em>factual</em> labels are committed - track IDs, the short scene-name titles, and where each cue plays. No Sony-owned bytes (sequence data, sample data, executable) are reproduced; the audio itself is decoded at runtime from the user's own disc.</p>
   <p>Confidence is <span class="tag tag-partial">Inferred</span> unless a track is matched to its OST entry, in which case the OST columns are <span class="tag tag-done">Confirmed</span> against the published listing. The last three rows (highlighted in the source as uncertain) are flagged inline.</p>
+</section>
+
+<section class="doc-section" id="disc-join">
+  <h2>The disc-side join: the <code>music_01</code> bank in sound-test order</h2>
+  <p>When a scene script starts music it uses a number, not a name. A script BGM id <code>&ge; 2000</code> resolves through the global pool, and the pool order <strong>is</strong> the debug sound-test order: <strong>global id <code>2000 + i</code> plays sound-test track <code>i</code></strong>. Reading every scene's own scripts and joining each started id against this table lands the right label across the board (evidence in <a href="#how-we-know">how we know</a>):</p>
+  <table>
+    <thead><tr><th>Scene</th><th>Script starts</th><th>Track it names</th></tr></thead>
+    <tbody>
+      <tr><td><code>town01</code> (Rim Elm)</td><td><code>2016</code></td><td>#16 <code>M14B</code> - Rim Elm theme</td></tr>
+      <tr><td>The three kingdom overworlds</td><td><code>2000</code> / <code>2001</code></td><td>#0 <code>M01</code> / #1 <code>M02</code> - the misty / mist-free overworld pair</td></tr>
+      <tr><td><code>bylon</code></td><td><code>2019</code></td><td>#19 <code>M17</code> - Byron Monastery</td></tr>
+      <tr><td>Sol's floors</td><td>per floor</td><td><code>M16</code> casino, <code>M23</code> bar, <code>M100</code> Sol, <code>M112</code> disco</td></tr>
+      <tr><td><code>geremi</code></td><td><code>2047</code></td><td>#47 <code>M102</code> - Jeremi</td></tr>
+      <tr><td>Bio-Castle interiors</td><td><code>2013</code></td><td>#13 <code>M13</code> - Bio-Castle</td></tr>
+    </tbody>
+  </table>
+  <h3>The bank is piecewise, not a flat base</h3>
+  <p>The <em>physical</em> <code>music_01</code> bank is not a single linear PROT run. Sound-test index maps onto two contiguous extraction ranges with a two-entry gap between them:</p>
+  <figure class="overlay-strip">
+    <svg viewBox="0 0 880 150" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="music-bank-title" style="width:100%;height:auto;font-family:'JetBrains Mono',monospace">
+      <title id="music-bank-title">Sound-test index to extraction PROT entry: two runs with a two-entry gap</title>
+      <rect x="20" y="30" width="580" height="40" rx="4" fill="none" stroke="var(--accent)" stroke-width="1.5"/>
+      <text x="310" y="48" text-anchor="middle" font-size="12" fill="currentColor">tracks 0..=67</text>
+      <text x="310" y="63" text-anchor="middle" font-size="11" fill="var(--text-muted)">extraction 988 + i  (988..=1055)</text>
+      <rect x="612" y="30" width="92" height="40" rx="4" fill="none" stroke="var(--text-muted)" stroke-width="1.5" stroke-dasharray="4 3"/>
+      <text x="658" y="48" text-anchor="middle" font-size="11" fill="var(--text-muted)">gap</text>
+      <text x="658" y="63" text-anchor="middle" font-size="10" fill="var(--text-muted)">1056, 1057</text>
+      <rect x="716" y="30" width="150" height="40" rx="4" fill="none" stroke="var(--accent)" stroke-width="1.5"/>
+      <text x="791" y="48" text-anchor="middle" font-size="12" fill="currentColor">tracks 68..=80</text>
+      <text x="791" y="63" text-anchor="middle" font-size="11" fill="var(--text-muted)">990 + i  (1058..=1070)</text>
+      <text x="20" y="100" font-size="11" fill="var(--text-muted)">988 = the first two entries whose filename label reads "monster_test" (CDNAME +2 skew)</text>
+      <text x="20" y="120" font-size="11" fill="var(--text-muted)">1056 = a VAB-only sound bank, no score; 1057 = an entry not in the sound-test list</text>
+      <text x="20" y="140" font-size="11" fill="var(--text-muted)">1066..=1069 = the four placeholder-filled slots = dev-leftover rows #76..=79</text>
+    </svg>
+    <figcaption>Global BGM id <code>2000 + i</code> is one flat id space; the files behind it are two runs.</figcaption>
+  </figure>
+  <p>The low range starts at extraction <strong>988</strong>: the first two tracks (<code>M01</code>/<code>M02</code>) live in the entries whose extraction filename reads <code>monster_test</code>, because CDNAME <code>#define</code> numbers are raw TOC indices and the named content sits two entries earlier (<a href="../formats/cdname.html">the +2 filename skew</a>).</p>
+  <p>Scenes carry <strong>no local SEQ data</strong>: apart from a dev bank and one scene-local copy of <code>M01</code>, every music sequence on the disc lives in this bank plus the boot/battle banks, so the scene-local id space (<code>&lt; 2000</code>) is the rare exception. The engine's resolver <code>legaia_engine_core::music_labels</code> owns the piecewise map; the play-window HUD names the playing track and the asset-viewer <code>seq</code> command names a bank slot's file through it.</p>
+  <details class="disclosure" id="how-we-know">
+    <summary>How we know: script census, on-disc residency, runtime corroboration</summary>
+    <div class="disclosure-body">
+      <ul class="bullets">
+        <li><strong>Script census.</strong> The global pool resolves through <code>FUN_800243F0</code> (<a href="../subsystems/script-vm.html">script VM</a>). Walking every scene's field-VM op-<code>0x35</code> starts and joining each id against this table lands the right label across the corpus (<code>engine-core/tests/scene_bgm_labels_disc.rs</code>).</li>
+        <li><strong>Pochi alignment.</strong> The four placeholder-filled slots (extraction <code>1066..=1069</code>) land exactly on the four dev-leftover rows (#76..=79 - the M13 flute, <code>M117</code>, <code>MPIANO</code> and the row whose romaji is <code>LEVELUP</code>), still holding their sound-test slots on the retail NA disc.</li>
+        <li><strong>Battle-bank copies.</strong> The ten boot/battle-bank SEQ copies (extraction <code>877..886</code>) resolve, under this map, to exactly the ten battle/boss themes (#26, #27, #28, #30, #31, #32, #51, #61, #67, #73) - a coherent battle bank only when the low range is based at 988. The title theme #65 sits at extraction <code>1053</code> and is <strong>not</strong> in the battle bank. Pinned by on-disc SEQ residency (<code>engine-core/tests/music_bank_residency_disc.rs</code>).</li>
+        <li><strong>Runtime corroboration.</strong> Playthrough captures show the live BGM global agreeing with the join wherever the scene name itself names the track: <code>2022</code> in <code>doman</code> (#22 "Doctor Doman's laboratory"), <code>2054</code> in <code>nilboa</code> (#54 "Nivora"), <code>2021</code> in <code>dolk2</code> (#21 "Dolk Castle revived") against <code>2010</code> in mist-era <code>dolk</code> (#10 "mist outbreak"), <code>2063</code> in <code>opdeene</code> (#63 opening act 1), <code>2038</code> in <code>taiku</code> (#38 Soren flight). These are played values, independent of the script census.</li>
+      </ul>
+    </div>
+  </details>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../formats/seq.html">SEQ format</a>
+    <a href="../formats/vab.html">VAB banks</a>
+    <a href="../formats/cdname.html">CDNAME numbering</a>
+    <a href="../subsystems/audio.html">Audio subsystem</a>
+    <a href="../media.html">Media page (listen)</a>
+  </div>
 </section>
 
 <section class="doc-section" id="notable">
   <h2>Notable entries</h2>
   <ul class="bullets">
     <li><strong>Borrowed placeholder cues.</strong> <code>ALNDRA</code> (#72) is <em>Alundra</em>'s Zazzan battle theme and <code>JBGM</code> (#73) is the <em>Wild Arms</em> battle theme - both other Contrail/Sony titles, present on the Legaia disc as dev placeholders.</li>
-    <li><strong>Dev test files.</strong> <code>DUMMY</code> (#74, &ldquo;I'm a Dummy-dayo!&rdquo;), <code>PIANO</code> (#78), <code>LEVELUP</code> (#79), and <code>A</code> (#80) are test/placeholder entries, not shipping music.</li>
-    <li><strong>Reused themes under different IDs.</strong> <code>中ボス</code> / &ldquo;medium boss&rdquo; appears for <code>M27</code>, <code>M108</code>, <code>M33</code>; <code>ディスコ</code> / &ldquo;disco&rdquo; for <code>M112</code>, <code>M120</code>, <code>M117</code> - the same idea staged for different scenes.</li>
+    <li><strong>Dev test files.</strong> #74 (no debug ID at all; romaji <code>DAMĪ</code>, "Dummy"), <code>MPIANO</code> (#78, romaji <code>PIANO</code>), #79 (ID <code>獸衣</code>, romaji <code>LEVELUP</code>) and <code>M26A</code> (#80, romaji <code>A</code>) are test/placeholder entries, not shipping music. The last three carry an ID distinct from their romaji - quote the <strong>ID</strong> column when joining against the table below.</li>
+    <li><strong>Reused themes under different IDs.</strong> Several debug IDs share a title (<code>中ボス</code> / "medium boss" appears for <code>M27</code>, <code>M108</code> and <code>M33</code>; <code>ディスコ</code> / "disco" for <code>M112</code> and <code>M117</code>; <code>ディスコ決勝</code> / "disco finals" for <code>M116</code> and <code>M120</code>) - the same musical idea staged for different scenes.</li>
   </ul>
 </section>
 
@@ -125,9 +194,12 @@
 
 <section class="doc-section" id="see-also">
   <h2>See also</h2>
-  <ul class="see-also">
-    <li><a href="../subsystems/audio.html">Audio subsystem</a> - the BGM director, SsAPI sequencer, and per-scene BGM lookup that play these tracks.</li>
-    <li><a href="../formats/seq.html">SEQ format</a> - the sequenced-music format the tracks are stored in.</li>
-    <li><a href="gamedata.html">Curated game-data tables</a> - the sibling curated-label tables this follows the pattern of.</li>
-  </ul>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../subsystems/audio.html">Audio subsystem</a>
+    <a href="../formats/seq.html">SEQ format</a>
+    <a href="../formats/vab.html">VAB format</a>
+    <a href="gamedata.html">Curated game-data tables</a>
+    <a href="../guides/extracting-assets.html#seq-bgm">Extracting BGM</a>
+  </div>
 </section>

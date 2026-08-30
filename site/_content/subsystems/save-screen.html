@@ -1,243 +1,198 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; save screen</div>
   <h1>Save Screen</h1>
-  <p class="lede">Everything that happens between "Save" on the menu and bytes landing on the PSX memory card: the slot list, the "Now checking. Do not remove MEMORY CARD" beat, the overwrite confirm, and the actual card write. One structural surprise up front: the retail save UI is <strong>two-stage in two different id spaces</strong> - the SLOT 1 / SLOT 2 pills pick a memory-card <em>port</em>, and the 5&times;3 preview grid then picks one of that card's 15 save <em>blocks</em>. Conflating the two is the easy mistake.</p>
+  <p class="lede">Everything between choosing "Save" and bytes landing on the memory card: the SLOT 1 / SLOT 2 pills, the "Now checking. Do not remove MEMORY CARD" beat, the fifteen-block preview grid, the overwrite prompt and the card write. The saved block is a straight copy of the live game state in RAM with an additive checksum stamped on the end - which is why a card editor only needs the layout, not a cipher. <span class="tag tag-done">Fully ported</span></p>
 </header>
 
-<section class="doc-section" id="how-it-works">
-  <h2>How it works</h2>
-  <p>The whole flow lives inside the <strong>menu overlay</strong> - a chunk of code the game streams into RAM on demand, the same binary that carries the shop, inn, and status screens (it is not an overlay of its own). We traced it with a disassembler (Ghidra); the <code>FUN_80xxxxxx</code> names below are RAM addresses in that trace. Three layers: an outer 9-state dispatcher (<code>FUN_801DC6B4</code>), a sub-screen function-pointer table, and a state machine over libcd (Sony's CD/memory-card library) that does the actual card I/O.</p>
-  <p><code>FUN_801DC6B4</code> drives a 9-case state machine on <code>_DAT_8007B43C</code>. It returns <code>true</code> when the save flow terminates (state &ge; 6). The entry-context pointer <code>_DAT_8007B450</code> is decoded on state 0 to select which sub-screen opens:</p>
-  <table>
-    <thead><tr><th><code>_DAT_8007B450</code></th><th>Sub-screen ID</th><th>Meaning</th></tr></thead>
-    <tbody>
-      <tr><td><code>(char*)1</code> sentinel</td><td><code>0x2</code></td><td>Save from menu entry</td></tr>
-      <tr><td><code>*ptr == '\x01'</code></td><td><code>0x19</code></td><td>Load from slot</td></tr>
-      <tr><td><code>*ptr == '\x07'</code></td><td><code>0x20</code></td><td>Auto-save path</td></tr>
-      <tr><td><code>*ptr == '\r'</code></td><td><code>0x4</code></td><td>Post-save return</td></tr>
-      <tr><td><code>*ptr == '\x00'</code></td><td><code>0x1a</code></td><td>Cancel / back</td></tr>
-    </tbody>
-  </table>
-  <p>State 2 dispatches via the sub-screen function pointer table at <code>0x801E4F40</code>: <code>(*(DAT_801E46A4 * 4 + 0x801E4F40))(_DAT_8007B874)</code>. Input is suppressed while <code>_DAT_8007B440 &gt; 0x79</code> (mid-fade). States 3&ndash;5 handle the fade-out sequence before the terminal return.</p>
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Lives in</dt><dd>The <strong>menu overlay</strong> (PROT <code>0899</code>) - the same code chunk as the shop, inn and status screens. There is no save overlay of its own.</dd>
+    <dt>Driver</dt><dd><code>FUN_801DC6B4</code>: a 9-state outer machine that fades in, dispatches one sub-screen from a 33-entry function table, and fades out.</dd>
+    <dt>Card I/O</dt><dd>A 5-state machine over Sony's libcd (<code>FUN_801E3294</code>), sequenced by a per-frame ticker; BIOS <code>bu</code> device calls underneath.</dd>
+    <dt>Block</dt><dd>One card block, <code>0x2000</code> bytes: <code>SC</code> header + icon, then <code>0x1A18</code> bytes copied verbatim from RAM <code>0x80084140</code>; checksum word at <code>+0x1FFC</code>.</dd>
+    <dt>Engine</dt><dd><code>engine-core::save_select</code> (session + card machine), <code>save_subscreen</code> (the screen graph), <code>legaia_save</code> (block layout, round-trip).</dd>
+    <dt>Confidence</dt><dd>Confirmed - overlay captures, disassembly, GP0 draw-list pins (<a href="#how-we-know">how we know</a>).</dd>
+  </dl>
 </section>
 
-<section class="doc-section" id="key-functions">
-  <h2>Key functions</h2>
-  <h3><code>FUN_801DAEF4</code> - load-from-slot driver (sub-screen 0x19)</h3>
-  <p>Runs an actor VM with bytecode at <code>&amp;DAT_801E4E30</code> (its display actor), waits on <code>_DAT_8007BB80 != 0</code> (menu-active flag). State 2 calls <code>FUN_801DD35C(1, 1)</code> - the saving-overlay main in <em>load</em> direction (param_2 selects op: 1 = load, 2 = save). Each step calls <code>FUN_80031D00</code> (text-actor tick / MES advance). It is reached from row 6 of the root command picker <code>FUN_801D6B20</code> (sub-screen <code>0x01</code>) - which, despite an earlier label here, is <strong>not</strong> a slot selector.</p>
-
-  <h3><code>FUN_801D6B20</code> - root command picker (sub-screen 0x01)</h3>
-  <p>The menu overlay's own top level. Phase 0 runs the display script <code>&amp;DAT_801E4BC0</code>, raises <code>DAT_801E46C0 = 0x1000</code> and masks <code>DAT_801E46BC &amp;= 0xFFF</code>; phase 1 waits for the menu-active flag to clear, then runs a <strong>7-row</strong> picker <code>FUN_801D688C(&amp;DAT_801E46BC, 7, 1)</code>. Rows 0..4 route unconditionally to sub-screens <code>5</code> (Items command window), <code>0x0E</code> (Magic caster picker), <code>0x12</code> (Equip character picker), <code>0x15</code> and <code>0x17</code>. The last two are gated: row 5 (save-card driver <code>0x18</code>) is blocked when the installed entry context <code>_DAT_8007B450</code> carries kind byte <code>0x0D</code> - the test is on the <em>kind</em>, not on the pointer's presence, so a null context takes the allow branch - and row 6 (load <code>0x19</code>) is blocked when the save-block presence byte is zero. Blocked rows buzz with cue <code>0x23</code> and stay. Cancel leaves for sub-screen <code>0</code>, except under that same <code>0x0D</code> context where it goes to <code>3</code>, the Yes/No confirm: one context byte both hides Save and makes leaving ask first. Engine port: <code>engine-core::pause_screens::{root_menu_confirm_route, root_menu_cancel_route}</code>.</p>
-
-  <h3><code>FUN_801DAFD4</code> - slot confirm + saving in progress</h3>
-  <p>Runs the 3-item slot scrolling list via <code>FUN_801D688C(&amp;DAT_801E46BC, 3, 1)</code>. On slot 1 confirmed: validates against the save-block existence table at <code>&amp;DAT_80084140 + slot * 2 + 0x1818</code> (byte 0 = slot present, byte 1 = slot valid), then advances <code>DAT_801E46A4</code> to <code>0x1E</code> (the write sub-screen). On slot 2: cancel SFX. Slot 0 routes to the card-full/error sub-screen (<code>0x1B</code>).</p>
-
-  <h3><code>FUN_801D688C</code> - shared list-cursor navigator</h3>
-  <p>The menu / shop / save-slot state-handlers funnel list-cursor navigation through one overlay helper, <code>FUN_801D688C(cursor: *u32, count, mode)</code>. It reads the overlay confirm / cancel pad masks (<code>_DAT_8007B874 &amp; DAT_801EF0F0</code> / <code>DAT_801EF0F4</code>) and the held-pad word <code>_DAT_8007BB84</code>, mutates the caller's cursor cell in place, enqueues a UI SFX cue through <code>FUN_80035B50</code>, and returns a result enum: <code>1</code> = confirm (SFX <code>0x36</code>, tested first even when <code>count == 0</code>), <code>2</code> = cancel (SFX <code>0x37</code>), <code>3</code> = moved (SFX <code>0x21</code>), <code>0</code> = none. The cursor cell is packed - the low 12 bits are the list index and the high nibble (<code>0xF000</code>) carries caller flags the navigator preserves across a move; held-pad <code>0x1000</code> decrements, <code>0x4000</code> increments. <code>mode == 0</code> clamps at the ends, <code>mode != 0</code> wraps (every ported call site passes <code>1</code>). Call sites: the 3-item slot list (<code>FUN_801DAFD4</code>), the 2-item Yes/No confirm <code>FUN_801D688C(&amp;DAT_801E46D0, 2, 1)</code> (sub-screen <code>0x03</code>), and the party-count picker (sub-screen <code>0x12</code>).</p>
-  <p><strong>Engine port:</strong> <code>legaia_engine_core::menu_input::menu_cursor_nav(cursor, count, wrap, NavButtons)</code> reproduces it as a plain function over a caller-owned cursor cell and a <code>NavButtons</code> snapshot (host derives the booleans from <code>input::InputState</code>), returning a <code>CursorNav</code> enum whose <code>sfx_cue()</code> surfaces the retail cue id for the host to play through its <code>SfxBank</code>. <code>SaveSelectSession::tick_confirm</code> consumes it for the Yes/No confirm cursor.</p>
-
-  <h3>Load/save dispatch (<code>FUN_801DD35C</code>)</h3>
-  <p>Sub-screens <code>0x18</code> and <code>0x19</code> are structurally identical 3-state drivers that share the saving-overlay main routine, distinguished only by the op selector passed as <code>param_2</code>. Both install <code>_DAT_8007B44C = DAT_801C6EA0</code> (card handle) on state 0.</p>
-  <table>
-    <thead><tr><th>Sub-screen</th><th>Driver</th><th>Display actor</th><th>Call</th><th>Direction</th></tr></thead>
-    <tbody>
-      <tr><td><code>0x18</code></td><td><code>FUN_801DAE24</code></td><td><code>&amp;DAT_801E4E28</code></td><td><code>FUN_801DD35C(1, 2)</code></td><td>save (RAM&rarr;card)</td></tr>
-      <tr><td><code>0x19</code></td><td><code>FUN_801DAEF4</code></td><td><code>&amp;DAT_801E4E30</code></td><td><code>FUN_801DD35C(1, 1)</code></td><td>load (card&rarr;RAM)</td></tr>
-    </tbody>
-  </table>
-
-  <h3>Sub-screen pointer table at <code>0x801E4F40</code></h3>
-  <table>
-    <thead><tr><th>ID</th><th>Address</th><th>Function</th></tr></thead>
-    <tbody>
-      <tr><td><code>0x1</code></td><td><code>0x801E4F44</code></td><td><code>FUN_801D6B20</code> - root command picker (7 rows)</td></tr>
-      <tr><td><code>0x2</code></td><td><code>0x801E4F48</code></td><td>Save entry (from menu)</td></tr>
-      <tr><td><code>0x4</code></td><td><code>0x801E4F50</code></td><td>Post-save return path</td></tr>
-      <tr><td><code>0x18</code></td><td><code>0x801E4F80</code></td><td><code>FUN_801DAE24</code> - save-card driver entry; installs card handle and dispatches into <code>FUN_801DD35C(1, 2)</code></td></tr>
-      <tr><td><code>0x19</code></td><td>-</td><td><code>FUN_801DAEF4</code> - load-from-slot driver</td></tr>
-      <tr><td><code>0x1B</code></td><td>-</td><td>Card-full / error screen</td></tr>
-      <tr><td><code>0x1E</code></td><td><code>0x801E4FB8</code></td><td><code>FUN_801DBC5C</code> - 4-state spinner; advances to <code>0x1F</code> on user-confirm</td></tr>
-      <tr><td><code>0x1F</code></td><td><code>0x801E4FBC</code></td><td><code>FUN_801DBD94</code> - D-pad quantity-input screen (money/inventory effect; NOT the card writer - actual card I/O lives in the <code>overlay_save_ui_saving_*</code> overlay via libcd write syscalls through the <code>_DAT_8007B44C</code> card handle)</td></tr>
-    </tbody>
-  </table>
-  <p>See <code>docs/subsystems/save-screen.md</code> for the full pointer-table audit (most 5&ndash;15 ms state machines following the same actor-invoke / pad-input / advance pattern as <code>FUN_801DA9F8</code>).</p>
-
-  <h3>Libcd I/O state machine (<code>FUN_801E3294</code>)</h3>
-  <p>The actual PSX memory-card calls live in <code>FUN_801E3294</code> - a 5-state libcd state-machine driver in the menu overlay. The per-frame ticker <code>FUN_801E1114</code> is the static caller wiring it together: every frame it calls <code>FUN_801E3294(DAT_801EF18C, 0)</code>; when <code>_DAT_801F021C == 3</code> (save commit) it sequences <code>FUN_801E3AF0</code> (sprintf <code>"bu%d_%d"</code> + libcd channel open) &rarr; <code>FUN_801E3BA0</code> (block-count query) &rarr; <code>FUN_801E1208</code> (directory walk).</p>
-  <p><code>FUN_801E1208</code> walks the 15-entry libcd directory table at <code>0x801F32A8</code> (stride <code>0x28</code>), matching each filename against the region-specific Legend of Legaia prefix using BIOS-A(0x18) <code>strncmp</code>:</p>
-  <ul>
-    <li><code>BASCUS-94254PRO_</code> - USA (Legend of Legaia, SCUS-94254)</li>
-    <li><code>BISCPS-10059PRO_</code> - JP (Legend of Legaia, SCPS-10059)</li>
-  </ul>
-  <p>The actual BIOS card-write thunk is <code>FUN_8006EE34</code>: it calls <code>FUN_8006EE7C</code> (BIOS-B(0x50)) then <code>FUN_8006EE6C</code> (BIOS-B(0x4E)) with channel argument <code>(port, 0x3F, 0)</code>. The channel encoding is <code>chan = port * 16 + sub_op</code>.</p>
-
-  <h3>Save-block checksum (<code>FUN_801E38D8</code>)</h3>
-  <p>A save block is exactly one card block (<code>0x2000</code> bytes = <code>0x800</code> u32 words). <code>FUN_801E38D8</code> is the block's additive checksum: it sums the first <code>0x7FF</code> little-endian words with a wrapping accumulator, stopping one word short of the block's final word at byte <code>0x1FFC</code> - the word where the write path stores the sum. The load direction of <code>FUN_801DD35C</code> reloads it (<code>lw v1,0x1ffc(s1); beq v1,v0</code> at <code>0x801df888</code>) and branches on stored-equals-computed to route the slot to the valid or the corrupt state. Ported as <code>save_select::save_block_checksum</code> with the compose helper <code>save_block_checksum_valid</code> mirroring the load-path compare.</p>
-</section>
-
-<section class="doc-section" id="slot-list-id-spaces">
-  <h2>Slot list: memory-card slots, not save blocks</h2>
-  <p>Retail's save UI is <strong>two-stage</strong>, and the two stages live in different id spaces - conflating them is the easy mistake.</p>
+<section class="doc-section" id="flow">
+  <h2>The flow, screen by screen</h2>
+  <figure class="overlay-strip">
+    <svg viewBox="0 0 810 200" width="100%" style="max-width: 820px; font-family: var(--font-mono); font-size: 12px;" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Save flow: pause menu Save row, memory-card port pick, Now checking card read, fifteen-block grid, overwrite confirm, checksum and write, fade back">
+      <defs><marker id="ss-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="var(--text-muted)"/></marker></defs>
+      <g fill="var(--bg-raised)" stroke="var(--accent)" stroke-width="1.4">
+        <rect x="20" y="20" width="170" height="48" rx="4"/>
+        <rect x="220" y="20" width="170" height="48" rx="4"/>
+        <rect x="420" y="20" width="170" height="48" rx="4"/>
+        <rect x="620" y="20" width="170" height="48" rx="4"/>
+        <rect x="620" y="130" width="170" height="48" rx="4"/>
+        <rect x="420" y="130" width="170" height="48" rx="4"/>
+        <rect x="220" y="130" width="170" height="48" rx="4"/>
+      </g>
+      <g fill="currentColor" text-anchor="middle">
+        <text x="105" y="40">Pause menu<tspan x="105" dy="16" fill="var(--text-muted)">Save row</tspan></text>
+        <text x="305" y="40">Port pick<tspan x="305" dy="16" fill="var(--text-muted)">SLOT 1 / SLOT 2</tspan></text>
+        <text x="505" y="40">Now checking<tspan x="505" dy="16" fill="var(--text-muted)">card read</tspan></text>
+        <text x="705" y="40">Block grid<tspan x="705" dy="16" fill="var(--text-muted)">5 x 3 previews</tspan></text>
+        <text x="705" y="150">Confirm<tspan x="705" dy="16" fill="var(--text-muted)">overwrite Yes/No</tspan></text>
+        <text x="505" y="150">Write<tspan x="505" dy="16" fill="var(--text-muted)">checksum + libcd</tspan></text>
+        <text x="305" y="150">Return<tspan x="305" dy="16" fill="var(--text-muted)">fade to menu</tspan></text>
+      </g>
+      <g stroke="var(--text-muted)" stroke-width="1.4" fill="none" marker-end="url(#ss-arrow)">
+        <line x1="190" y1="44" x2="218" y2="44"/>
+        <line x1="390" y1="44" x2="418" y2="44"/>
+        <line x1="590" y1="44" x2="618" y2="44"/>
+        <line x1="705" y1="68" x2="705" y2="128"/>
+        <line x1="620" y1="154" x2="592" y2="154"/>
+        <line x1="420" y1="154" x2="392" y2="154"/>
+      </g>
+      <text x="718" y="102" fill="var(--text-muted)" font-size="11">pick a block</text>
+    </svg>
+    <figcaption>Two pick stages in two id spaces: the pills choose a memory-card <em>port</em>, the grid chooses one of that card's fifteen <em>blocks</em>. The card read sits between them, which is why "Now checking" exists at all.</figcaption>
+  </figure>
   <table>
     <thead><tr><th>Stage</th><th>What the player picks</th><th>Count</th><th>Retail anchor</th></tr></thead>
     <tbody>
-      <tr><td>Pill row (<code>SLOT 1</code> / <code>SLOT 2</code>)</td><td>a <strong>memory-card port</strong></td><td>2</td><td>the libcd channel's <code>port</code> (<code>chan = port * 16 + sub_op</code>, <code>FUN_801E3294</code>)</td></tr>
-      <tr><td>5x3 preview grid</td><td>a <strong>save block</strong> on the chosen card</td><td>15</td><td>the directory walk <code>FUN_801E1208</code>; per-slot buffer <code>0x801EF1B8 + N * 0x100</code></td></tr>
+      <tr><td>Pill row</td><td>a memory-card <strong>port</strong></td><td>2</td><td>the libcd channel's port (<code>chan = port &times; 16 + sub_op</code>)</td></tr>
+      <tr><td>Preview grid</td><td>a <strong>save block</strong> on that card</td><td>15 (+ a Return cell)</td><td>the directory walk; per-slot preview buffer <code>0x801EF1B8 + N &times; 0x100</code></td></tr>
     </tbody>
   </table>
-  <p>Between them sits the card read - the "Now checking. Do not remove MEMORY CARD" dialog - which is why that beat exists at all.</p>
-  <p><code>SaveSelectSession</code> is renderer-agnostic and models the phases, not the id space, so a host picks which reading its slot list carries:</p>
-  <ul class="bullets">
-    <li><strong>Flat</strong> (default): the slot list <em>is</em> the save blocks; the pills show the first two and Save picks a block straight off the pill row. The native shell drives this against its on-disk LGSF slots.</li>
-    <li><strong>Card slots</strong> (<code>set_card_slots_mode(true)</code>): the slot list is the two ports. Save then crosses the same <code>NowChecking</code> beat Load does and raises its overwrite prompt from the preview rather than from the pill row, and <code>present</code> on a pill means "a card is inserted", not "this holds a save". The browser play page drives this against the player's own card images.</li>
-  </ul>
-  <p>The <strong>grid cursor</strong> is the host's, not the session's: <code>SlotPreview</code> ignores directions, so which of the fifteen blocks is focused - and therefore which block a confirm commits - is host state.</p>
+  <p>A third id lives in the filename: retail files a save as <code>BASCUS-94254PRO-nn</code> where <code>nn</code> is the list position it was standing on, and lets the BIOS put the file in any free block. The grid index, the port and that number are three different spaces.</p>
 </section>
 
-<section class="doc-section" id="messagebox-geometry">
-  <h2>Messagebox panel geometry (<code>FUN_801E36C4</code>)</h2>
-  <p>Every save-UI panel rect flows through one drawer. Its <code>x</code> is a <strong>centre</strong>, not a left edge, and the box emitter it forwards to inflates the centre rect by a uniform 8px on every side (the same inflation as the dialog reading box):</p>
-  <pre><code>footprint = (center_x - w/2 - 10,  y - 2,  w + 16,  h + 16)</code></pre>
-  <p>Pinned against the live GP0 draw list (the sprite rects the GPU actually receives): the header tab <code>(48, 6, 65, 13)</code> predicts <code>(6, 4, 81, 29)</code> - exactly the Load panel's byte-pinned 14-sprite composition - and the parked "Now checking" dialog <code>(160, 97, 169, 26)</code> predicts <code>(66, 95, 185, 42)</code>. Gold-border pixel scans read one pixel inside this footprint (the outermost tile ring scans as background), which is what an earlier <code>+14 / -9 / -1</code> model was built on.</p>
-  <p>The confirm prompt is <strong>two</strong> panels plus stacked options - not one box with Yes/No side by side: prompt bar <code>(8, 86, 300, 29)</code> and Yes/No box <code>(129, 118, 58, 42)</code> at the parked slide y = 88.</p>
-</section>
-
-<section class="doc-section" id="engine-port">
-  <h2>Engine port</h2>
-  <p><code>legaia_save::SaveFile</code> (with <code>SaveExt</code>) is the clean-room counterpart: the <code>LGSF v2</code> container (party records, story flags, money, inventory, play-time, per-character ext) with backward-compatible <code>v3</code> (full 512-byte story-flag bitmap) and <code>v4</code> (<code>LGX4</code> shiny-Seru block) extensions. It round-trips via <code>engine-core</code>'s <code>save_full</code> / <code>load_full</code> calls; the <code>legaia-engine save</code> / <code>load</code> subcommands exercise this path end-to-end.</p>
-  <p>Retail-save offsets are pinned (<code>story_flags</code> at SC <code>+0x14C0</code>, <code>inventory</code> at SC <code>+0x1818</code>); see <code>docs/subsystems/save-screen.md</code> for the full block layout. The libcd I/O state machine that drives both load and save is pinned at <code>FUN_801E3294</code>; the actual BIOS card-write thunk is <code>FUN_8006EE34</code> (which calls BIOS-B(0x4E) <code>_card_write</code> via the wrapper at <code>FUN_8006EE6C</code>). <code>FUN_8001A8B0</code> is plain <code>memcpy</code> used to stage data into / out of the staging buffer at <code>0x801E5120</code>.</p>
-  <p><strong>UI render side.</strong> <code>legaia_engine_core::save_menu_atlas</code> composes a single 256&times;256 RGBA atlas containing the 9-slice panel tiles, the interior-fill tile (pre-baked gouraud gradient), the pointing-finger cursor, and the slot pills, each decoded with its correct CLUT row; <code>legaia_engine_render::save_select_chrome_draws_for</code> emits the retail-pinned tile composition, and the &ldquo;Load&rdquo; title renders from the whitewashed dialog-font stencil at <code>SAVE_SELECT_TITLE_POS</code> with the <code>SAVE_SELECT_TITLE_COLOR</code> tint. All retail framebuffer coordinates are expressed in the canonical <code>320 &times; 240</code> boot-UI stage so they stay in lockstep at any window resolution.</p>
-  <p><strong>Animation side.</strong> <code>SaveSelectSession::slide_anim_t()</code> collapses retail slide timers 0/2 into one driver, with <code>interpolate_anim((start, target, t))</code> implementing the 12-bit fixed-point formula; <code>info_panel_slide_anim_t()</code> drives the bottom info panel's vertical slide, and <code>slot_info_panel_draws_for</code> / <code>slot_info_panel_text_draws_for</code> take a <code>panel_y_offset</code> so every per-element constant stays panel-relative.</p>
-</section>
-
-<section class="doc-section" id="story-flags-vs-scratchpad">
-  <h2>Story-flag persistence vs. scratchpad word</h2>
-  <p>Two distinct stores share the name &ldquo;story flags&rdquo; but live in unrelated regions, and the SC save/load path does <strong>not</strong> sync between them:</p>
+<section class="doc-section" id="how-it-works">
+  <h2>Three layers of code</h2>
   <table>
-    <thead><tr><th>Store</th><th>Address</th><th>Size</th><th>Persists in SC?</th></tr></thead>
+    <thead><tr><th>Layer</th><th>Routine</th><th>Job</th></tr></thead>
     <tbody>
-      <tr><td>Wide bitmap</td><td>RAM <code>0x80085600..0x80085800</code></td><td>512 B (4096 bits)</td><td>Yes - at SC offset <code>0x14C0</code>, via the bulk RAM&rarr;card transfer</td></tr>
-      <tr><td>Scratchpad word</td><td>RAM <code>0x1F800394</code></td><td>4 B (32 bits)</td><td>No</td></tr>
+      <tr><td>Outer dispatcher</td><td><code>FUN_801DC6B4</code></td><td>State 0 decodes the entry context into a sub-screen id and starts the fade; state 2 calls the sub-screen through the table at <code>0x801E4F40</code>; states 3..5 fade out; 6+ returns.</td></tr>
+      <tr><td>Sub-screens</td><td>table <code>0x801E4F40</code></td><td>33 small step machines sharing one shape: run a display script, wait for it to go idle, take input, write the next screen id. The save flow uses about a third of them; the rest are the pause menu, shop and casino exchange.</td></tr>
+      <tr><td>Card I/O</td><td><code>FUN_801E3294</code></td><td>Five states over libcd with a 5-try retry budget; result codes <code>1</code> ok, <code>-1</code> no card, <code>-2</code> stray event, <code>-3</code> abort / timeout.</td></tr>
     </tbody>
   </table>
-  <p>The scratchpad word <code>_DAT_1F800394</code> is the field-VM transient that opcodes <code>0x2E</code> (set bit), <code>0x2F</code> (clear bit), and <code>0x30</code> (test bit) operate on. A static sweep across all dumped functions finds one non-RMW writer: <code>FUN_8001DCF8</code> at PC <code>0x8001E17C</code>, which seeds the lower 16 bits from <code>mode_table[mode_idx].param</code> on mode init. No retail code path copies between the wide bitmap and the scratchpad word, so the engine's <code>SaveExt::story_flags</code> (mirroring the scratchpad word) and <code>SaveExt::story_flag_bits</code> (mirroring the bitmap) round-trip independently - that matches retail behaviour.</p>
+  <p>The entry context (<code>_DAT_8007B450</code>) is what a field script parks when it opens the menu; its first byte decides where the save UI opens.</p>
+  <table>
+    <thead><tr><th>Entry context</th><th>Opens</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td>sentinel <code>1</code></td><td><code>0x02</code></td><td>Save from the pause menu</td></tr>
+      <tr><td>kind <code>0x01</code></td><td><code>0x19</code></td><td>Save from a field script's save point - straight to the card driver</td></tr>
+      <tr><td>kind <code>0x07</code></td><td><code>0x20</code></td><td>Casino prize exchange (shares the table; touches no card)</td></tr>
+      <tr><td>kind <code>0x0D</code></td><td><code>0x04</code></td><td>Post-save "press any button" return</td></tr>
+      <tr><td>kind <code>0x00</code></td><td><code>0x1A</code></td><td>Shop mode select (Buy / Sell / Quit)</td></tr>
+    </tbody>
+  </table>
+  <details class="disclosure">
+    <summary>Save-flow sub-screens</summary>
+    <div class="disclosure-body">
+      <table>
+        <thead><tr><th>Id</th><th>Function</th><th>Role</th></tr></thead>
+        <tbody>
+          <tr><td><code>0x00</code></td><td><code>FUN_801DD12C</code></td><td>Final exit: terminal display script, then arms the fade-out delta and outer state 3.</td></tr>
+          <tr><td><code>0x01</code></td><td><code>FUN_801D6B20</code></td><td>Root command picker - the pause menu's own top level, 7 rows. Row 5 <em>Load</em> opens <code>0x18</code> unless the entry context is kind <code>0x0D</code>; row 6 <em>Save</em> opens <code>0x19</code> unless the scene's save-allow byte <code>_DAT_8007B6A8</code> is zero. Blocked rows buzz (cue <code>0x23</code>).</td></tr>
+          <tr><td><code>0x03</code></td><td><code>FUN_801D6D38</code></td><td>Yes / No confirm, default cursor on No; Yes advances to <code>0x00</code>.</td></tr>
+          <tr><td><code>0x04</code></td><td><code>FUN_801DD1B8</code></td><td>Post-save "press any button": waits for a held confirm-or-cancel button, returns to <code>0x01</code>.</td></tr>
+          <tr><td><code>0x18</code></td><td><code>FUN_801DAE24</code></td><td>Load-card driver: install the card handle, run the display script, call <code>FUN_801DD35C(1, 2)</code> until done, return to <code>0x01</code>.</td></tr>
+          <tr><td><code>0x19</code></td><td><code>FUN_801DAEF4</code></td><td>Save-card driver: same four steps with <code>FUN_801DD35C(1, 1)</code>. Returns to <code>0x01</code>, or exits to <code>0x00</code> when a field script parked the context.</td></tr>
+        </tbody>
+      </table>
+      <p>Op <code>1</code> is save and op <code>2</code> is load: the row labels (<code>@Load</code> row 5, <code>@Save</code> row 6), the op flag (op 1 erases the file before writing), and the op-2 arm's "Unable to load data." message all agree. Both directions share <code>FUN_801DD35C</code>, whose load branch copies the <code>0x2000</code>-byte read buffer at <code>0x801E5120</code> back over the live window; the save branch composes into <code>0x801E7120</code>.</p>
+    </div>
+  </details>
+</section>
+
+<section class="doc-section" id="save-rules">
+  <h2>Rules a player runs into</h2>
+  <ul>
+    <li><strong>Save is overworld-only.</strong> The Save row is gated by a per-scene byte seeded from the scene MAN's header bit; across the disc that bit is set only on the three kingdom world maps. A field save comes through a script's save point instead, which opens the card driver directly.</li>
+    <li><strong>"Now checking" ends when the card answers - or after 120 frames.</strong> The per-frame poll tests four card event handles in order (last one wins) and forces a timeout status on the 121st poll; timeout and a stray complete event both tear the read down.</li>
+    <li><strong>A foreign save is never offered as free.</strong> The directory walk clears every slot to "unreadable", stamps "Legaia save" on each filename matching <code>BASCUS-94254PRO-</code> (JP: <code>BISCPS-10059PRO-</code>), and only then spends the card's reported free-block count marking the rest free. A slot the walk cannot afford to call free stays unreadable.</li>
+    <li><strong>The block is checksummed.</strong> The compose path zeroes a <code>0x2000</code> buffer, copies <code>0x1A18</code> bytes of live state over the front, sums the first <code>0x7FF</code> words and stores the sum at <code>+0x1FFC</code>; the load path re-sums and routes a mismatch to "Damaged data."</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="block-layout">
+  <h2>What the block holds</h2>
+  <p>The game-data region is a linear copy of RAM from <code>0x80084340</code>: any live field lands at <code>block + 0x200 + (addr &minus; 0x80084340)</code>.</p>
+  <table class="layout">
+    <thead><tr><th>Offset</th><th>Size</th><th>Field</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x0000</code></td><td>2</td><td><code>SC</code> magic; icon flags, title (Shift-JIS), 16-colour palette and 16x16 icon follow through <code>0x1FF</code></td></tr>
+      <tr><td><code>0x0200</code></td><td><code>0x3C8</code></td><td>Display / global header: location name <code>+0</code>, leader name <code>+0x54</code>, scene labels <code>+0x208</code> / <code>+0x218</code>, gold <code>+0x25C</code></td></tr>
+      <tr><td><code>0x05C8</code></td><td><code>0x414</code> &times; 4</td><td><a href="../formats/save-record.html">Character records</a> Vahn, Noa, Gala, Terra (RAM <code>0x80084708</code>)</td></tr>
+      <tr><td><code>0x14C0</code></td><td><code>0x200</code></td><td>Story-flag bitmap (RAM <code>0x80085600</code>); overlaps Terra's tail</td></tr>
+      <tr><td><code>0x1818</code></td><td><code>0x90</code></td><td>Inventory page, 72 &times; <code>(id, count)</code> (RAM <code>0x80085958</code>)</td></tr>
+      <tr><td><code>0x1FFC</code></td><td>4</td><td>Additive checksum of words <code>0..0x7FE</code></td></tr>
+    </tbody>
+  </table>
+  <p>Two stores share the name "story flags" and never sync: the 512-byte bitmap above persists; the field VM's 32-bit scratchpad word at <code>0x1F800394</code> (opcodes <code>0x2E</code>/<code>0x2F</code>/<code>0x30</code>) does not, and is re-seeded from the mode table on mode init. The engine's <code>SaveExt</code> mirrors both independently.</p>
 </section>
 
 <section class="doc-section" id="sprite-sources">
-  <h2>Continue &rarr; Load screen sprite sources</h2>
-  <p>The retail Continue &rarr; Load screen overlays a &ldquo;Load&rdquo; header panel and N blue SLOT pills on top of dimmed title art, with a pointing-finger cursor next to the active pill. Every sprite source is byte-confirmed via a VRAM dump (VRAM is the PS1's video memory, where every texture and CLUT palette row lives) plus a scan of the GP0 primitives (the GPU's raw draw commands) at PCSX-Redux save state 9:</p>
+  <h2>What the screen is drawn from</h2>
+  <p>Every sprite on the Continue / Load screen is pinned to a source texture and palette row by reading the GPU's own draw list out of a capture.</p>
   <table>
-    <thead><tr><th>Element</th><th>Source</th><th>Notes</th></tr></thead>
+    <thead><tr><th>Element</th><th>Source</th><th>Note</th></tr></thead>
     <tbody>
-      <tr>
-        <td>Title art behind</td>
-        <td><code>PROT 0890</code> title TIM, dst <code>(33, 6)</code> - <code>(287, 154)</code></td>
-        <td>Same atlas the title menu samples; rendered dimmed during SaveSelect.</td>
-      </tr>
-      <tr>
-        <td><strong>&ldquo;Load&rdquo; panel chrome (9-slice)</strong></td>
-        <td><strong><code>PROT.DAT[0x018E0]</code> system-UI sprite sheet, CLUT row 2</strong></td>
-        <td>4bpp 256&times;192 TIM in the unindexed pre-<code>init_data</code> PROT.DAT gap. The 32-byte CLUT signature appears at exactly one place in the disc corpus (PROT.DAT offset <code>0x1934</code>). Retail composes the 81&times;29 panel at dst <code>(6, 4)</code> from 14 textured-sprite primitives (cmd <code>0x64</code>): 4 corners (4&times;4 each), top/bottom edges (24&times;4 tiles repeated 3&times; with a 1&times;4 remainder), and left/right edges (4&times;21).</td>
-      </tr>
-      <tr>
-        <td>Panel interior fill</td>
-        <td>Same TIM, CLUT row 2, source (128, 0, 32, 29)</td>
-        <td>3 gouraud-shaded textured-quad primitives (cmd <code>0x3C</code>) with a vertical gray gradient <code>rgb(64,64,64) &rarr; rgb(136,136,136)</code> tile the marbled-blue stippled pattern across the panel interior (2 full 32-wide copies + 1 17-wide remainder).</td>
-      </tr>
-      <tr>
-        <td>&ldquo;Load&rdquo; text glyphs</td>
-        <td><strong>The dialog font</strong> (<code>legaia_font</code>), tpage 14 (VRAM <code>(896, 0)</code>), CLUT at VRAM <code>(208, 510)</code></td>
-        <td>4 textured sprites (14&times;15 each) at stage <code>(35, 13)</code>&hellip;; source UVs map to <code>L</code>/<code>o</code>/<code>a</code>/<code>d</code> via the runtime 16&times;16 cell pitch. The bright text colour is CLUT entry <code>[15]</code> = <code>(206, 206, 206)</code>. The earlier &ldquo;menu-glyph atlas at <code>PROT.DAT[0x11218]</code>, CLUT row 13&rdquo; pin is falsified - that atlas has zero glyph indices at the documented rects.</td>
-      </tr>
-      <tr>
-        <td><strong>Pointing-finger cursor</strong></td>
-        <td><strong>Same system-UI TIM, CLUT row 7</strong>, source <code>(152, 64, 16, 16)</code></td>
-        <td>Retail dispatches as a single textured-sprite at dst <code>(114, 100)</code>; shifts down by 17 px for SLOT 2.</td>
-      </tr>
-      <tr>
-        <td>SLOT pills</td>
-        <td><code>PROT 0899 + 0x16908</code> save-menu TIM, CLUT 7, sources <code>(33, 97, 45, 15)</code> and <code>(33, 113, 45, 15)</code></td>
-        <td>Saturated blue with baked &ldquo;SLOT 1&rdquo; / &ldquo;SLOT 2&rdquo; labels. Byte-equal to retail.</td>
-      </tr>
+      <tr><td>Title art behind</td><td>PROT 0890 title TIM</td><td>Drawn dimmed at <code>(33, 6)</code>.</td></tr>
+      <tr><td>"Load" panel chrome</td><td>System-UI sheet at <code>PROT.DAT[0x018E0]</code>, CLUT row 2</td><td>9-slice: 14 textured sprites compose the 81x29 panel at <code>(6, 4)</code>; 3 gouraud quads tile the marbled interior.</td></tr>
+      <tr><td>"Load" glyphs</td><td>The <a href="../formats/dialog-font.html">dialog font</a>, VRAM page <code>(896, 0)</code></td><td>Four 14x15 sprites; bright colour is CLUT entry 15.</td></tr>
+      <tr><td>Pointing-finger cursor</td><td>Same sheet, CLUT row 7, <code>(152, 64, 16, 16)</code></td><td>At <code>(114, 100)</code>; 17 px lower for SLOT 2.</td></tr>
+      <tr><td>SLOT pills</td><td>Save-menu TIM at PROT 0899 <code>+0x16908</code>, CLUT 7</td><td>Baked "SLOT 1" / "SLOT 2" labels.</td></tr>
     </tbody>
   </table>
   <details class="disclosure">
-    <summary>Pin method</summary>
-    <p>Pin CLUT TIMs via PCSX-Redux save state &rarr; <code>extract_vram_from_sstate.py</code> &rarr; locate CLUT row in VRAM &rarr; grep the byte signature in <code>PROT.DAT</code>. Pin tile geometry by scanning the captured main RAM for GPU primitives (<code>scan_panel_prims.py</code> for textured sprites, <code>scan_textured_quads.py</code> for gouraud-shaded quads) and reading the source u/v + CLUT inline in each primitive. Full tooling chain: <a href="../tooling/pcsx-redux-automation.html">tooling/pcsx-redux-automation</a>.</p>
+    <summary>Panel geometry, slide-ins and the info panel</summary>
+    <div class="disclosure-body">
+      <p><strong>Messagebox drawer <code>FUN_801E36C4</code>.</strong> Its <code>x</code> is a centre, and the box emitter inflates the rect by 8 px on every side: <code>footprint = (cx &minus; w/2 &minus; 10, y &minus; 2, w + 16, h + 16)</code>. The header tab <code>(48, 6, 65, 13)</code> predicts <code>(6, 4, 81, 29)</code>, the Load panel's pinned rect; the confirm prompt is two panels, a bar at <code>(8, 86, 300, 29)</code> and a Yes/No box at <code>(129, 118, 58, 42)</code>.</p>
+      <p><strong>Slide-in primitive <code>FUN_801E1C1C</code>.</strong> 12-bit fixed-point lerp, timer ramps <code>+0x100</code> per frame to <code>0x1000</code> - a 16-frame slide.</p>
+      <table>
+        <thead><tr><th>Mode</th><th>Element</th><th>Start &rarr; target</th></tr></thead>
+        <tbody>
+          <tr><td>0</td><td>"Now checking" dialog</td><td><code>(416, 112)</code> &rarr; <code>(160, 112)</code></td></tr>
+          <tr><td>2</td><td>"Load" tab + active pill</td><td><code>(160, 96)</code> &rarr; <code>(48, 40)</code></td></tr>
+          <tr><td>3</td><td>Yes/No confirm</td><td><code>(160, 344)</code> &rarr; <code>(160, 88)</code></td></tr>
+          <tr><td>4</td><td>Card-format dialog</td><td><code>(576, 112)</code> &rarr; <code>(160, 112)</code></td></tr>
+        </tbody>
+      </table>
+      <p><strong>Bottom info panel <code>FUN_801E08D8</code>.</strong> Slides vertically from 394 to 138 once "Now checking" retracts; draws the slot's kingdom, play time and up to three party columns 96 px apart (portrait, name, LV, HP, MP; HP/MP go yellow at half and red at a quarter). The view mode per cell comes from <code>FUN_801E3F74</code>: readable save, foreign block, free block, or the Return cell. Slot data is read from <code>0x801EF1B8 + N &times; 0x100</code> (kingdom name <code>+0</code>, seconds <code>+0x24</code>, party count <code>+0x28</code>, names <code>+0x54 + i &times; 0xC</code>).</p>
+    </div>
   </details>
 </section>
 
-<section class="doc-section" id="slide-in-primitive">
-  <h2>Slide-in UI primitive (<code>FUN_801E1C1C</code>)</h2>
-  <p>The save-UI overlay's slide-in animations all flow through a single primitive, <code>FUN_801E1C1C(mode, anim_t, start_x, start_y, target_x, target_y)</code>. The function inlines its own 12-bit fixed-point linear interpolation, then dispatches per mode to emit the slid-in content at the interpolated <code>(x, y)</code>:</p>
-  <pre><code>iVar10 = (param_5 - param_3) * param_2;       // (target_x - start_x) * t
-if (iVar10 &lt; 0) iVar10 += 0xfff;               // round-toward-zero
-param_3 = param_3 + (iVar10 &gt;&gt; 0xc);           // start_x + delta * (t/4096)</code></pre>
-  <p><code>anim_t</code> is 12-bit fixed-point in <code>[0, 0x1000]</code>: <code>t=0</code> at start, <code>t=0x1000</code> at target. Each animated element owns a dedicated timer global that the dispatcher (<code>FUN_801DD35C</code>) ramps <code>+0x100</code> per frame, clamped at <code>0x1000</code> - a 16-frame slide at NTSC.</p>
+<section class="doc-section" id="engine-port">
+  <h2>The port</h2>
+  <ul>
+    <li><code>SaveSelectSession</code> models the phases; the host's <code>SaveRack</code> decides the id space - <code>CardPorts</code> (both shipped hosts) or a flat <code>Blocks</code> list for headless drivers. The browser mounts the player's own card images; the native shell mounts its save directory as port 1.</li>
+    <li><code>CardIoMachine</code>, <code>card_status_poll</code>, <code>classify_card_directory</code> and <code>save_block_checksum</code> are line-for-line ports of the retail routines above; the BIOS card-hardware sequencer is documented, not ported.</li>
+    <li><code>legaia_save::SaveFile</code> (LGSF) is the engine's own container; <code>write_into_retail_sc_block</code> patches a real block in place and restamps the checksum, so an edited retail save still loads.</li>
+    <li>Chrome and the slide animations are rebuilt from the pinned geometry in a canonical 320x240 stage (<code>save_menu_atlas</code>, <code>save_select_chrome_draws_for</code>).</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="how-we-know">
+  <h2>How we know</h2>
+  <table>
+    <thead><tr><th>Function / data</th><th>Address</th><th>What it proves</th><th>Dump</th></tr></thead>
+    <tbody>
+      <tr><td>Outer dispatcher</td><td><code>FUN_801DC6B4</code></td><td>9-state machine on <code>_DAT_8007B43C</code>; entry-context decode; fade constants <code>0xF2</code> / <code>0x79</code>.</td><td><code>overlay_menu_801dc6b4.txt</code></td></tr>
+      <tr><td>Root picker</td><td><code>FUN_801D6B20</code></td><td>Row 5 Load / row 6 Save gates; the <code>@Load</code> / <code>@Save</code> string pointers at <code>0x801CEA00</code> / <code>0x801CEA08</code>.</td><td>menu overlay dump</td></tr>
+      <tr><td>Card drivers</td><td><code>FUN_801DAE24</code> / <code>FUN_801DAEF4</code></td><td>Identical four-step machines; op 2 = load, op 1 = save.</td><td><code>overlay_menu_801daef4.txt</code></td></tr>
+      <tr><td>Load / save main</td><td><code>FUN_801DD35C</code></td><td>Op flag <code>0x801F0200</code>; erase-before-write on op 1; checksum compare at <code>0x801DF888</code>.</td><td>menu overlay dump</td></tr>
+      <tr><td>libcd machine</td><td><code>FUN_801E3294</code></td><td>Five states, retry budget <code>DAT_801E4FC4</code>, result codes; status strings <code>NOT_CARD</code> / <code>card_sts</code>.</td><td>menu overlay dump</td></tr>
+      <tr><td>Status poll</td><td><code>FUN_801E3900</code></td><td>Four <code>TestEvent</code> handles, last wins; 120-frame backstop with the increment in the delay slot.</td><td>menu overlay dump</td></tr>
+      <tr><td>Directory walk</td><td><code>FUN_801E1208</code></td><td>15-entry table at <code>0x801F32A8</code>, 16-byte <code>strncmp</code> against the regional prefix; class-then-budget order.</td><td>menu overlay dump</td></tr>
+      <tr><td>Checksum</td><td><code>FUN_801E38D8</code></td><td>Sums <code>0x7FF</code> words; compose buffer <code>0x801E7120</code>, read buffer <code>0x801E5120</code>.</td><td>menu overlay dump</td></tr>
+      <tr><td>List navigator</td><td><code>FUN_801D688C</code></td><td>Packed cursor (low 12 bits index, high nibble flags); cues <code>0x36</code> / <code>0x37</code> / <code>0x21</code>.</td><td><code>overlay_save_ui_select_801d688c.txt</code></td></tr>
+      <tr><td>Draw-list pins</td><td>PCSX-Redux state, GP0 scan</td><td>Sprite sources, CLUT rows, panel rects; VRAM dump + <code>PROT.DAT</code> signature grep.</td><td><code>scan_panel_prims.py</code>, <code>scan_textured_quads.py</code></td></tr>
+      <tr><td>Block layout</td><td>real <code>.mcr</code> saves vs RAM dumps</td><td>The <code>0x200 + (addr &minus; 0x80084340)</code> mapping.</td><td><code>crates/save</code> tests</td></tr>
+    </tbody>
+  </table>
   <details class="disclosure">
-  <summary>Per-mode timer + element table</summary>
-  <table>
-    <thead><tr><th>Mode</th><th>Timer</th><th>Element</th><th>(start) &rarr; (target)</th></tr></thead>
-    <tbody>
-      <tr><td><code>0</code></td><td><code>DAT_801ef160</code></td><td>"Now checking" dialog</td><td><code>(416, 112)</code> &rarr; <code>(160, 112)</code></td></tr>
-      <tr><td><code>1</code></td><td>const 0</td><td>Header tabs</td><td>held at <code>(48, 6)</code></td></tr>
-      <tr><td><code>2</code></td><td><code>DAT_801ef194</code></td><td>"Load" tab + active-slot pill</td><td><code>(160, 96)</code> &rarr; <code>(48, 40)</code></td></tr>
-      <tr><td><code>3</code></td><td><code>DAT_801ef1a4</code></td><td>Yes/No confirm dialog</td><td><code>(160, 344)</code> &rarr; <code>(160, 88)</code></td></tr>
-      <tr><td><code>4</code></td><td><code>_DAT_801f01cc</code></td><td>Card-init / format dialog</td><td><code>(576, 112)</code> &rarr; <code>(160, 112)</code></td></tr>
-    </tbody>
-  </table>
+    <summary>History: readings this page replaced</summary>
+    <div class="disclosure-body"><p>The card-driver pair reads naturally the other way round (<code>0x18</code> before <code>0x19</code>, save before load); three independent signs put load on <code>0x18</code>. Several table slots once carried save labels - "slot confirm", "card-full screen", "auto-save" - and are the shop's mode picker, the shop's buy list and the casino prize exchange. The card filename separator is a hyphen, not an underscore. The "menu-glyph atlas" pin for the Load text was wrong; the glyphs are the dialog font. See <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p></div>
   </details>
-</section>
-
-<section class="doc-section" id="info-panel-renderer">
-  <h2>Bottom info panel (<code>FUN_801E08D8</code>)</h2>
-  <p>Once the "Now checking" dialog dismisses and the slot-preview screen appears, the save-UI overlay emits a bottom info panel showing the selected slot's kingdom, game time, party leader portrait, and per-character stats. <code>FUN_801E08D8(slot_index, view_mode)</code> renders the whole panel and is called once per frame by the grid-renderer wrapper <code>FUN_801E06C0</code>.</p>
-  <h3>Vertical slide-in (sixth save-UI animator)</h3>
-  <p>The info panel has its own bespoke vertical slide-in, distinct from the <code>FUN_801E1C1C</code> primitive - the primitive can only animate ONE element, while the info panel propagates a single <code>panel_y</code> across 15+ separate sprite/text emit calls. Entry math:</p>
-  <pre><code>iVar4 = DAT_801ef1a0 * -0x100;
-if (iVar4 &lt; 0) iVar4 += 0xfff;
-iVar4 &gt;&gt;= 0xc;
-local_34 = iVar4 + 0x18a;   // panel chrome top-y</code></pre>
-  <p><code>local_34</code> ramps from <strong>394 (off-screen below)</strong> at <code>anim_t = 0</code> down to <strong>138 (parked under load chrome)</strong> at <code>anim_t = 0x1000</code>. The timer <code>DAT_801ef1a0</code> is held to 0 while <code>DAT_801ef160</code> (NowChecking) is up, then increments once the NowChecking dialog has retracted - matching the engine's <code>SaveSelectSession::info_panel_slide_anim_t()</code> semantics.</p>
-  <h3>Title row layout (view mode 1)</h3>
-  <p>All emit at <code>y = local_34 + 4</code> (= 142 fully-landed). The "No.X" slot-number badge is rendered as a sprite via <code>FUN_801E3FF0</code> (CLUT row = <code>slot_index &lt;&lt; 4</code>) at <code>x = 8</code>; kingdom name at <code>x = 48</code>; "Time " label at <code>x = 208</code>; HH:MM:SS digits at <code>x = 236</code> / <code>260</code> / <code>284</code>.</p>
-  <h3>Per-character row layout</h3>
-  <p>Iterates <code>i = 0..slot_buf[+0x28]</code> (party member count). Horizontal stride <code>+0x60 = 96 px</code> starting at base_x = 16, so columns 0/1/2 emit at x = 16 / 112 / 208. Per-character vertical base <code>s3 = local_34 + 20</code> (= 158):</p>
-  <table>
-    <thead><tr><th>Element</th><th>x (relative to col base)</th><th>y</th></tr></thead>
-    <tbody>
-      <tr><td>16&times;16 portrait icon</td><td>base_x</td><td>s3 &minus; 4 (= 154)</td></tr>
-      <tr><td>Character name</td><td>base_x + 24</td><td>s3 (= 158)</td></tr>
-      <tr><td><code>LV</code> separator + value</td><td>base_x / +32</td><td>s3 + 13 (= 171)</td></tr>
-      <tr><td><code>HP</code> separator + cur/max</td><td>base_x / +16 / +61</td><td>s3 + 26 (= 184)</td></tr>
-      <tr><td><code>MP</code> separator + cur/max</td><td>base_x / +24 / +69</td><td>s3 + 39 (= 197)</td></tr>
-    </tbody>
-  </table>
-  <p>HP / MP value colour ramp: 7 (green, default), 6 (yellow, <code>cur &le; max/2</code>), 9 (red, <code>cur &le; max/4</code>).</p>
-  <h3>Per-slot data buffer</h3>
-  <p>The renderer reads slot N from <code>0x801EF1B8 + N * 0x100</code>.</p>
-  <details class="disclosure">
-  <summary>Buffer byte layout</summary>
-  <table>
-    <thead><tr><th>Offset</th><th>Type</th><th>Field</th></tr></thead>
-    <tbody>
-      <tr><td><code>+0x00</code></td><td>char[24]</td><td>Kingdom name (null-padded)</td></tr>
-      <tr><td><code>+0x10</code></td><td>char[14]</td><td>Save-card filename prefix (<code>BISCPS-10059PRO</code>) for validity</td></tr>
-      <tr><td><code>+0x24</code></td><td>u32</td><td>Game time in seconds</td></tr>
-      <tr><td><code>+0x28</code></td><td>u8</td><td>Party member count</td></tr>
-      <tr><td><code>+0x2C+i</code></td><td>u8</td><td>Per-character party ID (0=Vahn, 1=Noa, 2=Gala)</td></tr>
-      <tr><td><code>+0x30+i</code></td><td>u8</td><td>Per-character level</td></tr>
-      <tr><td><code>+0x34 / +0x44</code></td><td>s16</td><td>Char 0 MP current / max</td></tr>
-      <tr><td><code>+0x3C / +0x4C</code></td><td>s16</td><td>Char 0 HP current / max</td></tr>
-      <tr><td><code>+0x54 + i*0x0C</code></td><td>char[8]</td><td>Per-character name</td></tr>
-    </tbody>
-  </table>
-  </details>
-</section>
-
-<section class="doc-section" id="full-reference">
-  <h2>Full reference</h2>
-  <p>Complete state-machine and sub-screen tables with Ghidra provenance live at <code>docs/subsystems/save-screen.md</code> in the repo. Function dumps: <code>ghidra/scripts/funcs/overlay_menu_801dc6b4.txt</code>, <code>overlay_menu_801daef4.txt</code>, <code>overlay_menu_801dafd4.txt</code>, <code>overlay_save_ui_select_801e1c1c.txt</code>, <code>overlay_save_ui_select_801e08d8.txt</code>. Capture sources: the <code>overlay_save_ui_select.bin</code> / <code>overlay_save_ui_saving.bin</code> mednafen captures (slot-select and writing-in-progress states), both confirmed as the menu overlay by function-address identity.</p>
+  <p class="hint">Full write-up, including the debug character editor and sub-screen <code>0x15</code>: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/save-screen.md" target="_blank" rel="noopener"><code>docs/subsystems/save-screen.md</code></a>.</p>
 </section>
 
 <section class="doc-section" id="see-also">
@@ -245,7 +200,13 @@ local_34 = iVar4 + 0x18a;   // panel chrome top-y</code></pre>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="../formats/save-record.html">Save record</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/save-icon.md">Save icons</a>
+    <a href="field-menu.html">Field menu</a>
+    <a href="shop.html">Shop</a>
     <a href="inn.html">Inn</a>
-    <a href="shop.html">Shop UI</a>
+    <a href="actor-vm.html">Window-widget VM</a>
+    <a href="../formats/window-script.html">Window scripts</a>
+    <a href="../reference/cheats.html">Cheat database (RAM offsets)</a>
+    <a href="../tooling/pcsx-redux-automation.html">PCSX-Redux capture</a>
   </div>
 </section>

@@ -1,93 +1,111 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../../index.html">home</a> &middot; <a href="../index.html">write-ups</a> &middot; <a href="index.html">disc patching</a> &middot; Tier B</div>
   <h1>Tier B - editing inside LZS</h1>
-  <p class="lede">Most editable values don't sit in the open - they're inside a Legaia LZS stream the asset dispatcher decompresses at load. Changing one is decompress &rarr; mutate &rarr; recompress &rarr; write back, which is impossible until you can produce a stream the retail decoder accepts. The game ships only a decoder; this tier exists because the project wrote the missing encoder, and because the monster archive's fixed slots leave just enough slack to re-pack into.</p>
+  <p class="lede">A seed can give a Gimard different HP, a different drop, and give Vahn a cheaper swing with a weapon he is not built for. None of those values sits in the open: each is inside a compressed record the game inflates at load. Changing one is decompress, edit, recompress, write back - and the game ships no compressor, only a decompressor.</p>
 </header>
 
 <div class="notice">
-  <div class="notice-title">Tier B overview</div>
-  Tier B of the A&ndash;F ladder - same idea as <a href="a-static-tables.html">tier A</a> (overwrite a located field), but the field lives inside compression. Start at the <a href="index.html">series index</a> for the editing model.
+  <div class="notice-title">The technique in one box</div>
+  The project's own LZS encoder produces streams the retail decoder accepts. Its output is slightly longer than Sony's, and that is fine: every monster occupies a fixed <code>0x14000</code>-byte slot with padding, so the re-packed stream lands in the same slot, zero-padded to the same size. Nothing downstream moves. Decoded output is trusted only after a structural check - a clean decompress proves nothing.
 </div>
 
-<section class="doc-section" id="mechanism">
-  <h2>Mechanism at a glance</h2>
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
   <dl class="kv">
-    <dt>Target</dt><dd>values inside an LZS-compressed slot the dispatcher decodes at load - chiefly the monster archive (PROT 867)</dd>
-    <dt>The enabler</dt><dd><code>legaia_lzs::compress</code>: a greedy LZSS encoder whose output the retail decoder <code>FUN_8001A55C</code> accepts (<code>decompress(compress(x)) == x</code>)</dd>
-    <dt>The slack</dt><dd>each monster gets a fixed <code>0x14000</code>-byte slot <code>[u32 decompressed_size][LZS stream]</code>; the re-pack is zero-padded back to <code>0x14000</code> so no downstream offset moves</dd>
-    <dt>Edit class</dt><dd>in-place / same-size (slot stride preserved); <code>repack_slot</code> rejects the rare stream that wouldn't fit</dd>
-    <dt>Fields</dt><dd>drops <code>+0x48</code>/<code>+0x49</code> &middot; combat stats <code>+0x0C</code>.. &middot; weapon arm-cost <code>+0x74</code> (player files 0863..0865)</dd>
+    <dt>Target</dt><dd>Values inside an LZS stream - chiefly the monster archive (PROT 0867) and the player battle files (PROT 0863..0865)</dd>
+    <dt>Enabler</dt><dd><code>legaia_lzs::compress</code>: greedy LZSS with one-step lazy matching; <code>decompress(compress(x)) == x</code> against the retail decoder</dd>
+    <dt>Slot</dt><dd><code>[u32 decompressed_size][LZS stream][zero pad]</code>, fixed <code>0x14000</code> bytes per monster</dd>
+    <dt>Edit class</dt><dd>In place at the slot level; <code>repack_slot</code> rejects the rare stream that would overflow</dd>
+    <dt>Mods</dt><dd><code>--drops</code> &middot; <code>--monster-stats</code> &middot; <code>--weapon-specialty</code></dd>
+    <dt>Confidence</dt><dd><span class="tag tag-done">Confirmed</span> - round-trip oracles re-decode every patched slot</dd>
     <dt>Oracles</dt><dd><code>monster_drop_real.rs</code> &middot; <code>monster_stats_real.rs</code> &middot; <code>weapon_specialty_real.rs</code></dd>
   </dl>
 </section>
 
-<section class="doc-section" id="reversing">
-  <h2>The reversing: an encoder, and a validity signal</h2>
-  <p>Retail ships only the LZS <em>decoder</em> (<code>FUN_8001A55C</code>), reversed for the preservation track. To edit anything inside a stream you have to emit one the game will decode - so the project built an LZSS encoder (a greedy matcher with <strong>one-step lazy matching</strong>) whose output the retail decoder round-trips exactly. It is <em>not</em> better than Sony's packer - it leaves a small, near-constant gap versus retail (output equal-or-slightly-longer); the lazy matching only narrows that gap enough to fit. That's precisely why the slot slack below matters.</p>
-  <p>The decoder also hides a trap worth stating, because it shaped how every LZS edit is validated: <strong>&ldquo;decompresses without error&rdquo; is not a validity signal.</strong> The 4&nbsp;KB ring buffer initialises to zeros, so most random input decodes to plausible-looking output. A decoded record is only trusted after a magic / structural check, never because decompression succeeded - see <a href="../../formats/lzs.html">Legaia LZS</a>. With a trustworthy round trip in hand, the rest is the same field-locating work as <a href="a-static-tables.html">tier A</a>, just performed against the <em>decompressed</em> record.</p>
-</section>
-
 <section class="doc-section" id="padback">
   <h2>Why the slot stride is the whole trick</h2>
-  <p>The monster archive (PROT 867) gives every monster a fixed <code>0x14000</code>-byte slot, and that slot is the source of the slack - not our compressor. Because our re-pack is a little looser than Sony's, the new stream is usually a touch <em>longer</em> than the original; the fixed slot simply has enough built-in padding to absorb it, and the slot is re-emitted zero-padded back to its full <code>0x14000</code>. The decoded record length never changed; the slot stride never changed; so nothing downstream of it moves and the edit stays a pure same-size overwrite. (There is no compression win here - for assets with <em>no</em> slack, like a scene MAN, the lazy matching has to fight to fit the original footprint exactly; see <a href="c-field-vm-operands.html#budget">tier C</a>.)</p>
+  <p>The slack comes from the archive, not from the compressor. Sony's packer is tighter than the project's, so a re-packed stream is usually a little <em>longer</em> than the original - and the fixed slot has enough padding to absorb it. The decoded record length never changes; the slot stride never changes; the edit stays a pure same-size overwrite.</p>
   <figure class="overlay-strip">
-    <svg viewBox="0 0 880 220" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="padback-title">
-      <title id="padback-title">Re-packing a monster slot, zero-padded back to its fixed 0x14000 stride</title>
+    <svg viewBox="0 0 880 220" width="100%" style="max-width:880px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Two rows: the original slot holds a size word, Sony's LZS stream and padding; the re-packed slot holds the same size word, a slightly longer stream and less padding, inside the same fixed 0x14000 stride">
+      <title>Re-packing a monster slot, zero-padded back to its fixed stride</title>
       <style>
-        .pb-lab   { font: 11px 'Inter', sans-serif; fill: #8b949e; }
-        .pb-addr  { font: 11px 'JetBrains Mono', monospace; fill: #58c4b3; }
-        .pb-sz    { fill: #19212d; stroke: #58c4b3; stroke-width: 1.2; }
-        .pb-stream{ fill: #131922; stroke: #58c4b3; stroke-width: 1.3; }
-        .pb-pad   { fill: #0d1117; stroke: #2a323e; stroke-width: 1.1; stroke-dasharray: 3 3; }
-        .pb-seg   { font: 10px 'Inter', sans-serif; fill: #8b949e; text-anchor: middle; }
-        .pb-segd  { font: 10px 'Inter', sans-serif; fill: #7c8893; text-anchor: middle; }
+        .pb-lab   { font: 11px var(--font-body), sans-serif; fill: var(--text-muted); }
+        .pb-addr  { font: 11px var(--font-mono), monospace; fill: var(--accent); }
+        .pb-sz    { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.2; }
+        .pb-stream{ fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.3; }
+        .pb-pad   { fill: none; stroke: var(--border); stroke-width: 1.1; stroke-dasharray: 3 3; }
+        .pb-seg   { font: 11px var(--font-body), sans-serif; fill: currentColor; text-anchor: middle; dominant-baseline: middle; }
+        .pb-segd  { font: 10px var(--font-body), sans-serif; fill: var(--text-muted); text-anchor: middle; dominant-baseline: middle; }
       </style>
+      <text x="20" y="48" class="pb-lab">original</text>
+      <rect x="120" y="26" width="34"  height="40" class="pb-sz"/>
+      <rect x="154" y="26" width="556" height="40" class="pb-stream"/>
+      <rect x="710" y="26" width="150" height="40" class="pb-pad"/>
+      <text x="137" y="46" class="pb-segd">size</text>
+      <text x="432" y="46" class="pb-seg">Sony LZS stream</text>
+      <text x="785" y="46" class="pb-segd">zero pad</text>
 
-      <text x="20" y="40" class="pb-lab">original</text>
-      <rect x="120" y="26" width="30"  height="34" class="pb-sz"/>
-      <rect x="150" y="26" width="560" height="34" class="pb-stream"/>
-      <rect x="710" y="26" width="150" height="34" class="pb-pad"/>
-      <text x="135" y="48" class="pb-segd">size</text>
-      <text x="430" y="48" class="pb-seg">Sony LZS stream</text>
-      <text x="785" y="48" class="pb-segd">pad</text>
+      <text x="20" y="128" class="pb-lab">re-packed</text>
+      <rect x="120" y="106" width="34"  height="40" class="pb-sz"/>
+      <rect x="154" y="106" width="596" height="40" class="pb-stream"/>
+      <rect x="750" y="106" width="110" height="40" class="pb-pad"/>
+      <text x="137" y="126" class="pb-segd">size</text>
+      <text x="452" y="126" class="pb-seg">project LZS stream (slightly longer)</text>
+      <text x="805" y="126" class="pb-segd">zero pad</text>
 
-      <text x="20" y="120" class="pb-lab">re-packed</text>
-      <rect x="120" y="106" width="30"  height="34" class="pb-sz"/>
-      <rect x="150" y="106" width="600" height="34" class="pb-stream"/>
-      <rect x="750" y="106" width="110" height="34" class="pb-pad"/>
-      <text x="135" y="128" class="pb-segd">size</text>
-      <text x="450" y="128" class="pb-seg">our LZS stream (looser - a touch longer)</text>
-      <text x="805" y="128" class="pb-segd">zero pad</text>
-
-      <line x1="120" y1="170" x2="860" y2="170" stroke="#2a323e" stroke-width="1"/>
-      <text x="120" y="190" class="pb-addr">slot base</text>
-      <text x="860" y="190" class="pb-addr" text-anchor="end">+0x14000</text>
-      <text x="490" y="190" class="pb-lab" text-anchor="middle">fixed slot stride - identical in both rows, so nothing downstream moves</text>
+      <line x1="120" y1="172" x2="860" y2="172" stroke="var(--border)" stroke-width="1"/>
+      <text x="120" y="192" class="pb-addr">slot base</text>
+      <text x="860" y="192" class="pb-addr" text-anchor="end">+0x14000</text>
+      <text x="490" y="212" class="pb-lab" text-anchor="middle">fixed slot stride, identical in both rows</text>
     </svg>
-    <figcaption>The decoded record is unchanged; our slightly looser stream eats a little into the zero pad, but the fixed slot absorbs it. <code>repack_slot</code> rejects the rare case where even our stream would overflow the slot.</figcaption>
+    <figcaption>The longer stream eats into the pad; the slot boundary does not move. Where an asset has <em>no</em> slack - a scene script - the lazy matching has to fit the original footprint exactly; see <a href="c-field-vm-operands.html#budget">tier C</a>.</figcaption>
   </figure>
 </section>
 
-<section class="doc-section" id="examples">
-  <h2>Worked examples</h2>
-  <h3>Monster drops &amp; combat stats</h3>
-  <p>Inside each decompressed monster record, the drop is <code>+0x48</code> (item id) / <code>+0x49</code> (chance), and the combat stats are halfwords from <code>+0x0C</code> (HP, MP, ATK, two defence fields, AGL, SPD). The randomizer decodes the slot, rewrites those fields, recompresses, and pads back - drops and stats are independent passes over the same archive.</p>
-  <h3>Weapon specialty (a per-character disc byte)</h3>
-  <p>Which weapon class a character favours isn't a runtime comparison - it's a per-(character, weapon) byte sitting in the LZS-decoded equipment section of the player battle files (PROT 0863..0865), at the swing record's <code>+0x74</code>. It's copied verbatim into the arts command gauge at battle load (<code>FUN_800557B8</code>), which makes it a clean tier-B target: decode the section, rewrite the arm-cost byte, recompress. See <a href="../../subsystems/arts-command-gauge.html">arts command gauge</a>.</p>
+<section class="doc-section" id="fields">
+  <h2>What moves</h2>
+  <table class="layout">
+    <thead><tr><th>Field</th><th>Inside</th><th>Offset</th><th>Mod</th></tr></thead>
+    <tbody>
+      <tr><td>Drop item / drop chance</td><td>decoded monster record, PROT 0867</td><td><code>+0x48</code> / <code>+0x49</code> (u8)</td><td><code>--drops</code></td></tr>
+      <tr><td>HP, MP, ATK, DEF&times;2, AGL, SPD</td><td>decoded monster record, PROT 0867</td><td>halfwords from <code>+0x0C</code></td><td><code>--monster-stats</code></td></tr>
+      <tr><td>Weapon-class arm cost</td><td>equipment section of the player battle files, PROT 0863..0865</td><td>swing record <code>+0x74</code></td><td><code>--weapon-specialty</code></td></tr>
+    </tbody>
+  </table>
+  <p>Weapon specialty is worth a sentence: which weapon class a character favours is not a runtime comparison. It is a per-(character, weapon) disc byte, copied verbatim into the arts command gauge at battle load - which is exactly what makes it a data target. See <a href="../../subsystems/arts-command-gauge.html">arts command gauge</a>.</p>
+  <p>Drops and stats are independent passes over the same archive. Each works from the original decoded record and pads back to the same stride, so order does not matter and neither pass can shift the other's offsets.</p>
 </section>
 
-<section class="doc-section" id="composition">
-  <h2>Composition</h2>
-  <p>Every tier-B edit is same-size at the slot level, so it composes with the rest of the ladder exactly like tier A. The one internal subtlety is multi-pass: drops and stats both decode and re-pack the same archive, but each works from the original decoded record and pads back to the same stride, so order doesn't matter and neither pass can shift the other's offsets.</p>
+<section class="doc-section" id="how-we-know">
+  <h2>How we know</h2>
+  <table>
+    <thead><tr><th>Claim</th><th>Evidence</th><th>Reference</th></tr></thead>
+    <tbody>
+      <tr><td>LZS format + ring-buffer semantics</td><td>Retail decoder <code>FUN_8001A55C</code>, reversed for the preservation track</td><td><a href="../../formats/lzs.html">lzs</a></td></tr>
+      <tr><td>Slot stride <code>0x14000</code>, record layout</td><td>Monster archive parser + the <code>monster-archive</code> CLI listing every monster's stats</td><td><a href="../../formats/battle-data-pack.html">battle-data-pack</a></td></tr>
+      <tr><td>Arm cost is disc data at <code>+0x74</code></td><td>Battle-load copy into <code>DAT_801C9360[char][cmd]</code> by <code>FUN_800557B8</code></td><td><a href="../../subsystems/arts-command-gauge.html">arts-command-gauge</a></td></tr>
+      <tr><td>Round trip is exact</td><td>Disc oracles decode every patched slot and compare against the pre-patch multiset</td><td><code>crates/patcher/tests/</code></td></tr>
+    </tbody>
+  </table>
 </section>
 
-<section class="doc-section" id="mods">
-  <h2>Mods using this technique</h2>
-  <ul>
-    <li><strong>Monster drops</strong> (<code>--drops</code>) &middot; <strong>Monster combat stats</strong> (<code>--monster-stats</code>) &middot; <strong>Weapon specialty</strong> (<code>--weapon-specialty</code>)</li>
-  </ul>
-  <p class="hint">Adding a tier-B mod: confirm the field's offset in the <em>decompressed</em> record (magic-check the decode, don't trust a clean decompress), edit, recompress with <code>legaia_lzs::compress</code>, pad back to the slot stride, reject on overflow, and add a disc-gated oracle.</p>
-</section>
+<details class="disclosure">
+  <summary>Details: "decompresses without error" is not a validity signal</summary>
+  <div class="disclosure-body">
+    <p>The decoder's 4&nbsp;KB ring buffer initialises to zeros, so most random input decodes to plausible-looking output. A decoded record is trusted only after a magic or structural check - never because decompression succeeded. This shaped how every LZS edit in the patcher is validated, and it is why the extraction tools report "no plausible sections" on a non-container entry instead of emitting garbage.</p>
+  </div>
+</details>
+
+<details class="disclosure">
+  <summary>Details: adding a tier-B mod</summary>
+  <div class="disclosure-body">
+    <ol>
+      <li>Confirm the field's offset in the <em>decompressed</em> record (structural check on the decode).</li>
+      <li>Edit, recompress with <code>legaia_lzs::compress</code>, pad back to the slot stride, reject on overflow.</li>
+      <li>Add a disc-gated oracle that re-decodes the patched slot.</li>
+    </ol>
+  </div>
+</details>
 
 <section class="doc-section" id="see-also">
   <h2>See also</h2>

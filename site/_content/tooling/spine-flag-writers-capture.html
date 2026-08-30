@@ -1,127 +1,176 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; spine flag-writers capture</div>
   <h1>Capturing the chapter-1 spine story-flag writers</h1>
-  <p class="lede">Legaia records story progress as <em>story flags</em> - single bits in a RAM bitmap that scene scripts check to decide what
-  happens next. The "spine" is the chain of mandatory chapter-1 story beats, and the question this page answers is: <em>which code sets each
-  spine flag?</em> The writes happen inside overlays (code the game loads into RAM on demand) that were never imported into the disassembler,
-  so static analysis alone cannot name the writer. This runbook is the dynamic answer - one interactive PCSX-Redux play-forward session, human
-  at the controls, that arms watchpoints on all three spine writes at once and logs each writer's return address (<code>ra</code> - i.e.
-  <em>who called the flag-setter</em>). It is maintainer infrastructure, kept as a worked example of a live writer hunt.</p>
+  <p class="lede">Legaia records story progress as <em>story flags</em> - single bits in a RAM bitmap that scene scripts check to decide what happens next: whether a door opens, whether a boss is beaten, whether the mist walls around Drake Castle have fallen. The "spine" is the chain of mandatory chapter-1 beats, and this runbook answers <em>which code sets each spine flag</em>: one PCSX-Redux play-forward session with a human at the controls, a breakpoint on the game's own flag-setter, and a log of every caller. Kept as the worked example of a live writer hunt.</p>
 </header>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Emulator</dt><dd>PCSX-Redux, interpreter + debugger (<code>run_probe.sh</code> default). Never <code>--fast</code>: Lua breakpoints do not fire under the recompiler</dd>
+    <dt>Probe</dt><dd><code>scripts/pcsx-redux/autorun_spine_flag_writers.lua</code> (spine targets) or <code>autorun_flag_firehose.lua</code> (every flag write). Neither self-quits - wrap in <code>timeout</code></dd>
+    <dt>Watched</dt><dd>Execution breakpoint on the flag setter, filtered by the flag index in its first argument; the hit's return address names the caller</dd>
+    <dt>Flag bank</dt><dd>SCUS-resident bitmap at <code>0x80085758</code>; <code>byte = base + (idx &gt;&gt; 3)</code>, <code>mask = 0x80 &gt;&gt; (idx &amp; 7)</code></dd>
+    <dt>Start point</dt><dd>Chapter-1 ladder card <code>saves/library/cards/playthrough-ladder-pro00-14.mcr</code>, slot loaded <strong>by name</strong> on the in-game load screen</dd>
+    <dt>Output</dt><dd><code>captures/spine_flag_writers/&lt;run-ts&gt;/</code> - CSV rows <code>tick,label,addr,pc,ra,value</code>; a caught write has a non-zero <code>ra</code></dd>
+    <dt>Used by</dt><dd><a href="../subsystems/script-vm.html">script VM</a> flag-op census, <a href="../reference/open-rev-eng-threads.html">open RE threads</a></dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="overview">
+  <h2>What this solves</h2>
+  <p>A story flag is set by one line of one script somewhere on the disc, and a save-state diff only says the bit flipped - not who flipped it. The writes happen inside overlays (code paged into RAM on demand), so the static executable cannot name them either. The trick: break on the game's flag-<em>setter</em> function filtered by flag index. Every hit names the calling code directly, and that return address is attributed to an overlay and then to a script carrier.</p>
+  <figure class="overlay-strip">
+    <svg viewBox="0 0 860 200" width="100%" style="max-width:860px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Flow: a field-VM script op calls the SCUS flag setter; an execution breakpoint filtered on the flag index fires and logs the return address; attribute_overlay_hits.py maps that address to an overlay and then to the script bytes in the scene MAN">
+      <style>
+        .sp-box { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.3; }
+        .sp-soft { fill: var(--bg-raised); stroke: var(--border); stroke-width: 1.1; }
+        .sp-lab { font: 12px sans-serif; fill: currentColor; }
+        .sp-sub { font: 10px monospace; fill: var(--text-muted); }
+        .sp-arr { fill: none; stroke: var(--text-muted); stroke-width: 1.2; marker-end: url(#sp-head); }
+      </style>
+      <defs><marker id="sp-head" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="var(--text-muted)"/></marker></defs>
+      <rect x="20" y="40" width="160" height="56" class="sp-soft"/>
+      <text x="100" y="62" text-anchor="middle" class="sp-lab">Scene script op</text>
+      <text x="100" y="82" text-anchor="middle" class="sp-sub">field VM 0x5x SET</text>
+      <path d="M180,68 L232,68" class="sp-arr"/>
+      <rect x="234" y="40" width="160" height="56" class="sp-box"/>
+      <text x="314" y="62" text-anchor="middle" class="sp-lab">Flag setter</text>
+      <text x="314" y="82" text-anchor="middle" class="sp-sub">FUN_8003CE08(a0=idx)</text>
+      <path d="M394,68 L446,68" class="sp-arr"/>
+      <rect x="448" y="40" width="160" height="56" class="sp-box"/>
+      <text x="528" y="62" text-anchor="middle" class="sp-lab">Exec breakpoint</text>
+      <text x="528" y="82" text-anchor="middle" class="sp-sub">a0 == 322 / 1154</text>
+      <path d="M608,68 L660,68" class="sp-arr"/>
+      <rect x="662" y="40" width="178" height="56" class="sp-soft"/>
+      <text x="751" y="62" text-anchor="middle" class="sp-lab">CSV row</text>
+      <text x="751" y="82" text-anchor="middle" class="sp-sub">tick,label,pc,ra,value</text>
+      <path d="M751,96 L751,124" class="sp-arr"/>
+      <rect x="662" y="126" width="178" height="56" class="sp-soft"/>
+      <text x="751" y="148" text-anchor="middle" class="sp-lab">Attribute ra</text>
+      <text x="751" y="168" text-anchor="middle" class="sp-sub">attribute_overlay_hits.py</text>
+      <path d="M660,154 L520,154" class="sp-arr"/>
+      <rect x="340" y="126" width="178" height="56" class="sp-soft"/>
+      <text x="429" y="148" text-anchor="middle" class="sp-lab">Overlay, then MAN</text>
+      <text x="429" y="168" text-anchor="middle" class="sp-sub">script bytes 51 42</text>
+    </svg>
+    <figcaption>The breakpoint sits on the setter, so the return address is the script dispatcher arm that requested the flag.</figcaption>
+  </figure>
+</section>
+
+<section class="doc-section" id="quick-start">
+  <h2>Quick start</h2>
+  <p>Localise first, then hunt. The breakpoints force the interpreter (~10 fps), so a <code>--fast</code> run of <code>autorun_state_poll.lua</code> (the <a href="pcsx-redux-automation.html#two-tier-capture">two-tier model</a>) first logs <em>which scene</em> each flag changes in at full speed; then point the interpreter session there.</p>
+  <div class="cli"><code>LEGAIA_NO_SSTATE=1 xvfb-run -a timeout --kill-after=15s 1800s bash scripts/pcsx-redux/run_probe.sh --lua scripts/pcsx-redux/autorun_spine_flag_writers.lua</code></div>
+  <p>Card-save play is the primary mode: configure the ladder <code>.mcr</code> as memory card 1, cold-boot, load the slot from the in-game load screen, play forward. Drop <code>xvfb-run -a</code> to see and drive the window; raise the budget for a long run. Holding a <code>.sstate</code> near a beat, seed from it instead:</p>
+  <div class="cli"><code>LEGAIA_SSTATE=/path/to/pre-zeto.sstate xvfb-run -a timeout --kill-after=15s 900s bash scripts/pcsx-redux/run_probe.sh --lua scripts/pcsx-redux/autorun_spine_flag_writers.lua</code></div>
+  <p>The <code>[spine] HIT ...</code> lines in <code>pcsx.log</code> mirror each CSV row live.</p>
+</section>
 
 <section class="doc-section" id="targets">
   <h2>What gets watched</h2>
-  <p>Three targets, two watch methods: a plain write-watch on a RAM address, and an execution breakpoint on the game's own flag-setter function (<code>0x8003CE08</code>) filtered by the flag index in its <code>a0</code> argument register - the latter names the calling code directly.</p>
   <table>
-    <thead><tr><th>Target</th><th>What it gates</th><th>Watch method</th></tr></thead>
+    <thead><tr><th>Target</th><th>What it gates</th><th>Watch</th><th>Bank byte / mask</th><th>Status</th></tr></thead>
     <tbody>
-      <tr><td><code>DAT_8007b7fc = 0x4B</code></td><td><s>Zeto battle-id</s> <strong>FALSIFIED - see note</strong></td><td>Write-watch <code>0x8007b7fc</code>, width 1</td></tr>
-      <tr><td>system flag <code>0x142</code></td><td>dolk-dungeon clear</td><td>Exec-bp <code>0x8003CE08</code>, <code>a0 == 322</code></td></tr>
-      <tr><td>system flag <code>0x482</code></td><td>Drake mist walls</td><td>Exec-bp <code>0x8003CE08</code>, <code>a0 == 1154</code></td></tr>
+      <tr><td>flag <code>0x142</code> (322)</td><td>rikuroa post-Caruban beat (probe label <code>flag_0x142_dolk_clear</code>)</td><td>exec-bp, <code>a0 == 322</code></td><td><code>0x80085780</code> / <code>0x20</code></td><td>caught, closed statically</td></tr>
+      <tr><td>flag <code>0x482</code> (1154)</td><td>Drake mist walls</td><td>exec-bp, <code>a0 == 1154</code></td><td><code>0x800857E8</code> / <code>0x20</code></td><td>standing target</td></tr>
+      <tr><td>flag <code>0x225</code> (549)</td><td>direct code path</td><td>exec-bp, <code>a0 == 549</code></td><td>-</td><td>standing target</td></tr>
+      <tr><td><code>DAT_8007b7fc = 0x4B</code></td><td>Zeto battle-id</td><td>write-watch, width 1 (<code>LEGAIA_ZETO_WIDTH=4</code>)</td><td>-</td><td>falsified - armed, never fires</td></tr>
     </tbody>
   </table>
-  <blockquote><p><strong>Correction - the <code>DAT_8007b7fc</code> Zeto leg is moot.</strong> A live firehose from <code>chapter2_garmel_pre_zeto</code> (interpreter, this exact write-watch armed width-1 <strong>and</strong> width-4) stayed <strong>silent</strong> across three reproducible Zeto fights. Zeto (<code>0x4B</code>, byte-confirmed name in PROT 867) fights in scene <strong><code>garmel</code></strong>, and its formation <code>[0x4B,0,0,0]</code> is installed by the <code>FUN_801DA51C</code> <code>actor[+0x94]</code> <strong>record path</strong> - not the <code>DAT_8007b7fc</code> battle-id path (which reads <code>0</code> everywhere and may be vestigial). The <code>jou</code> scoping below is superseded. The <strong>flag</strong> legs (<code>0x142</code> / <code>0x482</code> / <code>549</code>) are unaffected; keep the runbook for them. Full detail: <a href="../formats/encounter.html#battle-id-path">encounter.html</a>.</p></blockquote>
-  <p>The probe is <code>autorun_spine_flag_writers.lua</code>. It installs a bare Vsync listener with <strong>no self-quit</strong> (this is a human-at-the-controls session), arms the watches once the game settles into field mode, and streams every hit to a CSV.</p>
-  <p class="note"><strong>Localise first with the fast poll tier.</strong> These exec-bp watches force the interpreter (~10 fps). Before a targeted session, a <code>--fast</code> dynarec run of <code>autorun_state_poll.lua</code> (the <a href="pcsx-redux-automation.html#two-tier-capture">two-tier model</a>) logs <em>which scene</em> each flag changes in at full speed - point the exec-bp firehose there for the writer <code>ra</code>. Both probes share the USA-build version guard (<code>lib/probe/version.lua</code>).</p>
-</section>
-
-<section class="doc-section" id="watch-addresses">
-  <h2>Derived watch addresses</h2>
-  <p>Flag-bank geometry (SCUS-resident): base <code>0x80085758</code>, <code>byte = base + (idx &gt;&gt; 3)</code>, <code>mask = 0x80 &gt;&gt; (idx &amp; 7)</code>.</p>
-  <table>
-    <thead><tr><th>Flag</th><th>idx (dec)</th><th>Bank byte</th><th>Mask</th><th>Fallback Write-watch</th></tr></thead>
-    <tbody>
-      <tr><td><code>0x142</code> (dolk clear)</td><td>322</td><td><code>0x80085780</code></td><td><code>0x20</code></td><td>byte <code>0x80085780</code> bit <code>0x20</code></td></tr>
-      <tr><td><code>0x482</code> (mist walls)</td><td>1154</td><td><code>0x800857E8</code></td><td><code>0x20</code></td><td>byte <code>0x800857E8</code> bit <code>0x20</code></td></tr>
-    </tbody>
-  </table>
-  <p>The Exec-bp path is preferred: it isolates the exact flag AND names the writer <code>ra</code> directly, which a raw byte watch can't (eight flags share one bank byte). Set <code>LEGAIA_FLAG_FALLBACK=1</code> to additionally arm the raw byte watches if a flag write is somehow missed by the setter breakpoint (then decode the <code>ra</code> by hand). The Zeto byte watch is width 1; if it never fires, set <code>LEGAIA_ZETO_WIDTH=4</code> to widen it to the full word.</p>
-</section>
-
-<section class="doc-section" id="which-emulator">
-  <h2>Which emulator</h2>
-  <p><strong>PCSX-Redux</strong>, not mednafen. These are live watchpoints, which need the interpreter + debugger. <code>run_probe.sh</code> sets <code>-interpreter -debugger</code> by default; <strong>do not</strong> pass <code>--fast</code> - Lua breakpoints do not fire under the recompiler.</p>
+  <p>The setter breakpoint isolates the exact flag <em>and</em> names the caller; a raw byte watch cannot, because eight flags share one bank byte. <code>LEGAIA_FLAG_FALLBACK=1</code> additionally arms the byte watches in the table as a safety net.</p>
+  <p>Zeto fights in scene <code>garmel</code>, and its formation is installed by the encounter <strong>record path</strong>, not the battle-id global - which reads 0 everywhere and may be vestigial. Detail: <a href="../formats/encounter.html#battle-id-path">encounter - battle-id path</a>.</p>
 </section>
 
 <section class="doc-section" id="card-slots">
-  <h2>Which card slot for which beat</h2>
-  <p>The chapter-1 ladder card <code>saves/library/cards/playthrough-ladder-pro00-14.mcr</code> holds 15 active slots (PRO-00..14, blocks 1..15). Story-flag state was read directly from each SC block's bitmap (block offset <code>0x14C0</code>, mirroring RAM <code>0x80085600</code>). Load the slot nearest the beat you want, then play forward:</p>
+  <h2>Which save for which beat</h2>
+  <p>The ladder card holds 15 active slots (PRO-00..14). Load the slot nearest the beat, then play forward; the flags fall in story order so one armed session sweeps several.</p>
   <table>
-    <thead><tr><th>Beat / write</th><th>Load save</th><th>Why</th><th>Fallback</th></tr></thead>
+    <thead><tr><th>Beat</th><th>Load</th><th>Why</th><th>Then</th></tr></thead>
     <tbody>
-      <tr><td>Zeto write (<code>0x8007b7fc=0x4B</code>)</td><td><strong>PRO-01</strong></td><td>keikoku + dolk done, Zeto not beaten; tightest pre-trigger</td><td>PRO-05</td></tr>
-      <tr><td>flag <code>0x142</code> (dolk clear)</td><td><strong>PRO-00</strong></td><td>everything unset; play through the dolk dungeon to its clear beat</td><td>&mdash;</td></tr>
-      <tr><td>flag <code>0x482</code> (mist walls)</td><td>(not on this card)</td><td><code>0x482</code> is unset in all 15 slots; no catalogued save reaches it</td><td>see note</td></tr>
+      <tr><td>keikoku (Kikoku Cliff)</td><td>PRO-00</td><td>everything unset</td><td>sets <code>0x193</code> - not watched, but the marker that you are on the spine</td></tr>
+      <tr><td>rikuroa - Caruban trigger and victory</td><td>PRO-00</td><td>walk forward</td><td>the post-victory record sets <code>0x142</code></td></tr>
+      <tr><td>Zeto (garmel)</td><td>PRO-01 (fallback PRO-05)</td><td>keikoku + dolk done, Zeto not beaten</td><td>continue to the Drake mist-wall event</td></tr>
+      <tr><td>Drake mist walls (<code>0x482</code>)</td><td>none on this card</td><td>unset in all 15 slots</td><td>keep the watch armed and play past Zeto (<code>chapter2_garmel_pre_zeto</code> brackets it), or source a nearer card</td></tr>
     </tbody>
   </table>
-  <p>Load saves <strong>by name</strong> on the in-game load screen, never by block position: the card's physical block order does not follow the PRO numbering (verify with <code>save-tool saves &lt;card&gt;</code>; e.g. PRO-01 sits mid-card, after PRO-03/04/05).</p>
-  <p>PRO-00 is also a viable single start for a forward run past the Caruban beat (<code>0x142</code>). (The old <code>jou</code>-side Zeto battle-id write it once targeted was falsified live - see the correction note.)</p>
-  <p><strong>Mist-wall caveat.</strong> Flag <code>0x482</code> is unset across every slot of this card (it matches the library-wide zero the backlog notes). It is <strong>not bracketable</strong> from this card: the operator must keep the watch armed and play forward <em>past</em> the Zeto beat to the Drake mist-wall story event, or source a different card that sits nearer it. Treat this as the one leg that needs fresh forward play - the other two are one short walk from their load slot.</p>
+  <aside class="notice">
+    <span class="notice-title">Load by name, never by block position</span>
+    The card's physical block order does not follow the PRO numbering (<code>save-tool saves &lt;card&gt;</code> shows it; PRO-01 sits mid-card). Story-flag state per slot is read from each save block's bitmap at block offset <code>0x14C0</code>.
+  </aside>
 </section>
 
 <section class="doc-section" id="firehose">
-  <h2>The firehose variant - capture every flag write, not just the spine</h2>
-  <p><code>autorun_flag_firehose.lua</code> generalizes this session: instead of filtering to the three spine targets it logs <strong>every</strong> story-flag SET (<code>FUN_8003CE08</code>) and CLEAR (<code>FUN_8003CE34</code>) with the writer <code>ra</code>, every battle-id staging write (<code>0x8007B7FC</code>), and every scene-name / game-mode transition as a context timeline - one CSV (<code>flag_firehose.csv</code>: <code>tick,kind,value,pc,ra,mode,scene,count</code>).</p>
-  <p>Per-key repeat suppression (first 8 of each <code>(kind,flag,ra)</code>, then every 64th with a running count) keeps hot per-tick callers from flooding the file; a long session stays in the hundreds of KB. Prefer it for any play-forward longer than a single beat: the same session that catches the spine writers also banks the full flag-provenance stream for later analysis, so nothing needs re-capturing. Same launch shape, same emulator constraints, same <code>attribute_overlay_hits.py</code> post-pass per row.</p>
+  <h2>The firehose variant</h2>
+  <p><code>autorun_flag_firehose.lua</code> logs <strong>every</strong> story-flag SET and CLEAR with the caller, every battle-id staging write, and every scene / mode transition as a timeline - one CSV (<code>flag_firehose.csv</code>: <code>tick,kind,value,pc,ra,mode,scene,count</code>). Per-key repeat suppression (first 8 of each <code>(kind,flag,ra)</code>, then every 64th) keeps hot callers from flooding it. Prefer it for any play-forward longer than one beat: the same session banks the whole flag-provenance stream. Same launch shape, same post-pass.</p>
+</section>
+
+<section class="doc-section" id="caught">
+  <h2>Reading a hit</h2>
+  <table>
+    <thead><tr><th>File</th><th>Contents</th></tr></thead>
+    <tbody>
+      <tr><td><code>spine_flag_writers.csv</code></td><td>one row per hit: <code>tick,label,addr,pc,ra,value</code>; <code>pc</code> = the setter, <code>value</code> = flag index, <code>ra</code> = the game-logic caller</td></tr>
+      <tr><td><code>spine_flag_writers.detail.txt</code></td><td>registers + code + stack for the first N hits per label (<code>LEGAIA_MAX_DETAIL</code>, default 8)</td></tr>
+    </tbody>
+  </table>
+  <aside class="notice warn">
+    <span class="notice-title">Attribute from resident bytes, not static dumps</span>
+    The static field-overlay image is wrong at the writer addresses (previous-occupant strata and aliasing - <a href="static-overlay-pipeline.html#a-small-overlay-does-not-clear-the-slot">a small overlay does not clear the slot</a>). Disassemble the bytes resident in a same-mode save state.
+  </aside>
+  <p>Each beat boundary is also a chance to close a gap in the state library: save a PCSX-Redux state at pre-Zeto and pre/post-mist, then <code>scripts/manage-states.py fingerprint</code> and <code>library</code> so the bracket is catalogued. Load states by fingerprint, not slot.</p>
 </section>
 
 <section class="doc-section" id="settled">
   <h2>What the captures settled</h2>
   <ul class="bullets">
-    <li><strong>Flag <code>0x142</code> - CAUGHT, then closed statically.</strong> The SET fires at the <strong>rikuroa post-Caruban beat</strong> ("dolk clear" was a mislabel), <code>ra 0x801E3598</code> = the field-VM dispatcher's own <code>0x5x</code> SET arm. The source is script bytes <code>51 42</code> in the scene's <strong>streaming variant MAN</strong> (PROT <code>0157_rikuroa</code>, records <code>P1[10..12]</code> + the self-latching post-victory <code>P2[50]</code>; carrier + census in <a href="../subsystems/script-vm.html">script-vm</a>). Save-state bracket catalogued as <code>rikuroa_pre_caruban</code> / <code>rikuroa_post_caruban</code>.</li>
-    <li><strong>Story-flag provenance model (capture-proven).</strong> Across every chapter-1 scene traversed, story flags are written exclusively by the <code>0x5x</code>/<code>0x6x</code> script ops; every other setter caller is an engine system touching low indices (<code>0</code>/<code>3</code> entity-SM staging, <code>0x35</code> battle-end victory in <code>FUN_8004E568</code>, <code>0xB</code>/<code>0xC</code>/<code>0x18</code> interaction locks, <code>0xE</code> dispatcher spawn ops).</li>
-    <li><strong>Attribution caveat:</strong> the static field-overlay image is WRONG at the writer VAs (over-read/alias) - attribute callers by disassembling the <strong>resident bytes from a same-mode save state</strong>, not from static overlay dumps.</li>
-    <li>The carrier-complete census closed <code>0x1BE</code> statically (geremi's Jeremi-arrival one-shot - never a Zeto gate). Its <code>0x482</code> closure did NOT hold: every census site for <code>0x482</code> is a desynced-walker alias of SJIS text (hand-disasm-falsified per class; the census now flags decode coherence per site - <code>GFlagSite::clean</code>). The <code>DAT_8007B7FC</code> battle-id write was falsified live (see the correction note: silent at the Zeto trigger, Zeto is a <code>garmel</code> record-path fight) and is no longer a standing target. TWO capture targets stand: flag <code>549</code> (<code>0x225</code>) and flag <code>0x482</code> (Drake mist walls) - both direct code paths; for <code>0x482</code> arm a write-watch across the post-Zeto Drake-revival beat (<code>chapter2_garmel_pre_zeto</code> brackets it).</li>
+    <li><strong>Flag <code>0x142</code>.</strong> The SET fires at the rikuroa post-Caruban beat from the field-VM dispatcher's own SET arm; the source is script bytes in the scene's streaming-variant MAN (records <code>P1[10..12]</code> plus the self-latching post-victory <code>P2[50]</code>). Bracket catalogued as <code>rikuroa_pre_caruban</code> / <code>rikuroa_post_caruban</code>.</li>
+    <li><strong>Provenance model.</strong> Across every chapter-1 scene traversed, story flags are written exclusively by the field VM's <code>0x5x</code>/<code>0x6x</code> script ops. Every other setter caller is an engine system touching low indices - entity-SM staging, battle-end victory, interaction locks, spawn ops.</li>
+    <li><strong>Standing targets:</strong> flags <code>0x225</code> and <code>0x482</code>, both direct code paths.</li>
   </ul>
+  <details class="disclosure">
+    <summary>History: readings this runbook once targeted</summary>
+    <div class="disclosure-body">
+      <ul class="bullets">
+        <li><strong>"<code>DAT_8007b7fc = 0x4B</code> is the Zeto battle-id write"</strong> - falsified live: a firehose from <code>chapter2_garmel_pre_zeto</code> with the watch at width 1 and 4 stayed silent across three Zeto fights.</li>
+        <li><strong>"<code>0x142</code> = dolk-dungeon clear"</strong> - a mislabel; the probe's row label keeps the old name.</li>
+        <li><strong>"<code>0x1BE</code> is a Zeto gate"</strong> - closed statically as geremi's Jeremi-arrival one-shot.</li>
+        <li><strong>"The census closed <code>0x482</code>"</strong> - every census site for it is a desynced-walker alias of text bytes; the census flags decode coherence per site (<code>GFlagSite::clean</code>).</li>
+      </ul>
+      <p>Project-wide list: <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p>
+    </div>
+  </details>
 </section>
 
-<section class="doc-section" id="running">
-  <h2>Running the probe</h2>
-  <p>Wrap the launch in <code>timeout --kill-after</code> - the probe never exits on its own, so an unwrapped run would hang the emulator open indefinitely.</p>
-  <p>Card-save play (the primary mode). Configure PCSX-Redux to use the ladder <code>.mcr</code> as memory card 1 (persisted in its GUI settings, or copied into the emulator's memcards dir before launch), then cold-boot and load the slot from the in-game load screen:</p>
-<pre><code>LEGAIA_NO_SSTATE=1 \
-xvfb-run -a timeout --kill-after=15s 1800s \
-bash scripts/pcsx-redux/run_probe.sh \
-    --lua scripts/pcsx-redux/autorun_spine_flag_writers.lua</code></pre>
-  <p>(Drop <code>xvfb-run -a</code> if you want to see the window and drive it yourself; raise the <code>1800s</code> budget for a long forward run.)</p>
-  <p>Save-state seed (alternative). If you already hold a <code>.sstate</code> near a beat, skip <code>LEGAIA_NO_SSTATE</code> and point <code>LEGAIA_SSTATE</code> at it:</p>
-<pre><code>LEGAIA_SSTATE=/path/to/pre-zeto.sstate \
-xvfb-run -a timeout --kill-after=15s 900s \
-bash scripts/pcsx-redux/run_probe.sh \
-    --lua scripts/pcsx-redux/autorun_spine_flag_writers.lua</code></pre>
+<section class="doc-section" id="how-we-know">
+  <h2>How we know</h2>
+  <table>
+    <thead><tr><th>Item</th><th>Address / function</th><th>What it proves</th><th>Source</th></tr></thead>
+    <tbody>
+      <tr><td>Flag setter / clearer</td><td><code>FUN_8003CE08</code> / <code>FUN_8003CE34</code>, SCUS-resident</td><td>Every story-flag write passes through one function; breaking on it names the caller</td><td><code>ghidra/scripts/funcs/8003CE08.txt</code></td></tr>
+      <tr><td>Flag bank</td><td><code>0x80085758</code>, bit <code>0x80 &gt;&gt; (idx &amp; 7)</code></td><td>Byte / mask for a fallback write-watch</td><td><a href="../reference/memory-map.html">memory map</a></td></tr>
+      <tr><td><code>0x142</code> writer</td><td><code>ra 0x801E3598</code> in the field-VM dispatcher; script bytes <code>51 42</code> in PROT <code>0157_rikuroa</code></td><td>Flag set by script op, not engine code</td><td>capture <code>rikuroa_post_caruban</code>; <a href="../subsystems/script-vm.html">script VM</a></td></tr>
+      <tr><td>Zeto formation</td><td><code>FUN_801DA51C</code>, <code>actor[+0x94]</code> record</td><td>The battle-id global is not the Zeto path</td><td><a href="../formats/encounter.html">encounter</a></td></tr>
+      <tr><td>Battle-end victory flag</td><td><code>FUN_8004E568</code> sets index <code>0x35</code></td><td>An engine-side setter caller outside the script ops</td><td>firehose capture</td></tr>
+      <tr><td>Slot bitmap in a save block</td><td>block offset <code>0x14C0</code> (mirrors RAM <code>0x80085600</code>)</td><td>Which ladder slot has which flags set</td><td><a href="../formats/save-record.html">save record</a></td></tr>
+    </tbody>
+  </table>
 </section>
 
-<section class="doc-section" id="beat-order">
-  <h2>Beat order for one full session</h2>
-  <p>With PRO-00 loaded (or the tightest slot per beat), the flags fall in story order, so a single armed session can sweep several:</p>
-  <ol>
-    <li><strong>keikoku</strong> - walk the Kikoku Cliff leg (sets <code>0x193</code>; not watched, but the marker that you're on the spine).</li>
-    <li><strong>rikuroa (Caruban trigger)</strong> - enter Mt. Rikuroa; Caruban is <code>0x142</code>-gated. (The <code>zeto_battle_id</code> watch on <code>DAT_8007b7fc</code> was falsified live and stays silent - see the correction note; Caruban's own formation mechanism is still un-captured and worth re-checking with the firehose.)</li>
-    <li><strong>Caruban victory</strong> - win the fight; the post-victory record <code>P2[50]</code> sets <code>0x142</code> (the write the firehose caught).</li>
-    <li><strong>dolk clear</strong> - clear the dolk dungeon to its clear beat; the <code>flag_0x142_dolk_clear</code> row fires.</li>
-    <li><strong>mist-wall event</strong> - continue to the Drake mist-wall story event; the <code>flag_0x482_mist_walls</code> row fires (this leg needs fresh forward play; see the caveat above).</li>
-  </ol>
-</section>
-
-<section class="doc-section" id="caught">
-  <h2>What a &ldquo;caught&rdquo; hit looks like</h2>
-  <p>Output lands under <code>captures/spine_flag_writers/&lt;run-ts&gt;/</code>:</p>
-  <ul class="bullets">
-    <li><code>spine_flag_writers.csv</code> - one row per hit: <code>tick,label,addr,pc,ra,value</code>.</li>
-    <li><code>spine_flag_writers.detail.txt</code> - call-context (GPRs + code + stack) for the first N hits of each label (<code>LEGAIA_MAX_DETAIL</code>, default 8).</li>
-  </ul>
-  <p>A <strong>caught</strong> write is a CSV row whose <code>ra</code> column is <strong>non-zero</strong> - that is the writer's return address, the whole point of the hunt. Concretely:</p>
-  <ul class="bullets">
-    <li><code>zeto_battle_id</code> - <code>value</code> should read <code>75</code> (<code>0x4B</code>); <code>pc</code> is the store site and <code>ra</code> its caller.</li>
-    <li><code>flag_0x142_dolk_clear</code> / <code>flag_0x482_mist_walls</code> - <code>pc</code> is the setter <code>0x8003CE08</code>, <code>value</code> is the flag index (<code>322</code> / <code>1154</code>), and <code>ra</code> is the game-logic caller that requested the set. That <code>ra</code> is what to attribute by containment (<code>attribute_overlay_hits.py</code>) to find the owning overlay.</li>
-  </ul>
-  <p>The <code>[spine] HIT ...</code> lines in <code>pcsx.log</code> mirror each CSV row live, so you can watch the hunt land without opening the CSV.</p>
-</section>
-
-<section class="doc-section" id="catalogue-states">
-  <h2>Catalogue the missing pre-write states</h2>
-  <p>Each beat boundary is also a chance to close a gap in the state library: no catalogued state brackets any of these three writes. At each boundary (pre-Zeto rikuroa, pre-dolk-clear, pre/post-mist), save a PCSX-Redux state, then fingerprint and catalogue it so the library gains the missing brackets:</p>
-<pre><code>scripts/manage-states.py fingerprint     # compute the RAM fingerprint
-scripts/manage-states.py library         # confirm it's backed up + catalogued</code></pre>
-  <p>Load states by <strong>fingerprint</strong>, not slot number (slot indices are ephemeral and get overwritten). These additions are valuable regardless of what the watches catch this run.</p>
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Tooling</span>
+    <a href="pcsx-redux-automation.html">PCSX-Redux automation</a>
+    <a href="mednafen-automation.html">Mednafen automation</a>
+    <a href="overlay-capture.html">Overlay capture</a>
+    <a href="static-overlay-pipeline.html">Static overlay pipeline</a>
+  </div>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../subsystems/script-vm.html">Field / event script VM</a>
+    <a href="../formats/encounter.html">Encounter record</a>
+    <a href="../reference/memory-map.html">Memory map</a>
+    <a href="../reference/open-rev-eng-threads.html">Open RE threads</a>
+  </div>
 </section>

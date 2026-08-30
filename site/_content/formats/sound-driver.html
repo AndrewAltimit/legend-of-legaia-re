@@ -1,123 +1,59 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; sound-driver path-string cluster</div>
   <h1>Sound-driver path-string cluster <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">The game's executable still carries the file extensions its sound tooling used during development - <code>.dpk</code>, <code>.spk</code>, <code>.MAP</code>, <code>.PCH</code> - as a little cluster of path strings the sound subsystem appends when building asset paths. This page decodes that cluster and answers the question it raises: are these exotic sound formats to reverse? Mostly no.
-The retail <code>.dpk</code> / <code>sound_data2</code> payload turns out to be a chunked <a href="vab.html">VAB</a> + <a href="seq.html">SEQ</a> bundle - the ordinary instrument-bank + music-sequence pair (see the <a href="#what-s-left-to-format-spec">final section</a>) - and the <code>.MAP</code> / <code>.PCH</code> PsyQ intermediates are dev-side tool outputs the retail disc does not carry at all.</p>
+  <p class="lede">When a scene starts and its music and sound effects load, the game builds a file path out of a small set of extensions its developers' sound tools used - <code>.dpk</code>, <code>.spk</code>, <code>.MAP</code>, <code>.PCH</code> - still sitting in the executable. Are these exotic sound formats to reverse? Mostly no. The per-scene <code>.dpk</code> sound pack is an ordinary <a href="vab.html">VAB</a> + <a href="seq.html">SEQ</a> pair in a chunked wrapper, and the <code>.MAP</code> / <code>.PCH</code> intermediates never made it onto the retail disc.</p>
 </header>
 
-<section class="doc-section" id="cluster-layout">
-  <h2>Cluster layout</h2>
-  <p>The cluster lives in <code>SCUS_942.54</code> (the game's main executable) at RAM <code>0x8007B380</code> (file offset <code>0x6BB80</code>):</p>
-<table>
-<thead><tr>
-<th>Offset</th>
-<th>Bytes</th>
-<th>Meaning</th>
-</tr></thead>
-<tbody>
-<tr>
-<td><code>0x8007B380</code></td>
-<td>12 bytes</td>
-<td>Per-extension flag/mode metadata table: <code>00 01 FF FF FF FF 00 00 00 02 00 00</code>.</td>
-</tr>
-<tr>
-<td><code>0x8007B38C</code></td>
-<td><code>"sound\"</code></td>
-<td>Path prefix for streaming-asset loads.</td>
-</tr>
-<tr>
-<td><code>0x8007B394</code></td>
-<td><code>".spk"</code></td>
-<td>SPU sample bank.</td>
-</tr>
-<tr>
-<td><code>0x8007B39C</code></td>
-<td><code>".LZS"</code></td>
-<td>Compressed wrapper (per-file).</td>
-</tr>
-<tr>
-<td><code>0x8007B3A4</code></td>
-<td>8 bytes</td>
-<td><strong>Not sound data.</strong> The per-character equipment-swap selector bytes (3 equip-condition offsets at <code>0x8007B3A4</code> + 3 group indices at <code>0x8007B3A8</code>) read by the graphics-side <code>FUN_8001EBEC</code> - see <a href="character-mesh.html">character-mesh</a>. Adjacent to the path cluster in BSS but unrelated to it.</td>
-</tr>
-<tr>
-<td><code>0x8007B3AC</code></td>
-<td><code>"bse.dat"</code></td>
-<td>Master sound-bank file name (loaded once at sound-init).</td>
-</tr>
-<tr>
-<td><code>0x8007B3B4</code></td>
-<td><code>".dpk"</code></td>
-<td>Per-scene sound pack - the format <code>FUN_8001FA88</code> loads.</td>
-</tr>
-<tr>
-<td><code>0x8007B3BC</code></td>
-<td><code>".MAP"</code></td>
-<td>Sound bank map (PsyQ SoundArtist output).</td>
-</tr>
-<tr>
-<td><code>0x8007B3C4</code></td>
-<td><code>".PCH"</code></td>
-<td>Patch / instrument data (PsyQ output).</td>
-</tr>
-<tr>
-<td><code>0x8007B3CC</code></td>
-<td><code>".LZS"</code></td>
-<td>Duplicate, fallback.</td>
-</tr>
-<tr>
-<td><code>0x8007B3D4</code></td>
-<td><code>".pac"</code></td>
-<td>Per-scene generic pack.</td>
-</tr>
-<tr>
-<td><code>0x8007B3DC</code></td>
-<td><code>"STR"</code></td>
-<td>Streaming audio (raw PSX <code>.STR</code> containers).</td>
-</tr>
-</tbody>
-</table>
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Magic</dt><dd>none - a string cluster in <code>SCUS_942.54</code> at RAM <code>0x8007B380</code> (file offset <code>0x6BB80</code>)</dd>
+    <dt>Where on disc</dt><dd>The <code>.dpk</code> payloads are the <code>sound_data2</code> PROT family (<code>0877</code>..<code>0885</code>); <code>bse.dat</code> is the master bank the sound subsystem loads once at init</dd>
+    <dt>Parser</dt><dd><code>legaia_asset::sound_pack</code> (<code>extract</code> returns the reconstituted VAB + SEQ); walker <code>parse_streaming_with(.., StreamTerminator::TypeTwo)</code></dd>
+    <dt>Confidence</dt><dd>Confirmed - loader, path builders and chunk walker traced (<a href="#how-we-know">how we know</a>); VAB reconstitution byte-verified across <code>0877</code>..<code>0885</code></dd>
+    <dt>Used by</dt><dd><a href="../subsystems/audio.html">Audio stack</a></dd>
+  </dl>
 </section>
 
-<section class="doc-section" id="consumers">
-  <h2>Consumers</h2>
-  <p>Two SCUS functions touch the cluster (located via <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/ghidra/scripts/find_sound_path_builders.py"><code>ghidra/scripts/find_sound_path_builders.py</code></a>):</p>
-<table>
-<thead><tr>
-<th>Function</th>
-<th>Role</th>
-<th>Touch points</th>
-</tr></thead>
-<tbody>
-<tr>
-<td><code>FUN_8001FA88</code></td>
-<td><strong>Sound subsystem init / <code>.dpk</code> loader.</strong> Allocates a 0x1800-byte buffer at <code>_DAT_8007B8D0</code>. Loads <code>bse.dat</code> via the path-based opener. Then assembles <code>h:\main\bg\domepack\&lt;name&gt;.dpk</code> (template at <code>0x800105C8</code> + extension at <code>0x8007B3B4</code>) and opens it.</td>
-<td><code>0x8007B3AC</code> (<code>bse.dat</code>), <code>0x8007B3B4</code> (<code>.dpk</code>)</td>
-</tr>
-<tr>
-<td><code>FUN_8001FC00</code></td>
-<td><strong>Streaming-asset loader.</strong> Builds paths under the <code>sound\</code> prefix; the XA / <code>.pac</code> / <code>STR</code> consumer.</td>
-<td><code>0x8007B38C</code> (<code>sound\</code>)</td>
-</tr>
-</tbody>
-</table>
-<p class="hint"><strong>Trap:</strong> <code>FUN_8001EBEC</code> looks like a third consumer (it reads <code>_DAT_8007B824</code> + the tables at <code>0x8007B3A4</code>/<code>0x8007B3A8</code>) but is <strong>not</strong> a sound function - it is the character-TMD equipment-conditional group-transform swap (it reads the loaded battle-character TMD pointers from <code>DAT_8007C018[_DAT_8007B824 + 0..2]</code>, where <code>_DAT_8007B824</code> is the party base index, and copies group transforms). The <code>0x8007B3A4</code>/<code>0x8007B3A8</code> bytes are its per-character selector tables, not sound-extension descriptors. See <a href="character-mesh.html">character-mesh</a>.</p>
-</section>
-
-<section class="doc-section" id="dev-build-vs-retail-build-paths">
-  <h2>Dev-build vs retail-build paths</h2>
-  <p>Both <code>FUN_8001FA88</code> and <code>FUN_8001FC00</code> carry a <code>_DAT_8007B8C2</code> (debug-flag) carve-out:</p>
-  <ul class="bullets">
-    <li><strong>Dev branch</strong> (<code>_DAT_8007B8C2 != 0</code>) loads sound data via PROT indices. <code>FUN_8001FA88</code>'s dev branch loads index <code>0x37A</code> (= <code>sound_data2</code>) plus <code>param_1 + 5</code> for per-scene variations, via the index-based loader (<code>FUN_8003EB98</code>).</li>
-    <li><strong>Retail branch</strong> (<code>_DAT_8007B8C2 == 0</code>) loads via dev-style paths through the path-based opener (<code>FUN_8003E6BC</code>), which resolves <code>h:\main\bg\domepack\…</code> into the appropriate PROT entry through the CDNAME-driven name map.</li>
-  </ul>
-  <p>Both paths land at the same files; only the indirection differs. The same dev/retail split appears in <a href="../subsystems/asset-loader.html"><code>FUN_800255B8</code></a>, so it's a pattern that repeats across asset-loading subsystems.</p>
-</section>
-
-<section class="doc-section" id="what-s-left-to-format-spec">
-  <h2>The <code>.dpk</code> / <code>sound_data2</code> payload is a VAB + SEQ bundle</h2>
-  <p>The sound-side chunk payload is a <strong>VAB followed by a SEQ</strong>, not a novel <code>.MAP</code>/<code>.PCH</code>/<code>.spk</code> layout:</p>
-  <table>
+<section class="doc-section" id="dpk-payload">
+  <h2>The <code>.dpk</code> sound pack is a VAB + SEQ bundle</h2>
+  <p>A per-scene sound pack is a <strong>VAB followed by a SEQ</strong> in a streaming-chunk container - not a novel <code>.MAP</code> / <code>.PCH</code> / <code>.spk</code> layout. Each chunk is <code>[u32 (type &lt;&lt; 24) | size][payload, 4-padded]</code>; the walk ends on the type-2 chunk, which is itself the SEQ.</p>
+  <figure class="overlay-strip">
+    <svg viewBox="0 0 880 170" width="100%" style="max-width:880px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A .dpk pack: chunk type 0 holds the VAB header, type 1 the VAB samples, type 2 the SEQ terminator; types 0 and 1 concatenate into one VAB">
+      <style>
+        .sd-seg { font: 12px 'Inter', sans-serif; fill: currentColor; text-anchor: middle; }
+        .sd-note { font: 11px 'Inter', sans-serif; fill: var(--text-muted); text-anchor: middle; }
+        .sd-mag { font: 10px 'JetBrains Mono', monospace; fill: var(--accent); text-anchor: middle; }
+        .sd-box { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.2; }
+        .sd-out { fill: var(--bg-raised); stroke: var(--border); stroke-width: 1.2; }
+        .sd-arrow { stroke: var(--accent); stroke-width: 1.2; fill: none; }
+      </style>
+      <rect x="20"  y="26" width="230" height="40" class="sd-box"/>
+      <rect x="250" y="26" width="330" height="40" class="sd-box"/>
+      <rect x="580" y="26" width="230" height="40" class="sd-box"/>
+      <text x="135" y="41" class="sd-seg">chunk type 0</text>
+      <text x="135" y="57" class="sd-note">VAB header</text>
+      <text x="415" y="41" class="sd-seg">chunk type 1</text>
+      <text x="415" y="57" class="sd-note">VAB sample pool</text>
+      <text x="695" y="41" class="sd-seg">chunk type 2 = end</text>
+      <text x="695" y="57" class="sd-note">SEQ</text>
+      <text x="135" y="16" class="sd-mag">pBAV</text>
+      <text x="695" y="16" class="sd-mag">pQES</text>
+      <path d="M 135 66 L 135 96 L 260 96 L 260 116" class="sd-arrow"/>
+      <path d="M 415 66 L 415 96 L 300 96" class="sd-arrow"/>
+      <path d="M 254 110 L 260 116 L 266 110" class="sd-arrow"/>
+      <rect x="120" y="116" width="280" height="40" class="sd-out"/>
+      <text x="260" y="131" class="sd-seg">one contiguous VAB</text>
+      <text x="260" y="147" class="sd-note">total_size = size0 + size1</text>
+      <path d="M 695 66 L 695 116" class="sd-arrow"/>
+      <path d="M 689 110 L 695 116 L 701 110" class="sd-arrow"/>
+      <rect x="600" y="116" width="190" height="40" class="sd-out"/>
+      <text x="695" y="131" class="sd-seg">the scene's SEQ</text>
+      <text x="695" y="147" class="sd-note">plays against the VAB</text>
+    </svg>
+    <figcaption>Types 0 + 1 concatenate into one VAB; the terminator chunk is the SEQ itself.</figcaption>
+  </figure>
+  <table class="layout">
     <thead><tr><th>Chunk type</th><th>Payload</th><th>Magic</th></tr></thead>
     <tbody>
       <tr><td><code>0</code></td><td>VAB <strong>header</strong> section</td><td><code>pBAV</code> (<code>0x5641_4270</code> LE)</td></tr>
@@ -125,9 +61,73 @@ The retail <code>.dpk</code> / <code>sound_data2</code> payload turns out to be 
       <tr><td><code>2</code></td><td><strong>SEQ</strong> (the stream terminator)</td><td><code>pQES</code></td></tr>
     </tbody>
   </table>
-  <p>The decisive invariant: <strong>type-0 + type-1 reconstitute one contiguous VAB</strong> whose header <code>total_size</code> (<code>+0x0C</code>) equals <code>chunk[0].size + chunk[1].size</code>. Byte-verified across <code>0877</code>&ndash;<code>0885</code> (e.g. <code>0877</code>: <code>0x2820 + 0x1BA90 == 0x1E2B0</code>); the reconstituted VAB parses with <code>legaia_vab</code> and the terminator SEQ with <code>legaia_seq</code>.</p>
-  <p>The <strong>type-1 chunk payload</strong> depends on the consumer: on the <em>graphics</em> battle-init walk, <code>FUN_8001FE70</code>'s type-1 handler is the TIM/CLUT upload (<code>FUN_800198E0</code>); a sound pack's type-1 is the VAB's sample pool. The content shape matches the <a href="scene-bundles.html">scene_vab_stream</a> BGM wrapper (VAB + SEQ); only the container differs. Decoder: <code>legaia_asset::sound_pack</code> (<code>extract</code> returns the reconstituted VAB + SEQ); disc-gated <code>sound_pack_vab_seq_real</code> test.</p>
-  <p>The <code>.MAP</code> / <code>.PCH</code> PsyQ SoundArtist intermediates are the dev-side inputs that <em>produce</em> this VAB, not separate on-disc retail chunks - the retail disc does not carry them.</p>
+  <ul class="bullets">
+    <li><strong>Decisive invariant:</strong> type-0 + type-1 reconstitute one contiguous VAB whose header <code>total_size</code> equals <code>chunk[0].size + chunk[1].size</code>. Byte-verified across <code>0877</code>&ndash;<code>0885</code>; the reconstituted VAB parses with <code>legaia_vab</code>, the SEQ with <code>legaia_seq</code>.</li>
+    <li><strong>Same walker, different terminator.</strong> The chunk walker is the one the <a href="data-field.html">DATA_FIELD</a> dispatcher models, but it ends on a type-<code>0x02</code> chunk (non-zero size) where DATA_FIELD ends on a zero-size header - so the DATA_FIELD parser mis-reads a <code>.dpk</code>. Use <code>StreamTerminator::TypeTwo</code>.</li>
+    <li><strong>Type-1 depends on the consumer.</strong> On the graphics battle-init walk, the type-1 handler is the TIM/CLUT upload; in a sound pack it is the VAB's sample pool.</li>
+    <li>The content shape matches the <a href="scene-bundles.html">scene_vab_stream</a> BGM wrapper; only the container differs. The <code>.MAP</code> (sample-address map) and <code>.PCH</code> (patch data) are the PsyQ SoundArtist dev-side inputs that <em>produce</em> this VAB - the retail disc does not carry them, so no dedicated parser is warranted.</li>
+  </ul>
+  <details class="disclosure">
+    <summary>History: the bare-VAG-container reading</summary>
+    <div class="disclosure-body">
+      <p>An interim trace labelled the <code>.dpk</code> a <em>bare</em> VAG-record container. That is falsified: the VAG samples are the type-1 section <em>of a VAB</em>, indexed by the type-0 header, not a header-less stream. Falsified readings are catalogued in <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p>
+    </div>
+  </details>
+</section>
+
+<section class="doc-section" id="cluster-layout">
+  <h2>The string cluster</h2>
+  <table class="layout">
+    <thead><tr><th>Offset</th><th>Bytes</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x8007B380</code></td><td>12 bytes</td><td>Per-extension flag/mode metadata table: <code>00 01 FF FF FF FF 00 00 00 02 00 00</code>.</td></tr>
+      <tr><td><code>0x8007B38C</code></td><td><code>"sound\"</code></td><td>Path prefix for streaming-asset loads.</td></tr>
+      <tr><td><code>0x8007B394</code></td><td><code>".spk"</code></td><td>SPU sample bank.</td></tr>
+      <tr><td><code>0x8007B39C</code></td><td><code>".LZS"</code></td><td>Compressed wrapper (per-file).</td></tr>
+      <tr><td><code>0x8007B3A4</code></td><td>8 bytes</td><td><strong>Not sound data</strong> - the per-character equipment-swap selector bytes read by a graphics-side routine; adjacent in BSS but unrelated (<a href="#not-a-sound-consumer">trap below</a>).</td></tr>
+      <tr><td><code>0x8007B3AC</code></td><td><code>"bse.dat"</code></td><td>Master sound-bank file name (loaded once at sound-init).</td></tr>
+      <tr><td><code>0x8007B3B4</code></td><td><code>".dpk"</code></td><td>Per-scene sound pack - the VAB + SEQ bundle above.</td></tr>
+      <tr><td><code>0x8007B3BC</code></td><td><code>".MAP"</code></td><td>Sound bank map (PsyQ SoundArtist output; dev-only).</td></tr>
+      <tr><td><code>0x8007B3C4</code></td><td><code>".PCH"</code></td><td>Patch / instrument data (PsyQ output; dev-only).</td></tr>
+      <tr><td><code>0x8007B3CC</code></td><td><code>".LZS"</code></td><td>Duplicate, fallback.</td></tr>
+      <tr><td><code>0x8007B3D4</code></td><td><code>".pac"</code></td><td>Per-scene generic pack.</td></tr>
+      <tr><td><code>0x8007B3DC</code></td><td><code>"STR"</code></td><td>Streaming audio (raw PSX <code>.STR</code> containers).</td></tr>
+    </tbody>
+  </table>
+  <p class="hint" id="not-a-sound-consumer"><strong>Trap:</strong> a third routine reads the <code>0x8007B3A4</code>/<code>0x8007B3A8</code> bytes and looks like a sound consumer, but it is the character-TMD equipment-conditional group-transform swap - a graphics function. See <a href="character-mesh.html">character-mesh</a> and <a href="#how-we-know">how we know</a>.</p>
+</section>
+
+<section class="doc-section" id="bse-dat-header">
+  <h2><code>bse.dat</code> master-bank header</h2>
+  <p>The sound init loads <code>bse.dat</code> once into a <code>0x1800</code>-byte buffer and keeps a pointer into it for the whole session. A single <code>u16</code> at offset <code>+2</code>, rounded down to even, is the <strong>byte offset</strong> of a second section:</p>
+<pre><code>count     = *(u16 *)(bse_base + 2)
+gp[0x678] = bse_base + (count &amp; ~1)     ; even byte offset, not a divisor</code></pre>
+  <p>So <code>bse.dat</code> leads with <code>[u16 @0][u16 @2 = offset to section B][section A ...][section B]</code>. The offset indexes the master bank itself, not the per-scene <code>.dpk</code>.</p>
+</section>
+
+<section class="doc-section" id="dev-build-vs-retail-build-paths">
+  <h2>Dev-build vs retail-build paths</h2>
+  <p>Both path builders carry a debug-flag carve-out (<code>_DAT_8007B8C2</code>):</p>
+  <ul class="bullets">
+    <li><strong>Retail branch</strong> (flag non-zero, the value retail boots with) loads sound data by PROT index - <code>0x37A</code> (= <code>sound_data2</code>) plus <code>param_1 + 5</code> for per-scene variations - via the index-based loader.</li>
+    <li><strong>Dev branch</strong> (flag zero) opens an <code>h:\main\bg\domepack\&lt;name&gt;.dpk</code> path through a helper that is <code>strcpy</code>, a dev-station host trap (<code>break 0x103</code>), then fseek/fread/fclose. Retail hardware cannot service it.</li>
+  </ul>
+  <p>Only the retail branch runs on a real disc; the dev branch is a build-time artefact whose paths are not in the filesystem. The same split appears in the <a href="../subsystems/asset-loader.html">asset loader</a>, so it is a pattern that repeats across loading subsystems.</p>
+</section>
+
+<section class="doc-section" id="how-we-know">
+  <h2>How we know</h2>
+  <table>
+    <thead><tr><th>Function</th><th>Address</th><th>What it proves</th><th>Dump</th></tr></thead>
+    <tbody>
+      <tr><td>Sound init / <code>.dpk</code> loader</td><td><code>FUN_8001FA88</code></td><td>Allocates the <code>0x1800</code> buffer at <code>_DAT_8007B8D0</code>, loads <code>bse.dat</code>, derives the section-B offset from <code>+2</code>; assembles the dev <code>.dpk</code> path from the template at <code>0x800105C8</code>; retail branch loads PROT index <code>0x37A</code></td><td><code>funcs/8001fa88.txt</code></td></tr>
+      <tr><td>Streaming-asset path builder</td><td><code>FUN_8001FC00</code></td><td>Builds paths under the <code>sound\</code> prefix; the XA / <code>.pac</code> / <code>STR</code> consumer</td><td><code>funcs/8001fc00.txt</code></td></tr>
+      <tr><td>Chunk walker (consumer)</td><td><code>FUN_8001FE70</code>, called by <code>FUN_800513F0</code> on the loaded buffer</td><td><code>[type|size]</code> chunk walk, advance <code>(size &amp; ~3) + 4</code>, type-2 terminator; type-1 &rarr; TIM upload on the graphics walk</td><td><code>funcs/8001fe70.txt</code>, <code>funcs/800513f0.txt</code></td></tr>
+      <tr><td>Not-a-sound-consumer trap</td><td><code>FUN_8001EBEC</code></td><td>Reads <code>0x8007B3A4</code>/<code>0x8007B3A8</code> as equipment-swap selectors against <code>DAT_8007C018</code> TMD pointers - a graphics routine</td><td><code>funcs/8001ebec.txt</code></td></tr>
+      <tr><td>Locator sweep</td><td><code>ghidra/scripts/find_sound_path_builders.py</code></td><td>These are the only SCUS functions touching the cluster</td><td>-</td></tr>
+      <tr><td>Disc pins</td><td><code>sound_pack_stream_real</code>, <code>sound_pack_vab_seq_real</code></td><td>PROT <code>0877</code> walks as <code>[0: 0x2820][1: 0x1BA90][2: SEQ]</code>; <code>0x2820 + 0x1BA90 == 0x1E2B0</code> = the VAB's declared <code>total_size</code>; verified across <code>0877</code>..<code>0885</code></td><td>disc-gated tests</td></tr>
+    </tbody>
+  </table>
 </section>
 
 <section class="doc-section" id="see-also">
@@ -136,6 +136,8 @@ The retail <code>.dpk</code> / <code>sound_data2</code> payload turns out to be 
     <span class="see-also-label">Reference</span>
     <a href="vab.html">VAB sound bank</a>
     <a href="seq.html">SEQ sequence</a>
+    <a href="data-field.html">DATA_FIELD streaming</a>
     <a href="../subsystems/audio.html">Audio stack</a>
+    <a href="../subsystems/asset-loader.html">Asset loader</a>
   </div>
 </section>

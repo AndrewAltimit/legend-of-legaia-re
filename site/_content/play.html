@@ -247,8 +247,9 @@
   <div class="breadcrumb"><a href="index.html">home</a> &middot; play</div>
   <h1>Play the port</h1>
   <p class="lede">
-    Walk around inside <em>Legend of Legaia</em>, in this browser, on your own copy of the game -
-    the clean-room engine reimplementation compiled to WebAssembly, not a video and not an emulator.
+    Walk around inside <em>Legend of Legaia</em>, in this browser, on your own copy of the game.
+    This is the project's clean-room rewrite of the game engine compiled to WebAssembly - not a
+    video and not an emulator. Pick your disc image, choose New Game or a town, and take the controls.
   </p>
 </header>
 
@@ -284,11 +285,10 @@
       <button class="play-mode" type="button" data-mode="newgame">
         <span class="play-mode-tag">boot</span>
         <span class="play-mode-name">New game</span>
-        <span class="play-mode-desc">Boots the retail title card off your disc's own art, then plays
-          the opening prologue - the cutscene tableaux with the narration crawl, in the retail sepia
-          grade (Z/Space skips to Rim Elm, retail's intro skip) - and lands on the naming prompt,
-          where the name you pick goes into your party for good. The pre-title FMV movie and the
-          Continue save-slot grid are native-only for now.</span>
+        <span class="play-mode-desc">The real title card off your disc's own art, then the opening
+          prologue - the narrated tableaux in their sepia grade (Z or Space skips ahead, as on the
+          console) - ending at the naming prompt. Continue loads a save from an inserted memory
+          card. The pre-title movie is skipped here.</span>
       </button>
       <button class="play-mode" type="button" data-mode="scene">
         <span class="play-mode-tag">explore</span>
@@ -381,131 +381,128 @@
 </section>
 
 <details class="about-data">
-  <summary>About this page - what the engine is, what runs here, VR, and how it is wired</summary>
+  <summary>About this page - what runs here, what does not yet, VR, and how it is wired</summary>
   <div class="about-body">
 
   <p>
-    Not a video, and not an emulator: this is the project's clean-room
+    <strong>What you are looking at.</strong> The project's clean-room
     <a href="subsystems/engine.html">engine reimplementation</a>, compiled to WebAssembly and
-    actually running - the same <a href="subsystems/script-vm.html">field VM</a>,
-    <a href="subsystems/field-locomotion.html">movement controller</a>, and NPC motion VMs the
-    native build uses, with WebGL drawing what they simulate.
+    actually running: the same <a href="subsystems/script-vm.html">field script engine</a>,
+    <a href="subsystems/field-locomotion.html">movement controller</a> and NPC
+    <a href="subsystems/motion-vm.html">motion engines</a> the native build uses, with WebGL
+    drawing what they simulate. Nothing is pre-rendered; every frame is computed from your disc.
   </p>
   <p>
     <strong>You supply the game.</strong> The site ships no game data. Pick a <code>.bin</code>
-    disc image of your own copy above; it is read locally in your browser and nothing is uploaded.
+    disc image of your own copy above; it is read locally in your browser, cached for the other
+    pages here, and never uploaded.
+  </p>
+  <p>
+    <strong>Three ways in.</strong> <em>New game</em> runs the title card and prologue.
+    <em>Scene picker</em> drops you straight into any town, field or dungeon - the best-supported
+    mode. The <em>save bar</em> resumes a session you exported earlier, or a real memory-card
+    image from your emulator.
   </p>
   <p>
     <strong>VR.</strong> Have a headset? The <strong>VR</strong> button under the canvas presents
     the running scene over WebXR - a diorama you look into, or first-person from Vahn's own eyes
     (<a href="subsystems/vr-mode.html">VR mode</a>). It needs Chrome or Edge with SteamVR as the
-    active OpenXR runtime and a secure context (https or <code>localhost</code>); if it can't
+    active OpenXR runtime and a secure context (https or <code>localhost</code>); if it cannot
     start, the button says what is missing.
   </p>
 
 <section class="doc-section" id="what-works">
-  <h3>What actually works</h3>
+  <h3>What works here</h3>
   <p>
-    This is a partial reimplementation; the honest map matters more than a demo reel. Running in
-    the browser today:
+    This is a partial reimplementation, and an honest map matters more than a demo reel.
   </p>
   <ul>
-    <li><strong>Field and town scenes.</strong> The map assembles from the same pieces the game
-      uses - environment models, tile grid, floor heights, walkable ground - textured from the PSX
-      video memory the engine builds up (<a href="subsystems/renderer.html">renderer</a>). Movement
-      is the ported controller, with retail's 2-unit stepping and per-axis collision against the
-      walkability grid (<a href="subsystems/field-locomotion.html">field locomotion</a>).</li>
-    <li><strong>The player character.</strong> The lead's field model, re-posed every frame from
-      the real animation clips - idle while you stand, walk cycle while you move
-      (<a href="formats/character-mesh.html">character meshes</a>, <a href="formats/anm.html">ANM</a>).</li>
-    <li><strong>NPCs.</strong> Every character the scene's placement script puts down, animated and
-      moved by the <a href="subsystems/motion-vm.html">motion VMs</a>. Press <kbd>Z</kbd> at one
-      and the <a href="subsystems/script-vm.html">field VM</a> plays out their dialogue, branches
-      and all.</li>
-    <li><strong>Doors.</strong> Walk into one and the engine loads the destination scene under you.</li>
-    <li><strong>The New Game flow, end to end.</strong> Title card, New Game, the prologue, and
-      then Rim Elm's establishing sweep running into the <em>"Select your name."</em> grid - the
-      real screen, opened by the scene's own script, which stays suspended until you confirm. The
+    <li><strong>Towns, fields and dungeons.</strong> The map assembles from the same pieces the
+      game uses - environment models, tile grid, floor heights, walkable ground - textured from the
+      PSX video memory the engine builds up (<a href="subsystems/renderer.html">renderer</a>).
+      Movement is the ported controller with retail's stepping and collision
+      (<a href="subsystems/field-locomotion.html">field locomotion</a>).</li>
+    <li><strong>Your character and the townsfolk.</strong> The lead's field model re-posed every
+      frame from the real animation clips; every NPC the scene's placement script puts down,
+      walking its routes. Press <kbd>Z</kbd> at one and the script engine plays out their dialogue,
+      branches and all.</li>
+    <li><strong>Doors.</strong> Walk into one and the destination scene loads under you.</li>
+    <li><strong>The New Game flow.</strong> Title card, prologue, Rim Elm's opening sweep and the
+      <em>"Select your name."</em> grid - the real screen, opened by the scene's own script. The
       name you commit is written into the party record, so the status panel and your saves carry
       it (<a href="subsystems/boot.html">boot chain</a>).</li>
     <li><strong>The pause menu and every screen behind it.</strong> Press <kbd>Enter</kbd> for the
-      real retail menu - chrome and glyphs off your disc, every rectangle placed by the ported
-      window-descriptor code (<a href="subsystems/field-menu.html">field menu</a>). Items, Magic,
-      Equip, Status, Options, Load and Save each run their live engine sub-session.</li>
+      retail menu - chrome and glyphs off your disc, every window placed by the ported
+      descriptor table (<a href="subsystems/field-menu.html">field menu</a>). Items, Magic,
+      Equip, Status, Options, Load and Save each run their live engine session.</li>
+    <li><strong>Shops.</strong> Walk into a shopkeeper and the retail gold shop opens, priced from
+      your disc's own item table (<a href="subsystems/shop.html">shop</a>).</li>
     <li><strong>Saving to a real memory card.</strong> Insert a card image from your emulator and
       the in-game Load and Save screens read and write <em>that</em> card through retail's own
       save-select flow (<a href="subsystems/save-screen.html">save screen</a>). Saving edits the
       block in place, so <em>Export</em> hands back a card your emulator still loads.</li>
-    <li><strong>Music.</strong> The scene's BGM plays through the clean-room
-      <a href="subsystems/audio.html">SPU + sequencer</a> in your browser - the same field-VM
-      op-0x35 events the native window routes drive a WebAudio output here, off your disc's own VAB
-      and SEQ. Browsers require a click first (autoplay policy); picking a scene or clicking the
-      canvas enables it.</li>
+    <li><strong>Music and sound effects.</strong> The scene's BGM plays through the clean-room
+      <a href="subsystems/audio.html">sound chip and sequencer</a>, off your disc's own instrument
+      bank and score. Browsers require a click first; picking a scene or clicking the canvas
+      enables it.</li>
     <li><strong>Battles - as an overlay.</strong> Walking a wilderness scene rolls the disc's own
       step-driven encounters, and the fight that opens is the ported
-      <a href="subsystems/battle.html">battle</a> engine: real formations off the scene's data,
-      real <a href="subsystems/battle-formulas.html">damage formulas</a>, and player-driven turns -
-      pick a command, a target, an art, a spell or an item from the same menus the native window
-      draws, over an HP/MP/AP readout with damage popups. What you will not see yet is the
-      battle's 3D layer (monster and party battle models, the arena backdrop): the field scene
-      keeps rendering behind the overlay. Win and you are back on the field with XP, gold and
-      drops; scenes with no encounter table (towns) stay peaceful.</li>
+      <a href="subsystems/battle.html">battle engine</a>: real formations, real
+      <a href="subsystems/battle-formulas.html">damage formulas</a>, player-driven turns - pick a
+      command, a target, an art, a spell or an item from the same menus the native window draws,
+      over an HP/MP/AP readout with damage popups. Win and you are back on the field with XP,
+      gold and drops. Towns have no encounter table and stay peaceful.</li>
+    <li><strong>Fishing.</strong> <em>Fish here</em> starts the minigame on the spot.</li>
   </ul>
-  <p>What does <em>not</em> run here yet:</p>
+  <h3>Not here yet</h3>
   <ul>
-    <li><strong>The battle's 3D render.</strong> Monster meshes, the assembled per-equipment party
-      battle forms, and the stage dome live in the native window's render path; the browser fight
-      is the overlay described above.</li>
-    <li><strong>The pre-title FMV movies.</strong> The title card, the prologue
-      <a href="subsystems/cutscene.html">cutscene</a> chain, its narration crawl, and the sepia +
-      depth-cue grade all render here off your disc; STR movie playback (MDEC video) runs only in
-      the native window, so an FMV beat is skipped in the browser.</li>
-    <li><strong>The inn.</strong> Its runtime state is ported, but no scene opens an inn session
-      in either the browser or the native window yet. Merchants <em>do</em> work here: walking into
-      a shopkeeper opens the retail gold shop, priced from your disc's own item table.</li>
-    <li><strong>Four of the five minigames.</strong> Fishing draws here; the slot machine, Baka
-      Fighter, the Muscle Dome and the dance floor do not yet, so this page does not open them from
-      a cabinet. They are playable standalone on the
-      <a href="minigames.html">minigames page</a>. Start leaves any minigame from anywhere - a mode
-      you can enter has to be one you can leave.</li>
-    <li><strong>The overworld.</strong> World-map locomotion and camera are a different controller;
-      see the <a href="world-overview.html">world overview</a> for the continents.</li>
+    <li><strong>The battle's 3D layer.</strong> Monster meshes, the party's dressed battle forms
+      and the arena backdrop draw only in the native window; the browser fight is the overlay
+      above, with the field scene still rendering behind it. The models themselves are on the
+      <a href="monsters.html">enemy</a> and <a href="characters.html">character</a> pages.</li>
+    <li><strong>Movies.</strong> The prologue's rendered tableaux and narration play here, but
+      the pre-title FMV and any other STR movie run only in the native window, so a movie beat is
+      skipped. The <a href="media.html">media browser</a> plays every movie on its own.</li>
+    <li><strong>The inn.</strong> Its state is ported, but no scene opens an inn session on
+      either host yet.</li>
+    <li><strong>Four of the five minigames.</strong> The slot machine, Baka Fighter, the Muscle
+      Dome and the dance floor are playable standalone on the
+      <a href="minigames.html">minigames page</a> but not from their cabinets here. Start leaves
+      any minigame from anywhere.</li>
+    <li><strong>The overworld.</strong> World-map walking is a different controller; the
+      <a href="world-overview.html">world overview</a> shows the continents.</li>
   </ul>
   <p class="hint">
     Some scenes frame better than others: retail hand-authors a camera per scene, while this page
-    runs one generic camera plus line-of-sight hiding of whatever blocks the view. In caves the
-    floor sampler can also disagree with the visible ground - an engine-level thread tracked with
-    the <a href="reference/open-rev-eng-threads.html">open questions</a>.
+    runs one generic camera plus see-through walls for whatever blocks the view. In caves the
+    floor sampler can disagree with the visible ground - tracked with the
+    <a href="reference/open-rev-eng-threads.html">open questions</a>.
   </p>
 </section>
 
 <section class="doc-section" id="how">
   <h3>How this page is wired</h3>
   <p>
-    The WebAssembly bundle is the engine crates themselves, compiled for
-    <code>wasm32-unknown-unknown</code>. The page only turns key state into a PSX pad word, calls
-    <code>tick_frame()</code> once per animation frame, and draws what the engine reports - the
-    engine decides where you are. Actors are assembled per frame as <code>R&middot;v + T</code>
-    from the animation record's bone transforms, because character meshes ship object-local
-    vertices (<a href="formats/character-mesh.html">character meshes</a>,
-    <a href="formats/anm.html">ANM</a>).
+    The WebAssembly bundle is the engine crates themselves. The page only turns key state into a
+    PSX controller word, ticks the engine once per animation frame, and draws what it reports -
+    the engine decides where you are. Characters are assembled per frame from their animation
+    records' bone transforms, because the meshes ship as object-local pieces
+    (<a href="formats/character-mesh.html">character meshes</a>, <a href="formats/anm.html">ANM</a>).
   </p>
   <p>
-    The menus are the same menus. Every screen's geometry - the pause menu, the save-card flow,
-    the dialog box, the shop panel - is built by one renderer-agnostic crate that both this page
-    and the native window call; the page supplies a different framebuffer, not a different UI.
-    That is also how the two stay in step: because a host "has" a screen exactly when it calls
-    that screen's builder, a repository check can derive the shared surface from the source and
-    fail the build when a screen reaches one host and not the other. Anything genuinely
-    single-host has to be written down with a reason, and the check re-validates those reasons
-    against the code on every commit - so this list of what does not run here cannot quietly go
-    out of date.
+    The menus are the same menus as the native window. Every screen's geometry - pause menu, save
+    flow, dialog box, shop panel - is built by one renderer-agnostic crate both hosts call; the
+    page supplies a different framebuffer, not a different UI. A repository check derives the
+    shared surface from the source and fails the build when a screen reaches one host and not
+    the other, so the "not here yet" list above cannot quietly go out of date.
   </p>
   <div class="see-also">
-    <span class="see-also-label">Related</span>
+    <span class="see-also-label">Reference</span>
     <a href="subsystems/engine.html">Engine reimplementation</a>
     <a href="subsystems/field-locomotion.html">Field locomotion</a>
     <a href="subsystems/script-vm.html">Field / event VM</a>
+    <a href="subsystems/vr-mode.html">VR mode</a>
+    <a href="guides/playing-and-viewing.html">Playing natively</a>
     <a href="viewer.html">Asset viewer</a>
     <a href="world.html">Game world</a>
   </div>

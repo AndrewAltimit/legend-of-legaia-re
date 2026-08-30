@@ -1,58 +1,107 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">reference</a> &middot; curated game-data</div>
   <h1>Curated game-data tables</h1>
-  <p class="lede">Arts, magic, items, weapons, armor, accessories, enemies, shops, casino, and fishing tables mined from three public walkthroughs and exposed as typed Rust accessors. When a record comes off the disc as anonymous bytes, these tables are the ground-truth labels it gets checked against: the walkthroughs say what the numbers should be, the disc says what they are, and the tests below hold the two together.</p>
+  <p class="lede">Every fan who has played Legaia with a GameFAQs guide open knows these numbers: what Tornado Flame costs in AP, what the Rim Elm shop sells, what a Gimard drops. The project keeps a typed copy of those numbers - arts, magic, items, equipment, enemies, shops, casino, fishing - mined from public walkthroughs. When a record comes off the disc as anonymous bytes, these tables are the labels it is checked against; where the two disagree, the disc wins.</p>
 </header>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Where</dt><dd>TOML tables under <code>data/gamedata/</code> (committed; no Sony bytes)</dd>
+    <dt>Crate</dt><dd><code>crates/gamedata</code> (<code>legaia_gamedata::Database</code>) + the <code>gamedata-tool</code> CLI; needs no disc</dd>
+    <dt>Sources</dt><dd>Three GameFAQs walkthroughs (factual columns only) + Stann0x's music table</dd>
+    <dt>Confidence</dt><dd>Disc-checked wherever a disc record exists: prices, equip slots, accessory passives, enemy stats, spells, shop stock, casino prizes</dd>
+    <dt>Rendered on</dt><dd><a href="../arts.html">Arts</a>, <a href="../magic.html">Magic</a>, <a href="../shops.html">Shops</a>, <a href="../monsters.html">Monsters</a>, <a href="music-tracks.html">Music tracks</a></dd>
+  </dl>
+</section>
 
 <section class="doc-section" id="why">
   <h2>Why this exists</h2>
-  <p>The binary reverse-engineering work has the raw record bytes (PROT entry <code>0x05C4</code> - the arts records' slot in the disc's main archive - for arts, RAM <code>0x80160EFC+</code> for Vahn's runtime art table, <code>0x80085958+</code> for inventory, etc.) but no human-readable labels for any of them, and no public reference to cross-validate the parsed numeric fields against. The curated tables close that gap so:</p>
+  <p>Reverse engineering yields raw records - an art's direction bytes, a spell's MP cost, a monster's stat block - but no names and no second source to check the numbers against. The curated tables supply both.</p>
+  <figure class="overlay-strip">
+    <svg viewBox="0 0 760 210" width="100%" style="max-width:760px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Walkthroughs feed TOML tables, which the gamedata crate loads; disc-gated tests join them to disc records, and the disc wins on disagreement">
+      <style>
+        .gd-box { fill: var(--bg-raised); stroke: var(--border); stroke-width: 1.2; rx: 4; }
+        .gd-disc { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.6; rx: 4; }
+        .gd-t { font: 600 13px 'Inter', sans-serif; fill: currentColor; text-anchor: middle; dominant-baseline: middle; }
+        .gd-s { font: 11px 'Inter', sans-serif; fill: var(--text-muted); text-anchor: middle; dominant-baseline: middle; }
+        .gd-l { stroke: var(--text-muted); stroke-width: 1.4; fill: none; marker-end: url(#gd-arrow); }
+      </style>
+      <defs><marker id="gd-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--text-muted)"/></marker></defs>
+      <rect x="10" y="30" width="150" height="56" class="gd-box"/>
+      <text x="85" y="50" class="gd-t">Walkthroughs</text>
+      <text x="85" y="68" class="gd-s">factual columns only</text>
+      <line x1="160" y1="58" x2="200" y2="58" class="gd-l"/>
+      <rect x="200" y="30" width="150" height="56" class="gd-box"/>
+      <text x="275" y="50" class="gd-t">data/gamedata/*.toml</text>
+      <text x="275" y="68" class="gd-s">stable snake_case keys</text>
+      <line x1="350" y1="58" x2="390" y2="58" class="gd-l"/>
+      <rect x="390" y="30" width="150" height="56" class="gd-box"/>
+      <text x="465" y="50" class="gd-t">legaia_gamedata</text>
+      <text x="465" y="68" class="gd-s">Database::load()</text>
+      <line x1="540" y1="58" x2="580" y2="58" class="gd-l"/>
+      <rect x="580" y="30" width="170" height="56" class="gd-box"/>
+      <text x="665" y="50" class="gd-t">Site pages + engine</text>
+      <text x="665" y="68" class="gd-s">arts, magic, shops, monsters</text>
+      <rect x="390" y="140" width="150" height="56" class="gd-disc"/>
+      <text x="465" y="160" class="gd-t">Disc records</text>
+      <text x="465" y="178" class="gd-s">SCUS tables, PROT 0867, MANs</text>
+      <line x1="465" y1="140" x2="465" y2="90" class="gd-l"/>
+      <text x="560" y="115" class="gd-s">disc-gated tests join by name;</text>
+      <text x="560" y="130" class="gd-s">a mismatch is fixed in the TOML</text>
+    </svg>
+    <figcaption>Walkthrough numbers become typed tables; disc-gated tests join each table to the matching disc record, and the disc is the tie-breaker.</figcaption>
+  </figure>
   <ul class="bullets">
-    <li>Art records parsed from the binary can be sanity-checked against retail AP costs and command sequences.</li>
-    <li>Inventory item IDs that appear as cheat-modifier values can be resolved to display names.</li>
-    <li>Spell records can be linked to their MP / element / target type.</li>
-    <li>Monster encounter records can be linked to known retail names, locations, and drop tables.</li>
-    <li>Boss HP estimates ground the damage-formula reverse engineering: predicted hits-to-kill should fall inside the walkthrough's HP bracket.</li>
+    <li>Art records parsed from the disc get a name and a retail AP cost to check against.</li>
+    <li>Item ids seen in cheat codes and inventory bytes resolve to display names.</li>
+    <li>Spell records link to MP / element / target; monster records to location and drop tables.</li>
+    <li>Boss stat blocks bracket the <a href="../subsystems/battle-formulas.html">damage-formula</a> work: predicted hits-to-kill must land inside the guide's numbers.</li>
   </ul>
 </section>
 
 <section class="doc-section" id="sources">
   <h2>Source attribution</h2>
-  <p>Three GameFAQs walkthroughs supply the raw values:</p>
-  <ul class="bullets">
-    <li>Tan Yong Hua, <em>Legend of Legaia Walkthrough</em> v6.6 (1999).</li>
-    <li>Psycho Penguin (mcfaddendaman), <em>Legend of Legaia Walkthrough</em> (2001) - the more complete table dump (PSM Magazine attribution for the enemy drop / steal table).</li>
-    <li>Meth962, <em>Legend of Legaia 100% Walkthrough</em> v1.11 (2015, FAQ 53721) - the per-enemy stat columns, the per-fight boss moveset / rewards layer, the Seru-magic absorb fields, and the magic-leveling tables.</li>
-  </ul>
-  <p>The music-track table is contributed directly by Stann0x rather than mined from a guide; see <a href="music-tracks.html">Music-track disambiguation</a>.</p>
-  <p>Only the <em>factual</em> columns are committed (item names, prices, art command sequences, MP costs, monster locations, drop tables). Prose passages from the guides are NOT reproduced - prices and stats are not independently copyrightable, but the prose is. Sony-owned bytes (asset data, executable, raw ROM bytes) remain out of the repo entirely.</p>
-  <p>Psycho Penguin's guide is the primary source for the item / art / shop columns, and Tan Yong Hua fills gaps and contributes the boss-HP estimates from its Master Course commentary. Meth962's stat columns outrank both where they overlap: they were extracted from in-RAM memory dumps rather than estimated from play, which is why they are what the binary records get cross-validated against.</p>
+  <table>
+    <thead><tr><th>Source</th><th>Supplies</th></tr></thead>
+    <tbody>
+      <tr><td>Tan Yong Hua, <em>Legend of Legaia Walkthrough</em> v6.6 (1999)</td><td>Gap-filling; boss-HP estimates from its Master Course commentary</td></tr>
+      <tr><td>Psycho Penguin (mcfaddendaman), <em>Legend of Legaia Walkthrough</em> (2001)</td><td>Primary item / art / shop columns; the drop / steal table (PSM Magazine attribution)</td></tr>
+      <tr><td>Meth962, <em>Legend of Legaia 100% Walkthrough</em> v1.11 (FAQ 53721)</td><td>Per-enemy stat columns (from RAM dumps, so they outrank the others), boss movesets and rewards, Seru absorb rates, magic-levelling tables</td></tr>
+      <tr><td>Stann0x</td><td>The music table, contributed directly - see <a href="music-tracks.html">music tracks</a></td></tr>
+    </tbody>
+  </table>
+  <p>Only <em>factual</em> columns are committed - names, prices, command sequences, MP costs, locations, drop tables. Guide prose is copyrightable and is never reproduced; Sony-owned bytes stay out of the repo entirely.</p>
 </section>
 
 <section class="doc-section" id="files">
   <h2>Where the data lives</h2>
-  <pre><code>data/gamedata/
-  README.md           - source attribution + cross-validation rules
-  arts.toml           - per-character arts (regular/hyper/super/miracle)
-  magic.toml          - 21 Seru spells + 8 Ra-Seru summons
-  items.toml          - consumables, key items, art books, fishing tackle
-  weapons.toml        - 27 weapons
-  armor.toml          - 49 armor / helmet / shoes entries
-  accessories.toml    - 70+ accessories with structured effect classes
-  enemies.toml        - 130+ enemies with location + drop / steal table
-  bosses.toml         - boss HP estimates (sanity-check data)
-  shops.toml          - per-town shop inventories with item-key references
-  casino.toml         - Sol/Vidna slot prizes + Muscle Dome courses + Baka Fighter
-  sol_tower.toml      - Sol Tower floor map + side-quest chains
-  fishing.toml        - Vidna/Buma fishing pond prizes
-  characters.toml     - Vahn / Noa / Gala affinities and weapon classes
-  music.toml          - 81-track BGM disambiguation (Stann0x)</code></pre>
-  <p>Implementation: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/tree/main/crates/gamedata" target="_blank" rel="noopener"><code>crates/gamedata</code></a>. The <code>music</code> table has its own page: <a href="music-tracks.html">music-track disambiguation</a>.</p>
+  <table class="layout">
+    <thead><tr><th>File</th><th>Contents</th></tr></thead>
+    <tbody>
+      <tr><td>arts.toml</td><td>Per-character arts: regular / hyper / super / miracle</td></tr>
+      <tr><td>magic.toml</td><td>21 Seru spells + 8 Ra-Seru summons</td></tr>
+      <tr><td>items.toml</td><td>Consumables, key items, art books, fishing tackle</td></tr>
+      <tr><td>weapons.toml</td><td>27 weapons</td></tr>
+      <tr><td>armor.toml</td><td>51 entries: body 20, head 15, footwear 16</td></tr>
+      <tr><td>accessories.toml</td><td>77 accessories with structured effect classes</td></tr>
+      <tr><td>enemies.toml</td><td>177 enemies: location, drop / steal, <code>steal_chance</code> (byte-exact from the SCUS steal table), full stat columns</td></tr>
+      <tr><td>bosses.toml</td><td>22 main-story boss rows over 20 ids (the three Delilas share one) + Lapis + 7 Muscle Dome rounds: attacks, rewards, recommended level</td></tr>
+      <tr><td>shops.toml</td><td>Per-town shop inventories by item key</td></tr>
+      <tr><td>casino.toml</td><td>Sol / Vidna prize counters, Muscle Dome courses, Baka Fighter</td></tr>
+      <tr><td>sol_tower.toml</td><td>Sol Tower floor map + side-quest chains</td></tr>
+      <tr><td>fishing.toml</td><td>Vidna / Buma fishing prizes</td></tr>
+      <tr><td>characters.toml</td><td>Vahn / Noa / Gala affinities and weapon classes</td></tr>
+      <tr><td>music.toml</td><td>81-track BGM disambiguation (Stann0x)</td></tr>
+      <tr><td>README.md</td><td>Source attribution + cross-validation rules</td></tr>
+    </tbody>
+  </table>
+  <p>Implementation: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/tree/main/crates/gamedata" target="_blank" rel="noopener"><code>crates/gamedata</code></a>.</p>
 </section>
 
 <section class="doc-section" id="arts-schema">
-  <h2>Schema highlights &middot; Arts</h2>
-  <p>Each art carries a <code>command</code> (player-facing input tokens: <code>Arms</code>, <code>Ra-Seru</code>, <code>High</code>, <code>Low</code>) <em>and</em> a <code>directions</code> array of raw direction bytes (<code>1=L, 2=R, 3=D, 4=U</code>) - exactly the prefix that ends up in the on-disc Art Record. The mapping is per-character because Noa is left-handed:</p>
+  <h2>Schema &middot; Arts</h2>
+  <p>Each art carries a player-facing <code>command</code> (tokens <code>Arms</code> / <code>Ra-Seru</code> / <code>High</code> / <code>Low</code>) <em>and</em> a <code>directions</code> array of raw direction bytes - the prefix that appears in the on-disc art record. The mapping is per character because Noa is left-handed.</p>
   <table>
     <thead><tr><th>Token</th><th>Vahn / Gala</th><th>Noa</th></tr></thead>
     <tbody>
@@ -62,101 +111,125 @@
       <tr><td><code>Low</code></td><td>D = 3</td><td>D = 3</td></tr>
     </tbody>
   </table>
-  <p>The <code>action_constant</code> field (<code>0x1B..=0x32</code>) cross-references the per-character art name table in <code>crates/art/src/tables.rs</code>. The <code>arts_action_constants_match_legaia_art_tables</code> integration test pins the relationship.</p>
+  <p>The <code>action_constant</code> field (<code>0x1B..=0x32</code>) joins the per-character art-name table in <code>crates/art</code>.</p>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../formats/art-data.html">Art data format</a>
+    <a href="../subsystems/arts-command-gauge.html">Arts command gauge</a>
+    <a href="../arts.html">Arts page</a>
+  </div>
 </section>
 
 <section class="doc-section" id="magic-schema">
-  <h2>Schema highlights &middot; Magic</h2>
-  <p>21 Seru spells + 8 Ra-Seru summons. <code>element</code> is lowercase (<code>fire</code>, <code>water</code>, <code>earth</code>, <code>wind</code>, <code>thunder</code>, <code>light</code>, <code>dark</code>, <code>evil</code>). <code>target</code> is one of <code>single_enemy</code>, <code>all_enemies</code>, <code>single_ally</code>, <code>all_allies</code>, <code>self</code>.</p>
+  <h2>Schema &middot; Magic</h2>
+  <p>21 Seru spells and 8 Ra-Seru summons. <code>element</code> is one of eight lowercase values (<code>fire</code> &hellip; <code>evil</code>); <code>target</code> is <code>single_enemy</code>, <code>all_enemies</code>, <code>single_ally</code>, <code>all_allies</code> or <code>self</code>. Seru spells also carry <code>absorb_lv1..3</code> - the percent chance a kill captures the Lv1 / Lv2 / Lv3 mist variant (Gimard 55/60/80, Gilium 1/1/1). Summons are egg-derived and have no absorb rate.</p>
+  <h3>Magic levelling</h3>
+  <table>
+    <thead><tr><th><code>legaia_gamedata::magic_leveling</code></th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>XP_TO_LEVEL</code></td><td>18, 51, 93, 145, 209, 289, 393, 537 - cumulative cost Lv2 &rarr; Lv9</td></tr>
+      <tr><td><code>SCALING_BP</code></td><td>Damage / heal multiplier in basis points: Lv1 = 10000, Lv9 = 20000</td></tr>
+      <tr><td><code>VERA_HEAL</code> / <code>ORB_HEAL</code> / <code>SPOON_HEAL</code></td><td>Per-level healer output (Vera 256-512, Orb 512-1024 AoE, Spoon 1024-2048 AoE)</td></tr>
+      <tr><td><code>NIGHTO_HIT_PCT</code></td><td>Nighto's Confuse / Death base hit chance per level (fixed 8:1 split)</td></tr>
+      <tr><td><code>xp_single_target</code> / <code>xp_multi_target</code></td><td>Damage-as-fraction-of-HP &rarr; XP award (0..=12 single, 0..=4 per enemy multi)</td></tr>
+    </tbody>
+  </table>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../formats/spell-table.html">Spell table</a>
+    <a href="../magic.html">Magic page</a>
+  </div>
 </section>
 
 <section class="doc-section" id="items-schema">
-  <h2>Schema highlights &middot; Items / weapons / armor / accessories</h2>
-  <p>Each row carries a stable snake_case <code>key</code> that <code>shops.toml</code>, <code>casino.toml</code>, <code>fishing.toml</code>, and <code>enemies.toml</code> reference; the <code>shop_inventory_keys_resolve</code> test asserts every reference resolves.</p>
-  <p><code>accessories.toml</code> carries an informal <code>effect_class</code> taxonomy (<code>hp_max_pct</code>, <code>ap_accrual_pct</code>, <code>mp_cost_pct</code>, <code>attack_pct</code>, <code>speed_pct</code>, <code>revive_once</code>, <code>protect_status</code>, <code>elemental_def</code>, <code>summon_seru</code>, &hellip;). This is <em>not</em> retail data - it's a structured re-encoding of the walkthrough effect text designed for the engine to dispatch on. As individual cheats and battle-formula reverse-engineering pin exact retail mechanics, <code>effect_class</code> rows can be promoted to retail-confirmed data.</p>
+  <h2>Schema &middot; Items, weapons, armor, accessories</h2>
+  <p>Every row carries a stable snake_case <code>key</code> that the shop, casino, fishing and enemy tables reference. <code>accessories.toml</code> adds an <code>effect_class</code> (<code>hp_max_pct</code>, <code>ap_accrual_pct</code>, <code>revive_once</code>, <code>elemental_def</code>, &hellip;) - a structured re-encoding of the guide's effect text for the engine to dispatch on, and the field the disc's <a href="../formats/accessory-passive-table.html">accessory passive index</a> is checked against.</p>
 </section>
 
 <section class="doc-section" id="enemies-schema">
-  <h2>Schema highlights &middot; Enemies</h2>
-  <p>Per enemy: <code>name</code>, <code>location</code>, an optional <code>element</code> (for elemental Seru enemies), an optional <code>boss = true</code>, and optional <code>drop</code> / <code>steal</code> item keys. The <code>enemy_drop_and_steal_keys_resolve</code> test asserts every drop/steal target exists in the item tables.</p>
+  <h2>Schema &middot; Enemies</h2>
+  <p>Per enemy: <code>name</code>, <code>location</code>, optional <code>element</code> and <code>boss</code>, optional <code>drop</code> / <code>steal</code> keys, <code>steal_chance</code>, and the stat columns HP / MP / EXP / Gold / ATK / SPD / UDF / LDF / INT / AGL. The stats are the <strong>in-battle</strong> values the player fights, not the raw disc record - see <a href="#invariants">cross-validation</a>.</p>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../formats/battle-data-pack.html">Battle-data pack (monster records)</a>
+    <a href="../formats/steal-table.html">Steal table</a>
+    <a href="../monsters.html">Monster viewer</a>
+  </div>
 </section>
 
 <section class="doc-section" id="shops-schema">
-  <h2>Schema highlights &middot; Shops</h2>
-  <p>One <code>[[shop]]</code> per merchant. Inventories reference item keys; the <code>gamedata-tool shop &lt;town&gt;</code> CLI joins those keys against the four item tables and prints a fully-priced inventory.</p>
+  <h2>Schema &middot; Shops</h2>
+  <p>One <code>[[shop]]</code> per merchant, inventory as item keys. <code>gamedata-tool shop &lt;town&gt;</code> joins the keys against the four item tables and prints a priced inventory.</p>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../subsystems/shop.html">Shop subsystem</a>
+    <a href="../shops.html">Shops page</a>
+  </div>
 </section>
 
 <section class="doc-section" id="casino-schema">
-  <h2>Schema highlights &middot; Casino + Muscle Dome</h2>
-  <p><code>casino.toml</code> carries several concept families:</p>
-  <ul class="bullets">
-    <li><code>[[slot_prize]]</code> rows for the Vidna casino counter and the Sol Tower Muscle Dome prize-exchange counter (<code>location = "Sol"</code> is the F4 counter, <em>not</em> the slot machine itself - slot machines only pay coins).</li>
-    <li><code>[[muscle_dome_course]]</code> rows (Beginner / Expert / Master) with entry fee, clear reward, and <code>restrictions</code> / <code>allowed</code> arrays capturing the equipment / item / magic gating. Master Course's <code>reward_first_clear = "war_god_icon"</code> requires Jette to have been defeated in Absolute Fortress. The flat <code>enemies = [...]</code> field is the encounter-order roster as plain strings.</li>
-    <li><code>[[muscle_dome_round]]</code> rows pin the round-by-round assignment for each course as a normalised <code>(course_key, round, boss_key, seru_level)</code> table. Beginner and Expert have 8 rows each; Master has 13 rows (the longest progression).</li>
-    <li><code>[[muscle_dome_boss]]</code> rows hold the full per-enemy stat block (HP / MP / ATK / UDF / LDF / <code>intelligence</code> / SPD / AGL / XP / <code>gold</code>), drop and steal items with chance percentages, attack list, immunity tags, element + weakness/strength arrays, plus <code>wiki_path</code> for provenance back to the Fandom source. Seru enemies (<code>kind = "seru"</code>) carry their Lv1 / Lv2 / Lv3 stats as nested <code>[[muscle_dome_boss.seru_level]]</code> blocks; the round table's <code>seru_level</code> field selects which block applies.</li>
-    <li><code>[baka_fighter_meta]</code> records the all-rounds-clear reward (<code>reward_coins = 460</code>) and the rule sketch. Per-round button sequences live as <code>[[baka_fighter]]</code> rows.</li>
-    <li><code>[[muscle_paradise_secret]]</code> records the Chicken King easter egg ("run from the first battle in all three difficulties").</li>
-  </ul>
+  <h2>Schema &middot; Casino + Muscle Dome</h2>
+  <table>
+    <thead><tr><th>Table</th><th>Holds</th></tr></thead>
+    <tbody>
+      <tr><td><code>[[slot_prize]]</code></td><td>Vidna casino counter and the Sol Tower F4 prize counter (<code>location = "Sol"</code>). Slot machines themselves only pay coins.</td></tr>
+      <tr><td><code>[[muscle_dome_course]]</code></td><td>Beginner / Expert / Master: entry fee, clear reward, <code>restrictions</code> / <code>allowed</code> gating, encounter-order roster. Master's first-clear reward (War God Icon) requires Jette defeated in Absolute Fortress.</td></tr>
+      <tr><td><code>[[muscle_dome_round]]</code></td><td>Normalised <code>(course_key, round, boss_key, seru_level)</code> rows: 8 for Beginner and Expert, 13 for Master</td></tr>
+      <tr><td><code>[[muscle_dome_boss]]</code></td><td>Full per-enemy stat block, drop / steal with chances, attack list, immunities, element and weakness arrays, <code>wiki_path</code> provenance. Seru entries nest Lv1-3 stats as <code>[[muscle_dome_boss.seru_level]]</code>.</td></tr>
+      <tr><td><code>[baka_fighter_meta]</code> / <code>[[baka_fighter]]</code></td><td>All-rounds-clear reward (460 coins), rule sketch, per-round button sequences</td></tr>
+      <tr><td><code>[[muscle_paradise_secret]]</code></td><td>The Chicken King easter egg (run from the first battle in all three difficulties)</td></tr>
+    </tbody>
+  </table>
 </section>
 
 <section class="doc-section" id="sol-tower-schema">
-  <h2>Schema highlights &middot; Sol Tower</h2>
-  <p><code>sol_tower.toml</code> is location-scoped data that doesn't fit any of the type-scoped tables: a per-floor map (<code>[[floor]]</code> rows with named sections) and the side-quest chains (<code>[[side_quest]]</code> rows with ordered step lists and reward pointers). The <code>scene_label = "town0d"</code> ties the data back to the CDNAME map in <code>site/_gen.py</code> and the field-VM bundle.</p>
+  <h2>Schema &middot; Sol Tower</h2>
+  <p><code>sol_tower.toml</code> is location-scoped: a per-floor map (<code>[[floor]]</code> with named sections) and side-quest chains (<code>[[side_quest]]</code> with ordered steps and reward pointers). <code>scene_label = "town0d"</code> ties it to the scene name map and the field-VM bundle.</p>
 </section>
 
 <section class="doc-section" id="invariants">
-  <h2>Cross-validation invariants</h2>
-  <p>Run with <code>cargo test -p legaia-gamedata</code>. Enforced rules:</p>
+  <h2>Cross-validation</h2>
+  <p>Disc-free rules run with <code>cargo test -p legaia-gamedata</code>; the disc-gated joins skip without <code>extracted/SCUS_942.54</code>. The disc is the tie-breaker.</p>
+  <h3>Disc-free rules</h3>
   <ul class="bullets">
-    <li>Every art's <code>action_constant</code> resolves through <code>legaia_art::tables::art_name</code>, and the canonical name matches modulo <code>(Hyper)</code> / <code>(Miracle)</code> / numeric suffix variants.</li>
-    <li>Every art's direction-byte sequence is in <code>1..=4</code> and equals the per-character mapping of its <code>command</code> token list.</li>
-    <li>AP costs align with kind: regulars &le; 36, hypers 30..=70, supers 48..=72, miracles = 99.</li>
-    <li>Each character has exactly one Miracle Art.</li>
-    <li>Magic table contains exactly 21 Seru + 8 Ra-Seru entries; every <code>element</code> is one of the eight canonical values.</li>
-    <li>Every shop / slot / fishing / muscle-dome reference resolves to a row in <code>items.toml</code> / <code>weapons.toml</code> / <code>armor.toml</code> / <code>accessories.toml</code>.</li>
-    <li>Every enemy <code>drop</code> / <code>steal</code> key resolves.</li>
-    <li>Every armor <code>slot</code> &isin; {<code>armor</code>, <code>helmet</code>, <code>shoes</code>}; every <code>equip</code> &isin; {<code>Vahn</code>, <code>Noa</code>, <code>Gala</code>, <code>None</code>}.</li>
-    <li>Every item <code>category</code> &isin; {<code>consumable</code>, <code>permanent_stat</code>, <code>key</code>, <code>art_book</code>, <code>fishing_lure</code>}.</li>
+    <li>Every art's <code>action_constant</code> resolves to a name in <code>crates/art</code>; its direction bytes are in <code>1..=4</code> and equal the per-character mapping of its command tokens.</li>
+    <li>AP costs match kind: regulars &le; 36, hypers 30-70, supers 48-72, miracles 99; one Miracle Art per character.</li>
+    <li>Magic has exactly 21 Seru + 8 Ra-Seru rows; every element is canonical.</li>
+    <li>Every shop / prize / fishing / Muscle Dome / drop / steal key resolves to an item row.</li>
+    <li>Armor <code>slot</code> &isin; {armor, helmet, shoes}; <code>equip</code> &isin; {Vahn, Noa, Gala, None}; item <code>category</code> &isin; {consumable, permanent_stat, key, art_book, fishing_lure}.</li>
   </ul>
-  <h3>Disc-gated cross-checks (skip when <code>extracted/SCUS_942.54</code> is absent)</h3>
-  <p>These validate the curated tables against the real executable, so the disc is the tie-breaker when the two disagree:</p>
-  <ul class="bullets">
-    <li><code>item_prices_vs_disc</code> - every priced weapon / armor / accessory whose name resolves to a disc item id has a curated <code>price</code> equal to the authoritative <code>SCUS</code> shop-price field (the <code>u16</code> at <code>+2</code> of the item-property record). 119+ cross-checks, <strong>zero</strong> mismatches.</li>
-    <li><code>equip_slots_vs_disc</code> - the disc equip-stat table's four <code>+7</code> slot categories map name-exactly to the four gamedata armour/weapon slots (body 20, head 15, footwear 16), and none of the 77 accessories appear in that table (they are the separate passive-effect system below).</li>
-    <li><code>accessory_passives_vs_disc</code> - joins <code>accessories.toml</code> to the disc's 64-slot accessory passive-effect index space (the descriptor <code>+3</code> byte, parsed by <code>legaia_asset::accessory_passive</code>; the index becomes a bit in the per-character ability bitfield <code>char+0xF4</code> via <code>FUN_80042558</code>). Every curated accessory with a structured <code>effect_class</code> that name-joins a disc item (72 of 73; the gap is the curated &ldquo;Light Ra-Seru Egg&rdquo; vs disc &ldquo;Light Egg&rdquo; spelling) decodes to exactly the index its class + value/status/element predicts - <strong>zero</strong> mismatches across HP/MP/stat boosts, status guards, elemental guards, AP/encounter/loot/escape modifiers.</li>
-    <li><code>enemy_stats_vs_disc</code> - joins <code>enemies.toml</code> to the monster-stat archive (<code>PROT 0867</code>) by name (unambiguous names only; multi-form bosses like Gaza are skipped). The curated bestiary stats are <strong>scaled derivations</strong> of the raw disc record: <code>hp</code>/<code>spd</code> &times;1, <code>udf</code>/<code>ldf</code> &times;2, <code>atk</code> &times;5/4, <code>exp</code> &times;3/4, <code>gold</code> &times;5/16. Two curated labels are disc stats in disguise: curated <code>agl</code> <strong>is</strong> the disc AGL action gauge (<code>+0x0E</code>), and curated <code>intel</code> is the disc INT stat (<code>+0x18</code>) &times;9/8. The disc is the raw ground truth; the test pins all nine fields across 120+ enemies.</li>
-    <li><code>magic_vs_disc</code> - joins <code>magic.toml</code> to the static spell table in <code>SCUS_942.54</code> by spell name. All <strong>21</strong> Seru spells (ids <code>0x81..=0x95</code>) and <strong>7</strong> of the 8 Ra-Seru summons (<code>0x9a..=0xa0</code>; the hidden <em>Juggernaut</em> isn't in the contiguous named region) name-join, and every one's <strong>MP cost is byte-exact</strong> against the disc record. Target shape (the <code>+2</code> byte) agrees for all joins except the revive Ra-Seru <em>Horn</em> / &ldquo;Resurrector&rdquo;, whose byte is enemy-side though the effect revives all allies (checked explicitly).</li>
-    <li><code>shop_inventory_vs_disc</code> - scans every PROT entry for the gold-shop stock records embedded inline in each scene MAN (<code>legaia_asset::shop_stock</code>, op <code>0x49</code> sub-op <code>0</code>) and joins disc shops to curated shops by the <strong>item-name set</strong> (order-independent; the item set is far more distinctive than the shop title, which repeats as &ldquo;Arms Shop&rdquo; / &ldquo;Items Shop&rdquo; across towns). Every located disc shop's stock matches a curated inventory as an exact set, with one documented disc-only exception - <em>Soru's Bakery</em>, which sells only the novelty &ldquo;Soru Bread&rdquo; and has no curated counterpart.</li>
-    <li><code>casino_prizes_vs_disc</code> - joins <code>casino.toml</code> to the coin prize-exchange table in the menu/save/shop overlay's data segment (PROT entry 0899, stored raw; canonical reader <code>legaia_patcher::casino::CasinoExchange</code>). Each prize is an 8-byte record <code>[u16 item_id][u16 story_gate][u32 coin_price]</code> in <code>0x60</code>-byte blocks - block 1 the Vidna casino counter, block 0 the Sol Tower Muscle Dome counter (high-value prizes story-gated via the <code>+2</code> word), blocks 2/3 short pre-progression states. Every curated prize joins a disc record byte-exact on <strong>(item name, coin price)</strong> across both full lists, and every disc record is a curated prize, with one documented exception - <strong>Earth Egg @ 100000 coins</strong> (the Muscle Paradise &ldquo;Chicken King&rdquo; easter egg), a separate hidden exchange not in the four-block table (asserted explicitly).</li>
-  </ul>
+  <h3>Disc-gated joins</h3>
+  <table>
+    <thead><tr><th>Test</th><th>Joins</th><th>Result</th></tr></thead>
+    <tbody>
+      <tr><td><code>item_prices_vs_disc</code></td><td>Curated price vs the SCUS item record's <code>u16</code> at <code>+2</code></td><td>Zero mismatches</td></tr>
+      <tr><td><code>equip_slots_vs_disc</code></td><td>The equip table's four slot categories vs body / head / footwear / weapon</td><td>Name-exact; accessories absent from that table, as expected</td></tr>
+      <tr><td><code>accessory_passives_vs_disc</code></td><td><code>effect_class</code> vs the 64-slot passive index (descriptor <code>+3</code>)</td><td>72 of 73 name-join; zero mismatches (gap: "Light Ra-Seru Egg" vs disc "Light Egg")</td></tr>
+      <tr><td><code>enemy_stats_vs_disc</code></td><td>Stat columns vs the monster archive (PROT 0867), through the battle-load stat boost</td><td>All nine fields across 120+ enemies (&plusmn;1 on fractional factors)</td></tr>
+      <tr><td><code>magic_vs_disc</code></td><td>MP cost and target vs the SCUS spell table</td><td>21 Seru + 7 of 8 summons byte-exact (Juggernaut is outside the named region; Horn's target byte is enemy-side by design)</td></tr>
+      <tr><td><code>shop_inventory_vs_disc</code></td><td>Inline MAN stock records vs curated shops, by item-name set</td><td>Every disc shop matches; disc-only Soru's Bakery is asserted explicitly</td></tr>
+      <tr><td><code>casino_prizes_vs_disc</code></td><td>The PROT 0899 prize-exchange blocks vs curated prizes, on (name, coin price)</td><td>Byte-exact both ways; Earth Egg @ 100000 is a separate hidden exchange</td></tr>
+    </tbody>
+  </table>
+  <p>The enemy join is the one with a twist: the curated stats are what the player fights, and retail boosts the disc record at battle load - UDF / LDF &times;2, ATK &times;5/4, INT &times;9/8, HP / SPD / AGL unchanged - and scales rewards separately (EXP &times;3/4, gold &times;5/16). This international-vs-raw difficulty difference was first surfaced by Zetopheonix; the loader is on the <a href="../subsystems/battle.html">battle</a> page.</p>
   <details class="disclosure">
     <summary>Where the disc overrides the walkthroughs</summary>
     <div class="disclosure-body">
-      <p>The curated tables carry the disc values wherever a public walkthrough disagrees; these oracles enforce that. Known divergences: the Forest / Magic Amulet price is 2000 (walkthrough 4000) and the Evil Medallion 9999 (walkthrough 9998); Mushura's &ldquo;Crazy Driver&rdquo; targets a single enemy (walkthrough all-enemies); the Gala helmet is spelled <strong>&ldquo;Power Earring&rdquo;</strong>, singular, as the disc names it.</p>
+      <p>Forest / Magic Amulet cost 2000 (guides: 4000); Evil Medallion 9999 (guides: 9998); Mushura's Crazy Driver targets a single enemy (guides: all); the Gala helmet is spelled "Power Earring", singular. The casino prize layout is 8-byte records <code>[u16 item_id][u16 story_gate][u32 coin_price]</code> in <code>0x60</code>-byte blocks - block 1 Vidna, block 0 the Muscle Dome counter, blocks 2 / 3 short pre-progression states.</p>
     </div>
   </details>
 </section>
 
 <section class="doc-section" id="api">
   <h2>Library API</h2>
-  <pre><code>use legaia_gamedata::{Database, Character, ArtKind, SpellFamily};
+  <pre><code>use legaia_gamedata::{Database, Character};
 
 let db = Database::load();
-
-// Per-character arts
 for art in db.arts_for(Character::Vahn) {
     println!("{:?} {:&gt;3} AP  {}", art.kind, art.ap, art.name);
 }
-
-// Look up an art by direction-byte sequence
-let art = db.find_art_by_directions(Character::Vahn, &amp;[1, 2, 4]).unwrap();
-assert_eq!(art.name, "Hyper Elbow");
-
-// Map an action constant to AP cost (for runtime damage tooling)
-let ap = db.ap_cost_for_action(Character::Gala, 0x1B).unwrap();
-assert_eq!(ap, 99); // Biron Rage
-
-// Resolve a shop entry against the unified item lookup
+let art = db.find_art_by_directions(Character::Vahn, &amp;[1, 2, 4]).unwrap();   // Hyper Elbow
+let ap = db.ap_cost_for_action(Character::Gala, 0x1B).unwrap();                // 99, Biron Rage
 for entry in db.shop_inventory("Rim Elm", "Variety Shop").unwrap() {
     println!("  {:&gt;20}  {:&gt;5}G", entry.name, entry.price.unwrap_or(0));
 }</code></pre>
@@ -164,19 +237,56 @@ for entry in db.shop_inventory("Rim Elm", "Variety Shop").unwrap() {
 
 <section class="doc-section" id="cli">
   <h2>CLI</h2>
-  <pre><code>cargo run -p legaia-gamedata --bin gamedata-tool -- list arts --character Noa
-cargo run -p legaia-gamedata --bin gamedata-tool -- list magic --element light
-cargo run -p legaia-gamedata --bin gamedata-tool -- find "Tornado Flame"
-cargo run -p legaia-gamedata --bin gamedata-tool -- arts-by-command Vahn "Arms,Ra-Seru,High"
-cargo run -p legaia-gamedata --bin gamedata-tool -- shop "Sol"
-cargo run -p legaia-gamedata --bin gamedata-tool -- dump-json arts &gt; arts.json</code></pre>
+  <div class="cli"><code>gamedata-tool list arts --character Noa</code></div>
+  <div class="cli"><code>gamedata-tool list magic --element light</code></div>
+  <div class="cli"><code>gamedata-tool find "Tornado Flame"</code></div>
+  <div class="cli"><code>gamedata-tool arts-by-command Vahn "Arms,Ra-Seru,High"</code></div>
+  <div class="cli"><code>gamedata-tool shop "Sol"</code></div>
+  <div class="cli"><code>gamedata-tool dump-json arts &gt; arts.json</code></div>
+  <p class="hint">From source: <code>cargo run -p legaia-gamedata --bin gamedata-tool -- &lt;subcommand&gt;</code>.</p>
+</section>
+
+<section class="doc-section" id="decomp">
+  <h2>How this helps the reverse engineering</h2>
+  <table>
+    <thead><tr><th>Curated table</th><th>Grounds</th></tr></thead>
+    <tbody>
+      <tr><td>Arts</td><td>Names for the command-byte sequences <code>crates/art</code> parses from the art records</td></tr>
+      <tr><td>Magic</td><td>MP costs, elements and names for the spell-table offsets the damage / MP-cost formulas read</td></tr>
+      <tr><td>Item keys</td><td>Stable identifiers, so a disc byte-id is one extra column rather than churn across consumers</td></tr>
+      <tr><td>Enemy + boss stats</td><td>Hits-to-kill predictions from the formulas must match Meth's blocks (Jette: HP 34,567 / ATK 277 / UDF 412 / SPD 274)</td></tr>
+      <tr><td>Seru absorb rates</td><td>The engine's capture roll (<code>engine-core::seru_learning</code>) reads <code>Spell::absorb_lv1..3</code></td></tr>
+      <tr><td>Magic XP curve</td><td>Per-cast levelling: <code>xp_*_target</code> award, <code>XP_TO_LEVEL</code> bump, <code>SCALING_BP</code> on the next cast</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="how-we-know">
+  <h2>How we know</h2>
+  <table>
+    <thead><tr><th>Function / table</th><th>Address</th><th>What it proves</th></tr></thead>
+    <tbody>
+      <tr><td>Battle-load stat boost</td><td><code>FUN_80054CB0</code></td><td>The &times;2 / &times;5/4 / &times;9/8 factors between the disc record and the curated in-battle stats</td></tr>
+      <tr><td>Victory-spoils scaling</td><td><code>FUN_8004E568</code></td><td>EXP &times;3/4, gold &times;5/16</td></tr>
+      <tr><td>Ability bitfield writer</td><td><code>FUN_80042558</code></td><td>Accessory passive index &rarr; bit in <code>char+0xF4</code></td></tr>
+      <tr><td>Steal table</td><td><code>DAT_80077828</code></td><td><code>steal_chance</code> column is byte-exact</td></tr>
+      <tr><td>Art records</td><td>PROT <code>0x05C4</code>; runtime tables <code>0x80160EFC / 0x80176998 / 0x8018BA54</code></td><td>Direction-byte prefix the <code>directions</code> array mirrors</td></tr>
+      <tr><td>Shop stock records</td><td>scene MAN op <code>0x49</code> sub-op 0 (<code>legaia_asset::shop_stock</code>)</td><td>Per-shop inventory join</td></tr>
+      <tr><td>Casino exchange</td><td>PROT 0899 (<code>legaia_patcher::casino::CasinoExchange</code>)</td><td>Prize-counter join</td></tr>
+    </tbody>
+  </table>
 </section>
 
 <section class="doc-section" id="see-also">
   <h2>See also</h2>
-  <ul class="bullets">
-    <li><a href="cheats.html">Cheat databases</a> - the GameShark / Mednafen pipeline that already pins many RAM offsets.</li>
-    <li><a href="../formats/save-record.html">Per-character save record</a> - the <code>0x414</code>-byte runtime record that cheats and gamedata both anchor on.</li>
-    <li><a href="../formats/art-data.html">Art data format</a> - the on-disc Art Record layout that gamedata's <code>directions</code> field cross-validates.</li>
-  </ul>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="cheats.html">Cheat databases</a>
+    <a href="../formats/save-record.html">Per-character save record</a>
+    <a href="../formats/art-data.html">Art data format</a>
+    <a href="../formats/item-table.html">Item table</a>
+    <a href="../formats/equipment-table.html">Equipment table</a>
+    <a href="../formats/accessory-passive-table.html">Accessory passives</a>
+    <a href="music-tracks.html">Music-track disambiguation</a>
+  </div>
 </section>

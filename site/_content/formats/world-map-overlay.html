@@ -1,451 +1,349 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; slot-4 records</div>
   <h1>Slot-4 records (world-map mesh library) <span class="tag tag-partial">Inferred</span></h1>
-  <p class="lede">Each of Legaia's three overworld continents (Drake, Sebucus, Karisto) ships as a "kingdom bundle" - a per-continent asset bundle whose numbered slots hold the map's textures, meshes, and data. Slot 4 is this page's subject: <strong>a per-kingdom library of small object-local 3D meshes</strong>, rendered as PSX triangles and quads by the world-map renderer. Fair warning before you chase the obvious idea: the tempting reading - that these records are 2D map data, the continent's <em>coastline wireframe</em> or the dev-menu top-view outline - is <strong>falsified</strong>. Rendering every body on every projection plane produces no map silhouette in any kingdom; see <a href="#falsified">Falsified readings</a> before re-opening that thread.</p>
-  <p class="lede">What the records actually are: 3D vertices. The container layout below is byte-verified
-  against live RAM, the consumer is pinned, and the per-record semantic is decoded: each 8-byte record is a GTE
-  vertex (the GTE is the PlayStation's geometry coprocessor - all 3D transforms go through its registers) - the
-  cluster-A prim handler <code>FUN_80044c14</code> (a Ghidra-traced function; <code>FUN_80xxxxxx</code> names
-  are addresses) loads each record&apos;s two words straight into the GTE vertex registers (<code>VXYn = x |
-  y&lt;&lt;16</code>, <code>VZn = z</code>) and RTPT-transforms them, so
-  <code>x</code>/<code>y</code>/<code>z</code> are model-space coordinates and the 4th <code>i16</code>
-  (<code>attr</code>) rides in the discarded high half of the <code>VZn</code> word and is not a coordinate. The
-  slot-4 body is read <strong>in place, per frame</strong>, by the world-map renderer (<code>ra
-  0x801F78D4</code>) - there is <strong>no record &rarr; working-buffer transcode</strong>. See <a
-  href="#consumer">Consumer call sites</a>.</p>
-  <p class="lede">The bulk continent terrain itself - the ~4300 POLY_FT4 prims that tile the kingdom continent in the dev-menu top-view - is <em>not</em> sourced from slot 4. It comes from the same kingdom slot-1 TMD pack the landmarks draw from, routed through <code>FUN_80043390</code>&apos;s overlay-mode dispatch table at <code>0x801F8968</code> whose eight high-mode renderers replace the SCUS variants when the world-map overlay is paged in. See <a href="../subsystems/world-map.html#bulk-continent-terrain-emit-mechanism-pinned">subsystems / world-map - bulk continent terrain emit mechanism</a>.</p>
+  <p class="lede">Each of Legaia's three overworld continents (Drake, Sebucus, Karisto) ships as a &ldquo;kingdom bundle&rdquo; - a per-continent asset bundle whose numbered slots hold the map's textures, meshes and data. Slot 4 is a library of small 3D meshes - the props and landmarks the overworld renderer draws around the walking party. Each mesh is a pool of 8-byte vertices the PlayStation's geometry coprocessor reads straight off the loaded bytes, every frame, with no conversion in between.</p>
 </header>
 
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Where on disc</dt><dd>Slot 4 of the kingdom bundles: PROT <code>0086</code> (Drake, <code>map01</code>), <code>0245</code> (Sebucus, <code>map02</code>), <code>0392</code> (Karisto, <code>map03</code>). Type byte <code>0x05</code>.</dd>
+    <dt>Magic</dt><dd>None. Every sub-body carries the constant marker <code>0x080C</code> at <code>+4</code>.</dd>
+    <dt>Size</dt><dd>15-16 bodies per kingdom; 24-32 KB decoded; 8 bytes per vertex record.</dd>
+    <dt>In RAM</dt><dd>Loaded verbatim (LZS-decoded, no fixup) at a per-kingdom base - see <a href="#ram-layout">RAM layout</a>.</dd>
+    <dt>Parser</dt><dd><code>legaia_asset::world_map_overlay</code>; engine <code>SceneResources::world_map_slot4</code>.</dd>
+    <dt>Confidence</dt><dd>Inferred - container and RAM placement byte-verified; consumer pinned reading records in place as GTE vertices; <code>kind</code> / <code>attr</code> characterised, not decoded.</dd>
+    <dt>Used by</dt><dd><a href="../subsystems/world-map.html">World map</a>, <a href="../subsystems/world-overview-viewer.html">World-overview viewer</a></dd>
+  </dl>
+</section>
+
 <section class="doc-section" id="overview">
-  <h2>Overview</h2>
-  <p>Slot 4 of each world-map (kingdom) bundle decompresses to a fixed-size buffer that the runtime loads verbatim into RAM. (PROT.DAT is the disc's single big archive; the "PROT index" is the bundle's entry number in it. CDNAME is the disc's name map, which is where the <code>map01..03</code> labels come from.) Three carriers:</p>
+  <h2>What it is</h2>
+  <p>A kingdom's slot 4 is a small <strong>mesh library</strong>: 15-16 self-contained bodies, each an 8-byte header plus a pool of 3D vertices. The world-map renderer walks the bodies in place each frame, pushes vertices through the GTE (the geometry coprocessor), and emits ordinary triangle and quad packets. The triangle topology is <em>not</em> in the body - a separate command stream indexes into the vertex pool.</p>
+  <ul class="bullets">
+    <li><strong>Not the continent itself.</strong> The bulk terrain (~4300 textured quads in the top view) comes from the kingdom's slot-1 TMD pack, drawn through the overlay-mode dispatch table - see <a href="../subsystems/world-map.html#bulk-continent-terrain-emit-mechanism-pinned">world map - bulk terrain</a>.</li>
+    <li><strong>Not a coastline or map outline.</strong> That reading is falsified; see <a href="#falsified">History</a>.</li>
+    <li><strong>Not a move table</strong>, although the type byte <code>0x05</code> is what <a href="asset-type.html">asset-type</a> labels &ldquo;MOVE&rdquo;. The kingdom-bundle consumer treats each body as a mesh.</li>
+  </ul>
   <table>
-    <thead><tr><th>Bundle</th><th>PROT index</th><th>CDNAME label</th><th>Decoded size</th></tr></thead>
+    <thead><tr><th>Bundle</th><th>PROT index</th><th>CDNAME label</th><th>Decoded size</th><th>Bodies</th></tr></thead>
     <tbody>
-      <tr><td>Drake</td><td>0085</td><td><code>map01</code></td><td>32304</td></tr>
-      <tr><td>Sebucus</td><td>0244</td><td><code>map02</code></td><td>26964</td></tr>
-      <tr><td>Karisto</td><td>0391</td><td><code>map03</code></td><td>24444</td></tr>
+      <tr><td>Drake</td><td>0086</td><td><code>map01</code></td><td>32304</td><td>15</td></tr>
+      <tr><td>Sebucus</td><td>0245</td><td><code>map02</code></td><td>26964</td><td>16</td></tr>
+      <tr><td>Karisto</td><td>0392</td><td><code>map03</code></td><td>24444</td><td>16</td></tr>
     </tbody>
   </table>
-  <p>The 7-asset bundle is the standard <a href="scene-bundles.html#scene-asset-table-count-prefixed-asset-bundle">scene_asset_table</a> shape with type sequence <code>(1, 2, 3, 4, 5, 6, 7)</code>. Slot 4&apos;s type byte is <code>0x05</code> per <a href="asset-type.html">asset-type</a> - the standard table calls this &quot;MOVE&quot;, but the kingdom-bundle consumer interprets each body as an object-local mesh (8-byte header + GTE vertex pool + command stream), not a move table (see <a href="#per-record-semantic">Per-record semantic</a> below).</p>
 </section>
 
 <section class="doc-section" id="container">
-  <h2>Container layout (confirmed)</h2>
+  <h2>Layout</h2>
+  <figure class="overlay-strip">
+    <svg viewBox="0 0 760 200" width="100%" style="max-width:760px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Slot-4 body layout: 8-byte header, vertex records, 8-byte zero trailer; one record expands into four 16-bit fields x, y, z, attr, of which x and y form the GTE VXY register and z the VZ register">
+      <style>
+        .s4-box  { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.3; }
+        .s4-soft { fill: var(--bg-raised); stroke: var(--border); stroke-width: 1.1; stroke-dasharray: 3 3; }
+        .s4-lab  { font: 12px sans-serif; fill: currentColor; }
+        .s4-sub  { font: 11px monospace; fill: var(--text-muted); }
+        .s4-line { stroke: var(--text-muted); stroke-width: 1; fill: none; }
+      </style>
+      <!-- row 1: one body -->
+      <text class="s4-sub" x="8" y="18">one body (8 + 8&#215;count_a&#215;count_b + 8 bytes)</text>
+      <rect class="s4-box" x="8" y="28" width="120" height="44"/>
+      <text class="s4-lab" x="68" y="46" text-anchor="middle">header</text>
+      <text class="s4-sub" x="68" y="62" text-anchor="middle">8 B, marker 0x080C</text>
+      <rect class="s4-box" x="132" y="28" width="96" height="44"/>
+      <text class="s4-lab" x="180" y="46" text-anchor="middle">record 0</text>
+      <text class="s4-sub" x="180" y="62" text-anchor="middle">8 B</text>
+      <rect class="s4-box" x="232" y="28" width="96" height="44"/>
+      <text class="s4-lab" x="280" y="46" text-anchor="middle">record 1</text>
+      <text class="s4-sub" x="280" y="62" text-anchor="middle">8 B</text>
+      <rect class="s4-soft" x="332" y="28" width="200" height="44"/>
+      <text class="s4-lab" x="432" y="46" text-anchor="middle">&#8230; count_a &#215; count_b</text>
+      <text class="s4-sub" x="432" y="62" text-anchor="middle">records, 8-byte stride</text>
+      <rect class="s4-box" x="536" y="28" width="120" height="44"/>
+      <text class="s4-lab" x="596" y="46" text-anchor="middle">trailer</text>
+      <text class="s4-sub" x="596" y="62" text-anchor="middle">8 zero bytes</text>
+      <!-- zoom lines -->
+      <path class="s4-line" d="M132 72 L60 112"/>
+      <path class="s4-line" d="M228 72 L700 112"/>
+      <!-- row 2: one record -->
+      <text class="s4-sub" x="60" y="104">one record = one GTE vertex</text>
+      <rect class="s4-box" x="60" y="112" width="160" height="44"/>
+      <text class="s4-lab" x="140" y="130" text-anchor="middle">x</text>
+      <text class="s4-sub" x="140" y="146" text-anchor="middle">+0 i16</text>
+      <rect class="s4-box" x="220" y="112" width="160" height="44"/>
+      <text class="s4-lab" x="300" y="130" text-anchor="middle">y</text>
+      <text class="s4-sub" x="300" y="146" text-anchor="middle">+2 i16</text>
+      <rect class="s4-box" x="380" y="112" width="160" height="44"/>
+      <text class="s4-lab" x="460" y="130" text-anchor="middle">z</text>
+      <text class="s4-sub" x="460" y="146" text-anchor="middle">+4 i16</text>
+      <rect class="s4-soft" x="540" y="112" width="160" height="44"/>
+      <text class="s4-lab" x="620" y="130" text-anchor="middle">attr</text>
+      <text class="s4-sub" x="620" y="146" text-anchor="middle">+6 i16, ignored</text>
+      <!-- register brackets -->
+      <path class="s4-line" d="M60 166 L60 172 L380 172 L380 166"/>
+      <text class="s4-sub" x="220" y="188" text-anchor="middle">GTE register VXYn</text>
+      <path class="s4-line" d="M380 166 L380 172 L700 172 L700 166"/>
+      <text class="s4-sub" x="540" y="188" text-anchor="middle">GTE register VZn (high half dropped)</text>
+    </svg>
+    <figcaption>A slot-4 body is a header, a run of 8-byte vertex records, and a zero trailer; the renderer loads each record's two words directly into the GTE vertex registers.</figcaption>
+  </figure>
+
   <h3 id="outer-pack">Outer pack</h3>
-<pre><code>+0x00   u32  count                ; number of sub-bodies
-+0x04   u32  byte_offsets[count]  ; absolute byte offset into the
-                                  ; decoded payload (NOT word offsets,
-                                  ; unlike the slot-1 TMD pack)
-+offset bodies[count]             ; contiguous sub-bodies</code></pre>
+  <table class="layout">
+    <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>+0x00</code></td><td>u32</td><td><code>count</code></td><td>Number of sub-bodies</td></tr>
+      <tr><td><code>+0x04</code></td><td>u32 &times; count</td><td><code>byte_offsets[]</code></td><td>Absolute <em>byte</em> offsets into the decoded payload (word offsets in the slot-1 TMD pack - a different rule)</td></tr>
+      <tr><td><code>+offset</code></td><td>-</td><td><code>bodies[]</code></td><td>Contiguous sub-bodies</td></tr>
+    </tbody>
+  </table>
 
   <h3 id="sub-body-header">Sub-body header (8 bytes)</h3>
-<pre><code>+0x00   u8   count_a              ; records per group
-+0x01   u8   flag_a               ; usually 0; 1 for kind=4 bodies
-+0x02   u8   count_b              ; number of groups
-+0x03   u8   flag_b               ; usually 0
-+0x04   u16  marker               ; constant 0x080C across all bodies
-+0x06   u16  kind                 ; 1, 2, or 4 (body class/scope tag)</code></pre>
+  <table class="layout">
+    <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>+0x00</code></td><td>u8</td><td><code>count_a</code></td><td>Records per group</td></tr>
+      <tr><td><code>+0x01</code></td><td>u8</td><td><code>flag_a</code></td><td>Usually 0; 1 for <code>kind = 4</code> bodies</td></tr>
+      <tr><td><code>+0x02</code></td><td>u8</td><td><code>count_b</code></td><td>Number of groups</td></tr>
+      <tr><td><code>+0x03</code></td><td>u8</td><td><code>flag_b</code></td><td>Usually 0</td></tr>
+      <tr><td><code>+0x04</code></td><td>u16</td><td><code>marker</code></td><td>Constant <code>0x080C</code> in every body</td></tr>
+      <tr><td><code>+0x06</code></td><td>u16</td><td><code>kind</code></td><td>1, 2 or 4 - body class / scope tag</td></tr>
+    </tbody>
+  </table>
 
   <h3 id="body-payload">Body payload</h3>
-<pre><code>+0x08   record[count_a * count_b] ; each record is 8 bytes
-                                  ; ( i16 x, i16 y, i16 z, i16 attr )
-+...    trailer (8 bytes)         ; always 8 zero bytes</code></pre>
-  <p>Total body size is always <code>8 + count_a * count_b * 8 + 8</code>. The math fits every body in all three kingdoms exactly.</p>
-
-  <h3 id="per-record-semantic">Per-record semantic - each record is a GTE vertex (decoded)</h3>
-  <p>The 8-byte records are an <strong>object-local vertex pool</strong>: each record is a 3D vertex the cluster-A prim handlers transform through the GTE. Traced from the handler <code>FUN_80044c14</code> (one of the per-kind emitters the dispatch table reaches from <code>FUN_80043390</code>). Each per-kind handler receives three arguments; its third (<code>param_3</code> below) is the <strong>base of the body&apos;s 8-byte-stride vertex pool</strong> - the record region:</p>
-<pre><code>// pool word pairs loaded straight into the GTE vertex registers:
-puVar = pool + (cmd_index &amp; 0x7ff8);   // index = byte offset, 8-byte stride
-setCopReg(2, 0x0000, pool_word0);      // VXY0  = (i16 X | i16 Y &lt;&lt; 16)
-setCopReg(2, 0x0800, pool_word1);      // VZ0   = (i16 Z) in the low half
-// ... V1, V2 the same ...
-copFunction(2, 0x280030);              // RTPT  - perspective-transform 3 verts
-copFunction(2, 0x1400006);             // NCLIP - backface cull</code></pre>
-  <p>So a record&apos;s first word is the GTE <code>VXYn</code> register (<code>X</code> low, <code>Y</code> high) and its second word is <code>VZn</code> (<code>Z</code> in the low 16 bits). Mapping the 8 bytes back to the parser&apos;s <code>i16</code> fields:</p>
-  <table>
-    <thead><tr><th>bytes</th><th>field</th><th>role</th></tr></thead>
+  <table class="layout">
+    <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
     <tbody>
-      <tr><td>0..1</td><td><code>x</code></td><td>model-space X - GTE <code>VXYn</code> low half</td></tr>
-      <tr><td>2..3</td><td><code>y</code></td><td>model-space Y - GTE <code>VXYn</code> high half</td></tr>
-      <tr><td>4..5</td><td><code>z</code></td><td>model-space Z - GTE <code>VZn</code></td></tr>
-      <tr><td>6..7</td><td><code>attr</code></td><td>high half of the <code>VZn</code> word - <strong>not</strong> a coordinate; the GTE vertex load ignores it</td></tr>
+      <tr><td><code>+0x08</code></td><td>8 &times; <code>count_a &times; count_b</code></td><td><code>record[]</code></td><td>GTE vertices <code>(i16 x, i16 y, i16 z, i16 attr)</code></td></tr>
+      <tr><td>after</td><td>8</td><td>trailer</td><td>Always 8 zero bytes</td></tr>
     </tbody>
   </table>
-  <p>The X/Y/Z ranges bear this out (e.g. Sebucus body 0: X&isin;[-20224,-3598], Y&isin;[-6416,4351], Z&isin;[-17649,20992] - object-local mesh extents). The <strong>triangle topology is not in the body</strong>: the per-kind handler reads its vertex indices (the <code>&amp; 0x7ff8</code> byte offsets) from a <em>separate</em> cluster-A command stream and indexes them into this pool, then emits a <code>POLY</code> packet.</p>
+  <p>Body size is always <code>8 + count_a &times; count_b &times; 8 + 8</code>; the arithmetic fits every body in all three kingdoms exactly.</p>
 
-  <h3 id="kind-tag"><code>kind</code> (1/2/4) - a body class/scope tag (characterized)</h3>
-  <p><code>kind</code> is the body header&apos;s <code>+0x06</code> field and is <strong>not</strong> the dispatcher&apos;s prim-kind (<code>8..19</code>, computed from a separate command word). Hashing each body&apos;s bytes across the three kingdoms shows <code>kind</code> partitions bodies by <strong>scope and class</strong>:</p>
-  <ul>
-    <li><strong><code>kind = 1</code></strong> - the three leading bodies (0, 1, 2) are <strong>byte-identical across all three kingdoms</strong> (sha256-matched): a shared, universal mesh set present on every kingdom map.</li>
-    <li><strong><code>kind = 2</code></strong> - full-3D kingdom objects. Some are kingdom-specific; a trailing cluster (Drake bodies 9&ndash;11 &equiv; Sebucus/Karisto bodies 12&ndash;14) is <strong>byte-identical across all three</strong> - another globally shared set. Other kind-2 bodies are shared between adjacent kingdom <em>pairs</em>.</li>
-    <li><strong><code>kind = 4</code></strong> - always carries <code>flag_a = 1</code> (the only <code>flag_a = 1</code> exception in the corpus is one kind-2 body). Often the widest-extent meshes (Drake body 13 reaches the &plusmn;32 K world bounds); shared between kingdom pairs.</li>
-  </ul>
-  <p>So a kingdom&apos;s slot 4 is a per-kingdom <strong>assembly</strong> drawn from a shared mesh library (<code>kind 1</code> universal + shared <code>kind 2/4</code>) plus kingdom-specific bodies, with <code>kind</code> tagging each body&apos;s category. Degenerate bodies (<code>count_a = 1</code>, all-zero records) are empty placeholder slots.</p>
-
-  <h3 id="attr-value"><code>attr</code> - a per-vertex value the render path ignores (characterized)</h3>
-  <p>The 4th <code>i16</code> is genuinely <strong>per-vertex</strong> (not constant within a <code>count_a</code> group), is <strong>not</strong> a function of the vertex position (<code>corr(attr, x/y/z) &asymp; 0.1</code>), and is not a copy of a neighbouring vertex&apos;s coordinate. It rides in the high half of the <code>VZn</code> word, which the GTE vertex load discards. A full sweep of <strong>every</strong> cluster-A handler (<code>FUN_80043658</code>..<code>FUN_80045988</code>) confirms none extract the pool word&apos;s high half - every <code>&gt;&gt; 0x10</code> in the family is either a vertex-index extraction or an output-packet / RTPT-screen write, never a read of the pool <code>word1</code> high half. So <code>attr</code> is <strong>render-unused reserved per-vertex data</strong>: the 43 <code>&gt;&gt; 0x10</code> hits in the cluster-A family are all command-word index extraction, and each record <code>word1</code> is loaded whole into the GTE <code>VZn</code> register with the high 16 bits discarded (<code>grep puVar[1] &gt;&gt; 0x10</code> = zero). Real per-vertex authoring data (135 distinct values in one Sebucus body) that the engine never reads on any render path.</p>
-</section>
-
-<section class="doc-section" id="per-kingdom-inventory">
-  <h2>Per-kingdom body inventory</h2>
-  <p>Drake = 15 bodies; Sebucus = 16; Karisto = 16. The leading three bodies (<code>kind = 1</code>, <code>count_a = 10</code>) are byte-identical templates across all three kingdoms - whatever they encode, the engine ships the same generic shape in every bundle.</p>
-
-  <h3 id="drake-inventory">Drake (<code>map01</code>, PROT 0086)</h3>
-  <table>
-    <thead><tr><th>Body</th><th>count_a</th><th>count_b</th><th>kind</th><th>flag_a</th><th>records</th><th>X span</th><th>Y span</th><th>Z span</th></tr></thead>
+  <h3 id="per-record-semantic">Each record is a GTE vertex</h3>
+  <p>The per-kind handler receives the record region as its vertex pool and indexes it with byte offsets (<code>index &amp; 0x7FF8</code>, an 8-byte stride). It loads the first word into <code>VXYn</code> (X low half, Y high half) and the second into <code>VZn</code> (Z in the low half), then runs RTPT (perspective-transform three vertices) and NCLIP (backface cull). The fourth <code>i16</code> rides in the discarded high half of the <code>VZn</code> word.</p>
+  <table class="layout">
+    <thead><tr><th>Bytes</th><th>Field</th><th>Role</th></tr></thead>
     <tbody>
-      <tr><td>0</td><td>10</td><td>20</td><td>1</td><td>0</td><td>200</td><td>16626</td><td>10767</td><td>38641</td></tr>
-      <tr><td>1</td><td>10</td><td>20</td><td>1</td><td>0</td><td>200</td><td colspan="3">byte-identical template (matches Sebucus / Karisto)</td></tr>
-      <tr><td>2</td><td>10</td><td>30</td><td>1</td><td>0</td><td>300</td><td colspan="3">byte-identical template</td></tr>
-      <tr><td>3</td><td>2</td><td>30</td><td>2</td><td>0</td><td>60</td><td colspan="3">pinned plane (degenerate)</td></tr>
-      <tr><td>4</td><td>2</td><td>20</td><td>2</td><td>0</td><td>40</td><td colspan="3">pinned plane (degenerate)</td></tr>
-      <tr><td>5</td><td>10</td><td>30</td><td>2</td><td>0</td><td>300</td><td colspan="3">25 unique of 30 groups</td></tr>
-      <tr><td>6</td><td>10</td><td>26</td><td>2</td><td>0</td><td>260</td><td colspan="3"></td></tr>
-      <tr><td>7</td><td>10</td><td>30</td><td>2</td><td>0</td><td>300</td><td colspan="3">25 unique of 30 groups</td></tr>
-      <tr><td>8</td><td>10</td><td>3</td><td>2</td><td>0</td><td>30</td><td colspan="3">3 identical groups (filler / padding)</td></tr>
-      <tr><td>9</td><td>12</td><td>30</td><td>2</td><td>0</td><td>360</td><td>10725</td><td><strong>25856</strong></td><td>21248</td></tr>
-      <tr><td>10</td><td>12</td><td>30</td><td>2</td><td>0</td><td>360</td><td>13056</td><td>18432</td><td>31503</td></tr>
-      <tr><td>11</td><td>12</td><td>10</td><td>2</td><td>0</td><td>120</td><td>11492</td><td><strong>27648</strong></td><td>24064</td></tr>
-      <tr><td>12</td><td>10</td><td>120</td><td>2</td><td>0</td><td>1200</td><td>16118</td><td>4096</td><td>31473</td></tr>
-      <tr><td>13</td><td>14</td><td>15</td><td>4</td><td>1</td><td>210</td><td>65485</td><td>14336</td><td>64512</td></tr>
-      <tr><td>14</td><td>2</td><td>30</td><td>2</td><td>0</td><td>60</td><td colspan="3"></td></tr>
+      <tr><td>0..1</td><td><code>x</code></td><td>Model-space X - GTE <code>VXYn</code> low half</td></tr>
+      <tr><td>2..3</td><td><code>y</code></td><td>Model-space Y - GTE <code>VXYn</code> high half</td></tr>
+      <tr><td>4..5</td><td><code>z</code></td><td>Model-space Z - GTE <code>VZn</code></td></tr>
+      <tr><td>6..7</td><td><code>attr</code></td><td>Not a coordinate; the GTE vertex load ignores it</td></tr>
     </tbody>
   </table>
-  <p>Bodies 9 / 10 / 11 have Y spans comparable to the X/Z scale - 3D mesh extent, not 2D contour data. Body 12 is nearly flat (Y span 4K). Body 13 reaches the full &plusmn;32K world bounds on X and Z and clusters in the corners.</p>
+  <p>Coordinate ranges are object-local mesh extents (Sebucus body 0: X in [-20224, -3598], Y in [-6416, 4351], Z in [-17649, 20992]).</p>
 
-  <h3 id="sebucus-inventory">Sebucus (<code>map02</code>, PROT 0245)</h3>
-  <p>16 bodies; same leading three templates as Drake. Bodies 8-11 are all <code>kind = 4</code> with <code>flag_a = 1</code> (more boundary-style bodies than Drake&apos;s single body 13).</p>
+  <h3 id="kind-tag"><code>kind</code> - a class / scope tag</h3>
+  <p><code>kind</code> is not the renderer's primitive kind (that comes from a separate command word). Hashing bodies across the three kingdoms shows what it partitions:</p>
+  <table>
+    <thead><tr><th><code>kind</code></th><th>What the bodies are</th><th>Shared?</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>The three leading bodies (0, 1, 2), <code>count_a = 10</code></td><td>Byte-identical in all three kingdoms - a universal mesh set</td></tr>
+      <tr><td>2</td><td>Full-3D kingdom objects</td><td>Some kingdom-specific; one trailing cluster identical in all three; others shared by kingdom pairs</td></tr>
+      <tr><td>4</td><td>Widest-extent meshes (Drake body 13 reaches the &plusmn;32 K world bounds); always <code>flag_a = 1</code></td><td>Shared by kingdom pairs</td></tr>
+    </tbody>
+  </table>
+  <p>So each kingdom's slot 4 is an <strong>assembly</strong> from a shared library plus kingdom-specific bodies. Degenerate bodies (<code>count_a = 1</code>, all-zero records) are empty placeholder slots.</p>
 
-  <h3 id="karisto-inventory">Karisto (<code>map03</code>, PROT 0392)</h3>
-  <p>16 bodies; same leading three templates. Bodies 4-9 + 11 are <code>kind = 4</code> with <code>flag_a = 1</code>. Karisto body 10 is anomalous: <code>kind = 2, flag_a = 1</code> (the only non-<code>kind=4</code> body with <code>flag_a = 1</code> across all three kingdoms).</p>
+  <h3 id="attr-value"><code>attr</code> - present but unread</h3>
+  <p>The fourth <code>i16</code> varies per vertex, is uncorrelated with position, and is not a neighbour's coordinate. A sweep of every cluster-A handler finds no reader of the pool word's high half, so it is reserved data the render path never uses.</p>
+
+  <details class="disclosure">
+    <summary>Per-kingdom body inventory</summary>
+    <div class="disclosure-body" id="per-kingdom-inventory">
+      <p>Drake = 15 bodies, Sebucus = 16, Karisto = 16. Bodies 0-2 are the shared <code>kind = 1</code> templates in every kingdom.</p>
+      <h4 id="drake-inventory">Drake (<code>map01</code>, PROT 0086)</h4>
+      <table>
+        <thead><tr><th>Body</th><th>count_a</th><th>count_b</th><th>kind</th><th>flag_a</th><th>Records</th><th>Notes / X&middot;Y&middot;Z span</th></tr></thead>
+        <tbody>
+          <tr><td>0</td><td>10</td><td>20</td><td>1</td><td>0</td><td>200</td><td>16626 &middot; 10767 &middot; 38641; shared template</td></tr>
+          <tr><td>1</td><td>10</td><td>20</td><td>1</td><td>0</td><td>200</td><td>shared template</td></tr>
+          <tr><td>2</td><td>10</td><td>30</td><td>1</td><td>0</td><td>300</td><td>shared template</td></tr>
+          <tr><td>3</td><td>2</td><td>30</td><td>2</td><td>0</td><td>60</td><td>degenerate plane</td></tr>
+          <tr><td>4</td><td>2</td><td>20</td><td>2</td><td>0</td><td>40</td><td>degenerate plane</td></tr>
+          <tr><td>5</td><td>10</td><td>30</td><td>2</td><td>0</td><td>300</td><td>25 unique of 30 groups</td></tr>
+          <tr><td>6</td><td>10</td><td>26</td><td>2</td><td>0</td><td>260</td><td></td></tr>
+          <tr><td>7</td><td>10</td><td>30</td><td>2</td><td>0</td><td>300</td><td>25 unique of 30 groups</td></tr>
+          <tr><td>8</td><td>10</td><td>3</td><td>2</td><td>0</td><td>30</td><td>3 identical groups (filler)</td></tr>
+          <tr><td>9</td><td>12</td><td>30</td><td>2</td><td>0</td><td>360</td><td>10725 &middot; 25856 &middot; 21248; shared with Sebucus / Karisto 12</td></tr>
+          <tr><td>10</td><td>12</td><td>30</td><td>2</td><td>0</td><td>360</td><td>13056 &middot; 18432 &middot; 31503; shared with Sebucus / Karisto 13</td></tr>
+          <tr><td>11</td><td>12</td><td>10</td><td>2</td><td>0</td><td>120</td><td>11492 &middot; 27648 &middot; 24064; shared with Sebucus / Karisto 14</td></tr>
+          <tr><td>12</td><td>10</td><td>120</td><td>2</td><td>0</td><td>1200</td><td>16118 &middot; 4096 &middot; 31473; near-flat</td></tr>
+          <tr><td>13</td><td>14</td><td>15</td><td>4</td><td>1</td><td>210</td><td>65485 &middot; 14336 &middot; 64512; corner-clustered</td></tr>
+          <tr><td>14</td><td>2</td><td>30</td><td>2</td><td>0</td><td>60</td><td></td></tr>
+        </tbody>
+      </table>
+      <h4 id="sebucus-inventory">Sebucus (<code>map02</code>, PROT 0245)</h4>
+      <p>16 bodies. Bodies 8-11 are <code>kind = 4</code>, <code>flag_a = 1</code>.</p>
+      <h4 id="karisto-inventory">Karisto (<code>map03</code>, PROT 0392)</h4>
+      <p>16 bodies. Bodies 4-9 and 11 are <code>kind = 4</code>, <code>flag_a = 1</code>. Body 10 is the corpus's one <code>kind = 2</code> body with <code>flag_a = 1</code>.</p>
+      <p>Full dump: <code>asset kingdom-slot &lt;PROT&gt;.BIN --slot 4</code>.</p>
+    </div>
+  </details>
 </section>
 
 <section class="doc-section" id="ram-layout">
-  <h2>RAM layout (confirmed)</h2>
-  <p>Slot 4 is loaded <strong>verbatim into RAM</strong> with zero per-byte diffs vs disc, and the <strong>resident base varies per kingdom</strong> - each is pinned by byte-matching the disc-decoded payload against a post-warp full-RAM dump (all bodies agreeing unanimously):</p>
+  <h2>RAM layout</h2>
+  <p>The LZS decoder writes slot 4 straight to its destination - byte-identical to the disc, no fixup - and the resident base <strong>differs per kingdom</strong>, so a RAM probe must locate the base first. Body 0's records start <code>0x40</code> past the base.</p>
   <table>
-    <thead><tr><th>Kingdom</th><th>bundle</th><th>resident base</th><th>end (excl.)</th><th>bytes</th><th>bodies matched</th></tr></thead>
+    <thead><tr><th>Kingdom</th><th>Bundle</th><th>Resident base</th><th>End (excl.)</th><th>Bytes</th></tr></thead>
     <tbody>
-      <tr><td>Drake</td><td><code>map01</code> / 0085</td><td><code>0x8011A624</code></td><td><code>0x80122454</code></td><td>32304</td><td>15/15</td></tr>
-      <tr><td>Sebucus</td><td><code>map02</code> / 0244</td><td><code>0x80119CE4</code></td><td><code>0x80120638</code></td><td>26964</td><td>16/16</td></tr>
-      <tr><td>Karisto</td><td><code>map03</code> / 0391</td><td><code>0x80108D84</code></td><td><code>0x8010ED00</code></td><td>24444</td><td>16/16</td></tr>
+      <tr><td>Drake</td><td><code>map01</code> / 0086</td><td><code>0x8011A624</code></td><td><code>0x80122454</code></td><td>32304</td></tr>
+      <tr><td>Sebucus</td><td><code>map02</code> / 0245</td><td><code>0x80119CE4</code></td><td><code>0x80120638</code></td><td>26964</td></tr>
+      <tr><td>Karisto</td><td><code>map03</code> / 0392</td><td><code>0x80108D84</code></td><td><code>0x8010ED00</code></td><td>24444</td></tr>
     </tbody>
   </table>
-  <p>Body 0&apos;s records start <code>0x40</code> past the base (after the 4-byte count and 15&ndash;16 &times; 4-byte offsets). No runtime fixup is applied. Because the base is not constant, a probe that arms breakpoints on the slot-4 RAM window <strong>must locate the base for that kingdom first</strong>.</p>
-  <p>Verified by <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/pcsx-redux/diff_slot4_ram_vs_disc.py" target="_blank" rel="noopener"><code>scripts/pcsx-redux/diff_slot4_ram_vs_disc.py</code></a> against a PCSX-Redux save state (every byte of all Drake bodies matches the disc-side LZS-decoded payload); the per-kingdom base table extends that with a full-RAM dump (<code>autorun_dump_full_ram_hold.lua</code> drives the warp, then dumps post-warp RAM) plus a unanimous body-vote base search (<code>locate_slot4_base.py</code>).</p>
-</section>
-
-<section class="doc-section" id="falsified">
-  <h2>Falsified readings</h2>
-  <p>Three encoding interpretations are falsified by visual inspection (PNG renders of every body &times; every projection plane &times; every topology mode) - do not re-open them without new evidence:</p>
-  <ol>
-    <li><strong>Top-down dev-menu wireframe / continent coastline</strong> (body 12 = coastline, body 13 = world boundary frame). Projecting all 15 bodies onto <code>xz</code> produces no recognizable map silhouette in any kingdom, and no render matches the dev-menu top-view captured from PCSX-Redux save states.</li>
-    <li><strong><code>count_a &times; count_b</code> heightfield grid.</strong> Rendering Drake body 12 as a coarse 10 &times; 120 grid quad-mesh wireframe produces the wrong silhouette; pair-wise edge interpretation (<code>(r0,r1) (r2,r3) ...</code>) likewise yields no coastline-like contour.</li>
-    <li><strong>A single non-<code>xz</code> projection.</strong> <code>xy</code> surfaces clean pillar silhouettes for bodies 9 and 11 (25K-27K Y span), but no single axis pair produces a coherent map across <strong>all</strong> 15 bodies - the recognizable <code>xy</code> shapes are 3D objects seen sideways, not map outlines.</li>
-  </ol>
-  <p>Superseded probe readings, kept as warnings:</p>
-  <ul class="bullets">
-    <li><strong>"Slot 4 is transcoded / overwritten by TMD-pack installs."</strong> An intermediate model held that cluster A read TMDs at addresses that had once held slot-4 bytes. Wrong on two counts: the register snapshots that placed cluster-A reads in the <code>0x801BA000</code> working buffer belong to the separate per-actor renderer stream, and the "slot-4 window full of TMDs" snapshot was a <em>field-scene</em> (<code>dolk</code>) capture whose <code>0x8011Axxx</code> TMDs are that scene's field-file pack, not the kingdom slot-4 buffer. The in-place Read-watchpoint capture (see <a href="#consumer">Consumer call sites</a>) retired the transcode framing.</li>
-    <li><strong>"Sebucus shows no render reads."</strong> A wrong-base assumption - re-read against the byte-verified Sebucus base, 171 of 177 reads land inside the slot-4 window.</li>
-    <li><strong>"Mid-load table entries past the walker counter are content."</strong> Historical "non-TMD entry classification" passes sampled stale pointers past <code>DAT_8007BB38</code>; those characterisations were out-of-bounds reads, not table contents.</li>
-  </ul>
 </section>
 
 <section class="doc-section" id="consumer">
-  <h2>Consumer call sites</h2>
-  <p>Two distinct SCUS-resident reader clusters consume slot 4. Both are <strong>byte-identical across all three kingdoms</strong> - same PC ranges, same caller RAs - proving the consumer is generic SCUS code, not per-kingdom overlay code.</p>
-  <p><strong>Slot 4 is read in place - there is no transcode.</strong> A Read-watchpoint tiled across the Drake slot-4 RAM window (driving the held-Up warp from the <code>drake_castle_to_worldmap</code> save) captures the slot-4 records being read directly by the renderer: of 365 captured rows, <strong>363 are slot-4 reads by the cluster-A GTE mesh path</strong> (none a copy), with the faulting addresses spanning almost the whole window and the live <code>a1</code>/<code>a2</code> register pointers inside the slot-4 window. The return addresses are <strong><code>0x801F78D4</code> (the world-map top-view overlay renderer) and <code>0x8001BC8C</code> (the SCUS render path)</strong>. The streaming-chunk dispatcher <code>FUN_8001E54C</code> fired only twice and never with a slot-4 pointer - so it does not copy the slot-4 records. The dispatcher capture corroborates this: of 2153 <code>FUN_80043390</code> calls during the Drake warp, 762 take their command pointer <code>a0</code> from inside the slot-4 window, so slot-4 is walked in place as command streams, not just as the vertex source. A Read-watchpoint on body 0&apos;s header (the <code>count</code>/<code>kind</code> words) during the warp catches the cluster-A handler chain reading it in place (PC inside <code>FUN_80045584</code>, <code>ra 0x801F78D4</code>), confirming each slot-4 body is a self-contained render packet (8-byte header + indexed vertex records) the renderer walks in place. Sebucus and Karisto are byte-pinned resident at their own bases (see <a href="#ram-layout">RAM layout</a>) and a Sebucus warp confirms the same renderer drives cluster-A there too, with 171 of 177 captured reads inside the byte-verified Sebucus window.</p>
-  <table>
-    <thead><tr><th>Reader</th><th>Entry / PC range</th><th>Caller RA</th></tr></thead>
-    <tbody>
-      <tr><td><strong>Cluster A - TMD-style primitive renderer</strong> (<code>FUN_80043390</code> + per-kind handlers)</td><td>dispatcher entry <code>0x80043390</code>; per-kind handler bodies at <code>0x80043658..0x80045988</code></td><td><code>0x8001B47C</code> (inside <code>FUN_8001ada4</code>), <code>0x801F78D4</code> (world-map overlay) - both in every kingdom</td></tr>
-      <tr><td><strong>Cluster B - secondary mid-body reader</strong></td><td><code>0x80059DE4</code></td><td><code>0x80059C00</code> (SCUS) - identical across all three kingdoms</td></tr>
-    </tbody>
-  </table>
-  <p class="note"><strong>Cluster-B provenance caveat:</strong> the dump file <code>ghidra/scripts/funcs/80059de4.txt</code> is <strong>mislabeled</strong> - its function entry is <code>FUN_80059BD4</code>, a <strong>generic VRAM <code>LoadImage</code> DMA</strong>, not a slot-4-specific reader. The Exec-bp hits at <code>0x80059DE4</code> fall inside that DMA routine, so &ldquo;cluster B&rdquo; is the generic image-upload path incidentally touching the slot-4 RAM window, not a dedicated slot-4 consumer. The real slot-4 render path is cluster A.</p>
-  <p><code>FUN_80043390</code> (712 bytes / 178 instructions) takes three arguments:</p>
-<pre><code>void FUN_80043390(struct *display_state, u32 cmd_flags, u32 fade_flags);
-//   display_state[0]   -> vertex pool base  (a2 in handlers = param_3)
-//   display_state[3]   -> non-zero gates the color/light-modulation path
-//   display_state[4]   -> command-stream pointer (where slot-4 records feed in)</code></pre>
-  <p>It reads one u32 command word from <code>display_state[4]</code> (the command stream pointer), extracts a 15-bit <code>kind</code> from bits 17-31 and a 16-bit <code>count</code> from bits 0-15, optionally re-arms the GTE colour registers, and <strong>tail-calls a per-kind handler</strong> through a jump table. Each handler consumes its own command&apos;s primitive batch (count items of a kind-specific stride), emits GP0 packets into the active primitive pool, then <strong>chain-calls the next kind handler at the same dispatch point</strong> - the renderer is a TMD-style display-list walker, not a fixed-size record loop.</p>
-  <p>Two parallel handler tables drive the dispatch: SCUS handlers at <code>0x8007657C</code> (default), or overlay handlers at <code>0x801F8968</code> when <code>_DAT_1F800394 &amp; 1</code> is set (the alternate route for the bulk-terrain pipeline). Within the SCUS table the dispatcher adds a <strong>bank offset</strong> to the <code>kind*4</code> index per the literal disassembly of <code>FUN_80043390</code>:</p>
-<pre><code>_DAT_1f800028 = 0;
-if (fade_flags != 0) {                            // param_3 != 0
-    _DAT_1f800028 = 0x50;                          // baseline
-    if ((cmd_flags &amp; 0x04000000) != 0) _DAT_1f800028 = 0xA0;
-    if ((cmd_flags &amp; 0x20000000) != 0) _DAT_1f800028 = 0xF0;
-}</code></pre>
-  <p>So there are <strong>four banks</strong>, not three. The two <code>if</code>s are sequential (not else-if), so the <code>0x20000000</code> branch wins when both flags are set. And bank 0 / bank 1 are gated by <code>fade_flags</code>, not by <code>cmd_flags</code> bits:</p>
-  <table>
-    <thead><tr><th><code>fade_flags</code></th><th><code>cmd_flags</code> bits</th><th>Bank offset</th><th>Effect</th></tr></thead>
-    <tbody>
-      <tr><td><code>== 0</code></td><td>(ignored)</td><td><code>0x00</code></td><td>bank 0 - kinds 12-19 use the small <code>0x80043658..0x80043F10</code> handler set</td></tr>
-      <tr><td><code>!= 0</code></td><td>neither high bit set</td><td><code>0x50</code></td><td>bank 1 - kinds 12-19 swap to <code>0x800448B0..0x80045584</code></td></tr>
-      <tr><td><code>!= 0</code></td><td><code>0x04000000</code> set, <code>0x20000000</code> clear</td><td><code>0xA0</code></td><td>bank 2 - kind 18/19 swap to <code>0x800457C4</code> / <code>0x80045988</code></td></tr>
-      <tr><td><code>!= 0</code></td><td><code>0x20000000</code> set</td><td><code>0xF0</code></td><td>bank 3 - likely dev / debug mode; never observed in retail world-map render</td></tr>
-    </tbody>
-  </table>
-  <p>Kinds 8-11 are shared across all banks. Empirically (Drake post-warp settled, 19,935 dispatcher-entry hits via <code>autorun_slot4_dispatcher_args.lua</code>), retail world-map render exercises <strong>only banks <code>0x00</code> (77%) and <code>0x50</code> (23%)</strong>; both <code>0x04000000</code> and <code>0x20000000</code> cmd_flags bits are <em>never</em> set, so banks 2 and 3 stay dark. The bank distinction in retail play is purely the <code>fade_flags != 0</code> toggle.</p>
-  <h3 id="per-kind">Per-kind primitive types</h3>
-  <p>Every handler has the same shape: read N command-stream words, transform 3-or-4 vertices through the GTE, write an <code>M</code>-byte GP0 packet at the primitive-pool pointer. The strides give away the PSX primitive type:</p>
-  <table>
-    <thead><tr><th>Kind</th><th>Bank 0 entry</th><th>Banks 1,2 entry</th><th>cmd stride</th><th>GP0 stride</th><th>Likely primitive</th></tr></thead>
-    <tbody>
-      <tr><td>8</td><td><code>0x8004409c</code> (shared)</td><td>(shared)</td><td>0x14 (20B)</td><td>0x20 (32B)</td><td>POLY_G4 (gouraud quad)</td></tr>
-      <tr><td>9</td><td><code>0x8004423c</code> (shared)</td><td>(shared)</td><td>0x18 (24B)</td><td>0x28 (40B)</td><td>POLY_GT4 (gouraud-textured quad)</td></tr>
-      <tr><td>10</td><td><code>0x80044434</code> (shared)</td><td>(shared)</td><td>0x18 (24B)</td><td>0x28 (40B)</td><td>POLY_GT4 variant</td></tr>
-      <tr><td>11</td><td><code>0x800445b0</code> (shared)</td><td>(shared)</td><td>0x1c (28B)</td><td>0x34 (52B)</td><td>extended quad (extra per-vert data)</td></tr>
-      <tr><td>12</td><td><code>0x80043658</code></td><td><code>0x800448b0</code></td><td>0x0c (12B)</td><td>0x14 (20B)</td><td>POLY_F3 (flat triangle)</td></tr>
-      <tr><td>13</td><td><code>0x80043768</code></td><td><code>0x80044a3c</code></td><td>0x0c (12B)</td><td>0x18 (24B)</td><td>POLY_G3 / POLY_FT3</td></tr>
-      <tr><td>14</td><td><code>0x80043b58</code></td><td><code>0x80044fdc</code></td><td>0x14 (20B)</td><td>0x1c (28B)</td><td>POLY_FT3</td></tr>
-      <tr><td>15</td><td><code>0x80043c6c</code></td><td><code>0x80045194</code></td><td>0x18 (24B)</td><td>0x24 (36B)</td><td>POLY_GT3</td></tr>
-      <tr><td>16</td><td><code>0x800438b8</code></td><td><code>0x80044c14</code></td><td>0x14 (20B)</td><td>0x20 (32B)</td><td>POLY_G4</td></tr>
-      <tr><td>17</td><td><code>0x800439e4</code></td><td><code>0x80044dc8</code></td><td>0x18 (24B)</td><td>0x28 (40B)</td><td>POLY_GT4</td></tr>
-      <tr><td>18</td><td><code>0x80043dd4</code></td><td><code>0x800453bc</code> (b1) / <code>0x800457c4</code> (b2)</td><td>0x1c (28B)</td><td>0x28 / 0x20</td><td>POLY_GT4 extended</td></tr>
-      <tr><td>19</td><td><code>0x80043f10</code></td><td><code>0x80045584</code> (b1) / <code>0x80045988</code> (b2)</td><td>0x24 (36B)</td><td>0x34 / 0x28</td><td>POLY_GT4 extended-plus</td></tr>
-    </tbody>
-  </table>
-  <p>Each handler decodes the per-command words as two packed vertex indices per <code>u32</code> (low-16 <code>&amp; 0x7FF8</code>, high-16 also <code>&amp; 0x7FF8</code> - a <code>&gt;&gt;3</code> divisor plus 8-byte vertex stride from <code>param_3</code> = the vertex pool base).</p>
-  <h3 id="cross-kingdom-hits">Cross-kingdom hit-count comparison</h3>
-  <p>Exec-breakpoint hit counts at the eight cluster-A LW PCs + the cluster-B LW PC during a single warp-tile transition. All three kingdoms captured with <code>LEGAIA_PC_CAP=50000</code> over 1800 vsyncs; no PC saturates the cap, so the totals are exact:</p>
-  <table>
-    <thead><tr><th>Kingdom</th><th>sstate</th><th>Cluster A total</th><th>Cluster B</th><th>Cluster A RAs observed</th></tr></thead>
-    <tbody>
-      <tr><td>Drake</td><td>already on map01, held UP</td><td>71,331</td><td>178</td><td><code>0x8001B47C</code>, <code>0x8001BC8C</code>, <code>0x801F78D4</code></td></tr>
-      <tr><td>Sebucus</td><td>town &rarr; map02, held DOWN</td><td>90,096</td><td>67</td><td><code>0x8001B47C</code>, <code>0x801F78D4</code></td></tr>
-      <tr><td>Karisto</td><td>town &rarr; map03, held DOWN</td><td>13,593</td><td>115</td><td><code>0x8001B47C</code>, <code>0x801F78D4</code></td></tr>
-    </tbody>
-  </table>
-  <p>Sebucus&apos;s cluster-A total is <em>higher</em> than Drake&apos;s despite Sebucus&apos;s slot-4 being smaller - confirming hit-count tracks scene-render volume, not slot-4 record count. Cluster B&apos;s variance is the inverse: Drake walks the most slot-4 bodies, then Karisto, then Sebucus.</p>
-
-  <h4>Per-kind delta</h4>
-  <p>With the cluster-A LW PCs mapped to specific kind handlers, the per-PC &times; per-kingdom hit counts surface a clean signal. All three kingdoms captured uncapped (<code>LEGAIA_PC_CAP=50000</code> over 1800 vsyncs):</p>
-  <table>
-    <thead><tr><th>Kind handler</th><th>Primitive (likely)</th><th>Drake</th><th>Sebucus</th><th>Karisto</th></tr></thead>
-    <tbody>
-      <tr><td>13 banks 1,2 (<code>0x80044A3C</code>)</td><td>POLY_G3 / POLY_FT3 triangle</td><td><strong>9,465</strong></td><td><strong>2,040</strong></td><td>49</td></tr>
-      <tr><td>17 banks 1,2 (<code>0x80044DC8</code>)</td><td>POLY_GT4 textured quad</td><td><strong>762</strong></td><td><strong>240</strong></td><td>147</td></tr>
-      <tr><td>18 bank 1 (<code>0x800453BC</code>, &times;4 LW PCs)</td><td>POLY_GT4 extended quad</td><td><strong>13,561</strong> (&times;4)</td><td><strong>20,601</strong> (&times;4)</td><td><strong>1,820</strong> (&times;4)</td></tr>
-      <tr><td>16 banks 1,2 (<code>0x80044C14</code>)</td><td>POLY_G4 quad</td><td><strong>7,688</strong></td><td><strong>878</strong></td><td><strong>2,058</strong></td></tr>
-      <tr><td>15 banks 1,2 (<code>0x80045194</code>)</td><td>POLY_GT3 textured triangle</td><td><strong>6,860</strong></td><td><strong>5,412</strong></td><td><strong>2,059</strong></td></tr>
-      <tr><td>cluster B (<code>0x80059DE4</code>)</td><td>mid-body reader</td><td><strong>178</strong></td><td><strong>67</strong></td><td><strong>115</strong></td></tr>
-    </tbody>
-  </table>
-  <ul>
-    <li><strong>Kind 13</strong> scales sharply: Drake (9,465) &Gt; Sebucus (2,040) &Gt; Karisto (49). Drake / Sebucus have many small triangle primitives; Karisto barely uses them.</li>
-    <li><strong>Kind 17</strong> scales with overall scene weight: Drake (762) &gt; Sebucus (240) &gt; Karisto (147). Ratio Drake / Karisto &asymp; 5.2.</li>
-    <li><strong>Kind 16</strong>: Karisto-heavy (2,058) / Drake-heavy (7,688) but Sebucus uses it least (878).</li>
-    <li><strong>Kind 18 (extended quad)</strong> is the absolute workhorse - Sebucus dispatches <strong>20,601 instances</strong> of it (~80% of cluster-A primitive count), Drake 13,561, Karisto 1,820. Dominant per-frame primitive across every kingdom.</li>
-    <li><strong>Cluster B</strong> (the mid-body reader): Drake (178) &gt; Karisto (115) &gt; Sebucus (67) - Drake&apos;s larger slot 4 visits more of the secondary reader&apos;s body subset.</li>
+  <h2>How it is drawn</h2>
+  <p>The world-map top-view renderer (in the world-map overlay) walks the slot-4 bodies in place every frame and hands each to the SCUS-resident <strong>primitive dispatcher</strong> - a TMD-style display-list walker. The dispatcher reads one command word (a 15-bit primitive kind plus a 16-bit count), optionally re-arms the GTE colour registers, and tail-calls a per-kind handler through a jump table. Each handler transforms 3-4 pool vertices through the GTE, writes one GP0 packet into the scene's primitive pool, and chains to the next command.</p>
+  <ul class="bullets">
+    <li><strong>In place.</strong> A read-watchpoint tiled across the Drake window catches only renderer reads (363 of 365 captures); no copy into a working buffer exists.</li>
+    <li><strong>Generic code.</strong> One dispatcher serves all three kingdoms and the field-character renderer; the world-map overlay swaps in its own handler table for the bulk-terrain route.</li>
+    <li><strong>Four handler banks</strong>, selected per call by fade and command flags; retail world-map play uses only banks 0 and 1.</li>
   </ul>
-  <p>Captured CSVs land under <code>captures/slot4_uncapped/</code> (per-row flushed, safe to inspect mid-run). The dispatcher-entry probe CSV at <code>captures/slot4_dispatcher/</code> gives the first-kind / cmd_flags / fade_flags per call.</p>
+  <h3 id="per-kind">Primitive kinds</h3>
+  <p>Kinds 8-19 map onto the standard PlayStation polygon packets - flat, gouraud and textured triangles and quads. Kind 18 (an extended textured quad) is the per-frame workhorse in every kingdom. Each command word packs two vertex indices per <code>u32</code>, both masked <code>&amp; 0x7FF8</code>.</p>
 
-  <h3 id="cluster-a-caller">Cluster-A caller (<code>FUN_8001ada4</code>)</h3>
-  <p><code>FUN_8001ada4</code> (2456 B / 614 instructions) is the per-actor renderer that walks a linked list of actor records and calls cluster A for each one&apos;s meshes. For each actor, the mesh-table at <code>actor+0x44</code> is <code>[u32 count, u32 mesh_ptr[count]]</code>. Each <code>mesh_ptr</code> is the TMD-style struct passed as <code>param_1</code> to <code>FUN_80043390</code>. This is the per-actor mesh path; it is a <em>separate</em> caller from the world-map slot-4 render - the warp-transition slot-4 reads return into <code>ra = 0x801F78D4</code> (the world-map top-view overlay renderer) and <code>0x8001BC8C</code> (the SCUS render path), reading the slot-4 records in place as documented in <a href="#consumer">Consumer call sites</a> above.</p>
+  <details class="disclosure">
+    <summary>Primitive kinds, bank selection and per-kingdom render load</summary>
+    <div class="disclosure-body">
+      <p>Every handler has the same shape; the command and packet strides give away the primitive type. Kinds 8-11 share one handler across all banks; kinds 12-19 have a bank-0 and a bank-1/2 handler each.</p>
+      <table>
+    <thead><tr><th>Kind</th><th>Command stride</th><th>GP0 packet</th><th>Primitive</th></tr></thead>
+    <tbody>
+      <tr><td>8</td><td>20 B</td><td>32 B</td><td>POLY_G4 gouraud quad</td></tr>
+      <tr><td>9, 10</td><td>24 B</td><td>40 B</td><td>POLY_GT4 gouraud-textured quad</td></tr>
+      <tr><td>11</td><td>28 B</td><td>52 B</td><td>Extended quad</td></tr>
+      <tr><td>12</td><td>12 B</td><td>20 B</td><td>POLY_F3 flat triangle</td></tr>
+      <tr><td>13</td><td>12 B</td><td>24 B</td><td>POLY_G3 / POLY_FT3</td></tr>
+      <tr><td>14</td><td>20 B</td><td>28 B</td><td>POLY_FT3</td></tr>
+      <tr><td>15</td><td>24 B</td><td>36 B</td><td>POLY_GT3</td></tr>
+      <tr><td>16</td><td>20 B</td><td>32 B</td><td>POLY_G4</td></tr>
+      <tr><td>17</td><td>24 B</td><td>40 B</td><td>POLY_GT4</td></tr>
+      <tr><td>18</td><td>28 B</td><td>40 / 32 B</td><td>POLY_GT4 extended - the per-frame workhorse in every kingdom</td></tr>
+      <tr><td>19</td><td>36 B</td><td>52 / 40 B</td><td>POLY_GT4 extended-plus</td></tr>
+    </tbody>
+  </table>
+      <p>The dispatcher computes a bank offset added to the <code>kind &times; 4</code> jump-table index. The two flag tests are sequential, so the <code>0x20000000</code> branch wins when both are set.</p>
+      <table>
+        <thead><tr><th><code>fade_flags</code></th><th><code>cmd_flags</code> bits</th><th>Bank</th><th>Effect</th></tr></thead>
+        <tbody>
+          <tr><td><code>== 0</code></td><td>ignored</td><td>0 (<code>+0x00</code>)</td><td>Kinds 12-19 use the small handler set</td></tr>
+          <tr><td><code>!= 0</code></td><td>neither high bit</td><td>1 (<code>+0x50</code>)</td><td>Kinds 12-19 swap to the lit handler set</td></tr>
+          <tr><td><code>!= 0</code></td><td><code>0x04000000</code></td><td>2 (<code>+0xA0</code>)</td><td>Kinds 18 / 19 swap again</td></tr>
+          <tr><td><code>!= 0</code></td><td><code>0x20000000</code></td><td>3 (<code>+0xF0</code>)</td><td>Never observed in retail world-map render</td></tr>
+        </tbody>
+      </table>
+      <p>Over 19,935 dispatcher entries on Drake, 77% take bank 0 and 23% bank 1; neither high flag bit is ever set. Exec-breakpoint totals over one warp transition (1800 vsyncs, uncapped): Drake 71,331 cluster-A hits, Sebucus 90,096, Karisto 13,593 - tracking scene render volume, not slot-4 size. Kind 18 dominates in every kingdom (Sebucus 20,601 instances, about 80% of its primitives); kind 13 triangles are heavy on Drake (9,465) and nearly absent on Karisto (49).</p>
+      <p id="cross-kingdom-hits">A second reader, &ldquo;cluster B&rdquo; at <code>0x80059DE4</code>, is the generic VRAM <code>LoadImage</code> DMA (<code>FUN_80059BD4</code>) incidentally touching the window - not a slot-4 consumer. The dump file named <code>80059de4.txt</code> is that DMA routine.</p>
+    </div>
+  </details>
+
+  <details class="disclosure">
+    <summary>The two callers: top-view dispatcher and per-actor renderer</summary>
+    <div class="disclosure-body" id="cluster-a-caller">
+      <p>Two call paths reach the primitive dispatcher with the same three arguments <code>(display_state, cmd_flags, fade_flags)</code>: <code>display_state[0]</code> is the vertex pool, <code>[3]</code> gates colour / light modulation, <code>[4]</code> is the command stream.</p>
+      <ol>
+        <li><strong>Top-view dispatcher <code>FUN_801F69D8</code></strong> (world-map overlay, 2572 bytes). Copies a 0x20-byte camera struct into scratchpad, loops over visible tile cells (&plusmn;10 padding) in the scratchpad tile table, dereferences each 0x20-byte object record, applies frustum bounds and visibility flags, projects through the GTE, then calls the dispatcher with colour <code>0xD0D0D0</code> (variants for the record's <code>+0x1E</code> flag and the interactive bit <code>+0x12 &amp; 0x800</code>) and a fog cue <code>clamp((screen_z - 0x5000) &gt;&gt; 3, 0, 0x1000)</code>. This is the path that reads slot 4 in place.</li>
+        <li><strong>Per-actor renderer <code>FUN_8001ADA4</code></strong> (SCUS, 2456 bytes). Walks a linked list of actors; each actor's <code>+0x44</code> mesh table is <code>[u32 count, u32 mesh_ptr[count]]</code> and each pointer is a TMD group-descriptor array. This is the field-character path, sharing the dispatcher but not the slot-4 buffer.</li>
+      </ol>
+    </div>
+  </details>
 </section>
 
-<section class="doc-section" id="working-hypothesis">
-  <h2>What slot 4 encodes</h2>
-  <p>Slot 4 is a <strong>per-kingdom assembly of small object-local 3D meshes</strong>, walked in place by the world-map top-view renderer through the cluster-A primitive renderer above. Each body is a self-contained render packet: an 8-byte class header (<code>kind</code> 1/2/4) + a GTE vertex pool + a command stream of packed vertex indices. A full cluster-A sweep finds no reader of the pool word's high half, so the per-vertex <code>attr</code> word is render-unused reserved data. The picture is consistent with:</p>
-  <ul>
-    <li>bodies 9 / 11 having full 3D mesh-scale Y extents while body 12 is near-flat (different kinds of objects, not 2D contour vs 2D outline)</li>
-    <li>the leading three bodies (<code>kind = 1</code>) being byte-identical templates across all three kingdoms (a shared universal mesh set), plus shared <code>kind 2/4</code> clusters, with the rest kingdom-specific</li>
-    <li>the corner-clustered point distribution in body 13 (<code>kind = 4</code>): four corner-anchored objects, not a single &plusmn;32K boundary frame</li>
-    <li>the in-game-object silhouettes visible in side projections - body-9 features that resemble specific game props</li>
-    <li>cluster A&apos;s primitive vocabulary (POLY_G4 / POLY_GT4 / POLY_F3 / etc.) is a standard 3D-mesh renderer, not a wireframe / coastline-line driver</li>
-  </ul>
-  <p>The reader doesn&apos;t appear as a direct <code>LUI+ADDIU</code> reference to the (per-kingdom) slot-4 base in any captured world-map overlay - the world-map renderer reaches the slot-4 records through a runtime pointer, which is why the static sweep returned empty. Slot 4 is <em>not</em> re-read from a cache; the warp Read-watchpoint shows the renderer reading the records in place, every frame, transforming each through the GTE and emitting GP0 primitive packets into the scene&apos;s primitive pool (see <a href="#consumer">Consumer call sites</a>).</p>
+<section class="doc-section" id="dat-8007c018">
+  <h2>The neighbouring TMD table</h2>
+  <p>The same dispatcher draws field characters and per-tile kingdom objects from a global table of TMD pointers, <code>DAT_8007C018</code>. That is a <strong>separate path</strong>: slot 4 is walked at its resident base and never installed into the table, even though a field-scene RAM snapshot fills the same address range with that scene's TMD pack.</p>
+  <details class="disclosure">
+    <summary>DAT_8007C018 - installer, consumers, party-mesh source</summary>
+    <div class="disclosure-body">
+      <table>
+        <thead><tr><th>Global</th><th>Role</th></tr></thead>
+        <tbody>
+          <tr><td><code>DAT_8007C018</code></td><td>Array of u32 TMD pointers, stride 4; each target is a Legaia TMD (magic <code>0x80000002</code>) with <code>+0x08</code> group count and 0x1C-byte group descriptors from <code>+0x0C</code></td></tr>
+          <tr><td><code>DAT_8007B774</code></td><td>Install counter (next free index)</td></tr>
+          <tr><td><code>DAT_8007BB38</code></td><td>Walk counter (last valid index) - every reader gates on it, so entries past it are never content</td></tr>
+          <tr><td><code>DAT_8007B824</code></td><td>Per-pack count / persistent-base index</td></tr>
+          <tr><td><code>DAT_8007B6F8</code></td><td>Kingdom-TMD prefix (5 in every snapshot)</td></tr>
+        </tbody>
+      </table>
+      <table>
+        <thead><tr><th>Function</th><th>Role</th></tr></thead>
+        <tbody>
+          <tr><td><code>FUN_80026B4C</code></td><td>Installer, called per TMD from the asset dispatcher's TMD-pack case; builds the group-descriptor array at <code>tmd + 0xC</code> and stores the pointer. Ghidra misses the store because an <code>addu</code> sits between the <code>lui+addiu</code> and the <code>sw</code>.</td></tr>
+          <tr><td><code>FUN_80021B04</code>, <code>FUN_80024D78</code></td><td>SCUS actor allocators - fill <code>actor+0x44</code> from <code>DAT_8007C018[actor+0x64]</code>; the variant also sets <code>actor+0x10 |= 0x08000000</code></td></tr>
+          <tr><td><code>FUN_801D77F4</code>, <code>FUN_801D8280</code></td><td>Overlay allocator and table walker</td></tr>
+          <tr><td><code>FUN_801F69D8</code></td><td>Top-view dispatcher - indexes <code>[(object_kind + DAT_8007B6F8)]</code> per tile</td></tr>
+          <tr><td><code>FUN_8001E890</code>, <code>FUN_8001EBEC</code></td><td>Cap the three party TMDs at 10 groups and patch one equipment-conditional group descriptor per member (disc group 10 or 11)</td></tr>
+          <tr><td><code>FUN_801D6704</code></td><td>Overlay scene loader: installs PROT 0874 section 0 into <code>[0..4]</code> via <code>FUN_80020118</code>, then the scene's own TMD pack via <code>FUN_80020224</code> - the same walk every field scene runs</td></tr>
+        </tbody>
+      </table>
+      <p>Entries <code>[0..4]</code> are the party character meshes from PROT 0874 section 0 (a 5-TMD pack, LZS at file offset <code>0x20</code>; slots ship with 12 / 12 / 12 / 3 / 2 groups). A settled <code>dolk</code> field snapshot shows 143 installed entries, <code>[5..142]</code> being that scene's field TMD pack; a mid-warp Sebucus snapshot shows 92 with the install still in flight. The dev-tree path <code>data\field\player.lzs</code> maps to PROT 876, which carries a VAB + TIM list + SEQ stream with no TMDs; the SCUS branch that would read it as three LZS descriptors is incompatible with those bytes and is either gated off or dead in retail.</p>
+    </div>
+  </details>
 </section>
 
 <section class="doc-section" id="tooling">
   <h2>Tooling</h2>
-  <p>The wireframe interpretation is falsified, but these tools render and dump the container for inspection:</p>
   <table>
     <thead><tr><th>Tool</th><th>Role</th></tr></thead>
     <tbody>
-      <tr><td><code>cargo run -p legaia-asset --bin asset -- slot4-png --input &lt;PROT&gt;.BIN --out &lt;png&gt;</code></td><td>Container PNG renderer. <code>--style row|col|pairs|grid|points</code> toggles between topology interpretations; <code>--axes xz|xy|zy</code> switches projection plane; <code>--only-body N</code> / <code>--frame-body N</code> isolate a single body. <code>--from-raw &lt;bin&gt;</code> renders a previously-dumped slot-4 payload.</td></tr>
-      <tr><td><code>cargo run -p legaia-asset --bin asset -- kingdom-slot &lt;PROT&gt;.BIN --slot 4</code></td><td>Per-body inventory dump.</td></tr>
-      <tr><td><code>legaia_asset::world_map_overlay::{parse, top_down_lines, wireframe_segments_3d, record_points, body_axis_range}</code></td><td>Rust API. <code>wireframe_segments_3d</code> emits the full-3D segment list (group-polyline topology, all three model-space coordinates kept) the live-engine inspection overlay consumes.</td></tr>
-      <tr><td><code>scripts/pcsx-redux/run_dump_slot4.sh</code> + <code>autorun_dump_slot4.lua</code></td><td>PCSX-Redux closed-loop dumper: loads a save state, dumps the live slot-4 RAM region, quits.</td></tr>
-      <tr><td><code>scripts/pcsx-redux/autorun_dump_full_ram.lua</code></td><td>Full 2 MiB main RAM dump. Use when the load base is unknown.</td></tr>
-      <tr><td><code>scripts/pcsx-redux/diff_slot4_ram_vs_disc.py</code></td><td>Byte-compare a RAM dump against the disc-decoded payload.</td></tr>
+      <tr><td><code>asset kingdom-slot &lt;PROT&gt;.BIN --slot 4</code></td><td>Per-body inventory dump</td></tr>
+      <tr><td><code>asset slot4-png --input &lt;PROT&gt;.BIN --out &lt;png&gt;</code></td><td>Container renderer (<code>--style</code>, <code>--axes</code>, <code>--only-body</code>)</td></tr>
+      <tr><td><code>legaia_asset::world_map_overlay</code></td><td>Rust API: <code>parse</code>, <code>wireframe_segments_3d</code>, <code>record_points</code></td></tr>
+      <tr><td><code>LEGAIA_WORLDMAP_SLOT4=1 legaia-engine play-window</code></td><td>Inspection overlay of the decoded pools under the live camera and fog - not faithful geometry</td></tr>
+      <tr><td><code>scripts/pcsx-redux/</code> slot-4 dump / base-locate / diff scripts</td><td>Dump live RAM, find the per-kingdom base, byte-compare against the disc</td></tr>
     </tbody>
   </table>
-  <p>The <a href="../world-overview.html">world-overview web viewer</a> does not expose slot 4 (the wireframe interpretation is falsified). The WASM exports (<code>slot4_wireframe_lines</code> / <code>slot4_wireframe_points</code> / <code>slot4_wireframe_bounds</code>) remain available to re-enable a slot-4 draw, though a faithful render would walk each body as an object-local GTE vertex pool indexed by its command stream rather than as a wireframe.</p>
-  <p><strong>Live-engine inspection overlay.</strong> The clean-room engine decodes slot 4 for every world-map scene onto <code>SceneResources::world_map_slot4</code> (resolved only for <code>SceneLoadKind::WorldMap</code>; <code>None</code> everywhere else). With <code>LEGAIA_WORLDMAP_SLOT4=1</code>, <code>legaia-engine play-window</code> builds a <code>LineList</code> from <code>wireframe_segments_3d</code> and merges it into the world-map overlay-lines buffer (colour-keyed by body <code>kind</code>), so the decoded vertex pool can be inspected in the live 3D view under the real camera / fog. This is an inspection overlay, not faithful geometry: the segments use the group-polyline topology convention and the records render at their raw object-local coordinates, because the per-object placement transform (and the true triangle topology) live in the unpinned cluster-A command stream described above. Off by default.</p>
 </section>
 
-<section class="doc-section" id="loader-hunt">
-  <h2>Slot-4 loader (loader-hunt probe)</h2>
-  <p>Running <code>autorun_slot4_loader_hunt.lua</code> against Drake (held UP for 60 vsyncs into the warp) with Write bps tiled across slot-4 RAM (<code>0x8011A624 + offset[0..7000]</code>) surfaces <strong>the LZS decoder</strong> as the sole writer:</p>
+
+<section class="doc-section" id="how-we-know">
+  <h2>How we know</h2>
   <table>
-    <thead><tr><th>Caller chain</th><th>PC of write</th><th>Notes</th></tr></thead>
+    <thead><tr><th>Function / site</th><th>Address</th><th>What it proves</th><th>Evidence</th></tr></thead>
     <tbody>
-      <tr><td><code>FUN_8001A55C</code> (LZS decoder)</td><td><code>0x8001A604</code> (<code>sb v1, 0(s1)</code> literal-byte write)</td><td>Dominant: 5-byte bursts at every probed offset</td></tr>
-      <tr><td>same</td><td><code>0x8001A664</code> / <code>0x8001A668</code> / <code>0x8001A610</code> / <code>0x8001A5AC</code></td><td>Back-reference / literal-run / dictionary-byte paths inside the LZS loop</td></tr>
+      <tr><td>Primitive dispatcher <code>FUN_80043390</code></td><td><code>0x80043390</code>; SCUS jump table <code>0x8007657C</code>, overlay table <code>0x801F8968</code></td><td>Command-word decode, four-bank handler selection</td><td>Disassembly; <code>captures/slot4_dispatcher/</code></td></tr>
+      <tr><td>Kind-16 handler <code>FUN_80044C14</code></td><td><code>0x80044C14</code> (family <code>0x80043658..0x80045988</code>)</td><td>Each 8-byte record is loaded as a GTE vertex; <code>attr</code> unread</td><td>Disassembly sweep of every handler</td></tr>
+      <tr><td>World-map top-view renderer</td><td>return address <code>0x801F78D4</code>; entry <code>FUN_801F69D8</code></td><td>Slot 4 read in place, per frame, 363 / 365 captured reads; 762 of 2153 dispatcher calls take their command pointer from the window</td><td><code>autorun_slot4_source_map.lua</code>, <code>drake_castle_to_worldmap</code> state</td></tr>
+      <tr><td>LZS decoder <code>FUN_8001A55C</code></td><td>writes at <code>0x8001A604</code> etc.</td><td>Sole writer of the slot-4 window: decoded verbatim, no transcoder</td><td><code>autorun_slot4_loader_hunt.lua</code></td></tr>
+      <tr><td>Working-buffer writers <code>FUN_80028158</code>, <code>FUN_8001E54C</code></td><td><code>0x801BA000</code> buffer</td><td>Procedural mesh builder and chunk loader - other streams, never slot-4 pointers</td><td><code>autorun_slot4_transcoder_hunt.lua</code></td></tr>
+      <tr><td>Resident bases</td><td>Drake <code>0x8011A624</code>, Sebucus <code>0x80119CE4</code>, Karisto <code>0x80108D84</code></td><td>Byte-identical to the disc payload for every body</td><td><code>diff_slot4_ram_vs_disc.py</code>, <code>locate_slot4_base.py</code></td></tr>
+      <tr><td>TMD installer <code>FUN_80026B4C</code></td><td>store at <code>0x80026BA8</code></td><td>How <code>DAT_8007C018</code> is filled</td><td><code>find_addr_materializer_dat_8007c018.py</code></td></tr>
+      <tr><td>Party-mesh source</td><td>PROT 0874 section 0</td><td><code>DAT_8007C018[0..4]</code> byte-match the disc pack (6488 bytes on slot 3, 1048-byte prefix on slot 4)</td><td>Drake post-warp RAM dump vs LZS-decoded section</td></tr>
     </tbody>
   </table>
-  <p>Every captured first-write shows <code>pc = 0x8001A604, ra = 0x8001A58C</code> (LZS calling itself internally), with the stack containing <code>0x8001F194</code> / <code>0x8001F0A0</code> at the call-chain slots - both inside the <code>FUN_8001F05C</code> asset-dispatcher region. The chain is the <strong>standard asset-load path</strong>: scene loader &rarr; <code>FUN_8001F05C</code> (asset dispatcher) &rarr; LZS decoder &rarr; writes slot 4 at its allocated RAM destination. No special slot-4 transcoder - the asset is just LZS-decoded verbatim into RAM, matching the byte-verified disc-to-RAM finding.</p>
+  <p>Full capture transcripts and reproduction steps: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/world-map-overlay.md" target="_blank" rel="noopener"><code>docs/formats/world-map-overlay.md</code></a>.</p>
 </section>
 
-<section class="doc-section" id="transcoder-hunt">
-  <h2>Working-buffer writers (transcoder-hunt probe)</h2>
-  <p>Running <code>autorun_slot4_transcoder_hunt.lua</code> against Drake (held UP for 60 vsyncs into the warp transition) with Write bps tiled across the <code>0x801BA000</code> working buffer surfaces <strong>two distinct writers</strong>, not a single transcoder:</p>
-  <table>
-    <thead><tr><th>Offset</th><th>First-write PC</th><th>RA</th><th>Writer function</th><th>Role</th></tr></thead>
-    <tbody>
-      <tr><td><code>+0x7F8</code> (cluster A&apos;s <code>vertex_base</code>)</td><td><code>0x80028710</code> / <code>0x8002871C</code></td><td><code>0x8001B160</code></td><td><code>FUN_80028158</code> (5580 B)</td><td><strong>per-frame procedural mesh builder</strong>, called from <code>FUN_8001ada4</code> case 4</td></tr>
-      <tr><td><code>+0x8E4</code> (cluster A&apos;s <code>command_stream</code>)</td><td><code>0x800293C8</code> / <code>0x800296A0</code></td><td><code>0x8001B160</code></td><td>same <code>FUN_80028158</code></td><td>per-frame procedural primitive-batch writer (same call)</td></tr>
-      <tr><td><code>+0x6000</code> (deeper region)</td><td><code>0x8001A8C8</code> (memcpy)</td><td><code>0x8001E758</code></td><td><code>FUN_8001E54C</code> (836 B)</td><td><strong>scene-load chunk loader</strong> - copies <code>[type, size, data]</code> chunks to the buffer</td></tr>
-    </tbody>
-  </table>
-  <p><code>FUN_80028158</code> reads only the actor&apos;s <code>+0x9C</code> params struct (offsets <code>+0x10..+0x22</code>) and writes the working buffer directly - <strong>no slot-4 RAM pointers in its arguments</strong>. It is a procedural mesh generator (probably waves / sky / particle-emitter sheets), not a slot-4 transcoder.</p>
-  <p><code>FUN_8001E54C</code> is the <code>[type, size, data]</code> streaming chunk dispatcher: switches on <code>*(char*)(chunk + 3)</code> (chunk type byte) and routes each chunk to memcpy (case 0/2), LZS decode (case 1/3), or another decoder (case 12). These writes are <em>other</em> data streams - they never carry slot-4 pointers.</p>
-  <p><strong>The writers above are not slot-4 transcoders.</strong> The finer source-map probe (Read bps tiled across the Drake slot-4 window plus an Exec bp on <code>FUN_8001E54C</code>) settled this: the slot-4 records are read <strong>in place</strong> as per-frame render geometry by the world-map renderer (<code>0x801F78D4</code> &rarr; cluster-A prim dispatcher <code>0x80043390</code> &rarr; GTE mesh emit), and <code>FUN_8001E54C</code> never copies them - see <a href="#consumer">Consumer call sites</a>. The <code>FUN_80028158</code> procedural mesh builder and the <code>FUN_8001E54C</code> chunk copies are separate, non-slot-4 streams (waves / sky / particle sheets and other scene-load chunks); they populate the <code>0x801BA000</code>-region working buffer the <em>per-actor</em> renderer reads, which is a distinct path from the world-map slot-4 render.</p>
-</section>
-
-<section class="doc-section" id="dat-8007c018">
-  <h2><code>DAT_8007C018</code> - global TMD pointer table (the <em>actual</em> cluster-A source)</h2>
-  <p><code>FUN_80043390</code>&apos;s <code>display_state</code> arg points at a TMD&apos;s group-descriptor array (offset <code>+0xC</code> into a TMD blob whose <code>+0x00</code> carries the Legaia magic <code>0x80000002</code>). Those TMD pointers live in a global runtime table:</p>
-  <pre><code>DAT_8007C018 : array of u32 TMD pointers; entry stride = 4
-DAT_8007B774 : install counter (next free index)
-DAT_8007BB38 : walk counter (last valid index, used by the table walker)
-DAT_8007B824 : per-pack count (set by case 2 to *pack_header[0])</code></pre>
-
-  <p>The installer is <strong><code>FUN_80026B4C</code> @ PC <code>0x80026BA8</code></strong> (called per-TMD from the asset dispatcher&apos;s case 2 TMD-pack handler):</p>
-<pre><code>80026b90  lui   v1, 0x8008
-80026b94  lw    v1, -0x488c(v1)     ; v1 = *DAT_8007B774 (next free idx)
-80026b98  addiu v0, v0, -0x3fe8     ; v0 = 0x8007C018
-80026b9c  sll   v1, v1, 0x2
-80026ba0  addu  v1, v1, v0          ; v1 = &amp;DAT_8007C018[idx]
-80026ba4  jal   FUN_800268dc        ; build per-group descriptor array at tmd+0xC
-80026ba8  _sw   a0, 0x0(v1)         ; install: DAT_8007C018[idx] = tmd_ptr</code></pre>
-
-  <p>Ghidra&apos;s static reference-database doesn&apos;t surface this store because the <code>addu</code> between the <code>lui+addiu</code> and the <code>sw</code> defeats its constant propagation. The materialisation scan <code>ghidra/scripts/find_addr_materializer_dat_8007c018.py</code> walks every <code>lui+addiu</code> pair that produces <code>0x8007C018</code> and looks at the next six instructions; that&apos;s how the installer was pinned.</p>
-
-  <p>After installation, each pointed-to TMD has the runtime shape:</p>
-<pre><code>[+0x00] u32 magic = 0x80000002
-[+0x04] u32 flags / version
-[+0x08] u32 group_count
-[+0x0C] array of group_count &times; 0x1C-byte group descriptors
-        each starts with vertex_base_ptr (u32) + vertex_count (u32)
-        followed by 0x14 bytes of per-group state</code></pre>
-
-  <h3 id="dat-8007c018-consumers">Consumers</h3>
-  <table>
-    <thead><tr><th>Function</th><th>Site</th><th>Role</th></tr></thead>
-    <tbody>
-      <tr><td><code>FUN_80021B04</code> (SCUS actor allocator)</td><td>reads <code>DAT_8007C018[actor[+0x64].i16]</code></td><td>populates <code>actor[+0x44] = [count, mesh_ptr[count]]</code> from TMD groups</td></tr>
-      <tr><td><code>FUN_80024D78</code> (SCUS actor allocator - variant)</td><td>reads <code>DAT_8007C018[actor[+0x64].i16]</code></td><td>same shape as <code>FUN_80021B04</code> but also OR-sets <code>actor[+0x10] |= 0x08000000</code> (a per-actor enable flag)</td></tr>
-      <tr><td><code>FUN_801D77F4</code> (overlay alt allocator)</td><td>reads <code>DAT_8007C018[(i16)param_2]</code> + <code>_DAT_8007B7DC</code> VDF buffer</td><td>copies vertex pool from sub-records into <code>actor[+0x90]</code></td></tr>
-      <tr><td><code>FUN_801D8280</code> (overlay table walker)</td><td>iterates <code>DAT_8007C018[0..DAT_8007BB38]</code></td><td>hands each sub-record to <code>FUN_801D5E20</code></td></tr>
-      <tr><td><code>FUN_801F69D8</code> (world-map top-view dispatcher in <code>world_map_top_ext</code>)</td><td>reads <code>DAT_8007C018[(visible_object_kind8 + DAT_8007B6F8) * 4]</code></td><td>walks per-tile visibility scratchpad, calls <code>FUN_80043390(tmd+0xC, color, fog)</code></td></tr>
-      <tr><td><code>FUN_8001E890</code></td><td>writes <code>entry[+0x8] = 10</code> for three consecutive table indices at <code>DAT_8007B824 + 0..2</code></td><td>per-pack count override (overwrites the installed TMD&apos;s <code>group_count</code> field)</td></tr>
-      <tr><td><code>FUN_8001EBEC</code></td><td>reads <code>DAT_8007C018[DAT_8007B824 + 0..2]</code> (3 consecutive party-character TMDs)</td><td>per-party-member group-descriptor patch - picks one of two pre-built 0x1C-byte descriptors (<code>TMD+0x124</code> vs <code>TMD+0x140</code>) based on a per-character flag, then overwrites the indexed group descriptor. Drives equipment-conditional mesh swaps</td></tr>
-    </tbody>
-  </table>
-
-  <h3 id="warp-transition-caller">Warp-transition caller (<code>FUN_801F69D8</code>)</h3>
-  <p>The Drake warp-into-world-map Read-bp captured <code>ra = 0x801F725C</code>, pointing at the JAL into <code>FUN_80043390</code> at PC <code>0x801F7254</code>. The enclosing function is <strong><code>FUN_801F69D8</code></strong> (2572 B / 643 instr) in <code>overlay_world_map_top_ext.bin</code>. The probe&apos;s original label "<code>FUN_801F7088</code>" was inside the function body, not at its entry - the prologue <code>addiu sp, sp, -0x70</code> sits 1712 bytes earlier at <code>0x801F69D8</code>. Force-disasm + walk-back + force-set body pinned the true extent; see <code>ghidra/scripts/dump_world_map_top_ext_caller.py</code>.</p>
-
-  <p>The function bulk-copies a 0x20-byte camera struct from <code>0x8007BF10</code> into scratchpad <code>0x1F8002CC</code>, nested-loops over visible tile cells in scratchpad table <code>_DAT_1F8003EC + 0x8000 + Y*0x100 + X*2</code> (padded by &plusmn;10), dereferences each 0x20-byte object record at <code>_DAT_1F8003EC + (idx &amp; 0x1FF) * 0x20</code>, applies frustum bounds + visibility flags + GTE RTPT projection, then routes the TMD via <code>DAT_8007C018</code> and emits the display list. Arg breakdown for the <code>FUN_80043390</code> call:</p>
-  <ul>
-    <li><code>arg0</code> = TMD group descriptor array start (<code>tmd + 0xC</code>)</li>
-    <li><code>arg1</code> = color RGB (<code>0xD0D0D0</code> default; <code>0x40D0D0D0</code> if object record&apos;s <code>[+0x1E]</code> flag is set; OR&apos;d with <code>0x10000000</code> if <code>record[+0x12] &amp; 0x800</code> - interactive)</li>
-    <li><code>arg2</code> = fog cue <code>clamp((GTE_screen_z - 0x5000) &gt;&gt; 3, 0, 0x1000)</code></li>
-  </ul>
-
-  <h3 id="how-slot4-reaches-cluster-a">How slot-4 bytes reach cluster A</h3>
-  <p>The cluster-A input pointer originates from <code>DAT_8007C018</code> (the global TMD pointer table). Two parallel call paths funnel into the same dispatcher:</p>
-  <ol>
-    <li><strong>Top-view dispatcher (<code>FUN_801F69D8</code>):</strong> reads <code>DAT_8007C018[(visible_object_kind8 + DAT_8007B6F8) * 4]</code> per tile and passes <code>entry + 0xC</code> to <code>FUN_80043390</code>. This is the warp-into-world-map render path the Read-bp probe captured.</li>
-    <li><strong>Per-actor renderer (<code>FUN_8001ada4</code>, caller RA <code>0x8001B47C</code>):</strong> walks <code>actor+0x44 = [u32 count, u32 mesh_ptr[count]]</code> and passes each <code>mesh_ptr</code> to <code>FUN_80043390</code>. The mesh pointers came from <code>actor+0x44</code>, which is populated by <code>FUN_80021B04</code>/<code>FUN_80024D78</code> from <code>DAT_8007C018[actor[+0x64].i16]</code> - same table, different actor-allocator path.</li>
-  </ol>
-  <p>This <code>DAT_8007C018</code> table is the source for the <em>character-mesh</em> and per-tile world-map TMD objects (the <code>[0..4]</code> party meshes from PROT 0874, plus the per-tile kingdom-object TMDs). It is a <strong>separate</strong> path from the slot-4 render: the kingdom slot-4 body (<code>type = 0x05</code> = MOVE) is read <strong>in place</strong> at its per-kingdom resident base by the world-map renderer (<code>ra 0x801F78D4</code>), not routed through <code>DAT_8007C018</code> - see <a href="#consumer">Consumer call sites</a> (and the superseded transcode/overwrite readings under <a href="#falsified">Falsified readings</a>).</p>
-  <p>The slot-4 body header <code>kind &isin; {1, 2, 4}</code> is a per-body class/scope tag (see <a href="#kind-tag"><code>kind</code> (1/2/4)</a> above) and has <strong>no link</strong> to the cluster-A bank selector (which is driven by the per-call <code>fade_flags</code> / <code>cmd_flags</code> args, not by any slot-4 field).</p>
-
-  <h3 id="dat-8007c018-snapshot">Live snapshot - settled field scene</h3>
-  <p class="note"><strong>Provenance correction:</strong> the local dump is named <code>drake_world.bin</code>, but its scene id (<code>0x80084540</code> = <code>0x3c</code>), scene name (<code>dolk</code>), and <code>game_mode 0x03</code> identify it as the <strong><code>dolk</code> field scene</strong>, <em>not</em> the Drake world map. <code>DAT_8007C018</code> is filled identically by every field-scene load (the single <code>FUN_80020224</code> descriptor-walk), so the layout/counters below are a valid generic field-scene example; the <code>[5..142]</code> entries are this scene's field-file TMD pack (one contiguous 138-entry pack), not a "kingdom bundle". type-<code>0x05</code> slot-4 does not install into <code>DAT_8007C018</code> - only dispatcher cases <code>0x02</code>/<code>0x09</code> reach <code>FUN_80026B4C</code>.</p>
-  <p>RAM dump after the scene load has settled (full RAM captured by <code>autorun_dump_full_ram.lua</code> + the classifier at <code>scripts/asset-investigation/classify_dat_8007c018.py</code>):</p>
-  <table>
-    <thead><tr><th>Field</th><th>Value</th></tr></thead>
-    <tbody>
-      <tr><td><code>DAT_8007B774</code> (install counter)</td><td>143</td></tr>
-      <tr><td><code>DAT_8007BB38</code> (walker counter)</td><td>142</td></tr>
-      <tr><td><code>DAT_8007B6F8</code> (kingdom-TMD prefix)</td><td>5</td></tr>
-      <tr><td><code>DAT_8007B828</code> (error bits)</td><td><code>0x00000000</code> (no magic mismatches)</td></tr>
-    </tbody>
-  </table>
-  <table>
-    <thead><tr><th>Index range</th><th>Count</th><th>Content</th></tr></thead>
-    <tbody>
-      <tr><td><code>[0..4]</code></td><td>5</td><td>Character-mesh TMDs at <code>0x8014D554..0x801585C0</code>, group_count 10/10/10/3/2. Disc source: <a href="#disc-side-source-of-04">&sect; Disc-side source of [0..4]</a> below.</td></tr>
-      <tr><td><code>[5..142]</code></td><td>138</td><td>Kingdom-derived TMDs at <code>0x800F7908..0x80138D44</code> (group_count 1..10, mixed sizes)</td></tr>
-      <tr><td><code>[143..255]</code></td><td>113</td><td>Either zero (uninstalled) or stale junk past the walker counter - <strong>never read by code</strong> because every reader gates on <code>DAT_8007BB38</code> or an explicit index &le; install counter</td></tr>
-    </tbody>
-  </table>
-  <p><strong>Every populated entry is a valid Legaia TMD</strong> (magic <code>0x80000002</code>, flags = 1, <code>group_count &gt; 0</code>). The table is homogeneous in the steady state. This is a <em>field-scene</em> (<code>dolk</code>) snapshot, not a world-map one - its <code>0x8011Axxx</code>-range TMDs are this scene&apos;s field-file TMD pack, not the kingdom slot-4 buffer (see <a href="#falsified">Falsified readings</a> for the retired overwrite reading).</p>
-
-  <h3 id="disc-side-source-of-04">Disc-side source of <code>[0..4]</code></h3>
-  <p>The five character-mesh TMDs at <code>DAT_8007C018[0..4]</code> originate from <strong>PROT entry 0874 (<code>befect_data</code>)</strong>, not from the dev-tree path <code>data\field\player.lzs</code> (whose runtime name maps to PROT 876 - <code>player_data</code> - which actually carries a VAB + TIM_LIST + SEQ streaming-format payload with <strong>zero TMDs</strong>; see <a href="data-field.html">data-field.html</a> for the chunk shape).</p>
-  <p>PROT 0874 is a <a href="asset-descriptor.html"><code>parse_player_lzs(buf, 3)</code></a>-shaped container with three LZS-compressed sections:</p>
-  <table>
-    <thead><tr><th>Section</th><th>Type byte</th><th>Compressed size</th><th>File offset</th><th>Content</th></tr></thead>
-    <tbody>
-      <tr><td>0</td><td><code>0x01</code></td><td><code>0xB49C</code> (46 236 B)</td><td><code>0x20</code></td><td>5-TMD pack (LZS decodes to 65 536 B)</td></tr>
-      <tr><td>1</td><td><code>0x02</code></td><td><code>0x41E0</code> (16 864 B)</td><td><code>0x5037</code></td><td>Secondary TMD payload</td></tr>
-      <tr><td>2</td><td><code>0x03</code></td><td><code>0x1D524</code> (120 100 B)</td><td><code>0x7055</code></td><td>MAN-shape data</td></tr>
-    </tbody>
-  </table>
-  <p>Decoding section 0 (LZS-decompress from file offset <code>0x20</code>) yields a canonical TMD pack - <code>[u32 count][u32 word_offsets[count]][TMD bodies]</code> with word offsets in 4-byte units (same convention as <a href="tim-pack.html">tim-pack</a> / kingdom slot 1):</p>
-  <table>
-    <thead><tr><th>Pack slot</th><th>Body offset</th><th>nobj (disc)</th><th>Body bytes (to next slot)</th></tr></thead>
-    <tbody>
-      <tr><td>0</td><td><code>0x0018</code></td><td>12</td><td>13 220</td></tr>
-      <tr><td>1</td><td><code>0x33BC</code></td><td>12</td><td>13 800</td></tr>
-      <tr><td>2</td><td><code>0x69A4</code></td><td>12</td><td>11 656</td></tr>
-      <tr><td>3</td><td><code>0x972C</code></td><td>3 </td><td>6 488</td></tr>
-      <tr><td>4</td><td><code>0xB084</code></td><td>2 </td><td>20 348 (trailing padding to pack end)</td></tr>
-    </tbody>
-  </table>
-  <p>Byte-equality check against a Drake post-warp RAM snapshot (local-only <code>captures/ram_dumps/drake_world.bin</code>):</p>
-  <ul>
-    <li><strong>Pack slot 3 vs RAM <code>DAT_8007C018[3]</code></strong> (un-fixup the runtime&apos;s absolute-pointer group descriptors back to disc-form offsets using <code>disc_off = abs_ptr - (tmd_base + 0xC)</code>): the full 6488-byte body matches byte-for-byte (0 differences over <code>0x1958</code> bytes compared).</li>
-    <li><strong>Pack slot 4 vs RAM <code>DAT_8007C018[4]</code></strong>: the first 1048 bytes match byte-for-byte. The runtime allocates only the in-use prefix; the trailing ~19 KB of disc padding is not copied.</li>
-    <li><strong>Pack slots 0/1/2 vs RAM <code>DAT_8007C018[0..2]</code></strong>: the first three group descriptors and groups 4..9 match byte-for-byte. RAM&apos;s <code>nobj=10</code> vs disc&apos;s <code>nobj=12</code> is a deliberate runtime override (see &ldquo;10-group cap&rdquo; below); RAM&apos;s slot-3 group descriptor is sourced from disc&apos;s group 11 (the FUN_8001EBEC patch).</li>
-  </ul>
-
-  <h3 id="ten-group-cap">10-group cap + equipment-conditional group patch</h3>
-  <p>The five disc TMDs ship with <code>nobj=12</code> (for the three active-party slots) and <code>nobj=3 / 2</code> (for the trailing two - confirmed <code>nobj</code> from the disc pack matches RAM exactly for those). The active-party post-install loop in <code>FUN_8001E890</code> overwrites <code>DAT_8007C018[DAT_8007B824 + 0..2]</code>&apos;s <code>entry[+0x08]</code> (TMD <code>group_count</code>) to <strong>10</strong>, capping each of the first three TMDs at 10 active groups. The last two disc groups (10 and 11) are <em>equipment-conditional</em> descriptors: <code>FUN_8001EBEC</code> reads two per-character bytes (from <code>0x80084xxx</code>, equipment slots) and for each of the three active party slots picks either <code>TMD+0x124</code> (= group 10) or <code>TMD+0x140</code> (= group 11) and overwrites the indexed live group descriptor with that pre-built 0x1C-byte template. This is the equipment-conditional mesh swap (weapon variant, etc.).</p>
-
-  <h3 id="loader-chain-open">Loader chain</h3>
-  <p>The retail loader is the overlay-resident scene loader <strong><code>FUN_801D6704</code></strong>: it calls <code>FUN_80020118</code> to install PROT 0874 section 0 into <code>DAT_8007C018[0..4]</code>, then <code>FUN_80020224(0)</code> to install the kingdom-derived <code>[5..N]</code> via the generic <code>FUN_8001F05C case 2</code> &rarr; <code>FUN_80026B4C</code> TMD-pack chain - the <strong>same</strong> descriptor walk every field scene runs; there is no kingdom-specific installer. The static-SCUS dead ends below are retained for provenance.</p>
-  <p><code>FUN_8001E890</code>&apos;s retail-PROT branch (<code>DAT_8007B8C2 != 0</code>) calls <code>FUN_8003eb98(0x36C, piVar2, 1)</code>, which loads PROT 876&apos;s raw bytes into <code>piVar2</code>. The downstream LZS calls then interpret <code>piVar2[2..7]</code> as three <code>(size, offset)</code> pairs - but PROT 876&apos;s bytes there are streaming-format chunk data (the start of a VABp header inside chunk 0), not LZS descriptors. That branch is therefore <strong>incompatible with PROT 876&apos;s actual layout</strong> in retail and either (a) is gated off by <code>DAT_8007B8C2 == 0</code> in retail or (b) is dead code. The <code>data\field\player.lzs</code> string and PROT-876 fast path both fall over the same shape mismatch.</p>
-  <p>Among the static SCUS sites, <code>FUN_800520F0</code> (the battle scene loader) loads PROT 873+874 contiguously, but its two install loops walk both buffers as flat <code>[count, offsets[], data]</code> packs and process PROT 874&apos;s <code>count = 3</code> entries via <code>FUN_8001fbcc</code> (VDF install). PROT 874 section 0 is gated on the type byte (<code>0x01</code>), so no static SCUS site funnels section 0 through the TMD-pack handler - that dispatch lives in the overlay loader <code>FUN_801D6704</code> above. The one residual is the exact CDNAME indirection handing <code>FUN_80020118</code> its PROT-0874 bytes; see <a href="#open">Open work</a> below.</p>
-
-  <h3 id="dat-8007c018-snapshot-sebucus">Live snapshot - Sebucus mid-warp</h3>
-  <p>The Sebucus dump captures the warp transition partway through the asset install:</p>
-  <table>
-    <thead><tr><th>Field</th><th>Value</th></tr></thead>
-    <tbody>
-      <tr><td><code>DAT_8007B774</code> (install counter)</td><td>92</td></tr>
-      <tr><td><code>DAT_8007BB38</code> (walker counter)</td><td>91</td></tr>
-      <tr><td><code>DAT_8007B6F8</code> (kingdom-TMD prefix)</td><td>5</td></tr>
-      <tr><td><code>DAT_8007B828</code> (error bits)</td><td><code>0x00000000</code></td></tr>
-    </tbody>
-  </table>
-  <p>Entries <code>[0..91]</code> are valid TMDs; the install is in flight, so the TMD-pack handler has not yet completed pushing every member. Entries <code>[92..]</code> carry leftover pointers from a previous game-state's table fill, but <code>DAT_8007BB38 = 91</code> means <strong>no consumer ever reads past index 91</strong>. With <code>DAT_8007BB38</code> as the authoritative bound, nothing past index 91 is table content (see <a href="#falsified">Falsified readings</a> for the retired mid-load classifications).</p>
+<section class="doc-section" id="falsified">
+  <h2>History</h2>
+  <details class="disclosure">
+    <summary>History: the coastline reading and other retired hypotheses</summary>
+    <div class="disclosure-body">
+      <ul class="bullets">
+        <li><strong>Coastline wireframe / dev-menu outline.</strong> Rendering every body on every projection plane and topology mode produces no map silhouette in any kingdom; the clean <code>xy</code> silhouettes of bodies 9 and 11 are 3D props seen sideways. A <code>count_a &times; count_b</code> heightfield grid fails the same test.</li>
+        <li><strong>&ldquo;Slot 4 is transcoded into the working buffer.&rdquo;</strong> The <code>0x801BA000</code> writes belong to the per-actor procedural stream, and the &ldquo;window full of TMDs&rdquo; snapshot was a <code>dolk</code> field scene, not a world map.</li>
+        <li><strong>&ldquo;Sebucus shows no render reads.&rdquo;</strong> A wrong-base assumption; against the verified base, 171 of 177 reads land in the window.</li>
+        <li><strong>Table entries past the walk counter</strong> are stale pointers, not content.</li>
+        <li><strong>PROT 0085 / 0244 / 0391</strong> named the entry an over-read window started in; the bundle is the next entry. See <a href="prot.html">PROT</a>.</li>
+      </ul>
+      <p>Catalogued on <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p>
+    </div>
+  </details>
 </section>
 
 <section class="doc-section" id="open">
-  <h2>Open work</h2>
-  <ol>
-    <li><strong>Banks 2 (<code>0xA0</code>) and 3 (<code>0xF0</code>).</strong> Banks reachable in the dispatcher but never observed during retail world-map play. Candidates: dev/debug menu render modes, battle-overlay re-use of the dispatcher, or cutscene render paths. A wide-coverage <code>cmd_flags</code>-capture probe across multiple non-world-map game modes would pin which (if any) caller passes those flags.</li>
-    <li><strong>PROT 0874 section-0 loader indirection.</strong> The producer chain is pinned (see <a href="#loader-chain-open">Loader chain</a> and <a href="#disc-side-source-of-04">&sect; Disc-side source of [0..4]</a>); the residual is the exact CDNAME indirection handing <code>FUN_80020118</code> its PROT-0874 bytes - a Write-bp probe on <code>DAT_8007C018[0]</code> would settle it. Full inner-dispatch and caller detail: <code>docs/formats/world-map-overlay.md</code>.</li>
-    <li><strong>The <code>_DAT_8007B824</code> "freeze" path.</strong> The <code>FUN_8001F05C</code> case-2 sub-path (<code>if (param_3 == 1) { _DAT_8007B704 = size; _DAT_8007B824 = pack_count; }</code>, PC <code>0x8001F2F8</code>) is the sole SCUS <code>sw</code> writer of <code>_DAT_8007B824</code> - the persistent-base index <code>FUN_8001E1B4</code> reads to reset the install cursor (<code>DAT_8007B774 = _DAT_8007B824</code>). No static SCUS caller of <code>FUN_8001F05C</code> passes <code>param_3 == 1</code> (the three direct callers - <code>FUN_80020224</code>, <code>FUN_8002541C</code>, <code>overlay_baka_fighter_801d4c50</code> - pass <code>s6</code>, <code>0</code>, <code>0</code>), and no dumped overlay caller of <code>FUN_80020224</code> passes <code>param_1 == 1</code>. So either the freeze path lives in an uncaptured overlay, or <code>_DAT_8007B824</code> stays at its BSS-init zero throughout retail play and the "persistent slots" semantic is vestigial. A write-bp on <code>_DAT_8007B824</code> would settle which.</li>
-  </ol>
+  <h2>Open questions</h2>
+  <ul class="bullets">
+    <li>Which caller, if any, selects handler banks 2 and 3 - candidates are debug render modes, battle reuse of the dispatcher, or cutscenes.</li>
+    <li>The exact CDNAME indirection that hands the PROT 0874 party-mesh bytes to the installer; a write breakpoint on <code>DAT_8007C018[0]</code> would settle it.</li>
+    <li>Who calls the asset dispatcher with the &ldquo;freeze&rdquo; argument that latches <code>DAT_8007B824</code> - no static SCUS caller does.</li>
+  </ul>
 </section>
 
 <section class="doc-section" id="see-also">
@@ -454,6 +352,11 @@ DAT_8007B824 : per-pack count (set by case 2 to *pack_header[0])</code></pre>
     <span class="see-also-label">Reference</span>
     <a href="../subsystems/world-map.html">World map</a>
     <a href="../subsystems/world-overview-viewer.html">World-overview viewer</a>
-    <a href="tmd.html">Legaia TMD</a>
+    <a href="../world-overview.html">World overview (viewer)</a>
+    <a href="scene-bundles.html">Scene bundles</a>
+    <a href="tmd.html">TMD</a>
+    <a href="character-mesh.html">Character meshes</a>
+    <a href="asset-type.html">Asset type byte</a>
+    <a href="../reference/re-do-not-re-walk.html">Do-not-re-walk</a>
   </div>
 </section>

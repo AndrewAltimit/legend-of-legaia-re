@@ -751,6 +751,33 @@ function setupManualTables(wasm, fileInput, discBytes) {
     el.appendChild(p);
   };
 
+  // A compact table with a sticky header inside a height-capped scroll box,
+  // the same shape as the equipment editor, so long lists cost no height.
+  const makeTable = (el, heads) => {
+    el.textContent = '';
+    const table = document.createElement('table');
+    table.className = 'rom-equip-table rom-edit-table';
+    const thead = document.createElement('thead');
+    const hr = document.createElement('tr');
+    for (const h of heads) {
+      const th = document.createElement('th');
+      th.textContent = h;
+      hr.appendChild(th);
+    }
+    thead.appendChild(hr);
+    table.appendChild(thead);
+    const tbody = document.createElement('tbody');
+    table.appendChild(tbody);
+    el.appendChild(table);
+    return tbody;
+  };
+  const cell = (row, child) => {
+    const td = document.createElement('td');
+    if (typeof child === 'string') td.textContent = child; else if (child) td.appendChild(child);
+    row.appendChild(td);
+    return td;
+  };
+
   // Highlight rows that will patch, so "what did I change" is scannable.
   const markEdited = (input) => {
     const row = input.closest('.rom-edit-row');
@@ -773,8 +800,9 @@ function setupManualTables(wasm, fileInput, discBytes) {
       byItem.set(p.item, cur);
     }
     const venueName = (page) => (page === 0 ? 'Buma' : 'Vidna');
+    const tbody = makeTable(fishRowsEl, ['Prize', 'Current', 'New price']);
     for (const g of byItem.values()) {
-      const row = document.createElement('label');
+      const row = document.createElement('tr');
       row.className = 'rom-edit-row';
       const name = document.createElement('span');
       name.className = 'rom-edit-name';
@@ -796,14 +824,17 @@ function setupManualTables(wasm, fileInput, discBytes) {
       input.dataset.item = String(g.item);
       input.dataset.cur = JSON.stringify(g.venues.map((v) => v.price));
       input.addEventListener('input', () => markEdited(input));
+      const edit = document.createElement('label');
+      edit.className = 'rom-edit-cell';
       const unit = document.createElement('span');
       unit.className = 'rom-edit-unit';
       unit.textContent = 'pts';
-      row.appendChild(name);
-      row.appendChild(cur);
-      row.appendChild(input);
-      row.appendChild(unit);
-      fishRowsEl.appendChild(row);
+      edit.appendChild(input);
+      edit.appendChild(unit);
+      cell(row, name);
+      cell(row, cur);
+      cell(row, edit);
+      tbody.appendChild(row);
     }
   }
 
@@ -813,45 +844,30 @@ function setupManualTables(wasm, fileInput, discBytes) {
       showEmpty(locRowsEl, 'No location-name table found on this disc.');
       return;
     }
-    names.forEach((cur, i) => {
-      const row = document.createElement('label');
+    const tbody = makeTable(locRowsEl, ['Place', 'New name']);
+    const addRow = (cur, index) => {
+      const row = document.createElement('tr');
       row.className = 'rom-edit-row';
       const name = document.createElement('span');
       name.className = 'rom-edit-name';
-      name.textContent = cur || `(slot ${i})`;
+      name.textContent = cur || `(slot ${index})`;
       const input = document.createElement('input');
       input.type = 'text';
       input.maxLength = maxNameLen;
       input.placeholder = 'new name (blank = keep)';
       input.spellcheck = false;
       input.autocomplete = 'off';
-      input.dataset.index = String(i);
+      // Quick-travel cells are keyed by index; the world-map-only places
+      // (a label and an entry banner, but no cell) by their current name.
+      if (index !== undefined) input.dataset.index = String(index);
       input.dataset.cur = cur;
       input.addEventListener('input', () => markEdited(input));
-      row.appendChild(name);
-      row.appendChild(input);
-      locRowsEl.appendChild(row);
-    });
-    // Places with a world-map label and an entry banner but no quick-travel
-    // cell. Same editor, keyed by the current name instead of a cell index.
-    (extra || []).forEach((cur) => {
-      const row = document.createElement('label');
-      row.className = 'rom-edit-row';
-      const name = document.createElement('span');
-      name.className = 'rom-edit-name';
-      name.textContent = cur;
-      const input = document.createElement('input');
-      input.type = 'text';
-      input.maxLength = maxNameLen;
-      input.placeholder = 'new name (blank = keep)';
-      input.spellcheck = false;
-      input.autocomplete = 'off';
-      input.dataset.cur = cur;
-      input.addEventListener('input', () => markEdited(input));
-      row.appendChild(name);
-      row.appendChild(input);
-      locRowsEl.appendChild(row);
-    });
+      cell(row, name);
+      cell(row, input);
+      tbody.appendChild(row);
+    };
+    names.forEach((cur, i) => addRow(cur, i));
+    (extra || []).forEach((cur) => addRow(cur));
   }
 
   // Populate from the chosen disc. Guarded per-file so re-picking the same

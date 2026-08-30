@@ -9,8 +9,9 @@
   <div class="hero-copy">
     <div class="hero-eyebrow">PSX &middot; SCUS-94254 &middot; 1998</div>
     <h1>Legend of Legaia, taken apart and running again.</h1>
-    <p class="hero-sub-line">A 1998 PlayStation RPG reverse-engineered end to end &mdash; play the
-    clean-room engine port, browse everything on the disc, and read how it all works. All in your
+    <p class="hero-sub-line">A fan project that pulls the 1998 PlayStation RPG apart piece by piece and
+    puts it back together: play a clean-room rewrite of the engine, look at every model, texture and
+    tune on the disc, mod your own copy, and read how the game really works underneath. All in your
     browser.</p>
     <span class="legal-pill">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6z"/><path d="M9 12l2 2 4-4.5"/></svg>
@@ -22,7 +23,7 @@
         Play in your browser
       </a>
       <a class="btn btn-ghost" href="viewer.html">Browse the disc</a>
-      <a class="cta-tertiary" href="architecture.html">Read the docs &rarr;</a>
+      <a class="cta-tertiary" href="architecture.html">Read how it works &rarr;</a>
     </div>
   </div>
   <div class="hero-media">
@@ -45,6 +46,36 @@
   pages. Nothing is ever uploaded.</span></span>
   <button type="button" class="browse">Choose .bin file</button>
 </div>
+
+<section class="doc-section" id="what-you-can-do">
+  <div class="group">
+    <div class="group-head"><h2>What you can do here</h2><span class="rule"></span><span class="count">four doors in</span></div>
+  </div>
+  <div class="card-grid">
+    <a class="card" href="play.html">
+      <h3>Play</h3>
+      <p>Walk the towns and fields of Legaia inside a rewrite of the game's engine. Not an emulator,
+      not a video: the engine itself, compiled for the browser, reading your disc.</p>
+    </a>
+    <a class="card" href="viewer.html">
+      <h3>Browse</h3>
+      <p>Every 3D model, texture, town, monster, tune and cutscene on the disc, decoded on the spot.
+      Spin a boss, export a town to Blender, listen to the sound test.</p>
+    </a>
+    <a class="card" href="tooling/rom-patcher.html">
+      <h3>Patch</h3>
+      <p>Randomize your own copy - drops, chests, shops, doors, arts - or fix a 27-year-old softlock.
+      The patcher runs in the tab and hands you a patched image; nothing leaves your machine.</p>
+    </a>
+    <a class="card" href="architecture.html">
+      <h3>Read</h3>
+      <p>How the disc is laid out, how the script and battle engines work, and how each fact was
+      proved - written for fans first, with the byte-level detail one click deeper.</p>
+    </a>
+  </div>
+  <p class="hint">Everything on this site is a fan reconstruction. The project ships none of Sony's
+  data: each page reads the disc image you supply, in your browser, and forgets it when you ask.</p>
+</section>
 
 <section class="doc-section" id="progress">
   <!--PROGRESS_METER-->
@@ -79,7 +110,7 @@
         </div>
         <div class="tile-body">
           <h3>Minigames &amp; Sol Tower</h3>
-          <p>Slots, Noa's dance, Baka Fighter &mdash; playable with retail data.</p>
+          <p>Slots, Noa's dance, Baka Fighter, the Muscle Dome, fishing &mdash; playable with retail data.</p>
         </div>
       </a>
     </div>
@@ -94,13 +125,15 @@
         <div class="tile-body">
           <h3>ROM patcher (randomizer)</h3>
           <p>Randomize drops, encounters, chests, shops, doors, arts combos, and code-injected extras
-          like the in-shop Seru-trading vendor. Outputs a patched image &mdash; nothing is uploaded.</p>
+          like the in-shop Seru-trading vendor. Outputs a patched image &mdash; nothing is uploaded.
+          Translators: the same toolkit exports the game's text to an editable pack and reimports
+          it (<a href="tooling/translation.html">translation</a>).</p>
         </div>
       </a>
     </div>
   </div>
   <div class="group">
-    <div class="group-head"><h2>Browse the disc</h2><span class="rule"></span><span class="count">9 tools</span></div>
+    <div class="group-head"><h2>Browse the disc</h2><span class="rule"></span><span class="count">10 tools</span></div>
     <div class="tiles cols3">
       <a class="tile" href="viewer.html">
         <div class="shot"><img src="img/tiles/viewer.jpg" alt="The TIM texture catalog decoded from the disc" loading="lazy">
@@ -213,6 +246,12 @@
 <section class="doc-section" id="understand">
   <div class="group">
     <div class="group-head"><h2>Read how it works</h2><span class="rule"></span><span class="count">docs zone</span></div>
+    <p>The project runs on two tracks that feed each other. <strong>Preservation</strong> gets every
+    asset off the disc and writes down each file format, with every claim traced back to the game's
+    own code. <strong>Reimplementation</strong> is a clean-room rewrite of the engine in Rust, built
+    from those documents rather than from Sony's executable - so it can run the game faithfully and
+    also go beyond it (dynamic lighting, see-through walls, VR) with the retail look one toggle away.
+    The docs below are the shared ground truth for both.</p>
     <div class="doc-tiles">
       <a class="doc-tile" href="architecture.html">
         <span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 10h16M4 14h10M4 18h7"/></svg></span>
@@ -226,16 +265,16 @@
         <span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1"/><rect x="13" y="4" width="7" height="7" rx="1"/><rect x="4" y="13" width="7" height="7" rx="1"/><rect x="13" y="13" width="7" height="7" rx="1"/></svg></span>
         <div>
           <h3>Subsystems</h3>
-          <p>Boot path, asset loader, the five runtime VMs, renderer, audio, battle, world map, save / shop / inn / level-up.</p>
-          <span class="meta">24 pages &rarr;</span>
+          <p>How the running game works: boot, the script engines, rendering, sound, battle, the world map, menus, shops, inns, level-ups and the minigames.</p>
+          <span class="meta">Subsystems &rarr;</span>
         </div>
       </a>
       <a class="doc-tile" href="formats/index.html">
         <span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4M10 12h5M10 15.5h5"/></svg></span>
         <div>
           <h3>Formats</h3>
-          <p>Byte-level specs for everything on the disc &mdash; each traced to a Ghidra function dump.</p>
-          <span class="meta">40+ pages &rarr;</span>
+          <p>Byte-level specs for everything on the disc &mdash; each traced to the game code that reads it, with a confidence badge.</p>
+          <span class="meta">Formats &rarr;</span>
         </div>
       </a>
       <a class="doc-tile" href="guides/getting-started.html">
@@ -246,6 +285,13 @@
           <span class="meta">Guides &rarr;</span>
         </div>
       </a>
+    </div>
+    <div class="see-also">
+      <span class="see-also-label">Also</span>
+      <a href="quickstart.html">Quick start (native tools)</a>
+      <a href="reference/open-rev-eng-threads.html">Open questions</a>
+      <a href="reference/re-settled-threads.html">Settled questions</a>
+      <a href="https://github.com/AndrewAltimit/legend-of-legaia-re">Source on GitHub</a>
     </div>
   </div>
 </section>

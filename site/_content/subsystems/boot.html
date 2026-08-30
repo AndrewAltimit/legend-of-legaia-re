@@ -1,308 +1,431 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; boot path</div>
   <h1>Boot path</h1>
-  <p class="lede">What the game does between disc-spin and title screen. Three jobs, in order: read the PROT.DAT directory into RAM, wire up the asset-type dispatcher, and hand control to the title-screen overlay.</p>
+  <p class="lede">Everything between the disc spinning up and the moment you press NEW GAME. The PlayStation logo fades, four publisher screens go by, the wordmark appears - and behind that the game reads its archive directory, wires up its asset router, streams its first code overlay and enters the top-level &ldquo;what mode am I in&rdquo; state machine that runs for the rest of the session. This page follows that ladder, then the title screen, then what NEW GAME launches.</p>
 </header>
 
-<section class="doc-section" id="how-it-works">
-  <h2>How it works</h2>
-  <p>Everything below comes from tracing the game's code with a disassembler (Ghidra); the game shipped without symbols, so functions are named <code>FUN_80xxxxxx</code> after their RAM addresses in that trace.</p>
-
-  <p>Almost every PSX game has a built-in archive that bundles the small files together so the disc can stream them efficiently. Legaia's archive is <code>PROT.DAT</code>, and it has its own table of contents (TOC) - a list saying "entry N starts at sector S and is L bytes long". Before the game can do <em>anything</em>, it has to read that table into RAM. That's job one.</p>
-
-  <p>Job two is wiring up a small <em>asset-type dispatcher</em>. The PROT entries don't all hold the same kind of data - some are textures, some are 3D meshes, some are dialog blobs, some are animation containers. Each entry's first byte is a type tag, and there's a single function that reads that tag and routes the bytes to the right per-format parser. Once the dispatcher's helper tables are populated, every later "load this entry" call works.</p>
-
-  <p>Job three: the boot code reaches a top-level <strong>game-mode state machine</strong>. This is a 28-entry table where each slot is a function pointer for one major mode of the game - boot, title, field, battle, world map, menu, cutscene, etc. The mode pointer changes whenever the game transitions; the per-frame loop just calls "whatever the current mode's handler says". The title-screen overlay is loaded next, and the actor VM inside it starts ticking the splash animation.</p>
-
-  <p>One important quirk: the interpreter that drives every running script - the <em>field VM</em> - is <strong>not</strong> in the main executable. It lives in a RAM overlay (a chunk of MIPS code the game streams from the disc into RAM on demand) loaded when you enter a town or field map. That's why the boot path here is so short: most of the gameplay code isn't in <code>SCUS_942.54</code> (the game's main executable on the disc) at all.</p>
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Entry point</dt><dd><code>main()</code> = <code>FUN_80015E90</code>, called once by the executable stub with <code>$gp = 0x8007B318</code>; it never returns in normal play</dd>
+    <dt>Archive directory</dt><dd>First three sectors of <code>PROT.DAT</code> (6 KB) land at <code>0x801C70F0</code>; every later load is a table lookup</dd>
+    <dt>Mode machine</dt><dd>28-entry table at <code>0x8007078C</code>: 14 modes, each an INIT / per-frame pair; the mode word is <code>_DAT_8007B83C</code></dd>
+    <dt>Overlay window</dt><dd>Slot A at <code>0x801CE818</code> holds one of field / menu / cutscene / minigame code at a time; slot B holds the summon-render pair</dd>
+    <dt>Title screen</dt><dd>Not a mode - its tick is the tail of PROT 0899, streamed raw before the mode table runs</dd>
+    <dt>NEW GAME</dt><dd>Writes mode 2 (field), loads PROT 0897 and opens the prologue scene <code>opdeene</code>; name entry comes later, in <code>town01</code></dd>
+    <dt>Port</dt><dd><code>engine-shell::BootSession</code> (init), <code>engine-core::mode::ModeDriver</code> (the table), <code>engine-vm::title_overlay</code> (the title tick)</dd>
+    <dt>Confidence</dt><dd>Confirmed - mode table read off the disc; title tick and launch write pinned by live watchpoints</dd>
+  </dl>
 </section>
 
-<section class="doc-section" id="toc-loader">
-  <h2>TOC loader</h2>
-  <dl class="kv">
-    <dt>Function</dt><dd><code>FUN_8003E4E8</code></dd>
-    <dt>Reads</dt><dd>First three sectors of <code>PROT.DAT</code> (= 6&nbsp;KB)</dd>
-    <dt>Lands at</dt><dd><code>0x801C70F0</code> in RAM</dd>
-    <dt>Called from</dt><dd><code>FUN_8003EFE8</code> and <code>FUN_8003F08C</code> at boot</dd>
-  </dl>
+<section class="doc-section" id="how-it-works">
+  <h2>The ladder</h2>
+  <figure class="overlay-strip">
+    <svg viewBox="0 0 960 250" width="100%" style="max-width: 960px; font-family: var(--font-mono); font-size: 12px;" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The main loop reads the mode word, dispatches the mode table entry's INIT handler once and its per-frame handler thereafter; INIT streams an overlay into slot A, the per-frame handler calls the master frame driver, and any handler may write a new mode word which feeds back to the loop">
+      <g fill="var(--bg-raised)" stroke="var(--border)">
+        <rect x="20" y="50" width="180" height="50" rx="4" stroke="var(--accent)"/>
+        <rect x="260" y="50" width="180" height="50" rx="4"/>
+        <rect x="500" y="50" width="180" height="50" rx="4"/>
+        <rect x="740" y="50" width="200" height="50" rx="4"/>
+        <rect x="500" y="170" width="180" height="50" rx="4"/>
+        <rect x="740" y="170" width="200" height="50" rx="4"/>
+      </g>
+      <g fill="currentColor" text-anchor="middle" dominant-baseline="middle">
+        <text x="110" y="68">main loop</text>
+        <text x="110" y="86" fill="var(--text-muted)">FUN_80015E90</text>
+        <text x="350" y="68">mode table</text>
+        <text x="350" y="86" fill="var(--text-muted)">14 INIT / RUN pairs</text>
+        <text x="590" y="68">INIT handler</text>
+        <text x="590" y="86" fill="var(--text-muted)">one frame</text>
+        <text x="840" y="68">per-frame handler</text>
+        <text x="840" y="86" fill="var(--text-muted)">every frame</text>
+        <text x="590" y="188">overlay slot A</text>
+        <text x="590" y="206" fill="var(--text-muted)">0x801CE818</text>
+        <text x="840" y="188">master frame driver</text>
+        <text x="840" y="206" fill="var(--text-muted)">actors, VMs, draw</text>
+      </g>
+      <g stroke="currentColor" fill="none" stroke-width="1.5">
+        <line x1="200" y1="75" x2="258" y2="75"/>
+        <line x1="440" y1="75" x2="498" y2="75"/>
+        <line x1="680" y1="75" x2="738" y2="75"/>
+        <line x1="590" y1="100" x2="590" y2="168"/>
+        <line x1="840" y1="100" x2="840" y2="168"/>
+        <path d="M 840 50 C 840 10, 110 10, 110 48"/>
+      </g>
+      <g fill="currentColor">
+        <polygon points="258,75 250,71 250,79"/>
+        <polygon points="498,75 490,71 490,79"/>
+        <polygon points="738,75 730,71 730,79"/>
+        <polygon points="590,168 586,160 594,160"/>
+        <polygon points="840,168 836,160 844,160"/>
+        <polygon points="110,48 106,40 114,40"/>
+      </g>
+      <g fill="var(--text-muted)" text-anchor="middle">
+        <text x="475" y="38">handler writes a new mode word</text>
+        <text x="229" y="66">mode word</text>
+        <text x="580" y="140" text-anchor="end">streams a PROT entry</text>
+        <text x="830" y="140" text-anchor="end">skipped by pause menu</text>
+        <text x="20" y="236" text-anchor="start">Title screen: runs before this loop, from its own overlay tick</text>
+      </g>
+    </svg>
+    <figcaption>One loop, one table: a mode&rsquo;s INIT handler streams code into the overlay window, its per-frame handler runs the game, and writing the mode word is the only way to switch.</figcaption>
+  </figure>
+  <div class="flow">
+    <span class="num">1</span><span class="layer">Hardware init</span><span class="desc">GPU, CD, sound and heap; a console probe picks the heap size</span><span class="crate">main()</span>
+    <span class="num">2</span><span class="layer">Archive directory</span><span class="desc">the PROT.DAT table of contents is read once into RAM</span><span class="crate">TOC loader</span>
+    <span class="num">3</span><span class="layer">Name map</span><span class="desc">CDNAME.TXT fills the scene-name table so &ldquo;town01&rdquo; resolves to an entry index</span><span class="crate">CDNAME primer</span>
+    <span class="num">4</span><span class="layer">Asset router</span><span class="desc">the type-byte dispatcher&rsquo;s buffer pointers become valid</span><span class="crate">asset dispatcher</span>
+    <span class="num">5</span><span class="layer">Publisher logos</span><span class="desc">four textures in <code>init.pak</code> fade in / hold / fade out</span><span class="crate">legaia_asset::init_pak</span>
+    <span class="num">6</span><span class="layer">Title overlay</span><span class="desc">PROT 0899&rsquo;s tail streams raw into slot A; the attract loop ticks</span><span class="crate">title tick</span>
+    <span class="num">7</span><span class="layer">Mode machine</span><span class="desc">NEW GAME writes mode 2; the master loop dispatches the table from here on</span><span class="crate">ModeDriver</span>
+  </div>
+  <p>Almost every PlayStation game bundles its small files into one archive so the disc can stream them; Legaia&rsquo;s is <code>PROT.DAT</code>, with a table of contents saying &ldquo;entry N starts at sector S&rdquo;. Reading that table is job one. Job two is the <em>asset-type dispatcher</em>: each entry&rsquo;s first byte is a type tag, and one router hands the bytes to the matching parser (<a href="../formats/asset-type.html">asset-type</a>). Job three is the mode machine below.</p>
+  <p class="hint">Most gameplay code is <strong>not</strong> in the executable. The field VM, dialog renderer and battle logic live in RAM overlays streamed on demand into <code>0x801C0000+</code>. &ldquo;Zero callers in <code>SCUS_942.54</code>&rdquo; never means dead code - it means the caller is in an overlay.</p>
+</section>
 
-  <p>The on-disc TOC and the in-RAM TOC have <strong>different strides</strong> - the on-disc-to-in-RAM transformation runs once at boot, but its function hasn't been reversed yet. See the <a href="../formats/index.html">PROT.DAT format spec</a> for the byte layout.</p>
-
-  <p>After the TOC is in RAM, two resolvers are usable:</p>
-  <table>
-    <thead><tr><th>Resolver</th><th>Mode</th><th>Used by</th></tr></thead>
+<section class="doc-section" id="main-loop">
+  <h2>The main loop</h2>
+  <p>After hardware init, <code>main()</code> spins forever: call the current mode&rsquo;s handler; if the handler asked for a different mode, do the housekeeping and switch. A negative mode index exits - a dev quit path retail never takes.</p>
+  <p><strong>Switching modes.</strong> When a handler writes a mode index different from the latched one, the loop stops XA / CD, flushes the GPU queue, re-reads the pad and clears the held-input and frame-state globals before latching the new index.</p>
+  <details class="disclosure">
+    <summary>Details: the init sequence, stage by stage</summary>
+    <div class="disclosure-body">
+  <table class="data-table">
+    <thead><tr><th>Init stage</th><th>What happens</th></tr></thead>
     <tbody>
-      <tr><td><code>FUN_8003E8A8</code></td><td>Index-based (PROT entry number in)</td><td>Streaming loader, dev-build sound branch</td></tr>
-      <tr><td><code>FUN_8003E6BC</code></td><td>Path-based (resolves <code>data\battle\efect.dat</code>, <code>h:\PROT\FIELD\&lt;scene&gt;\&hellip;</code>)</td><td>Most retail-build code paths</td></tr>
+      <tr><td>GPU / display</td><td>display-mode reset, display mask off, full-frame clear, queue flush</td></tr>
+      <tr><td>CD + XA</td><td>CD driver init; the console probe result (<code>gp+0x550</code>) selects the heap size</td></tr>
+      <tr><td>Sound</td><td>libsnd init over the sound-driver work area (<a href="audio.html">audio</a>)</td></tr>
+      <tr><td>Heap</td><td><code>0x134800</code> bytes retail, <code>0x200000</code> on an expanded-RAM dev console</td></tr>
+      <tr><td>Boot scene + names</td><td>default scene string <code>opdeene</code>; the dev/retail halfword gets its only write (<a href="#debug-flags">debug flags</a>); CDNAME primes the name table at <code>0x80088758</code></td></tr>
+      <tr><td>Display env + mode machine</td><td>DISPENV / DRAWENV pair, boot mode-init, packet + ordering-table allocator, one priming frame, display on, first overlay pair streamed</td></tr>
     </tbody>
   </table>
-  <p class="hint">The path-based opener runs the dev-style filename through the <a href="../formats/index.html">CDNAME.TXT name map</a> to find the index, then delegates to the index-based resolver. It's a thin layer.</p>
-</section>
-
-<section class="doc-section" id="asset-dispatcher">
-  <h2>Asset-type dispatcher</h2>
-  <dl class="kv">
-    <dt>Function</dt><dd><code>FUN_8001F05C</code></dd>
-    <dt>Calling convention</dt><dd><code>result = FUN_8001F05C(byte *src_data, u32 type_and_size, int param3, int copy_only)</code></dd>
-    <dt>Encoding</dt><dd><code>type_and_size</code> packs the type byte in the high 8 bits, size in the low 24 bits</dd>
-  </dl>
-
-  <p>Every TIM, TMD, MES, ANM, etc. is reached through this one function. The boot path doesn't call it itself - it just makes sure the buffer pointers it writes to are valid. <code>FUN_80020224</code> (the asset descriptor walker) is one of the dispatcher's two static call sites and is invoked from the town overlay's <code>FUN_801D6704</code> (MAIN_INIT) at runtime. See <a href="asset-loader.html">Asset loader</a> for the full story.</p>
+      <p>Each stage is bracketed by a dev-checkpoint print that is compiled in but inert on the shipped disc.</p>
+    </div>
+  </details>
 </section>
 
 <section class="doc-section" id="game-mode">
   <h2>Game-mode state machine</h2>
-  <p>The 28-mode state machine table at <code>0x8007078C</code> is the top-level "what is the game doing" dispatcher. Each 24-byte entry is a <code>(name_ptr, &hellip;, handler_ptr, param)</code> tuple corresponding to a major mode - boot, title, field, battle, world map, menu, cutscene, and so on. Modes come in init/per-frame pairs (even index = init, odd = per-frame).</p>
-
-  <h3>Handler map (recovered from the disc)</h3>
-  <p>The whole table is static executable data, so <code>legaia_asset::mode_table</code> reads the index &rarr; handler/param/name map straight out of <code>SCUS_942.54</code> (<code>asset mode-table</code>; disc-gated test). The dev names mislead - this is the ground-truth dispatch:</p>
-  <table>
-    <thead><tr><th>Mode</th><th>Name (disc)</th><th>Init handler</th><th>Per-frame handler</th></tr></thead>
+  <p>Walking a town, fighting, browsing the pause menu, watching a movie - to the game these are <em>modes</em>, and exactly one is active. Even table rows are INIT handlers (one frame, usually loading an overlay); odd rows are per-frame handlers. The table is static executable data, so <code>legaia_asset::mode_table</code> reads it straight off the disc (<code>asset mode-table</code>). The dev names mislead; this is the ground truth:</p>
+  <table class="data-table">
+    <thead><tr><th>Mode</th><th>Disc name</th><th>What it really is</th><th>Overlay loaded</th><th>Init handler</th></tr></thead>
     <tbody>
-      <tr><td>0/1</td><td>CONFIG (dev debug menu)</td><td><code>0x80025C68</code></td><td><code>0x80025EEC</code></td></tr>
-      <tr><td>2/3</td><td><strong>MAIN (field/town)</strong></td><td><code>0x80025B64</code></td><td><code>0x80025EEC</code></td></tr>
-      <tr><td>4/5</td><td>MONSTER TEST</td><td><code>0x8002611C</code></td><td><code>0x80025EEC</code></td></tr>
-      <tr><td>6/7</td><td>TMD TEST</td><td><code>0x801CF730</code></td><td><code>0x80025EEC</code></td></tr>
-      <tr><td>8/9</td><td>EFECT TEST</td><td><code>0x80025E68</code></td><td><code>0x80025EEC</code></td></tr>
-      <tr><td>10/11</td><td>TEST</td><td><code>0x8002B97C</code></td><td><code>0x80025EEC</code></td></tr>
-      <tr><td>12/13</td><td><strong>MAPDSIP (world-map display)</strong></td><td><code>0x80025DA0</code></td><td><code>0x80025F2C</code></td></tr>
-      <tr><td>14/15</td><td>MAP TEST</td><td><code>0x8002B904</code></td><td><code>0x80025EEC</code></td></tr>
-      <tr><td>16/17</td><td>READ</td><td><code>0x8002612C</code></td><td><code>0x80025EEC</code></td></tr>
-      <tr><td>18/19</td><td>GAME OVER</td><td><code>0x80025B30</code></td><td><code>0x80025EEC</code></td></tr>
-      <tr><td>20/21</td><td>BATTLE</td><td><code>0x800565D8</code></td><td><code>0x80025EEC</code></td></tr>
-      <tr><td>22/23</td><td>CARD (menu / memory card)</td><td><code>0x8002574C</code></td><td><code>0x80025F74</code></td></tr>
-      <tr><td>24/25</td><td>OTHER</td><td><code>0x80025980</code></td><td><code>0x80025EEC</code></td></tr>
-      <tr><td>26/27</td><td>STR (FMV)</td><td><code>0x80025FB4</code></td><td><code>0x80025EEC</code></td></tr>
+      <tr><td>0/1</td><td>CONFIG</td><td>dev debug menu</td><td>0971</td><td><code>0x80025C68</code></td></tr>
+      <tr><td>2/3</td><td><strong>MAIN</strong></td><td><strong>field / town gameplay</strong></td><td><strong>0897</strong></td><td><code>0x80025B64</code></td></tr>
+      <tr><td>4/5</td><td>MONSTER TEST</td><td>dev; INIT bounces back to mode 0</td><td>-</td><td><code>0x8002611C</code></td></tr>
+      <tr><td>6/7</td><td>TMD TEST</td><td>dev</td><td>-</td><td><code>0x801CF730</code></td></tr>
+      <tr><td>8/9</td><td>EFECT TEST</td><td>dev</td><td>0979</td><td><code>0x80025E68</code></td></tr>
+      <tr><td>10/11</td><td>TEST</td><td>dev</td><td>-</td><td><code>0x8002B97C</code></td></tr>
+      <tr><td>12/13</td><td><strong>MAPDSIP</strong></td><td><strong>world-map display</strong></td><td>0981, over 0897&rsquo;s head</td><td><code>0x80025DA0</code></td></tr>
+      <tr><td>14/15</td><td>MAP TEST</td><td>dev</td><td>-</td><td><code>0x8002B904</code></td></tr>
+      <tr><td>16/17</td><td>READ</td><td>dev; jumps into slot A blind</td><td>-</td><td><code>0x8002612C</code></td></tr>
+      <tr><td>18/19</td><td>GAME OVER</td><td>game over</td><td>0902</td><td><code>0x80025B30</code></td></tr>
+      <tr><td>20/21</td><td>BATTLE</td><td>battle; setup is resident in the executable</td><td>none (0898 via the field path)</td><td><code>0x800565D8</code></td></tr>
+      <tr><td>22/23</td><td>CARD</td><td><strong>menu</strong> incl. the pause menu, save, options</td><td><strong>0899</strong></td><td><code>0x8002574C</code></td></tr>
+      <tr><td>24/25</td><td>OTHER</td><td><strong>minigames</strong>, one overlay per sub-id</td><td>0972..0977, 0980</td><td><code>0x80025980</code></td></tr>
+      <tr><td>26/27</td><td>STR</td><td>FMV movies</td><td>0970</td><td><code>0x80025FB4</code></td></tr>
     </tbody>
   </table>
-  <p><strong>Three structural facts:</strong> (1) field/town gameplay is modes 2/3 MAIN (<code>game_mode 0x03</code>), <em>not</em> the world map - the "MAPDSIP" pair (12/13, misspelled on the disc) is the world-map <em>display</em> mode, whose per-frame handler routes the world-map render tick. The mode-12 init <code>FUN_80025DA0</code> is a <strong>transient sub-overlay swap</strong> (same save/restore shape as the mode-24 minigame warp): it saves the field overlay's slot-A head (<code>0x801CE818</code>, <code>0x4000</code> bytes), loads PROT 981 over it, and calls its init <code>0x801CF4AC</code> (file <code>+0xC94</code> - so base <code>0x801CE818</code> is pinned by the call target), restoring 0897's head on exit. PROT 981 seeds the scratchpad display list <code>0x1F800314</code> and runs a 21-state display SM that reads the still-resident 0897 body; the world-map <em>controller</em> proper (<code>FUN_801E76D4</code>) stays in 0897. (2) 12 of the 14 per-frame ("MODE") handlers share one generic per-frame tick <code>0x80025EEC</code>; only Mode 13 (world map) and Mode 23 (menu / memory card) carry their own - so the per-frame half is mostly one shared handler parameterised by <code>+0x14</code>. (3) <strong>The in-field pause menu runs under the CARD pair (mode 23), not field mode 3</strong>: every menu-open capture in the save library (equipment / status / options, field and town) holds <code>game_mode = 0x17</code> - the "CARD" dev label covers the whole menu / memory-card overlay surface (the field menu carries the Save flow).</p>
-  <p><strong>Mode 23 runs no frame driver at all.</strong> Its own handler is not a variation on the shared one, it is a substitution: <code>FUN_80025F74</code> calls the frame-begin pass, then <code>FUN_80017978</code> where every other handler calls the master frame driver <code>FUN_80016444</code>, then the frame-end pass. <code>FUN_80017978</code> is eighteen instructions carrying three <code>jal</code>s - a debug chord that is inert on a shipped disc, an indirect call through the CARD actor's own tick handler, and a dev readout HUD - and <strong>none of them is <code>0x80016444</code></strong>. Since the master driver is where the five actor tick passes live, the consequence is a whole-frame one: while the pause menu is up, retail advances no actor, no effect, no move VM and no animation, and draws nothing but what the CARD actor's handler draws. The port mirrors this in the engine rather than in its hosts: <code>World::tick</code> suspends the same passes whenever the mode table says the current mode skips the master driver. That split is the point - both of the port's hosts had reached the same outcome by simply not ticking at all while the menu is up, which freezes <em>more</em> than retail does, since retail keeps the frame-begin and frame-end passes (the timed sound release, the frame-cadence resolver) running underneath.</p>
-
-  <p><strong>The mode word does not determine the scene.</strong> Modes 24/25 OTHER host all five warp minigames, and the word says nothing about which one. Retail's discriminator is a second register, the signed halfword <code>_DAT_8007BA34</code>: the field VM's op-<code>0x3E</code> door-warp arm writes <code>sub_id = op0 - 100</code> there in the delay slot of the same instruction pair that sets the mode word to <code>0x18</code>, and the mode-24 init reads it twice to pick the overlay and its entry point. That init's last act sets the mode word to <code>0x19</code> and <em>leaves the sub-id standing</em>, so the pair stays readable for every frame the minigame runs. Two traps follow for anything translating between the retail mode word and a higher-level state: the pair is the key, not the word (<code>0x19</code> alone cannot tell fishing from dance), and <code>0x18</code> is the <em>init</em> half, which runs for a single frame - keying a live minigame on it never observes one.</p>
-
-  <p>Each table entry also carries an <code>i16</code> <strong>next-mode</strong> field at <code>+0x0A</code>: <code>-1</code> = the mode manages its own transitions, <code>0</code> = fall back to mode 0 on completion (the only two retail values). The word at <code>+0x08</code> reads <code>0xFFFF0000</code> on self-managed modes - that is the <code>-1</code> over a zero low half, not a sentinel constant. <code>legaia_asset::mode_table::ModeEntry::next_mode</code> decodes it, and the engine's transcribed table is cross-checked field-by-field against the executable by the disc-gated <code>mode_table_reconcile</code> test.</p>
-
-  <h3>Mode-init &rarr; overlay loader census</h3>
-  <p>The init handlers stream their overlays through the two parallel loaders <code>FUN_8003EBE4</code>/<code>FUN_8003EC70</code>, both calling <code>FUN_8003E8A8(param + 0x381)</code> - in extraction index space that is <strong>entry <code>param + 0x37F</code></strong>, two below the raw <code>+ 0x381</code> (the resolver indexes the raw in-RAM <code>PROT.DAT</code> head; see <a href="../formats/prot.html">PROT &sect; In-RAM TOC</a>). The verified mode &rarr; entry map: mode 0 CONFIG &rarr; <strong>0971</strong> (the dev debug-menu overlay); mode 2 MAIN &rarr; <strong>0897</strong> (the field/town overlay); mode 8 EFECT TEST &rarr; 0979; mode 12 MAPDSIP &rarr; 0981; mode 18 GAME OVER &rarr; 0902; mode 22 CARD &rarr; <strong>0899</strong> (the menu / memory-card overlay); mode 24 OTHER &rarr; <strong>0972..0977, 0980</strong> (the minigame door-warp sub-id slots, see <a href="script-vm.html">script-VM &sect; 0x3E WARP</a>); mode 26 STR &rarr; 0970 (cutscene). The census is exhaustive for static <code>SCUS_942.54</code>: a full-image scan of both loaders' <code>jal</code> sites finds 16 callsites - the computed params cover the battle special-attack, summon-stager (<code>id - 0x79</code> &rarr; extraction 903..913) and battle-stage bands, plus the slot-B default pair <code>FUN_80025BA0</code> (param 5 or 6 &rarr; extraction <strong>0900/0901</strong>, the summon-render pair). No site can produce param 0 or 1, so extraction entries 0895/0896 are unreachable from any static loader call.</p>
-  <details class="disclosure">
-    <summary>Superseded readings (off-by-2 loader arithmetic)</summary>
-    <ul>
-      <li>An earlier <code>+ 0x381</code>-arithmetic reading placed the mode-0 overlay at 973 and took the slot-machine text in 973's over-read tail for its content. 973 is the 1-sector <code>OTHER2</code> dev module (mode-24 warp sub-id 1); the casino slot machine is 975; the mode-0 overlay is 0971.</li>
-      <li>&ldquo;Mode 2 loads 899, the field/town/menu overlay&rdquo; was the same off-by-2: mode 2 loads <strong>0897</strong> (field); 0899 is the <em>menu</em> overlay, loaded by mode 22.</li>
-      <li>&ldquo;Mode 24 loads PROT 0896&rdquo; is refuted - 0896's bytes appear nowhere in RAM across the entry window; mode 24 loads the per-sub-id minigame slots 0972..0977 / 0980.</li>
-      <li>General rule: CDNAME <code>#define</code> numbers are raw in-RAM TOC indices, so extraction filename labels shift +2. Always cross-validate against the loader-call constant or the file's magic bytes; see <a href="../formats/cdname.html#numbering-space">CDNAME &sect; numbering space</a>.</li>
-    </ul>
-  </details>
-
-  <p>The script VM that drives every running script is <strong>not</strong> in <code>SCUS_942.54</code>. It lives in RAM overlays at <code>0x801C0000+</code>, loaded on demand:</p>
-
-  <table>
-    <thead><tr><th>VM</th><th>Driver</th><th>Lives in</th></tr></thead>
-    <tbody>
-      <tr><td><a href="actor-vm.html">Actor / sprite VM</a></td><td><code>FUN_801D6628</code></td><td>Title-screen overlay</td></tr>
-      <tr><td><a href="script-vm.html">Field / event VM</a></td><td><code>FUN_801DE840</code></td><td>Town / field overlay</td></tr>
-      <tr><td><a href="effect-vm.html">Effect VM cluster</a></td><td><code>FUN_801DE914</code> / <code>801DFDF8</code> / <code>801E0088</code></td><td>Battle overlay</td></tr>
-    </tbody>
-  </table>
-</section>
-
-<section class="doc-section" id="init-pak-publisher-logos">
-  <h2>Publisher-logo boot screens (PROT 0895 <code>init.pak</code>)</h2>
-  <p>PROT entry <code>0895</code> (filename label <code>bat_back_dat</code>) is the boot-time <code>init.pak</code> bundle. The label is the <a href="../formats/cdname.html#numbering-space">+2 filename shift</a>, not dev mislabeling: in the define map, raw 897 (= extraction 0895) is the first <code>xxx_dat</code> slot, while <code>bat_back_dat</code> truly names the battle side-band <code>summon.dat</code>/<code>readef.DAT</code> files at extraction 893/894. The bundle contains four uncompressed PSX TIMs (the PS1's standard texture-image format) that the boot sequence uploads to VRAM (the console's video memory) and fades through before the title screen appears:</p>
-  <table>
-    <thead><tr><th>Offset</th><th>Logo</th><th>Mode</th><th>Decoded size</th></tr></thead>
-    <tbody>
-      <tr><td><code>+0x021c4</code></td><td>PROKION</td><td>8&nbsp;bpp</td><td>176&times;256</td></tr>
-      <tr><td><code>+0x0d3e4</code></td><td>Contrail</td><td>8&nbsp;bpp</td><td>184&times;256</td></tr>
-      <tr><td><code>+0x18e04</code></td><td>SCEA Presents</td><td>4&nbsp;bpp</td><td>256&times;128</td></tr>
-      <tr><td><code>+0x1ce44</code></td><td>WARNING</td><td>4&nbsp;bpp</td><td>256&times;256</td></tr>
-    </tbody>
-  </table>
-  <p>A typed parser at <code>legaia_asset::init_pak</code> returns slice pointers + decoded VRAM rects for each logo; a disc-gated test pins the on-disc layout. The asset viewer's <em>"Boot publisher logos"</em> panel and the <code>legaia-engine play-window --boot-ui</code> binary both consume this parser to drive a 30 / 90 / 30 fade-in / hold / fade-out animation per logo (see <code>legaia_engine_core::publisher_logos</code>).</p>
-  <h3>Strip-grid unfolding</h3>
-  <p>Two of the four TIMs (PROKION, SCEA) are <strong>vertically-packed sprite atlases</strong> - the decoded bitmap stacks several smaller strips that retail unfolds into a horizontal/grid layout via multiple GPU quads. Blitting the whole TIM as one quad shows the packed layout (PROKION as <code>PROK</code> over <code>KION</code>, SCEA as four wrapped text rows) rather than the on-screen logo. The per-logo grid lives in <code>publisher_logos::STRIP_GRID</code>:</p>
-  <table>
-    <thead><tr><th>Logo</th><th>Grid <code>(cols, rows)</code></th><th>Source strip</th><th>Unfolded</th></tr></thead>
-    <tbody>
-      <tr><td>PROKION</td><td><code>(2, 1)</code></td><td>176&times;128</td><td>352&times;128 (<code>PROK&nbsp;&#9737;&nbsp;KION</code>)</td></tr>
-      <tr><td>Contrail</td><td><code>(1, 1)</code></td><td>184&times;256</td><td>184&times;256 (no slicing)</td></tr>
-      <tr><td>SCEA</td><td><code>(2, 2)</code></td><td>256&times;32</td><td>512&times;64 (<code>Sony Computer Entertainment America</code> / <code>Presents</code>)</td></tr>
-      <tr><td>WARNING</td><td><code>(1, 1)</code></td><td>256&times;256</td><td>256&times;256 (no slicing)</td></tr>
-    </tbody>
-  </table>
-  <p>Source strips are stored <strong>column-major</strong> in the bitmap; the output grid is row-major, so source strip <code>s = c &times; rows + r</code> lands at output cell <code>(col&nbsp;c, row&nbsp;r)</code>. PROKION's two halves combine into <code>PROK &#9737; KION</code> (the green hemispheres in each half complete a single sun when adjacent); SCEA's four 32-row strips read top-line <code>Sony Computer Entertainment America</code> + bottom-line <code>Presents</code>.</p>
-  <p>The exact on-screen layout retail uses still has to be RE'd from the unlocated <a href="#title-overlay-state">title-overlay tick body</a> - the <code>STRIP_GRID</code> constants are hypothesis-fit-to-visible-content, not pinned to specific GPU draw commands.</p>
-  <p>There is <strong>no single <code>title.pak</code> bundle entry</strong>. The <code>h:\prot\field\title\title.pak</code> string in <code>init.pak</code>'s pool is only a debug-print referent; SCUS does not contain the literal string <code>title.pak</code> anywhere. The dev-tree <code>title.pak</code> content is split across two retail PROT entries, both confirmed by the init.pak fingerprint method against the <code>title_screen_new_game</code> save state: the <strong>title wordmark TIM</strong> is <strong>PROT 0890</strong> (parsed by <code>legaia_asset::title_pak</code>, the big-logo RAM TIM at <code>0x80170DF8</code> fingerprint-matches it), and the <strong>options / config-menu bundle</strong> is <strong>PROT 0899</strong> (<code>xxx_dat</code>). Entry 0899's indexed payload opens with the config-menu string pool - <code>Display Off</code> / <code>Gradual</code> / <code>Immediate</code> / <code>Field HP Display</code> / <code>Encounters</code> / <code>Vibration</code> / <code>Dual Shock</code> / <code>Voices</code> / <code>Battle Camera</code> / <code>Monaural</code> / <code>Stereo</code> / <code>Sound</code> - followed by the small config-screen TIMs (CLUTs byte-matched at 0899 offsets <code>0x169DC</code> and <code>0x1F91C</code>+). The title-overlay <em>code</em> lives in the unindexed gap immediately after entry 0899. (The extraction filename labels here are the <a href="../formats/cdname.html#numbering-space">+2 numbering shift</a> - always cross-validate against the loader-call constant or the file's magic bytes.) So 0890 = title image, 0899 = options/config bundle + trailing overlay code.</p>
-</section>
-
-<section class="doc-section" id="system-ui-gap">
-  <h2>Pre-<code>init_data</code> system-UI gap (menu-glyph atlas + boot cursors)</h2>
-  <p>A separate 236&nbsp;KB / 118-sector unindexed region sits <strong>between the TOC and the first indexed entry</strong> (<code>init_data</code> at LBA&nbsp;121). The TOC ends at PROT.DAT offset <code>0x1800</code> (3 sectors); the first indexed payload starts at <code>0x3C800</code> (sector&nbsp;121). The gap is a packed bundle of system-UI TIMs - boot-time cursors, the menu-glyph small-caps font retail samples for the title menu rows ("NEW GAME" / "CONTINUE" / "OPTIONS"), and a handful of ornamental sprite strips. All TIMs are 4bpp + CLUT (a CLUT is a 16- or 256-colour palette stored as a row of framebuffer pixels) and target the bottom-right corner of PSX VRAM (<code>fb_x &gt;= 640</code>).</p>
-  <table>
-    <thead><tr><th>PROT.DAT offset</th><th>TIM dims</th><th>VRAM target</th><th>Purpose</th></tr></thead>
-    <tbody>
-      <tr><td><code>0x01858</code></td><td>tiny</td><td><code>(896,256)</code></td><td>boot cursor variant</td></tr>
-      <tr><td><code>0x018E0</code></td><td>256&times;192</td><td><code>(896,256)</code></td><td>large UI sprite sheet</td></tr>
-      <tr><td><code>0x07F40</code></td><td>256&times;256</td><td><code>(896,0)</code></td><td>dialog-font / large bitmap sheet</td></tr>
-      <tr><td><code>0x10178</code></td><td>256&times;32</td><td><code>(896,448)</code></td><td>AP / status-icon sprite sheet</td></tr>
-      <tr><td><strong><code>0x11218</code></strong></td><td><strong>256&times;256</strong></td><td><code>(960,256)</code></td><td><strong>menu-glyph small-caps font</strong> (NEW GAME / CONTINUE / &hellip;)</td></tr>
-      <tr><td><code>0x19438</code></td><td>240&times;24</td><td><code>(960,400)</code></td><td>UI sprite strip</td></tr>
-      <tr><td><code>0x1B80C</code></td><td>256&times;256</td><td><code>(640,0)</code></td><td>system sprite sheet</td></tr>
-    </tbody>
-  </table>
-  <h3>Menu-glyph atlas</h3>
-  <p>The TIM at <code>PROT.DAT[0x11218&hellip;0x11218 + 33312]</code> (256&times;256 @ 4bpp + 16&times;16 CLUT bank) is the small-caps font retail samples for the title-menu rows and the same shape elsewhere in the menu UI. Confirmed by pinning the in-RAM copy at vaddr <code>0x80106478</code> (sstate8, live title-menu state) against PROT.DAT - byte-equal modulo the runtime CLUT relocation. The atlas does NOT appear in any extracted PROT entry; it's strictly in this pre-<code>init_data</code> gap.</p>
-  <ul>
-    <li>Alphabet row: atlas <code>y=224&hellip;238</code>, 26 cells &times; 8 px wide on an 8 px pitch starting at <code>x=8</code>.</li>
-    <li>Digits row: atlas <code>y=209&hellip;220</code>, 10 cells with the same pitch.</li>
-    <li>Non-glyph debug content (a <code>&lt;DEMO&gt;</code> row, dev string, <code>FONT CLUT</code> palette-bar) is present but ignored by the engine.</li>
+  <ul class="bullets">
+    <li><strong>12 of 14 per-frame handlers are one shared tick</strong> (<code>0x80025EEC</code>), parameterised by the entry&rsquo;s <code>+0x14</code> word. Only world map (13) and menu (23) carry their own.</li>
+    <li><strong>The pause menu runs under CARD (mode 23), not field mode 3.</strong> Every menu-open save state holds <code>game_mode = 0x17</code>. The engine mirrors it: <code>BootSession</code> holds the world in <code>SceneMode::Menu</code>.</li>
+    <li><strong>Mode 23 runs no frame driver.</strong> Its per-frame handler calls an 18-instruction stub instead of the master frame driver, so retail advances no actor, effect, move VM or animation while the pause menu is up. <code>World::tick</code> suspends the same passes and keeps the frame-begin / frame-end passes running underneath.</li>
+    <li><strong>World map is a head swap.</strong> Mode 12&rsquo;s INIT saves the first <code>0x4000</code> bytes of the field overlay, loads PROT 0981 over them and restores them on exit; the world-map controller proper stays in 0897 (<a href="world-map.html">world map</a>).</li>
+    <li><strong>The mode word does not name the minigame.</strong> Modes 24/25 host all five warp minigames; the discriminator is the signed halfword <code>_DAT_8007BA34</code>, written by the field VM&rsquo;s door-warp arm as <code>op0 &minus; 100</code> and left standing while the minigame runs. Key on the pair, never on <code>0x19</code> alone - and <code>0x18</code> is the one-frame INIT half. Full chain: <a href="asset-loader.html#warp-flow">asset loader</a>.</li>
+    <li><strong>Overlay index arithmetic.</strong> Both overlay loaders resolve <code>param + 0x381</code> in the raw TOC, which is extraction entry <code>param + 0x37F</code> (<a href="../formats/cdname.html#numbering-space">the +2 shift</a>). No call site can produce params 0 or 1, so extraction entries 0895 / 0896 are unreachable from any static loader call.</li>
   </ul>
-  <p>CLUT row 0 renders the alphabet in solid red with magenta highlights; retail switches CLUT rows per context to read white / gold / dim. The clean-room engine sidesteps the CLUT-switching logic by decoding once to a stencil (pixel-index 0 &rarr; transparent, indices 1&hellip;15 &rarr; opaque white) and applying a <code>SpriteDraw::color</code> tint at draw time. The atlas builder lives in <code>crates/asset/src/menu_glyph_atlas.rs</code> (source pin + per-character rect helper) and <code>crates/engine-core/src/menu_glyph_atlas.rs</code> (RGBA8 stencil decode).</p>
-  <p>Extraction reads PROT.DAT directly via the <code>ProtIndex::prot_dat_raw_bytes(byte_offset, len)</code> accessor; the per-entry <code>entry_bytes</code> / <code>entry_bytes_extended</code> paths walk TOC indices and never visit this gap.</p>
-  <p><strong>Note on title-screen "NEW GAME" / "CONTINUE":</strong> The title menu rows are NOT rendered from this atlas - retail samples a pre-rendered band at <code>y=227..237</code> inside the title TIM itself (PROT 0890; see <code>TITLE_BAND_MENU_NEW_GAME</code> / <code>TITLE_BAND_MENU_CONTINUE</code> in <code>legaia_asset::title_pak</code>). The band carries both strings packed into a single 128&times;10 strip; the engine emits two <code>SpriteDraw</code>s sampling the left half (x=0..65) and right half (x=65..127). Selection is colour-coded: bright/white for the cursor row, dim/gray otherwise - there's no arrow cursor mark in retail.</p>
+  <p>The interpreters live in those overlays: the <a href="script-vm.html">field / event VM</a> in 0897, the <a href="effect-vm.html">effect VM cluster</a> in the battle overlay 0898, and the <a href="actor-vm.html">window-widget VM</a> in the menu overlay 0899. Slot-A overlays are mutually exclusive - see the residency figure on the <a href="index.html">subsystems index</a>.</p>
+  <details class="disclosure">
+    <summary>Details: next-mode field, bare INIT handlers, slot-B default</summary>
+    <div class="disclosure-body">
+      <p>Each 24-byte entry is <code>(name_ptr, &hellip;, next_mode: i16 at +0x0A, handler_ptr at +0x10, param at +0x14)</code>. <code>next_mode</code> is <code>-1</code> (self-managed) or <code>0</code> (fall back to mode 0) - the only two retail values; the word at <code>+0x08</code> reading <code>0xFFFF0000</code> is that <code>-1</code> over a zero low half, not a sentinel. <code>ModeEntry::next_mode</code> decodes it and the disc-gated <code>mode_table_reconcile</code> test cross-checks the engine&rsquo;s transcribed table field by field.</p>
+      <p>Three INIT handlers skip the &ldquo;reset, wait, load slot A, jump in&rdquo; wrapper. Mode 4 writes mode 0 and returns. Mode 16 <code>jal</code>s <code>0x801CE9C0</code> without loading anything - an address that is a function entry in no image on the disc, so it executes whatever sits at slot A <code>+0x1A8</code>: a retail-stripped dev path. Mode 20&rsquo;s <code>FUN_80055B6C</code> is the battle scene setup, resident in the executable. Mirrored as <code>engine_core::mode::mode_init_bare</code>.</p>
+      <p>Slot B&rsquo;s default (<code>FUN_80025BA0</code>) is the only runtime-decided load: it mirrors the summon-render flag <code>DAT_8007B6A8</code>, picks extraction 901 when set and 900 otherwise, and skips the load when that overlay is already resident. Two other constant loads: the effect-data init uses raw <code>0x3D5</code> (= extraction 979) and the CARD-mode init raw <code>0x37E</code> (= 892, an <code>asset::pack</code> of TIMs); <code>legaia_asset::boot_overlay</code> ports the arithmetic and pins each by content.</p>
+    </div>
+  </details>
+  <details class="disclosure">
+    <summary>History: off-by-2 loader arithmetic</summary>
+    <div class="disclosure-body">
+      <p>Reading <code>+ 0x381</code> as an extraction index placed the mode-0 overlay at 973 (the 1-sector <code>OTHER2</code> dev module), the mode-2 overlay at 899 (the menu) and the minigames at 0896. All three are the same +2 shift; see <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p>
+    </div>
+  </details>
 </section>
 
-<section class="doc-section" id="title-overlay-source">
-  <h2>Title-overlay source on disc</h2>
-  <p>The title-overlay code (function <code>FUN_801DD35C</code> at <code>0x801DD35C</code>, the captured <code>overlay_title.bin</code> 256-KiB window) lives in an <strong>unindexed 60-sector gap inside <code>PROT.DAT</code></strong> between TOC entries 899 and 900. The per-entry size formula stops at each TOC entry's claimed end, so a naive extractor never sees the gap bytes; the extractor applies a <code>max(indexed, footprint)</code> rule and surfaces the gap as the trailing portion of <code>extracted/PROT/0899_xxx_dat.BIN</code>.</p>
-  <table>
-    <thead><tr><th>Range (PROT.DAT)</th><th>Sectors</th><th>Bytes</th><th>Contents</th></tr></thead>
+<section class="doc-section" id="toc-loader">
+  <h2>Archive directory and CD reads</h2>
+  <p>The TOC is read exactly once. After that, &ldquo;give me entry N&rdquo; is a table lookup, and &ldquo;give me <code>h:\PROT\FIELD\town01\&hellip;</code>&rdquo; is a <a href="../formats/cdname.html">CDNAME</a> name lookup followed by the same table lookup. An entry&rsquo;s size is the sector gap to the next entry, exactly what retail&rsquo;s own span routine computes (<a href="../formats/prot.html">PROT</a>).</p>
+  <table class="data-table">
+    <thead><tr><th>Resolver</th><th>Input</th><th>Used by</th></tr></thead>
     <tbody>
-      <tr><td><code>0x5C3D800..0x5C44800</code></td><td>47227..47241</td><td>28&nbsp;672</td><td>PROT 899 indexed payload (the options / config-menu bundle - loaded by the mode-22 CARD init as the menu overlay; carries the config-menu strings + small config-screen TIMs)</td></tr>
-      <tr><td><code>0x5C44800..0x5C62800</code></td><td>47241..47301</td><td><strong>122&nbsp;880</strong></td><td><strong>Unindexed gap = title overlay code</strong></td></tr>
-      <tr><td><code>0x5C62800..0x5C67800</code></td><td>47301..47311</td><td>20&nbsp;480</td><td>PROT 900 indexed payload</td></tr>
+      <tr><td>index-based</td><td>PROT entry number &rarr; LBA</td><td>streaming loader, both overlay loaders</td></tr>
+      <tr><td>path-based</td><td>dev-style path &rarr; CDNAME index &rarr; the index resolver</td><td>most retail code paths (<code>data\battle\efect.dat</code>, scene paths)</td></tr>
     </tbody>
   </table>
-  <p>The title-tick body (<code>FUN_801DD35C</code>) source is at <code>PROT.DAT</code> offset <code>0x5C4C344</code> (gap-relative <code>+0x7B44</code>, sector +15 within the gap).</p>
-  <h3>How the load happens</h3>
-  <p>The SCUS boot sequence issues a multi-sector <code>ReadN</code> starting at PROT 899's LBA (47227) and reads ~74 sectors of contiguous on-disc data - crossing PROT 899's TOC-claimed end (47241) into the unindexed gap. The CD-DMA primitive (<code>FUN_8005D9A0</code>) breaks the read into 5 sequential DMA bursts, each landing into a different point in the overlay window (capture: <code>scripts/pcsx-redux/autorun_title_overlay_writer_hunt.lua</code> with <code>LEGAIA_NO_SSTATE=1</code>). PCSX-Redux Write breakpoints catch DMA writes from CD-DMA-channel-3.</p>
-  <h3>Why the TOC misses it</h3>
-  <p>The historical per-entry size formula <code>size_sectors = toc[p+5] - toc[p+3] + 4</code> gives 14 sectors for PROT 899, but the on-disc contiguous range to PROT 900's LBA is 74 sectors. The formula appears to describe an "indexed" subset of each entry's disc footprint, with trailing unindexed bytes carrying overlay code the SCUS loader reads via an explicit larger sector count. The extractor honors <code>max(indexed_size_sectors, footprint_sectors)</code> - see <a href="../formats/prot.html">PROT TOC</a>.</p>
+  <p>Every load ends as &ldquo;seek to a sector, DMA bytes into RAM&rdquo; through Legaia&rsquo;s own layered CD driver - hardware registers and callbacks, not the PsyQ <code>libcd</code> path. The stack is <em>documented, not ported</em>: the engine reads a disc image directly. Every loader is dual-mode, keyed on the dev/retail flag: the retail branch takes the TOC-index path, the dev branch opens a host path through a <code>break</code> trap real hardware cannot service.</p>
+  <details class="disclosure" id="cd-read-stack">
+    <summary>Details: the CD-read API stack, bottom-up</summary>
+    <div class="disclosure-body">
+      <table class="data-table">
+        <thead><tr><th>Function</th><th>Role</th></tr></thead>
+        <tbody>
+          <tr><td><code>FUN_8005D9A0</code></td><td>CD-DMA-channel-3 synchronous read primitive; the DMA trigger is at <code>0x8005DA50</code> inside it</td></tr>
+          <tr><td><code>FUN_8005C42C</code> / <code>FUN_8005C328</code></td><td>BCD-MSF &harr; LBA, standard <code>(min*60 + sec)*75 + frame &minus; 150</code></td></tr>
+          <tr><td><code>FUN_8005DBB4</code></td><td>ISO9660 directory lookup: filename &rarr; <code>{msf[3], size, &hellip;}</code></td></tr>
+          <tr><td><code>FUN_8005E788</code> / <code>FUN_8005E574</code></td><td>streaming-read starter + per-IRQ callback; cursor <code>DAT_800796CC</code>, sectors left <code>DAT_800796D8</code>, LBA <code>DAT_800796E4</code></td></tr>
+          <tr><td><code>FUN_8005E9A4</code></td><td>public streaming read <code>(sector_count, dest, mode_flags)</code>; sector size 2048 / 2336 (XA) / <code>0x246</code> by <code>mode_flags &amp; 0x30</code></td></tr>
+          <tr><td><code>FUN_8005EA84</code></td><td>completion sync; <code>0x4B0</code>-vsync overall timeout, a <code>0x3C</code>-vsync sector stall restarts the read. Port <code>engine-core::cd_dma::stream_read_sync</code></td></tr>
+          <tr><td><code>FUN_8005E4D4</code> / <code>FUN_8003D3C4</code></td><td>sync LBA reader; path-based ISO9660 loader for <code>.STR</code> / <code>.XA</code> files</td></tr>
+          <tr><td><code>FUN_8003E4E8</code></td><td>boot-time TOC loader</td></tr>
+          <tr><td><code>FUN_8003E800</code></td><td>async LBA loader; queues via <code>gp+0x97C</code> / <code>gp+0x894</code>, kicked by <code>FUN_8003F128</code></td></tr>
+          <tr><td><code>FUN_8003DDA0</code></td><td>index-based streaming enqueue: 8-byte <code>(idx, byte_offset)</code> descriptors at <code>gp+0x1A8</code>, cursor advanced by <code>size &lt;&lt; 11</code></td></tr>
+          <tr><td><code>FUN_8003DAA8</code></td><td>load-kick / completion driver (in-progress flag <code>_DAT_8007B876 &amp; 1</code>)</td></tr>
+          <tr><td><code>FUN_8003EBE4</code> / <code>FUN_8003EC70</code></td><td>overlay loaders A / B; differ only in destination pointer and current-id tracker (<code>0x8007BC3C</code> / <code>0x8007BC4C</code>)</td></tr>
+          <tr><td><code>FUN_8005DAB0</code> / <code>FUN_8005D5F8</code> / <code>FUN_8005D648</code></td><td>CD response dispatcher (cause <code>0x4</code> data-ready, <code>0x2</code> completion), re-arm, init / reset</td></tr>
+        </tbody>
+      </table>
+      <p>The BIOS-trampoline stubs in this cluster (<code>FUN_8005BD30</code> = B(<code>0x07</code>), <code>FUN_8005DB9C</code> = B(<code>0x3F</code>), the <code>FUN_80056648</code> family) are syscall shims with no game logic.</p>
+    </div>
+  </details>
 </section>
 
 <section class="doc-section" id="title-overlay-state">
-  <h2>Title-screen overlay state</h2>
-  <p>The title-screen overlay loads into <code>0x801E0000+</code> during the boot sequence and keeps its mode state in a struct at <code>0x801EF018</code>. Known fields:</p>
-  <table>
-    <thead><tr><th>Offset</th><th>Width</th><th>Field</th></tr></thead>
+  <h2>The title screen</h2>
+  <p>The title screen is a small program of its own: an attract countdown that eventually plays the opening movie, a two-row menu, a memory-card check, and the NEW GAME / CONTINUE launch. It is <strong>not one of the 14 modes</strong> - its tick is loaded by a pre-dispatch boot routine, so &ldquo;which mode-table row is the title screen?&rdquo; has an empty answer.</p>
+  <table class="data-table">
+    <thead><tr><th>Piece</th><th>Where</th><th>Note</th></tr></thead>
     <tbody>
-      <tr><td><code>+0x154</code></td><td>u32</td><td>Title-attract idle countdown (<code>_DAT_801EF16C</code>). Initialized to <code>0x8000</code>; decremented per-frame by <code>_DAT_1F800393</code> (the global per-frame scalar - same byte used by <code>World::tick_move_vms_with_delta</code>); underflow writes the master game-mode index to <code>0x1A</code> (= STR FMV mode 26) and zeroes the FMV id at <code>_DAT_8007BA78</code> &rarr; <code>MV1.STR</code>. See <a href="cutscene.html">cutscene</a>.</td></tr>
-      <tr><td><code>+0x158</code></td><td>u32</td><td>Title-overlay frame counter (<code>_DAT_801EF170</code>). Incremented unconditionally every tick.</td></tr>
+      <tr><td>tick function</td><td><code>FUN_801DD35C</code>, in the overlay</td><td>3,026 instructions; the first ~250 fan out through a 25-entry sub-mode jump table</td></tr>
+      <tr><td>state struct</td><td><code>0x801F0000</code> (+ a sibling block at <code>0x801EF014..0x801EF200</code>)</td><td>sub-mode selector at <code>+0x204</code>; cursor grid at <code>+0x1F4</code> / <code>+0x1F8</code>; linear cursor at <code>+0x1FC</code></td></tr>
+      <tr><td>attract countdown</td><td><code>0x801EF16C</code></td><td>starts at <code>0x8000</code> (a disc byte, not computed), minus the per-frame scalar each tick; underflow writes mode <code>0x1A</code> and FMV id 0 &rarr; <code>MV1.STR</code> (<a href="cutscene.html">cutscene</a>)</td></tr>
+      <tr><td>menu sub-mode</td><td><code>0x10</code></td><td>two rows, cursor <code>_DAT_8007B820</code>; confirm stashes the row and enters <code>0x14</code></td></tr>
+      <tr><td>launch</td><td>sub-modes <code>0x16</code> fade &rarr; <code>0x06</code> init_game</td><td>writes mode word <code>2</code> at <code>0x801DFC00</code> and scene id <code>opdeene</code> into <code>0x8007050C</code>; CONTINUE detours through the card-load path first</td></tr>
     </tbody>
   </table>
-  <p>Initial values are <strong>disc bytes</strong>: the CD-DMA-channel-3 primitive <code>FUN_8005D9A0</code> copies the overlay image (initialized data included) into the overlay window, and a write-watch on the countdown fires at the DMA-trigger instruction <code>0x8005DA4C</code> inside it. The countdown's <code>0x8000</code> sentinel is therefore part of the overlay's on-disc initialized data, not computed by an init routine. (An earlier reading attributed this to a &ldquo;bulk-initializer <code>FUN_8005DA40</code> walking a pointer table <code>_DAT_800795B4</code>&rdquo; &mdash; both artifacts of a Ghidra-promoted intra-function label.)</p>
-  <h3>Tick function</h3>
-  <p>The per-frame tick function is <code>FUN_801DD35C</code> (entry <code>0x801DD35C</code>, 12&nbsp;104 bytes / 3&nbsp;026 instructions, in the title overlay at <code>0x801C0000+</code>, <strong>not</strong> in SCUS). Pinned via a PCSX-Redux watchpoint on the countdown - the BP captured <code>pc=0x801DDCCC</code> on the exact <code>sw v0, -0xe94(a0)</code> instruction that writes the decremented value back. Full disassembly + decompile in <code>ghidra/scripts/funcs/overlay_title_801ddccc.txt</code>; capture pipeline in <code>scripts/pcsx-redux/autorun_countdown_trigger.lua</code> (slot-8 save state default; outputs RAM + screenshot + regs to <code>captures/boot_walk/overlay_title.bin*</code>).</p>
-  <p>Decrement sequence (around <code>0x801DDCB0..0x801DDCCC</code>):</p>
-  <pre><code>lui   a0, 0x801f
-lui   v1, 0x1f80
-lbu   v1, 0x393(v1)     ; v1 = *_DAT_1F800393  (per-frame scalar)
-lw    v0, -0xe94(a0)    ; v0 = *0x801EF16C     (countdown, u32)
-nop
-subu  v0, v0, v1        ; v0 -= scalar
-bgez  v0, 0x801dfc3c    ; if signed &gt;= 0, branch to "still counting"
-_sw   v0, -0xe94(a0)    ; &lt;-- captured pc: store decremented value
-</code></pre>
-  <p>The "still counting" path branches to <code>0x801DFC3C</code> (the normal per-frame attract loop: rendering, input, cursor logic). The "underflow" path falls through past <code>0x801DDCCC</code> into a block that prepares draw primitives via <code>0x80058490</code> and writes the master game-mode index <code>_DAT_8007B83C = 0x1A</code>, zeroing <code>_DAT_8007BA78</code> (FMV id slot) &rarr; <code>MV1.STR</code>.</p>
-  <h3>Sub-mode dispatcher</h3>
-  <p>The first ~250 instructions of <code>FUN_801DD35C</code> fan out via a 25-entry jump table at <code>0x801CF244</code> keyed on <code>state[+0x204]</code>. The JT, the state-struct field offsets, and the observed <code>state[+0x204] = N</code> transitions are pinned in <code>legaia_engine_vm::title_overlay</code>. Four modes are semantically labelled (<code>Init</code>, <code>Idle</code>, <code>AttractIdle</code>, <code>AttractDelay</code>); the other 21 carry <code>Phase0xNN</code> placeholders with traced-transition docstrings.</p>
-  <p>Standout pin: <strong><code>Phase06</code> writes <code>_DAT_8007B83C = 0x02</code> at <code>0x801DFC00</code></strong> - the title-screen &rarr; main-game master-mode transition, exported as <code>MASTER_GAME_MODE_FIELD_LAUNCH</code> + <code>PHASE06_LAUNCH_GAME_PC</code>. Engine-side observers can detect the launch by watching that single write site.</p>
-  <p><strong>This sub-mode SM is the front-end title-menu + memory-card manager + new-game/continue launcher</strong> - not an opening-narration/name-entry sequence. Sub-mode <code>0x10</code> is the <strong>menu</strong> (2-option cursor <code>_DAT_8007B820</code>; idle-timeout &rarr; master-mode <code>0x1A</code> = attract/opening FMV); <code>0x15</code> is the <strong>card-check</strong> poll. NEW GAME and CONTINUE both funnel <strong>menu &rarr; fade (<code>0x16</code>) &rarr; init_game (<code>0x06</code>) &rarr; master-mode 2 (field)</strong>; <code>init_game</code> writes the opening <em>scene id</em> <code>opdeene</code> (the prologue cutscene, CDNAME/PROT #748) into the active-scene-name buffer (<code>0x8007050C</code>).</p>
-  <p>The opening narration and naming happen <strong>downstream of the field launch</strong>, as a <strong>five-scene engine-rendered chain</strong> (zero input, master mode 3): <code>opdeene</code> (the Genesis-tree creation-myth crawl, &ldquo;It was the Seru.&rdquo; - not an STR FMV) &rarr; <code>opstati</code> (Seru intro) &rarr; <code>opurud</code> (Mist story) &rarr; <code>map01</code> (the world-map fly-in: title card + crawl over an aerial approach of Rim Elm) &rarr; <code>town01</code> (establishing pan &rarr; the <strong>name-entry menu overlay</strong> &rarr; Vahn's walk-out &rarr; free roam). The new-game data-init (gold / flags / stats) runs after the field launch. See <a href="cutscene.html#opdeene">the cutscene page</a> for the chain mechanics.</p>
+  <p>Four sub-modes carry names in <code>legaia_engine_vm::title_overlay</code> (<code>Init</code>, <code>Idle</code>, <code>AttractIdle</code>, <code>AttractDelay</code>); the other 21 are <code>Phase0xNN</code> placeholders with traced transitions. The whole sub-mode machine is the front-end menu, memory-card manager and launcher - not an opening narration or name-entry sequence.</p>
   <details class="disclosure">
-    <summary>Evidence: sub-mode decomp + captured opening order</summary>
-    <p>The full C-decomp (a <code>switch</code> over <code>DAT_801f0204</code>, cases <code>0x00..0x18</code>) is all title-menu / memory-card UI: the strings are card/save messages (<code>Now checking MEMORY CARD</code>, <code>Do you wish to format?</code>, <code>Load/Save successful</code>, &hellip;) and <code>FUN_801E3EE0</code>/<code>FUN_801E36C4</code> are the centered card-message text+box drawers. The <code>opdeene</code> write is verified live (<code>opdeene</code> at the intro save state, <code>town01</code> at the Rim Elm saves), so <code>s_opdeene</code> is a scene id, not a display name. The captured opening order comes from the save-state corpus <code>new_game_cutscene_intro_a</code> / <code>rim_elm_zoom_intro</code> / <code>vahn_walks_out</code> / <code>name_input_ui</code>.</p>
+    <summary>Details: pad-mask layout the title tick reads</summary>
+    <div class="disclosure-body">
+  <p>The per-frame button mask (<code>_DAT_8007B850</code>) and newly-pressed mask (<code>_DAT_8007B874</code>) are <strong>packed</strong>: the face / shoulder byte sits in bits 0..7 and the d-pad / system byte in bits 8..15 - not the raw PSX pad word. Anything that ingests retail RAM-side input must translate; <code>engine-core::input::PadButton</code> uses the raw layout.</p>
+  <table class="data-table">
+    <thead><tr><th>Bit</th><th>Button</th><th>Bit</th><th>Button</th></tr></thead>
+    <tbody>
+      <tr><td>0</td><td>L2</td><td>8</td><td>Select</td></tr>
+      <tr><td>1</td><td>R2</td><td>9</td><td>L3</td></tr>
+      <tr><td>2</td><td>L1</td><td>10</td><td>R3</td></tr>
+      <tr><td>3</td><td>R1</td><td>11</td><td>Start</td></tr>
+      <tr><td>4</td><td>Triangle</td><td>12</td><td>Up</td></tr>
+      <tr><td>5</td><td>Circle</td><td>13</td><td>Right</td></tr>
+      <tr><td>6</td><td>Cross</td><td>14</td><td>Down</td></tr>
+      <tr><td>7</td><td>Square</td><td>15</td><td>Left</td></tr>
+    </tbody>
+  </table>
+  <p>Masks the title tick tests: <code>0x44</code> = L1|Cross (confirm), <code>0x21</code> = L2|Circle (cancel), <code>0x844</code> = Start|L1|Cross (press start), <code>0xF5</code> = any face button + L1 + L2.</p>
+    </div>
   </details>
-  <h3>New Game boot chain (title &rarr; field)</h3>
-  <p>Confirming <strong>NEW GAME</strong> is what crosses from the title overlay into the 28-mode table. The menu handler reads the live cursor (<code>state[+0x1FC]</code>), and on <code>L1|Cross</code> (<code>pad &amp; 0x44</code>) stashes the chosen row at <code>state[+0x200]</code> and advances to sub-mode <code>0x14</code>; NEW GAME is row 0 (a non-zero row, CONTINUE, routes to the save/card load path). The row-0 sub-phases reach the launch write above:</p>
-  <ol class="bullets">
-    <li><strong>Mode 2 (field INIT).</strong> <code>_DAT_8007B83C = 2</code> &rarr; the dispatcher runs <code>FUN_80025B64</code>, which loads the field overlay (<code>FUN_8003EBE4(2)</code>, PROT 897) and calls the per-scene initializer <code>FUN_801D6704</code>.</li>
-    <li><strong>Field scene init.</strong> <code>FUN_801D6704</code> reads the resident map id and loads geometry + the scene's MAN (its script/event-data container) via <code>FUN_8003AEB0</code> + camera + fog + BGM through the field loader <code>FUN_8001F7C0</code>, allocates the game-mode work buffer, then writes <code>_DAT_8007B83C = 3</code>.</li>
-    <li><strong>Mode 3 (field RUN).</strong> The field per-frame loop ("MAIN MODE", <code>game_mode 0x03</code>) takes over. So modes 2/3 are the field/town gameplay INIT/RUN pair - <em>not</em> an options screen, despite the dev label.</li>
-  </ol>
-  <p>The mode-transition control flow is mirrored in <code>legaia_engine_vm::title_overlay</code> (<code>MASTER_GAME_MODE_FIELD_RUN</code>, <code>FIELD_SCENE_INIT_PC</code>, <code>MENU_INDEX_NEW_GAME</code>) and <code>World::begin_new_game</code> in <code>engine-core</code>. The <em>fresh-state seed</em> a new game establishes is the new-game data-init <code>FUN_80034A6C</code> (reached via the boot mode initializer <code>FUN_8001DCF8</code>):</p>
-  <ul class="bullets">
-    <li><strong>Gold</strong> &rarr; party gold <code>_DAT_8008459C</code> is set to a hardcoded <strong>500</strong> (a constant, not a template field). Mirror: <code>NEW_GAME_STARTING_GOLD</code>.</li>
-    <li><strong>Story flags</strong> &rarr; the routine zeroes a ~<code>0x200</code>-byte story-flag region, so a New Game starts with all flags clear.</li>
-    <li><strong>Party stats</strong> &rarr; it calls <code>FUN_800560B4</code>, which expands the <code>SCUS_942.54</code> starting-party template into the live records (stride <code>0x414</code>), copying each member's <em>default name</em> (<code>Vahn</code>). This default is what the downstream <strong>name-entry</strong> screen (&ldquo;Select your name.&rdquo;, save-state <code>name_input_ui</code>) pre-fills and lets the player overwrite - that screen fires in the field/event flow after the opening, not here.</li>
-    <li><strong>Opening scene</strong> &rarr; the front-end launcher (<code>init_game</code>), not this data seed, sets the opening scene: NEW GAME enters <code>opdeene</code> (the prologue cutscene) first, and the opening chain reaches <code>town01</code> (Rim Elm) through <code>opstati</code> / <code>opurud</code> / <code>map01</code>.</li>
-  </ul>
-  <p><code>FUN_801D6704</code> is generic field entry and reads this seeded state from globals.</p>
-  <h3>The opening scene chain + the FUN_801D1344 intro skip</h3>
-  <p>The natural (zero-input) opening chains scene to scene by <strong>script execution</strong>: <code>opdeene</code>'s timeline record P2[18] ends with a field-VM <code>0x3F</code> SceneChange to <code>opstati</code>, which chains to <code>opurud</code>, then to <code>map01</code>, which scene-changes into <code>town01</code> at tile <code>(0x1D, 0x5B)</code>. Each leg's opening record spawns via op <code>0x44</code> SPAWN_RECORD in the entry script (<code>opdeene</code>/<code>opstati</code>/<code>opurud</code>) or the walk-on tile trigger (<code>FUN_801D1EC4</code> &rarr; <code>FUN_801D5630</code> &rarr; <code>FUN_8003BDE0</code>; <code>map01</code>/<code>town01</code>) - live-probe-pinned (exec-BP on <code>FUN_8003BDE0</code>, exactly 5 hits). See <a href="cutscene.html#opdeene">the cutscene page</a>.</p>
-  <p>On top of that, a <strong>confirm press at any time after <code>opdeene</code>'s timeline arms <code>GFLAG 26</code></strong> fires a name-based scene-change packet straight to <code>town01</code> - the <strong>intro SKIP</strong> (its former reading as the required hand-off gate is superseded: the chain advances by itself). The packet path is not the map-id door-warp (<code>0x3E</code> / <code>FUN_80025980</code>) - the door-warp handler backs up the active scene name into <code>0x8007BAE8</code>, and that buffer is <strong>empty in the <code>town01</code> opening saves</strong>.</p>
-  <p><code>FUN_8001FD44(name_ptr)</code> is the scene-change-packet API: it copies the target name into <code>0x8007050C</code>, syncs it to the active buffer <code>0x80084548</code> (<code>FUN_8001D7F8</code>), and stages the load (gated retail-vs-debug on <code>_DAT_8007B8C2</code>; <code>s_ERR_CHANGE_PACKET</code> guards re-entry). The per-frame field/cutscene controller <code>FUN_801D1344</code> issues the skip as a one-shot, flag- and pad-gated block:</p>
-  <pre><code>if (_DAT_8007b868 == 0 &amp;&amp; (_DAT_1f800394 &amp; 0x4000000) &amp;&amp; (_DAT_8007b850 &amp; 0x100)) {
+  <details class="disclosure">
+    <summary>Details: the countdown instruction and the extended state struct</summary>
+    <div class="disclosure-body">
+      <pre><code>lui   a0, 0x801f
+lui   v1, 0x1f80
+lbu   v1, 0x393(v1)     ; per-frame scalar  (_DAT_1F800393)
+lw    v0, -0xe94(a0)    ; countdown          (0x801EF16C)
+subu  v0, v0, v1
+bgez  v0, 0x801dfc3c    ; still counting: normal attract loop
+_sw   v0, -0xe94(a0)    ; pc 0x801DDCCC - the watchpoint hit
+</code></pre>
+      <table class="data-table">
+        <thead><tr><th>Address</th><th>Offset</th><th>Use</th></tr></thead>
+        <tbody>
+          <tr><td><code>0x801EF14C</code></td><td><code>-0xEB4</code></td><td>slider X, clamped <code>[0, 0x2C]</code>; step = scalar &times; 8</td></tr>
+          <tr><td><code>0x801EF160</code></td><td><code>-0xEA0</code></td><td>fade / sweep accumulator, clamp <code>0x1000</code></td></tr>
+          <tr><td><code>0x801EF170</code></td><td><code>-0xE90</code></td><td>frame counter, incremented every tick</td></tr>
+          <tr><td><code>0x801EF190</code> / <code>194</code> / <code>1A0</code></td><td><code>-0xE70..</code></td><td>alpha A / B / C, clamp <code>0x1000</code></td></tr>
+          <tr><td><code>0x801F0204</code></td><td><code>+0x204</code></td><td>sub-mode dispatcher, jump table at <code>0x801CF244</code></td></tr>
+          <tr><td><code>0x801F0230</code></td><td><code>+0x230</code></td><td>top-of-tick early-out guard</td></tr>
+        </tbody>
+      </table>
+      <p>The tick draws through three executable-side helpers ported in <code>legaia_engine_vm::title_prim</code>: the <code>ClearImage</code> rect-fill queue, the <code>MoveImage</code> VRAM copy, and the sprite-descriptor dispatcher (<code>SpriteDescriptor { tag, flags, rect, pixel_data_ptr }</code>, alpha-OR pre-pass under <code>flags &amp; 8</code>, width divisor from <code>flags &amp; 3</code>). The overlay-side text and box drawers shared with the menu / save UI are a separate port.</p>
+    </div>
+  </details>
+</section>
+
+<section class="doc-section" id="title-overlay-source">
+  <h2>Where the title overlay lives on disc</h2>
+  <p>The title code is the <strong>tail of PROT entry 0899</strong> - the same entry whose head is the options-menu bundle. It is streamed raw and uncompressed straight into the overlay window: a multi-sector read from the entry&rsquo;s LBA (47227) covering its 74 sectors, in five DMA bursts that all land inside the entry.</p>
+  <details class="disclosure">
+    <summary>Details: sector ranges, DMA bursts and the embedded TIMs</summary>
+    <div class="disclosure-body">
+  <table class="data-table">
+    <thead><tr><th>PROT.DAT range</th><th>Sectors</th><th>Contents</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x5C3D800..0x5C44800</code></td><td>47227..47241</td><td>0899 head: options / config-menu strings + small config TIMs</td></tr>
+      <tr><td><code>0x5C44800..0x5C62800</code></td><td>47241..47301</td><td>0899 tail: title-overlay code + data, incl. two embedded UI TIMs</td></tr>
+      <tr><td><code>0x5C62800..</code></td><td>47301..</td><td>0900, the slot-B summon-render pair</td></tr>
+    </tbody>
+  </table>
+      <table class="data-table">
+        <thead><tr><th>Burst</th><th>RAM</th><th>Entry offset</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td><code>0x801CF818</code></td><td><code>+0x1000</code></td></tr>
+          <tr><td>2</td><td><code>0x801D4818</code></td><td><code>+0x6000</code></td></tr>
+          <tr><td>3</td><td><code>0x801D9818</code></td><td><code>+0xB000</code></td></tr>
+          <tr><td>4</td><td><code>0x801DD018</code></td><td><code>+0xE800</code></td></tr>
+          <tr><td>5</td><td><code>0x801E4818</code></td><td><code>+0x16000</code></td></tr>
+        </tbody>
+      </table>
+      <p>The tick body sits at entry offset <code>+0xEB44</code>, byte-identical to the captured <code>overlay_title.bin</code>. Two TIMs are embedded in the data segment: <code>0x801E5120</code> (entry <code>+0x16908</code>, the save-menu UI atlas) and <code>0x801EE120</code> (<code>+0x1F908</code>, the 14-frame memory-card icon strip - <a href="save-screen.html">save screen</a>).</p>
+    </div>
+  </details>
+  <details class="disclosure">
+    <summary>History: the &ldquo;unindexed 60-sector gap&rdquo;</summary>
+    <div class="disclosure-body">
+      <p>A superseded entry-size expression gave 0899 only 14 sectors, and the missing 60 became a &ldquo;gap the TOC misses&rdquo;. The real size is the gap to the next entry, 74 sectors. The same artifact produced every &ldquo;hidden overlay after entry N&rdquo; reading; see <a href="../formats/prot.html">PROT</a>.</p>
+    </div>
+  </details>
+</section>
+
+<section class="doc-section" id="new-game-chain">
+  <h2>What NEW GAME launches</h2>
+  <p>Press NEW GAME and you do not get a name-entry screen. You get a scripted opening - the creation-myth crawl, the Seru intro, the Mist story, a fly-in over Rim Elm - and only once you stand in Rim Elm does &ldquo;Select your name&rdquo; appear. Every leg is an ordinary field scene chained by script, not a movie, and a confirm press skips the whole thing.</p>
+  <div class="flow">
+    <span class="num">1</span><span class="layer">Mode 2</span><span class="desc">the field INIT handler streams the field overlay (PROT 0897) and calls the per-scene initializer</span><span class="crate">mode table</span>
+    <span class="num">2</span><span class="layer">Scene init</span><span class="desc">reads the resident scene id, loads geometry + the MAN (the scene&rsquo;s script-and-data bundle), camera, fog and BGM, then writes mode 3</span><span class="crate">field overlay</span>
+    <span class="num">3</span><span class="layer">opdeene</span><span class="desc">creation-myth crawl; its timeline arms the skip flag near its top and ends with a scene change</span><span class="crate">field VM</span>
+    <span class="num">4</span><span class="layer">opstati &rarr; opurud &rarr; map01</span><span class="desc">Seru intro, Mist story, world-map fly-in with the title card</span><span class="crate">field VM</span>
+    <span class="num">5</span><span class="layer">town01</span><span class="desc">arrival at tile <code>(0x1D, 0x5B)</code>; the opening timeline pans, opens name entry, then plays Vahn&rsquo;s walk-out</span><span class="crate">menu overlay</span>
+  </div>
+  <p><strong>The fresh-state seed.</strong> The new-game data init sets gold to a hard-coded 500, zeroes a <code>~0x200</code>-byte story-flag region, and expands the executable&rsquo;s <a href="../formats/new-game-table.html">starting-party template</a> into the live <code>0x414</code>-byte records, default names included. The opening scene comes from the title launcher, not from this seed. Port: <code>World::begin_new_game</code>.</p>
+  <p><strong>The intro skip.</strong> Once <code>opdeene</code>&rsquo;s timeline sets scratchpad flag bit 26 (field-VM op <code>0x2E</code> <code>GFLAG_SET</code>, operand <code>0x1A</code>), a confirm press at any time fades out, sets the <code>town01</code> entry coordinates, clears the bit so it fires once, and issues a name-based scene-change packet to <code>town01</code>. The target name is an overlay literal, which is why <code>opdeene</code>&rsquo;s own data holds no <code>town01</code> string. Port: <code>World::take_prologue_handoff</code>, armed by execution when the timeline runs.</p>
+  <p><strong>Name entry</strong> runs in <code>town01</code> under mode 3, opened by field-VM op <code>0x49</code> sub-op 3 in the opening timeline record (P2[3], body offset <code>0x02C6</code>). The overlay draws a 6&times;17 ASCII grid in three column groups (upper / lower / digits); the cursor walks a 7&times;17 space whose last row is Backspace / Space / End, and End on a non-empty name opens the Yes/No commit. The committed name lands at record <code>+0x2A7</code>. Port: <code>engine-core::name_entry</code>, rendered by <code>name_entry_draws_for</code>; a story flag on the record keeps a later visit from re-prompting.</p>
+  <details class="disclosure">
+    <summary>Details: the skip block, the packet API, the name-entry grid</summary>
+    <div class="disclosure-body">
+      <pre><code>if (_DAT_8007b868 == 0 &amp;&amp; (_DAT_1f800394 &amp; 0x4000000) &amp;&amp; (_DAT_8007b850 &amp; 0x100)) {
     FUN_801d58f0(2, 0, 0xffffff, 0, 0x3c, -1);   // fade out
     _DAT_80073ef4 = 0xec0;  _DAT_80073ef8 = 0x2dc0;   // town01 entry coords
-    _DAT_1f800394 &amp;= 0xfbffffff;                  // clear bit 0x4000000 (fire-once)
+    _DAT_1f800394 &amp;= 0xfbffffff;                  // clear bit 26 (fire-once)
     func_0x8001fd44(s_town01_801ce82c, 3);        // next scene = "town01"
 }</code></pre>
-  <p>The target name <code>"town01"</code> is the <strong>overlay literal at <code>0x801CE82C</code></strong> - which is why scanning <code>opdeene</code>&rsquo;s per-scene data (MAN + event scripts) finds no <code>town01</code> string. The pad bit <code>_DAT_8007B850 &amp; 0x100</code> is the player&rsquo;s <strong>skip press</strong> - it fires mid-narration too (the crawl is timer-driven, not confirm-paced). The executable&rsquo;s default scene name is also <code>town01</code>: <code>FUN_8001D424</code> loads the dev file <code>initmap.txt</code> into <code>0x8007050C</code>; <code>init_game</code> overrides it with <code>opdeene</code>, and the natural chain (or the skip) sets it back.</p>
-  <p><strong>Trigger flag (<code>_DAT_1F800394 &amp; 0x4000000</code>, bit 26).</strong> Set by the field VM&rsquo;s generic scratchpad-bit opcode <strong><code>GFLAG_SET</code> (op <code>0x2E</code>, operand <code>0x1A</code>)</strong> - the <code>FUN_801DE840</code> dispatcher runs <code>_DAT_1f800394 |= 1 &lt;&lt; (idx &amp; 0x1f)</code>, and <code>idx = 0x1A</code> is bit 26. The only <code>GFLAG_SET 26</code> in <code>opdeene</code>&rsquo;s decoded MAN is <strong>not</strong> in the partition-1 per-actor/scene-entry scripts; it lives in the <strong>last record of the MAN&rsquo;s third record partition</strong> (partition index 2, count 19; record start at MAN file offset <code>0xA47</code>, the <code>2E 1A</code> at <code>0xA5E</code> = body <code>+0x17</code>) - the cutscene-timeline script arms the skip bit <strong>near its top</strong>, right after the opening colour reset (op <code>0x34</code>, instant neutral), then stages the whole vignette choreography and ends with the <code>0x3F</code> SceneChange to <code>opstati</code>. (Earlier notes guessing a <code>0x4C</code> MenuCtrl sub-op in record 0 are falsified - record 0 has no <code>0x2E</code>/<code>0x2F</code> byte at all.)</p>
-  <p><strong>Clean-room port.</strong> <code>World::take_prologue_handoff</code> mirrors the <code>FUN_801D1344</code> gate: while the opening chain is playing (<code>World::opening_chain_active</code>, set at the <code>opdeene</code> entry and carried through the later legs) and the trigger bit (<code>PROLOGUE_HANDOFF_FLAG = 1 &lt;&lt; 26</code> in <code>World::story_flags</code>, the engine&rsquo;s <code>_DAT_1F800394</code> mirror) is set, a confirm press clears the bit (fire-once), tears down the playing narration / timeline, and returns <code>town01</code>. On the <code>Some(target)</code> the host runs <code>BootSession::enter_field_live(target)</code>.</p>
-  <p>The arm fires <strong>by execution</strong>: entering <code>opdeene</code> installs its timeline record as a spawned field-VM context (<code>World::load_cutscene_timeline_from_man</code>) and the <code>GFLAG_SET 26</code> writes the bit through the same host path the main field VM uses; a static MAN-walk arm (<code>World::arm_prologue_handoff_from_man</code>, built on <code>man_field_scripts::walk_partition_gflag_sites</code>) remains as the fallback, so a cutscene scene that never issues that write can never produce a false skip. The disc-gated test <code>opdeene_prologue_arm.rs</code> pins the <code>GFLAG_SET 26</code> at the partition-2 record-18 offset <code>0xA5E</code> and asserts <code>town01</code> carries no such arm.</p>
-  <p>The opening narration <strong>plays from the timeline records by execution</strong>: each leg's inline subtitle pages (<code>0x1F</code>/<code>0x00</code>-framed ASCII decoded by <code>legaia_asset::cutscene_text</code>) roll through the bottom-up <strong>crawl roller</strong> (<code>FUN_80037174</code>; engine <code>CutsceneNarration</code>), spawned as a child context so the parent timeline keeps running and the between-block camera cuts play under the scroll (it blocks only on a scene's last block) - see <a href="cutscene.html#narration-playback">the cutscene page</a>. The field-VM op that auto-opens the name-entry overlay is pinned (see below).</p>
-  <h3>Name-entry overlay</h3>
-  <p>The &ldquo;Select your name.&rdquo; screen (default <code>Vahn</code>) runs <strong>after</strong> the field launches, as a menu overlay invoked during the <code>town01</code> opening (master mode <code>0x03</code>) - part of the field/dialog overlay at <code>0x801C0000</code>, not a title sub-mode. <strong>The field-VM op that opens it is pinned:</strong> op <code>0x49</code> STATE_RESUME sub-op 3 at <code>town01</code> partition-2 record 3 (P2[3]) body offset <code>0x02c6</code> (<code>49 03 00</code>), in the opening cutscene timeline. After the establishing camera pan the script suspends on this STATE_RESUME and <code>op49_invoke_setup</code> (<code>func_0x80020de0(0x8007065c, _DAT_8007c34c)</code>) hands off to the overlay; Vahn's scripted walk-out plays <strong>after</strong> the name commits.</p>
-  <details class="disclosure">
-    <summary>Pin evidence (save-state correlation)</summary>
-    <p>Executing P2[3] through the engine field VM and correlating against the <code>name_input_ui</code> save state: <code>_DAT_8007B450</code> (the op-<code>0x49</code> state slot) holds <code>0x800EB297</code> = the <code>0x49</code> op's RAM address + 1 (record body <code>0x02b0</code> loads at RAM <code>0x800EB280</code>, byte-identical), so the field script is parked precisely at this op while name entry is up. Regression tests: <code>town01_opening_timeline_trace.rs</code> + <code>town01_opening_name_entry_wiring.rs</code>.</p>
+      <ul class="bullets">
+        <li>The packet API copies the target name into <code>0x8007050C</code>, syncs it to the active buffer <code>0x80084548</code> and stages the load; <code>s_ERR_CHANGE_PACKET</code> guards re-entry. It is not the map-id door warp (op <code>0x3E</code>), which backs up the active scene name into <code>0x8007BAE8</code> - empty in the <code>town01</code> opening saves.</li>
+        <li>The arm is the last record of <code>opdeene</code>&rsquo;s third partition (MAN offset <code>0xA47</code>, the <code>2E 1A</code> at <code>0xA5E</code>). Disc-gated <code>opdeene_prologue_arm.rs</code> pins it and asserts <code>town01</code> carries no such arm.</li>
+        <li>Each leg&rsquo;s opening record spawns via op <code>0x44</code> SPAWN_RECORD (the three op scenes) or the walk-on tile trigger (<code>map01</code>, <code>town01</code>). Subtitle pages roll through the bottom-up crawl roller (<code>FUN_80037174</code>; engine <code>CutsceneNarration</code>) as a child context so camera cuts play under the scroll.</li>
+        <li>Name-entry pins: grid at <code>0x801F29F0</code>, live buffer <code>0x801F2A6C</code>, cursor <code>0x8007BB88</code> (linear <code>0..0x77</code>, d-pad deltas &plusmn;<code>0x11</code> / &plusmn;1, separators skipped, name width capped at 57 px). Renderer <code>FUN_801E6B34</code>; state machine <code>FUN_801F03F0</code> with a 5-entry jump table at <code>0x801CF71C</code> (init &rarr; interactive &rarr; three confirm handlers). The parked op-<code>0x49</code> state slot <code>_DAT_8007B450</code> holds the op&rsquo;s RAM address + 1 in the <code>name_input_ui</code> save state.</li>
+      </ul>
+    </div>
   </details>
-  <h4>Character grid</h4>
-  <p>The grid lives at <code>0x801F29F0</code>: a flat ASCII table, 6 rows &times; 17 bytes (<code>ABCDE|abcde|12345</code> &hellip; <code>Z␣␣␣␣|z␣␣␣␣|:;()~</code>), three column-groups of 5 with <code>|</code> (<code>0x7C</code>) separators. The live name buffer is at <code>0x801F2A6C</code>; the committed name lands in the character record at internal offset <code>+0x2A7</code> (record base <code>0x80084708 + n*0x414</code>; save-block offset <code>+0x86F</code> for slot 0); the prompts (&ldquo;Select your name.&rdquo;, &ldquo;Is this name okay?&rdquo;, &hellip;) are at <code>0x801CF698</code>+.</p>
-  <h4>Cursor + controls</h4>
-  <p>The cursor (<code>0x8007BB88</code>) is a linear index over a <strong>7-row &times; 17-col</strong> navigation space (<code>0..0x77</code> = 119, wrapped modulo <code>0x77</code>): cells <code>0..0x66</code> are the glyph rows, <code>0x66..0x77</code> the control row. The interactive handler applies d-pad deltas <code>-0x11</code>/<code>+0x11</code>/<code>+1</code>/<code>-1</code>, wraps modulo <code>0x77</code>, and skips separators; confirm on a glyph appends it (width-capped at <code>0x39</code> = 57&nbsp;px). The control row tiles the sentinel bytes <code>00 00 | 66&times;6 | 64&times;6 | 65&times;3</code> &rarr; Backspace (<code>0x66</code>) / Space (<code>0x64</code>) / End (<code>0x65</code>, gated on a non-empty name &rarr; the Yes/No confirm, whose Yes commits the name into the record's <code>+0x2A7</code> name field).</p>
-  <h4>Renderer + state machine</h4>
-  <p>Two functions carry it. <code>FUN_801E6B34</code> renders the grid (skipping <code>|</code> / space) via glyph drawer <code>FUN_80036888</code>, plus the current name, the blinking caret (the <code>Vahn_</code> underscore) and the box frames. <code>FUN_801F03F0</code> is the state machine: substate at <code>struct+0x54</code>, 5-entry jump table at <code>0x801CF71C</code> - <strong>init</strong> (<code>0x801F0444</code>) &rarr; <strong>interactive</strong> (<code>0x801F0480</code>) &rarr; three <strong>confirm</strong> handlers (<code>0x801F095C</code>/<code>09C0</code>/<code>097C</code>).</p>
-  <h4>Clean-room engine port</h4>
-  <p>The whole SM is ported as a standalone overlay in <code>legaia_engine_core::name_entry</code> (<code>NameEntry</code> + <code>NameEntryState</code> + <code>Control</code>), driven on the world by <code>World::open_name_entry</code> / <code>step_name_entry</code> (committing into <code>World::party_names</code>) and rendered through <code>legaia_engine_render::name_entry_draws_for</code>. The <code>town01</code> entry installs P2[3] as a spawned cutscene timeline (walk-on tile trigger on the natural arrival; <code>World::install_town01_opening_timeline</code> on the skip), which plays the establishing camera pan, opens the overlay at the pinned op <code>0x49</code> via the op-49 host hooks (<code>op49_invoke_setup</code> &rarr; <code>open_name_entry</code>), freezes until a name commits, then resumes with Vahn's walk-out. The P2[3] C1 gate (flag <code>0x225</code>) keeps a normal later <code>town01</code> visit from re-prompting - both install routes honor it, and the flag itself lands from the record's opening <code>52 25</code> script bytes when the timeline executes (the self-latching one-shot; disc-gated <code>organic_beat_records_disc.rs</code>); a dev <code>N</code> key also opens it for testing.</p>
-  <h3>Sprite-emit helpers</h3>
-  <p>The title-tick body reaches into three SCUS-side helpers to emit GPU primitives. All three are ported clean-room in <code>legaia_engine_vm::title_prim</code>:</p>
-  <ul class="bullets">
-    <li><code>FUN_80058298</code> (<code>ClearImage</code> rect-fill queue, 37 instructions) &rarr; <code>exec_clear_image(host, rect, r, g, b)</code>.</li>
-    <li><code>FUN_80058490</code> (<code>MoveImage</code> VRAM-copy queue, 49 instructions) &rarr; <code>exec_move_image(host, src, dst_x, dst_y)</code> with early-out on zero extent.</li>
-    <li><code>FUN_800198E0</code> (sprite-descriptor dispatcher, 146 instructions) &rarr; <code>exec_sprite_descriptor(host, &amp;SpriteDescriptor)</code> with full tag-<code>0x11</code> + complex variant routing (alpha-OR pre-pass under <code>flags &amp; 8</code>, four width-divisor variants from <code>flags &amp; 3</code>).</li>
-  </ul>
-  <p><code>SpriteDescriptor { tag, flags, rect, pixel_data_ptr }</code> + <code>Rect12 { x, y, w, h }</code> capture the wire shapes. The <code>PrimHost</code> trait abstracts the four engine-side callbacks. Overlay-side helpers (<code>FUN_801E1C1C</code> / <code>FUN_801E373C</code> / <code>FUN_801E3EE0</code> / <code>FUN_801E36C4</code>, shared across menu / battle / shop / save UI overlays) are deferred to their own port.</p>
-  <h3>Title TIM source pinned</h3>
-  <p>The <strong>main title-screen art</strong> (Legend of Legaia wordmark, orb, "PRESS START BUTTON", "NEW GAME" / "CONTINUE" menu, copyrights) is sourced from <strong>PROT 0890</strong> - the multi-bank sound-data cluster carries title art in the trailing pool past the audio payload. There is exactly <strong>one</strong> copy on the disc:</p>
-  <table>
-    <thead><tr><th>PROT entry</th><th>File offset</th><th>Size</th><th>Format</th></tr></thead>
+  <details class="disclosure">
+    <summary>History: superseded readings of the skip</summary>
+    <div class="disclosure-body">
+      <p>The skip was first read as the <em>required</em> hand-off from the prologue into the field; the chain advances by itself and the gate is a skip. A guess that a <code>0x4C</code> MenuCtrl sub-op in record 0 armed the bit is falsified - record 0 has no <code>0x2E</code> / <code>0x2F</code> byte at all.</p>
+    </div>
+  </details>
+</section>
+
+<section class="doc-section" id="init-pak-publisher-logos">
+  <h2>Boot-time art</h2>
+  <p>Three separate sources feed the boot screens: the publisher logos in <code>init.pak</code>, the title wordmark sheet in PROT 0890, and a bundle of system-UI textures that sits in no PROT entry at all.</p>
+  <h3>Publisher logos - PROT 0895 <code>init.pak</code></h3>
+  <p>PROKION, Contrail, &ldquo;SCEA Presents&rdquo; and the epilepsy warning are four uncompressed TIMs in one bundle, each shown with a 30 / 90 / 30 frame fade-in / hold / fade-out. Two are vertically packed strips that retail unfolds into a wider layout with several quads - blitting the whole TIM shows <code>PROK</code> over <code>KION</code>.</p>
+  <table class="layout">
+    <thead><tr><th>Offset</th><th>Logo</th><th>Mode</th><th>Stored</th><th>Unfolded grid</th></tr></thead>
     <tbody>
-      <tr><td>PROT 0890</td><td><code>0x14228</code></td><td>66 080 bytes</td><td>256&times;256 8bpp + 256-colour CLUT</td></tr>
+      <tr><td><code>+0x021C4</code></td><td>PROKION</td><td>8 bpp</td><td>176&times;256</td><td>(2, 1) &rarr; 352&times;128</td></tr>
+      <tr><td><code>+0x0D3E4</code></td><td>Contrail</td><td>8 bpp</td><td>184&times;256</td><td>none</td></tr>
+      <tr><td><code>+0x18E04</code></td><td>SCEA Presents</td><td>4 bpp</td><td>256&times;128</td><td>(2, 2) &rarr; 512&times;64</td></tr>
+      <tr><td><code>+0x1CE44</code></td><td>WARNING</td><td>4 bpp</td><td>256&times;256</td><td>none</td></tr>
     </tbody>
   </table>
-  <p>This page used to list three sources - <code>0888 @ 0x1AA28</code>, <code>0889 @ 0x19A28</code>, <code>0890 @ 0x14228</code> - as "multi-bank duplicates". All three arithmetics land on the <em>same</em> absolute <code>PROT.DAT</code> offset (LBA 38009 + <code>0x228</code>); they looked like three entries only under the pre-correction PROT entry size, which gave 0888 an 88-sector window and 0889 a 3008-sector one, both running over 0890. A byte scan for the TIM's header signature across the whole archive returns one hit, inside 0890's own 73 sectors.</p>
-  <p>The 256&times;256 image is a <strong>sprite sheet</strong> that bundles every text band the title screen <em>could</em> draw - retail composes the screen by sampling specific sub-rects rather than blitting the full quad. The bands, top to bottom in source-y:</p>
-  <table>
-    <thead><tr><th>Source rect <code>(x, y, w, h)</code></th><th>Content</th><th>Drawn when</th></tr></thead>
+  <p>Parser <code>legaia_asset::init_pak</code>; fade driver and <code>STRIP_GRID</code> in <code>engine_core::publisher_logos</code>; shown by the asset viewer&rsquo;s &ldquo;Boot publisher logos&rdquo; panel and <code>play-window --boot-ui</code>. The entry&rsquo;s <code>bat_back_dat</code> filename label is the <a href="../formats/cdname.html#numbering-space">+2 shift</a>, not a mislabel. There is no single <code>title.pak</code> entry: that dev-tree bundle is split between PROT 0890 (wordmark) and PROT 0899 (options bundle + title code).</p>
+  <h3 id="title-tim">Title wordmark - PROT 0890</h3>
+  <p>One 256&times;256 8-bpp sheet at file offset <code>0x14228</code> (66,080 bytes with its CLUT) carries the orb, wordmark, prompt and copyright lines. Retail samples it in bands rather than blitting the quad; the engine (<code>title_screen_atlas</code>) emits one sprite per active band.</p>
+  <table class="layout">
+    <thead><tr><th>Source rect</th><th>Content</th><th>Drawn when</th></tr></thead>
     <tbody>
-      <tr><td><code>(0, 17, 256, 124)</code></td><td>Orb + "Legend of Legaia" wordmark</td><td>every post-fade phase</td></tr>
-      <tr><td><code>(96, 151, 64, 10)</code></td><td><code>&lt;DEMO&gt;</code></td><td><strong>never</strong> - demo-build leftover</td></tr>
-      <tr><td><code>(60, 178, 196, 16)</code></td><td>"PRESS START BUTTON" prompt</td><td>PressStart phase only</td></tr>
-      <tr><td><code>(4, 195, 244, 14)</code></td><td>"TM of Sony&hellip;" copyright</td><td>every post-fade phase</td></tr>
-      <tr><td><code>(8, 209, 234, 14)</code></td><td>"&copy; 1998,1999&hellip;" copyright</td><td>every post-fade phase</td></tr>
-      <tr><td><code>(0, 226, 256, 11)</code></td><td>small "NEW GAME CONTINUE" footer</td><td>replaced by larger font glyphs</td></tr>
+      <tr><td><code>(0, 17, 256, 124)</code></td><td>orb + wordmark</td><td>every post-fade phase</td></tr>
+      <tr><td><code>(96, 151, 64, 10)</code></td><td>demo-build label</td><td>never - a demo leftover the framebuffer omits</td></tr>
+      <tr><td><code>(60, 178, 196, 16)</code></td><td>PRESS START BUTTON</td><td>press-start phase only</td></tr>
+      <tr><td><code>(4, 195, 244, 14)</code></td><td>trademark line</td><td>every post-fade phase</td></tr>
+      <tr><td><code>(8, 209, 234, 14)</code></td><td>copyright line</td><td>every post-fade phase</td></tr>
+      <tr><td><code>(0, 226, 256, 11)</code></td><td>NEW GAME / CONTINUE footer</td><td>menu rows, sampled as two halves; selection is bright vs dim, no arrow cursor</td></tr>
     </tbody>
   </table>
-  <p>The <code>&lt;DEMO&gt;</code> band is a residual from a development demo build that retail simply never samples - verified by capturing main RAM at the live title screen (sstate8, sub-mode <code>0x10</code> AttractIdle) and confirming the in-RAM TIM bytes byte-match the disc TIM while the live framebuffer omits the band. The small "NEW GAME CONTINUE" footer is similarly never drawn; retail renders the menu labels using the dialog-font glyph atlas instead (which is why the on-screen "NEW GAME / CONTINUE" letters are visibly larger than the embedded footer text).</p>
-  <p>Pinned by capturing main RAM at the live title screen, TIM-magic-scanning the dump, and byte-grepping the in-RAM copy (at vaddr <code>0x80170DF8</code>) against the extracted PROT corpus. Reusable scanner at <code>scripts/asset-investigation/scan_tims_and_match_prot.py</code>. Typed parser at <code>legaia_asset::title_pak::extract_title_tim</code>, with band-rect constants <code>TITLE_BAND_WORDMARK</code> / <code>TITLE_BAND_PRESS_START</code> / <code>TITLE_BAND_TM_COPYRIGHT</code> / <code>TITLE_BAND_C_COPYRIGHT</code> (plus <code>TITLE_BAND_DEMO</code> for reference) pinning the sub-rects above; an engine-side RGBA decoder lives at <code>legaia_engine_core::title_screen_atlas::build_atlas_from_prot_888</code>. The <code>play-window --boot-ui</code> binary uploads the atlas and emits one <code>SpriteDraw</code> per active band each frame (<code>title_screen_sprite_draws</code> in <code>legaia-engine</code>), gating the press-start band on phase. The font-rendered "PRESS START" overlay is suppressed via the <code>atlas_present</code> flag on <code>title_draws_for</code> so the TIM band isn't duplicated.</p>
-  <p>Two more title-related TIMs live <em>embedded inside the title overlay's data segment</em> (the trailing-gap portion of PROT 899) at the addresses the tick body's <code>FUN_800198E0</code> calls reference: <code>0x801E5120</code> &rarr; <code>extracted/PROT/0899_xxx_dat.BIN @ 0x16908</code> (save-menu UI atlas) and <code>0x801EE120</code> &rarr; <code>0x1F908</code> (animated PSX memcard icon strip, 14 frames). The mismatch between the debug-print path <code>h:\prot\field\title\title.pak</code> in <code>init.pak</code>'s string pool and the actual on-disc location (PROT 0890) is a dev-tree-vs-disc split; the <code>0895_bat_back_dat</code>-style label confusions are the separate <a href="../formats/cdname.html#numbering-space">+2 filename-numbering shift</a>. Either way: always cross-validate against the loader-call constant or the file's magic bytes.</p>
-  <p>A <strong>town/field subsystem</strong> uses a separate format-string pool at <code>0x80011079..0x80011109</code> (<code>"    town "</code>, <code>"mode %d"</code>, <code>"    baria mode "</code>, <code>"    walking set"</code>, <code>"end of mes works set"</code>, <code>"open port.dat"</code>, <code>"nt_group_table %x"</code>). These print at retail-build runtime but have no LUI+ADDIU caller resident until the town/field overlay is loaded - i.e. the "mode 17 / mode 16" runtime printfs are <em>town-subsystem</em> mode transitions, not the master 28-mode state-machine index.</p>
+  <h3 id="system-ui-gap">System-UI textures in the pre-entry gap</h3>
+  <p>A 118-sector region sits between the TOC (ends at <code>0x1800</code>) and the first indexed entry (<code>0x3C800</code>, sector 121). It holds the small-caps menu font, the boot cursor and a few sprite strips - all 4-bpp TIMs with palettes, all targeting the bottom-right corner of VRAM. No per-entry extractor visits it; <code>ProtIndex::prot_dat_raw_bytes</code> reads it directly.</p>
+  <details class="disclosure">
+    <summary>Details: the gap&rsquo;s seven TIMs and the menu-glyph atlas</summary>
+    <div class="disclosure-body">
+  <table class="layout">
+    <thead><tr><th>PROT.DAT offset</th><th>Dims</th><th>VRAM target</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x01858</code></td><td>tiny</td><td>(896, 256)</td><td>boot cursor variant</td></tr>
+      <tr><td><code>0x018E0</code></td><td>256&times;192</td><td>(896, 256)</td><td>large UI sprite sheet</td></tr>
+      <tr><td><code>0x07F40</code></td><td>256&times;256</td><td>(896, 0)</td><td>dialog-font sheet</td></tr>
+      <tr><td><code>0x10178</code></td><td>256&times;32</td><td>(896, 448)</td><td>AP / status-icon strip</td></tr>
+      <tr><td><code>0x11218</code></td><td>256&times;256</td><td>(960, 256)</td><td><strong>menu-glyph small-caps font</strong></td></tr>
+      <tr><td><code>0x19438</code></td><td>240&times;24</td><td>(960, 400)</td><td>UI sprite strip</td></tr>
+      <tr><td><code>0x1B80C</code></td><td>256&times;256</td><td>(640, 0)</td><td>system sprite sheet</td></tr>
+    </tbody>
+  </table>
+      <p>The atlas at <code>0x11218</code> (33,312 bytes) is the font the shop / inventory / status panels sample; its in-RAM copy at <code>0x80106478</code> is byte-equal modulo CLUT relocation. Alphabet row at <code>y = 224..238</code>, 26 cells 8 px wide from <code>x = 8</code>; digits at <code>y = 209..220</code>. Retail switches CLUT rows per context (white / gold / dim); the engine decodes once to a stencil (index 0 transparent, 1..15 opaque) and tints at draw time via <code>SpriteDraw::color</code>. Builders: <code>crates/asset/src/menu_glyph_atlas.rs</code> and <code>crates/engine-core/src/menu_glyph_atlas.rs</code>. The title&rsquo;s own NEW GAME / CONTINUE rows do <em>not</em> use it - they are the footer band of the wordmark sheet.</p>
+    </div>
+  </details>
+  <details class="disclosure">
+    <summary>History: &ldquo;three multi-bank duplicates&rdquo; of the title TIM</summary>
+    <div class="disclosure-body">
+      <p>Three sources (<code>0888 @ 0x1AA28</code>, <code>0889 @ 0x19A28</code>, <code>0890 @ 0x14228</code>) all land on the same absolute <code>PROT.DAT</code> offset; they looked like three entries only under the pre-correction entry size. A header-signature scan across the archive returns one hit, inside 0890.</p>
+    </div>
+  </details>
 </section>
 
 <section class="doc-section" id="debug-flags">
   <h2>Debug flags</h2>
-  <p>Two RAM bytes that several subsystems branch on at boot time and beyond:</p>
-  <table>
-    <thead><tr><th>Address</th><th>Role</th></tr></thead>
+  <p>Two RAM values decide whether the game behaves like the shipped disc or a dev station. On real hardware both read &ldquo;retail&rdquo;; a cheat device can flip them, which is how the debug menu on the retail disc becomes reachable (<code>docs/reference/builds.md</code> lists the bindings).</p>
+  <table class="data-table">
+    <thead><tr><th>Address</th><th>Role</th><th>Retail value</th></tr></thead>
     <tbody>
-      <tr><td><code>_DAT_8007B8C2</code></td><td>Dev/retail build toggle. Sound init, the field loader, the monster-bank loader, the save-card path, the scene-change packet, and the title overlay all carry an "if dev" branch keyed on this byte.</td></tr>
-      <tr><td><code>_DAT_8007B98F</code></td><td>Separate debug-mode flag (NA build offset; JP retail uses <code>0x07D51F</code>, an <code>0x1B90</code> build-shift).</td></tr>
+      <tr><td><code>_DAT_8007B8C2</code></td><td>dev / retail loader selector, read as a halfword at 40 sites; <code>!= 0</code> takes the PROT-index path, <code>== 0</code> opens a host path that ends in <code>break 0x103</code></td><td><code>1</code>, written once by <code>main()</code> from a two-instruction leaf</td></tr>
+      <tr><td><code>_DAT_8007B98C</code></td><td>debug-mode word tested by the input dispatcher and ~14 field-overlay gates; poking its top byte <code>_DAT_8007B98F</code> to 1 makes every <code>!= 0</code> gate read active, and SELECT+&#9651; opens the debug menu</td><td><code>0</code></td></tr>
     </tbody>
   </table>
-  <p><strong>Corrected.</strong> An earlier sweep of 2661 files reported zero writes to <code>_DAT_8007B8C2</code> and concluded it was BSS-resident with <code>0</code> (= retail) at boot, mutable only by external POKE. Both halves were wrong. The sweep searched only the absolute <code>lui</code>+offset form and could not see the writer, which is gp-relative: <code>main()</code> stores it once at cold boot, <code>0x80015F08 sh v0,0x5aa(gp)</code> with <code>gp = 0x8007B318</code>, taking the return of <code>FUN_8003F084</code> - a two-instruction leaf returning the constant <code>1</code>. And no BSS is cleared for this executable at all, since its PS-X EXE header carries <code>b_size = 0</code>. <strong>Retail runs with the halfword at <code>1</code>, so <code>!= 0</code> is the retail PROT-index arm and <code>== 0</code> the dev host-trap arm</strong> - confirmed in 60/60 save states. <code>_DAT_8007B98F</code> returns zero <em>byte</em>-granular references because it is the most-significant byte (offset +3, little-endian) of the 32-bit debug-mode word <code>_DAT_8007B98C</code>, and the code reads the word: <code>_DAT_8007B98C</code> is the debug gate tested by <code>FUN_8001822c</code> (the input dispatcher) plus ~14 resident field-overlay (0897) gates, written by the shared menu/title/save-init routine. Poking <code>0x8007B98F = 1</code> sets the word's MSB, so every <code>_DAT_8007B98C != 0</code> gate reads debug mode active and SELECT+△ brings up the debug menu in the NA retail build. The consumer is statically pinned (no uncaptured overlay needed); the earlier "stripped at link time / inert" conclusion is falsified.</p>
+  <details class="disclosure">
+    <summary>History: why both flags were once read backwards</summary>
+    <div class="disclosure-body">
+      <p>A sweep for absolute <code>lui</code>+offset references saw no writer for the loader flag, because the one write is gp-relative, and concluded it booted at 0; the executable&rsquo;s PS-X EXE header carries <code>b_size = 0</code>, so no BSS is cleared either. The debug byte returned zero byte-granular references because consumers read the word. Both are under <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>; the gp-relative blind spot is why the <a href="../tooling/address-reference-scan.html">address reference scan</a> checks all five forms.</p>
+    </div>
+  </details>
+</section>
+
+<section class="doc-section" id="how-we-know">
+  <h2>How we know</h2>
+  <p>The game shipped without symbols; functions are named <code>FUN_&lt;address&gt;</code> after their RAM location in the Ghidra trace.</p>
+  <table class="data-table">
+    <thead><tr><th>Function</th><th>Address</th><th>What it proves</th><th>Dump</th></tr></thead>
+    <tbody>
+      <tr><td>main loop</td><td><code>FUN_80015E90</code></td><td>init order, heap sizes, the mode-switch housekeeping, the loader flag&rsquo;s only write at <code>0x80015F08</code></td><td><code>funcs/80015e90.txt</code></td></tr>
+      <tr><td>entry stub</td><td><code>FUN_80026C28</code></td><td>sets <code>$gp = 0x8007B318</code>, calls main once</td><td>-</td></tr>
+      <tr><td>TOC loader / span</td><td><code>FUN_8003E4E8</code> / <code>FUN_8003E68C</code></td><td>3 sectors to <code>0x801C70F0</code>; size = gap to the next entry</td><td>-</td></tr>
+      <tr><td>resolvers</td><td><code>FUN_8003E8A8</code> / <code>FUN_8003E6BC</code></td><td>index-based and path-based LBA lookup</td><td>-</td></tr>
+      <tr><td>CDNAME primer</td><td><code>FUN_8001D8FC</code></td><td>16-byte name records at <code>0x80088758</code>; unbounded copy</td><td>-</td></tr>
+      <tr><td>asset dispatcher</td><td><code>FUN_8001F05C</code></td><td>type byte in the high 8 bits of the size word; handler table <code>0x80010638</code></td><td>-</td></tr>
+      <tr><td>mode table</td><td><code>0x8007078C</code></td><td>14 INIT / RUN pairs, 24-byte stride; read by <code>legaia_asset::mode_table</code></td><td>disc-gated test</td></tr>
+      <tr><td>overlay loaders</td><td><code>FUN_8003EBE4</code> / <code>FUN_8003EC70</code></td><td>16 static call sites; <code>param + 0x381</code> raw index</td><td>-</td></tr>
+      <tr><td>menu per-frame</td><td><code>FUN_80025F74</code> &rarr; <code>FUN_80017978</code></td><td>skips the master frame driver <code>FUN_80016444</code></td><td>-</td></tr>
+      <tr><td>minigame init</td><td><code>FUN_80025980</code></td><td>reads sub-id <code>_DAT_8007BA34</code> twice, leaves it standing</td><td>-</td></tr>
+      <tr><td>title tick</td><td><code>FUN_801DD35C</code></td><td>countdown store at <code>0x801DDCCC</code> (write watchpoint); launch write at <code>0x801DFC00</code></td><td><code>funcs/overlay_title_801ddccc.txt</code></td></tr>
+      <tr><td>title overlay source</td><td>CD-DMA <code>FUN_8005D9A0</code></td><td>five bursts from LBA 47227, all inside entry 0899; uncompressed</td><td><code>autorun_title_overlay_writer_hunt.lua</code></td></tr>
+      <tr><td>field INIT / scene init</td><td><code>FUN_80025B64</code> / <code>FUN_801D6704</code></td><td>loads 0897, reads the scene id, writes mode 3</td><td>-</td></tr>
+      <tr><td>new-game seed</td><td><code>FUN_80034A6C</code> / <code>FUN_800560B4</code></td><td>gold 500, flags zeroed, template expanded</td><td>-</td></tr>
+      <tr><td>intro skip</td><td><code>FUN_801D1344</code> / <code>FUN_8001FD44</code></td><td>flag-and-pad-gated one-shot; name packet to <code>town01</code></td><td>-</td></tr>
+      <tr><td>opening chain</td><td><code>FUN_8003BDE0</code></td><td>exec breakpoint: exactly five spawns, one per leg</td><td>live probe</td></tr>
+      <tr><td>name entry</td><td><code>FUN_801E6B34</code> / <code>FUN_801F03F0</code></td><td>grid renderer; substate jump table <code>0x801CF71C</code></td><td>-</td></tr>
+      <tr><td>pad builder</td><td><code>FUN_8001822C</code></td><td><code>~((pad[2] &lt;&lt; 8) | pad[3])</code> packed layout; debug-word gate</td><td>-</td></tr>
+      <tr><td>title TIM</td><td>RAM <code>0x80170DF8</code></td><td>byte-matches PROT 0890 <code>@0x14228</code>; framebuffer omits the demo band</td><td><code>scan_tims_and_match_prot.py</code></td></tr>
+      <tr><td>menu-glyph atlas</td><td>RAM <code>0x80106478</code></td><td>byte-matches PROT.DAT <code>0x11218</code></td><td>-</td></tr>
+    </tbody>
+  </table>
 </section>
 
 <section class="doc-section" id="see-also">
@@ -310,7 +433,16 @@ _sw   v0, -0xe94(a0)    ; &lt;-- captured pc: store decremented value
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="../formats/prot.html">PROT.DAT TOC</a>
+    <a href="../formats/cdname.html">CDNAME name map</a>
+    <a href="../formats/asset-type.html">Asset-type dispatch</a>
     <a href="asset-loader.html">Asset loader</a>
-    <a href="../tooling/extraction.html">Extraction pipeline</a>
+    <a href="cutscene.html">Cutscenes + the opening chain</a>
+    <a href="save-screen.html">Save screen</a>
+    <a href="world-map.html">World map</a>
+    <a href="../reference/memory-map.html">Memory map</a>
+    <a href="../tooling/overlay-capture.html">Overlay capture</a>
+    <a href="../tooling/static-overlay-pipeline.html">Static overlay pipeline</a>
+    <a href="../play.html">Play the port</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/boot.md" target="_blank" rel="noopener">Full doc</a>
   </div>
 </section>

@@ -78,7 +78,7 @@ body.magic-live .magic-status-idle { display: none; }
   <div class="breadcrumb"><a href="index.html">home</a> &middot; seru magic</div>
   <h1>Seru Magic &amp; Summons</h1>
   <p class="lede">
-    Every Seru-magic cast in the game, animated. Load your own disc image and each spell plays the creature it summons - the real model, the real textures, the real on-disc keyframes - including the seven Ra-Seru and Sim-Seru summons: Meta, Ozma, Terra, Horn, Jedo, Palma and Mule.
+    In Legaia every spell is a summon: absorb a Seru in battle and its magic calls that creature onto the field to attack for you, and the Ra-Seru on your characters' arms grow into the big summons of the late game. This page plays every one of those casts - the real model, textures and on-disc keyframes - from your own disc image, in your browser.
   </p>
 </header>
 
@@ -90,6 +90,7 @@ body.magic-live .magic-status-idle { display: none; }
 
 <section class="doc-section" id="stage">
   <h2>Watch the cast</h2>
+  <p>Click a card in either list below to play its cast here. The chip row plays the cast one phase at a time, or the whole thing back to back; drag to orbit. The small tiles under the model are the effect textures the spell streams in while it plays.</p>
   <div class="magic-controls">
     <label class="magic-fit-label" title="Off: frame the summon's own body and follow it, so the creature fills the canvas - a part thrown far from the body (Meta's sword) may sit outside the frame. On: fit the whole cast, so everything stays visible at the cost of drawing the body small, because these casts travel a long way.">
       <input type="checkbox" id="magic-fit-toggle"> frame the whole cast
@@ -109,9 +110,9 @@ body.magic-live .magic-status-idle { display: none; }
 </section>
 
 <section class="doc-section" id="ra-seru">
-  <h2>Ra-Seru &amp; Sim-Seru summons</h2>
+  <h2>Ra-Seru summons</h2>
   <p>
-    The seven big summons. Each is a <strong>bespoke</strong> body - unlike every other Seru-magic cast, its model matches no enemy in the monster archive, and its texture pool and keyframes live in a separate slot of its own group. Click one to orbit it.
+    The seven big summons - Meta, Ozma and Terra on the party's arms, plus Horn, Jedo, Palma and Mule from the Ra-Seru eggs. Each is a <strong>bespoke</strong> body: unlike every other cast, its model matches no enemy in the game, and its textures and animation live in a slot of their own. Click one to orbit it.
   </p>
   <p class="summon-placeholder">Meta &middot; Ozma &middot; Terra &middot; Horn &middot; Jedo &middot; Palma &middot; Mule - load a disc to see them.</p>
   <div class="summon-grid" id="magic-gallery"></div>
@@ -120,7 +121,7 @@ body.magic-live .magic-status-idle { display: none; }
 <section class="doc-section" id="seru-magic">
   <h2>Seru magic</h2>
   <p>
-    The rest of the player Seru-magic block. Each of these summons an ordinary creature from the game's own monster archive - the Gimard spell summons a Gimard - so the model you see here is the same body you fight in the field, performing its cast animation.
+    The everyday spells - Gimard, Vera, Nova and the rest. Each one summons an ordinary creature from the game's monster roster (the Gimard spell summons a Gimard), so the model you see is the same body you fight in the field, performing its cast animation.
   </p>
   <p class="summon-placeholder">Load a disc to list every cast.</p>
   <div class="summon-grid" id="magic-grid"></div>
@@ -131,18 +132,19 @@ body.magic-live .magic-status-idle { display: none; }
   <div class="about-body">
   <h3>The streaming side-band</h3>
   <p>
-    A Seru-magic cast is not resident: the battle engine streams it off the disc mid-fight, in fixed 66&nbsp;KB slots of <code>\data\battle\summon.dat</code>, while the spell plays. Each cast owns a group of slots - texture pages first, then a <em>summon-creature actor record</em> holding the creature's model, its texture pool, and a table of per-part keyframe streams. This page decodes exactly that, entirely in your browser.
+    A Seru-magic cast is not kept in memory: the battle engine streams it off the disc mid-fight, in fixed 66&nbsp;KB slots of <code>\data\battle\summon.dat</code>, while the spell plays. Each cast owns a group of slots - texture pages first, then a <em>summon-creature actor record</em> holding the creature's model, its texture pool, and a table of per-part keyframe streams. This page decodes exactly that, entirely in your browser.
   </p>
+  <h3>Why the seven Ra-Seru are different</h3>
   <p>
-    The <strong>.glb</strong> button above the canvas bakes the selected cast's summon into a binary glTF download: the model, its VRAM texture pool as one atlas, and every phase clip as a named animation (one rigid node per TMD object, keyframed straight from the on-disc streams at the record's own playback rate) - ready for Blender or three.js. Everything is baked in your browser; nothing is uploaded.
+    An ordinary Seru spell reuses an enemy body: its model is byte-identical to a record in the monster archive, so the summon resolves to a creature id. The seven Ra-Seru summons cannot be resolved that way - their slot groups are one slot wider, their model matches nothing in the archive, and their texture pool and keyframes live in that extra slot rather than in the record. Each cast carries its attack name as plain text on the disc, and the record's element byte independently agrees, which is how this page pins each summon's identity. The hidden eighth summon, Juggernaut, sits outside the named block.
   </p>
-  <h3>Why the seven were different</h3>
+  <h3>The .glb export</h3>
   <p>
-    Casts <code>0x81</code>-<code>0x99</code> reuse an ordinary enemy body - their model is byte-identical to a record in the monster archive, so a summon can be resolved to a creature id. The seven Ra-Seru / Sim-Seru summons cannot: their groups are four slots wide instead of three, their model matches nothing in the archive, and their texture pool and per-part keyframes live in the group's extra raw slot rather than in the record. That is the split this page's decoder handles, and it is what the summon's own identity is pinned on here - each cast carries its attack name as plain text on the disc (Meta's is "Inferno", Ozma's is "Voltagor"), and the record's element byte independently agrees.
+    The <strong>.glb</strong> button bakes the selected cast into a binary glTF download: the model, its texture pool as one atlas, and every phase clip as a named animation (one rigid node per model part, keyframed straight from the on-disc streams at the record's own playback rate) - ready for Blender or three.js. Nothing is uploaded.
   </p>
   <h3>Shading</h3>
   <p>
-    Retail applies no light source to these bodies: a textured primitive draws as <code>texel &times; colour / 128</code> using the model's own baked colour word. This page uploads that per-vertex colour stream and does the same - so what you see is the game's shading, not a viewer's.
+    Retail applies no light source to these bodies: a textured face draws as its texel scaled by the model's own baked colour. This page uploads that per-vertex colour and does the same, so what you see is the game's shading, not a viewer's.
   </p>
 
 <section class="doc-section" id="related">
@@ -152,8 +154,11 @@ body.magic-live .magic-status-idle { display: none; }
     <a href="formats/summon-readef.html">summon.dat / readef.DAT</a>
     <a href="formats/spell-table.html">Spell table</a>
     <a href="formats/monster-animation.html">Monster animation</a>
+    <a href="subsystems/battle-formulas.html">Magic damage formulas</a>
     <a href="subsystems/effect-vm.html">Effect VM</a>
     <a href="subsystems/battle-action.html">Battle action</a>
+    <a href="subsystems/renderer.html">Renderer (shading)</a>
+    <a href="monsters.html">Enemy table</a>
   </div>
 </section>
   </div>

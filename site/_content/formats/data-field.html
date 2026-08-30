@@ -1,46 +1,99 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; data_field streaming format</div>
   <h1>DATA_FIELD streaming format <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">A container format for shipping several assets in one file: a stream of typed <em>chunks</em>, each a 4-byte header (type + size) followed by raw data, read one after another until a terminator. The consumer is <code>FUN_8002541C</code> (a Ghidra-traced routine in the game's executable) on its <code>0x14</code> (DATA_FIELD) branch, which passes every chunk through the <a href="asset-type.html">asset-type dispatcher</a> - the routine that routes each blob to its format handler - with <code>copy_only=1</code>, so chunks are always uncompressed.</p>
+  <p class="lede">When the game loads a scene or a battle effect it usually needs several different things at once - a texture, a mesh, an animation - and it wants to read them off the disc in one go. DATA_FIELD is the container that does that: a stream of typed <em>chunks</em>, each a 4-byte header (what it is, how long it is) followed by raw data, read one after another until a terminator. The game hands each chunk to the <a href="asset-type.html">asset-type dispatcher</a>, which routes it to the right format handler.</p>
 </header>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Magic</dt><dd>none - the first <code>u32</code> is already a chunk header (type byte in the top 8 bits)</dd>
+    <dt>Where on disc</dt><dd>34 <code>PROT.DAT</code> entries strict-validate as class <code>data_field_streaming</code>: the <code>other5</code> character/effect run (1204..1219) and a family of scene bundles</dd>
+    <dt>Parser</dt><dd><code>crates/asset/src/lib.rs::parse_streaming</code>; <code>asset scan-stream</code> / <code>asset extract</code></dd>
+    <dt>Confidence</dt><dd>Confirmed - consumer <code>FUN_8002541C</code>, the <code>0x14</code> (DATA_FIELD) branch, feeding <code>FUN_8001F05C</code> with <code>copy_only=1</code></dd>
+    <dt>Used by</dt><dd><a href="../subsystems/asset-loader.html">asset loader</a>, <a href="../subsystems/battle.html">battle scene loader</a>, <a href="../characters.html">characters page</a> (battle-form meshes + atlases)</dd>
+  </dl>
+</section>
 
 <section class="doc-section" id="overview">
   <h2>Overview</h2>
-  <p>Implementation: <code>crates/asset/src/lib.rs::parse_streaming</code>.</p>
+  <p>The walker passes every chunk through the dispatcher with <code>copy_only=1</code>, so chunks are always uncompressed - the container trades disc space for a load path with no decompression step. Implementation: <code>crates/asset/src/lib.rs::parse_streaming</code>.</p>
   <aside class="notice">
     <div class="notice-title">Scope note</div>
-    <p>This page covers the <em>typed-chunk streaming</em> shape that <code>FUN_8002541C</code> consumes - not the wider question of "what does the per-scene CDNAME block actually carry?" (a CDNAME block is the run of consecutive <code>PROT.DAT</code> archive entries that <a href="cdname.html"><code>CDNAME.TXT</code></a> assigns to one scene). Per-scene field bundles use multiple shapes; the typed map below identifies which shapes show up where.</p>
+    <p>This page covers the <em>typed-chunk streaming</em> shape that <code>FUN_8002541C</code> consumes - not the wider question of "what does the per-scene CDNAME block actually carry?" (a CDNAME block is the run of consecutive <code>PROT.DAT</code> entries that <a href="cdname.html"><code>CDNAME.TXT</code></a> assigns to one scene). Per-scene field bundles use multiple shapes; the slot map at the end identifies which shapes show up where.</p>
   </aside>
 </section>
 
 <section class="doc-section" id="layout">
   <h2>Layout</h2>
-<pre><code>[u32 type_size] [size_bytes of raw data]
-[u32 type_size] [size_bytes of raw data]
-...
-[u32 terminator]    // type_size with low 24 bits all zero</code></pre>
-  <p>Where:</p>
-  <ul class="bullets">
-    <li><code>type_size = (type_byte &lt;&lt; 24) | (size_bytes &amp; 0x00FFFFFF)</code>.</li>
-    <li><code>type_byte</code> matches the <a href="asset-type.html">asset type table</a>.</li>
-    <li>The next chunk header starts at <code>current_pos + 4 + (size &amp; ~3)</code> - i.e., header + size truncated to a 4-byte boundary. Sizes are always 4-aligned in practice.</li>
-    <li>Terminator: any header <code>u32</code> whose low 24 bits are zero.</li>
-  </ul>
+  <figure class="overlay-strip">
+    <svg viewBox="0 0 880 150" width="100%" style="max-width:880px" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="dfc-title">
+      <title id="dfc-title">A DATA_FIELD stream: a chain of 4-byte type-and-size headers each followed by raw data, ended by a header whose low 24 bits are zero</title>
+      <style>
+        .dfc-box  { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.3; }
+        .dfc-soft { fill: var(--bg-raised); stroke: var(--border); stroke-width: 1.1; stroke-dasharray: 3 3; }
+        .dfc-lab  { font: 12px 'Inter', sans-serif; fill: currentColor; }
+        .dfc-sub  { font: 10px 'JetBrains Mono', monospace; fill: var(--text-muted); }
+        .dfc-off  { font: 10px 'JetBrains Mono', monospace; fill: var(--accent); }
+        .dfc-arr  { fill: none; stroke: var(--accent); stroke-width: 1.2; }
+      </style>
+      <text x="20" y="22" class="dfc-off">+0</text>
+      <rect x="20" y="30" width="70" height="44" class="dfc-box"/>
+      <text x="26" y="50" class="dfc-lab">hdr</text>
+      <text x="26" y="66" class="dfc-sub">type|size</text>
+      <rect x="90" y="30" width="200" height="44" class="dfc-soft"/>
+      <text x="96" y="50" class="dfc-lab">chunk 0 data (e.g. TIM)</text>
+      <text x="96" y="66" class="dfc-sub">size bytes</text>
+      <text x="290" y="22" class="dfc-off">+4+(size&amp;~3)</text>
+      <rect x="290" y="30" width="70" height="44" class="dfc-box"/>
+      <text x="296" y="50" class="dfc-lab">hdr</text>
+      <text x="296" y="66" class="dfc-sub">type|size</text>
+      <rect x="360" y="30" width="200" height="44" class="dfc-soft"/>
+      <text x="366" y="50" class="dfc-lab">chunk 1 data (e.g. TMD2)</text>
+      <text x="366" y="66" class="dfc-sub">size bytes</text>
+      <rect x="560" y="30" width="60" height="44" class="dfc-soft"/>
+      <text x="576" y="56" class="dfc-lab">...</text>
+      <rect x="620" y="30" width="110" height="44" class="dfc-box"/>
+      <text x="626" y="50" class="dfc-lab">terminator</text>
+      <text x="626" y="66" class="dfc-sub">low 24 bits = 0</text>
+      <rect x="730" y="30" width="130" height="44" class="dfc-soft"/>
+      <text x="736" y="50" class="dfc-lab">trailer</text>
+      <text x="736" y="66" class="dfc-sub">optional, unparsed</text>
+      <path d="M 55 80 L 55 100 L 325 100 L 325 80" class="dfc-arr"/>
+      <text x="120" y="122" class="dfc-sub">next header = this header + 4 + (size &amp; ~3)</text>
+      <text x="560" y="122" class="dfc-sub">header u32 = (type &lt;&lt; 24) | (size &amp; 0x00FFFFFF)</text>
+    </svg>
+    <figcaption>The chunk chain. Every chunk is self-describing through its header; the walker never needs a count up front.</figcaption>
+  </figure>
+  <table>
+    <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>+0x00</code></td><td>u32</td><td><code>type_size</code></td><td><code>(type_byte &lt;&lt; 24) | (size_bytes &amp; 0x00FFFFFF)</code>; <code>type_byte</code> per the <a href="asset-type.html">asset type table</a></td></tr>
+      <tr><td><code>+0x04</code></td><td><code>size_bytes</code></td><td>data</td><td>the raw asset, uncompressed</td></tr>
+      <tr><td><code>+0x04 + (size &amp; ~3)</code></td><td>u32</td><td>next <code>type_size</code></td><td>header + size truncated to a 4-byte boundary; sizes are 4-aligned in practice</td></tr>
+      <tr><td>last</td><td>u32</td><td>terminator</td><td>any header whose low 24 bits are zero</td></tr>
+    </tbody>
+  </table>
 </section>
 
 <section class="doc-section" id="what-s-in-the-wild">
   <h2>What's in the wild</h2>
-  <p>Strict-validating PROT entries with <code>asset scan-stream</code> finds 26 hits, concentrated in the <code>_other5</code> cluster (entries 1214–1219+) plus a few in <code>dolk2</code>, <code>rikuroa2</code>, <code>rayman</code>. Each entry has 3 chunks of single-asset shape:</p>
+  <p><code>asset scan-stream</code> strict-validates 34 PROT entries (class <code>data_field_streaming</code>), in two families.</p>
+  <h3 id="character-effect-streams">Character / effect streams</h3>
+  <p>The <code>other5</code> run, entries 1204..1219. The common shape is three single-asset chunks:</p>
 <pre><code>chunk[0]: TIM   (single, magic 0x10)        - sprite atlas / texture
 chunk[1]: TMD2  (single, magic 0x80000002)  - single Legaia TMD
 chunk[2]: MOVE2 (single, magic 0x08)        - animation data
 terminator</code></pre>
-  <p>The chunk layouts are <strong>single assets</strong> here (one TIM, one TMD2, one MOVE2), not packs. Other clusters elsewhere in the corpus do use pack-shaped TIM_LIST / TMD chunks; the <a href="pack.html">pack format</a> handles that case.</p>
+  <p>The two heads of the run are homogeneous instead: <code>1204</code> is five <code>TMD2</code> chunks (the battle-form party meshes used by the Baka Fighter minigame and as the default-equipment sibling pack - the in-battle player meshes themselves are assembled from the <a href="battle-data-pack.html"><code>PLAYER1..4</code> files</a>) and <code>1205</code> is eight <code>TIM</code> chunks of <code>0x8220</code> bytes each (their atlases) - which is what makes the atlas stride <code>0x8224</code>, chunk header included.</p>
+  <h3 id="scene-bundles">Scene bundles</h3>
+  <p><code>MAN / MES / MOVE / VDF</code>, four chunks (<code>dolk2</code>, <code>rikuroa</code>, <code>rikuroa2</code>, <code>rayman</code>, <code>station</code>, <code>taiku</code>, <code>taiku2</code>, <code>doman</code>, <code>nilboa2</code>, <code>edbalden</code>, <code>eddoman</code>). Shorter variants drop the trailing <code>VDF</code> (<code>balden2</code>, <code>ropeway2</code>) or lead with a bare <code>TMD</code> where a <code>MAN</code> would sit (<code>balden</code>, <code>bubu1</code>, <code>edbubu</code>). Two entries are neither family: <code>init_data</code> is <code>TIM_LIST + TMD</code>, and <code>0890_sound_data2</code> is two <code>TIM</code>s.</p>
+  <p>The chunk layouts are <strong>single assets</strong> in the <code>other5</code> family (one TIM, one TMD2, one MOVE2), not packs. Other clusters do use pack-shaped TIM_LIST / TMD chunks; the <a href="pack.html">pack format</a> handles that case.</p>
 </section>
 
 <section class="doc-section" id="trailer-data">
   <h2>Trailer data</h2>
-  <p>Some entries contain bytes past the streaming terminator. <code>asset extract</code> preserves these as <code>_trailer.bin</code> next to the extracted chunks. The function that consumes the trailer has not been located.</p>
+  <p>Some entries contain bytes past the streaming terminator. <code>asset extract</code> preserves these as <code>_trailer.bin</code> next to the extracted chunks. The function that consumes the trailer has not been located; tracing the caller of <code>FUN_8002541C</code> in the field/town overlay is the next move if a specific entry's trailer looks structured.</p>
 </section>
 
 <section class="doc-section" id="related-shapes">
@@ -49,66 +102,57 @@ terminator</code></pre>
     <li>The <a href="scene-bundles.html">scene-TMD-prefixed streaming</a> shape is structurally similar but the leading chunk has no <code>[u32 type_size]</code> header and the inner content is a bare TMD instead of a TIM.</li>
     <li>The <a href="scene-bundles.html">scene-VAB-prefixed streaming</a> shape uses the same chunk0-header trick but with VAB content.</li>
     <li><a href="pack.html">Pack format</a> lives <em>inside</em> TIM_LIST / TMD chunks when the chunk's data is a pack rather than a single asset.</li>
-    <li>A handful of entries (<code>0157_rikuroa</code>, <code>0228_station</code>, <code>0373_taiku</code>, <code>1205_other5</code>) carry the streaming layout but the <strong>final</strong> chunk's declared <code>size</code> walks past EOF without a terminator on disc. The runtime extends the chunk via streaming DMA continuation rather than consuming a literal terminator. Detector: <code>crates/asset/src/data_field_truncated.rs</code> (class <code>data_field_truncated</code>).</li>
+    <li>One entry (<code>0892_level_up</code>) carries the streaming layout but its <strong>final</strong> chunk's declared <code>size</code> walks past the entry's end without a terminator on disc - three clean leading chunks, then an over-large fourth header. Detector: <code>crates/asset/src/data_field_truncated.rs</code> (class <code>data_field_truncated</code>). How the runtime consumes that chunk is not pinned.</li>
   </ul>
+  <details class="disclosure">
+    <summary>History: the "truncated" scene entries</summary>
+    <div class="disclosure-body">
+      <p>Three scene entries once cited in the truncated class - <code>0157_rikuroa</code>, <code>0228_station</code>, <code>0373_taiku</code> - are <strong>not</strong> truncated, and neither is <code>1205_other5</code>. Each scene entry is one of the four-chunk <code>MAN / MES / MOVE / VDF</code> bundles above; the superseded over-read entry size (<code>toc[p+5] - toc[p+3] + 4</code>) fell <em>short</em> of these entries (<code>0157</code> declared 163840 bytes against a real 186368; the other two were short by 69632 and 8192), so the last chunk overran a buffer that ended early. Against their own sectors all three terminate cleanly. The "runtime extends the chunk via streaming DMA continuation" explanation that accompanied the old reading is withdrawn with it. See <a href="prot.html#a-entry-offset-pair-is-only-a-coordinate-if-the-offset-is-inside-the-entry">PROT TOC &sect; history of the over-read</a>.</p>
+    </div>
+  </details>
 </section>
 
 <section class="doc-section" id="per-scene-field-bundles-what-s-still-open">
   <h2>Per-scene field bundles - what's still open</h2>
-  <p>The CDNAME block for a typical field/town scene (e.g. <code>town01</code>, <code>bubu1</code>) carries 8–12 PROT entries. Categorize (the sweep that classifies every archive entry by format) identifies several known shapes per block:</p>
-<table>
-<thead><tr>
-<th>Common slot</th>
-<th>Class</th>
-<th>Typical content</th>
-</tr></thead>
-<tbody>
-<tr>
-<td>0 / 1</td>
-<td><code>SceneTmdStream</code> or <code>TmdSizePrefix</code></td>
-<td>scene mesh (room geometry)</td>
-</tr>
-<tr>
-<td>1 / 2</td>
-<td><code>Pack</code> (TIM-pack)</td>
-<td>scene textures / sprite atlas</td>
-</tr>
-<tr>
-<td>2 / 3</td>
-<td><code>SceneEventScripts</code> or <code>SceneScriptedAssetTable</code></td>
-<td>per-event field-VM bytecode</td>
-</tr>
-<tr>
-<td>3 / 4</td>
-<td><code>MesContainer</code></td>
-<td>dialog text</td>
-</tr>
-<tr>
-<td>4 / 5</td>
-<td><code>Pack</code> (ANM-pack)</td>
-<td>per-actor animation sets</td>
-</tr>
-<tr>
-<td>5..7</td>
-<td><code>PochiFiller</code></td>
-<td>reserved-but-unused dev fillers</td>
-</tr>
-<tr>
-<td>6..8</td>
-<td><code>SceneVabStream</code> (rare; only on scenes with custom audio)</td>
-<td>per-scene VAB + SEQ</td>
-</tr>
-</tbody>
-</table>
-  <p>What's <strong>NOT</strong> modelled yet:</p>
+  <p>The CDNAME block for a typical field/town scene (e.g. <code>town01</code>, <code>bubu1</code>) carries 8-12 PROT entries. Categorize (the sweep that classifies every archive entry by format) identifies several known shapes per block. Slots below are in the retail block frame (see <a href="cdname.html#numbering-space">CDNAME &sect; numbering space</a>): slot 0 is the scene's <code>.MAP</code> and slot 1 its v12 trigger sidecar, which is why the classes below start one or two slots later than a naive count.</p>
+  <table>
+    <thead><tr><th>Common slot</th><th>Class</th><th>Typical content</th></tr></thead>
+    <tbody>
+      <tr><td>0 / 1</td><td><code>SceneTmdStream</code> or <code>TmdSizePrefix</code></td><td>scene mesh (room geometry)</td></tr>
+      <tr><td>1 / 2</td><td><code>Pack</code> (TIM-pack)</td><td>scene textures / sprite atlas</td></tr>
+      <tr><td>2 / 3</td><td><code>SceneEventScripts</code></td><td>per-event field-VM bytecode (the event-script prescript)</td></tr>
+      <tr><td>3 / 4</td><td><code>MesContainer</code></td><td>dialog text</td></tr>
+      <tr><td>4 / 5</td><td><code>Pack</code> (ANM-pack)</td><td>per-actor animation sets</td></tr>
+      <tr><td>5..7</td><td><code>PochiFiller</code></td><td>reserved-but-unused dev fillers (one sector each)</td></tr>
+      <tr><td>6..8</td><td><code>SceneVabStream</code> (rare; only on scenes with custom audio)</td><td>per-scene VAB + SEQ</td></tr>
+    </tbody>
+  </table>
+  <p>What is <strong>not</strong> modelled yet:</p>
   <ul class="bullets">
-    <li>Cross-entry pointers (NPC references that point into other PROT entries - the asset chain in <a href="../subsystems/asset-loader.html">asset-loader.md</a> is best-effort).</li>
-    <li>The per-slot semantics of the <code>field-pack</code> shared-template block (magic <code>0x01059B84</code>; see <a href="field-pack.html">field-pack</a>) - known shape, consumer unlocated.</li>
-    <li>The retail engine's per-scene "asset table" indirection (<code>SceneAssetTable</code> and <code>SceneScriptedAssetTable</code> detectors fire on a small fraction of entries; full reverse needs an overlay capture of <code>FUN_8001f7c0</code> at scene-load time).</li>
+    <li>Cross-entry pointers (NPC references that point into other PROT entries - the asset chain in <a href="../subsystems/asset-loader.html">asset loader</a> is best-effort).</li>
+    <li>The runtime-reconstructed slot-to-asset mapping inside <a href="field-pack.html">field-pack</a> containers (magic <code>0x01059B84</code>, 124 entries) - known shape, unknown slot semantics.</li>
+    <li>The retail engine's per-scene "asset table" indirection (the <code>SceneAssetTable</code> detector fires on a small fraction of entries; a full reverse needs an overlay capture of <code>FUN_8001f7c0</code> at scene-load time).</li>
   </ul>
   <p>The categorize sweep classifies every PROT entry to <em>something</em>; the items above are the residual edge. See <a href="../subsystems/engine.html">the engine page</a> for how scene loading consumes these shapes.</p>
+  <details class="disclosure">
+    <summary>History: the "scripted asset table" class</summary>
+    <div class="disclosure-body">
+      <p>A <code>SceneScriptedAssetTable</code> class - a descriptor table found at a sector-aligned offset inside an entry that led with an event prescript - was an artefact of the over-read entry size: every such offset was the next entry's start LBA, i.e. the neighbour's ordinary offset-0 table. Read against their own sectors, the prescript entries classify as event scripts and the 88 bare asset tables stay where they are. See <a href="prot.html#a-entry-offset-pair-is-only-a-coordinate-if-the-offset-is-inside-the-entry">PROT TOC &sect; history of the over-read</a>.</p>
+    </div>
+  </details>
 </section>
 
+<section class="doc-section" id="how-we-know">
+  <h2>How we know</h2>
+  <table>
+    <thead><tr><th>Evidence</th><th>Address / test</th><th>What it proves</th></tr></thead>
+    <tbody>
+      <tr><td>Retail consumer</td><td><code>FUN_8002541C</code>, the <code>0x14</code> branch</td><td>The chunk walk: header split, <code>(size &amp; ~3) + 4</code> advance, zero-size terminator.</td></tr>
+      <tr><td>Dispatcher hand-off</td><td><code>FUN_8001F05C</code> called with <code>copy_only=1</code></td><td>Chunks are consumed uncompressed, one dispatcher call per chunk.</td></tr>
+      <tr><td>Corpus sweep</td><td><code>asset scan-stream</code> strict validation</td><td>The 34-entry census and the two family shapes above.</td></tr>
+    </tbody>
+  </table>
+</section>
 
 <section class="doc-section" id="see-also">
   <h2>See also</h2>
@@ -117,5 +161,9 @@ terminator</code></pre>
     <a href="pack.html">asset::pack</a>
     <a href="asset-type.html">Asset-type dispatch</a>
     <a href="asset-descriptor.html">Asset descriptor</a>
+    <a href="scene-bundles.html">Scene bundles</a>
+    <a href="battle-data-pack.html">Player battle files</a>
+    <a href="../subsystems/asset-loader.html">Asset loader</a>
+    <a href="../characters.html">Characters</a>
   </div>
 </section>

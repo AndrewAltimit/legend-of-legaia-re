@@ -26,15 +26,15 @@
       <canvas id="wo-canvas3d" width="800" height="600" class="viewer-canvas" aria-label="World-map 3D mesh viewer"></canvas>
       <div class="wo-canvas-controls">
         <span class="wo-mode-group" role="radiogroup" aria-label="Render mode">
-          <button id="wo-mode-world" type="button" class="wo-mode is-active" role="radio" aria-checked="true"  title="Landmark TMDs from the kingdom bundle placed at their world coordinates from the static MAN table.">Assembled scene (disc)</button>
-          <button id="wo-mode-mesh"  type="button" class="wo-mode"           role="radio" aria-checked="false" title="Browse the per-kingdom TMD pack one mesh at a time.">Mesh inspector</button>
+          <button id="wo-mode-world" type="button" class="wo-mode is-active" role="radio" aria-checked="true"  title="Landmark meshes from the kingdom bundle placed at their world coordinates from the static MAN table.">Assembled scene (disc)</button>
+          <button id="wo-mode-mesh"  type="button" class="wo-mode"           role="radio" aria-checked="false" title="Browse the per-kingdom mesh pack one mesh at a time.">Mesh inspector</button>
         </span>
         <button id="wo-prev-mesh" type="button" disabled hidden>&larr; prev mesh</button>
         <span id="wo-mesh-label">no disc loaded</span>
         <button id="wo-next-mesh" type="button" disabled hidden>next mesh &rarr;</button>
         <label style="margin-left:1rem" hidden id="wo-auto-rotate-wrap"><input type="checkbox" id="wo-auto-rotate" checked> auto-rotate</label>
-        <label style="margin-left:1rem" id="wo-show-unplaced-wrap" title="Slot-1 TMDs that the static MAN placement table doesn't reference, laid out by class.">
-          <input type="checkbox" id="wo-show-unplaced"> show unplaced slot-1 TMDs
+        <label style="margin-left:1rem" id="wo-show-unplaced-wrap" title="Meshes in the kingdom pack that the placement table never uses, laid out by best-guess class.">
+          <input type="checkbox" id="wo-show-unplaced"> show unplaced meshes
         </label>
         <label style="margin-left:0.5rem" id="wo-normalize-unplaced-wrap" title="Scale and centre each unplaced mesh to a sensible size for the layout grid.">
           <input type="checkbox" id="wo-normalize-unplaced" checked> normalize unplaced
@@ -42,10 +42,10 @@
         <label style="margin-left:0.5rem" id="wo-fog-wrap" title="Enable the distance-cue fog post-process - the same far-haze tint the retail world map draws.">
           <input type="checkbox" id="wo-fog-enable"> fog
         </label>
-        <label style="margin-left:0.5rem" id="wo-ocean-wrap" title="Render the ocean backdrop plane beyond the continent. The 13-frame CLUT wave animation itself cycles inside VRAM (retail mechanism), so terrain water keeps shimmering even with this off.">
+        <label style="margin-left:0.5rem" id="wo-ocean-wrap" title="Render the ocean backdrop plane beyond the continent. The 13-frame wave animation is a palette cycle inside video memory (the retail mechanism), so terrain water keeps shimmering even with this off.">
           <input type="checkbox" id="wo-ocean-enable" checked> ocean
         </label>
-        <label style="margin-left:0.5rem" id="wo-show-terrain-wrap" title="Render the walk-view continent ground as a procedural heightfield, per-cell textured from the terrain-type atlas - the same terrain the native engine draws.">
+        <label style="margin-left:0.5rem" id="wo-show-terrain-wrap" title="Render the walk-view continent ground as a heightfield, per-cell textured from the terrain-type atlas - the same terrain the native engine draws.">
           <input type="checkbox" id="wo-show-terrain" checked> terrain
         </label>
         <label style="margin-left:0.5rem" id="wo-show-landmarks-wrap" title="Draw the placed landmark meshes (towns, gates, towers) and the decoration layer (trees, mountain groups, props) on top of the continent terrain, at the world positions the game places them.">
@@ -55,7 +55,7 @@
         <button id="wo-reset-cam" type="button" hidden>reset camera</button>
         <button id="wo-export-glb" type="button" hidden title="Download the assembled continent - terrain heightfield + placed landmarks and trees, textures baked from VRAM - as a binary glTF. Opens in Blender, three.js, or any glTF viewer.">&#11015; Download .glb</button>
       </div>
-      <div class="wo-hover-3d" id="wo-mesh-info">Load a disc image above to see the kingdom's landmark TMDs assembled in 3D.</div>
+      <div class="wo-hover-3d" id="wo-mesh-info">Load a disc image above to see the kingdom's landmarks assembled in 3D.</div>
     </div>
 
     <aside class="wo-side">
@@ -74,8 +74,13 @@
 </section>
 
 <section class="doc-section" id="quick-travel">
-  <h2>World-map quick-travel menu (whole Legaia)</h2>
-  <p class="hint" style="margin: 0 0 0.6rem 0;">Coordinates are the in-game menu screen-space. Hover a dot for the name and the destination scene id. Load a disc above to populate.</p>
+  <h2>Quick-travel menu (whole of Legaia)</h2>
+  <p>
+    Late in the game the party can jump between places they have already visited from a menu drawn
+    over a map of the whole world. This is that menu's map, with its markers placed exactly where
+    the game draws them.
+  </p>
+  <p class="hint" style="margin: 0 0 0.6rem 0;">Coordinates are the in-game menu's screen space. Hover a dot for the name and the destination scene id. Load a disc above to populate.</p>
   <div class="wo-layout">
     <div>
       <canvas id="wo-qt-canvas" width="600" height="450" class="viewer-canvas" aria-label="Quick-travel menu map"></canvas>
@@ -89,32 +94,34 @@
 </section>
 
 <details class="about-data" id="about-this-view">
-  <summary>About this view - assembly, toggles, VR, provenance</summary>
+  <summary>How to read this view - modes, toggles, export, VR</summary>
   <div class="about-body">
     <p>
-      Nothing is uploaded; the disc is cached locally in your browser and shared across
-      pages - use <em>Forget</em> on the chip to clear it.
+      In the game you cross each continent on foot, camera locked behind the party, with the far
+      side of the land fading into haze. Here the same continent is one scene you can orbit: the
+      ground, the towns and towers standing on it, the trees, the ocean around it. Nothing is
+      uploaded; the disc is cached locally in your browser and shared across pages - use
+      <em>Forget</em> on the chip to clear it.
     </p>
+    <h3>What each control does</h3>
+    <ul>
+      <li><strong>Tabs</strong> switch kingdom. Each kingdom's overworld ships as one bundle of numbered slots on the disc - ocean texture, landmark mesh pack, placement data.</li>
+      <li><strong>Assembled scene</strong> draws the mesh pack at the world coordinates the bundle's placement data ("MAN") gives it. <strong>Mesh inspector</strong> browses the same pack one mesh at a time.</li>
+      <li><strong>show unplaced meshes</strong> lays out every mesh the placement table never uses, sorted into best-guess classes - the leftovers and one-offs in the pack.</li>
+      <li><strong>terrain</strong> and <strong>landmarks + trees</strong> toggle the two layers of the walk view: the continent ground, and everything standing on it.</li>
+      <li><strong>ocean</strong> plays the disc's wave animation, a 13-frame palette cycle. <strong>fog</strong> approximates the retail distance-cue haze from a table read out of the executable.</li>
+      <li><strong>lock to retail top-view</strong> flattens the camera to the straight-down view the game's own debug menu uses.</li>
+    </ul>
     <p>
-      Each kingdom's overworld ships as one bundle of numbered slots on the disc - ocean texture,
-      landmark mesh pack (slot&nbsp;1), placement data. <strong>Assembled scene</strong> mode draws
-      the mesh pack at the world coordinates the bundle's &ldquo;MAN&rdquo; placement data gives it;
-      the <em>show unplaced slot-1 TMDs</em> toggle lays out everything the table doesn't place,
-      sorted into best-guess classes.
-    </p>
-    <p>
-      The <strong>mesh inspector</strong> browses the pack one mesh at a time, and the
-      <strong>top-down placement map</strong> plots the parsed MAN actor positions (Drake adds
-      live-RAM-resolved actor placements). The <strong>ocean</strong> toggle plays the disc's tile +
-      CLUT wave animation; <strong>fog</strong> approximates the retail distance-cue pass from a LUT
-      auto-extracted from <code>SCUS_942.54</code>. How each reconstruction works is on the
-      <a href="subsystems/world-overview-viewer.html">world-overview viewer</a> page.
+      The <strong>top-down placement map</strong> on the right plots the parsed placement positions
+      (Drake adds actor placements resolved from a live capture); <strong>Placements by list</strong>
+      counts them per placement list, colour-matched to the dots.
     </p>
     <h3>Exporting</h3>
     <p>
-      The <strong>&#11015; Download .glb</strong> button under the canvas exports the assembled
-      continent - terrain, landmarks, trees, textures baked in - as one
-      <a href="https://www.khronos.org/gltf/">glTF</a> file for Blender, three.js, or any glTF viewer.
+      <strong>&#11015; Download .glb</strong> exports the assembled continent - terrain, landmarks,
+      trees, textures baked in - as one <a href="https://www.khronos.org/gltf/">glTF</a> file for
+      Blender, three.js, or any glTF viewer.
     </p>
     <h3>VR</h3>
     <p>
@@ -123,22 +130,33 @@
       (<a href="subsystems/vr-mode.html">VR mode</a>). It needs Chrome or Edge with SteamVR as the
       active OpenXR runtime and a secure context; if it can't start, the button explains what's missing.
     </p>
-    <h3>Quick-travel data</h3>
+    <h3>Where the quick-travel data comes from</h3>
     <p>
-      The retail executable ships a 16-entry landmark name table plus a placement table - the data the in-game world-map menu uses to draw labelled markers when the player presses the &quot;visit&quot; button. Both are decoded straight from your disc here.
-      See the <a href="formats/world-map-overlay.html">world-map overlay format</a>.
+      The game's executable carries a fixed 16-entry list of landmark names and marker positions -
+      the data the world-map menu draws when the player opens it. One place name actually lives in
+      three separate places on the disc (this menu, the world-map label table, and each scene's
+      banner), and the 16 here are only the ones the menu has room for. Both tables are decoded
+      straight from your disc on this page.
     </p>
   </div>
 </details>
 
 <section class="doc-section" id="related">
   <h2>Related</h2>
-  <p>The runtime semantics behind the world map - controller, top-view toggle, render pipeline, bulk-terrain emit - live on the <strong>world-map subsystem</strong>. The reverse-engineering specific to this WebGL viewer - slot-1 layout heuristics, fog approximation, the MAN <code>0x7F</code> sentinel resolver, ocean extraction, camera anchors - is on the <strong>world-overview viewer</strong> page.</p>
+  <p>
+    How the game itself runs the world map - controller, top-view toggle, render pipeline, bulk
+    terrain - is on the <strong>world-map subsystem</strong> page. How this viewer reconstructs each
+    piece (unplaced-mesh layout, the fog approximation, the placement sentinel resolver, ocean
+    extraction, camera anchors) is on the <strong>world-overview viewer</strong> page.
+  </p>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="subsystems/world-map.html">World-map subsystem</a>
     <a href="subsystems/world-overview-viewer.html">World-overview viewer</a>
-    <a href="formats/world-map-overlay.html">Slot-4 records</a>
+    <a href="formats/world-map-overlay.html">Slot-4 records (world-map overlay)</a>
+    <a href="formats/scene-bundles.html">Scene bundles</a>
+    <a href="subsystems/vr-mode.html">VR mode</a>
+    <a href="world.html">Game world (towns &amp; dungeons)</a>
   </div>
 </section>
 

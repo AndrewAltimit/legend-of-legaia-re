@@ -2,7 +2,8 @@
   <div class="breadcrumb"><a href="index.html">home</a> &middot; shops &amp; vendors</div>
   <h1>Shops &amp; vendors</h1>
   <p class="lede">
-    Every merchant in the game and everything they sell - browsable by town, with each item's price, category, and what it actually does. No disc image needed - click any item for its detail panel.
+    Every merchant in the game and everything they sell - browsable by town, with each item's price,
+    category and what it actually does. No disc image needed; click any item for its detail panel.
   </p>
 </header>
 
@@ -32,28 +33,31 @@
       </div>
     </aside>
   </div>
+  <p class="hint">
+    <strong>How to read it:</strong> pick a town on the left; the middle column lists each vendor in
+    it. A shop's stock changes as the story moves on, so some vendors appear more than once with a
+    <em>phase</em> note. <strong>NEW</strong> marks items a walkthrough singles out as first
+    available there. Casino and fishing prize counters sit under the shops: they charge coins or
+    points instead of gold. Add <code>?town=Rim+Elm</code> to the URL to open on a town.
+  </p>
 </section>
 
 <details class="about-data">
-  <summary>About this data &mdash; where it comes from, and reading it off your own disc</summary>
+  <summary>Where this data comes from, and how to read it off your own disc</summary>
   <div class="about-body">
   <p>
-    This page runs off the project's
-    <a href="reference/gamedata.html">curated game-data tables</a>, mined from public walkthroughs.
-  </p>
-  <p>
-    These tables are <strong>ground truth</strong> for reverse engineering - a shop's on-disc
-    inventory is just item ids and prices, and a trustworthy human-readable table is what confirms a
-    decoded record. Each item's panel names the data anchor it validates.
+    The prices and effects here are the project's <a href="reference/gamedata.html">curated
+    game-data tables</a>, mined from public walkthroughs. They are the <strong>ground truth</strong>
+    the reverse engineering checks itself against: on the disc a shop is just a list of item ids
+    and prices, and a trustworthy human-readable table is what confirms a decoded record. Each
+    item's panel names the table row it validates.
   </p>
 
 <section class="doc-section" id="from-disc">
   <h3>Read it off your own disc</h3>
   <p>
     This page tells you what the shops sell. <code>asset shop-stock</code> tells you what the
-    <em>disc</em> says they sell - and when the two agree, both are confirmed. That is the other half
-    of the sentence at the top of this page: the curated tables are ground truth, and this command
-    produces the decoded record they validate.
+    <em>disc</em> says they sell - and when the two agree, both are confirmed.
   </p>
 <pre><code>asset shop-stock --prot extracted/PROT.DAT --scus extracted/SCUS_942.54 \
                  --cdname extracted/CDNAME.TXT            # every shop on the disc
@@ -61,19 +65,22 @@
 asset shop-stock --prot extracted/PROT.DAT --scus extracted/SCUS_942.54 \
                  --cdname extracted/CDNAME.TXT --scene bylon    # one scene</code></pre>
   <p>
-    The join is the interesting part, because the data is in two unrelated files. A town's stock is
-    <strong>not</strong> a shop table - it is inline in that scene's MAN field-VM script (op
-    <code>0x49</code>, sub-op <code>0</code>), next to the scene's chests and doors. The item names
-    and prices come from the static item record table in <code>SCUS_942.54</code>. The command opens
-    both and joins them.
+    The data is in two unrelated files. There is <strong>no shop table</strong>: a town's stock is
+    written inline into that town's own event script, next to its chests and doors, while the item
+    names and prices live in a static table in the executable. The command opens both and joins
+    them.
   </p>
   <p>
-    Two results are reported per shop, on purpose - <em>"decodes 10 ids, sells 7"</em>. The record's
-    <code>count</code> byte includes a trailing run of unsellable price-<code>0</code> template ids
-    that the in-game shop never displays, so the listing flags that tail rather than hiding it.
-    Shops are also located by <em>scanning</em> for the opcode rather than walking the script: a
-    vendor behind a dialogue confirm-picker desyncs a linear disassembler, and a walk would report
-    one shop too few with no error.
+    Two numbers are reported per shop on purpose - <em>"decodes 10 ids, sells 7"</em>. The
+    on-disc count includes a trailing run of unsellable placeholder ids the in-game shop never
+    displays, so the listing flags that tail rather than hiding it. Shops are also found by
+    <em>scanning</em> for the shop instruction rather than walking the script in order: a vendor
+    hidden behind a dialogue choice desyncs a linear reader, which would then report one shop too
+    few with no error.
+  </p>
+  <p>
+    The same applies to inns: there is no inn price table either - each inn's charge is a literal
+    in its town's script.
   </p>
   <p>
     Full walkthrough, with the byte offsets and the CDNAME index shift:
@@ -84,8 +91,23 @@ asset shop-stock --prot extracted/PROT.DAT --scus extracted/SCUS_942.54 \
 <section class="doc-section" id="related">
   <h3>Related</h3>
   <p>
-    Pricing &amp; effects come from <a href="reference/gamedata.html">curated game-data tables</a> (mined from public walkthroughs). The runtime mechanism - buying / inn / level-up flow, character-record equipment slots - lives on the <a href="subsystems/shop.html">Shop subsystem</a> and <a href="formats/save-record.html">per-character save record</a> pages.
+    The buy / sell / quantity flow the game runs, and which slot of the character record an
+    equip lands in, are on the reference pages below. The randomizer can reshuffle these stocks
+    on a real disc.
   </p>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="subsystems/shop.html">Shop subsystem</a>
+    <a href="subsystems/inn.html">Inn</a>
+    <a href="subsystems/inventory.html">Inventory</a>
+    <a href="formats/item-table.html">Item table</a>
+    <a href="formats/item-effect-table.html">Item effects</a>
+    <a href="formats/equipment-table.html">Equipment table</a>
+    <a href="formats/save-record.html">Character save record</a>
+    <a href="reference/gamedata.html">Curated game data</a>
+    <a href="tooling/rom-patcher.html">ROM patcher (shop shuffle)</a>
+    <a href="world.html">Game world</a>
+  </div>
 </section>
   </div>
 </details>

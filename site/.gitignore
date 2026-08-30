@@ -39,6 +39,7 @@
 /formats/npc-palette.html
 /formats/overlay-ptr-table.html
 /formats/pack.html
+/formats/place-names.html
 /formats/pochi.html
 /formats/prot.html
 /formats/save-record.html
@@ -92,13 +93,17 @@
 /subsystems/audio.html
 /subsystems/battle-action.html
 /subsystems/battle-formulas.html
+/subsystems/battle-internals.html
 /subsystems/battle.html
 /subsystems/boot.html
+/subsystems/cutscene-internals.html
 /subsystems/cutscene.html
 /subsystems/effect-vm.html
 /subsystems/engine.html
 /subsystems/field-locomotion.html
 /subsystems/field-menu.html
+/subsystems/history-battle.html
+/subsystems/history-world-map.html
 /subsystems/index.html
 /subsystems/inn.html
 /subsystems/inventory.html
@@ -122,6 +127,7 @@
 /tooling/overlay-capture.html
 /tooling/pcsx-redux-automation.html
 /tooling/port-catalog.html
+/tooling/randomizer-internals.html
 /tooling/randomizer.html
 /tooling/recomp-differential.html
 /tooling/rom-patcher.html

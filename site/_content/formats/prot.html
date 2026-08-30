@@ -1,78 +1,162 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; prot.dat / dmy.dat toc</div>
   <h1>PROT.DAT / DMY.DAT TOC <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede"><code>PROT.DAT</code> is the disc's single big asset archive: 1233 numbered <em>entries</em> holding nearly everything in the game - every texture (TIM), 3D model (TMD), sound bank (VAB), dialog container (MES), animation set (ANM), move table (MDT), streaming buffer, scene asset table, and runtime code overlay. Only the movies, streamed audio, and the executable live outside it. This page documents its table of contents (TOC): the index that says where each entry starts and how big it is.</p>
+  <p class="lede"><code>PROT.DAT</code> is the disc's one big asset archive. Nearly everything you see and hear in the game -
+  every texture, model, sound bank, dialogue container, animation set, scene script, and the chunks of engine code that
+  load on demand - is one of its 1233 numbered <em>entries</em>. Only the movies, the streamed voice audio and the main
+  executable live outside it. This page covers its table of contents (TOC): the index at the front of the file that says
+  where each entry starts and how big it is.</p>
 </header>
 
-<section class="doc-section" id="overview">
-  <h2>Overview</h2>
-  <p>An "entry" (or "slot") is one numbered region of the archive - the unit the game requests when it loads assets. The TOC measures everything in sectors and LBAs (a sector is the disc's 2048-byte block; an LBA is a sector number counting from the start of the file). Two wrinkles make this TOC more interesting than a plain offset table, and both are covered below:</p>
-  <ul class="bullets">
-    <li><strong>Trailing-overlay sectors:</strong> for ~24% of entries the game reads <em>past</em> the size the TOC declares - the extra sectors carry real content (e.g. PROT 899's trailing 60 sectors are the title-screen overlay code, a chunk of MIPS code the game loads into RAM on demand).</li>
-    <li><strong>Two index spaces, off by 2:</strong> the game's in-RAM copy of the TOC counts entries from a different origin than this project's extraction, so every index recovered from game code must be shifted by 2 - the root cause of a whole family of historical mislabelings.</li>
-  </ul>
-  <p><code>DMY.DAT</code> is a sibling archive at the disc root that turns out to be developer fixtures (memory-bus test pattern + paired random blobs), not game data; see <a href="dmy.html">DMY.DAT</a>. Implementation: <code>crates/prot/src/archive.rs</code>.</p>
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Where</dt><dd><code>PROT.DAT</code> at the disc root; header + TOC = the first 3 sectors. <code>DMY.DAT</code> shares the layout (<a href="dmy.html">dev fixtures only</a>)</dd>
+    <dt>Magic</dt><dd>None - two header words, then a flat <code>u32</code> LBA table</dd>
+    <dt>Size / stride</dt><dd>1236 TOC rows of 4 bytes; entry size = gap to the next row, in 2048-byte sectors</dd>
+    <dt>In RAM</dt><dd>Raw copy of the first 3 sectors at <code>0x801C70F0</code></dd>
+    <dt>Parser</dt><dd><code>crates/prot</code> (<code>Archive</code>, <code>runtime_toc</code>, <code>tiling</code>)</dd>
+    <dt>Confidence</dt><dd>Confirmed - retail's own resolver does the same subtraction, and the entries tile the archive exactly</dd>
+    <dt>Used by</dt><dd><a href="../subsystems/asset-loader.html">asset loader</a>, <a href="../subsystems/boot.html">boot sequence</a>, <a href="../tooling/extraction.html">extraction pipeline</a>, <a href="../viewer.html">asset viewer</a></dd>
+  </dl>
 </section>
 
-<section class="doc-section" id="header-8-bytes-at-offset-0x000-or-0x800">
-  <h2>Header (8 bytes at offset 0x000 OR 0x800)</h2>
-<pre><code>u32 file_count_minus_1
-u32 header_sectors      // size of TOC in 0x800-byte sectors</code></pre>
-  <p>The detector tries offset 0x000 first, then 0x800, accepting whichever yields plausible values. PROT.DAT uses 0x000.</p>
+<section class="doc-section" id="overview">
+  <h2>Three things to hold onto</h2>
+  <p>An <em>entry</em> is one numbered region of the archive - the unit the game requests when it loads a scene, a battle or a menu. The TOC measures in sectors (2048 bytes) and LBAs, where an LBA here counts sectors from the start of <code>PROT.DAT</code> itself, not from the start of the disc.</p>
+  <ul class="bullets">
+    <li><strong>One word per entry.</strong> The TOC stores only each entry's start LBA. Its size is the gap to the next entry's start - exactly how the game computes it.</li>
+    <li><strong>The entries tile the archive.</strong> Starts ascend, each entry ends where the next begins, and the sizes sum to the whole file. That is what makes the reading self-checking.</li>
+    <li><strong>Two index spaces, off by 2.</strong> The game counts TOC rows from the file's first word; this project's extraction counts from the first entry. Every index recovered from game code is 2 higher than the matching <code>extracted/PROT/NNNN_*.BIN</code>, and <a href="cdname.html">CDNAME.TXT</a> is authored in the game's space.</li>
+  </ul>
 </section>
 
 <section class="doc-section" id="toc-immediately-after-header">
-  <h2>TOC (immediately after header)</h2>
-  <p>The TOC is a flat array of <code>u32</code> words (<code>toc[]</code> below - word 0 is the first u32 after the 8-byte header). <code>p</code> is the 0-based <strong>entry index</strong> (the extraction index). Each entry contributes exactly <strong>one</strong> word - its start LBA, at <code>toc[p+2]</code> - and its size is the gap to the next entry:</p>
-<pre><code>start_lba     = toc[p + 2]                  // absolute LBA into PROT.DAT
-size_sectors  = toc[p + 3] - toc[p + 2]     // gap to the next entry's start LBA
-byte_offset   = start_lba * 0x800
-size_bytes    = size_sectors * 0x800</code></pre>
-  <p>That is retail's own arithmetic: <code>FUN_8003E68C</code> is twelve instructions long and returns <code>TABLE[i+3] - TABLE[i+2]</code>, and the LBA resolver <code>FUN_8003E8A8</code> computes the same difference beside the start LBA it stores. The property that pins it is that the entries <strong>tile <code>PROT.DAT</code> exactly</strong> - 1233 entries, LBA 121..59206, monotonic starts, no gaps, no overlaps, reaching the archive's last sector (<code>legaia_prot::tiling</code>, asserted against a disc by <code>archive_tiling_real</code>).</p>
-  <h3 id="the-4-span-is-not-an-entrys-size"><code>toc[p+5] - toc[p+3] + 4</code> is not an entry's size</h3>
-  <p>This page used to give <code>indexed_size_sectors = toc[p+5] - toc[p+3] + 4</code> as the entry's TOC-declared payload, with the real size taken as <code>max()</code> of that and the sector gap. Since every entry contributes one word, <code>toc[p+3]</code> is entry <code>p+1</code>'s start LBA and <code>toc[p+5]</code> is entry <code>p+3</code>'s, so the expression expands to <code>size(p+1) + size(p+2) + 4</code> - a span of the two entries that <em>follow</em> <code>p</code>. It exceeds the real size for most of the archive (the declared spans total about 2.5&times; the whole file, which no partition of it can), and falls short for the rest. Under the <code>max()</code> reading 931 of 1233 entries were parsed over a buffer that ran into their neighbours' sectors.</p>
-  <p>The "trailing-overlay sectors" reading was the same thing seen from the other side: entry 899's payload is not "14 indexed sectors plus 60 trailing overlay sectors", it is 74 sectors, all its own. <code>Archive::read_entry</code> returns exactly those and nothing a neighbour owns; <code>read_entry_declared_span</code> reproduces the old window for diagnostics only.</p>
-  <h3 id="a-entry-offset-pair-is-only-a-coordinate-if-the-offset-is-inside-the-entry">A <code>(entry, offset)</code> pair is only a coordinate if the offset is inside the entry</h3>
-  <p>The over-read's longest-lived legacy is a <strong>naming</strong> one. Any constant of the form "asset X lives at PROT <code>N</code> offset <code>K</code>" was measured inside the old window, so whenever <code>K</code> ran past entry <code>N</code>'s real end the pair named a real place on the disc - just not the entry it claimed. Re-keying it to the entry whose own sectors hold those bytes changes no byte and fixes the read:</p>
-  <table>
-    <thead><tr><th>Was</th><th>Is</th><th>What the wrong reading looked like</th></tr></thead>
+  <h2>Layout</h2>
+  <figure class="overlay-strip">
+    <svg viewBox="0 0 880 150" width="100%" style="max-width:880px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="PROT.DAT header words followed by the TOC: entry p starts at toc[p+2] and its size is toc[p+3] minus toc[p+2]">
+      <style>
+        .ptoc-box  { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.3; }
+        .ptoc-soft { fill: var(--bg-raised); stroke: var(--border); stroke-width: 1.1; stroke-dasharray: 3 3; }
+        .ptoc-lab  { font: 12px 'Inter', sans-serif; fill: currentColor; }
+        .ptoc-sub  { font: 10px 'JetBrains Mono', monospace; fill: var(--text-muted); }
+        .ptoc-off  { font: 10px 'JetBrains Mono', monospace; fill: var(--accent); }
+        .ptoc-arr  { fill: none; stroke: var(--accent); stroke-width: 1.2; }
+      </style>
+      <text x="20" y="22" class="ptoc-off">+0x00</text>
+      <rect x="20" y="30" width="80" height="44" class="ptoc-soft"/>
+      <text x="26" y="50" class="ptoc-lab">unused</text>
+      <text x="26" y="66" class="ptoc-sub">u32</text>
+      <text x="100" y="22" class="ptoc-off">+0x04</text>
+      <rect x="100" y="30" width="90" height="44" class="ptoc-soft"/>
+      <text x="106" y="50" class="ptoc-lab">rows - 1</text>
+      <text x="106" y="66" class="ptoc-sub">u32</text>
+      <text x="190" y="22" class="ptoc-off">+0x08</text>
+      <rect x="190" y="30" width="90" height="44" class="ptoc-soft"/>
+      <text x="196" y="50" class="ptoc-lab">toc[0]</text>
+      <text x="196" y="66" class="ptoc-sub">boot UI a</text>
+      <rect x="280" y="30" width="90" height="44" class="ptoc-soft"/>
+      <text x="286" y="50" class="ptoc-lab">toc[1]</text>
+      <text x="286" y="66" class="ptoc-sub">boot UI b</text>
+      <rect x="370" y="30" width="120" height="44" class="ptoc-box"/>
+      <text x="376" y="50" class="ptoc-lab">toc[p+2]</text>
+      <text x="376" y="66" class="ptoc-sub">entry p start</text>
+      <rect x="490" y="30" width="130" height="44" class="ptoc-box"/>
+      <text x="496" y="50" class="ptoc-lab">toc[p+3]</text>
+      <text x="496" y="66" class="ptoc-sub">entry p+1 start</text>
+      <rect x="620" y="30" width="60" height="44" class="ptoc-soft"/>
+      <text x="640" y="56" class="ptoc-lab">...</text>
+      <rect x="680" y="30" width="130" height="44" class="ptoc-soft"/>
+      <text x="686" y="50" class="ptoc-lab">toc[1235]</text>
+      <text x="686" y="66" class="ptoc-sub">end = 59206</text>
+      <path d="M 430 80 L 430 100 L 555 100 L 555 80" class="ptoc-arr"/>
+      <text x="380" y="124" class="ptoc-lab">size_sectors(p) = toc[p+3] - toc[p+2]</text>
+      <text x="20" y="124" class="ptoc-sub">raw TOC index = p + 2 (the game's space)</text>
+    </svg>
+    <figcaption>The first words of <code>PROT.DAT</code>. Word <code>+0x08</code> is both the TOC-size word and <code>toc[0]</code>; the first extracted entry's start LBA is two words later.</figcaption>
+  </figure>
+  <table class="layout">
+    <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
     <tbody>
-      <tr><td>World-map kingdom bundle at PROT <code>0085</code> / <code>0244</code> / <code>0391</code></td><td><code>0086</code> / <code>0245</code> / <code>0392</code></td><td>The bundle's 7-asset table appeared to sit "at <code>0x1800</code> of the prescript entry". It is at offset 0 of the next entry.</td></tr>
-      <tr><td>Battle-form character atlases at PROT <code>1204</code> <code>0x25804 + k&times;0x8224</code>, seven, last truncated</td><td>PROT <code>1205</code> <code>4 + k&times;0x8224</code>, <strong>eight</strong>, none truncated</td><td><code>0x25800</code> is 1204's exact length, so <code>0x25804</code> is 1205 offset 4. The window stopped between atlas 6 and 7, so the eighth was invisible and its CLUT row (496) read as a skipped row.</td></tr>
-      <tr><td>Title TIM at PROT <code>0888</code> <code>0x1AA28</code> with duplicates at <code>0889</code> / <code>0890</code></td><td>PROT <code>0890</code> <code>0x14228</code>, one copy</td><td>All three expressions resolve to the same absolute offset. A whole-archive byte scan for the TIM header finds one hit.</td></tr>
+      <tr><td><code>+0x00</code></td><td>4</td><td><code>unused</code></td><td>Zero in both retail archives</td></tr>
+      <tr><td><code>+0x04</code></td><td>4</td><td><code>rows - 1</code></td><td>TOC row count minus one: <code>PROT.DAT</code> 1235, <code>DMY.DAT</code> 15</td></tr>
+      <tr><td><code>+0x08</code></td><td>4</td><td><code>toc[0]</code></td><td>Header + TOC size in sectors (3), which is also the first content LBA</td></tr>
+      <tr><td><code>+0x0C</code></td><td>4 &times; rows</td><td><code>toc[1..]</code></td><td>Start LBAs; <code>toc[1235] = 59206</code> is the end terminator</td></tr>
     </tbody>
   </table>
-  <p>Two properties make a corrected coordinate checkable: the offset plus the asset's length must fit inside the entry, and the payload's own framing (a streaming chunk chain, a descriptor count in the header) must terminate inside it rather than run to the buffer's end. A constant that needs a wider buffer than its entry is naming the wrong entry.</p>
+  <p>The 1236 rows are <code>toc[0]</code> and <code>toc[1]</code> (two boot-UI regions), 1233 entry starts, and one terminator. For extraction entry <code>p</code>:</p>
+<pre><code>start_lba     = toc[p + 2]                  // LBA relative to PROT.DAT
+size_sectors  = toc[p + 3] - toc[p + 2]     // the gap to entry p+1
+byte_offset   = start_lba * 0x800
+size_bytes    = size_sectors * 0x800</code></pre>
+  <p>The LBAs are <code>PROT.DAT</code>-relative, so they are identical on the USA and PAL discs even though <code>PROT.DAT</code> sits at a different disc LBA per region. That is what makes whole-sector entry growth tractable: shift the later start-LBA words, no disc-wide cascade (<a href="disc.html#full-iso-relayout">disc &sect; full-ISO relayout</a>). The detector tries the header at offset <code>0x000</code> first, then <code>0x800</code>; both retail archives use <code>0x000</code>.</p>
 </section>
 
 <section class="doc-section" id="in-ram-toc">
-  <h2>In-RAM TOC + the two index spaces</h2>
-  <p><code>SCUS_942.54</code> keeps a copy of the TOC at RAM address <code>0x801C70F0</code>. Used at <code>FUN_8003E8A8</code> (the LBA resolver; <code>FUN_80xxxxxx</code> names are Ghidra-traced function addresses in the executable):</p>
-<pre><code>start_lba    = TABLE[(idx + 2) * 4 + 0x801C70F0]
-next_start   = TABLE[(idx + 3) * 4 + 0x801C70F0]
-size_sectors = next_start - start_lba</code></pre>
-  <p>The in-RAM copy is <strong>raw <code>PROT.DAT</code> from byte 0</strong> - <code>FUN_8003E4E8</code> reads the first three sectors of <code>PROT.DAT</code> into <code>0x801C70F0</code> at boot, header words included (byte-verified against a live save state's RAM). There is no transformation; but the <strong>index space differs by 2</strong> from the extraction's: the extraction (<code>crates/prot</code>, and the <code>NNNN</code> in <code>extracted/PROT/NNNN_*.BIN</code>) builds its <code>toc[]</code> array <em>after</em> the two file-header words, so extraction entry <code>p</code>'s <code>start_lba</code> sits at file word <code>p + 4</code>, while the resolver's <code>TABLE[(idx + 2)]</code> is file word <code>idx + 2</code>.</p>
-  <p class="hint"><strong>The canonical rule: raw TOC index = extraction index + 2.</strong> Any PROT index recovered from a <code>FUN_8003E8A8</code> argument must subtract 2 to land in extraction space (byte-verified for the battle side-band files: raw TOC indices <code>0x37F</code>/<code>0x380</code> resolve to extraction entries 893/894, see <a href="summon-readef.html">summon-readef</a>). Raw-TOC entries 0 and 1 cover the pre-<code>init_data</code> boot-UI region (LBA 3..120) that extraction indexing leaves unindexed: two TIM-packs holding the boot-resident <strong>system-UI bundle</strong> (menu-glyph atlas, sprite sheets, cursor parts; uploaded once at boot by <code>FUN_800198E0</code> with flat-strip CLUT semantics, parser <code>legaia_asset::system_ui_bundle</code>)
-    - see <a href="tim-pack.html#boot-resident-system-ui-instance-raw-toc-entries-0-and-1">tim-pack &sect; boot-resident system-UI instance</a>. <a href="cdname.html"><code>CDNAME.TXT</code></a>'s <code>#define</code> numbers are authored in this raw-TOC space - the extractor's filename labels are shifted +2 relative to the content the defines name; see <a href="cdname.html#numbering-space">cdname &sect; numbering space</a>.</p>
+  <h2>In-RAM TOC and the two index spaces</h2>
+  <p>At boot the game copies the first three sectors of <code>PROT.DAT</code> into RAM, header words included, and resolves every later asset request against that copy. There is no transformation - but the extraction builds its <code>toc[]</code> after the two header words, so the two sides count from different origins.</p>
+  <table>
+    <thead><tr><th>File word</th><th>Raw TOC index (game)</th><th>Extraction index</th><th>Holds</th></tr></thead>
+    <tbody>
+      <tr><td>0, 1</td><td>-</td><td>-</td><td>the two header words</td></tr>
+      <tr><td>2</td><td>0</td><td>(unindexed)</td><td>boot-UI region a, LBA 3</td></tr>
+      <tr><td>3</td><td>1</td><td>(unindexed)</td><td>boot-UI region b</td></tr>
+      <tr><td>4</td><td>2</td><td>0000</td><td>first extracted entry, LBA 121</td></tr>
+      <tr><td><code>p + 4</code></td><td><code>p + 2</code></td><td><code>p</code></td><td>start LBA of extraction entry <code>p</code></td></tr>
+    </tbody>
+  </table>
+  <p class="hint"><strong>Raw TOC index = extraction index + 2.</strong> Any PROT index recovered from a resolver argument must subtract 2 to land in extraction space (the battle side-band files: raw <code>0x37F</code> / <code>0x380</code> = extraction 893 / 894). <a href="cdname.html">CDNAME.TXT</a>'s <code>#define</code> numbers are raw-space, so extraction filename labels are shifted +2 from the content the defines name.</p>
+  <p>Raw entries 0 and 1 (LBA 3..120) are two TIM-packs holding the boot-resident system-UI bundle - glyph atlas, sprite sheets, cursor parts (<a href="tim-pack.html#boot-resident-system-ui-instance-raw-toc-entries-0-and-1">tim-pack</a>).</p>
 </section>
 
 <section class="doc-section" id="resolving-entries-by-name-vs-by-index">
-  <h2>Resolving entries by name vs by index</h2>
-  <p>Two entry points:</p>
+  <h2>How the game asks for an entry</h2>
   <ul class="bullets">
-    <li><code>FUN_8003E8A8</code> - index-based (consumed directly by the streaming loader and the dev-build sound branch).</li>
-    <li><code>FUN_8003E6BC</code> - path-based; resolves dev paths like <code>data\battle\efect.dat</code> or <code>h:\PROT\FIELD\&lt;scene&gt;\&hellip;</code> into an index via the CDNAME-driven name map, then delegates to the LBA resolver. Most retail-build code paths land here.</li>
+    <li><strong>By index</strong> - the streaming loader and the dev-build sound branch call the resolver with a raw TOC index.</li>
+    <li><strong>By path</strong> - dev paths like <code>data\battle\efect.dat</code> or <code>h:\PROT\FIELD\&lt;scene&gt;\&hellip;</code> resolve through the CDNAME name map to an index, then to the resolver. Most retail code lands here.</li>
+    <li><strong>Overlays</strong> - the field, battle and menu engines are code entries loaded on mode switch. Two paired loaders manage two independently swappable RAM slots, each calling the resolver with <code>param + 0x381</code> = extraction entry <code>param + 0x37F</code> (2 = 0897 field, 3 = 0898 battle, 4 = 0899 menu). Two overlays can be resident at once.</li>
   </ul>
-  <p>Names come from <a href="cdname.html"><code>CDNAME.TXT</code></a>, which lives at the top level of the disc.</p>
+  <p>A dual-mode loader chooses between the TOC index (retail, the boot-time value of <code>_DAT_8007B8C2</code>) and an <code>h:\</code> dev-station path through a <code>break 0x103</code> host trap. Only the retail branch runs on a real disc. The CD-read API stack behind these is on <a href="../subsystems/boot.html">boot</a>.</p>
 </section>
 
-<details class="disclosure">
-  <summary>Superseded readings</summary>
-  <ul class="bullets">
-    <li><code>toc[p+5] - toc[p+2]</code> computes the SIZE in sectors, not the start LBA. Read as a start LBA it collapses ~80% of PROT entries onto the same few low-LBA byte ranges - anything derived from that formula's outputs is artefacted; trust only <code>start_lba = toc[p+2]</code> extractions.</li>
-    <li>"The boot loader transforms the TOC into a different in-RAM layout" - falsified; the in-RAM copy at <code>0x801C70F0</code> is raw <code>PROT.DAT</code> from byte 0, and only the <em>index space</em> differs (by 2).</li>
-  </ul>
-</details>
+<section class="doc-section" id="how-we-know">
+  <h2>How we know</h2>
+  <table>
+    <thead><tr><th>Function</th><th>Address</th><th>What it proves</th><th>Dump</th></tr></thead>
+    <tbody>
+      <tr><td>Entry size</td><td><code>FUN_8003E68C</code></td><td>Twelve instructions returning <code>TABLE[i+3] - TABLE[i+2]</code>; result goes straight to the sector read</td><td><code>funcs/8003e68c.txt</code></td></tr>
+      <tr><td>TOC resolver</td><td><code>FUN_8003E8A8</code></td><td>Indexes <code>0x801C70F0 + (idx+2)*4</code>; stores <code>start_lba</code> at <code>gp+0x8f0</code>, returns the span in <code>v0</code></td><td><code>funcs/8003e8a8.txt</code></td></tr>
+      <tr><td>Boot TOC copy</td><td><code>FUN_8003E4E8</code></td><td>Reads the first 3 sectors raw into <code>0x801C70F0</code>; byte-verified against a save state</td><td><code>funcs/8003e4e8.txt</code></td></tr>
+      <tr><td>By-index loader</td><td><code>FUN_8003EB98</code> &rarr; <code>FUN_8003E800</code></td><td>Passes the resolver's span as the sector count</td><td><code>funcs/8003eb98.txt</code></td></tr>
+      <tr><td>Path resolver</td><td><code>FUN_8003E6BC</code></td><td>CDNAME name map &rarr; index &rarr; LBA resolver</td><td><code>funcs/8003e6bc.txt</code></td></tr>
+      <tr><td>Overlay slot loaders</td><td><code>FUN_8003EBE4</code> (<code>*DAT_8001038C</code>, <code>gp+0x924</code>), <code>FUN_8003EC70</code> (<code>*DAT_80010390</code>, <code>gp+0x934</code>)</td><td>Two parallel slots; <code>param + 0x381</code> argument</td><td>per-function dumps</td></tr>
+      <tr><td>Dual-mode loader</td><td><code>FUN_8003E360</code>; <code>FUN_800608F0</code> / <code>FUN_80060944</code></td><td>Retail TOC branch vs dev <code>h:\</code> trap</td><td><code>funcs/8003e360.txt</code></td></tr>
+      <tr><td>Tiling</td><td><code>archive_tiling_real.rs</code></td><td>Sizes partition LBA 121..59206 exactly</td><td>disc-gated test</td></tr>
+    </tbody>
+  </table>
+  <p>Further evidence that the gap is the size, independent of the definition: known-length files agree with it (<code>readef.DAT</code> = 78 &times; <code>0x10800</code>, <code>summon.dat</code> = 103 &times; <code>0x10800</code>, every <code>.MAP</code> = <code>0x12000</code>, <code>bse.dat</code> = 2 sectors); every scene-asset table lands at offset 0 of its entry; mid-cast save states hold a stager byte-resident up to the sector gap and stale bytes after it; and PROT 899 is 74 sectors, all its own.</p>
+</section>
+
+<section class="doc-section" id="deep-dive">
+  <h2>Deep dive</h2>
+  <details class="disclosure" id="a-entry-offset-pair-is-only-a-coordinate-if-the-offset-is-inside-the-entry">
+    <summary>History: the over-read entry size and the coordinates it mislabelled</summary>
+    <div class="disclosure-body">
+      <p>The expression <code>toc[p+5] - toc[p+3] + 4</code> is not an entry's size: it expands to <code>size(p+1) + size(p+2) + 4</code>, the two entries that <em>follow</em> <code>p</code>. It overshoots for 931 of 1233 entries and falls short for the rest. Parsing over that window ran into neighbours' sectors. <code>Entry::declared_span_sectors</code> keeps the value for diagnostics only (<code>prot-extract list</code>, column <code>decl_span</code>, flag <code>OVR</code>).</p>
+      <p>Every constant of the form "asset X at PROT <code>N</code> offset <code>K</code>" measured inside that window names real bytes but, when <code>K</code> ran past entry <code>N</code>'s end, the wrong owner. Re-keying changes no byte:</p>
+      <table>
+        <thead><tr><th>Was</th><th>Is</th><th>Why</th></tr></thead>
+        <tbody>
+          <tr><td>Kingdom bundle at PROT <code>0085</code> / <code>0244</code> / <code>0391</code></td><td><code>0086</code> / <code>0245</code> / <code>0392</code></td><td>The 7-asset table is at offset 0 of the next entry, not "at <code>0x1800</code> of the prescript entry"</td></tr>
+          <tr><td>Battle-form atlases at PROT <code>1204</code> <code>0x25804 + k&times;0x8224</code>, seven, last truncated</td><td>PROT <code>1205</code> <code>4 + k&times;0x8224</code>, <strong>eight</strong></td><td><code>0x25800</code> is 1204's exact length; the window stopped between atlases 6 and 7</td></tr>
+          <tr><td>Title TIM at PROT <code>0888</code> <code>0x1AA28</code> with "duplicates" in 0889 / 0890</td><td>PROT <code>0890</code> <code>0x14228</code>, one copy</td><td>All three resolve to the same absolute offset</td></tr>
+        </tbody>
+      </table>
+      <p>Other artefacts of the over-read: the "prescript-prefixed asset table" (a neighbour's offset-0 table), inflated overlay self-pointer ratios (PROT 0901 has three, not nine), "shifted copy" claims between 0900 and 0901, and an <code>init.pak</code> detector that demanded <code>0x30000</code> bytes of a 75-sector entry. Two checks make a coordinate trustworthy: offset + length fits inside the entry, and the payload's own framing terminates inside it.</p>
+      <p>Older still: a Python proof-of-concept used <code>start_lba = toc[p+5] - toc[p+2]</code>, collapsing ~80% of entries onto the same low-LBA ranges; and "the boot loader transforms the TOC" is falsified - only the index space differs. Catalogue: <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p>
+    </div>
+  </details>
+</section>
 
 <section class="doc-section" id="see-also">
   <h2>See also</h2>
@@ -80,8 +164,13 @@ size_sectors = next_start - start_lba</code></pre>
     <span class="see-also-label">Reference</span>
     <a href="disc.html">Disc layout</a>
     <a href="cdname.html">CDNAME map</a>
+    <a href="dmy.html">DMY.DAT</a>
     <a href="lzs.html">LZS compression</a>
     <a href="asset-type.html">Asset-type dispatch</a>
+    <a href="../subsystems/asset-loader.html">Asset loader</a>
+    <a href="../subsystems/boot.html">Boot sequence</a>
     <a href="../tooling/extraction.html">Extraction pipeline</a>
+    <a href="../tooling/static-overlay-pipeline.html">Static overlay pipeline</a>
+    <a href="../reference/re-do-not-re-walk.html">Do not re-walk</a>
   </div>
 </section>

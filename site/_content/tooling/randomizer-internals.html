@@ -1,0 +1,323 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; randomizer internals</div>
+  <h1>Randomizer internals</h1>
+  <p class="lede">The engineering companion to the <a href="randomizer.html">randomizer</a>: how an edit travels from a PROT entry to a rewritten disc sector, the six techniques every feature is built from, and - for the features that inject hand-assembled MIPS code - where that code is allowed to live, why the room is so scarce, and the two traps that bite anyone who adds a hook. Read the main page first; this one assumes its vocabulary.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Crate</dt><dd><code>crates/patcher</code> (<code>legaia_patcher</code>); disc bridge <code>disc::DiscPatcher</code>, orchestration <code>apply</code>, patch output <code>ppf</code></dd>
+    <dt>Three capabilities</dt><dd>LZS <em>encoder</em> (<code>legaia_lzs::compress</code>), Mode 2/2352 sector write-back with EDC/ECC (<code>legaia_iso::write</code>), PROT-entry &rarr; LBA addressing (<code>DiscPatcher</code>)</dd>
+    <dt>Editing rule</dt><dd>Same-size in place; only doors and place names resize a record, through <a href="../formats/man-relocation.html">MAN relocation</a></dd>
+    <dt>Code hosts</dt><dd>SCUS rodata gap <code>0x8007AB38</code> (1028 B), the SCUS arena (652 B in four regions), reference-free dead runs inside overlays 0898 / 0899 / 0958, the <code>DMY.DAT</code> annex</dd>
+    <dt>Detour shape</dt><dd>Two words at the hook site become <code>j routine</code> + <code>nop</code>; the routine replays the two displaced instructions and jumps back</dd>
+    <dt>Guards</dt><dd>Every hook word must match the US build; every landing zone must be all-zero, outside every known table, and read-watch-verified unreferenced</dd>
+    <dt>Confidence</dt><dd>Confirmed: disc oracles pin every byte; the MIPS hooks are additionally verified by emulator playtest (the clean-room engine cannot execute them)</dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="patch-chain">
+  <h2>How a patch reaches the disc</h2>
+  <p>A PlayStation disc is not a folder of files. Almost every value the randomizer changes sits inside a compressed block, on a sector whose checksums must be recomputed, at an address nothing else may move. Three capabilities the preservation track never needed make that editable.</p>
+  <table>
+    <thead><tr><th>Capability</th><th>Module</th><th>Why it is needed</th></tr></thead>
+    <tbody>
+      <tr><td>LZS encoder</td><td><code>legaia_lzs::compress</code></td><td>Retail ships only a decoder. Monster records, scene MANs and art records are LZS streams, so editing one means producing a stream the retail decoder accepts - and packing it no larger than the original. <a href="../formats/lzs.html">LZS &rarr;</a></td></tr>
+      <tr><td>Sector write-back</td><td><code>legaia_iso::write</code></td><td>Overwriting a sector's 2048-byte payload also means recomputing its 4-byte EDC and 276-byte P/Q ECC, or the drive reads it as corrupt. <a href="../formats/disc.html">Disc geometry &rarr;</a></td></tr>
+      <tr><td>Disc bridge</td><td><code>legaia_patcher::disc::DiscPatcher</code></td><td>Turns "byte <code>K</code> of PROT entry <code>N</code>" into physical sector writes through the <a href="../formats/prot.html">PROT.DAT</a> table of contents.</td></tr>
+    </tbody>
+  </table>
+  <figure class="overlay-strip">
+    <svg viewBox="0 0 900 150" width="100%" style="max-width: 900px; font-family: var(--font-mono); font-size: 12px;" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="An edit addressed as PROT entry plus offset is resolved through the PROT table of contents to a logical offset in PROT.DAT, then through ISO 9660 to a disc sector, which is rewritten with fresh EDC and ECC">
+      <g fill="var(--bg-raised)" stroke="var(--border)" stroke-width="1.2">
+        <rect x="10" y="30" width="180" height="56" rx="4" stroke="var(--accent)" stroke-width="1.6"/>
+        <rect x="240" y="30" width="180" height="56" rx="4"/>
+        <rect x="470" y="30" width="180" height="56" rx="4"/>
+        <rect x="700" y="30" width="190" height="56" rx="4" stroke="var(--accent)" stroke-width="1.6"/>
+      </g>
+      <g fill="none" stroke="var(--text-muted)" stroke-width="1.2">
+        <line x1="190" y1="58" x2="236" y2="58"/>
+        <line x1="420" y1="58" x2="466" y2="58"/>
+        <line x1="650" y1="58" x2="696" y2="58"/>
+      </g>
+      <g fill="var(--text-muted)">
+        <polygon points="236,54 240,58 236,62"/>
+        <polygon points="466,54 470,58 466,62"/>
+        <polygon points="696,54 700,58 696,62"/>
+      </g>
+      <g fill="currentColor" text-anchor="middle" dominant-baseline="middle">
+        <text x="100" y="50">edit</text>
+        <text x="100" y="68" fill="var(--text-muted)" font-size="11">(entry N, offset K)</text>
+        <text x="330" y="50">PROT TOC</text>
+        <text x="330" y="68" fill="var(--text-muted)" font-size="11">start_lba[N]*2048 + K</text>
+        <text x="560" y="50">ISO 9660</text>
+        <text x="560" y="68" fill="var(--text-muted)" font-size="11">PROT.DAT at prot_lba</text>
+        <text x="795" y="50">sector write</text>
+        <text x="795" y="68" fill="var(--text-muted)" font-size="11">2352 B + EDC/ECC</text>
+      </g>
+      <g fill="var(--text-muted)" text-anchor="middle" font-size="11">
+        <text x="100" y="118">legaia_patcher</text>
+        <text x="330" y="118">legaia_prot</text>
+        <text x="560" y="118">legaia_iso</text>
+        <text x="795" y="118">legaia_iso::write</text>
+      </g>
+    </svg>
+    <figcaption>The three hops of <code>DiscPatcher::patch_prot_entry</code>. <code>patch_named_file</code> is the sibling for edits straight into <code>SCUS_942.54</code>; <code>patch_monster_slot</code> wraps the battle_data archive.</figcaption>
+  </figure>
+  <h3>The editing rule</h3>
+  <ul class="bullets">
+    <li><strong>Same size, in place.</strong> No sector address, PROT entry or ISO directory record ever moves, so a patch is a pure byte overwrite plus checksum recompute. The disc image's size never changes.</li>
+    <li><strong>Fixed slots pad; tight streams re-pack.</strong> A monster record is re-emitted zero-padded back to its <code>0x14000</code>-byte slot in the battle_data archive (PROT 867). A scene MAN has no compressed slack, so the encoder's lazy matching has to fit the exact original span; the rare stream that overflows is skipped and reported.</li>
+    <li><strong>Budget from the boundary.</strong> A MAN's re-pack budget is its span up to the next descriptor, not its current compressed length - otherwise a second pass over the same scene (encounters, then chests, then shops) would shrink the budget each time.</li>
+    <li><strong>Doors and place names are the exception.</strong> A destination carries its scene name inline and a banner name is stored unpadded, so re-pointing or renaming changes a record's length. The <a href="../formats/man-relocation.html">MAN relocation engine</a> fixes every offset the resize disturbs and rewrites the descriptor's size word.</li>
+  </ul>
+  <p>The error-correction math is the generic CD-ROM scheme (ECMA-130): EDC is a CRC over reversed polynomial <code>0xD8018001</code>, ECC is Reed-Solomon P/Q over GF(2<sup>8</sup>) with generator <code>0x11D</code>, and the header is treated as zero so parity is independent of the sector's address. It embeds no game bytes; the disc-gated <code>ecc_real</code> test reproduces real PROT.DAT sectors bit-for-bit.</p>
+</section>
+
+<section class="doc-section" id="ladder">
+  <h2>The technique ladder</h2>
+  <p>Every feature uses one of six techniques, from "overwrite a byte in a table" up to "host new machine code in unused overlay space". The <a href="../writeups/index.html">disc-patching write-ups</a> walk each tier with a worked example.</p>
+  <table class="layout">
+    <thead><tr><th>Tier</th><th>Technique</th><th>What changes</th><th>Features</th></tr></thead>
+    <tbody>
+      <tr><td>A</td><td>Static table</td><td>Bytes in a <code>SCUS_942.54</code> data table, same size</td><td>Steals, spell costs, equip bonuses and masks, casino prizes, item prices, Seru Bell name</td></tr>
+      <tr><td>B</td><td>LZS slot</td><td>Decompress, mutate, recompress, pad back into a fixed slot</td><td>Drops, monster stats, arts power and combos, difficulty scale, custom monster models</td></tr>
+      <tr><td>C</td><td>Script operand</td><td>An operand byte inside a scene MAN's field-VM script, same size, MAN re-packed</td><td>Chests, shops, encounters, house doors, inn costs, Earth Egg threshold</td></tr>
+      <tr><td>D</td><td>MAN relocation</td><td>A record grows or shrinks; every dependent offset is fixed</td><td>Doors, place names, starting-bag overflow, Delilas Challenge script, custom-item narration</td></tr>
+      <tr><td>E</td><td>Code in the rodata gap</td><td>A hand-assembled routine in preserved SCUS padding, reached by a two-word detour</td><td>Equipment drops, run-away EXP, enemy ally, Seru Bell string</td></tr>
+      <tr><td>F</td><td>Overlay dead region / arena</td><td>Code in an overlay's reference-free zero run, or in the verified-dead SCUS arena</td><td>Shiny Seru, Seru trading, Super Arts list, Super Arts Pack, arts AP override, Delilas Challenge, Delilas party swap, custom items</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="hooks">
+  <h2>Code hooks: where injected code lives</h2>
+  <p>A <em>detour</em> overwrites two instructions at a hook site with <code>j routine</code> + <code>nop</code>. The routine does its work, replays the two displaced instructions, and jumps back to the word after the site. On the PSX all resident RAM is executable, so a routine written into a dead data region runs when jumped to. Every feature below guards on the hook words matching the US build and refuses a differently-laid-out image rather than corrupting it.</p>
+  <div style="overflow-x:auto">
+  <table>
+    <thead><tr><th>Feature</th><th>Hook site(s)</th><th>Host image</th><th>Code lives at</th><th>What the routine does</th></tr></thead>
+    <tbody>
+      <tr><td>Equipment drops</td><td><code>0x8004F610</code> in the reward routine, right after the normal drop grant</td><td>SCUS</td><td>rodata gap <code>0x8007AB80</code> + id table</td><td>Rolls <code>rand() % 100 &lt; chance</code>, picks a random id from an embedded equipment table, calls the inventory-add helper once per battle</td></tr>
+      <tr><td>Run-away EXP</td><td><code>0x801E5A10</code>, the successful-escape teardown (state <code>0x66</code>)</td><td>PROT 0898 &rarr; SCUS</td><td>rodata gap <code>0x8007AD00</code></td><td>Sums the formation's EXP, scales to the percentage, banks it into every member's cumulative-XP cell (cap 9,999,999) without calling the level processor</td></tr>
+      <tr><td>Enemy ally</td><td><code>0x80051990</code> after battle setup's monster loop; one word at <code>0x801E6638</code></td><td>SCUS + PROT 0898</td><td>rodata gap <code>0x8007ACA0</code></td><td>Rolls the chance and ORs the AI-delegated flag <code>0x380</code> into the frontmost enemy; the overlay word widens the victory mask so the ally counts as down</td></tr>
+      <tr><td>Shiny Seru</td><td>Nine detours: setup, capture, grant, grant-shift, damage, menu, battle-menu, summon-fade, caption</td><td>SCUS + 0898 + 0899</td><td>the four arena regions</td><td>Boosts a capturable enemy &times;135/100, marks it, carries the mark through capture into a per-slot shiny byte at record <code>+0x788</code>, and applies +35% on every cast</td></tr>
+      <tr><td>Seru trading</td><td>Two picker edits in the shop menu</td><td>PROT 0899</td><td>0899's own dead run (~3.8 KB), from <code>0x801E7FB0</code></td><td>Adds a Trade row and hosts the whole trade screen - render, slide, cursor, confirm, swap - plus the seed-derived 64-bucket offer table. Touches no SCUS bytes</td></tr>
+      <tr><td>Show Super Arts (battle list)</td><td>Count read <code>0x800343C4</code>, id read <code>0x80034450</code>, applier arm <code>0x801EFBCC</code>, pager <code>0x801D3748</code></td><td>SCUS + PROT 0898</td><td>all four arena regions (613 B)</td><td>Synthesises a 20-byte arts-table record in dead space and enters the list renderer's hit arm with it, so retail draws the row; the pager is replaced in place</td></tr>
+      <tr><td>Show Super Arts (Moves page)</td><td>Count reads <code>0x801D4454</code> / <code>0x801D4440</code>, scan entry <code>0x801D4480</code>, cursor bound <code>0x801DA64C</code></td><td>PROT 0899</td><td>dead runs <code>0x801E7FB0..</code> and <code>0x801E65F4..</code></td><td>The same merge for the pause menu's panel renderer; composes with everything because it uses no SCUS bytes</td></tr>
+      <tr><td>Super Arts Pack</td><td>Six applier retargets, three jumps, battle-load stub at <code>0x80055DBC</code></td><td>SCUS + PROT 0898</td><td>56 B at arena 1 head; the 4 KB block in the <code>DMY.DAT</code> annex, streamed to <code>0x801FD000</code> at battle load</td><td>Doubles the applier's per-character stride so its find/replace tables point at the pack's wider tables; the stub reads the block with the game's own synchronous reader and flushes the I-cache</td></tr>
+      <tr><td>Arts AP override</td><td>Three detours in the party arts queue-builder</td><td>PROT 0898 &rarr; SCUS</td><td>arena regions + a 4&times;32 <code>i8</code> config table</td><td>Replaces the computed per-command cost with a per-(character, row) value, or turns it into a grant; rewrites the menu AP byte alongside</td></tr>
+      <tr><td>Delilas Challenge (dome)</td><td>Seed detour <code>0x801CEBCC</code>, payout <code>0x801D1118</code>, display <code>0x801D125C</code>, settle <code>0x801D114C</code></td><td>PROT 0977 &rarr; SCUS</td><td>arena 1 (seed routine + relocated hub template); grant cave <code>0x800352EC</code>; display override over <code>FUN_800260DC</code></td><td>Adds course 3 to the arena's descriptor table, pays 5000 for it, and grants the reward item(s) on a cleared settle</td></tr>
+      <tr><td>Delilas party swap (cast route)</td><td>Queue hook in the arts matcher; strike-loop fetch <code>0x801E374C</code>; label gate <code>0x801E43D0</code>; thirteen module damage retargets</td><td>SCUS + 0898 + 0958/0959/0960</td><td>rodata gap tail, arena 1 / arena 2 / slot 6, PROT 958's dead party-wipe body</td><td>Converts a matched signature combo into a capture-class cast, deferring when the starter is not at the queue base; halves the Hyper admission tier</td></tr>
+      <tr><td>Jewel fix</td><td>Thirteen <code>jal</code> words across PROT 944 / 952 / 953 / 958 / 959 / 960</td><td>cast modules</td><td>none (word edits)</td><td>Retargets the resist-bypassing damage wrapper to the guard-respecting one, so boss signature casts respect Jewels and guards</td></tr>
+      <tr><td>Approach-softlock fix</td><td>Nine words at <code>0x801E3568</code> in the state-<code>0x19</code> range poll</td><td>PROT 0898</td><td>none (in-place rewrite)</td><td>Replaces a redundant facing recompute with a guard that bounces a monster whose Move clip died back to state <code>0x14</code>, which re-stages the approach</td></tr>
+      <tr><td>Starting bag / level</td><td>40 bytes at <code>0x80034B04</code> in the new-game data-init</td><td>SCUS</td><td>none (the seed code itself)</td><td>Rewrites the code that builds the opening inventory (one packed halfword store per slot, cap 7) and stamps the party level; overflow items are spliced into <code>town01</code>'s entry script as silent give-item ops</td></tr>
+      <tr><td>Seru Bell name</td><td>Name pointer of item <code>0xFD</code></td><td>SCUS</td><td>rodata gap <code>0x8007AB40</code></td><td>Writes the string into loader-preserved padding and repoints one name pointer</td></tr>
+      <tr><td>Spirit / enemy-damage AP</td><td>The accrual tails in 0898</td><td>PROT 0898</td><td>none (same-size word rewrites)</td><td>Changes the AP constants; a negative value also installs a signed floor - see <a href="#signed-tail">the signed tail</a></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <h3 id="dead-space">The dead-space map</h3>
+  <p>"Dead" is a runtime property, not a file-byte one: a region qualifies only when it is all-zero in the clean image, constant across states, outside every known table, and read-watch-verified unreferenced on a live PCSX-Redux session. These are the regions that pass.</p>
+  <table class="layout">
+    <thead><tr><th>Region</th><th>Span</th><th>Size</th><th>Nature</th><th>Tenants</th></tr></thead>
+    <tbody>
+      <tr><td>Rodata gap</td><td><code>0x8007AB38..0x8007AF3C</code></td><td>1028 B</td><td>SCUS rodata padding the loader preserves (flanking constants survive file &rarr; RAM)</td><td>Seru Bell string <code>+0x08</code>; equipment-drop routine + table <code>0x8007AB80..0x8007ACA0</code>; enemy-ally <code>0x8007ACA0</code>; flee-EXP <code>0x8007AD00</code>. All coexist</td></tr>
+      <tr><td><code>SCUS_GAP</code></td><td><code>0x80077728..0x80077828</code></td><td>256 B</td><td>Arena; bounded above by the steal table</td><td>Arena claimants (exclusive)</td></tr>
+      <tr><td><code>ARENA1</code></td><td><code>0x8007AE00..0x8007AF00</code></td><td>256 B</td><td>Arena; the SsAPI I/O table begins exactly at <code>0x8007AF00</code></td><td>Arena claimants (exclusive)</td></tr>
+      <tr><td><code>ARENA2</code></td><td><code>0x8007AFF8..0x8007B040</code></td><td>72 B</td><td>Arena; a pocket between two SsAPI tables</td><td>Arena claimants (exclusive)</td></tr>
+      <tr><td><code>SLOT6</code></td><td><code>0x80078A88..0x80078ACC</code></td><td>68 B</td><td>Arena; padding between the <code>0x80078xxx</code> tables</td><td>Arena claimants (exclusive)</td></tr>
+      <tr><td>0899 dead runs</td><td><code>0x801E7FB0..</code>, <code>0x801E65F4..</code></td><td>~3.8 KB</td><td>Reference-free zero runs inside the menu overlay image; read/write-watched across a full pause-menu tour</td><td>Seru trading; Super Arts Moves page (past trading's highest blob)</td></tr>
+      <tr><td>0958 wipe body</td><td>inside PROT 0958</td><td>a few words</td><td>The module's dead party-wipe body</td><td>Party-swap cast stubs</td></tr>
+      <tr><td>Free RAM</td><td><code>0x801FD000..0x801FE000</code></td><td>4 KB</td><td>Not on the disc: all-zero in every state, no overlay covers it, deepest stack use 1388 B above it</td><td>Super Arts Pack block, streamed from the <code>DMY.DAT</code> annex at battle load</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="arena">
+  <h2>The injected-code arena budget</h2>
+  <p>Every hand-assembled SCUS-resident feature that needs more than the rodata gap offers lands in the same four verified-dead regions, and they add up to <strong>652 bytes</strong>. The limit is arithmetic, not policy: a sweep of every zero run in the executable outside the known live tables finds only 53 further candidate bytes.</p>
+  <table class="layout">
+    <thead><tr><th>Region</th><th>Size</th><th>Shiny Seru uses</th><th>Show Super Arts uses</th></tr></thead>
+    <tbody>
+      <tr><td><code>SCUS_GAP</code></td><td>256 B</td><td>246 B</td><td>253 B (routine B, scratch record, glyph buffer)</td></tr>
+      <tr><td><code>ARENA1</code></td><td>256 B</td><td>252 B</td><td>256 B (routine F, packed arrows)</td></tr>
+      <tr><td><code>ARENA2</code></td><td>72 B</td><td>64 B</td><td>44 B (routine A)</td></tr>
+      <tr><td><code>SLOT6</code></td><td>68 B</td><td>56 B</td><td>60 B (fifteen Super Art records)</td></tr>
+      <tr><td><strong>Total</strong></td><td><strong>652 B</strong></td><td><strong>618 B</strong></td><td><strong>613 B</strong></td></tr>
+    </tbody>
+  </table>
+  <p>Shiny Seru leaves 34 bytes in fragments of 4, 5, 8 and 12; nothing else fits beside it. So the arena claimants are <strong>mutually exclusive</strong>, enforced by the CLI and the browser patcher:</p>
+  <table>
+    <thead><tr><th>Claimant</th><th>Needs</th><th>Conflict rule</th></tr></thead>
+    <tbody>
+      <tr><td><code>--shiny-seru</code></td><td>618 B across all four</td><td>Yields to the Delilas Challenge with a note; refused alongside the others</td></tr>
+      <tr><td><code>--show-super-arts</code></td><td>613 B across all four</td><td>Refused alongside any other claimant (it also detours the same applier the Pack retargets)</td></tr>
+      <tr><td><code>--super-arts-pack</code></td><td>56 B at the head of <code>ARENA1</code></td><td>Refused alongside any other claimant</td></tr>
+      <tr><td><code>--arts-ap-grant</code> / <code>--arts-ap-cost</code></td><td>Routines + config table in the arena</td><td>Hard conflict with everything, including the Challenge</td></tr>
+      <tr><td><code>--delilas-challenge</code></td><td><code>ARENA1</code> (seed routine + relocated hub template)</td><td>Takes precedence over shiny Seru - the presets that enable both install the Challenge</td></tr>
+      <tr><td>Delilas party swap (cast route)</td><td>Rodata-gap tail + <code>ARENA1</code> / <code>ARENA2</code> / <code>SLOT6</code></td><td>Resolves silently: when another claimant owns the gap the swap still applies, but that slot keeps the art-side signature; the summary says so</td></tr>
+    </tbody>
+  </table>
+  <p>The Super Arts list payload cannot move into the battle overlay: the arts list is a shared window widget whose renderer has one reference on the disc, from a dispatcher the field and menu overlays call 64 times between them, so it runs when PROT 0898 is not resident. A Super Art <em>damage</em> row claims no arena and composes with everything. Growing PROT 0898 to cover the Pack's block was rejected because it would zero <code>0x801F7018..0x801FD000</code> - persistent effect and world state the field overlay leaves there - on every battle load.</p>
+</section>
+
+<section class="doc-section" id="traps">
+  <h2>Three traps in the MIPS injection features</h2>
+  <p>Each has bitten a shipped hook at least once; each is guarded now.</p>
+  <table>
+    <thead><tr><th>Trap</th><th>What goes wrong</th><th>The rule</th></tr></thead>
+    <tbody>
+      <tr><td>R3000 load-delay slot</td><td>A just-loaded register is not ready for the very next instruction. A routine that reads one in the instruction after its load reads the stale value; the shiny-Seru boost loop cascades into garbage without it</td><td>A filler instruction (or a reorder) between every load and its first use; never split a <code>mult</code>/<code>mflo</code>. The in-crate <code>mips_sim</code> interpreter is load-delay-accurate and runs the stubs in unit tests</td></tr>
+      <tr><td>"Zero is not dead"</td><td>A run of zero bytes is reusable only if no code reads it. Live indexed tables are full of zero padding the game still indexes</td><td>Regions must be all-zero in the clean image, constant across states, outside <code>SCUS_TABLE_RANGES</code> / <code>OVERLAY_TABLE_RANGES</code> (the structural <code>assert_not_in_tables</code> guard), and read-watched on a live battle that uses an item, plays a victory pose and casts a summon</td></tr>
+      <tr><td>Unaligned entry</td><td>The <code>j</code> encoding drops the target's low two bits, and zero-run scans return run <em>starts</em> that are frequently unaligned - so a routine placed at one jumps 2-3 bytes into garbage</td><td>Every routine VA is rounded up to a word boundary; <code>place</code> refuses an unaligned routine. Only byte-addressed data may sit unaligned</td></tr>
+    </tbody>
+  </table>
+  <details class="disclosure">
+    <summary>The three times "zero is not dead" bit</summary>
+    <div class="disclosure-body">
+      <table>
+        <thead><tr><th>Region that looked dead</th><th>Reader</th><th>Symptom</th></tr></thead>
+        <tbody>
+          <tr><td>Victory mouth-override table <code>0x80077E80</code> (rows <code>0x800781B0..</code>)</td><td><code>FUN_8004C7B4</code>, the victory face animator</td><td>Routine bytes read as facial keyframes: a corrupted mouth on the victory pose</td></tr>
+          <tr><td>Move-power table <code>0x801F4F5C</code>, records 4..8</td><td>The move-power lookup</td><td>Six move ids (<code>0x07</code>, <code>0x12..0x15</code>, <code>0x19</code>) read routine bytes as power records: garbage damage</td></tr>
+          <tr><td>SsAPI sound tables <code>0x800794F0</code> (and the former arenas at <code>0x8007075C</code> / <code>0x80079340</code>)</td><td><code>FUN_8005D0B8</code>, the item-use sound engine</td><td>Using a Healing Leaf indexed straight into the bitmap; the sound-synced item banner never dismissed - the Tetsu-tutorial freeze</td></tr>
+        </tbody>
+      </table>
+      <p>The same lesson shaped two data choices: the shiny flag lives in a parallel per-slot byte array at record <code>+0x1C0</code> rather than the spell-level byte's free <code>0x80</code> bit (a shared level-up/display function reads that byte unmasked and indexed a table out of bounds), and the Seru Bell string sits in rodata padding rather than the data segment's trailing zero-fill (that fill is <code>.sbss</code> scratch the game overwrites every frame).</p>
+    </div>
+  </details>
+</section>
+
+<section class="doc-section" id="signed-tail">
+  <h2>The signed accrual tail</h2>
+  <p>The Spirit and enemy-damage AP sliders accept negative values, which invert the knob: Spirit then spends AP, or being hit drains it. The gauge is a <code>u16</code> and every retail site that grows it clamps only against the 100 ceiling, so a negative constant alone would read back as +200-odd and pin the gauge at 100. The consumer has to honour the sign as well.</p>
+  <ul class="bullets">
+    <li><strong>Damage site:</strong> the ceiling words are dead once the site only subtracts, so a <code>bgez</code> floor fits in them.</li>
+    <li><strong>Spirit site:</strong> its add/clamp tail is shared with the +8 every non-Spirit action grants, so the ceiling must survive beside the new floor. They fit because a negative setting makes the AP-Boost-1 accessory arm dead, and the head of that arm hosts the relocated over-100 clamp. Consequence: while a slider is negative, the "spirit gain up" accessory is inert.</li>
+    <li><strong>No arena involved:</strong> every word is a same-size rewrite inside PROT 0898; the two sliders compose with each other and with everything else, and the retail value restores the stock bytes exactly.</li>
+  </ul>
+  <details class="disclosure">
+    <summary>The rewritten Spirit tail</summary>
+    <div class="disclosure-body">
+<pre><code>801e5e78  bgez v1,0x801e5e84
+801e5e7c  _slti v0,v1,0x65         ; delay slot: ceiling test
+801e5e80  move v1,zero             ; floor at 0
+801e5e84  beq  v0,zero,0x801e5e40  ; over 100 -&gt; the relocated clamp
+801e5e88  _sh  v1,0x170(s3)        ; delay slot: the store</code></pre>
+      <p>Both boost arms read the staged accrual unsigned, which is what makes the AP-Boost-1 arm dead under a negative setting. The negative modes are statically verified only: the disc oracles prove which words land where and that the hand-assembled branches resolve to these instructions; a live battle playtest has not been run.</p>
+    </div>
+  </details>
+</section>
+
+<section class="doc-section" id="modules">
+  <h2>Crate modules</h2>
+  <p>One machinery, three families on top: the randomizer, the translation packs and the manual edits. Each module is one row.</p>
+  <details class="disclosure">
+    <summary>Module map</summary>
+    <div class="disclosure-body">
+      <table>
+        <thead><tr><th>Module</th><th>Role</th></tr></thead>
+        <tbody>
+          <tr><td><code>rng</code></td><td>Version-stable SplitMix64; the first output for seed 0 is pinned by a test.</td></tr>
+          <tr><td><code>items</code> / <code>equipment</code></td><td>Valid item-id pool from the SCUS item-name table; equipment ids recovered by matching curated names against the disc's own table (~150 ids, no Sony bytes).</td></tr>
+          <tr><td><code>drops</code> / <code>monster</code></td><td>Drop-table planner (shuffle preserves the multiset); slot re-pack decompress &rarr; mutate &rarr; recompress &rarr; pad to <code>0x14000</code>.</td></tr>
+          <tr><td><code>encounter</code> / <code>kingdom</code></td><td>Formation shuffle per scene, kingdom or world; the kingdom partition of the scene namespace comes from CDNAME anchored on the overworld maps.</td></tr>
+          <tr><td><code>chest</code> / <code>shop</code> / <code>door</code> / <code>house_door</code></td><td>Opcode-aware MAN walks for give-item (<code>0x39</code>), vendor (<code>0x49</code>), scene-change (<code>0x3F</code>) and cross-context move sites; doors go through <code>man_edit</code>.</td></tr>
+          <tr><td><code>casino</code> / <code>steal</code> / <code>spell_cost</code> / <code>equip_*</code></td><td>Same-size static-table edits in the menu overlay (casino, raw file offset <code>0x15D00</code>) and <code>SCUS_942.54</code>.</td></tr>
+          <tr><td><code>monster_stats</code> / <code>move_power</code> / <code>element_affinity</code></td><td>Battle tuning: per-stat column redistribution over PROT 867 with tutorial enemies and bosses pinned; move-power halfwords and the 8&times;8 affinity matrix in PROT 0898.</td></tr>
+          <tr><td><code>starting_items</code> / <code>starting_bag</code> / <code>starting_level</code></td><td>Rewrite the new-game seed code; splice overflow gives into <code>town01</code>; stamp level and recompute growth templates for Vahn / Noa / Gala.</td></tr>
+          <tr><td><code>bonus_drop</code> / <code>flee_exp</code> / <code>enemy_ally</code> / <code>shiny_seru</code></td><td>The SCUS-resident MIPS hooks of the table above.</td></tr>
+          <tr><td><code>seru_overlay</code> / <code>super_art_list</code> / <code>super_art_menu</code> / <code>super_arts_pack</code> / <code>arts_ap_grant</code></td><td>The overlay- and arena-resident hooks.</td></tr>
+          <tr><td><code>delilas_dome</code> / <code>delilas_challenge</code> / <code>delilas_cast</code> / <code>custom_items</code> / <code>nivora_field</code></td><td>The Delilas features: dome course injection, koin1 script edit, cast route, custom item set, field-form mesh swap.</td></tr>
+          <tr><td><code>jewel_fix</code> / <code>approach_fix</code></td><td>The two seedless retail-bug fixes.</td></tr>
+          <tr><td><code>unused</code> / <code>item_name</code> / <code>texture</code> / <code>model</code></td><td>Cut-content ids, the Seru Bell name, PNG &rarr; TIM texture swaps, custom monster models.</td></tr>
+          <tr><td><code>mips_sim</code></td><td>In-crate MIPS interpreter (load-delay-accurate) the hook stubs execute under in unit tests.</td></tr>
+          <tr><td><code>disc</code> / <code>apply</code> / <code>ppf</code></td><td>The disc bridge; the orchestration every CLI verb drives, each returning an apply report; PPF 3.0 diff / write / apply.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </details>
+</section>
+
+<section class="doc-section" id="tests">
+  <h2>Tests</h2>
+  <p>Three layers. Disc-gated tests read <code>LEGAIA_DISC_BIN</code>; with it unset they skip and pass.</p>
+  <table>
+    <thead><tr><th>Layer</th><th>Where</th><th>What it proves</th></tr></thead>
+    <tbody>
+      <tr><td>Disc-free unit tests</td><td><code>crates/lzs</code>, <code>crates/iso</code>, <code>crates/patcher</code></td><td>The encoder round-trips; sector encoding is idempotent and address-independent; the planner is seed-deterministic; hook stubs behave under <code>mips_sim</code>; a synthetic disc round-trips through the disc &rarr; ISO &rarr; PROT chain.</td></tr>
+      <tr><td>Disc round-trip oracles</td><td><code>crates/patcher/tests/*_real.rs</code></td><td>Patch a feature onto a scratch copy of a real disc, re-decode off the patched image, assert the multiset or invariant is preserved, every touched sector is EDC/ECC-valid, neighbours are untouched, and a fixed seed is byte-deterministic. For code hooks: the stock words match, the detour and routine decode as the hand-assembled bytes, and the build guard refuses an unknown layout.</td></tr>
+      <tr><td>Runtime oracles</td><td><code>crates/engine-core/tests/*_randomizer_runtime_e2e.rs</code></td><td>Drive the clean-room engine's own grant / spawn / warp kernel over the patched bytes - chest, drop, encounter, steal, door - so a patch a savestate would mask (the scene or archive already resident in RAM) is observed. The engine cannot execute injected MIPS, so hook features are covered by the disc oracle plus an emulator playtest instead.</td></tr>
+    </tbody>
+  </table>
+  <details class="disclosure">
+    <summary>Per-feature oracle inventory</summary>
+    <div class="disclosure-body">
+      <table>
+        <thead><tr><th>Oracle</th><th>Asserts</th></tr></thead>
+        <tbody>
+          <tr><td><code>ecc_real</code>, <code>lzs_compress_roundtrip_real</code></td><td>Real PROT.DAT sectors re-encode bit-for-bit; real monster records and container sections round-trip and compress.</td></tr>
+          <tr><td><code>disc_patch_real</code>, <code>rando_cli_real</code></td><td>One drop patch re-decodes with neighbours untouched; a full-archive shuffle diffs into a PPF that reproduces the patched image.</td></tr>
+          <tr><td><code>encounter_patch_real</code></td><td>Counts and id multiset preserved per scene, ids in-pool; every scripted or boss formation (Tetsu <code>0x4F</code> among them) byte-identical.</td></tr>
+          <tr><td><code>chest_patch_real</code>, <code>shop_*</code>, <code>casino_*</code></td><td>Give-item site offsets unchanged, item multisets preserved; a targeted keikoku chest carries the new id in both the give operand and every announcement token.</td></tr>
+          <tr><td><code>steal_patch_real</code></td><td>Steal-item multiset preserved, every chance byte untouched.</td></tr>
+          <tr><td><code>door_*</code>, <code>house_door_*</code></td><td>Destination multisets preserved, names valid, sectors valid, image size unchanged; a census test pins per-scene entry/exit counts against a live-captured anchor.</td></tr>
+          <tr><td><code>equipment_drops_real</code>, <code>flee_exp_real</code>, <code>enemy_ally_real</code>, <code>shiny_seru_real</code></td><td>Each hook site holds its stock words; detour + routine + tables decode as planned; edits are surgical and compose in the shared gap; every landing region is dead and outside every live table.</td></tr>
+          <tr><td><code>seru_trade_real</code></td><td>Every piece lands in 0899, the schedule round-trips to the kernel's offers, the SCUS gap is untouched.</td></tr>
+          <tr><td><code>super_art_list_real</code>, <code>super_art_power_real</code>, <code>super_arts_pack_real</code>, <code>arts_ap_grant_real</code></td><td>Arena accounting intact; the Pack's runtime oracle executes the patched retail applier over a live queue and checks all fifteen added chains fire.</td></tr>
+          <tr><td><code>jewel_fix_real</code>, <code>approach_fix_real</code></td><td>Baseline words stock, exactly the planned words change, module windows contain no other module's bytes, re-application is refused or a no-op.</td></tr>
+          <tr><td><code>delilas_*_real</code>, <code>nivora_field_real</code>, <code>party_swap_real</code></td><td>The dome, cast, mirror and field-form halves of the Delilas features.</td></tr>
+          <tr><td><code>unused_content_real</code>, <code>monster_stats_*</code>, <code>move_power_*</code>, <code>element_affinity_*</code>, <code>spell_cost_*</code>, <code>equip_*</code>, <code>weapon_specialty_*</code></td><td>The remaining table and slot edits, each with a baseline pass so the oracle is non-vacuous.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </details>
+</section>
+
+<section class="doc-section" id="hygiene">
+  <h2>No-Sony-bytes hygiene</h2>
+  <ul class="bullets">
+    <li>The crate never embeds, commits or redistributes game bytes. Injected routines are the project's own code; item and equipment ids come from the user's disc at patch time.</li>
+    <li>A patched <code>.bin</code> contains Sony data and is never committed. The distribution form is a patcher plus seed, or the PPF the CLI emits - a PPF carries only the deltas between the user's original disc and the patched one and is meaningless without the original.</li>
+    <li>Disc-gated tests skip without <code>LEGAIA_DISC_BIN</code>; CI runs without disc data.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="how-we-know">
+  <h2>How we know</h2>
+  <table>
+    <thead><tr><th>Function</th><th>Address</th><th>What it proves</th><th>Dump</th></tr></thead>
+    <tbody>
+      <tr><td>LZS decoder</td><td><code>FUN_8001A55C</code></td><td>The stream format the encoder must produce; 4 KB ring initialised to zeros</td><td><code>ghidra/scripts/funcs/8001a55c.txt</code></td></tr>
+      <tr><td>PROT entry size</td><td><code>FUN_8003E68C</code></td><td>An entry's size is the sector gap to the next entry - the re-pack budget</td><td><code>funcs/8003e68c.txt</code></td></tr>
+      <tr><td>Battle reward routine</td><td><code>FUN_8004E568</code>, join <code>0x8004F610</code></td><td>Spoils tally once per battle; the equipment-drop hook site</td><td><code>funcs/8004e568.txt</code></td></tr>
+      <tr><td>Battle setup</td><td><code>FUN_800513F0</code>, <code>0x80051990</code> / <code>0x80051A20</code></td><td>Actor table populated after the monster loop; the enemy-ally and shiny-Seru setup sites</td><td><code>funcs/800513f0.txt</code></td></tr>
+      <tr><td>Battle-action SM</td><td><code>FUN_801E295C</code>, state <code>0x66</code> at <code>0x801E5A10</code></td><td>Successful-escape teardown runs once; the flee-EXP hook site</td><td><code>funcs/overlay_battle_action_801e295c.txt</code></td></tr>
+      <tr><td>Arts list renderer</td><td><code>FUN_80034358</code>, one caller <code>0x8003238C</code></td><td>Draws rows from a 20-byte record found by a linear scan - the record the Super Arts list synthesises</td><td><code>funcs/80034358.txt</code></td></tr>
+      <tr><td>Super-Art applier</td><td><code>FUN_801EF9E4</code></td><td>Find/replace tables addressed by a per-character stride in <code>t5</code> - the Pack's retarget</td><td><code>funcs/overlay_battle_action_801ef9e4.txt</code></td></tr>
+      <tr><td>Party arts queue-builder</td><td><code>FUN_801EED1C</code></td><td>AP cost is computed (<code>multiplier &times; commands</code>), not stored - why the AP override needs a hook</td><td><code>funcs/overlay_battle_action_801eed1c.txt</code></td></tr>
+      <tr><td>New-game data-init</td><td><code>FUN_80034A6C</code>, <code>0x80034B04</code></td><td>The opening bag is code-built; both callers memset the block, so the zero-loop is reclaimable</td><td><code>funcs/80034a6c.txt</code></td></tr>
+      <tr><td>Synchronous CD reader</td><td><code>FUN_8005E4D4</code></td><td>The read primitive the Pack's battle-load stub calls</td><td><code>funcs/8005e4d4.txt</code></td></tr>
+      <tr><td>Damage wrappers</td><td><code>FUN_801DD6B4</code> / <code>FUN_801DD4B0</code></td><td>The resist-bypassing and guard-respecting wrappers the jewel fix swaps</td><td><code>funcs/overlay_battle_action_801dd6b4.txt</code></td></tr>
+      <tr><td>Read-watch sessions</td><td>PCSX-Redux Lua probes</td><td>Every arena region unreferenced across item use, victory pose and a summon cast; the 0899 dead runs untouched across a pause-menu tour</td><td><a href="pcsx-redux-automation.html">PCSX-Redux automation</a></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="randomizer.html">Randomizer (option reference)</a>
+    <a href="rom-patcher.html">Browser patcher</a>
+    <a href="../formats/lzs.html">LZS compression</a>
+    <a href="../formats/disc.html">Disc geometry</a>
+    <a href="../formats/prot.html">PROT.DAT</a>
+    <a href="../formats/man-relocation.html">MAN relocation</a>
+    <a href="../subsystems/arts-command-gauge.html">Arts AP gauge</a>
+    <a href="../subsystems/battle-action.html">Battle action SM</a>
+    <a href="../writeups/index.html">Disc-patching write-ups</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/randomizer.md" target="_blank" rel="noopener">docs/tooling/randomizer.md</a>
+  </div>
+</section>

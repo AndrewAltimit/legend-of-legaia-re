@@ -1,372 +1,351 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; world map</div>
   <h1>World Map</h1>
-  <p class="lede">The overworld traversal mode - the view where you walk the party across a kingdom between towns and dungeons, and where random encounters fire. This page traces how the retail code drives it: the walk controller, the per-entity state machine that turns a step into a battle, the render pipeline, and the developers' own top-down debug camera and dev menu, both still present in the shipped game.</p>
+  <p class="lede">The overworld: the kingdom-sized map you walk between towns and dungeons, where random battles interrupt the trip. Under the hood it is the same field engine as a town - same walk controller, same collision grid, same script VM - plus a per-entity state machine that turns a step into a battle, a dedicated ground renderer, and the developers' own fly-over camera and debug menu, both shipped in the retail disc.</p>
 </header>
 
-<section class="doc-section" id="what-is-this">
-  <h2>How it works</h2>
-  <p>The world-map code is not in the game's main executable - it lives in <em>overlays</em>, chunks of MIPS code the game streams from the disc into RAM on demand. We traced them with a disassembler (Ghidra) over live RAM captures; the <code>FUN_80xxxxxx</code> names below are the RAM addresses of functions in that trace. The main controller is <code>FUN_801E76D4</code> (9320 bytes); the per-entity tick is <code>FUN_801DA51C</code> (260 bytes). Sources: <code>overlay_world_map.bin</code> (walk-view) and <code>overlay_world_map_top.bin</code> (top-view debug) mednafen captures.</p>
-  <p>Two things worth knowing up front. First, the shipped game still carries the developers' tooling: a top-down debug camera (a pad-combo toggle, gated on a debug flag) and a scrolling dev menu with entries like <code>MAP_CHANGE</code> and <code>ENCOUNT</code> - both documented below. Second, encounters are not a separate subsystem: a 5-state per-entity state machine drives them, and the monster-formation install and the battle launch both happen <em>in the same tick</em> the carrier entity reaches its activating state.</p>
-</section>
-
-<section class="doc-section" id="overlays">
-  <h2>Overlay structure</h2>
-  <p>Both variants load into the same address window. The top-view variant starts its first prologue ~0x1400 bytes earlier in the window to fit extra sprite-rendering code.</p>
-  <table>
-    <thead><tr><th>Variant</th><th>First prologue</th><th>Loaded when</th></tr></thead>
-    <tbody>
-      <tr><td>Normal walk (<code>overlay_world_map</code>)</td><td><code>0x801CFC40</code></td><td>Standard world-map mode</td></tr>
-      <tr><td>Top-view debug (<code>overlay_world_map_top</code>)</td><td><code>0x801CE850</code></td><td>Debug toggle combo (see below)</td></tr>
-    </tbody>
-  </table>
-  <p>Both variants share the core field VM (<code>FUN_801DE840</code>), the move-VM overlay extension (<code>FUN_801D362C</code>), and all rendering helpers. The view-mode toggle flag is at <code>DAT_801F2B94</code>. The world-map overlay variants extend past <code>0x801F0000</code> - captures use a wide window (<code>0x801C0000..0x801F9000</code>, 228 KB) so the prim-mode dispatch table at <code>0x801F8968</code> and its eight overlay-resident emit leaves at <code>0x801F7644..0x801F8690</code> are included.</p>
-</section>
-
-<section class="doc-section" id="controller">
-  <h2>World map controller - <code>FUN_801E76D4</code></h2>
-  <p>Entry: <code>(ctx_ptr)</code>. Three top-level paths based on <code>DAT_801F2B94</code>:</p>
-  <ul class="bullets">
-    <li><strong>Debug top-view toggle</strong> - fires when <code>_DAT_8007B98C != 0</code> (debug flag) AND pad mask <code>_DAT_8007B850 == 0x4A</code> AND held mask <code>_DAT_8007B874 == 0x40</code>. On trigger: <code>DAT_801F2B94 ^= 1</code>, captures current actor camera position into <code>_DAT_801F35A8/AA/AC</code>, clears <code>ctx[+0x54]</code> and <code>ctx[+0x50]</code>, calls <code>FUN_80035C10</code>.</li>
-    <li><strong>Top-view camera controls</strong> (<code>DAT_801F2B94 != 0</code>) - D-pad adjusts scroll globals; L/R buttons adjust azimuth and zoom:
-      <ul>
-        <li>Left/Right &rarr; <code>_DAT_80089120 &plusmn;= 8</code> (X scroll)</li>
-        <li>Up/Down &rarr; <code>_DAT_80089118 &plusmn;= 8</code> (Z scroll)</li>
-        <li>Circle/Square &rarr; <code>_DAT_8007B794 &plusmn;= 0x14</code> (azimuth)</li>
-        <li>R1/L1 &rarr; <code>_DAT_8007B6F4 &plusmn;= 4</code> (zoom/height)</li>
-      </ul>
-    </li>
-    <li><strong>Normal-walk path</strong> (<code>DAT_801F2B94 == 0</code>) - standard per-frame world-map update: field VM tick, actor step, camera follow via the motion VM.</li>
-  </ul>
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Where</dt><dd>Three kingdom scenes <code>map01</code> / <code>map02</code> / <code>map03</code> (Drake / Sebucus / Karisto). Kingdom bundles PROT 0086 / 0245 / 0392; the walk <code>.MAP</code> is the first entry of each scene block. Code: the world-map overlay, loaded into the shared <code>0x801C0000+</code> window in two builds (walk, top-view debug).</dd>
+    <dt>Game mode</dt><dd><code>0x03</code> - the ordinary field-run mode a town uses. The overworld is classified by scene name, not by mode.</dd>
+    <dt>Walking</dt><dd>Byte-for-byte the <a href="field-locomotion.html">field locomotion</a> against the same walkability grid; the camera is a pitched GTE view at a 6x world scale.</dd>
+    <dt>Encounters</dt><dd>A region-keyed roll on every 128-unit tile crossing feeds a 5-state carrier entity that installs the formation and launches the battle in one tick. Record format: <a href="../formats/encounter.html">encounter</a>.</dd>
+    <dt>Entrances</dt><dd>Walk-on tile triggers in the <code>.MAP</code> spawn partition-2 records of the scene MAN (its script-and-data bundle); each names its destination with a <code>0x3F</code> scene change and carries its own story-flag gates.</dd>
+    <dt>Ground</dt><dd>A heightfield from the <code>.MAP</code>'s floor nibbles, textured per cell from a multi-page atlas; landmarks are the kingdom bundle's slot-1 mesh pack; the sea shimmers by palette animation from slot 5.</dd>
+    <dt>Port</dt><dd><code>engine-vm::world_map</code> (entity SM), <code>engine-core::world_map</code> (top-view controller), <code>build_walk_heightfield</code> (ground), <code>engine-vm::prim_dispatch</code> (top-view terrain). Browser twin: <a href="../world-overview.html">world overview</a>.</dd>
+    <dt>Confidence</dt><dd>Confirmed from disassembly and RAM captures for everything above; the retail walk-camera path <em>between</em> its two zoom anchors is Inferred.</dd>
+  </dl>
 </section>
 
 <section class="doc-section" id="entity-sm">
-  <h2>World map entity tick - <code>FUN_801DA51C</code></h2>
-  <p>Entry: <code>(entity_ptr)</code>. A 5-state dispatcher on <code>entity[+0x8A]</code> (jump table at <code>0x801CEC28</code>). Called once per world-map entity per frame by the entity pool tick loop.</p>
-  <ul class="bullets">
-    <li><strong>State 0 (Idle)</strong> - when <code>_DAT_80083808 == 0</code>: calls <code>FUN_800243F0</code> (BGM/asset resolver) to look up the scene associated with the entity's location; checks <code>_DAT_8007BB38</code> pad buttons for entity interaction.</li>
-    <li><strong>States 1&ndash;4</strong> - Activating, Transitioning, and Terminal states for encounter and location-entry sequences.</li>
-  </ul>
-</section>
+  <h2>How a step becomes a battle</h2>
+  <p>Random encounters are not a separate subsystem. One MAN-placed <strong>carrier entity</strong> - distinct from the player - runs a five-state machine every frame. The idle state is where the encounter roll lands; the moment the carrier reaches state 1 it installs the monster formation and, in the same tick, falls through to the battle hand-off.</p>
+  <figure class="overlay-strip">
+    <svg viewBox="0 0 900 190" width="100%" style="max-width: 900px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="World-map carrier entity state machine: Idle rolls or is scripted into Activating, which installs the formation and falls through Transitioning to write game mode 8 and park in Terminal">
+      <defs><marker id="wm-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--text-muted)"/></marker></defs>
+      <g font-family="sans-serif" font-size="12" fill="currentColor" text-anchor="middle">
+        <rect x="16" y="50" width="180" height="80" rx="4" fill="var(--bg-raised)" stroke="var(--border)"/>
+        <text x="106" y="76" font-weight="600">0 Idle</text>
+        <text x="106" y="96" fill="var(--text-muted)">roll on tile crossing,</text>
+        <text x="106" y="114" fill="var(--text-muted)">or a script advance</text>
 
-<section class="doc-section" id="encounter-installation">
-  <h2>Encounter-record installation</h2>
-  <p>The body at <code>0x801DA620..0x801DA678</code> populates the global encounter formation cell from a per-encounter record pointed at by <code>entity[+0x94]</code>:</p>
-  <ol>
-    <li>Clear the 4-slot formation array at <code>0x8007BD0C..0x8007BD0F</code> (slots 3, 2, 1, then 0 - slot 0 is cleared in the delay slot of <code>JAL 0x801DE190</code>).</li>
-    <li>Read <code>monster_count = entity[+0x94][+0x3]</code>.</li>
-    <li>Copy <code>entity[+0x94][+0x4 .. +0x4 + monster_count]</code> into the formation cell, byte-for-byte.</li>
-  </ol>
-  <p>This copy runs in <strong>SM state 1</strong> (<code>entity[+0x8A] == 1</code>). The same invocation clears <code>entity[+0x94]</code>, advances <code>entity[+0x8A]</code> to <code>2</code>, and then <strong>falls through</strong> the <code>case 2/3</code> arm, which writes <code>_DAT_8007B83C = 8</code> (the game-mode handoff that launches the battle), sets <code>entity[+0x8A] = 4</code>, and clears the <code>0x80000</code> "encounter active" flag on the player context (<code>_DAT_8007C364[+0x10]</code>, which state 1 had raised). So the formation install and the battle launch happen in the <strong>same tick</strong> the carrier reaches state 1. State 0 reaches state 1 either via the random roll <code>FUN_801D9E1C</code> or - in a 0%-random town like <code>town01</code> - via a scripted advance from the scene's interaction bytecode.</p>
-  <p>The carrier <code>entity_ptr</code> is a <strong>dedicated field entity</strong>, distinct from the player context <code>_DAT_8007C364</code> (corpus-stable at <code>0x80083794</code>, which carries no clean <code>+0x8A</code>/<code>+0x94</code> SM): the routine reads the SM fields off its <code>param_1</code> but writes the flag onto <code>_DAT_8007C364</code> separately. The entity-update loop reaches the carrier through per-entity update-function-pointer dispatch (no direct <code>jal</code>), so it is one of the scene's MAN-placed entities, not the player.</p>
-  <p>The encounter-record format consumed here is documented on the <a href="../formats/encounter.html">encounter record page</a>. The 4-byte formation cell at <code>0x8007BD0C</code> is the input to the battle-scene loader (<code>FUN_800520F0</code>); the adjacent byte at <code>0x8007BD11</code> is a battle-data PROT-id selector that picks between PROT entries <code>0x367</code> and <code>0x36D</code>.</p>
-  <p>The pointer at <code>entity[+0x94]</code> is set by field-VM op handlers inside the script-VM dispatcher (<code>FUN_801DE840</code>); see the <a href="script-vm.html">script-VM page</a> and the op-handler family at <code>0x801DEEDC</code> / <code>0x801DEF08</code> / <code>0x801DEFA0</code> / <code>0x801DF038</code> / <code>0x801DF3FC</code> / <code>0x801E1C38</code> / <code>0x801E1F44</code> / <code>0x801E21C0</code>. Each handler is a different "trigger encounter on actor X" op; they all share the clause:</p>
+        <rect x="252" y="50" width="180" height="80" rx="4" fill="var(--bg-raised)" stroke="var(--accent)" stroke-width="1.5"/>
+        <text x="342" y="76" font-weight="600">1 Activating</text>
+        <text x="342" y="96" fill="var(--text-muted)">copy monster ids into</text>
+        <text x="342" y="114" fill="var(--text-muted)">the formation cell</text>
+
+        <rect x="488" y="50" width="180" height="80" rx="4" fill="var(--bg-raised)" stroke="var(--accent)" stroke-width="1.5"/>
+        <text x="578" y="76" font-weight="600">2 / 3 Transitioning</text>
+        <text x="578" y="96" fill="var(--text-muted)">game mode := 8</text>
+        <text x="578" y="114" fill="var(--text-muted)">(battle next frame)</text>
+
+        <rect x="724" y="50" width="160" height="80" rx="4" fill="var(--bg-raised)" stroke="var(--border)"/>
+        <text x="804" y="76" font-weight="600">4 Terminal</text>
+        <text x="804" y="96" fill="var(--text-muted)">parked until the</text>
+        <text x="804" y="114" fill="var(--text-muted)">battle returns</text>
+
+        <path d="M196,90 L250,90" fill="none" stroke="var(--text-muted)" stroke-width="1.2" marker-end="url(#wm-ah)"/>
+        <path d="M432,90 L486,90" fill="none" stroke="var(--text-muted)" stroke-width="1.2" marker-end="url(#wm-ah)"/>
+        <path d="M668,90 L722,90" fill="none" stroke="var(--text-muted)" stroke-width="1.2" marker-end="url(#wm-ah)"/>
+        <text x="223" y="34" font-size="11" fill="var(--text-muted)">roll hits</text>
+        <text x="459" y="34" font-size="11" fill="var(--text-muted)">same tick</text>
+        <text x="695" y="34" font-size="11" fill="var(--text-muted)">same tick</text>
+        <text x="450" y="168" font-size="11" fill="var(--text-muted)">one carrier entity per scene; the states in the accent boxes run inside a single frame</text>
+      </g>
+    </svg>
+    <figcaption>The carrier's five states. Formation install and battle launch happen in the same tick the carrier reaches state 1.</figcaption>
+  </figure>
+  <p>What each state does, in order:</p>
+  <table>
+    <thead><tr><th>State</th><th>Action</th></tr></thead>
+    <tbody>
+      <tr><td>0 Idle</td><td>Polls the pending-BGM resolver and the pad for interaction. The encounter roll (<a href="#how-we-know">region roll</a>) or a script advance pushes the carrier to state 1 and points it at an encounter record.</td></tr>
+      <tr><td>1 Activating</td><td>Clears the 4-slot formation cell, copies <code>count</code> monster ids out of the record, raises the player's "encounter active" flag, clears the record pointer, moves to state 2 - and keeps executing.</td></tr>
+      <tr><td>2 / 3 Transitioning</td><td>Writes game mode 8 (battle), sets state 4, clears the encounter-active flag.</td></tr>
+      <tr><td>4 Terminal</td><td>Parked; the battle's return path re-seats the overworld.</td></tr>
+    </tbody>
+  </table>
+  <p id="encounter-installation">The formation cell is the input to the battle-scene loader (<a href="battle.html">battle</a>). Scene and town transitions are <em>not</em> in this machine - they are the field VM's named scene-change op, covered under <a href="#entrances">entrances</a>.</p>
+  <details class="disclosure">
+    <summary>Register-level detail: encounter-record installation and who arms it</summary>
+    <div class="disclosure-body">
+      <p>The install body at <code>0x801DA620..0x801DA678</code> (inside the entity tick, jump table <code>0x801CEC28</code> on <code>entity[+0x8A]</code>):</p>
+      <ol>
+        <li>Clear the formation array <code>0x8007BD0C..0x8007BD0F</code> (slots 3, 2, 1, then 0 - slot 0 in the delay slot of <code>JAL 0x801DE190</code>).</li>
+        <li><code>monster_count = entity[+0x94][+3]</code>.</li>
+        <li>Copy <code>entity[+0x94][+4 ..+4+count]</code> into the cell byte-for-byte; clear <code>entity[+0x94]</code>, set <code>entity[+0x88] = 0</code>, <code>entity[+0x8A] = 2</code>.</li>
+        <li>Fall through the case-2/3 arm: <code>_DAT_8007B83C = 8</code>, <code>entity[+0x8A] = 4</code>, clear bit <code>0x80000</code> of <code>_DAT_8007C364[+0x10]</code> (the player context, corpus-stable at <code>0x80083794</code>).</li>
+      </ol>
+      <p>The adjacent byte <code>0x8007BD11</code> selects the battle-data PROT entry (<code>0x367</code> or <code>0x36D</code>). The random roll <code>FUN_801D9E1C</code> sets <code>+0x88</code> / <code>+0x8A</code> / <code>+0x94</code> from the rolled formation index. Scripted arming comes from a family of field-VM op handlers inside the script dispatcher (<code>0x801DEEDC</code>, <code>0x801DEF08</code>, <code>0x801DEFA0</code>, <code>0x801DF038</code>, <code>0x801DF3FC</code>, <code>0x801E1C38</code>, <code>0x801E1F44</code>, <code>0x801E21C0</code>), each a "trigger encounter on actor X" op sharing one clause:</p>
 <pre><code>sw   &lt;record_ptr&gt;, 0x94(&lt;actor&gt;)
 sh   $zero,         0x54(&lt;actor&gt;)
-ori  $tmp, $tmp, 0x400      ; raise "encounter armed" flag in actor[+0x10]
+ori  $tmp, $tmp, 0x400      ; "encounter armed" in actor[+0x10]
 sw   $tmp,         0x10(&lt;actor&gt;)</code></pre>
+      <p>The carrier is reached through the per-entity update-function-pointer dispatch, never by a direct <code>jal</code>, which is what shows it is a MAN-placed entity and not the player. State 0's resolver call (<code>FUN_800243F0</code>) is the per-frame BGM/asset poller, not a location lookup.</p>
+    </div>
+  </details>
 </section>
 
-<section class="doc-section" id="debug-menu">
-  <h2>Debug menu renderer - <code>FUN_801EAD98</code></h2>
-  <p>Entry: <code>(ctx_ptr, x, y, scroll_idx, max_visible)</code>. Renders a vertically scrolling menu list for the world map developer menu. String table at <code>0x801CF344</code>; at least 24 entries (bounds check <code>local_40 &gt; 0x17</code>). Known entries: <code>MAP_CHANGE</code>, <code>CARD_OPTION</code> (both show as <code>CLOSED</code> when <code>_DAT_8007B868 != 0</code>), <code>PLAYER_STATUS</code>, <code>CAMERA</code>, <code>ENCOUNT</code>, <code>OTHER_SETTINGS</code>, <code>BGM_CALL</code>, <code>DEBUG</code>.</p>
-  <p>Called by <code>FUN_801ECA08</code> when the debug panel is active (<code>ctx[+0x54]</code> mod-6 dispatch, cases 1 or 3).</p>
-  <p><strong>Engine port.</strong> The renderer-free half of the dev-menu leaves lives in <code>legaia_engine_vm::world_map_overlay</code>: the 24-row model (<code>DevMenuRow</code> + <code>is_closed</code>, incl. the <code>MAP_CHANGE</code>/<code>CARD_OPTION</code> CLOSED gating), <code>cursor_step</code> (swap-wrap), <code>list_body_draws</code> (the phase&times;gate draw gate), <code>format_fixed_decimal</code> (the zero-padded digit kernel <code>FUN_801EAD98</code> inlines per numeric readout) and <code>decode_camera_readout</code>; the same module ports the escape-timer scheduler (<code>EscapeTimer</code>, from <code>FUN_801D2EBC</code>), the battle-records data model (<code>records_screen</code>, from <code>FUN_801ED710</code>), and the equipment stat-comparison preview (from <code>FUN_801E5B4C</code>). The <strong>draw</strong> half - the GPU-packet emitters - lives in <code>engine-ui</code>: <code>records_screen_draws_for</code> (the nine heading rows, the six per-character categories &times; three columns, the <code>H:MM:SS</code> play clock and the treasure line) and <code>dev_menu_list_draws_for</code> (label column <code>x + 8</code>, 8-px row pitch, the <code>0x17</code> clamp), with every offset load-base independent - read straight off the <code>param + N</code> immediates. The per-character portrait/separator icons (<code>FUN_8002C488</code>) remain a UI-icon-atlas sprite seam owned by the host, as with the status page's LV/HP/MP icons.</p>
+<section class="doc-section" id="walking">
+  <h2>Walking the overworld</h2>
+  <p>Everything on <a href="field-locomotion.html">field locomotion</a> applies: the same held-pad remap, the same 2-unit stepping, the same per-axis collision against the walkability grid (the kingdom maps carry thousands of wall sub-cells). Three things are specific to the overworld:</p>
+  <ul class="bullets">
+    <li><strong>Region-keyed encounters.</strong> Each 128-unit tile crossing selects the first region whose bounding box contains the player; that region's rate depletes a step counter, and a counter at zero rolls a formation from the region's slice and hands it to the carrier. A camera-only map with no region table never rolls.</li>
+    <li><strong>The camera.</strong> A pitch-only GTE view with a <strong>6.0x uniform world scale</strong> (battle uses 4x), focused on the player's X/Z, with two pinned zoom states. During the opening's Rim Elm fly-in the cutscene timeline owns the camera instead: a snap to the aerial shot, then a quadratic-ease-out descent.</li>
+    <li><strong>Camera-relative d-pad.</strong> The remap is not trigonometry: the held direction is looked up in an eight-entry compass ring and rotated by a whole number of 45-degree octants, so "screen up" always walks toward the top of the screen.</li>
+  </ul>
+  <p>The port keeps what the player sees identical while placing its camera on a different world axis than retail; the compensating rotation lives in the remap. Rotating only one half of that pair breaks the screen contract, so a projection test and a pad-to-axis test pin both halves.</p>
+  <details class="disclosure">
+    <summary>Deep dive: camera model, axis convention and pinned globals</summary>
+    <div class="disclosure-body">
+      <table class="layout">
+        <thead><tr><th>Symbol</th><th>Meaning</th><th>Value / global</th></tr></thead>
+        <tbody>
+          <tr><td>H</td><td>projection distance</td><td>368 (<code>_DAT_8007B6F4</code>)</td></tr>
+          <tr><td>S</td><td>base world scale matrix</td><td><code>DAT_8007BF10</code> = 24576 x I (6.0x)</td></tr>
+          <tr><td>R</td><td>pitch-only rotation trio</td><td><code>_DAT_8007B790</code></td></tr>
+          <tr><td>focus</td><td>player world X/Z (negated)</td><td><code>_DAT_80089118</code> / <code>_DAT_80089120</code></td></tr>
+          <tr><td>TR</td><td>translation, two zoom anchors</td><td><code>_DAT_800840B8</code>: (0, 536, 9139) / (0, 406, 11041)</td></tr>
+        </tbody>
+      </table>
+      <p><code>screen = H * (R * (S * (v - player)) + TR) / Ze</code>. The pitch/TR trajectory between the two anchors is unpinned; the community poll probe streams the tuple (<code>wmcam</code> rows) so any captured zoom session yields it.</p>
+      <p><strong>Axis convention.</strong> <code>FUN_800467E8</code> looks the direction nibble (<code>pad &amp; 0xF000</code>) up in the ring at <code>DAT_800766FC</code> (<code>1000, 3000, 2000, 6000, 4000, C000, 8000, 9000</code>), adds the octant count at <code>gp + 0x2D8</code>, masks <code>&amp; 7</code>, and writes the entry back over the pad bits. The step arms of <code>FUN_801D01B0</code> then fix the axes: <code>0x1000</code> = Z+, <code>0x4000</code> = Z-, <code>0x2000</code> = X+, <code>0x8000</code> = X-. Retail's yaw-0 camera looks down +Z; the port's <code>world_map_camera_mvp</code> puts the eye on +X, so its azimuth-0 Up walks -X. A single-axis sign flip turns the frame from a rotation into a reflection and is caught by the tests named above.</p>
+      <p><strong>Port symbols.</strong> <code>tick_world_map</code>, <code>step_world_map_locomotion</code>, <code>live_world_map_tick</code>, <code>set_world_map_regions</code> (the region roll), <code>World::advance_with_collision</code>, <code>World::world_map_camera_relative_bits</code>.</p>
+    </div>
+  </details>
+</section>
+
+<section class="doc-section" id="entrances">
+  <h2>Where the towns are: entrances and story gates</h2>
+  <p>How does stepping on a tile mean "enter Rim Elm"? The kingdom <code>.MAP</code> holds walk-on tile triggers. Each points at a partition-2 record in the scene MAN, and that record is a small script: it may carry a named scene change (op <code>0x3F</code>), a one-shot cutscene beat, or both, and it carries its own two story-flag lists - <strong>C1</strong> blocks the record if <em>any</em> listed flag is set, <strong>C2</strong> requires <em>all</em> of them.</p>
+  <div class="flow">
+    <span class="num">1</span><span class="layer">Tile</span><span class="desc">the player's 128-unit tile matches a walk-on trigger in the <code>.MAP</code></span><span class="crate">.MAP triggers</span>
+    <span class="num">2</span><span class="layer">Record</span><span class="desc">the trigger names a partition-2 record in the scene MAN</span><span class="crate">MAN P2[n]</span>
+    <span class="num">3</span><span class="layer">Gate</span><span class="desc">C1 / C2 story-flag lists decide whether the record runs at all</span><span class="crate">flag test</span>
+    <span class="num">4</span><span class="layer">Beat</span><span class="desc">optional cutscene (the mist-wall force-walks are records with no destination)</span><span class="crate">timeline</span>
+    <span class="num">5</span><span class="layer">Destination</span><span class="desc">op <code>0x3F</code> names the CDNAME scene and the arrival tile</span><span class="crate">scene change</span>
+  </div>
+  <p>Drake's hub, <code>map01</code>, as the disc lays it out:</p>
+  <table>
+    <thead><tr><th>Destination</th><th>Record</th><th>Gate</th><th>Note</th></tr></thead>
+    <tbody>
+      <tr><td><code>town01</code> (Rim Elm), <code>cave01</code>, <code>vell</code>, <code>vozz</code>, <code>suimon</code>, <code>jou</code></td><td>one P2 record each</td><td>none</td><td>reachable on a fresh arrival</td></tr>
+      <tr><td><code>dolk</code> / <code>dolk2</code></td><td>P2[1] / P2[2]</td><td>selector on flag <code>0x142</code></td><td>same trigger and arrival tile; clear = pre-boss, set = post-boss interior</td></tr>
+      <tr><td><code>keikoku</code> (the Ravine)</td><td>P2 portals</td><td>C1 = [<code>0x193</code>]</td><td>drops out of the portal set once <code>vozz</code> sets the flag</td></tr>
+      <tr><td>mist-wall bands</td><td>P2[34..36]</td><td>C1 = [<code>0x482</code>]</td><td>force-walk beats, no destination; dispatched as a cutscene timeline</td></tr>
+    </tbody>
+  </table>
+  <p>The interior legs (what each town's exits lead to, which deeper rooms are gated) are tabulated on the <a href="history-world-map.html">chapter-1 hub sweep</a> page. NPCs on the map are partition-1 placement records whose dialogue text is inline in the record; talking to one opens that text directly.</p>
+  <details class="disclosure">
+    <summary>Deep dive: how the port seeds entities, portals and gates from the disc</summary>
+    <div class="disclosure-body">
+      <ul class="bullets">
+        <li><strong>Placements.</strong> Partition-1 records (<code>ManFile::actor_placements</code>): <code>[u8 N][N x 2 locals][model][anim_id][tile_x][tile_z][script]</code>. <code>classify_placements</code> reads the kind off the script: a genuine door warp (base <code>0x3E</code>, <code>op0</code> in <code>100..=106</code>, not extended) is a <strong>Portal</strong> to scene-type overlay <code>op0 - 100</code>; an inline <code>0x1F</code> text block or an interact (<code>op0 &lt; 100</code>) is an <strong>NPC</strong>; anything else is Plain. Eleven genuine portals exist in the whole corpus; <code>map01</code> has none, so its entrances come from the bridge below.</li>
+        <li><strong>Bridge.</strong> <code>man_field_scripts::overworld_portal_sites</code> joins <code>.MAP</code> tile trigger to P2 record to <code>0x3F</code> destination + arrival tile, decoding the op-<code>0x70</code> conditional pair as <code>ConditionalDest</code>. <code>enter_world_map_scene</code> runs each record through <code>partition2_record_gates</code> / <code>World::p2_record_gates_pass</code> (retail <code>FUN_8003BDE0</code>) and installs an <code>OverworldPortal</code> only when the gate passes.</li>
+        <li><strong>Drain.</strong> <code>auto_engage_world_map_portals</code> drives a matching Idle portal to its transition state once per visit; <code>SceneHost::tick</code> drains the <code>WorldMapTransition</code> - an <code>OverworldPortal</code> loads its scene and seats the arrival tile; a door portal resolves through <code>MapIdResolver</code>. <code>SceneHost::dispatch_walk_on_trigger</code> runs in world-map mode too, leaving portal records to the entity SM and spawning beat records as timelines so their C1 one-shot latch holds.</li>
+        <li><strong>NPC talk.</strong> <code>tick_world_map</code> opens an NPC's inline dialogue on confirm within one tile (<code>first_inline_dialog_offset</code>, <code>OwnedDialogPanel::from_inline_dialog</code>); the text is the record's structural <code>0x1F</code> segment pool, never the scene MES and never the <code>0x3F</code> op.</li>
+        <li><strong>Flag writers.</strong> <code>0x142</code> is set by plain <code>51 42</code> script bytes in <code>rikuroa</code>'s streaming-carrier MAN (P1[10..12] and the post-victory P2[50], self-latching), re-asserted by <code>dolk2</code> P1[0..1], cleared by <code>dolk</code> P1[26]; the engine reaches it organically through the boss-stager record (<code>organic_beat_records_disc.rs</code>). <code>0x482</code> (mist walls) and <code>0x225</code> (the town01 opening one-shot) have <strong>no</strong> script writer in either the field-VM census or the motion-VM census; they are direct code paths in overlays and remain capture targets (<a href="../tooling/spine-flag-writers-capture.html">runbook</a>).</li>
+      </ul>
+      <p>Two falsified readings, kept so they are not re-walked: "<code>dolk2</code> is reached from a dungeon interior" (it is the same hub entrance selected by <code>0x142</code>), and "<code>0x482</code> is set in the <code>other7</code> block" (desynced-walker noise over SJIS text). More on <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p>
+    </div>
+  </details>
 </section>
 
 <section class="doc-section" id="render-pipeline">
-  <h2>Render pipeline</h2>
-  <p>The per-frame world-map render dispatches from the SCUS-resident game loop into the overlay-loaded code window. Two chains converge: a per-frame dispatch tick that reads the prim emitter's gate flag, and a one-shot arm path that sets the gate plus a small param block.</p>
-
-  <h3>Per-frame dispatch (SCUS-resident)</h3>
-  <p>Two SCUS-resident handlers from the 28-mode dispatch table at <code>0x8007078C</code> reach the world-map render tick:</p>
+  <h2>What you see: the render pipeline</h2>
+  <p>The ground, the landmarks, the rotating horizon and the shimmering sea are drawn by four different mechanisms. The frame starts in the always-resident executable (SCUS) and calls out into the overlay only for the horizon plane and, in the top view, for the terrain renderers.</p>
+  <div class="flow">
+    <span class="num">1</span><span class="layer">Mode tick</span><span class="desc">the per-mode handler enters the world-map render tick once per frame</span><span class="crate">FUN_80016444</span>
+    <span class="num">2</span><span class="layer">Five passes</span><span class="desc">the actor-list iterator walks five linked lists, calling each actor's tick</span><span class="crate">FUN_8002519C</span>
+    <span class="num">3</span><span class="layer">Render dispatch</span><span class="desc">per actor, a switch on its render mode; case 5 walks the mesh chain</span><span class="crate">FUN_8001ADA4</span>
+    <span class="num">4</span><span class="layer">Mesh leaf</span><span class="desc">each landmark mesh goes through the Legaia TMD renderer on the GTE</span><span class="crate">FUN_8002735C</span>
+    <span class="num">5</span><span class="layer">Horizon</span><span class="desc">when the submode register reads 2, one direct call emits the rotating sky plane</span><span class="crate">FUN_801D7EA0</span>
+  </div>
   <table>
-    <thead><tr><th>Address</th><th>Mode-table role</th><th>Tick call</th></tr></thead>
+    <thead><tr><th>Layer</th><th>Source</th><th>Mechanism</th></tr></thead>
     <tbody>
-      <tr><td><code>FUN_80025EEC</code></td><td>Default per-mode handler (used by 13 of 28 modes - not world-map-specific).</td><td><code>FUN_8001698C</code> &rarr; <code>FUN_80016444(1)</code> &rarr; <code>FUN_80016B6C</code>.</td></tr>
-      <tr><td><code>FUN_80025F2C</code></td><td>Mode 13 (MAPDSIP MODE) - field/world-map display per-frame handler.</td><td><code>FUN_8001698C</code> &rarr; <code>func_0x801CE850</code> (overlay entry) &rarr; <code>FUN_80016444(0)</code>.</td></tr>
+      <tr><td>Continent ground (walk view)</td><td><code>.MAP</code> floor nibbles at <code>+0x4000</code></td><td>A smooth <strong>heightfield</strong>: one quad per object-grid cell, corner heights through the floor LUT (the bilinear ground-height sampler's math).</td></tr>
+      <tr><td>Ground texture</td><td>object record <code>+0x14..+0x18</code></td><td>Per cell: 8x8 atlas tile index, PSX texture page (grass / mountain / water / forest are different pages), CLUT word. Matches the record 100% in captures.</td></tr>
+      <tr><td>Landmarks</td><td>kingdom bundle slot 1 (Drake 40 / Sebucus 36 / Karisto 56 meshes)</td><td>Placed by <code>flags &amp; 0x4</code> records; rendered as ordinary case-5 TMD actors.</td></tr>
+      <tr><td>Horizon / sky plane</td><td>cos table + three globals</td><td>A one-shot emitter behind a self-clearing gate: 224 iterations, about 670 prims, rotating with the camera angle.</td></tr>
+      <tr><td>Bulk terrain (top view)</td><td>same slot-1 pack, per cell</td><td>Ordinary TMD rendering whose per-primitive dispatch is <strong>mode-switched</strong> to eight overlay-resident renderers that add a distance-cue fog pass (<a href="#bulk-continent-terrain-emit-mechanism-pinned">below</a>).</td></tr>
+      <tr><td>Sea shimmer</td><td>kingdom bundle slot 5</td><td>Palette animation - see <a href="#ambient">ambient effects</a>.</td></tr>
     </tbody>
   </table>
-  <p>The <code>a0</code> arg controls whether <code>FUN_80016444</code> skips its early <code>FUN_8005FB84</code> block (Mode 13 skips it; the default handler runs it). Both reach the world-map render branch deeper in the function, so the horizon emitter can fire from any of the 14 modes that route through <code>FUN_80016444</code> whenever the submode register holds <code>2</code>.</p>
+  <p>Cells with no object record have no ground quad in retail either - their surface is an environment mesh placed over them. A clear-colour hole over such a cell means a missing mesh, not a texturing bug. Slot 4 of the kingdom bundle is <em>not</em> a terrain source; it is a library of object-local meshes (<a href="../formats/world-map-overlay.html">world-map overlay</a>).</p>
 
-  <h3><code>FUN_80016444</code> - SCUS world-map render tick (1352 bytes)</h3>
-  <p>Entry: <code>(submode_flag)</code>. Iterates the world-map render passes for one frame. The pipeline includes a gated direct call into the overlay-resident POLY_FT4 emitter:</p>
-<pre><code>80016750  lui   v1, 0x8008
-80016754  lw    v1, -0x43c4(v1)        ; v1 = _DAT_8007BC3C (submode register)
-80016758  li    v0, 0x2
-8001675c  bne   v1, v0, 0x8001676c     ; skip unless submode == 2
-80016764  jal   0x801d7ea0             ; -&gt; overlay-resident emitter</code></pre>
-  <p>Same <code>0x8007BC3C</code> register has six SCUS writers (<code>FUN_80016230</code> - the two-write set/clear path - plus <code>FUN_80025980</code>, <code>FUN_80025DA0</code>, <code>FUN_8001D424</code>); the writer that stores <code>2</code> is the entry point for the world-map render branch.</p>
-
-  <h3><code>FUN_801D7EA0</code> - world-map POLY_FT4 batch emitter (832 bytes)</h3>
-  <p>Entry: <code>()</code>. One-shot emitter gated by <code>_DAT_801F351C</code>:</p>
-<pre><code>if (_DAT_801F351C != 0) {
-    _DAT_801F351C = 0;                   // self-clear gate
-    iVar11 = 4;
-    local_30 = 0x2C808080;                // POLY_FT4 GP0 cmd + neutral grey
-    uVar6 = _DAT_801F3518
-          + DAT_1F800393 * _DAT_801F3524; // angle += per-frame-tick * step
-    _DAT_801F3518 = uVar6;
-    local_3c = _DAT_801F3520;
-    local_34 = _DAT_801F3520 / 5;
-    local_38 = _DAT_801F3520 - local_34;
-    do {
-        iVar10 = cos_table[(uVar6 &amp; 0xFFF)];   // 0x8007B81C cos LUT
-        // emit 2x POLY_FT4 (chain tag 0x9000000) + 1 small prim
-        // (chain tag 0x3000000); vertex coords are cos-rotation-
-        // projected with local_3c/local_38 as scale moduli.
-        ...
-        uVar6 += 0x10;
-        iVar11++;
-    } while (iVar11 &lt; 0xE4);              // 224 iterations
-}</code></pre>
-  <p><code>_DAT_8007B81C</code> is the cos lookup table (see the <a href="../reference/memory-map.html">memory map</a>). The function emits ~670 prims per call (2 POLY_FT4 + 1 small per iter across 224 iters). Vertex coordinates project via the cos table, so the rendered output rotates with the camera angle - consistent with a horizon / sky / animated-background plane, not a fixed continent mesh.</p>
-  <p>The case-5 path of the per-actor render dispatcher <code>FUN_8001ADA4</code> draws every <strong>landmark</strong> TMD (castle, towers, bridges, gates) - each world-map actor&apos;s <code>actor[+0x44]</code> mesh chain points into Drake&apos;s 40-TMD landmark pack (TMD is the game's 3D-mesh format) at PROT entry 0086 slot 1, which the dispatcher walks once per frame through <code>FUN_8002735C</code> (the Legaia TMD renderer - 60 ops on the GTE, the PS1's geometry coprocessor). That accounts for the landmark prims in the GPU pool.</p>
-  <h3 id="bulk-continent-terrain-emit-mechanism-pinned">Top-view bulk-terrain render path (overlay-replaced per-prim renderers)</h3>
-  <p>This is the <strong>top-view / overview</strong> render path (game mode 0x0D), distinct from the walk-view continent (a heightfield, see the engine port). The top-view's bulk terrain prims are not produced by a procedural emitter sibling of <code>FUN_801D7EA0</code>; they come out of ordinary case-5 TMD rendering (of the overview-pool meshes placed per cell) whose per-prim dispatch is <strong>mode-switched</strong> to overlay-resident renderers when the top-view overlay is paged in. <code>FUN_80043390</code> (the SCUS-side per-prim TMD renderer at the leaf of the actor-mesh-chain walk) selects one of two function-pointer tables based on <code>_DAT_1F800394 &amp; 1</code>:</p>
+  <h3 id="bulk-continent-terrain-emit-mechanism-pinned">Top-view bulk terrain: the overlay-replaced renderers</h3>
+  <p>The top view (the developers' fly-over) draws the continent as per-cell meshes. The SCUS per-primitive TMD renderer picks its emit function from one of two tables, chosen by a scratchpad flag; with the top-view overlay paged in, the overlay table's eight high-mode slots point at overlay copies of the SCUS renderers with a fog post-process spliced in between the GTE projection and the packet write.</p>
   <table>
-    <thead><tr><th>Flag</th><th>Table base</th><th>Rows</th><th>Where it lives</th></tr></thead>
+    <thead><tr><th>Flag</th><th>Table</th><th>Rows</th><th>Lives in</th></tr></thead>
     <tbody>
-      <tr><td>clear</td><td><code>0x8007657C</code></td><td>4 (alpha 0/50/A0/F0)</td><td><code>SCUS_942.54</code></td></tr>
-      <tr><td>set</td><td><code>0x801F8968</code></td><td>1 (alpha 0 only)</td><td>world-map overlay</td></tr>
+      <tr><td>clear</td><td><code>0x8007657C</code></td><td>4 (alpha 0 / 50 / A0 / F0)</td><td>SCUS</td></tr>
+      <tr><td>set</td><td><code>0x801F8968</code></td><td>1 (alpha 0 only; the alpha offset is skipped)</td><td>world-map overlay</td></tr>
     </tbody>
   </table>
-  <p>The overlay path skips the alpha offset (<code>_DAT_1F800028</code> is not added on the overlay branch), so only the first row of the overlay table is meaningful. Slots 8..11 of row 0 share the same low-mode dispatchers as SCUS (<code>0x8004409C</code>, <code>0x8004423C</code>, <code>0x80044434</code>, <code>0x800445B0</code>); slots 12..19 carry the eight overlay-resident high-mode renderers at <code>0x801F7644</code>, <code>0x801F7838</code>, <code>0x801F7F78</code>, <code>0x801F8198</code>, <code>0x801F7AA4</code>, <code>0x801F7CCC</code>, <code>0x801F8454</code>, <code>0x801F8690</code>. Each is a per-primitive emitter that loads vertex indices from the TMD prim body, looks vertices up in the actor&apos;s vertex pool, runs them through the GTE, and emits one GPU prim packet.</p>
-  <p>Source mesh data is the same kingdom slot-1 TMD pack the landmarks draw from. <code>mednafen-state prim-dispatch-table &lt;save&gt;</code> decodes both tables out of a save state&apos;s main RAM and surfaces the eight overlay-resident targets; pass <code>--overlay-targets-only</code> to pipe addresses into a Ghidra <code>dump_funcs.py</code> <code>TARGETS</code> list. The companion subcommand <code>mednafen-state prim-dispatch-survey &lt;save&gt;...</code> compares multiple saves side-by-side and asserts the SCUS table is byte-identical across them.</p>
-
-  <h4 id="per-slot-delta-vs-scus-sibling">Per-slot delta vs SCUS sibling</h4>
-  <p>Capstone disassembly (<code>scripts/ghidra-analysis/disasm-overlay-fn.py --batch leaves</code>) plus Ghidra decompilation (<code>ghidra/scripts/dump_world_map_top_prim_leaves.py</code>) confirms every overlay leaf is the SCUS sibling body plus a per-vertex <strong>distance-cue fog post-process</strong> inserted between the GTE projection and the OT packet write. The fog block is gated on <code>(u8 *)(t2-0x2D1) &amp; 0x10</code>; when set, it computes a clamped max-Z, shifts it by <code>(u8 *)(t2+0x90)</code>, mixes a far-Z reference at <code>t2-0x2E0</code> into the prim cmd, invokes <code>GTE.dpcs</code> (single colour, slots 12-14 / 16-18) or <code>GTE.dpct + dpcs</code> (textured quads, slots 15 / 19), then indexes the per-Z RGB LUT at <code>t2-0x2BC</code> three times to ADD-write fog tints into offsets 8 / 0xC / 0x10 of the OT packet.</p>
-
-  <table>
-    <thead><tr><th>Slot</th><th>SCUS sibling</th><th>Overlay leaf</th><th>Overlay-only GTE ops</th></tr></thead>
-    <tbody>
-      <tr><td>12</td><td><code>0x80043658</code> (68 instr)</td><td><code>0x801F7644</code> (125 instr)</td><td><code>dpcs</code></td></tr>
-      <tr><td>13</td><td><code>0x80043768</code> (84 instr)</td><td><code>0x801F7838</code> (155 instr)</td><td><code>dpcs</code></td></tr>
-      <tr><td>14</td><td><code>0x80043B58</code> (69 instr)</td><td><code>0x801F7F78</code> (136 instr)</td><td><code>dpcs</code></td></tr>
-      <tr><td>15</td><td><code>0x80043C6C</code> (90 instr)</td><td><code>0x801F8198</code> (175 instr)</td><td><code>dpct</code> + <code>dpcs</code></td></tr>
-      <tr><td>16</td><td><code>0x800438B8</code> (75 instr)</td><td><code>0x801F7AA4</code> (138 instr)</td><td><code>dpcs</code></td></tr>
-      <tr><td>17</td><td><code>0x800439E4</code> (93 instr)</td><td><code>0x801F7CCC</code> (171 instr)</td><td><code>dpcs</code></td></tr>
-      <tr><td>18</td><td><code>0x80043DD4</code> (79 instr)</td><td><code>0x801F8454</code> (143 instr)</td><td><code>dpcs</code></td></tr>
-      <tr><td>19</td><td><code>0x80043F10</code> (99 instr)</td><td><code>0x801F8690</code> (182 instr)</td><td><code>dpct</code> + <code>dpcs</code></td></tr>
-    </tbody>
-  </table>
-
-  <p>Slots 15 and 19 are the textured-quad (POLY_FT4 / POLY_GT4) variants that need <code>dpct</code> for the first three vertices plus a final <code>dpcs</code> for the fourth; every other slot needs only <code>dpcs</code>. Each leaf ends with <code>j 0x80043580; addiu $a1, $a1, 0xc</code> - tail call to the SCUS dispatcher continuation plus the loop's per-prim source-pointer advance. The engine port mirrors this dispatch in <code>legaia-engine-vm::prim_dispatch</code>; <code>SceneLoadKind::WorldMap</code> selects the overlay variant.</p>
-
-  <p>Slot 4 of each kingdom bundle is <strong>not</strong> the bulk-terrain source. Its records are a runtime library of object-local 3D meshes (see the <a href="../formats/world-map-overlay.html">slot-4 records format doc</a>) - independent of the continent terrain emit mechanism.</p>
-
+  <p>The engine mirrors the dispatch in <code>engine-vm::prim_dispatch</code>; <code>SceneLoadKind::WorldMap</code> selects the overlay variant. <code>mednafen-state prim-dispatch-table</code> decodes both tables from a save state.</p>
   <details class="disclosure">
-    <summary>Why static hunts miss the terrain emitters (negative-result audit)</summary>
+    <summary>Per-slot delta: overlay leaf vs SCUS sibling</summary>
     <div class="disclosure-body">
-      <p>Three properties of the dispatch hide the terrain emitters from the usual static hunts:</p>
-      <ul class="bullets">
-        <li>The GP0 cmd byte is loaded from a per-mode descriptor table (<code>DAT_8007326C</code> on the SCUS side, <code>0x801F8968</code> in the overlay), not built with <code>lui</code>/<code>li</code> immediates - so <code>addprim</code> immediate-scanners see neither <code>FUN_8002735C</code> (the landmark TMD renderer) nor the eight overlay leaves. Static addprim hits reduce to the horizon emitter plus five non-terrain SCUS emitters (HUD sprite batches, screen-tint, digit batchers).</li>
-        <li>An overlay capture that stops at <code>0x801F0000</code> clips every leaf address out of the analysed binary. The dynamic prim-pool-writers probe confirms top-of-list PC hits at <code>0x801F7344..0x801F8DBC</code> - exactly the eight high-mode renderer addresses.</li>
-        <li>The horizon emitter is called by direct <code>jal</code> from SCUS; Ghidra's reference manager misses the cross-program call when sweeping the overlay alone (sweep SCUS to surface the caller).</li>
-      </ul>
-      <p>An audit of <code>FUN_80016444</code>&apos;s direct <code>jal</code> targets (12 unique targets across 60 call sites) confirms <strong>none is a bulk-terrain emitter on its own</strong> - the bulk prims come from many small case-5 TMD renders going through the overlay-replaced per-mode renderers:</p>
-      <table>
-        <thead><tr><th>Target</th><th>Calls</th><th>Role</th></tr></thead>
+      <p>Every overlay leaf is the SCUS body plus a per-vertex distance-cue fog block gated on <code>(u8*)(t2-0x2D1) &amp; 0x10</code>: clamp max-Z, shift by <code>(u8*)(t2+0x90)</code>, mix the far-Z reference at <code>t2-0x2E0</code> into the prim cmd, run <code>GTE.dpcs</code> (or <code>dpct + dpcs</code> for textured quads), then index the per-Z RGB LUT at <code>t2-0x2BC</code> three times to add fog tints into packet offsets 8 / 0xC / 0x10. Each leaf ends with <code>j 0x80043580; addiu $a1, $a1, 0xc</code>. Slots 8..11 share the SCUS low-mode dispatchers.</p>
+      <table class="layout">
+        <thead><tr><th>Slot</th><th>SCUS sibling</th><th>Overlay leaf</th><th>Extra GTE ops</th></tr></thead>
         <tbody>
-          <tr><td><code>0x8001a068</code></td><td>19</td><td>Actor-list pass dispatcher (8 of the 19 hit at the function head).</td></tr>
-          <tr><td><code>0x8005fb84</code></td><td>18</td><td>Early-return block; skipped when submode == 2.</td></tr>
-          <tr><td><code>0x8002519c</code></td><td>6</td><td>Per-frame render-pass iterator (5 lists per frame).</td></tr>
-          <tr><td><code>0x8001d140</code></td><td>6</td><td>Stack-swap wrapper &rarr; <code>FUN_8001ADA4</code> (per-actor render dispatcher).</td></tr>
-          <tr><td><code>0x800172c0</code></td><td>1</td><td>GTE matrix setup helper (<code>FUN_80026988(&amp;local_18, 0x1F8003A8)</code>).</td></tr>
-          <tr><td><code>0x800179c0</code></td><td>1</td><td>Small helper.</td></tr>
-          <tr><td><code>0x800188c8</code></td><td>1</td><td>Debug-HUD text renderer (<code>PSX_TEST_PROGRAM</code> string).</td></tr>
-          <tr><td><code>0x8001d058</code></td><td>2</td><td>48-byte scratchpad / GPU register flush.</td></tr>
-          <tr><td><code>0x8002b688/790</code></td><td>2 / 2</td><td>Tiny accessors (60-80 bytes each).</td></tr>
-          <tr><td><code>0x80046978</code></td><td>1</td><td>Screen-tint fade emitter (gated on <code>gp+0x9d4</code>).</td></tr>
-          <tr><td><code>0x801d7ea0</code></td><td>1</td><td><strong>Horizon emitter</strong> (overlay-resident, single direct call).</td></tr>
+          <tr><td>12</td><td><code>0x80043658</code></td><td><code>0x801F7644</code></td><td>dpcs</td></tr>
+          <tr><td>13</td><td><code>0x80043768</code></td><td><code>0x801F7838</code></td><td>dpcs</td></tr>
+          <tr><td>14</td><td><code>0x80043B58</code></td><td><code>0x801F7F78</code></td><td>dpcs</td></tr>
+          <tr><td>15</td><td><code>0x80043C6C</code></td><td><code>0x801F8198</code></td><td>dpct + dpcs (FT4 / GT4)</td></tr>
+          <tr><td>16</td><td><code>0x800438B8</code></td><td><code>0x801F7AA4</code></td><td>dpcs</td></tr>
+          <tr><td>17</td><td><code>0x800439E4</code></td><td><code>0x801F7CCC</code></td><td>dpcs</td></tr>
+          <tr><td>18</td><td><code>0x80043DD4</code></td><td><code>0x801F8454</code></td><td>dpcs</td></tr>
+          <tr><td>19</td><td><code>0x80043F10</code></td><td><code>0x801F8690</code></td><td>dpct + dpcs (FT4 / GT4)</td></tr>
         </tbody>
       </table>
+      <p>Three properties hide these from static hunts: the GP0 command byte comes from a descriptor table, not an immediate; an overlay capture that stops at <code>0x801F0000</code> clips every leaf; and the horizon emitter is called by a direct <code>jal</code> from SCUS that a sweep of the overlay alone never sees. Capture the overlay with the wide window <code>0x801C0000..0x801F9000</code>.</p>
     </div>
   </details>
+  <details class="disclosure">
+    <summary>Deep dive: per-frame dispatch, the horizon emitter and the pass iterator</summary>
+    <div class="disclosure-body">
+      <p><strong>Dispatch.</strong> Two handlers from the 28-mode table at <code>0x8007078C</code> reach the render tick: the default handler <code>FUN_80025EEC</code> (<code>FUN_8001698C</code> &rarr; <code>FUN_80016444(1)</code>) and the mode-13 handler <code>FUN_80025F2C</code> (<code>FUN_8001698C</code> &rarr; overlay entry <code>0x801CE850</code> &rarr; <code>FUN_80016444(0)</code>). The argument only decides whether the early <code>FUN_8005FB84</code> block runs. The horizon call is gated on the submode register <code>_DAT_8007BC3C == 2</code>:</p>
+<pre><code>80016750  lui   v1, 0x8008
+80016754  lw    v1, -0x43c4(v1)        ; _DAT_8007BC3C
+80016758  li    v0, 0x2
+8001675c  bne   v1, v0, 0x8001676c
+80016764  jal   0x801d7ea0             ; horizon emitter</code></pre>
+      <p><strong>Horizon emitter</strong> <code>FUN_801D7EA0</code>: if <code>_DAT_801F351C</code> is set, clear it, advance the angle <code>_DAT_801F3518 += DAT_1F800393 * _DAT_801F3524</code>, and loop 224 times emitting two POLY_FT4 (cmd <code>0x2C808080</code>, chain tag <code>0x9000000</code>) plus one small prim per step, vertices projected through the cos LUT at <code>0x8007B81C</code> with <code>_DAT_801F3520</code> and its 4/5 as scale moduli. The gate is armed by <code>FUN_801D1344</code> (reads <code>_DAT_8007BCD0/D4/D8</code>) &rarr; <code>FUN_801D8258</code> (writes the gate + <code>_DAT_801F3520/24/28</code>); <code>FUN_801C2B2C</code> in the 0897 field overlay is a code-identical copy. The gate lives above <code>0x801F0000</code> and survives overlay swaps; the field overlay's <code>FUN_801C9688</code> also reads and clears it.</p>
+      <p><strong>Pass iterator</strong> <code>FUN_8002519C</code>: five linked-list heads at <code>_DAT_8007C34C..+0x20</code>; per node, bit <code>0x8</code> of <code>+0x10</code> takes an early return, otherwise <code>jalr</code> the tick at <code>+0x0C</code>.</p>
+      <table class="layout">
+        <thead><tr><th>Offset</th><th>Type</th><th>Role</th></tr></thead>
+        <tbody>
+          <tr><td>+0x00</td><td>actor*</td><td>next (NULL terminates)</td></tr>
+          <tr><td>+0x0C</td><td>fn*</td><td>tick function</td></tr>
+          <tr><td>+0x10</td><td>u32</td><td>flags: <code>0x8</code> early return, <code>0x200</code> already-emitted guard, <code>0x800</code> free the chain at +0x44</td></tr>
+          <tr><td>+0x44</td><td>chain*</td><td>mesh / prim chain head (count, then pointers)</td></tr>
+          <tr><td>+0x48</td><td>u8*</td><td>move-VM bytecode base</td></tr>
+          <tr><td>+0x56</td><td>u8</td><td>render mode 1..0xB for <code>FUN_8001ADA4</code></td></tr>
+          <tr><td>+0x70</td><td>u16</td><td>move-VM PC in halfwords</td></tr>
+        </tbody>
+      </table>
+      <p>Ticks seen on the overworld: <code>FUN_80021DF4</code> (move VM step, 8 actors), <code>FUN_8003BC08</code> (motion VM + overlay helper <code>FUN_801D79E8</code>, 14 actors), <code>FUN_801E76D4</code>, <code>FUN_801DA51C</code>, <code>FUN_801D1344</code>. The render dispatcher's case 4 splits on <code>actor[+0x9E]</code> (<code>0x4000</code> &rarr; <code>FUN_8002A5A4</code>, <code>0x2000</code> &rarr; overlay <code>FUN_801CFA48</code>, else <code>FUN_80028158</code>); case 5 walks <code>+0x44</code> calling <code>FUN_80043390</code> (textured), <code>FUN_80029888</code> (environment-mapped when <code>+0x7A != 0</code>) or <code>FUN_8002735C</code>; cases 1/2/3/6/7/8/B are LOD, particle and billboard branches. The walk pool <code>DAT_8007C018</code> settles at 45 entries on <code>map01</code>: five party meshes then the 40-mesh landmark pack, so pack mesh <code>i</code> is pool slot <code>i + 5</code>.</p>
+      <p><strong>Walk <code>.MAP</code> source.</strong> The field-file loader <code>FUN_8001F7C0</code> resolves the <code>.MAP</code> by PROT entry index (<code>FUN_8003E8A8</code> over the in-RAM TOC at <code>0x801C70F0</code>, index from <code>0x80084540</code>); a live Drake walk reads index 85, the raw uncompressed <code>0x10000</code> region at PROT.DAT <code>0x655800</code>.</p>
+    </div>
+  </details>
+  <details class="disclosure">
+    <summary id="walk-rendering">Engine port: heightfield, texturing and the slot-4 inspection overlay</summary>
+    <div class="disclosure-body">
+      <ul class="bullets">
+        <li><code>Scene::walk_heightfield</code> &rarr; <code>build_walk_heightfield</code> sweeps the <code>0x1000</code> cells, emits one quad per cell with corner Y = <code>-lut[nibble]</code>, and bakes per-cell UV + <code>[clut, tpage]</code> (<code>WalkHeightfield::uvs</code> / <code>::cba_tsb</code>). The heightfield is drawn <strong>without</strong> the Y-flip the pack meshes get - flipping it sinks every raised cell under its own buildings.</li>
+        <li>Texture rule: <code>u = (id % 8) * 32</code>, <code>v = (id / 8) * 32</code> from <code>+0x14</code>; page from <code>+0x15</code> (<code>0x1A</code> grass, <code>0x0C</code> mountain, <code>0x1B</code>/<code>0x1C</code> water, <code>0x0B</code> forest); CLUT from <code>+0x16</code>. Verified with <code>analyze-walk-ground-tiles.py --verify-rule</code>; disc-gated <code>field_ground_surface_disc.rs</code>.</li>
+        <li>Landmarks: <code>Scene::walk_object_placements</code>. Entities draw as kind-coded markers (portals cyan, NPCs green, encounter zones red) and the player as a marker with a facing tick.</li>
+        <li><code>LEGAIA_WORLDMAP_SLOT4=1</code> overlays the decoded slot-4 mesh library as coloured wireframes (<code>world_map_overlay::wireframe_segments_3d</code>). It is an inspection aid: retail consumes that pool in place through the per-prim handler chain, which the overlay does not replay.</li>
+      </ul>
+      <p>History: "single grass page, positional <code>(col%3,row%3)</code>, <code>+0x14</code> unused" was a misread - grass tiles happen to occupy the atlas's top-left 3x3 block; <code>+0x14</code> is the selector.</p>
+    </div>
+  </details>
+</section>
 
-  <h3>Per-frame render-pass iterator - <code>FUN_8002519c</code></h3>
-  <p>Five times per frame, <code>FUN_80016444</code> invokes the SCUS-resident actor-list iterator <code>FUN_8002519c</code> (328 bytes) against five linked-list heads at <code>_DAT_8007C34C..._DAT_8007C36C</code>. Each list is one render pass. The iterator walks the chain and per node either takes an early-return path (when bit <code>0x8</code> of <code>node[+0x10]</code> is set) or calls the tick function at <code>node[+0xC]</code> via <code>jalr</code>.</p>
-  <p>Per-actor record layout consumed by the iterator:</p>
+<section class="doc-section" id="ambient">
+  <h2>Ambient effects: why the ocean shimmers</h2>
+  <p>Nothing moves on the overworld but you, yet the sea glitters. The effect is palette animation: a table in the kingdom bundle's slot 5 tells a walker to copy 16-pixel palette strips onto the water and shoreline palette cells on a fixed cadence, so the same texels cycle through a ring of colours. Two families are easy to confuse:</p>
   <table>
-    <thead><tr><th>Offset</th><th>Type</th><th>Role</th></tr></thead>
+    <thead><tr><th>Family</th><th>Source</th><th>Animates</th><th>Engine</th></tr></thead>
     <tbody>
-      <tr><td><code>+0x00</code></td><td><code>actor *</code></td><td>Next pointer (singly linked list, <code>NULL</code> terminates).</td></tr>
-      <tr><td><code>+0x0C</code></td><td><code>void (*)(actor *)</code></td><td>Tick function (the entry point <code>jalr</code> calls).</td></tr>
-      <tr><td><code>+0x10</code></td><td><code>u32</code></td><td>Flags; bit <code>0x8</code> selects the early-return path, bit <code>0x200</code> is the &quot;already-emitted this frame&quot; guard.</td></tr>
-      <tr><td><code>+0x14</code></td><td><code>u32</code></td><td>Saved next-pc copy used by the early-return path.</td></tr>
-      <tr><td><code>+0x18</code></td><td><code>u16</code></td><td>Halfword count exposed at <code>+0x20</code> for the early-return path.</td></tr>
-      <tr><td><code>+0x44</code></td><td><code>chain *</code></td><td>Optional prim-chain head; freed via <code>FUN_80017b94</code> when bit <code>0x800</code> is set.</td></tr>
-      <tr><td><code>+0x48</code></td><td><code>u8 *</code></td><td>Move-VM bytecode base (for actors whose tick is <code>FUN_80021df4</code>).</td></tr>
-      <tr><td><code>+0x70</code></td><td><code>u16</code></td><td>Move-VM PC in halfword units; the actual byte offset is <code>2 * actor[+0x70]</code>.</td></tr>
+      <tr><td>Slot-5 CLUT-walk table</td><td>kingdom bundle slot 5 (type <code>0x06</code>), 516 bytes, identical across the three kingdoms</td><td>the ocean head plus seven shoreline / terrain cells</td><td><code>legaia_asset::clut_walk</code>, <code>WaterAnim::Walk</code></td></tr>
+      <tr><td>Script-driven CLUT-cell ops</td><td>MAN <code>4C 61</code> ops (one-shot copy, cross-fade)</td><td>only the row-498 park-cell one-shots on <code>map01</code></td><td><code>engine-core::clut_fx</code></td></tr>
     </tbody>
   </table>
-  <p>Standard tick functions observed in the world-map render passes:</p>
-  <table>
-    <thead><tr><th>Tick function</th><th>Where</th><th>Role</th></tr></thead>
-    <tbody>
-      <tr><td><code>FUN_80021DF4</code> (SCUS)</td><td>per-frame actor tick</td><td>Steps the move VM via <code>FUN_80023070(actor)</code>. The eight actors in list <code>_DAT_8007C350</code> use this tick.</td></tr>
-      <tr><td><code>FUN_8003BC08</code> (SCUS)</td><td>per-actor tick</td><td>Calls the motion VM (<code>FUN_8003774C</code>), move-buffer setup (<code>FUN_800204F8</code>), and overlay helper <code>FUN_801D79E8</code>. The fourteen actors in list <code>_DAT_8007C354</code> use this tick.</td></tr>
-      <tr><td><code>FUN_801E76D4</code> (world_map overlay)</td><td>world-map controller</td><td>Top-view debug toggle + camera scroll/azimuth/zoom + dev-menu render.</td></tr>
-      <tr><td><code>FUN_801DA51C</code> (world_map overlay)</td><td>per-entity tick</td><td>5-state SM on <code>entity[+0x8A]</code>.</td></tr>
-      <tr><td><code>FUN_801D1344</code> (world_map overlay)</td><td>horizon gate-arm wrapper</td><td>See the gate-arm chain below.</td></tr>
-    </tbody>
-  </table>
+  <p>The same type-6 table drives ambient walks in twelve carriers, not only kingdoms; towns add an effect tree and the HSV cycler behind jou's pulsating flesh - see <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/field-ambient-fx.md" target="_blank" rel="noopener">field-ambient-fx.md</a>.</p>
+  <details class="disclosure">
+    <summary>Deep dive: table format, cadence arithmetic and the parked strips</summary>
+    <div class="disclosure-body">
+      <p>Format: <code>[u32 count=8][u32 entry_offsets[8]]</code>, then per entry <code>[u8 kind=1][u8 nframes][u16 cumulative_size][u16 dest_x][u16 dest_y]</code> + <code>nframes</code> x <code>[u8 0][u8 hold_vsyncs][u16 0][u16 src_x][u16 src_y]</code>. The asset-type dispatcher (case 6) installs it at <code>DAT_8007B7C8</code>; field init spawns one actor per entry with the accumulator seeded to 100 so all eight fire on the first tick; the SCUS walker (render case 0xB) adds the frame-skip byte <code>DAT_1F800393</code> (overworld 3, towns 2) each tick and on <code>acc &gt;= hold</code> emits a 16x1 <code>MoveImage</code>, resets to zero, and advances with wrap. Interval = <code>ceil(hold/dt) * dt</code>: the ocean head at fb <code>(0, 506)</code> (18 steps, hold 8) fires every 9 vsyncs, full cycle 162 vsyncs, about 2.7 s.</p>
+      <p>Sources park at VRAM rows 498/499/501..505 as raw CLUT-block records in the bundle's slot-0 TIM list (no TIM magic; <code>clut_walk::park_strips</code>). <code>map02</code> / <code>map03</code> ship only rows {501, 503, 505} and inherit the rest as VRAM residue from the Drake upload, so the engine parks Drake's byte-identical records for the missing rows. The VRAM parity oracle excludes exactly the destination cells (<code>WORLD_MAP_CLUT_CYCLE_CELLS</code>); <code>clut_walk_real</code> and <code>world_map_ocean_clut_live.rs</code> pin it on all three kingdoms. The script family: <code>FUN_801E4C58</code> (field-VM <code>0x4C</code> n6 sub-<code>0x61</code> one-shot copy / fill) and <code>FUN_801E4794</code> (multi-frame cross-fade); <code>map01</code> holds exactly eight such ops, all on row 498, frames denominated in vsyncs through the same skip byte.</p>
+    </div>
+  </details>
+</section>
 
-  <h3>Per-actor render dispatcher - <code>FUN_8001ADA4</code></h3>
-  <p>In addition to the five TICK calls into <code>FUN_8002519c</code>, the same frame issues six RENDER calls into the stack-swap wrapper <code>FUN_8001D140</code>, which forwards into the per-actor render dispatcher <code>FUN_8001ADA4</code> (2456 bytes). The render dispatcher walks the same actor lists but runs a different switch - on <code>actor[+0x56]</code> (render mode <code>1..0xB</code>):</p>
+<section class="doc-section" id="controller">
+  <h2>The developers' tooling: top view and debug menu</h2>
+  <p>The shipped game carries the tooling the designers used to fly over the map: a top-down camera behind a pad combo, and a scrolling dev menu with entries such as <code>MAP CHANGE</code>, <code>ENCOUNT</code> and <code>BGM CALL</code>. Both need a debug flag retail leaves clear, so no player ever reaches them - but the code is all there, and it is the source of the top-view terrain renderer above.</p>
   <ul class="bullets">
-    <li><strong>case 4</strong> (multi-target). Dispatches on <code>actor[+0x9e]</code> flags: bit <code>0x4000</code> &rarr; <code>FUN_8002A5A4</code> (SCUS); bit <code>0x2000</code> &rarr; <code>FUN_801CFA48</code> (overlay-resident); else &rarr; <code>FUN_80028158</code> (SCUS - distinct from the 6692-byte motion bytecode VM <code>FUN_80038158</code>).</li>
-    <li><strong>case 5</strong> (full TMD). Iterates the mesh chain at <code>actor[+0x44]</code> (<code>puVar5[0]</code> = count, <code>puVar5[1..n]</code> = mesh pointers) and per entry calls <code>FUN_80043390</code> (textured TMD), <code>FUN_80029888</code> (environment-mapped when <code>actor[+0x7a] != 0</code>), or <code>FUN_8002735C</code> (60-GTE Legaia TMD renderer for bone-animated meshes - the landmark emit leaf: each landmark TMD in Drake&apos;s 40-mesh kingdom pack passes through here).</li>
-    <li><strong>cases 1, 2, 3, 6, 7, 8, B</strong> - distance-LOD / particle / sprite-billboard branches calling per-effect helpers.</li>
+    <li><strong>The top-view controller</strong> is <em>only</em> the debug camera: with the view flag clear it returns immediately. The overworld's per-frame update is the ordinary field chain (gate-arm wrapper &rarr; locomotion), the same pair a town runs.</li>
+    <li><strong>Toggle:</strong> debug flag set + pad mask <code>0x4A</code> + held mask <code>0x40</code> flips the view flag, snapshots the camera and resets the panel cursor.</li>
+    <li><strong>Top-view controls:</strong> d-pad scrolls X/Z by 8 per frame; Circle/Square turn the azimuth by <code>0x14</code>; R1/L1 change zoom by 4.</li>
+    <li><strong>Dev menu:</strong> at least 24 rows; <code>MAP CHANGE</code> and <code>CARD OPTION</code> read <code>CLOSED</code> on a retail flag; <code>CAMERA</code>, <code>ENCOUNT</code> and <code>BGM CALL</code> show live readouts.</li>
   </ul>
-  <p>The landmark prims originate in <code>FUN_8002735C</code>, whose cmd byte comes from the per-mode descriptor table at <code>DAT_8007326C</code>; the top-view's bulk terrain follows the same dispatch-table pattern via <code>FUN_80043390</code>&apos;s overlay-mode jump table at <code>0x801F8968</code> and its eight overlay-resident high-mode renderers (the walk-view continent ground is instead a heightfield, see the engine port). Neither shows up in immediate-scanning <code>addprim</code> hunts - see the negative-result audit disclosure above.</p>
-
-  <h3>Gate-arm chain - <code>FUN_801D1344</code> &rarr; <code>FUN_801D8258</code></h3>
-  <p>The one-shot gate <code>_DAT_801F351C</code> is armed by a 40-byte trigger function called from a 1332-byte parameter-prep wrapper:</p>
-  <table>
-    <thead><tr><th>Address</th><th>Role</th></tr></thead>
-    <tbody>
-      <tr><td><code>FUN_801D1344</code></td><td>World-map gate-arm wrapper. 1332 bytes; function-pointer-only entry (Ghidra <code>incoming=0</code>). Reads three globals at <code>_DAT_8007BCD0/_D4/_D8</code> and forwards them to <code>FUN_801D8258</code> as the scale / step / OT-layer params at PC <code>0x801D1470: jal 0x801D8258</code>. <strong>Same RAM address holds a different function when the dialog overlay is paged in</strong> - that variant is the actor frame handler (see the <a href="../reference/functions.html">functions reference</a>).</td></tr>
-      <tr><td><code>FUN_801D8258</code></td><td>40-byte gate setter. Writes <code>_DAT_801F351C = 1</code>, then <code>_DAT_801F3520 = param_2</code>, <code>_DAT_801F3524 = param_3</code>, <code>_DAT_801F3528 = param_4</code> - the inputs the emitter consumes on its next run.</td></tr>
-      <tr><td><code>FUN_801C2B2C</code></td><td>Code-identical relocation copy of <code>FUN_801D1344</code> in the 0897 field overlay. Same body, different load address; calls <code>jal 0x801D8258</code> at PC <code>0x801C2C58</code>. Active during field-mode entry transitions.</td></tr>
-    </tbody>
-  </table>
-  <p>The gate flag <code>_DAT_801F351C</code> is in the persistent <code>0x801F0000+</code> region, so it survives overlay swaps. The flag is shared - both the world-map overlay's <code>FUN_801D7EA0</code> and the 0897 field overlay's <code>FUN_801C9688</code> read + clear it.</p>
+  <details class="disclosure">
+    <summary>Globals and engine port of the debug tooling</summary>
+    <div class="disclosure-body">
+      <table class="layout">
+        <thead><tr><th>Global</th><th>Role</th></tr></thead>
+        <tbody>
+          <tr><td><code>_DAT_8007B98C</code></td><td>debug flag (clear on retail)</td></tr>
+          <tr><td><code>DAT_801F2B94</code></td><td>view flag (walk / top view); <code>DAT_801F2B95</code> bits 1 / 2 enable the screen-dim pass and a second animation</td></tr>
+          <tr><td><code>_DAT_8007B850</code> / <code>_DAT_8007B874</code></td><td>pad mask / held mask</td></tr>
+          <tr><td><code>_DAT_80089120</code> / <code>_DAT_80089118</code></td><td>X / Z scroll</td></tr>
+          <tr><td><code>_DAT_8007B794</code> / <code>_DAT_8007B6F4</code></td><td>azimuth / zoom-height</td></tr>
+          <tr><td><code>_DAT_801F35A8..AC</code></td><td>camera snapshot taken on toggle</td></tr>
+          <tr><td><code>0x801CF344</code></td><td>dev-menu string table; <code>DAT_8007B5F8</code> encounter-rate readout; <code>_DAT_801F2E90</code> BGM readout</td></tr>
+        </tbody>
+      </table>
+      <p>Port: <code>engine-core::world_map::WorldMapController</code> models the four camera globals and the toggle (<code>tick(pad_input)</code>); <code>engine-vm::world_map_overlay</code> holds the 24-row dev-menu model (<code>DevMenuRow</code>, <code>is_closed</code>, <code>cursor_step</code>, <code>format_fixed_decimal</code>, <code>decode_camera_readout</code>), the escape-timer scheduler, the battle-records model and the equipment stat-comparison preview; <code>engine-ui</code> owns the draw halves (<code>records_screen_draws_for</code>, <code>dev_menu_list_draws_for</code>). <code>legaia-engine play-window --world-map</code> shows the camera state in the HUD.</p>
+      <p>History: an earlier reading of the top-view controller as "the world-map controller with a normal-walk path" is falsified by its own branch target (the walk branch is the epilogue). It mattered - it implied the overworld needed its own menu-open arm, which left the pause menu unreachable on the overworld in the port. See <a href="save-screen.html">save screen</a>.</p>
+    </div>
+  </details>
 </section>
 
 <section class="doc-section" id="engine-port">
   <h2>Engine port</h2>
-  <p>Two modules in the clean-room port cover this subsystem:</p>
-  <ul class="bullets">
-    <li><strong><code>engine-vm::world_map</code></strong> - clean-room port of <code>FUN_801DA51C</code>: <code>EntityState</code> enum (Idle / Activating / Transitioning / Terminal), <code>WorldMapEntityHost</code> trait (encounter / interact / scene-transition callbacks), <code>step(entity_idx, ctx, host)</code>. <code>World</code> drives one <code>WorldMapEntityCtx</code> per installed overworld entity each <code>SceneMode::WorldMap</code> tick: the Idle-state encounter latches the configured formation, which the world resolves into a battle through the same <code>formation_table</code> machinery as a field encounter - tagged via <code>battle_return_mode</code> to return to the overworld - while interactions surface as a <code>FieldInteract</code> event. Each entity carries an optional per-entity role (<code>WorldMapEntityConfig</code>): an <code>EncounterZone</code> spawns its own formation, a <code>Portal</code> surfaces a <code>WorldMapTransition</code> with its target map when engaged, and an <code>Npc</code> carries its interaction id plus the inline dialog-text bytes from its placement record's structural <code>0x1F</code>-lead segment pool (the actual message - <strong>not</strong> from a <code>0x3F</code> op, which is the named scene-change).</li>
-    <li><strong>Overworld player movement + region encounters</strong> - <code>tick_world_map</code> walks the player actor from the held d-pad (<code>step_world_map_locomotion</code>) and, on each 128-unit tile crossing (<code>live_world_map_tick</code>, mirroring the field <code>live_field_tick</code>), rolls the scene's region-keyed encounter table (<code>set_world_map_regions</code>, the clean-room port of <code>FUN_801D9E1C</code>): the player's tile selects the first region whose AABB contains it, the region's rate depletes a step counter, and a <code>&lt;= 0</code> counter rolls a formation from the region's slice and flips <code>WorldMap &rarr; Battle</code> (returning to the overworld). A camera-only world map (no region table) is unchanged. In walk mode the native <code>play-window</code> camera follows the player; the top-view debug camera keeps the free scroll. While a cutscene timeline that staged op-<code>0x45</code> camera params owns the overworld - the New-Game opening's map01 leg - the walk/top-view cameras stand down and the shell renders the same cutscene GTE camera the field prologue uses: retail's Rim Elm aerial fly-in is three camera beats in map01's opening record (a snap to the high aerial shot, then a <code>45 0B .. apply 900</code> mode-2 quadratic-ease-out descent), confirmed against a per-frame RAM capture of the live camera globals; the marker overlay hides while the timeline runs. The walk-view camera itself is the retail GTE model, RAM-pinned from the overworld resident savestates: <code>screen = H&middot;(R&middot;(S&middot;(v&nbsp;&minus;&nbsp;player)) + TR)/Ze</code> with <code>H = 368</code> (<code>_DAT_8007B6F4</code>), <code>S</code> = the base matrix <code>DAT_8007BF10</code> = <code>24576&middot;I</code> (a <strong>6.0&times; uniform world scale</strong>; the battle sibling holds 4&times;), a pitch-only rotation trio at <code>_DAT_8007B790</code>, focus = the player's world X/Z (<code>_DAT_80089118/20</code> hold its negation), and <code>TR</code> from <code>_DAT_800840B8</code> - two pinned zoom states, <code>(0,536,9139)</code> / <code>(0,406,11041)</code>. The retail pitch/TR path <em>between</em> the anchors is not yet pinned; the community poll probe streams the full tuple on the overworld (<code>wmcam</code> rows: rotation trio + H + the TR low halves + view mode, on change), so any captured zoom/rotate session yields the trajectory.</li>
-    <li><strong>Collision + camera-relative movement</strong> - the walk overlay's locomotion is byte-for-byte the field <code>FUN_801d01b0</code> + <code>FUN_801cfe4c</code> against the same <code>_DAT_1f8003ec + 0x4000</code> walkability grid (the kingdom maps carry thousands of wall sub-cells there), stepped through the shared <code>World::advance_with_collision</code>. <code>World::world_map_camera_relative_bits</code> rotates the held d-pad through the camera azimuth so &quot;screen up&quot; walks toward the top of the screen for any framing (the retail <code>func_0x800467e8</code> remap). The kingdom pack is drawn Y-flipped (PSX Y-down &rarr; renderer Y-up); the world&rarr;screen axes come from the real <code>world_map_camera_mvp</code> matrix and are pinned by a disc-free projection test.</li>
-    <li><strong>The overworld axis convention</strong> - retail pins it twice, both in the instruction stream. <code>FUN_800467E8</code> is not a trigonometric rotation: it looks the held direction nibble (<code>pad &amp; 0xF000</code>) up in the eight-entry compass ring at <code>DAT_800766FC</code> (<code>1000, 3000, 2000, 6000, 4000, C000, 8000, 9000</code>), adds the integer octant count at <code>gp + 0x2D8</code>, masks <code>&amp; 7</code>, and writes the entry back over the pad bits - so the remap is a whole number of 45&deg; steps turning from <code>+Z</code> toward <code>+X</code>, and a count of <code>0</code> is the identity. <code>FUN_801D01B0</code>'s four step arms then fix the axes: <code>0x1000</code> &rarr; <code>actor[+0x18] += 2</code> (Z+), <code>0x4000</code> &rarr; Z&minus;, <code>0x2000</code> &rarr; <code>actor[+0x14] += 2</code> (X+), <code>0x8000</code> &rarr; X&minus;. Those are the raw PSX d-pad bit positions, so retail's unrotated overworld d-pad walks Up = world Z+, Right = world X+. <strong>The port's frame is offset from that on purpose</strong>: retail's yaw-0 walk camera looks down <code>+Z</code>, while <code>world_map_camera_mvp</code> puts the eye on <code>+X</code>, so the port's remap carries a compensating rotation and its azimuth-0 Up walks <code>&minus;X</code>. What the player sees matches; the world-axis assignment does not - and rotating only one half of the remap/camera pair breaks the screen contract. A single-axis sign flip is a different animal (it turns the frame from a reflection into a rotation) and is caught by the projection test plus a pad&rarr;<code>move_state</code> end-to-end test of the retail bit-to-axis table.</li>
-    <li><strong>Geometry: the kingdom landmark pack (slot 1)</strong> - a <code>map\d\d</code> scene load decodes the kingdom bundle's slot-1 Legaia-TMD pack (Drake 40 / Sebacus 36 / Karisto 56 meshes) and slot-0 TIM atlas straight from the 7-asset descriptor table (<code>SceneLoadKind::WorldMap</code>); only the scene's <em>primary</em> kingdom entry contributes. The <code>DAT_8007C018</code> pool the tile dispatcher reads is filled by one descriptor-walk (<code>FUN_801D6704</code> &rarr; <code>FUN_80020118</code> party meshes [0..4] + <code>FUN_80020224</code>, dispatching via <code>FUN_8001f05c</code>; only cases <code>0x02</code>/<code>0x09</code> install). A real <code>map01</code> walk capture settles it to 45 entries: 5 party meshes + the 40-mesh slot-1 landmark pack (<code>prefix=5</code>: pool slots 0..4 hold the five party meshes, so pack mesh <code>i</code> lands at pool slot <code>i + 5</code>) - so the walk pool <em>is</em> the landmark pack. Parsed live, the 40 meshes are small object-local tile/prop meshes (dx/dz &le; ~768): the <strong>landmark layer</strong> (trees, mountains, the castle), not the continent ground. (Walk-view and overview pools are mutually exclusive - 0085's and 0093's slot-0 atlases target the same VRAM pages.)</li>
-    <li><strong>The continent ground is a procedural heightfield, not instanced meshes</strong> - confirmed by <code>FUN_80019278</code> (SCUS, always-resident, no overlay aliasing), the bilinear ground-height sampler: it gates on the object-grid <code>0x1000</code> cell bit and interpolates the floor height from the 2&times;2 block of <code>+0x4000</code> nibbles (each <code>&amp; 0xf</code> &rarr; the <code>0x1f80035c</code> LUT, weighted by sub-tile position). So <code>+0x4000</code> is terrain elevation and the <code>0x1000</code> continent is a smooth heightfield surface; the <code>.MAP</code> <code>+0x10</code> field feeds only the sparse placed-landmark layer (<code>FUN_8003A55C</code>, <code>flags &amp; 0x4</code>; <code>+0x10 == 0</code> for bulk ground cells). The only per-cell terrain emitter is <code>FUN_801F69D8</code> (the top-view overview renderer, gate <code>0x2000</code>), which draws per-cell <strong>meshes</strong> via <code>+0x10</code> through <code>FUN_80043390</code> - <code>FUN_80019278</code> (the height math) is the reliable anchor for the walk-view heightfield geometry.</li>
-    <li><strong>Walk <code>.MAP</code> source (pinned)</strong> - the field-file loader <code>FUN_8001f7c0</code> is dual-mode; on retail (<code>_DAT_8007b868 == 0 &amp;&amp; _DAT_8007b8c2 != 0</code>) it resolves the <code>.MAP</code> by <strong>PROT entry index</strong> via <code>FUN_8003e8a8</code> (indexing the in-RAM PROT TOC at <code>0x801c70f0</code>), the index read from the global at <code>0x80084540</code>. A live Drake walk reads <code>0x80084540 = 85</code>, so the records+grid is the <strong>raw</strong> <code>0x10000</code> region at PROT.DAT <code>0x655800</code> (= <code>toc[87]</code>, no compression; 99.7% byte-identical to the live buffer). The per-entry extractor mis-slices it (its <code>0085_map01.BIN</code> count=46 pack at <code>0x668000</code> is the field object/script pack; the real <code>.MAP</code> is under the overlapping manifest entry 83). Parsing the raw region with the walk rules (<code>0x1000</code> gate, <code>pool = record[+0x10] + prefix</code>) reproduces the live placements exactly.</li>
-    <li><strong>Entities + boot-path seeding</strong> - the overworld shares game mode 0x03 with towns, so the engine classifies it by scene (<code>is_world_map_scene</code>); a field-VM <code>scene_transition</code> resolving to a <code>mapNN</code> label routes <code>SceneHost::tick</code> through <code>enter_world_map_scene</code> (region table + world-map mode). On-map entities are the MAN partition-1 records (<code>FUN_8003A1E4</code>, decoded by <code>ManFile::actor_placements</code> / <code>Scene::field_actor_placements</code>): each is <code>[u8 N][N&times;2 locals][model][anim_id][tile_x][tile_z][script]</code>, giving spawn position, model index, animation clip (<code>anim_id</code> = scene-bundle ANM record + 1, installed into actor <code>+0x5C</code>; <code>0</code> = none - see the <a href="script-vm.html#placement-header-model-animation-resolution">placement-header resolution</a>), and a per-entity field-VM script. <code>classify_placements</code> reads the kind off the script: a <em>genuine</em> warp (the base <code>0x3E</code> with <code>op0</code> in <code>100..=106</code>) &rarr; <strong>Portal</strong> (target map id <code>op0 - 100</code>, i.e. one of the 7 door-warp scene-<em>type</em> overlays); an inline <code>0x1F</code> dialog-text block (structural, not an opcode) / interact (<code>0x3E</code>, <code>op0 &lt; 100</code>) &rarr; <strong>NPC</strong>; otherwise <strong>Plain</strong>. The walk is over-approximating and desyncs inside embedded message / SJIS text, so a genuine-warp gate (<code>!extended &amp;&amp; op0 in 100..=106</code>) rejects phantoms. Across the PROT corpus exactly <strong>11</strong> genuine portals survive (town01: 14 NPCs; <code>koin1</code> maps 3/4/5, <code>koin3</code> map 6, <code>balden</code> map 3, plus one overworld fishing-spot warp each on map02/map03). <code>enter_world_map_scene</code> installs the typed Portal/NPC entities with their spawn positions from disc.</li>
-  </ul>
-
-  <h3 id="walk-rendering">Rendering (walk view)</h3>
-
-  <h4>Heightfield ground</h4>
-  <p>The continent ground renders as a <strong>heightfield surface</strong>: <code>Scene::walk_heightfield</code> &rarr; <code>build_walk_heightfield</code> sweeps the <code>0x1000</code> cells and emits one quad per cell, each corner's Y from the <code>+0x4000</code> floor-nibble grid via the floor LUT (the <code>FUN_80019278</code> math), verified vs the real disc (map01/02/03 build &gt;10k-quad heightfields with genuine elevation). The baked corner height <code>-lut[nibble]</code> is already the world height the placement / actor transforms carry in their <em>un-flipped</em> translation, so the heightfield draws <strong>without</strong> the mesh Y-flip the pack meshes get - flipping it re-negates the elevation and sinks every raised cell below its own buildings (in town scenes that hid the whole cliff-top core, including Rim Elm&apos;s spawn plaza). <code>play-window</code> draws it as the ground with the placed landmarks (<code>Scene::walk_object_placements</code>, the <code>flags &amp; 0x4</code> slot-1 pack meshes via <code>record[+0x10]+prefix</code>) on top. Placed entities draw as kind-coded upright markers (<code>World::world_map_entity_markers</code>; portals cyan, NPCs green, encounter zones red), the player as a white-yellow marker with a facing tick (<code>World::world_map_player_marker</code>; <code>step_world_map_locomotion</code> records the heading into the actor's <code>render_26</code>). Distinct from the <strong>top-view</strong> bulk continent (per-cell <em>meshes</em> via <code>FUN_80043390</code> / MAN <code>0x7F</code>-sentinel).</p>
-
-  <h4>Per-cell ground texturing (multi-page atlas)</h4>
-  <p>The walk-view ground is per-cell <code>POLY_FT4</code> (cmd <code>0x2C</code>) quads, one <code>32&times;32</code> quad per visible cell, emitted in a row-major world-cell sweep. The texture is selected <strong>per cell</strong> from a <strong>terrain-type-keyed multi-page atlas</strong> - grass, mountain, water, and forest cells each sample a different VRAM page - via the cell's object-record <code>+0x14..+0x18</code> run: <code>+0x14</code> = <code>8&times;8</code> atlas tile index (<code>u=(id%8)&times;32</code>, <code>v=(id/8)&times;32</code>), <code>+0x15</code> = PSX <code>tpage</code> (the terrain page/type: <code>0x1A</code> grass, <code>0x0C</code> mountain, <code>0x1B</code>/<code>0x1C</code> water, <code>0x0B</code> forest), <code>+0x16..+0x18</code> = PSX <code>clut</code> word. Verified by aligning each quad run's UV&rarr;tile sequence to the <code>.MAP</code>'s <code>+0x14</code> grid (<code>scripts/ghidra-analysis/analyze-walk-ground-tiles.py --verify-rule</code>): tile/page/clut match the record <strong>100%</strong> across mountain + coast captures. <code>build_walk_heightfield</code> bakes the per-cell UV + <code>[clut,tpage]</code> (<code>WalkHeightfield::uvs</code> / <code>::cba_tsb</code>) so one ground mesh samples the right page per cell.</p>
-
-  <p><strong>The gate is the object grid, in towns too.</strong> The ground quads share corner vertices, so a capture&apos;s ground lattice rebuilds camera-independently and the fitted projection re-projects every cell to sub-pixel residual. Asking per cell whether retail emitted a quad gives a clean split on a Rim Elm field capture: <strong>every</strong> on-screen <code>0x1000</code> cell has one, <strong>no</strong> on-screen <code>objcell == 0</code> cell has one, and every recovered quad carries its record&apos;s <code>+0x14</code>/<code>+0x15</code>/<code>+0x16</code>. A floor cell with no object record therefore has <em>no ground quad in retail either</em> - its surface is an <strong>env mesh</strong> placed over it by a <code>+0x10</code> record. Widening the gate to the collision grid is wrong twice over: it emits quads retail never draws, and - having no record - they sample empty atlas space, decode to <code>0x0000</code>, and are discarded. A clear-colour hole over such cells means a <em>missing mesh</em>, not a texturing bug. Disc-gated coverage: <code>crates/engine-core/tests/field_ground_surface_disc.rs</code>.</p>
-
-  <h4>Ocean / water CLUT animation (kingdom-bundle slot 5)</h4>
-  <p>The water tile&apos;s CLUT row at fb <code>(0, 506)</code> (CBA <code>0x7E80</code>) - plus seven more shoreline/terrain shimmer cells - is rewritten by a table-driven walker whose <strong>operand source is the kingdom bundle&apos;s slot 5</strong> (the type-<code>0x06</code> slot of PROT 0086/0245/0392): an LZS-compressed 516-byte <strong>CLUT-walk animation table</strong>, byte-identical across the three kingdoms (parser <code>legaia_asset::clut_walk</code>). Format: <code>[u32 count=8][u32 entry_offsets[8]]</code>, then per entry <code>[u8 kind=1][u8 nframes][u16 cumulative_size][u16 dest_x][u16 dest_y]</code> + <code>nframes</code> &times; 8-byte frames <code>[u8 0][u8 hold_vsyncs][u16 0][u16 src_x][u16 src_y]</code>. The asset-type dispatcher <code>FUN_8001f05c</code> case 6 installs the decoded table at <code>DAT_8007B7C8</code>; field init <code>FUN_801d6704</code> spawns one actor per entry (<code>FUN_80024cfc</code>, accumulator seeded to 100 so all eight fire on the first game tick); the SCUS walker <code>FUN_8001ada4</code> case 0xB steps each actor - <code>acc += dt</code> per game tick (<code>DAT_1F800393</code>; overworld 3, towns 2), and on <code>acc &gt;= hold_vsyncs</code> emits a 16&times;1 <code>MoveImage</code> from the parked strip onto the destination cell, <strong>resets <code>acc</code> to zero</strong> (live traces show strictly constant intervals), and advances the frame with wrap. Real interval = <code>ceil(hold/dt)*dt</code> vsyncs: the ocean head (<code>(0, 506)</code>, 18 steps hold 8 over the row-505 strip with a 128/144 ping-pong &times;3 mid-cycle) fires every 9 vsyncs on the overworld, full cycle 162 vsyncs &asymp; 2.7&nbsp;s. <code>play-window</code> runs the same model (<code>WaterAnim::Walk</code> / <code>advance_ocean_animation</code>: per-entry accumulators, CPU-VRAM <code>move_image</code>, re-upload on fire), with the legacy 13-frame ocean-head cycle (<code>legaia_asset::ocean</code>) kept only as a fallback for a bundle without slot 5.</p>
-  <p>The walk <strong>sources</strong> park at VRAM rows 498/499/501..505 as raw CLUT-block records in the bundle&apos;s slot-0 TIM_LIST (no TIM magic, so plain TIM walkers skip them; <code>clut_walk::park_strips</code>). map01 ships the full six-record set; <strong>map02/map03 ship only rows {501, 503, 505}</strong> and inherit the kingdom-invariant rest (rows 498/499/502/504) as VRAM residue from the Drake upload - map01 is always the first world map, and resident Sebucus / Karisto captures hold map01&apos;s record bytes on those rows byte-exact - so the engine parks the byte-identical Drake records for rows the scene&apos;s own bundle doesn&apos;t carry. The earlier map01 capture census stays as corroboration: every censused animating column falls inside a slot-5 destination cell (row 506 cols 0..48 incl. the STP near-copies + pure-channel tail; row 508 cols 0..48 incl. the map01-only <code>[32..47] == [0..15]</code> mirror - strip <em>content</em>, not a second writer; row 509&apos;s entries 42..43 inside <code>(32, 509)</code>; row 500 cols 62..63 inside <code>(48, 500)</code>), and row 507 - which no entry targets - is fully static. The VRAM parity oracle excludes exactly the destination-cell fold (<code>vram_oracle::WORLD_MAP_CLUT_CYCLE_CELLS</code>); the disc-gated <code>clut_walk_real</code> test pins the full entry set against all three bundles, and <code>world_map_ocean_clut_live.rs</code> verifies the cycle live on all three kingdoms.</p>
-  <p>The <strong>row-498 park-cell fades are a separate, script-driven family</strong> - event-triggered MAN <code>4C 61</code> ops, not part of the slot-5 table: <code>FUN_801E4C58</code> (field-VM <code>0x4C</code> n6 sub-<code>0x61</code>, a one-shot 16&times;1 <code>MoveImage</code> cell copy / flat-colour fill whose coordinates are script operands) and <code>FUN_801E4794</code> (a multi-frame CLUT cross-fade state machine). map01&apos;s field MAN holds exactly eight <code>4C 61</code> ops, all on the row-498 strip park row (four <code>frames=0</code> one-shots copying <code>(112, 499)</code> onto <code>(0/16/32/48, 498)</code> + four 128-vsync cross-fades back; scanner <code>scene_clut_cell_fx</code>, disc-gated <code>map01_clut_fx_disc</code>). The fade&apos;s per-tick advance multiplies by the same adaptive frame-skip byte <code>0x1F800393</code>, so the <code>frames</code> operand is denominated in vsyncs; engine mirror <code>engine-core::clut_fx</code> + <code>World::step_clut_fx</code>, fed by the <code>op4c_n6_sub_61_emitter</code> host hook.</p>
-
-  <h4>Slot-4 vertex-pool inspection overlay</h4>
-  <p>The per-kingdom object-mesh library (kingdom-bundle slot 4) decodes onto <code>SceneResources::world_map_slot4</code> for every <code>SceneLoadKind::WorldMap</code> scene (and only those); with <code>LEGAIA_WORLDMAP_SLOT4=1</code>, <code>play-window</code> builds a colour-by-<code>kind</code> <code>LineList</code> from <code>world_map_overlay::wireframe_segments_3d</code> and merges it into the world-map overlay-lines buffer, so the decoded pool is visible in the live 3D view. It is an <em>inspection overlay, not faithful world geometry</em>: it draws raw object-local coordinates + group-polyline topology, whereas retail consumes the pool <strong>in place</strong> through the <strong>cluster-A handler chain</strong> - the per-prim GTE emit family rooted at the TMD prim dispatcher <code>FUN_80043390</code>, entered from the world-map renderer at <code>ra 0x801F78D4</code> - which supplies the per-object placement transform and triangle emission (documented in the <a href="../formats/world-map-overlay.html">world-map overlay format doc</a>); the viewer does not replay that handler chain. Off by default.</p>
-
-  <details class="disclosure">
-    <summary>Misreadings to avoid</summary>
-    <div class="disclosure-body">
-      <ul class="bullets">
-        <li>"Single <code>0x1A</code> grass page, positional <code>(col%3,row%3)</code>, <code>+0x14</code> unused" is a misread: grass cells use page <code>0x1A</code> with <code>+0x14</code> in the atlas's top-left <code>3&times;3</code> block, so a mod-3 sequence is coincidental; <code>+0x14</code> IS the tile selector.</li>
-        <li>A placement classifier without the genuine-warp gate mis-classifies <code>geremi</code> (<code>op0=200</code>) and the leftover-JP <code>other7</code> (<code>op0=175/179</code>) as portals to non-existent maps; the gate (<code>!extended &amp;&amp; op0 in 100..=106</code>) rejects these text-desync phantoms.</li>
-      </ul>
-    </div>
-  </details>
-
-  <ul class="bullets">
-    <li><strong>Portals + NPC talk-to</strong> - <code>auto_engage_world_map_portals</code> runs each tick (after locomotion, before the SM step) and drives any <code>Portal</code> whose placement tile matches the player's to its transition state, surfacing a <code>WorldMapTransition</code> to its target map (Idle portals only, once per visit). NPCs are talk-to: <code>tick_world_map</code> opens an <code>Npc</code>'s inline dialogue (sets <code>World::current_dialog</code> + emits <code>OpenDialog</code>) on a confirm press within one tile, dismissed on the next press. Dialogue text is <strong>inline in the record's structural <code>0x1F</code>-lead segment pool</strong> (found by <code>first_inline_dialog_offset</code>, not by a dialog opcode), not the scene MES. <code>OwnedDialogPanel::from_inline_dialog</code> decodes the first <code>0x1F</code> segment and <code>play-window</code> renders the box (geometry-header layout + multi-segment menu rendering not yet pinned). <strong>Not the <code>0x3F</code> op:</strong> that is the named scene-change (it carries a destination scene name and calls the scene-change packet <code>FUN_8001FD44</code>), and the overworld's reachable towns/dungeons are listed as a table of <code>0x3F</code> ops in the controller script - <code>man_field_scripts::scene_destinations</code> recovers them (map01 &rarr; <code>town01/0b/0c</code>, <code>dolk</code>, <code>rikuroa</code>, <code>cave01</code>, <code>vell</code>, <code>vozz</code>, &hellip;, all real CDNAME scenes). <strong>The real overworld hop</strong> is the <code>OverworldPortal</code> config: <code>map01</code> has <strong>no</strong> partition-1 <code>Portal</code> placements, so its town/dungeon entrances are seeded (<code>enter_world_map_scene</code>) from the <code>.MAP</code> walk-on tile-trigger &rarr; partition-2 record &rarr; <code>0x3F</code> bridge (<code>man_field_scripts::overworld_portal_sites</code>), each carrying its exact CDNAME destination + arrival tile. <code>WorldMapTransition</code> is emitted by the entity SM and <strong>drained by <code>SceneHost::tick</code></strong> (sibling of the named-<code>0x3F</code> drain): an <code>OverworldPortal</code> loads its <code>scene_name</code> and seats the arrival tile; a door <code>Portal</code> resolves its <code>target_map</code> through the <code>MapIdResolver</code>. <strong>Story-gating</strong> is the entrance record's own C1/C2 gate: <code>enter_world_map_scene</code> runs each bridge site's partition-2 record through <code>partition2_record_gates</code> + <code>World::p2_record_gates_pass</code> (<code>FUN_8003BDE0</code>: C1 blocks if ANY listed flag is set, C2 requires ALL) and installs an <code>OverworldPortal</code> only when it passes. Most Drake entrances carry empty gates (unconditional); the Ravine (<code>keikoku</code>) portals carry <code>C1=[0x193]</code>, so a fresh continent arrival keeps them reachable and setting <code>0x193</code> drops them from the per-visit portal set. The other half is <strong>walk-on beat records</strong>: a gate-1 tile trigger whose record carries no <code>0x3F</code> (the Drake mist-wall force-walk bands, <code>map01</code> <code>P2[34..36]</code>, <code>C1=[0x482]</code>) is spawned by <code>SceneHost::dispatch_walk_on_trigger</code> - which runs in world-map mode too, leaving portal records (tested by <code>p2_record_is_portal</code>) to the entity SM and spawning only beats as a cutscene timeline, so their C1 one-shot latch is honored (band force-walks while <code>0x482</code> is clear). <code>step_world_map_locomotion</code> stands the player down while such a timeline runs. A finer mechanism lives <em>inside</em> an entrance record: a <strong>story-conditional destination</strong> where an op-<code>0x70</code> <code>SysFlag.Test</code> switches the <code>0x3F</code> target after a beat. <code>map01</code>'s dungeon entrance (<code>P2[1]</code>/<code>P2[2]</code>) branches on flag <code>0x142</code> - clear &rarr; <code>dolk</code> (pre-boss), set &rarr; a second <code>0x3F</code> &rarr; <code>dolk2</code> (post-boss), same trigger + arrival tile; <code>overworld_portal_sites</code> decodes the conditional pair (<code>ConditionalDest</code>) and the seeder resolves it via <code>World::system_flag_test</code>. (This falsifies the earlier "dolk2 is reached from a dungeon interior" reading - no interior lists <code>dolk2</code>; it is the same hub entrance as <code>dolk</code>, chosen by flag <code>0x142</code>.) <strong>Gate-flag setters beyond a scene's bundle MAN:</strong> <code>man-scripts --system-flag-census</code> walks the MAN field-VM ops <code>0x50/0x60/0x70</code> across EVERY carrier per scene (bundle + the streaming variant MANs); the other disc-resident bytecode writing the same bank is the motion VM <code>FUN_80038158</code> (op-<code>7</code>/op-<code>8</code>, carrier MAN tail-section 1, swept by <code>--motion-flag-census</code>). A flag absent from BOTH censuses is set by a direct code path (<code>FUN_8003CE08</code>-class call in an overlay). Where the chapter-1 spine flags landed: <code>549</code>/<code>0x225</code> (town01 opening one-shot) - writer still unrecovered; the RAM-diff pin stands but neither census finds a disc stream carrying it (the earlier "written by op-7 from its own script bytecode" reading is falsified), so the setter is a direct code path and the spine flag-writer capture harness is the closer. <code>0x142</code> (the Caruban beat / dolk-dolk2 switch) - writer <strong>pinned</strong>: the SETs are plain field-VM <code>51 42</code> script bytes in the rikuroa <strong>streaming-carrier MAN</strong> (extraction 157) - <code>P1[10..12]</code> plus the post-victory record <code>P2[50]</code> (C1 = <code>0x142</code> itself, the self-latching one-shot) - re-asserted by dolk2's carrier <code>P1[0..1]</code> and cleared by dolk's bundle <code>P1[26]</code>; the firehose capture caught the write live (<code>ra 0x801E3598</code>, the dispatcher's own <code>0x5x</code> SET arm) and the resident script heap byte-matches the carrier (the old corpus-negative stood because no census walked the streaming variant MANs). Engine: the whole chain is organic record execution - approaching the rikuroa boss-stager placement <code>P1[3]</code> runs the record through the field VM (<code>World::install_boss_stagers_from_man</code> / <code>run_boss_stager_record</code>; park gate = <code>0x142</code>, read from the record's own head test), whose <code>52 89</code> SETs the transient staged marker <code>0x289</code> and whose <code>3E FF 11</code> enters the fight; the post-battle field return re-runs the scene-entry script <code>P1[0]</code>, whose <code>72 89</code> test arm spawns <code>P2[50]</code> through the C1-gated record dispatch - the record's own <code>51 42</code> script bytes SET <code>0x142</code> (and <code>62 89</code> clears the marker), flipping the dolk&rarr;dolk2 entrance organically (disc-gated oracle: <code>organic_beat_records_disc.rs</code>). <code>0x482</code> (mist walls) - <strong>no script writer exists</strong>: the earlier "SETs in the <code>other7</code> block, clears in the <code>edbalden</code>/<code>eddoman</code> epilogue carriers" reading was desynced-walker text noise (full-width SJIS digits / an <code>EXIT</code> label table aliasing the <code>54 82</code>/<code>64 82</code> op bytes; falsified per-site by hand disasm, pinned by the census decode-coherence flag in <code>man_variant_carrier_census_disc.rs</code>). The writer is a direct code path - a capture target (write-watch across the post-Zeto Drake-revival beat), like flag 549; the engine leaves the gate as-is meanwhile.</li>
-    <li><strong>Chapter-1 Drake hub sweep</strong> - past the covered spine (<code>town01 &rarr; map01 &rarr; keikoku</code> and the boss leg
-      <code>map01 &rarr; rikuroa / dolk &rarr; dolk2</code>) the remaining <code>map01</code> interior legs are <code>cave01</code>,
-      <code>vell</code>, <code>vozz</code>, <code>suimon</code>, <code>jou</code>, each decoded + driven straight from disc bytes (no capture) by
-      <code>chapter1_hub_sweep_oracle.rs</code>: driving <code>town01 &rarr; map01</code> and stepping onto the leg's portal tile loads it in
-      <code>Field</code> mode with its MAN present. Portals / entrance records / MAN partitions: <code>cave01</code> tile <code>(37,110)</code>
-      <code>P2[5]</code> <code>[1,13,18]</code>; <code>vell</code> <code>(77,97)</code> <code>P2[6]</code> <code>[8,17,13]</code>;
-      <code>vozz</code> <code>(107,91)</code> <code>P2[8]</code> <code>[4,24,20]</code>; <code>suimon</code> <code>(57,61)</code>
-      <code>P2[19]</code> <code>[10,7,3]</code>; <code>jou</code> <code>(95,23)</code> <code>P2[37]</code> <code>[15,8,7]</code>. Every one lists
-      a single onward <code>0x3F</code> back to <code>map01</code> (<code>jou</code> also warps to its interior variant <code>jouina</code>).
-      <code>dolk2</code> (post-boss variant; its real MAN is the <strong>streaming carrier</strong> extraction 70, partitions
-      <code>[29,73,17]</code>) is a <strong>terminal interior</strong>: its only
-      <code>0x3F</code> leads back to <code>map01</code>. <strong>Gate census:</strong> all five swept entrance records install
-      <strong>unconditionally</strong> (empty C1/C2); the only C1-gated <code>map01</code> entrance is <code>keikoku</code>
-      (<code>C1=[0x193]</code>), the only op-<code>0x70</code> branch is the <code>dolk</code>/<code>dolk2</code> destination switch on flag
-      <code>0x142</code> (a selector in the ungated <code>dolk</code> record), and <code>0x482</code> is a separate no-<code>0x3F</code> band
-      record - so no C1/C2 progression gate stands between a fresh Drake arrival and any of the five legs. <strong>The
-      &ldquo;<code>suimon</code> and <code>dolk2</code> share a MAN&rdquo; identity - dissolved:</strong> both halves were the
-    CDNAME-shifted scene window - <code>dolk2</code>'s unshifted window bled two entries into <code>suimon</code>'s block and picked
-    up suimon's sidecar copy of its own 2345-byte <code>[10,7,3]</code> MAN (<code>rikuroa</code>/<code>geremi</code> aliased the
-    same way; byte comparison + position law in
-    <a href="../formats/scene-v12-table.html#embedded-man-over-read">scene-v12-table &sect; over-read</a>). In the retail frame
-    <code>suimon</code> keeps that MAN (its scripted bundle) and <code>dolk2</code> resolves its own streaming carrier
-    (extraction 70, <code>[29,73,17]</code>). <code>Scene::load</code> converts CDNAME raw-TOC block ranges to the extraction
-    frame (<code>raw - 2</code>), which also dissolves the historical &ldquo;a scene's <code>.MAP</code> is two entries below its
-    block&rdquo; rule - the <code>.MAP</code> is simply the retail block's FIRST entry.</li>
-    <li><strong>Chapter-1 hub depth (vozz + jou &rarr; jouina)</strong> - one level deeper on the two story-load-bearing legs, decoded + driven
-      by <code>chapter1_hub_depth_oracle.rs</code>. <strong><code>vozz</code> is the Ravine unlock:</strong> its <code>0x3F</code> set is
-      <code>{map01}</code> only (exit <code>P2[10]</code>, tiles <code>(60..62, 2)</code>), but the ONLY <code>0x193</code> SET on the disc is
-      <code>vozz</code> <code>P1[7]</code> (<code>51 93</code> at MAN <code>0xDA6</code>, one-shot-guarded on <code>0x2AC</code>); its
-      <code>P2[11..=13]</code> are self-latching one-shots (each record's C1 is the very flag its own script SETs - the canonical one-shot beat
-      idiom). The <code>town01 &rarr; map01 &rarr; vozz &rarr; map01</code> round trip drives clean in-engine. <strong><code>jou</code>'s castle
-      door is chapter-gated:</strong> the <code>jouina</code> warp <code>P2[5]</code> (tiles <code>(93..95, 97)</code>) sits behind
-      <code>C2=[0x44D]</code>, whose only setter is <code>jou</code>'s own opener chain <code>P2[2] &rarr; P2[3] &rarr; P2[4]</code> gated
-      upstream on <code>0x44B</code> (set by <code>izumi</code> P1[15] / <code>noaru</code> P2[31] - the Noa beat). In-engine the gate behaves:
-      fresh walk-on installs nothing; with <code>0x44D</code> set the same walk-on spawns the door record. <strong><code>jouina</code> is not
-      terminal</strong> (destinations <code>{jou, jouinb}</code>, both ungated). <strong>Player-channel handshake (resolved):</strong>
-      <code>jou</code> <code>P2[5]</code>'s door cutscene drives the PLAYER channel
-    (<code>A2 F8 06</code> ExecMove + <code>C3 F8 ...</code> HaltAcquire). The timeline stepper models the handshake (ExecMove arms
-    an in-flight countdown, HaltAcquire parks then steps past by encoded width; see <a href="cutscene.html">cutscene</a>), so the
-    record reaches its trailing <code>0x3F</code> and the oracle drives the <code>jou &rarr; jouina</code> hop to
-    <code>SceneEntered</code>.</li>
-    <li><strong>Chapter-1 hub breadth (cave01 / vell / suimon + the Drake Castle chain)</strong> - the remaining hub legs, one
-    level deep, decoded + driven by the disc-gated <code>chapter1_hub_breadth_oracle.rs</code>.
-    <strong><code>cave01</code> is a two-mouth pass-through</strong> - one named <code>0x3F</code> destination
-    (<code>map01</code>) carried by TWO exit records (<code>P2[0]</code> gate-0 trigger <code>(8,89)</code>, <code>P2[1]</code>
-    gate-1 band <code>(93..94,96)</code>). Nine of 18 <code>P2</code> records are gated: six self-latch one-shots plus the longest
-    ordered beat chain decoded on a hub leg - <code>P2[13]</code> (C1 <code>0x15E</code> / C2 <code>0x15D</code>) &rarr;
-    <code>P2[14]</code> (C1 <code>0x169</code> / C2 <code>0x15E</code>) &rarr; <code>P2[15]</code> (C1 <code>[0x13, 0x142]</code> /
-    C2 <code>0x169</code>; the final beat stops replaying once the Zeto flag sets). Ungated <code>P2[16]</code> SETs the
-    <code>0x15D</code> entry key. The <code>0x15E</code> beat is read cross-scene by <code>urudre1</code> <code>P2[0]</code> (the
-    Uru Mais dream tests the cave beat). <strong><code>vell</code></strong> - single exit <code>P2[10]</code> (band
-    <code>(88..92,7)</code>). <code>P2[11]</code> self-latch C1=[<code>0x2AF</code>] (strictly vell-local Set/Test pair);
-    <code>P2[7]</code> carries <code>C1=[0x63A, 0x7]</code> <strong>byte-identical to vozz <code>P2[7]</code>'s gate</strong>, and
-    <code>0x63A</code> has ZERO script sites disc-wide (no writer anywhere in the MAN corpus - open thread). Also carries a gate-4
-    trigger family (record 53, five scattered tiles) not seen on the other legs. <strong><code>suimon</code> is a pure
-    corridor</strong> - all three <code>P2</code> records are ungated <code>0x3F</code> exits to <code>map01</code>; story
-    variation only via the shared controller <code>P1[0]</code> testing <code>0x142</code>. <strong>The Drake Castle interior is
-    FOUR scenes deep</strong>: <code>jou &rarr; jouina &rarr; jouinb &rarr; jouinc &rarr; jouind</code>. <code>jouinb</code>
-    (<code>[19,7,13]</code>) is fully ungated (no jouina-style <code>C1=[0xF]</code> busy-latch): <code>P2[9]</code> back to
-    <code>jouina</code>, <code>P2[10]</code> deeper to <code>jouinc</code> (<code>[43,18,60]</code>, lists
-    <code>{jouinb, jouind}</code>). Once <code>jou</code>'s <code>0x44D</code> door is passed the deep castle is open. The
-    oracle's part F drives <code>jou &rarr; jouina &rarr; jouinb &rarr; jouinc</code> end-to-end in one session (the door
-    cutscene completes through the player-channel model) - the deepest driven interior chain in the engine.
-    <code>jouinc</code>/<code>jouind</code> decode is an open thread. <strong>Decoder asymmetry (pinned):</strong> the
-    partition-1 destination-table scan under-reports doors carried only by <code>P2</code> records (<code>jouinb</code>'s
-    <code>jouina</code> return door) - the reverse of the <code>jou</code> <code>P2[5]</code> blind spot; the <code>P2</code>
-    walker and the strict portal-site join both see them.</li>
-    <li><strong><code>engine-core::world_map::WorldMapController</code></strong> - models the camera globals (<code>scroll_x</code>, <code>scroll_z</code>, <code>azimuth</code>, <code>zoom</code>) and the <code>top_view</code> debug toggle flag; exposes <code>tick(pad_input)</code> matching <code>FUN_801E76D4</code>'s control logic. Attached to <code>World</code> as <code>world_map_ctrl: Option&lt;WorldMapController&gt;</code> and ticked when <code>SceneMode::WorldMap</code> is active.</li>
-  </ul>
-  <p>The <code>legaia-engine play-window --world-map</code> flag activates <code>WorldMap</code> mode and shows camera state (scroll, azimuth, zoom) in the HUD overlay.</p>
+  <table>
+    <thead><tr><th>Module</th><th>Ports</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td><code>engine-vm::world_map</code></td><td>carrier entity SM</td><td><code>EntityState</code> (Idle / Activating / Transitioning / Terminal), <code>WorldMapEntityHost</code>, <code>step(entity_idx, ctx, host)</code>; per-entity roles <code>EncounterZone</code> / <code>Portal</code> / <code>Npc</code>. Serves field-resident carriers too.</td></tr>
+      <tr><td><code>engine-core::World</code></td><td>walk, regions, portals, NPC talk</td><td><code>tick_world_map</code>, <code>set_world_map_regions</code>, <code>enter_world_map_scene</code>, <code>auto_engage_world_map_portals</code>; battles return via <code>battle_return_mode</code>.</td></tr>
+      <tr><td><code>engine-core::world_map</code></td><td>top-view controller</td><td>camera globals + toggle.</td></tr>
+      <tr><td><code>build_walk_heightfield</code> / <code>prim_dispatch</code></td><td>ground, top-view terrain</td><td>heightfield with baked per-cell texturing; overlay-variant prim table.</td></tr>
+      <tr><td><code>legaia_asset::clut_walk</code></td><td>sea shimmer</td><td>slot-5 table parser; <code>WaterAnim::Walk</code> in <code>play-window</code>.</td></tr>
+    </tbody>
+  </table>
 </section>
 
-<section class="doc-section" id="world-overview-viewer">
-  <h2>World-overview viewer</h2>
-  <p>The <a href="../world-overview.html"><code>/world-overview/</code></a> page in the static site renders each kingdom's landmark layer in real-time WebGL 3D from a disc image. The viewer-side reverse engineering (slot-1 layout heuristics, distance-cue fog approximation, sentinel placement resolver, ocean asset extraction, camera anchors) lives on its own page: <a href="world-overview-viewer.html">world-overview viewer subsystem</a>.</p>
-</section>
-
-<section class="doc-section" id="full-reference">
-  <h2>Full reference</h2>
-  <p>The complete function-level reference with Ghidra provenance lives at <code>docs/subsystems/world-map.md</code> in the repo. Function dumps: <code>ghidra/scripts/funcs/overlay_dialog_801e76d4.txt</code>, <code>overlay_dialog_801ead98.txt</code>, and <code>801cfc40.txt</code>.</p>
+<section class="doc-section" id="how-we-know">
+  <h2>How we know</h2>
+  <table>
+    <thead><tr><th>Function</th><th>Address</th><th>What it proves</th><th>Dump</th></tr></thead>
+    <tbody>
+      <tr><td>entity tick</td><td><code>FUN_801DA51C</code></td><td>the 5-state carrier SM; formation install + mode-8 write in one tick</td><td><code>overlay_world_map_801da51c</code></td></tr>
+      <tr><td>region roll</td><td><code>FUN_801D9E1C</code></td><td>region-keyed encounter roll per tile crossing</td><td>world-map overlay</td></tr>
+      <tr><td>top-view controller</td><td><code>FUN_801E76D4</code></td><td>toggle combo, scroll / azimuth / zoom globals; walk branch is the epilogue</td><td><code>overlay_dialog_801e76d4.txt</code></td></tr>
+      <tr><td>dev-menu renderer</td><td><code>FUN_801EAD98</code></td><td>row labels, CLOSED gating, readouts</td><td><code>overlay_dialog_801ead98.txt</code></td></tr>
+      <tr><td>gate-arm wrapper</td><td><code>FUN_801D1344</code></td><td>the overworld's real per-frame chain; arms the horizon gate</td><td><code>801cfc40.txt</code> window</td></tr>
+      <tr><td>horizon emitter</td><td><code>FUN_801D7EA0</code></td><td>224-step cos-projected sky plane</td><td>world-map overlay</td></tr>
+      <tr><td>render tick</td><td><code>FUN_80016444</code></td><td>submode-2 gated direct call into the overlay</td><td>SCUS</td></tr>
+      <tr><td>prim dispatcher</td><td><code>FUN_80043390</code></td><td>flag-selected table; eight overlay leaves at <code>0x801F7644..0x801F8690</code></td><td><code>dump_world_map_top_prim_leaves.py</code></td></tr>
+      <tr><td>ground-height sampler</td><td><code>FUN_80019278</code></td><td>the continent is a heightfield from <code>+0x4000</code> nibbles</td><td>SCUS</td></tr>
+      <tr><td>compass remap</td><td><code>FUN_800467E8</code></td><td>octant table lookup, not trigonometry</td><td>SCUS</td></tr>
+      <tr><td>P2 gate test</td><td><code>FUN_8003BDE0</code></td><td>C1 any-blocks / C2 all-required</td><td>SCUS</td></tr>
+      <tr><td>CLUT walker</td><td><code>FUN_8001ADA4</code> case 0xB</td><td>slot-5 cadence; installed by <code>FUN_8001F05C</code> case 6</td><td>SCUS</td></tr>
+      <tr><td>captures</td><td>-</td><td>walk pool of 45 entries; walk camera anchors; ocean cadence; texture rule 100%</td><td>mednafen overworld save states</td></tr>
+    </tbody>
+  </table>
+  <p>Full function-level reference: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/world-map.md" target="_blank" rel="noopener">docs/subsystems/world-map.md</a>.</p>
 </section>
 
 <section class="doc-section" id="see-also">
   <h2>See also</h2>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
+    <a href="field-locomotion.html">Field locomotion</a>
+    <a href="script-vm.html">Field/event VM</a>
+    <a href="motion-vm.html">Motion VMs</a>
     <a href="world-overview-viewer.html">World-overview viewer</a>
-    <a href="motion-vm.html">Motion VM</a>
+    <a href="history-world-map.html">Chapter-1 hub sweep</a>
     <a href="../formats/encounter.html">Encounter record</a>
-    <a href="../formats/world-map-overlay.html">World-map overlay</a>
+    <a href="../formats/world-map-overlay.html">World-map overlay (slot 4)</a>
+    <a href="../formats/scene-bundles.html">Scene bundles</a>
+    <a href="../world-overview.html">World overview (3D demo)</a>
+    <a href="../reference/re-do-not-re-walk.html">Do-not-re-walk</a>
   </div>
 </section>

@@ -107,7 +107,7 @@ body.arts-live .art-card[data-art]:hover { outline: 1px solid #8C88EC; }
   <div class="breadcrumb"><a href="index.html">home</a> &middot; tactical arts</div>
   <h1>Tactical Arts</h1>
   <p class="lede">
-    Every character's Arts - the direction-input combos they chain together in battle. Load your own disc image and watch each one performed by the character's real battle model, animated in your browser.
+    Arts are the direction-input combos Vahn, Noa and Gala throw in battle: each turn you get a bar of inputs, and the right sequence turns a string of punches into a named move. This page lists every art with its inputs and AP cost, and - with your own disc image loaded - plays each one on the character's real battle model, in your browser.
   </p>
 </header>
 
@@ -119,6 +119,7 @@ body.arts-live .art-card[data-art]:hover { outline: 1px solid #8C88EC; }
 
 <section class="doc-section" id="arts-motion">
   <h2>Watch the arts</h2>
+  <p>Pick a character below, then click any art card to play it here. The chip row under the model plays the character's other battle clips - idle, walk, flinches, knockdown, block and the four weapon swings. Drag to orbit.</p>
   <div class="arts-controls">
     <label class="arts-trail-label" title="The tinted delayed after-image drawn behind the character during an art (retail-faithful). Untick to draw the animation clean.">
       <input type="checkbox" id="arts-trail-toggle"> after-image trail
@@ -130,7 +131,7 @@ body.arts-live .art-card[data-art]:hover { outline: 1px solid #8C88EC; }
   <div class="arts-stage" id="arts-stage" hidden>
     <canvas id="arts-canvas" class="arts-canvas" width="720" height="420"></canvas>
     <div class="arts-actions" id="arts-actions"
-         title="The character's battle action bank (record[0] of their player battle file) + the four direction-command weapon swings - the non-art clips the .glb download also carries. Retail has no separate run clip; Walk / Approach is the locomotion the battle engine plays."></div>
+         title="The character's battle action bank + the four direction-command weapon swings - the non-art clips the .glb download also carries. Retail has no separate run clip; Walk / Approach is the locomotion the battle engine plays."></div>
     <div class="arts-now" id="arts-now"></div>
     <div class="arts-note" id="arts-note"></div>
   </div>
@@ -148,7 +149,7 @@ body.arts-live .art-card[data-art]:hover { outline: 1px solid #8C88EC; }
 </section>
 
 <section class="doc-section" id="overview">
-  <h2>Reading the inputs</h2>
+  <h2>How to read the cards</h2>
   <div class="arts-legend">
     <div class="arts-legend-block">
       <div class="arts-legend-row">
@@ -167,23 +168,43 @@ body.arts-live .art-card[data-art]:hover { outline: 1px solid #8C88EC; }
       </div>
     </div>
   </div>
-  <p class="arts-legend-note arts-legend-note-dim" style="margin-top:0.75rem;">
-    Regular arts light only the trigger input yellow; Hyper, Super and Miracle arts light every input. Noa is left-handed, so her Arms input mirrors Vahn and Gala - same animation, mirrored direction.
-  </p>
+  <ul>
+    <li><strong>Arrows</strong> are the inputs, left to right. Up and Down are the high and low attacks, Left and Right are the two arm attacks. Regular arts light only the trigger yellow; Hyper, Super and Miracle arts light every input, the way the game's own arts list does.</li>
+    <li><strong>AP</strong> is what the art costs from the arts gauge. A Super Art has no cost of its own - the number shown is what the chain of arts that triggers it pays. The Miracle Art is always 99.</li>
+    <li><strong>Noa is left-handed</strong>, so her arm inputs mirror Vahn's and Gala's: same move, mirrored direction.</li>
+    <li>Arts can overlap inside one input bar: the game matches the longest art whose inputs fit, then keeps going from its trigger - so a long bar can land two or three arts in a row.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="kinds">
+  <h2>The four kinds of art</h2>
+  <table>
+    <thead><tr><th>Kind</th><th>How you get it</th><th>What it is</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Regular</strong></td><td>Learned by trying inputs in battle</td><td>Short combos; the AP cost grows with the number of inputs</td></tr>
+      <tr><td><strong>Hyper</strong></td><td>Unlocked as the character levels up</td><td>Longer pre-set combos, entered as one chain; they play a fanfare instead of a voice shout</td></tr>
+      <tr><td><strong>Super</strong></td><td>Story unlock (Vahn: Cyclone Trigger, Noa: Music Box Trigger, Gala: Wind Cave and the Mystery Tree)</td><td>Fires automatically when the right chain of arts is entered in one bar; the chain pays the AP</td></tr>
+      <tr><td><strong>Miracle</strong></td><td>One per character, from the Ra-Seru</td><td>The most powerful unique animation, at a fixed 99 AP</td></tr>
+    </tbody>
+  </table>
 </section>
 
 <details class="about-data">
-  <summary>About this data &mdash; the four kinds, shouts &amp; fanfares, the .glb export</summary>
+  <summary>About this data &mdash; where the animations and voices come from, the .glb export</summary>
   <div class="about-body">
-  <h3>The four kinds</h3>
+  <h3>Playback</h3>
   <p>
-    Four kinds: <strong>Regular</strong> (learned by use), <strong>Hyper</strong> (longer combos),
-    <strong>Super</strong> (story-unlocked), and one <strong>Miracle Art</strong> apiece.
+    With a disc loaded, every art card plays that art on the character's battle model, posed from the on-disc keyframes. The voice shout rides along as in retail: each shout is a CD-XA channel from the character's own voice bank (Vahn <code>XA2.XA</code>, Noa <code>XA4.XA</code>, Gala <code>XA6.XA</code>). Retail rolls a random channel from the art's candidate pool each time; this page plays the channel a live instrumented battle was captured firing for that art where one is pinned, else a fixed member of the same pool.
   </p>
-  <h3>How the playback works</h3>
   <p>
-    With a disc loaded, every art card becomes clickable: the canvas plays that art on the character's battle model, posed from the on-disc keyframes, with the voice shout riding along as in retail. Each shout is a CD-XA channel from the character's own voice bank (Vahn <code>XA2.XA</code>, Noa <code>XA4.XA</code>, Gala <code>XA6.XA</code>); retail rolls a random channel from the art's candidate pool every fire, and this page plays the channel a live instrumented battle was captured firing for that art where one is pinned, else a fixed member of the same pool.
-    <strong>Hyper Arts play no shout at all in retail</strong> - instead each fires a stereo <em>fanfare</em> from the character's fanfare bank (Vahn <code>XA1.XA</code>, Noa <code>XA3.XA</code>, Gala <code>XA5.XA</code>), coin-flipped between the art's own pair of channels; Super and Miracle Arts open with the same bank's generic fanfare. Those are the cues this page plays on a Hyper, Super or Miracle card - every per-art channel capture-verified against a live instrumented battle. Retail also draws a tinted after-image trail behind the character (Vahn <span style="color:#e0524a">red</span>, Noa <span style="color:#4ac05a">green</span>, Gala <span style="color:#5a7ae8">blue</span>) - it starts off here for a clean view of the model; tick the box to switch it on. The <strong>.glb</strong> button bakes the selected character's assembled battle model with its <em>entire</em> battle-animation set as named glTF animations - the full action bank (Idle, Walk / Approach, the flinches, Knockdown, Get Up, Ready / Recover / Defeat, Block), the four direction-command weapon swings, and every art - ready for Blender or three.js. The chip row under the model plays each action clip directly, the same way an art card does. (Retail has no separate <em>run</em> clip - Walk / Approach is the battle locomotion, and a live capture confirmed the field engine likewise never leaves its walk record.) Nothing is uploaded; the disc never leaves your machine.
+    <strong>Hyper Arts play no shout in retail</strong> - each fires a stereo fanfare from the character's fanfare bank (Vahn <code>XA1.XA</code>, Noa <code>XA3.XA</code>, Gala <code>XA5.XA</code>), coin-flipped between the art's own pair of channels; Super and Miracle Arts open with the same bank's generic fanfare. Every per-art channel was verified against a live instrumented battle.
+  </p>
+  <p>
+    Retail also draws a tinted after-image trail behind the character (Vahn <span style="color:#e0524a">red</span>, Noa <span style="color:#4ac05a">green</span>, Gala <span style="color:#5a7ae8">blue</span>). It starts off here for a clean view; tick the box to switch it on.
+  </p>
+  <h3>The .glb export</h3>
+  <p>
+    The <strong>.glb</strong> button bakes the selected character's assembled battle model with its <em>entire</em> battle-animation set as named glTF animations - the action bank (Idle, Walk / Approach, the flinches, Knockdown, Get Up, Ready / Recover / Defeat, Block), the four direction-command weapon swings, and every art - ready for Blender or three.js. Retail has no separate <em>run</em> clip: Walk / Approach is the battle locomotion. Nothing is uploaded; the disc never leaves your machine.
   </p>
 
 <section class="doc-section" id="related">
@@ -191,10 +212,15 @@ body.arts-live .art-card[data-art]:hover { outline: 1px solid #8C88EC; }
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="formats/art-data.html">Art-data format</a>
+    <a href="subsystems/arts-command-gauge.html">Arts gauge &amp; AP</a>
+    <a href="subsystems/battle-formulas.html">Damage formulas</a>
     <a href="formats/character-mesh.html">Character mesh</a>
+    <a href="formats/battle-data-pack.html">Player battle files</a>
     <a href="formats/summon-readef.html">Animation side-band</a>
+    <a href="formats/xa.html">XA audio (shouts)</a>
     <a href="subsystems/battle-action.html">Battle action</a>
     <a href="reference/gamedata.html">Arts gamedata</a>
+    <a href="tooling/rom-patcher.html">ROM patcher (arts randomizer)</a>
   </div>
 </section>
   </div>

@@ -1,0 +1,76 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; <a href="world-map.html">world map</a> &middot; chapter-1 hub sweep</div>
+  <h1>Chapter-1 hub sweep</h1>
+  <p class="lede">Every overworld leg reachable from Drake Kingdom's <code>map01</code> in chapter 1: which tile enters which scene, which record in the scene's MAN (its script-and-data bundle) carries the entrance, and which story flags gate it. The entrance model itself is on the <a href="world-map.html#entrances">world-map page</a>; this page is the per-leg table that validates it.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Scope</dt><dd><code>map01</code>'s interior legs beyond the story spine (<code>town01 &rarr; map01 &rarr; keikoku</code>, <code>map01 &rarr; rikuroa / dolk &rarr; dolk2</code>): <code>cave01</code>, <code>vell</code>, <code>vozz</code>, <code>suimon</code>, <code>jou</code>, and the four-deep Drake Castle interior.</dd>
+    <dt>Method</dt><dd>Decode each leg from disc bytes, then drive it in-engine: walk <code>town01 &rarr; map01</code>, step on the portal tile, confirm the scene loads with its MAN present.</dd>
+    <dt>Oracles</dt><dd><code>chapter1_hub_sweep_oracle.rs</code>, <code>chapter1_hub_depth_oracle.rs</code>, <code>chapter1_hub_breadth_oracle.rs</code> (disc-gated, <code>crates/engine-core/tests/</code>).</dd>
+    <dt>Notation</dt><dd><code>P1[n]</code> / <code>P2[n]</code> = MAN partition-1 (placements) / partition-2 (trigger records); <code>[a,b,c]</code> = record counts per partition; C1 blocks if <em>any</em> flag is set, C2 requires <em>all</em>.</dd>
+    <dt>Result</dt><dd>No C1/C2 progression gate stands between a fresh Drake arrival and any of the five hub legs. The gated doors are inside them.</dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="sweep">
+  <h2>The hub legs</h2>
+  <table>
+    <thead><tr><th>Leg</th><th>map01 tile</th><th>Entrance record</th><th>MAN partitions</th><th>Exits</th><th>Gate</th></tr></thead>
+    <tbody>
+      <tr><td><code>cave01</code></td><td>(37, 110)</td><td>P2[5]</td><td>[1, 13, 18]</td><td><code>map01</code> via two mouths: P2[0] trigger (8, 89), P2[1] band (93..94, 96)</td><td>none</td></tr>
+      <tr><td><code>vell</code></td><td>(77, 97)</td><td>P2[6]</td><td>[8, 17, 13]</td><td><code>map01</code> via P2[10] band (88..92, 7)</td><td>none</td></tr>
+      <tr><td><code>vozz</code></td><td>(107, 91)</td><td>P2[8]</td><td>[4, 24, 20]</td><td><code>map01</code> via P2[10] tiles (60..62, 2)</td><td>none</td></tr>
+      <tr><td><code>suimon</code></td><td>(57, 61)</td><td>P2[19]</td><td>[10, 7, 3]</td><td><code>map01</code> (all three P2 records, ungated corridor)</td><td>none</td></tr>
+      <tr><td><code>jou</code></td><td>(95, 23)</td><td>P2[37]</td><td>[15, 8, 7]</td><td><code>map01</code>; <code>jouina</code> via P2[5] tiles (93..95, 97)</td><td>castle door C2 = [<code>0x44D</code>]</td></tr>
+      <tr><td><code>dolk2</code></td><td>same as <code>dolk</code></td><td>P2[2] (selector on <code>0x142</code>)</td><td>[29, 73, 17] (streaming carrier, extraction 70)</td><td><code>map01</code> only - a terminal interior</td><td>flag <code>0x142</code> set</td></tr>
+    </tbody>
+  </table>
+  <p>The only C1-gated <code>map01</code> entrance is <code>keikoku</code> (C1 = [<code>0x193</code>]); the only conditional destination is the <code>dolk</code> / <code>dolk2</code> switch; <code>0x482</code> belongs to the mist-wall band records, which have no destination.</p>
+</section>
+
+<section class="doc-section" id="depth">
+  <h2>Story-load-bearing legs</h2>
+  <table>
+    <thead><tr><th>Scene</th><th>What it gates</th><th>Records</th></tr></thead>
+    <tbody>
+      <tr><td><code>vozz</code></td><td><strong>The Ravine unlock.</strong> The only <code>0x193</code> SET on the disc is P1[7] (<code>51 93</code> at MAN <code>0xDA6</code>), one-shot-guarded on <code>0x2AC</code>.</td><td>P2[11..13] are self-latching one-shots: each record's C1 is the flag its own script sets - the canonical one-shot beat idiom.</td></tr>
+      <tr><td><code>jou</code></td><td><strong>The castle door.</strong> P2[5] (the <code>jouina</code> warp) sits behind C2 = [<code>0x44D</code>], set only by <code>jou</code>'s own opener chain P2[2] &rarr; P2[3] &rarr; P2[4], itself gated on <code>0x44B</code> (the Noa beat: <code>izumi</code> P1[15] / <code>noaru</code> P2[31]).</td><td>The door cutscene drives the player channel (<code>A2 F8 06</code> ExecMove + <code>C3 F8</code> HaltAcquire); the timeline stepper models the handshake so the record reaches its trailing <code>0x3F</code>. See <a href="cutscene.html">cutscene</a>.</td></tr>
+      <tr><td><code>cave01</code></td><td>Nine of 18 P2 records gated: six self-latch one-shots plus the longest ordered beat chain on a hub leg.</td><td>P2[13] (C1 <code>0x15E</code> / C2 <code>0x15D</code>) &rarr; P2[14] (C1 <code>0x169</code> / C2 <code>0x15E</code>) &rarr; P2[15] (C1 [<code>0x13</code>, <code>0x142</code>] / C2 <code>0x169</code>). Ungated P2[16] sets the <code>0x15D</code> entry key. <code>urudre1</code> P2[0] tests <code>0x15E</code> cross-scene.</td></tr>
+      <tr><td><code>vell</code></td><td>P2[11] self-latches on <code>0x2AF</code>; P2[7] carries C1 = [<code>0x63A</code>, <code>0x7</code>] byte-identical to <code>vozz</code> P2[7].</td><td><code>0x63A</code> has no script site anywhere on the disc (open thread). Record 53 is a gate-4 trigger family over five scattered tiles, seen on no other leg.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="castle">
+  <h2>The Drake Castle interior</h2>
+  <div class="flow">
+    <span class="num">1</span><span class="layer">jou</span><span class="desc">castle grounds; door P2[5] behind <code>0x44D</code></span><span class="crate">[15, 8, 7]</span>
+    <span class="num">2</span><span class="layer">jouina</span><span class="desc">not terminal: exits to <code>jou</code> and <code>jouinb</code>, both ungated</span><span class="crate">busy-latch C1 = [0xF]</span>
+    <span class="num">3</span><span class="layer">jouinb</span><span class="desc">fully ungated; P2[9] back, P2[10] deeper</span><span class="crate">[19, 7, 13]</span>
+    <span class="num">4</span><span class="layer">jouinc</span><span class="desc">lists <code>jouinb</code> and <code>jouind</code>; decode of jouinc / jouind is an open thread</span><span class="crate">[43, 18, 60]</span>
+  </div>
+  <p>Once the <code>0x44D</code> door is passed the deep castle is open. The breadth oracle drives <code>jou &rarr; jouina &rarr; jouinb &rarr; jouinc</code> end-to-end in one session, the deepest driven interior chain in the engine.</p>
+</section>
+
+<section class="doc-section" id="pitfalls">
+  <h2>Decoder pitfalls</h2>
+  <ul class="bullets">
+    <li><strong>Frame shift.</strong> CDNAME block numbers are raw TOC indices; the extraction frame is <code>raw - 2</code>. An unshifted window bleeds two entries into the next scene's block - which is how <code>dolk2</code> once appeared to share a MAN with <code>suimon</code>. In the retail frame <code>suimon</code> keeps its 2345-byte <code>[10,7,3]</code> MAN and <code>dolk2</code> resolves its own streaming carrier. Position law: <a href="../formats/scene-v12-table.html#embedded-man-over-read">scene-v12-table</a>.</li>
+    <li><strong>Partition asymmetry.</strong> A partition-1 destination scan under-reports doors carried only by P2 records (<code>jouinb</code>'s return door); a P2 walker or the strict portal-site join sees them.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="world-map.html">World map</a>
+    <a href="script-vm.html">Field/event VM</a>
+    <a href="cutscene.html">Cutscenes</a>
+    <a href="../formats/scene-v12-table.html">Scene v12 table</a>
+    <a href="../formats/cdname.html">CDNAME</a>
+  </div>
+</section>

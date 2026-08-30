@@ -1,0 +1,121 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; place names</div>
+  <h1>Place names <span class="tag tag-done">Confirmed</span></h1>
+  <p class="lede">"Rim Elm", "Sol Tower", "Ancient Wind Cave" - a place name shows up in three spots while you play: the quick-travel list, the label floating over the world map, and the banner that slides in when you walk into a town. Each of those <strong>reads its own copy off the disc</strong>. There is no single name table, which is why a rename that only edits the well-known executable table leaves the world map and the entry banner still saying the old name.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Magic</dt><dd>none - three carriers: a static table in <code>SCUS_942.54</code>, the trailer of each kingdom MAN, and section 2 of each scene MAN</dd>
+    <dt>Where</dt><dd>site 1: <code>0x80073B18</code> (16 cells); site 2: pointer <code>DAT_80073EE0</code> into the kingdom MAN trailer (29 records); site 3: <code>_DAT_801C6EA0</code> into the scene MAN</dd>
+    <dt>Parsers</dt><dd><code>legaia_asset::worldmap_menu</code> (site 1), <code>legaia_asset::place_names</code> (sites 2 and 3); editor <code>legaia-patcher --rename-location</code> edits all three together</dd>
+    <dt>Confidence</dt><dd>Confirmed - layouts read off the disc, both MAN consumers pinned live, and a rename read back out of RAM on a patched disc</dd>
+    <dt>Used by</dt><dd><a href="../world-overview.html">World overview</a> (quick-travel table), <a href="../world.html">Game world</a>, <a href="../tooling/randomizer.html#location-names">Randomizer</a>, <a href="../tooling/rom-patcher.html">ROM patcher</a></dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="the-three-carriers">
+  <h2>The three carriers</h2>
+  <p>One name, three displays, three byte layouts. The shared cap for a rename is <strong>23 characters</strong> - the tightest of the three.</p>
+  <figure class="overlay-strip" style="margin:0.8rem 0 1rem">
+    <svg viewBox="0 0 640 150" width="100%" style="max-width:640px;font-family:var(--font-mono);font-size:12px" role="img" aria-label="Three carriers of one place name">
+      <g fill="none" stroke="var(--border)">
+        <rect x="10" y="10" width="190" height="60" rx="6"/>
+        <rect x="225" y="10" width="190" height="60" rx="6"/>
+        <rect x="440" y="10" width="190" height="60" rx="6"/>
+      </g>
+      <g fill="currentColor">
+        <text x="105" y="32" text-anchor="middle" font-weight="700">SCUS_942.54</text>
+        <text x="105" y="52" text-anchor="middle" fill="var(--text-muted)">16 x 0x20 cells</text>
+        <text x="320" y="32" text-anchor="middle" font-weight="700">kingdom MAN trailer</text>
+        <text x="320" y="52" text-anchor="middle" fill="var(--text-muted)">[count][29 x 0x20]</text>
+        <text x="535" y="32" text-anchor="middle" font-weight="700">scene MAN section 2</text>
+        <text x="535" y="52" text-anchor="middle" fill="var(--text-muted)">strlen + 1 bytes</text>
+      </g>
+      <g stroke="var(--accent)" fill="none" stroke-width="1.5">
+        <path d="M105 70 v30"/><path d="M320 70 v30"/><path d="M535 70 v30"/>
+      </g>
+      <g fill="var(--accent)">
+        <text x="105" y="120" text-anchor="middle">quick-travel list</text>
+        <text x="320" y="120" text-anchor="middle">world-map labels</text>
+        <text x="535" y="120" text-anchor="middle">entry banner + save row</text>
+      </g>
+    </svg>
+    <figcaption>One name, three independent on-disc copies, three displays. A rename must edit all three.</figcaption>
+  </figure>
+  <table>
+  <thead><tr><th>Site</th><th>What it draws</th><th>Carrier</th><th>Shape</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>the quick-travel / Door-of-Wind destination list</td><td><code>SCUS_942.54</code> <code>0x80073B18</code></td><td>16 fixed <code>0x20</code>-byte NUL-padded cells</td></tr>
+    <tr><td>2</td><td>the labels drawn over the world map at each place's position</td><td>the trailer of every <strong>kingdom</strong> MAN (<code>map01</code> / <code>map02</code> / <code>map03</code>)</td><td><code>[u8 count][count x 0x20 record]</code></td></tr>
+    <tr><td>3</td><td>the banner on entering a scene, and the save-screen location row</td><td>each scene MAN's <strong>section 2</strong></td><td>bare <code>strlen + 1</code> NUL-terminated string</td></tr>
+  </tbody>
+  </table>
+  <p>The three name spaces are <strong>not</strong> the same set. Site 1 holds 16 names; site 2 holds 29, naming 14 places the quick-travel menu has no room for (Hunter's Spring, Mt. Rikuroa, Snowdrift Cave, the Voz Forests, Zeto's Dungeon, Shadow Gate, Sol Tower, Nivora Ravine and so on). Site 3 holds one name per scene bundle, so a multi-scene place repeats its name - Sol Tower across 13 bundles, Rim Elm across 7. Near-miss names are genuinely distinct strings: site 1's "Sol" is not site 2's "Sol Tower".</p>
+</section>
+
+<section class="doc-section" id="site-2">
+  <h2>Site 2 - the world-map location table</h2>
+  <p>MAN section 5 is the chain terminator in every scene bundle, so its "body" is whatever trails the chain. In the three kingdom MANs that trailing data is the location table, and the MAN walker installs a pointer to its count byte (<a href="#how-we-know">how we know</a>). All three kingdom MANs carry a <strong>byte-identical copy of the whole 29-record table</strong>, filtered by <code>region</code> at draw time - so a rename must edit every kingdom MAN, not just the one whose continent the place sits on.</p>
+  <table class="layout">
+  <thead><tr><th>Offset</th><th>Type</th><th>Field</th></tr></thead>
+  <tbody>
+    <tr><td><code>+0x00</code></td><td>u8</td><td><code>region</code> - 0 = Drake, 1 = Sebucus, 2 = Karisto</td></tr>
+    <tr><td><code>+0x01</code></td><td>u8</td><td>map x (world coordinate = <code>x &lt;&lt; 7</code>)</td></tr>
+    <tr><td><code>+0x02</code></td><td>u8</td><td>map y (world coordinate = <code>y &lt;&lt; 7</code>)</td></tr>
+    <tr><td><code>+0x03</code></td><td>u16</td><td>discovery flag, queried through <code>FUN_8003CE64</code> (<code>0x0484..0x04A0</code>; the two element caves share <code>0x048E</code> and differ by region)</td></tr>
+    <tr><td><code>+0x05</code></td><td>3 bytes</td><td>reserved, zero across the retail corpus</td></tr>
+    <tr><td><code>+0x08</code></td><td>0x18 bytes</td><td>name, NUL-padded ASCII</td></tr>
+  </tbody>
+  </table>
+  <p>The world-map band's per-frame label pass draws each record whose region matches the current kingdom and whose discovery flag is set (or the show-all debug flag is on): project the map position to the screen, draw the name, measure it, underline it. So the name is drawn <strong>at the place's own map position</strong>, gated on having discovered it (<a href="#how-we-know">how we know</a>).</p>
+</section>
+
+<section class="doc-section" id="site-3">
+  <h2>Site 3 - the scene display name</h2>
+  <p>MAN section 2's body is the scene's display name. The MAN walker installs the body pointer, and the field
+  overlay's scene-entry state machines hand it to the banner panel script, latching it in a global buffer on the
+  way. The body is <strong>not padded</strong> - exactly <code>strlen + 1</code> bytes - so a longer name means
+  resizing the section.</p>
+  <p>The menu overlay reads the latched name twice, both times for the save screen: once to draw the save-slot
+  location row, once to copy it into the save block's location field. That is why a save state captured mid-scene
+  holds the <em>last scene entered</em> in that buffer: it is filled at save time from the latch, not per frame.</p>
+  <details class="disclosure"><summary>How site 3 was pinned</summary><div class="disclosure-body">
+    <p>Statically the chain ends at a panel script, one indirection short of proof. It was closed live: a breakpoint on the glyph renderer <code>FUN_80036888</code> across an overworld-into-town transition captures the banner draw arriving with <code>a0 == _DAT_801C6EA0</code>, spelling the scene's section-2 name. Probe: <code>scripts/pcsx-redux/autorun_location_banner_source.lua</code>.</p>
+  </div></details>
+</section>
+
+<section class="doc-section" id="how-we-know">
+  <h2>How we know</h2>
+  <table>
+    <thead><tr><th>Function</th><th>Address</th><th>What it proves</th><th>Dump / probe</th></tr></thead>
+    <tbody>
+      <tr><td>MAN walker</td><td><code>FUN_8003AEB0</code></td><td>Installs the site-2 table pointer (<code>DAT_80073EE0</code>) and the site-3 body pointer (<code>_DAT_801C6EA0</code>)</td><td><code>funcs/8003aeb0.txt</code></td></tr>
+      <tr><td>World-map label pass</td><td><code>0x801CEBB6..0x801CEC30</code>; discovery query <code>FUN_8003CE64</code>, projection <code>FUN_8003D368</code>, glyph draw <code>FUN_80036888</code>, measure <code>FUN_80035F04</code></td><td>Per-record region filter, discovery gate (debug show-all <code>_DAT_8007B868</code>), draw-at-map-position</td><td><code>funcs/overlay_world_map_top_801ce9c4.txt</code></td></tr>
+      <tr><td>Banner latch</td><td>state machines <code>0x801EE634</code> / <code>0x801EAC7C</code> / <code>0x801EEAE4</code></td><td>The section-2 pointer handed to the banner panel script, latched in <code>_DAT_8007B44C</code></td><td>field-overlay dumps; live probe <code>autorun_location_banner_source.lua</code></td></tr>
+      <tr><td>Save-screen readers</td><td><code>0x801E1D9C</code> (row draw), <code>0x801E1A28</code> (copy to SC block <code>+0x200</code>)</td><td>The latch's two menu-overlay consumers - both save-screen, neither per-frame</td><td>menu-overlay dumps</td></tr>
+      <tr><td>Patched-disc read-back</td><td>-</td><td>A rename re-parses at every site; resized banner + edited world-map table read back out of live RAM</td><td><code>crates/patcher/tests/place_names_real.rs</code></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="editing-notes">
+  <h2>Editing a name</h2>
+  <ul>
+    <li><strong>Site 1</strong> - same-size overwrite of a 32-byte cell, zero-padded.</li>
+    <li><strong>Site 2</strong> - same-size overwrite of the record's 24-byte name field, then an LZS re-pack of each kingdom MAN.</li>
+    <li><strong>Site 3</strong> - resize the section. No relocation work is needed: the partition tables and <code>u24_at_28</code> address the region <em>before</em> section 0, and sections 3..5 are reached by walking the chain, so rewriting section 2's length prefix moves every later section correctly by construction. What must move is the MAN's <strong>decompressed size</strong> in the scene bundle's descriptor word (<code>scene_asset_table::encode_size_word</code>).</li>
+    <li>Every scene MAN is the last asset in its bundle, so the re-packed stream can grow into the entry's sector padding (smallest headroom in the corpus ~430 bytes). Clamp the budget to the entry's <a href="prot.html">true footprint</a>, never to an over-reading length.</li>
+    <li>Ten scene MANs carry an untranslated Shift-JIS name in section 2 (the ending scenes plus <code>other7</code>) and seven carry an empty one; both read as "no name".</li>
+  </ul>
+  <div class="see-also"><span class="see-also-label">Reference</span>
+    <a href="man-relocation.html">MAN relocation</a>
+    <a href="scene-bundles.html">Scene bundles</a>
+    <a href="../subsystems/world-map.html">World map</a>
+    <a href="../subsystems/field-menu.html">Field menu</a>
+    <a href="../subsystems/save-screen.html">Save screen</a>
+    <a href="../tooling/randomizer.html#location-names">Randomizer: location names</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/place-names.md">Full doc on GitHub</a>
+  </div>
+</section>

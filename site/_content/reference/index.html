@@ -1,19 +1,22 @@
 <header class="page-header">
-  <div class="breadcrumb"><a href="../index.html">home</a> · reference</div>
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; reference</div>
   <h1>Reference</h1>
-  <p class="lede">Lookup tables, not reading. Where a fact about the game lives: which function does what, what is at an address, what a track is called, and which questions are still open.</p>
+  <p class="lede">Lookup tables, not reading. Where a fact about the game is filed: which function does what, what sits at an address, what a track is called, and which questions are still open. Every row carries the function, capture or cheat code behind it, so if a claim elsewhere on the site looks surprising, the evidence is here.</p>
 </header>
 
 <section class="doc-section" id="orientation">
   <h2>Which table do you want?</h2>
-  <ul class="bullets">
-    <li>You have an <strong>address or a <code>FUN_</code> symbol</strong> and want to know what it does &rarr; <a href="functions.html">key functions</a>, then <a href="memory-map.html">the RAM map</a> for globals.</li>
-    <li>You have a <strong>binary record</strong> and want to know what the values mean &rarr; <a href="gamedata.html">curated game-data tables</a> are the ground-truth labels; <a href="cheats.html">cheat databases</a> anchor the RAM offsets.</li>
-    <li>You have an <strong>extracted track</strong> and want its name &rarr; <a href="music-tracks.html">music-track disambiguation</a>.</li>
-    <li>You have a <strong>question</strong> and want to know whether it is still contested &rarr; <a href="open-rev-eng-threads.html">open RE threads</a>. Check here before starting a hunt.</li>
-    <li>You want the <strong>answer</strong> to a question, and how firmly it is pinned &rarr; <a href="re-settled-threads.html">settled threads</a>, where every row carries an evidence grade.</li>
-    <li>A reading of the bytes looks <strong>obvious</strong> and you want to be sure it has not already been disproved &rarr; <a href="re-do-not-re-walk.html">do not re-walk</a>.</li>
-  </ul>
+  <table>
+    <thead><tr><th>You have&hellip;</th><th>Go to</th></tr></thead>
+    <tbody>
+      <tr><td>An address or a <code>FUN_</code> symbol</td><td><a href="functions.html">Key functions</a>, then the <a href="memory-map.html">RAM map</a> for globals</td></tr>
+      <tr><td>A binary record and want to know what the values mean</td><td><a href="gamedata.html">Game-data tables</a> for the labels; <a href="cheats.html">cheat databases</a> for the RAM offsets</td></tr>
+      <tr><td>An extracted track and want its name</td><td><a href="music-tracks.html">Music tracks</a></td></tr>
+      <tr><td>A question and want to know if it is still contested</td><td><a href="open-rev-eng-threads.html">Open RE threads</a> - check before starting a hunt</td></tr>
+      <tr><td>A question and want the answer plus how firmly it is pinned</td><td><a href="re-settled-threads.html">Settled threads</a></td></tr>
+      <tr><td>An "obvious" reading of some bytes</td><td><a href="re-do-not-re-walk.html">Do not re-walk</a> - it may already be disproved</td></tr>
+    </tbody>
+  </table>
 </section>
 
 <section class="doc-section">
@@ -21,55 +24,69 @@
   <div class="card-grid">
     <a class="card" href="functions.html">
       <div class="card-title">Key functions</div>
-      <div class="card-body">A directory of the game's traced functions, grouped by subsystem - the <code>FUN_80xxxxxx</code> names are the disassembler's labels for code at those RAM addresses. Boot, asset loader, the runtime VMs, BIOS thunks, audio libraries, the battle and effect systems.</div>
+      <div class="card-body">The traced functions that matter, grouped by subsystem: boot, asset loader, the VMs, cutscenes, renderer, battle, menus, audio, world map. Explains the <code>FUN_80xxxxxx</code> naming and the overlay-window trap.</div>
     </a>
     <a class="card" href="memory-map.html">
       <div class="card-title">PSX RAM map</div>
-      <div class="card-body">2 MB main RAM. Where SCUS_942.54 loads, where overlays live, where the global game state lives, where the actor table is, where the scratchpad is.</div>
+      <div class="card-body">The 2 MB main RAM as a picture: where the executable loads, where overlays go, where the party's records, inventory and story flags live.</div>
     </a>
     <a class="card" href="cheats.html">
       <div class="card-title">Cheat databases</div>
-      <div class="card-body">Third-party GameShark cheat-code dumps (each cheat is a RAM address someone verified on real hardware) as a ground-truth source for where game state lives. Format reference, parser overview, citation table, and a runtime applier wired into <code>legaia-engine play-window --cheat-file</code>.</div>
+      <div class="card-body">GameShark codes as hardware-verified RAM addresses: encoding, parser, what each region pins, and the engine's cheat applier.</div>
     </a>
     <a class="card" href="gamedata.html">
       <div class="card-title">Curated game-data tables</div>
-      <div class="card-body">Arts, magic, items, weapons, armor, accessories, enemies, shops, casino, and fishing tables mined from public walkthroughs. Acts as ground-truth labels for the binary records being reverse-engineered (PROT entry <code>0x05C4</code>, RAM character struct, drop tables).</div>
+      <div class="card-body">Arts, magic, items, equipment, enemies, shops, casino and fishing tables from public walkthroughs - the labels disc records are checked against.</div>
     </a>
     <a class="card" href="music-tracks.html">
-      <div class="card-title">Music-track disambiguation</div>
-      <div class="card-body">Every BGM cue cross-referenced across its four naming spaces: the debug sound-test ID + working title, the in-game context it plays in, the official OST album title, and a proposed relocalization title. The human-readable label layer for the extracted SEQ/BGM tracks. Curated reference (Stann0x).</div>
+      <div class="card-title">Music tracks</div>
+      <div class="card-body">Every BGM cue across its four naming spaces - sound-test id, in-game context, OST title, proposed relocalization - and the disc join behind it.</div>
     </a>
     <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/builds.md" target="_blank" rel="noopener">
       <div class="card-title">Builds + region differences</div>
-      <div class="card-body">14 known builds across NA / JP / EU / Demo / preview / debug. SCUS-94254 is the NA build the project targets.</div>
+      <div class="card-body">14 known builds across NA / JP / EU / demo / preview / debug. <code>SCUS_942.54</code> is the NA build the project targets.</div>
     </a>
     <a class="card" href="open-rev-eng-threads.html">
       <div class="card-title">Open RE threads</div>
-      <div class="card-body">The live list of unsolved mysteries, each with the concrete next step that would close it. If you want to contribute to the reverse-engineering, start here. Question-level companion to the <a href="../tooling/port-catalog.html">port catalog</a>'s function-level worklist.</div>
+      <div class="card-body">The live list of unsolved questions, each with the next step that would close it. Start here to contribute.</div>
     </a>
     <a class="card" href="re-settled-threads.html">
       <div class="card-title">Settled RE threads</div>
-      <div class="card-body">The questions that have an answer, and how firmly each one is pinned. Every row is graded by what its own evidence rests on - instructions, a runtime capture, Ghidra's decompiled C, or inference - so you can tell a byte-pinned fact from one nobody has checked against the disassembly yet.</div>
+      <div class="card-body">Answered questions, each graded by what its evidence rests on: instructions, a runtime capture, decompiled C, or inference.</div>
     </a>
     <a class="card" href="re-do-not-re-walk.html">
       <div class="card-title">Do not re-walk</div>
-      <div class="card-body">Falsified hypotheses with their reasoning intact. Each is a plausible reading of the bytes that turned out wrong; knowing <em>why</em> is worth more than the row it occupies. Check here before committing to a reading that looks obvious.</div>
+      <div class="card-body">Readings of the bytes that looked right and were disproved, with the reasoning kept so nobody repeats the walk.</div>
     </a>
   </div>
 </section>
 
-<section class="doc-section">
+<section class="doc-section" id="acknowledgments">
   <h2>Acknowledgments</h2>
-  <p>Reverse engineering stands on prior work. The findings here lean on:</p>
-  <ul>
-    <li><strong>Public community research on unused content and builds</strong> - developer attribution (Prokion / Contrail), debug-flag addresses, and the catalog of 14 known builds.</li>
-    <li><a href="https://github.com/SamSteProjects/LegendOfLegaia_.Dat_unpacker" target="_blank" rel="noopener">Sam Ste's PROT.DAT unpacker</a> - an early Python proof-of-concept that pointed at the right TOC slots and the TIM-pack heuristic.</li>
-    <li><a href="https://github.com/mstan/psxrecomp" target="_blank" rel="noopener"><strong>PSXRecomp</strong></a> (mstan / <a href="https://github.com/SamSteProjects" target="_blank" rel="noopener">SamSteProjects</a>) - a PlayStation 1 static recompiler (MIPS R3000A &rarr; C &rarr; native, recompiled SCPH1001 BIOS as the kernel, no HLE), and its <a href="https://github.com/SamSteProjects/psxrecomp/tree/codex/legaia-recompile-fixes" target="_blank" rel="noopener">Legaia-specific fork</a> whose runtime work carries the game from boot through field, battle, and the CD/XA cutscene path. We run it as a live cross-reference oracle - a second, independent execution of the retail code to validate the clean-room port against (GTE registers, overlay identity, render-dispatch and sound-driver behaviour) - never as a source of Sony bytes. Built on the <a href="https://github.com/N64Recomp/N64Recomp" target="_blank" rel="noopener">N64Recomp</a> static-recompilation model (RT64 team).</li>
-    <li><a href="https://docs.google.com/spreadsheets/d/1_U_AKdEncylFwE0lXkvPG-OhMWpNXgUdoaSGZ6vSUg0/edit?usp=drive_link" target="_blank" rel="noopener"><strong>ZetaPhoenix's "Legaia Arts Data" spreadsheet</strong></a> - public Google Sheets catalog of the Tactical Arts / Miracle Arts / Super Arts trigger strings and finisher replacements. The <code>legaia-art</code> <code>MiracleMatcher</code> / <code>SuperMatcher</code> tables (<code>crates/art/src/miracle.rs</code>, <code>super_art.rs</code>) cross-reference and validate against it. His damage-formula analysis - the Offense Value / Defense Value shape, the per-command equipment selection and halving, and the worked example - organises the <a href="../subsystems/battle-formulas.html">battle formulas</a> page, where each claim is checked against the disassembly.</li>
-    <li><a href="https://gamefaqs.gamespot.com/ps/197766-legend-of-legaia/faqs/53721" target="_blank" rel="noopener"><strong>Meth962's "Legend of Legaia 100% Walkthrough"</strong> (GameFAQs)</a> and his damage-formula threads on the old legendoflegaia.net forums (archived <a href="https://web.archive.org/web/20161205053304/https://www.legendoflegaia.net/forums/viewtopic.php?f=66&amp;t=800&amp;sid=b9049876cd2bcdd56c9eb66fe8614cf4&amp;start=30" target="_blank" rel="noopener">thread 800</a>, <a href="https://web.archive.org/web/20161203095801/https://www.legendoflegaia.net/forums/viewtopic.php?f=66&amp;t=941&amp;sid=10471c996f5bab205174f85853bf65e7" target="_blank" rel="noopener">thread 941</a>) - the original community damage analysis, and the enemy-stats, Seru-magic, and magic-leveling tables that ground the <a href="gamedata.html">curated game-data tables</a>.</li>
-    <li><strong>ZetaPhoenix</strong> - the <strong>Super Arts Pack</strong>, a mod adding five Super Arts per character with their own names, hit counts and animations, contributed as a RAM block the <a href="../tooling/rom-patcher.html">ROM patcher</a> installs unmodified. Same author as the "Legaia Arts Data" spreadsheet above.</li>
-    <li><a href="https://github.com/Stann0xus" target="_blank" rel="noopener"><strong>Henrique Stanke Scandelari (Stann0x)</strong></a> - a <a href="music-tracks.html">music-track disambiguation</a> that cross-references every BGM cue across its four naming spaces (the internal debug sound-test ID + working title, the in-game context it plays in, the official OST title, and a proposed relocalization title); the human-readable label layer for the extracted SEQ/BGM tracks, in the same curated-reference spirit as the game-data tables above.</li>
-    <li>The PSX scene generally - Sony PsyQ documentation, Martin Korth's <a href="https://problemkaputt.de/psx-spx.htm" target="_blank" rel="noopener">PSX-SPX</a>, and decades of accumulated TIM / TMD / SPU documentation.</li>
-    <li>Reference projects whose legal pattern this repo follows: <a href="https://www.scummvm.org/" target="_blank" rel="noopener">ScummVM</a>, <a href="https://github.com/OpenRCT2/OpenRCT2" target="_blank" rel="noopener">OpenRCT2</a>, <a href="https://github.com/OpenMW/openmw" target="_blank" rel="noopener">OpenMW</a>, <a href="https://github.com/XProger/OpenLara" target="_blank" rel="noopener">OpenLara</a>.</li>
-  </ul>
+  <p>Reverse engineering stands on prior work. The findings on this site lean on:</p>
+  <table>
+    <thead><tr><th>Source</th><th>Contribution</th></tr></thead>
+    <tbody>
+      <tr><td>Public community research on unused content and builds</td><td>Developer attribution (Prokion / Contrail), debug-flag addresses, the catalogue of 14 builds</td></tr>
+      <tr><td><a href="https://github.com/SamSteProjects/LegendOfLegaia_.Dat_unpacker" target="_blank" rel="noopener">Sam Ste's PROT.DAT unpacker</a></td><td>Early proof-of-concept that pointed at the right TOC slots and the TIM-pack heuristic</td></tr>
+      <tr><td><a href="https://github.com/mstan/psxrecomp" target="_blank" rel="noopener">PSXRecomp</a> (mstan / <a href="https://github.com/SamSteProjects" target="_blank" rel="noopener">SamSteProjects</a>) and its <a href="https://github.com/SamSteProjects/psxrecomp/tree/codex/legaia-recompile-fixes" target="_blank" rel="noopener">Legaia fork</a></td><td>A static recompiler (MIPS &rarr; C &rarr; native, on the <a href="https://github.com/N64Recomp/N64Recomp" target="_blank" rel="noopener">N64Recomp</a> model) the project runs as an independent execution oracle for GTE registers, overlay identity, render dispatch and sound-driver behaviour - never as a source of Sony bytes</td></tr>
+      <tr><td><a href="https://docs.google.com/spreadsheets/d/1_U_AKdEncylFwE0lXkvPG-OhMWpNXgUdoaSGZ6vSUg0/edit?usp=drive_link" target="_blank" rel="noopener">ZetaPhoenix's "Legaia Arts Data"</a></td><td>Tactical / Miracle / Super Arts trigger strings that <code>crates/art</code> validates against; the Offense-minus-Defense damage analysis that organises the <a href="../subsystems/battle-formulas.html">battle formulas</a> page; the Super Arts Pack the <a href="../tooling/rom-patcher.html">ROM patcher</a> installs</td></tr>
+      <tr><td><a href="https://gamefaqs.gamespot.com/ps/197766-legend-of-legaia/faqs/53721" target="_blank" rel="noopener">Meth962's 100% Walkthrough</a> and forum threads (<a href="https://web.archive.org/web/20161205053304/https://www.legendoflegaia.net/forums/viewtopic.php?f=66&amp;t=800&amp;sid=b9049876cd2bcdd56c9eb66fe8614cf4&amp;start=30" target="_blank" rel="noopener">800</a>, <a href="https://web.archive.org/web/20161203095801/https://www.legendoflegaia.net/forums/viewtopic.php?f=66&amp;t=941&amp;sid=10471c996f5bab205174f85853bf65e7" target="_blank" rel="noopener">941</a>)</td><td>The original community damage analysis; the enemy-stat, Seru-magic and magic-levelling tables behind the <a href="gamedata.html">game-data tables</a></td></tr>
+      <tr><td><a href="https://github.com/Stann0xus" target="_blank" rel="noopener">Henrique Stanke Scandelari (Stann0x)</a></td><td>The <a href="music-tracks.html">music-track disambiguation</a> - the label layer for every extracted BGM cue</td></tr>
+      <tr><td>The PSX scene</td><td>Sony PsyQ documentation, Martin Korth's <a href="https://problemkaputt.de/psx-spx.htm" target="_blank" rel="noopener">PSX-SPX</a>, decades of TIM / TMD / SPU documentation</td></tr>
+      <tr><td>Legal-pattern precedents</td><td><a href="https://www.scummvm.org/" target="_blank" rel="noopener">ScummVM</a>, <a href="https://github.com/OpenRCT2/OpenRCT2" target="_blank" rel="noopener">OpenRCT2</a>, <a href="https://github.com/OpenMW/openmw" target="_blank" rel="noopener">OpenMW</a>, <a href="https://github.com/XProger/OpenLara" target="_blank" rel="noopener">OpenLara</a></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../formats/index.html">Format specs</a>
+    <a href="../subsystems/index.html">Subsystems</a>
+    <a href="../tooling/port-catalog.html">Port catalog</a>
+    <a href="../tooling/ghidra.html">Ghidra tooling</a>
+    <a href="../guides/getting-started.html">Getting started</a>
+  </div>
 </section>

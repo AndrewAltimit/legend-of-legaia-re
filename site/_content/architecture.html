@@ -1,50 +1,60 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="index.html">home</a> · architecture</div>
   <h1>How the layers stack</h1>
-  <p class="lede">Click any layer to see what crate handles it and what's documented for it.</p>
+  <p class="lede">A PlayStation game is a stack of containers: a disc holds files, one file holds an archive, the archive holds bundles, the bundles hold models, textures and sounds, and the running game loads all of that into a handful of little script engines. This page is the map of that stack and of the code that reads each layer - start here before any format or subsystem page.</p>
 </header>
 
-<section class="doc-section">
-  <h2>The pipeline at a glance</h2>
-  <p>Going top-to-bottom: a PSX disc image, then the ISO filesystem, then the project's archive (PROT.DAT), then per-entry containers, then individual sub-assets. Each layer is owned by exactly one crate.</p>
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <ul>
+    <li><strong>Almost everything is in one file.</strong> <code>PROT.DAT</code> is the game's archive: 1233 numbered entries holding every scene, monster, tune and menu. The executable only carries the tables that tie them together.</li>
+    <li><strong>Each layer has one owner.</strong> One Rust crate reads the disc, one splits the archive, one sorts entries by format, and one small crate per format decodes it. That is what lets the browser pages and the native tools share code.</li>
+    <li><strong>The game runs on scripts.</strong> Towns, cutscenes, battle moves, menus and NPC pathing are bytecode interpreted by a family of small virtual machines. The engine port reimplements those VMs rather than emulating the CPU.</li>
+    <li><strong>Two tracks, one repo.</strong> <em>Preservation</em> (extract and document every asset) and <em>reimplementation</em> (a clean-room engine) feed each other: the docs are the spec the engine is built from, and the engine is the test that the docs are right.</li>
+  </ul>
+</section>
 
-  <!-- Interactive layer diagram. Each .layer is clickable. -->
+<section class="doc-section" id="pipeline">
+  <h2>The pipeline</h2>
+  <p>Going top to bottom: a PSX disc image, then the ISO filesystem, then the archive (<code>PROT.DAT</code>), then per-entry containers, then individual sub-assets, and finally the engine that brings them to life. Click any layer to read its format page or the crate that handles it.</p>
+
+  <!-- Layer diagram. Each .layer is a link. -->
   <div class="layers-diagram" id="layers" aria-label="Layered architecture diagram">
 
-    <a class="layer" href="formats/index.html#disc" data-detail="disc">
+    <a class="layer" href="formats/disc.html" data-detail="disc">
       <div class="layer-head">
         <span class="layer-num">1</span>
         <span class="layer-title">PSX disc image (.bin Mode2/2352)</span>
       </div>
       <div class="layer-body">
         <div class="layer-crate">crates/iso → <code>disc-extract</code></div>
-        <div class="layer-desc">Raw 2352-byte sector reader. Strips the 24-byte sector overhead and returns 2048-byte user data per sector.</div>
+        <div class="layer-desc">A CD is a run of 2352-byte sectors, each with 2048 bytes of real data wrapped in sync, header and error-correction bytes. This layer strips the wrapper. The same crate can re-encode sectors, which is what lets the patcher write a modified disc back.</div>
       </div>
     </a>
 
     <div class="layer-arrow">↓</div>
 
-    <a class="layer" href="formats/index.html#disc-layer" data-detail="iso">
+    <a class="layer" href="formats/disc.html" data-detail="iso">
       <div class="layer-head">
         <span class="layer-num">2</span>
         <span class="layer-title">ISO9660 filesystem</span>
       </div>
       <div class="layer-body">
         <div class="layer-crate">crates/iso</div>
-        <div class="layer-desc">PROT.DAT, DMY.DAT, SCUS_942.54, MOV/, XA/, CDNAME.TXT, SYSTEM.CNF.</div>
+        <div class="layer-desc">The disc's directory: <code>PROT.DAT</code> (the archive), <code>SCUS_942.54</code> (the executable), <code>DMY.DAT</code> (dev fixture data), the <code>MOV/</code> movies, the <code>XA/</code> voice streams, <code>CDNAME.TXT</code> (the archive's name list) and <code>SYSTEM.CNF</code>.</div>
       </div>
     </a>
 
     <div class="layer-arrow">↓</div>
 
-    <a class="layer" href="formats/index.html#prot" data-detail="prot">
+    <a class="layer" href="formats/prot.html" data-detail="prot">
       <div class="layer-head">
         <span class="layer-num">3</span>
-        <span class="layer-title">PROT.DAT - the project archive</span>
+        <span class="layer-title">PROT.DAT - the archive</span>
       </div>
       <div class="layer-body">
         <div class="layer-crate">crates/prot → <code>prot-extract</code></div>
-        <div class="layer-desc">1233 entries indexed by a 16-byte TOC walked at boot. Names from CDNAME.TXT (block-start <code>#define</code> markers; names inherit forward).</div>
+        <div class="layer-desc">1233 entries located by a table of contents the game reads at boot. An entry's size is the gap to the next entry's start. Names come from <code>CDNAME.TXT</code>, whose numbers are raw table indices and sit two ahead of the extraction numbering (<a href="formats/cdname.html">why</a>).</div>
       </div>
     </a>
 
@@ -57,20 +67,21 @@
       </div>
       <div class="layer-body">
         <div class="layer-crate">crates/asset → <code>asset</code></div>
-        <div class="layer-desc">Format detectors classify each entry: LZS, TIM-pack, DATA_FIELD streaming, scene-bundle, effect-bundle, sound-driver outputs, VAB banks, MIPS overlays. Handlers dispatch to per-format crates.</div>
+        <div class="layer-desc">Entries carry no type label, so detectors classify each one by its bytes: LZS-compressed, TIM-pack, streaming container, scene bundle, effect bundle, sound-driver output, sound bank, or a code overlay. Three different "pack" layouts coexist here - the format pages keep their header math apart.</div>
       </div>
     </a>
 
     <div class="layer-arrow">↓</div>
 
     <div class="layer-fanout">
-      <a class="leaf" href="formats/index.html#tim">PSX TIM<br><small>crates/tim</small></a>
-      <a class="leaf" href="formats/index.html#tmd">Legaia TMD<br><small>crates/tmd</small></a>
-      <a class="leaf" href="formats/index.html#vab">VAB sound bank<br><small>crates/vab</small></a>
-      <a class="leaf" href="formats/index.html#mes">MES dialog<br><small>crates/mes</small></a>
-      <a class="leaf" href="formats/index.html#anm">ANM animation<br><small>crates/anm</small></a>
-      <a class="leaf" href="formats/index.html#mdt">MDT moves<br><small>crates/mdt</small></a>
-      <a class="leaf" href="formats/index.html#lzs">LZS<br><small>crates/lzs</small></a>
+      <a class="leaf" href="formats/tim.html">PSX TIM<br><small>textures · crates/tim</small></a>
+      <a class="leaf" href="formats/tmd.html">Legaia TMD<br><small>3D models · crates/tmd</small></a>
+      <a class="leaf" href="formats/vab.html">VAB<br><small>instruments · crates/vab</small></a>
+      <a class="leaf" href="formats/seq.html">SEQ<br><small>music score · crates/seq</small></a>
+      <a class="leaf" href="formats/mes.html">MES<br><small>dialog · crates/mes</small></a>
+      <a class="leaf" href="formats/anm.html">ANM<br><small>animation · crates/anm</small></a>
+      <a class="leaf" href="formats/mdt.html">MDT<br><small>moves · crates/mdt</small></a>
+      <a class="leaf" href="formats/lzs.html">LZS<br><small>compression · crates/lzs</small></a>
     </div>
 
     <div class="layer-arrow">↓</div>
@@ -81,155 +92,214 @@
         <span class="layer-title">Engine reimplementation</span>
       </div>
       <div class="layer-body">
-        <div class="layer-crate">engine-core / engine-render / engine-audio / engine-vm</div>
-        <div class="layer-desc">Clean-room Rust port: the asset viewer, the runtime (script VMs + asset loader chain), and the gameplay layer (field, battle, and menus in <code>play-window</code>). Native binary + WASM build.</div>
+        <div class="layer-crate">engine-core / engine-vm / engine-ui / engine-render / engine-audio / engine-shell</div>
+        <div class="layer-desc">The clean-room Rust port: world and scene state, the script VMs, the menus, a software PSX video memory drawn through wgpu, and a recreated sound chip. One native window and one WebAssembly build share the same simulation - the <a href="play.html">play page</a> is the engine itself, not a second implementation.</div>
       </div>
     </a>
   </div>
+
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="formats/index.html">All formats</a>
+    <a href="subsystems/asset-loader.html">Asset loader</a>
+    <a href="subsystems/boot.html">Boot sequence</a>
+    <a href="tooling/extraction.html">Extraction tooling</a>
+  </div>
 </section>
 
-<section class="doc-section">
-  <h2>The five runtime VMs</h2>
-  <p>Legaia's runtime is driven by five independent VMs that talk to one shared actor model. Four are clean bytecode dispatchers (actor / move-table / motion / field-event); the fifth (effect) is a per-slot state machine - different shape, same architectural role. Click each card to read the dedicated subsystem page.</p>
+<section class="doc-section" id="two-tracks">
+  <h2>Two tracks, one repo</h2>
+  <p>The <code>-re</code> in the project name means both <em>reverse engineering</em> and <em>reimplementation</em>. The tracks are separate crates with a clear boundary between them.</p>
+  <table>
+    <thead><tr><th>Track</th><th>What it produces</th><th>Where it lives</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><strong>Preservation</strong></td>
+        <td>Every asset off the disc as PNG / WAV / OBJ / glTF / JSON, a format spec per file type with the game function that reads it named as evidence, and round-trip parsers that can write assets back.</td>
+        <td>The container crates (<code>iso</code>, <code>prot</code>, <code>lzs</code>, <code>asset</code>), one crate per format, the <code>extract</code> driver, and the <code>patcher</code>.</td>
+      </tr>
+      <tr>
+        <td><strong>Reimplementation</strong></td>
+        <td>A playable engine built from those specs plus decompiled-and-rewritten logic - never a static recompile of Sony's executable. Retail behaviour is the measured ground truth; enhancements (dynamic lighting, see-through walls, free-angle movement, VR) are toggles that leave the faithful mode bit-identical when off.</td>
+        <td><code>engine-core</code>, <code>engine-vm</code>, <code>engine-ui</code>, <code>engine-render</code>, <code>engine-audio</code>, <code>engine-shell</code>, and the <code>asset-viewer</code> / <code>web-viewer</code> front ends.</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>What keeps the two honest is a set of parity oracles: the engine's video memory, sound output and game-mode trace are compared against emulator captures of the real game, so a doc that is wrong shows up as a pixel or a sample that differs. The <a href="subsystems/engine.html">engine page</a> has the boundaries and the current list of enhancement toggles.</p>
+</section>
+
+<section class="doc-section" id="vms">
+  <h2>The runtime VMs</h2>
+  <p>When you talk to a villager, watch a cutscene, throw a Tactical Art or open the shop, no hand-written code for that moment is running. Instead the game's engine interprets small programs stored with the data: the villager's dialogue is a script, the art is a move record, the shop window is a widget program. The five interpreters below share one <em>actor</em> model - the same records describe your character, an NPC, a monster and a spark of a spell - and each has its own page. Four are classic bytecode dispatchers; the effect VM is a per-slot state machine that plays the same role with a different shape.</p>
+  <p class="hint">"Five VMs" is the orientation, not the census: the field VM's menu sub-dispatcher, the move VM's overlay extension, and the battle, world-map and tile-board state machines are separate dispatchers with their own tables. The <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/vm-inventory.md">VM inventory</a> lists every one.</p>
 
   <div class="vm-grid">
-    <a class="vm-card" href="subsystems/actor-vm.html" title="Driver: FUN_801D6628 - details on the actor-VM subsystem page">
+    <a class="vm-card" href="subsystems/actor-vm.html" title="Details, including the driver function, on the actor-VM subsystem page">
       <div class="vm-card-num">VM 1</div>
       <div class="vm-card-title">Actor / sprite VM</div>
       <dl>
-        <dt>Where</dt>       <dd>Title-screen overlay (0971)</dd>
+        <dt>What it runs</dt> <dd>Menu window widgets - the shop and pause-menu choreography</dd>
+        <dt>Where</dt>       <dd>Menu overlay (PROT 0899)</dd>
         <dt>Opcodes</dt>     <dd>13</dd>
         <dt>Operands</dt>    <dd>byte stream</dd>
-        <dt>Status</dt>      <dd><span class="tag tag-done">ported</span> <span class="tag tag-partial">not wired</span></dd>
-        <dt>Note</dt>        <dd>All 13 opcodes are ported, but nothing in the engine calls the interpreter yet - it is inert.</dd>
+        <dt>Status</dt>      <dd><span class="tag tag-done">ported</span> - drives the shop widget choreography in the engine</dd>
       </dl>
     </a>
-    <a class="vm-card" href="subsystems/move-vm.html" title="Driver: FUN_80023070 - details on the move-VM subsystem page">
+    <a class="vm-card" href="subsystems/move-vm.html" title="Details, including the driver function, on the move-VM subsystem page">
       <div class="vm-card-num">VM 2</div>
       <div class="vm-card-title">Move-table VM</div>
       <dl>
-        <dt>Where</dt>       <dd>SCUS_942.54 + town overlay</dd>
+        <dt>What it runs</dt> <dd>Move records - Tactical Arts, summons, scene props that animate</dd>
+        <dt>Where</dt>       <dd>Executable, plus a 61-sub-op extension in the town overlay</dd>
         <dt>Opcodes</dt>     <dd>71 + 61 sub-ops</dd>
         <dt>Operands</dt>    <dd>u16 stream</dd>
-        <dt>Status</dt>      <dd><span class="tag tag-done">ported</span></dd>
+        <dt>Status</dt>      <dd><span class="tag tag-done">ported</span> - extension ported, reached only from the town overlay</dd>
       </dl>
     </a>
-    <a class="vm-card" href="subsystems/motion-vm.html" title="Driver: FUN_8003774C - details on the motion-VM subsystem page">
+    <a class="vm-card" href="subsystems/motion-vm.html" title="Details, including the driver function, on the motion-VM subsystem page">
       <div class="vm-card-num">VM 3a</div>
       <div class="vm-card-title">Motion VM - pursue / patrol</div>
       <dl>
-        <dt>Where</dt>       <dd>SCUS_942.54</dd>
-        <dt>Opcodes</dt>     <dd>22 (JT <code>0x80010EE0</code>)</dd>
+        <dt>What it runs</dt> <dd>NPC pathing, face-the-player, camera follow</dd>
+        <dt>Where</dt>       <dd>Executable</dd>
+        <dt>Opcodes</dt>     <dd>22</dd>
         <dt>Operands</dt>    <dd>byte stream</dd>
         <dt>Status</dt>      <dd><span class="tag tag-done">ported</span></dd>
       </dl>
     </a>
-    <a class="vm-card" href="subsystems/motion-vm.html" title="Driver: FUN_80038158 - details on the motion-VM subsystem page">
+    <a class="vm-card" href="subsystems/motion-vm.html" title="Details, including the driver function, on the motion-VM subsystem page">
       <div class="vm-card-num">VM 3b</div>
       <div class="vm-card-title">Motion VM - scripted motion</div>
       <dl>
-        <dt>Where</dt>       <dd>SCUS_942.54 (MAN tail-section 1)</dd>
-        <dt>Opcodes</dt>     <dd>32 (JT <code>0x80010FE8</code>, <code>0x01..=0x20</code>)</dd>
+        <dt>What it runs</dt> <dd>Cutscene blocking and story-flag writes; bytecode ships in each scene's MAN</dd>
+        <dt>Where</dt>       <dd>Executable</dd>
+        <dt>Opcodes</dt>     <dd>32</dd>
         <dt>Operands</dt>    <dd>byte stream</dd>
         <dt>Status</dt>      <dd><span class="tag tag-partial">partial</span> - table decoded, port split across three crates</dd>
       </dl>
     </a>
-    <a class="vm-card" href="subsystems/script-vm.html" title="Driver: FUN_801DE840 - details on the field/event-VM subsystem page">
+    <a class="vm-card" href="subsystems/script-vm.html" title="Details, including the driver function, on the field/event-VM subsystem page">
       <div class="vm-card-num">VM 4</div>
       <div class="vm-card-title">Field / event script VM</div>
       <dl>
-        <dt>Where</dt>       <dd>Town overlay (0897)</dd>
+        <dt>What it runs</dt> <dd>Everything in a town or dungeon: dialogue, doors, chests, shops, inns, story flags</dd>
+        <dt>Where</dt>       <dd>Town / field overlay (PROT 0897)</dd>
         <dt>Opcodes</dt>     <dd>43 + default-route extensions</dd>
         <dt>Operands</dt>    <dd>byte stream</dd>
         <dt>Status</dt>      <dd><span class="tag tag-done">ported</span></dd>
       </dl>
     </a>
-    <a class="vm-card" href="subsystems/effect-vm.html" title="Driver: FUN_801E0088 (per-frame walker) - details on the effect-VM subsystem page">
+    <a class="vm-card" href="subsystems/effect-vm.html" title="Details, including the driver function, on the effect-VM subsystem page">
       <div class="vm-card-num">VM 5</div>
       <div class="vm-card-title">Effect VM</div>
       <dl>
-        <dt>Where</dt>       <dd>Battle overlay (0898)</dd>
-        <dt>Shape</dt>       <dd>per-slot state machine (no central opcode table)</dd>
+        <dt>What it runs</dt> <dd>Battle sparks, slashes and spell visuals</dd>
+        <dt>Where</dt>       <dd>Battle overlay (PROT 0898)</dd>
+        <dt>Shape</dt>       <dd>per-slot state machine - no opcode table, by construction</dd>
         <dt>Pool</dt>        <dd>32 master + 128 child slots</dd>
-        <dt>Status</dt>      <dd><span class="tag tag-done">done</span></dd>
+        <dt>Status</dt>      <dd><span class="tag tag-done">ported</span></dd>
       </dl>
     </a>
   </div>
 
-  <p style="margin-top: 1rem;"><strong>How they wire together:</strong> field-VM op <code>0x22 EXEC_MOVE</code> stages a move record into the actor; the per-frame actor tick steps the move VM; move-VM opcode <code>0x2F</code> escapes to an overlay-resident extension dispatcher - a single 61-sub-opcode copy that lives in the field overlay (0897) only, so op <code>0x2F</code> executes only while that overlay is resident and battle-side move records cannot reach it. The motion VM runs independently per actor for NPC pathing and camera-follow paths. The effect VM is on a different track - battle-only - but shares the same actor model: every effect is bound to a master-slot actor that the script-VM and battle-action SM can reference. The linked subsystem pages carry the driver function addresses and traces.</p>
+  <h3>How they wire together</h3>
+  <p>The field VM drives the scene. When it needs an actor to perform something, it stages a move record into that actor, and the per-frame actor tick steps the move VM through it. One move-VM opcode escapes into an overlay-resident extension dispatcher that exists only while the town overlay is loaded, so battle-side move records can never reach it. The motion VMs run independently per actor for pathing and camera follow. The effect VM is battle-only, but every effect is bound to a master-slot actor that the script VM and the battle state machine can reference - the same actor model throughout. Driver addresses and traces are on the linked subsystem pages.</p>
 
   <figure class="vm-graph">
-    <svg viewBox="0 0 880 460" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="vm-graph-title">
-      <title id="vm-graph-title">Runtime VM call graph</title>
+    <svg viewBox="0 0 880 500" width="100%" style="max-width:880px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Runtime VM call graph: the field VM stages move records into actors, the per-actor tick steps the move VM, which can escape into an overlay extension; the actor, motion and effect VMs run independently on the same actor records">
+      <title>Runtime VM call graph</title>
       <defs>
         <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-          <path d="M0,0 L10,5 L0,10 z" fill="#58c4b3"/>
-        </marker>
-        <marker id="arrow-soft" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-          <path d="M0,0 L10,5 L0,10 z" fill="#636b76"/>
+          <path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/>
         </marker>
       </defs>
       <style>
-        .vm-box { fill: #131922; stroke: #58c4b3; stroke-width: 1.5; rx: 4; ry: 4; }
-        .vm-box-soft { fill: #131922; stroke: #2a323e; stroke-width: 1.2; rx: 4; ry: 4; }
-        .vm-title { font: 600 13px 'JetBrains Mono', monospace; fill: #c9d1d9; }
-        .vm-sub   { font: 11px 'JetBrains Mono', monospace; fill: #8b949e; }
-        .vm-edge  { stroke: #58c4b3; stroke-width: 1.5; fill: none; }
-        .vm-edge-soft { stroke: #636b76; stroke-width: 1.2; fill: none; stroke-dasharray: 4 3; }
-        .vm-label { font: 11px 'Inter', sans-serif; fill: #c9d1d9; }
-        .vm-band  { font: 10px 'Inter', sans-serif; fill: #636b76; letter-spacing: 0.06em; text-transform: uppercase; }
+        .vm-box { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.5; rx: 4; ry: 4; }
+        .vm-box-soft { fill: var(--bg-raised); stroke: var(--border); stroke-width: 1.2; rx: 4; ry: 4; }
+        .vm-title { font: 600 13px var(--font-mono), monospace; fill: currentColor; }
+        .vm-sub   { font: 11px var(--font-mono), monospace; fill: var(--text-muted); }
+        .vm-edge  { stroke: var(--accent); stroke-width: 1.5; fill: none; }
+        .vm-label { font: 11px var(--font-body), sans-serif; fill: currentColor; }
+        .vm-band  { font: 10px var(--font-body), sans-serif; fill: var(--text-muted); letter-spacing: 0.06em; text-transform: uppercase; }
       </style>
 
       <text x="20" y="22" class="vm-band">Per-frame scene tick</text>
       <rect x="280" y="36" width="320" height="58" class="vm-box"/>
       <text x="296" y="58" class="vm-title">Field / event VM</text>
-      <text x="296" y="76" class="vm-sub">FUN_801DE840 - 43 opcodes (town overlay)</text>
-      <text x="296" y="89" class="vm-sub">drives NPC movement, dialog, story flags</text>
+      <text x="296" y="76" class="vm-sub">43 opcodes - town / field overlay</text>
+      <text x="296" y="89" class="vm-sub">NPC movement, dialog, story flags</text>
 
       <path class="vm-edge" d="M440 94 L440 156" marker-end="url(#arrow)"/>
-      <text x="448" y="120" class="vm-label">op 0x22 EXEC_MOVE</text>
-      <text x="448" y="135" class="vm-label">→ FUN_800204F8 stages a move record</text>
+      <text x="452" y="120" class="vm-label">EXEC_MOVE</text>
+      <text x="452" y="135" class="vm-label">stages a move record into the actor</text>
 
       <text x="20" y="180" class="vm-band">Per-actor frame tick</text>
       <rect x="280" y="156" width="320" height="58" class="vm-box"/>
       <text x="296" y="178" class="vm-title">Actor tick</text>
-      <text x="296" y="196" class="vm-sub">FUN_80021DF4 - physics + anim per actor</text>
+      <text x="296" y="196" class="vm-sub">physics + animation, once per actor</text>
       <text x="296" y="209" class="vm-sub">steps the move VM each frame</text>
 
       <path class="vm-edge" d="M440 214 L440 274" marker-end="url(#arrow)"/>
-      <text x="448" y="240" class="vm-label">step move VM for active actor</text>
+      <text x="452" y="248" class="vm-label">step the active actor's move VM</text>
 
       <text x="20" y="298" class="vm-band">Per-actor opcode dispatch</text>
       <rect x="200" y="274" width="280" height="58" class="vm-box"/>
       <text x="216" y="296" class="vm-title">Move-table VM</text>
-      <text x="216" y="314" class="vm-sub">FUN_80023070 - 71 opcodes (SCUS)</text>
-      <text x="216" y="327" class="vm-sub">JT 0x80010778 - drives Tactical Arts</text>
+      <text x="216" y="314" class="vm-sub">71 opcodes - executable</text>
+      <text x="216" y="327" class="vm-sub">Tactical Arts, summons, props</text>
 
       <path class="vm-edge" d="M480 303 L520 303" marker-end="url(#arrow)"/>
       <rect x="520" y="274" width="280" height="58" class="vm-box"/>
       <text x="536" y="296" class="vm-title">Move VM extension</text>
-      <text x="536" y="314" class="vm-sub">FUN_801D362C - 61 sub-ops (overlay)</text>
-      <text x="536" y="327" class="vm-sub">JT 0x801CE868 - reached via op 0x2F</text>
+      <text x="536" y="314" class="vm-sub">61 sub-ops - town overlay only</text>
+      <text x="536" y="327" class="vm-sub">reached via the escape opcode</text>
 
-      <text x="20" y="370" class="vm-band">Independent per-actor / per-slot drivers</text>
-      <rect x="40" y="384" width="240" height="58" class="vm-box-soft"/>
-      <text x="56" y="406" class="vm-title">Actor / sprite VM</text>
-      <text x="56" y="424" class="vm-sub">FUN_801D6628 - 13 opcodes</text>
-      <text x="56" y="437" class="vm-sub">menu overlay (0899) - window widgets</text>
+      <text x="20" y="374" class="vm-band">Independent drivers - same actor records</text>
+      <rect x="40" y="388" width="250" height="58" class="vm-box-soft"/>
+      <text x="56" y="410" class="vm-title">Actor / sprite VM</text>
+      <text x="56" y="428" class="vm-sub">13 opcodes - menu overlay</text>
+      <text x="56" y="441" class="vm-sub">window widgets: shop, pause</text>
 
-      <rect x="320" y="384" width="240" height="58" class="vm-box-soft"/>
-      <text x="336" y="406" class="vm-title">Motion VM</text>
-      <text x="336" y="424" class="vm-sub">FUN_8003774C - 22 opcodes</text>
-      <text x="336" y="437" class="vm-sub">NPC pathing, camera follow</text>
+      <rect x="315" y="388" width="250" height="58" class="vm-box-soft"/>
+      <text x="331" y="410" class="vm-title">Motion VMs</text>
+      <text x="331" y="428" class="vm-sub">22 + 32 opcodes - executable</text>
+      <text x="331" y="441" class="vm-sub">NPC pathing, camera, cutscenes</text>
 
-      <rect x="600" y="384" width="240" height="58" class="vm-box-soft"/>
-      <text x="616" y="406" class="vm-title">Effect VM</text>
-      <text x="616" y="424" class="vm-sub">FUN_801E0088 walker (battle)</text>
-      <text x="616" y="437" class="vm-sub">32 master + 128 child slots</text>
+      <rect x="590" y="388" width="250" height="58" class="vm-box-soft"/>
+      <text x="606" y="410" class="vm-title">Effect VM</text>
+      <text x="606" y="428" class="vm-sub">per-slot walker - battle overlay</text>
+      <text x="606" y="441" class="vm-sub">32 master + 128 child slots</text>
 
-      <path class="vm-edge-soft" d="M280 413 L320 413" marker-end="url(#arrow-soft)"/>
-      <text x="284" y="408" class="vm-label" style="font-size:9px;fill:#636b76">share actor model</text>
+      <line x1="40" y1="468" x2="840" y2="468" stroke="var(--border)" stroke-width="1" stroke-dasharray="4 3"/>
+      <text x="440" y="486" class="vm-label" text-anchor="middle">all three read and write the same actor records as the chain above</text>
     </svg>
-    <figcaption>Field VM drives the scene; per-actor ticks step the move VM; the move VM jumps into an overlay extension via op <code>0x2F</code>. Actor / motion / effect VMs run independently but bind to the same actor records.</figcaption>
+    <figcaption>The field VM drives the scene; per-actor ticks step the move VM; the move VM can jump into an overlay extension. Actor, motion and effect VMs run independently but bind to the same actor records.</figcaption>
   </figure>
+
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/vm-inventory.md">VM inventory</a>
+    <a href="subsystems/script-vm.html">Field / event VM</a>
+    <a href="subsystems/move-vm.html">Move VM</a>
+    <a href="subsystems/motion-vm.html">Motion VMs</a>
+    <a href="subsystems/actor-vm.html">Actor / sprite VM</a>
+    <a href="subsystems/effect-vm.html">Effect VM</a>
+    <a href="reference/functions.html">Key functions</a>
+  </div>
+</section>
+
+<section class="doc-section" id="where-next">
+  <h2>Where to go next</h2>
+  <table>
+    <thead><tr><th>You want to…</th><th>Read</th></tr></thead>
+    <tbody>
+      <tr><td>See it running before reading anything</td><td><a href="play.html">Play the port</a>, <a href="viewer.html">asset viewer</a>, <a href="media.html">media browser</a></td></tr>
+      <tr><td>Install the tools or build from source</td><td><a href="quickstart.html">Quick start</a>, <a href="guides/getting-started.html">getting started</a></td></tr>
+      <tr><td>Understand one file format</td><td><a href="formats/index.html">Formats index</a> - each page has a confidence badge</td></tr>
+      <tr><td>Understand one part of the running game</td><td><a href="subsystems/index.html">Subsystems index</a></td></tr>
+      <tr><td>Mod or translate your own copy</td><td><a href="guides/modding-and-translation.html">Modding and translation</a>, then <a href="tooling/randomizer.html">randomizer</a> / <a href="tooling/translation.html">translation</a></td></tr>
+      <tr><td>Look up a function or RAM address</td><td><a href="reference/functions.html">Key functions</a>, <a href="reference/memory-map.html">memory map</a></td></tr>
+      <tr><td>Find an open question to work on, or check one already answered</td><td><a href="reference/open-rev-eng-threads.html">Open threads</a>, <a href="reference/re-settled-threads.html">settled threads</a>, <a href="reference/re-do-not-re-walk.html">do not re-walk</a></td></tr>
+    </tbody>
+  </table>
 </section>

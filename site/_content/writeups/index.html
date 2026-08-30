@@ -1,30 +1,36 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; write-ups</div>
   <h1>Technical write-ups</h1>
-  <p class="lede">Long-form walk-throughs of how a piece of the game was reverse-engineered and what the project built on top of it. The rest of the site is reference - per-format byte specs, per-subsystem function maps; these pages are the <em>narrative</em>: the reasoning, the dead ends, and the payoff, told in reading order.</p>
+  <p class="lede">Each write-up starts from something a player has seen - a randomizer seed, a battle that never ends, a fish that never bites - and follows it down into the disc. The rest of the site is reference; these pages are the narrative: what the finding is, how the mechanism works, and what the project built on it.</p>
 </header>
 
 <section class="doc-section" id="index">
-  <h2>Series</h2>
-  <ul>
-    <li>
-      <a href="disc-patching/index.html"><strong>Patching a sealed disc</strong></a>
-      - how the randomizer rewrites a retail Legaia disc with no source and no SDK, told as a ladder of <strong>injection techniques</strong>: from same-size byte edits, through editing inside compression and rewriting field-VM bytecode, up to hand-assembled MIPS hosted in a resident overlay's dead space (the in-shop Seru-trading vendor). One page per technique; the mods are the worked examples. Includes a generated <a href="disc-patching/index.html#catalog">mod catalog + roadmap</a>.
-    </li>
-    <li>
-      <a href="gaza-orbit-softlock.html"><strong>The endless camera orbit</strong></a>
-      - anatomy of a retail softlock: the 25-year-old &ldquo;battle freezes while the camera circles the party&rdquo; bug, caught live, traced to an approach animation that dies with nothing to re-stage it, reproduced on demand (a summon immediately before the boss's melee), and fixed with a nine-word in-place rewrite that makes the game's own staging state repair it. Links to the <a href="../tooling/rom-patcher.html">browser ROM patcher</a> where the fix ships.
-    </li>
-    <li>
-      <a href="spirit-fish.html"><strong>The Spirit fish gate</strong></a>
-      - fishing's rarest catch, decompiled: why the observed Spirit catch rate never matched the published 1-in-32 model. The rare spawn column is unreachable by the random roll - it sits behind a six-condition strike-time gate (a saved cast counter over 50 <em>and even</em>, the right lure <em>and rod</em>, the rare band, then 1-in-16) - and the &ldquo;Good!&rdquo; splash fires for four reel cadences of which only the Square-ending one sets the rare band. With the effective per-catch probabilities, and long-standing player observations mapped to their mechanisms.
-    </li>
-  </ul>
+  <h2>Reading list</h2>
+  <p>No reference page is required reading first - each article links out to the byte-level detail where it lives.</p>
+  <div class="card-grid">
+    <a class="card" href="disc-patching/index.html">
+      <div class="card-title">Patching a sealed disc</div>
+      <div class="card-body"><p><strong>What it is about.</strong> How the randomizer rewrites a retail Legaia disc with no source and no SDK - a ladder of six injection techniques, from same-size byte edits up to hand-assembled MIPS hosted in a menu overlay's dead space (the in-shop Seru-trading vendor).</p><p><strong>Why you might care.</strong> If you have wondered how a randomizer can exist for a game that was never meant to be modified, this is the answer, one technique per page, with a generated <a href="disc-patching/index.html#catalog">mod catalog + roadmap</a>.</p></div>
+    </a>
+    <a class="card" href="gaza-orbit-softlock.html">
+      <div class="card-title">The endless camera orbit</div>
+      <div class="card-body"><p><strong>What it is about.</strong> Anatomy of a retail softlock: the "battle freezes while the camera circles the party" bug, traced to an approach animation that dies with nothing to re-stage it, reproduced on demand, and fixed with a nine-word in-place rewrite.</p><p><strong>Why you might care.</strong> If Gaza's second fight ever ate a save of yours, this is what happened - and the fix ships in the <a href="../tooling/rom-patcher.html">browser ROM patcher</a>.</p></div>
+    </a>
+    <a class="card" href="spirit-fish.html">
+      <div class="card-title">The Spirit fish gate</div>
+      <div class="card-body"><p><strong>What it is about.</strong> Fishing's rarest catch, decompiled: the Spirit's spawn column is not on the dice at all. It sits behind a six-condition strike-time gate, and only one of the four "Good!" reel cadences selects it.</p><p><strong>Why you might care.</strong> Twenty years of player folklore about the Spirit, each observation mapped to the mechanism that produced it, with the real per-catch probabilities.</p></div>
+    </a>
+  </div>
 </section>
 
 <section class="doc-section" id="conventions">
   <h2>How to read these</h2>
-  <p>Each write-up leads with the <strong>reverse engineering</strong> - the static and runtime evidence that pinned a function, an offset, or a structure - and only then describes what was built. Addresses are PSX virtual addresses (<code>0x801C0000+</code> is the overlay window); function labels are Ghidra's <code>FUN_8xxxxxxx</code> entry points, cross-referenced to the per-subsystem and per-format reference pages. No Sony-owned bytes appear here or anywhere in the repo - only addresses, offsets, and the project's own clean-room code.</p>
+  <ul>
+    <li>Each page opens with the finding in plain words, then the mechanism, then a <strong>How we know</strong> table with the function addresses and dump files.</li>
+    <li>Addresses are PlayStation virtual addresses. <code>0x8000xxxx</code> is the always-resident executable; <code>0x801C0000+</code> is the window the game pages its per-mode overlays into.</li>
+    <li>Register-level walkthroughs sit in collapsed <em>Details</em> blocks - open them when you want the proof.</li>
+    <li>No Sony-owned bytes appear here or anywhere in the repo - only addresses, offsets, and the project's own clean-room code.</li>
+  </ul>
 </section>
 
 <section class="doc-section" id="see-also">
@@ -35,5 +41,7 @@
     <a href="../tooling/rom-patcher.html">ROM patcher (in browser)</a>
     <a href="../tooling/static-overlay-pipeline.html">Static overlay pipeline</a>
     <a href="../subsystems/shop.html">Shop subsystem</a>
+    <a href="../subsystems/battle-action.html">Battle action SM</a>
+    <a href="../minigames.html">Playable minigames</a>
   </div>
 </section>

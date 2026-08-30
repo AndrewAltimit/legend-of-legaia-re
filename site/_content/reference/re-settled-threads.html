@@ -1,994 +1,297 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">reference</a> &middot; settled threads</div>
   <h1>Settled reverse-engineering threads</h1>
-  <p class="lede">The questions about Legaia's runtime that have an answer - and, for each one, how firmly that answer is pinned. This is the archive half of the RE register: the live hunts are on <a href="open-rev-eng-threads.html">open RE threads</a>, and the disproved readings on <a href="re-do-not-re-walk.html">do not re-walk</a>.</p>
+  <p class="lede">Questions about how Legaia works that have an answer, and how firmly each answer is pinned. This is the archive half of the RE register: the live hunts are on <a href="open-rev-eng-threads.html">open RE threads</a>, and the readings that turned out wrong are on <a href="re-do-not-re-walk.html">do not re-walk</a>. This page is an index; every full write-up lives in the source document.</p>
 </header>
 
 <section class="doc-section" id="overview" data-doc="how-a-thread-is-laid-out">
-  <h2>How to use this page</h2>
-  <p>Look here when you need the answer to something, or when you are about to build on a claim and want to know what it rests on. Each row carries a one-line current answer; byte-level detail lives on the linked page, and the full working notes live in <code>docs/reference/re-settled-threads.md</code>.</p>
-  <p><strong><code>resolved</code> is a claim, not a warranty.</strong> That is what the evidence column is for.</p>
+  <h2>How to read this page</h2>
+  <p>A <strong>thread</strong> is one question the project stopped to ask - why a boss battle freezes with the camera circling, where the party's battle models come from, which routine swaps the music. A thread is <strong>settled</strong> when it has an answer that can be pointed at: an instruction sequence, a runtime capture, or a measurement taken off the disc. <code>resolved</code> is a claim, not a warranty - which is what the evidence column is for.</p>
+  <p>Each area below is one table. A row gives the question, a one-line verdict, the <a href="#grades">evidence grade</a>, and a link to the full write-up - every address, capture and correction - at its anchor in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md" target="_blank" rel="noopener"><code>docs/reference/re-settled-threads.md</code></a>. The areas run from the overworld inwards (world map, battle, field, text, animation, audio, boot, rendering) and end with the project's own instruments.</p>
+  <dl class="kv">
+    <dt>Source of record</dt><dd><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md" target="_blank" rel="noopener"><code>docs/reference/re-settled-threads.md</code></a></dd>
+    <dt>Row lifecycle</dt><dd><a href="open-rev-eng-threads.html">open</a> &rarr; settled (here) &rarr; <a href="re-do-not-re-walk.html">falsified</a> if a later reading overturns it</dd>
+    <dt>Function names</dt><dd>A <code>FUN_&lt;addr&gt;</code> in a row is described in <a href="functions.html">key functions</a></dd>
+    <dt>Function-level view</dt><dd><a href="../tooling/port-catalog.html">Port catalog</a> - dumped &times; documented &times; ported per routine</dd>
+  </dl>
 </section>
 
 <section class="doc-section" id="grades" data-doc="the-evidence-column">
   <h2>What an evidence grade means</h2>
-  <p>Every settled row is graded by what its own stated evidence actually rests on. Where a row cites more than one kind, it is graded by the <strong>weakest load-bearing</strong> claim - the one that breaks the conclusion if it is wrong.</p>
+  <p>Every thread is graded by what its stated evidence rests on. A thread citing more than one kind is graded by the <strong>weakest load-bearing</strong> claim - the one that breaks the conclusion if it is wrong.</p>
   <table>
-    <thead><tr><th>Grade</th><th>The row cites</th></tr></thead>
+    <thead><tr><th>Grade</th><th>The thread cites</th></tr></thead>
     <tbody>
-      <tr><td><span class="tag tag-done">disassembly</span></td><td>Instructions, addresses, opcode encodings, branch or store sequences. The strongest grade.</td></tr>
-      <tr><td><span class="tag tag-done">capture</span></td><td>A runtime capture, save state, probe, firehose, or disc-derived oracle.</td></tr>
-      <tr><td><span class="tag tag-partial">decompiled-C</span></td><td>Ghidra's C output, a <code>FUN_x(...)</code> call signature, a Ghidra label, or a claim about store order / store count / a boolean operator with no instruction behind it.</td></tr>
+      <tr><td><span class="tag tag-done">disassembly</span></td><td>Instructions, addresses, opcode encodings, branch or store sequences read from the MIPS code. The strongest grade.</td></tr>
+      <tr><td><span class="tag tag-done">capture</span></td><td>A runtime capture: a save state, an emulator probe, a write watchpoint, a trace, or a measurement taken off the disc.</td></tr>
+      <tr><td><span class="tag tag-partial">decompiled-C</span></td><td>Ghidra's C output, a <code>FUN_x(...)</code> call signature, a Ghidra label, or a claim about store order / count / a boolean operator with no instruction behind it.</td></tr>
       <tr><td><span class="tag tag-partial">inference</span></td><td>Reasoning from surrounding facts, corpus absence, or analogy, with no direct evidence cited.</td></tr>
     </tbody>
   </table>
-  <p><strong><code>decompiled-C</code> is the re-audit bucket, not a wrong-answer bucket.</strong> It marks a claim nobody has confirmed against instructions. Most are probably right; the point is that none has been checked, and every claim falsified in the last audit wave would have graded <code>decompiled-C</code>. The C is a rendering: dropped register arguments, <code>||</code> printed as nested <code>if</code>s, reordered or omitted stores, and hand-written annotations read as fact have each already put a wrong statement on these pages.</p>
+  <p><strong><code>decompiled-C</code> is the re-audit bucket, not a wrong-answer bucket.</strong> It marks a claim nobody has confirmed against instructions. Three shapes carry most of the risk: evidence citing a call signature or a <code>funcs/&lt;addr&gt;.txt</code> dump rather than instructions, any claim about store <em>order</em> or <em>count</em>, and any claim about which boolean operator a predicate uses. The catalogue of C-rendering artifacts is on <a href="../tooling/ghidra.html">Ghidra workflow</a>.</p>
 </section>
 
 <section class="doc-section" id="world-map" data-doc="world-map--kingdom-bundles">
   <h2>World map / kingdom bundles</h2>
+  <p>The overworld: kingdom bundles, continent terrain, the slot-4 mesh library and the place-name carriers.</p>
+  <div style="overflow-x:auto">
   <table>
-    <thead><tr><th>Thread</th><th>Status</th><th>Evidence</th><th>Current answer</th><th>Detail</th></tr></thead>
+    <thead><tr><th>Thread</th><th>Verdict</th><th>Evidence</th><th>Write-up</th></tr></thead>
     <tbody>
-      <tr>
-        <td>World-map walk-view continent ground render</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td>A procedural heightfield (<code>FUN_80019278</code> bilinearly samples the <code>+0x4000</code> nibbles) with per-cell texturing from the object record <code>+0x14..+0x16</code>; slot-1 pack meshes are only sparse landmarks. Shipped in the engine.</td>
-        <td><a href="../subsystems/world-map.html">world-map</a></td>
-      </tr>
-      <tr>
-        <td><code>DAT_8007C018[45..53]</code> mid-load vertex-pool pointers</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-partial">inference</span></td>
-        <td>Structural: <code>DAT_8007C018[i]</code> is meaningful only for <code>i &lt;= DAT_8007BB38</code> (the walker counter); entries above it - including <code>45..53</code> in small field scenes - are stale carryover, never dereferenced. No per-index "vertex-pool" semantic.</td>
-        <td><a href="memory-map.html">memory-map</a></td>
-      </tr>
-      <tr>
-        <td>Field decoration path - does it dispatch the NCC light handlers?</td>
-        <td><span class="tag tag-done">resolved (no field light; depth-cue only)</span></td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td>It does not. The field decoration path never reaches the NCC light handlers - field shading is the GTE depth cue alone, with no light source applied.</td>
-        <td><a href="../subsystems/renderer.html">renderer</a></td>
-      </tr>
-      <tr>
-        <td>Kingdom slot 4 - per-record semantic + consumer</td>
-        <td><span class="tag tag-done">resolved</span> (read in place; <code>attr</code> render-unused)</td>
-        <td><span class="tag tag-done">capture</span> + <span class="tag tag-done">disassembly</span></td>
-        <td>Each 8-byte record is a <strong>GTE vertex</strong>: the cluster-A handler <code>FUN_80044c14</code> loads its two words into the GTE vertex registers and <code>RTPT</code>-transforms them, and each slot-4 body is a self-contained render packet (header + object-local vertex pool) walked <strong>in place</strong> - there is no transcode and no separate command-stream builder. <code>kind</code> tags body class/scope (the <code>kind 1</code> bodies are byte-identical across all three kingdoms - a shared mesh library); <code>attr</code> is genuinely per-vertex yet the full handler-family sweep finds no reader - authoring data the render path ignores.</td>
-        <td><a href="../formats/world-map-overlay.html">world-map-overlay</a></td>
-      </tr>
+      <tr id="t-world-map-walk-view-continent-ground-render"><td>World-map walk-view continent ground render</td><td>resolved</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#world-map-walk-view-continent-ground-render" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-dat_8007c0184553-mid-load-vertex-pool-pointers"><td><code>DAT_8007C018[45..53]</code> mid-load vertex-pool pointers</td><td>structural</td><td><span class="tag tag-partial">inference</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#world-map--kingdom-bundles" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-field-decoration-path---does-it-dispatch-the-ncc-light-handlers"><td>Field decoration path - does it dispatch the NCC light handlers?</td><td>no field light; depth-cue only</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#field-decoration-path---does-it-dispatch-the-ncc-light-handlers" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-kingdom-slot-4---per-record-semantic"><td>Kingdom slot 4 - per-record semantic + consumer</td><td>read in place; <code>attr</code> render-unused</td><td><span class="tag tag-done">disassembly</span> <span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#kingdom-slot-4---per-record-semantic" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-man-sections-2-and-5---what-do-_dat_801c6ea0--dat_80073ee0-carry"><td>MAN sections 2 and 5 - what do <code>_DAT_801C6EA0</code> / <code>DAT_80073EE0</code> carry?</td><td>both are place-name carriers</td><td><span class="tag tag-done">disassembly</span> <span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/place-names.md" target="_blank" rel="noopener">doc</a></td></tr>
     </tbody>
   </table>
+  </div>
 </section>
 
 <section class="doc-section" id="battle" data-doc="battle--arts--level-up">
   <h2>Battle / arts / level-up</h2>
+  <p>Battle load, the action state machine, arts and Super Arts, damage kernels, the party HUD, level-up and the boss softlocks.</p>
+  <div style="overflow-x:auto">
   <table>
-    <thead><tr><th>Thread</th><th>Status</th><th>Evidence</th><th>Current answer</th><th>Detail</th></tr></thead>
+    <thead><tr><th>Thread</th><th>Verdict</th><th>Evidence</th><th>Write-up</th></tr></thead>
     <tbody>
-      <tr>
-        <td>Arts command-input UI decomposition (the Muscle Dome runs the standard battle input)</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td>A live dome match in the static recomp, read through the runtime's <code>gpu_frame_dump</code> GP0 packet ring + a same-moment full-VRAM dump, pins the input screen piece by piece: the High/Left/Right/Low chips are boot-gap widget-page hexagon pieces + baked label strips + gold diamond ends; the input bar is the tiled maroon widget bar filling with committed-command pennants at cost-wide pitch; the right-hand AP plate reads the <em>Spirit</em> gauge (the entry budget's only visible form is the bar); Triangle cycles a five-row-per-page learned-arts window (system-UI interior tiles under a <code>0x40..0x88</code> gouraud) whose name / arrow-string / AP columns are the SCUS arts-name table's own, in orange sub-palette 15; the green Triangle circle is its own tiny gap TIM at <code>PROT.DAT 0x7B00</code>. Flow pinned live: per-press budget debit + queue append, auto-end on exhaustion (<code>0x50 &rarr; 0x5a</code>), the Begin|Reselect chain (<code>0x6e</code>), Triangle inert with no learned arts.</td>
-        <td><a href="../minigames.html#muscle-dome">muscle dome</a> &middot; <a href="../subsystems/arts-command-gauge.html">arts gauge</a></td>
-      </tr>
-      <tr>
-        <td>Encounter MAN sub-section layout</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-partial">decompiled-C</span></td>
-        <td><code>FUN_8003AEB0</code> walks the MAN multi-section header; the region table is a count-prefixed array of 18-byte records (kind + tile-space bounding box + a per-region camera preset). The camera payload <code>bytes[5..17]</code> is decoded byte-for-byte: three mode-keyed splits on <code>byte[5] &gt;&gt; 4</code> into the <code>0x8007B607..27</code> camera globals (loader <code>FUN_801dbc20</code>, builder <code>FUN_801dab90</code>). Residual: the mask-kind records' scratchpad side-copy (<code>0x1F8003E8..EB</code>) has no traced reader.</td>
-        <td><a href="../formats/encounter.html#camera-region-table">encounter</a></td>
-      </tr>
-      <tr>
-        <td>Endless camera orbit (Gaza 2 softlock) - the <code>0x19</code> attack-approach park</td>
-        <td><span class="tag tag-done">resolved</span> (caught live; root-caused; disc fix shipped)</td>
-        <td><span class="tag tag-done">capture</span> + <span class="tag tag-done">disassembly</span></td>
-        <td>State <code>0x14</code> (attack approach setup) looks up the approach-transition clip - action tag <code>0x20</code>, distinct from the tag-<code>1</code> "Move" locomotion loop the enemy viewer shows (that one is only played inside the walk chain this gate protects) - in the acting monster's action table (<code>FUN_80050E2C</code> over <code>record+0x4C</code>); when absent (bosses generally never walk; Gaza's parked-save table reads <code>[00 01 02 03 04 05 0B 0E 13 0C 23 23]</code>), the fallback drops straight into the state-<code>0x19</code> range re-poll, whose SM arm has <strong>no movement code and no timeout</strong>. The staged Move clip's playback normally still closes the gap during <code>0x19</code> (~19 units/vsync, measured); in the caught parks the clip engages and dies ~12 vsyncs in (anim pair back to <code>0/0</code>, frozen beyond reach), so the attack waits forever while the idle camera orbits. Trigger reproduced: a summon immediately followed by the boss's melee; the anim-driver field the staging leaves stale is pinned in the next row. Caught live by the poll-only dynarec-speed hunter (scenario <code>battle_gaza2_park_0x19</code>); the stall counter <code>ctx[+0x6D4]</code> feeds only the arms-resolver roll. Fix: <code>legaia-patcher --approach-softlock-fix</code> - a nine-word guard replacing the poll's redundant facing recompute: a dead approach clip bounces the state back to <code>0x14</code>, retail re-stages it, and the boss resumes walking (runtime-verified on both park savestates). The sibling <code>0x51</code> HP-settle class stays injection-only (twelve-revive retail campaign; both candidate generators measured out).</td>
-        <td><a href="../subsystems/battle-action.html">battle-action</a></td>
-      </tr>
-      <tr>
-        <td><code>0x19</code> fallback approach drive - which anim-driver field does summon staging leave stale?</td>
-        <td><span class="tag tag-done">resolved</span> (pinned + causally reproduced)</td>
-        <td><span class="tag tag-done">capture</span> + <span class="tag tag-done">disassembly</span></td>
-        <td>The battle actor's anim event-flag byte <code>+0x1DC</code>, bit 2 (<code>0x4</code>) - the <strong>stage-idle-at-clip-end</strong> flag. The summon's hit stages the flinch with <code>+0x1DC |= 4|1</code>; when the boss's melee follows immediately, state <code>0x14</code>'s fallback stages the Move clip through the tick's event-path commit, which clears only bits 0-1 where the natural-end path clears bits 0-2 - so the Move clip runs with bit 2 still set and, at its first natural end, the tick stages idle over the queued clip (<code>sb zero,0x1da</code> at <code>0x80047B44</code>) instead of re-looping. Both halves replayed causally on the parked save (clearing the flag lets the clip loop and arrive; re-arming it reproduces the kill write at exactly the first natural end). The park save reads <code>+0x1DC == 0</code> because the killing commit consumed the flag - it is only visible in flight.</td>
-        <td><a href="../subsystems/battle-action.html">battle-action</a></td>
-      </tr>
-      <tr>
-        <td>Super / Miracle Arts trigger chain</td>
-        <td><span class="tag tag-done">resolved</span> (all 15 Supers live-executed)</td>
-        <td><span class="tag tag-done">disassembly</span> + <span class="tag tag-done">capture</span></td>
-        <td>Saved-chain preseed <code>FUN_801DA34C</code> (verbatim <code>+0x76F &rarr; +0x1DF</code> copy - the char-record chain uses the queue-space encoding), queue-builder <code>FUN_801EED1C</code> (ActionSeed <code>0x0C</code>), Miracle replacement inline, Super find&rarr;tail-replace in <code>FUN_801EF9E4</code> (table-driven off <code>(actor slot, char index)</code>; find <code>0x801F6524 + char*65 + row*13</code>, replace <code>0x801F65E8 + char*80 + row*16</code>, first-match-wins). The queue proper is 16 bytes at <code>actor[+0x1DF..+0x1EE]</code>. All 30 resident find/replace strings byte-exact vs the modeled tables, and all 15 Supers live-executed via applier-entry injection, each tail-replace byte-exact; per-character library states re-checked by <code>crates/pcsxr/tests/super_art_queue_replace.rs</code>.</td>
-        <td><a href="../subsystems/battle-action.html">battle-action</a></td>
-      </tr>
-      <tr>
-        <td>Xain "Bloody Horns"/"Terio Punch" ignore elemental guards (community mystery)</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">disassembly</span> + <span class="tag tag-done">capture</span></td>
-        <td>Not an element drop - a <strong>resist-ladder bypass</strong>. Capture-class casts (spell byte <code>+0</code> = <code>'c'</code>) run per-spell modules (PROT 944..966) whose damage calls pick one of two wrappers: <code>FUN_801DD4B0</code> (finisher <code>param_5=0</code>, resist ladder runs) or <code>FUN_801DD6B4</code> (<code>param_5=1</code>, the whole party-defender jewel/guard block is skipped). BH (952) / TP (953) use the bypass wrapper for their main hits; enemy ESM (966) uses the respecting one (hence Cort reads as Dark). Element attribution law + live confirmation: <a href="../subsystems/battle-formulas.html">battle-formulas</a>.</td>
-        <td><a href="../formats/spell-table.html">spell-table</a></td>
-      </tr>
-      <tr>
-        <td>First boss trigger &rarr; Battle</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">disassembly</span></td>
-        <td>The scripted-battle arm is the field-VM op <code>3E FF &lt;formation_row&gt;</code>: Zeto = garmel <code>P2[12]</code> row 9 (lone <code>0x4B</code>), Caruban = rikuroa stager <code>P1[3]</code> row 17 (lone <code>0x49</code>) - the same record path, entered organically by the engine (<code>World::run_boss_stager_record</code>). <code>DAT_8007b7fc</code> is closed: writer-less across <code>SCUS_942.54</code> + every static overlay (absolute + gp-relative + address-materialisation sweep); readers pin it as the <strong>debug forced-battle formation id</strong> - battle init <code>FUN_80055b6c</code> &rarr; <code>FUN_8005567c</code> seeds the formation cells <code>DAT_8007BD0C+</code> from it, and <code>FUN_80046A20</code> routes a nonzero value to its mode-0 debug-menu exit. Retail never sets it.</td>
-        <td><a href="../subsystems/battle.html">battle</a></td>
-      </tr>
-      <tr>
-        <td>Enemy-ally charm battle softlock</td>
-        <td><span class="tag tag-done">resolved</span> (both tracks fixed)</td>
-        <td><span class="tag tag-done">disassembly</span></td>
-        <td>The state-<code>0x5A</code> victory arm's party-slot assumption OOB-indexes the win-pose roster <code>DAT_8007BD10</code> (via <code>0x801E6770</code>) when a living charmed ally is the acting actor at monster-wipe victory - the <code>FUN_801E7320</code> "unbounded reroll" theory is falsified (<a href="re-do-not-re-walk.html">do not re-walk</a>). Fixed on both tracks: engine <code>victory_pose_fixup</code>/<code>charm_widen</code>, and the disc-side <code>legaia_patcher::charm_fix</code> guard - a single-word detour at the <code>0x801E6690</code> keep-branch into a SCUS dead-space liveness guard.</td>
-        <td><a href="../subsystems/battle.html">battle</a></td>
-      </tr>
-      <tr>
-        <td>Battle-actor <code>+0x16E</code> bit <code>0x400</code> applier (guard-disabling status)</td>
-        <td><span class="tag tag-done">resolved</span> (exhaustive negative)</td>
-        <td><span class="tag tag-done">disassembly</span></td>
-        <td>Bit <code>0x400</code> has <strong>no retail setter</strong>: a word-level decode of <code>SCUS_942.54</code> plus every static-overlay image (all stores covering <code>+0x16C..+0x171</code>, pointer precomputes, <code>ori</code>/<code>sllv</code> bit-set shapes, the <code>+0x6F6</code> mirror, the <code>+0x21F</code> deferral) finds only clears. The infliction appliers (hit leg <code>FUN_801EC3E4</code>, cast leg <code>FUN_801E09F8</code>) map kinds 3/4/5/6 to bits <code>0x1</code>/<code>0x2</code>/random-<code>0x38</code>/<code>0x1000</code> and kinds 1-2 to the <code>0x380</code> deferral; no kind reaches <code>0x400</code>. Latent content with a full consumer/cure lifecycle.</td>
-        <td><a href="../subsystems/battle.html">battle</a></td>
-      </tr>
-      <tr>
-        <td>Effect-VM pass-1 "state token algebra" (<code>FUN_801E0088</code>)</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td>Fully extracted: the "state" bytes are 5.3 fixed-point <strong>wait counters</strong>, not opcodes &mdash; the lifecycle is two countdown-driven cursor walks (master spawn cadence over 14-byte pack1 records, child anim/motion over 6-byte pack0 frames). The pack1 record fields are re-pinned (anim-batch index + delay + rotated offsets/velocities; the old <code>sprite_id</code>/<code>anim_flags</code>/<code>tail</code> reading is superseded), the init immediates <code>(0x1000, 0xA00)</code> resolve as the global motion + sprite-scale scalars, and pass 2's triangular brightness envelope + random UV-mirror bits are decoded. A faithful <code>Pool::tick</code> port is still owed.</td>
-        <td><a href="../subsystems/effect-vm.html">effect-vm</a></td>
-      </tr>
-      <tr>
-        <td>Seru-magic summon visual (e.g. Tail Fire)</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td>The player summon renders as its namesake <code>battle_data</code> creature (Gimard <code>0x81</code> &rarr; monster 10; disc-pinned through <code>0x95</code>) via the ordinary rigid TRS-keyframe battle draw - not the move-VM stager scene-graph, and not PROT 0900.</td>
-        <td><a href="../subsystems/move-vm.html">move-vm</a></td>
-      </tr>
-      <tr>
-        <td><code>summon.dat</code> / <code>readef.DAT</code> side-band streaming</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-partial">decompiled-C</span></td>
-        <td>Extraction PROT 893/894, <code>0x10800</code>-byte slots: per-special CLUT rows + texture pages + summon-creature actor records + the player art-anim "ME" archives. Action id &rarr; slot <code>3*(id-1)</code> (<code>id &lt; 0x9A</code>) else <code>4*id + 0x63</code>; bit 7 selects the file.</td>
-        <td><a href="../formats/summon-readef.html">summon-readef</a></td>
-      </tr>
-      <tr>
-        <td>Monster steal item (Evil God Icon)</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td>Static SCUS table <code>DAT_80077828 + id*2</code> (1-based monster id): <code>[steal_chance_pct, steal_item_id]</code> - chance first. Not in the PROT 867 record. Byte-exact vs the published steal table.</td>
-        <td><a href="../formats/steal-table.html">steal-table</a></td>
-      </tr>
-      <tr>
-        <td>Battle face-stamp issuing site</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td>The per-frame facial animator <code>FUN_8004C7B4</code> stamps eye/mouth frames every frame (action-entry tracks <code>+0x8C</code>/<code>+0x98</code>, static per-character SCUS tables, via <code>MoveImage</code>; Terra skipped). The sibling-pass residue is closed: <code>FUN_8004CCD4</code> is not a stamp - it is the per-frame equipment mesh-variant swap driven by the entry's third track at <code>+0xA4</code> (retail windows Noa-only), re-run per after-image ghost by the arts trail renderer.</td>
-        <td><a href="../formats/battle-data-pack.html">battle-data-pack</a></td>
-      </tr>
-      <tr>
-        <td>Per-spell magic power / multiplier</td>
-        <td><span class="tag tag-done">resolved</span> (mechanism + roll ported)</td>
-        <td><span class="tag tag-partial">decompiled-C</span></td>
-        <td>Summon power is battle-state-derived, not a static scalar: roll <code>FUN_801dd0ac</code> &rarr; affinity scale <code>FUN_801dd864</code> &rarr; finisher <code>FUN_801ddb30</code>, all ported. Arts/specials read the 26-byte move-power table at <code>0x801F4F5C</code> (PROT 0898). <a href="#d-move-power">details &darr;</a></td>
-        <td><a href="../formats/move-power.html">move-power</a></td>
-      </tr>
-      <tr>
-        <td>Arts command sequence - independent source</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td>The SCUS arts-name table (<code>DAT_80075EC4</code>) glyph string is byte-exact ground truth for every art's directional command; contract tests validate the PROT <code>0x05C4</code> record decode and the curated gamedata against it.</td>
-        <td><a href="../formats/art-data.html">art-data</a></td>
-      </tr>
-      <tr>
-        <td>Weapon-specialty arm width</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td>Not a runtime comparison: the Arms AP cost is a per-(character, weapon) disc byte at the weapon section's swing record <code>+0x74</code> (favored <code>0x1E</code> / off-class <code>0x2A</code> / far <code>0x36</code>), copied verbatim at battle load by <code>FUN_800557B8</code>.</td>
-        <td><a href="../subsystems/arts-command-gauge.html">arts-command-gauge</a></td>
-      </tr>
-      <tr>
-        <td>Stat growth-rate source</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td>Resolved + wired: static SCUS tables read by <code>FUN_801E9504</code> - <code>DAT_80076918</code> per-character <code>{start, max, jitter, row}</code> sub-records + three curves; gain = <code>(max-start)*curve/0x24C0</code> &plusmn; jitter. Byte-validated; wired in <code>engine-core/src/levelup.rs</code>.</td>
-        <td><a href="../subsystems/level-up.html">level-up</a></td>
-      </tr>
-      <tr>
-        <td>Character-record HP/MP/AP pair order is <code>(max, cur)</code></td>
-        <td><span class="tag tag-done">resolved</span> (relabeled throughout)</td>
-        <td><span class="tag tag-partial">decompiled-C</span></td>
-        <td>Three independent sources - the walk-regen tick <code>FUN_801D0B90</code> (bumps <code>+0x106</code>, clamps at <code>+0x104</code>), the per-frame stat aggregator <code>FUN_80042558</code> (rewrites <code>+0x104</code> from base stats + passives), and the GameShark "Infinite HP" codes (write <code>+0x106</code> at every character stride) - agree <code>+0x104/+0x108/+0x10C</code> are the effective maxima and <code>+0x106/+0x10A/+0x10E</code> the currents. Beware: fresh-save fixtures mask a swap (cur == max at seed).</td>
-        <td><a href="cheats.html">cheats</a></td>
-      </tr>
-      <tr>
-        <td>Monster stat-record archive source</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td>PROT 0867 (the <code>monster_data</code> block): <code>FUN_800542C8</code> streams per-monster <code>0x14000</code> LZS slots; each head is the <code>FUN_80054CB0</code> stat record (name, battle-TMD offset, HP/MP, six stats, rewards at <code>+0x44..0x49</code>).</td>
-        <td><a href="../formats/monster-animation.html">monster-animation</a></td>
-      </tr>
-      <tr>
-        <td>Monster mesh + texture pool</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td>A Legaia TMD at stat record <code>+0x04</code> in each PROT 867 block; the pool at <code>+0x08</code> is fifteen 16-colour CLUTs + a 4bpp page (the loader relocates CBA/TSB per slot; disc values are nominal).</td>
-        <td><a href="../formats/monster-animation.html">monster-animation</a></td>
-      </tr>
-      <tr>
-        <td>Terra slot-3 / story-flag overlap</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td>A header-size drift: the record base is <code>game+0x3C8</code> (name at <code>+0x2A7</code>). Terra's tail benignly aliases the story-flag bitmap - she is never a savable battle-party member. No special case.</td>
-        <td><a href="../formats/save-record.html">save-record</a></td>
-      </tr>
-      <tr>
-        <td>Battle party meshes (PROT 1204 / <code>other5</code>)</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td>Battles assemble each character's mesh at setup from the player battle files' equipment-id sections (<code>FUN_80052770</code> case 4 &rarr; <code>FUN_80052FA0</code> &rarr; <code>FUN_800536BC</code> splice), with load-time TSB/CBA relocation to rows 481-483. PROT 1204 is the Baka Fighter / default-equipment sibling.</td>
-        <td><a href="../formats/character-mesh.html">character-mesh</a></td>
-      </tr>
-      <tr>
-        <td>MP-cost ability-bit priority (half vs quarter)</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">disassembly</span></td>
-        <td>Half (<code>0x20</code>) wins over Quarter (<code>0x10</code>); the formula subtracts a shifted copy: half = <code>cost-(cost&gt;&gt;1)</code>, quarter = <code>cost-(cost&gt;&gt;2)</code> (pay 3/4). All engine cast paths share one helper.</td>
-        <td><a href="../subsystems/battle-formulas.html">battle-formulas</a></td>
-      </tr>
-      <tr>
-        <td>Scripted Tetsu encounter &rarr; Battle</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td>Reaches Battle from a NEW GAME cold boot: the MAN-derived sparring carrier (town01 formation index 4, monster <code>0x4F</code>) is engaged by walking to it, the interaction probe, and the dialogue-accept - no teleport, no injection; the row selection is the standard scripted-battle op <code>3E FF 04</code> in <code>P1[10]</code>. <a href="#d-tetsu">details &darr;</a></td>
-        <td><a href="../subsystems/battle.html">battle</a></td>
-      </tr>
-      <tr>
-        <td>Spine flag <code>0x142</code> (Caruban beat / dolk-dolk2 switch) writer</td>
-        <td><span class="tag tag-done">resolved</span> (disc writers + engine port + oracle)</td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td>Plain field-VM <code>51 42</code> SETs in the rikuroa <strong>streaming variant MAN</strong>
-        (PROT 0157: <code>P1[10..12]</code> + post-victory <code>P2[50]</code>, C1 = <code>0x142</code> itself - the self-latching
-        one-shot), re-asserted by dolk2's carrier <code>P1[0..1]</code>, cleared by dolk <code>P1[26]</code>. An earlier corpus-negative
-        stood only because no census walked the streaming carriers (census + pins: <code>man_variant_carrier_census_disc.rs</code>);
-        the engine sets the flag organically when rikuroa <code>P2[50]</code> executes on the Battle&rarr;Field edge.</td>
-        <td><a href="../subsystems/world-map.html">world-map</a></td>
-      </tr>
-      <tr>
-        <td>Spine flag <code>0x482</code> (Drake mist-wall) writer</td>
-        <td><span class="tag tag-done">resolved</span> (writer-less; the "direct code path" presumption falsified)</td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td>No script writer exists: every census site for <code>0x482</code> is a <strong>desynced-walker alias of Shift-JIS text</strong> - the <code>other7</code> "SETs" are the full-width digit run <code>82 54 82 4F</code> read one byte off as <code>54 82</code>, the <code>edbalden</code>/<code>eddoman</code> "CLEARs" are a repeating full-width <code>EXIT</code> label table, the <code>edbylon</code> "TEST" is dialogue with a garbage branch target. The census carries a per-site decode-coherence flag (<code>GFlagSite::clean</code>) and the anchor asserts all 37 sites non-clean (<code>man_variant_carrier_census_disc.rs</code>); motion-VM + op-0x49 censuses find no site either. The named capture then ran: a byte write-watch on <code>0x800857E8</code> (<code>autorun_flag_writer_watch.lua</code>) across the whole post-Zeto beat (battle exit, mist-clear FMV, <code>map01</code> arrival). The only write to the byte is the SET helper re-latching <code>0x484</code>; <code>0x482</code> never flips, every catalogued state through the Karisto era holds it clear, and all 37 census sites stay desynced. Verdict: <strong>no writer ever fires</strong> - the presumed direct code path is falsified, the <code>map01</code> <code>P2[34..36]</code> C1 spawn-block never latches, and wall despawn is not flag-driven. (Flag 549's identical verdict was overturned by the <code>4C 0xE_</code> width fix; <code>0x482</code> stays all-noise under the fixed widths.) Reader side is solid: <code>map01</code> <code>P2[34..36]</code> C1 force-walk bands (header gates, not disasm). Bonus identity: <code>other7</code> = a dev-leftover <strong>earlier revision of koin3's MAN</strong> (its 8 P2 records are a name-exact prefix subset of koin3's 12; no loader in any captured code).</td>
-        <td><a href="../subsystems/world-map.html">world-map</a></td>
-      </tr>
-      <tr>
-        <td>CDNAME scene-window frame (<code>raw = extraction + 2</code>) in <code>Scene::load</code></td>
-        <td><span class="tag tag-done">resolved</span> (engine converts; misattributions corrected)</td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td>Engine scene windows used raw-TOC defines as extraction indices - two entries late, dropping each block's first two retail entries and bleeding in the next block's. Corrections that fell out: the <code>.MAP</code> is the retail block's first entry (not "two below"); "suimon == dolk2 MAN" and "rikuroa MAN = <code>[18,70,20]</code>" were next-block sidecars under the wrong label; "urudre1 tests <code>0x15E</code>" and "<code>0x63A</code> has no writer" are falsified; "<code>0x1BE</code> = rikuroa Zeto gate" was geremi's arrival one-shot. Head blocks (defines 0/1, inside the TOC header rows) keep legacy windows. See <a href="../formats/cdname.html#numbering-space">cdname &sect; numbering space</a>.</td>
-        <td><a href="../formats/cdname.html">cdname</a></td>
-      </tr>
-      <tr>
-        <td>Motion-VM (<code>FUN_80038158</code>) bytecode carrier + flag census</td>
-        <td><span class="tag tag-done">resolved</span> (carrier pinned; spine flags negative)</td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td>The second motion VM's bytecode source is <strong>MAN tail-section 1</strong> (<code>FUN_8003AEB0</code> installs it; <code>FUN_8003A9D4</code> binds records to actors; parser <code>legaia_asset::man_motion</code>). Disc-wide op-7/op-8 census (<code>man-scripts --motion-flag-census</code>): overworld walking-band choreography (<code>map02</code>/<code>map03</code>) + one <code>town0b</code> clear; <code>0x142</code>/<code>0x482</code>/<code>0x1BE</code> and <code>549</code> appear in no stream, falsifying the "549 set by op-7 bytecode" carrier claim. Anchor test <code>motion_flag_census_disc.rs</code>.</td>
-        <td><a href="../subsystems/motion-vm.html">motion-vm</a></td>
-      </tr>
-      <tr>
-        <td>Debug-menu "STR trigger teleports + sets flags" mechanism</td>
-        <td><span class="tag tag-done">resolved</span> (no per-FMV event table; dev-menu tools explain it)</td>
-        <td><span class="tag tag-partial">decompiled-C</span></td>
-        <td>The FMV dispatch record is playback-only (<code>legaia_asset::fmv_dispatch</code> - no scene/position/flag fields) and the two direct <code>_DAT_8007BA78</code> store sites are <strong>corpus-exhaustive</strong> (raw scan of all 1235 PROT entries, every addressing form). The observed teleport+flag application is the field-overlay 0897 dev-menu toolset: warp appliers <code>FUN_801EE094</code> ("ON RIREMITO,") / <code>FUN_801EE328</code> ("ON RULA,") for MAP CHANGE, and the EVENT FLAG editor (<code>FUN_801DBD04</code>, cursor over flags <code>0..0xFFF</code>, SET/CLEAR at cursor). The FMV corpus states were produced by dev-menu pointer-mediated global editing (invisible to static addressing-form scans). Do not re-walk the "per-FMV event table" shape.</td>
-        <td><a href="../subsystems/cutscene.html">cutscene</a></td>
-      </tr>
-      <tr>
-        <td>Spawned-record player-channel (<code>0xF8</code>) ExecMove/HaltAcquire handshake</td>
-        <td><span class="tag tag-done">resolved</span> (engine completion model)</td>
-        <td><span class="tag tag-partial">inference</span></td>
-        <td>The timeline stepper models the handshake directly: <code>A2 F8</code> ExecMove arms an in-flight countdown (<code>CutsceneTimeline::player_move_frames</code>) and <code>C3 F8</code> HaltAcquire parks at the op until it drains, then steps past by encoded width - so door-cutscene records reach their trailing <code>0x3F</code> and driven hops land (<code>jou</code>&rarr;<code>jouina</code> and the full castle chain to <code>jouinc</code>; chapter-1 hub oracles). See <a href="../subsystems/cutscene.html">cutscene</a> &sect; player-channel completion.</td>
-        <td><a href="../subsystems/cutscene.html">cutscene</a></td>
-      </tr>
-      <tr>
-        <td>Equipment stat-bonus table - slot model</td>
-        <td><span class="tag tag-done">resolved</span> (slot model + passives)</td>
-        <td><span class="tag tag-partial">decompiled-C</span></td>
-        <td><code>DAT_80074F68</code> (8-byte stride) decoded from <code>FUN_801CF650</code>: <code>+0</code> INT, <code>+1</code> ATK, <code>+2</code> UDF, <code>+3</code> LDF, <code>+4</code> SPD. The four <code>+7</code> categories are the weapon/armour slots; accessories are absent.</td>
-        <td><a href="../formats/equipment-table.html">equipment-table</a></td>
-      </tr>
-      <tr>
-        <td>Flag <code>0x63A</code> - the vell/vozz <code>P2[7]</code> gate with NO script writer</td>
-        <td><span class="tag tag-done">resolved</span> (script writers exist)</td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td>vell <code>P2[7]</code> and vozz <code>P2[7]</code> carry byte-identical <code>C1=[0x63A, 0x7]</code> gates. The "no script sites disc-wide" premise was the CDNAME +2 skew: under the fixed scene windows the census shows eight <strong>clean</strong> sites - Set/Clear pairs in the rikuroa post-Caruban variant MAN (PROT 0157 <code>P2[29]</code>/<code>[30]</code>, op <code>0x56</code>/<code>0x66</code>), rikuroa2 (PROT 0122), retockin (PROT 0281 <code>P2[7]</code>/<code>[8]</code>) and edretoin (PROT 0800 <code>P2[7]</code>/<code>[8]</code>) - all late-game beats, so the vell/vozz spawn-block passes for the whole first visit. Retail states corroborate: <code>0x63A</code> reads clear through the Karisto era while its bank byte already holds <code>0x0C</code>. NB the old row's watch target <code>0x800858C7</code> was <strong>mis-derived</strong>; the byte for <code>0x63A</code> is <code>0x80085758 + (0x63A &gt;&gt; 3) = 0x8008581F</code>.</td>
-        <td><a href="../subsystems/world-map.html">world-map</a></td>
-      </tr>
-      <tr>
-        <td>cave01 <code>P2[16]</code> (the <code>0x15D</code> entry-key setter) - what spawns it</td>
-        <td><span class="tag tag-done">closed</span> (slot-counted spawn chain)</td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td><code>P2[16]</code> is spawned by <code>44 1E</code> at <code>P2[12]</code> body <code>+0x1C</code>, gated by an op-<code>0x4E</code> <strong>slot-table compare</strong> (<code>4E 00 50 08 00 06 00</code>: skip while slot <code>0x801C6460[0]</code> &lt; 8); <code>P2[12]</code> increments that slot and is spawned once per interaction by the five creature-interact scripts <code>P1[3..7]</code>, whose talked latches <code>0x161..0x165</code> are re-cleared so interactions repeat until the count reaches 8 (<code>P1[2]</code> zeroes the slot). Corrected along the way: op-<code>0x4E</code> subs 0..9 are all the 7-byte compare-and-skip - the "sub-5..8 absolute jump" / "sub-4 rand as next PC" readings were a collapsed decomp switch.</td>
-        <td><a href="../subsystems/world-map.html">world-map</a></td>
-      </tr>
-      <tr>
-        <td>Drake Castle deep interiors (<code>jouinc</code>/<code>jouind</code>) depth decode</td>
-        <td><span class="tag tag-done">resolved</span> (door-choreography families, not story gates)</td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td><code>jouinc</code>'s 58-record <code>C1=[0x00F]</code> P2 family (SJIS names J01..J58) is a <strong>busy-mutex door family</strong> - each record SETs <code>0x00F</code> first / CLEARs it last, a mutual-exclusion lock, not story content; bodies are per-door walk-through choreography. <code>jouind</code> P2[10..13]'s <code>0x4BE..0x4C2</code> band is <strong>per-visit door/lift state</strong> (cleared by <code>jouina</code> P1[0] on entry), not a later-chapter revisit gate pair; <code>jouinb P2[6..8]</code> is the interior beat band (<code>0x44E</code>/<code>0x44F</code>/<code>0x450</code> + the jouinb-local <code>0x461</code>). See <a href="../subsystems/script-vm.html">script-vm</a> &sect; door-choreography record families.</td>
-        <td><a href="../subsystems/world-map.html">world-map</a></td>
-      </tr>
-      <tr>
-        <td><code>scene_destinations</code> P1-table scan misses P2-only door names</td>
-        <td><span class="tag tag-done">resolved</span> (P2 pass folded in)</td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td>The P2-only class is the town/dungeon <strong>exit door</strong> (a P2 door-choreography record): <code>town01</code>&rarr;<code>map01</code> (the P1 pass alone sees <em>zero</em> town01 destinations), <code>retockin</code>&rarr;<code>retona</code>, <code>geremi</code>&rarr;<code>map02</code>/<code>tower</code> &mdash; 13 scenes / 14 destinations disc-wide. The suspected <code>jouinb</code>&rarr;<code>jouina</code> exemplar is falsified: it is P1-visible. Merged kernel <code>legaia_asset::man_edit::scene_destinations</code>; disc pins <code>scene_destinations_p2_disc.rs</code>.</td>
-        <td><a href="../subsystems/world-map.html">world-map</a></td>
-      </tr>
-      <tr>
-        <td><code>0x4C 0x51</code> byte <code>+3</code> = <code>[bit7 special-model | facing nibble]</code> vs the glide-speed interim <code>depth &amp; 7</code> reading</td>
-        <td><span class="tag tag-done">closed</span> (facing wins; two different ops)</td>
-        <td><span class="tag tag-done">disassembly</span></td>
-        <td>Raw asm settles both halves: <code>4C 51</code> case-1 consumes byte <code>+3</code> <strong>only</strong> as <code>[bit7 special-model | facing-LUT nibble]</code> and carries no speed operand (byte <code>+4</code> = move-anim id); the <code>depth &amp; 7</code> base-step selector belongs to the walk-kernel op <code>0x47</code>'s <em>own</em> third operand (<code>FUN_8003774C</code>; ops 0x37/0x41 use <code>(op0&gt;&gt;5 &amp; 4)|(op1&gt;&gt;6)</code>). No motion-bytecode synthesis exists: the field-VM yield-class ops park their instruction pointer at actor <code>+0x94</code> and the walk kernel interprets the record bytes in place. See <a href="../subsystems/field-locomotion.html#npc-glide-speed">field-locomotion &sect; NPC glide speed</a>.</td>
-        <td><a href="../subsystems/field-locomotion.html">field-locomotion</a></td>
-      </tr>
-      <tr>
-        <td>dolk2/rikuroa MAN source (the "v12-embedded MAN" was an over-read)</td>
-        <td><span class="tag tag-done">closed</span> (streaming carrier)</td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td>Their own <code>base+3</code> bundles are the MAN-less count=4 form <code>[1,2,6,0x14]</code>; the "embedded MAN at 0x1000" inside their SceneV12Table entries is the extended-footprint over-read onto the next scene's <code>base+3</code> bundle (byte-identical to suimon/geremi's - see <a href="../formats/scene-v12-table.html#embedded-man-over-read">scene-v12-table &sect; over-read</a>). The scene's real MAN is the type-3 chunk of its block's standalone <code>data_field_streaming</code> entry (<code>dolk2</code> extraction 70, <code>[29,73,17]</code>; <code>rikuroa</code> extraction 157, <code>[13,29,64]</code>); the live script heap at the Caruban beat byte-matches PROT 0157's chunk. Engine: the <code>field_man_payload</code> streaming fallback (<code>v12_bundle_man_disc.rs</code>) supersedes <code>V12Embedded</code> for these two scenes.</td>
-        <td><a href="../formats/scene-v12-table.html">scene-v12-table</a></td>
-      </tr>
-      <tr>
-        <td>kor-family op-<code>0x49</code> flag window <code>[0x138..0x13F]</code> - what the 8 flags gate</td>
-        <td><span class="tag tag-done">closed</span> (Uru Mais warp-pad destination memory)</td>
-        <td><span class="tag tag-partial">decompiled-C</span></td>
-        <td>Each flag is one destination row of the Uru Mais dream-shrine teleport-pad picker: the pad records (kor <code>P2[17..20]</code>, kor3 <code>P2[9..12]</code>, kor4 <code>P2[4..7]</code>) clear the window, pre-set <strong>their own row</strong> (kor &rarr; <code>0x138..0x13B</code>, kor3 &rarr; <code>0x13C</code>/<code>0x13D</code>, kor4 &rarr; <code>0x13E</code>/<code>0x13F</code>), run the <code>FUN_801EF014</code> picker, then an 8-way test ladder executes a named <code>0x3F</code> SceneChange per row (4 KOR entries, 2 KOR3, 2 KOR4). Descriptor <code>+2</code> = first visible row, <code>+3</code> = visible row count, so the paired descriptors are the full 8-row menu vs the rows-4..7 chambers-only menu (state flags <code>0x136</code>/<code>0x137</code>). Confirming a different row sets <code>base + selection</code>; picking the current row or cancelling sets nothing, so the ladder falls through to the stay-put arm.</td>
-        <td><a href="functions.html">functions</a></td>
-      </tr>
-      <tr>
-        <td>Battle stage backdrop: which <code>scene_tmd_stream</code> a scene fights in</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td>A scene bundle carries one stage stream per sub-area, and the battle's is not uniformly the block's first - <code>map01</code> uses bundle slot 5 (entry 88), Rim Elm <code>town01</code> slot 6 (entry <strong>7</strong>). Engine <code>ProtIndex::battle_stage_entry_for_scene</code>.</td>
-        <td><a href="../subsystems/battle.html">battle</a></td>
-      </tr>
-      <tr>
-        <td>Battle-stage overlay band (<code>+0x47</code>)</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-partial">decompiled-C</span></td>
-        <td><code>FUN_800520F0</code> pages a per-stage slot-B overlay via <code>FUN_8003EC70(_DAT_8007B64A + 0x47)</code>, skipped when the id is <code>0</code> - which every catalogued battle but the Tetsu tutorial reads.</td>
-        <td><a href="../subsystems/battle.html">battle</a></td>
-      </tr>
-      <tr>
-        <td>Battle-intro tutorial boxes (Tetsu sparring fight)</td>
-        <td><span class="tag tag-done">resolved (machine pinned, ported and wired)</span></td>
-        <td><span class="tag tag-partial">decompiled-C</span></td>
-        <td>The prompts live <strong>only</strong> in stage overlay 967, so porting the battle SM alone could never emit them. <code>FUN_801F6B70</code> is a 91-entry jump-table hook on the flow-state byte <code>ctx[+0x06]</code> with just nine live slots.</td>
-        <td><a href="../subsystems/battle.html">battle</a></td>
-      </tr>
-      <tr>
-        <td>Battle command-flow byte <code>ctx[+0x06]</code></td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-partial">decompiled-C</span></td>
-        <td>The <em>other</em> battle SM - <code>FUN_801D0748</code>, the menu half, distinct from the action SM's <code>ctx[+0x07]</code> and overlapping its value space. Its selection band is regular decimal tens <code>30..120</code>.</td>
-        <td><a href="../subsystems/battle-action.html">battle-action</a></td>
-      </tr>
-      <tr>
-        <td>How an enemy's signature cast picks the spell id it announces</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">disassembly</span></td>
-        <td><code>FUN_801E9FD4</code>'s round-counter arm, <code>0x801EB7C0..0x801EB81C</code> (PROT 0898 file <code>0x1CFF0..0x1CFFC</code>): the round byte <code>ctx[+0x28A]</code> goes through the <code>0xAAAAAAAB</code> reciprocal, the arm returns unless <code>% 3 == 2</code>, then stores that remainder to <code>actor[+0x1DE]</code> (action category), loads the seat's byte from the formation cell <code>0x8007BD0C + seat</code>, and writes <code>actor[+0x1DF] = monster_id - 0x29</code> &mdash; the literal <code>0x2442FFD7</code>, with <code>sb v0,0x1DF(s4)</code> in the next <code>j</code>'s delay slot. Formation id <code>162</code> therefore announces spell <code>0x79</code>, <code>163</code> <code>0x7A</code>, <code>164</code> <code>0x7B</code>, in the party spell table's own id space &mdash; which is why renaming a party art to a sibling's move has to <em>exchange</em> names with the enemy row rather than write one way.</td>
-        <td><a href="../tooling/randomizer.html">randomizer</a></td>
-      </tr>
-      <tr>
-        <td>How a Delilas sibling's signature move stages its clips</td>
-        <td><span class="tag tag-done">resolved</span> (channel + arithmetic; the stage <em>count</em> is corroboration)</td>
-        <td><span class="tag tag-done">disassembly</span></td>
-        <td>The cast modules drive <code>actor[+0x1DA]</code> as a running monster-archive entry index. Lu's (PROT <code>0960</code>) writes explicit constants &mdash; <code>10</code>, then <code>14</code>, <code>12</code>, <code>13</code> in file order &mdash; reproducing the probe-traced <code>14 &rarr; 12 &rarr; 13</code>. Che's (<code>0959</code>) seeds <code>10</code> and carries one <code>lbu +0x1DA</code> / <code>addiu +1</code> / <code>sb +0x1DA</code> advance: <code>10 &rarr; 11</code>. Gi's (<code>0958</code>) seeds <code>10</code> the same way, carries three of those <code>+1</code> advances plus one <code>addiu v0,v0,-2</code> back toward the seed, and seeds <code>13</code> elsewhere &mdash; so his index walks consecutively up from <code>10</code>, the shape <code>10 &rarr; 11 &rarr; 12</code> predicts and clip shape alone cannot separate from three arbitrary entries.</td>
-        <td><a href="../tooling/randomizer.html">randomizer</a></td>
-      </tr>
-      <tr>
-        <td>Is the player battle idle channel-delta encoded, like the readef "ME" bodies?</td>
-        <td><span class="tag tag-done">resolved</span> (no &mdash; raw packed inline in <code>record[0]</code>)</td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td>Each action entry in a player battle file's <code>record[0]</code> carries <code>[u8 parts][u8 frames]</code> at <code>+0xAC</code> then <code>parts &times; frames</code> raw 9-byte TRS records &mdash; the monster archive's own packing, with no codec between disc and RAM. The entries tile the block: Vahn's slot 0 is 15 parts &times; 9 frames ending at <code>0x5CD</code>, slot 1 opens at <code>0x5D0</code>, and so on down the table (Noa's rig is 16 parts to Vahn's and Gala's 15). The live pose oracle byte-matches the disc stream against PSX RAM at <code>record0_base + stream_off</code>. So an idle rewritten at its exact retail length leaves every later entry offset valid and needs no relocation.</td>
-        <td><a href="../formats/battle-data-pack.html">battle-data-pack</a></td>
-      </tr>
+      <tr id="t-encounter-man-sub-section-layout"><td>Encounter MAN sub-section layout</td><td>header shape corrected</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#encounter-man-sub-section-layout" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-battle-intro-tile-shatter---the-side-face-shade-page"><td>Battle-intro tile shatter - the side-face shade page</td><td>a resident field asset, not a transition upload</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#battle-intro-tile-shatter---the-side-face-shade-page" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-battle-intro-transition-length---dat_801d2458"><td>How long does a field-to-battle transition run (<code>DAT_801D2458</code>)?</td><td>132 frames; 252 for the swirl</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#battle-intro-transition-length---dat_801d2458" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-which-stage-dome-objects-does-the-battle-backdrop-draw"><td>Which stage-dome objects does the battle backdrop draw?</td><td>drop index 1, not "keep index 0"</td><td><span class="tag tag-done">disassembly</span> <span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/battle.md#object-1-is-dropped" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-battle-ground-grid-depth-cue---the-far-colour"><td>Battle ground grid depth cue - the far colour</td><td>captured at the draw; port fogs the grid</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#battle-ground-grid-depth-cue---the-far-colour" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-the-chrome-kind-byte-is-an-index-into-the-widget-class-table"><td>Which element the screen-element <code>+0x0E</code> <strong>kind pair</strong> selects, per value</td><td>it is a table index, not a style enum</td><td><span class="tag tag-done">disassembly</span> <span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#the-chrome-kind-byte-is-an-index-into-the-widget-class-table" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-the-element-badge-palette-selector"><td>The element-<strong>badge</strong> palette selector</td><td>the badge record's own palette byte</td><td><span class="tag tag-done">disassembly</span> <span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#the-element-badge-palette-selector" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-the-status-element-badge-sheet-0x180x20"><td>The status-element badge sheet <code>0x18..=0x20</code></td><td>nine 48x16 word tags; ladder assignment independently confirmed</td><td><span class="tag tag-done">disassembly</span> <span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#the-status-element-badge-sheet-0x180x20" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-does-the-battle-ground-grid-roll-per-cell-randomness"><td>Does the battle ground grid roll per-cell randomness?</td><td>no - a four-entry table walk</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/battle.md#the-grids-own-constants-read-off-the-emitter" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-endless-camera-orbit---the-0x19-attack-approach-park"><td>Endless camera orbit (Gaza 2 softlock) - the <code>0x19</code> attack-approach park</td><td>caught live; root-caused; disc fix shipped</td><td><span class="tag tag-done">disassembly</span> <span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#endless-camera-orbit---the-0x19-attack-approach-park" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-the-summon-then-melee-park-trigger---the-stale-field-is-0x1dc-bit-2"><td><code>0x19</code> fallback approach drive - which anim-driver field does summon staging leave stale?</td><td>pinned + causally reproduced on the parked save</td><td><span class="tag tag-done">disassembly</span> <span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#the-summon-then-melee-park-trigger---the-stale-field-is-0x1dc-bit-2" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-super--miracle-arts-trigger-chain"><td>Super / Miracle Arts trigger chain</td><td>all 15 Supers live-executed</td><td><span class="tag tag-done">disassembly</span> <span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#super--miracle-arts-trigger-chain" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-xain-bloody-hornsterio-punch-ignore-elemental-guards-community-mystery"><td>Xain "Bloody Horns"/"Terio Punch" ignore elemental guards (community mystery)</td><td>resolved</td><td><span class="tag tag-done">disassembly</span> <span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/battle-formulas.md" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-first-boss-trigger--battle"><td>First boss trigger → Battle</td><td>resolved</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/battle.md#scripted-battle-entry-3e-ff-row" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-how-an-enemys-signature-cast-picks-the-spell-id-it-announces"><td>How an enemy's signature cast picks the spell id it announces</td><td>resolved</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/randomizer.md#delilas-party-swap" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-how-a-delilas-siblings-signature-move-stages-its-clips"><td>How a Delilas sibling's signature move stages its clips</td><td>walk order capture-pinned</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/monster-animation.md#a-special-attack-can-be-a-chain-of-entries" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-is-the-player-battle-idle-channel-delta-encoded-like-the-readef-me-bodies"><td>Is the player battle idle channel-delta encoded, like the readef "ME" bodies?</td><td>no - raw packed inline in <code>record[0]</code></td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#battle--arts--level-up" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-enemy-ally-charm-battle-softlock"><td>Enemy-ally charm battle softlock</td><td>both tracks fixed</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/battle.md#enemy-ally-charm-at-the-end-of-action-gate-the-charm-battle-softlock" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-battle-actor-0x16e-bit-0x400-applier-guard-disabling-status"><td>Battle-actor <code>+0x16E</code> bit <code>0x400</code> applier (guard-disabling status)</td><td>exhaustive negative</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/battle.md#the-0x16e-status-halfword---retail-writer-inventory" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-who-calls-the-battle-on-screen-test-fun_8005126c"><td>Who calls the battle on-screen test <code>FUN_8005126C</code>?</td><td>exhaustive negative</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#who-calls-the-battle-on-screen-test-fun_8005126c" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-what-spawns-the-battle-xa-voice-selector-fun_8004da00"><td>What spawns the battle XA voice selector <code>FUN_8004DA00</code>?</td><td>resolved</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#battle--arts--level-up" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-effect-vm-pass-1-state-token-algebra-fun_801e0088"><td>Effect-VM pass-1 "state token algebra" (<code>FUN_801E0088</code>)</td><td>ported</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#effect-vm-pass-1-state-token-algebra-fun_801e0088" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-seru-magic-summon-visual-eg-tail-fire"><td>Seru-magic summon visual (e.g. Tail Fire)</td><td>player visual; wired</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#seru-magic-summon-visual-eg-tail-fire" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-summondat--readefdat-side-band-streaming"><td><code>summon.dat</code> / <code>readef.DAT</code> side-band streaming</td><td>entries + format</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#summondat--readefdat-side-band-streaming" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-monster-steal-item-evil-god-icon"><td>Monster steal item (Evil God Icon)</td><td>resolved</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#monster-steal-item-evil-god-icon" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-battle-face-stamp-issuing-site"><td>Battle face-stamp issuing site</td><td>resolved</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#battle-face-stamp-issuing-site" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-per-spell-magic-power--multiplier"><td>Per-spell magic power / multiplier</td><td>mechanism + roll ported</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#per-spell-magic-power--multiplier" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-arts-command-sequence---independent-source"><td>Arts command sequence - independent source</td><td>resolved</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#battle--arts--level-up" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-weapon-specialty-arm-width-off-class-widens-the-arms-command"><td>Weapon-specialty arm width (off-class widens the Arms command)</td><td>resolved</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/arts-command-gauge.md" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-stat-growth-rate-source"><td>Stat growth-rate source</td><td>validated + wired; core + opt-in jitter</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#stat-growth-rate-source" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-character-record-hpmpap-pair-order"><td>Character-record HP/MP/AP pair order (<code>+0x104..0x110</code>) is <code>(max, cur)</code></td><td>relabeled throughout</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#character-record-hpmpap-pair-order" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-monster-stat-record-archive-source"><td>Monster stat-record archive source</td><td>resolved</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#monster-stat-record-archive-source" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-monster-mesh--texture-pool"><td>Monster mesh + texture pool</td><td>resolved</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#monster-mesh--texture-pool" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-terra-slot-3--story-flag-overlap"><td>Terra slot-3 / story-flag overlap</td><td>resolved</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#terra-slot-3--story-flag-overlap" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-battle-party-meshes--assembled-from-the-player-battle-files-prot-1204--baka-fighter--default-equipment-sibling"><td>Battle party mesh pack <code>other5</code> = <strong>PROT 1204</strong> (battle form; Baka Fighter reuses it)</td><td>empirical</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#battle-party-meshes--assembled-from-the-player-battle-files-prot-1204--baka-fighter--default-equipment-sibling" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-mp-cost-ability-bit-priority-half-vs-quarter"><td>MP-cost ability-bit priority (half vs quarter)</td><td>dump-confirmed</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#mp-cost-ability-bit-priority-half-vs-quarter" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-scripted-tetsu-encounter--battle-v01-oracle-battle-leg"><td>Scripted Tetsu encounter → Battle (v0.1 oracle Battle leg)</td><td>resolved</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#scripted-tetsu-encounter--battle-v01-oracle-battle-leg" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-battle-stage-backdrop-which-scene_tmd_stream-a-scene-fights-in"><td>Battle stage backdrop: which <code>scene_tmd_stream</code> a scene fights in</td><td>resolved</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/battle.md#which-stage-stream-a-scene-fights-in" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-battle-stage-backdrop-is-the-authored-half-completed-and-how"><td>Battle stage backdrop: is the authored half completed, and how</td><td>two actors; per-stage transform; object 1 dropped</td><td><span class="tag tag-done">disassembly</span> <span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/battle.md#backdrop-shell---two-copies-of-one-mesh" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-battle-stage-overlay-band-0x47"><td>Battle-stage overlay band (<code>+0x47</code>)</td><td>resolved</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/battle.md#stage-overlay-dispatch-the-0x47-loader-band" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-battle-intro-tutorial-boxes-tetsu-sparring-fight"><td>Battle-intro tutorial boxes (Tetsu sparring fight)</td><td>machine pinned, ported and wired</td><td><span class="tag tag-done">disassembly</span> <span class="tag tag-partial">inference</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/battle.md#the-sparring-tutorial-prompt-machine-overlay-967" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-what-arms-the-battle-stage-id-1-sparring-tutorial"><td>What arms the battle-stage id <code>1</code> (sparring tutorial)</td><td>resolved</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/battle.md#who-writes-stage-id-1---the-one-shot-arm-flag-0x19" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-mid-battle-second-_dat_8007b64a-stage-id-writer-the-0x801fd514-phantom"><td>Mid-battle second <code>_DAT_8007B64A</code> stage-id writer (the <code>0x801fd514</code> phantom)</td><td>coordinate re-keyed</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/battle.md#stage-overlay-dispatch-the-0x47-loader-band" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-no-party-seated-vs-party-dead-in-the-wipe-scan"><td>"No party seated" vs "party dead" in the wipe scan</td><td>port-only state; guarded</td><td><span class="tag tag-done">disassembly</span> <span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/battle.md#an-unseeded-party-reads-as-a-dead-one" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-battle-command-flow-byte-ctx0x06"><td>Battle command-flow byte <code>ctx[+0x06]</code></td><td>resolved</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/battle.md#the-command-flow-byte-ctx0x06---what-the-hook-table-indexes" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-action-sm-state-0xff-treated-as-battle-end-by-the-port"><td>Action-SM state <code>0xFF</code> treated as battle end by the port</td><td>path was live-reachable; port fixed</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#action-sm-state-0xff-treated-as-battle-end-by-the-port" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-spine-flag-0x142-caruban-beat--dolk-dolk2-switch-writer"><td>Spine flag <code>0x142</code> (Caruban beat / dolk-dolk2 switch) writer</td><td>disc writers + engine port + oracle</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#spine-flag-0x142-caruban-beat--dolk-dolk2-switch-writer" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-spine-flag-0x482-drake-mist-wall-writer"><td>Spine flag <code>0x482</code> (Drake mist-wall) writer</td><td>writer-less; "direct code path" presumption falsified</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#spine-flag-0x482-drake-mist-wall-writer" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-cdname-scene-window-frame-raw--extraction--2-in-sceneload"><td>CDNAME scene-window frame (<code>raw = extraction + 2</code>) in <code>Scene::load</code></td><td>engine converts; misattributions corrected</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/cdname.md#numbering-space" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-motion-vm-fun_80038158-bytecode-carrier--flag-census"><td>Motion-VM (<code>FUN_80038158</code>) bytecode carrier + flag census</td><td>carrier pinned; spine flags negative</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/motion-vm.md#the-second-motion-vm---fun_80038158" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-debug-menu-str-trigger-teleports--sets-flags-mechanism"><td>Debug-menu "STR trigger teleports + sets flags" mechanism</td><td>no per-FMV event table; dev-menu tools explain it</td><td><span class="tag tag-done">disassembly</span> <span class="tag tag-partial">inference</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/cutscene.md" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-spawned-record-player-channel-0xf8-execmovehaltacquire-handshake"><td>Spawned-record player-channel (<code>0xF8</code>) ExecMove/HaltAcquire handshake</td><td>engine completion model</td><td><span class="tag tag-partial">inference</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/cutscene.md" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-equipment-stat-bonus-table---slot-model"><td>Equipment stat-bonus table - slot model</td><td>slot model + passives</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#battle--arts--level-up" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-flag-0x63a---the-vellvozz-p27-gate-with-no-script-writer"><td>Flag <code>0x63A</code> - the vell/vozz <code>P2[7]</code> gate with NO script writer</td><td>script writers exist; the "no writer" premise was the CDNAME +2 skew</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#flag-0x63a---the-vellvozz-p27-gate-with-no-script-writer" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-cave01-p216-spawner---the-slot-counted-interact-chain"><td>cave01 <code>P2[16]</code> (the <code>0x15D</code> entry-key setter) - what spawns it</td><td>slot-counted spawn chain</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#cave01-p216-spawner---the-slot-counted-interact-chain" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-drake-castle-deep-interiors-jouincjouind-depth-decode"><td>Drake Castle deep interiors (<code>jouinc</code>/<code>jouind</code>) depth decode</td><td>door-choreography families, not story gates</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#drake-castle-deep-interiors-jouincjouind-depth-decode" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-scene_destinations-p1-table-scan-misses-p2-only-door-names"><td><code>scene_destinations</code> P1-table scan misses P2-only door names</td><td>P2 pass folded in</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#battle--arts--level-up" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-0x4c-0x51-byte-3-reconcile---facing-wins-no-motion-bytecode-synthesis"><td><code>0x4C 0x51</code> byte <code>+3</code> = <code>[bit7 special-model | facing nibble]</code> vs the glide-speed interim <code>depth &amp; 7</code> reading</td><td>facing wins; the two readings were two different ops</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#0x4c-0x51-byte-3-reconcile---facing-wins-no-motion-bytecode-synthesis" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-npc-dynamic-facing---two-laws-and-an-execution-order"><td>How an NPC's facing changes <strong>after</strong> spawn - snap vs ramp, and which writer wins</td><td>two laws; order-of-execution priority</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#npc-dynamic-facing---two-laws-and-an-execution-order" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-dolk2rikuroa-man-source-the-v12-embedded-man-was-an-over-read"><td>dolk2/rikuroa MAN source (the "v12-embedded MAN" was an over-read)</td><td>streaming carrier</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/scene-v12-table.md" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-kor-family-op-0x49-flag-window-0x1380x13f---uru-mais-warp-pad-picker"><td>kor-family op-0x49 flag window <code>[0x138..0x13F]</code> - what the 8 flags gate</td><td>Uru Mais warp-pad destination memory</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#kor-family-op-0x49-flag-window-0x1380x13f---uru-mais-warp-pad-picker" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-formation-species-limit---what-the-battle-setup-does-with-3-distinct-monster-ids"><td>Formation species limit - what the battle setup does with 3 distinct monster ids</td><td><code>[a,b,c]</code> loads as <code>[c,c,a]</code> on half of all rolls, verbatim (three streamed blocks) on …</td><td><span class="tag tag-done">disassembly</span> <span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#formation-species-limit---what-the-battle-setup-does-with-3-distinct-monster-ids" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-super-art-connectors-and-physical-inputs---the-tokenizer-keeps-the-leading-arrows"><td>Super Art connectors and physical inputs - the tokenizer keeps the leading arrows</td><td>disassembly (<code>FUN_801EED1C</code> <code>0x801EF2EC..0x801EF858</code>) + capture</td><td><span class="tag tag-done">disassembly</span> <span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#super-art-connectors-and-physical-inputs---the-tokenizer-keeps-the-leading-arrows" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-the-runtime-art-record-chase---the-4-and-the---0x10-grid-origin"><td>The runtime art-record chase - the <code>+4</code> and the <code>- 0x10</code> grid origin</td><td><code>record(c) = <em>(</em>(DAT_801C9360[char]) + 0x58) + 4 + (c - 0x10) * 0xD0</code>,</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#the-runtime-art-record-chase---the-4-and-the---0x10-grid-origin" target="_blank" rel="noopener">doc</a></td></tr>
     </tbody>
   </table>
-
-  <h3 id="d-move-power">Per-spell magic power - residual</h3>
-  <p>The <code>0x801F4F5C</code> table is special-attack-only (party arts take per-strike art-record power); the aux effect tables are parsed, move-FX scene-graphs render through the ported move VM, and both affinity directions are wired. Residual: live note-on wiring of the resolved sound cue; the retail draw transform of a move-VM part (the <code>FUN_80021DF4</code> render tail); the live slot-7 summon's HP at roll time (modelled as spawn HP).</p>
-
-  <h3 id="d-tetsu">Scripted Tetsu encounter - resolved</h3>
-  <p>Launch mechanism, carrier identity/placement, picker, and the walk-talk-accept leg are all derived from disc bytes. The formation-row selection is the standard field-VM scripted-battle op <code>3E FF 04</code> in <code>P1[10]</code> (MAN body <code>0x01B67</code>) - the same case-<code>0x3E</code> direct-install arm as garmel's Zeto (<code>3E FF 09</code>) and rikuroa's Caruban (<code>3E FF 11</code>) - with row 4 = the lone-Tetsu formation. The opening carrier reposition is <code>P1[10]</code>'s <code>4C 51 15 0E 07 22</code> NpcRun &rarr; tile <code>(21,14)</code> = world <code>(2752,1856)</code> (bytecode-derived, not a bare constant), and the spar Yes/No is a MES option picker (<code>0x29</code> open + relative-jump table, handler <code>FUN_80038050</code>, ported as <code>legaia_mes::Picker::jump_target</code>), not a field-VM opcode. Anchor <code>rim_elm_sparring_carrier.rs</code>.</p>
+  </div>
 </section>
 
 <section class="doc-section" id="field" data-doc="field--locomotion">
   <h2>Field / locomotion</h2>
+  <p>Town and dungeon scenes: locomotion, doors, story-flag gates, ambient animation, NPC facing and the field-VM event scripts.</p>
+  <div style="overflow-x:auto">
   <table>
-    <thead><tr><th>Thread</th><th>Status</th><th>Evidence</th><th>Current answer</th><th>Detail</th></tr></thead>
+    <thead><tr><th>Thread</th><th>Verdict</th><th>Evidence</th><th>Write-up</th></tr></thead>
     <tbody>
-      <tr>
-        <td>Town/field free-movement locomotion</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td><code>FUN_801d01b0</code> (field overlay 0897): camera-remapped pad, per-frame speed, 2-unit steps gated by per-axis wall collision <code>FUN_801cfe4c</code> and the actor probe. Footprint probes, NPC boxes, and the interact probe are byte-reproduced in the engine.</td>
-        <td><a href="../subsystems/field-locomotion.html">field-locomotion</a></td>
-      </tr>
-      <tr>
-        <td>Field ambient animation - what makes jou's ground pulse and the water shimmer</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">disassembly</span></td>
-        <td>Three mechanisms: the bundle type-6 CLUT-walk table (12 carriers, 9 of them field water/waterfall scenes), the ambient move-VM tree the MAN P1 placements install at scene entry (<code>FUN_800252EC</code> &rarr; <code>FUN_80021B04</code> spawn-time first run + op-<code>0x25</code> fan-out), and jou's flesh pulse = the mode-3 CLUT-cell HSV cycler: op <code>0x2C</code> captures a palette rect and <code>FUN_80019D50</code> rewrites it per frame with integrated H/S/V adds (lightning = flag <code>0x364</code> brightness spikes + screen flash + thunder cues). Runs in the engine and the site field-scene viewer.</td>
-        <td><code>docs/subsystems/field-ambient-fx.md</code></td>
-      </tr>
-      <tr>
-        <td>Ambient render-mode 4 - what the op-<code>0x1E</code> seat animates</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">disassembly</span></td>
-        <td>A <strong>cyclic VRAM-rect scroller</strong>, and it is what makes waterfalls fall. Per fired period (<code>+0xC6</code> drained by the frame step alone, without the mode-3 arm's speed scalar) the render tail rotates the seated rect <code>+0xD0..+0xD6</code> left by <code>+0xCC * frame_step</code> and up by <code>+0xCE * frame_step</code>, each axis as StoreImage / MoveImage / LoadImage over a bump-allocated strip (<code>0x80022CB8..0x80022EE0</code>). Seventeen scenes carry one at plain scene entry; sixteen scroll upward over a texture-band rect (<code>x &gt;= 0x200</code>) and <code>tunnelc</code>'s second seat is the exception that bounds the reading - a one-row rect at <code>(0, 508)</code> stepping right, i.e. a CLUT row walked by the same primitive. Ported as <code>engine-core::world::ambient::vram_scroll</code>.</td>
-        <td><code>docs/subsystems/field-ambient-fx.md</code></td>
-      </tr>
-      <tr>
-        <td>Master ambient record 0 - what reads the 8-byte rows</td>
-        <td><span class="tag tag-done">resolved</span> (it is not a stager record at all)</td>
-        <td><span class="tag tag-done">disassembly</span></td>
-        <td>The <strong>per-scene sound-effect descriptor bank</strong> for cue ids <code>&gt;= 0x200</code>. Both SFX readers resolve those ids as <code>*(u32*)0x8007B8D0 + offsets[0] + (id - 0x200)*8</code> - record 0 of whatever bundle is installed at <code>0x8007B8D0</code>, which in field mode is the scene prescript bundle (the field asset loader stores scene buffer + <code>0x12800</code> there on every load). <code>offsets[0]</code> is the identical word <code>FUN_800252EC</code> reads for stager id 0, so "record 0" and "the runtime SFX bank" name one address. Rows are the 8-byte descriptor of the <a href="../formats/sfx-table.html">SFX table</a>, category 3 - a variable VAB slot.</td>
-        <td><code>docs/formats/sfx-table.md</code></td>
-      </tr>
-      <tr>
-        <td>Which op-<code>0x34</code> sub-3 installs fire at <strong>scene entry</strong></td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">disassembly</span></td>
-        <td>The ones the placement spawn-prologue slice executes - the carrier is not a distinguished kind of script. <code>FUN_8003A1E4</code> carries its own copy of the per-actor frame slice: <code>0x8003A480</code> gates the entire pre-run on the record's first opcode being <code>0x24</code>/<code>0x25</code>, and <code>0x8003A4C4</code> breaks the slice <em>after</em> executing an opcode whose full byte is <code>0x21</code>. Both are "nop" to a disassembler and only one ends the slice, which is why a dialogue-bearing placed actor opening <code>25 / 34 30 00</code> installs its ambient tree exactly like a dedicated effect actor. Ported as <code>engine-core::man_field_scripts::scene_entry_ambient_installs</code>, taking the unconditional prefix of that slice - an under-approximation, since a flag-gated install deeper in a record depends on runtime state.</td>
-        <td><code>docs/subsystems/field-ambient-fx.md</code></td>
-      </tr>
-      <tr>
-        <td>town0e's morph-record installer</td>
-        <td><span class="tag tag-done">resolved</span> (the census was shape-blind, not the disc)</td>
-        <td><span class="tag tag-done">disassembly</span></td>
-        <td>The install is the ordinary <code>0x34</code> sub-3 arg 0 (stager record 1) - it just rides <strong>partition-1 placement 29</strong>, a full placed actor with its own dialogue, as that record's second instruction, ahead of its <code>SysFlag.Test 0x1A</code> park/seat branch. A census that discriminates by script <em>shape</em> reports nothing here; the entry-slice rule above finds it. Residual: that the entry pre-run slice reaches it is an inference from the settled pre-run mechanism, not a live capture of this scene.</td>
-        <td><code>docs/subsystems/field-ambient-fx.md</code></td>
-      </tr>
-      <tr>
-        <td>Scene bundle type-7 slot content (VDF)</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">disassembly</span></td>
-        <td>The scene's vertex-morph delta pack (61 bundles populated; jou = 17 sub-entries of ground-vertex deltas), installed at <code>DAT_8007B7DC</code> via <code>FUN_8001FBCC</code> and consumed by the morph stager <code>FUN_8001C604</code> through move-VM morph lanes. Parser <code>legaia_asset::scene_vdf</code>.</td>
-        <td><code>docs/subsystems/field-ambient-fx.md</code></td>
-      </tr>
-      <tr>
-        <td>VDF morph render substitution - what draws the staged vertices, and what arms the lanes</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">disassembly</span></td>
-        <td>Per drawn group of a part whose flags carry op-<code>0x0A</code>'s bit <code>0x1000</code>, <code>FUN_8001ADA4</code> calls <code>FUN_8001C604</code> (rest-pose scratch copy + weighted-delta blend <code>FUN_8005B038</code> + group vertex-pointer retarget) and restores the pointer after the draw. Arming = op-<code>0x0A</code> <em>mesh</em> stager parts in the ambient tree (pack slot = <code>model_sel - 5</code>; rikuroa's flag-gated records 69/70, town0e 10/11, jagaroom 20/21), weights ramped by the <code>FUN_80020740</code> envelope under op-<code>0x32</code> flags. jou arms nothing at plain entry (cutscene op <code>0x1F</code> only) - its entry throb in the engine is the documented <code>vdf_pulse</code> enhancement. Ported to the play-window, the field-scene viewer, and the web play runtime.</td>
-        <td><code>docs/subsystems/field-ambient-fx.md</code></td>
-      </tr>
-      <tr>
-        <td>Field collision-map source</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-partial">decompiled-C</span></td>
-        <td>Walls are painted by the field-VM <code>0x4C</code> outer-nibble-7 wall-paint ops in the scene event script; the <code>+0x4000</code> byte's low nibble is a floor-elevation tier; <code>+0x8000</code> is a per-tile object/attribute map.</td>
-        <td><a href="../subsystems/field-locomotion.html">field-locomotion</a></td>
-      </tr>
-      <tr>
-        <td>Tile-board grid mode</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-partial">decompiled-C</span></td>
-        <td>Re-scoped: a puzzle / board minigame (procedural <code>rand</code>-filled board, per-cell tile actors) installed by field-VM op <code>0x49</code> - not town locomotion. Open sub-questions: which minigames use it; fixed vs procedural boards.</td>
-        <td><code>docs/subsystems/tile-board.md</code></td>
-      </tr>
-      <tr>
-        <td><code>game_mode 0x03</code> = field/town gameplay</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td>Modes 2/3 are field init/run (<code>0x03</code> = in-town/on-field gameplay); the handler map is read off the disc, <code>MAPDSIP</code> 12/13 is world-map display, and the pause menu runs under mode 23 (CARD).</td>
-        <td><a href="../subsystems/boot.html">boot</a></td>
-      </tr>
-      <tr>
-        <td>Scene prescript: field-VM scripts vs move-VM stagers</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td><strong>Single consumer.</strong> The op-<code>0x34</code> sub-3 operand census across every scene MAN shows every prescript record is a move-VM stager: partition-1 effect-actor records install the ambience on entry (record 0 = the master ambient record in 62 scenes) and partition-2 cutscene timelines install the per-shot ids. Installer id = record index (RAM <code>[u16 count][u16 offsets]</code> relocation at <code>_DAT_8007B8D0</code>, live-pinned vs the file bundle). The "field-VM runs a record" premise was the engine's own fallback, not retail behaviour. <a href="#d-prescript">details &darr;</a></td>
-        <td><a href="../formats/scene-bundles.html">scene-bundles</a></td>
-      </tr>
-      <tr>
-        <td>Engine VRAM byte-exactness for town01</td>
-        <td><span class="tag tag-done">resolved</span> (major source); minor residue</td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td>Single-snapshot byte-exactness is unachievable (much of the texpage band is dynamic/residual); the oracle asserts the static mask and passes on every static pixel uploaded. Residue: the <code>x=896..1024</code> character-texture region + small UI residue (the <code>(960,256..511)</code> part is the boot-resident system-UI band).</td>
-        <td></td>
-      </tr>
-      <tr>
-        <td>CLUT row 510 population (env meshes' <code>(64,510)</code> CBA)</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td>Row 510/511 = the flat-strip CLUT band of the <strong>boot-resident system-UI TIM bundle</strong> (the <code>prot::timpack</code> at raw PROT TOC entry 0, below the extraction index space; uploader <code>FUN_800198E0</code> flattens every declared CLUT bank to a <code>w*h &times; 1</code> strip). Byte-identical to the disc in every captured phase, title included; the engine pre-pass uploads the bundle (<code>legaia_asset::system_ui_bundle</code>), and the once-unattributed page rows 456..462 are the pack's own bare row-patch members. Residue: the exact boot walker call site.</td>
-        <td><a href="../formats/npc-palette.html#row510-band">npc-palette</a></td>
-      </tr>
-      <tr>
-        <td>Field <code>.MAP</code> PROT resolution</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td>A scene's <code>.MAP</code> is the entry two slots before its CDNAME block start (<code>define &minus; 2</code>), identified by its <code>0x12000</code> footprint - universal; the first in-block hit is the <em>next</em> scene's map. Census-pinned; engine resolver corrected.</td>
-        <td><a href="../formats/cdname.html">cdname</a></td>
-      </tr>
-      <tr>
-        <td>World-map CLUT cycling beyond the ocean head</td>
-        <td><span class="tag tag-done">closed</span> (operand table + emitter + cadence pinned)</td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td>A per-column census pins the runtime-touched CLUT cells (rows 500/506/508/509); the writers are the field overlay's script-driven CLUT-cell effects (<code>FUN_801E4C58</code> / <code>FUN_801E4794</code>) copying from strips parked at rows 498/501..505. <a href="#d-clut-cycle">details &darr;</a></td>
-        <td><a href="../subsystems/world-map.html">world-map</a></td>
-      </tr>
-      <tr>
-        <td><code>init_data</code> UI-tile pages / map03 texture column</td>
-        <td><span class="tag tag-done">resolved</span> (both premises falsified)</td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td>The <code>(704, 0)</code>/<code>(704, 256)</code> UI-tile rects are journey-dependent residency (overworld transit leaves kingdom-bundle content behind). The map03 column at <code>x=576..640</code> is resolved: the "engine fails to upload PROT 0392" premise is <strong>falsified</strong> - a direct prepass measurement shows real terrain (only 37 stray <code>0x3332</code> cells, an old-build artifact), and PROT 0392 slot-0 is byte-identical to 0391 slot-0 which the engine already uploads. Residual (low): a map03-resident capture would fully close it.</td>
-        <td></td>
-      </tr>
-      <tr>
-        <td>Scene-transition (<code>0x3F</code> door) destination indexing</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td><code>0x3F</code> ops are partition-2 MAN records reached through the partition-2 record-offset table, making variable-length door editing safe (<code>man_edit</code>). The <code>0x3E</code> warp is the SCUS-resident mode-24 minigame door (scene-name backup/restore).</td>
-        <td><a href="../formats/man-relocation.html">man-relocation</a></td>
-      </tr>
-      <tr>
-        <td>Intra-town (house / interior) door mechanism</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">disassembly</span></td>
-        <td>Not a scene change: the cross-context form <code>0xA3 0xF8</code> (opcode <code>0x23 | 0x80</code> into the player channel) teleports within the same scene; the partition-0 records pair fullwidth IN/OUT names. The randomizer shuffles class-preserving.</td>
-        <td><a href="../subsystems/script-vm.html">script-vm</a></td>
-      </tr>
-      <tr>
-        <td>Field/town environment-geometry placement</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td>Object-local TMDs in the scene_asset_table LZS streams, placed by <code>FUN_8003a55c</code> from the <code>+0x8000</code> object-index grid. The engine renders the town, including per-vertex-RGB props; the only residue is one missing-CLUT mesh.</td>
-        <td><a href="../subsystems/field-locomotion.html">field-locomotion</a></td>
-      </tr>
-      <tr>
-        <td>Overworld / town entrance story-flag gating</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td>An entrance's unlock is its own partition-2 record's C1/C2 gate (<code>FUN_8003BDE0</code>; C1 = one-shot latch, C2 = requires-all) against the system-flag bank <code>_DAT_80085758</code>; ops <code>0x50/0x60/0x70</code> carry <code>idx = ((op &amp; 0x8F) &lt;&lt; 8) | operand</code>. Disc-pinned via <code>man-scripts --system-flag-census</code>: map01 keikoku portals <code>C1=[0x193]</code> (setter <code>vozz</code> P1[7], the only <code>0x193</code> SET disc-wide), mist walls <code>P2[34..36] C1=[0x482]</code>, town01 dinner chain P2[4]&rarr;550&rarr;P2[5]&rarr;551. The dinner "re-fire" is falsified: SET ops already apply in the timeline stepper, and P2[5] has no walk-on trigger.</td>
-        <td><a href="../subsystems/world-map.html">world-map</a></td>
-      </tr>
-      <tr>
-        <td>Overworld story-conditional destination (<code>dolk</code>&rarr;<code>dolk2</code>)</td>
-        <td><span class="tag tag-done">resolved</span> (mechanism + port)</td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td>Beyond the record-level C1/C2 gate, an entrance record can switch its <code>0x3F</code> target by an in-record op-<code>0x70</code> <code>SysFlag.Test</code>. <code>map01</code>'s dungeon entrance (<code>P2[1]</code>/<code>P2[2]</code>) branches on flag <code>0x142</code>: clear &rarr; <code>dolk</code> (pre-boss), set &rarr; <code>dolk2</code> (post-boss), same trigger + arrival tile. <code>overworld_portal_sites</code> decodes the conditional pair (<code>ConditionalDest</code>); the seeder resolves via <code>World::system_flag_test</code>. <strong>Falsifies</strong> "dolk2 is reached from a dungeon interior" (no interior lists dolk2). The <code>0x142</code> setter is pinned (rikuroa streaming-carrier script records; see the spine <code>0x142</code> row).</td>
-        <td><a href="../subsystems/world-map.html">world-map</a></td>
-      </tr>
-      <tr>
-        <td>Writer of the Rim Elm opening flag (<code>549</code>)</td>
-        <td><span class="tag tag-done">resolved</span> - self-latching script SET; the census was width-blind, not carrier-blind</td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td><code>549</code> (<code>0x225</code>) is the Rim Elm opening one-shot; its writer is <strong>town01 <code>P2[3]</code> itself</strong> - a plain <code>52 25</code> SET at body <code>+0x3</code> in the very record its C1 gates (the same self-latch shape as rikuroa's <code>0x142</code>), plus the <code>gameover_data</code> dev-copy sibling. Reader: the C1/C2 gate evaluator <code>FUN_8003BDE0</code> across <code>town01</code>/<code>town0b</code>/<code>town0c</code>/<code>gameover_data</code>. Trap worth keeping: the census had missed the SET because the preceding <code>4C ED</code> op had no width in the disassembler, desyncing the walk one byte short - the earlier "direct code path, capture-only" verdict was <strong>width blindness</strong>, and the whole <code>4C 0xE_</code> sub-op width family is pinned from the retail <code>param_2 + N</code> advances. Anchors <code>flag_549_reader_is_the_rim_elm_p2_gate</code> / <code>flag_549_writer_is_the_rim_elm_p2_3_self_latch</code>.</td>
-        <td><a href="../subsystems/world-map.html">world-map</a></td>
-      </tr>
-      <tr>
-        <td>How an NPC's facing changes <strong>after</strong> spawn - snap vs ramp, and which writer wins</td>
-        <td><span class="tag tag-done">resolved (two laws; order-of-execution priority)</span></td>
-        <td><span class="tag tag-done">disassembly</span></td>
-        <td>Two distinct facing laws coexist; which one is visible is decided by order of execution rather than by precedence in the data.</td>
-        <td><a href="../subsystems/motion-vm.html">motion-vm</a></td>
-      </tr>
-      <tr>
-        <td>What opens an inn stay in retail?</td>
-        <td><span class="tag tag-done">resolved (the premise was wrong)</span></td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td>There is no inn trigger, because there is no inn <em>session</em>: retail composes a stay inline in the scene MAN out of generic ops (dialogue, an MES picker, an op-<code>0x4E</code> gold gate, op-<code>0x3A</code> <code>ADD_MONEY</code>, fades) and then one <code>4C 82 &lt;slot&gt;</code> per member.</td>
-        <td><a href="../subsystems/field-menu.html">field-menu</a></td>
-      </tr>
-      <tr>
-        <td>Retail-vs-engine NPC + story-flag state parity across the capture library</td>
-        <td><span class="tag tag-done">resolved (breadth oracle)</span></td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td>The sweep oracle <code>field_npc_state_parity_disc.rs</code> compares every catalogued field-mode capture against a cold engine entry with the capture's <code>DAT_80085758</code> bank seeded byte-for-byte. Residuals are filed as their own rows.</td>
-        <td><a href="../subsystems/script-vm.html">script-vm</a></td>
-      </tr>
-      <tr>
-        <td>Entry pre-run channel slice ends on a no-mask <code>4C 70</code> wall paint</td>
-        <td><span class="tag tag-done">resolved (slice-continue landed)</span></td>
-        <td><span class="tag tag-partial">decompiled-C</span></td>
-        <td>All four nibble-7 tile-flag paints continue in the same interpreter call; the apparent <code>Yield</code> was the label-call idiom. The pre-run and runner break a slice only on a real yield.</td>
-        <td><a href="../subsystems/script-vm.html">script-vm</a></td>
-      </tr>
-      <tr>
-        <td>What transitions retail into game over?</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">capture</span> + <span class="tag tag-done">disassembly</span></td>
-        <td>Retail has <strong>no</strong> mode-<code>0x12</code> transition. A party wipe exits battle to mode 2; MAIN INIT <code>FUN_8003AEB0</code>'s back-from-battle arm (gated on the <code>DAT_8007BD60 &amp; 0x80</code> survivor latch and the scripted-loss story-flag latch) stores <code>game_mode = 0x16</code> (CARD INIT) at <code>0x8003B5D4</code>, landing on the title screen with CONTINUE preselected - no GAME OVER art, no dedicated menu. Every store PC captured live. Mode 18/19 + PROT 0902 are an unreachable dev harness; the port's three-row session stays an engine invention.</td>
-        <td><a href="../subsystems/battle.html">battle</a></td>
-      </tr>
-      <tr>
-        <td>Mid-visit NPC re-arrangement beats (dolk2 market crowd; garmel pre-Zeto staging)</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">disassembly</span> + <span class="tag tag-done">capture</span></td>
-        <td>dolk2: the swap is <code>P2[11]</code>, spawned by <code>.MAP</code> fallback walk-on-trigger rows (C1=<code>0x27C</code>, C2=<code>0x142</code>) - eight <code>CC &lt;crowd&gt; E3 &lt;day&gt;</code> position-copy seats (op <code>4C</code> nE sub-3, <code>0x801E3108</code>) put <code>P1[53..60]</code> on the day cohort's market tiles and park the day cohort at <code>(127,127)</code>. garmel: the Zeto stager <code>P2[12]</code> materializes <code>P1[3]</code>/<code>P1[4]</code> beside the player; post-battle re-entries run <code>P1[0]</code>'s flag-consume arms. Pinned by <code>man_midvisit_rearrangement_disc.rs</code>.</td>
-        <td><a href="../subsystems/script-vm.html">script-vm</a></td>
-      </tr>
-      <tr>
-        <td>Region story-flag gate families (record-header C1/C2 gates)</td>
-        <td><span class="tag tag-done">resolved</span> as structure (play-order residual on the <a href="open-rev-eng-threads.html">open page</a>)</td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td>Field-scene progression is driven almost entirely by the C1/C2 flag lists in each partition-2 record <em>header</em> (evaluated by <code>FUN_8003BDE0</code>: C1 = one-shot latch, C2 = requires-all), which the inline opcode census cannot see. Every region's families are pinned disc-static by census anchor tests: the Sebucus dungeon spokes, the Rim Elm opening/revisit/final town-state variants, Uru Mais, Nivora Ravine, the Karisto region and castle depth, and Conkram - with the low flags <code>0x7</code>/<code>0xF</code> recurring as scene-variant discriminators. The chapter-2 spine is engine-wired through real <code>0x3F</code> scene transitions with no chapter-specific code.</td>
-        <td><a href="../subsystems/script-vm.html">script-vm</a></td>
-      </tr>
-      <tr>
-        <td>Extraction-0874 &sect;2 (<code>player.lzs</code>) F-variant pixels</td>
-        <td><span class="tag tag-done">resolved</span> (installing event named)</td>
-        <td><span class="tag tag-done">capture</span> + <span class="tag tag-done">disassembly</span></td>
-        <td>Both prior premises fell: the pause walk issues zero image transfers (menu-writer falsified), and the wrap-scroll-phase reading is a frame-content coincidence. The variant is a <strong>one-shot face-frame stamp</strong>: town01 opening record <code>P2[3]</code> (C1-gated on the opening latch <code>0x225</code>) runs field-VM op <code>4C 60</code> MoveImage <code>(852,336,6,16) &rarr; (852,268)</code> after the white flash - the parked alternate frame differs from the boot cell at exactly the three F-variant halfwords. Live-caught at <code>ra 0x801E1B8C</code>; disc ops at MAN <code>0x735A</code>/<code>0x7368</code> (misaligned-u16 operands, which is why aligned scans missed them).</td>
-        <td><a href="../formats/character-mesh.html">character-mesh</a></td>
-      </tr>
+      <tr id="t-rim-elms-south-gate"><td>Rim Elm's south gate - why a seated player exits and a walking one does not</td><td>resolved</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#rim-elms-south-gate" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-townfield-free-movement-locomotion"><td>Town/field free-movement locomotion</td><td>resolved</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#townfield-free-movement-locomotion" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-field-ambient-animation---what-makes-jous-ground-pulse-and-the-water-shimmer"><td>Field ambient animation - what makes jou's ground pulse and the water shimmer</td><td>resolved</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/field-ambient-fx.md" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-ambient-render-mode-4---the-vram-rect-scroller"><td>Ambient render-mode 4 - what the op-<code>0x1E</code> seat animates</td><td>resolved</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#ambient-render-mode-4---the-vram-rect-scroller" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-master-ambient-record-0---the-per-scene-sfx-descriptor-bank"><td>Master ambient record 0 - what reads the 8-byte rows</td><td>it is not a stager record at all</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#master-ambient-record-0---the-per-scene-sfx-descriptor-bank" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-town0es-morph-record-installer"><td>town0e's morph-record installer</td><td>the census was shape-blind, not the disc</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/field-ambient-fx.md#town0es-installer-is-a-placed-actor-not-an-effect-actor" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-which-op-0x34-sub-3-installs-fire-at-scene-entry"><td>Which op-<code>0x34</code> sub-3 installs fire at <strong>scene entry</strong></td><td>resolved</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#which-op-0x34-sub-3-installs-fire-at-scene-entry" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-scene-bundle-type-7-slot-content-vdf"><td>Scene bundle type-7 slot content (VDF)</td><td>resolved</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/field-ambient-fx.md#mechanism-3---strip-cycling-and-vertex-morphs" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-vdf-morph-render-substitution---what-draws-the-staged-vertices-and-what-arms-the-lanes"><td>VDF morph render substitution - what draws the staged vertices, and what arms the lanes</td><td>resolved</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/field-ambient-fx.md#the-vdf-vertex-morph-chain" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-what-opens-an-inn-stay-in-retail"><td>What opens an inn stay in retail?</td><td>the premise was wrong</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/field-menu.md#inn-stay-there-is-no-inn-screen" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-field-collision-map-source"><td>Field collision-map source</td><td>headline corrected: the <code>.MAP</code> supplies the base grid</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#field-collision-map-source" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-tile-board-grid-mode"><td>Tile-board grid mode</td><td>resolved</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/tile-board.md" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-game_mode-0x03--fieldtown-gameplay"><td>game_mode 0x03 = field/town gameplay</td><td>resolved</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#game_mode-0x03--fieldtown-gameplay" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-scene-prescript-field-vm-event-scripts-vs-move-vm-stagers-dual-consumer"><td>Scene prescript: field-VM event scripts vs move-VM stagers (dual consumer)</td><td>resolved</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/scene-bundles.md" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-engine-vram-byte-exactness-for-town01"><td>Engine VRAM byte-exactness for town01</td><td>major source); minor residue</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#engine-vram-byte-exactness-for-town01" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-clut-row-510-population-boot-resident-system-ui-strip-band"><td>CLUT row 510 population (env meshes' <code>(64,510)</code> CBA)</td><td>boot-resident system-UI strip band); residue = the exact boot walker call site</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#clut-row-510-population-boot-resident-system-ui-strip-band" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-scene-transition-0x3f-door-destination-indexing"><td>Scene-transition (<code>0x3F</code> door) destination indexing</td><td>resolved</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#scene-transition-0x3f-door-destination-indexing" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-intra-town-house--interior-door-mechanism"><td>Intra-town (house / interior) door mechanism</td><td>resolved</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#intra-town-house--interior-door-mechanism" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-fieldtown-environment-geometry-placement"><td>Field/town environment-geometry placement</td><td>renders</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#fieldtown-environment-geometry-placement" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-overworld--town-entrance-story-flag-gating"><td>Overworld / town entrance story-flag gating</td><td>resolved</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/world-map.md" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-overworld-story-conditional-destination-dolkdolk2"><td>Overworld story-conditional destination (<code>dolk</code>→<code>dolk2</code>)</td><td>mechanism + engine port</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/world-map.md" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-retail-vs-engine-npc--story-flag-state-parity-across-the-capture-library"><td>Retail-vs-engine NPC + story-flag state parity across the capture library</td><td>breadth oracle); residuals filed as their own rows</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#field--locomotion" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-entry-pre-run-channel-slice-ends-on-a-no-mask-4c-70-wall-paint"><td>Entry pre-run channel slice ends on a no-mask <code>4C 70</code> wall paint</td><td>slice-continue landed</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/script-vm.md" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-writer-of-the-rim-elm-opening-flag-549"><td>Writer of the Rim Elm opening flag (<code>549</code>)</td><td>self-latching script SET; the census was width-blind</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/script-vm.md" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-field-map-prot-resolution---define--2-universal"><td>Field <code>.MAP</code> PROT resolution - which entry holds a scene's map</td><td>census-pinned; engine resolver corrected</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#field-map-prot-resolution---define--2-universal" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-world-map-clut-cycling-beyond-the-ocean-head---closed-operand-table--emitter--cadence-all-pinned"><td>World-map CLUT cycling beyond the ocean head</td><td>closed (operand table + emitter + cadence pinned</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#world-map-clut-cycling-beyond-the-ocean-head---closed-operand-table--emitter--cadence-all-pinned" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-init_data-ui-tile-pages---journey-dependent-residency-resolved-map03-texture-column-resolved---not-uploaded-premise-falsified"><td><code>init_data</code> UI-tile page residency; the map03 terrain column</td><td>both premises falsified</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#init_data-ui-tile-pages---journey-dependent-residency-resolved-map03-texture-column-resolved---not-uploaded-premise-falsified" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-what-transitions-retail-into-game-over"><td>What transitions retail into game over?</td><td>resolved</td><td><span class="tag tag-done">disassembly</span> <span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/battle.md#party-wipe--the-game-over-overlay" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-mid-visit-npc-re-arrangement-beats-dolk2-market-crowd-garmel-pre-zeto-staging"><td>Mid-visit NPC re-arrangement beats (dolk2 market crowd; garmel pre-Zeto staging)</td><td>resolved</td><td><span class="tag tag-done">disassembly</span> <span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/script-vm.md#mid-visit-npc-re-arrangement-beats-dolk2-market-swap--garmel-boss-staging" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-region-story-flag-gate-families"><td>Region story-flag gate families (record-header C1/C2 gates)</td><td>as structure (play-order residual on the open page</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#region-story-flag-gate-families" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-extraction-0874-2-playerlzs-f-variant-pixels---a-one-shot-opening-face-frame-stamp-not-a-menu-writer"><td>Extraction-0874 §2 (<code>player.lzs</code>) F-variant pixels</td><td>installing event named</td><td><span class="tag tag-done">disassembly</span> <span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#extraction-0874-2-playerlzs-f-variant-pixels---a-one-shot-opening-face-frame-stamp-not-a-menu-writer" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-chapter-1-scene-frontier"><td>Which chapter-1 scenes the engine can load, script, walk and leave</td><td>as a per-scene verdict; one open exit mechanism named</td><td><span class="tag tag-done">disassembly</span> <span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#chapter-1-scene-frontier" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-clip-end-latch-for-cross-context-clip-pokes"><td>Who latches the clip-end bit for a conversation's cross-context clip pokes</td><td>port residual named</td><td><span class="tag tag-done">disassembly</span> <span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#clip-end-latch-for-cross-context-clip-pokes" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-what-the-op-0x49-entry-context-kind-byte-is-and-which-screens-it-selects"><td>What the op-<code>0x49</code> entry-context kind byte is, and which screens it selects</td><td>disassembly + disc measurement - </td><td><span class="tag tag-done">disassembly</span> <span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#what-the-op-0x49-entry-context-kind-byte-is-and-which-screens-it-selects" target="_blank" rel="noopener">doc</a></td></tr>
     </tbody>
   </table>
-
-  <h3 id="d-prescript">Scene prescript dual consumer - resolution</h3>
-  <p>The op-<code>0x34</code> sub-3 census (scanner <code>man_field_scripts::scene_stager_installs</code>, oracle <code>scene_prescript_consumer_census_disc</code>) walked all three MAN partitions across the corpus: 78 scenes install stagers, from both the placement scripts and the cutscene timelines. The install carriers in partition 1 are dedicated effect-actor records - Shift-JIS-named "effect", whole script = <code>install id N</code> + infinite loop - and the town "768-byte dispatch table" at record 0 is those actors' target: the scene's master ambient stager (8-byte-periodic spawn rows), not a table. A town01 field state pins the id space: retail relocates the bundle to RAM as <code>[u16 count][u16 offsets[count]]</code> at <code>_DAT_8007B8D0</code> with count = the file record count and record 0 byte-identical at the first offset.</p>
-
-  <h3 id="d-clut-cycle">World-map CLUT cycling - closed</h3>
-  <p>The head-walk operands are a literal disc table: <strong>kingdom-bundle slot 5</strong> (type byte <code>0x06</code>), a 516-byte 8-entry CLUT-walk animation table byte-identical across all three kingdoms (parser <code>legaia_asset::clut_walk</code>). Chain: loader <code>FUN_8001F05C</code> case 6 &rarr; <code>DAT_8007B7C8</code>; field-init <code>FUN_801D6704</code> spawns one render-mode-<code>0xB</code> actor per entry (<code>FUN_80024CFC</code>, accumulator seeded 100); emitter <code>FUN_8001ADA4</code> case <code>0xB</code> banks <code>acc += DAT_1F800393</code> and on <code>acc &gt;= hold</code> issues the 16&times;1 <code>MoveImage</code>, <em>resetting</em> <code>acc = 0</code>. Live traces on all three kingdoms confirm strictly constant intervals <code>ceil(hold/dt)*dt</code> (9/12/21 vsyncs for holds 8/10/20 at overworld <code>dt=3</code>), a shared spawn epoch with independent per-entry phases, and the 18-step head cycle sourcing two extra wave frames parked before the <code>OCEAN_ANIM_FRAME0_HEAD</code> signature (ocean frame 12 never shown). The emitter is <em>not</em> the script-driven <code>FUN_801E4C58</code>/<code>FUN_801E4794</code> family - that carries only the row-498 park one-shots/fades, whose cells the slot-5 walkers then use as <em>sources</em>. "Dest rows = park rows + 8" is falsified (literal u16 dest cells). Engine: <code>WaterAnim::Walk</code> in play-window; <code>WORLD_MAP_CLUT_CYCLE_CELLS</code> = the slot-5 destination fold. See <a href="../subsystems/world-map.html">world-map</a> &sect; Ocean animation.</p>
+  </div>
 </section>
 
 <section class="doc-section" id="text-dialog" data-doc="text--fonts--dialog">
   <h2>Text / fonts / dialog</h2>
+  <p>The dialog font and the inline dialog-box encoding.</p>
+  <div style="overflow-x:auto">
   <table>
-    <thead><tr><th>Thread</th><th>Status</th><th>Evidence</th><th>Current answer</th><th>Detail</th></tr></thead>
+    <thead><tr><th>Thread</th><th>Verdict</th><th>Evidence</th><th>Write-up</th></tr></thead>
     <tbody>
-      <tr>
-        <td>Dialog font extraction</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td>The glyph tile page lives at VRAM <code>(896, 0)..(960, 256)</code>; <code>legaia-font</code> extracts widths + atlas from the SCUS plus any in-game save state. Kept so the older "blocked on runtime trace" framing isn't re-opened.</td>
-        <td><a href="../formats/dialog-font.html">dialog-font</a></td>
-      </tr>
-      <tr>
-        <td>Inline dialog-box format (<code>0x1F</code>-lead segments)</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-partial">decompiled-C</span></td>
-        <td>NPC dialogue is an inline <code>0x1F</code>-lead segment pool (the NPC's full line set, not prompt + options); the pre-segment bytes are ordinary field-VM prologue bytecode. Pager dispatch, picker jump tables, and 3-row box packing are decoded and ported.</td>
-        <td><a href="../formats/mes.html">mes</a></td>
-      </tr>
-      <tr>
-        <td>Tetsu 4-option spar menu mechanism</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td>A standard <code>0x29</code> 4-option MES inline picker in the partner's dialogue (immediate-labels form); confirming index 2 starts the spar, driven by the dialog SM. The engine engages the carrier only on the fight option.</td>
-        <td><a href="../formats/mes.html">mes</a></td>
-      </tr>
-      <tr>
-        <td>Pause Items/Magic screens: remaining sub-flows</td>
-        <td><span class="tag tag-done">resolved</span> (dim-bit residual closed)</td>
-        <td><span class="tag tag-done">disassembly</span> + <span class="tag tag-done">capture</span></td>
-        <td>All four sub-flows traced from disassembly and ported: the <strong>window-14 target panel</strong> (<code>FUN_801D0520</code>; the preview modes are the permanent-stat Water previews, superseding the "HP-restore" reading), the <strong>PAGE sprite</strong> (UI-icon <code>0x76</code>), the <strong>SCUS kind-4 list kernel</strong> (<code>FUN_80032A44</code> + allocator <code>FUN_80030104</code>), and the <strong>class-<code>0x80..0x82</code> Use routes</strong> (single-target apply <code>FUN_801D8308</code>, Door of Light/Wind <code>FUN_801D8A58</code>/<code>FUN_801D8B90</code>, Incense <code>FUN_801D8D94</code>); Throw Out / Arrange likewise. Engine <code>engine-ui</code>/<code>pause_screens</code>. The <code>0x800</code> dim bit is set at build time by the SCUS content builder <code>FUN_80030628</code>'s content-id-3 case (equipment always-dim, field-usable bit <code>0x2</code>, then the <code>FUN_8003043C</code> applicability probe); no focus-dependent write exists - the white&rarr;grey flip is the kernel mode-4 park override.</td>
-        <td><a href="../subsystems/field-menu.html">field-menu</a></td>
-      </tr>
+      <tr id="t-dialog-font-extraction"><td>Dialog font extraction</td><td>done - kept for reference</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#text--fonts--dialog" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-inline-dialog-box-format-0x1f-lead-segments"><td>Inline dialog-box format (<code>0x1F</code>-lead segments)</td><td>init-arm count corrected; session-end semantics open</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#inline-dialog-box-format-0x1f-lead-segments" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-tetsu-4-option-spar-menu-mechanism"><td>Tetsu 4-option spar menu mechanism</td><td>resolved</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#text--fonts--dialog" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-pause-itemsmagic-screens---remaining-sub-flows"><td>Pause Items/Magic screens: remaining sub-flows</td><td>dim-bit residual closed</td><td><span class="tag tag-done">disassembly</span> <span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#pause-itemsmagic-screens---remaining-sub-flows" target="_blank" rel="noopener">doc</a></td></tr>
     </tbody>
   </table>
+  </div>
 </section>
 
 <section class="doc-section" id="animation" data-doc="animation">
   <h2>Animation</h2>
+  <p>Player and NPC animation streams.</p>
+  <div style="overflow-x:auto">
   <table>
-    <thead><tr><th>Thread</th><th>Status</th><th>Evidence</th><th>Current answer</th><th>Detail</th></tr></thead>
+    <thead><tr><th>Thread</th><th>Verdict</th><th>Evidence</th><th>Write-up</th></tr></thead>
     <tbody>
-      <tr>
-        <td>Player ANM per-record layout</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-partial">decompiled-C</span></td>
-        <td>8-byte header + prologue + <code>frames &times; bones</code> 8-byte entries; each is a nibble-packed signed-12-bit translation triple + three <code>u8</code> rotations (interpreter <code>FUN_8001BE80</code>), posing <code>R&middot;v + T</code> about the object origin. Decodes byte-exact corpus-wide.</td>
-        <td><a href="../formats/anm.html">anm</a></td>
-      </tr>
-      <tr>
-        <td>Battle anim-id space + record[0] strike family</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td>Anim ids are entry indices (commit <code>FUN_8004AD80</code>; idle = 0); tags <code>2..5</code>/<code>0xB</code> form the hit-reaction family; weapon swings are the equipment-section splice (slots <code>0xC..0xF</code>) plus dynamic art slots <code>0x10</code>/<code>0x11</code>.</td>
-        <td><a href="../formats/monster-animation.html">monster-animation</a></td>
-      </tr>
-      <tr>
-        <td><code>FUN_80047430</code> caller</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td>Live-captured: a single dispatch site, the <code>jalr</code> at <code>0x800252B4</code> inside <code>FUN_8002519C</code> (the per-frame actor-list tick iterator), which calls each node's <code>+0x0C</code> handler slot. The anim-node tick is an ordinary list-node tick handler.</td>
-        <td><a href="functions.html">functions</a></td>
-      </tr>
-      <tr>
-        <td>Record[0] <code>+0x5C</code> pointer + art-anim stream source</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-partial">decompiled-C</span></td>
-        <td>The art keyframe streams are "ME" archives in <code>readef.DAT</code> slots <code>3*char+1</code>/<code>+2</code> (ported, disc-validated). The staging is traced end to end: the initiative scheduler <code>FUN_801DABA4</code> stages the acting character's group per turn (main archive resident), the battle-end arms request <code>3*char+2</code> directly (base archive = the win-pose records 1..8). <code>+0x5C</code> is reframed as a vestigial paired-relocation field: rebased at load alongside <code>+0x58</code>, but an exhaustive corpus sweep finds no reader.</td>
-        <td><a href="../formats/battle-data-pack.html">battle-data-pack</a></td>
-      </tr>
+      <tr id="t-player-anm-per-record-layout"><td>Player ANM per-record layout</td><td>byte-4 nibble corrected</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#player-anm-per-record-layout" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-battle-anim-id-space--record0-strike-family"><td>Battle anim-id space + record[0] "strike family"</td><td>resolved</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/monster-animation.md" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-fun_80047430-caller"><td><code>FUN_80047430</code> caller</td><td>resolved</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#animation" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-record0-0x5c-pointer--art-anim-bank-stream-source"><td>Record[0] <code>+0x5C</code> pointer + art-anim bank stream source</td><td><code>+0x5C</code> = vestigial paired-relocation</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/dump-corpus-integrity.md" target="_blank" rel="noopener">doc</a></td></tr>
     </tbody>
   </table>
+  </div>
 </section>
 
 <section class="doc-section" id="audio" data-doc="audio">
   <h2>Audio</h2>
+  <p>SEQ / VAB playback, the SPU transfer engine, BGM selection and the battle voice cues.</p>
+  <div style="overflow-x:auto">
   <table>
-    <thead><tr><th>Thread</th><th>Status</th><th>Evidence</th><th>Current answer</th><th>Detail</th></tr></thead>
+    <thead><tr><th>Thread</th><th>Verdict</th><th>Evidence</th><th>Write-up</th></tr></thead>
     <tbody>
-      <tr>
-        <td>SPU reverb live routing (C7-REVERB)</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td>Retail runs the <code>Studio C</code> preset, master-enabled, globally; per-voice <code>EON</code> send is broad (BGM + SFX alike). No per-cue enable source exists. Wired at SPU init; residual: output-depth tuning only.</td>
-        <td><a href="../subsystems/audio.html">audio</a></td>
-      </tr>
-      <tr>
-        <td>SFX cue bank routing - the category byte selects the VAB slot</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td>A cue names its own bank. The descriptor's <code>+4</code> category selects the 12-byte mixer record at <code>0x80091508 + category*12</code>, whose <code>+8</code> is a <strong>VAB slot id</strong>: <code>FUN_80065034</code> hands it to <code>FUN_80068b98</code>, which repoints the current-bank globals at that slot <em>before</em> the program / tone lookup. Across every catalogued save state record <code>N</code> holds <code>+8 == N</code>. Slot 0 = PROT 0868 (byte-matched against a live state's <code>VagAtr</code> page), slot 2 = the class-2 bank PROT 0869. Worth grading rather than assuming, because staging one bank fails <em>quietly</em>: both banks carry a UI key map at program 0, so a category-0 cue resolved to a sibling sample - a real retail blip, twice as long and a fifth lower - and peak, duration and "did a voice key" all passed. Both hosts now stage the pinned pair out of one SPU allocator and route by category; categories 6 and 11 keep falling back to the class-2 bank while their slots are unpinned.</td>
-        <td><a href="../formats/sfx-table.html">sfx-table</a></td>
-      </tr>
-      <tr>
-        <td>XA channel map / STR demux SM</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">disassembly</span></td>
-        <td>Statically decompiled from PROT 0970 + SCUS. No channel selector exists in the STR overlay: FMVs play filter-off (each movie = one <code>(1, 0)</code> track); the <code>XA*.XA</code> clip path selects <code>CdlSetfilter {file 1, chan}</code> per cue (<code>FUN_8003D764</code>). Falsified: the "<code>\DATA\MOV.STR</code> multi-channel container" hypothesis; the 64-byte dispatch stride (real stride 32 B - all nine retail slots resolve, every disc movie plays, <code>town0d</code>/<code>uru</code>/<code>jouine</code> triggers are not vestigial); the name-first "compact MV table" phase (it is libcd's <code>CdlFILE</code> dir cache). The engine resolver <code>fmv_index_to_str_filename</code> mirrors the corrected nine-slot map and the return-scene list.</td>
-        <td><a href="../subsystems/cutscene.html#xa-channel-selection">cutscene</a></td>
-      </tr>
-      <tr>
-        <td>Which PROT entries fill SFX VAB slots 1 / 3 / 6 / 11</td>
-        <td><span class="tag tag-done">resolved</span> (slot 6 = 0876, slot 11 = 0889; 1 / 3 are variable banks)</td>
-        <td><span class="tag tag-done">disassembly</span></td>
-        <td>The installer names every binding: a bank reaches a slot through the pair <code>FUN_8001FC00(raw_toc_index, &hellip;)</code> + <code>FUN_8001E54C(category, &hellip;)</code>, and reading the install call sites closes the map - slot 6 = <strong>PROT 0876</strong> (field init <code>FUN_801D6704</code>; its programs cover 29 of the 30 category-<code>6</code> descriptors), slot 11 = <strong>PROT 0889</strong> (battle-end reward resolution <code>FUN_8004E568</code>; its lone program matches the one category-<code>11</code> cue), while slots 1 and 3 hold the current BGM / <code>vab_01</code> side-band banks re-selected at runtime, so neither has a fixed entry to name. Two laws fell out of the same read: <code>FUN_8001D424</code> writes mixer <code>+8 = record index</code> for all 16 records ("category is the slot" is the initialiser's own statement), and slots 2 / 6 share one header buffer + SPU base - the same physical bank in two modes, never open together.</td>
-        <td><a href="../formats/sfx-table.html">sfx-table</a></td>
-      </tr>
-      <tr>
-        <td>XA clip-table writer + <code>(clip_id, chan)</code> cue census</td>
-        <td><span class="tag tag-done">resolved</span> (writer pinned; cue census decoded)</td>
-        <td><span class="tag tag-done">disassembly</span></td>
-        <td>The <code>0x801C6ED8</code> clip-table content is pinned (34 <code>[CdlLOC][len]</code> slots = <code>XA1..XA34</code>, title-capture byte-exact vs the disc files). The filler is <strong><code>FUN_801CFA78</code></strong> in PROT 0895 <code>init.pak</code> (base <code>0x801CE818</code>): it sprintf-generates <code>\XA\XA%d.XA;1</code> per slot and fills <code>[BCD-MSF][size]</code> via the ISO9660 lookup <code>FUN_8005DBB4</code>, called once from the init boot tick <code>0x801CF500</code>. The earlier "untraceable DMA/computed write" framing was the SCUS-only sweep's blind spot - the two <code>lui 0x801c</code> sites in SCUS (<code>FUN_8003D53C</code>/<code>FUN_8003EAE4</code>) are the <strong>readers</strong>; the writer is overlay-resident. Cue census (callers of those readers): menu voice <code>FUN_8004FCC8</code>; the normal-move grunt (<code>XA30</code> chan 0/4/6, overlay <code>0x801EEB44</code>); the arts shout (<code>FUN_8004C140</code> &rarr; <code>XA2</code>/<code>XA4</code>/<code>XA6</code> per character); SM state-<code>0x6E</code> (<code>XA9</code>); slot machine <code>XA1</code>. Full deduped census in <a href="../subsystems/audio.html">audio</a>; dedupe by true entry extent - PROT over-read aliases callsites into neighbouring overlays.</td>
-        <td><a href="../subsystems/audio.html">audio</a></td>
-      </tr>
-      <tr>
-        <td>Hyper Arts fanfare selector - what audio fires when a Hyper executes</td>
-        <td><span class="tag tag-done">resolved</span> (per-(char, art) coin flip over a fixed channel pair)</td>
-        <td><span class="tag tag-done">disassembly</span> <span class="tag tag-done">capture</span></td>
-        <td>A Hyper art fires <strong>no pool shout</strong> (its action constant sits below the shout table's <code>lo</code> bound). The staged-animation materialiser <code>FUN_8004AD80</code>, on the Hyper class byte <code>0x1A</code>, fires the jingle queue with <code>jingle_id = rand()%2*3 + base</code> - a per-(character, art) coin flip between the fixed channel pair <code>{base, base+3}</code> of the character's stereo fanfare bank (Vahn <code>XA1.XA</code>, Noa <code>XA3.XA</code>, Gala <code>XA5.XA</code>). Super/Miracle expansions take fixed ids = the bank's generic channel 1; a Miracle's finisher adds its anim cue track. No avoid-repeat memory, unlike the shout pool. All nine Hyper rows capture-witnessed; durations reproduce the <code>0x800788B8</code> table. Engine table <code>legaia_art::hyper_fanfare::CAPTURED_FANFARES</code>; the arts page plays the pinned cue per card.</td>
-        <td><a href="../subsystems/battle-action.html">battle-action</a></td>
-      </tr>
+      <tr id="t-spu-reverb-live-routing-c7-reverb"><td>SPU reverb live routing (C7-REVERB)</td><td>wired; Studio C, global</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#spu-reverb-live-routing-c7-reverb" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-xa-channel-map--str-demux-sm"><td>XA channel map / STR demux SM</td><td>static decompile of PROT 0970 + SCUS</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#xa-channel-map--str-demux-sm" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-fun_80018db0-is-a-rumble-cadence-not-an-audio-one"><td><code>FUN_80018DB0</code> is a rumble cadence, not an audio one</td><td>libpad, not SsAPI; no cue to pin</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#fun_80018db0-is-a-rumble-cadence-not-an-audio-one" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-key-on-pitch-unity-on-centre"><td>Key-on pitch: what does retail put in the voice pitch register?</td><td>unity on centre; the port was an octave low</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#key-on-pitch-unity-on-centre" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-sfx-cue-bank-routing---the-category-byte-selects-the-vab-slot"><td>SFX cue bank routing - the category byte selects the VAB slot</td><td>mechanism + the two pinned banks; ported</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#sfx-cue-bank-routing---the-category-byte-selects-the-vab-slot" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-which-prot-entries-fill-sfx-vab-slots-1--3--6--11"><td>Which PROT entries fill SFX VAB slots 1 / 3 / 6 / 11</td><td>slot 6 = 0876, slot 11 = 0889; 1 / 3 are variable banks</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#which-prot-entries-fill-sfx-vab-slots-1--3--6--11" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-the-fun_8006ef18-trio-is-a-bios-kernel-patch-sequence-not-an-spu-init"><td>The <code>FUN_8006EF18</code> trio is a BIOS kernel-patch sequence, not an SPU init</td><td>negative</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#the-fun_8006ef18-trio-is-a-bios-kernel-patch-sequence-not-an-spu-init" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-_dat_8007b910-is-the-live-audio-level-not-screen-brightness"><td><code>_DAT_8007B910</code> is the live audio level, not screen brightness</td><td>both hosts' labels corrected</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#_dat_8007b910-is-the-live-audio-level-not-screen-brightness" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-xa-clip-table-writer--clip_id-chan-cue-census"><td>XA clip-table writer + <code>(clip_id, chan)</code> cue census</td><td>writer pinned statically; census in <code>audio.md</code></td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#xa-clip-table-writer--clip_id-chan-cue-census" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-hyper-arts-fanfare-selector"><td>Hyper Arts fanfare selector - what audio fires when a Hyper executes</td><td>per-(char, art) coin flip over a fixed channel pair of the even-slot fanfare bank</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#hyper-arts-fanfare-selector" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-op-0x35-sub-op-0xa-is-the-track-swap-commit"><td>Op-<code>0x35</code> sub-op <code>0xA</code> - what the "unhalt-pause toggle" waits on</td><td>it is the track-swap commit; both globals pinned; ported</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#op-0x35-sub-op-0xa-is-the-track-swap-commit" target="_blank" rel="noopener">doc</a></td></tr>
     </tbody>
   </table>
+  </div>
 </section>
 
 <section class="doc-section" id="title-boot-overlays" data-doc="title--boot--overlays">
   <h2>Title / boot / overlays</h2>
+  <p>Boot order, the title screen, the save screen, and which overlay is resident when.</p>
+  <div style="overflow-x:auto">
   <table>
-    <thead><tr><th>Thread</th><th>Status</th><th>Evidence</th><th>Current answer</th><th>Detail</th></tr></thead>
+    <thead><tr><th>Thread</th><th>Verdict</th><th>Evidence</th><th>Write-up</th></tr></thead>
     <tbody>
-      <tr>
-        <td><code>title.pak</code> PROT entry</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td>No single bundle: the title wordmark TIM is PROT 888/890, the options/config-menu bundle is PROT 899, and the title-overlay code sits in the unindexed gap after entry 899.</td>
-        <td><a href="../subsystems/boot.html">boot</a></td>
-      </tr>
-      <tr>
-        <td>Title screen mode-table PROT</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-partial">inference</span></td>
-        <td>No such entry: a pre-mode-dispatch boot routine loads the title overlay (tick <code>FUN_801DD35C</code>, in the unindexed PROT.DAT gap between TOC entries 899 and 900); NEW GAME crosses into mode 2. Open sub-question: <em>which</em> overlay owns <code>FUN_801DD35C</code> - its disassembly is identical across the menu, title, save-UI and shop-save dumps, and the engine ports it twice under incompatible descriptions. Closing it needs the residency check the op-<code>0x2F</code> thread used.</td>
-        <td><a href="../subsystems/boot.html">boot</a></td>
-      </tr>
-      <tr>
-        <td>Load-screen panel 9-slice geometry</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td>Retail composes the 81&times;29 panel from 14 textured sprites sampling the system-UI sheet with CLUT <code>(32, 511)</code>; no interior fill - the "marbled blue" is dimmed title art through the empty frame middle. Engine renders it byte-perfect.</td>
-        <td><a href="../subsystems/save-screen.html">save-screen</a></td>
-      </tr>
-      <tr>
-        <td>Key-item area consumers (<code>0x800859E8..0x80085A40</code>)</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-partial">decompiled-C</span></td>
-        <td>No unguarded-index consumer: the range is inventory slots <code>&gt;= 72</code> of <code>&amp;DAT_80085958</code>, read by the item-menu functions via <code>&amp; 0x3ff</code> masks into 256-entry item tables (bounded). It amplifies to game-state corruption (item possession / displayed ids), not a native index-OOB chain step; the OOB <em>write</em> at <code>0x800422BC</code> remains the only primitive.</td>
-        <td></td>
-      </tr>
-      <tr>
-        <td>Full-window item-add OOB reachability</td>
-        <td><span class="tag tag-done">resolved</span> (write primitive real; normal play cannot reach it)</td>
-        <td><span class="tag tag-done">disassembly</span></td>
-        <td>The id store <code>sb t0,0x1818(a0)</code> at <code>0x800422BC</code> in <code>FUN_800421D4</code> is unconditional and precedes the <code>slt</code>/<code>beq</code> guard that gates only the count store, so an exhausted free-slot scan writes one slot past the window - but the retail add call sites can never present a full window. <a href="#d-item-add-oob">details &darr;</a></td>
-        <td><a href="memory-map.html">memory-map</a></td>
-      </tr>
-      <tr>
-        <td>XP-table source + reader</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td>The static SCUS per-level delta table <code>DAT_80076AF4</code>, read by the level-up applier <code>FUN_801E9504</code>. Extracted at boot; byte-validated L2 = 365 / L3 = 730 against a captured retail level-up.</td>
-        <td><a href="../subsystems/level-up.html">level-up</a></td>
-      </tr>
-      <tr>
-        <td>Overlay identity from the disc (static extraction)</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td>Overlays are clean fixed-VA copies, so each extracts statically from its PROT entry at a jal-recovered (or anchor / pointer-resolution) base; the committed map spans the slot-A family + pinned slot-B entries. Complements runtime captures.</td>
-        <td><a href="../tooling/static-overlay-pipeline.html">static-overlay-pipeline</a></td>
-      </tr>
-      <tr>
-        <td>SCUS recomp gap - render/GTE + boot/init clusters</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">disassembly</span></td>
-        <td>The recomp's "undocumented" render/GTE + boot bands dissolve on behavior read: entry-skew aliases of documented functions, statically-linked libgte per-op wrappers with zero callers (link residue), and a dev draw cluster (wireframe box / line / digit emitters). Genuinely new: <code>FUN_80015E90</code> = <strong>main()</strong>, and <code>FUN_8004CE30</code> = the per-frame battle actor maintenance pass (not a mode dispatcher). The general-game band stays open.</td>
-        <td><a href="../subsystems/boot.html">boot</a></td>
-      </tr>
-      <tr>
-        <td>Options/menu overlay PROT entry</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td><strong>PROT 0899</strong> at <code>0x801CE818</code>: <code>FUN_801CF650</code>'s signature byte-matches file <code>0xe38</code>; the prefix is byte-identical across menu-open saves. The earlier "0896 = menu" label is falsified.</td>
-        <td><a href="../tooling/static-overlay-pipeline.html">static-overlay-pipeline</a></td>
-      </tr>
-      <tr>
-        <td>PROT 0896 (<code>bat_back_dat</code>) identity</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td>The unique ~<code>0x9000</code>-byte head is the vestigial Japanese-build field-menu / config / status overlay - the debug-string sibling of the English retail menu overlay PROT 0899 (same <code>~0x801D0000</code> window-renderer VA family, <code>"FWIN ERR %d"</code> at file <code>0x3D4</code>). 0899 ships the English label set with zero <code>FWIN</code>; a signature scan finds 0896 resident in 0 of 140 states, so the USA build never loads it. <a href="#d-prot0896">details &darr;</a></td>
-        <td><a href="../tooling/static-overlay-pipeline.html">static-overlay-pipeline</a></td>
-      </tr>
-      <tr>
-        <td>Slot-A scene-overlay family beyond field/battle/menu</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">disassembly</span></td>
-        <td>Pinned from the disc: 0970 cutscene/STR plus minigame overlays 0972 fishing / 0975 slot machine / 0976 Baka Fighter / 0980 dance, each anchored at <code>0x801CE818</code>. Minigame entries over-read each other (phantom-base risk).</td>
-        <td><a href="../tooling/static-overlay-pipeline.html">static-overlay-pipeline</a></td>
-      </tr>
-      <tr>
-        <td>"World-map / save / shop" overlay PROT entries</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">disassembly</span></td>
-        <td>Not separate entries: the world-map controller <code>FUN_801E76D4</code> lives in field overlay 0897, the save dispatcher <code>FUN_801DC6B4</code> + shop session in menu overlay 0899 (signature-matched). They are subsystems of existing slot-A overlays.</td>
-        <td><a href="../tooling/static-overlay-pipeline.html">static-overlay-pipeline</a></td>
-      </tr>
-      <tr>
-        <td>Debug flag <code>0x8007B98F</code></td>
-        <td><span class="tag tag-done">resolved</span> (the MSB of the debug-mode word <code>_DAT_8007B98C</code>)</td>
-        <td><span class="tag tag-done">disassembly</span> + <span class="tag tag-done">capture</span></td>
-        <td><code>0x8007B98F</code> has zero <em>byte</em>-granular references because it is the most-significant byte (offset +3, little-endian) of the 32-bit debug-mode word <code>0x8007B98C</code>, and code reads the word. <code>_DAT_8007B98C</code> is the debug gate tested by the input dispatcher <code>FUN_8001822c</code> plus the resident field-overlay (0897) gates, written by the shared menu/title/save-init routine. Poking <code>0x8007B98F = 1</code> sets the MSB, so every <code>!= 0</code> gate reads debug active and SELECT+&#9651; opens the debug menu. Statically pinned and runtime-confirmed.</td>
-        <td><a href="../subsystems/boot.html">boot</a></td>
-      </tr>
-      <tr>
-        <td><code>_DAT_8007B8C2</code> polarity, and its writer</td>
-        <td><span class="tag tag-done">resolved</span> (docs were backwards)</td>
-        <td><span class="tag tag-done">disassembly</span> + <span class="tag tag-done">capture</span></td>
-        <td>The old reading had the branch sense backwards and named the wrong loader for one arm. Every site reads the flag with <code>lh</code> and takes the <strong>zero</strong> arm to the host-PC debug station (<code>FUN_8003E360</code> falls through to <code>jal 0x800608F0</code>, whose body is <code>break 0x103</code>), the <strong>non-zero</strong> arm to the PROT-index resolver. The writer that makes it self-consistent is <strong>gp-relative</strong>: <code>main()</code> (<code>FUN_80015E90</code>) stores the flag once at cold boot, <code>sh v0,0x5aa(gp)</code> at <code>0x80015F08</code>, taking the constant <code>1</code> from the two-instruction leaf <code>FUN_8003F084</code> - an absolute-form-only scan cannot see it, and no BSS is cleared for this executable at all (<code>b_size = 0</code>).</td>
-        <td><a href="memory-map.html">memory-map</a></td>
-      </tr>
-      <tr>
-        <td>New-Game opening chain + narration roller</td>
-        <td><span class="tag tag-done">resolved</span> (chain + caption + roller + prologue gold grade; far-geometry residual resolved-negative)</td>
-        <td><span class="tag tag-done">capture</span> + <span class="tag tag-done">disassembly</span></td>
-        <td>The opening is a five-scene chain (<code>opdeene</code> &rarr; <code>opstati</code> &rarr; <code>opurud</code> &rarr; <code>map01</code> &rarr; <code>town01</code>, all master mode 3, zero input), live-probe + pixel-capture pinned; the narration is a bottom-up scrolling crawl on a child-context roller actor (<code>FUN_80037174</code>), the "It was the Seru." caption is a pre-rendered TIM in PROT 0749, and the camera op <code>0x45</code> map, name-entry auto-open and the eye-back depth (offset-trio slot 5, <code>0x800840B8</code>) are all pinned. Both former render-fidelity residuals had one root cause: the <strong>prologue gold grade is a capture-pinned palette-space collapse</strong> (<code>L = max(r,g,b) &rarr; (L, max(L-1,0), L&gt;&gt;1)</code> applied to every uploaded CLUT + the TMDs' colour packets; the per-node depth-cue reading is falsified - <a href="re-do-not-re-walk.html">do not re-walk</a>). Engine port <code>Renderer::set_palette_grade</code>. The far-geometry-brightness residual closed <strong>resolved-negative</strong>: reproducing retail's scene GTE far/back-colour ambient would contradict the port's no-field-light boundary, so no engine change was warranted.</td>
-        <td><a href="../subsystems/cutscene.html">cutscene</a></td>
-      </tr>
-      <tr>
-        <td>Overlay-loader index off-by-2 - remaining ripple</td>
-        <td><span class="tag tag-done">resolved</span> (slot A reconciled; slot-B per-spell identity capture-pinned)</td>
-        <td><span class="tag tag-done">capture</span> + <span class="tag tag-done">disassembly</span></td>
-        <td>The loaded entry is extraction <code>param + 0x37F</code> (the in-RAM TOC is raw PROT.DAT), so every historical <code>+ 0x381</code> attribution was 2 high. Slot A reconciled; the player, evolved (Kemaro &rarr; 918, Spoon &rarr; 919, pinned by injected casts), high, flute (0924/0925 Lippian/Spikefish), and Cort enemy stager blocks are all capture-pinned on the linear <code>spell &minus; 0x79</code> arithmetic, each loader-B-id-confirmed mid-cast with the slot-B image a full byte-match over the entry's LBA footprint; engine mirrors corrected.</td>
-        <td><a href="../formats/prot.html">prot</a></td>
-      </tr>
-      <tr>
-        <td>Slot-B overlay cluster (<code>0900..0969</code>) per-entry identity</td>
-        <td><span class="tag tag-done">resolved</span> except 0968 (that residual is on the <a href="open-rev-eng-threads.html">open page</a>)</td>
-        <td><span class="tag tag-done">capture</span> + <span class="tag tag-done">disassembly</span></td>
-        <td>0900/0901 = the default move-FX pair, 0902 = GAME OVER, 0903..0913 = player summon stagers (capture-pinned per spell id), 0924/0925 = the rare-Seru flute summons Lippian / Spikefish (loader-B ids <code>0x1D</code>/<code>0x1E</code> mid-cast, extending the player run <code>loader = spell &minus; 0x79</code> unbroken through 927; the "other enemies' specials" guess is refuted), 0926 = the unused-<code>0x98</code> one-sector <code>jr ra</code> stub, 0957 = summon-effect strings. The <code>0x4000</code>/<code>0x4001</code> render-mode nodes are statically decoded (moving particle / 3D positional <em>sound</em> emitter) and the classification is ported.</td>
-        <td><a href="../tooling/static-overlay-pipeline.html">static-overlay-pipeline</a></td>
-      </tr>
+      <tr id="t-_dat_8007b8c2-polarity-and-its-writer"><td><code>_DAT_8007B8C2</code> polarity, and its writer</td><td>docs were backwards</td><td><span class="tag tag-done">disassembly</span> <span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#_dat_8007b8c2-polarity-and-its-writer" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-actor-vm-fun_801d6628-program-source---which-carrier-what-selects-one"><td>Actor-VM (<code>FUN_801D6628</code>) program source - which carrier, what selects one</td><td>menu-overlay-resident program table</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/window-script.md" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-titlepak-prot-entry"><td><code>title.pak</code> PROT entry</td><td>resolved</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#titlepak-prot-entry" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-title-screen-mode-table-prot"><td>Title screen mode-table PROT</td><td>no such entry</td><td><span class="tag tag-partial">inference</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#title-screen-mode-table-prot" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-load-screen-panel-9-slice-geometry"><td>Load-screen panel 9-slice geometry</td><td>engine renders byte-perfect</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/save-screen.md#pinned-9-slice-tile-rects-system-ui-tim-clut-row-2" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-key-item-area-consumers"><td>Key-item area consumers (<code>0x800859E8..0x80085A40</code>)</td><td>narrow negative); reader list incomplete</td><td><span class="tag tag-done">disassembly</span> <span class="tag tag-partial">inference</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#key-item-area-consumers" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-xp-table-source--reader"><td>XP-table source + reader</td><td>ported</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#xp-table-source--reader" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-new-game-world-state-seed-store-widths"><td>New-game world-state seed store widths (<code>FUN_80034A6C</code>)</td><td>port confirmed, no change</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#new-game-world-state-seed-store-widths" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-overlay-identity-from-the-disc-static-extraction"><td>Overlay identity from the disc (static extraction)</td><td>pipeline landed</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#overlay-identity-from-the-disc-static-extraction" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-scus-recomp-gap---rendergte--bootinit-clusters"><td>SCUS recomp gap - render/GTE + boot/init clusters</td><td>aliases + libgte residue + dev tooling; <code>main()</code> documented</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#scus-recomp-gap---rendergte--bootinit-clusters" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-optionsmenu-overlay-prot-entry"><td>Options/menu overlay PROT entry</td><td>RAM-verified; PROT 0899 @ <code>0x801CE818</code></td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#title--boot--overlays" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-prot-0896-bat_back_dat-identity"><td>PROT 0896 (<code>bat_back_dat</code>) identity</td><td>resolved</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#prot-0896-bat_back_dat-identity" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-slot-a-scene-overlay-family-beyond-fieldbattlemenu"><td>Slot-A scene-overlay family beyond field/battle/menu</td><td>in the static map</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#title--boot--overlays" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-world-map--save--shop-overlay-prot-entries"><td>"world-map / save / shop" overlay PROT entries</td><td>not separate entries</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#title--boot--overlays" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-prot-0977--0978-extraction--the-dump-re-key"><td>PROT 0977 / 0978 extraction + the dump re-key</td><td>resolved</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#prot-0977--0978-extraction--the-dump-re-key" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-slot-b-capture-module-band-09350966-per-entry-identity"><td>Slot-B capture-module band <code>0935..0966</code> per-entry identity</td><td>statically derived, capture-corroborated</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#slot-b-capture-module-band-09350966-per-entry-identity" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-phantom-va-sweep-of-the-prot-0897-imports"><td>Phantom-VA sweep of the PROT 0897 imports</td><td>resolved</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#phantom-va-sweep-of-the-prot-0897-imports" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-_dat_8007b98f-is-byte-3-of-the-debug-mode-word-_dat_8007b98c"><td>Debug flag <code>0x8007B98F</code></td><td>the MSB of the debug-mode word <code>_DAT_8007B98C</code></td><td><span class="tag tag-done">disassembly</span> <span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#_dat_8007b98f-is-byte-3-of-the-debug-mode-word-_dat_8007b98c" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-new-game-opening-chain--narration-roller"><td>New-Game opening chain + narration roller</td><td>chain + caption + roller + prologue gold grade; far-geometry residual resolved-negative</td><td><span class="tag tag-done">disassembly</span> <span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#new-game-opening-chain--narration-roller" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-overlay-loader-index-off-by-2---remaining-ripple"><td>Overlay-loader index off-by-2 - remaining ripple</td><td>slot A reconciled; slot-B per-spell identity capture-pinned</td><td><span class="tag tag-done">disassembly</span> <span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#overlay-loader-index-off-by-2---remaining-ripple" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-slot-b-overlay-cluster-09000969-per-entry-identity"><td>Slot-B overlay cluster (<code>0900..0969</code>) per-entry identity</td><td>for every entry</td><td><span class="tag tag-done">disassembly</span> <span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#slot-b-overlay-cluster-09000969-per-entry-identity" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-prot-0968---the-cort-battle-stage-overlay"><td>PROT 0968 - what it is, who loads it, and how big it really is</td><td>identity and extent by disassembly, residency by capture</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#prot-0968---the-cort-battle-stage-overlay" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-0x80010390-is-the-slot-b-overlay-destination-pointer"><td><code>0x80010390</code> - the SCUS word that looked like a lead on 0968</td><td>: it is the slot-B overlay destination pointer, shared by every slot-B entry</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#0x80010390-is-the-slot-b-overlay-destination-pointer" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-muscle-dome-match-shape-an-ordinary-battle-ladder-not-a-card-battle"><td>Muscle Dome match shape: an ordinary battle ladder, not a card battle</td><td>disassembly - </td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#muscle-dome-match-shape-an-ordinary-battle-ladder-not-a-card-battle" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-the-dome-runs-two-state-machines-the-outer-one-is-the-contest"><td>The dome runs two state machines; the outer one is the contest</td><td>disassembly - </td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#the-dome-runs-two-state-machines-the-outer-one-is-the-contest" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-battle-arts-input-ui-decomposition-dome--standard-battle-input"><td>Battle arts-input UI decomposition (dome = standard battle input)</td><td>capture - the input screen's full piece decomposition +</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#battle-arts-input-ui-decomposition-dome--standard-battle-input" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="d-item-add-oob"><td>Full-window item-add OOB reachability</td><td>the write primitive is real; normal play cannot reach it.</td><td><span class="tag tag-done">disassembly</span> <span class="tag tag-partial">inference</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#full-window-item-add-oob-reachability" target="_blank" rel="noopener">doc</a></td></tr>
     </tbody>
   </table>
-
-  <h3 id="d-item-add-oob">Full-window item-add OOB reachability - resolved</h3>
-  <p><em>Grade:</em> <code>disassembly</code> for the full window; <code>inference</code> for the half-window sub-case.</p>
-  <p>The OOB <em>write</em> is confirmed from <code>FUN_800421D4</code>'s disassembly: the id store <code>sb t0,0x1818(a0)</code> at <code>0x800422BC</code> is unconditional and precedes the <code>slt</code>/<code>beq</code> guard (<code>0x800422C8</code>/<code>0x800422CC</code>) that gates only the count store at <code>0x80042300</code>. When the free-slot scan exhausts the window it leaves the index <code>== end</code>, so the id lands one slot past the window (<code>base + end*2</code> = <code>0x80085A58</code> for <code>end=128</code>, <code>0x80085B58</code> for <code>end=256</code>). The window is installed only by <code>FUN_8004313C</code>, which installs <code>[0,256)</code>, <code>[0,128)</code> or <code>[128,256)</code> - never the 72-slot span an earlier note recorded.</p>
-  <p><strong>Reachability verdict: unreachable through the retail add call sites in normal play.</strong> No add caller pre-checks room - each loads an item id and <code>jal</code>s the helper directly (shop buy-confirm <code>0x801C38A4</code>, battle-loot <code>0x8004F380</code>/<code>0x8004F608</code>, plus the menu/save/fishing/world-map/minigame/equip-refund helpers) - so the helper's own scan is the only backstop, and it holds:</p>
-  <ul class="bullets">
-    <li><strong>Full window <code>[0,256)</code></strong> (installed for any party of &ge;2, the normal mid/late state). The merge pass keys on the id byte (<code>andi a3,t0,0xff</code> @ <code>0x800421F4</code>), so each non-zero id occupies at most one slot and <code>0</code> is the empty sentinel; at most <strong>255</strong> distinct ids occupy the 256 slots, so a hole always remains and the scan exits in-window. The OOB store is mathematically unreachable here.</li>
-    <li><strong>Half windows <code>[0,128)</code> / <code>[128,256)</code></strong> (a single playable member with story flag 20 clear - a transient early/solo phase). 128 &le; 255 so the id ceiling alone does not forbid a fill, but the real disc item population is far below 128, so the scan still terminates on a hole.</li>
-  </ul>
-  <p>A non-add path (debug menu, cheat engine, or a crafted save seeding duplicate live ids) could still force the exit with an attacker-influenced byte - outside "normal play", which is what the thread asked. Port + machine-checkable verdict: <code>legaia_save::retail_inventory</code> (<code>ItemWindow::oob_reachability</code>, <code>MAX_DISTINCT_ITEM_IDS</code>, <code>OobReachability</code>).</p>
-
-  <h3 id="d-prot0896">PROT 0896 - resolved</h3>
-  <p>Host-capstone decode of the head (extraction entry 896, located by the <code>"FWIN ERR"</code> bytes) identifies it as the vestigial Japanese-build field-menu / config / status overlay: a Shift-JIS config/menu/status label pool, the <code>"FWIN ERR %d"</code> (Field WINdow) debug printf at file offset <code>0x3D4</code>, real MIPS at link base <code>~0x801D0000</code> indexing the <code>0x414</code>-byte character records, and head function-pointer tables across <code>0x801D81C0..0x801DC700</code> - the same window-renderer VA family as the live English menu overlay PROT 0899, which ships the English equivalents of the identical label set with zero <code>FWIN</code>. A distinctive-signature scan across 140 catalogued RAM states finds 0896 resident in none (positive control: the English "Battle Voices" is resident in 10 menu-phase states), so the USA build never loads it - a vestigial JP-build overlay carried on the disc.</p>
+  </div>
 </section>
+
 <section class="doc-section" id="rendering-camera" data-doc="rendering--camera">
   <h2>Rendering / camera</h2>
+  <p>GTE projection, camera beats, the backdrop draw and VRAM parity.</p>
+  <div style="overflow-x:auto">
   <table>
-    <thead><tr><th>Thread</th><th>Status</th><th>Evidence</th><th>Answer</th></tr></thead>
+    <thead><tr><th>Thread</th><th>Verdict</th><th>Evidence</th><th>Write-up</th></tr></thead>
     <tbody>
-      <tr>
-        <td>Does any retail shot author a non-zero camera roll?</td>
-        <td><span class="tag tag-done">resolved</span> (yes)</td>
-        <td><span class="tag tag-done">capture</span> + <span class="tag tag-done">disassembly</span></td>
-        <td>Eight scenes stage a reachable, executing op-<code>0x45</code> slot-2 roll, from <code>10</code> units (0.9&deg;) to <code>-660</code> (&minus;58&deg;). The port used to drop the <code>RotMatrixZ</code> factor and now composes it. <a href="#d-camera-roll">details &darr;</a></td>
-      </tr>
+      <tr id="t-does-any-retail-shot-author-a-non-zero-camera-roll"><td>Does any retail shot author a non-zero camera roll?</td><td>yes</td><td><span class="tag tag-done">disassembly</span> <span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#does-any-retail-shot-author-a-non-zero-camera-roll" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-does-retail-stack-coincident-curved-shells"><td>Does retail stack coincident curved shells?</td><td>no</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#does-retail-stack-coincident-curved-shells" target="_blank" rel="noopener">doc</a></td></tr>
     </tbody>
   </table>
-
-  <h3 id="d-camera-roll">Camera roll - retail authors it</h3>
-  <p>Slot <code>2</code> of the op-<code>0x45</code> CONFIGURE mask is the roll angle <code>_DAT_8007B794</code>, the argument <code>FUN_8001CF50</code> hands to <code>RotMatrixZ</code> (<code>0x8004638C</code>) as the third factor of <code>Rx &middot; Ry &middot; Rz</code>. The engine used to compose pitch and yaw only, on the assumption that retail shots rarely roll.</p>
-  <p>Eight scenes roll. Every one of these beats carries the full nine-slot mask - pitch, yaw, roll, the eye trio, focus X and Z, <code>H</code>, and no focus Y - every operand is an in-range 12-bit angle, and the beats of one shot repeat the same tilt, which is what an authored Dutch angle looks like.</p>
-  <table>
-    <thead><tr><th>scene</th><th>what it is</th><th>PROT entry</th><th>record</th><th>roll (12-bit)</th><th>degrees</th></tr></thead>
-    <tbody>
-      <tr><td><code>edstati3</code></td><td>Ending (station3)</td><td>826</td><td>P2[0]</td><td><code>10</code>, <code>20</code></td><td>0.9, 1.8</td></tr>
-      <tr><td><code>station3</code></td><td>Karisto Station (late)</td><td>616</td><td>P2[0]</td><td><code>30</code></td><td>2.6</td></tr>
-      <tr><td><code>map03</code></td><td>World map (Karisto)</td><td>392</td><td>P2[10]</td><td><code>60</code></td><td>5.3</td></tr>
-      <tr><td><code>nilboa</code></td><td>Nivora Ravine</td><td>638</td><td>P2[33]</td><td><code>60</code></td><td>5.3</td></tr>
-      <tr><td><code>taiku</code></td><td>Muscle Dome</td><td>373</td><td>P2[27]</td><td><code>-120</code></td><td>&minus;10.5</td></tr>
-      <tr><td><code>korout</code></td><td>Field (korout)</td><td>534</td><td>P2[3]</td><td><code>240</code></td><td>21.1</td></tr>
-      <tr><td><code>juui1</code></td><td>Juggernaut interior 1</td><td>588</td><td>P2[0], P2[3], P2[4]</td><td><code>-400</code></td><td>&minus;35.2</td></tr>
-      <tr><td><code>juui2</code></td><td>Juggernaut interior 2</td><td>597</td><td>P2[0]</td><td><code>-660</code></td><td>&minus;58.0</td></tr>
-    </tbody>
-  </table>
-  <p>The two biggest tilts sit inside the Juggernaut, and the smallest opens an ending cutscene - which is where a canted camera is exactly what an author would reach for.</p>
-  <p>Roll stays a <strong>minority</strong> term: of the 371 CONFIGUREs a control-flow walk reaches, 123 set the slot at all and 15 of those write a non-zero value - roughly a third, then about one in eight. That is why "rarely" survived as long as it did. Rare is not never.</p>
-  <p><strong>Why it took execution.</strong> A field-VM record's tail is not linearly decodable, so a <em>decode</em> of the corpus has to pick a resynchronisation policy, and the policy is what it ends up measuring. Three instruments disagreed:</p>
-  <table>
-    <thead><tr><th>Instrument</th><th>CONFIGUREs reached</th><th>Non-zero rolls</th><th>What it was really measuring</th></tr></thead>
-    <tbody>
-      <tr><td>Strict linear (stop at first decode error)</td><td>21</td><td>0</td><td>its own blindness - it reaches none of the eight</td></tr>
-      <tr><td>Resuming linear (advance one byte on error)</td><td>2182</td><td>637 roll operands, 7 outside the 12-bit angle space</td><td>its resynchronisation into data</td></tr>
-      <tr><td>Raw byte scan (decode at every offset)</td><td>4257</td><td>a "2 %" ratio</td><td>its own post-hoc credibility filter</td></tr>
-    </tbody>
-  </table>
-  <p>The resuming sweep's own shortlist of "coherent" candidates - <code>deroa</code>, <code>chitei2</code>, <code>station3</code>, <code>town0b</code>, <code>retona</code>, <code>nilboa</code>, <code>edstati3</code> - scores three hits out of seven and misses five of the eight real ones. That is its signal-to-noise stated as a number: half its picks are data, and it cannot see most of what is there, because the authored rolls live in <strong>partition 2</strong> (cutscene-timeline / walk-on beat records) while the linear census walks partition 1.</p>
-  <p>The decider is control flow. Stepping the ported field VM from each record's real entry PC, under a probe host that answers every branch predicate both ways, gives the set of PCs control flow can arrive at; executing the same records in a real world gives the subset that runs. Both find the same eight scenes, and <strong>neither reaches a roll operand outside the angle space</strong> - which is what identifies the resuming sweep's impossible operands (<code>26708</code> is not an angle) as data.</p>
-  <p>Two corrections fall out. The parenthetical "zeroed in the field-camera build path" on the slot-2 row was wrong: none of <code>FUN_801DAB90</code>, <code>FUN_801DB8EC</code> or <code>FUN_801DBE9C</code> writes <code>_DAT_8007B794</code>, and the only zeroing is the scene-entry reset <code>FUN_80025C24</code>. And <code>edstati3</code> is a real scene - the ending cutscene block whose bundle sits at extraction entry 826. Its CDNAME label inherits forward as far as the battle-data packs at 863/864, and that is what made it look like a decode artefact rather than a scene.</p>
-  <p>Grade <span class="tag tag-done">capture</span> for the census (a disc-derived executing oracle) and <span class="tag tag-done">disassembly</span> for the factor itself - <code>0x8001CFD0..0x8001CFE8</code> loads <code>_DAT_8007B794</code> through <code>lui a0,0x8008; lh a0,-0x486c(a0)</code> and calls <code>0x8004638C</code> unless the render node's <code>+0x52</code> bit <code>0x200</code> is set.</p>
+  </div>
 </section>
+
 <section class="doc-section" id="measurement" data-doc="measurement--corpus">
   <h2>Measurement + corpus</h2>
-  <p>Questions about the <em>instruments</em> rather than about the game. They are settled rows like any other, and they are on this page because a measurement has no oracle: a number it prints is believed on the strength of its explanation.</p>
+  <p>Claims about the project's own instruments - dump corpus, coverage counts, attribution.</p>
+  <div style="overflow-x:auto">
   <table>
-    <thead><tr><th>Thread</th><th>Status</th><th>Evidence</th><th>Answer</th></tr></thead>
+    <thead><tr><th>Thread</th><th>Verdict</th><th>Evidence</th><th>Write-up</th></tr></thead>
     <tbody>
-      <tr>
-        <td>What is in the <code>SCUS_942.54</code> code gap the citation graph never listed</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">disassembly</span> + <span class="tag tag-done">capture</span></td>
-        <td>Mostly one thing: routines <strong>nothing references</strong>. Ghidra builds functions from the call graph, so a routine with no reference gets no function record, no dump and no citation - invisible to any worklist derived from citations. <a href="#d-scus-gap">details &darr;</a></td>
-      </tr>
-      <tr>
-        <td>Why three plausible-code blocks in <code>SCUS_942.54</code> can never be a function body</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><span class="tag tag-done">disassembly</span></td>
-        <td>The BIOS kernel-patch cluster copies <code>0x8006EF78</code> and <code>0x8006F058</code> into kernel RAM, and <code>0x8005BBB8</code> is the stock PSX exception-handler prologue with no reference of any of the five forms anywhere on the disc. Each is real MIPS that executes only after relocation.</td>
-      </tr>
-      <tr>
-        <td>Is the unattributable dump-extent residue a re-dumping problem</td>
-        <td><span class="tag tag-done">resolved</span> (no)</td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td>Three shapes remain and only one is dump-shaped: short windows no image reproduces at that VA, bytes in no extracted image at any VA (which needs an <strong>extraction</strong>), and extents where two dumps genuinely resolve to different images (which is an answer).</td>
-      </tr>
-      <tr>
-        <td>Can the inner of two nested overlay spans be measured at all</td>
-        <td><span class="tag tag-done">resolved</span> (yes)</td>
-        <td><span class="tag tag-done">capture</span></td>
-        <td>Address ambiguity is total for it by construction; byte attribution places most of its extents anyway and the row reports. What is structural is that it can never be resolved <em>by address</em> - a statement about one method, not about the image.</td>
-      </tr>
+      <tr id="t-what-is-in-the-scus_94254-code-gap"><td>What is in the <code>SCUS_942.54</code> code gap the citation graph never listed</td><td>resolved</td><td><span class="tag tag-done">disassembly</span> <span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#what-is-in-the-scus_94254-code-gap" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-why-three-plausible-code-blocks-in-scus_94254-can-never-be-a-function-body"><td>Why three plausible-code blocks in <code>SCUS_942.54</code> can never be a function body</td><td>resolved</td><td><span class="tag tag-done">disassembly</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#measurement--corpus" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-is-the-unattributable-dump-extent-residue-a-re-dumping-problem"><td>Is the unattributable dump-extent residue a re-dumping problem</td><td>no</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#measurement--corpus" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="t-can-the-inner-of-two-nested-overlay-spans-be-measured-at-all"><td>Can the inner of two nested overlay spans be measured at all</td><td>yes</td><td><span class="tag tag-done">capture</span></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-settled-threads.md#measurement--corpus" target="_blank" rel="noopener">doc</a></td></tr>
     </tbody>
   </table>
-
-  <h3 id="d-scus-gap">What is in the <code>SCUS_942.54</code> code gap</h3>
-  <p><em>Status:</em> resolved.</p>
-  <p>The gap is what the citation-denominated instruments cannot see, and it is mostly one thing. Working <a href="../tooling/disc-coverage.html">the disc-denominated gap list</a> until it stopped yielding produced roughly 95 function entries; a five-form <a href="../tooling/address-reference-scan.html">reference sweep</a> over each, across <code>SCUS_942.54</code>, the based overlay images and every PROT entry, splits them about three quarters / one fifth / three:</p>
-  <ul class="bullets">
-    <li><strong>No reference of any form, anywhere.</strong> The class only the bytes can find, and the majority of what was left.</li>
-    <li><strong>Referenced from <code>SCUS_942.54</code></strong> - mostly through the entry-stub / init path, or from a body whose own analysis was incomplete.</li>
-    <li><strong>Referenced only from an overlay</strong> (three): live routines whose only caller sits in an image the SCUS-only analysis never sees - the standing "zero static callers is not dead" trap, surfacing as a coverage gap.</li>
-  </ul>
-  <p>Four recovered entries are game logic rather than library material: the inventory count-add primitive carrying the 99 stack cap (<code>80042FE8</code>), the CD-read retry step and subsystem mode toggle (<code>8003F210</code> / <code>8003EDAC</code>), and a camera preset (<code>800260DC</code>).</p>
-  <p>Grade <span class="tag tag-done">disassembly</span> for the identifications, <span class="tag tag-done">capture</span> for the reachability split - the latter rests on the reference sweep, whose negative is a statement about <em>static</em> references only: a computed target assembled some other way, or a caller in an overlay never extracted, would not appear.</p>
+  </div>
 </section>
 
 <section class="doc-section" id="see-also" data-doc="related-pages">
@@ -996,8 +299,11 @@
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="open-rev-eng-threads.html">Open RE threads</a>
-    <a href="re-settled-threads.html">Settled threads</a>
     <a href="re-do-not-re-walk.html">Do not re-walk</a>
-    <a href="functions.html">Functions</a>
+    <a href="functions.html">Key functions</a>
+    <a href="memory-map.html">RAM map</a>
+    <a href="../tooling/ghidra.html">Ghidra workflow</a>
+    <a href="../tooling/port-catalog.html">Port catalog</a>
   </div>
+  <p class="hint">A thread whose verdict no longer matches the disassembly moves back to the open list; the row here is not edited in place.</p>
 </section>

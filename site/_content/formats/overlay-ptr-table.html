@@ -1,28 +1,73 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; overlay pointer-table code</div>
   <h1>Overlay pointer-table code <span class="tag tag-partial">Inferred</span></h1>
-  <p class="lede">Sister format to <a href="mips-overlay.html">MIPS overlay code</a>: the same family of on-disc code blobs (overlays - chunks of MIPS code the game loads into RAM on demand), but instead of starting with a function prologue, these start with a table of function pointers, then the code those pointers reference. 42 PROT entries (entries of <code>PROT.DAT</code>, the disc's main asset archive) match. A few of them open with an ASCII title like <code>Hell's Music</code> - which reads like a song name but is actually the battle special attack the overlay implements.</p>
+  <p class="lede">When a Ra-Seru summon like Nighto's Hell's Music fills the screen, the code choreographing that attack was not in memory a second earlier - it was streamed off the disc into a small "slot" of RAM just for the cast, and thrown away afterwards. These are the blobs that hold such code. Sister format to <a href="mips-overlay.html">MIPS overlay code</a>: the same family of on-disc code blobs (overlays - chunks of MIPS code the game loads into RAM on demand), but instead of starting with a function prologue, these start with a table of function pointers, then the code those pointers reference. A few of them open with an ASCII title that reads like a song name but is the battle special attack the overlay implements.</p>
 </header>
 
-<section class="doc-section" id="overview">
-  <h2>Overview</h2>
-  <p>Implementation: <code>crates/asset/src/overlay_ptr_table.rs</code>.</p>
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>In the game</dt><dd>Per-attack code for summons and special attacks (the slot-B "stagers"), plus other mode-specific modules that expose an entry-point or dispatch table.</dd>
+    <dt>Magic / marker</dt><dd>No header - the first u32 is a pointer into the overlay window <code>0x801C0000..=0x801FFFFF</code>, followed by 3..63 more</dd>
+    <dt>Lives in</dt><dd><a href="prot.html">PROT.DAT</a> entries in the <code>0900..=0968</code> range (extraction index), 42 entries, 14-160 KB; the attack stagers load at slot-B base <code>0x801F69D8</code></dd>
+    <dt>Parser</dt><dd><code>legaia_asset::overlay_ptr_table::detect</code> (<code>crates/asset/src/overlay_ptr_table.rs</code>); load bases in <code>crates/asset/data/static-overlays.toml</code></dd>
+    <dt>Confidence</dt><dd>Inferred as a detector (a shape heuristic with zero overlap against named formats); the individual attack-stager identities are capture-pinned.</dd>
+    <dt>Used by</dt><dd><a href="summon-readef.html">summon.dat / readef.DAT</a>, <a href="../tooling/static-overlay-pipeline.html">Static overlay pipeline</a></dd>
+  </dl>
 </section>
 
 <section class="doc-section" id="layout">
   <h2>Layout</h2>
-<pre><code>+0x00   u32  ptr_0      ; address in 0x801C0000..=0x801FFFFF (overlay window)
-+0x04   u32  ptr_1      ; same range
-...
-+N*4    u32  ptr_{N-1}  ; last pointer (still in range)
-+(N+1)*4 ...            ; first non-pointer u32 (typically MIPS code, sometimes
-                        ; a `jr ra; nop` stub or a leading ASCII string)</code></pre>
-  <p>The overlay window <code>0x801C0000..0x801FFFFF</code> is the RAM region reserved for swappable code - a valid pointer into it is a strong sign the blob expects to live there. The pointer-table length <code>N</code> ranges from 4 to 64. Tables come in three shapes:</p>
-  <ul class="bullets">
-    <li><strong>Function entry-point tables</strong> - small, monotonic; one slot per public function.</li>
-    <li><strong>Switch dispatch tables</strong> - larger, repeating; emitted by the C compiler for <code>switch(x)</code> over a dense integer range.</li>
-    <li><strong>Per-mode actor vtables</strong> - small alphabet of 3 distinct values across N slots.</li>
-  </ul>
+  <p>The overlay window is the RAM region reserved for swappable code, so a run of valid pointers into it is a strong sign the blob expects to live there. The run is 4 to 64 pointers long; the first word that is not such a pointer starts the body.</p>
+
+  <figure class="overlay-strip">
+    <svg viewBox="0 0 760 132" width="100%" style="max-width: 760px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="An overlay pointer-table blob: N pointers into the overlay window at the start, then the code body, which may begin with an ASCII title or a jr ra stub">
+      <style>
+        .op-box  { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.3; }
+        .op-soft { fill: var(--bg-raised); stroke: var(--border); stroke-width: 1.1; stroke-dasharray: 4 3; }
+        .op-lab  { font: 12px sans-serif; fill: currentColor; }
+        .op-sub  { font: 11px monospace; fill: var(--text-muted); }
+        .op-off  { font: 11px monospace; fill: var(--accent); }
+      </style>
+      <text class="op-off" x="16" y="18">+0x00</text>
+      <text class="op-off" x="136" y="18">+0x04</text>
+      <text class="op-off" x="296" y="18">+N*4</text>
+      <text class="op-off" x="416" y="18">+(N+1)*4</text>
+      <rect class="op-box" x="16" y="26" width="120" height="64" rx="3"/>
+      <text class="op-lab" x="76" y="52" text-anchor="middle">ptr_0</text>
+      <text class="op-sub" x="76" y="72" text-anchor="middle">u32 LE</text>
+      <rect class="op-box" x="136" y="26" width="160" height="64" rx="3"/>
+      <text class="op-lab" x="216" y="52" text-anchor="middle">ptr_1 ... ptr_N-2</text>
+      <text class="op-sub" x="216" y="72" text-anchor="middle">N = 4..64</text>
+      <rect class="op-box" x="296" y="26" width="120" height="64" rx="3"/>
+      <text class="op-lab" x="356" y="52" text-anchor="middle">ptr_N-1</text>
+      <text class="op-sub" x="356" y="72" text-anchor="middle">last in range</text>
+      <rect class="op-soft" x="416" y="26" width="328" height="64" rx="3"/>
+      <text class="op-lab" x="580" y="52" text-anchor="middle">body: MIPS code</text>
+      <text class="op-sub" x="580" y="72" text-anchor="middle">or ASCII title / jr ra stub first</text>
+      <text class="op-sub" x="16" y="118">every pointer in 0x801C0000..0x801FFFFF</text>
+    </svg>
+    <figcaption>The detector consumes pointers until the first out-of-window word; the smallest pointer bounds the load address from above.</figcaption>
+  </figure>
+
+  <table class="layout">
+    <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>+0x00</code></td><td>4</td><td>ptr_0</td><td>Address in <code>0x801C0000..=0x801FFFFF</code> (the overlay window)</td></tr>
+      <tr><td><code>+0x04</code></td><td>4</td><td>ptr_1</td><td>Same range</td></tr>
+      <tr><td><code>+N*4</code></td><td>4</td><td>ptr_{N-1}</td><td>Last pointer (still in range); <code>N</code> is 4..64</td></tr>
+      <tr><td><code>+(N+1)*4</code></td><td>rest</td><td>body</td><td>First non-pointer u32 - typically MIPS code, sometimes a <code>jr ra; nop</code> stub or a leading ASCII string</td></tr>
+    </tbody>
+  </table>
+  <p>Tables come in three shapes:</p>
+  <table>
+    <thead><tr><th>Shape</th><th>Size</th><th>Tell</th></tr></thead>
+    <tbody>
+      <tr><td>Function entry-point table</td><td>Small (5-14)</td><td>Monotonic; one slot per public function</td></tr>
+      <tr><td>Switch dispatch table</td><td>Larger</td><td>Repeating handler addresses; the C compiler's <code>switch(x)</code> over a dense range</td></tr>
+      <tr><td>Per-mode actor vtable</td><td>Small</td><td>Only 3 distinct values across N slots</td></tr>
+    </tbody>
+  </table>
 </section>
 
 <section class="doc-section" id="detection">
@@ -32,34 +77,59 @@
     <li>The first u32 is in <code>0x801C0000..=0x801FFFFF</code> (the overlay window).</li>
     <li>The run of consecutive overlay-pointer u32s is between 4 and 64 long.</li>
   </ol>
-  <p>Monotonicity is <strong>not</strong> required - switch dispatch tables legitimately contain repeating handler addresses.</p>
-</section>
-
-<section class="doc-section" id="cluster-anatomy">
-  <h2>Cluster anatomy</h2>
-  <p>All matches cluster in the <code>0900..=0968_xxx_dat</code> PROT range - sized 14 KB to 160 KB. Pointer-range distribution:</p>
-  <ul class="bullets">
-    <li>30 entries: <code>0x801F6Axx</code>–<code>0x801F71xx</code> cluster (small function-entry tables, monotonic, 5–14 entries).</li>
-    <li>12 entries: <code>0x801F84xx+</code> cluster (some monotonic, some switch dispatch with repeating handlers).</li>
-  </ul>
-  <p>A handful of entries lead with an ASCII title string before the pointer table - the title is the <strong>battle special-attack name</strong> the overlay stages, not a song. Per entry (extraction numbering):</p>
-  <ul class="bullets">
-    <li><strong><code>0907_xxx_dat.BIN</code> "Hell's Music"</strong> - <strong>Nighto's summon stager</strong>, capture-pinned on the spell-<code>0x85</code> slot of the summon loader's <code>903..=913</code> range; the SCUS spell table carries the same name, and <code>summon.dat</code>'s attack-name records list it parallel to Gimard's "Burning Attack".</li>
-    <li><strong><code>0924_xxx_dat.BIN</code> "Ultimate Rave"</strong> and <strong><code>0927_xxx_dat.BIN</code> "Dark Eclipse"</strong> - the same attack-titled, stager-shaped family (part-spawn call census matches the pinned stagers); their loader callsites are <em>computed</em> rather than constant, but which action ids drive them is <strong>no longer open</strong> - both are capture-pinned mid-cast off the loader-B current id: 0924 is the rare-Seru flute summon <strong>Lippian</strong> (spell <code>0x96</code>) and 0927 is <strong>Juggernaut</strong> on Evil Seru Magic (spell <code>0x99</code>).</li>
-    <li><strong><code>0957_xxx_dat.BIN</code></strong> - a different shape: its head is a summon string table (<code>Dies</code> / <code>Puera</code> / <code>Both</code> / <code>Damage</code> / <code>Recover</code>) followed by an absolute-pointer table and code - the slot-B <code>summon_effect_table</code> overlay.</li>
-  </ul>
-  <p>All the attack-titled entries sit in the static overlay map at slot-B base <code>0x801F69D8</code>. The titles look like song names ("Hell's Music" reads like a Disco King dance track) but they are <strong>not</strong>: the dance overlay (0980) contains zero slot-B loader callsites - its music is sequenced BGM. See <a href="../tooling/static-overlay-pipeline.html">static overlay pipeline</a>.</p>
-</section>
-
-<section class="doc-section" id="reading-the-format">
-  <h2>Reading the format</h2>
+  <p>Monotonicity is <strong>not</strong> required - switch dispatch tables legitimately repeat handler addresses.</p>
 <pre><code>use legaia_asset::overlay_ptr_table;
 
 if let Some(t) = overlay_ptr_table::detect(buf) {
     println!("Overlay pointer table: {} entries, first=0x{:08x}, last=0x{:08x}",
              t.count, t.first_ptr, t.last_ptr);
 }</code></pre>
-  <p>Each entry can be imported into Ghidra (the disassembler this project uses) via <a href="../tooling/overlay-capture.html"><code>scripts/ghidra-analysis/bulk-import-overlays.sh</code></a> once the load address is determined; the pointer values bound the load address from above (<code>&lt;= min_ptr</code>).</p>
+  <p>Once the load address is known (the pointer values bound it from above: base <code>&lt;= min_ptr</code>), the entry can be imported into Ghidra via <a href="../tooling/overlay-capture.html"><code>scripts/ghidra-analysis/bulk-import-overlays.sh</code></a>.</p>
+</section>
+
+<section class="doc-section" id="cluster-anatomy">
+  <h2>Where they sit</h2>
+  <p>All 42 matches are in the <code>0900..=0968_xxx_dat</code> range, 14 KB to 160 KB, in two pointer clusters:</p>
+  <table>
+    <thead><tr><th>Entries</th><th>Pointer range</th><th>Shape</th></tr></thead>
+    <tbody>
+      <tr><td>30</td><td><code>0x801F6Axx</code> - <code>0x801F71xx</code></td><td>Small function-entry tables, monotonic, 5-14 entries - the slot-B stagers</td></tr>
+      <tr><td>12</td><td><code>0x801F84xx</code> and up</td><td>Mixed: some monotonic, some switch dispatch with repeating handlers</td></tr>
+    </tbody>
+  </table>
+  <h3>Entries that open with a title</h3>
+  <p>A handful lead with an ASCII string before the pointer table. The string is the <strong>battle special-attack name</strong> the overlay stages. All of these load at slot-B base <code>0x801F69D8</code>.</p>
+  <table>
+    <thead><tr><th>Entry</th><th>Title</th><th>What it stages</th><th>Spell id</th><th>Pinned by</th></tr></thead>
+    <tbody>
+      <tr><td><code>0907_xxx_dat</code></td><td>Hell's Music</td><td>Nighto's summon</td><td><code>0x85</code></td><td>Capture on the summon loader's <code>903..=913</code> slot; the same name in the <a href="spell-table.html">spell table</a> and <code>summon.dat</code></td></tr>
+      <tr><td><code>0924_xxx_dat</code></td><td>Ultimate Rave</td><td>Lippian (rare-Seru flute summon)</td><td><code>0x96</code></td><td>Capture mid-cast off the loader-B current id</td></tr>
+      <tr><td><code>0927_xxx_dat</code></td><td>Dark Eclipse</td><td>Juggernaut (Evil Seru Magic)</td><td><code>0x99</code></td><td>Capture mid-cast off the loader-B current id</td></tr>
+      <tr><td><code>0957_xxx_dat</code></td><td>(string table)</td><td>The <code>summon_effect_table</code> overlay - a summon / effect / target label table, then an absolute-pointer table and code</td><td>-</td><td>Static overlay map</td></tr>
+    </tbody>
+  </table>
+  <p>0924 and 0927 have computed rather than constant loader call sites, which is why their identities come from captures instead of a static loader constant.</p>
+  <details class="disclosure">
+    <summary>History: the "Disco King dance-song" reading</summary>
+    <div class="disclosure-body">
+      <p>The titles look like song names, and an earlier reading filed 0907's title as a Disco King dance track. It is refuted: the dance overlay (0980) contains zero slot-B loader call sites - its music is sequenced BGM via the sound streaming loader - while 0907 is capture-pinned as Nighto's summon stager. Retired readings are collected on <a href="../reference/re-do-not-re-walk.html">do not re-walk</a>.</p>
+    </div>
+  </details>
+</section>
+
+<section class="doc-section" id="how-we-know">
+  <h2>How we know</h2>
+  <table>
+    <thead><tr><th>Claim</th><th>Evidence</th><th>Where</th></tr></thead>
+    <tbody>
+      <tr><td>Pointer-run shape is code</td><td>Zero overlap with any named format over the corpus; bodies disassemble as MIPS</td><td><code>crates/asset/src/overlay_ptr_table.rs</code></td></tr>
+      <tr><td>Slot-B base <code>0x801F69D8</code></td><td>Summon loader constant + the stager pointer clusters</td><td><code>crates/asset/data/static-overlays.toml</code></td></tr>
+      <tr><td>0907 = Nighto (spell <code>0x85</code>)</td><td>Capture of the summon loader's <code>903..=913</code> slot select</td><td><a href="summon-readef.html">summon.dat / readef.DAT</a> action-id map</td></tr>
+      <tr><td>0924 = Lippian, 0927 = Juggernaut</td><td>Mid-cast capture of the loader-B current id</td><td><a href="../tooling/pcsx-redux-automation.html">PCSX-Redux probes</a></td></tr>
+      <tr><td>0980 is not a stager</td><td>No slot-B loader call site in the dance overlay</td><td><a href="../tooling/address-reference-scan.html">Address reference scan</a></td></tr>
+    </tbody>
+  </table>
+  <p>Source of record: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/overlay-ptr-table.md"><code>docs/formats/overlay-ptr-table.md</code></a>.</p>
 </section>
 
 <section class="doc-section" id="see-also">
@@ -67,7 +137,15 @@ if let Some(t) = overlay_ptr_table::detect(buf) {
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="mips-overlay.html">MIPS overlay detection</a>
+    <a href="summon-readef.html">summon.dat / readef.DAT slots</a>
+    <a href="spell-table.html">Spell table</a>
     <a href="../reference/functions.html">Functions</a>
     <a href="../reference/memory-map.html">Memory map</a>
+  </div>
+  <div class="see-also">
+    <span class="see-also-label">Demo / tooling</span>
+    <a href="../magic.html">Magic (summons)</a>
+    <a href="../tooling/static-overlay-pipeline.html">Static overlay pipeline</a>
+    <a href="../tooling/overlay-capture.html">Overlay capture</a>
   </div>
 </section>

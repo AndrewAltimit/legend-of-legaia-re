@@ -103,17 +103,21 @@ const NAV = [
       { href: 'subsystems/effect-vm.html',      text: 'Effect VM',                key: 'subsystems/effect-vm' },
       // Battle
       { href: 'subsystems/battle.html',         text: 'Battle',                   key: 'subsystems/battle' },
+      { href: 'subsystems/battle-internals.html', text: 'Battle: internals',    key: 'subsystems/battle-internals', indent: true },
       { href: 'subsystems/battle-action.html',  text: 'Battle action FSM',        key: 'subsystems/battle-action' },
+      { href: 'subsystems/history-battle.html', text: 'Battle: capture notes',    key: 'subsystems/history-battle', indent: true },
       { href: 'subsystems/battle-formulas.html',text: 'Battle formulas',          key: 'subsystems/battle-formulas' },
       { href: 'subsystems/arts-command-gauge.html', text: 'Arts command gauge',   key: 'subsystems/arts-command-gauge' },
       // Per-domain runtime
       { href: 'subsystems/world-map.html',      text: 'World map',                key: 'subsystems/world-map' },
+      { href: 'subsystems/history-world-map.html', text: 'Chapter-1 hub sweep (history)', key: 'subsystems/history-world-map', indent: true },
       { href: 'subsystems/world-overview-viewer.html', text: 'World-overview viewer', key: 'subsystems/world-overview-viewer' },
       { href: 'subsystems/save-screen.html',    text: 'Save screen',              key: 'subsystems/save-screen' },
       { href: 'subsystems/shop.html',           text: 'Shop',                     key: 'subsystems/shop' },
       { href: 'subsystems/inn.html',            text: 'Inn',                      key: 'subsystems/inn' },
       { href: 'subsystems/level-up.html',       text: 'Level-up',                 key: 'subsystems/level-up' },
       { href: 'subsystems/cutscene.html',       text: 'Cutscene (STR)',           key: 'subsystems/cutscene' },
+      { href: 'subsystems/cutscene-internals.html', text: 'Cutscene: internals',  key: 'subsystems/cutscene-internals', indent: true },
       // Output
       { href: 'subsystems/audio.html',          text: 'Audio',                    key: 'subsystems/audio' },
       { href: 'subsystems/renderer.html',       text: 'Renderer',                 key: 'subsystems/renderer' },
@@ -144,6 +148,7 @@ const NAV = [
       { href: 'formats/scene-bundles.html',          text: 'Scene bundles',            key: 'formats/scene-bundles' },
       { href: 'formats/scene-v12-table.html',        text: 'Scene V12 table',          key: 'formats/scene-v12-table' },
       { href: 'formats/world-map-overlay.html',      text: 'World-map overlay',        key: 'formats/world-map-overlay' },
+      { href: 'formats/place-names.html',            text: 'Place names',              key: 'formats/place-names' },
       // Per-asset
       { href: 'formats/tim.html',                    text: 'PSX TIM',                  key: 'formats/tim' },
       { href: 'formats/tmd.html',                    text: 'Legaia TMD',               key: 'formats/tmd' },
@@ -192,6 +197,7 @@ const NAV = [
       { href: 'tooling/port-catalog.html',           text: 'Port catalog',             key: 'tooling/port-catalog' },
       { href: 'tooling/determinism-replay.html',     text: 'Determinism replay',       key: 'tooling/determinism-replay' },
       { href: 'tooling/randomizer.html',             text: 'Randomizer / disc patcher', key: 'tooling/randomizer' },
+      { href: 'tooling/randomizer-internals.html',   text: 'Randomizer: internals',   key: 'tooling/randomizer-internals', indent: true },
       { href: 'tooling/translation.html',            text: 'Translation / language packs', key: 'tooling/translation' },
     ],
   },

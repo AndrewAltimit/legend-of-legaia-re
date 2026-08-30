@@ -1,50 +1,169 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; MAN relocation</div>
   <h1>MAN relocation <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">Every town and dungeon ships a <strong>MAN</strong> - the per-scene data file that carries, among other things, the scene's event scripts, including its doors. A door is a tiny script op (<code>0x3F</code>) that names its destination scene <em>inline, as a length-prefixed string</em> - so re-pointing a door at a scene with a longer or shorter name means the record physically changes size, and every byte-offset stored elsewhere in the file that points past the edit goes stale. This page is how to resize such a record and rebuild the MAN so every internal offset stays valid. Engine: <code>legaia_asset::man_edit</code>.</p>
+  <p class="lede">Every town and dungeon ships a <strong>MAN</strong> - the per-scene data file that carries, among other things, the scene's event scripts, including its doors. A door is a tiny script op (<code>0x3F</code>) that names its destination scene <em>inline, as a length-prefixed string</em> - so re-pointing a door at a scene with a longer or shorter name physically changes the record's size, and every byte-offset stored elsewhere in the file that points past the edit goes stale. This page is how to resize such a record and rebuild the MAN so every internal offset stays valid.</p>
 </header>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Magic</dt><dd>none - operates on a decompressed scene MAN (header, three partition record-offset tables, record region, then the section chain)</dd>
+    <dt>Where on disc</dt><dd>Every scene bundle's LZS-compressed MAN, described by the <a href="scene-bundles.html">scene_asset_table</a> descriptor word <code>(type&lt;&lt;24)|size</code></dd>
+    <dt>Stride</dt><dd>u24LE record-offset entries from <code>0x2B</code>; the data region starts at <code>0x2B + 3 &times; total_records</code></dd>
+    <dt>Parser / editor</dt><dd><code>legaia_asset::man_edit</code> (<code>apply_dest_edits</code>, <code>apply_text_edits</code>, <code>rebuild_man</code>, <code>validate</code>)</dd>
+    <dt>Confidence</dt><dd>Confirmed - dispatch path pinned by a live PCSX-Redux trace; disc-wide corpus census; round-trip backstop re-walks every record (<a href="#how-we-know">how we know</a>)</dd>
+    <dt>Used by</dt><dd><a href="../tooling/randomizer.html">Door randomizer</a>, <a href="../tooling/translation.html">Translation packs</a></dd>
+  </dl>
+</section>
 
 <section class="doc-section" id="why-resize">
   <h2>Why resize a record at all?</h2>
-  <p>Nobody edits a shipped game file for fun - two real consumers force the problem:</p>
+  <p>Two consumers force the problem:</p>
   <ul class="bullets">
-    <li><strong>The door randomizer.</strong> The <a href="../tooling/randomizer.html">randomizer</a>'s door shuffle re-points a scene exit at a different destination. Because the destination is an inline name, swapping <code>town01</code> for a longer scene name grows the record; without the fixups below, every record after it - and the tables that index them - would decode as garbage.</li>
-    <li><strong>Translation.</strong> The same machinery generalizes from a door's destination name to any interior byte run: a community language pack's dialog line that runs longer than the English original grows its record the same way. Growth is budgeted by the MAN's on-disc footprint - the recompressed file must still fit its original slot on the disc - so a wordier localization only fits when the rewritten MAN recompresses no larger than the original.</li>
+    <li><strong>The door randomizer.</strong> Its door shuffle re-points a scene exit at a different destination. Because the destination is an inline name, swapping <code>town01</code> for a longer scene name grows the record; without the fixups below, every record after it - and the tables that index them - would decode as garbage.</li>
+    <li><strong>Translation.</strong> A language pack's dialog line that runs longer than the English original grows its record the same way. Growth is budgeted by the MAN's on-disc footprint: the recompressed file must still fit its original slot.</li>
   </ul>
-  <p>The reason a resize is <em>safe at all</em> is structural: the doors are reached at runtime through an offset table the format already exposes (next section), not through absolute addresses scattered in code - fix the table and every door stays addressable.</p>
-</section>
-
-<section class="doc-section" id="indexing">
-  <h2>The destination table is the partition-2 record-offset table</h2>
-  <p>(Terms: the <em>field VM</em> is the interpreter that runs a scene's event bytecode - <code>FUN_801DE840</code> in Ghidra's naming, where <code>FUN_80xxxxxx</code> labels a traced function by address. A MAN's records are grouped into three <em>partitions</em>; partition 2 holds the named event records, doors included.)</p>
-  <p>A <code>0x3F</code> op carries its destination inline:</p>
-<pre><code>0x3F  [i16 index]  [u8 name_len]  [name bytes]  [entry_x]  [entry_z]  [dir]</code></pre>
-  <p>The ops are <strong>partition-2 MAN records</strong> (the named records - see <a href="encounter.html">the MAN layout</a>). They are reached at runtime through the <strong>partition-2 record-offset table</strong>: on a transition the field controller sets the VM bytecode base to <code>man_base + data_region + partition2[slot]</code> and runs that record's small script by fall-through (<code>SysFlag.Set; CFlag.Set; EFFECT; yield; 0x3F; entry-trailer; JmpRel-1 self-loop</code>), whose <code>0x3F</code> op warps by the inline name. Selection is by stable <strong>slot index</strong>, so the op's <code>index</code> field is only the destination-scene id passed to the warp packet (<code>FUN_8001FD44</code>), not a record selector.</p>
-  <p>Pinned by a live PCSX-Redux dispatch trace (<code>autorun_door_dispatch_trace.lua</code> on the <code>drake_castle_to_worldmap</code> capture): the executing op's bytecode base minus the MAN base equalled <code>data_region + partition2[0]</code> exactly. Corpus census (clean partition walk, disc-wide): 160 destination ops across 48 scenes, 153 in partition 2; <strong>zero absolute-reference ops</strong> at/after any destination op. The consequence: the destination "index" <em>is</em> a structural offset table the MAN parser already exposes, so resizing a record is safe - fix the table and every door stays addressable.</p>
+  <p>A resize is safe because the doors are reached at runtime through an offset table the format already exposes, not through absolute addresses scattered in code. Fix the table and every door stays addressable.</p>
 </section>
 
 <section class="doc-section" id="surface">
   <h2>Relocation surface</h2>
-  <p>A mid-buffer insert/delete of <code>delta</code> bytes at a destination op needs these fixups:</p>
-  <ol class="bullets">
-    <li><strong>Partition record-offset tables</strong> (<code>MAN[0x2B..]</code>, u24LE entries relative to <code>data_region_offset</code>): bump every entry whose record starts after the edit by <code>delta</code>. This table <em>is</em> the door dispatch index.</li>
-    <li><strong><code>u24_at_28</code></strong> (header section-0 offset, relative to <code>data_region</code>): the section chain sits after the records, so it shifts by the total delta.</li>
-    <li><strong>Intra-record relative jumps</strong> in the edited record whose source/target straddle the edit (<code>0x26</code> / <code>0x42</code> / <code>0x4D</code> / <code>0x4E</code> / <code>0x70</code>): the stored u16 delta is recomputed; a jump wholly on one side is unaffected. The delta field sits at the jump's relative base (<code>target - delta</code>), so the rewrite is op-agnostic. (37 of 160 corpus ops have such a jump.)</li>
-    <li><strong>External descriptor</strong> (<code>scene_asset_table</code>): the MAN's <em>decompressed</em> size is stored only in the scene-bundle descriptor word <code>(type&lt;&lt;24)|size</code> - rewrite it after recompressing.</li>
-  </ol>
-  <p><code>data_region_offset</code> is derived (<code>0x2B + 3*total_records</code>) and does not move.</p>
+  <p>A mid-buffer insert or delete of <code>delta</code> bytes at a record needs four fixups. Everything before the edit stays put; everything after it shifts.</p>
+  <figure class="overlay-strip">
+    <svg viewBox="0 0 880 230" width="100%" style="max-width: 880px; height: auto;" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A decompressed MAN as a byte strip: header, u24_at_28, partition offset tables, records before the edit, the resized record, records after the edit, section chain; below, the four fixups that keep offsets valid">
+      <style>
+        .mr-box  { fill: var(--bg-raised); stroke: var(--border); stroke-width: 1.1; }
+        .mr-hot  { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.6; }
+        .mr-lab  { font: 12px var(--font-body, sans-serif); fill: currentColor; }
+        .mr-sub  { font: 10px var(--font-mono, monospace); fill: var(--text-muted); }
+        .mr-off  { font: 10px var(--font-mono, monospace); fill: var(--accent); }
+        .mr-fix  { font: 12px var(--font-body, sans-serif); fill: var(--accent); }
+        .mr-arr  { stroke: var(--accent); stroke-width: 1.2; fill: none; }
+      </style>
+      <defs>
+        <marker id="mr-head" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+          <path d="M0,0 L8,4 L0,8 z" fill="var(--accent)"/>
+        </marker>
+      </defs>
+      <!-- offsets -->
+      <text x="20" y="22" class="mr-off">0x00</text>
+      <text x="110" y="22" class="mr-off">0x28</text>
+      <text x="196" y="22" class="mr-off">0x2B</text>
+      <text x="356" y="22" class="mr-off">data_region</text>
+      <!-- strip -->
+      <rect x="20" y="30" width="90" height="48" class="mr-box"/>
+      <text x="65" y="50" class="mr-lab" text-anchor="middle">header</text>
+      <text x="65" y="66" class="mr-sub" text-anchor="middle">40 bytes</text>
+      <rect x="110" y="30" width="86" height="48" class="mr-hot"/>
+      <text x="153" y="50" class="mr-lab" text-anchor="middle">u24_at_28</text>
+      <text x="153" y="66" class="mr-sub" text-anchor="middle">section 0</text>
+      <rect x="196" y="30" width="160" height="48" class="mr-hot"/>
+      <text x="276" y="50" class="mr-lab" text-anchor="middle">partition tables</text>
+      <text x="276" y="66" class="mr-sub" text-anchor="middle">u24 x records</text>
+      <rect x="356" y="30" width="130" height="48" class="mr-box"/>
+      <text x="421" y="50" class="mr-lab" text-anchor="middle">records before</text>
+      <text x="421" y="66" class="mr-sub" text-anchor="middle">unchanged</text>
+      <rect x="486" y="30" width="120" height="48" class="mr-hot"/>
+      <text x="546" y="50" class="mr-lab" text-anchor="middle">edited record</text>
+      <text x="546" y="66" class="mr-sub" text-anchor="middle">+ delta</text>
+      <rect x="606" y="30" width="130" height="48" class="mr-box"/>
+      <text x="671" y="50" class="mr-lab" text-anchor="middle">records after</text>
+      <text x="671" y="66" class="mr-sub" text-anchor="middle">shift + delta</text>
+      <rect x="736" y="30" width="124" height="48" class="mr-box"/>
+      <text x="798" y="50" class="mr-lab" text-anchor="middle">section chain</text>
+      <text x="798" y="66" class="mr-sub" text-anchor="middle">shift + delta</text>
+      <!-- fixups -->
+      <line x1="153" y1="78" x2="128" y2="108" class="mr-arr" marker-end="url(#mr-head)"/>
+      <text x="128" y="126" class="mr-fix" text-anchor="middle">1. section-0 offset</text>
+      <text x="128" y="142" class="mr-sub" text-anchor="middle">+= total delta</text>
+      <line x1="276" y1="78" x2="306" y2="108" class="mr-arr" marker-end="url(#mr-head)"/>
+      <text x="306" y="126" class="mr-fix" text-anchor="middle">2. table entries</text>
+      <text x="306" y="142" class="mr-sub" text-anchor="middle">after edit += delta</text>
+      <line x1="546" y1="78" x2="546" y2="108" class="mr-arr" marker-end="url(#mr-head)"/>
+      <text x="546" y="126" class="mr-fix" text-anchor="middle">3. straddling jumps</text>
+      <text x="546" y="142" class="mr-sub" text-anchor="middle">recompute u16 delta</text>
+      <line x1="798" y1="78" x2="798" y2="108" class="mr-arr" marker-end="url(#mr-head)"/>
+      <text x="798" y="126" class="mr-fix" text-anchor="middle">4. descriptor word</text>
+      <text x="798" y="142" class="mr-sub" text-anchor="middle">size in scene bundle</text>
+      <text x="20" y="180" class="mr-sub">data_region = 0x2B + 3 x total_records - derived, never moves.</text>
+      <text x="20" y="200" class="mr-sub">Fixup 4 lives outside the MAN: the scene_asset_table word (type&lt;&lt;24)|size is rewritten after recompressing.</text>
+    </svg>
+    <figcaption>The four fixups <code>rebuild_man</code> applies after a record changes size. Highlighted boxes are the bytes that are rewritten.</figcaption>
+  </figure>
+  <table class="layout">
+    <thead><tr><th>Fixup</th><th>Where</th><th>Rule</th></tr></thead>
+    <tbody>
+      <tr><td><code>u24_at_28</code></td><td><code>MAN[0x28..0x2B]</code>, u24LE, relative to <code>data_region</code></td><td>The section chain sits after the records, so it shifts by the total delta</td></tr>
+      <tr><td>Partition record-offset tables</td><td><code>MAN[0x2B..]</code>, u24LE entries relative to <code>data_region</code></td><td>Bump every entry whose record starts after the edit by <code>delta</code>. This table <em>is</em> the door dispatch index</td></tr>
+      <tr><td>Intra-record relative jumps</td><td>Ops <code>0x26</code> / <code>0x42</code> / <code>0x4D</code> / <code>0x4E</code> / <code>0x70</code> in the edited record</td><td>Recompute the stored u16 delta when source and target straddle the edit; a jump wholly on one side is unaffected. The delta field sits at the jump's relative base, so the rewrite is op-agnostic</td></tr>
+      <tr><td>External descriptor</td><td><code>scene_asset_table</code> word <code>(type&lt;&lt;24)|size</code></td><td>The decompressed size lives only here - rewrite it after recompressing</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="indexing">
+  <h2>How a door is reached: the partition-2 table</h2>
+  <p>The <em>field VM</em> is the interpreter that runs a scene's event bytecode. A MAN's records are grouped into three <em>partitions</em>; partition 2 holds the named event records, doors included. A <code>0x3F</code> op carries its destination inline:</p>
+  <table class="layout">
+    <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>+0</code></td><td>u8</td><td>opcode</td><td><code>0x3F</code> - named scene change</td></tr>
+      <tr><td><code>+1</code></td><td>i16</td><td><code>index</code></td><td>Destination-scene id passed to the warp packet - not a record selector</td></tr>
+      <tr><td><code>+3</code></td><td>u8</td><td><code>name_len</code></td><td>Length of the inline scene name - the field that makes the record variable-length</td></tr>
+      <tr><td><code>+4</code></td><td><code>name_len</code></td><td><code>name</code></td><td>Destination scene name (CDNAME symbol)</td></tr>
+      <tr><td>after name</td><td>3 fields</td><td><code>entry_x</code>, <code>entry_z</code>, <code>dir</code></td><td>Where the player appears and faces on arrival</td></tr>
+    </tbody>
+  </table>
+  <p>On a transition the field controller sets the VM bytecode base to <code>man_base + data_region + partition2[slot]</code> and runs that record by fall-through - flag sets, an effect, a yield, the <code>0x3F</code> warp, its entry trailer, then a self-loop. Selection is by stable <strong>slot index</strong>, so the offset table is the door index and resizing a record is safe once the table is fixed.</p>
 </section>
 
 <section class="doc-section" id="safety">
   <h2>Safety</h2>
-  <p><strong>Absolute-reference ops</strong> (<code>0x45 0xC0</code> camera-apply, <code>0x4E</code> abs-jump) are record-local and can't be relocated blindly; <code>apply_dest_edits</code> errors out if it finds one in an edited record (none exist in the retail corpus), and the caller leaves that scene unchanged. <code>man_edit::validate</code> re-parses + re-walks the rebuilt MAN and confirms each edited op still decodes as a <code>0x3F</code> carrying the intended name. The recompressed MAN must fit the original asset's on-disc footprint (the gap to the next descriptor); a scene that can't grow in place - the big overworld hubs, whose next asset is flush after the MAN - is skipped and reported rather than relocating the whole bundle.</p>
+  <ul class="bullets">
+    <li><strong>Absolute-reference ops</strong> (<code>0x45 0xC0</code> camera-apply, <code>0x4E</code> abs-jump) are record-local and cannot be relocated blindly. <code>apply_dest_edits</code> errors out if it finds one in an edited record - none exist in the retail corpus - and the caller leaves that scene unchanged.</li>
+    <li><strong>Validate.</strong> <code>man_edit::validate</code> re-parses and re-walks the rebuilt MAN and confirms each edited op still decodes as a <code>0x3F</code> carrying the intended name.</li>
+    <li><strong>Footprint.</strong> The recompressed MAN must fit the original asset's on-disc footprint (the gap to the next descriptor). A scene that cannot grow in place - the big overworld hubs, whose next asset is flush after the MAN - is skipped and reported rather than relocating the whole bundle.</li>
+  </ul>
 </section>
 
-<section class="doc-section see-also" id="see-also">
+<section class="doc-section" id="text-growth">
+  <h2>Generalized interior-text growth</h2>
+  <p>The same machinery generalizes from a door's destination <em>name</em> to any interior byte run - the dialog text a localization grows or shrinks. <code>man_edit::apply_text_edits</code> takes a set of <code>TextEdit { offset, old_len, new_bytes }</code> and rebuilds the MAN through the identical <code>rebuild_man</code> path. A dialog segment is a field-VM <code>0x49 0x00</code> message op whose text is framed <code>0x1F &lt;text&gt; 0x00</code>; the decoder recovers the op's width by walking to the <code>&lt;= 0x1E</code> terminator, so a grown run keeps the fall-through decode in sync.</p>
+  <p>Two invariants keep this safe:</p>
+  <ol class="bullets">
+    <li><strong>Record-region gate.</strong> Every edit must lie strictly before section 0, inside a partition record with no absolute-reference op. Dialog is field-VM script, never a data section, so an edit that would touch the section chain or an abs-jump / camera-apply target is refused.</li>
+    <li><strong>Round-trip backstop.</strong> <code>man_edit::text_edits_preserve_scripts(original, rebuilt)</code> re-walks every record in both buffers and requires an identical instruction stream - same opcodes in order, every control-flow target resolving to the same instruction ordinal. A mis-relocated jump is caught; the caller drops the growth and falls back to same-size abbreviation for that scene.</li>
+  </ol>
+  <p><strong>Budget = the MAN's on-disc footprint.</strong> Across the retail USA disc the scene-bundle entries are sector-aligned with zero padding and each compressed MAN already fills its footprint, so in-place growth fits only when the rewritten MAN recompresses no larger than the original - a small fraction of scenes. The rest are sector-crossers whose deficit is under one 2048-byte sector; supplying it is a disc-level relayout, which is what the PAL discs did at mastering (<a href="disc.html#full-iso-relayout">disc relayout</a>, <a href="../tooling/translation.html">translation tooling</a>).</p>
+</section>
+
+<section class="doc-section" id="how-we-know">
+  <h2>How we know</h2>
+  <table>
+    <thead><tr><th>Evidence</th><th>Address / source</th><th>What it proves</th></tr></thead>
+    <tbody>
+      <tr><td>Field VM</td><td><code>FUN_801DE840</code></td><td>The interpreter that executes the door record by fall-through; <code>0x3F</code> is the named scene change</td></tr>
+      <tr><td>Warp packet</td><td><code>FUN_8001FD44</code></td><td>Receives the op's <code>index</code> as a destination-scene id, not as a record selector</td></tr>
+      <tr><td>Runtime record resolver</td><td><code>FUN_8003C8F0</code></td><td>Indexes records by partition slot through the record-offset tables</td></tr>
+      <tr><td>Live dispatch trace</td><td><code>autorun_door_dispatch_trace.lua</code> on the <code>drake_castle_to_worldmap</code> capture</td><td>The executing op's bytecode base minus the MAN base equals <code>data_region + partition2[0]</code> exactly</td></tr>
+      <tr><td>Corpus census</td><td>clean partition walk, disc-wide</td><td>160 destination ops across 48 scenes, 153 in partition 2; zero absolute-reference ops at or after any destination op; 37 ops carry a straddling relative jump</td></tr>
+      <tr><td>Round-trip tests</td><td><code>crates/patcher/tests/*_real.rs</code> (doors), translation import</td><td>Rebuilt MANs re-walk to identical instruction streams; touched sectors stay EDC/ECC-valid</td></tr>
+    </tbody>
+  </table>
+  <p>Full page: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/man-relocation.md">docs/formats/man-relocation.md</a>.</p>
+</section>
+
+<section class="doc-section" id="see-also">
   <h2>See also</h2>
-  <ul class="bullets">
-    <li><a href="../tooling/randomizer.html">Randomizer</a> - the door feature this enables.</li>
-    <li><a href="encounter.html">Encounter record</a> - the MAN multi-section layout.</li>
-    <li><a href="../subsystems/script-vm.html">Field/event script VM</a> - the opcode decoder the jump fixup uses.</li>
-  </ul>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../tooling/randomizer.html">Randomizer (doors)</a>
+    <a href="../tooling/translation.html">Translation packs</a>
+    <a href="encounter.html">Encounter record / MAN layout</a>
+    <a href="scene-bundles.html">Scene bundles</a>
+    <a href="mes.html">MES dialog</a>
+    <a href="lzs.html">LZS compression</a>
+    <a href="../subsystems/script-vm.html">Field/event VM</a>
+    <a href="../tooling/rom-patcher.html">ROM patcher (browser)</a>
+  </div>
 </section>
