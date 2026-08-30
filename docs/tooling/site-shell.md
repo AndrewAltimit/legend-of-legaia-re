@@ -268,6 +268,41 @@ Ten positive/negative controls ship inside the file and the positive ones run
 on every invocation. Wired into CI and into the pre-commit hook when staged
 changes touch `site/`.
 
+## Module-only syntax kills a classic script whole
+
+`import.meta`, static `import ... from` and `export` declarations are legal
+only inside `<script type="module">`. In a classic `<script src=...>` any one
+of them is a **parse error for the entire file**: no line of it runs, and the
+page silently degrades to whatever its static HTML shows - controls present,
+nothing wired. The world-overview viewer shipped dead exactly this way: its
+wasm loader gained one `import.meta.url` (pasted from the module-loaded ROM
+patcher app, where the same line is correct), and the one syntax error took
+out the whole 1400-line app with every other gate green. Only a browser
+parses these files, so nothing but a browser - or a checker - sees it.
+
+The legal classic-script forms, used by `arts-viewer.js` / `summon-view.js`:
+dynamic `import()` (an expression, allowed anywhere), and URL resolution
+against the *page* via `new URL('wasm/...', document.baseURI)` instead of
+against the script via `import.meta.url`.
+
+## Gate: `check-js-classic-module-syntax.py`
+
+```bash
+python3 scripts/ci/check-js-classic-module-syntax.py            # audit site/
+python3 scripts/ci/check-js-classic-module-syntax.py --selftest # controls only
+```
+
+It joins two facts no single file carries: which `.js` files the committed
+page sources (`site/_content/**/*.html` + `_gen.py`'s shell template) load
+without `type="module"`, and which files use module-only syntax outside
+comments and strings (`IMPORT_META_IN_CLASSIC` / `STATIC_IMPORT_IN_CLASSIC` /
+`EXPORT_IN_CLASSIC`). A file referenced by no scanned source is skipped - a
+dynamically-`import()`ed module is entitled to module syntax. Waive in place
+with `// classic-script-ok: <reason>`; a reason-less waiver is itself a
+finding. Controls ship inside the file and the positive ones run on every
+invocation. Wired into CI and into the pre-commit hook when staged changes
+touch `site/`.
+
 ## A `_content` mirror of a `docs/` page rots silently
 
 Several `site/_content/` fragments are *mirrors*: a page under `docs/` is the

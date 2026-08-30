@@ -127,6 +127,20 @@ if [[ "$SITE_TOUCHED" == "1" ]] && command -v python3 >/dev/null 2>&1 \
     fi
 fi
 
+# Module-only syntax in a classic script. `import.meta` (or a static
+# import/export declaration) in a <script src=...> without type="module" is a
+# parse error for the WHOLE file: nothing in it runs, the page degrades to its
+# static HTML, and no gate but a browser sees it. The world-overview viewer
+# shipped dead that way - one pasted `import.meta.url` in its wasm loader.
+if [[ "$SITE_TOUCHED" == "1" ]] && command -v python3 >/dev/null 2>&1 \
+    && [[ -f "scripts/ci/check-js-classic-module-syntax.py" ]]; then
+    printf '[pre-commit] js module syntax in classic scripts\n'
+    if ! python3 scripts/ci/check-js-classic-module-syntax.py --quiet; then
+        printf '[pre-commit] module-only syntax above -- resolve against document.baseURI or load the page with type="module" (or LEGAIA_SKIP_PRECOMMIT=1 to bypass)\n' >&2
+        exit 1
+    fi
+fi
+
 # Generated-page staleness. The link gate above proves every reference RESOLVES;
 # it cannot see a reference that is absent. Editing a _content fragment to pull
 # in a new asset and not re-running site/_gen.py leaves the served page loading
