@@ -229,7 +229,8 @@ struct ObjectGeom {
     normals: Vec<[f32; 3]>,
     uvs: Vec<[f32; 2]>,
     /// Per-vertex `COLOR_0` - the prim's packet word as the texture-blend
-    /// factor `colour / 128` ([`crate::gltf_color::modulation_color`]).
+    /// factor `colour / 128`, sRGB-linearized
+    /// ([`crate::gltf_color::modulation_color`]).
     colors: Vec<[f32; 4]>,
     indices: Vec<u32>,
 }
@@ -649,8 +650,11 @@ mod tests {
             .expect("COLOR_0 attribute") as usize;
         let c = crate::gltf_color::glb_probe::floats(&root, bin, acc).expect("COLOR_0 floats");
         assert_eq!(c.len(), 3);
-        assert!((c[0][0] - 0.5).abs() < 1e-6, "{:?}", c[0]);
+        // Each channel is the sRGB-linearized display ratio word / 128:
+        // re-encoding recovers the ratio (0x80 stays exactly 1.0).
+        use crate::gltf_color::linear_to_srgb_ratio as enc;
+        assert!((enc(c[0][0]) - 0.5).abs() < 1e-5, "{:?}", c[0]);
         assert!((c[0][1] - 1.0).abs() < 1e-6, "{:?}", c[0]);
-        assert!((c[0][2] - 248.0 / 128.0).abs() < 1e-6, "{:?}", c[0]);
+        assert!((enc(c[0][2]) - 248.0 / 128.0).abs() < 1e-5, "{:?}", c[0]);
     }
 }

@@ -47,7 +47,11 @@ with, so the export matches the on-screen pages:
   play-window's static bake). Sky shells are dropped by the site's
   `isSkyMesh` heuristic unless `--include-sky`. Baking is
   `legaia_asset::scene_gltf`: one VRAM-derived RGBA atlas + one material,
-  NEAREST samplers, packet colours on `COLOR_0`, PSX word-0 transparency
+  NEAREST samplers, packet colours on `COLOR_0` (sRGB-linearized so a
+  linear-colour-space importer - glTFast under VRChat's mandated Linear
+  setting included - reproduces retail's display-space `texel * colour/128`
+  product; a project left in Gamma colour space will render these models
+  darker than intended), PSX word-0 transparency
   as MASK cutout.
 - **NPC glbs** - `engine-core::npc_catalog` (the MAN partition-1 placement
   walk shared with the NPC browser page) + `legaia_asset::character_gltf`:

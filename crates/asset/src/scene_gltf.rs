@@ -455,11 +455,14 @@ mod tests {
             .as_u64()
             .expect("hybrid mesh needs COLOR_0") as usize;
         let c = crate::gltf_color::glb_probe::floats(&root, bin, acc).expect("COLOR_0 floats");
-        assert!((c[0][0] - 248.0 / 128.0).abs() < 1e-6, "{:?}", c[0]);
+        // Every channel is the sRGB-linearized display ratio; re-encoding
+        // recovers word / 128 (textured) or word / 255 (fill).
+        use crate::gltf_color::linear_to_srgb_ratio as enc;
+        assert!((enc(c[0][0]) - 248.0 / 128.0).abs() < 1e-5, "{:?}", c[0]);
         assert!(c[0][0] > 1.0, "the over-bright tail survives the encoding");
-        assert!((c[1][0] - 64.0 / 128.0).abs() < 1e-6, "{:?}", c[1]);
+        assert!((enc(c[1][0]) - 64.0 / 128.0).abs() < 1e-5, "{:?}", c[1]);
         assert_ne!(c[0][0], 1.0, "textured vert must not export white");
-        // The untextured fill keeps the /255 divisor.
+        // The untextured fill keeps the /255 divisor (white stays exact).
         assert!((c[2][0] - 1.0).abs() < 1e-6, "{:?}", c[2]);
         assert_eq!(c[2][1], 0.0);
     }

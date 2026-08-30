@@ -179,9 +179,10 @@ fn drake_kingdom_bundle_bakes_a_wellformed_glb() {
         "atlas PNG is non-trivial ({png_len} bytes)"
     );
 
-    // The shading survives the bake: every vertex's packet word comes back as
-    // COLOR_0 = word / 128, not as white. Non-vacuous - a kingdom's landmark
-    // prims are not a uniform neutral run.
+    // The shading survives the bake: every vertex's packet word comes back
+    // as COLOR_0 = the sRGB-linearized ratio word / 128, not as white
+    // (re-encoding through the OETF recovers the word). Non-vacuous - a
+    // kingdom's landmark prims are not a uniform neutral run.
     let neutral = [u32::from(legaia_asset::gltf_color::MODULATION_NEUTRAL); 3];
     assert!(
         want_words.iter().any(|w| *w != neutral),
@@ -197,14 +198,18 @@ fn drake_kingdom_bundle_bakes_a_wellformed_glb() {
         for row in
             legaia_asset::gltf_color::glb_probe::floats(&root, bin, acc).expect("COLOR_0 floats")
         {
+            let enc = legaia_asset::gltf_color::linear_to_srgb_ratio;
             got.push([
-                (row[0] * 128.0).round() as u32,
-                (row[1] * 128.0).round() as u32,
-                (row[2] * 128.0).round() as u32,
+                (enc(row[0]) * 128.0).round() as u32,
+                (enc(row[1]) * 128.0).round() as u32,
+                (enc(row[2]) * 128.0).round() as u32,
             ]);
         }
     }
     got.sort_unstable();
     want_words.sort_unstable();
-    assert_eq!(got, want_words, "every exported colour is its word / 128");
+    assert_eq!(
+        got, want_words,
+        "every exported colour re-encodes to its word / 128"
+    );
 }
