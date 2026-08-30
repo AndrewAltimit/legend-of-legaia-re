@@ -640,6 +640,51 @@ pub(crate) enum Cmd {
         #[arg(long)]
         disc: Option<PathBuf>,
     },
+    /// Export a scene (or every scene) as textured `.glb` files plus a JSON
+    /// manifest for Unity / VRChat world building: the assembled static map
+    /// (ground + terrain + placed objects, frame-0 posed), one animated
+    /// `.glb` per catalogued NPC, and animated-prop `.glb`s (windmills,
+    /// doors) with their placement transforms. The output contains
+    /// Sony-derived asset data - keep it local, never commit or
+    /// redistribute it. Full pipeline + Unity guide:
+    /// docs/tooling/vrchat-world-export.md.
+    #[command(display_order = 7, name = "export-glb")]
+    ExportGlb {
+        /// CDNAME scene name (e.g. `town01`). Repeat for several scenes.
+        #[arg(long)]
+        scene: Vec<String>,
+        /// Export every CDNAME scene that assembles (failures are
+        /// reported and skipped).
+        #[arg(long, action = clap::ArgAction::SetTrue)]
+        all_scenes: bool,
+        /// Output directory. Files land as `<out>/<scene>/<scene>.glb`,
+        /// `<out>/<scene>/npcs/*.glb`, `<out>/<scene>/props/*.glb`, and
+        /// `<out>/<scene>/manifest.json`.
+        #[arg(long, default_value = "glb-export")]
+        out: PathBuf,
+        /// Uniform scale: glTF meters per PSX world unit. The default
+        /// (1/64) makes one 128-unit walk tile 2 m - about right for
+        /// VRChat player scale. Use 1.0 for raw PSX units.
+        #[arg(long, default_value_t = 1.0 / 64.0)]
+        scale: f32,
+        /// Keep the sky-backdrop shells in the world glb (the site viewers
+        /// hide them; inside a VR world they can serve as horizon dressing).
+        #[arg(long, action = clap::ArgAction::SetTrue)]
+        include_sky: bool,
+        /// Skip the per-NPC animated glbs + manifest roster.
+        #[arg(long, action = clap::ArgAction::SetTrue)]
+        no_npcs: bool,
+        /// Skip the animated-prop glbs.
+        #[arg(long, action = clap::ArgAction::SetTrue)]
+        no_props: bool,
+        /// Extracted-root directory containing `PROT.DAT` + `CDNAME.TXT`.
+        #[arg(long, default_value = "extracted")]
+        extracted_root: PathBuf,
+        /// Alternative source: read PROT.DAT + CDNAME.TXT directly from a
+        /// `.bin` disc image. When provided, `--extracted-root` is ignored.
+        #[arg(long)]
+        disc: Option<PathBuf>,
+    },
     /// Save the current world's empty/default party to a slot file.
     /// Useful as a smoke test for the disk save path; engines drive this
     /// from menu mode at runtime.

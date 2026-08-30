@@ -1290,6 +1290,7 @@ dependencies = [
  "legaia-vab",
  "log",
  "serde",
+ "serde_json",
  "tempfile",
  "toml",
 ]

@@ -454,10 +454,16 @@ SIM_PAIRS: list[dict[str, object]] = [
         "two web surfaces assemble the same scene through the same resolver "
         "calls, so both must hand the combined draw list to the same "
         "coplanar kernel (see the native pairing above for the failure this "
-        "catches)",
+        "catches). The field-scene viewer's whole assembly now lives in the "
+        "shared kernel `engine-core::scene_assembly::assemble_field_scene` "
+        "(which the native export-glb path also reads), so the viewer side "
+        "of this pair is checked at the kernel",
         "sites": {
             "web_play": (WEB_PLAY, "build_field_render"),
-            "web_viewer": (WEB_FIELD_SCENE, "build_field_scene"),
+            "web_viewer": (
+                "crates/engine-core/src/scene_assembly.rs",
+                "assemble_field_scene",
+            ),
         },
         "mode": "symbols_all",
         "symbols": ["draw_plane_summaries", "coplanar_draw_offsets"],

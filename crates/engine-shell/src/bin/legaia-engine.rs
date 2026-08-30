@@ -24,9 +24,10 @@ use clap::Parser;
 use cli::{Cli, Cmd};
 use commands::{
     cmd_audio_trace, cmd_battle, cmd_chain_editor, cmd_clut_trace, cmd_config, cmd_encounter,
-    cmd_equip, cmd_gte_replay, cmd_info, cmd_inventory, cmd_list_scenes, cmd_load, cmd_man_scripts,
-    cmd_mode_trace, cmd_pcm_trace, cmd_play, cmd_replay, cmd_save, cmd_save_select, cmd_scenarios,
-    cmd_seru_capture, cmd_sim_trace, cmd_target_pick, cmd_title, cmd_vram_oracle,
+    cmd_equip, cmd_export_glb, cmd_gte_replay, cmd_info, cmd_inventory, cmd_list_scenes, cmd_load,
+    cmd_man_scripts, cmd_mode_trace, cmd_pcm_trace, cmd_play, cmd_replay, cmd_save,
+    cmd_save_select, cmd_scenarios, cmd_seru_capture, cmd_sim_trace, cmd_target_pick, cmd_title,
+    cmd_vram_oracle,
 };
 use std::path::Path;
 use window::{cmd_play_str, cmd_play_window, cmd_record};
@@ -71,6 +72,27 @@ fn main() -> Result<()> {
             extracted_root,
             disc,
         } => cmd_list_scenes(&extracted_root, disc.as_deref()),
+        Cmd::ExportGlb {
+            scene,
+            all_scenes,
+            out,
+            scale,
+            include_sky,
+            no_npcs,
+            no_props,
+            extracted_root,
+            disc,
+        } => cmd_export_glb(
+            &scene,
+            all_scenes,
+            &out,
+            scale,
+            include_sky,
+            no_npcs,
+            no_props,
+            &extracted_root,
+            disc.as_deref(),
+        ),
         Cmd::ClutTrace {
             scene,
             extracted_root,

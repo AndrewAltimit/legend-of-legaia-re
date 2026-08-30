@@ -24,36 +24,12 @@
 
 use super::*;
 use crate::field_scene::FieldScenePack;
-use legaia_asset::man_section::ActorPlacement;
-use legaia_engine_core::man_field_scripts::{PlacementKind, classify_placements};
-use legaia_engine_core::scene::{ProtIndex, Scene};
-use legaia_engine_core::world::FIELD_OFFMAP_HIDE_XZ;
+use legaia_engine_core::scene::ProtIndex;
 
-/// One catalogued placement: the MAN record plus what its script implies.
-pub struct NpcEntry {
-    pub placement: ActorPlacement,
-    /// `"talk"` (carries inline dialog / an interact op), `"door"` (warps to
-    /// another scene), or `"prop"` (decorative / script-only).
-    pub kind: &'static str,
-    /// Field-VM map id for a `door`.
-    pub target_map: Option<u8>,
-    /// First line of the actor's inline dialog block, when it has one - the
-    /// only human-readable label retail gives an NPC.
-    pub dialog: Option<String>,
-    /// Object count of the resolved TMD (the mesh's bone count ceiling).
-    pub nobj: u32,
-    /// Parked at the off-map hide box: a **conditional spawn** the scene only
-    /// places once a script says so (a story NPC who isn't in town yet). Its
-    /// model and clip are fully resolvable - retail just isn't drawing it at
-    /// scene load - so the catalog lists it, flagged.
-    pub conditional: bool,
-    /// `model_index >= 0xF0`: a **global-pool special** (party head / save
-    /// point). Its mesh comes from the world's global TMD pool (slot
-    /// `model_index - 0xF0`) and its clip from the PROT 0874 locomotion
-    /// bundle, not the scene's. Only the play catalog
-    /// ([`build_npc_catalog_play`]) lists these.
-    pub special: bool,
-}
+/// One catalogued placement - the shared kernel's record
+/// ([`legaia_engine_core::npc_catalog::NpcEntry`]), re-exported so the
+/// viewer's accessors keep their old path.
+pub use legaia_engine_core::npc_catalog::NpcEntry;
 
 /// The NPC catalog for one loaded field scene. Built by
 /// [`LegaiaViewer::set_scene_npcs`]; the meshes resolve against the
@@ -83,38 +59,6 @@ pub struct FieldNpcPack {
     /// `(catalog_idx, mesh, object_ids, flat_rgba)`.
     #[allow(clippy::type_complexity)]
     pub cur: Option<(usize, legaia_tmd::mesh::VramMesh, Vec<u32>, Vec<u8>)>,
-}
-
-/// Decode the first line of an inline dialog block into a display label.
-/// Glyph bytes are ASCII-compatible from `0x20`, so the printable run is the
-/// text; control bytes (line breaks, the `0x1F` segment lead) end the line.
-fn dialog_label(inline: &[u8]) -> Option<String> {
-    let segs = legaia_engine_core::dialog::decode_inline_segments(inline);
-    let first = segs.into_iter().next()?;
-    let line: String = first
-        .iter()
-        .take_while(|&&b| b != 0x00)
-        .filter(|&&b| (0x20..=0x7E).contains(&b))
-        .map(|&b| b as char)
-        .collect();
-    let line = line.trim();
-    if line.len() < 2 {
-        return None;
-    }
-    Some(line.chars().take(64).collect())
-}
-
-/// Locate the scene's ANM bundle the way the play-window does: the type-0x05
-/// section of one of the scene's PROT slots. The descriptor-count seed varies
-/// per scene (town01 resolves at 3; the prologue scenes only at >= 5), so try
-/// the spread and take the first hit.
-fn scene_anm_prot(scene: &Scene) -> Option<u32> {
-    scene.entries.iter().find_map(|e| {
-        let found = [3usize, 5, 6, 7]
-            .into_iter()
-            .any(|desc| !legaia_asset::player_anm::find_in_entry(&e.bytes, desc).is_empty());
-        found.then_some(e.idx)
-    })
 }
 
 impl LegaiaViewer {
@@ -178,87 +122,24 @@ pub fn build_npc_catalog_play(
     build_npc_catalog_impl(index, name, res, Some(global_pool))
 }
 
-/// Shared walk behind the two catalog builders. `play_pool` is `Some` for the
-/// play-page build (specials resolve against it, clipless multi-object actors
-/// stay in), `None` for the NPC browser page's curated build.
+/// Shared walk behind the two catalog builders - delegates to the kernel
+/// (`engine-core::npc_catalog::catalog_scene_npcs`) and wraps the result
+/// with the viewer's mesh cache.
 fn build_npc_catalog_impl(
     index: &ProtIndex,
     name: &str,
     res: &legaia_engine_core::scene_resources::SceneResources,
     play_pool: Option<&[Option<std::sync::Arc<legaia_engine_core::world::GlobalTmd>>]>,
 ) -> Result<FieldNpcPack, String> {
-    let scene = Scene::load(index, name).map_err(|e| format!("{e:#}"))?;
-    let man = scene
-        .field_man_payload(index)
-        .map_err(|e| format!("MAN: {e:#}"))?
-        .ok_or_else(|| format!("{name}: scene has no MAN"))?;
-    let mf = legaia_asset::man_section::parse(&man).map_err(|e| format!("MAN parse: {e:#}"))?;
-
-    let anm_prot = scene_anm_prot(&scene);
-    let mut entries = Vec::new();
-    let mut special_count = 0u32;
-    let mut unposable_count = 0u32;
-    for (p, kind) in classify_placements(&mf, &man) {
-        let nobj = if p.special_model {
-            // Party / savepoint heads come from the global pool, not the
-            // scene's. The browser NPC page routes them to the characters
-            // page; the play page draws them like the native window does.
-            let Some(pool) = play_pool else {
-                special_count += 1;
-                continue;
-            };
-            let Some(g) = pool
-                .get((p.model_index - 0xF0) as usize)
-                .and_then(|s| s.as_ref())
-            else {
-                continue; // no pool mesh - the native window skips it too
-            };
-            special_count += 1;
-            g.tmd.objects.len() as u32
-        } else {
-            let Some(t) = res.tmds.get(p.model_index as usize) else {
-                continue;
-            };
-            t.tmd.objects.len() as u32
-        };
-        // A multi-object TMD's vertices are object-local: without a bone pose
-        // it draws as a pile of parts on the origin. The curated NPC page
-        // withholds those; the play page keeps them (retail draw kind 5 draws
-        // them raw, and so does the native play-window).
-        if !p.special_model && nobj > 1 && (p.anim_id == 0 || anm_prot.is_none()) {
-            unposable_count += 1;
-            if play_pool.is_none() {
-                continue;
-            }
-        }
-        let (label, target_map, dialog) = match &kind {
-            PlacementKind::Portal { target_map } => ("door", Some(*target_map), None),
-            PlacementKind::Npc { dialog_inline, .. } => (
-                "talk",
-                None,
-                dialog_inline.as_deref().and_then(dialog_label),
-            ),
-            PlacementKind::Plain => ("prop", None, None),
-        };
-        // The off-map hide box marks a spawn retail withholds until a script
-        // places it - the actor is real and fully resolvable, so the catalog
-        // lists it with a flag rather than dropping it the way the field
-        // renderer does.
-        let conditional = p.world_x == FIELD_OFFMAP_HIDE_XZ && p.world_z == FIELD_OFFMAP_HIDE_XZ;
-        let special = p.special_model;
-        entries.push(NpcEntry {
-            nobj,
-            placement: p,
-            kind: label,
-            target_map,
-            dialog,
-            conditional,
-            special,
-        });
-    }
-
+    let legaia_engine_core::npc_catalog::NpcCatalog {
+        scene,
+        entries,
+        anm_prot,
+        special_count,
+        unposable_count,
+    } = legaia_engine_core::npc_catalog::catalog_scene_npcs(index, name, res, play_pool)?;
     Ok(FieldNpcPack {
-        scene: name.to_string(),
+        scene,
         entries,
         anm_prot,
         special_count,

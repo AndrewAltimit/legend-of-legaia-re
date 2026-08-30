@@ -12,11 +12,9 @@
 //! meshes assemble into.
 
 use super::*;
-use legaia_engine_core::field_env::{self, EnvDraw};
+use legaia_engine_core::field_env::EnvDraw;
 use legaia_engine_core::scene::{ProtIndex, Scene};
-use legaia_engine_core::scene_resources::{
-    BuildOptions, FIELD_SHARED_BLOCKS, SceneLoadKind, SceneResources,
-};
+use legaia_engine_core::scene_resources::SceneResources;
 use std::sync::Arc;
 
 /// A fully-assembled field scene held by [`LegaiaViewer`] between
@@ -81,224 +79,28 @@ pub struct FieldSceneAnim {
     vsync_accum: u8,
 }
 
-/// Build one env-pack mesh the way the native play-window renders it: the
-/// VRAM-filtered **textured** prims plus the untextured `F*`/`G*`
-/// **vertex-colour** prims (`legaia_tmd::mesh::tmd_to_color_mesh` - the props
-/// whose prims carry per-vertex RGB instead of UVs, which the textured
-/// builder drops; the engine-shell draws them on its colour-mesh pipeline).
-/// Both halves are merged into one vertex stream for the WebGL renderer, with
-/// a parallel `[r, g, b, flag]` byte array (`flag` 255 = textured, sample
-/// VRAM and modulate by the RGB; 0 = untextured, fill with the RGB) matching
-/// the `u_use_flat_colors` / `a_flat_rgba` convention the field-character
-/// hybrid shader path already implements. Every vertex carries a colour -
-/// the textured half's is the prim's packet word, retail's whole field
-/// lighting model (`texel * colour / 128`).
-pub fn build_hybrid_env_mesh(
-    rtmd: &legaia_engine_core::scene_resources::ResolvedTmd,
-    vram: &legaia_tim::Vram,
-) -> (legaia_tmd::mesh::VramMesh, Vec<u8>) {
-    let mut mesh = rtmd.build_filtered_vram_mesh(vram);
-    let mut cmesh = legaia_tmd::mesh::tmd_to_color_mesh(&rtmd.tmd, &rtmd.raw);
-    // Coplanar z-fight resolution over BOTH halves as one stream - the same
-    // shared kernel the native play-window runs (`legaia_tmd::mesh::coplanar`):
-    // flag double-sided pairs for the shader's facing discard, nudge distinct
-    // coplanar decal layers toward their visible side. The merge below carries
-    // the colour half's pair flag onto the merged CBA attribute.
-    legaia_tmd::mesh::resolve_hybrid(&mut mesh, &mut cmesh);
-    merge_hybrid_halves(mesh, &cmesh)
-}
-
-/// [`build_hybrid_env_mesh`] **posed** at one set of per-object rigid
-/// transforms (frame 0 of a placed prop's object-bind clip): both halves go
-/// through the `*_posed_rot` builders - the same `R . v + T` bake the native
-/// play-window's posed-placement pass runs - and merge into the same hybrid
-/// stream. Used for the `.MAP` placed objects whose bind names an animation;
-/// their TMD objects are that clip's bones, and the raw object-local vertices
-/// are nonsense without its transform.
-pub fn build_hybrid_env_mesh_posed(
-    rtmd: &legaia_engine_core::scene_resources::ResolvedTmd,
-    offsets: &[([i16; 3], [i16; 3])],
-) -> (legaia_tmd::mesh::VramMesh, Vec<u8>) {
-    let mut mesh = legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(&rtmd.tmd, &rtmd.raw, offsets);
-    let mut cmesh = legaia_tmd::mesh::tmd_to_color_mesh_posed_rot(&rtmd.tmd, &rtmd.raw, offsets);
-    legaia_tmd::mesh::resolve_hybrid(&mut mesh, &mut cmesh);
-    merge_hybrid_halves(mesh, &cmesh)
-}
-
-/// Merge the untextured vertex-colour half into the textured half's vertex
-/// stream, producing the parallel `[r, g, b, flag]` array. Both halves carry a
-/// colour: the untextured half's is its **fill**, the textured half's is its
-/// **modulation** (`texel * colour / 128`), and the `flag` byte is which.
-///
-/// The colour half's per-vertex PSX blend word (ABE enable in bit 15 + ABR
-/// mode in bits 5..=6, see [`legaia_tmd::mesh::ColorMesh::blend`]) is carried
-/// into the TSB half of the merged `cba_tsb` attribute - the same packing the
-/// textured prims ride ([`legaia_tmd::mesh::TSB_SEMI_TRANSPARENT_BIT`]).
-/// Dropping it forced every untextured semi-transparent prim (water sheets,
-/// window light shafts) to draw opaque in the WebGL viewers. The flat-colour
-/// shader path never samples VRAM for these verts, so the nonzero TSB is
-/// blend metadata only.
-fn merge_hybrid_halves(
-    mut mesh: legaia_tmd::mesh::VramMesh,
-    cmesh: &legaia_tmd::mesh::ColorMesh,
-) -> (legaia_tmd::mesh::VramMesh, Vec<u8>) {
-    // The textured half's stream is its packet colours (the shader's
-    // `texel * colour / 128` modulation), NOT white - a white stream would
-    // brighten every textured surface by 255/128.
-    if cmesh.is_empty() {
-        let flat = crate::packet_color::textured(&mesh);
-        return (mesh, flat);
-    }
-    let mut flat = crate::packet_color::textured(&mesh);
-    flat.reserve(cmesh.positions.len() * 4);
-    let base = mesh.positions.len() as u32;
-    for ((p, c), blend) in cmesh
-        .positions
-        .iter()
-        .zip(cmesh.colors.iter())
-        .zip(cmesh.blend.iter())
-    {
-        mesh.positions.push(*p);
-        mesh.uvs.push([0, 0]);
-        // A colour vert flagged as one copy of a double-sided pair
-        // (`resolve_hybrid`, blend bit 14) re-keys the flag onto the merged
-        // CBA attribute's bit 15 - where the WebGL shader's facing discard
-        // reads it for every vertex, textured or flat.
-        let cba = if blend & legaia_tmd::mesh::BLEND_DOUBLE_SIDED_BIT != 0 {
-            legaia_tmd::mesh::CBA_DOUBLE_SIDED_BIT
-        } else {
-            0
-        };
-        mesh.cba_tsb
-            .push([cba, blend & !legaia_tmd::mesh::BLEND_DOUBLE_SIDED_BIT]);
-        mesh.normals.push([0.0, 0.0, 0.0]);
-        // Keep `VramMesh::colors` index-aligned with the positions: the
-        // untextured half has no modulation word, so it takes the neutral one.
-        mesh.colors.push([crate::packet_color::NEUTRAL; 3]);
-        flat.extend_from_slice(&[c[0], c[1], c[2], 0]);
-    }
-    mesh.indices.extend(cmesh.indices.iter().map(|i| i + base));
-    (mesh, flat)
-}
+/// Hybrid env-mesh builders - hoisted to the shared assembly kernel
+/// (`engine-core::scene_assembly`) so the browser pages and the native
+/// `export-glb` path bake identical meshes; re-exported under the old path
+/// for the crate's other pages.
+pub use legaia_engine_core::scene_assembly::{build_hybrid_env_mesh, build_hybrid_env_mesh_posed};
 
 /// Assemble a CDNAME scene's full static map: field-mode
 /// [`SceneResources`] (VRAM + env TMD pack) + the `.MAP` placement /
 /// terrain-tile draws resolved through [`field_env`] + the walk-ground
 /// heightfield. The engine-parity core of [`LegaiaViewer::set_scene_field`].
 pub fn build_field_scene(index: &ProtIndex, name: &str) -> Result<FieldScenePack, String> {
-    let scene = Scene::load(index, name).map_err(|e| format!("{e:#}"))?;
-
-    // The shared blocks the retail field engine keeps resident across
-    // scene transitions (player TMD + shared UI atlas) - included so the
-    // VRAM matches the engine's field build; the env-pack vote filters
-    // them out of the mesh selection.
-    let mut shared_scenes: Vec<Scene> = Vec::new();
-    for n in FIELD_SHARED_BLOCKS {
-        if let Ok(s) = Scene::load(index, n) {
-            shared_scenes.push(s);
-        }
-    }
-    let shared_refs: Vec<&Scene> = shared_scenes.iter().collect();
-    let is_world_map = legaia_engine_core::scene::is_world_map_scene(name);
-    let kind = if is_world_map {
-        SceneLoadKind::WorldMap
-    } else {
-        SceneLoadKind::Field
-    };
-    // Boot-resident system-UI bundle (raw PROT TOC entries 0/1): layers
-    // under the scene build so the row-510 strip CLUT + (960,256)
-    // menu-glyph atlas the env meshes sample (town01 slots 21/26/74,
-    // rikuroa slots 50/51/63) are resident in the browser build too.
-    let system_ui = index.system_ui_bundle().ok();
-    let (res, _stats) = SceneResources::build_targeted_with_options(
-        &scene,
-        &shared_refs,
-        BuildOptions {
-            kind,
-            // Retail's field loader DMA-uploads every scene TIM; the
-            // render-targeted subset drops ~75% of the env pack's prims.
-            upload_all_tims: true,
-            system_ui: system_ui.as_deref(),
-        },
-    )
-    .map_err(|e| format!("{e:#}"))?;
-
-    let env_tmds = field_env::env_pack_tmd_indices(&scene, &res);
-    let floor_lut = scene.field_floor_height_lut(index).ok().flatten();
-    // World-map scenes draw two sparse walk-frame layers over the continent
-    // heightfield; field/town scenes draw the placed objects + the bulk
-    // terrain-tile layer (mirrors the play-window's resolve_field_* /
-    // resolve_world_map_* split in `engine-shell`).
-    let (placement_records, terrain_records) = if is_world_map {
-        // The walk `.MAP` carries the placed-flag landmarks (`FUN_8003A55C`,
-        // flags & 0x4) AND a **decoration** layer - walk-visible cells with a
-        // nonzero record `+0x10` and no placed flag: the crossed-quad trees,
-        // mountain groups and props (~300 cells on Drake alone). Both are one
-        // un-posed layer, concatenated landmarks-then-decorations exactly as
-        // `resolve_world_map_terrain_draws` in `engine-shell` does; dropping
-        // the second half here left the browser's assembled world maps bare
-        // next to the native window. The continent ground itself is NOT this
-        // layer - it is the heightfield below.
-        let mut tiles = scene
-            .walk_object_placements(index)
-            .ok()
-            .flatten()
-            .unwrap_or_default();
-        if let Ok(Some(deco)) = scene.walk_decoration_placements(index) {
-            tiles.extend(deco);
-        }
-        (tiles, Vec::new())
-    } else {
-        (
-            scene
-                .field_object_placements(index)
-                .ok()
-                .flatten()
-                .unwrap_or_default(),
-            // Retail's per-cell terrain emitters (`FUN_801F69D8` /
-            // `FUN_801F7088`) skip records carrying the *placed* flag - those
-            // are the placement sweep's actors, drawn (and posed) above. The
-            // two layers also resolve Y differently (corner average vs single
-            // nibble), so a duplicate here would land at a different height.
-            scene
-                .field_terrain_tiles(index)
-                .ok()
-                .flatten()
-                .unwrap_or_default()
-                .into_iter()
-                .filter(|p| p.flags & legaia_asset::field_objects::FLAG_PLACED == 0)
-                .collect(),
-        )
-    };
-    let (mut placements, _) =
-        field_env::resolve_env_draws(&env_tmds, &placement_records, floor_lut);
-    // Story-hidden placed objects: the `.MAP` table says where an object CAN
-    // stand, its bind record's spawn prologue says whether it currently DOES
-    // (town01's flag-gated gate rocks; town0c's parked intact doorway). The
-    // full-map viewer stages each scene at its canonical free-roam visit,
-    // same as the play page's world does.
-    if !is_world_map && let Ok(Some(binds)) = scene.field_object_binds(index) {
-        let hidden = field_env::story_hidden_records_for_scene(&scene, index);
-        field_env::retain_visible_placed_draws(&mut placements, &binds, &hidden);
-    }
-    let (terrain, _) = field_env::resolve_env_draws(&env_tmds, &terrain_records, floor_lut);
-    let ground = scene
-        .walk_heightfield(index)
-        .ok()
-        .flatten()
-        .filter(|h| !h.indices.is_empty());
-
-    // Cross-draw coplanar lifts over the combined layers (terrain first,
-    // then placements - the same concatenation the native shell ranks).
-    let mut combined: Vec<EnvDraw> = Vec::with_capacity(terrain.len() + placements.len());
-    combined.extend_from_slice(&terrain);
-    combined.extend_from_slice(&placements);
-    let planes = legaia_engine_core::coplanar_draws::draw_plane_summaries(&combined, &res);
-    let coplanar_offsets =
-        legaia_engine_core::coplanar_draws::coplanar_draw_offsets(&combined, &planes);
-
+    let legaia_engine_core::scene_assembly::AssembledScene {
+        name,
+        res,
+        env_tmds,
+        placements,
+        terrain,
+        ground,
+        coplanar_offsets,
+    } = legaia_engine_core::scene_assembly::assemble_field_scene(index, name)?;
     Ok(FieldScenePack {
-        name: name.to_string(),
+        name,
         res,
         env_tmds,
         placements,
@@ -910,44 +712,5 @@ impl LegaiaViewer {
             .and_then(|f| f.ground.as_ref())
             .map(|hf| hf.quad_count() as u32)
             .unwrap_or(0)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::merge_hybrid_halves;
-    use legaia_tmd::mesh::{ColorMesh, TSB_SEMI_TRANSPARENT_BIT, VramMesh};
-
-    /// The colour half's blend words must survive the hybrid merge in the
-    /// TSB half of `cba_tsb` - an untextured ABE prim (fountain water /
-    /// window light shaft) that loses its blend word draws as an opaque
-    /// grey blob in the WebGL viewers.
-    #[test]
-    fn hybrid_merge_keeps_colour_half_blend_words() {
-        let mesh = VramMesh {
-            positions: vec![[0.0; 3]; 3],
-            uvs: vec![[0, 0]; 3],
-            cba_tsb: vec![[7, 0x1234]; 3],
-            indices: vec![0, 1, 2],
-            normals: vec![[0.0; 3]; 3],
-            colors: vec![[128; 3]; 3],
-        };
-        let semi = TSB_SEMI_TRANSPARENT_BIT; // ABE on, ABR 0
-        let cmesh = ColorMesh {
-            positions: vec![[1.0; 3]; 3],
-            colors: vec![[10, 20, 30]; 3],
-            indices: vec![0, 1, 2],
-            blend: vec![semi; 3],
-        };
-        let (merged, flat) = merge_hybrid_halves(mesh, &cmesh);
-        assert_eq!(merged.positions.len(), 6);
-        assert_eq!(flat.len(), 24);
-        // Textured prefix untouched, colour tail flagged 0 with its blend
-        // word in the TSB half.
-        assert_eq!(merged.cba_tsb[0], [7, 0x1234]);
-        for v in 3..6 {
-            assert_eq!(merged.cba_tsb[v], [0, semi], "vert {v}");
-            assert_eq!(flat[v * 4 + 3], 0, "vert {v} flag");
-        }
     }
 }
