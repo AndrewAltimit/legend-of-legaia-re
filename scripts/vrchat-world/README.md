@@ -154,14 +154,26 @@ the VCC setup in more detail if this is your first worlds project.
   importer is the separate handedness convention - flip `YAW_SIGN` in
   `LegaiaWorldBuilder.cs`.
 - **Individual buildings face the wrong way** (windmill blades edge-on,
-  a house showing its back to the plaza) while the overall layout is
-  right: the export was made before the yaw-sign fix in
-  `legaia_asset::scene_gltf` - the site's `placementModelScaledY` has a
-  transposed inline rotation block, and the bake once emitted the
-  unnegated param, facing every *yawed* instance backwards while leaving
-  every position (and any layout check) correct. Rebuild `legaia-engine`
-  and re-export; the manifest yaw flips with it, so builder-placed props
-  stay aligned with their baked twins.
+  a hut's door on the wrong side) while the overall layout is right: two
+  separate causes, and each was fixed once - re-export with a current
+  build and re-run a current builder before debugging further.
+  1. *Yaw sign in the bake* (`legaia_asset::scene_gltf`): the site's
+     `placementModelScaledY` has a transposed inline rotation block, and
+     the bake once emitted the unnegated param, facing every yawed
+     instance backwards while leaving every position (and any layout
+     check) correct. Fixed at the node-quaternion emission; the manifest
+     yaw flipped with it.
+  2. *Handedness of placed props* (the builder): the world glb bakes the
+     site's Y-mirror into its vertices (det -1) while NPC / prop glbs
+     are proper-rotation models (root `Rx(180)`, det +1) - opposite
+     chirality, so NO yaw value can align a placed prop with its baked
+     frame-0 twin (a mirrored hut has its door on the wrong side at
+     every angle; this is what made yaw-sign experiments look
+     inconsistent). The builder supplies the missing mirror with a
+     negative Z instance scale (`PROP_NPC_SCALE_Z`); with it, prop and
+     twin coincide exactly, which is the invariant to check first
+     (temporarily untick **Hide static prop twins**: each animated prop
+     must z-fight its twin, not sit rotated against it).
 - **Collider errors at build time**: with the default merged collider the
   cook runs off a generated readable asset and this doesn't arise; if you
   switched to per-mesh colliders, enable **Read/Write** in the glb's

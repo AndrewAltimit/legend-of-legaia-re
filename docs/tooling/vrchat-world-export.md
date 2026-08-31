@@ -129,7 +129,14 @@ in `site/js/webgl-shaders.js`) gave confident wrong answers in both
 directions before the landmark test - re-run the test, don't re-count.
 The NPC / prop `.glb`s themselves stay in **raw PSX units**
 (matching the site's character downloads), so a consumer scales each
-instance by the manifest's `scale` - the kit's builder does.
+instance by the manifest's `scale` - the kit's builder does. They also
+differ from the world glb in **handedness**: the world bakes the site
+convention's Y-mirror into its vertices (determinant -1), while the NPC /
+prop files are proper-rotation models (root `Rx(180)`, determinant +1).
+Placing a prop into the world therefore needs one mirror in the instance
+transform - `Ry(rot_y_radians) * diag(1, 1, -1)` composed onto the file's
+root - or no yaw will ever line it up with its baked frame-0 twin. The
+kit's builder applies this as a negative Z instance scale.
 
 ## Verification
 

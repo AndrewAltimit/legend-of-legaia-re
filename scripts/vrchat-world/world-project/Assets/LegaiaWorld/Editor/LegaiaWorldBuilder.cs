@@ -17,6 +17,18 @@
 // mapped through the same inversion here, and yaw flips sign. If a prop
 // faces mirrored in your importer, flip YAW_SIGN.
 //
+// Handedness note (the trap that ate three yaw-sign attempts): the WORLD
+// glb bakes the site viewers' Y-mirror into its vertices (determinant -1
+// geometry), while the NPC / prop glbs are proper-rotation models (root
+// node Rx(180deg), determinant +1, raw PSX units). Opposite handedness
+// means NO yaw value can make a placed prop coincide with its baked
+// frame-0 twin - a mirrored building has its door on the wrong side at
+// every angle. The fix is PROP_NPC_SCALE_Z = -1: a negative Z on each
+// instance's scale supplies the missing mirror (algebra: the required
+// instance transform is Ry(yaw) * diag(1,-1,1) * Rx(pi)^-1
+// = Ry(yaw) * diag(1,1,-1)). Materials are exported double-sided, so the
+// flipped winding doesn't cull.
+//
 // Orientation note: the raw import IS mirrored relative to the site's
 // field-scene viewer, and the fix is a -1 X root scale. This was settled
 // EMPIRICALLY with a landmark test on town01 - stand at the sea looking at
@@ -43,6 +55,12 @@ namespace LegaiaWorld
     public class LegaiaWorldBuilder : EditorWindow
     {
         const float YAW_SIGN = -1f;
+
+        // NPC / prop instances need a Z-mirror to match the world glb's
+        // baked (mirror-handed) geometry - see the handedness note in the
+        // header. Set to +1 only for an importer whose world glb is
+        // handedness-corrected on import.
+        const float PROP_NPC_SCALE_Z = -1f;
 
         string manifestPath = "";
         bool matchExplorerOrientation = true;
@@ -179,7 +197,9 @@ namespace LegaiaWorld
                 // NPC/prop glbs ship in raw PSX units (same as the site's
                 // downloads); manifest positions are pre-scaled, the meshes
                 // are not - scale each instance by the manifest's factor.
-                go.transform.localScale = Vector3.one * scale;
+                // Negative Z: the handedness mirror (see header note).
+                go.transform.localScale =
+                    new Vector3(scale, scale, PROP_NPC_SCALE_Z * scale);
                 go.transform.localPosition = G2U(MiniJson.GetVec3(n, "position"));
                 string label = MiniJson.AsStr(MiniJson.Get(n, "label"));
                 if (!string.IsNullOrEmpty(label))
@@ -207,7 +227,10 @@ namespace LegaiaWorld
                 {
                     var go = InstantiateGlb(dir + "/" + file, propRoot.transform);
                     if (go == null) continue;
-                    go.transform.localScale = Vector3.one * scale;
+                    // Negative Z: the handedness mirror (see header note) -
+                    // without it no yaw can align a prop with its baked twin.
+                    go.transform.localScale =
+                        new Vector3(scale, scale, PROP_NPC_SCALE_Z * scale);
                     go.transform.localPosition = G2U(MiniJson.GetVec3(inst, "position"));
                     float yaw = MiniJson.GetNum(inst, "rot_y_radians") * Mathf.Rad2Deg;
                     go.transform.localRotation = Quaternion.Euler(0, YAW_SIGN * yaw, 0);
