@@ -109,12 +109,15 @@ objects - the village centre, not the map-grid centre), composition
 Transforms are in the **export frame**: the site renderers' convention
 (mesh-local Y flipped at bake so the model reads +Y-up,
 mirror-handedness and all), already multiplied by `scale`; yaw in radians
-about +Y exactly as the world-glb instances apply it. That frame is
-X-mirrored relative to what retail *displays* - the site pages add a
-retail screen-X mirror in the shader that the bake doesn't carry - so a
-consumer that wants the in-game orientation mirrors the assembled scene
-once on X (the kit builder's default-on "Match retail orientation"
-toggle). The NPC / prop `.glb`s themselves stay in **raw PSX units**
+about +Y exactly as the world-glb instances apply it. The frame is
+**parity-correct** but sits 180° from the site pages' presentation: the
+pages' view chain nets a 180° screen rotation over the baked frame
+(model Y-flip + projection Y-flip + retail screen-X mirror = three
+reflections; the bake carries one - see `u_pair_front` in
+`site/js/webgl-shaders.js`). A consumer that wants the explorer's
+orientation rotates the assembled scene 180° about +Y (the kit builder's
+default-on toggle) - never a mirror, which flips building parity for
+real. The NPC / prop `.glb`s themselves stay in **raw PSX units**
 (matching the site's character downloads), so a consumer scales each
 instance by the manifest's `scale` - the kit's builder does.
 

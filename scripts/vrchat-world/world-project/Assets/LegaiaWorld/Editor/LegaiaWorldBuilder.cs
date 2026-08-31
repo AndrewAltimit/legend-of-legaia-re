@@ -17,13 +17,15 @@
 // mapped through the same inversion here, and yaw flips sign. If a prop
 // faces mirrored in your importer, flip YAW_SIGN.
 //
-// Orientation note: the exported glbs carry the site renderers' world frame,
-// which is X-mirrored relative to what retail displays (the site pages add a
-// retail screen-X mirror in the shader; the bake doesn't). "Match retail
-// orientation" (default on) mirrors the finished root (-1 X scale) so the
-// town reads the way it does in game. Everything sits under the one mirrored
-// root - visuals, colliders and manifest placements stay consistent - and the
-// shared material is double-sided, so the flipped winding doesn't cull.
+// Orientation note: the exported glbs are parity-correct - the site pages'
+// view chain nets a 180-degree screen rotation over the baked frame (model
+// Y-flip + projection Y-flip + retail screen-X mirror = three reflections,
+// the bake carries one), NOT a mirror. So the raw import reads "flipped" at
+// first glance next to the explorer pages but every asymmetric detail is
+// right, and the fix is a rotation, never a mirror (a -1 axis scale flips
+// building parity for real). "Match explorer orientation" (default on)
+// rotates the finished root 180 degrees about Y so the scene sits the way
+// the site's field-scene viewer presents it.
 
 using System.Collections.Generic;
 using System.IO;
@@ -39,7 +41,7 @@ namespace LegaiaWorld
         const float YAW_SIGN = -1f;
 
         string manifestPath = "";
-        bool matchRetailOrientation = true;
+        bool matchExplorerOrientation = true;
         bool addWorldColliders = true;
         bool mergedWorldCollider = true;
         bool addNpcCapsules = true;
@@ -68,12 +70,13 @@ namespace LegaiaWorld
             }
             EditorGUILayout.EndHorizontal();
 
-            matchRetailOrientation = EditorGUILayout.Toggle(
-                new GUIContent("Match retail orientation",
-                    "Mirror the built root on X so the town reads the way retail " +
-                    "displays it (the exported glbs carry the site's pre-mirror " +
-                    "world frame)"),
-                matchRetailOrientation);
+            matchExplorerOrientation = EditorGUILayout.Toggle(
+                new GUIContent("Match explorer orientation",
+                    "Rotate the built root 180 degrees about Y so the scene sits " +
+                    "the way the site's field-scene viewer presents it. Never " +
+                    "mirror instead - the glbs are parity-correct, and a negative " +
+                    "axis scale genuinely flips the buildings"),
+                matchExplorerOrientation);
             addWorldColliders = EditorGUILayout.Toggle("World mesh colliders", addWorldColliders);
             using (new EditorGUI.DisabledScope(!addWorldColliders))
             {
@@ -210,11 +213,12 @@ namespace LegaiaWorld
                 }
             }
 
-            // Mirror the whole assembly at the very end: children keep their
-            // manifest-frame local transforms, the root flips them into
-            // retail's displayed orientation as one unit.
-            if (matchRetailOrientation)
-                root.transform.localScale = new Vector3(-1f, 1f, 1f);
+            // Rotate the whole assembly at the very end: children keep their
+            // manifest-frame local transforms, the root turns them into the
+            // explorer pages' presentation as one unit. A rotation, never a
+            // mirror - the glbs are parity-correct.
+            if (matchExplorerOrientation)
+                root.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
 
             Selection.activeGameObject = root;
             Debug.Log("[Legaia] built " + sceneName + ": world + " + npcCount +
