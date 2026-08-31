@@ -82,10 +82,12 @@ namespace LegaiaWorld
             {
                 mergedWorldCollider = EditorGUILayout.Toggle(
                     new GUIContent("  Merged + welded (recommended)",
-                        "One welded collision mesh for the whole world instead of a " +
-                        "collider per mesh - closes the hairline seams between tile " +
-                        "colliders that a player capsule can slip through, and works " +
-                        "in client builds without enabling Read/Write on the glb"),
+                        "One welded, double-sided collision mesh for the whole world " +
+                        "instead of a collider per mesh. The PSX data's mixed winding " +
+                        "makes single-sided colliders intangible from one side (you " +
+                        "fall through half the floors), per-mesh colliders leave " +
+                        "hairline seams, and this also works in client builds without " +
+                        "enabling Read/Write on the glb"),
                     mergedWorldCollider);
             }
             addNpcCapsules = EditorGUILayout.Toggle("NPC capsule colliders", addNpcCapsules);
@@ -278,6 +280,23 @@ namespace LegaiaWorld
                 indexFormat = UnityEngine.Rendering.IndexFormat.UInt32
             };
             mesh.CombineMeshes(combine.ToArray(), true, true);
+
+            // Double-side the collision: PhysX triangle meshes collide on the
+            // wound face only, and the PSX source data's winding is mixed
+            // (retail culled per-view via NCLIP; the renderers draw
+            // double-sided, so it never shows) - single-sided cooking leaves
+            // roughly half the floors intangible. Appending each triangle
+            // reversed makes every surface solid from both sides.
+            int[] tris = mesh.triangles;
+            int[] both = new int[tris.Length * 2];
+            tris.CopyTo(both, 0);
+            for (int i = 0; i < tris.Length; i += 3)
+            {
+                both[tris.Length + i] = tris[i];
+                both[tris.Length + i + 1] = tris[i + 2];
+                both[tris.Length + i + 2] = tris[i + 1];
+            }
+            mesh.triangles = both;
 
             string genDir = "Assets/LegaiaGenerated/" + sceneName;
             Directory.CreateDirectory(genDir);

@@ -54,9 +54,17 @@ is gitignored - it is Sony-derived output.
 2. Add **glTFast** for `.glb` import: `Window > Package Manager >
    + > Add package by name...` → `com.unity.cloud.gltfast` (a Unity-registry
    package - it never appears in the Creator Companion, which only manages
-   VRChat's own packages). On the VRChat-mandated 2022.3.22f1 editor, pin
-   version `6.14.1`: 6.15+ needs a newer 2022.3 patch (2022.3.67f2) and
-   6.19+ needs Unity 6, so the Package Manager refuses them.
+   VRChat's own packages; likewise the VRChat packages live in
+   `Packages/vpm-manifest.json`, so don't be alarmed when
+   `Packages/manifest.json` shows no `com.vrchat.*` entries). On the
+   VRChat-mandated 2022.3.22f1 editor, pin version `6.14.1`: 6.15+ needs a
+   newer 2022.3 patch (2022.3.67f2) and 6.19+ needs Unity 6, so the
+   Package Manager refuses them. Equivalent to the UI route, one line in
+   `Packages/manifest.json` under `"dependencies"` does the same job:
+
+   ```json
+   "com.unity.cloud.gltfast": "6.14.1",
+   ```
 3. Copy `world-project/Assets/LegaiaWorld/` into the project's `Assets/`.
 
 The sibling diorama kit's
@@ -93,11 +101,22 @@ the VCC setup in more detail if this is your first worlds project.
      delete the animated instance and re-enable its twin;
    - `LegaiaSpawn` - the manifest's suggested spawn (the placed-object
      median, i.e. the village centre).
-3. Add the VRChat scene descriptor (`VRCWorld` prefab from the SDK), move
-   its spawn to `LegaiaSpawn`, then `VRChat SDK > Show Control Panel >
-   Build & Test`. Publish with **Upload** when it feels right - a fresh
-   world is private until you explicitly publish it to Community Labs;
-   leave it private.
+3. Add the VRChat scene descriptor (`VRCWorld` prefab from the SDK) and
+   point it at the spawn marker: select `VRCWorld`, expand the **VRC
+   Scene Descriptor**'s **Spawns** list, and drag
+   `Legaia_town01/LegaiaSpawn` into element 0 (replacing the prefab's own
+   `Spawn` child - moving the marker does nothing until the list
+   references it; with an *empty* list the descriptor's own transform is
+   the spawn). Players face the spawn transform's +Z, so rotate the
+   marker toward the view you want. Then `VRChat SDK > Show Control
+   Panel > Build & Test`. Publish with **Upload** when it feels right - a
+   fresh world is private until you explicitly publish it to Community
+   Labs; leave it private.
+4. Sanity checks: the sample scene's `GridFloor` plane sits near the
+   origin - delete it (or keep it far below as a fall catch) so it can't
+   mask the real walk surface; and after a build, `world` should carry
+   one MeshCollider referencing
+   `Assets/LegaiaGenerated/<scene>/world_collider.asset`.
 
 ## Making it feel alive
 
@@ -136,9 +155,16 @@ the VCC setup in more detail if this is your first worlds project.
   switched to per-mesh colliders, enable **Read/Write** in the glb's
   import inspector (Unity needs readable meshes to cook MeshColliders
   into a client build).
-- **Falling through floor seams**: use the default **Merged + welded**
-  world collider - per-mesh colliders leave hairline gaps where adjacent
-  tile meshes meet, and a walking capsule can slip through them.
+- **Falling through the floor**: use the default **Merged + welded**
+  world collider. Two distinct causes it removes: per-mesh colliders leave
+  hairline gaps where adjacent tile meshes meet (and silently vanish from
+  client builds when the glb isn't Read/Write) - and, the big one, PhysX
+  triangle meshes collide on the wound face only, while the PSX source
+  data's winding is **mixed** (retail culled per-view via NCLIP; every
+  renderer here draws double-sided, so it never shows). A single-sided
+  collider therefore drops you through roughly half the floors. The
+  merged collider appends every triangle reversed, so all geometry is
+  solid from both sides.
 - **Transparent surfaces look wrong**: PSX black-is-transparent bakes as
   alpha-0 with MASK (cutout) materials - correct for foliage and grates.
   Semi-transparent (ABE) prims - water sheets, light pools - split into a
