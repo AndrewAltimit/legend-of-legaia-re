@@ -46,13 +46,16 @@ with, so the export matches the on-screen pages:
   whose object bind names a clip are posed at **frame 0** (the native
   play-window's static bake). Sky shells are dropped by the site's
   `isSkyMesh` heuristic unless `--include-sky`. Baking is
-  `legaia_asset::scene_gltf`: one VRAM-derived RGBA atlas + one material,
-  NEAREST samplers, packet colours on `COLOR_0` (sRGB-linearized so a
+  `legaia_asset::scene_gltf`: one VRAM-derived RGBA atlas, NEAREST
+  samplers, packet colours on `COLOR_0` (sRGB-linearized so a
   linear-colour-space importer - glTFast under VRChat's mandated Linear
   setting included - reproduces retail's display-space `texel * colour/128`
   product; a project left in Gamma colour space will render these models
-  darker than intended), PSX word-0 transparency
-  as MASK cutout.
+  darker than intended), PSX word-0 transparency as MASK cutout. ABE
+  semi-transparent prims split into a second `BLEND` material at half
+  alpha (retail's dominant `B/2 + F/2` mode exactly; the blended queue's
+  depth-write skip is also what keeps retail's coincident water scroll
+  layers from z-fighting in depth-buffered engines).
 - **NPC glbs** - `engine-core::npc_catalog` (the MAN partition-1 placement
   walk shared with the NPC browser page) + `legaia_asset::character_gltf`:
   the scene TMD with its spawn clip first and every other
@@ -106,10 +109,14 @@ objects - the village centre, not the map-grid centre), composition
 Transforms are in the **export frame**: the site renderers' convention
 (mesh-local Y flipped at bake so the model reads +Y-up,
 mirror-handedness and all), already multiplied by `scale`; yaw in radians
-about +Y exactly as the world-glb instances apply it. The NPC / prop
-`.glb`s themselves stay in **raw PSX units** (matching the site's
-character downloads), so a consumer scales each instance by the
-manifest's `scale` - the kit's builder does.
+about +Y exactly as the world-glb instances apply it. That frame is
+X-mirrored relative to what retail *displays* - the site pages add a
+retail screen-X mirror in the shader that the bake doesn't carry - so a
+consumer that wants the in-game orientation mirrors the assembled scene
+once on X (the kit builder's default-on "Match retail orientation"
+toggle). The NPC / prop `.glb`s themselves stay in **raw PSX units**
+(matching the site's character downloads), so a consumer scales each
+instance by the manifest's `scale` - the kit's builder does.
 
 ## Verification
 

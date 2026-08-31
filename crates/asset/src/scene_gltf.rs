@@ -31,6 +31,17 @@
 //! PSX transparency follows the fragment shader: a BGR555 word of `0` bakes
 //! as fully transparent (alpha 0) and the material uses `MASK` alpha, so
 //! cutout foliage / grates export as cutouts.
+//!
+//! Semi-transparent (ABE) prims split into a **second material** with
+//! `alphaMode: BLEND` and a 0.5 base-colour alpha: PSX blend mode 0
+//! (`B/2 + F/2`, the dominant mode - water sheets, light pools) is exactly
+//! standard alpha blending at 0.5, and a depth-test-only transparent queue is
+//! also what keeps retail's coincident-plane scroll layers (the sea's stacked
+//! sheets) from z-fighting in depth-writing importers (Unity/glTFast puts
+//! BLEND in the no-depth-write transparent queue, matching the engine
+//! renderers' own ABE pass). The ABE flag rides each vertex's TSB bit 15
+//! (`legaia_tmd::mesh::TSB_SEMI_TRANSPARENT_BIT`) on both hybrid halves;
+//! [`tile_key`] masks it off, so atlas tiling is unaffected.
 
 use crate::gltf_color;
 use crate::monster_gltf::{BinBuilder, TARGET_ARRAY, pack_glb, rgba_to_png};
@@ -218,6 +229,8 @@ pub fn build_scene_glb(
     let mut gltf_meshes: Vec<Value> = Vec::new();
     // meshes[] index -> glTF mesh index (only used meshes are emitted).
     let mut gltf_mesh_of: BTreeMap<usize, usize> = BTreeMap::new();
+    // Any ABE triangle anywhere adds the BLEND material as materials[1].
+    let mut any_abe = false;
     for (mi, m) in meshes.iter().enumerate() {
         if !mesh_used[mi] {
             continue;
@@ -272,20 +285,46 @@ pub fn build_scene_glb(
             .iter()
             .map(|&i| i.min(nverts.saturating_sub(1) as u32))
             .collect();
+        // Partition triangles by the prim's semi-transparency enable (every
+        // corner of a prim carries the same TSB, so the first corner decides).
+        let is_abe = |vi: u32| -> bool {
+            m.cba_tsb
+                .get(vi as usize * 2 + 1)
+                .is_some_and(|&tsb| tsb & legaia_tmd::mesh::TSB_SEMI_TRANSPARENT_BIT != 0)
+        };
+        let (mut opaque_idx, mut blend_idx) = (Vec::<u32>::new(), Vec::<u32>::new());
+        for tri in indices.as_chunks::<3>().0 {
+            let dst = if is_abe(tri[0]) {
+                &mut blend_idx
+            } else {
+                &mut opaque_idx
+            };
+            dst.extend_from_slice(tri);
+        }
 
         let pos_acc = b.push_vec3(&positions, Some(TARGET_ARRAY), true);
         let uv_acc = b.push_vec2(&uvs, Some(TARGET_ARRAY));
-        let idx_acc = b.push_indices(&indices);
         let mut attrs = json!({ "POSITION": pos_acc, "TEXCOORD_0": uv_acc });
         if has_colors {
             let col_acc = b.push_vec4(&colors);
             attrs["COLOR_0"] = json!(col_acc);
         }
+        let mut prims: Vec<Value> = Vec::new();
+        for (idx, material) in [(&opaque_idx, 0), (&blend_idx, 1)] {
+            if idx.is_empty() {
+                continue;
+            }
+            let idx_acc = b.push_indices(idx);
+            prims.push(json!({
+                "attributes": attrs.clone(), "indices": idx_acc,
+                "material": material, "mode": 4
+            }));
+        }
+        if !blend_idx.is_empty() {
+            any_abe = true;
+        }
         gltf_mesh_of.insert(mi, gltf_meshes.len());
-        gltf_meshes.push(json!({
-            "name": m.name,
-            "primitives": [{ "attributes": attrs, "indices": idx_acc, "material": 0, "mode": 4 }]
-        }));
+        gltf_meshes.push(json!({ "name": m.name, "primitives": prims }));
     }
 
     // --- Instances -> nodes. ---
@@ -314,6 +353,29 @@ pub fn build_scene_glb(
     let root = nodes.len();
     nodes.push(json!({ "name": name, "children": children }));
 
+    let mut materials = vec![json!({
+        "pbrMetallicRoughness": {
+            "baseColorTexture": { "index": 0 },
+            "metallicFactor": 0.0, "roughnessFactor": 1.0
+        },
+        "extensions": { "KHR_materials_unlit": {} },
+        "alphaMode": "MASK", "alphaCutoff": 0.5, "doubleSided": true
+    })];
+    if any_abe {
+        // PSX blend mode 0 (B/2 + F/2) as standard alpha blending at 0.5;
+        // importers keep BLEND out of the depth-writing opaque queue, which
+        // is what retail's coincident ABE scroll layers rely on.
+        materials.push(json!({
+            "pbrMetallicRoughness": {
+                "baseColorTexture": { "index": 0 },
+                "baseColorFactor": [1.0, 1.0, 1.0, 0.5],
+                "metallicFactor": 0.0, "roughnessFactor": 1.0
+            },
+            "extensions": { "KHR_materials_unlit": {} },
+            "alphaMode": "BLEND", "doubleSided": true
+        }));
+    }
+
     let root_json = json!({
         "asset": { "version": "2.0", "generator": "legend-of-legaia-re scene exporter" },
         "extensionsUsed": [gltf_color::UNLIT_EXTENSION],
@@ -321,14 +383,7 @@ pub fn build_scene_glb(
         "scenes": [{ "nodes": [root] }],
         "nodes": nodes,
         "meshes": gltf_meshes,
-        "materials": [{
-            "pbrMetallicRoughness": {
-                "baseColorTexture": { "index": 0 },
-                "metallicFactor": 0.0, "roughnessFactor": 1.0
-            },
-            "extensions": { "KHR_materials_unlit": {} },
-            "alphaMode": "MASK", "alphaCutoff": 0.5, "doubleSided": true
-        }],
+        "materials": materials,
         "images": [{ "bufferView": png_view, "mimeType": "image/png" }],
         // NEAREST + clamp, matching the PSX point-sampled pages.
         "samplers": [{ "magFilter": 9728, "minFilter": 9728, "wrapS": 33071, "wrapT": 33071 }],
@@ -465,6 +520,56 @@ mod tests {
         // The untextured fill keeps the /255 divisor (white stays exact).
         assert!((c[2][0] - 1.0).abs() < 1e-6, "{:?}", c[2]);
         assert_eq!(c[2][1], 0.0);
+    }
+
+    /// ABE (semi-transparent) triangles split off into a second primitive on
+    /// a BLEND material; opaque scenes keep the single-material layout.
+    #[test]
+    fn abe_triangles_split_into_a_blend_primitive() {
+        let vram = Vram::new();
+        // Two triangles sharing a vertex pool: verts 0-2 opaque, 3-5 ABE
+        // (TSB bit 15 - `pack_tsb_semi` sets it from the group's ABE flag).
+        let abe_tsb = 0x0005 | legaia_tmd::mesh::TSB_SEMI_TRANSPARENT_BIT;
+        let m = SceneMesh {
+            name: "water".into(),
+            positions: vec![
+                0.0, 0.0, 0.0, 64.0, 0.0, 0.0, 0.0, -64.0, 0.0, //
+                0.0, 0.0, 8.0, 64.0, 0.0, 8.0, 0.0, -64.0, 8.0,
+            ],
+            uvs: vec![0, 0, 63, 0, 0, 63, 0, 0, 63, 0, 0, 63],
+            cba_tsb: vec![
+                0, 0x0005, 0, 0x0005, 0, 0x0005, //
+                0, abe_tsb, 0, abe_tsb, 0, abe_tsb,
+            ],
+            indices: vec![0, 1, 2, 3, 4, 5],
+            flat_rgba: Vec::new(),
+        };
+        let instances = [SceneInstance {
+            mesh: 0,
+            translation: [0.0; 3],
+            rot_y: 0.0,
+            scale: 1.0,
+        }];
+        let glb = build_scene_glb("abe", &[m], &instances, &vram).unwrap();
+        let (root, _) = crate::gltf_color::glb_probe::split(&glb).expect("glb container");
+        let prims = root["meshes"][0]["primitives"].as_array().unwrap();
+        assert_eq!(prims.len(), 2, "one opaque + one blend primitive");
+        assert_eq!(prims[0]["material"], 0);
+        assert_eq!(prims[1]["material"], 1);
+        let mats = root["materials"].as_array().unwrap();
+        assert_eq!(mats.len(), 2);
+        assert_eq!(mats[0]["alphaMode"], "MASK");
+        assert_eq!(mats[1]["alphaMode"], "BLEND");
+        assert_eq!(
+            mats[1]["pbrMetallicRoughness"]["baseColorFactor"][3], 0.5,
+            "PSX average blend approximated at half alpha"
+        );
+
+        // An all-opaque scene keeps exactly one material and one primitive.
+        let glb = build_scene_glb("plain", &[quad_mesh(0, 0x0005)], &instances, &vram).unwrap();
+        let (root, _) = crate::gltf_color::glb_probe::split(&glb).expect("glb container");
+        assert_eq!(root["materials"].as_array().unwrap().len(), 1);
+        assert_eq!(root["meshes"][0]["primitives"].as_array().unwrap().len(), 1);
     }
 
     /// A caller with no colour stream still exports - nothing to modulate by,

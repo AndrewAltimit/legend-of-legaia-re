@@ -52,7 +52,11 @@ is gitignored - it is Sony-derived output.
    (Windows; on Linux the community `vrc-get`/ALCOM tools do the same job)
    and create a **Worlds** project (Unity 2022.3).
 2. Add **glTFast** for `.glb` import: `Window > Package Manager >
-   + > Add package by name...` → `com.unity.cloud.gltfast`.
+   + > Add package by name...` → `com.unity.cloud.gltfast` (a Unity-registry
+   package - it never appears in the Creator Companion, which only manages
+   VRChat's own packages). On the VRChat-mandated 2022.3.22f1 editor, pin
+   version `6.14.1`: 6.15+ needs a newer 2022.3 patch (2022.3.67f2) and
+   6.19+ needs Unity 6, so the Package Manager refuses them.
 3. Copy `world-project/Assets/LegaiaWorld/` into the project's `Assets/`.
 
 The sibling diorama kit's
@@ -67,9 +71,16 @@ the VCC setup in more detail if this is your first worlds project.
    up every `.glb`, and the baked NEAREST samplers keep the PSX
    point-sampled look without any material fixup.
 2. Menu **Legaia > Build Scene From Manifest...**, browse to the copied
-   `manifest.json`, and **Build scene**. You get a `Legaia_town01` root:
-   - `world` - the full map with a MeshCollider per mesh (ground included,
-     so the retail walk surface is what you stand on);
+   `manifest.json`, and **Build scene**. Two default-on options worth
+   knowing: **Match retail orientation** mirrors the finished root on X
+   (the glbs carry the site's pre-mirror world frame - unmirrored, the
+   whole town reads flipped relative to the game), and **Merged + welded**
+   builds one welded collision mesh for the whole world instead of a
+   collider per mesh (closes the hairline seams between tile colliders a
+   player capsule can slip through, and client builds stop needing
+   Read/Write enabled on the glb). You get a `Legaia_town01` root:
+   - `world` - the full map with its collider (ground included, so the
+     retail walk surface is what you stand on);
    - `npcs/` - every catalogued villager at their MAN spawn tile, playing
      their retail spawn clip on a loop, capsule-collided;
    - `props/` - the animated placements (Rim Elm's windmills and doors)
@@ -105,18 +116,30 @@ the VCC setup in more detail if this is your first worlds project.
 
 ## Troubleshooting
 
-- **Everything is mirrored / a prop faces backward**: glTF is
-  right-handed, Unity left-handed; glTFast converts by inverting X and the
-  builder maps manifest transforms through the same inversion. If your
-  importer differs, flip `YAW_SIGN` in `LegaiaWorldBuilder.cs`.
-- **Collider errors at build time**: enable **Read/Write** in the glb's
+- **Everything is mirrored**: the exported glbs carry the site renderers'
+  world frame, which is X-mirrored relative to what retail displays (the
+  site pages add the retail screen-X mirror in the shader; the bake
+  doesn't). The builder's **Match retail orientation** option (default on)
+  mirrors the built root to compensate - if you unchecked it, that's the
+  flip you're seeing. A prop facing backward on a *different* importer is
+  the separate handedness convention - flip `YAW_SIGN` in
+  `LegaiaWorldBuilder.cs`.
+- **Collider errors at build time**: with the default merged collider the
+  cook runs off a generated readable asset and this doesn't arise; if you
+  switched to per-mesh colliders, enable **Read/Write** in the glb's
   import inspector (Unity needs readable meshes to cook MeshColliders
   into a client build).
+- **Falling through floor seams**: use the default **Merged + welded**
+  world collider - per-mesh colliders leave hairline gaps where adjacent
+  tile meshes meet, and a walking capsule can slip through them.
 - **Transparent surfaces look wrong**: PSX black-is-transparent bakes as
   alpha-0 with MASK (cutout) materials - correct for foliage and grates.
-  Semi-transparent water sheets export with their blend metadata but Unity
-  picks one blend mode per material; nudge the material to Fade/Additive
-  where it matters.
+  Semi-transparent (ABE) prims - water sheets, light pools - split into a
+  second `BLEND` material at half alpha (retail's dominant average blend
+  mode); that also keeps the sea's stacked scroll layers from z-fighting,
+  since blended materials skip depth writes. Additive/subtractive ABE
+  modes flatten to the same alpha blend - nudge those few materials to
+  Additive by hand where it matters.
 - **Too big / too small**: re-export with a different `--scale`; the
   manifest records the scale used so the builder stays consistent.
 - **A hand-placed NPC or prop is a giant**: the NPC/prop `.glb`s ship in

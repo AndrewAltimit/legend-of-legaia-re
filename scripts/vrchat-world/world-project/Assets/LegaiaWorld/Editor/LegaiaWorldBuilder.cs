@@ -16,6 +16,14 @@
 // left-handed one by inverting X, so manifest positions (glTF frame) are
 // mapped through the same inversion here, and yaw flips sign. If a prop
 // faces mirrored in your importer, flip YAW_SIGN.
+//
+// Orientation note: the exported glbs carry the site renderers' world frame,
+// which is X-mirrored relative to what retail displays (the site pages add a
+// retail screen-X mirror in the shader; the bake doesn't). "Match retail
+// orientation" (default on) mirrors the finished root (-1 X scale) so the
+// town reads the way it does in game. Everything sits under the one mirrored
+// root - visuals, colliders and manifest placements stay consistent - and the
+// shared material is double-sided, so the flipped winding doesn't cull.
 
 using System.Collections.Generic;
 using System.IO;
@@ -31,7 +39,9 @@ namespace LegaiaWorld
         const float YAW_SIGN = -1f;
 
         string manifestPath = "";
+        bool matchRetailOrientation = true;
         bool addWorldColliders = true;
+        bool mergedWorldCollider = true;
         bool addNpcCapsules = true;
         bool loopNpcClips = true;
         bool loopPropClips = true;
@@ -57,7 +67,23 @@ namespace LegaiaWorld
             }
             EditorGUILayout.EndHorizontal();
 
+            matchRetailOrientation = EditorGUILayout.Toggle(
+                new GUIContent("Match retail orientation",
+                    "Mirror the built root on X so the town reads the way retail " +
+                    "displays it (the exported glbs carry the site's pre-mirror " +
+                    "world frame)"),
+                matchRetailOrientation);
             addWorldColliders = EditorGUILayout.Toggle("World mesh colliders", addWorldColliders);
+            using (new EditorGUI.DisabledScope(!addWorldColliders))
+            {
+                mergedWorldCollider = EditorGUILayout.Toggle(
+                    new GUIContent("  Merged + welded (recommended)",
+                        "One welded collision mesh for the whole world instead of a " +
+                        "collider per mesh - closes the hairline seams between tile " +
+                        "colliders that a player capsule can slip through, and works " +
+                        "in client builds without enabling Read/Write on the glb"),
+                    mergedWorldCollider);
+            }
             addNpcCapsules = EditorGUILayout.Toggle("NPC capsule colliders", addNpcCapsules);
             loopNpcClips = EditorGUILayout.Toggle("Loop NPC spawn clips", loopNpcClips);
             loopPropClips = EditorGUILayout.Toggle("Loop animated-prop clips", loopPropClips);
@@ -101,11 +127,18 @@ namespace LegaiaWorld
             world.name = "world";
             if (addWorldColliders)
             {
-                foreach (var mf in world.GetComponentsInChildren<MeshFilter>())
+                if (mergedWorldCollider)
                 {
-                    if (mf.sharedMesh == null || mf.GetComponent<MeshCollider>() != null)
-                        continue;
-                    mf.gameObject.AddComponent<MeshCollider>().sharedMesh = mf.sharedMesh;
+                    AddMergedCollider(world, sceneName);
+                }
+                else
+                {
+                    foreach (var mf in world.GetComponentsInChildren<MeshFilter>())
+                    {
+                        if (mf.sharedMesh == null || mf.GetComponent<MeshCollider>() != null)
+                            continue;
+                        mf.gameObject.AddComponent<MeshCollider>().sharedMesh = mf.sharedMesh;
+                    }
                 }
             }
 
@@ -168,10 +201,58 @@ namespace LegaiaWorld
                 }
             }
 
+            // Mirror the whole assembly at the very end: children keep their
+            // manifest-frame local transforms, the root flips them into
+            // retail's displayed orientation as one unit.
+            if (matchRetailOrientation)
+                root.transform.localScale = new Vector3(-1f, 1f, 1f);
+
             Selection.activeGameObject = root;
             Debug.Log("[Legaia] built " + sceneName + ": world + " + npcCount +
                       " NPC(s) + " + propCount + " animated prop instance(s). " +
                       "Point your VRC scene descriptor spawn at LegaiaSpawn.");
+        }
+
+        /// One welded collision mesh for the whole world: every renderer
+        /// submesh (semi-transparent water included, so there's a floor over
+        /// the sea) combined in world-local space, saved as an asset, cooked
+        /// with colocated-vertex welding so hairline seams between adjacent
+        /// tile meshes close instead of dropping a player capsule through.
+        static void AddMergedCollider(GameObject world, string sceneName)
+        {
+            var combine = new List<CombineInstance>();
+            foreach (var mf in world.GetComponentsInChildren<MeshFilter>())
+            {
+                if (mf.sharedMesh == null) continue;
+                var toLocal = world.transform.worldToLocalMatrix * mf.transform.localToWorldMatrix;
+                for (int sm = 0; sm < mf.sharedMesh.subMeshCount; sm++)
+                    combine.Add(new CombineInstance
+                    {
+                        mesh = mf.sharedMesh,
+                        subMeshIndex = sm,
+                        transform = toLocal
+                    });
+            }
+            if (combine.Count == 0) return;
+
+            var mesh = new Mesh
+            {
+                name = "world_collider",
+                indexFormat = UnityEngine.Rendering.IndexFormat.UInt32
+            };
+            mesh.CombineMeshes(combine.ToArray(), true, true);
+
+            string genDir = "Assets/LegaiaGenerated/" + sceneName;
+            Directory.CreateDirectory(genDir);
+            string meshPath = genDir + "/world_collider.asset";
+            AssetDatabase.DeleteAsset(meshPath);
+            AssetDatabase.CreateAsset(mesh, meshPath);
+
+            var col = world.AddComponent<MeshCollider>();
+            col.cookingOptions = MeshColliderCookingOptions.EnableMeshCleaning
+                | MeshColliderCookingOptions.WeldColocatedVertices
+                | MeshColliderCookingOptions.UseFastMidphase;
+            col.sharedMesh = mesh;
         }
 
         /// Instantiate the glTFast-imported prefab at `assetPath` (null when
