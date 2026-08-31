@@ -52,7 +52,19 @@ is gitignored - it is Sony-derived output.
    (Windows; on Linux the community `vrc-get`/ALCOM tools do the same job)
    and create a **Worlds** project (Unity 2022.3).
 2. Add **glTFast** for `.glb` import: `Window > Package Manager >
-   + > Add package by name...` → `com.unity.cloud.gltfast`.
+   + > Add package by name...` → `com.unity.cloud.gltfast` (a Unity-registry
+   package - it never appears in the Creator Companion, which only manages
+   VRChat's own packages; likewise the VRChat packages live in
+   `Packages/vpm-manifest.json`, so don't be alarmed when
+   `Packages/manifest.json` shows no `com.vrchat.*` entries). On the
+   VRChat-mandated 2022.3.22f1 editor, pin version `6.14.1`: 6.15+ needs a
+   newer 2022.3 patch (2022.3.67f2) and 6.19+ needs Unity 6, so the
+   Package Manager refuses them. Equivalent to the UI route, one line in
+   `Packages/manifest.json` under `"dependencies"` does the same job:
+
+   ```json
+   "com.unity.cloud.gltfast": "6.14.1",
+   ```
 3. Copy `world-project/Assets/LegaiaWorld/` into the project's `Assets/`.
 
 The sibling diorama kit's
@@ -67,22 +79,43 @@ the VCC setup in more detail if this is your first worlds project.
    up every `.glb`, and the baked NEAREST samplers keep the PSX
    point-sampled look without any material fixup.
 2. Menu **Legaia > Build Scene From Manifest...**, browse to the copied
-   `manifest.json`, and **Build scene**. You get a `Legaia_town01` root:
-   - `world` - the full map with a MeshCollider per mesh (ground included,
-     so the retail walk surface is what you stand on);
+   `manifest.json`, and **Build scene**. Two default-on options worth
+   knowing: **Match explorer orientation** mirrors the finished root on X
+   so the scene reads the way the site's field-scene viewer presents it
+   (the raw import genuinely is mirrored - see the troubleshooting entry
+   for the landmark test that settled it), and **Merged + welded**
+   builds one welded collision mesh for the whole world instead of a
+   collider per mesh (closes the hairline seams between tile colliders a
+   player capsule can slip through, and client builds stop needing
+   Read/Write enabled on the glb). You get a `Legaia_town01` root:
+   - `world` - the full map with its collider (ground included, so the
+     retail walk surface is what you stand on);
    - `npcs/` - every catalogued villager at their MAN spawn tile, playing
      their retail spawn clip on a loop, capsule-collided;
    - `props/` - the animated placements (Rim Elm's windmills and doors)
-     playing their bind clips; the world keeps a frame-0 static twin
-     underneath, so delete whichever of the pair you don't want moving
-     (doors especially - a looping door clip swings forever);
+     playing their bind clips. The world glb keeps a frame-0 static twin
+     under each one; the builder disables it by default (**Hide static
+     prop twins**) so the pair doesn't z-fight - for a prop you'd rather
+     have still (doors especially - a looping door clip swings forever),
+     delete the animated instance and re-enable its twin;
    - `LegaiaSpawn` - the manifest's suggested spawn (the placed-object
      median, i.e. the village centre).
-3. Add the VRChat scene descriptor (`VRCWorld` prefab from the SDK), move
-   its spawn to `LegaiaSpawn`, then `VRChat SDK > Show Control Panel >
-   Build & Test`. Publish with **Upload** when it feels right - a fresh
-   world is private until you explicitly publish it to Community Labs;
-   leave it private.
+3. Add the VRChat scene descriptor (`VRCWorld` prefab from the SDK) and
+   point it at the spawn marker: select `VRCWorld`, expand the **VRC
+   Scene Descriptor**'s **Spawns** list, and drag
+   `Legaia_town01/LegaiaSpawn` into element 0 (replacing the prefab's own
+   `Spawn` child - moving the marker does nothing until the list
+   references it; with an *empty* list the descriptor's own transform is
+   the spawn). Players face the spawn transform's +Z, so rotate the
+   marker toward the view you want. Then `VRChat SDK > Show Control
+   Panel > Build & Test`. Publish with **Upload** when it feels right - a
+   fresh world is private until you explicitly publish it to Community
+   Labs; leave it private.
+4. Sanity checks: the sample scene's `GridFloor` plane sits near the
+   origin - delete it (or keep it far below as a fall catch) so it can't
+   mask the real walk surface; and after a build, `world` should carry
+   one MeshCollider referencing
+   `Assets/LegaiaGenerated/<scene>/world_collider.asset`.
 
 ## Making it feel alive
 
@@ -105,18 +138,65 @@ the VCC setup in more detail if this is your first worlds project.
 
 ## Troubleshooting
 
-- **Everything is mirrored / a prop faces backward**: glTF is
-  right-handed, Unity left-handed; glTFast converts by inverting X and the
-  builder maps manifest transforms through the same inversion. If your
-  importer differs, flip `YAW_SIGN` in `LegaiaWorldBuilder.cs`.
-- **Collider errors at build time**: enable **Read/Write** in the glb's
+- **Everything looks mirrored**: it is - the raw import is X-mirrored
+  relative to the site's field-scene viewer, and the builder's **Match
+  explorer orientation** option (default on) mirrors the built root to
+  compensate. This was settled *empirically* with a landmark test on
+  town01, after deriving it from the shader reflection chain
+  (`u_pair_front` in `site/js/webgl-shaders.js`) produced confident wrong
+  answers in **both** directions: stand at the sea looking at the village
+  (the sea-to-gate axis pins the viewpoint, so only parity can differ) -
+  the raw glb puts the big terrace house left and the paired small huts
+  right, the explorer page shows the opposite sides, and no rotation
+  swaps sides across a content-pinned axis. Re-run that test rather than
+  re-counting reflections. The double-sided merged collider keeps physics
+  solid under the negative scale. A prop facing backward on a *different*
+  importer is the separate handedness convention - flip `YAW_SIGN` in
+  `LegaiaWorldBuilder.cs`.
+- **Individual buildings face the wrong way** (windmill blades edge-on,
+  a hut's door on the wrong side) while the overall layout is right: two
+  separate causes, and each was fixed once - re-export with a current
+  build and re-run a current builder before debugging further.
+  1. *Yaw sign in the bake* (`legaia_asset::scene_gltf`): the site's
+     `placementModelScaledY` has a transposed inline rotation block, and
+     the bake once emitted the unnegated param, facing every yawed
+     instance backwards while leaving every position (and any layout
+     check) correct. Fixed at the node-quaternion emission; the manifest
+     yaw flipped with it.
+  2. *Handedness of placed props* (the builder): the world glb bakes the
+     site's Y-mirror into its vertices (det -1) while NPC / prop glbs
+     are proper-rotation models (root `Rx(180)`, det +1) - opposite
+     chirality, so NO yaw value can align a placed prop with its baked
+     frame-0 twin (a mirrored hut has its door on the wrong side at
+     every angle; this is what made yaw-sign experiments look
+     inconsistent). The builder supplies the missing mirror with a
+     negative Z instance scale (`PROP_NPC_SCALE_Z`); with it, prop and
+     twin coincide exactly, which is the invariant to check first
+     (temporarily untick **Hide static prop twins**: each animated prop
+     must z-fight its twin, not sit rotated against it).
+- **Collider errors at build time**: with the default merged collider the
+  cook runs off a generated readable asset and this doesn't arise; if you
+  switched to per-mesh colliders, enable **Read/Write** in the glb's
   import inspector (Unity needs readable meshes to cook MeshColliders
   into a client build).
+- **Falling through the floor**: use the default **Merged + welded**
+  world collider. Two distinct causes it removes: per-mesh colliders leave
+  hairline gaps where adjacent tile meshes meet (and silently vanish from
+  client builds when the glb isn't Read/Write) - and, the big one, PhysX
+  triangle meshes collide on the wound face only, while the PSX source
+  data's winding is **mixed** (retail culled per-view via NCLIP; every
+  renderer here draws double-sided, so it never shows). A single-sided
+  collider therefore drops you through roughly half the floors. The
+  merged collider appends every triangle reversed, so all geometry is
+  solid from both sides.
 - **Transparent surfaces look wrong**: PSX black-is-transparent bakes as
   alpha-0 with MASK (cutout) materials - correct for foliage and grates.
-  Semi-transparent water sheets export with their blend metadata but Unity
-  picks one blend mode per material; nudge the material to Fade/Additive
-  where it matters.
+  Semi-transparent (ABE) prims - water sheets, light pools - split into a
+  second `BLEND` material at half alpha (retail's dominant average blend
+  mode); that also keeps the sea's stacked scroll layers from z-fighting,
+  since blended materials skip depth writes. Additive/subtractive ABE
+  modes flatten to the same alpha blend - nudge those few materials to
+  Additive by hand where it matters.
 - **Too big / too small**: re-export with a different `--scale`; the
   manifest records the scale used so the builder stays consistent.
 - **A hand-placed NPC or prop is a giant**: the NPC/prop `.glb`s ship in

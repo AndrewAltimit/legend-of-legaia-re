@@ -413,7 +413,13 @@ pub fn export_animated_prop_glbs(
         if entry.is_empty() {
             key_order.push(key);
         }
-        entry.push((t, draw_rot_y_radians(d.rot_y)));
+        // The manifest contract is "rot_y_radians is applied the way the
+        // world glb instances are": the glb node negates the page param
+        // (see `scene_gltf::quat_y`), so the manifest carries the negation
+        // too - which lands on the authored retail yaw as a plain positive
+        // rotation about +Y. Keeps builder-placed props aligned with their
+        // baked frame-0 twins in any importer.
+        entry.push((t, -draw_rot_y_radians(d.rot_y)));
     }
     let mut out = Vec::new();
     for key in key_order {

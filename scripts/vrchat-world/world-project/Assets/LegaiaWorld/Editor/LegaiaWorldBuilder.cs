@@ -16,6 +16,32 @@
 // left-handed one by inverting X, so manifest positions (glTF frame) are
 // mapped through the same inversion here, and yaw flips sign. If a prop
 // faces mirrored in your importer, flip YAW_SIGN.
+//
+// Handedness note (the trap that ate three yaw-sign attempts): the WORLD
+// glb bakes the site viewers' Y-mirror into its vertices (determinant -1
+// geometry), while the NPC / prop glbs are proper-rotation models (root
+// node Rx(180deg), determinant +1, raw PSX units). Opposite handedness
+// means NO yaw value can make a placed prop coincide with its baked
+// frame-0 twin - a mirrored building has its door on the wrong side at
+// every angle. The fix is PROP_NPC_SCALE_Z = -1: a negative Z on each
+// instance's scale supplies the missing mirror (algebra: the required
+// instance transform is Ry(yaw) * diag(1,-1,1) * Rx(pi)^-1
+// = Ry(yaw) * diag(1,1,-1)). Materials are exported double-sided, so the
+// flipped winding doesn't cull.
+//
+// Orientation note: the raw import IS mirrored relative to the site's
+// field-scene viewer, and the fix is a -1 X root scale. This was settled
+// EMPIRICALLY with a landmark test on town01 - stand at the sea looking at
+// the village (the sea-to-gate axis pins the viewpoint, so only parity can
+// differ): the raw glb shows the big house left / huts right / gate
+// slightly right of the animated gate doors' wall, the explorer shows the
+// exact opposite sides. No rotation swaps sides across a content-pinned
+// axis. Do NOT re-derive this from the shader reflection chain
+// (webgl-shaders.js u_pair_front) - counting reflections there produced
+// confident wrong answers in BOTH directions before the landmark test
+// settled it. The double-sided merged collider keeps physics correct under
+// the negative scale, and the shared material is double-sided so the
+// flipped winding doesn't cull.
 
 using System.Collections.Generic;
 using System.IO;
@@ -30,11 +56,20 @@ namespace LegaiaWorld
     {
         const float YAW_SIGN = -1f;
 
+        // NPC / prop instances need a Z-mirror to match the world glb's
+        // baked (mirror-handed) geometry - see the handedness note in the
+        // header. Set to +1 only for an importer whose world glb is
+        // handedness-corrected on import.
+        const float PROP_NPC_SCALE_Z = -1f;
+
         string manifestPath = "";
+        bool matchExplorerOrientation = true;
         bool addWorldColliders = true;
+        bool mergedWorldCollider = true;
         bool addNpcCapsules = true;
         bool loopNpcClips = true;
         bool loopPropClips = true;
+        bool hideStaticPropTwins = true;
         bool includeConditionalNpcs = false;
 
         [MenuItem("Legaia/Build Scene From Manifest...")]
@@ -57,10 +92,35 @@ namespace LegaiaWorld
             }
             EditorGUILayout.EndHorizontal();
 
+            matchExplorerOrientation = EditorGUILayout.Toggle(
+                new GUIContent("Match explorer orientation",
+                    "Mirror the built root on X so the scene reads the way the " +
+                    "site's field-scene viewer presents it (verified by landmark " +
+                    "test on town01: the raw import puts known buildings on the " +
+                    "wrong side of the sea-to-gate axis)"),
+                matchExplorerOrientation);
             addWorldColliders = EditorGUILayout.Toggle("World mesh colliders", addWorldColliders);
+            using (new EditorGUI.DisabledScope(!addWorldColliders))
+            {
+                mergedWorldCollider = EditorGUILayout.Toggle(
+                    new GUIContent("  Merged + welded (recommended)",
+                        "One welded, double-sided collision mesh for the whole world " +
+                        "instead of a collider per mesh. The PSX data's mixed winding " +
+                        "makes single-sided colliders intangible from one side (you " +
+                        "fall through half the floors), per-mesh colliders leave " +
+                        "hairline seams, and this also works in client builds without " +
+                        "enabling Read/Write on the glb"),
+                    mergedWorldCollider);
+            }
             addNpcCapsules = EditorGUILayout.Toggle("NPC capsule colliders", addNpcCapsules);
             loopNpcClips = EditorGUILayout.Toggle("Loop NPC spawn clips", loopNpcClips);
             loopPropClips = EditorGUILayout.Toggle("Loop animated-prop clips", loopPropClips);
+            hideStaticPropTwins = EditorGUILayout.Toggle(
+                new GUIContent("Hide static prop twins",
+                    "The world glb keeps a frame-0 static copy under every " +
+                    "animated prop; hide it so the pair doesn't z-fight " +
+                    "(the merged collider still includes its geometry)"),
+                hideStaticPropTwins);
             includeConditionalNpcs = EditorGUILayout.Toggle(
                 new GUIContent("Include conditional NPCs",
                     "Story-gated spawns retail parks off-map until a script places them"),
@@ -101,11 +161,18 @@ namespace LegaiaWorld
             world.name = "world";
             if (addWorldColliders)
             {
-                foreach (var mf in world.GetComponentsInChildren<MeshFilter>())
+                if (mergedWorldCollider)
                 {
-                    if (mf.sharedMesh == null || mf.GetComponent<MeshCollider>() != null)
-                        continue;
-                    mf.gameObject.AddComponent<MeshCollider>().sharedMesh = mf.sharedMesh;
+                    AddMergedCollider(world, sceneName);
+                }
+                else
+                {
+                    foreach (var mf in world.GetComponentsInChildren<MeshFilter>())
+                    {
+                        if (mf.sharedMesh == null || mf.GetComponent<MeshCollider>() != null)
+                            continue;
+                        mf.gameObject.AddComponent<MeshCollider>().sharedMesh = mf.sharedMesh;
+                    }
                 }
             }
 
@@ -130,7 +197,9 @@ namespace LegaiaWorld
                 // NPC/prop glbs ship in raw PSX units (same as the site's
                 // downloads); manifest positions are pre-scaled, the meshes
                 // are not - scale each instance by the manifest's factor.
-                go.transform.localScale = Vector3.one * scale;
+                // Negative Z: the handedness mirror (see header note).
+                go.transform.localScale =
+                    new Vector3(scale, scale, PROP_NPC_SCALE_Z * scale);
                 go.transform.localPosition = G2U(MiniJson.GetVec3(n, "position"));
                 string label = MiniJson.AsStr(MiniJson.Get(n, "label"));
                 if (!string.IsNullOrEmpty(label))
@@ -158,20 +227,116 @@ namespace LegaiaWorld
                 {
                     var go = InstantiateGlb(dir + "/" + file, propRoot.transform);
                     if (go == null) continue;
-                    go.transform.localScale = Vector3.one * scale;
+                    // Negative Z: the handedness mirror (see header note) -
+                    // without it no yaw can align a prop with its baked twin.
+                    go.transform.localScale =
+                        new Vector3(scale, scale, PROP_NPC_SCALE_Z * scale);
                     go.transform.localPosition = G2U(MiniJson.GetVec3(inst, "position"));
                     float yaw = MiniJson.GetNum(inst, "rot_y_radians") * Mathf.Rad2Deg;
                     go.transform.localRotation = Quaternion.Euler(0, YAW_SIGN * yaw, 0);
                     if (loopPropClips)
                         AttachLoopingClip(go, dir + "/" + file, null, dir, sceneName);
+                    if (hideStaticPropTwins)
+                        HideStaticTwin(world, file, go.transform.localPosition);
                     propCount++;
                 }
             }
+
+            // Mirror the whole assembly at the very end: children keep their
+            // manifest-frame local transforms, the root flips them into the
+            // explorer pages' presentation as one unit (see the orientation
+            // note in the header - this is empirically a mirror, not a
+            // rotation).
+            if (matchExplorerOrientation)
+                root.transform.localScale = new Vector3(-1f, 1f, 1f);
 
             Selection.activeGameObject = root;
             Debug.Log("[Legaia] built " + sceneName + ": world + " + npcCount +
                       " NPC(s) + " + propCount + " animated prop instance(s). " +
                       "Point your VRC scene descriptor spawn at LegaiaSpawn.");
+        }
+
+        /// The world glb keeps every animated placement's frame-0 static twin
+        /// (`mesh_<slot>_anim<id>` at the same spot the manifest places the
+        /// animated instance). Hide it so the pair doesn't z-fight - matched
+        /// by mesh name (prop file stem `prop_15_anim2` -> `mesh_15_anim2`,
+        /// which glTFast preserves) plus position, so nothing else is
+        /// touched. Disabled, not destroyed: re-enable to swap back to the
+        /// static version, and the merged collider (built before the props
+        /// loop) keeps its geometry either way.
+        static void HideStaticTwin(GameObject world, string propFile, Vector3 localPos)
+        {
+            string stem = Path.GetFileNameWithoutExtension(propFile);
+            string meshName = stem.StartsWith("prop_")
+                ? "mesh_" + stem.Substring("prop_".Length)
+                : stem;
+            foreach (var mf in world.GetComponentsInChildren<MeshFilter>())
+            {
+                if (mf.sharedMesh == null || mf.sharedMesh.name != meshName)
+                    continue;
+                var p = world.transform.InverseTransformPoint(mf.transform.position);
+                if ((p - localPos).sqrMagnitude < 1e-4f)
+                    mf.gameObject.SetActive(false);
+            }
+        }
+
+        /// One welded collision mesh for the whole world: every renderer
+        /// submesh (semi-transparent water included, so there's a floor over
+        /// the sea) combined in world-local space, saved as an asset, cooked
+        /// with colocated-vertex welding so hairline seams between adjacent
+        /// tile meshes close instead of dropping a player capsule through.
+        static void AddMergedCollider(GameObject world, string sceneName)
+        {
+            var combine = new List<CombineInstance>();
+            foreach (var mf in world.GetComponentsInChildren<MeshFilter>())
+            {
+                if (mf.sharedMesh == null) continue;
+                var toLocal = world.transform.worldToLocalMatrix * mf.transform.localToWorldMatrix;
+                for (int sm = 0; sm < mf.sharedMesh.subMeshCount; sm++)
+                    combine.Add(new CombineInstance
+                    {
+                        mesh = mf.sharedMesh,
+                        subMeshIndex = sm,
+                        transform = toLocal
+                    });
+            }
+            if (combine.Count == 0) return;
+
+            var mesh = new Mesh
+            {
+                name = "world_collider",
+                indexFormat = UnityEngine.Rendering.IndexFormat.UInt32
+            };
+            mesh.CombineMeshes(combine.ToArray(), true, true);
+
+            // Double-side the collision: PhysX triangle meshes collide on the
+            // wound face only, and the PSX source data's winding is mixed
+            // (retail culled per-view via NCLIP; the renderers draw
+            // double-sided, so it never shows) - single-sided cooking leaves
+            // roughly half the floors intangible. Appending each triangle
+            // reversed makes every surface solid from both sides.
+            int[] tris = mesh.triangles;
+            int[] both = new int[tris.Length * 2];
+            tris.CopyTo(both, 0);
+            for (int i = 0; i < tris.Length; i += 3)
+            {
+                both[tris.Length + i] = tris[i];
+                both[tris.Length + i + 1] = tris[i + 2];
+                both[tris.Length + i + 2] = tris[i + 1];
+            }
+            mesh.triangles = both;
+
+            string genDir = "Assets/LegaiaGenerated/" + sceneName;
+            Directory.CreateDirectory(genDir);
+            string meshPath = genDir + "/world_collider.asset";
+            AssetDatabase.DeleteAsset(meshPath);
+            AssetDatabase.CreateAsset(mesh, meshPath);
+
+            var col = world.AddComponent<MeshCollider>();
+            col.cookingOptions = MeshColliderCookingOptions.EnableMeshCleaning
+                | MeshColliderCookingOptions.WeldColocatedVertices
+                | MeshColliderCookingOptions.UseFastMidphase;
+            col.sharedMesh = mesh;
         }
 
         /// Instantiate the glTFast-imported prefab at `assetPath` (null when

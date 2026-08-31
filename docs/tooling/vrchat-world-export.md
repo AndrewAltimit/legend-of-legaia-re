@@ -46,13 +46,16 @@ with, so the export matches the on-screen pages:
   whose object bind names a clip are posed at **frame 0** (the native
   play-window's static bake). Sky shells are dropped by the site's
   `isSkyMesh` heuristic unless `--include-sky`. Baking is
-  `legaia_asset::scene_gltf`: one VRAM-derived RGBA atlas + one material,
-  NEAREST samplers, packet colours on `COLOR_0` (sRGB-linearized so a
+  `legaia_asset::scene_gltf`: one VRAM-derived RGBA atlas, NEAREST
+  samplers, packet colours on `COLOR_0` (sRGB-linearized so a
   linear-colour-space importer - glTFast under VRChat's mandated Linear
   setting included - reproduces retail's display-space `texel * colour/128`
   product; a project left in Gamma colour space will render these models
-  darker than intended), PSX word-0 transparency
-  as MASK cutout.
+  darker than intended), PSX word-0 transparency as MASK cutout. ABE
+  semi-transparent prims split into a second `BLEND` material at half
+  alpha (retail's dominant `B/2 + F/2` mode exactly; the blended queue's
+  depth-write skip is also what keeps retail's coincident water scroll
+  layers from z-fighting in depth-buffered engines).
 - **NPC glbs** - `engine-core::npc_catalog` (the MAN partition-1 placement
   walk shared with the NPC browser page) + `legaia_asset::character_gltf`:
   the scene TMD with its spawn clip first and every other
@@ -106,10 +109,34 @@ objects - the village centre, not the map-grid centre), composition
 Transforms are in the **export frame**: the site renderers' convention
 (mesh-local Y flipped at bake so the model reads +Y-up,
 mirror-handedness and all), already multiplied by `scale`; yaw in radians
-about +Y exactly as the world-glb instances apply it. The NPC / prop
-`.glb`s themselves stay in **raw PSX units** (matching the site's
-character downloads), so a consumer scales each instance by the
-manifest's `scale` - the kit's builder does.
+about +Y exactly as the world-glb instances apply it - a **standard**
+positive rotation about +Y, which lands on the authored retail yaw. That
+is a sign conversion away from the internal `placementModelScaledY`
+param (the page function's inline rotY block is transposed, so its param
+is the negated yaw); `scene_gltf` performs the negation when emitting
+node quaternions, and the manifest mirrors it. A consumer that applies
+`rot_y_radians` as a plain `Ry` therefore matches the baked frame-0
+twins exactly. The frame is
+**X-mirrored relative to the site pages' presentation**: a consumer that
+wants the explorer's orientation mirrors the assembled scene once on X
+(the kit builder's default-on toggle). That fact is settled by a
+landmark test, not by the shader chain - viewing town01 from the sea
+(the sea-to-gate axis pins the viewpoint, so only parity can differ),
+the raw glb puts known buildings on the opposite sides from the
+field-scene page, and no rotation swaps sides across a content-pinned
+axis. Counting reflections through the page view chain (`u_pair_front`
+in `site/js/webgl-shaders.js`) gave confident wrong answers in both
+directions before the landmark test - re-run the test, don't re-count.
+The NPC / prop `.glb`s themselves stay in **raw PSX units**
+(matching the site's character downloads), so a consumer scales each
+instance by the manifest's `scale` - the kit's builder does. They also
+differ from the world glb in **handedness**: the world bakes the site
+convention's Y-mirror into its vertices (determinant -1), while the NPC /
+prop files are proper-rotation models (root `Rx(180)`, determinant +1).
+Placing a prop into the world therefore needs one mirror in the instance
+transform - `Ry(rot_y_radians) * diag(1, 1, -1)` composed onto the file's
+root - or no yaw will ever line it up with its baked frame-0 twin. The
+kit's builder applies this as a negative Z instance scale.
 
 ## Verification
 
