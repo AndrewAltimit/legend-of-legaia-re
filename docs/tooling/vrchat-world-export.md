@@ -109,7 +109,14 @@ objects - the village centre, not the map-grid centre), composition
 Transforms are in the **export frame**: the site renderers' convention
 (mesh-local Y flipped at bake so the model reads +Y-up,
 mirror-handedness and all), already multiplied by `scale`; yaw in radians
-about +Y exactly as the world-glb instances apply it. The frame is
+about +Y exactly as the world-glb instances apply it - a **standard**
+positive rotation about +Y, which lands on the authored retail yaw. That
+is a sign conversion away from the internal `placementModelScaledY`
+param (the page function's inline rotY block is transposed, so its param
+is the negated yaw); `scene_gltf` performs the negation when emitting
+node quaternions, and the manifest mirrors it. A consumer that applies
+`rot_y_radians` as a plain `Ry` therefore matches the baked frame-0
+twins exactly. The frame is
 **X-mirrored relative to the site pages' presentation**: a consumer that
 wants the explorer's orientation mirrors the assembled scene once on X
 (the kit builder's default-on toggle). That fact is settled by a

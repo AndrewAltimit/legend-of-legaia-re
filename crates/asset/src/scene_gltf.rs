@@ -26,7 +26,12 @@
 //! flip Y in the per-placement model matrix (`diag(s, -s, s)`); the export
 //! bakes the same flip into the mesh geometry (negating local Y) so instance
 //! transforms stay plain TRS and the model reads +Y-up in any glTF viewer -
-//! matching what the page shows, mirror-handedness and all.
+//! matching what the page shows, mirror-handedness and all. (The Y-flip
+//! commutes with a Y-rotation, so baking it into the vertices is exact.)
+//! Instance yaw needs one conversion: [`SceneInstance::rot_y`] carries the
+//! page's `placementModelScaledY` param, whose inline rotY block is the
+//! transpose of a standard +Y rotation - the emitted node quaternion is
+//! therefore `Ry(-rot_y)` (see [`quat_y`]).
 //!
 //! PSX transparency follows the fragment shader: a BGR555 word of `0` bakes
 //! as fully transparent (alpha 0) and the material uses `MASK` alpha, so
@@ -135,9 +140,16 @@ pub(crate) fn bake_tile(
     }
 }
 
-/// Quaternion `[x, y, z, w]` for a rotation of `a` radians about +Y -
-/// produces the same linear map as the page's `placementModelScaled` rotY
-/// block (`[c,0,s; 0,1,0; -s,0,c]`).
+/// Quaternion `[x, y, z, w]` for a **standard** rotation of `a` radians
+/// about +Y (`[c,0,s; 0,1,0; -s,0,c]` acting on column vectors).
+///
+/// This is the TRANSPOSE of the inline rotY block in the page's
+/// `placementModelScaledY` (whose column-major literal reads as
+/// `Ry(-param)`), so a [`SceneInstance::rot_y`] - which carries the page
+/// param by contract - must be **negated** at the emission site to
+/// reproduce the page's facing. Emitting `quat_y(rot_y)` unnegated is the
+/// bug that faced every yawed building the wrong way in exported worlds
+/// while leaving positions (and therefore layout comparisons) untouched.
 fn quat_y(a: f32) -> [f32; 4] {
     let h = a * 0.5;
     [0.0, h.sin(), 0.0, h.cos()]
@@ -339,7 +351,10 @@ pub fn build_scene_glb(
             "translation": inst.translation,
         });
         if inst.rot_y != 0.0 {
-            node["rotation"] = json!(quat_y(inst.rot_y));
+            // `rot_y` is the page's `placementModelScaledY` param, and that
+            // function's inline rotY block is the transpose of a standard
+            // +Y rotation - negate to land on the same facing (see quat_y).
+            node["rotation"] = json!(quat_y(-inst.rot_y));
         }
         if inst.scale != 1.0 {
             node["scale"] = json!([inst.scale, inst.scale, inst.scale]);
@@ -451,6 +466,19 @@ mod tests {
         // Instance TRS carried through.
         assert_eq!(root["nodes"][0]["translation"][0], 100.0);
         assert_eq!(root["nodes"][0]["scale"][0], 6.0);
+        // The yaw SIGN: rot_y is the page's `placementModelScaledY` param,
+        // whose inline rotY block is transposed - the node quaternion must
+        // be the standard Ry of the NEGATED param. For rot_y = +PI/2 that
+        // is quat [0, sin(-PI/4), 0, cos(PI/4)]: y strictly negative. The
+        // unnegated emission faced every yawed building backwards in Unity
+        // and Blender while leaving all positions (and layout tests) right.
+        let qy = root["nodes"][0]["rotation"][1].as_f64().unwrap();
+        let qw = root["nodes"][0]["rotation"][3].as_f64().unwrap();
+        assert!(
+            (qy + std::f64::consts::FRAC_PI_4.sin()).abs() < 1e-6,
+            "rotation must be Ry(-rot_y), got quat y = {qy}"
+        );
+        assert!((qw - std::f64::consts::FRAC_PI_4.cos()).abs() < 1e-6);
     }
 
     #[test]

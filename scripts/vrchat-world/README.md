@@ -153,6 +153,15 @@ the VCC setup in more detail if this is your first worlds project.
   solid under the negative scale. A prop facing backward on a *different*
   importer is the separate handedness convention - flip `YAW_SIGN` in
   `LegaiaWorldBuilder.cs`.
+- **Individual buildings face the wrong way** (windmill blades edge-on,
+  a house showing its back to the plaza) while the overall layout is
+  right: the export was made before the yaw-sign fix in
+  `legaia_asset::scene_gltf` - the site's `placementModelScaledY` has a
+  transposed inline rotation block, and the bake once emitted the
+  unnegated param, facing every *yawed* instance backwards while leaving
+  every position (and any layout check) correct. Rebuild `legaia-engine`
+  and re-export; the manifest yaw flips with it, so builder-placed props
+  stay aligned with their baked twins.
 - **Collider errors at build time**: with the default merged collider the
   cook runs off a generated readable asset and this doesn't arise; if you
   switched to per-mesh colliders, enable **Read/Write** in the glb's
