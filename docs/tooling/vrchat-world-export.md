@@ -110,14 +110,17 @@ Transforms are in the **export frame**: the site renderers' convention
 (mesh-local Y flipped at bake so the model reads +Y-up,
 mirror-handedness and all), already multiplied by `scale`; yaw in radians
 about +Y exactly as the world-glb instances apply it. The frame is
-**parity-correct** but sits 180° from the site pages' presentation: the
-pages' view chain nets a 180° screen rotation over the baked frame
-(model Y-flip + projection Y-flip + retail screen-X mirror = three
-reflections; the bake carries one - see `u_pair_front` in
-`site/js/webgl-shaders.js`). A consumer that wants the explorer's
-orientation rotates the assembled scene 180° about +Y (the kit builder's
-default-on toggle) - never a mirror, which flips building parity for
-real. The NPC / prop `.glb`s themselves stay in **raw PSX units**
+**X-mirrored relative to the site pages' presentation**: a consumer that
+wants the explorer's orientation mirrors the assembled scene once on X
+(the kit builder's default-on toggle). That fact is settled by a
+landmark test, not by the shader chain - viewing town01 from the sea
+(the sea-to-gate axis pins the viewpoint, so only parity can differ),
+the raw glb puts known buildings on the opposite sides from the
+field-scene page, and no rotation swaps sides across a content-pinned
+axis. Counting reflections through the page view chain (`u_pair_front`
+in `site/js/webgl-shaders.js`) gave confident wrong answers in both
+directions before the landmark test - re-run the test, don't re-count.
+The NPC / prop `.glb`s themselves stay in **raw PSX units**
 (matching the site's character downloads), so a consumer scales each
 instance by the manifest's `scale` - the kit's builder does.
 

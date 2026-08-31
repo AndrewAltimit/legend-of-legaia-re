@@ -80,11 +80,10 @@ the VCC setup in more detail if this is your first worlds project.
    point-sampled look without any material fixup.
 2. Menu **Legaia > Build Scene From Manifest...**, browse to the copied
    `manifest.json`, and **Build scene**. Two default-on options worth
-   knowing: **Match explorer orientation** rotates the finished root 180°
-   about Y so the scene sits the way the site's field-scene viewer
-   presents it (the raw import reads "flipped" at first glance, but it is
-   a rotation away, not a mirror - the glbs are parity-correct, so never
-   fix it with a negative axis scale), and **Merged + welded**
+   knowing: **Match explorer orientation** mirrors the finished root on X
+   so the scene reads the way the site's field-scene viewer presents it
+   (the raw import genuinely is mirrored - see the troubleshooting entry
+   for the landmark test that settled it), and **Merged + welded**
    builds one welded collision mesh for the whole world instead of a
    collider per mesh (closes the hairline seams between tile colliders a
    player capsule can slip through, and client builds stop needing
@@ -139,17 +138,21 @@ the VCC setup in more detail if this is your first worlds project.
 
 ## Troubleshooting
 
-- **Everything looks mirrored**: it isn't - it's rotated. The site pages'
-  view chain nets a 180° screen rotation over the baked frame (model
-  Y-flip + projection Y-flip + retail screen-X mirror = three
-  reflections; the bake carries one), so the raw import sits 180° from
-  the explorer presentation while every asymmetric detail is correct.
-  The builder's **Match explorer orientation** option (default on)
-  applies that rotation. Never "fix" this with a negative axis scale -
-  that flips building parity for real, and reads as "the layout matches
-  now but each house is somehow backwards". A prop facing backward on a
-  *different* importer is the separate handedness convention - flip
-  `YAW_SIGN` in `LegaiaWorldBuilder.cs`.
+- **Everything looks mirrored**: it is - the raw import is X-mirrored
+  relative to the site's field-scene viewer, and the builder's **Match
+  explorer orientation** option (default on) mirrors the built root to
+  compensate. This was settled *empirically* with a landmark test on
+  town01, after deriving it from the shader reflection chain
+  (`u_pair_front` in `site/js/webgl-shaders.js`) produced confident wrong
+  answers in **both** directions: stand at the sea looking at the village
+  (the sea-to-gate axis pins the viewpoint, so only parity can differ) -
+  the raw glb puts the big terrace house left and the paired small huts
+  right, the explorer page shows the opposite sides, and no rotation
+  swaps sides across a content-pinned axis. Re-run that test rather than
+  re-counting reflections. The double-sided merged collider keeps physics
+  solid under the negative scale. A prop facing backward on a *different*
+  importer is the separate handedness convention - flip `YAW_SIGN` in
+  `LegaiaWorldBuilder.cs`.
 - **Collider errors at build time**: with the default merged collider the
   cook runs off a generated readable asset and this doesn't arise; if you
   switched to per-mesh colliders, enable **Read/Write** in the glb's

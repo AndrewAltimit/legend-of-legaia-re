@@ -17,15 +17,19 @@
 // mapped through the same inversion here, and yaw flips sign. If a prop
 // faces mirrored in your importer, flip YAW_SIGN.
 //
-// Orientation note: the exported glbs are parity-correct - the site pages'
-// view chain nets a 180-degree screen rotation over the baked frame (model
-// Y-flip + projection Y-flip + retail screen-X mirror = three reflections,
-// the bake carries one), NOT a mirror. So the raw import reads "flipped" at
-// first glance next to the explorer pages but every asymmetric detail is
-// right, and the fix is a rotation, never a mirror (a -1 axis scale flips
-// building parity for real). "Match explorer orientation" (default on)
-// rotates the finished root 180 degrees about Y so the scene sits the way
-// the site's field-scene viewer presents it.
+// Orientation note: the raw import IS mirrored relative to the site's
+// field-scene viewer, and the fix is a -1 X root scale. This was settled
+// EMPIRICALLY with a landmark test on town01 - stand at the sea looking at
+// the village (the sea-to-gate axis pins the viewpoint, so only parity can
+// differ): the raw glb shows the big house left / huts right / gate
+// slightly right of the animated gate doors' wall, the explorer shows the
+// exact opposite sides. No rotation swaps sides across a content-pinned
+// axis. Do NOT re-derive this from the shader reflection chain
+// (webgl-shaders.js u_pair_front) - counting reflections there produced
+// confident wrong answers in BOTH directions before the landmark test
+// settled it. The double-sided merged collider keeps physics correct under
+// the negative scale, and the shared material is double-sided so the
+// flipped winding doesn't cull.
 
 using System.Collections.Generic;
 using System.IO;
@@ -72,10 +76,10 @@ namespace LegaiaWorld
 
             matchExplorerOrientation = EditorGUILayout.Toggle(
                 new GUIContent("Match explorer orientation",
-                    "Rotate the built root 180 degrees about Y so the scene sits " +
-                    "the way the site's field-scene viewer presents it. Never " +
-                    "mirror instead - the glbs are parity-correct, and a negative " +
-                    "axis scale genuinely flips the buildings"),
+                    "Mirror the built root on X so the scene reads the way the " +
+                    "site's field-scene viewer presents it (verified by landmark " +
+                    "test on town01: the raw import puts known buildings on the " +
+                    "wrong side of the sea-to-gate axis)"),
                 matchExplorerOrientation);
             addWorldColliders = EditorGUILayout.Toggle("World mesh colliders", addWorldColliders);
             using (new EditorGUI.DisabledScope(!addWorldColliders))
@@ -215,12 +219,13 @@ namespace LegaiaWorld
                 }
             }
 
-            // Rotate the whole assembly at the very end: children keep their
-            // manifest-frame local transforms, the root turns them into the
-            // explorer pages' presentation as one unit. A rotation, never a
-            // mirror - the glbs are parity-correct.
+            // Mirror the whole assembly at the very end: children keep their
+            // manifest-frame local transforms, the root flips them into the
+            // explorer pages' presentation as one unit (see the orientation
+            // note in the header - this is empirically a mirror, not a
+            // rotation).
             if (matchExplorerOrientation)
-                root.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
+                root.transform.localScale = new Vector3(-1f, 1f, 1f);
 
             Selection.activeGameObject = root;
             Debug.Log("[Legaia] built " + sceneName + ": world + " + npcCount +
