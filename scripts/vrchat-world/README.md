@@ -84,9 +84,11 @@ the VCC setup in more detail if this is your first worlds project.
    - `npcs/` - every catalogued villager at their MAN spawn tile, playing
      their retail spawn clip on a loop, capsule-collided;
    - `props/` - the animated placements (Rim Elm's windmills and doors)
-     playing their bind clips; the world keeps a frame-0 static twin
-     underneath, so delete whichever of the pair you don't want moving
-     (doors especially - a looping door clip swings forever);
+     playing their bind clips. The world glb keeps a frame-0 static twin
+     under each one; the builder disables it by default (**Hide static
+     prop twins**) so the pair doesn't z-fight - for a prop you'd rather
+     have still (doors especially - a looping door clip swings forever),
+     delete the animated instance and re-enable its twin;
    - `LegaiaSpawn` - the manifest's suggested spawn (the placed-object
      median, i.e. the village centre).
 3. Add the VRChat scene descriptor (`VRCWorld` prefab from the SDK), move

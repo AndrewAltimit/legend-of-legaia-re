@@ -45,6 +45,7 @@ namespace LegaiaWorld
         bool addNpcCapsules = true;
         bool loopNpcClips = true;
         bool loopPropClips = true;
+        bool hideStaticPropTwins = true;
         bool includeConditionalNpcs = false;
 
         [MenuItem("Legaia/Build Scene From Manifest...")]
@@ -87,6 +88,12 @@ namespace LegaiaWorld
             addNpcCapsules = EditorGUILayout.Toggle("NPC capsule colliders", addNpcCapsules);
             loopNpcClips = EditorGUILayout.Toggle("Loop NPC spawn clips", loopNpcClips);
             loopPropClips = EditorGUILayout.Toggle("Loop animated-prop clips", loopPropClips);
+            hideStaticPropTwins = EditorGUILayout.Toggle(
+                new GUIContent("Hide static prop twins",
+                    "The world glb keeps a frame-0 static copy under every " +
+                    "animated prop; hide it so the pair doesn't z-fight " +
+                    "(the merged collider still includes its geometry)"),
+                hideStaticPropTwins);
             includeConditionalNpcs = EditorGUILayout.Toggle(
                 new GUIContent("Include conditional NPCs",
                     "Story-gated spawns retail parks off-map until a script places them"),
@@ -197,6 +204,8 @@ namespace LegaiaWorld
                     go.transform.localRotation = Quaternion.Euler(0, YAW_SIGN * yaw, 0);
                     if (loopPropClips)
                         AttachLoopingClip(go, dir + "/" + file, null, dir, sceneName);
+                    if (hideStaticPropTwins)
+                        HideStaticTwin(world, file, go.transform.localPosition);
                     propCount++;
                 }
             }
@@ -211,6 +220,30 @@ namespace LegaiaWorld
             Debug.Log("[Legaia] built " + sceneName + ": world + " + npcCount +
                       " NPC(s) + " + propCount + " animated prop instance(s). " +
                       "Point your VRC scene descriptor spawn at LegaiaSpawn.");
+        }
+
+        /// The world glb keeps every animated placement's frame-0 static twin
+        /// (`mesh_<slot>_anim<id>` at the same spot the manifest places the
+        /// animated instance). Hide it so the pair doesn't z-fight - matched
+        /// by mesh name (prop file stem `prop_15_anim2` -> `mesh_15_anim2`,
+        /// which glTFast preserves) plus position, so nothing else is
+        /// touched. Disabled, not destroyed: re-enable to swap back to the
+        /// static version, and the merged collider (built before the props
+        /// loop) keeps its geometry either way.
+        static void HideStaticTwin(GameObject world, string propFile, Vector3 localPos)
+        {
+            string stem = Path.GetFileNameWithoutExtension(propFile);
+            string meshName = stem.StartsWith("prop_")
+                ? "mesh_" + stem.Substring("prop_".Length)
+                : stem;
+            foreach (var mf in world.GetComponentsInChildren<MeshFilter>())
+            {
+                if (mf.sharedMesh == null || mf.sharedMesh.name != meshName)
+                    continue;
+                var p = world.transform.InverseTransformPoint(mf.transform.position);
+                if ((p - localPos).sqrMagnitude < 1e-4f)
+                    mf.gameObject.SetActive(false);
+            }
         }
 
         /// One welded collision mesh for the whole world: every renderer
