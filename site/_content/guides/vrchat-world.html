@@ -1,12 +1,18 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; guides &middot; vrchat world</div>
   <h1>Importing a world into VRChat</h1>
-  <p class="lede">The engine exports any town or field scene as textured <code>.glb</code> files plus a manifest, and a Unity editor kit rebuilds it as a walkable VRChat world: the retail walk surface underfoot, villagers playing their spawn animations, doors that open as you approach and teleport you inside, the shoreline washing in and out, and the scene's music on a seamless loop. This guide goes from disc to standing in Rim Elm in about six steps.</p>
+  <p class="lede">The engine exports any town or field scene as textured <code>.glb</code> files plus a manifest, and a Unity editor kit rebuilds it as a walkable VRChat world: the retail walk surface underfoot, villagers playing their spawn animations, doors that open as you approach and teleport you inside, the shoreline washing in and out, and the scene's music on a seamless loop. This guide goes from disc to standing in Rim Elm in about six steps - read the disclaimer first.</p>
 </header>
 
 <section class="doc-section" id="legal">
-  <h2>Before anything: keep it private</h2>
-  <p>The exported <code>.glb</code> files contain Sony-derived geometry and textures decoded from <strong>your own disc</strong>. They are for your own local use: never commit them to a repository, never redistribute them, and keep any VRChat upload <strong>private</strong> - which is the default for a fresh world, so all you have to do is not publish it to Community Labs. The kit itself (scripts, builder, this guide) ships no game data.</p>
+  <h2>Disclaimer: educational use only, and keep it private</h2>
+  <p><strong>This guide is educational documentation of the project's tooling.</strong> Legend of Legaia's assets - the geometry, textures, animations and music the export decodes - are Sony's copyrighted intellectual property, and this project does <strong>not</strong> endorse distributing them in this or any other form. The tooling exists so you can study and experience content decoded from <em>your own disc</em>, on your own machines.</p>
+  <p>Concretely, if you follow this guide:</p>
+  <ul>
+    <li>Any VRChat upload must stay <strong>private</strong>. A fresh world is private by default - never publish it to Community Labs, never make it public, and don't hand out portals or invites as a distribution channel.</li>
+    <li>Never redistribute the exported files in any form - no <code>.glb</code>s, no unitypackages, no built worlds, no committing them to a repository. <code>glb-export/</code> is gitignored for exactly this reason.</li>
+    <li>The kit itself (scripts, builder, this guide) ships no game data; everything Sony-derived comes from your disc and stays with you.</li>
+  </ul>
 </section>
 
 <section class="doc-section" id="at-a-glance">
@@ -69,7 +75,7 @@
     <li>Select it, expand the <strong>VRC Scene Descriptor</strong>'s <strong>Spawns</strong> list, and drag <code>Legaia_town01/LegaiaSpawn</code> into element 0, replacing the prefab's own <code>Spawn</code> child. Moving a spawn marker does nothing until the list references it. Players face the spawn transform's +Z, so rotate the marker toward the view you want.</li>
     <li>Delete the template's <code>GridFloor</code> plane (or sink it far below as a fall catch) so it can't mask the real walk surface.</li>
     <li><strong>VRChat SDK &gt; Show Control Panel &gt; Build &amp; Test</strong>. Doors and teleports react to <em>players</em>, so test in Build &amp; Test or ClientSim - flying the editor scene camera through a trigger does nothing.</li>
-    <li>When it feels right, <strong>Upload</strong>. A fresh world is private until you explicitly publish it to Community Labs - leave it private.</li>
+    <li>When it feels right, <strong>Upload</strong>. A fresh world is private until you explicitly publish it to Community Labs - it must stay that way (<a href="#legal">disclaimer</a>).</li>
   </ol>
 </section>
 
