@@ -7,7 +7,7 @@
 use super::*;
 use legaia_engine_core::glb_export::{
     FloorSampler, GlbExportOptions, export_animated_prop_glbs, export_equipment_item_glbs,
-    export_npc_glbs, export_world_glb, items_manifest, world_manifest,
+    export_npc_glbs, export_scene_traversal, export_world_glb, items_manifest, world_manifest,
 };
 use legaia_engine_core::npc_catalog::catalog_scene_npcs;
 use legaia_engine_core::scene_assembly::assemble_field_scene;
@@ -85,7 +85,7 @@ fn export_one(
 ) -> Result<bool> {
     let a = assemble_field_scene(index, name).map_err(|e| anyhow::anyhow!(e))?;
     let scene = Scene::load(index, name)?;
-    let world = export_world_glb(&scene, &a, opts).map_err(|e| anyhow::anyhow!(e))?;
+    let world = export_world_glb(index, &scene, &a, opts).map_err(|e| anyhow::anyhow!(e))?;
     if world.glb.is_empty() {
         println!("  [empty] {name}: no drawable geometry");
         return Ok(false);
@@ -125,6 +125,7 @@ fn export_one(
         }
     }
     let floor = FloorSampler::build(index, &scene);
+    let traversal = export_scene_traversal(index, &scene, &floor, opts);
     let manifest = world_manifest(
         &a,
         opts,
@@ -134,6 +135,7 @@ fn export_one(
         &npcs,
         &props,
         &floor,
+        &traversal,
     );
     std::fs::write(
         dir.join("manifest.json"),

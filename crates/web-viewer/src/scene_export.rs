@@ -78,6 +78,7 @@ impl LegaiaViewer {
             cba_tsb: cba_tsb.to_vec(),
             indices: indices.to_vec(),
             flat_rgba: flat_rgba.to_vec(),
+            morph_targets: Vec::new(),
         });
         (s.meshes.len() - 1) as u32
     }

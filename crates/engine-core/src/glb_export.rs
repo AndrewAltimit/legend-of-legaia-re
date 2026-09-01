@@ -33,13 +33,15 @@ use crate::scene_assembly::{
 };
 use legaia_asset::character_gltf::{CharacterClip, build_character_glb_hybrid};
 use legaia_asset::player_anm::PlayerAnmBundle;
-use legaia_asset::scene_gltf::{SceneInstance, SceneMesh, build_scene_glb};
+use legaia_asset::scene_gltf::{SceneInstance, SceneMesh};
 use serde_json::{Value, json};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
-/// Placement transforms of one animated prop: `(translation, rot_y radians)`
-/// per placed instance, already in the export frame.
-type PropInstances = Vec<([f32; 3], f32)>;
+/// Placement transforms of one animated prop: `(translation, rot_y radians,
+/// footprint-anchor tile)` per placed instance, translation already in the
+/// export frame. The anchor tile is the placement's bind identity
+/// ([`crate::field_env::EnvDraw::anchor`]) - what the door-record join keys on.
+type PropInstances = Vec<([f32; 3], f32, (u8, u8))>;
 
 /// Field/duel clip playback rate baked into exported animation timelines -
 /// the observed retail field animator cadence (see the characters page's
@@ -82,6 +84,12 @@ pub struct WorldGlb {
     pub spawn: [f32; 3],
     /// Ground heightfield quad count (0 = scene had no walk floor grid).
     pub ground_quads: usize,
+    /// Meshes that carry baked VDF morph targets (the ambient vertex-morph
+    /// bake - Rim Elm's shoreline). `0` = the scene has no armed pulse.
+    pub morph_mesh_count: usize,
+    /// Loop length of the baked `vdf_pulse` weights animation, in seconds
+    /// (`0.0` when no animation was baked).
+    pub morph_loop_seconds: f32,
 }
 
 /// Frame-`frame` bone offsets of scene ANM record `anim_id - 1`, under
@@ -119,6 +127,7 @@ fn frame_bone_offsets(
 /// placement-transform conventions baked in. `Err` only on structural
 /// failure; a scene with no drawable geometry returns an empty `glb`.
 pub fn export_world_glb(
+    index: &ProtIndex,
     scene: &Scene,
     a: &AssembledScene,
     opts: &GlbExportOptions,
@@ -154,6 +163,7 @@ pub fn export_world_glb(
             cba_tsb,
             indices: hf.indices.clone(),
             flat_rgba: Vec::new(),
+            morph_targets: Vec::new(),
         });
         instances.push(SceneInstance {
             mesh: 0,
@@ -214,6 +224,7 @@ pub fn export_world_glb(
                     cba_tsb,
                     indices: mesh.indices.clone(),
                     flat_rgba: flat,
+                    morph_targets: Vec::new(),
                 });
                 Some(meshes.len() - 1)
             });
@@ -253,7 +264,30 @@ pub fn export_world_glb(
         median(2, &spawn_src),
     ];
 
-    let glb = build_scene_glb(&a.name, &meshes, &instances, &a.res.vram).unwrap_or_default();
+    // --- Ambient VDF morph bake (Rim Elm's shoreline going in and out). ---
+    // Recreate the engine's scene-entry pulse (`crate::vdf_pulse` - the same
+    // arming the play hosts run, with its self-guard for retail-armed
+    // scenes), turn each lane's full-weight deltas into a glTF morph target
+    // on the affected world meshes, and sample the envelope for exactly one
+    // loop period as a `weights` animation.
+    let weights_anim = bake_vdf_pulse_anim(index, scene, a, &handles, &mut meshes);
+    let morph_mesh_count = meshes
+        .iter()
+        .filter(|m| !m.morph_targets.is_empty())
+        .count();
+    let morph_loop_seconds = weights_anim
+        .as_ref()
+        .and_then(|w| w.times.last().copied())
+        .unwrap_or(0.0);
+
+    let glb = legaia_asset::scene_gltf::build_scene_glb_animated(
+        &a.name,
+        &meshes,
+        &instances,
+        &a.res.vram,
+        weights_anim.as_ref(),
+    )
+    .unwrap_or_default();
     Ok(WorldGlb {
         glb,
         mesh_count: meshes.len(),
@@ -261,6 +295,183 @@ pub fn export_world_glb(
         sky_hidden,
         spawn,
         ground_quads,
+        morph_mesh_count,
+        morph_loop_seconds,
+    })
+}
+
+/// The ambient game-tick rate the pulse envelope advances at (the retail
+/// 30 Hz field tick) - the time base of the baked weights animation.
+const PULSE_TICK_HZ: f32 = 30.0;
+
+/// Recreate the scene-entry VDF pulse and bake it: morph targets onto the
+/// world meshes of every targeted env slot (one target per envelope lane, the
+/// lane's deltas applied at full weight), plus the sampled lane weights over
+/// exactly one envelope period. `None` when the scene arms no pulse (no VDF
+/// pack, retail owns the morphs, or nothing fits).
+fn bake_vdf_pulse_anim(
+    index: &ProtIndex,
+    scene: &Scene,
+    a: &AssembledScene,
+    handles: &HashMap<(usize, u8), Option<usize>>,
+    meshes: &mut [SceneMesh],
+) -> Option<legaia_asset::scene_gltf::SceneWeightsAnim> {
+    use legaia_asset::scene_gltf::{SceneMorphTarget, SceneWeightsAnim};
+
+    // The same setup `SceneHost::enter_field_scene` runs before arming.
+    let mut w = crate::world::World {
+        frame_step: 2,
+        ..Default::default()
+    };
+    if let Some(scripts) = scene.find_event_scripts() {
+        w.install_field_stagers(scripts.bytes);
+    }
+    w.set_vdf_buffer(crate::scene_bundle::find_vdf_buffer(scene));
+    if let Ok(Some(man)) = scene.field_man_payload(index)
+        && let Ok(mf) = legaia_asset::man_section::parse(&man)
+    {
+        for arg in crate::man_field_scripts::scene_entry_ambient_installs(&mf, &man) {
+            w.spawn_ambient_record(arg as usize + 1, [0, 0, 0]);
+        }
+    }
+    let pack_objects: Vec<Vec<usize>> = a
+        .env_tmds
+        .iter()
+        .map(|&ti| {
+            a.res.tmds[ti]
+                .tmd
+                .objects
+                .iter()
+                .map(|o| o.vertices.len())
+                .collect()
+        })
+        .collect();
+    if !w.install_entry_vdf_pulse(&pack_objects) {
+        return None;
+    }
+
+    // Per targeted env slot: the lanes that touch it (each lane = one morph
+    // target) and the groups each lane moves.
+    let all_targets = w.entry_vdf_pulse.as_ref()?.all_targets();
+    let mut slot_lanes: BTreeMap<usize, Vec<u8>> = BTreeMap::new();
+    let mut lane_groups: BTreeMap<(usize, u8), Vec<u32>> = BTreeMap::new();
+    for &(slot, group) in &all_targets {
+        for (lane, _) in w.entry_vdf_pulse.as_ref()?.lanes_for(slot, group) {
+            let lanes = slot_lanes.entry(slot).or_default();
+            if !lanes.contains(&lane) {
+                lanes.push(lane);
+            }
+            let groups = lane_groups.entry((slot, lane)).or_default();
+            if !groups.contains(&group) {
+                groups.push(group);
+            }
+        }
+    }
+    for lanes in slot_lanes.values_mut() {
+        lanes.sort_unstable();
+    }
+
+    // Build the morph targets: rebuild each slot's mesh with one lane's
+    // deltas at full weight and diff the position stream (the rebuild keeps
+    // vertex order - `with_group_deltas` only moves positions).
+    let mut tracked_meshes: Vec<(usize, Vec<u8>)> = Vec::new();
+    for (&slot, lanes) in &slot_lanes {
+        // Only the static (anim 0) world mesh morphs; a slot that never
+        // reached the world glb (unplaced twin, sky) has no mesh to morph.
+        let Some(&Some(mi)) = handles.get(&(slot, 0)) else {
+            continue;
+        };
+        if mi == usize::MAX {
+            continue;
+        }
+        let Some(&res_tmd) = a.env_tmds.get(slot) else {
+            continue;
+        };
+        let rtmd = &a.res.tmds[res_tmd];
+        let mut targets: Vec<SceneMorphTarget> = Vec::new();
+        for &lane in lanes {
+            let mut morphed = rtmd.clone();
+            for &group in lane_groups.get(&(slot, lane)).into_iter().flatten() {
+                let n_verts = morphed
+                    .tmd
+                    .objects
+                    .get(group as usize)
+                    .map_or(0, |o| o.vertices.len());
+                let deltas = w.morph_deltas_for(&[(lane, 0x1000)], group, n_verts);
+                morphed = morphed.with_group_deltas(group, &deltas);
+            }
+            let (mesh, _) = build_hybrid_env_mesh(&morphed, &a.res.vram);
+            let base = &meshes[mi].positions;
+            if mesh.positions.len() * 3 != base.len() {
+                continue; // rebuild changed shape - refuse a desynced target
+            }
+            let mut deltas_flat = Vec::with_capacity(base.len());
+            for (vi, p) in mesh.positions.iter().enumerate() {
+                deltas_flat.push(p[0] - base[vi * 3]);
+                deltas_flat.push(p[1] - base[vi * 3 + 1]);
+                deltas_flat.push(p[2] - base[vi * 3 + 2]);
+            }
+            targets.push(SceneMorphTarget {
+                name: format!("vdf_lane_{lane}"),
+                deltas: deltas_flat,
+            });
+        }
+        if !targets.is_empty() {
+            meshes[mi].morph_targets = targets;
+            tracked_meshes.push((mi, lanes.clone()));
+        }
+    }
+    if tracked_meshes.is_empty() {
+        return None;
+    }
+
+    // Sample the envelope for one full period (fingerprint recurrence),
+    // closing the loop with a final key equal to the first.
+    const MAX_TICKS: usize = 3600;
+    let sample_lanes = |w: &crate::world::World, lanes: &[u8]| -> Vec<f32> {
+        let (weights, _, _) = w
+            .entry_vdf_pulse
+            .as_ref()
+            .map(|p| p.phase_fingerprint())
+            .unwrap_or_default();
+        lanes
+            .iter()
+            .map(|&l| {
+                weights
+                    .get(l as usize)
+                    .map_or(0.0, |&v| f32::from(v.min(0x1000)) / 4096.0)
+            })
+            .collect()
+    };
+    let start = w.entry_vdf_pulse.as_ref()?.phase_fingerprint();
+    let mut times: Vec<f32> = Vec::new();
+    let mut tracks: BTreeMap<usize, Vec<f32>> = BTreeMap::new();
+    for tick in 0..=MAX_TICKS {
+        times.push(tick as f32 / PULSE_TICK_HZ);
+        for (mi, lanes) in &tracked_meshes {
+            tracks
+                .entry(*mi)
+                .or_default()
+                .extend(sample_lanes(&w, lanes));
+        }
+        w.tick_ambient_fx();
+        if w.entry_vdf_pulse.as_ref()?.phase_fingerprint() == start {
+            // The state has returned to key 0's - one more key with those
+            // weights closes the loop seamlessly under LINEAR interpolation.
+            times.push((tick + 1) as f32 / PULSE_TICK_HZ);
+            for (mi, lanes) in &tracked_meshes {
+                tracks
+                    .entry(*mi)
+                    .or_default()
+                    .extend(sample_lanes(&w, lanes));
+            }
+            break;
+        }
+    }
+    Some(SceneWeightsAnim {
+        name: "vdf_pulse".to_string(),
+        times,
+        tracks,
     })
 }
 
@@ -419,7 +630,7 @@ pub fn export_animated_prop_glbs(
         // too - which lands on the authored retail yaw as a plain positive
         // rotation about +Y. Keeps builder-placed props aligned with their
         // baked frame-0 twins in any importer.
-        entry.push((t, -draw_rot_y_radians(d.rot_y)));
+        entry.push((t, -draw_rot_y_radians(d.rot_y), d.anchor));
     }
     let mut out = Vec::new();
     for key in key_order {
@@ -521,6 +732,188 @@ impl FloorSampler {
     }
 }
 
+/// Traversal data of one scene, ready for the manifest: the intra-scene
+/// teleports a walk-in world needs to make doorways *work*, plus the
+/// scene-change portal sites a multi-scene build can wire up.
+#[derive(Default)]
+pub struct TraversalExport {
+    /// Intra-scene teleports (both retail families - see
+    /// [`export_scene_traversal`]), as manifest-ready JSON entries.
+    pub teleports: Vec<Value>,
+    /// Gate-1 walk-on portal sites whose record runs a `0x3F` named scene
+    /// change (a town exit / overworld entrance) - useful when several
+    /// exported scenes share one world.
+    pub portals: Vec<Value>,
+    /// Anchor tiles whose bound MAN record carries a player teleport - the
+    /// placements those tiles anchor are **door meshes** (their bind clip is
+    /// the swing the door record plays). Joined against
+    /// [`crate::field_env::EnvDraw::anchor`] when tagging animated props.
+    pub door_anchor_tiles: Vec<(u8, u8)>,
+}
+
+/// The facing direction of engine heading `h` (12-bit, `0` faces +Z) as a
+/// unit XZ vector - unchanged by the export frame's Y re-sign
+/// ([`draw_translation`] touches only Y), so it is valid in both.
+fn heading_dir_xz(h: i16) -> [f32; 2] {
+    let th = (h as f32) / 4096.0 * std::f32::consts::TAU;
+    [th.sin(), th.cos()]
+}
+
+/// Recover both retail doorway families of a scene as manifest entries (the
+/// same disc structures the play hosts dispatch - see
+/// `docs/subsystems/field-locomotion.md` § intra-scene doorways):
+///
+/// - **map doors** (`.MAP` kind-0 intra-scene-teleport table): a plain tile
+///   carries a destination; crossing onto it repositions the player. This is
+///   where most house *exits* live.
+/// - **script doors** (`.MAP` object gate-0 kind-1 binds): touching the
+///   object's contact box runs its MAN record, whose taken arm teleports the
+///   player channel. The arm is resolved here against the **cold-entry**
+///   story-flag state (all clear - the state a fresh walk-in world models);
+///   records whose cold arm spawns a cutscene instead of teleporting are
+///   skipped.
+///
+/// Positions are in the export frame (scaled, [`draw_translation`]-signed),
+/// with destination heights re-sampled off the floor model exactly as the
+/// engine re-seats an arrival. `facing_dir` is the arrival facing as a unit
+/// XZ direction (`null` = keep the walked-in facing).
+pub fn export_scene_traversal(
+    index: &ProtIndex,
+    scene: &Scene,
+    floor: &FloorSampler,
+    opts: &GlbExportOptions,
+) -> TraversalExport {
+    let s = opts.scale;
+    let pt = |x: f32, y: f32, z: f32| -> [f32; 3] {
+        let t = draw_translation([x, y, z]);
+        [t[0] * s, t[1] * s, t[2] * s]
+    };
+    let floor_pt = |wx: i16, wz: i16| -> [f32; 3] {
+        let y = floor.height(wx as i32, wz as i32);
+        pt(wx as f32, y as f32, wz as f32)
+    };
+    let mut out = TraversalExport::default();
+
+    // --- Map doors (kind-0 intra-scene teleports). ---
+    if let Ok((primary, fallback)) = scene.field_intra_scene_teleports(index) {
+        let mut seen: Vec<(u8, u8)> = Vec::new();
+        for t in primary.iter().chain(fallback.iter()) {
+            if seen.contains(&(t.tile_x, t.tile_z)) {
+                continue; // primary block wins, as in the trigger dispatch
+            }
+            seen.push((t.tile_x, t.tile_z));
+            let (tx, tz) = (
+                i16::from(t.tile_x) * 128 + 0x40,
+                i16::from(t.tile_z) * 128 + 0x40,
+            );
+            let (dx, dz) = t.dest_world();
+            out.teleports.push(json!({
+                "kind": "map",
+                "trigger": {
+                    "position": floor_pt(tx, tz),
+                    // One collision tile (the kind-0 dispatch is an
+                    // exact tile compare), raised a body height.
+                    "half_extents": [64.0 * s, 96.0 * s, 64.0 * s],
+                },
+                "destination": { "position": floor_pt(dx, dz) },
+                "facing_dir": Value::Null,
+                "record": Value::Null,
+            }));
+        }
+    }
+
+    // --- Script doors (object walk-touch binds). ---
+    let map_bytes = scene
+        .field_map_index(index)
+        .and_then(|i| index.entry_bytes_extended(i).ok());
+    let triggers = scene.field_tile_triggers(index).ok().map(|(p, f)| {
+        let mut t = p;
+        t.extend(f);
+        t
+    });
+    let man = scene.field_man_payload(index).ok().flatten();
+    if let (Some(map), Some(triggers), Some(man)) = (map_bytes, triggers, man.as_ref())
+        && let Ok(mf) = legaia_asset::man_section::parse(man)
+    {
+        // Door-mesh anchors: every kind-1 trigger tile whose bound record
+        // carries a player teleport in any arm (the structural classifier -
+        // the placement anchored there is a door whatever the flag state).
+        for t in &triggers {
+            if out.door_anchor_tiles.contains(&(t.tile_x, t.tile_z)) {
+                continue;
+            }
+            if crate::man_field_scripts::flat_record_walk_touch_event(&mf, man, t.record as usize)
+                .is_some()
+            {
+                out.door_anchor_tiles.push((t.tile_x, t.tile_z));
+            }
+        }
+        for bind in crate::man_field_scripts::object_walk_touch_binds(&map, &triggers, &mf, man) {
+            // Re-resolve the arm the record takes with every story flag
+            // clear - the cold-entry state a fresh world models. A record
+            // whose cold arm is a cutscene spawn (or a minigame warp) is
+            // not a plain doorway; leave it out rather than guess.
+            let cold =
+                crate::man_field_scripts::resolve_walk_touch_event(&mf, man, bind.record, &|_| {
+                    false
+                });
+            let Some(crate::man_field_scripts::WalkTouchEvent::PlayerMoveTo {
+                world_x,
+                world_z,
+                facing,
+            }) = cold
+            else {
+                continue;
+            };
+            let (cx, cz) = bind.contact;
+            let half = crate::field_regions::MAP_OBJECT_CONTACT_HALF as f32;
+            out.teleports.push(json!({
+                "kind": "script",
+                "trigger": {
+                    "position": floor_pt(cx, cz),
+                    "half_extents": [half * s, 96.0 * s, half * s],
+                },
+                "destination": { "position": floor_pt(world_x, world_z) },
+                "facing_dir": facing.map(heading_dir_xz),
+                "record": bind.record,
+            }));
+        }
+
+        // --- Scene-change portal sites (gate-1 walk-on -> 0x3F). ---
+        let half = |b: u8| -> f32 {
+            f32::from(b & 0x7F) * 128.0 + if b & 0x80 != 0 { 128.0 } else { 64.0 }
+        };
+        for site in crate::man_field_scripts::overworld_portal_sites(&mf, man, &triggers) {
+            let (tx, tz) = (
+                i16::from(site.overworld_x) * 128 + 0x40,
+                i16::from(site.overworld_z) * 128 + 0x40,
+            );
+            // Arrival facing: the 0x3F trailing dir byte through the retail
+            // compass table (`dir & 7` eighths of the 12-bit circle).
+            let facing = heading_dir_xz(i16::from(site.dir & 7) * 0x200);
+            out.portals.push(json!({
+                "target_scene": site.scene_name,
+                "trigger": {
+                    "position": floor_pt(tx, tz),
+                    "half_extents": [64.0 * s, 96.0 * s, 64.0 * s],
+                },
+                // Arrival point in the TARGET scene's export frame (XZ only,
+                // scaled; sample the destination scene's floor for Y when
+                // wiring a multi-scene world).
+                "entry_xz": [half(site.entry_x) * s, half(site.entry_z) * s],
+                "facing_dir": facing,
+                "record": site.record,
+                "conditional": site.conditional.as_ref().map(|c| json!({
+                    "flag": c.flag,
+                    "target_scene": c.scene_name,
+                    "entry_xz": [half(c.entry_x) * s, half(c.entry_z) * s],
+                })),
+            }));
+        }
+    }
+    out
+}
+
 /// Compose the per-scene manifest JSON: everything a world builder (or the
 /// shipped Unity importer script) needs to place the exported files -
 /// transforms in the export frame, file names, labels, and the coordinate /
@@ -535,7 +928,25 @@ pub fn world_manifest(
     npcs: &[NpcGlb],
     props: &[PropGlb],
     floor: &FloorSampler,
+    traversal: &TraversalExport,
 ) -> Value {
+    // A prop instance whose anchor tile binds a door record is a door mesh
+    // (its clip is the swing the record plays); one standing on a
+    // scene-change portal band is a gate leaf. A builder swaps either's
+    // free-running loop for open-on-approach.
+    let near_portal = |t: &[f32; 3]| -> Option<usize> {
+        let thresh = 384.0 * opts.scale; // 3 collision tiles
+        let mut best: Option<(f32, usize)> = None;
+        for (i, tp) in traversal.portals.iter().enumerate() {
+            let p = tp["trigger"]["position"].as_array()?;
+            let (dx, dz) = (p[0].as_f64()? as f32 - t[0], p[2].as_f64()? as f32 - t[2]);
+            let d = dx * dx + dz * dz;
+            if d < thresh * thresh && best.is_none_or(|(b, _)| d < b) {
+                best = Some((d, i));
+            }
+        }
+        best.map(|(_, i)| i)
+    };
     let npc_dir_entries: Vec<Value> = npcs
         .iter()
         .filter_map(|n| {
@@ -581,9 +992,15 @@ pub fn world_manifest(
                 "env_slot": p.env_slot,
                 "anim_id": p.anim_id,
                 "clip_frames": p.frame_count,
-                "instances": p.instances.iter().map(|(t, r)| json!({
+                "instances": p.instances.iter().map(|(t, r, anchor)| json!({
                     "position": t,
                     "rot_y_radians": r,
+                    // The anchor-tile bind says this placement's clip is a
+                    // door record's swing - open it on approach, don't loop.
+                    "is_door": traversal.door_anchor_tiles.contains(anchor),
+                    // Index into `scene_portals` when this instance stands
+                    // on an exit band (a town-gate leaf).
+                    "near_portal": near_portal(t),
                 })).collect::<Vec<_>>(),
             })
         })
@@ -606,10 +1023,19 @@ pub fn world_manifest(
             "ground_quads": world.ground_quads,
             "placements": a.placements.len(),
             "terrain_tiles": a.terrain.len(),
+            "morph_meshes": world.morph_mesh_count,
         },
+        // The world glb's baked ambient vertex-morph clip (Rim Elm's
+        // shoreline): play it looping on the world instance.
+        "world_anim": (world.morph_loop_seconds > 0.0).then(|| json!({
+            "clip": "vdf_pulse",
+            "loop_seconds": world.morph_loop_seconds,
+        })),
         "npcs": npc_dir_entries,
         "doors": door_entries,
         "animated_props": prop_entries,
+        "teleports": traversal.teleports.clone(),
+        "scene_portals": traversal.portals.clone(),
     })
 }
 
