@@ -53,6 +53,7 @@ const NAV = [
       { href: 'guides/extracting-assets.html',       text: 'Extracting assets',        key: 'guides/extracting-assets' },
       { href: 'guides/playing-and-viewing.html',     text: 'Playing + viewing',        key: 'guides/playing-and-viewing' },
       { href: 'guides/modding-and-translation.html', text: 'Modding + translation',    key: 'guides/modding-and-translation' },
+      { href: 'guides/vrchat-world.html',            text: 'VRChat world',             key: 'guides/vrchat-world' },
     ],
   },
   {

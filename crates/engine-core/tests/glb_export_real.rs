@@ -7,8 +7,8 @@
 //! Skips silently when `extracted/` or `LEGAIA_DISC_BIN` is missing.
 
 use legaia_engine_core::glb_export::{
-    FloorSampler, GlbExportOptions, export_animated_prop_glbs, export_npc_glbs, export_world_glb,
-    world_manifest,
+    FloorSampler, GlbExportOptions, export_animated_prop_glbs, export_npc_glbs,
+    export_scene_traversal, export_world_glb, world_manifest,
 };
 use legaia_engine_core::npc_catalog::catalog_scene_npcs;
 use legaia_engine_core::scene::{ProtIndex, Scene};
@@ -55,9 +55,37 @@ fn town01_world_export_bakes_all_three_artifact_families() {
     };
 
     // --- World glb: ground + terrain + placements, sky shells dropped. ---
-    let world = export_world_glb(&scene, &a, &opts).expect("world glb");
+    let world = export_world_glb(&index, &scene, &a, &opts).expect("world glb");
     assert!(world.ground_quads > 0, "town01 has a walk floor grid");
     assert!(world.sky_hidden > 0, "town01's sky shells are filtered");
+    // The shoreline morph bake: town01's populated VDF pack arms the
+    // scene-entry pulse, so the world glb carries baked morph targets and a
+    // looping `vdf_pulse` weights animation.
+    assert!(
+        world.morph_mesh_count > 0,
+        "town01's shoreline mesh carries baked VDF morph targets"
+    );
+    assert!(
+        world.morph_loop_seconds > 1.0,
+        "the vdf_pulse loop has a real period, got {}",
+        world.morph_loop_seconds
+    );
+    {
+        let wj = glb_json(&world.glb);
+        let anims = wj["animations"].as_array().expect("world animations");
+        assert_eq!(anims.len(), 1);
+        assert_eq!(anims[0]["name"], "vdf_pulse");
+        assert!(
+            !anims[0]["channels"].as_array().unwrap().is_empty(),
+            "vdf_pulse animates at least one instance node"
+        );
+        let has_targets = wj["meshes"].as_array().unwrap().iter().any(|m| {
+            m["primitives"][0]["targets"]
+                .as_array()
+                .is_some_and(|t| !t.is_empty())
+        });
+        assert!(has_targets, "a world mesh carries glTF morph targets");
+    }
     assert!(
         world.instance_count > 100,
         "town01 draws >100 instances, got {}",
@@ -86,7 +114,7 @@ fn town01_world_export_bakes_all_three_artifact_families() {
         "town01 catalogs a real NPC roster, got {}",
         catalog.entries.len()
     );
-    let npcs = export_npc_glbs(&scene, &a, &catalog);
+    let npcs = export_npc_glbs(&scene, &a, &catalog, &opts);
     assert!(npcs.len() > 20, "most entries bake, got {}", npcs.len());
     let animated = npcs
         .iter()
@@ -109,8 +137,39 @@ fn town01_world_export_bakes_all_three_artifact_families() {
         assert_eq!(pj["animations"].as_array().map(Vec::len), Some(1));
     }
 
-    // --- Manifest: files cross-reference the baked sets. ---
+    // --- Traversal: both doorway families resolve for Rim Elm, with
+    // trigger boxes capsule-reach verified against the baked world glb. ---
     let floor = FloorSampler::build(&index, &scene);
+    let traversal = export_scene_traversal(&index, &scene, &floor, &opts, Some(&world.glb));
+    let kinds: Vec<&str> = traversal
+        .teleports
+        .iter()
+        .filter_map(|t| t["kind"].as_str())
+        .collect();
+    assert!(
+        kinds.contains(&"map"),
+        "town01 has kind-0 map doors (Vahn's house exit)"
+    );
+    assert!(
+        kinds.contains(&"script"),
+        "town01 has script doors (the IN/OUT pairs)"
+    );
+    assert!(
+        traversal
+            .teleports
+            .iter()
+            .any(|t| t["kind"] == "script" && !t["facing_dir"].is_null()),
+        "at least one script door carries an authored arrival facing"
+    );
+    assert!(
+        traversal
+            .portals
+            .iter()
+            .any(|p| p["target_scene"] == "map01"),
+        "the south gate portal to map01 is exported"
+    );
+
+    // --- Manifest: files cross-reference the baked sets. ---
     let m = world_manifest(
         &a,
         &opts,
@@ -120,8 +179,30 @@ fn town01_world_export_bakes_all_three_artifact_families() {
         &npcs,
         &props,
         &floor,
+        &traversal,
     );
     assert_eq!(m["scene"], "town01");
+    assert_eq!(
+        m["teleports"].as_array().map(Vec::len),
+        Some(traversal.teleports.len())
+    );
+    // Rim Elm's house doors stand on their own doorway-teleport triggers
+    // (is_door), the gate leaves on the exit band (near_portal) - and the
+    // windmills on neither, so they keep looping.
+    let insts: Vec<&serde_json::Value> = m["animated_props"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|p| p["instances"].as_array().unwrap())
+        .collect();
+    let doors = insts.iter().filter(|i| i["is_door"] == true).count();
+    let leaves = insts.iter().filter(|i| !i["near_portal"].is_null()).count();
+    assert!(doors >= 4, "house doors tag is_door (got {doors})");
+    assert!(leaves >= 1, "gate leaves tag near_portal (got {leaves})");
+    assert!(
+        doors + leaves < insts.len(),
+        "windmills and other looping props stay untagged"
+    );
     assert_eq!(m["npcs"].as_array().map(Vec::len), Some(npcs.len()));
     assert_eq!(
         m["animated_props"].as_array().map(Vec::len),

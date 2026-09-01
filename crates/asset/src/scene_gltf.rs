@@ -75,6 +75,28 @@ pub struct SceneMesh {
     pub cba_tsb: Vec<u16>,
     pub indices: Vec<u32>,
     pub flat_rgba: Vec<u8>,
+    /// Morph targets (glTF `targets`, Unity blendshapes): per-vertex position
+    /// deltas in the same PSX-frame layout as `positions` (the bake applies
+    /// the same Y flip). Empty for the ordinary static mesh. The engine's
+    /// VDF vertex-morph lanes export through this - one target per lane.
+    pub morph_targets: Vec<SceneMorphTarget>,
+}
+
+/// One morph target of a [`SceneMesh`]: a named per-vertex position-delta
+/// stream (`deltas.len() == positions.len()`).
+pub struct SceneMorphTarget {
+    pub name: String,
+    pub deltas: Vec<f32>,
+}
+
+/// A sampled morph-weight animation over the scene's instances: every node
+/// whose mesh has a track gets a glTF `weights` channel. `times` are seconds;
+/// `tracks[mesh_index]` is key-major flattened weights
+/// (`times.len() * mesh.morph_targets.len()` values in `0.0..=1.0`).
+pub struct SceneWeightsAnim {
+    pub name: String,
+    pub times: Vec<f32>,
+    pub tracks: BTreeMap<usize, Vec<f32>>,
 }
 
 /// One placement of a [`SceneMesh`]: the same `(translation, rot_y, scale)`
@@ -162,6 +184,20 @@ pub fn build_scene_glb(
     meshes: &[SceneMesh],
     instances: &[SceneInstance],
     vram: &Vram,
+) -> Option<Vec<u8>> {
+    build_scene_glb_animated(name, meshes, instances, vram, None)
+}
+
+/// [`build_scene_glb`] plus an optional morph-weight animation: meshes with
+/// [`SceneMesh::morph_targets`] emit glTF `targets` (Unity blendshapes), and
+/// `anim`'s tracks become one looping `weights` channel per instance node of
+/// each tracked mesh.
+pub fn build_scene_glb_animated(
+    name: &str,
+    meshes: &[SceneMesh],
+    instances: &[SceneInstance],
+    vram: &Vram,
+    anim: Option<&SceneWeightsAnim>,
 ) -> Option<Vec<u8>> {
     // Which meshes are actually placed (and structurally sound)?
     let mesh_used: Vec<bool> = meshes
@@ -321,27 +357,61 @@ pub fn build_scene_glb(
             let col_acc = b.push_vec4(&colors);
             attrs["COLOR_0"] = json!(col_acc);
         }
+        // Morph targets: one POSITION-delta accessor per target, with the
+        // same Y flip the base positions get.
+        let mut target_attrs: Vec<Value> = Vec::new();
+        let mut target_names: Vec<Value> = Vec::new();
+        for t in &m.morph_targets {
+            if t.deltas.len() != m.positions.len() {
+                continue; // malformed target - drop rather than desync streams
+            }
+            let deltas: Vec<[f32; 3]> = (0..nverts)
+                .map(|vi| {
+                    [
+                        t.deltas[vi * 3],
+                        -t.deltas[vi * 3 + 1],
+                        t.deltas[vi * 3 + 2],
+                    ]
+                })
+                .collect();
+            let acc = b.push_vec3(&deltas, Some(TARGET_ARRAY), true);
+            target_attrs.push(json!({ "POSITION": acc }));
+            target_names.push(json!(t.name));
+        }
         let mut prims: Vec<Value> = Vec::new();
         for (idx, material) in [(&opaque_idx, 0), (&blend_idx, 1)] {
             if idx.is_empty() {
                 continue;
             }
             let idx_acc = b.push_indices(idx);
-            prims.push(json!({
+            let mut prim = json!({
                 "attributes": attrs.clone(), "indices": idx_acc,
                 "material": material, "mode": 4
-            }));
+            });
+            if !target_attrs.is_empty() {
+                prim["targets"] = json!(target_attrs.clone());
+            }
+            prims.push(prim);
         }
         if !blend_idx.is_empty() {
             any_abe = true;
         }
         gltf_mesh_of.insert(mi, gltf_meshes.len());
-        gltf_meshes.push(json!({ "name": m.name, "primitives": prims }));
+        let mut mesh_json = json!({ "name": m.name, "primitives": prims });
+        if !target_attrs.is_empty() {
+            mesh_json["weights"] = json!(vec![0.0f32; target_attrs.len()]);
+            // The convention Unity/glTFast (and Blender) read blendshape
+            // names from.
+            mesh_json["extras"] = json!({ "targetNames": target_names });
+        }
+        gltf_meshes.push(mesh_json);
     }
 
     // --- Instances -> nodes. ---
     let mut nodes: Vec<Value> = Vec::new();
     let mut children: Vec<usize> = Vec::new();
+    // (node index, caller mesh index) pairs, for the weights channels below.
+    let mut inst_nodes: Vec<(usize, usize)> = Vec::new();
     for inst in instances {
         let Some(&gm) = gltf_mesh_of.get(&inst.mesh) else {
             continue;
@@ -360,6 +430,7 @@ pub fn build_scene_glb(
             node["scale"] = json!([inst.scale, inst.scale, inst.scale]);
         }
         children.push(nodes.len());
+        inst_nodes.push((nodes.len(), inst.mesh));
         nodes.push(node);
     }
     if children.is_empty() {
@@ -391,7 +462,41 @@ pub fn build_scene_glb(
         }));
     }
 
-    let root_json = json!({
+    // --- Morph-weight animation (one channel per node of a tracked mesh). ---
+    let mut animations: Vec<Value> = Vec::new();
+    if let Some(a) = anim
+        && !a.times.is_empty()
+    {
+        let mut samplers: Vec<Value> = Vec::new();
+        let mut channels: Vec<Value> = Vec::new();
+        let time_acc = b.push_scalar_f32(&a.times);
+        for (&mesh_idx, weights) in &a.tracks {
+            let targets = meshes.get(mesh_idx).map_or(0, |m| m.morph_targets.len());
+            if targets == 0 || weights.len() != a.times.len() * targets {
+                continue;
+            }
+            let out_acc = b.push_scalar_f32(weights);
+            let sampler = samplers.len();
+            samplers.push(json!({
+                "input": time_acc, "output": out_acc, "interpolation": "LINEAR"
+            }));
+            for &(node, mi) in &inst_nodes {
+                if mi == mesh_idx {
+                    channels.push(json!({
+                        "sampler": sampler,
+                        "target": { "node": node, "path": "weights" }
+                    }));
+                }
+            }
+        }
+        if !channels.is_empty() {
+            animations.push(json!({
+                "name": a.name, "samplers": samplers, "channels": channels
+            }));
+        }
+    }
+
+    let mut root_json = json!({
         "asset": { "version": "2.0", "generator": "legend-of-legaia-re scene exporter" },
         "extensionsUsed": [gltf_color::UNLIT_EXTENSION],
         "scene": 0,
@@ -407,6 +512,9 @@ pub fn build_scene_glb(
         "bufferViews": b.buffer_views,
         "buffers": [{ "byteLength": b.bin.len() }]
     });
+    if !animations.is_empty() {
+        root_json["animations"] = json!(animations);
+    }
     Some(pack_glb(&root_json, &b.bin))
 }
 
@@ -422,7 +530,69 @@ mod tests {
             cba_tsb: vec![cba, tsb, cba, tsb, cba, tsb],
             indices: vec![0, 1, 2],
             flat_rgba: Vec::new(),
+            morph_targets: Vec::new(),
         }
+    }
+
+    /// Morph targets export as glTF `targets` (Y-flipped like the base
+    /// positions, named through `extras.targetNames`), and a weights
+    /// animation lands one channel per instance node of the tracked mesh.
+    #[test]
+    fn morph_targets_and_weights_animation_export() {
+        let vram = Vram::new();
+        let mut m = quad_mesh(0x1234, 0x0005);
+        m.morph_targets = vec![SceneMorphTarget {
+            name: "vdf_lane_0".into(),
+            // Move vertex 1 down by 32 in PSX space (+Y down).
+            deltas: vec![0.0, 0.0, 0.0, 0.0, 32.0, 0.0, 0.0, 0.0, 0.0],
+        }];
+        let instances = [
+            SceneInstance {
+                mesh: 0,
+                translation: [0.0; 3],
+                rot_y: 0.0,
+                scale: 1.0,
+            },
+            SceneInstance {
+                mesh: 0,
+                translation: [128.0, 0.0, 0.0],
+                rot_y: 0.0,
+                scale: 1.0,
+            },
+        ];
+        let anim = SceneWeightsAnim {
+            name: "vdf_pulse".into(),
+            times: vec![0.0, 0.5, 1.0],
+            tracks: BTreeMap::from([(0usize, vec![0.0, 1.0, 0.0])]),
+        };
+        let glb = build_scene_glb_animated("morph", &[m], &instances, &vram, Some(&anim)).unwrap();
+        let (root, bin) = crate::gltf_color::glb_probe::split(&glb).expect("glb container");
+        let mesh = &root["meshes"][0];
+        let targets = mesh["primitives"][0]["targets"].as_array().unwrap();
+        assert_eq!(targets.len(), 1);
+        assert_eq!(mesh["extras"]["targetNames"][0], "vdf_lane_0");
+        assert_eq!(mesh["weights"][0], 0.0);
+        // The delta stream gets the same Y flip as the base positions.
+        let acc = targets[0]["POSITION"].as_u64().unwrap() as usize;
+        let d = crate::gltf_color::glb_probe::floats(&root, bin, acc).expect("deltas");
+        assert_eq!(d[1][1], -32.0, "PSX +Y-down delta flips to -Y");
+        // One weights channel per instance node, sharing one sampler.
+        let anims = root["animations"].as_array().unwrap();
+        assert_eq!(anims.len(), 1);
+        assert_eq!(anims[0]["name"], "vdf_pulse");
+        let channels = anims[0]["channels"].as_array().unwrap();
+        assert_eq!(channels.len(), 2);
+        for c in channels {
+            assert_eq!(c["target"]["path"], "weights");
+            assert_eq!(c["sampler"], 0);
+        }
+
+        // The plain entry point stays animation- and target-free.
+        let glb =
+            build_scene_glb("plain", &[quad_mesh(0, 0x0005)], &instances[..1], &vram).unwrap();
+        let (root, _) = crate::gltf_color::glb_probe::split(&glb).expect("glb container");
+        assert!(root["animations"].is_null());
+        assert!(root["meshes"][0]["primitives"][0]["targets"].is_null());
     }
 
     #[test]
@@ -571,6 +741,7 @@ mod tests {
             ],
             indices: vec![0, 1, 2, 3, 4, 5],
             flat_rgba: Vec::new(),
+            morph_targets: Vec::new(),
         };
         let instances = [SceneInstance {
             mesh: 0,

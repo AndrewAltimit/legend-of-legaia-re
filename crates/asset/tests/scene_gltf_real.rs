@@ -136,6 +136,7 @@ fn drake_kingdom_bundle_bakes_a_wellformed_glb() {
             cba_tsb: m.cba_tsb.iter().flatten().copied().collect(),
             indices: m.indices.clone(),
             flat_rgba,
+            morph_targets: Vec::new(),
         });
         instances.push(SceneInstance {
             mesh: mi,

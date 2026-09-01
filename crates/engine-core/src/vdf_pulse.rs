@@ -143,6 +143,18 @@ impl EntryVdfPulse {
             .collect()
     }
 
+    /// The full envelope phase - lane weights plus the ramp-direction state -
+    /// as a comparable value. Two equal fingerprints mean the pulse is at the
+    /// same point of its cycle, which is how a sampler (the glb export's
+    /// morph-weight bake) finds the exact loop period.
+    pub fn phase_fingerprint(&self) -> (Vec<u16>, u32, u16) {
+        (
+            self.env.lanes[..self.env.bone_count as usize].to_vec(),
+            self.env.done_mask,
+            self.env.env_flags,
+        )
+    }
+
     /// Every `(pack_slot, group)` any lane targets.
     pub fn all_targets(&self) -> Vec<(usize, u32)> {
         let mut out = Vec::new();

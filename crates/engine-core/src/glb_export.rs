@@ -33,12 +33,12 @@ use crate::scene_assembly::{
 };
 use legaia_asset::character_gltf::{CharacterClip, build_character_glb_hybrid};
 use legaia_asset::player_anm::PlayerAnmBundle;
-use legaia_asset::scene_gltf::{SceneInstance, SceneMesh, build_scene_glb};
+use legaia_asset::scene_gltf::{SceneInstance, SceneMesh};
 use serde_json::{Value, json};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 /// Placement transforms of one animated prop: `(translation, rot_y radians)`
-/// per placed instance, already in the export frame.
+/// per placed instance, translation already in the export frame.
 type PropInstances = Vec<([f32; 3], f32)>;
 
 /// Field/duel clip playback rate baked into exported animation timelines -
@@ -82,6 +82,12 @@ pub struct WorldGlb {
     pub spawn: [f32; 3],
     /// Ground heightfield quad count (0 = scene had no walk floor grid).
     pub ground_quads: usize,
+    /// Meshes that carry baked VDF morph targets (the ambient vertex-morph
+    /// bake - Rim Elm's shoreline). `0` = the scene has no armed pulse.
+    pub morph_mesh_count: usize,
+    /// Loop length of the baked `vdf_pulse` weights animation, in seconds
+    /// (`0.0` when no animation was baked).
+    pub morph_loop_seconds: f32,
 }
 
 /// Frame-`frame` bone offsets of scene ANM record `anim_id - 1`, under
@@ -119,6 +125,7 @@ fn frame_bone_offsets(
 /// placement-transform conventions baked in. `Err` only on structural
 /// failure; a scene with no drawable geometry returns an empty `glb`.
 pub fn export_world_glb(
+    index: &ProtIndex,
     scene: &Scene,
     a: &AssembledScene,
     opts: &GlbExportOptions,
@@ -154,6 +161,7 @@ pub fn export_world_glb(
             cba_tsb,
             indices: hf.indices.clone(),
             flat_rgba: Vec::new(),
+            morph_targets: Vec::new(),
         });
         instances.push(SceneInstance {
             mesh: 0,
@@ -214,6 +222,7 @@ pub fn export_world_glb(
                     cba_tsb,
                     indices: mesh.indices.clone(),
                     flat_rgba: flat,
+                    morph_targets: Vec::new(),
                 });
                 Some(meshes.len() - 1)
             });
@@ -253,7 +262,30 @@ pub fn export_world_glb(
         median(2, &spawn_src),
     ];
 
-    let glb = build_scene_glb(&a.name, &meshes, &instances, &a.res.vram).unwrap_or_default();
+    // --- Ambient VDF morph bake (Rim Elm's shoreline going in and out). ---
+    // Recreate the engine's scene-entry pulse (`crate::vdf_pulse` - the same
+    // arming the play hosts run, with its self-guard for retail-armed
+    // scenes), turn each lane's full-weight deltas into a glTF morph target
+    // on the affected world meshes, and sample the envelope for exactly one
+    // loop period as a `weights` animation.
+    let weights_anim = bake_vdf_pulse_anim(index, scene, a, &handles, &mut meshes);
+    let morph_mesh_count = meshes
+        .iter()
+        .filter(|m| !m.morph_targets.is_empty())
+        .count();
+    let morph_loop_seconds = weights_anim
+        .as_ref()
+        .and_then(|w| w.times.last().copied())
+        .unwrap_or(0.0);
+
+    let glb = legaia_asset::scene_gltf::build_scene_glb_animated(
+        &a.name,
+        &meshes,
+        &instances,
+        &a.res.vram,
+        weights_anim.as_ref(),
+    )
+    .unwrap_or_default();
     Ok(WorldGlb {
         glb,
         mesh_count: meshes.len(),
@@ -261,6 +293,183 @@ pub fn export_world_glb(
         sky_hidden,
         spawn,
         ground_quads,
+        morph_mesh_count,
+        morph_loop_seconds,
+    })
+}
+
+/// The ambient game-tick rate the pulse envelope advances at (the retail
+/// 30 Hz field tick) - the time base of the baked weights animation.
+const PULSE_TICK_HZ: f32 = 30.0;
+
+/// Recreate the scene-entry VDF pulse and bake it: morph targets onto the
+/// world meshes of every targeted env slot (one target per envelope lane, the
+/// lane's deltas applied at full weight), plus the sampled lane weights over
+/// exactly one envelope period. `None` when the scene arms no pulse (no VDF
+/// pack, retail owns the morphs, or nothing fits).
+fn bake_vdf_pulse_anim(
+    index: &ProtIndex,
+    scene: &Scene,
+    a: &AssembledScene,
+    handles: &HashMap<(usize, u8), Option<usize>>,
+    meshes: &mut [SceneMesh],
+) -> Option<legaia_asset::scene_gltf::SceneWeightsAnim> {
+    use legaia_asset::scene_gltf::{SceneMorphTarget, SceneWeightsAnim};
+
+    // The same setup `SceneHost::enter_field_scene` runs before arming.
+    let mut w = crate::world::World {
+        frame_step: 2,
+        ..Default::default()
+    };
+    if let Some(scripts) = scene.find_event_scripts() {
+        w.install_field_stagers(scripts.bytes);
+    }
+    w.set_vdf_buffer(crate::scene_bundle::find_vdf_buffer(scene));
+    if let Ok(Some(man)) = scene.field_man_payload(index)
+        && let Ok(mf) = legaia_asset::man_section::parse(&man)
+    {
+        for arg in crate::man_field_scripts::scene_entry_ambient_installs(&mf, &man) {
+            w.spawn_ambient_record(arg as usize + 1, [0, 0, 0]);
+        }
+    }
+    let pack_objects: Vec<Vec<usize>> = a
+        .env_tmds
+        .iter()
+        .map(|&ti| {
+            a.res.tmds[ti]
+                .tmd
+                .objects
+                .iter()
+                .map(|o| o.vertices.len())
+                .collect()
+        })
+        .collect();
+    if !w.install_entry_vdf_pulse(&pack_objects) {
+        return None;
+    }
+
+    // Per targeted env slot: the lanes that touch it (each lane = one morph
+    // target) and the groups each lane moves.
+    let all_targets = w.entry_vdf_pulse.as_ref()?.all_targets();
+    let mut slot_lanes: BTreeMap<usize, Vec<u8>> = BTreeMap::new();
+    let mut lane_groups: BTreeMap<(usize, u8), Vec<u32>> = BTreeMap::new();
+    for &(slot, group) in &all_targets {
+        for (lane, _) in w.entry_vdf_pulse.as_ref()?.lanes_for(slot, group) {
+            let lanes = slot_lanes.entry(slot).or_default();
+            if !lanes.contains(&lane) {
+                lanes.push(lane);
+            }
+            let groups = lane_groups.entry((slot, lane)).or_default();
+            if !groups.contains(&group) {
+                groups.push(group);
+            }
+        }
+    }
+    for lanes in slot_lanes.values_mut() {
+        lanes.sort_unstable();
+    }
+
+    // Build the morph targets: rebuild each slot's mesh with one lane's
+    // deltas at full weight and diff the position stream (the rebuild keeps
+    // vertex order - `with_group_deltas` only moves positions).
+    let mut tracked_meshes: Vec<(usize, Vec<u8>)> = Vec::new();
+    for (&slot, lanes) in &slot_lanes {
+        // Only the static (anim 0) world mesh morphs; a slot that never
+        // reached the world glb (unplaced twin, sky) has no mesh to morph.
+        let Some(&Some(mi)) = handles.get(&(slot, 0)) else {
+            continue;
+        };
+        if mi == usize::MAX {
+            continue;
+        }
+        let Some(&res_tmd) = a.env_tmds.get(slot) else {
+            continue;
+        };
+        let rtmd = &a.res.tmds[res_tmd];
+        let mut targets: Vec<SceneMorphTarget> = Vec::new();
+        for &lane in lanes {
+            let mut morphed = rtmd.clone();
+            for &group in lane_groups.get(&(slot, lane)).into_iter().flatten() {
+                let n_verts = morphed
+                    .tmd
+                    .objects
+                    .get(group as usize)
+                    .map_or(0, |o| o.vertices.len());
+                let deltas = w.morph_deltas_for(&[(lane, 0x1000)], group, n_verts);
+                morphed = morphed.with_group_deltas(group, &deltas);
+            }
+            let (mesh, _) = build_hybrid_env_mesh(&morphed, &a.res.vram);
+            let base = &meshes[mi].positions;
+            if mesh.positions.len() * 3 != base.len() {
+                continue; // rebuild changed shape - refuse a desynced target
+            }
+            let mut deltas_flat = Vec::with_capacity(base.len());
+            for (vi, p) in mesh.positions.iter().enumerate() {
+                deltas_flat.push(p[0] - base[vi * 3]);
+                deltas_flat.push(p[1] - base[vi * 3 + 1]);
+                deltas_flat.push(p[2] - base[vi * 3 + 2]);
+            }
+            targets.push(SceneMorphTarget {
+                name: format!("vdf_lane_{lane}"),
+                deltas: deltas_flat,
+            });
+        }
+        if !targets.is_empty() {
+            meshes[mi].morph_targets = targets;
+            tracked_meshes.push((mi, lanes.clone()));
+        }
+    }
+    if tracked_meshes.is_empty() {
+        return None;
+    }
+
+    // Sample the envelope for one full period (fingerprint recurrence),
+    // closing the loop with a final key equal to the first.
+    const MAX_TICKS: usize = 3600;
+    let sample_lanes = |w: &crate::world::World, lanes: &[u8]| -> Vec<f32> {
+        let (weights, _, _) = w
+            .entry_vdf_pulse
+            .as_ref()
+            .map(|p| p.phase_fingerprint())
+            .unwrap_or_default();
+        lanes
+            .iter()
+            .map(|&l| {
+                weights
+                    .get(l as usize)
+                    .map_or(0.0, |&v| f32::from(v.min(0x1000)) / 4096.0)
+            })
+            .collect()
+    };
+    let start = w.entry_vdf_pulse.as_ref()?.phase_fingerprint();
+    let mut times: Vec<f32> = Vec::new();
+    let mut tracks: BTreeMap<usize, Vec<f32>> = BTreeMap::new();
+    for tick in 0..=MAX_TICKS {
+        times.push(tick as f32 / PULSE_TICK_HZ);
+        for (mi, lanes) in &tracked_meshes {
+            tracks
+                .entry(*mi)
+                .or_default()
+                .extend(sample_lanes(&w, lanes));
+        }
+        w.tick_ambient_fx();
+        if w.entry_vdf_pulse.as_ref()?.phase_fingerprint() == start {
+            // The state has returned to key 0's - one more key with those
+            // weights closes the loop seamlessly under LINEAR interpolation.
+            times.push((tick + 1) as f32 / PULSE_TICK_HZ);
+            for (mi, lanes) in &tracked_meshes {
+                tracks
+                    .entry(*mi)
+                    .or_default()
+                    .extend(sample_lanes(&w, lanes));
+            }
+            break;
+        }
+    }
+    Some(SceneWeightsAnim {
+        name: "vdf_pulse".to_string(),
+        times,
+        tracks,
     })
 }
 
@@ -289,11 +498,65 @@ fn slug(s: &str) -> String {
     out.trim_matches('-').to_string()
 }
 
+/// Bake the export scale onto a character/prop glb's scene-root nodes so
+/// the file opens **world-sized** in any glTF consumer - dragging a prop
+/// into a Unity scene next to the built world then just fits, instead of
+/// coming in 64x giant in raw PSX units. Root-level only: the per-object
+/// nodes and their animated translations sit under the root, so the whole
+/// subtree scales as one. Returns the input unchanged if the container
+/// does not parse (never expected for our own baker's output).
+fn scale_glb_scene_roots(glb: Vec<u8>, scale: f32) -> Vec<u8> {
+    let patched = (|| -> Option<Vec<u8>> {
+        if glb.len() < 20 || &glb[0..4] != b"glTF" {
+            return None;
+        }
+        let jlen = u32::from_le_bytes(glb[12..16].try_into().ok()?) as usize;
+        let mut json: Value = serde_json::from_slice(glb.get(20..20 + jlen)?).ok()?;
+        let rest = glb.get(20 + jlen..)?.to_vec(); // BIN chunk, verbatim
+        let roots: Vec<usize> = json["scenes"][0]["nodes"]
+            .as_array()?
+            .iter()
+            .filter_map(|v| v.as_u64().map(|u| u as usize))
+            .collect();
+        for r in roots {
+            let node = json["nodes"].get_mut(r)?;
+            let mut sc = [f64::from(scale); 3];
+            if let Some(e) = node.get("scale").and_then(|v| v.as_array()).cloned() {
+                for (k, s) in sc.iter_mut().enumerate() {
+                    *s *= e.get(k).and_then(|v| v.as_f64()).unwrap_or(1.0);
+                }
+            }
+            node["scale"] = json!(sc);
+        }
+        let mut jbytes = serde_json::to_vec(&json).ok()?;
+        while jbytes.len() % 4 != 0 {
+            jbytes.push(b' ');
+        }
+        let total = 12 + 8 + jbytes.len() + rest.len();
+        let mut out = Vec::with_capacity(total);
+        out.extend_from_slice(b"glTF");
+        out.extend_from_slice(&2u32.to_le_bytes());
+        out.extend_from_slice(&(total as u32).to_le_bytes());
+        out.extend_from_slice(&(jbytes.len() as u32).to_le_bytes());
+        out.extend_from_slice(b"JSON");
+        out.extend_from_slice(&jbytes);
+        out.extend_from_slice(&rest);
+        Some(out)
+    })();
+    patched.unwrap_or(glb)
+}
+
 /// Bake every catalogued (non-special) NPC into an animated `.glb`: the scene
 /// TMD in the scene's field VRAM, its spawn clip first plus every other
 /// bone-count-matching clip in the scene ANM bundle as extra takes. Entries
-/// whose mesh produces no triangles are skipped.
-pub fn export_npc_glbs(scene: &Scene, a: &AssembledScene, catalog: &NpcCatalog) -> Vec<NpcGlb> {
+/// whose mesh produces no triangles are skipped. Files carry the export
+/// scale on their root node ([`scale_glb_scene_roots`]).
+pub fn export_npc_glbs(
+    scene: &Scene,
+    a: &AssembledScene,
+    catalog: &NpcCatalog,
+    opts: &GlbExportOptions,
+) -> Vec<NpcGlb> {
     let bundle = scene_anm_bundle(scene);
     let mut out = Vec::new();
     for (i, e) in catalog.entries.iter().enumerate() {
@@ -366,7 +629,7 @@ pub fn export_npc_glbs(scene: &Scene, a: &AssembledScene, catalog: &NpcCatalog) 
         out.push(NpcGlb {
             entry_index: i,
             file_stem: stem,
-            glb,
+            glb: scale_glb_scene_roots(glb, opts.scale),
             clips: anims.into_iter().map(|(n, _)| n).collect(),
         });
     }
@@ -466,7 +729,7 @@ pub fn export_animated_prop_glbs(
             env_slot,
             anim_id,
             file_stem: stem,
-            glb,
+            glb: scale_glb_scene_roots(glb, opts.scale),
             frame_count: rec.frame_count,
             instances: by_key.remove(&key).unwrap_or_default(),
         });
@@ -519,6 +782,779 @@ impl FloorSampler {
     pub fn height(&self, world_x: i32, world_z: i32) -> i32 {
         self.world.sample_field_floor_height(world_x, world_z)
     }
+
+    /// Retail "the player may stand here": on the authored walk-visible
+    /// floor and clear of the collision-grid wall bits - the same pair of
+    /// gates the engine's spawn validation composes. Distinguishes street
+    /// from the unwalkable inside of an exterior house shell, which pure
+    /// mesh analysis cannot.
+    pub fn standable(&self, world_x: i16, world_z: i16) -> bool {
+        self.world.field_tile_is_walk_visible(world_x, world_z)
+            && !self.world.field_tile_is_wall(world_x, world_z)
+    }
+}
+
+/// Traversal data of one scene, ready for the manifest: the intra-scene
+/// teleports a walk-in world needs to make doorways *work*, plus the
+/// scene-change portal sites a multi-scene build can wire up.
+#[derive(Default)]
+pub struct TraversalExport {
+    /// Intra-scene teleports (both retail families - see
+    /// [`export_scene_traversal`]), as manifest-ready JSON entries.
+    pub teleports: Vec<Value>,
+    /// Gate-1 walk-on portal sites whose record runs a `0x3F` named scene
+    /// change (a town exit / overworld entrance) - useful when several
+    /// exported scenes share one world.
+    pub portals: Vec<Value>,
+}
+
+/// The facing direction of engine heading `h` (12-bit, `0` faces +Z) as a
+/// unit XZ vector - unchanged by the export frame's Y re-sign
+/// ([`draw_translation`] touches only Y), so it is valid in both.
+fn heading_dir_xz(h: i16) -> [f32; 2] {
+    let th = (h as f32) / 4096.0 * std::f32::consts::TAU;
+    [th.sin(), th.cos()]
+}
+
+// --- Trigger reach analysis: capsule vs the scene's own baked mesh. ---
+//
+// Retail dispatches doorway teleports on a height-blind 2D check for a
+// POINT player, and retail's collision is the walkability grid - but a
+// glTF consumer collides a fat capsule against the rendered mesh. Rim Elm
+// alone has a door whose retail-walkable approach channel is narrower
+// than a capsule (Vahn's), one on an unclimbable porch, and one whose
+// contact samples a floor layer the approach never walks. So after the
+// world glb is baked, each trigger box is checked against the exact
+// triangles that ship: a standing-capsule grid is built over the
+// retail-standable cells around the contact, flood-filled from an outer
+// ring (standability prunes the inside of exterior house shells, which
+// pure mesh analysis mistakes for open rooms), and a box no reachable
+// cell can touch is extended toward the nearest spot a player can
+// actually occupy.
+
+/// Player-capsule model for trigger reach analysis (export-frame meters
+/// at the default 1/64 scale; all scale-relative).
+const REACH_RADIUS: f32 = 0.30;
+const REACH_GRID_STEP: f32 = 0.15;
+const REACH_HALF_GRID: f32 = 4.5;
+const REACH_SEED_RING: f32 = 3.5;
+const REACH_STEP_UP: f32 = 0.35;
+const REACH_TORSO_LO: f32 = 0.55;
+const REACH_TORSO_HI: f32 = 1.40;
+
+/// World-space triangle soup parsed back out of the scene's own baked glb
+/// bytes - the exact geometry a Unity / glTF consumer builds colliders
+/// from, so the analysis and the shipped world cannot drift apart.
+pub struct GlbTriangles {
+    tris: Vec<[[f32; 3]; 3]>,
+}
+
+impl GlbTriangles {
+    pub fn from_glb(bytes: &[u8]) -> Option<Self> {
+        if bytes.len() < 20 || &bytes[0..4] != b"glTF" {
+            return None;
+        }
+        let jlen = u32::from_le_bytes(bytes[12..16].try_into().ok()?) as usize;
+        let json: Value = serde_json::from_slice(bytes.get(20..20 + jlen)?).ok()?;
+        let boff = 20 + jlen;
+        let blen = u32::from_le_bytes(bytes.get(boff..boff + 4)?.try_into().ok()?) as usize;
+        let bin = bytes.get(boff + 8..boff + 8 + blen)?;
+
+        let accessor = |ai: usize| -> Option<(&Value, usize)> {
+            let a = json["accessors"].get(ai)?;
+            let bv = json["bufferViews"].get(a["bufferView"].as_u64()? as usize)?;
+            let off = bv["byteOffset"].as_u64().unwrap_or(0) as usize
+                + a["byteOffset"].as_u64().unwrap_or(0) as usize;
+            Some((a, off))
+        };
+        let read_vec3 = |ai: usize| -> Option<Vec<[f32; 3]>> {
+            let (a, off) = accessor(ai)?;
+            let count = a["count"].as_u64()? as usize;
+            let mut out = Vec::with_capacity(count);
+            for i in 0..count {
+                let p = off + i * 12;
+                let b = bin.get(p..p + 12)?;
+                out.push([
+                    f32::from_le_bytes(b[0..4].try_into().ok()?),
+                    f32::from_le_bytes(b[4..8].try_into().ok()?),
+                    f32::from_le_bytes(b[8..12].try_into().ok()?),
+                ]);
+            }
+            Some(out)
+        };
+        let read_indices = |ai: usize| -> Option<Vec<u32>> {
+            let (a, off) = accessor(ai)?;
+            let count = a["count"].as_u64()? as usize;
+            let ct = a["componentType"].as_u64()?;
+            let mut out = Vec::with_capacity(count);
+            for i in 0..count {
+                out.push(match ct {
+                    5123 => u32::from(u16::from_le_bytes(
+                        bin.get(off + i * 2..off + i * 2 + 2)?.try_into().ok()?,
+                    )),
+                    5125 => {
+                        u32::from_le_bytes(bin.get(off + i * 4..off + i * 4 + 4)?.try_into().ok()?)
+                    }
+                    _ => return None,
+                });
+            }
+            Some(out)
+        };
+
+        let mut tris = Vec::new();
+        for node in json["nodes"].as_array()?.iter() {
+            let Some(mi) = node["mesh"].as_u64() else {
+                continue;
+            };
+            let g3 = |v: &Value, d: f32| -> [f32; 3] {
+                match v.as_array() {
+                    Some(a) => [
+                        a[0].as_f64().unwrap_or(d as f64) as f32,
+                        a[1].as_f64().unwrap_or(d as f64) as f32,
+                        a[2].as_f64().unwrap_or(d as f64) as f32,
+                    ],
+                    None => [d, d, d],
+                }
+            };
+            let t = g3(&node["translation"], 0.0);
+            let sc = g3(&node["scale"], 1.0);
+            // rotation quaternion -> matrix
+            let m = match node["rotation"].as_array() {
+                Some(q) => {
+                    let (x, y, z, w) = (
+                        q[0].as_f64().unwrap_or(0.0) as f32,
+                        q[1].as_f64().unwrap_or(0.0) as f32,
+                        q[2].as_f64().unwrap_or(0.0) as f32,
+                        q[3].as_f64().unwrap_or(1.0) as f32,
+                    );
+                    [
+                        [
+                            1.0 - 2.0 * (y * y + z * z),
+                            2.0 * (x * y - z * w),
+                            2.0 * (x * z + y * w),
+                        ],
+                        [
+                            2.0 * (x * y + z * w),
+                            1.0 - 2.0 * (x * x + z * z),
+                            2.0 * (y * z - x * w),
+                        ],
+                        [
+                            2.0 * (x * z - y * w),
+                            2.0 * (y * z + x * w),
+                            1.0 - 2.0 * (x * x + y * y),
+                        ],
+                    ]
+                }
+                None => [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+            };
+            let mesh = json["meshes"].get(mi as usize)?;
+            for prim in mesh["primitives"].as_array()?.iter() {
+                let Some(pi) = prim["attributes"]["POSITION"].as_u64() else {
+                    continue;
+                };
+                let Some(ii) = prim["indices"].as_u64() else {
+                    continue;
+                };
+                let (Some(pos), Some(idx)) = (read_vec3(pi as usize), read_indices(ii as usize))
+                else {
+                    continue;
+                };
+                let world: Vec<[f32; 3]> = pos
+                    .iter()
+                    .map(|p| {
+                        let (px, py, pz) = (p[0] * sc[0], p[1] * sc[1], p[2] * sc[2]);
+                        [
+                            m[0][0] * px + m[0][1] * py + m[0][2] * pz + t[0],
+                            m[1][0] * px + m[1][1] * py + m[1][2] * pz + t[1],
+                            m[2][0] * px + m[2][1] * py + m[2][2] * pz + t[2],
+                        ]
+                    })
+                    .collect();
+                for tri in idx.chunks(3) {
+                    if tri.len() == 3 {
+                        tris.push([
+                            world[tri[0] as usize],
+                            world[tri[1] as usize],
+                            world[tri[2] as usize],
+                        ]);
+                    }
+                }
+            }
+        }
+        Some(Self { tris })
+    }
+}
+
+fn closest_pt_on_tri(p: [f32; 3], a: [f32; 3], b: [f32; 3], c: [f32; 3]) -> [f32; 3] {
+    let sub = |u: [f32; 3], v: [f32; 3]| [u[0] - v[0], u[1] - v[1], u[2] - v[2]];
+    let dot = |u: [f32; 3], v: [f32; 3]| u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
+    let (ab, ac, ap) = (sub(b, a), sub(c, a), sub(p, a));
+    let (d1, d2) = (dot(ab, ap), dot(ac, ap));
+    if d1 <= 0.0 && d2 <= 0.0 {
+        return a;
+    }
+    let bp = sub(p, b);
+    let (d3, d4) = (dot(ab, bp), dot(ac, bp));
+    if d3 >= 0.0 && d4 <= d3 {
+        return b;
+    }
+    let vc = d1 * d4 - d3 * d2;
+    if vc <= 0.0 && d1 >= 0.0 && d3 <= 0.0 {
+        let v = d1 / (d1 - d3);
+        return [a[0] + ab[0] * v, a[1] + ab[1] * v, a[2] + ab[2] * v];
+    }
+    let cp = sub(p, c);
+    let (d5, d6) = (dot(ab, cp), dot(ac, cp));
+    if d6 >= 0.0 && d5 <= d6 {
+        return c;
+    }
+    let vb = d5 * d2 - d1 * d6;
+    if vb <= 0.0 && d2 >= 0.0 && d6 <= 0.0 {
+        let w = d2 / (d2 - d6);
+        return [a[0] + ac[0] * w, a[1] + ac[1] * w, a[2] + ac[2] * w];
+    }
+    let va = d3 * d6 - d5 * d4;
+    if va <= 0.0 && (d4 - d3) >= 0.0 && (d5 - d6) >= 0.0 {
+        let w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
+        return [
+            b[0] + (c[0] - b[0]) * w,
+            b[1] + (c[1] - b[1]) * w,
+            b[2] + (c[2] - b[2]) * w,
+        ];
+    }
+    let den = 1.0 / (va + vb + vc);
+    let (v, w) = (vb * den, vc * den);
+    [
+        a[0] + ab[0] * v + ac[0] * w,
+        a[1] + ab[1] * v + ac[1] * w,
+        a[2] + ab[2] * v + ac[2] * w,
+    ]
+}
+
+/// Extend one trigger box (bottom-center `pos` + `half`) so a player
+/// capsule standing on the shipped mesh can touch it. The analysis is
+/// confined to the door's own floor level (`door_y` +- a step-and-a-half):
+/// without the band, rooftops and overpasses read as standable ground and
+/// a flood across them "reaches" the box from a level the door does not
+/// serve. Unchanged when a reachable standing cell already meets the box
+/// (the common case), when the glb is absent, or when nothing on the
+/// door's level is reachable (the cross-layer cases the vertical envelope
+/// already covers).
+fn reach_extend_box(
+    soup: &GlbTriangles,
+    floor: &FloorSampler,
+    scale: f32,
+    door_y: f32,
+    pos: &mut [f32; 3],
+    half: &mut [f32; 3],
+) {
+    const LEVEL_BAND: f32 = 1.75;
+    let (cx, cz) = (pos[0], pos[2]);
+    let ceil_y = door_y + 2.0;
+    // Local triangles, bucketed on a coarse XZ hash for the fit test.
+    let lim = REACH_HALF_GRID + 1.0;
+    let local: Vec<&[[f32; 3]; 3]> = soup
+        .tris
+        .iter()
+        .filter(|t| {
+            t.iter().any(|v| {
+                (v[0] - cx).abs() < lim + 2.0
+                    && (v[2] - cz).abs() < lim + 2.0
+                    && v[1] < ceil_y + 4.0
+                    && v[1] > pos[1] - 8.0
+            })
+        })
+        .collect();
+    const BUCKET: f32 = 0.75;
+    let nb = (2.0 * (REACH_HALF_GRID + 1.0) / BUCKET).ceil() as i32 + 1;
+    let bucket_of = |x: f32, z: f32| -> Option<usize> {
+        let bi = ((x - (cx - lim)) / BUCKET) as i32;
+        let bj = ((z - (cz - lim)) / BUCKET) as i32;
+        if bi < 0 || bj < 0 || bi >= nb || bj >= nb {
+            return None;
+        }
+        Some((bj * nb + bi) as usize)
+    };
+    let mut buckets: Vec<Vec<usize>> = vec![Vec::new(); (nb * nb) as usize];
+    for (ti, t) in local.iter().enumerate() {
+        let (mut x0, mut x1) = (f32::MAX, f32::MIN);
+        let (mut z0, mut z1) = (f32::MAX, f32::MIN);
+        for v in t.iter() {
+            x0 = x0.min(v[0]);
+            x1 = x1.max(v[0]);
+            z0 = z0.min(v[2]);
+            z1 = z1.max(v[2]);
+        }
+        let mut x = x0 - BUCKET;
+        while x <= x1 + BUCKET {
+            let mut z = z0 - BUCKET;
+            while z <= z1 + BUCKET {
+                if let Some(b) = bucket_of(x, z)
+                    && buckets[b].last() != Some(&ti)
+                {
+                    buckets[b].push(ti);
+                }
+                z += BUCKET;
+            }
+            x += BUCKET;
+        }
+    }
+
+    let n = (2.0 * REACH_HALF_GRID / REACH_GRID_STEP) as i32 + 1;
+    let cell_xz = |i: i32, j: i32| -> (f32, f32) {
+        (
+            cx - REACH_HALF_GRID + i as f32 * REACH_GRID_STEP,
+            cz - REACH_HALF_GRID + j as f32 * REACH_GRID_STEP,
+        )
+    };
+    // Ground per cell: the highest surface at/below the ceiling.
+    let ground_at = |x: f32, z: f32| -> Option<f32> {
+        let b = bucket_of(x, z)?;
+        let mut best: Option<f32> = None;
+        for &ti in &buckets[b] {
+            let t = local[ti];
+            let (x1, z1, x2, z2, x3, z3) = (t[0][0], t[0][2], t[1][0], t[1][2], t[2][0], t[2][2]);
+            let den = (z2 - z3) * (x1 - x3) + (x3 - x2) * (z1 - z3);
+            if den.abs() < 1e-12 {
+                continue;
+            }
+            let l1 = ((z2 - z3) * (x - x3) + (x3 - x2) * (z - z3)) / den;
+            let l2 = ((z3 - z1) * (x - x3) + (x1 - x3) * (z - z3)) / den;
+            let l3 = 1.0 - l1 - l2;
+            if l1 < -0.001 || l2 < -0.001 || l3 < -0.001 {
+                continue;
+            }
+            let y = l1 * t[0][1] + l2 * t[1][1] + l3 * t[2][1];
+            if y <= ceil_y && best.is_none_or(|b| y > b) {
+                best = Some(y);
+            }
+        }
+        best
+    };
+    let capsule_fits = |x: f32, z: f32, g: f32| -> bool {
+        let Some(b) = bucket_of(x, z) else {
+            return false;
+        };
+        for &ti in &buckets[b] {
+            let t = local[ti];
+            for k in 0..4 {
+                let y = g + REACH_TORSO_LO + (REACH_TORSO_HI - REACH_TORSO_LO) * (k as f32) / 3.0;
+                let q = closest_pt_on_tri([x, y, z], t[0], t[1], t[2]);
+                let d2 =
+                    (q[0] - x) * (q[0] - x) + (q[1] - y) * (q[1] - y) + (q[2] - z) * (q[2] - z);
+                if d2 < REACH_RADIUS * REACH_RADIUS {
+                    return false;
+                }
+            }
+        }
+        true
+    };
+
+    // Standing domain: retail-standable + ground on the door's level +
+    // capsule fits.
+    let mut ground = vec![None::<f32>; (n * n) as usize];
+    let mut open = vec![false; (n * n) as usize];
+    for j in 0..n {
+        for i in 0..n {
+            let (x, z) = cell_xz(i, j);
+            let (px, pz) = (x / scale, z / scale);
+            if px < 0.0 || pz < 0.0 || px > i16::MAX as f32 || pz > i16::MAX as f32 {
+                continue;
+            }
+            if !floor.standable(px as i16, pz as i16) {
+                continue;
+            }
+            let Some(g) = ground_at(x, z) else { continue };
+            if (g - door_y).abs() > LEVEL_BAND {
+                continue;
+            }
+            ground[(j * n + i) as usize] = Some(g);
+            open[(j * n + i) as usize] = capsule_fits(x, z, g);
+        }
+    }
+    // Flood from the outer ring inward.
+    let mut reach = vec![false; (n * n) as usize];
+    let mut queue: Vec<(i32, i32)> = Vec::new();
+    for j in 0..n {
+        for i in 0..n {
+            let (x, z) = cell_xz(i, j);
+            let d = ((x - cx).powi(2) + (z - cz).powi(2)).sqrt();
+            if d >= REACH_SEED_RING && open[(j * n + i) as usize] {
+                reach[(j * n + i) as usize] = true;
+                queue.push((i, j));
+            }
+        }
+    }
+    while let Some((i, j)) = queue.pop() {
+        let g0 = ground[(j * n + i) as usize].unwrap_or(0.0);
+        for (di, dj) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+            let (ni, nj) = (i + di, j + dj);
+            if ni < 0 || nj < 0 || ni >= n || nj >= n {
+                continue;
+            }
+            let k = (nj * n + ni) as usize;
+            if reach[k] || !open[k] {
+                continue;
+            }
+            let Some(g1) = ground[k] else { continue };
+            if (g1 - g0).abs() > REACH_STEP_UP {
+                continue;
+            }
+            reach[k] = true;
+            queue.push((ni, nj));
+        }
+    }
+    // Does any reachable capsule already touch the box?
+    let (bx0, bx1) = (pos[0] - half[0], pos[0] + half[0]);
+    let (bz0, bz1) = (pos[2] - half[2], pos[2] + half[2]);
+    let mut nearest: Option<(f32, f32, f32, f32)> = None; // (dist, x, z, ground)
+    for j in 0..n {
+        for i in 0..n {
+            let k = (j * n + i) as usize;
+            if !reach[k] {
+                continue;
+            }
+            let (x, z) = cell_xz(i, j);
+            if x >= bx0 - REACH_RADIUS
+                && x <= bx1 + REACH_RADIUS
+                && z >= bz0 - REACH_RADIUS
+                && z <= bz1 + REACH_RADIUS
+            {
+                // Vertical check too: the capsule must overlap the span.
+                let g = ground[k].unwrap_or(0.0);
+                let (top, bottom) = (pos[1] + 2.0 * half[1], pos[1]);
+                if g + REACH_TORSO_HI > bottom && g + 0.1 < top {
+                    return; // reachable as-is - keep the tight box
+                }
+            }
+            let d = ((x - cx).powi(2) + (z - cz).powi(2)).sqrt();
+            if nearest.is_none_or(|(bd, ..)| d < bd) {
+                nearest = Some((d, x, z, ground[k].unwrap_or(0.0)));
+            }
+        }
+    }
+    let Some((_, rx, rz, rg)) = nearest else {
+        return; // nothing reachable anywhere - leave the retail box alone
+    };
+    // Extend the AABB to cover the nearest reachable standing spot.
+    let pad = REACH_RADIUS + 0.15;
+    let nx0 = bx0.min(rx - pad);
+    let nx1 = bx1.max(rx + pad);
+    let nz0 = bz0.min(rz - pad);
+    let nz1 = bz1.max(rz + pad);
+    let ny0 = pos[1].min(rg - 0.5);
+    let ny1 = (pos[1] + 2.0 * half[1]).max(rg + 2.2);
+    pos[0] = (nx0 + nx1) / 2.0;
+    pos[2] = (nz0 + nz1) / 2.0;
+    pos[1] = ny0;
+    half[0] = (nx1 - nx0) / 2.0;
+    half[2] = (nz1 - nz0) / 2.0;
+    half[1] = (ny1 - ny0) / 2.0;
+}
+
+/// Recover both retail doorway families of a scene as manifest entries (the
+/// same disc structures the play hosts dispatch - see
+/// `docs/subsystems/field-locomotion.md` § intra-scene doorways):
+///
+/// - **map doors** (`.MAP` kind-0 intra-scene-teleport table): a plain tile
+///   carries a destination; crossing onto it repositions the player. This is
+///   where most house *exits* live.
+/// - **script doors** (`.MAP` object gate-0 kind-1 binds): touching the
+///   object's contact box runs its MAN record, whose taken arm teleports the
+///   player channel. The arm is resolved here against the **cold-entry**
+///   story-flag state (all clear - the state a fresh walk-in world models);
+///   records whose cold arm spawns a cutscene instead of teleporting are
+///   skipped.
+///
+/// Positions are in the export frame (scaled, [`draw_translation`]-signed),
+/// with destination heights re-sampled off the floor model exactly as the
+/// engine re-seats an arrival. `facing_dir` is the arrival facing as a unit
+/// XZ direction (`null` = keep the walked-in facing).
+///
+/// **Trigger boxes are built for a physical player capsule, not retail's
+/// point-player.** Retail dispatches both families on a 2D distance check
+/// with no height test, so a literal transcription fails two ways a 3D
+/// engine's capsule exposes: a contact tile can sample a different floor
+/// *layer* than the approach ground walks on (Rim Elm's cave mouth: contact
+/// floor 4 m below the village ground crossing above it), and a recessed
+/// door's contact centre can sit deeper into an alcove than a capsule can
+/// follow (Vahn's door: the walkable channel is narrower than a player
+/// capsule; retail's point slides down it). Hence each trigger's vertical
+/// span is the min..max of the floor sampled on rings around the contact
+/// (padded a step down / a body height up), and script-door horizontal
+/// half-extents carry a capsule allowance over retail's `0x50`.
+pub fn export_scene_traversal(
+    index: &ProtIndex,
+    scene: &Scene,
+    floor: &FloorSampler,
+    opts: &GlbExportOptions,
+    world_glb: Option<&[u8]>,
+) -> TraversalExport {
+    let s = opts.scale;
+    // The baked world's own triangles: what a glTF consumer collides
+    // against, used to verify each trigger box is capsule-reachable.
+    let soup = world_glb.and_then(GlbTriangles::from_glb);
+    let reach_adjust = |pos: &mut [f32; 3], half: &mut [f32; 3], door_y: f32| {
+        if let Some(soup) = &soup {
+            reach_extend_box(soup, floor, s, door_y, pos, half);
+        }
+    };
+    let door_level = |wx: i16, wz: i16| -> f32 { -(floor.height(wx as i32, wz as i32) as f32) * s };
+    let pt = |x: f32, y: f32, z: f32| -> [f32; 3] {
+        let t = draw_translation([x, y, z]);
+        [t[0] * s, t[1] * s, t[2] * s]
+    };
+    let floor_pt = |wx: i16, wz: i16| -> [f32; 3] {
+        let y = floor.height(wx as i32, wz as i32);
+        pt(wx as f32, y as f32, wz as f32)
+    };
+    // Trigger vertical envelope: sample the floor at the contact and on
+    // 8-direction rings out to two tiles, and return `(position, half_y)`
+    // such that the box spans `lowest - 0x20 .. highest + 0x90` PSX units
+    // (half a step below, a body height above) - so the box overlaps the
+    // player wherever the *approach* ground actually is, exactly as
+    // retail's height-blind 2D check behaves. Retail frame: +Y is DOWN,
+    // so "lowest surface" is the numeric max.
+    let floor_box = |wx: i16, wz: i16| -> ([f32; 3], f32) {
+        let (cx, cz) = (wx as i32, wz as i32);
+        let mut lo = floor.height(cx, cz); // numeric min = highest surface
+        let mut hi = lo;
+        for r in [64, 128] {
+            for (dx, dz) in [
+                (0, -1),
+                (1, -1),
+                (1, 0),
+                (1, 1),
+                (0, 1),
+                (-1, 1),
+                (-1, 0),
+                (-1, -1),
+            ] {
+                let h = floor.height(cx + dx * r, cz + dz * r);
+                lo = lo.min(h);
+                hi = hi.max(h);
+            }
+        }
+        let bottom = hi + 0x20; // retail +Y down: below the lowest floor
+        let top = lo - 0x90; // above the highest floor
+        let half_y = (bottom - top) as f32 / 2.0 * s;
+        (pt(wx as f32, bottom as f32, wz as f32), half_y)
+    };
+    let mut out = TraversalExport::default();
+
+    // --- Collect both door families first: the boxes are sized in a
+    // second pass so every box can be clamped against every OTHER door's
+    // landing point (a reach-grown box that swallows a landing would
+    // bounce the arriving player straight back).
+    // Map doors (kind-0 intra-scene teleports): (trigger world, dest world).
+    let mut map_doors: Vec<((i16, i16), (i16, i16))> = Vec::new();
+    if let Ok((primary, fallback)) = scene.field_intra_scene_teleports(index) {
+        let mut seen: Vec<(u8, u8)> = Vec::new();
+        for t in primary.iter().chain(fallback.iter()) {
+            if seen.contains(&(t.tile_x, t.tile_z)) {
+                continue; // primary block wins, as in the trigger dispatch
+            }
+            seen.push((t.tile_x, t.tile_z));
+            let (tx, tz) = (
+                i16::from(t.tile_x) * 128 + 0x40,
+                i16::from(t.tile_z) * 128 + 0x40,
+            );
+            map_doors.push(((tx, tz), t.dest_world()));
+        }
+    }
+
+    // Script doors (object walk-touch binds): resolve the arm the record
+    // takes with every story flag clear - the cold-entry state a fresh
+    // world models. A record whose cold arm is a cutscene spawn (or a
+    // minigame warp) is not a plain doorway; left out rather than guessed.
+    type ScriptDoor = ((i16, i16), (i16, i16), Option<i16>, usize);
+    let mut script_doors: Vec<ScriptDoor> = Vec::new();
+    let mut portal_sites = Vec::new();
+    let map_bytes = scene
+        .field_map_index(index)
+        .and_then(|i| index.entry_bytes_extended(i).ok());
+    let triggers = scene.field_tile_triggers(index).ok().map(|(p, f)| {
+        let mut t = p;
+        t.extend(f);
+        t
+    });
+    let man = scene.field_man_payload(index).ok().flatten();
+    if let (Some(map), Some(triggers), Some(man)) = (map_bytes, triggers, man.as_ref())
+        && let Ok(mf) = legaia_asset::man_section::parse(man)
+    {
+        for bind in crate::man_field_scripts::object_walk_touch_binds(&map, &triggers, &mf, man) {
+            let cold =
+                crate::man_field_scripts::resolve_walk_touch_event(&mf, man, bind.record, &|_| {
+                    false
+                });
+            let Some(crate::man_field_scripts::WalkTouchEvent::PlayerMoveTo {
+                world_x,
+                world_z,
+                facing,
+            }) = cold
+            else {
+                continue;
+            };
+            script_doors.push((bind.contact, (world_x, world_z), facing, bind.record));
+        }
+        portal_sites = crate::man_field_scripts::overworld_portal_sites(&mf, man, &triggers);
+    }
+
+    // Every landing point, indexed teleport-order (map doors then script
+    // doors) so a trigger can skip its own destination.
+    let landings: Vec<[f32; 3]> = map_doors
+        .iter()
+        .map(|&(_, (dx, dz))| floor_pt(dx, dz))
+        .chain(
+            script_doors
+                .iter()
+                .map(|&(_, (dx, dz), _, _)| floor_pt(dx, dz)),
+        )
+        .collect();
+
+    // Box sizing shared by both families: retail footprint + capsule
+    // allowance (retail measured a POINT player; a capsule stopped by a
+    // mesh doorframe narrower than itself needs the face to come out and
+    // meet it), vertical span from the local floor envelope, capsule-reach
+    // verified against the baked mesh, then landing-clamped.
+    let sized_box = |wx: i16, wz: i16, base_half_units: f32, own: usize| -> ([f32; 3], [f32; 3]) {
+        let (mut tpos, thalf_y) = floor_box(wx, wz);
+        let mut thalf = [base_half_units * s, thalf_y, base_half_units * s];
+        let base = (tpos, thalf);
+        reach_adjust(&mut tpos, &mut thalf, door_level(wx, wz));
+        clamp_box_from_landings(
+            &mut tpos,
+            &mut thalf,
+            &base.0,
+            &base.1,
+            &landings,
+            Some(own),
+        );
+        (tpos, thalf)
+    };
+
+    for (i, &((tx, tz), (dx, dz))) in map_doors.iter().enumerate() {
+        let (tpos, thalf) = sized_box(tx, tz, 88.0, i);
+        out.teleports.push(json!({
+            "kind": "map",
+            "trigger": { "position": tpos, "half_extents": thalf },
+            "destination": { "position": floor_pt(dx, dz) },
+            "facing_dir": Value::Null,
+            "record": Value::Null,
+        }));
+    }
+    for (i, &((cx, cz), (dx, dz), facing, record)) in script_doors.iter().enumerate() {
+        let base = (crate::field_regions::MAP_OBJECT_CONTACT_HALF + 48) as f32;
+        let (tpos, thalf) = sized_box(cx, cz, base, map_doors.len() + i);
+        out.teleports.push(json!({
+            "kind": "script",
+            "trigger": { "position": tpos, "half_extents": thalf },
+            "destination": { "position": floor_pt(dx, dz) },
+            "facing_dir": facing.map(heading_dir_xz),
+            "record": record,
+        }));
+    }
+
+    // --- Scene-change portal sites (gate-1 walk-on -> 0x3F). ---
+    let entry_half =
+        |b: u8| -> f32 { f32::from(b & 0x7F) * 128.0 + if b & 0x80 != 0 { 128.0 } else { 64.0 } };
+    for site in &portal_sites {
+        let (tx, tz) = (
+            i16::from(site.overworld_x) * 128 + 0x40,
+            i16::from(site.overworld_z) * 128 + 0x40,
+        );
+        // Arrival facing: the 0x3F trailing dir byte through the retail
+        // compass table (`dir & 7` eighths of the 12-bit circle).
+        let facing = heading_dir_xz(i16::from(site.dir & 7) * 0x200);
+        let (mut tpos, thalf_y) = floor_box(tx, tz);
+        let mut thalf = [88.0 * s, thalf_y, 88.0 * s];
+        let base = (tpos, thalf);
+        reach_adjust(&mut tpos, &mut thalf, door_level(tx, tz));
+        clamp_box_from_landings(&mut tpos, &mut thalf, &base.0, &base.1, &landings, None);
+        out.portals.push(json!({
+            "target_scene": site.scene_name,
+            "trigger": { "position": tpos, "half_extents": thalf },
+            // Arrival point in the TARGET scene's export frame (XZ only,
+            // scaled; sample the destination scene's floor for Y when
+            // wiring a multi-scene world).
+            "entry_xz": [entry_half(site.entry_x) * s, entry_half(site.entry_z) * s],
+            "facing_dir": facing,
+            "record": site.record,
+            "conditional": site.conditional.as_ref().map(|c| json!({
+                "flag": c.flag,
+                "target_scene": c.scene_name,
+                "entry_xz": [entry_half(c.entry_x) * s, entry_half(c.entry_z) * s],
+            })),
+        }));
+    }
+    out
+}
+
+/// Shrink a reach-grown trigger box so no OTHER teleport's landing point
+/// (plus a standing-capsule clearance) sits inside it - an arriving player
+/// inside a trigger is bounced straight back where they came from. Only
+/// the grown margin is ever given up: faces never pull past the retail
+/// baseline box, which is verified landing-clear by construction.
+fn clamp_box_from_landings(
+    pos: &mut [f32; 3],
+    half: &mut [f32; 3],
+    base_pos: &[f32; 3],
+    base_half: &[f32; 3],
+    landings: &[[f32; 3]],
+    own: Option<usize>,
+) {
+    const CLEAR: f32 = 0.5;
+    for (li, d) in landings.iter().enumerate() {
+        if own == Some(li) {
+            continue;
+        }
+        let (x0, x1) = (pos[0] - half[0], pos[0] + half[0]);
+        let (z0, z1) = (pos[2] - half[2], pos[2] + half[2]);
+        let (y0, y1) = (pos[1], pos[1] + 2.0 * half[1]);
+        let overlaps = d[0] > x0 - CLEAR
+            && d[0] < x1 + CLEAR
+            && d[2] > z0 - CLEAR
+            && d[2] < z1 + CLEAR
+            && d[1] + 1.7 > y0
+            && d[1] < y1;
+        if !overlaps {
+            continue;
+        }
+        let (bx0, bx1) = (base_pos[0] - base_half[0], base_pos[0] + base_half[0]);
+        let (bz0, bz1) = (base_pos[2] - base_half[2], base_pos[2] + base_half[2]);
+        // Four candidate face pulls: (new coord, feasible, cost).
+        let cands = [
+            (0usize, d[0] + CLEAR, d[0] + CLEAR <= bx0, d[0] + CLEAR - x0),
+            (1, d[0] - CLEAR, d[0] - CLEAR >= bx1, x1 - (d[0] - CLEAR)),
+            (2, d[2] + CLEAR, d[2] + CLEAR <= bz0, d[2] + CLEAR - z0),
+            (3, d[2] - CLEAR, d[2] - CLEAR >= bz1, z1 - (d[2] - CLEAR)),
+        ];
+        let Some(&(face, coord, _, _)) = cands
+            .iter()
+            .filter(|&&(_, _, ok, cost)| ok && cost > 0.0)
+            .min_by(|a, b| a.3.total_cmp(&b.3))
+        else {
+            continue; // no feasible pull - leave it (base was clear)
+        };
+        match face {
+            0 => {
+                half[0] = (x1 - coord) / 2.0;
+                pos[0] = coord + half[0];
+            }
+            1 => {
+                half[0] = (coord - x0) / 2.0;
+                pos[0] = x0 + half[0];
+            }
+            2 => {
+                half[2] = (z1 - coord) / 2.0;
+                pos[2] = coord + half[2];
+            }
+            _ => {
+                half[2] = (coord - z0) / 2.0;
+                pos[2] = z0 + half[2];
+            }
+        }
+    }
 }
 
 /// Compose the per-scene manifest JSON: everything a world builder (or the
@@ -535,7 +1571,43 @@ pub fn world_manifest(
     npcs: &[NpcGlb],
     props: &[PropGlb],
     floor: &FloorSampler,
+    traversal: &TraversalExport,
 ) -> Value {
+    // A prop instance standing on a doorway-teleport trigger is a door mesh
+    // (its clip is the swing retail's door record plays); one standing on a
+    // scene-change portal band is a gate leaf. A builder swaps either's
+    // free-running loop for open-on-approach. Trigger proximity is the
+    // structural join: retail parks the door placement on its own doorway
+    // tile (town01 doors sit within ~136 PSX units of their trigger; the
+    // nearest non-door animated prop is ~530 away), and it covers both
+    // teleport families where a script-tile anchor join structurally cannot
+    // (map doors never had trigger records).
+    let near_teleport = |t: &[f32; 3]| -> bool {
+        let thresh = 256.0 * opts.scale; // two collision tiles
+        traversal.teleports.iter().any(|tp| {
+            let Some(p) = tp["trigger"]["position"].as_array() else {
+                return false;
+            };
+            let (Some(px), Some(pz)) = (p[0].as_f64(), p[2].as_f64()) else {
+                return false;
+            };
+            let (dx, dz) = (px as f32 - t[0], pz as f32 - t[2]);
+            dx * dx + dz * dz < thresh * thresh
+        })
+    };
+    let near_portal = |t: &[f32; 3]| -> Option<usize> {
+        let thresh = 384.0 * opts.scale; // 3 collision tiles
+        let mut best: Option<(f32, usize)> = None;
+        for (i, tp) in traversal.portals.iter().enumerate() {
+            let p = tp["trigger"]["position"].as_array()?;
+            let (dx, dz) = (p[0].as_f64()? as f32 - t[0], p[2].as_f64()? as f32 - t[2]);
+            let d = dx * dx + dz * dz;
+            if d < thresh * thresh && best.is_none_or(|(b, _)| d < b) {
+                best = Some((d, i));
+            }
+        }
+        best.map(|(_, i)| i)
+    };
     let npc_dir_entries: Vec<Value> = npcs
         .iter()
         .filter_map(|n| {
@@ -584,6 +1656,13 @@ pub fn world_manifest(
                 "instances": p.instances.iter().map(|(t, r)| json!({
                     "position": t,
                     "rot_y_radians": r,
+                    // Standing on a doorway-teleport trigger says this
+                    // placement's clip is a door record's swing - open it
+                    // on approach, don't loop.
+                    "is_door": near_teleport(t),
+                    // Index into `scene_portals` when this instance stands
+                    // on an exit band (a town-gate leaf).
+                    "near_portal": near_portal(t),
                 })).collect::<Vec<_>>(),
             })
         })
@@ -596,6 +1675,12 @@ pub fn world_manifest(
             "units": "glTF meters = PSX world units * scale; one walk tile = 128 PSX units",
             "axes": "glTF +Y up; geometry keeps the site viewers' mirror-handedness",
             "rotation": "rot_y_radians is about +Y, applied the way the world glb instances are",
+            // NPC / prop glbs carry `scale` baked on their root node, so a
+            // file dragged into a scene is already world-sized; a builder
+            // placing instances applies only the handedness mirror (a
+            // manifest without this flag is an older raw-PSX-units export
+            // whose instances need the full scale).
+            "npc_prop_units": "scaled",
         },
         "world_glb": world_file,
         "spawn": { "position": world.spawn },
@@ -606,10 +1691,19 @@ pub fn world_manifest(
             "ground_quads": world.ground_quads,
             "placements": a.placements.len(),
             "terrain_tiles": a.terrain.len(),
+            "morph_meshes": world.morph_mesh_count,
         },
+        // The world glb's baked ambient vertex-morph clip (Rim Elm's
+        // shoreline): play it looping on the world instance.
+        "world_anim": (world.morph_loop_seconds > 0.0).then(|| json!({
+            "clip": "vdf_pulse",
+            "loop_seconds": world.morph_loop_seconds,
+        })),
         "npcs": npc_dir_entries,
         "doors": door_entries,
         "animated_props": prop_entries,
+        "teleports": traversal.teleports.clone(),
+        "scene_portals": traversal.portals.clone(),
     })
 }
 
