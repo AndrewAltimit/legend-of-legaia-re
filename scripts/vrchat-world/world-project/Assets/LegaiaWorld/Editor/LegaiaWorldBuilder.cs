@@ -340,7 +340,7 @@ namespace LegaiaWorld
                     catch (System.Exception e)
                     {
                         Debug.LogError("[Legaia] prop instance of " + file +
-                            " failed to wire, continuing: " + e.Message);
+                            " failed to wire, continuing: " + (e.InnerException ?? e).Message);
                     }
                 }
             }
@@ -402,7 +402,7 @@ namespace LegaiaWorld
                     catch (System.Exception e)
                     {
                         Debug.LogError("[Legaia] teleport " + i +
-                            " failed to wire, continuing: " + e.Message);
+                            " failed to wire, continuing: " + (e.InnerException ?? e).Message);
                     }
                 }
 
@@ -460,7 +460,7 @@ namespace LegaiaWorld
                     catch (System.Exception e)
                     {
                         Debug.LogError("[Legaia] scene portal " + i +
-                            " failed to wire, continuing: " + e.Message);
+                            " failed to wire, continuing: " + (e.InnerException ?? e).Message);
                     }
                 }
             }
@@ -768,6 +768,18 @@ namespace LegaiaWorld
                         + "Program.asset";
                 var pa = ScriptableObject.CreateInstance(paType);
                 paType.GetField("sourceCsScript").SetValue(pa, script);
+                // A fresh program asset carries ScriptVersion Unknown, and
+                // CopyProxyToUdon refuses to serialize until BOTH versions
+                // reach CurrentVersion. CompileSync below bumps
+                // CompiledVersion, but ScriptVersion is only ever bumped by
+                // U#'s editor-update-deferred upgrader - whose rewrite pass
+                // is a no-op for these scripts (plain Unity-serializable
+                // public fields) and terminates by setting exactly this
+                // value. Set it up front so wiring works in this same build.
+                var sv = paType.GetProperty("ScriptVersion");
+                if (sv != null)
+                    sv.SetValue(pa,
+                        System.Enum.Parse(sv.PropertyType, "CurrentVersion"));
                 AssetDatabase.CreateAsset(pa, assetPath);
                 Debug.Log("[Legaia] created U# program asset " + assetPath);
                 created = true;
@@ -859,7 +871,18 @@ namespace LegaiaWorld
                 var ps = mi.GetParameters();
                 if (ps.Length != 1 || !ps[0].ParameterType.IsInstanceOfType(comp))
                     continue;
-                mi.Invoke(null, new object[] { comp });
+                try
+                {
+                    mi.Invoke(null, new object[] { comp });
+                }
+                catch (System.Exception e)
+                {
+                    // Unwrap TargetInvocationException so the real U#
+                    // message reaches the console.
+                    Debug.LogError("[Legaia] CopyProxyToUdon failed on " +
+                        comp.gameObject.name + ": " +
+                        (e.InnerException ?? e).Message);
+                }
                 return;
             }
             Debug.LogWarning("[Legaia] CopyProxyToUdon not found - " +
