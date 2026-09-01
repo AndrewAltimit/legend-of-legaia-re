@@ -26,7 +26,7 @@ your disc ──legaia-extract──▶ extracted/ ──legaia-engine export-gl
 | File | Role |
 |---|---|
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaWorldBuilder.cs` | Editor menu `Legaia > Build Scene From Manifest...`: instantiates the world, adds colliders, places NPCs + animated props, builds doorway-teleport triggers, wires proximity doors + the shoreline morph clip + the BGM loop, drops a spawn marker; also the **Equipment props** rack (the `--items` export placed as grabbable pickups near the spawn). |
-| `world-project/Assets/LegaiaWorld/Editor/LegaiaRealism.cs` | The builder's "Realism enhancements" foldout: lit materials + generated normals + sun, day/night wiring, sky + fog, procedural grass, interior room shells, texture smoothing, synthesized ambience, wander wiring. Every pass defaults on; untick for the faithful look. |
+| `world-project/Assets/LegaiaWorld/Editor/LegaiaRealism.cs` | The builder's "Realism enhancements" foldout: lit materials + generated normals + sun, day/night wiring + night doorway lamps, sky + fog, procedural grass, interior room shells, texture smoothing, synthesized ambience, wander wiring. Every pass defaults on; untick for the faithful look. |
 | `world-project/Assets/LegaiaWorld/Editor/MiniJson.cs` | Dependency-free JSON reader for `manifest.json` (so the builder compiles in any project). |
 | `world-project/Assets/LegaiaWorld/Shaders/LegaiaLitVertexColor.shader` | Lit cutout stand-in for the exports' unlit materials: `COLOR_0` keeps modulating the texture, and lighting is the sign-independent two-sided Lambert `\|N.L\|` (the only stable answer over the mixed PSX winding - the header keeps the failed-flip history). |
 | `world-project/Assets/LegaiaWorld/Shaders/LegaiaLitVertexColorTransparent.shader` | The BLEND (water / light pool) sibling of the lit shader - alpha-blended, depth-write off. |
@@ -35,7 +35,7 @@ your disc ──legaia-extract──▶ extracted/ ──legaia-engine export-gl
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaDoorway.cs` | UdonSharp doorway teleport: walking into the trigger repositions the local player at the landing marker with the authored arrival facing - the retail intra-scene door mechanism. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaDoor.cs` | UdonSharp proximity door: first approach plays the door's swing clip once and holds it open. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaNpcWander.cs` | Optional UdonSharp stroll behaviour: an NPC wanders a small radius around its spawn between pauses - collision-aware (strolls clamp against walls, a waist-height ray stops a blocked walk, a downward ray follows the floor). |
-| `world-project/Assets/LegaiaWorld/Udon/LegaiaDayNight.cs` | Optional UdonSharp day/night cycle: sweeps the realism sun on a fixed cycle, synced across players via server time. |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaDayNight.cs` | Optional UdonSharp day/night cycle: sweeps the realism sun on a fixed cycle, synced across players via server time; night dims the trilight ambient + fog to a moonlit fraction and enables the night-lamp container. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaPickupProp.cs` | UdonSharp equipment-rack pickup: the prop spawns kinematic (frozen on the rack) and only becomes a free physics object the first time a player drops it - so a rack of dozens of bodies can't tunnel through the thin ground during world-load hitches. |
 
 ## Step 1 - export a scene
@@ -103,7 +103,11 @@ the VCC setup in more detail if this is your first worlds project.
    player capsule can slip through, and client builds stop needing
    Read/Write enabled on the glb). You get a `Legaia_town01` root:
    - `world` - the full map with its collider (ground included, so the
-     retail walk surface is what you stand on). When the scene carries the
+     retail walk surface is what you stand on). Semi-transparent submeshes
+     are left OUT of collision - they represent light (window shafts,
+     glow cones), and cooked solid a slanted shaft even acts as a
+     walkable ramp - except ones shaped like a water sheet (large, flat,
+     horizontal), so the sea keeps its floor. When the scene carries the
      baked shoreline morph clip (**Animate world morphs**) the sea edge
      washes in and out on a loop, and the exported BGM loops from an
      AudioSource on the root (**Scene music**);
@@ -123,9 +127,11 @@ the VCC setup in more detail if this is your first worlds project.
      (**Doorway teleports**): walk into a house door and you land in its
      interior with the authored facing, exactly the retail intra-scene
      door mechanism (`LegaiaDoorway`). Trigger boxes get an absolute
-     player-sized floor (1.5 m across, player height) - the authored
-     extents scale with the world, but the player doesn't, so a
-     small-scale export would otherwise make doorways easy to miss.
+     player-sized floor (2.2 m across, player height) - the authored
+     extents scale with the world, but the player doesn't, and a retail
+     trigger hugging the door plane of a recessed entrance (Mei's house,
+     the cave) is hard to clip at any smaller size; the wall absorbs the
+     backward growth.
      A loop guard covers the retail landings that sit inside (or a
      capsule-width from) the paired door's trigger (town01's hilltop
      house lands inside its own exit band): before teleporting, the
@@ -218,6 +224,14 @@ pass is idempotent (it refreshes rather than stacks).
   behaviour sweeps the sun through a full day on a fixed cycle, with night
   compressed (`dayShare`). Every client derives the same angle from the
   shared server clock, so the cycle is synced with no networking events.
+  Night genuinely darkens the landscape: the behaviour sweeps the trilight
+  ambient (and fog colour) down to a moonlit, blue-shifted fraction of
+  their daytime values ("Night darkness" slider - sun intensity alone
+  leaves the ambient day-bright after sunset). **Night lamps** places a
+  warm point light + small glow bulb above each village-side doorway
+  (positions come from the manifest's own teleport endpoints - no new
+  export data) in a `night_lamps` container the behaviour enables only
+  while the sun is below the horizon.
 - **Sky + distance fog**: a procedural-skybox material (it tracks
   `RenderSettings.sun`, so with day/night on the sky darkens by itself)
   and linear fog scaled to the built root's bounds.
@@ -282,7 +296,7 @@ Caveats: the sun / ambient / skybox / fog are **per-Unity-scene render
 settings** - applying them from one built root is global, the last applied
 root wins, and turning the options off later does not revert them (reset
 via `Window > Rendering > Lighting`, and delete the root's `LegaiaSun` /
-`foliage` / `interiors` / `ambience` children). The day/night and wander passes need the
+`foliage` / `interiors` / `ambience` / `night_lamps` children). The day/night and wander passes need the
 VRChat SDK, same as doors and teleports. And the grass + realtime shadows
 budget is a PC-world budget - trim density and shadow strength for a Quest
 target.

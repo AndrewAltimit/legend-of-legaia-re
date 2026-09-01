@@ -516,11 +516,26 @@ namespace LegaiaWorld
                     new GUIContent("  Day / night cycle",
                         "Udon: the sun sweeps a full day on a fixed cycle, " +
                         "synced across players via server time (needs the " +
-                        "VRChat SDK). Night keeps the dim ambient"),
+                        "VRChat SDK). Night dims the ambient to the darkness " +
+                        "slider below"),
                     realism.dayNight);
                 if (realism.dayNight)
+                {
                     realism.dayNightMinutes = EditorGUILayout.Slider(
                         "    Cycle (minutes)", realism.dayNightMinutes, 1f, 120f);
+                    realism.nightAmbient = EditorGUILayout.Slider(
+                        new GUIContent("    Night darkness",
+                            "Midnight ambient as a fraction of the daytime " +
+                            "trilight - lower = darker landscape at night " +
+                            "(the sun itself is already off)"),
+                        realism.nightAmbient, 0f, 1f);
+                    realism.nightLamps = EditorGUILayout.Toggle(
+                        new GUIContent("    Night lamps on buildings",
+                            "Warm point lights above each village doorway " +
+                            "(placed from the manifest's own door data), on " +
+                            "only while the sun is down"),
+                        realism.nightLamps);
+                }
             }
             realism.skyAndFog = EditorGUILayout.Toggle(
                 new GUIContent("Sky + distance fog",
@@ -704,6 +719,15 @@ namespace LegaiaWorld
                     {
                         if (mf.sharedMesh == null || mf.GetComponent<MeshCollider>() != null)
                             continue;
+                        bool solid = false;
+                        for (int sm = 0; sm < mf.sharedMesh.subMeshCount; sm++)
+                            if (SubmeshCollides(mf, sm))
+                            {
+                                solid = true;
+                                break;
+                            }
+                        if (!solid)
+                            continue; // pure light/effect mesh: walk through
                         mf.gameObject.AddComponent<MeshCollider>().sharedMesh = mf.sharedMesh;
                     }
                 }
@@ -1016,10 +1040,40 @@ namespace LegaiaWorld
             }
         }
 
-        /// One welded collision mesh for the whole world: every renderer
-        /// submesh (semi-transparent water included, so there's a floor over
-        /// the sea) combined in world-local space, saved as an asset, cooked
-        /// with colocated-vertex welding so hairline seams between adjacent
+        /// True when this submesh belongs in world collision. Opaque and
+        /// cutout surfaces are always solid. Semi-transparent surfaces
+        /// represent light (window shafts, glow cones) - the player should
+        /// walk straight through those, and a slanted shaft even acts as a
+        /// walkable ramp when cooked solid - so a transparent submesh only
+        /// collides when it is shaped like a water sheet (large, flat,
+        /// horizontal): the sea keeps its floor, the light does not.
+        static bool SubmeshCollides(MeshFilter mf, int sm)
+        {
+            var r = mf.GetComponent<Renderer>();
+            var mats = r != null ? r.sharedMaterials : null;
+            Material mat = mats != null && sm < mats.Length ? mats[sm] : null;
+            if (mat == null || mat.renderQueue <
+                (int)UnityEngine.Rendering.RenderQueue.Transparent)
+                return true;
+            var verts = mf.sharedMesh.vertices;
+            var tris = mf.sharedMesh.GetTriangles(sm);
+            if (tris.Length == 0)
+                return false;
+            // World space is meters here (the build mirror is applied after
+            // colliders; the glb bakes the export scale into vertices).
+            Matrix4x4 toWorld = mf.transform.localToWorldMatrix;
+            Bounds b = new Bounds(
+                toWorld.MultiplyPoint3x4(verts[tris[0]]), Vector3.zero);
+            for (int i = 1; i < tris.Length; i++)
+                b.Encapsulate(toWorld.MultiplyPoint3x4(verts[tris[i]]));
+            return b.size.y <= 2f && Mathf.Max(b.size.x, b.size.z) >= 10f;
+        }
+
+        /// One welded collision mesh for the whole world: every solid
+        /// renderer submesh (see SubmeshCollides - semi-transparent light
+        /// meshes are walk-through, water sheets keep a floor over the sea)
+        /// combined in world-local space, saved as an asset, cooked with
+        /// colocated-vertex welding so hairline seams between adjacent
         /// tile meshes close instead of dropping a player capsule through.
         static void AddMergedCollider(GameObject world, string sceneName)
         {
@@ -1029,12 +1083,16 @@ namespace LegaiaWorld
                 if (mf.sharedMesh == null) continue;
                 var toLocal = world.transform.worldToLocalMatrix * mf.transform.localToWorldMatrix;
                 for (int sm = 0; sm < mf.sharedMesh.subMeshCount; sm++)
+                {
+                    if (!SubmeshCollides(mf, sm))
+                        continue;
                     combine.Add(new CombineInstance
                     {
                         mesh = mf.sharedMesh,
                         subMeshIndex = sm,
                         transform = toLocal
                     });
+                }
             }
             if (combine.Count == 0) return;
 
@@ -1207,15 +1265,19 @@ namespace LegaiaWorld
         /// bands are collision-tile sized), but the player stays real-sized
         /// whatever the export scale - at 1 m per tile a map-door trigger
         /// shrinks to half a meter and becomes easy to walk past. Floors in
-        /// METERS: half-width 0.75 (1.5 m across), half-height 1.1 (covers
-        /// a standing player; the box bottom stays on the floor because the
-        /// caller centres it a half-height up).
+        /// METERS: half-width 1.1 (2.2 m across - a retail trigger hugging
+        /// the door plane is otherwise hard to clip when the doorway is
+        /// recessed; the wall behind absorbs the backward growth, and the
+        /// doorway loop guard keeps the bigger boxes from chain-firing a
+        /// paired landing), half-height 1.1 (covers a standing player; the
+        /// box bottom stays on the floor because the caller centres it a
+        /// half-height up).
         internal static Vector3 PlayerSizedHalf(Vector3 half)
         {
             return new Vector3(
-                Mathf.Max(half.x, 0.75f),
+                Mathf.Max(half.x, 1.1f),
                 Mathf.Max(half.y, 1.1f),
-                Mathf.Max(half.z, 0.75f));
+                Mathf.Max(half.z, 1.1f));
         }
 
         /// Attach an UdonSharp behaviour by type name without a compile-time

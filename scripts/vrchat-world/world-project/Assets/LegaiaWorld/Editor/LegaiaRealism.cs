@@ -77,6 +77,12 @@ namespace LegaiaWorld
         public float shadowStrength = 0.75f;
         public bool dayNight = true;
         public float dayNightMinutes = 20f;
+        // Midnight ambient as a fraction of the daytime trilight - the
+        // landscape's night darkness (the sun itself is already off).
+        public float nightAmbient = 0.12f;
+        // Warm point lights beside each village doorway, enabled by the
+        // day/night behaviour only while the sun is down.
+        public bool nightLamps = true;
         public bool skyAndFog = true;
         public bool foliage = true;
         public float grassDensity = 6f;
@@ -122,7 +128,10 @@ namespace LegaiaWorld
                 if (o.lighting)
                 {
                     EditorUtility.DisplayProgressBar("Legaia realism", "Lit materials + normals", 0.1f);
-                    ConvertToLit(root, genDir, o);
+                    // Lamps first: ApplySun (inside ConvertToLit) hands the
+                    // container to the day/night behaviour.
+                    GameObject lamps = BuildNightLamps(root, manifest, genDir, o);
+                    ConvertToLit(root, genDir, o, lamps);
                 }
                 if (o.skyAndFog)
                     ApplySkyAndFog(root, genDir);
@@ -152,7 +161,8 @@ namespace LegaiaWorld
 
         // --- Lighting -------------------------------------------------------
 
-        static void ConvertToLit(GameObject root, string genDir, LegaiaRealismOptions o)
+        static void ConvertToLit(GameObject root, string genDir,
+            LegaiaRealismOptions o, GameObject nightLamps)
         {
             var cutout = Shader.Find("Legaia/Lit Vertex Color (Cutout)");
             var transparent = Shader.Find("Legaia/Lit Vertex Color (Transparent)");
@@ -220,7 +230,7 @@ namespace LegaiaWorld
                 }
             }
 
-            ApplySun(root, o);
+            ApplySun(root, o, nightLamps);
             Debug.Log("[Legaia] lit conversion: " + meshCache.Count + " mesh(es), " +
                       matCache.Count + " material(s), " + wrapped +
                       " character material(s) wrap-lit.");
@@ -369,7 +379,8 @@ namespace LegaiaWorld
             return null;
         }
 
-        static void ApplySun(GameObject root, LegaiaRealismOptions o)
+        static void ApplySun(GameObject root, LegaiaRealismOptions o,
+            GameObject nightLamps)
         {
             var existing = root.transform.Find("LegaiaSun");
             GameObject go = existing != null ? existing.gameObject : new GameObject("LegaiaSun");
@@ -393,15 +404,111 @@ namespace LegaiaWorld
 
             if (o.dayNight)
             {
+                // Re-runs must re-set the fields (the night_lamps container
+                // is rebuilt fresh each pass, so a wired-once reference goes
+                // stale) - get the existing proxy instead of skipping.
                 var dnType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaDayNight");
-                if (dnType != null && go.GetComponent(dnType) != null)
-                    return; // already wired
-                var udon = LegaiaWorldBuilder.TryAttachUdon(go, "LegaiaDayNight");
+                Component udon = dnType != null ? go.GetComponent(dnType) : null;
+                if (udon == null)
+                    udon = LegaiaWorldBuilder.TryAttachUdon(go, "LegaiaDayNight");
                 LegaiaWorldBuilder.SetUdonField(udon, "sun", sun);
                 LegaiaWorldBuilder.SetUdonField(udon, "cycleMinutes", o.dayNightMinutes);
                 LegaiaWorldBuilder.SetUdonField(udon, "dayIntensity", o.sunIntensity);
+                LegaiaWorldBuilder.SetUdonField(udon, "nightAmbientScale", o.nightAmbient);
+                LegaiaWorldBuilder.SetUdonField(udon, "nightLights", nightLamps);
                 LegaiaWorldBuilder.SyncUdonProxy(udon);
             }
+        }
+
+        // --- Night lamps ----------------------------------------------------
+
+        /// A warm lamp above each village-side doorway, held in one
+        /// "night_lamps" container that starts INACTIVE - the day/night
+        /// behaviour enables it only while the sun is below the horizon.
+        /// Placement rides the manifest's own door data: every teleport
+        /// endpoint on the village side of the interior-room distance marks a
+        /// building entrance, so a lamp above each (deduped - a door's
+        /// trigger and its paired return landing sit a step apart) puts
+        /// light exactly where the buildings are with no new export data.
+        /// Returns null (and removes any stale container) when night lamps
+        /// or the day/night cycle are off - without the cycle nothing would
+        /// ever switch the lamps on.
+        static GameObject BuildNightLamps(GameObject root, object manifest,
+            string genDir, LegaiaRealismOptions o)
+        {
+            var old = root.transform.Find("night_lamps");
+            if (old != null)
+                Object.DestroyImmediate(old.gameObject);
+            if (!o.dayNight || !o.nightLamps || manifest == null)
+                return null;
+            var tps = MiniJson.AsList(MiniJson.Get(manifest, "teleports"));
+            if (tps == null || tps.Count == 0)
+                return null;
+            Vector3 spawnW = root.transform.TransformPoint(LegaiaWorldBuilder.G2U(
+                MiniJson.GetVec3(MiniJson.Get(manifest, "spawn"), "position")));
+            float DistXZ(Vector3 a, Vector3 b)
+            {
+                a.y = b.y = 0;
+                return (a - b).magnitude;
+            }
+            var pts = new List<Vector3>();
+            void Consider(Vector3 w)
+            {
+                if (DistXZ(w, spawnW) > o.interiorRoomDistance)
+                    return; // interior side - rooms have the shell glow
+                foreach (var q in pts)
+                    if (DistXZ(q, w) < 2.5f)
+                        return; // the paired landing a step from its door
+                pts.Add(w);
+            }
+            foreach (object tp in tps)
+            {
+                Consider(root.transform.TransformPoint(LegaiaWorldBuilder.G2U(
+                    MiniJson.GetVec3(MiniJson.Get(tp, "trigger"), "position"))));
+                Consider(root.transform.TransformPoint(LegaiaWorldBuilder.G2U(
+                    MiniJson.GetVec3(MiniJson.Get(tp, "destination"), "position"))));
+            }
+            if (pts.Count == 0)
+                return null;
+
+            string matPath = genDir + "/lamp_glow.mat";
+            var glowMat = AssetDatabase.LoadAssetAtPath<Material>(matPath);
+            if (glowMat == null)
+            {
+                var unlit = Shader.Find("Unlit/Color");
+                glowMat = new Material(unlit != null ? unlit : Shader.Find("Standard"));
+                if (glowMat.HasProperty("_Color"))
+                    glowMat.SetColor("_Color", new Color(1f, 0.85f, 0.55f));
+                AssetDatabase.CreateAsset(glowMat, matPath);
+            }
+
+            var container = new GameObject("night_lamps");
+            container.transform.SetParent(root.transform, false);
+            for (int i = 0; i < pts.Count; i++)
+            {
+                var go = new GameObject("lamp_" + i);
+                go.transform.SetParent(container.transform, false);
+                // World-space placement (the root carries the mirror);
+                // lamp height above the door, wall-mounted look.
+                go.transform.position = pts[i] + Vector3.up * 2.2f;
+                var light = go.AddComponent<Light>();
+                light.type = LightType.Point;
+                light.range = 7f;
+                light.intensity = 1.1f;
+                light.color = new Color(1f, 0.75f, 0.45f);
+                // Several per village: keep them cheap.
+                light.shadows = LightShadows.None;
+                var bulb = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                bulb.name = "glow";
+                Object.DestroyImmediate(bulb.GetComponent<Collider>());
+                bulb.transform.SetParent(go.transform, false);
+                bulb.transform.localScale = Vector3.one * 0.15f;
+                bulb.GetComponent<MeshRenderer>().sharedMaterial = glowMat;
+            }
+            container.SetActive(false); // day/night behaviour turns these on
+            Debug.Log("[Legaia] " + pts.Count +
+                      " night lamp(s) placed at village doorways.");
+            return container;
         }
 
         // --- Sky + fog ------------------------------------------------------
