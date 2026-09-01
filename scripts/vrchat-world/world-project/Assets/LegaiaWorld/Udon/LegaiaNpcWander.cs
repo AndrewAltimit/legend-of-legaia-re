@@ -13,6 +13,13 @@
 // maps through those signs (see Start) so villagers face the way they walk.
 // Movement is forward-only: on a direction change the NPC pivots in place
 // until aligned, then steps off - it never translates while mis-facing.
+// Some spawn clips bake a constant facing yaw into the skeleton itself
+// (town01's spawn_record_17 holds every top bone at -90deg), which turns
+// the mesh under the transform and defeats any transform-only facing
+// math. The behaviour self-calibrates: it captures the skeleton root's
+// rest rotation in Start (before the Animator's first evaluation),
+// measures the yaw the clip applied two frames later, and subtracts it
+// from the walk facing (see CalibrateClipYaw).
 //
 // Requires UdonSharp (bundled with the VRChat worlds SDK via the Creator
 // Companion). Drop this component on an NPC instance the builder placed;
@@ -46,11 +53,20 @@ namespace LegaiaWorld
                  "the facing math assumes the model faces +Z in its own file.")]
         public bool flipFacing = false;
 
+        [Tooltip("Extra facing correction in degrees, added on top of the " +
+                 "automatic clip-yaw calibration - for hand-tuning one NPC.")]
+        public float facingYawOffset = 0f;
+
         private Vector3 home;
         private Vector3 target;
         private float pauseUntil;
         private float faceX = 1f;
         private float faceZ = 1f;
+        private Transform faceRef;
+        private Quaternion faceRefRest;
+        private int calibrateAfterFrame;
+        private bool calibrated;
+        private float clipYaw;
 
         void Start()
         {
@@ -74,10 +90,56 @@ namespace LegaiaWorld
                 * (flipFacing ? -1f : 1f);
             faceX = Mathf.Sign(ps.x) * fz;
             faceZ = Mathf.Sign(ps.z) * fz;
+
+            // Rest-pose anchor for the clip-yaw calibration: the skinned
+            // skeleton's root bone, captured before the Animator's first
+            // evaluation overwrites it with the spawn clip's pose.
+            var smr = GetComponentInChildren<SkinnedMeshRenderer>();
+            if (smr != null && smr.rootBone != null)
+            {
+                faceRef = smr.rootBone;
+                faceRefRest = faceRef.localRotation;
+            }
+            calibrateAfterFrame = Time.frameCount + 2;
+        }
+
+        // Some spawn clips pose the whole skeleton at a constant yaw (the
+        // authored facing lives in the ANM record, not the placement), so
+        // the mesh faces off-axis from the transform. Measure that yaw as
+        // the root bone's rotation delta between rest and the animated
+        // pose, then map it into the transform's frame: the delta lives in
+        // the bone's parent frame, whose vertical is flipped by the glb
+        // root's Rx(180) (the up-dot sign) and whose yaw sense each
+        // horizontal mirror in our own scale conjugates.
+        void CalibrateClipYaw()
+        {
+            calibrated = true;
+            clipYaw = 0f;
+            if (faceRef == null)
+                return;
+            Quaternion d = faceRef.localRotation
+                * Quaternion.Inverse(faceRefRest);
+            Vector3 f = d * Vector3.forward;
+            f.y = 0f;
+            if (f.sqrMagnitude < 1e-4f)
+                return;
+            float local = Vector3.SignedAngle(Vector3.forward, f, Vector3.up);
+            float sVert = Mathf.Sign(
+                Vector3.Dot(faceRef.parent.up, transform.up));
+            float sMirror = Mathf.Sign(
+                transform.localScale.x * transform.localScale.z);
+            clipYaw = local * sVert * sMirror;
         }
 
         void Update()
         {
+            if (!calibrated)
+            {
+                if (Time.frameCount < calibrateAfterFrame)
+                    return;
+                CalibrateClipYaw();
+            }
+
             if (Time.time < pauseUntil)
                 return;
 
@@ -102,7 +164,9 @@ namespace LegaiaWorld
             }
 
             Quaternion face = Quaternion.LookRotation(
-                new Vector3(dir.x * faceX, 0f, dir.z * faceZ), Vector3.up);
+                new Vector3(dir.x * faceX, 0f, dir.z * faceZ), Vector3.up)
+                * Quaternion.AngleAxis(
+                    -(clipYaw + facingYawOffset), Vector3.up);
             transform.rotation = Quaternion.RotateTowards(
                 transform.rotation, face, turnSpeed * Time.deltaTime);
 

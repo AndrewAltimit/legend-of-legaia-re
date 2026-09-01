@@ -232,7 +232,12 @@ pass is idempotent (it refreshes rather than stacks).
   signs so villagers face the way they walk (a `flipFacing` field covers
   an import stack with the opposite model-forward convention). Movement is
   forward-only: a direction change pivots the whole body in place first,
-  then steps off - an NPC never translates while mis-facing.
+  then steps off - an NPC never translates while mis-facing. Some spawn
+  clips bake a constant facing yaw into the skeleton itself (the authored
+  facing lives in the ANM record, not the placement), so the behaviour
+  self-calibrates at start: it measures the yaw the playing clip applies
+  to the root bone and subtracts it from the walk facing (a
+  `facingYawOffset` field adds a manual correction on top).
 
 Caveats: the sun / ambient / skybox / fog are **per-Unity-scene render
 settings** - applying them from one built root is global, the last applied
