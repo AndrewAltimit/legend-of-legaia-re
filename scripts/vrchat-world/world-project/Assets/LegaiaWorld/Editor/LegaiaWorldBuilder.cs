@@ -12,6 +12,12 @@
 //      a looping Animator on its spawn clip, and drops a "LegaiaSpawn"
 //      marker at the manifest's suggested spawn.
 //
+// The "Realism enhancements" foldout layers optional passes over the built
+// root (lit materials + sun, day/night, sky + fog, grass, interior room
+// shells, texture smoothing, ambience, wandering villagers) - see
+// LegaiaRealism.cs. The graphics passes default ON; untick them for the
+// faithful retail-shaded build.
+//
 // Coordinate note: glTFast converts glTF's right-handed frame to Unity's
 // left-handed one by inverting X, so manifest positions (glTF frame) are
 // mapped through the same inversion here, and yaw flips sign. If a prop
@@ -77,6 +83,19 @@ namespace LegaiaWorld
         bool addMusic = true;
         float musicVolume = 0.5f;
 
+        // Optional realism layer (LegaiaRealism.cs) - every pass defaults
+        // on; untick everything in the foldout for the faithful
+        // retail-shaded scene.
+        LegaiaRealismOptions realism = new LegaiaRealismOptions();
+        bool showRealism = true;
+        Vector2 scroll;
+
+        // Equipment props: place the `export-glb --items` weapons as
+        // (grabbable) props near the spawn.
+        string itemsManifestPath = "";
+        bool equipWeaponsOnly = true;
+        bool equipPickups = true;
+
         [MenuItem("Legaia/Build Scene From Manifest...")]
         static void Open()
         {
@@ -85,6 +104,7 @@ namespace LegaiaWorld
 
         void OnGUI()
         {
+            scroll = EditorGUILayout.BeginScrollView(scroll);
             GUILayout.Label("Exported scene manifest", EditorStyles.boldLabel);
             EditorGUILayout.BeginHorizontal();
             manifestPath = EditorGUILayout.TextField(manifestPath);
@@ -159,14 +179,432 @@ namespace LegaiaWorld
                 musicVolume = EditorGUILayout.Slider("  Music volume", musicVolume, 0f, 1f);
 
             GUILayout.Space(8);
+            RealismGUI();
+
+            GUILayout.Space(8);
+            EquipmentGUI();
+
+            GUILayout.Space(8);
             using (new EditorGUI.DisabledScope(string.IsNullOrEmpty(manifestPath)))
             {
                 if (GUILayout.Button("Build scene"))
                     Build();
             }
+            EditorGUILayout.EndScrollView();
         }
 
-        static Vector3 G2U(Vector3 g) => new Vector3(-g.x, g.y, g.z);
+        void EquipmentGUI()
+        {
+            GUILayout.Label("Equipment props", EditorStyles.boldLabel);
+            EditorGUILayout.BeginHorizontal();
+            itemsManifestPath = EditorGUILayout.TextField(itemsManifestPath);
+            if (GUILayout.Button("Browse", GUILayout.Width(70)))
+            {
+                string abs = EditorUtility.OpenFilePanel(
+                    "items/manifest.json inside Assets/ (from export-glb --items)",
+                    Application.dataPath, "json");
+                if (!string.IsNullOrEmpty(abs))
+                    itemsManifestPath = "Assets" + abs.Substring(Application.dataPath.Length);
+            }
+            EditorGUILayout.EndHorizontal();
+            equipWeaponsOnly = EditorGUILayout.Toggle(
+                new GUIContent("Weapons only",
+                    "Place only the weapon sections (swords, axes, whips...). " +
+                    "Untick to also rack armour, headgear, footwear and Ra-Seru"),
+                equipWeaponsOnly);
+            equipPickups = EditorGUILayout.Toggle(
+                new GUIContent("Grabbable (VRC Pickup)",
+                    "Wire each prop as a physics pickup (Rigidbody + VRC Pickup " +
+                    "+ VRC Object Sync - needs the VRChat SDK; without it the " +
+                    "rack is a static display). Props spawn frozen on the rack " +
+                    "and only go physical the first time a player drops one"),
+                equipPickups);
+            using (new EditorGUI.DisabledScope(
+                string.IsNullOrEmpty(itemsManifestPath) || string.IsNullOrEmpty(manifestPath)))
+            {
+                if (GUILayout.Button("Place equipment rack near spawn"))
+                    PlaceEquipmentProps();
+            }
+        }
+
+        /// Place the `export-glb --items` item-alone glbs as props on a rack
+        /// near the built scene's spawn: one row per character, grounded on
+        /// the world collider, wrapped in a convex mesh collider cooked from
+        /// the rest pose, and (optionally) wired as VRChat pickups. Items ship in raw PSX units (`conventions.units`), so
+        /// each instance carries the scene manifest's scale; the rack lives
+        /// at the TOP level, not under the mirrored scene root, so the
+        /// proper-rotation item models keep their chirality and the pickup
+        /// physics never fights a parent mirror.
+        void PlaceEquipmentProps()
+        {
+            object sm = MiniJson.Parse(File.ReadAllText(manifestPath));
+            string sceneName = MiniJson.AsStr(MiniJson.Get(sm, "scene")) ?? "scene";
+            var sceneRoot = GameObject.Find("Legaia_" + sceneName);
+            if (sceneRoot == null)
+            {
+                EditorUtility.DisplayDialog("Legaia World Builder",
+                    "No built root 'Legaia_" + sceneName +
+                    "' in this scene - build first (the rack grounds on its " +
+                    "collider and stands near its spawn).", "OK");
+                return;
+            }
+            float scale = MiniJson.GetNum(sm, "scale", 1f / 64f);
+            var spawnT = sceneRoot.transform.Find("LegaiaSpawn");
+            Vector3 origin = spawnT != null
+                ? spawnT.position : sceneRoot.transform.position;
+
+            string dir = Path.GetDirectoryName(itemsManifestPath).Replace('\\', '/');
+            object im = MiniJson.Parse(File.ReadAllText(itemsManifestPath));
+            var items = MiniJson.AsList(MiniJson.Get(im, "items"));
+            if (items == null || items.Count == 0)
+            {
+                EditorUtility.DisplayDialog("Legaia World Builder",
+                    "No items in " + itemsManifestPath, "OK");
+                return;
+            }
+
+            var old = GameObject.Find("Legaia_equipment");
+            if (old != null)
+                Undo.DestroyObjectImmediate(old);
+            var rack = new GameObject("Legaia_equipment");
+            Undo.RegisterCreatedObjectUndo(rack, "Place Legaia equipment");
+
+            // Fresh collider-mesh assets each run (the hulls must persist as
+            // assets or the scene loses them on reload / in a client build).
+            string eqDir = "Assets/LegaiaGenerated/" + sceneName + "/equipment";
+            AssetDatabase.DeleteAsset(eqDir);
+            Directory.CreateDirectory(eqDir);
+
+            var pickupType = FindType("VRC.SDK3.Components.VRCPickup");
+            var syncType = FindType("VRC.SDK3.Components.VRCObjectSync");
+            if (equipPickups && pickupType == null)
+                Debug.LogWarning("[Legaia] VRC Pickup not found (VRChat SDK " +
+                    "missing?) - placing the rack as a static display.");
+            if (equipPickups && pickupType != null)
+                EnsureUdonProgramAssets(); // for LegaiaPickupProp
+
+            var charRow = new Dictionary<string, int>();
+            var charCursor = new Dictionary<string, float>();
+            int placed = 0, missing = 0;
+            foreach (object it in items)
+            {
+                string label = MiniJson.AsStr(MiniJson.Get(it, "section_label")) ?? "";
+                if (equipWeaponsOnly && !label.Contains("Weapon"))
+                    continue;
+                string file = MiniJson.AsStr(MiniJson.Get(it, "alone"))
+                    ?? MiniJson.AsStr(MiniJson.Get(it, "with_limb"));
+                if (file == null)
+                    continue;
+                string character = MiniJson.AsStr(MiniJson.Get(it, "character")) ?? "?";
+                var go = InstantiateGlb(dir + "/" + file, rack.transform);
+                if (go == null)
+                {
+                    missing++;
+                    continue;
+                }
+                string name = MiniJson.AsStr(MiniJson.Get(it, "name"));
+                go.name = character + " - " +
+                    (name ?? Path.GetFileNameWithoutExtension(file));
+                go.transform.localScale = Vector3.one * scale;
+
+                if (!charRow.ContainsKey(character))
+                {
+                    charRow[character] = charRow.Count;
+                    charCursor[character] = 0f;
+                }
+                int row = charRow[character];
+                Vector3 pos = origin + Vector3.forward * (2.5f + row * 1.2f)
+                    + Vector3.right * (1f + charCursor[character]);
+                if (Physics.Raycast(pos + Vector3.up * 5f, Vector3.down,
+                        out RaycastHit hit, 60f, ~0, QueryTriggerInteraction.Ignore))
+                    pos.y = hit.point.y;
+                go.transform.position = pos;
+
+                // Collide the geometry as it actually RENDERS. The items are
+                // SKINNED meshes (they carry the action bank), and a
+                // SkinnedMeshRenderer's .bounds before any animator runs is
+                // the imported clip-union volume in character space - metres
+                // wide and metres off the weapon; colliders built from that
+                // overlapped the whole rack (physics explosion at start) and
+                // held each piece high off its own visual. Bake the rest
+                // pose instead and cook a CONVEX MeshCollider from it, which
+                // wraps a blade far tighter than any axis-aligned box (and a
+                // dynamic Rigidbody demands convex anyway).
+                Mesh colMesh = BuildRestPoseMesh(go);
+                if (colMesh != null)
+                {
+                    Bounds lb = colMesh.bounds; // go-local (uniform scale)
+                    Bounds b = new Bounds(
+                        go.transform.TransformPoint(lb.center), lb.size * scale);
+                    // Slide so the piece starts at the row cursor and rests
+                    // on the floor, then advance the cursor by its real width.
+                    Vector3 shift = new Vector3(
+                        pos.x - b.min.x,
+                        pos.y - b.min.y + 0.01f,
+                        pos.z - b.center.z);
+                    go.transform.position += shift;
+                    b.center += shift;
+                    charCursor[character] += b.size.x + 0.25f;
+
+                    float minDim = Mathf.Min(b.size.x,
+                        Mathf.Min(b.size.y, b.size.z));
+                    if (minDim < 0.03f)
+                    {
+                        // Near-flat piece: convex cooking is unreliable at
+                        // ~zero volume - a padded box does better.
+                        Object.DestroyImmediate(colMesh);
+                        var box = go.AddComponent<BoxCollider>();
+                        box.center = go.transform.InverseTransformPoint(b.center);
+                        box.size = Vector3.Max(lb.size,
+                            Vector3.one * (0.06f / Mathf.Max(scale, 1e-6f)));
+                    }
+                    else
+                    {
+                        colMesh.name = Sanitize(
+                            Path.GetFileNameWithoutExtension(file)) + "_col";
+                        AssetDatabase.CreateAsset(colMesh,
+                            eqDir + "/" + colMesh.name + ".asset");
+                        var mc = go.AddComponent<MeshCollider>();
+                        mc.convex = true;
+                        mc.sharedMesh = colMesh;
+                    }
+                }
+                else
+                {
+                    charCursor[character] += 0.7f;
+                }
+
+                if (equipPickups)
+                {
+                    var rb = go.AddComponent<Rigidbody>();
+                    rb.mass = 1.5f;
+                    rb.collisionDetectionMode =
+                        CollisionDetectionMode.ContinuousDynamic;
+                    // Spawn kinematic regardless of the SDK: dozens of
+                    // dynamic bodies waking during world load pick up fall
+                    // speed in the load hitches and tunnel through the
+                    // paper-thin ground mesh, then respawn-loop.
+                    // LegaiaPickupProp frees the body on first drop.
+                    rb.isKinematic = true;
+                    if (pickupType != null)
+                    {
+                        go.AddComponent(pickupType);
+                        if (syncType != null)
+                            go.AddComponent(syncType);
+                        SyncUdonProxy(TryAttachUdon(go, "LegaiaPickupProp"));
+                    }
+                }
+                placed++;
+            }
+            if (missing > 0)
+                Debug.LogWarning("[Legaia] " + missing + " item glb(s) not " +
+                    "found under Assets - copy the exported items/ folder " +
+                    "(with its character subfolders) next to the items " +
+                    "manifest and let Unity import first.");
+            Debug.Log("[Legaia] placed " + placed + " equipment prop(s) on " +
+                      "the rack near LegaiaSpawn.");
+        }
+
+        /// One combined mesh of the geometry as it actually RENDERS right
+        /// now, in `go`'s local space: skinned meshes are baked at their
+        /// current (rest) pose - their `.bounds` is the imported clip-union
+        /// volume, useless for a collider - and static meshes contribute
+        /// through their transform. Baking skips the transform scale and the
+        /// combine maps through localToWorldMatrix, so the scale chain is
+        /// applied exactly once on either path. Feed the result to a convex
+        /// MeshCollider (and save it as an asset - a scene-only mesh is lost
+        /// on reload). Editor-only: mesh reads are always allowed here.
+        static Mesh BuildRestPoseMesh(GameObject go)
+        {
+            var combine = new List<CombineInstance>();
+            var temps = new List<Mesh>();
+            Matrix4x4 toLocal = go.transform.worldToLocalMatrix;
+            foreach (var r in go.GetComponentsInChildren<Renderer>())
+            {
+                Mesh src = null;
+                if (r is SkinnedMeshRenderer smr && smr.sharedMesh != null)
+                {
+                    var baked = new Mesh();
+                    smr.BakeMesh(baked, false);
+                    temps.Add(baked);
+                    src = baked;
+                }
+                else
+                {
+                    var mf = r.GetComponent<MeshFilter>();
+                    if (mf != null)
+                        src = mf.sharedMesh;
+                }
+                if (src == null)
+                    continue;
+                var m = toLocal * r.transform.localToWorldMatrix;
+                for (int sm = 0; sm < src.subMeshCount; sm++)
+                    combine.Add(new CombineInstance
+                    {
+                        mesh = src,
+                        subMeshIndex = sm,
+                        transform = m
+                    });
+            }
+            if (combine.Count == 0)
+                return null;
+            var outMesh = new Mesh
+            {
+                indexFormat = UnityEngine.Rendering.IndexFormat.UInt32
+            };
+            outMesh.CombineMeshes(combine.ToArray(), true, true);
+            foreach (var t in temps)
+                Object.DestroyImmediate(t);
+            return outMesh;
+        }
+
+        void RealismGUI()
+        {
+            showRealism = EditorGUILayout.Foldout(showRealism,
+                "Realism enhancements (all on by default - untick for the faithful look)",
+                true);
+            if (!showRealism)
+                return;
+            EditorGUI.indentLevel++;
+            realism.lighting = EditorGUILayout.Toggle(
+                new GUIContent("Realistic lighting",
+                    "Swap the unlit retail materials for the kit's lit " +
+                    "vertex-colour shaders (smoothed normals are generated - " +
+                    "the glbs carry none) and add a warm directional sun with " +
+                    "soft shadows and a three-colour ambient. The baked retail " +
+                    "shading still modulates every surface, so the scene keeps " +
+                    "its palette. Scene-wide lighting settings - reset via " +
+                    "Window > Rendering > Lighting to undo"),
+                realism.lighting);
+            using (new EditorGUI.DisabledScope(!realism.lighting))
+            {
+                realism.sunElevation = EditorGUILayout.Slider(
+                    "  Sun elevation", realism.sunElevation, 5f, 90f);
+                realism.sunAzimuth = EditorGUILayout.Slider(
+                    "  Sun azimuth", realism.sunAzimuth, 0f, 360f);
+                realism.sunIntensity = EditorGUILayout.Slider(
+                    "  Sun intensity", realism.sunIntensity, 0f, 2f);
+                realism.shadowStrength = EditorGUILayout.Slider(
+                    "  Shadow strength", realism.shadowStrength, 0f, 1f);
+                realism.dayNight = EditorGUILayout.Toggle(
+                    new GUIContent("  Day / night cycle",
+                        "Udon: the sun sweeps a full day on a fixed cycle, " +
+                        "synced across players via server time (needs the " +
+                        "VRChat SDK). Night keeps the dim ambient"),
+                    realism.dayNight);
+                if (realism.dayNight)
+                    realism.dayNightMinutes = EditorGUILayout.Slider(
+                        "    Cycle (minutes)", realism.dayNightMinutes, 1f, 120f);
+            }
+            realism.skyAndFog = EditorGUILayout.Toggle(
+                new GUIContent("Sky + distance fog",
+                    "Procedural skybox (tracks the sun, so it darkens with the " +
+                    "day/night cycle) and linear fog scaled to the scene's " +
+                    "bounds. Scene-wide render settings, same undo note as " +
+                    "lighting"),
+                realism.skyAndFog);
+            realism.foliage = EditorGUILayout.Toggle(
+                new GUIContent("Ground foliage (grass)",
+                    "Procedural wind-swayed grass blades scattered over " +
+                    "green-reading ground, tinted from the terrain itself - " +
+                    "generated geometry, no game data. Deterministic per seed"),
+                realism.foliage);
+            using (new EditorGUI.DisabledScope(!realism.foliage))
+            {
+                realism.grassDensity = EditorGUILayout.Slider(
+                    new GUIContent("  Density (tufts / m^2)"),
+                    realism.grassDensity, 0.5f, 30f);
+                realism.grassGreenThreshold = EditorGUILayout.Slider(
+                    new GUIContent("  Green threshold",
+                        "How green a ground texel must read before grass grows " +
+                        "on it - lower to cover more ground, raise to keep " +
+                        "grass off paths"),
+                    realism.grassGreenThreshold, 0f, 0.2f);
+                realism.grassSeed = EditorGUILayout.IntField(
+                    "  Scatter seed", realism.grassSeed);
+            }
+            realism.interiorShells = EditorGUILayout.Toggle(
+                new GUIContent("Interior room shells",
+                    "Wrap each detached interior room (the doorway-teleport " +
+                    "destinations parked off the village map) in a black " +
+                    "inside-only dome: from inside, the sky above and the " +
+                    "doorway behind read as black space - retail's own " +
+                    "framing - while the dome is invisible from outside and " +
+                    "casts no shadow, so the room stays lit"),
+                realism.interiorShells);
+            using (new EditorGUI.DisabledScope(!realism.interiorShells))
+            {
+                realism.interiorGlow = EditorGUILayout.Toggle(
+                    new GUIContent("  Window light",
+                        "A warm fill light per room, so it reads window-lit " +
+                        "inside its black shell"),
+                    realism.interiorGlow);
+                realism.interiorShellMargin = EditorGUILayout.Slider(
+                    new GUIContent("  Shell margin (m)",
+                        "Clearance between the room geometry and the dome"),
+                    realism.interiorShellMargin, 1f, 8f);
+                realism.interiorRoomDistance = EditorGUILayout.Slider(
+                    new GUIContent("  Room distance (m)",
+                        "How far from the spawn a teleport endpoint must sit " +
+                        "to count as a detached interior room (town01: village " +
+                        "endpoints stay within ~52m, rooms start at ~86m)"),
+                    realism.interiorRoomDistance, 20f, 150f);
+            }
+            realism.smoothTextures = EditorGUILayout.Toggle(
+                new GUIContent("Smooth textures (bilinear)",
+                    "Bilinear + anisotropic filtering on every texture under " +
+                    "the root instead of the exports' PSX point sampling. A " +
+                    "glb reimport resets it - rerun after one"),
+                realism.smoothTextures);
+            realism.ambientAudio = EditorGUILayout.Toggle(
+                new GUIContent("Ambient audio bed",
+                    "A quiet synthesized wind/surf noise loop on a 2D source - " +
+                    "generated audio, not from the disc"),
+                realism.ambientAudio);
+            using (new EditorGUI.DisabledScope(!realism.ambientAudio))
+                realism.ambientVolume = EditorGUILayout.Slider(
+                    "  Ambience volume", realism.ambientVolume, 0f, 1f);
+            realism.npcWander = EditorGUILayout.Toggle(
+                new GUIContent("Villagers wander",
+                    "Wire the LegaiaNpcWander Udon behaviour on every " +
+                    "talk-kind NPC so the town strolls instead of standing " +
+                    "still (needs the VRChat SDK)"),
+                realism.npcWander);
+            using (new EditorGUI.DisabledScope(!realism.npcWander))
+                realism.wanderRadius = EditorGUILayout.Slider(
+                    "  Wander radius (m)", realism.wanderRadius, 0.5f, 8f);
+
+            GUILayout.Space(4);
+            using (new EditorGUI.DisabledScope(
+                string.IsNullOrEmpty(manifestPath) || !realism.AnyEnabled))
+            {
+                if (GUILayout.Button("Apply enhancements to the already-built root"))
+                    ApplyRealismToExisting();
+            }
+            EditorGUI.indentLevel--;
+        }
+
+        /// Run just the realism passes over an existing `Legaia_<scene>`
+        /// root (so tuning a slider doesn't force a full rebuild). Every
+        /// pass is idempotent - rerunning refreshes rather than stacks.
+        void ApplyRealismToExisting()
+        {
+            object m = MiniJson.Parse(File.ReadAllText(manifestPath));
+            string sceneName = MiniJson.AsStr(MiniJson.Get(m, "scene")) ?? "scene";
+            var root = GameObject.Find("Legaia_" + sceneName);
+            if (root == null)
+            {
+                EditorUtility.DisplayDialog("Legaia World Builder",
+                    "No built root 'Legaia_" + sceneName +
+                    "' in this scene - build first.", "OK");
+                return;
+            }
+            if (realism.NeedsUdon)
+                EnsureUdonProgramAssets();
+            LegaiaRealism.Apply(root, m, sceneName, realism);
+        }
+
+        internal static Vector3 G2U(Vector3 g) => new Vector3(-g.x, g.y, g.z);
 
         void Build()
         {
@@ -199,7 +637,7 @@ namespace LegaiaWorld
             // U# refuses to attach a behaviour whose script has no
             // UdonSharpProgramAsset - and bare .cs files copied into a
             // project have none. Create any missing ones before wiring.
-            if (wireTeleports || openDoorsOnApproach)
+            if (wireTeleports || openDoorsOnApproach || realism.NeedsUdon)
                 EnsureUdonProgramAssets();
 
             var root = new GameObject("Legaia_" + sceneName);
@@ -496,6 +934,11 @@ namespace LegaiaWorld
                         Quaternion.LookRotation(dirWorld.normalized, Vector3.up);
             }
 
+            // Optional realism layer, after the final mirror stands (its
+            // passes sample and scatter in the finished world frame).
+            if (realism.AnyEnabled)
+                LegaiaRealism.Apply(root, m, sceneName, realism);
+
             Selection.activeGameObject = root;
             Debug.Log("[Legaia] built " + sceneName + ": world + " + npcCount +
                       " NPC(s) + " + propCount + " animated prop instance(s) (" +
@@ -717,7 +1160,7 @@ namespace LegaiaWorld
         /// falls back to a plain AddComponent; warns when the type isn't
         /// compiled (SDK missing) so the object is visibly inert, not
         /// silently so.
-        static System.Type FindType(string fullName)
+        internal static System.Type FindType(string fullName)
         {
             foreach (var asm in System.AppDomain.CurrentDomain.GetAssemblies())
             {
@@ -735,7 +1178,7 @@ namespace LegaiaWorld
         /// CreateInstance + sourceCsScript pattern U#'s own editor uses),
         /// reset U#'s script-to-program lookup cache, and compile so the
         /// backing programs exist before the first behaviour is wired.
-        static void EnsureUdonProgramAssets()
+        internal static void EnsureUdonProgramAssets()
         {
             var paType = FindType("UdonSharp.UdonSharpProgramAsset");
             var utilType = FindType("UdonSharpEditor.UdonSharpEditorUtility");
@@ -745,7 +1188,8 @@ namespace LegaiaWorld
                 "GetUdonSharpProgramAsset", new[] { typeof(System.Type) });
             bool created = false;
             foreach (string name in new[]
-                     { "LegaiaDoorway", "LegaiaDoor", "LegaiaNpcWander" })
+                     { "LegaiaDoorway", "LegaiaDoor", "LegaiaNpcWander",
+                       "LegaiaDayNight", "LegaiaPickupProp" })
             {
                 var t = FindType("LegaiaWorld." + name);
                 if (t == null) continue;
@@ -804,7 +1248,7 @@ namespace LegaiaWorld
                 compile.Invoke(null, new object[] { null });
         }
 
-        static Component TryAttachUdon(GameObject go, string typeName)
+        internal static Component TryAttachUdon(GameObject go, string typeName)
         {
             var t = FindType("LegaiaWorld." + typeName);
             if (t == null)
@@ -851,7 +1295,7 @@ namespace LegaiaWorld
         /// land on the U# PROXY component only - call SyncUdonProxy once all
         /// fields are set, or the backing UdonBehaviour (what actually runs
         /// in-world) keeps null defaults and the behaviour silently no-ops.
-        static void SetUdonField(Component comp, string field, object value)
+        internal static void SetUdonField(Component comp, string field, object value)
         {
             if (comp == null) return;
             var f = comp.GetType().GetField(field);
@@ -865,7 +1309,7 @@ namespace LegaiaWorld
         /// the documented requirement after editing a proxy from an editor
         /// script. Without it the teleport destinations and door animator
         /// references never reach the program that runs in-world.
-        static void SyncUdonProxy(Component comp)
+        internal static void SyncUdonProxy(Component comp)
         {
             if (comp == null) return;
             var util = FindType("UdonSharpEditor.UdonSharpEditorUtility");
@@ -910,7 +1354,7 @@ namespace LegaiaWorld
             cap.radius = Mathf.Max(Mathf.Min(b.size.x, b.size.z) * 0.35f, 0.15f);
         }
 
-        static string Sanitize(string s)
+        internal static string Sanitize(string s)
         {
             foreach (char c in Path.GetInvalidFileNameChars())
                 s = s.Replace(c, '_');
