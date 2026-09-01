@@ -275,7 +275,7 @@ namespace LegaiaWorld
                     "missing?) - placing the rack as a static display.");
 
             var charRow = new Dictionary<string, int>();
-            var charCol = new Dictionary<string, int>();
+            var charCursor = new Dictionary<string, float>();
             int placed = 0, missing = 0;
             foreach (object it in items)
             {
@@ -301,34 +301,53 @@ namespace LegaiaWorld
                 if (!charRow.ContainsKey(character))
                 {
                     charRow[character] = charRow.Count;
-                    charCol[character] = 0;
+                    charCursor[character] = 0f;
                 }
                 int row = charRow[character];
-                int col = charCol[character]++;
                 Vector3 pos = origin + Vector3.forward * (2.5f + row * 1.2f)
-                    + Vector3.right * (1f + col * 0.7f);
+                    + Vector3.right * (1f + charCursor[character]);
                 if (Physics.Raycast(pos + Vector3.up * 5f, Vector3.down,
                         out RaycastHit hit, 60f, ~0, QueryTriggerInteraction.Ignore))
                     pos.y = hit.point.y;
                 go.transform.position = pos;
 
-                // Rest the piece on the floor and box-collide its bounds.
-                var rs = go.GetComponentsInChildren<Renderer>();
-                if (rs.Length > 0)
+                // TIGHT bounds from the actual rest-pose vertices. The items
+                // are SKINNED meshes (they carry the action bank), and a
+                // SkinnedMeshRenderer's .bounds before any animator runs is
+                // the imported clip-union volume in character space - metres
+                // wide and metres off the weapon. Colliders built from that
+                // overlapped the whole rack (physics explosion at start) and
+                // held each piece high off its own visual.
+                if (TightWorldBounds(go, out Bounds b))
                 {
-                    Bounds b = rs[0].bounds;
-                    foreach (var r in rs)
-                        b.Encapsulate(r.bounds);
-                    go.transform.position += Vector3.up * (pos.y - b.min.y + 0.02f);
+                    // Slide so the piece starts at the row cursor and rests
+                    // on the floor, then advance the cursor by its real width.
+                    Vector3 shift = new Vector3(
+                        pos.x - b.min.x,
+                        pos.y - b.min.y + 0.01f,
+                        pos.z - b.center.z);
+                    go.transform.position += shift;
+                    b.center += shift;
+                    charCursor[character] += b.size.x + 0.25f;
+
                     var box = go.AddComponent<BoxCollider>();
                     box.center = go.transform.InverseTransformPoint(b.center);
-                    box.size = b.size / Mathf.Max(scale, 1e-6f);
+                    // Minimum thickness so a flat blade's collider neither
+                    // tunnels nor is impossible to point at.
+                    box.size = Vector3.Max(b.size, Vector3.one * 0.1f)
+                        / Mathf.Max(scale, 1e-6f);
+                }
+                else
+                {
+                    charCursor[character] += 0.7f;
                 }
 
                 if (equipPickups)
                 {
                     var rb = go.AddComponent<Rigidbody>();
                     rb.mass = 1.5f;
+                    rb.collisionDetectionMode =
+                        CollisionDetectionMode.ContinuousDynamic;
                     if (pickupType != null)
                     {
                         go.AddComponent(pickupType);
@@ -349,6 +368,55 @@ namespace LegaiaWorld
                     "manifest and let Unity import first.");
             Debug.Log("[Legaia] placed " + placed + " equipment prop(s) on " +
                       "the rack near LegaiaSpawn.");
+        }
+
+        /// World-space bounds of the geometry as it actually RENDERS right
+        /// now: skinned meshes are baked at their current (rest) pose -
+        /// their `.bounds` is the imported clip-union volume, useless for a
+        /// collider - and static meshes contribute their vertices through
+        /// their transform. Editor-only (mesh reads are always allowed in
+        /// the editor).
+        static bool TightWorldBounds(GameObject go, out Bounds bounds)
+        {
+            bounds = default;
+            bool has = false;
+            var baked = new Mesh();
+            foreach (var r in go.GetComponentsInChildren<Renderer>())
+            {
+                Vector3[] verts = null;
+                if (r is SkinnedMeshRenderer smr && smr.sharedMesh != null)
+                {
+                    // Bake skinning WITHOUT the transform scale, then map
+                    // through localToWorldMatrix like the static path - the
+                    // scale chain is applied exactly once either way.
+                    smr.BakeMesh(baked, false);
+                    verts = baked.vertices;
+                }
+                else
+                {
+                    var mf = r.GetComponent<MeshFilter>();
+                    if (mf != null && mf.sharedMesh != null)
+                        verts = mf.sharedMesh.vertices;
+                }
+                if (verts == null)
+                    continue;
+                Matrix4x4 toWorld = r.transform.localToWorldMatrix;
+                foreach (var v in verts)
+                {
+                    Vector3 w = toWorld.MultiplyPoint3x4(v);
+                    if (!has)
+                    {
+                        bounds = new Bounds(w, Vector3.zero);
+                        has = true;
+                    }
+                    else
+                    {
+                        bounds.Encapsulate(w);
+                    }
+                }
+            }
+            Object.DestroyImmediate(baked);
+            return has;
         }
 
         void RealismGUI()
