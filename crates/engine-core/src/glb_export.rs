@@ -770,6 +770,19 @@ fn heading_dir_xz(h: i16) -> [f32; 2] {
 /// with destination heights re-sampled off the floor model exactly as the
 /// engine re-seats an arrival. `facing_dir` is the arrival facing as a unit
 /// XZ direction (`null` = keep the walked-in facing).
+///
+/// **Trigger boxes are built for a physical player capsule, not retail's
+/// point-player.** Retail dispatches both families on a 2D distance check
+/// with no height test, so a literal transcription fails two ways a 3D
+/// engine's capsule exposes: a contact tile can sample a different floor
+/// *layer* than the approach ground walks on (Rim Elm's cave mouth: contact
+/// floor 4 m below the village ground crossing above it), and a recessed
+/// door's contact centre can sit deeper into an alcove than a capsule can
+/// follow (Vahn's door: the walkable channel is narrower than a player
+/// capsule; retail's point slides down it). Hence each trigger's vertical
+/// span is the min..max of the floor sampled on rings around the contact
+/// (padded a step down / a body height up), and script-door horizontal
+/// half-extents carry a capsule allowance over retail's `0x50`.
 pub fn export_scene_traversal(
     index: &ProtIndex,
     scene: &Scene,
@@ -784,6 +797,38 @@ pub fn export_scene_traversal(
     let floor_pt = |wx: i16, wz: i16| -> [f32; 3] {
         let y = floor.height(wx as i32, wz as i32);
         pt(wx as f32, y as f32, wz as f32)
+    };
+    // Trigger vertical envelope: sample the floor at the contact and on
+    // 8-direction rings out to two tiles, and return `(position, half_y)`
+    // such that the box spans `lowest - 0x20 .. highest + 0x90` PSX units
+    // (half a step below, a body height above) - so the box overlaps the
+    // player wherever the *approach* ground actually is, exactly as
+    // retail's height-blind 2D check behaves. Retail frame: +Y is DOWN,
+    // so "lowest surface" is the numeric max.
+    let floor_box = |wx: i16, wz: i16| -> ([f32; 3], f32) {
+        let (cx, cz) = (wx as i32, wz as i32);
+        let mut lo = floor.height(cx, cz); // numeric min = highest surface
+        let mut hi = lo;
+        for r in [64, 128] {
+            for (dx, dz) in [
+                (0, -1),
+                (1, -1),
+                (1, 0),
+                (1, 1),
+                (0, 1),
+                (-1, 1),
+                (-1, 0),
+                (-1, -1),
+            ] {
+                let h = floor.height(cx + dx * r, cz + dz * r);
+                lo = lo.min(h);
+                hi = hi.max(h);
+            }
+        }
+        let bottom = hi + 0x20; // retail +Y down: below the lowest floor
+        let top = lo - 0x90; // above the highest floor
+        let half_y = (bottom - top) as f32 / 2.0 * s;
+        (pt(wx as f32, bottom as f32, wz as f32), half_y)
     };
     let mut out = TraversalExport::default();
 
@@ -800,13 +845,15 @@ pub fn export_scene_traversal(
                 i16::from(t.tile_z) * 128 + 0x40,
             );
             let (dx, dz) = t.dest_world();
+            let (tpos, thalf_y) = floor_box(tx, tz);
             out.teleports.push(json!({
                 "kind": "map",
                 "trigger": {
-                    "position": floor_pt(tx, tz),
+                    "position": tpos,
                     // One collision tile (the kind-0 dispatch is an
-                    // exact tile compare), raised a body height.
-                    "half_extents": [64.0 * s, 96.0 * s, 64.0 * s],
+                    // exact tile compare); vertical span from the local
+                    // floor envelope (see `floor_box`).
+                    "half_extents": [64.0 * s, thalf_y, 64.0 * s],
                 },
                 "destination": { "position": floor_pt(dx, dz) },
                 "facing_dir": Value::Null,
@@ -846,12 +893,17 @@ pub fn export_scene_traversal(
                 continue;
             };
             let (cx, cz) = bind.contact;
-            let half = crate::field_regions::MAP_OBJECT_CONTACT_HALF as f32;
+            // Retail's `0x50` contact half-extent measured a POINT player;
+            // a capsule stopped at the mouth of a recessed doorway (Vahn's
+            // door: the walkable channel is narrower than a capsule) needs
+            // the face to come out and meet it - widen by half a tile.
+            let half = (crate::field_regions::MAP_OBJECT_CONTACT_HALF + 32) as f32;
+            let (tpos, thalf_y) = floor_box(cx, cz);
             out.teleports.push(json!({
                 "kind": "script",
                 "trigger": {
-                    "position": floor_pt(cx, cz),
-                    "half_extents": [half * s, 96.0 * s, half * s],
+                    "position": tpos,
+                    "half_extents": [half * s, thalf_y, half * s],
                 },
                 "destination": { "position": floor_pt(world_x, world_z) },
                 "facing_dir": facing.map(heading_dir_xz),
@@ -871,11 +923,12 @@ pub fn export_scene_traversal(
             // Arrival facing: the 0x3F trailing dir byte through the retail
             // compass table (`dir & 7` eighths of the 12-bit circle).
             let facing = heading_dir_xz(i16::from(site.dir & 7) * 0x200);
+            let (tpos, thalf_y) = floor_box(tx, tz);
             out.portals.push(json!({
                 "target_scene": site.scene_name,
                 "trigger": {
-                    "position": floor_pt(tx, tz),
-                    "half_extents": [64.0 * s, 96.0 * s, 64.0 * s],
+                    "position": tpos,
+                    "half_extents": [64.0 * s, thalf_y, 64.0 * s],
                 },
                 // Arrival point in the TARGET scene's export frame (XZ only,
                 // scaled; sample the destination scene's floor for Y when

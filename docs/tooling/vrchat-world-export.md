@@ -131,8 +131,13 @@ objects - the village centre, not the map-grid centre), composition
   doorways): the `.MAP` kind-0 map-door table and the object walk-touch
   script doors (arm-resolved against the cold-entry flag state). Each
   entry is a trigger box (position + `half_extents` - one collision tile
-  for a map door, the retail `0x50` contact half-extent for a script
-  door), a floor-sampled destination, and `facing_dir` (the authored
+  wide for a map door, the retail `0x50` contact half-extent plus a
+  capsule allowance for a script door; the vertical span covers the
+  min..max floor sampled around the contact, because retail's dispatch is
+  a height-blind 2D check for a point player and a literal box misses
+  where the contact tile samples a different floor layer than the
+  approach ground, or where a recessed door's channel is narrower than a
+  player capsule), a floor-sampled destination, and `facing_dir` (the authored
   arrival facing as a unit XZ direction, `null` = keep the walked-in
   facing). Walking into the box and repositioning the player IS the retail
   behaviour - a house interior is an unused corner of the same map;
