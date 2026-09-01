@@ -114,7 +114,7 @@ fn town01_world_export_bakes_all_three_artifact_families() {
         "town01 catalogs a real NPC roster, got {}",
         catalog.entries.len()
     );
-    let npcs = export_npc_glbs(&scene, &a, &catalog);
+    let npcs = export_npc_glbs(&scene, &a, &catalog, &opts);
     assert!(npcs.len() > 20, "most entries bake, got {}", npcs.len());
     let animated = npcs
         .iter()
@@ -137,9 +137,10 @@ fn town01_world_export_bakes_all_three_artifact_families() {
         assert_eq!(pj["animations"].as_array().map(Vec::len), Some(1));
     }
 
-    // --- Traversal: both doorway families resolve for Rim Elm. ---
+    // --- Traversal: both doorway families resolve for Rim Elm, with
+    // trigger boxes capsule-reach verified against the baked world glb. ---
     let floor = FloorSampler::build(&index, &scene);
-    let traversal = export_scene_traversal(&index, &scene, &floor, &opts);
+    let traversal = export_scene_traversal(&index, &scene, &floor, &opts, Some(&world.glb));
     let kinds: Vec<&str> = traversal
         .teleports
         .iter()

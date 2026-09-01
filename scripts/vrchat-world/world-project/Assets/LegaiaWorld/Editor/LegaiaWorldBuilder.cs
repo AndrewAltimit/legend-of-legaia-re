@@ -176,6 +176,15 @@ namespace LegaiaWorld
             string worldGlb = MiniJson.AsStr(MiniJson.Get(m, "world_glb"));
 
             float scale = MiniJson.GetNum(m, "scale", 1f);
+            // Current exports bake the scale onto each NPC / prop glb's own
+            // root node (conventions.npc_prop_units == "scaled") so a file
+            // dragged into the scene by hand is already world-sized;
+            // instances then carry only the handedness mirror. An older
+            // manifest without the flag shipped raw-PSX-unit files whose
+            // instances need the full scale here.
+            bool scaledAssets = MiniJson.AsStr(MiniJson.Get(
+                MiniJson.Get(m, "conventions"), "npc_prop_units")) == "scaled";
+            float instScale = scaledAssets ? 1f : scale;
 
             // Rebuilding over a stale root leaves two overlapping worlds (and
             // any half-wired behaviours from an aborted earlier build keep
@@ -272,12 +281,10 @@ namespace LegaiaWorld
                 string file = MiniJson.AsStr(MiniJson.Get(n, "file"));
                 var go = InstantiateGlb(dir + "/" + file, npcRoot.transform);
                 if (go == null) continue;
-                // NPC/prop glbs ship in raw PSX units (same as the site's
-                // downloads); manifest positions are pre-scaled, the meshes
-                // are not - scale each instance by the manifest's factor.
-                // Negative Z: the handedness mirror (see header note).
+                // Negative Z: the handedness mirror (see header note);
+                // instScale covers legacy raw-PSX-unit exports.
                 go.transform.localScale =
-                    new Vector3(scale, scale, PROP_NPC_SCALE_Z * scale);
+                    new Vector3(instScale, instScale, PROP_NPC_SCALE_Z * instScale);
                 go.transform.localPosition = G2U(MiniJson.GetVec3(n, "position"));
                 string label = MiniJson.AsStr(MiniJson.Get(n, "label"));
                 if (!string.IsNullOrEmpty(label))
@@ -314,7 +321,7 @@ namespace LegaiaWorld
                     // Negative Z: the handedness mirror (see header note) -
                     // without it no yaw can align a prop with its baked twin.
                     go.transform.localScale =
-                        new Vector3(scale, scale, PROP_NPC_SCALE_Z * scale);
+                        new Vector3(instScale, instScale, PROP_NPC_SCALE_Z * instScale);
                     go.transform.localPosition = G2U(MiniJson.GetVec3(inst, "position"));
                     float yaw = MiniJson.GetNum(inst, "rot_y_radians") * Mathf.Rad2Deg;
                     go.transform.localRotation = Quaternion.Euler(0, YAW_SIGN * yaw, 0);

@@ -102,7 +102,7 @@ fn export_one(
         catalog_scene_npcs(index, name, &a.res, None).ok()
     };
     let npcs = match catalog.as_ref() {
-        Some(c) => export_npc_glbs(&scene, &a, c),
+        Some(c) => export_npc_glbs(&scene, &a, c, opts),
         None => Vec::new(),
     };
     if !npcs.is_empty() {
@@ -125,7 +125,7 @@ fn export_one(
         }
     }
     let floor = FloorSampler::build(index, &scene);
-    let traversal = export_scene_traversal(index, &scene, &floor, opts);
+    let traversal = export_scene_traversal(index, &scene, &floor, opts, Some(&world.glb));
     let mut manifest = world_manifest(
         &a,
         opts,

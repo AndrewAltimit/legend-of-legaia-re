@@ -31,6 +31,20 @@ fn main() {
         floor.height(cx, cz),
         -(floor.height(cx, cz) as f32) / 64.0
     );
+    // Standability map: 64-unit lattice, +-6 cells; 'W' standable, '#' not.
+    println!("standability (rows = -Z .. +Z, cols = -X .. +X, 64-unit cells):");
+    for dz in -6i32..=6 {
+        let row: String = (-6i32..=6)
+            .map(|dx| {
+                if floor.standable((cx + dx * 64) as i16, (cz + dz * 64) as i16) {
+                    'W'
+                } else {
+                    '#'
+                }
+            })
+            .collect();
+        println!("  {row}");
+    }
     for r in rings {
         print!("ring {r:>4}: ");
         for (dx, dz) in [

@@ -104,8 +104,10 @@ of the wasm session so both hosts share one implementation - and the
 manifest repeats each record's honesty tags (`class`, `complete`,
 `isolation_mode`, `curated`, `grip_bridges`) so a heuristic cut is
 distinguishable from a curated one. `SCUS_942.54` supplies display names
-and section labels when readable; without it, ids stand in. Like the NPC
-and prop glbs, item glbs ship in **raw PSX units**.
+and section labels when readable; without it, ids stand in. Unlike the
+scene NPC / prop glbs (which bake the export scale onto their root),
+item glbs ship in **raw PSX units** - matching the site's character
+downloads they share a kernel with.
 
 ## Manifest
 
@@ -173,16 +175,19 @@ field-scene page, and no rotation swaps sides across a content-pinned
 axis. Counting reflections through the page view chain (`u_pair_front`
 in `site/js/webgl-shaders.js`) gave confident wrong answers in both
 directions before the landmark test - re-run the test, don't re-count.
-The NPC / prop `.glb`s themselves stay in **raw PSX units**
-(matching the site's character downloads), so a consumer scales each
-instance by the manifest's `scale` - the kit's builder does. They also
-differ from the world glb in **handedness**: the world bakes the site
-convention's Y-mirror into its vertices (determinant -1), while the NPC /
-prop files are proper-rotation models (root `Rx(180)`, determinant +1).
-Placing a prop into the world therefore needs one mirror in the instance
-transform - `Ry(rot_y_radians) * diag(1, 1, -1)` composed onto the file's
-root - or no yaw will ever line it up with its baked frame-0 twin. The
-kit's builder applies this as a negative Z instance scale.
+The NPC / prop `.glb`s carry the export `scale` **baked on their root
+node** (`conventions.npc_prop_units: "scaled"`), so a file dragged into a
+scene next to the built world is already world-sized - unlike the site's
+character downloads, which stay in raw PSX units. They still differ from
+the world glb in **handedness**: the world bakes the site convention's
+Y-mirror into its vertices (determinant -1), while the NPC / prop files
+are proper-rotation models (root `Rx(180)`, determinant +1). Placing a
+prop into the world therefore needs one mirror in the instance transform -
+`Ry(rot_y_radians) * diag(1, 1, -1)` composed onto the file's root - or no
+yaw will ever line it up with its baked frame-0 twin. The kit's builder
+applies this as a negative-Z instance scale (unit magnitude for current
+exports; a manifest without the `npc_prop_units` flag is an older
+raw-units export whose instances get the full `scale`).
 
 ## Verification
 
