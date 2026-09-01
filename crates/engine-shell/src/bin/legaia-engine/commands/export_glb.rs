@@ -126,7 +126,7 @@ fn export_one(
     }
     let floor = FloorSampler::build(index, &scene);
     let traversal = export_scene_traversal(index, &scene, &floor, opts);
-    let manifest = world_manifest(
+    let mut manifest = world_manifest(
         &a,
         opts,
         &world,
@@ -137,6 +137,14 @@ fn export_one(
         &floor,
         &traversal,
     );
+    // Scene music: render the MAN's opening BGM start through the engine's
+    // SPU + sequencer to a seamlessly-looping WAV (Sony-derived output, same
+    // rules as the glbs). Soft-fails - a scene without a resolvable track
+    // just ships no `music` block.
+    manifest["music"] = match export_scene_music(index, &scene, &dir) {
+        Some(m) => m,
+        None => serde_json::Value::Null,
+    };
     std::fs::write(
         dir.join("manifest.json"),
         serde_json::to_string_pretty(&manifest)?,
@@ -152,6 +160,105 @@ fn export_one(
         props.len(),
     );
     Ok(true)
+}
+
+/// Render the scene's entry BGM to `music/bgm_<id>.wav` and return the
+/// manifest `music` block. The track is the scene MAN's **first** op-`0x35`
+/// sub-1 BGM start (the id the controller script plays at entry -
+/// `man_field_scripts::scene_bgm_starts`), resolved the way the play hosts
+/// resolve it: global ids (`>= 2000`) through the `music_01` bank map
+/// ([`legaia_engine_core::music_labels::prot_entry_for_bgm_id`]), scene-local
+/// ids through the scene's own SEQ/VAB entries.
+///
+/// The render drives the engine's SPU + SsAPI sequencer sample-by-sample
+/// ([`legaia_engine_audio::render_bgm_loop_region`], the site's minigame-BGM
+/// path) and writes ONLY the detected loop region, so an `AudioSource` set to
+/// loop plays it seamlessly with no lead-in seam. `None` when the scene names
+/// no track or the pair doesn't parse.
+fn export_scene_music(index: &ProtIndex, scene: &Scene, dir: &Path) -> Option<serde_json::Value> {
+    use legaia_engine_audio::{SPU_INTERNAL_RATE, render_bgm_loop_region};
+    use serde_json::json;
+
+    let man = scene.field_man_payload(index).ok()??;
+    let mf = legaia_asset::man_section::parse(&man).ok()?;
+    let starts = legaia_engine_core::man_field_scripts::scene_bgm_starts(&mf, &man);
+    let bgm_id = starts.first()?.bgm_id;
+
+    // Resolve the [VAB..][SEQ..] byte carriers.
+    let (vab_carrier, seq_bytes): (std::sync::Arc<Vec<u8>>, Vec<u8>) = if bgm_id >= 2000 {
+        // Global pool: one music_01 bank entry carries the whole pair.
+        let entry = legaia_engine_core::music_labels::prot_entry_for_bgm_id(bgm_id)?;
+        let bytes = index.entry_bytes(entry).ok()?;
+        let vab_off = bytes.windows(4).position(|w| w == b"pBAV")?;
+        let seq_off = vab_off + bytes[vab_off..].windows(4).position(|w| w == b"pQES")?;
+        let seq = bytes[seq_off..].to_vec();
+        (bytes, seq)
+    } else {
+        // Scene-local: SEQ from the id-mapped stream entry, VAB from the
+        // scene's first bank entry (the same pair `SceneHost` stages).
+        let assets = SceneAssets::build(scene);
+        let seq_entry = assets.bgm_seq_entry(bgm_id)?;
+        let seq_all = index.entry_bytes(seq_entry).ok()?;
+        let off = assets.bgm_seq_offset(bgm_id).unwrap_or(0);
+        let seq = seq_all.get(off..)?.to_vec();
+        let vab_entry = *assets.vab_entries.first()?;
+        (index.entry_bytes(vab_entry).ok()?, seq)
+    };
+    let vab_off = vab_carrier.windows(4).position(|w| w == b"pBAV")?;
+    let report = legaia_vab::parse(&vab_carrier, vab_off).ok()?;
+    let seq = legaia_seq::Seq::parse(&seq_bytes).ok()?;
+
+    let mut spu = legaia_engine_audio::Spu::new();
+    let mut alloc = legaia_engine_audio::spu::ram::SpuAllocator::new(
+        0x1000,
+        legaia_engine_audio::spu::ram::SPU_RAM_BYTES as u32 - 0x1000,
+    );
+    let bank = legaia_engine_audio::VabBank::upload(
+        &mut spu,
+        &mut alloc,
+        &report,
+        &vab_carrier[vab_off..],
+    );
+    let mut sequencer = legaia_engine_audio::sequencer::Sequencer::new(seq, bank);
+    // End-of-track fallback loop, as the site's pre-render path sets - an
+    // in-stream loop marker still wins.
+    sequencer.set_loop_to(0);
+    const MAX_SECONDS: usize = 300;
+    let render = render_bgm_loop_region(
+        &mut sequencer,
+        &mut spu,
+        MAX_SECONDS * SPU_INTERNAL_RATE as usize,
+    );
+    // Keep only the repeatable body: hard-looping [loop_start, loop_end) is
+    // seamless; keeping the lead-in would seam every repeat.
+    let looped = render.loop_start_sample > 0 || render.loop_end_sample > 0;
+    let pcm = if render.loop_start_sample < render.loop_end_sample {
+        &render.pcm[render.loop_start_sample * 2..render.loop_end_sample * 2]
+    } else {
+        &render.pcm[..]
+    };
+    if pcm.is_empty() {
+        return None;
+    }
+    let music_dir = dir.join("music");
+    std::fs::create_dir_all(&music_dir).ok()?;
+    let file = format!("music/bgm_{bgm_id}.wav");
+    write_wav(&music_dir.join(format!("bgm_{bgm_id}.wav")), pcm).ok()?;
+    let seconds = (pcm.len() / 2) as f32 / SPU_INTERNAL_RATE as f32;
+    println!(
+        "  [music] bgm {bgm_id}{}: {seconds:.1}s loop -> {file}",
+        legaia_engine_core::music_labels::label_for_bgm_id(bgm_id)
+            .map(|t| format!(" ({t})"))
+            .unwrap_or_default()
+    );
+    Some(json!({
+        "file": file,
+        "bgm_id": bgm_id,
+        "title": legaia_engine_core::music_labels::label_for_bgm_id(bgm_id),
+        "sample_rate": SPU_INTERNAL_RATE,
+        "seamless_loop": looped,
+        "loop_seconds": seconds,
+    }))
 }
 
 /// Export every equipment item of the four player battle files as animated
