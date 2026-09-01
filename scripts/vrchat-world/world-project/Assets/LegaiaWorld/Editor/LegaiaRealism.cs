@@ -10,9 +10,10 @@
 //   with NO normals, so Unity lights can't touch them as imported. The
 //   pass duplicates every mesh under the root into Assets/LegaiaGenerated
 //   with smoothed normals (position-welded, sign-aligned - the PSX source
-//   winding is mixed, so raw face normals point both ways and would cancel;
-//   the lit shaders then flip each normal toward the camera per vertex,
-//   because the winding is no more trustworthy at raster time than here),
+//   winding is mixed, so raw face normals point both ways and would
+//   cancel; the lit shaders then light with the sign-independent
+//   two-sided Lambert |N.L|, because no per-vertex sign choice survives
+//   this data - the shader headers keep the failed-attempt history),
 //   swaps every material for the kit's lit vertex-colour shaders (the
 //   baked COLOR_0 retail shading keeps modulating, so the palette holds),
 //   and adds a warm directional sun + trilight ambient + soft shadows.
@@ -193,8 +194,10 @@ namespace LegaiaWorld
         /// windings reinforce instead of cancelling), then every cell picks
         /// a canonical global sign (up, then +x, then +z) so neighbouring
         /// cells agree and interpolation never crosses zero. The lit
-        /// shaders flip each vertex normal toward the camera, so the sign
-        /// only needs to be locally consistent, not globally correct.
+        /// shaders' |N.L| lighting is sign-independent, so the sign only
+        /// needs to be locally consistent (for clean interpolation), not
+        /// globally correct - and the trilight ambient reads the signed
+        /// normal, which is why the canonical up matters for the ground.
         static void SmoothNormalsInPlace(Mesh m)
         {
             var verts = m.vertices;

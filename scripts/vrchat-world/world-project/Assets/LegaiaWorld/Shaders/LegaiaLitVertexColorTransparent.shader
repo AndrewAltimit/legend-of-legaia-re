@@ -1,9 +1,9 @@
 // Lit stand-in for the exporter's BLEND materials (ABE semi-transparent
 // prims: water sheets, light pools - split at half alpha by the export).
 // Same contract as the cutout sibling: COLOR_0 keeps modulating the
-// texture, lighting is layered on top, and the vert modifier flips the
-// smoothed normal toward the camera per vertex (the mixed PSX winding
-// makes VFACE the wrong signal - see the cutout shader's header).
+// texture, and lighting is the sign-independent two-sided Lambert |N.L|
+// (see the cutout shader's header for why neither a VFACE flip nor a
+// toward-camera flip survives this data's mixed winding).
 // alpha:fade keeps depth writes off, which is also what keeps retail's
 // coincident water scroll layers from z-fighting.
 Shader "Legaia/Lit Vertex Color (Transparent)"
@@ -12,7 +12,6 @@ Shader "Legaia/Lit Vertex Color (Transparent)"
     {
         _MainTex ("Base (RGB) Alpha (blend)", 2D) = "white" {}
         _Color ("Tint", Color) = (1,1,1,1)
-        _Glossiness ("Smoothness", Range(0,1)) = 0.3
     }
     SubShader
     {
@@ -21,12 +20,11 @@ Shader "Legaia/Lit Vertex Color (Transparent)"
         LOD 200
 
         CGPROGRAM
-        #pragma surface surf Standard vertex:vert alpha:fade
+        #pragma surface surf LegaiaTwoSided alpha:fade
         #pragma target 3.0
 
         sampler2D _MainTex;
         fixed4 _Color;
-        half _Glossiness;
 
         struct Input
         {
@@ -34,21 +32,20 @@ Shader "Legaia/Lit Vertex Color (Transparent)"
             float4 color : COLOR;
         };
 
-        void vert (inout appdata_full v)
+        half4 LightingLegaiaTwoSided (SurfaceOutput s, half3 lightDir, half atten)
         {
-            float3 wpos = mul(unity_ObjectToWorld, v.vertex).xyz;
-            float3 wn = UnityObjectToWorldNormal(v.normal);
-            if (dot(wn, _WorldSpaceCameraPos - wpos) < 0)
-                v.normal = -v.normal;
+            half nl = abs(dot(s.Normal, lightDir));
+            half4 c;
+            c.rgb = s.Albedo * _LightColor0.rgb * nl * atten;
+            c.a = s.Alpha;
+            return c;
         }
 
-        void surf (Input IN, inout SurfaceOutputStandard o)
+        void surf (Input IN, inout SurfaceOutput o)
         {
             fixed4 t = tex2D(_MainTex, IN.uv_MainTex) * _Color;
             o.Albedo = t.rgb * IN.color.rgb;
             o.Alpha = t.a * IN.color.a;
-            o.Metallic = 0;
-            o.Smoothness = _Glossiness;
         }
         ENDCG
     }
