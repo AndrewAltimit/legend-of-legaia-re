@@ -152,8 +152,10 @@ the VCC setup in more detail if this is your first worlds project.
   section at its `manifest.json`, and **Place equipment rack near spawn**
   lines them up grounded on the world collider - one row per character,
   each prop scaled from raw PSX units by the scene's export scale,
-  box-collided, and wired as a `VRC Pickup` + `VRC Object Sync` physics
-  pickup (static display without the SDK). **Weapons only** is the
+  wrapped in a convex mesh collider cooked from its baked rest pose (a
+  tight hull, not a bounding box; near-flat pieces fall back to a padded
+  box), and wired as a `VRC Pickup` + `VRC Object Sync` physics pickup
+  (static display without the SDK). **Weapons only** is the
   default filter; untick it to also rack armour, headgear, footwear and
   Ra-Seru. (The site's equipment viewer offers the same files per
   download.)

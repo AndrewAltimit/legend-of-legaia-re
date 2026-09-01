@@ -228,8 +228,8 @@ namespace LegaiaWorld
 
         /// Place the `export-glb --items` item-alone glbs as props on a rack
         /// near the built scene's spawn: one row per character, grounded on
-        /// the world collider, box-collided, and (optionally) wired as VRChat
-        /// pickups. Items ship in raw PSX units (`conventions.units`), so
+        /// the world collider, wrapped in a convex mesh collider cooked from
+        /// the rest pose, and (optionally) wired as VRChat pickups. Items ship in raw PSX units (`conventions.units`), so
         /// each instance carries the scene manifest's scale; the rack lives
         /// at the TOP level, not under the mirrored scene root, so the
         /// proper-rotation item models keep their chirality and the pickup
@@ -267,6 +267,12 @@ namespace LegaiaWorld
                 Undo.DestroyObjectImmediate(old);
             var rack = new GameObject("Legaia_equipment");
             Undo.RegisterCreatedObjectUndo(rack, "Place Legaia equipment");
+
+            // Fresh collider-mesh assets each run (the hulls must persist as
+            // assets or the scene loses them on reload / in a client build).
+            string eqDir = "Assets/LegaiaGenerated/" + sceneName + "/equipment";
+            AssetDatabase.DeleteAsset(eqDir);
+            Directory.CreateDirectory(eqDir);
 
             var pickupType = FindType("VRC.SDK3.Components.VRCPickup");
             var syncType = FindType("VRC.SDK3.Components.VRCObjectSync");
@@ -311,15 +317,22 @@ namespace LegaiaWorld
                     pos.y = hit.point.y;
                 go.transform.position = pos;
 
-                // TIGHT bounds from the actual rest-pose vertices. The items
-                // are SKINNED meshes (they carry the action bank), and a
+                // Collide the geometry as it actually RENDERS. The items are
+                // SKINNED meshes (they carry the action bank), and a
                 // SkinnedMeshRenderer's .bounds before any animator runs is
                 // the imported clip-union volume in character space - metres
-                // wide and metres off the weapon. Colliders built from that
+                // wide and metres off the weapon; colliders built from that
                 // overlapped the whole rack (physics explosion at start) and
-                // held each piece high off its own visual.
-                if (TightWorldBounds(go, out Bounds b))
+                // held each piece high off its own visual. Bake the rest
+                // pose instead and cook a CONVEX MeshCollider from it, which
+                // wraps a blade far tighter than any axis-aligned box (and a
+                // dynamic Rigidbody demands convex anyway).
+                Mesh colMesh = BuildRestPoseMesh(go);
+                if (colMesh != null)
                 {
+                    Bounds lb = colMesh.bounds; // go-local (uniform scale)
+                    Bounds b = new Bounds(
+                        go.transform.TransformPoint(lb.center), lb.size * scale);
                     // Slide so the piece starts at the row cursor and rests
                     // on the floor, then advance the cursor by its real width.
                     Vector3 shift = new Vector3(
@@ -330,12 +343,28 @@ namespace LegaiaWorld
                     b.center += shift;
                     charCursor[character] += b.size.x + 0.25f;
 
-                    var box = go.AddComponent<BoxCollider>();
-                    box.center = go.transform.InverseTransformPoint(b.center);
-                    // Minimum thickness so a flat blade's collider neither
-                    // tunnels nor is impossible to point at.
-                    box.size = Vector3.Max(b.size, Vector3.one * 0.1f)
-                        / Mathf.Max(scale, 1e-6f);
+                    float minDim = Mathf.Min(b.size.x,
+                        Mathf.Min(b.size.y, b.size.z));
+                    if (minDim < 0.03f)
+                    {
+                        // Near-flat piece: convex cooking is unreliable at
+                        // ~zero volume - a padded box does better.
+                        Object.DestroyImmediate(colMesh);
+                        var box = go.AddComponent<BoxCollider>();
+                        box.center = go.transform.InverseTransformPoint(b.center);
+                        box.size = Vector3.Max(lb.size,
+                            Vector3.one * (0.06f / Mathf.Max(scale, 1e-6f)));
+                    }
+                    else
+                    {
+                        colMesh.name = Sanitize(
+                            Path.GetFileNameWithoutExtension(file)) + "_col";
+                        AssetDatabase.CreateAsset(colMesh,
+                            eqDir + "/" + colMesh.name + ".asset");
+                        var mc = go.AddComponent<MeshCollider>();
+                        mc.convex = true;
+                        mc.sharedMesh = colMesh;
+                    }
                 }
                 else
                 {
@@ -370,53 +399,57 @@ namespace LegaiaWorld
                       "the rack near LegaiaSpawn.");
         }
 
-        /// World-space bounds of the geometry as it actually RENDERS right
-        /// now: skinned meshes are baked at their current (rest) pose -
-        /// their `.bounds` is the imported clip-union volume, useless for a
-        /// collider - and static meshes contribute their vertices through
-        /// their transform. Editor-only (mesh reads are always allowed in
-        /// the editor).
-        static bool TightWorldBounds(GameObject go, out Bounds bounds)
+        /// One combined mesh of the geometry as it actually RENDERS right
+        /// now, in `go`'s local space: skinned meshes are baked at their
+        /// current (rest) pose - their `.bounds` is the imported clip-union
+        /// volume, useless for a collider - and static meshes contribute
+        /// through their transform. Baking skips the transform scale and the
+        /// combine maps through localToWorldMatrix, so the scale chain is
+        /// applied exactly once on either path. Feed the result to a convex
+        /// MeshCollider (and save it as an asset - a scene-only mesh is lost
+        /// on reload). Editor-only: mesh reads are always allowed here.
+        static Mesh BuildRestPoseMesh(GameObject go)
         {
-            bounds = default;
-            bool has = false;
-            var baked = new Mesh();
+            var combine = new List<CombineInstance>();
+            var temps = new List<Mesh>();
+            Matrix4x4 toLocal = go.transform.worldToLocalMatrix;
             foreach (var r in go.GetComponentsInChildren<Renderer>())
             {
-                Vector3[] verts = null;
+                Mesh src = null;
                 if (r is SkinnedMeshRenderer smr && smr.sharedMesh != null)
                 {
-                    // Bake skinning WITHOUT the transform scale, then map
-                    // through localToWorldMatrix like the static path - the
-                    // scale chain is applied exactly once either way.
+                    var baked = new Mesh();
                     smr.BakeMesh(baked, false);
-                    verts = baked.vertices;
+                    temps.Add(baked);
+                    src = baked;
                 }
                 else
                 {
                     var mf = r.GetComponent<MeshFilter>();
-                    if (mf != null && mf.sharedMesh != null)
-                        verts = mf.sharedMesh.vertices;
+                    if (mf != null)
+                        src = mf.sharedMesh;
                 }
-                if (verts == null)
+                if (src == null)
                     continue;
-                Matrix4x4 toWorld = r.transform.localToWorldMatrix;
-                foreach (var v in verts)
-                {
-                    Vector3 w = toWorld.MultiplyPoint3x4(v);
-                    if (!has)
+                var m = toLocal * r.transform.localToWorldMatrix;
+                for (int sm = 0; sm < src.subMeshCount; sm++)
+                    combine.Add(new CombineInstance
                     {
-                        bounds = new Bounds(w, Vector3.zero);
-                        has = true;
-                    }
-                    else
-                    {
-                        bounds.Encapsulate(w);
-                    }
-                }
+                        mesh = src,
+                        subMeshIndex = sm,
+                        transform = m
+                    });
             }
-            Object.DestroyImmediate(baked);
-            return has;
+            if (combine.Count == 0)
+                return null;
+            var outMesh = new Mesh
+            {
+                indexFormat = UnityEngine.Rendering.IndexFormat.UInt32
+            };
+            outMesh.CombineMeshes(combine.ToArray(), true, true);
+            foreach (var t in temps)
+                Object.DestroyImmediate(t);
+            return outMesh;
         }
 
         void RealismGUI()
