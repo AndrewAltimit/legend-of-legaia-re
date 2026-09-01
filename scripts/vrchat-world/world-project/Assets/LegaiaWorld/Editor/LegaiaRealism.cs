@@ -11,7 +11,8 @@
 //   pass duplicates every mesh under the root into Assets/LegaiaGenerated
 //   with smoothed normals (position-welded, sign-aligned - the PSX source
 //   winding is mixed, so raw face normals point both ways and would cancel;
-//   the lit shaders' VFACE flip then lights whichever side is visible),
+//   the lit shaders then flip each normal toward the camera per vertex,
+//   because the winding is no more trustworthy at raster time than here),
 //   swaps every material for the kit's lit vertex-colour shaders (the
 //   baked COLOR_0 retail shading keeps modulating, so the palette holds),
 //   and adds a warm directional sun + trilight ambient + soft shadows.
@@ -179,9 +180,6 @@ namespace LegaiaWorld
             var m = Object.Instantiate(src);
             m.name = src.name; // keep the twin-matching name
             SmoothNormalsInPlace(m);
-            // Writing o.Normal in the lit shaders puts them on the
-            // tangent-space path, which needs tangents on the mesh.
-            m.RecalculateTangents();
             string path = genDir + "/" + LegaiaWorldBuilder.Sanitize(src.name)
                 + "_lit_" + idx++ + ".asset";
             AssetDatabase.DeleteAsset(path);
@@ -195,7 +193,8 @@ namespace LegaiaWorld
         /// windings reinforce instead of cancelling), then every cell picks
         /// a canonical global sign (up, then +x, then +z) so neighbouring
         /// cells agree and interpolation never crosses zero. The lit
-        /// shaders' VFACE flip lights the visible side either way.
+        /// shaders flip each vertex normal toward the camera, so the sign
+        /// only needs to be locally consistent, not globally correct.
         static void SmoothNormalsInPlace(Mesh m)
         {
             var verts = m.vertices;
@@ -257,7 +256,14 @@ namespace LegaiaWorld
             };
             var tex = ExtractMainTexture(src);
             if (tex != null)
+            {
                 m.mainTexture = tex;
+                if (src.mainTexture != null)
+                {
+                    m.mainTextureScale = src.mainTextureScale;
+                    m.mainTextureOffset = src.mainTextureOffset;
+                }
+            }
             foreach (var p in new[] { "_Color", "baseColorFactor", "_BaseColor" })
                 if (src.HasProperty(p))
                 {

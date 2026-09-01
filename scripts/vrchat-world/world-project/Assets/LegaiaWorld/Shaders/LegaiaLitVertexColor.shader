@@ -6,12 +6,15 @@
 //
 // Two source-data quirks this shader absorbs:
 // - the glbs carry NO normals; the builder generates smoothed ones on a
-//   duplicated mesh (LegaiaRealism.SmoothedCopy) before assigning this
-//   shader, and RecalculateTangents runs there because writing o.Normal
-//   below puts the surface shader on the tangent-space path;
-// - the PSX source winding is MIXED (retail culled per-view via NCLIP),
-//   so a per-vertex normal can only be canonicalised, not made to face
-//   the camera. Cull Off + the VFACE flip lights whichever side is seen.
+//   duplicated mesh (LegaiaRealism.SmoothedCopy);
+// - the PSX source winding is MIXED (retail culled per-view via NCLIP)
+//   and the import stack layers several mirrors on top, so neither the
+//   winding nor the stored normal sign says which way a surface really
+//   faces. The vert modifier flips the smoothed normal toward the camera
+//   per vertex, so both sides of every surface light as "front" - do NOT
+//   swap this for a VFACE flip: VFACE follows the (random) winding, which
+//   turns mixed-wound ground into random black patches and zigzag walls
+//   into alternating lit/dark stripes.
 Shader "Legaia/Lit Vertex Color (Cutout)"
 {
     Properties
@@ -28,7 +31,7 @@ Shader "Legaia/Lit Vertex Color (Cutout)"
         LOD 200
 
         CGPROGRAM
-        #pragma surface surf Standard alphatest:_Cutoff addshadow fullforwardshadows
+        #pragma surface surf Standard vertex:vert alphatest:_Cutoff addshadow fullforwardshadows
         #pragma target 3.0
 
         sampler2D _MainTex;
@@ -39,8 +42,16 @@ Shader "Legaia/Lit Vertex Color (Cutout)"
         {
             float2 uv_MainTex;
             float4 color : COLOR;
-            fixed facing : VFACE;
         };
+
+        void vert (inout appdata_full v)
+        {
+            // Face the smoothed normal toward the viewer (see header).
+            float3 wpos = mul(unity_ObjectToWorld, v.vertex).xyz;
+            float3 wn = UnityObjectToWorldNormal(v.normal);
+            if (dot(wn, _WorldSpaceCameraPos - wpos) < 0)
+                v.normal = -v.normal;
+        }
 
         void surf (Input IN, inout SurfaceOutputStandard o)
         {
@@ -49,8 +60,6 @@ Shader "Legaia/Lit Vertex Color (Cutout)"
             o.Alpha = t.a * IN.color.a;
             o.Metallic = 0;
             o.Smoothness = _Glossiness;
-            // Light the visible side regardless of the mixed source winding.
-            o.Normal = float3(0, 0, IN.facing >= 0 ? 1 : -1);
         }
         ENDCG
     }

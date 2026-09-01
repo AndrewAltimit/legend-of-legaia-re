@@ -1,7 +1,9 @@
 // Lit stand-in for the exporter's BLEND materials (ABE semi-transparent
 // prims: water sheets, light pools - split at half alpha by the export).
 // Same contract as the cutout sibling: COLOR_0 keeps modulating the
-// texture, lighting is layered on top, VFACE handles the mixed winding.
+// texture, lighting is layered on top, and the vert modifier flips the
+// smoothed normal toward the camera per vertex (the mixed PSX winding
+// makes VFACE the wrong signal - see the cutout shader's header).
 // alpha:fade keeps depth writes off, which is also what keeps retail's
 // coincident water scroll layers from z-fighting.
 Shader "Legaia/Lit Vertex Color (Transparent)"
@@ -19,7 +21,7 @@ Shader "Legaia/Lit Vertex Color (Transparent)"
         LOD 200
 
         CGPROGRAM
-        #pragma surface surf Standard alpha:fade
+        #pragma surface surf Standard vertex:vert alpha:fade
         #pragma target 3.0
 
         sampler2D _MainTex;
@@ -30,8 +32,15 @@ Shader "Legaia/Lit Vertex Color (Transparent)"
         {
             float2 uv_MainTex;
             float4 color : COLOR;
-            fixed facing : VFACE;
         };
+
+        void vert (inout appdata_full v)
+        {
+            float3 wpos = mul(unity_ObjectToWorld, v.vertex).xyz;
+            float3 wn = UnityObjectToWorldNormal(v.normal);
+            if (dot(wn, _WorldSpaceCameraPos - wpos) < 0)
+                v.normal = -v.normal;
+        }
 
         void surf (Input IN, inout SurfaceOutputStandard o)
         {
@@ -40,7 +49,6 @@ Shader "Legaia/Lit Vertex Color (Transparent)"
             o.Alpha = t.a * IN.color.a;
             o.Metallic = 0;
             o.Smoothness = _Glossiness;
-            o.Normal = float3(0, 0, IN.facing >= 0 ? 1 : -1);
         }
         ENDCG
     }
