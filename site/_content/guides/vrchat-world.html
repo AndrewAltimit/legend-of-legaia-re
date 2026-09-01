@@ -1,0 +1,120 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; guides &middot; vrchat world</div>
+  <h1>Importing a world into VRChat</h1>
+  <p class="lede">The engine exports any town or field scene as textured <code>.glb</code> files plus a manifest, and a Unity editor kit rebuilds it as a walkable VRChat world: the retail walk surface underfoot, villagers playing their spawn animations, doors that open as you approach and teleport you inside, the shoreline washing in and out, and the scene's music on a seamless loop. This guide goes from disc to standing in Rim Elm in about six steps.</p>
+</header>
+
+<section class="doc-section" id="legal">
+  <h2>Before anything: keep it private</h2>
+  <p>The exported <code>.glb</code> files contain Sony-derived geometry and textures decoded from <strong>your own disc</strong>. They are for your own local use: never commit them to a repository, never redistribute them, and keep any VRChat upload <strong>private</strong> - which is the default for a fresh world, so all you have to do is not publish it to Community Labs. The kit itself (scripts, builder, this guide) ships no game data.</p>
+</section>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <div class="flow">
+    <div class="num">1</div><div class="layer">Export a scene</div><div class="desc">World glb + NPCs + props + music + manifest from your disc.</div><div class="crate">export-glb</div>
+    <div class="num">2</div><div class="layer">Make a worlds project</div><div class="desc">VRChat Creator Companion + glTFast + the kit.</div><div class="crate">Unity 2022.3</div>
+    <div class="num">3</div><div class="layer">Build the scene</div><div class="desc">One menu action wires the whole map from the manifest.</div><div class="crate">LegaiaWorldBuilder</div>
+    <div class="num">4</div><div class="layer">Spawn + test</div><div class="desc">Point the VRChat descriptor at the spawn marker, Build &amp; Test.</div><div class="crate">VRC SDK</div>
+    <div class="num">5</div><div class="layer">Make it alive</div><div class="desc">Wandering NPCs, grabbable weapons, more scenes joined by their portals.</div><div class="crate">Udon kit</div>
+  </div>
+</section>
+
+<section class="doc-section" id="export">
+  <h2>1 &middot; Export a scene</h2>
+  <div class="cli"><code>./legaia-engine export-glb --scene town01 --out glb-export</code></div>
+  <p>Reads <code>extracted/</code> by default, or the disc directly with <code>--disc "/path/to/Legend of Legaia (USA).bin"</code>. <code>--all-scenes</code> exports everything that assembles and reports what each scene yielded. One scene produces:</p>
+  <ul>
+    <li><code>town01.glb</code> - the assembled world: ground, terrain, buildings, every placed object at its resolved transform, with the PSX point-sampled look baked into the materials. Where the scene has one (Rim Elm does), the shoreline's wave motion rides along as a looping blendshape clip.</li>
+    <li><code>npcs/*.glb</code> - one animated file per catalogued villager, carrying every scene animation whose skeleton matches.</li>
+    <li><code>props/*.glb</code> - the animated placements: windmills, house doors, gate leaves.</li>
+    <li><code>music/bgm_*.wav</code> - the scene's entry BGM rendered through the engine's own SPU, cut to exactly its loop region so a looping AudioSource repeats it seamlessly.</li>
+    <li><code>manifest.json</code> - transforms, labels, doorway-teleport triggers and landings, door tags, the suggested spawn, and the scale/axis conventions that tie it all together.</li>
+  </ul>
+  <p>The default <code>--scale</code> is 1/64: one 128-unit walk tile becomes 2&nbsp;m, which lands doorways and NPCs near VRChat human scale. NPC and prop files carry that scale baked on their root node, so one dragged into a Unity scene by hand is already world-sized.</p>
+</section>
+
+<section class="doc-section" id="project">
+  <h2>2 &middot; Set up a VRChat worlds project</h2>
+  <ol>
+    <li>Install the <a href="https://vcc.docs.vrchat.com/" target="_blank" rel="noopener">VRChat Creator Companion</a> and create a <strong>Worlds</strong> project (Unity 2022.3).</li>
+    <li>Add <strong>glTFast</strong> so Unity can import <code>.glb</code>: <em>Window &gt; Package Manager &gt; + &gt; Add package by name...</em> &rarr; <code>com.unity.cloud.gltfast</code>. On the VRChat-mandated 2022.3.22f1 editor, pin version <code>6.14.1</code> - newer glTFast releases require a newer Unity than the SDK allows, so the Package Manager refuses them. Equivalently, one line in <code>Packages/manifest.json</code> under <code>"dependencies"</code>: <code>"com.unity.cloud.gltfast": "6.14.1"</code>.</li>
+    <li>Copy the kit from the repo - <code>scripts/vrchat-world/world-project/Assets/LegaiaWorld/</code> - into the project's <code>Assets/</code>. It is four small C# files: the editor builder, a JSON reader, and two UdonSharp behaviours (doorway teleport, proximity door).</li>
+  </ol>
+  <p class="hint">glTFast is a Unity-registry package, so it never appears inside the Creator Companion - and the VRChat packages live in <code>Packages/vpm-manifest.json</code>, so don't be alarmed when <code>Packages/manifest.json</code> shows no <code>com.vrchat.*</code> entries. Both are normal.</p>
+</section>
+
+<section class="doc-section" id="build">
+  <h2>3 &middot; Import and build the scene</h2>
+  <ol>
+    <li>Copy the exported scene folder into the project, e.g. <code>Assets/LegaiaImports/town01/</code>, keeping <code>npcs/</code>, <code>props/</code> and <code>manifest.json</code> beside the world glb. Let Unity import - glTFast picks up every <code>.glb</code> with no material fixup needed.</li>
+    <li>Menu <strong>Legaia &gt; Build Scene From Manifest...</strong>, browse to the copied <code>manifest.json</code>, and <strong>Build scene</strong>.</li>
+  </ol>
+  <p>Two default-on options are worth knowing before you press the button. <strong>Match explorer orientation</strong> mirrors the finished root on X so the scene reads the way this site's field-scene viewer presents it (the raw export genuinely is mirrored). <strong>Merged + welded</strong> builds one welded, double-sided collision mesh for the whole world instead of a collider per mesh - it closes the hairline seams a player capsule slips through, and because the source data's triangle winding is mixed, a single-sided collider would drop you through roughly half the floors.</p>
+  <p>The result is one <code>Legaia_town01</code> root:</p>
+  <ul>
+    <li><code>world</code> - the full map with its collider; the shoreline morph clip and the BGM loop play from here.</li>
+    <li><code>npcs/</code> - every catalogued villager at their retail spawn tile, looping their spawn animation, capsule-collided.</li>
+    <li><code>props/</code> - windmills spinning, gate leaves, and house doors. Instances the manifest tags as doors <strong>open on first approach and stay open</strong> instead of looping their swing - the kit's <code>LegaiaDoor</code> behaviour.</li>
+    <li><code>teleports/</code> - one trigger volume per retail doorway. Walk into a house door and you land in its interior facing the authored direction: house interiors sit in an unused corner of the same map, and repositioning the player <em>is</em> the retail door mechanism (<code>LegaiaDoorway</code>). The trigger boxes are sized for a player capsule, not for retail's point-player check - each one is verified reachable against the exported world mesh itself, so a door works from a normal walk-up rather than only at the exact retail contact point.</li>
+    <li><code>LegaiaSpawn</code> - the manifest's suggested spawn, the village centre.</li>
+  </ul>
+  <p class="hint">The builder creates the UdonSharp program assets its behaviours need, compiles them, and syncs every wired field - so a plain copy of the kit's <code>.cs</code> files is enough; no manual UdonSharp setup.</p>
+</section>
+
+<section class="doc-section" id="descriptor">
+  <h2>4 &middot; Descriptor, test, upload</h2>
+  <ol>
+    <li>Drop the SDK's <code>VRCWorld</code> prefab into the scene if the template didn't already.</li>
+    <li>Select it, expand the <strong>VRC Scene Descriptor</strong>'s <strong>Spawns</strong> list, and drag <code>Legaia_town01/LegaiaSpawn</code> into element 0, replacing the prefab's own <code>Spawn</code> child. Moving a spawn marker does nothing until the list references it. Players face the spawn transform's +Z, so rotate the marker toward the view you want.</li>
+    <li>Delete the template's <code>GridFloor</code> plane (or sink it far below as a fall catch) so it can't mask the real walk surface.</li>
+    <li><strong>VRChat SDK &gt; Show Control Panel &gt; Build &amp; Test</strong>. Doors and teleports react to <em>players</em>, so test in Build &amp; Test or ClientSim - flying the editor scene camera through a trigger does nothing.</li>
+    <li>When it feels right, <strong>Upload</strong>. A fresh world is private until you explicitly publish it to Community Labs - leave it private.</li>
+  </ol>
+</section>
+
+<section class="doc-section" id="alive">
+  <h2>5 &middot; Making it feel alive</h2>
+  <ul>
+    <li><strong>Wandering villagers</strong> - add the kit's <code>LegaiaNpcWander</code> behaviour to any NPC the builder placed and tune radius/speed. Movement is computed per player: fine for ambience, use synced variables if everyone must agree.</li>
+    <li><strong>Grabbable weapons</strong> - <code>export-glb --items</code> exports every equipment item in the game (all four characters' weapons, Ra-Seru, armour, headgear, footwear), each animated with its swing clips. Import one, add a <code>VRC Pickup</code> and a collider, and hold Vahn's sword. Item glbs stay in raw PSX units (they share the site's download kernel), so scale those by the manifest's <code>scale</code>.</li>
+    <li><strong>More scenes</strong> - build several exported scenes into the same Unity scene and the town-exit portals connect automatically: when a portal's target root (<code>Legaia_map01</code>, say) exists, walking out the town gate teleports you onto the world map.</li>
+    <li><strong>More animation</strong> - every NPC glb carries all the scene's skeleton-matching clips as <code>record_N</code> takes; retarget the generated Animator at any of them.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="troubleshooting">
+  <h2>Troubleshooting</h2>
+  <ul>
+    <li><strong>Doors don't open / teleports do nothing</strong>: the Udon behaviours need the VRChat worlds SDK in the project, and they only react to players - test in Build &amp; Test or ClientSim. A door that opens but never teleports is usually a scene-exit portal whose target scene isn't built in this Unity scene.</li>
+    <li><strong>Falling through the floor</strong>: use the default <strong>Merged + welded</strong> world collider - per-mesh colliders leave hairline seams and collide single-sided against mixed-winding source data.</li>
+    <li><strong>Everything looks mirrored</strong>: the raw export is X-mirrored relative to the site's viewers; the builder's default-on <strong>Match explorer orientation</strong> compensates. If you unticked it, that's the whole difference.</li>
+    <li><strong>A hand-placed NPC or prop is a giant</strong>: current exports bake the scale onto each NPC/prop glb's root, so a dragged-in file is world-sized as-is - re-export if your files predate that (the builder reads the manifest's <code>npc_prop_units</code> flag and handles both).</li>
+    <li><strong>A scene looks empty</strong>: world-map scenes have no villagers, and some scenes are cutscene-only shells; <code>--all-scenes</code> reports what each yielded.</li>
+    <li><strong>The shoreline doesn't move</strong>: the morph clip lives in the world glb - the manifest should carry <code>world_anim</code>, <strong>Animate world morphs</strong> should be on, and the glb's import inspector's Animation tab must keep animations enabled.</li>
+  </ul>
+  <p>The kit's committed README carries the full troubleshooting list, including the collider, transparency and orientation deep-dives: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/vrchat-world/README.md" target="_blank" rel="noopener"><code>scripts/vrchat-world/README.md</code></a>.</p>
+</section>
+
+<section class="doc-section" id="faithful">
+  <h2>Faithful vs. approximated</h2>
+  <p>The geometry, textures, shading, placements, floor heights, walk surface, doorway trigger/landing data, shoreline morph deltas and the music render are the engine's own retail-parity kernels - the same code this site's field-scene viewer draws with. What a static export approximates: NPCs loop a clip instead of running their scripts, non-door props free-run instead of waiting for script triggers, a door's full choreography collapses to open-on-approach + teleport, and script-door variants are frozen at the fresh-game story state. The manifest already carries each NPC's role and first dialog line, so dialog and shop counters are the natural next Udon layer to build yourself.</p>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Guides</span>
+    <a href="getting-started.html">Getting started</a>
+    <a href="extracting-assets.html">Extracting assets</a>
+    <a href="playing-and-viewing.html">Playing + viewing</a>
+    <a href="modding-and-translation.html">Modding + translation</a>
+  </div>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/vrchat-world-export.md" target="_blank" rel="noopener">Exporter reference (docs)</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/vrchat-world/README.md" target="_blank" rel="noopener">Unity kit README</a>
+    <a href="../world.html">Game world</a>
+    <a href="../subsystems/vr-mode.html">VR mode (WebXR)</a>
+  </div>
+</section>

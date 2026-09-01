@@ -78,6 +78,7 @@ TITLE_OVERRIDES: dict[str, str] = {
     "arts": "Legend of Legaia Tactical Arts List - Inputs, AP & Damage",
     "magic": "Legend of Legaia Seru Magic & Summons - Every Cast in 3D",
     "tooling/rom-patcher": "Legend of Legaia Randomizer - In-Browser ROM Patcher",
+    "guides/vrchat-world": "Legend of Legaia in VRChat - Build a World from Your Own Disc",
 }
 
 # Hand-written meta descriptions for the same landing pages. Everything else
@@ -157,6 +158,12 @@ DESCRIPTIONS: dict[str, str] = {
         "How the Legend of Legaia RE project stacks from raw PSX disc "
         "sectors to a running from-scratch engine: formats, parsers, "
         "subsystems, and the WASM port."
+    ),
+    "guides/vrchat-world": (
+        "Turn a Legend of Legaia town into a private VRChat world: export any "
+        "scene from your own disc as glTF, then build it in Unity with the "
+        "project's kit - walkable retail terrain, animated villagers, doors "
+        "that teleport you inside, and the scene's music on loop."
     ),
     "writeups/index": (
         "Technical deep-dives from reverse engineering Legend of Legaia: a "
@@ -485,6 +492,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("guides/extracting-assets.html","Extracting assets",             "guides/extracting-assets",   "guides/extracting-assets.html"),
     ("guides/playing-and-viewing.html","Playing and viewing",         "guides/playing-and-viewing", "guides/playing-and-viewing.html"),
     ("guides/modding-and-translation.html","Modding and translation", "guides/modding-and-translation","guides/modding-and-translation.html"),
+    ("guides/vrchat-world.html",   "Importing a world into VRChat",  "guides/vrchat-world",        "guides/vrchat-world.html"),
     # Technical write-ups (narrative deep-dives)
     ("writeups/index.html",        "Technical write-ups",           "writeups/index",             "writeups/index.html"),
     ("writeups/gaza-orbit-softlock.html", "The endless camera orbit - anatomy of a retail softlock", "writeups/gaza-orbit-softlock", "writeups/gaza-orbit-softlock.html"),
