@@ -11,6 +11,8 @@
 // mirror-aware: the builder's instances carry scale mirrors that decouple
 // the mesh's visual forward from the transform's +Z, and the walk facing
 // maps through those signs (see Start) so villagers face the way they walk.
+// Movement is forward-only: on a direction change the NPC pivots in place
+// until aligned, then steps off - it never translates while mis-facing.
 //
 // Requires UdonSharp (bundled with the VRChat worlds SDK via the Creator
 // Companion). Drop this component on an NPC instance the builder placed;
@@ -103,6 +105,13 @@ namespace LegaiaWorld
                 new Vector3(dir.x * faceX, 0f, dir.z * faceZ), Vector3.up);
             transform.rotation = Quaternion.RotateTowards(
                 transform.rotation, face, turnSpeed * Time.deltaTime);
+
+            // Turn in place first: no stepping until the body points down
+            // the walk direction, so a direction change reads as a pivot
+            // followed by a forward walk - never a strafe or moonwalk.
+            if (Quaternion.Angle(transform.rotation, face) > 3f)
+                return;
+
             transform.position += dir * (speed * Time.deltaTime);
 
             // Follow the floor so a stroll across sloped ground doesn't

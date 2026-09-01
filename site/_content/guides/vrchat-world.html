@@ -100,7 +100,7 @@
     <li><strong>Interior room shells</strong> - the doorway-teleport interiors are unused corners of the same map, so from inside a room you'd see the skybox above and the floating village past the doorway. The pass detects each detached room from the manifest's teleport data and wraps it in a black dome that faces inward only: black space from inside (retail's own framing for these rooms), invisible from outside, and shadow-free so the room stays lit - with a warm fill light so it reads window-lit.</li>
     <li><strong>Smooth textures</strong> - bilinear + anisotropic filtering instead of the PSX point sampling, for the "remaster" look.</li>
     <li><strong>Ambient audio bed</strong> - a quiet synthesized wind/surf loop under the BGM (generated noise, not disc audio).</li>
-    <li><strong>Villagers wander</strong> - wires the stroll behaviour on every talk-role NPC automatically, so the whole town ambles. Strolls are collision-aware: a walk that would clip a hut re-picks instead, and a downward ray keeps feet on the floor.</li>
+    <li><strong>Villagers wander</strong> - wires the stroll behaviour on every talk-role NPC automatically, so the whole town ambles. Strolls are collision-aware: a walk that would clip a hut re-picks instead, and a downward ray keeps feet on the floor. Movement is forward-only - a direction change pivots the whole body in place before stepping off.</li>
   </ul>
   <p class="hint">Lighting, sky and fog are per-Unity-scene render settings: the last applied root wins, and turning the options off later doesn't revert them - reset via <em>Window &gt; Rendering &gt; Lighting</em>. Grass plus realtime shadows is a PC-world budget; trim density and shadow strength for Quest.</p>
 </section>

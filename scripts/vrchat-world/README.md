@@ -230,7 +230,9 @@ pass is idempotent (it refreshes rather than stacks).
   is mirror-aware: the instance scale mirrors decouple the mesh's visual
   forward from the transform's +Z, and the walk facing maps through those
   signs so villagers face the way they walk (a `flipFacing` field covers
-  an import stack with the opposite model-forward convention).
+  an import stack with the opposite model-forward convention). Movement is
+  forward-only: a direction change pivots the whole body in place first,
+  then steps off - an NPC never translates while mis-facing.
 
 Caveats: the sun / ambient / skybox / fog are **per-Unity-scene render
 settings** - applying them from one built root is global, the last applied
