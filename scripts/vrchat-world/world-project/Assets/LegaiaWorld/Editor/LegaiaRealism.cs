@@ -93,6 +93,15 @@ namespace LegaiaWorld
         public float ambientVolume = 0.15f;
         public bool npcWander = true;
         public float wanderRadius = 1.25f;
+        // Per-NPC facing trims that survive rebuilds, for the rare model
+        // whose face is authored off the rig's -Z in VERTEX space (no
+        // transform measurement can see that). "npc_30:90; npc_07:-90" -
+        // each key matches the manifest file stem, value = degrees.
+        public string wanderFacingOverrides = "";
+        // Flattens the |N.L| angular term on NPC/prop meshes only (0 =
+        // full Lambert, 1 = even): on a low-poly villager the lighting
+        // terminator cuts a harsh dark band across the face.
+        public float characterLightWrap = 0.75f;
 
         public bool AnyEnabled =>
             lighting || skyAndFog || foliage || interiorShells || smoothTextures ||
@@ -183,9 +192,38 @@ namespace LegaiaWorld
                     r.sharedMaterials = mats;
             }
 
+            // Character-scale meshes get wrap lighting: on a low-poly
+            // villager the |N.L| terminator cuts a harsh dark band right
+            // across the face, so their materials flatten the angular term
+            // (shadow-map attenuation still applies). World surfaces keep
+            // full |N.L| so buildings stay directionally lit. Safe to set
+            // in place: NPC/prop glbs import their own material assets, so
+            // their lit twins are never shared with world-glb materials.
+            int wrapped = 0;
+            if (o.characterLightWrap > 0f)
+            {
+                var seen = new HashSet<Material>();
+                foreach (string sub in new[] { "npcs", "props" })
+                {
+                    var t = root.transform.Find(sub);
+                    if (t == null)
+                        continue;
+                    foreach (var r in t.GetComponentsInChildren<Renderer>(true))
+                        foreach (var mat in r.sharedMaterials)
+                            if (mat != null && mat.shader != null &&
+                                mat.shader.name.StartsWith("Legaia/Lit") &&
+                                seen.Add(mat))
+                            {
+                                mat.SetFloat("_LightWrap", o.characterLightWrap);
+                                wrapped++;
+                            }
+                }
+            }
+
             ApplySun(root, o);
             Debug.Log("[Legaia] lit conversion: " + meshCache.Count + " mesh(es), " +
-                      matCache.Count + " material(s).");
+                      matCache.Count + " material(s), " + wrapped +
+                      " character material(s) wrap-lit.");
         }
 
         /// A smoothed-normal duplicate of `src`, saved as a readable asset
@@ -1021,6 +1059,7 @@ namespace LegaiaWorld
             if (npcRoot == null)
                 return;
             var wanderType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaNpcWander");
+            var overrides = ParseFacingOverrides(o.wanderFacingOverrides);
             int wired = 0;
             foreach (object n in MiniJson.AsList(MiniJson.Get(manifest, "npcs"))
                      ?? new List<object>())
@@ -1028,6 +1067,14 @@ namespace LegaiaWorld
                 if (MiniJson.AsStr(MiniJson.Get(n, "kind")) != "talk")
                     continue;
                 Vector3 p = LegaiaWorldBuilder.G2U(MiniJson.GetVec3(n, "position"));
+                string file = MiniJson.AsStr(MiniJson.Get(n, "file")) ?? "";
+                float yawOff = 0f;
+                foreach (var kv in overrides)
+                    if (file.Contains(kv.Key))
+                    {
+                        yawOff = kv.Value;
+                        break;
+                    }
                 foreach (Transform child in npcRoot)
                 {
                     if ((child.localPosition - p).sqrMagnitude > 1e-3f)
@@ -1037,6 +1084,8 @@ namespace LegaiaWorld
                     var udon = LegaiaWorldBuilder.TryAttachUdon(
                         child.gameObject, "LegaiaNpcWander");
                     LegaiaWorldBuilder.SetUdonField(udon, "radius", o.wanderRadius);
+                    if (yawOff != 0f)
+                        LegaiaWorldBuilder.SetUdonField(udon, "facingYawOffset", yawOff);
                     LegaiaWorldBuilder.SyncUdonProxy(udon);
                     if (udon != null)
                         wired++;
@@ -1044,6 +1093,33 @@ namespace LegaiaWorld
                 }
             }
             Debug.Log("[Legaia] wander wired on " + wired + " villager(s).");
+        }
+
+        /// "npc_30:90; npc_07:-90" -> (stem fragment, degrees) pairs. A
+        /// hand-set facingYawOffset on a placed instance dies with every
+        /// rebuild - this list is the durable home for the rare model whose
+        /// face is authored off the rig's -Z in vertex space, where no
+        /// transform measurement can recover it.
+        static List<KeyValuePair<string, float>> ParseFacingOverrides(string spec)
+        {
+            var list = new List<KeyValuePair<string, float>>();
+            if (string.IsNullOrEmpty(spec))
+                return list;
+            foreach (string part in spec.Split(';', ','))
+            {
+                int colon = part.LastIndexOf(':');
+                if (colon <= 0)
+                    continue;
+                string key = part.Substring(0, colon).Trim();
+                if (key.Length == 0)
+                    continue;
+                if (float.TryParse(part.Substring(colon + 1).Trim(),
+                        System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        out float deg))
+                    list.Add(new KeyValuePair<string, float>(key, deg));
+            }
+            return list;
         }
     }
 }

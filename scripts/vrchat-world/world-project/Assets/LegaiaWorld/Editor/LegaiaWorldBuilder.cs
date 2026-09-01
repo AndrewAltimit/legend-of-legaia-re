@@ -505,6 +505,13 @@ namespace LegaiaWorld
                     "  Sun intensity", realism.sunIntensity, 0f, 2f);
                 realism.shadowStrength = EditorGUILayout.Slider(
                     "  Shadow strength", realism.shadowStrength, 0f, 1f);
+                realism.characterLightWrap = EditorGUILayout.Slider(
+                    new GUIContent("  NPC/prop light wrap",
+                        "Evens out the lighting on character and prop meshes " +
+                        "(0 = full directional Lambert, 1 = flat): the " +
+                        "lighting terminator cuts a harsh dark band across a " +
+                        "low-poly face. World surfaces keep full lighting"),
+                    realism.characterLightWrap, 0f, 1f);
                 realism.dayNight = EditorGUILayout.Toggle(
                     new GUIContent("  Day / night cycle",
                         "Udon: the sun sweeps a full day on a fixed cycle, " +
@@ -565,9 +572,10 @@ namespace LegaiaWorld
                 realism.interiorRoomDistance = EditorGUILayout.Slider(
                     new GUIContent("  Room distance (m)",
                         "How far from the spawn a teleport endpoint must sit " +
-                        "to count as a detached interior room (town01: village " +
-                        "endpoints stay within ~52m, rooms start at ~86m)"),
-                    realism.interiorRoomDistance, 20f, 150f);
+                        "to count as a detached interior room (town01 at the " +
+                        "1 m-per-tile scale: village endpoints stay within " +
+                        "~26m, rooms start at ~43m)"),
+                    realism.interiorRoomDistance, 10f, 150f);
             }
             realism.smoothTextures = EditorGUILayout.Toggle(
                 new GUIContent("Smooth textures (bilinear)",
@@ -590,8 +598,19 @@ namespace LegaiaWorld
                     "still (needs the VRChat SDK)"),
                 realism.npcWander);
             using (new EditorGUI.DisabledScope(!realism.npcWander))
+            {
                 realism.wanderRadius = EditorGUILayout.Slider(
                     "  Wander radius (m)", realism.wanderRadius, 0.5f, 8f);
+                realism.wanderFacingOverrides = EditorGUILayout.TextField(
+                    new GUIContent("  Facing overrides",
+                        "Per-NPC facing trim in degrees for the rare model " +
+                        "whose face is authored off the rig's -Z in vertex " +
+                        "space (it walks sideways/backwards and no automatic " +
+                        "measurement can see it). Format: npc_30:90; " +
+                        "npc_07:-90 - keys match the NPC glb file name, and " +
+                        "the trim survives rebuilds"),
+                    realism.wanderFacingOverrides);
+            }
 
             GUILayout.Space(4);
             using (new EditorGUI.DisabledScope(
@@ -836,7 +855,7 @@ namespace LegaiaWorld
                     object tp = tps[i];
                     object trig = MiniJson.Get(tp, "trigger");
                     string kind = MiniJson.AsStr(MiniJson.Get(tp, "kind"));
-                    Vector3 half = MiniJson.GetVec3(trig, "half_extents");
+                    Vector3 half = PlayerSizedHalf(MiniJson.GetVec3(trig, "half_extents"));
                     var go = new GameObject("teleport_" + i + "_" + kind);
                     go.transform.SetParent(tpRoot.transform, false);
                     // Trigger position is at the floor; centre the box a
@@ -897,7 +916,7 @@ namespace LegaiaWorld
                     if (targetRoot == null)
                         continue; // single-scene build: leave the exit inert
                     object trig = MiniJson.Get(p, "trigger");
-                    Vector3 half = MiniJson.GetVec3(trig, "half_extents");
+                    Vector3 half = PlayerSizedHalf(MiniJson.GetVec3(trig, "half_extents"));
                     var go = new GameObject("portal_" + i + "_" + target);
                     go.transform.SetParent(tpRoot.transform, false);
                     go.transform.localPosition =
@@ -1181,6 +1200,22 @@ namespace LegaiaWorld
             var udon = TryAttachUdon(trigger, "LegaiaDoor");
             SetUdonField(udon, "doorAnimator", animator);
             SyncUdonProxy(udon);
+        }
+
+        /// Manifest trigger half-extents with an absolute player-sized
+        /// floor. The authored extents scale with the world (retail's door
+        /// bands are collision-tile sized), but the player stays real-sized
+        /// whatever the export scale - at 1 m per tile a map-door trigger
+        /// shrinks to half a meter and becomes easy to walk past. Floors in
+        /// METERS: half-width 0.75 (1.5 m across), half-height 1.1 (covers
+        /// a standing player; the box bottom stays on the floor because the
+        /// caller centres it a half-height up).
+        internal static Vector3 PlayerSizedHalf(Vector3 half)
+        {
+            return new Vector3(
+                Mathf.Max(half.x, 0.75f),
+                Mathf.Max(half.y, 1.1f),
+                Mathf.Max(half.z, 0.75f));
         }
 
         /// Attach an UdonSharp behaviour by type name without a compile-time

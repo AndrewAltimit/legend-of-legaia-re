@@ -122,7 +122,10 @@ the VCC setup in more detail if this is your first worlds project.
    - `teleports/` - one trigger volume per manifest doorway teleport
      (**Doorway teleports**): walk into a house door and you land in its
      interior with the authored facing, exactly the retail intra-scene
-     door mechanism (`LegaiaDoorway`). Scene-exit portals also connect
+     door mechanism (`LegaiaDoorway`). Trigger boxes get an absolute
+     player-sized floor (1.5 m across, player height) - the authored
+     extents scale with the world, but the player doesn't, so a
+     small-scale export would otherwise make doorways easy to miss. Scene-exit portals also connect
      automatically when the target scene's built root (`Legaia_map01`,
      say) already exists in the same Unity scene;
    - `LegaiaSpawn` - the manifest's suggested spawn (the placed-object
@@ -198,7 +201,12 @@ pass is idempotent (it refreshes rather than stacks).
   queue), and adds a warm directional sun with soft shadows plus a
   trilight ambient. The baked `COLOR_0` retail shading keeps modulating
   every surface, so the scene holds its palette - lighting layers on top
-  instead of replacing it.
+  instead of replacing it. NPC and prop materials additionally get
+  **light wrap** (`_LightWrap`, slider "NPC/prop light wrap"): the
+  `|N.L|` terminator cuts a harsh dark band right across a low-poly
+  villager's face, so their angular term is flattened toward even
+  lighting (shadow maps still attenuate); world surfaces keep the full
+  directional response.
 - **Day / night cycle** (under lighting): the `LegaiaDayNight` Udon
   behaviour sweeps the sun through a full day on a fixed cycle, with night
   compressed (`dayShare`). Every client derives the same angle from the
@@ -254,9 +262,14 @@ pass is idempotent (it refreshes rather than stacks).
   convention is the face axis: **-Z**, pinned empirically - +Z walked
   the whole town backwards, and a wireframe render cannot tell front
   from back (`flipFacing` covers a model authored facing +Z;
-  `facingYawOffset` adds a manual trim). Wall/floor ray heights are
-  measured from the rendered model at Start, so they track any export
-  scale.
+  `facingYawOffset` adds a manual trim). A rare model authors its face
+  off the rig's -Z in **vertex space**, where no transform measurement
+  can see it - it walks sideways or backwards while every sibling walks
+  right; the realism foldout's **Facing overrides** field
+  (`npc_30:90; npc_07:-90`, keys matching the NPC glb file name) trims
+  those and survives rebuilds, unlike a hand-set field on the placed
+  instance. Wall/floor ray heights are measured from the rendered model
+  at Start, so they track any export scale.
 
 Caveats: the sun / ambient / skybox / fog are **per-Unity-scene render
 settings** - applying them from one built root is global, the last applied

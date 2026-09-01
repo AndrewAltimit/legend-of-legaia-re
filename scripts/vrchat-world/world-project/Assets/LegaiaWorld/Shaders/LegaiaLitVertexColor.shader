@@ -28,6 +28,12 @@ Shader "Legaia/Lit Vertex Color (Cutout)"
         _MainTex ("Base (RGB) Alpha (cutout)", 2D) = "white" {}
         _Color ("Tint", Color) = (1,1,1,1)
         _Cutoff ("Alpha cutoff", Range(0,1)) = 0.5
+        // 0 = full |N.L| (world surfaces). Toward 1 the angular term
+        // flattens to even lighting - the realism pass raises it on
+        // character/prop meshes, where the |N.L| terminator cuts a harsh
+        // dark band right across a low-poly face. Shadow-map attenuation
+        // still applies at any wrap.
+        _LightWrap ("Light wrap (flatten shading)", Range(0,1)) = 0
     }
     SubShader
     {
@@ -41,6 +47,7 @@ Shader "Legaia/Lit Vertex Color (Cutout)"
 
         sampler2D _MainTex;
         fixed4 _Color;
+        half _LightWrap;
 
         struct Input
         {
@@ -50,7 +57,7 @@ Shader "Legaia/Lit Vertex Color (Cutout)"
 
         half4 LightingLegaiaTwoSided (SurfaceOutput s, half3 lightDir, half atten)
         {
-            half nl = abs(dot(s.Normal, lightDir));
+            half nl = lerp(abs(dot(s.Normal, lightDir)), 1.0h, _LightWrap);
             half4 c;
             c.rgb = s.Albedo * _LightColor0.rgb * nl * atten;
             c.a = s.Alpha;
