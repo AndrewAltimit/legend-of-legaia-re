@@ -19,8 +19,11 @@ legaia-engine export-glb --items --out glb-export              # every equipment
 ```
 
 Reads `extracted/` (default) or `--disc <image.bin>`. Flags: `--scale`
-(glTF meters per PSX world unit, default 1/64 - one 128-unit walk tile
-= 2 m, near VRChat human scale), `--include-sky` (keep the sky-backdrop
+(glTF meters per PSX world unit, default 1/128 - one 128-unit walk tile
+= 1 m; in-headset testing found the earlier 1/64 "2 m tile" oversized
+against real player scale, retail's field proportions being generous;
+equipment-item glbs are raw PSX units regardless, scaled at placement
+time by the Unity builder), `--include-sky` (keep the sky-backdrop
 shells the site viewers hide), `--no-npcs`, `--no-props`, `--items` (the
 equipment export below - standalone or combined with scenes).
 `--all-scenes` skips cutscene labels, reports each scene's yield, and

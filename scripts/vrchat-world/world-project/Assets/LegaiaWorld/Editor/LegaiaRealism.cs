@@ -84,13 +84,15 @@ namespace LegaiaWorld
         public int grassSeed = 1;
         public bool interiorShells = true;
         public bool interiorGlow = true;
-        public float interiorShellMargin = 3f;
-        public float interiorRoomDistance = 60f;
+        // Defaults sized for the 1 m-per-tile export scale (1/128); a
+        // legacy 1/64 export wants roughly double on all three.
+        public float interiorShellMargin = 1.5f;
+        public float interiorRoomDistance = 30f;
         public bool smoothTextures = true;
         public bool ambientAudio = true;
         public float ambientVolume = 0.15f;
         public bool npcWander = true;
-        public float wanderRadius = 2.5f;
+        public float wanderRadius = 1.25f;
 
         public bool AnyEnabled =>
             lighting || skyAndFog || foliage || interiorShells || smoothTextures ||

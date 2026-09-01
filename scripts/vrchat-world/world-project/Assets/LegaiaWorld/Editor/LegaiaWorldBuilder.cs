@@ -91,10 +91,15 @@ namespace LegaiaWorld
         Vector2 scroll;
 
         // Equipment props: place the `export-glb --items` weapons as
-        // (grabbable) props near the spawn.
+        // (grabbable) props near the spawn. The size multiplier sits on
+        // top of the scene's export scale: these are BATTLE-mode models,
+        // authored against battle proportions the field never shows, and
+        // at 1:1 with the field scale they read comically large in hand -
+        // half the world scale lands them at believable prop size.
         string itemsManifestPath = "";
         bool equipWeaponsOnly = true;
         bool equipPickups = true;
+        float equipSizeMult = 0.5f;
 
         [MenuItem("Legaia/Build Scene From Manifest...")]
         static void Open()
@@ -221,6 +226,13 @@ namespace LegaiaWorld
                     "rack is a static display). Props spawn frozen on the rack " +
                     "and only go physical the first time a player drops one"),
                 equipPickups);
+            equipSizeMult = EditorGUILayout.FloatField(
+                new GUIContent("Size multiplier",
+                    "Extra scale on top of the scene's export scale. These " +
+                    "are battle-mode models the field never shows at field " +
+                    "proportions; 0.5 lands them at believable hand-prop " +
+                    "size, 1.0 is the raw battle-vs-field ratio"),
+                equipSizeMult);
             using (new EditorGUI.DisabledScope(
                 string.IsNullOrEmpty(itemsManifestPath) || string.IsNullOrEmpty(manifestPath)))
             {
@@ -250,7 +262,12 @@ namespace LegaiaWorld
                     "collider and stands near its spawn).", "OK");
                 return;
             }
-            float scale = MiniJson.GetNum(sm, "scale", 1f / 64f);
+            // Scene export scale x the battle-model size trim (see the
+            // field comment on equipSizeMult). Every use below - instance
+            // scale, collider bounds, the flat-piece box floor - goes
+            // through this one value, so the collider always matches the
+            // rendered size.
+            float scale = MiniJson.GetNum(sm, "scale", 1f / 64f) * equipSizeMult;
             var spawnT = sceneRoot.transform.Find("LegaiaSpawn");
             Vector3 origin = spawnT != null
                 ? spawnT.position : sceneRoot.transform.position;
@@ -1155,7 +1172,11 @@ namespace LegaiaWorld
             var box = trigger.AddComponent<BoxCollider>();
             box.isTrigger = true;
             box.center = Vector3.up * 1.2f;
-            box.size = new Vector3(6f, 3f, 6f);
+            // Player-reach sized, in absolute meters (the player stays
+            // real-sized whatever the world scale): at the 1 m-per-tile
+            // export a wider box would swallow a whole hut interior and
+            // pop its cupboards open from the doorway.
+            box.size = new Vector3(3f, 3f, 3f);
 
             var udon = TryAttachUdon(trigger, "LegaiaDoor");
             SetUdonField(udon, "doorAnimator", animator);

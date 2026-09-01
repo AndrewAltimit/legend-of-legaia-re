@@ -32,6 +32,15 @@
 //     the yaw with the probed sign until visual forward lies on the walk
 //     direction. No rest capture, no calibration frames, no sign algebra.
 //
+// The one convention that must be ASSUMED is which node-local axis the
+// mesh's face points down, and it is -Z, pinned empirically: with +Z the
+// entire town walked backwards in-world - a uniform 180 - while wireframe
+// renders of every rig cannot distinguish front from back (a projected
+// silhouette is identical both ways). -Z is also consistent with history:
+// the builder's own negative-Z instance mirror flips file -Z onto the
+// transform's +Z, which is why the old LookRotation-on-transform code
+// looked correct on every rest-yaw-0 rig.
+//
 // Requires UdonSharp (bundled with the VRChat worlds SDK via the Creator
 // Companion). Drop this component on an NPC instance the builder placed;
 // tune radius/speed per NPC. Movement is local (each player computes it
@@ -45,11 +54,12 @@ namespace LegaiaWorld
 {
     public class LegaiaNpcWander : UdonSharpBehaviour
     {
-        [Tooltip("How far from the spawn point the NPC strolls (meters).")]
-        public float radius = 3f;
+        [Tooltip("How far from the spawn point the NPC strolls (meters). " +
+                 "Default suits the 1 m-per-tile export scale.")]
+        public float radius = 1.5f;
 
         [Tooltip("Walk speed in m/s. Legaia townsfolk amble - keep it low.")]
-        public float speed = 0.8f;
+        public float speed = 0.4f;
 
         [Tooltip("Average pause between strolls (seconds).")]
         public float pauseSeconds = 5f;
@@ -58,10 +68,10 @@ namespace LegaiaWorld
         public float turnSpeed = 240f;
 
         [Tooltip("Clear space kept between the NPC and any wall (meters).")]
-        public float wallClearance = 0.45f;
+        public float wallClearance = 0.3f;
 
-        [Tooltip("Tick if this NPC's mesh is authored facing -Z instead of " +
-                 "+Z (walks exactly backwards with the automatic facing).")]
+        [Tooltip("Tick if this NPC's mesh is authored facing +Z instead of " +
+                 "-Z (walks exactly backwards with the automatic facing).")]
         public bool flipFacing = false;
 
         [Tooltip("Extra facing correction in degrees, added on top of the " +
@@ -75,6 +85,10 @@ namespace LegaiaWorld
         private float servoSign = 1f;
         private bool walking;
         private Vector3 lastForward = Vector3.forward;
+        // Measured at Start from the rendered rest pose, so the wall and
+        // floor rays stay proportioned to the model at any export scale.
+        private float npcHeight = 1.6f;
+        private float rayHeight = 0.8f;
 
         void Start()
         {
@@ -123,6 +137,20 @@ namespace LegaiaWorld
                 anchor = anyAnchor;
             lastForward = transform.forward;
 
+            // Model height from the rendered rest bounds: the ray heights
+            // must track the villager, not an assumed human - at the
+            // 1 m-per-tile export scale these models stand well under 1 m,
+            // and a fixed waist ray would pass over their heads.
+            Renderer[] rends = GetComponentsInChildren<Renderer>();
+            if (rends.Length > 0)
+            {
+                Bounds wb = rends[0].bounds;
+                for (int i = 1; i < rends.Length; i++)
+                    wb.Encapsulate(rends[i].bounds);
+                npcHeight = Mathf.Clamp(wb.size.y, 0.3f, 2.5f);
+            }
+            rayHeight = 0.5f * npcHeight;
+
             // Servo-sign probe: yaw the instance +10 degrees, see which way
             // the visual forward actually moves (a mirror in the scale chain
             // reverses it), and restore. The walk servo then always turns
@@ -152,7 +180,9 @@ namespace LegaiaWorld
         {
             if (anchor == null)
                 return transform.forward;
-            Vector3 f = anchor.TransformPoint(Vector3.forward)
+            // -Z is the face axis of these meshes (empirically pinned: +Z
+            // walked the whole town backwards; see the header note).
+            Vector3 f = anchor.TransformPoint(Vector3.back)
                 - anchor.TransformPoint(Vector3.zero);
             if (flipFacing)
                 f = -f;
@@ -186,8 +216,8 @@ namespace LegaiaWorld
             // A wall within clearance directly ahead (waist height; the ray
             // starts inside the NPC's own capsule, which PhysX never reports
             // from the inside): rest, then stroll somewhere else.
-            if (Physics.Raycast(transform.position + Vector3.up * 0.9f, dir,
-                    out RaycastHit blocked, wallClearance,
+            if (Physics.Raycast(transform.position + Vector3.up * rayHeight,
+                    dir, out RaycastHit blocked, wallClearance,
                     ~0, QueryTriggerInteraction.Ignore))
             {
                 PickNextTarget();
@@ -224,8 +254,8 @@ namespace LegaiaWorld
             // Follow the floor so a stroll across sloped ground doesn't
             // float or sink.
             Vector3 p = transform.position;
-            if (Physics.Raycast(p + Vector3.up * 1.5f, Vector3.down,
-                    out RaycastHit ground, 4f,
+            if (Physics.Raycast(p + Vector3.up * npcHeight, Vector3.down,
+                    out RaycastHit ground, 3f * npcHeight,
                     ~0, QueryTriggerInteraction.Ignore))
             {
                 p.y = ground.point.y;
@@ -250,8 +280,8 @@ namespace LegaiaWorld
                 return;
             }
             Vector3 dir = d / dist;
-            if (Physics.Raycast(transform.position + Vector3.up * 0.9f, dir,
-                    out RaycastHit hit, dist,
+            if (Physics.Raycast(transform.position + Vector3.up * rayHeight,
+                    dir, out RaycastHit hit, dist,
                     ~0, QueryTriggerInteraction.Ignore))
                 dist = Mathf.Max(0f, hit.distance - wallClearance);
             target = transform.position + dir * dist;

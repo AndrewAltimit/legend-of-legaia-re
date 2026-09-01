@@ -54,8 +54,10 @@ too). Per scene you get the world `.glb` (with the shoreline's baked
 blendshape clip where the scene has one), `npcs/`, `props/`, `music/`
 (the entry BGM as a seamless-loop WAV) and `manifest.json` (which now also
 carries the doorway-teleport and door-tag data the builder wires below).
-Default `--scale` is 1/64: one 128-unit walk tile becomes 2 m, which lands
-doorways and NPCs near VRChat human scale. `glb-export/` is gitignored -
+Default `--scale` is 1/128: one 128-unit walk tile becomes 1 m. (The
+earlier 1/64 default read oversized in-headset - retail's field
+proportions are generous, so "2 m per tile" made buildings loom over a
+real-scale player.) `glb-export/` is gitignored -
 it is Sony-derived output.
 
 ## Step 2 - a VRChat worlds project
@@ -155,7 +157,10 @@ the VCC setup in more detail if this is your first worlds project.
   `items/` folder into `Assets/`, point the builder's **Equipment props**
   section at its `manifest.json`, and **Place equipment rack near spawn**
   lines them up grounded on the world collider - one row per character,
-  each prop scaled from raw PSX units by the scene's export scale,
+  each prop scaled from raw PSX units by the scene's export scale times
+  the **Size multiplier** (default 0.5: these are battle-mode models the
+  field never shows, and at the raw battle-vs-field ratio they read
+  comically large in hand),
   wrapped in a convex mesh collider cooked from its baked rest pose (a
   tight hull, not a bounding box; near-flat pieces fall back to a padded
   box), and wired as a `VRC Pickup` + `VRC Object Sync` physics pickup
@@ -245,8 +250,13 @@ pass is idempotent (it refreshes rather than stacks).
   it visibly faces off its `localToWorldMatrix` every walking frame
   (baked yaw, idle sway, every mirror included by construction), probes
   which way that visual forward responds to a transform yaw, and servos
-  the yaw until the mesh faces the walk direction (`flipFacing` covers a
-  model authored facing -Z; `facingYawOffset` adds a manual trim).
+  the yaw until the mesh faces the walk direction. The one assumed
+  convention is the face axis: **-Z**, pinned empirically - +Z walked
+  the whole town backwards, and a wireframe render cannot tell front
+  from back (`flipFacing` covers a model authored facing +Z;
+  `facingYawOffset` adds a manual trim). Wall/floor ray heights are
+  measured from the rendered model at Start, so they track any export
+  scale.
 
 Caveats: the sun / ambient / skybox / fog are **per-Unity-scene render
 settings** - applying them from one built root is global, the last applied
