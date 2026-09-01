@@ -205,7 +205,9 @@ pass is idempotent (it refreshes rather than stacks).
   and the floating village past the doorway - retail frames these rooms
   against black. The pass detects each detached room from the manifest's
   own teleport data (endpoints beyond a spawn-distance threshold,
-  clustered per room, grown to the nearby geometry) and wraps it in a
+  clustered per room, then flood-filled outward to the whole building's
+  meshes so the dome centres on the room, not on its doorway) and wraps
+  it in a
   black dome wound to face **inward only**: black space from inside,
   backface-culled (invisible) from outside, casting no shadow so the sun
   still lights the room. **Window light + shafts** adds a warm fill light
@@ -222,7 +224,11 @@ pass is idempotent (it refreshes rather than stacks).
   from the manifest (matched by spawn position), so the town strolls
   instead of standing still. The behaviour is collision-aware: strolls are
   clamped against the world's colliders, a blocked walk re-picks instead
-  of clipping through a hut, and a downward ray follows the floor.
+  of clipping through a hut, and a downward ray follows the floor. Facing
+  is mirror-aware: the instance scale mirrors decouple the mesh's visual
+  forward from the transform's +Z, and the walk facing maps through those
+  signs so villagers face the way they walk (a `flipFacing` field covers
+  an import stack with the opposite model-forward convention).
 
 Caveats: the sun / ambient / skybox / fog are **per-Unity-scene render
 settings** - applying them from one built root is global, the last applied

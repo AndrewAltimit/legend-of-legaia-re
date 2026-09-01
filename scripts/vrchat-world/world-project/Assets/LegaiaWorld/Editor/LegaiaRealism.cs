@@ -755,6 +755,18 @@ namespace LegaiaWorld
             Matrix4x4 toLocal = container.transform.worldToLocalMatrix;
             var world = root.transform.Find("world");
 
+            // Candidate room geometry: every world mesh that is not
+            // map-spanning (the ground heightfield's bounds would balloon a
+            // shell to the whole world).
+            var candidates = new List<Bounds>();
+            if (world != null)
+                foreach (var r in world.GetComponentsInChildren<Renderer>(true))
+                {
+                    Bounds rb = r.bounds;
+                    if (rb.size.magnitude <= 30f)
+                        candidates.Add(rb);
+                }
+
             string shellMatPath = genDir + "/interior_shell.mat";
             var shellMat = AssetDatabase.LoadAssetAtPath<Material>(shellMatPath);
             if (shellMat == null)
@@ -786,27 +798,41 @@ namespace LegaiaWorld
             int roomIdx = 0;
             foreach (var cl in clusters.Values)
             {
-                // Endpoint bounds -> catch nearby room geometry (skipping
-                // map-spanning meshes like the ground heightfield, whose
-                // bounds would balloon the shell to the whole world) ->
-                // margin.
+                // Endpoint bounds seed the room, then grow to the WHOLE
+                // building: the doorway endpoints sit at the edge of a large
+                // interior, so a single nearest-meshes pass leaves the dome
+                // centred on the door and slicing through the far wall.
+                // Flood-fill instead - repeatedly encapsulate any candidate
+                // mesh whose XZ footprint overlaps the current region
+                // (expanded by the margin) until nothing new joins, capped
+                // by distance from the doorway seed so a chain of meshes
+                // can't walk the region across the map.
                 Bounds b = new Bounds(cl[0], Vector3.zero);
                 foreach (var p in cl)
                     b.Encapsulate(p);
-                Bounds catchB = b;
-                catchB.Expand(new Vector3(o.interiorShellMargin * 2f, 0f,
-                                          o.interiorShellMargin * 2f));
-                if (world != null)
-                    foreach (var r in world.GetComponentsInChildren<Renderer>(true))
+                Vector3 seed = b.center;
+                var used = new bool[candidates.Count];
+                for (int pass = 0, grew = 1; grew == 1 && pass < 6; pass++)
+                {
+                    grew = 0;
+                    Bounds reach = b;
+                    reach.Expand(new Vector3(o.interiorShellMargin * 2f, 0f,
+                                             o.interiorShellMargin * 2f));
+                    for (int ci = 0; ci < candidates.Count; ci++)
                     {
-                        Bounds rb = r.bounds;
-                        if (rb.size.magnitude > 30f)
+                        if (used[ci])
                             continue;
-                        if (rb.center.x < catchB.min.x || rb.center.x > catchB.max.x ||
-                            rb.center.z < catchB.min.z || rb.center.z > catchB.max.z)
+                        Bounds rb = candidates[ci];
+                        if (rb.min.x > reach.max.x || rb.max.x < reach.min.x ||
+                            rb.min.z > reach.max.z || rb.max.z < reach.min.z)
+                            continue;
+                        if (DistXZ(rb.center, seed) > 25f)
                             continue;
                         b.Encapsulate(rb);
+                        used[ci] = true;
+                        grew = 1;
                     }
+                }
                 Bounds room = b; // pre-margin: where the dressing goes
                 b.Expand(o.interiorShellMargin * 2f);
                 float radius = b.extents.magnitude + 0.5f;

@@ -7,7 +7,10 @@
 // ray stops a walk that would clip a wall, and the NPC follows the floor
 // with a downward ray - so villagers no longer amble through huts. Trigger
 // colliders (doorway teleports, door-approach boxes) are ignored, so a
-// wandering NPC neither blocks on them nor fires them.
+// wandering NPC neither blocks on them nor fires them. Facing is
+// mirror-aware: the builder's instances carry scale mirrors that decouple
+// the mesh's visual forward from the transform's +Z, and the walk facing
+// maps through those signs (see Start) so villagers face the way they walk.
 //
 // Requires UdonSharp (bundled with the VRChat worlds SDK via the Creator
 // Companion). Drop this component on an NPC instance the builder placed;
@@ -37,15 +40,38 @@ namespace LegaiaWorld
         [Tooltip("Clear space kept between the NPC and any wall (meters).")]
         public float wallClearance = 0.45f;
 
+        [Tooltip("Tick if villagers stroll backwards on your import stack - " +
+                 "the facing math assumes the model faces +Z in its own file.")]
+        public bool flipFacing = false;
+
         private Vector3 home;
         private Vector3 target;
         private float pauseUntil;
+        private float faceX = 1f;
+        private float faceZ = 1f;
 
         void Start()
         {
             home = transform.position;
             target = home;
             pauseUntil = Time.time + Random.Range(0f, pauseSeconds);
+
+            // The builder places NPC instances with a negative-Z local scale
+            // (the handedness mirror) under a root that usually carries a
+            // negative-X mirror. Mirrors in the scale chain mean the model's
+            // VISUAL forward is not the transform's +Z - aiming LookRotation
+            // at the walk direction then reads as backwards (or mirrored)
+            // walking. With the mirrors diagonal, visual forward
+            // = R * (sign(parent.x) * sign(local.z) * x, y,
+            //        sign(parent.z) * sign(local.z) * z)-remap of +Z, so
+            // pre-mapping the walk direction through those signs makes the
+            // MESH face the way it walks, whatever the mirror combination.
+            Vector3 ps = transform.parent != null
+                ? transform.parent.lossyScale : Vector3.one;
+            float fz = Mathf.Sign(transform.localScale.z)
+                * (flipFacing ? -1f : 1f);
+            faceX = Mathf.Sign(ps.x) * fz;
+            faceZ = Mathf.Sign(ps.z) * fz;
         }
 
         void Update()
@@ -73,7 +99,8 @@ namespace LegaiaWorld
                 return;
             }
 
-            Quaternion face = Quaternion.LookRotation(dir, Vector3.up);
+            Quaternion face = Quaternion.LookRotation(
+                new Vector3(dir.x * faceX, 0f, dir.z * faceZ), Vector3.up);
             transform.rotation = Quaternion.RotateTowards(
                 transform.rotation, face, turnSpeed * Time.deltaTime);
             transform.position += dir * (speed * Time.deltaTime);
