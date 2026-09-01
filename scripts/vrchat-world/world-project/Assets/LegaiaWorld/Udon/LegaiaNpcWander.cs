@@ -14,13 +14,14 @@
 // Movement is forward-only: on a direction change the NPC pivots in place
 // until aligned, then steps off - it never translates while mis-facing.
 // Some spawn clips bake a facing yaw into the skeleton itself (town01's
-// spawn_record_17 holds every top bone at -90deg; other idles sway the
-// root bone over the loop), which turns the mesh under the transform and
-// defeats any transform-only facing math. The behaviour tracks it live:
-// it captures the skeleton root's rest rotation in Start (before the
+// spawn_record_17 holds every top bone at -90deg; other idles sway bones
+// over the loop), which turns the mesh under the transform and defeats
+// any transform-only facing math. The behaviour tracks it live: it
+// captures every top-level bone's rest rotation in Start (before the
 // Animator's first evaluation), then every walking frame measures the
-// yaw the clip is currently applying and subtracts it from the walk
-// facing (see UpdateClipYaw).
+// yaw the clip is currently applying - the circular mean across the top
+// bones, so limb swings cancel - and subtracts it from the walk facing
+// (see UpdateClipYaw).
 //
 // Requires UdonSharp (bundled with the VRChat worlds SDK via the Creator
 // Companion). Drop this component on an NPC instance the builder placed;
@@ -63,8 +64,8 @@ namespace LegaiaWorld
         private float pauseUntil;
         private float faceX = 1f;
         private float faceZ = 1f;
-        private Transform faceRef;
-        private Quaternion faceRefRest;
+        private Transform[] faceBones;
+        private Quaternion[] faceBoneRest;
         private int calibrateAfterFrame;
         private float clipYaw;
 
@@ -91,44 +92,90 @@ namespace LegaiaWorld
             faceX = Mathf.Sign(ps.x) * fz;
             faceZ = Mathf.Sign(ps.z) * fz;
 
-            // Rest-pose anchor for the clip-yaw calibration: the skinned
-            // skeleton's root bone, captured before the Animator's first
-            // evaluation overwrites it with the spawn clip's pose.
+            // Rest-pose anchors for the clip-yaw tracking: every TOP-LEVEL
+            // bone (a bone whose parent is not itself a bone), captured
+            // before the Animator's first evaluation overwrites them with
+            // the spawn clip's pose. These rigs are flat - several
+            // top-level nodes animated independently - so no single bone
+            // is "the body": a limb node can swing 80deg while the body
+            // holds still, and anchoring on one bone (rootBone) injected
+            // that limb's animation into the walk facing on rigs where the
+            // binding happened to point there.
             var smr = GetComponentInChildren<SkinnedMeshRenderer>();
-            if (smr != null && smr.rootBone != null)
+            if (smr != null)
             {
-                faceRef = smr.rootBone;
-                faceRefRest = faceRef.localRotation;
+                Transform[] bones = smr.bones;
+                int nTop = 0;
+                for (int i = 0; i < bones.Length; i++)
+                    if (IsTopBone(bones, i))
+                        nTop++;
+                faceBones = new Transform[nTop];
+                faceBoneRest = new Quaternion[nTop];
+                int k = 0;
+                for (int i = 0; i < bones.Length; i++)
+                {
+                    if (!IsTopBone(bones, i))
+                        continue;
+                    faceBones[k] = bones[i];
+                    faceBoneRest[k] = bones[i].localRotation;
+                    k++;
+                }
             }
             calibrateAfterFrame = Time.frameCount + 2;
         }
 
+        bool IsTopBone(Transform[] bones, int i)
+        {
+            Transform b = bones[i];
+            if (b == null)
+                return false;
+            Transform p = b.parent;
+            for (int j = 0; j < bones.Length; j++)
+                if (j != i && bones[j] == p)
+                    return false;
+            return true;
+        }
+
         // Some spawn clips pose the whole skeleton at a yaw of their own
         // (the authored facing lives in the ANM record, not the placement),
-        // and that yaw is NOT always constant - idles sway or turn the root
-        // bone over the loop. So the compensation is tracked live, every
-        // frame while walking, not calibrated once: a one-shot sample froze
-        // whatever the loop happened to be doing at that instant and walked
-        // the NPC sideways at every other phase. Measure the yaw as the
-        // root bone's rotation delta between rest and the current animated
-        // pose, then map it into the transform's frame: the delta lives in
-        // the bone's parent frame, whose vertical is flipped by the glb
+        // and that yaw is NOT always constant - idles sway or turn bones
+        // over the loop. So the compensation is tracked live, every frame
+        // while walking, not calibrated once. The measured quantity is the
+        // yaw common to ALL top-level bones - the baked facing offsets
+        // every one of them equally (town01's spawn_record_17 holds all
+        // four at -90deg), while limb swings point different ways and
+        // cancel in the circular mean. Each bone's rest-to-current delta
+        // lives in its parent frame, whose vertical is flipped by the glb
         // root's Rx(180) (the up-dot sign) and whose yaw sense each
         // horizontal mirror in our own scale conjugates.
         void UpdateClipYaw()
         {
             clipYaw = 0f;
-            if (faceRef == null)
+            if (faceBones == null || faceBones.Length == 0)
                 return;
-            Quaternion d = faceRef.localRotation
-                * Quaternion.Inverse(faceRefRest);
-            Vector3 f = d * Vector3.forward;
-            f.y = 0f;
-            if (f.sqrMagnitude < 1e-4f)
+            Vector3 acc = Vector3.zero;
+            Transform first = null;
+            for (int i = 0; i < faceBones.Length; i++)
+            {
+                Transform b = faceBones[i];
+                if (b == null)
+                    continue;
+                if (first == null)
+                    first = b;
+                Quaternion d = b.localRotation
+                    * Quaternion.Inverse(faceBoneRest[i]);
+                Vector3 f = d * Vector3.forward;
+                f.y = 0f;
+                // A pitch-dominated delta has no reliable yaw reading.
+                if (f.sqrMagnitude < 0.25f)
+                    continue;
+                acc += f.normalized;
+            }
+            if (first == null || acc.sqrMagnitude < 0.25f)
                 return;
-            float local = Vector3.SignedAngle(Vector3.forward, f, Vector3.up);
+            float local = Vector3.SignedAngle(Vector3.forward, acc, Vector3.up);
             float sVert = Mathf.Sign(
-                Vector3.Dot(faceRef.parent.up, transform.up));
+                Vector3.Dot(first.parent.up, transform.up));
             float sMirror = Mathf.Sign(
                 transform.localScale.x * transform.localScale.z);
             clipYaw = local * sVert * sMirror;

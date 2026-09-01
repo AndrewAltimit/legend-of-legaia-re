@@ -238,10 +238,12 @@ pass is idempotent (it refreshes rather than stacks).
   forward-only: a direction change pivots the whole body in place first,
   then steps off - an NPC never translates while mis-facing. Some spawn
   clips pose the skeleton at a yaw of their own (the authored facing
-  lives in the ANM record, not the placement - and idles can sway the
-  root bone over the loop), so the behaviour tracks that yaw live, every
-  walking frame, and subtracts it from the walk facing (a
-  `facingYawOffset` field adds a manual correction on top).
+  lives in the ANM record, not the placement - and idles can sway bones
+  over the loop), so the behaviour tracks that yaw live, every walking
+  frame, as the circular mean across the skeleton's top-level bones
+  (these rigs are flat, so limb swings cancel and the common facing
+  survives) and subtracts it from the walk facing (a `facingYawOffset`
+  field adds a manual correction on top).
 
 Caveats: the sun / ambient / skybox / fog are **per-Unity-scene render
 settings** - applying them from one built root is global, the last applied
