@@ -26,14 +26,16 @@ your disc ──legaia-extract──▶ extracted/ ──legaia-engine export-gl
 | File | Role |
 |---|---|
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaWorldBuilder.cs` | Editor menu `Legaia > Build Scene From Manifest...`: instantiates the world, adds colliders, places NPCs + animated props, builds doorway-teleport triggers, wires proximity doors + the shoreline morph clip + the BGM loop, drops a spawn marker. |
-| `world-project/Assets/LegaiaWorld/Editor/LegaiaRealism.cs` | The builder's optional "Realism enhancements" foldout: lit materials + generated normals + sun, day/night wiring, sky + fog, procedural grass, texture smoothing, synthesized ambience, wander wiring. All default off. |
+| `world-project/Assets/LegaiaWorld/Editor/LegaiaRealism.cs` | The builder's "Realism enhancements" foldout: lit materials + generated normals + sun, day/night wiring, sky + fog, procedural grass, interior room shells, texture smoothing, synthesized ambience, wander wiring. Graphics passes default on; untick for the faithful look. |
 | `world-project/Assets/LegaiaWorld/Editor/MiniJson.cs` | Dependency-free JSON reader for `manifest.json` (so the builder compiles in any project). |
-| `world-project/Assets/LegaiaWorld/Shaders/LegaiaLitVertexColor.shader` | Lit cutout stand-in for the exports' unlit materials: `COLOR_0` keeps modulating the texture, Standard lighting layers on top, VFACE flip handles the mixed PSX winding. |
+| `world-project/Assets/LegaiaWorld/Shaders/LegaiaLitVertexColor.shader` | Lit cutout stand-in for the exports' unlit materials: `COLOR_0` keeps modulating the texture, and lighting is the sign-independent two-sided Lambert `\|N.L\|` (the only stable answer over the mixed PSX winding - the header keeps the failed-flip history). |
 | `world-project/Assets/LegaiaWorld/Shaders/LegaiaLitVertexColorTransparent.shader` | The BLEND (water / light pool) sibling of the lit shader - alpha-blended, depth-write off. |
 | `world-project/Assets/LegaiaWorld/Shaders/LegaiaGrassWind.shader` | Vertex-coloured wind sway for the procedural grass blades (sway weight in vertex alpha, world-position phase). |
+| `world-project/Assets/LegaiaWorld/Shaders/LegaiaInteriorShell.shader` | Unlit black, front faces only: the interior-room dome, wound inward so it reads as black space from inside and is invisible (backface-culled) from outside. |
+| `world-project/Assets/LegaiaWorld/Shaders/LegaiaLightShaft.shader` | Additive, double-sided, procedural-falloff quad for the interior window-light shafts - no texture, feathered in the fragment shader. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaDoorway.cs` | UdonSharp doorway teleport: walking into the trigger repositions the local player at the landing marker with the authored arrival facing - the retail intra-scene door mechanism. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaDoor.cs` | UdonSharp proximity door: first approach plays the door's swing clip once and holds it open. |
-| `world-project/Assets/LegaiaWorld/Udon/LegaiaNpcWander.cs` | Optional UdonSharp stroll behaviour: an NPC wanders a small radius around its spawn between pauses. |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaNpcWander.cs` | Optional UdonSharp stroll behaviour: an NPC wanders a small radius around its spawn between pauses - collision-aware (strolls clamp against walls, a waist-height ray stops a blocked walk, a downward ray follows the floor). |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaDayNight.cs` | Optional UdonSharp day/night cycle: sweeps the realism sun on a fixed cycle, synced across players via server time. |
 
 ## Step 1 - export a scene
@@ -159,11 +161,13 @@ the VCC setup in more detail if this is your first worlds project.
 ## Optional realism enhancements
 
 The builder window's **Realism enhancements** foldout layers a set of
-optional passes over the built root. Every one defaults **off** - with the
-foldout untouched, the build is the faithful retail-shaded scene - and
-everything the passes create is generated from scratch (shaders, grass
-geometry, synthesized audio): no game data is produced or shipped beyond
-what the export already decoded. The **Apply enhancements to the
+optional passes over the built root. The graphics passes (lighting, sky +
+fog, foliage, interior shells, texture smoothing) default **on** - untick
+them all for the faithful retail-shaded scene - while the passes that need
+the VRChat SDK at runtime or add sound (day/night, ambience, wander) stay
+opt-in. Everything the passes create is generated from scratch (shaders,
+dome/grass geometry, synthesized audio): no game data is produced or
+shipped beyond what the export already decoded. The **Apply enhancements to the
 already-built root** button reruns just these passes over an existing
 `Legaia_<scene>` root, so tuning a slider doesn't force a rebuild; each
 pass is idempotent (it refreshes rather than stacks).
@@ -173,7 +177,8 @@ pass is idempotent (it refreshes rather than stacks).
   pass duplicates every mesh into `Assets/LegaiaGenerated/<scene>/realism/`
   with smoothed, position-welded normals (sign-aligned - the PSX source
   winding is mixed, so raw face normals point both ways and would cancel;
-  the lit shaders' VFACE flip then lights whichever side you see), swaps
+  the lit shaders then light with the sign-independent two-sided Lambert
+  `|N.L|`, since no per-vertex sign choice survives this data), swaps
   every material for `Legaia/Lit Vertex Color` (cutout or transparent by
   queue), and adds a warm directional sun with soft shadows plus a
   trilight ambient. The baked `COLOR_0` retail shading keeps modulating
@@ -195,6 +200,17 @@ pass is idempotent (it refreshes rather than stacks).
   **green threshold** (lower = more coverage, higher = keeps grass off
   paths); the scatter is deterministic per seed, capped at 25k tufts, and
   each rerun rescatters instead of stacking.
+- **Interior room shells**: the doorway-teleport interiors are unused
+  corners of the same map, so from inside a room you see the skybox above
+  and the floating village past the doorway - retail frames these rooms
+  against black. The pass detects each detached room from the manifest's
+  own teleport data (endpoints beyond a spawn-distance threshold,
+  clustered per room, grown to the nearby geometry) and wraps it in a
+  black dome wound to face **inward only**: black space from inside,
+  backface-culled (invisible) from outside, casting no shadow so the sun
+  still lights the room. **Window light + shafts** adds a warm fill light
+  and slanted additive light-shaft quads per room so it reads window-lit -
+  decorative placement, not detected window meshes.
 - **Smooth textures**: bilinear + anisotropic filtering on every texture
   under the root, instead of the exports' PSX point sampling. This edits
   the imported texture objects in place, so a glb **reimport resets it** -
@@ -204,13 +220,15 @@ pass is idempotent (it refreshes rather than stacks).
   AudioSource - generated audio, not from the disc.
 - **Villagers wander**: wires `LegaiaNpcWander` on every talk-kind NPC
   from the manifest (matched by spawn position), so the town strolls
-  instead of standing still.
+  instead of standing still. The behaviour is collision-aware: strolls are
+  clamped against the world's colliders, a blocked walk re-picks instead
+  of clipping through a hut, and a downward ray follows the floor.
 
 Caveats: the sun / ambient / skybox / fog are **per-Unity-scene render
 settings** - applying them from one built root is global, the last applied
 root wins, and turning the options off later does not revert them (reset
 via `Window > Rendering > Lighting`, and delete the root's `LegaiaSun` /
-`foliage` / `ambience` children). The day/night and wander passes need the
+`foliage` / `interiors` / `ambience` children). The day/night and wander passes need the
 VRChat SDK, same as doors and teleports. And the grass + realtime shadows
 budget is a PC-world budget - trim density and shadow strength for a Quest
 target.
@@ -332,7 +350,10 @@ already carries each NPC's kind (`talk`/`door`/`prop`) and dialog first
 line to seed it.
 
 The realism foldout sits entirely on the *enhancement* side of this line:
-lighting, sky, grass, ambience and wander are deliberate departures from
-retail, opt-in per option, and the default-off build stays the faithful
-one - the same retail-default / enhancements-one-toggle-away policy as the
-engine's own knobs.
+lighting, sky, grass, shells, ambience and wander are deliberate
+departures from retail, each its own toggle. The graphics passes now ship
+enabled by default - the project's ship-the-better-experience-by-default
+policy - and unticking them all restores the faithful retail-shaded
+build, one toggle away, same as the engine's own knobs. (The interior
+shells are the one pass that *restores* retail framing: those rooms sit
+against black space in the real game.)

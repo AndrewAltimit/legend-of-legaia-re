@@ -1,8 +1,12 @@
 // Optional realism enhancements over a built Legaia root - the builder's
-// "Realism enhancements" foldout. Everything here is OFF by default and
-// generated from scratch (shaders, grass geometry, synthesized audio): no
-// game data is created or shipped, and with every option off the build is
-// byte-for-byte the faithful retail-shaded scene.
+// "Realism enhancements" foldout. The graphics passes (lighting, sky +
+// fog, foliage, interior shells, texture smoothing) default ON; untick
+// them for the faithful retail-shaded build. The passes that need the
+// VRChat SDK at runtime or add sound (day/night, ambience, wander) stay
+// opt-in. Everything is generated from scratch (shaders, dome/grass
+// geometry, synthesized audio): no game data is created or shipped, and
+// with every option off the build is byte-for-byte the faithful
+// retail-shaded scene.
 //
 // What each pass does, and the source-data constraint it works around:
 //
@@ -32,6 +36,17 @@
 //   qualify). Blades are tinted from the sampled ground colour and sway
 //   via the Legaia/Grass Wind shader. Deterministic per seed.
 //
+// - Interior shells (BuildInteriorShells): the doorway-teleport interiors
+//   are unused corners of the same map, so from inside a room you see the
+//   skybox above and the floating village past the doorway. The pass finds
+//   each detached room (teleport endpoints beyond a spawn-distance
+//   threshold, clustered), wraps it in a black dome wound to face INWARD
+//   only - backface-culled, so it is invisible from outside, and casting
+//   no shadows, so the sun still lights the room through it - and adds an
+//   optional warm fill light + additive light-shaft quads so the room
+//   reads window-lit inside its black surround. Retail frames these rooms
+//   against black space; this restores that.
+//
 // - Texture smoothing: bilinear + anisotropic on every texture under the
 //   root (the exports pin NEAREST for the PSX look). In-editor asset
 //   tweak - a glb reimport resets it, rerun the pass after one.
@@ -58,26 +73,31 @@ namespace LegaiaWorld
     [System.Serializable]
     public class LegaiaRealismOptions
     {
-        public bool lighting = false;
+        public bool lighting = true;
         public float sunElevation = 55f;
         public float sunAzimuth = 40f;
         public float sunIntensity = 1.15f;
         public float shadowStrength = 0.75f;
         public bool dayNight = false;
         public float dayNightMinutes = 20f;
-        public bool skyAndFog = false;
-        public bool foliage = false;
+        public bool skyAndFog = true;
+        public bool foliage = true;
         public float grassDensity = 6f;
         public float grassGreenThreshold = 0.03f;
         public int grassSeed = 1;
-        public bool smoothTextures = false;
+        public bool interiorShells = true;
+        public bool interiorGlow = true;
+        public float interiorShellMargin = 3f;
+        public float interiorRoomDistance = 60f;
+        public bool smoothTextures = true;
         public bool ambientAudio = false;
         public float ambientVolume = 0.15f;
         public bool npcWander = false;
         public float wanderRadius = 2.5f;
 
         public bool AnyEnabled =>
-            lighting || skyAndFog || foliage || smoothTextures || ambientAudio || npcWander;
+            lighting || skyAndFog || foliage || interiorShells || smoothTextures ||
+            ambientAudio || npcWander;
 
         public bool NeedsUdon => (lighting && dayNight) || npcWander;
     }
@@ -104,6 +124,11 @@ namespace LegaiaWorld
                 {
                     EditorUtility.DisplayProgressBar("Legaia realism", "Scattering foliage", 0.5f);
                     ScatterGrass(root, genDir, o);
+                }
+                if (o.interiorShells && manifest != null)
+                {
+                    EditorUtility.DisplayProgressBar("Legaia realism", "Interior shells", 0.75f);
+                    BuildInteriorShells(root, manifest, genDir, o);
                 }
                 if (o.ambientAudio)
                     AddAmbience(root, genDir, o);
@@ -642,6 +667,334 @@ namespace LegaiaWorld
             RenderTexture.ReleaseTemporary(rt);
             cache[src] = copy;
             return copy;
+        }
+
+        // --- Interior shells ------------------------------------------------
+
+        /// Wrap each detached interior room in a black inward-facing dome
+        /// (plus optional window-light dressing). Room detection rides the
+        /// manifest's own door data: interiors are doorway-teleport
+        /// endpoints parked far off the playable village (on town01 every
+        /// village-side endpoint sits within ~52m of the spawn and every
+        /// room-side one beyond ~86m - a wide gap the distance threshold
+        /// splits), clustered into per-room groups, then grown to the
+        /// nearby world geometry so the dome clears the whole room.
+        static void BuildInteriorShells(GameObject root, object manifest,
+            string genDir, LegaiaRealismOptions o)
+        {
+            // Fresh container each run (re-shell, don't stack).
+            var old = root.transform.Find("interiors");
+            if (old != null)
+                Object.DestroyImmediate(old.gameObject);
+
+            var shellShader = Shader.Find("Legaia/Interior Shell");
+            var shaftShader = Shader.Find("Legaia/Light Shaft");
+            if (shellShader == null)
+            {
+                Debug.LogError("[Legaia] Legaia/Interior Shell shader not found - is " +
+                    "Assets/LegaiaWorld/Shaders/ imported? Interior shells skipped.");
+                return;
+            }
+
+            var tps = MiniJson.AsList(MiniJson.Get(manifest, "teleports"));
+            if (tps == null || tps.Count == 0)
+            {
+                Debug.Log("[Legaia] no doorway teleports in the manifest - " +
+                          "interior shells skipped.");
+                return;
+            }
+            Vector3 spawnW = root.transform.TransformPoint(LegaiaWorldBuilder.G2U(
+                MiniJson.GetVec3(MiniJson.Get(manifest, "spawn"), "position")));
+            var pts = new List<Vector3>();
+            foreach (object tp in tps)
+            {
+                pts.Add(root.transform.TransformPoint(LegaiaWorldBuilder.G2U(
+                    MiniJson.GetVec3(MiniJson.Get(tp, "trigger"), "position"))));
+                pts.Add(root.transform.TransformPoint(LegaiaWorldBuilder.G2U(
+                    MiniJson.GetVec3(MiniJson.Get(tp, "destination"), "position"))));
+            }
+            float DistXZ(Vector3 a, Vector3 b)
+            {
+                a.y = b.y = 0;
+                return (a - b).magnitude;
+            }
+            var roomPts = new List<Vector3>();
+            foreach (var p in pts)
+                if (DistXZ(p, spawnW) > o.interiorRoomDistance)
+                    roomPts.Add(p);
+            if (roomPts.Count == 0)
+            {
+                Debug.Log("[Legaia] no teleport endpoint sits beyond the room " +
+                    "distance - no detached interiors detected, shells skipped.");
+                return;
+            }
+
+            // Union-find clustering into per-room groups. Rooms are compact
+            // (their doorway endpoints span a few meters) and distinct rooms
+            // sit well apart, so a fixed linkage separates them cleanly.
+            const float LINK = 10f;
+            var parent = new int[roomPts.Count];
+            for (int i = 0; i < parent.Length; i++)
+                parent[i] = i;
+            int Find(int i) => parent[i] == i ? i : parent[i] = Find(parent[i]);
+            for (int i = 0; i < roomPts.Count; i++)
+                for (int j = i + 1; j < roomPts.Count; j++)
+                    if (DistXZ(roomPts[i], roomPts[j]) <= LINK)
+                        parent[Find(j)] = Find(i);
+            var clusters = new Dictionary<int, List<Vector3>>();
+            for (int i = 0; i < roomPts.Count; i++)
+            {
+                int r = Find(i);
+                if (!clusters.TryGetValue(r, out var list))
+                    clusters[r] = list = new List<Vector3>();
+                list.Add(roomPts[i]);
+            }
+
+            var container = new GameObject("interiors");
+            container.transform.SetParent(root.transform, false);
+            Matrix4x4 toLocal = container.transform.worldToLocalMatrix;
+            var world = root.transform.Find("world");
+
+            string shellMatPath = genDir + "/interior_shell.mat";
+            var shellMat = AssetDatabase.LoadAssetAtPath<Material>(shellMatPath);
+            if (shellMat == null)
+            {
+                shellMat = new Material(shellShader);
+                AssetDatabase.CreateAsset(shellMat, shellMatPath);
+            }
+            Material shaftMat = null;
+            if (o.interiorGlow && shaftShader != null)
+            {
+                string shaftMatPath = genDir + "/light_shaft.mat";
+                shaftMat = AssetDatabase.LoadAssetAtPath<Material>(shaftMatPath);
+                if (shaftMat == null)
+                {
+                    shaftMat = new Material(shaftShader);
+                    AssetDatabase.CreateAsset(shaftMat, shaftMatPath);
+                }
+            }
+
+            // Sun direction for the shaft slant: the realism sun when it
+            // stands, else the default sliders' angle.
+            Vector3 sunDir = RenderSettings.sun != null
+                ? RenderSettings.sun.transform.forward
+                : Quaternion.Euler(55f, 40f, 0f) * Vector3.forward;
+            if (sunDir.y > -0.25f)
+                sunDir = Quaternion.Euler(55f, 40f, 0f) * Vector3.forward;
+            sunDir.Normalize();
+
+            int roomIdx = 0;
+            foreach (var cl in clusters.Values)
+            {
+                // Endpoint bounds -> catch nearby room geometry (skipping
+                // map-spanning meshes like the ground heightfield, whose
+                // bounds would balloon the shell to the whole world) ->
+                // margin.
+                Bounds b = new Bounds(cl[0], Vector3.zero);
+                foreach (var p in cl)
+                    b.Encapsulate(p);
+                Bounds catchB = b;
+                catchB.Expand(new Vector3(o.interiorShellMargin * 2f, 0f,
+                                          o.interiorShellMargin * 2f));
+                if (world != null)
+                    foreach (var r in world.GetComponentsInChildren<Renderer>(true))
+                    {
+                        Bounds rb = r.bounds;
+                        if (rb.size.magnitude > 30f)
+                            continue;
+                        if (rb.center.x < catchB.min.x || rb.center.x > catchB.max.x ||
+                            rb.center.z < catchB.min.z || rb.center.z > catchB.max.z)
+                            continue;
+                        b.Encapsulate(rb);
+                    }
+                Bounds room = b; // pre-margin: where the dressing goes
+                b.Expand(o.interiorShellMargin * 2f);
+                float radius = b.extents.magnitude + 0.5f;
+
+                var shell = ShellSphere(toLocal, b.center, radius,
+                    "shell_" + roomIdx);
+                string shellPath = genDir + "/" + shell.name + ".asset";
+                AssetDatabase.DeleteAsset(shellPath);
+                AssetDatabase.CreateAsset(shell, shellPath);
+                var go = new GameObject("room_" + roomIdx + "_shell");
+                go.transform.SetParent(container.transform, false);
+                go.AddComponent<MeshFilter>().sharedMesh = shell;
+                var mr = go.AddComponent<MeshRenderer>();
+                mr.sharedMaterial = shellMat;
+                // No shadows: the sun keeps lighting the room through the dome.
+                mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+
+                if (o.interiorGlow)
+                {
+                    var lgo = new GameObject("room_" + roomIdx + "_light");
+                    lgo.transform.SetParent(container.transform, false);
+                    lgo.transform.position = room.center + Vector3.up * 0.6f;
+                    var light = lgo.AddComponent<Light>();
+                    light.type = LightType.Point;
+                    light.range = radius * 1.6f;
+                    light.intensity = 0.7f;
+                    light.color = new Color(1f, 0.92f, 0.78f);
+                    light.shadows = LightShadows.None;
+
+                    if (shaftMat != null)
+                    {
+                        var shaft = ShaftMesh(toLocal, room, sunDir,
+                            "shaft_" + roomIdx);
+                        string shaftPath = genDir + "/" + shaft.name + ".asset";
+                        AssetDatabase.DeleteAsset(shaftPath);
+                        AssetDatabase.CreateAsset(shaft, shaftPath);
+                        var sgo = new GameObject("room_" + roomIdx + "_shafts");
+                        sgo.transform.SetParent(container.transform, false);
+                        sgo.AddComponent<MeshFilter>().sharedMesh = shaft;
+                        var smr = sgo.AddComponent<MeshRenderer>();
+                        smr.sharedMaterial = shaftMat;
+                        smr.shadowCastingMode =
+                            UnityEngine.Rendering.ShadowCastingMode.Off;
+                    }
+                }
+                roomIdx++;
+            }
+            // Drop stale assets a previous run with more rooms (or with the
+            // glow on when it is now off) left behind.
+            for (int i = roomIdx; ; i++)
+                if (!AssetDatabase.DeleteAsset(genDir + "/shell_" + i + ".asset") &
+                    !AssetDatabase.DeleteAsset(genDir + "/shaft_" + i + ".asset"))
+                    break;
+            if (!o.interiorGlow || shaftMat == null)
+                for (int i = 0; i < roomIdx; i++)
+                    AssetDatabase.DeleteAsset(genDir + "/shaft_" + i + ".asset");
+            Debug.Log("[Legaia] wrapped " + roomIdx +
+                      " interior room(s) in black shells.");
+        }
+
+        /// An inward-facing UV sphere around `centerW` (world), baked into
+        /// container-local space. "Inward" must hold in WORLD space, and the
+        /// built root usually carries a mirror that flips winding - so the
+        /// orientation is settled empirically: sample one face's local
+        /// normal, flip everything if the front points the wrong way for
+        /// this parent chain.
+        static Mesh ShellSphere(Matrix4x4 toLocal, Vector3 centerW, float radius,
+            string name)
+        {
+            const int SEG = 24, RING = 14;
+            var v = new List<Vector3>((SEG + 1) * (RING + 1));
+            for (int y = 0; y <= RING; y++)
+            {
+                float phi = Mathf.PI * y / RING;
+                for (int x = 0; x <= SEG; x++)
+                {
+                    float th = 2f * Mathf.PI * x / SEG;
+                    v.Add(toLocal.MultiplyPoint3x4(centerW + new Vector3(
+                        Mathf.Sin(phi) * Mathf.Cos(th),
+                        Mathf.Cos(phi),
+                        Mathf.Sin(phi) * Mathf.Sin(th)) * radius));
+                }
+            }
+            var t = new List<int>(SEG * RING * 6);
+            for (int y = 0; y < RING; y++)
+                for (int x = 0; x < SEG; x++)
+                {
+                    int a = y * (SEG + 1) + x;
+                    int b = a + SEG + 1;
+                    t.Add(a);
+                    t.Add(a + 1);
+                    t.Add(b);
+                    t.Add(a + 1);
+                    t.Add(b + 1);
+                    t.Add(b);
+                }
+
+            // Empirical inward check on a mid-mesh face: Unity's front-face
+            // normal is cross(v1-v0, v2-v0); it must point at the centre.
+            Vector3 centerL = toLocal.MultiplyPoint3x4(centerW);
+            int mid = (t.Count / 6) * 3; // a non-degenerate equatorial tri
+            Vector3 fn = Vector3.Cross(v[t[mid + 1]] - v[t[mid]],
+                                       v[t[mid + 2]] - v[t[mid]]);
+            Vector3 centroid = (v[t[mid]] + v[t[mid + 1]] + v[t[mid + 2]]) / 3f;
+            if (Vector3.Dot(fn, centerL - centroid) < 0f)
+                for (int i = 0; i < t.Count; i += 3)
+                {
+                    int tmp = t[i + 1];
+                    t[i + 1] = t[i + 2];
+                    t[i + 2] = tmp;
+                }
+
+            var m = new Mesh { name = name };
+            m.SetVertices(v);
+            m.SetTriangles(t, 0);
+            m.RecalculateBounds();
+            return m;
+        }
+
+        /// Two slanted window-light shafts for one room: crossed additive
+        /// quads from up on the sun-facing side down to the floor, feathered
+        /// by the shaft shader (uv.x across the width) and faded along the
+        /// length by vertex alpha. Purely decorative - the positions are
+        /// heuristic, not detected window meshes.
+        static Mesh ShaftMesh(Matrix4x4 toLocal, Bounds room, Vector3 sunDir,
+            string name)
+        {
+            var v = new List<Vector3>();
+            var uv = new List<Vector2>();
+            var c = new List<Color>();
+            var t = new List<int>();
+
+            Vector3 horiz = new Vector3(sunDir.x, 0f, sunDir.z);
+            if (horiz.sqrMagnitude < 1e-4f)
+                horiz = Vector3.right;
+            horiz.Normalize();
+            Vector3 perp = Vector3.Cross(Vector3.up, horiz);
+            float topY = room.center.y + Mathf.Max(room.extents.y, 1.5f) + 0.5f;
+            float spread = Mathf.Max(1f, room.extents.magnitude * 0.25f);
+
+            void Quad(Vector3 a, Vector3 b, Vector3 d, Vector3 e,
+                Color ca, Color cb)
+            {
+                int i0 = v.Count;
+                v.Add(toLocal.MultiplyPoint3x4(a));
+                v.Add(toLocal.MultiplyPoint3x4(b));
+                v.Add(toLocal.MultiplyPoint3x4(d));
+                v.Add(toLocal.MultiplyPoint3x4(e));
+                uv.Add(new Vector2(0f, 0f));
+                uv.Add(new Vector2(1f, 0f));
+                uv.Add(new Vector2(1f, 1f));
+                uv.Add(new Vector2(0f, 1f));
+                c.Add(ca);
+                c.Add(ca);
+                c.Add(cb);
+                c.Add(cb);
+                t.Add(i0);
+                t.Add(i0 + 1);
+                t.Add(i0 + 2);
+                t.Add(i0);
+                t.Add(i0 + 2);
+                t.Add(i0 + 3);
+            }
+
+            for (int k = -1; k <= 1; k += 2)
+            {
+                Vector3 entry = new Vector3(room.center.x, topY, room.center.z)
+                    - horiz * (Mathf.Max(room.extents.x, room.extents.z) * 0.45f)
+                    + perp * (k * spread);
+                float len = Mathf.Min(
+                    (entry.y - room.min.y) / Mathf.Max(0.2f, -sunDir.y), 25f);
+                Vector3 bottom = entry + sunDir * len;
+                Vector3 axis = (bottom - entry).normalized;
+                Vector3 s1 = perp * 0.45f;
+                Vector3 s2 = Vector3.Cross(axis, perp).normalized * 0.45f;
+                var top = new Color(1f, 1f, 1f, 0.8f);
+                var end = new Color(1f, 1f, 1f, 0.06f);
+                Quad(entry - s1, entry + s1, bottom + s1, bottom - s1, top, end);
+                Quad(entry - s2, entry + s2, bottom + s2, bottom - s2, top, end);
+            }
+
+            var m = new Mesh { name = name };
+            m.SetVertices(v);
+            m.SetUVs(0, uv);
+            m.SetColors(c);
+            m.SetTriangles(t, 0);
+            m.RecalculateBounds();
+            return m;
         }
 
         // --- Ambient audio --------------------------------------------------

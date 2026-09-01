@@ -12,9 +12,11 @@
 //      a looping Animator on its spawn clip, and drops a "LegaiaSpawn"
 //      marker at the manifest's suggested spawn.
 //
-// The "Realism enhancements" foldout layers optional, default-off passes
-// over the built root (lit materials + sun, day/night, sky + fog, grass,
-// texture smoothing, ambience, wandering villagers) - see LegaiaRealism.cs.
+// The "Realism enhancements" foldout layers optional passes over the built
+// root (lit materials + sun, day/night, sky + fog, grass, interior room
+// shells, texture smoothing, ambience, wandering villagers) - see
+// LegaiaRealism.cs. The graphics passes default ON; untick them for the
+// faithful retail-shaded build.
 //
 // Coordinate note: glTFast converts glTF's right-handed frame to Unity's
 // left-handed one by inverting X, so manifest positions (glTF frame) are
@@ -81,10 +83,11 @@ namespace LegaiaWorld
         bool addMusic = true;
         float musicVolume = 0.5f;
 
-        // Optional realism layer (LegaiaRealism.cs) - every knob defaults
-        // off, so the plain build stays the faithful retail-shaded scene.
+        // Optional realism layer (LegaiaRealism.cs) - the graphics passes
+        // default on; untick everything in the foldout for the faithful
+        // retail-shaded scene.
         LegaiaRealismOptions realism = new LegaiaRealismOptions();
-        bool showRealism;
+        bool showRealism = true;
         Vector2 scroll;
 
         [MenuItem("Legaia/Build Scene From Manifest...")]
@@ -184,7 +187,8 @@ namespace LegaiaWorld
         void RealismGUI()
         {
             showRealism = EditorGUILayout.Foldout(showRealism,
-                "Realism enhancements (optional - default off, faithful look)", true);
+                "Realism enhancements (graphics on by default - untick for the faithful look)",
+                true);
             if (!showRealism)
                 return;
             EditorGUI.indentLevel++;
@@ -244,6 +248,34 @@ namespace LegaiaWorld
                     realism.grassGreenThreshold, 0f, 0.2f);
                 realism.grassSeed = EditorGUILayout.IntField(
                     "  Scatter seed", realism.grassSeed);
+            }
+            realism.interiorShells = EditorGUILayout.Toggle(
+                new GUIContent("Interior room shells",
+                    "Wrap each detached interior room (the doorway-teleport " +
+                    "destinations parked off the village map) in a black " +
+                    "inside-only dome: from inside, the sky above and the " +
+                    "doorway behind read as black space - retail's own " +
+                    "framing - while the dome is invisible from outside and " +
+                    "casts no shadow, so the room stays lit"),
+                realism.interiorShells);
+            using (new EditorGUI.DisabledScope(!realism.interiorShells))
+            {
+                realism.interiorGlow = EditorGUILayout.Toggle(
+                    new GUIContent("  Window light + shafts",
+                        "A warm fill light and slanted light-shaft quads per " +
+                        "room, so it reads window-lit inside its black shell " +
+                        "(decorative - not detected window meshes)"),
+                    realism.interiorGlow);
+                realism.interiorShellMargin = EditorGUILayout.Slider(
+                    new GUIContent("  Shell margin (m)",
+                        "Clearance between the room geometry and the dome"),
+                    realism.interiorShellMargin, 1f, 8f);
+                realism.interiorRoomDistance = EditorGUILayout.Slider(
+                    new GUIContent("  Room distance (m)",
+                        "How far from the spawn a teleport endpoint must sit " +
+                        "to count as a detached interior room (town01: village " +
+                        "endpoints stay within ~52m, rooms start at ~86m)"),
+                    realism.interiorRoomDistance, 20f, 150f);
             }
             realism.smoothTextures = EditorGUILayout.Toggle(
                 new GUIContent("Smooth textures (bilinear)",

@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; guides &middot; vrchat world</div>
   <h1>Importing a world into VRChat</h1>
-  <p class="lede">The engine exports any town or field scene as textured <code>.glb</code> files plus a manifest, and a Unity editor kit rebuilds it as a walkable VRChat world: the retail walk surface underfoot, villagers playing their spawn animations, doors that open as you approach and teleport you inside, the shoreline washing in and out, and the scene's music on a seamless loop - plus an optional realism layer (dynamic lighting, a day/night cycle, swaying grass) one foldout away. This guide goes from disc to standing in Rim Elm in about six steps - read the disclaimer first.</p>
+  <p class="lede">The engine exports any town or field scene as textured <code>.glb</code> files plus a manifest, and a Unity editor kit rebuilds it as a walkable VRChat world: the retail walk surface underfoot, villagers playing their spawn animations, doors that open as you approach and teleport you inside, the shoreline washing in and out, and the scene's music on a seamless loop - plus a realism layer (dynamic lighting, swaying grass, black-space interior rooms with window light, an optional day/night cycle) whose graphics passes ship on by default, the faithful look one foldout of unticks away. This guide goes from disc to standing in Rim Elm in about six steps - read the disclaimer first.</p>
 </header>
 
 <section class="doc-section" id="legal">
@@ -45,7 +45,7 @@
   <ol>
     <li>Install the <a href="https://vcc.docs.vrchat.com/" target="_blank" rel="noopener">VRChat Creator Companion</a> and create a <strong>Worlds</strong> project (Unity 2022.3).</li>
     <li>Add <strong>glTFast</strong> so Unity can import <code>.glb</code>: <em>Window &gt; Package Manager &gt; + &gt; Add package by name...</em> &rarr; <code>com.unity.cloud.gltfast</code>. On the VRChat-mandated 2022.3.22f1 editor, pin version <code>6.14.1</code> - newer glTFast releases require a newer Unity than the SDK allows, so the Package Manager refuses them. Equivalently, one line in <code>Packages/manifest.json</code> under <code>"dependencies"</code>: <code>"com.unity.cloud.gltfast": "6.14.1"</code>.</li>
-    <li>Copy the kit from the repo - <code>scripts/vrchat-world/world-project/Assets/LegaiaWorld/</code> - into the project's <code>Assets/</code>: the editor builder + its optional realism module, a JSON reader, three small shaders, and four UdonSharp behaviours (doorway teleport, proximity door, wander, day/night).</li>
+    <li>Copy the kit from the repo - <code>scripts/vrchat-world/world-project/Assets/LegaiaWorld/</code> - into the project's <code>Assets/</code>: the editor builder + its realism module, a JSON reader, five small shaders, and four UdonSharp behaviours (doorway teleport, proximity door, wander, day/night).</li>
   </ol>
   <p class="hint">glTFast is a Unity-registry package, so it never appears inside the Creator Companion - and the VRChat packages live in <code>Packages/vpm-manifest.json</code>, so don't be alarmed when <code>Packages/manifest.json</code> shows no <code>com.vrchat.*</code> entries. Both are normal.</p>
 </section>
@@ -90,16 +90,17 @@
 </section>
 
 <section class="doc-section" id="realism">
-  <h2>Optional: realism enhancements</h2>
-  <p>The builder window's <strong>Realism enhancements</strong> foldout layers a set of optional passes over the built root. Every one defaults <strong>off</strong> - untouched, the build is the faithful retail-shaded scene - and everything the passes create is generated from scratch (shaders, grass geometry, synthesized audio), so no game data is produced beyond what the export already decoded. An <em>apply to the already-built root</em> button reruns just these passes, so tuning a slider doesn't force a rebuild.</p>
+  <h2>Realism enhancements</h2>
+  <p>The builder window's <strong>Realism enhancements</strong> foldout layers a set of passes over the built root. The graphics passes default <strong>on</strong> - untick them all for the faithful retail-shaded scene - while the passes that need the SDK at runtime or add sound (day/night, ambience, wander) stay opt-in. Everything the passes create is generated from scratch (shaders, dome and grass geometry, synthesized audio), so no game data is produced beyond what the export already decoded. An <em>apply to the already-built root</em> button reruns just these passes, so tuning a slider doesn't force a rebuild.</p>
   <ul>
     <li><strong>Realistic lighting</strong> - the exported materials are unlit and the meshes carry no normals, so the pass generates smoothed normals, swaps in lit vertex-colour shaders, and adds a warm directional sun with soft shadows and a three-colour ambient. The baked retail shading keeps modulating every surface, so the scene holds its palette - Rim Elm at golden hour still looks like Rim Elm.</li>
     <li><strong>Day / night cycle</strong> - an Udon behaviour sweeps the sun through a full day on a fixed cycle (night compressed), synced across all players from the shared server clock.</li>
     <li><strong>Sky + distance fog</strong> - a procedural skybox that tracks the sun (so it darkens with the cycle) and linear fog scaled to the scene's size.</li>
     <li><strong>Ground foliage</strong> - procedural wind-swayed grass, scattered where the terrain reads green and tinted from the ground it grows on. Density, coverage threshold and seed are sliders; each rerun rescatters instead of stacking.</li>
+    <li><strong>Interior room shells</strong> - the doorway-teleport interiors are unused corners of the same map, so from inside a room you'd see the skybox above and the floating village past the doorway. The pass detects each detached room from the manifest's teleport data and wraps it in a black dome that faces inward only: black space from inside (retail's own framing for these rooms), invisible from outside, and shadow-free so the room stays lit - with an optional warm fill light and slanted light shafts so it reads window-lit.</li>
     <li><strong>Smooth textures</strong> - bilinear + anisotropic filtering instead of the PSX point sampling, for the "remaster" look.</li>
     <li><strong>Ambient audio bed</strong> - a quiet synthesized wind/surf loop under the BGM (generated noise, not disc audio).</li>
-    <li><strong>Villagers wander</strong> - wires the stroll behaviour on every talk-role NPC automatically, so the whole town ambles.</li>
+    <li><strong>Villagers wander</strong> - wires the stroll behaviour on every talk-role NPC automatically, so the whole town ambles. Strolls are collision-aware: a walk that would clip a hut re-picks instead, and a downward ray keeps feet on the floor.</li>
   </ul>
   <p class="hint">Lighting, sky and fog are per-Unity-scene render settings: the last applied root wins, and turning the options off later doesn't revert them - reset via <em>Window &gt; Rendering &gt; Lighting</em>. Grass plus realtime shadows is a PC-world budget; trim density and shadow strength for Quest.</p>
 </section>
