@@ -71,6 +71,11 @@ namespace LegaiaWorld
         bool loopPropClips = true;
         bool hideStaticPropTwins = true;
         bool includeConditionalNpcs = false;
+        bool wireTeleports = true;
+        bool openDoorsOnApproach = true;
+        bool playWorldMorphClip = true;
+        bool addMusic = true;
+        float musicVolume = 0.5f;
 
         [MenuItem("Legaia/Build Scene From Manifest...")]
         static void Open()
@@ -125,6 +130,33 @@ namespace LegaiaWorld
                 new GUIContent("Include conditional NPCs",
                     "Story-gated spawns retail parks off-map until a script places them"),
                 includeConditionalNpcs);
+            wireTeleports = EditorGUILayout.Toggle(
+                new GUIContent("Doorway teleports",
+                    "Build trigger volumes from the manifest's `teleports` " +
+                    "(retail's intra-scene doors: walk into a doorway, land " +
+                    "in the interior) and wire the LegaiaDoorway Udon " +
+                    "behaviour. Scene portals also connect when the target " +
+                    "scene's built root is present in this Unity scene"),
+                wireTeleports);
+            openDoorsOnApproach = EditorGUILayout.Toggle(
+                new GUIContent("Doors open on approach",
+                    "Props the manifest tags as doors (`is_door` / gate " +
+                    "leaves on an exit band) play their swing once when a " +
+                    "player comes near and hold the open pose, instead of " +
+                    "swinging on a loop forever"),
+                openDoorsOnApproach);
+            playWorldMorphClip = EditorGUILayout.Toggle(
+                new GUIContent("Animate world morphs",
+                    "Play the world glb's baked `vdf_pulse` blendshape clip " +
+                    "on a loop - Rim Elm's shoreline washing in and out"),
+                playWorldMorphClip);
+            addMusic = EditorGUILayout.Toggle(
+                new GUIContent("Scene music",
+                    "Loop the exported BGM WAV (manifest `music`) on the " +
+                    "scene root as a 2D AudioSource"),
+                addMusic);
+            using (new EditorGUI.DisabledScope(!addMusic))
+                musicVolume = EditorGUILayout.Slider("  Music volume", musicVolume, 0f, 1f);
 
             GUILayout.Space(8);
             using (new EditorGUI.DisabledScope(string.IsNullOrEmpty(manifestPath)))
@@ -176,11 +208,41 @@ namespace LegaiaWorld
                 }
             }
 
+            // Shoreline & other baked vertex morphs: the world glb carries a
+            // looping `vdf_pulse` blendshape clip when the exporter armed the
+            // engine's scene-entry VDF pulse - play it on the world instance.
+            object worldAnim = MiniJson.Get(m, "world_anim");
+            if (playWorldMorphClip && worldAnim != null)
+                AttachLoopingClip(world, dir + "/" + worldGlb,
+                    MiniJson.AsStr(MiniJson.Get(worldAnim, "clip")), dir, sceneName);
+
             // --- Spawn marker (assign to your VRC scene descriptor) ---
             Vector3 spawn = G2U(MiniJson.GetVec3(MiniJson.Get(m, "spawn"), "position"));
             var spawnGo = new GameObject("LegaiaSpawn");
             spawnGo.transform.SetParent(root.transform, false);
             spawnGo.transform.localPosition = spawn + Vector3.up * 0.1f;
+
+            // --- Scene music (the exported seamless BGM loop) ---
+            string musicFile = MiniJson.AsStr(
+                MiniJson.Get(MiniJson.Get(m, "music"), "file"));
+            if (addMusic && musicFile != null)
+            {
+                var clip = AssetDatabase.LoadAssetAtPath<AudioClip>(dir + "/" + musicFile);
+                if (clip != null)
+                {
+                    var src = root.AddComponent<AudioSource>();
+                    src.clip = clip;
+                    src.loop = true;
+                    src.playOnAwake = true;
+                    src.spatialBlend = 0f; // the town theme plays everywhere
+                    src.volume = musicVolume;
+                }
+                else
+                {
+                    Debug.LogWarning("[Legaia] music clip not imported yet: " +
+                                     dir + "/" + musicFile);
+                }
+            }
 
             // --- NPCs ---
             var npcRoot = new GameObject("npcs");
@@ -217,6 +279,7 @@ namespace LegaiaWorld
             var propRoot = new GameObject("props");
             propRoot.transform.SetParent(root.transform, false);
             int propCount = 0;
+            int doorCount = 0;
             foreach (object p in MiniJson.AsList(MiniJson.Get(m, "animated_props"))
                      ?? new List<object>())
             {
@@ -234,11 +297,126 @@ namespace LegaiaWorld
                     go.transform.localPosition = G2U(MiniJson.GetVec3(inst, "position"));
                     float yaw = MiniJson.GetNum(inst, "rot_y_radians") * Mathf.Rad2Deg;
                     go.transform.localRotation = Quaternion.Euler(0, YAW_SIGN * yaw, 0);
-                    if (loopPropClips)
+                    // A door-tagged instance (its bind record teleports the
+                    // player, or it stands on a scene-exit band - a gate
+                    // leaf) opens on approach and stays open; anything else
+                    // free-runs its clip.
+                    bool isDoor = MiniJson.Get(inst, "is_door") is bool db && db;
+                    bool gateLeaf = MiniJson.Get(inst, "near_portal") is double;
+                    if (openDoorsOnApproach && (isDoor || gateLeaf))
+                    {
+                        AttachProximityDoor(go, dir + "/" + file, sceneName);
+                        doorCount++;
+                    }
+                    else if (loopPropClips)
+                    {
                         AttachLoopingClip(go, dir + "/" + file, null, dir, sceneName);
+                    }
                     if (hideStaticPropTwins)
                         HideStaticTwin(world, file, go.transform.localPosition);
                     propCount++;
+                }
+            }
+
+            // --- Doorway teleports + scene portals ---
+            // The trigger boxes and landings are retail's own door data (see
+            // the manifest's `teleports` / `scene_portals`); the arrival
+            // facing is resolved AFTER the final mirror below, so collect the
+            // (marker, root-local direction) pairs here.
+            var facingMarkers = new List<KeyValuePair<Transform, Vector3>>();
+            int teleportCount = 0;
+            if (wireTeleports)
+            {
+                var tpRoot = new GameObject("teleports");
+                tpRoot.transform.SetParent(root.transform, false);
+                var tps = MiniJson.AsList(MiniJson.Get(m, "teleports"))
+                          ?? new List<object>();
+                for (int i = 0; i < tps.Count; i++)
+                {
+                    object tp = tps[i];
+                    object trig = MiniJson.Get(tp, "trigger");
+                    string kind = MiniJson.AsStr(MiniJson.Get(tp, "kind"));
+                    Vector3 half = MiniJson.GetVec3(trig, "half_extents");
+                    var go = new GameObject("teleport_" + i + "_" + kind);
+                    go.transform.SetParent(tpRoot.transform, false);
+                    // Trigger position is at the floor; centre the box a
+                    // half-height up so it covers a standing player.
+                    go.transform.localPosition =
+                        G2U(MiniJson.GetVec3(trig, "position")) + Vector3.up * half.y;
+                    var box = go.AddComponent<BoxCollider>();
+                    box.isTrigger = true;
+                    box.size = new Vector3(half.x * 2f, half.y * 2f, half.z * 2f);
+
+                    var dst = new GameObject("dest");
+                    dst.transform.SetParent(go.transform, false);
+                    // Destination is absolute in the manifest frame (which is
+                    // the root's local frame), not trigger-relative.
+                    Vector3 destLocal =
+                        G2U(MiniJson.GetVec3(MiniJson.Get(tp, "destination"), "position"))
+                        + Vector3.up * 0.05f;
+                    dst.transform.localPosition = destLocal - go.transform.localPosition;
+
+                    var fd = MiniJson.AsList(MiniJson.Get(tp, "facing_dir"));
+                    bool hasFacing = fd != null && fd.Count >= 2;
+                    if (hasFacing)
+                        facingMarkers.Add(new KeyValuePair<Transform, Vector3>(
+                            dst.transform,
+                            G2U(new Vector3((float)MiniJson.AsNum(fd[0]), 0,
+                                            (float)MiniJson.AsNum(fd[1])))));
+
+                    var udon = TryAttachUdon(go, "LegaiaDoorway");
+                    SetUdonField(udon, "destination", dst.transform);
+                    SetUdonField(udon, "alignToDestination", hasFacing);
+                    teleportCount++;
+                }
+
+                // Scene portals (town exits / entrances) connect only when
+                // the target scene is already built in this Unity scene: the
+                // landing goes at the manifest entry point in the TARGET
+                // root's frame, grounded by a downward raycast against its
+                // colliders.
+                var portals = MiniJson.AsList(MiniJson.Get(m, "scene_portals"))
+                              ?? new List<object>();
+                for (int i = 0; i < portals.Count; i++)
+                {
+                    object p = portals[i];
+                    string target = MiniJson.AsStr(MiniJson.Get(p, "target_scene"));
+                    var entry = MiniJson.AsList(MiniJson.Get(p, "entry_xz"));
+                    if (target == null || entry == null || entry.Count < 2)
+                        continue;
+                    var targetRoot = GameObject.Find("Legaia_" + target);
+                    if (targetRoot == null)
+                        continue; // single-scene build: leave the exit inert
+                    object trig = MiniJson.Get(p, "trigger");
+                    Vector3 half = MiniJson.GetVec3(trig, "half_extents");
+                    var go = new GameObject("portal_" + i + "_" + target);
+                    go.transform.SetParent(tpRoot.transform, false);
+                    go.transform.localPosition =
+                        G2U(MiniJson.GetVec3(trig, "position")) + Vector3.up * half.y;
+                    var box = go.AddComponent<BoxCollider>();
+                    box.isTrigger = true;
+                    box.size = new Vector3(half.x * 2f, half.y * 2f, half.z * 2f);
+
+                    var dst = new GameObject("arrival_from_" + sceneName);
+                    dst.transform.SetParent(targetRoot.transform, false);
+                    dst.transform.localPosition = new Vector3(
+                        -(float)MiniJson.AsNum(entry[0]), 1f,
+                        (float)MiniJson.AsNum(entry[1]));
+                    Vector3 probe = dst.transform.position + Vector3.up * 50f;
+                    if (Physics.Raycast(probe, Vector3.down, out RaycastHit hit, 200f))
+                        dst.transform.position = hit.point + Vector3.up * 0.05f;
+
+                    var fd = MiniJson.AsList(MiniJson.Get(p, "facing_dir"));
+                    if (fd != null && fd.Count >= 2)
+                        facingMarkers.Add(new KeyValuePair<Transform, Vector3>(
+                            dst.transform,
+                            G2U(new Vector3((float)MiniJson.AsNum(fd[0]), 0,
+                                            (float)MiniJson.AsNum(fd[1])))));
+
+                    var udon = TryAttachUdon(go, "LegaiaDoorway");
+                    SetUdonField(udon, "destination", dst.transform);
+                    SetUdonField(udon, "alignToDestination", fd != null && fd.Count >= 2);
+                    teleportCount++;
                 }
             }
 
@@ -250,9 +428,27 @@ namespace LegaiaWorld
             if (matchExplorerOrientation)
                 root.transform.localScale = new Vector3(-1f, 1f, 1f);
 
+            // Resolve arrival facings AFTER the final mirror stands: a
+            // Transform's `.rotation` ignores parent scale, so the facing is
+            // baked as a world rotation from the mirrored direction
+            // (`TransformDirection` DOES include the scale). The stored
+            // direction is root-local (one G2U flip), so the parent chain
+            // supplies the mirror exactly once, matching how every position
+            // flows.
+            foreach (var fm in facingMarkers)
+            {
+                Vector3 dirWorld = fm.Key.parent.TransformDirection(fm.Value);
+                dirWorld.y = 0;
+                if (dirWorld.sqrMagnitude > 1e-6f)
+                    fm.Key.rotation =
+                        Quaternion.LookRotation(dirWorld.normalized, Vector3.up);
+            }
+
             Selection.activeGameObject = root;
             Debug.Log("[Legaia] built " + sceneName + ": world + " + npcCount +
-                      " NPC(s) + " + propCount + " animated prop instance(s). " +
+                      " NPC(s) + " + propCount + " animated prop instance(s) (" +
+                      doorCount + " proximity door(s)) + " + teleportCount +
+                      " doorway teleport(s). " +
                       "Point your VRC scene descriptor spawn at LegaiaSpawn.");
         }
 
@@ -390,6 +586,124 @@ namespace LegaiaWorld
             if (animator == null)
                 animator = go.AddComponent<Animator>();
             animator.runtimeAnimatorController = ctrl;
+        }
+
+        /// Door prop: a two-state AnimatorController - `closed` (default; the
+        /// swing clip parked at frame 0, which IS the closed pose) and `open`
+        /// (the clip once, loop off, so the Animator holds the final open
+        /// frame) - plus an approach trigger and the LegaiaDoor Udon
+        /// behaviour that plays `open` on first contact.
+        static void AttachProximityDoor(GameObject go, string glbPath, string sceneName)
+        {
+            var clips = AssetDatabase.LoadAllAssetsAtPath(glbPath)
+                .OfType<AnimationClip>()
+                .Where(c => !c.name.StartsWith("__preview"))
+                .ToList();
+            if (clips.Count == 0) return;
+            var clip = clips[0];
+
+            string genDir = "Assets/LegaiaGenerated/" + sceneName;
+            Directory.CreateDirectory(genDir);
+            string baseName =
+                Path.GetFileNameWithoutExtension(glbPath) + "_" + clip.name + "_door";
+            string clipPath = genDir + "/" + Sanitize(baseName) + ".anim";
+            var once = AssetDatabase.LoadAssetAtPath<AnimationClip>(clipPath);
+            if (once == null)
+            {
+                once = Object.Instantiate(clip);
+                var settings = AnimationUtility.GetAnimationClipSettings(once);
+                settings.loopTime = false;
+                AnimationUtility.SetAnimationClipSettings(once, settings);
+                AssetDatabase.CreateAsset(once, clipPath);
+            }
+
+            string ctrlPath = genDir + "/" + Sanitize(baseName) + ".controller";
+            var ctrl = AssetDatabase.LoadAssetAtPath<AnimatorController>(ctrlPath);
+            if (ctrl == null)
+            {
+                ctrl = AnimatorController.CreateAnimatorControllerAtPath(ctrlPath);
+                var sm = ctrl.layers[0].stateMachine;
+                var closed = sm.AddState("closed");
+                closed.motion = once;
+                closed.speed = 0f; // parked at frame 0 = closed
+                var open = sm.AddState("open");
+                open.motion = once;
+                sm.defaultState = closed;
+            }
+
+            var animator = go.GetComponentInChildren<Animator>();
+            if (animator == null)
+                animator = go.AddComponent<Animator>();
+            animator.runtimeAnimatorController = ctrl;
+
+            // Approach trigger from the render bounds, padded so the swing
+            // starts a step or two before the player reaches the leaf.
+            var box = go.AddComponent<BoxCollider>();
+            box.isTrigger = true;
+            var renderers = go.GetComponentsInChildren<Renderer>();
+            if (renderers.Length > 0)
+            {
+                var b = renderers[0].bounds;
+                foreach (var r in renderers) b.Encapsulate(r.bounds);
+                box.center = go.transform.InverseTransformPoint(b.center);
+                Vector3 size = go.transform.InverseTransformVector(b.size);
+                box.size = new Vector3(
+                    Mathf.Abs(size.x) + 2.5f,
+                    Mathf.Max(Mathf.Abs(size.y), 2f),
+                    Mathf.Abs(size.z) + 2.5f);
+            }
+            else
+            {
+                box.size = new Vector3(3f, 2.5f, 3f);
+            }
+
+            var udon = TryAttachUdon(go, "LegaiaDoor");
+            SetUdonField(udon, "doorAnimator", animator);
+        }
+
+        /// Attach an UdonSharp behaviour by type name without a compile-time
+        /// dependency on the VRChat SDK (this Editor script must compile in a
+        /// bare Unity project too). Prefers UdonSharpEditor's
+        /// AddUdonSharpComponent so the backing UdonBehaviour is created;
+        /// falls back to a plain AddComponent; warns when the type isn't
+        /// compiled (SDK missing) so the object is visibly inert, not
+        /// silently so.
+        static Component TryAttachUdon(GameObject go, string typeName)
+        {
+            System.Type t = null;
+            foreach (var asm in System.AppDomain.CurrentDomain.GetAssemblies())
+            {
+                t = asm.GetType("LegaiaWorld." + typeName);
+                if (t != null) break;
+            }
+            if (t == null)
+            {
+                Debug.LogWarning("[Legaia] " + typeName + " is not compiled " +
+                    "(VRChat SDK / UdonSharp missing?) - " + go.name +
+                    " stays inert until the behaviour is added manually.");
+                return null;
+            }
+            var ext = System.Type.GetType(
+                "UdonSharpEditor.UdonSharpComponentExtensions, UdonSharp.Editor");
+            if (ext != null)
+            {
+                var mi = ext.GetMethod("AddUdonSharpComponent",
+                    new[] { typeof(GameObject), typeof(System.Type) });
+                if (mi != null)
+                    return (Component)mi.Invoke(null, new object[] { go, t });
+            }
+            return go.AddComponent(t);
+        }
+
+        /// Set a public field on an attached Udon behaviour via reflection
+        /// (keeps this file free of compile-time VRC SDK references).
+        static void SetUdonField(Component comp, string field, object value)
+        {
+            if (comp == null) return;
+            var f = comp.GetType().GetField(field);
+            if (f == null) return;
+            f.SetValue(comp, value);
+            EditorUtility.SetDirty(comp);
         }
 
         /// A rough person-sized capsule from the instance's render bounds so

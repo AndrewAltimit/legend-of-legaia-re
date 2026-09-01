@@ -30,9 +30,10 @@ continues past failures.
 
 ```
 glb-export/town01/
-├── town01.glb        the assembled static world
+├── town01.glb        the assembled world (+ baked morph animation, below)
 ├── npcs/*.glb        one animated glb per catalogued MAN placement
 ├── props/*.glb       animated placed props (windmills, doors)
+├── music/bgm_*.wav   the scene's entry BGM as a seamless loop
 └── manifest.json     transforms + labels + conventions tying it together
 ```
 
@@ -65,6 +66,21 @@ with, so the export matches the on-screen pages:
   pair whose clip has more than one frame, exported object-local with the
   clip, plus every placement transform in the manifest. The world glb
   keeps their frame-0 static twins, so these are opt-in upgrades.
+- **Baked ambient vertex morphs** - when the scene arms the engine's
+  scene-entry VDF pulse (`engine-core::vdf_pulse` - a populated type-7
+  morph pack with no retail entry arming; Rim Elm's shoreline is the
+  flagship), the world glb carries one glTF **morph target** per envelope
+  lane on the affected meshes (Unity blendshapes, named
+  `vdf_lane_<n>` via `extras.targetNames`) plus a looping `vdf_pulse`
+  weights animation sampled over exactly one envelope period
+  (fingerprint-detected, ~3 s for town01) - the wave sheet washes in and
+  out in any glTF player. Scenes where retail owns the morph arming are
+  left alone, same self-guard as the play hosts.
+- **Scene music** - the MAN's first op-`0x35` sub-1 BGM start, rendered
+  through the engine SPU + sequencer (`render_bgm_loop_region`) to
+  `music/bgm_<id>.wav`. Only the detected loop region is written, so a
+  looping `AudioSource` repeats it seamlessly; the manifest `music` block
+  carries the id, curated title, sample rate and loop length.
 
 ## `--items`: every equipment item
 
@@ -104,7 +120,30 @@ objects - the village centre, not the map-grid centre), composition
   off-map until a script places it), `model_index` / `anim_id`;
 - `doors[]` - portal placements with their field-VM target map;
 - `animated_props[]` - file, clip frame count, per-instance
-  position + yaw.
+  position + yaw, plus two door tags: `is_door` (the instance's
+  anchor-tile bind record carries a player teleport - its clip is a door
+  swing, meant to open on approach rather than loop) and `near_portal`
+  (the instance stands on a scene-exit band - a gate leaf);
+- `teleports[]` - retail's **intra-scene doorways**, both families
+  ([`field-locomotion.md`](../subsystems/field-locomotion.md) § intra-scene
+  doorways): the `.MAP` kind-0 map-door table and the object walk-touch
+  script doors (arm-resolved against the cold-entry flag state). Each
+  entry is a trigger box (position + `half_extents` - one collision tile
+  for a map door, the retail `0x50` contact half-extent for a script
+  door), a floor-sampled destination, and `facing_dir` (the authored
+  arrival facing as a unit XZ direction, `null` = keep the walked-in
+  facing). Walking into the box and repositioning the player IS the retail
+  behaviour - a house interior is an unused corner of the same map;
+- `scene_portals[]` - gate-1 walk-on portal sites whose partition-2 record
+  runs a `0x3F` named scene change (town exits / overworld entrances):
+  trigger box, `target_scene`, the arrival `entry_xz` in the **target**
+  scene's export frame, `facing_dir`, and the story-flag `conditional`
+  alternative when the record branches. A multi-scene build wires these
+  into cross-scene teleports;
+- `music` - the rendered BGM loop (`file`, `bgm_id`, curated `title`,
+  `sample_rate`, `loop_seconds`, `seamless_loop`);
+- `world_anim` - present when the world glb carries the baked `vdf_pulse`
+  morph clip (name + loop length).
 
 Transforms are in the **export frame**: the site renderers' convention
 (mesh-local Y flipped at bake so the model reads +Y-up,
@@ -143,15 +182,21 @@ kit's builder applies this as a negative Z instance scale.
 Disc-gated oracle `crates/engine-core/tests/glb_export_real.rs`: assembles
 town01, bakes all three families, validates every glb container (magic,
 length, JSON chunk), asserts the sky filter, the bind-resolve that feeds
-the prop split, clip counts against manifest cross-references. Skip-passes
+the prop split, clip counts against manifest cross-references, both
+doorway-teleport families plus the map01 gate portal, the door tagging,
+and the shoreline morph targets + `vdf_pulse` animation. Skip-passes
 without `LEGAIA_DISC_BIN`.
 
 ## Faithful vs. approximated
 
 Geometry, textures, packet-colour shading, placement transforms, floor
-heights and the walk surface are retail-parity kernels. Approximations, by
-design of a static export: NPCs loop a clip instead of running their
-field-VM scripts, props free-run instead of waiting for script triggers,
-doors don't warp. The manifest's `kind` / `dialog` / `target_map` fields
-exist to seed the next layer - porting those behaviours to Udon in the
-world kit.
+heights, the walk surface, the doorway trigger/landing data, the shoreline
+morph deltas and the BGM render are retail-parity kernels. Approximations,
+by design of a static export: NPCs loop a clip instead of running their
+field-VM scripts, non-door props free-run instead of waiting for script
+triggers, door swings collapse to open-on-approach (the kit's `LegaiaDoor`)
+rather than the full door-record choreography, the morph *arming* cadence is
+the engine's scene-entry pulse enhancement rather than a retail cue, and
+script-door arms are frozen at the cold-entry story-flag state. The
+manifest's `kind` / `dialog` fields still seed the next layer (dialog lines
+from the MES corpus, shop counters).

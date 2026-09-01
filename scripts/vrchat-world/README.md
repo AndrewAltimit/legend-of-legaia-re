@@ -25,8 +25,10 @@ your disc ──legaia-extract──▶ extracted/ ──legaia-engine export-gl
 
 | File | Role |
 |---|---|
-| `world-project/Assets/LegaiaWorld/Editor/LegaiaWorldBuilder.cs` | Editor menu `Legaia > Build Scene From Manifest...`: instantiates the world, adds colliders, places NPCs + animated props from the manifest, wires looping Animators, drops a spawn marker. |
+| `world-project/Assets/LegaiaWorld/Editor/LegaiaWorldBuilder.cs` | Editor menu `Legaia > Build Scene From Manifest...`: instantiates the world, adds colliders, places NPCs + animated props, builds doorway-teleport triggers, wires proximity doors + the shoreline morph clip + the BGM loop, drops a spawn marker. |
 | `world-project/Assets/LegaiaWorld/Editor/MiniJson.cs` | Dependency-free JSON reader for `manifest.json` (so the builder compiles in any project). |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaDoorway.cs` | UdonSharp doorway teleport: walking into the trigger repositions the local player at the landing marker with the authored arrival facing - the retail intra-scene door mechanism. |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaDoor.cs` | UdonSharp proximity door: first approach plays the door's swing clip once and holds it open. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaNpcWander.cs` | Optional UdonSharp stroll behaviour: an NPC wanders a small radius around its spawn between pauses. |
 
 ## Step 1 - export a scene
@@ -41,10 +43,13 @@ cargo build --release -p legaia-engine-shell
 ```
 
 Reads `extracted/` by default (`--disc "Legend of Legaia (USA).bin"` works
-too). Per scene you get the world `.glb`, `npcs/`, `props/`, and
-`manifest.json`. Default `--scale` is 1/64: one 128-unit walk tile becomes
-2 m, which lands doorways and NPCs near VRChat human scale. `glb-export/`
-is gitignored - it is Sony-derived output.
+too). Per scene you get the world `.glb` (with the shoreline's baked
+blendshape clip where the scene has one), `npcs/`, `props/`, `music/`
+(the entry BGM as a seamless-loop WAV) and `manifest.json` (which now also
+carries the doorway-teleport and door-tag data the builder wires below).
+Default `--scale` is 1/64: one 128-unit walk tile becomes 2 m, which lands
+doorways and NPCs near VRChat human scale. `glb-export/` is gitignored -
+it is Sony-derived output.
 
 ## Step 2 - a VRChat worlds project
 
@@ -89,15 +94,25 @@ the VCC setup in more detail if this is your first worlds project.
    player capsule can slip through, and client builds stop needing
    Read/Write enabled on the glb). You get a `Legaia_town01` root:
    - `world` - the full map with its collider (ground included, so the
-     retail walk surface is what you stand on);
+     retail walk surface is what you stand on). When the scene carries the
+     baked shoreline morph clip (**Animate world morphs**) the sea edge
+     washes in and out on a loop, and the exported BGM loops from an
+     AudioSource on the root (**Scene music**);
    - `npcs/` - every catalogued villager at their MAN spawn tile, playing
      their retail spawn clip on a loop, capsule-collided;
-   - `props/` - the animated placements (Rim Elm's windmills and doors)
-     playing their bind clips. The world glb keeps a frame-0 static twin
-     under each one; the builder disables it by default (**Hide static
-     prop twins**) so the pair doesn't z-fight - for a prop you'd rather
-     have still (doors especially - a looping door clip swings forever),
-     delete the animated instance and re-enable its twin;
+   - `props/` - the animated placements (Rim Elm's windmills, doors, gate
+     leaves) playing their bind clips. The world glb keeps a frame-0
+     static twin under each one; the builder disables it by default
+     (**Hide static prop twins**) so the pair doesn't z-fight. Instances
+     the manifest tags as doors open **on approach** and stay open
+     (**Doors open on approach**, via the `LegaiaDoor` behaviour) instead
+     of looping their swing;
+   - `teleports/` - one trigger volume per manifest doorway teleport
+     (**Doorway teleports**): walk into a house door and you land in its
+     interior with the authored facing, exactly the retail intra-scene
+     door mechanism (`LegaiaDoorway`). Scene-exit portals also connect
+     automatically when the target scene's built root (`Legaia_map01`,
+     say) already exists in the same Unity scene;
    - `LegaiaSpawn` - the manifest's suggested spawn (the placed-object
      median, i.e. the village centre).
 3. Add the VRChat scene descriptor (`VRCWorld` prefab from the SDK) and
@@ -207,16 +222,31 @@ the VCC setup in more detail if this is your first worlds project.
 - **A scene looks empty**: world-map scenes (`deele1`…) have no MAN NPCs,
   and some scenes are cutscene-only shells; `export-glb --all-scenes`
   reports what each scene yielded.
+- **Doors don't open / doorway teleports do nothing**: the `LegaiaDoorway`
+  and `LegaiaDoor` behaviours need the VRChat worlds SDK (UdonSharp) in
+  the project - without it the builder logs one warning per object and
+  leaves the trigger inert. They also only react to *players*, so test in
+  Build & Test / ClientSim, not by flying the editor scene camera through
+  them. A door that opens but never teleports is the separate case of a
+  scene-exit portal whose target scene isn't built in this Unity scene -
+  the builder wires those only when `Legaia_<target>` exists.
+- **The shoreline doesn't move**: the morph clip lives in the world glb -
+  re-export with a current build (the manifest should carry `world_anim`),
+  leave **Animate world morphs** on, and check the glTFast import kept
+  animations enabled (the glb's import inspector, Animation tab).
 
 ## Faithful vs. approximated
 
 The world geometry, textures, packet-colour shading, placement transforms,
-floor heights and walk surface are the engine's own retail-parity kernels
-(`engine-core::scene_assembly` - the same code the site's field-scene
-viewer renders). What is approximated: NPCs loop their spawn clip instead
-of running their field-VM scripts, animated props free-run instead of
-waiting for script triggers, and door meshes don't warp anywhere. Porting
-those behaviours to Udon (doors that open on approach, dialog lines from
-the MES corpus, shop counters) is the natural next layer - the manifest
-already carries each NPC's kind (`talk`/`door`/`prop`), dialog first line,
-and door target map to seed it.
+floor heights, walk surface, doorway trigger/landing data, shoreline morph
+deltas and the BGM render are the engine's own retail-parity kernels
+(`engine-core::scene_assembly` and friends - the same code the site's
+field-scene viewer renders). What is approximated: NPCs loop their spawn
+clip instead of running their field-VM scripts, non-door props free-run
+instead of waiting for script triggers, a door's full record choreography
+collapses to open-on-approach + teleport, script-door arms are frozen at
+the cold-entry story-flag state, and the shoreline's arming cadence is the
+engine's scene-entry pulse enhancement. Dialog lines from the MES corpus
+and shop counters remain the natural next Udon layer - the manifest
+already carries each NPC's kind (`talk`/`door`/`prop`) and dialog first
+line to seed it.
