@@ -26,10 +26,15 @@ your disc ──legaia-extract──▶ extracted/ ──legaia-engine export-gl
 | File | Role |
 |---|---|
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaWorldBuilder.cs` | Editor menu `Legaia > Build Scene From Manifest...`: instantiates the world, adds colliders, places NPCs + animated props, builds doorway-teleport triggers, wires proximity doors + the shoreline morph clip + the BGM loop, drops a spawn marker. |
+| `world-project/Assets/LegaiaWorld/Editor/LegaiaRealism.cs` | The builder's optional "Realism enhancements" foldout: lit materials + generated normals + sun, day/night wiring, sky + fog, procedural grass, texture smoothing, synthesized ambience, wander wiring. All default off. |
 | `world-project/Assets/LegaiaWorld/Editor/MiniJson.cs` | Dependency-free JSON reader for `manifest.json` (so the builder compiles in any project). |
+| `world-project/Assets/LegaiaWorld/Shaders/LegaiaLitVertexColor.shader` | Lit cutout stand-in for the exports' unlit materials: `COLOR_0` keeps modulating the texture, Standard lighting layers on top, VFACE flip handles the mixed PSX winding. |
+| `world-project/Assets/LegaiaWorld/Shaders/LegaiaLitVertexColorTransparent.shader` | The BLEND (water / light pool) sibling of the lit shader - alpha-blended, depth-write off. |
+| `world-project/Assets/LegaiaWorld/Shaders/LegaiaGrassWind.shader` | Vertex-coloured wind sway for the procedural grass blades (sway weight in vertex alpha, world-position phase). |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaDoorway.cs` | UdonSharp doorway teleport: walking into the trigger repositions the local player at the landing marker with the authored arrival facing - the retail intra-scene door mechanism. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaDoor.cs` | UdonSharp proximity door: first approach plays the door's swing clip once and holds it open. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaNpcWander.cs` | Optional UdonSharp stroll behaviour: an NPC wanders a small radius around its spawn between pauses. |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaDayNight.cs` | Optional UdonSharp day/night cycle: sweeps the realism sun on a fixed cycle, synced across players via server time. |
 
 ## Step 1 - export a scene
 
@@ -151,6 +156,65 @@ the VCC setup in more detail if this is your first worlds project.
   bone count matches (`record_N` takes) - retarget the Animator the
   builder generated at any of them.
 
+## Optional realism enhancements
+
+The builder window's **Realism enhancements** foldout layers a set of
+optional passes over the built root. Every one defaults **off** - with the
+foldout untouched, the build is the faithful retail-shaded scene - and
+everything the passes create is generated from scratch (shaders, grass
+geometry, synthesized audio): no game data is produced or shipped beyond
+what the export already decoded. The **Apply enhancements to the
+already-built root** button reruns just these passes over an existing
+`Legaia_<scene>` root, so tuning a slider doesn't force a rebuild; each
+pass is idempotent (it refreshes rather than stacks).
+
+- **Realistic lighting**: the exported glbs are `KHR_materials_unlit` and
+  carry **no normals**, so Unity lights can't touch them as imported. The
+  pass duplicates every mesh into `Assets/LegaiaGenerated/<scene>/realism/`
+  with smoothed, position-welded normals (sign-aligned - the PSX source
+  winding is mixed, so raw face normals point both ways and would cancel;
+  the lit shaders' VFACE flip then lights whichever side you see), swaps
+  every material for `Legaia/Lit Vertex Color` (cutout or transparent by
+  queue), and adds a warm directional sun with soft shadows plus a
+  trilight ambient. The baked `COLOR_0` retail shading keeps modulating
+  every surface, so the scene holds its palette - lighting layers on top
+  instead of replacing it.
+- **Day / night cycle** (under lighting): the `LegaiaDayNight` Udon
+  behaviour sweeps the sun through a full day on a fixed cycle, with night
+  compressed (`dayShare`). Every client derives the same angle from the
+  shared server clock, so the cycle is synced with no networking events.
+- **Sky + distance fog**: a procedural-skybox material (it tracks
+  `RenderSettings.sun`, so with day/night on the sky darkens by itself)
+  and linear fog scaled to the built root's bounds.
+- **Ground foliage**: procedural grass - single-triangle blades in tufts,
+  scattered over upward-facing world triangles whose ground colour reads
+  green (texel x mean vertex colour at the triangle centre, the same
+  product the retail shading displays). Blades are tinted from the sampled
+  ground so they blend with the terrain, and sway via `Legaia/Grass Wind`
+  (weight in vertex alpha, world-position phase). Tune **density** and the
+  **green threshold** (lower = more coverage, higher = keeps grass off
+  paths); the scatter is deterministic per seed, capped at 25k tufts, and
+  each rerun rescatters instead of stacking.
+- **Smooth textures**: bilinear + anisotropic filtering on every texture
+  under the root, instead of the exports' PSX point sampling. This edits
+  the imported texture objects in place, so a glb **reimport resets it** -
+  rerun the pass after one.
+- **Ambient audio bed**: a quiet synthesized wind/surf noise loop
+  (filtered noise, loop-crossfaded, written to `LegaiaGenerated/`) on a 2D
+  AudioSource - generated audio, not from the disc.
+- **Villagers wander**: wires `LegaiaNpcWander` on every talk-kind NPC
+  from the manifest (matched by spawn position), so the town strolls
+  instead of standing still.
+
+Caveats: the sun / ambient / skybox / fog are **per-Unity-scene render
+settings** - applying them from one built root is global, the last applied
+root wins, and turning the options off later does not revert them (reset
+via `Window > Rendering > Lighting`, and delete the root's `LegaiaSun` /
+`foliage` / `ambience` children). The day/night and wander passes need the
+VRChat SDK, same as doors and teleports. And the grass + realtime shadows
+budget is a PC-world budget - trim density and shadow strength for a Quest
+target.
+
 ## Troubleshooting
 
 - **Everything looks mirrored**: it is - the raw import is X-mirrored
@@ -266,3 +330,9 @@ engine's scene-entry pulse enhancement. Dialog lines from the MES corpus
 and shop counters remain the natural next Udon layer - the manifest
 already carries each NPC's kind (`talk`/`door`/`prop`) and dialog first
 line to seed it.
+
+The realism foldout sits entirely on the *enhancement* side of this line:
+lighting, sky, grass, ambience and wander are deliberate departures from
+retail, opt-in per option, and the default-off build stays the faithful
+one - the same retail-default / enhancements-one-toggle-away policy as the
+engine's own knobs.

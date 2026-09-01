@@ -12,6 +12,10 @@
 //      a looping Animator on its spawn clip, and drops a "LegaiaSpawn"
 //      marker at the manifest's suggested spawn.
 //
+// The "Realism enhancements" foldout layers optional, default-off passes
+// over the built root (lit materials + sun, day/night, sky + fog, grass,
+// texture smoothing, ambience, wandering villagers) - see LegaiaRealism.cs.
+//
 // Coordinate note: glTFast converts glTF's right-handed frame to Unity's
 // left-handed one by inverting X, so manifest positions (glTF frame) are
 // mapped through the same inversion here, and yaw flips sign. If a prop
@@ -77,6 +81,12 @@ namespace LegaiaWorld
         bool addMusic = true;
         float musicVolume = 0.5f;
 
+        // Optional realism layer (LegaiaRealism.cs) - every knob defaults
+        // off, so the plain build stays the faithful retail-shaded scene.
+        LegaiaRealismOptions realism = new LegaiaRealismOptions();
+        bool showRealism;
+        Vector2 scroll;
+
         [MenuItem("Legaia/Build Scene From Manifest...")]
         static void Open()
         {
@@ -85,6 +95,7 @@ namespace LegaiaWorld
 
         void OnGUI()
         {
+            scroll = EditorGUILayout.BeginScrollView(scroll);
             GUILayout.Label("Exported scene manifest", EditorStyles.boldLabel);
             EditorGUILayout.BeginHorizontal();
             manifestPath = EditorGUILayout.TextField(manifestPath);
@@ -159,14 +170,136 @@ namespace LegaiaWorld
                 musicVolume = EditorGUILayout.Slider("  Music volume", musicVolume, 0f, 1f);
 
             GUILayout.Space(8);
+            RealismGUI();
+
+            GUILayout.Space(8);
             using (new EditorGUI.DisabledScope(string.IsNullOrEmpty(manifestPath)))
             {
                 if (GUILayout.Button("Build scene"))
                     Build();
             }
+            EditorGUILayout.EndScrollView();
         }
 
-        static Vector3 G2U(Vector3 g) => new Vector3(-g.x, g.y, g.z);
+        void RealismGUI()
+        {
+            showRealism = EditorGUILayout.Foldout(showRealism,
+                "Realism enhancements (optional - default off, faithful look)", true);
+            if (!showRealism)
+                return;
+            EditorGUI.indentLevel++;
+            realism.lighting = EditorGUILayout.Toggle(
+                new GUIContent("Realistic lighting",
+                    "Swap the unlit retail materials for the kit's lit " +
+                    "vertex-colour shaders (smoothed normals are generated - " +
+                    "the glbs carry none) and add a warm directional sun with " +
+                    "soft shadows and a three-colour ambient. The baked retail " +
+                    "shading still modulates every surface, so the scene keeps " +
+                    "its palette. Scene-wide lighting settings - reset via " +
+                    "Window > Rendering > Lighting to undo"),
+                realism.lighting);
+            using (new EditorGUI.DisabledScope(!realism.lighting))
+            {
+                realism.sunElevation = EditorGUILayout.Slider(
+                    "  Sun elevation", realism.sunElevation, 5f, 90f);
+                realism.sunAzimuth = EditorGUILayout.Slider(
+                    "  Sun azimuth", realism.sunAzimuth, 0f, 360f);
+                realism.sunIntensity = EditorGUILayout.Slider(
+                    "  Sun intensity", realism.sunIntensity, 0f, 2f);
+                realism.shadowStrength = EditorGUILayout.Slider(
+                    "  Shadow strength", realism.shadowStrength, 0f, 1f);
+                realism.dayNight = EditorGUILayout.Toggle(
+                    new GUIContent("  Day / night cycle",
+                        "Udon: the sun sweeps a full day on a fixed cycle, " +
+                        "synced across players via server time (needs the " +
+                        "VRChat SDK). Night keeps the dim ambient"),
+                    realism.dayNight);
+                if (realism.dayNight)
+                    realism.dayNightMinutes = EditorGUILayout.Slider(
+                        "    Cycle (minutes)", realism.dayNightMinutes, 1f, 120f);
+            }
+            realism.skyAndFog = EditorGUILayout.Toggle(
+                new GUIContent("Sky + distance fog",
+                    "Procedural skybox (tracks the sun, so it darkens with the " +
+                    "day/night cycle) and linear fog scaled to the scene's " +
+                    "bounds. Scene-wide render settings, same undo note as " +
+                    "lighting"),
+                realism.skyAndFog);
+            realism.foliage = EditorGUILayout.Toggle(
+                new GUIContent("Ground foliage (grass)",
+                    "Procedural wind-swayed grass blades scattered over " +
+                    "green-reading ground, tinted from the terrain itself - " +
+                    "generated geometry, no game data. Deterministic per seed"),
+                realism.foliage);
+            using (new EditorGUI.DisabledScope(!realism.foliage))
+            {
+                realism.grassDensity = EditorGUILayout.Slider(
+                    new GUIContent("  Density (tufts / m^2)"),
+                    realism.grassDensity, 0.5f, 30f);
+                realism.grassGreenThreshold = EditorGUILayout.Slider(
+                    new GUIContent("  Green threshold",
+                        "How green a ground texel must read before grass grows " +
+                        "on it - lower to cover more ground, raise to keep " +
+                        "grass off paths"),
+                    realism.grassGreenThreshold, 0f, 0.2f);
+                realism.grassSeed = EditorGUILayout.IntField(
+                    "  Scatter seed", realism.grassSeed);
+            }
+            realism.smoothTextures = EditorGUILayout.Toggle(
+                new GUIContent("Smooth textures (bilinear)",
+                    "Bilinear + anisotropic filtering on every texture under " +
+                    "the root instead of the exports' PSX point sampling. A " +
+                    "glb reimport resets it - rerun after one"),
+                realism.smoothTextures);
+            realism.ambientAudio = EditorGUILayout.Toggle(
+                new GUIContent("Ambient audio bed",
+                    "A quiet synthesized wind/surf noise loop on a 2D source - " +
+                    "generated audio, not from the disc"),
+                realism.ambientAudio);
+            using (new EditorGUI.DisabledScope(!realism.ambientAudio))
+                realism.ambientVolume = EditorGUILayout.Slider(
+                    "  Ambience volume", realism.ambientVolume, 0f, 1f);
+            realism.npcWander = EditorGUILayout.Toggle(
+                new GUIContent("Villagers wander",
+                    "Wire the LegaiaNpcWander Udon behaviour on every " +
+                    "talk-kind NPC so the town strolls instead of standing " +
+                    "still (needs the VRChat SDK)"),
+                realism.npcWander);
+            using (new EditorGUI.DisabledScope(!realism.npcWander))
+                realism.wanderRadius = EditorGUILayout.Slider(
+                    "  Wander radius (m)", realism.wanderRadius, 0.5f, 8f);
+
+            GUILayout.Space(4);
+            using (new EditorGUI.DisabledScope(
+                string.IsNullOrEmpty(manifestPath) || !realism.AnyEnabled))
+            {
+                if (GUILayout.Button("Apply enhancements to the already-built root"))
+                    ApplyRealismToExisting();
+            }
+            EditorGUI.indentLevel--;
+        }
+
+        /// Run just the realism passes over an existing `Legaia_<scene>`
+        /// root (so tuning a slider doesn't force a full rebuild). Every
+        /// pass is idempotent - rerunning refreshes rather than stacks.
+        void ApplyRealismToExisting()
+        {
+            object m = MiniJson.Parse(File.ReadAllText(manifestPath));
+            string sceneName = MiniJson.AsStr(MiniJson.Get(m, "scene")) ?? "scene";
+            var root = GameObject.Find("Legaia_" + sceneName);
+            if (root == null)
+            {
+                EditorUtility.DisplayDialog("Legaia World Builder",
+                    "No built root 'Legaia_" + sceneName +
+                    "' in this scene - build first.", "OK");
+                return;
+            }
+            if (realism.NeedsUdon)
+                EnsureUdonProgramAssets();
+            LegaiaRealism.Apply(root, m, sceneName, realism);
+        }
+
+        internal static Vector3 G2U(Vector3 g) => new Vector3(-g.x, g.y, g.z);
 
         void Build()
         {
@@ -199,7 +332,7 @@ namespace LegaiaWorld
             // U# refuses to attach a behaviour whose script has no
             // UdonSharpProgramAsset - and bare .cs files copied into a
             // project have none. Create any missing ones before wiring.
-            if (wireTeleports || openDoorsOnApproach)
+            if (wireTeleports || openDoorsOnApproach || realism.NeedsUdon)
                 EnsureUdonProgramAssets();
 
             var root = new GameObject("Legaia_" + sceneName);
@@ -496,6 +629,11 @@ namespace LegaiaWorld
                         Quaternion.LookRotation(dirWorld.normalized, Vector3.up);
             }
 
+            // Optional realism layer, after the final mirror stands (its
+            // passes sample and scatter in the finished world frame).
+            if (realism.AnyEnabled)
+                LegaiaRealism.Apply(root, m, sceneName, realism);
+
             Selection.activeGameObject = root;
             Debug.Log("[Legaia] built " + sceneName + ": world + " + npcCount +
                       " NPC(s) + " + propCount + " animated prop instance(s) (" +
@@ -717,7 +855,7 @@ namespace LegaiaWorld
         /// falls back to a plain AddComponent; warns when the type isn't
         /// compiled (SDK missing) so the object is visibly inert, not
         /// silently so.
-        static System.Type FindType(string fullName)
+        internal static System.Type FindType(string fullName)
         {
             foreach (var asm in System.AppDomain.CurrentDomain.GetAssemblies())
             {
@@ -735,7 +873,7 @@ namespace LegaiaWorld
         /// CreateInstance + sourceCsScript pattern U#'s own editor uses),
         /// reset U#'s script-to-program lookup cache, and compile so the
         /// backing programs exist before the first behaviour is wired.
-        static void EnsureUdonProgramAssets()
+        internal static void EnsureUdonProgramAssets()
         {
             var paType = FindType("UdonSharp.UdonSharpProgramAsset");
             var utilType = FindType("UdonSharpEditor.UdonSharpEditorUtility");
@@ -745,7 +883,7 @@ namespace LegaiaWorld
                 "GetUdonSharpProgramAsset", new[] { typeof(System.Type) });
             bool created = false;
             foreach (string name in new[]
-                     { "LegaiaDoorway", "LegaiaDoor", "LegaiaNpcWander" })
+                     { "LegaiaDoorway", "LegaiaDoor", "LegaiaNpcWander", "LegaiaDayNight" })
             {
                 var t = FindType("LegaiaWorld." + name);
                 if (t == null) continue;
@@ -804,7 +942,7 @@ namespace LegaiaWorld
                 compile.Invoke(null, new object[] { null });
         }
 
-        static Component TryAttachUdon(GameObject go, string typeName)
+        internal static Component TryAttachUdon(GameObject go, string typeName)
         {
             var t = FindType("LegaiaWorld." + typeName);
             if (t == null)
@@ -851,7 +989,7 @@ namespace LegaiaWorld
         /// land on the U# PROXY component only - call SyncUdonProxy once all
         /// fields are set, or the backing UdonBehaviour (what actually runs
         /// in-world) keeps null defaults and the behaviour silently no-ops.
-        static void SetUdonField(Component comp, string field, object value)
+        internal static void SetUdonField(Component comp, string field, object value)
         {
             if (comp == null) return;
             var f = comp.GetType().GetField(field);
@@ -865,7 +1003,7 @@ namespace LegaiaWorld
         /// the documented requirement after editing a proxy from an editor
         /// script. Without it the teleport destinations and door animator
         /// references never reach the program that runs in-world.
-        static void SyncUdonProxy(Component comp)
+        internal static void SyncUdonProxy(Component comp)
         {
             if (comp == null) return;
             var util = FindType("UdonSharpEditor.UdonSharpEditorUtility");
@@ -910,7 +1048,7 @@ namespace LegaiaWorld
             cap.radius = Mathf.Max(Mathf.Min(b.size.x, b.size.z) * 0.35f, 0.15f);
         }
 
-        static string Sanitize(string s)
+        internal static string Sanitize(string s)
         {
             foreach (char c in Path.GetInvalidFileNameChars())
                 s = s.Replace(c, '_');
