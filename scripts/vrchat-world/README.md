@@ -125,7 +125,14 @@ the VCC setup in more detail if this is your first worlds project.
      door mechanism (`LegaiaDoorway`). Trigger boxes get an absolute
      player-sized floor (1.5 m across, player height) - the authored
      extents scale with the world, but the player doesn't, so a
-     small-scale export would otherwise make doorways easy to miss. Scene-exit portals also connect
+     small-scale export would otherwise make doorways easy to miss.
+     A loop guard covers the retail landings that sit inside (or a
+     capsule-width from) the paired door's trigger (town01's hilltop
+     house lands inside its own exit band): before teleporting, the
+     firing doorway suppresses every sibling doorway near the landing
+     for a few seconds, so a landing can never chain-fire a ping-pong
+     loop - which reads as "the door does nothing" when the hops cancel
+     out; Scene-exit portals also connect
      automatically when the target scene's built root (`Legaia_map01`,
      say) already exists in the same Unity scene;
    - `LegaiaSpawn` - the manifest's suggested spawn (the placed-object
@@ -258,18 +265,18 @@ pass is idempotent (it refreshes rather than stacks).
   it visibly faces off its `localToWorldMatrix` every walking frame
   (baked yaw, idle sway, every mirror included by construction), probes
   which way that visual forward responds to a transform yaw, and servos
-  the yaw until the mesh faces the walk direction. The one assumed
-  convention is the face axis: **-Z**, pinned empirically - +Z walked
-  the whole town backwards, and a wireframe render cannot tell front
-  from back (`flipFacing` covers a model authored facing +Z;
-  `facingYawOffset` adds a manual trim). A rare model authors its face
-  off the rig's -Z in **vertex space**, where no transform measurement
-  can see it - it walks sideways or backwards while every sibling walks
-  right; the realism foldout's **Facing overrides** field
-  (`npc_30:90; npc_07:-90`, keys matching the NPC glb file name) trims
-  those and survives rebuilds, unlike a hand-set field on the placed
-  instance. Wall/floor ray heights are measured from the rendered model
-  at Start, so they track any export scale.
+  the yaw until the mesh faces the walk direction. The face-axis
+  invariant (textured 4-view renders of every town01 model - wireframes
+  cannot tell front from back) is **+Z in the glb scene frame at
+  rest**; it is NOT a fixed node-local axis, because one rig family
+  rests its nodes at -90 degrees with the vertices counter-rotated
+  (npc_12 and kin, which walked sideways until the anchor's rest
+  rotation was folded out of the measurement at Start). `flipFacing`
+  covers a model violating the invariant; `facingYawOffset` adds a
+  manual trim, and the realism foldout's **Facing overrides** field
+  (`npc_30:90`, keys matching the NPC glb file name) applies such trims
+  durably across rebuilds. Wall/floor ray heights are measured from the
+  rendered model at Start, so they track any export scale.
 
 Caveats: the sun / ambient / skybox / fog are **per-Unity-scene render
 settings** - applying them from one built root is global, the last applied

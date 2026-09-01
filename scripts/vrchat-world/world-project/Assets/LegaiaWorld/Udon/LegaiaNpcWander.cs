@@ -32,14 +32,17 @@
 //     the yaw with the probed sign until visual forward lies on the walk
 //     direction. No rest capture, no calibration frames, no sign algebra.
 //
-// The one convention that must be ASSUMED is which node-local axis the
-// mesh's face points down, and it is -Z, pinned empirically: with +Z the
-// entire town walked backwards in-world - a uniform 180 - while wireframe
-// renders of every rig cannot distinguish front from back (a projected
-// silhouette is identical both ways). -Z is also consistent with history:
-// the builder's own negative-Z instance mirror flips file -Z onto the
-// transform's +Z, which is why the old LookRotation-on-transform code
-// looked correct on every rest-yaw-0 rig.
+// The one convention that must be ASSUMED is the face axis, and the
+// invariant that holds across every town01 model (textured 4-view
+// renders - wireframes cannot tell front from back) is: the mesh faces
+// +Z in the INSTANCE-local (glb scene) frame at rest. It is NOT a fixed
+// node-local axis: one rig family rests its nodes at -90 deg yaw with
+// the vertices counter-rotated (the "male warrior" family - npc_12 and
+// kin - which walked sideways while every rest-yaw-0 rig walked right),
+// so the anchor's node-local face axis varies per family. Start folds
+// the anchor's rest rotation out once (anchorFaceLocal below); with
+// that, rest-yaw-0 rigs reduce exactly to the previously verified
+// behaviour and the rotated family lands on its true axis.
 //
 // Requires UdonSharp (bundled with the VRChat worlds SDK via the Creator
 // Companion). Drop this component on an NPC instance the builder placed;
@@ -70,8 +73,9 @@ namespace LegaiaWorld
         [Tooltip("Clear space kept between the NPC and any wall (meters).")]
         public float wallClearance = 0.3f;
 
-        [Tooltip("Tick if this NPC's mesh is authored facing +Z instead of " +
-                 "-Z (walks exactly backwards with the automatic facing).")]
+        [Tooltip("Tick if this NPC walks exactly backwards: covers a model " +
+                 "authored facing -Z in its file where every known rig " +
+                 "faces +Z.")]
         public bool flipFacing = false;
 
         [Tooltip("Extra facing correction in degrees, added on top of the " +
@@ -82,6 +86,7 @@ namespace LegaiaWorld
         private Vector3 target;
         private float pauseUntil;
         private Transform anchor;
+        private Vector3 anchorFaceLocal = Vector3.back;
         private float servoSign = 1f;
         private bool walking;
         private Vector3 lastForward = Vector3.forward;
@@ -135,6 +140,19 @@ namespace LegaiaWorld
             }
             if (anchor == null)
                 anchor = anyAnchor;
+            // The face axis in the ANCHOR's local frame, captured at rest
+            // (before the Animator's first evaluation). Every model faces
+            // +Z in the instance frame at rest, but the anchor node's rest
+            // rotation varies per rig family (one family rests at -90 deg
+            // yaw with counter-rotated vertices), so the composed rest
+            // rotation is folded out once here. Pure quaternions are safe
+            // for this: every mirror in the chain lives on scales at or
+            // above the instance, and Transform.rotation composes
+            // rotations only - the mirrors re-enter through TransformPoint
+            // in VisualForward.
+            if (anchor != null)
+                anchorFaceLocal = Quaternion.Inverse(anchor.rotation)
+                    * (transform.rotation * Vector3.forward);
             lastForward = transform.forward;
 
             // Model height from the rendered rest bounds: the ray heights
@@ -180,9 +198,10 @@ namespace LegaiaWorld
         {
             if (anchor == null)
                 return transform.forward;
-            // -Z is the face axis of these meshes (empirically pinned: +Z
-            // walked the whole town backwards; see the header note).
-            Vector3 f = anchor.TransformPoint(Vector3.back)
+            // anchorFaceLocal is the rest-calibrated face axis (see Start);
+            // through the anchor's full matrix it tracks baked yaw, idle
+            // sway and every mirror at once.
+            Vector3 f = anchor.TransformPoint(anchorFaceLocal)
                 - anchor.TransformPoint(Vector3.zero);
             if (flipFacing)
                 f = -f;
