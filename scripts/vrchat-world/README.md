@@ -230,6 +230,13 @@ the VCC setup in more detail if this is your first worlds project.
   them. A door that opens but never teleports is the separate case of a
   scene-exit portal whose target scene isn't built in this Unity scene -
   the builder wires those only when `Legaia_<target>` exists.
+- **Doors swing on a loop / teleports silently no-op after an older
+  build**: both were builder defects - door tagging keyed on a join that
+  missed every house door (fixed in the exporter: re-export the scene so
+  the manifest's `is_door` flags are current), and Udon field values were
+  set on the U# proxy without `CopyProxyToUdon`, so the backing behaviour
+  kept null defaults. Rebuild with the current kit **and** a current
+  manifest, and delete the previously built `Legaia_<scene>` root first.
 - **The shoreline doesn't move**: the morph clip lives in the world glb -
   re-export with a current build (the manifest should carry `world_anim`),
   leave **Animate world morphs** on, and check the glTFast import kept

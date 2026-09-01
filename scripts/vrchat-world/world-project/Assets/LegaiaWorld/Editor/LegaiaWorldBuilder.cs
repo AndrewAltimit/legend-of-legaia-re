@@ -367,6 +367,7 @@ namespace LegaiaWorld
                     var udon = TryAttachUdon(go, "LegaiaDoorway");
                     SetUdonField(udon, "destination", dst.transform);
                     SetUdonField(udon, "alignToDestination", hasFacing);
+                    SyncUdonProxy(udon);
                     teleportCount++;
                 }
 
@@ -416,6 +417,7 @@ namespace LegaiaWorld
                     var udon = TryAttachUdon(go, "LegaiaDoorway");
                     SetUdonField(udon, "destination", dst.transform);
                     SetUdonField(udon, "alignToDestination", fd != null && fd.Count >= 2);
+                    SyncUdonProxy(udon);
                     teleportCount++;
                 }
             }
@@ -636,29 +638,26 @@ namespace LegaiaWorld
                 animator = go.AddComponent<Animator>();
             animator.runtimeAnimatorController = ctrl;
 
-            // Approach trigger from the render bounds, padded so the swing
-            // starts a step or two before the player reaches the leaf.
-            var box = go.AddComponent<BoxCollider>();
+            // Approach trigger: an UNSCALED sibling at the prop's position.
+            // The prop instance carries the PSX-unit scale (plus the negative
+            // Z mirror), so a collider on the prop itself needs error-prone
+            // local-unit math - and a door prop is often a whole hut mesh
+            // whose door node sits at the prop origin (which retail parks on
+            // the doorway trigger tile), so render bounds would open the door
+            // from anywhere around the building. A fixed people-sized box at
+            // the origin opens it a couple of steps out, on the doorway side
+            // and every other - close enough to retail's walk-up feel.
+            var trigger = new GameObject(go.name + "_approach");
+            trigger.transform.SetParent(go.transform.parent, false);
+            trigger.transform.localPosition = go.transform.localPosition;
+            var box = trigger.AddComponent<BoxCollider>();
             box.isTrigger = true;
-            var renderers = go.GetComponentsInChildren<Renderer>();
-            if (renderers.Length > 0)
-            {
-                var b = renderers[0].bounds;
-                foreach (var r in renderers) b.Encapsulate(r.bounds);
-                box.center = go.transform.InverseTransformPoint(b.center);
-                Vector3 size = go.transform.InverseTransformVector(b.size);
-                box.size = new Vector3(
-                    Mathf.Abs(size.x) + 2.5f,
-                    Mathf.Max(Mathf.Abs(size.y), 2f),
-                    Mathf.Abs(size.z) + 2.5f);
-            }
-            else
-            {
-                box.size = new Vector3(3f, 2.5f, 3f);
-            }
+            box.center = Vector3.up * 1.2f;
+            box.size = new Vector3(6f, 3f, 6f);
 
-            var udon = TryAttachUdon(go, "LegaiaDoor");
+            var udon = TryAttachUdon(trigger, "LegaiaDoor");
             SetUdonField(udon, "doorAnimator", animator);
+            SyncUdonProxy(udon);
         }
 
         /// Attach an UdonSharp behaviour by type name without a compile-time
@@ -668,14 +667,19 @@ namespace LegaiaWorld
         /// falls back to a plain AddComponent; warns when the type isn't
         /// compiled (SDK missing) so the object is visibly inert, not
         /// silently so.
-        static Component TryAttachUdon(GameObject go, string typeName)
+        static System.Type FindType(string fullName)
         {
-            System.Type t = null;
             foreach (var asm in System.AppDomain.CurrentDomain.GetAssemblies())
             {
-                t = asm.GetType("LegaiaWorld." + typeName);
-                if (t != null) break;
+                var t = asm.GetType(fullName);
+                if (t != null) return t;
             }
+            return null;
+        }
+
+        static Component TryAttachUdon(GameObject go, string typeName)
+        {
+            var t = FindType("LegaiaWorld." + typeName);
             if (t == null)
             {
                 Debug.LogWarning("[Legaia] " + typeName + " is not compiled " +
@@ -683,8 +687,7 @@ namespace LegaiaWorld
                     " stays inert until the behaviour is added manually.");
                 return null;
             }
-            var ext = System.Type.GetType(
-                "UdonSharpEditor.UdonSharpComponentExtensions, UdonSharp.Editor");
+            var ext = FindType("UdonSharpEditor.UdonSharpComponentExtensions");
             if (ext != null)
             {
                 var mi = ext.GetMethod("AddUdonSharpComponent",
@@ -692,11 +695,19 @@ namespace LegaiaWorld
                 if (mi != null)
                     return (Component)mi.Invoke(null, new object[] { go, t });
             }
+            // Plain AddComponent creates the proxy but not necessarily the
+            // backing UdonBehaviour - visible so it can be fixed by hand.
+            Debug.LogWarning("[Legaia] UdonSharpEditor not found; adding " +
+                typeName + " to " + go.name + " without the U# attach path - " +
+                "verify a backing UdonBehaviour exists on it.");
             return go.AddComponent(t);
         }
 
         /// Set a public field on an attached Udon behaviour via reflection
-        /// (keeps this file free of compile-time VRC SDK references).
+        /// (keeps this file free of compile-time VRC SDK references). Fields
+        /// land on the U# PROXY component only - call SyncUdonProxy once all
+        /// fields are set, or the backing UdonBehaviour (what actually runs
+        /// in-world) keeps null defaults and the behaviour silently no-ops.
         static void SetUdonField(Component comp, string field, object value)
         {
             if (comp == null) return;
@@ -704,6 +715,31 @@ namespace LegaiaWorld
             if (f == null) return;
             f.SetValue(comp, value);
             EditorUtility.SetDirty(comp);
+        }
+
+        /// Copy an UdonSharpBehaviour proxy's serialized fields down to its
+        /// backing UdonBehaviour (UdonSharpEditorUtility.CopyProxyToUdon) -
+        /// the documented requirement after editing a proxy from an editor
+        /// script. Without it the teleport destinations and door animator
+        /// references never reach the program that runs in-world.
+        static void SyncUdonProxy(Component comp)
+        {
+            if (comp == null) return;
+            var util = FindType("UdonSharpEditor.UdonSharpEditorUtility");
+            if (util == null) return;
+            foreach (var mi in util.GetMethods(
+                System.Reflection.BindingFlags.Public |
+                System.Reflection.BindingFlags.Static))
+            {
+                if (mi.Name != "CopyProxyToUdon") continue;
+                var ps = mi.GetParameters();
+                if (ps.Length != 1 || !ps[0].ParameterType.IsInstanceOfType(comp))
+                    continue;
+                mi.Invoke(null, new object[] { comp });
+                return;
+            }
+            Debug.LogWarning("[Legaia] CopyProxyToUdon not found - " +
+                comp.gameObject.name + "'s Udon fields may not be applied.");
         }
 
         /// A rough person-sized capsule from the instance's render bounds so

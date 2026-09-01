@@ -185,17 +185,22 @@ fn town01_world_export_bakes_all_three_artifact_families() {
         m["teleports"].as_array().map(Vec::len),
         Some(traversal.teleports.len())
     );
-    // The gate leaves stand on the exit band - at least one prop instance is
-    // tagged as a portal door.
-    let door_tagged = m["animated_props"]
+    // Rim Elm's house doors stand on their own doorway-teleport triggers
+    // (is_door), the gate leaves on the exit band (near_portal) - and the
+    // windmills on neither, so they keep looping.
+    let insts: Vec<&serde_json::Value> = m["animated_props"]
         .as_array()
         .unwrap()
         .iter()
         .flat_map(|p| p["instances"].as_array().unwrap())
-        .any(|i| i["is_door"] == true || !i["near_portal"].is_null());
+        .collect();
+    let doors = insts.iter().filter(|i| i["is_door"] == true).count();
+    let leaves = insts.iter().filter(|i| !i["near_portal"].is_null()).count();
+    assert!(doors >= 4, "house doors tag is_door (got {doors})");
+    assert!(leaves >= 1, "gate leaves tag near_portal (got {leaves})");
     assert!(
-        door_tagged,
-        "a prop instance is tagged as a door / gate leaf"
+        doors + leaves < insts.len(),
+        "windmills and other looping props stay untagged"
     );
     assert_eq!(m["npcs"].as_array().map(Vec::len), Some(npcs.len()));
     assert_eq!(

@@ -37,11 +37,9 @@ use legaia_asset::scene_gltf::{SceneInstance, SceneMesh};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashMap};
 
-/// Placement transforms of one animated prop: `(translation, rot_y radians,
-/// footprint-anchor tile)` per placed instance, translation already in the
-/// export frame. The anchor tile is the placement's bind identity
-/// ([`crate::field_env::EnvDraw::anchor`]) - what the door-record join keys on.
-type PropInstances = Vec<([f32; 3], f32, (u8, u8))>;
+/// Placement transforms of one animated prop: `(translation, rot_y radians)`
+/// per placed instance, translation already in the export frame.
+type PropInstances = Vec<([f32; 3], f32)>;
 
 /// Field/duel clip playback rate baked into exported animation timelines -
 /// the observed retail field animator cadence (see the characters page's
@@ -630,7 +628,7 @@ pub fn export_animated_prop_glbs(
         // too - which lands on the authored retail yaw as a plain positive
         // rotation about +Y. Keeps builder-placed props aligned with their
         // baked frame-0 twins in any importer.
-        entry.push((t, -draw_rot_y_radians(d.rot_y), d.anchor));
+        entry.push((t, -draw_rot_y_radians(d.rot_y)));
     }
     let mut out = Vec::new();
     for key in key_order {
@@ -744,11 +742,6 @@ pub struct TraversalExport {
     /// change (a town exit / overworld entrance) - useful when several
     /// exported scenes share one world.
     pub portals: Vec<Value>,
-    /// Anchor tiles whose bound MAN record carries a player teleport - the
-    /// placements those tiles anchor are **door meshes** (their bind clip is
-    /// the swing the door record plays). Joined against
-    /// [`crate::field_env::EnvDraw::anchor`] when tagging animated props.
-    pub door_anchor_tiles: Vec<(u8, u8)>,
 }
 
 /// The facing direction of engine heading `h` (12-bit, `0` faces +Z) as a
@@ -835,19 +828,6 @@ pub fn export_scene_traversal(
     if let (Some(map), Some(triggers), Some(man)) = (map_bytes, triggers, man.as_ref())
         && let Ok(mf) = legaia_asset::man_section::parse(man)
     {
-        // Door-mesh anchors: every kind-1 trigger tile whose bound record
-        // carries a player teleport in any arm (the structural classifier -
-        // the placement anchored there is a door whatever the flag state).
-        for t in &triggers {
-            if out.door_anchor_tiles.contains(&(t.tile_x, t.tile_z)) {
-                continue;
-            }
-            if crate::man_field_scripts::flat_record_walk_touch_event(&mf, man, t.record as usize)
-                .is_some()
-            {
-                out.door_anchor_tiles.push((t.tile_x, t.tile_z));
-            }
-        }
         for bind in crate::man_field_scripts::object_walk_touch_binds(&map, &triggers, &mf, man) {
             // Re-resolve the arm the record takes with every story flag
             // clear - the cold-entry state a fresh world models. A record
@@ -930,10 +910,28 @@ pub fn world_manifest(
     floor: &FloorSampler,
     traversal: &TraversalExport,
 ) -> Value {
-    // A prop instance whose anchor tile binds a door record is a door mesh
-    // (its clip is the swing the record plays); one standing on a
+    // A prop instance standing on a doorway-teleport trigger is a door mesh
+    // (its clip is the swing retail's door record plays); one standing on a
     // scene-change portal band is a gate leaf. A builder swaps either's
-    // free-running loop for open-on-approach.
+    // free-running loop for open-on-approach. Trigger proximity is the
+    // structural join: retail parks the door placement on its own doorway
+    // tile (town01 doors sit within ~136 PSX units of their trigger; the
+    // nearest non-door animated prop is ~530 away), and it covers both
+    // teleport families where a script-tile anchor join structurally cannot
+    // (map doors never had trigger records).
+    let near_teleport = |t: &[f32; 3]| -> bool {
+        let thresh = 256.0 * opts.scale; // two collision tiles
+        traversal.teleports.iter().any(|tp| {
+            let Some(p) = tp["trigger"]["position"].as_array() else {
+                return false;
+            };
+            let (Some(px), Some(pz)) = (p[0].as_f64(), p[2].as_f64()) else {
+                return false;
+            };
+            let (dx, dz) = (px as f32 - t[0], pz as f32 - t[2]);
+            dx * dx + dz * dz < thresh * thresh
+        })
+    };
     let near_portal = |t: &[f32; 3]| -> Option<usize> {
         let thresh = 384.0 * opts.scale; // 3 collision tiles
         let mut best: Option<(f32, usize)> = None;
@@ -992,12 +990,13 @@ pub fn world_manifest(
                 "env_slot": p.env_slot,
                 "anim_id": p.anim_id,
                 "clip_frames": p.frame_count,
-                "instances": p.instances.iter().map(|(t, r, anchor)| json!({
+                "instances": p.instances.iter().map(|(t, r)| json!({
                     "position": t,
                     "rot_y_radians": r,
-                    // The anchor-tile bind says this placement's clip is a
-                    // door record's swing - open it on approach, don't loop.
-                    "is_door": traversal.door_anchor_tiles.contains(anchor),
+                    // Standing on a doorway-teleport trigger says this
+                    // placement's clip is a door record's swing - open it
+                    // on approach, don't loop.
+                    "is_door": near_teleport(t),
                     // Index into `scene_portals` when this instance stands
                     // on an exit band (a town-gate leaf).
                     "near_portal": near_portal(t),

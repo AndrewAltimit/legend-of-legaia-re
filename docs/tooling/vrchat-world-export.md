@@ -120,10 +120,12 @@ objects - the village centre, not the map-grid centre), composition
   off-map until a script places it), `model_index` / `anim_id`;
 - `doors[]` - portal placements with their field-VM target map;
 - `animated_props[]` - file, clip frame count, per-instance
-  position + yaw, plus two door tags: `is_door` (the instance's
-  anchor-tile bind record carries a player teleport - its clip is a door
-  swing, meant to open on approach rather than loop) and `near_portal`
-  (the instance stands on a scene-exit band - a gate leaf);
+  position + yaw, plus two door tags: `is_door` (the instance stands on a
+  doorway-teleport trigger - retail parks a door placement on its own
+  doorway tile, so its clip is the door record's swing, meant to open on
+  approach rather than loop; the tag covers both teleport families, where
+  a script-tile anchor join structurally misses every map door) and
+  `near_portal` (the instance stands on a scene-exit band - a gate leaf);
 - `teleports[]` - retail's **intra-scene doorways**, both families
   ([`field-locomotion.md`](../subsystems/field-locomotion.md) § intra-scene
   doorways): the `.MAP` kind-0 map-door table and the object walk-touch
