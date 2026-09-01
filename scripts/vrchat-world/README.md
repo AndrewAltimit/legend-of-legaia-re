@@ -36,6 +36,7 @@ your disc ──legaia-extract──▶ extracted/ ──legaia-engine export-gl
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaDoor.cs` | UdonSharp proximity door: first approach plays the door's swing clip once and holds it open. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaNpcWander.cs` | Optional UdonSharp stroll behaviour: an NPC wanders a small radius around its spawn between pauses - collision-aware (strolls clamp against walls, a waist-height ray stops a blocked walk, a downward ray follows the floor). |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaDayNight.cs` | Optional UdonSharp day/night cycle: sweeps the realism sun on a fixed cycle, synced across players via server time. |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaPickupProp.cs` | UdonSharp equipment-rack pickup: the prop spawns kinematic (frozen on the rack) and only becomes a free physics object the first time a player drops it - so a rack of dozens of bodies can't tunnel through the thin ground during world-load hitches. |
 
 ## Step 1 - export a scene
 
@@ -155,7 +156,10 @@ the VCC setup in more detail if this is your first worlds project.
   wrapped in a convex mesh collider cooked from its baked rest pose (a
   tight hull, not a bounding box; near-flat pieces fall back to a padded
   box), and wired as a `VRC Pickup` + `VRC Object Sync` physics pickup
-  (static display without the SDK). **Weapons only** is the
+  (static display without the SDK). Props spawn **frozen** on the rack
+  (`LegaiaPickupProp` flips the body physical on first drop), so world
+  load never scatters them or drops them through the thin ground mesh.
+  **Weapons only** is the
   default filter; untick it to also rack armour, headgear, footwear and
   Ra-Seru. (The site's equipment viewer offers the same files per
   download.)
@@ -233,10 +237,10 @@ pass is idempotent (it refreshes rather than stacks).
   an import stack with the opposite model-forward convention). Movement is
   forward-only: a direction change pivots the whole body in place first,
   then steps off - an NPC never translates while mis-facing. Some spawn
-  clips bake a constant facing yaw into the skeleton itself (the authored
-  facing lives in the ANM record, not the placement), so the behaviour
-  self-calibrates at start: it measures the yaw the playing clip applies
-  to the root bone and subtracts it from the walk facing (a
+  clips pose the skeleton at a yaw of their own (the authored facing
+  lives in the ANM record, not the placement - and idles can sway the
+  root bone over the loop), so the behaviour tracks that yaw live, every
+  walking frame, and subtracts it from the walk facing (a
   `facingYawOffset` field adds a manual correction on top).
 
 Caveats: the sun / ambient / skybox / fog are **per-Unity-scene render

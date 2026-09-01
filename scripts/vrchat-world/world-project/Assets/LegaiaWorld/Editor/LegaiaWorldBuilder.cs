@@ -216,7 +216,8 @@ namespace LegaiaWorld
                 new GUIContent("Grabbable (VRC Pickup)",
                     "Wire each prop as a physics pickup (Rigidbody + VRC Pickup " +
                     "+ VRC Object Sync - needs the VRChat SDK; without it the " +
-                    "rack is a static display)"),
+                    "rack is a static display). Props spawn frozen on the rack " +
+                    "and only go physical the first time a player drops one"),
                 equipPickups);
             using (new EditorGUI.DisabledScope(
                 string.IsNullOrEmpty(itemsManifestPath) || string.IsNullOrEmpty(manifestPath)))
@@ -279,6 +280,8 @@ namespace LegaiaWorld
             if (equipPickups && pickupType == null)
                 Debug.LogWarning("[Legaia] VRC Pickup not found (VRChat SDK " +
                     "missing?) - placing the rack as a static display.");
+            if (equipPickups && pickupType != null)
+                EnsureUdonProgramAssets(); // for LegaiaPickupProp
 
             var charRow = new Dictionary<string, int>();
             var charCursor = new Dictionary<string, float>();
@@ -377,15 +380,18 @@ namespace LegaiaWorld
                     rb.mass = 1.5f;
                     rb.collisionDetectionMode =
                         CollisionDetectionMode.ContinuousDynamic;
+                    // Spawn kinematic regardless of the SDK: dozens of
+                    // dynamic bodies waking during world load pick up fall
+                    // speed in the load hitches and tunnel through the
+                    // paper-thin ground mesh, then respawn-loop.
+                    // LegaiaPickupProp frees the body on first drop.
+                    rb.isKinematic = true;
                     if (pickupType != null)
                     {
                         go.AddComponent(pickupType);
                         if (syncType != null)
                             go.AddComponent(syncType);
-                    }
-                    else
-                    {
-                        rb.isKinematic = true; // static display without the SDK
+                        SyncUdonProxy(TryAttachUdon(go, "LegaiaPickupProp"));
                     }
                 }
                 placed++;
@@ -1182,7 +1188,8 @@ namespace LegaiaWorld
                 "GetUdonSharpProgramAsset", new[] { typeof(System.Type) });
             bool created = false;
             foreach (string name in new[]
-                     { "LegaiaDoorway", "LegaiaDoor", "LegaiaNpcWander", "LegaiaDayNight" })
+                     { "LegaiaDoorway", "LegaiaDoor", "LegaiaNpcWander",
+                       "LegaiaDayNight", "LegaiaPickupProp" })
             {
                 var t = FindType("LegaiaWorld." + name);
                 if (t == null) continue;

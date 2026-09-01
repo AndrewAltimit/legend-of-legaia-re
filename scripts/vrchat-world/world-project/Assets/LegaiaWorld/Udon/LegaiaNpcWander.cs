@@ -13,13 +13,14 @@
 // maps through those signs (see Start) so villagers face the way they walk.
 // Movement is forward-only: on a direction change the NPC pivots in place
 // until aligned, then steps off - it never translates while mis-facing.
-// Some spawn clips bake a constant facing yaw into the skeleton itself
-// (town01's spawn_record_17 holds every top bone at -90deg), which turns
-// the mesh under the transform and defeats any transform-only facing
-// math. The behaviour self-calibrates: it captures the skeleton root's
-// rest rotation in Start (before the Animator's first evaluation),
-// measures the yaw the clip applied two frames later, and subtracts it
-// from the walk facing (see CalibrateClipYaw).
+// Some spawn clips bake a facing yaw into the skeleton itself (town01's
+// spawn_record_17 holds every top bone at -90deg; other idles sway the
+// root bone over the loop), which turns the mesh under the transform and
+// defeats any transform-only facing math. The behaviour tracks it live:
+// it captures the skeleton root's rest rotation in Start (before the
+// Animator's first evaluation), then every walking frame measures the
+// yaw the clip is currently applying and subtracts it from the walk
+// facing (see UpdateClipYaw).
 //
 // Requires UdonSharp (bundled with the VRChat worlds SDK via the Creator
 // Companion). Drop this component on an NPC instance the builder placed;
@@ -65,7 +66,6 @@ namespace LegaiaWorld
         private Transform faceRef;
         private Quaternion faceRefRest;
         private int calibrateAfterFrame;
-        private bool calibrated;
         private float clipYaw;
 
         void Start()
@@ -103,17 +103,20 @@ namespace LegaiaWorld
             calibrateAfterFrame = Time.frameCount + 2;
         }
 
-        // Some spawn clips pose the whole skeleton at a constant yaw (the
-        // authored facing lives in the ANM record, not the placement), so
-        // the mesh faces off-axis from the transform. Measure that yaw as
-        // the root bone's rotation delta between rest and the animated
+        // Some spawn clips pose the whole skeleton at a yaw of their own
+        // (the authored facing lives in the ANM record, not the placement),
+        // and that yaw is NOT always constant - idles sway or turn the root
+        // bone over the loop. So the compensation is tracked live, every
+        // frame while walking, not calibrated once: a one-shot sample froze
+        // whatever the loop happened to be doing at that instant and walked
+        // the NPC sideways at every other phase. Measure the yaw as the
+        // root bone's rotation delta between rest and the current animated
         // pose, then map it into the transform's frame: the delta lives in
         // the bone's parent frame, whose vertical is flipped by the glb
         // root's Rx(180) (the up-dot sign) and whose yaw sense each
         // horizontal mirror in our own scale conjugates.
-        void CalibrateClipYaw()
+        void UpdateClipYaw()
         {
-            calibrated = true;
             clipYaw = 0f;
             if (faceRef == null)
                 return;
@@ -133,12 +136,11 @@ namespace LegaiaWorld
 
         void Update()
         {
-            if (!calibrated)
-            {
-                if (Time.frameCount < calibrateAfterFrame)
-                    return;
-                CalibrateClipYaw();
-            }
+            // Wait for the Animator's first evaluation so the rest-pose
+            // anchor captured in Start is meaningfully different from the
+            // animated pose.
+            if (Time.frameCount < calibrateAfterFrame)
+                return;
 
             if (Time.time < pauseUntil)
                 return;
@@ -163,6 +165,7 @@ namespace LegaiaWorld
                 return;
             }
 
+            UpdateClipYaw();
             Quaternion face = Quaternion.LookRotation(
                 new Vector3(dir.x * faceX, 0f, dir.z * faceZ), Vector3.up)
                 * Quaternion.AngleAxis(
