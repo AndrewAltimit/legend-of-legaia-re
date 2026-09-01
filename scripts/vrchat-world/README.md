@@ -111,9 +111,12 @@ the VCC setup in more detail if this is your first worlds project.
      leaves) playing their bind clips. The world glb keeps a frame-0
      static twin under each one; the builder disables it by default
      (**Hide static prop twins**) so the pair doesn't z-fight. Instances
-     the manifest tags as doors open **on approach** and stay open
-     (**Doors open on approach**, via the `LegaiaDoor` behaviour) instead
-     of looping their swing;
+     the manifest tags as doors - plus every prop whose clip the manifest
+     marks one-shot (`cyclic: false`: interior doors, cupboard doors,
+     drawers, whose swing ends displaced from its first frame and would
+     re-play forever on a loop) - open **on approach** and stay open
+     (**Doors open on approach**, via the `LegaiaDoor` behaviour); only
+     seamless loops free-run;
    - `teleports/` - one trigger volume per manifest doorway teleport
      (**Doorway teleports**): walk into a house door and you land in its
      interior with the authored facing, exactly the retail intra-scene
@@ -230,20 +233,20 @@ pass is idempotent (it refreshes rather than stacks).
   from the manifest (matched by spawn position), so the town strolls
   instead of standing still. The behaviour is collision-aware: strolls are
   clamped against the world's colliders, a blocked walk re-picks instead
-  of clipping through a hut, and a downward ray follows the floor. Facing
-  is mirror-aware: the instance scale mirrors decouple the mesh's visual
-  forward from the transform's +Z, and the walk facing maps through those
-  signs so villagers face the way they walk (a `flipFacing` field covers
-  an import stack with the opposite model-forward convention). Movement is
-  forward-only: a direction change pivots the whole body in place first,
-  then steps off - an NPC never translates while mis-facing. Some spawn
-  clips pose the skeleton at a yaw of their own (the authored facing
-  lives in the ANM record, not the placement - and idles can sway bones
-  over the loop), so the behaviour tracks that yaw live, every walking
-  frame, as the circular mean across the skeleton's top-level bones
-  (these rigs are flat, so limb swings cancel and the common facing
-  survives) and subtracts it from the walk facing (a `facingYawOffset`
-  field adds a manual correction on top).
+  of clipping through a hut, and a downward ray follows the floor.
+  Movement is forward-only: a direction change pivots the whole body in
+  place first, then steps off - an NPC never translates while mis-facing.
+  Facing is **measured, not derived**: the exported rigs have no skins
+  (each TMD object is a rigid mesh node) and the authored facing is baked
+  into the node rest rotations themselves (the MAN placement has no
+  facing byte), under a stack of mirrors and importer conversions that
+  defeats sign-by-sign algebra. So at Start the behaviour picks the
+  largest mesh node that rests upright (the torso), reads the direction
+  it visibly faces off its `localToWorldMatrix` every walking frame
+  (baked yaw, idle sway, every mirror included by construction), probes
+  which way that visual forward responds to a transform yaw, and servos
+  the yaw until the mesh faces the walk direction (`flipFacing` covers a
+  model authored facing -Z; `facingYawOffset` adds a manual trim).
 
 Caveats: the sun / ambient / skybox / fog are **per-Unity-scene render
 settings** - applying them from one built root is global, the last applied
@@ -341,6 +344,11 @@ target.
   set on the U# proxy without `CopyProxyToUdon`, so the backing behaviour
   kept null defaults. Rebuild with the current kit **and** a current
   manifest; the builder offers to replace a stale `Legaia_<scene>` root.
+  Interior doors, cupboards and drawers looping their opening is the
+  same symptom one layer deeper: those stand near no teleport or portal,
+  so no proximity join can ever tag them - the manifest's per-prop
+  `cyclic` flag (clip returns to its first frame or not) is what routes
+  them to the approach-open path, and it too needs a current manifest.
 - **"Unable to find valid U# program asset associated with script"**:
   UdonSharp only auto-creates program assets for scripts made through its
   own Create menu, so the kit's bare `.cs` files have none and U# refuses

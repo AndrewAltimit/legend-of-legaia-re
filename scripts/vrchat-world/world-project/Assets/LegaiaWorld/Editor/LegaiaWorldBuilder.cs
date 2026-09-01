@@ -161,9 +161,11 @@ namespace LegaiaWorld
             openDoorsOnApproach = EditorGUILayout.Toggle(
                 new GUIContent("Doors open on approach",
                     "Props the manifest tags as doors (`is_door` / gate " +
-                    "leaves on an exit band) play their swing once when a " +
-                    "player comes near and hold the open pose, instead of " +
-                    "swinging on a loop forever"),
+                    "leaves on an exit band) - plus any prop whose clip is " +
+                    "a one-shot (`cyclic: false`: interior doors, cupboards, " +
+                    "drawers) - play their swing once when a player comes " +
+                    "near and hold the open pose, instead of swinging on a " +
+                    "loop forever"),
                 openDoorsOnApproach);
             playWorldMorphClip = EditorGUILayout.Toggle(
                 new GUIContent("Animate world morphs",
@@ -747,6 +749,12 @@ namespace LegaiaWorld
                 string file = MiniJson.AsStr(MiniJson.Get(p, "file"));
                 var insts = MiniJson.AsList(MiniJson.Get(p, "instances"));
                 if (file == null || insts == null) continue;
+                // A one-shot clip (swing/slide that ends displaced from its
+                // first frame - interior doors, cupboards, drawers) must
+                // never free-loop: looped it re-plays its opening forever.
+                // Older manifests lack the flag; treat those as cyclic so
+                // only the teleport/portal tagging fires, as before.
+                bool oneShot = MiniJson.Get(p, "cyclic") is bool cyc && !cyc;
                 foreach (object inst in insts)
                 {
                     // Per-instance guard: one failed wire (e.g. an Udon
@@ -765,11 +773,12 @@ namespace LegaiaWorld
                     go.transform.localRotation = Quaternion.Euler(0, YAW_SIGN * yaw, 0);
                     // A door-tagged instance (its bind record teleports the
                     // player, or it stands on a scene-exit band - a gate
-                    // leaf) opens on approach and stays open; anything else
-                    // free-runs its clip.
+                    // leaf) opens on approach and stays open, and so does
+                    // any one-shot clip regardless of tags; only cyclic
+                    // clips free-run.
                     bool isDoor = MiniJson.Get(inst, "is_door") is bool db && db;
                     bool gateLeaf = MiniJson.Get(inst, "near_portal") is double;
-                    if (openDoorsOnApproach && (isDoor || gateLeaf))
+                    if (openDoorsOnApproach && (isDoor || gateLeaf || oneShot))
                     {
                         AttachProximityDoor(go, dir + "/" + file, sceneName);
                         doorCount++;

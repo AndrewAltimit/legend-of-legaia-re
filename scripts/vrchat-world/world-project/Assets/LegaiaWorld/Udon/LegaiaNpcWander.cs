@@ -7,21 +7,30 @@
 // ray stops a walk that would clip a wall, and the NPC follows the floor
 // with a downward ray - so villagers no longer amble through huts. Trigger
 // colliders (doorway teleports, door-approach boxes) are ignored, so a
-// wandering NPC neither blocks on them nor fires them. Facing is
-// mirror-aware: the builder's instances carry scale mirrors that decouple
-// the mesh's visual forward from the transform's +Z, and the walk facing
-// maps through those signs (see Start) so villagers face the way they walk.
-// Movement is forward-only: on a direction change the NPC pivots in place
-// until aligned, then steps off - it never translates while mis-facing.
-// Some spawn clips bake a facing yaw into the skeleton itself (town01's
-// spawn_record_17 holds every top bone at -90deg; other idles sway bones
-// over the loop), which turns the mesh under the transform and defeats
-// any transform-only facing math. The behaviour tracks it live: it
-// captures every top-level bone's rest rotation in Start (before the
-// Animator's first evaluation), then every walking frame measures the
-// yaw the clip is currently applying - the circular mean across the top
-// bones, so limb swings cancel - and subtracts it from the walk facing
-// (see UpdateClipYaw).
+// wandering NPC neither blocks on them nor fires them. Movement is
+// forward-only: on a direction change the NPC pivots in place until
+// aligned, then steps off - it never translates while mis-facing.
+//
+// FACING - measured, not derived. The exported NPC glbs have no skins:
+// each TMD object is a rigid mesh on its own animated node, and the node
+// REST rotations are frame 0 of the spawn clip - so the facing retail
+// authored for the NPC is baked into the node transforms themselves
+// (town01's spawn_record_17 family rests the whole rig at -90 degrees;
+// most rigs rest at 0). On top of that sit the glb root's Rx(180), the
+// importer's handedness conversion, the builder's scale mirrors and any
+// idle sway the clip animates - too many stacked sign conventions to fold
+// by hand (each attempt so far has been wrong for some rig). So this
+// behaviour derives nothing:
+//   - Start picks a facing ANCHOR: the largest mesh node whose rendered
+//     rest pose keeps the model's up axis vertical (the torso - limb and
+//     head nodes rest tilted, checked across every town01 rig).
+//   - The anchor's VISUAL forward is read through the full transform
+//     matrix (as a TransformPoint difference, so scale mirrors count),
+//     which bakes in every mirror, conversion and animated rotation.
+//   - Start also probes which way that visual forward moves when the
+//     transform yaws +10 degrees (mirrors can flip it), and Update servos
+//     the yaw with the probed sign until visual forward lies on the walk
+//     direction. No rest capture, no calibration frames, no sign algebra.
 //
 // Requires UdonSharp (bundled with the VRChat worlds SDK via the Creator
 // Companion). Drop this component on an NPC instance the builder placed;
@@ -51,23 +60,21 @@ namespace LegaiaWorld
         [Tooltip("Clear space kept between the NPC and any wall (meters).")]
         public float wallClearance = 0.45f;
 
-        [Tooltip("Tick if villagers stroll backwards on your import stack - " +
-                 "the facing math assumes the model faces +Z in its own file.")]
+        [Tooltip("Tick if this NPC's mesh is authored facing -Z instead of " +
+                 "+Z (walks exactly backwards with the automatic facing).")]
         public bool flipFacing = false;
 
         [Tooltip("Extra facing correction in degrees, added on top of the " +
-                 "automatic clip-yaw calibration - for hand-tuning one NPC.")]
+                 "measured visual forward - for hand-tuning one NPC.")]
         public float facingYawOffset = 0f;
 
         private Vector3 home;
         private Vector3 target;
         private float pauseUntil;
-        private float faceX = 1f;
-        private float faceZ = 1f;
-        private Transform[] faceBones;
-        private Quaternion[] faceBoneRest;
-        private int calibrateAfterFrame;
-        private float clipYaw;
+        private Transform anchor;
+        private float servoSign = 1f;
+        private bool walking;
+        private Vector3 lastForward = Vector3.forward;
 
         void Start()
         {
@@ -75,122 +82,97 @@ namespace LegaiaWorld
             target = home;
             pauseUntil = Time.time + Random.Range(0f, pauseSeconds);
 
-            // The builder places NPC instances with a negative-Z local scale
-            // (the handedness mirror) under a root that usually carries a
-            // negative-X mirror. Mirrors in the scale chain mean the model's
-            // VISUAL forward is not the transform's +Z - aiming LookRotation
-            // at the walk direction then reads as backwards (or mirrored)
-            // walking. With the mirrors diagonal, visual forward
-            // = R * (sign(parent.x) * sign(local.z) * x, y,
-            //        sign(parent.z) * sign(local.z) * z)-remap of +Z, so
-            // pre-mapping the walk direction through those signs makes the
-            // MESH face the way it walks, whatever the mirror combination.
-            Vector3 ps = transform.parent != null
-                ? transform.parent.lossyScale : Vector3.one;
-            float fz = Mathf.Sign(transform.localScale.z)
-                * (flipFacing ? -1f : 1f);
-            faceX = Mathf.Sign(ps.x) * fz;
-            faceZ = Mathf.Sign(ps.z) * fz;
-
-            // Rest-pose anchors for the clip-yaw tracking: every TOP-LEVEL
-            // bone (a bone whose parent is not itself a bone), captured
-            // before the Animator's first evaluation overwrites them with
-            // the spawn clip's pose. These rigs are flat - several
-            // top-level nodes animated independently - so no single bone
-            // is "the body": a limb node can swing 80deg while the body
-            // holds still, and anchoring on one bone (rootBone) injected
-            // that limb's animation into the walk facing on rigs where the
-            // binding happened to point there.
-            var smr = GetComponentInChildren<SkinnedMeshRenderer>();
-            if (smr != null)
+            // Facing anchor: the biggest mesh node standing upright in the
+            // rest pose (Start runs before the Animator's first evaluation,
+            // so the nodes still hold the glb defaults = spawn-clip frame 0).
+            // The torso qualifies on every town01 rig; heads, limbs and
+            // bowing poses rest tilted and are skipped. Uprightness is
+            // tested on the RENDERED direction (through the full matrix
+            // chain), so mirrors and the importer's conversion are included.
+            MeshFilter[] filters = GetComponentsInChildren<MeshFilter>();
+            float bestUpright = -1f;
+            float bestAny = -1f;
+            Transform anyAnchor = null;
+            for (int i = 0; i < filters.Length; i++)
             {
-                Transform[] bones = smr.bones;
-                int nTop = 0;
-                for (int i = 0; i < bones.Length; i++)
-                    if (IsTopBone(bones, i))
-                        nTop++;
-                faceBones = new Transform[nTop];
-                faceBoneRest = new Quaternion[nTop];
-                int k = 0;
-                for (int i = 0; i < bones.Length; i++)
+                Mesh mesh = filters[i].sharedMesh;
+                if (mesh == null)
+                    continue;
+                Vector3 s = mesh.bounds.size;
+                // Flat meshes have zero volume; the vertex count keeps them
+                // comparable without ever outranking a real solid.
+                float score = s.x * s.y * s.z + mesh.vertexCount * 1e-6f;
+                Transform t = filters[i].transform;
+                // TransformPoint difference = the full matrix applied to a
+                // direction, scale mirrors included (TransformDirection
+                // ignores scale and would miss them).
+                Vector3 up = (t.TransformPoint(Vector3.up)
+                    - t.TransformPoint(Vector3.zero)).normalized;
+                if (score > bestAny)
                 {
-                    if (!IsTopBone(bones, i))
-                        continue;
-                    faceBones[k] = bones[i];
-                    faceBoneRest[k] = bones[i].localRotation;
-                    k++;
+                    bestAny = score;
+                    anyAnchor = t;
+                }
+                if (up.y > 0.9f && score > bestUpright)
+                {
+                    bestUpright = score;
+                    anchor = t;
                 }
             }
-            calibrateAfterFrame = Time.frameCount + 2;
-        }
+            if (anchor == null)
+                anchor = anyAnchor;
+            lastForward = transform.forward;
 
-        bool IsTopBone(Transform[] bones, int i)
-        {
-            Transform b = bones[i];
-            if (b == null)
-                return false;
-            Transform p = b.parent;
-            for (int j = 0; j < bones.Length; j++)
-                if (j != i && bones[j] == p)
-                    return false;
-            return true;
-        }
-
-        // Some spawn clips pose the whole skeleton at a yaw of their own
-        // (the authored facing lives in the ANM record, not the placement),
-        // and that yaw is NOT always constant - idles sway or turn bones
-        // over the loop. So the compensation is tracked live, every frame
-        // while walking, not calibrated once. The measured quantity is the
-        // yaw common to ALL top-level bones - the baked facing offsets
-        // every one of them equally (town01's spawn_record_17 holds all
-        // four at -90deg), while limb swings point different ways and
-        // cancel in the circular mean. Each bone's rest-to-current delta
-        // lives in its parent frame, whose vertical is flipped by the glb
-        // root's Rx(180) (the up-dot sign) and whose yaw sense each
-        // horizontal mirror in our own scale conjugates.
-        void UpdateClipYaw()
-        {
-            clipYaw = 0f;
-            if (faceBones == null || faceBones.Length == 0)
-                return;
-            Vector3 acc = Vector3.zero;
-            Transform first = null;
-            for (int i = 0; i < faceBones.Length; i++)
+            // Servo-sign probe: yaw the instance +10 degrees, see which way
+            // the visual forward actually moves (a mirror in the scale chain
+            // reverses it), and restore. The walk servo then always turns
+            // the visible mesh TOWARD the walk direction, whatever the
+            // mirror stack is.
+            if (anchor != null)
             {
-                Transform b = faceBones[i];
-                if (b == null)
-                    continue;
-                if (first == null)
-                    first = b;
-                Quaternion d = b.localRotation
-                    * Quaternion.Inverse(faceBoneRest[i]);
-                Vector3 f = d * Vector3.forward;
-                f.y = 0f;
-                // A pitch-dominated delta has no reliable yaw reading.
-                if (f.sqrMagnitude < 0.25f)
-                    continue;
-                acc += f.normalized;
+                Vector3 f0 = VisualForward();
+                Quaternion saved = transform.rotation;
+                transform.rotation =
+                    Quaternion.AngleAxis(10f, Vector3.up) * saved;
+                Vector3 f1 = VisualForward();
+                transform.rotation = saved;
+                float resp = Vector3.SignedAngle(f0, f1, Vector3.up);
+                servoSign = resp < 0f ? -1f : 1f;
             }
-            if (first == null || acc.sqrMagnitude < 0.25f)
-                return;
-            float local = Vector3.SignedAngle(Vector3.forward, acc, Vector3.up);
-            float sVert = Mathf.Sign(
-                Vector3.Dot(first.parent.up, transform.up));
-            float sMirror = Mathf.Sign(
-                transform.localScale.x * transform.localScale.z);
-            clipYaw = local * sVert * sMirror;
+        }
+
+        // The direction the mesh visibly faces, in world space, flattened to
+        // the ground plane - read off the anchor node's full transform chain
+        // (TransformPoint difference: rotation AND scale mirrors) every
+        // frame, so baked rest yaw, idle sway, mirrors and importer
+        // conversions are all accounted for by construction. Falls back to
+        // the last good reading while the clip pitches the anchor too
+        // vertical for a yaw to mean anything.
+        Vector3 VisualForward()
+        {
+            if (anchor == null)
+                return transform.forward;
+            Vector3 f = anchor.TransformPoint(Vector3.forward)
+                - anchor.TransformPoint(Vector3.zero);
+            if (flipFacing)
+                f = -f;
+            float m2 = f.sqrMagnitude;
+            f.y = 0f;
+            // Yaw is unreadable past ~72 degrees of pitch.
+            if (m2 < 1e-12f || f.sqrMagnitude < 0.09f * m2)
+                return lastForward;
+            f = f.normalized;
+            lastForward = f;
+            return f;
         }
 
         void Update()
         {
-            // Wait for the Animator's first evaluation so the rest-pose
-            // anchor captured in Start is meaningfully different from the
-            // animated pose.
-            if (Time.frameCount < calibrateAfterFrame)
-                return;
-
             if (Time.time < pauseUntil)
+            {
+                walking = false;
                 return;
+            }
 
             Vector3 to = target - transform.position;
             to.y = 0;
@@ -212,19 +194,30 @@ namespace LegaiaWorld
                 return;
             }
 
-            UpdateClipYaw();
-            Quaternion face = Quaternion.LookRotation(
-                new Vector3(dir.x * faceX, 0f, dir.z * faceZ), Vector3.up)
-                * Quaternion.AngleAxis(
-                    -(clipYaw + facingYawOffset), Vector3.up);
-            transform.rotation = Quaternion.RotateTowards(
-                transform.rotation, face, turnSpeed * Time.deltaTime);
+            // Servo the yaw until the MESH faces the walk direction.
+            float err = Vector3.SignedAngle(VisualForward(), dir, Vector3.up)
+                + facingYawOffset;
+            float step = Mathf.Clamp(err,
+                -turnSpeed * Time.deltaTime, turnSpeed * Time.deltaTime);
+            transform.rotation =
+                Quaternion.AngleAxis(servoSign * step, Vector3.up)
+                * transform.rotation;
 
             // Turn in place first: no stepping until the body points down
             // the walk direction, so a direction change reads as a pivot
-            // followed by a forward walk - never a strafe or moonwalk.
-            if (Quaternion.Angle(transform.rotation, face) > 3f)
+            // followed by a forward walk - never a strafe or moonwalk. Once
+            // walking, only a gross misalignment (idle sway is compensated
+            // live, but a swaying clip can outpace one frame's servo step)
+            // pauses the stepping again.
+            float abs = Mathf.Abs(err);
+            if (!walking && abs > 3f)
                 return;
+            if (abs > 25f)
+            {
+                walking = false;
+                return;
+            }
+            walking = true;
 
             transform.position += dir * (speed * Time.deltaTime);
 

@@ -136,6 +136,13 @@ fn town01_world_export_bakes_all_three_artifact_families() {
         let pj = glb_json(&p.glb);
         assert_eq!(pj["animations"].as_array().map(Vec::len), Some(1));
     }
+    // The loop/one-shot split is real data, not a constant: town01 carries
+    // both a seamless loop (env 32's sway returns to frame 0 exactly) and
+    // one-shot swings (the door/cupboard family ends 77..120 degrees out).
+    assert!(
+        props.iter().any(|p| p.cyclic) && props.iter().any(|p| !p.cyclic),
+        "town01 has both cyclic and one-shot prop clips"
+    );
 
     // --- Traversal: both doorway families resolve for Rim Elm, with
     // trigger boxes capsule-reach verified against the baked world glb. ---

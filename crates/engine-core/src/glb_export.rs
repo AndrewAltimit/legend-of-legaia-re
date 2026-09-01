@@ -646,8 +646,41 @@ pub struct PropGlb {
     pub file_stem: String,
     pub glb: Vec<u8>,
     pub frame_count: u16,
+    /// `true` when the clip's last keyframe returns to its first (a seamless
+    /// loop: windmill sails, sways); `false` for a one-shot that ends
+    /// displaced (a door/cupboard swing, a drawer slide). Retail advances
+    /// these clips only while the bind record's script runs, so a one-shot
+    /// looped free-running re-plays its swing forever - a builder should
+    /// trigger it once instead (town01: every untagged looping-door report
+    /// traced to a `cyclic == false` clip).
+    pub cyclic: bool,
     /// `(translation, rot_y radians)` per placed instance.
     pub instances: PropInstances,
+}
+
+/// Does the clip's last keyframe return to its first? Rotation compared
+/// per-axis in retail's `0..4096` angle space with wraparound (a full turn is
+/// cyclic), translation in TMD model units. Thresholds: 5 degrees / 4 units -
+/// wide enough for keyframe rounding, far under the smallest real swing
+/// (town01's shallowest one-shot ends 77 degrees out; its drawer slide ends
+/// 27 units out; true loops measure exactly 0).
+fn anim_is_cyclic(anim: &legaia_asset::monster_archive::MonsterAnimation) -> bool {
+    let (Some(first), Some(last)) = (anim.frames.first(), anim.frames.last()) else {
+        return true;
+    };
+    let wrap = |a: u16, b: u16| -> u32 {
+        let d = u32::from(a.wrapping_sub(b) & 0xFFF);
+        d.min(4096 - d)
+    };
+    let tr = |a: i16, b: i16| -> u32 { (i32::from(a) - i32::from(b)).unsigned_abs() };
+    first.iter().zip(last.iter()).all(|(f, l)| {
+        wrap(f.rx, l.rx) <= 57
+            && wrap(f.ry, l.ry) <= 57
+            && wrap(f.rz, l.rz) <= 57
+            && tr(f.tx, l.tx) <= 4
+            && tr(f.ty, l.ty) <= 4
+            && tr(f.tz, l.tz) <= 4
+    })
 }
 
 /// Export the scene's animated placed props (windmill sails, doors, gates):
@@ -731,6 +764,7 @@ pub fn export_animated_prop_glbs(
             file_stem: stem,
             glb: scale_glb_scene_roots(glb, opts.scale),
             frame_count: rec.frame_count,
+            cyclic: anim_is_cyclic(&anim),
             instances: by_key.remove(&key).unwrap_or_default(),
         });
     }
@@ -1653,6 +1687,11 @@ pub fn world_manifest(
                 "env_slot": p.env_slot,
                 "anim_id": p.anim_id,
                 "clip_frames": p.frame_count,
+                // Seamless loop vs one-shot swing (see [`PropGlb::cyclic`]):
+                // a builder free-loops cyclic clips and plays the rest once
+                // on approach, even when no teleport/portal tags the
+                // instance as a door (interior doors, cupboards, drawers).
+                "cyclic": p.cyclic,
                 "instances": p.instances.iter().map(|(t, r)| json!({
                     "position": t,
                     "rot_y_radians": r,
