@@ -236,7 +236,15 @@ the VCC setup in more detail if this is your first worlds project.
   the manifest's `is_door` flags are current), and Udon field values were
   set on the U# proxy without `CopyProxyToUdon`, so the backing behaviour
   kept null defaults. Rebuild with the current kit **and** a current
-  manifest, and delete the previously built `Legaia_<scene>` root first.
+  manifest; the builder offers to replace a stale `Legaia_<scene>` root.
+- **"Unable to find valid U# program asset associated with script"**:
+  UdonSharp only auto-creates program assets for scripts made through its
+  own Create menu, so the kit's bare `.cs` files have none and U# refuses
+  to attach them (an older builder let that exception abort the whole
+  build - nothing after the first door got wired). The builder now
+  creates the missing `UdonSharpProgramAsset`s next to the scripts,
+  resets U#'s lookup cache and compiles before wiring; each failed wire
+  is also contained to its own object instead of ending the build.
 - **The shoreline doesn't move**: the morph clip lives in the world glb -
   re-export with a current build (the manifest should carry `world_anim`),
   leave **Animate world morphs** on, and check the glTFast import kept

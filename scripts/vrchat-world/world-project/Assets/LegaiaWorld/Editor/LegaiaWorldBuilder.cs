@@ -177,6 +177,22 @@ namespace LegaiaWorld
 
             float scale = MiniJson.GetNum(m, "scale", 1f);
 
+            // Rebuilding over a stale root leaves two overlapping worlds (and
+            // any half-wired behaviours from an aborted earlier build keep
+            // spamming the console) - offer to clear it first.
+            var existingRoot = GameObject.Find("Legaia_" + sceneName);
+            if (existingRoot != null && EditorUtility.DisplayDialog(
+                    "Legaia World Builder",
+                    "A built root 'Legaia_" + sceneName + "' already exists " +
+                    "in this scene. Replace it?", "Replace", "Keep both"))
+                Undo.DestroyObjectImmediate(existingRoot);
+
+            // U# refuses to attach a behaviour whose script has no
+            // UdonSharpProgramAsset - and bare .cs files copied into a
+            // project have none. Create any missing ones before wiring.
+            if (wireTeleports || openDoorsOnApproach)
+                EnsureUdonProgramAssets();
+
             var root = new GameObject("Legaia_" + sceneName);
             Undo.RegisterCreatedObjectUndo(root, "Build Legaia scene");
 
@@ -288,6 +304,11 @@ namespace LegaiaWorld
                 if (file == null || insts == null) continue;
                 foreach (object inst in insts)
                 {
+                    // Per-instance guard: one failed wire (e.g. an Udon
+                    // attach refusal) must not abort the rest of the build -
+                    // that once cost a build every teleport it never reached.
+                    try
+                    {
                     var go = InstantiateGlb(dir + "/" + file, propRoot.transform);
                     if (go == null) continue;
                     // Negative Z: the handedness mirror (see header note) -
@@ -315,6 +336,12 @@ namespace LegaiaWorld
                     if (hideStaticPropTwins)
                         HideStaticTwin(world, file, go.transform.localPosition);
                     propCount++;
+                    }
+                    catch (System.Exception e)
+                    {
+                        Debug.LogError("[Legaia] prop instance of " + file +
+                            " failed to wire, continuing: " + e.Message);
+                    }
                 }
             }
 
@@ -333,6 +360,8 @@ namespace LegaiaWorld
                           ?? new List<object>();
                 for (int i = 0; i < tps.Count; i++)
                 {
+                    try
+                    {
                     object tp = tps[i];
                     object trig = MiniJson.Get(tp, "trigger");
                     string kind = MiniJson.AsStr(MiniJson.Get(tp, "kind"));
@@ -369,6 +398,12 @@ namespace LegaiaWorld
                     SetUdonField(udon, "alignToDestination", hasFacing);
                     SyncUdonProxy(udon);
                     teleportCount++;
+                    }
+                    catch (System.Exception e)
+                    {
+                        Debug.LogError("[Legaia] teleport " + i +
+                            " failed to wire, continuing: " + e.Message);
+                    }
                 }
 
                 // Scene portals (town exits / entrances) connect only when
@@ -380,6 +415,8 @@ namespace LegaiaWorld
                               ?? new List<object>();
                 for (int i = 0; i < portals.Count; i++)
                 {
+                    try
+                    {
                     object p = portals[i];
                     string target = MiniJson.AsStr(MiniJson.Get(p, "target_scene"));
                     var entry = MiniJson.AsList(MiniJson.Get(p, "entry_xz"));
@@ -419,6 +456,12 @@ namespace LegaiaWorld
                     SetUdonField(udon, "alignToDestination", fd != null && fd.Count >= 2);
                     SyncUdonProxy(udon);
                     teleportCount++;
+                    }
+                    catch (System.Exception e)
+                    {
+                        Debug.LogError("[Legaia] scene portal " + i +
+                            " failed to wire, continuing: " + e.Message);
+                    }
                 }
             }
 
@@ -677,6 +720,71 @@ namespace LegaiaWorld
             return null;
         }
 
+        /// UdonSharp refuses AddUdonSharpComponent for a script that has no
+        /// UdonSharpProgramAsset ("Unable to find valid U# program asset
+        /// associated with script"), and bare .cs files copied into a project
+        /// have none - U# only creates them for scripts made through its own
+        /// Create menu. Create any missing ones next to the scripts (the same
+        /// CreateInstance + sourceCsScript pattern U#'s own editor uses),
+        /// reset U#'s script-to-program lookup cache, and compile so the
+        /// backing programs exist before the first behaviour is wired.
+        static void EnsureUdonProgramAssets()
+        {
+            var paType = FindType("UdonSharp.UdonSharpProgramAsset");
+            var utilType = FindType("UdonSharpEditor.UdonSharpEditorUtility");
+            if (paType == null || utilType == null)
+                return; // no VRC SDK - TryAttachUdon warns per object
+            var getPa = utilType.GetMethod(
+                "GetUdonSharpProgramAsset", new[] { typeof(System.Type) });
+            bool created = false;
+            foreach (string name in new[]
+                     { "LegaiaDoorway", "LegaiaDoor", "LegaiaNpcWander" })
+            {
+                var t = FindType("LegaiaWorld." + name);
+                if (t == null) continue;
+                if (getPa != null && getPa.Invoke(null, new object[] { t }) != null)
+                    continue; // already has one
+                MonoScript script = null;
+                foreach (string guid in AssetDatabase.FindAssets(name + " t:MonoScript"))
+                {
+                    var ms = AssetDatabase.LoadAssetAtPath<MonoScript>(
+                        AssetDatabase.GUIDToAssetPath(guid));
+                    if (ms != null && ms.GetClass() == t)
+                    {
+                        script = ms;
+                        break;
+                    }
+                }
+                if (script == null)
+                {
+                    Debug.LogWarning("[Legaia] no MonoScript asset found for " +
+                        name + " - cannot create its U# program asset.");
+                    continue;
+                }
+                string scriptPath = AssetDatabase.GetAssetPath(script);
+                string assetPath = Path.ChangeExtension(scriptPath, ".asset");
+                if (AssetDatabase.LoadAssetAtPath<Object>(assetPath) != null)
+                    assetPath = scriptPath.Substring(0, scriptPath.Length - 3)
+                        + "Program.asset";
+                var pa = ScriptableObject.CreateInstance(paType);
+                paType.GetField("sourceCsScript").SetValue(pa, script);
+                AssetDatabase.CreateAsset(pa, assetPath);
+                Debug.Log("[Legaia] created U# program asset " + assetPath);
+                created = true;
+            }
+            if (!created) return;
+            AssetDatabase.Refresh();
+            // The attach path's script->program lookup is cached; reset it so
+            // the new assets are visible in this same build pass.
+            utilType.GetMethod("ResetCaches",
+                System.Reflection.BindingFlags.NonPublic |
+                System.Reflection.BindingFlags.Static)?.Invoke(null, null);
+            var compile = FindType("UdonSharp.Compiler.UdonSharpCompilerV1")
+                ?.GetMethod("CompileSync");
+            if (compile != null)
+                compile.Invoke(null, new object[] { null });
+        }
+
         static Component TryAttachUdon(GameObject go, string typeName)
         {
             var t = FindType("LegaiaWorld." + typeName);
@@ -693,7 +801,23 @@ namespace LegaiaWorld
                 var mi = ext.GetMethod("AddUdonSharpComponent",
                     new[] { typeof(GameObject), typeof(System.Type) });
                 if (mi != null)
-                    return (Component)mi.Invoke(null, new object[] { go, t });
+                {
+                    try
+                    {
+                        return (Component)mi.Invoke(null, new object[] { go, t });
+                    }
+                    catch (System.Exception e)
+                    {
+                        // Most common cause: no UdonSharpProgramAsset for the
+                        // script (EnsureUdonProgramAssets should have made
+                        // one). Leave the object inert rather than adding a
+                        // bare proxy that spams serialization errors.
+                        var inner = e.InnerException ?? e;
+                        Debug.LogError("[Legaia] U# attach of " + typeName +
+                            " to " + go.name + " failed: " + inner.Message);
+                        return null;
+                    }
+                }
             }
             // Plain AddComponent creates the proxy but not necessarily the
             // backing UdonBehaviour - visible so it can be fixed by hand.
