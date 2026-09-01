@@ -83,12 +83,18 @@ namespace LegaiaWorld
         bool addMusic = true;
         float musicVolume = 0.5f;
 
-        // Optional realism layer (LegaiaRealism.cs) - the graphics passes
-        // default on; untick everything in the foldout for the faithful
+        // Optional realism layer (LegaiaRealism.cs) - every pass defaults
+        // on; untick everything in the foldout for the faithful
         // retail-shaded scene.
         LegaiaRealismOptions realism = new LegaiaRealismOptions();
         bool showRealism = true;
         Vector2 scroll;
+
+        // Equipment props: place the `export-glb --items` weapons as
+        // (grabbable) props near the spawn.
+        string itemsManifestPath = "";
+        bool equipWeaponsOnly = true;
+        bool equipPickups = true;
 
         [MenuItem("Legaia/Build Scene From Manifest...")]
         static void Open()
@@ -176,6 +182,9 @@ namespace LegaiaWorld
             RealismGUI();
 
             GUILayout.Space(8);
+            EquipmentGUI();
+
+            GUILayout.Space(8);
             using (new EditorGUI.DisabledScope(string.IsNullOrEmpty(manifestPath)))
             {
                 if (GUILayout.Button("Build scene"))
@@ -184,10 +193,168 @@ namespace LegaiaWorld
             EditorGUILayout.EndScrollView();
         }
 
+        void EquipmentGUI()
+        {
+            GUILayout.Label("Equipment props", EditorStyles.boldLabel);
+            EditorGUILayout.BeginHorizontal();
+            itemsManifestPath = EditorGUILayout.TextField(itemsManifestPath);
+            if (GUILayout.Button("Browse", GUILayout.Width(70)))
+            {
+                string abs = EditorUtility.OpenFilePanel(
+                    "items/manifest.json inside Assets/ (from export-glb --items)",
+                    Application.dataPath, "json");
+                if (!string.IsNullOrEmpty(abs))
+                    itemsManifestPath = "Assets" + abs.Substring(Application.dataPath.Length);
+            }
+            EditorGUILayout.EndHorizontal();
+            equipWeaponsOnly = EditorGUILayout.Toggle(
+                new GUIContent("Weapons only",
+                    "Place only the weapon sections (swords, axes, whips...). " +
+                    "Untick to also rack armour, headgear, footwear and Ra-Seru"),
+                equipWeaponsOnly);
+            equipPickups = EditorGUILayout.Toggle(
+                new GUIContent("Grabbable (VRC Pickup)",
+                    "Wire each prop as a physics pickup (Rigidbody + VRC Pickup " +
+                    "+ VRC Object Sync - needs the VRChat SDK; without it the " +
+                    "rack is a static display)"),
+                equipPickups);
+            using (new EditorGUI.DisabledScope(
+                string.IsNullOrEmpty(itemsManifestPath) || string.IsNullOrEmpty(manifestPath)))
+            {
+                if (GUILayout.Button("Place equipment rack near spawn"))
+                    PlaceEquipmentProps();
+            }
+        }
+
+        /// Place the `export-glb --items` item-alone glbs as props on a rack
+        /// near the built scene's spawn: one row per character, grounded on
+        /// the world collider, box-collided, and (optionally) wired as VRChat
+        /// pickups. Items ship in raw PSX units (`conventions.units`), so
+        /// each instance carries the scene manifest's scale; the rack lives
+        /// at the TOP level, not under the mirrored scene root, so the
+        /// proper-rotation item models keep their chirality and the pickup
+        /// physics never fights a parent mirror.
+        void PlaceEquipmentProps()
+        {
+            object sm = MiniJson.Parse(File.ReadAllText(manifestPath));
+            string sceneName = MiniJson.AsStr(MiniJson.Get(sm, "scene")) ?? "scene";
+            var sceneRoot = GameObject.Find("Legaia_" + sceneName);
+            if (sceneRoot == null)
+            {
+                EditorUtility.DisplayDialog("Legaia World Builder",
+                    "No built root 'Legaia_" + sceneName +
+                    "' in this scene - build first (the rack grounds on its " +
+                    "collider and stands near its spawn).", "OK");
+                return;
+            }
+            float scale = MiniJson.GetNum(sm, "scale", 1f / 64f);
+            var spawnT = sceneRoot.transform.Find("LegaiaSpawn");
+            Vector3 origin = spawnT != null
+                ? spawnT.position : sceneRoot.transform.position;
+
+            string dir = Path.GetDirectoryName(itemsManifestPath).Replace('\\', '/');
+            object im = MiniJson.Parse(File.ReadAllText(itemsManifestPath));
+            var items = MiniJson.AsList(MiniJson.Get(im, "items"));
+            if (items == null || items.Count == 0)
+            {
+                EditorUtility.DisplayDialog("Legaia World Builder",
+                    "No items in " + itemsManifestPath, "OK");
+                return;
+            }
+
+            var old = GameObject.Find("Legaia_equipment");
+            if (old != null)
+                Undo.DestroyObjectImmediate(old);
+            var rack = new GameObject("Legaia_equipment");
+            Undo.RegisterCreatedObjectUndo(rack, "Place Legaia equipment");
+
+            var pickupType = FindType("VRC.SDK3.Components.VRCPickup");
+            var syncType = FindType("VRC.SDK3.Components.VRCObjectSync");
+            if (equipPickups && pickupType == null)
+                Debug.LogWarning("[Legaia] VRC Pickup not found (VRChat SDK " +
+                    "missing?) - placing the rack as a static display.");
+
+            var charRow = new Dictionary<string, int>();
+            var charCol = new Dictionary<string, int>();
+            int placed = 0, missing = 0;
+            foreach (object it in items)
+            {
+                string label = MiniJson.AsStr(MiniJson.Get(it, "section_label")) ?? "";
+                if (equipWeaponsOnly && !label.Contains("Weapon"))
+                    continue;
+                string file = MiniJson.AsStr(MiniJson.Get(it, "alone"))
+                    ?? MiniJson.AsStr(MiniJson.Get(it, "with_limb"));
+                if (file == null)
+                    continue;
+                string character = MiniJson.AsStr(MiniJson.Get(it, "character")) ?? "?";
+                var go = InstantiateGlb(dir + "/" + file, rack.transform);
+                if (go == null)
+                {
+                    missing++;
+                    continue;
+                }
+                string name = MiniJson.AsStr(MiniJson.Get(it, "name"));
+                go.name = character + " - " +
+                    (name ?? Path.GetFileNameWithoutExtension(file));
+                go.transform.localScale = Vector3.one * scale;
+
+                if (!charRow.ContainsKey(character))
+                {
+                    charRow[character] = charRow.Count;
+                    charCol[character] = 0;
+                }
+                int row = charRow[character];
+                int col = charCol[character]++;
+                Vector3 pos = origin + Vector3.forward * (2.5f + row * 1.2f)
+                    + Vector3.right * (1f + col * 0.7f);
+                if (Physics.Raycast(pos + Vector3.up * 5f, Vector3.down,
+                        out RaycastHit hit, 60f, ~0, QueryTriggerInteraction.Ignore))
+                    pos.y = hit.point.y;
+                go.transform.position = pos;
+
+                // Rest the piece on the floor and box-collide its bounds.
+                var rs = go.GetComponentsInChildren<Renderer>();
+                if (rs.Length > 0)
+                {
+                    Bounds b = rs[0].bounds;
+                    foreach (var r in rs)
+                        b.Encapsulate(r.bounds);
+                    go.transform.position += Vector3.up * (pos.y - b.min.y + 0.02f);
+                    var box = go.AddComponent<BoxCollider>();
+                    box.center = go.transform.InverseTransformPoint(b.center);
+                    box.size = b.size / Mathf.Max(scale, 1e-6f);
+                }
+
+                if (equipPickups)
+                {
+                    var rb = go.AddComponent<Rigidbody>();
+                    rb.mass = 1.5f;
+                    if (pickupType != null)
+                    {
+                        go.AddComponent(pickupType);
+                        if (syncType != null)
+                            go.AddComponent(syncType);
+                    }
+                    else
+                    {
+                        rb.isKinematic = true; // static display without the SDK
+                    }
+                }
+                placed++;
+            }
+            if (missing > 0)
+                Debug.LogWarning("[Legaia] " + missing + " item glb(s) not " +
+                    "found under Assets - copy the exported items/ folder " +
+                    "(with its character subfolders) next to the items " +
+                    "manifest and let Unity import first.");
+            Debug.Log("[Legaia] placed " + placed + " equipment prop(s) on " +
+                      "the rack near LegaiaSpawn.");
+        }
+
         void RealismGUI()
         {
             showRealism = EditorGUILayout.Foldout(showRealism,
-                "Realism enhancements (graphics on by default - untick for the faithful look)",
+                "Realism enhancements (all on by default - untick for the faithful look)",
                 true);
             if (!showRealism)
                 return;
@@ -261,10 +428,9 @@ namespace LegaiaWorld
             using (new EditorGUI.DisabledScope(!realism.interiorShells))
             {
                 realism.interiorGlow = EditorGUILayout.Toggle(
-                    new GUIContent("  Window light + shafts",
-                        "A warm fill light and slanted light-shaft quads per " +
-                        "room, so it reads window-lit inside its black shell " +
-                        "(decorative - not detected window meshes)"),
+                    new GUIContent("  Window light",
+                        "A warm fill light per room, so it reads window-lit " +
+                        "inside its black shell"),
                     realism.interiorGlow);
                 realism.interiorShellMargin = EditorGUILayout.Slider(
                     new GUIContent("  Shell margin (m)",

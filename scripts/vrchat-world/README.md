@@ -25,14 +25,13 @@ your disc ──legaia-extract──▶ extracted/ ──legaia-engine export-gl
 
 | File | Role |
 |---|---|
-| `world-project/Assets/LegaiaWorld/Editor/LegaiaWorldBuilder.cs` | Editor menu `Legaia > Build Scene From Manifest...`: instantiates the world, adds colliders, places NPCs + animated props, builds doorway-teleport triggers, wires proximity doors + the shoreline morph clip + the BGM loop, drops a spawn marker. |
-| `world-project/Assets/LegaiaWorld/Editor/LegaiaRealism.cs` | The builder's "Realism enhancements" foldout: lit materials + generated normals + sun, day/night wiring, sky + fog, procedural grass, interior room shells, texture smoothing, synthesized ambience, wander wiring. Graphics passes default on; untick for the faithful look. |
+| `world-project/Assets/LegaiaWorld/Editor/LegaiaWorldBuilder.cs` | Editor menu `Legaia > Build Scene From Manifest...`: instantiates the world, adds colliders, places NPCs + animated props, builds doorway-teleport triggers, wires proximity doors + the shoreline morph clip + the BGM loop, drops a spawn marker; also the **Equipment props** rack (the `--items` export placed as grabbable pickups near the spawn). |
+| `world-project/Assets/LegaiaWorld/Editor/LegaiaRealism.cs` | The builder's "Realism enhancements" foldout: lit materials + generated normals + sun, day/night wiring, sky + fog, procedural grass, interior room shells, texture smoothing, synthesized ambience, wander wiring. Every pass defaults on; untick for the faithful look. |
 | `world-project/Assets/LegaiaWorld/Editor/MiniJson.cs` | Dependency-free JSON reader for `manifest.json` (so the builder compiles in any project). |
 | `world-project/Assets/LegaiaWorld/Shaders/LegaiaLitVertexColor.shader` | Lit cutout stand-in for the exports' unlit materials: `COLOR_0` keeps modulating the texture, and lighting is the sign-independent two-sided Lambert `\|N.L\|` (the only stable answer over the mixed PSX winding - the header keeps the failed-flip history). |
 | `world-project/Assets/LegaiaWorld/Shaders/LegaiaLitVertexColorTransparent.shader` | The BLEND (water / light pool) sibling of the lit shader - alpha-blended, depth-write off. |
 | `world-project/Assets/LegaiaWorld/Shaders/LegaiaGrassWind.shader` | Vertex-coloured wind sway for the procedural grass blades (sway weight in vertex alpha, world-position phase). |
 | `world-project/Assets/LegaiaWorld/Shaders/LegaiaInteriorShell.shader` | Unlit black, front faces only: the interior-room dome, wound inward so it reads as black space from inside and is invisible (backface-culled) from outside. |
-| `world-project/Assets/LegaiaWorld/Shaders/LegaiaLightShaft.shader` | Additive, double-sided, procedural-falloff quad for the interior window-light shafts - no texture, feathered in the fragment shader. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaDoorway.cs` | UdonSharp doorway teleport: walking into the trigger repositions the local player at the landing marker with the authored arrival facing - the retail intra-scene door mechanism. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaDoor.cs` | UdonSharp proximity door: first approach plays the door's swing clip once and holds it open. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaNpcWander.cs` | Optional UdonSharp stroll behaviour: an NPC wanders a small radius around its spawn between pauses - collision-aware (strolls clamp against walls, a waist-height ray stops a blocked walk, a downward ray follows the floor). |
@@ -148,12 +147,16 @@ the VCC setup in more detail if this is your first worlds project.
   item** (all four characters' weapons, Ra-Seru, armour, headgear,
   footwear) to `glb-export/items/` - per record an item-alone `.glb`
   (grip repaired) and an exact-cut `.glb` with its host limb, both
-  animated, plus a manifest of names and cut-honesty tags. Import one the
-  same way, then add a `VRC Pickup` + a collider to hold Vahn's sword.
-  (The site's equipment viewer offers the same files per download, and
-  the characters/bestiary pages export characters and monsters with
-  their full animation banks.) Item glbs are raw PSX units - scale them
-  like NPCs.
+  animated, plus a manifest of names and cut-honesty tags. Copy the
+  `items/` folder into `Assets/`, point the builder's **Equipment props**
+  section at its `manifest.json`, and **Place equipment rack near spawn**
+  lines them up grounded on the world collider - one row per character,
+  each prop scaled from raw PSX units by the scene's export scale,
+  box-collided, and wired as a `VRC Pickup` + `VRC Object Sync` physics
+  pickup (static display without the SDK). **Weapons only** is the
+  default filter; untick it to also rack armour, headgear, footwear and
+  Ra-Seru. (The site's equipment viewer offers the same files per
+  download.)
 - **More clips**: every NPC glb carries *all* the scene-bundle clips whose
   bone count matches (`record_N` takes) - retarget the Animator the
   builder generated at any of them.
@@ -161,11 +164,9 @@ the VCC setup in more detail if this is your first worlds project.
 ## Optional realism enhancements
 
 The builder window's **Realism enhancements** foldout layers a set of
-optional passes over the built root. The graphics passes (lighting, sky +
-fog, foliage, interior shells, texture smoothing) default **on** - untick
-them all for the faithful retail-shaded scene - while the passes that need
-the VRChat SDK at runtime or add sound (day/night, ambience, wander) stay
-opt-in. Everything the passes create is generated from scratch (shaders,
+optional passes over the built root. Every pass defaults **on** - untick
+them all for the faithful retail-shaded scene. Everything the passes
+create is generated from scratch (shaders,
 dome/grass geometry, synthesized audio): no game data is produced or
 shipped beyond what the export already decoded. The **Apply enhancements to the
 already-built root** button reruns just these passes over an existing
@@ -210,9 +211,8 @@ pass is idempotent (it refreshes rather than stacks).
   it in a
   black dome wound to face **inward only**: black space from inside,
   backface-culled (invisible) from outside, casting no shadow so the sun
-  still lights the room. **Window light + shafts** adds a warm fill light
-  and slanted additive light-shaft quads per room so it reads window-lit -
-  decorative placement, not detected window meshes.
+  still lights the room. **Window light** adds a warm fill light per room
+  so it reads window-lit inside its black surround.
 - **Smooth textures**: bilinear + anisotropic filtering on every texture
   under the root, instead of the exports' PSX point sampling. This edits
   the imported texture objects in place, so a glb **reimport resets it** -
@@ -357,9 +357,9 @@ line to seed it.
 
 The realism foldout sits entirely on the *enhancement* side of this line:
 lighting, sky, grass, shells, ambience and wander are deliberate
-departures from retail, each its own toggle. The graphics passes now ship
-enabled by default - the project's ship-the-better-experience-by-default
-policy - and unticking them all restores the faithful retail-shaded
-build, one toggle away, same as the engine's own knobs. (The interior
+departures from retail, each its own toggle. Every pass ships enabled by
+default - the project's ship-the-better-experience-by-default policy -
+and unticking them all restores the faithful retail-shaded build, one
+toggle away, same as the engine's own knobs. (The interior
 shells are the one pass that *restores* retail framing: those rooms sit
 against black space in the real game.)

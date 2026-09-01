@@ -1,12 +1,9 @@
 // Optional realism enhancements over a built Legaia root - the builder's
-// "Realism enhancements" foldout. The graphics passes (lighting, sky +
-// fog, foliage, interior shells, texture smoothing) default ON; untick
-// them for the faithful retail-shaded build. The passes that need the
-// VRChat SDK at runtime or add sound (day/night, ambience, wander) stay
-// opt-in. Everything is generated from scratch (shaders, dome/grass
-// geometry, synthesized audio): no game data is created or shipped, and
-// with every option off the build is byte-for-byte the faithful
-// retail-shaded scene.
+// "Realism enhancements" foldout. Every pass defaults ON; untick them all
+// for the faithful retail-shaded build. Everything is generated from
+// scratch (shaders, dome/grass geometry, synthesized audio): no game data
+// is created or shipped, and with every option off the build is
+// byte-for-byte the faithful retail-shaded scene.
 //
 // What each pass does, and the source-data constraint it works around:
 //
@@ -43,9 +40,9 @@
 //   threshold, clustered), wraps it in a black dome wound to face INWARD
 //   only - backface-culled, so it is invisible from outside, and casting
 //   no shadows, so the sun still lights the room through it - and adds an
-//   optional warm fill light + additive light-shaft quads so the room
-//   reads window-lit inside its black surround. Retail frames these rooms
-//   against black space; this restores that.
+//   optional warm fill light so the room reads window-lit inside its
+//   black surround. Retail frames these rooms against black space; this
+//   restores that.
 //
 // - Texture smoothing: bilinear + anisotropic on every texture under the
 //   root (the exports pin NEAREST for the PSX look). In-editor asset
@@ -78,7 +75,7 @@ namespace LegaiaWorld
         public float sunAzimuth = 40f;
         public float sunIntensity = 1.15f;
         public float shadowStrength = 0.75f;
-        public bool dayNight = false;
+        public bool dayNight = true;
         public float dayNightMinutes = 20f;
         public bool skyAndFog = true;
         public bool foliage = true;
@@ -90,9 +87,9 @@ namespace LegaiaWorld
         public float interiorShellMargin = 3f;
         public float interiorRoomDistance = 60f;
         public bool smoothTextures = true;
-        public bool ambientAudio = false;
+        public bool ambientAudio = true;
         public float ambientVolume = 0.15f;
-        public bool npcWander = false;
+        public bool npcWander = true;
         public float wanderRadius = 2.5f;
 
         public bool AnyEnabled =>
@@ -688,7 +685,6 @@ namespace LegaiaWorld
                 Object.DestroyImmediate(old.gameObject);
 
             var shellShader = Shader.Find("Legaia/Interior Shell");
-            var shaftShader = Shader.Find("Legaia/Light Shaft");
             if (shellShader == null)
             {
                 Debug.LogError("[Legaia] Legaia/Interior Shell shader not found - is " +
@@ -774,26 +770,6 @@ namespace LegaiaWorld
                 shellMat = new Material(shellShader);
                 AssetDatabase.CreateAsset(shellMat, shellMatPath);
             }
-            Material shaftMat = null;
-            if (o.interiorGlow && shaftShader != null)
-            {
-                string shaftMatPath = genDir + "/light_shaft.mat";
-                shaftMat = AssetDatabase.LoadAssetAtPath<Material>(shaftMatPath);
-                if (shaftMat == null)
-                {
-                    shaftMat = new Material(shaftShader);
-                    AssetDatabase.CreateAsset(shaftMat, shaftMatPath);
-                }
-            }
-
-            // Sun direction for the shaft slant: the realism sun when it
-            // stands, else the default sliders' angle.
-            Vector3 sunDir = RenderSettings.sun != null
-                ? RenderSettings.sun.transform.forward
-                : Quaternion.Euler(55f, 40f, 0f) * Vector3.forward;
-            if (sunDir.y > -0.25f)
-                sunDir = Quaternion.Euler(55f, 40f, 0f) * Vector3.forward;
-            sunDir.Normalize();
 
             int roomIdx = 0;
             foreach (var cl in clusters.Values)
@@ -861,34 +837,18 @@ namespace LegaiaWorld
                     light.intensity = 0.7f;
                     light.color = new Color(1f, 0.92f, 0.78f);
                     light.shadows = LightShadows.None;
-
-                    if (shaftMat != null)
-                    {
-                        var shaft = ShaftMesh(toLocal, room, sunDir,
-                            "shaft_" + roomIdx);
-                        string shaftPath = genDir + "/" + shaft.name + ".asset";
-                        AssetDatabase.DeleteAsset(shaftPath);
-                        AssetDatabase.CreateAsset(shaft, shaftPath);
-                        var sgo = new GameObject("room_" + roomIdx + "_shafts");
-                        sgo.transform.SetParent(container.transform, false);
-                        sgo.AddComponent<MeshFilter>().sharedMesh = shaft;
-                        var smr = sgo.AddComponent<MeshRenderer>();
-                        smr.sharedMaterial = shaftMat;
-                        smr.shadowCastingMode =
-                            UnityEngine.Rendering.ShadowCastingMode.Off;
-                    }
                 }
                 roomIdx++;
             }
-            // Drop stale assets a previous run with more rooms (or with the
-            // glow on when it is now off) left behind.
+            // Drop stale assets a previous run with more rooms left behind,
+            // plus the light-shaft assets of the retired shaft dressing.
             for (int i = roomIdx; ; i++)
-                if (!AssetDatabase.DeleteAsset(genDir + "/shell_" + i + ".asset") &
-                    !AssetDatabase.DeleteAsset(genDir + "/shaft_" + i + ".asset"))
+                if (!AssetDatabase.DeleteAsset(genDir + "/shell_" + i + ".asset"))
                     break;
-            if (!o.interiorGlow || shaftMat == null)
-                for (int i = 0; i < roomIdx; i++)
-                    AssetDatabase.DeleteAsset(genDir + "/shaft_" + i + ".asset");
+            for (int i = 0; ; i++)
+                if (!AssetDatabase.DeleteAsset(genDir + "/shaft_" + i + ".asset"))
+                    break;
+            AssetDatabase.DeleteAsset(genDir + "/light_shaft.mat");
             Debug.Log("[Legaia] wrapped " + roomIdx +
                       " interior room(s) in black shells.");
         }
@@ -947,77 +907,6 @@ namespace LegaiaWorld
 
             var m = new Mesh { name = name };
             m.SetVertices(v);
-            m.SetTriangles(t, 0);
-            m.RecalculateBounds();
-            return m;
-        }
-
-        /// Two slanted window-light shafts for one room: crossed additive
-        /// quads from up on the sun-facing side down to the floor, feathered
-        /// by the shaft shader (uv.x across the width) and faded along the
-        /// length by vertex alpha. Purely decorative - the positions are
-        /// heuristic, not detected window meshes.
-        static Mesh ShaftMesh(Matrix4x4 toLocal, Bounds room, Vector3 sunDir,
-            string name)
-        {
-            var v = new List<Vector3>();
-            var uv = new List<Vector2>();
-            var c = new List<Color>();
-            var t = new List<int>();
-
-            Vector3 horiz = new Vector3(sunDir.x, 0f, sunDir.z);
-            if (horiz.sqrMagnitude < 1e-4f)
-                horiz = Vector3.right;
-            horiz.Normalize();
-            Vector3 perp = Vector3.Cross(Vector3.up, horiz);
-            float topY = room.center.y + Mathf.Max(room.extents.y, 1.5f) + 0.5f;
-            float spread = Mathf.Max(1f, room.extents.magnitude * 0.25f);
-
-            void Quad(Vector3 a, Vector3 b, Vector3 d, Vector3 e,
-                Color ca, Color cb)
-            {
-                int i0 = v.Count;
-                v.Add(toLocal.MultiplyPoint3x4(a));
-                v.Add(toLocal.MultiplyPoint3x4(b));
-                v.Add(toLocal.MultiplyPoint3x4(d));
-                v.Add(toLocal.MultiplyPoint3x4(e));
-                uv.Add(new Vector2(0f, 0f));
-                uv.Add(new Vector2(1f, 0f));
-                uv.Add(new Vector2(1f, 1f));
-                uv.Add(new Vector2(0f, 1f));
-                c.Add(ca);
-                c.Add(ca);
-                c.Add(cb);
-                c.Add(cb);
-                t.Add(i0);
-                t.Add(i0 + 1);
-                t.Add(i0 + 2);
-                t.Add(i0);
-                t.Add(i0 + 2);
-                t.Add(i0 + 3);
-            }
-
-            for (int k = -1; k <= 1; k += 2)
-            {
-                Vector3 entry = new Vector3(room.center.x, topY, room.center.z)
-                    - horiz * (Mathf.Max(room.extents.x, room.extents.z) * 0.45f)
-                    + perp * (k * spread);
-                float len = Mathf.Min(
-                    (entry.y - room.min.y) / Mathf.Max(0.2f, -sunDir.y), 25f);
-                Vector3 bottom = entry + sunDir * len;
-                Vector3 axis = (bottom - entry).normalized;
-                Vector3 s1 = perp * 0.45f;
-                Vector3 s2 = Vector3.Cross(axis, perp).normalized * 0.45f;
-                var top = new Color(1f, 1f, 1f, 0.8f);
-                var end = new Color(1f, 1f, 1f, 0.06f);
-                Quad(entry - s1, entry + s1, bottom + s1, bottom - s1, top, end);
-                Quad(entry - s2, entry + s2, bottom + s2, bottom - s2, top, end);
-            }
-
-            var m = new Mesh { name = name };
-            m.SetVertices(v);
-            m.SetUVs(0, uv);
-            m.SetColors(c);
             m.SetTriangles(t, 0);
             m.RecalculateBounds();
             return m;

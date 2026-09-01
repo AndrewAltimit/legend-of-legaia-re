@@ -216,8 +216,9 @@ from the MES corpus, shop counters).
 On the deliberate-enhancement side, the kit's builder carries a **realism**
 foldout (lit vertex-colour materials with generated normals + a sun,
 day/night cycle, sky + fog, procedural grass, black interior-room shells
-with window-light dressing, texture smoothing, synthesized ambience,
-wandering villagers). The graphics passes default on - unticking them all
-restores the faithful retail-shaded build - and everything is generated
-from scratch on top of the export, documented in
+with window light, texture smoothing, synthesized ambience, wandering
+villagers) plus an **equipment rack** placer that stands the `--items`
+export near the spawn as grabbable pickups. Every realism pass defaults
+on - unticking them all restores the faithful retail-shaded build - and
+everything is generated from scratch on top of the export, documented in
 [`scripts/vrchat-world/README.md`](../../scripts/vrchat-world/README.md#optional-realism-enhancements).
