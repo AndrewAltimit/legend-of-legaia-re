@@ -220,6 +220,7 @@ All keys optional (`town01.settings.json` is the worked example):
   "delete_objects": ["room_6_shell", "room_6_light"],
   "static_npcs": [26, 27, 45, 46, 29, 12],
   "remove_npcs": [28, 10, 11],
+  "freeze_npcs": [47],
   "spawn_position": [-24.85, 1.75, 12.22],
   "set_descriptor_spawn": true
 }
@@ -237,6 +238,12 @@ All keys optional (`town01.settings.json` is the worked example):
   the file name. Re-applying the realism layer also *strips* a wander
   behaviour wired before the rule was added.
 - **`remove_npcs`** - not placed at all (same matching rules).
+- **`freeze_npcs`** - placed with **no animation clip**, holding the rest
+  pose (and never wander-wired). For prop-kind actors - trees, signs -
+  whose bundle slot carries a generic locomotion record: looping that
+  record visibly walks the prop in place (town01's npc_47 tree paces
+  ~10 cm side to side on `record_37`). Takes effect on the next full
+  build, like `remove_npcs`.
 - **`spawn_position`** - overrides the manifest's suggested spawn:
   **exactly what LegaiaSpawn's Inspector shows** (its local position
   under the built root). Drag the marker where you want it, copy its
@@ -250,8 +257,8 @@ All keys optional (`town01.settings.json` is the worked example):
 
 Deletions and the descriptor assignment also re-run after "Apply
 enhancements to the already-built root", so tuning a rule doesn't force
-a full rebuild - except `remove_npcs`/`spawn_position`, which take effect
-on the next **Build scene**.
+a full rebuild - except `remove_npcs`/`freeze_npcs`/`spawn_position`,
+which take effect on the next **Build scene**.
 
 ## Making it feel alive
 

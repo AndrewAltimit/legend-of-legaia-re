@@ -30,6 +30,11 @@
 //   "remove_npcs":     [28, 10, 11]
 //       NPCs not placed at all (same matching rules).
 //
+//   "freeze_npcs":     [47]
+//       NPCs placed with NO animation clip - they hold their rest pose.
+//       For prop-kind actors (trees, signs) whose bundle slot carries a
+//       generic locomotion record: looping it walks the prop in place.
+//
 //   "spawn_position":  [-24.85, 1.75, 12.22]
 //       Overrides the manifest's suggested spawn: EXACTLY the value the
 //       Inspector shows on LegaiaSpawn (its local position under the
@@ -59,6 +64,7 @@ namespace LegaiaWorld
         public List<string> deleteObjects = new List<string>();
         public List<string> staticNpcs = new List<string>();
         public List<string> removeNpcs = new List<string>();
+        public List<string> freezeNpcs = new List<string>();
         public bool hasSpawn;
         /// LegaiaSpawn's root-local position - what its Inspector shows.
         public Vector3 spawnLocal;
@@ -78,6 +84,7 @@ namespace LegaiaWorld
             ReadTokens(MiniJson.Get(m, "delete_objects"), s.deleteObjects);
             ReadTokens(MiniJson.Get(m, "static_npcs"), s.staticNpcs);
             ReadTokens(MiniJson.Get(m, "remove_npcs"), s.removeNpcs);
+            ReadTokens(MiniJson.Get(m, "freeze_npcs"), s.freezeNpcs);
             var sp = MiniJson.AsList(MiniJson.Get(m, "spawn_position"))
                 ?? MiniJson.AsList(MiniJson.Get(m, "spawn_world")); // old key
             if (sp != null && sp.Count >= 3)
@@ -93,7 +100,8 @@ namespace LegaiaWorld
             Debug.Log("[Legaia] scene settings " + p + ": " +
                 s.deleteObjects.Count + " deletion(s), " +
                 s.staticNpcs.Count + " static NPC rule(s), " +
-                s.removeNpcs.Count + " removed NPC rule(s)" +
+                s.removeNpcs.Count + " removed NPC rule(s), " +
+                s.freezeNpcs.Count + " frozen NPC rule(s)" +
                 (s.hasSpawn ? ", spawn override " + s.spawnLocal : "") + ".");
             return s;
         }
@@ -120,6 +128,7 @@ namespace LegaiaWorld
 
         public bool NpcIsStatic(string file) => NpcMatch(staticNpcs, file);
         public bool NpcIsRemoved(string file) => NpcMatch(removeNpcs, file);
+        public bool NpcIsFrozen(string file) => NpcMatch(freezeNpcs, file);
 
         /// A purely numeric token N matches the exported stem
         /// npc_<NN>_... exactly (zero-padded to two digits, underscore

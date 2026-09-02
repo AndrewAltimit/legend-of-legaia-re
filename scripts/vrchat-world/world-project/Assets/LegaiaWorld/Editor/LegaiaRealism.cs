@@ -1615,7 +1615,8 @@ namespace LegaiaWorld
                 // never travels; a removed NPC was not placed at all. Strip
                 // any wander wired by an earlier pass so re-applying the
                 // realism layer honours a newly-added rule too.
-                if (settings.NpcIsStatic(file) || settings.NpcIsRemoved(file))
+                if (settings.NpcIsStatic(file) || settings.NpcIsRemoved(file)
+                    || settings.NpcIsFrozen(file))
                 {
                     if (wanderType != null)
                         StripWander(npcRoot, p, wanderType);

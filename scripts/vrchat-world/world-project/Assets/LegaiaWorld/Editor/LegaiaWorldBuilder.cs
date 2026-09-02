@@ -829,7 +829,11 @@ namespace LegaiaWorld
                 if (!string.IsNullOrEmpty(label))
                     go.name += " (" + label + ")";
                 var clips = MiniJson.AsList(MiniJson.Get(n, "clips"));
-                if (loopNpcClips && clips != null && clips.Count > 0)
+                // A frozen NPC (per-scene settings) holds its rest pose:
+                // prop-kind actors can carry a generic locomotion record
+                // in their bundle slot, and looping it walks the prop.
+                if (loopNpcClips && clips != null && clips.Count > 0
+                    && !settings.NpcIsFrozen(file))
                     AttachLoopingClip(go, dir + "/" + file,
                         MiniJson.AsStr(clips[0]), dir, sceneName);
                 if (addNpcCapsules)
