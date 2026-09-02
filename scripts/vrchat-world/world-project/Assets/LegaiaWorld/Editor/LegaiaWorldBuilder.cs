@@ -531,9 +531,10 @@ namespace LegaiaWorld
                         realism.nightAmbient, 0f, 1f);
                     realism.nightLamps = EditorGUILayout.Toggle(
                         new GUIContent("    Night lamps on buildings",
-                            "Warm point lights above each village doorway " +
-                            "(placed from the manifest's own door data), on " +
-                            "only while the sun is down"),
+                            "Small warm lights at each village building " +
+                            "window (anchored on the world mesh's own " +
+                            "authored window-glow volumes; doorways when a " +
+                            "scene has none), on only while the sun is down"),
                         realism.nightLamps);
                 }
             }

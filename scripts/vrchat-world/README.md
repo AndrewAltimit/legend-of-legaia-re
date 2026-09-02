@@ -138,7 +138,9 @@ the VCC setup in more detail if this is your first worlds project.
      firing doorway suppresses every sibling doorway near the landing
      for a few seconds, so a landing can never chain-fire a ping-pong
      loop - which reads as "the door does nothing" when the hops cancel
-     out; Scene-exit portals also connect
+     out. Stepping off a trigger re-arms it immediately (retail's own
+     walk-away re-arm), so walking away and straight back always fires;
+     Scene-exit portals also connect
      automatically when the target scene's built root (`Legaia_map01`,
      say) already exists in the same Unity scene;
    - `LegaiaSpawn` - the manifest's suggested spawn (the placed-object
@@ -226,19 +228,28 @@ pass is idempotent (it refreshes rather than stacks).
   shared server clock, so the cycle is synced with no networking events.
   Night genuinely darkens the landscape: the behaviour sweeps the trilight
   ambient (and fog colour) down to a moonlit, blue-shifted fraction of
-  their daytime values ("Night darkness" slider - sun intensity alone
-  leaves the ambient day-bright after sunset). **Night lamps** places a
-  warm point light + small glow bulb above each village-side doorway
-  (positions come from the manifest's own teleport endpoints - no new
-  export data) in a `night_lamps` container the behaviour enables only
-  while the sun is below the horizon.
+  their daytime values ("Night darkness" slider, default 0.05 - walls and
+  ground keep a little moonlight, not much; sun intensity alone leaves
+  the ambient day-bright after sunset). **Night lamps** places a small
+  warm light + glow bulb at each village building **window**, anchored on
+  the world mesh itself: the retail scene authors semi-transparent glow
+  volumes exactly where light spills out of a hut window (town01 repeats
+  one identically-sized glow object across three huts), so each
+  village-side BLEND submesh of window-glow proportions gets a
+  tight-radius light at its centroid - light coming out of the building,
+  where the building actually is. Scenes with no authored glows fall
+  back to a lamp above each village-side doorway (manifest teleport
+  endpoints). The `night_lamps` container is enabled by the day/night
+  behaviour only while the sun is below the horizon.
 - **Sky + distance fog**: a procedural-skybox material (it tracks
   `RenderSettings.sun`, so with day/night on the sky darkens by itself)
   and linear fog scaled to the built root's bounds.
 - **Ground foliage**: procedural grass - single-triangle blades in tufts,
   scattered over upward-facing world triangles whose ground colour reads
   green (texel x mean vertex colour at the triangle centre, the same
-  product the retail shading displays). Blades are tinted from the sampled
+  product the retail shading displays). Ground only: a per-cell lowest
+  upward-surface grid rejects any green triangle floating above other
+  geometry, so tree canopies and roofs never sprout grass. Blades are tinted from the sampled
   ground so they blend with the terrain, and sway via `Legaia/Grass Wind`
   (weight in vertex alpha, world-position phase). Tune **density** and the
   **green threshold** (lower = more coverage, higher = keeps grass off

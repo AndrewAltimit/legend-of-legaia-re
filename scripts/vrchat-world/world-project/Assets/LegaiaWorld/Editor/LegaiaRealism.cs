@@ -79,7 +79,8 @@ namespace LegaiaWorld
         public float dayNightMinutes = 20f;
         // Midnight ambient as a fraction of the daytime trilight - the
         // landscape's night darkness (the sun itself is already off).
-        public float nightAmbient = 0.12f;
+        // Low: walls and ground get a little moonlight, not much.
+        public float nightAmbient = 0.05f;
         // Warm point lights beside each village doorway, enabled by the
         // day/night behaviour only while the sun is down.
         public bool nightLamps = true;
@@ -422,14 +423,22 @@ namespace LegaiaWorld
 
         // --- Night lamps ----------------------------------------------------
 
-        /// A warm lamp above each village-side doorway, held in one
+        /// A warm light at each village building window, held in one
         /// "night_lamps" container that starts INACTIVE - the day/night
         /// behaviour enables it only while the sun is below the horizon.
-        /// Placement rides the manifest's own door data: every teleport
-        /// endpoint on the village side of the interior-room distance marks a
-        /// building entrance, so a lamp above each (deduped - a door's
-        /// trigger and its paired return landing sit a step apart) puts
-        /// light exactly where the buildings are with no new export data.
+        ///
+        /// Window positions come from the WORLD MESH itself: the retail
+        /// scene authors semi-transparent glow volumes right where light
+        /// visibly spills out of a hut window (town01 repeats one
+        /// identically-sized glow object on three separate huts), so every
+        /// village-side BLEND submesh of window-glow proportions marks "a
+        /// lit window of a building" exactly - the night light goes at its
+        /// centroid, by the window, shining out. Water sheets and room-side
+        /// glows are filtered out by shape and by the interior-room
+        /// distance. Scenes with no authored glow volumes fall back to a
+        /// small lamp above each village-side doorway (from the manifest's
+        /// teleport endpoints).
+        ///
         /// Returns null (and removes any stale container) when night lamps
         /// or the day/night cycle are off - without the cycle nothing would
         /// ever switch the lamps on.
@@ -441,9 +450,6 @@ namespace LegaiaWorld
                 Object.DestroyImmediate(old.gameObject);
             if (!o.dayNight || !o.nightLamps || manifest == null)
                 return null;
-            var tps = MiniJson.AsList(MiniJson.Get(manifest, "teleports"));
-            if (tps == null || tps.Count == 0)
-                return null;
             Vector3 spawnW = root.transform.TransformPoint(LegaiaWorldBuilder.G2U(
                 MiniJson.GetVec3(MiniJson.Get(manifest, "spawn"), "position")));
             float DistXZ(Vector3 a, Vector3 b)
@@ -452,21 +458,65 @@ namespace LegaiaWorld
                 return (a - b).magnitude;
             }
             var pts = new List<Vector3>();
-            void Consider(Vector3 w)
+            void Consider(Vector3 w, float dedupe)
             {
                 if (DistXZ(w, spawnW) > o.interiorRoomDistance)
-                    return; // interior side - rooms have the shell glow
+                    return; // room side - interiors have the shell glow
                 foreach (var q in pts)
-                    if (DistXZ(q, w) < 2.5f)
-                        return; // the paired landing a step from its door
+                    if (DistXZ(q, w) < dedupe)
+                        return;
                 pts.Add(w);
             }
-            foreach (object tp in tps)
+
+            // Primary: authored window-glow volumes in the world mesh.
+            var world = root.transform.Find("world");
+            if (world != null)
+                foreach (var mf in world.GetComponentsInChildren<MeshFilter>())
+                {
+                    if (mf.sharedMesh == null)
+                        continue;
+                    var r = mf.GetComponent<Renderer>();
+                    var mats = r != null ? r.sharedMaterials : null;
+                    for (int sm = 0; sm < mf.sharedMesh.subMeshCount; sm++)
+                    {
+                        Material mat = mats != null && sm < mats.Length
+                            ? mats[sm] : null;
+                        if (mat == null || mat.renderQueue <
+                            (int)UnityEngine.Rendering.RenderQueue.Transparent)
+                            continue;
+                        var verts = mf.sharedMesh.vertices;
+                        var tris = mf.sharedMesh.GetTriangles(sm);
+                        if (tris.Length == 0)
+                            continue;
+                        Matrix4x4 toWorld = mf.transform.localToWorldMatrix;
+                        Bounds b = new Bounds(
+                            toWorld.MultiplyPoint3x4(verts[tris[0]]), Vector3.zero);
+                        for (int i = 1; i < tris.Length; i++)
+                            b.Encapsulate(toWorld.MultiplyPoint3x4(verts[tris[i]]));
+                        // Window-glow proportions: a couple of meters tall,
+                        // not map-spanning (water sheets are flat and wide).
+                        if (b.size.y < 0.5f || b.size.y > 4.5f ||
+                            Mathf.Max(b.size.x, b.size.z) > 8f)
+                            continue;
+                        Consider(b.center, 2f);
+                    }
+                }
+            bool fromGlows = pts.Count > 0;
+
+            // Fallback: a lamp above each village-side doorway.
+            if (!fromGlows)
             {
-                Consider(root.transform.TransformPoint(LegaiaWorldBuilder.G2U(
-                    MiniJson.GetVec3(MiniJson.Get(tp, "trigger"), "position"))));
-                Consider(root.transform.TransformPoint(LegaiaWorldBuilder.G2U(
-                    MiniJson.GetVec3(MiniJson.Get(tp, "destination"), "position"))));
+                var tps = MiniJson.AsList(MiniJson.Get(manifest, "teleports"))
+                          ?? new List<object>();
+                foreach (object tp in tps)
+                {
+                    Consider(root.transform.TransformPoint(LegaiaWorldBuilder.G2U(
+                        MiniJson.GetVec3(MiniJson.Get(tp, "trigger"), "position")))
+                        + Vector3.up * 2.2f, 2.5f);
+                    Consider(root.transform.TransformPoint(LegaiaWorldBuilder.G2U(
+                        MiniJson.GetVec3(MiniJson.Get(tp, "destination"), "position")))
+                        + Vector3.up * 2.2f, 2.5f);
+                }
             }
             if (pts.Count == 0)
                 return null;
@@ -488,13 +538,15 @@ namespace LegaiaWorld
             {
                 var go = new GameObject("lamp_" + i);
                 go.transform.SetParent(container.transform, false);
-                // World-space placement (the root carries the mirror);
-                // lamp height above the door, wall-mounted look.
-                go.transform.position = pts[i] + Vector3.up * 2.2f;
+                // World-space placement (the root carries the mirror):
+                // the glow volume's centroid IS the window.
+                go.transform.position = pts[i];
                 var light = go.AddComponent<Light>();
                 light.type = LightType.Point;
-                light.range = 7f;
-                light.intensity = 1.1f;
+                // A tight pool by the window, not a street light: the
+                // window glow should read local against the dark ambient.
+                light.range = 3f;
+                light.intensity = 1.2f;
                 light.color = new Color(1f, 0.75f, 0.45f);
                 // Several per village: keep them cheap.
                 light.shadows = LightShadows.None;
@@ -502,12 +554,12 @@ namespace LegaiaWorld
                 bulb.name = "glow";
                 Object.DestroyImmediate(bulb.GetComponent<Collider>());
                 bulb.transform.SetParent(go.transform, false);
-                bulb.transform.localScale = Vector3.one * 0.15f;
+                bulb.transform.localScale = Vector3.one * 0.1f;
                 bulb.GetComponent<MeshRenderer>().sharedMaterial = glowMat;
             }
             container.SetActive(false); // day/night behaviour turns these on
-            Debug.Log("[Legaia] " + pts.Count +
-                      " night lamp(s) placed at village doorways.");
+            Debug.Log("[Legaia] " + pts.Count + " night light(s) placed at " +
+                      (fromGlows ? "authored window glows." : "village doorways."));
             return container;
         }
 
@@ -609,6 +661,19 @@ namespace LegaiaWorld
             var chunks = new List<Mesh>();
             int tufts = 0;
 
+            // Grass grows on the GROUND: an upward-facing green triangle
+            // floating above other geometry (a tree canopy, a roof) must
+            // not scatter. Pass 1 records, per 1.5 m XZ cell, the lowest
+            // upward-facing surface height while collecting green
+            // candidates; pass 2 emits only candidates sitting within a
+            // step of their cell's floor - the ground under a tree is
+            // always lower than the canopy above it.
+            var groundMinY = new Dictionary<Vector2Int, float>();
+            var cand = new List<(Vector3 a, Vector3 b, Vector3 d,
+                Color ground, float weight, float area)>();
+            Vector2Int CellOf(Vector3 p) => new Vector2Int(
+                Mathf.FloorToInt(p.x / 1.5f), Mathf.FloorToInt(p.z / 1.5f));
+
             foreach (var r in world.GetComponentsInChildren<Renderer>(false))
             {
                 Mesh mesh = MeshOf(r);
@@ -639,6 +704,11 @@ namespace LegaiaWorld
                         // winding makes the sign meaningless.
                         if (Mathf.Abs(cr.y / (area * 2f)) < 0.65f)
                             continue;
+                        Vector3 cen = (a + b + d) / 3f;
+                        var cell = CellOf(cen);
+                        if (!groundMinY.TryGetValue(cell, out float floorY) ||
+                            cen.y < floorY)
+                            groundMinY[cell] = cen.y;
 
                         // Ground colour at the triangle centre = texel x mean
                         // COLOR_0, the product the retail shading displays.
@@ -657,28 +727,39 @@ namespace LegaiaWorld
                         if (green < o.grassGreenThreshold)
                             continue;
                         float weight = Mathf.Clamp01(green / 0.12f);
-
-                        float expected = area * o.grassDensity * weight;
-                        int count = (int)expected +
-                            (rng.NextDouble() < expected - (int)expected ? 1 : 0);
-                        for (int k = 0; k < count && tufts < MAX_TUFTS; k++)
-                        {
-                            float u = (float)rng.NextDouble();
-                            float w = (float)rng.NextDouble();
-                            if (u + w > 1f)
-                            {
-                                u = 1f - u;
-                                w = 1f - w;
-                            }
-                            Vector3 p = a + (b - a) * u + (d - a) * w;
-                            EmitTuft(p, ground, rng, toLocal, v, c, t);
-                            tufts++;
-                            if (v.Count > CHUNK_VERTS)
-                                FlushGrassChunk(v, c, t, chunks, genDir);
-                        }
+                        cand.Add((a, b, d, ground, weight, area));
                     }
                 }
             }
+            // Pass 2: emit only candidates on their cell's floor - a green
+            // canopy or roof sits well above the lowest upward surface at
+            // its spot and is skipped.
+            foreach (var (a, bb, d, ground, weight, area) in cand)
+            {
+                Vector3 cen = (a + bb + d) / 3f;
+                if (groundMinY.TryGetValue(CellOf(cen), out float floorY) &&
+                    cen.y > floorY + 0.75f)
+                    continue;
+                float expected = area * o.grassDensity * weight;
+                int count = (int)expected +
+                    (rng.NextDouble() < expected - (int)expected ? 1 : 0);
+                for (int k = 0; k < count && tufts < MAX_TUFTS; k++)
+                {
+                    float u = (float)rng.NextDouble();
+                    float w = (float)rng.NextDouble();
+                    if (u + w > 1f)
+                    {
+                        u = 1f - u;
+                        w = 1f - w;
+                    }
+                    Vector3 p = a + (bb - a) * u + (d - a) * w;
+                    EmitTuft(p, ground, rng, toLocal, v, c, t);
+                    tufts++;
+                    if (v.Count > CHUNK_VERTS)
+                        FlushGrassChunk(v, c, t, chunks, genDir);
+                }
+            }
+
             FlushGrassChunk(v, c, t, chunks, genDir);
             // Drop stale chunks a denser previous run left behind.
             for (int i = chunks.Count; ; i++)

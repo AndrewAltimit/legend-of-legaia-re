@@ -64,6 +64,15 @@ namespace LegaiaWorld
                 suppressUntil = Time.time + 3f;
         }
 
+        // Stepping off the trigger re-arms it immediately (retail's own
+        // walk-away re-arm): without this, leaving the box and walking
+        // straight back within the timed window still did nothing.
+        public override void OnPlayerTriggerExit(VRCPlayerApi player)
+        {
+            if (player != null && player.isLocal)
+                suppressUntil = 0f;
+        }
+
         public override void OnPlayerTriggerEnter(VRCPlayerApi player)
         {
             if (player == null || !player.isLocal || destination == null)
