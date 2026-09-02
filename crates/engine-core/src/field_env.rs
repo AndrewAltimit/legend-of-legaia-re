@@ -947,6 +947,32 @@ pub fn decode_prop_program(record: &[u8], pc0: usize) -> PropProgram {
     prog
 }
 
+/// Does this bind record's spawn pass leave the clip **free-running** - i.e.
+/// looping forever with no script driving it?
+///
+/// This is the retail split between the windmill and the doors: every actor is
+/// born with the looping [`ANIM_SPAWN_FLAGS`], and the spawn pass either parks
+/// the clip (a door's `0x4C 0x35` reset-hold, a searched shelf's `0x4C 0x36`)
+/// or leaves the template flags alone (the windmill, whose sails then spin
+/// under the unconditional per-frame anim tick `FUN_800204F8` for as long as
+/// the scene is loaded). Free-running means [`ANIM_HOLD`] and [`ANIM_CLAMP`]
+/// are both still clear after the spawn commands run.
+///
+/// A record index that does not decode is reported free-running: an actor with
+/// no runnable spawn prologue keeps the template flags, same as an unbound
+/// placement.
+pub fn prop_spawn_free_runs(man_file: &ManFile, man: &[u8], record: usize) -> bool {
+    let Some((rec, pc0)) = partition0_record(man_file, man, record) else {
+        return true;
+    };
+    let program = decode_prop_program(rec, pc0);
+    let mut anim = PropAnim::spawned(1, 2, false, 0);
+    for c in &program.spawn {
+        c.apply(&mut anim);
+    }
+    anim.flags & (ANIM_HOLD | ANIM_CLAMP) == 0
+}
+
 /// One placed prop's animation + interaction runtime: its live [`PropAnim`],
 /// the program its bind record decodes to, the record itself (the prop's
 /// field-VM script), and the actor state the retail collision / touch probes

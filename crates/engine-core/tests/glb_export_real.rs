@@ -128,13 +128,38 @@ fn town01_world_export_bakes_all_three_artifact_families() {
     );
 
     // --- Animated props (windmill sails etc.): clip frames > 1, instanced. ---
-    let props = export_animated_prop_glbs(&scene, &a, &opts);
+    let props = export_animated_prop_glbs(&index, &scene, &a, &opts);
     assert!(!props.is_empty(), "town01 has animated props");
     for p in &props {
         assert!(p.frame_count > 1);
         assert!(!p.instances.is_empty());
         let pj = glb_json(&p.glb);
         assert_eq!(pj["animations"].as_array().map(Vec::len), Some(1));
+    }
+    // The loop/one-shot split is real data, not a constant: town01 carries
+    // both free-running props and one-shot swings (the door/cupboard family
+    // parks its clip held at spawn).
+    assert!(
+        props.iter().any(|p| p.cyclic) && props.iter().any(|p| !p.cyclic),
+        "town01 has both cyclic and one-shot prop clips"
+    );
+    // The windmill (env slot 13, the village's one always-running prop): its
+    // clip ends ~179 degrees displaced, so the keyframe-shape test alone
+    // calls it a one-shot - but its bind record's spawn pass is empty, the
+    // actor keeps the template's looping flags, and the sails spin under the
+    // unconditional anim tick. The retail-program verdict must win here.
+    // Contrast: env slot 15 (the interior cupboards) spawns `ResetHold` and
+    // must stay one-shot.
+    let windmill = props
+        .iter()
+        .find(|p| p.env_slot == 13)
+        .expect("town01 exports the windmill prop (env slot 13)");
+    assert!(
+        windmill.cyclic,
+        "the windmill free-runs per its retail bind program"
+    );
+    if let Some(cupboard) = props.iter().find(|p| p.env_slot == 15) {
+        assert!(!cupboard.cyclic, "cupboards spawn held (one-shot)");
     }
 
     // --- Traversal: both doorway families resolve for Rim Elm, with

@@ -37,16 +37,21 @@
 //! as fully transparent (alpha 0) and the material uses `MASK` alpha, so
 //! cutout foliage / grates export as cutouts.
 //!
-//! Semi-transparent (ABE) prims split into a **second material** with
-//! `alphaMode: BLEND` and a 0.5 base-colour alpha: PSX blend mode 0
-//! (`B/2 + F/2`, the dominant mode - water sheets, light pools) is exactly
-//! standard alpha blending at 0.5, and a depth-test-only transparent queue is
-//! also what keeps retail's coincident-plane scroll layers (the sea's stacked
-//! sheets) from z-fighting in depth-writing importers (Unity/glTFast puts
-//! BLEND in the no-depth-write transparent queue, matching the engine
-//! renderers' own ABE pass). The ABE flag rides each vertex's TSB bit 15
+//! Semi-transparent (ABE) prims split into **one material per PSX blend
+//! rate** (the ABR field, TSB bits 5..6): `legaia_semi_abr0` = `B/2 + F/2`,
+//! `abr1` = `B + F` (additive - window light shafts, glows), `abr2` =
+//! `B - F`, `abr3` = `B + F/4`. Core glTF can only express alpha blending,
+//! so every semi material ships `alphaMode: BLEND` (a depth-test-only
+//! transparent queue is also what keeps retail's coincident-plane scroll
+//! layers - the sea's stacked sheets - from z-fighting in depth-writing
+//! importers) with the rate approximated in the base-colour alpha; the
+//! material **name** is the contract an importer restores the real blend
+//! state from (the Unity kit maps `abr1`/`abr3` onto an additive shader -
+//! rendered as plain alpha blend they read as a grey film, not a glow).
+//! The ABE flag rides each vertex's TSB bit 15
 //! (`legaia_tmd::mesh::TSB_SEMI_TRANSPARENT_BIT`) on both hybrid halves;
-//! [`tile_key`] masks it off, so atlas tiling is unaffected.
+//! [`tile_key`] masks both it and the ABR bits off, so atlas tiling is
+//! unaffected.
 
 use crate::gltf_color;
 use crate::monster_gltf::{BinBuilder, TARGET_ARRAY, pack_glb, rgba_to_png};
@@ -277,8 +282,10 @@ pub fn build_scene_glb_animated(
     let mut gltf_meshes: Vec<Value> = Vec::new();
     // meshes[] index -> glTF mesh index (only used meshes are emitted).
     let mut gltf_mesh_of: BTreeMap<usize, usize> = BTreeMap::new();
-    // Any ABE triangle anywhere adds the BLEND material as materials[1].
-    let mut any_abe = false;
+    // ABR blend rate -> materials[] index, allocated on first use (opaque is
+    // always materials[0]). BTreeMap so allocation order is deterministic in
+    // insertion order via the running length.
+    let mut semi_mat_of: BTreeMap<u8, usize> = BTreeMap::new();
     for (mi, m) in meshes.iter().enumerate() {
         if !mesh_used[mi] {
             continue;
@@ -333,21 +340,22 @@ pub fn build_scene_glb_animated(
             .iter()
             .map(|&i| i.min(nverts.saturating_sub(1) as u32))
             .collect();
-        // Partition triangles by the prim's semi-transparency enable (every
-        // corner of a prim carries the same TSB, so the first corner decides).
-        let is_abe = |vi: u32| -> bool {
-            m.cba_tsb
-                .get(vi as usize * 2 + 1)
-                .is_some_and(|&tsb| tsb & legaia_tmd::mesh::TSB_SEMI_TRANSPARENT_BIT != 0)
-        };
-        let (mut opaque_idx, mut blend_idx) = (Vec::<u32>::new(), Vec::<u32>::new());
+        // Partition triangles by the prim's semi-transparency enable and,
+        // for ABE prims, the ABR blend rate (TSB bits 5..6) - every corner
+        // of a prim carries the same TSB, so the first corner decides.
+        // Keyed by materials[] index: 0 = opaque, semi rates allocate
+        // lazily; BTreeMap iteration then emits opaque first.
+        let mut buckets: BTreeMap<usize, Vec<u32>> = BTreeMap::new();
         for tri in indices.as_chunks::<3>().0 {
-            let dst = if is_abe(tri[0]) {
-                &mut blend_idx
+            let tsb = m.cba_tsb.get(tri[0] as usize * 2 + 1).copied().unwrap_or(0);
+            let mat = if tsb & legaia_tmd::mesh::TSB_SEMI_TRANSPARENT_BIT != 0 {
+                let abr = ((tsb >> 5) & 3) as u8;
+                let next = 1 + semi_mat_of.len();
+                *semi_mat_of.entry(abr).or_insert(next)
             } else {
-                &mut opaque_idx
+                0
             };
-            dst.extend_from_slice(tri);
+            buckets.entry(mat).or_default().extend_from_slice(tri);
         }
 
         let pos_acc = b.push_vec3(&positions, Some(TARGET_ARRAY), true);
@@ -379,7 +387,7 @@ pub fn build_scene_glb_animated(
             target_names.push(json!(t.name));
         }
         let mut prims: Vec<Value> = Vec::new();
-        for (idx, material) in [(&opaque_idx, 0), (&blend_idx, 1)] {
+        for (material, idx) in &buckets {
             if idx.is_empty() {
                 continue;
             }
@@ -392,9 +400,6 @@ pub fn build_scene_glb_animated(
                 prim["targets"] = json!(target_attrs.clone());
             }
             prims.push(prim);
-        }
-        if !blend_idx.is_empty() {
-            any_abe = true;
         }
         gltf_mesh_of.insert(mi, gltf_meshes.len());
         let mut mesh_json = json!({ "name": m.name, "primitives": prims });
@@ -440,6 +445,7 @@ pub fn build_scene_glb_animated(
     nodes.push(json!({ "name": name, "children": children }));
 
     let mut materials = vec![json!({
+        "name": "legaia_opaque",
         "pbrMetallicRoughness": {
             "baseColorTexture": { "index": 0 },
             "metallicFactor": 0.0, "roughnessFactor": 1.0
@@ -447,14 +453,24 @@ pub fn build_scene_glb_animated(
         "extensions": { "KHR_materials_unlit": {} },
         "alphaMode": "MASK", "alphaCutoff": 0.5, "doubleSided": true
     })];
-    if any_abe {
-        // PSX blend mode 0 (B/2 + F/2) as standard alpha blending at 0.5;
-        // importers keep BLEND out of the depth-writing opaque queue, which
-        // is what retail's coincident ABE scroll layers rely on.
+    // One BLEND material per ABR rate in use, appended at its allocated
+    // index. The name is the importer's contract (core glTF cannot express
+    // additive/subtractive blending); the alpha only approximates the rate
+    // for plain viewers - mode 0 (B/2 + F/2) IS alpha blending at 0.5,
+    // mode 3 (B + F/4) reads about right at 0.25, and modes 1/2 have no
+    // alpha-blend equivalent at all, so they keep 0.5 as the least-bad
+    // stand-in. Importers keep BLEND out of the depth-writing opaque queue,
+    // which is what retail's coincident ABE scroll layers rely on.
+    let mut semi_sorted: Vec<(usize, u8)> = semi_mat_of.iter().map(|(&a, &i)| (i, a)).collect();
+    semi_sorted.sort_unstable();
+    for (mat_idx, abr) in semi_sorted {
+        debug_assert_eq!(mat_idx, materials.len());
+        let alpha = if abr == 3 { 0.25 } else { 0.5 };
         materials.push(json!({
+            "name": format!("legaia_semi_abr{abr}"),
             "pbrMetallicRoughness": {
                 "baseColorTexture": { "index": 0 },
-                "baseColorFactor": [1.0, 1.0, 1.0, 0.5],
+                "baseColorFactor": [1.0, 1.0, 1.0, alpha],
                 "metallicFactor": 0.0, "roughnessFactor": 1.0
             },
             "extensions": { "KHR_materials_unlit": {} },
@@ -720,26 +736,31 @@ mod tests {
         assert_eq!(c[2][1], 0.0);
     }
 
-    /// ABE (semi-transparent) triangles split off into a second primitive on
-    /// a BLEND material; opaque scenes keep the single-material layout.
+    /// ABE (semi-transparent) triangles split off into per-ABR-rate
+    /// primitives on named BLEND materials; opaque scenes keep the
+    /// single-material layout.
     #[test]
     fn abe_triangles_split_into_a_blend_primitive() {
         let vram = Vram::new();
-        // Two triangles sharing a vertex pool: verts 0-2 opaque, 3-5 ABE
-        // (TSB bit 15 - `pack_tsb_semi` sets it from the group's ABE flag).
+        // Three triangles sharing a vertex pool: verts 0-2 opaque, 3-5 ABE
+        // rate 0 (TSB bit 15 - `pack_tsb_semi` sets it from the group's ABE
+        // flag), 6-8 ABE rate 1 (additive - ABR in TSB bits 5..6).
         let abe_tsb = 0x0005 | legaia_tmd::mesh::TSB_SEMI_TRANSPARENT_BIT;
+        let add_tsb = abe_tsb | (1 << 5);
         let m = SceneMesh {
             name: "water".into(),
             positions: vec![
                 0.0, 0.0, 0.0, 64.0, 0.0, 0.0, 0.0, -64.0, 0.0, //
-                0.0, 0.0, 8.0, 64.0, 0.0, 8.0, 0.0, -64.0, 8.0,
+                0.0, 0.0, 8.0, 64.0, 0.0, 8.0, 0.0, -64.0, 8.0, //
+                0.0, 0.0, 16.0, 64.0, 0.0, 16.0, 0.0, -64.0, 16.0,
             ],
-            uvs: vec![0, 0, 63, 0, 0, 63, 0, 0, 63, 0, 0, 63],
+            uvs: vec![0, 0, 63, 0, 0, 63, 0, 0, 63, 0, 0, 63, 0, 0, 63, 0, 0, 63],
             cba_tsb: vec![
                 0, 0x0005, 0, 0x0005, 0, 0x0005, //
-                0, abe_tsb, 0, abe_tsb, 0, abe_tsb,
+                0, abe_tsb, 0, abe_tsb, 0, abe_tsb, //
+                0, add_tsb, 0, add_tsb, 0, add_tsb,
             ],
-            indices: vec![0, 1, 2, 3, 4, 5],
+            indices: vec![0, 1, 2, 3, 4, 5, 6, 7, 8],
             flat_rgba: Vec::new(),
             morph_targets: Vec::new(),
         };
@@ -752,17 +773,25 @@ mod tests {
         let glb = build_scene_glb("abe", &[m], &instances, &vram).unwrap();
         let (root, _) = crate::gltf_color::glb_probe::split(&glb).expect("glb container");
         let prims = root["meshes"][0]["primitives"].as_array().unwrap();
-        assert_eq!(prims.len(), 2, "one opaque + one blend primitive");
+        assert_eq!(prims.len(), 3, "opaque + one blend primitive per rate");
         assert_eq!(prims[0]["material"], 0);
         assert_eq!(prims[1]["material"], 1);
+        assert_eq!(prims[2]["material"], 2);
         let mats = root["materials"].as_array().unwrap();
-        assert_eq!(mats.len(), 2);
+        assert_eq!(mats.len(), 3);
         assert_eq!(mats[0]["alphaMode"], "MASK");
+        assert_eq!(mats[0]["name"], "legaia_opaque");
         assert_eq!(mats[1]["alphaMode"], "BLEND");
+        assert_eq!(mats[1]["name"], "legaia_semi_abr0");
         assert_eq!(
             mats[1]["pbrMetallicRoughness"]["baseColorFactor"][3], 0.5,
             "PSX average blend approximated at half alpha"
         );
+        assert_eq!(
+            mats[2]["name"], "legaia_semi_abr1",
+            "additive prims land on their own named material"
+        );
+        assert_eq!(mats[2]["alphaMode"], "BLEND");
 
         // An all-opaque scene keeps exactly one material and one primitive.
         let glb = build_scene_glb("plain", &[quad_mesh(0, 0x0005)], &instances, &vram).unwrap();
