@@ -12,6 +12,10 @@ Shader "Legaia/Lit Vertex Color (Transparent)"
     {
         _MainTex ("Base (RGB) Alpha (blend)", 2D) = "white" {}
         _Color ("Tint", Color) = (1,1,1,1)
+        // See the cutout sibling: 0 = full |N.L|; toward 1 the angular
+        // term flattens (raised on character/prop meshes by the realism
+        // pass to kill the terminator band on low-poly figures).
+        _LightWrap ("Light wrap (flatten shading)", Range(0,1)) = 0
     }
     SubShader
     {
@@ -25,6 +29,7 @@ Shader "Legaia/Lit Vertex Color (Transparent)"
 
         sampler2D _MainTex;
         fixed4 _Color;
+        half _LightWrap;
 
         struct Input
         {
@@ -34,7 +39,7 @@ Shader "Legaia/Lit Vertex Color (Transparent)"
 
         half4 LightingLegaiaTwoSided (SurfaceOutput s, half3 lightDir, half atten)
         {
-            half nl = abs(dot(s.Normal, lightDir));
+            half nl = lerp(abs(dot(s.Normal, lightDir)), 1.0h, _LightWrap);
             half4 c;
             c.rgb = s.Albedo * _LightColor0.rgb * nl * atten;
             c.a = s.Alpha;

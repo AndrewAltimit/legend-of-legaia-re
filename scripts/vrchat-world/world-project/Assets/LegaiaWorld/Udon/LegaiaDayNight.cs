@@ -3,11 +3,16 @@
 // transform - the directional light sits on the same GameObject) through
 // a full day on a fixed cycle. Every client derives the same sun angle
 // from the shared server clock, so the cycle is synced across players
-// with no networking events or ownership.
+// by construction; the only networked state is `timeOffset`, the synced
+// jump the settings panel's Day / Night buttons apply for everyone.
 //
-// Night keeps the scene's ambient trilight (a dim, moonless look); only
-// the sun's intensity and colour animate. Shorten cycleMinutes or raise
-// dayShare if the dark stretch drags.
+// Night darkness: sun intensity alone is not enough - the trilight
+// ambient keeps lighting the landscape at daytime levels after sunset -
+// so this behaviour also sweeps the ambient (and fog colour) down to a
+// moonlit fraction of the daytime values it captures at Start. It also
+// enables `nightLights` (the realism pass's night_lamps container -
+// warm lamps on the buildings) only while the sun is below the horizon.
+// Shorten cycleMinutes or raise dayShare if the dark stretch drags.
 //
 // Requires UdonSharp (bundled with the VRChat worlds SDK).
 
@@ -17,6 +22,7 @@ using VRC.SDKBase;
 
 namespace LegaiaWorld
 {
+    [UdonBehaviourSyncMode(BehaviourSyncMode.Manual)]
     public class LegaiaDayNight : UdonSharpBehaviour
     {
         [Tooltip("The directional light this behaviour drives (the builder's LegaiaSun - on this same GameObject).")]
@@ -37,13 +43,65 @@ namespace LegaiaWorld
         [Tooltip("Sun colour just above the horizon (dawn / dusk).")]
         public Color horizonColor = new Color(1f, 0.55f, 0.25f);
 
+        [Tooltip("Midnight ambient as a fraction of the daytime trilight - the landscape's night darkness (the sun itself is already off at night). 0 = pitch black, 1 = night stays day-bright.")]
+        public float nightAmbientScale = 0.02f;
+
+        [Tooltip("Root object holding the night-only lamps (the realism pass's night_lamps container): enabled while the sun is below the horizon, disabled by day.")]
+        public GameObject nightLights;
+
+        [Tooltip("Root object holding the always-burning night torches (the realism pass's top-level torch container): enabled while the sun is below the horizon, disabled by day.")]
+        public GameObject nightTorches;
+
+        [Tooltip("Daytime ambience bed (breeze + birds) - its volume is faded in with the sun.")]
+        public AudioSource dayAmbience;
+
+        [Tooltip("Night ambience bed (crickets) - its volume is faded in as the sun sets.")]
+        public AudioSource nightAmbience;
+
+        [Tooltip("Peak volume of the daytime ambience bed.")]
+        public float dayAmbienceVolume = 0.16f;
+
+        [Tooltip("Peak volume of the night ambience bed.")]
+        public float nightAmbienceVolume = 0.2f;
+
+        // Synced jump applied on top of the server clock, so the menu's
+        // "Day" / "Night" buttons move the cycle for every player at once.
+        [UdonSynced]
+        private double timeOffset;
+
         private float azimuth;
+        private Color daySky;
+        private Color dayEquator;
+        private Color dayGround;
+        private Color dayFog;
+        private bool fogOn;
+        private bool lightsOn;
 
         void Start()
         {
             // The builder aims the sun with a world-space rotation; keep its
             // compass heading and let this behaviour own only the elevation.
             azimuth = transform.eulerAngles.y;
+            // The realism pass's daytime scene values are the reference the
+            // night interpolates from - captured once, and this behaviour is
+            // their only writer afterwards.
+            daySky = RenderSettings.ambientSkyColor;
+            dayEquator = RenderSettings.ambientEquatorColor;
+            dayGround = RenderSettings.ambientGroundColor;
+            fogOn = RenderSettings.fog;
+            dayFog = RenderSettings.fogColor;
+            if (nightLights != null)
+                lightsOn = nightLights.activeSelf;
+            else if (nightTorches != null)
+                lightsOn = nightTorches.activeSelf;
+        }
+
+        // Moonlit version of a daytime colour: dimmed to nightAmbientScale
+        // with a blue shift so night reads cold instead of gray.
+        Color NightOf(Color day)
+        {
+            return new Color(day.r * 0.7f, day.g * 0.85f, day.b * 1.3f)
+                * nightAmbientScale;
         }
 
         void Update()
@@ -54,7 +112,11 @@ namespace LegaiaWorld
             if (cycle < 1.0)
                 cycle = 1.0;
             float ds = Mathf.Clamp(dayShare, 0.05f, 0.95f);
-            float phase = (float)((Networking.GetServerTimeInSeconds() % cycle) / cycle);
+            double t = Networking.GetServerTimeInSeconds() + timeOffset;
+            double wrapped = t % cycle;
+            if (wrapped < 0.0)
+                wrapped += cycle;
+            float phase = (float)(wrapped / cycle);
             // 0..dayShare maps to the 180 degrees above the horizon,
             // the rest to the 180 below - a piecewise-constant-rate sweep.
             float elev = phase < ds
@@ -64,6 +126,70 @@ namespace LegaiaWorld
             float up = Mathf.Sin(elev * Mathf.Deg2Rad);
             sun.intensity = Mathf.Clamp01(up * 4f) * dayIntensity;
             sun.color = Color.Lerp(horizonColor, dayColor, Mathf.Clamp01(up * 2.5f));
+
+            // Landscape darkness: sweep the trilight ambient (and the fog
+            // colour, so distant haze doesn't glow day-bright) down to the
+            // moonlit fraction as the sun sets.
+            float dayF = Mathf.Clamp01(up * 2.5f);
+            RenderSettings.ambientSkyColor =
+                Color.Lerp(NightOf(daySky), daySky, dayF);
+            RenderSettings.ambientEquatorColor =
+                Color.Lerp(NightOf(dayEquator), dayEquator, dayF);
+            RenderSettings.ambientGroundColor =
+                Color.Lerp(NightOf(dayGround), dayGround, dayF);
+            if (fogOn)
+                RenderSettings.fogColor = Color.Lerp(NightOf(dayFog), dayFog, dayF);
+
+            // Building lamps + planted torches: on from just before sunset
+            // to just after sunrise. One SetActive per container flips all.
+            bool night = up < 0.05f;
+            if (night != lightsOn)
+            {
+                lightsOn = night;
+                if (nightLights != null)
+                    nightLights.SetActive(night);
+                if (nightTorches != null)
+                    nightTorches.SetActive(night);
+            }
+
+            // Ambience beds: crossfade breeze/birds against crickets with
+            // the same day factor the ambient sweep uses.
+            if (dayAmbience != null)
+                dayAmbience.volume = dayAmbienceVolume * dayF;
+            if (nightAmbience != null)
+                nightAmbience.volume = nightAmbienceVolume * (1f - dayF);
+        }
+
+        // --- Menu jumps -------------------------------------------------
+        // Jump the shared cycle so "now" lands at the requested phase, and
+        // sync the offset: every player's clock-derived sun agrees again on
+        // the next serialization.
+
+        public void JumpToDay()
+        {
+            float ds = Mathf.Clamp(dayShare, 0.05f, 0.95f);
+            JumpToPhase(0.5f * ds); // high noon
+        }
+
+        public void JumpToNight()
+        {
+            float ds = Mathf.Clamp(dayShare, 0.05f, 0.95f);
+            JumpToPhase(ds + 0.5f * (1f - ds)); // midnight
+        }
+
+        void JumpToPhase(float target)
+        {
+            double cycle = cycleMinutes * 60.0;
+            if (cycle < 1.0)
+                cycle = 1.0;
+            double t = Networking.GetServerTimeInSeconds();
+            double current = (t + timeOffset) % cycle;
+            if (current < 0.0)
+                current += cycle;
+            timeOffset += target * cycle - current;
+            if (!Networking.IsOwner(gameObject))
+                Networking.SetOwner(Networking.LocalPlayer, gameObject);
+            RequestSerialization();
         }
     }
 }

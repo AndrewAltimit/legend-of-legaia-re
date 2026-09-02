@@ -82,6 +82,7 @@ namespace LegaiaWorld
         bool playWorldMorphClip = true;
         bool addMusic = true;
         float musicVolume = 0.5f;
+        bool campProps = true;
 
         // Optional realism layer (LegaiaRealism.cs) - every pass defaults
         // on; untick everything in the foldout for the faithful
@@ -91,10 +92,15 @@ namespace LegaiaWorld
         Vector2 scroll;
 
         // Equipment props: place the `export-glb --items` weapons as
-        // (grabbable) props near the spawn.
+        // (grabbable) props near the spawn. The size multiplier sits on
+        // top of the scene's export scale: these are BATTLE-mode models,
+        // authored against battle proportions the field never shows, and
+        // at 1:1 with the field scale they read comically large in hand -
+        // half the world scale lands them at believable prop size.
         string itemsManifestPath = "";
         bool equipWeaponsOnly = true;
         bool equipPickups = true;
+        float equipSizeMult = 0.5f;
 
         [MenuItem("Legaia/Build Scene From Manifest...")]
         static void Open()
@@ -161,9 +167,11 @@ namespace LegaiaWorld
             openDoorsOnApproach = EditorGUILayout.Toggle(
                 new GUIContent("Doors open on approach",
                     "Props the manifest tags as doors (`is_door` / gate " +
-                    "leaves on an exit band) play their swing once when a " +
-                    "player comes near and hold the open pose, instead of " +
-                    "swinging on a loop forever"),
+                    "leaves on an exit band) - plus any prop whose clip is " +
+                    "a one-shot (`cyclic: false`: interior doors, cupboards, " +
+                    "drawers) - play their swing once when a player comes " +
+                    "near and hold the open pose, instead of swinging on a " +
+                    "loop forever"),
                 openDoorsOnApproach);
             playWorldMorphClip = EditorGUILayout.Toggle(
                 new GUIContent("Animate world morphs",
@@ -177,6 +185,14 @@ namespace LegaiaWorld
                 addMusic);
             using (new EditorGUI.DisabledScope(!addMusic))
                 musicVolume = EditorGUILayout.Slider("  Music volume", musicVolume, 0f, 1f);
+            campProps = EditorGUILayout.Toggle(
+                new GUIContent("Camp props (menu, torches, fires)",
+                    "A pickup settings panel near spawn (local music mute, " +
+                    "synced day/night jump buttons) plus two carry-able " +
+                    "torches and two campfires - hold one and press Use to " +
+                    "light it (particles, warm point light, spatial crackle " +
+                    "loop). All generated, no game data"),
+                campProps);
 
             GUILayout.Space(8);
             RealismGUI();
@@ -219,6 +235,13 @@ namespace LegaiaWorld
                     "rack is a static display). Props spawn frozen on the rack " +
                     "and only go physical the first time a player drops one"),
                 equipPickups);
+            equipSizeMult = EditorGUILayout.FloatField(
+                new GUIContent("Size multiplier",
+                    "Extra scale on top of the scene's export scale. These " +
+                    "are battle-mode models the field never shows at field " +
+                    "proportions; 0.5 lands them at believable hand-prop " +
+                    "size, 1.0 is the raw battle-vs-field ratio"),
+                equipSizeMult);
             using (new EditorGUI.DisabledScope(
                 string.IsNullOrEmpty(itemsManifestPath) || string.IsNullOrEmpty(manifestPath)))
             {
@@ -248,7 +271,12 @@ namespace LegaiaWorld
                     "collider and stands near its spawn).", "OK");
                 return;
             }
-            float scale = MiniJson.GetNum(sm, "scale", 1f / 64f);
+            // Scene export scale x the battle-model size trim (see the
+            // field comment on equipSizeMult). Every use below - instance
+            // scale, collider bounds, the flat-piece box floor - goes
+            // through this one value, so the collider always matches the
+            // rendered size.
+            float scale = MiniJson.GetNum(sm, "scale", 1f / 64f) * equipSizeMult;
             var spawnT = sceneRoot.transform.Find("LegaiaSpawn");
             Vector3 origin = spawnT != null
                 ? spawnT.position : sceneRoot.transform.position;
@@ -486,15 +514,45 @@ namespace LegaiaWorld
                     "  Sun intensity", realism.sunIntensity, 0f, 2f);
                 realism.shadowStrength = EditorGUILayout.Slider(
                     "  Shadow strength", realism.shadowStrength, 0f, 1f);
+                realism.characterLightWrap = EditorGUILayout.Slider(
+                    new GUIContent("  NPC/prop light wrap",
+                        "Evens out the lighting on character and prop meshes " +
+                        "(0 = full directional Lambert, 1 = flat): the " +
+                        "lighting terminator cuts a harsh dark band across a " +
+                        "low-poly face. World surfaces keep full lighting"),
+                    realism.characterLightWrap, 0f, 1f);
                 realism.dayNight = EditorGUILayout.Toggle(
                     new GUIContent("  Day / night cycle",
                         "Udon: the sun sweeps a full day on a fixed cycle, " +
                         "synced across players via server time (needs the " +
-                        "VRChat SDK). Night keeps the dim ambient"),
+                        "VRChat SDK). Night dims the ambient to the darkness " +
+                        "slider below"),
                     realism.dayNight);
                 if (realism.dayNight)
+                {
                     realism.dayNightMinutes = EditorGUILayout.Slider(
                         "    Cycle (minutes)", realism.dayNightMinutes, 1f, 120f);
+                    realism.nightAmbient = EditorGUILayout.Slider(
+                        new GUIContent("    Night darkness",
+                            "Midnight ambient as a fraction of the daytime " +
+                            "trilight - lower = darker landscape at night " +
+                            "(the sun itself is already off)"),
+                        realism.nightAmbient, 0f, 1f);
+                    realism.nightLamps = EditorGUILayout.Toggle(
+                        new GUIContent("    Night lamps on buildings",
+                            "Small warm lights at each village building " +
+                            "window (anchored on the world mesh's own " +
+                            "authored window-glow volumes; doorways when a " +
+                            "scene has none), on only while the sun is down"),
+                        realism.nightLamps);
+                    realism.nightTorches = EditorGUILayout.Toggle(
+                        new GUIContent("    Night torches (trees + doors)",
+                            "A planted stake torch by each tree (green " +
+                            "canopy clusters in the world mesh) and beside " +
+                            "each village doorway, burning only while the " +
+                            "sun is down"),
+                        realism.nightTorches);
+                }
             }
             realism.skyAndFog = EditorGUILayout.Toggle(
                 new GUIContent("Sky + distance fog",
@@ -546,9 +604,10 @@ namespace LegaiaWorld
                 realism.interiorRoomDistance = EditorGUILayout.Slider(
                     new GUIContent("  Room distance (m)",
                         "How far from the spawn a teleport endpoint must sit " +
-                        "to count as a detached interior room (town01: village " +
-                        "endpoints stay within ~52m, rooms start at ~86m)"),
-                    realism.interiorRoomDistance, 20f, 150f);
+                        "to count as a detached interior room (town01 at the " +
+                        "1 m-per-tile scale: village endpoints stay within " +
+                        "~26m, rooms start at ~43m)"),
+                    realism.interiorRoomDistance, 10f, 150f);
             }
             realism.smoothTextures = EditorGUILayout.Toggle(
                 new GUIContent("Smooth textures (bilinear)",
@@ -557,9 +616,11 @@ namespace LegaiaWorld
                     "glb reimport resets it - rerun after one"),
                 realism.smoothTextures);
             realism.ambientAudio = EditorGUILayout.Toggle(
-                new GUIContent("Ambient audio bed",
-                    "A quiet synthesized wind/surf noise loop on a 2D source - " +
-                    "generated audio, not from the disc"),
+                new GUIContent("Ambient audio beds",
+                    "Quiet synthesized loops on 2D sources: a wind/surf base, " +
+                    "a daytime bed (breeze + birds) and a night bed (crickets) " +
+                    "crossfaded with the day/night sun - generated audio, not " +
+                    "from the disc"),
                 realism.ambientAudio);
             using (new EditorGUI.DisabledScope(!realism.ambientAudio))
                 realism.ambientVolume = EditorGUILayout.Slider(
@@ -571,8 +632,19 @@ namespace LegaiaWorld
                     "still (needs the VRChat SDK)"),
                 realism.npcWander);
             using (new EditorGUI.DisabledScope(!realism.npcWander))
+            {
                 realism.wanderRadius = EditorGUILayout.Slider(
                     "  Wander radius (m)", realism.wanderRadius, 0.5f, 8f);
+                realism.wanderFacingOverrides = EditorGUILayout.TextField(
+                    new GUIContent("  Facing overrides",
+                        "Per-NPC facing trim in degrees for the rare model " +
+                        "whose face is authored off the rig's -Z in vertex " +
+                        "space (it walks sideways/backwards and no automatic " +
+                        "measurement can see it). Format: npc_30:90; " +
+                        "npc_07:-90 - keys match the NPC glb file name, and " +
+                        "the trim survives rebuilds"),
+                    realism.wanderFacingOverrides);
+            }
 
             GUILayout.Space(4);
             using (new EditorGUI.DisabledScope(
@@ -602,6 +674,15 @@ namespace LegaiaWorld
             if (realism.NeedsUdon)
                 EnsureUdonProgramAssets();
             LegaiaRealism.Apply(root, m, sceneName, realism);
+            // The passes above regenerate what per-scene deletions target
+            // (interior shells, lamps) - re-apply them, and refresh the
+            // descriptor spawn (a VRCWorld prefab added after the build
+            // picks up LegaiaSpawn here without a full rebuild).
+            var settings = LegaiaSceneSettings.Load(sceneName);
+            settings.ApplyDeletions(root);
+            var spawnT = root.transform.Find("LegaiaSpawn");
+            if (settings.setDescriptorSpawn && spawnT != null)
+                LegaiaSceneSettings.AssignDescriptorSpawn(spawnT);
         }
 
         internal static Vector3 G2U(Vector3 g) => new Vector3(-g.x, g.y, g.z);
@@ -612,6 +693,10 @@ namespace LegaiaWorld
             object m = MiniJson.Parse(File.ReadAllText(manifestPath));
             string sceneName = MiniJson.AsStr(MiniJson.Get(m, "scene")) ?? "scene";
             string worldGlb = MiniJson.AsStr(MiniJson.Get(m, "world_glb"));
+
+            // Per-scene refinements (deleted objects, static / removed
+            // NPCs, spawn override) - see LegaiaSceneSettings.cs.
+            var settings = LegaiaSceneSettings.Load(sceneName);
 
             float scale = MiniJson.GetNum(m, "scale", 1f);
             // Current exports bake the scale onto each NPC / prop glb's own
@@ -637,7 +722,7 @@ namespace LegaiaWorld
             // U# refuses to attach a behaviour whose script has no
             // UdonSharpProgramAsset - and bare .cs files copied into a
             // project have none. Create any missing ones before wiring.
-            if (wireTeleports || openDoorsOnApproach || realism.NeedsUdon)
+            if (wireTeleports || openDoorsOnApproach || campProps || realism.NeedsUdon)
                 EnsureUdonProgramAssets();
 
             var root = new GameObject("Legaia_" + sceneName);
@@ -666,6 +751,15 @@ namespace LegaiaWorld
                     {
                         if (mf.sharedMesh == null || mf.GetComponent<MeshCollider>() != null)
                             continue;
+                        bool solid = false;
+                        for (int sm = 0; sm < mf.sharedMesh.subMeshCount; sm++)
+                            if (SubmeshCollides(mf, sm))
+                            {
+                                solid = true;
+                                break;
+                            }
+                        if (!solid)
+                            continue; // pure light/effect mesh: walk through
                         mf.gameObject.AddComponent<MeshCollider>().sharedMesh = mf.sharedMesh;
                     }
                 }
@@ -686,6 +780,7 @@ namespace LegaiaWorld
             spawnGo.transform.localPosition = spawn + Vector3.up * 0.1f;
 
             // --- Scene music (the exported seamless BGM loop) ---
+            AudioSource musicSrc = null;
             string musicFile = MiniJson.AsStr(
                 MiniJson.Get(MiniJson.Get(m, "music"), "file"));
             if (addMusic && musicFile != null)
@@ -699,6 +794,10 @@ namespace LegaiaWorld
                     src.playOnAwake = true;
                     src.spatialBlend = 0f; // the town theme plays everywhere
                     src.volume = musicVolume;
+                    // SDK compliance: a flat 2D source still wants a
+                    // (disabled) VRC_SpatialAudioSource sibling.
+                    LegaiaAudioGen.AddVrcSpatial(root, false, 0f, 0f, 0f);
+                    musicSrc = src;
                 }
                 else
                 {
@@ -717,6 +816,8 @@ namespace LegaiaWorld
                 if (conditional && !includeConditionalNpcs)
                     continue;
                 string file = MiniJson.AsStr(MiniJson.Get(n, "file"));
+                if (settings.NpcIsRemoved(file))
+                    continue;
                 var go = InstantiateGlb(dir + "/" + file, npcRoot.transform);
                 if (go == null) continue;
                 // Negative Z: the handedness mirror (see header note);
@@ -728,7 +829,11 @@ namespace LegaiaWorld
                 if (!string.IsNullOrEmpty(label))
                     go.name += " (" + label + ")";
                 var clips = MiniJson.AsList(MiniJson.Get(n, "clips"));
-                if (loopNpcClips && clips != null && clips.Count > 0)
+                // A frozen NPC (per-scene settings) holds its rest pose:
+                // prop-kind actors can carry a generic locomotion record
+                // in their bundle slot, and looping it walks the prop.
+                if (loopNpcClips && clips != null && clips.Count > 0
+                    && !settings.NpcIsFrozen(file))
                     AttachLoopingClip(go, dir + "/" + file,
                         MiniJson.AsStr(clips[0]), dir, sceneName);
                 if (addNpcCapsules)
@@ -747,6 +852,12 @@ namespace LegaiaWorld
                 string file = MiniJson.AsStr(MiniJson.Get(p, "file"));
                 var insts = MiniJson.AsList(MiniJson.Get(p, "instances"));
                 if (file == null || insts == null) continue;
+                // A one-shot clip (swing/slide that ends displaced from its
+                // first frame - interior doors, cupboards, drawers) must
+                // never free-loop: looped it re-plays its opening forever.
+                // Older manifests lack the flag; treat those as cyclic so
+                // only the teleport/portal tagging fires, as before.
+                bool oneShot = MiniJson.Get(p, "cyclic") is bool cyc && !cyc;
                 foreach (object inst in insts)
                 {
                     // Per-instance guard: one failed wire (e.g. an Udon
@@ -765,11 +876,12 @@ namespace LegaiaWorld
                     go.transform.localRotation = Quaternion.Euler(0, YAW_SIGN * yaw, 0);
                     // A door-tagged instance (its bind record teleports the
                     // player, or it stands on a scene-exit band - a gate
-                    // leaf) opens on approach and stays open; anything else
-                    // free-runs its clip.
+                    // leaf) opens on approach and stays open, and so does
+                    // any one-shot clip regardless of tags; only cyclic
+                    // clips free-run.
                     bool isDoor = MiniJson.Get(inst, "is_door") is bool db && db;
                     bool gateLeaf = MiniJson.Get(inst, "near_portal") is double;
-                    if (openDoorsOnApproach && (isDoor || gateLeaf))
+                    if (openDoorsOnApproach && (isDoor || gateLeaf || oneShot))
                     {
                         AttachProximityDoor(go, dir + "/" + file, sceneName);
                         doorCount++;
@@ -810,7 +922,7 @@ namespace LegaiaWorld
                     object tp = tps[i];
                     object trig = MiniJson.Get(tp, "trigger");
                     string kind = MiniJson.AsStr(MiniJson.Get(tp, "kind"));
-                    Vector3 half = MiniJson.GetVec3(trig, "half_extents");
+                    Vector3 half = PlayerSizedHalf(MiniJson.GetVec3(trig, "half_extents"));
                     var go = new GameObject("teleport_" + i + "_" + kind);
                     go.transform.SetParent(tpRoot.transform, false);
                     // Trigger position is at the floor; centre the box a
@@ -871,7 +983,7 @@ namespace LegaiaWorld
                     if (targetRoot == null)
                         continue; // single-scene build: leave the exit inert
                     object trig = MiniJson.Get(p, "trigger");
-                    Vector3 half = MiniJson.GetVec3(trig, "half_extents");
+                    Vector3 half = PlayerSizedHalf(MiniJson.GetVec3(trig, "half_extents"));
                     var go = new GameObject("portal_" + i + "_" + target);
                     go.transform.SetParent(tpRoot.transform, false);
                     go.transform.localPosition =
@@ -934,10 +1046,40 @@ namespace LegaiaWorld
                         Quaternion.LookRotation(dirWorld.normalized, Vector3.up);
             }
 
+            // Per-scene spawn override: the value is what LegaiaSpawn's
+            // INSPECTOR shows (root-local - drag the marker, copy, paste),
+            // so it round-trips digit for digit. World space would come
+            // back sign-flipped on X under the mirrored root. Local
+            // position is mirror-invariant, but camp props below read the
+            // WORLD position, so this still runs before them.
+            if (settings.hasSpawn)
+                spawnGo.transform.localPosition = settings.spawnLocal;
+
+            // Camp props (settings panel, torches, campfires): built AFTER
+            // the mirror, in world space, in their own top-level container -
+            // world-space UI text under the root's X-flip would render
+            // mirror-written, and the ground raycasts want final collider
+            // positions.
+            if (campProps)
+                LegaiaCampProps.Build("Assets/LegaiaGenerated/" + sceneName,
+                    sceneName, spawnGo.transform.position, musicSrc);
+            else
+            {
+                var oldCamp = GameObject.Find(LegaiaCampProps.CONTAINER);
+                if (oldCamp != null)
+                    Undo.DestroyObjectImmediate(oldCamp);
+            }
+
             // Optional realism layer, after the final mirror stands (its
             // passes sample and scatter in the finished world frame).
             if (realism.AnyEnabled)
                 LegaiaRealism.Apply(root, m, sceneName, realism);
+
+            // Per-scene deletions run LAST - the names usually refer to
+            // objects the passes above generate (interior shells, lamps).
+            settings.ApplyDeletions(root);
+            if (settings.setDescriptorSpawn)
+                LegaiaSceneSettings.AssignDescriptorSpawn(spawnGo.transform);
 
             Selection.activeGameObject = root;
             Debug.Log("[Legaia] built " + sceneName + ": world + " + npcCount +
@@ -971,10 +1113,40 @@ namespace LegaiaWorld
             }
         }
 
-        /// One welded collision mesh for the whole world: every renderer
-        /// submesh (semi-transparent water included, so there's a floor over
-        /// the sea) combined in world-local space, saved as an asset, cooked
-        /// with colocated-vertex welding so hairline seams between adjacent
+        /// True when this submesh belongs in world collision. Opaque and
+        /// cutout surfaces are always solid. Semi-transparent surfaces
+        /// represent light (window shafts, glow cones) - the player should
+        /// walk straight through those, and a slanted shaft even acts as a
+        /// walkable ramp when cooked solid - so a transparent submesh only
+        /// collides when it is shaped like a water sheet (large, flat,
+        /// horizontal): the sea keeps its floor, the light does not.
+        static bool SubmeshCollides(MeshFilter mf, int sm)
+        {
+            var r = mf.GetComponent<Renderer>();
+            var mats = r != null ? r.sharedMaterials : null;
+            Material mat = mats != null && sm < mats.Length ? mats[sm] : null;
+            if (mat == null || mat.renderQueue <
+                (int)UnityEngine.Rendering.RenderQueue.Transparent)
+                return true;
+            var verts = mf.sharedMesh.vertices;
+            var tris = mf.sharedMesh.GetTriangles(sm);
+            if (tris.Length == 0)
+                return false;
+            // World space is meters here (the build mirror is applied after
+            // colliders; the glb bakes the export scale into vertices).
+            Matrix4x4 toWorld = mf.transform.localToWorldMatrix;
+            Bounds b = new Bounds(
+                toWorld.MultiplyPoint3x4(verts[tris[0]]), Vector3.zero);
+            for (int i = 1; i < tris.Length; i++)
+                b.Encapsulate(toWorld.MultiplyPoint3x4(verts[tris[i]]));
+            return b.size.y <= 2f && Mathf.Max(b.size.x, b.size.z) >= 10f;
+        }
+
+        /// One welded collision mesh for the whole world: every solid
+        /// renderer submesh (see SubmeshCollides - semi-transparent light
+        /// meshes are walk-through, water sheets keep a floor over the sea)
+        /// combined in world-local space, saved as an asset, cooked with
+        /// colocated-vertex welding so hairline seams between adjacent
         /// tile meshes close instead of dropping a player capsule through.
         static void AddMergedCollider(GameObject world, string sceneName)
         {
@@ -984,12 +1156,16 @@ namespace LegaiaWorld
                 if (mf.sharedMesh == null) continue;
                 var toLocal = world.transform.worldToLocalMatrix * mf.transform.localToWorldMatrix;
                 for (int sm = 0; sm < mf.sharedMesh.subMeshCount; sm++)
+                {
+                    if (!SubmeshCollides(mf, sm))
+                        continue;
                     combine.Add(new CombineInstance
                     {
                         mesh = mf.sharedMesh,
                         subMeshIndex = sm,
                         transform = toLocal
                     });
+                }
             }
             if (combine.Count == 0) return;
 
@@ -1146,11 +1322,35 @@ namespace LegaiaWorld
             var box = trigger.AddComponent<BoxCollider>();
             box.isTrigger = true;
             box.center = Vector3.up * 1.2f;
-            box.size = new Vector3(6f, 3f, 6f);
+            // Player-reach sized, in absolute meters (the player stays
+            // real-sized whatever the world scale): at the 1 m-per-tile
+            // export a wider box would swallow a whole hut interior and
+            // pop its cupboards open from the doorway.
+            box.size = new Vector3(3f, 3f, 3f);
 
             var udon = TryAttachUdon(trigger, "LegaiaDoor");
             SetUdonField(udon, "doorAnimator", animator);
             SyncUdonProxy(udon);
+        }
+
+        /// Manifest trigger half-extents with an absolute player-sized
+        /// floor. The authored extents scale with the world (retail's door
+        /// bands are collision-tile sized), but the player stays real-sized
+        /// whatever the export scale - at 1 m per tile a map-door trigger
+        /// shrinks to half a meter and becomes easy to walk past. Floors in
+        /// METERS: half-width 1.1 (2.2 m across - a retail trigger hugging
+        /// the door plane is otherwise hard to clip when the doorway is
+        /// recessed; the wall behind absorbs the backward growth, and the
+        /// doorway loop guard keeps the bigger boxes from chain-firing a
+        /// paired landing), half-height 1.1 (covers a standing player; the
+        /// box bottom stays on the floor because the caller centres it a
+        /// half-height up).
+        internal static Vector3 PlayerSizedHalf(Vector3 half)
+        {
+            return new Vector3(
+                Mathf.Max(half.x, 1.1f),
+                Mathf.Max(half.y, 1.1f),
+                Mathf.Max(half.z, 1.1f));
         }
 
         /// Attach an UdonSharp behaviour by type name without a compile-time
@@ -1189,7 +1389,8 @@ namespace LegaiaWorld
             bool created = false;
             foreach (string name in new[]
                      { "LegaiaDoorway", "LegaiaDoor", "LegaiaNpcWander",
-                       "LegaiaDayNight", "LegaiaPickupProp" })
+                       "LegaiaDayNight", "LegaiaPickupProp", "LegaiaTorch",
+                       "LegaiaWorldMenu", "LegaiaFlicker" })
             {
                 var t = FindType("LegaiaWorld." + name);
                 if (t == null) continue;

@@ -134,7 +134,24 @@ pub fn catalog_scene_npcs(
     let mut entries = Vec::new();
     let mut special_count = 0u32;
     let mut unposable_count = 0u32;
-    for (p, kind) in classify_placements(&mf, &man) {
+    for (mut p, kind) in classify_placements(&mf, &man) {
+        // Retail's placement installer pre-runs the record's spawn prologue,
+        // and a flag-dispatched spawn's taken arm relocates the actor before
+        // the first frame draws - the header tile is only a staging square
+        // (town01's running kids are staged on the standing kids' exact
+        // tiles). Resolve the cold fresh-game arm so the catalog's position
+        // is where the actor actually stands; a parked-sentinel arm decodes
+        // to the hide box and flows into the `conditional` flag below.
+        // See `man_field_scripts::placement_spawn_relocation`.
+        if !p.special_model
+            && let Some((x_enc, z_enc)) =
+                crate::man_field_scripts::placement_spawn_relocation(&mf, &man, &p, &|_| false)
+        {
+            p.tile_x = x_enc & 0x7F;
+            p.tile_z = z_enc & 0x7F;
+            p.world_x = crate::man_field_scripts::grid_byte_to_world(x_enc);
+            p.world_z = crate::man_field_scripts::grid_byte_to_world(z_enc);
+        }
         let nobj = if p.special_model {
             // Party / savepoint heads come from the global pool, not the
             // scene's. The curated shape routes them elsewhere; the play

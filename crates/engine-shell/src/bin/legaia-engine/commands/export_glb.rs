@@ -115,7 +115,7 @@ fn export_one(
     let props = if no_props {
         Vec::new()
     } else {
-        export_animated_prop_glbs(&scene, &a, opts)
+        export_animated_prop_glbs(index, &scene, &a, opts)
     };
     if !props.is_empty() {
         let prop_dir = dir.join("props");

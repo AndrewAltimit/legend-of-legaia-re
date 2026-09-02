@@ -48,7 +48,9 @@
 //   root (the exports pin NEAREST for the PSX look). In-editor asset
 //   tweak - a glb reimport resets it, rerun the pass after one.
 //
-// - Ambient audio: a synthesized wind/surf noise bed (WriteAmbienceWav -
+// - Ambient audio: a synthesized wind/surf noise bed plus day (breeze +
+//   birds) and night (crickets) beds whose volumes LegaiaDayNight
+//   crossfades with the sun (WriteAmbienceWav / LegaiaAudioGen -
 //   filtered noise, loop-crossfaded, written to LegaiaGenerated) on a
 //   quiet 2D AudioSource. Not disc audio.
 //
@@ -77,6 +79,17 @@ namespace LegaiaWorld
         public float shadowStrength = 0.75f;
         public bool dayNight = true;
         public float dayNightMinutes = 20f;
+        // Midnight ambient as a fraction of the daytime trilight - the
+        // landscape's night darkness (the sun itself is already off).
+        // Very low: at 0.05 the ground still read well-lit at night, so
+        // night is nearly black and the lamps/fires carve out the light.
+        public float nightAmbient = 0.02f;
+        // Warm point lights beside each village doorway, enabled by the
+        // day/night behaviour only while the sun is down.
+        public bool nightLamps = true;
+        // Planted stake torches by each tree and each village doorway,
+        // burning only while the sun is down.
+        public bool nightTorches = true;
         public bool skyAndFog = true;
         public bool foliage = true;
         public float grassDensity = 6f;
@@ -84,13 +97,24 @@ namespace LegaiaWorld
         public int grassSeed = 1;
         public bool interiorShells = true;
         public bool interiorGlow = true;
-        public float interiorShellMargin = 3f;
-        public float interiorRoomDistance = 60f;
+        // Defaults sized for the 1 m-per-tile export scale (1/128); a
+        // legacy 1/64 export wants roughly double on all three.
+        public float interiorShellMargin = 1.5f;
+        public float interiorRoomDistance = 30f;
         public bool smoothTextures = true;
         public bool ambientAudio = true;
         public float ambientVolume = 0.15f;
         public bool npcWander = true;
-        public float wanderRadius = 2.5f;
+        public float wanderRadius = 1.25f;
+        // Per-NPC facing trims that survive rebuilds, for the rare model
+        // whose face is authored off the rig's -Z in VERTEX space (no
+        // transform measurement can see that). "npc_30:90; npc_07:-90" -
+        // each key matches the manifest file stem, value = degrees.
+        public string wanderFacingOverrides = "";
+        // Flattens the |N.L| angular term on NPC/prop meshes only (0 =
+        // full Lambert, 1 = even): on a low-poly villager the lighting
+        // terminator cuts a harsh dark band across the face.
+        public float characterLightWrap = 0.75f;
 
         public bool AnyEnabled =>
             lighting || skyAndFog || foliage || interiorShells || smoothTextures ||
@@ -108,10 +132,19 @@ namespace LegaiaWorld
             Directory.CreateDirectory(genDir);
             try
             {
+                // Ambience beds first: ApplySun (inside ConvertToLit) wires
+                // the day/night crossfade to sources that must already exist.
+                if (o.ambientAudio)
+                    AddAmbience(root, genDir, o);
                 if (o.lighting)
                 {
                     EditorUtility.DisplayProgressBar("Legaia realism", "Lit materials + normals", 0.1f);
-                    ConvertToLit(root, genDir, o);
+                    // Lamps + torches first: ApplySun (inside ConvertToLit)
+                    // hands both containers to the day/night behaviour.
+                    GameObject lamps = BuildNightLamps(root, manifest, genDir, o);
+                    GameObject torches = BuildNightTorches(root, manifest,
+                        "Assets/LegaiaGenerated/" + sceneName, o);
+                    ConvertToLit(root, genDir, o, lamps, torches);
                 }
                 if (o.skyAndFog)
                     ApplySkyAndFog(root, genDir);
@@ -127,10 +160,9 @@ namespace LegaiaWorld
                     EditorUtility.DisplayProgressBar("Legaia realism", "Interior shells", 0.75f);
                     BuildInteriorShells(root, manifest, genDir, o);
                 }
-                if (o.ambientAudio)
-                    AddAmbience(root, genDir, o);
                 if (o.npcWander && manifest != null)
-                    WireWander(root, manifest, o);
+                    WireWander(root, manifest, o,
+                        LegaiaSceneSettings.Load(sceneName));
             }
             finally
             {
@@ -141,7 +173,8 @@ namespace LegaiaWorld
 
         // --- Lighting -------------------------------------------------------
 
-        static void ConvertToLit(GameObject root, string genDir, LegaiaRealismOptions o)
+        static void ConvertToLit(GameObject root, string genDir,
+            LegaiaRealismOptions o, GameObject nightLamps, GameObject nightTorches)
         {
             var cutout = Shader.Find("Legaia/Lit Vertex Color (Cutout)");
             var transparent = Shader.Find("Legaia/Lit Vertex Color (Transparent)");
@@ -151,6 +184,11 @@ namespace LegaiaWorld
                     "Assets/LegaiaWorld/Shaders/ imported? Lighting skipped.");
                 return;
             }
+            var additive = Shader.Find("Legaia/Vertex Color (Additive)");
+            if (additive == null)
+                Debug.LogWarning("[Legaia] Legaia/Vertex Color (Additive) not " +
+                    "found - additive prims (window light shafts) will render " +
+                    "alpha-blended and read grey instead of glowing.");
 
             var meshCache = new Dictionary<Mesh, Mesh>();
             var matCache = new Dictionary<Material, Material>();
@@ -170,7 +208,8 @@ namespace LegaiaWorld
                 {
                     if (mats[i] == null)
                         continue;
-                    var lit = LitVariant(mats[i], cutout, transparent, genDir, matCache, ref matIdx);
+                    var lit = LitVariant(mats[i], cutout, transparent, additive,
+                        genDir, matCache, ref matIdx);
                     if (lit != mats[i])
                     {
                         mats[i] = lit;
@@ -181,9 +220,43 @@ namespace LegaiaWorld
                     r.sharedMaterials = mats;
             }
 
-            ApplySun(root, o);
+            // Character-scale meshes get wrap lighting: on a low-poly
+            // villager the |N.L| terminator cuts a harsh dark band right
+            // across the face, so their materials flatten the angular term
+            // (shadow-map attenuation still applies). World surfaces keep
+            // full |N.L| so buildings stay directionally lit. Safe to set
+            // in place: NPC/prop glbs import their own material assets, so
+            // their lit twins are never shared with world-glb materials.
+            int wrapped = 0;
+            if (o.characterLightWrap > 0f)
+            {
+                var seen = new HashSet<Material>();
+                foreach (string sub in new[] { "npcs", "props" })
+                {
+                    var t = root.transform.Find(sub);
+                    if (t == null)
+                        continue;
+                    foreach (var r in t.GetComponentsInChildren<Renderer>(true))
+                        foreach (var mat in r.sharedMaterials)
+                            if (mat != null && mat.shader != null &&
+                                mat.shader.name.StartsWith("Legaia/Lit") &&
+                                seen.Add(mat))
+                            {
+                                mat.SetFloat("_LightWrap", o.characterLightWrap);
+                                wrapped++;
+                            }
+                }
+            }
+
+            ApplySun(root, o, nightLamps, nightTorches);
+            int addRouted = 0;
+            foreach (var v in matCache.Values)
+                if (additive != null && v != null && v.shader == additive)
+                    addRouted++;
             Debug.Log("[Legaia] lit conversion: " + meshCache.Count + " mesh(es), " +
-                      matCache.Count + " material(s).");
+                      matCache.Count + " material(s), " + addRouted +
+                      " routed to additive, " + wrapped +
+                      " character material(s) wrap-lit.");
         }
 
         /// A smoothed-normal duplicate of `src`, saved as a readable asset
@@ -266,16 +339,32 @@ namespace LegaiaWorld
         /// A lit twin of a glTFast-imported material: cutout or transparent
         /// by render queue, base texture + tint + cutoff carried over.
         /// Materials already on a Legaia/ shader pass through (idempotent).
+        ///
+        /// The exporter names each semi-transparent material with its PSX
+        /// ABR blend rate ("legaia_semi_abrN") because core glTF can only
+        /// say "alpha blend" - the name is the contract. Rate 1 (B + F,
+        /// window light shafts / glows), 3 (B + F/4) and 2 (B - F) route to
+        /// the unlit additive shader with the matching intensity / blend op;
+        /// rate 0 (B/2 + F/2) IS alpha blending and stays on the lit
+        /// transparent shader, as do unnamed BLEND materials from older
+        /// exports.
         static Material LitVariant(Material src, Shader cutout, Shader transparent,
-            string genDir, Dictionary<Material, Material> cache, ref int idx)
+            Shader additive, string genDir, Dictionary<Material, Material> cache,
+            ref int idx)
         {
             if (src.shader != null && src.shader.name.StartsWith("Legaia/"))
                 return src;
             if (cache.TryGetValue(src, out var got))
                 return got;
-            bool blend = src.renderQueue >=
+            int abr = -1;
+            int at = src.name.IndexOf("legaia_semi_abr");
+            if (at >= 0 && at + 15 < src.name.Length &&
+                char.IsDigit(src.name[at + 15]))
+                abr = src.name[at + 15] - '0';
+            bool add = additive != null && abr >= 1 && abr <= 3;
+            bool blend = !add && src.renderQueue >=
                 (int)UnityEngine.Rendering.RenderQueue.Transparent;
-            var m = new Material(blend ? transparent : cutout)
+            var m = new Material(add ? additive : blend ? transparent : cutout)
             {
                 name = src.name + "_lit"
             };
@@ -295,7 +384,21 @@ namespace LegaiaWorld
                     m.SetColor("_Color", src.GetColor(p));
                     break;
                 }
-            if (!blend)
+            if (add)
+            {
+                // The export approximates the additive rate in the base
+                // colour's alpha (0.5 / 0.25) for plain viewers; the shader
+                // carries the rate in _Intensity instead, so the copied
+                // tint's alpha must not darken the glow a second time.
+                var c = m.GetColor("_Color");
+                c.a = 1f;
+                m.SetColor("_Color", c);
+                m.SetFloat("_Intensity", abr == 3 ? 0.25f : 1f);
+                if (abr == 2)
+                    m.SetFloat("_BlendOp",
+                        (float)UnityEngine.Rendering.BlendOp.ReverseSubtract);
+            }
+            else if (!blend)
             {
                 float cut = 0.5f;
                 foreach (var p in new[] { "_Cutoff", "alphaCutoff", "_AlphaCutoff" })
@@ -329,7 +432,8 @@ namespace LegaiaWorld
             return null;
         }
 
-        static void ApplySun(GameObject root, LegaiaRealismOptions o)
+        static void ApplySun(GameObject root, LegaiaRealismOptions o,
+            GameObject nightLamps, GameObject nightTorches)
         {
             var existing = root.transform.Find("LegaiaSun");
             GameObject go = existing != null ? existing.gameObject : new GameObject("LegaiaSun");
@@ -353,15 +457,444 @@ namespace LegaiaWorld
 
             if (o.dayNight)
             {
+                // Re-runs must re-set the fields (the night_lamps container
+                // is rebuilt fresh each pass, so a wired-once reference goes
+                // stale) - get the existing proxy instead of skipping.
                 var dnType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaDayNight");
-                if (dnType != null && go.GetComponent(dnType) != null)
-                    return; // already wired
-                var udon = LegaiaWorldBuilder.TryAttachUdon(go, "LegaiaDayNight");
+                Component udon = dnType != null ? go.GetComponent(dnType) : null;
+                if (udon == null)
+                    udon = LegaiaWorldBuilder.TryAttachUdon(go, "LegaiaDayNight");
                 LegaiaWorldBuilder.SetUdonField(udon, "sun", sun);
                 LegaiaWorldBuilder.SetUdonField(udon, "cycleMinutes", o.dayNightMinutes);
                 LegaiaWorldBuilder.SetUdonField(udon, "dayIntensity", o.sunIntensity);
+                LegaiaWorldBuilder.SetUdonField(udon, "nightAmbientScale", o.nightAmbient);
+                LegaiaWorldBuilder.SetUdonField(udon, "nightLights", nightLamps);
+                LegaiaWorldBuilder.SetUdonField(udon, "nightTorches", nightTorches);
+                // Ambience crossfade: the beds AddAmbience built (if any).
+                var amb = root.transform.Find("ambience");
+                var dayBed = amb != null ? amb.Find("ambience_day") : null;
+                var nightBed = amb != null ? amb.Find("ambience_night") : null;
+                LegaiaWorldBuilder.SetUdonField(udon, "dayAmbience",
+                    dayBed != null ? dayBed.GetComponent<AudioSource>() : null);
+                LegaiaWorldBuilder.SetUdonField(udon, "nightAmbience",
+                    nightBed != null ? nightBed.GetComponent<AudioSource>() : null);
                 LegaiaWorldBuilder.SyncUdonProxy(udon);
+
+                // The settings panel's Day / Night buttons drive this cycle -
+                // wire its dayNight reference (the panel lives in the
+                // builder's top-level camp container, if built).
+                var menuGo = GameObject.Find("LegaiaMenu");
+                if (menuGo != null)
+                {
+                    var menuType =
+                        LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaWorldMenu");
+                    var menu = menuType != null ? menuGo.GetComponent(menuType) : null;
+                    if (menu != null)
+                    {
+                        LegaiaWorldBuilder.SetUdonField(menu, "dayNight", udon);
+                        LegaiaWorldBuilder.SyncUdonProxy(menu);
+                    }
+                }
             }
+        }
+
+        // --- Night lamps ----------------------------------------------------
+
+        /// A warm light at each village building window, held in one
+        /// "night_lamps" container that starts INACTIVE - the day/night
+        /// behaviour enables it only while the sun is below the horizon.
+        ///
+        /// Window positions come from the WORLD MESH itself: the retail
+        /// scene authors semi-transparent glow volumes right where light
+        /// visibly spills out of a hut window (town01 repeats one
+        /// identically-sized glow object on three separate huts), so every
+        /// village-side BLEND submesh of window-glow proportions marks "a
+        /// lit window of a building" exactly - the night light goes at the
+        /// shaft's top-vertex centroid, in the window opening, shining out.
+        /// No visible bulb mesh: the light pool on the wall is the effect.
+        /// Water sheets and room-side glows are filtered out by shape and by
+        /// the interior-room distance. Scenes with no glow volumes fall back to a
+        /// small lamp above each village-side doorway (from the manifest's
+        /// teleport endpoints).
+        ///
+        /// Returns null (and removes any stale container) when night lamps
+        /// or the day/night cycle are off - without the cycle nothing would
+        /// ever switch the lamps on.
+        static GameObject BuildNightLamps(GameObject root, object manifest,
+            string genDir, LegaiaRealismOptions o)
+        {
+            var old = root.transform.Find("night_lamps");
+            if (old != null)
+                Object.DestroyImmediate(old.gameObject);
+            if (!o.dayNight || !o.nightLamps || manifest == null)
+                return null;
+            Vector3 spawnW = root.transform.TransformPoint(LegaiaWorldBuilder.G2U(
+                MiniJson.GetVec3(MiniJson.Get(manifest, "spawn"), "position")));
+            float DistXZ(Vector3 a, Vector3 b)
+            {
+                a.y = b.y = 0;
+                return (a - b).magnitude;
+            }
+            var pts = new List<Vector3>();
+            void Consider(Vector3 w, float dedupe)
+            {
+                if (DistXZ(w, spawnW) > o.interiorRoomDistance)
+                    return; // room side - interiors have the shell glow
+                foreach (var q in pts)
+                    if (DistXZ(q, w) < dedupe)
+                        return;
+                pts.Add(w);
+            }
+
+            // Primary: authored window-glow volumes in the world mesh.
+            var world = root.transform.Find("world");
+            if (world != null)
+                foreach (var mf in world.GetComponentsInChildren<MeshFilter>())
+                {
+                    if (mf.sharedMesh == null)
+                        continue;
+                    var r = mf.GetComponent<Renderer>();
+                    var mats = r != null ? r.sharedMaterials : null;
+                    for (int sm = 0; sm < mf.sharedMesh.subMeshCount; sm++)
+                    {
+                        Material mat = mats != null && sm < mats.Length
+                            ? mats[sm] : null;
+                        if (mat == null || mat.renderQueue <
+                            (int)UnityEngine.Rendering.RenderQueue.Transparent)
+                            continue;
+                        var verts = mf.sharedMesh.vertices;
+                        var tris = mf.sharedMesh.GetTriangles(sm);
+                        if (tris.Length == 0)
+                            continue;
+                        Matrix4x4 toWorld = mf.transform.localToWorldMatrix;
+                        var wpts = new List<Vector3>(tris.Length);
+                        foreach (int ti in tris)
+                            wpts.Add(toWorld.MultiplyPoint3x4(verts[ti]));
+                        Bounds b = new Bounds(wpts[0], Vector3.zero);
+                        for (int i = 1; i < wpts.Count; i++)
+                            b.Encapsulate(wpts[i]);
+                        // Window-glow proportions: a couple of meters tall,
+                        // not map-spanning (water sheets are flat and wide).
+                        if (b.size.y < 0.5f || b.size.y > 4.5f ||
+                            Mathf.Max(b.size.x, b.size.z) > 8f)
+                            continue;
+                        // The glow volume is the light SHAFT spilling down and
+                        // out of the window - its centroid hangs in mid-air
+                        // off the wall. The shaft's own geometry says where
+                        // the window is: its TOP band of vertices sits in the
+                        // window opening, its bottom band where the light
+                        // pools on the ground. Park the lamp at the top-band
+                        // centroid, nudged along the spill direction so it
+                        // sits just outside the opening. (Raycast wall-snap
+                        // was tried and grabbed unrelated nearby walls - the
+                        // palisade - so the anchor is purely geometric now.)
+                        float topY = b.max.y - b.size.y * 0.3f;
+                        float botY = b.min.y + b.size.y * 0.3f;
+                        Vector3 win = Vector3.zero, foot = Vector3.zero;
+                        int wc = 0, fc = 0;
+                        foreach (var wpt in wpts)
+                        {
+                            if (wpt.y >= topY)
+                            {
+                                win += wpt;
+                                wc++;
+                            }
+                            if (wpt.y <= botY)
+                            {
+                                foot += wpt;
+                                fc++;
+                            }
+                        }
+                        if (wc == 0)
+                            continue;
+                        win /= wc;
+                        Vector3 spill = fc > 0 ? foot / fc - win : Vector3.zero;
+                        spill.y = 0f;
+                        if (spill.sqrMagnitude > 1e-4f)
+                            win += spill.normalized * 0.25f;
+                        Consider(win, 2f);
+                    }
+                }
+            bool fromGlows = pts.Count > 0;
+
+            // Fallback: a lamp above each village-side doorway.
+            if (!fromGlows)
+            {
+                var tps = MiniJson.AsList(MiniJson.Get(manifest, "teleports"))
+                          ?? new List<object>();
+                foreach (object tp in tps)
+                {
+                    Consider(root.transform.TransformPoint(LegaiaWorldBuilder.G2U(
+                        MiniJson.GetVec3(MiniJson.Get(tp, "trigger"), "position")))
+                        + Vector3.up * 2.2f, 2.5f);
+                    Consider(root.transform.TransformPoint(LegaiaWorldBuilder.G2U(
+                        MiniJson.GetVec3(MiniJson.Get(tp, "destination"), "position")))
+                        + Vector3.up * 2.2f, 2.5f);
+                }
+            }
+            if (pts.Count == 0)
+                return null;
+
+            // Light only - no visible bulb mesh. A glowing orb floating by
+            // the window reads as an artifact; the warm pool of light on the
+            // wall and ground is the whole effect. (Stale orb material from
+            // earlier kit versions is cleaned up here.)
+            AssetDatabase.DeleteAsset(genDir + "/lamp_glow.mat");
+
+            var container = new GameObject("night_lamps");
+            container.transform.SetParent(root.transform, false);
+            for (int i = 0; i < pts.Count; i++)
+            {
+                var go = new GameObject("lamp_" + i);
+                go.transform.SetParent(container.transform, false);
+                // World-space placement (the root carries the mirror).
+                go.transform.position = pts[i];
+                var light = go.AddComponent<Light>();
+                light.type = LightType.Point;
+                // A tight pool by the window, not a street light: the
+                // window glow should read local against the dark ambient.
+                light.range = 3f;
+                light.intensity = 1.2f;
+                light.color = new Color(1f, 0.75f, 0.45f);
+                // Several per village: keep them cheap.
+                light.shadows = LightShadows.None;
+            }
+            container.SetActive(false); // day/night behaviour turns these on
+            Debug.Log("[Legaia] " + pts.Count + " night light(s) placed at " +
+                      (fromGlows ? "authored window glows." : "village doorways."));
+            return container;
+        }
+
+        // --- Night torches --------------------------------------------------
+
+        /// A planted stake torch by each tree and each village doorway,
+        /// burning only at night. The container is TOP-LEVEL, outside the
+        /// mirrored root (particles and audio under a negative scale
+        /// misbehave - same reason the camp props live outside), starts
+        /// inactive, and LegaiaDayNight enables it while the sun is down.
+        ///
+        /// Houses come from the manifest's village-side doorway-teleport
+        /// triggers: one stake flanking each door. Trees come from the
+        /// world mesh itself - green-reading upward triangles well ABOVE
+        /// the local ground (a canopy), grid-clustered in XZ, one stake at
+        /// each cluster's trunk. Same texel x COLOR_0 green test and
+        /// per-cell floor grid as the grass pass, inverted: grass keeps
+        /// ground green, this keeps floating green.
+        static GameObject BuildNightTorches(GameObject root, object manifest,
+            string campDir, LegaiaRealismOptions o)
+        {
+            const string NAME = "Legaia_night_torches";
+            var old = GameObject.Find(NAME);
+            if (old != null)
+                Object.DestroyImmediate(old);
+            if (!o.dayNight || !o.nightTorches || manifest == null)
+                return null;
+
+            Vector3 spawnW = root.transform.TransformPoint(LegaiaWorldBuilder.G2U(
+                MiniJson.GetVec3(MiniJson.Get(manifest, "spawn"), "position")));
+            float DistXZ(Vector3 a, Vector3 b)
+            {
+                a.y = b.y = 0;
+                return (a - b).magnitude;
+            }
+            var pts = new List<Vector3>();
+            void Consider(Vector3 w, float dedupe)
+            {
+                if (pts.Count >= 24)
+                    return; // keep the dynamic-light budget sane
+                if (DistXZ(w, spawnW) > o.interiorRoomDistance)
+                    return; // room side - interiors have the shell glow
+                foreach (var q in pts)
+                    if (DistXZ(q, w) < dedupe)
+                        return;
+                pts.Add(w);
+            }
+
+            // Houses: one torch flanking each village-side doorway. The
+            // trigger sits right at the wall, so step a little toward the
+            // village and to the side - beside the door, never in it.
+            var tps = MiniJson.AsList(MiniJson.Get(manifest, "teleports"))
+                      ?? new List<object>();
+            foreach (object tp in tps)
+            {
+                Vector3 w = root.transform.TransformPoint(LegaiaWorldBuilder.G2U(
+                    MiniJson.GetVec3(MiniJson.Get(tp, "trigger"), "position")));
+                if (DistXZ(w, spawnW) > o.interiorRoomDistance)
+                    continue;
+                Vector3 d = spawnW - w;
+                d.y = 0f;
+                d = d.sqrMagnitude > 1e-4f ? d.normalized : Vector3.forward;
+                var lateral = new Vector3(d.z, 0f, -d.x);
+                Consider(LegaiaCampProps.Ground(
+                    w + d * 0.35f + lateral * 0.7f), 2.5f);
+            }
+            int houseTorches = pts.Count;
+
+            foreach (var t in TreeTrunkPoints(root, spawnW, o))
+                Consider(t, 2.5f);
+
+            if (pts.Count == 0)
+                return null;
+
+            // Shared camp-prop assets (the camp dir, not realism/ - the
+            // pickup torches use the same ones, so they exist only once).
+            Directory.CreateDirectory(campDir);
+            var fireClip = LegaiaAudioGen.EnsureClip(
+                campDir + "/fire_crackle.wav", LegaiaAudioGen.FireCrackle);
+            var wood = LegaiaCampProps.EnsureMat(campDir, "camp_wood",
+                "Standard", new Color(0.36f, 0.24f, 0.13f));
+            var dark = LegaiaCampProps.EnsureMat(campDir, "camp_dark",
+                "Standard", new Color(0.16f, 0.14f, 0.12f));
+            var flameMat = LegaiaCampProps.EnsureFlameMaterial(campDir);
+            var smokeMat = LegaiaCampProps.EnsureSmokeMaterial(campDir);
+
+            var container = new GameObject(NAME);
+            for (int i = 0; i < pts.Count; i++)
+                LegaiaCampProps.BuildNightTorch(container.transform, pts[i],
+                    fireClip, wood, dark, flameMat, smokeMat, i);
+            container.SetActive(false); // day/night behaviour turns these on
+            Debug.Log("[Legaia] " + pts.Count + " night torch(es): " +
+                houseTorches + " by doorways, " + (pts.Count - houseTorches) +
+                " by trees.");
+            return container;
+        }
+
+        /// One trunk-side point per tree-sized canopy: green upward
+        /// triangles more than 1.5 m above their 1.5 m-cell's lowest upward
+        /// surface, bucketed into 2 m XZ cells, 8-neighbour-merged into
+        /// clusters. A cluster with real canopy area drops a ray from just
+        /// under its lowest leaf (nudged toward the village so the stake
+        /// stands beside the trunk, not inside it) to find the ground.
+        static List<Vector3> TreeTrunkPoints(GameObject root, Vector3 spawnW,
+            LegaiaRealismOptions o)
+        {
+            var result = new List<Vector3>();
+            var world = root.transform.Find("world");
+            if (world == null)
+                return result;
+            var texCache = new Dictionary<Texture, Texture2D>();
+            var groundMinY = new Dictionary<Vector2Int, float>();
+            var canopy = new List<(Vector3 cen, float area)>();
+            Vector2Int CellOf(Vector3 p) => new Vector2Int(
+                Mathf.FloorToInt(p.x / 1.5f), Mathf.FloorToInt(p.z / 1.5f));
+
+            foreach (var r in world.GetComponentsInChildren<Renderer>(false))
+            {
+                Mesh mesh = MeshOf(r);
+                if (mesh == null)
+                    continue;
+                var mats = r.sharedMaterials;
+                var verts = mesh.vertices;
+                var uvs = mesh.uv;
+                var cols = mesh.colors;
+                Matrix4x4 toWorld = r.transform.localToWorldMatrix;
+                for (int sm = 0; sm < mesh.subMeshCount; sm++)
+                {
+                    Texture2D tex = null;
+                    if (sm < mats.Length && mats[sm] != null)
+                        tex = ReadableCopy(ExtractMainTexture(mats[sm]), texCache);
+                    var tris = mesh.GetTriangles(sm);
+                    for (int i = 0; i < tris.Length; i += 3)
+                    {
+                        int t0 = tris[i], t1 = tris[i + 1], t2 = tris[i + 2];
+                        Vector3 a = toWorld.MultiplyPoint3x4(verts[t0]);
+                        Vector3 b = toWorld.MultiplyPoint3x4(verts[t1]);
+                        Vector3 d = toWorld.MultiplyPoint3x4(verts[t2]);
+                        Vector3 cr = Vector3.Cross(b - a, d - a);
+                        float area = cr.magnitude * 0.5f;
+                        if (area < 1e-4f)
+                            continue;
+                        if (Mathf.Abs(cr.y / (area * 2f)) < 0.65f)
+                            continue;
+                        Vector3 cen = (a + b + d) / 3f;
+                        var cell = CellOf(cen);
+                        if (!groundMinY.TryGetValue(cell, out float fY) ||
+                            cen.y < fY)
+                            groundMinY[cell] = cen.y;
+                        Color texel = Color.white;
+                        if (tex != null && uvs.Length > 0)
+                        {
+                            Vector2 uv = (uvs[t0] + uvs[t1] + uvs[t2]) / 3f;
+                            texel = tex.GetPixelBilinear(
+                                uv.x - Mathf.Floor(uv.x), uv.y - Mathf.Floor(uv.y));
+                        }
+                        Color vcol = Color.white;
+                        if (cols.Length > 0)
+                            vcol = (cols[t0] + cols[t1] + cols[t2]) / 3f;
+                        Color ground = texel * vcol;
+                        if (ground.g - Mathf.Max(ground.r, ground.b) <
+                            o.grassGreenThreshold)
+                            continue;
+                        canopy.Add((cen, area));
+                    }
+                }
+            }
+
+            // Elevated green only (the canopy), bucketed into 2 m XZ cells.
+            var cells =
+                new Dictionary<Vector2Int, (Vector3 wsum, float area, float minY)>();
+            foreach (var (cen, area) in canopy)
+            {
+                if (!groundMinY.TryGetValue(CellOf(cen), out float fY) ||
+                    cen.y <= fY + 1.5f)
+                    continue;
+                var k = new Vector2Int(
+                    Mathf.FloorToInt(cen.x / 2f), Mathf.FloorToInt(cen.z / 2f));
+                if (cells.TryGetValue(k, out var agg))
+                    cells[k] = (agg.wsum + cen * area, agg.area + area,
+                                Mathf.Min(agg.minY, cen.y));
+                else
+                    cells[k] = (cen * area, area, cen.y);
+            }
+
+            // Merge occupied 8-neighbour cells into per-tree clusters.
+            var keys = new List<Vector2Int>(cells.Keys);
+            var parent = new int[keys.Count];
+            var index = new Dictionary<Vector2Int, int>();
+            for (int i = 0; i < keys.Count; i++)
+            {
+                parent[i] = i;
+                index[keys[i]] = i;
+            }
+            int Find(int i) => parent[i] == i ? i : parent[i] = Find(parent[i]);
+            for (int i = 0; i < keys.Count; i++)
+                for (int dx = -1; dx <= 1; dx++)
+                    for (int dz = -1; dz <= 1; dz++)
+                        if (index.TryGetValue(
+                                new Vector2Int(keys[i].x + dx, keys[i].y + dz),
+                                out int j))
+                            parent[Find(j)] = Find(i);
+            var clusters =
+                new Dictionary<int, (Vector3 wsum, float area, float minY)>();
+            for (int i = 0; i < keys.Count; i++)
+            {
+                int rt = Find(i);
+                var c = cells[keys[i]];
+                if (clusters.TryGetValue(rt, out var agg))
+                    clusters[rt] = (agg.wsum + c.wsum, agg.area + c.area,
+                                    Mathf.Min(agg.minY, c.minY));
+                else
+                    clusters[rt] = c;
+            }
+
+            foreach (var c in clusters.Values)
+            {
+                if (c.area < 2.5f)
+                    continue; // a stray green scrap, not a tree
+                Vector3 cen = c.wsum / c.area;
+                Vector3 toSpawn = spawnW - cen;
+                toSpawn.y = 0f;
+                toSpawn = toSpawn.sqrMagnitude > 1e-4f
+                    ? toSpawn.normalized : Vector3.forward;
+                // Start just under the lowest leaf so the ray can't land on
+                // the canopy itself.
+                Vector3 start = new Vector3(cen.x, c.minY - 0.35f, cen.z)
+                    + toSpawn * 0.6f;
+                if (Physics.Raycast(start, Vector3.down, out RaycastHit hit,
+                        30f, ~0, QueryTriggerInteraction.Ignore))
+                    result.Add(hit.point);
+            }
+            return result;
         }
 
         // --- Sky + fog ------------------------------------------------------
@@ -462,6 +995,19 @@ namespace LegaiaWorld
             var chunks = new List<Mesh>();
             int tufts = 0;
 
+            // Grass grows on the GROUND: an upward-facing green triangle
+            // floating above other geometry (a tree canopy, a roof) must
+            // not scatter. Pass 1 records, per 1.5 m XZ cell, the lowest
+            // upward-facing surface height while collecting green
+            // candidates; pass 2 emits only candidates sitting within a
+            // step of their cell's floor - the ground under a tree is
+            // always lower than the canopy above it.
+            var groundMinY = new Dictionary<Vector2Int, float>();
+            var cand = new List<(Vector3 a, Vector3 b, Vector3 d,
+                Color ground, float weight, float area)>();
+            Vector2Int CellOf(Vector3 p) => new Vector2Int(
+                Mathf.FloorToInt(p.x / 1.5f), Mathf.FloorToInt(p.z / 1.5f));
+
             foreach (var r in world.GetComponentsInChildren<Renderer>(false))
             {
                 Mesh mesh = MeshOf(r);
@@ -492,6 +1038,11 @@ namespace LegaiaWorld
                         // winding makes the sign meaningless.
                         if (Mathf.Abs(cr.y / (area * 2f)) < 0.65f)
                             continue;
+                        Vector3 cen = (a + b + d) / 3f;
+                        var cell = CellOf(cen);
+                        if (!groundMinY.TryGetValue(cell, out float floorY) ||
+                            cen.y < floorY)
+                            groundMinY[cell] = cen.y;
 
                         // Ground colour at the triangle centre = texel x mean
                         // COLOR_0, the product the retail shading displays.
@@ -510,28 +1061,39 @@ namespace LegaiaWorld
                         if (green < o.grassGreenThreshold)
                             continue;
                         float weight = Mathf.Clamp01(green / 0.12f);
-
-                        float expected = area * o.grassDensity * weight;
-                        int count = (int)expected +
-                            (rng.NextDouble() < expected - (int)expected ? 1 : 0);
-                        for (int k = 0; k < count && tufts < MAX_TUFTS; k++)
-                        {
-                            float u = (float)rng.NextDouble();
-                            float w = (float)rng.NextDouble();
-                            if (u + w > 1f)
-                            {
-                                u = 1f - u;
-                                w = 1f - w;
-                            }
-                            Vector3 p = a + (b - a) * u + (d - a) * w;
-                            EmitTuft(p, ground, rng, toLocal, v, c, t);
-                            tufts++;
-                            if (v.Count > CHUNK_VERTS)
-                                FlushGrassChunk(v, c, t, chunks, genDir);
-                        }
+                        cand.Add((a, b, d, ground, weight, area));
                     }
                 }
             }
+            // Pass 2: emit only candidates on their cell's floor - a green
+            // canopy or roof sits well above the lowest upward surface at
+            // its spot and is skipped.
+            foreach (var (a, bb, d, ground, weight, area) in cand)
+            {
+                Vector3 cen = (a + bb + d) / 3f;
+                if (groundMinY.TryGetValue(CellOf(cen), out float floorY) &&
+                    cen.y > floorY + 0.75f)
+                    continue;
+                float expected = area * o.grassDensity * weight;
+                int count = (int)expected +
+                    (rng.NextDouble() < expected - (int)expected ? 1 : 0);
+                for (int k = 0; k < count && tufts < MAX_TUFTS; k++)
+                {
+                    float u = (float)rng.NextDouble();
+                    float w = (float)rng.NextDouble();
+                    if (u + w > 1f)
+                    {
+                        u = 1f - u;
+                        w = 1f - w;
+                    }
+                    Vector3 p = a + (bb - a) * u + (d - a) * w;
+                    EmitTuft(p, ground, rng, toLocal, v, c, t);
+                    tufts++;
+                    if (v.Count > CHUNK_VERTS)
+                        FlushGrassChunk(v, c, t, chunks, genDir);
+                }
+            }
+
             FlushGrassChunk(v, c, t, chunks, genDir);
             // Drop stale chunks a denser previous run left behind.
             for (int i = chunks.Count; ; i++)
@@ -788,6 +1350,7 @@ namespace LegaiaWorld
                     b.Encapsulate(p);
                 Vector3 seed = b.center;
                 var used = new bool[candidates.Count];
+                var roomMeshes = new List<Bounds>();
                 for (int pass = 0, grew = 1; grew == 1 && pass < 6; pass++)
                 {
                     grew = 0;
@@ -805,15 +1368,43 @@ namespace LegaiaWorld
                         if (DistXZ(rb.center, seed) > 25f)
                             continue;
                         b.Encapsulate(rb);
+                        roomMeshes.Add(rb);
                         used[ci] = true;
                         grew = 1;
                     }
                 }
                 Bounds room = b; // pre-margin: where the dressing goes
                 b.Expand(o.interiorShellMargin * 2f);
-                float radius = b.extents.magnitude + 0.5f;
+                // An ellipsoid fitted per-axis, not a circumscribing sphere:
+                // the old radius was the expanded box's half-DIAGONAL and the
+                // sphere reached that far in every direction, so a wide
+                // room's dome bled into its neighbour. Start from the box
+                // extents and inflate uniformly only as far as the room's
+                // actual geometry demands - every member mesh's AABB corner
+                // (and doorway endpoint) must stay inside the shell.
+                Vector3 radii = b.extents + Vector3.one * 0.5f;
+                float need = 1f;
+                void Fit(Vector3 p)
+                {
+                    Vector3 d = p - b.center;
+                    float nrm = Mathf.Sqrt(
+                        d.x * d.x / (radii.x * radii.x) +
+                        d.y * d.y / (radii.y * radii.y) +
+                        d.z * d.z / (radii.z * radii.z));
+                    if (nrm > need)
+                        need = nrm;
+                }
+                foreach (var p in cl)
+                    Fit(p);
+                foreach (var rb in roomMeshes)
+                    for (int cx = 0; cx < 8; cx++)
+                        Fit(new Vector3(
+                            (cx & 1) == 0 ? rb.min.x : rb.max.x,
+                            (cx & 2) == 0 ? rb.min.y : rb.max.y,
+                            (cx & 4) == 0 ? rb.min.z : rb.max.z));
+                radii *= need * 1.05f; // small slack past the tightest corner
 
-                var shell = ShellSphere(toLocal, b.center, radius,
+                var shell = ShellSphere(toLocal, b.center, radii,
                     "shell_" + roomIdx);
                 string shellPath = genDir + "/" + shell.name + ".asset";
                 AssetDatabase.DeleteAsset(shellPath);
@@ -833,7 +1424,7 @@ namespace LegaiaWorld
                     lgo.transform.position = room.center + Vector3.up * 0.6f;
                     var light = lgo.AddComponent<Light>();
                     light.type = LightType.Point;
-                    light.range = radius * 1.6f;
+                    light.range = Mathf.Max(radii.x, Mathf.Max(radii.y, radii.z)) * 1.6f;
                     light.intensity = 0.7f;
                     light.color = new Color(1f, 0.92f, 0.78f);
                     light.shadows = LightShadows.None;
@@ -853,13 +1444,14 @@ namespace LegaiaWorld
                       " interior room(s) in black shells.");
         }
 
-        /// An inward-facing UV sphere around `centerW` (world), baked into
-        /// container-local space. "Inward" must hold in WORLD space, and the
-        /// built root usually carries a mirror that flips winding - so the
-        /// orientation is settled empirically: sample one face's local
-        /// normal, flip everything if the front points the wrong way for
-        /// this parent chain.
-        static Mesh ShellSphere(Matrix4x4 toLocal, Vector3 centerW, float radius,
+        /// An inward-facing UV ellipsoid around `centerW` (world) with
+        /// per-axis semi-axes `radii`, baked into container-local space.
+        /// "Inward" must hold in WORLD space, and the built root usually
+        /// carries a mirror that flips winding - so the orientation is
+        /// settled empirically: sample one face's local normal, flip
+        /// everything if the front points the wrong way for this parent
+        /// chain.
+        static Mesh ShellSphere(Matrix4x4 toLocal, Vector3 centerW, Vector3 radii,
             string name)
         {
             const int SEG = 24, RING = 14;
@@ -870,10 +1462,11 @@ namespace LegaiaWorld
                 for (int x = 0; x <= SEG; x++)
                 {
                     float th = 2f * Mathf.PI * x / SEG;
-                    v.Add(toLocal.MultiplyPoint3x4(centerW + new Vector3(
-                        Mathf.Sin(phi) * Mathf.Cos(th),
-                        Mathf.Cos(phi),
-                        Mathf.Sin(phi) * Mathf.Sin(th)) * radius));
+                    v.Add(toLocal.MultiplyPoint3x4(centerW + Vector3.Scale(
+                        new Vector3(
+                            Mathf.Sin(phi) * Mathf.Cos(th),
+                            Mathf.Cos(phi),
+                            Mathf.Sin(phi) * Mathf.Sin(th)), radii)));
                 }
             }
             var t = new List<int>(SEG * RING * 6);
@@ -939,6 +1532,36 @@ namespace LegaiaWorld
             src.playOnAwake = true;
             src.spatialBlend = 0f;
             src.volume = o.ambientVolume;
+            LegaiaAudioGen.AddVrcSpatial(go, false, 0f, 0f, 0f);
+
+            // Day / night beds under the same container: breeze + birds vs
+            // crickets. Both always play; their volumes are crossfaded by
+            // LegaiaDayNight (ApplySun wires them), so without the cycle the
+            // day bed simply stays up and the night bed stays silent.
+            AmbienceBed(go, genDir + "/ambience_day.wav", "ambience_day",
+                LegaiaAudioGen.DayBed, 0.16f);
+            AmbienceBed(go, genDir + "/ambience_night.wav", "ambience_night",
+                LegaiaAudioGen.NightBed, 0f);
+        }
+
+        static void AmbienceBed(GameObject parent, string wavPath, string name,
+            System.Func<float[]> gen, float volume)
+        {
+            var clip = LegaiaAudioGen.EnsureClip(wavPath, gen);
+            if (clip == null)
+                return;
+            var existing = parent.transform.Find(name);
+            GameObject go = existing != null ? existing.gameObject : new GameObject(name);
+            go.transform.SetParent(parent.transform, false);
+            var src = go.GetComponent<AudioSource>();
+            if (src == null)
+                src = go.AddComponent<AudioSource>();
+            src.clip = clip;
+            src.loop = true;
+            src.playOnAwake = true;
+            src.spatialBlend = 0f;
+            src.volume = volume;
+            LegaiaAudioGen.AddVrcSpatial(go, false, 0f, 0f, 0f);
         }
 
         /// Synthesize a 12 s seamless wind/surf noise bed: two one-pole
@@ -1013,19 +1636,40 @@ namespace LegaiaWorld
 
         // --- NPC wander -----------------------------------------------------
 
-        static void WireWander(GameObject root, object manifest, LegaiaRealismOptions o)
+        static void WireWander(GameObject root, object manifest,
+            LegaiaRealismOptions o, LegaiaSceneSettings settings)
         {
             var npcRoot = root.transform.Find("npcs");
             if (npcRoot == null)
                 return;
             var wanderType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaNpcWander");
+            var overrides = ParseFacingOverrides(o.wanderFacingOverrides);
             int wired = 0;
             foreach (object n in MiniJson.AsList(MiniJson.Get(manifest, "npcs"))
                      ?? new List<object>())
             {
                 if (MiniJson.AsStr(MiniJson.Get(n, "kind")) != "talk")
                     continue;
+                string file = MiniJson.AsStr(MiniJson.Get(n, "file")) ?? "";
                 Vector3 p = LegaiaWorldBuilder.G2U(MiniJson.GetVec3(n, "position"));
+                // Per-scene settings: a static NPC keeps its idle clip but
+                // never travels; a removed NPC was not placed at all. Strip
+                // any wander wired by an earlier pass so re-applying the
+                // realism layer honours a newly-added rule too.
+                if (settings.NpcIsStatic(file) || settings.NpcIsRemoved(file)
+                    || settings.NpcIsFrozen(file))
+                {
+                    if (wanderType != null)
+                        StripWander(npcRoot, p, wanderType);
+                    continue;
+                }
+                float yawOff = 0f;
+                foreach (var kv in overrides)
+                    if (file.Contains(kv.Key))
+                    {
+                        yawOff = kv.Value;
+                        break;
+                    }
                 foreach (Transform child in npcRoot)
                 {
                     if ((child.localPosition - p).sqrMagnitude > 1e-3f)
@@ -1035,6 +1679,8 @@ namespace LegaiaWorld
                     var udon = LegaiaWorldBuilder.TryAttachUdon(
                         child.gameObject, "LegaiaNpcWander");
                     LegaiaWorldBuilder.SetUdonField(udon, "radius", o.wanderRadius);
+                    if (yawOff != 0f)
+                        LegaiaWorldBuilder.SetUdonField(udon, "facingYawOffset", yawOff);
                     LegaiaWorldBuilder.SyncUdonProxy(udon);
                     if (udon != null)
                         wired++;
@@ -1042,6 +1688,58 @@ namespace LegaiaWorld
                 }
             }
             Debug.Log("[Legaia] wander wired on " + wired + " villager(s).");
+        }
+
+        /// Remove an already-wired LegaiaNpcWander from the NPC instance at
+        /// `p` - proxy AND backing UdonBehaviour (destroying only the U#
+        /// proxy leaves the program that actually runs in-world attached).
+        static void StripWander(Transform npcRoot, Vector3 p, System.Type wanderType)
+        {
+            foreach (Transform child in npcRoot)
+            {
+                if ((child.localPosition - p).sqrMagnitude > 1e-3f)
+                    continue;
+                var comp = child.GetComponent(wanderType);
+                if (comp == null)
+                    return;
+                var util = LegaiaWorldBuilder.FindType(
+                    "UdonSharpEditor.UdonSharpEditorUtility");
+                var backing = util?.GetMethod("GetBackingUdonBehaviour")
+                    ?.Invoke(null, new object[] { comp }) as Component;
+                if (backing != null)
+                    Undo.DestroyObjectImmediate(backing);
+                Undo.DestroyObjectImmediate(comp);
+                Debug.Log("[Legaia] wander stripped from " + child.name +
+                    " (static in scene settings).");
+                return;
+            }
+        }
+
+        /// "npc_30:90; npc_07:-90" -> (stem fragment, degrees) pairs. A
+        /// hand-set facingYawOffset on a placed instance dies with every
+        /// rebuild - this list is the durable home for the rare model whose
+        /// face is authored off the rig's -Z in vertex space, where no
+        /// transform measurement can recover it.
+        static List<KeyValuePair<string, float>> ParseFacingOverrides(string spec)
+        {
+            var list = new List<KeyValuePair<string, float>>();
+            if (string.IsNullOrEmpty(spec))
+                return list;
+            foreach (string part in spec.Split(';', ','))
+            {
+                int colon = part.LastIndexOf(':');
+                if (colon <= 0)
+                    continue;
+                string key = part.Substring(0, colon).Trim();
+                if (key.Length == 0)
+                    continue;
+                if (float.TryParse(part.Substring(colon + 1).Trim(),
+                        System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        out float deg))
+                    list.Add(new KeyValuePair<string, float>(key, deg));
+            }
+            return list;
         }
     }
 }

@@ -19,8 +19,11 @@ legaia-engine export-glb --items --out glb-export              # every equipment
 ```
 
 Reads `extracted/` (default) or `--disc <image.bin>`. Flags: `--scale`
-(glTF meters per PSX world unit, default 1/64 - one 128-unit walk tile
-= 2 m, near VRChat human scale), `--include-sky` (keep the sky-backdrop
+(glTF meters per PSX world unit, default 1/128 - one 128-unit walk tile
+= 1 m; in-headset testing found the earlier 1/64 "2 m tile" oversized
+against real player scale, retail's field proportions being generous;
+equipment-item glbs are raw PSX units regardless, scaled at placement
+time by the Unity builder), `--include-sky` (keep the sky-backdrop
 shells the site viewers hide), `--no-npcs`, `--no-props`, `--items` (the
 equipment export below - standalone or combined with scenes).
 `--all-scenes` skips cutscene labels, reports each scene's yield, and
@@ -53,10 +56,16 @@ with, so the export matches the on-screen pages:
   setting included - reproduces retail's display-space `texel * colour/128`
   product; a project left in Gamma colour space will render these models
   darker than intended), PSX word-0 transparency as MASK cutout. ABE
-  semi-transparent prims split into a second `BLEND` material at half
-  alpha (retail's dominant `B/2 + F/2` mode exactly; the blended queue's
-  depth-write skip is also what keeps retail's coincident water scroll
-  layers from z-fighting in depth-buffered engines).
+  semi-transparent prims split into one `BLEND` material **per PSX ABR
+  blend rate**, named `legaia_semi_abr<N>` (0 = `B/2 + F/2`, 1 = `B + F`
+  additive, 2 = `B - F`, 3 = `B + F/4`): core glTF can only express alpha
+  blending, so the alpha only approximates the rate (0.5, or 0.25 for
+  rate 3) and the **name is the contract** an importer restores the real
+  blend state from - the Unity kit maps rates 1/2/3 onto its additive
+  shader, since alpha-blending an additive light shaft reads as a grey
+  film instead of a glow. Rate 0 is alpha blending exactly, and the
+  blended queue's depth-write skip is also what keeps retail's coincident
+  water scroll layers from z-fighting in depth-buffered engines.
 - **NPC glbs** - `engine-core::npc_catalog` (the MAN partition-1 placement
   walk shared with the NPC browser page) + `legaia_asset::character_gltf`:
   the scene TMD with its spawn clip first and every other
@@ -119,15 +128,37 @@ objects - the village centre, not the map-grid centre), composition
 - `npcs[]` - file, kind (`talk` / `door` / `prop`), the dialog first line
   as a label, position (floor height via the retail sampler
   `World::sample_field_floor_height`), clip names, `conditional` (parked
-  off-map until a script places it), `model_index` / `anim_id`;
+  off-map until a script places it), `model_index` / `anim_id`. The
+  position is **not** the raw placement-header tile: retail's installer
+  pre-runs each record's spawn prologue, and a flag-branched prologue's
+  taken arm teleports the actor before the first frame draws - so the
+  catalog resolves that arm under cold fresh-game flags
+  (`man_field_scripts::placement_spawn_relocation`). Reading the header
+  tile alone stacks a flag-dispatched spawn on whatever actor is authored
+  at its staging square (town01's running kids sit exactly on the
+  standing kids' tiles) and draws dev records retail parks; the resolved
+  roster is pinned against a live fresh-game capture's actor list;
 - `doors[]` - portal placements with their field-VM target map;
-- `animated_props[]` - file, clip frame count, per-instance
-  position + yaw, plus two door tags: `is_door` (the instance stands on a
-  doorway-teleport trigger - retail parks a door placement on its own
-  doorway tile, so its clip is the door record's swing, meant to open on
-  approach rather than loop; the tag covers both teleport families, where
-  a script-tile anchor join structurally misses every map door) and
-  `near_portal` (the instance stands on a scene-exit band - a gate leaf);
+- `animated_props[]` - file, clip frame count, a per-prop `cyclic` flag
+  (does retail leave this clip **free-running**? The verdict comes from
+  the placement's bind record: every actor is born with looping playback
+  flags, and the spawn pass either parks the clip held - a door's
+  `0x4C 0x35` reset-hold, so a builder should trigger it once on approach;
+  retail advances those only while the bind script runs - or leaves the
+  template flags alone, the windmill, whose sails spin forever under the
+  unconditional anim tick (`legaia_engine_core::field_env::prop_spawn_free_runs`).
+  A keyframe-shape test is only the no-bind fallback: the windmill's
+  0..179-degree spin ends displaced from frame 0 and its four-blade
+  symmetry is what makes the loop seamless, so shape alone misreads
+  retail's one always-running prop as a one-shot),
+  and per-instance position + yaw plus two door tags: `is_door` (the
+  instance stands on a doorway-teleport trigger - retail parks a door
+  placement on its own doorway tile, so its clip is the door record's
+  swing, meant to open on approach rather than loop; the tag covers both
+  teleport families, where a script-tile anchor join structurally misses
+  every map door) and `near_portal` (the instance stands on a scene-exit
+  band - a gate leaf); the door tags catch exterior doors, `cyclic`
+  catches the one-shots standing near no teleport at all;
 - `teleports[]` - retail's **intra-scene doorways**, both families
   ([`field-locomotion.md`](../subsystems/field-locomotion.md) § intra-scene
   doorways): the `.MAP` kind-0 map-door table and the object walk-touch
@@ -222,3 +253,10 @@ export near the spawn as grabbable pickups. Every realism pass defaults
 on - unticking them all restores the faithful retail-shaded build - and
 everything is generated from scratch on top of the export, documented in
 [`scripts/vrchat-world/README.md`](../../scripts/vrchat-world/README.md#optional-realism-enhancements).
+
+Hand-tuned corrections a specific scene needs (delete a generated object,
+keep listed NPCs from wandering, drop an NPC, override the spawn, aim the
+VRC scene descriptor at the spawn marker) live in a per-scene kit file,
+`Assets/LegaiaWorld/Settings/<scene>.settings.json` - authored tuning
+data, no game content - documented in
+[`scripts/vrchat-world/README.md`](../../scripts/vrchat-world/README.md#per-scene-settings).

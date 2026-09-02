@@ -25,17 +25,25 @@ your disc ──legaia-extract──▶ extracted/ ──legaia-engine export-gl
 
 | File | Role |
 |---|---|
-| `world-project/Assets/LegaiaWorld/Editor/LegaiaWorldBuilder.cs` | Editor menu `Legaia > Build Scene From Manifest...`: instantiates the world, adds colliders, places NPCs + animated props, builds doorway-teleport triggers, wires proximity doors + the shoreline morph clip + the BGM loop, drops a spawn marker; also the **Equipment props** rack (the `--items` export placed as grabbable pickups near the spawn). |
-| `world-project/Assets/LegaiaWorld/Editor/LegaiaRealism.cs` | The builder's "Realism enhancements" foldout: lit materials + generated normals + sun, day/night wiring, sky + fog, procedural grass, interior room shells, texture smoothing, synthesized ambience, wander wiring. Every pass defaults on; untick for the faithful look. |
+| `world-project/Assets/LegaiaWorld/Editor/LegaiaWorldBuilder.cs` | Editor menu `Legaia > Build Scene From Manifest...`: instantiates the world, adds colliders, places NPCs + animated props, builds doorway-teleport triggers, wires proximity doors + the shoreline morph clip + the BGM loop, drops a spawn marker; also the **Equipment props** rack (the `--items` export placed as grabbable pickups near the spawn) and the camp props (below). |
+| `world-project/Assets/LegaiaWorld/Editor/LegaiaCampProps.cs` | The **Camp props** pass: a carry-able settings panel (world-space buttons - local music mute, synced day/night jumps; grab collider confined to a bottom handle so it can't shadow the UI) plus two carry-able torches and two campfires near spawn, all primitives + generated materials, in a top-level container outside the mirrored root (mirrored UI text would render backwards). |
+| `world-project/Assets/LegaiaWorld/Editor/LegaiaAudioGen.cs` | Synthesized audio (fire crackle, day breeze + birds, night crickets - seamless loops, no disc audio) and the `VRC_SpatialAudioSource` compliance helper (the SDK deprecates bare AudioSources; 2D beds get the disabled component the SDK's own Auto Fix adds, spatial sources a configured one). |
+| `world-project/Assets/LegaiaWorld/Editor/LegaiaRealism.cs` | The builder's "Realism enhancements" foldout: lit materials + generated normals + sun, day/night wiring + night doorway lamps, sky + fog, procedural grass, interior room shells, texture smoothing, synthesized ambience, wander wiring. Every pass defaults on; untick for the faithful look. |
+| `world-project/Assets/LegaiaWorld/Editor/LegaiaSceneSettings.cs` | Per-scene refinements from `Settings/<scene>.settings.json` (see "Per-scene settings" below): delete named objects after the build, keep listed NPCs static (idle clip, no wandering), drop listed NPCs entirely, override the spawn point in Unity world space, and point the VRC Scene Descriptor's `Spawns[0]` at LegaiaSpawn automatically. |
+| `world-project/Assets/LegaiaWorld/Settings/town01.settings.json` | The town01 refinements (kit-authored tuning data, no game content). |
 | `world-project/Assets/LegaiaWorld/Editor/MiniJson.cs` | Dependency-free JSON reader for `manifest.json` (so the builder compiles in any project). |
 | `world-project/Assets/LegaiaWorld/Shaders/LegaiaLitVertexColor.shader` | Lit cutout stand-in for the exports' unlit materials: `COLOR_0` keeps modulating the texture, and lighting is the sign-independent two-sided Lambert `\|N.L\|` (the only stable answer over the mixed PSX winding - the header keeps the failed-flip history). |
 | `world-project/Assets/LegaiaWorld/Shaders/LegaiaLitVertexColorTransparent.shader` | The BLEND (water / light pool) sibling of the lit shader - alpha-blended, depth-write off. |
+| `world-project/Assets/LegaiaWorld/Shaders/LegaiaVertexColorAdditive.shader` | Unlit additive for the exporter's `legaia_semi_abr1/2/3` materials - PSX additive prims (window light shafts, glows) read grey under plain alpha blend. Two passes approximate the PSX's display-space add in Unity's Linear pipeline: a background multiplier that keeps the scene readable through the prim, plus an additive floor exact over black (the shader header derives the fit). |
 | `world-project/Assets/LegaiaWorld/Shaders/LegaiaGrassWind.shader` | Vertex-coloured wind sway for the procedural grass blades (sway weight in vertex alpha, world-position phase). |
 | `world-project/Assets/LegaiaWorld/Shaders/LegaiaInteriorShell.shader` | Unlit black, front faces only: the interior-room dome, wound inward so it reads as black space from inside and is invisible (backface-culled) from outside. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaDoorway.cs` | UdonSharp doorway teleport: walking into the trigger repositions the local player at the landing marker with the authored arrival facing - the retail intra-scene door mechanism. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaDoor.cs` | UdonSharp proximity door: first approach plays the door's swing clip once and holds it open. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaNpcWander.cs` | Optional UdonSharp stroll behaviour: an NPC wanders a small radius around its spawn between pauses - collision-aware (strolls clamp against walls, a waist-height ray stops a blocked walk, a downward ray follows the floor). |
-| `world-project/Assets/LegaiaWorld/Udon/LegaiaDayNight.cs` | Optional UdonSharp day/night cycle: sweeps the realism sun on a fixed cycle, synced across players via server time. |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaDayNight.cs` | Optional UdonSharp day/night cycle: sweeps the realism sun on a fixed cycle, synced across players via server time; night dims the trilight ambient + fog to a moonlit fraction, enables the night-lamp container, and crossfades the day/night ambience beds. `JumpToDay`/`JumpToNight` apply a synced offset (the settings panel's buttons). |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaWorldMenu.cs` | The settings panel's behaviour: `ToggleMusic` (mutes the BGM locally - a personal preference), `SetDay`/`SetNight` (jump the shared cycle for everyone). |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaTorch.cs` | Torch/campfire pickup: hold + Use toggles the flame container (fire + smoke particles, a Perlin-flickered point light - no glow orb) and a spatial crackle loop; `lit` is synced so a fire someone lights burns for everyone. Spawn-kinematic like the rack pickups. |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaFlicker.cs` | Firelight flicker for the always-burning night torches: no sync, no interaction - just the two-octave Perlin intensity wobble on the flame's point light. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaPickupProp.cs` | UdonSharp equipment-rack pickup: the prop spawns kinematic (frozen on the rack) and only becomes a free physics object the first time a player drops it - so a rack of dozens of bodies can't tunnel through the thin ground during world-load hitches. |
 
 ## Step 1 - export a scene
@@ -54,8 +62,10 @@ too). Per scene you get the world `.glb` (with the shoreline's baked
 blendshape clip where the scene has one), `npcs/`, `props/`, `music/`
 (the entry BGM as a seamless-loop WAV) and `manifest.json` (which now also
 carries the doorway-teleport and door-tag data the builder wires below).
-Default `--scale` is 1/64: one 128-unit walk tile becomes 2 m, which lands
-doorways and NPCs near VRChat human scale. `glb-export/` is gitignored -
+Default `--scale` is 1/128: one 128-unit walk tile becomes 1 m. (The
+earlier 1/64 default read oversized in-headset - retail's field
+proportions are generous, so "2 m per tile" made buildings loom over a
+real-scale player.) `glb-export/` is gitignored -
 it is Sony-derived output.
 
 ## Step 2 - a VRChat worlds project
@@ -101,7 +111,11 @@ the VCC setup in more detail if this is your first worlds project.
    player capsule can slip through, and client builds stop needing
    Read/Write enabled on the glb). You get a `Legaia_town01` root:
    - `world` - the full map with its collider (ground included, so the
-     retail walk surface is what you stand on). When the scene carries the
+     retail walk surface is what you stand on). Semi-transparent submeshes
+     are left OUT of collision - they represent light (window shafts,
+     glow cones), and cooked solid a slanted shaft even acts as a
+     walkable ramp - except ones shaped like a water sheet (large, flat,
+     horizontal), so the sea keeps its floor. When the scene carries the
      baked shoreline morph clip (**Animate world morphs**) the sea edge
      washes in and out on a loop, and the exported BGM loops from an
      AudioSource on the root (**Scene music**);
@@ -111,25 +125,74 @@ the VCC setup in more detail if this is your first worlds project.
      leaves) playing their bind clips. The world glb keeps a frame-0
      static twin under each one; the builder disables it by default
      (**Hide static prop twins**) so the pair doesn't z-fight. Instances
-     the manifest tags as doors open **on approach** and stay open
-     (**Doors open on approach**, via the `LegaiaDoor` behaviour) instead
-     of looping their swing;
+     the manifest tags as doors - plus every prop whose clip the manifest
+     marks one-shot (`cyclic: false`: interior doors, cupboard doors,
+     drawers - retail parks these held at spawn and only a script plays
+     them, so looped they'd re-play their swing forever) - open **on
+     approach** and stay open (**Doors open on approach**, via the
+     `LegaiaDoor` behaviour). Only the props retail itself leaves
+     free-running loop - the `cyclic` flag is the bind record's own
+     spawn-pass verdict, which is what keeps the village windmill
+     spinning (its clip ends 179° displaced, so any keyframe-shape test
+     misreads it; the four-blade symmetry makes the loop seamless);
    - `teleports/` - one trigger volume per manifest doorway teleport
      (**Doorway teleports**): walk into a house door and you land in its
      interior with the authored facing, exactly the retail intra-scene
-     door mechanism (`LegaiaDoorway`). Scene-exit portals also connect
+     door mechanism (`LegaiaDoorway`). Trigger boxes get an absolute
+     player-sized floor (2.2 m across, player height) - the authored
+     extents scale with the world, but the player doesn't, and a retail
+     trigger hugging the door plane of a recessed entrance (Mei's house,
+     the cave) is hard to clip at any smaller size; the wall absorbs the
+     backward growth.
+     A loop guard covers the retail landings that sit inside (or a
+     capsule-width from) the paired door's trigger (town01's hilltop
+     house lands inside its own exit band): before teleporting, the
+     firing doorway suppresses every sibling doorway near the landing
+     for a few seconds, so a landing can never chain-fire a ping-pong
+     loop - which reads as "the door does nothing" when the hops cancel
+     out. Stepping off a trigger re-arms it immediately (retail's own
+     walk-away re-arm), so walking away and straight back always fires;
+     Scene-exit portals also connect
      automatically when the target scene's built root (`Legaia_map01`,
      say) already exists in the same Unity scene;
    - `LegaiaSpawn` - the manifest's suggested spawn (the placed-object
      median, i.e. the village centre).
-3. Add the VRChat scene descriptor (`VRCWorld` prefab from the SDK) and
-   point it at the spawn marker: select `VRCWorld`, expand the **VRC
-   Scene Descriptor**'s **Spawns** list, and drag
-   `Legaia_town01/LegaiaSpawn` into element 0 (replacing the prefab's own
-   `Spawn` child - moving the marker does nothing until the list
-   references it; with an *empty* list the descriptor's own transform is
-   the spawn). Players face the spawn transform's +Z, so rotate the
-   marker toward the view you want. Then `VRChat SDK > Show Control
+
+   A separate top-level `Legaia_camp_props` container (**Camp props**,
+   default on) holds the settings panel and the torches/campfires - it
+   sits outside the mirrored root on purpose (world-space UI text under
+   the X-flip would render mirror-written). The panel is a board with a
+   grab handle along its bottom edge: point at a button for the UI
+   cursor, grab the handle to carry it. The handle is the panel's ONLY
+   collider on purpose - VRChat's pointer takes the closest collider
+   hit, so a grab collider covering the buttons turns every press into
+   a pickup grab and the UI never receives the click (in desktop the
+   click then reads as the held pickup's use/drop, with the button still
+   animating - the panel looks alive but is dead). Click the buttons
+   while the board stands; a held pickup's own UI is not clickable in
+   desktop mode. **Music On/Off** mutes the BGM for you alone,
+   **Daytime**/**Nighttime** jump the shared day/night cycle for
+   everyone (they do nothing until the realism pass builds the cycle).
+   The two torches and two campfires
+   are pickups too - hold one and press **Use** (left click / trigger)
+   to light or snuff it: fire particles, a faint rising smoke plume, a
+   warm point light with a Perlin fire flicker (no glow-orb mesh), and a
+   spatial synthesized crackle loop; the lit state is synced, so a
+   campfire someone lights burns for the whole instance. Every
+   AudioSource the kit creates also carries the `VRC_SpatialAudioSource`
+   component the SDK now expects (disabled on the flat 2D music/ambience
+   beds, exactly what the SDK's Auto Fix does - the "2D audio source
+   with no VRC Spatial Audio component" warning is gone).
+3. Add the VRChat scene descriptor (`VRCWorld` prefab from the SDK). The
+   builder points its **Spawns** element 0 at `LegaiaSpawn` automatically
+   when the descriptor already exists at build time (set
+   `"set_descriptor_spawn": false` in the scene's settings file to keep
+   your own); if you added `VRCWorld` after building, either rebuild or
+   drag `Legaia_town01/LegaiaSpawn` into element 0 by hand (replacing the
+   prefab's own `Spawn` child - moving the marker does nothing until the
+   list references it; with an *empty* list the descriptor's own
+   transform is the spawn). Players face the spawn transform's +Z, so
+   rotate the marker toward the view you want. Then `VRChat SDK > Show Control
    Panel > Build & Test`. Publish with **Upload** when it feels right - a
    fresh world is private until you explicitly publish it to Community
    Labs; leave it private.
@@ -138,6 +201,69 @@ the VCC setup in more detail if this is your first worlds project.
    mask the real walk surface; and after a build, `world` should carry
    one MeshCollider referencing
    `Assets/LegaiaGenerated/<scene>/world_collider.asset`.
+
+## Per-scene settings
+
+The generic build is right almost everywhere, but each scene earns a few
+hand-tuned corrections - and they must survive re-exports and rebuilds,
+so they live in a small JSON file shipped with the kit (never in the
+exported folder, which is regenerated):
+
+```
+Assets/LegaiaWorld/Settings/<scene>.settings.json
+```
+
+All keys optional (`town01.settings.json` is the worked example):
+
+```json
+{
+  "scene": "town01",
+  "delete_objects": ["room_6_shell", "room_6_light", "prop_53_anim8/object_1"],
+  "static_npcs": [26, 27, 45, 46, 29, 12],
+  "remove_npcs": [28, 10, 11],
+  "freeze_npcs": [47],
+  "spawn_position": [-24.85, 1.75, 12.22],
+  "set_descriptor_spawn": true
+}
+```
+
+- **`delete_objects`** - exact GameObject names removed after the build +
+  realism passes (so generated objects like interior shells are already
+  there to match). A name with `/` is a path *suffix*: the last segment
+  names the object, each earlier segment must match the next parent up -
+  so `prop_53_anim8/object_1` hits only that prop's `object_1`, while a
+  bare `object_1` would hit every glb's. Searched under the built root
+  and the kit's top-level containers. Generated objects are destroyed;
+  glb prefab children are disabled instead (Unity forbids deleting
+  prefab-instance children). A name that matches nothing logs a warning
+  so typos are visible.
+- **`static_npcs`** - these NPCs keep their looping idle clip but the
+  wander pass never wires them, so they stay put. A number `N` matches
+  the exported `npc_<NN>_...` stem exactly; a string matches any part of
+  the file name. Re-applying the realism layer also *strips* a wander
+  behaviour wired before the rule was added.
+- **`remove_npcs`** - not placed at all (same matching rules).
+- **`freeze_npcs`** - placed with **no animation clip**, holding the rest
+  pose (and never wander-wired). For prop-kind actors - trees, signs -
+  whose bundle slot carries a generic locomotion record: looping that
+  record visibly walks the prop in place (town01's npc_47 tree paces
+  ~10 cm side to side on `record_37`). Takes effect on the next full
+  build, like `remove_npcs`.
+- **`spawn_position`** - overrides the manifest's suggested spawn:
+  **exactly what LegaiaSpawn's Inspector shows** (its local position
+  under the built root). Drag the marker where you want it, copy its
+  Inspector position here, and the rebuild reproduces it digit for
+  digit. (Not world space: the root is X-mirrored, so a world value
+  would come back with its X sign flipped in the Inspector.)
+- **`set_descriptor_spawn`** - point the VRC Scene Descriptor's
+  `Spawns[0]` at `LegaiaSpawn` after the build (default true, also
+  without a settings file; a no-op until the `VRCWorld` prefab is in the
+  scene).
+
+Deletions and the descriptor assignment also re-run after "Apply
+enhancements to the already-built root", so tuning a rule doesn't force
+a full rebuild - except `remove_npcs`/`freeze_npcs`/`spawn_position`,
+which take effect on the next **Build scene**.
 
 ## Making it feel alive
 
@@ -152,7 +278,10 @@ the VCC setup in more detail if this is your first worlds project.
   `items/` folder into `Assets/`, point the builder's **Equipment props**
   section at its `manifest.json`, and **Place equipment rack near spawn**
   lines them up grounded on the world collider - one row per character,
-  each prop scaled from raw PSX units by the scene's export scale,
+  each prop scaled from raw PSX units by the scene's export scale times
+  the **Size multiplier** (default 0.5: these are battle-mode models the
+  field never shows, and at the raw battle-vs-field ratio they read
+  comically large in hand),
   wrapped in a convex mesh collider cooked from its baked rest pose (a
   tight hull, not a bounding box; near-flat pieces fall back to a padded
   box), and wired as a `VRC Pickup` + `VRC Object Sync` physics pickup
@@ -188,20 +317,64 @@ pass is idempotent (it refreshes rather than stacks).
   `|N.L|`, since no per-vertex sign choice survives this data), swaps
   every material for `Legaia/Lit Vertex Color` (cutout or transparent by
   queue), and adds a warm directional sun with soft shadows plus a
-  trilight ambient. The baked `COLOR_0` retail shading keeps modulating
+  trilight ambient. Semi-transparent materials the export names
+  `legaia_semi_abr1` / `abr2` / `abr3` (PSX additive / subtractive /
+  quarter-additive blend rates - core glTF can only express alpha blend,
+  so the name carries the real rate) route instead to the unlit
+  `Legaia/Vertex Color (Additive)` shader: retail's window light shafts
+  and glows only ever brighten what's behind them, and alpha-blending
+  them reads as a grey film. Rate 0 (the 50/50 average - water sheets)
+  IS alpha blending and stays on the lit transparent shader. Re-exported
+  glbs are required for this: pre-existing exports carry one unnamed
+  BLEND material and keep the old grey behaviour. The baked `COLOR_0` retail shading keeps modulating
   every surface, so the scene holds its palette - lighting layers on top
-  instead of replacing it.
+  instead of replacing it. NPC and prop materials additionally get
+  **light wrap** (`_LightWrap`, slider "NPC/prop light wrap"): the
+  `|N.L|` terminator cuts a harsh dark band right across a low-poly
+  villager's face, so their angular term is flattened toward even
+  lighting (shadow maps still attenuate); world surfaces keep the full
+  directional response.
 - **Day / night cycle** (under lighting): the `LegaiaDayNight` Udon
   behaviour sweeps the sun through a full day on a fixed cycle, with night
   compressed (`dayShare`). Every client derives the same angle from the
   shared server clock, so the cycle is synced with no networking events.
+  Night genuinely darkens the landscape: the behaviour sweeps the trilight
+  ambient (and fog colour) down to a moonlit, blue-shifted fraction of
+  their daytime values ("Night darkness" slider, default 0.02 - night is
+  nearly black so the lamps and fires carve out the light; sun intensity
+  alone leaves the ambient day-bright after sunset). **Night lamps** places a small
+  warm light (no visible bulb mesh - the pool of light on the wall is
+  the whole effect) at each village building **window**, anchored on
+  the world mesh itself: the retail scene authors semi-transparent glow
+  volumes exactly where light spills out of a hut window (town01 repeats
+  one identically-sized glow object across three huts), so each
+  village-side BLEND submesh of window-glow proportions anchors a
+  tight-radius light. The glow volume is the light *shaft* angled down
+  toward the ground - its centroid hangs in mid-air off the wall - so
+  the lamp anchors on the shaft's own geometry: the centroid of its top
+  band of vertices is the window opening, nudged slightly along the
+  spill direction (a raycast wall-snap was tried first and grabbed
+  unrelated nearby walls such as the palisade). Scenes with no authored
+  glows fall back to a lamp above each village-side doorway (manifest
+  teleport endpoints). The `night_lamps` container is enabled by the
+  day/night behaviour only while the sun is below the horizon.
+  **Night torches** plants a burning stake torch (same flame stack as
+  the camp props: fire + smoke particles, flickering light, crackle -
+  no pickup) beside each village doorway and by each tree - trees are
+  found in the world mesh itself as clusters of green-reading upward
+  triangles floating well above the local ground (the grass pass's
+  canopy-rejection test, inverted). They live in a top-level
+  `Legaia_night_torches` container the day/night behaviour enables
+  alongside the lamps.
 - **Sky + distance fog**: a procedural-skybox material (it tracks
   `RenderSettings.sun`, so with day/night on the sky darkens by itself)
   and linear fog scaled to the built root's bounds.
 - **Ground foliage**: procedural grass - single-triangle blades in tufts,
   scattered over upward-facing world triangles whose ground colour reads
   green (texel x mean vertex colour at the triangle centre, the same
-  product the retail shading displays). Blades are tinted from the sampled
+  product the retail shading displays). Ground only: a per-cell lowest
+  upward-surface grid rejects any green triangle floating above other
+  geometry, so tree canopies and roofs never sprout grass. Blades are tinted from the sampled
   ground so they blend with the terrain, and sway via `Legaia/Grass Wind`
   (weight in vertex alpha, world-position phase). Tune **density** and the
   **green threshold** (lower = more coverage, higher = keeps grass off
@@ -214,48 +387,73 @@ pass is idempotent (it refreshes rather than stacks).
   own teleport data (endpoints beyond a spawn-distance threshold,
   clustered per room, then flood-filled outward to the whole building's
   meshes so the dome centres on the room, not on its doorway) and wraps
-  it in a
-  black dome wound to face **inward only**: black space from inside,
-  backface-culled (invisible) from outside, casting no shadow so the sun
-  still lights the room. **Window light** adds a warm fill light per room
+  it in a black ellipsoid dome fitted per-axis to the room's own geometry
+  (a circumscribing sphere reached its half-diagonal in every direction
+  and bled into neighbouring rooms), wound to face **inward only**:
+  black space from inside, backface-culled (invisible) from outside,
+  casting no shadow so the sun still lights the room. **Window light** adds a warm fill light per room
   so it reads window-lit inside its black surround.
 - **Smooth textures**: bilinear + anisotropic filtering on every texture
   under the root, instead of the exports' PSX point sampling. This edits
   the imported texture objects in place, so a glb **reimport resets it** -
   rerun the pass after one.
-- **Ambient audio bed**: a quiet synthesized wind/surf noise loop
-  (filtered noise, loop-crossfaded, written to `LegaiaGenerated/`) on a 2D
-  AudioSource - generated audio, not from the disc.
+- **Ambient audio beds**: three quiet synthesized loops on 2D sources
+  (filtered noise + sines, loop-crossfaded, written to
+  `LegaiaGenerated/`) - a wind/surf base that always plays, a daytime
+  bed (breeze, leaf rustle, a few soft bird chirps) and a night bed
+  (two interleaved cricket voices over a faint cool breeze). With the
+  day/night cycle on, `LegaiaDayNight` crossfades day against night
+  with the sun; without it the day bed simply stays up. Generated
+  audio, not from the disc - the atmosphere holds even with the music
+  muted from the settings panel.
 - **Villagers wander**: wires `LegaiaNpcWander` on every talk-kind NPC
   from the manifest (matched by spawn position), so the town strolls
   instead of standing still. The behaviour is collision-aware: strolls are
   clamped against the world's colliders, a blocked walk re-picks instead
-  of clipping through a hut, and a downward ray follows the floor. Facing
-  is mirror-aware: the instance scale mirrors decouple the mesh's visual
-  forward from the transform's +Z, and the walk facing maps through those
-  signs so villagers face the way they walk (a `flipFacing` field covers
-  an import stack with the opposite model-forward convention). Movement is
-  forward-only: a direction change pivots the whole body in place first,
-  then steps off - an NPC never translates while mis-facing. Some spawn
-  clips pose the skeleton at a yaw of their own (the authored facing
-  lives in the ANM record, not the placement - and idles can sway bones
-  over the loop), so the behaviour tracks that yaw live, every walking
-  frame, as the circular mean across the skeleton's top-level bones
-  (these rigs are flat, so limb swings cancel and the common facing
-  survives) and subtracts it from the walk facing (a `facingYawOffset`
-  field adds a manual correction on top).
+  of clipping through a hut, and a downward ray follows the floor.
+  Movement is forward-only: a direction change pivots the whole body in
+  place first, then steps off - an NPC never translates while mis-facing.
+  Facing is **measured, not derived**: the exported rigs have no skins
+  (each TMD object is a rigid mesh node) and the authored facing is baked
+  into the node rest rotations themselves (the MAN placement has no
+  facing byte), under a stack of mirrors and importer conversions that
+  defeats sign-by-sign algebra. So at Start the behaviour picks the
+  largest mesh node that rests upright (the torso), reads the direction
+  it visibly faces off its `localToWorldMatrix` every walking frame
+  (baked yaw, idle sway, every mirror included by construction), probes
+  which way that visual forward responds to a transform yaw, and servos
+  the yaw until the mesh faces the walk direction. The face-axis
+  invariant (textured 4-view renders of every town01 model - wireframes
+  cannot tell front from back) is **+Z in the glb scene frame at
+  rest**; it is NOT a fixed node-local axis, because one rig family
+  rests its nodes at -90 degrees with the vertices counter-rotated
+  (npc_12 and kin, which walked sideways until the anchor's rest
+  rotation was folded out of the measurement at Start). `flipFacing`
+  covers a model violating the invariant; `facingYawOffset` adds a
+  manual trim, and the realism foldout's **Facing overrides** field
+  (`npc_30:90`, keys matching the NPC glb file name) applies such trims
+  durably across rebuilds. Wall/floor ray heights are measured from the
+  rendered model at Start, so they track any export scale.
 
 Caveats: the sun / ambient / skybox / fog are **per-Unity-scene render
 settings** - applying them from one built root is global, the last applied
 root wins, and turning the options off later does not revert them (reset
 via `Window > Rendering > Lighting`, and delete the root's `LegaiaSun` /
-`foliage` / `interiors` / `ambience` children). The day/night and wander passes need the
+`foliage` / `interiors` / `ambience` / `night_lamps` children). The day/night and wander passes need the
 VRChat SDK, same as doors and teleports. And the grass + realtime shadows
 budget is a PC-world budget - trim density and shadow strength for a Quest
 target.
 
 ## Troubleshooting
 
+- **Doubled villagers standing inside each other** (town01: the two pairs
+  of kids at the north square): a stale export. Retail stages some
+  placements on another actor's exact tile and teleports them across town
+  in the record's spawn prologue before the first frame; the manifest now
+  resolves that relocation (`npc_catalog` +
+  `placement_spawn_relocation`), places the runners at their real spots,
+  and hides the dev records retail parks off-map. Re-run `export-glb` and
+  rebuild the scene.
 - **Everything looks mirrored**: it is - the raw import is X-mirrored
   relative to the site's field-scene viewer, and the builder's **Match
   explorer orientation** option (default on) mirrors the built root to
@@ -341,6 +539,18 @@ target.
   set on the U# proxy without `CopyProxyToUdon`, so the backing behaviour
   kept null defaults. Rebuild with the current kit **and** a current
   manifest; the builder offers to replace a stale `Legaia_<scene>` root.
+  Interior doors, cupboards and drawers looping their opening is the
+  same symptom one layer deeper: those stand near no teleport or portal,
+  so no proximity join can ever tag them - the manifest's per-prop
+  `cyclic` flag is what routes them to the approach-open path, and it
+  too needs a current manifest.
+- **The windmill doesn't spin**: an older manifest judged `cyclic` by
+  clip shape (last keyframe returns to the first), and the windmill's
+  spin ends ~179° displaced - so it was mis-filed as a one-shot and
+  frozen at frame 0. The flag is now the bind record's own retail
+  verdict (an empty spawn pass keeps the actor's looping template
+  flags; a door's reset-hold parks it) - re-export the scene and
+  rebuild.
 - **"Unable to find valid U# program asset associated with script"**:
   UdonSharp only auto-creates program assets for scripts made through its
   own Create menu, so the kit's bare `.cs` files have none and U# refuses

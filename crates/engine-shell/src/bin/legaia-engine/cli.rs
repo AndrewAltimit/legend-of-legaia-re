@@ -663,9 +663,11 @@ pub(crate) enum Cmd {
         #[arg(long, default_value = "glb-export")]
         out: PathBuf,
         /// Uniform scale: glTF meters per PSX world unit. The default
-        /// (1/64) makes one 128-unit walk tile 2 m - about right for
-        /// VRChat player scale. Use 1.0 for raw PSX units.
-        #[arg(long, default_value_t = 1.0 / 64.0)]
+        /// (1/128) makes one 128-unit walk tile 1 m - in-headset testing
+        /// found the 1/64 "2 m tile" reads oversized against real player
+        /// scale (retail's field proportions are generous). Use 1.0 for
+        /// raw PSX units.
+        #[arg(long, default_value_t = 1.0 / 128.0)]
         scale: f32,
         /// Keep the sky-backdrop shells in the world glb (the site viewers
         /// hide them; inside a VR world they can serve as horizon dressing).
