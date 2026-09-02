@@ -249,8 +249,13 @@ namespace LegaiaWorld
             }
 
             ApplySun(root, o, nightLamps, nightTorches);
+            int addRouted = 0;
+            foreach (var v in matCache.Values)
+                if (additive != null && v != null && v.shader == additive)
+                    addRouted++;
             Debug.Log("[Legaia] lit conversion: " + meshCache.Count + " mesh(es), " +
-                      matCache.Count + " material(s), " + wrapped +
+                      matCache.Count + " material(s), " + addRouted +
+                      " routed to additive, " + wrapped +
                       " character material(s) wrap-lit.");
         }
 

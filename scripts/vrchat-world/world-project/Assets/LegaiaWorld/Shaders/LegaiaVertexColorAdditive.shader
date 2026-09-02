@@ -13,6 +13,16 @@
 // self-luminous - running it through the lit shaders would double-darken it
 // at night. Fog fades the contribution to nothing (black) instead of
 // tinting it toward the fog colour, the standard additive-fog treatment.
+//
+// Blend space: the PSX GPU adds in DISPLAY (gamma) space, and so do the
+// site's WebGL viewers - but a Linear-colour-space Unity project (VRChat
+// mandates Linear) blends in linear, where the same additive contribution
+// reads far dimmer over any non-black background (a shaft that saturates a
+// mid-bright wall to white in retail only lifts it to a milky grey). The
+// fragment therefore converts its contribution to display space before the
+// blend: exact over black, close over the dark-to-mid backgrounds these
+// prims sit on, and only the destination-dependent cross term (unreachable
+// without a framebuffer read) is approximated away.
 Shader "Legaia/Vertex Color (Additive)"
 {
     Properties
@@ -21,6 +31,8 @@ Shader "Legaia/Vertex Color (Additive)"
         _Color ("Tint", Color) = (1,1,1,1)
         // PSX blend-rate weight: 1 = B + F (rate 1), 0.25 = B + F/4 (rate 3).
         _Intensity ("Intensity", Range(0,1)) = 1
+        // Extra user brightness trim on top of the display-space conversion.
+        _Boost ("Brightness boost", Range(0.25, 2)) = 1
         // Add for rates 1/3; ReverseSubtract (2) for PSX rate 2 (B - F).
         [Enum(UnityEngine.Rendering.BlendOp)] _BlendOp ("Blend op", Float) = 0
     }
@@ -44,6 +56,7 @@ Shader "Legaia/Vertex Color (Additive)"
             float4 _MainTex_ST;
             fixed4 _Color;
             half _Intensity;
+            half _Boost;
 
             struct appdata
             {
@@ -76,8 +89,17 @@ Shader "Legaia/Vertex Color (Additive)"
                 // Fully-transparent atlas texels (BGR555 word 0) are black
                 // already; the alpha multiply keeps any filtered edge dark
                 // so it adds nothing.
+                half3 f = t.rgb * i.color.rgb * t.a;
+                #ifndef UNITY_COLORSPACE_GAMMA
+                // Linear pipeline: lift the contribution to display space so
+                // the One One blend approximates the PSX's gamma-space add
+                // (see header). A Gamma project is already display-referred.
+                f = LinearToGammaSpace(f);
+                #endif
                 fixed4 c;
-                c.rgb = t.rgb * i.color.rgb * t.a * _Intensity;
+                // _Intensity is the PSX rate weight (B + F/4 scales the
+                // DISPLAY-space term), so it applies after the lift.
+                c.rgb = f * _Intensity * _Boost;
                 c.a = 1;
                 // Additive fades to black in fog, never toward fog colour.
                 UNITY_APPLY_FOG_COLOR(i.fogCoord, c, fixed4(0, 0, 0, 0));
