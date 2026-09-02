@@ -39,7 +39,7 @@ your disc ──legaia-extract──▶ extracted/ ──legaia-engine export-gl
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaNpcWander.cs` | Optional UdonSharp stroll behaviour: an NPC wanders a small radius around its spawn between pauses - collision-aware (strolls clamp against walls, a waist-height ray stops a blocked walk, a downward ray follows the floor). |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaDayNight.cs` | Optional UdonSharp day/night cycle: sweeps the realism sun on a fixed cycle, synced across players via server time; night dims the trilight ambient + fog to a moonlit fraction, enables the night-lamp container, and crossfades the day/night ambience beds. `JumpToDay`/`JumpToNight` apply a synced offset (the settings panel's buttons). |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaWorldMenu.cs` | The settings panel's behaviour: `ToggleMusic` (mutes the BGM locally - a personal preference), `SetDay`/`SetNight` (jump the shared cycle for everyone). |
-| `world-project/Assets/LegaiaWorld/Udon/LegaiaTorch.cs` | Torch/campfire pickup: hold + Use toggles the flame container (particles, point light, glow) and a spatial crackle loop; `lit` is synced so a fire someone lights burns for everyone. Spawn-kinematic like the rack pickups. |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaTorch.cs` | Torch/campfire pickup: hold + Use toggles the flame container (fire + smoke particles, a Perlin-flickered point light - no glow orb) and a spatial crackle loop; `lit` is synced so a fire someone lights burns for everyone. Spawn-kinematic like the rack pickups. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaPickupProp.cs` | UdonSharp equipment-rack pickup: the prop spawns kinematic (frozen on the rack) and only becomes a free physics object the first time a player drops it - so a rack of dozens of bodies can't tunnel through the thin ground during world-load hitches. |
 
 ## Step 1 - export a scene
@@ -162,7 +162,8 @@ the VCC setup in more detail if this is your first worlds project.
    jump the shared day/night cycle for everyone (they do nothing until
    the realism pass builds the cycle). The two torches and two campfires
    are pickups too - hold one and press **Use** (left click / trigger)
-   to light or snuff it: flame particles, a warm point light, and a
+   to light or snuff it: fire particles, a faint rising smoke plume, a
+   warm point light with a Perlin fire flicker (no glow-orb mesh), and a
    spatial synthesized crackle loop; the lit state is synced, so a
    campfire someone lights burns for the whole instance. Every
    AudioSource the kit creates also carries the `VRC_SpatialAudioSource`
@@ -255,16 +256,18 @@ pass is idempotent (it refreshes rather than stacks).
   their daytime values ("Night darkness" slider, default 0.05 - walls and
   ground keep a little moonlight, not much; sun intensity alone leaves
   the ambient day-bright after sunset). **Night lamps** places a small
-  warm light + glow bulb at each village building **window**, anchored on
+  warm light (no visible bulb mesh - the pool of light on the wall is
+  the whole effect) at each village building **window**, anchored on
   the world mesh itself: the retail scene authors semi-transparent glow
   volumes exactly where light spills out of a hut window (town01 repeats
   one identically-sized glow object across three huts), so each
   village-side BLEND submesh of window-glow proportions anchors a
   tight-radius light. The glow volume is the light *shaft* angled down
   toward the ground - its centroid hangs in mid-air off the wall - so
-  the lamp is snapped from the shaft's upper (window) end onto the
-  nearest wall face of the world collider: the bulb sits in the window
-  plane, light coming out of the building. Scenes with no authored
+  the lamp anchors on the shaft's own geometry: the centroid of its top
+  band of vertices is the window opening, nudged slightly along the
+  spill direction (a raycast wall-snap was tried first and grabbed
+  unrelated nearby walls such as the palisade). Scenes with no authored
   glows fall back to a lamp above each village-side doorway (manifest
   teleport endpoints). The `night_lamps` container is enabled by the
   day/night behaviour only while the sun is below the horizon.

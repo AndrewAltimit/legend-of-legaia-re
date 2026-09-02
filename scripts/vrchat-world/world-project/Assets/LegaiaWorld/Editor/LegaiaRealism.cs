@@ -460,10 +460,11 @@ namespace LegaiaWorld
         /// visibly spills out of a hut window (town01 repeats one
         /// identically-sized glow object on three separate huts), so every
         /// village-side BLEND submesh of window-glow proportions marks "a
-        /// lit window of a building" exactly - the night light goes at its
-        /// centroid, by the window, shining out. Water sheets and room-side
-        /// glows are filtered out by shape and by the interior-room
-        /// distance. Scenes with no authored glow volumes fall back to a
+        /// lit window of a building" exactly - the night light goes at the
+        /// shaft's top-vertex centroid, in the window opening, shining out.
+        /// No visible bulb mesh: the light pool on the wall is the effect.
+        /// Water sheets and room-side glows are filtered out by shape and by
+        /// the interior-room distance. Scenes with no glow volumes fall back to a
         /// small lamp above each village-side doorway (from the manifest's
         /// teleport endpoints).
         ///
@@ -517,26 +518,52 @@ namespace LegaiaWorld
                         if (tris.Length == 0)
                             continue;
                         Matrix4x4 toWorld = mf.transform.localToWorldMatrix;
-                        Bounds b = new Bounds(
-                            toWorld.MultiplyPoint3x4(verts[tris[0]]), Vector3.zero);
-                        for (int i = 1; i < tris.Length; i++)
-                            b.Encapsulate(toWorld.MultiplyPoint3x4(verts[tris[i]]));
+                        var wpts = new List<Vector3>(tris.Length);
+                        foreach (int ti in tris)
+                            wpts.Add(toWorld.MultiplyPoint3x4(verts[ti]));
+                        Bounds b = new Bounds(wpts[0], Vector3.zero);
+                        for (int i = 1; i < wpts.Count; i++)
+                            b.Encapsulate(wpts[i]);
                         // Window-glow proportions: a couple of meters tall,
                         // not map-spanning (water sheets are flat and wide).
                         if (b.size.y < 0.5f || b.size.y > 4.5f ||
                             Mathf.Max(b.size.x, b.size.z) > 8f)
                             continue;
-                        // The glow volume is the light SHAFT spilling out of
-                        // the window, angled down toward the ground - its
-                        // centroid hangs in mid-air off the wall. The window
-                        // is where the shaft meets the building: start from
-                        // the shaft's upper half (the window end) and snap to
-                        // the nearest wall face. Transparent submeshes are
-                        // excluded from collision, so the ray can't hit the
-                        // shaft itself.
-                        Vector3 p = b.center;
-                        p.y = b.center.y + b.size.y * 0.25f;
-                        Consider(SnapToWall(p), 2f);
+                        // The glow volume is the light SHAFT spilling down and
+                        // out of the window - its centroid hangs in mid-air
+                        // off the wall. The shaft's own geometry says where
+                        // the window is: its TOP band of vertices sits in the
+                        // window opening, its bottom band where the light
+                        // pools on the ground. Park the lamp at the top-band
+                        // centroid, nudged along the spill direction so it
+                        // sits just outside the opening. (Raycast wall-snap
+                        // was tried and grabbed unrelated nearby walls - the
+                        // palisade - so the anchor is purely geometric now.)
+                        float topY = b.max.y - b.size.y * 0.3f;
+                        float botY = b.min.y + b.size.y * 0.3f;
+                        Vector3 win = Vector3.zero, foot = Vector3.zero;
+                        int wc = 0, fc = 0;
+                        foreach (var wpt in wpts)
+                        {
+                            if (wpt.y >= topY)
+                            {
+                                win += wpt;
+                                wc++;
+                            }
+                            if (wpt.y <= botY)
+                            {
+                                foot += wpt;
+                                fc++;
+                            }
+                        }
+                        if (wc == 0)
+                            continue;
+                        win /= wc;
+                        Vector3 spill = fc > 0 ? foot / fc - win : Vector3.zero;
+                        spill.y = 0f;
+                        if (spill.sqrMagnitude > 1e-4f)
+                            win += spill.normalized * 0.25f;
+                        Consider(win, 2f);
                     }
                 }
             bool fromGlows = pts.Count > 0;
@@ -559,16 +586,11 @@ namespace LegaiaWorld
             if (pts.Count == 0)
                 return null;
 
-            string matPath = genDir + "/lamp_glow.mat";
-            var glowMat = AssetDatabase.LoadAssetAtPath<Material>(matPath);
-            if (glowMat == null)
-            {
-                var unlit = Shader.Find("Unlit/Color");
-                glowMat = new Material(unlit != null ? unlit : Shader.Find("Standard"));
-                if (glowMat.HasProperty("_Color"))
-                    glowMat.SetColor("_Color", new Color(1f, 0.85f, 0.55f));
-                AssetDatabase.CreateAsset(glowMat, matPath);
-            }
+            // Light only - no visible bulb mesh. A glowing orb floating by
+            // the window reads as an artifact; the warm pool of light on the
+            // wall and ground is the whole effect. (Stale orb material from
+            // earlier kit versions is cleaned up here.)
+            AssetDatabase.DeleteAsset(genDir + "/lamp_glow.mat");
 
             var container = new GameObject("night_lamps");
             container.transform.SetParent(root.transform, false);
@@ -576,8 +598,7 @@ namespace LegaiaWorld
             {
                 var go = new GameObject("lamp_" + i);
                 go.transform.SetParent(container.transform, false);
-                // World-space placement (the root carries the mirror):
-                // the glow volume's centroid IS the window.
+                // World-space placement (the root carries the mirror).
                 go.transform.position = pts[i];
                 var light = go.AddComponent<Light>();
                 light.type = LightType.Point;
@@ -588,43 +609,11 @@ namespace LegaiaWorld
                 light.color = new Color(1f, 0.75f, 0.45f);
                 // Several per village: keep them cheap.
                 light.shadows = LightShadows.None;
-                var bulb = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                bulb.name = "glow";
-                Object.DestroyImmediate(bulb.GetComponent<Collider>());
-                bulb.transform.SetParent(go.transform, false);
-                bulb.transform.localScale = Vector3.one * 0.1f;
-                bulb.GetComponent<MeshRenderer>().sharedMaterial = glowMat;
             }
             container.SetActive(false); // day/night behaviour turns these on
             Debug.Log("[Legaia] " + pts.Count + " night light(s) placed at " +
                       (fromGlows ? "authored window glows." : "village doorways."));
             return container;
-        }
-
-        /// Nearest wall face within a few meters of `p`, horizontally: the
-        /// hit point nudged off the surface. Walls only (steep normals), and
-        /// only the world's MeshCollider - NPC capsules and camp-prop boxes
-        /// are not windows. Falls back to `p` when nothing is close.
-        static Vector3 SnapToWall(Vector3 p)
-        {
-            float best = float.MaxValue;
-            Vector3 snapped = p;
-            const int RAYS = 16;
-            for (int i = 0; i < RAYS; i++)
-            {
-                float a = i * Mathf.PI * 2f / RAYS;
-                var dir = new Vector3(Mathf.Sin(a), 0f, Mathf.Cos(a));
-                if (Physics.Raycast(p, dir, out RaycastHit hit, 5f, ~0,
-                        QueryTriggerInteraction.Ignore)
-                    && hit.collider is MeshCollider
-                    && Mathf.Abs(hit.normal.y) < 0.6f
-                    && hit.distance < best)
-                {
-                    best = hit.distance;
-                    snapped = hit.point + hit.normal * 0.12f;
-                }
-            }
-            return snapped;
         }
 
         // --- Sky + fog ------------------------------------------------------

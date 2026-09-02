@@ -11,7 +11,9 @@
 //   synced day/night jumps (the realism pass wires the dayNight ref
 //   when it builds the cycle).
 // - Torches / campfires: LegaiaTorch pickups - hold + Use toggles the
-//   flame (particles + point light + glow) and a spatial crackle loop.
+//   flame (fire + smoke particles and a flickering point light - no
+//   visible glow orb, the light itself is the effect) and a spatial
+//   crackle loop.
 
 using System.IO;
 using UnityEditor;
@@ -40,21 +42,23 @@ namespace LegaiaWorld
                 new Color(0.36f, 0.24f, 0.13f));
             var dark = EnsureMat(genDir, "camp_dark", "Standard",
                 new Color(0.16f, 0.14f, 0.12f));
-            var glow = EnsureMat(genDir, "camp_glow", "Unlit/Color",
-                new Color(1f, 0.8f, 0.45f));
+            // Stale glow-orb material from earlier kit versions - the flames
+            // no longer carry a visible glow sphere.
+            AssetDatabase.DeleteAsset(genDir + "/camp_glow.mat");
             var flameMat = EnsureFlameMaterial(genDir);
+            var smokeMat = EnsureSmokeMaterial(genDir);
 
             var pickupType = LegaiaWorldBuilder.FindType("VRC.SDK3.Components.VRCPickup");
             var syncType = LegaiaWorldBuilder.FindType("VRC.SDK3.Components.VRCObjectSync");
 
             BuildTorch(container, Ground(spawnW + new Vector3(1.8f, 0f, 1.4f)),
-                fireClip, wood, dark, glow, flameMat, pickupType, syncType, 1);
+                fireClip, wood, dark, flameMat, smokeMat, pickupType, syncType, 1);
             BuildTorch(container, Ground(spawnW + new Vector3(-1.6f, 0f, 1.2f)),
-                fireClip, wood, dark, glow, flameMat, pickupType, syncType, 2);
+                fireClip, wood, dark, flameMat, smokeMat, pickupType, syncType, 2);
             BuildCampfire(container, Ground(spawnW + new Vector3(2.6f, 0f, -2.1f)),
-                fireClip, wood, glow, flameMat, pickupType, syncType, 1);
+                fireClip, wood, flameMat, smokeMat, pickupType, syncType, 1);
             BuildCampfire(container, Ground(spawnW + new Vector3(-2.5f, 0f, 2.7f)),
-                fireClip, wood, glow, flameMat, pickupType, syncType, 2);
+                fireClip, wood, flameMat, smokeMat, pickupType, syncType, 2);
             BuildMenu(container, spawnW, sceneName, music, dark,
                 pickupType, syncType);
 
@@ -118,11 +122,30 @@ namespace LegaiaWorld
             return m;
         }
 
-        /// The flame visual stack: particles + glow blob + point light, in an
-        /// initially-inactive container LegaiaTorch toggles. `size` 1 = torch,
-        /// ~1.8 = campfire.
+        /// Alpha-blended particle material over the same soft radial sprite -
+        /// the smoke billboard (additive can't darken, so smoke needs its
+        /// own blend mode).
+        static Material EnsureSmokeMaterial(string genDir)
+        {
+            string matPath = genDir + "/smoke_particle.mat";
+            var m = AssetDatabase.LoadAssetAtPath<Material>(matPath);
+            if (m == null)
+            {
+                m = new Material(
+                    Shader.Find("Legacy Shaders/Particles/Alpha Blended"));
+                AssetDatabase.CreateAsset(m, matPath);
+            }
+            m.mainTexture = AssetDatabase.LoadAssetAtPath<Texture2D>(
+                genDir + "/flame_soft.png");
+            return m;
+        }
+
+        /// The flame visual stack: fire particles + a smoke plume + a point
+        /// light (LegaiaTorch flickers it), in an initially-inactive container
+        /// LegaiaTorch toggles. No visible glow mesh - the light is the
+        /// effect. `size` 1 = torch, ~1.8 = campfire.
         static GameObject BuildFlame(Transform parent, Vector3 localPos,
-            float size, Material flameMat, Material glowMat)
+            float size, Material flameMat, Material smokeMat)
         {
             var flame = new GameObject("flame");
             flame.transform.SetParent(parent, false);
@@ -170,18 +193,55 @@ namespace LegaiaWorld
             // head tilt breaks immersion in VR (the SDK flags it otherwise).
             psr.allowRoll = false;
 
-            var glowGo = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            glowGo.name = "glow";
-            Object.DestroyImmediate(glowGo.GetComponent<Collider>());
-            glowGo.transform.SetParent(flame.transform, false);
-            glowGo.transform.localPosition = new Vector3(0f, 0.03f * size, 0f);
-            glowGo.transform.localScale = Vector3.one * 0.09f * size;
-            glowGo.GetComponent<MeshRenderer>().sharedMaterial = glowMat;
+            // A faint smoke plume rising off the flame tips: few particles,
+            // slow, growing and fading as they climb.
+            var smokeGo = new GameObject("smoke");
+            smokeGo.transform.SetParent(flame.transform, false);
+            smokeGo.transform.localPosition = new Vector3(0f, 0.25f * size, 0f);
+            var sps = smokeGo.AddComponent<ParticleSystem>();
+            var smain = sps.main;
+            smain.startLifetime = new ParticleSystem.MinMaxCurve(1.4f, 2.4f);
+            smain.startSpeed = new ParticleSystem.MinMaxCurve(0.25f * size, 0.45f * size);
+            smain.startSize = new ParticleSystem.MinMaxCurve(0.14f * size, 0.22f * size);
+            smain.startColor = new Color(0.28f, 0.26f, 0.24f, 0.30f);
+            smain.simulationSpace = ParticleSystemSimulationSpace.World;
+            smain.maxParticles = 32;
+            var semission = sps.emission;
+            semission.rateOverTime = 4.5f * size;
+            var sshape = sps.shape;
+            sshape.shapeType = ParticleSystemShapeType.Cone;
+            sshape.angle = 14f;
+            sshape.radius = 0.03f * size;
+            var scol = sps.colorOverLifetime;
+            scol.enabled = true;
+            var sgrad = new Gradient();
+            sgrad.SetKeys(
+                new[]
+                {
+                    new GradientColorKey(new Color(0.30f, 0.28f, 0.26f), 0f),
+                    new GradientColorKey(new Color(0.24f, 0.24f, 0.24f), 1f),
+                },
+                new[]
+                {
+                    new GradientAlphaKey(0f, 0f),
+                    new GradientAlphaKey(0.8f, 0.25f),
+                    new GradientAlphaKey(0f, 1f),
+                });
+            scol.color = new ParticleSystem.MinMaxGradient(sgrad);
+            var ssol = sps.sizeOverLifetime;
+            ssol.enabled = true;
+            ssol.size = new ParticleSystem.MinMaxCurve(1f,
+                AnimationCurve.EaseInOut(0f, 0.6f, 1f, 2.4f));
+            var spsr = smokeGo.GetComponent<ParticleSystemRenderer>();
+            spsr.sharedMaterial = smokeMat;
+            spsr.allowRoll = false;
 
             var light = flame.AddComponent<Light>();
             light.type = LightType.Point;
             light.range = 3.5f * size;
-            light.intensity = 1.4f;
+            // Base level LegaiaTorch's flicker wobbles around; a campfire
+            // throws more light than a hand torch.
+            light.intensity = 1.05f + 0.35f * size;
             light.color = new Color(1f, 0.62f, 0.3f);
             light.shadows = LightShadows.None;
 
@@ -234,13 +294,18 @@ namespace LegaiaWorld
             var torch = LegaiaWorldBuilder.TryAttachUdon(go, "LegaiaTorch");
             LegaiaWorldBuilder.SetUdonField(torch, "flame", flame);
             LegaiaWorldBuilder.SetUdonField(torch, "crackle", crackle);
+            // The flame's point light, for the per-frame fire flicker.
+            var fireLight = flame.GetComponent<Light>();
+            LegaiaWorldBuilder.SetUdonField(torch, "fireLight", fireLight);
+            LegaiaWorldBuilder.SetUdonField(torch, "fireIntensity",
+                fireLight != null ? fireLight.intensity : 1.4f);
             LegaiaWorldBuilder.SyncUdonProxy(torch);
         }
 
         static void BuildTorch(GameObject container, Vector3 pos,
-            AudioClip fireClip, Material wood, Material dark, Material glow,
-            Material flameMat, System.Type pickupType, System.Type syncType,
-            int n)
+            AudioClip fireClip, Material wood, Material dark,
+            Material flameMat, Material smokeMat,
+            System.Type pickupType, System.Type syncType, int n)
         {
             var go = new GameObject("torch_" + n);
             go.transform.SetParent(container.transform, false);
@@ -263,16 +328,16 @@ namespace LegaiaWorld
             head.GetComponent<MeshRenderer>().sharedMaterial = dark;
 
             var flame = BuildFlame(go.transform, new Vector3(0f, 0.68f, 0f),
-                1f, flameMat, glow);
+                1f, flameMat, smokeMat);
             WireFirePickup(go, flame, fireClip, 0.55f, 12f,
                 new Vector3(0f, 0.33f, 0f), new Vector3(0.13f, 0.7f, 0.13f),
                 pickupType, syncType);
         }
 
         static void BuildCampfire(GameObject container, Vector3 pos,
-            AudioClip fireClip, Material wood, Material glow,
-            Material flameMat, System.Type pickupType, System.Type syncType,
-            int n)
+            AudioClip fireClip, Material wood,
+            Material flameMat, Material smokeMat,
+            System.Type pickupType, System.Type syncType, int n)
         {
             var go = new GameObject("campfire_" + n);
             go.transform.SetParent(container.transform, false);
@@ -291,7 +356,7 @@ namespace LegaiaWorld
             }
 
             var flame = BuildFlame(go.transform, new Vector3(0f, 0.12f, 0f),
-                1.8f, flameMat, glow);
+                1.8f, flameMat, smokeMat);
             WireFirePickup(go, flame, fireClip, 0.8f, 18f,
                 new Vector3(0f, 0.14f, 0f), new Vector3(0.55f, 0.3f, 0.55f),
                 pickupType, syncType);
