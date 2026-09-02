@@ -166,6 +166,9 @@ namespace LegaiaWorld
                 AnimationCurve.EaseInOut(0f, 1f, 1f, 0.25f));
             var psr = flame.GetComponent<ParticleSystemRenderer>();
             psr.sharedMaterial = flameMat;
+            // VRChat recommends no camera roll on billboards: rolling with
+            // head tilt breaks immersion in VR (the SDK flags it otherwise).
+            psr.allowRoll = false;
 
             var glowGo = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             glowGo.name = "glow";
