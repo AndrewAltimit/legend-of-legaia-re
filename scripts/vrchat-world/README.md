@@ -26,7 +26,7 @@ your disc ──legaia-extract──▶ extracted/ ──legaia-engine export-gl
 | File | Role |
 |---|---|
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaWorldBuilder.cs` | Editor menu `Legaia > Build Scene From Manifest...`: instantiates the world, adds colliders, places NPCs + animated props, builds doorway-teleport triggers, wires proximity doors + the shoreline morph clip + the BGM loop, drops a spawn marker; also the **Equipment props** rack (the `--items` export placed as grabbable pickups near the spawn) and the camp props (below). |
-| `world-project/Assets/LegaiaWorld/Editor/LegaiaCampProps.cs` | The **Camp props** pass: a pickup settings panel (world-space buttons - local music mute, synced day/night jumps) plus two carry-able torches and two campfires near spawn, all primitives + generated materials, in a top-level container outside the mirrored root (mirrored UI text would render backwards). |
+| `world-project/Assets/LegaiaWorld/Editor/LegaiaCampProps.cs` | The **Camp props** pass: a carry-able settings panel (world-space buttons - local music mute, synced day/night jumps; grab collider confined to a bottom handle so it can't shadow the UI) plus two carry-able torches and two campfires near spawn, all primitives + generated materials, in a top-level container outside the mirrored root (mirrored UI text would render backwards). |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaAudioGen.cs` | Synthesized audio (fire crackle, day breeze + birds, night crickets - seamless loops, no disc audio) and the `VRC_SpatialAudioSource` compliance helper (the SDK deprecates bare AudioSources; 2D beds get the disabled component the SDK's own Auto Fix adds, spatial sources a configured one). |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaRealism.cs` | The builder's "Realism enhancements" foldout: lit materials + generated normals + sun, day/night wiring + night doorway lamps, sky + fog, procedural grass, interior room shells, texture smoothing, synthesized ambience, wander wiring. Every pass defaults on; untick for the faithful look. |
 | `world-project/Assets/LegaiaWorld/Editor/MiniJson.cs` | Dependency-free JSON reader for `manifest.json` (so the builder compiles in any project). |
@@ -158,10 +158,19 @@ the VCC setup in more detail if this is your first worlds project.
    A separate top-level `Legaia_camp_props` container (**Camp props**,
    default on) holds the settings panel and the torches/campfires - it
    sits outside the mirrored root on purpose (world-space UI text under
-   the X-flip would render mirror-written). The panel is a pickup board:
-   **Music On/Off** mutes the BGM for you alone, **Daytime**/**Nighttime**
-   jump the shared day/night cycle for everyone (they do nothing until
-   the realism pass builds the cycle). The two torches and two campfires
+   the X-flip would render mirror-written). The panel is a board with a
+   grab handle along its bottom edge: point at a button for the UI
+   cursor, grab the handle to carry it. The handle is the panel's ONLY
+   collider on purpose - VRChat's pointer takes the closest collider
+   hit, so a grab collider covering the buttons turns every press into
+   a pickup grab and the UI never receives the click (in desktop the
+   click then reads as the held pickup's use/drop, with the button still
+   animating - the panel looks alive but is dead). Click the buttons
+   while the board stands; a held pickup's own UI is not clickable in
+   desktop mode. **Music On/Off** mutes the BGM for you alone,
+   **Daytime**/**Nighttime** jump the shared day/night cycle for
+   everyone (they do nothing until the realism pass builds the cycle).
+   The two torches and two campfires
    are pickups too - hold one and press **Use** (left click / trigger)
    to light or snuff it: fire particles, a faint rising smoke plume, a
    warm point light with a Perlin fire flicker (no glow-orb mesh), and a

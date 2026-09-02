@@ -444,8 +444,23 @@ namespace LegaiaWorld
             board.transform.localScale = new Vector3(0.46f, 0.36f, 0.02f);
             board.GetComponent<MeshRenderer>().sharedMaterial = dark;
 
+            // Grab HANDLE below the board. The pickup's collider must stay
+            // out of the button area: VRChat's pointer raycasts colliders
+            // and the closest hit wins, so a grab collider in front of the
+            // canvas's VRCUiShape collider turns every button press into a
+            // pickup grab and the UI never receives the click (a full-board
+            // collider is exactly the bug that made the panel dead).
+            var handle = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            handle.name = "handle";
+            Object.DestroyImmediate(handle.GetComponent<Collider>());
+            handle.transform.SetParent(go.transform, false);
+            handle.transform.localPosition = new Vector3(0f, -0.235f, 0f);
+            handle.transform.localScale = new Vector3(0.3f, 0.07f, 0.03f);
+            handle.GetComponent<MeshRenderer>().sharedMaterial = dark;
+
             var box = go.AddComponent<BoxCollider>();
-            box.size = new Vector3(0.48f, 0.38f, 0.05f);
+            box.center = new Vector3(0f, -0.235f, 0f);
+            box.size = new Vector3(0.32f, 0.09f, 0.06f);
             var rb = go.AddComponent<Rigidbody>();
             rb.isKinematic = true; // the panel floats where it is left
             if (pickupType != null)
