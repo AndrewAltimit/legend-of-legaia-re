@@ -1069,6 +1069,7 @@ namespace LegaiaWorld
                     b.Encapsulate(p);
                 Vector3 seed = b.center;
                 var used = new bool[candidates.Count];
+                var roomMeshes = new List<Bounds>();
                 for (int pass = 0, grew = 1; grew == 1 && pass < 6; pass++)
                 {
                     grew = 0;
@@ -1086,15 +1087,43 @@ namespace LegaiaWorld
                         if (DistXZ(rb.center, seed) > 25f)
                             continue;
                         b.Encapsulate(rb);
+                        roomMeshes.Add(rb);
                         used[ci] = true;
                         grew = 1;
                     }
                 }
                 Bounds room = b; // pre-margin: where the dressing goes
                 b.Expand(o.interiorShellMargin * 2f);
-                float radius = b.extents.magnitude + 0.5f;
+                // An ellipsoid fitted per-axis, not a circumscribing sphere:
+                // the old radius was the expanded box's half-DIAGONAL and the
+                // sphere reached that far in every direction, so a wide
+                // room's dome bled into its neighbour. Start from the box
+                // extents and inflate uniformly only as far as the room's
+                // actual geometry demands - every member mesh's AABB corner
+                // (and doorway endpoint) must stay inside the shell.
+                Vector3 radii = b.extents + Vector3.one * 0.5f;
+                float need = 1f;
+                void Fit(Vector3 p)
+                {
+                    Vector3 d = p - b.center;
+                    float nrm = Mathf.Sqrt(
+                        d.x * d.x / (radii.x * radii.x) +
+                        d.y * d.y / (radii.y * radii.y) +
+                        d.z * d.z / (radii.z * radii.z));
+                    if (nrm > need)
+                        need = nrm;
+                }
+                foreach (var p in cl)
+                    Fit(p);
+                foreach (var rb in roomMeshes)
+                    for (int cx = 0; cx < 8; cx++)
+                        Fit(new Vector3(
+                            (cx & 1) == 0 ? rb.min.x : rb.max.x,
+                            (cx & 2) == 0 ? rb.min.y : rb.max.y,
+                            (cx & 4) == 0 ? rb.min.z : rb.max.z));
+                radii *= need * 1.05f; // small slack past the tightest corner
 
-                var shell = ShellSphere(toLocal, b.center, radius,
+                var shell = ShellSphere(toLocal, b.center, radii,
                     "shell_" + roomIdx);
                 string shellPath = genDir + "/" + shell.name + ".asset";
                 AssetDatabase.DeleteAsset(shellPath);
@@ -1114,7 +1143,7 @@ namespace LegaiaWorld
                     lgo.transform.position = room.center + Vector3.up * 0.6f;
                     var light = lgo.AddComponent<Light>();
                     light.type = LightType.Point;
-                    light.range = radius * 1.6f;
+                    light.range = Mathf.Max(radii.x, Mathf.Max(radii.y, radii.z)) * 1.6f;
                     light.intensity = 0.7f;
                     light.color = new Color(1f, 0.92f, 0.78f);
                     light.shadows = LightShadows.None;
@@ -1134,13 +1163,14 @@ namespace LegaiaWorld
                       " interior room(s) in black shells.");
         }
 
-        /// An inward-facing UV sphere around `centerW` (world), baked into
-        /// container-local space. "Inward" must hold in WORLD space, and the
-        /// built root usually carries a mirror that flips winding - so the
-        /// orientation is settled empirically: sample one face's local
-        /// normal, flip everything if the front points the wrong way for
-        /// this parent chain.
-        static Mesh ShellSphere(Matrix4x4 toLocal, Vector3 centerW, float radius,
+        /// An inward-facing UV ellipsoid around `centerW` (world) with
+        /// per-axis semi-axes `radii`, baked into container-local space.
+        /// "Inward" must hold in WORLD space, and the built root usually
+        /// carries a mirror that flips winding - so the orientation is
+        /// settled empirically: sample one face's local normal, flip
+        /// everything if the front points the wrong way for this parent
+        /// chain.
+        static Mesh ShellSphere(Matrix4x4 toLocal, Vector3 centerW, Vector3 radii,
             string name)
         {
             const int SEG = 24, RING = 14;
@@ -1151,10 +1181,11 @@ namespace LegaiaWorld
                 for (int x = 0; x <= SEG; x++)
                 {
                     float th = 2f * Mathf.PI * x / SEG;
-                    v.Add(toLocal.MultiplyPoint3x4(centerW + new Vector3(
-                        Mathf.Sin(phi) * Mathf.Cos(th),
-                        Mathf.Cos(phi),
-                        Mathf.Sin(phi) * Mathf.Sin(th)) * radius));
+                    v.Add(toLocal.MultiplyPoint3x4(centerW + Vector3.Scale(
+                        new Vector3(
+                            Mathf.Sin(phi) * Mathf.Cos(th),
+                            Mathf.Cos(phi),
+                            Mathf.Sin(phi) * Mathf.Sin(th)), radii)));
                 }
             }
             var t = new List<int>(SEG * RING * 6);

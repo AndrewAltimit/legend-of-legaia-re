@@ -292,10 +292,11 @@ pass is idempotent (it refreshes rather than stacks).
   own teleport data (endpoints beyond a spawn-distance threshold,
   clustered per room, then flood-filled outward to the whole building's
   meshes so the dome centres on the room, not on its doorway) and wraps
-  it in a
-  black dome wound to face **inward only**: black space from inside,
-  backface-culled (invisible) from outside, casting no shadow so the sun
-  still lights the room. **Window light** adds a warm fill light per room
+  it in a black ellipsoid dome fitted per-axis to the room's own geometry
+  (a circumscribing sphere reached its half-diagonal in every direction
+  and bled into neighbouring rooms), wound to face **inward only**:
+  black space from inside, backface-culled (invisible) from outside,
+  casting no shadow so the sun still lights the room. **Window light** adds a warm fill light per room
   so it reads window-lit inside its black surround.
 - **Smooth textures**: bilinear + anisotropic filtering on every texture
   under the root, instead of the exports' PSX point sampling. This edits
