@@ -29,6 +29,8 @@ your disc ──legaia-extract──▶ extracted/ ──legaia-engine export-gl
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaCampProps.cs` | The **Camp props** pass: a carry-able settings panel (world-space buttons - local music mute, synced day/night jumps; grab collider confined to a bottom handle so it can't shadow the UI) plus two carry-able torches and two campfires near spawn, all primitives + generated materials, in a top-level container outside the mirrored root (mirrored UI text would render backwards). |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaAudioGen.cs` | Synthesized audio (fire crackle, day breeze + birds, night crickets - seamless loops, no disc audio) and the `VRC_SpatialAudioSource` compliance helper (the SDK deprecates bare AudioSources; 2D beds get the disabled component the SDK's own Auto Fix adds, spatial sources a configured one). |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaRealism.cs` | The builder's "Realism enhancements" foldout: lit materials + generated normals + sun, day/night wiring + night doorway lamps, sky + fog, procedural grass, interior room shells, texture smoothing, synthesized ambience, wander wiring. Every pass defaults on; untick for the faithful look. |
+| `world-project/Assets/LegaiaWorld/Editor/LegaiaSceneSettings.cs` | Per-scene refinements from `Settings/<scene>.settings.json` (see "Per-scene settings" below): delete named objects after the build, keep listed NPCs static (idle clip, no wandering), drop listed NPCs entirely, override the spawn point in Unity world space, and point the VRC Scene Descriptor's `Spawns[0]` at LegaiaSpawn automatically. |
+| `world-project/Assets/LegaiaWorld/Settings/town01.settings.json` | The town01 refinements (kit-authored tuning data, no game content). |
 | `world-project/Assets/LegaiaWorld/Editor/MiniJson.cs` | Dependency-free JSON reader for `manifest.json` (so the builder compiles in any project). |
 | `world-project/Assets/LegaiaWorld/Shaders/LegaiaLitVertexColor.shader` | Lit cutout stand-in for the exports' unlit materials: `COLOR_0` keeps modulating the texture, and lighting is the sign-independent two-sided Lambert `\|N.L\|` (the only stable answer over the mixed PSX winding - the header keeps the failed-flip history). |
 | `world-project/Assets/LegaiaWorld/Shaders/LegaiaLitVertexColorTransparent.shader` | The BLEND (water / light pool) sibling of the lit shader - alpha-blended, depth-write off. |
@@ -180,14 +182,16 @@ the VCC setup in more detail if this is your first worlds project.
    component the SDK now expects (disabled on the flat 2D music/ambience
    beds, exactly what the SDK's Auto Fix does - the "2D audio source
    with no VRC Spatial Audio component" warning is gone).
-3. Add the VRChat scene descriptor (`VRCWorld` prefab from the SDK) and
-   point it at the spawn marker: select `VRCWorld`, expand the **VRC
-   Scene Descriptor**'s **Spawns** list, and drag
-   `Legaia_town01/LegaiaSpawn` into element 0 (replacing the prefab's own
-   `Spawn` child - moving the marker does nothing until the list
-   references it; with an *empty* list the descriptor's own transform is
-   the spawn). Players face the spawn transform's +Z, so rotate the
-   marker toward the view you want. Then `VRChat SDK > Show Control
+3. Add the VRChat scene descriptor (`VRCWorld` prefab from the SDK). The
+   builder points its **Spawns** element 0 at `LegaiaSpawn` automatically
+   when the descriptor already exists at build time (set
+   `"set_descriptor_spawn": false` in the scene's settings file to keep
+   your own); if you added `VRCWorld` after building, either rebuild or
+   drag `Legaia_town01/LegaiaSpawn` into element 0 by hand (replacing the
+   prefab's own `Spawn` child - moving the marker does nothing until the
+   list references it; with an *empty* list the descriptor's own
+   transform is the spawn). Players face the spawn transform's +Z, so
+   rotate the marker toward the view you want. Then `VRChat SDK > Show Control
    Panel > Build & Test`. Publish with **Upload** when it feels right - a
    fresh world is private until you explicitly publish it to Community
    Labs; leave it private.
@@ -196,6 +200,55 @@ the VCC setup in more detail if this is your first worlds project.
    mask the real walk surface; and after a build, `world` should carry
    one MeshCollider referencing
    `Assets/LegaiaGenerated/<scene>/world_collider.asset`.
+
+## Per-scene settings
+
+The generic build is right almost everywhere, but each scene earns a few
+hand-tuned corrections - and they must survive re-exports and rebuilds,
+so they live in a small JSON file shipped with the kit (never in the
+exported folder, which is regenerated):
+
+```
+Assets/LegaiaWorld/Settings/<scene>.settings.json
+```
+
+All keys optional (`town01.settings.json` is the worked example):
+
+```json
+{
+  "scene": "town01",
+  "delete_objects": ["room_6_shell", "room_6_light"],
+  "static_npcs": [26, 27, 45, 46, 29, 12],
+  "remove_npcs": [28, 10, 11],
+  "spawn_world": [-24.85, 1.75, 12.22],
+  "set_descriptor_spawn": true
+}
+```
+
+- **`delete_objects`** - exact GameObject names removed after the build +
+  realism passes (so generated objects like interior shells are already
+  there to match). Searched under the built root and the kit's top-level
+  containers. Generated objects are destroyed; world-glb prefab children
+  are disabled instead (Unity forbids deleting prefab-instance children).
+  A name that matches nothing logs a warning so typos are visible.
+- **`static_npcs`** - these NPCs keep their looping idle clip but the
+  wander pass never wires them, so they stay put. A number `N` matches
+  the exported `npc_<NN>_...` stem exactly; a string matches any part of
+  the file name. Re-applying the realism layer also *strips* a wander
+  behaviour wired before the rule was added.
+- **`remove_npcs`** - not placed at all (same matching rules).
+- **`spawn_world`** - overrides the manifest's suggested spawn, in
+  **Unity world space**: copy the position straight off a transform in
+  the built scene.
+- **`set_descriptor_spawn`** - point the VRC Scene Descriptor's
+  `Spawns[0]` at `LegaiaSpawn` after the build (default true, also
+  without a settings file; a no-op until the `VRCWorld` prefab is in the
+  scene).
+
+Deletions and the descriptor assignment also re-run after "Apply
+enhancements to the already-built root", so tuning a rule doesn't force
+a full rebuild - except `remove_npcs`/`spawn_world`, which take effect
+on the next **Build scene**.
 
 ## Making it feel alive
 

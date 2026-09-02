@@ -674,6 +674,15 @@ namespace LegaiaWorld
             if (realism.NeedsUdon)
                 EnsureUdonProgramAssets();
             LegaiaRealism.Apply(root, m, sceneName, realism);
+            // The passes above regenerate what per-scene deletions target
+            // (interior shells, lamps) - re-apply them, and refresh the
+            // descriptor spawn (a VRCWorld prefab added after the build
+            // picks up LegaiaSpawn here without a full rebuild).
+            var settings = LegaiaSceneSettings.Load(sceneName);
+            settings.ApplyDeletions(root);
+            var spawnT = root.transform.Find("LegaiaSpawn");
+            if (settings.setDescriptorSpawn && spawnT != null)
+                LegaiaSceneSettings.AssignDescriptorSpawn(spawnT);
         }
 
         internal static Vector3 G2U(Vector3 g) => new Vector3(-g.x, g.y, g.z);
@@ -684,6 +693,10 @@ namespace LegaiaWorld
             object m = MiniJson.Parse(File.ReadAllText(manifestPath));
             string sceneName = MiniJson.AsStr(MiniJson.Get(m, "scene")) ?? "scene";
             string worldGlb = MiniJson.AsStr(MiniJson.Get(m, "world_glb"));
+
+            // Per-scene refinements (deleted objects, static / removed
+            // NPCs, spawn override) - see LegaiaSceneSettings.cs.
+            var settings = LegaiaSceneSettings.Load(sceneName);
 
             float scale = MiniJson.GetNum(m, "scale", 1f);
             // Current exports bake the scale onto each NPC / prop glb's own
@@ -803,6 +816,8 @@ namespace LegaiaWorld
                 if (conditional && !includeConditionalNpcs)
                     continue;
                 string file = MiniJson.AsStr(MiniJson.Get(n, "file"));
+                if (settings.NpcIsRemoved(file))
+                    continue;
                 var go = InstantiateGlb(dir + "/" + file, npcRoot.transform);
                 if (go == null) continue;
                 // Negative Z: the handedness mirror (see header note);
@@ -1027,6 +1042,12 @@ namespace LegaiaWorld
                         Quaternion.LookRotation(dirWorld.normalized, Vector3.up);
             }
 
+            // Per-scene spawn override, in UNITY WORLD SPACE (the value is
+            // copy/pasted from the built scene, so it is applied after the
+            // mirror stands - and before camp props, which stand near it).
+            if (settings.hasSpawn)
+                spawnGo.transform.position = settings.spawnWorld;
+
             // Camp props (settings panel, torches, campfires): built AFTER
             // the mirror, in world space, in their own top-level container -
             // world-space UI text under the root's X-flip would render
@@ -1046,6 +1067,12 @@ namespace LegaiaWorld
             // passes sample and scatter in the finished world frame).
             if (realism.AnyEnabled)
                 LegaiaRealism.Apply(root, m, sceneName, realism);
+
+            // Per-scene deletions run LAST - the names usually refer to
+            // objects the passes above generate (interior shells, lamps).
+            settings.ApplyDeletions(root);
+            if (settings.setDescriptorSpawn)
+                LegaiaSceneSettings.AssignDescriptorSpawn(spawnGo.transform);
 
             Selection.activeGameObject = root;
             Debug.Log("[Legaia] built " + sceneName + ": world + " + npcCount +

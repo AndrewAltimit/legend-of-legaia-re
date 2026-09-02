@@ -247,3 +247,10 @@ export near the spawn as grabbable pickups. Every realism pass defaults
 on - unticking them all restores the faithful retail-shaded build - and
 everything is generated from scratch on top of the export, documented in
 [`scripts/vrchat-world/README.md`](../../scripts/vrchat-world/README.md#optional-realism-enhancements).
+
+Hand-tuned corrections a specific scene needs (delete a generated object,
+keep listed NPCs from wandering, drop an NPC, override the spawn, aim the
+VRC scene descriptor at the spawn marker) live in a per-scene kit file,
+`Assets/LegaiaWorld/Settings/<scene>.settings.json` - authored tuning
+data, no game content - documented in
+[`scripts/vrchat-world/README.md`](../../scripts/vrchat-world/README.md#per-scene-settings).

@@ -161,7 +161,8 @@ namespace LegaiaWorld
                     BuildInteriorShells(root, manifest, genDir, o);
                 }
                 if (o.npcWander && manifest != null)
-                    WireWander(root, manifest, o);
+                    WireWander(root, manifest, o,
+                        LegaiaSceneSettings.Load(sceneName));
             }
             finally
             {
@@ -1594,7 +1595,8 @@ namespace LegaiaWorld
 
         // --- NPC wander -----------------------------------------------------
 
-        static void WireWander(GameObject root, object manifest, LegaiaRealismOptions o)
+        static void WireWander(GameObject root, object manifest,
+            LegaiaRealismOptions o, LegaiaSceneSettings settings)
         {
             var npcRoot = root.transform.Find("npcs");
             if (npcRoot == null)
@@ -1607,8 +1609,18 @@ namespace LegaiaWorld
             {
                 if (MiniJson.AsStr(MiniJson.Get(n, "kind")) != "talk")
                     continue;
-                Vector3 p = LegaiaWorldBuilder.G2U(MiniJson.GetVec3(n, "position"));
                 string file = MiniJson.AsStr(MiniJson.Get(n, "file")) ?? "";
+                Vector3 p = LegaiaWorldBuilder.G2U(MiniJson.GetVec3(n, "position"));
+                // Per-scene settings: a static NPC keeps its idle clip but
+                // never travels; a removed NPC was not placed at all. Strip
+                // any wander wired by an earlier pass so re-applying the
+                // realism layer honours a newly-added rule too.
+                if (settings.NpcIsStatic(file) || settings.NpcIsRemoved(file))
+                {
+                    if (wanderType != null)
+                        StripWander(npcRoot, p, wanderType);
+                    continue;
+                }
                 float yawOff = 0f;
                 foreach (var kv in overrides)
                     if (file.Contains(kv.Key))
@@ -1634,6 +1646,31 @@ namespace LegaiaWorld
                 }
             }
             Debug.Log("[Legaia] wander wired on " + wired + " villager(s).");
+        }
+
+        /// Remove an already-wired LegaiaNpcWander from the NPC instance at
+        /// `p` - proxy AND backing UdonBehaviour (destroying only the U#
+        /// proxy leaves the program that actually runs in-world attached).
+        static void StripWander(Transform npcRoot, Vector3 p, System.Type wanderType)
+        {
+            foreach (Transform child in npcRoot)
+            {
+                if ((child.localPosition - p).sqrMagnitude > 1e-3f)
+                    continue;
+                var comp = child.GetComponent(wanderType);
+                if (comp == null)
+                    return;
+                var util = LegaiaWorldBuilder.FindType(
+                    "UdonSharpEditor.UdonSharpEditorUtility");
+                var backing = util?.GetMethod("GetBackingUdonBehaviour")
+                    ?.Invoke(null, new object[] { comp }) as Component;
+                if (backing != null)
+                    Undo.DestroyObjectImmediate(backing);
+                Undo.DestroyObjectImmediate(comp);
+                Debug.Log("[Legaia] wander stripped from " + child.name +
+                    " (static in scene settings).");
+                return;
+            }
         }
 
         /// "npc_30:90; npc_07:-90" -> (stem fragment, degrees) pairs. A
