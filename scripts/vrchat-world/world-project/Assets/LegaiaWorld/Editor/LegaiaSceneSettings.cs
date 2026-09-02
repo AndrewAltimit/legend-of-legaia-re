@@ -11,15 +11,19 @@
 //
 // Recognised keys (all optional):
 //
-//   "delete_objects":  ["room_6_shell", "room_6_light"]
+//   "delete_objects":  ["room_6_shell", "prop_53_anim8/object_1"]
 //       Exact GameObject names to remove after the build + realism passes.
-//       Searched under the built root (children of Legaia_<scene>,
-//       inactive included) and the kit's top-level containers
-//       (Legaia_camp_props, Legaia_night_torches, Legaia_equipment).
-//       Generated objects are destroyed (they come back next build for a
-//       scene whose settings drop the name); prefab-instance children
-//       (world glb nodes) are disabled instead, since Unity forbids
-//       deleting them without unpacking.
+//       A name with '/' is a path SUFFIX: the last segment names the
+//       object and each earlier segment must match the next parent up
+//       ("prop_53_anim8/object_1" hits only the object_1 under a
+//       prop_53_anim8, not every glb's object_1). Searched under the
+//       built root (children of Legaia_<scene>, inactive included) and
+//       the kit's top-level containers (Legaia_camp_props,
+//       Legaia_night_torches, Legaia_equipment). Generated objects are
+//       destroyed (they come back next build for a scene whose settings
+//       drop the name); prefab-instance children (world/prop glb nodes)
+//       are disabled instead, since Unity forbids deleting them without
+//       unpacking.
 //
 //   "static_npcs":     [26, 27, "npc_45"]
 //       NPCs that keep their looping idle clip but never travel: the
@@ -166,7 +170,6 @@ namespace LegaiaWorld
         {
             if (deleteObjects.Count == 0 || root == null)
                 return;
-            var names = new HashSet<string>(deleteObjects);
             var targets = new List<GameObject>();
             var scopes = new List<GameObject> { root };
             foreach (string top in new[]
@@ -179,11 +182,17 @@ namespace LegaiaWorld
             var matched = new HashSet<string>();
             foreach (var scope in scopes)
                 foreach (var t in scope.GetComponentsInChildren<Transform>(true))
-                    if (t != null && t.gameObject != scope && names.Contains(t.name))
-                    {
-                        targets.Add(t.gameObject);
-                        matched.Add(t.name);
-                    }
+                {
+                    if (t == null || t.gameObject == scope)
+                        continue;
+                    foreach (string token in deleteObjects)
+                        if (MatchesPath(t, token))
+                        {
+                            targets.Add(t.gameObject);
+                            matched.Add(token);
+                            break;
+                        }
+                }
             int removed = 0, hidden = 0;
             foreach (var go in targets)
             {
@@ -203,10 +212,29 @@ namespace LegaiaWorld
             }
             Debug.Log("[Legaia] scene settings deletions: " + removed +
                 " destroyed, " + hidden + " disabled (prefab children).");
-            foreach (string n in names)
+            foreach (string n in deleteObjects)
                 if (!matched.Contains(n))
                     Debug.LogWarning("[Legaia] delete_objects name not found " +
                         "in the built hierarchy: " + n);
+        }
+
+        /// True when `token` names this transform: a bare name is an
+        /// exact match on t.name; a '/'-joined token additionally
+        /// requires each earlier segment to match the next parent up
+        /// (a path SUFFIX - the chain may sit anywhere in the scene).
+        static bool MatchesPath(Transform t, string token)
+        {
+            string[] segs = token.Split('/');
+            if (segs.Length == 0 || t.name != segs[segs.Length - 1])
+                return false;
+            Transform cur = t.parent;
+            for (int i = segs.Length - 2; i >= 0; i--)
+            {
+                if (cur == null || cur.name != segs[i])
+                    return false;
+                cur = cur.parent;
+            }
+            return true;
         }
 
         /// Point the VRC Scene Descriptor's Spawns[0] at `spawn` (the

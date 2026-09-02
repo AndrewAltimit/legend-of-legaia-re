@@ -1,6 +1,6 @@
 {
   "scene": "town01",
-  "delete_objects": ["room_6_shell", "room_6_light"],
+  "delete_objects": ["room_6_shell", "room_6_light", "prop_53_anim8/object_1"],
   "static_npcs": [26, 27, 45, 46, 29, 12],
   "remove_npcs": [28, 10, 11],
   "freeze_npcs": [47, 48],

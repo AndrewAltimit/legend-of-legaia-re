@@ -217,7 +217,7 @@ All keys optional (`town01.settings.json` is the worked example):
 ```json
 {
   "scene": "town01",
-  "delete_objects": ["room_6_shell", "room_6_light"],
+  "delete_objects": ["room_6_shell", "room_6_light", "prop_53_anim8/object_1"],
   "static_npcs": [26, 27, 45, 46, 29, 12],
   "remove_npcs": [28, 10, 11],
   "freeze_npcs": [47],
@@ -228,10 +228,14 @@ All keys optional (`town01.settings.json` is the worked example):
 
 - **`delete_objects`** - exact GameObject names removed after the build +
   realism passes (so generated objects like interior shells are already
-  there to match). Searched under the built root and the kit's top-level
-  containers. Generated objects are destroyed; world-glb prefab children
-  are disabled instead (Unity forbids deleting prefab-instance children).
-  A name that matches nothing logs a warning so typos are visible.
+  there to match). A name with `/` is a path *suffix*: the last segment
+  names the object, each earlier segment must match the next parent up -
+  so `prop_53_anim8/object_1` hits only that prop's `object_1`, while a
+  bare `object_1` would hit every glb's. Searched under the built root
+  and the kit's top-level containers. Generated objects are destroyed;
+  glb prefab children are disabled instead (Unity forbids deleting
+  prefab-instance children). A name that matches nothing logs a warning
+  so typos are visible.
 - **`static_npcs`** - these NPCs keep their looping idle clip but the
   wander pass never wires them, so they stay put. A number `N` matches
   the exported `npc_<NN>_...` stem exactly; a string matches any part of
