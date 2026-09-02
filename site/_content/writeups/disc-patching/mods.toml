@@ -13,7 +13,7 @@
 #   name      display name
 #   flag      CLI flag (legaia-patcher)
 #   tier      A-F primary technique
-#   variant   optional G/H/I/J specialization tag ("" if none)
+#   variant   optional specialization tag: splice / stamp / string / config ("" if none)
 #   target    what + where the edit lands (concise; addresses where pinned)
 #   edit      "in-place" (same-size) | "relocate" (variable-length, footprint-bounded)
 #   gap       true if it consumes the shared SCUS rodata gap (composition-relevant)
@@ -68,24 +68,31 @@ page = "f-overlay-dead-region.html"
 published = true
 summary = "Host hand-assembled code inside a resident overlay's reference-free dead space - so a whole new screen or system costs nothing and never competes for the shared rodata gap."
 
+[[tier]]
+id = "G"
+title = "Carrying a RAM patch on disc"
+page = "g-ram-payload-carrier.html"
+published = true
+summary = "A payload that targets free RAM no overlay covers cannot be hosted - it must be streamed: parked in annex sectors and read to its address at load time by an injected stub calling the game's own CD reader. Also the rung where a third-party mod's bytes ride the disc verbatim."
+
 # ---------------------------------------------------------------------------
 # Variant specializations (shown as tags, not ladder rungs).
 # ---------------------------------------------------------------------------
 
 [[variant]]
-id = "G"
+id = "splice"
 title = "GIVE_ITEM splice into the opening MAN"
 
 [[variant]]
-id = "H"
+id = "stamp"
 title = "New-game seed-table stamp"
 
 [[variant]]
-id = "I"
+id = "string"
 title = "String injection into a reserved zero gap"
 
 [[variant]]
-id = "J"
+id = "config"
 title = "Config blob consumed by the from-scratch engine"
 
 # ---------------------------------------------------------------------------
@@ -174,7 +181,7 @@ key = "starting_level"
 name = "Starting level"
 flag = "--starting-level"
 tier = "A"
-variant = "H"
+variant = "stamp"
 target = "SCUS new-game roster seed: level literal +0x130, growth-curve stats, lead XP +0x0/+0x4"
 edit = "in-place"
 gap = false
@@ -186,7 +193,7 @@ key = "item_name"
 name = "Unused-item naming (Seru Bell)"
 flag = "--unused-items"
 tier = "A"
-variant = "I"
+variant = "string"
 target = "Seru Bell name string at reserved gap 0x8007AB40 + name-pointer repoint for id 0xFD"
 edit = "in-place"
 gap = true
@@ -321,7 +328,7 @@ key = "starting_bag"
 name = "Starting bag (high-capacity)"
 flag = "--starting-items"
 tier = "D"
-variant = "G"
+variant = "splice"
 target = "Opening-scene MAN: guarded GIVE_ITEM block (0x70 test / 0x39 give / 0x50 set) spliced in"
 edit = "relocate"
 gap = false
@@ -333,7 +340,7 @@ key = "starting_items"
 name = "Starting items (seed code)"
 flag = "--starting-items"
 tier = "D"
-variant = "H"
+variant = "stamp"
 target = "SCUS new-game seed routine FUN_80034A6C: reclaimed region re-stamped with grant code"
 edit = "in-place"
 gap = false
@@ -400,7 +407,7 @@ key = "seru_trade"
 name = "Seru trading vendor"
 flag = "--seru-trade"
 tier = "F"
-variant = "J"
+variant = "config"
 target = "Menu overlay (PROT 0899) dead region 0x801E74E0..0x801E83E0: full Trade screen; SCUS config blob 0x8007AF00 drives the engine mirror"
 edit = "in-place"
 gap = false
@@ -515,3 +522,31 @@ gap = false
 status = "shipped"
 test = "monster_model_real"
 notes = "the mesh must keep the retail part count - animations pose parts by index, so a same-part-count mesh inherits every retail move"
+
+# ---------------------------------------------------------------------------
+# Tier G - carrying a RAM patch on disc
+# ---------------------------------------------------------------------------
+
+[[mod]]
+key = "super_arts_pack"
+name = "Super Arts Pack (by ZetaPhoenix)"
+flag = "--super-arts-pack"
+tier = "G"
+target = "3764-byte community RAM patch streamed to free RAM 0x801FD000 at battle load; 14 hook words across SCUS + PROT 0898"
+edit = "annex sectors + in-place word edits"
+gap = true
+status = "shipped"
+test = "super_arts_pack_real"
+notes = "fifteen extra Super Arts, five per character; ZetaPhoenix's block and hook set installed verbatim - the loader stub is the carrier's only added code"
+
+[[mod]]
+key = "arts_name_fix"
+name = "Arts name-length fix (by ZetaPhoenix)"
+flag = "--arts-name-fix"
+tier = "E"
+target = "banner path 0x8004BC3C detour + 18-word re-centre routine in verified-dead arena 1"
+edit = "in-place"
+gap = true
+status = "shipped"
+test = "arts_name_fix_real"
+notes = "fixes retail's mis-centred Super/Miracle Art name banner; ZetaPhoenix's fix installed verbatim, relocated out of the SsAPI zero-padding window; auto-included by --super-arts-pack"

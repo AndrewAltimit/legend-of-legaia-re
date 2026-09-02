@@ -16,7 +16,7 @@
     <dt>Engine</dt><dd><code>legaia_asset::man_edit</code> - rebuild, resize, fix every disturbed offset</dd>
     <dt>Fix-ups</dt><dd>Partition tables &middot; partition-2 record-offset table &middot; the <code>u24</code> length at <code>+0x28</code> &middot; intra-record jump deltas &middot; the external descriptor size word</dd>
     <dt>Bound</dt><dd>Recompressed stream must fit the asset footprint; otherwise the scene is skipped</dd>
-    <dt>Mods</dt><dd><code>--doors</code> &middot; <code>--starting-items</code> (variant G)</dd>
+    <dt>Mods</dt><dd><code>--doors</code> &middot; <code>--starting-items</code> (variant: splice)</dd>
     <dt>Confidence</dt><dd><span class="tag tag-done">Confirmed</span> - oracles re-decode every relocated scene and walk its scripts</dd>
     <dt>Oracles</dt><dd><code>door_patch_real.rs</code> &middot; <code>starting_bag_real.rs</code></dd>
   </dl>
@@ -73,7 +73,7 @@
   <h2>Two shapes of edit</h2>
   <ul>
     <li><strong>Re-point a record (<code>--doors</code>).</strong> The canonical relocation: the inline name resizes the record, the engine fixes the offsets, the MAN recompresses within footprint. Coupling is bidirectional (a door and its return both move) or one-way, by flag.</li>
-    <li><strong>Insert a block (<code>--starting-items</code>, variant G).</strong> The high-capacity starting bag inserts a guarded grant block into the opening scene's script - a story-flag test, a run of give-item ops, and a flag set so it fires once. <code>man_edit::apply_insertions</code> relocates it like any other length change, lifting the seven-slot cap of the same-size new-game seed path.</li>
+    <li><strong>Insert a block (<code>--starting-items</code>, the <em>splice</em> variant).</strong> The high-capacity starting bag inserts a guarded grant block into the opening scene's script - a story-flag test, a run of give-item ops, and a flag set so it fires once. <code>man_edit::apply_insertions</code> relocates it like any other length change, lifting the seven-slot cap of the same-size new-game seed path.</li>
   </ul>
   <p>Relocation composes with the same-size tiers because they leave descriptor offsets fixed: a relocation pass runs on the stable footprint the <a href="c-field-vm-operands.html#budget">tier-C budget</a> is read from.</p>
 </section>

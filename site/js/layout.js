@@ -87,6 +87,7 @@ const NAV = [
       { href: 'writeups/disc-patching/d-man-relocation.html',      text: 'Tier D - MAN relocation',  key: 'writeups/disc-patching/d-man-relocation', indent: true },
       { href: 'writeups/disc-patching/e-rodata-gap-code.html',     text: 'Tier E - rodata-gap code', key: 'writeups/disc-patching/e-rodata-gap-code', indent: true },
       { href: 'writeups/disc-patching/f-overlay-dead-region.html', text: 'Tier F - overlay dead-region', key: 'writeups/disc-patching/f-overlay-dead-region', indent: true },
+      { href: 'writeups/disc-patching/g-ram-payload-carrier.html', text: 'Tier G - RAM-patch carrier', key: 'writeups/disc-patching/g-ram-payload-carrier', indent: true },
     ],
   },
   {

@@ -393,6 +393,7 @@ pub async fn patch_rom(
     super_art_powers: &str,
     show_super_arts: bool,
     super_arts_pack: bool,
+    arts_name_fix: bool,
     enemy_attack_count: &str,
     swing_costs: &str,
     equip_owners: &str,
@@ -462,6 +463,22 @@ pub async fn patch_rom(
             return Err(err(format!(
                 "the Super Arts Pack and {what} both inject into the same verified-dead SCUS \
                  regions and are mutually exclusive; enable only one"
+            )));
+        }
+    }
+    // The arts name-length fix parks at the arena head when standalone; with
+    // the pack on it rides behind the pack's stub instead, so the pack is not
+    // in this list.
+    for (other, what) in [
+        (arts_ap, "the arts AP override"),
+        (shiny_seru, "shiny-seru"),
+        (delilas_challenge, "the Delilas Challenge"),
+        (show_super_arts, "showing Super Arts on the move list"),
+    ] {
+        if arts_name_fix && other {
+            return Err(err(format!(
+                "the arts name-length fix and {what} both inject into the same verified-dead \
+                 SCUS regions and are mutually exclusive; enable only one"
             )));
         }
     }
@@ -707,6 +724,26 @@ pub async fn patch_rom(
         ));
     } else {
         summary.push_str("super-arts-pack: untouched\n");
+    }
+    // The arts name-length fix (also by ZetaPhoenix): re-centre the Super /
+    // Miracle Art name banner for the installed name. The pack installs it
+    // automatically as the author's own update, parked behind the pack's
+    // battle-load stub; standalone it takes the arena head.
+    if super_arts_pack || arts_name_fix {
+        let routine_va = if super_arts_pack {
+            legaia_patcher::super_arts_pack::ARENA_USED_END_VA
+        } else {
+            legaia_patcher::shiny_seru::ARENA1_VA
+        };
+        apply::inject_arts_name_fix(&mut patcher, routine_va)
+            .map_err(|e| err(format!("arts-name-fix: {e}")))?;
+        summary.push_str(if super_arts_pack {
+            "arts-name-fix (by ZetaPhoenix): art name banner re-centred (included with the pack)\n"
+        } else {
+            "arts-name-fix (by ZetaPhoenix): art name banner re-centred\n"
+        });
+    } else {
+        summary.push_str("arts-name-fix: untouched\n");
     }
 
     // Seru trading: a vendor in shops offers to trade a party member's Seru-magic for
@@ -1269,6 +1306,7 @@ pub async fn patch_rom(
                 let cast_route = if shiny_seru
                     || show_super_arts
                     || super_arts_pack
+                    || arts_name_fix
                     || !arts_ap_grants.trim().is_empty()
                     || !arts_ap_costs.trim().is_empty()
                 {

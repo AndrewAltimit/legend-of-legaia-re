@@ -13,7 +13,8 @@ seventeen animation edit-lists; the layout is tabulated in
 
 The bytes are installed **unmodified** - the patcher parks this file in the
 disc's `DMY.DAT` annex and streams it to `0x801FD000` at battle load, then
-writes ten small same-size word edits so retail code reaches it. Nothing in the
+writes fourteen small same-size word edits - ZetaPhoenix's own hook set, plus
+the battle-load detour - so retail code reaches it. Nothing in the
 block is rewritten, relocated or re-assembled.
 
 **Provenance and licence.** Contributed by ZetaPhoenix as a GameShark-style RAM

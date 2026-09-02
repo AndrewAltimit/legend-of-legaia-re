@@ -935,6 +935,18 @@ pub(crate) struct RandomizeArgs {
     /// untouched.
     #[arg(long, default_value_t = false)]
     pub(crate) jewel_fix: bool,
+    /// Fix retail's **mis-centred Super / Miracle Art name banner** (a fix by
+    /// ZetaPhoenix, installed verbatim): the banner routine measures the
+    /// placeholder name "Vulture Blade" and only re-measures for regular /
+    /// Hyper Arts, so every Super Art and Miracle finisher is centred for the
+    /// wrong name. A 3-word detour re-measures the installed name and
+    /// re-centres the four banner X coordinates. Standalone vanilla bug fix;
+    /// `--super-arts-pack` installs it automatically as the author's own
+    /// update to his mod. Standalone it claims the head of the shared
+    /// verified-dead arena, so it is mutually exclusive with `--shiny-seru`,
+    /// `--show-super-arts`, the arts AP overrides and `--delilas-challenge`.
+    #[arg(long, default_value_t = false)]
+    pub(crate) arts_name_fix: bool,
     /// Fix the **attack-approach softlock** (the "endless camera orbit"): a
     /// monster approaching an out-of-reach target waits in a range poll with
     /// no timeout while its approach animation drives the movement - and

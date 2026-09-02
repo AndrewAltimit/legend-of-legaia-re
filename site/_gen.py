@@ -504,6 +504,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("writeups/disc-patching/d-man-relocation.html","Tier D - variable-length relocation","writeups/disc-patching/d-man-relocation","writeups/disc-patching/d-man-relocation.html"),
     ("writeups/disc-patching/e-rodata-gap-code.html","Tier E - rodata-gap code injection","writeups/disc-patching/e-rodata-gap-code","writeups/disc-patching/e-rodata-gap-code.html"),
     ("writeups/disc-patching/f-overlay-dead-region.html","Tier F - overlay dead-region injection","writeups/disc-patching/f-overlay-dead-region","writeups/disc-patching/f-overlay-dead-region.html"),
+    ("writeups/disc-patching/g-ram-payload-carrier.html","Tier G - carrying a RAM patch on disc","writeups/disc-patching/g-ram-payload-carrier","writeups/disc-patching/g-ram-payload-carrier.html"),
     ("subsystems/index.html",      "Subsystems",                    "subsystems/index",           "subsystems/index.html"),
     ("subsystems/boot.html",       "Boot path",                     "subsystems/boot",            "subsystems/boot.html"),
     ("subsystems/asset-loader.html","Asset loader",                 "subsystems/asset-loader",    "subsystems/asset-loader.html"),
