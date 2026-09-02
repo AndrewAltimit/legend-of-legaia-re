@@ -82,6 +82,7 @@ namespace LegaiaWorld
         bool playWorldMorphClip = true;
         bool addMusic = true;
         float musicVolume = 0.5f;
+        bool campProps = true;
 
         // Optional realism layer (LegaiaRealism.cs) - every pass defaults
         // on; untick everything in the foldout for the faithful
@@ -184,6 +185,14 @@ namespace LegaiaWorld
                 addMusic);
             using (new EditorGUI.DisabledScope(!addMusic))
                 musicVolume = EditorGUILayout.Slider("  Music volume", musicVolume, 0f, 1f);
+            campProps = EditorGUILayout.Toggle(
+                new GUIContent("Camp props (menu, torches, fires)",
+                    "A pickup settings panel near spawn (local music mute, " +
+                    "synced day/night jump buttons) plus two carry-able " +
+                    "torches and two campfires - hold one and press Use to " +
+                    "light it (particles, warm point light, spatial crackle " +
+                    "loop). All generated, no game data"),
+                campProps);
 
             GUILayout.Space(8);
             RealismGUI();
@@ -600,9 +609,11 @@ namespace LegaiaWorld
                     "glb reimport resets it - rerun after one"),
                 realism.smoothTextures);
             realism.ambientAudio = EditorGUILayout.Toggle(
-                new GUIContent("Ambient audio bed",
-                    "A quiet synthesized wind/surf noise loop on a 2D source - " +
-                    "generated audio, not from the disc"),
+                new GUIContent("Ambient audio beds",
+                    "Quiet synthesized loops on 2D sources: a wind/surf base, " +
+                    "a daytime bed (breeze + birds) and a night bed (crickets) " +
+                    "crossfaded with the day/night sun - generated audio, not " +
+                    "from the disc"),
                 realism.ambientAudio);
             using (new EditorGUI.DisabledScope(!realism.ambientAudio))
                 realism.ambientVolume = EditorGUILayout.Slider(
@@ -691,7 +702,7 @@ namespace LegaiaWorld
             // U# refuses to attach a behaviour whose script has no
             // UdonSharpProgramAsset - and bare .cs files copied into a
             // project have none. Create any missing ones before wiring.
-            if (wireTeleports || openDoorsOnApproach || realism.NeedsUdon)
+            if (wireTeleports || openDoorsOnApproach || campProps || realism.NeedsUdon)
                 EnsureUdonProgramAssets();
 
             var root = new GameObject("Legaia_" + sceneName);
@@ -749,6 +760,7 @@ namespace LegaiaWorld
             spawnGo.transform.localPosition = spawn + Vector3.up * 0.1f;
 
             // --- Scene music (the exported seamless BGM loop) ---
+            AudioSource musicSrc = null;
             string musicFile = MiniJson.AsStr(
                 MiniJson.Get(MiniJson.Get(m, "music"), "file"));
             if (addMusic && musicFile != null)
@@ -762,6 +774,10 @@ namespace LegaiaWorld
                     src.playOnAwake = true;
                     src.spatialBlend = 0f; // the town theme plays everywhere
                     src.volume = musicVolume;
+                    // SDK compliance: a flat 2D source still wants a
+                    // (disabled) VRC_SpatialAudioSource sibling.
+                    LegaiaAudioGen.AddVrcSpatial(root, false, 0f, 0f, 0f);
+                    musicSrc = src;
                 }
                 else
                 {
@@ -1002,6 +1018,21 @@ namespace LegaiaWorld
                 if (dirWorld.sqrMagnitude > 1e-6f)
                     fm.Key.rotation =
                         Quaternion.LookRotation(dirWorld.normalized, Vector3.up);
+            }
+
+            // Camp props (settings panel, torches, campfires): built AFTER
+            // the mirror, in world space, in their own top-level container -
+            // world-space UI text under the root's X-flip would render
+            // mirror-written, and the ground raycasts want final collider
+            // positions.
+            if (campProps)
+                LegaiaCampProps.Build("Assets/LegaiaGenerated/" + sceneName,
+                    sceneName, spawnGo.transform.position, musicSrc);
+            else
+            {
+                var oldCamp = GameObject.Find(LegaiaCampProps.CONTAINER);
+                if (oldCamp != null)
+                    Undo.DestroyObjectImmediate(oldCamp);
             }
 
             // Optional realism layer, after the final mirror stands (its
@@ -1317,7 +1348,8 @@ namespace LegaiaWorld
             bool created = false;
             foreach (string name in new[]
                      { "LegaiaDoorway", "LegaiaDoor", "LegaiaNpcWander",
-                       "LegaiaDayNight", "LegaiaPickupProp" })
+                       "LegaiaDayNight", "LegaiaPickupProp", "LegaiaTorch",
+                       "LegaiaWorldMenu" })
             {
                 var t = FindType("LegaiaWorld." + name);
                 if (t == null) continue;

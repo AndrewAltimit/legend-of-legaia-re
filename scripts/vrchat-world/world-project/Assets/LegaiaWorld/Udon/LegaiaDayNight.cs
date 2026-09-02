@@ -3,7 +3,8 @@
 // transform - the directional light sits on the same GameObject) through
 // a full day on a fixed cycle. Every client derives the same sun angle
 // from the shared server clock, so the cycle is synced across players
-// with no networking events or ownership.
+// by construction; the only networked state is `timeOffset`, the synced
+// jump the settings panel's Day / Night buttons apply for everyone.
 //
 // Night darkness: sun intensity alone is not enough - the trilight
 // ambient keeps lighting the landscape at daytime levels after sunset -
@@ -21,6 +22,7 @@ using VRC.SDKBase;
 
 namespace LegaiaWorld
 {
+    [UdonBehaviourSyncMode(BehaviourSyncMode.Manual)]
     public class LegaiaDayNight : UdonSharpBehaviour
     {
         [Tooltip("The directional light this behaviour drives (the builder's LegaiaSun - on this same GameObject).")]
@@ -46,6 +48,23 @@ namespace LegaiaWorld
 
         [Tooltip("Root object holding the night-only lamps (the realism pass's night_lamps container): enabled while the sun is below the horizon, disabled by day.")]
         public GameObject nightLights;
+
+        [Tooltip("Daytime ambience bed (breeze + birds) - its volume is faded in with the sun.")]
+        public AudioSource dayAmbience;
+
+        [Tooltip("Night ambience bed (crickets) - its volume is faded in as the sun sets.")]
+        public AudioSource nightAmbience;
+
+        [Tooltip("Peak volume of the daytime ambience bed.")]
+        public float dayAmbienceVolume = 0.16f;
+
+        [Tooltip("Peak volume of the night ambience bed.")]
+        public float nightAmbienceVolume = 0.2f;
+
+        // Synced jump applied on top of the server clock, so the menu's
+        // "Day" / "Night" buttons move the cycle for every player at once.
+        [UdonSynced]
+        private double timeOffset;
 
         private float azimuth;
         private Color daySky;
@@ -88,7 +107,11 @@ namespace LegaiaWorld
             if (cycle < 1.0)
                 cycle = 1.0;
             float ds = Mathf.Clamp(dayShare, 0.05f, 0.95f);
-            float phase = (float)((Networking.GetServerTimeInSeconds() % cycle) / cycle);
+            double t = Networking.GetServerTimeInSeconds() + timeOffset;
+            double wrapped = t % cycle;
+            if (wrapped < 0.0)
+                wrapped += cycle;
+            float phase = (float)(wrapped / cycle);
             // 0..dayShare maps to the 180 degrees above the horizon,
             // the rest to the 180 below - a piecewise-constant-rate sweep.
             float elev = phase < ds
@@ -120,6 +143,45 @@ namespace LegaiaWorld
                 lightsOn = night;
                 nightLights.SetActive(night);
             }
+
+            // Ambience beds: crossfade breeze/birds against crickets with
+            // the same day factor the ambient sweep uses.
+            if (dayAmbience != null)
+                dayAmbience.volume = dayAmbienceVolume * dayF;
+            if (nightAmbience != null)
+                nightAmbience.volume = nightAmbienceVolume * (1f - dayF);
+        }
+
+        // --- Menu jumps -------------------------------------------------
+        // Jump the shared cycle so "now" lands at the requested phase, and
+        // sync the offset: every player's clock-derived sun agrees again on
+        // the next serialization.
+
+        public void JumpToDay()
+        {
+            float ds = Mathf.Clamp(dayShare, 0.05f, 0.95f);
+            JumpToPhase(0.5f * ds); // high noon
+        }
+
+        public void JumpToNight()
+        {
+            float ds = Mathf.Clamp(dayShare, 0.05f, 0.95f);
+            JumpToPhase(ds + 0.5f * (1f - ds)); // midnight
+        }
+
+        void JumpToPhase(float target)
+        {
+            double cycle = cycleMinutes * 60.0;
+            if (cycle < 1.0)
+                cycle = 1.0;
+            double t = Networking.GetServerTimeInSeconds();
+            double current = (t + timeOffset) % cycle;
+            if (current < 0.0)
+                current += cycle;
+            timeOffset += target * cycle - current;
+            if (!Networking.IsOwner(gameObject))
+                Networking.SetOwner(Networking.LocalPlayer, gameObject);
+            RequestSerialization();
         }
     }
 }

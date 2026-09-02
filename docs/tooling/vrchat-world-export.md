@@ -125,11 +125,17 @@ objects - the village centre, not the map-grid centre), composition
   off-map until a script places it), `model_index` / `anim_id`;
 - `doors[]` - portal placements with their field-VM target map;
 - `animated_props[]` - file, clip frame count, a per-prop `cyclic` flag
-  (does the clip's last keyframe return to its first? seamless loops -
-  windmill sails, sways - free-run; a one-shot that ends displaced - an
-  interior door / cupboard swing, a drawer slide - re-plays its opening
-  forever if looped, so a builder should trigger it once on approach;
-  retail advances these clips only while the bind record's script runs),
+  (does retail leave this clip **free-running**? The verdict comes from
+  the placement's bind record: every actor is born with looping playback
+  flags, and the spawn pass either parks the clip held - a door's
+  `0x4C 0x35` reset-hold, so a builder should trigger it once on approach;
+  retail advances those only while the bind script runs - or leaves the
+  template flags alone, the windmill, whose sails spin forever under the
+  unconditional anim tick (`legaia_engine_core::field_env::prop_spawn_free_runs`).
+  A keyframe-shape test is only the no-bind fallback: the windmill's
+  0..179-degree spin ends displaced from frame 0 and its four-blade
+  symmetry is what makes the loop seamless, so shape alone misreads
+  retail's one always-running prop as a one-shot),
   and per-instance position + yaw plus two door tags: `is_door` (the
   instance stands on a doorway-teleport trigger - retail parks a door
   placement on its own doorway tile, so its clip is the door record's

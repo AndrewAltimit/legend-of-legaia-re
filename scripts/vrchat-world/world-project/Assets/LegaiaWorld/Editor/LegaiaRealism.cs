@@ -48,7 +48,9 @@
 //   root (the exports pin NEAREST for the PSX look). In-editor asset
 //   tweak - a glb reimport resets it, rerun the pass after one.
 //
-// - Ambient audio: a synthesized wind/surf noise bed (WriteAmbienceWav -
+// - Ambient audio: a synthesized wind/surf noise bed plus day (breeze +
+//   birds) and night (crickets) beds whose volumes LegaiaDayNight
+//   crossfades with the sun (WriteAmbienceWav / LegaiaAudioGen -
 //   filtered noise, loop-crossfaded, written to LegaiaGenerated) on a
 //   quiet 2D AudioSource. Not disc audio.
 //
@@ -126,6 +128,10 @@ namespace LegaiaWorld
             Directory.CreateDirectory(genDir);
             try
             {
+                // Ambience beds first: ApplySun (inside ConvertToLit) wires
+                // the day/night crossfade to sources that must already exist.
+                if (o.ambientAudio)
+                    AddAmbience(root, genDir, o);
                 if (o.lighting)
                 {
                     EditorUtility.DisplayProgressBar("Legaia realism", "Lit materials + normals", 0.1f);
@@ -148,8 +154,6 @@ namespace LegaiaWorld
                     EditorUtility.DisplayProgressBar("Legaia realism", "Interior shells", 0.75f);
                     BuildInteriorShells(root, manifest, genDir, o);
                 }
-                if (o.ambientAudio)
-                    AddAmbience(root, genDir, o);
                 if (o.npcWander && manifest != null)
                     WireWander(root, manifest, o);
             }
@@ -417,7 +421,31 @@ namespace LegaiaWorld
                 LegaiaWorldBuilder.SetUdonField(udon, "dayIntensity", o.sunIntensity);
                 LegaiaWorldBuilder.SetUdonField(udon, "nightAmbientScale", o.nightAmbient);
                 LegaiaWorldBuilder.SetUdonField(udon, "nightLights", nightLamps);
+                // Ambience crossfade: the beds AddAmbience built (if any).
+                var amb = root.transform.Find("ambience");
+                var dayBed = amb != null ? amb.Find("ambience_day") : null;
+                var nightBed = amb != null ? amb.Find("ambience_night") : null;
+                LegaiaWorldBuilder.SetUdonField(udon, "dayAmbience",
+                    dayBed != null ? dayBed.GetComponent<AudioSource>() : null);
+                LegaiaWorldBuilder.SetUdonField(udon, "nightAmbience",
+                    nightBed != null ? nightBed.GetComponent<AudioSource>() : null);
                 LegaiaWorldBuilder.SyncUdonProxy(udon);
+
+                // The settings panel's Day / Night buttons drive this cycle -
+                // wire its dayNight reference (the panel lives in the
+                // builder's top-level camp container, if built).
+                var menuGo = GameObject.Find("LegaiaMenu");
+                if (menuGo != null)
+                {
+                    var menuType =
+                        LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaWorldMenu");
+                    var menu = menuType != null ? menuGo.GetComponent(menuType) : null;
+                    if (menu != null)
+                    {
+                        LegaiaWorldBuilder.SetUdonField(menu, "dayNight", udon);
+                        LegaiaWorldBuilder.SyncUdonProxy(menu);
+                    }
+                }
             }
         }
 
@@ -498,7 +526,17 @@ namespace LegaiaWorld
                         if (b.size.y < 0.5f || b.size.y > 4.5f ||
                             Mathf.Max(b.size.x, b.size.z) > 8f)
                             continue;
-                        Consider(b.center, 2f);
+                        // The glow volume is the light SHAFT spilling out of
+                        // the window, angled down toward the ground - its
+                        // centroid hangs in mid-air off the wall. The window
+                        // is where the shaft meets the building: start from
+                        // the shaft's upper half (the window end) and snap to
+                        // the nearest wall face. Transparent submeshes are
+                        // excluded from collision, so the ray can't hit the
+                        // shaft itself.
+                        Vector3 p = b.center;
+                        p.y = b.center.y + b.size.y * 0.25f;
+                        Consider(SnapToWall(p), 2f);
                     }
                 }
             bool fromGlows = pts.Count > 0;
@@ -561,6 +599,32 @@ namespace LegaiaWorld
             Debug.Log("[Legaia] " + pts.Count + " night light(s) placed at " +
                       (fromGlows ? "authored window glows." : "village doorways."));
             return container;
+        }
+
+        /// Nearest wall face within a few meters of `p`, horizontally: the
+        /// hit point nudged off the surface. Walls only (steep normals), and
+        /// only the world's MeshCollider - NPC capsules and camp-prop boxes
+        /// are not windows. Falls back to `p` when nothing is close.
+        static Vector3 SnapToWall(Vector3 p)
+        {
+            float best = float.MaxValue;
+            Vector3 snapped = p;
+            const int RAYS = 16;
+            for (int i = 0; i < RAYS; i++)
+            {
+                float a = i * Mathf.PI * 2f / RAYS;
+                var dir = new Vector3(Mathf.Sin(a), 0f, Mathf.Cos(a));
+                if (Physics.Raycast(p, dir, out RaycastHit hit, 5f, ~0,
+                        QueryTriggerInteraction.Ignore)
+                    && hit.collider is MeshCollider
+                    && Mathf.Abs(hit.normal.y) < 0.6f
+                    && hit.distance < best)
+                {
+                    best = hit.distance;
+                    snapped = hit.point + hit.normal * 0.12f;
+                }
+            }
+            return snapped;
         }
 
         // --- Sky + fog ------------------------------------------------------
@@ -1167,6 +1231,36 @@ namespace LegaiaWorld
             src.playOnAwake = true;
             src.spatialBlend = 0f;
             src.volume = o.ambientVolume;
+            LegaiaAudioGen.AddVrcSpatial(go, false, 0f, 0f, 0f);
+
+            // Day / night beds under the same container: breeze + birds vs
+            // crickets. Both always play; their volumes are crossfaded by
+            // LegaiaDayNight (ApplySun wires them), so without the cycle the
+            // day bed simply stays up and the night bed stays silent.
+            AmbienceBed(go, genDir + "/ambience_day.wav", "ambience_day",
+                LegaiaAudioGen.DayBed, 0.16f);
+            AmbienceBed(go, genDir + "/ambience_night.wav", "ambience_night",
+                LegaiaAudioGen.NightBed, 0f);
+        }
+
+        static void AmbienceBed(GameObject parent, string wavPath, string name,
+            System.Func<float[]> gen, float volume)
+        {
+            var clip = LegaiaAudioGen.EnsureClip(wavPath, gen);
+            if (clip == null)
+                return;
+            var existing = parent.transform.Find(name);
+            GameObject go = existing != null ? existing.gameObject : new GameObject(name);
+            go.transform.SetParent(parent.transform, false);
+            var src = go.GetComponent<AudioSource>();
+            if (src == null)
+                src = go.AddComponent<AudioSource>();
+            src.clip = clip;
+            src.loop = true;
+            src.playOnAwake = true;
+            src.spatialBlend = 0f;
+            src.volume = volume;
+            LegaiaAudioGen.AddVrcSpatial(go, false, 0f, 0f, 0f);
         }
 
         /// Synthesize a 12 s seamless wind/surf noise bed: two one-pole

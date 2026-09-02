@@ -646,19 +646,28 @@ pub struct PropGlb {
     pub file_stem: String,
     pub glb: Vec<u8>,
     pub frame_count: u16,
-    /// `true` when the clip's last keyframe returns to its first (a seamless
-    /// loop: windmill sails, sways); `false` for a one-shot that ends
-    /// displaced (a door/cupboard swing, a drawer slide). Retail advances
-    /// these clips only while the bind record's script runs, so a one-shot
-    /// looped free-running re-plays its swing forever - a builder should
-    /// trigger it once instead (town01: every untagged looping-door report
-    /// traced to a `cyclic == false` clip).
+    /// `true` when retail leaves this prop's clip **free-running** - the bind
+    /// record's spawn pass keeps the template's looping playback flags
+    /// ([`crate::field_env::prop_spawn_free_runs`]: the windmill, whose sails
+    /// spin forever under the unconditional anim tick) - so a builder should
+    /// free-loop it. `false` for a prop whose spawn pass parks the clip held
+    /// (a door/cupboard swing, a drawer slide): retail advances those only
+    /// while the bind record's script runs, so a builder should trigger the
+    /// clip once instead (town01: every untagged looping-door report traced
+    /// to a `cyclic == false` clip). When no bind resolves, falls back to the
+    /// keyframe test [`anim_is_cyclic`] - which alone is NOT sufficient: the
+    /// windmill's 0..179-degree spin ends displaced from frame 0 (its
+    /// four-blade symmetry is what makes the loop seamless), so the keyframe
+    /// test misreads retail's one always-running prop as a one-shot.
     pub cyclic: bool,
     /// `(translation, rot_y radians)` per placed instance.
     pub instances: PropInstances,
 }
 
-/// Does the clip's last keyframe return to its first? Rotation compared
+/// Does the clip's last keyframe return to its first? **Fallback only** - the
+/// primary `cyclic` verdict is the retail bind program (see
+/// [`PropGlb::cyclic`]; this shape test calls the windmill's symmetric spin a
+/// one-shot). Rotation compared
 /// per-axis in retail's `0..4096` angle space with wraparound (a full turn is
 /// cyclic), translation in TMD model units. Thresholds: 5 degrees / 4 units -
 /// wide enough for keyframe rounding, far under the smallest real swing
@@ -689,6 +698,7 @@ fn anim_is_cyclic(anim: &legaia_asset::monster_archive::MonsterAnimation) -> boo
 /// their frame-0 static twins - a world builder swaps these in where the
 /// motion is wanted.
 pub fn export_animated_prop_glbs(
+    index: &ProtIndex,
     scene: &Scene,
     a: &AssembledScene,
     opts: &GlbExportOptions,
@@ -696,13 +706,38 @@ pub fn export_animated_prop_glbs(
     let Some(bundle) = scene_anm_bundle(scene) else {
         return Vec::new();
     };
+    // The retail free-run verdict per placement anchor: does the bind
+    // record's spawn pass leave the clip looping (windmill) or parked
+    // (door)? See [`PropGlb::cyclic`].
+    let man = scene.field_man_payload(index).ok().flatten();
+    let man_file = man
+        .as_ref()
+        .and_then(|m| legaia_asset::man_section::parse(m).ok());
+    let binds = scene
+        .field_object_binds(index)
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+    let free_runs = |anchor: &(u8, u8)| -> Option<bool> {
+        let (Some(man), Some(mf)) = (man.as_ref(), man_file.as_ref()) else {
+            return None;
+        };
+        let bind = binds.get(anchor)?;
+        Some(crate::field_env::prop_spawn_free_runs(
+            mf,
+            man,
+            bind.record as usize,
+        ))
+    };
     let mut by_key: HashMap<(usize, u8), PropInstances> = HashMap::new();
+    let mut anchors_by_key: HashMap<(usize, u8), Vec<(u8, u8)>> = HashMap::new();
     let mut key_order: Vec<(usize, u8)> = Vec::new();
     for d in &a.placements {
         if d.anim_id == 0 {
             continue;
         }
         let key = (d.env_slot, d.anim_id);
+        anchors_by_key.entry(key).or_default().push(d.anchor);
         let t = draw_translation(a.draw_world_position(d));
         let t = [t[0] * opts.scale, t[1] * opts.scale, t[2] * opts.scale];
         let entry = by_key.entry(key).or_default();
@@ -758,13 +793,27 @@ pub fn export_animated_prop_glbs(
         ) else {
             continue;
         };
+        // Retail verdict when any instance's bind resolves (all instances of
+        // a key share the record shape; conservative AND if they differ);
+        // keyframe-shape fallback otherwise.
+        let retail: Vec<bool> = anchors_by_key
+            .remove(&key)
+            .unwrap_or_default()
+            .iter()
+            .filter_map(free_runs)
+            .collect();
+        let cyclic = if retail.is_empty() {
+            anim_is_cyclic(&anim)
+        } else {
+            retail.iter().all(|&v| v)
+        };
         out.push(PropGlb {
             env_slot,
             anim_id,
             file_stem: stem,
             glb: scale_glb_scene_roots(glb, opts.scale),
             frame_count: rec.frame_count,
-            cyclic: anim_is_cyclic(&anim),
+            cyclic,
             instances: by_key.remove(&key).unwrap_or_default(),
         });
     }
