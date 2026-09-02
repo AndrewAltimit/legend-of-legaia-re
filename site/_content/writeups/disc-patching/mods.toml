@@ -537,16 +537,4 @@ edit = "annex sectors + in-place word edits"
 gap = true
 status = "shipped"
 test = "super_arts_pack_real"
-notes = "fifteen extra Super Arts, five per character; ZetaPhoenix's block and hook set installed verbatim - the loader stub is the carrier's only added code"
-
-[[mod]]
-key = "arts_name_fix"
-name = "Arts name-length fix (by ZetaPhoenix)"
-flag = "--arts-name-fix"
-tier = "E"
-target = "banner path 0x8004BC3C detour + 18-word re-centre routine in verified-dead arena 1"
-edit = "in-place"
-gap = true
-status = "shipped"
-test = "arts_name_fix_real"
-notes = "fixes retail's mis-centred Super/Miracle Art name banner; ZetaPhoenix's fix installed verbatim, relocated out of the SsAPI zero-padding window; auto-included by --super-arts-pack"
+notes = "fifteen extra Super Arts, five per character; ZetaPhoenix's block and hook set installed verbatim (the loader stub is the carrier's only added code), incl. his fix for retail's mis-centred art name banner, relocated to arena 1"
