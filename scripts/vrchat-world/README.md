@@ -253,9 +253,9 @@ pass is idempotent (it refreshes rather than stacks).
   shared server clock, so the cycle is synced with no networking events.
   Night genuinely darkens the landscape: the behaviour sweeps the trilight
   ambient (and fog colour) down to a moonlit, blue-shifted fraction of
-  their daytime values ("Night darkness" slider, default 0.05 - walls and
-  ground keep a little moonlight, not much; sun intensity alone leaves
-  the ambient day-bright after sunset). **Night lamps** places a small
+  their daytime values ("Night darkness" slider, default 0.02 - night is
+  nearly black so the lamps and fires carve out the light; sun intensity
+  alone leaves the ambient day-bright after sunset). **Night lamps** places a small
   warm light (no visible bulb mesh - the pool of light on the wall is
   the whole effect) at each village building **window**, anchored on
   the world mesh itself: the retail scene authors semi-transparent glow

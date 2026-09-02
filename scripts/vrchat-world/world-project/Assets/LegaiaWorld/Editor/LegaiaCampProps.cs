@@ -238,7 +238,9 @@ namespace LegaiaWorld
 
             var light = flame.AddComponent<Light>();
             light.type = LightType.Point;
-            light.range = 3.5f * size;
+            // A wide throw: a lit fire should carve a real pool out of the
+            // night, not a puddle at its feet.
+            light.range = 10.5f * size;
             // Base level LegaiaTorch's flicker wobbles around; a campfire
             // throws more light than a hand torch.
             light.intensity = 1.05f + 0.35f * size;

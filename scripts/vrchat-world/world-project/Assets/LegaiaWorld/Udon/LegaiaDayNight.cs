@@ -44,7 +44,7 @@ namespace LegaiaWorld
         public Color horizonColor = new Color(1f, 0.55f, 0.25f);
 
         [Tooltip("Midnight ambient as a fraction of the daytime trilight - the landscape's night darkness (the sun itself is already off at night). 0 = pitch black, 1 = night stays day-bright.")]
-        public float nightAmbientScale = 0.05f;
+        public float nightAmbientScale = 0.02f;
 
         [Tooltip("Root object holding the night-only lamps (the realism pass's night_lamps container): enabled while the sun is below the horizon, disabled by day.")]
         public GameObject nightLights;

@@ -81,8 +81,9 @@ namespace LegaiaWorld
         public float dayNightMinutes = 20f;
         // Midnight ambient as a fraction of the daytime trilight - the
         // landscape's night darkness (the sun itself is already off).
-        // Low: walls and ground get a little moonlight, not much.
-        public float nightAmbient = 0.05f;
+        // Very low: at 0.05 the ground still read well-lit at night, so
+        // night is nearly black and the lamps/fires carve out the light.
+        public float nightAmbient = 0.02f;
         // Warm point lights beside each village doorway, enabled by the
         // day/night behaviour only while the sun is down.
         public bool nightLamps = true;
