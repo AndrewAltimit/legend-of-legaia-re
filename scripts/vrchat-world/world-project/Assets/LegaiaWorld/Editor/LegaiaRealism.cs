@@ -87,6 +87,9 @@ namespace LegaiaWorld
         // Warm point lights beside each village doorway, enabled by the
         // day/night behaviour only while the sun is down.
         public bool nightLamps = true;
+        // Planted stake torches by each tree and each village doorway,
+        // burning only while the sun is down.
+        public bool nightTorches = true;
         public bool skyAndFog = true;
         public bool foliage = true;
         public float grassDensity = 6f;
@@ -136,10 +139,12 @@ namespace LegaiaWorld
                 if (o.lighting)
                 {
                     EditorUtility.DisplayProgressBar("Legaia realism", "Lit materials + normals", 0.1f);
-                    // Lamps first: ApplySun (inside ConvertToLit) hands the
-                    // container to the day/night behaviour.
+                    // Lamps + torches first: ApplySun (inside ConvertToLit)
+                    // hands both containers to the day/night behaviour.
                     GameObject lamps = BuildNightLamps(root, manifest, genDir, o);
-                    ConvertToLit(root, genDir, o, lamps);
+                    GameObject torches = BuildNightTorches(root, manifest,
+                        "Assets/LegaiaGenerated/" + sceneName, o);
+                    ConvertToLit(root, genDir, o, lamps, torches);
                 }
                 if (o.skyAndFog)
                     ApplySkyAndFog(root, genDir);
@@ -168,7 +173,7 @@ namespace LegaiaWorld
         // --- Lighting -------------------------------------------------------
 
         static void ConvertToLit(GameObject root, string genDir,
-            LegaiaRealismOptions o, GameObject nightLamps)
+            LegaiaRealismOptions o, GameObject nightLamps, GameObject nightTorches)
         {
             var cutout = Shader.Find("Legaia/Lit Vertex Color (Cutout)");
             var transparent = Shader.Find("Legaia/Lit Vertex Color (Transparent)");
@@ -236,7 +241,7 @@ namespace LegaiaWorld
                 }
             }
 
-            ApplySun(root, o, nightLamps);
+            ApplySun(root, o, nightLamps, nightTorches);
             Debug.Log("[Legaia] lit conversion: " + meshCache.Count + " mesh(es), " +
                       matCache.Count + " material(s), " + wrapped +
                       " character material(s) wrap-lit.");
@@ -386,7 +391,7 @@ namespace LegaiaWorld
         }
 
         static void ApplySun(GameObject root, LegaiaRealismOptions o,
-            GameObject nightLamps)
+            GameObject nightLamps, GameObject nightTorches)
         {
             var existing = root.transform.Find("LegaiaSun");
             GameObject go = existing != null ? existing.gameObject : new GameObject("LegaiaSun");
@@ -422,6 +427,7 @@ namespace LegaiaWorld
                 LegaiaWorldBuilder.SetUdonField(udon, "dayIntensity", o.sunIntensity);
                 LegaiaWorldBuilder.SetUdonField(udon, "nightAmbientScale", o.nightAmbient);
                 LegaiaWorldBuilder.SetUdonField(udon, "nightLights", nightLamps);
+                LegaiaWorldBuilder.SetUdonField(udon, "nightTorches", nightTorches);
                 // Ambience crossfade: the beds AddAmbience built (if any).
                 var amb = root.transform.Find("ambience");
                 var dayBed = amb != null ? amb.Find("ambience_day") : null;
@@ -615,6 +621,238 @@ namespace LegaiaWorld
             Debug.Log("[Legaia] " + pts.Count + " night light(s) placed at " +
                       (fromGlows ? "authored window glows." : "village doorways."));
             return container;
+        }
+
+        // --- Night torches --------------------------------------------------
+
+        /// A planted stake torch by each tree and each village doorway,
+        /// burning only at night. The container is TOP-LEVEL, outside the
+        /// mirrored root (particles and audio under a negative scale
+        /// misbehave - same reason the camp props live outside), starts
+        /// inactive, and LegaiaDayNight enables it while the sun is down.
+        ///
+        /// Houses come from the manifest's village-side doorway-teleport
+        /// triggers: one stake flanking each door. Trees come from the
+        /// world mesh itself - green-reading upward triangles well ABOVE
+        /// the local ground (a canopy), grid-clustered in XZ, one stake at
+        /// each cluster's trunk. Same texel x COLOR_0 green test and
+        /// per-cell floor grid as the grass pass, inverted: grass keeps
+        /// ground green, this keeps floating green.
+        static GameObject BuildNightTorches(GameObject root, object manifest,
+            string campDir, LegaiaRealismOptions o)
+        {
+            const string NAME = "Legaia_night_torches";
+            var old = GameObject.Find(NAME);
+            if (old != null)
+                Object.DestroyImmediate(old);
+            if (!o.dayNight || !o.nightTorches || manifest == null)
+                return null;
+
+            Vector3 spawnW = root.transform.TransformPoint(LegaiaWorldBuilder.G2U(
+                MiniJson.GetVec3(MiniJson.Get(manifest, "spawn"), "position")));
+            float DistXZ(Vector3 a, Vector3 b)
+            {
+                a.y = b.y = 0;
+                return (a - b).magnitude;
+            }
+            var pts = new List<Vector3>();
+            void Consider(Vector3 w, float dedupe)
+            {
+                if (pts.Count >= 24)
+                    return; // keep the dynamic-light budget sane
+                if (DistXZ(w, spawnW) > o.interiorRoomDistance)
+                    return; // room side - interiors have the shell glow
+                foreach (var q in pts)
+                    if (DistXZ(q, w) < dedupe)
+                        return;
+                pts.Add(w);
+            }
+
+            // Houses: one torch flanking each village-side doorway. The
+            // trigger sits right at the wall, so step a little toward the
+            // village and to the side - beside the door, never in it.
+            var tps = MiniJson.AsList(MiniJson.Get(manifest, "teleports"))
+                      ?? new List<object>();
+            foreach (object tp in tps)
+            {
+                Vector3 w = root.transform.TransformPoint(LegaiaWorldBuilder.G2U(
+                    MiniJson.GetVec3(MiniJson.Get(tp, "trigger"), "position")));
+                if (DistXZ(w, spawnW) > o.interiorRoomDistance)
+                    continue;
+                Vector3 d = spawnW - w;
+                d.y = 0f;
+                d = d.sqrMagnitude > 1e-4f ? d.normalized : Vector3.forward;
+                var lateral = new Vector3(d.z, 0f, -d.x);
+                Consider(LegaiaCampProps.Ground(
+                    w + d * 0.35f + lateral * 0.7f), 2.5f);
+            }
+            int houseTorches = pts.Count;
+
+            foreach (var t in TreeTrunkPoints(root, spawnW, o))
+                Consider(t, 2.5f);
+
+            if (pts.Count == 0)
+                return null;
+
+            // Shared camp-prop assets (the camp dir, not realism/ - the
+            // pickup torches use the same ones, so they exist only once).
+            Directory.CreateDirectory(campDir);
+            var fireClip = LegaiaAudioGen.EnsureClip(
+                campDir + "/fire_crackle.wav", LegaiaAudioGen.FireCrackle);
+            var wood = LegaiaCampProps.EnsureMat(campDir, "camp_wood",
+                "Standard", new Color(0.36f, 0.24f, 0.13f));
+            var dark = LegaiaCampProps.EnsureMat(campDir, "camp_dark",
+                "Standard", new Color(0.16f, 0.14f, 0.12f));
+            var flameMat = LegaiaCampProps.EnsureFlameMaterial(campDir);
+            var smokeMat = LegaiaCampProps.EnsureSmokeMaterial(campDir);
+
+            var container = new GameObject(NAME);
+            for (int i = 0; i < pts.Count; i++)
+                LegaiaCampProps.BuildNightTorch(container.transform, pts[i],
+                    fireClip, wood, dark, flameMat, smokeMat, i);
+            container.SetActive(false); // day/night behaviour turns these on
+            Debug.Log("[Legaia] " + pts.Count + " night torch(es): " +
+                houseTorches + " by doorways, " + (pts.Count - houseTorches) +
+                " by trees.");
+            return container;
+        }
+
+        /// One trunk-side point per tree-sized canopy: green upward
+        /// triangles more than 1.5 m above their 1.5 m-cell's lowest upward
+        /// surface, bucketed into 2 m XZ cells, 8-neighbour-merged into
+        /// clusters. A cluster with real canopy area drops a ray from just
+        /// under its lowest leaf (nudged toward the village so the stake
+        /// stands beside the trunk, not inside it) to find the ground.
+        static List<Vector3> TreeTrunkPoints(GameObject root, Vector3 spawnW,
+            LegaiaRealismOptions o)
+        {
+            var result = new List<Vector3>();
+            var world = root.transform.Find("world");
+            if (world == null)
+                return result;
+            var texCache = new Dictionary<Texture, Texture2D>();
+            var groundMinY = new Dictionary<Vector2Int, float>();
+            var canopy = new List<(Vector3 cen, float area)>();
+            Vector2Int CellOf(Vector3 p) => new Vector2Int(
+                Mathf.FloorToInt(p.x / 1.5f), Mathf.FloorToInt(p.z / 1.5f));
+
+            foreach (var r in world.GetComponentsInChildren<Renderer>(false))
+            {
+                Mesh mesh = MeshOf(r);
+                if (mesh == null)
+                    continue;
+                var mats = r.sharedMaterials;
+                var verts = mesh.vertices;
+                var uvs = mesh.uv;
+                var cols = mesh.colors;
+                Matrix4x4 toWorld = r.transform.localToWorldMatrix;
+                for (int sm = 0; sm < mesh.subMeshCount; sm++)
+                {
+                    Texture2D tex = null;
+                    if (sm < mats.Length && mats[sm] != null)
+                        tex = ReadableCopy(ExtractMainTexture(mats[sm]), texCache);
+                    var tris = mesh.GetTriangles(sm);
+                    for (int i = 0; i < tris.Length; i += 3)
+                    {
+                        int t0 = tris[i], t1 = tris[i + 1], t2 = tris[i + 2];
+                        Vector3 a = toWorld.MultiplyPoint3x4(verts[t0]);
+                        Vector3 b = toWorld.MultiplyPoint3x4(verts[t1]);
+                        Vector3 d = toWorld.MultiplyPoint3x4(verts[t2]);
+                        Vector3 cr = Vector3.Cross(b - a, d - a);
+                        float area = cr.magnitude * 0.5f;
+                        if (area < 1e-4f)
+                            continue;
+                        if (Mathf.Abs(cr.y / (area * 2f)) < 0.65f)
+                            continue;
+                        Vector3 cen = (a + b + d) / 3f;
+                        var cell = CellOf(cen);
+                        if (!groundMinY.TryGetValue(cell, out float fY) ||
+                            cen.y < fY)
+                            groundMinY[cell] = cen.y;
+                        Color texel = Color.white;
+                        if (tex != null && uvs.Length > 0)
+                        {
+                            Vector2 uv = (uvs[t0] + uvs[t1] + uvs[t2]) / 3f;
+                            texel = tex.GetPixelBilinear(
+                                uv.x - Mathf.Floor(uv.x), uv.y - Mathf.Floor(uv.y));
+                        }
+                        Color vcol = Color.white;
+                        if (cols.Length > 0)
+                            vcol = (cols[t0] + cols[t1] + cols[t2]) / 3f;
+                        Color ground = texel * vcol;
+                        if (ground.g - Mathf.Max(ground.r, ground.b) <
+                            o.grassGreenThreshold)
+                            continue;
+                        canopy.Add((cen, area));
+                    }
+                }
+            }
+
+            // Elevated green only (the canopy), bucketed into 2 m XZ cells.
+            var cells =
+                new Dictionary<Vector2Int, (Vector3 wsum, float area, float minY)>();
+            foreach (var (cen, area) in canopy)
+            {
+                if (!groundMinY.TryGetValue(CellOf(cen), out float fY) ||
+                    cen.y <= fY + 1.5f)
+                    continue;
+                var k = new Vector2Int(
+                    Mathf.FloorToInt(cen.x / 2f), Mathf.FloorToInt(cen.z / 2f));
+                if (cells.TryGetValue(k, out var agg))
+                    cells[k] = (agg.wsum + cen * area, agg.area + area,
+                                Mathf.Min(agg.minY, cen.y));
+                else
+                    cells[k] = (cen * area, area, cen.y);
+            }
+
+            // Merge occupied 8-neighbour cells into per-tree clusters.
+            var keys = new List<Vector2Int>(cells.Keys);
+            var parent = new int[keys.Count];
+            var index = new Dictionary<Vector2Int, int>();
+            for (int i = 0; i < keys.Count; i++)
+            {
+                parent[i] = i;
+                index[keys[i]] = i;
+            }
+            int Find(int i) => parent[i] == i ? i : parent[i] = Find(parent[i]);
+            for (int i = 0; i < keys.Count; i++)
+                for (int dx = -1; dx <= 1; dx++)
+                    for (int dz = -1; dz <= 1; dz++)
+                        if (index.TryGetValue(
+                                new Vector2Int(keys[i].x + dx, keys[i].y + dz),
+                                out int j))
+                            parent[Find(j)] = Find(i);
+            var clusters =
+                new Dictionary<int, (Vector3 wsum, float area, float minY)>();
+            for (int i = 0; i < keys.Count; i++)
+            {
+                int rt = Find(i);
+                var c = cells[keys[i]];
+                if (clusters.TryGetValue(rt, out var agg))
+                    clusters[rt] = (agg.wsum + c.wsum, agg.area + c.area,
+                                    Mathf.Min(agg.minY, c.minY));
+                else
+                    clusters[rt] = c;
+            }
+
+            foreach (var c in clusters.Values)
+            {
+                if (c.area < 2.5f)
+                    continue; // a stray green scrap, not a tree
+                Vector3 cen = c.wsum / c.area;
+                Vector3 toSpawn = spawnW - cen;
+                toSpawn.y = 0f;
+                toSpawn = toSpawn.sqrMagnitude > 1e-4f
+                    ? toSpawn.normalized : Vector3.forward;
+                // Start just under the lowest leaf so the ray can't land on
+                // the canopy itself.
+                Vector3 start = new Vector3(cen.x, c.minY - 0.35f, cen.z)
+                    + toSpawn * 0.6f;
+                if (Physics.Raycast(start, Vector3.down, out RaycastHit hit,
+                        30f, ~0, QueryTriggerInteraction.Ignore))
+                    result.Add(hit.point);
+            }
+            return result;
         }
 
         // --- Sky + fog ------------------------------------------------------

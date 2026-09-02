@@ -545,6 +545,13 @@ namespace LegaiaWorld
                             "authored window-glow volumes; doorways when a " +
                             "scene has none), on only while the sun is down"),
                         realism.nightLamps);
+                    realism.nightTorches = EditorGUILayout.Toggle(
+                        new GUIContent("    Night torches (trees + doors)",
+                            "A planted stake torch by each tree (green " +
+                            "canopy clusters in the world mesh) and beside " +
+                            "each village doorway, burning only while the " +
+                            "sun is down"),
+                        realism.nightTorches);
                 }
             }
             realism.skyAndFog = EditorGUILayout.Toggle(
@@ -1349,7 +1356,7 @@ namespace LegaiaWorld
             foreach (string name in new[]
                      { "LegaiaDoorway", "LegaiaDoor", "LegaiaNpcWander",
                        "LegaiaDayNight", "LegaiaPickupProp", "LegaiaTorch",
-                       "LegaiaWorldMenu" })
+                       "LegaiaWorldMenu", "LegaiaFlicker" })
             {
                 var t = FindType("LegaiaWorld." + name);
                 if (t == null) continue;

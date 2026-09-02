@@ -49,6 +49,9 @@ namespace LegaiaWorld
         [Tooltip("Root object holding the night-only lamps (the realism pass's night_lamps container): enabled while the sun is below the horizon, disabled by day.")]
         public GameObject nightLights;
 
+        [Tooltip("Root object holding the always-burning night torches (the realism pass's top-level torch container): enabled while the sun is below the horizon, disabled by day.")]
+        public GameObject nightTorches;
+
         [Tooltip("Daytime ambience bed (breeze + birds) - its volume is faded in with the sun.")]
         public AudioSource dayAmbience;
 
@@ -89,6 +92,8 @@ namespace LegaiaWorld
             dayFog = RenderSettings.fogColor;
             if (nightLights != null)
                 lightsOn = nightLights.activeSelf;
+            else if (nightTorches != null)
+                lightsOn = nightTorches.activeSelf;
         }
 
         // Moonlit version of a daytime colour: dimmed to nightAmbientScale
@@ -135,13 +140,16 @@ namespace LegaiaWorld
             if (fogOn)
                 RenderSettings.fogColor = Color.Lerp(NightOf(dayFog), dayFog, dayF);
 
-            // Building lamps: on from just before sunset to just after
-            // sunrise. One SetActive on the container flips every lamp.
+            // Building lamps + planted torches: on from just before sunset
+            // to just after sunrise. One SetActive per container flips all.
             bool night = up < 0.05f;
-            if (nightLights != null && night != lightsOn)
+            if (night != lightsOn)
             {
                 lightsOn = night;
-                nightLights.SetActive(night);
+                if (nightLights != null)
+                    nightLights.SetActive(night);
+                if (nightTorches != null)
+                    nightTorches.SetActive(night);
             }
 
             // Ambience beds: crossfade breeze/birds against crickets with

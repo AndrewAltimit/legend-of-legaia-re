@@ -68,7 +68,7 @@ namespace LegaiaWorld
 
         /// Snap a point to the walkable ground under it (the world colliders
         /// exist by the time camp props build).
-        static Vector3 Ground(Vector3 p)
+        internal static Vector3 Ground(Vector3 p)
         {
             if (Physics.Raycast(p + Vector3.up * 4f, Vector3.down,
                     out RaycastHit hit, 40f, ~0, QueryTriggerInteraction.Ignore))
@@ -76,7 +76,7 @@ namespace LegaiaWorld
             return p;
         }
 
-        static Material EnsureMat(string genDir, string name, string shader, Color c)
+        internal static Material EnsureMat(string genDir, string name, string shader, Color c)
         {
             string path = genDir + "/" + name + ".mat";
             var m = AssetDatabase.LoadAssetAtPath<Material>(path);
@@ -91,7 +91,7 @@ namespace LegaiaWorld
 
         /// Additive particle material over a generated soft radial-glow
         /// sprite - the flame billboard.
-        static Material EnsureFlameMaterial(string genDir)
+        internal static Material EnsureFlameMaterial(string genDir)
         {
             string texPath = genDir + "/flame_soft.png";
             if (AssetDatabase.LoadAssetAtPath<Texture2D>(texPath) == null)
@@ -125,7 +125,7 @@ namespace LegaiaWorld
         /// Alpha-blended particle material over the same soft radial sprite -
         /// the smoke billboard (additive can't darken, so smoke needs its
         /// own blend mode).
-        static Material EnsureSmokeMaterial(string genDir)
+        internal static Material EnsureSmokeMaterial(string genDir)
         {
             string matPath = genDir + "/smoke_particle.mat";
             var m = AssetDatabase.LoadAssetAtPath<Material>(matPath);
@@ -144,7 +144,7 @@ namespace LegaiaWorld
         /// light (LegaiaTorch flickers it), in an initially-inactive container
         /// LegaiaTorch toggles. No visible glow mesh - the light is the
         /// effect. `size` 1 = torch, ~1.8 = campfire.
-        static GameObject BuildFlame(Transform parent, Vector3 localPos,
+        internal static GameObject BuildFlame(Transform parent, Vector3 localPos,
             float size, Material flameMat, Material smokeMat)
         {
             var flame = new GameObject("flame");
@@ -362,6 +362,62 @@ namespace LegaiaWorld
             WireFirePickup(go, flame, fireClip, 0.8f, 18f,
                 new Vector3(0f, 0.14f, 0f), new Vector3(0.55f, 0.3f, 0.55f),
                 pickupType, syncType);
+        }
+
+        /// A planted, non-pickup stake torch for the realism pass's night
+        /// torches: taller than the camp torches, flame active from the
+        /// start (its container is what LegaiaDayNight toggles), point
+        /// light flickered by LegaiaFlicker, low crackle that plays
+        /// whenever the torch is enabled. No collider - these stand beside
+        /// doorways and must never block a walk path.
+        internal static void BuildNightTorch(Transform parent, Vector3 pos,
+            AudioClip fireClip, Material wood, Material dark,
+            Material flameMat, Material smokeMat, int n)
+        {
+            var go = new GameObject("night_torch_" + n);
+            go.transform.SetParent(parent, false);
+            go.transform.position = pos;
+
+            var stake = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            stake.name = "stake";
+            Object.DestroyImmediate(stake.GetComponent<Collider>());
+            stake.transform.SetParent(go.transform, false);
+            stake.transform.localPosition = new Vector3(0f, 0.55f, 0f);
+            stake.transform.localScale = new Vector3(0.055f, 0.55f, 0.055f);
+            stake.GetComponent<MeshRenderer>().sharedMaterial = wood;
+
+            var head = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            head.name = "head";
+            Object.DestroyImmediate(head.GetComponent<Collider>());
+            head.transform.SetParent(go.transform, false);
+            head.transform.localPosition = new Vector3(0f, 1.13f, 0f);
+            head.transform.localScale = new Vector3(0.085f, 0.05f, 0.085f);
+            head.GetComponent<MeshRenderer>().sharedMaterial = dark;
+
+            var flame = BuildFlame(go.transform, new Vector3(0f, 1.24f, 0f),
+                1f, flameMat, smokeMat);
+            flame.SetActive(true); // burns whenever the night container is on
+
+            var light = flame.GetComponent<Light>();
+            var flick = LegaiaWorldBuilder.TryAttachUdon(go, "LegaiaFlicker");
+            LegaiaWorldBuilder.SetUdonField(flick, "fireLight", light);
+            LegaiaWorldBuilder.SetUdonField(flick, "fireIntensity",
+                light != null ? light.intensity : 1.4f);
+            LegaiaWorldBuilder.SyncUdonProxy(flick);
+
+            if (fireClip != null)
+            {
+                var crackle = go.AddComponent<AudioSource>();
+                crackle.clip = fireClip;
+                crackle.loop = true;
+                // playOnAwake restarts the loop each time LegaiaDayNight
+                // re-enables the night container.
+                crackle.playOnAwake = true;
+                crackle.spatialBlend = 1f;
+                crackle.volume = 0.4f;
+                crackle.maxDistance = 10f;
+                LegaiaAudioGen.AddVrcSpatial(go, true, 6f, 0.6f, 10f);
+            }
         }
 
         // --- Settings panel --------------------------------------------------

@@ -40,6 +40,7 @@ your disc ──legaia-extract──▶ extracted/ ──legaia-engine export-gl
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaDayNight.cs` | Optional UdonSharp day/night cycle: sweeps the realism sun on a fixed cycle, synced across players via server time; night dims the trilight ambient + fog to a moonlit fraction, enables the night-lamp container, and crossfades the day/night ambience beds. `JumpToDay`/`JumpToNight` apply a synced offset (the settings panel's buttons). |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaWorldMenu.cs` | The settings panel's behaviour: `ToggleMusic` (mutes the BGM locally - a personal preference), `SetDay`/`SetNight` (jump the shared cycle for everyone). |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaTorch.cs` | Torch/campfire pickup: hold + Use toggles the flame container (fire + smoke particles, a Perlin-flickered point light - no glow orb) and a spatial crackle loop; `lit` is synced so a fire someone lights burns for everyone. Spawn-kinematic like the rack pickups. |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaFlicker.cs` | Firelight flicker for the always-burning night torches: no sync, no interaction - just the two-octave Perlin intensity wobble on the flame's point light. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaPickupProp.cs` | UdonSharp equipment-rack pickup: the prop spawns kinematic (frozen on the rack) and only becomes a free physics object the first time a player drops it - so a rack of dozens of bodies can't tunnel through the thin ground during world-load hitches. |
 
 ## Step 1 - export a scene
@@ -271,6 +272,14 @@ pass is idempotent (it refreshes rather than stacks).
   glows fall back to a lamp above each village-side doorway (manifest
   teleport endpoints). The `night_lamps` container is enabled by the
   day/night behaviour only while the sun is below the horizon.
+  **Night torches** plants a burning stake torch (same flame stack as
+  the camp props: fire + smoke particles, flickering light, crackle -
+  no pickup) beside each village doorway and by each tree - trees are
+  found in the world mesh itself as clusters of green-reading upward
+  triangles floating well above the local ground (the grass pass's
+  canopy-rejection test, inverted). They live in a top-level
+  `Legaia_night_torches` container the day/night behaviour enables
+  alongside the lamps.
 - **Sky + distance fog**: a procedural-skybox material (it tracks
   `RenderSettings.sun`, so with day/night on the sky darkens by itself)
   and linear fog scaled to the built root's bounds.
