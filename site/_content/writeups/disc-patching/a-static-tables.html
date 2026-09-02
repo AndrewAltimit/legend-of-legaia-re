@@ -14,7 +14,7 @@
   <dl class="kv">
     <dt>Target</dt><dd>Fixed-width tables in <code>SCUS_942.54</code> (always resident) or in a raw overlay's data section (PROT 0898 battle, PROT 0899 menu)</dd>
     <dt>Edit class</dt><dd>In place, same size - no compression, no relocation, no new code</dd>
-    <dt>Mods</dt><dd><code>--steals</code> &middot; <code>--spell-cost</code> &middot; <code>--equip-bonus</code> &middot; <code>--move-power</code> &middot; <code>--element-affinity</code> &middot; item prices &middot; <code>--casino</code> &middot; <code>--starting-level</code> (variant H) &middot; <code>--unused-items</code> (variant I)</dd>
+    <dt>Mods</dt><dd><code>--steals</code> &middot; <code>--spell-cost</code> &middot; <code>--equip-bonus</code> &middot; <code>--move-power</code> &middot; <code>--element-affinity</code> &middot; item prices &middot; <code>--casino</code> &middot; <code>--starting-level</code> (variant: stamp) &middot; <code>--unused-items</code> (variant: string)</dd>
     <dt>Ground truth</dt><dd>The <a href="../../reference/gamedata.html">curated game-data tables</a> - every located table is byte-validated against them before it is trusted</dd>
     <dt>Confidence</dt><dd><span class="tag tag-done">Confirmed</span> - each table pinned from its reader and cross-checked field-by-field</dd>
     <dt>Oracles</dt><dd><code>cross_table_integrity_real.rs</code> plus one disc-round-trip test per feature</dd>
@@ -78,8 +78,8 @@
 <section class="doc-section" id="variants">
   <h2>Two variants that ride on the same shape</h2>
   <ul>
-    <li><strong>New-game seed stamp (variant H, <code>--starting-level</code>).</strong> The executable holds the roster the game seeds at New Game. Overwriting its displayed-level byte, growth-curve rows and the lead's cumulative-XP words is a same-size edit aimed at the boot template instead of a gameplay table - <a href="../../formats/new-game-table.html">new-game table</a>.</li>
-    <li><strong>String injection (variant I, <code>--unused-items</code>).</strong> Naming an unused item re-points its name-table pointer (a tier-A write) <em>and</em> writes the new string into a reserved zero run - the executable's rodata gap, the contended region the <a href="e-rodata-gap-code.html#gap-map">tier E</a> map lays out.</li>
+    <li><strong>New-game seed stamp (the <em>stamp</em> variant, <code>--starting-level</code>).</strong> The executable holds the roster the game seeds at New Game. Overwriting its displayed-level byte, growth-curve rows and the lead's cumulative-XP words is a same-size edit aimed at the boot template instead of a gameplay table - <a href="../../formats/new-game-table.html">new-game table</a>.</li>
+    <li><strong>String injection (the <em>string</em> variant, <code>--unused-items</code>).</strong> Naming an unused item re-points its name-table pointer (a tier-A write) <em>and</em> writes the new string into a reserved zero run - the executable's rodata gap, the contended region the <a href="e-rodata-gap-code.html#gap-map">tier E</a> map lays out.</li>
   </ul>
   <p>Tier A composes with everything: every edit is same-size and self-contained, so none can disturb another's offsets.</p>
 </section>

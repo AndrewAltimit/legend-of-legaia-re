@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../../index.html">home</a> &middot; <a href="../index.html">write-ups</a> &middot; disc patching</div>
   <h1>Patching a sealed disc</h1>
-  <p class="lede">A randomizer seed changes what a chest holds, what a monster drops, where a door leads and what a shop sells - on a retail disc that ships no source, no SDK and no extension points. Every one of those changes is one of six <strong>injection techniques</strong>, and the techniques form a ladder: from same-size byte edits, through editing inside compression and rewriting bytecode, up to hand-assembled MIPS hosted in an overlay's dead space. This series walks the ladder one rung per page.</p>
+  <p class="lede">A randomizer seed changes what a chest holds, what a monster drops, where a door leads and what a shop sells - on a retail disc that ships no source, no SDK and no extension points. Every one of those changes is one of seven <strong>injection techniques</strong>, and the techniques form a ladder: from same-size byte edits, through editing inside compression and rewriting bytecode, up to hand-assembled MIPS hosted in an overlay's dead space. This series walks the ladder one rung per page.</p>
 </header>
 
 <div class="notice">
@@ -23,10 +23,10 @@
 
 <section class="doc-section" id="ladder">
   <h2>The technique ladder</h2>
-  <p>Six techniques in ascending order of what they let you change - and of how much reverse engineering each demands before the first byte can move.</p>
+  <p>Seven techniques in ascending order of what they let you change - and of how much reverse engineering each demands before the first byte can move.</p>
   <figure class="overlay-strip">
-    <svg viewBox="0 0 880 470" width="100%" style="max-width:880px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The disc-patching technique ladder: tier A static-table overwrites at the bottom, up through LZS editing, field-VM bytecode, variable-length relocation and rodata-gap code, to tier F overlay dead-region injection at the top">
-      <title>The disc-patching technique ladder, tier A (simplest) up to tier F (most advanced)</title>
+    <svg viewBox="0 0 880 510" width="100%" style="max-width:880px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The disc-patching technique ladder: tier A static-table overwrites at the bottom, up through LZS editing, field-VM bytecode, variable-length relocation, rodata-gap code and overlay dead-region injection, to tier G carrying a RAM patch on disc at the top">
+      <title>The disc-patching technique ladder, tier A (simplest) up to tier G (most advanced)</title>
       <style>
         .ld-badge { fill: var(--accent); stroke: none; }
         .ld-bid   { font: 700 18px var(--font-mono), monospace; fill: var(--bg-raised); text-anchor: middle; dominant-baseline: middle; }
@@ -37,55 +37,62 @@
         .ld-axis  { fill: none; stroke: var(--border); stroke-width: 1.2; }
         .ld-axlab { font: 10px var(--font-body), sans-serif; fill: var(--text-muted); letter-spacing: 0.06em; text-transform: uppercase; }
       </style>
-      <line x1="34" y1="56" x2="34" y2="430" class="ld-axis"/>
+      <line x1="34" y1="56" x2="34" y2="490" class="ld-axis"/>
       <path d="M34 56 l-5 9 h10 z" fill="var(--border)"/>
       <text x="50" y="44" class="ld-axlab">More advanced - more reversing</text>
 
       <rect x="54" y="56" width="34" height="48" rx="5" class="ld-badge"/>
-      <text x="71" y="80" class="ld-bid">F</text>
+      <text x="71" y="80" class="ld-bid">G</text>
       <rect x="100" y="56" width="760" height="48" rx="4" class="ld-card"/>
-      <text x="116" y="78" class="ld-title">Overlay dead-region injection</text>
-      <text x="116" y="95" class="ld-ex">Seru-trading vendor &middot; roadmap: battle assist, Seru racing, dome betting, Blood Moon</text>
-      <text x="844" y="84" class="ld-tag">new systems</text>
+      <text x="116" y="78" class="ld-title">Carrying a RAM patch on disc</text>
+      <text x="116" y="95" class="ld-ex">Super Arts Pack (by ZetaPhoenix) - a community RAM patch streamed from annex sectors by an injected loader</text>
+      <text x="844" y="84" class="ld-tag">foreign payloads</text>
 
       <rect x="54" y="116" width="34" height="48" rx="5" class="ld-badge"/>
-      <text x="71" y="140" class="ld-bid">E</text>
+      <text x="71" y="140" class="ld-bid">F</text>
       <rect x="100" y="116" width="760" height="48" rx="4" class="ld-card"/>
-      <text x="116" y="138" class="ld-title">Code injection via the rodata gap</text>
-      <text x="116" y="155" class="ld-ex">Bonus equipment drops &middot; run-away EXP &middot; enemy ally &middot; shiny Seru</text>
-      <text x="844" y="144" class="ld-tag">new behaviour</text>
+      <text x="116" y="138" class="ld-title">Overlay dead-region injection</text>
+      <text x="116" y="155" class="ld-ex">Seru-trading vendor &middot; roadmap: battle assist, Seru racing, dome betting, Blood Moon</text>
+      <text x="844" y="144" class="ld-tag">new systems</text>
 
       <rect x="54" y="176" width="34" height="48" rx="5" class="ld-badge"/>
-      <text x="71" y="200" class="ld-bid">D</text>
+      <text x="71" y="200" class="ld-bid">E</text>
       <rect x="100" y="176" width="760" height="48" rx="4" class="ld-card"/>
-      <text x="116" y="198" class="ld-title">Variable-length relocation</text>
-      <text x="116" y="215" class="ld-ex">Doors (scene transitions) &middot; high-capacity starting bag</text>
-      <text x="844" y="204" class="ld-tag">resize + fix-ups</text>
+      <text x="116" y="198" class="ld-title">Code injection via the rodata gap</text>
+      <text x="116" y="215" class="ld-ex">Bonus equipment drops &middot; run-away EXP &middot; enemy ally &middot; shiny Seru &middot; arts name-length fix</text>
+      <text x="844" y="204" class="ld-tag">new behaviour</text>
 
       <rect x="54" y="236" width="34" height="48" rx="5" class="ld-badge"/>
-      <text x="71" y="260" class="ld-bid">C</text>
+      <text x="71" y="260" class="ld-bid">D</text>
       <rect x="100" y="236" width="760" height="48" rx="4" class="ld-card"/>
-      <text x="116" y="258" class="ld-title">Rewriting field-VM bytecode</text>
-      <text x="116" y="275" class="ld-ex">Treasure chests &middot; town shops &middot; random encounters &middot; house doors</text>
-      <text x="844" y="264" class="ld-tag">operand rewrite</text>
+      <text x="116" y="258" class="ld-title">Variable-length relocation</text>
+      <text x="116" y="275" class="ld-ex">Doors (scene transitions) &middot; high-capacity starting bag</text>
+      <text x="844" y="264" class="ld-tag">resize + fix-ups</text>
 
       <rect x="54" y="296" width="34" height="48" rx="5" class="ld-badge"/>
-      <text x="71" y="320" class="ld-bid">B</text>
+      <text x="71" y="320" class="ld-bid">C</text>
       <rect x="100" y="296" width="760" height="48" rx="4" class="ld-card"/>
-      <text x="116" y="318" class="ld-title">Editing inside LZS</text>
-      <text x="116" y="335" class="ld-ex">Monster drops &middot; monster combat stats &middot; weapon specialty</text>
-      <text x="844" y="324" class="ld-tag">decompress / repack</text>
+      <text x="116" y="318" class="ld-title">Rewriting field-VM bytecode</text>
+      <text x="116" y="335" class="ld-ex">Treasure chests &middot; town shops &middot; random encounters &middot; house doors</text>
+      <text x="844" y="324" class="ld-tag">operand rewrite</text>
 
       <rect x="54" y="356" width="34" height="48" rx="5" class="ld-badge"/>
-      <text x="71" y="380" class="ld-bid">A</text>
+      <text x="71" y="380" class="ld-bid">B</text>
       <rect x="100" y="356" width="760" height="48" rx="4" class="ld-card"/>
-      <text x="116" y="378" class="ld-title">Static-table overwrites</text>
-      <text x="116" y="395" class="ld-ex">Steal items &middot; spell costs &middot; element affinity &middot; prices &middot; casino</text>
-      <text x="844" y="384" class="ld-tag">same-size data</text>
+      <text x="116" y="378" class="ld-title">Editing inside LZS</text>
+      <text x="116" y="395" class="ld-ex">Monster drops &middot; monster combat stats &middot; weapon specialty</text>
+      <text x="844" y="384" class="ld-tag">decompress / repack</text>
 
-      <text x="50" y="428" class="ld-axlab">Foundational - same-size data edits</text>
+      <rect x="54" y="416" width="34" height="48" rx="5" class="ld-badge"/>
+      <text x="71" y="440" class="ld-bid">A</text>
+      <rect x="100" y="416" width="760" height="48" rx="4" class="ld-card"/>
+      <text x="116" y="438" class="ld-title">Static-table overwrites</text>
+      <text x="116" y="455" class="ld-ex">Steal items &middot; spell costs &middot; element affinity &middot; prices &middot; casino</text>
+      <text x="844" y="444" class="ld-tag">same-size data</text>
+
+      <text x="50" y="488" class="ld-axlab">Foundational - same-size data edits</text>
     </svg>
-    <figcaption>Each rung is a page in this series. Variants (a <code>GIVE_ITEM</code> splice, a new-game seed stamp, a string injection, an engine-facing config blob) are specialisations of a parent tier and are tagged in the catalog below rather than given their own rung.</figcaption>
+    <figcaption>Each rung is a page in this series. Variants (the <code>GIVE_ITEM</code> splice, the new-game seed stamp, the string injection, the engine-facing config blob) are specialisations of a parent tier, tagged on their catalog rows rather than given their own rung.</figcaption>
   </figure>
 </section>
 
@@ -101,6 +108,7 @@
       <tr><td><strong>D</strong></td><td><a href="d-man-relocation.html">Variable-length relocation</a></td><td>A door carries its destination's name inline, so re-pointing it resizes the record.</td><td>The door randomizer and the high-capacity starting bag.</td></tr>
       <tr><td><strong>E</strong></td><td><a href="e-rodata-gap-code.html">Code injection via the rodata gap</a></td><td>Hand-assembled MIPS detoured into reclaimed space in the executable.</td><td>New behaviour, not just new data - and the traps that bite the first time.</td></tr>
       <tr><td><strong>F</strong></td><td><a href="f-overlay-dead-region.html">Overlay dead-region injection</a></td><td>A whole new screen hosted in a menu overlay's dead space: the Seru-trading vendor.</td><td>Where genuinely new features come from.</td></tr>
+      <tr><td><strong>G</strong></td><td><a href="g-ram-payload-carrier.html">Carrying a RAM patch on disc</a></td><td>A community GameShark mod - the Super Arts Pack by ZetaPhoenix - parked in annex sectors and streamed into free RAM by an injected loader, installed byte-for-byte.</td><td>How someone else's cheat-device mod becomes a cold-boot disc patch, credit intact.</td></tr>
     </tbody>
   </table>
 </section>

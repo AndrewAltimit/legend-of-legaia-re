@@ -78,6 +78,22 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
             );
         }
     }
+    // The arts name-length fix parks its routine at the arena head when it is
+    // installed standalone; alongside --super-arts-pack it rides behind the
+    // pack's stub instead, so the pack is not in this list.
+    for (other, flag) in [
+        (arts_ap, "--arts-ap-grant / --arts-ap-cost"),
+        (args.shiny_seru, "--shiny-seru"),
+        (args.delilas_challenge, "--delilas-challenge"),
+        (args.show_super_arts, "--show-super-arts"),
+    ] {
+        if args.arts_name_fix && other {
+            bail!(
+                "--arts-name-fix and {flag} both inject into the same verified-dead SCUS \
+                 regions and are mutually exclusive; enable only one"
+            );
+        }
+    }
 
     let original = load_image(&args.input)?;
     check_usa_disc(&original, args.allow_region_mismatch, "randomize")?;
@@ -685,6 +701,36 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         manifest.push("super_arts_pack = true  # by ZetaPhoenix".to_string());
     } else {
         manifest.push("super_arts_pack = false".to_string());
+    }
+
+    // The arts name-length fix (also by ZetaPhoenix). The pack installs it
+    // automatically - the author ships it as his mod's own update - with the
+    // routine parked behind the pack's battle-load stub; standalone it takes
+    // the arena head.
+    if args.super_arts_pack || args.arts_name_fix {
+        let routine_va = if args.super_arts_pack {
+            legaia_patcher::super_arts_pack::ARENA_USED_END_VA
+        } else {
+            legaia_patcher::shiny_seru::ARENA1_VA
+        };
+        let report = apply::inject_arts_name_fix(&mut patcher, routine_va)?;
+        let how = if args.super_arts_pack {
+            if args.arts_name_fix {
+                " (included with --super-arts-pack)"
+            } else {
+                " (the pack's own update)"
+            }
+        } else {
+            ""
+        };
+        println!(
+            "arts-name-fix (by ZetaPhoenix): Super/Miracle Art banner re-centred for the \
+             installed name (routine at {:#x}, {} edits){how}",
+            report.routine_va, report.edits
+        );
+        manifest.push("arts_name_fix = true  # by ZetaPhoenix".to_string());
+    } else {
+        manifest.push("arts_name_fix = false".to_string());
     }
 
     // Place renames: the SCUS landmark cell, the world-map label records, and

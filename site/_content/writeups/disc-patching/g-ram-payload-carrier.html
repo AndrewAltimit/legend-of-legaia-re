@@ -1,0 +1,166 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../../index.html">home</a> &middot; <a href="../index.html">write-ups</a> &middot; <a href="index.html">disc patching</a> &middot; Tier G</div>
+  <h1>Tier G - carrying a RAM patch on disc</h1>
+  <p class="lede">On a <code>--super-arts-pack</code> disc each character has <strong>ten</strong> Super Arts - five retail, five new, each with its own name banner, hit count and animation, fired by its own arts chain. The five new ones are the <strong>Super Arts Pack</strong>, a community mod by <strong>ZetaPhoenix</strong> - and he wrote it for a GameShark, not a disc. This rung is how a RAM patch built for a cheat device becomes a cold-boot disc patch, with the author's bytes installed byte-for-byte.</p>
+</header>
+
+<div class="notice">
+  <div class="notice-title">The technique in one box</div>
+  Every earlier rung hosts new bytes inside something the game already loads - the executable's gap (tier E), an overlay's dead space (tier F). A payload that targets <em>free RAM no overlay covers</em> has no host, so the disc must gain a <strong>loader</strong>: the payload is parked in annex sectors the game never reads, and a small injected stub streams it to its address at load time using the game's own CD reader. The payload itself ships verbatim - nothing is reassembled or relocated - which is also what makes this the rung for carrying <em>someone else's</em> mod.
+</div>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Payload</dt><dd>ZetaPhoenix's 3,764-byte block at <code>0x801FD000</code>: trigger tables, fifteen names, four MIPS routines, 34 animation edit-lists</dd>
+    <dt>Parking</dt><dd>Two 2,048-byte sectors in the <code>DMY.DAT</code> annex (dev-fixture space the game never reads); disc size unchanged, PPF-safe</dd>
+    <dt>Loader</dt><dd>12-instruction stub in verified-dead arena 1 (<code>0x8007AE00</code>), entered from battle init; calls the game's own reader <code>FUN_8005E4D4</code>, then BIOS <code>FlushCache</code></dd>
+    <dt>Hooks</dt><dd>Fourteen same-size words across ten sites - the author's own hook set, installed verbatim; the battle-load detour is the carrier's one addition</dd>
+    <dt>Edit class</dt><dd>In place throughout (annex sectors already exist)</dd>
+    <dt>Confidence</dt><dd><span class="tag tag-done">Confirmed</span> - interpreter oracle over all 30 trigger chains + emulator probe of the live CD read</dd>
+    <dt>Oracle</dt><dd><code>super_arts_pack_real.rs</code></dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="what-the-payload-does">
+  <h2>What the payload does</h2>
+  <p>A retail Super Art is a find-and-replace: the queue builder tokenizes your arrow chain into a byte queue of action constants on the battle actor (<code>actor+0x1DF</code>), and the applier (<code>FUN_801EF9E4</code>) scans a five-row-per-character trigger table over the finished queue - a matching tail is overwritten with that row's replace string, the <code>0x1A</code> special starter plus the Super's finisher constants. The pack widens exactly this mechanism: its own tables carry <strong>ten</strong> rows per character (rows 0-4 are the retail rows byte-for-byte; 5-9 are new), plus routines that give the new rows names, hit counts and animations. The cleverest part is the animation scheme: the added Supers reuse seventeen existing action constants, and a routine applies a per-constant <code>(offset, values)</code> edit-list over the live art record on the way in - and its inverse on the way out. A self-reversing patch over game state, carrying no copied game data.</p>
+</section>
+
+<section class="doc-section" id="free-ram">
+  <h2>Free RAM is a claim that needs evidence</h2>
+  <p>The payload's home, <code>0x801FD000</code>, is above everything the game loads - and "above everything" is exactly the kind of claim this project has been burned by before ("zero is not dead"). Three measurements back it:</p>
+  <ul>
+    <li>No overlay covers it: slot A - where the battle overlay PROT 0898 loads - ends at <code>0x801F7018</code>, and nothing loads higher.</li>
+    <li>Across the project's save-state library - 60 states, battles included - <code>0x801FD000..0x801FE000</code> is all-zero in every one.</li>
+    <li>The deepest observed stack use is <code>0x801FE420</code>, still 1,388 bytes above the block's end.</li>
+  </ul>
+  <figure class="overlay-strip">
+    <svg viewBox="0 0 880 250" width="100%" style="max-width:880px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The top of PSX RAM as a strip: the battle overlay ends at 0x801F7018, persistent effect state sits above it, the payload occupies 3764 bytes from 0x801FD000 in free space, and the stack's deepest observed use is 0x801FE420">
+      <title>The top of RAM: the payload sits in a gap no overlay covers and no observed state touches</title>
+      <style>
+        .rm-live { fill: var(--bg-raised); stroke: var(--border); stroke-width: 1.2; }
+        .rm-pay  { fill: var(--accent); stroke: none; }
+        .rm-t    { font: 11px var(--font-body), sans-serif; fill: currentColor; text-anchor: middle; dominant-baseline: middle; }
+        .rm-lab  { font: 11px var(--font-body), sans-serif; fill: var(--text-muted); }
+        .rm-addr { font: 11px var(--font-mono), monospace; fill: var(--accent); }
+        .rm-line { stroke: var(--border); stroke-width: 1; }
+      </style>
+      <text x="20" y="28" class="rm-lab">top of main RAM, 0x801C0000 .. 0x80200000</text>
+      <rect x="20" y="40" width="840" height="44" fill="none" class="rm-live"/>
+      <rect x="210" y="40" width="532" height="44" class="rm-live"/>
+      <text x="476" y="62" class="rm-t">battle overlay - PROT 0898 (slot A)</text>
+      <rect x="742" y="40" width="78" height="44" fill="var(--bg-raised)" opacity="0.5" stroke="var(--border)" stroke-width="1"/>
+      <rect x="820" y="40" width="12" height="44" class="rm-pay"/>
+      <text x="20"  y="104" class="rm-addr">0x801C0000</text>
+      <text x="210" y="104" class="rm-addr">0x801CE818</text>
+      <text x="742" y="104" class="rm-addr" text-anchor="middle">0x801F7018</text>
+      <line x1="826" y1="84" x2="770" y2="140" class="rm-line"/>
+      <text x="770" y="158" class="rm-lab" text-anchor="middle">payload &middot; 0x801FD000 (+3,764 B)</text>
+      <line x1="781" y1="84" x2="600" y2="140" class="rm-line"/>
+      <text x="560" y="158" class="rm-lab" text-anchor="middle">persistent effect / world state</text>
+      <text x="560" y="175" class="rm-lab" text-anchor="middle">(must never be zeroed)</text>
+      <line x1="845" y1="84" x2="845" y2="190" class="rm-line"/>
+      <text x="850" y="208" class="rm-lab" text-anchor="end">deepest stack use seen: 0x801FE420 (60 states)</text>
+    </svg>
+    <figcaption>The rejected alternative - growing PROT 0898 to cover the address - would zero <code>0x801F7018..0x801FD000</code> at every battle load, wiping the persistent effect state the field overlay leaves there.</figcaption>
+  </figure>
+</section>
+
+<section class="doc-section" id="loader">
+  <h2>The loader: annex sectors plus a streaming stub</h2>
+  <p>The payload is written into the <a href="../../formats/dmy.html"><code>DMY.DAT</code></a> annex - a bump allocator over sectors of dev-fixture data the retail game never reads, so the disc keeps its exact size and the whole install stays a PPF. A 12-instruction stub in the executable's verified-dead arena streams it in at every battle load:</p>
+  <figure class="overlay-strip">
+    <svg viewBox="0 0 880 300" width="100%" style="max-width:880px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Delivery path: battle init is detoured to the injected stub, which calls the game's CD reader to stream the annexed payload from DMY.DAT into RAM at 0x801FD000, flushes the instruction cache and returns; in battle the hooked retail sites jump into the resident payload">
+      <title>The delivery path: annex sectors, the battle-load stub, and the resident payload</title>
+      <style>
+        .dp-box  { fill: var(--bg-raised); stroke: var(--border); stroke-width: 1.3; }
+        .dp-hot  { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.5; }
+        .dp-t    { font: 11px var(--font-body), sans-serif; fill: currentColor; }
+        .dp-m    { font: 11px var(--font-mono), monospace; fill: currentColor; }
+        .dp-lab  { font: 11px var(--font-body), sans-serif; fill: var(--text-muted); }
+        .dp-acc  { font: 11px var(--font-mono), monospace; fill: var(--accent); }
+        .dp-line { stroke: var(--border); stroke-width: 1.3; fill: none; }
+        .dp-aline{ stroke: var(--accent); stroke-width: 1.3; fill: none; }
+      </style>
+      <defs>
+        <marker id="dp-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="var(--border)"/></marker>
+        <marker id="dp-arra" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="var(--accent)"/></marker>
+      </defs>
+      <text x="120" y="28" class="dp-lab" text-anchor="middle">DISC</text>
+      <rect x="30" y="40" width="180" height="46" class="dp-box"/>
+      <text x="120" y="60" class="dp-t" text-anchor="middle">SCUS_942.54</text>
+      <text x="120" y="76" class="dp-lab" text-anchor="middle">+ stub + 4 hook words</text>
+      <rect x="30" y="100" width="180" height="46" class="dp-box"/>
+      <text x="120" y="120" class="dp-t" text-anchor="middle">PROT 0898 overlay</text>
+      <text x="120" y="136" class="dp-lab" text-anchor="middle">+ 10 hook words</text>
+      <rect x="30" y="160" width="180" height="46" class="dp-hot"/>
+      <text x="120" y="180" class="dp-acc" text-anchor="middle">DMY.DAT annex</text>
+      <text x="120" y="196" class="dp-lab" text-anchor="middle">payload &middot; 2 sectors</text>
+
+      <text x="590" y="28" class="dp-lab" text-anchor="middle">RAM, at battle load</text>
+      <rect x="380" y="40" width="420" height="50" class="dp-box"/>
+      <text x="396" y="60" class="dp-m">battle init FUN_80055B6C</text>
+      <text x="396" y="78" class="dp-lab">detour @ 0x80055DBC - after the overlay's own CD read</text>
+      <rect x="380" y="118" width="420" height="50" class="dp-box"/>
+      <text x="396" y="138" class="dp-m">loader stub @ 0x8007AE00 (dead arena)</text>
+      <text x="396" y="156" class="dp-lab">FUN_8005E4D4(2, lba, 0x801FD000) + FlushCache</text>
+      <rect x="380" y="196" width="420" height="50" class="dp-hot"/>
+      <text x="396" y="216" class="dp-acc">payload, resident @ 0x801FD000</text>
+      <text x="396" y="234" class="dp-lab">tables &middot; names &middot; routines &middot; animation edit-lists</text>
+
+      <line x1="590" y1="90" x2="590" y2="112" class="dp-line" marker-end="url(#dp-arr)"/>
+      <line x1="590" y1="168" x2="590" y2="190" class="dp-line" marker-end="url(#dp-arr)"/>
+      <path d="M 210 183 C 300 183, 310 221, 374 221" class="dp-aline" marker-end="url(#dp-arra)"/>
+      <text x="285" y="212" class="dp-acc">CD read</text>
+      <text x="380" y="278" class="dp-lab">in battle: the hooked retail sites jump into the payload's routines, each returning to the word after its hook</text>
+    </svg>
+    <figcaption>The stub runs in the same idle-drive, between-frames context as every retail load - it is entered one instruction after battle init's own wait for the overlay CD read. <code>FlushCache</code> matters: the payload is code, and the R3000's instruction cache is not DMA-coherent.</figcaption>
+  </figure>
+</section>
+
+<section class="doc-section" id="hooks">
+  <h2>The hooks: reading them out of the payload</h2>
+  <p>The pack's fourteen hook words across ten sites are the author's own, installed verbatim. Before he published them, though, most were <em>reconstructed from the payload alone</em> - and the method generalises to any payload written in his style. Each routine replays the exact retail instruction it displaces and ends with a jump back to the instruction after its hook, so the routine pins its own site; the stride retarget is forced by the payload's table strides meeting the applier's own address arithmetic (one doubled register turns <code>t5&times;65</code> / <code>t5&times;80</code> into the 10-row strides).</p>
+  <p>The instructive part is where reconstruction and author <em>differed</em>. Everywhere the payload could pin a word, the two matched. The deltas sat exactly where the payload is silent - and one was a genuine miss: the row loop's <strong>exit seed</strong>, a <code>li a1,5</code> the match arm uses to fall out of the scan, which must widen to 10 alongside the loop bound. Neither word is referenced by any routine, so the payload cannot pin them; without the seed, every match resumed scanning against the already-rewritten queue (end-state identical on his tables, a third more work per match). The law this leaves behind: <strong>when reconstructing hooks from a payload, every un-pinned loop immediate is a place to suspect a paired edit.</strong></p>
+  <p>The full hook table, the delay-slot relocation trick his queue hook uses, and the loop-immediate pairing are laid out in the <a href="../../tooling/randomizer.html#super-arts-pack">randomizer reference</a>.</p>
+</section>
+
+<section class="doc-section" id="authorship">
+  <h2>The authorship boundary</h2>
+  <p>Carrying a third-party mod draws a line the earlier rungs never needed: the payload is <strong>the author's work</strong>, and the carrier's whole job is delivery without alteration. The block ships as a data file installed byte-for-byte; the hook words are his; the loader stub is the carrier's one addition, because a RAM cheat had nothing to load. The patcher refuses rather than adapts: every hook site must carry its exact retail word, the payload's retail rows must match the disc's own trigger tables byte-for-byte, and the embedded block's size, routine entries and baked return addresses are checked against the hook map - so a swapped-out blob can never install against hooks derived from a different one.</p>
+  <p>The same boundary governs his follow-up <a href="../../tooling/randomizer.html#arts-name-fix">arts name-length fix</a>, with one documented exception that proves the rule: his fix parks its routine in an all-zero run inside the executable's SsAPI sound-table window - the exact cluster where this project once learned that zero padding between live tables is not dead space. The carrier installs his instruction stream unchanged but parks it in read-watch-verified arena space, moving only the hook's jump target.</p>
+</section>
+
+<section class="doc-section" id="how-we-know">
+  <h2>How we know</h2>
+  <table>
+    <thead><tr><th>Claim</th><th>Evidence</th><th>Reference</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x801FD000</code> is free RAM</td><td>All-zero across the 60-state save library; slot A extent from the based overlay images; stack low-water from the same states</td><td><a href="../../tooling/static-overlay-pipeline.html">static-overlay-pipeline</a></td></tr>
+      <tr><td>Every hook site carries its known retail word</td><td>Applier + queue builder + banner routines disassembled at their recovered bases; the plan fingerprints all ten sites before writing</td><td><a href="../../subsystems/battle-action.html">battle-action</a></td></tr>
+      <tr><td>The pack actually fires</td><td>Disc-gated oracle: the <em>patched</em> applier's real instructions, with the payload read back out of the annex, run in a MIPS interpreter over all 30 trigger chains - added chains rewrite the queue and index the right name; retail chains come out untouched</td><td><code>super_arts_pack_real.rs</code></td></tr>
+      <tr><td>The CD read works live</td><td>PCSX-Redux probe: boot the patched disc, walk into a random encounter, check <code>0x801FD000</code> was clear before and holds the payload at the stub's return</td><td><a href="../../tooling/pcsx-redux-automation.html">pcsx-redux-automation</a></td></tr>
+      <tr><td>Nothing else moved</td><td>Byte-diff oracle: only the planned words and the annex sectors differ from the clean image, every touched sector stays EDC-valid, and a rerun is byte-identical</td><td><code>super_arts_pack_real.rs</code></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<details class="disclosure">
+  <summary>Details: adding a tier-G mod</summary>
+  <div class="disclosure-body">
+    <p>Park the payload with <code>DiscPatcher::annex_blob</code> (whole sectors, returns the LBA the stub bakes in). Prove the target RAM free the same three ways: no overlay covers it, all-zero across the save-state library, clear of the observed stack floor. Enter the loader from a load path that already waited for its own CD read, call the game's own reader, and <code>FlushCache</code> if the payload is code. Fingerprint every hook word; if the payload is someone else's, install it verbatim, check any rows it duplicates against the disc's own tables, and keep the authorship boundary in the docs as well as the code.</p>
+  </div>
+</details>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="index.html">Series index &middot; the ladder</a>
+    <a href="../../tooling/randomizer.html#super-arts-pack">Super Arts Pack - full hook reference</a>
+    <a href="../../formats/dmy.html">DMY.DAT</a>
+    <a href="e-rodata-gap-code.html">Tier E - the dead-space discipline</a>
+    <a href="../../tooling/rom-patcher.html">Try it: in-browser ROM patcher</a>
+  </div>
+</section>

@@ -1093,6 +1093,16 @@ function arenaClaims() {
       where: 'the checkbox in Gameplay',
     });
   }
+  if (
+    chk('rom-arts-name-fix') && chk('rom-arts-name-fix').checked &&
+    !(chk('rom-super-arts-pack') && chk('rom-super-arts-pack').checked)
+  ) {
+    out.push({
+      key: 'artsNameFix',
+      label: 'the arts name-length fix (by ZetaPhoenix)',
+      where: 'the checkbox in Gameplay',
+    });
+  }
   if (chk('rom-shiny-seru') && chk('rom-shiny-seru').checked) {
     out.push({ key: 'shinySeru', label: 'Shiny Seru', where: 'the checkbox in Gameplay' });
   }
@@ -1131,6 +1141,8 @@ function arenaConflictMessage() {
   const claims = arenaClaims();
   const hard =
     claims.some((c) => c.key === 'superArtsPack') && claims.length > 1
+      ? claims
+      : claims.some((c) => c.key === 'artsNameFix') && claims.length > 1
       ? claims
       : claims.some((c) => c.key === 'showSuperArts') && claims.length > 1
       ? claims
@@ -2244,7 +2256,7 @@ const PRESET_BASE = {
   drops: 'none', encounters: 'none', encounter_scope: 'scene', soloStrong: false, fleeExp: false, chests: 'none',
   shops: 'none', casino: 'none', steals: 'none', arts: 'none', doors: 'none',
   door_coupling: 'coupled', houseDoors: false, equipmentDrops: false, seruTrade: false,
-  enemyAlly: false, shinySeru: false, showSuperArts: false, superArtsPack: false, jewelFix: false, approachFix: false, delilasChallenge: false, customItems: false, fishingPrice: '', renameLocation: '', earthEggPrice: '', artsPower: '', superArtPower: '', artsApGrant: '', spiritAp: '', damageAp: '', enemyStatScale: '', expScale: '', seruCatchRate: '', delilasParty: '', delilasArtsVoice: 'original', delilasMoves: 'hybrid', attackCount: '',
+  enemyAlly: false, shinySeru: false, showSuperArts: false, superArtsPack: false, artsNameFix: false, jewelFix: false, approachFix: false, delilasChallenge: false, customItems: false, fishingPrice: '', renameLocation: '', earthEggPrice: '', artsPower: '', superArtPower: '', artsApGrant: '', spiritAp: '', damageAp: '', enemyStatScale: '', expScale: '', seruCatchRate: '', delilasParty: '', delilasArtsVoice: 'original', delilasMoves: 'hybrid', attackCount: '',
   startingItems: 0, doorOfWind: false, incense: false,
   speedChain: false, chickenHeart: false, goodLuckBell: false,
   allWarps: false,
@@ -2341,6 +2353,7 @@ function init() {
   const shinySeruChk = $('rom-shiny-seru');
   const showSuperArtsChk = $('rom-show-super-arts');
   const superArtsPackChk = $('rom-super-arts-pack');
+  const artsNameFixChk = $('rom-arts-name-fix');
   const jewelFixChk = $('rom-jewel-fix');
   const approachFixChk = $('rom-approach-fix');
   const delilasChallengeChk = $('rom-delilas-challenge');
@@ -2632,6 +2645,7 @@ function init() {
     shinySeruChk.checked = cfg.shinySeru;
     showSuperArtsChk.checked = !!cfg.showSuperArts;
     superArtsPackChk.checked = !!cfg.superArtsPack;
+    artsNameFixChk.checked = !!cfg.artsNameFix;
     jewelFixChk.checked = cfg.jewelFix;
     approachFixChk.checked = cfg.approachFix;
     delilasChallengeChk.checked = cfg.delilasChallenge;
@@ -2754,6 +2768,7 @@ function init() {
     const BOX = {
       showSuperArts: 'rom-show-super-arts',
       superArtsPack: 'rom-super-arts-pack',
+      artsNameFix: 'rom-arts-name-fix',
       shinySeru: 'rom-shiny-seru',
       delilasChallenge: 'rom-delilas-challenge',
     };
@@ -2842,6 +2857,7 @@ function init() {
     const shinySeru = shinySeruChk.checked;
     const showSuperArts = showSuperArtsChk.checked;
     const superArtsPack = superArtsPackChk.checked;
+    const artsNameFix = artsNameFixChk.checked;
     const jewelFix = jewelFixChk.checked;
     const approachFix = approachFixChk.checked;
     const delilasChallenge = delilasChallengeChk.checked;
@@ -2986,7 +3002,7 @@ function init() {
       speedChain === 0 && chickenHeart === 0 && goodLuckBell === 0 && !allWarps &&
       monsterStats === 'none' && movePower === 'none' && elementAffinity === 'none' &&
       spellCost === 'none' && equipBonus === 'none' && !weaponSpecialty &&
-      startingLevel === 0 && !fleeExp && !seruTrade && !enemyAlly && !shinySeru && !showSuperArts && !superArtsPack && !jewelFix && !approachFix && !delilasChallenge && !customItems &&
+      startingLevel === 0 && !fleeExp && !seruTrade && !enemyAlly && !shinySeru && !showSuperArts && !superArtsPack && !artsNameFix && !jewelFix && !approachFix && !delilasChallenge && !customItems &&
       !fishingPrice && !renameLocation && !earthEggPrice && !artsPower && !superArtPower &&
       !artsApGrant && !artsApCost &&
       !spiritAp && !damageAp && !enemyStatScale && !expScale && !seruCatchRate && !delilasParty &&
@@ -3026,7 +3042,7 @@ function init() {
       let summaryText = '';
       let langReport = null;
       if (baseActive) {
-        const result = await mod.patch_rom(buf, seed, langPack, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel, soloStrong, fleeExp, seruTrade, enemyAlly, shinySeru, jewelFix, approachFix, delilasChallenge, customItems, fishingPrice, renameLocation, earthEggPrice, artsPower, artsApGrant, artsApCost, spiritAp, damageAp, enemyStatScale, expScale, seruCatchRate, delilasParty, delilasArtsVoice, delilasMoves, superArtPower, showSuperArts, superArtsPack, attackCount, swingCosts, equipOwners, onPatchProgress);
+        const result = await mod.patch_rom(buf, seed, langPack, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel, soloStrong, fleeExp, seruTrade, enemyAlly, shinySeru, jewelFix, approachFix, delilasChallenge, customItems, fishingPrice, renameLocation, earthEggPrice, artsPower, artsApGrant, artsApCost, spiritAp, damageAp, enemyStatScale, expScale, seruCatchRate, delilasParty, delilasArtsVoice, delilasMoves, superArtPower, showSuperArts, superArtsPack, artsNameFix, attackCount, swingCosts, equipOwners, onPatchProgress);
         data = result.data;
         usedSeed = result.seed;
         summaryText = result.summary || '';
