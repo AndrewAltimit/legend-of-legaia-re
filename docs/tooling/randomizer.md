@@ -98,7 +98,6 @@ disc-gated, so CI runs without a disc. There is also a
   - [Super Art damage power](#super-art-damage-power)
   - [Show Super Arts on the in-battle move list](#show-super-arts-on-the-in-battle-move-list)
   - [Super Arts Pack (by ZetaPhoenix)](#super-arts-pack-by-zetaphoenix)
-  - [Arts name-length fix (by ZetaPhoenix)](#arts-name-length-fix-by-zetaphoenix)
   - [Arts AP override](#arts-ap-override)
   - [Spirit AP](#spirit-ap)
   - [Enemy-damage AP](#enemy-damage-ap)
@@ -319,8 +318,7 @@ unless asked for:
 | `--arts-power COMBO=VALUE` | rebalance a Tactical Art's per-strike damage-power bytes, targeted by input combo (`RDLDL=0x16`); `VALUE` is a power tier `0x0C..=0x1F` or `0` to disable | repeatable / comma-separated | [Arts damage power](#arts-damage-power) |
 | `--super-art-power NAME=VALUE` | the same rebalance for a **Super Art**, targeted by name (`"Tri-Somersault"=0x1A`); Super Arts carry no combo, no arts-table row and no AP cost of their own, so name is their only key | repeatable / comma-separated | [Super Art damage power](#super-art-damage-power) |
 | `--show-super-arts` | list a character's Super Arts on the in-battle Tactical-Arts list, which retail never draws: once performed, sorted in by AP, with name, chain AP and the arrows you type; mutually exclusive with `--shiny-seru`, the arts AP overrides and `--delilas-challenge` |
-| `--super-arts-pack` | install the **Super Arts Pack by ZetaPhoenix**: fifteen extra Super Arts, five per character, each with its own name, hit count and animation; his block and hook words are installed byte-for-byte, parked in the `DMY.DAT` annex and streamed to `0x801FD000` at battle load. Installs the author's arts name-length fix automatically. Mutually exclusive with `--shiny-seru`, `--show-super-arts`, the arts AP overrides and `--delilas-challenge` | flag | [Super Arts Pack](#super-arts-pack-by-zetaphoenix) |
-| `--arts-name-fix` | fix retail's mis-centred **Super / Miracle Art name banner** (a fix by ZetaPhoenix, installed verbatim): re-measure the name actually installed and re-centre the banner. A standalone vanilla bug fix; included automatically by `--super-arts-pack`. Standalone it is mutually exclusive with `--shiny-seru`, `--show-super-arts`, the arts AP overrides and `--delilas-challenge` | flag | [Arts name-length fix](#arts-name-length-fix-by-zetaphoenix) |
+| `--super-arts-pack` | install the **Super Arts Pack by ZetaPhoenix**: fifteen extra Super Arts, five per character, each with its own name, hit count and animation; his block and hook words are installed byte-for-byte, parked in the `DMY.DAT` annex and streamed to `0x801FD000` at battle load. Ships with the author's name-banner fix. Mutually exclusive with `--shiny-seru`, `--show-super-arts`, the arts AP overrides and `--delilas-challenge` | flag | [Super Arts Pack](#super-arts-pack-by-zetaphoenix) |
 | `--arts-ap-grant [CHAR:]COMBO=AMOUNT` | make a Tactical Art **grant** `AMOUNT` AP (Spirit, clamped at 100) instead of costing it, admitting it at any AP level; a code hook into the party arts queue-builder. Keyed per (character, arts row). Mutually exclusive with `--shiny-seru` | repeatable / comma-separated | [Arts AP override](#arts-ap-override) |
 | `--arts-ap-cost [CHAR:]COMBO=AMOUNT` | set what a Tactical Art **costs** in AP (`1..=100`), replacing retail's computed cost. Same hook, same keying, same exclusivity; the art's menu AP number is rewritten to match | repeatable / comma-separated | [Arts AP override](#arts-ap-override) |
 | `--spirit-ap AP` | set how much AP the Spirit command charges into the battle gauge (retail 32): `0` = defence boost only, `100` = one press fills the gauge, negative = Spirit drains the gauge | single value -100..=100 | [Spirit AP](#spirit-ap) |
@@ -3873,11 +3871,53 @@ cannot pin, which retarget register carries the table `lui`, and whether the
 displaced `move t9,a0` rides a trampoline or the jump's own delay slot.
 
 **Banner centring:** retail centres the art-name banner for the wrong name on
-every Super / Miracle finisher (see the
-[arts name-length fix](#arts-name-length-fix-by-zetaphoenix)), which the pack's
-longer names ("Blazing Typhoon", "Grand Maelstrom") make slightly more visible.
-The pack installs the author's own fix automatically, with its routine parked
-directly behind the battle-load stub.
+every Super / Miracle finisher (see
+[the author's name-length fix](#the-authors-name-length-fix) below), which the
+pack's longer names ("Blazing Typhoon", "Grand Maelstrom") make slightly more
+visible. The pack ships with the author's own fix, its routine parked directly
+behind the battle-load stub.
+
+#### The author's name-length fix
+
+The pack ships with a second piece of ZetaPhoenix's work, installed verbatim: a
+fix for a **retail bug** his added names made more visible.
+
+**The retail bug.** An art's display name lives in two places: the SCUS
+arts-name table (the real names of regular and Hyper Arts) and the arts
+animation data (placeholder names for regular/Hyper Arts, the *real* names of
+Super Arts and the Miracle finisher). The banner routine `FUN_8004AD80` first
+measures the name behind the fixed pointer at `0x80076024` - always
+"Vulture Blade" (the measure at `0x8004BBB4`) - and a later check re-measures
+with the correct table name **only for regular/Hyper Arts**. A Super or Miracle
+finisher keeps Vulture Blade's width no matter which one fired, so its banner
+is centred for the wrong name. Root cause traced by ZetaPhoenix, reproduced on
+vanilla by renaming a finisher and firing it back-to-back with a Hyper Art.
+
+**The fix.** A 3-word detour at `0x8004BC3C` - the banner path's
+`li a0,0x4C; jal FUN_801D8DE8; move a1,zero` tail - into a 17-instruction
+routine that re-measures the **installed** name pointer (`+0x74C` of the banner
+block at `0x80076C10`), recomputes `x = 160 - width/2`, stores it into the four
+banner X halfwords (`+0x742`/`+0x73A`/`+0x72A`/`+0x722`), replays the three
+displaced words and returns. It corrects every banner, vanilla's five Super
+Arts and the Miracle finishers included - the author's own update to his mod,
+installed as part of the pack.
+
+**One relocation, and why.** The author's patch parks the routine at
+`0x80079100` - a 128-byte all-zero run the
+[address-reference scan](address-reference-scan.md) also finds unreferenced in
+every image. But that address sits inside the `0x80078D00..0x80079800` SsAPI
+sound-table window, the cluster where an all-zero-therefore-dead assumption
+previously produced the Healing-Leaf freeze: zero *padding between live
+tables* is reachable by indexed reads a static scan cannot see. This carrier
+holds injection sites to the read-watch standard, so it installs his
+instruction stream unchanged (the routine is position-independent - every jump
+in it is absolute) but parks it directly behind the pack's battle-load stub in
+**verified-dead arena 1**. Only the hook's `j` word differs from the author's
+patch. Module
+[`legaia_patcher::arts_name_fix`](../../crates/patcher/src/arts_name_fix.rs);
+disc oracle `crates/patcher/tests/arts_name_fix_real.rs`, plus an in-crate
+interpreter test that runs the hook + routine over a fake banner block and
+checks the four X halfwords come out `160 - width/2` for the installed name.
 
 #### Where it lives, and what it excludes
 
@@ -3900,52 +3940,6 @@ emulator probe, `scripts/pcsx-redux/autorun_super_arts_pack_load.lua`: on the
 patched disc it walks a save state into a random encounter and reads
 `0x801FD000` at the stub's return, having first checked that address was clear
 (catalogued in [pcsx-redux-automation.md](pcsx-redux-automation.md#runtime-probes-lua-autorun)).
-
-### Arts name-length fix (by ZetaPhoenix)
-
-`--arts-name-fix` installs a **retail bug fix by ZetaPhoenix**, verbatim.
-
-**The retail bug.** An art's display name lives in two places: the SCUS
-arts-name table (the real names of regular and Hyper Arts) and the arts
-animation data (placeholder names for regular/Hyper Arts, the *real* names of
-Super Arts and the Miracle finisher). The banner routine `FUN_8004AD80` first
-measures the name behind the fixed pointer at `0x80076024` - always
-"Vulture Blade" (the measure at `0x8004BBB4`) - and a later check re-measures
-with the correct table name **only for regular/Hyper Arts**. A Super or Miracle
-finisher keeps Vulture Blade's width no matter which one fired, so its banner
-is centred for the wrong name. Root cause traced by ZetaPhoenix, reproduced on
-vanilla by renaming a finisher and firing it back-to-back with a Hyper Art.
-
-**The fix.** A 3-word detour at `0x8004BC3C` - the banner path's
-`li a0,0x4C; jal FUN_801D8DE8; move a1,zero` tail - into a 17-instruction
-routine that re-measures the **installed** name pointer (`+0x74C` of the banner
-block at `0x80076C10`), recomputes `x = 160 - width/2`, stores it into the four
-banner X halfwords (`+0x742`/`+0x73A`/`+0x72A`/`+0x722`), replays the three
-displaced words and returns. It corrects every banner, vanilla's five Super
-Arts and the Miracle finishers included - a standalone bug fix, and the
-author's own update to his Super Arts Pack (which installs it automatically).
-
-**One relocation, and why.** The author's patch parks the routine at
-`0x80079100` - a 128-byte all-zero run the
-[address-reference scan](address-reference-scan.md) also finds unreferenced in
-every image. But that address sits inside the `0x80078D00..0x80079800` SsAPI
-sound-table window, the cluster where an all-zero-therefore-dead assumption
-previously produced the Healing-Leaf freeze: zero *padding between live
-tables* is reachable by indexed reads a static scan cannot see. This carrier
-holds injection sites to the read-watch standard, so it installs his
-instruction stream unchanged (the routine is position-independent - every jump
-in it is absolute) but parks it in **verified-dead arena 1**: at the arena head
-standalone, or directly behind the Super Arts Pack's battle-load stub when the
-two install together. Only the hook's `j` word differs from the author's patch.
-
-Standalone the fix claims the arena head, so it is **mutually exclusive with
-`--shiny-seru`, `--show-super-arts`, `--arts-ap-grant` / `--arts-ap-cost` and
-`--delilas-challenge`**; with `--super-arts-pack` it rides inside the pack's
-existing claim. Seedless toggle, off by default, in no preset. Module
-[`legaia_patcher::arts_name_fix`](../../crates/patcher/src/arts_name_fix.rs);
-disc oracle `crates/patcher/tests/arts_name_fix_real.rs`, plus an in-crate
-interpreter test that runs the hook + routine over a fake banner block and
-checks the four X halfwords come out `160 - width/2` for the installed name.
 
 ### Arts AP override
 

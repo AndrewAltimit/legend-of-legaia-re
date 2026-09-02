@@ -22,8 +22,9 @@
 //! recomputes `x = 160 - width/2`, stores it into the four banner X halfwords
 //! (`+0x742`/`+0x73A`/`+0x72A`/`+0x722`), replays the three displaced words,
 //! and returns to `0x8004BC48`. It corrects every banner - vanilla's five
-//! Super Arts and Miracle finishers included - so it doubles as a standalone
-//! retail bug fix and as an update to his Super Arts Pack.
+//! Super Arts and Miracle finishers included. The author wrote it to double as
+//! a standalone retail fix; this carrier ships it as **part of the Super Arts
+//! Pack**, the author's own update to his mod.
 //!
 //! ## What is his, and the one relocation
 //!
@@ -40,8 +41,7 @@
 //! **verified-dead arena 1** instead ([`crate::shiny_seru::ARENA1_VA`],
 //! read-watch-verified unreferenced across a live battle with an item use, a
 //! victory pose and a summon cast) and re-targets only the hook's `j` word.
-//! Standalone the routine sits at the arena head; installed alongside the
-//! Super Arts Pack it sits directly behind the pack's battle-load stub.
+//! The pack parks it directly behind its battle-load stub.
 
 use anyhow::{Result, bail};
 
