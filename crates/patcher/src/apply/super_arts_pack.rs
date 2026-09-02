@@ -14,9 +14,8 @@ pub struct SuperArtsPackReport {
     /// took from the `DMY.DAT` annex.
     pub block_lba: u32,
     pub block_sectors: u32,
-    /// Where the battle-load stub and the queue-hook trampoline landed.
+    /// Where the battle-load stub landed.
     pub stub_va: u32,
-    pub trampoline_va: u32,
     /// Same-size word edits written (excluding the annexed block itself).
     pub edits: usize,
 }
@@ -26,9 +25,10 @@ pub struct SuperArtsPackReport {
 /// hit count and animation, triggered by their own arts chains.
 ///
 /// ZetaPhoenix's 3764-byte block is parked in the `DMY.DAT` annex and streamed
-/// to `0x801FD000` at battle load by an injected stub; ten same-size word edits
-/// point the retail Super-Art applier, the arts queue builder and the two banner
-/// routines at it. His bytes are installed unmodified.
+/// to `0x801FD000` at battle load by an injected stub; fourteen same-size word
+/// edits - his own hook set plus the battle-load detour - point the retail
+/// Super-Art applier, the arts queue builder and the two banner routines at it.
+/// His bytes are installed unmodified.
 ///
 /// **Mutually exclusive with `--shiny-seru`, `--show-super-arts`,
 /// `--arts-ap-grant` / `--arts-ap-cost` and `--delilas-challenge`** - they all
@@ -79,7 +79,6 @@ pub fn inject_super_arts_pack(patcher: &mut DiscPatcher) -> Result<SuperArtsPack
         block_lba,
         block_sectors,
         stub_va: plan.stub_va,
-        trampoline_va: plan.trampoline_va,
         edits: plan.edits.len(),
     })
 }

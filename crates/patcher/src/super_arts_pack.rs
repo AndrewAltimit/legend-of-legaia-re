@@ -55,20 +55,21 @@
 //!
 //! ## The hooks
 //!
-//! Ten same-size word edits, every one of them derived from the block's own code
-//! (each routine replays the exact instruction it displaces and returns to the
-//! instruction after it, which pins the site):
+//! Fourteen same-size edited words across ten sites - **ZetaPhoenix's own hook
+//! set, supplied by him and installed verbatim**, plus the battle-load hook,
+//! which is this project's addition (his RAM patch had nothing to load):
 //!
 //! | Site | Retail word | Becomes |
 //! |---|---|---|
-//! | `0x801EF9E8` | `move t5,a1` | `sll t5,a1,1` - the applier's per-character stride doubles (5 rows -> 10) |
-//! | `0x801EFA38` / `0x801EFA3C` | `lui v0,0x801f` / `addiu t6,v0,0x6524` | the find table becomes `0x801FD000` |
-//! | `0x801EFA58` / `0x801EFA5C` | `lui v0,0x801f` / `addiu t8,v0,0x65e8` | the replace table becomes `0x801FD186` |
+//! | `0x801EFA0C` | `nop` (a load-delay slot) | `sll t5,t5,1` - `t5` (the character, from the intact `move t5,a1`) doubles, so the applier's stride math lands on 10 rows |
+//! | `0x801EFA38` / `0x801EFA3C` | `lui v0,0x801f` / `addiu t6,v0,0x6524` | `lui t6,0x8020` / `addiu t6,t6,0xd000` - the find table becomes `0x801FD000` (`v0` untouched) |
+//! | `0x801EFA58` / `0x801EFA5C` | `lui v0,0x801f` / `addiu t8,v0,0x65e8` | `lui t8,0x8020` / `addiu t8,t8,0xd186` - the replace table becomes `0x801FD186` |
 //! | `0x801EFBE0` | `slti v0,a1,5` | `slti v0,a1,10` - the applier tries all ten rows |
+//! | `0x801EFBD8` | `li a1,5` | `li a1,10` - the match arm's exit seed keeps pace with the bound, so a match still ends the scan |
 //! | `0x801EFB94` | `nop` (a load-delay slot) | `j 0x801FD380` - routine A |
-//! | `0x801EED20` | `move t9,a0` | `j` the arena trampoline -> routine B |
+//! | `0x801EED20` / `0x801EED24` | `move t9,a0` / `sw s3,0x54(sp)` | `j 0x801FD3DC` / `move t9,a0` - routine B, with the displaced `move` relocated into the jump's delay slot; routine B itself replays the displaced `sw` |
 //! | `0x8004BC10` | `sw v0,0x74c(a0)` | `j 0x801FD538` - routine D |
-//! | `0x8004C718` / `0x8004C71C` | `sw v0,0x74c(s0)` / `sw v0,0x734(s0)` | `j 0x801FD510` + `nop` - routine C |
+//! | `0x8004C718` / `0x8004C71C` | `sw v0,0x74c(s0)` / `sw v0,0x734(s0)` | `j 0x801FD510` + `nop` - routine C re-stores both words on its non-skip path and neither on its skip path |
 //! | `0x80055DBC` | `lui a2,0x1f80` | `j` the arena loader stub |
 //!
 //! The `t5` edit is what makes the applier's own arithmetic land on the wider
@@ -76,23 +77,14 @@
 //! as `t5*80`, so a doubled `t5` gives `130 = 10*13` and `160 = 10*16` exactly.
 //! It is also what makes routine A's `(t5>>1) + t5 + t5` read as `5*character` -
 //! the flat 0..14 index it stores at `0x801FD378` and uses against the hit-count
-//! and name tables. Nothing else in the applier reads `t5`.
+//! and name tables. Nothing reads `t5` between its `move t5,a1` source
+//! ([`T5_SOURCE_VA`], fingerprinted) and the doubling.
 //!
-//! **What is ours, not ZetaPhoenix's.** He supplied the block and described the
-//! hooks as "a few more lines that replace lines from the OG code (mostly jumps
-//! to my new code)", but not the lines themselves. The nine jump/retarget words
-//! above are this project's reconstruction from his block; the tenth (the loader
-//! stub + its hook) is ours by construction, because his RAM patch had no need
-//! to load anything. Two deliberate departures, both to keep his bytes exact:
-//!
-//! - The `0x801EED20` hook goes through a 2-word arena trampoline instead of
-//!   detouring `0x801EED24` directly. A `j` at `0x801EED24` would run
-//!   `move s3,zero` in its delay slot, so routine B's replayed `sw s3,0x54(sp)`
-//!   would spill 0 instead of the caller's `s3`. Hooking one word earlier keeps
-//!   the spill honest and replays `move t9,a0` in the trampoline's delay slot.
-//! - `0x8004C71C` is nopped rather than left as `sw v0,0x734(s0)`, because
-//!   routine C re-stores **both** words on its non-skip path and stores neither
-//!   on its skip path.
+//! The exit seed and the bound move together: the match arm runs `li a1,seed`
+//! so the following `addiu a1,a1,1` / `slti v0,a1,bound` pair falls out of the
+//! row loop. Widening the bound without the seed leaves a match resuming the
+//! scan at row 6 against the already-rewritten queue - end-state identical on
+//! the pack's own chains (verified in the interpreter), but not the mod.
 //!
 //! Retail's own five per character keep their triggers and their queue results
 //! exactly: rows 0..4 of each character in the pack are the disc's own trigger
@@ -171,8 +163,13 @@ pub const APPLIER_VA: u32 = 0x801E_F9E4;
 const APPLIER_W: u32 = 0x27BD_FFF8; // addiu sp,sp,-8
 
 /// The applier's `move t5,a1` (its per-character stride source).
-pub const HOOK_STRIDE_VA: u32 = 0x801E_F9E8;
-const HOOK_STRIDE_W: u32 = 0x00A0_6821;
+pub const HOOK_STRIDE_VA: u32 = 0x801E_FA0C;
+const HOOK_STRIDE_W: u32 = 0x0000_0000;
+/// The applier's `move t5,a1` (`t5` = character), fingerprinted so the stride
+/// hook's assumption - `t5` still holds the raw character at [`HOOK_STRIDE_VA`],
+/// nothing reads it in between - is checked against the build.
+pub const T5_SOURCE_VA: u32 = 0x801E_F9E8;
+const T5_SOURCE_W: u32 = 0x00A0_6821;
 
 /// The applier's find-table `lui` / `addiu` pair.
 pub const HOOK_FIND_HI_VA: u32 = 0x801E_FA38;
@@ -190,6 +187,14 @@ const HOOK_REPL_LO_W: u32 = 0x2458_65E8;
 pub const HOOK_BOUND_VA: u32 = 0x801E_FBE0;
 const HOOK_BOUND_W: u32 = 0x28A2_0005;
 
+/// The applier's exit-on-match seed (`li a1,5`): the match arm sets the row
+/// index to the loop bound so the following `addiu`/`slti` pair falls out of
+/// the loop. Widening the bound without widening the seed would leave the
+/// applier rescanning rows 6..9 against the already-rewritten queue.
+/// Supplied by ZetaPhoenix as part of his original hook set.
+pub const HOOK_EXIT_SEED_VA: u32 = 0x801E_FBD8;
+const HOOK_EXIT_SEED_W: u32 = 0x2405_0005;
+
 /// The applier's post-match arm - a load-delay `nop`, so routine A displaces
 /// nothing and the following `subu v0,t4,v0` runs as the jump's delay slot.
 pub const HOOK_APPLIER_VA: u32 = 0x801E_FB94;
@@ -197,11 +202,15 @@ const HOOK_APPLIER_W: u32 = 0x0000_0000;
 /// The instruction routine A returns to.
 pub const APPLIER_RET_VA: u32 = 0x801E_FB9C;
 
-/// `FUN_801EED1C`'s `move t9,a0` (its second instruction). Routine B is reached
-/// through the arena trampoline so the `sw s3,0x54(sp)` in the delay slot still
-/// spills the caller's `s3`.
+/// `FUN_801EED1C`'s `move t9,a0` (its second instruction) - the jump into
+/// routine B lands here, with the displaced `move` relocated into its delay
+/// slot at [`HOOK_QUEUE_DELAY_VA`].
 pub const HOOK_QUEUE_VA: u32 = 0x801E_ED20;
 const HOOK_QUEUE_W: u32 = 0x0080_C821;
+/// The word after the queue hook - retail `sw s3,0x54(sp)`, the store routine B
+/// replays at its head. ZetaPhoenix's hook overwrites it with the relocated
+/// `move t9,a0`, riding the jump's delay slot.
+pub const HOOK_QUEUE_DELAY_VA: u32 = 0x801E_ED24;
 /// The instruction routine B returns to.
 pub const QUEUE_RET_VA: u32 = 0x801E_ED28;
 
@@ -239,12 +248,8 @@ const FLUSH_CACHE_FN: u16 = 0x0044;
 pub const STUB_VA: u32 = ARENA1_VA;
 /// Words the loader stub occupies.
 pub const STUB_WORDS: u32 = 12;
-/// Queue-hook trampoline VA, right behind the loader stub.
-pub const TRAMPOLINE_VA: u32 = STUB_VA + STUB_WORDS * 4;
-/// Words the trampoline occupies.
-pub const TRAMPOLINE_WORDS: u32 = 2;
 /// One past the last arena byte this feature claims.
-pub const ARENA_USED_END_VA: u32 = TRAMPOLINE_VA + TRAMPOLINE_WORDS * 4;
+pub const ARENA_USED_END_VA: u32 = STUB_VA + STUB_WORDS * 4;
 
 /// Assemble the battle-load stub: read [`BLOCK_SECTORS`] sectors from disc
 /// `lba` to [`BLOCK_VA`], `FlushCache()`, replay `displaced`, return to
@@ -271,14 +276,6 @@ pub fn assemble_loader_stub(lba: u32, displaced: [u32; 2]) -> Vec<u32> {
     words
 }
 
-/// Assemble the queue-hook trampoline: jump to routine B with the displaced
-/// `move t9,a0` in the delay slot. 2 instructions.
-pub fn assemble_queue_trampoline(displaced: u32) -> Vec<u32> {
-    let words = vec![j(ROUTINE_QUEUE_VA), displaced];
-    debug_assert_eq!(words.len(), TRAMPOLINE_WORDS as usize);
-    words
-}
-
 /// A planned Super Arts Pack injection: the block's annex placement plus every
 /// same-size word edit. Nothing is written until [`crate::apply::inject_super_arts_pack`]
 /// applies it.
@@ -290,8 +287,6 @@ pub struct SuperArtsPackInjection {
     pub block_lba: u32,
     /// Loader-stub VA (arena 1).
     pub stub_va: u32,
-    /// Trampoline VA (arena 1).
-    pub trampoline_va: u32,
     /// The fifteen added Super Art names, in table order (character-major).
     pub names: Vec<String>,
 }
@@ -312,15 +307,17 @@ impl SuperArtsPackInjection {
         // 1. Recognized build: the applier, the queue builder and both banner
         //    routines must carry their known words.
         expect_overlay(overlay, APPLIER_VA, APPLIER_W)?;
-        let stride_w = expect_overlay(overlay, HOOK_STRIDE_VA, HOOK_STRIDE_W)?;
+        expect_overlay(overlay, HOOK_STRIDE_VA, HOOK_STRIDE_W)?;
+        expect_overlay(overlay, T5_SOURCE_VA, T5_SOURCE_W)?;
         expect_overlay(overlay, HOOK_FIND_HI_VA, HOOK_FIND_HI_W)?;
         expect_overlay(overlay, HOOK_FIND_LO_VA, HOOK_FIND_LO_W)?;
         expect_overlay(overlay, HOOK_REPL_HI_VA, HOOK_REPL_HI_W)?;
         expect_overlay(overlay, HOOK_REPL_LO_VA, HOOK_REPL_LO_W)?;
         expect_overlay(overlay, HOOK_BOUND_VA, HOOK_BOUND_W)?;
+        expect_overlay(overlay, HOOK_EXIT_SEED_VA, HOOK_EXIT_SEED_W)?;
         expect_overlay(overlay, HOOK_APPLIER_VA, HOOK_APPLIER_W)?;
         let queue_w = expect_overlay(overlay, HOOK_QUEUE_VA, HOOK_QUEUE_W)?;
-        let _ = stride_w;
+        expect_overlay(overlay, HOOK_QUEUE_DELAY_VA, HOOK_QUEUE_W_DISPLACED)?;
         expect_scus(scus, HOOK_BANNER_VA, HOOK_BANNER_W)?;
         expect_scus(scus, HOOK_KEEP_NAME_VA, HOOK_KEEP_NAME_W0)?;
         expect_scus(scus, HOOK_KEEP_NAME_VA + 4, HOOK_KEEP_NAME_W1)?;
@@ -334,10 +331,9 @@ impl SuperArtsPackInjection {
 
         // 3. The arena must be dead space, and not inside a live table.
         let stub = assemble_loader_stub(block_lba, [load_w0, load_w1]);
-        let tramp = assemble_queue_trampoline(queue_w);
         if ARENA_USED_END_VA > ARENA1_END_VA {
             bail!(
-                "super-arts-pack: the loader stub + trampoline overrun arena 1 \
+                "super-arts-pack: the loader stub overruns arena 1 \
                  ({ARENA_USED_END_VA:#x} > {ARENA1_END_VA:#x})"
             );
         }
@@ -356,7 +352,7 @@ impl SuperArtsPackInjection {
         )?;
         for (va, len, what) in [
             (HOOK_APPLIER_VA, 4, "applier hook"),
-            (HOOK_QUEUE_VA, 4, "queue hook"),
+            (HOOK_QUEUE_VA, 8, "queue hook"),
         ] {
             assert_not_in_tables(va, len, OVERLAY_TABLE_RANGES, what)?;
         }
@@ -368,24 +364,28 @@ impl SuperArtsPackInjection {
             file_off: (va - OVERLAY_BASE_VA) as usize,
             bytes: words_to_bytes(words),
         };
-        edits.push(ov(HOOK_STRIDE_VA, &[sll(T5, A1, 1)]));
+        edits.push(ov(HOOK_STRIDE_VA, &[sll(T5, T5, 1)]));
         edits.push(ov(
             HOOK_FIND_HI_VA,
             &[
-                lui(V0, hi_of(FIND_TABLE_VA)),
-                addiu(T6, V0, lo_of(FIND_TABLE_VA)),
+                lui(T6, hi_of(FIND_TABLE_VA)),
+                addiu(T6, T6, lo_of(FIND_TABLE_VA)),
             ],
         ));
         edits.push(ov(
             HOOK_REPL_HI_VA,
             &[
-                lui(V0, hi_of(REPLACE_TABLE_VA)),
-                addiu(T8, V0, lo_of(REPLACE_TABLE_VA)),
+                lui(T8, hi_of(REPLACE_TABLE_VA)),
+                addiu(T8, T8, lo_of(REPLACE_TABLE_VA)),
             ],
         ));
         edits.push(ov(HOOK_BOUND_VA, &[slti(V0, A1, ROWS_PER_CHAR as i16)]));
+        edits.push(ov(
+            HOOK_EXIT_SEED_VA,
+            &[addiu(A1, ZERO, ROWS_PER_CHAR as u16)],
+        ));
         edits.push(ov(HOOK_APPLIER_VA, &[j(ROUTINE_APPLIER_VA)]));
-        edits.push(ov(HOOK_QUEUE_VA, &[j(TRAMPOLINE_VA)]));
+        edits.push(ov(HOOK_QUEUE_VA, &[j(ROUTINE_QUEUE_VA), queue_w]));
 
         let sc = |va: u32, words: &[u32]| -> Result<Edit> {
             Ok(Edit {
@@ -398,13 +398,11 @@ impl SuperArtsPackInjection {
         edits.push(sc(HOOK_KEEP_NAME_VA, &[j(ROUTINE_KEEP_NAME_VA), nop()])?);
         edits.push(sc(LOAD_HOOK_VA, &[j(STUB_VA)])?);
         edits.push(sc(STUB_VA, &stub)?);
-        edits.push(sc(TRAMPOLINE_VA, &tramp)?);
 
         Ok(Self {
             edits,
             block_lba,
             stub_va: STUB_VA,
-            trampoline_va: TRAMPOLINE_VA,
             names: names(),
         })
     }
@@ -468,7 +466,7 @@ fn assert_block_shape() -> Result<()> {
 }
 
 /// `sw s3,0x54(sp)` - the queue builder's `s3` spill, replayed at routine B's
-/// head (and the word the trampoline design keeps honest).
+/// head (which is what lets the hook overwrite it at [`HOOK_QUEUE_DELAY_VA`]).
 const HOOK_QUEUE_W_DISPLACED: u32 = 0xAFB3_0054;
 
 /// The pack's rows 0..4 per character must equal the disc's own retail rows.
@@ -657,15 +655,16 @@ mod tests {
         }
     }
 
-    /// Run the assembled `sll t5,a1,1` through the interpreter, for the same
-    /// reason: the edit must double `a1`, not shift it somewhere else.
+    /// Run the assembled `sll t5,t5,1` through the interpreter, for the same
+    /// reason: the edit must double the character index `t5` already holds
+    /// (from the intact `move t5,a1` the plan fingerprints at [`T5_SOURCE_VA`]).
     #[test]
     fn stride_edit_doubles_the_character_index() {
         for ch in 0u32..3 {
             let mut cpu = Cpu::new();
-            cpu.r[A1 as usize] = ch;
+            cpu.r[T5 as usize] = ch;
             cpu.pc = 0x8000_0000;
-            cpu.load_words(0x8000_0000, &[sll(T5, A1, 1)]);
+            cpu.load_words(0x8000_0000, &[sll(T5, T5, 1)]);
             let w = cpu.rd32(cpu.pc);
             cpu.exec(w);
             assert_eq!(cpu.r[T5 as usize], 2 * ch);
@@ -692,19 +691,22 @@ mod tests {
         assert_eq!(cpu.r[A2 as usize], 0x1F80_0314, "replayed lui+ori (a2)");
     }
 
-    /// The trampoline jumps to routine B with the displaced word in its delay
-    /// slot, so `move t9,a0` still happens.
+    /// ZetaPhoenix's queue hook relocates the displaced `move t9,a0` into the
+    /// jump's own delay slot, so it still executes on the way into routine B -
+    /// and routine B's replayed `sw s3,0x54(sp)` covers the store the second
+    /// word displaces.
     #[test]
-    fn trampoline_replays_move_t9_a0() {
-        let tramp = assemble_queue_trampoline(HOOK_QUEUE_W);
-        assert_eq!(tramp[0], j(ROUTINE_QUEUE_VA));
-        assert_eq!(tramp[1], HOOK_QUEUE_W);
+    fn queue_hook_replays_move_t9_a0_in_the_delay_slot() {
         let mut cpu = Cpu::new();
         cpu.r[A0 as usize] = 0x8009_9000;
-        cpu.load_words(TRAMPOLINE_VA, &tramp);
-        cpu.pc = TRAMPOLINE_VA;
+        cpu.load_words(HOOK_QUEUE_VA, &[j(ROUTINE_QUEUE_VA), HOOK_QUEUE_W]);
+        cpu.pc = HOOK_QUEUE_VA;
         cpu.run_until(&[ROUTINE_QUEUE_VA]);
         assert_eq!(cpu.r[25], 0x8009_9000, "t9 = a0");
+        assert_eq!(
+            HOOK_QUEUE_W_DISPLACED, 0xAFB3_0054,
+            "routine B replays the sw s3,0x54(sp) the delay-slot word displaces"
+        );
     }
 
     /// Every hook target the edits jump to is inside the block, and every return
@@ -729,10 +731,7 @@ mod tests {
     #[test]
     fn arena_claim_fits() {
         const { assert!(ARENA_USED_END_VA <= ARENA1_END_VA) };
-        assert_eq!(
-            ARENA_USED_END_VA - STUB_VA,
-            (STUB_WORDS + TRAMPOLINE_WORDS) * 4
-        );
+        assert_eq!(ARENA_USED_END_VA - STUB_VA, STUB_WORDS * 4);
         assert!(
             assert_not_in_tables(
                 STUB_VA,
@@ -742,32 +741,36 @@ mod tests {
             )
             .is_ok()
         );
-        // Both routine VAs are 4-byte aligned: a `j` drops the low two bits.
+        // Every jump-target VA is 4-byte aligned: a `j` drops the low two bits.
         for va in [
             STUB_VA,
-            TRAMPOLINE_VA,
             ROUTINE_APPLIER_VA,
+            ROUTINE_QUEUE_VA,
             ROUTINE_BANNER_VA,
         ] {
             assert_eq!(va % 4, 0);
         }
     }
 
-    /// The retargeted `lui`/`addiu` pairs really address the pack's tables.
+    /// The retargeted `lui`/`addiu` pairs really address the pack's tables -
+    /// ZetaPhoenix's form, which builds the address in the destination register
+    /// and leaves retail's `v0` scratch untouched.
     #[test]
     fn table_retargets_resolve() {
         for (va, reg) in [(FIND_TABLE_VA, T6), (REPLACE_TABLE_VA, T8)] {
             let mut cpu = Cpu::new();
+            cpu.r[V0 as usize] = 0xDEAD_BEEF;
             cpu.pc = 0x8000_0000;
             cpu.load_words(
                 0x8000_0000,
-                &[lui(V0, hi_of(va)), addiu(reg, V0, lo_of(va))],
+                &[lui(reg, hi_of(va)), addiu(reg, reg, lo_of(va))],
             );
             for _ in 0..2 {
                 let w = cpu.rd32(cpu.pc);
                 cpu.exec(w);
             }
             assert_eq!(cpu.r[reg as usize], va);
+            assert_eq!(cpu.r[V0 as usize], 0xDEAD_BEEF, "v0 untouched");
         }
     }
 
@@ -776,6 +779,29 @@ mod tests {
     fn bound_edit_is_ten_rows() {
         assert_eq!(slti(V0, A1, ROWS_PER_CHAR as i16), 0x28A2_000A);
         assert_eq!(HOOK_BOUND_W, 0x28A2_0005, "retail bound is five");
+    }
+
+    /// The exit seed must move with the bound: the match arm runs
+    /// `li a1,seed; addiu a1,a1,1; slti v0,a1,bound` and only exits the row
+    /// loop when the seed equals the bound. Checked by executing the patched
+    /// three-word sequence (and retail's own 5/5 pair, which pins the idiom).
+    #[test]
+    fn exit_seed_edit_matches_the_bound() {
+        assert_eq!(addiu(A1, ZERO, ROWS_PER_CHAR as u16), 0x2405_000A);
+        assert_eq!(HOOK_EXIT_SEED_W, 0x2405_0005, "retail seed is five");
+        for (seed, bound) in [(HOOK_EXIT_SEED_W, HOOK_BOUND_W), (0x2405_000A, 0x28A2_000A)] {
+            let mut cpu = Cpu::new();
+            cpu.pc = 0x8000_0000;
+            cpu.load_words(0x8000_0000, &[seed, 0x24A5_0001, bound]);
+            for _ in 0..3 {
+                let w = cpu.rd32(cpu.pc);
+                cpu.exec(w);
+            }
+            assert_eq!(
+                cpu.r[V0 as usize], 0,
+                "a match must fall out of the row loop"
+            );
+        }
     }
 
     // --- Runtime oracle (disc-gated) -----------------------------------------

@@ -3816,21 +3816,24 @@ needs 14 sectors taken from a neighbouring entry, and it would zero
 `0x801F7018..0x801FD000` at every battle load - the persistent `0x801F****`
 effect and world state the field overlay leaves there.
 
-#### The ten word edits
+#### The word edits
 
-Every one is same-size and PPF-safe. Six retarget the retail Super-Art applier
-`FUN_801EF9E4` onto the pack's wider tables; four are the jumps:
+Fourteen edited words across ten sites, every one same-size and PPF-safe -
+**ZetaPhoenix's own hook set, supplied by him and installed verbatim**, plus
+the battle-load hook, which is this project's addition (his RAM patch had
+nothing to load):
 
 | Site | Retail word | Becomes |
 |---|---|---|
-| `0x801EF9E8` | `move t5,a1` | `sll t5,a1,1` - the applier's per-character stride doubles |
-| `0x801EFA38` / `0x801EFA3C` | `lui v0,0x801f` / `addiu t6,v0,0x6524` | the find table becomes `0x801FD000` |
-| `0x801EFA58` / `0x801EFA5C` | `lui v0,0x801f` / `addiu t8,v0,0x65e8` | the replace table becomes `0x801FD186` |
+| `0x801EFA0C` | `nop` (a load-delay slot) | `sll t5,t5,1` - `t5` (the character, from the intact `move t5,a1`) doubles, so the applier's stride math lands on ten rows |
+| `0x801EFA38` / `0x801EFA3C` | `lui v0,0x801f` / `addiu t6,v0,0x6524` | `lui t6,0x8020` / `addiu t6,t6,0xd000` - the find table becomes `0x801FD000` |
+| `0x801EFA58` / `0x801EFA5C` | `lui v0,0x801f` / `addiu t8,v0,0x65e8` | `lui t8,0x8020` / `addiu t8,t8,0xd186` - the replace table becomes `0x801FD186` |
 | `0x801EFBE0` | `slti v0,a1,5` | `slti v0,a1,10` - all ten rows are tried |
+| `0x801EFBD8` | `li a1,5` | `li a1,10` - the match arm's exit seed keeps pace with the bound, so a match still ends the scan |
 | `0x801EFB94` | `nop` (a load-delay slot) | `j 0x801FD380` (routine A) |
-| `0x801EED20` | `move t9,a0` | `j` an arena trampoline into routine B |
+| `0x801EED20` / `0x801EED24` | `move t9,a0` / `sw s3,0x54(sp)` | `j 0x801FD3DC` / `move t9,a0` - routine B, with the displaced `move` relocated into the jump's delay slot; routine B itself replays the displaced `sw` |
 | `0x8004BC10` | `sw v0,0x74c(a0)` | `j 0x801FD538` (routine D) |
-| `0x8004C718` / `0x8004C71C` | `sw v0,0x74c(s0)` / `sw v0,0x734(s0)` | `j 0x801FD510` (routine C) + `nop` |
+| `0x8004C718` / `0x8004C71C` | `sw v0,0x74c(s0)` / `sw v0,0x734(s0)` | `j 0x801FD510` + `nop` - routine C re-stores both words on its non-skip path and neither on its skip path |
 | `0x80055DBC` | `lui a2,0x1f80` | `j` the battle-load stub |
 
 The `t5` edit is the whole retarget. The applier computes a character's find
@@ -3838,30 +3841,34 @@ base as `t5*65` and its replace base as `t5*80`, so a doubled `t5` gives
 `130 = 10*13` and `160 = 10*16` exactly - the pack's strides. It is also what
 makes routine A's own `(t5>>1) + t5 + t5` read as `5*character`, the flat 0..14
 index it stores at `0x801FD378` and uses against the hit-seed and name tables.
-Nothing else in the applier reads `t5`. Routine A returns immediately for a row
-below 5 (`slti t0,0x50`), so a retail Super Art never picks up a pack name or
-hit count.
+Nothing reads `t5` between its `move t5,a1` source (which stays intact and is
+fingerprinted at patch time) and the doubling. Routine A returns immediately
+for a row below 5 (`slti t0,0x50`), so a retail Super Art never picks up a pack
+name or hit count.
+
+The exit seed and the bound move together. The applier's match arm runs
+`li a1,5` so the following `addiu a1,a1,1` / `slti v0,a1,5` pair falls out of
+the row loop - widening the bound without widening the seed leaves a match
+resuming the scan at row 6 against the already-rewritten queue. On the pack's
+own chains the rescan finds no second match (verified end-state-identical in
+the interpreter, at roughly a third more instructions per match), but the exit
+is the retail semantics and part of ZetaPhoenix's hook set.
 
 #### What is ZetaPhoenix's and what is this project's
 
-He supplied the block and described the rest as "a few more lines of code that
-replace lines from the OG code (mostly jumps to my new code)", but not the lines
-themselves. **The nine jump/retarget words above are this project's
-reconstruction from his block**, not his own: each of his routines replays the
-exact instruction it displaces and returns to the instruction after it, which
-pins the site; the doubled `t5` is forced by his tables' strides and by his own
-index arithmetic. The tenth edit - the battle-load stub and its hook - is ours
-by construction, because a RAM cheat had nothing to load.
+The block and every hook in the table above except the battle-load detour are
+his; the hook words are installed exactly as he supplied them. The loader stub
+and its `0x80055DBC` hook are this project's by construction, because a RAM
+cheat had nothing to load.
 
-Two deliberate departures, both taken to keep his bytes exact:
-
-- The `0x801EED20` hook goes through a two-word arena trampoline rather than
-  detouring `0x801EED24` directly. A `j` at `0x801EED24` would run `move s3,zero`
-  in its delay slot, so routine B's replayed `sw s3,0x54(sp)` would spill 0
-  instead of the caller's `s3`. Hooking one word earlier keeps the spill honest,
-  and the trampoline replays `move t9,a0` in its own delay slot.
-- `0x8004C71C` is nopped rather than left in place, because routine C re-stores
-  **both** banner words on its non-skip path and neither on its skip path.
+His hook set is also independently confirmed by the block: each of his routines
+replays the exact retail instruction it displaces and returns to the
+instruction after it, which pins its own hook site, and the doubled `t5` is
+forced by his tables' strides and his index arithmetic. A reconstruction from
+the block alone reproduces every jump and lands byte-different only where the
+block is silent: the two loop-control immediates (bound and exit seed) it
+cannot pin, which retarget register carries the table `lui`, and whether the
+displaced `move t9,a0` rides a trampoline or the jump's own delay slot.
 
 **Not fixed here:** the art-name banner is centred as if every name were the
 13-character placeholder `FUN_8004AD80` measures at `0x8004BBB4` (the fixed
@@ -3873,8 +3880,8 @@ needs, so the banner is left exactly as ZetaPhoenix's mod draws it.
 
 #### Where it lives, and what it excludes
 
-The battle-load stub and the trampoline are 56 bytes at `0x8007AE00`, the head
-of the verified-dead SCUS arena 1 - so the pack is **mutually exclusive with
+The battle-load stub is 48 bytes at `0x8007AE00`, the head of the
+verified-dead SCUS arena 1 - so the pack is **mutually exclusive with
 `--shiny-seru`, `--show-super-arts`, `--arts-ap-grant` / `--arts-ap-cost` and
 `--delilas-challenge`**, the other claimants of the same 652 bytes (see
 [Show Super Arts](#show-super-arts-on-the-in-battle-move-list) for the arena

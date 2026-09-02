@@ -2,8 +2,10 @@
 //! (see `legaia_patcher::super_arts_pack`).
 //!
 //! The injection has two halves: ZetaPhoenix's 3764-byte block parked in the
-//! `DMY.DAT` annex, and ten same-size word edits (six in PROT 0898, four in
-//! `SCUS_942.54`) that make retail code load it and jump into it. These tests
+//! `DMY.DAT` annex, and fourteen same-size edited words across ten sites
+//! (seven sites in PROT 0898, three in `SCUS_942.54`) - ZetaPhoenix's own hook
+//! set plus the battle-load hook - that make retail code load it and jump into
+//! it. These tests
 //! apply it to a scratch copy of the real disc and assert, off the patched
 //! image, that:
 //!   * the block landed in the annex **byte-identical** to the embedded file -
@@ -28,10 +30,10 @@ use legaia_patcher::apply;
 use legaia_patcher::disc::DiscPatcher;
 use legaia_patcher::super_arts_pack::{
     self as pack, BLOCK, BLOCK_SECTORS, BLOCK_VA, FIND_TABLE_VA, HOOK_APPLIER_VA, HOOK_BANNER_VA,
-    HOOK_BOUND_VA, HOOK_FIND_HI_VA, HOOK_KEEP_NAME_VA, HOOK_QUEUE_VA, HOOK_REPL_HI_VA,
-    HOOK_STRIDE_VA, LOAD_HOOK_VA, OVERLAY_BASE_VA, OVERLAY_PROT_INDEX, REPLACE_TABLE_VA,
-    ROUTINE_APPLIER_VA, ROUTINE_BANNER_VA, ROUTINE_KEEP_NAME_VA, STUB_VA, SuperArtsPackInjection,
-    TRAMPOLINE_VA,
+    HOOK_BOUND_VA, HOOK_EXIT_SEED_VA, HOOK_FIND_HI_VA, HOOK_KEEP_NAME_VA, HOOK_QUEUE_DELAY_VA,
+    HOOK_QUEUE_VA, HOOK_REPL_HI_VA, HOOK_STRIDE_VA, LOAD_HOOK_VA, OVERLAY_BASE_VA,
+    OVERLAY_PROT_INDEX, REPLACE_TABLE_VA, ROUTINE_APPLIER_VA, ROUTINE_BANNER_VA,
+    ROUTINE_KEEP_NAME_VA, STUB_VA, SuperArtsPackInjection, T5_SOURCE_VA,
 };
 
 fn load_disc() -> Option<Vec<u8>> {
@@ -76,8 +78,13 @@ fn baseline_hook_sites_match_the_known_build() {
     // Spelled out, so a build change names the site that moved.
     assert_eq!(
         overlay_word(&overlay, HOOK_STRIDE_VA),
+        0,
+        "load-delay nop the stride edit burns"
+    );
+    assert_eq!(
+        overlay_word(&overlay, T5_SOURCE_VA),
         0x00A0_6821,
-        "move t5,a1"
+        "move t5,a1 - t5 must still be the raw character at the stride site"
     );
     assert_eq!(overlay_word(&overlay, HOOK_APPLIER_VA), 0, "load-delay nop");
     assert_eq!(
@@ -86,9 +93,19 @@ fn baseline_hook_sites_match_the_known_build() {
         "move t9,a0"
     );
     assert_eq!(
+        overlay_word(&overlay, HOOK_QUEUE_DELAY_VA),
+        0xAFB3_0054,
+        "sw s3,0x54(sp) - the store routine B replays"
+    );
+    assert_eq!(
         overlay_word(&overlay, HOOK_BOUND_VA),
         0x28A2_0005,
         "slti v0,a1,5"
+    );
+    assert_eq!(
+        overlay_word(&overlay, HOOK_EXIT_SEED_VA),
+        0x2405_0005,
+        "li a1,5 - the match arm's exit seed"
     );
     assert_eq!(
         scus_word(&scus, HOOK_BANNER_VA),
@@ -149,7 +166,15 @@ fn hooks_reach_the_block_and_the_tables_are_retargeted() {
         overlay_word(&overlay, HOOK_APPLIER_VA),
         j(ROUTINE_APPLIER_VA)
     );
-    assert_eq!(overlay_word(&overlay, HOOK_QUEUE_VA), j(TRAMPOLINE_VA));
+    assert_eq!(
+        overlay_word(&overlay, HOOK_QUEUE_VA),
+        j(pack::ROUTINE_QUEUE_VA)
+    );
+    assert_eq!(
+        overlay_word(&overlay, HOOK_QUEUE_DELAY_VA),
+        0x0080_C821,
+        "the displaced move t9,a0 rides the jump's delay slot"
+    );
     assert_eq!(scus_word(&scus, HOOK_BANNER_VA), j(ROUTINE_BANNER_VA));
     assert_eq!(scus_word(&scus, HOOK_KEEP_NAME_VA), j(ROUTINE_KEEP_NAME_VA));
     assert_eq!(
@@ -158,11 +183,7 @@ fn hooks_reach_the_block_and_the_tables_are_retargeted() {
         "second store nopped"
     );
 
-    // 2. The trampoline replays `move t9,a0` in its delay slot.
-    let tramp = scus_words(&scus, TRAMPOLINE_VA, 2);
-    assert_eq!(tramp, vec![j(pack::ROUTINE_QUEUE_VA), 0x0080_C821]);
-
-    // 3. The applier now addresses the pack's tables, at the pack's strides.
+    // 2. The applier now addresses the pack's tables, at the pack's strides.
     //    `lui`+`addiu` resolve to the table VAs; `t5` is doubled so the
     //    character stride the applier computes (`t5*65` / `t5*80`) becomes
     //    10 rows of 13 / 16 bytes.
@@ -181,16 +202,21 @@ fn hooks_reach_the_block_and_the_tables_are_retargeted() {
     assert_eq!(resolve(&repl_pair), REPLACE_TABLE_VA);
     assert_eq!(
         overlay_word(&overlay, HOOK_STRIDE_VA),
-        0x0005_6840,
-        "sll t5,a1,1"
+        0x000D_6840,
+        "sll t5,t5,1"
     );
     assert_eq!(
         overlay_word(&overlay, HOOK_BOUND_VA),
         0x28A2_000A,
         "ten rows"
     );
+    assert_eq!(
+        overlay_word(&overlay, HOOK_EXIT_SEED_VA),
+        0x2405_000A,
+        "li a1,10 - a match still exits the widened row loop"
+    );
 
-    // 4. The battle-load stub reads the annexed block to 0x801FD000 and returns
+    // 3. The battle-load stub reads the annexed block to 0x801FD000 and returns
     //    to battle init. Decode the pieces the stub's correctness rests on.
     assert_eq!(scus_word(&scus, LOAD_HOOK_VA), j(STUB_VA));
     let stub = scus_words(&scus, STUB_VA, pack::STUB_WORDS as usize);
@@ -227,15 +253,16 @@ fn every_other_byte_is_untouched_and_the_disc_still_parses() {
     let scus = patcher.read_named_file("SCUS_942.54").expect("SCUS");
     let overlay = patcher.read_entry(OVERLAY_PROT_INDEX).expect("PROT 0898");
 
-    // Overlay: only the six planned words moved.
+    // Overlay: only the ten planned words moved.
     let mut allowed_ov: Vec<std::ops::Range<usize>> = Vec::new();
     for (va, words) in [
         (HOOK_STRIDE_VA, 1usize),
         (HOOK_FIND_HI_VA, 2),
         (HOOK_REPL_HI_VA, 2),
         (HOOK_BOUND_VA, 1),
+        (HOOK_EXIT_SEED_VA, 1),
         (HOOK_APPLIER_VA, 1),
-        (HOOK_QUEUE_VA, 1),
+        (HOOK_QUEUE_VA, 2),
     ] {
         let off = (va - OVERLAY_BASE_VA) as usize;
         allowed_ov.push(off..off + words * 4);

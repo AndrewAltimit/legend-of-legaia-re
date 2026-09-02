@@ -62,7 +62,7 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
             );
         }
     }
-    // The Super Arts Pack hosts its battle-load stub + queue trampoline in the
+    // The Super Arts Pack hosts its battle-load stub in the
     // same arena, and rewrites the Super-Art applier the move list detours - so
     // it is a hard conflict with every one of them.
     for (other, flag) in [
@@ -664,7 +664,8 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
 
     // Super Arts Pack (by ZetaPhoenix): fifteen extra Super Arts, five per
     // character, from his own 3764-byte block - parked in the DMY.DAT annex and
-    // streamed to 0x801FD000 at battle load, reached by ten same-size edits.
+    // streamed to 0x801FD000 at battle load, reached by fourteen same-size
+    // edited words across ten retail sites.
     if args.super_arts_pack {
         let report = apply::inject_super_arts_pack(&mut patcher)?;
         println!(
