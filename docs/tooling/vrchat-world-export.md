@@ -56,10 +56,16 @@ with, so the export matches the on-screen pages:
   setting included - reproduces retail's display-space `texel * colour/128`
   product; a project left in Gamma colour space will render these models
   darker than intended), PSX word-0 transparency as MASK cutout. ABE
-  semi-transparent prims split into a second `BLEND` material at half
-  alpha (retail's dominant `B/2 + F/2` mode exactly; the blended queue's
-  depth-write skip is also what keeps retail's coincident water scroll
-  layers from z-fighting in depth-buffered engines).
+  semi-transparent prims split into one `BLEND` material **per PSX ABR
+  blend rate**, named `legaia_semi_abr<N>` (0 = `B/2 + F/2`, 1 = `B + F`
+  additive, 2 = `B - F`, 3 = `B + F/4`): core glTF can only express alpha
+  blending, so the alpha only approximates the rate (0.5, or 0.25 for
+  rate 3) and the **name is the contract** an importer restores the real
+  blend state from - the Unity kit maps rates 1/2/3 onto its additive
+  shader, since alpha-blending an additive light shaft reads as a grey
+  film instead of a glow. Rate 0 is alpha blending exactly, and the
+  blended queue's depth-write skip is also what keeps retail's coincident
+  water scroll layers from z-fighting in depth-buffered engines.
 - **NPC glbs** - `engine-core::npc_catalog` (the MAN partition-1 placement
   walk shared with the NPC browser page) + `legaia_asset::character_gltf`:
   the scene TMD with its spawn clip first and every other

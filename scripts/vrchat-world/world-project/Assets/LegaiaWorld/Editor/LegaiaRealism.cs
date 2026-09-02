@@ -184,6 +184,11 @@ namespace LegaiaWorld
                     "Assets/LegaiaWorld/Shaders/ imported? Lighting skipped.");
                 return;
             }
+            var additive = Shader.Find("Legaia/Vertex Color (Additive)");
+            if (additive == null)
+                Debug.LogWarning("[Legaia] Legaia/Vertex Color (Additive) not " +
+                    "found - additive prims (window light shafts) will render " +
+                    "alpha-blended and read grey instead of glowing.");
 
             var meshCache = new Dictionary<Mesh, Mesh>();
             var matCache = new Dictionary<Material, Material>();
@@ -203,7 +208,8 @@ namespace LegaiaWorld
                 {
                     if (mats[i] == null)
                         continue;
-                    var lit = LitVariant(mats[i], cutout, transparent, genDir, matCache, ref matIdx);
+                    var lit = LitVariant(mats[i], cutout, transparent, additive,
+                        genDir, matCache, ref matIdx);
                     if (lit != mats[i])
                     {
                         mats[i] = lit;
@@ -328,16 +334,32 @@ namespace LegaiaWorld
         /// A lit twin of a glTFast-imported material: cutout or transparent
         /// by render queue, base texture + tint + cutoff carried over.
         /// Materials already on a Legaia/ shader pass through (idempotent).
+        ///
+        /// The exporter names each semi-transparent material with its PSX
+        /// ABR blend rate ("legaia_semi_abrN") because core glTF can only
+        /// say "alpha blend" - the name is the contract. Rate 1 (B + F,
+        /// window light shafts / glows), 3 (B + F/4) and 2 (B - F) route to
+        /// the unlit additive shader with the matching intensity / blend op;
+        /// rate 0 (B/2 + F/2) IS alpha blending and stays on the lit
+        /// transparent shader, as do unnamed BLEND materials from older
+        /// exports.
         static Material LitVariant(Material src, Shader cutout, Shader transparent,
-            string genDir, Dictionary<Material, Material> cache, ref int idx)
+            Shader additive, string genDir, Dictionary<Material, Material> cache,
+            ref int idx)
         {
             if (src.shader != null && src.shader.name.StartsWith("Legaia/"))
                 return src;
             if (cache.TryGetValue(src, out var got))
                 return got;
-            bool blend = src.renderQueue >=
+            int abr = -1;
+            int at = src.name.IndexOf("legaia_semi_abr");
+            if (at >= 0 && at + 15 < src.name.Length &&
+                char.IsDigit(src.name[at + 15]))
+                abr = src.name[at + 15] - '0';
+            bool add = additive != null && abr >= 1 && abr <= 3;
+            bool blend = !add && src.renderQueue >=
                 (int)UnityEngine.Rendering.RenderQueue.Transparent;
-            var m = new Material(blend ? transparent : cutout)
+            var m = new Material(add ? additive : blend ? transparent : cutout)
             {
                 name = src.name + "_lit"
             };
@@ -357,7 +379,21 @@ namespace LegaiaWorld
                     m.SetColor("_Color", src.GetColor(p));
                     break;
                 }
-            if (!blend)
+            if (add)
+            {
+                // The export approximates the additive rate in the base
+                // colour's alpha (0.5 / 0.25) for plain viewers; the shader
+                // carries the rate in _Intensity instead, so the copied
+                // tint's alpha must not darken the glow a second time.
+                var c = m.GetColor("_Color");
+                c.a = 1f;
+                m.SetColor("_Color", c);
+                m.SetFloat("_Intensity", abr == 3 ? 0.25f : 1f);
+                if (abr == 2)
+                    m.SetFloat("_BlendOp",
+                        (float)UnityEngine.Rendering.BlendOp.ReverseSubtract);
+            }
+            else if (!blend)
             {
                 float cut = 0.5f;
                 foreach (var p in new[] { "_Cutoff", "alphaCutoff", "_AlphaCutoff" })

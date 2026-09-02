@@ -34,6 +34,7 @@ your disc ──legaia-extract──▶ extracted/ ──legaia-engine export-gl
 | `world-project/Assets/LegaiaWorld/Editor/MiniJson.cs` | Dependency-free JSON reader for `manifest.json` (so the builder compiles in any project). |
 | `world-project/Assets/LegaiaWorld/Shaders/LegaiaLitVertexColor.shader` | Lit cutout stand-in for the exports' unlit materials: `COLOR_0` keeps modulating the texture, and lighting is the sign-independent two-sided Lambert `\|N.L\|` (the only stable answer over the mixed PSX winding - the header keeps the failed-flip history). |
 | `world-project/Assets/LegaiaWorld/Shaders/LegaiaLitVertexColorTransparent.shader` | The BLEND (water / light pool) sibling of the lit shader - alpha-blended, depth-write off. |
+| `world-project/Assets/LegaiaWorld/Shaders/LegaiaVertexColorAdditive.shader` | Unlit additive (`Blend One One`) for the exporter's `legaia_semi_abr1/2/3` materials - PSX additive prims (window light shafts, glows) read grey under plain alpha blend; this restores the brighten-only retail look. |
 | `world-project/Assets/LegaiaWorld/Shaders/LegaiaGrassWind.shader` | Vertex-coloured wind sway for the procedural grass blades (sway weight in vertex alpha, world-position phase). |
 | `world-project/Assets/LegaiaWorld/Shaders/LegaiaInteriorShell.shader` | Unlit black, front faces only: the interior-room dome, wound inward so it reads as black space from inside and is invisible (backface-culled) from outside. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaDoorway.cs` | UdonSharp doorway teleport: walking into the trigger repositions the local player at the landing marker with the authored arrival facing - the retail intra-scene door mechanism. |
@@ -316,7 +317,16 @@ pass is idempotent (it refreshes rather than stacks).
   `|N.L|`, since no per-vertex sign choice survives this data), swaps
   every material for `Legaia/Lit Vertex Color` (cutout or transparent by
   queue), and adds a warm directional sun with soft shadows plus a
-  trilight ambient. The baked `COLOR_0` retail shading keeps modulating
+  trilight ambient. Semi-transparent materials the export names
+  `legaia_semi_abr1` / `abr2` / `abr3` (PSX additive / subtractive /
+  quarter-additive blend rates - core glTF can only express alpha blend,
+  so the name carries the real rate) route instead to the unlit
+  `Legaia/Vertex Color (Additive)` shader: retail's window light shafts
+  and glows only ever brighten what's behind them, and alpha-blending
+  them reads as a grey film. Rate 0 (the 50/50 average - water sheets)
+  IS alpha blending and stays on the lit transparent shader. Re-exported
+  glbs are required for this: pre-existing exports carry one unnamed
+  BLEND material and keep the old grey behaviour. The baked `COLOR_0` retail shading keeps modulating
   every surface, so the scene holds its palette - lighting layers on top
   instead of replacing it. NPC and prop materials additionally get
   **light wrap** (`_LightWrap`, slider "NPC/prop light wrap"): the
