@@ -508,6 +508,99 @@ pub fn facing_index_to_engine_heading(idx: u8) -> Option<i16> {
     legaia_engine_vm::motion_vm::heading_lut_engine(idx).map(|h| h as i16)
 }
 
+/// The spawn tile the placement's prologue **relocates** the actor to under
+/// a given story-flag state, as raw `(x_enc, z_enc)` grid bytes - or `None`
+/// when the taken path runs no own-context move (the actor stands where the
+/// header placed it).
+///
+/// Retail's placement installer `FUN_8003A1E4` doesn't just read the header
+/// tile: it **pre-runs** the record's leading field-VM ops (first opcode
+/// `0x24`/`0x25`) through the dispatcher until the `0x21` terminator, and
+/// that pre-run takes the record's `SysFlag.Test` branches. A record whose
+/// arms each end in an own-context move (`0x4C 0x51` NPC run, or the bare
+/// `0x23` MOVE_TO) is a *flag-dispatched spawn*: the
+/// header tile is only a staging square, and the taken arm's run target is
+/// where the actor actually stands at scene load. town01's running kids are
+/// the canonical case - placed on the standing kids' exact tiles, then
+/// immediately dispatched across town by the cold arm, so a consumer reading
+/// the header tile alone draws two coincident copies of each child. An arm
+/// running to the [`PARKED_SENTINEL_TILE`] despawns the actor in that story
+/// state (return it as-is; the hide-box coordinate it decodes to is the
+/// caller's existing conditional-spawn signal).
+///
+/// [`placement_initial_facing`] walks the same prologue linearly (its
+/// fall-through-first order happens to land on the fresh-game facing); this
+/// walker follows the branches under `flag_test` - `|_| false` is the cold
+/// fresh-game state - because the relocation arms, unlike the facing
+/// nibbles, genuinely differ per flag state. Same branch semantics as
+/// [`resolve_walk_touch_event`]: TEST jumps when the flag is set, `JmpRel`
+/// is followed (masked to the 16-bit `+0x9E` cursor), a revisited pc or the
+/// walk budget ends the walk.
+// PORT: FUN_8003A1E4 (spawn pre-run, body 0x8003A474..0x8003A4F8)
+// REF: FUN_801DE840 (op 0x7x TEST branch polarity, op 0x26 JmpRel,
+//      nibble-5 sub-1 teleport)
+pub fn placement_spawn_relocation(
+    man_file: &ManFile,
+    man: &[u8],
+    p: &ActorPlacement,
+    flag_test: &dyn Fn(u16) -> bool,
+) -> Option<(u8, u8)> {
+    let (region, pc0) = placement_pretext_region(man_file, man, p)?;
+    // Retail gate: `FUN_8003A1E4` only pre-runs records whose first opcode is
+    // the 0x24/0x25 spawn-prologue marker (`uVar14 - 0x24 < 2`).
+    if !matches!(region.get(pc0), Some(0x24 | 0x25)) {
+        return None;
+    }
+    let mut pc = pc0;
+    let mut seen = std::collections::HashSet::new();
+    for _ in 0..DOOR_WALK_BUDGET {
+        if !seen.insert(pc) {
+            return None; // looped back: the record's idle loop
+        }
+        let op = *region.get(pc)?;
+        if op == 0x21 || (op & 0x7F) < 0x20 {
+            return None; // prologue end before any run leg (retail loop guard)
+        }
+        let insn = legaia_asset::field_disasm::decode(region, pc).ok()?;
+        if insn.size == 0 {
+            return None;
+        }
+        match insn.info {
+            InsnInfo::SystemFlag {
+                kind: FlagKind::Test,
+                idx,
+                target: Some(target),
+                ..
+            } => {
+                if flag_test(idx) {
+                    pc = target & 0xFFFF;
+                    continue;
+                }
+            }
+            InsnInfo::JmpRel { target, .. } => {
+                pc = target & 0xFFFF;
+                continue;
+            }
+            InsnInfo::MenuCtrl {
+                kind: MenuCtrlKind::Nibble5NpcRun { x_enc, z_enc, .. },
+                ..
+            } if insn.extended.is_none() => {
+                return Some((x_enc, z_enc));
+            }
+            // Own-context `0x23` MOVE_TO is the same relocation through the
+            // bare teleport op - town01's dev flag-controller record parks
+            // itself with `23 7F 7F` on the cold arm (anchor-C capture shows
+            // it parked live; the header tile is never seen).
+            InsnInfo::MoveTo { xb, zb } if insn.extended.is_none() => {
+                return Some((xb, zb));
+            }
+            _ => {}
+        }
+        pc += insn.size;
+    }
+    None
+}
+
 /// The field-VM **player system channel** id (`0xF8`): a cross-context op
 /// prefixed `op | 0x80, 0xF8` targets the player actor (retail resolves it to
 /// `_DAT_8007c364`). See `docs/subsystems/script-vm.md`.

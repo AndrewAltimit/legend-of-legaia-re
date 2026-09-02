@@ -122,7 +122,16 @@ objects - the village centre, not the map-grid centre), composition
 - `npcs[]` - file, kind (`talk` / `door` / `prop`), the dialog first line
   as a label, position (floor height via the retail sampler
   `World::sample_field_floor_height`), clip names, `conditional` (parked
-  off-map until a script places it), `model_index` / `anim_id`;
+  off-map until a script places it), `model_index` / `anim_id`. The
+  position is **not** the raw placement-header tile: retail's installer
+  pre-runs each record's spawn prologue, and a flag-branched prologue's
+  taken arm teleports the actor before the first frame draws - so the
+  catalog resolves that arm under cold fresh-game flags
+  (`man_field_scripts::placement_spawn_relocation`). Reading the header
+  tile alone stacks a flag-dispatched spawn on whatever actor is authored
+  at its staging square (town01's running kids sit exactly on the
+  standing kids' tiles) and draws dev records retail parks; the resolved
+  roster is pinned against a live fresh-game capture's actor list;
 - `doors[]` - portal placements with their field-VM target map;
 - `animated_props[]` - file, clip frame count, a per-prop `cyclic` flag
   (does retail leave this clip **free-running**? The verdict comes from

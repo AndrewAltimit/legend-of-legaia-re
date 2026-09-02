@@ -172,6 +172,20 @@ parameters. An engine that steps the system script one instruction per frame
 plays half a second of a track retail never lets you hear and tracks the
 camera zones at 3 Hz. Port: `World::step_field_frame_slice`.
 
+The same install slice runs over every **placement** record (`FUN_8003A1E4`,
+same `0x24`/`0x25` first-opcode gate), and its consequence for actors is
+positional: a spawn prologue's `SysFlag.Test` chain picks an arm, and an arm
+ending in an own-context move (`0x4C 0x51` NPC run, or a bare `0x23`) teleports
+the actor off its header tile before the first frame draws. The header tile of
+such a **flag-dispatched spawn** is only a staging square - town01 stages its
+two running kids on the standing kids' exact tiles and immediately dispatches
+them across town, and parks its dev flag-controller record the same way. A
+consumer that reads the header tile without the pre-run draws coincident actor
+pairs and dev records retail never shows. Static resolver (branch-following,
+cold or supplied flags): `man_field_scripts::placement_spawn_relocation`,
+applied by `npc_catalog`; roster pinned against a live fresh-game capture's
+actor list (`_DAT_8007C354`).
+
 Three consequences worth stating plainly, because they retire the intuition
 that long cutscenes need catching up:
 

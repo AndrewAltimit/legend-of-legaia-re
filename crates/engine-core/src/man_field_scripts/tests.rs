@@ -606,6 +606,95 @@ fn initial_facing_stops_at_the_prologue_terminator() {
     assert_eq!(placement_initial_facing(&mf, &man, p), None);
 }
 
+/// The town01 running-kid shape: a spawn prologue whose `SysFlag.Test` chain
+/// dispatches to one of three arms, each ending in an own-context NPC run -
+/// arm A (fall-through / cold) to (20, 30), arm B (flag 0x022E) to (40, 41),
+/// arm C (flag 0x0146) to the park sentinel.
+fn flag_dispatched_spawn_script() -> Vec<u8> {
+    vec![
+        0x25, // prologue marker                          body pc 5
+        0x71, 0x46, 0x1B, 0x00, // Test 0x0146 -> arm C   body pc 6
+        0x72, 0x2E, 0x0E, 0x00, // Test 0x022E -> arm B   body pc 10
+        0x26, 0x02, 0x00, // JmpRel -> arm A              body pc 14
+        0x4C, 0x51, 20, 30, 0, 5, // arm A                body pc 17
+        0x26, 0x11, 0x00, // JmpRel -> end                body pc 23
+        0x4C, 0x51, 40, 41, 0, 5, // arm B                body pc 26
+        0x26, 0x08, 0x00, // JmpRel -> end                body pc 32
+        0x4C, 0x51, 0x7F, 0x7F, 0, 5,    // arm C (parked)   body pc 35
+        0x21, // prologue terminator                      body pc 41
+    ]
+}
+
+#[test]
+fn spawn_relocation_takes_the_cold_fall_through_arm() {
+    let (mf, man) = man_with_placement_script(&flag_dispatched_spawn_script());
+    let p = &mf.actor_placements(&man)[0];
+    assert_eq!(
+        placement_spawn_relocation(&mf, &man, p, &|_| false),
+        Some((20, 30))
+    );
+}
+
+#[test]
+fn spawn_relocation_follows_the_flag_gated_arms() {
+    let (mf, man) = man_with_placement_script(&flag_dispatched_spawn_script());
+    let p = &mf.actor_placements(&man)[0];
+    // Flag 0x022E set -> arm B.
+    assert_eq!(
+        placement_spawn_relocation(&mf, &man, p, &|idx| idx == 0x022E),
+        Some((40, 41))
+    );
+    // Flag 0x0146 set -> arm C, the park-sentinel despawn (returned as-is:
+    // it decodes to the hide box, the caller's conditional-spawn signal).
+    assert_eq!(
+        placement_spawn_relocation(&mf, &man, p, &|idx| idx == 0x0146),
+        Some((0x7F, 0x7F))
+    );
+}
+
+#[test]
+fn spawn_relocation_reads_own_context_move_to() {
+    // town01's dev flag-controller shape: cold arm falls through a TEST to
+    // an own-context `0x23` MOVE_TO park; the flag-set arm skips it.
+    let script = [
+        0x25, // marker                              body pc 5
+        0x70, 0x1A, 0x06, 0x00, // Test 0x001A -> body pc 14 (skip the park)
+        0x23, 0x7F, 0x7F, // cold arm: park          body pc 10
+        0x21, // idle                                body pc 13
+        0x31, 0x02, // flag-set arm                  body pc 14
+        0x21,
+    ];
+    let (mf, man) = man_with_placement_script(&script);
+    let p = &mf.actor_placements(&man)[0];
+    assert_eq!(
+        placement_spawn_relocation(&mf, &man, p, &|_| false),
+        Some((0x7F, 0x7F))
+    );
+    assert_eq!(
+        placement_spawn_relocation(&mf, &man, p, &|idx| idx == 0x001A),
+        None
+    );
+}
+
+#[test]
+fn spawn_relocation_requires_the_prologue_marker() {
+    // Same record without the 0x24/0x25 lead: retail's spawn pre-run gate
+    // (`FUN_8003A1E4` `uVar14 - 0x24 < 2`) never fires.
+    let script = flag_dispatched_spawn_script()[1..].to_vec();
+    let (mf, man) = man_with_placement_script(&script);
+    let p = &mf.actor_placements(&man)[0];
+    assert_eq!(placement_spawn_relocation(&mf, &man, p, &|_| false), None);
+}
+
+#[test]
+fn spawn_relocation_stops_at_the_prologue_terminator() {
+    // A run leg after the 0x21 NOP is outside the spawn pre-run.
+    let script = [0x25, 0x31, 0x02, 0x21, 0x4C, 0x51, 11, 10, 0x06, 5, 0x21];
+    let (mf, man) = man_with_placement_script(&script);
+    let p = &mf.actor_placements(&man)[0];
+    assert_eq!(placement_spawn_relocation(&mf, &man, p, &|_| false), None);
+}
+
 #[test]
 fn initial_facing_reads_cam_cfg_simple_path() {
     // `0x38 CAM_CFG` with `op1 & 0x7F == 0` is the other +0x26 LUT write.

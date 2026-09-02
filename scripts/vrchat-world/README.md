@@ -369,6 +369,14 @@ target.
 
 ## Troubleshooting
 
+- **Doubled villagers standing inside each other** (town01: the two pairs
+  of kids at the north square): a stale export. Retail stages some
+  placements on another actor's exact tile and teleports them across town
+  in the record's spawn prologue before the first frame; the manifest now
+  resolves that relocation (`npc_catalog` +
+  `placement_spawn_relocation`), places the runners at their real spots,
+  and hides the dev records retail parks off-map. Re-run `export-glb` and
+  rebuild the scene.
 - **Everything looks mirrored**: it is - the raw import is X-mirrored
   relative to the site's field-scene viewer, and the builder's **Match
   explorer orientation** option (default on) mirrors the built root to
