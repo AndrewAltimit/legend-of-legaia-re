@@ -1042,11 +1042,14 @@ namespace LegaiaWorld
                         Quaternion.LookRotation(dirWorld.normalized, Vector3.up);
             }
 
-            // Per-scene spawn override, in UNITY WORLD SPACE (the value is
-            // copy/pasted from the built scene, so it is applied after the
-            // mirror stands - and before camp props, which stand near it).
+            // Per-scene spawn override: the value is what LegaiaSpawn's
+            // INSPECTOR shows (root-local - drag the marker, copy, paste),
+            // so it round-trips digit for digit. World space would come
+            // back sign-flipped on X under the mirrored root. Local
+            // position is mirror-invariant, but camp props below read the
+            // WORLD position, so this still runs before them.
             if (settings.hasSpawn)
-                spawnGo.transform.position = settings.spawnWorld;
+                spawnGo.transform.localPosition = settings.spawnLocal;
 
             // Camp props (settings panel, torches, campfires): built AFTER
             // the mirror, in world space, in their own top-level container -

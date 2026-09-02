@@ -220,7 +220,7 @@ All keys optional (`town01.settings.json` is the worked example):
   "delete_objects": ["room_6_shell", "room_6_light"],
   "static_npcs": [26, 27, 45, 46, 29, 12],
   "remove_npcs": [28, 10, 11],
-  "spawn_world": [-24.85, 1.75, 12.22],
+  "spawn_position": [-24.85, 1.75, 12.22],
   "set_descriptor_spawn": true
 }
 ```
@@ -237,9 +237,12 @@ All keys optional (`town01.settings.json` is the worked example):
   the file name. Re-applying the realism layer also *strips* a wander
   behaviour wired before the rule was added.
 - **`remove_npcs`** - not placed at all (same matching rules).
-- **`spawn_world`** - overrides the manifest's suggested spawn, in
-  **Unity world space**: copy the position straight off a transform in
-  the built scene.
+- **`spawn_position`** - overrides the manifest's suggested spawn:
+  **exactly what LegaiaSpawn's Inspector shows** (its local position
+  under the built root). Drag the marker where you want it, copy its
+  Inspector position here, and the rebuild reproduces it digit for
+  digit. (Not world space: the root is X-mirrored, so a world value
+  would come back with its X sign flipped in the Inspector.)
 - **`set_descriptor_spawn`** - point the VRC Scene Descriptor's
   `Spawns[0]` at `LegaiaSpawn` after the build (default true, also
   without a settings file; a no-op until the `VRCWorld` prefab is in the
@@ -247,7 +250,7 @@ All keys optional (`town01.settings.json` is the worked example):
 
 Deletions and the descriptor assignment also re-run after "Apply
 enhancements to the already-built root", so tuning a rule doesn't force
-a full rebuild - except `remove_npcs`/`spawn_world`, which take effect
+a full rebuild - except `remove_npcs`/`spawn_position`, which take effect
 on the next **Build scene**.
 
 ## Making it feel alive

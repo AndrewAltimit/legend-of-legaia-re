@@ -30,10 +30,14 @@
 //   "remove_npcs":     [28, 10, 11]
 //       NPCs not placed at all (same matching rules).
 //
-//   "spawn_world":     [-24.85, 1.75, 12.22]
-//       Overrides the manifest's suggested spawn. UNITY WORLD SPACE, i.e.
-//       exactly the position you read off a transform in the built scene
-//       (applied after the root mirror, so copy/paste from the editor).
+//   "spawn_position":  [-24.85, 1.75, 12.22]
+//       Overrides the manifest's suggested spawn: EXACTLY the value the
+//       Inspector shows on LegaiaSpawn (its local position under the
+//       built root). To tune it, drag LegaiaSpawn where you want it and
+//       copy its Inspector position here - the rebuild reproduces it
+//       digit for digit. (Not raw world space: the root is X-mirrored,
+//       so a world value would come back sign-flipped in the Inspector -
+//       the trap this convention exists to avoid.)
 //
 //   "set_descriptor_spawn": true
 //       Point the VRC Scene Descriptor's Spawns[0] at the LegaiaSpawn
@@ -56,7 +60,8 @@ namespace LegaiaWorld
         public List<string> staticNpcs = new List<string>();
         public List<string> removeNpcs = new List<string>();
         public bool hasSpawn;
-        public Vector3 spawnWorld;
+        /// LegaiaSpawn's root-local position - what its Inspector shows.
+        public Vector3 spawnLocal;
         public bool setDescriptorSpawn = true;
         /// Asset path the settings were read from; null = no file (every
         /// list empty, defaults only).
@@ -73,11 +78,12 @@ namespace LegaiaWorld
             ReadTokens(MiniJson.Get(m, "delete_objects"), s.deleteObjects);
             ReadTokens(MiniJson.Get(m, "static_npcs"), s.staticNpcs);
             ReadTokens(MiniJson.Get(m, "remove_npcs"), s.removeNpcs);
-            var sp = MiniJson.AsList(MiniJson.Get(m, "spawn_world"));
+            var sp = MiniJson.AsList(MiniJson.Get(m, "spawn_position"))
+                ?? MiniJson.AsList(MiniJson.Get(m, "spawn_world")); // old key
             if (sp != null && sp.Count >= 3)
             {
                 s.hasSpawn = true;
-                s.spawnWorld = new Vector3(
+                s.spawnLocal = new Vector3(
                     (float)MiniJson.AsNum(sp[0]),
                     (float)MiniJson.AsNum(sp[1]),
                     (float)MiniJson.AsNum(sp[2]));
@@ -88,7 +94,7 @@ namespace LegaiaWorld
                 s.deleteObjects.Count + " deletion(s), " +
                 s.staticNpcs.Count + " static NPC rule(s), " +
                 s.removeNpcs.Count + " removed NPC rule(s)" +
-                (s.hasSpawn ? ", spawn override " + s.spawnWorld : "") + ".");
+                (s.hasSpawn ? ", spawn override " + s.spawnLocal : "") + ".");
             return s;
         }
 
