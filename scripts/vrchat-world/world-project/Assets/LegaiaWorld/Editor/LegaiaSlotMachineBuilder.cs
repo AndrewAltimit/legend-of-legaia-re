@@ -58,6 +58,7 @@ namespace LegaiaWorld
         Vector3 rigOffset = new Vector3(0f, 1.25f, 0.1f);
         float rigYaw;
         string buttonNames = "Circle.001;Circle.002;Circle.003";
+        string screenNodeName = "screen";
         bool flipButtonOrder;
         bool buildPaytable = true;
         bool buildFallbackButtons = true;
@@ -106,6 +107,13 @@ namespace LegaiaWorld
                     "Local Y rotation; +Z faces the player."), rigYaw);
             if (flatScreen)
             {
+                screenNodeName = EditorGUILayout.TextField(
+                    new GUIContent("Screen node",
+                        "Cabinet node whose flat face the screen quad snaps " +
+                        "to. When found, the position/size fields above are " +
+                        "derived from it (the face must look along the " +
+                        "cabinet's +Z). Clear to place by hand."),
+                    screenNodeName);
                 viewCenter = EditorGUILayout.Vector2Field(
                     new GUIContent("View centre (model units)",
                         "What the studio camera looks at; 0,0 = the payline centre."),
@@ -158,6 +166,13 @@ namespace LegaiaWorld
             if (old != null)
                 Undo.DestroyObjectImmediate(old.gameObject);
 
+            // A cabinet node named after `screenNodeName` (e.g. the mesh's
+            // own "screen" face) pins the build: position, yaw and width are
+            // derived from its face instead of the hand-tuned fields. Runs
+            // after the old rig is destroyed so it can't match the generated
+            // quad of a previous build (also named "screen").
+            TrySnapToScreenNode(parent);
+
             // Root: the visible anchor (screen quad, machine behaviour,
             // fallback buttons - all in metres). The machine itself is built
             // under a "studio" child in the retail scene's model units: at
@@ -171,8 +186,13 @@ namespace LegaiaWorld
             rig.transform.localRotation = Quaternion.Euler(0f, rigYaw, 0f);
             var studioGo = new GameObject("studio");
             studioGo.transform.SetParent(rig.transform, false);
+            // The hidden-studio drop is 40 WORLD metres: the rig inherits the
+            // cabinet's scale (a glb authored in centimetres often carries an
+            // import scale), and a raw local drop would shrink with it and
+            // leave the studio visibly inside the world.
+            float drop = 40f / Mathf.Max(rig.transform.lossyScale.y, 1e-6f);
             studioGo.transform.localPosition =
-                flatScreen ? new Vector3(0f, -40f, 0f) : Vector3.zero;
+                flatScreen ? new Vector3(0f, -drop, 0f) : Vector3.zero;
             studioGo.transform.localScale = Vector3.one * (screenWidth / GLASS_SPAN);
             Transform studio = studioGo.transform;
             float worldUnit = studio.lossyScale.x;
@@ -602,6 +622,69 @@ namespace LegaiaWorld
             for (int i = 0; list != null && i < list.Count && i < count; i++)
                 arr[i] = (int)MiniJson.AsNum(list[i]);
             return arr;
+        }
+
+        // --- screen-node snap ----------------------------------------------
+
+        /// Fit the build to a cabinet node that IS the screen (a flat face
+        /// looking along the cabinet's +Z): rig offset, yaw and screen width
+        /// are derived from its mesh corners in cabinet space, so a mesh
+        /// swap is "select cabinet, Build" with no hand alignment. Writes
+        /// the derived values back into the window fields (visible after
+        /// the build, and used verbatim by a later manual rebuild).
+        void TrySnapToScreenNode(Transform parent)
+        {
+            if (!flatScreen || parent == null)
+                return;
+            string name = screenNodeName != null ? screenNodeName.Trim() : "";
+            if (name.Length == 0)
+                return;
+            var node = FindDeep(parent, name);
+            var mf = node != null ? node.GetComponent<MeshFilter>() : null;
+            if (mf == null || mf.sharedMesh == null)
+            {
+                if (node != null)
+                    Debug.LogWarning("[Legaia] screen node '" + name +
+                        "' has no mesh - placing the screen by hand instead.");
+                return;
+            }
+
+            // The face's 8 mesh-bounds corners, in cabinet-local space (the
+            // frame the rig's own offset lives in - so whatever import scale
+            // or scene placement the cabinet carries is respected).
+            Bounds b = mf.sharedMesh.bounds;
+            var min = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue);
+            var max = new Vector3(float.MinValue, float.MinValue, float.MinValue);
+            for (int i = 0; i < 8; i++)
+            {
+                var corner = new Vector3(
+                    (i & 1) == 0 ? b.min.x : b.max.x,
+                    (i & 2) == 0 ? b.min.y : b.max.y,
+                    (i & 4) == 0 ? b.min.z : b.max.z);
+                var local = parent.InverseTransformPoint(node.TransformPoint(corner));
+                min = Vector3.Min(min, local);
+                max = Vector3.Max(max, local);
+            }
+            float w = max.x - min.x;
+            float h = max.y - min.y;
+            if (w <= 0f || h <= 0f)
+            {
+                Debug.LogWarning("[Legaia] screen node '" + name +
+                    "' has a degenerate face - placing the screen by hand instead.");
+                return;
+            }
+            // Centre of the face, nudged just in front of it so the feed
+            // quad covers the cabinet's own baked screen material.
+            screenWidth = w;
+            rigOffset = new Vector3(
+                (min.x + max.x) * 0.5f,
+                (min.y + max.y) * 0.5f,
+                max.z + w * 0.01f);
+            rigYaw = 0f;
+            Debug.Log("[Legaia] screen snapped to node '" + name + "': " +
+                w.ToString("0.###") + " x " + h.ToString("0.###") +
+                " (cabinet units; feed quad is 4:3 " + w.ToString("0.###") + " x " +
+                (w * 0.75f).ToString("0.###") + ") at " + rigOffset + ".");
         }
 
         // --- buttons -------------------------------------------------------

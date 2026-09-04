@@ -343,10 +343,14 @@ no casino coin bank to cash out to).
    3D scene is built in a hidden studio 40 m below the cabinet, a camera
    films it into a point-sampled 640x480 RenderTexture, and that feed is
    shown on a flat screen quad at the anchor - so the cabinet needs no
-   screen cutout, just a flat screen area for the quad to sit on. Drag
-   the `LegaiaSlotGame` root to place the screen, then copy its
-   transform into the window fields so a rebuild lands in the same
-   place; `View centre` / `View half-width` crop the filmed frame. The
+   screen cutout, just a flat screen area for the quad to sit on. A
+   cabinet node named `screen` (the **Screen node** field) pins the
+   build automatically: position, yaw and width are derived from that
+   face, in cabinet-local space, so import scale is respected and a
+   mesh swap is "select cabinet, Build". Without one, drag the
+   `LegaiaSlotGame` root to place the screen, then copy its transform
+   into the window fields so a rebuild lands in the same place;
+   `View centre` / `View half-width` crop the filmed frame. The
    camera pauses per-client when nobody is near the screen. Untick
    **Flat screen** for the older behind-a-cutout build (the same rig,
    placed at the anchor at glass scale). Named button nodes get fitted
