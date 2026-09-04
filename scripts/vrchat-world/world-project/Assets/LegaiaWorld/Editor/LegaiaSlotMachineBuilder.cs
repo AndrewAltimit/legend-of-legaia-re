@@ -21,7 +21,7 @@
 // - the dot-matrix marquee as message-bank quads (tally / pips / payout
 //   caption / scrolled attract legend) - placement-level port of the retail
 //   composer, not a per-dot grid;
-// - a balance + status TextMesh HUD and the paytable board;
+// - a balance + status TextMeshPro HUD and the paytable board;
 // - the three cabinet buttons wired as LegaiaSlotButton interacts (named
 //   nodes on the cabinet mesh; fallback pads are built when missing).
 //
@@ -579,29 +579,28 @@ namespace LegaiaWorld
             return slots;
         }
 
-        static TextMesh MakeText(Transform parent, string name, Vector3 localPos, float size)
+        /// World-space TextMeshPro, not legacy TextMesh: the SDK exposes no
+        /// TextMesh members to Udon, so a TextMesh HUD compiles in C# but
+        /// fails the UdonSharp bind. TMP's default font asset auto-assigns
+        /// on AddComponent (TMP essentials ship with the worlds SDK).
+        static TMPro.TextMeshPro MakeText(Transform parent, string name, Vector3 localPos, float size)
         {
             var go = new GameObject(name);
             go.transform.SetParent(parent, false);
             go.transform.localPosition = localPos;
-            var tm = go.AddComponent<TextMesh>();
-            tm.anchor = TextAnchor.MiddleCenter;
-            tm.alignment = TextAlignment.Center;
-            tm.fontSize = 64;
-            tm.characterSize = size / 10f;
-            tm.color = new Color(1f, 0.9f, 0.6f);
-            tm.text = "";
-            // A script-created TextMesh has no font and renders nothing
-            // until one (and its material) is assigned.
-            var font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            if (font == null)
-                font = Resources.GetBuiltinResource<Font>("Arial.ttf");
-            if (font != null)
-            {
-                tm.font = font;
-                go.GetComponent<MeshRenderer>().sharedMaterial = font.material;
-            }
-            return tm;
+            var tmp = go.AddComponent<TMPro.TextMeshPro>();
+            tmp.alignment = TMPro.TextAlignmentOptions.Center;
+            // TMP world text draws ~1 local unit of line height per 10 font
+            // points; size*7 lands near the old TextMesh glyph height.
+            tmp.fontSize = size * 7f;
+            tmp.enableWordWrapping = false;
+            tmp.color = new Color(1f, 0.9f, 0.6f);
+            tmp.text = "";
+            tmp.rectTransform.sizeDelta = new Vector2(size * 40f, size * 2f);
+            var mr = go.GetComponent<MeshRenderer>();
+            if (mr != null)
+                mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            return tmp;
         }
 
         float[] MessageWidths(object m)

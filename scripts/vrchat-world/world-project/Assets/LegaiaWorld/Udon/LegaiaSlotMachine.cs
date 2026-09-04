@@ -118,8 +118,11 @@ namespace LegaiaWorld
         public float cameraActiveDistance = 14f;
 
         [Header("HUD")]
-        public TextMesh balanceText;
-        public TextMesh statusText;
+        // World-space TextMeshPro, NOT legacy TextMesh - the SDK ships no
+        // ExternUnityEngineTextMesh wrapper module, so TextMesh members are
+        // not exposed to Udon at all.
+        public TMPro.TextMeshPro balanceText;
+        public TMPro.TextMeshPro statusText;
 
         [Header("Game data (slot-machine.json)")]
         [Tooltip("Per-symbol line payout, index = symbol id 0..9.")]
