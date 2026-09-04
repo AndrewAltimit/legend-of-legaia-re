@@ -761,10 +761,28 @@ namespace LegaiaWorld
                 (min.y + max.y) * 0.5f,
                 max.z + w * 0.01f);
             rigYaw = 0f;
+
+            // The glb's own screen face carries whatever placeholder image
+            // was baked into it, and the composition's relief quads don't
+            // cover every pixel of it - black it out (on the scene instance
+            // only; the imported glb asset is untouched, and a rebuild
+            // reassigns the same material).
+            var nodeMr = node.GetComponent<MeshRenderer>();
+            if (nodeMr != null)
+            {
+                Undo.RecordObject(nodeMr, "Black out slot screen face");
+                var black = BlackMat();
+                var mats = new Material[nodeMr.sharedMaterials.Length];
+                for (int i = 0; i < mats.Length; i++)
+                    mats[i] = black;
+                nodeMr.sharedMaterials = mats;
+            }
+
             Debug.Log("[Legaia] screen snapped to node '" + name + "': " +
                 w.ToString("0.###") + " x " + h.ToString("0.###") +
                 " (cabinet units; composition is 4:3 " + w.ToString("0.###") + " x " +
-                (w * 0.75f).ToString("0.###") + ") at " + rigOffset + ".");
+                (w * 0.75f).ToString("0.###") + ") at " + rigOffset +
+                "; the face's placeholder material was blacked out.");
         }
 
         // --- buttons -------------------------------------------------------
