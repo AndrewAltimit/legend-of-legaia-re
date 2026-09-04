@@ -383,6 +383,41 @@ float occl_keep(vec2 frag_px, float frag_w) {
   return mix(1.0, mix(u_occl_params.y, 1.0, t), s);
 }
 
+/* World-overview distance haze, applied to BOTH prim families: retail's
+ * overlay renderers run the dpcs/dpct cue pass on every prim they emit,
+ * untextured F* / G* leaves included (the four untextured slots of the
+ * 0x801F8968 row carry the same post-process as the textured four), so a
+ * flat-filled roof hazes with distance exactly like the textured wall
+ * under it. Identity when u_fog_enable is 0. */
+vec3 apply_distance_fog(vec3 lit) {
+  if (u_fog_enable == 0) return lit;
+  /* The retail LUT at gp-0x2BC stores a per-Z SCALAR (entries climb
+   * from 0x0000 at near-Z to ~0x01FF at far-Z) that the overlay
+   * leaves add to vertex SXY+offset words; the per-kingdom haze
+   * COLOR comes from the GTE FAR_COLOR register, set via ctc2
+   * during kingdom init. The retail visual is "diffuse fades toward
+   * a kingdom-tinted haze color with distance" - not a color tint
+   * baked into the LUT itself.
+   *
+   * The WebGL approximation mirrors that split: sample the LUT as a
+   * scalar fog factor in 0..1, then mix(lit, u_fog_color, factor)
+   * with u_fog_color = the kingdom haze tint. When v_fog_t already
+   * encodes the distance signal, the LUT shapes the per-tier
+   * curve (retail samples discrete tiers at Z >> 5 boundaries). */
+  float lut_idx_f = clamp(v_fog_t * 2047.0, 0.0, 2047.0);
+  int lut_idx = int(lut_idx_f);
+  uint lut_word = texelFetch(u_fog_lut, ivec2(lut_idx, 0), 0).r;
+  /* The retail LUT saturates at 0x01FF (= 511); normalise to 0..1.
+   * Without a captured LUT (the 1D texture is seeded to all zeros)
+   * we fall back to v_fog_t directly so the toggle still produces
+   * a distance-based fade. */
+  float lut_factor = float(lut_word) / 511.0;
+  float factor = (lut_word == 0u && v_fog_t > 0.0)
+    ? v_fog_t
+    : clamp(lut_factor, 0.0, 1.0);
+  return mix(lit, u_fog_color, factor);
+}
+
 void main() {
   uint cba = v_cba_tsb.x;
   uint tsb = v_cba_tsb.y;
@@ -429,7 +464,8 @@ void main() {
     if (u_semi_pass == 1 && !prim_semi) discard;
     /* Untextured prims pull to the DPCS far colour directly (retail: the
      * cue runs on the packet colour and there is no texel multiply). */
-    vec3 flat_lit = grade_near(v_flat_rgba.rgb);
+    vec3 flat_lit = apply_distance_fog(v_flat_rgba.rgb);
+    flat_lit = grade_near(flat_lit);
     o_color = vec4(mix(flat_lit, u_cue_far, cue_ir0(v_view_z)), 1.0);
     return;
   }
@@ -509,33 +545,7 @@ void main() {
   vec3 lit = clamp(color.rgb * v_flat_rgba.rgb * (255.0 / 128.0),
                    vec3(0.0), vec3(1.0));
 
-  if (u_fog_enable != 0) {
-    /* The retail LUT at gp-0x2BC stores a per-Z SCALAR (entries climb
-     * from 0x0000 at near-Z to ~0x01FF at far-Z) that the overlay
-     * leaves add to vertex SXY+offset words; the per-kingdom haze
-     * COLOR comes from the GTE FAR_COLOR register, set via ctc2
-     * during kingdom init. The retail visual is "diffuse fades toward
-     * a kingdom-tinted haze color with distance" - not a color tint
-     * baked into the LUT itself.
-     *
-     * The WebGL approximation mirrors that split: sample the LUT as a
-     * scalar fog factor in 0..1, then mix(lit, u_fog_color, factor)
-     * with u_fog_color = the kingdom haze tint. When v_fog_t already
-     * encodes the distance signal, the LUT shapes the per-tier
-     * curve (retail samples discrete tiers at Z >> 5 boundaries). */
-    float lut_idx_f = clamp(v_fog_t * 2047.0, 0.0, 2047.0);
-    int lut_idx = int(lut_idx_f);
-    uint lut_word = texelFetch(u_fog_lut, ivec2(lut_idx, 0), 0).r;
-    /* The retail LUT saturates at 0x01FF (= 511); normalise to 0..1.
-     * Without a captured LUT (the 1D texture is seeded to all zeros)
-     * we fall back to v_fog_t directly so the toggle still produces
-     * a distance-based fade. */
-    float lut_factor = float(lut_word) / 511.0;
-    float factor = (lut_word == 0u && v_fog_t > 0.0)
-      ? v_fog_t
-      : clamp(lut_factor, 0.0, 1.0);
-    lit = mix(lit, u_fog_color, factor);
-  }
+  lit = apply_distance_fog(lit);
 
   /* Prologue grade + depth-cue ramp (identity when unset). Retail order:
    * the grade tints the NEAR term; the far term is texel * far colour
