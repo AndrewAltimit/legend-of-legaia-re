@@ -737,9 +737,14 @@ impl World {
                     panel.move_picker_cursor(1);
                 }
             }
+            // One-frame rule (see `step_inline_dialogue`): a menu that opened
+            // on this tick is shown before any confirm can commit it.
+            let menu_was_open = panel.menu_active();
             panel.tick();
             if confirm {
-                if panel.menu_active() {
+                if panel.menu_active() && !menu_was_open {
+                    // Opened this frame: nothing to commit yet.
+                } else if panel.menu_active() {
                     // NB: unlike the inline runner's picker commit, the wrap
                     // map is NOT cleared here. A cutscene record's picker
                     // picks a branch of one linear scene (the Mei beat's
@@ -2266,9 +2271,22 @@ impl World {
                     panel.move_picker_cursor(1);
                 }
             }
+            // Whether the menu was already open BEFORE this frame's typewriter
+            // tick. A prompt whose last row finishes typing on a frame the
+            // confirm button is down must not commit on that same frame: the
+            // player has not seen the options yet, and a held or mashed
+            // confirm would silently pick option 0 - which on Tetsu's Rim Elm
+            // record ("I want to hear about Biron") re-enters the same speech
+            // and reads as an inescapable loop. Retail opens the picker in one
+            // dialog-SM state (`0x11` / `0x12`, the box geometry animates first)
+            // and reads the choice in the next, so the commit is always at
+            // least one frame behind the open.
+            let menu_was_open = panel.menu_active();
             panel.tick();
             if confirm {
-                if panel.menu_active() {
+                if panel.menu_active() && !menu_was_open {
+                    // The menu opened this frame: show it, commit next frame.
+                } else if panel.menu_active() {
                     // Commit the choice: apply the option's relative jump and
                     // resume the VM at the branch handler (its flag-sets /
                     // scene-change run before the reply box). A user choice is

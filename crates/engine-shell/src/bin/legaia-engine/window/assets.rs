@@ -543,6 +543,11 @@ impl PlayWindowApp {
             }
         }
         let world_map_terrain_draws = self.resolve_world_map_terrain_draws(&res, &tmd_src_index);
+        // The same stamps bridged through the colour-mesh list: the landmark
+        // pack's untextured F*/G* prims (hut roofs, colour-only landmarks)
+        // draw on the colour pipeline, as the field terrain's do.
+        let world_map_terrain_color_draws =
+            self.resolve_world_map_terrain_draws(&res, &color_tmd_src_index);
         // Field move-VM stager scene-pack TMD list: `env_tmds` (res.tmds @ the
         // scene_asset_table bundle entry, scan order) = retail `DAT_8007C018[5..]`,
         // indexed by a field stager's relative `model_sel`. Kept as its own clone
@@ -754,6 +759,7 @@ impl PlayWindowApp {
         self.field_posed_tmds = posed_tmds;
         self.field_posed_props = posed_props;
         self.world_map_terrain_draws = world_map_terrain_draws;
+        self.world_map_terrain_color_draws = world_map_terrain_color_draws;
         self.ground_heightfield = world_map_hf;
         self.world_map_slot4_lines = world_map_slot4_lines;
         // World-map ocean: recover the 13-frame CLUT animation for the kingdom

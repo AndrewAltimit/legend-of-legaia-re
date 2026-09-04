@@ -177,10 +177,16 @@ impl World {
                     panel.move_picker_cursor(1);
                 }
             }
+            // Same one-frame rule as the inline runner: a menu that opened
+            // on this frame's tick is shown first and commits on a later
+            // confirm, so a mashed confirm never picks option 0 unseen.
+            let menu_was_open = panel.menu_active();
             panel.tick();
             if confirm {
                 self.dialog_input_consumed = true;
-                if panel.menu_active() {
+                if panel.menu_active() && !menu_was_open {
+                    // Opened this frame: nothing to commit yet.
+                } else if panel.menu_active() {
                     let choice = panel.picker_cursor();
                     let target = panel.picker().and_then(|pk| pk.jump_target(choice));
                     id.last_choice = Some(choice);

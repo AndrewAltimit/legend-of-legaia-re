@@ -290,13 +290,12 @@ impl LegaiaViewer {
             .unwrap_or_default()
     }
 
-    /// Per-vertex `[r, g, b, 255]` packet colours of the continent mesh - the
-    /// modulation half of retail's `texel * colour / 128`.
+    /// Per-vertex `[r, g, b, flag]` packet colours of the continent mesh -
+    /// the same hybrid stream `pack_mesh_flat_rgba` documents.
     pub fn continent_pack_mesh_flat_rgba(&self) -> Vec<u8> {
-        let Some(mesh) = self.build_continent_mesh() else {
-            return Vec::new();
-        };
-        crate::packet_color::textured(&mesh)
+        self.build_continent_hybrid()
+            .map(|(_, flat)| flat)
+            .unwrap_or_default()
     }
 
     pub fn continent_pack_mesh_bounds(&self) -> Vec<f32> {
@@ -448,13 +447,17 @@ impl LegaiaViewer {
             .unwrap_or_default()
     }
 
-    /// Per-vertex `[r, g, b, 255]` packet colours of the selected kingdom pack
-    /// slot - the modulation half of retail's `texel * colour / 128`.
+    /// Per-vertex `[r, g, b, flag]` packet colours of the selected kingdom
+    /// pack slot, index-aligned with `pack_mesh_positions`: `flag` 255 on a
+    /// textured vertex (the modulation half of retail's `texel * colour /
+    /// 128`), 0 on an untextured `F*`/`G*` vertex whose RGB is the fill the
+    /// shader's flat-colour branch paints (the Rim Elm hut roofs). The
+    /// `packet_color` convention shared with the field-scene page and the
+    /// `.glb` baker.
     pub fn pack_mesh_flat_rgba(&self) -> Vec<u8> {
-        let Some(mesh) = self.build_kingdom_mesh() else {
-            return Vec::new();
-        };
-        crate::packet_color::textured(&mesh)
+        self.build_kingdom_hybrid()
+            .map(|(_, flat)| flat)
+            .unwrap_or_default()
     }
 
     pub fn pack_mesh_bounds(&self) -> Vec<f32> {

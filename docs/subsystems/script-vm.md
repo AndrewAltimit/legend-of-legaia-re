@@ -1645,7 +1645,15 @@ NPC is the **interaction pipeline**, not a text-carrying instruction:
    that loop-back - a VM `Advance` jumping backward onto an already-executed PC
    (`InlineDialogue::visited`) - rather than replaying the branch forever; the
    map is cleared on every picker commit so menu records that re-emit their
-   menu by jumping back after a branch reply still cycle.
+   menu by jumping back after a branch reply still cycle. A picker commits
+   only on a frame **after** the one it opened on - retail opens the menu in
+   one dialog-SM state (`0x11` / `0x12`) and reads the choice in the next -
+   so a confirm held or mashed through the prompt's typewriter cannot pick
+   option 0 unseen. On Tetsu's Rim Elm record that unseen pick is "I want to
+   hear about Biron", which re-enters the same speech: from the pad it read
+   as a conversation with no exit, and the disc-gated
+   `npc_conversation_terminates` oracle reported the record as a looping
+   non-menu because the menu never survived a frame.
 
 ### The interaction cursor: one record, two consecutive scripts
 

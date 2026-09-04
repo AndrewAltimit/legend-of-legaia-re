@@ -1813,6 +1813,19 @@ sweeps over the `.MAP` object grid serve two different render modes:
   carry `0x2000`. Stamping that family tiles a wall/gate mesh down every
   river (visually falsified against retail). For the bulk ground cells (97%
   of the walk grid) `+0x10` is 0 and only `0x1000` is set.
+- **Both prim families of a stamped mesh draw.** The landmark pack meshes mix
+  textured prims with untextured `F*`/`G*` vertex-colour prims - Rim Elm
+  (Drake slot 29) is textured walls plus four hut roofs of 24 gouraud
+  triangles; Karisto slot 8 - the Uru Mais temple, placed record 441 at cell
+  `(36, 75)` - is colour prims only, so a textured-only build has no mesh for
+  it at all; 14 Drake, 8 Sebucus and 12 Karisto slots carry some. The per-prim dispatch `FUN_80043390` selects the
+  renderer by the group header's `flags >> 1` (`0x80043614`), and the four
+  untextured slots 12..=15 (F3 / F4 / G3 / G4, descriptor rows 2/3 of
+  `DAT_8007326C`) are populated in the SCUS row `0x8007657C` and in the
+  world-map overlay row `0x801F8968` alike, so nothing on the world map
+  skips them - a host that builds only the textured half draws the huts as
+  open rings (the port's shared pack kernel
+  `legaia_engine_core::scene_assembly::build_hybrid_pack_mesh` carries both).
 
 The walk-placer `FUN_8003A55C` (placed flag `0x4`) spawns only the ~51
 interactive objects (distance-culled to ~14 live actors in the capture; most
@@ -2481,18 +2494,24 @@ The overlay path skips the alpha offset (`_DAT_1F800028` is not added
 on the overlay branch), so only the first row of the overlay table is
 meaningful. Slots 8..11 of row 0 share the same low-mode dispatchers
 as SCUS (`0x8004409C, 0x8004423C, 0x80044434, 0x800445B0`); slots
-12..19 carry the eight overlay-resident high-mode renderers:
+12..19 carry the eight overlay-resident high-mode renderers. The slot is the
+group header's `flags >> 1` (`0x80043614`; `legaia_tmd::descriptor` decodes
+the same field), so slots 8..11 are the lit rows, 12..15 the **untextured**
+flat / gouraud shapes and 16..19 the textured ones - a shape's `olen` is its
+GPU packet length, and each leaf's GTE sequence (`RTPT` alone for three
+vertices, `RTPT` + `RTPS` for four; `dpct` where the packet carries three
+colour words) agrees:
 
-| Slot | Address | Role (per case-5 TMD prim mode) |
-|---|---|---|
-| 12 | `0x801F7644` | high-mode prim renderer A |
-| 13 | `0x801F7838` | high-mode prim renderer B |
-| 14 | `0x801F7F78` | high-mode prim renderer C |
-| 15 | `0x801F8198` | high-mode prim renderer D |
-| 16 | `0x801F7AA4` | high-mode prim renderer E |
-| 17 | `0x801F7CCC` | high-mode prim renderer F |
-| 18 | `0x801F8454` | high-mode prim renderer G |
-| 19 | `0x801F8690` | high-mode prim renderer H |
+| Slot | Address | Shape (group `flags`, `olen`) | GTE cue |
+|---|---|---|---|
+| 12 | `0x801F7644` | `F3` untextured flat triangle (`0x19`, 4) | `dpcs` `0x801F7764` |
+| 13 | `0x801F7838` | `F4` untextured flat quad (`0x1B`, 5) | `dpcs` `0x801F7A50` |
+| 14 | `0x801F7F78` | `G3` untextured gouraud triangle (`0x1D`, 6) | `dpct` `0x801F80A4` |
+| 15 | `0x801F8198` | `G4` untextured gouraud quad (`0x1F`, 8) | `dpct` `0x801F8330` + `dpcs` `0x801F83F4` |
+| 16 | `0x801F7AA4` | `FT3` textured flat triangle (`0x21`, 7) | `dpcs` `0x801F7BD0` |
+| 17 | `0x801F7CCC` | `FT4` textured flat quad (`0x23`, 9) | `dpcs` `0x801F7E64` |
+| 18 | `0x801F8454` | `GT3` textured gouraud triangle (`0x24`/`0x25`, 9) | `dpct` `0x801F8590` |
+| 19 | `0x801F8690` | `GT4` textured gouraud quad (`0x26`/`0x27`, 12) | `dpct` `0x801F890C` + `dpcs` `0x801F8928` |
 
 Each is a per-primitive emitter that loads vertex indices from the TMD
 prim body, looks vertices up in the actor's vertex pool (passed as
@@ -2508,8 +2527,11 @@ Every overlay leaf is its SCUS sibling body plus a **distance-cue fog
 post-process** inserted between the GTE projection and the OT packet write
 (constant shape across all eight slots): per-vertex `Z_far = max(z1,z2,z3) >>
 shift`, seed `IR0` and `RGBC`, `dpcs`/`dpct`, then a per-Z LUT value added into
-the OT packet's vertex screen coordinates. The two textured-quad modes (slots
-15, 19) use `dpct` (triple); the rest use `dpcs`. The parameters sit at
+the OT packet's vertex screen coordinates. The gouraud shapes (slots 14, 15,
+18, 19) cue three colours with `dpct` (the quads add a `dpcs` for the fourth);
+the flat shapes (12, 13, 16, 17) cue their one colour with `dpcs`. The
+untextured leaves run the pass too - a flat-filled roof hazes with distance
+like the textured wall under it. The parameters sit at
 GP-relative offsets in the per-frame camera/render context:
 
 | GP offset | Role |
