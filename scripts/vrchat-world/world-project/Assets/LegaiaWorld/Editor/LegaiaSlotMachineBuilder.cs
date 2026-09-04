@@ -143,7 +143,8 @@ namespace LegaiaWorld
                 screenNodeName);
             buttonNames = EditorGUILayout.TextField(
                 new GUIContent("Button nodes",
-                    "';'-separated node names on the cabinet mesh, wired left to right."),
+                    "';'-separated node names on the cabinet mesh, wired " +
+                    "left-to-right as the player facing the cabinet sees them."),
                 buttonNames);
             flipButtonOrder = EditorGUILayout.Toggle("Flip button order", flipButtonOrder);
             buildFallbackButtons = EditorGUILayout.Toggle(
@@ -786,10 +787,14 @@ namespace LegaiaWorld
                         "' not found under " + searchRoot.name +
                         (buildFallbackButtons ? " - building a fallback pad." : "."));
             }
-            // Left-to-right in the cabinet's own frame.
+            // Left-to-right AS THE PLAYER SEES THEM: the cabinet faces +z,
+            // and a viewer looking back along -z sees cabinet +x on their
+            // LEFT - so player-visual order is DESCENDING cabinet x. (The
+            // same single mirror the screen composition carries; sorting
+            // ascending wires the right-hand button to the left reel.)
             found.Sort((a, b) =>
-                searchRoot.InverseTransformPoint(a.position).x
-                    .CompareTo(searchRoot.InverseTransformPoint(b.position).x));
+                searchRoot.InverseTransformPoint(b.position).x
+                    .CompareTo(searchRoot.InverseTransformPoint(a.position).x));
             if (flipButtonOrder)
                 found.Reverse();
 
@@ -820,12 +825,14 @@ namespace LegaiaWorld
                     if (!buildFallbackButtons)
                         continue;
                     // Metres, under the (unscaled) anchor root: a row of pads
-                    // just below the screen.
+                    // just below the screen. Rig +x is the PLAYER'S LEFT
+                    // (the rig faces +z), so pad 0 - reel 0, screen-left -
+                    // sits at positive x.
                     go = GameObject.CreatePrimitive(PrimitiveType.Cube);
                     go.name = "slot_button_" + i;
                     go.transform.SetParent(rig.transform, false);
                     go.transform.localPosition = new Vector3(
-                        -0.17f + i * 0.17f,
+                        0.17f - i * 0.17f,
                         -(screenWidth * 0.375f + 0.07f), 0.03f);
                     go.transform.localScale = new Vector3(0.09f, 0.04f, 0.05f);
                 }
