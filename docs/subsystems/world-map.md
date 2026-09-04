@@ -1796,19 +1796,23 @@ sweeps over the `.MAP` object grid serve two different render modes:
   the `+0x4000` floor-nibble grid, confirmed by `FUN_80019278`; see below). The
   `.MAP` records' `+0x10` field is used by two sparse mesh layers on top of
   that ground: the placed-landmark layer (`FUN_8003A55C`, `flags & 0x4`) and
-  the **decoration layer** - walk-visible cells whose record carries a nonzero
-  `+0x10` plus the mesh-drawn flag bit `0x2` *without* the placed flag (flag
-  families `0x0013`/`0x0813`; Drake ~295 cells over 31 records, Sebacus ~240,
-  Karisto ~210). The decorations are the crossed-quad billboard trees (one
-  tree mesh is stamped from dozens of cells per forest cluster), the mountain
-  groups, and small props
-  ([`legaia_asset::field_objects::parse_walk_decorations`]). The `0x0011`
-  family (nonzero `+0x10`, no `0x2` bit) is **not** drawn: those are the
-  riverbank/system cells - record 408 in every kingdom walk `.MAP` (same
-  index, same `+0x10 = 4`, same flags across all three kingdoms), and
-  stamping them tiles a wall/gate mesh down every river (visually falsified
-  against retail). For the bulk ground cells (97% of the walk grid) `+0x10`
-  is 0.
+  the **decoration layer** - every cell carrying the draw bit `0x2000` whose
+  record is not placed, stamping the record's `+0x10` mesh (Drake 298 cells,
+  Sebucus 242, Karisto 218). The decorations are the crossed-quad billboard
+  trees (one tree mesh is stamped from dozens of cells per forest cluster),
+  the mountain groups, small props - and the **big enterable mountains**,
+  whose cells carry `0x2000` with **no** `0x1000` walk bit because the mesh
+  replaces the walkable ground there (Drake record 412, mesh 23, cell
+  `(39, 80)`; Karisto's cull-radius-8..10 records 444 / 445 / 447 / 462 /
+  463 / 473). The sweep is the slot-B `FUN_801F69D8` kernel below: gate
+  `0x2000` only, placed skip, no `+0x10 == 0` test and no flag-`0x2` test
+  ([`legaia_asset::field_objects::parse_walk_decorations`]). A `0x1000`-gated
+  sweep loses exactly the big mountains, and the `0x0011` riverbank/system
+  family (record 408 in every kingdom walk `.MAP`: same index, same
+  `+0x10 = 4`, same flags) needs no flag test to stay out - its cells never
+  carry `0x2000`. Stamping that family tiles a wall/gate mesh down every
+  river (visually falsified against retail). For the bulk ground cells (97%
+  of the walk grid) `+0x10` is 0 and only `0x1000` is set.
 
 The walk-placer `FUN_8003A55C` (placed flag `0x4`) spawns only the ~51
 interactive objects (distance-culled to ~14 live actors in the capture; most
@@ -1848,9 +1852,12 @@ by **positioning** them per tile. The **overview** layer is modelled today:
 
 - **Overview terrain** ([`Scene::field_terrain_tiles`] →
   `resolve_world_map_terrain_draws`): the `FUN_801F69D8` visible-bit
-  (`0x2000`) cells (Drake 970, Sebacus 184, Karisto 161), mesh via record
-  `+0x10`. This targets the *overview* pack; against the 40-mesh walk pool the
-  high indices resolve to no mesh.
+  (`0x2000`) cells of the *within-block* `.MAP`, mesh via record `+0x10`.
+  That entry is the next scene's map, not the kingdom's (for `map01` it is
+  `garmel`'s, whose 970 visible cells were once quoted here as Drake's); the
+  kingdom walk `.MAP`s carry 304 / 275 / 243 `0x2000` cells. This targets the
+  *overview* pack; against the 40-mesh walk pool the high indices resolve to
+  no mesh.
 - **Interactive objects** ([`Scene::field_object_placements`] →
   `resolve_field_placement_draws`): the placed-flag (`0x4`) records (Drake 51,
   Sebacus 20, Karisto 24), the `FUN_8003A55C` set.
@@ -1895,10 +1902,12 @@ i.e. **`pool = record[+0x10] + prefix`** - the existing
 Confirmed at the real live `.MAP` buffer `_DAT_1f8003ec = 0x80139530`
 (`474 → 16+5=21`, `349 → 6+5=11`, `414 → 31+5=36`, `430 → 29+5=34`,
 `411 → 14+5=19`). `FUN_80024e08(actor, model)` is the direct set-model primitive
-for script-driven (non-`.MAP`-grid) actors. The **walk continent grid gate is
-cell bit `0x1000`** (15389 cells in the live grid), distinct from the overview's
-`0x2000` (304 cells) - so the walk sweep is `(cell & 0x1000)`, not
-`parse_terrain_tiles`'s `0x2000`. MAN partition 1 supplies the NPC/portal/party
+for script-driven (non-`.MAP`-grid) actors. The **walk continent *ground* gate
+is cell bit `0x1000`** (15389 cells in the live grid) - the heightfield's sweep
+- while the pack-mesh decoration sweep keeps the `0x2000` draw gate (304 cells
+on Drake) in the walk view too; the two bits are independent per cell (a river
+cell is ground without a mesh, an enterable-mountain cell is a mesh without
+ground). MAN partition 1 supplies the NPC/portal/party
 placements (decoded via
 [`legaia_asset::man_section::ManFile::actor_placements`]).
 
@@ -1916,13 +1925,26 @@ the `0x1000`-gated continent is a smooth heightfield surface, and the slot-1
 prefix` set above, spawned by `FUN_8003A55C` gated on `flags & 0x4`).
 
 The only per-cell terrain emitter that sweeps this grid is **`FUN_801F69D8`**
-(the **top-view overview** renderer, PROT 0901, gate `cell & 0x2000`): for each
+(PROT 0901, gate `cell & 0x2000` - and **only** that bit, `andi v0,v1,0x2000` at
+`0x801F6ECC`; the walk bit is never tested): for each
 occupied cell it reads the object record (grid base + `(cell & 0x1ff) * 0x20`),
 **skips records carrying the placed flag** (`+0x12` bit `0x4` - those are the
 `FUN_8003A55C` actor sweep's), takes the **mesh-pool index from `+0x10`**
 (`record[+0x10]` plus a per-scene base, into a drawable-pointer table), and
 submits the per-cell mesh through `FUN_80043390` - the sole caller of that
-bulk-terrain emit. Its cell world **Y** is the **flat mean of the four
+bulk-terrain emit. It is **not an overview-only pass**: the render tick
+`FUN_80016444` reaches it through `FUN_8001D058` → `FUN_80026CE4`, whose body
+(`0x80026E50..0x80026E98`) accepts game modes `3`, `0xD` and `0x19` and picks
+`FUN_801F69D8` when the world-map selector `_DAT_8007BA90` is set (`jal` at
+`0x80026E84`; the word reads `1` in a `map01` walk capture and `0` in `town01`)
+and the field sibling `FUN_801F7088` (PROT 0900) otherwise - so the same kernel
+stamps the walk view's decorations. Between the placed skip and the `+0x10`
+read it tests neither `+0x10 == 0` nor flag bit `0x2`, so the two retail cells
+whose record carries `+0x10 = 0` under the draw bit (Drake `(98, 66)`, Sebucus
+`(60, 49)`, both `0x0813` props) stamp pack slot 0. Flags `0x380` drop the
+camera rotation on the matching axis (`0x801F706C..0x801F70FC`, a per-axis
+billboard control no kingdom record uses); the record's `+0x08/+0x0A/+0x0C`
+angles apply when nonzero. Its cell world **Y** is the **flat mean of the four
 corner tiles' LUT heights** - the `+0x4000` bytes at `+0`, `+1`, `+0x80`,
 `+0x81`, each `& 0xF` through the scratchpad LUT, summed and divided by 4
 rounding toward zero (`if (sum < 0) sum += 3; sum >>= 2`; body

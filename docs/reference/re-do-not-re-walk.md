@@ -23,6 +23,7 @@ below.
 |---|---|---|
 | Slot-4 → cluster-A converter site | falsified | There is no slot-4 → cluster-A converter. The cluster-A pool (`DAT_8007C018`) is filled exclusively by `FUN_80026B4C`, reached only from `FUN_8001f05c` **case `0x02`** (TMD pack) and **case `0x09`** (bare TMD). Slot-4's type byte is **`0x05`**, whose `FUN_8001f05c` case merely allocates the MOVE buffer `_DAT_8007B888` and never calls `FUN_80026B4C`. So slot-4 bytes never become cluster-A TMDs; the `DAT_8007C018` kingdom entries are the scene's own type-`0x02` field-file TMD pack(s), installed by the single `FUN_80020224` descriptor-walk. |
 | World-map outline / coastline reading | falsified | Visual inspection plus the slot-4 record-semantic work refuted the "world-map overlay outlines / coastline wireframe" interpretation. Bodies are most likely small object-local 3D meshes; treat any future "kingdom border lines" claim with suspicion. |
+| Walk-view decoration layer = walk-bit (`0x1000`) cells plus a `FLAG_MESH_DRAWN` test | falsified (the gate is `0x2000` alone) | Plausible: every tree / prop cell carries both bits, and the one family the walk-bit sweep wrongly admitted (record 408, a wall down every river) happened to lack flag `0x2`, so a flag test "fixed" it. But the resident kernel (`FUN_801F69D8`, PROT 0901, `andi 0x2000` at `0x801F6ECC`) tests only the draw bit, never `+0x12 & 0x2` - and the big enterable mountains sit on cells with `0x2000` and **no** `0x1000` (the mesh is the ground there), so the walk-bit sweep drew every tree and dropped every mountain while looking complete ([world-map.md](../subsystems/world-map.md#placing-the-continent-terrain-engine-port)). |
 
 ## Battle / arts / level-up
 
@@ -616,9 +617,10 @@ capture set does not merely permit the second copy - it refutes its absence.
 
 **What this is still not.** Not the `+0x10` mesh puzzle - the walk-visible
 `.MAP` cells that name a pack mesh no layer draws. That family is `0x0011`,
-i.e. `FLAG_MESH_DRAWN` **clear**, and stamping it was separately falsified
-against retail: it draws a wall down every river (`FLAG_MESH_DRAWN` in
-`crates/asset/src/field_objects.rs`). And not the site's assembled map view or
+and stamping it was separately falsified against retail: it draws a wall down
+every river. (What keeps it out is the `0x2000` draw gate its cells never
+carry, not the `FLAG_MESH_DRAWN` bit - see the world-map table above.) And
+not the site's assembled map view or
 the engine's field renderer - those exclude `scene_tmd_stream` entries
 entirely and build the scene from the environment mesh pack plus the `.MAP`
 placements (`crates/web-viewer/tests/field_scene_assembly.rs`).
