@@ -249,8 +249,12 @@ namespace LegaiaWorld
         int localSpinSerial;
         int spinTimer;
         int payoutTimer;
-        uint rngState;   // slot LCG (strips + landings)
-        uint randState;  // feature-roll stream (BIOS-rand stand-in)
+        // Both RNG states are ints holding the u32 bit patterns: Udon does
+        // not expose the unsigned operators (uint % is a compile error), and
+        // wrapping int arithmetic is bit-identical for * + << ^, with masked
+        // arithmetic shifts standing in for the logical ones.
+        int rngState;    // slot LCG (strips + landings)
+        int randState;   // feature-roll stream (BIOS-rand stand-in)
         bool isLocalOwner;
         float tickAccum;
         float legendOffset;
@@ -370,25 +374,43 @@ namespace LegaiaWorld
 
         // --- RNG (FUN_801d30cc + the engine's BiosRand stand-in) -------------
 
-        uint NextRng()
+        // The slot LCG: x = x*5 + 1, 16-bit halves folded. Int arithmetic
+        // wraps exactly like the retail u32; `(x >> 16) & 0xFFFF` is the
+        // logical right shift Udon's int can express.
+        int NextRng()
         {
-            uint x = rngState * 5u + 1u;
-            rngState = (x << 16) + (x >> 16);
+            int x = rngState * 5 + 1;
+            rngState = (x << 16) + ((x >> 16) & 0xFFFF);
             return rngState;
+        }
+
+        /// The next slot-LCG value reduced mod `m`, as the retail u32 would
+        /// be: the value is `low31 + 2^31*highbit`, so fold `2^31 mod m` in
+        /// when the sign bit is set (2^31 = 2*2^30 keeps every term in int).
+        int NextRngMod(int m)
+        {
+            int x = NextRng();
+            int r = (x & 0x7FFFFFFF) % m;
+            if (x < 0)
+            {
+                int t = 1073741824 % m;
+                r = (r + t + t) % m;
+            }
+            return r;
         }
 
         int NextRand15()
         {
-            randState = randState * 1103515245u + 12345u;
-            return (int)((randState >> 16) & 0x7FFF);
+            randState = randState * 1103515245 + 12345;
+            return (randState >> 16) & 0x7FFF;
         }
 
         /// Owner-side flush: mirror both RNG streams into the synced fields so
         /// the next owner continues them, then serialize.
         void Serialize()
         {
-            syncRngState = (int)rngState;
-            syncRandState = (int)randState;
+            syncRngState = rngState;
+            syncRandState = randState;
             if (suppressSerialization)
                 return;
             RequestSerialization();
@@ -399,8 +421,8 @@ namespace LegaiaWorld
         void BuildStrips(int seed)
         {
             builtSeed = seed;
-            rngState = (uint)seed;
-            randState = (uint)seed ^ 0x5A5A5A5Au;
+            rngState = seed;
+            randState = seed ^ 0x5A5A5A5A;
             for (int i = 0; i < symbolStrip.Length; i++)
             {
                 symbolStrip[i] = -1;
@@ -413,12 +435,12 @@ namespace LegaiaWorld
                 // off the same RNG stream - the order is what the strips are.
                 for (int slot = 0; slot < STRIP_LEN; slot++)
                 {
-                    int pos = (int)(NextRng() % STRIP_LEN);
+                    int pos = NextRngMod(STRIP_LEN);
                     while (symbolStrip[b + pos] != -1)
                         pos = (pos + 13) % STRIP_LEN;
                     symbolStrip[b + pos] = slot / 2;
 
-                    pos = (int)(NextRng() % STRIP_LEN);
+                    pos = NextRngMod(STRIP_LEN);
                     while (bonusStrip[b + pos] != -1)
                         pos = (pos + 1) % STRIP_LEN;
                     bonusStrip[b + pos] = slot / 2 + BONUS_VALUE_BASE;
@@ -526,11 +548,11 @@ namespace LegaiaWorld
             int depth;
             int target;
             int mode = syncFeatureMode;
-            if (mode == 1) { depth = (int)((NextRng() & 3) + 6); target = punchSymbol; }
-            else if (mode == 2) { depth = (int)((NextRng() & 3) + 6); target = kickSymbol; }
+            if (mode == 1) { depth = (NextRng() & 3) + 6; target = punchSymbol; }
+            else if (mode == 2) { depth = (NextRng() & 3) + 6; target = kickSymbol; }
             else if (mode == FEATURE_MODE_BONUS) { depth = 0; target = -1; } // the free stop
             else if (mode == 4) { depth = STRIP_LEN; target = guarantee >= 0 ? guarantee : syncNormalTarget; }
-            else { depth = (int)(NextRng() % 3 + 2); target = syncNormalTarget; }
+            else { depth = NextRngMod(3) + 2; target = syncNormalTarget; }
 
             int fromRow = (reelPos[reel] >> 8) % STRIP_LEN;
             int row = LandRow(reel, fromRow, depth, target);
@@ -681,8 +703,8 @@ namespace LegaiaWorld
             // owner's left off.
             if (!isLocalOwner)
             {
-                rngState = (uint)syncRngState;
-                randState = (uint)syncRandState;
+                rngState = syncRngState;
+                randState = syncRandState;
             }
             if (syncSpinSerial != localSpinSerial)
             {
