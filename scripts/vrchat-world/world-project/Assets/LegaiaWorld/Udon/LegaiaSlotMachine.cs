@@ -89,6 +89,16 @@ namespace LegaiaWorld
         [Tooltip("Dots per second the attract legend scrolls.")]
         public float legendScrollSpeed = 20f;
 
+        [Header("Screen feed (flat-screen mode)")]
+        [Tooltip("Camera filming the hidden studio into the screen RenderTexture; null in behind-glass mode.")]
+        public Camera screenCamera;
+
+        [Tooltip("The visible screen quad - the camera pauses when no player is near it.")]
+        public Transform screenPlane;
+
+        [Tooltip("Metres from the screen beyond which the studio camera stops rendering (frozen last frame stays up).")]
+        public float cameraActiveDistance = 14f;
+
         [Header("HUD")]
         public TextMesh balanceText;
         public TextMesh statusText;
@@ -196,6 +206,7 @@ namespace LegaiaWorld
         float legendOffset;
         Material legendMaterial;
         int shownLegendMsg = -1;
+        int cameraPoll;
 
         void Start()
         {
@@ -572,6 +583,28 @@ namespace LegaiaWorld
             }
             ApplyReelTransforms();
             ScrollLegend();
+
+            // The studio camera is per-client cost: pause it (locally) when
+            // this player is nowhere near the cabinet screen.
+            cameraPoll++;
+            if (cameraPoll >= 30)
+            {
+                cameraPoll = 0;
+                UpdateCameraCulling();
+            }
+        }
+
+        void UpdateCameraCulling()
+        {
+            if (screenCamera == null)
+                return;
+            bool active = true;
+            var player = Networking.LocalPlayer;
+            if (player != null && screenPlane != null)
+                active = Vector3.Distance(player.GetPosition(), screenPlane.position)
+                    < cameraActiveDistance;
+            if (screenCamera.enabled != active)
+                screenCamera.enabled = active;
         }
 
         void Tick()

@@ -328,16 +328,23 @@ no casino coin bank to cash out to).
    dot-matrix messages, the paytable board, and `slot-machine.json`
    (payout table + the disc's own geometry tables).
 2. Put a cabinet mesh in the scene (the kit was drafted against a
-   modelled cabinet glb with a screen cutout and three button nodes
-   named `Circle.001` / `Circle.002` / `Circle.003`).
+   modelled cabinet glb with three button nodes named `Circle.001` /
+   `Circle.002` / `Circle.003`).
 3. Menu **Legaia > Build Slot Machine...**, point it at the cabinet root
-   and the art folder, **Build slot machine**. The rig is built in the
-   retail scene's model units and scaled so the 1280-unit glass width
-   becomes the window's `Glass width`; drag the `LegaiaSlotGame` root to
-   line the reels up with the screen cutout, then copy its transform
-   into the window fields so a rebuild lands in the same place. Named
-   button nodes get fitted colliders + `LegaiaSlotButton`; missing ones
-   (a stale mesh) get fallback pads.
+   and the art folder, **Build slot machine**. In the default **Flat
+   screen** mode the machine is *filmed, not modelled on the glass*: the
+   3D scene is built in a hidden studio 40 m below the cabinet, a camera
+   films it into a point-sampled 640x480 RenderTexture, and that feed is
+   shown on a flat screen quad at the anchor - so the cabinet needs no
+   screen cutout, just a flat screen area for the quad to sit on. Drag
+   the `LegaiaSlotGame` root to place the screen, then copy its
+   transform into the window fields so a rebuild lands in the same
+   place; `View centre` / `View half-width` crop the filmed frame. The
+   camera pauses per-client when nobody is near the screen. Untick
+   **Flat screen** for the older behind-a-cutout build (the same rig,
+   placed at the anchor at glass scale). Named button nodes get fitted
+   colliders + `LegaiaSlotButton`; missing ones (a stale mesh) get
+   fallback pads under the screen.
 
 Sync model: the last player to press a button owns the machine and runs
 the rules; outcomes (stop rows, wins, balance) sync, and every client
