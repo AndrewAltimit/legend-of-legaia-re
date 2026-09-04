@@ -107,15 +107,18 @@ namespace LegaiaWorld
         [Tooltip("Dots per second the attract legend scrolls.")]
         public float legendScrollSpeed = 20f;
 
-        [Header("Screen feed (flat-screen mode)")]
-        [Tooltip("Camera filming the hidden studio into the screen RenderTexture; null in behind-glass mode.")]
-        public Camera screenCamera;
+        [Header("Screen projection")]
+        [Tooltip("Software-projection camera distance in model units (the retail slot scene's framing; the builder bakes the same value into the static quads).")]
+        public float projectionDistance = 3000f;
 
-        [Tooltip("The visible screen quad - the camera pauses when no player is near it.")]
-        public Transform screenPlane;
+        [Tooltip("Projection centre x in model units (what the retail camera looks at).")]
+        public float viewCenterX = 80f;
 
-        [Tooltip("Metres from the screen beyond which the studio camera stops rendering (frozen last frame stays up).")]
-        public float cameraActiveDistance = 14f;
+        [Tooltip("Projection centre y in model units, y up.")]
+        public float viewCenterY = -150f;
+
+        [Tooltip("Metres from the machine beyond which the per-frame visual updates pause (the last-drawn frame stays up).")]
+        public float visualsActiveDistance = 14f;
 
         [Header("HUD")]
         // World-space TextMeshPro, NOT legacy TextMesh - the SDK ships no
@@ -264,7 +267,7 @@ namespace LegaiaWorld
         Material legendMaterial;
         int shownLegendMsg = -1;
         int shownStateHash = -1;
-        int cameraPoll;
+        int gatePoll;
         bool visualsActive = true;
 
         void Start()
@@ -321,8 +324,10 @@ namespace LegaiaWorld
         {
             if (reelShadeOrigin == null || valueMaterials == null)
                 return;
-            float unit = reelShadeOrigin.lossyScale.z;
-            if (unit < 1e-6f)
+            // lossyScale.z carries the composition's z flatten; the shader's
+            // reconstructed model z stays retail-exact because it cancels.
+            float unit = Mathf.Abs(reelShadeOrigin.lossyScale.z);
+            if (unit < 1e-9f) // the flatten makes this legitimately tiny
                 return;
             Vector4 origin = reelShadeOrigin.position;
             Vector4 axis = reelShadeOrigin.forward * (-1f / unit);
@@ -744,15 +749,14 @@ namespace LegaiaWorld
                 Tick();
             }
 
-            // The studio camera is per-client cost: pause it (locally) when
-            // this player is nowhere near the cabinet screen. The same gate
-            // pauses all the visual work - what the camera doesn't film,
-            // nobody sees.
-            cameraPoll++;
-            if (cameraPoll >= 30)
+            // Per-frame visual updates are per-client cost: pause them
+            // (locally) when this player is nowhere near the machine. The
+            // renderers stay up showing the last-drawn frame.
+            gatePoll++;
+            if (gatePoll >= 30)
             {
-                cameraPoll = 0;
-                UpdateCameraCulling();
+                gatePoll = 0;
+                UpdateVisualsGate();
             }
             if (!visualsActive)
                 return;
@@ -768,15 +772,13 @@ namespace LegaiaWorld
             ScrollLegend();
         }
 
-        void UpdateCameraCulling()
+        void UpdateVisualsGate()
         {
             bool active = true;
             var player = Networking.LocalPlayer;
-            if (player != null && screenPlane != null)
-                active = Vector3.Distance(player.GetPosition(), screenPlane.position)
-                    < cameraActiveDistance;
-            if (screenCamera != null && screenCamera.enabled != active)
-                screenCamera.enabled = active;
+            if (player != null)
+                active = Vector3.Distance(player.GetPosition(), transform.position)
+                    < visualsActiveDistance;
             if (active && !visualsActive)
                 ForceRedraw(); // catch up everything missed while paused
             visualsActive = active;
@@ -869,6 +871,13 @@ namespace LegaiaWorld
                     continue;
                 lastDrawnPos[r] = drawPos;
 
+                // Software perspective: the composition sits flattened on the
+                // cabinet's screen face, so each face applies the projection
+                // the retail camera used to provide - scale and shift by
+                // k = D / (D - z) about the view centre. The pivot itself
+                // sits unprojected on the z=0 (payline) plane.
+                float pivotX = reelPivots[r].localPosition.x;
+
                 int row0 = (drawPos >> 8) % STRIP_LEN;
                 int frac = drawPos & 0xFF;
                 int baseEdge = (FACE_ANGLE_BASE + frac) >> 4;
@@ -886,12 +895,20 @@ namespace LegaiaWorld
                     float zB = edgeZ[iB];
                     float dy = yT - yB;
                     float dz = zT - zB;
-                    face.localPosition =
-                        new Vector3(0f, (yT + yB) * 0.5f, (zT + zB) * 0.5f);
+                    float yC = (yT + yB) * 0.5f;
+                    float zC = (zT + zB) * 0.5f;
+                    float k = projectionDistance / (projectionDistance - zC);
+                    face.localPosition = new Vector3(
+                        (pivotX - viewCenterX) * (k - 1f),
+                        viewCenterY + (yC - viewCenterY) * k,
+                        zC);
                     // Quad +Z = the outward chord normal, +Y = up the edge.
+                    // The composition root's z flatten squashes the rotated
+                    // quad to the foreshortened chord height on screen.
                     face.localRotation = Quaternion.LookRotation(
                         new Vector3(0f, -dz, dy), new Vector3(0f, dy, dz));
-                    face.localScale = new Vector3(reelFaceWidth, faceLen[iT], 1f);
+                    face.localScale =
+                        new Vector3(reelFaceWidth * k, faceLen[iT] * k, 1f);
 
                     // The strip walks downward as the angle advances: the
                     // payline face (4) carries row0, faces above carry the

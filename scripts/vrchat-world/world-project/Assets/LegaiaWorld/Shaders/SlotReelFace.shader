@@ -29,6 +29,10 @@ Shader "LegaiaWorld/SlotReelFace"
     {
         Tags { "Queue" = "AlphaTest" "RenderType" = "TransparentCutout" }
         Lighting Off
+        // The screen composition is x-mirrored at its root (one flip makes
+        // a +z-facing quad read correctly to the player), which reverses
+        // triangle winding - so nothing here may backface-cull.
+        Cull Off
         Pass
         {
             CGPROGRAM

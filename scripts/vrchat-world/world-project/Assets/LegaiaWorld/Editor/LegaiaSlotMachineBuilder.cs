@@ -6,9 +6,24 @@
 //   asset slot-art extracted/PROT/0975_*.BIN extracted/PROT/1200_*.BIN \
 //       --out "<unity project>/Assets/LegaiaImports/slot-art"
 //
-// What gets built, in the retail scene's own model units (the studio node is
-// scaled so the 1280-unit glass width becomes `screenWidth` metres; local
-// frame: x right, y up = -PSX y, z toward the player = -PSX z):
+// What gets built, in the retail scene's own model units (local frame:
+// x right, y up = -PSX y, z toward the player = -PSX z). The whole
+// composition is parented DIRECTLY onto the cabinet's screen face - no
+// hidden studio, no camera, no RenderTexture. The composition root:
+//
+// - scales so the old filmed frame (view centre +- view half-width) spans
+//   the screen node;
+// - mirrors x once (negative x scale): a +z-facing quad reads mirrored to
+//   the player looking at it, so exactly one flip is correct - which is
+//   why every shader here is Cull Off (the mirror reverses winding);
+// - flattens z by Z_FLATTEN, so the drum and overlay layers are millimetres
+//   of relief on the cabinet face; overlay ordering is decided by material
+//   renderQueue, not by the micrometre z gaps the flatten leaves;
+// - bakes the retail camera's perspective in software: every static quad is
+//   placed at k = D/(D - z) about the view centre, and LegaiaSlotMachine
+//   applies the same k to the 8 drum faces per frame. Without it the lamps
+//   and paylines (z ~800, k ~1.36) would misalign with the payline symbols
+//   (z ~500, k ~1.2).
 //
 // - three reel drums as retail draws them (FUN_801d0fa8): 8 face quads per
 //   reel that LegaiaSlotMachine re-derives per frame at a 22.5-degree pitch
@@ -25,9 +40,6 @@
 // - the three cabinet buttons wired as LegaiaSlotButton interacts (named
 //   nodes on the cabinet mesh; fallback pads are built when missing).
 //
-// Generated screen-feed assets (RenderTexture + screen material) are named
-// per cabinet, so several machines in one scene don't fight over one feed.
-//
 // Everything the builder generates is from-scratch; the textures it consumes
 // are the user's own disc-decoded exports (never committed).
 
@@ -42,9 +54,21 @@ namespace LegaiaWorld
     {
         const string RIG_NAME = "LegaiaSlotGame";
         const string GEN_DIR = "Assets/LegaiaGenerated/slot-machine";
-        // The glass spans x -640..+640 in model units (the payline table).
-        const float GLASS_SPAN = 1280f;
         const int FACE_COUNT = 8;
+
+        // Software projection (the retail slot camera's framing) + the z
+        // flatten that turns the composition into screen-face relief.
+        const float PROJ_DIST = 3000f;
+        const float Z_FLATTEN = 0.02f;
+
+        // renderQueue ladder: the flattened overlay layers draw in this
+        // order (later wins at equal depth), replacing z separation.
+        const int Q_BACKDROP = 2445;
+        const int Q_REEL_FACE = 2450;
+        const int Q_MARQUEE_BB = 2452;
+        const int Q_PEDESTAL = 2453;
+        const int Q_GLASS = 2454;   // lamps, medallions, paytable
+        const int Q_MESSAGE = 2456;
 
         // Kit-level layout (not disc data): the paytable board and HUD text.
         static readonly Vector3 PAYTABLE_POS = new Vector3(950f, 60f, 802f);
@@ -62,14 +86,8 @@ namespace LegaiaWorld
         bool flipButtonOrder;
         bool buildPaytable = true;
         bool buildFallbackButtons = true;
-        bool flatScreen = true;
         Vector2 viewCenter = new Vector2(80f, -150f);
         float viewHalfWidth = 1250f;
-
-        // Studio-camera geometry (model units / derived from the unit scale).
-        const float CAM_DIST = 3000f;
-        const int RT_WIDTH = 640;
-        const int RT_HEIGHT = 480;
 
         [MenuItem("Legaia/Build Slot Machine...")]
         static void Open()
@@ -89,40 +107,33 @@ namespace LegaiaWorld
             cabinet = (GameObject)EditorGUILayout.ObjectField(
                 "Cabinet root", cabinet, typeof(GameObject), true);
             artDir = EditorGUILayout.TextField("Art folder", artDir);
-            flatScreen = EditorGUILayout.Toggle(
-                new GUIContent("Flat screen",
-                    "Film a hidden studio into a RenderTexture on a flat " +
-                    "screen quad (recommended). Off = the 3D rig sits behind " +
-                    "the cabinet's screen cutout instead."), flatScreen);
             screenWidth = EditorGUILayout.FloatField(
-                new GUIContent("Screen width (m)",
-                    "Metres across the visible screen (flat mode) or the " +
-                    "1280-unit glass span (behind-glass mode)."), screenWidth);
+                new GUIContent("Screen width",
+                    "Width of the visible screen in cabinet-local units " +
+                    "(derived from the screen node when one is found)."),
+                screenWidth);
             rigOffset = EditorGUILayout.Vector3Field(
                 new GUIContent("Screen local position",
-                    "Local position of the screen (or rig) under the cabinet root."),
+                    "Local position of the screen centre under the cabinet root."),
                 rigOffset);
             rigYaw = EditorGUILayout.FloatField(
                 new GUIContent("Screen yaw",
                     "Local Y rotation; +Z faces the player."), rigYaw);
-            if (flatScreen)
-            {
-                screenNodeName = EditorGUILayout.TextField(
-                    new GUIContent("Screen node",
-                        "Cabinet node whose flat face the screen quad snaps " +
-                        "to. When found, the position/size fields above are " +
-                        "derived from it (the face must look along the " +
-                        "cabinet's +Z). Clear to place by hand."),
-                    screenNodeName);
-                viewCenter = EditorGUILayout.Vector2Field(
-                    new GUIContent("View centre (model units)",
-                        "What the studio camera looks at; 0,0 = the payline centre."),
-                    viewCenter);
-                viewHalfWidth = EditorGUILayout.FloatField(
-                    new GUIContent("View half-width (model units)",
-                        "Horizontal half-extent of the filmed frame (glass is 640)."),
-                    viewHalfWidth);
-            }
+            screenNodeName = EditorGUILayout.TextField(
+                new GUIContent("Screen node",
+                    "Cabinet node whose flat face the composition snaps " +
+                    "to. When found, the position/size fields above are " +
+                    "derived from it (the face must look along the " +
+                    "cabinet's +Z). Clear to place by hand."),
+                screenNodeName);
+            viewCenter = EditorGUILayout.Vector2Field(
+                new GUIContent("View centre (model units)",
+                    "Composition point at the screen centre; 0,0 = the payline centre."),
+                viewCenter);
+            viewHalfWidth = EditorGUILayout.FloatField(
+                new GUIContent("View half-width (model units)",
+                    "Horizontal half-extent shown across the screen (glass is 640)."),
+                viewHalfWidth);
             buttonNames = EditorGUILayout.TextField(
                 new GUIContent("Button nodes",
                     "';'-separated node names on the cabinet mesh, wired left to right."),
@@ -169,55 +180,60 @@ namespace LegaiaWorld
             // A cabinet node named after `screenNodeName` (e.g. the mesh's
             // own "screen" face) pins the build: position, yaw and width are
             // derived from its face instead of the hand-tuned fields. Runs
-            // after the old rig is destroyed so it can't match the generated
-            // quad of a previous build (also named "screen").
+            // after the old rig is destroyed so it can't match anything a
+            // previous build generated.
             TrySnapToScreenNode(parent);
 
-            // Root: the visible anchor (screen quad, machine behaviour,
-            // fallback buttons - all in metres). The machine itself is built
-            // under a "studio" child in the retail scene's model units: at
-            // the anchor in behind-glass mode, or parked 40 m below in flat
-            // mode, where only the studio camera ever sees it.
+            // Root: the anchor at the cabinet's screen face (behaviour +
+            // fallback buttons, cabinet units). The composition is built
+            // under a "screen_root" child, in the retail scene's model
+            // units, directly on the face:
+            //
+            // - scale x is NEGATIVE - the single mirror that makes a
+            //   +z-facing quad read correctly to a player looking at it
+            //   (every shader in the build is Cull Off for this);
+            // - scale z carries the flatten - the drum and overlays become
+            //   millimetres of relief instead of a hologram;
+            // - the position puts the view centre at the screen centre.
             var rig = new GameObject(RIG_NAME);
             Undo.RegisterCreatedObjectUndo(rig, "Build Legaia slot machine");
             if (parent != null)
                 rig.transform.SetParent(parent, false);
             rig.transform.localPosition = rigOffset;
             rig.transform.localRotation = Quaternion.Euler(0f, rigYaw, 0f);
-            var studioGo = new GameObject("studio");
+            var studioGo = new GameObject("screen_root");
             studioGo.transform.SetParent(rig.transform, false);
-            // The hidden-studio drop is 40 WORLD metres: the rig inherits the
-            // cabinet's scale (a glb authored in centimetres often carries an
-            // import scale), and a raw local drop would shrink with it and
-            // leave the studio visibly inside the world.
-            float drop = 40f / Mathf.Max(rig.transform.lossyScale.y, 1e-6f);
+            float compScale = screenWidth / (2f * viewHalfWidth);
+            studioGo.transform.localScale =
+                new Vector3(-compScale, compScale, compScale * Z_FLATTEN);
             studioGo.transform.localPosition =
-                flatScreen ? new Vector3(0f, -drop, 0f) : Vector3.zero;
-            studioGo.transform.localScale = Vector3.one * (screenWidth / GLASS_SPAN);
+                new Vector3(compScale * viewCenter.x, -compScale * viewCenter.y, 0f);
             Transform studio = studioGo.transform;
-            float worldUnit = studio.lossyScale.x;
+            float worldUnit = Mathf.Abs(studio.lossyScale.x);
 
             Mesh quad = EnsureQuadMesh();
 
             // --- materials over the exported art -------------------------
-            // Reel faces get the depth-cue shader; everything else is plain
-            // unlit cutout.
+            // Reel faces get the depth-cue shader; everything else is the
+            // kit's Cull Off cutout (the mirror reverses winding, so the
+            // legacy back-culled cutout would render nothing).
             var faceShader = Shader.Find("LegaiaWorld/SlotReelFace");
             if (faceShader == null)
                 Debug.LogWarning("[Legaia] LegaiaWorld/SlotReelFace shader not found " +
                     "(is Assets/LegaiaWorld/Shaders synced?) - reel faces fall " +
-                    "back to unshaded cutout.");
+                    "back to unshaded cutout AND will be invisible (backface" +
+                    " culled under the mirrored composition).");
             var valueMats = new Material[20];
-            for (int s = 0; s < 10; s++)
-                valueMats[s] = CutoutMat("symbol_" + s, "symbols/symbol_" + s + ".png",
-                    false, faceShader);
+            for (int i = 0; i < 10; i++)
+                valueMats[i] = CutoutMat("symbol_" + i, "symbols/symbol_" + i + ".png",
+                    false, faceShader, Q_REEL_FACE);
             for (int n = 1; n <= 10; n++)
                 valueMats[9 + n] = CutoutMat("numeral_" + n, "symbols/numeral_" + n + ".png",
-                    false, faceShader);
+                    false, faceShader, Q_REEL_FACE);
             var msgMats = new Material[21];
             for (int i = 0; i < 21; i++)
                 msgMats[i] = CutoutMat("msg_" + i.ToString("00"),
-                    "marquee/msg_" + i.ToString("00") + "_a.png", true);
+                    "marquee/msg_" + i.ToString("00") + "_a.png", true, null, Q_MESSAGE);
 
             var reelsRoot = Child(studio, "reels", Vector3.zero);
             var reelPivots = new Transform[3];
@@ -242,16 +258,19 @@ namespace LegaiaWorld
 
             var hud = Child(studio, "hud", Vector3.zero);
             if (buildPaytable)
-                MakeQuad(hud, "paytable", quad, PAYTABLE_POS,
+                MakeQuad(hud, "paytable", quad, Proj(PAYTABLE_POS),
+                    ProjK(PAYTABLE_POS.z) *
                     new Vector2(127f * PAYTABLE_SCALE, 239f * PAYTABLE_SCALE),
-                    CutoutMat("paytable", "hud/paytable.png", false));
-            var balanceText = MakeText(hud, "balance", HUD_BALANCE_POS, 60f);
-            var statusText = MakeText(hud, "status", HUD_STATUS_POS, 40f);
+                    CutoutMat("paytable", "hud/paytable.png", false, null, Q_GLASS));
+            var balanceText = MakeText(hud, "balance", Proj(HUD_BALANCE_POS),
+                60f * ProjK(HUD_BALANCE_POS.z));
+            var statusText = MakeText(hud, "status", Proj(HUD_STATUS_POS),
+                40f * ProjK(HUD_STATUS_POS.z));
 
-            Camera screenCamera;
-            Transform screenPlane;
-            BuildScreenFeed(rig, studio, quad, worldUnit,
-                out screenCamera, out screenPlane);
+            // Stale feed assets from a pre-direct-screen build (the studio
+            // camera's RenderTexture + flipped screen material).
+            AssetDatabase.DeleteAsset(GEN_DIR + "/slot_screen_" + RigAssetSuffix() + ".renderTexture");
+            AssetDatabase.DeleteAsset(GEN_DIR + "/slot_screen_" + RigAssetSuffix() + ".mat");
 
             // --- the machine behaviour -----------------------------------
             var machine = LegaiaWorldBuilder.TryAttachUdon(rig, "LegaiaSlotMachine");
@@ -298,8 +317,9 @@ namespace LegaiaWorld
             W("msgCoins", (int)MiniJson.GetNum(m, "msg_coins", 20f));
             W("dotCols", (int)dotCols);
             W("dotRows", (int)dotRows);
-            W("screenCamera", screenCamera);
-            W("screenPlane", screenPlane);
+            W("projectionDistance", PROJ_DIST);
+            W("viewCenterX", viewCenter.x);
+            W("viewCenterY", viewCenter.y);
             LegaiaWorldBuilder.SyncUdonProxy(machine);
 
             WireButtons(rig, machine, worldUnit);
@@ -309,6 +329,28 @@ namespace LegaiaWorld
                 ". Drag '" + RIG_NAME + "' to line the screen up with the " +
                 "cabinet; test in ClientSim / Build & Test (Interact the " +
                 "three buttons).");
+        }
+
+        // --- software projection ------------------------------------------
+
+        /// Scale factor about the view centre for a point at composition z -
+        /// the perspective the studio camera used to provide, now baked into
+        /// placements (and applied per frame to the drum faces by
+        /// LegaiaSlotMachine, which is wired the same constants).
+        float ProjK(float z)
+        {
+            return PROJ_DIST / (PROJ_DIST - z);
+        }
+
+        /// Project a composition-frame position: x/y scaled by k(z) about
+        /// the view centre; z kept (the composition root's scale flattens it).
+        Vector3 Proj(Vector3 p)
+        {
+            float k = ProjK(p.z);
+            return new Vector3(
+                viewCenter.x + (p.x - viewCenter.x) * k,
+                viewCenter.y + (p.y - viewCenter.y) * k,
+                p.z);
         }
 
         // --- the reels ----------------------------------------------------
@@ -334,7 +376,8 @@ namespace LegaiaWorld
                 {
                     var face = new GameObject("face_" + f);
                     face.transform.SetParent(pivot, false);
-                    PlaceDrumFace(face.transform, f, ry, rz, reelW);
+                    PlaceDrumFace(face.transform, f, ry, rz, reelW,
+                        pivot.localPosition.x);
                     face.AddComponent<MeshFilter>().sharedMesh = quad;
                     var mr = face.AddComponent<MeshRenderer>();
                     mr.sharedMaterial = valueMats[f % 10];
@@ -345,15 +388,19 @@ namespace LegaiaWorld
             // A black backdrop behind the drums so the cabinet interior never
             // shows through. (No shade overlay any more - the depth-cue fade
             // is the face shader's, as in retail.)
-            MakeQuad(reelsRoot, "backdrop", quad, new Vector3(0f, 0f, -620f),
-                new Vector2(1500f, 1400f), BlackMat());
+            var back = new Vector3(0f, 0f, -620f);
+            MakeQuad(reelsRoot, "backdrop", quad, Proj(back),
+                ProjK(back.z) * new Vector2(1500f, 1400f), BlackMat());
             return reelW;
         }
 
         /// Face f's frac-0 pose: top edge at angle 0x380 + f*0x100 of a
         /// 0x1000 turn, on the y/z ellipse, in the rig frame (both PSX signs
-        /// flipped). Mirror of LegaiaSlotMachine.ApplyReelVisuals.
-        static void PlaceDrumFace(Transform face, int f, float ry, float rz, float w)
+        /// flipped), through the software projection. Mirror of
+        /// LegaiaSlotMachine.ApplyReelVisuals - runtime overwrites this on
+        /// the first visual pass; this is the edit-mode preview.
+        void PlaceDrumFace(Transform face, int f, float ry, float rz, float w,
+            float pivotX)
         {
             float step = Mathf.PI * 2f / 4096f;
             float aT = (0x380 + f * 0x100) * step;
@@ -364,18 +411,29 @@ namespace LegaiaWorld
             float zB = -Mathf.Cos(aB) * rz;
             float dy = yT - yB;
             float dz = zT - zB;
-            face.localPosition = new Vector3(0f, (yT + yB) * 0.5f, (zT + zB) * 0.5f);
+            float yC = (yT + yB) * 0.5f;
+            float zC = (zT + zB) * 0.5f;
+            float k = ProjK(zC);
+            face.localPosition = new Vector3(
+                (pivotX - viewCenter.x) * (k - 1f),
+                viewCenter.y + (yC - viewCenter.y) * k,
+                zC);
             face.localRotation = Quaternion.LookRotation(
                 new Vector3(0f, -dz, dy), new Vector3(0f, dy, dz));
-            face.localScale = new Vector3(w, Mathf.Sqrt(dy * dy + dz * dz), 1f);
+            face.localScale =
+                new Vector3(w * k, Mathf.Sqrt(dy * dy + dz * dz) * k, 1f);
         }
 
         /// Bake the face shader's world -> model-z reconstruction (the same
         /// pair LegaiaSlotMachine.BakeShadeVectors refreshes at Start).
         static void BakeShadeVectors(Transform studio, Transform reelsRoot, Material[] mats)
         {
-            float unit = studio.lossyScale.z;
-            if (unit < 1e-6f)
+            // lossyScale.z carries the composition's z flatten, so the
+            // shader's reconstructed model z stays retail-exact (the
+            // flatten cancels); Abs guards against the mirrored x leaking
+            // a sign through a rotated setup.
+            float unit = Mathf.Abs(studio.lossyScale.z);
+            if (unit < 1e-9f) // the flatten makes this legitimately tiny
                 return;
             Vector4 origin = reelsRoot.position;
             Vector4 axis = (Vector4)(studio.forward * (-1f / unit));
@@ -397,22 +455,28 @@ namespace LegaiaWorld
             out Material[] pedSpin, out Material[] pedStop)
         {
             var glass = Child(studio, "glass", Vector3.zero);
-            lampLit = CutoutMat("lamp_lit", "furniture/lamp_lit.png", false);
-            lampUnlit = CutoutMat("lamp_unlit", "furniture/lamp_unlit.png", false);
+            lampLit = CutoutMat("lamp_lit", "furniture/lamp_lit.png", false, null, Q_GLASS);
+            lampUnlit = CutoutMat("lamp_unlit", "furniture/lamp_unlit.png", false, null, Q_GLASS);
             var lamps = MiniJson.AsList(MiniJson.Get(m, "lamps"));
             float lampW = 2f * MiniJson.GetNum(m, "lamp_half_w", 180f);
             float lampH = 2f * MiniJson.GetNum(m, "lamp_half_h", 160f);
             for (int i = 0; lamps != null && i < lamps.Count && i < 5; i++)
+            {
+                var p = PsxPos(lamps[i], 2f);
                 lampRenderers[i] = MakeQuad(glass, "lamp_" + i, quad,
-                    PsxPos(lamps[i], 2f), new Vector2(lampW, lampH), lampUnlit);
+                    Proj(p), ProjK(p.z) * new Vector2(lampW, lampH), lampUnlit);
+            }
             var medallions = MiniJson.AsList(MiniJson.Get(m, "medallions"));
             float medW = MiniJson.GetNum(m, "medallion_half_w", 416f);
             float medH = MiniJson.GetNum(m, "medallion_half_h", 208f);
             for (int i = 0; medallions != null && i < medallions.Count && i < 5; i++)
+            {
+                var p = PsxPos(MiniJson.Get(medallions[i], "pos"), 2f);
                 MakeQuad(glass, "medallion_" + i, quad,
-                    PsxPos(MiniJson.Get(medallions[i], "pos"), 2f),
-                    new Vector2(medW, medH),
-                    CutoutMat("medallion_" + i, "furniture/medallion_" + i + ".png", false));
+                    Proj(p), ProjK(p.z) * new Vector2(medW, medH),
+                    CutoutMat("medallion_" + i, "furniture/medallion_" + i + ".png",
+                        false, null, Q_GLASS));
+            }
             pedSpin = new Material[3];
             pedStop = new Material[3];
             float pedX0 = MiniJson.GetNum(m, "pedestal_x0", -384f);
@@ -423,22 +487,24 @@ namespace LegaiaWorld
             for (int r = 0; r < 3; r++)
             {
                 pedSpin[r] = CutoutMat("pedestal_" + r + "_spin",
-                    "furniture/pedestal_" + r + "_spin.png", false);
+                    "furniture/pedestal_" + r + "_spin.png", false, null, Q_PEDESTAL);
                 pedStop[r] = CutoutMat("pedestal_" + r + "_stop",
-                    "furniture/pedestal_" + r + "_stop.png", false);
+                    "furniture/pedestal_" + r + "_stop.png", false, null, Q_PEDESTAL);
+                var p = new Vector3(pedX0 + r * pedXStep, -pedY, 801f);
                 pedestalRenderers[r] = MakeQuad(glass, "pedestal_" + r, quad,
-                    new Vector3(pedX0 + r * pedXStep, -pedY, 801f),
-                    new Vector2(pedW, pedH), pedSpin[r]);
+                    Proj(p), ProjK(p.z) * new Vector2(pedW, pedH), pedSpin[r]);
             }
             var marqueeBbs = MiniJson.AsList(MiniJson.Get(m, "marquee"));
             for (int i = 0; marqueeBbs != null && i < marqueeBbs.Count && i < 3; i++)
             {
                 var bb = marqueeBbs[i];
+                var p = PsxPos(MiniJson.Get(bb, "pos"), -1f);
                 MakeQuad(glass, "marquee_bb_" + i, quad,
-                    PsxPos(MiniJson.Get(bb, "pos"), -1f),
-                    new Vector2(2f * MiniJson.GetNum(bb, "half_w", 100f),
-                                2f * MiniJson.GetNum(bb, "half_h", 100f)),
-                    CutoutMat("marquee_" + i, "furniture/marquee_" + i + ".png", false));
+                    Proj(p),
+                    ProjK(p.z) * new Vector2(2f * MiniJson.GetNum(bb, "half_w", 100f),
+                                             2f * MiniJson.GetNum(bb, "half_h", 100f)),
+                    CutoutMat("marquee_" + i, "furniture/marquee_" + i + ".png",
+                        false, null, Q_MARQUEE_BB));
             }
 
             // Paylines: the disc's five 3D segments, lit by the behaviour.
@@ -451,10 +517,13 @@ namespace LegaiaWorld
                 var lr = go.AddComponent<LineRenderer>();
                 lr.useWorldSpace = false;
                 lr.positionCount = 2;
-                lr.SetPosition(0, PsxPos(MiniJson.Get(paylines[i], "a"), 4f));
-                lr.SetPosition(1, PsxPos(MiniJson.Get(paylines[i], "b"), 4f));
-                lr.startWidth = 10f * worldUnit;
-                lr.endWidth = 10f * worldUnit;
+                var a = PsxPos(MiniJson.Get(paylines[i], "a"), 4f);
+                var b = PsxPos(MiniJson.Get(paylines[i], "b"), 4f);
+                lr.SetPosition(0, Proj(a));
+                lr.SetPosition(1, Proj(b));
+                float lineW = 10f * worldUnit * ProjK((a.z + b.z) * 0.5f);
+                lr.startWidth = lineW;
+                lr.endWidth = lineW;
                 lr.sharedMaterial = lineMat;
                 lr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
                 paylineLines[i] = lr;
@@ -475,8 +544,12 @@ namespace LegaiaWorld
             float dotY0 = MiniJson.GetNum(m, "dot_y0", -640f);
             float dotXStep = MiniJson.GetNum(m, "dot_x_step", 11f);
             float dotYStep = MiniJson.GetNum(m, "dot_y_step", 12f);
-            var marquee = Child(studio, "marquee", new Vector3(dotX0, -dotY0, 806f));
-            marquee.localScale = new Vector3(dotXStep, dotYStep, 1f);
+            // The whole dot grid inherits the projection through the anchor's
+            // position and per-dot scale.
+            var anchorPos = new Vector3(dotX0, -dotY0, 806f);
+            float mk = ProjK(anchorPos.z);
+            var marquee = Child(studio, "marquee", Proj(anchorPos));
+            marquee.localScale = new Vector3(dotXStep * mk, dotYStep * mk, 1f);
             tallySlots = MarqueeSlots(marquee, quad, "tally", 3);
             timesSlots = MarqueeSlots(marquee, quad, "times", 2);
             pipSlots = MarqueeSlots(marquee, quad, "pip", 3);
@@ -489,47 +562,6 @@ namespace LegaiaWorld
             legendQuad.transform.localScale = new Vector3(dotCols, dotRows, 1f);
             legendQuad.sharedMaterial = msgMats[0];
             legendQuad.gameObject.SetActive(true);
-        }
-
-        // --- the screen feed (flat mode) ----------------------------------
-
-        /// A camera films the hidden studio into a RenderTexture shown on a
-        /// flat quad at the anchor - the machine is filmed, not modelled on
-        /// the glass. The quad's horizontal UV is flipped: the camera faces
-        /// the machine, so its image mirrors model +x, while retail projects
-        /// +x to screen-right (lamps on the right).
-        void BuildScreenFeed(GameObject rig, Transform studio, Mesh quad,
-            float worldUnit, out Camera screenCamera, out Transform screenPlane)
-        {
-            screenCamera = null;
-            screenPlane = null;
-            if (!flatScreen)
-                return;
-            var rt = EnsureScreenRT();
-            var camGo = new GameObject("screen_camera");
-            camGo.transform.SetParent(studio, false);
-            camGo.transform.localPosition =
-                new Vector3(viewCenter.x, viewCenter.y, CAM_DIST);
-            camGo.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
-            screenCamera = camGo.AddComponent<Camera>();
-            screenCamera.clearFlags = CameraClearFlags.SolidColor;
-            screenCamera.backgroundColor = Color.black;
-            float halfH = viewHalfWidth * ((float)RT_HEIGHT / RT_WIDTH);
-            screenCamera.fieldOfView =
-                2f * Mathf.Atan(halfH / CAM_DIST) * Mathf.Rad2Deg;
-            // Clip tightly around the studio so nothing else underground
-            // can wander into frame; distances scale with the unit size.
-            screenCamera.nearClipPlane = Mathf.Max(0.01f, 1000f * worldUnit);
-            screenCamera.farClipPlane = 4500f * worldUnit;
-            screenCamera.allowHDR = false;
-            screenCamera.allowMSAA = false;
-            screenCamera.useOcclusionCulling = false;
-            screenCamera.targetTexture = rt;
-
-            var screenMr = MakeQuad(rig.transform, "screen", quad, Vector3.zero,
-                new Vector2(screenWidth, screenWidth * ((float)RT_HEIGHT / RT_WIDTH)),
-                ScreenMat(rt));
-            screenPlane = screenMr.transform;
         }
 
         // ------------------------------------------------------------------
@@ -633,7 +665,7 @@ namespace LegaiaWorld
         /// the build, and used verbatim by a later manual rebuild).
         void TrySnapToScreenNode(Transform parent)
         {
-            if (!flatScreen || parent == null)
+            if (parent == null)
                 return;
             string name = screenNodeName != null ? screenNodeName.Trim() : "";
             if (name.Length == 0)
@@ -672,8 +704,8 @@ namespace LegaiaWorld
                     "' has a degenerate face - placing the screen by hand instead.");
                 return;
             }
-            // Centre of the face, nudged just in front of it so the feed
-            // quad covers the cabinet's own baked screen material.
+            // Centre of the face, nudged just in front of it so the
+            // composition covers the cabinet's own baked screen material.
             screenWidth = w;
             rigOffset = new Vector3(
                 (min.x + max.x) * 0.5f,
@@ -682,7 +714,7 @@ namespace LegaiaWorld
             rigYaw = 0f;
             Debug.Log("[Legaia] screen snapped to node '" + name + "': " +
                 w.ToString("0.###") + " x " + h.ToString("0.###") +
-                " (cabinet units; feed quad is 4:3 " + w.ToString("0.###") + " x " +
+                " (cabinet units; composition is 4:3 " + w.ToString("0.###") + " x " +
                 (w * 0.75f).ToString("0.###") + ") at " + rigOffset + ".");
         }
 
@@ -792,9 +824,9 @@ namespace LegaiaWorld
 
         // --- generated assets ----------------------------------------------
 
-        /// Per-cabinet suffix for the screen-feed assets, so two machines in
-        /// one scene never share a RenderTexture (two cameras writing one
-        /// texture fight - each cabinet gets its own feed).
+        /// Per-cabinet suffix the pre-direct-screen builds keyed their feed
+        /// assets by - kept so Build can delete a stale RenderTexture +
+        /// screen material pair left by an older build of this cabinet.
         string RigAssetSuffix()
         {
             string raw = cabinet != null ? cabinet.name : "scene";
@@ -831,7 +863,8 @@ namespace LegaiaWorld
             return mesh;
         }
 
-        Material CutoutMat(string name, string relTex, bool repeat, Shader shader = null)
+        Material CutoutMat(string name, string relTex, bool repeat,
+            Shader shader = null, int queue = 2450)
         {
             string texPath = artDir + "/" + relTex;
             var tex = AssetDatabase.LoadAssetAtPath<Texture2D>(texPath);
@@ -840,7 +873,20 @@ namespace LegaiaWorld
             else
                 ConfigureTexture(texPath, repeat);
             if (shader == null)
-                shader = Shader.Find("Unlit/Transparent Cutout");
+            {
+                // The kit's Cull Off cutout: the mirrored composition
+                // reverses winding, so the legacy back-culled cutout
+                // renders nothing.
+                shader = Shader.Find("LegaiaWorld/SlotCutout");
+                if (shader == null)
+                {
+                    Debug.LogWarning("[Legaia] LegaiaWorld/SlotCutout shader " +
+                        "not found (is Assets/LegaiaWorld/Shaders synced?) - " +
+                        "'" + name + "' will be INVISIBLE (backface culled " +
+                        "under the mirrored composition).");
+                    shader = Shader.Find("Unlit/Transparent Cutout");
+                }
+            }
             string matPath = GEN_DIR + "/" + name + ".mat";
             var mat = AssetDatabase.LoadAssetAtPath<Material>(matPath);
             if (mat == null)
@@ -855,6 +901,8 @@ namespace LegaiaWorld
             mat.mainTexture = tex;
             if (mat.HasProperty("_Cutoff"))
                 mat.SetFloat("_Cutoff", 0.5f);
+            // Overlay layer order under the z flatten (see the queue ladder).
+            mat.renderQueue = queue;
             return mat;
         }
 
@@ -878,53 +926,26 @@ namespace LegaiaWorld
                 imp.SaveAndReimport();
         }
 
-        /// The screen feed target: a PSX-ish low-res RenderTexture, point
-        /// sampled so the pixels stay crisp on the cabinet screen. One per
-        /// cabinet (see RigAssetSuffix).
-        RenderTexture EnsureScreenRT()
-        {
-            string path = GEN_DIR + "/slot_screen_" + RigAssetSuffix() + ".renderTexture";
-            var rt = AssetDatabase.LoadAssetAtPath<RenderTexture>(path);
-            if (rt == null)
-            {
-                rt = new RenderTexture(RT_WIDTH, RT_HEIGHT, 16)
-                {
-                    name = "slot_screen",
-                    antiAliasing = 1,
-                };
-                AssetDatabase.CreateAsset(rt, path);
-            }
-            rt.filterMode = FilterMode.Point;
-            return rt;
-        }
-
-        /// Unlit screen material over the feed, horizontally flipped (see the
-        /// screen-feed comment in BuildScreenFeed).
-        Material ScreenMat(RenderTexture rt)
-        {
-            string path = GEN_DIR + "/slot_screen_" + RigAssetSuffix() + ".mat";
-            var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
-            if (mat == null)
-            {
-                mat = new Material(Shader.Find("Unlit/Texture"));
-                AssetDatabase.CreateAsset(mat, path);
-            }
-            mat.mainTexture = rt;
-            mat.mainTextureScale = new Vector2(-1f, 1f);
-            mat.mainTextureOffset = new Vector2(1f, 0f);
-            return mat;
-        }
-
         static Material BlackMat()
         {
             string path = GEN_DIR + "/slot_black.mat";
+            // The Cull Off cutout with a black tint (Unlit/Color would
+            // backface-cull under the mirrored composition).
+            var shader = Shader.Find("LegaiaWorld/SlotCutout");
+            if (shader == null)
+                shader = Shader.Find("Unlit/Color");
             var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
             if (mat == null)
             {
-                mat = new Material(Shader.Find("Unlit/Color"));
+                mat = new Material(shader);
                 AssetDatabase.CreateAsset(mat, path);
             }
+            else if (mat.shader != shader)
+            {
+                mat.shader = shader;
+            }
             mat.color = Color.black;
+            mat.renderQueue = Q_BACKDROP;
             return mat;
         }
 

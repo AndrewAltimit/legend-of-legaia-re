@@ -11,10 +11,10 @@
 // silent failure mode of a hand translation: an RNG fold, a `%`, or an
 // int-width slip that compiles fine and drifts quietly.
 //
-// `Legaia > Slot Screen Snapshot` renders the machine's studio camera into
-// its RenderTexture and saves a PNG - a one-click visual check of framing,
-// the UV mirror, and the reel drum against the site's minigames page,
-// without entering play mode.
+// `Legaia > Slot Screen Snapshot` films the machine's on-cabinet screen
+// composition head-on from the player's side and saves a PNG - a one-click
+// visual check of framing, the mirror, and the reel drum against the
+// site's minigames page, without entering play mode.
 
 using System.Collections.Generic;
 using System.IO;
@@ -205,15 +205,6 @@ namespace LegaiaWorld
                     "(Legaia > Build Slot Machine...).", "OK");
                 return;
             }
-            var cam = machine.screenCamera;
-            if (cam == null || cam.targetTexture == null)
-            {
-                EditorUtility.DisplayDialog("Legaia slot snapshot",
-                    "The machine has no screen camera (behind-glass build?) - " +
-                    "the snapshot films the flat-screen feed.", "OK");
-                return;
-            }
-
             if (!Application.isPlaying)
             {
                 // Pose a real frame in edit mode: seed the strips and run the
@@ -231,35 +222,78 @@ namespace LegaiaWorld
                     "scene; rebuild the machine to reset the preview pose.");
             }
 
-            var rt = cam.targetTexture;
-            var prevActive = RenderTexture.active;
-            cam.Render();
-            RenderTexture.active = rt;
-            var tex = new Texture2D(rt.width, rt.height, TextureFormat.RGBA32, false);
-            tex.ReadPixels(new Rect(0, 0, rt.width, rt.height), 0, 0);
-            tex.Apply();
-            RenderTexture.active = prevActive;
+            // Frame the composition head-on from the player's side: the
+            // machine root's +z faces the player, so the camera sits in
+            // front looking back. What it films IS what a player sees -
+            // no flip, the composition root carries the one mirror.
+            var bounds = new Bounds();
+            bool hasBounds = false;
+            foreach (var r in machine.GetComponentsInChildren<Renderer>())
+            {
+                if (!r.gameObject.activeInHierarchy)
+                    continue;
+                if (!hasBounds) { bounds = r.bounds; hasBounds = true; }
+                else bounds.Encapsulate(r.bounds);
+            }
+            if (!hasBounds)
+            {
+                EditorUtility.DisplayDialog("Legaia slot snapshot",
+                    "The machine has no active renderers - rebuild it first.", "OK");
+                return;
+            }
 
-            // The screen quad shows the feed horizontally mirrored (the
-            // camera faces the machine); bake the same flip into the PNG so
-            // it matches what a player sees.
-            var px = tex.GetPixels32();
-            var flipped = new Color32[px.Length];
-            for (int y = 0; y < rt.height; y++)
-                for (int x = 0; x < rt.width; x++)
-                    flipped[y * rt.width + x] = px[y * rt.width + (rt.width - 1 - x)];
-            tex.SetPixels32(flipped);
-            tex.Apply();
+            var camGo = new GameObject("legaia_snapshot_camera");
+            try
+            {
+                Vector3 fwd = machine.transform.forward;
+                camGo.transform.position =
+                    bounds.center + fwd * (bounds.extents.magnitude + 1f);
+                camGo.transform.rotation =
+                    Quaternion.LookRotation(-fwd, machine.transform.up);
+                var cam = camGo.AddComponent<Camera>();
+                cam.orthographic = true;
+                float hw = AbsDot(bounds.extents, camGo.transform.right);
+                float hh = AbsDot(bounds.extents, camGo.transform.up);
+                cam.orthographicSize = Mathf.Max(hh, hw * 0.75f); // 4:3 frame
+                cam.nearClipPlane = 0.01f;
+                cam.farClipPlane = bounds.extents.magnitude * 2f + 2f;
+                cam.clearFlags = CameraClearFlags.SolidColor;
+                cam.backgroundColor = Color.black;
 
-            Directory.CreateDirectory(Path.GetDirectoryName(SNAPSHOT_PATH));
-            File.WriteAllBytes(SNAPSHOT_PATH, tex.EncodeToPNG());
-            Object.DestroyImmediate(tex);
+                var rt = RenderTexture.GetTemporary(640, 480, 16);
+                cam.targetTexture = rt;
+                var prevActive = RenderTexture.active;
+                cam.Render();
+                RenderTexture.active = rt;
+                var tex = new Texture2D(rt.width, rt.height, TextureFormat.RGBA32, false);
+                tex.ReadPixels(new Rect(0, 0, rt.width, rt.height), 0, 0);
+                tex.Apply();
+                RenderTexture.active = prevActive;
+                cam.targetTexture = null;
+                RenderTexture.ReleaseTemporary(rt);
+
+                Directory.CreateDirectory(Path.GetDirectoryName(SNAPSHOT_PATH));
+                File.WriteAllBytes(SNAPSHOT_PATH, tex.EncodeToPNG());
+                Object.DestroyImmediate(tex);
+            }
+            finally
+            {
+                Object.DestroyImmediate(camGo);
+            }
             AssetDatabase.ImportAsset(SNAPSHOT_PATH);
             var asset = AssetDatabase.LoadAssetAtPath<Texture2D>(SNAPSHOT_PATH);
             if (asset != null)
                 EditorGUIUtility.PingObject(asset);
             Debug.Log("[Legaia] slot screen snapshot -> " + SNAPSHOT_PATH +
                 " (compare against the site minigames page render).");
+        }
+
+        /// Half-extent of an AABB along an arbitrary world axis.
+        static float AbsDot(Vector3 extents, Vector3 axis)
+        {
+            return extents.x * Mathf.Abs(axis.x)
+                 + extents.y * Mathf.Abs(axis.y)
+                 + extents.z * Mathf.Abs(axis.z);
         }
 
         // --- reflection over the U# proxy -----------------------------------
