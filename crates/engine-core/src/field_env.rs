@@ -368,29 +368,15 @@ pub fn resolve_placed_env_draws(
                 }
             },
         };
-        let world_y = match (floor_lut, p.floor_corner_nibbles, p.floor_nibble) {
-            // Terrain / decoration cell: retail's per-cell emitters
-            // (`FUN_801F69D8` in PROT 0901 / `FUN_801F7088` in PROT 0900,
-            // identical bodies) sum the *runtime* (negated) LUT heights of the
-            // cell's 2x2 corner-tile block and divide by 4 rounding toward
-            // zero (`if (sum < 0) sum += 3; sum >>= 2`), then add the
-            // record's `y_off`. An edge cell between floor tiers lands
-            // mid-slope, where its mesh's baked ramp expects it; the
-            // single-nibble sample below snaps it a whole tier instead
-            // (Vidna's terraces shear apart by 64..128 units).
-            (Some(lut), Some(corners), _) => {
-                let sum: i32 = corners
-                    .iter()
-                    .map(|&n| -(lut[(n & 0x0F) as usize] as i32))
-                    .sum();
-                let avg = if sum < 0 { (sum + 3) >> 2 } else { sum >> 2 };
-                avg + p.y_off as i32
-            }
-            // Placed object: `FUN_8003A55C` reads the single placement-tile
-            // nibble.
-            (Some(lut), None, Some(nib)) => -(lut[(nib & 0x0F) as usize] as i32) + p.y_off as i32,
-            _ => 0,
-        };
+        // Terrain / decoration cells resolve through the corner-block
+        // average (retail's per-cell sweeps sum the 2x2 corner tiles' runtime
+        // LUT heights and divide by 4 toward zero, then add `y_off`), placed
+        // objects (`FUN_8003A55C`) through the single placement-tile nibble.
+        // One kernel - `Placement::world_y` - shared with the web viewer's
+        // walk-frame stamps, so the hosts cannot drift on tier-edge cells
+        // (Vidna's terraces shear apart by 64..128 units when an edge cell
+        // snaps to its own nibble instead).
+        let world_y = floor_lut.map_or(0, |lut| p.world_y(&lut));
         draws.push(EnvDraw {
             env_slot: pack_index as usize,
             res_tmd,

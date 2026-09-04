@@ -83,14 +83,17 @@ pub const OBJECT_GRID_OFFSET: usize = 0x8000;
 pub const OBJECT_INDEX_MASK: u16 = 0x1FF;
 /// Object-record `+0x12` flag bit marking the tile as a placed/visible object.
 pub const FLAG_PLACED: u16 = 0x4;
-/// Object-record `+0x12` flag bit marking the record's `+0x10` pack mesh as
-/// **drawn**. Every record family that renders a mesh carries it (placed
-/// landmarks `0x16`/`0x17`, decorations `0x13`, plus their `0x8xx` collider-
-/// correction variants); the `0x0011` family does NOT - those are the
-/// riverbank/system cells (record 408 in every kingdom walk `.MAP`: same
-/// index, same `+0x10 = 4`, same flags across Drake / Sebucus / Karisto)
-/// whose `+0x10` is not a decoration mesh reference. Stamping them draws a
-/// wall/gate mesh down every river - visually falsified against retail.
+/// Object-record `+0x12` flag bit that every mesh-drawing record family
+/// carries (placed landmarks `0x16`/`0x17`, decorations `0x12`/`0x13`, plus
+/// their `0x8xx` collider-correction variants); at spawn it selects the
+/// placed actor's render type 5 (mesh-chain draw) vs 0. The `0x0011` family
+/// (record 408 in every kingdom walk `.MAP`: same index, same `+0x10 = 4`,
+/// same flags across Drake / Sebucus / Karisto - the riverbank/system cells)
+/// lacks it, and stamping that family draws a wall/gate mesh down every river
+/// (visually falsified against retail). **The decoration sweep does not test
+/// this bit**, though: what keeps the riverbank family out of the draw is
+/// that its cells carry only the walk bit [`CELL_WALK_VISIBLE`], never the
+/// draw gate [`CELL_VISIBLE`] - see [`parse_walk_decorations`].
 pub const FLAG_MESH_DRAWN: u16 = 0x2;
 /// Object-record `+0x12` flag bit selecting the collision-footprint offset
 /// **correction** (`-x_off`, `+z_off`) in the static-entity collision arm.
@@ -115,21 +118,31 @@ pub const FLAG_COLLIDER_CORRECTION: u16 = 0x8;
 /// `0x2000` marks the decoration/object cells that pass draws, alongside the
 /// `0x1000` walk-visible ground cells - two consumers of the same grid word.
 ///
-/// **The free-roam *walk* view (game mode `0x03`) uses the same record layout
-/// but a different cell gate, [`CELL_WALK_VISIBLE`] (`0x1000`).** It reads the
-/// per-scene walk `.MAP` (e.g. `map01` walk = PROT entry `0085`), whose `+0x10`
+/// **The free-roam *walk* view (game mode `0x03`) keeps this gate for its
+/// pack-mesh decorations and uses [`CELL_WALK_VISIBLE`] (`0x1000`) only for
+/// the heightfield ground.** It reads the per-scene walk `.MAP` (e.g. `map01`
+/// walk = extraction entry `0083`, the block's first entry), whose `+0x10`
 /// values are small (`0..39`) because the walk pool is 5 party + the 40-mesh
-/// slot-1 landmark pack. The per-object mesh resolution is the same
+/// slot-1 landmark pack. The biggest landmarks - the enterable mountains -
+/// sit on cells that carry `0x2000` **without** `0x1000` (the mesh is the
+/// ground there), which is why a `0x1000`-gated decoration sweep loses
+/// exactly them. The per-object mesh resolution is the same
 /// [`pack_mesh_index`] (`+0x10`) **plus the pack prefix**: the retail path
 /// (`FUN_80020f88` -> `actor+0x64 = record[+0x10] + DAT_8007b6f8`, prefix `= 5`;
 /// `FUN_80024d78` then builds the actor's mesh chain from
 /// `DAT_8007C018[actor+0x64]`) was pinned 14/14 against a live walk capture, so
 /// the walk continent pool index is `FIELD_ACTOR_PACK_BIAS + pack_mesh_index`.
 pub const CELL_VISIBLE: u16 = 0x2000;
-/// Object-index-grid cell bit marking a **walk-view** (game mode `0x03`) visible
-/// continent tile - the free-roam analogue of [`CELL_VISIBLE`]. The Drake walk
-/// `.MAP` grid sets this on ~15k cells (vs ~300 with `0x2000`); see the
-/// `CELL_VISIBLE` docs for the shared `+0x10`-plus-prefix mesh resolution.
+/// Object-index-grid cell bit marking a **walk-view** (game mode `0x03`)
+/// heightfield **ground** tile - the cell gate of the continent surface
+/// ([`build_walk_heightfield`]; the bilinear floor sampler `FUN_80019278`
+/// tests the same bit). The Drake walk `.MAP` grid sets this on ~16k cells
+/// (vs ~300 with `0x2000`). It is **not** the pack-mesh draw gate:
+/// decorations and the big landmarks are [`CELL_VISIBLE`]-gated, and a cell
+/// can carry either bit without the other (a river cell is walk-visible
+/// ground with no mesh; an enterable-mountain cell is a mesh with no ground).
+/// See the `CELL_VISIBLE` docs for the shared `+0x10`-plus-prefix mesh
+/// resolution.
 pub const CELL_WALK_VISIBLE: u16 = 0x1000;
 /// Object-index-grid cell bit `0x0400`, read on a placed object's
 /// **footprint-anchor tile**: the marker that says *"this object is the
@@ -399,6 +412,38 @@ pub struct Placement {
     pub collider_z: i32,
 }
 
+impl Placement {
+    /// World Y of the placement's anchor in the retail (pre-flip) frame, from
+    /// the scene's 16-entry floor-height LUT (`man[+0x02..+0x22]`; the runtime
+    /// stores it negated, so every term is `-lut[nibble]`):
+    ///
+    /// - a **terrain / decoration** cell ([`Self::floor_corner_nibbles`] is
+    ///   `Some`) takes the *average* of its 2 x 2 corner-tile heights, the
+    ///   sum divided by 4 rounding toward zero (`if (sum < 0) sum += 3;`
+    ///   then `sum >>= 2` - body `0x801F6FC8..0x801F7040` of the per-cell
+    ///   sweep), so a cell on a floor-tier edge lands mid-slope where its
+    ///   mesh's baked ramp expects it;
+    /// - a **placed** object (`FUN_8003A55C`) reads the single placement-tile
+    ///   nibble ([`Self::floor_nibble`]);
+    /// - a placement with neither (no floor grid) sits at `0`.
+    ///
+    /// Then `+ y_off` in every case. One kernel for every consumer - the
+    /// native draw resolver, the web viewer's walk-frame stamps and the
+    /// parity tests - so the hosts cannot drift on tier-edge cells.
+    pub fn world_y(&self, lut: &[i16; 16]) -> i32 {
+        let h = |nibble: u8| -(lut[(nibble & 0x0F) as usize] as i32);
+        let floor = match (self.floor_corner_nibbles, self.floor_nibble) {
+            (Some(corners), _) => {
+                let sum: i32 = corners.iter().map(|&n| h(n)).sum();
+                if sum < 0 { (sum + 3) >> 2 } else { sum >> 2 }
+            }
+            (None, Some(nib)) => h(nib),
+            (None, None) => return 0,
+        };
+        floor + self.y_off as i32
+    }
+}
+
 /// The object-index-grid `u16` at tile `(col, row)`. `grid` is the field map
 /// sliced from [`OBJECT_GRID_OFFSET`]. Off-grid / truncated reads give `0`.
 fn grid_cell(grid: &[u8], col: u8, row: u8) -> u16 {
@@ -593,30 +638,37 @@ pub fn parse_terrain_tiles_gated(field_map: &[u8], gate: u16, walk_mesh: bool) -
     out
 }
 
-/// The walk view's **decoration layer**: every walk-visible
-/// ([`CELL_WALK_VISIBLE`]) cell whose object record carries a nonzero `+0x10`
-/// pack mesh with the [`FLAG_MESH_DRAWN`] bit but **not** the placed flag -
-/// the crossed-quad billboard trees, mountain groups, and small props stamped
-/// across the continent (Drake ~300 cells over 35 records; forest clusters
-/// reference one tree mesh from dozens of cells each). Flag families
-/// `0x0013`/`0x0813`, vs the placed (`FLAG_PLACED`) interactive set
-/// [`parse_placements`] returns; excluding placed records here keeps the two
-/// layers disjoint so a consumer drawing both never double-stamps a landmark.
-/// The `0x0011` family (nonzero `+0x10` but no `FLAG_MESH_DRAWN`) is
-/// excluded - those are the riverbank/system cells (see [`FLAG_MESH_DRAWN`]).
+/// The walk view's **decoration layer**: every draw-gated ([`CELL_VISIBLE`],
+/// `0x2000`) cell whose object record is **not** placed - the record's
+/// `+0x10` pack mesh stamped at the cell. This is the per-cell pack-mesh
+/// sweep of the slot-B render library resident on the world map (the `0x2000`
+/// gate + placed-flag skip + `+0x10` mesh kernel - `FUN_801F7088` in PROT
+/// 0900 for towns, the byte-shared kernel of the kingdom sibling PROT 0901 on
+/// the overworld), layered over the heightfield ground: the crossed-quad
+/// billboard trees (forest clusters reference one tree mesh from dozens of
+/// cells each), the mountain groups, small props - **and the big enterable
+/// mountains**, whose cells carry `0x2000` without [`CELL_WALK_VISIBLE`]
+/// because the mountain mesh replaces the walkable ground there (Drake record
+/// 412, mesh 23, at cell `(39, 80)`; Karisto's cull-radius-8..10 records
+/// 444 / 445 / 447 / 462 / 463 / 473). Gating on `0x1000` instead drops
+/// exactly those.
 ///
-/// The bulk ground cells (97% of the walk grid) have `+0x10 == 0` and are the
-/// heightfield surface ([`build_walk_heightfield`]), not part of this layer.
+/// The placed (`FLAG_PLACED`) interactive set is [`parse_placements`]'s;
+/// excluding it here keeps the two layers disjoint so a consumer drawing both
+/// never double-stamps a landmark. The bulk ground cells (97% of the walk
+/// grid) carry only `0x1000` and are the heightfield surface
+/// ([`build_walk_heightfield`]), and so is the `0x0011` riverbank/system
+/// family (record 408: nonzero `+0x10`, no `0x2000` cell anywhere) - neither
+/// needs a flag test to stay out; see [`FLAG_MESH_DRAWN`]. A `0x2000` cell
+/// whose record's `+0x10` is `0` stamps pack slot 0 like any other value
+/// (one such cell on Drake and one on Sebucus, both `0x0813` prop records).
 /// Mesh resolution is the walk rule (`record[+0x10]` directly, per
-/// `FUN_80020f88`), the same one [`parse_walk_terrain_tiles`] uses.
+/// `FUN_80020f88`), the same one [`parse_walk_terrain_tiles`] uses; world Y
+/// is the corner-block average ([`Placement::world_y`]).
 pub fn parse_walk_decorations(field_map: &[u8]) -> Vec<Placement> {
-    parse_terrain_tiles_gated(field_map, CELL_WALK_VISIBLE, true)
+    parse_terrain_tiles_gated(field_map, CELL_VISIBLE, true)
         .into_iter()
-        .filter(|p| {
-            p.pack_index.is_some_and(|m| m != 0)
-                && p.flags & FLAG_MESH_DRAWN != 0
-                && p.flags & FLAG_PLACED == 0
-        })
+        .filter(|p| p.pack_index.is_some() && p.flags & FLAG_PLACED == 0)
         .collect()
 }
 
@@ -933,49 +985,128 @@ mod tests {
     }
 
     #[test]
-    fn parse_walk_decorations_skips_ground_and_placed_records() {
+    fn parse_walk_decorations_gates_on_the_draw_bit_and_skips_placed_records() {
         let mut map = vec![0u8; 0x12000];
-        // Record 475: a tree mesh (nonzero +0x10, decoration flags 0x0013).
+        // Record 475: a tree mesh (nonzero +0x10, decoration flags 0x0013) -
+        // its cells carry both the ground bit and the draw bit, like every
+        // forest cell on the retail kingdom maps.
         let r = &mut map[OBJECT_RECORD_STRIDE * 475..OBJECT_RECORD_STRIDE * 476];
         r[0x10..0x12].copy_from_slice(&11u16.to_le_bytes());
         r[0x12..0x14].copy_from_slice(&0x0013u16.to_le_bytes());
+        // Record 412: a big enterable mountain (Drake mesh 23, flags 0x0012)
+        // whose cell carries the draw bit WITHOUT the ground bit - the mesh
+        // is the ground there. The 0x1000-gated sweep lost exactly these.
+        let r = &mut map[OBJECT_RECORD_STRIDE * 412..OBJECT_RECORD_STRIDE * 413];
+        r[0x00..0x02].copy_from_slice(&(-64i16).to_le_bytes());
+        r[0x04..0x06].copy_from_slice(&(-64i16).to_le_bytes());
+        r[0x10..0x12].copy_from_slice(&23u16.to_le_bytes());
+        r[0x12..0x14].copy_from_slice(&0x0012u16.to_le_bytes());
         // Record 349: a placed landmark (nonzero +0x10 AND the placed flag).
         let r = &mut map[OBJECT_RECORD_STRIDE * 349..OBJECT_RECORD_STRIDE * 350];
         r[0x10..0x12].copy_from_slice(&6u16.to_le_bytes());
         r[0x12..0x14].copy_from_slice(&0x0017u16.to_le_bytes());
-        // Record 200: bulk ground (+0x10 == 0, flags 0x0011).
+        // Record 200: bulk ground (+0x10 == 0, flags 0x0011), ground bit only.
         let r = &mut map[OBJECT_RECORD_STRIDE * 200..OBJECT_RECORD_STRIDE * 201];
         r[0x12..0x14].copy_from_slice(&0x0011u16.to_le_bytes());
-        // Record 408: the riverbank/system family - nonzero +0x10 but flags
-        // 0x0011 (no FLAG_MESH_DRAWN). Stamping it draws a wall mesh down
-        // every river, so it must be excluded.
+        // Record 408: the riverbank/system family - nonzero +0x10, flags
+        // 0x0011, and (on every retail kingdom map) cells that carry only the
+        // ground bit. Stamping it draws a wall mesh down every river; the
+        // draw gate is what keeps it out, not a flag test.
         let r = &mut map[OBJECT_RECORD_STRIDE * 408..OBJECT_RECORD_STRIDE * 409];
         r[0x10..0x12].copy_from_slice(&4u16.to_le_bytes());
         r[0x12..0x14].copy_from_slice(&0x0011u16.to_le_bytes());
-        // Walk-visible cells, one per record; the tree stamps twice.
-        for (row, col, idx) in [
-            (4, 10, 475u16),
-            (4, 11, 475),
-            (5, 10, 349),
-            (5, 11, 200),
-            (6, 10, 408),
+        // Record 285: a prop record whose +0x10 is 0 on a draw-gated cell
+        // (Drake cell (98, 66), flags 0x0813) - stamps pack slot 0.
+        let r = &mut map[OBJECT_RECORD_STRIDE * 285..OBJECT_RECORD_STRIDE * 286];
+        r[0x12..0x14].copy_from_slice(&0x0813u16.to_le_bytes());
+        for (row, col, idx, bits) in [
+            (4, 10, 475u16, CELL_WALK_VISIBLE | CELL_VISIBLE),
+            (4, 11, 475, CELL_WALK_VISIBLE | CELL_VISIBLE),
+            (80, 39, 412, CELL_VISIBLE),
+            (5, 10, 349, CELL_WALK_VISIBLE | CELL_VISIBLE),
+            (5, 11, 200, CELL_WALK_VISIBLE),
+            (6, 10, 408, CELL_WALK_VISIBLE),
+            (66, 98, 285, CELL_WALK_VISIBLE | CELL_VISIBLE),
         ] {
             let cell = OBJECT_GRID_OFFSET + (row * GRID_DIM + col) * 2;
-            map[cell..cell + 2].copy_from_slice(&(CELL_WALK_VISIBLE | idx).to_le_bytes());
+            map[cell..cell + 2].copy_from_slice(&(bits | idx).to_le_bytes());
         }
         let d = parse_walk_decorations(&map);
-        // Only the two tree cells: the placed landmark belongs to
-        // parse_placements, the zero-mesh cell to the heightfield, and the
-        // riverbank record lacks FLAG_MESH_DRAWN.
-        assert_eq!(d.len(), 2);
-        assert!(
-            d.iter()
-                .all(|p| p.obj_idx == 475 && p.pack_index == Some(11))
-        );
+        // The two tree cells, the mountain, and the slot-0 prop: the placed
+        // landmark belongs to parse_placements, and the ground / riverbank
+        // cells never carry the draw bit.
         assert_eq!(
-            d.iter().map(|p| (p.col, p.row)).collect::<Vec<_>>(),
-            vec![(10, 4), (11, 4)]
+            d.iter()
+                .map(|p| (p.obj_idx, p.pack_index, p.col, p.row))
+                .collect::<Vec<_>>(),
+            vec![
+                (475, Some(11), 10, 4),
+                (475, Some(11), 11, 4),
+                (285, Some(0), 98, 66),
+                (412, Some(23), 39, 80),
+            ]
         );
+        assert!(d.iter().all(|p| p.floor_corner_nibbles.is_some()));
+        let mountain = d.iter().find(|p| p.obj_idx == 412).unwrap();
+        assert_eq!(
+            (mountain.world_x, mountain.world_z),
+            (world_x(39, -64), world_z(80, -64))
+        );
+    }
+
+    #[test]
+    fn placement_world_y_averages_corners_or_reads_the_single_nibble() {
+        // Runtime LUT convention: every term is `-lut[nibble]`.
+        let mut lut = [0i16; 16];
+        lut[1] = 48;
+        lut[2] = 96;
+        lut[4] = 192;
+        let mut p = Placement {
+            obj_idx: 1,
+            col: 0,
+            row: 0,
+            anchor_col: 0,
+            anchor_row: 0,
+            anchor_cell: 0,
+            world_x: 0,
+            world_z: 0,
+            y_off: 10,
+            floor_nibble: Some(4),
+            floor_corner_nibbles: None,
+            pack_index: Some(0),
+            flags: 0,
+            rot_x: 0,
+            rot_y: 0,
+            rot_z: 0,
+            collider_x: 0,
+            collider_z: 0,
+        };
+        // Placed object: single nibble.
+        assert_eq!(p.world_y(&lut), -192 + 10);
+        // Terrain / decoration cell on a tier edge: the corner average, sum
+        // divided by 4 rounding toward zero. (-48 - 96 - 48 - 96) / 4 = -72.
+        p.floor_corner_nibbles = Some([1, 2, 1, 2]);
+        assert_eq!(p.world_y(&lut), -72 + 10);
+        // Rounding toward zero on a negative sum: (-48 + 0 + 0 + 0) / 4 = -12,
+        // and (-48 - 48 - 48 + 0) = -144 / 4 = -36 exactly; an odd case:
+        // (-48 - 96 + 0 + 0) = -144 -> -36; (-96 + 0 + 0 + 0) = -96 -> -24;
+        // (-48 - 96 - 96 + 0) = -240 -> -60; and -(48+96+96+96) = -336 -> -84.
+        p.floor_corner_nibbles = Some([1, 0, 0, 0]);
+        assert_eq!(p.world_y(&lut), -12 + 10);
+        // A sum that does not divide evenly: (-48 - 48 - 48 - 96) = -240 / 4
+        // = -60; (-48 -48 -96 -96) = -288 / 4 = -72; make one that is odd by
+        // using lut entries 48 and 96 with three zeros: -48 -> (-48+3)>>2 =
+        // -45>>2 = -12 (toward zero), whereas -48>>2 = -12 as well; use
+        // -96 - 48 = -144 -> -36. The toward-zero clause matters for e.g.
+        // sum = -50: (-50 + 3) >> 2 = -47 >> 2 = -12, not -13.
+        lut[3] = 50;
+        p.floor_corner_nibbles = Some([3, 0, 0, 0]);
+        assert_eq!(p.world_y(&lut), -12 + 10);
+        // No floor grid at all: 0 (the y_off is not applied either, matching
+        // the draw resolver's fallback).
+        p.floor_corner_nibbles = None;
+        p.floor_nibble = None;
+        assert_eq!(p.world_y(&lut), 0);
     }
 
     #[test]

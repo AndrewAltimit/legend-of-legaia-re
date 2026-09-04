@@ -499,8 +499,11 @@ pub fn build_walk_ground(
 /// world frame** the walk heightfield is built in.
 ///
 /// Mirrors the native engine's `resolve_placement_draws` world transform: the
-/// placement anchor sits at `world_y = -lut[floor_nibble] + y_off` (the runtime
-/// stores the floor LUT negated) and the JS renderer applies the shared
+/// placement anchor sits at the floor height the shared
+/// [`legaia_asset::field_objects::Placement::world_y`] kernel resolves (the
+/// corner-block average for decoration cells, the single placement-tile
+/// nibble for placed objects, plus `y_off`; the runtime stores the floor LUT
+/// negated) and the JS renderer applies the shared
 /// `(1, -1, 1)` model flip at scale `1` - the slot-1 pack meshes are already in
 /// true world units, unlike the legacy overview-frame icons that needed an
 /// arbitrary presentation scale. This is why these placements line up on top of
@@ -513,8 +516,8 @@ pub struct WalkPlacement {
     pub pack_index: u32,
     /// World X in the `col*128` walk frame.
     pub world_x: i32,
-    /// World Y: `-lut[floor_nibble] + y_off` (pre-Y-flip, same frame as the
-    /// heightfield's stored positions).
+    /// World Y from [`legaia_asset::field_objects::Placement::world_y`]
+    /// (pre-Y-flip, same frame as the heightfield's stored positions).
     pub world_y: i32,
     /// World Z in the `row*128` walk frame.
     pub world_z: i32,
@@ -534,9 +537,10 @@ pub struct WalkPlacement {
 ///
 /// - the **placed landmarks** (the `flags & 0x4` slot-1 pack objects
 ///   `FUN_8003A55C` draws; [`legaia_asset::field_objects::parse_placements`]),
-/// - the **decoration layer** (walk-visible cells stamping a nonzero record
+/// - the **decoration layer** (draw-gated `0x2000` cells stamping the record
 ///   `+0x10` mesh without the placed flag - the crossed-quad billboard trees,
-///   mountain groups, and props;
+///   mountain groups, props, and the big enterable mountains whose cells carry
+///   no walkable ground at all;
 ///   [`legaia_asset::field_objects::parse_walk_decorations`]).
 ///
 /// Reads the same walk `.MAP` + floor-height LUT [`build_walk_ground`] does
@@ -559,17 +563,13 @@ pub fn build_walk_placements(
         .iter()
         .filter_map(|p| {
             let pack_index = p.pack_index?;
-            // World Y from the floor-height LUT (`-lut[nibble] + y_off`), or the
-            // ground plane when the nibble is unavailable - matches the native
-            // engine's `resolve_placement_draws`.
-            let world_y = match p.floor_nibble {
-                Some(nib) => -(lut[(nib & 0x0F) as usize] as i32) + p.y_off as i32,
-                None => 0,
-            };
+            // World Y through the one floor-height kernel the native engine's
+            // `resolve_placed_env_draws` uses (corner average for decoration
+            // cells, single nibble for placed objects).
             Some(WalkPlacement {
                 pack_index: pack_index as u32,
                 world_x: p.world_x,
-                world_y,
+                world_y: p.world_y(&lut),
                 world_z: p.world_z,
                 rot_y: p.rot_y,
             })

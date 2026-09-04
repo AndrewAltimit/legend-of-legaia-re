@@ -43,8 +43,9 @@ fn walk_placements_match_engine_for_every_kingdom() {
 
         // Engine side: the authoritative resolver via CDNAME + ProtIndex. Drop
         // the protagonist / NPC placements (pack_index None) the viewer also
-        // drops, then resolve world Y from the floor LUT exactly as the native
-        // play-window render (`resolve_placement_draws`) does.
+        // drops, then resolve world Y through the shared `Placement::world_y`
+        // kernel the native play-window render (`resolve_placement_draws` ->
+        // `field_env::resolve_placed_env_draws`) goes through.
         let scene = Scene::load(&index, scene_name).expect("scene load");
         let lut = scene
             .field_floor_height_lut(&index)
@@ -67,11 +68,13 @@ fn walk_placements_match_engine_for_every_kingdom() {
             .iter()
             .filter_map(|p| {
                 let pack_index = p.pack_index?;
-                let world_y = match p.floor_nibble {
-                    Some(nib) => -(lut[(nib & 0x0F) as usize] as i32) + p.y_off as i32,
-                    None => 0,
-                };
-                Some((pack_index as u32, p.world_x, world_y, p.world_z, p.rot_y))
+                Some((
+                    pack_index as u32,
+                    p.world_x,
+                    p.world_y(&lut),
+                    p.world_z,
+                    p.rot_y,
+                ))
             })
             .collect();
 
@@ -110,6 +113,39 @@ fn walk_placements_match_engine_for_every_kingdom() {
                 "map02: expected >= 4 quarter-turn bridge placements, got {quarter_turns}"
             );
         }
+
+        // The big enterable mountains sit on draw-gated (`0x2000`) cells that
+        // carry no walkable-ground bit at all, so a decoration sweep gated on
+        // `0x1000` loses exactly them. Pin one per continent: Drake's record
+        // 412 (pack 23, the terraced peak) at cell (39, 80) with its -64/-64
+        // record offsets, and Karisto's cull-radius-10 record 462 (pack 14)
+        // at cell (49, 90) with its +128 Z offset.
+        let has = |pack: u32, col: u8, row: u8, x_off: i16, z_off: i16| {
+            viewer.iter().any(|p| {
+                p.pack_index == pack
+                    && p.world_x == legaia_asset::field_objects::world_x(col, x_off)
+                    && p.world_z == legaia_asset::field_objects::world_z(row, z_off)
+            })
+        };
+        match scene_name {
+            "map01" => assert!(
+                has(23, 39, 80, -64, -64),
+                "map01: the record-412 mountain (pack 23) is missing"
+            ),
+            "map03" => assert!(
+                has(14, 49, 90, 0, 128),
+                "map03: the record-462 mountain (pack 14) is missing"
+            ),
+            _ => {}
+        }
+        // And the riverbank/system family (record 408, pack 4 on every kingdom
+        // map, cells with the walk bit only) must stay out - stamping it tiles
+        // a wall mesh down every river. Pack 4 is otherwise a rare prop.
+        let pack4 = viewer.iter().filter(|p| p.pack_index == 4).count();
+        assert!(
+            pack4 <= 2,
+            "{scene_name}: {pack4} pack-4 stamps - the riverbank family leaked in"
+        );
 
         eprintln!(
             "{scene_name}: {} walk-frame landmark + decoration placements (viewer == engine)",

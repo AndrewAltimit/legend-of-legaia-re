@@ -148,13 +148,17 @@ over its heightfield:
 
 - the **placed landmarks** (the `flags & 0x4` objects `FUN_8003A55C` stamps
   on occupied tiles - towers, castles, bridges), and
-- the **decoration layer** - walk-visible cells whose record stamps a nonzero
-  `+0x10` mesh with the mesh-drawn flag bit `0x2` and no placed flag: the
-  crossed-quad billboard trees (a forest cluster stamps one tree mesh from
-  dozens of cells), mountain groups, and small props. Cells with a nonzero
-  `+0x10` but no `0x2` bit (the riverbank/system record 408 family) are NOT
-  decorations and must not be stamped - drawing them tiles a wall mesh down
-  every river.
+- the **decoration layer** - every cell carrying the draw bit `0x2000` whose
+  record is not placed, stamping the record's `+0x10` mesh: the crossed-quad
+  billboard trees (a forest cluster stamps one tree mesh from dozens of
+  cells), mountain groups, small props, and the **big enterable mountains**
+  (Drake's terraced peak is record 412 / pack 23 at cell `(39, 80)`; Karisto
+  has six such records). Those mountain cells carry `0x2000` and **no**
+  `0x1000` walk bit - the mesh is the ground there - so a sweep gated on the
+  walk bit draws every tree and drops every big mountain, which is how the
+  page shipped for a while. The riverbank/system record 408 family (nonzero
+  `+0x10`, walk bit only) never carries `0x2000` and stays out by the gate
+  alone; drawing it tiles a wall mesh down every river.
 
 `legaia_web_viewer::build_walk_placements` resolves both from the raw
 PROT.DAT the viewer already holds, sharing the walk `.MAP` + floor-LUT
@@ -164,10 +168,12 @@ resolution with `build_walk_ground` (`resolve_walk_map_and_lut`):
   `parse_walk_decorations` on the walk `.MAP` and concatenates.
 - Each placement's mesh is the record's `+0x10` field (`pack_index`) - a
   slot into the kingdom's slot-1 TMD pack the `pack_mesh_*` accessors expose.
-- World position is the placement's `(world_x, world_z)` plus a world Y of
-  `-lut[floor_nibble] + y_off` (the runtime stores the floor LUT negated), so
-  the mesh sits on the heightfield. This mirrors the native engine's
-  `resolve_placement_draws` exactly; the disc-gated
+- World position is the placement's `(world_x, world_z)` plus the world Y the
+  shared `Placement::world_y` kernel resolves - the 2 x 2 corner-tile average
+  for decoration cells, the single placement-tile nibble for placed objects,
+  plus `y_off` (the runtime stores the floor LUT negated) - so the mesh sits
+  on the heightfield, mid-slope on a tier edge. This mirrors the native
+  engine's `resolve_placement_draws` exactly; the disc-gated
   `crates/web-viewer/tests/walk_placements_parity.rs` asserts the viewer's
   resolved placements equal `Scene::walk_object_placements` +
   `Scene::walk_decoration_placements` + the floor LUT for all three kingdoms.
