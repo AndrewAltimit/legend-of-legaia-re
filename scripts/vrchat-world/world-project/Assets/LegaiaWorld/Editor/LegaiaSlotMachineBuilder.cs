@@ -6,15 +6,15 @@
 //   asset slot-art extracted/PROT/0975_*.BIN extracted/PROT/1200_*.BIN \
 //       --out "<unity project>/Assets/LegaiaImports/slot-art"
 //
-// What gets built, in the retail scene's own model units (the rig root is
+// What gets built, in the retail scene's own model units (the studio node is
 // scaled so the 1280-unit glass width becomes `screenWidth` metres; local
 // frame: x right, y up = -PSX y, z toward the player = -PSX z):
 //
-// - three 20-face reel cylinders (one quad per strip row, each face's
-//   material = its display-strip value), spun by LegaiaSlotMachine. Retail
-//   draws 8 faces at a 22.5 degree pitch and re-derives them per frame; a
-//   rigid 20-face wheel at 18 degrees per row is the draft approximation -
-//   same strip, same payline, slightly gentler curl;
+// - three reel drums as retail draws them (FUN_801d0fa8): 8 face quads per
+//   reel that LegaiaSlotMachine re-derives per frame at a 22.5-degree pitch
+//   on the y=585 / z=512 ellipse. The faces use the LegaiaWorld/SlotReelFace
+//   shader, which reproduces retail's depth-cue shade per pixel (bright at
+//   the payline, black past ~48 degrees - the fade IS the top/bottom cap);
 // - the glass furniture from the disc's own tables (slot-machine.json):
 //   5 payline lines, 5 lamps, 5 medallions, 3 reel-stop pedestals, the
 //   marquee panel + mascots;
@@ -24,6 +24,9 @@
 // - a balance + status TextMesh HUD and the paytable board;
 // - the three cabinet buttons wired as LegaiaSlotButton interacts (named
 //   nodes on the cabinet mesh; fallback pads are built when missing).
+//
+// Generated screen-feed assets (RenderTexture + screen material) are named
+// per cabinet, so several machines in one scene don't fight over one feed.
 //
 // Everything the builder generates is from-scratch; the textures it consumes
 // are the user's own disc-decoded exports (never committed).
@@ -41,8 +44,13 @@ namespace LegaiaWorld
         const string GEN_DIR = "Assets/LegaiaGenerated/slot-machine";
         // The glass spans x -640..+640 in model units (the payline table).
         const float GLASS_SPAN = 1280f;
-        const int STRIP_LEN = 20;
-        const float REEL_RADIUS = 540f; // between retail's 585 y / 512 z ellipse
+        const int FACE_COUNT = 8;
+
+        // Kit-level layout (not disc data): the paytable board and HUD text.
+        static readonly Vector3 PAYTABLE_POS = new Vector3(950f, 60f, 802f);
+        const float PAYTABLE_SCALE = 3.2f;
+        static readonly Vector3 HUD_BALANCE_POS = new Vector3(0f, -760f, 810f);
+        static readonly Vector3 HUD_STATUS_POS = new Vector3(0f, -860f, 810f);
 
         GameObject cabinet;
         string artDir = "Assets/LegaiaImports/slot-art";
@@ -74,7 +82,7 @@ namespace LegaiaWorld
             EditorGUILayout.HelpBox(
                 "Feed: the `asset slot-art` export (PNGs + slot-machine.json). " +
                 "The rig is built under the cabinet mesh; drag the rig root " +
-                "afterwards to line the reels up with the screen cutout, then " +
+                "afterwards to line the screen up with the cabinet, then " +
                 "copy its transform back into these fields so a rebuild lands " +
                 "in the same place.", MessageType.Info);
             cabinet = (GameObject)EditorGUILayout.ObjectField(
@@ -167,193 +175,63 @@ namespace LegaiaWorld
                 flatScreen ? new Vector3(0f, -40f, 0f) : Vector3.zero;
             studioGo.transform.localScale = Vector3.one * (screenWidth / GLASS_SPAN);
             Transform studio = studioGo.transform;
+            float worldUnit = studio.lossyScale.x;
 
             Mesh quad = EnsureQuadMesh();
 
             // --- materials over the exported art -------------------------
+            // Reel faces get the depth-cue shader; everything else is plain
+            // unlit cutout.
+            var faceShader = Shader.Find("LegaiaWorld/SlotReelFace");
+            if (faceShader == null)
+                Debug.LogWarning("[Legaia] LegaiaWorld/SlotReelFace shader not found " +
+                    "(is Assets/LegaiaWorld/Shaders synced?) - reel faces fall " +
+                    "back to unshaded cutout.");
             var valueMats = new Material[20];
             for (int s = 0; s < 10; s++)
-                valueMats[s] = CutoutMat("symbol_" + s, "symbols/symbol_" + s + ".png", false);
+                valueMats[s] = CutoutMat("symbol_" + s, "symbols/symbol_" + s + ".png",
+                    false, faceShader);
             for (int n = 1; n <= 10; n++)
-                valueMats[9 + n] = CutoutMat("numeral_" + n, "symbols/numeral_" + n + ".png", false);
-            var lampLit = CutoutMat("lamp_lit", "furniture/lamp_lit.png", false);
-            var lampUnlit = CutoutMat("lamp_unlit", "furniture/lamp_unlit.png", false);
-            var pedSpin = new Material[3];
-            var pedStop = new Material[3];
-            for (int r = 0; r < 3; r++)
-            {
-                pedSpin[r] = CutoutMat("pedestal_" + r + "_spin",
-                    "furniture/pedestal_" + r + "_spin.png", false);
-                pedStop[r] = CutoutMat("pedestal_" + r + "_stop",
-                    "furniture/pedestal_" + r + "_stop.png", false);
-            }
+                valueMats[9 + n] = CutoutMat("numeral_" + n, "symbols/numeral_" + n + ".png",
+                    false, faceShader);
             var msgMats = new Material[21];
             for (int i = 0; i < 21; i++)
                 msgMats[i] = CutoutMat("msg_" + i.ToString("00"),
                     "marquee/msg_" + i.ToString("00") + "_a.png", true);
 
-            // --- the reels ------------------------------------------------
             var reelsRoot = Child(studio, "reels", Vector3.zero);
             var reelPivots = new Transform[3];
-            var reelFaces = new MeshRenderer[60];
-            float chord = 2f * REEL_RADIUS * Mathf.Sin(Mathf.PI / STRIP_LEN) * 1.02f;
-            float reelX0 = MiniJson.GetNum(m, "reel_x0", -512f);
-            float reelXStep = MiniJson.GetNum(m, "reel_x_step", 384f);
-            float reelW = MiniJson.GetNum(m, "reel_width", 256f);
-            for (int r = 0; r < 3; r++)
-            {
-                var pivot = Child(reelsRoot, "reel_" + r,
-                    new Vector3(reelX0 + r * reelXStep + reelW * 0.5f, 0f, 0f));
-                reelPivots[r] = pivot;
-                for (int row = 0; row < STRIP_LEN; row++)
-                {
-                    float theta = row * (360f / STRIP_LEN);
-                    float rad = theta * Mathf.Deg2Rad;
-                    var face = new GameObject("row_" + row);
-                    face.transform.SetParent(pivot, false);
-                    face.transform.localPosition = new Vector3(
-                        0f, Mathf.Sin(rad) * REEL_RADIUS, Mathf.Cos(rad) * REEL_RADIUS);
-                    face.transform.localRotation = Quaternion.Euler(-theta, 0f, 0f);
-                    face.transform.localScale = new Vector3(reelW, chord, 1f);
-                    face.AddComponent<MeshFilter>().sharedMesh = quad;
-                    var mr = face.AddComponent<MeshRenderer>();
-                    mr.sharedMaterial = valueMats[0];
-                    mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-                    reelFaces[r * STRIP_LEN + row] = mr;
-                }
-            }
-            // A black backdrop behind the wheels so the cabinet interior
-            // never shows through, and a top/bottom shade in front of them -
-            // retail's depth-cued gouraud fade, as a gradient overlay.
-            MakeQuad(reelsRoot, "backdrop", quad, new Vector3(0f, 0f, -620f),
-                new Vector2(1500f, 1400f), BlackMat());
-            MakeQuad(reelsRoot, "shade", quad, new Vector3(0f, 0f, 660f),
-                new Vector2(1500f, 3.4f * chord), ShadeMat());
+            var reelFaces = new MeshRenderer[3 * FACE_COUNT];
+            float reelW = BuildReels(m, quad, reelsRoot, valueMats, reelPivots, reelFaces);
+            BakeShadeVectors(studio, reelsRoot, valueMats);
 
-            // --- the glass furniture -------------------------------------
-            var glass = Child(studio, "glass", Vector3.zero);
             var lampRenderers = new MeshRenderer[5];
-            var lamps = MiniJson.AsList(MiniJson.Get(m, "lamps"));
-            float lampW = 2f * MiniJson.GetNum(m, "lamp_half_w", 180f);
-            float lampH = 2f * MiniJson.GetNum(m, "lamp_half_h", 160f);
-            for (int i = 0; lamps != null && i < lamps.Count && i < 5; i++)
-                lampRenderers[i] = MakeQuad(glass, "lamp_" + i, quad,
-                    PsxPos(lamps[i], 2f), new Vector2(lampW, lampH), lampUnlit);
-            var medallions = MiniJson.AsList(MiniJson.Get(m, "medallions"));
-            float medW = 2f * MiniJson.GetNum(m, "medallion_half_w", 416f) * 0.5f;
-            float medH = 2f * MiniJson.GetNum(m, "medallion_half_h", 208f) * 0.5f;
-            for (int i = 0; medallions != null && i < medallions.Count && i < 5; i++)
-                MakeQuad(glass, "medallion_" + i, quad,
-                    PsxPos(MiniJson.Get(medallions[i], "pos"), 2f),
-                    new Vector2(medW, medH),
-                    CutoutMat("medallion_" + i, "furniture/medallion_" + i + ".png", false));
             var pedestalRenderers = new MeshRenderer[3];
-            float pedX0 = MiniJson.GetNum(m, "pedestal_x0", -384f);
-            float pedXStep = MiniJson.GetNum(m, "pedestal_x_step", 384f);
-            float pedY = MiniJson.GetNum(m, "pedestal_y", 480f);
-            for (int r = 0; r < 3; r++)
-                pedestalRenderers[r] = MakeQuad(glass, "pedestal_" + r, quad,
-                    new Vector3(pedX0 + r * pedXStep, -pedY, 801f),
-                    new Vector2(340f, 200f), pedSpin[r]);
-            var marqueeBbs = MiniJson.AsList(MiniJson.Get(m, "marquee"));
-            for (int i = 0; marqueeBbs != null && i < marqueeBbs.Count && i < 3; i++)
-            {
-                var bb = marqueeBbs[i];
-                MakeQuad(glass, "marquee_bb_" + i, quad,
-                    PsxPos(MiniJson.Get(bb, "pos"), -1f),
-                    new Vector2(2f * MiniJson.GetNum(bb, "half_w", 100f),
-                                2f * MiniJson.GetNum(bb, "half_h", 100f)),
-                    CutoutMat("marquee_" + i, "furniture/marquee_" + i + ".png", false));
-            }
-
-            // Paylines: the disc's five 3D segments, lit by the behaviour.
             var paylineLines = new LineRenderer[5];
-            var paylines = MiniJson.AsList(MiniJson.Get(m, "paylines"));
-            var lineMat = LineMat();
-            float worldUnit = studio.lossyScale.x;
-            for (int i = 0; paylines != null && i < paylines.Count && i < 5; i++)
-            {
-                var go = new GameObject("payline_" + i);
-                go.transform.SetParent(glass, false);
-                var lr = go.AddComponent<LineRenderer>();
-                lr.useWorldSpace = false;
-                lr.positionCount = 2;
-                lr.SetPosition(0, PsxPos(MiniJson.Get(paylines[i], "a"), 4f));
-                lr.SetPosition(1, PsxPos(MiniJson.Get(paylines[i], "b"), 4f));
-                lr.startWidth = 10f * worldUnit;
-                lr.endWidth = 10f * worldUnit;
-                lr.sharedMaterial = lineMat;
-                lr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-                paylineLines[i] = lr;
-            }
+            Material lampLit, lampUnlit;
+            Material[] pedSpin, pedStop;
+            BuildGlass(m, quad, studio, worldUnit, lampRenderers, pedestalRenderers,
+                paylineLines, out lampLit, out lampUnlit, out pedSpin, out pedStop);
 
-            // --- the dot-matrix marquee ----------------------------------
-            // Anchor local frame: 1 unit = 1 dot column/row, origin at the
-            // matrix top-left (what LegaiaSlotMachine's slot placement uses).
-            float dotX0 = MiniJson.GetNum(m, "dot_x0", -429f);
-            float dotY0 = MiniJson.GetNum(m, "dot_y0", -640f);
-            float dotXStep = MiniJson.GetNum(m, "dot_x_step", 11f);
-            float dotYStep = MiniJson.GetNum(m, "dot_y_step", 12f);
-            var marquee = Child(studio, "marquee", new Vector3(dotX0, -dotY0, 806f));
-            marquee.localScale = new Vector3(dotXStep, dotYStep, 1f);
-            var tallySlots = MarqueeSlots(marquee, quad, "tally", 3);
-            var timesSlots = MarqueeSlots(marquee, quad, "times", 2);
-            var pipSlots = MarqueeSlots(marquee, quad, "pip", 3);
-            var payoutSlots = MarqueeSlots(marquee, quad, "payout", 4);
-            var coinSlot = MarqueeSlots(marquee, quad, "coin", 1)[0];
-            var legendQuad = MarqueeSlots(marquee, quad, "legend", 1)[0];
-            float dotCols = MiniJson.GetNum(m, "dot_cols", 78f);
-            float dotRows = MiniJson.GetNum(m, "dot_rows", 13f);
-            legendQuad.transform.localPosition = new Vector3(dotCols * 0.5f, -dotRows * 0.5f, 0f);
-            legendQuad.transform.localScale = new Vector3(dotCols, dotRows, 1f);
-            legendQuad.sharedMaterial = msgMats[0];
-            legendQuad.gameObject.SetActive(true);
+            MeshRenderer[] tallySlots, timesSlots, pipSlots, payoutSlots;
+            MeshRenderer coinSlot, legendQuad;
+            float dotCols, dotRows;
+            BuildMarquee(m, quad, studio, msgMats, out tallySlots, out timesSlots,
+                out pipSlots, out payoutSlots, out coinSlot, out legendQuad,
+                out dotCols, out dotRows);
 
-            // --- HUD ------------------------------------------------------
             var hud = Child(studio, "hud", Vector3.zero);
             if (buildPaytable)
-                MakeQuad(hud, "paytable", quad, new Vector3(950f, 60f, 802f),
-                    new Vector2(127f * 3.2f, 239f * 3.2f),
+                MakeQuad(hud, "paytable", quad, PAYTABLE_POS,
+                    new Vector2(127f * PAYTABLE_SCALE, 239f * PAYTABLE_SCALE),
                     CutoutMat("paytable", "hud/paytable.png", false));
-            var balanceText = MakeText(hud, "balance", new Vector3(0f, -760f, 810f), 60f);
-            var statusText = MakeText(hud, "status", new Vector3(0f, -860f, 810f), 40f);
+            var balanceText = MakeText(hud, "balance", HUD_BALANCE_POS, 60f);
+            var statusText = MakeText(hud, "status", HUD_STATUS_POS, 40f);
 
-            // --- the screen feed (flat mode) -----------------------------
-            // A camera films the hidden studio into a RenderTexture shown on
-            // a flat quad at the anchor - the machine is filmed, not modelled
-            // on the glass. The quad's horizontal UV is flipped: the camera
-            // faces the machine, so its image mirrors model +x, while retail
-            // projects +x to screen-right (lamps on the right).
-            Camera screenCamera = null;
-            Transform screenPlane = null;
-            if (flatScreen)
-            {
-                var rt = EnsureScreenRT();
-                var camGo = new GameObject("screen_camera");
-                camGo.transform.SetParent(studio, false);
-                camGo.transform.localPosition =
-                    new Vector3(viewCenter.x, viewCenter.y, CAM_DIST);
-                camGo.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
-                screenCamera = camGo.AddComponent<Camera>();
-                screenCamera.clearFlags = CameraClearFlags.SolidColor;
-                screenCamera.backgroundColor = Color.black;
-                float halfH = viewHalfWidth * ((float)RT_HEIGHT / RT_WIDTH);
-                screenCamera.fieldOfView =
-                    2f * Mathf.Atan(halfH / CAM_DIST) * Mathf.Rad2Deg;
-                // Clip tightly around the studio so nothing else underground
-                // can wander into frame; distances scale with the unit size.
-                screenCamera.nearClipPlane = Mathf.Max(0.01f, 1000f * worldUnit);
-                screenCamera.farClipPlane = 4500f * worldUnit;
-                screenCamera.allowHDR = false;
-                screenCamera.allowMSAA = false;
-                screenCamera.useOcclusionCulling = false;
-                screenCamera.targetTexture = rt;
-
-                var screenMr = MakeQuad(rig.transform, "screen", quad, Vector3.zero,
-                    new Vector2(screenWidth, screenWidth * ((float)RT_HEIGHT / RT_WIDTH)),
-                    ScreenMat(rt));
-                screenPlane = screenMr.transform;
-            }
+            Camera screenCamera;
+            Transform screenPlane;
+            BuildScreenFeed(rig, studio, quad, worldUnit,
+                out screenCamera, out screenPlane);
 
             // --- the machine behaviour -----------------------------------
             var machine = LegaiaWorldBuilder.TryAttachUdon(rig, "LegaiaSlotMachine");
@@ -362,6 +240,10 @@ namespace LegaiaWorld
             W("reelPivots", reelPivots);
             W("reelFaces", reelFaces);
             W("valueMaterials", valueMats);
+            W("reelYRadius", MiniJson.GetNum(m, "reel_y_radius", 585f));
+            W("reelZRadius", MiniJson.GetNum(m, "reel_z_radius", 512f));
+            W("reelFaceWidth", reelW);
+            W("reelShadeOrigin", reelsRoot);
             W("lampRenderers", lampRenderers);
             W("lampLitMaterial", lampLit);
             W("lampUnlitMaterial", lampUnlit);
@@ -404,9 +286,230 @@ namespace LegaiaWorld
 
             Debug.Log("[Legaia] slot machine built under " +
                 (parent != null ? parent.name : "scene root") +
-                ". Drag '" + RIG_NAME + "' to line the reels up with the " +
-                "screen cutout; test in ClientSim / Build & Test (Interact " +
-                "the three buttons).");
+                ". Drag '" + RIG_NAME + "' to line the screen up with the " +
+                "cabinet; test in ClientSim / Build & Test (Interact the " +
+                "three buttons).");
+        }
+
+        // --- the reels ----------------------------------------------------
+
+        /// Retail's drum: 8 face quads per reel that the machine re-derives
+        /// per frame (angle base 0x380, 0x100 pitch, y/z ellipse). The
+        /// builder places them at frac = 0 with placeholder symbols so the
+        /// edit-mode preview shows the drum shape; returns the face width.
+        float BuildReels(object m, Mesh quad, Transform reelsRoot,
+            Material[] valueMats, Transform[] reelPivots, MeshRenderer[] reelFaces)
+        {
+            float reelX0 = MiniJson.GetNum(m, "reel_x0", -512f);
+            float reelXStep = MiniJson.GetNum(m, "reel_x_step", 384f);
+            float reelW = MiniJson.GetNum(m, "reel_width", 256f);
+            float ry = MiniJson.GetNum(m, "reel_y_radius", 585f);
+            float rz = MiniJson.GetNum(m, "reel_z_radius", 512f);
+            for (int r = 0; r < 3; r++)
+            {
+                var pivot = Child(reelsRoot, "reel_" + r,
+                    new Vector3(reelX0 + r * reelXStep + reelW * 0.5f, 0f, 0f));
+                reelPivots[r] = pivot;
+                for (int f = 0; f < FACE_COUNT; f++)
+                {
+                    var face = new GameObject("face_" + f);
+                    face.transform.SetParent(pivot, false);
+                    PlaceDrumFace(face.transform, f, ry, rz, reelW);
+                    face.AddComponent<MeshFilter>().sharedMesh = quad;
+                    var mr = face.AddComponent<MeshRenderer>();
+                    mr.sharedMaterial = valueMats[f % 10];
+                    mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                    reelFaces[r * FACE_COUNT + f] = mr;
+                }
+            }
+            // A black backdrop behind the drums so the cabinet interior never
+            // shows through. (No shade overlay any more - the depth-cue fade
+            // is the face shader's, as in retail.)
+            MakeQuad(reelsRoot, "backdrop", quad, new Vector3(0f, 0f, -620f),
+                new Vector2(1500f, 1400f), BlackMat());
+            return reelW;
+        }
+
+        /// Face f's frac-0 pose: top edge at angle 0x380 + f*0x100 of a
+        /// 0x1000 turn, on the y/z ellipse, in the rig frame (both PSX signs
+        /// flipped). Mirror of LegaiaSlotMachine.ApplyReelVisuals.
+        static void PlaceDrumFace(Transform face, int f, float ry, float rz, float w)
+        {
+            float step = Mathf.PI * 2f / 4096f;
+            float aT = (0x380 + f * 0x100) * step;
+            float aB = aT + 0x100 * step;
+            float yT = Mathf.Sin(aT) * ry;
+            float yB = Mathf.Sin(aB) * ry;
+            float zT = -Mathf.Cos(aT) * rz;
+            float zB = -Mathf.Cos(aB) * rz;
+            float dy = yT - yB;
+            float dz = zT - zB;
+            face.localPosition = new Vector3(0f, (yT + yB) * 0.5f, (zT + zB) * 0.5f);
+            face.localRotation = Quaternion.LookRotation(
+                new Vector3(0f, -dz, dy), new Vector3(0f, dy, dz));
+            face.localScale = new Vector3(w, Mathf.Sqrt(dy * dy + dz * dz), 1f);
+        }
+
+        /// Bake the face shader's world -> model-z reconstruction (the same
+        /// pair LegaiaSlotMachine.BakeShadeVectors refreshes at Start).
+        static void BakeShadeVectors(Transform studio, Transform reelsRoot, Material[] mats)
+        {
+            float unit = studio.lossyScale.z;
+            if (unit < 1e-6f)
+                return;
+            Vector4 origin = reelsRoot.position;
+            Vector4 axis = (Vector4)(studio.forward * (-1f / unit));
+            foreach (var mat in mats)
+            {
+                if (mat == null || !mat.HasProperty("_ShadeOrigin"))
+                    continue;
+                mat.SetVector("_ShadeOrigin", origin);
+                mat.SetVector("_ShadeAxis", axis);
+                EditorUtility.SetDirty(mat);
+            }
+        }
+
+        // --- the glass furniture ------------------------------------------
+
+        void BuildGlass(object m, Mesh quad, Transform studio, float worldUnit,
+            MeshRenderer[] lampRenderers, MeshRenderer[] pedestalRenderers,
+            LineRenderer[] paylineLines, out Material lampLit, out Material lampUnlit,
+            out Material[] pedSpin, out Material[] pedStop)
+        {
+            var glass = Child(studio, "glass", Vector3.zero);
+            lampLit = CutoutMat("lamp_lit", "furniture/lamp_lit.png", false);
+            lampUnlit = CutoutMat("lamp_unlit", "furniture/lamp_unlit.png", false);
+            var lamps = MiniJson.AsList(MiniJson.Get(m, "lamps"));
+            float lampW = 2f * MiniJson.GetNum(m, "lamp_half_w", 180f);
+            float lampH = 2f * MiniJson.GetNum(m, "lamp_half_h", 160f);
+            for (int i = 0; lamps != null && i < lamps.Count && i < 5; i++)
+                lampRenderers[i] = MakeQuad(glass, "lamp_" + i, quad,
+                    PsxPos(lamps[i], 2f), new Vector2(lampW, lampH), lampUnlit);
+            var medallions = MiniJson.AsList(MiniJson.Get(m, "medallions"));
+            float medW = MiniJson.GetNum(m, "medallion_half_w", 416f);
+            float medH = MiniJson.GetNum(m, "medallion_half_h", 208f);
+            for (int i = 0; medallions != null && i < medallions.Count && i < 5; i++)
+                MakeQuad(glass, "medallion_" + i, quad,
+                    PsxPos(MiniJson.Get(medallions[i], "pos"), 2f),
+                    new Vector2(medW, medH),
+                    CutoutMat("medallion_" + i, "furniture/medallion_" + i + ".png", false));
+            pedSpin = new Material[3];
+            pedStop = new Material[3];
+            float pedX0 = MiniJson.GetNum(m, "pedestal_x0", -384f);
+            float pedXStep = MiniJson.GetNum(m, "pedestal_x_step", 384f);
+            float pedY = MiniJson.GetNum(m, "pedestal_y", 480f);
+            float pedW = 2f * MiniJson.GetNum(m, "pedestal_half_w", 170f);
+            float pedH = 2f * MiniJson.GetNum(m, "pedestal_half_h", 100f);
+            for (int r = 0; r < 3; r++)
+            {
+                pedSpin[r] = CutoutMat("pedestal_" + r + "_spin",
+                    "furniture/pedestal_" + r + "_spin.png", false);
+                pedStop[r] = CutoutMat("pedestal_" + r + "_stop",
+                    "furniture/pedestal_" + r + "_stop.png", false);
+                pedestalRenderers[r] = MakeQuad(glass, "pedestal_" + r, quad,
+                    new Vector3(pedX0 + r * pedXStep, -pedY, 801f),
+                    new Vector2(pedW, pedH), pedSpin[r]);
+            }
+            var marqueeBbs = MiniJson.AsList(MiniJson.Get(m, "marquee"));
+            for (int i = 0; marqueeBbs != null && i < marqueeBbs.Count && i < 3; i++)
+            {
+                var bb = marqueeBbs[i];
+                MakeQuad(glass, "marquee_bb_" + i, quad,
+                    PsxPos(MiniJson.Get(bb, "pos"), -1f),
+                    new Vector2(2f * MiniJson.GetNum(bb, "half_w", 100f),
+                                2f * MiniJson.GetNum(bb, "half_h", 100f)),
+                    CutoutMat("marquee_" + i, "furniture/marquee_" + i + ".png", false));
+            }
+
+            // Paylines: the disc's five 3D segments, lit by the behaviour.
+            var paylines = MiniJson.AsList(MiniJson.Get(m, "paylines"));
+            var lineMat = LineMat();
+            for (int i = 0; paylines != null && i < paylines.Count && i < 5; i++)
+            {
+                var go = new GameObject("payline_" + i);
+                go.transform.SetParent(glass, false);
+                var lr = go.AddComponent<LineRenderer>();
+                lr.useWorldSpace = false;
+                lr.positionCount = 2;
+                lr.SetPosition(0, PsxPos(MiniJson.Get(paylines[i], "a"), 4f));
+                lr.SetPosition(1, PsxPos(MiniJson.Get(paylines[i], "b"), 4f));
+                lr.startWidth = 10f * worldUnit;
+                lr.endWidth = 10f * worldUnit;
+                lr.sharedMaterial = lineMat;
+                lr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                paylineLines[i] = lr;
+            }
+        }
+
+        // --- the dot-matrix marquee ---------------------------------------
+
+        /// Anchor local frame: 1 unit = 1 dot column/row, origin at the
+        /// matrix top-left (what LegaiaSlotMachine's slot placement uses).
+        void BuildMarquee(object m, Mesh quad, Transform studio, Material[] msgMats,
+            out MeshRenderer[] tallySlots, out MeshRenderer[] timesSlots,
+            out MeshRenderer[] pipSlots, out MeshRenderer[] payoutSlots,
+            out MeshRenderer coinSlot, out MeshRenderer legendQuad,
+            out float dotCols, out float dotRows)
+        {
+            float dotX0 = MiniJson.GetNum(m, "dot_x0", -429f);
+            float dotY0 = MiniJson.GetNum(m, "dot_y0", -640f);
+            float dotXStep = MiniJson.GetNum(m, "dot_x_step", 11f);
+            float dotYStep = MiniJson.GetNum(m, "dot_y_step", 12f);
+            var marquee = Child(studio, "marquee", new Vector3(dotX0, -dotY0, 806f));
+            marquee.localScale = new Vector3(dotXStep, dotYStep, 1f);
+            tallySlots = MarqueeSlots(marquee, quad, "tally", 3);
+            timesSlots = MarqueeSlots(marquee, quad, "times", 2);
+            pipSlots = MarqueeSlots(marquee, quad, "pip", 3);
+            payoutSlots = MarqueeSlots(marquee, quad, "payout", 4);
+            coinSlot = MarqueeSlots(marquee, quad, "coin", 1)[0];
+            legendQuad = MarqueeSlots(marquee, quad, "legend", 1)[0];
+            dotCols = MiniJson.GetNum(m, "dot_cols", 78f);
+            dotRows = MiniJson.GetNum(m, "dot_rows", 13f);
+            legendQuad.transform.localPosition = new Vector3(dotCols * 0.5f, -dotRows * 0.5f, 0f);
+            legendQuad.transform.localScale = new Vector3(dotCols, dotRows, 1f);
+            legendQuad.sharedMaterial = msgMats[0];
+            legendQuad.gameObject.SetActive(true);
+        }
+
+        // --- the screen feed (flat mode) ----------------------------------
+
+        /// A camera films the hidden studio into a RenderTexture shown on a
+        /// flat quad at the anchor - the machine is filmed, not modelled on
+        /// the glass. The quad's horizontal UV is flipped: the camera faces
+        /// the machine, so its image mirrors model +x, while retail projects
+        /// +x to screen-right (lamps on the right).
+        void BuildScreenFeed(GameObject rig, Transform studio, Mesh quad,
+            float worldUnit, out Camera screenCamera, out Transform screenPlane)
+        {
+            screenCamera = null;
+            screenPlane = null;
+            if (!flatScreen)
+                return;
+            var rt = EnsureScreenRT();
+            var camGo = new GameObject("screen_camera");
+            camGo.transform.SetParent(studio, false);
+            camGo.transform.localPosition =
+                new Vector3(viewCenter.x, viewCenter.y, CAM_DIST);
+            camGo.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
+            screenCamera = camGo.AddComponent<Camera>();
+            screenCamera.clearFlags = CameraClearFlags.SolidColor;
+            screenCamera.backgroundColor = Color.black;
+            float halfH = viewHalfWidth * ((float)RT_HEIGHT / RT_WIDTH);
+            screenCamera.fieldOfView =
+                2f * Mathf.Atan(halfH / CAM_DIST) * Mathf.Rad2Deg;
+            // Clip tightly around the studio so nothing else underground
+            // can wander into frame; distances scale with the unit size.
+            screenCamera.nearClipPlane = Mathf.Max(0.01f, 1000f * worldUnit);
+            screenCamera.farClipPlane = 4500f * worldUnit;
+            screenCamera.allowHDR = false;
+            screenCamera.allowMSAA = false;
+            screenCamera.useOcclusionCulling = false;
+            screenCamera.targetTexture = rt;
+
+            var screenMr = MakeQuad(rig.transform, "screen", quad, Vector3.zero,
+                new Vector2(screenWidth, screenWidth * ((float)RT_HEIGHT / RT_WIDTH)),
+                ScreenMat(rt));
+            screenPlane = screenMr.transform;
         }
 
         // ------------------------------------------------------------------
@@ -607,6 +710,18 @@ namespace LegaiaWorld
 
         // --- generated assets ----------------------------------------------
 
+        /// Per-cabinet suffix for the screen-feed assets, so two machines in
+        /// one scene never share a RenderTexture (two cameras writing one
+        /// texture fight - each cabinet gets its own feed).
+        string RigAssetSuffix()
+        {
+            string raw = cabinet != null ? cabinet.name : "scene";
+            var sb = new System.Text.StringBuilder(raw.Length);
+            foreach (char c in raw)
+                sb.Append(char.IsLetterOrDigit(c) ? c : '_');
+            return sb.ToString();
+        }
+
         /// A unit quad in the XY plane whose front face looks along +Z (the
         /// rig's player side) - Unity's built-in Quad faces the other way.
         static Mesh EnsureQuadMesh()
@@ -634,7 +749,7 @@ namespace LegaiaWorld
             return mesh;
         }
 
-        Material CutoutMat(string name, string relTex, bool repeat)
+        Material CutoutMat(string name, string relTex, bool repeat, Shader shader = null)
         {
             string texPath = artDir + "/" + relTex;
             var tex = AssetDatabase.LoadAssetAtPath<Texture2D>(texPath);
@@ -642,12 +757,18 @@ namespace LegaiaWorld
                 Debug.LogWarning("[Legaia] slot art texture missing: " + texPath);
             else
                 ConfigureTexture(texPath, repeat);
+            if (shader == null)
+                shader = Shader.Find("Unlit/Transparent Cutout");
             string matPath = GEN_DIR + "/" + name + ".mat";
             var mat = AssetDatabase.LoadAssetAtPath<Material>(matPath);
             if (mat == null)
             {
-                mat = new Material(Shader.Find("Unlit/Transparent Cutout"));
+                mat = new Material(shader);
                 AssetDatabase.CreateAsset(mat, matPath);
+            }
+            else if (mat.shader != shader)
+            {
+                mat.shader = shader; // upgrade a material built before the shader change
             }
             mat.mainTexture = tex;
             if (mat.HasProperty("_Cutoff"))
@@ -676,10 +797,11 @@ namespace LegaiaWorld
         }
 
         /// The screen feed target: a PSX-ish low-res RenderTexture, point
-        /// sampled so the pixels stay crisp on the cabinet screen.
-        static RenderTexture EnsureScreenRT()
+        /// sampled so the pixels stay crisp on the cabinet screen. One per
+        /// cabinet (see RigAssetSuffix).
+        RenderTexture EnsureScreenRT()
         {
-            string path = GEN_DIR + "/slot_screen.renderTexture";
+            string path = GEN_DIR + "/slot_screen_" + RigAssetSuffix() + ".renderTexture";
             var rt = AssetDatabase.LoadAssetAtPath<RenderTexture>(path);
             if (rt == null)
             {
@@ -695,10 +817,10 @@ namespace LegaiaWorld
         }
 
         /// Unlit screen material over the feed, horizontally flipped (see the
-        /// screen-feed comment in Build).
-        static Material ScreenMat(RenderTexture rt)
+        /// screen-feed comment in BuildScreenFeed).
+        Material ScreenMat(RenderTexture rt)
         {
-            string path = GEN_DIR + "/slot_screen.mat";
+            string path = GEN_DIR + "/slot_screen_" + RigAssetSuffix() + ".mat";
             var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
             if (mat == null)
             {
@@ -733,46 +855,6 @@ namespace LegaiaWorld
                 mat = new Material(Shader.Find("Sprites/Default"));
                 AssetDatabase.CreateAsset(mat, path);
             }
-            return mat;
-        }
-
-        /// Vertical gradient: opaque black at the top and bottom edges,
-        /// transparent through the middle band - the stand-in for retail's
-        /// depth-cued reel shade (bright at the payline, black past ~48
-        /// degrees either side).
-        Material ShadeMat()
-        {
-            string texPath = GEN_DIR + "/slot_shade.png";
-            if (AssetDatabase.LoadAssetAtPath<Texture2D>(texPath) == null)
-            {
-                const int H = 128;
-                var tex = new Texture2D(4, H, TextureFormat.RGBA32, false);
-                for (int y = 0; y < H; y++)
-                {
-                    float t = Mathf.Abs(y / (H - 1f) - 0.5f) * 2f; // 0 centre, 1 edge
-                    float a = Mathf.Clamp01((t - 0.35f) / 0.5f);
-                    a = a * a;
-                    for (int x = 0; x < 4; x++)
-                        tex.SetPixel(x, y, new Color(0f, 0f, 0f, a));
-                }
-                File.WriteAllBytes(texPath, tex.EncodeToPNG());
-                Object.DestroyImmediate(tex);
-                AssetDatabase.ImportAsset(texPath);
-                var imp = AssetImporter.GetAtPath(texPath) as TextureImporter;
-                if (imp != null)
-                {
-                    imp.wrapMode = TextureWrapMode.Clamp;
-                    imp.SaveAndReimport();
-                }
-            }
-            string matPath = GEN_DIR + "/slot_shade.mat";
-            var mat = AssetDatabase.LoadAssetAtPath<Material>(matPath);
-            if (mat == null)
-            {
-                mat = new Material(Shader.Find("Unlit/Transparent"));
-                AssetDatabase.CreateAsset(mat, matPath);
-            }
-            mat.mainTexture = AssetDatabase.LoadAssetAtPath<Texture2D>(texPath);
             return mat;
         }
     }

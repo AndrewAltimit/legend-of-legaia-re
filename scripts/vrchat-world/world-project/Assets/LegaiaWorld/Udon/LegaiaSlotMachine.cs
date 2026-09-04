@@ -18,16 +18,25 @@
 // - the five-payline all-equal evaluation, the per-symbol payout table, the
 //   jackpot symbols 8/9 opening 1/3 bonus rounds, and the bonus product
 //   payout `(v0-0xF)*(v1-0xF)*(v2-0xF)` = 1..1000 coins;
+// - the reel *drum* itself (FUN_801d0fa8): 8 faces re-derived per frame at a
+//   22.5-degree pitch (0x100 of a 0x1000 turn) from base angle 0x380+frac,
+//   on the y=585 / z=512 ellipse, the payline row on face 4 and the strip
+//   walking downward as the angle advances. The depth-cue shade lives in the
+//   LegaiaWorld/SlotReelFace shader (per pixel - retail is per vertex);
 // - the 70-coin entry balance (retail's dev-launch fallback - exactly the
 //   "no casino coin bank" situation a VRChat world is in).
 //
 // VRChat adaptations: the BIOS-rand feature stream is a plain LCG (as in the
 // engine port), balance is per-cabinet and refills to 70 when it runs dry
-// (free play - there is no casino bank to cash out to), and the cash-out
-// submenu is dropped. Sync: the last player to press a button owns the
-// machine and drives the rules; outcomes (stop rows, wins, balance) are
-// synced, reel animation runs locally on every client from the same
-// deterministic strips.
+// (free play - there is no casino bank to cash out to), the cash-out submenu
+// is dropped, and a payout left unclaimed auto-collects (`autoCollect`).
+//
+// Sync: outcomes (stop rows, wins, balance, phase) are owner-authoritative
+// and synced; reel animation runs locally on every client from the same
+// deterministic strips. Both RNG streams are synced alongside the outcomes,
+// so a change of owner continues the SAME streams instead of forking them -
+// and ownership only transfers while the machine is idle (one seat per
+// session, as retail), which also closes the double-stop race.
 //
 // Requires UdonSharp (bundled with the VRChat worlds SDK).
 
@@ -43,17 +52,26 @@ namespace LegaiaWorld
         // --- wiring (set by LegaiaSlotMachineBuilder) ------------------------
 
         [Header("Reels")]
-        [Tooltip("3 reel pivots; local X is the cylinder axis, rotation shows the strip.")]
+        [Tooltip("3 reel pivots at the drum centres; faces are their children.")]
         public Transform[] reelPivots;
 
-        [Tooltip("60 face renderers, reel*20+row - one quad per strip row around each cylinder.")]
+        [Tooltip("24 face renderers, reel*8+face - retail's 8 per-frame drum faces.")]
         public MeshRenderer[] reelFaces;
 
         [Tooltip("20 materials: 0..9 the reel symbols, 10..19 the bonus numerals 1..10.")]
         public Material[] valueMaterials;
 
-        [Tooltip("Degrees the pivot turns per full strip revolution sign - flip if the reels spin backwards.")]
-        public float spinDirection = -1f;
+        [Tooltip("The reel drum's y radius in model units (retail 0x249).")]
+        public float reelYRadius = 585f;
+
+        [Tooltip("The reel drum's z radius in model units (retail cos >> 3).")]
+        public float reelZRadius = 512f;
+
+        [Tooltip("Width of one reel face in model units (retail 0x100).")]
+        public float reelFaceWidth = 256f;
+
+        [Tooltip("Drum-centre transform the face shader's depth cue is baked from.")]
+        public Transform reelShadeOrigin;
 
         [Header("Glass furniture")]
         [Tooltip("5 payline lamp quads down the right (index = payline).")]
@@ -114,6 +132,9 @@ namespace LegaiaWorld
         [Tooltip("Refill the balance to 70 when a spin can't be paid for (free play - no casino bank in VRChat).")]
         public bool freePlayRefill = true;
 
+        [Tooltip("Collect an unclaimed payout automatically after the hold (VRChat convenience; retail waits for input).")]
+        public bool autoCollect = true;
+
         // Marquee layout (dot columns; retail constants, builder overwrites
         // from the manifest).
         public int[] tallyNumberCols = { 0x00, 0x20, 0x40 };
@@ -128,6 +149,11 @@ namespace LegaiaWorld
         public int msgCoins = 0x14;
         public int dotCols = 78;
         public int dotRows = 13;
+
+        // The editor verify harness (LegaiaSlotTools) drives the rules methods
+        // directly outside the Udon runtime; this mutes the VRC serialization
+        // call it cannot service. Never set in a world.
+        [System.NonSerialized] public bool suppressSerialization;
 
         // --- rules constants (docs/subsystems/minigame-slot-machine.md) ------
 
@@ -159,6 +185,17 @@ namespace LegaiaWorld
         // land in the synced int field.
         const int ENTRY_LCG_SEED = 0x6C0A2AF0;
 
+        // Reel drum (FUN_801d0fa8): 8 faces per frame, each 0x100 of a 0x1000
+        // turn (22.5 degrees), first face's top edge at 0x380 + frac. Face 4
+        // carries the payline row (the face whose depth cue peaks), and the
+        // strip walks DOWNWARD as the angle advances. The edge tables below
+        // are indexed at 16-angle-unit granularity (256 entries per turn).
+        const int FACE_COUNT = 8;
+        const int FACE_ANGLE_BASE = 0x380;
+        const int FACE_ANGLE_STEP = 0x100;
+        const int PAYLINE_FACE = 4;
+        const int EDGE_TABLE = 256;                // 0x1000 / 16
+
         // Five paylines x three per-reel row offsets from the payline row
         // (top / middle / bottom / two diagonals). Not `readonly` - UdonSharp
         // does not support the modifier on array fields.
@@ -167,6 +204,8 @@ namespace LegaiaWorld
         // --- synced state (owner-authoritative) ------------------------------
 
         [UdonSynced] int syncSeed;
+        [UdonSynced] int syncRngState;   // slot LCG - synced so a new owner continues the stream
+        [UdonSynced] int syncRandState;  // feature-roll stream, ditto
         [UdonSynced] int syncSpinSerial;
         [UdonSynced] int syncSpinFrames = SPIN_UP_FRAMES;
         [UdonSynced] int syncPhase = PHASE_IDLE;
@@ -175,6 +214,7 @@ namespace LegaiaWorld
         [UdonSynced] int syncBalance = ENTRY_BALANCE;
         [UdonSynced] int syncNetTake;
         [UdonSynced] int syncNormalTarget = 2;
+        [UdonSynced] int syncJitter;     // rand%5 sub-row landing nudge (visual)
         [UdonSynced] int syncStopRow0 = -1;
         [UdonSynced] int syncStopRow1 = -1;
         [UdonSynced] int syncStopRow2 = -1;
@@ -190,11 +230,20 @@ namespace LegaiaWorld
         int[] displayStrip = new int[REEL_COUNT * STRIP_LEN];
         int[] symbolStrip = new int[REEL_COUNT * STRIP_LEN];
         int[] bonusStrip = new int[REEL_COUNT * STRIP_LEN];
-        int[] shownValue = new int[REEL_COUNT * STRIP_LEN]; // material shadow
         int[] reelPos = new int[REEL_COUNT];   // fixed point, high byte = row
         int[] reelVel = new int[REEL_COUNT];
         int[] localStopRow = { -1, -1, -1 };
         int[] claimed = new int[REEL_COUNT];   // payline value + 1, 0 = unclaimed
+
+        // Drum-face shadows: what each of the 24 face quads currently shows.
+        int[] faceShownValue = new int[REEL_COUNT * FACE_COUNT];
+        int[] lastDrawnPos = { -1, -1, -1 };
+
+        // Edge tables over the 0x1000-unit turn at 16-unit steps, in the rig's
+        // local frame (y up = -PSX y, z toward the player = -PSX z).
+        float[] edgeY = new float[EDGE_TABLE];
+        float[] edgeZ = new float[EDGE_TABLE];
+        float[] faceLen = new float[EDGE_TABLE]; // edge i -> edge i+16 chord
 
         int builtSeed = int.MinValue;
         int localSpinSerial;
@@ -202,37 +251,100 @@ namespace LegaiaWorld
         int payoutTimer;
         uint rngState;   // slot LCG (strips + landings)
         uint randState;  // feature-roll stream (BIOS-rand stand-in)
+        bool isLocalOwner;
         float tickAccum;
         float legendOffset;
         Material legendMaterial;
         int shownLegendMsg = -1;
+        int shownStateHash = -1;
         int cameraPoll;
+        bool visualsActive = true;
 
         void Start()
         {
-            if (Networking.IsOwner(gameObject) && syncSeed == 0)
+            isLocalOwner = Networking.IsOwner(gameObject);
+            BuildEdgeTables();
+            BakeShadeVectors();
+            if (isLocalOwner && syncSeed == 0)
             {
                 syncSeed = ENTRY_LCG_SEED;
-                RequestSerialization();
+                BuildStrips(syncSeed);
+                Serialize();
             }
-            if (syncSeed == 0)
-                syncSeed = ENTRY_LCG_SEED;
-            BuildStrips(syncSeed);
-            for (int i = 0; i < shownValue.Length; i++)
-                shownValue[i] = -1;
+            else
+            {
+                if (syncSeed == 0)
+                    syncSeed = ENTRY_LCG_SEED;
+                BuildStrips(syncSeed);
+            }
             if (legendQuad != null)
                 legendMaterial = legendQuad.material; // instance for UV scroll
             ApplySyncedStops();
-            RefreshAllFaces();
+            ForceRedraw();
             UpdateHud();
+        }
+
+        void BuildEdgeTables()
+        {
+            float ry = reelYRadius;
+            float rz = reelZRadius;
+            for (int i = 0; i < EDGE_TABLE; i++)
+            {
+                float a = i * 16 * (Mathf.PI * 2f / 4096f);
+                // PSX: y(a) = sin(a) * -ry, z(a) = cos(a) * rz; the rig frame
+                // negates both, so the drum top is up and the payline face
+                // (angle 0x800) lands at z = +rz, toward the player.
+                edgeY[i] = Mathf.Sin(a) * ry;
+                edgeZ[i] = -Mathf.Cos(a) * rz;
+            }
+            for (int i = 0; i < EDGE_TABLE; i++)
+            {
+                int j = (i + 16) % EDGE_TABLE;
+                float dy = edgeY[i] - edgeY[j];
+                float dz = edgeZ[i] - edgeZ[j];
+                faceLen[i] = Mathf.Sqrt(dy * dy + dz * dz);
+            }
+        }
+
+        /// The face shader reconstructs machine-space z from world space via
+        /// two baked vectors; refresh them here so a rig dragged after the
+        /// build self-corrects. (The builder bakes the same pair at build
+        /// time for the edit-mode preview.)
+        void BakeShadeVectors()
+        {
+            if (reelShadeOrigin == null || valueMaterials == null)
+                return;
+            float unit = reelShadeOrigin.lossyScale.z;
+            if (unit < 1e-6f)
+                return;
+            Vector4 origin = reelShadeOrigin.position;
+            Vector4 axis = reelShadeOrigin.forward * (-1f / unit);
+            for (int i = 0; i < valueMaterials.Length; i++)
+            {
+                Material m = valueMaterials[i];
+                if (m != null && m.HasProperty("_ShadeOrigin"))
+                {
+                    m.SetVector("_ShadeOrigin", origin);
+                    m.SetVector("_ShadeAxis", axis);
+                }
+            }
         }
 
         // --- input (LegaiaSlotButton forwards Interact here) -----------------
 
         public void PressButton(int index)
         {
-            if (!Networking.IsOwner(gameObject))
+            if (!isLocalOwner)
+            {
+                // One seat per session: the machine only changes hands while
+                // idle. This keeps both RNG streams and the stop inputs in one
+                // player's hands from bet to payout (and closes the race where
+                // a second player re-stops a reel the owner already stopped).
+                if (syncPhase != PHASE_IDLE)
+                    return;
                 Networking.SetOwner(Networking.LocalPlayer, gameObject);
+                isLocalOwner = true;
+            }
 
             if (syncPhase == PHASE_IDLE)
             {
@@ -251,6 +363,11 @@ namespace LegaiaWorld
             UpdateHud();
         }
 
+        public override void OnOwnershipTransferred(VRCPlayerApi player)
+        {
+            isLocalOwner = player != null && player.isLocal;
+        }
+
         // --- RNG (FUN_801d30cc + the engine's BiosRand stand-in) -------------
 
         uint NextRng()
@@ -264,6 +381,17 @@ namespace LegaiaWorld
         {
             randState = randState * 1103515245u + 12345u;
             return (int)((randState >> 16) & 0x7FFF);
+        }
+
+        /// Owner-side flush: mirror both RNG streams into the synced fields so
+        /// the next owner continues them, then serialize.
+        void Serialize()
+        {
+            syncRngState = (int)rngState;
+            syncRandState = (int)randState;
+            if (suppressSerialization)
+                return;
+            RequestSerialization();
         }
 
         // --- strip build (FUN_801cf0d8 case 0) -------------------------------
@@ -332,14 +460,14 @@ namespace LegaiaWorld
             syncPhase = PHASE_SPINNING;
             localSpinSerial = syncSpinSerial;
             StartSpinLocal(syncSpinFrames);
-            RequestSerialization();
+            Serialize();
         }
 
-        // Per-spin roll: jitter (discarded - sub-row presentation), the
-        // normal-mode target symbol, and the net-take-bracketed feature entry.
+        // Per-spin roll: jitter (the sub-row landing nudge), the normal-mode
+        // target symbol, and the net-take-bracketed feature entry.
         void FeatureRoll()
         {
-            NextRand15(); // jitter rand%5 - drawn for stream fidelity
+            syncJitter = NextRand15() % 5;
             syncNormalTarget = NextRand15() % 6 + 2;
             if (syncFeatureMode != 0)
                 return;
@@ -373,6 +501,9 @@ namespace LegaiaWorld
             reelVel[1] = 0x70;
             reelVel[2] = 0x80;
             spinTimer = frames;
+            // Reels start moving again - force the next visual pass.
+            for (int r = 0; r < REEL_COUNT; r++)
+                lastDrawnPos[r] = -1;
         }
 
         // --- stop (FUN_801d2114 / FUN_801d2440 / FUN_801d0554) ---------------
@@ -419,7 +550,7 @@ namespace LegaiaWorld
                 syncPhase = PHASE_PAYOUT;
                 payoutTimer = PAYOUT_HOLD_FRAMES;
             }
-            RequestSerialization();
+            Serialize();
         }
 
         int LandRow(int reel, int fromRow, int depth, int target)
@@ -444,6 +575,7 @@ namespace LegaiaWorld
             reelPos[reel] = row << 8;
             reelVel[reel] = 0;
             localStopRow[reel] = row;
+            lastDrawnPos[reel] = -1; // one final draw with the landing nudge
             // The claimed latch: payline value + 1 the frame the reel locks -
             // what the marquee's bonus tally prints (FUN_801d0554).
             claimed[reel] = displayStrip[reel * STRIP_LEN + row] + 1;
@@ -535,7 +667,7 @@ namespace LegaiaWorld
             if (syncBalance > BALANCE_CAP)
                 syncBalance = BALANCE_CAP;
             syncPhase = PHASE_IDLE;
-            RequestSerialization();
+            Serialize();
         }
 
         // --- sync ------------------------------------------------------------
@@ -543,9 +675,14 @@ namespace LegaiaWorld
         public override void OnDeserialization()
         {
             if (syncSeed != builtSeed && syncSeed != 0)
-            {
                 BuildStrips(syncSeed);
-                RefreshAllFaces();
+            // Continue the owner's streams, not our own fork: if this client
+            // later takes the machine, its draws pick up where the previous
+            // owner's left off.
+            if (!isLocalOwner)
+            {
+                rngState = (uint)syncRngState;
+                randState = (uint)syncRandState;
             }
             if (syncSpinSerial != localSpinSerial)
             {
@@ -581,30 +718,69 @@ namespace LegaiaWorld
                 tickAccum -= 1f / 60f;
                 Tick();
             }
-            ApplyReelTransforms();
-            ScrollLegend();
 
             // The studio camera is per-client cost: pause it (locally) when
-            // this player is nowhere near the cabinet screen.
+            // this player is nowhere near the cabinet screen. The same gate
+            // pauses all the visual work - what the camera doesn't film,
+            // nobody sees.
             cameraPoll++;
             if (cameraPoll >= 30)
             {
                 cameraPoll = 0;
                 UpdateCameraCulling();
             }
+            if (!visualsActive)
+                return;
+
+            ApplyReelVisuals();
+            int hash = StateHash();
+            if (hash != shownStateHash)
+            {
+                shownStateHash = hash;
+                RefreshFurniture();
+                RefreshMarquee();
+            }
+            ScrollLegend();
         }
 
         void UpdateCameraCulling()
         {
-            if (screenCamera == null)
-                return;
             bool active = true;
             var player = Networking.LocalPlayer;
             if (player != null && screenPlane != null)
                 active = Vector3.Distance(player.GetPosition(), screenPlane.position)
                     < cameraActiveDistance;
-            if (screenCamera.enabled != active)
+            if (screenCamera != null && screenCamera.enabled != active)
                 screenCamera.enabled = active;
+            if (active && !visualsActive)
+                ForceRedraw(); // catch up everything missed while paused
+            visualsActive = active;
+        }
+
+        void ForceRedraw()
+        {
+            for (int i = 0; i < faceShownValue.Length; i++)
+                faceShownValue[i] = -1;
+            for (int r = 0; r < REEL_COUNT; r++)
+                lastDrawnPos[r] = -1;
+            shownStateHash = -1;
+        }
+
+        /// Everything RefreshFurniture / RefreshMarquee draw from, folded to
+        /// one word so an unchanged frame costs one comparison.
+        int StateHash()
+        {
+            int h = syncPhase;
+            h = h * 31 + syncWinLine;
+            h = h * 31 + syncPayout;
+            h = h * 31 + syncFeatureMode;
+            h = h * 31 + syncBonusSpins;
+            for (int r = 0; r < REEL_COUNT; r++)
+            {
+                h = h * 31 + claimed[r];
+                h = h * 31 + localStopRow[r];
+            }
+            return h;
         }
 
         void Tick()
@@ -616,18 +792,18 @@ namespace LegaiaWorld
             if (spinTimer > 0)
             {
                 spinTimer--;
-                if (spinTimer <= 0 && Networking.IsOwner(gameObject) && syncPhase == PHASE_SPINNING)
+                if (spinTimer <= 0 && isLocalOwner && syncPhase == PHASE_SPINNING)
                 {
                     syncPhase = PHASE_STOPPING;
-                    RequestSerialization();
+                    Serialize();
                     UpdateHud();
                 }
             }
 
-            if (syncPhase == PHASE_PAYOUT && payoutTimer > 0)
+            if (syncPhase == PHASE_PAYOUT && autoCollect && payoutTimer > 0)
             {
                 payoutTimer--;
-                if (payoutTimer <= 0 && Networking.IsOwner(gameObject))
+                if (payoutTimer <= 0 && isLocalOwner)
                 {
                     Collect();
                     UpdateHud();
@@ -644,45 +820,68 @@ namespace LegaiaWorld
                 int i = r * STRIP_LEN + row;
                 displayStrip[i] = bonus ? bonusStrip[i] : symbolStrip[i];
             }
-            RefreshChangedFaces();
-            RefreshFurniture();
-            RefreshMarquee();
         }
 
-        void ApplyReelTransforms()
+        // --- reel drum (FUN_801d0fa8 at face granularity) --------------------
+
+        /// Re-derive the 8 drum faces per reel from the live position, as
+        /// retail does per frame: face f's top edge sits at angle
+        /// 0x380 + frac + f*0x100 on the y/z ellipse, and carries strip row
+        /// (payline_row + 4 - f). A reel whose position hasn't changed since
+        /// the last pass costs one comparison.
+        void ApplyReelVisuals()
         {
-            if (reelPivots == null)
+            if (reelPivots == null || reelFaces == null || valueMaterials == null)
                 return;
             for (int r = 0; r < REEL_COUNT && r < reelPivots.Length; r++)
             {
-                if (reelPivots[r] == null)
+                // Stopped reels draw once more with the landing nudge - the
+                // rand%5 sub-row offset retail leaves the reel sitting on.
+                int drawPos = reelPos[r];
+                if (localStopRow[r] != -1)
+                    drawPos += syncJitter * 0x10;
+                if (drawPos == lastDrawnPos[r])
                     continue;
-                float angle = spinDirection * (reelPos[r] * 360f / REEL_WRAP);
-                reelPivots[r].localRotation = Quaternion.Euler(angle, 0f, 0f);
-            }
-        }
+                lastDrawnPos[r] = drawPos;
 
-        void RefreshChangedFaces()
-        {
-            if (reelFaces == null || valueMaterials == null)
-                return;
-            for (int i = 0; i < displayStrip.Length && i < reelFaces.Length; i++)
-            {
-                int v = displayStrip[i];
-                if (v == shownValue[i])
-                    continue;
-                shownValue[i] = v;
-                int mat = v >= BONUS_VALUE_BASE ? 10 + (v - BONUS_VALUE_BASE) : v;
-                if (reelFaces[i] != null && mat >= 0 && mat < valueMaterials.Length)
-                    reelFaces[i].sharedMaterial = valueMaterials[mat];
-            }
-        }
+                int row0 = (drawPos >> 8) % STRIP_LEN;
+                int frac = drawPos & 0xFF;
+                int baseEdge = (FACE_ANGLE_BASE + frac) >> 4;
+                for (int f = 0; f < FACE_COUNT; f++)
+                {
+                    int i = r * FACE_COUNT + f;
+                    if (i >= reelFaces.Length || reelFaces[i] == null)
+                        continue;
+                    Transform face = reelFaces[i].transform;
+                    int iT = (baseEdge + f * 16) % EDGE_TABLE;
+                    int iB = (iT + 16) % EDGE_TABLE;
+                    float yT = edgeY[iT];
+                    float yB = edgeY[iB];
+                    float zT = edgeZ[iT];
+                    float zB = edgeZ[iB];
+                    float dy = yT - yB;
+                    float dz = zT - zB;
+                    face.localPosition =
+                        new Vector3(0f, (yT + yB) * 0.5f, (zT + zB) * 0.5f);
+                    // Quad +Z = the outward chord normal, +Y = up the edge.
+                    face.localRotation = Quaternion.LookRotation(
+                        new Vector3(0f, -dz, dy), new Vector3(0f, dy, dz));
+                    face.localScale = new Vector3(reelFaceWidth, faceLen[iT], 1f);
 
-        void RefreshAllFaces()
-        {
-            for (int i = 0; i < shownValue.Length; i++)
-                shownValue[i] = -1;
-            RefreshChangedFaces();
+                    // The strip walks downward as the angle advances: the
+                    // payline face (4) carries row0, faces above carry the
+                    // rows after it.
+                    int idx = (row0 + STRIP_LEN + PAYLINE_FACE - f) % STRIP_LEN;
+                    int v = displayStrip[r * STRIP_LEN + idx];
+                    if (v != faceShownValue[i])
+                    {
+                        faceShownValue[i] = v;
+                        int mat = v >= BONUS_VALUE_BASE ? 10 + (v - BONUS_VALUE_BASE) : v;
+                        if (mat >= 0 && mat < valueMaterials.Length)
+                            reelFaces[i].sharedMaterial = valueMaterials[mat];
+                    }
+                }
+            }
         }
 
         void RefreshFurniture()
