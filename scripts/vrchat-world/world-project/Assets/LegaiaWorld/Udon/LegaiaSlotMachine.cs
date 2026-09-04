@@ -108,14 +108,8 @@ namespace LegaiaWorld
         public float legendScrollSpeed = 20f;
 
         [Header("Screen projection")]
-        [Tooltip("Software-projection camera distance in model units (the retail slot scene's framing; the builder bakes the same value into the static quads).")]
-        public float projectionDistance = 3000f;
-
-        [Tooltip("Projection centre x in model units (what the retail camera looks at).")]
-        public float viewCenterX = 80f;
-
-        [Tooltip("Projection centre y in model units, y up.")]
-        public float viewCenterY = -150f;
+        [Tooltip("Retail view-space depth z0 (minigame_slot_scene PROJ_Z0): the per-face scale is z0/(z0 - z), about the model origin. The builder bakes the same projection into the static quads.")]
+        public float projectionDistance = 9324f;
 
         [Tooltip("Metres from the machine beyond which the per-frame visual updates pause (the last-drawn frame stays up).")]
         public float visualsActiveDistance = 14f;
@@ -872,10 +866,10 @@ namespace LegaiaWorld
                 lastDrawnPos[r] = drawPos;
 
                 // Software perspective: the composition sits flattened on the
-                // cabinet's screen face, so each face applies the projection
-                // the retail camera used to provide - scale and shift by
-                // k = D / (D - z) about the view centre. The pivot itself
-                // sits unprojected on the z=0 (payline) plane.
+                // cabinet's screen face, so each face applies the retail
+                // projection itself - scale and shift by k = z0 / (z0 - z)
+                // about the MODEL ORIGIN (the retail vanishing point). The
+                // pivot itself sits unprojected on the z=0 (payline) plane.
                 float pivotX = reelPivots[r].localPosition.x;
 
                 int row0 = (drawPos >> 8) % STRIP_LEN;
@@ -898,10 +892,8 @@ namespace LegaiaWorld
                     float yC = (yT + yB) * 0.5f;
                     float zC = (zT + zB) * 0.5f;
                     float k = projectionDistance / (projectionDistance - zC);
-                    face.localPosition = new Vector3(
-                        (pivotX - viewCenterX) * (k - 1f),
-                        viewCenterY + (yC - viewCenterY) * k,
-                        zC);
+                    face.localPosition =
+                        new Vector3(pivotX * (k - 1f), yC * k, zC);
                     // Quad +Z = the outward chord normal, +Y = up the edge.
                     // The composition root's z flatten squashes the rotated
                     // quad to the foreshortened chord height on screen.

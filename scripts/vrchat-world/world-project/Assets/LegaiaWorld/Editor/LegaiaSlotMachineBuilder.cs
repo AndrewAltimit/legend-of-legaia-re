@@ -56,9 +56,7 @@ namespace LegaiaWorld
         const string GEN_DIR = "Assets/LegaiaGenerated/slot-machine";
         const int FACE_COUNT = 8;
 
-        // Software projection (the retail slot camera's framing) + the z
-        // flatten that turns the composition into screen-face relief.
-        const float PROJ_DIST = 3000f;
+        // The z flatten that turns the composition into screen-face relief.
         const float Z_FLATTEN = 0.02f;
 
         // renderQueue ladder: the flattened overlay layers draw in this
@@ -67,14 +65,16 @@ namespace LegaiaWorld
         const int Q_REEL_FACE = 2450;
         const int Q_MARQUEE_BB = 2452;
         const int Q_PEDESTAL = 2453;
-        const int Q_GLASS = 2454;   // lamps, medallions, paytable
+        const int Q_GLASS = 2454;   // lamps, medallions
         const int Q_MESSAGE = 2456;
+        const int Q_SCREEN = 2458;  // retail's raw screen-space draws (paytable, HUD)
 
-        // Kit-level layout (not disc data): the paytable board and HUD text.
-        static readonly Vector3 PAYTABLE_POS = new Vector3(950f, 60f, 802f);
-        const float PAYTABLE_SCALE = 3.2f;
-        static readonly Vector3 HUD_BALANCE_POS = new Vector3(0f, -760f, 810f);
-        static readonly Vector3 HUD_STATUS_POS = new Vector3(0f, -860f, 810f);
+        // Kit-level layout (not disc data): where the balance / status text
+        // sits, in retail screen-space PIXELS (the coin readout is a
+        // screen-space HUD draw in retail too - FUN_801cfff0).
+        static readonly Vector2 HUD_BALANCE_PX = new Vector2(280f, 208f);
+        static readonly Vector2 HUD_STATUS_PX = new Vector2(280f, 226f);
+        const float HUD_Z = 820f;
 
         GameObject cabinet;
         string artDir = "Assets/LegaiaImports/slot-art";
@@ -86,8 +86,23 @@ namespace LegaiaWorld
         bool flipButtonOrder;
         bool buildPaytable = true;
         bool buildFallbackButtons = true;
-        Vector2 viewCenter = new Vector2(80f, -150f);
-        float viewHalfWidth = 1250f;
+
+        // The retail projection, read from the manifest at build time
+        // (minigame_slot_scene constants; defaults match the USA disc).
+        // The composition frame is isotropic: the aspect-2 y term exactly
+        // cancels the 640x240 framebuffer's 1:2 pixels, so only x needs a
+        // scale and y follows.
+        float projZ0 = 9324f;
+        float projSx0 = 0.2547f;
+        float projOfx = 253f;
+        float projOfy = 118.5f;
+        float projAspect = 2f;
+        float projXScale = 6f;
+        float screenPxW = 640f;
+        float screenPxH = 240f;
+        // Derived per build: the screen window in projected model units.
+        Vector2 viewCenter = new Vector2(263f, -11.8f);
+        float viewHalfWidth = 1256.4f;
 
         [MenuItem("Legaia/Build Slot Machine...")]
         static void Open()
@@ -126,14 +141,6 @@ namespace LegaiaWorld
                     "derived from it (the face must look along the " +
                     "cabinet's +Z). Clear to place by hand."),
                 screenNodeName);
-            viewCenter = EditorGUILayout.Vector2Field(
-                new GUIContent("View centre (model units)",
-                    "Composition point at the screen centre; 0,0 = the payline centre."),
-                viewCenter);
-            viewHalfWidth = EditorGUILayout.FloatField(
-                new GUIContent("View half-width (model units)",
-                    "Horizontal half-extent shown across the screen (glass is 640)."),
-                viewHalfWidth);
             buttonNames = EditorGUILayout.TextField(
                 new GUIContent("Button nodes",
                     "';'-separated node names on the cabinet mesh, wired left to right."),
@@ -168,6 +175,23 @@ namespace LegaiaWorld
             object m = MiniJson.Parse(File.ReadAllText(manifestPath));
             Directory.CreateDirectory(GEN_DIR);
             LegaiaWorldBuilder.EnsureUdonProgramAssets();
+
+            // The retail projection (see minigame_slot_scene): scale
+            // z0/(z0 - z_comp) about the model ORIGIN. The visible screen
+            // window (what the 640x240 framebuffer showed) is derived from
+            // the same constants - it is not centred on the origin.
+            projZ0 = MiniJson.GetNum(m, "proj_z0", 9324f);
+            projSx0 = MiniJson.GetNum(m, "proj_sx0", 0.2547f);
+            projOfx = MiniJson.GetNum(m, "proj_ofx", 253f);
+            projOfy = MiniJson.GetNum(m, "proj_ofy", 118.5f);
+            projAspect = MiniJson.GetNum(m, "proj_aspect", 2f);
+            projXScale = MiniJson.GetNum(m, "proj_xscale", 6f);
+            screenPxW = MiniJson.GetNum(m, "screen_w", 640f);
+            screenPxH = MiniJson.GetNum(m, "screen_h", 240f);
+            viewHalfWidth = screenPxW * 0.5f / projSx0;
+            viewCenter = new Vector2(
+                (screenPxW * 0.5f - projOfx) / projSx0,
+                -((screenPxH * 0.5f - projOfy) / (projSx0 / projAspect)));
 
             // Replace an existing rig in place.
             Transform parent = cabinet != null ? cabinet.transform : null;
@@ -256,16 +280,19 @@ namespace LegaiaWorld
                 out pipSlots, out payoutSlots, out coinSlot, out legendQuad,
                 out dotCols, out dotRows);
 
+            // The paytable is retail's raw screen-space draw: the 127x239
+            // panel centred at framebuffer (560, 128), no projection.
             var hud = Child(studio, "hud", Vector3.zero);
             if (buildPaytable)
-                MakeQuad(hud, "paytable", quad, Proj(PAYTABLE_POS),
-                    ProjK(PAYTABLE_POS.z) *
-                    new Vector2(127f * PAYTABLE_SCALE, 239f * PAYTABLE_SCALE),
-                    CutoutMat("paytable", "hud/paytable.png", false, null, Q_GLASS));
-            var balanceText = MakeText(hud, "balance", Proj(HUD_BALANCE_POS),
-                60f * ProjK(HUD_BALANCE_POS.z));
-            var statusText = MakeText(hud, "status", Proj(HUD_STATUS_POS),
-                40f * ProjK(HUD_STATUS_POS.z));
+                MakeQuad(hud, "paytable", quad,
+                    ScreenPx(MiniJson.GetNum(m, "paytable_px_x", 560f),
+                             MiniJson.GetNum(m, "paytable_px_y", 128f), HUD_Z),
+                    new Vector2(PxToModelW(127f), PxToModelH(239f)),
+                    CutoutMat("paytable", "hud/paytable.png", false, null, Q_SCREEN));
+            var balanceText = MakeText(hud, "balance",
+                ScreenPx(HUD_BALANCE_PX.x, HUD_BALANCE_PX.y, HUD_Z), 90f);
+            var statusText = MakeText(hud, "status",
+                ScreenPx(HUD_STATUS_PX.x, HUD_STATUS_PX.y, HUD_Z), 65f);
 
             // Stale feed assets from a pre-direct-screen build (the studio
             // camera's RenderTexture + flipped screen material).
@@ -317,9 +344,7 @@ namespace LegaiaWorld
             W("msgCoins", (int)MiniJson.GetNum(m, "msg_coins", 20f));
             W("dotCols", (int)dotCols);
             W("dotRows", (int)dotRows);
-            W("projectionDistance", PROJ_DIST);
-            W("viewCenterX", viewCenter.x);
-            W("viewCenterY", viewCenter.y);
+            W("projectionDistance", projZ0);
             LegaiaWorldBuilder.SyncUdonProxy(machine);
 
             WireButtons(rig, machine, worldUnit);
@@ -333,25 +358,37 @@ namespace LegaiaWorld
 
         // --- software projection ------------------------------------------
 
-        /// Scale factor about the view centre for a point at composition z -
-        /// the perspective the studio camera used to provide, now baked into
-        /// placements (and applied per frame to the drum faces by
-        /// LegaiaSlotMachine, which is wired the same constants).
+        /// The retail perspective at composition z (comp z = -PSX z, toward
+        /// the player): `k = z0 / (z0 + z_psx)`. Baked into placements here,
+        /// and applied per frame to the drum faces by LegaiaSlotMachine.
         float ProjK(float z)
         {
-            return PROJ_DIST / (PROJ_DIST - z);
+            return projZ0 / (projZ0 - z);
         }
 
         /// Project a composition-frame position: x/y scaled by k(z) about
-        /// the view centre; z kept (the composition root's scale flattens it).
+        /// the model ORIGIN (the retail vanishing point - NOT the screen
+        /// centre); z kept (the composition root's scale flattens it).
         Vector3 Proj(Vector3 p)
         {
             float k = ProjK(p.z);
-            return new Vector3(
-                viewCenter.x + (p.x - viewCenter.x) * k,
-                viewCenter.y + (p.y - viewCenter.y) * k,
-                p.z);
+            return new Vector3(p.x * k, p.y * k, p.z);
         }
+
+        /// A retail screen-space pixel (the paytable / HUD draws) into the
+        /// projected composition frame - these draws bypass the projection.
+        Vector3 ScreenPx(float px, float py, float z)
+        {
+            return new Vector3(
+                (px - projOfx) / projSx0,
+                -((py - projOfy) / (projSx0 / projAspect)),
+                z);
+        }
+
+        /// Framebuffer pixel spans into projected model units. y pixels are
+        /// twice the model units of x pixels (the 640x240 grid's 1:2 shape).
+        float PxToModelW(float px) { return px / projSx0; }
+        float PxToModelH(float px) { return px / (projSx0 / projAspect); }
 
         // --- the reels ----------------------------------------------------
 
@@ -414,10 +451,9 @@ namespace LegaiaWorld
             float yC = (yT + yB) * 0.5f;
             float zC = (zT + zB) * 0.5f;
             float k = ProjK(zC);
-            face.localPosition = new Vector3(
-                (pivotX - viewCenter.x) * (k - 1f),
-                viewCenter.y + (yC - viewCenter.y) * k,
-                zC);
+            // Projection about the model origin; the pivot itself sits
+            // unprojected on the z=0 plane.
+            face.localPosition = new Vector3(pivotX * (k - 1f), yC * k, zC);
             face.localRotation = Quaternion.LookRotation(
                 new Vector3(0f, -dz, dy), new Vector3(0f, dy, dz));
             face.localScale =
@@ -454,12 +490,20 @@ namespace LegaiaWorld
             LineRenderer[] paylineLines, out Material lampLit, out Material lampUnlit,
             out Material[] pedSpin, out Material[] pedStop)
         {
+            // Billboard half-extents are VIEW space in the disc tables: the
+            // retail projector builds the corners after the camera-matrix
+            // multiply, so they divide by its x scale (6) - and y additionally
+            // gains the aspect (2), because billboards are NOT aspect-
+            // corrected while positions are. Model units = w/6, h/3.
+            float vmx = 1f / projXScale;
+            float vmy = projAspect / projXScale;
+
             var glass = Child(studio, "glass", Vector3.zero);
             lampLit = CutoutMat("lamp_lit", "furniture/lamp_lit.png", false, null, Q_GLASS);
             lampUnlit = CutoutMat("lamp_unlit", "furniture/lamp_unlit.png", false, null, Q_GLASS);
             var lamps = MiniJson.AsList(MiniJson.Get(m, "lamps"));
-            float lampW = 2f * MiniJson.GetNum(m, "lamp_half_w", 180f);
-            float lampH = 2f * MiniJson.GetNum(m, "lamp_half_h", 160f);
+            float lampW = 2f * MiniJson.GetNum(m, "lamp_half_w", 180f) * vmx;
+            float lampH = 2f * MiniJson.GetNum(m, "lamp_half_h", 160f) * vmy;
             for (int i = 0; lamps != null && i < lamps.Count && i < 5; i++)
             {
                 var p = PsxPos(lamps[i], 2f);
@@ -467,8 +511,8 @@ namespace LegaiaWorld
                     Proj(p), ProjK(p.z) * new Vector2(lampW, lampH), lampUnlit);
             }
             var medallions = MiniJson.AsList(MiniJson.Get(m, "medallions"));
-            float medW = MiniJson.GetNum(m, "medallion_half_w", 416f);
-            float medH = MiniJson.GetNum(m, "medallion_half_h", 208f);
+            float medW = 2f * MiniJson.GetNum(m, "medallion_half_w", 416f) * vmx;
+            float medH = 2f * MiniJson.GetNum(m, "medallion_half_h", 208f) * vmy;
             for (int i = 0; medallions != null && i < medallions.Count && i < 5; i++)
             {
                 var p = PsxPos(MiniJson.Get(medallions[i], "pos"), 2f);
@@ -482,8 +526,8 @@ namespace LegaiaWorld
             float pedX0 = MiniJson.GetNum(m, "pedestal_x0", -384f);
             float pedXStep = MiniJson.GetNum(m, "pedestal_x_step", 384f);
             float pedY = MiniJson.GetNum(m, "pedestal_y", 480f);
-            float pedW = 2f * MiniJson.GetNum(m, "pedestal_half_w", 170f);
-            float pedH = 2f * MiniJson.GetNum(m, "pedestal_half_h", 100f);
+            float pedW = 2f * MiniJson.GetNum(m, "pedestal_half_w", 560f) * vmx;
+            float pedH = 2f * MiniJson.GetNum(m, "pedestal_half_h", 288f) * vmy;
             for (int r = 0; r < 3; r++)
             {
                 pedSpin[r] = CutoutMat("pedestal_" + r + "_spin",
@@ -501,8 +545,9 @@ namespace LegaiaWorld
                 var p = PsxPos(MiniJson.Get(bb, "pos"), -1f);
                 MakeQuad(glass, "marquee_bb_" + i, quad,
                     Proj(p),
-                    ProjK(p.z) * new Vector2(2f * MiniJson.GetNum(bb, "half_w", 100f),
-                                             2f * MiniJson.GetNum(bb, "half_h", 100f)),
+                    ProjK(p.z) * new Vector2(
+                        2f * MiniJson.GetNum(bb, "half_w", 100f) * vmx,
+                        2f * MiniJson.GetNum(bb, "half_h", 100f) * vmy),
                     CutoutMat("marquee_" + i, "furniture/marquee_" + i + ".png",
                         false, null, Q_MARQUEE_BB));
             }
@@ -545,8 +590,11 @@ namespace LegaiaWorld
             float dotXStep = MiniJson.GetNum(m, "dot_x_step", 11f);
             float dotYStep = MiniJson.GetNum(m, "dot_y_step", 12f);
             // The whole dot grid inherits the projection through the anchor's
-            // position and per-dot scale.
-            var anchorPos = new Vector3(dotX0, -dotY0, 806f);
+            // position and per-dot scale (dots are individually projected
+            // model-space sprites in retail; +2 lifts them over the panel,
+            // though the queue ladder is what actually orders the draw).
+            float dotZ = -MiniJson.GetNum(m, "dot_z", -800f) + 2f;
+            var anchorPos = new Vector3(dotX0, -dotY0, dotZ);
             float mk = ProjK(anchorPos.z);
             var marquee = Child(studio, "marquee", Proj(anchorPos));
             marquee.localScale = new Vector3(dotXStep * mk, dotYStep * mk, 1f);

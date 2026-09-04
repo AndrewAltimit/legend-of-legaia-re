@@ -482,6 +482,21 @@ pub(crate) fn slot_art_cmd(overlay: &Path, art: &Path, out: &Path) -> Result<()>
         "reel_shade_bias": slot::REEL_SHADE_Z_BIAS,
         "reel_shade_gain": slot::REEL_SHADE_Z_GAIN,
         "glass_z": slot::GLASS_Z,
+        "dot_z": slot::DOT_Z,
+        // The retail projection (minigame_slot_scene): -z toward the viewer,
+        // scale z0/(z0+z) about the model origin; billboards' half-extents
+        // are VIEW space (divide by xscale, and by xscale/aspect for y, to
+        // reach model units); the paytable is a raw screen-space draw.
+        "proj_z0": slot::PROJ_Z0,
+        "proj_sx0": slot::PROJ_SX0,
+        "proj_ofx": slot::PROJ_OFX,
+        "proj_ofy": slot::PROJ_OFY,
+        "proj_aspect": slot::PROJ_ASPECT,
+        "proj_xscale": slot::PROJ_X_SCALE,
+        "screen_w": slot::SCREEN_W,
+        "screen_h": slot::SCREEN_H,
+        "paytable_px_x": minigame_art::SLOT_PANEL_SCREEN_POS.0,
+        "paytable_px_y": minigame_art::SLOT_PANEL_SCREEN_POS.1,
         "pedestal_x0": slot::PEDESTAL_X0,
         "pedestal_x_step": slot::PEDESTAL_X_STEP,
         "pedestal_y": slot::PEDESTAL_Y,

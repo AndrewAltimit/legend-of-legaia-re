@@ -343,15 +343,20 @@ no casino coin bank to cash out to).
    and the art folder, **Build slot machine**. The whole screen
    composition is parented *directly onto the cabinet's screen face* -
    no hidden studio, no camera, no RenderTexture. The composition root
-   scales the retail frame (`View centre` / `View half-width`) to the
-   screen, mirrors x once (a +z-facing quad reads mirrored to the
-   player, so exactly one flip is correct - every kit slot shader is
-   `Cull Off` because that mirror reverses winding), flattens z to
-   millimetres of relief (overlay order comes from a material
-   renderQueue ladder, not the flattened z gaps), and bakes the retail
-   camera's perspective in software (`k = D/(D-z)` about the view
-   centre; the behaviour applies the same k to the 8 drum faces per
-   frame). A cabinet node named `screen` (the **Screen node** field)
+   scales the retail 640x240 frame to the screen (window derived from
+   the manifest's projection block - `minigame_slot_scene` constants),
+   mirrors x once (a +z-facing quad reads mirrored to the player, so
+   exactly one flip is correct - every kit slot shader is `Cull Off`
+   because that mirror reverses winding), flattens z to millimetres of
+   relief (overlay order comes from a material renderQueue ladder, not
+   the flattened z gaps), and applies the retail projection in software
+   (`k = z0/(z0-z)` about the model origin, z0 = 9324; the behaviour
+   applies the same k to the 8 drum faces per frame). Billboard
+   half-extents are view-space in the disc tables and divide by the
+   camera matrix's x scale (and gain the aspect in y) to reach model
+   units; the paytable and HUD are retail's raw screen-space draws and
+   bypass the projection. A cabinet node named `screen` (the **Screen
+   node** field)
    pins the build automatically: position, yaw and width are derived
    from that face, in cabinet-local space, so import scale is respected
    and a mesh swap is "select cabinet, Build". Without one, drag the

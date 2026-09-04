@@ -399,6 +399,11 @@ pub fn slot_hud_sprite(art: &[Tim], widget: &SlotHudWidget) -> Result<Sprite> {
 /// 7 is the GPU's colour-depth field: it selects **8-bit** texels, not 4.
 pub const SLOT_PANEL_TEXPAGE: u16 = 0x8A;
 
+/// Screen-space centre the info panel draws at - `FUN_801cfff0` places the
+/// 127x239 sprite at `(560, 128)` on the 640x240 framebuffer (a raw
+/// screen-space draw, not part of the projected 3D scene).
+pub const SLOT_PANEL_SCREEN_POS: (i32, i32) = (560, 128);
+
 /// Decode the machine's **paytable / coin info panel** - HUD record 0, the
 /// 127x239 sprite `FUN_801cfff0` draws at screen `(560, 128)` on the right of
 /// the machine (the "x30 back" / "x9 back" / "Bonus games" board with the coin
