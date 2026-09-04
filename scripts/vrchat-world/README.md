@@ -45,6 +45,9 @@ your disc ──legaia-extract──▶ extracted/ ──legaia-engine export-gl
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaTorch.cs` | Torch/campfire pickup: hold + Use toggles the flame container (fire + smoke particles, a Perlin-flickered point light - no glow orb) and a spatial crackle loop; `lit` is synced so a fire someone lights burns for everyone. Spawn-kinematic like the rack pickups. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaFlicker.cs` | Firelight flicker for the always-burning night torches: no sync, no interaction - just the two-octave Perlin intensity wobble on the flame's point light. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaPickupProp.cs` | UdonSharp equipment-rack pickup: the prop spawns kinematic (frozen on the rack) and only becomes a free physics object the first time a player drops it - so a rack of dozens of bodies can't tunnel through the thin ground during world-load hitches. |
+| `world-project/Assets/LegaiaWorld/Editor/LegaiaSlotMachineBuilder.cs` | Editor menu `Legaia > Build Slot Machine...`: assembles the playable casino slot minigame onto a cabinet mesh from the `asset slot-art` export - reel cylinders, glass furniture, dot-matrix marquee, HUD, buttons. See "The casino slot machine" below. |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaSlotMachine.cs` | UdonSharp port of the engine's slot-machine rules kernel (`engine-core::slot_machine`): the retail LCG + reel strips, feature rolls, stop plans, five-payline evaluation, bonus rounds, coin balance. Owner-synced; reels animate locally on every client from the same deterministic strips. |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaSlotButton.cs` | One cabinet face button: forwards Interact to the machine with its reel index (idle = spin, reels running = stop reel N, payout = collect). |
 
 ## Step 1 - export a scene
 
@@ -295,6 +298,60 @@ which take effect on the next **Build scene**.
 - **More clips**: every NPC glb carries *all* the scene-bundle clips whose
   bone count matches (`record_N` takes) - retarget the Animator the
   builder generated at any of them.
+
+## The casino slot machine
+
+The Sol/Vidna casino slot minigame
+([`docs/subsystems/minigame-slot-machine.md`](../../docs/subsystems/minigame-slot-machine.md))
+as a playable cabinet: walk up, press the three face buttons, spin. The
+rules are the engine's ported kernel - the retail reel strips and LCG,
+the flat 3-coin bet across all five paylines, the net-take-bracketed
+feature odds, the kick/punch jackpot symbols opening 1/3 bonus rounds,
+and the bonus round's unsteered stops paying the product of the three
+numbers (1..1000 coins). The balance starts at retail's 70-coin
+dev-launch fallback and refills on empty (free play - a VRChat world has
+no casino coin bank to cash out to).
+
+1. Export the machine's art off your disc (into the Unity project's
+   import folder, which stays local like every other export):
+
+   ```bash
+   cargo build --release -p legaia-asset
+   ./target/release/asset slot-art extracted/PROT/0975_*.BIN \
+       extracted/PROT/1200_*.BIN \
+       --out "<unity project>/Assets/LegaiaImports/slot-art"
+   ```
+
+   That is the 10 reel symbols + 10 bonus numerals (each through its own
+   CLUT column - the palette is load-bearing), the payline lamps,
+   medallions, reel-stop pedestals, marquee panel + mascots, the 21
+   dot-matrix messages, the paytable board, and `slot-machine.json`
+   (payout table + the disc's own geometry tables).
+2. Put a cabinet mesh in the scene (the kit was drafted against a
+   modelled cabinet glb with a screen cutout and three button nodes
+   named `Circle.001` / `Circle.002` / `Circle.003`).
+3. Menu **Legaia > Build Slot Machine...**, point it at the cabinet root
+   and the art folder, **Build slot machine**. The rig is built in the
+   retail scene's model units and scaled so the 1280-unit glass width
+   becomes the window's `Glass width`; drag the `LegaiaSlotGame` root to
+   line the reels up with the screen cutout, then copy its transform
+   into the window fields so a rebuild lands in the same place. Named
+   button nodes get fitted colliders + `LegaiaSlotButton`; missing ones
+   (a stale mesh) get fallback pads.
+
+Sync model: the last player to press a button owns the machine and runs
+the rules; outcomes (stop rows, wins, balance) sync, and every client
+animates the reels locally from the same seed-deterministic strips - so
+onlookers see the same spin without per-frame traffic.
+
+Faithful vs approximated, on top of the engine port's own notes: the
+reel wheel is a rigid 20-face cylinder at 18 degrees per row (retail
+re-derives 8 faces per frame at 22.5 degrees - same strip, slightly
+gentler curl), the depth-cued reel shade is a gradient overlay, the
+dot-matrix marquee is composed at message granularity rather than
+per-dot (tally / pips / payout caption / scrolled attract legend), the
+cash-out submenu is dropped, and the machine's sound cues are not yet
+wired.
 
 ## Optional realism enhancements
 

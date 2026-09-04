@@ -1,3 +1,7 @@
+// The slot-art manifest's `serde_json::json!` tree is deep enough to clear
+// the default macro recursion limit.
+#![recursion_limit = "256"]
+
 use std::path::PathBuf;
 
 use anyhow::Result;
@@ -53,7 +57,7 @@ SUBCOMMAND GROUPS:
     monster-archive (3D monsters, --glb), character-pack, battle-char-pack,
     item-tables, shop-stock, spell-names, steal-table, accessory-passive,
     sfx-table, new-game, level-up, worldmap-menu, summon-creatures,
-    mode-table, move-power, element-affinity
+    mode-table, move-power, element-affinity, slot-art
   RE scanners and bulk sweeps (reverse-engineering aids):
     scan, scan-stream, tim-scan, tim-catalog, tim-deep-catalog,
     tim-render-distinct, tmd-scan, clut-finder, stage, stage-scan,
@@ -966,6 +970,23 @@ enum Cmd {
         #[arg(long, default_value_t = 5)]
         frames: usize,
     },
+    /// Export the slot machine's art + data as PNGs and a JSON manifest -
+    /// the feed for the VRChat world kit's cabinet builder
+    /// (`scripts/vrchat-world/`): reel symbols + bonus numerals (each through
+    /// its own CLUT), lamps / medallions / pedestals / marquee billboards,
+    /// the 21 dot-matrix messages, the paytable board and the digit strip.
+    ///
+    /// The output is decoded from your disc's data - keep it out of any repo,
+    /// like `extracted/` itself.
+    SlotArt {
+        /// The slot overlay PROT entry (`extracted/PROT/0975_*.BIN`).
+        overlay: PathBuf,
+        /// The slot art pack PROT entry (`extracted/PROT/1200_*.BIN`).
+        art: PathBuf,
+        /// Output directory (created if missing).
+        #[arg(long, default_value = "slot-art")]
+        out: PathBuf,
+    },
     Man {
         /// PROT entry (`extracted/PROT/0086_map01.BIN`).
         input: PathBuf,
@@ -1314,6 +1335,7 @@ fn main() -> Result<()> {
             art,
             frames,
         } => slot_scene_cmd(&overlay, art.as_deref(), frames),
+        Cmd::SlotArt { overlay, art, out } => slot_art_cmd(&overlay, &art, &out),
         Cmd::Man {
             input,
             with_encounter,

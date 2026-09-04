@@ -1390,7 +1390,8 @@ namespace LegaiaWorld
             foreach (string name in new[]
                      { "LegaiaDoorway", "LegaiaDoor", "LegaiaNpcWander",
                        "LegaiaDayNight", "LegaiaPickupProp", "LegaiaTorch",
-                       "LegaiaWorldMenu", "LegaiaFlicker" })
+                       "LegaiaWorldMenu", "LegaiaFlicker",
+                       "LegaiaSlotMachine", "LegaiaSlotButton" })
             {
                 var t = FindType("LegaiaWorld." + name);
                 if (t == null) continue;

@@ -797,4 +797,5 @@ so a slot in this range is extraction `988 + slot`, not `990 + slot`;
 **Reference** -
 [Tile-board grid](tile-board.md) ·
 [Cheats](../reference/cheats.md) ·
-[Casino prize exchange (randomizer)](../tooling/randomizer.md)
+[Casino prize exchange (randomizer)](../tooling/randomizer.md) ·
+[VRChat cabinet (world kit)](../../scripts/vrchat-world/README.md#the-casino-slot-machine)
