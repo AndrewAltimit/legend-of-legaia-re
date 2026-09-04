@@ -144,7 +144,10 @@ namespace LegaiaWorld
         const int PHASE_PAYOUT = 4;
 
         // Retail's entry seed (FUN_801cec94 writes this literal every entry).
-        const uint ENTRY_LCG_SEED = 0x6C0A2AF0u;
+        // Typed int, not uint: the literal fits a positive int, and UdonSharp
+        // does not support the `unchecked` cast a uint constant would need to
+        // land in the synced int field.
+        const int ENTRY_LCG_SEED = 0x6C0A2AF0;
 
         // Five paylines x three per-reel row offsets from the payline row
         // (top / middle / bottom / two diagonals). Not `readonly` - UdonSharp
@@ -198,11 +201,11 @@ namespace LegaiaWorld
         {
             if (Networking.IsOwner(gameObject) && syncSeed == 0)
             {
-                syncSeed = unchecked((int)ENTRY_LCG_SEED);
+                syncSeed = ENTRY_LCG_SEED;
                 RequestSerialization();
             }
             if (syncSeed == 0)
-                syncSeed = unchecked((int)ENTRY_LCG_SEED);
+                syncSeed = ENTRY_LCG_SEED;
             BuildStrips(syncSeed);
             for (int i = 0; i < shownValue.Length; i++)
                 shownValue[i] = -1;
