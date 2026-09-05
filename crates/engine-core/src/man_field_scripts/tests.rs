@@ -984,9 +984,7 @@ fn battle_entry_arm_needs_a_scripted_entry_within_the_window() {
     assert!(walk_battle_entry_arms(&mf, &man).is_empty());
     // The entry sits BATTLE_ENTRY_ARM_WINDOW + 1 instructions past the SET.
     let mut far = vec![0x50, 0x19];
-    for _ in 0..=BATTLE_ENTRY_ARM_WINDOW {
-        far.push(0x25); // Nop
-    }
+    far.resize(far.len() + BATTLE_ENTRY_ARM_WINDOW + 1, 0x25); // Nops
     far.extend_from_slice(&[0x3E, 0xFF, 0x04, 0x21]);
     let (mf, man) = man_with_placement_script(&far);
     assert!(walk_battle_entry_arms(&mf, &man).is_empty());
