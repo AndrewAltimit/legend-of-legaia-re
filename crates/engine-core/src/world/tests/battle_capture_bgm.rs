@@ -478,9 +478,11 @@ fn battle_arts_uses_staged_art_record_power_tiers_and_status() {
     // UDF / LDF split so the record's per-strike target picks the right half.
     world.set_battle_defense_split(1, Some((10, 40)));
 
-    // Stage a Vahn art: two damage strikes (UDF ×28, LDF ×28) that burns.
+    // Stage a Vahn art: two damage strikes (UDF ×28, LDF ×28) that burns. A
+    // normal-art constant (`0x1F+`): the queue-builder tokenizes only those
+    // (the Miracle / Hyper ordinals take retail's other arm).
     let rec = legaia_art::ArtRecord {
-        action: ActionConstant::Art1B,
+        action: ActionConstant::Art1F,
         commands: vec![Command::Up, Command::Up],
         anim_index: 0,
         anim_extra: vec![],
@@ -496,7 +498,7 @@ fn battle_arts_uses_staged_art_record_power_tiers_and_status() {
         background: 0,
         runtime_address: None,
     };
-    world.set_art_record(legaia_art::Character::Vahn, ActionConstant::Art1B, rec);
+    world.set_art_record(legaia_art::Character::Vahn, ActionConstant::Art1F, rec);
 
     // Saved chain ending in the art's command string (Up, Up).
     world.saved_chains.push(legaia_save::SavedChainRecord {
@@ -532,7 +534,7 @@ fn battle_arts_uses_staged_art_record_power_tiers_and_status() {
             0x0C,
             0x0F,
             ActionConstant::SpecialStarter.as_byte(),
-            ActionConstant::Art1B.as_byte(),
+            ActionConstant::Art1F.as_byte(),
             0
         ],
         "swing, swing-turned-starter, the constant, the terminator"

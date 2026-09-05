@@ -2632,6 +2632,44 @@ seat for yet - with every hit able to connect, retail's look-ahead answers
 represent; and the War God Icon's `s2 = 0xFF` carry-over needs the icon's
 *Attack x2* pair itself (`ctx[+0x16]`), which the engine does not model.
 
+**What the builder tokenizes against.** The records retail's inner loop walks
+are the character's art-animation bank records (`record[0] +0x58`,
+[battle-data-pack.md](../formats/battle-data-pack.md#art-animation-bank-record0-0x58)):
+record `k` is constant `0x10 + k`, its `+0x00` combo is the arrow string
+compared against the queue (`0x801EF3BC..0x801EF3EC`). Both hosts install
+those records at battle entry, next to the bank's clips
+(`World::install_art_bank_records`), so the live arts input matches the disc's
+arts. Two records never rewrite the queue and are left out of the port's
+catalog: the Miracle Art and the three Hyper Arts (ordinals `0..=3`,
+constants `0x1B..0x1E`) take the loop's other arm (`sltiu a1,a0,0x4` at
+`0x801EF330`), which writes nothing while the slot's `+0x25F` marker is clear;
+and a fully matched **one-arrow** combo takes the `s1 == 1` exit
+(`0x801EF420..0x801EF434`) with no rewrite - on the disc that is the Miracle
+finisher's record, and admitting it would steal an arrow from every art that
+contains one.
+
+Still divergent after this, each with its prerequisite:
+
+- **`0x20` is left at once.** Retail's return state holds while the target's
+  committed anim is not idle / `8` and the actor's node `+0x74` still counts
+  (`FUN_801E295C` state `0x20`), so the last clip finishes and the recover
+  pose plays - with its negative `+0x0C` root speed, the backstep - before
+  `0x50`. The port transitions immediately, so the last clip's hit lands
+  under `0x51` (still with the cursor parked, so the total applies) and the
+  recover pose is dropped while the clip plays. Prerequisite: a host query
+  for "clip in flight" on the `BattleActionHost` trait (every host impl).
+- **Empty-event art clips deal nothing through the driver.** The Miracle
+  entry (Vahn's Craze, `0x1B`: 50 frames, `+0x10..+0x13 = 0`) has no hit
+  events, so its damage path - the effect script or a chained clip - is
+  unpinned; the typed path never reaches it (above), the Miracle replacement
+  does.
+- **The starter's rate.** The `0x1A` SpecialStarter arms `ctx[+0x243]`
+  through its solo byte and the art-constant commit arm halves every actor's
+  `+0x21D` while it is set (`0x8004BB78..0x8004BBB0`); the SM clears it at
+  `0x38` and `0x50` (`0x801E4E94`, `0x801E5234`) and arms it itself at `0x3C`.
+  The port mirrors the arm through `gauge_rearm_latch` and the Done clear;
+  the two SM writes are not modelled.
+
 ## Engine port
 
 `crates/engine-vm/src/battle_action.rs` ports the state graph as a per-frame edge-triggered state machine. Surface:

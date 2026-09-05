@@ -463,6 +463,11 @@ struct PendingClips {
     idle: Option<legaia_asset::monster_archive::MonsterAnimation>,
     action_clips: Option<Vec<Option<legaia_asset::monster_archive::MonsterAnimation>>>,
     art_bank: Option<Vec<Option<legaia_asset::monster_archive::MonsterAnimation>>>,
+    /// The art bank's records (the arts the queue-builder matches), party
+    /// members only; empty for a monster.
+    art_records: Vec<legaia_asset::battle_char_assembly::ArtAnimRecord>,
+    /// Character slot the records belong to (`0..=2` = Vahn / Noa / Gala).
+    cslot: usize,
 }
 
 /// Flatten one animation frame to the `[tx, ty, tz, rx, ry, rz] x parts`
@@ -679,6 +684,8 @@ impl LegaiaRuntime {
                 idle,
                 action_clips,
                 art_bank: None,
+                art_records: Vec::new(),
+                cslot: usize::MAX,
             });
         }
 
@@ -757,6 +764,18 @@ impl LegaiaRuntime {
                 if let Some(bank) = p.art_bank.filter(|b| !b.is_empty()) {
                     host.world
                         .set_actor_battle_art_bank(p.actor_idx, std::sync::Arc::new(bank));
+                }
+                // The bank's records are the arts the queue-builder matches:
+                // install them so the live arts input tokenizes real arts.
+                if let Some(character) = [
+                    legaia_art::Character::Vahn,
+                    legaia_art::Character::Noa,
+                    legaia_art::Character::Gala,
+                ]
+                .get(p.cslot)
+                {
+                    host.world
+                        .install_art_bank_records(*character, &p.art_records);
                 }
             }
         }
@@ -931,7 +950,7 @@ impl LegaiaRuntime {
             }
             // Art-animation bank (record[0] +0x58) through the character's
             // readef.DAT "ME" archives, so staged ids >= 0x10 resolve.
-            let art_bank = self.party_art_bank_web(host, raw, cslot, &anm_bones);
+            let (art_bank, art_records) = self.party_art_bank_web(host, raw, cslot, &anm_bones);
             return Some((
                 BattleActorRender {
                     actor_idx: member,
@@ -945,6 +964,8 @@ impl LegaiaRuntime {
                     idle,
                     action_clips: Some(clips),
                     art_bank: Some(art_bank),
+                    art_records,
+                    cslot,
                 },
             ));
         }
@@ -991,6 +1012,8 @@ impl LegaiaRuntime {
                 idle: None,
                 action_clips: None,
                 art_bank: None,
+                art_records: Vec::new(),
+                cslot: usize::MAX,
             },
         ))
     }
@@ -1040,16 +1063,19 @@ impl LegaiaRuntime {
         raw: &[u8],
         cslot: usize,
         anm_bones: &[u8],
-    ) -> Vec<Option<legaia_asset::monster_archive::MonsterAnimation>> {
+    ) -> (
+        Vec<Option<legaia_asset::monster_archive::MonsterAnimation>>,
+        Vec<legaia_asset::battle_char_assembly::ArtAnimRecord>,
+    ) {
         use legaia_asset::battle_char_assembly as bca;
         let Ok(record0) = bca::decode_record0(raw) else {
-            return Vec::new();
+            return (Vec::new(), Vec::new());
         };
         let Ok(records) = bca::art_animation_bank(&record0) else {
-            return Vec::new();
+            return (Vec::new(), Vec::new());
         };
         let Ok(readef) = host.index.entry_bytes_extended(READEF_PROT_INDEX) else {
-            return Vec::new();
+            return (Vec::new(), records);
         };
         let main = bca::art_me_archive(&readef, cslot, false);
         let base = bca::art_me_archive(&readef, cslot, true);
@@ -1065,7 +1091,7 @@ impl LegaiaRuntime {
                 bank[rec.index] = Some(bca::expand_animation_for_objects(&anim, anm_bones));
             }
         }
-        bank
+        (bank, records)
     }
 }
 

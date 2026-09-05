@@ -4124,10 +4124,11 @@ the action SM's attack band verbatim: each swing, starter and art constant is
 its own staged clip, and the clip's hit events resolve the damage
 (`World::tick_battle_hit_events`; see
 [battle-action.md](battle-action.md#what-the-port-does)). Art records come from
-`World::art_records`, keyed by `(Character, ActionConstant)` and populated from
-disc PROT entry `0x05C4` via `World::set_art_record`; the hit-event driver reads
-them for the status effect and per-hit cue only - the power bytes are the
-clip entry's own.
+`World::art_records`, keyed by `(Character, ActionConstant)` and installed at
+battle entry from the character's art-animation bank
+(`World::install_art_bank_records`, both hosts) - the same records retail's
+queue-builder walks; the hit-event driver reads them for the status effect
+and per-hit cue only - the power bytes are the clip entry's own.
   Because an entry runs until the pool is spent, performing **several** arts in
 one turn is the ordinary case, and the performed-art list is what the shout cue
 and the learn-on-use check are keyed on - once per art, not once per turn (see

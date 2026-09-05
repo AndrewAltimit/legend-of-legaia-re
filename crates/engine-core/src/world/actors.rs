@@ -757,6 +757,16 @@ impl World {
                 .as_ref()
                 .is_some_and(|p| !p.finished() && !p.is_looping());
         if in_flight {
+            if let Some(p) = actor.battle_animation.as_ref() {
+                log::trace!(
+                    "battle anim: slot {i} staged {:#04x} waits for the boundary of {:?} (frame {} / {}, loop cycles left {})",
+                    actor.battle.queued_anim,
+                    actor.battle_staged_anim,
+                    p.current_frame(),
+                    p.frame_count(),
+                    p.loop_cycles_remaining()
+                );
+            }
             return;
         }
         self.commit_staged_battle_anim_at_boundary(i);
@@ -923,6 +933,15 @@ impl World {
         });
         match player {
             Some(p) => {
+                log::debug!(
+                    "battle anim: slot {i} commits {committed:#04x} (staged {q:#04x}): {} frames, loop window {:?}, events {:?}, power {:?}, lock {:?}, speed {}",
+                    p.frame_count(),
+                    clip.as_ref().and_then(|c| c.entry_loop_window()),
+                    clip.as_ref().and_then(|c| c.entry_event_frames()),
+                    clip.as_ref().and_then(|c| c.entry_power_run()),
+                    clip.as_ref().and_then(|c| c.entry_event_commit_lock()),
+                    p.root_speed()
+                );
                 a.battle_animation = Some(p);
                 a.battle_pose = None;
                 // The marker keeps the SM's per-frame pose() requests from

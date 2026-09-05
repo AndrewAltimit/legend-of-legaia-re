@@ -4,6 +4,13 @@
 
 use super::*;
 
+/// The first **normal**-art action constant (art ordinal `4`). The queue
+/// builder `FUN_801EED1C` tokenizes only ordinals `>= 4`: the Miracle Art
+/// (ordinal `0`) and the three Hyper Arts (`1..=3`) take its other arm
+/// (`sltiu a1,a0,0x4` at `0x801EF330`), which writes nothing unless the
+/// slot's `+0x25F` Miracle marker is armed.
+const NORMAL_ART_MIN_CONSTANT: u8 = 0x1F;
+
 impl World {
     /// Open the player-driven command menu for party member `actor` and park
     /// the action SM. The action context's `active_actor` is set now; the
@@ -578,13 +585,37 @@ impl World {
         let mut catalog: Vec<(ActionConstant, Vec<legaia_art::Command>)> = self
             .art_records
             .iter()
-            .filter(|((ch, _), rec)| *ch == character && !rec.commands.is_empty())
+            .filter(|((ch, action), rec)| {
+                // Only the **normal** arts (ordinal `>= 4`, constants
+                // `0x1F+`): the builder's inner loop routes the Miracle Art
+                // and the three Hyper Arts (ordinals `0..=3`) through a
+                // different arm (`sltiu a1,a0,0x4` at `0x801EF330`) that,
+                // with the slot's `+0x25F` marker clear, writes nothing -
+                // their combo bytes never tokenize as arts.
+                // ... and only combos of two arrows or more: a fully matched
+                // one-arrow string takes the builder's `s1 == 1` exit
+                // (`0x801EF420..0x801EF434`) with no rewrite - the disc's
+                // one-arrow record is the Miracle finisher's, and letting it
+                // match would steal an arrow from every art containing it.
+                *ch == character
+                    && rec.commands.len() >= 2
+                    && action.as_byte() >= NORMAL_ART_MIN_CONSTANT
+            })
             .map(|((_, action), rec)| (*action, rec.commands.clone()))
             .collect();
         catalog.sort_by_key(|(a, _)| a.as_byte());
         let entries: Vec<legaia_art::tokenize::ArtEntry<'_>> =
             catalog.iter().map(|(a, c)| (*a, c.as_slice())).collect();
         let tokens = legaia_art::tokenize(&entries, commands);
+        log::debug!(
+            "arts queue: {:?} over {:?} -> {:02x?}",
+            commands,
+            catalog
+                .iter()
+                .map(|(a, c)| (a.as_byte(), c.as_slice()))
+                .collect::<Vec<_>>(),
+            &tokens[..]
+        );
         let mut bytes = [0u8; ACTION_QUEUE_CAP];
         bytes[..tokens.len()].copy_from_slice(&tokens);
         // Learn-on-use per accepted art, in queue order. Retail's insert

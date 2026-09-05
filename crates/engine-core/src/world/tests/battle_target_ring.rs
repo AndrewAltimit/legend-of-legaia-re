@@ -194,14 +194,16 @@ fn the_cursor_falls_back_to_slot_order_without_seats() {
     assert_eq!(cursor_slot(&w), 2);
 }
 
-/// Stage Vahn's Somersault (`0x27`) so the saved chain `[Up]` resolves to a
-/// real art constant. A synthetic row carries none, and the learn check has
-/// no id to insert - so without this the test would pass vacuously.
+/// Stage Vahn's Somersault (`0x27`) with its real `↑↓↑` command so the saved
+/// chain `[Up, Down, Up]` resolves to a real art constant. A synthetic row
+/// carries none, and the learn check has no id to insert - so without this
+/// the test would pass vacuously.
 fn stage_somersault(w: &mut World) {
+    use legaia_art::Command::{Down, Up};
     let action = legaia_art::ActionConstant::from_byte(0x27).unwrap();
     let rec = legaia_art::ArtRecord {
         action,
-        commands: vec![legaia_art::Command::Up],
+        commands: vec![Up, Down, Up],
         anim_index: 0,
         anim_extra: vec![],
         name: None,
@@ -232,7 +234,7 @@ fn performing_an_art_learns_it_once() {
     w.saved_chains.push(legaia_save::SavedChainRecord {
         char_slot: 0,
         name: "Som".into(),
-        sequence: vec![4], // Up
+        sequence: vec![4, 3, 4], // Up Down Up
     });
     let art_id = w
         .build_battle_arts_rows(0)
@@ -248,17 +250,20 @@ fn performing_an_art_learns_it_once() {
     assert!(w.battle_arts_menu.is_none(), "arts menu closed");
     // The confirm arms the SM's attack band; the learn-on-use check runs off
     // the strike that band produces, so the band has to be let run.
-    // Retail's queue for a one-arrow art: the arrow becomes the starter -
-    // `0x1A`, since this performance learns the art - and the constant is
-    // inserted after it (`FUN_801EED1C` `0x801EF6F0..0x801EF7A0`).
+    // Retail's queue for a three-arrow art: the leading arrows stay swings,
+    // the last arrow becomes the starter - `0x1A`, since this performance
+    // learns the art - and the constant is inserted after it
+    // (`FUN_801EED1C` `0x801EF6F0..0x801EF7A0`).
     assert_eq!(
-        &w.actors[0].battle.params[..3],
+        &w.actors[0].battle.params[..5],
         &[
+            0x0F,
+            0x0E,
             legaia_art::ActionConstant::SpecialStarter.as_byte(),
             art_id,
             0
         ],
-        "the learned-on-use starter and the art constant are staged into the stream"
+        "swing, swing, the learned-on-use starter and the art constant are staged into the stream"
     );
     assert_eq!(w.actors[0].battle.action_category, 3, "attack band armed");
     let learned: Vec<_> = run_armed_action(&mut w, 400)

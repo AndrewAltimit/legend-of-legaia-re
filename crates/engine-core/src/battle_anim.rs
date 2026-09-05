@@ -249,6 +249,11 @@ impl MonsterAnimPlayer {
         self.looping
     }
 
+    /// Number of keyframes in the clip.
+    pub fn frame_count(&self) -> u32 {
+        self.frame_count
+    }
+
     /// Number of animated parts (= TMD objects the pose addresses).
     pub fn part_count(&self) -> usize {
         self.part_count

@@ -787,12 +787,15 @@ impl PlayWindowApp {
                     None;
                 let mut art_face_tracks: Vec<Option<legaia_asset::face_anim::FaceTracks>> =
                     Vec::new();
-                if let Some((asm, uploads, idle, clips, bank, faces, art_faces)) =
+                let mut art_records: Vec<legaia_asset::battle_char_assembly::ArtAnimRecord> =
+                    Vec::new();
+                if let Some((asm, uploads, idle, clips, bank, faces, art_faces, records)) =
                     self.assembled_party_battle_mesh(cslot, member)
                 {
                     tex_uploads = uploads;
                     action_clips = Some(clips);
                     art_bank = Some(bank);
+                    art_records = records;
                     face_tracks = Some(faces);
                     art_face_tracks = art_faces;
                     match legaia_tmd::parse(&asm.tmd) {
@@ -981,6 +984,15 @@ impl PlayWindowApp {
                                 .host
                                 .world
                                 .set_actor_battle_art_bank(member, std::sync::Arc::new(bank));
+                        }
+                        // The bank's records are the arts the queue-builder
+                        // matches: install them so the live arts input
+                        // tokenizes this character's real arts.
+                        if let Some(character) = party_art_character(cslot) {
+                            self.session
+                                .host
+                                .world
+                                .install_art_bank_records(character, &art_records);
                         }
                         // Facial animation (FUN_8004C7B4): register the
                         // member's per-action face tracks so the per-tick
@@ -1255,8 +1267,17 @@ impl PlayWindowApp {
         // (main slot 3*char+1, base slot 3*char+2 for rate_alt == 0xFF
         // records). The staged-anim commit materializes bank record
         // `id - 0x10` into dynamic slot 0x10/0x11 (FUN_8004AD80).
-        let (art_bank, art_faces) = self.party_art_bank(&raw, cslot, &asm.anm_bones);
-        Some((asm, uploads, idle, clips, art_bank, faces, art_faces))
+        let (art_bank, art_faces, art_records) = self.party_art_bank(&raw, cslot, &asm.anm_bones);
+        Some((
+            asm,
+            uploads,
+            idle,
+            clips,
+            art_bank,
+            faces,
+            art_faces,
+            art_records,
+        ))
     }
 
     /// Decode one character's art-animation bank into commit-ready clips
@@ -1271,19 +1292,20 @@ impl PlayWindowApp {
     ) -> (
         Vec<Option<legaia_asset::monster_archive::MonsterAnimation>>,
         Vec<Option<legaia_asset::face_anim::FaceTracks>>,
+        Vec<legaia_asset::battle_char_assembly::ArtAnimRecord>,
     ) {
         let record0 = match legaia_asset::battle_char_assembly::decode_record0(raw) {
             Ok(r) => r,
             Err(e) => {
                 log::warn!("play-window: party {cslot} record[0] decode for art bank: {e:#}");
-                return (Vec::new(), Vec::new());
+                return (Vec::new(), Vec::new(), Vec::new());
             }
         };
         let records = match legaia_asset::battle_char_assembly::art_animation_bank(&record0) {
             Ok(r) => r,
             Err(e) => {
                 log::warn!("play-window: party {cslot} art-bank parse: {e:#}");
-                return (Vec::new(), Vec::new());
+                return (Vec::new(), Vec::new(), Vec::new());
             }
         };
         // The embedded entries' face tracks (record +0xB0 / +0xBC) come
@@ -1296,7 +1318,7 @@ impl PlayWindowApp {
             Ok(b) => b,
             Err(e) => {
                 log::warn!("play-window: readef.DAT (PROT 894) read: {e:#}");
-                return (Vec::new(), faces);
+                return (Vec::new(), faces, records);
             }
         };
         let main = legaia_asset::battle_char_assembly::art_me_archive(&readef, cslot, false);
@@ -1324,7 +1346,7 @@ impl PlayWindowApp {
                 ),
             }
         }
-        (bank, faces)
+        (bank, faces, records)
     }
 
     /// Spawn the player Seru-magic summon as a battle creature, the faithful
@@ -2150,6 +2172,19 @@ use legaia_engine_vm::battle_intro_particles::IntroEnv;
 /// the field actor table (`World::end_battle`'s `field_return` restore), the
 /// same channel `exit_battle_render` already relies on.
 // REF: FUN_800513F0 (battle setup: the battle's own registration set)
+/// The [`legaia_art::Character`] whose art tables a player-file character
+/// slot (`0..=2` = Vahn / Noa / Gala) resolves against; `None` for Terra
+/// (slot `3`), who has no arts catalog.
+fn party_art_character(cslot: usize) -> Option<legaia_art::Character> {
+    [
+        legaia_art::Character::Vahn,
+        legaia_art::Character::Noa,
+        legaia_art::Character::Gala,
+    ]
+    .get(cslot)
+    .copied()
+}
+
 pub(super) fn unregister_non_battle_meshes(
     world: &mut legaia_engine_core::world::World,
     registered: &[usize],

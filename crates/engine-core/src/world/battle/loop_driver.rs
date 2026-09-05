@@ -516,9 +516,12 @@ impl World {
             let a = &self.actors[attacker];
             let converged_idle =
                 a.battle_staged_anim.is_none() && a.battle.queued_anim == a.battle.current_anim;
-            if self.battle_ctx.action_state == ActionState::AttackRecovery.as_byte()
-                || converged_idle
-            {
+            // Only the converged, clip-less case. `AttackRecovery` itself
+            // must NOT release the latch: retail's `0x1F` waits for the last
+            // staged byte to commit at the playing clip's boundary
+            // (`0x801E3AEC..0x801E3AF8`), and releasing it here dropped that
+            // byte - a two-swing queue played one swing.
+            if converged_idle {
                 self.actors[attacker]
                     .battle
                     .flag_bits
@@ -1116,6 +1119,12 @@ impl World {
             self.apply_combo_total(target);
         }
         let running_total = self.actors[target as usize].battle.damage_accum;
+        log::debug!(
+            "battle hit: slot {attacker} -> {target} hit {} pb {:#04x} dmg {dmg} total {running_total} applied {applied} (state {state:#04x}, cursor {:#04x}, committed {committed:#04x}, latched {latched:#04x})",
+            hit.hit_index,
+            hit.power_byte,
+            self.actors[attacker as usize].battle.strike_index
+        );
         self.battle_hit_events
             .push(crate::battle_events::BattleHitEvent {
                 attacker_slot: attacker,

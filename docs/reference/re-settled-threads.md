@@ -346,6 +346,12 @@ stream satisfies the head guard on every hit. Engine seats: `legaia_engine_vm::b
 (the head), `World::tick_battle_hit_events` / `land_melee_hit` / `apply_combo_total`
 (`engine-core`); write-up in
 [battle-action.md](../subsystems/battle-action.md#a-tactical-art-is-an-ordinary-attack-band-action).
+The port's own timeline (`legaia-engine play-window --battle 4`, `RUST_LOG=legaia_engine_core=debug`,
+N = 2 runs) reads the same shape: a two-swing Auto queue commits `0C`, hits at frame 6 of its `e0 = 7`
+entry and accumulates, commits `0D` at the boundary and lands the total on its hit; a typed `↑↓↑`
+becomes `0F 0E 1A 27`, both swings hit at their beats, the starter parks `[13, 14] x 5` with no hit,
+and the Somersault entry (`p0 = 0x18, e0 = 5`, lock `1`, the capture's bytes) hits at frame 4 and lands
+the total once.
 
 ### The battle HUD's per-phase surfaces are the sub-draw script table
 
