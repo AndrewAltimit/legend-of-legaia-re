@@ -164,3 +164,67 @@ fn tetsu_and_gobu_gobu_idle_entries_never_ghost() {
         eprintln!("{name}: {rows:?}");
     }
 }
+
+/// The same `+0x7A` byte on the **player** side: every basic-action entry
+/// of the four player battle files (`data\battle\PLAYER1..4`, extraction
+/// 863..866) and every art record of their record-0 banks. The melee /
+/// arts routine reads the acting record's byte whichever side is acting,
+/// so this is the selector space a party swing can stamp on a monster.
+#[test]
+fn player_file_records_carry_only_routed_selectors() {
+    std::env::var_os("LEGAIA_DISC_BIN").expect("gated above by prot_file; keep the same skip");
+    let mut files = Vec::new();
+    for p in ["extracted/PROT", "../../extracted/PROT"] {
+        if let Ok(rd) = std::fs::read_dir(p) {
+            for e in rd.flatten() {
+                let name = e.file_name().to_string_lossy().into_owned();
+                if name.starts_with("086")
+                    && (863..=866).contains(&name[..4].parse::<u32>().unwrap_or(0))
+                {
+                    files.push((name, e.path()));
+                }
+            }
+            break;
+        }
+    }
+    if files.is_empty() {
+        eprintln!("[skip] extracted/PROT/086[3-6]_* missing");
+        return;
+    }
+    files.sort();
+    let mut seen = std::collections::BTreeMap::<u8, usize>::new();
+    for (name, path) in &files {
+        let bytes = std::fs::read(path).expect("player file reads");
+        let anims = legaia_asset::battle_char_assembly::battle_animations(&bytes)
+            .unwrap_or_else(|e| panic!("{name}: basic animations: {e}"));
+        let basic: Vec<(u8, u8, u8, u8)> = anims
+            .iter()
+            .map(|a| (a.action_id, a.attach_key, a.solo_flag, a.impact_class))
+            .collect();
+        let record0 = legaia_asset::battle_char_assembly::decode_record0(&bytes)
+            .unwrap_or_else(|e| panic!("{name}: record0: {e}"));
+        let arts = legaia_asset::battle_char_assembly::art_animation_bank(&record0)
+            .unwrap_or_else(|e| panic!("{name}: art bank: {e}"));
+        let art_rows: Vec<(usize, u8, u8)> = arts
+            .iter()
+            .map(|r| (r.index, r.anim_id, r.impact_class))
+            .collect();
+        for &(_, _, _, c) in &basic {
+            *seen.entry(c).or_default() += 1;
+        }
+        for &(_, _, c) in &art_rows {
+            *seen.entry(c).or_default() += 1;
+        }
+        eprintln!("[census] {name}: basic (tag, +0x77, +0x87, +0x7A) = {basic:?}");
+        eprintln!(
+            "[census] {name}: art records (index, anim_id, +0x7A) with a non-zero selector = {:?} of {}",
+            art_rows.iter().filter(|r| r.2 != 0).collect::<Vec<_>>(),
+            art_rows.len()
+        );
+    }
+    eprintln!("[census] player-side +0x7A histogram: {seen:?}");
+    assert!(
+        seen.keys().all(|&c| c <= 6),
+        "a player record carries a selector with no retail arm: {seen:?}"
+    );
+}
