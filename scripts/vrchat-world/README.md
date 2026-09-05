@@ -365,7 +365,11 @@ no casino coin bank to cash out to).
    Per-frame visual updates pause per-client when nobody is near the
    machine (the last-drawn frame stays up). Named button nodes get
    fitted colliders + `LegaiaSlotButton`; missing ones (a stale mesh)
-   get fallback pads under the screen.
+   get fallback pads under the screen. **Match world shading** (default
+   on) converts the cabinet's imported glTFast PBR materials to the
+   kit's lit vertex-color shaders so the prop sits under the same sun
+   and ambient as the scene; the screen composition stays unlit - it
+   is a display, it should glow.
 
 Sync model: a player takes ownership of the machine by pressing a button
 **while it is idle**, and holds it through the spin - one seat per

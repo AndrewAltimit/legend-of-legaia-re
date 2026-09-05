@@ -86,6 +86,7 @@ namespace LegaiaWorld
         bool flipButtonOrder;
         bool buildPaytable = true;
         bool buildFallbackButtons = true;
+        bool matchWorldShading = true;
 
         // The retail projection, read from the manifest at build time
         // (minigame_slot_scene constants; defaults match the USA disc).
@@ -152,6 +153,13 @@ namespace LegaiaWorld
                     "Build simple pads when a named node is missing (stale mesh)."),
                 buildFallbackButtons);
             buildPaytable = EditorGUILayout.Toggle("Paytable board", buildPaytable);
+            matchWorldShading = EditorGUILayout.Toggle(
+                new GUIContent("Match world shading",
+                    "Convert the cabinet's imported (glTFast PBR) materials " +
+                    "to the kit's lit vertex-color shaders so it sits under " +
+                    "the same sun and ambient as the rest of the scene. The " +
+                    "screen composition stays unlit - it is a display."),
+                matchWorldShading);
             GUILayout.Space(8);
             using (new EditorGUI.DisabledScope(!Directory.Exists(artDir)))
             {
@@ -208,6 +216,14 @@ namespace LegaiaWorld
             // after the old rig is destroyed so it can't match anything a
             // previous build generated.
             TrySnapToScreenNode(parent);
+
+            // Shade the cabinet like the scene around it: its glTFast PBR
+            // materials answer the sun and ambient probe on their own terms
+            // and read overbright next to the kit-shaded world. Runs before
+            // the rig exists, and skips every Legaia* material (the blacked
+            // screen face, and any already-converted rebuild).
+            if (matchWorldShading && cabinet != null)
+                LegaiaRealism.ConvertPropToLit(cabinet, GEN_DIR);
 
             // Root: the anchor at the cabinet's screen face (behaviour +
             // fallback buttons, cabinet units). The composition is built

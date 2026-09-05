@@ -259,6 +259,55 @@ namespace LegaiaWorld
                       " character material(s) wrap-lit.");
         }
 
+        /// Convert one prop's imported (glTFast) materials to the kit's lit
+        /// shaders - the same LitVariant treatment the world lighting pass
+        /// applies, minus the normal smoothing (an authored mesh keeps its
+        /// own normals). Used by the slot-machine builder so a cabinet glb
+        /// shades under the scene's sun + ambient instead of standing out
+        /// with PBR defaults. Materials already on any Legaia* shader (the
+        /// kit's unlit screen shaders included) pass through untouched, so
+        /// the call is idempotent and never converts the screen composition.
+        public static void ConvertPropToLit(GameObject root, string genDir)
+        {
+            var cutout = Shader.Find("Legaia/Lit Vertex Color (Cutout)");
+            var transparent = Shader.Find("Legaia/Lit Vertex Color (Transparent)");
+            if (cutout == null || transparent == null)
+            {
+                Debug.LogWarning("[Legaia] lit shaders not found (is " +
+                    "Assets/LegaiaWorld/Shaders/ imported?) - " + root.name +
+                    " keeps its imported materials.");
+                return;
+            }
+            Directory.CreateDirectory(genDir);
+            var cache = new Dictionary<Material, Material>();
+            int idx = 0;
+            int converted = 0;
+            foreach (var r in root.GetComponentsInChildren<Renderer>(true))
+            {
+                var mats = r.sharedMaterials;
+                bool changed = false;
+                for (int i = 0; i < mats.Length; i++)
+                {
+                    if (mats[i] == null || (mats[i].shader != null &&
+                        mats[i].shader.name.StartsWith("Legaia")))
+                        continue;
+                    var lit = LitVariant(mats[i], cutout, transparent, null,
+                        genDir, cache, ref idx);
+                    if (lit != mats[i])
+                    {
+                        mats[i] = lit;
+                        changed = true;
+                        converted++;
+                    }
+                }
+                if (changed)
+                    r.sharedMaterials = mats;
+            }
+            if (converted > 0)
+                Debug.Log("[Legaia] " + root.name + ": " + cache.Count +
+                    " material(s) converted to the kit's lit shaders.");
+        }
+
         /// A smoothed-normal duplicate of `src`, saved as a readable asset
         /// (skinned meshes keep their blendshapes and bindposes, so the
         /// world morph clip still drives the copy). Idempotent: a mesh that
