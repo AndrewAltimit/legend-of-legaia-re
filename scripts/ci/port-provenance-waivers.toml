@@ -636,3 +636,25 @@ return - so the "jumps to 0x801EC96C" reading has no dump behind it. The row now
 says that and keeps the address so the falsified reading stays searchable.
 """
 
+
+[[waiver]]
+key = "module-orphan:crates/engine-core/src/world/actors.rs:801d01b0"
+reason = """
+Correct tag, new neighbours. `field_base_step` is the base-step selector at
+`0x801D0334..0x801D03E0` inside the field locomotion controller
+`FUN_801d01b0` (its second tag; the walker itself is in `field_movement.rs`).
+The row went orphan only when the battle-side siblings `8004ad80` / `801ec3e4`
+were tagged in the same module: a field routine shares no data with the battle
+anim commit or the melee kernel, and the heuristic reads that as doubt.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-core/src/world/vm_hosts.rs:801dbf9c"
+reason = """
+Correct tag. `spell_anim_trigger` is the party cast trigger `FUN_801DBF9C`: the
+`sltiu v0,a1,0x25` split at `0x801DBFA0` and the `+0x1E0 = 9 / +0x1E1 = 0x12 /
++0x1E2 = 0xFF` stores at `0x801DC080..0x801DC09C` are its own, and its two
+distinctive addresses `0x801F4E64` / `0x801F4EDC` are exactly the `< 0x25`
+anim-pair table the doc comment names as the un-parsed arm. The host trait's
+other hooks are dispatcher-side routines that share nothing with it by design.
+"""
