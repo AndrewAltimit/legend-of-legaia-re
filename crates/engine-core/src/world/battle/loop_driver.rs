@@ -1794,7 +1794,10 @@ mod melee_cue_tests {
             w.monster_ai_state.flag_bd84, 0,
             "the `_DAT_8007BD84` word is zero at battle start"
         );
-        assert!(w.apply_one_basic_strike(BASIC_ATTACK_COMMAND));
+        {
+            let atk = w.battle_ctx.active_actor;
+            w.land_melee_hit(atk, 1 - atk, BASIC_ATTACK_COMMAND, 0, false);
+        }
         assert!(
             w.drain_battle_sfx_cues().is_empty(),
             "the grunt arm submits nothing to the SPU ring"
@@ -1816,7 +1819,10 @@ mod melee_cue_tests {
     fn an_ordinary_monster_swing_is_silent_at_this_site() {
         let mut w = duel();
         w.battle_ctx.active_actor = 1; // the monster attacks
-        assert!(w.apply_one_basic_strike(BASIC_ATTACK_COMMAND));
+        {
+            let atk = w.battle_ctx.active_actor;
+            w.land_melee_hit(atk, 1 - atk, BASIC_ATTACK_COMMAND, 0, false);
+        }
         // `sltiu v0,a0,0x3` at `0x801EEA7C` skips the grunt for a monster
         // seat, and the re-read of the zero word at `0x801EEB60` skips the
         // cue: a monster's ordinary swing makes no sound from this routine.
@@ -1873,7 +1879,10 @@ mod melee_cue_tests {
         // `FUN_8003DE7C(1) != 0` at `0x8004FE9C`: a read in flight drops the
         // voice leg's request.
         w.battle_xa_busy_frames = 5;
-        assert!(w.apply_one_basic_strike(BASIC_ATTACK_COMMAND));
+        {
+            let atk = w.battle_ctx.active_actor;
+            w.land_melee_hit(atk, 1 - atk, BASIC_ATTACK_COMMAND, 0, false);
+        }
         assert!(w.drain_battle_sfx_cues().is_empty());
         assert!(w.drain_battle_xa_cues().is_empty());
     }
@@ -1939,7 +1948,10 @@ mod impact_tint_arm_tests {
     #[test]
     fn a_connecting_swing_arms_the_impact_triple_from_the_attackers_clip() {
         let mut w = duel_with_attacker_clip(0, 1);
-        assert!(w.apply_one_basic_strike(BASIC_ATTACK_COMMAND));
+        {
+            let atk = w.battle_ctx.active_actor;
+            w.land_melee_hit(atk, 1 - atk, BASIC_ATTACK_COMMAND, 0, false);
+        }
         assert_eq!(w.actors[1].battle.impact_state, 1);
         assert_eq!(
             w.actors[1].battle.render_blend,
@@ -1956,7 +1968,10 @@ mod impact_tint_arm_tests {
     #[test]
     fn a_monster_swing_arms_the_party_target_the_same_way() {
         let mut w = duel_with_attacker_clip(1, 2);
-        assert!(w.apply_one_basic_strike(BASIC_ATTACK_COMMAND));
+        {
+            let atk = w.battle_ctx.active_actor;
+            w.land_melee_hit(atk, 1 - atk, BASIC_ATTACK_COMMAND, 0, false);
+        }
         assert_eq!(w.actors[0].battle.impact_state, 2);
         assert_eq!(w.actors[0].battle.render_blend, 0x1000);
     }
@@ -1968,7 +1983,9 @@ mod impact_tint_arm_tests {
         for class in [0u8, crate::move_power::IMPACT_CLASS_LIMIT, 0xFF] {
             let mut w = duel_with_attacker_clip(0, class);
             let hp_before = w.actors[1].battle.hp;
-            assert!(w.apply_one_basic_strike(BASIC_ATTACK_COMMAND));
+            w.land_melee_hit(0, 1, BASIC_ATTACK_COMMAND, 0, false);
+            // Hits accumulate; the combo total is the one live-HP write.
+            w.apply_combo_total(1);
             assert!(
                 w.actors[1].battle.hp < hp_before,
                 "class {class}: the swing landed"
@@ -1983,7 +2000,10 @@ mod impact_tint_arm_tests {
     fn no_playing_clip_reads_class_zero() {
         let mut w = duel_with_attacker_clip(0, 3);
         w.actors[0].battle_animation = None;
-        assert!(w.apply_one_basic_strike(BASIC_ATTACK_COMMAND));
+        {
+            let atk = w.battle_ctx.active_actor;
+            w.land_melee_hit(atk, 1 - atk, BASIC_ATTACK_COMMAND, 0, false);
+        }
         assert_eq!(w.actors[1].battle.impact_state, 0);
     }
 }
