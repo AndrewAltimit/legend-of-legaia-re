@@ -742,34 +742,34 @@ pub fn diag_hud_enabled() -> bool {
 /// marbled panel background and the 8x16 `/` separator have no rect in the
 /// engine's system-UI atlas set yet, so the panel draws in the shared
 /// chrome and the separator as a font glyph.
-const BAR_X: i32 = 8;
+pub(crate) const BAR_X: i32 = 8;
 /// Plate top of the active-actor bar.
-const BAR_Y: i32 = 188;
+pub(crate) const BAR_Y: i32 = 188;
 /// Interior width of the active-actor bar; the plate spans `8 ..= 312`.
-const BAR_INTERIOR_W: i32 = 288;
+pub(crate) const BAR_INTERIOR_W: i32 = 288;
 /// Plate height, every plate run on the battle screen.
-const PLATE_H: i32 = 20;
+pub(crate) const PLATE_H: i32 = 20;
 /// Width a plate run occupies for a given interior (a cap at each end).
-const PLATE_CAP_W: i32 = 8;
+pub(crate) const PLATE_CAP_W: i32 = 8;
 
 /// Name-glyph pen inside the active-actor bar.
-const BAR_NAME: (i32, i32) = (16, 192);
+pub(crate) const BAR_NAME: (i32, i32) = (16, 192);
 /// HP / MP label-sprite seats inside the bar.
-const BAR_HP_LABEL: (i32, i32) = (80, 194);
-const BAR_MP_LABEL: (i32, i32) = (192, 194);
+pub(crate) const BAR_HP_LABEL: (i32, i32) = (80, 194);
+pub(crate) const BAR_MP_LABEL: (i32, i32) = (192, 194);
 /// `/` separator seats - the separator sits four rows above its numerals.
 const BAR_HP_SEPARATOR: (i32, i32) = (136, 188);
 const BAR_MP_SEPARATOR: (i32, i32) = (240, 188);
 /// Numeral pen row, every field in the bar.
-const BAR_DIGIT_Y: i32 = 192;
+pub(crate) const BAR_DIGIT_Y: i32 = 192;
 /// Right edges the four numeral fields are laid out back from. **Both**
 /// halves of a `cur / max` pair are right-aligned - the field grows leftward
 /// one 8-px cell per digit - which is what keeps a four-digit HP inside its
 /// own field. A forward-running maximum is what a capture whose values are
 /// all three digits looks like, and it overruns as soon as they are not.
-const BAR_HP_CUR_RIGHT: i32 = 134;
+pub(crate) const BAR_HP_CUR_RIGHT: i32 = 134;
 const BAR_HP_MAX_RIGHT: i32 = 178;
-const BAR_MP_CUR_RIGHT: i32 = 238;
+pub(crate) const BAR_MP_CUR_RIGHT: i32 = 238;
 const BAR_MP_MAX_RIGHT: i32 = 274;
 
 /// Width and horizontal pitch of one HUD numeral cell - retail's, and the

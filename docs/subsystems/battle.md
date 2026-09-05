@@ -4419,17 +4419,33 @@ parks offscreen (its digit rows sit at y `234..264` in the capture), a name
 tag floats beside the targeted actor, and the camera re-frames on the target;
 RIGHT steps the target across the party band and the whole strip follows.
 
+The strip is not a widget of its own: every pen above is the seat of the
+ring's full-width party bar (plate `(8, 188)` closing at 312, name `(16,
+192)`, `HP` widget `(80, 194)`, current run ending at 134, `MP` widget
+`(192, 194)`, run ending at 238), and the sub-draw step the menu SM runs into
+`0x64` (`FUN_801D388C(0x12)`: `01/3 07/0 1A/3 29/0 2A/0 34/1 3B/3`) opens
+**placement record 7** - the record step 1 opens for the ring - and sends the
+description window (`34/1`) off, then re-points it per cursor move (step
+`0x18`). The item window's target strip is the party bar pointed at the
+member under the cursor, exactly as [the per-phase rule](#the-per-phase-rule---what-the-sub-draw-script-builds)
+tabulates it.
+
 **Port.** `engine-ui::battle_item_ui` carries the pins and composes the
 windows through the shared 9-slice menu-window chrome + tab-banner 3-slice +
 save-select hand cell; the projection (dedup row list with the cursor mapped
 into it, disc description, breadcrumb name, same-side target rows) is
 `engine-core::World::battle_item_menu_model` /
-`InventoryUseSession::menu_view`, consumed by both play hosts. Target select
-draws the pinned strip for the pointed-at member. Known divergences, disclosed
+`InventoryUseSession::menu_view`, consumed by both play hosts. At target
+select the window draws only the breadcrumb trail; the strip is the HUD
+builder's party bar (`battle_readout_bar_slot` names the pointed member
+through `CommandSurface::ItemTarget`), so the blue plate and the sprite label
+widgets are the ones on the row, and the `TARGET_*` pins are held equal to
+the bar's seats by test. Known divergences, disclosed
 in the module doc: breadcrumb tabs are sized per label (the engine font is
-wider than retail's tab glyphs), the HP/MP labels are text stand-ins for the
-gold HUD label widgets, and the floating world-anchored name tag + the
-target-camera re-frame are not drawn.
+wider than retail's tab glyphs), the max-value pens of the two captures
+disagree by one 8-px cell (the strip capture starts the maximum at 146, the
+ring capture right-aligns it to 178; the bar draws the ring's), and the
+floating world-anchored name tag + the target-camera re-frame are not drawn.
 
 ## See also
 

@@ -237,7 +237,11 @@ attack on a monster, the target's pill during a monster cast - is on
 [`battle.md`](../subsystems/battle.md#the-per-phase-rule---what-the-sub-draw-script-builds).
 Each `mednafen` state's `ctx[+0x1074]` walk agrees element for element; the
 disc-gated `crates/engine-core/tests/battle_hud_subdraw_disc.rs` holds the
-port's constants to the table's bytes.
+port's constants to the table's bytes. One corollary settles a widget that
+had been ported twice: the item window's `0x64` "target strip" is record 7
+again (step `0x12`: `07/0`, `34/1`), and its packet-pinned pens are the
+ring bar's seat for seat - so the port draws the bar there and the item
+window keeps only its breadcrumbs.
 
 ### The ring's element chip reads `-` or the Ra-Seru, and the gate is the equipment byte
 

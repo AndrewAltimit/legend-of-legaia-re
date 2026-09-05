@@ -1003,8 +1003,8 @@ pub enum BattleHudPhase {
     Action,
 }
 
-/// Is `state` (the action SM's `ctx[+0x07]`) inside an action's presentation
-/// - from the seed through the Done band, plus the run / capture arms? The
+/// Is `state` (the action SM's `ctx[+0x07]`) inside an action's presentation,
+/// from the seed through the Done band, plus the run / capture arms? The
 /// pre-action holds (`0x00` / `0x0A` / `0x0B`) and the end-of-action gate
 /// (`0x5A`) are outside: retail's `rage` capture, taken in `0x0A`, carries no
 /// live widget handle.
@@ -2668,10 +2668,7 @@ mod tests {
         use legaia_engine_vm::battle_action::ActionCategory;
         let mut w = battle_world(1);
         arm_action(&mut w, 3, ActionCategory::Magic.as_byte(), 0);
-        assert_eq!(
-            battle_active_actor(&w).map(|(s, n)| (s, n)),
-            Some((3, "Gimard".into()))
-        );
+        assert_eq!(battle_active_actor(&w), Some((3, "Gimard".into())));
         assert_eq!(
             battle_readout_bar_slot(&w),
             Some(0),

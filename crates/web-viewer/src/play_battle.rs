@@ -170,6 +170,16 @@ fn battle_hud_popup_views(hud: &BattleHud) -> Vec<HudPopupView> {
         .collect()
 }
 
+/// The chip cluster the page projects for one frame: the owned `(label,
+/// enabled)` chips in seat order, the cursor index, and the cluster's phase
+/// (`engine-core::battle_hud::BattleCommandChips`, with the phase mapped
+/// onto the leaf crate's own enum).
+pub(crate) type CommandChips = (
+    Vec<(String, bool)>,
+    usize,
+    legaia_engine_ui::battle_command_ui::ChipPhase,
+);
+
 impl LegaiaRuntime {
     /// The retail enemy target-name strip for a picker parked on the enemy
     /// row - the browser twin of the native window's
@@ -606,19 +616,13 @@ impl LegaiaRuntime {
     /// cursor index, and the phase (which names the seats). `None` when no
     /// command surface owns the frame.
     ///
-    /// The projection itself is `engine-core::battle_hud::battle_command_chips`
-    /// - shared with the native window, and where the ring's element chip
+    /// The projection itself is `engine-core::battle_hud::battle_command_chips`,
+    /// shared with the native window, and where the ring's element chip
     /// becomes the member's Ra-Seru name or `-` off the disc. One projector
-    /// feeds both halves of the cluster - the plate sprites and the labels -
+    /// feeds both halves of the cluster (the plate sprites and the labels),
     /// so the page's two draw arrays cannot disagree about whether the menu
     /// is up.
-    pub(crate) fn battle_command_menu_chips(
-        &self,
-    ) -> Option<(
-        Vec<(String, bool)>,
-        usize,
-        legaia_engine_ui::battle_command_ui::ChipPhase,
-    )> {
+    pub(crate) fn battle_command_menu_chips(&self) -> Option<CommandChips> {
         use legaia_engine_core::battle_hud::{CommandChipPhase, battle_command_chips};
         use legaia_engine_ui::battle_command_ui::ChipPhase;
         let world = self.scene_host.as_ref().map(|h| &h.world)?;

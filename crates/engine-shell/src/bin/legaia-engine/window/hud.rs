@@ -19,6 +19,16 @@ fn arts_input_screen(
     }
 }
 
+/// The chip cluster a host projects for one frame: the owned `(label,
+/// enabled)` chips in seat order, the cursor index, and the cluster's phase
+/// (`engine-core::battle_hud::BattleCommandChips`, with the phase mapped
+/// onto the leaf crate's own enum).
+pub(super) type CommandChips = (
+    Vec<(String, bool)>,
+    usize,
+    legaia_engine_render::battle_command_ui::ChipPhase,
+);
+
 impl PlayWindowApp {
     /// Keep the rendered dialog panel ([`Self::active_dialog`]) in sync with
     /// the world's pending dialog request.
@@ -2215,16 +2225,10 @@ impl PlayWindowApp {
     /// cursor index, and the phase (which names the seats). `None` when no
     /// command surface owns the frame.
     ///
-    /// The projection itself is `engine-core::battle_hud::battle_command_chips`
-    /// - shared with the browser page, and where the ring's element chip
+    /// The projection itself is `engine-core::battle_hud::battle_command_chips`,
+    /// shared with the browser page, and where the ring's element chip
     /// becomes the member's Ra-Seru name or `-` off the disc.
-    pub(super) fn battle_command_menu_chips(
-        &self,
-    ) -> Option<(
-        Vec<(String, bool)>,
-        usize,
-        legaia_engine_render::battle_command_ui::ChipPhase,
-    )> {
+    pub(super) fn battle_command_menu_chips(&self) -> Option<CommandChips> {
         use legaia_engine_core::battle_hud::{CommandChipPhase, battle_command_chips};
         use legaia_engine_render::battle_command_ui::ChipPhase;
         let chips = battle_command_chips(&self.session.host.world)?;
