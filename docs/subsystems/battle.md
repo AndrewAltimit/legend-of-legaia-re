@@ -2823,12 +2823,12 @@ the panel's `(+5, +4)` name pen. The engine's tag survives as the per-cell
 fallback: a host whose atlas could not reach a badge's sub-palette keeps the
 tag for that one badge and blits the other eight.
 
-**Parked, not stacked.** The port emits no panel draws at all while the
-active-actor bar or a command-entry session owns the frame, rather than
-drawing at retail's parked `y = 230`: the engine stage is 240 lines against
-retail's 228-line display window, so `y = 230` would still be visible here.
-Drawing both is what "two mutually exclusive surfaces" rules out - the bar
-would sit on top of the panel row it replaces.
+**Parked, not stacked.** The port emits no panel draws at all while retail
+parks the cluster, rather than drawing at retail's parked `y = 236`: the
+engine stage is 240 lines against retail's 228-line display window, so the
+parked row would still be visible here. Which frames park it is not a
+guess - it is [the per-phase rule](#the-per-phase-rule---what-the-sub-draw-script-builds),
+read off the disc's own sub-draw script.
 
 **Diagnostic surface** (`LEGAIA_DIAG_HUD` set to anything but `0` / empty).
 Everything the port used to draw unconditionally and retail does not: monster
@@ -3039,6 +3039,101 @@ are the **name pen**, five pixels inside the panel background. When the
 active-actor bar takes over, the panels do not stop drawing - they move to
 `y = 230`, below the 228-line display window, the same park row the arts
 input screen uses ([`minigame-muscle-dome.md`](minigame-muscle-dome.md#arts-command-input-packet-pinned)).
+
+### The per-phase rule - what the sub-draw script builds
+
+Retail's battle HUD is not drawn per frame. It is a list of retained text
+actors - `ctx[+0x1074]`, forty handles - that the two battle state machines
+rebuild at every transition, and both rebuilds are **disc data**:
+
+- the menu SM `FUN_801D0748` runs `FUN_801D388C(step)` on every `ctx[+0x06]`
+  edge, and `step` indexes the sub-draw script table `PTR_DAT_801F4D34`
+  (overlay 0898 rodata, fifty steps). A record is `[count][anim][panel]` +
+  `count` x `(placement record, mode)`; `anim = 1` first hard-resets the
+  handle list (`FUN_801D99BC`), so after the step the live elements are
+  exactly the pairs listed;
+- the action SM `FUN_801E295C` opens the per-action elements in its seed arms
+  and closes every one of them in the `0x51` band (`0x801E6170..0x801E6364`).
+
+`FUN_801D8DE8(record, mode)` is one body for both: the record indexes the
+[placement table](../reference/memory-map.md#0x80076c10---one-table-three-names)
+directly (`0x80076C10 + id * 0x18`), and its text actor is
+`FUN_8003541C(id byte, class, string, x, y - 2, w, h, kind)`. Mode bit 0 picks
+which of the record's two seats the actor spawns at (`+0x02/+0x04` for `0`,
+`+0x0A/+0x0C` for `1`) before `FUN_801DB7B0` glides it to the other; bit 1
+suppresses the glide (`0x801D92E0..0x801D93DC`). The glide stepper
+`FUN_801D9BBC` walks `ctx[+0x11B4 + slot * 0xC]` - `[total][elapsed] ..
+[target x][target y][start x][start y]`, linear, snapping on arrival. Which
+seat is on screen is per record, so "mode 0" means *appear* for the bar and
+*unfold* for a chip; the port's `SubdrawStep::shows` reads it as "seat B is
+the on-screen one", which holds for every record the battle HUD draws.
+
+The steps the menu SM runs, with the records that decide the party surfaces
+(`engine-core::battle_hud::subdraw_steps` / `placement_record`):
+
+| Transition | Step | Panels 6/78/79 | Bar 7 | Tab 1 + plaque 26 | AP plate 82 |
+|---|---|---|---|---|---|
+| `0x14` -> `0x1E` round prompt | 0 | up | - | - | - |
+| `0x1E` -> `0x28` ring | 1 | park | up | both slide in | slides in |
+| `0x28` -> `0x3C` item / `0x46` magic window | 5 / 7 | back up | park | snap | leaves |
+| item / magic target step | `0x18` / `0x1B` | park | up, pointed member | snap | - |
+| `0x28` -> `0x78` attack mode, `0x78` -> `0x5A` cursor | `0x30` / `0x2D` | - | park | snap | leaves |
+| `0x28` -> `0x50` arts entry | 9 | - | park (AP bar 15 takes the seat) | snap | snap |
+| `0x28` -> `0x6E` all committed | `0x23` | - | - | tab only | leaves |
+
+So the roster **card** is the round prompt's and the browsed windows'; the
+full-width **pill** is the ring's and the target steps'; and the ring alone
+carries the AP plate. The action SM's openers are two: the `0x0C` seed
+(`0x801E2F24`, again `0x801E401C`) reads the acting actor's target byte
+`+0x1DD` and raises the bar for it when it is a party slot (`t2 == 8`, a
+party-wide cast, raises all three panels instead), and the Item / Spirit
+pre-arm `0x3C` (`0x801E3DA0`) raises it for the acting member. A party
+member's attack on a monster therefore shows **no** readout at all; a monster's
+cast on a member shows that member's bar.
+
+The handle lists of the catalogued states agree with the table, element for
+element: `v0_1_battle_command_menu` (`0x1E`) holds `Begin`, `Run` and one panel
+at `(114, 168)`; `v0_1_battle_command_submenu` (`0x28`) holds the four ring
+chips, `Begin` at `(16, 12)`, the plaque at `(68, 12)`, the bar at `(16, 192)`,
+the parked panel at `y = 234`, the parked `Run` at `x = 328` and the AP plate
+at `(208, 172)`; `party_battle_gobu_gobu` and `terra_party_battle` hold three
+and two panels; `evil_medallion_rage_battle` (action `0x0A`) holds nothing.
+
+The action-phase records, from the same walks: the plaque (68) at `(16, 12)`
+through every action; the **target plaque** (81) for a party member's action
+on a monster - `x` written to `304 - w` so the blue plate's cap ends at 312,
+rising from `y = 236` to the bar's row, the name carrying the `0xCE` badge
+escape (`Gimard` at `x = 241`, `Skeleton A` at 245, `Gobu Gobu` at 249) - and
+closed in `0x51` only for categories `1..=3`; the **move name** (76 / 77) at
+`y = 150` with its four X fields written to `0xA0 - width / 2`
+(`Somersault` 130, `Tail Fire` 135, `Glare` 146, plain glyphs, no plate); and
+the **combo cluster** anchor (80), `(328, 170)` to `(168, 170)` over sixteen
+frames - `battle_melee_hit_spark` carries it mid-glide at elapsed 12 of 16,
+`x = 208`, which is the `+40` every `HIT` / `TOTAL` packet of that frame shows.
+The cluster's own seats are in `engine-vm::battle_value_readout`.
+
+The ring's right arm is record 10, and its string is chosen in `FUN_801D8DE8`'s
+own case (`0x801D8EC8`): `0x801F4B9E + char_id * 10` - the character's
+Ra-Seru, `Meta` / `Terra` / `Ozma` for `char_id` `1..=3` - when the member's
+gate `ctx[+0x25F + member]` is set, and index 4 of the run, a lone `-`,
+when it is clear. The gate has one writer, the party battle-actor init
+`FUN_80053CB8` (`0x800541D0..0x80054270`): it reads the record's Ra-Seru
+equipment byte - `+0x199`, through the `0x80084140` display alias as
+`+0x761`, for every character but Noa, whose `char_id == 2` arm reads
+`+0x198` - and stores `1` when it is non-zero. The catalogued states agree
+byte for byte, and a fourth character (Terra is `char_id` 4) lands on the
+`-` entry.
+
+Port: `engine-core::battle_hud` carries the rule as predicates
+(`battle_panels_visible`, `battle_readout_bar_slot`,
+`battle_begin_tab_visible`, `battle_ring_ap_plate_value`,
+`battle_move_name`, `battle_target_plaque`, `battle_combo_style`,
+`battle_magic_chip`) and decodes the table itself (`subdraw_step`);
+the disc-gated `crates/engine-core/tests/battle_hud_subdraw_disc.rs` holds
+those constants to the disc's bytes. Both hosts feed the predicates into one
+`engine-ui::BattleHudFrame`, and the chip projection
+(`battle_command_chips`) is shared too, which is what makes the `-` chip the
+same chip on both.
 
 ### The command chips
 

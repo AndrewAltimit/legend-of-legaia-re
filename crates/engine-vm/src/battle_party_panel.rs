@@ -162,6 +162,15 @@ impl LabelState {
     /// "No engine analogue" note - this is a documented record of the retail
     /// lifecycle, not a port waiting on a caller.
     ///
+    /// What that actor **is** was mis-read once: it is not the party readout.
+    /// The routine's one caller is the menu SM's `0x28 -> 0x50` arm
+    /// (`0x801D1660`, right after `FUN_801D388C(9)` builds the arts-entry
+    /// screen), and the actor it registers is `FUN_8003541C(0, 0xC, 0, -146,
+    /// 36, 138, 144, 3)` - a 138x144 box parked one screen to the left, the
+    /// arts-list window the Triangle page slides in. The party bar and the
+    /// roster panels are placement records 7 and 6 / 78 / 79, opened by the
+    /// sub-draw script through `FUN_801D8DE8` (`engine-core::battle_hud`).
+    ///
     /// PORT: FUN_801DBB8C
     pub const fn opened(handle: u32) -> Self {
         Self {

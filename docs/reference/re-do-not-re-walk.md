@@ -138,6 +138,56 @@ index arithmetic (`0x800732A4 + kind * 0x0C`, `FUN_8002C69C` at
 `0x8002C7A0`) does. Resolution:
 [`re-settled-threads.md`](re-settled-threads.md#the-chrome-kind-byte-is-an-index-into-the-widget-class-table).
 
+### `FUN_801DBB8C` is not the party readout's registration
+
+The battle overlay's `FUN_801DBB8C` registers one retained SCUS text actor
+through `FUN_8003541C` and stashes the handle at `_DAT_801F4E0C`, and it sits
+among the party-panel build and teardown leaves. Reading it as the readout's
+own registration - the actor the arts input then parks at `y = 230` - was
+the natural next step, and a brief carried it as a fact.
+
+Its one caller says otherwise. `FUN_801D0748` calls it at `0x801D1660`, on the
+ring's `0x28 -> 0x50` arm, immediately after `FUN_801D388C(9)` has built the
+arts-entry screen - and the arguments it passes are `(0, 0xC, 0, -146, 36,
+138, 144, 3)`: a 138x144 box parked one screen to the left, which is the arts
+list window the Triangle page slides in. The party readouts are placement
+records 7 and 6 / 78 / 79, opened by the sub-draw script through
+`FUN_801D8DE8` like every other chrome element.
+
+**Lesson:** a registration is identified by the rect it registers and the
+transition that calls it, not by the leaves it is compiled beside.
+
+### The item window shows the pill
+
+Retail's item-use *action* shows the full-width pill (`captures/tetsu_idle`),
+and the ring the window opens from shows it too, so "pill while the item
+window is up" read as the obvious interpolation. The sub-draw step the
+`0x28 -> 0x3C` arm runs (`FUN_801D388C(5)`, `0x801D13F0`) says the opposite:
+`06/0 4E/0 4F/0 07/1` - the roster panels come **back up** and the bar parks.
+The window's target step (`0x64`, step `0x18`) is where the bar returns,
+re-pointed at the member the cursor names. The magic window (step 7) has the
+same shape.
+
+**Lesson:** a menu state's surfaces are a table row, not a neighbour's; read
+the step, not the frames either side of it.
+
+### The magic chip's gate reads the weapon byte
+
+`FUN_80053CB8` writes `ctx[+0x25F + member]` after an `lbu` at `+0x760` off
+`0x80084140 + (char_id - 1) * 0x414`, and `0x80084140 + 0x760` is the live
+record's `+0x198` - the equipment byte the save-record table names
+`weapon_id`. So the first reading was "the element chip is live when a weapon
+is equipped". Twenty-nine states say no: `player_steal_skeleton_pre` has the
+gate at `1` with `+0x198 = 0` and `+0x199 = 1`. The store at `0x80054270` is
+the **second** arm; the first (`0x800541E0..0x80054218`) reads `+0x761` -
+`+0x199`, the Ra-Seru slot - and every state's gate equals that byte's
+non-zero test. The `+0x760` arm is reached only for `char_id == 2` - the
+`beq v0,a3` at `0x800541E4` on `DAT_8007BD10[member]` - so it is Noa's byte,
+not the weapon rule.
+
+**Lesson:** one `lbu` in a two-arm predicate is not the predicate; check the
+reading against a state whose bytes disagree with it.
+
 ### `FUN_801DBC30` is not the battle name plate
 
 The blit at `FUN_801DBC30` sits in the battle overlay next to the party-name

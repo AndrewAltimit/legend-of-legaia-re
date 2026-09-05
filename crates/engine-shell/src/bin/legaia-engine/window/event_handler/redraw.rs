@@ -2531,13 +2531,64 @@ impl PlayWindowApp {
         if self.session.host.world.mode != SceneMode::Battle {
             return None;
         }
-        if self.battle_vram.is_none() || self.battle_hud.popups.is_empty() {
+        if self.battle_vram.is_none()
+            || (self.battle_hud.popups.is_empty() && self.battle_hud.combo.is_none())
+        {
             return None;
         }
         let mut pos: Vec<[f32; 3]> = Vec::new();
         let mut uvs: Vec<[u8; 2]> = Vec::new();
         let mut cba_tsb: Vec<[u16; 2]> = Vec::new();
         let mut idx: Vec<u32> = Vec::new();
+        // One textured quad on the effect atlas's glyph page: `(x, y, w, h)`
+        // in stage pixels, `(u0, v0, u1, v1)` inclusive texels.
+        let quad = |pos: &mut Vec<[f32; 3]>,
+                    uvs: &mut Vec<[u8; 2]>,
+                    cba_tsb: &mut Vec<[u16; 2]>,
+                    idx: &mut Vec<u32>,
+                    rect: (i32, i32, u32, u32),
+                    uv: (u8, u8, u8, u8)| {
+            let base = pos.len() as u32;
+            let (x0, y0) = (rect.0 as f32, rect.1 as f32);
+            let (x1, y1) = (x0 + rect.2 as f32, y0 + rect.3 as f32);
+            pos.push([x0, y0, 0.0]);
+            pos.push([x1, y0, 0.0]);
+            pos.push([x0, y1, 0.0]);
+            pos.push([x1, y1, 0.0]);
+            uvs.extend_from_slice(&[[uv.0, uv.1], [uv.2, uv.1], [uv.0, uv.3], [uv.2, uv.3]]);
+            cba_tsb.extend(std::iter::repeat_n([vr::GLYPH_CLUT, vr::GLYPH_TPAGE], 4));
+            idx.extend_from_slice(&[base, base + 1, base + 2, base + 1, base + 3, base + 2]);
+        };
+        // The combo counter cluster: the `HIT` / `TOTAL` / `DAMAGE` word
+        // cells and the value digits, off the same sheet, on the seats the
+        // steal-banner and tail-fire display lists pin, sliding in with
+        // placement record 80's glide (`vr::combo_slide`).
+        if let Some(c) = self.battle_hud.combo.as_ref() {
+            let cluster = vr::combo_cluster(c.style, c.hits, c.total, c.slide());
+            for l in &cluster.labels {
+                let (w, h) = l.size();
+                quad(
+                    &mut pos,
+                    &mut uvs,
+                    &mut cba_tsb,
+                    &mut idx,
+                    (l.x, l.y, w, h),
+                    l.uv,
+                );
+            }
+            for k in &cluster.cells {
+                let u1 = k.u.saturating_add(k.cell - 1);
+                let v1 = k.v.saturating_add(k.cell - 1);
+                quad(
+                    &mut pos,
+                    &mut uvs,
+                    &mut cba_tsb,
+                    &mut idx,
+                    (k.x, k.y, k.w, k.h),
+                    (k.u, k.v, u1, v1),
+                );
+            }
+        }
         // One numeral per actor, the newest. Retail's readout is a per-slot
         // **value window** (`_DAT_801F6980`, four halfwords, one per slot), so
         // a second hit on the same actor replaces the figure rather than

@@ -303,6 +303,20 @@ pub struct CommandChipView<'a> {
     pub enabled: bool,
 }
 
+/// Borrow a host's owned `(label, enabled)` chip list as the views the
+/// cluster builders take. The labels are owned because the ring's element
+/// chip is the member's Ra-Seru name off the disc (or `-`), not a fixed
+/// word (`engine-core::battle_hud::battle_command_chips`).
+pub fn command_chip_views(chips: &[(String, bool)]) -> Vec<CommandChipView<'_>> {
+    chips
+        .iter()
+        .map(|(label, enabled)| CommandChipView {
+            label: label.as_str(),
+            enabled: *enabled,
+        })
+        .collect()
+}
+
 /// Everything the cluster draws from. Hosts project their live command
 /// session into this; `chips` is in the order the phase's own chip list
 /// carries and is seated by [`ChipPhase::seats`].

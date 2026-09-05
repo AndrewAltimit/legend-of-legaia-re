@@ -571,7 +571,7 @@ fn parked_input_session_suppresses_the_roster_panels() {
             log: &[],
             solid_src: Some(SOLID),
             surface: SURFACE,
-            input_session_parked: true,
+            panels_parked: true,
             ..Default::default()
         },
         PEN,

@@ -26,6 +26,8 @@
 use crate::ap_gauge::ApGauge;
 use legaia_engine_vm::battle_gauge_rearm::DamagePopupRing;
 pub use legaia_engine_vm::battle_gauge_rearm::POPUP_RING_SLOTS;
+pub use legaia_engine_vm::battle_value_readout::ComboStyle;
+use legaia_engine_vm::battle_value_readout::{COMBO_SLIDE_FRAMES, combo_slide};
 use legaia_engine_vm::status_effects::{StatusEffectTracker, StatusIcon, StatusKind};
 
 /// Per-slot row update payload for [`BattleHud::sync_slot`].
@@ -368,6 +370,46 @@ pub struct BattleHud {
     /// drained by the host's mid-battle VRAM pass through
     /// [`crate::battle_status_clut::StatusClutState::step`].
     pub status_clut: crate::battle_status_clut::StatusClutState,
+    /// The right-hand combo counter the current action has put up - `N HIT`
+    /// / `TOTAL x` for a physical chain, `DAMAGE x` for a cast - or `None`
+    /// while nothing has landed. Accumulated by [`Self::push_popup`] from
+    /// the per-hit damage FX, armed and torn down per action by
+    /// [`Self::arm_combo`] (which [`sync_battle_hud_rows`] drives from the
+    /// live world). Retail closes the cluster in the action SM's `0x51`
+    /// fade-down (`FUN_801D8DE8(0x50, 1)`, placement record 80).
+    pub combo: Option<ComboReadout>,
+    /// The style the action in flight would draw its hits in; `None`
+    /// outside an action, which is what keeps a stray popup from raising a
+    /// cluster on its own.
+    combo_style: Option<ComboStyle>,
+    /// The acting actor the cluster belongs to - a new actor is a new
+    /// cluster even when the style repeats.
+    combo_actor: Option<u8>,
+}
+
+/// The combo counter cluster's running values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ComboReadout {
+    pub style: ComboStyle,
+    /// Landed hits so far (drawn only for [`ComboStyle::HitTotal`]).
+    pub hits: u16,
+    /// Running damage the value row shows.
+    pub total: u32,
+    /// Frames since the cluster first appeared - drives the slide-in.
+    pub age: u16,
+}
+
+impl ComboReadout {
+    /// Horizontal offset from the rest seats this frame
+    /// (`battle_value_readout::combo_slide`).
+    pub fn slide(&self) -> i32 {
+        combo_slide(self.age)
+    }
+
+    /// Has the slide-in finished?
+    pub fn settled(&self) -> bool {
+        self.age >= COMBO_SLIDE_FRAMES
+    }
 }
 
 impl Default for BattleHud {
@@ -386,6 +428,9 @@ impl BattleHud {
             log: Vec::new(),
             log_capacity: 6,
             status_clut: Default::default(),
+            combo: None,
+            combo_style: None,
+            combo_actor: None,
         }
     }
 
@@ -502,6 +547,39 @@ impl BattleHud {
                 self.popup_ring_slots.push(slot);
             }
         }
+        // The combo cluster counts every landed damage hit of the action in
+        // flight: one more `HIT`, its amount into `TOTAL` / `DAMAGE`. Heals
+        // and status tags carry no numeral on the cluster.
+        if !popup.is_heal
+            && popup.status.is_none()
+            && popup.amount > 0
+            && let Some(style) = self.combo_style
+        {
+            let c = self.combo.get_or_insert(ComboReadout {
+                style,
+                hits: 0,
+                total: 0,
+                age: 0,
+            });
+            c.style = style;
+            c.hits = c.hits.saturating_add(1);
+            c.total = c.total.saturating_add(u32::from(popup.amount));
+        }
+    }
+
+    /// Arm (or tear down) the combo cluster for the action the world is in.
+    ///
+    /// `style` is [`battle_combo_style`]'s answer this frame and `actor` the
+    /// acting slot: `None` (no action in flight) or a change of actor drops
+    /// the cluster, matching retail's per-action open / `0x51` close. Called
+    /// once per simulation tick by [`sync_battle_hud_rows`].
+    pub fn arm_combo(&mut self, style: Option<ComboStyle>, actor: u8) {
+        let owner = style.map(|_| actor);
+        if owner != self.combo_actor {
+            self.combo = None;
+        }
+        self.combo_style = style;
+        self.combo_actor = owner;
     }
 
     /// Append a battle log line. When the log exceeds [`Self::log_capacity`],
@@ -526,6 +604,8 @@ impl BattleHud {
         // The ring lives in the battle context, which retail rebuilds per
         // encounter - reset the cursor + counter with the display list.
         self.popup_ring = DamagePopupRing::default();
+        self.combo = None;
+        self.combo_actor = None;
     }
 
     /// Drop every log line.
@@ -552,6 +632,9 @@ impl BattleHud {
         });
         for p in self.popups.iter_mut() {
             p.frames_remaining = p.frames_remaining.saturating_sub(1);
+        }
+        if let Some(c) = &mut self.combo {
+            c.age = c.age.saturating_add(1);
         }
         // Re-prune in case the saturating_sub above dropped any to zero
         // (kept above zero before, zero now - render once more then drop
@@ -820,6 +903,7 @@ pub fn sync_battle_hud_rows(hud: &mut BattleHud, world: &crate::world::World) {
     for slot in cleared {
         hud.clear_slot(slot);
     }
+    hud.arm_combo(battle_combo_style(world), world.battle_ctx.active_actor);
 }
 
 /// Build the deduplicated enemy target-menu rows straight off the live
@@ -874,55 +958,798 @@ pub fn battle_enemy_target_rows(
     )
 }
 
-/// The actor the current battle frame belongs to: `(actor-table slot, name)`.
+/// Which of retail's HUD phases the frame is in.
 ///
-/// Retail's battle screen keys two surfaces off this actor - the top-left
-/// name plaque (`battle_chrome::name_plaque`, which reads "Vahn" on his turn
-/// and the monster's name through its attack) and the full-width active-actor
-/// bar, which replaces the resting per-member panels for exactly this actor.
+/// Retail's battle HUD is not drawn per frame - it is a list of retained
+/// text actors (`ctx[+0x1074]`, forty handles) that the two battle state
+/// machines rebuild at every transition, and both rebuilds are disc data:
 ///
-/// The engine has no single "whose turn is it" cursor, so this reads the two
-/// states it does have, in retail's own precedence: an open command session
-/// names its acting party member; otherwise the first live monster stands in
-/// for the enemy turn. That fallback is also the port's whole **monster**
-/// readout - retail's HUD draws no monster gauge at all
-/// (`docs/subsystems/battle-action.md`), so a monster's name is all it
-/// contributes to the drawn surface.
+/// * the **menu** SM `FUN_801D0748` runs `FUN_801D388C(step)` on every
+///   `ctx[+0x06]` edge, and `step` indexes the sub-draw script table
+///   `PTR_DAT_801F4D34` (overlay 0898 rodata). A record is
+///   `[count][anim][panel]` + `count` x `(record, mode)`: `anim = 1` first
+///   hard-resets the handle list (`FUN_801D99BC`), so after the step the
+///   live elements are exactly the pairs listed. `record` indexes the
+///   screen-element placement table at `0x80076C10` directly
+///   (`FUN_801D8DE8`: `0x80076C10 + id * 0x18`), `mode` bit 0 picks which
+///   of the record's two seats the actor spawns at (`+0x02/+0x04` for `0`,
+///   `+0x0A/+0x0C` for `1`) before it glides to the other, and bit 1
+///   suppresses the glide (`0x801D92E0..0x801D93DC`);
+/// * the **action** SM `FUN_801E295C` opens the per-action elements in
+///   its seed arms and closes every one of them in the `0x51` band
+///   (`0x801E6170..0x801E6364`).
 ///
-/// `None` with no command session and every formation slot cleared, which is
-/// what stops the plaque drawing over the victory frames.
-pub fn battle_active_actor(world: &crate::world::World) -> Option<(u8, String)> {
-    let pc = (world.party_count.clamp(1, 3) as usize).min(world.actors.len());
-    if let Some(cmd) = world.battle_command.as_ref() {
-        let names = crate::field_menu_dispatch::roster_names(world);
-        let ordinal = (cmd.party_slot as usize).min(pc.saturating_sub(1));
-        let name = names
-            .get(world.party_roster_slot(ordinal))
-            .filter(|n| !n.is_empty())
-            .cloned()
-            .unwrap_or_else(|| format!("P{}", ordinal + 1));
-        return Some((cmd.actor, name));
+/// The phases below are the four distinct element sets those two tables
+/// produce, cross-checked against the live handle lists of the catalogued
+/// mednafen states (`scripts/scenarios.toml`; the walk is in
+/// `docs/subsystems/battle.md`, "The per-phase rule"):
+///
+/// * **`RoundPrompt`** (`ctx[+0x06] = 0x1E`, step 0: `00/0 03/0 06/0
+///   4E/0 4F/0`): the `Begin` / `Run` chips and one roster panel per
+///   member - nothing else. No plaque, no bar, no AP plate.
+/// * **`CommandEntry`** (`0x28` and every window below it): what shows
+///   depends on the surface - [`battle_command_surface`].
+/// * **`Action`** (the action SM's `0x0C..=0x52` bands): decided per
+///   action by the seed arms - [`battle_readout_bar_slot`],
+///   [`battle_move_name`], [`battle_target_plaque`].
+/// * **`Idle`** (`0x0A` between actions, the open and the close): retail
+///   holds no live handle at all (the `evil_medallion_rage_battle` state,
+///   taken in `0x0A`, has an empty handle list).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BattleHudPhase {
+    Idle,
+    RoundPrompt,
+    CommandEntry,
+    Action,
+}
+
+/// Is `state` (the action SM's `ctx[+0x07]`) inside an action's presentation
+/// - from the seed through the Done band, plus the run / capture arms? The
+/// pre-action holds (`0x00` / `0x0A` / `0x0B`) and the end-of-action gate
+/// (`0x5A`) are outside: retail's `rage` capture, taken in `0x0A`, carries no
+/// live widget handle.
+pub fn battle_action_in_flight(state: u8) -> bool {
+    matches!(state, 0x0C..=0x52 | 0x64..=0x6B | 0x6E..=0x71)
+}
+
+/// The HUD phase this frame is in ([`BattleHudPhase`]).
+///
+/// An open submenu or arts-entry session wins over the command session's
+/// own phase (retail's windows are states below the ring), and the command
+/// session wins over the action SM (it opens between actions).
+pub fn battle_hud_phase(world: &crate::world::World) -> BattleHudPhase {
+    use crate::battle_input::CommandPhase;
+    if world.mode != crate::world::SceneMode::Battle {
+        return BattleHudPhase::Idle;
     }
-    const MAX_FORMATION_MONSTERS: usize = 5;
-    for (i, a) in world
-        .actors
-        .iter()
-        .enumerate()
-        .skip(pc)
-        .take(MAX_FORMATION_MONSTERS)
+    if world.arts_input_active()
+        || world.battle_arts_menu.is_some()
+        || world.battle_spell_menu.is_some()
+        || world.battle_item_menu.is_some()
     {
-        if a.battle.max_hp == 0 || a.battle.hp == 0 {
-            continue;
-        }
-        return Some((
-            i as u8,
-            a.battle_monster_id
-                .and_then(|id| world.monster_catalog.get(id))
-                .map(|d| d.name.clone())
-                .unwrap_or_else(|| format!("M{}", i - pc + 1)),
-        ));
+        return BattleHudPhase::CommandEntry;
     }
-    None
+    if let Some(cmd) = world.battle_command.as_ref() {
+        return match cmd.phase {
+            CommandPhase::RoundPrompt { .. } => BattleHudPhase::RoundPrompt,
+            _ => BattleHudPhase::CommandEntry,
+        };
+    }
+    if battle_action_in_flight(world.battle_ctx.action_state) {
+        BattleHudPhase::Action
+    } else {
+        BattleHudPhase::Idle
+    }
+}
+
+/// The command surface that owns a [`BattleHudPhase::CommandEntry`] frame -
+/// retail's `ctx[+0x06]` window, named by the sub-draw step that built it.
+///
+/// Each variant's doc names the step whose element list it stands for; the
+/// pairs quoted are `(placement record / mode)` as the table carries them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommandSurface {
+    /// `0x28`, step 1: `09/0 0A/0 08/0 0B/0 01/0 05/0 06/1 4E/1 4F/1 07/0
+    /// 1A/0 52/0` - the four ring chips unfold, the `Begin` chip becomes
+    /// the `(16, 14)` tab, `Run` leaves, the panels park, the bar (7) rises
+    /// for the acting member, the plaque (26) drops in behind the tab at
+    /// `(68, 14)` and the AP plate (82) slides in to `(208, 174)`.
+    Ring,
+    /// `0x78`, step `0x30`: `01/3 07/1 08/1 0A/1 0B/1 0D/0 1A/3 29/0 52/1`
+    /// - the bar parks and the AP plate leaves; tab and plaque stay.
+    AttackMode,
+    /// `0x5A`, step `0x2D`: `01/3 07/1 0D/3 1A/3 29/0 52/1 54/1 57/1` -
+    /// same as the attack-mode prompt for the party surfaces.
+    Targeting,
+    /// `0x50`, step 9: `01/3 07/1 08/1 0A/1 0B/1 0D/0 0F/0 1A/3 1B/0 1C/0
+    /// 1D/0 1E/0 52/3` - the bar parks and the AP **bar** (15) takes its
+    /// seat; the AP plate stays.
+    ArtsInput,
+    /// The port's saved-chain list, which retail has no state for; treated
+    /// as the arts-entry screen it stands in for.
+    ArtsList,
+    /// `0x3C`, step 5: `01/3 06/0 4E/0 4F/0 07/1 09/1 0A/1 0B/1 0C/0 16/0
+    /// 17/0 1A/3 52/1` - the roster panels come **back up**, the bar parks,
+    /// the plate leaves.
+    ItemBrowse,
+    /// `0x64`, step `0x12` then `0x18` per cursor move: `01/3 07/0 1A/3
+    /// 29/0 2A/0 34/1 3B/3` - the panels park and the bar (7) rises for the
+    /// member the cursor points at (`None` while it points at an enemy).
+    ItemTarget(Option<u8>),
+    /// `0x46`, step 7: `01/3 06/0 4E/0 4F/0 07/1 08/1 09/1 0B/1 0E/0 18/0
+    /// 19/0 1A/3 1F/0 64/0 52/1` - panels up, bar parked, plate gone.
+    SpellBrowse,
+    /// `0x65..`, step `0x1B`: `01/3 06/1 4E/1 4F/1 07/0 18/1 19/1 1A/3 1F/1
+    /// 64/1 29/0 32/0 3B/0` - panels park, bar up for the pointed member.
+    SpellTarget(Option<u8>),
+    /// A command-session phase with no window of its own (a confirmed
+    /// command, the hand-offs, the escape roll). Retail's `0x6E` prompt
+    /// (step `0x23`) carries the tab and the `Begin` / `Reselect` chips and
+    /// no party surface.
+    Other,
+}
+
+/// The surface owning this frame, or `None` outside
+/// [`BattleHudPhase::CommandEntry`].
+pub fn battle_command_surface(world: &crate::world::World) -> Option<CommandSurface> {
+    use crate::battle_input::CommandPhase;
+    use crate::target_picker::{CursorRow, PickerState};
+    if battle_hud_phase(world) != BattleHudPhase::CommandEntry {
+        return None;
+    }
+    if world.arts_input_active() {
+        return Some(CommandSurface::ArtsInput);
+    }
+    if world.battle_arts_menu.is_some() {
+        return Some(CommandSurface::ArtsList);
+    }
+    if let Some(m) = world.battle_spell_menu.as_ref() {
+        return Some(match &m.phase {
+            crate::battle_magic::SpellPhase::Targeting { picker, .. } => {
+                CommandSurface::SpellTarget(match picker.state() {
+                    PickerState::Cursor {
+                        row: CursorRow::Ally,
+                        slot,
+                    } => Some(slot),
+                    _ => None,
+                })
+            }
+            _ => CommandSurface::SpellBrowse,
+        });
+    }
+    if let Some(menu) = world.battle_item_menu.as_ref() {
+        let view = menu.menu_view();
+        return Some(if view.target_select {
+            CommandSurface::ItemTarget(
+                menu.targets
+                    .get(view.target_cursor)
+                    .filter(|t| !t.is_enemy)
+                    .map(|t| t.slot),
+            )
+        } else {
+            CommandSurface::ItemBrowse
+        });
+    }
+    let cmd = world.battle_command.as_ref()?;
+    Some(match cmd.phase {
+        CommandPhase::Menu { .. } => CommandSurface::Ring,
+        CommandPhase::AttackMode { .. } => CommandSurface::AttackMode,
+        CommandPhase::Targeting { .. } => CommandSurface::Targeting,
+        _ => CommandSurface::Other,
+    })
+}
+
+/// The party member entering a command while a command surface is up.
+fn command_entry_actor(world: &crate::world::World) -> Option<u8> {
+    if let Some(slot) = world.arts_input_actor() {
+        return Some(slot);
+    }
+    if let Some(m) = world.battle_arts_menu.as_ref() {
+        return Some(m.actor);
+    }
+    if let Some(m) = world.battle_spell_menu.as_ref() {
+        return Some(m.actor);
+    }
+    if world.battle_item_menu.is_some() {
+        return Some(world.battle_ctx.active_actor);
+    }
+    world.battle_command.as_ref().map(|c| c.actor)
+}
+
+/// Seated party count, clamped to the actor table.
+fn party_count(world: &crate::world::World) -> usize {
+    (world.party_count.clamp(1, 3) as usize).min(world.actors.len())
+}
+
+/// A party member's display name by battle ordinal.
+fn party_member_name(world: &crate::world::World, slot: u8) -> String {
+    let names = crate::field_menu_dispatch::roster_names(world);
+    names
+        .get(world.party_roster_slot(slot as usize))
+        .filter(|n| !n.is_empty())
+        .cloned()
+        .unwrap_or_else(|| format!("P{}", slot + 1))
+}
+
+/// A monster's catalog name by actor slot.
+fn monster_name(world: &crate::world::World, slot: u8) -> String {
+    let pc = party_count(world);
+    world
+        .actors
+        .get(slot as usize)
+        .and_then(|a| a.battle_monster_id)
+        .and_then(|id| world.monster_catalog.get(id))
+        .map(|d| d.name.clone())
+        .unwrap_or_else(|| format!("M{}", (slot as usize).saturating_sub(pc) + 1))
+}
+
+/// Any actor's display name by slot.
+fn actor_name(world: &crate::world::World, slot: u8) -> String {
+    if (slot as usize) < party_count(world) {
+        party_member_name(world, slot)
+    } else {
+        monster_name(world, slot)
+    }
+}
+
+/// The actor the frame's top-left plaque names, with its display name -
+/// the party member entering a command, or the actor whose action is
+/// playing out - or `None` when retail draws no plaque (the round prompt,
+/// the holds between actions, and the `0x6E` all-committed prompt).
+///
+/// Two records carry the plaque. Record 26 (`(68, -24)` to `(68, 14)`) is
+/// the command-entry one: step 1 slides it in and every later menu step
+/// snaps it (`1A/3`) except step `0x23`. Record 68 (`(16, -24)` to
+/// `(16, 14)`) is the action one: opened for the acting actor and closed in
+/// the `0x51` band unless the category is Run (`0x801E61F0`, category `5`
+/// skips the `(0x44, 1)` close because no plaque was opened for it). The
+/// captures agree - `Vahn` behind the tab in the ring, `Vahn` / `Gimard` /
+/// `Zora` at `(16, 12)` through their actions, nothing at `0x1E` or `0x0A`.
+pub fn battle_active_actor(world: &crate::world::World) -> Option<(u8, String)> {
+    match battle_hud_phase(world) {
+        BattleHudPhase::Idle | BattleHudPhase::RoundPrompt => None,
+        BattleHudPhase::CommandEntry => {
+            if battle_command_surface(world) == Some(CommandSurface::Other) {
+                return None;
+            }
+            let slot = command_entry_actor(world)?;
+            Some((slot, actor_name(world, slot)))
+        }
+        BattleHudPhase::Action => {
+            let slot = world.battle_ctx.active_actor;
+            let actor = world.actors.get(slot as usize)?;
+            if actor.battle.action_category
+                == legaia_engine_vm::battle_action::ActionCategory::Run.as_byte()
+            {
+                return None;
+            }
+            Some((slot, actor_name(world, slot)))
+        }
+    }
+}
+
+/// Does the frame carry the `Begin` breadcrumb tab at `(16, 14)` with the
+/// plaque slid behind it to `(68, 14)`?
+///
+/// Step 1 turns the round prompt's `Begin` chip into the tab (record 1,
+/// `(104, 88)` to `(16, 14)`, the gold plate class) and drops the plaque
+/// (record 26) in beside it; every later menu step keeps both with a snap
+/// (`01/3 1A/3`). The item window continues the trail as `Begin | <name>
+/// | Item` through its own breadcrumb builder, and the arts-entry screen
+/// draws its own surface, so both are excluded here.
+pub fn battle_begin_tab_visible(world: &crate::world::World) -> bool {
+    matches!(
+        battle_command_surface(world),
+        Some(
+            CommandSurface::Ring
+                | CommandSurface::AttackMode
+                | CommandSurface::Targeting
+                | CommandSurface::SpellBrowse
+                | CommandSurface::SpellTarget(_)
+        )
+    )
+}
+
+/// Are the resting roster panels (records 6 / 78 / 79) on screen this
+/// frame?
+///
+/// Up at the round prompt (step 0), parked by the ring (step 1, mode 1),
+/// **back up** while the item or magic window is browsed (steps 5 and 7),
+/// parked again for their target steps (`0x12` / `0x1B`), and raised by the
+/// action seed for a party-wide target (`0x801E404C`: `t2 == 8` opens 6,
+/// `0x4E` and `0x4F` and leaves `ctx[+0x18] = 6` for the `0x51` close).
+/// Absent from every other action capture.
+pub fn battle_panels_visible(world: &crate::world::World) -> bool {
+    match battle_hud_phase(world) {
+        BattleHudPhase::RoundPrompt => true,
+        BattleHudPhase::CommandEntry => matches!(
+            battle_command_surface(world),
+            Some(CommandSurface::ItemBrowse | CommandSurface::SpellBrowse)
+        ),
+        // The `t2 == 8` arm sits on the `0x0C` seed, which the attack and
+        // magic arms reach; an item or spirit action pre-arms through
+        // `0x3C` instead and opens the bar for its actor, never the panels.
+        BattleHudPhase::Action => world
+            .actors
+            .get(world.battle_ctx.active_actor as usize)
+            .is_some_and(|a| {
+                use legaia_engine_vm::battle_action::ActionCategory;
+                let cat = a.battle.action_category;
+                a.battle.active_target == legaia_engine_vm::battle_cue_group::TARGET_PARTY_WIDE
+                    && cat != ActionCategory::Item.as_byte()
+                    && cat != ActionCategory::Spirit.as_byte()
+            }),
+        BattleHudPhase::Idle => false,
+    }
+}
+
+/// The party member whose full-width readout bar (placement record 7) is
+/// up this frame, or `None`.
+///
+/// Command entry: the ring (step 1, `07/0`) and the item / magic target
+/// steps (`0x18` / `0x1B`, `07/0` for the member under the cursor) raise
+/// it; the attack-mode prompt, the target cursor, the arts-entry screen and
+/// the browsed windows park it (`07/1`).
+///
+/// Action, both openers read off `FUN_801E295C`:
+///
+/// * the seed `0x0C` (`0x801E2F24..0x801E2F44`, again at `0x801E401C`):
+///   `t2 = actor[+0x1DD]` is the action's target; `sltiu v0,t2,3` opens
+///   record 7 for that member and stores it as `ctx[+0x18]` for the close.
+///   Tail Fire and Glare on Vahn show `Vahn`; Vahn's Somersault on Gimard
+///   shows nothing;
+/// * the Spirit / Item pre-arm `0x3C` (`0x801E3DA0..0x801E3DC0`) opens it
+///   for the acting member when that member is a party slot.
+pub fn battle_readout_bar_slot(world: &crate::world::World) -> Option<u8> {
+    use legaia_engine_vm::battle_action::ActionCategory;
+    let pc = party_count(world) as u8;
+    match battle_hud_phase(world) {
+        BattleHudPhase::CommandEntry => match battle_command_surface(world)? {
+            CommandSurface::Ring => command_entry_actor(world).filter(|s| *s < pc),
+            CommandSurface::ItemTarget(slot) | CommandSurface::SpellTarget(slot) => {
+                slot.filter(|s| *s < pc)
+            }
+            _ => None,
+        },
+        BattleHudPhase::Action => {
+            let a = world.battle_ctx.active_actor;
+            let actor = world.actors.get(a as usize)?;
+            let party_target = {
+                let t = actor.battle.active_target;
+                (t < pc).then_some(t)
+            };
+            let cat = actor.battle.action_category;
+            if cat == ActionCategory::Item.as_byte() || cat == ActionCategory::Spirit.as_byte() {
+                if a < pc { Some(a) } else { party_target }
+            } else {
+                party_target
+            }
+        }
+        _ => None,
+    }
+}
+
+/// The value the ring's AP plate (placement record 82, at `(208, 174)`)
+/// shows, or `None` when the plate is not up.
+///
+/// Step 1 slides it in (`52/0`) and every step that leaves the ring sends it
+/// off (`52/1`) except the arts-entry screen, which keeps it and draws its
+/// own copy in the port. `FUN_801D8DE8` case `0x52` (`0x801D9028`) reads
+/// the acting member's actor `+0x170` - the Spirit gauge, `0` for a level-1
+/// Vahn in the sparring fight's `v0_1_battle_command_submenu` frame.
+pub fn battle_ring_ap_plate_value(world: &crate::world::World) -> Option<u8> {
+    if battle_command_surface(world) != Some(CommandSurface::Ring) {
+        return None;
+    }
+    let actor = world.battle_command.as_ref()?.actor;
+    Some(world.spirit_gauge(actor).min(100) as u8)
+}
+
+/// The name label retail draws under the action (placement records 76 /
+/// 77, `Somersault` / `Tail Fire` / `Glare` / `Healing Leaf`), or `None`.
+///
+/// Both records sit at `y = 150` with `w = 0`; the four X fields
+/// (`0x722 / 0x72A / 0x73A / 0x742`) are written to `0xA0 - width / 2`
+/// before the open, so the label is centred and never glides
+/// (`engine-ui::battle_name_banner::banner_x`). Sources, per category:
+///
+/// * a party member's attack band names the **art** whose constant the
+///   strike cursor has passed - `FUN_8004C650` places the record when the
+///   art's animation commits, so `player_steal_skeleton_pre` (`0x1E`, chain
+///   start) has no label and `battle_melee_hit_spark` (`0x20`, mid-chain)
+///   has `Somersault`; a plain swing never shows one;
+/// * a cast names the spell: the `0x28` arm stores the spell table's `+8`
+///   name pointer into both records before `FUN_801D8DE8(0x4C, 0)`
+///   (`0x801E4430..0x801E4458`);
+/// * an item names the item (the `0x3C` arm's `(0x4C, 0)` at `0x801E3DC8`).
+pub fn battle_move_name(world: &crate::world::World) -> Option<String> {
+    use legaia_engine_vm::battle_action::ActionCategory;
+    if battle_hud_phase(world) != BattleHudPhase::Action {
+        return None;
+    }
+    let a = world.battle_ctx.active_actor;
+    let actor = world.actors.get(a as usize)?;
+    let pc = party_count(world) as u8;
+    let cat = actor.battle.action_category;
+    if cat == ActionCategory::Attack.as_byte() || cat == ActionCategory::TacticalArts.as_byte() {
+        if a >= pc {
+            return None;
+        }
+        let staged = usize::from(actor.battle.strike_index).min(actor.battle.params.len());
+        let character = crate::battle_arts::character_for_slot(a);
+        actor.battle.params[..staged]
+            .iter()
+            .rev()
+            .filter_map(|&b| legaia_art::ActionConstant::from_byte(b))
+            .find(|c| c.is_art())
+            .and_then(|c| legaia_art::tables::art_name(character, c))
+            .map(str::to_string)
+    } else if cat == ActionCategory::Magic.as_byte() {
+        let id = actor.battle.params[0];
+        world
+            .menu_text
+            .as_ref()
+            .and_then(|t| t.spell_name(id))
+            .map(str::to_string)
+    } else if cat == ActionCategory::Item.as_byte() {
+        let id = actor.battle.params[0];
+        world
+            .menu_text
+            .as_ref()
+            .and_then(|t| t.item_name(id))
+            .map(str::to_string)
+    } else {
+        None
+    }
+}
+
+/// The bottom-right target plaque (placement record 81): the monster a
+/// party member's attack is aimed at, with its element badge - or `None`.
+///
+/// The record's `x` is written to right-align the plate's cap at `x = 312`
+/// (`241` for `Gimard` behind its badge, `w = 63`; `245` for `Skeleton A`,
+/// `w = 59`; `249` for `Gobu Gobu`, `w = 55`), it rises from `y = 236` to
+/// `194`, and its name payload carries the `0xCE` badge escape in front of
+/// the name. Live from the strike loop (`0x1E`) through the Done band in
+/// every party-attack capture, absent from every monster-action one, and
+/// closed in `0x51` only for a monster target under categories `1..=3`
+/// (`0x801E6314..0x801E6348`).
+pub fn battle_target_plaque(world: &crate::world::World) -> Option<(String, Option<u8>)> {
+    use legaia_engine_vm::battle_action::ActionCategory;
+    if battle_hud_phase(world) != BattleHudPhase::Action {
+        return None;
+    }
+    let a = world.battle_ctx.active_actor;
+    let pc = party_count(world) as u8;
+    if a >= pc {
+        return None;
+    }
+    let actor = world.actors.get(a as usize)?;
+    let cat = actor.battle.action_category;
+    if cat != ActionCategory::Attack.as_byte()
+        && cat != ActionCategory::TacticalArts.as_byte()
+        && cat != ActionCategory::Magic.as_byte()
+        && cat != ActionCategory::Item.as_byte()
+    {
+        return None;
+    }
+    let t = actor.battle.active_target;
+    if t < pc {
+        return None;
+    }
+    let target = world.actors.get(t as usize)?;
+    if target.battle.max_hp == 0 {
+        return None;
+    }
+    Some((monster_name(world, t), monster_element_badge(world, t)))
+}
+
+/// The element badge a monster slot's plaque wears (`None` for none).
+fn monster_element_badge(world: &crate::world::World, slot: u8) -> Option<u8> {
+    let actor = world.actors.get(slot as usize)?;
+    let def = world
+        .monster_catalog
+        .get(actor.battle_monster_id?)
+        .filter(|d| (d.element as usize) < legaia_asset::element_affinity::ELEMENT_COUNT)?;
+    Some(def.element)
+}
+
+/// Character record byte the magic chip's gate reads, as an index into the
+/// eight equipment bytes at `+0x196..+0x19D`: `+0x199` for every character
+/// but Noa, whose arm reads `+0x198`.
+const RASERU_EQUIP_SLOT: usize = 3;
+/// Noa's arm of the same gate (`char_id == 2`) reads `+0x198`.
+const RASERU_EQUIP_SLOT_NOA: usize = 2;
+/// The character id `DAT_8007BD10` carries for Noa.
+const CHAR_ID_NOA: u8 = 2;
+
+/// Does the member at battle ordinal `ordinal` carry a Ra-Seru?
+///
+/// Retail's per-member gate `ctx[+0x25F + member]` is written once, by the
+/// party battle-actor init `FUN_80053CB8` (`0x800541D0..0x80054270`). It
+/// loads the member's character id (`DAT_8007BD10[member]`), and for every
+/// id but `2` reads the record's `+0x761` through the `0x80084140` display
+/// alias - the live record's `+0x199`, the Ra-Seru equipment slot
+/// (`0x800541EC..0x80054218`); for `2` (Noa) it reads `+0x760`, the byte
+/// before (`0x80054228..0x80054258`). Either way `1` is stored when the
+/// byte is non-zero. The catalogued states agree byte for byte: the gate is
+/// `1` exactly for the members whose byte is set (Vahn with Meta from
+/// `rim_elm_gimard_seru_capture_after` on, all three at
+/// `evil_medallion_rage_battle`) and `0` for the sparring fight, for Noa in
+/// `terra_party_battle` and for the zeroed `zora_glare` party.
+pub fn battle_member_has_raseru(world: &crate::world::World, ordinal: u8) -> bool {
+    let roster = world.party_roster_slot(ordinal as usize);
+    let char_id = roster as u8 + 1;
+    let slot = if char_id == CHAR_ID_NOA {
+        RASERU_EQUIP_SLOT_NOA
+    } else {
+        RASERU_EQUIP_SLOT
+    };
+    world
+        .roster
+        .members
+        .get(roster)
+        .is_some_and(|m| m.equipment().slots[slot] != 0)
+}
+
+/// The command ring's right arm for the member at battle ordinal
+/// `ordinal`: `(label, enabled)`.
+///
+/// `FUN_801D8DE8`'s case for record 10 (`0x801D8EC8..0x801D8F2C`) writes
+/// the record's name pointer as `0x801F4B9E + char_id * 10` when the
+/// member's gate [`battle_member_has_raseru`] is set - the character's
+/// Ra-Seru (`Meta` / `Terra` / `Ozma` for `char_id` `1..=3`) - and index 4
+/// of the same run, a lone `-`, when it is clear; a character past the
+/// three (Terra is `char_id` 4) lands on the `-` entry. The label comes off
+/// the disc (`World::battle_ui_strings`) and falls back to the port's own
+/// word only when the overlay strings were not read. `enabled` is the
+/// same gate: retail draws the `-` chip and refuses the arm.
+pub fn battle_magic_chip(world: &crate::world::World, ordinal: u8) -> (String, bool) {
+    let has_raseru = battle_member_has_raseru(world, ordinal);
+    let roster = world.party_roster_slot(ordinal as usize);
+    let char_id = roster as u8 + 1;
+    let idx = if has_raseru && (1..=3).contains(&char_id) {
+        char_id
+    } else {
+        4
+    };
+    let label = world
+        .battle_ui_strings
+        .raseru_label(idx)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| {
+            if idx == 4 {
+                "-".to_string()
+            } else {
+                crate::battle_input::BattleCommand::Magic
+                    .label()
+                    .to_string()
+            }
+        });
+    (label, has_raseru)
+}
+
+/// Which selection surface a chip cluster belongs to - the three clusters
+/// retail seats differently (`engine-ui::battle_command_ui::ChipPhase`
+/// carries the seats; this is the renderer-free twin hosts map onto it).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommandChipPhase {
+    RoundPrompt,
+    CommandRing,
+    AttackMode,
+}
+
+/// The live command surface projected into chip labels: one `(label,
+/// enabled)` per chip of whichever prompt is up, in seat order, the cursor
+/// index and the cluster.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BattleCommandChips {
+    pub chips: Vec<(String, bool)>,
+    pub cursor: usize,
+    pub phase: CommandChipPhase,
+}
+
+/// The chip cluster this frame draws, or `None` when no command prompt
+/// owns the frame (a submenu, an arts session or a dialogue box wins).
+///
+/// One projector for both hosts, so the two cannot disagree about whether
+/// the menu is up or what its right arm says: the ring's element chip is
+/// [`battle_magic_chip`] - the member's Ra-Seru name or `-` - not a fixed
+/// word.
+pub fn battle_command_chips(world: &crate::world::World) -> Option<BattleCommandChips> {
+    use crate::battle_input::{AttackMode, BattleCommand, CommandPhase, RoundChoice};
+    if world.mode != crate::world::SceneMode::Battle {
+        return None;
+    }
+    if world.current_dialog.is_some() || world.inline_dialogue.is_some() {
+        return None;
+    }
+    if world.arts_input_active()
+        || world.battle_arts_menu.is_some()
+        || world.battle_spell_menu.is_some()
+        || world.battle_item_menu.is_some()
+    {
+        return None;
+    }
+    let cmd = world.battle_command.as_ref()?;
+    let no_escape = world.battle_no_escape;
+    let chip = |label: &str, enabled: bool| (label.to_string(), enabled);
+    match cmd.phase {
+        CommandPhase::RoundPrompt { cursor } => Some(BattleCommandChips {
+            chips: RoundChoice::PROMPT
+                .iter()
+                .map(|c| chip(c.label(), !matches!(c, RoundChoice::Run) || !no_escape))
+                .collect(),
+            cursor: cursor as usize,
+            phase: CommandChipPhase::RoundPrompt,
+        }),
+        CommandPhase::Menu { cursor } => Some(BattleCommandChips {
+            chips: BattleCommand::MENU
+                .iter()
+                .map(|c| match c {
+                    BattleCommand::Magic => battle_magic_chip(world, cmd.party_slot),
+                    _ => chip(c.label(), c.available(no_escape)),
+                })
+                .collect(),
+            cursor: cursor as usize,
+            phase: CommandChipPhase::CommandRing,
+        }),
+        CommandPhase::AttackMode { cursor } => Some(BattleCommandChips {
+            chips: AttackMode::PROMPT
+                .iter()
+                .map(|m| chip(m.label(), true))
+                .collect(),
+            cursor: cursor as usize,
+            phase: CommandChipPhase::AttackMode,
+        }),
+        _ => None,
+    }
+}
+
+/// The combo cluster style the action in flight draws its hits in, or
+/// `None` outside an action: a physical / arts chain counts `HIT` +
+/// `TOTAL` (`player_steal_skeleton_banner`), a cast, item or spirit action
+/// shows `DAMAGE` (`battle_gimard_tail_fire_a`). Capture-graded: the two
+/// styles are read off those frames' display lists, not off a dispatch.
+pub fn battle_combo_style(world: &crate::world::World) -> Option<ComboStyle> {
+    use legaia_engine_vm::battle_action::ActionCategory;
+    if battle_hud_phase(world) != BattleHudPhase::Action {
+        return None;
+    }
+    let a = world.battle_ctx.active_actor;
+    let cat = world.actors.get(a as usize)?.battle.action_category;
+    if cat == ActionCategory::Attack.as_byte() || cat == ActionCategory::TacticalArts.as_byte() {
+        Some(ComboStyle::HitTotal)
+    } else if cat == ActionCategory::Magic.as_byte()
+        || cat == ActionCategory::Item.as_byte()
+        || cat == ActionCategory::Spirit.as_byte()
+    {
+        Some(ComboStyle::Damage)
+    } else {
+        None
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The sub-draw script table - retail's own per-step element lists
+// ---------------------------------------------------------------------------
+
+/// VA of `PTR_DAT_801F4D34`, the per-step sub-draw script pointer table in
+/// the battle overlay (PROT 0898) that `FUN_801D388C(step)` indexes.
+pub const SUBDRAW_PTR_TABLE_VA: u32 = 0x801F_4D34;
+/// Steps the table holds - `FUN_801D388C`'s `sltiu v0,s8,0x32` bound.
+pub const SUBDRAW_STEP_COUNT: usize = 0x32;
+
+/// The `FUN_801D388C` steps the predicates above encode, by the menu-SM
+/// transition that runs them (`ghidra/scripts/funcs/overlay_0898_801d0748.txt`).
+pub mod subdraw_steps {
+    /// `0x14` round start -> `0x1E` round prompt (`0x801D0EE4`).
+    pub const ROUND_PROMPT: usize = 0x00;
+    /// `0x1E` confirm -> `0x28` ring (`0x801D109C`).
+    pub const RING: usize = 0x01;
+    /// `0x28` -> `0x3C` item window (`0x801D13F0`).
+    pub const ITEM_WINDOW: usize = 0x05;
+    /// `0x28` -> `0x46` magic window (`0x801D14C8`).
+    pub const MAGIC_WINDOW: usize = 0x07;
+    /// `0x28` -> `0x50` arts command entry (`0x801D1658`).
+    pub const ARTS_INPUT: usize = 0x09;
+    /// `0x3C` -> `0x64` item target step (`0x801D1958`).
+    pub const ITEM_TARGET_OPEN: usize = 0x12;
+    /// `0x64` cursor move: the bar re-pointed at the pointed member
+    /// (`0x801D2D1C`).
+    pub const ITEM_TARGET_CURSOR: usize = 0x18;
+    /// `0x46` -> magic target step (`0x801D2B74`).
+    pub const MAGIC_TARGET: usize = 0x1B;
+    /// `0x28` -> `0x6E` all members committed (`0x801D16D8`).
+    pub const ALL_COMMITTED: usize = 0x23;
+    /// `0x78` Auto -> `0x5A` target cursor (`0x801D179C`).
+    pub const TARGET_CURSOR: usize = 0x2D;
+    /// `0x28` Attack -> `0x78` attack-mode prompt (`0x801D161C`).
+    pub const ATTACK_MODE: usize = 0x30;
+}
+
+/// Screen-element placement records (`0x80076C10 + id * 0x18`) the battle
+/// HUD's surfaces live in - the `elem_id` `FUN_801D8DE8` takes.
+pub mod placement_record {
+    /// The `Begin` chip on its way to the breadcrumb tab seat `(16, 14)`.
+    pub const BEGIN_TAB: u8 = 0x01;
+    /// The first member's roster panel; 78 / 79 are the second / third.
+    pub const PANEL: [u8; 3] = [0x06, 0x4E, 0x4F];
+    /// The full-width active-actor bar.
+    pub const BAR: u8 = 0x07;
+    /// The ring's element (magic) chip.
+    pub const MAGIC_CHIP: u8 = 0x0A;
+    /// The AP bar the arts-entry screen and the Spirit action raise.
+    pub const AP_BAR: u8 = 0x0F;
+    /// The plaque behind the `Begin` tab, at `(68, 14)`.
+    pub const PLAQUE_BEHIND_TAB: u8 = 0x1A;
+    /// The plaque on its action seat `(16, 14)`.
+    pub const PLAQUE: u8 = 0x44;
+    /// The move-name label (77 is its twin).
+    pub const MOVE_NAME: u8 = 0x4C;
+    /// The combo counter cluster's anchor.
+    pub const COMBO: u8 = 0x50;
+    /// The bottom-right target plaque.
+    pub const TARGET_PLAQUE: u8 = 0x51;
+    /// The ring's AP plate.
+    pub const AP_PLATE: u8 = 0x52;
+}
+
+/// One decoded sub-draw step: `[count][anim][panel]` + `count` x
+/// `(record, mode)`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SubdrawStep {
+    /// `1` / `3` hard-reset the handle list before the pairs run
+    /// (`FUN_801D99BC`), `2` tears the sprites down (`FUN_801D9AE8`), `0`
+    /// leaves the list alone.
+    pub anim: u8,
+    /// The `ctx[+0x275]` panel id the step installs (how many leading
+    /// pairs bind to the direction slots).
+    pub panel: u8,
+    /// `(placement record, mode)` in run order.
+    pub pairs: Vec<(u8, u8)>,
+}
+
+impl SubdrawStep {
+    /// The mode `record` is opened with in this step, or `None` when the
+    /// step does not touch it.
+    pub fn mode_of(&self, record: u8) -> Option<u8> {
+        self.pairs
+            .iter()
+            .find(|(r, _)| *r == record)
+            .map(|(_, m)| *m)
+    }
+
+    /// Does the step leave `record` on screen? Mode bit 0 clear spawns the
+    /// element at its seat A and glides it to seat B - the on-screen seat
+    /// for every battle-HUD record listed in [`placement_record`] - while
+    /// bit 0 set does the reverse. Bit 1 only suppresses the glide.
+    pub fn shows(&self, record: u8) -> bool {
+        self.mode_of(record).is_some_and(|m| m & 1 == 0)
+    }
+}
+
+/// Decode step `step` of the sub-draw table out of a **loaded** battle
+/// overlay image (`legaia_asset::static_overlay::as_loaded`, so `image[0]`
+/// is `base_va`). `None` when the table or the record falls outside the
+/// image.
+pub fn subdraw_step(image: &[u8], base_va: u32, step: usize) -> Option<SubdrawStep> {
+    if step >= SUBDRAW_STEP_COUNT {
+        return None;
+    }
+    let at = |va: u32| -> Option<usize> { va.checked_sub(base_va).map(|o| o as usize) };
+    let slot = at(SUBDRAW_PTR_TABLE_VA)? + step * 4;
+    let ptr = u32::from_le_bytes(image.get(slot..slot + 4)?.try_into().ok()?);
+    let rec = at(ptr)?;
+    let head = image.get(rec..rec + 3)?;
+    let count = usize::from(head[0]);
+    let body = image.get(rec + 3..rec + 3 + count * 2)?;
+    Some(SubdrawStep {
+        anim: head[1],
+        panel: head[2],
+        pairs: body.chunks_exact(2).map(|c| (c[0], c[1])).collect(),
+    })
 }
 
 /// Element-badge index the actor-name plaque wears in front of the name, or
@@ -1602,5 +2429,367 @@ mod tests {
         let views = hud.log_views();
         assert_eq!(views[0].text, "hi");
         assert_eq!(views[0].color_rgba, log_accent_color(LogAccent::Heal));
+    }
+
+    // ------------------------------------------------------------------
+    // The per-phase rule (retail's sub-draw script + action-SM seed arms)
+    // ------------------------------------------------------------------
+
+    fn battle_world(party: u8) -> crate::world::World {
+        use crate::monster_catalog::MonsterDef;
+        use crate::world::{Actor, SceneMode, World};
+        let mut w = World::new();
+        while w.actors.len() < 8 {
+            w.actors.push(Actor::default());
+        }
+        w.mode = SceneMode::Battle;
+        w.party_count = party;
+        w.load_party(legaia_save::Party::zeroed(3));
+        for i in 0..usize::from(party) {
+            w.actors[i].battle.hp = 100;
+            w.actors[i].battle.max_hp = 100;
+            w.actors[i].battle.liveness = 1;
+        }
+        let mut gimard = MonsterDef::new(7, "Gimard", 40, 5);
+        gimard.element = 2;
+        w.monster_catalog.insert(gimard);
+        w.actors[3].battle.hp = 40;
+        w.actors[3].battle.max_hp = 40;
+        w.actors[3].battle.liveness = 1;
+        w.actors[3].battle_monster_id = Some(7);
+        w
+    }
+
+    #[test]
+    fn round_prompt_is_panels_only() {
+        use crate::battle_input::BattleCommandSession;
+        let mut w = battle_world(1);
+        w.battle_command = Some(BattleCommandSession::new_round_open(0, 0, false));
+        assert_eq!(battle_hud_phase(&w), BattleHudPhase::RoundPrompt);
+        assert!(battle_panels_visible(&w));
+        assert_eq!(battle_readout_bar_slot(&w), None);
+        assert_eq!(battle_active_actor(&w), None);
+        assert!(!battle_begin_tab_visible(&w));
+        assert_eq!(battle_ring_ap_plate_value(&w), None);
+        let chips = battle_command_chips(&w).expect("prompt chips");
+        assert_eq!(chips.phase, CommandChipPhase::RoundPrompt);
+        assert_eq!(chips.chips.len(), 2);
+    }
+
+    #[test]
+    fn the_ring_is_bar_tab_plaque_and_ap_plate() {
+        use crate::battle_input::BattleCommandSession;
+        let mut w = battle_world(1);
+        w.actors[0].battle.spirit_gauge = 37;
+        w.battle_command = Some(BattleCommandSession::new(0, 0));
+        assert_eq!(battle_command_surface(&w), Some(CommandSurface::Ring));
+        assert!(!battle_panels_visible(&w));
+        assert_eq!(battle_readout_bar_slot(&w), Some(0));
+        assert_eq!(battle_active_actor(&w).map(|(s, _)| s), Some(0));
+        assert!(battle_begin_tab_visible(&w));
+        assert_eq!(battle_ring_ap_plate_value(&w), Some(37));
+    }
+
+    #[test]
+    fn the_magic_chip_reads_dash_without_a_raseru_and_the_disc_name_with_one() {
+        use crate::battle_input::BattleCommandSession;
+        let mut w = battle_world(1);
+        w.battle_command = Some(BattleCommandSession::new(0, 0));
+        let chips = battle_command_chips(&w).expect("ring chips");
+        assert_eq!(chips.phase, CommandChipPhase::CommandRing);
+        assert_eq!(chips.chips.len(), 4);
+        // Ring order: Item, Attack, Magic, Spirit (`BattleCommand::MENU`).
+        let (label, enabled) = &chips.chips[2];
+        assert_eq!(label, "-");
+        assert!(!enabled, "no Ra-Seru: the arm is the `-` chip");
+        // Equip a Ra-Seru in the record's `+0x199` slot: the gate flips and
+        // the label leaves the `-` entry. Without the overlay strings the
+        // port's own word stands in for the disc name.
+        let mut eq = w.roster.members[0].equipment();
+        eq.slots[RASERU_EQUIP_SLOT] = 1;
+        w.roster.members[0].set_equipment(eq);
+        assert!(battle_member_has_raseru(&w, 0));
+        let chips = battle_command_chips(&w).expect("ring chips");
+        let (label, enabled) = &chips.chips[2];
+        assert_ne!(label, "-");
+        assert!(enabled);
+    }
+
+    #[test]
+    fn noa_gate_reads_the_byte_before_everyone_elses() {
+        // `FUN_80053CB8`'s `beq v0,a3` arm: character id 2 reads `+0x198`,
+        // every other id `+0x199`.
+        let mut w = battle_world(2);
+        let mut eq = w.roster.members[1].equipment();
+        eq.slots[RASERU_EQUIP_SLOT] = 1;
+        w.roster.members[1].set_equipment(eq);
+        assert!(
+            !battle_member_has_raseru(&w, 1),
+            "Noa's gate does not read +0x199"
+        );
+        let mut eq = w.roster.members[1].equipment();
+        eq.slots[RASERU_EQUIP_SLOT] = 0;
+        eq.slots[RASERU_EQUIP_SLOT_NOA] = 1;
+        w.roster.members[1].set_equipment(eq);
+        assert!(battle_member_has_raseru(&w, 1), "Noa's gate reads +0x198");
+        // Vahn's arm is unaffected by the +0x198 byte.
+        let mut eq = w.roster.members[0].equipment();
+        eq.slots[RASERU_EQUIP_SLOT_NOA] = 1;
+        w.roster.members[0].set_equipment(eq);
+        assert!(!battle_member_has_raseru(&w, 0));
+    }
+
+    #[test]
+    fn attack_mode_and_targeting_park_the_bar_but_keep_tab_and_plaque() {
+        use crate::battle_input::{BattleCommandSession, CommandPhase};
+        let mut w = battle_world(1);
+        let mut cmd = BattleCommandSession::new(0, 0);
+        cmd.phase = CommandPhase::AttackMode { cursor: 0 };
+        w.battle_command = Some(cmd);
+        assert_eq!(battle_command_surface(&w), Some(CommandSurface::AttackMode));
+        assert_eq!(battle_readout_bar_slot(&w), None);
+        assert!(!battle_panels_visible(&w));
+        assert!(battle_begin_tab_visible(&w));
+        assert!(battle_active_actor(&w).is_some());
+        assert_eq!(battle_ring_ap_plate_value(&w), None);
+        assert_eq!(
+            battle_command_chips(&w).map(|c| c.phase),
+            Some(CommandChipPhase::AttackMode)
+        );
+    }
+
+    #[test]
+    fn item_window_shows_panels_and_its_target_step_shows_the_pointed_bar() {
+        use crate::inventory_use::{
+            InventoryContext, InventoryUseSession, InventoryUseState, TargetRow,
+        };
+        let mut w = battle_world(2);
+        w.battle_ctx.active_actor = 1;
+        let mut menu = InventoryUseSession::new(
+            crate::items::ItemCatalog::default(),
+            Vec::new(),
+            vec![TargetRow::new(0, "Vahn"), TargetRow::new(1, "Noa")],
+            InventoryContext::Battle,
+        );
+        w.battle_item_menu = Some(menu.clone());
+        assert_eq!(battle_command_surface(&w), Some(CommandSurface::ItemBrowse));
+        assert!(
+            battle_panels_visible(&w),
+            "browsing: the panels come back up"
+        );
+        assert_eq!(
+            battle_readout_bar_slot(&w),
+            None,
+            "browsing: the bar is parked"
+        );
+        assert!(
+            !battle_begin_tab_visible(&w),
+            "the item window draws its own trail"
+        );
+        assert_eq!(battle_ring_ap_plate_value(&w), None);
+        assert_eq!(battle_command_chips(&w), None);
+
+        menu.state = InventoryUseState::TargetSelect {
+            item_cursor: 0,
+            cursor: 0,
+        };
+        w.battle_item_menu = Some(menu);
+        assert_eq!(
+            battle_command_surface(&w),
+            Some(CommandSurface::ItemTarget(Some(0)))
+        );
+        assert!(!battle_panels_visible(&w), "target step: the panels park");
+        assert_eq!(
+            battle_readout_bar_slot(&w),
+            Some(0),
+            "target step: the bar names the pointed member, not the actor"
+        );
+    }
+
+    fn arm_action(w: &mut crate::world::World, actor: u8, category: u8, target: u8) {
+        w.battle_command = None;
+        w.battle_ctx.active_actor = actor;
+        w.battle_ctx.action_state = 0x20;
+        let a = &mut w.actors[usize::from(actor)].battle;
+        a.action_category = category;
+        a.active_target = target;
+    }
+
+    #[test]
+    fn a_party_attack_on_a_monster_shows_plaque_target_plaque_and_no_readout() {
+        use legaia_engine_vm::battle_action::ActionCategory;
+        let mut w = battle_world(1);
+        arm_action(&mut w, 0, ActionCategory::Attack.as_byte(), 3);
+        assert_eq!(battle_hud_phase(&w), BattleHudPhase::Action);
+        assert_eq!(battle_active_actor(&w).map(|(s, _)| s), Some(0));
+        assert_eq!(
+            battle_readout_bar_slot(&w),
+            None,
+            "no party participant: no bar"
+        );
+        assert!(!battle_panels_visible(&w));
+        assert_eq!(
+            battle_target_plaque(&w),
+            Some(("Gimard".to_string(), Some(2)))
+        );
+        assert_eq!(battle_combo_style(&w), Some(ComboStyle::HitTotal));
+        assert!(!battle_begin_tab_visible(&w));
+        assert_eq!(battle_ring_ap_plate_value(&w), None);
+        // No art has committed yet: a plain swing carries no move name.
+        assert_eq!(battle_move_name(&w), None);
+    }
+
+    #[test]
+    fn an_art_names_itself_once_the_strike_cursor_passes_its_constant() {
+        use legaia_engine_vm::battle_action::ActionCategory;
+        let mut w = battle_world(1);
+        arm_action(&mut w, 0, ActionCategory::Attack.as_byte(), 3);
+        // Any Vahn art constant the curated table names.
+        let (byte, name) = (0x1Bu8..=0x40)
+            .find_map(|b| {
+                let c = legaia_art::ActionConstant::from_byte(b)?;
+                legaia_art::tables::art_name(legaia_art::Character::Vahn, c).map(|n| (b, n))
+            })
+            .expect("a Vahn art");
+        {
+            let a = &mut w.actors[0].battle;
+            a.params[0] = 0x0D;
+            a.params[1] = byte;
+            a.params[2] = 0x27;
+            a.strike_index = 1;
+        }
+        assert_eq!(battle_move_name(&w), None, "the art's byte is still ahead");
+        w.actors[0].battle.strike_index = 2;
+        assert_eq!(battle_move_name(&w).as_deref(), Some(name));
+    }
+
+    #[test]
+    fn a_monster_cast_on_a_member_shows_that_member_bar_and_damage_style() {
+        use legaia_engine_vm::battle_action::ActionCategory;
+        let mut w = battle_world(1);
+        arm_action(&mut w, 3, ActionCategory::Magic.as_byte(), 0);
+        assert_eq!(
+            battle_active_actor(&w).map(|(s, n)| (s, n)),
+            Some((3, "Gimard".into()))
+        );
+        assert_eq!(
+            battle_readout_bar_slot(&w),
+            Some(0),
+            "the target's bar rises"
+        );
+        assert_eq!(
+            battle_target_plaque(&w),
+            None,
+            "monster actions carry no target plaque"
+        );
+        assert_eq!(battle_combo_style(&w), Some(ComboStyle::Damage));
+        assert!(!battle_panels_visible(&w));
+    }
+
+    #[test]
+    fn a_party_item_shows_the_actor_bar_and_a_party_wide_cast_shows_the_panels() {
+        use legaia_engine_vm::battle_action::ActionCategory;
+        use legaia_engine_vm::battle_cue_group::TARGET_PARTY_WIDE;
+        let mut w = battle_world(2);
+        arm_action(&mut w, 1, ActionCategory::Item.as_byte(), 0);
+        assert_eq!(
+            battle_readout_bar_slot(&w),
+            Some(1),
+            "item: the acting member's bar"
+        );
+        assert!(!battle_panels_visible(&w));
+        arm_action(&mut w, 1, ActionCategory::Item.as_byte(), TARGET_PARTY_WIDE);
+        assert!(
+            !battle_panels_visible(&w),
+            "a party-wide item pre-arms through 0x3C"
+        );
+        assert_eq!(battle_readout_bar_slot(&w), Some(1));
+        arm_action(
+            &mut w,
+            1,
+            ActionCategory::Magic.as_byte(),
+            TARGET_PARTY_WIDE,
+        );
+        assert!(
+            battle_panels_visible(&w),
+            "a party-wide cast raises all the panels"
+        );
+        assert_eq!(battle_readout_bar_slot(&w), None);
+    }
+
+    #[test]
+    fn run_shows_no_plaque_and_idle_shows_nothing() {
+        use legaia_engine_vm::battle_action::ActionCategory;
+        let mut w = battle_world(1);
+        arm_action(&mut w, 0, ActionCategory::Run.as_byte(), 3);
+        assert_eq!(battle_active_actor(&w), None);
+        assert_eq!(battle_combo_style(&w), None);
+        w.battle_ctx.action_state = 0x0A;
+        assert_eq!(battle_hud_phase(&w), BattleHudPhase::Idle);
+        assert_eq!(battle_active_actor(&w), None);
+        assert_eq!(battle_readout_bar_slot(&w), None);
+        assert!(!battle_panels_visible(&w));
+        assert_eq!(battle_target_plaque(&w), None);
+        assert_eq!(battle_move_name(&w), None);
+    }
+
+    #[test]
+    fn action_bands_in_flight_exclude_the_holds() {
+        for s in [0x00u8, 0x0A, 0x0B, 0x5A, 0xFF] {
+            assert!(!battle_action_in_flight(s), "{s:#x}");
+        }
+        for s in [0x0C_u8, 0x1E, 0x20, 0x2B, 0x51, 0x52, 0x64, 0x6F] {
+            assert!(battle_action_in_flight(s), "{s:#x}");
+        }
+    }
+
+    #[test]
+    fn the_combo_cluster_counts_landed_damage_of_one_action_and_drops_with_it() {
+        let mut h = BattleHud::new();
+        h.arm_combo(Some(ComboStyle::HitTotal), 0);
+        h.push_damage(3, 15);
+        h.push_damage(3, 14);
+        h.push_heal(0, 20);
+        let c = h.combo.expect("cluster armed by the first hit");
+        assert_eq!((c.style, c.hits, c.total), (ComboStyle::HitTotal, 2, 29));
+        assert_eq!(c.age, 0);
+        h.tick();
+        assert_eq!(h.combo.unwrap().age, 1);
+        // Same actor, same style: the cluster keeps counting.
+        h.arm_combo(Some(ComboStyle::HitTotal), 0);
+        assert!(h.combo.is_some());
+        // A new actor is a new cluster; no action at all tears it down.
+        h.arm_combo(Some(ComboStyle::Damage), 3);
+        assert!(h.combo.is_none());
+        h.push_damage(0, 16);
+        assert_eq!(
+            h.combo.map(|c| (c.style, c.total)),
+            Some((ComboStyle::Damage, 16))
+        );
+        h.arm_combo(None, 3);
+        assert!(h.combo.is_none());
+        // Without an action in flight a stray popup raises nothing.
+        h.push_damage(0, 5);
+        assert!(h.combo.is_none());
+    }
+
+    #[test]
+    fn subdraw_decoder_reads_a_synthetic_table() {
+        let base = 0x801F_0000u32;
+        let mut image = vec![0u8; 0x6000];
+        // Step 1 -> record at base + 0x5000: [3][1][4] (9,0) (6,1) (7,0).
+        let slot = (SUBDRAW_PTR_TABLE_VA - base) as usize + 4;
+        image[slot..slot + 4].copy_from_slice(&(base + 0x5000).to_le_bytes());
+        image[0x5000..0x5009].copy_from_slice(&[3, 1, 4, 9, 0, 6, 1, 7, 0]);
+        let s = subdraw_step(&image, base, 1).expect("decodes");
+        assert_eq!((s.anim, s.panel), (1, 4));
+        assert_eq!(s.pairs, vec![(9, 0), (6, 1), (7, 0)]);
+        assert!(s.shows(7) && s.shows(9));
+        assert!(!s.shows(6));
+        assert_eq!(s.mode_of(6), Some(1));
+        assert_eq!(s.mode_of(0x52), None);
+        // A null pointer / out-of-range step decodes to nothing.
+        assert_eq!(subdraw_step(&image, base, 0), None);
+        assert_eq!(subdraw_step(&image, base, SUBDRAW_STEP_COUNT), None);
     }
 }

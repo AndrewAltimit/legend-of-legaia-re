@@ -210,6 +210,69 @@ species and at the disc's authored heap-cost maximum.
 | dolk2/rikuroa MAN source (the "v12-embedded MAN" was an over-read) | resolved (streaming carrier) | `capture` | Their own `base+3` bundles are the MAN-less count=4 form `[1,2,6,0x14]`; the "embedded MAN at 0x1000" inside their SceneV12Table entries is an over-read onto the next scene's bundle (suimon's / geremi's; [scene-v12-table.md](../formats/scene-v12-table.md) § over-read). Retail sources their partition scripts from the block's standalone `data_field_streaming` entry's type-3 chunk (`dolk2` ext 70 `[29,73,17]`, `rikuroa` ext 157 `[13,29,64]`; live script-heap byte-match at the Caruban beat). Engine: `field_man_payload` streaming fallback (`streaming_man_payloads`) + retail-frame `Scene::load` windows; pins `v12_bundle_man_disc.rs`. |
 | kor-family op-0x49 flag window `[0x138..0x13F]` - what the 8 flags gate | resolved (Uru Mais warp-pad destination memory) | `disassembly` | [details ↓](#kor-family-op-0x49-flag-window-0x1380x13f---uru-mais-warp-pad-picker) |
 
+### The battle HUD's per-phase surfaces are the sub-draw script table
+
+*Status:* resolved - `disassembly`, corroborated by the handle lists of sixteen
+states.
+
+The question was which of retail's two party readouts (roster card, full-width
+pill) a given battle frame shows, and when the plaque, the AP plate, the
+target plaque and the move name join them. Retail never computes it: the menu
+SM `FUN_801D0748` runs `FUN_801D388C(step)` on every `ctx[+0x06]` edge
+(`0x801D0EE4`, `0x801D109C`, `0x801D13F0`, `0x801D14C8`, `0x801D1658`, ...),
+and `step` indexes `PTR_DAT_801F4D34` - fifty `[count][anim][panel]` +
+`count` x `(placement record, mode)` records in the battle overlay's rodata,
+walked at `0x801D4BA4..0x801D4CBC`. `anim = 1` hard-resets the handle list
+first, so the pairs are the whole screen. `FUN_801D8DE8(record, mode)` takes
+the record straight into `0x80076C10 + id * 0x18`; mode bit 0 picks the spawn
+seat (`+0x02/+0x04` or `+0x0A/+0x0C`) and the glide runs to the other, bit 1
+suppresses the glide (`0x801D92E0..0x801D93DC`). The action SM's openers are
+the `0x0C` seed (`0x801E2F24`: bar for a party target byte `+0x1DD`, panels
+for `8`) and the Item / Spirit pre-arm `0x3C` (`0x801E3DA0`), with every
+close in the `0x51` band (`0x801E6170..0x801E6364`).
+
+The rule that falls out - card at the round prompt and while a window is
+browsed, pill in the ring and the target steps, nothing during a party
+attack on a monster, the target's pill during a monster cast - is on
+[`battle.md`](../subsystems/battle.md#the-per-phase-rule---what-the-sub-draw-script-builds).
+Each `mednafen` state's `ctx[+0x1074]` walk agrees element for element; the
+disc-gated `crates/engine-core/tests/battle_hud_subdraw_disc.rs` holds the
+port's constants to the table's bytes.
+
+### The ring's element chip reads `-` or the Ra-Seru, and the gate is the equipment byte
+
+*Status:* resolved - `disassembly`, corroborated across twenty-nine states.
+
+`FUN_801D8DE8`'s case for record 10 (`0x801D8EC8..0x801D8F2C`) writes the
+chip's string pointer as `0x801F4B9E + char_id * 10` - the run `Meta` /
+`Terra` / `Ozma` at indices `1..=3`, a lone `-` at index 4 - when
+`ctx[+0x25F + member]` is set, and the `-` entry when it is clear. The gate's
+one writer is the party battle-actor init `FUN_80053CB8`
+(`0x800541D0..0x80054270`): `lbu v0,0x761(v0)` off the `0x80084140` display
+alias, which is the live character record's `+0x199`, the Ra-Seru slot of
+the eight equipment bytes at `+0x196` - or `+0x760` (`+0x198`) on the arm
+the member's character id `2` (Noa) takes. In every catalogued state the three
+gate bytes equal `(+0x199 != 0)` for the seated members - `0` in the sparring
+fight, `1` for Vahn from the Meta capture on, `0` for Noa beside Terra, all
+`1` at the level-99 Rage state. Port `engine-core::battle_hud::battle_magic_chip`.
+
+### The combo counter's glide is placement record 80's
+
+*Status:* resolved - `capture` (the live glide record), the stepper by
+`disassembly`.
+
+The `HIT` / `TOTAL` / `DAMAGE` cluster hangs off screen-element record 80,
+seat A `(328, 170)`, seat B `(168, 170)`, opened at mode 0 and closed in the
+`0x51` band (`FUN_801D8DE8(0x50, 1)` at `0x801E6360`, gated on the damage
+finisher's `_DAT_8007BD14`). `battle_melee_hit_spark` carries the glide record
+live at `ctx[+0x11B4 + slot * 0xC]`: total `0x10`, elapsed `0x0C`, start
+`(328, 168)`, target `(168, 168)`, handle at `x = 208` - which is the `+40`
+every packet of the cluster shows against the settled seats of
+`player_steal_skeleton_banner`. `FUN_801D9BBC` steps it linearly
+(`start + (target - start) * elapsed / total`, snap on arrival), so the
+cluster slides 160 px in over sixteen frames. Port
+`engine-vm::battle_value_readout::combo_slide`.
+
 ### The chrome `kind` byte is an index into the widget-class table
 
 *Status:* resolved - the correlation was a table lookup all along.
