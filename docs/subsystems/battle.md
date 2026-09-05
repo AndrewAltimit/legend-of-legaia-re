@@ -4123,7 +4123,26 @@ The `legaia-engine play-window` host ships the loop **on**, matching the browser
 
 - **Party HP / MP persists.** The battle mutates the `BattleActor` mirrors; `finish_battle` writes them into the roster records (via `World::save_party`) *before* restoring the field actor snapshot, then pushes them back onto the restored party actors (`World::resync_party_actors_from_roster`). Without that step every fight ended at the HP it started with, and losing was indistinguishable from winning.
 - **A wipe raises `World::game_over`**, which both hosts read and route to the **title screen** - retail's destination, pinned to the `game_mode = 0x16` / `_DAT_8007BB00 = 1` store pair (see [§ party wipe](#party-wipe--the-game-over-overlay)). Native pushes `BootUiState::GameOver`, the browser arms the same `GameOverSession`; neither draws anything and neither reads a button, because retail asks the player nothing here.
-- **A victory arms the post-battle report** (`World::battle_spoils_banner`, `World::SPOILS_BANNER_FRAMES`) - retail's two framed windows, described by `engine-ui::battle_spoils_windows` and filled by `battle_spoils_draws_for` on both hosts. Rects and columns are measured off a retail framebuffer; see [level-up](level-up.md#what-the-port-draws-between-the-last-enemy-dying-and-the-field-returning).
+- **A victory raises the result screen in battle** (`World::battle_spoils_banner`, up from the results frame of the sequence below through the exit) - retail's two framed windows, described by `engine-ui::battle_spoils_windows` and filled by `battle_spoils_draws_for` on both hosts. Rects and columns are measured off a retail framebuffer; see [level-up](level-up.md#what-the-port-draws-between-the-last-enemy-dying-and-the-field-returning). A direct `finish_battle` (the runner path) still arms the aging `World::SPOILS_BANNER_FRAMES` window instead.
+
+### Battle end, retail's way - the results sequencer
+
+`finish_battle` no longer runs on the frame the `0x5A` gate raises the signal. Retail's battle tick `FUN_80046A20` stops stepping the action SM once `DAT_8007BD71 == 0xFE` (`0x80047040`) and runs the results sequencer `FUN_8004E568` every frame instead (`0x800470D0..0x800470E8`), and the battle exits only when the sequencer's phase halfword `ctx[+0x6CE]` reaches `0x43` (`0x80046DAC`). The port's mirror is `World::battle_victory` (`world::battle::victory`), walked by `World::tick_battle_end_sequence` in place of the SM while the scene stays in `SceneMode::Battle`.
+
+`_DAT_8007BD2C` is both the wipe cause and the sequencer's phase word: a victory (`0`) walks the jump table at `0x800152FC` as `0 -> 2 -> 4 -> 5` while the hero's `monster.snd` voice clip (slot 7) and PROT 0889 (the level-up jingle bank, slot 11) stream in, with the pose actor framed at `FUN_801D5854(seat, 8)`; a party wipe (`5`) lands on phase 5 at once with `DAT_8007BD60 & 0x80` clear, which selects the annihilated arm. The timeline, measured once on `rim_elm_gimard_victory` under PCSX-Redux (`scripts/pcsx-redux/autorun_victory_timeline.lua`):
+
+| Frame (vsyncs from the signal) | Retail | Port |
+|---|---|---|
+| `+0` | `0x5A` gate: `DAT_8007BD71 = 0xFE`, cause `0` | `BattleComplete` arms the sequence |
+| `+0..+80` | CD loads, pose-8 framing on the pose actor | `VICTORY_LOAD_FRAMES` hold, same framing |
+| `+80` | results frame: flag `0x35`, round bump, pose clip staged, HP floor at 1 for downed members, XP / gold / drop / level-ups, result window `0x41`, level-up window `0x44+mask` + cue `0x50` | same, through `apply_battle_loot` |
+| `+80..+336` | hold (`gp+0xA54` to `0x100`), framing 6 | `VICTORY_RESULTS_HOLD_FRAMES` |
+| `+336` | white-out template (kind 2, `0x40`, to white), phase halfword from 2 | `screen_fade` = the escape template |
+| `+402` | `ctx[+0x6CE] >= 0x43`: `game_mode = 2` | `finish_battle`, windows come down |
+
+The pose actor is `ctx[+0x13]`, and the party **leader** poses: no store in the battle overlay writes a seat there (every store is a round-boundary zero or the magic menu's MP-cost scratch), and the three-member `noa_levelup_banner` capture reads `ctx[+0x13] == 0` with seat 0 carrying the staged pose while Noa is the one who levelled. The pose id comes from the SCUS table at `0x800788A0` through the HP-quarter tier, aged by the round count and forced weak by the `0x107B` status mask (`victory_pose_tier` / `victory_pose_column`); the clip is one of the eight base-archive records the art-bank ladder already resolves for ids `0x11..=0x18`. The hero's voice line (`monster.snd` tail clips) is not staged - no engine bank carries `monster.snd`.
+
+An **escape** runs the sequencer's `0x67` arm: no results, the phase halfword counts up from the white-out the SM's `0x66` teardown spawned, same `0x43` gate. A **party wipe** runs the annihilated arm: the same `0x100` hold and white-out, every member floored at 1 HP on the white-out frame (`0x8004FB94..0x8004FBA4` - a scripted loss returns to the field standing), then the MAIN INIT game-over gate `finish_battle` folds.
 
 ### Scenes that cannot roll
 

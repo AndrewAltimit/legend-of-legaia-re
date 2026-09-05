@@ -1077,9 +1077,11 @@ impl World {
                 let caster = menu.actor;
                 self.apply_battle_spell(caster, spell_id, target_row, target_slot);
                 if self.battle_escaped {
-                    // Escape spell succeeded: leave the encounter now (no loot,
-                    // no game-over) instead of cycling the turn.
-                    self.finish_battle();
+                    // Escape spell succeeded: leave the encounter (no loot,
+                    // no game-over) through the escape teardown's white-out
+                    // + exit hold instead of cycling the turn.
+                    self.battle_end = Some(BattleEndCause::Escaped);
+                    self.begin_battle_end_sequence();
                 } else {
                     self.battle_ctx.action_state =
                         vm::battle_action::ActionState::EndOfAction.as_byte();
@@ -1338,9 +1340,11 @@ impl World {
                 self.consume_item(item_id);
             }
             if self.battle_escaped {
-                // Escape item succeeded: leave the encounter now (no loot, no
-                // game-over) instead of cycling the turn.
-                self.finish_battle();
+                // Escape item succeeded: leave the encounter (no loot, no
+                // game-over) through the escape teardown's white-out + exit
+                // hold instead of cycling the turn.
+                self.battle_end = Some(BattleEndCause::Escaped);
+                self.begin_battle_end_sequence();
             } else if let Some(item_id) = item_before {
                 // Using an item is the actor's whole turn - and in retail the
                 // turn *is* the action SM's Item band: the committed category-1

@@ -172,6 +172,32 @@ impact_class` carrying `+0x7A`, and both hosts staging `IR0 = blend /
 native window's former white "hit flash" and the hosts' fixed `0.6`
 strength were engine inventions and are gone. Details in
 [battle.md](../subsystems/battle.md#how-the-tint-words-reach-the-pixel).
+### Battle end - the results sequencer's timeline, and who strikes the pose
+
+*Status:* resolved - `FUN_8004E568` runs every frame the signal is `0xFE`, the exit is `ctx[+0x6CE] >= 0x43`, and the **leader** poses; shipped as `world::battle::victory`
+
+`FUN_80046A20` stops stepping the action SM once `DAT_8007BD71 == 0xFE` (`0x80047040`) and calls
+`FUN_8004E568` every frame (`0x800470D0..0x800470E8`); it exits the battle at `slti v0,v0,0x43`
+on `ctx[+0x6CE]` (`0x80046DAC`). `_DAT_8007BD2C` doubles as the sequencer's phase word (jump
+table `0x800152FC`: `0 -> 2 -> 4 -> 5` through two CD loads for a victory; a wipe's `5` lands on
+the annihilated arm directly). The results frame stages the pose into `+0x1DA` of the seat
+`ctx[+0x13]` names, and no store in the battle overlay writes a seat there. Measured on
+`rim_elm_gimard_victory` (PCSX-Redux poll, N=1): signal v322, results v402, white-out v657, exit
+v723. The three-member `noa_levelup_banner` state reads `ctx[+0x13] == 0` with seat 0 carrying
+pose `0x14` while Noa levelled. Evidence: `disassembly` + `capture`. Details:
+[battle.md](../subsystems/battle.md#battle-end-retails-way---the-results-sequencer).
+
+### What a normal party attack sounds like
+
+*Status:* resolved - the `XA30` grunt on an ordinary swing; the `0x10C` sting only when `_DAT_8007BD84` is non-zero; the `s7` latch on the grunt is not decoded
+
+`FUN_801EC3E4` picks one of two emissions on `_DAT_8007BD84`: zero takes `FUN_8003D53C(0x1D, chan, dur)` at `0x801EEB44` (per-character `(0,0x26)` / `(4,0x2E)` / `(6,0x1A)` off `DAT_8007BD10[seat]`) and the re-read at `0x801EEB60` skips the cue; non-zero branches over the grunt (`0x801EEAC8`) into `FUN_8004FE5C(0x10C, seat)` at `0x801EEBE8`, whose voice leg is further gated on `FUN_8003DE7C(1) == 0` (`0x8004FE9C`). The word is the same cell the damage finisher reads as the enemy-defender halve; its only dumped stores are zeros (battle start, round reset). `XA27` is an eight-channel stereo sting bank, `XA30` a ten-channel mono grunt bank (disc demux). Evidence: `disassembly` for the selector and gates, `inference` for the grunt latch always passing and for the word staying zero in an ordinary fight. Shipped: `World::fire_melee_impact_cue` + `read_battle_xa_clip_bank`.
+
+### `FUN_8003EAE4` is a seek plus driver flags, not a stream start
+
+*Status:* partial - the routine seeks (`CdlSeekL`) and arms `gp+0x908` / `gp+0x910` / `gp+0x890`; the driver that consumes those flags is untraced
+
+The starter the resident battle voice selector `FUN_8004DA00` hands its clip to cancels any in-flight read, positions the drive on the clip file's slot record (`FUN_8005C160(2, slot, ..)`) and issues CD command `0x15` (`li a0,0x15; jal 0x8005C034` at `0x8003EB68`), then stores `1` at `gp+0x908` and `gp+0x910` and the slot at `gp+0x890`. Nothing in the routine reads a sector; whatever plays is the CD-callback driver's response to those flags, which no dump follows. `battle_voice_step`'s `Arm` outcome therefore has a device-side sequence behind it the engine does not model - it stays a decision without a driver. Evidence: `disassembly` for the seek and the flag stores, `inference` for what the driver does next.
 
 ### Formation species limit - what the battle setup does with 3 distinct monster ids
 

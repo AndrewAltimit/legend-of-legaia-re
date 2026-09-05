@@ -190,10 +190,15 @@ fn a_party_wipe_raises_game_over_and_leaves_the_party_down() {
         SceneMode::Battle,
         "the resolve completes the battle exit"
     );
+    // Retail's annihilated arm floors every member at exactly 1 HP on the
+    // white-out frame (`FUN_8004E568` `0x8004FB94..0x8004FBA4`, one
+    // `sh 1,0x14c` per party seat) - a scripted loss returns to the field
+    // with the party standing, and a real wipe hands the CARD flow a
+    // 1-HP party. Neither is a heal.
     assert_eq!(
         w.roster.members[0].hp_mp_sp().hp_cur,
-        0,
-        "losing must not hand the player a healed party"
+        1,
+        "losing floors the party at 1 HP, never heals it"
     );
     assert!(w.last_battle_rewards.is_none(), "a wipe grants no loot");
 
@@ -220,24 +225,53 @@ fn a_victory_arms_the_spoils_panel() {
         w.tick();
     }
     assert_eq!(w.mode, SceneMode::Battle);
-    for _ in 0..20_000 {
+    // Retail raises the result windows on the results frame of the
+    // end-of-battle sequence - still IN battle, after the load window -
+    // and takes them down with the battle (`world::battle::victory`).
+    let mut results_frame = None;
+    for i in 0..20_000 {
         w.tick();
-        if w.mode != SceneMode::Battle {
+        if w.battle_result_screen_active() {
+            results_frame = Some(i);
             break;
         }
-    }
-    assert_ne!(w.mode, SceneMode::Battle);
-    let banner = w
-        .battle_spoils_banner()
-        .expect("a victory arms the spoils panel");
-    assert!(banner.xp > 0 || banner.gold > 0, "the panel shows the loot");
-
-    for _ in 0..World::SPOILS_BANNER_FRAMES + 2 {
-        w.tick();
+        assert_eq!(
+            w.mode,
+            SceneMode::Battle,
+            "no field return before the results"
+        );
     }
     assert!(
+        results_frame.is_some(),
+        "a victory raises the result screen"
+    );
+    let banner = w
+        .battle_spoils_banner()
+        .expect("the result screen carries the spoils panel");
+    assert!(banner.xp > 0 || banner.gold > 0, "the panel shows the loot");
+    assert_eq!(
+        w.mode,
+        SceneMode::Battle,
+        "the results are drawn over the battle"
+    );
+
+    // The hold, the white-out and the exit gate: results + 0x100 + 0x43.
+    let mut exited = false;
+    for _ in 0..(World::VICTORY_RESULTS_HOLD_FRAMES + World::VICTORY_EXIT_PHASE + 8) {
+        w.tick();
+        if w.mode != SceneMode::Battle {
+            exited = true;
+            break;
+        }
+        assert!(
+            w.battle_spoils_banner().is_some(),
+            "the panel stays up through the white-out"
+        );
+    }
+    assert!(exited, "the exit gate returns to the field");
+    assert!(
         w.battle_spoils_banner().is_none(),
-        "the panel ages out on its own"
+        "the windows come down with the battle"
     );
 }
 

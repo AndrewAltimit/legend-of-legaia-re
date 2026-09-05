@@ -1886,7 +1886,12 @@ emitter `FUN_8003479C` (clamped `0xF2`). Name the overlay when citing it: in the
 arm's power-scalar read), which touches `_DAT_8007B440` nowhere - the aliasing
 class the dump-aliasing caution below covers. The two were conflated because they ramp together - the summon
 dims the screen *and* ducks the music. Port: `BattleActionHost::duck_audio_level`
-→ `BattleEvent::DuckAudioLevel`.
+→ `BattleEvent::DuckAudioLevel` (`75` from the summon / capture arms, `100` once
+on the `0x50 -> 0x51` transition); the native window's `AudioBgmDirector`
+mirrors the cell (`duck_level`, seeded `0xD7`), ramps it one unit per frame
+toward the target (`tick_duck`) and re-applies it through
+`AudioOut::set_sequencer_master_vol`. The browser play page has no consumer
+for the event yet.
 
 ### Battle voice cues - the XA30 grunt vs the XA2/XA4/XA6 arts shout
 
@@ -2546,7 +2551,30 @@ Two gates guard the submit. The target must be playing a plain action-table clip
 
 The port's live gameplay loop resolves melee damage inline rather than through the art-strike event, so nothing downstream of `World::fold_battle_event` used to see a swing at all and a whole fight produced **zero** cues. `World::apply_one_basic_strike` now runs the funnel at retail's site, which is what makes `sfx_cue::route_sfx_cue` a live port rather than a caller-less one. The engine's compacted monster seating has to be re-based into retail's `0..=2` / `3..=7` index space first, or a monster seated at index 1 takes the party leg.
 
-**Which half that is.** The *producer* half is done and observable: a monster swing enqueues `0x2A8` on `World::battle_sfx_cues` and the native host logs it. The *playback* half is not, for two reasons that are properties of the audio stack rather than of this seam - the party leg's `XA27` is not among the clips boot stages (`XA2`/`XA4`/`XA6`), and `0x2A8` is a runtime-bank id (`>= 0x200`) that no engine bank models, so the host's scheduler accepts it and resolves nothing. The party leg's request is therefore discarded rather than faked into the ring.
+**Which half that is.** The cue site is one of the kernel's two sound emissions, and
+`_DAT_8007BD84` picks which. While the word is zero the routine takes the per-character
+**grunt** (`0x801EEAD0..0x801EEB44`), `FUN_8003D53C(0x1D, chan, dur)` - clip slot `0x1D` =
+`XA30.XA`, a ten-channel mono bank; the seat's 1-based character id picks `(0, 0x26)` Vahn /
+`(4, 0x2E)` Noa / `(6, 0x1A)` Gala, gated on a per-strike latch (`s7`, `0x801EEA84`, written
+from the target's `+0x1EF..+0x1F1` / `+0x1F3` bytes and two immediates - not decoded) and on
+`_DAT_8007BC20 < 2` - and the re-read at `0x801EEB60` then skips the cue. While the word is
+non-zero, `bne v0,zero,0x801EEB70` at `0x801EEAC8` jumps over the grunt into the `0x10C` cue,
+gated on the target clip test and, inside the funnel, on the drive being idle
+(`FUN_8003DE7C(1) == 0`, `0x8004FE9C`). The word's only dumped stores are zeros (the
+battle-start sweep `FUN_80055B6C`, the round reset `FUN_8004CE2C`), so an ordinary party swing
+is heard as the grunt; the `XA27` channel-4 sting is the flagged case.
+
+The port carries both halves now. `World::fire_melee_impact_cue` selects on
+`MonsterAiState::flag_bd84` (the port's mirror of the word - the damage finisher's
+enemy-defender halve): the grunt goes out as a `(clip, channel, dur)` request on
+`World::battle_xa_cues`, and the cue arm routes `0x10C` through `route_sfx_cue` with a modelled
+drive-busy flag (`dur` vsyncs after any clip start: `dur * 2.5` sectors at 150/s is `dur / 60`
+s) and the `0x800788B8` duration table parsed off the user's SCUS (`legaia_asset::xa_cue_table`). The native window plays the requests off a boot-staged
+`XaClipBank` (`XA27` / `XA30` demuxed + decoded, `crate::boot::read_battle_xa_clip_bank`)
+through the same XA mixing path as the arts shouts; the browser play page has no XA lane and
+consumes them (`NOT WIRED` there, prerequisite: an in-browser demux + a `WebAudioOut` XA path -
+the same gap that drops the arts shouts). The monster leg's `0x2A8` is still a runtime-bank id
+no engine bank models, so it reaches the hosts' scheduler and resolves nothing.
 
 ### Three readings the port already satisfied
 

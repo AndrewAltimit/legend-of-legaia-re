@@ -199,6 +199,15 @@ impl World {
     /// sounds [`Self::fold_battle_event`] resolves). The host plays each through
     /// its `SfxBank::play_one_shot` at the cue's `timing_frames` delay; nothing
     /// here mutates gameplay state. Returns them in resolve order.
+    /// Take this tick's CD-XA clip requests (see
+    /// [`World::battle_xa_cues`]). A host with a staged
+    /// `legaia_engine_audio::XaClipBank` plays each one; the request is a
+    /// `(clip_slot, channel, duration_sectors)` triple in the retail
+    /// starter's own terms.
+    pub fn drain_battle_xa_cues(&mut self) -> Vec<crate::sfx_cue::XaVoiceClip> {
+        std::mem::take(&mut self.battle_xa_cues)
+    }
+
     pub fn drain_battle_sfx_cues(&mut self) -> Vec<BattleSfxCue> {
         std::mem::take(&mut self.battle_sfx_cues)
     }

@@ -2101,6 +2101,15 @@ impl PlayWindowApp {
         h: u32,
     ) -> legaia_engine_render::BattleHudDraws {
         use legaia_engine_core::battle_hud as bh;
+        // The result screen draws neither the party card nor the pill
+        // (retail `noa_levelup_banner`: the two framed windows over the
+        // bare battle scene) - the readout comes down with the last action.
+        if self.session.host.world.battle_result_screen_active() {
+            return legaia_engine_render::BattleHudDraws {
+                text: Vec::new(),
+                sprites: Vec::new(),
+            };
+        }
         let slots = battle_hud_slot_views(&self.battle_hud);
         let popups = battle_hud_popup_views(&self.battle_hud);
         let w_ref = &self.session.host.world;

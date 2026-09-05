@@ -470,6 +470,25 @@ pub struct World {
     /// Last-issued battle-end cause (for inspection / engine side-effects).
     pub battle_end: Option<BattleEndCause>,
 
+    /// The armed end-of-battle presentation (retail's results sequencer
+    /// `FUN_8004E568`, run every frame the battle-end signal is up). While
+    /// `Some` the scene stays in [`SceneMode::Battle`], the action SM does
+    /// not step, and [`World::tick_battle_end_sequence`] walks the load /
+    /// results / white-out phases before [`World::finish_battle`] runs. See
+    /// `world::battle::victory`.
+    pub battle_victory: Option<crate::world::VictorySequence>,
+
+    /// The static `SCUS_942.54` win-pose table (`0x800788A0`) the results
+    /// frame picks the leader's victory pose from. Installed at boot by the
+    /// shell (`legaia_asset::victory_pose`); `None` on a disc-free build,
+    /// where the pose actor simply keeps its idle.
+    pub victory_pose_table: Option<legaia_asset::victory_pose::VictoryPoseTable>,
+
+    /// Set by the results frame once [`World::apply_battle_loot`] has run for
+    /// this battle, so the deferred [`World::finish_battle`] does not credit
+    /// the rewards a second time. Cleared by `finish_battle`.
+    pub battle_loot_applied: bool,
+
     /// Active full-screen fade, staged by the battle SM's escape teardown
     /// (retail state `0x66` spawns the `DAT_801C9070` black→white ramp via
     /// the fade-primitive spawner `FUN_80024E80`). Stepped once per
@@ -649,6 +668,27 @@ pub struct World {
     /// state depends on them. Drained via [`World::drain_battle_sfx_cues`];
     /// cleared on battle exit.
     pub battle_sfx_cues: Vec<BattleSfxCue>,
+
+    /// CD-XA one-shot clip requests the battle raised this tick - the
+    /// `FUN_8003D53C(clip, channel, dur)` calls the melee kernel makes (the
+    /// per-character `XA30` grunt) and the party voice leg of the sound
+    /// funnel resolves (`XA27` for `0x10C`). Drained by the hosts into the
+    /// XA mixing path ([`World::drain_battle_xa_cues`]).
+    pub battle_xa_cues: Vec<crate::sfx_cue::XaVoiceClip>,
+
+    /// Frames the modelled CD drive stays busy after a clip start - the
+    /// read span in vsyncs (`dur * 2.5` sectors at 150/s = `dur / 60` s). The
+    /// funnel's voice leg drops a request while it is non-zero
+    /// (`FUN_8003DE7C(1) != 0` at `0x8004FE9C`), so two `0x10C` stings
+    /// inside one read span collapse to the first. Counted down once per
+    /// battle tick.
+    pub battle_xa_busy_frames: u16,
+
+    /// The static `SCUS_942.54` XA cue duration table (`DAT_800788B8`) the
+    /// voice legs read (`legaia_asset::xa_cue_table`); installed at boot,
+    /// `None` on a disc-free build (a voice cue then requests no span and
+    /// is dropped).
+    pub xa_cue_durations: Option<Vec<u16>>,
 
     /// Battle effect-script spawn requests queued this frame - one per
     /// effect record the per-actor effect-script walk consumed
@@ -2753,6 +2793,9 @@ impl World {
             pending_battle_events: Vec::new(),
             battle_hit_fx: Vec::new(),
             battle_sfx_cues: Vec::new(),
+            battle_xa_cues: Vec::new(),
+            battle_xa_busy_frames: 0,
+            xa_cue_durations: None,
             battle_effect_spawns: Vec::new(),
             battle_shout_cues: Vec::new(),
             current_bgm: None,
@@ -2964,6 +3007,9 @@ impl World {
             scene_encounters_rollable: false,
             scene_encounter_hint_frames: 0,
             battle_spoils_frames: 0,
+            battle_victory: None,
+            victory_pose_table: None,
+            battle_loot_applied: false,
             game_over: false,
             game_over_hold: false,
             field_return: None,

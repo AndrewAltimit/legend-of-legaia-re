@@ -38,6 +38,7 @@ pub mod test_sink;
 pub mod vab_bind;
 #[cfg(all(target_arch = "wasm32", feature = "audio-webaudio"))]
 mod webaudio;
+pub mod xa_clip_bank;
 
 pub use anim_cue::{
     AnimCueActor, AnimCueEmit, AnimCueSlot, AnimCueState, AnimCueWalk, walk_anim_cues,
@@ -72,6 +73,7 @@ pub use test_sink::{SinkMeasure, TestAudioSink};
 pub use vab_bind::{UploadedVag, VabBank};
 #[cfg(all(target_arch = "wasm32", feature = "audio-webaudio"))]
 pub use webaudio::WebAudioOut;
+pub use xa_clip_bank::{XaClip, XaClipBank};
 
 /// Default sample rate to assume for queued buffers when the caller
 /// doesn't specify one. PSX VAG samples in Legaia run at this rate
@@ -998,6 +1000,23 @@ impl AudioOut {
     /// resume from where the sequencer left off.
     pub fn set_sequencer_paused(&self, paused: bool) {
         self.lock().sequencer_paused = paused;
+    }
+
+    /// Set the attached sequencer's master volume (`SsSeqSetVol`-shaped,
+    /// `0..=127`) in place, without restarting it. The battle's audio duck
+    /// rides this: retail ramps `_DAT_8007B910` and re-applies it through
+    /// `FUN_800267A8` -> `FUN_80062004` each frame (`docs/subsystems/battle-action.md`
+    /// § the `_DAT_8007B910` ramps are an audio duck). No-op with no
+    /// sequencer attached; a pending cross-fade target inherits it when it
+    /// installs.
+    pub fn set_sequencer_master_vol(&self, vol: u8) {
+        let mut s = self.lock();
+        if let Some(seq) = s.sequencer.as_mut() {
+            seq.set_master_vol(vol);
+        }
+        if let Some(seq) = s.pending_seq.as_mut() {
+            seq.set_master_vol(vol);
+        }
     }
 
     /// Cross-fade from the currently-playing sequencer to `new_seq` over

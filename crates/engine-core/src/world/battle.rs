@@ -20,8 +20,14 @@ mod stats;
 mod teardown;
 mod tutorial;
 mod validator_host;
+mod victory;
 
 pub use teardown::BattleSpoilsBanner;
+pub use victory::{
+    LEVEL_UP_CUE, VICTORY_EXIT_PHASE, VICTORY_FADE_PHASE_SEED, VICTORY_LOAD_FRAMES,
+    VICTORY_RESULTS_HOLD_FRAMES, VictoryPhase, VictorySequence, victory_pose_column,
+    victory_pose_id, victory_pose_tier,
+};
 
 /// The staged command id a generic physical swing runs as.
 ///
@@ -39,6 +45,10 @@ pub(in crate::world) const BASIC_ATTACK_COMMAND: u8 = 0x0C;
 /// `FUN_801EC3E4`. See [`World::apply_one_basic_strike`]'s cue arm for what
 /// each of the funnel's two legs does with it.
 pub(in crate::world) const MELEE_IMPACT_CUE: u32 = 0x10C;
+
+/// Clip slot of the per-character melee grunt bank - `XA30.XA` (`li a0,0x1d`
+/// at `0x801EEB18` / `0x801EEB28` / `0x801EEB38` of `FUN_801EC3E4`).
+pub(in crate::world) const GRUNT_CLIP_SLOT: u32 = 0x1D;
 
 /// Attacker element the SFX funnel's tinted leg writes when the engine can
 /// resolve none - retail's non-elemental id, the same `7` the melee damage

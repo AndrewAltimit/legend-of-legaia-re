@@ -21,6 +21,15 @@ impl PlayWindowApp {
     pub(super) fn drain_and_log_battle_events(&mut self) {
         let events = self.session.host.world.drain_battle_events();
         for ev in events {
+            // The audio duck: the summon / capture arms lower the BGM to 75%
+            // of its reference, the Done band's `0x51` arm raises it back.
+            // The director ramps one retail unit per frame (`tick_duck`).
+            if let legaia_engine_core::battle_events::BattleEvent::DuckAudioLevel { target_pct } =
+                &ev
+                && let Some(bgm) = self.session.bgm.as_mut()
+            {
+                bgm.set_duck_pct(*target_pct);
+            }
             // Surface in the HUD ring.
             if self.battle_event_log.len() >= Self::BATTLE_EVENT_LOG_CAP {
                 self.battle_event_log.pop_front();
@@ -67,7 +76,56 @@ impl PlayWindowApp {
         // shout with the modeled CD-response delay, so the voice trails the
         // animation (the retail contract) instead of leading it.
         let shouts = self.session.host.world.drain_battle_shout_cues();
+        // One-shot CD-XA clip requests (the melee grunt / attack sting):
+        // `(clip_slot, channel, dur)` in the retail starter's terms, played
+        // off the boot-staged clip bank through the same XA mixing path.
+        let xa_cues = self.session.host.world.drain_battle_xa_cues();
+        // The level-up jingle's bank (PROT 0889, cue `0x50`, category 11)
+        // is loaded at results time in retail and lives nowhere resident in
+        // the port's SFX region; stage it transiently behind the battle
+        // theme the moment the results frame asks for it.
+        let wants_reward_bank = cues
+            .iter()
+            .any(|c| c.kind == legaia_engine_core::world::LEVEL_UP_CUE);
+        if wants_reward_bank
+            && let Some(bgm) = self.session.bgm.as_mut()
+            && !bgm.has_sfx_vab_slot(legaia_engine_shell::bgm::TRANSIENT_REWARD_SLOT)
+        {
+            match self
+                .session
+                .host
+                .index
+                .entry_bytes_extended(legaia_asset::sfx_table::SLOT11_REWARD_BANK_PROT_INDEX)
+            {
+                Ok(bytes) => {
+                    let ok = bgm.stage_transient_sfx_vab(
+                        legaia_engine_shell::bgm::TRANSIENT_REWARD_SLOT,
+                        &bytes,
+                    );
+                    log::info!(
+                        "level-up jingle bank (PROT 0889) {}",
+                        if ok {
+                            "staged behind the BGM"
+                        } else {
+                            "did not fit behind the BGM"
+                        }
+                    );
+                }
+                Err(e) => log::warn!("level-up jingle bank (PROT 0889) read: {e:#}"),
+            }
+        }
         if let Some(bgm) = self.session.bgm.as_mut() {
+            bgm.tick_duck();
+            for xa in &xa_cues {
+                let fired = bgm.play_xa_clip(xa.clip, xa.channel, xa.duration_sectors);
+                log::debug!(
+                    "battle XA clip slot {} ch {} dur {} -> {}",
+                    xa.clip,
+                    xa.channel,
+                    xa.duration_sectors,
+                    if fired { "playing" } else { "not staged" }
+                );
+            }
             for cue in &cues {
                 bgm.enqueue_sfx(cue.kind, cue.timing_frames, cue.actor_slot, cue.target_slot);
             }

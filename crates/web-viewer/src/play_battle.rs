@@ -313,6 +313,14 @@ impl LegaiaRuntime {
         // drained (the world must not accumulate them) and dropped.
         let cues = host.world.drain_battle_sfx_cues();
         let _ = host.world.drain_battle_shout_cues();
+        // NOT WIRED (browser): the melee grunt / attack sting are CD-XA clip
+        // requests (`drain_battle_xa_cues`), and the play page has no XA
+        // lane at all - the same gap that drops the arts shouts above. The
+        // prerequisite is an in-browser demux of `XA27` / `XA30` off the
+        // user's disc bytes into an `XaClipBank` and a `WebAudioOut` XA
+        // mixing path; until then the requests are consumed here so they
+        // cannot pile up across frames.
+        let _ = host.world.drain_battle_xa_cues();
         // Battle effect-script spawn requests (one per effect record the
         // per-actor effect-script walk consumed this tick). Routed into the
         // world's own spawn paths so the FX render layers
@@ -513,6 +521,18 @@ impl LegaiaRuntime {
         surface_w: u32,
         surface_h: u32,
     ) -> ui::BattleHudDraws {
+        // The result screen draws neither the party card nor the pill
+        // (retail `noa_levelup_banner`) - same gate as the native window.
+        if self
+            .scene_host
+            .as_ref()
+            .is_some_and(|h| h.world.battle_result_screen_active())
+        {
+            return ui::BattleHudDraws {
+                text: Vec::new(),
+                sprites: Vec::new(),
+            };
+        }
         let font = assets.font_ref();
         // The badge cells the HUD blits, projected out of the baked atlas. A
         // `None` CELL inside it means that badge's palette source was outside

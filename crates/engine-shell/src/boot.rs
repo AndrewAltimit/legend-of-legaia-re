@@ -462,6 +462,77 @@ pub fn read_arts_shout_bank(disc: &Path) -> Option<legaia_engine_audio::ArtsShou
     bank.has_clips().then_some(bank)
 }
 
+/// Clip slots the battle's one-shot CD-XA cues address, as `(slot, file)`:
+/// `26` = `XA27.XA` (the eight stereo attack stings the melee kernel's
+/// `0x10C` cue resolves to through the sound funnel's voice leg) and `0x1D`
+/// = `XA30.XA` (the ten mono per-character grunts the same kernel fires
+/// directly). Slot `i` is `XA<i+1>.XA` by the boot-built clip table's own
+/// construction (`docs/subsystems/audio.md`).
+pub const BATTLE_XA_CLIP_SLOTS: &[(u8, &str)] = &[(26, "XA27.XA"), (0x1D, "XA30.XA")];
+
+/// Demux + decode the battle **one-shot clip** banks from a disc image into
+/// a generic `(clip_slot, channel)` bank: the files in
+/// [`BATTLE_XA_CLIP_SLOTS`]. Every 4-bit channel is decoded (mono or
+/// stereo, at its subheader rate); the file's channel count is recorded so
+/// the retail read span can be divided by the interleave. Same disc-only
+/// caveat as [`read_arts_shout_bank`]. `None` when nothing decodes.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn read_battle_xa_clip_bank(disc: &Path) -> Option<legaia_engine_audio::XaClipBank> {
+    use legaia_engine_audio::{XaClip, XaClipBank};
+    let mut raw = legaia_iso::raw::RawDisc::open(disc).ok()?;
+    let volume = legaia_iso::iso9660::read_volume(&mut raw).ok()?;
+    let files = legaia_iso::iso9660::walk_files(&mut raw, &volume.root).ok()?;
+    let mut bank = XaClipBank::new();
+    for &(slot, name) in BATTLE_XA_CLIP_SLOTS {
+        let Some(rec) = files.iter().find_map(|(path, rec)| {
+            let base = path.rsplit('/').next().unwrap_or(path);
+            let base = base.split(';').next().unwrap_or(base);
+            base.eq_ignore_ascii_case(name).then_some(rec)
+        }) else {
+            continue;
+        };
+        let sectors = rec.size.div_ceil(legaia_iso::raw::USER_DATA_SIZE as u32);
+        let Ok(streams) = legaia_xa::demux::demux_disc_range(&mut raw, rec.lba, sectors) else {
+            continue;
+        };
+        let widest = streams.iter().map(|s| s.ch_no).max().unwrap_or(0);
+        bank.set_channel_count(slot, widest.saturating_add(1));
+        for s in &streams {
+            if s.bits_per_sample != 4 {
+                continue;
+            }
+            let channels = if s.stereo {
+                legaia_xa::Channels::Stereo
+            } else {
+                legaia_xa::Channels::Mono
+            };
+            let Ok((pcm, _)) = legaia_xa::decode(
+                &s.audio,
+                legaia_xa::DecodeOptions {
+                    channels,
+                    sample_rate: s.sample_rate,
+                    bits: legaia_xa::BitsPerSample::Four,
+                },
+            ) else {
+                continue;
+            };
+            if pcm.is_empty() {
+                continue;
+            }
+            bank.insert(
+                slot,
+                s.ch_no,
+                XaClip {
+                    pcm,
+                    sample_rate: s.sample_rate,
+                    stereo: s.stereo,
+                },
+            );
+        }
+    }
+    bank.has_clips().then_some(bank)
+}
+
 /// Read the gold-shop item data (per-id buy price + "names a real item" mask)
 /// from a boot source's `SCUS_942.54` item table. Returns `None` when the
 /// executable isn't reachable or its item table doesn't parse, so a boot never
@@ -669,6 +740,19 @@ impl BootSession {
             host.world.level_up_tracker = tracker.with_growth_tables(&tables);
         }
 
+        // Install the static-SCUS victory-pose table (`0x800788A0`) the
+        // battle results frame picks the leader's win pose from
+        // (`world::battle::victory`). Best-effort: absent on a disc-free
+        // build, where the pose actor keeps its idle.
+        if let Some(scus) = read_scus(&source) {
+            host.world.victory_pose_table =
+                legaia_asset::victory_pose::victory_pose_table_from_scus(&scus);
+            // The XA cue duration table (`DAT_800788B8`) the sound funnel's
+            // voice leg reads for its read span.
+            host.world.xa_cue_durations =
+                legaia_asset::xa_cue_table::xa_cue_durations_from_scus(&scus);
+        }
+
         // Install the summon-magic spell-XP level-up thresholds (the static
         // SCUS table the battle overlay's level-up check reads) so Seru-magic
         // casts accrue spell XP against the retail curve and level the
@@ -754,6 +838,12 @@ impl BootSession {
                         match read_arts_shout_bank(path) {
                             Some(bank) => director.set_shout_bank(bank),
                             None => log::warn!("arts-voice shout bank not staged"),
+                        }
+                        // The battle's one-shot clips (`XA27` stings, `XA30`
+                        // grunts) - the melee kernel's two sound sites.
+                        match read_battle_xa_clip_bank(path) {
+                            Some(bank) => director.set_xa_clip_bank(bank),
+                            None => log::warn!("battle CD-XA clip bank not staged"),
                         }
                     }
                     (Some(audio), Some(director))

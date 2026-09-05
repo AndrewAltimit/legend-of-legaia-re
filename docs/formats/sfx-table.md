@@ -245,8 +245,14 @@ duration and "did a voice key on" all pass in that state. The only observable
 that separates the two is which PROT entry the samples came from.
 
 Both hosts stage two banks - slot 0 and slot 2 - and route each cue through
-`slot_for_category(descriptor.category)`; the 31 category-`6`/`11` descriptors
+`slot_for_category(descriptor.category)`; the 30 category-`6` descriptors
 fall back to the class-2 bank, which is exactly the behaviour they had before.
+The single category-`11` cue (`0x50`, the level-up jingle) is the exception on
+the native window: it is staged the way retail stages it, at results time -
+`AudioBgmDirector::stage_transient_sfx_vab` uploads PROT 0889 into the free
+tail of the BGM region behind the battle theme the moment the results frame
+queues the cue, and drops it again when the next track restages. The browser
+still falls back for it.
 That fallback is now a **residency** limit rather than a gap in the map: slots 6
 and 11 name real entries (0876 / 0889), and what stops a host staging them is
 the [SPU budget](#spu-budget---both-banks-in-one-region) below. Retail does not

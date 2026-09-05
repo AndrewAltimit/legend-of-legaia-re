@@ -210,6 +210,20 @@ impl World {
     pub(in crate::world) fn live_battle_tick(&mut self) -> Option<StepOutcome> {
         use vm::battle_action::{ActionState, ActorFlags};
 
+        // The modelled CD drive: one clip read span elapses per frame.
+        self.battle_xa_busy_frames = self.battle_xa_busy_frames.saturating_sub(1);
+
+        // The battle has ended and its presentation owns the frame: retail's
+        // battle tick runs the results sequencer instead of the action SM
+        // while `DAT_8007BD71 == 0xFE` (`FUN_80046A20` `0x80047040` /
+        // `0x800470D0`), and nothing else - no round prompt, no turn cycling,
+        // no menu - until the exit gate fires.
+        // REF: FUN_80046A20
+        if self.battle_victory.is_some() {
+            self.tick_battle_end_sequence();
+            return None;
+        }
+
         // Everything already in the battle-event queue belongs to an earlier
         // tick and has been folded once; only this tick's tail may be folded
         // below. See the fold site for what re-folding costs.
@@ -563,7 +577,10 @@ impl World {
         self.cycle_battle_turn();
 
         if matches!(outcome, StepOutcome::BattleComplete) {
-            self.finish_battle();
+            // Retail does not leave the battle on the frame the wipe scan
+            // raises the signal: the results sequencer holds the scene for
+            // the load window, the result screen and the white-out first.
+            self.begin_battle_end_sequence();
         }
         Some(outcome)
     }
@@ -909,35 +926,38 @@ impl World {
         true
     }
 
-    /// The melee kernel's own sound cue - retail's `FUN_801EC3E4` tail
-    /// (`0x801EEB5C..0x801EEBEC`), which submits cue id [`MELEE_IMPACT_CUE`]
-    /// with the **attacker slot as the category** through the battle overlay's
-    /// one sound funnel `FUN_8004FE5C`
-    /// ([`crate::sfx_cue::route_sfx_cue`]).
+    /// The melee kernel's own sound - retail's `FUN_801EC3E4` tail
+    /// (`0x801EEA80..0x801EEBEC`), **one** of two emissions, selected by the
+    /// `_DAT_8007BD84` word:
     ///
-    /// This is the only `jal 0x8004fe5c` in the melee kernel, so it is the
-    /// whole of a physical swing's sound, and the funnel's two legs make the
-    /// two sides of a fight sound different by construction:
+    /// * **zero** - every ordinary swing: the battle-start sweep
+    ///   `FUN_80055B6C` and the round reset `FUN_8004CE2C` both store zero
+    ///   there and no dumped routine stores anything else - takes the
+    ///   per-character **grunt**, `FUN_8003D53C(0x1D, chan, dur)` at
+    ///   `0x801EEB44`, the seat's 1-based character id (`DAT_8007BD10[seat]`)
+    ///   selecting `(0, 0x26)` Vahn / `(4, 0x2E)` Noa / `(6, 0x1A)` Gala
+    ///   (`0x801EEAD0..0x801EEB40`); clip slot `0x1D` = `XA30`, the
+    ///   ten-channel mono grunt bank. The fall-through re-reads the word at
+    ///   `0x801EEB60` and, still zero, skips the cue at `0x801EEB68`.
+    /// * **non-zero**: `bne v0,zero,0x801EEB70` at `0x801EEAC8` jumps over
+    ///   the grunt into the cue path - `0x10C` through the battle overlay's
+    ///   one sound funnel `FUN_8004FE5C` ([`crate::sfx_cue::route_sfx_cue`])
+    ///   with the **attacker's actor-table index as the category**
+    ///   (`0x801EEBD8`), so the two sides sound different by construction: a
+    ///   party attacker takes the CD-XA voice leg (`XA27` channel 4, an
+    ///   attack sting), a monster the element-tinted ring leg (`0x2A8`).
     ///
-    /// * a **party** attacker (`category < 3`) takes the CD-XA voice leg -
-    ///   `0x10C` resolves to clip `26` / channel `4`, i.e. `XA27`. Boot stages
-    ///   only `XA2`/`XA4`/`XA6`, so that clip is not resident and the port has
-    ///   no carrier for a raw (clip, channel, duration) request either. The
-    ///   route is run and its outcome discarded rather than faked: a party
-    ///   swing stays silent, and that is a *staging* gap, not a missing
-    ///   producer.
-    /// * a **monster** attacker takes the element-tinted high leg, which
-    ///   enqueues ring id `0x10C + 0x19C = 0x2A8`. That one has a carrier -
-    ///   [`World::battle_sfx_cues`], the queue both hosts drain into their SFX
-    ///   scheduler - so it is pushed.
-    ///
-    /// Two retail gates, one modelled and one not. Modelled: the target must be
-    /// playing a plain action-table clip (`+0x1D9 < 0x10`, `0x801EEB88`), so a
-    /// hit landing during an art-bank animation is silent. Not modelled:
-    /// `_DAT_8007BD84`, the word that selects between this cue and the
-    /// per-character XA30 grunt above it (`0x801EEAC0` / `0x801EEB60`) - it has
-    /// no engine model and no other reader, so the port always takes the cue
-    /// arm.
+    /// The engine mirrors the word as `MonsterAiState::flag_bd84` - the same
+    /// cell the damage finisher reads as the enemy-defender halve and the
+    /// `0xB4` boss-intro cast gates on. Two grunt gates are not modelled -
+    /// the per-strike latch `s7` (`0x801EEA84`, matched against the target's
+    /// `+0x1F3`) and the voice pass's in-flight counter `_DAT_8007BC20 < 2`
+    /// (`0x801EEAB4`) - so the port grunts on every party strike the word
+    /// leaves to the grunt arm. The cue arm keeps its retail gates: the
+    /// target playing a plain action-table clip (`+0x1D9 < 0x10`,
+    /// `0x801EEB88`) and, inside the funnel, the drive being idle
+    /// (`FUN_8003DE7C(1) == 0` at `0x8004FE9C`, modelled as
+    /// [`World::battle_xa_busy_frames`]).
     ///
     /// The ring is transient by design. Its slots are drained in retail by
     /// `FUN_80016B6C`, which the port does not model (the hosts' own SFX
@@ -945,8 +965,32 @@ impl World {
     /// carry across calls is the `last_played` dedupe word that same drainer
     /// maintains - so a stored ring would sit at zero and dedupe nothing.
     ///
-    /// PORT: FUN_801EC3E4 (`0x801EEBD8..0x801EEBEC`, the cue-submit site)
+    /// PORT: FUN_801EC3E4 (`0x801EEA80..0x801EEBEC`, the two sound sites)
     fn fire_melee_impact_cue(&mut self, attacker: u8, target: u8) {
+        let category = self.retail_actor_category(attacker);
+        if self.monster_ai_state.flag_bd84 == 0 {
+            // The grunt arm. `XA30` channel + read span per character id
+            // (`DAT_8007BD10[seat]`, 1-based); a monster seat names no
+            // character and falls out of the switch silent (`0x801EEAFC`).
+            if category < 3 {
+                let char_id = self.party_roster_slot(attacker as usize) as u8 + 1;
+                let grunt = match char_id {
+                    1 => Some((0u32, 0x26u32)),
+                    2 => Some((4, 0x2E)),
+                    3 => Some((6, 0x1A)),
+                    _ => None,
+                };
+                if let Some((channel, duration_sectors)) = grunt {
+                    self.push_battle_xa_cue(crate::sfx_cue::XaVoiceClip {
+                        clip: GRUNT_CLIP_SLOT,
+                        channel,
+                        duration_sectors,
+                    });
+                }
+            }
+            return;
+        }
+        // The cue arm: `0x10C` through the funnel.
         let target_anim = self
             .actors
             .get(target as usize)
@@ -960,19 +1004,21 @@ impl World {
         // engine compacts seating to `party_count..`, so the slot has to be
         // re-based first or a monster seated at index 1 takes the party leg
         // and the fight goes silent from the wrong side.
-        let category = self.retail_actor_category(attacker);
         let element_of = |cat: u8| {
             let slot = self.engine_slot_of_retail_category(cat);
             self.battle_slot_element(slot).unwrap_or(NEUTRAL_ELEMENT)
         };
-        // The `0x800788B8` per-clip duration table is not parsed; it is read
-        // only on the XA leg, whose request is discarded below.
-        let xa_duration_raw = |_: u32| 0u16;
+        let durations = self.xa_cue_durations.as_deref();
+        let xa_duration_raw = |n: u32| {
+            durations
+                .and_then(|t| t.get(n as usize).copied())
+                .unwrap_or(0)
+        };
         let src = crate::sfx_cue::SfxCueSources {
             element_of: &element_of,
             xa_duration_raw: &xa_duration_raw,
             tutorial_active: self.battle_tutorial.is_some(),
-            cd_read_busy: false,
+            cd_read_busy: self.battle_xa_busy_frames > 0,
         };
         let mut ring = crate::sfx_cue::SfxCueRing::default();
         let out = crate::sfx_cue::route_sfx_cue(&mut ring, MELEE_IMPACT_CUE, category, &src);
@@ -985,6 +1031,19 @@ impl World {
                     target_slot: target,
                 });
         }
+        if let Some(xa) = out.xa
+            && xa.duration_sectors > 0
+        {
+            self.push_battle_xa_cue(xa);
+        }
+    }
+
+    /// Queue one CD-XA clip start and hold the modelled drive busy for its
+    /// read span (`dur` vsyncs - see [`World::battle_xa_busy_frames`]).
+    /// REF: FUN_8003D53C
+    fn push_battle_xa_cue(&mut self, cue: crate::sfx_cue::XaVoiceClip) {
+        self.battle_xa_busy_frames = cue.duration_sectors.min(u16::MAX as u32) as u16;
+        self.battle_xa_cues.push(cue);
     }
 
     /// An engine seat index in **retail's** actor-table index space: party
@@ -1143,9 +1202,59 @@ mod melee_cue_tests {
         w
     }
 
+    /// The `0x800788B8` duration table with the melee entry (`0x0C`) at its
+    /// retail value, `373` -> `(373 * 60 + 99) / 100 = 224` sectors.
+    fn durations_with_melee_entry() -> Vec<u16> {
+        let mut t = vec![0u16; 0x40];
+        t[0x0C] = 373;
+        t
+    }
+
     #[test]
-    fn a_monster_swing_enqueues_the_melee_impact_cue() {
+    fn an_ordinary_party_swing_grunts_and_requests_no_sting() {
         let mut w = duel();
+        w.xa_cue_durations = Some(durations_with_melee_entry());
+        w.battle_ctx.active_actor = 0; // the party member attacks
+        assert_eq!(
+            w.monster_ai_state.flag_bd84, 0,
+            "the `_DAT_8007BD84` word is zero at battle start"
+        );
+        assert!(w.apply_one_basic_strike(BASIC_ATTACK_COMMAND));
+        assert!(
+            w.drain_battle_sfx_cues().is_empty(),
+            "the grunt arm submits nothing to the SPU ring"
+        );
+        let xa = w.drain_battle_xa_cues();
+        assert_eq!(xa.len(), 1, "one swing, one grunt, no sting: {xa:?}");
+        // `FUN_8003D53C(0x1D, 0, 0x26)` - Vahn's `XA30` channel + read span.
+        assert_eq!(
+            (xa[0].clip, xa[0].channel, xa[0].duration_sectors),
+            (0x1D, 0, 0x26)
+        );
+        assert_eq!(
+            w.battle_xa_busy_frames, 0x26,
+            "the modelled drive stays busy for the read span"
+        );
+    }
+
+    #[test]
+    fn an_ordinary_monster_swing_is_silent_at_this_site() {
+        let mut w = duel();
+        w.battle_ctx.active_actor = 1; // the monster attacks
+        assert!(w.apply_one_basic_strike(BASIC_ATTACK_COMMAND));
+        // `sltiu v0,a0,0x3` at `0x801EEA7C` skips the grunt for a monster
+        // seat, and the re-read of the zero word at `0x801EEB60` skips the
+        // cue: a monster's ordinary swing makes no sound from this routine.
+        assert!(w.drain_battle_sfx_cues().is_empty());
+        assert!(w.drain_battle_xa_cues().is_empty());
+    }
+
+    #[test]
+    fn a_flagged_monster_swing_enqueues_the_melee_impact_cue() {
+        let mut w = duel();
+        // Non-zero word: `bne v0,zero,0x801EEB70` at `0x801EEAC8` takes the
+        // cue arm.
+        w.monster_ai_state.flag_bd84 = 1;
         w.battle_ctx.active_actor = 1; // the monster attacks
         assert!(w.apply_one_basic_strike(BASIC_ATTACK_COMMAND));
         let cues = w.drain_battle_sfx_cues();
@@ -1154,22 +1263,50 @@ mod melee_cue_tests {
         assert_eq!(cues[0].kind, 0x2A8);
         assert_eq!(cues[0].actor_slot, 1);
         assert_eq!(cues[0].target_slot, 0);
+        assert!(
+            w.drain_battle_xa_cues().is_empty(),
+            "no grunt on the cue arm"
+        );
     }
 
     #[test]
-    fn a_party_swing_takes_the_xa_leg_and_enqueues_nothing() {
+    fn a_flagged_party_swing_takes_the_xa_leg_and_enqueues_nothing() {
         let mut w = duel();
+        w.monster_ai_state.flag_bd84 = 1;
+        w.xa_cue_durations = Some(durations_with_melee_entry());
         w.battle_ctx.active_actor = 0; // the party member attacks
         assert!(w.apply_one_basic_strike(BASIC_ATTACK_COMMAND));
         assert!(
             w.drain_battle_sfx_cues().is_empty(),
             "a party attacker's `0x10C` is a CD-XA voice request, not a ring id"
         );
+        let xa = w.drain_battle_xa_cues();
+        assert_eq!(xa.len(), 1, "the sting, and no grunt: {xa:?}");
+        // Clip `(0x0C >> 3) = 1` remapped to `26` (`XA27`), channel `0x0C & 7`.
+        assert_eq!(
+            (xa[0].clip, xa[0].channel, xa[0].duration_sectors),
+            (26, 4, 224)
+        );
+    }
+
+    #[test]
+    fn a_flagged_party_swing_is_dropped_while_the_drive_is_busy() {
+        let mut w = duel();
+        w.monster_ai_state.flag_bd84 = 1;
+        w.xa_cue_durations = Some(durations_with_melee_entry());
+        w.battle_ctx.active_actor = 0;
+        // `FUN_8003DE7C(1) != 0` at `0x8004FE9C`: a read in flight drops the
+        // voice leg's request.
+        w.battle_xa_busy_frames = 5;
+        assert!(w.apply_one_basic_strike(BASIC_ATTACK_COMMAND));
+        assert!(w.drain_battle_sfx_cues().is_empty());
+        assert!(w.drain_battle_xa_cues().is_empty());
     }
 
     #[test]
     fn a_target_playing_an_art_bank_clip_is_silent() {
         let mut w = duel();
+        w.monster_ai_state.flag_bd84 = 1;
         w.battle_ctx.active_actor = 1;
         // Retail gate `0x801EEB88`: the cue is submitted only while the target
         // is playing a plain action-table clip.

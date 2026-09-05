@@ -64,6 +64,11 @@ pub mod ambient;
 mod assets_events;
 mod battle;
 pub use battle::BattleSpoilsBanner;
+pub use battle::{
+    LEVEL_UP_CUE, VICTORY_EXIT_PHASE, VICTORY_FADE_PHASE_SEED, VICTORY_LOAD_FRAMES,
+    VICTORY_RESULTS_HOLD_FRAMES, VictoryPhase, VictorySequence, victory_pose_column,
+    victory_pose_id, victory_pose_tier,
+};
 mod effects;
 pub use effects::{
     ClutCellFx, ClutCellFxPhase, DEBUG_EFFECT_LIFETIME_FRAMES, MAX_DEBUG_EFFECTS, ScriptVramMove,

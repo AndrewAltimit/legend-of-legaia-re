@@ -162,10 +162,37 @@ fn battle_item_escape_returns_to_field() {
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_item_menu(); // confirm
 
-    assert_eq!(world.mode, SceneMode::Field, "escaped back to the field");
-    assert!(!world.battle_escaped, "escape flag reset by finish_battle");
+    // Retail does not leave the battle on the confirm frame: the `0x66`
+    // teardown spawns the white-out and parks the SM in the `0x67` hold, and
+    // the results sequencer's escape arm then counts `ctx[+0x6CE]` up from
+    // zero until `FUN_80046A20`'s `0x43` exit gate returns to the field
+    // (`world::battle::victory`).
+    assert_eq!(
+        world.mode,
+        SceneMode::Battle,
+        "the exit hold keeps the battle scene up"
+    );
+    assert!(
+        world.battle_end_sequence_active(),
+        "the escape arm is armed"
+    );
     assert!(world.battle_item_menu.is_none(), "battle menus cleared");
     assert_eq!(world.inventory.get(&0x12).copied(), None, "item consumed");
+    let mut exit_tick = None;
+    for i in 1..=(usize::from(World::VICTORY_EXIT_PHASE) + 8) {
+        world.tick();
+        if world.mode != SceneMode::Battle {
+            exit_tick = Some(i);
+            break;
+        }
+    }
+    assert_eq!(
+        exit_tick,
+        Some(usize::from(World::VICTORY_EXIT_PHASE)),
+        "the `0x43` gate fires once the phase halfword reaches it"
+    );
+    assert_eq!(world.mode, SceneMode::Field, "escaped back to the field");
+    assert!(!world.battle_escaped, "escape flag reset by finish_battle");
 }
 
 #[test]
@@ -615,11 +642,35 @@ fn battle_magic_escape_returns_to_field() {
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_spell_menu();
 
-    assert_eq!(world.mode, SceneMode::Field, "escape returns to the field");
+    // Same exit hold as the escape item: the field returns through the
+    // sequencer's `0x67` arm, `VICTORY_EXIT_PHASE` ticks later.
+    assert_eq!(
+        world.mode,
+        SceneMode::Battle,
+        "the exit hold keeps the battle scene up"
+    );
+    assert!(
+        world.battle_end_sequence_active(),
+        "the escape arm is armed"
+    );
     assert!(
         world.battle_spell_menu.is_none(),
         "submenu dropped on escape"
     );
+    let mut exit_tick = None;
+    for i in 1..=(usize::from(World::VICTORY_EXIT_PHASE) + 8) {
+        world.tick();
+        if world.mode != SceneMode::Battle {
+            exit_tick = Some(i);
+            break;
+        }
+    }
+    assert_eq!(
+        exit_tick,
+        Some(usize::from(World::VICTORY_EXIT_PHASE)),
+        "the `0x43` gate fires once the phase halfword reaches it"
+    );
+    assert_eq!(world.mode, SceneMode::Field, "escape returns to the field");
     assert!(
         !world.battle_escaped,
         "escape flag cleared by finish_battle"

@@ -44,6 +44,11 @@ pub(super) fn done_cleanup<H: BattleActionHost + ?Sized>(
 
     rearm_action_gauge(host, ctx);
 
+    // The `0x51` arm ramps the live audio level `_DAT_8007B910` back up to
+    // its reference every frame (`docs/subsystems/battle-action.md` § the
+    // `_DAT_8007B910` ramps are an audio duck); the host owns the ramp, so
+    // the target is handed over once, on entry.
+    host.duck_audio_level(100);
     transition(ctx, ActionState::DoneFadeDown)
 }
 

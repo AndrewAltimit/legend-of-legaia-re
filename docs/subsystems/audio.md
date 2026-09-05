@@ -1229,50 +1229,60 @@ The field-VM XA opcode thus has **two shapes**: a non-zero third operand plays
 one channel one-shot (`FUN_8003D53C(op>>3, op&7, dur)`); a zero operand streams
 the whole clip (`FUN_80019794(op>>3)`).
 
-## What a normal attack sounds like, and why the port's is silent
+## What a normal attack sounds like
 
-The plain melee swing is the most common sound in a fight, and it is **two**
-emissions from one routine. `FUN_801EC3E4` (battle overlay 0898, the melee
-roll pair) calls:
+The plain melee swing is the most common sound in a fight, and it is **one of
+two** emissions from one routine, selected by the `_DAT_8007BD84` word.
+`FUN_801EC3E4` (battle overlay 0898, the melee roll pair) calls:
 
-- `FUN_8003D53C(0x1D, chan, dur)` at `0x801EEB44`, the XA30 grunt - three arms
-  select `(0, 0x26)` / `(4, 0x2E)` / `(6, 0x1A)`, the same character-indexed
-  channel spacing the XA2/XA4/XA6 shout banks use. Already tabulated under the
-  [one-shot cue census](#one-shot-cue-census-fun_8003d53c).
+- `FUN_8003D53C(0x1D, chan, dur)` at `0x801EEB44`, the **XA30 grunt** - three
+  arms select `(0, 0x26)` / `(4, 0x2E)` / `(6, 0x1A)` off the seat's 1-based
+  character id, the same character-indexed channel spacing the XA2/XA4/XA6
+  shout banks use. `XA30.XA` is a ten-channel mono 37.8 kHz bank of ~1.5 s
+  clips; `dur` cuts Vahn's to `0x26` vsyncs. Taken while `_DAT_8007BD84` is
+  **zero** - every ordinary swing: the battle-start sweep and the round reset
+  store zero there and no dumped routine stores anything else - and further
+  gated on a per-strike latch (`s7`, `0x801EEA84`) whose writers are not
+  decoded and on the voice pass's in-flight counter `_DAT_8007BC20 < 2`.
+  Tabulated under the [one-shot cue census](#one-shot-cue-census-fun_8003d53c).
 - `FUN_8004FE5C(0x10C, cat)` at `0x801EEBE8`, the cue router. `0x10C` is above
   `0x100`, so for a party attacker it takes the router's **XA voice** leg -
-  clip `(0x0C >> 3) = 1` remapped to `26`, channel `0x0C & 7 = 4` - and for a
+  clip `(0x0C >> 3) = 1` remapped to `26`, channel `0x0C & 7 = 4`, i.e.
+  `XA27.XA` channel 4 (an eight-channel *stereo* bank of 2.4-4.5 s attack
+  stings; the duration table entry `373` covers the whole clip) - and for a
   non-party attacker the high element-tinted ring leg (`id + 0x19C = 0x2A8`).
+  Taken while `_DAT_8007BD84` is **non-zero** (`bne v0,zero,0x801EEB70` at
+  `0x801EEAC8` jumps over the grunt), and further gated on the target's clip
+  being a plain action-table entry and - inside the router - the drive being
+  idle (`FUN_8003DE7C(1) == 0`, `0x8004FE9C`).
 
-Both are `see ghidra/scripts/funcs/overlay_battle_action_801ec3e4.txt`
-(disassembly, not the C). Note what that makes retail's impact sound: a
-**streamed CD-XA clip**, not an SPU descriptor one-shot.
+Both are `see ghidra/scripts/funcs/overlay_0898_801ec3e4.txt` (disassembly,
+not the C). The word decides, never the order: after the grunt the routine
+re-reads `_DAT_8007BD84` at `0x801EEB60` and, still zero, skips the cue at
+`0x801EEB68`, so one strike never attempts both. The word is the same cell
+the damage finisher reads as the enemy-defender halve. Note what that makes
+retail's ordinary impact sound: a **streamed CD-XA clip** (the grunt), not
+an SPU descriptor one-shot.
 
-That is the shape of the port's silence, and it is specifically a *sound
-effect* silence: a battle does have music, because the field track keeps
-playing through the swap (the [audio-trace section](#audio-trace-parity-oracle)
-records why no battle track resolves). What a whole fight produces is zero
-cues. Three gaps, in order of what they cost:
+The port carries the producer (`World::fire_melee_impact_cue`: the selector
+on `MonsterAiState::flag_bd84`, the grunt request or the routed `0x10C`, a
+modelled busy window of `dur` vsyncs for the router's drive gate, the
+`0x800788B8` table off the user's SCUS) and, on the native window, the
+playback: boot
+demuxes `XA27` / `XA30` into a `legaia_engine_audio::XaClipBank`
+(`read_battle_xa_clip_bank`) and `AudioBgmDirector::play_xa_clip` mixes the
+requested `(slot, channel)` PCM, cut at the retail read span, through the
+same XA path as the arts shouts. Two gaps remain: the browser play page has
+no XA lane (the requests are consumed, as the arts shouts already are), and
+the monster leg's `0x2A8` is a runtime-bank id no engine bank models (the
+per-scene record-0 descriptor bank plus the `monster.snd` slots 7 / 8).
 
-1. **The live battle loop emits no cue at all.** `World::fold_battle_event`
-   turns an `ApplyArtStrike` outcome's `is_sound` cues into `battle_sfx_cues`,
-   and the only caller of that fold is the `BattleSession` path. The live loop
-   (`live_battle_tick`) resolves damage inline and queues a presentation-only
-   `BattleHitFx`, so a fight driven by the window host or the play page produces
-   an empty cue queue for its whole duration.
-2. **No CD-XA bank is staged for the battle voice clips.** Boot demuxes
-   `XA2`/`XA4`/`XA6` for the arts shouts (`read_arts_shout_bank`) and nothing
-   else, so even a correctly routed `0x10C` or `0x1D` cue has no PCM to play.
-   `legaia_engine_core::sfx_cue::route_sfx_cue` - a complete port of
-   `FUN_8004FE5C` - has no caller for the same reason.
-3. **The cue queue is `u16` and the descriptor bank is `u8`.** The battle action
-   SM's cast cues run to `0x20E`; truncating them into the descriptor space did
-   not silence them, it played a *different populated descriptor*
-   (`0x20C` → `0x0C`). The consumer now classifies with `classify_cue` and drops
-   the voice band instead. The low band's retail `id - 1` resolution is **not**
-   applied: the one live producer feeds this queue an art-record `HitCue::kind`
-   the bank is already indexed by, and moving it without an oracle would break
-   the one cue that works.
+`FUN_8004DA00`, the resident per-frame selector `battle_voice` ports, is
+still a decision without a driver: the starter it hands its clip to,
+`FUN_8003EAE4`, seeks the drive to the clip file (`CdlSeekL`, `li a0,0x15`
+at `0x8003EB68`) and raises `gp+0x908` / `gp+0x910` for the CD-callback
+driver, and what that driver then streams is not traced. The engine has no
+drive to seek and no driver to poll those flags.
 
 ## Audio-trace parity oracle
 
