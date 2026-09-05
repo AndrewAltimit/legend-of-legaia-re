@@ -179,6 +179,18 @@ plus `stage_id_at_battle_entry`, consumed by `World::enter_battle` through
 decides anything: the native window and the browser play page each get the
 tutorial in the fight retail gives it and in no other.
 
+A **direct entry** into the row (`play-window --battle 4`) runs the battle
+entry without the record, so the arm has to be replayed from the record's
+own bytes: `man_field_scripts::walk_battle_entry_arms` pairs every system
+SET with a `3E FF <row>` battle-entry op that follows it within a few
+coherently decoded instructions, and `World::replay_scripted_battle_arm(row)`
+raises the flag when the pairing `(0x19, row)` exists in the scene's script.
+The pairing is the key, not the flag census's `clean` bit: the SET sits a
+few ops past the record's dialogue bytes, where the linear walk is still
+resynchronising, so the census reports the one real site as desynced. A
+phantom SET inside text is not followed by a decodable `3E FF` and a real
+one is.
+
 ### The sparring-tutorial prompt machine (overlay 967)
 
 What overlay 967 *does* is emit the in-battle "how to fight" boxes of the Tetsu

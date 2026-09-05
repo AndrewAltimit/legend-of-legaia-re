@@ -2157,13 +2157,13 @@ pub struct World {
     /// [`World::raise_sparring_caption_if_due`]. Reset at battle entry.
     pub battle_sparring_phase: u8,
 
-    /// System flags the active scene's own field-VM script SETs cleanly
-    /// (`0x5x` ops decoded in a coherent stream), read off the MAN when the
-    /// scene's carriers are installed. The disc-side evidence a direct
-    /// `--battle` entry into a scripted carrier's fight consults to replay
-    /// the arm that carrier's record raises
-    /// ([`World::replay_scripted_battle_arm`]).
-    pub scene_script_system_flag_sets: Vec<u16>,
+    /// The system flags the active scene's own field-VM records SET on
+    /// their way into a `3E FF <row>` scripted battle entry, each paired
+    /// with that row ([`crate::man_field_scripts::BattleEntryArm`]), read
+    /// off the MAN when the scene's carriers are installed. The disc-side
+    /// evidence a direct `--battle <row>` entry consults to replay the arm
+    /// the row's own record raises ([`World::replay_scripted_battle_arm`]).
+    pub scene_battle_entry_arms: Vec<crate::man_field_scripts::BattleEntryArm>,
 
     /// Battle "Select Attack" option - retail config word `0x800846C4`,
     /// the pause menu's row ([`crate::options::SelectAttackOpt`]): whether
@@ -3046,7 +3046,7 @@ impl World {
             battle_flow: crate::battle_flow::BattleFlowState::Idle,
             battle_round_flow: crate::battle_round::RoundFlow::default(),
             battle_sparring_phase: 0,
-            scene_script_system_flag_sets: Vec::new(),
+            scene_battle_entry_arms: Vec::new(),
             battle_select_attack: crate::options::SelectAttackOpt::default(),
             battle_tutorial: None,
             battle_tutorial_script: crate::battle_tutorial::BattleTutorialScript::default(),

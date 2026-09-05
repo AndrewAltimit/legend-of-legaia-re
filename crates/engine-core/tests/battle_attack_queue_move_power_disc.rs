@@ -102,7 +102,26 @@ fn the_queued_swing_byte_resolves_a_move_power_record() {
             break;
         }
     }
-    assert!(w.battle_command.is_some(), "command session never opened");
+    assert_eq!(w.mode, SceneMode::Battle, "the walk never entered a battle");
+    // The round's first party command opens on `Begin | Run` - unless the
+    // entry rolled a **back attack**, where retail's `0x0B -> 0xFE` jump
+    // gives the monsters the whole first round and the prompt opens with
+    // round two. Settle with no input until a session is up: nothing acts
+    // on a prompt without a press, so the first open is the one observed.
+    let advantage = w.battle_formation_latched();
+    let mut opened = w.battle_command.is_some();
+    for _ in 0..4000 {
+        if opened {
+            break;
+        }
+        w.set_pad(0);
+        w.tick();
+        opened = w.battle_command.is_some();
+    }
+    assert!(
+        opened,
+        "command session never opened (formation advantage {advantage:?})"
+    );
     let slot = w.battle_ctx.active_actor as usize;
 
     // Walk retail's open flow to a committed swing: `Begin` on the round

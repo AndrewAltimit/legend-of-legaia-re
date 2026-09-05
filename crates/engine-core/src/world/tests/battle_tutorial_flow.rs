@@ -378,3 +378,61 @@ fn the_fourth_completed_lesson_closes_the_fight_out() {
         "the machine disarms once the fight is closed"
     );
 }
+
+/// A direct entry into a scripted carrier's row (`--battle <row>`) replays
+/// the arm the row's own record raises - and only for the row the record's
+/// `3E FF <row>` names.
+#[test]
+fn replay_scripted_battle_arm_keys_on_the_records_entry_row() {
+    use crate::battle_tutorial::TUTORIAL_ARM_FLAG;
+    use legaia_asset::man_section::{ManFile, ManHeader};
+
+    // One controller record + one placement whose script is the retail
+    // sparring shape: dialogue, wait, `50 19 · 50 00 · 52 3C · 3E FF 04`.
+    let data_region_offset = 0x40usize;
+    let rec0: &[u8] = &[0x00, 0, 0, 0, 0, 0x21];
+    let mut rec1 = vec![0x00, 0x05, 0x00, 0x03, 0x04, 0x1F];
+    rec1.extend_from_slice(b"Come at me!");
+    rec1.extend_from_slice(&[
+        0x00, 0x4A, 0x10, 0x00, 0x50, 0x19, 0x50, 0x00, 0x52, 0x3C, 0x3E, 0xFF, 0x04, 0x21,
+    ]);
+    let mut man = vec![0u8; data_region_offset];
+    man.extend_from_slice(rec0);
+    let off1 = rec0.len() as u32;
+    man.extend_from_slice(&rec1);
+    let man_file = ManFile {
+        header: ManHeader {
+            status_flags: 0,
+            low_flag: false,
+            depth_lut: [0; 16],
+            partition_counts: [0, 2, 0],
+            u24_at_28: 0,
+        },
+        partitions: [vec![], vec![0, off1], vec![]],
+        data_region_offset,
+        sections: std::array::from_fn(|_| legaia_asset::man_section::SectionRef {
+            offset: man.len(),
+            length: 0,
+        }),
+    };
+
+    let mut world = World::new();
+    world.install_field_carriers_from_man(&man_file, &man);
+    assert!(
+        !world.system_flag_test(TUTORIAL_ARM_FLAG),
+        "nothing armed before the replay"
+    );
+    assert!(
+        !world.replay_scripted_battle_arm(3),
+        "row 3 is not the record's entry row"
+    );
+    assert!(!world.system_flag_test(TUTORIAL_ARM_FLAG));
+    assert!(
+        world.replay_scripted_battle_arm(4),
+        "row 4 is the record's entry row"
+    );
+    assert!(
+        world.system_flag_test(TUTORIAL_ARM_FLAG),
+        "the replay raises the one-shot arm the entry consumes"
+    );
+}

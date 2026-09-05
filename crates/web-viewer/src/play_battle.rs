@@ -46,6 +46,12 @@ use legaia_engine_ui::battle_intro::{BattleIntro, IntroQuadTable};
 use legaia_engine_ui::{self as ui, HudPopupView, HudSlotMeta, HudSlotView, SpriteDraw, TextDraw};
 use wasm_bindgen::prelude::*;
 
+/// One on-screen sparring-tutorial box with its stage rect `(x, y, w, h)`.
+pub(crate) type TutorialStageBox<'a> = (
+    (i32, i32, i32, i32),
+    &'a legaia_engine_core::battle_flow::ActiveTutorialBox,
+);
+
 /// Top-left anchor of the battle HUD's slot-row block, in surface pixels
 /// (the native window's `BATTLE_HUD_PEN`).
 const BATTLE_HUD_PEN: (i32, i32) = (8, 60);
@@ -1158,10 +1164,7 @@ impl LegaiaRuntime {
     pub(crate) fn battle_tutorial_stage_boxes(
         &self,
         font: &legaia_font::Font,
-    ) -> Vec<(
-        (i32, i32, i32, i32),
-        &legaia_engine_core::battle_flow::ActiveTutorialBox,
-    )> {
+    ) -> Vec<TutorialStageBox<'_>> {
         let Some(host) = self.scene_host.as_ref() else {
             return Vec::new();
         };

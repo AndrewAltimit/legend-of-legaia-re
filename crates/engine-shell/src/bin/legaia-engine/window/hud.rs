@@ -2,6 +2,12 @@
 
 use super::*;
 
+/// One on-screen sparring-tutorial box with its stage rect `(x, y, w, h)`.
+pub(super) type TutorialStageBox<'a> = (
+    (i32, i32, i32, i32),
+    &'a legaia_engine_core::battle_flow::ActiveTutorialBox,
+);
+
 /// Project the simulation's arts-input phase onto the presentation
 /// crate's. The two enums are deliberately separate types -
 /// `legaia-engine-ui` is a leaf that does not link `engine-core` - so
@@ -1943,12 +1949,7 @@ impl PlayWindowApp {
     /// Every tutorial box on screen with its stage rect - the front group of
     /// the world's box queue (one retail hook dispatch registers all of its
     /// boxes together, so the group draws together).
-    pub(super) fn battle_tutorial_stage_boxes(
-        &self,
-    ) -> Vec<(
-        (i32, i32, i32, i32),
-        &legaia_engine_core::battle_flow::ActiveTutorialBox,
-    )> {
+    pub(super) fn battle_tutorial_stage_boxes(&self) -> Vec<TutorialStageBox<'_>> {
         self.session
             .host
             .world

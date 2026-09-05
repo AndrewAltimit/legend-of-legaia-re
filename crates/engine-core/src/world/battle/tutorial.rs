@@ -189,33 +189,31 @@ impl World {
         true
     }
 
-    /// Replay the one-shot system-flag arm a scripted carrier's record
-    /// raises before its battle-entry op, for a direct entry into that
-    /// carrier's fight (`--battle <row>`), which runs the entry without the
-    /// record.
+    /// Replay the one-shot system-flag arm the record that enters formation
+    /// row `formation_id` raises before its `3E FF <row>` battle-entry op,
+    /// for a direct entry into that row (`--battle <row>`), which runs the
+    /// entry without the record.
     ///
-    /// Two disc-side conditions, both required: `formation_id` is a
-    /// [`FieldCarrierConfig::ScriptedEncounter`] carrier's row in the
-    /// installed set, and the scene's own field-VM script carries a clean
-    /// `SET` of [`crate::battle_tutorial::TUTORIAL_ARM_FLAG`]
-    /// ([`Self::scene_script_system_flag_sets`], read off the MAN at carrier
-    /// install). A disc-wide census finds that SET in exactly one record -
-    /// town01's sparring record, two ops before its `3E FF` - so this raises
-    /// the flag for the Tetsu fight and for nothing else. Returns `true` when
-    /// it armed.
+    /// The disc-side condition is the pairing itself: the scene's own
+    /// field-VM script carries a `SET` of
+    /// [`crate::battle_tutorial::TUTORIAL_ARM_FLAG`] within a few coherently
+    /// decoded ops of a `3E FF` that enters `formation_id`
+    /// ([`Self::scene_battle_entry_arms`], read off the MAN at carrier
+    /// install; the shape is [`crate::man_field_scripts::BattleEntryArm`]).
+    /// A disc-wide census finds that SET in exactly one record - town01's
+    /// sparring record, `50 19` three ops before its `3E FF 04` - so this
+    /// raises the flag for the Tetsu fight and for nothing else. Returns
+    /// `true` when it armed.
     ///
     /// The faithful path needs none of this: the field VM executing the
     /// record raises the flag itself ([`Self::take_battle_tutorial_arm`]).
     pub fn replay_scripted_battle_arm(&mut self, formation_id: u16) -> bool {
         use crate::battle_tutorial::TUTORIAL_ARM_FLAG;
-        let scripted = self.field_carrier_configs.iter().any(|c| {
-            matches!(c, FieldCarrierConfig::ScriptedEncounter { formation_id: f } if *f == formation_id)
-        });
-        if !scripted
-            || !self
-                .scene_script_system_flag_sets
-                .contains(&TUTORIAL_ARM_FLAG)
-        {
+        let armed = self
+            .scene_battle_entry_arms
+            .iter()
+            .any(|a| a.flag == TUTORIAL_ARM_FLAG && u16::from(a.row) == formation_id);
+        if !armed {
             return false;
         }
         self.system_flag_set(TUTORIAL_ARM_FLAG);
