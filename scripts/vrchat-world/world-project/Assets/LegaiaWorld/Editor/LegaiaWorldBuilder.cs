@@ -1390,7 +1390,8 @@ namespace LegaiaWorld
             foreach (string name in new[]
                      { "LegaiaDoorway", "LegaiaDoor", "LegaiaNpcWander",
                        "LegaiaDayNight", "LegaiaPickupProp", "LegaiaTorch",
-                       "LegaiaWorldMenu", "LegaiaFlicker" })
+                       "LegaiaWorldMenu", "LegaiaFlicker",
+                       "LegaiaSlotMachine", "LegaiaSlotButton" })
             {
                 var t = FindType("LegaiaWorld." + name);
                 if (t == null) continue;
@@ -1515,30 +1516,90 @@ namespace LegaiaWorld
             if (comp == null) return;
             var util = FindType("UdonSharpEditor.UdonSharpEditorUtility");
             if (util == null) return;
+            System.Reflection.MethodInfo copy = null;
             foreach (var mi in util.GetMethods(
                 System.Reflection.BindingFlags.Public |
                 System.Reflection.BindingFlags.Static))
             {
                 if (mi.Name != "CopyProxyToUdon") continue;
                 var ps = mi.GetParameters();
-                if (ps.Length != 1 || !ps[0].ParameterType.IsInstanceOfType(comp))
-                    continue;
+                if (ps.Length == 1 && ps[0].ParameterType.IsInstanceOfType(comp))
+                {
+                    copy = mi;
+                    break;
+                }
+            }
+            if (copy == null)
+            {
+                Debug.LogWarning("[Legaia] CopyProxyToUdon not found - " +
+                    comp.gameObject.name + "'s Udon fields may not be applied.");
+                return;
+            }
+            for (int attempt = 0; ; attempt++)
+            {
                 try
                 {
-                    mi.Invoke(null, new object[] { comp });
+                    copy.Invoke(null, new object[] { comp });
+                    return;
                 }
                 catch (System.Exception e)
                 {
                     // Unwrap TargetInvocationException so the real U#
                     // message reaches the console.
+                    var msg = (e.InnerException ?? e).Message;
+                    // "wait until program assets have compiled" = the
+                    // program asset's CompiledVersion stamp is stale (its
+                    // last compile happened while a script had errors).
+                    // Nothing re-stamps it until UdonSharp compiles again,
+                    // so trigger that compile and retry once.
+                    if (attempt == 0 &&
+                        msg.Contains("wait until program assets have compiled") &&
+                        CompileUdonSharpPrograms())
+                        continue;
                     Debug.LogError("[Legaia] CopyProxyToUdon failed on " +
-                        comp.gameObject.name + ": " +
-                        (e.InnerException ?? e).Message);
+                        comp.gameObject.name + ": " + msg +
+                        " If UdonSharp is still compiling, wait for it to" +
+                        " finish and click Build again.");
+                    return;
                 }
-                return;
             }
-            Debug.LogWarning("[Legaia] CopyProxyToUdon not found - " +
-                comp.gameObject.name + "'s Udon fields may not be applied.");
+        }
+
+        static bool udonSharpCompileTried;
+
+        /// Synchronous UdonSharp compile (UdonSharpCompilerV1.CompileSync)
+        /// via reflection - the recovery for stale program assets blocking
+        /// CopyProxyToUdon. One attempt per domain reload: a success fixes
+        /// every behaviour at once, and a failure would fail identically on
+        /// each of the dozens of proxies a build syncs.
+        static bool CompileUdonSharpPrograms()
+        {
+            if (udonSharpCompileTried) return false;
+            udonSharpCompileTried = true;
+            var t = FindType("UdonSharp.Compiler.UdonSharpCompilerV1");
+            var mi = t == null ? null : t.GetMethod("CompileSync",
+                System.Reflection.BindingFlags.Public |
+                System.Reflection.BindingFlags.Static);
+            if (mi == null)
+            {
+                Debug.LogWarning("[Legaia] UdonSharpCompilerV1.CompileSync " +
+                    "not found - cannot refresh stale U# program assets.");
+                return false;
+            }
+            Debug.Log("[Legaia] U# program assets are stale - running an " +
+                "UdonSharp compile before syncing proxies...");
+            try
+            {
+                // Optional-parameter defaults (null options) via reflection.
+                mi.Invoke(null, new object[mi.GetParameters().Length]);
+                return true;
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError("[Legaia] UdonSharp compile failed: " +
+                    (e.InnerException ?? e).Message);
+                return false;
+            }
         }
 
         /// A rough person-sized capsule from the instance's render bounds so
