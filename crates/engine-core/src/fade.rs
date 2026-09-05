@@ -15,7 +15,11 @@
 //! so the displayed colour each frame is `current >> 6`, advancing linearly
 //! and landing exactly on `end` after `duration` frames. The battle-action SM
 //! stages the summon backdrop fade (state `0x33`) and the successful-escape
-//! white-out (state `0x66`, template at `DAT_801C9070`) through this.
+//! fade to black (state `0x66`, template at `DAT_801C9070`) through this.
+//! A template's **kind** word is also the quad's blend: the fade actor's tick
+//! hands it to `FUN_80024EE4` as the second argument, which folds it into the
+//! draw-mode packet's ABR bits (`sll a3,a1,0x5` at `0x80024FB0`), so kind `2`
+//! draws `B - F` and a black -> white ramp darkens the scene to black.
 
 // REF: FUN_80020C14 - the per-frame ramp step over the block this loader
 // fills; ported in `crate::fade_ramp`.
@@ -42,10 +46,13 @@ pub struct FadeTemplate {
     pub mode: [i16; 3],
 }
 
-/// The successful-escape white-out template the battle-action SM writes at
+/// The successful-escape fade template the battle-action SM writes at
 /// `DAT_801C9070` before spawning the fade (state `0x66`): kind `2`, a
 /// `0x40`-frame ramp from black `(0,0,0)` to white `(0xFF,0xFF,0xFF)`, and
-/// trailing words `(0, -1, 0)` - no start delay, no hold, id `0`.
+/// trailing words `(0, -1, 0)` - no start delay, no hold, id `0`. Kind `2`
+/// is the `B - F` blend, so the rising ramp fades the scene **to black**;
+/// the battle results sequencer spawns the same template at its exit
+/// (`world::battle::victory`).
 ///
 /// REF: FUN_801E295C (case 0x66 template write)
 pub fn escape_fade_template() -> FadeTemplate {
@@ -149,6 +156,27 @@ impl FadeState {
     /// Ramp progress in `0.0..=1.0` (for hosts that drive an overlay alpha).
     pub fn progress(&self) -> f32 {
         self.elapsed as f32 / self.duration.max(1) as f32
+    }
+
+    /// The GPU semi-transparency (ABR) mode the fade quad draws with: the
+    /// template's kind word, which the fade actor's tick `FUN_80025000`
+    /// passes as `FUN_80024EE4`'s second argument and the emitter folds
+    /// into the draw-mode packet (`sll a3,a1,0x5; ori a3,a3,0xe` at
+    /// `0x80024FB0`). Kind `1` is `B + F` (a ramp to white brightens to a
+    /// white-out), kind `2` is `B - F` (the same ramp darkens to black).
+    /// Hosts draw the quad through
+    /// `legaia_engine_ui::screen_prim::screen_fade_prim`.
+    // REF: FUN_80024EE4, FUN_80025000
+    pub fn abr(&self) -> u8 {
+        (self.kind & 3) as u8
+    }
+
+    /// The OT layer the fade quad is linked at: the template's trailing id
+    /// word (`[12]`, block `+0x22`), the emitter's first argument. The
+    /// spawn wrapper's own id override (`spawn_fade`'s `id`) is not folded
+    /// in here; every battle template carries `0`.
+    pub fn ot_layer(&self) -> u8 {
+        self.mode[2].clamp(0, 255) as u8
     }
 }
 

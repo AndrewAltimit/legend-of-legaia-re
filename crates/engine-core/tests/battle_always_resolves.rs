@@ -191,7 +191,7 @@ fn a_party_wipe_raises_game_over_and_leaves_the_party_down() {
         "the resolve completes the battle exit"
     );
     // Retail's annihilated arm floors every member at exactly 1 HP on the
-    // white-out frame (`FUN_8004E568` `0x8004FB94..0x8004FBA4`, one
+    // exit-fade frame (`FUN_8004E568` `0x8004FB94..0x8004FBA4`, one
     // `sh 1,0x14c` per party seat) - a scripted loss returns to the field
     // with the party standing, and a real wipe hands the CARD flow a
     // 1-HP party. Neither is a heal.
@@ -215,6 +215,10 @@ fn a_party_wipe_raises_game_over_and_leaves_the_party_down() {
 #[test]
 fn a_victory_arms_the_spoils_panel() {
     let mut w = world_in_a_battle();
+    // A win-pose table in the shape the SCUS carries (one pair per tier,
+    // every id in the `0x11..=0x18` band), so the results frame has a
+    // pose to stage.
+    w.victory_pose_table = Some([[0x13, 0x14, 0x11, 0x12, 0x15, 0x16]; 4]);
     assert!(w.trigger_scripted_battle(0) || w.trigger_scripted_battle(1));
     // Through the intro transition into the fight first, so the resolution
     // loop below cannot pass vacuously off the pre-battle Field mode.
@@ -245,6 +249,22 @@ fn a_victory_arms_the_spoils_panel() {
         results_frame.is_some(),
         "a victory raises the result screen"
     );
+    // The results frame staged the LEADER's win pose (`ctx[+0x13]` = seat
+    // 0): an id off the table row lands in the pose actor's `+0x1DA`
+    // mirror, and the commit keeps it as the committed value in a world
+    // without a clip bank.
+    let seq = w.battle_victory.expect("the sequence is armed");
+    assert_eq!(seq.pose_actor, 0, "the leader poses");
+    let pose = seq.pose_id.expect("the table picks a pose");
+    assert!((0x11..=0x18).contains(&pose), "win-pose band: {pose:#x}");
+    assert_eq!(
+        w.actors[0].battle.queued_anim, pose,
+        "the win pose is staged on the pose actor"
+    );
+    assert!(
+        w.screen_fade.is_none(),
+        "the exit fade waits for the results hold"
+    );
     let banner = w
         .battle_spoils_banner()
         .expect("the result screen carries the spoils panel");
@@ -255,8 +275,9 @@ fn a_victory_arms_the_spoils_panel() {
         "the results are drawn over the battle"
     );
 
-    // The hold, the white-out and the exit gate: results + 0x100 + 0x43.
+    // The hold, the exit fade and the exit gate: results + 0x100 + 0x43.
     let mut exited = false;
+    let mut fade_frames = 0u32;
     for _ in 0..(World::VICTORY_RESULTS_HOLD_FRAMES + World::VICTORY_EXIT_PHASE + 8) {
         w.tick();
         if w.mode != SceneMode::Battle {
@@ -265,10 +286,30 @@ fn a_victory_arms_the_spoils_panel() {
         }
         assert!(
             w.battle_spoils_banner().is_some(),
-            "the panel stays up through the white-out"
+            "the panel stays up through the exit fade"
         );
+        // While the phase halfword counts (`ctx[+0x6CE] >= 2`) the kind-2
+        // fade template is live: `B - F`, black -> white, i.e. the scene
+        // darkening to black under the still-drawn windows.
+        if let Some(legaia_engine_core::world::VictorySequence {
+            phase: legaia_engine_core::world::VictoryPhase::Exit { .. },
+            ..
+        }) = w.battle_victory
+        {
+            let fade = w
+                .screen_fade
+                .expect("the exit fade is live while the phase halfword counts");
+            assert_eq!(fade.kind, 2, "the escape / results template is kind 2");
+            assert_eq!(fade.abr(), 2, "kind 2 draws B - F: a fade to black");
+            fade_frames += 1;
+        }
     }
     assert!(exited, "the exit gate returns to the field");
+    assert_eq!(
+        u32::from(World::VICTORY_EXIT_PHASE - World::VICTORY_FADE_PHASE_SEED) - 1,
+        fade_frames,
+        "the fade is up for every counted phase frame before the gate"
+    );
     assert!(
         w.battle_spoils_banner().is_none(),
         "the windows come down with the battle"

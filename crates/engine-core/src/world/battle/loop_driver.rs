@@ -579,7 +579,7 @@ impl World {
         if matches!(outcome, StepOutcome::BattleComplete) {
             // Retail does not leave the battle on the frame the wipe scan
             // raises the signal: the results sequencer holds the scene for
-            // the load window, the result screen and the white-out first.
+            // the load window, the result screen and the exit fade first.
             self.begin_battle_end_sequence();
         }
         Some(outcome)

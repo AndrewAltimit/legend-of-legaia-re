@@ -182,7 +182,7 @@ on `ctx[+0x6CE]` (`0x80046DAC`). `_DAT_8007BD2C` doubles as the sequencer's phas
 table `0x800152FC`: `0 -> 2 -> 4 -> 5` through two CD loads for a victory; a wipe's `5` lands on
 the annihilated arm directly). The results frame stages the pose into `+0x1DA` of the seat
 `ctx[+0x13]` names, and no store in the battle overlay writes a seat there. Measured on
-`rim_elm_gimard_victory` (PCSX-Redux poll, N=1): signal v322, results v402, white-out v657, exit
+`rim_elm_gimard_victory` (PCSX-Redux poll, N=1): signal v322, results v402, exit fade v657, exit
 v723. The three-member `noa_levelup_banner` state reads `ctx[+0x13] == 0` with seat 0 carrying
 pose `0x14` while Noa levelled. Evidence: `disassembly` + `capture`. Details:
 [battle.md](../subsystems/battle.md#battle-end-retails-way---the-results-sequencer).
@@ -191,7 +191,16 @@ pose `0x14` while Noa levelled. Evidence: `disassembly` + `capture`. Details:
 
 *Status:* resolved - the `XA30` grunt on an ordinary swing; the `0x10C` sting only when `_DAT_8007BD84` is non-zero; the `s7` latch on the grunt is not decoded
 
-`FUN_801EC3E4` picks one of two emissions on `_DAT_8007BD84`: zero takes `FUN_8003D53C(0x1D, chan, dur)` at `0x801EEB44` (per-character `(0,0x26)` / `(4,0x2E)` / `(6,0x1A)` off `DAT_8007BD10[seat]`) and the re-read at `0x801EEB60` skips the cue; non-zero branches over the grunt (`0x801EEAC8`) into `FUN_8004FE5C(0x10C, seat)` at `0x801EEBE8`, whose voice leg is further gated on `FUN_8003DE7C(1) == 0` (`0x8004FE9C`). The word is the same cell the damage finisher reads as the enemy-defender halve; its only dumped stores are zeros (battle start, round reset). `XA27` is an eight-channel stereo sting bank, `XA30` a ten-channel mono grunt bank (disc demux). Evidence: `disassembly` for the selector and gates, `inference` for the grunt latch always passing and for the word staying zero in an ordinary fight. Shipped: `World::fire_melee_impact_cue` + `read_battle_xa_clip_bank`.
+`FUN_801EC3E4` picks one of two emissions on `_DAT_8007BD84`: zero takes `FUN_8003D53C(0x1D,
+chan, dur)` at `0x801EEB44` (per-character `(0,0x26)` / `(4,0x2E)` / `(6,0x1A)` off
+`DAT_8007BD10[seat]`) and the re-read at `0x801EEB60` skips the cue; non-zero branches over the
+grunt (`0x801EEAC8`) into `FUN_8004FE5C(0x10C, seat)` at `0x801EEBE8`, whose voice leg is
+further gated on `FUN_8003DE7C(1) == 0` (`0x8004FE9C`). The word is the same cell the damage
+finisher reads as the enemy-defender halve; its only dumped stores are zeros (battle start,
+round reset). `XA27` is an eight-channel stereo sting bank, `XA30` a ten-channel mono grunt bank
+(disc demux). Evidence: `disassembly` for the selector and gates, `inference` for the grunt
+latch always passing and for the word staying zero in an ordinary fight. Shipped:
+`World::fire_melee_impact_cue` + `read_battle_xa_clip_bank`.
 
 ### `FUN_8003EAE4` is a seek plus driver flags, not a stream start
 

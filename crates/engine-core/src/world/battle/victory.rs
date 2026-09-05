@@ -6,7 +6,7 @@
 //! halfword `ctx[+0x6CE]` reaches `0x43` (`0x80046DAC`).
 //!
 //! PORT: FUN_8004e568 (the presentation half - the phase walk, the pose
-//! tier + pose pick, the results hold, the white-out; the reward arithmetic
+//! tier + pose pick, the results hold, the exit fade; the reward arithmetic
 //! it also carries is `battle_formulas::victory` / `World::apply_battle_loot`
 //! and the level-up applier is `levelup`).
 //! REF: FUN_80046a20 (the `ctx[+0x6CE] >= 0x43` exit gate)
@@ -18,8 +18,8 @@
 //! `0x800152FC` as `0 -> 2 -> 4 -> 5` - phase 0 picks the pose tier and
 //! kicks the hero's `monster.snd` voice clip into VAB slot 7, phase 2 waits
 //! for the CD then streams PROT 0889 (the level-up jingle bank) toward slot
-//! 11, phase 4 waits again and installs it, setting `DAT_8007BD60 |= 0x80`
-//! - and a **party wipe** (`5`) lands on phase 5 at once with that bit clear,
+//! 11, phase 4 waits again and installs it, setting `DAT_8007BD60 |= 0x80`;
+//! a **party wipe** (`5`) lands on phase 5 at once with that bit clear,
 //! which is what selects the annihilated arm (`0x8004F8C0`). Through phases
 //! `0..=4` the pose actor is framed at `FUN_801D5854(seat, 8)`; on the
 //! `rim_elm_gimard_victory` state that load window measures **80 vsyncs**
@@ -33,7 +33,8 @@
 //! (`FUN_801D8DE8(0x41)`), and - when any member levelled - fires cue `0x50`
 //! and the level-up window `0x44 + mask`. The hold then counts one per
 //! vsync; at `0x100` (with the field preload `ctx[+0xB]` settled) the
-//! white-out template (kind 2, `0x40` frames, to white) is spawned and the
+//! exit fade template (kind 2, `0x40` frames, black -> white; kind 2 is the
+//! `B - F` blend, so the scene fades **to black**) is spawned and the
 //! phase halfword starts counting from 2 (`0x8004FC6C`); the exit gate
 //! fires at `0x43`. Measured: fade at v657 (= results + 255), exit at v723
 //! (= fade + 66).
@@ -59,9 +60,9 @@
 //! An **escape** (`0x66` -> `0x67`) takes the sequencer's `0x67` arm instead
 //! (`lbu v1,0x7(a0); li v0,0x67` at `0x8004E63C`): no results, the phase
 //! halfword counts up from its battle-start zero by the vsync delta
-//! (`0x8004E70C..0x8004E724`) behind the white-out the SM's `0x66` arm
+//! (`0x8004E70C..0x8004E724`) behind the fade the SM's `0x66` arm
 //! spawned, and the same `0x43` gate exits. A **party wipe** takes the
-//! annihilated arm: the loss window, the same `0x100` hold and white-out,
+//! annihilated arm: the loss window, the same `0x100` hold and fade,
 //! every member's HP floored at 1, then the MAIN INIT game-over gate that
 //! [`World::finish_battle`] folds.
 
@@ -75,7 +76,7 @@ use legaia_asset::victory_pose::VictoryPoseTable;
 /// a real drive varies it, the engine keeps the measured span.
 pub const VICTORY_LOAD_FRAMES: u16 = 80;
 
-/// The results hold: `gp+0xA54` counts one per vsync and the white-out is
+/// The results hold: `gp+0xA54` counts one per vsync and the exit fade is
 /// spawned once it reaches `0x100` (`0x8004F778` / `0x8004FAF8`).
 pub const VICTORY_RESULTS_HOLD_FRAMES: u16 = 0x100;
 
@@ -83,7 +84,7 @@ pub const VICTORY_RESULTS_HOLD_FRAMES: u16 = 0x100;
 /// (`slti v0,v0,0x43` at `0x80046DAC`).
 pub const VICTORY_EXIT_PHASE: u16 = 0x43;
 
-/// The phase halfword's value on the frame the white-out is spawned
+/// The phase halfword's value on the frame the exit fade is spawned
 /// (`li v0,0x2; sh v0,0x6ce(a0)` at `0x8004F7A0` / `0x8004FC44`).
 pub const VICTORY_FADE_PHASE_SEED: u16 = 2;
 
@@ -107,7 +108,7 @@ pub enum VictoryPhase {
     /// Phase 5 with `ctx[+0x6CE] == 1`: windows up, pose clip playing,
     /// `hold` = `gp+0xA54`.
     Results { hold: u16 },
-    /// `ctx[+0x6CE] >= 2`: the white-out is running; `phase` is the
+    /// `ctx[+0x6CE] >= 2`: the exit fade is running; `phase` is the
     /// halfword the exit gate reads.
     Exit { phase: u16 },
 }
@@ -266,7 +267,7 @@ impl World {
             },
             BattleEndCause::PartyWipe => VictoryPhase::Results { hold: 0 },
             // The `0x67` arm counts `ctx[+0x6CE]` from its battle-start
-            // zero; only the victory / wipe white-out frame seeds it at 2.
+            // zero; only the victory / wipe fade frame seeds it at 2.
             BattleEndCause::Escaped => VictoryPhase::Exit { phase: 0 },
         };
         let mut seq = VictorySequence {
@@ -311,7 +312,12 @@ impl World {
         // `DAT_8007BD10[seat]` is 1-based; the roster slot is 0-based.
         let char_id = (self.party_roster_slot(seat) as u8).saturating_add(1);
         let mut rng = || self.next_rng();
-        victory_pose_id(&table, char_id, tier, &mut rng)
+        let pose = victory_pose_id(&table, char_id, tier, &mut rng);
+        log::info!(
+            "battle end: seat {seat} (char {char_id}) hp {hp}/{hp_max} round {round} \
+             status {status:#06x} -> pose tier {tier}, win pose {pose:#04x?}"
+        );
+        pose
     }
 
     /// One retail frame of the sequence. Runs instead of the action SM.
@@ -336,9 +342,10 @@ impl World {
                 self.victory_frame_pose(seq.pose_actor, vm::battle_action::Pose::Idle);
                 let hold = hold.saturating_add(1);
                 if hold >= VICTORY_RESULTS_HOLD_FRAMES {
-                    // The white-out (`0x8004F7B4..0x8004F7F0` / the wipe
-                    // twin at `0x8004FB1C`): the same template the escape
-                    // teardown spawns.
+                    // The exit fade (`0x8004F7B4..0x8004F7F0` / the wipe
+                    // twin at `0x8004FB1C`): the same kind-2 template the
+                    // escape teardown spawns - `B - F`, black -> white, a
+                    // fade to black both hosts draw off `screen_fade`.
                     self.screen_fade = Some(crate::fade::FadeState::load(
                         &crate::fade::escape_fade_template(),
                     ));
@@ -427,7 +434,7 @@ impl World {
             BattleEndCause::PartyWipe => {
                 // The annihilated arm (`0x8004F8C0..`): the loss window
                 // (`FUN_801D8DE8(0x42)`) and the same hold; the HP floor
-                // waits for the white-out frame.
+                // waits for the fade frame.
                 self.battle_spoils_frames =
                     VICTORY_RESULTS_HOLD_FRAMES.saturating_add(VICTORY_EXIT_PHASE);
             }

@@ -163,7 +163,7 @@ fn battle_item_escape_returns_to_field() {
     world.tick_battle_item_menu(); // confirm
 
     // Retail does not leave the battle on the confirm frame: the `0x66`
-    // teardown spawns the white-out and parks the SM in the `0x67` hold, and
+    // teardown spawns the exit fade and parks the SM in the `0x67` hold, and
     // the results sequencer's escape arm then counts `ctx[+0x6CE]` up from
     // zero until `FUN_80046A20`'s `0x43` exit gate returns to the field
     // (`world::battle::victory`).

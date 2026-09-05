@@ -1078,7 +1078,7 @@ impl World {
                 self.apply_battle_spell(caster, spell_id, target_row, target_slot);
                 if self.battle_escaped {
                     // Escape spell succeeded: leave the encounter (no loot,
-                    // no game-over) through the escape teardown's white-out
+                    // no game-over) through the escape teardown's fade
                     // + exit hold instead of cycling the turn.
                     self.battle_end = Some(BattleEndCause::Escaped);
                     self.begin_battle_end_sequence();
@@ -1341,7 +1341,7 @@ impl World {
             }
             if self.battle_escaped {
                 // Escape item succeeded: leave the encounter (no loot, no
-                // game-over) through the escape teardown's white-out + exit
+                // game-over) through the escape teardown's fade + exit
                 // hold instead of cycling the turn.
                 self.battle_end = Some(BattleEndCause::Escaped);
                 self.begin_battle_end_sequence();

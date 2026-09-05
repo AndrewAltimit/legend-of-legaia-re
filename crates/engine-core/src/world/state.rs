@@ -474,7 +474,7 @@ pub struct World {
     /// `FUN_8004E568`, run every frame the battle-end signal is up). While
     /// `Some` the scene stays in [`SceneMode::Battle`], the action SM does
     /// not step, and [`World::tick_battle_end_sequence`] walks the load /
-    /// results / white-out phases before [`World::finish_battle`] runs. See
+    /// results / exit-fade phases before [`World::finish_battle`] runs. See
     /// `world::battle::victory`.
     pub battle_victory: Option<crate::world::VictorySequence>,
 

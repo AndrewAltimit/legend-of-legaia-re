@@ -58,6 +58,7 @@ pub use legaia_engine_ui::screen_prim::{
     SCREEN_VERTEX_OFF_CBA_TSB, SCREEN_VERTEX_OFF_COLOR, SCREEN_VERTEX_OFF_FLAGS,
     SCREEN_VERTEX_OFF_POS, SCREEN_VERTEX_OFF_UV, SCREEN_VERTEX_STRIDE, ScreenPrim, ScreenQuad,
     ScreenVertex, build_geometry, display_rect_flat_quad, fade_prim, order_primitives,
+    screen_fade_prim,
 };
 
 /// The display rect the shared model authors in is the same rect this crate

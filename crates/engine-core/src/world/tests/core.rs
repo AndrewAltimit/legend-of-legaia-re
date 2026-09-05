@@ -127,7 +127,7 @@ fn battle_party_wipe_signals_end_via_world() {
     // tick stops stepping the action SM once `DAT_8007BD71 == 0xFE` and runs
     // the results sequencer `FUN_8004E568` instead; a wipe lands on its
     // annihilated arm - the loss window, the `0x100` results hold, the
-    // white-out with the phase halfword seeded at 2, then the `0x43` exit
+    // exit fade with the phase halfword seeded at 2, then the `0x43` exit
     // gate - before `finish_battle` folds the MAIN INIT game-over
     // (`world::battle::victory`).
     assert!(
@@ -151,7 +151,7 @@ fn battle_party_wipe_signals_end_via_world() {
                 + usize::from(World::VICTORY_EXIT_PHASE)
                 - usize::from(World::VICTORY_FADE_PHASE_SEED)
         ),
-        "results hold + white-out phase walk, in vsyncs (retail: 321 from the results frame)"
+        "results hold + exit-fade phase walk, in vsyncs (retail: 321 from the results frame)"
     );
     // Then the cause is consumed by `finish_battle`: `battle_end` clears,
     // `game_over` latches, and the wipe hold parks the world in Battle mode

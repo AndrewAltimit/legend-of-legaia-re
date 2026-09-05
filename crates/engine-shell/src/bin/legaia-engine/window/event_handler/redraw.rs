@@ -2293,6 +2293,17 @@ impl PlayWindowApp {
             // trail only draws once a swing clip plays inside the battle).
             let mut screen_prims = battle_intro_prims;
             screen_prims.extend(self.weapon_trail_screen_prims(r));
+            // The live full-screen fade the model steps in `World::screen_fade`
+            // (the battle-end / escape template, the leader-swap fades): the
+            // fade actor's quad, blended with the template's kind as its ABR
+            // mode - the same prim the browser play page pushes.
+            if let Some(f) = self.session.host.world.screen_fade.as_ref() {
+                screen_prims.push(legaia_engine_render::screen_overlay::screen_fade_prim(
+                    f.rgb(),
+                    f.abr(),
+                    f.ot_layer(),
+                ));
+            }
             let target = |scene| present_target(scene, &screen_prims);
             // Periodic sweep (`--screenshot-every`): capture a frame every N
             // ticks into the sweep dir (named for the tick), keep running,

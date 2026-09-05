@@ -790,6 +790,12 @@ impl World {
                     .as_ref()
                     .and_then(|b| b.get(record as usize))
                     .and_then(|c| c.clone());
+                if clip.is_none() {
+                    log::warn!(
+                        "battle actor {i}: staged art id {q:#04x} -> bank record {record} \
+                         carries no clip (zero-length commit)"
+                    );
+                }
                 (clip, slot)
             }
             // Direct entries - and, for an actor without an art bank (a
