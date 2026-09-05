@@ -290,7 +290,7 @@ fn a_victory_arms_the_spoils_panel() {
         );
         // While the phase halfword counts (`ctx[+0x6CE] >= 2`) the kind-2
         // fade template is live: `B - F`, black -> white, i.e. the scene
-        // darkening to black under the still-drawn windows.
+        // darkening to black, result windows included.
         if let Some(legaia_engine_core::world::VictorySequence {
             phase: legaia_engine_core::world::VictoryPhase::Exit { .. },
             ..
@@ -305,10 +305,16 @@ fn a_victory_arms_the_spoils_panel() {
         }
     }
     assert!(exited, "the exit gate returns to the field");
+    // Phases `2..=0x42` each drew the fade - the ramp lands after `0x40`
+    // steps and the template's `-1` hold word keeps the black up past it.
     assert_eq!(
-        u32::from(World::VICTORY_EXIT_PHASE - World::VICTORY_FADE_PHASE_SEED) - 1,
+        u32::from(World::VICTORY_EXIT_PHASE - World::VICTORY_FADE_PHASE_SEED),
         fade_frames,
         "the fade is up for every counted phase frame before the gate"
+    );
+    assert!(
+        w.screen_fade.is_none(),
+        "the fade actor dies with the battle: the teardown clears it"
     );
     assert!(
         w.battle_spoils_banner().is_none(),

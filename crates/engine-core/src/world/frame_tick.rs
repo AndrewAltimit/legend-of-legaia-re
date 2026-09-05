@@ -881,10 +881,14 @@ impl World {
                 self.pending_sound_release = true;
             }
         }
-        // Step the active full-screen fade (escape teardown ramp); drop it
-        // once the ramp lands on its target so hosts stop drawing the overlay.
+        // Step the active full-screen fade. A template with a hold countdown
+        // is dropped once the ramp lands (hosts stop drawing the overlay); one
+        // whose hold word is `-1` - the battle-end / escape template - keeps
+        // its end colour up until the battle teardown clears it
+        // (`FadeState::holds_at_end`, `finish_battle`).
         if let Some(fade) = &mut self.screen_fade
             && !fade.step()
+            && !fade.holds_at_end()
         {
             self.screen_fade = None;
         }

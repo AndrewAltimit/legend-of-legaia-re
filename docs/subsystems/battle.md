@@ -4164,6 +4164,8 @@ subtracts more each frame, over the scene and the result windows alike (the temp
 draw `World::screen_fade` through `engine-ui::screen_prim::screen_fade_prim` in their
 screen-overlay pass (the native window's redraw overlay, the play page's intro/FX prim pass); a
 host that hand-rolls the quad is how the blend gets lost.
+The template's hold word is `-1`, so once the ramp lands the black holds - the world tick never
+drops it - until `finish_battle` tears the battle down with its fade actor.
 
 ### Scenes that cannot roll
 

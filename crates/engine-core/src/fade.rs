@@ -171,6 +171,18 @@ impl FadeState {
         (self.kind & 3) as u8
     }
 
+    /// Whether the fade actor keeps drawing its end colour once the ramp
+    /// lands: the template's hold word (`[11]`, block `+0x1E`) is `-1`,
+    /// which `FUN_80020C14` treats as "no hold countdown" - the finished
+    /// latch never rises and the quad stays up until the owning scene
+    /// unloads (`crate::fade_ramp`). The battle-end / escape template is
+    /// `-1`: the black stays until `finish_battle` tears the battle down.
+    /// A non-negative word counts down and the fade is dropped when it
+    /// expires (the leader-swap templates carry `0`).
+    pub fn holds_at_end(&self) -> bool {
+        self.mode[1] < 0
+    }
+
     /// The OT layer the fade quad is linked at: the template's trailing id
     /// word (`[12]`, block `+0x22`), the emitter's first argument. The
     /// spawn wrapper's own id override (`spawn_fade`'s `id`) is not folded

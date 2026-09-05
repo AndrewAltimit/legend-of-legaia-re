@@ -69,7 +69,11 @@
 //! until the battle unloads. Substituting one for the other therefore moves the
 //! fade's lifetime out of the world tick and onto the teardown, which is a
 //! change to when the screen clears rather than a call insertion - so the
-//! substitution lands with the battle-teardown owner, not here.
+//! substitution lands with the battle-teardown owner, not here. The lifetime
+//! half has landed there: `FadeState::holds_at_end` keeps a `-1`-hold fade at
+//! its end colour and `finish_battle` clears it, so the battle exit holds
+//! black until the scene unloads. What this module still has and the live
+//! model does not is the vsync-scaled step and the start delay.
 //!
 //! Until then this module is the retail reference the host model is checked
 //! against, not the thing driving the screen.
