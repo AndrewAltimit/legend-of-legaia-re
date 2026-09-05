@@ -167,6 +167,8 @@ fn concat(segments: &[MonsterAnimation]) -> Option<MonsterAnimation> {
     let mut out = MonsterAnimation {
         action_id: first.action_id,
         attach_key: first.attach_key,
+        solo_flag: first.solo_flag,
+        impact_class: first.impact_class,
         rate: first.rate,
         part_count: first.part_count,
         frame_count: 0,
@@ -327,6 +329,8 @@ mod tests {
         let seg = |rate: u8, n: usize| MonsterAnimation {
             action_id: 0x1C,
             attach_key: 0,
+            solo_flag: 0,
+            impact_class: 0,
             rate,
             part_count: 2,
             frame_count: n,

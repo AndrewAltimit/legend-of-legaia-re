@@ -1784,63 +1784,62 @@ impl PlayWindowApp {
                                 }
                                 _ => {}
                             }
-                            // Per-clip impact tint (`FUN_8004CE2C` pass 2
-                            // via `engine-vm::battle_impact_fx`; the world
-                            // tick owns the writes + decay): while the
-                            // actor's +0x21F selector is armed, the packed
-                            // +0x04 colour word rides the same saturated
-                            // DrawCue seam. The same arm renders the
-                            // item/spirit cue-group flash (`FUN_801E22C8`
-                            // stamps colour + a `0x2000` blend the tick
-                            // drains), weighting the strength by the live
-                            // blend so the flash fades out. Overrides the
-                            // cursor arms (the impact target is retail's
-                            // tint owner) and loses to the hit flash below.
+                            // Retail's one tint seam: `FUN_8004A908` packs
+                            // the actor's `+0x04` lanes (`>> 2`) into the
+                            // render node's `+0x74` and copies the `+0x0C`
+                            // blend into `+0x78` whenever it is non-zero
+                            // (`0x8004AA24..0x8004AA70`); the draw pass
+                            // `FUN_80048A08` stages those as the GTE far
+                            // colour + IR0 (`gp[0x9D8]` / `gp[0x9DC]`,
+                            // `0x80048BEC..0x80048C00`). So the prim's
+                            // modulation colour becomes `baked + (tint -
+                            // baked) * blend / 0x1000` and the GPU still
+                            // multiplies the texel through it - a hit reads
+                            // as the actor's own texture pushed toward the
+                            // element colour, never a flat silhouette
+                            // (retail `battle_gimard_tail_fire_a`: Vahn at
+                            // `(0xC7,0x38,0x38)` x `0x1000` is red 160..248
+                            // over his texture). Every writer rides this
+                            // one rule - the impact triple (`FUN_801EC3E4` /
+                            // `FUN_801E09F8` / the clip-`0x18` arms), the
+                            // item/spirit cue-group flash, and the
+                            // presentation SM's colour arms
+                            // (`FUN_80050120`). `DrawCue.far` is display
+                            // units and the shader's far term is
+                            // `texel * far * 255 / 128` - retail's own
+                            // `texel * colour / 128`. The cursor arms above
+                            // keep their own cue (their retail look is the
+                            // same rule; that thread is not this one's).
+                            //
+                            // NOT WIRED: `render_flag == 2` (the capture /
+                            // defeat fade, SM arm 2) also ORs `0x81000000`
+                            // into the node's mode word, so the fading actor
+                            // draws ABE|ABR1 additive and black = gone; a
+                            // colour word of `0` then skips the draw
+                            // outright (`FUN_800480D8`'s word-zero arm). The
+                            // renderer has no per-`SceneDraw` blend override,
+                            // so the fade is left un-cued (drawn opaque and
+                            // untinted) rather than as an opaque black
+                            // silhouette. Colour `0` is likewise left alone:
+                            // it is the summon-hide's "not drawn" word.
+                            if b.render_blend != 0
+                                && b.render_color != 0
+                                && !matches!(
+                                    b.render_flag,
+                                    ba::CURSOR_FLAG_SELECTED | ba::CURSOR_FLAG_DIMMED | 2
+                                )
                             {
                                 use legaia_engine_vm::battle_impact_fx as ifx;
-                                let blend_armed = b.render_flag == 0 && b.render_blend != 0;
-                                if (b.impact_state != 0 || blend_armed)
-                                    && b.render_color != ifx::IMPACT_NEUTRAL_STATE
-                                    && b.render_color != 0
-                                {
-                                    let strength = if b.impact_state != 0 {
-                                        ifx::IMPACT_TINT_CUE_STRENGTH
-                                    } else {
-                                        ifx::IMPACT_TINT_CUE_STRENGTH
-                                            * (b.render_blend.min(0x1000) as f32 / 4096.0)
-                                    };
-                                    let c = ifx::unpack_actor_state_rgb(b.render_color);
-                                    cue = Some(legaia_engine_render::DrawCue {
-                                        far: [
-                                            f32::from(c[0]) / 255.0,
-                                            f32::from(c[1]) / 255.0,
-                                            f32::from(c[2]) / 255.0,
-                                        ],
-                                        near_z: -1.0,
-                                        far_z: 0.0,
-                                        max_ir0: strength,
-                                    });
-                                }
-                            }
-                            // Hit reaction: the struck actor ramps toward
-                            // white for a few frames after damage lands.
-                            // Retail's own recolour is the per-actor colour
-                            // word `FUN_8004A908` steps through the actor
-                            // OTZ/colour setup; the port has no per-actor
-                            // colour word, so the flash rides the same
-                            // saturated `DrawCue` seam the target cursor
-                            // uses - a flat blend toward the cue colour,
-                            // decaying over `HIT_FLASH_FRAMES`. It composes
-                            // over the cursor tint rather than beside it:
-                            // a struck monster that is also the pointed-at
-                            // one flashes, then falls back to its pulse.
-                            if let Some(age) = self.battle_hit_age(i) {
-                                let k = 1.0 - f32::from(age) / f32::from(HIT_FLASH_FRAMES.max(1));
+                                let c = ifx::unpack_actor_state_rgb(b.render_color);
                                 cue = Some(legaia_engine_render::DrawCue {
-                                    far: [1.0, 1.0, 1.0],
+                                    far: [
+                                        f32::from(c[0]) / 255.0,
+                                        f32::from(c[1]) / 255.0,
+                                        f32::from(c[2]) / 255.0,
+                                    ],
                                     near_z: -1.0,
                                     far_z: 0.0,
-                                    max_ir0: 0.8 * k,
+                                    max_ir0: ifx::tint_ir0(b.render_blend),
                                 });
                             }
                         }
@@ -2384,9 +2383,6 @@ impl PlayWindowApp {
 /// lift is engine-chosen; the row it rises **to** is pinned.
 const VALUE_READOUT_ACTOR_LIFT: i32 = 26;
 
-/// Frames the struck actor stays flashed after a hit lands.
-pub(super) const HIT_FLASH_FRAMES: u16 = 10;
-
 impl PlayWindowApp {
     /// Screen-space stage position (retail 320x240) an actor's origin
     /// projects to under `cam`, or `None` when it is behind the camera.
@@ -2499,19 +2495,6 @@ impl PlayWindowApp {
                 texels,
             );
         }
-    }
-
-    /// How recently actor `slot` was struck, in frames, or `None` if the
-    /// flash window has passed. Derived from the popup queue, which is what
-    /// the per-strike FX drain already fills.
-    pub(super) fn battle_hit_age(&self, slot: usize) -> Option<u16> {
-        self.battle_hud
-            .popups
-            .iter()
-            .filter(|p| usize::from(p.slot) == slot && !p.is_heal)
-            .map(|p| p.frames_total.saturating_sub(p.frames_remaining))
-            .filter(|&age| age < HIT_FLASH_FRAMES)
-            .min()
     }
 
     /// The frame's floating value readout, as one screen-space VRAM-textured

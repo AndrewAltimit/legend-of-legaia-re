@@ -22,8 +22,11 @@
 //!   `0x1A` (`anim_vm::resolve_staged_anim`) - i.e. the Super / Miracle
 //!   **SpecialStarter** dash; an ordinary art materialises at slot `0x10`
 //!   and leaves the 2D weapon-trail streak instead. For a monster the ring
-//!   id is `clip_tag + 0x10` (`0x80048044..0x80048060`), so any non-idle
-//!   clip (tag `>= 1`) ghosts.
+//!   id is the committed record's `+0x77` byte `+ 0x10`, or `0x11` when
+//!   its `+0x87` solo byte is `1` (`0x80048044..0x80048060`) - a data law
+//!   ([`monster_ring_id`]): on the disc only the solo / special entries
+//!   qualify and no idle entry does, so an idle or walking monster never
+//!   ghosts.
 //! * **Colour**: the ghost is drawn **flat-coloured and additive** - the
 //!   draw wrapper `FUN_80043390` decodes the colour word's mode byte
 //!   (`0x85`): bit `0x80` sets the GP0 ABE (semi-transparent) command bit,
@@ -67,6 +70,45 @@ pub const GHOST_COLOR_DECAY: u8 = 0x10;
 /// Ring-id threshold: a ghost draws only for history ids **greater than**
 /// `0x10` (`sltiu 0x11` at `0x80049460`).
 pub const GHOST_RING_ID_MIN: u8 = 0x11;
+
+/// The ring-id bias the anim tick adds to a monster record's `+0x77` byte
+/// (`addiu v0,v0,0x10` at `0x8004805C`).
+pub const MONSTER_RING_ID_BIAS: u8 = 0x10;
+
+/// The ring id a monster record with `+0x87 == 1` gets regardless of its
+/// `+0x77` byte (`li v0,0x11` in the delay slot at `0x80048050`).
+pub const MONSTER_RING_ID_FLAGGED: u8 = 0x11;
+
+/// The history-ring anim id the anim tick stamps for a **monster** seat
+/// this frame (`FUN_80047430` `0x80048044..0x80048060`): `record[+0x77] +
+/// 0x10` (an 8-bit add - the `sb` truncates), or `0x11` when the record's
+/// `+0x87` byte is exactly `1`. Both bytes are the committed clip record's
+/// own; the engine reads them off the playing clip
+/// (`MonsterAnimation::attach_key` / `MonsterAnimation::ring_flag`).
+///
+/// This is a **data** law: whether a monster ghosts is decided by the disc
+/// bytes of the clip it is playing, never by what the engine's staging
+/// state happens to look like (the disc census is
+/// `tests/battle_afterimage_gate_real.rs`).
+pub fn monster_ring_id(attach_key: u8, flag_87: u8) -> u8 {
+    if flag_87 == 1 {
+        MONSTER_RING_ID_FLAGGED
+    } else {
+        attach_key.wrapping_add(MONSTER_RING_ID_BIAS)
+    }
+}
+
+/// The history-ring anim id for a **party** seat: the committed dynamic
+/// slot byte `+0x1D9` copied verbatim (`0x80047FCC..0x80047FD4`).
+pub fn party_ring_id(committed_anim: u8) -> u8 {
+    committed_anim
+}
+
+/// The ghost walk's gate on one ring entry (`0x80049458..0x80049464`):
+/// `id >= 0x11`.
+pub fn ghost_eligible(ring_id: u8) -> bool {
+    ring_id >= GHOST_RING_ID_MIN
+}
 
 /// The two ring depths the walk samples for an actor: `step` and `2 * step`
 /// with `step = 8 / rate` (floored at 1 - retail floors the quotient's zero

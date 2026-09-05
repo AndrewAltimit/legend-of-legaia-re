@@ -27,6 +27,8 @@ fn clip(action_id: u8, frames: usize, tx: i16) -> MonsterAnimation {
         action_id,
         rate: 2,
         attach_key: 0,
+        solo_flag: 0,
+        impact_class: 0,
         effect_script: Vec::new(),
         part_count: 1,
         frame_count: frames,

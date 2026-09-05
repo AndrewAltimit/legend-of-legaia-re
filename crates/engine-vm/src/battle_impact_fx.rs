@@ -35,7 +35,25 @@
 //! packed word eases per-lane toward the neutral `0x20080200`
 //! ([`ease_actor_state`] with target `(0x80, 0x80, 0x80)` and step 1);
 //! once neutral, the `+0x0C` intensity word drains by `dt << 5` and the
-//! `+0x21F` selector clears.
+//! `+0x21F` selector clears. The whole machine - that arm and the ten
+//! others the jump table at `0x8001532C` reaches - is
+//! `crate::battle_formulas::tint_sm_step`; [`ease_actor_state`] is the
+//! same ease kept as the arms' shared primitive.
+//!
+//! # How the tint reaches the pixel
+//!
+//! The tint pass `FUN_8004A908` packs the `+0x04` lanes (`>> 2`) into the
+//! render node's `+0x74` and copies `+0x0C` into `+0x78` whenever it is
+//! non-zero (`0x8004AA24..0x8004AA70`); the draw pass `FUN_80048A08`
+//! stages those two as the GTE far colour and `IR0` (`gp[0x9D8]` /
+//! `gp[0x9DC]`, `0x80048BEC..0x80048C00`). So a hit does not paint a flat
+//! silhouette: the prim's modulation colour becomes `baked + (tint -
+//! baked) * blend / 0x1000` and the GPU still multiplies the texel through
+//! it (`texel * colour / 128`). Retail capture: the Tail-Fire-struck Vahn
+//! in `battle_gimard_tail_fire_a` (`+0x04 = (0xC7, 0x38, 0x38)`, `+0x0C =
+//! 0x1000`) reads red 160..248 / green-blue 8..80 across his texture, not
+//! one colour. Both hosts render exactly that: far = the unpacked lanes,
+//! `IR0 = blend / 0x1000`, through the saturated per-draw depth-cue seam.
 //!
 //! The neighbouring arms of the same pass (Gala tags `0x16`/`0x17`/`0x67`,
 //! Vahn `0x2B`, Noa `0x29`/`0x2D` status flags, monster `0x3B`) are
@@ -69,13 +87,16 @@ pub const IMPACT_EASE_STEP: u32 = 8;
 /// cue-group flash (`+0x0C = 0x2000`, `FUN_801E22C8`).
 pub const BLEND_DRAIN_STEP: u32 = 0x20;
 
-/// Host-side cue strength for the impact tint: the engine hosts render
-/// the tint as a flat blend toward the unpacked RGB on the saturated
-/// depth-cue seam (the same seam the target cursor and the hit flash
-/// ride), rather than retail's multiplicative mesh-colour word - a
-/// disclosed presentation approximation. Shared by both hosts so the
-/// blend cannot drift.
-pub const IMPACT_TINT_CUE_STRENGTH: f32 = 0.6;
+/// The `IR0` both hosts stage for an actor's tint: the `+0x0C` blend as a
+/// `1.0 = 0x1000` factor, truncated to the halfword `FUN_8004A908` copies
+/// (`lhu v0,0xc(s1)` / `sh v0,0x0(s4)` at `0x8004AA68..0x8004AA70`) and
+/// **not** saturated - the cue-group flash's `0x2000` extrapolates past the
+/// far colour until the DPCS output clamp bounds it, exactly as a bare
+/// `mtc2` load does. `0` = no tint staged (the depth-dimming branch of the
+/// tint pass, which the port does not model).
+pub fn tint_ir0(render_blend: u32) -> f32 {
+    (render_blend & 0xFFFF) as f32 / 4096.0
+}
 
 /// One clip-impact arm's windowed target writes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -156,6 +177,19 @@ pub fn ease_actor_state(word: u32, target_rgb: [u8; 3], step_lanes: u32) -> u32 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The staged IR0 is the halfword blend over `0x1000`, unsaturated:
+    /// the hit triple's `0x1000` is exactly `1.0`, the cue-group flash's
+    /// `0x2000` extrapolates to `2.0`, and a high-half bit the `lhu` never
+    /// sees is dropped.
+    #[test]
+    fn tint_ir0_is_the_halfword_blend_over_0x1000() {
+        assert_eq!(tint_ir0(0), 0.0);
+        assert_eq!(tint_ir0(0x1000), 1.0);
+        assert_eq!(tint_ir0(0x0800), 0.5);
+        assert_eq!(tint_ir0(0x2000), 2.0);
+        assert_eq!(tint_ir0(0x1_0800), 0.5);
+    }
 
     #[test]
     fn only_the_two_retail_arms_fire() {

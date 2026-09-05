@@ -124,6 +124,46 @@ reserved/authoring data with no live consumer.
 
 ## Battle / arts / level-up
 
+### The battle hit tint - what a landing hit writes and how it reaches the pixel
+
+*Status:* resolved - a landing hit stamps a three-word tint triple on the
+struck actor from the acting record's `+0x7A` (party melee / arts) or the
+move-power `+0x0A` (monster specials); the presentation SM eases it back;
+the draw stages the words as GTE far colour + `IR0` so the texel is
+modulated, not replaced. Grade: **capture** (the triple, its ease rate and
+the pixel law read off two consecutive save states; every write and gate
+also in disassembly).
+
+- **The stamp.** `FUN_801EC3E4` `0x801EE3D4..0x801EE43C`: `+0x04 =
+  0x801F53D4[class - 1]`, `+0x21F = class`, `+0x0C = 0x1000`, with `class
+  = record[+0x7A]`, `beq zero` past the arm and `sltiu v0,v0,0x6` bounding
+  it; no exit precedes the arm, so every connecting swing (a Stone-absorbed
+  one included) reaches it. `FUN_801E09F8` `0x801E15AC..0x801E15EC` is the
+  monster-special twin off `move_power[+0x0A]`, at each arm's impact phase
+  (`ctx[+0x24E + i] == 3`). The clip-`0x18` arms of `FUN_8004CE2C` stamp
+  the same three words (`0x8004D1D4..0x8004D1E4`, `0x8004D28C..0x8004D29C`).
+- **The ease.** `FUN_80050120` arm 0 (`0x800501A4..0x80050210`): the word
+  eases to `0x20080200` at `1 * dt * 8` lane units per frame, then `+0x0C`
+  drains by `dt << 5`, then `+0x21F` clears; the jump table at
+  `0x8001532C` routes states `1`/`3`/`4`/`6..=10` to fixed colours with
+  `+0x0C = 0x1000`, `2` to the capture fade, `5` to a hold. Two consecutive
+  captures (`battle_gimard_tail_fire_b` -> `_a`) hold Vahn at `+0x21F = 1`,
+  `+0x0C = 0x1000` with the red lane at `0x35F` then `0x31F` - eight frames
+  of the ease.
+- **The pixel.** `FUN_8004A908` packs the lanes into the render node's
+  `+0x74` and copies `+0x0C` into `+0x78`; `FUN_80048A08` stages them as far
+  colour + `IR0` (`gp[0x9D8]` / `gp[0x9DC]`). The struck Vahn in that
+  capture reads red `160..248` over green / blue `8..80` across his texture
+  - modulation, not a flat fill.
+
+Port: `engine-vm::battle_formulas::tint_sm_step` (the SM),
+`World::arm_impact_tint` at the three hit seats, `MonsterAnimation::
+impact_class` carrying `+0x7A`, and both hosts staging `IR0 = blend /
+0x1000` toward the unpacked lanes (`battle_impact_fx::tint_ir0`). The
+native window's former white "hit flash" and the hosts' fixed `0.6`
+strength were engine inventions and are gone. Details in
+[battle.md](../subsystems/battle.md#how-the-tint-words-reach-the-pixel).
+
 ### Formation species limit - what the battle setup does with 3 distinct monster ids
 
 *Status:* resolved - `[a,b,c]` loads as `[c,c,a]` on half of all rolls, verbatim (three streamed blocks) on the other half; randomizer capped at 2 distinct species. Grade: **capture** (write watchpoints + cell readback + heap walk; the rebuild loop also read in disassembly).

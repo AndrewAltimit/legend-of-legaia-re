@@ -63,6 +63,25 @@ pub struct MonsterAnimation {
     /// `record[+0x77]` against a per-character constant to fire the swept
     /// `POLY_G4` trail). `0` when the source stream carries no entry header.
     pub attach_key: u8,
+    /// Solo / freeze byte (entry `+0x87`). A non-zero value is handed to the
+    /// solo dispatcher `FUN_8004E13C` on commit (the "everyone else freezes
+    /// during a special" spotlight), and the anim tick's history-ring stamp
+    /// reads it too: a monster record with `+0x87 == 1` gets ring id `0x11`
+    /// regardless of its `+0x77` byte (`FUN_80047430` `0x80048044..
+    /// 0x80048060`), which is what makes the arts after-image walk
+    /// (`FUN_80049348`) ghost that clip. `0` when the source carries no
+    /// entry header.
+    pub solo_flag: u8,
+    /// Impact-effect class (entry `+0x7A`): the 1-based selector into the
+    /// battle overlay's 5-entry impact-tint table (`0x801F53D4`) that the
+    /// melee / arts hit routine `FUN_801EC3E4` stamps onto the **struck**
+    /// actor when this clip's action lands - `+0x04` = the table word,
+    /// `+0x21F` = the class, `+0x0C = 0x1000` (`0x801EE3D4..0x801EE43C`,
+    /// gated `0 < class < 6`). `0` = the hit tints nothing. Retail reads
+    /// it off the acting actor's committed record, so it rides the clip
+    /// like [`Self::attach_key`]. `0` when the source carries no entry
+    /// header.
+    pub impact_class: u8,
     /// Number of animated objects per frame (one per TMD object).
     pub part_count: usize,
     /// Number of keyframes.
@@ -116,6 +135,12 @@ pub(crate) const ANIM_RATE_OFFSET: usize = 0x78;
 /// Offset of the attach-key / clip-identity byte inside a per-action entry
 /// (see [`MonsterAnimation::attach_key`]).
 pub(crate) const ATTACH_KEY_OFFSET: usize = 0x77;
+/// Offset of the solo / freeze byte inside a per-action entry (see
+/// [`MonsterAnimation::solo_flag`]).
+pub(crate) const SOLO_FLAG_OFFSET: usize = 0x87;
+/// Offset of the impact-effect class byte inside a per-action entry (see
+/// [`MonsterAnimation::impact_class`]).
+pub(crate) const IMPACT_CLASS_OFFSET: usize = 0x7A;
 /// Bytes per part record in the packed stream (six 12-bit fields).
 const ANIM_PART_STRIDE: usize = 9;
 
@@ -160,14 +185,25 @@ fn parse_animation(block: &[u8], action_id: u8, entry_off: usize) -> Option<Mons
         .get(entry_off + ATTACH_KEY_OFFSET)
         .copied()
         .unwrap_or(0);
-    parse_animation_stream(
+    let solo_flag = block
+        .get(entry_off + SOLO_FLAG_OFFSET)
+        .copied()
+        .unwrap_or(0);
+    let impact_class = block
+        .get(entry_off + IMPACT_CLASS_OFFSET)
+        .copied()
+        .unwrap_or(0);
+    let mut anim = parse_animation_stream(
         block,
         action_id,
         rate,
         attach_key,
         entry_off + ANIM_STREAM_OFFSET,
         effect_script_head(block, entry_off),
-    )
+    )?;
+    anim.solo_flag = solo_flag;
+    anim.impact_class = impact_class;
+    Some(anim)
 }
 
 /// Parse a packed `[u8 parts][u8 frames][9-byte TRS records]` stream starting
@@ -206,6 +242,10 @@ pub(crate) fn parse_animation_stream(
         action_id,
         rate,
         attach_key,
+        // The stream parser sees no entry head; entry-aware callers
+        // (`parse_animation`, the player-file record walk) fill these in.
+        solo_flag: 0,
+        impact_class: 0,
         part_count,
         frame_count,
         frames,

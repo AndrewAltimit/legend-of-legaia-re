@@ -369,7 +369,19 @@ after the release - the park is timing choreography, not a terminal hold. Entry 
 solo/freeze dispatcher - it writes battle ctx `+0x243` and raises the
 other actors' pause flag `+0x21C` (the "everyone freezes during a
 special" spotlight; value 2 additionally re-rolls a coin into ctx
-`+0x6DA` when a party member is acting).
+`+0x6DA` when a party member is acting). The anim tick reads the same
+byte again when it stamps the after-image history ring: a monster record
+with `+0x87 == 1` gets ring id `0x11` (otherwise `+0x77 + 0x10`), which is
+what lets the ghost walk `FUN_80049348` trail that clip - see
+[battle-action.md](../subsystems/battle-action.md#the-after-image-ghost-walk-fun_80049348).
+Parser field `MonsterAnimation::solo_flag`. Entry `+0x7A` is the action's
+**impact-effect class**: when the action lands, the melee / arts routine
+`FUN_801EC3E4` stamps `0x801F53D4[class - 1]` into the struck actor's
+`+0x04` tint word with `+0x21F = class` and `+0x0C = 0x1000` (gated
+`0 < class < 6`) - see
+[battle.md](../subsystems/battle.md#how-the-tint-words-reach-the-pixel).
+Parser field `MonsterAnimation::impact_class`; the player-file art records
+carry the same byte (`ArtAnimRecord::impact_class`).
 
 Three consequences of that commit shape:
 

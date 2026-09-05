@@ -946,6 +946,18 @@ impl World {
                     self.apply_battle_hp_delta(target, i32::from(applied));
                     total = total.saturating_add(applied as u32);
                     landed = landed.saturating_add(1);
+                    // The impact-tint triple on the struck actor, per
+                    // connecting strike (`FUN_801EC3E4` `0x801EE3D4..
+                    // 0x801EE43C`, class = the caster's committed record
+                    // `+0x7A`, gated `< 6`). On this immediate path the
+                    // caster's playing clip is whatever the session left
+                    // committed - the live loop's `ApplyArtStrike` fold is
+                    // the seat where the art clip is guaranteed current.
+                    // REF: FUN_801EC3E4
+                    let class = self.attacker_impact_class(usize::from(caster));
+                    if class < crate::move_power::IMPACT_CLASS_LIMIT {
+                        self.arm_impact_tint(target, class);
+                    }
                 }
             }
         }

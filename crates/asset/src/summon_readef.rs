@@ -515,6 +515,8 @@ fn parse_part_entry(pool: &[u8], entry_off: usize) -> Option<MonsterAnimation> {
         // Summon actor-pool entries share the action-entry head family, so
         // the `+0x77` byte is the same attach-key slot.
         attach_key: pool.get(entry_off + 0x77).copied().unwrap_or(0),
+        solo_flag: pool.get(entry_off + 0x87).copied().unwrap_or(0),
+        impact_class: pool.get(entry_off + 0x7a).copied().unwrap_or(0),
         part_count,
         frame_count,
         frames,

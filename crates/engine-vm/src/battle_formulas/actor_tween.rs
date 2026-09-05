@@ -11,23 +11,18 @@
 //! It is a genuine closed-form arithmetic kernel with no hardware or table
 //! dependency, so it ports clean-room even though its consumer is presentation.
 //!
-//! # NOT WIRED
+//! # Wiring
 //!
-//! The tween is one step of `FUN_80050120`, the per-actor **tint state
-//! machine**, and that machine is what is missing - not positions (it is
-//! unrelated to battle motion; `funcs/80050120.txt` shows it eases only the
-//! colour word `actor[+0x4]`). Precisely: `FUN_80050120` is an 11-state
-//! jump-table SM (table at `0x8001532C`) keyed on the per-actor state byte
-//! `actor[+0x21C]` (which the port models as `BattleActor::render_flag`, but
-//! only ever writes with the cursor/summon values `0`/`2`/`5`/`200`/`0xFF`,
-//! never the tween states), with a per-actor hold counter at `actor[+0xC]`
-//! (unmodelled - distinct from `render_blend`'s snapshot use) and per-state
-//! target triples (`0x80` neutral, `0x20` dimmed, ...). Wiring means porting
-//! that state ladder and driving it from the per-frame battle tick slot
-//! retail uses (`FUN_80046A20` calls it right after `FUN_8004DC68`); the
-//! ease arithmetic below is complete and tested, and the word it eases,
-//! `BattleActor::render_color`, is already live (the target-select cursor
-//! stamps it).
+//! The tween is one step of `FUN_80050120`, the per-actor **presentation
+//! tint state machine** (11-state jump table at `0x8001532C`, keyed on
+//! `actor[+0x21C]`); that machine is ported as
+//! [`super::tint_sm::tint_sm_step`], which calls
+//! [`packed3_approach_target`] per arm with retail's per-state targets and
+//! step scales, and `legaia_engine_core::World::tick_battle_impact_fx`
+//! drives it over every seated battle actor each frame - the slot retail's
+//! battle tick `FUN_80046A20` gives it. The word it eases is
+//! `BattleActor::render_color` (`+0x04`); the hold counter it drains is
+//! `BattleActor::render_blend` (`+0x0C`).
 
 /// One channel stepped toward `target` by at most `max_delta`, clamping exactly
 /// on the target without overshoot. Signed so a channel may pass through zero

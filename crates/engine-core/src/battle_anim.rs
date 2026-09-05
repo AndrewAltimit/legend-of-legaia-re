@@ -54,6 +54,16 @@ pub struct MonsterAnimPlayer {
     /// weapon trail, `FUN_8004CE2C` impact freeze/tint arms). `0` when the
     /// source stream carried no entry header.
     attach_key: u8,
+    /// The clip's solo / freeze byte (entry `+0x87`,
+    /// [`MonsterAnimation::solo_flag`]) - the second input of the retail
+    /// history-ring id a monster seat stamps each frame
+    /// (`legaia_engine_core::battle_afterimage::monster_ring_id`).
+    solo_flag: u8,
+    /// The clip's impact-effect class (entry `+0x7A`,
+    /// [`MonsterAnimation::impact_class`]) - the selector the hit routine
+    /// `FUN_801EC3E4` reads off the acting actor's committed record and
+    /// stamps onto the struck actor (`World::arm_impact_tint`).
+    impact_class: u8,
     /// 8.8 fixed-point frame cursor (integer part = keyframe index).
     phase: u32,
     /// Phase units added per [`tick`](Self::tick). Seeded from the clip's
@@ -103,6 +113,8 @@ impl MonsterAnimPlayer {
             part_count: anim.part_count,
             action_id: anim.action_id,
             attach_key: anim.attach_key,
+            solo_flag: anim.solo_flag,
+            impact_class: anim.impact_class,
             phase: 0,
             step: step_for_rate(anim.rate),
             looping: true,
@@ -140,6 +152,18 @@ impl MonsterAnimPlayer {
     /// the field docs). `0` = no entry header.
     pub fn attach_key(&self) -> u8 {
         self.attach_key
+    }
+
+    /// The playing clip's solo / freeze byte (entry `+0x87`; see the field
+    /// docs). `0` = no entry header.
+    pub fn solo_flag(&self) -> u8 {
+        self.solo_flag
+    }
+
+    /// The playing clip's impact-effect class (entry `+0x7A`; see the
+    /// field docs). `0` = a landed hit from this clip tints nothing.
+    pub fn impact_class(&self) -> u8 {
+        self.impact_class
     }
 
     /// The cursor in retail's own 12.4 fixed-point unit (sixteenths of a
@@ -261,6 +285,8 @@ mod tests {
             action_id: 0,
             rate: 2,
             attach_key: 0,
+            solo_flag: 0,
+            impact_class: 0,
             effect_script: Vec::new(),
             part_count: 1,
             frame_count: 2,
@@ -291,6 +317,8 @@ mod tests {
             action_id: 0,
             rate: 2,
             attach_key: 0,
+            solo_flag: 0,
+            impact_class: 0,
             effect_script: Vec::new(),
             part_count: 0,
             frame_count: 0,
@@ -333,6 +361,8 @@ mod tests {
             action_id: 0,
             rate: 2,
             attach_key: 0,
+            solo_flag: 0,
+            impact_class: 0,
             effect_script: Vec::new(),
             part_count: 1,
             frame_count: 2,
@@ -374,6 +404,8 @@ mod one_shot_tests {
             action_id: 8,
             rate: 2,
             attach_key: 0,
+            solo_flag: 0,
+            impact_class: 0,
             effect_script: Vec::new(),
             part_count: 1,
             frame_count: frames,

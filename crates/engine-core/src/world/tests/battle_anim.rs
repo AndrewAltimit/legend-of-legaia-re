@@ -9,6 +9,8 @@ fn pose_test_clip(action_id: u8, frames: usize, tx: i16) -> MonsterAnimation {
         action_id,
         rate: 2,
         attach_key: 0,
+        solo_flag: 0,
+        impact_class: 0,
         effect_script: Vec::new(),
         part_count: 1,
         frame_count: frames,
@@ -626,6 +628,8 @@ fn trail_test_clip(attach_key: u8, frames: usize) -> MonsterAnimation {
         action_id: 0xC,
         rate: 2,
         attach_key,
+        solo_flag: 0,
+        impact_class: 0,
         part_count: parts,
         frame_count: frames,
         frames: (0..frames)
@@ -814,8 +818,13 @@ fn gala_clip_key_0x18_freezes_the_target_in_window() {
     assert_eq!(world2.actors[1].battle.anim_rate.get(), RATE_NORMAL);
 }
 
-/// The armed tint eases back to the neutral word and the selector clears -
-/// the FUN_80050120 arm-0 decay over the FUN_80050F30 per-lane ease.
+/// The armed tint eases back to the neutral word, the blend drains, and
+/// the selector retires - `FUN_80050120` arm 0 over the `FUN_80050F30`
+/// per-lane ease, in the disassembly's order (`0x800501A4..0x80050210`):
+/// the eased word is compared against `0x20080200` on the SAME frame it
+/// was eased, a non-zero `+0x0C` then drains by `0x20`, and only a zero
+/// `+0x0C` clears `+0x21F`. So with no blend armed the selector clears on
+/// the arrival frame itself, not a frame later.
 #[test]
 fn impact_tint_decays_to_neutral_and_clears() {
     use vm::battle_impact_fx as ifx;
@@ -829,19 +838,41 @@ fn impact_tint_decays_to_neutral_and_clears() {
         world.actors[0].battle.render_color,
         ifx::IMPACT_NEUTRAL_STATE + 0x8
     );
+    assert_eq!(world.actors[0].battle.impact_state, 2);
     world.tick_battle_animations();
     assert_eq!(
         world.actors[0].battle.render_color,
         ifx::IMPACT_NEUTRAL_STATE
     );
     assert_eq!(
-        world.actors[0].battle.impact_state, 2,
-        "clears a frame later"
+        world.actors[0].battle.impact_state, 0,
+        "no blend armed: the selector retires on the arrival frame (`sb zero,0x21f` at 0x80050210)"
+    );
+    // With the retail hit triple armed the blend drains first: 0x1000 at
+    // 0x20 per frame is 128 frames of blend after the colour arrives, and
+    // the selector waits for all of them.
+    world.actors[0].battle.impact_state = 1;
+    world.actors[0].battle.render_color = ifx::IMPACT_NEUTRAL_STATE + 0x8;
+    world.actors[0].battle.render_blend = 0x1000;
+    world.tick_battle_animations();
+    assert_eq!(
+        world.actors[0].battle.render_color,
+        ifx::IMPACT_NEUTRAL_STATE
+    );
+    assert_eq!(world.actors[0].battle.render_blend, 0x1000 - 0x20);
+    assert_eq!(world.actors[0].battle.impact_state, 1);
+    for _ in 0..(0x1000 / 0x20 - 1) {
+        world.tick_battle_animations();
+    }
+    assert_eq!(world.actors[0].battle.render_blend, 0);
+    assert_eq!(
+        world.actors[0].battle.impact_state, 1,
+        "the frame the blend hit zero"
     );
     world.tick_battle_animations();
     assert_eq!(world.actors[0].battle.impact_state, 0);
-    // A render-flag override (the target cursor) suspends the ease -
-    // retail's +0x21C dispatch skips arm 0.
+    // A render-flag override (the target cursor's `5`) is a hold arm -
+    // retail's +0x21C dispatch never reaches the ease.
     world.actors[0].battle.impact_state = 1;
     world.actors[0].battle.render_color = ifx::IMPACT_NEUTRAL_STATE + 0x20;
     world.actors[0].battle.render_flag = 5;

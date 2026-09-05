@@ -279,6 +279,8 @@ mod tests {
             action_id: tag,
             rate: 2,
             attach_key: 0,
+            solo_flag: 0,
+            impact_class: 0,
             part_count: 15,
             frame_count: 20,
             frames: Vec::new(),

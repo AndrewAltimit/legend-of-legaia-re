@@ -3024,11 +3024,24 @@ ring:
 - **Spacing** `step = 8 / actor[+0x21D]` (monster seats double it), depths
   `step` and `2*step` - the trail stretches exactly when slow-motion drops
   the rate (quarter speed → depths 4 and 8).
-- **Gate**: ring id `> 0x10`. A party art materialises at dynamic slot
+- **Gate**: ring id `> 0x10` (`sltiu 0x11` at `0x80049460`). The ring id
+  is stamped by the anim tick from the **committed record's own bytes**,
+  never from the actor's staging state: a party seat copies the committed
+  dynamic slot `+0x1D9` (`0x80047FCC`), a monster seat stamps
+  `record[+0x77] + 0x10`, or `0x11` when the record's `+0x87` solo byte is
+  `1` (`0x80048044..0x80048060`). A party art materialises at dynamic slot
   `0x10` except the `0x1A` / re-staged-`0x10` commits, which land at `0x11` -
   so party mesh ghosts belong to the **SpecialStarter dash** (ordinary art
-  swings leave the 2D weapon-trail streak instead); a monster ghosts on any
-  non-idle clip tag.
+  swings leave the 2D weapon-trail streak instead; a **chained** art is a
+  re-staged `0x10` and lands at `0x11` too - the `battle_melee_hit_spark`
+  capture holds Vahn at `+0x1D9 = +0x1FB = 0x11` mid-Somersault with his
+  ghosts drawn, and Gimard at ring id `0x10`, none). A monster ghosts only on
+  a clip whose record carries a non-zero `+0x77` or `+0x87 == 1` - on the
+  disc that is the solo / special entries (Tetsu's tag-`0x0F` special
+  carries both; Gobu Gobu has none), and **no** idle entry qualifies, so an
+  idle or walking monster never ghosts. The earlier "any non-idle clip tag"
+  reading is falsified ([re-do-not-re-walk.md](../reference/re-do-not-re-walk.md#battle--arts--level-up));
+  the disc census is `crates/engine-core/tests/battle_afterimage_gate_real.rs`.
 - **Colour**: flat additive. The draw wrapper `FUN_80043390` decodes the
   colour word's mode byte (`0x85`): bit `0x80` → the GP0 ABE bit, low bits →
   ABR mode 1 (B + F), bit `0x04` → the flat-colour prim bank with the GTE far

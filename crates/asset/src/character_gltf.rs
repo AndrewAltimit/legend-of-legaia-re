@@ -458,6 +458,8 @@ mod tests {
             action_id: 0,
             rate: 2,
             attach_key: 0,
+            solo_flag: 0,
+            impact_class: 0,
             effect_script: Vec::new(),
             part_count: 2,
             frame_count: frames,

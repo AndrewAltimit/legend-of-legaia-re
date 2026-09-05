@@ -2423,6 +2423,40 @@ Retail links every segment at the **same** OT bucket, the depth `FUN_800195A8` r
 Ported as `legaia_engine_render::afterimage::build_streak_ribbon` (injected rng, unit-tested); projection is `project_ribbon_corners`, and arena allocation plus OT linking stay on the retail-renderer side that engine-render replaces.
 
 
+### How the tint words reach the pixel
+
+The tint pass `FUN_8004A908` packs the actor's `+0x04` lanes (`>> 2`) into
+the render node's `+0x74` colour word and copies `+0x0C` into the node's
+`+0x78` whenever it is non-zero (`0x8004AA24..0x8004AA70`; with `+0x0C == 0`
+the pass instead derives `+0x78` from the transformed depth and dims the
+lanes by `radius / depth` - the distance-dimming branch). The draw pass
+`FUN_80048A08` then stages the two words as the GTE far colour and `IR0`
+(`gp[0x9D8]` / `gp[0x9DC]`, `0x80048BEC..0x80048C00`) for the actor's
+prims. So the prim's **modulation** colour becomes
+`baked + (tint - baked) * blend / 0x1000`, and the GPU still multiplies the
+texel through it (`texel * colour / 128`): a hit is the actor's own texture
+pushed toward the element colour, never a flat silhouette. `IR0` is loaded
+bare, so the item / spirit cue-group flash's `0x2000` extrapolates past the
+far colour until the DPCS output clamp bounds it.
+
+Retail capture: `battle_gimard_tail_fire_a` / `_b` (Tail Fire striking
+Vahn) hold `+0x21F = 1`, `+0x0C = 0x1000` and a red `+0x04` word eight
+lane-units apart between the two frames - the arm-0 ease at `1 * 8` per
+frame - and the struck Vahn reads red `160..248` over green / blue `8..80`
+across his texture. The impact table's five words are red, two blues, a
+violet and white (`0x801F53D4`, parsed by
+`legaia_asset::move_power::parse_impact_effect_table`). A colour word of
+`0` is the summon-hide's "not drawn" value (`FUN_800480D8`'s word-zero
+arm), not a black tint.
+
+Both hosts render that law through the per-draw depth-cue seam (far = the
+unpacked lanes, `IR0 = blend / 0x1000` via
+`engine-vm::battle_impact_fx::tint_ir0`), one rule for every writer. The
+capture / defeat fade (`+0x21C == 2`, arm 2) additionally ORs
+`0x81000000` into the node's mode word so the fading actor draws additive;
+neither host has a per-draw blend override yet, so that state is left
+un-cued rather than drawn as an opaque black silhouette.
+
 ## Per-frame actor maintenance (`FUN_8004CE2C`)
 
 The SCUS-resident per-frame sweep over the battle actor table - one of the
@@ -2444,9 +2478,23 @@ byte `*(_DAT_8007BD24)[0]`:
    target's pose** (`+0x21D = 0`, cursor window `0x40..=0x80`; restored by
    `FUN_801E93C8`); Vahn's clip-`0x18` arm is tint-only (`0x90..=0xA0`). The
    overlay ribbon `FUN_801E1D98` is called by the clip-`0x67` arm, not the
-   `0x18` one. Port: `engine-vm::battle_impact_fx` +
-   `World::tick_battle_impact_fx`; the tint decays through the
-   `FUN_80050F30` per-lane ease (`FUN_80050120` arm 0).
+   `0x18` one. Both arms also stamp `+0x0C = 0x1000` (`sw v0,0xc(s1)` at
+   `0x8004D1DC` / `0x8004D294`). Port: `engine-vm::battle_impact_fx` +
+   `World::tick_battle_impact_fx`; the tint decays through the per-actor
+   presentation SM `FUN_80050120` (arm 0: `FUN_80050F30` ease to neutral,
+   then the `+0x0C` blend drains, then the `+0x21F` selector retires - port
+   `engine-vm::battle_formulas::tint_sm_step`, driven by the same tick).
+   The same triple is what a **landing hit** stamps on the struck actor:
+   the melee / arts routine `FUN_801EC3E4` reads the acting record's
+   `+0x7A` impact class (`0x801EE3D4..0x801EE43C`, gated `0 < class < 6`
+   by `sltiu v0,v0,0x6`; every connecting swing reaches it - there is no
+   exit ahead of the arm), the monster special-attack tick `FUN_801E09F8`
+   reads the move-power record's `+0x0A` at each arm's impact phase
+   (`0x801E15AC..0x801E15EC`). Port `World::arm_impact_tint`, called from
+   the basic-strike kernel, the `ApplyArtStrike` fold and the enemy
+   status-proc arm; the class rides the clip as
+   `MonsterAnimation::impact_class`. How the words reach the pixel is in
+   [tint pass and draw pass](#how-the-tint-words-reach-the-pixel).
 3. **Per-encounter boss hooks.** Gated on `DAT_8007BD0C` - the **monster /
    formation id**, not a sequence sub-phase byte, and `0x8A`/`0xA7`/`0xAA`/`0xB4`
    (138/167/170/180) are **boss ids**, not phase bands. Each arm applies
@@ -4125,7 +4173,7 @@ stated by the concrete writes.
 | `FUN_8004C650` | Battle name-banner placement: measures a name string width (`FUN_80035F04`) and centres its four banner X coords around `0xA0`, with `0xCF`/`0xC1` leading-byte nudges. |
 | `FUN_8004CCD4` | Per-command display resolver (battle-data-pack): for each of the actor's up-to-2 command slots, tests a threshold value against the `+0xA4` range pairs and writes the matching `+0x1034` (hit) or `+0x1030` (fallback) display pointer into the caller's output table. |
 | `FUN_80046978` | Screen-flash colour submit: when trigger `gp[0x9D4]` is set, scales stored colour `gp[0x9D0]` by scratch byte `0x1F800393` and submits via `FUN_80024EE4`. The per-channel saturating scale is ported as `scale_rgb24`; the trigger + submit stay caller-side. |
-| `FUN_80050120` | Per-actor battle-presentation tick: walks the actor table `DAT_801C9370`, skips actors with no `+0x22C` sub-struct, and dispatches on the actor state byte `+0x21C` (11-entry jump table at `0x8001532C`). Its live arms ease the actor's packed tint/tween word `+0x04` toward a target via `FUN_80050F30`, and treat the packed arrival value `0x20080200` (all three channels at the neutral `0x80` target) as "reached". |
+| `FUN_80050120` | Per-actor battle-presentation tick: walks the actor table `DAT_801C9370`, skips actors with no `+0x22C` sub-struct, and dispatches on the actor state byte `+0x21C` (11-entry jump table at `0x8001532C`). Arm 0 eases `+0x04` to neutral, then drains `+0x0C`, then clears `+0x21F`; arms `1`/`3`/`4`/`6..=10` ease toward fixed colours (dim / red / blue / magenta / soft red / green / yellow / white) with `+0x0C = 0x1000`; arm 2 is the defeat / capture fade to black. Ported as `engine-vm::battle_formulas::tint_sm_step` (arm table in its module docs), driven per frame by `World::tick_battle_impact_fx`. |
 | `FUN_80050F30` | 3×10-bit packed approach-to-target step: eases each 10-bit channel of a packed `u32` toward an 8-bit target (widened `<<2`) by at most `step_scale * DAT_1f800393 * 8` per call, clamping on the target without overshoot; only differing channels are rewritten (the byte-exact masking is why the top two bits survive an unchanged Z channel). A pure closed-form kernel with no table/hardware dependency; **ported** (with tests) as `battle_formulas::packed3_approach_target` / `approach_channel_clamped`. |
 | `FUN_80050BB8` | Pairwise battle-actor separation (push-apart): reads two actors' body radii `+0x22C→+0x58` and positions `+0x3C`/`+0x40`, projects the between-actor distance onto the angle from `FUN_80019B28` via the sin/cos LUTs `_DAT_8007B81C`/`DAT_8007B7F8`, and if the projected gap is below `(r1+r2)/6` nudges both actors' **live** position pairs `+0x34`/`+0x38` apart by `sin/cos >> 10` (the `+0x3C`/`+0x40` pair it measures is the seat). Ported as a faithful fixed-point mirror in `engine-vm::battle_separation::push_apart` (trig samples lifted to caller parameters, no Sony table bytes); driven every live battle frame by `World::tick_battle_separation`, on the line after the action-SM step - retail's `FUN_80046A20` call order. |
 | `FUN_80051078` | Separation driver: the 7×7 double loop over the actor table that calls `FUN_80050BB8(i, j)` for every ordered pair of living actors (`i != j`, both `+4 != 0`), so every actor is pushed off every other once per pass. Its caller is `FUN_80046A20`, which runs it **every battle frame** immediately after the action SM (`jal 0x801E295C` then `jal 0x80051078`), gated only on "battle live and not tearing down". Not a movement-only pass. |

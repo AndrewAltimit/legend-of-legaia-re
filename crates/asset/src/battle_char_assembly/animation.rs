@@ -131,7 +131,15 @@ pub fn battle_animations(file: &[u8]) -> Result<Vec<crate::monster_archive::Mons
             .get(entry_off + crate::monster_archive::ATTACH_KEY_OFFSET)
             .copied()
             .unwrap_or(0);
-        if let Some(anim) = crate::monster_archive::parse_animation_stream(
+        let solo_flag = block
+            .get(entry_off + crate::monster_archive::SOLO_FLAG_OFFSET)
+            .copied()
+            .unwrap_or(0);
+        let impact_class = block
+            .get(entry_off + crate::monster_archive::IMPACT_CLASS_OFFSET)
+            .copied()
+            .unwrap_or(0);
+        if let Some(mut anim) = crate::monster_archive::parse_animation_stream(
             &block,
             slot as u8,
             rate,
@@ -139,6 +147,8 @@ pub fn battle_animations(file: &[u8]) -> Result<Vec<crate::monster_archive::Mons
             entry_off + PLAYER_ANIM_STREAM_OFFSET,
             crate::monster_archive::effect_script_head(&block, entry_off),
         ) {
+            anim.solo_flag = solo_flag;
+            anim.impact_class = impact_class;
             out.push(anim);
         }
     }
@@ -165,6 +175,14 @@ pub fn idle_battle_animation(
         .get(entry_off + crate::monster_archive::ATTACH_KEY_OFFSET)
         .copied()
         .unwrap_or(0);
+    let solo_flag = block
+        .get(entry_off + crate::monster_archive::SOLO_FLAG_OFFSET)
+        .copied()
+        .unwrap_or(0);
+    let impact_class = block
+        .get(entry_off + crate::monster_archive::IMPACT_CLASS_OFFSET)
+        .copied()
+        .unwrap_or(0);
     Ok(crate::monster_archive::parse_animation_stream(
         &block,
         0,
@@ -172,5 +190,10 @@ pub fn idle_battle_animation(
         attach_key,
         entry_off + PLAYER_ANIM_STREAM_OFFSET,
         crate::monster_archive::effect_script_head(&block, entry_off),
-    ))
+    )
+    .map(|mut anim| {
+        anim.solo_flag = solo_flag;
+        anim.impact_class = impact_class;
+        anim
+    }))
 }

@@ -251,27 +251,26 @@ impl World {
                 let idle = actor.battle.current_anim == 0 && actor.battle_reaction.is_none();
                 let pose = player.tick_rated(rate, idle);
                 let after = player.current_frame();
-                let clip_tag = player.action_id();
                 // History-ring push (retail `FUN_80047430`
                 // `0x80047E58..0x80048060`): slot 0 takes this frame's pose
                 // + position; the arts after-image walk samples it. The
-                // ring-id gate: party ghosts only on the committed dynamic
-                // slot `0x11` (the Super / Miracle SpecialStarter dash);
-                // monster ring ids are `clip_tag + 0x10`, so any non-idle
-                // tag is eligible.
-                // Retail's monster ring id is the committed clip's tag; the
-                // engine's ambient monster loop is `idle_animation`'s pick,
-                // which (because `animations` filters malformed entries) may
-                // wear a non-zero tag - so the loop-player state, not the
-                // tag alone, is what maps retail's "id 0 = idle" here.
-                let non_idle =
-                    actor.battle_staged_anim.is_some() || actor.battle_reaction.is_some();
+                // ring id is retail's own: a party seat stamps the
+                // committed dynamic slot `+0x1D9` (`0x80047FCC`), a monster
+                // seat stamps the committed record's `+0x77` byte `+ 0x10`,
+                // or `0x11` when the record's `+0x87` solo byte is `1`
+                // (`0x80048044..0x80048060`); the walk draws ids `>= 0x11`.
+                // Both are read off the playing clip's own disc bytes - the
+                // engine's staging / reaction state is not consulted, because
+                // retail never consults it (gating on "is a clip staged"
+                // ghosted every monster on every frame of its approach walk
+                // and its idle loop after it: the permanent yellow halo).
                 let clip_key = player.attach_key();
-                let ghost_eligible = if actor.battle_monster_id.is_none() {
-                    actor.battle.current_anim == vm::anim_vm::DYNAMIC_ART_SLOT_B
+                let ring_id = if actor.battle_monster_id.is_none() {
+                    crate::battle_afterimage::party_ring_id(actor.battle.current_anim)
                 } else {
-                    non_idle && clip_tag != 0
+                    crate::battle_afterimage::monster_ring_id(clip_key, player.solo_flag())
                 };
+                let ghost_eligible = crate::battle_afterimage::ghost_eligible(ring_id);
                 actor.battle_pose_history.push_front(BattleGhostFrame {
                     pose: pose.clone(),
                     pos: [
@@ -453,49 +452,118 @@ impl World {
         out
     }
 
-    /// Per-frame **impact freeze + tint** maintenance - the engine seat of
-    /// `FUN_8004CE2C` pass 2 (kernel `legaia_engine_vm::battle_impact_fx`)
-    /// plus the tint's neutral decay (`FUN_80050120` arm 0 via the
-    /// `FUN_80050F30` ease).
+    /// Arm the retail **impact tint triple** on `target`: `+0x04 = impact
+    /// table[selector - 1]`, `+0x21F = selector`, `+0x0C = 0x1000` - the
+    /// writes both impact arms perform when a hit lands. The melee / arts
+    /// routine `FUN_801EC3E4` (`0x801EE3D4..0x801EE43C`) reads the selector
+    /// off the acting actor's action record `+0x7A`
+    /// ([`crate::battle_anim::MonsterAnimPlayer::impact_class`]) and gates it
+    /// `0 < sel < 6` (`sltiu v0,v0,0x6` at `0x801EE3E0` - a class past the
+    /// table skips all three writes; callers apply that gate, see
+    /// [`crate::move_power::IMPACT_CLASS_LIMIT`]). The monster special-attack arm
+    /// `FUN_801E09F8` (`0x801E15AC..0x801E15EC`, at each arm's impact phase)
+    /// reads the move-power record's `+0x0A` and stamps unguarded; a zero
+    /// selector arms nothing in either (`beq v0,zero` past the writes). A
+    /// selector past the 5-entry table with no gate leaves the colour word
+    /// alone here (retail would read past the table - nothing on the disc
+    /// does).
     ///
-    /// Decay runs first so an in-window arm's rewrite owns the frame, the
-    /// retail steady state. The engine folds retail's `+0x0C` intensity
-    /// drain (an unmodeled brightness channel) into the selector clear,
-    /// and gates the ease on its own selector so the target-cursor /
-    /// cue-group colour writers are never fought (retail separates the
-    /// same writers through the `+0x21C` dispatch).
+    /// The tint then decays through [`Self::tick_battle_impact_fx`]'s
+    /// presentation SM (`FUN_80050120` arm 0): colour eases to neutral, the
+    /// blend drains, the selector retires. Retail captures of the armed
+    /// state: `battle_gimard_tail_fire_a` / `_b` (Vahn at `+0x21F = 1`,
+    /// `+0x0C = 0x1000`, the red word eight lane-units apart between the two
+    /// frames).
+    // PORT: FUN_801EC3E4 (the `+0x7A` impact-tint arm only; the damage /
+    // status body is the battle loop's)
+    // REF: FUN_801E09F8 (the move-power sibling arm - same three writes)
+    pub fn arm_impact_tint(&mut self, target: usize, selector: u8) {
+        if selector == 0 {
+            return;
+        }
+        let word = self
+            .move_power
+            .as_ref()
+            .and_then(|t| t.impact_table())
+            .and_then(|t| t.get(usize::from(selector - 1)).copied());
+        let Some(a) = self.actors.get_mut(target) else {
+            return;
+        };
+        if let Some(word) = word {
+            a.battle.render_color = word;
+        }
+        a.battle.impact_state = selector;
+        a.battle.render_blend = vm::battle_formulas::TINT_BLEND_FULL;
+    }
+
+    /// Per-frame **presentation tint + impact freeze** maintenance: the
+    /// per-actor arms of `FUN_80050120` (kernel
+    /// `legaia_engine_vm::battle_formulas::tint_sm_step`) followed by
+    /// `FUN_8004CE2C` pass 2's per-clip impact arms (kernel
+    /// `legaia_engine_vm::battle_impact_fx`).
+    ///
+    /// The SM runs on every seated battle actor and dispatches on the
+    /// render flag `+0x21C` exactly as retail's jump table does: `0` eases
+    /// the colour word to neutral, then drains the `+0x0C` blend, then
+    /// retires the `+0x21F` selector (one phase per frame, in that order);
+    /// `1`/`3`/`4`/`6..=10` ease toward their fixed colours with the full
+    /// blend stamped; `2` runs the defeat / capture fade; `5` and every
+    /// out-of-table value (the cursor's `200`, the summon-hide `0xFF`)
+    /// leave the words alone. The ease is unconditional on flag `0` -
+    /// retail has no "was it armed" test, so a colour word any writer left
+    /// off-neutral (the retired target cursor's dim word included) eases
+    /// back at the same rate.
+    ///
+    /// Runs before the per-clip arms so an in-window arm's rewrite owns the
+    /// frame - the retail order (`FUN_80046A20` calls `FUN_8004CE2C`, then
+    /// the presentation tick, then the next frame's arms re-stamp).
     // PORT: FUN_8004CE2C (pass 2 - per-clip impact arms; pass 4 is
     // `crate::battle_status_clut`)
-    // REF: FUN_80050120 (arm 0 - the decay driver this folds)
+    // REF: FUN_80050120 (the per-actor arms, ported as `tint_sm_step`; this is
+    // the per-frame walk over the actor table that drives them)
     fn tick_battle_impact_fx(&mut self) {
+        use vm::battle_formulas::{FadeInputs, TintWords, tint_sm_step};
         use vm::battle_impact_fx as ifx;
         if self.mode != SceneMode::Battle {
             return;
         }
-        // Decay pass. Retail arm 0 runs on render flag `0` only: ease the
-        // colour word toward neutral, then drain the `+0x0C` blend
-        // intensity by `0x20`/frame, then retire the selector. The ease
-        // stays gated on "something armed it" (the impact selector or a
-        // live cue-group blend) so unrelated colour writers are never
-        // fought (retail separates the same writers through the `+0x21C`
-        // dispatch).
         for a in self.actors.iter_mut() {
+            // `+0x22C == 0` (no battle record) skips the slot.
             if !a.active {
                 continue;
             }
+            let party = a.battle_monster_id.is_none();
             let b = &mut a.battle;
-            if b.render_flag != 0 {
-                continue;
-            }
-            if b.render_color != ifx::IMPACT_NEUTRAL_STATE
-                && (b.impact_state != 0 || b.render_blend != 0)
-            {
-                b.render_color =
-                    ifx::ease_actor_state(b.render_color, [0x80; 3], ifx::IMPACT_EASE_STEP);
-            } else if b.render_blend != 0 {
-                b.render_blend = b.render_blend.saturating_sub(ifx::BLEND_DRAIN_STEP);
-            } else if b.impact_state != 0 {
-                b.impact_state = 0;
+            let words = TintWords {
+                color: b.render_color,
+                blend: b.render_blend,
+                selector: b.impact_state,
+            };
+            // The arm-2 gate compares the committed anim against the cached
+            // knockdown entry `+0x1F1`; the engine plays a knockdown through
+            // the reaction channel without re-pointing `current_anim`, so
+            // the reaction latch stands in for that equality.
+            let fade = FadeInputs {
+                party,
+                committed_anim: b.current_anim,
+                knockdown_entry: if a.battle_reaction == Some(4) {
+                    b.current_anim
+                } else {
+                    0xFF
+                },
+                captured: b.capture_state != 0,
+            };
+            let (next, fx) = tint_sm_step(b.render_flag, words, fade, 1);
+            b.render_color = next.color;
+            b.render_blend = next.blend;
+            b.impact_state = next.selector;
+            if fx.party_fade_done {
+                // `0x80050344..0x80050354`: state 0, staged anim 0, the
+                // `+0x1DC` fade-done bit, blend `0x800` (already in `next`).
+                b.render_flag = 0;
+                b.queued_anim = 0;
+                b.flag_bits =
+                    vm::battle_action::ActorFlags(vm::battle_action::ActorFlags::WINDUP_DONE);
             }
         }
         // The per-clip arms: acting party actor's committed record key +
@@ -538,9 +606,24 @@ impl World {
         if let Some(word) = tint {
             t.battle.render_color = word;
         }
-        // The selector arms even without disc data (the freeze is
-        // data-free; the tint word just has nothing to carry).
+        // The selector + full blend arm even without disc data (the freeze
+        // is data-free; the tint word just has nothing to carry). Both arms
+        // stamp `+0x0C = 0x1000` (`sw v0,0xc(s1)` at `0x8004D1DC` /
+        // `0x8004D294`).
         t.battle.impact_state = w.impact_selector;
+        t.battle.render_blend = vm::battle_formulas::TINT_BLEND_FULL;
+    }
+
+    /// The acting actor's impact-effect class for a landing hit - the
+    /// `+0x7A` byte of its committed action record, read off the playing
+    /// clip; `0` when nothing is playing (a synthetic battle) or the clip
+    /// carries no class.
+    pub(in crate::world) fn attacker_impact_class(&self, attacker: usize) -> u8 {
+        self.actors
+            .get(attacker)
+            .and_then(|a| a.battle_animation.as_ref())
+            .map(|p| p.impact_class())
+            .unwrap_or(0)
     }
 
     /// Plan this frame's weapon-trail sweeps - the engine seat of the

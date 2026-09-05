@@ -240,6 +240,11 @@ impl World {
             if let Some(a) = self.actors.get_mut(target as usize) {
                 a.pending_status = Some(legaia_art::record::EnemyEffect::from_byte(selector));
             }
+            // The same three stores are the impact-tint triple
+            // (`0x801E15AC..0x801E15EC`: `+0x21F = sel`, `+0x04 =
+            // 0x801F53D4[sel - 1]`, `+0x0C = 0x1000`) - Tail Fire's red
+            // Vahn in the `battle_gimard_tail_fire_a` capture.
+            self.arm_impact_tint(target as usize, selector);
             let target_is_party = target < party_count;
             let ability_bits = if target_is_party {
                 self.character_ability_bits

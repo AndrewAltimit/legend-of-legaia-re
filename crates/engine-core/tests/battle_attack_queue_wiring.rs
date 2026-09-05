@@ -252,6 +252,8 @@ fn stub_clip(action_id: u8) -> MonsterAnimation {
         action_id,
         rate: 1,
         attach_key: 0,
+        solo_flag: 0,
+        impact_class: 0,
         part_count: 1,
         frame_count: 8,
         frames: (0..8u16).map(|f| vec![pose(f)]).collect(),
