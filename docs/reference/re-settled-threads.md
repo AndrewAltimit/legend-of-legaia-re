@@ -159,6 +159,7 @@ species and at the disc's authored heap-cost maximum.
 | Does the battle ground grid roll per-cell randomness? | resolved (no - a four-entry table walk) | `disassembly` | No. `func_0x801d02c0` builds sixteen literal UV words into scratchpad `0x1f800034` (`0x801d0304..0x801d03a0`) and the emit loop reads group `n` for quad `n`, advancing `0x10` each time. They decode to four fixed 32x32 sub-tiles of the `(192..=255)^2` window walked in `sub_row * 2 + sub_col` order, copied into the packet verbatim - no roll, no corner mirror. The grid origin also carries an extra `-0x200` bias on `z`, and pass 1's cull is a view-`z` bracket with **no** screen-space term (that is a separate pass-2 test). See [battle.md](../subsystems/battle.md#the-grids-own-constants-read-off-the-emitter). |
 | Endless camera orbit (Gaza 2 softlock) - the `0x19` attack-approach park | resolved (caught live; root-caused; disc fix shipped) | `capture` + `disassembly` | [details ↓](#endless-camera-orbit---the-0x19-attack-approach-park) |
 | Which `FUN_801D5854` case-6 arm a running fight takes, and where `ctx[+0x6DA]` is seeded | resolved | `capture` + `disassembly` | [details ↓](#the-in-fight-action-framing-and-the-yaw-counter-ladder) |
+| Which framing the Done band (`0x50` / `0x51`) takes, and the idle-orbit rate at the Begin/Run prompt | resolved | `capture` + `disassembly` | [details ↓](#the-done-band-framing-and-the-two-orbit-writers) |
 | `0x19` fallback approach drive - which anim-driver field does summon staging leave stale? | resolved (pinned + causally reproduced on the parked save) | `capture` + `disassembly` | [details ↓](#the-summon-then-melee-park-trigger---the-stale-field-is-0x1dc-bit-2) |
 | Super / Miracle Arts trigger chain | resolved (all 15 Supers live-executed) | `disassembly` + `capture` | [details ↓](#super--miracle-arts-trigger-chain) |
 | Xain "Bloody Horns"/"Terio Punch" ignore elemental guards (community mystery) | resolved | `disassembly` + `capture` | Not an element drop - a **resist-ladder bypass**. Capture-class casts (spell byte `+0` = `'c'`) run per-spell modules (PROT 944..966) whose damage calls pass the caster's seat but pick one of two wrappers: `FUN_801DD4B0` (finisher `param_5=0`, resist ladder runs) or `FUN_801DD6B4` (`param_5=1`, the whole party-defender jewel/guard block is skipped). BH (952) / TP (953) use the bypass wrapper for their main hits; enemy ESM (966) uses the respecting one (hence Cort reads as Dark). Element attribution law + live confirmation: [battle-formulas.md](../subsystems/battle-formulas.md); cast classes: [spell-table.md](../formats/spell-table.md#cast-classes-record-byte-0). |
@@ -665,6 +666,42 @@ focus height, and `BattleCamera::observe_action_state` applies the seed
 ladder on the action-state edges (the swing-clip commit stood in by the edge
 into `0x1E`, since the engine's animation player does not expose the clip
 header byte). Both hosts feed the same `action_state`.
+
+### The Done band framing and the two orbit writers
+
+**Question.** After an action resolves, `FUN_801E295C` sits in `0x50` /
+`0x51` for the `ctx[+0x6D8]` tail (`0x3C` display frames by default). Is the
+camera on the far framing there, and how fast does the Begin/Run prompt
+orbit?
+
+**Answer.** The tail is a **per-action framing chosen by category**, not the
+far framing. Both Done arms read `actor[+0x1DE]` before the framing call
+(`0x801E5E90..0x801E5EF4` in `0x50`, `0x801E5FC0..0x801E6018` in `0x51`):
+category `5` (Run) takes no framing and runs the yaw orbit, category `3`
+(Attack) `li a1,0x8`, a party slot whose target's live HP `+0x14C` is zero
+`li a1,0x8`, anything else `li a1,0x6` - re-armed every pass. The far framing
+returns at the end-of-action gate `0x5A`. The prompt orbits at `−2` yaw units
+per display frame (`−4` per two-frame camera step).
+
+**Evidence.** `zora_glare_petrify_post` (mednafen, `ctx[7] == 0x51`, slot 3
+acting after a spell, `ctx[+0x6D0] = 0xC00`, `ctx[+0x6DA] = 1966`, Zora at
+`(649, −47)` facing `3297`) reads pitch `0`, yaw `2735`, `TR (0, 1275,
+4820)`, focus the negated `(624, 0, −40)` - case 6's in-fight pose
+`(0, 0x500, 4915)` on the caster's seat with the tween one step short, and
+yaw `(1966 − 3297) & 0xFFF = 2765` being chased. `evil_medallion_rage_battle`
+(`ctx[7] == 0x0A`, flow byte `0xFF`) reads pitch `32`, `TR (0, 1280, 7920)`,
+focus at the origin - case 9 over `±825` seats - so between actions retail is
+on the far framing. The orbit rate: `scripts/pcsx-redux/autorun_battle_cam_orbit.lua`
+on `battle_gaza2_prompt` (240 vsyncs, `ctx[+6] == 0x1E`, `ctx[7] == 0x00`)
+with Exec breakpoints on both `sh v0,0x2(a0)` stores - the SM's at
+`0x801E2A6C` never fires, the battle tick's at `0x801D07CC` fires once per
+tick and the yaw drops `2 × DAT_1F800393` each time (`−6` per 3 vsyncs under
+the interpreter's `step = 3`, i.e. `−2` per vsync).
+
+**Engine side.** `legaia_engine_vm::battle_cam_script::done_band_phase` over
+`DoneBandInputs` (category / party seat / dead target), filled by both hosts;
+`DONE_STATES` split from `ACTION_END_STATES`. The orbit rate was already
+`ORBIT_STEP = 4` per camera step.
 
 ### The summon-then-melee park trigger - the stale field is `+0x1DC` bit 2
 

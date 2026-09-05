@@ -1007,21 +1007,47 @@ inside whichever combatant stood there - and is recorded in
 arms per band: the setup band (`0x00`, `0x0B`) arms nothing and runs the
 prologue orbit, the seed (`0x0C`) and action (`0x14..=0x48`) bands arm case
 `6`, the Run band (`0x64..=0x67`) arms case `9` plus the orbit itself, and the
-Done band (`0x50..=0x5A`) arms case `6`/`8` under a **bounded** tail - retail
-seeds `ctx[+0x6D8] = 0x3C` in the `0x50` arm and leaves for `0x5A` when the
-frame step drives it negative, so the per-action framing survives ~60 display
-frames past the strike. `0x3C` is the default, not the ceiling: a non-zero
-`ctx[+0x15]` raises the seed to `0x96` (150 frames) at `0x801E5F2C..0x801E5F3C`.
+Done band (`0x50..=0x52`) arms case `6`/`8` **per category** under a
+**bounded** tail - retail seeds `ctx[+0x6D8] = 0x3C` in the `0x50` arm and
+leaves for `0x5A` when the frame step drives it negative, so the per-action
+framing survives ~60 display frames past the strike. `0x3C` is the default,
+not the ceiling: a non-zero `ctx[+0x15]` raises the seed to `0x96` (150
+frames) at `0x801E5F2C..0x801E5F3C`.
 
-That bound is the one thing the port cannot copy: its `DoneFadeDown` waits on
-the HP-bar display cursor settling, which is unbounded, and a measured
-auto-resolved fight rests there for half its frames. `battle_cam_script::
-action_state_frames_the_action` therefore treats the whole Done band as idle,
-which is the port's stand-in for retail's timer; classifying it as an action
-in flight leaves both hosts in the per-action close-up for the entire fight,
-with one actor filling the frame and no idle orbit. Guards:
-`the_done_band_does_not_own_the_action_framing` and
-`a_real_turn_spends_most_of_its_frames_in_the_far_framing`.
+**The Done band's fork is on the action category**, read off the `0x50` arm
+(`0x801E5E90..0x801E5EF4`; the `0x51` arm at `0x801E5FC0..0x801E6018` is the
+same ladder): `actor[+0x1DE] == 5` (Run) skips the framing call and runs the
+yaw orbit instead, `== 3` (Attack) takes `li a1,0x8`, a party slot
+(`ctx[+0x13] < 3`) whose target's live HP `+0x14C` reads zero takes `0x8` too,
+and everything else `li a1,0x6`. Two captures pin the two sides:
+`zora_glare_petrify_post` (`ctx[7] == 0x51` after a monster's spell) reads
+pitch `0`, `TR (0, 1275, 4820)` - one tween step short of case 6's
+`(0, 0x500, prescale(0xC00) = 4915)` - with the focus on the caster's own seat
+and the yaw `ctx[+0x6DA] − actor[+0x46]`; `evil_medallion_rage_battle`
+(`ctx[7] == 0x0A`, flow byte `0xFF`, between actions) reads case 9's far
+framing over its `±825` seats. So the tail is filmed by the per-action
+framing and the end-of-action gate `0x5A` is where the far framing takes
+over. Engine: `battle_cam_script::done_band_phase` over `DoneBandInputs`,
+which both hosts fill from the acting actor; the far framing at a collapsed
+formation's `0x800` floor (`z = 3276`) is a closer shot than the in-fight
+arm's `4915`, which is what the port's earlier "Done band is idle" reading
+showed as a torso close-up after every strike. Guards:
+`the_done_band_owns_the_action_framing_until_end_of_action`,
+`a_monster_spell_done_tail_reads_the_zora_capture` and
+`a_real_turn_films_its_done_tail_and_hands_back_at_end_of_action`.
+
+**The idle orbit has two writers, and they never add up.** Besides the
+action SM's prologue store (gated on `ctx[7]` being `0x00` / `0x0B`), the
+battle tick `FUN_801D0748` carries the same `yaw -= DAT_1F800393 * 2` store
+in its own prologue (`0x801D07AC..0x801D07CC`), gated on the command-flow
+byte `ctx[+6]` being `0x1E` / `0x32` / `0x6E` / `0xFE` - the Begin/Run prompt
+among them. A 240-vsync PCSX-Redux trace parked at the `battle_gaza2_prompt`
+state (`scripts/pcsx-redux/autorun_battle_cam_orbit.lua`, Exec breakpoints on
+both stores) counts the dispatcher's store once per battle tick and the SM's
+never - the action SM is not run while the flow byte owns the frame - with
+the yaw stepping `−2 × frame_step` each time. The prompt therefore orbits at
+`−2` per display frame, the `−4` per camera step the port runs, from either
+writer alone.
 
 **Case 6 is re-armed every pass, so the framing chases the actor.** Each of
 the action states calls `FUN_801D5854(actor, 6)` before it does anything else

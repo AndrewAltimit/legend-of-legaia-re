@@ -35,6 +35,7 @@ below.
 | A streamed signature-attack cast module cannot run from a party slot because "a party actor has no monster block" | falsified (it has a first-class equivalent) | `FUN_8004AD80` resolves the staged raw anim index down two arms, and the party one (`DAT_801C9360[slot]`) carries the indices PROT 960 stages. The module's only monster-block touch is a hardcoded **seat-0** write unrelated to the caster. [details ↓](#the-cast-module-blocker-was-named-wrong) |
 | An art whose attack camera films flat has the wrong **arm**, so the fix is to select a better-choreographed one | falsified (every arm is timed for a ~20-frame swing, and not one is spare) | [details ↓](#the-attack-camera-was-never-an-arm-choice) |
 | `FUN_801D5854` case 6's `0x801D5CFC` arm is the per-action **party** framing, gated on `DAT_8007BD71 == 0xFE` as "the in-battle state" | falsified (`0xFE` is the battle-END signal; a running fight takes the `0x801D64C4` arm for everyone) | [details ↓](#the-case-6-party-arm-is-the-battle-over-framing) |
+| The Done band (`0x50` / `0x51`) is idle for the camera - keep it on the far framing so the "per-action close-up" does not own half the fight | falsified (retail re-arms case `6` / `8` per category there; the close-up was the wrong arm) | [details ↓](#the-done-band-is-not-idle) |
 | Navmesh / per-scene navigation data | falsified | `0x80108EA4..0x80109550` is per-scene GPU primitive scratch, not a 24-byte stride navmesh. Pointer hunts find zero RAM cells pointing into the window. Real per-scene region / collision / event-trigger data lives in the field-file preamble (a count + `u16` offset table + records - **not** the field-pack schema slots, which are a global-constant template; see [field-pack](../formats/field-pack.md)); the collision grid is the `+0x4000` MAP region; the encounter-record path lives at `actor[+0x94]`. |
 | Op-`0x4E` sub-ops 4..8 "absolute jump" / "rand -> next PC" readings | falsified (all sub-ops 0..9 are the 7-byte compare-and-skip) | [details ↓](#op-0x4e-sub-op-family---every-sub-op-09-is-a-compare) |
 | `801d58f0` / `801d63b0` as single shared port blockers | falsified (VA-aliasing artifact) | The two addresses host different code in different overlays (byte-verified: 80/228/124/308/1 B and 208/1036 B across 0897/baka/cutscene/debug-menu/fishing/slot/dance) - the port-catalog's bare-VA keying aggregated their refs into phantom top blockers. Tracked per-overlay via `overlay_<label>_<addr>` identities; catalog ignore category `va_aliased_overlay_local`. |
@@ -436,6 +437,33 @@ for the other actor. The fix is one boolean with the right name
 (`ActionFraming::battle_over`, `false` while a fight runs), not a camera-model
 change. Corrected reading in
 [battle.md](../subsystems/battle.md#battle-camera-exact).
+
+### The Done band is not idle
+
+The reading: `FUN_801E295C`'s Done band (`0x50` cleanup, `0x51` fade-down)
+is where a port fight rests, and a measured auto-resolved fight spent about
+half its frames there; classifying it as "an action is executing" left both
+hosts in the per-action close-up for the whole fight, so the port treated
+the band as idle and put the far framing (case 9) on it.
+
+Why it was plausible: the band *is* long relative to the port's short action
+band, the far framing *is* where the formation and the idle orbit live, and
+the per-action framing at the time really was a close-up.
+
+Why it is wrong: that close-up was the battle-over arm applied to a running
+fight (see [above](#the-case-6-party-arm-is-the-battle-over-framing)). With
+the in-fight arm, case 6 sits at `prescale(ctx[+0x6D0])` - `4915` for a
+`0xC00` depth - with both combatants in frame, while the far framing over a
+formation collapsed by a melee sits at its `0x800` floor, `3276`, closer than
+the arm it was standing in for; every torso close-up in the port's Done band
+was the far framing. Retail's own `0x50` / `0x51` arms fork on the category
+(`0x801E5E90..0x801E5EF4`, `0x801E5FC0..0x801E6018`): Run → orbit, Attack →
+case 8, party slot over a dead target → case 8, else case 6, re-armed every
+pass; `zora_glare_petrify_post` (`ctx[7] == 0x51`) reads case 6's pose on the
+caster and `evil_medallion_rage_battle` (`ctx[7] == 0x0A`, between actions)
+reads the far framing. Corrected reading in
+[battle.md](../subsystems/battle.md#battle-camera-exact) and
+[re-settled-threads.md](re-settled-threads.md#the-done-band-framing-and-the-two-orbit-writers).
 
 ## Audio / sound driver
 
