@@ -347,10 +347,16 @@ the band's `0x78`-frame sustain. The two flashes ride `World::screen_fade`
 hosts composite it through `fade_prim`; the band's hide (`RENDER_FLAG_HIDDEN`)
 is honoured by both hosts' draw gates.
 
-The retail player-summon frames carry **no** party readout and **no**
-spell-name label (mednafen `theeder_summon_mid_cast` / `meta_summon_mid_cast`:
-the acting-actor plaque, the caster close-up, the additive burst) - consistent
-with the `0x4C` block being monster-only at `0x28`.
+The retail player-summon frames carry **no** spell-name label (consistent
+with the `0x4C` block being monster-only at `0x28`), and the party readout
+follows the hide: the `0x33` / `0x34` crops (`theeder` / `gizam` / `nighto` /
+`aluru` `_summon_mid_cast`) show the acting-actor plaque, the caster close-up
+or the full white of the flash and no readout, `gola_gola` (`0x35`, stager
+phase 2, every seat hidden) is the plaque over white, and `vera` (`0x35`,
+stager phase 3) has the stager's un-hidden caster (`+0x21C = 0`, prim word
+live, the other seats still `0xFF`) with the pill readout back under it. The
+target plaque at the bottom right (`Vera Lv3 A` in `aluru`, `Gilium Lv3 A` in
+`nighto`) stays up through the band.
 
 ## The turn cursor `ctx[+0x1A]`
 

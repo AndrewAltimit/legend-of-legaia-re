@@ -1336,9 +1336,12 @@ Read off the capture corpus and the summon band's disassembly:
 
 - **No spell-name label for a party caster.** `0x28`'s label block is
   skipped for an acting id `< 3` (`sltiu v0,v0,0x3; bne v0,zero,0x801e4460`
-  at `0x801E43D8`); the mednafen `theeder_summon_mid_cast` /
-  `meta_summon_mid_cast` display crops show the acting-actor plaque, the
-  caster close-up and the additive burst, no label, and **no party readout**.
+  at `0x801E43D8`); the mednafen `*_summon_mid_cast` display crops show the
+  acting-actor plaque, the caster close-up or the flash's white and the
+  additive burst, and no label. The party readout follows the hide: absent in
+  every `0x33` / `0x34` crop and in `gola_gola` (`0x35`, all seats hidden),
+  back under the caster in `vera` (`0x35`, stager phase 3, the caster's
+  `+0x21C` cleared while the other seats stay `0xFF`).
 - **The hide.** `0x34` zeroes the prim word and sets `+0x21C = 0xFF` on
   every party seat and every living monster (`0x801E4B30..0x801E4B6C`); the
   PCSX `gimard_summon_visible` / `_burning_attack` states read exactly that
