@@ -733,6 +733,7 @@ pub(super) fn battle_cam_inputs(
             || world.battle_spell_menu.is_some()
             || world.battle_item_menu.is_some(),
         world.battle_ctx.action_state,
+        battle_done_band(world, acting_slot),
     );
     // The submenu close-up frames whoever owns the menu; the action framing
     // frames whoever is acting. Both are the same `BattleCamActor`.
@@ -923,6 +924,26 @@ pub(super) fn battle_post_action_target(
         ],
         live: t.active && t.battle.hp > 0,
     })
+}
+
+/// The Done band's per-category fork inputs (`FUN_801E295C`'s `0x50` /
+/// `0x51` arms, `script::done_band_phase`): the acting actor's committed
+/// category `actor[+0x1DE]`, whether its seat is a party one
+/// (`ctx[+0x13] < 3`), and whether its target's live HP has reached zero.
+/// A slot with no resolvable target reads as alive - retail dereferences
+/// whatever `s8` holds; the port's `None` takes the case-6 arm.
+pub(super) fn battle_done_band(
+    world: &legaia_engine_core::world::World,
+    acting_slot: u8,
+) -> legaia_engine_vm::battle_cam_script::DoneBandInputs {
+    legaia_engine_vm::battle_cam_script::DoneBandInputs {
+        category: world
+            .actors
+            .get(usize::from(acting_slot))
+            .map_or(0, |a| a.battle.action_category),
+        party_slot: usize::from(acting_slot) < world.party_count as usize,
+        target_dead: battle_post_action_target(world, acting_slot).is_some_and(|t| !t.live),
+    }
 }
 
 /// The per-art attack camera's track table, re-read from the battle-action

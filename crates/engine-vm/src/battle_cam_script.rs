@@ -262,7 +262,17 @@ pub enum BattleCamPhase {
 /// it pins *when* the orbit runs - only while the SM is idling between
 /// actions.
 ///
-/// ## The test is a **band**, not a deny-list
+/// The battle tick `FUN_801D0748` carries the same store in its own
+/// prologue (`0x801D07AC..0x801D07CC`), gated on the command-flow byte
+/// `ctx[+6]` being `0x1E` / `0x32` / `0x6E` / `0xFE` - the Begin/Run prompt
+/// among them. The two never add up: while the flow byte owns the frame the
+/// action SM is not run at all. A 240-vsync PCSX-Redux trace parked at the
+/// `battle_gaza2_prompt` state (`scripts/pcsx-redux/autorun_battle_cam_orbit.lua`)
+/// counts the dispatcher's store once per battle tick and the SM's store
+/// never, the yaw stepping `-2 * DAT_1F800393` each time - `-2` per display
+/// frame, i.e. [`ORBIT_STEP`] per camera step, from either writer alone.
+///
+/// ## The test is a **band**
 ///
 /// The `ctx[7]` space is banded, and `FUN_801E295C`'s own arms arm the camera
 /// per band rather than per byte:
@@ -272,34 +282,39 @@ pub enum BattleCamPhase {
 /// | Setup | `0x00`, `0x0B` | nothing; the prologue orbit runs |
 /// | Seed | `0x0C` | `FUN_801D5854(ctx[0x13], 6)` (`0x801E6464` arm) |
 /// | Action | `0x14..=0x48` | case `6` per state (`0x14`: `jal 0x801d5854` at `0x801E32E4`) |
-/// | Done | `0x50..=0x5A` | case `6`/`8`, under a **bounded** tail timer |
+/// | Done | `0x50..=0x52` | case `6` / `8` **per category** ([`done_band_phase`]), under the `ctx[+0x6D8]` tail timer |
+/// | End of action | `0x5A` | nothing - the far framing, retail's between-action pose |
 /// | Run | `0x64..=0x67` | case `9` + the orbit (`jal 0x801d5854`, `li a1,0x9` at `0x801E5BDC`) |
 ///
-/// The Done band is the one the port classifies differently, and the reason
-/// is a *duration*, not a missing timer. Retail seeds `ctx[+0x6D8] = 0x3C` in
-/// the `0x50` arm and decrements it by the frame step each `0x51` pass,
-/// leaving for `0x5A` when it goes negative - at most ~60 display frames of
-/// per-action framing past the strike. **The port has that timer too**
-/// (`done_cleanup` seeds it, `done_fade_down` ticks it), and it is bounded:
-/// ~39 display frames per turn, measured.
+/// **The Done band is a per-action framing, not an idle.** The `0x50` arm
+/// (`0x801E5E90..0x801E5EF4`) and the `0x51` arm (`0x801E5FC0..0x801E6018`)
+/// both fork on `actor[+0x1DE]`: category `5` (Run) skips the framing call
+/// and runs the yaw orbit instead, category `3` (Attack) takes `li a1,0x8`, a
+/// party slot whose target's live HP `+0x14C` reads zero takes `0x8` too, and
+/// everything else `li a1,0x6` - re-armed every pass for the
+/// `ctx[+0x6D8] = 0x3C` display frames the tail lasts. A retail save parked
+/// in `0x51` after a monster's spell (`zora_glare_petrify_post`) reads case
+/// 6's in-fight pose - pitch `0`, `TR (0, 0x500, prescale(ctx[+0x6D0]))`
+/// with the tween one step short, focus the caster's own seat, yaw
+/// `ctx[+0x6DA] - actor[+0x46]` - not the far framing.
 ///
-/// What differs is how much of a *fight* that band owns. Two measurements of
-/// the same `--no-player-battle` rikuroa fight, both correct and easy to read
-/// as contradicting each other: **~39 frames per turn** (the timer works) and
-/// **133 of ~270 sampled frames**, i.e. about half the fight (several turns,
-/// each with a Done band long relative to everything else). Classifying the
-/// band as "an action is executing" therefore pins the camera in the
-/// per-action close-up for roughly half the fight - one actor filling the
-/// frame, the rest of the formation off it or behind the eye, and no idle
-/// orbit. The band is idle here for that reason. Re-measure before moving it:
-/// the per-turn number alone makes the change look free, and it is not.
+/// An earlier port reading kept the whole Done band on the far framing
+/// because "the per-action close-up" would otherwise own about half of a
+/// fight's frames. That close-up was the battle-over arm applied to a
+/// running fight (see the module doc); the in-fight arm frames both
+/// combatants, so holding it through the tail is the retail look, and the
+/// tail is bounded by the same `0x3C`-frame timer the port ticks.
+///
+/// Between actions retail *is* on the far framing: a save parked at
+/// `ctx[7] == 0x0A` with the flow byte at `0xFF`
+/// (`evil_medallion_rage_battle`) reads pitch `32`, `TR (0, 1280, 7920)`,
+/// focus at the origin - case 9 over its `+-825` seats - so `0x5A` and the
+/// setup states stay idle here. (`0x0A` precedes the seed on both sides;
+/// `FUN_801E295C` has no arm for it.)
 ///
 /// The Run band is idle on retail's own authority, not as a deviation: both
 /// the category-`5` seed arm and the `0x50`/`0x51` arms skip the framing call
 /// for `actor[+0x1DE] == 5` and run the yaw orbit instead.
-///
-/// `0x0A` (`PreActionWait`) is a port-only state - `FUN_801E295C` has no
-/// `0x0A` arm at all - and it precedes the seed, so no action is executing.
 ///
 /// The retail orbit pair stays as [`RETAIL_ORBIT_STATES`] so the difference
 /// between retail's gate and this band model is visible rather than folded
@@ -307,10 +322,10 @@ pub enum BattleCamPhase {
 pub const fn action_state_frames_the_action(action_state: u8) -> bool {
     !matches!(
         action_state,
-        // Setup band: nothing committed yet (`0x0A` is port-only).
+        // Setup band: nothing committed yet.
         0x00 | 0x0A | 0x0B
-        // Done band: bounded on both sides, but ~half of a fight's frames.
-        | 0x50 | 0x51 | 0x52 | 0x5A
+        // End of action: the far framing until the next actor's seed.
+        | 0x5A
         // Run band: retail arms case 9 + the orbit here itself.
         | 0x64
             ..=0x67
@@ -320,8 +335,8 @@ pub const fn action_state_frames_the_action(action_state: u8) -> bool {
 }
 
 /// The two `ctx[7]` values retail's own orbit gate accepts
-/// (`0x801E2A3C..0x801E2A6C`). [`action_state_frames_the_action`] treats a
-/// whole band more as idle - see its note for why the port needs it.
+/// (`0x801E2A3C..0x801E2A6C`). [`action_state_frames_the_action`] is the
+/// band model built on it - see its note.
 pub const RETAIL_ORBIT_STATES: [u8; 2] = [0x00, 0x0B];
 
 /// The retail phase for one frame of battle state. Both hosts feed the same
@@ -358,25 +373,69 @@ pub fn phase_for(dialogue_up: bool, submenu_open: bool, action_executing: bool) 
 /// with `ctx[+0xD] == 2` it reads pitch `0x80` and `TR.y = 0x400` - case 7's
 /// style-2 tweak - over `TR.z = prescale(ctx[+0x6D0])`.
 ///
-/// The Done band's `0x51` is deliberately **not** here even though it can
-/// arm a per-action framing: the port's residency in that state is unbounded
-/// where retail's is `ctx[+0x6D8] = 0x3C` frames, so the whole band stays
-/// idle - see [`action_state_frames_the_action`].
+/// The Done band's `0x50` / `0x51` are not here: their arm forks per
+/// category ([`done_band_phase`]) and never reaches case `7`.
 pub const RECOVER_STATES: [u8; 2] = [0x1F, 0x20];
 
 /// `ctx[7]` values whose arm hands `FUN_801D5854` mode **`8`**
-/// ([`action_end_framing`]).
+/// unconditionally ([`action_end_framing`]): `0x52` (multi-cast
+/// continuation) and `0xFD` (idle hold), both `li a1,0x8` at `0x801E5F74`.
+/// The Done-cleanup pair forks per category instead - [`DONE_STATES`] and
+/// [`done_band_phase`].
+pub const ACTION_END_STATES: [u8; 2] = [0x52, 0xFD];
+
+/// The Done-cleanup pair: `0x50` (cleanup; seeds the `ctx[+0x6D8] = 0x3C`
+/// tail timer) and `0x51` (fade-down; ticks it). Their framing call forks on
+/// the action category - [`done_band_phase`].
+pub const DONE_STATES: [u8; 2] = [0x50, 0x51];
+
+/// What the Done-band arms read before choosing a framing case
+/// (`0x801E5E90..0x801E5EF4` in `0x50`, `0x801E5FC0..0x801E6018` in `0x51`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct DoneBandInputs {
+    /// `actor[+0x1DE]` - the committed action category (`1` item, `3`
+    /// attack, `4` spirit, `5` run).
+    pub category: u8,
+    /// `ctx[+0x13] < 3` - the acting slot is a party seat.
+    pub party_slot: bool,
+    /// The acting actor's target reads zero live HP (`s8[+0x14C] == 0`).
+    pub target_dead: bool,
+}
+
+/// `actor[+0x1DE]` value the Done band runs the orbit for instead of a framing.
+pub const DONE_CATEGORY_RUN: u8 = 5;
+/// `actor[+0x1DE]` value the Done band hands case `8` for.
+pub const DONE_CATEGORY_ATTACK: u8 = 3;
+
+/// The framing case the Done band's per-category fork arms, as a phase.
+/// Read off the `0x50` arm (the `0x51` arm at `0x801E5FC0` is the same
+/// ladder):
 ///
-/// The Done-cleanup arm forks on the action category
-/// (`0x801E5FC0..0x801E6018`): `actor[+0x1DE] == 3` (Attack) branches
-/// straight to `li a1,0x8`, as does a party slot whose target's live-HP
-/// halfword has reached zero; anything else takes `li a1,0x6`. `0x52`
-/// (multi-cast continuation) and `0xFD` (idle hold) arm `8` unconditionally
-/// (`0x801E5F74`).
+/// ```text
+/// 801e5ea0  li   v0,0x5
+/// 801e5ea4  beq  v1,v0,0x801e5f00     ; category 5 (Run): no framing, orbit
+/// 801e5ea8  _li  v0,0x3
+/// 801e5eac  beq  v1,v0,0x801e5ed8     ; category 3 (Attack): case 8
+/// 801e5eb4  lw   t2,0x20(sp)          ; ctx[+0x13]
+/// 801e5ebc  sltu v0,t2,v0             ; < 3 ?
+/// 801e5ec0  beq  v0,zero,0x801e5eec   ; monster slot: case 6
+/// 801e5ec8  lhu  v0,0x14c(s8)         ; the target's live HP
+/// 801e5ed0  bne  v0,zero,0x801e5eec   ; alive: case 6
+/// 801e5edc  jal  0x801d5854           ; a1 = 8: party slot, dead target
+/// 801e5ef0  jal  0x801d5854           ; a1 = 6
+/// ```
 ///
-/// Both `0x50` and `0x52` are single-frame transits in a measured fight, so
-/// classifying them as a close-up cannot pin the camera the way `0x51` would.
-pub const ACTION_END_STATES: [u8; 3] = [0x50, 0x52, 0xFD];
+/// The Run category's `Menu` is the far framing with the idle orbit: the
+/// `0x801E5F00` arm runs the same `yaw -= step * 2` store the prologue does.
+pub const fn done_band_phase(done: DoneBandInputs) -> BattleCamPhase {
+    if done.category == DONE_CATEGORY_RUN {
+        BattleCamPhase::Menu
+    } else if done.category == DONE_CATEGORY_ATTACK || (done.party_slot && done.target_dead) {
+        BattleCamPhase::ActionEnd
+    } else {
+        BattleCamPhase::Action
+    }
+}
 
 /// The retail phase for one frame of battle state, over the live `ctx[7]`.
 ///
@@ -396,10 +455,16 @@ pub const ACTION_END_STATES: [u8; 3] = [0x50, 0x52, 0xFD];
 ///
 /// **The post-strike band is case 7 / case 8, not case 6.** See
 /// [`RECOVER_STATES`] and [`ACTION_END_STATES`].
+///
+/// **The Done band frames per category.** `0x50` / `0x51` arm case `8` for
+/// an Attack (or a party slot over a dead target), the orbit for a Run, and
+/// case `6` for everything else - [`done_band_phase`] over `done`, which
+/// both hosts fill from the acting actor.
 pub fn phase_for_state(
     dialogue_up: bool,
     input_menu_open: bool,
     action_state: u8,
+    done: DoneBandInputs,
 ) -> BattleCamPhase {
     if dialogue_up {
         BattleCamPhase::Dialogue
@@ -407,6 +472,8 @@ pub fn phase_for_state(
         BattleCamPhase::Submenu
     } else if RECOVER_STATES.contains(&action_state) {
         BattleCamPhase::Recover
+    } else if DONE_STATES.contains(&action_state) {
+        done_band_phase(done)
     } else if ACTION_END_STATES.contains(&action_state) {
         BattleCamPhase::ActionEnd
     } else if action_state_frames_the_action(action_state) {
@@ -2866,7 +2933,7 @@ mod tests {
                 slot,
                 true,
                 BattleCamInputs {
-                    phase: phase_for_state(false, false, state),
+                    phase: phase_for_state(false, false, state, DoneBandInputs::default()),
                     acting: Some(BattleCamActor::default()),
                     action: ActionFraming {
                         party_slot: party,
@@ -2929,7 +2996,7 @@ mod tests {
                 slot,
                 true,
                 BattleCamInputs {
-                    phase: phase_for_state(false, false, state),
+                    phase: phase_for_state(false, false, state, DoneBandInputs::default()),
                     acting: Some(BattleCamActor::default()),
                     action: ActionFraming {
                         party_slot: party,
@@ -3180,11 +3247,9 @@ mod tests {
     /// than over raw bytes, so a state added to the SM lands on one side of
     /// the line deliberately.
     ///
-    /// The **Done band** is the load-bearing case: reading it as an action
-    /// leaves both hosts in the per-action close-up for an entire fight,
-    /// because it is the band a port battle *rests* in - retail bounds it
-    /// with the `ctx[+0x6D8]` tail timer, the port waits on the HP-bar
-    /// display cursor and has no bound at all.
+    /// The **Done band** is on the framed side: its arms re-arm case 6 / 8
+    /// every pass under the `ctx[+0x6D8]` tail timer, and the end-of-action
+    /// gate `0x5A` is where the far framing takes over.
     #[test]
     fn the_idle_states_leave_the_action_framing() {
         use crate::battle_action::ActionState;
@@ -3192,9 +3257,6 @@ mod tests {
             ActionState::Begin,
             ActionState::PreActionWait,
             ActionState::QueuedFromMenu,
-            ActionState::DoneCleanup,
-            ActionState::DoneFadeDown,
-            ActionState::DoneMultiCast,
             ActionState::EndOfAction,
             ActionState::RunBegin,
         ] {
@@ -3210,6 +3272,9 @@ mod tests {
             ActionState::AttackStrike,
             ActionState::MagicHitLoop,
             ActionState::SummonSustain,
+            ActionState::DoneCleanup,
+            ActionState::DoneFadeDown,
+            ActionState::DoneMultiCast,
         ] {
             assert!(
                 action_state_frames_the_action(s.as_byte()),
@@ -3609,12 +3674,18 @@ mod tests {
     #[test]
     fn only_the_input_pickers_take_the_close_up() {
         assert_eq!(
-            phase_for_state(false, false, 0x5A),
+            phase_for_state(false, false, 0x5A, DoneBandInputs::default()),
             BattleCamPhase::Menu,
             "the command chooser is retail's case 9, not the case-0 close-up"
         );
-        assert_eq!(phase_for_state(false, true, 0x5A), BattleCamPhase::Submenu);
-        assert_eq!(phase_for_state(true, true, 0x5A), BattleCamPhase::Dialogue);
+        assert_eq!(
+            phase_for_state(false, true, 0x5A, DoneBandInputs::default()),
+            BattleCamPhase::Submenu
+        );
+        assert_eq!(
+            phase_for_state(true, true, 0x5A, DoneBandInputs::default()),
+            BattleCamPhase::Dialogue
+        );
     }
 
     /// **The resting yaw is the free-running orbit, not a captured
@@ -3693,27 +3764,136 @@ mod tests {
         );
     }
 
-    /// The two post-strike states hand the camera to case 7, and the Done
-    /// cleanup / idle hold to case 8 - `FUN_801E295C`'s own arms.
+    /// The two post-strike states hand the camera to case 7, the multi-cast
+    /// continuation / idle hold to case 8, and the Done-cleanup pair to
+    /// whichever case its category fork picks - `FUN_801E295C`'s own arms.
     #[test]
     fn the_post_strike_states_arm_the_two_shot() {
+        let none = DoneBandInputs::default();
         for s in RECOVER_STATES {
             assert_eq!(
-                phase_for_state(false, false, s),
+                phase_for_state(false, false, s, none),
                 BattleCamPhase::Recover,
                 "state 0x{s:02X} arms FUN_801D5854 case 7"
             );
         }
         for s in ACTION_END_STATES {
             assert_eq!(
-                phase_for_state(false, false, s),
+                phase_for_state(false, false, s, none),
                 BattleCamPhase::ActionEnd,
                 "state 0x{s:02X} arms FUN_801D5854 case 8"
             );
         }
-        // The Done fade-down stays idle - the port's residency there is
-        // unbounded where retail's is `ctx[+0x6D8] = 0x3C` frames.
-        assert_eq!(phase_for_state(false, false, 0x51), BattleCamPhase::Menu);
+        // The Done-cleanup pair: `0x801E5EA0..0x801E5EF4`'s ladder.
+        let attack = DoneBandInputs {
+            category: DONE_CATEGORY_ATTACK,
+            party_slot: true,
+            target_dead: false,
+        };
+        let run = DoneBandInputs {
+            category: DONE_CATEGORY_RUN,
+            ..attack
+        };
+        let monster_spell = DoneBandInputs {
+            category: 2,
+            party_slot: false,
+            target_dead: false,
+        };
+        let party_over_corpse = DoneBandInputs {
+            category: 1,
+            party_slot: true,
+            target_dead: true,
+        };
+        let monster_over_corpse = DoneBandInputs {
+            party_slot: false,
+            ..party_over_corpse
+        };
+        for s in DONE_STATES {
+            assert_eq!(
+                phase_for_state(false, false, s, attack),
+                BattleCamPhase::ActionEnd
+            );
+            assert_eq!(phase_for_state(false, false, s, run), BattleCamPhase::Menu);
+            assert_eq!(
+                phase_for_state(false, false, s, monster_spell),
+                BattleCamPhase::Action
+            );
+            assert_eq!(
+                phase_for_state(false, false, s, party_over_corpse),
+                BattleCamPhase::ActionEnd
+            );
+            assert_eq!(
+                phase_for_state(false, false, s, monster_over_corpse),
+                BattleCamPhase::Action,
+                "the dead-target arm is gated on ctx[+0x13] < 3"
+            );
+        }
+        // The far framing still owns the end-of-action gate.
+        assert_eq!(
+            phase_for_state(false, false, 0x5A, attack),
+            BattleCamPhase::Menu
+        );
+    }
+
+    /// **Capture pin for the Done band.** `zora_glare_petrify_post` is a
+    /// retail save parked in `ctx[7] == 0x51` after a monster's spell (slot
+    /// 3, `ctx[+0xD] = 0`, `ctx[+0x6D0] = 0xC00`, `ctx[+0x6DA] = 1966`,
+    /// Zora at `+0x34/+0x38 = (649, -47)` facing `3297`). Its camera trio
+    /// reads pitch `0`, yaw `2735`, `TR (0, 1275, 4820)`, focus the negated
+    /// `(624, 0, -40)` - a tween one step short of case 6's in-fight pose,
+    /// nowhere near the far framing (pitch `32`, `TR.z` sized to the
+    /// formation, focus at the bbox centre; the two share `TR.y = 0x500`).
+    /// The Done band with a non-attack category is therefore
+    /// case 6 over the caster, and this is the pose the port targets.
+    #[test]
+    fn a_monster_spell_done_tail_reads_the_zora_capture() {
+        let done = DoneBandInputs {
+            category: 2,
+            party_slot: false,
+            target_dead: false,
+        };
+        assert_eq!(
+            phase_for_state(false, false, 0x51, done),
+            BattleCamPhase::Action
+        );
+        let zora = BattleCamActor {
+            facing: 3297,
+            world: [649.0, 0.0, -47.0],
+            height: None,
+        };
+        let f = ActionFraming {
+            party_slot: false,
+            depth_raw: 0xC00,
+            yaw_base: 1966,
+            style: 0,
+            char_id: 0,
+            ..Default::default()
+        };
+        let pose = action_framing(zora, f);
+        assert_eq!(pose.pitch, 0.0);
+        assert_eq!(
+            pose.yaw,
+            ((1966 - 3297) & 0xFFF) as f32,
+            "2765, the live 2735 chasing it"
+        );
+        assert_eq!(pose.tr, [0.0, 0x500 as f32, prescale_tr_z(0xC00)]);
+        assert!(
+            (pose.tr[2] - 4915.0).abs() < 1.0,
+            "4820 in the capture, one step short"
+        );
+        assert_eq!(pose.focus, [649.0, 0.0, -47.0]);
+        // The far framing this band used to take is a different pose on
+        // every axis the capture reads.
+        let far = menu_framing(
+            Some(FormationBox {
+                min: [-829.0, -319.0],
+                max: [830.0, 319.0],
+            }),
+            2735.0,
+        );
+        assert_ne!(far.pitch, pose.pitch, "32 vs 0");
+        assert_ne!(far.tr[2], pose.tr[2], "formation-sized vs ctx[+0x6D0]");
+        assert_ne!(far.focus, pose.focus, "bbox centre vs the caster");
     }
 
     /// **Case 7 orbits the midpoint, and that is what keeps both combatants
@@ -3800,18 +3980,16 @@ mod tests {
     }
 
     /// The action framing owns the camera **per band**, and the Done band is
-    /// not one of them.
+    /// one of them.
     ///
     /// The band boundaries are `FUN_801E295C`'s own (see
-    /// [`action_state_frames_the_action`]). What this pins is the one place
-    /// the port classifies differently: `DoneFadeDown` (`0x51`) is retail's
-    /// bounded action tail (`ctx[+0x6D8]`, seeded `0x3C` at `0x50`), and the
-    /// port's is bounded too - but it still owns about half of a fight's
-    /// frames, so classifying it as "an action is executing" hands it the
-    /// per-action close-up for half the battle.
+    /// [`action_state_frames_the_action`]). `DoneFadeDown` (`0x51`) is
+    /// retail's bounded action tail (`ctx[+0x6D8]`, seeded `0x3C` at `0x50`),
+    /// re-armed on case 6 / 8 every pass; the far framing takes over at the
+    /// end-of-action gate `0x5A`, not before.
     #[test]
-    fn the_done_band_does_not_own_the_action_framing() {
-        for idle in [0x00u8, 0x0A, 0x0B, 0x50, 0x51, 0x52, 0x5A, 0xFD, 0xFE, 0xFF] {
+    fn the_done_band_owns_the_action_framing_until_end_of_action() {
+        for idle in [0x00u8, 0x0A, 0x0B, 0x5A, 0xFD, 0xFE, 0xFF] {
             assert!(
                 !action_state_frames_the_action(idle),
                 "state 0x{idle:02X} is idle - the far framing owns it"
@@ -3826,7 +4004,8 @@ mod tests {
         // The action bands DO own it - the seed arm and every attack state
         // re-arm case 6 (`0x801E6464`, `0x801E32E4`).
         for act in [
-            0x0Cu8, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1E, 0x1F, 0x28, 0x3C, 0x46,
+            0x0Cu8, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1E, 0x1F, 0x28, 0x3C, 0x46, 0x50, 0x51,
+            0x52,
         ] {
             assert!(
                 action_state_frames_the_action(act),
@@ -3835,21 +4014,23 @@ mod tests {
         }
     }
 
-    /// **The residency law the phase script exists to satisfy.** A fight
-    /// whose action SM walks a real state sequence must spend a real share
-    /// of its frames in the far framing - that is where the whole formation
-    /// is on screen and where the idle orbit lives.
+    /// **The residency law the phase script exists to satisfy.** A turn's
+    /// Done tail is filmed by the per-action framing (case 8 for an attack)
+    /// and hands back to the far framing at the end-of-action gate, where the
+    /// formation is on screen and the idle orbit lives.
     ///
     /// The sequence below is a measured `--no-player-battle` turn from the
-    /// native play-window (`LEGAIA_DIAG_BATCAM`): seed, the attack band,
-    /// then the long `DoneFadeDown` settle before the next actor's `Begin`.
-    /// Classifying that settle as an action left the far framing owning
-    /// **one frame of 274** across the whole fight; the band model gives it
-    /// the majority.
+    /// native play-window (`LEGAIA_DIAG_BATCAM`): seed, the attack band, the
+    /// `DoneFadeDown` tail, then `0x5A` and the next `Begin`. An earlier
+    /// reading kept the tail on the far framing so that it owned most of the
+    /// fight's frames; retail's `0x51` arm re-arms case 6 / 8 every pass
+    /// (`0x801E5FC0..0x801E6018`), and with the in-fight arm right that is a
+    /// two-shot, not a close-up. What must hold: no tail frame is on the far
+    /// framing, and every frame from `0x5A` on is.
     #[test]
-    fn a_real_turn_spends_most_of_its_frames_in_the_far_framing() {
+    fn a_real_turn_films_its_done_tail_and_hands_back_at_end_of_action() {
         // (state byte, display frames spent there) - one measured turn.
-        let turn: [(u8, u32); 8] = [
+        let turn: [(u8, u32); 10] = [
             (0x00, 2),  // Begin
             (0x0C, 1),  // ActionSeed
             (0x14, 1),  // AttackFace
@@ -3857,11 +4038,18 @@ mod tests {
             (0x17, 1),  // AttackCloseRange
             (0x18, 1),  // AttackStrike
             (0x1E, 2),  // AttackChain
-            (0x51, 48), // DoneFadeDown - the port's unbounded settle
+            (0x50, 1),  // DoneCleanup
+            (0x51, 48), // DoneFadeDown - the bounded settle
+            (0x5A, 2),  // EndOfAction
         ];
+        let done = DoneBandInputs {
+            category: DONE_CATEGORY_ATTACK,
+            party_slot: true,
+            target_dead: false,
+        };
         let mut slot: Option<BattleCamera> = None;
         let mut frames = 0u64;
-        let (mut far, mut total) = (0u32, 0u32);
+        let (mut tail_far, mut tail, mut gate_far, mut gate) = (0u32, 0u32, 0u32, 0u32);
         for _round in 0..2 {
             for (state, dwell) in turn {
                 for _ in 0..dwell {
@@ -3869,7 +4057,7 @@ mod tests {
                     let inputs = BattleCamInputs {
                         target: None,
                         entry_yaw: 0.0,
-                        phase: phase_for(false, false, action_state_frames_the_action(state)),
+                        phase: phase_for_state(false, false, state, done),
                         acting: Some(BattleCamActor::default()),
                         formation: Some(traced_formation()),
                         action: ActionFraming::default(),
@@ -3878,16 +4066,29 @@ mod tests {
                         action_state: state,
                     };
                     drive(&mut slot, true, inputs, frames, None);
-                    total += 1;
-                    if slot.as_ref().map(|c| c.phase()) == Some(BattleCamPhase::Menu) {
-                        far += 1;
+                    let far = slot.as_ref().map(|c| c.phase()) == Some(BattleCamPhase::Menu);
+                    if DONE_STATES.contains(&state) {
+                        tail += 1;
+                        tail_far += u32::from(far);
+                    } else if state == 0x5A || state == 0x00 {
+                        gate += 1;
+                        gate_far += u32::from(far);
                     }
                 }
             }
         }
-        assert!(
-            far * 2 > total,
-            "far framing owned {far} of {total} frames - the fight is a permanent close-up"
+        assert_eq!(
+            tail_far, 0,
+            "the Done tail is a per-action framing ({tail} frames)"
+        );
+        assert_eq!(
+            gate_far, gate,
+            "end of action and Begin are the far framing"
+        );
+        assert_eq!(
+            slot.as_ref().unwrap().phase(),
+            BattleCamPhase::Menu,
+            "the round closes on the far framing"
         );
     }
 

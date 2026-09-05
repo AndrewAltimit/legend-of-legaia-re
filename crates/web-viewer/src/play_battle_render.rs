@@ -132,12 +132,41 @@ fn derive_battle_cam(
     // keeps the far framing. Same call the native window makes - see
     // `script::phase_for_state` for the two retail framebuffers that separate
     // case 0 from case 9, and for the case-7 / case-8 post-strike bands.
+    // Cases 7 / 8 frame against the acting actor's target (`actor[+0x1DD]`
+    // through the 8-slot actor table) - the browser mirror of the native
+    // `battle_post_action_target`.
+    let target = world
+        .actors
+        .get(acting_slot as usize)
+        .map(|a| a.battle.active_target)
+        .filter(|s| usize::from(*s) < 8)
+        .and_then(|s| world.actors.get(usize::from(s)))
+        .map(|t| script::PostActionTarget {
+            world: [
+                t.move_state.world_x as f32,
+                t.move_state.world_y as f32,
+                t.move_state.world_z as f32,
+            ],
+            live: t.active && t.battle.hp > 0,
+        });
+    // The Done band's per-category fork (`FUN_801E295C` `0x50` / `0x51`
+    // arms): category `actor[+0x1DE]`, party seat, dead target - the browser
+    // mirror of the native `battle_done_band`.
+    let done = script::DoneBandInputs {
+        category: world
+            .actors
+            .get(usize::from(acting_slot))
+            .map_or(0, |a| a.battle.action_category),
+        party_slot: usize::from(acting_slot) < world.party_count as usize,
+        target_dead: target.is_some_and(|t| !t.live),
+    };
     let phase = script::phase_for_state(
         world.current_dialog.is_some() || world.inline_dialogue.is_some(),
         world.battle_arts_menu.is_some()
             || world.battle_spell_menu.is_some()
             || world.battle_item_menu.is_some(),
         world.battle_ctx.action_state,
+        done,
     );
     let actor_at = |slot: u8, party_slot: Option<u8>| {
         let a = world.actors.get(slot as usize)?;
@@ -198,23 +227,6 @@ fn derive_battle_cam(
     // signal - `0xFF` for the whole of a running fight, so `false` here
     // (same as the native host; the victory-pose arm is not modelled).
     let party = usize::from(acting_slot) < pc;
-    // Cases 7 / 8 frame against the acting actor's target (`actor[+0x1DD]`
-    // through the 8-slot actor table) - the browser mirror of the native
-    // `battle_post_action_target`.
-    let target = world
-        .actors
-        .get(acting_slot as usize)
-        .map(|a| a.battle.active_target)
-        .filter(|s| usize::from(*s) < 8)
-        .and_then(|s| world.actors.get(usize::from(s)))
-        .map(|t| script::PostActionTarget {
-            world: [
-                t.move_state.world_x as f32,
-                t.move_state.world_y as f32,
-                t.move_state.world_z as f32,
-            ],
-            live: t.active && t.battle.hp > 0,
-        });
     script::BattleCamInputs {
         phase,
         acting,
