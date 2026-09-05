@@ -194,8 +194,9 @@ fn derive_battle_cam(
     // `FUN_801D5854` case 6: `party_slot` is retail's `ctx[+0x13] < 3` over
     // the engine's party band, `char_id` its `DAT_8007BD10[slot]`, and
     // `depth_raw` is `ctx[+0x6D0]` - what `camera_height_for_frame` last
-    // computed. `flow_active` is `_DAT_8007BD71 == 0xFE`, which the engine
-    // has no byte for and which is true whenever it runs this camera.
+    // computed. `battle_over` is `DAT_8007BD71 == 0xFE`, the battle-end
+    // signal - `0xFF` for the whole of a running fight, so `false` here
+    // (same as the native host; the victory-pose arm is not modelled).
     let party = usize::from(acting_slot) < pc;
     // Cases 7 / 8 frame against the acting actor's target (`actor[+0x1DD]`
     // through the 8-slot actor table) - the browser mirror of the native
@@ -221,7 +222,7 @@ fn derive_battle_cam(
         formation,
         action: script::ActionFraming {
             party_slot: party,
-            flow_active: true,
+            battle_over: false,
             depth_raw: world.battle_camera_frame_height as i32,
             yaw_base: 0,
             style: 0,
@@ -233,6 +234,10 @@ fn derive_battle_cam(
         entry_yaw: f32::from(world.field_camera_azimuth & 0xFFF),
         shake_amplitude: world.camera_shake_amplitude,
         attack: attack_channels(world, world.battle_ctx.active_actor),
+        // The yaw counter `ctx[+0x6DA]` is re-seeded on the action SM's
+        // state edges (`BattleCamera::observe_action_state`) - same field
+        // the native host fills.
+        action_state: world.battle_ctx.action_state,
     }
 }
 

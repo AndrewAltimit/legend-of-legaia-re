@@ -100,10 +100,18 @@
 //!
 //! A **coin flip**, not a swing-phase counter. Its one writer is
 //! `FUN_8004E13C` in `SCUS_942.54` (`0x8004E2DC`), which stores `rand() % 2`
-//! beside `ctx[+0x6DA] = (rand() % 2) * 0x800 + 0x280` and `ctx[+0xD] = 0`.
-//! Each of the twenty table rows therefore holds **two alternative offsets**
-//! and retail picks one per action, which is why the same art frames from two
-//! visibly different angles on successive swings. `FUN_801D5854` clears it to
+//! on every call - and it is called from the anim commit `FUN_8004AD80`
+//! (`0x8004BE28`) for every committed clip whose header byte `+0x87` is
+//! non-zero, with that byte as its argument. Its other store,
+//! `ctx[+0x6DA] = (rand() % 2) * 0x800 + 0x280` with `ctx[+0xD] = 0`, is
+//! gated harder (`0x8004E25C..0x8004E280`: argument `2`, the previous
+//! commit's `ctx[+0x243]` not `2`, and `ctx[+0x13] < 3`) - a party
+//! attacker's first swing-clip commit; the shared battle camera applies that
+//! seed on its own state edges (`battle_cam_script::BattleCamera::
+//! observe_action_state`). Each of the twenty table rows therefore holds
+//! **two alternative offsets** and retail picks one per commit, which is why
+//! the same art frames from two visibly different angles on successive
+//! swings. `FUN_801D5854` clears it to
 //! `0` when the acting character id is `3` (`0x801D6A5C`).
 //!
 //! ## The two ramp counters

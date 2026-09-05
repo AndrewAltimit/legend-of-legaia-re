@@ -790,6 +790,9 @@ pub(super) fn battle_cam_inputs(
         entry_yaw: battle_entry_yaw(world),
         shake_amplitude: world.camera_shake_amplitude,
         attack: battle_attack_channels(world, world.battle_ctx.active_actor),
+        // The yaw counter `ctx[+0x6DA]` is re-seeded on the action SM's
+        // state edges (`BattleCamera::observe_action_state`).
+        action_state: world.battle_ctx.action_state,
     }
 }
 
@@ -985,10 +988,11 @@ pub(super) fn battle_attack_channels(
 /// `party_slot` is retail's `ctx[+0x13] < 3` over the engine's own party
 /// band, `char_id` its `DAT_8007BD10[slot]` (the party row + 1), and
 /// `depth_raw` is `ctx[+0x6D0]` - the value `camera_height_for_frame`
-/// recomputed at the last action seed. `flow_active` is retail's
-/// `_DAT_8007BD71 == 0xFE`, the battle-flow SM's in-battle state: the engine
-/// has no flow-state byte and only ever runs the camera while a battle is
-/// live, so it is constant here. `style` (`ctx[+0xD]`) is unmodelled.
+/// recomputed at the last action seed. `battle_over` is retail's
+/// `DAT_8007BD71 == 0xFE`, the **battle-end signal**, which reads `0xFF` for
+/// the whole of a running fight; the engine only runs this camera while a
+/// battle is live and does not model the victory-pose sequence that arm
+/// frames, so it is `false` here. `style` (`ctx[+0xD]`) is unmodelled.
 pub(super) fn battle_action_framing(
     world: &legaia_engine_core::world::World,
     acting_slot: u8,
@@ -996,7 +1000,7 @@ pub(super) fn battle_action_framing(
     let party = usize::from(acting_slot) < world.party_count as usize;
     legaia_engine_vm::battle_cam_script::ActionFraming {
         party_slot: party,
-        flow_active: true,
+        battle_over: false,
         depth_raw: world.battle_camera_frame_height as i32,
         yaw_base: 0,
         style: 0,
