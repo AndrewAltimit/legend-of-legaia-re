@@ -296,7 +296,12 @@ fn committing_the_taught_category_is_accepted_and_advances_the_lesson() {
     });
     world.tick_battle_command();
     assert_eq!(queued(&world), vec![marker(msg::NOW_BEGIN)]);
-    assert!(world.battle_command.is_none(), "the strike commits");
+    // The strike commits and the ring walks on to the next member that owes
+    // a command (three are seated here), so slot 0's session is gone.
+    assert!(
+        world.battle_command.as_ref().is_none_or(|s| s.actor != 0),
+        "the strike commits"
+    );
     assert!(world.battle_tutorial.as_ref().unwrap().pending_advance);
 
     // The bump lands at the next turn start, so lesson 1's intro is what the

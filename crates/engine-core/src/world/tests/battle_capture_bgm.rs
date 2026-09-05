@@ -496,10 +496,14 @@ fn battle_arts_uses_staged_art_record_power_tiers_and_status() {
     );
 
     // Let the band walk the stream, exactly as the play window's live loop
-    // does.
+    // does - and stop the moment the art's own turn is over. The round runs
+    // on from there (the monster's turn, then the round end and the next
+    // round start's per-round Toxic DoT tick on this very target), so the
+    // HP read has to land before the turn moves on.
     for _ in 0..400 {
         if world.battle_ctx.action_state == ActionState::EndOfAction.as_byte()
             || world.battle_command.is_some()
+            || world.battle_ctx.active_actor != 0
         {
             break;
         }

@@ -429,13 +429,16 @@ So the bound shortens the round by one entry per pre-emptively removed
 combatant, and by nothing at all for an actor that died *after* its turn - that
 one already consumed a cursor position.
 
-**Port.** The engine compares the bumped cursor against the count of *living*
-combatants instead. The two agree while nobody dies mid-round, and diverge in
-one direction: an actor that dies **after** acting shrinks the engine's bound
-but not retail's, so the engine can end a round one action early. `ctx[+0x00]`,
-`ctx[+0x01]` and `ctx[+0x25]` are not modelled on
-`BattleActionCtx`; closing the gap means carrying all three, because "seated"
-is not recoverable from the engine's actor table once an actor is dead.
+**Port.** The engine's round end is keyed on the initiative keys rather than
+on a cursor: `World::next_combatant_by_initiative` returns `None` once no
+living actor holds an unspent key, and that is the round end
+(`World::end_battle_round`). It agrees with retail's bound in both
+directions: an actor that dies **after** acting had its key consumed at its
+dispatch (retail: its cursor position was consumed), and one that dies
+**before** acting has its key zeroed by the pick's first loop (retail: the
+`0x801DABF8` clear plus the `+0x25` skip bump). `ctx[+0x00]`, `ctx[+0x01]` and
+`ctx[+0x25]` are therefore not modelled on `BattleActionCtx`; what they
+compute is recovered from the keys.
 
 **Port.** `legaia_engine_vm::battle_action::BattleActionCtx::turn_cursor`. The
 port previously modelled `+0x1A` on `BattleActor` and stamped it at `Begin`

@@ -26,21 +26,54 @@ fn spirit_command_charges_ap_and_raises_the_guard_stance() {
         phase: CommandPhase::SpiritGuard,
     });
     world.tick_battle_command();
-    assert!(world.ap_gauges[0].spirit_charged, "+5 AP spirit charge");
-    assert!(world.battle_guarding[0], "guard stance raised");
-    // Spirit consumes the turn, and the SpiritGuard arm claims the cycle in
-    // the same tick (`World::cycle_battle_turn`): a parked EndOfAction would
-    // be re-seeded with the actor's stale action bytes by the SM's 0x5A
-    // self-advance next tick - the free-bonus-attack defect. So the
-    // observable is the turn moving on (here: the next party member's own
-    // command session, already open), not the intermediate park.
-    assert_ne!(
-        world.battle_ctx.active_actor, 0,
-        "spirit consumes the turn and the cycle claims the next combatant"
+    // The guard stance is up from the commit - retail's pending category
+    // `+0x1DE = 4`, which every monster that dispatches ahead of this member
+    // reads - while the AP charge is the Spirit band's own, at dispatch.
+    assert!(
+        world.battle_guarding[0],
+        "guard stance raised at the commit"
     );
-    if let Some(next) = world.battle_command.as_ref() {
-        assert_ne!(next.actor, 0, "slot 0's session did not linger");
+    assert!(
+        !world.ap_gauges[0].spirit_charged,
+        "the AP charge waits for the member's dispatch"
+    );
+    // The commit walks the ring on to the next member that owes a command
+    // (retail's ten-site idiom at `0x801D16AC`): slot 0's session does not
+    // linger, slot 1's opens.
+    let next = world
+        .battle_command
+        .as_ref()
+        .expect("the ring walks on to the next member");
+    assert_eq!(next.actor, 1, "slot 1 owes the next command");
+    // The other two commit Spirit as well; the last commit begins the round
+    // (`0x6E -> 0xFE`), and the execution band dispatches the party in slot
+    // order (flat tokens - no SPD here), each Spirit band charging its own
+    // gauge.
+    for actor in 1..3u8 {
+        world.battle_command = Some(BattleCommandSession {
+            actor,
+            party_slot: actor,
+            no_escape: false,
+            phase: CommandPhase::SpiritGuard,
+        });
+        world.tick_battle_command();
     }
+    assert!(
+        world.battle_command.is_none(),
+        "the last commit begins the round"
+    );
+    for slot in 0..3 {
+        assert!(
+            world.ap_gauges[slot].spirit_charged,
+            "+5 AP spirit charge at slot {slot}'s dispatch"
+        );
+    }
+    // Spirit consumes the turn: the cycle moved on past the party to the
+    // monsters, none of which is left parked on slot 0.
+    assert!(
+        world.battle_ctx.active_actor >= 3,
+        "the party's three Spirit turns are spent; a monster acts"
+    );
 }
 
 #[test]

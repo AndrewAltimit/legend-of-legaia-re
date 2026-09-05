@@ -84,6 +84,23 @@ impl World {
         // install_field_carriers cleared the slot map; repopulate for this set.
         self.field_carrier_slots = carrier_slots;
 
+        // The system flags this scene's own script SETs cleanly - the
+        // disc-side half of a direct entry into a scripted carrier's fight
+        // replaying the record's arm (`World::replay_scripted_battle_arm`).
+        // Every partition, coherent decodes only; the census's text-alias
+        // rows are excluded by the same `clean` bit.
+        self.scene_script_system_flag_sets = (0..3)
+            .flat_map(|p| crate::man_field_scripts::walk_partition_gflag_sites(man_file, man, p))
+            .filter(|s| {
+                s.bank == crate::man_field_scripts::FlagBank::System
+                    && s.kind == legaia_asset::field_disasm::FlagKind::Set
+                    && s.clean
+            })
+            .map(|s| s.flag)
+            .collect();
+        self.scene_script_system_flag_sets.sort_unstable();
+        self.scene_script_system_flag_sets.dedup();
+
         // Capture each actor's inline interaction-script dialogue, keyed by its
         // partition-1 record index (= the `slot` a field-interact op carries),
         // so `field_interact` can open the interacted actor's real dialogue.

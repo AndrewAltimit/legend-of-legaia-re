@@ -192,6 +192,14 @@ pub struct ActiveTutorialBox {
     /// Frames left before a non-waiting box dismisses itself. Unused when
     /// [`Self::waits_for_input`].
     pub frames_remaining: u16,
+    /// Dispatch group: every box one hook dispatch registered shares a
+    /// value, and the whole front group is on screen at once (each box is
+    /// its own retail text actor). Boxes of a later dispatch wait behind it.
+    pub group: u32,
+    /// Any pad press dismisses this box, not only Cross - the sparring
+    /// caption's `FUN_80056208` phase-1 test is on the whole packed pad
+    /// word. Meaningless for a waiting box.
+    pub any_press_dismisses: bool,
 }
 
 impl ActiveTutorialBox {

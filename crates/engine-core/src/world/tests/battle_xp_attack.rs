@@ -395,7 +395,9 @@ fn next_living_combatant_round_robins_skipping_dead() {
 /// Three living actors with well-separated SPD: the per-turn key ranges
 /// (`speed + rand()%(speed/2+1) + 1`) can't overlap, so the order is fixed
 /// by SPD regardless of the RNG. Highest SPD acts first; each turn is
-/// consumed; a fresh round is seeded once everyone has acted.
+/// consumed; the pick reports the round's end once everyone has acted, and
+/// the next round start (`FUN_801DA780` from `0x14`) is what re-seeds -
+/// the pick itself never does.
 #[test]
 fn initiative_orders_turns_by_speed_then_reseeds() {
     let mut world = World {
@@ -413,11 +415,18 @@ fn initiative_orders_turns_by_speed_then_reseeds() {
     world.battle_speed[0] = 10;
     world.battle_speed[1] = 50;
     world.battle_speed[2] = 30;
-    // Fresh keys (all 0): the first pick seeds a round, then orders by SPD.
+    // Fresh keys (all 0) are a round that never started: the pick has
+    // nothing to order and says so.
+    assert_eq!(world.next_combatant_by_initiative(), None);
+    // The round start seeds; the picks then order by SPD.
+    world.reseed_initiative();
     assert_eq!(world.next_combatant_by_initiative(), Some(1)); // SPD 50
     assert_eq!(world.next_combatant_by_initiative(), Some(2)); // SPD 30
     assert_eq!(world.next_combatant_by_initiative(), Some(0)); // SPD 10
-    // Round exhausted -> reseed -> highest SPD again.
+    // Round exhausted -> the round end; the next start re-seeds -> highest
+    // SPD again.
+    assert_eq!(world.next_combatant_by_initiative(), None);
+    world.reseed_initiative();
     assert_eq!(world.next_combatant_by_initiative(), Some(1));
 }
 
@@ -438,12 +447,16 @@ fn initiative_skips_dead_high_speed_actor() {
     world.battle_speed[0] = 20;
     world.battle_speed[1] = 90;
     world.battle_speed[2] = 40;
+    world.reseed_initiative();
     // Slot 1 is dead -> skipped; slot 2 (40) outruns slot 0 (20).
     assert_eq!(world.next_combatant_by_initiative(), Some(2));
     assert_eq!(world.next_combatant_by_initiative(), Some(0));
+    assert_eq!(world.next_combatant_by_initiative(), None);
 }
 
-/// With no SPD anywhere the selector defers to round-robin slot order.
+/// With no SPD anywhere there is nothing to roll: the round start hands
+/// every living slot one flat turn token and the pick walks them in slot
+/// order - party first, then monsters - once per round.
 #[test]
 fn initiative_falls_back_to_round_robin_without_speed() {
     let mut world = World {
@@ -456,9 +469,13 @@ fn initiative_falls_back_to_round_robin_without_speed() {
     world.actors[0].battle.liveness = 1;
     world.actors[2].battle.liveness = 1;
     assert!(!world.any_battle_speed());
-    world.battle_ctx.active_actor = 0;
+    world.reseed_initiative();
+    assert_eq!(world.next_combatant_by_initiative(), Some(0));
     assert_eq!(world.next_combatant_by_initiative(), Some(2));
-    world.battle_ctx.active_actor = 2;
+    // Both tokens spent: the round is over until the next start re-seeds.
+    assert_eq!(world.next_combatant_by_initiative(), None);
+    world.reseed_initiative();
+    world.battle_round_flow.flat_walk_last = None;
     assert_eq!(world.next_combatant_by_initiative(), Some(0));
 }
 

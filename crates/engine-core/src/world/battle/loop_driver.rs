@@ -600,125 +600,303 @@ impl World {
         Some(outcome)
     }
 
-    /// Turn cycling for the live loop: the round boundary + the next-combatant
-    /// re-arm, both keyed on the SM idling at `EndOfAction`.
+    /// Turn cycling for the live loop - retail's round machine, keyed on the
+    /// action SM idling at `EndOfAction`.
+    ///
+    /// The round has two bands ([`crate::battle_round::RoundPhase`]) that
+    /// never overlap. In the **command band** the flow SM owns the frame and
+    /// this does nothing: the command tick walks the party through their
+    /// rings and [`Self::begin_round_execution`] hands the round over once the
+    /// last member commits. In the **execution band** every idle is a pick:
+    /// the highest unspent initiative key acts next, party or monster, a party
+    /// member dispatching the command it committed
+    /// ([`Self::dispatch_pending_party_action`]) and a monster its AI pick.
+    /// When no key is left the round ends (`0xFF`: the mode-counter bump +
+    /// the `0x400` waker) and the next one opens (`0x14`: the actor sweep,
+    /// the key re-seed, the DoT tick, `Begin | Run`).
     ///
     /// Extracted so every site that PARKS the SM at `EndOfAction` mid-tick
-    /// (the spell / Spirit / tutorial arms and the monster cast fold, which
-    /// all run in a menu tick that returns before the step) can claim the
-    /// turn in the same tick. The SM's own `end_of_action` handler otherwise
-    /// steps `EndOfAction -> PreActionWait -> ActionSeed` on the NEXT tick
-    /// and re-seeds the same actor's **stale** action bytes - the shape that
+    /// (the spell / Spirit arms and the monster cast fold, which run in a
+    /// tick that returns before the step) can claim the turn in the same
+    /// tick. The SM's own `end_of_action` handler otherwise steps
+    /// `EndOfAction -> PreActionWait -> ActionSeed` on the NEXT tick and
+    /// re-seeds the same actor's **stale** action bytes - the shape that
     /// made every Spirit guard and every spell cast grant its actor a free
     /// bonus attack off the battle-entry queue (caught by the
     /// `seru_cast_magic_xp_ladder` test).
     ///
-    /// REF: FUN_801D0748 (retail's flow SM owns this arming; the SM's 0x5A
-    /// self-advance assumes the flow SM has already staged the next action)
+    /// REF: FUN_801D0748 (states `0x14` / `0x6E` / `0xFE`)
+    /// REF: FUN_801E295C (the `0x5A` re-pick and the `0xFF` round end at
+    /// `0x801E67E8`)
     pub(in crate::world) fn cycle_battle_turn(&mut self) {
+        use crate::battle_round::RoundPhase;
         use vm::battle_action::ActionState;
-        // Re-arm the next combatant when the SM idles at EndOfAction, cycling
-        // across the whole actor table (party AND monsters) in slot order so
-        // monsters take their turns. Only re-arm while BOTH sides still have a
-        // living member - if either side is wiped we leave the SM at
-        // EndOfAction so its liveness scan resolves the wipe into
-        // BattleComplete next step.
+        if self.battle_ctx.action_state != ActionState::EndOfAction.as_byte() {
+            return;
+        }
+        // Only cycle while BOTH sides still have a living member - if either
+        // side is wiped we leave the SM at EndOfAction so its liveness scan
+        // resolves the wipe into BattleComplete next step. A petrified actor
+        // counts as defeated (Stone), so it doesn't keep its side "alive" - a
+        // fully-petrified party is a wipe, not a stuck loop.
+        if !self.battle_both_sides_alive() {
+            return;
+        }
+        match self.battle_round_flow.phase {
+            // The flow SM owns the frame; the command tick advances it.
+            RoundPhase::Command => {}
+            // Battle entry without the formation path (`World::enter_battle`
+            // alone, or a host that staged the SM by hand): the first idle is
+            // the first round start.
+            RoundPhase::Open => self.begin_battle_round(),
+            RoundPhase::Execute => {
+                if let Some(next) = self.next_combatant_by_initiative() {
+                    self.dispatch_battle_turn(next);
+                } else {
+                    self.end_battle_round();
+                    // A DoT can down the last member of a side; the round
+                    // start re-checks before it opens a prompt.
+                    self.begin_battle_round();
+                }
+            }
+        }
+    }
+
+    /// `true` while each side still has a member who is not defeated.
+    pub(in crate::world) fn battle_both_sides_alive(&self) -> bool {
         let party_count = self.party_count.max(1);
         let n = self.actors.len() as u8;
-        // A petrified actor counts as defeated (Stone), so it doesn't keep its
-        // side "alive" - a fully-petrified party is a wipe, not a stuck loop.
-        let mut party_alive = (0..party_count).any(|i| !self.actor_effectively_defeated(i));
-        let mut monsters_alive = (party_count..n).any(|i| !self.actor_effectively_defeated(i));
+        let party_alive = (0..party_count).any(|i| !self.actor_effectively_defeated(i));
+        let monsters_alive = (party_count..n).any(|i| !self.actor_effectively_defeated(i));
+        party_alive && monsters_alive
+    }
 
-        // Round boundary: the SM idles at EndOfAction and no living actor still
-        // holds an initiative key, so a full round just completed. Tick every
-        // actor's status effects once here - DoT damage (Venom / Toxic) plus
-        // duration decay - mirroring the `BattleRound::end` tick the runner path
-        // uses, so poison actually drains HP and afflictions wear off in the
-        // live loop (this is the tick the skip-turn comment below relies on).
-        // RNG-free (DoT is deterministic), so the upcoming reseed's RNG stream
-        // is unchanged; gated on the SPD initiative path (a no-SPD synthetic
-        // battle has no round concept). A DoT can down the last member of a
-        // side, so re-evaluate the wipe flags afterward before arming a turn.
-        if self.battle_ctx.action_state == ActionState::EndOfAction.as_byte()
-            && party_alive
-            && monsters_alive
-            && self.any_battle_speed()
-            && !self.any_living_initiative_key()
-        {
-            // End-of-round handler. Retail reaches it as action-SM state
-            // `0xFF` (`801e67e8`), which the `0x5A` gate arms once every
-            // living actor has acted: it parks the flow byte at `0x14` - the
-            // round-driver state the sweep + DoT tick below stand in for -
-            // then bumps the round counter `ctx[+0x28A]` and calls
-            // `FUN_801F45A4`. Both run here, ahead of the sweep, in that
-            // order. The bump is what walks a multi-phase boss through its
-            // scripted casts (`crate::monster_ai::decide` reads the same
-            // counter); the waker is RNG-free unless an actor carries the
-            // latent `0x400` status, which no retail applier sets.
-            self.advance_battle_mode();
-            // Retail's round-end writes `ctx[+0x06] = 0x14`, and `0x14` opens
-            // the `Begin | Run` prompt (`0x1E`) unconditionally. Park the
-            // port's flow byte on the same state so the next party command of
-            // the new round gets the prompt and the ones after it do not.
-            self.set_battle_flow(crate::battle_flow::BattleFlowState::TurnPrompt);
-            self.tick_status_0x400_wakes();
-            // The actor sweep (`FUN_801D88CC`): action-gauge restore, the
-            // `+0x1DF` action-stream clear, and the party band's stale-target
-            // re-pick. Retail's flow SM runs it here, *before* the initiative
-            // reseed and before the DoT tick (`FUN_801D0748` at `801d0ec4`),
-            // so it goes ahead of `tick_status_effects` below and ahead of the
-            // reseed the picker performs. It draws no RNG, so the reseed's
-            // stream is unchanged.
-            crate::battle_round::BattleRound::boundary(self);
-            self.tick_status_effects();
-            party_alive = (0..party_count).any(|i| !self.actor_effectively_defeated(i));
-            monsters_alive = (party_count..n).any(|i| !self.actor_effectively_defeated(i));
+    /// Retail's round end - the action SM's `ctx[+0x07] == 0xFF` arm
+    /// (`0x801E67E8`), reached once the per-round action cursor has passed
+    /// every living actor: bump the round counter `ctx[+0x28A]` and run the
+    /// `0x400` waker `FUN_801F45A4`. The flow byte it parks at `0x14` is the
+    /// next [`Self::begin_battle_round`].
+    ///
+    /// PORT: FUN_801E295C (state `0xFF`, `0x801E67E8..0x801E6810`)
+    pub(in crate::world) fn end_battle_round(&mut self) {
+        self.advance_battle_mode();
+        self.tick_status_0x400_wakes();
+    }
+
+    /// Retail's round start - `FUN_801D0748` state `0x14` (`0x801D0EC4`):
+    /// the actor sweep `FUN_801D88CC`, the initiative seeder `FUN_801DA780`,
+    /// the per-round DoT ticker `FUN_801E752C` (round index `!= 0`), and the
+    /// unconditional `ctx[+0x06] = 0x1E` that opens `Begin | Run` for the
+    /// round's first party command. Every later member's ring is reached
+    /// through that prompt, and nothing executes until the last commit.
+    ///
+    /// The keys are re-seeded only when none is live: the battle-open path
+    /// ([`World::enter_battle_from_formation`]) seeds them itself ahead of the
+    /// formation latch, because the seeder is the one reader of the unlatched
+    /// `ctx+0x290` and the side lockout would otherwise be lost; every later
+    /// round finds them all spent and re-rolls.
+    ///
+    /// A **back attack** on the opening round takes retail's `0x0B -> 0xFE`
+    /// jump instead of the prompt: the party enters no command, and with its
+    /// keys zeroed by the lockout only the monsters dispatch.
+    ///
+    /// PORT: FUN_801D0748 (state `0x14`, `0x801D0EC4..0x801D0F0C`; the `0x0B`
+    /// back-attack arm at `0x801D0E68..0x801D0EB0`)
+    pub(in crate::world) fn begin_battle_round(&mut self) {
+        use crate::battle_flow::BattleFlowState;
+        use crate::battle_round::RoundPhase;
+        // The sparring fight's opening caption holds the round start back:
+        // retail's side-band tick sees `0x14` stored, raises the caption and
+        // sets `ctx[+0x6B0]`, and `FUN_801D0748` returns on it before its
+        // state switch (`0x801D0BDC`) - so none of the sweep / seed / prompt
+        // below runs until the caption has gone. The box tick reopens the
+        // round when it does.
+        // REF: FUN_80056208 (stage-1 phases 0..1), FUN_801D0748 (`0x801D0BDC`)
+        if self.raise_sparring_caption_if_due() {
+            return;
         }
+        self.battle_round_flow.flat_walk_last = None;
+        // The actor sweep (`FUN_801D88CC`): action-gauge restore, the
+        // `+0x1DF` action-stream clear, and the party band's stale-target
+        // re-pick + category clear. Retail runs it *before* the initiative
+        // seed and before the DoT tick (`801d0ec4..801d0ed8`). It draws no
+        // RNG, so the seeder's stream is unchanged.
+        crate::battle_round::BattleRound::boundary(self);
+        // The Spirit stance is the `+0x1DE == 4` category the sweep just
+        // cleared - it lasts exactly one round.
+        self.battle_guarding = [false; 3];
+        if !self.any_living_initiative_key() {
+            self.reseed_initiative();
+        }
+        self.battle_round_flow.clear_pending();
+        self.battle_round_flow.cursor = 0;
+        // `FUN_801E752C` - the per-round status DoT ticker, skipped on round
+        // 0 (`beq v0,zero` on `ctx[+0x28A]` at `0x801D0EFC`). RNG-free.
+        if self.battle_mode() != 0 {
+            self.tick_status_effects();
+            if !self.battle_both_sides_alive() {
+                return;
+            }
+        }
+        let first_round = self.battle_mode() == 0;
+        let ambushed = first_round
+            && self.battle_formation_latched()
+                == vm::battle_formulas::FormationAdvantage::BackAttack;
+        if ambushed {
+            // `0x0B`'s `ctx[+0x290] == 1` arm stores `0xFE` outright.
+            self.begin_round_execution();
+            return;
+        }
+        self.battle_round_flow.phase = RoundPhase::Command;
+        // `0x14 -> 0x1E`, unconditional.
+        self.set_battle_flow(BattleFlowState::TurnPrompt);
+        if !self.battle_player_driven {
+            // No pad drives the rings: every member strikes at its dispatch
+            // (the auto-fight arm `FUN_801EED1C` seeds), so the round is
+            // armed at once.
+            self.begin_round_execution();
+            return;
+        }
+        match self.next_member_owing_command(None) {
+            Some(first) => self.open_battle_command(first),
+            None => self.begin_round_execution(),
+        }
+    }
 
-        if self.battle_ctx.action_state == ActionState::EndOfAction.as_byte()
-            && party_alive
-            && monsters_alive
-            && let Some(next) = self.next_combatant_by_initiative()
-        {
-            // Start-of-turn: age this actor's buffs / debuffs, reverting any
-            // that expire this turn.
-            self.tick_battle_buffs_on_turn(next);
-            // A Spirit guard stance lasts until the guarding actor's next
-            // turn starts (the retail pending-action byte is overwritten by
-            // the new command).
-            if let Some(guard) = self.battle_guarding.get_mut(next as usize) {
-                *guard = false;
+    /// Hand the round to the action SM - retail's `0x6E` begin arm storing
+    /// `0xFE` (`0x801D31AC`) and `0xFE` storing `ctx[+0x07] = 0`
+    /// (`0x801D3224`). The first pick happens here: retail's seeder made it
+    /// at `0x14` (`FUN_801DA780` ends in `jal 0x801DABA4`) and the SM's
+    /// `0x0C` dispatches whatever `ctx[+0x274]` names; the engine picks and
+    /// dispatches on one call, and the command band draws no RNG in between,
+    /// so the stream is retail's.
+    ///
+    /// PORT: FUN_801D0748 (state `0xFE`, `0x801D31E8..0x801D3224`)
+    pub(in crate::world) fn begin_round_execution(&mut self) {
+        use crate::battle_flow::BattleFlowState;
+        use crate::battle_round::RoundPhase;
+        use vm::battle_action::ActionState;
+        self.battle_round_flow.phase = RoundPhase::Execute;
+        self.battle_round_flow.flat_walk_last = None;
+        self.battle_command = None;
+        self.set_battle_flow(BattleFlowState::Idle);
+        // A round entered without its start (a host or test that opened a
+        // command surface on a hand-built battle) has no keys yet; retail
+        // never reaches `0xFE` without `0x14`'s seed, so seed here rather
+        // than let the first pick read an empty round and drop every
+        // commit. A round that came through `begin_battle_round` finds its
+        // keys live and this is a no-op.
+        if !self.any_living_initiative_key() {
+            self.reseed_initiative();
+        }
+        self.battle_ctx.action_state = ActionState::EndOfAction.as_byte();
+        self.cycle_battle_turn();
+    }
+
+    /// The next party member who still owes this round a command, scanning
+    /// forward from `after` (or from slot 0) - retail `FUN_801DB81C` (from
+    /// `ctx[+0x13] + 1`) and its sibling `FUN_801DBA04` (from zero). Both skip
+    /// a member already committed (`_DAT_8007BD10[i] == 4`), one with no HP,
+    /// and one whose status word carries `+0x16E & 0xF84` - the petrified /
+    /// asleep / numbed band and the `0x380` AI-delegated bits, none of which
+    /// hands the pad a ring.
+    ///
+    /// PORT: FUN_801DB81C
+    /// REF: FUN_801DBA04
+    pub(in crate::world) fn next_member_owing_command(&self, after: Option<u8>) -> Option<u8> {
+        let party_count = self.party_count.clamp(1, 3);
+        let start = after.map_or(0, |a| a.saturating_add(1));
+        (start..party_count).find(|&slot| {
+            let alive = self
+                .actors
+                .get(usize::from(slot))
+                .is_some_and(|a| a.battle.liveness != 0 && a.battle.hp != 0);
+            alive
+                && !self.battle_round_flow.committed(slot)
+                && !self.actor_blocked_from_acting(slot)
+                && !self.actor_is_confused(slot)
+        })
+    }
+
+    /// Commit `action` as `actor`'s command for this round and walk the ring
+    /// on - retail's ten-site commit idiom (`0x801D16AC` and siblings):
+    /// advance to the next member that still owes a command, or begin the
+    /// round. The `Run` commit is the exception retail makes at `0x32`
+    /// (`0x801D1174..0x801D1184`): it stamps category `5` on every party actor
+    /// and begins the round at once.
+    ///
+    /// PORT: FUN_801D0748 (the commit idiom; `0x32`'s run confirm)
+    pub(in crate::world) fn commit_party_command(
+        &mut self,
+        actor: u8,
+        action: crate::battle_round::PendingPartyAction,
+    ) {
+        use crate::battle_round::PendingPartyAction;
+        let party_count = self.party_count.clamp(1, 3);
+        let run = matches!(action, PendingPartyAction::Run);
+        if let Some(slot) = self.battle_round_flow.pending.get_mut(usize::from(actor)) {
+            *slot = Some(action);
+        }
+        self.battle_round_flow.cursor = actor;
+        if run {
+            for slot in 0..party_count {
+                let alive = self
+                    .actors
+                    .get(usize::from(slot))
+                    .is_some_and(|a| a.battle.liveness != 0);
+                if alive {
+                    self.battle_round_flow.pending[usize::from(slot)] =
+                        Some(PendingPartyAction::Run);
+                }
             }
-            let next_is_party = next < party_count;
-            if self.actor_blocked_from_acting(next) {
-                // Sleep / Stone / Faint: the actor loses its turn. Its
-                // initiative key was already consumed by the picker, so the
-                // next advance moves on; advancing `active_actor` also moves
-                // the no-speed round-robin past it. The status duration ticks
-                // once per round at the boundary above (`tick_status_effects`),
-                // so the affliction still wears off. The SM stays at EndOfAction
-                // (no action armed) - exactly the "skipped turn" outcome.
-                self.battle_ctx.active_actor = next;
-            } else if next_is_party && self.actor_is_confused(next) {
-                // Confused party member: it "acts uncontrollably", so the player
-                // does NOT get the command menu - auto-arm a physical strike,
-                // then flip the target to a random living ally (the retarget
-                // runs inside `arm_party_physical`).
-                self.arm_party_physical(next);
-            } else if next_is_party && self.battle_player_driven {
-                // Party turn under player control: pause the SM and let the
-                // player pick the command. `tick_battle_command` arms the SM
-                // on confirm.
-                self.open_battle_command(next);
-            } else if !next_is_party {
-                // Monster turn: the AI picks a spell or a physical strike.
-                self.take_monster_turn(next);
-            } else {
-                // Party turn when not player-driven: arm a generic physical
-                // attack against the first living opponent.
-                self.arm_party_physical(next);
-            }
+            self.begin_round_execution();
+            return;
+        }
+        match self.next_member_owing_command(Some(actor)) {
+            Some(next) => self.open_battle_command(next),
+            None => self.begin_round_execution(),
+        }
+    }
+
+    /// Give `next` its turn in the execution band: age its buffs, then a
+    /// blocked actor loses the turn, a monster runs its AI pick, and a party
+    /// member dispatches the command it committed (a member with none - the
+    /// auto-fight party, or one the member walk skipped - strikes, and a
+    /// confused one strikes and re-targets).
+    ///
+    /// REF: FUN_801E295C (state `0x0C`: `FUN_801EED1C` for a party slot, the
+    /// `0x380` re-target for a delegated one)
+    fn dispatch_battle_turn(&mut self, next: u8) {
+        let party_count = self.party_count.max(1);
+        // Start-of-turn: age this actor's buffs / debuffs, reverting any
+        // that expire this turn.
+        self.tick_battle_buffs_on_turn(next);
+        if self.actor_blocked_from_acting(next) {
+            // Sleep / Stone / Faint: the actor loses its turn. Its
+            // initiative key was already consumed by the picker, so the
+            // next advance moves on; advancing `active_actor` also moves
+            // the no-speed walk past it. The status duration ticks once per
+            // round at the round start (`tick_status_effects`), so the
+            // affliction still wears off. The SM stays at EndOfAction (no
+            // action armed) - exactly the "skipped turn" outcome.
+            self.battle_ctx.active_actor = next;
+            return;
+        }
+        if next >= party_count {
+            self.take_monster_turn(next);
+            return;
+        }
+        if self.actor_is_confused(next) {
+            // Confused party member: it "acts uncontrollably", so the player
+            // never got the ring - auto-arm a physical strike, then flip the
+            // target to a random living ally (the retarget runs inside
+            // `arm_party_physical`).
+            self.arm_party_physical(next);
+            return;
+        }
+        match self.battle_round_flow.pending[usize::from(next)].take() {
+            Some(action) => self.dispatch_pending_party_action(next, action),
+            None => self.arm_party_physical(next),
         }
     }
 

@@ -184,6 +184,13 @@ pub struct BattleCommandInput {
     pub cross: bool,
     /// Cancel / back (Circle).
     pub circle: bool,
+    /// The "Select Attack" option word `0x800846C4`, read by the ring's
+    /// Attack arm alongside the pad (`FUN_801D0748`, `0x801D15E0..0x801D1650`):
+    /// `Select` (0) opens the `Auto | Command` prompt (`0x78`), `Automatic`
+    /// (1) goes straight to the target cursor (`0x5A`), `Command` (2)
+    /// straight to the directional arts entry (`0x50`). The host fills it
+    /// from the world's mirror of the pause-menu row each frame.
+    pub select_attack: crate::options::SelectAttackOpt,
 }
 
 /// The round-open prompt's two chips - retail flow state `0x1E`, the pair
@@ -681,9 +688,22 @@ fn step_menu(
         if command == BattleCommand::Spirit {
             return CommandPhase::SpiritGuard;
         }
-        // The Attack arm is the door to the attack-mode prompt, not a strike.
+        // The Attack arm is the door to the attack-mode prompt, not a
+        // strike - and the option word decides whether the prompt is shown
+        // at all: retail's `0x28` Left arm switches on `_DAT_800846C4` at
+        // `0x801D15E0`: `0` stores `0x78` (the prompt), `1` stores `0x5A`
+        // (the target cursor, an `Auto` pick made for the player), `2`
+        // stores `0x50` in the branch delay slot (the arts entry, a
+        // `Command` pick made for the player).
         if command == BattleCommand::Attack {
-            return CommandPhase::AttackMode { cursor: 0 };
+            use crate::options::SelectAttackOpt;
+            return match ev.select_attack {
+                SelectAttackOpt::Select => CommandPhase::AttackMode { cursor: 0 },
+                SelectAttackOpt::Automatic => {
+                    open_target_picker(BattleCommand::Attack, party_slot, party, monsters)
+                }
+                SelectAttackOpt::Command => CommandPhase::OpenArtsMenu,
+            };
         }
         if command.enabled() {
             return open_target_picker(command, party_slot, party, monsters);

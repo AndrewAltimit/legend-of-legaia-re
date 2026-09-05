@@ -263,6 +263,11 @@ impl PlayWindowApp {
             // host policy like the two above (default ON; see
             // `OptionsState::reduce_flashing`).
             self.session.host.world.reduce_flashing = self.options_state.reduce_flashing;
+            // Battle "Select Attack" (config word `0x800846C4`): whether the
+            // ring's Attack arm shows the Auto | Command prompt, goes
+            // straight to the target cursor, or straight to the arts entry.
+            // Host policy like the rows above.
+            self.session.host.world.battle_select_attack = self.options_state.battle_select_attack;
             // `set_pad` also latches the run button off the same word, so
             // there is nothing host-side to keep in sync.
             self.session.host.world.set_pad(field_pad);

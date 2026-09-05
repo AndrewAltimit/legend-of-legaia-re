@@ -760,6 +760,11 @@ impl BootSession {
         // where no spell XP accrues. Persists across New Game.
         if let Some(scus) = read_scus(&source) {
             host.world.install_magic_xp_thresholds(&scus);
+            // The SCUS half of the battle chip / caption labels (`Begin`,
+            // `Run`, `Attack`, ... and the sparring fight's opening caption).
+            // The overlay half merges in when a player battle is requested
+            // (`window/run.rs`); twin of the browser runtime's `load_disc`.
+            host.world.battle_ui_strings.merge_scus(&scus);
             // Pause-menu text: item names + info-window descriptions,
             // spell names / descriptions, accessory passive lines. The
             // Items / Magic pause screens resolve their strings here.

@@ -309,7 +309,7 @@ fn main() -> Result<()> {
             edge_collision,
             solid_npcs,
             live_npcs,
-            damage_finish,
+            no_damage_finish,
             battle_bgm,
             screenshot,
             screenshot_tick,
@@ -344,7 +344,7 @@ fn main() -> Result<()> {
             edge_collision,
             solid_npcs,
             live_npcs,
-            damage_finish,
+            !no_damage_finish,
             battle_bgm,
             window::ScreenshotConfig::from_args(
                 screenshot,

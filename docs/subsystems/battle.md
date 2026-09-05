@@ -298,6 +298,48 @@ the string *addresses* and reads the text off the user's own disc at runtime
 spell / dialog parsers follow. Disc-gated oracle
 `crates/engine-core/tests/battle_tutorial_disc.rs`.
 
+**One dispatch's boxes share the frame.** Each box the handler emits is its
+own registered text actor, so a two-box hook - the lesson intro at the top
+and the directional explainer at the bottom at `Begin | Run` - puts both on
+screen at once. The engine's queue carries a dispatch **group** per box
+(`ActiveTutorialBox::group`); both hosts draw the whole front group
+(`World::battle_tutorial_boxes_on_screen`), a non-waiting member counts
+itself down inside it, and the waiting member holds the group until Cross.
+
+#### The opening caption - the SCUS side-band, not overlay 967
+
+The first thing the sparring fight says is not a 967 prompt. It is the
+caption at SCUS `0x80078CB4` (label `BattleUiLabel::SparringIntro`, read off
+the executable at boot), raised by the battle **side-band tick**
+`FUN_80056208` - the once-per-frame SCUS pass keyed on the stage id
+`_DAT_8007B64A`, whose stage-`1` arm is a four-phase machine on
+`ctx[+0x289]`:
+
+```text
+800562c8  lbu  v1,0x6(a2)         ; phase 0 waits for ctx[+0x06] == 0x14
+800562e8  sb   v0,0x289(a2)       ; phase = 1
+800562f8  sh   v0,0x6ae(a2)       ; hold timer 0xB40, drained 8 per frame
+80056320  _sw  v0,0x7494(v1)      ; caption pointer _DAT_80077494 = 0x80078CB4
+8005631c  jal  0x801d8de8         ; HUD element 0x5A
+80056360  jal  0x801d829c         ; camera aimed at the first monster seat
+80056370  ...                     ; phase 1: any packed-pad press zeroes the timer
+80056400  sh   s0,0x6ae(v1)       ; expired -> phase 2
+80056418  jal  0x801f6b70         ; phase 2: the overlay-967 hook, every frame
+800565c4  sh   s0,0x6b0(v0)       ; ctx[+0x6B0] = 1 through phases 0 and 1
+```
+
+`ctx[+0x6B0]` is the hold: `FUN_801D0748` tests it at `0x801D0BDC` and returns
+before its state switch, so `0x14` - the sweep, the seed, `Begin | Run` -
+does not run until the caption has gone, and the prompt machine only ticks in
+phase `2`. The retail frame (`v0_1_battle_start_tetsu`) is the caption
+centred on the bottom anchor `0xCC`, the same corner as emitter style `9`.
+
+Engine port: `World::raise_sparring_caption_if_due` (`world/battle/tutorial.rs`)
+holds `begin_battle_round` back on round 0 while the caption is queued, and
+the box tick opens the round when it goes; the pure transition kernel for the
+whole side-band lives in `engine-render::battle_sideband` (the camera ramp
+half of it is not wired). A world with no caption text skips the hold.
+
 ### The command-flow byte `ctx[+0x06]` - what the hook table indexes
 
 The hook key is **not** the action SM's `ctx[+0x07]`. It is `ctx[+0x06]`, the
@@ -494,7 +536,10 @@ The engine splits what `FUN_801D0748` does in one machine across a
 [`battle_input::BattleCommandSession`](../../crates/engine-core/src/battle_input.rs)
 plus host-owned Item / Magic / Arts submenus, so the flow byte is *recomposed*
 each frame by `battle_flow::flow_state_for` (an open submenu wins over the
-command phase). Three points differ from retail and are deliberate:
+command phase). The round around them is retail's own two bands - every
+member commits before anyone acts, and the commits execute in initiative
+order - see [the two bands](#auto-resolve-vs-player-driven). Three points
+differ from retail and are deliberate:
 
 - **Round prompt.** `World::open_battle_command` builds the session **already
   on** `CommandPhase::RoundPrompt` whenever the flow byte says the round is
@@ -3965,19 +4010,69 @@ The battle tick has two modes.
 - By **default** it auto-resolves: every turn commits a generic physical strike against the first living combatant on the opposing side, with no player choice. The whole actor table takes turns, so **monsters take turns too** - a monster turn strikes a living party member, and a party wipe ends the battle (`game_over`) the same way a monster wipe does. The strike side is chosen by the attacker's slot (`World::first_living_opponent_of`).
 - When `World::battle_player_driven` is set (requires the live loop), each *party* turn instead pauses the action SM and opens a `battle_input::BattleCommandSession` (monster turns still auto-resolve) - the player picks a command from the battle command menu and a target before the strike commits. While a session is open `live_battle_tick` skips the SM advance and drives the picker from `World::input`; on confirm `World::tick_battle_command` arms `battle_ctx.{active_actor, queued_action, action_state}` plus the acting actor's `active_target` and resumes the SM. An abort (no valid target) falls back to a default strike so the loop can't deadlock. Target selection reuses the [battle target picker](#battle-target-picker).
 
-**Turn order.** Who acts next is chosen by `World::next_combatant_by_initiative`, the port of `recompute_battle_order` (`FUN_801daba4`).
+**The round has two bands, and nothing acts in the first.** Retail's two state
+machines hand a round back and forth (see [the round loop](#the-round-loop---what-re-arms-0x1e)):
+the flow SM's **command band** (`0x14 -> 0x1E -> 0x28 ...`) walks every living
+party member through a ring while the action SM idles, and only `0x6E`'s
+begin arm stores `0xFE` (`0x801D31AC`), the one state that hands the round to
+the action SM (`ctx[+0x07] = 0` at `0x801D3224`). From there `FUN_801E295C`
+dispatches **every** combatant, party and monster alike, by the max-key pick
+`FUN_801DABA4`, and consumes each key at its own `0x0C` dispatch
+(`sh zero,0x16c(s3)` at `0x801E2CDC`). So a monster that won initiative
+still waits for the last party commit; what initiative decides is the order
+inside the **execution band**, never whether anyone acts before the prompt.
+The only way a round skips its command band is a rolled **back attack**:
+`0x0B`'s `ctx[+0x290] == 1` arm stores `0xFE` outright (`0x801D0E78`), so the
+party enters no command and, with its keys zeroed by the side lockout, only
+the monsters dispatch.
 
-- Each living actor carries a per-turn **initiative key** (`BattleActor::init_key`, retail `+0x16c`) seeded from its SPD (`World::battle_speed`, retail `+0x164`): `init_key = speed + rand()%(speed/2 + 1) + 1` (`overlay_0897_801e23ec`; see [battle-formulas](battle-formulas.md)).
-- The selector picks the living actor with the highest key (random tiebreak via `rand % tie_count`), then consumes that actor's key so the next turn picks another; once every living actor's key is spent, a new round is seeded.
-- Dead actors' keys are zeroed each call (the function's first loop) so they can't be picked.
-- **Round 1 is picked the same way.** Battle setup seeds every living actor's key and consumes none, then takes the opening turn from the same max-key selector. Slot 0 is not hand-armed: a fast party member can open ahead of Vahn, a fast monster can open on the party, and a rolled **back attack** cashes in - the side lockout zeroes the party's keys and the monsters therefore lead, which is the advantage's whole effect.
+The engine runs the same two bands (`battle_round::RoundFlow`,
+`RoundPhase::{Command, Execute}`; `World::begin_battle_round` /
+`begin_round_execution` / `end_battle_round` in `world/battle/loop_driver.rs`):
+
+- **Command band.** `begin_battle_round` is retail's `0x14`: the actor sweep
+  (`BattleRound::boundary`), the initiative re-seed when no key is live, the
+  per-round DoT ticker (round index `!= 0`), then `Begin | Run` for the first
+  member that owes a command (`World::next_member_owing_command`, the port of
+  `FUN_801DB81C` / `FUN_801DBA04`: skips a committed member, one with no HP, and
+  one whose status word carries `+0x16E & 0xF84`). Each commit
+  (`World::commit_party_command`, retail's ten-site idiom at `0x801D16AC`)
+  parks the typed command in `RoundFlow::pending` and walks the ring on to the
+  next member, or begins the round. `Run` is the exception retail makes at
+  `0x32`: it stamps category `5` on every party actor and begins the round at
+  once.
+- **Execution band.** `begin_round_execution` is `0x6E -> 0xFE`. Every idle of
+  the action SM at `EndOfAction` is one pick by
+  `World::next_combatant_by_initiative` (`FUN_801DABA4`): the living actor with
+  the highest unspent key acts - a monster through its AI pick, a party member
+  through `World::dispatch_pending_party_action`, which is where the swing
+  stream is seeded (`FUN_801EED1C` from state `0x0C`), the art profile staged,
+  the spell cast, the item effect landed, the Spirit AP charged and the escape
+  rolled. The key is consumed by the pick, the engine's counterpart of the
+  `0x0C` consumption. When no living actor holds a key the round ends
+  (`end_battle_round`: the `ctx[+0x28A]` bump + the `0x400` waker, retail's
+  `0xFF` arm at `0x801E67E8`) and the next `begin_battle_round` opens.
+- The initiative **key** (`BattleActor::init_key`, retail `+0x16C`) is seeded by
+  `FUN_801DA780` from SPD (`+0x164`): `speed + rand()%(speed/2 + 1) + 1`, plus
+  the wounded bonus - party `(max-hp) >> 4` below a quarter, `>> 5` below half,
+  `>> 6` above; monsters `>> 10` - then halved under Slow
+  (`battle_formulas::seed_initiative`; see [battle-formulas](battle-formulas.md)).
+  Battle entry seeds the keys **ahead of** the formation latch, because the
+  seeder is the one reader of the unlatched `ctx+0x290` and the side lockout
+  would otherwise be lost; round 1 therefore finds live keys and does not
+  re-roll. Dead actors' keys are zeroed on every pick (the function's first
+  loop) so they can't be picked.
 - Party SPD is the **resolved** stat - base plus the equipment table's footwear bonus - written by `World::seed_party_battle_stats` at battle entry, over the raw record value `World::load_party` seeds at boot. Monster SPD comes from `MonsterDef::speed` (record `stats[5]`, unboosted) at battle setup.
-- When **no** living actor carries SPD - the disc-free / synthetic case where speed data hasn't been loaded - the selector falls back to round-robin slot order (`World::next_living_combatant`), which keeps the synthetic loop deterministic.
+- When **no** living actor carries SPD - the disc-free / synthetic case where
+  speed data hasn't been loaded - there is nothing to roll: every living slot
+  gets one flat turn token and the pick walks them in slot order after the
+  last acting actor, which keeps the synthetic loop deterministic while still
+  giving it retail's round boundary.
 
 All six commands - **Attack**, **Arts**, **Magic**, **Item**, **Spirit**, **Run** - are wired into the live loop. Attack opens a target cursor and commits a physical strike through the action SM. Arts / Magic / Item resolve to `Resolution::OpenArtsMenu` / `OpenSpellMenu` / `OpenItemMenu` - the command session can't run those pickers itself (they need the caster's saved chains / learned spells / live MP / inventory + party stats), so it hands off to a host-owned submenu. Spirit and Run resolve immediately (no target):
 
-- **Spirit** charges the caster's AP gauge (`ApGauge::charge_spirit`, the retail Square-press +5) and raises a per-slot guard stance (`World::battle_guarding`, the engine model of the retail pending-action byte `+0x1DE == 4`) that halves incoming damage through the finisher's guard stage until the actor's next turn starts; the turn is consumed (SM parked at `EndOfAction`).
-- **Run** rolls the escape and arms the ported run band (category 5 → `RunBegin`/`RunWait`/`RunEscape`): success tears the battle down `Escaped` (no loot, no game over, downed members floored alive at 1 HP), failure consumes the turn. The roll is the decoded `FUN_801E791C` formula - party `(SPD*3)>>1 + missingHP>>4` vs enemy `SPD + missingHP>>5`, two rand draws, Chicken Heart / Chicken King passives honoured (`battle_formulas::escape_roll`; see [battle-action.md](battle-action.md#spirit--run-in-the-live-command-menu)).
+- **Spirit** raises the guard stance at the **commit** (`World::battle_guarding`, the engine model of the retail pending-action byte `+0x1DE == 4`, which the melee kernel's guard roll reads) - so it protects against every monster that dispatches ahead of the member - and lasts until the next round's sweep clears the category. The AP charge (`ApGauge::charge_spirit`, the retail Square-press +5) is the Spirit band's own, at the member's dispatch.
+- **Run** stamps category `5` on every party actor at the commit and begins the round at once (retail `0x32`, `0x801D1174..0x801D1184`); each member's dispatch then rolls the escape and arms the ported run band (`RunBegin`/`RunWait`/`RunEscape`): success tears the battle down `Escaped` (no loot, no game over, downed members floored alive at 1 HP), failure consumes the turn. The roll is the decoded `FUN_801E791C` formula - party `(SPD*3)>>1 + missingHP>>4` vs enemy `SPD + missingHP>>5`, two rand draws, Chicken Heart / Chicken King passives honoured (`battle_formulas::escape_roll`; see [battle-action.md](battle-action.md#spirit--run-in-the-live-command-menu)).
 
 The submenu hand-offs:
 

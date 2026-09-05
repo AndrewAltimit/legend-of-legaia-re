@@ -58,6 +58,7 @@ impl World {
     /// so the loop never deadlocks.
     pub(in crate::world) fn tick_battle_command(&mut self) {
         use crate::battle_input::{BattleCommandInput, Resolution};
+        use crate::battle_round::PendingPartyAction;
         use crate::input::PadButton;
         use crate::target_picker::CursorRow;
 
@@ -78,6 +79,8 @@ impl World {
             right: self.input.just_pressed(PadButton::Right),
             cross: self.input.just_pressed(PadButton::Cross),
             circle: self.input.just_pressed(PadButton::Circle),
+            // The ring's Attack arm reads the option word with the pad.
+            select_attack: self.battle_select_attack,
         };
         session.input(ev, party, monsters);
         // Target-cursor tint: retail stamps the four monster slots bright /
@@ -119,8 +122,8 @@ impl World {
 
         match session.resolved() {
             Some(Resolution::Confirmed {
-                // v0.1 only enables Attack, so `command` is always Attack here;
-                // Arts/Magic/Item aren't wired into the live loop yet.
+                // Only Attack reaches Confirmed with a target: Arts / Magic /
+                // Item hand off to their own submenus above.
                 command: _,
                 target_row,
                 target_slot,
@@ -130,21 +133,16 @@ impl World {
                     CursorRow::Ally => target_slot,
                 };
                 let actor = session.actor;
-                // A freshly-armed action starts from an empty strike script -
-                // see [`World::clear_action_stream`] for the soft-lock a
-                // carried-over byte produces.
-                self.clear_action_stream(actor);
+                // Retail's target confirm (`0x5A`) writes the target byte
+                // `+0x1DD` and the category, then walks the ring on to the
+                // next member; the swing stream is seeded when the action SM
+                // dispatches the member (`FUN_801EED1C` from state `0x0C`),
+                // which is where `dispatch_pending_party_action` seeds it.
                 if let Some(a) = self.actors.get_mut(actor as usize) {
                     a.battle.active_target = target;
                     a.battle.action_category = 3; // Attack
                 }
-                // ... and then seeds it, which is what makes the attack band's
-                // strike loop a loop instead of an immediate exit.
-                self.seed_basic_attack_queue(actor, target);
-                self.battle_ctx.active_actor = actor;
-                self.battle_ctx.queued_action = 3;
-                self.battle_ctx.action_state = vm::battle_action::ActionState::Begin.as_byte();
-                // Session done; SM resumes next tick.
+                self.commit_party_command(actor, PendingPartyAction::Attack { target });
             }
             Some(Resolution::OpenArtsMenu) => {
                 // Player picked Arts: open the retail-model per-press command
@@ -186,65 +184,40 @@ impl World {
                 self.battle_item_menu = Some(self.build_battle_item_session());
             }
             Some(Resolution::SpiritGuard) => {
-                // Player picked Spirit: charge the AP gauge (+5, idempotent
-                // per turn - the retail Square-press kernel) and raise the
-                // guard stance (retail pending-action byte +0x1DE = 4, the
-                // damage finisher's guard-halve input). The stance holds
-                // until this actor's next turn starts. Spirit is the whole
-                // turn: park at EndOfAction so the loop cycles.
+                // Player picked Spirit: the guard stance (retail's pending
+                // category `+0x1DE = 4`, the melee kernel's tripled guard
+                // roll) is up from the commit - it protects against every
+                // monster that dispatches ahead of this member - and lasts
+                // until the next round's sweep clears the category. The AP
+                // charge is the Spirit band's own, at dispatch.
                 let actor = session.actor;
-                if let Some(gauge) = self.ap_gauges.get_mut(actor as usize) {
-                    gauge.charge_spirit();
+                if let Some(a) = self.actors.get_mut(actor as usize) {
+                    a.battle.action_category = 4;
                 }
                 if let Some(guard) = self.battle_guarding.get_mut(actor as usize) {
                     *guard = true;
                 }
-                self.battle_ctx.active_actor = actor;
-                self.battle_ctx.action_state =
-                    vm::battle_action::ActionState::EndOfAction.as_byte();
-                // Claim the turn NOW (see `World::cycle_battle_turn`): a
-                // parked EndOfAction is re-seeded by the SM's 0x5A
-                // self-advance next tick, which made Spirit a guard PLUS a
-                // free attack off the stale entry queue.
-                self.cycle_battle_turn();
+                self.commit_party_command(actor, PendingPartyAction::Spirit);
             }
             Some(Resolution::RunAway) => {
-                // Player picked Run: roll the escape and arm the action SM's
-                // run band (category 5 -> RunBegin/RunWait/RunEscape, retail
-                // 0x64..0x66). The SM carries the roll outcome on
-                // `multi_cast_gate` (success floors downed party HP at 1 and
-                // tears the battle down `Escaped`; failure consumes the turn
-                // via the Done band). The roll is the retail `FUN_801E791C`
-                // formula (the writer of `_DAT_8007726C`): party SPD*1.5 +
-                // missing-HP/16 vs enemy SPD + missing-HP/32, two rand draws,
-                // Chicken Heart/King accessory bits folded from the living
-                // party members' second ability word.
-                let actor = session.actor;
-                let escaped = self.roll_battle_escape();
-                if let Some(a) = self.actors.get_mut(actor as usize) {
-                    a.battle.action_category = 5; // Run band
-                }
-                self.battle_ctx.active_actor = actor;
-                self.battle_ctx.queued_action = 5;
-                self.battle_ctx.multi_cast_gate = u8::from(escaped);
-                self.battle_ctx.action_state = vm::battle_action::ActionState::Begin.as_byte();
+                // Player picked Run: retail's `0x32` confirm stamps category
+                // `5` on every party actor and begins the round at once
+                // (`commit_party_command` does both); the escape roll is the
+                // run band's own, at each member's dispatch.
+                self.commit_party_command(session.actor, PendingPartyAction::Run);
             }
             Some(Resolution::Aborted) => {
-                // No valid target the player could pick - arm a default strike
-                // on the first living monster so the loop progresses.
+                // No valid target the player could pick - commit a default
+                // strike on the first living monster so the round progresses.
                 let actor = session.actor;
                 let target = (party_count..self.actors.len() as u8)
                     .find(|&i| self.actors[i as usize].battle.liveness != 0)
                     .unwrap_or(party_count);
-                self.clear_action_stream(actor);
                 if let Some(a) = self.actors.get_mut(actor as usize) {
                     a.battle.active_target = target;
                     a.battle.action_category = 3;
                 }
-                self.seed_basic_attack_queue(actor, target);
-                self.battle_ctx.active_actor = actor;
-                self.battle_ctx.queued_action = 3;
-                self.battle_ctx.action_state = vm::battle_action::ActionState::Begin.as_byte();
+                self.commit_party_command(actor, PendingPartyAction::Attack { target });
             }
             None => {
                 // Still selecting - keep the session open for the next frame.
@@ -686,6 +659,35 @@ impl World {
         target_row: crate::target_picker::CursorRow,
         target_slot: u8,
     ) {
+        // The arts screen's commit (`0x50` -> `0x5A` -> the ring walk); the
+        // entry executes at the caster's dispatch.
+        if let Some(a) = self.actors.get_mut(caster as usize) {
+            a.battle.action_category = 3;
+        }
+        self.commit_party_command(
+            caster,
+            crate::battle_round::PendingPartyAction::Art {
+                power: power.to_vec(),
+                enemy_effect,
+                actions: actions.to_vec(),
+                target_row,
+                target_slot,
+            },
+        );
+    }
+
+    /// Execute a committed Tactical-Arts turn at the caster's dispatch: arm
+    /// the action SM's attack band for it, or - for an entry that performs no
+    /// named art - resolve it inline and park at `EndOfAction`.
+    fn execute_battle_art(
+        &mut self,
+        caster: u8,
+        power: &[legaia_art::PowerByte],
+        enemy_effect: legaia_art::EnemyEffect,
+        actions: &[legaia_art::ActionConstant],
+        target_row: crate::target_picker::CursorRow,
+        target_slot: u8,
+    ) {
         if self.arm_battle_art_action(
             caster,
             power,
@@ -710,6 +712,163 @@ impl World {
         self.battle_ctx.action_state = vm::battle_action::ActionState::EndOfAction.as_byte();
         // Claim the turn NOW (see `World::cycle_battle_turn`).
         self.cycle_battle_turn();
+    }
+
+    /// Dispatch the command `actor` committed this round - the engine's
+    /// counterpart of the action SM's `0x0C` seed for a party slot, run when
+    /// the initiative pick lands on the member. Everything the old commit
+    /// sites armed on the spot is armed here instead: the swing stream
+    /// (`FUN_801EED1C`), the art profile, the cast, the item effect + its
+    /// cast band, the Spirit charge, the escape roll + run band.
+    ///
+    /// REF: FUN_801E295C (state `0x0C`, the party-slot `jal 0x801EED1C`)
+    /// REF: FUN_801EED1C
+    pub(in crate::world) fn dispatch_pending_party_action(
+        &mut self,
+        actor: u8,
+        action: crate::battle_round::PendingPartyAction,
+    ) {
+        use crate::battle_round::PendingPartyAction as Pending;
+        use vm::battle_action::ActionState;
+        self.battle_ctx.active_actor = actor;
+        match action {
+            Pending::Attack { target } => {
+                // A freshly-armed action starts from an empty strike script -
+                // see [`World::clear_action_stream`] for the soft-lock a
+                // carried-over byte produces.
+                self.clear_action_stream(actor);
+                if let Some(a) = self.actors.get_mut(actor as usize) {
+                    a.battle.active_target = target;
+                    a.battle.action_category = 3; // Attack
+                }
+                // ... and then seeds it, which is what makes the attack band's
+                // strike loop a loop instead of an immediate exit.
+                self.seed_basic_attack_queue(actor, target);
+                self.battle_ctx.queued_action = 3;
+                self.battle_ctx.action_state = ActionState::Begin.as_byte();
+            }
+            Pending::Art {
+                power,
+                enemy_effect,
+                actions,
+                target_row,
+                target_slot,
+            } => self.execute_battle_art(
+                actor,
+                &power,
+                enemy_effect,
+                &actions,
+                target_row,
+                target_slot,
+            ),
+            Pending::Spell {
+                spell_id,
+                target_row,
+                target_slot,
+            } => {
+                // The dispatch commits the category-2 action; the action SM's
+                // Magic band carries it from here - facing, the MP debit and
+                // the `0x14`-frame wait at `0x28`/`0x29`, the summon band for
+                // a Seru id - and the outcome folds at retail's seam
+                // (`World::settle_cast_band` / the stager's strike). An
+                // escape spell's success ends the encounter from the live
+                // loop the frame it folds, through the escape teardown.
+                match self.spell_catalog.get(spell_id).cloned() {
+                    Some(def) => {
+                        let targets = self.spell_targets_for(&def, target_row, target_slot);
+                        self.arm_player_cast(actor, &def, targets);
+                    }
+                    None => {
+                        // Not a catalog spell (the submenu only lists catalog
+                        // ids, so this is defensive): the turn is spent.
+                        self.battle_ctx.action_state = ActionState::EndOfAction.as_byte();
+                        self.cycle_battle_turn();
+                    }
+                }
+            }
+            Pending::Item {
+                item_id,
+                used_slots,
+            } => {
+                // Apply to every affected slot (the copy went at the commit).
+                for &target_slot in &used_slots {
+                    let outcome = self.apply_battle_item(item_id, target_slot);
+                    self.push_item_use_fx(target_slot, outcome);
+                }
+                if self.battle_escaped {
+                    // Escape item succeeded: leave the encounter (no loot, no
+                    // game-over) through the escape teardown's fade + exit
+                    // hold instead of cycling the turn.
+                    self.battle_end = Some(BattleEndCause::Escaped);
+                    self.begin_battle_end_sequence();
+                    return;
+                }
+                // Using an item is the actor's whole turn - and in retail the
+                // turn *is* the action SM's Item band: the committed
+                // category-1 action seeds through `FUN_801E295C`'s item arm
+                // (`item_seed_band`) into the `0x3C..0x40` cast states, which
+                // fire the cast-audio cue (`FUN_801F3990` via `spirit_wait`),
+                // stamp the item's effect-descriptor `(class, tier)` pair, and
+                // expand the item's cue group (`FUN_800402F4`'s eleven
+                // `FUN_801E22C8` sites via `place_cue_group`). The simulation
+                // fold stays above; the band's own `apply_damage` hook is the
+                // presentation seam. The two SummonFlute ids (`0x98`/`0x99`)
+                // reroute inside `action_seed` to the summon band, which the
+                // live loop's settle glue (`live_battle_tick`) walks to
+                // completion.
+                let target = if used_slots.len() > 1 {
+                    vm::battle_cue_group::TARGET_PARTY_WIDE
+                } else {
+                    used_slots.first().copied().unwrap_or(actor)
+                };
+                self.clear_action_stream(actor);
+                if let Some(a) = self.actors.get_mut(actor as usize) {
+                    a.battle.active_target = target;
+                    a.battle.action_category = vm::battle_action::ActionCategory::Item.as_byte();
+                    a.battle.params[0] = item_id;
+                }
+                self.battle_ctx.queued_action = vm::battle_action::ActionCategory::Item.as_byte();
+                self.battle_ctx.action_state = ActionState::Begin.as_byte();
+            }
+            Pending::Spirit => {
+                // The AP charge (+5, idempotent per turn - the retail
+                // Square-press kernel). The guard stance has been up since
+                // the commit.
+                if let Some(gauge) = self.ap_gauges.get_mut(actor as usize) {
+                    gauge.charge_spirit();
+                }
+                if let Some(guard) = self.battle_guarding.get_mut(actor as usize) {
+                    *guard = true;
+                }
+                self.battle_ctx.action_state = ActionState::EndOfAction.as_byte();
+                self.cycle_battle_turn();
+            }
+            Pending::Run => {
+                // Roll the escape and arm the action SM's run band (category
+                // 5 -> RunBegin/RunWait/RunEscape, retail 0x64..0x66). The SM
+                // carries the roll outcome on `multi_cast_gate` (success
+                // floors downed party HP at 1 and tears the battle down
+                // `Escaped`; failure consumes the turn via the Done band).
+                // The roll is the retail `FUN_801E791C` formula (the writer of
+                // `_DAT_8007726C`): party SPD*1.5 + missing-HP/16 vs enemy SPD
+                // + missing-HP/32, two rand draws, Chicken Heart/King accessory
+                // bits folded from the living party members' second ability
+                // word. Retail rolls it inside the run band (`0x801E57C8`),
+                // once per party member that dispatches with category 5.
+                let escaped = self.roll_battle_escape();
+                if let Some(a) = self.actors.get_mut(actor as usize) {
+                    a.battle.action_category = 5; // Run band
+                }
+                self.battle_ctx.queued_action = 5;
+                self.battle_ctx.multi_cast_gate = u8::from(escaped);
+                self.battle_ctx.action_state = ActionState::Begin.as_byte();
+            }
+            Pending::StandBy => {
+                // Category 0 dispatches straight to the Done band.
+                self.battle_ctx.action_state = ActionState::EndOfAction.as_byte();
+                self.cycle_battle_turn();
+            }
+        }
     }
 
     /// Stage a Tactical-Arts turn on the acting actor and arm the action SM's
@@ -1074,27 +1233,20 @@ impl World {
                 target_row,
                 target_slot,
             }) => {
-                // The confirm commits the category-2 action; the action SM's
-                // Magic band carries it from here - facing, the MP debit and
-                // the `0x14`-frame wait at `0x28`/`0x29`, the summon band for
-                // a Seru id - and the outcome folds at retail's seam
-                // (`World::settle_cast_band` / the stager's strike). An
-                // escape spell's success ends the encounter from the live
-                // loop the frame it folds.
+                // The magic window's commit (`0x46` -> its sub-cursor ->
+                // the ring walk): the cast itself is the caster's dispatch.
                 let caster = menu.actor;
-                match self.spell_catalog.get(spell_id).cloned() {
-                    Some(def) => {
-                        let targets = self.spell_targets_for(&def, target_row, target_slot);
-                        self.arm_player_cast(caster, &def, targets);
-                    }
-                    None => {
-                        // Not a catalog spell (the submenu only lists catalog
-                        // ids, so this is defensive): the turn is spent.
-                        self.battle_ctx.action_state =
-                            vm::battle_action::ActionState::EndOfAction.as_byte();
-                        self.cycle_battle_turn();
-                    }
+                if let Some(a) = self.actors.get_mut(caster as usize) {
+                    a.battle.action_category = 2;
                 }
+                self.commit_party_command(
+                    caster,
+                    crate::battle_round::PendingPartyAction::Spell {
+                        spell_id,
+                        target_row,
+                        target_slot,
+                    },
+                );
             }
             Some(SpellResolution::Aborted) => {
                 let actor = self.battle_ctx.active_actor;
@@ -1300,56 +1452,31 @@ impl World {
         let used_slots = menu.used_slots.clone();
 
         if !used_slots.is_empty() {
-            if let Some(item_id) = item_before {
-                // Apply to every affected slot, but consume only one copy.
-                for &target_slot in &used_slots {
-                    let outcome = self.apply_battle_item(item_id, target_slot);
-                    self.push_item_use_fx(target_slot, outcome);
+            // The item window's commit. Retail consumes the copy here - the
+            // `0x6E` step-back and the dead-actor sweep both *refund* it
+            // through `FUN_800421D4` - and the effect lands when the member
+            // dispatches: the committed category-1 action seeds through
+            // `FUN_801E295C`'s item arm (`item_seed_band`) into the
+            // `0x3C..0x40` cast states (`dispatch_pending_party_action`).
+            let actor = self.battle_ctx.active_actor;
+            match item_before {
+                Some(item_id) => {
+                    self.consume_item(item_id);
+                    if let Some(a) = self.actors.get_mut(actor as usize) {
+                        a.battle.action_category =
+                            vm::battle_action::ActionCategory::Item.as_byte();
+                    }
+                    self.commit_party_command(
+                        actor,
+                        crate::battle_round::PendingPartyAction::Item {
+                            item_id,
+                            used_slots,
+                        },
+                    );
                 }
-                self.consume_item(item_id);
-            }
-            if self.battle_escaped {
-                // Escape item succeeded: leave the encounter (no loot, no
-                // game-over) through the escape teardown's fade + exit
-                // hold instead of cycling the turn.
-                self.battle_end = Some(BattleEndCause::Escaped);
-                self.begin_battle_end_sequence();
-            } else if let Some(item_id) = item_before {
-                // Using an item is the actor's whole turn - and in retail the
-                // turn *is* the action SM's Item band: the committed category-1
-                // action seeds through `FUN_801E295C`'s item arm
-                // (`item_seed_band`) into the `0x3C..0x40` cast states, which
-                // fire the cast-audio cue (`FUN_801F3990` via `spirit_wait`),
-                // stamp the item's effect-descriptor `(class, tier)` pair, and
-                // expand the item's cue group (`FUN_800402F4`'s eleven
-                // `FUN_801E22C8` sites via `place_cue_group`). Parking straight
-                // at EndOfAction skipped all of it - no cast cue, no cue-group
-                // spawns, no `0x4C` HUD label - on every battle item use.
-                //
-                // The simulation fold stays above (the menu applies the item's
-                // effect and consumes the copy, exactly as before); the band's
-                // own `apply_damage` hook is the presentation seam. The two
-                // SummonFlute ids (`0x98`/`0x99`) reroute inside `action_seed`
-                // to the summon band, which the live loop's settle glue
-                // (`live_battle_tick`) walks to completion.
-                let actor = self.battle_ctx.active_actor;
-                let target = if used_slots.len() > 1 {
-                    vm::battle_cue_group::TARGET_PARTY_WIDE
-                } else {
-                    used_slots[0]
-                };
-                self.clear_action_stream(actor);
-                if let Some(a) = self.actors.get_mut(actor as usize) {
-                    a.battle.active_target = target;
-                    a.battle.action_category = vm::battle_action::ActionCategory::Item.as_byte();
-                    a.battle.params[0] = item_id;
-                }
-                self.battle_ctx.queued_action = vm::battle_action::ActionCategory::Item.as_byte();
-                self.battle_ctx.action_state = vm::battle_action::ActionState::Begin.as_byte();
-            } else {
-                // No item id resolved (defensive) - consume the turn directly.
-                self.battle_ctx.action_state =
-                    vm::battle_action::ActionState::EndOfAction.as_byte();
+                // No item id resolved (defensive) - the member stands by.
+                None => self
+                    .commit_party_command(actor, crate::battle_round::PendingPartyAction::StandBy),
             }
             return;
         }

@@ -202,6 +202,19 @@ fn arm_requested_battle(session: &mut BootSession, spec: &str) {
         log::info!("play-window: --battle turns the live loop on (it drains the transition)");
         world.live_gameplay_loop = true;
     }
+    // A scripted carrier's fight is entered by its own record, and that
+    // record can raise a one-shot system-flag arm on the way in - the Rim
+    // Elm sparring record's `50 19` two ops before its `3E FF` battle-entry
+    // op, which is retail's whole condition for the sparring tutorial.
+    // `--battle` on that carrier's row replays the entry without running the
+    // record, so the arm is replayed with it; every other row, and a scene
+    // whose script never raises the flag, is untouched.
+    if world.replay_scripted_battle_arm(row) {
+        log::info!(
+            "play-window: --battle {row} is a scripted carrier's fight - its record's \
+             system-flag arm is replayed with the entry"
+        );
+    }
     if world.force_encounter(row) {
         log::info!(
             "play-window: --battle armed formation row {row} in '{}' - the fight opens through \
@@ -402,8 +415,9 @@ pub(super) fn cmd_play_window_with_record(
     // Opt-in: walk field NPCs along their MAN-authored routes through the
     // motion VM. Off by default -> NPCs rest at their placement anchors.
     session.host.world.animate_field_npcs = live_npcs;
-    // Opt-in: route live basic-attack damage through the retail damage
-    // finisher (9999 cap + no-damage floor). Off by default → flat path.
+    // Retail always runs the damage finisher (`FUN_801ddb30`) after the
+    // melee roll, so it is the default; `--no-damage-finish` keeps the flat
+    // pre-finisher path for comparison.
     session.host.world.use_damage_finish = damage_finish;
     // Opt-in, NON-FAITHFUL QoL: redirect a monster's single-target attack to
     // the lowest-HP living party member (the faithful default is a uniform
@@ -537,8 +551,11 @@ pub(super) fn cmd_play_window_with_record(
     if player_battle {
         let strings =
             legaia_engine_core::battle_open::battle_ui_strings_from_prot(&session.host.index);
-        let n = strings.len();
-        session.host.world.battle_ui_strings = strings;
+        // Merged, not assigned: the SCUS half (the chip words and the
+        // sparring caption) was read at boot (`boot.rs`), this is the overlay
+        // half.
+        session.host.world.battle_ui_strings.merge(&strings);
+        let n = session.host.world.battle_ui_strings.len();
         log::info!("play-window: battle UI labels read off the disc ({n} string(s))");
     }
     // Sparring tutorial: nothing to gate here.

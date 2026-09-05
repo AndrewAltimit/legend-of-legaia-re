@@ -59,10 +59,18 @@ pub const SCUS_RUN: u32 = 0x8007_B684;
 pub const SCUS_BEGIN: u32 = 0x8007_B688;
 /// `Reselect` - the commit-confirm menu's right chip.
 pub const SCUS_RESELECT: u32 = 0x8001_52D4;
+/// The sparring fight's opening caption - the one line of the Tetsu
+/// tutorial that is not in overlay 967. The battle side-band tick
+/// `FUN_80056208` points `_DAT_80077494` at it (`lui`+`addiu` at
+/// `0x80056314..0x80056318`) and raises HUD element `0x5A` when the flow byte
+/// first reads `0x14` in stage 1, with the intro camera aimed at the first
+/// monster seat.
+pub const SCUS_SPARRING_INTRO: u32 = 0x8007_8CB4;
 
 /// Every SCUS-resident battle label, in address order.
-pub const SCUS_LABELS: [(u32, BattleUiLabel); 7] = [
+pub const SCUS_LABELS: [(u32, BattleUiLabel); 8] = [
     (SCUS_RESELECT, BattleUiLabel::Reselect),
+    (SCUS_SPARRING_INTRO, BattleUiLabel::SparringIntro),
     (SCUS_AUTO, BattleUiLabel::Auto),
     (SCUS_COMMAND, BattleUiLabel::Command),
     (SCUS_ATTACK, BattleUiLabel::Attack),
@@ -143,6 +151,9 @@ pub enum BattleUiLabel {
     TeamSurprised,
     /// Pre-emptive banner, solo party.
     SoloSurprised,
+    /// The sparring fight's opening caption (SCUS, raised by the battle
+    /// side-band tick `FUN_80056208` through HUD element `0x5A`).
+    SparringIntro,
 }
 
 /// The battle UI labels read off one image pair.
@@ -206,6 +217,20 @@ impl BattleUiStrings {
                     self.raseru.push(String::new());
                 }
             }
+        }
+    }
+
+    /// Fold `other`'s labels over this set: every label `other` resolved
+    /// replaces the same label here, and its Ra-Seru run replaces this one
+    /// when it carries any entry. The two halves are read at different times
+    /// by the hosts (the SCUS half at boot, the overlay half when a battle is
+    /// requested), so each install merges rather than replaces.
+    pub fn merge(&mut self, other: &BattleUiStrings) {
+        for (label, text) in &other.labels {
+            self.labels.insert(*label, text.clone());
+        }
+        if !other.raseru.is_empty() {
+            self.raseru = other.raseru.clone();
         }
     }
 

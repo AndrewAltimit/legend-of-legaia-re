@@ -2052,17 +2052,19 @@ pub struct World {
     /// by default - when off, behaviour is identical to before.
     pub use_vm_dialogue: bool,
 
-    /// Opt-in: route the live basic-attack damage through the retail damage
+    /// Route the live basic-attack damage through the retail damage
     /// finisher ([`legaia_engine_vm::battle_formulas::damage_finish`], the port
     /// of `FUN_801ddb30`) instead of stopping at the raw roll. The finisher
-    /// adds the universal post-stages - elemental resistance, guard / enemy
-    /// halve, the rand-based no-damage floor, and the 9999 cap. Equipment
-    /// resistance + guard state aren't modelled on the battle actor yet, so
-    /// those inputs default to "no mitigation"; with the gate on the finisher
-    /// currently contributes the faithful 9999 cap and the `rand()%9+8` floor
-    /// on a zeroed hit. Off by default so the existing flat path (min-floor 1,
-    /// `0xFFFF` cap) and its RNG call-count stay the default. The finisher
-    /// draws one RNG **only** when the hit zeroes out, matching retail.
+    /// adds the universal post-stages - the party defender's equipment
+    /// elemental-resistance ladder (live, off the character's ability words
+    /// via [`World::defender_resist`]), the rand-based no-damage floor on a
+    /// hit mitigation zeroed, and the 9999 cap. The guard halve is
+    /// deliberately not taken here: the melee kernel already charges the
+    /// Spirit stance as its guard-roll triple. **On by default** - retail
+    /// always runs the finisher after the melee roll; `false` keeps the flat
+    /// pre-finisher path (min-floor 1, `0xFFFF` cap) for comparison. The
+    /// finisher draws one RNG **only** when the hit zeroes out, matching
+    /// retail.
     pub use_damage_finish: bool,
 
     /// Opt-in for a **player-driven** battle inside the live loop. When
@@ -2140,6 +2142,37 @@ pub struct World {
     /// plus submenus by [`crate::battle_flow::flow_state_for`]; the turn-start
     /// prompt is raised directly by `World::open_battle_command`.
     pub battle_flow: crate::battle_flow::BattleFlowState,
+
+    /// The live loop's round state - which of retail's two round bands the
+    /// battle is in (the command band collects every party member's command
+    /// before the execution band dispatches anyone by initiative), the
+    /// commands committed so far, and the member cursor `ctx[+0x13]`. See
+    /// [`crate::battle_round::RoundPhase`].
+    pub battle_round_flow: crate::battle_round::RoundFlow,
+
+    /// The sparring fight's side-band phase byte - retail `ctx[+0x289]`,
+    /// the SCUS tick `FUN_80056208`'s stage-1 cursor: `0` waiting for the
+    /// round start, `1` the opening caption up (the flow SM held back),
+    /// `2` the prompt machine live. See
+    /// [`World::raise_sparring_caption_if_due`]. Reset at battle entry.
+    pub battle_sparring_phase: u8,
+
+    /// System flags the active scene's own field-VM script SETs cleanly
+    /// (`0x5x` ops decoded in a coherent stream), read off the MAN when the
+    /// scene's carriers are installed. The disc-side evidence a direct
+    /// `--battle` entry into a scripted carrier's fight consults to replay
+    /// the arm that carrier's record raises
+    /// ([`World::replay_scripted_battle_arm`]).
+    pub scene_script_system_flag_sets: Vec<u16>,
+
+    /// Battle "Select Attack" option - retail config word `0x800846C4`,
+    /// the pause menu's row ([`crate::options::SelectAttackOpt`]): whether
+    /// the ring's Attack arm shows the `Auto | Command` prompt (`0x78`), goes
+    /// straight to the target cursor (`0x5A`) or straight to the directional
+    /// arts entry (`0x50`) - `FUN_801D0748`'s `0x28` Left arm at
+    /// `0x801D15E0..0x801D1650`. Hosts mirror their `OptionsState` onto this
+    /// the way they mirror [`Self::field_move_run_default`].
+    pub battle_select_attack: crate::options::SelectAttackOpt,
 
     /// The sparring-tutorial prompt machine, armed only for the Tetsu
     /// tutorial fight (battle-stage id
@@ -3002,7 +3035,7 @@ impl World {
             live_gameplay_loop: false,
             smarter_monster_targeting: false,
             use_vm_dialogue: false,
-            use_damage_finish: false,
+            use_damage_finish: true,
             battle_player_driven: false,
             battle_command: None,
             battle_item_menu: None,
@@ -3011,6 +3044,10 @@ impl World {
             battle_arts_input: None,
             battle_swing_costs: [[crate::arts_command_input::FAVORED_COST; 4]; 3],
             battle_flow: crate::battle_flow::BattleFlowState::Idle,
+            battle_round_flow: crate::battle_round::RoundFlow::default(),
+            battle_sparring_phase: 0,
+            scene_script_system_flag_sets: Vec::new(),
+            battle_select_attack: crate::options::SelectAttackOpt::default(),
             battle_tutorial: None,
             battle_tutorial_script: crate::battle_tutorial::BattleTutorialScript::default(),
             battle_tutorial_boxes: std::collections::VecDeque::new(),

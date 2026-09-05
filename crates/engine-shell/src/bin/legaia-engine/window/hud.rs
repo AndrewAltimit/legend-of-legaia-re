@@ -1488,8 +1488,13 @@ impl PlayWindowApp {
             // space, so it goes through the stage transform the dialog box and
             // window chrome use. Drawn last inside the battle block so it sits
             // over the menus, which is where retail's message box lands too.
-            if let Some(rect) = self.battle_tutorial_stage_rect() {
-                let tbox = bw.battle_tutorial_box().expect("rect implies a box");
+            //
+            // Every box of the on-screen group draws, not just the front
+            // one: a retail hook dispatch registers all its boxes at once
+            // (the lesson's top-anchored intro and its bottom-anchored
+            // explainer share the frame at `Begin | Run`).
+            let (stage_origin, stage_scale) = self.save_select_stage(w, h);
+            for (rect, tbox) in self.battle_tutorial_stage_boxes() {
                 let mut draws = legaia_engine_render::battle_tutorial_text_draws_for(
                     &self.font, &tbox.text, rect,
                 );
@@ -1504,7 +1509,6 @@ impl PlayWindowApp {
                         dim,
                     ));
                 }
-                let (stage_origin, stage_scale) = self.save_select_stage(w, h);
                 legaia_engine_render::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
                 out.extend(draws);
             }
@@ -1936,6 +1940,28 @@ impl PlayWindowApp {
         Some((x as i32, y as i32, w as i32, h as i32))
     }
 
+    /// Every tutorial box on screen with its stage rect - the front group of
+    /// the world's box queue (one retail hook dispatch registers all of its
+    /// boxes together, so the group draws together).
+    pub(super) fn battle_tutorial_stage_boxes(
+        &self,
+    ) -> Vec<(
+        (i32, i32, i32, i32),
+        &legaia_engine_core::battle_flow::ActiveTutorialBox,
+    )> {
+        self.session
+            .host
+            .world
+            .battle_tutorial_boxes_on_screen()
+            .filter_map(|tbox| {
+                let width =
+                    legaia_engine_render::battle_tutorial_text_width(&self.font, &tbox.text);
+                let (x, y, w, h) = tbox.rect(width)?;
+                Some(((x as i32, y as i32, w as i32, h as i32), tbox))
+            })
+            .collect()
+    }
+
     /// Sparring-tutorial prompt-box chrome: the same gradient fill + gold
     /// 9-slice frame the dialog reading box wears, at the rect the retail
     /// emitter registers the prompt's text actor with. Sampled from the
@@ -1952,23 +1978,18 @@ impl PlayWindowApp {
         if self.boot_ui.is_active() {
             return Vec::new();
         }
-        let Some(rect) = self.battle_tutorial_stage_rect() else {
-            return Vec::new();
-        };
-        let waits = self
-            .session
-            .host
-            .world
-            .battle_tutorial_box()
-            .is_some_and(|b| b.waits_for_input);
         let (stage_origin, stage_scale) = self.save_select_stage(surface_w, surface_h);
-        legaia_engine_render::battle_tutorial_chrome_draws_for(
-            &assets.rects,
-            rect,
-            waits,
-            stage_origin,
-            stage_scale,
-        )
+        let mut out = Vec::new();
+        for (rect, tbox) in self.battle_tutorial_stage_boxes() {
+            out.extend(legaia_engine_render::battle_tutorial_chrome_draws_for(
+                &assets.rects,
+                rect,
+                tbox.waits_for_input,
+                stage_origin,
+                stage_scale,
+            ));
+        }
+        out
     }
 
     /// Project the live name-entry session into the renderer-agnostic view

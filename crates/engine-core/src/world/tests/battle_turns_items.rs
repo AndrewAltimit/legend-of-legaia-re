@@ -152,18 +152,50 @@ fn battle_item_use_heals_ally_consumes_item_and_cycles_turn() {
     world.tick_battle_item_menu();
     assert!(world.battle_item_menu.is_some(), "still picking a target");
 
-    // Frame 2: Cross confirms the first target (the wounded slot 0).
+    // Frame 2: Cross confirms the first target (the wounded slot 0). The copy
+    // goes at the commit (retail's item window consumes it there and the
+    // `0x6E` step-back refunds it); the effect waits for the dispatch.
     world.set_pad(0);
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_item_menu();
-
-    assert_eq!(world.actors[0].battle.hp, 150, "healed 50 -> 150");
     assert_eq!(
         world.inventory.get(&0x01).copied(),
         Some(1),
-        "one Healing Leaf consumed"
+        "one Healing Leaf consumed at the commit"
     );
     assert!(world.battle_item_menu.is_none(), "menu closed after use");
+    assert_eq!(
+        world.actors[0].battle.hp, 50,
+        "the heal waits for the dispatch"
+    );
+    // The ring walks on to slot 1, which still owes this round a command;
+    // its Attack is the last commit, and the round begins. With no SPD the
+    // execution band walks the party in slot order, so slot 0's item lands
+    // first.
+    {
+        use crate::battle_input::{BattleCommand, BattleCommandSession, CommandPhase};
+        let next = world
+            .battle_command
+            .as_ref()
+            .expect("slot 1's ring opens after slot 0 commits");
+        assert_eq!(next.actor, 1);
+        world.battle_command = Some(BattleCommandSession {
+            actor: 1,
+            party_slot: 1,
+            no_escape: false,
+            phase: CommandPhase::Confirmed {
+                command: BattleCommand::Attack,
+                target_row: crate::target_picker::CursorRow::Enemy,
+                target_slot: 0,
+            },
+        });
+        world.tick_battle_command();
+    }
+    assert!(
+        world.battle_command.is_none(),
+        "the last commit begins the round"
+    );
+    assert_eq!(world.actors[0].battle.hp, 150, "healed 50 -> 150");
     // The use arms the action SM's Item band (retail category 1 through
     // `FUN_801E295C`'s item arm) rather than parking at EndOfAction; the
     // live loop cycles when the band completes (battle_item_cast_band.rs).

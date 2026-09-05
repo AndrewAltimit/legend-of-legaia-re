@@ -1366,6 +1366,10 @@ impl World {
         self.battle_tutorial = None;
         self.battle_tutorial_boxes.clear();
         self.battle_flow = crate::battle_flow::BattleFlowState::Idle;
+        self.battle_round_flow = crate::battle_round::RoundFlow::default();
+        // `ctx[+0x289]`: the side-band's stage-1 phase starts at 0 with the
+        // rest of the battle context.
+        self.battle_sparring_phase = 0;
         let armed_by_disc = self.take_battle_tutorial_arm();
         if self.battle_tutorial_pending || armed_by_disc {
             self.arm_battle_tutorial();

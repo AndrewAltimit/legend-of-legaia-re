@@ -62,9 +62,11 @@ impl World {
     }
 
     /// Next living combatant after `after` in round-robin slot order across
-    /// the whole actor table (party then monsters, wrapping). Drives the live
-    /// loop's turn cycling so monsters take turns interleaved with the party.
-    /// `None` only when no actor is alive.
+    /// the whole actor table (party then monsters, wrapping). The no-SPD arm
+    /// of [`Self::next_combatant_by_initiative`] walks the same order over
+    /// the round's unspent turn tokens; this is its keyless reference, kept
+    /// for the test that pins the wrap.
+    #[cfg(test)]
     pub(in crate::world) fn next_living_combatant(&self, after: u8) -> Option<u8> {
         let n = self.actors.len();
         if n == 0 {
@@ -120,6 +122,21 @@ impl World {
     pub(in crate::world) fn reseed_initiative(&mut self) {
         use vm::battle_formulas::{InitiativeActor, initiative_roll_modulus, seed_initiative};
         let party_count = self.party_count as usize;
+        if !self.any_battle_speed() {
+            // No SPD anywhere (the synthetic catalog, the disc-free tests):
+            // there is nothing to roll, so every living slot gets one flat
+            // turn token and no RNG is drawn. The pick
+            // ([`Self::next_combatant_by_initiative`]) walks these in slot
+            // order, which keeps the historical round-robin cadence while
+            // still giving the battle retail's round boundary.
+            for i in 0..BATTLE_SLOTS {
+                if let Some(a) = self.actors.get_mut(i) {
+                    a.battle.init_key = u16::from(a.battle.liveness != 0);
+                }
+            }
+            self.apply_engine_side_lockout();
+            return;
+        }
         for i in 0..BATTLE_SLOTS {
             let alive = self.actors.get(i).is_some_and(|a| a.battle.liveness != 0);
             if !alive {
@@ -152,6 +169,12 @@ impl World {
                 a.battle.init_key = key;
             }
         }
+        self.apply_engine_side_lockout();
+    }
+
+    /// The `ctx+0x290` side lockout over the engine's compacted seating - the
+    /// tail of [`Self::reseed_initiative`], shared by its SPD and no-SPD arms.
+    fn apply_engine_side_lockout(&mut self) {
         // `ctx+0x290` side lockout - read the *unlatched* copy, as retail does.
         //
         // `battle_formulas::apply_side_lockout` splits the sides at the fixed
@@ -337,28 +360,36 @@ impl World {
             .battle_ui_strings
             .get(banner.disc_label())
             .map(str::to_string);
+        let group = self.next_battle_tutorial_group();
         self.battle_tutorial_boxes
             .push_back(crate::battle_flow::ActiveTutorialBox {
                 text: banner.line(&leader, template.as_deref()),
                 style: BANNER_BOX_STYLE,
                 waits_for_input: false,
                 frames_remaining: BANNER_FRAMES,
+                group,
+                any_press_dismisses: false,
             });
     }
 
     /// Next combatant by SPD-seeded initiative - the port of
     /// `recompute_battle_order` (`FUN_801daba4`). Returns the living actor with
     /// the highest current initiative key (random tiebreak via `rand %
-    /// tie_count`), consuming that actor's key so the next turn picks another.
-    /// When every living actor's key is spent a new round is seeded. Dead
-    /// actors' keys are zeroed (the function's first loop) so they can't be
-    /// picked. Falls back to round-robin when no actor carries SPD.
+    /// tie_count`), consuming that actor's key so the next pick moves on -
+    /// retail consumes it at the action SM's `0x0C` dispatch
+    /// (`sh zero,0x16c(s3)` at `0x801E2CDC`), and the engine dispatches on the
+    /// same call, so the two are one seam. Dead actors' keys are zeroed (the
+    /// function's first loop) so they can't be picked.
+    ///
+    /// `None` once every living actor's key is spent: that is the round's
+    /// end, and it is the caller's to close (retail's `0x5A` bound test ->
+    /// `0xFF` -> `0x14`); the keys are re-seeded by the *round start*
+    /// (`FUN_801DA780` from `FUN_801D0748`'s `0x14` arm, `0x801D0ED8`), never
+    /// by the pick itself. A battle with no SPD walks its flat turn tokens in
+    /// slot order after the last acting actor - the historical round-robin.
     ///
     /// PORT: FUN_801DABA4
     pub(in crate::world) fn next_combatant_by_initiative(&mut self) -> Option<u8> {
-        if !self.any_battle_speed() {
-            return self.next_living_combatant(self.battle_ctx.active_actor);
-        }
         // First loop: zero dead actors' keys so the max-pick skips them.
         for i in 0..BATTLE_SLOTS {
             if self.actors.get(i).is_some_and(|a| a.battle.liveness == 0)
@@ -367,14 +398,21 @@ impl World {
                 a.battle.init_key = 0;
             }
         }
-        // Round boundary: when no living actor still holds a key, reseed.
-        let any_key = (0..BATTLE_SLOTS).any(|i| {
-            self.actors
-                .get(i)
-                .is_some_and(|a| a.battle.liveness != 0 && a.battle.init_key != 0)
-        });
-        if !any_key {
-            self.reseed_initiative();
+        if !self.any_battle_speed() {
+            // Flat turn tokens, walked in slot order from the round's start
+            // (party first, then monsters) - see `RoundFlow::flat_walk_last`.
+            let n = self.actors.len().min(BATTLE_SLOTS);
+            let start = self
+                .battle_round_flow
+                .flat_walk_last
+                .map_or(0, |last| usize::from(last) + 1);
+            let pick = (start..n).find(|&i| {
+                let a = &self.actors[i].battle;
+                a.liveness != 0 && a.init_key != 0
+            })?;
+            self.actors[pick].battle.init_key = 0;
+            self.battle_round_flow.flat_walk_last = Some(pick as u8);
+            return Some(pick as u8);
         }
         // Highest key among living actors; ties collected in slot order.
         let mut best: u16 = 0;
@@ -399,7 +437,7 @@ impl World {
             }
         }
         if ties.is_empty() {
-            return self.next_living_combatant(self.battle_ctx.active_actor);
+            return None;
         }
         let pick = ties[(self.next_rng() as usize) % ties.len()];
         if let Some(a) = self.actors.get_mut(pick as usize) {

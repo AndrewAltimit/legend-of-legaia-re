@@ -419,6 +419,23 @@ pub const HOOK_STATES: [u8; 9] = [30, 40, 50, 60, 80, 90, 100, 110, 120];
 /// sparring fight (`0x801F73A8`).
 pub const FLOW_STATE_BATTLE_OVER: u8 = 0xC8;
 
+/// How long the sparring fight's opening caption holds before the round
+/// opens on its own: the SCUS side-band tick `FUN_80056208` seeds
+/// `ctx[+0x6AE] = 0xB40` (`0x800562F4`) and drains it by `8 * frame_step`
+/// per frame (`0x80056390..0x80056394`), so `0xB40 / 8` frames at the
+/// normal step. Any pad press ends the hold early
+/// (`0x8005637C..0x800563A8`).
+///
+/// REF: FUN_80056208
+pub const SPARRING_CAPTION_FRAMES: u16 = 0x0B40 / 8;
+
+/// Box style the sparring caption is placed with. The caption is HUD
+/// element `0x5A`, not a 967 emission, and its frame position - centred,
+/// sitting on the bottom anchor `0xCC` - is the corner emitter style `9`
+/// computes ([`BoxStyle::from_raw`]), pinned from the retail frame of the
+/// caption up; style `9` also carries the caption's non-waiting dismissal.
+pub const SPARRING_CAPTION_STYLE: u8 = 9;
+
 /// Action-state value the completion tail writes to `ctx[0x07]`.
 pub const ACTION_STATE_TERMINAL: u8 = 0xFF;
 

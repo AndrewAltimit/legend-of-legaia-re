@@ -4,7 +4,13 @@
 //!
 //! PORT: FUN_80056208
 //!
-//! NOT WIRED: the pass is a state machine over the battle context
+//! NOT WIRED here - the intro caption half is wired in `engine-core`: the
+//! stage-1 phases `0` and `1` (the sparring caption, its hold timer, the
+//! any-press skip, and the `ctx[+0x6B0]` hold on the flow SM's round start)
+//! run live as `World::raise_sparring_caption_if_due` +
+//! `World::tick_battle_tutorial_boxes` (`world/battle/tutorial.rs`), which is
+//! where a wgpu-free model can reach both hosts. What stays unwired is the
+//! rest: the pass is a state machine over the battle context
 //! (`_DAT_8007BD24`) and four global registers, none of which this crate owns.
 //! Its three inputs are the sideband submode byte `DAT_8007B64A`, the phase
 //! counter `ctx[+0x289]` and the frame step `DAT_1F800393`; its outputs are the
