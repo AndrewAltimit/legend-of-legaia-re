@@ -40,7 +40,8 @@ pub struct FadeTemplate {
     pub end_rgb: [i16; 3],
     /// `[10]` / `[11]` / `[12]` - copied verbatim onto the state at `+0x1C`,
     /// `+0x1E` and `+0x22`. The per-frame tick `FUN_80020C14` reads them as
-    /// **start delay**, **hold after the ramp** (`-1` = no hold) and the **id**
+    /// **start delay**, **hold after the ramp** (`-1` = hold until the actor is
+    /// killed - the tick never raises its finished bit) and the **id**
     /// `FUN_80024E80` stamps and `FUN_80024EE4` receives - see
     /// [`crate::fade_ramp`].
     pub mode: [i16; 3],
@@ -49,9 +50,10 @@ pub struct FadeTemplate {
 /// The successful-escape fade template the battle-action SM writes at
 /// `DAT_801C9070` before spawning the fade (state `0x66`): kind `2`, a
 /// `0x40`-frame ramp from black `(0,0,0)` to white `(0xFF,0xFF,0xFF)`, and
-/// trailing words `(0, -1, 0)` - no start delay, no hold, id `0`. Kind `2`
-/// is the `B - F` blend, so the rising ramp fades the scene **to black**;
-/// the battle results sequencer spawns the same template at its exit
+/// trailing words `(0, -1, 0)` - no start delay, a `-1` hold (the landed
+/// frame persists until the battle unloads), id `0`. Kind `2` is the
+/// `B - F` blend, so the rising ramp fades the scene **to black**; the
+/// battle results sequencer spawns the same template at its exit
 /// (`world::battle::victory`).
 ///
 /// REF: FUN_801E295C (case 0x66 template write)
@@ -82,6 +84,13 @@ pub struct FadeState {
     elapsed: i16,
     /// Mode words (template `[10..=12]`).
     pub mode: [i16; 3],
+    /// Start delay still to run (block `+0x1C`, template `[10]`): nothing is
+    /// drawn and the ramp does not advance while it is positive.
+    delay_left: i16,
+    /// Post-ramp hold still to run (block `+0x1E`, template `[11]`): `-1`
+    /// holds the landed colour until the fade is replaced or torn down, `0`
+    /// drops the fade the frame the ramp lands, `n > 0` holds `n` frames.
+    hold_left: i16,
 }
 
 impl FadeState {
@@ -110,33 +119,64 @@ impl FadeState {
             duration,
             elapsed: 0,
             mode: t.mode,
+            delay_left: t.mode[0],
+            hold_left: t.mode[1],
         }
     }
 
-    /// Advance the ramp one frame (the linear integrator the loader's
-    /// state layout implies: `current += delta`, latching exactly on the
-    /// target at the end of the ramp). Returns `true` while the fade is
-    /// still running, `false` once it has completed.
+    /// Advance the fade one frame. Returns `true` while the fade is still
+    /// alive (delaying, ramping or holding), `false` once it is done and the
+    /// host should stop drawing it.
     ///
-    /// This is the engine's own endpoint model, not retail's. The retail pool
-    /// actor's per-frame tick is [`crate::fade_ramp`] (`FUN_80020C14` /
-    /// `FUN_80025000`): it scales the delta by the scratchpad vsync count,
-    /// clamps onto the target rather than latching on a frame counter, and
-    /// carries a start delay and a post-ramp hold that this model folds away.
-    /// Use `fade_ramp` where retail-exact timing matters.
+    /// The three template words retail's tick (`FUN_80020C14`) counts down
+    /// are honoured in the same order: the start delay first (nothing drawn,
+    /// see [`Self::visible`]), then the linear ramp (`current += delta`,
+    /// latching exactly on the target after `duration` frames), then the
+    /// hold - `-1` holds the landed colour **until the fade is replaced or
+    /// torn down** (the escape white-out and the summon flash-in both use it,
+    /// which is why they persist past their ramp), `0` ends the fade on the
+    /// landing frame, `n > 0` holds `n` more frames.
+    ///
+    /// The per-frame arithmetic is still the engine's linear integrator rather
+    /// than [`crate::fade_ramp`]'s vsync-scaled accumulator; the lifetime
+    /// words are retail's.
     pub fn step(&mut self) -> bool {
-        if self.elapsed >= self.duration {
-            return false;
+        if self.delay_left > 0 {
+            self.delay_left -= 1;
+            return true;
         }
-        self.elapsed += 1;
-        if self.elapsed >= self.duration {
-            self.current_q6 = self.end_q6;
-            return false;
+        if self.elapsed < self.duration {
+            self.elapsed += 1;
+            if self.elapsed >= self.duration {
+                self.current_q6 = self.end_q6;
+            } else {
+                for c in 0..3 {
+                    self.current_q6[c] = self.current_q6[c].wrapping_add(self.delta_q6[c]);
+                }
+                return true;
+            }
         }
-        for c in 0..3 {
-            self.current_q6[c] = self.current_q6[c].wrapping_add(self.delta_q6[c]);
+        // Landed: run the hold.
+        if self.hold_left < 0 {
+            return true;
         }
-        true
+        if self.hold_left > 0 {
+            self.hold_left -= 1;
+            return true;
+        }
+        false
+    }
+
+    /// `true` once the start delay has run - retail's tick returns `-1`
+    /// (draw nothing) while `+0x1C` is still positive.
+    pub fn visible(&self) -> bool {
+        self.delay_left <= 0
+    }
+
+    /// `true` while the landed colour is being held (hold word `-1`, or a
+    /// positive hold still counting).
+    pub fn held(&self) -> bool {
+        self.finished() && (self.hold_left != 0)
     }
 
     /// The current display colour (`current >> 6`, clamped to a byte).
@@ -536,17 +576,54 @@ mod tests {
     }
 
     #[test]
-    fn escape_fade_ramps_black_to_white_over_0x40_frames() {
+    fn escape_fade_ramps_black_to_white_over_0x40_frames_then_holds() {
         let mut f = FadeState::load(&escape_fade_template());
         assert_eq!(f.rgb(), [0, 0, 0]);
         assert_eq!(f.duration, 0x40);
-        let mut frames = 0;
-        while f.step() {
-            frames += 1;
+        assert!(f.visible(), "no start delay on the escape template");
+        // The ramp runs the template duration and lands exactly on white.
+        for _ in 0..0x40 {
+            assert!(f.step(), "the fade stays alive through its ramp");
         }
-        assert_eq!(frames + 1, 0x40, "ramp runs the template duration");
         assert!(f.finished());
         assert_eq!(f.rgb(), [0xFF, 0xFF, 0xFF], "lands exactly on white");
+        // Hold word -1: the landed colour holds until the fade is replaced
+        // (retail's `+0x1E == -1` never raises the actor's finished bit).
+        for _ in 0..1000 {
+            assert!(f.step(), "a -1 hold never ends on its own");
+        }
+        assert!(f.held());
+        assert_eq!(f.rgb(), [0xFF, 0xFF, 0xFF]);
+    }
+
+    #[test]
+    fn a_zero_hold_drops_on_the_landing_frame_and_a_delay_defers_the_ramp() {
+        let mut t = escape_fade_template();
+        t.duration = 4;
+        t.mode = [3, 0, 0];
+        let mut f = FadeState::load(&t);
+        // Three frames of delay: alive, invisible, colour untouched.
+        for _ in 0..3 {
+            assert!(!f.visible());
+            assert!(f.step());
+            assert_eq!(f.rgb(), [0, 0, 0]);
+        }
+        assert!(f.visible());
+        // Four ramp frames; the fourth lands and, with hold 0, ends the fade.
+        assert!(f.step());
+        assert!(f.step());
+        assert!(f.step());
+        assert!(!f.step(), "hold 0 ends on the landing frame");
+        assert_eq!(f.rgb(), [0xFF, 0xFF, 0xFF]);
+        // A positive hold keeps it alive that many frames more.
+        t.mode = [0, 2, 0];
+        let mut f = FadeState::load(&t);
+        for _ in 0..3 {
+            assert!(f.step());
+        }
+        assert!(f.step(), "landing frame, hold 2 -> 1");
+        assert!(f.step(), "hold 1 -> 0");
+        assert!(!f.step(), "hold expired");
     }
 
     #[test]

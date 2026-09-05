@@ -252,7 +252,8 @@ impl World {
                 }
                 LeaderSwapEffect::SpawnFadeOut => {
                     // `801d29c8..801d2a00`: kind 2, 0x20 frames, black ->
-                    // white, no start delay / no hold.
+                    // white, no start delay, a `-1` hold - the landed white
+                    // persists until the state-2 fade-in replaces it.
                     self.screen_fade =
                         Some(crate::fade::FadeState::load(&crate::fade::FadeTemplate {
                             kind: 2,

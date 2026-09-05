@@ -21,7 +21,7 @@
 //! +0x10/12/14  per-frame delta, 10.6 fixed  ((end - start) << 6) / duration
 //! +0x18        fade kind, word              (template [0])
 //! +0x1C        start delay, vsyncs          (template [10])
-//! +0x1E        hold after the ramp          (template [11]); -1 = no hold
+//! +0x1E        hold after the ramp          (template [11]); -1 = hold until killed
 //! +0x20        duration, vsyncs             (template [1])
 //! +0x22        id stamped by FUN_80024E80   (template [12])
 //! ```
