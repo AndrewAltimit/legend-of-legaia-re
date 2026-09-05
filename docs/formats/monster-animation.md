@@ -495,7 +495,12 @@ committed entry: the `+0x84..+0x86` loop window (`apply_loop_window`, run
 before the natural-end test as the tick does), the signed `+0x0C` root speed
 (`root_speed`, driven by `World::tick_battle_locomotion`) and the
 `+0x00..+0x03` / `+0x10..+0x13` / `+0x76` hit-event side (`hit_source`, read
-by `World::tick_battle_hit_events`).
+by `World::tick_battle_hit_events`). The hosts install a monster's clips
+**positionally** (`monster_archive::animations_by_entry`, one slot per `+0x4C`
+index with holes kept): a monster's staged anim id is that index - the AI
+picker queues its swing entries by it and `FUN_8004AD80` reads
+`action_table[slot][id]` - so the compacted `animations` list would
+mis-address every entry after the first undecodable one.
 
 ## Export
 

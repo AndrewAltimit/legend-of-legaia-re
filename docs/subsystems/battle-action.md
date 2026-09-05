@@ -2530,8 +2530,36 @@ actor's own counter `+0x1F4`:
 
 So **one staged art constant produces as many damage applications as its clip
 has hit events**, capped at four - the art's power list is walked by the
-animation, not by the stream. `+0x1F4` is reset from the anim side when the
-*latched* id crosses `0x2B` (`0x80047878`: `sb zero,0x1f4(s2)`).
+animation, not by the stream. Every commit zeroes `+0x1F4` (`FUN_8004AD80`,
+`0x8004B064`), and the tick's loop-window arm zeroes it again on every rewind
+(`0x80047840..0x80047878`: reached only from the `+0x176` window test, for a
+party slot whose committed id is `0x11` and whose latched id is `>= 0x2B`), so
+a Hyper / Super clip that replays its window re-fires its hits each cycle.
+
+**Which hit lands the total.** Every admitted hit adds its damage to the
+target's combo word `+0x0` and its HP-bar word `+0x10` (`0x801EDB40` /
+`0x801EDB58`); live HP `+0x14C` is written by one arm, `0x801EEA10..0x801EEA3C`
+(`hp - total`, floored at zero, then `sw zero,0x0` at `0x801EEA74`), selected
+by a mode register the kernel computes after the roll (`s2`, the two copies at
+`0x801EDEE4..0x801EE130` and `0x801EE790..0x801EE980` are the party / monster
+attacker branches):
+
+- `s2 = 0` - the ordinary case: apply only when the strike cursor is parked
+  (`ctx[+0x15] == 0xFF`, `0x801EE9A4`) **and** this is the clip's last listed
+  beat (`entry[0x11 + idx] == 0 || idx == 3`, `0x801EE9DC..0x801EE9EC`).
+- `s2 != 0` - a look-ahead over every remaining hit of the action (the rest of
+  this entry's power run, then every remaining stream byte's entry) found none
+  whose class bits can connect with the target's `+0x1E` size class
+  (`0x801EE060..0x801EE0B4`, the limb-vs-height "Miss" law): the total lands
+  **now**, since nothing after this hit can add to it.
+- `s2 = 0xFF` - the attacker's ability bitfield (`char +0xF4`) carries bit
+  `0x0D` (the War God Icon's *Attack x2*) and `ctx[+0x16] < 2`
+  (`0x801EE0C0..0x801EE120`): the first action of the pair never applies, its
+  total carries into the second.
+
+A swing entry's power byte 0 is **equipment-spliced**, not the command: the
+swing clips are per-item (`swing_battle_animations`), and the same `0x0E` reads
+`0x13` on one save and `0x1D` on another (N = 2 captures).
 
 ### 4. The latch is what makes the attack camera reachable
 
@@ -2592,6 +2620,17 @@ hits at stage time (`resolve_zero_length_clip_hits`), and a monster whose
 catalog carries no attack entries keeps the AGL-budget immediate swings
 (`apply_basic_attack`, still accumulate-then-apply). Neither is reachable with
 disc data, where every entry carries its head.
+
+Of the apply-mode law in §3 the port implements the `s2 = 0` arm and the
+loop-window re-zero of `+0x1F4` (`MonsterAnimPlayer::take_loop_rewound`, read
+by `tick_battle_hit_events` under the same party / slot `0x11` / latched
+`>= 0x2B` gate). Two arms are **not wired**, each with a concrete
+prerequisite: the `s2 != 0` early apply needs the size-class Miss model
+(`+0x1E` class 2 / 3 against a power byte's class), which the port has no
+seat for yet - with every hit able to connect, retail's look-ahead answers
+`s2 = 0`, so the port's behaviour is retail's for every target the port can
+represent; and the War God Icon's `s2 = 0xFF` carry-over needs the icon's
+*Attack x2* pair itself (`ctx[+0x16]`), which the engine does not model.
 
 ## Engine port
 

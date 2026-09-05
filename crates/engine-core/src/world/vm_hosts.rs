@@ -2397,14 +2397,11 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     /// `World::art_records`, the same map the entry resolver reads its
     /// per-strike power profile out of.
     ///
-    /// Without this the SM's whole art-strike seam was unreachable from the
-    /// World host: `attack_chain` only dispatches
-    /// [`legaia_engine_vm::battle_action::BattleActionHost::apply_art_strike`]
-    /// for an art it can resolve, and the trait default answers `None` for
-    /// every pair. The record supplies the strike's `dmg_timing` and hit cue;
-    /// the power itself comes from the profile the entry staged on the actor
-    /// (`BattleActor::art_power`), so an art whose record is not loaded still
-    /// resolves its damage.
+    /// The record supplies an art hit's side data - the status effect and
+    /// the per-hit cue (`legaia_engine_vm::battle_action::art_strike_info_for_hit`,
+    /// `World::apply_art_hit_side_data`); the power byte itself is the clip
+    /// entry's, so an art whose record is not loaded still resolves its
+    /// damage. The trait default answers `None` for every pair.
     fn art_record(
         &self,
         character: legaia_art::Character,

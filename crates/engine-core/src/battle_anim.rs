@@ -85,6 +85,11 @@ pub struct MonsterAnimPlayer {
     loop_budget: u32,
     loop_start: u32,
     loop_end: u32,
+    /// Set by [`Self::apply_loop_window`] when a real window (`start !=
+    /// end`) rewound the cursor this tick; taken by
+    /// [`Self::take_loop_rewound`]. The tick re-zeroes the per-clip hit
+    /// index on exactly that edge (`FUN_80047430` `0x80047840..0x80047878`).
+    loop_rewound: bool,
     /// The entry's signed root-motion speed (`+0x0C`), `0` for a headless
     /// clip - what the anim tick's position term multiplies per frame
     /// (`FUN_80047430` `0x80047D34..0x80047E18`).
@@ -182,6 +187,7 @@ impl MonsterAnimPlayer {
             loop_budget,
             loop_start,
             loop_end,
+            loop_rewound: false,
             root_speed: anim.entry_root_speed().unwrap_or(0),
             hit_source,
         })
@@ -211,6 +217,14 @@ impl MonsterAnimPlayer {
     /// this; see `docs/formats/monster-animation.md` § Playback).
     pub fn release_loop_window(&mut self) {
         self.loop_budget = 0;
+    }
+
+    /// `true` once per tick on which a real loop window rewound the cursor
+    /// (the `0x800477EC..0x8004783C` arm; a `start == end` park does not
+    /// count). Clears on read. The hit-event driver re-zeroes the actor's
+    /// per-clip hit index on this edge under retail's own gate.
+    pub fn take_loop_rewound(&mut self) -> bool {
+        std::mem::take(&mut self.loop_rewound)
     }
 
     /// Build a **one-shot** player: the clip plays once, the cursor clamps at
@@ -326,11 +340,7 @@ impl MonsterAnimPlayer {
         }
         if self.loop_end == self.loop_start {
             let over = phase - self.loop_start;
-            self.loop_budget = if over < self.loop_budget {
-                self.loop_budget - over
-            } else {
-                0
-            };
+            self.loop_budget = self.loop_budget.saturating_sub(over);
             return self.loop_start;
         }
         let span = self.loop_end - self.loop_start;
@@ -341,6 +351,7 @@ impl MonsterAnimPlayer {
                 break;
             }
         }
+        self.loop_rewound = true;
         phase
     }
 
@@ -634,6 +645,37 @@ mod one_shot_tests {
             }
         }
         assert_eq!(seen, vec![1, 2, 3, 4, 5, 5, 5, 5, 6, 7]);
+    }
+
+    #[test]
+    fn a_real_window_reports_each_rewind_once_and_a_park_never() {
+        // [4, 6] x 2 on a 10-frame clip: two rewinds, each reported on the
+        // tick it happens and cleared by the read.
+        let mut p = MonsterAnimPlayer::new_one_shot(&windowed_clip(10, 2, 4, 6)).unwrap();
+        p.step = 256;
+        let mut edges = Vec::new();
+        for _ in 0..16 {
+            p.tick();
+            if p.take_loop_rewound() {
+                edges.push(p.current_frame());
+            }
+            if p.finished() {
+                break;
+            }
+        }
+        assert_eq!(
+            edges,
+            vec![4, 4],
+            "one edge per rewind, on the rewound frame"
+        );
+        assert!(!p.take_loop_rewound(), "cleared by the read");
+        // A parking window ([5, 5]) holds without rewinding: no edge.
+        let mut q = MonsterAnimPlayer::new_one_shot(&windowed_clip(8, 3, 5, 5)).unwrap();
+        q.step = 256;
+        for _ in 0..12 {
+            q.tick();
+            assert!(!q.take_loop_rewound());
+        }
     }
 
     #[test]

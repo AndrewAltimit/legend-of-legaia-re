@@ -74,6 +74,13 @@ pub const HIT_BLOCKED_ACTION_STATE: u8 = 0x5A;
 /// (`addiu v0,v0,0x2 ; slt v0,v0,s0` at `0x80047930..0x80047934`).
 pub const EVENT_COMMIT_SLACK: i16 = 2;
 
+/// Lowest latched staged id (`+0x1DB`) for which the anim tick's loop-window
+/// arm re-zeroes the per-clip hit index on every rewind (`sltiu v0,v0,0x2b`
+/// at `0x80047864`, gated on a party slot whose committed id is dynamic
+/// slot `0x11`, `0x80047840..0x80047878`): the Hyper / Super constants, whose
+/// windowed clips re-fire their hits each cycle.
+pub const LOOP_REZERO_LATCHED_MIN: u8 = 0x2B;
+
 /// One hit event the kernel admitted for the frame it was called on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HitEvent {

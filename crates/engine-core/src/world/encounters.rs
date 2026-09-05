@@ -535,7 +535,7 @@ impl World {
             // commands, the sum of all five for an art). So the seeded
             // attack is the aggregator's ATK minus the equipment sum - the
             // base plus any accessory percent boost - and the per-slot bytes
-            // go to `battle_equip_atk` for `apply_one_basic_strike` to fold.
+            // go to `battle_equip_atk` for `land_melee_hit` to fold per hit.
             let mut equip_atk = [0u8; legaia_engine_vm::battle_formulas::EQUIP_SLOTS];
             let mut equip_atk_sum: u16 = 0;
             for (i, &id) in record.equip.iter().enumerate() {

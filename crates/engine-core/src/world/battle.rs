@@ -46,8 +46,8 @@ pub(in crate::world) const BASIC_ATTACK_COMMAND: u8 = 0x0C;
 
 /// The sound cue a landed melee swing submits - `li a0,0x10c` at
 /// `0x801EEBD8`, the one `jal 0x8004fe5c` in the melee kernel
-/// `FUN_801EC3E4`. See [`World::apply_one_basic_strike`]'s cue arm for what
-/// each of the funnel's two legs does with it.
+/// `FUN_801EC3E4`. See `World::land_melee_hit`'s cue arm for what each of
+/// the funnel's two legs does with it.
 pub(in crate::world) const MELEE_IMPACT_CUE: u32 = 0x10C;
 
 /// Clip slot of the per-character melee grunt bank - `XA30.XA` (`li a0,0x1d`

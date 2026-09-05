@@ -1011,16 +1011,34 @@ impl World {
             }
         }
         for i in 0..self.actors.len() {
-            let source = {
-                let a = &self.actors[i];
-                match (a.battle_staged_anim, &a.battle_animation) {
-                    (Some(_), Some(p)) => p.hit_source().map(|src| (src, p.current_frame())),
-                    _ => None,
+            let (source, rewound) = {
+                let a = &mut self.actors[i];
+                match (a.battle_staged_anim, a.battle_animation.as_mut()) {
+                    (Some(_), Some(p)) => (
+                        p.hit_source().map(|src| (src, p.current_frame())),
+                        p.take_loop_rewound(),
+                    ),
+                    _ => (None, false),
                 }
             };
             let Some((src, frame)) = source else {
                 continue;
             };
+            // The loop-window arm's re-zero (`0x80047840..0x80047878`): on a
+            // rewind, a party slot playing dynamic slot `0x11` under a latched
+            // Hyper / Super constant restarts its hit index and effect cursor,
+            // so the windowed clip re-fires its hits each cycle.
+            // PORT: FUN_80047430 (`0x80047840..0x80047878`)
+            if rewound {
+                let a = &mut self.actors[i];
+                if a.battle_monster_id.is_none()
+                    && a.battle.current_anim == vm::anim_vm::DYNAMIC_ART_SLOT_B
+                    && a.battle.latched_anim >= vm::battle_action::LOOP_REZERO_LATCHED_MIN
+                {
+                    a.battle.input_cursor = 0;
+                    a.battle_effect_cursor = 0;
+                }
+            }
             let frame_u8 = frame.clamp(0, 255) as u8;
             let hit_index = self.actors[i].battle.input_cursor;
             if let Some(hit) = hit_event_admits(
@@ -1248,15 +1266,16 @@ impl World {
         }
     }
 
-    /// Roll one melee hit from `attacker` on `target` and **accumulate** it
-    /// - the retail melee kernel `FUN_801EC3E4`'s body: attacker ATK (plus the
-    /// execution-time equipment fold of the committed command) rolled against
-    /// the defender's UDF / LDF, the underdog rewrite, the finisher's post
-    /// stages; then the hit's damage into the target's combo accumulator
-    /// (`target[+0x0]`, `0x801EDB40`) and HP-bar accumulator (`+0x10`,
-    /// `0x801EDB58`), the Spirit accrual, the popup, the impact cue and the
-    /// flinch. Live HP is **not** touched - [`Self::apply_combo_total`] does
-    /// that once per combo. Returns the damage the hit rolled.
+    /// Roll one melee hit from `attacker` on `target` and **accumulate** it:
+    /// the retail melee kernel `FUN_801EC3E4`'s body. Attacker ATK (plus the
+    /// execution-time equipment fold of the committed command) is rolled
+    /// against the defender's UDF / LDF with the underdog rewrite and the
+    /// finisher's post stages; then the hit's damage goes into the target's
+    /// combo accumulator (`target[+0x0]`, `0x801EDB40`) and HP-bar
+    /// accumulator (`+0x10`, `0x801EDB58`), followed by the Spirit accrual,
+    /// the popup, the impact cue and the flinch. Live HP is **not** touched;
+    /// [`Self::apply_combo_total`] does that once per combo. Returns the
+    /// damage the hit rolled.
     ///
     /// `power_byte` is the byte the kernel resolves the hit from - the clip
     /// entry's `entry[hit_index]` (`0x801EC494`): it picks the defence half

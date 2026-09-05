@@ -393,6 +393,36 @@ pub fn animations(entry: &[u8], id: u16) -> Result<Option<Vec<MonsterAnimation>>
     Ok(Some(out))
 }
 
+/// Every per-action entry of monster `id`, **positionally** - one slot per
+/// `+0x4C` offset-array index, `None` where the entry carries no decodable
+/// keyframe stream. This is the shape the battle engine's per-slot action
+/// table has at runtime: a monster's staged anim id is the `+0x4C` index
+/// (`FUN_8004AD80` reads `action_table[slot][id]` for ids below `0x10`, and
+/// the AI picker queues these indices into the action stream), so a
+/// compacted list ([`animations`]) would mis-address every entry after the
+/// first hole.
+pub fn animations_by_entry(entry: &[u8], id: u16) -> Result<Option<Vec<Option<MonsterAnimation>>>> {
+    let Some(block) = decode_block(entry, id)? else {
+        return Ok(None);
+    };
+    if block.len() < MIN_RECORD_BYTES {
+        return Ok(None);
+    }
+    let magic_count = block[0x4a] as usize;
+    let mut out = Vec::with_capacity(magic_count);
+    for i in 0..magic_count {
+        let Some(entry_off) = legaia_bytes::u32_le(&block, 0x4c + i * 4).map(|v| v as usize) else {
+            break;
+        };
+        out.push(
+            block
+                .get(entry_off)
+                .and_then(|&action_id| parse_animation(&block, action_id, entry_off)),
+        );
+    }
+    Ok(Some(out))
+}
+
 /// One per-action entry's authored **loop window**: `(loop_count,
 /// start_frame, end_frame)` from entry `+0x84..+0x87`.
 ///

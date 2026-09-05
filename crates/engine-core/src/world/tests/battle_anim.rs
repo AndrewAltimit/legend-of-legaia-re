@@ -406,23 +406,27 @@ fn attack_chain_paces_strikes_by_staged_clip_completion() {
     world.tick_battle_animations();
     assert_eq!(world.actors[0].battle_staged_anim, Some(0x0C));
 
-    // While the swing is in flight the chain holds (the 0x801E370C gate).
-    assert_eq!(world.step_battle(), StepOutcome::Stay);
-    assert_eq!(world.actors[0].battle.strike_index, 1, "no byte read");
-
-    // Finish the swing: the gate opens. The next step stages 0x0D and, with
-    // the terminator at the new cursor, leaves the loop on the SAME step
-    // (`0x801E3998..0x801E39AC` -> `0x1F`): the last clip is still owed, so
-    // recovery is entered with the latch set.
-    world.actors[0].battle_animation.as_mut().unwrap().step = 4096;
-    world.tick_battle_animations();
-    world.tick_battle_animations();
-    assert!(world.actors[0].battle_staged_anim.is_none());
+    // The commit released the stage latch (`FUN_8004AD80`'s `andi 0xF8` /
+    // `sb 0x1dc` at the tick's commit paths), so the `0x801E370C` read gate
+    // is open WHILE 0x0C is still in flight. Retail stages one ahead: the
+    // next step reads 0x0D at once (both captures: the next byte is staged
+    // 2-4 vsyncs after the previous commit, `0E` behind a playing `0F`) and,
+    // with the terminator at the new cursor, leaves the loop on the SAME
+    // step (`0x801E3998..0x801E39AC` -> `0x1F`). The queued byte does not
+    // commit yet - retail commits only from the tick's natural-end / event
+    // paths, never because `+0x1DA != +0x1D9`.
+    assert!(
+        !world.actors[0]
+            .battle
+            .flag_bits
+            .has(ActorFlags::ADVANCE_DONE),
+        "the commit released the latch"
+    );
     let out = world.step_battle();
     assert!(
         matches!(out, StepOutcome::Transition { to, .. }
             if to == ActionState::AttackRecovery.as_byte()),
-        "last byte staged + terminator -> recovery, got {out:?}"
+        "next byte staged one-ahead + terminator -> recovery, got {out:?}"
     );
     assert_eq!(
         world.actors[0].battle.strike_index, 2,
@@ -434,27 +438,51 @@ fn attack_chain_paces_strikes_by_staged_clip_completion() {
             .flag_bits
             .has(ActorFlags::ADVANCE_DONE)
     );
+    assert_eq!(world.actors[0].battle.queued_anim, 0x0D);
     world.tick_battle_animations();
-    assert_eq!(world.actors[0].battle_staged_anim, Some(0x0D));
+    assert_eq!(
+        world.actors[0].battle_staged_anim,
+        Some(0x0C),
+        "0x0D waits for 0x0C's clip boundary"
+    );
 
-    // Recovery holds while the last clip plays (`0x801E3AEC..0x801E3AF8`).
+    // Recovery holds while the latch is set (`0x801E3AEC..0x801E3AF8`).
     assert_eq!(world.step_battle(), StepOutcome::Stay);
-    // Its natural end releases the latch; the next step stages idle over it
-    // and parks the cursor at 0xFF on the way out (`0x801E3B04..0x801E3B1C`).
+
+    // 0x0C's natural end commits 0x0D in the same tick and releases the
+    // latch again.
     world.actors[0].battle_animation.as_mut().unwrap().step = 4096;
     world.tick_battle_animations();
     world.tick_battle_animations();
+    assert_eq!(world.actors[0].battle_staged_anim, Some(0x0D));
+    assert_eq!(world.actors[0].battle.current_anim, 0x0D);
+    assert!(
+        !world.actors[0]
+            .battle
+            .flag_bits
+            .has(ActorFlags::ADVANCE_DONE)
+    );
+
+    // The next step stages idle over the playing 0x0D and parks the cursor
+    // at 0xFF on the way to 0x20 (`0x801E3B04..0x801E3B1C`); the idle waits
+    // for 0x0D's own boundary, which is why the last clip's hit lands with
+    // the cursor already parked (the kernel's apply gate).
     let out = world.step_battle();
     assert!(
         matches!(out, StepOutcome::Transition { to, .. }
             if to == ActionState::AttackReturn.as_byte()),
-        "recovery -> return once the last clip is done, got {out:?}"
+        "recovery -> return once the last clip has committed, got {out:?}"
     );
     assert_eq!(
         world.actors[0].battle.strike_index,
         vm::battle_action::STRIKE_CURSOR_PARKED
     );
     assert_eq!(world.actors[0].battle.queued_anim, 0, "idle staged");
+    assert_eq!(
+        world.actors[0].battle_staged_anim,
+        Some(0x0D),
+        "the last clip is still playing under the staged idle"
+    );
 }
 
 // --- effect-script walk (FUN_801DEA50 via the animation tick) ---------------

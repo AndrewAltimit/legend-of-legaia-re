@@ -313,6 +313,11 @@ impl LegaiaRuntime {
                 self.battle_hud.push_damage(f.target_slot, f.amount);
             }
         }
+        // Per-hit events of the attack band (`World::tick_battle_hit_events`):
+        // the channel the impact-FX and HIT / TOTAL counter layers read.
+        // Drained so the world never accumulates it; nothing on this host
+        // consumes it yet (the popups above already carry each hit's number).
+        let _hits = host.world.drain_battle_hit_events();
         // Battle strike SFX cues route into the page's existing delay
         // scheduler (`crate::play_sfx`); the arts-voice shouts are CD-XA
         // clips this host has no demuxed channel bank for yet, so they are

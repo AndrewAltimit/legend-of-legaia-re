@@ -318,17 +318,28 @@ damage to the target's combo word `+0x0` and its HP-bar word `+0x10` (`0x801EDB4
 `0x801EDB58`) and bumps `+0x1F4`; every commit zeroes the index. Live HP moves **once**: the hit
 that lands after the strike loop has parked the cursor at `0xFF` (`ctx[+0x15]`, `0x801EE9A4`)
 and that is its clip's last listed beat (`entry[+0x11 + idx] == 0 || idx == 3`) subtracts the
-whole accumulator from `+0x14C` and zeroes it (`0x801EEA10..0x801EEA74`). The tick's bit-1 cut
+whole accumulator from `+0x14C` and zeroes it (`0x801EEA10..0x801EEA74`). That gate is the
+kernel's `s2 = 0` mode; the same register selects two other arms (`0x801EDEE4..0x801EE130`, and
+its monster-attacker copy at `0x801EE790..0x801EE980`): a look-ahead over every remaining hit of
+the action that finds none able to connect with the target's `+0x1E` size class applies the total
+at once (`s2 != 0`), and the War God Icon's *Attack x2* (ability bit `0x0D`) with `ctx[+0x16] < 2`
+withholds it so the pair lands as one (`s2 = 0xFF`). The tick's bit-1 cut
 commits the next staged byte once `entry[+0x10] + 2 < frame` with `entry[+0x76] == 0`, which is
 what chains one swing into the next mid-clip; the art records carry `+0x76 = 1` and play to
-their natural end.
+their natural end. The loop-window arm re-zeroes `+0x1F4` on every rewind for a party slot on
+`0x11` with a latched id `>= 0x2B` (`0x80047840..0x80047878`), so a windowed Hyper / Super clip
+re-fires its hits per cycle.
 
-Both captures read exactly that. A plain three-arrow Somersault: swing `0F` commits, its hit
-fires at frame 6 (`e0 = 7`), swing `0E` commits 8 vsyncs later at frame 10, hits at frame 6,
-the `0x19` starter plays with no events, `0x27` installs at slot `0x11` and hits at frame 4
-(`e0 = 5`) while the SM sits in `0x20` - and the target's HP falls 76 → 23 in that one frame.
-The Tri-Somersault Super stacks seven hits across `0F`, the two-hit `0x1F`, `0E`, `0x1A` and
-three `0x2B` clips and lands 3542 → 2318 on the last one. One probe artifact worth knowing:
+Both captures (N = 2, `scripts/pcsx-redux/autorun_hit_event_timeline.lua` over the
+`party_basic_attack_vs_gobu_gobu` and `battle_vahn_tri_somersault_super` states) read exactly
+that. A plain three-arrow Somersault: swing `0F` (`p0 = 0x18, e0 = 7`, lock `0`) commits, its hit
+fires at frame 6, swing `0E` (`p0 = 0x13`) commits 8 vsyncs later at frame 10 - the bit-1 cut -
+and hits at frame 6, the `0x19` starter (slot `0x10`, `e0 = 0`) plays with no events, `0x27`
+installs at slot `0x11` (`e0 = 5`, lock `1`) and hits at frame 4 while the SM sits in `0x20` -
+and the target's HP falls 76 → 23 in that one frame. The Tri-Somersault Super stacks seven hits
+across `0F`, the two-hit `0x1F` (`p = [0x17, 0x17]`, `e = [8, 19]`), `0E` (`p0 = 0x1D`), the
+`0x1A` SpecialStarter (slot `0x11`, loop window `[13, 14] x 5`, solo byte `1`) and three `0x2B`
+clips, and lands 3542 → 2318 on the last one. One probe artifact worth knowing:
 `*(actor + 0x22C)` alternates between two draw nodes on consecutive vsyncs, so a per-vsync
 cursor sample can read the node the tick did not advance (three frames behind); the in-sync
 stream satisfies the head guard on every hit. Engine seats: `legaia_engine_vm::battle_action::hit_event`

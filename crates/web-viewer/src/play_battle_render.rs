@@ -660,11 +660,13 @@ impl LegaiaRuntime {
                 .and_then(|a| a.frames.first())
                 .map(|f| flatten_frame(f))
                 .unwrap_or_default();
-            let action_clips = match legaia_asset::monster_archive::animations(&archive, monster_id)
-            {
-                Ok(Some(anims)) if !anims.is_empty() => Some(anims.into_iter().map(Some).collect()),
-                _ => None,
-            };
+            // Positional (one slot per `+0x4C` entry, holes kept): a monster's
+            // staged anim ids are these indices.
+            let action_clips =
+                match legaia_asset::monster_archive::animations_by_entry(&archive, monster_id) {
+                    Ok(Some(anims)) if anims.iter().any(Option::is_some) => Some(anims),
+                    _ => None,
+                };
             actors.push(BattleActorRender {
                 actor_idx,
                 monster: true,

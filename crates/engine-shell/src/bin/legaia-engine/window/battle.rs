@@ -62,6 +62,29 @@ impl PlayWindowApp {
                 .push_back(format!("slot {} {}{} HP", f.target_slot, sign, f.amount));
         }
 
+        // Per-hit events of the attack band (`World::tick_battle_hit_events`,
+        // one per damage-kernel resolution): the channel the impact-FX and
+        // HIT / TOTAL counter layers read. Drained here so the world never
+        // accumulates it; each surfaces as a diag line (the ring only draws
+        // under `LEGAIA_DIAG_HUD` / `F1`, so this is off by default).
+        let hits = self.session.host.world.drain_battle_hit_events();
+        for h in hits {
+            if self.battle_event_log.len() >= Self::BATTLE_EVENT_LOG_CAP {
+                self.battle_event_log.pop_front();
+            }
+            self.battle_event_log.push_back(format!(
+                "hit {} {}->{} pb {:#04x} dmg {} total {}{}{}",
+                h.hit_index,
+                h.attacker_slot,
+                h.target_slot,
+                h.power_byte,
+                h.damage,
+                h.running_total,
+                if h.applied { " APPLIED" } else { "" },
+                if h.is_art { " art" } else { "" },
+            ));
+        }
+
         // Battle sound cues: the art-strike outcomes resolve per-strike SFX
         // cues (kind = the SfxBank id, played directly without classify_cue).
         // Enqueue each into the director's SfxScheduler at its strike-relative
@@ -638,12 +661,14 @@ impl PlayWindowApp {
                             log::warn!("play-window: monster {monster_id} idle anim decode: {e:#}")
                         }
                     }
-                    // Install the full archive-order action-clip set so the
+                    // Install the full archive-order action-clip set -
+                    // positional, one slot per `+0x4C` entry with holes
+                    // kept, since a monster's staged anim ids (the AI
+                    // picker's swing entries) are these indices - so the
                     // hit-reaction family (action tags 2..5, the retail
-                    // `+0x1EF` map) can play when this monster takes damage.
-                    match legaia_asset::monster_archive::animations(&archive, monster_id) {
-                        Ok(Some(anims)) if !anims.is_empty() => {
-                            let clips: Vec<_> = anims.into_iter().map(Some).collect();
+                    // `+0x1EF` map) and the picked swings can play.
+                    match legaia_asset::monster_archive::animations_by_entry(&archive, monster_id) {
+                        Ok(Some(clips)) if clips.iter().any(Option::is_some) => {
                             self.session.host.world.set_actor_battle_action_clips(
                                 actor_idx,
                                 std::sync::Arc::new(clips),
