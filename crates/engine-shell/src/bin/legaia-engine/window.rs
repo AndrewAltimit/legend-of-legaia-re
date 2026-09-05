@@ -638,6 +638,16 @@ struct PlayWindowApp {
     /// shows its tiled ground / trees / mountains rather than a handful of
     /// landmark objects.
     world_map_terrain_draws: Vec<(usize, Mat4)>,
+    /// The untextured `F*`/`G*` half of the same world-map stamps: `(index
+    /// into `color_meshes`, world model)`, resolved through the colour-mesh
+    /// bridge exactly like `field_terrain_color_draws`. The landmark pack
+    /// meshes are hybrids - Rim Elm's hut walls are textured quads, its four
+    /// roofs are gouraud triangles - and retail's per-prim dispatch draws
+    /// both families (the untextured slots of the world-map overlay's
+    /// `0x801F8968` row are populated; see docs/subsystems/world-map.md), so
+    /// a world-map frame that draws only `world_map_terrain_draws` shows
+    /// roofless huts.
+    world_map_terrain_color_draws: Vec<(usize, Mat4)>,
     /// Bulk **ground**: the heightfield surface built from the scene's
     /// `.MAP` floor grid (`Scene::walk_heightfield`), textured per cell from
     /// the terrain-type-keyed atlas (record `+0x14`/`+0x15`/`+0x16`). `None`

@@ -186,6 +186,27 @@ resolution with `build_walk_ground` (`resolve_walk_map_and_lut`):
   decoration trees their variety; the record's X/Z tilts are zero on every
   retail walk `.MAP` and aren't carried.
 
+- Each stamped mesh is uploaded **whole**: the `pack_mesh_*` accessors
+  build the slot through the shared pack kernel
+  `legaia_engine_core::scene_assembly::build_hybrid_pack_mesh` - the
+  textured prims first, then the untextured `F*`/`G*` vertex-colour prims
+  appended with `(cba, tsb) = (0, blend)` - and `pack_mesh_flat_rgba` is the
+  index-aligned `[r, g, b, flag]` packet-colour stream (`flag` 255 =
+  textured, modulate; 0 = untextured, fill), the `packet_color` convention
+  the field-scene page and the `.glb` baker already read. The landmark
+  meshes need it: Rim Elm's hut walls are textured quads and its four roofs
+  are 24 gouraud triangles, Karisto slot 8 (the Uru Mais temple at cell
+  `(36, 75)`) is colour prims only - the page had no mesh to upload for that
+  stamp, so the landmark was absent - and 34 slots across the three packs
+  carry some. Retail draws both families
+  through one per-prim dispatch (the untextured slots of the world-map
+  overlay's `0x801F8968` row are populated - [world-map.md](world-map.md)),
+  so the textured-only upload the page shipped with drew the huts as open
+  rings. `renderAssembled` turns the shader's fill branch on per mesh that
+  carries the stream, and that branch runs the same distance-haze mix as
+  the textured path (retail's untextured leaves cue too). Disc-gated:
+  `crates/web-viewer/tests/world_map_pack_hybrid_real.rs`.
+
 The `walk_placement_{count,slots,positions,rot_y}` WASM accessors hand the
 list to JS, which uploads each referenced pack mesh once and pushes a draw
 record per stamp. `renderAssembled` draws them after the ground with

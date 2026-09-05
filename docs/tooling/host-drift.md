@@ -740,6 +740,32 @@ exporters therefore bake `COLOR_0` through the sRGB EOTF
 (`gltf_color::srgb_ratio_to_linear`), and the probes decode with the inverse
 before comparing words.
 
+### A draw list can reach every host and still carry half a mesh
+
+The textured / vertex-colour split is a second axis the tiers do not see. A
+Legaia TMD mixes two prim families, the builders come in pairs
+(`tmd_to_vram_mesh` for the textured half, `tmd_to_color_mesh` for the
+untextured), and a surface that runs one builder gets a mesh that parses,
+uploads, draws and passes every count-shaped assertion - with its roofs
+missing. The world-map stamps sat there on **both** hosts at once: the
+overview page fed its `pack_mesh_*` accessors the textured builder alone
+while the field-scene page next to it used the hybrid kernel, and the native
+window's world-map branch drew `world_map_terrain_draws` off the textured
+list only while its field branch drew both halves. Rim Elm's four huts
+rendered as open rings on every surface, which is what let it read as
+"authored that way" rather than as a dropped family; the Uru Mais temple,
+whose mesh is colour prims only, was not drawn at all.
+
+The retail answer is one dispatch row: `FUN_80043390` picks the per-prim
+renderer by the group's `flags >> 1`, and the untextured slots are populated
+in the world-map overlay's table as in the SCUS one
+([world-map.md](../subsystems/world-map.md)). The port answer is one kernel
+per surface family - `scene_assembly::build_hybrid_pack_mesh` for the pack
+stamps, the colour-mesh bridge for the native branch - and a disc-gated test
+per surface that asserts the **untextured corner count**, not the total
+(`world_map_pack_hybrid_real.rs`, `world_map_pack_untextured_real.rs`). A
+total passes with either half missing.
+
 ### The monster bestiary is a viewer, and says so
 
 `site/_content/monsters.html` carries its **own** WebGL program with a

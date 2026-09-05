@@ -405,22 +405,34 @@ impl LegaiaViewer {
         })
     }
 
-    /// Build the textured mesh for the currently-selected kingdom pack slot.
+    /// Build the mesh for the currently-selected kingdom pack slot: the
+    /// **hybrid** stream of the shared pack kernel
+    /// ([`legaia_engine_core::scene_assembly::build_hybrid_pack_mesh`]) - the
+    /// textured prims followed by the untextured `F*`/`G*` vertex-colour prims
+    /// (Rim Elm's hut roofs, Karisto's colour-only landmarks) the textured
+    /// builder alone drops. [`Self::build_kingdom_hybrid`] returns the same
+    /// mesh with its `[r, g, b, flag]` packet-colour stream.
     ///
-    /// Uses the unfiltered [`legaia_tmd::mesh::tmd_to_vram_mesh`] (not the
-    /// VRAM-targeted filter the per-PROT-entry path uses). The kingdom's
-    /// TIM_LIST packs ~50 TIMs into rows 479-510, so many CLUT rows hold
-    /// data from multiple TIMs and the filter's depth-mismatch heuristic
-    /// drops almost every prim. We accept that some prims may sample
-    /// "wrong" CLUT data (whichever TIM won the last-write-wins race for
-    /// that VRAM row) in exchange for geometry coverage: the assembled
-    /// continent view is "show the kingdom's shape and colour" first,
-    /// "pixel-perfect texturing" later. A future refinement is per-TMD
-    /// targeted upload (compute the prim CBA/TSB set, upload only the
-    /// matching TIMs), which would avoid the collision but require
-    /// rebuilding VRAM per slot.
+    /// The textured half is the unfiltered [`legaia_tmd::mesh::tmd_to_vram_mesh`]
+    /// build (not the VRAM-targeted filter the per-PROT-entry path uses). The
+    /// kingdom's TIM_LIST packs ~50 TIMs into rows 479-510, so many CLUT rows
+    /// hold data from multiple TIMs and the filter's depth-mismatch heuristic
+    /// drops almost every prim. We accept that some prims may sample "wrong"
+    /// CLUT data (whichever TIM won the last-write-wins race for that VRAM
+    /// row) in exchange for geometry coverage: the assembled continent view
+    /// is "show the kingdom's shape and colour" first, "pixel-perfect
+    /// texturing" later. A future refinement is per-TMD targeted upload
+    /// (compute the prim CBA/TSB set, upload only the matching TIMs), which
+    /// would avoid the collision but require rebuilding VRAM per slot.
     pub(crate) fn build_kingdom_mesh(&self) -> Option<legaia_tmd::mesh::VramMesh> {
         Self::build_pack_mesh(self.kingdom.as_ref()?)
+    }
+
+    /// [`Self::build_kingdom_mesh`] plus the per-vertex `[r, g, b, flag]`
+    /// packet-colour stream (`flag` 255 = textured, modulate; 0 = untextured,
+    /// fill) the page uploads as `a_flat_rgba`.
+    pub(crate) fn build_kingdom_hybrid(&self) -> Option<(legaia_tmd::mesh::VramMesh, Vec<u8>)> {
+        Self::build_pack_hybrid(self.kingdom.as_ref()?)
     }
 
     /// Mirror of `build_kingdom_mesh` for the bulk-continent pack loaded
@@ -431,13 +443,31 @@ impl LegaiaViewer {
         Self::build_pack_mesh(self.continent.as_ref()?)
     }
 
+    /// Continent-pack twin of [`Self::build_kingdom_hybrid`].
+    pub(crate) fn build_continent_hybrid(&self) -> Option<(legaia_tmd::mesh::VramMesh, Vec<u8>)> {
+        Self::build_pack_hybrid(self.continent.as_ref()?)
+    }
+
     pub(crate) fn build_pack_mesh(k: &KingdomPack) -> Option<legaia_tmd::mesh::VramMesh> {
+        Self::build_pack_hybrid(k).map(|(mesh, _)| mesh)
+    }
+
+    /// The selected slot's TMD through the shared pack kernel: one vertex
+    /// stream carrying both prim families plus the `[r, g, b, flag]` side
+    /// channel. Every `pack_mesh_*` / `continent_pack_mesh_*` accessor reads
+    /// this build, so the positions, indices and colour stream a page uploads
+    /// are index-aligned by construction.
+    pub(crate) fn build_pack_hybrid(
+        k: &KingdomPack,
+    ) -> Option<(legaia_tmd::mesh::VramMesh, Vec<u8>)> {
         let slot = k.cur_slot?;
         let start = *k.byte_offsets.get(slot)?;
         let end = *k.byte_ends.get(slot)?;
         let tmd_buf = k.pack.get(start..end)?;
         let tmd = legaia_tmd::parse(tmd_buf).ok()?;
-        Some(legaia_tmd::mesh::tmd_to_vram_mesh(&tmd, tmd_buf))
+        Some(legaia_engine_core::scene_assembly::build_hybrid_pack_mesh(
+            &tmd, tmd_buf,
+        ))
     }
 
     /// Triangle + vertex counts for the status line. Counts what the viewer

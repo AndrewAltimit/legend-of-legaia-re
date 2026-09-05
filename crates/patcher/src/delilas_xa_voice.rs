@@ -96,7 +96,11 @@ fn spu_encode(pcm: &[i16]) -> Vec<u8> {
                     }
                     .clamp(-8, 7);
                     let rec = (((n << 12) >> shift) + pred).clamp(i16::MIN as i32, i16::MAX as i32);
-                    err += ((rec - x as i32) * (rec - x as i32)) as u64;
+                    // Squared error in i64: a full-scale miss is 65535^2, past
+                    // i32 (release builds wrapped it and could rank a worse
+                    // (filter, shift) pair first; dev builds panicked).
+                    let miss = i64::from(rec - x as i32);
+                    err += (miss * miss) as u64;
                     nibs[i] = n as i8;
                     q2 = q1;
                     q1 = rec;

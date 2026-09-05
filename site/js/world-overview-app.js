@@ -318,10 +318,11 @@
         let mi = meshHandles.get(p.meshId);
         if (mi === undefined) {
           try { viewer.pack_mesh(p.meshId); } catch (e) { continue; }
-          /* Same packet-colour stream ensureMeshUploaded hands the shader -
-           * the export bakes it into COLOR_0, so the file carries the
-           * `texel * colour / 128` shading the canvas draws. Omitting it
-           * exported raw texels. */
+          /* Same hybrid packet-colour stream ensureMeshUploaded hands the
+           * shader - the export bakes it into COLOR_0 (and the flag picks
+           * textured-modulate vs untextured-fill per vertex), so the file
+           * carries the `texel * colour / 128` shading the canvas draws
+           * AND the vertex-colour roofs. Omitting it exported raw texels. */
           mi = viewer.scene_export_add_mesh(
             'mesh_' + p.meshId,
             viewer.pack_mesh_positions(), viewer.pack_mesh_uvs(),
@@ -839,8 +840,11 @@
     /* Terrain-height sampler for the VR "on the ground" mode. */
     groundSampler = groundQuads > 0 ? buildGroundSampler() : null;
     /* Upload a single pack mesh on demand; return true if its mesh data
-     * is renderable (some slots have non-textured flat-shaded prims that
-     * the WebGL path skips). */
+     * is renderable. The accessors hand back the HYBRID stream (the shared
+     * `build_hybrid_pack_mesh` kernel): the textured prims first, then the
+     * untextured F* / G* vertex-colour prims retail draws through the same
+     * per-prim dispatch - Rim Elm's four hut roofs are 24 gouraud triangles
+     * that a textured-only upload left as open rings. */
     const used = new Set();
     function ensureMeshUploaded(ms) {
       if (ms < 0 || ms >= packCount) return false;
@@ -851,8 +855,11 @@
       const cba = viewer.pack_mesh_cba_tsb();
       const idx = viewer.pack_mesh_indices();
       if (positions.length === 0 || idx.length === 0) return false;
-      /* Packet colours: the shader modulates each texel by them
-       * (`texel * colour / 128`), which is retail's whole lighting model. */
+      /* Packet colours, `[r, g, b, flag]` per vertex: flag 255 = textured,
+       * the shader modulates the texel by the RGB (`texel * colour / 128`,
+       * retail's whole lighting model); flag 0 = untextured, the shader
+       * fills with the RGB (renderAssembled turns the fill branch on per
+       * mesh that carries the stream). */
       glRenderer.uploadSceneMesh(ms, positions, uvs, cba, idx,
         viewer.pack_mesh_flat_rgba());
       used.add(ms);

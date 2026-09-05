@@ -467,14 +467,21 @@ pub(crate) fn assemble_id(
         j(at(LOOP)),                         // 45
         addiu(T4, T4, 1),                    // 46 delay: i += 1
         // PLAIN0: no Super Art rows at all - the learned index is the entry.
-        or(T4, A2, ZERO), // 49
+        or(T4, A2, ZERO), // 47
         // PLAINI: learned index i -> the stock load, re-based.
-        addu(V0, V0, T4),              // 50
-        lbu(S2, V0, LEARNED_LIST_OFF), // 51 == disp[0]
-        j(ret),                        // 52
-        disp[1],                       // 53 delay: sltiu v1,v1,0x63
+        addu(V0, V0, T4),              // 48
+        lbu(S2, V0, LEARNED_LIST_OFF), // 49 == disp[0]
+        j(ret),                        // 50
+        disp[1],                       // 51 delay: sltiu v1,v1,0x63
     ];
-    debug_assert_eq!(body[51], disp[0], "the learned path replays the stock load");
+    // The replayed stock load is the word after the PLAINI re-base; the check
+    // once named index 51, which is the delay-slot `sltiu`, so every dev-profile
+    // build tripped here while release builds (CI) compiled the check away.
+    debug_assert_eq!(
+        body[PLAINI as usize + 1],
+        disp[0],
+        "the learned path replays the stock load"
+    );
     debug_assert_eq!(body.len(), PLAINI as usize + 4);
     body
 }

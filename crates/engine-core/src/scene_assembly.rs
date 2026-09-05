@@ -263,6 +263,41 @@ pub fn build_hybrid_env_mesh_posed(
     merge_hybrid_halves(mesh, &cmesh)
 }
 
+/// The **kingdom slot-1 landmark pack** hybrid build - the world-map sibling
+/// of [`build_hybrid_env_mesh`] for the surfaces that stamp one pack mesh per
+/// walk `.MAP` cell (the world-overview page's `pack_mesh_*` accessors and its
+/// continent `.glb` export; the native play-window keeps the two halves on
+/// their own pipelines through `resolve_world_map_terrain_draws`).
+///
+/// Same merge, same `[r, g, b, flag]` side channel, two deliberate
+/// differences from the field kernel:
+///
+/// - the textured half is the **unfiltered** [`legaia_tmd::mesh::tmd_to_vram_mesh`]
+///   build: the kingdom TIM_LIST packs ~50 TIMs into VRAM rows 479..510, so
+///   the VRAM-targeted filter's depth-mismatch heuristic drops most of the
+///   pack's prims (the page has always drawn the unfiltered half);
+/// - no coplanar pass: the overview runs no cross-draw `coplanar_draws`
+///   ranking, and the textured half stays byte-identical to what the page
+///   drew before the colour half existed.
+///
+/// The colour half is what was missing: the landmark meshes mix textured
+/// walls with untextured `F*`/`G*` prims - Rim Elm's four hut roofs are 24
+/// gouraud triangles (Drake slot 29), the Uru Mais temple is colour prims only
+/// (Karisto slot 8: nothing to draw without this half) -
+/// and retail draws them through the same per-prim dispatch as the walls (the
+/// group header's `flags >> 1` selects the renderer; the untextured slots
+/// 12..=15 are populated in both the SCUS table `0x8007657C` and the
+/// world-map overlay's `0x801F8968` row - see `docs/subsystems/world-map.md`).
+/// A textured-only build drew the huts as open rings.
+pub fn build_hybrid_pack_mesh(
+    tmd: &legaia_tmd::Tmd,
+    raw: &[u8],
+) -> (legaia_tmd::mesh::VramMesh, Vec<u8>) {
+    let mesh = legaia_tmd::mesh::tmd_to_vram_mesh(tmd, raw);
+    let cmesh = legaia_tmd::mesh::tmd_to_color_mesh(tmd, raw);
+    merge_hybrid_halves(mesh, &cmesh)
+}
+
 /// Merge the untextured vertex-colour half into the textured half's vertex
 /// stream, producing the parallel `[r, g, b, flag]` array. Both halves carry a
 /// colour: the untextured half's is its **fill**, the textured half's is its
@@ -348,8 +383,111 @@ pub fn is_sky_mesh(mesh: &legaia_tmd::mesh::VramMesh) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::merge_hybrid_halves;
+    use super::{build_hybrid_pack_mesh, merge_hybrid_halves};
     use legaia_tmd::mesh::{ColorMesh, TSB_SEMI_TRANSPARENT_BIT, VramMesh};
+
+    /// One object mixing a textured `FT3` group (flags `0x20`, the same prim
+    /// layout as `legaia_tmd`'s synthetic pyramid) with an untextured gouraud
+    /// `G3` group (flags `0x1D`: three colour words, then the vertex
+    /// indices) - the shape of every landmark pack mesh that carries a roof.
+    fn synth_mixed_tmd() -> Vec<u8> {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&0x8000_0002u32.to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        buf.extend_from_slice(&1u32.to_le_bytes());
+        let prim_top: u32 = 28;
+        // Two groups of one 20-byte prim, each followed by its footer slot,
+        // then the u32 terminator.
+        let prim_size: u32 = 2 * (8 + 2 * 20) + 4;
+        let vert_top: u32 = prim_top + prim_size;
+        buf.extend_from_slice(&vert_top.to_le_bytes());
+        buf.extend_from_slice(&4u32.to_le_bytes()); // n_vert
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        buf.extend_from_slice(&prim_top.to_le_bytes());
+        buf.extend_from_slice(&2u32.to_le_bytes()); // n_primitive
+        buf.extend_from_slice(&0i32.to_le_bytes());
+        // Group A: FT3 (count=1 flags=0x20 olen=7 ilen=5 flag=1 mode=0x25),
+        // vertex indices at byte 14 (raw index * 8): verts 0,1,2.
+        buf.extend_from_slice(&1u16.to_le_bytes());
+        buf.extend_from_slice(&0x0020u16.to_le_bytes());
+        buf.extend_from_slice(&[7, 5, 1, 0x25]);
+        let mut prim = vec![0u8; 20];
+        for (i, v) in [0u16, 1, 2].iter().enumerate() {
+            prim[14 + i * 2..16 + i * 2].copy_from_slice(&(v * 8).to_le_bytes());
+        }
+        buf.extend_from_slice(&prim);
+        buf.extend_from_slice(&[0u8; 20]);
+        // Group B: G3 (count=1 flags=0x1D olen=5 ilen=5 flag=0 mode=0x31):
+        // three colour words then verts 0,1,3.
+        buf.extend_from_slice(&1u16.to_le_bytes());
+        buf.extend_from_slice(&0x001Du16.to_le_bytes());
+        buf.extend_from_slice(&[5, 5, 0, 0x31]);
+        let mut prim = vec![0u8; 20];
+        prim[0..4].copy_from_slice(&[0x60, 0x40, 0x20, 0x34]);
+        prim[4..8].copy_from_slice(&[0x61, 0x41, 0x21, 0x34]);
+        prim[8..12].copy_from_slice(&[0x62, 0x42, 0x22, 0x34]);
+        for (i, v) in [0u16, 1, 3].iter().enumerate() {
+            prim[12 + i * 2..14 + i * 2].copy_from_slice(&(v * 8).to_le_bytes());
+        }
+        buf.extend_from_slice(&prim);
+        buf.extend_from_slice(&[0u8; 20]);
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        for (x, y, z) in [(0i16, 0i16, 0i16), (64, 0, 0), (0, 0, 64), (32, -80, 32)] {
+            buf.extend_from_slice(&x.to_le_bytes());
+            buf.extend_from_slice(&y.to_le_bytes());
+            buf.extend_from_slice(&z.to_le_bytes());
+            buf.extend_from_slice(&0i16.to_le_bytes());
+        }
+        buf
+    }
+
+    /// The pack kernel keeps BOTH prim families: the textured triangle comes
+    /// through flagged 255 exactly as the plain textured builder emits it,
+    /// and the untextured gouraud triangle - the roof - is appended flagged
+    /// 0 with its own colour words, so a consumer of the merged stream draws
+    /// the whole landmark. A textured-only build has three vertices here.
+    #[test]
+    fn pack_hybrid_keeps_the_untextured_roof_prims() {
+        let buf = synth_mixed_tmd();
+        let tmd = legaia_tmd::parse(&buf).expect("synthetic TMD parses");
+        let textured_only = legaia_tmd::mesh::tmd_to_vram_mesh(&tmd, &buf);
+        assert_eq!(
+            textured_only.positions.len(),
+            3,
+            "textured half is one triangle"
+        );
+
+        let (mesh, flat) = build_hybrid_pack_mesh(&tmd, &buf);
+        assert_eq!(mesh.positions.len(), 6);
+        assert_eq!(mesh.indices, vec![0, 1, 2, 3, 4, 5]);
+        assert_eq!(flat.len(), 24);
+        // Textured prefix: byte-identical to the plain build, flagged 255.
+        assert_eq!(&mesh.positions[..3], &textured_only.positions[..]);
+        assert_eq!(&mesh.cba_tsb[..3], &textured_only.cba_tsb[..]);
+        for v in 0..3 {
+            assert_eq!(flat[v * 4 + 3], 255, "textured vert {v} flag");
+        }
+        // Colour tail: the roof's apex vertex and its gouraud colours,
+        // flagged 0, no VRAM address (the shader fills, never samples).
+        assert_eq!(mesh.positions[5], [32.0, -80.0, 32.0]);
+        assert_eq!(
+            &flat[12..24],
+            &[
+                0x60, 0x40, 0x20, 0, //
+                0x61, 0x41, 0x21, 0, //
+                0x62, 0x42, 0x22, 0,
+            ]
+        );
+        for v in 3..6 {
+            assert_eq!(
+                mesh.cba_tsb[v],
+                [0, 0],
+                "colour vert {v} carries no VRAM address"
+            );
+            assert_eq!(mesh.uvs[v], [0, 0]);
+        }
+    }
 
     /// The colour half's blend words must survive the hybrid merge in the
     /// TSB half of `cba_tsb` - an untextured ABE prim (fountain water /

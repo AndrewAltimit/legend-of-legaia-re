@@ -988,6 +988,7 @@ pub(super) fn cmd_play_window_with_record(
         coplanar_env_offsets: std::collections::HashMap::new(),
         field_terrain_color_draws: Vec::new(),
         world_map_terrain_draws: Vec::new(),
+        world_map_terrain_color_draws: Vec::new(),
         ground_heightfield: None,
         // Headless capture harnesses can't press `F3`; let them start on the
         // wide debug vantage via the env switch.

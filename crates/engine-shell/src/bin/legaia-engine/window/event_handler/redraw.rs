@@ -1216,6 +1216,17 @@ impl PlayWindowApp {
                         });
                     }
                 }
+                // The untextured half of the same stamps (hut roofs,
+                // colour-only landmarks) on the colour pipeline - the
+                // field branch's pairing, which this branch lacked.
+                for (mesh_idx, model) in self.world_map_terrain_color_draws.iter() {
+                    if let Some(mesh) = self.color_meshes.get(*mesh_idx) {
+                        color_draws.push(ColorSceneDraw {
+                            mesh,
+                            mvp: cam * *model,
+                        });
+                    }
+                }
                 // Last-resort fallback: nothing resolved at all -> draw
                 // the whole pack at pack-local coords so the map isn't
                 // blank.
