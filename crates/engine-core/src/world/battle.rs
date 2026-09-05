@@ -9,6 +9,7 @@ use legaia_engine_vm as vm;
 use vm::battle_action::{BattleEndCause, StepOutcome};
 
 mod capture;
+mod cast_band;
 mod casting;
 mod command_flow;
 mod initiative;
@@ -22,6 +23,9 @@ mod tutorial;
 mod validator_host;
 mod victory;
 
+pub use cast_band::{
+    PendingCast, SUMMON_SPAWN_BEHIND, SUMMON_STRIKE_BEHIND, SummonPhase, SummonStager,
+};
 pub use teardown::BattleSpoilsBanner;
 pub use victory::{
     LEVEL_UP_CUE, VICTORY_EXIT_PHASE, VICTORY_FADE_PHASE_SEED, VICTORY_LOAD_FRAMES,

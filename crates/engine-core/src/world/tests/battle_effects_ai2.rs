@@ -279,15 +279,16 @@ fn scripted_ai_monster_self_heals_when_wounded() {
         world.actors[1].battle.params[0], 0x52,
         "self-heal spell queued"
     );
+    // The pick arms the Magic band; the heal folds at its 0x29 exit.
+    tick_until_cast_folds(&mut world);
     assert!(
         world.actors[1].battle.hp > 20,
         "the monster healed itself instead of striking the party"
     );
     assert_eq!(world.actors[0].battle.hp, 200, "party untouched");
-    assert_eq!(
-        world.battle_ctx.action_state,
-        ActionState::EndOfAction.as_byte(),
-        "cast is the whole turn"
+    assert!(
+        world.battle_ctx.action_state >= ActionState::MagicAnimChain.as_byte(),
+        "cast is the whole turn; the band runs it out"
     );
     assert_eq!(world.monster_ai_state.dat[4], 1, "ability cooldown armed");
     let fx = world.drain_battle_hit_fx();

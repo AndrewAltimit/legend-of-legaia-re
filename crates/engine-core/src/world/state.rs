@@ -1748,6 +1748,18 @@ pub struct World {
     /// as the capture-archive load).
     pub pending_summon_spawn: Option<(u8, [i16; 3])>,
 
+    /// The engine's player-summon stager while a Seru cast is in the action
+    /// SM's summon band - the body behind `BattleActionHost::summon_stager_tick`
+    /// (see `crate::world::battle::cast_band`).
+    pub summon_stager: Option<SummonStager>,
+    /// Actor slot a host seated the summon creature at
+    /// ([`World::seat_summon_actor`]); `None` while no creature is out.
+    pub summon_actor_slot: Option<u8>,
+    /// A cast the action SM is carrying whose outcome is still owed - folded
+    /// once, at retail's seam ([`World::settle_cast_band`] / the stager's
+    /// strike).
+    pub pending_cast: Option<PendingCast>,
+
     /// Production battle-FX request for a **non-summon** move: a spell cast or
     /// enemy special whose move-power record carries a spawnable effect list
     /// sets `(move_id, target world pos)` here (see [`World::request_move_fx_spawn`]).
@@ -2753,6 +2765,9 @@ impl World {
             rng_state: 0x1234_5678,
             active_summon: None,
             pending_summon_spawn: None,
+            summon_stager: None,
+            summon_actor_slot: None,
+            pending_cast: None,
             pending_move_fx_spawn: None,
             sin_lut: Vec::new(),
             cos_lut: Vec::new(),

@@ -361,6 +361,10 @@ impl World {
 
         let outcome = self.step_battle();
 
+        // Cast band: fold the owed outcome at retail's seam (the frame the
+        // band leaves `0x29`; the summon route folds in its stager).
+        self.settle_cast_band(&outcome);
+
         // The all-pairs separation pass, on the line after the action SM -
         // retail's exact slot (`FUN_80046A20` runs `jal 0x801E295C` then
         // `jal 0x80051078`, every live battle frame).
@@ -572,6 +576,17 @@ impl World {
             if let Some(a) = self.actors.get_mut(caster) {
                 a.battle.anim_cue = 0;
             }
+        }
+
+        // An escape spell that folded this tick (Warp and its item twins
+        // land here through the band) ends the encounter now - no loot, no
+        // game-over - the way the item path does on its own fold.
+        if self.battle_escaped && self.mode == SceneMode::Battle {
+            // Through the escape teardown's fade + exit hold, like the item
+            // path - not the instant finish the results sequencer retired.
+            self.battle_end = Some(BattleEndCause::Escaped);
+            self.begin_battle_end_sequence();
+            return Some(outcome);
         }
 
         self.cycle_battle_turn();

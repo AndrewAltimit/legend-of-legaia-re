@@ -374,24 +374,12 @@ impl World {
                 }
                 None
             }
-            BattleEvent::SpellAnimTrigger {
-                party_slot,
-                spell_id,
-            } => {
-                let origin = self
-                    .actors
-                    .get(*party_slot as usize)
-                    .map(|a| {
-                        [
-                            a.move_state.world_x,
-                            a.move_state.world_y,
-                            a.move_state.world_z,
-                        ]
-                    })
-                    .unwrap_or([0, -300, -645]);
-                self.request_summon_spawn(*spell_id, origin);
-                None
-            }
+            // The cast trigger's work - the summon sub-route + the stager
+            // arm for a Seru id, the fold for the rest - is done at the host
+            // seam (`BattleHostImpl::spell_anim_trigger`, `FUN_801DBF9C`);
+            // the creature spawn is the stager's first tick, not the
+            // trigger's. The event stays observable.
+            BattleEvent::SpellAnimTrigger { .. } => None,
             _ => None,
         }
     }

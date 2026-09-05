@@ -1042,11 +1042,11 @@ impl World {
     /// Drive the open battle Magic submenu one frame from [`World::input`].
     ///
     /// Edge-triggered pad → one [`crate::battle_magic::BattleSpellInput`] per
-    /// frame. On a confirmed cast the spell applies via [`Self::apply_battle_spell`]
-    /// (MP deducted, HP / heal / cure / revive folded, popups surfaced) and the
-    /// action SM parks at `EndOfAction` so the live loop cycles to the next
-    /// combatant - a cast is the caster's whole turn, no strike fires. Backing
-    /// out reopens the command menu for the same actor.
+    /// frame. On a confirmed cast the action SM's Magic band is armed with the
+    /// committed spell and its resolved targets ([`Self::arm_player_cast`]);
+    /// the band charges the MP, plays the cast, and the outcome folds at
+    /// retail's seam - a cast is the caster's whole turn, no strike fires.
+    /// Backing out reopens the command menu for the same actor.
     pub(in crate::world) fn tick_battle_spell_menu(&mut self) {
         use crate::battle_magic::{BattleSpellInput, SpellResolution};
         use crate::input::PadButton;
@@ -1074,21 +1074,26 @@ impl World {
                 target_row,
                 target_slot,
             }) => {
+                // The confirm commits the category-2 action; the action SM's
+                // Magic band carries it from here - facing, the MP debit and
+                // the `0x14`-frame wait at `0x28`/`0x29`, the summon band for
+                // a Seru id - and the outcome folds at retail's seam
+                // (`World::settle_cast_band` / the stager's strike). An
+                // escape spell's success ends the encounter from the live
+                // loop the frame it folds.
                 let caster = menu.actor;
-                self.apply_battle_spell(caster, spell_id, target_row, target_slot);
-                if self.battle_escaped {
-                    // Escape spell succeeded: leave the encounter (no loot,
-                    // no game-over) through the escape teardown's fade
-                    // + exit hold instead of cycling the turn.
-                    self.battle_end = Some(BattleEndCause::Escaped);
-                    self.begin_battle_end_sequence();
-                } else {
-                    self.battle_ctx.action_state =
-                        vm::battle_action::ActionState::EndOfAction.as_byte();
-                    // Claim the turn NOW: left parked, the SM's own 0x5A
-                    // self-advance re-seeds this actor's stale action bytes
-                    // next tick (see `World::cycle_battle_turn`).
-                    self.cycle_battle_turn();
+                match self.spell_catalog.get(spell_id).cloned() {
+                    Some(def) => {
+                        let targets = self.spell_targets_for(&def, target_row, target_slot);
+                        self.arm_player_cast(caster, &def, targets);
+                    }
+                    None => {
+                        // Not a catalog spell (the submenu only lists catalog
+                        // ids, so this is defensive): the turn is spent.
+                        self.battle_ctx.action_state =
+                            vm::battle_action::ActionState::EndOfAction.as_byte();
+                        self.cycle_battle_turn();
+                    }
                 }
             }
             Some(SpellResolution::Aborted) => {
@@ -1099,42 +1104,6 @@ impl World {
                 self.battle_spell_menu = Some(menu);
             }
         }
-    }
-
-    /// Cast `spell_id` from `caster` against the picked target and fold the
-    /// outcome into world state. MP is deducted once up-front; the spell's
-    /// [`crate::spells::SpellTarget`] shape decides which slots are affected
-    /// (single → the picked slot; `AllEnemies` / `AllAllies` → the whole band),
-    /// each resolved through [`crate::spells::cast_spell`]. Caster magic comes
-    /// from [`Self::battle_magic`]; target magic-defense reuses
-    /// [`Self::battle_defense`]. Damage / heal / cure / revive / buff / capture
-    /// / escape all fold through [`Self::fold_spell_outcome`].
-    fn apply_battle_spell(
-        &mut self,
-        caster: u8,
-        spell_id: u8,
-        target_row: crate::target_picker::CursorRow,
-        target_slot: u8,
-    ) {
-        use crate::spells::SpellTarget;
-        use crate::target_picker::CursorRow;
-
-        let Some(def) = self.spell_catalog.get(spell_id).cloned() else {
-            return;
-        };
-        let party_count = self.party_count.clamp(1, 3);
-        let targets: Vec<u8> = match def.target {
-            SpellTarget::OneEnemy | SpellTarget::OneAlly | SpellTarget::SelfOnly => {
-                let abs = match target_row {
-                    CursorRow::Enemy => party_count + target_slot,
-                    CursorRow::Ally => target_slot,
-                };
-                vec![abs]
-            }
-            SpellTarget::AllEnemies => (party_count..self.actors.len() as u8).collect(),
-            SpellTarget::AllAllies => (0..party_count).collect(),
-        };
-        self.cast_spell_on_slots(caster, &def, &targets);
     }
 
     /// Build the battle-context inventory submenu from live world state:

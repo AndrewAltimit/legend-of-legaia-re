@@ -63,17 +63,17 @@ Each row: `ctx[7]` value, what runs during that frame, and the next state(s). Al
 | `0x1F` | Attack - recovery wait | `FUN_801D5854(actor, 7 or 8)` (recover-pose; pose 8 if target's anim matched a counter trigger at `s8[+0x1F1]/+0x1F2`). Waits for `actor[+0x1DC] & 2 == 0`. | `0x20`. |
 | `0x20` | Attack - return | Decides if combat continues by inspecting target liveness (`s8[+0x14C] != 0` for monster-slot, plus `s8[+0x1D9]` == `0` or `8`, plus `actor[*0x22C][+0x74] & 0xFFFFFF`), and counter-attack trigger flags (`ctx[+0x287] != 0 && DAT_8007BD0D == 0 && ctx[+0x288] != 0`). If combat ended → `0x50`. Else loops `FUN_801D5854(actor, 7 or 8)` per liveness. | `0x50` (done) or stays. |
 | `0x28` | **Magic / Item - cast begin** | Resolves bearing + facing, sets the cast timer, looks up the spell-name HUD label, and deducts the (ability-bit-scaled) MP cost; capture-class spells route to `0x6E`. Full step body: [Magic / Item - cast begin (`0x28`)](#magic--item---cast-begin-0x28). | `0x29` (or `0x6E` for capture). |
-| `0x29` | Magic - pre-cast wait | Decrements `ctx[+0x6D8]` by `DAT_1F800393` (frame dt). When it goes negative: if party_id < 3 calls `FUN_801DBF9C(party, spell_id)` (spell anim trigger). If `actor[+0x1E0] == 9` → routes to `0x32` (summon path). Pulls next anim from `actor[+0x1DF + +0x15]`; if `-1`, finishes → `0x50`. Else if spell_id < 0x81 → `FUN_801DC0A0(party, anim_id)` and special-case sound triggers (`func_0x8004FCC8(0x14C / 0x144 / 0x15E)` for spell IDs `0x3F / 0x2C / 0x6A`). | `0x29` loop or `0x32` (summon) or `0x50` (done). |
+| `0x29` | Magic - pre-cast wait | Decrements `ctx[+0x6D8]` by the frame dt. When negative: party_id < 3 → `FUN_801DBF9C(party, spell_id)` ([the cast trigger](#the-party-cast-trigger-fun_801dbf9c) - anim stream, not outcome). `actor[+0x1E0] == 9` → `0x32` (summon). Then **bumps the stream cursor before reading** (`0x801E4644..0x801E4650`) and stages the byte at `+0x1DA` (`0x801E4664`) - the first anim byte is `+0x1E0`, behind the spell id; a `-1` there clears the stage → `0x50`. Else if spell_id < 0x81: a second bump, `FUN_801DC0A0(party, byte)` (the cast-effect driver), and the id-keyed cues (`0x14C / 0x144 / 0x15E` for ids `0x3F / 0x2C / 0x6A`). | `0x2A`, or `0x32` (summon), or `0x50` (done). |
 | `0x2A` | Magic - animation chain | Reads next byte from `actor[+0x1DF + +0x15]`. If not terminator: stages `actor[+0x1DA] = next_byte`, calls `FUN_801DC0A0`, sets `actor[+0x1FA] = 1`. On terminator (`-1`): if `actor[+0x15] == 2` sets `actor[+0x1FA] = 1` and OR's `actor[+0x1DC] |= 4`. | `0x2B`. |
 | `0x2B` | Magic - sustained anim | Continues `FUN_801DC0A0` calls; checks `actor[+0x1FA] == 0`. | `0x2C` (and OR's `actor[+0x1DC] |= 4`). |
 | `0x2C` | Magic - hit-frame loop | `FUN_801DC0A0` per frame; condition: `actor[+0x1D9] == 0` OR `(ctx[+0x24C] >= actor[+0x21B] && actor[+0x21B] != 0)` (hit-counter reaches script bound). | `0x2D`. |
 | `0x2D` | Magic - recovery | If `ctx[+0x24D] == 0`: clears `actor[+0x176]` and `actor[+0x21B]`. Item-class spells (target == 9) set `DAT_8007B64C = 0x78` (UI flash). | `0x2E` once `+0x24D == 0`. |
 | `0x2E` | Magic - exit | Gated on `ctx[+0x249] == 0`. Resets screen-shake (`_DAT_8007B790` if > 400, sets to 0; `_DAT_800840BC = 0x500`). | `0x50`. |
 | `0x32` | Summon - invoke | `FUN_801D5854(actor, 6)` + waits on `func_0x8003DE7C(1)` (sound bank ready). When ready, computes summon-frame index `bVar5` from `actor[+0x1DF]` (if < 0x9A: `(actor[+0x1DF] + 0x7F) * 3 + 0x80`, else `actor[+0x1DF] * 4 + 99`); writes `ctx[+0x277] = bVar5`, `ctx[+0x276] = 1`, `ctx[+0x278] = 1`. Sets `actor[+0x1DA] = 9`, `actor[+0x1DC] |= 1`, `actor[+0x1FA]++`. | `0x33`. |
-| `0x33` | Summon - fade in | `FUN_801DC0A0(party, 0x12)`. When `actor[+0x1F5] != 0` (anim cue): writes a 16-byte BG fade descriptor (`DAT_801C9070..0x9086`: time `0x14`, RGB `(0xFF,0xFF,0xFF)`, alpha 0→`0x14`); calls `func_0x80024E80` (push fade primitive). | `0x34`. |
-| `0x34` | Summon - actor freeze | `FUN_801DC0A0(party, 0x12)`. When `actor[+0x1D9] == 0`: OR's the fade primitive bit `8`, clears `ctx[+0x278/+0x279]`, sets `ctx[+0x6D8] = 0x78` (timer), calls `func_0x801F1ED4` (the [player-summon effect-script dispatcher](#battle-helper-functions), keyed on the summon id `actor[+0x1DF]`), iterates the 8-actor table to clear `actor[+0x4]` and set `+0x21C = 0xFF` (actor-hidden marker). Writes a second fade descriptor (`0x78` time, alpha `0xFF→0`). | `0x35`. |
+| `0x33` | Summon - fade in | `FUN_801DC0A0(party, 0x12)` - the cast-effect driver on the `0x12` the trigger staged, while the caster stays on clip `9`. When `actor[+0x1F5] != 0` (anim cue): writes the flash-in template at `DAT_801C9070` (kind `1` = additive, ramp `0x14`, black → white, start delay `0x14`, hold `-1`), spawns it with id `1` via `func_0x80024E80`, then fires cue `0x63` through `FUN_8004FCC8` (`0x801E4AA8`). The `-1` hold is why the white persists until `0x34` kills the actor. | `0x34`. |
+| `0x34` | Summon - actor freeze | `FUN_801DC0A0(party, 0x12)`. When `actor[+0x1D9] == 0`: OR's the fade actor's bit `8` (kills the flash-in), clears `ctx[+0x278/+0x279]`, sets `ctx[+0x6D8] = 0x78` (timer), calls `func_0x801F1ED4` (the [player-summon stager dispatch](#the-engines-summon-stager), keyed on the summon id `actor[+0x1DF]` - phase 0 seats the creature), iterates the 8-actor table clearing `actor[+0x4]` and setting `+0x21C = 0xFF` on every party seat and every **living** monster (`lhu +0x14C` / `sltiu s0,3`, `0x801E4B30..0x801E4B6C`). Writes the flash-out template (additive, ramp `0x78`, white → black, no delay, hold `1`) and spawns it with id `1`. | `0x35`. |
 | `0x35` | Summon - sustain | Decrements `ctx[+0x6D8]`; ducks the live **audio level** `_DAT_8007B910` down by `DAT_1F800393` per frame, clamped at `(_DAT_8008457C * 0x4B) / 100` (75% of the configured level) for spells < 0x99 or 50% for higher. If `+0x6D8 < 0` and `ctx[+0x276] != 0`, force-clamp `+0x6D8 = 1`. | `0x36` when timer expires. |
-| `0x36` | Summon - return-from-fade | Runs `func_0x801F1ED4` (the [player-summon effect-script dispatcher](#battle-helper-functions)) again while the fade settles. Calls `FUN_801F3C34` at `0x801E4CB8` - the [queued-magic follow-up guard](#the-queued-magic-follow-up-guard-fun_801f3c34). Then iterates 8-actor table clearing `+0x21C = 0` and resetting `+0x8 = 0x81000000` for actors with `+0x4 == 0`. Calls `FUN_801E70BC` (the summon-magic level-up check - see [`reference/functions.md`](../reference/functions.md); engine `World::accrue_summon_spell_xp` + `battle_formulas::summon_magic_levels_up`). Finally clamps the follow-up hold `*(0x801F6964)` to `1` when it is non-zero. | `0x37`. |
+| `0x36` | Summon - return-from-fade | Runs `func_0x801F1ED4` and **holds while it returns non-zero** (`bne v0,zero,<exit>` at `0x801E4CB0`) - the stager's own phase machine paces this state. Calls `FUN_801F3C34` at `0x801E4CB8` - the [queued-magic follow-up guard](#the-queued-magic-follow-up-guard-fun_801f3c34). Then iterates 8-actor table clearing `+0x21C = 0` and resetting `+0x8 = 0x81000000` for actors with `+0x4 == 0`. Calls `FUN_801E70BC` (the summon-magic level-up check - see [`reference/functions.md`](../reference/functions.md); engine `World::accrue_summon_spell_xp` + `battle_formulas::summon_magic_levels_up`). Finally clamps the follow-up hold `*(0x801F6964)` to `1` when it is non-zero. | `0x37`. |
 | `0x37` | Summon - verify all alive | `FUN_801D5854(actor, 6)`. Iterates the 8-actor table (party + active monsters); checks each is alive (`+0x14C != 0` AND `+0x1D9 != 0`). Sets a 4-byte fade-back-in sentinel at `ctx[+0x890..+0x893]` (`84 10 42 08`). | `0x38`. |
 | `0x38` | Summon - done | OR's the fade primitive bit `8`; clears `DAT_801C938C[+0x22C]`. | `0x50`. |
 | `0x3C` | **Spirit / Item - pre-arm** | `FUN_801D5854(actor, 6)`. Sets `actor[+0x1DA] = actor[+0x1E7]` (queued anim). Sets `ctx[+0x243] = 1` ("action in progress" marker). **Seeds the `(class, tier)` pair `actor[+0x1E8]` / `+0x1E9`** ([below](#the-class-tier-seed-at-state-0x3c)). Item leg also writes HUD via `_DAT_80077332..+0x35C`; `actor[+0x1DF] == 0xFE` (Pomander) → label = `s_Points_returned_801CED34`. Non-Item computes MP cost (with ability-bit half/quarter), subtracts from `actor[+0x150]`; for party_id < 3 fires `FUN_801D8DE8(7, 0)` (UI element). Always fires `FUN_801D8DE8(0x4C, 0)` (HUD label). | `0x3D`. |
@@ -276,28 +276,81 @@ divergence on every item action, recorded here rather than papered over.
 States `0x28`–`0x2E` contain **no damage application**. The only
 `jal func_0x800402F4` (the damage primitive) in `FUN_801E295C` is at
 `0x801E4134`, in the attack band. What the magic band does is face the caster,
-stage the `0x14`-frame pre-cast timer, raise the `0x4C` spell-name HUD label,
-debit MP, and drive the animation chain; the *outcome* is produced by the
-per-spell streamed module that `FUN_801DBF9C` (`0x801E45E4`, state `0x29`)
-pages in, and by the effect-class dispatcher `func_0x801F2160` on the capture
-side.
+stage the `0x14`-frame pre-cast timer, raise the (monster-only) `0x4C`
+spell-name label, debit MP, and drive the animation chain; the *outcome* is
+produced by the per-spell streamed module that `FUN_801DBF9C` (`0x801E45E4`,
+state `0x29`) stages the anim stream for and `FUN_8003EC70` pages in - for a
+Seru id, inside the per-summon stager the summon band ticks - and by the
+effect-class dispatcher `func_0x801F2160` on the capture side.
 
-The port has the two halves in different places. `legaia_engine_vm`'s magic
-band is the presentation half, faithfully. The outcome half is
-`engine-core`'s live cast path - `World::apply_battle_spell` →
-`World::cast_spell_on_slots` - which the player's Magic submenu and the
-monster AI both call directly, parking the SM at `EndOfAction` afterwards.
-That shortcut is honest rather than lossy for simulation: it charges the same
-ability-bit-folded MP, rolls the same damage kernels, and runs the same
-capture / escape / heal folds. What it does not do is the presentation the
-band owns (facing, cast timing, the spell-name label, the capture cinematic).
+**The port routes every cast through the band.** The Magic submenu's confirm
+and the monster AI's pick both *arm* the SM (`World::arm_player_cast` /
+`arm_monster_cast`: category `2`, the spell id at `params[0]`, the target byte,
+a monster's cast clip at `params[1]`) and park the resolved targets in one
+owner, `World::pending_cast`. The band then charges the ability-bit-folded MP at
+`MagicCastBegin` and the outcome folds **once**, at retail's seam, through
+`cast_spell_on_slots_prepaid` (no second debit): a Seru cast folds in the
+engine's stager at its strike ([below](#the-engines-summon-stager)); anything
+else folds the frame the SM leaves `0x29` for the anim chain
+(`World::settle_cast_band`); a cast that leaves the bands by another door (the
+capture branch, a dead caster) folds at the band's end, so no turn spends MP
+for nothing. An escape spell that folds this way ends the encounter from the
+live loop on the same frame, as the item path's fold already did.
 
-Routing the player cast through the band therefore needs the outcome producer
-wired at retail's own seam - `BattleActionHost::spell_anim_trigger`, the port
-of `FUN_801DBF9C` - and needs the MP debit to move with it: the band already
-debits at `MagicCastBegin`, so a cast that also runs `cast_spell_on_slots`
-pays twice. Until both are done together, half-routing costs more than the
-shortcut does.
+#### The party cast trigger `FUN_801DBF9C`
+
+The trigger is a **params stager, not an outcome producer**. Read off its
+disassembly (`overlay_battle_action_801dbf9c.txt`):
+
+- `spell_id >= 0x25` (`sltiu v0,a1,0x25; beq v0,zero,0x801dc064`) - every
+  player Seru id: `actor[+0x1E0] = 9` (the summon sub-route `0x29` tests),
+  `+0x1E1 = 0x12`, `+0x1E2 = 0xFF` (`0x801DC064..0x801DC09C`). So in retail's
+  eyes **every** player cast, healing included, is a summon.
+- `spell_id < 0x25`: the byte at `0x801F4E64 + id - 1` indexes an 8-byte
+  anim-pair list at `0x801F4EDC`, copied pairwise into `+0x1E0..` until its
+  `0xFF` terminator (`0x801DBFAC..0x801DC060`). The engine has no parse of
+  that table (NOT WIRED); its `spell_anim_trigger` terminates the stream at
+  `params[1]` and folds the cast there.
+
+`FUN_801DC0A0`'s second argument is what this staged (`0x12` for a summon,
+the monster's own byte otherwise), and the summon band keeps calling it with
+`0x12` while the caster's `+0x1D9` stays `9` (capture `gimard_summon_start`)
+- it is the cast-**effect** driver, not a clip stage. The clip stage is the
+SM's own `+0x1DA` store at `0x29` / `0x2A`.
+
+#### The engine's summon stager
+
+`FUN_801F1ED4` dispatches into the streamed per-summon stager (extraction
+PROT `903..=934` at slot B), overlay code the engine cannot run. The engine's
+`World::summon_stager_tick` (`world/battle/cast_band.rs`) answers the same
+seam with its own choreography and reports busy where retail reads the
+stager's return. The choreography is capture-pinned on the player Gimard cast
+(`gimard_summon_start` / `_visible` / `_burning_attack`, RAM of the PCSX-Redux
+states):
+
+| State / phase | Caster (slot 0) | Summon seat (slot 7) | Everyone else |
+|---|---|---|---|
+| `0x33` | clip `9`, `+0x1F5 = 0` | empty | drawn |
+| `0x36`, `ctx[+0x279] = 6` | hidden (`+0x21C = 0xFF`, prim word `0`) | `x=185, z=-2272` (the caster sits at `82, -542`), facing `0xFD9` = the caster's, idle clip, `+0x21D = 2` | party + living monsters hidden |
+| `0x36`, `ctx[+0x279] = 11` | hidden | `x=143, z=-1606`, clip `1` (the walk), `+0x21D = 4` | hidden; the flame parts live, the damage numeral up |
+
+So the creature is seated about `1730` units **behind the party**, facing the
+enemy, and walks in toward the target while its effect parts play; the outcome
+lands mid-walk. The engine stager requests the namesake-creature spawn at that
+point (`pending_summon_spawn`, the hosts seat it and hand the seat back
+through `World::seat_summon_actor`), idles it, stages clip `1` and glides it
+to `1064` behind the caster, folds the outcome there, lingers, and despawns
+it. The per-summon effect parts (the `0x180C` move-VM records) are not
+staged; the frame counts are the engine's, chosen to land the strike inside
+the band's `0x78`-frame sustain. The two flashes ride `World::screen_fade`
+(`FadeState`, which honours the templates' start delay and `-1` hold) and both
+hosts composite it through `fade_prim`; the band's hide (`RENDER_FLAG_HIDDEN`)
+is honoured by both hosts' draw gates.
+
+The retail player-summon frames carry **no** party readout and **no**
+spell-name label (mednafen `theeder_summon_mid_cast` / `meta_summon_mid_cast`:
+the acting-actor plaque, the caster close-up, the additive burst) - consistent
+with the `0x4C` block being monster-only at `0x28`.
 
 ## The turn cursor `ctx[+0x1A]`
 

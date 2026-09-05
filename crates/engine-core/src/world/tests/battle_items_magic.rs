@@ -240,21 +240,32 @@ fn battle_magic_cast_damages_monster_spends_mp_and_cycles_turn() {
     world.tick_battle_spell_menu();
     assert!(world.battle_spell_menu.is_some(), "still picking a target");
 
-    // Frame 2: Cross confirms the monster; the cast resolves.
+    // Frame 2: Cross confirms the monster; the confirm arms the action SM's
+    // Magic band (nothing lands yet - retail's confirm commits the action,
+    // the band charges the MP at 0x28 and the outcome folds at its seam).
     world.set_pad(0);
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_spell_menu();
 
     assert!(world.battle_spell_menu.is_none(), "spell menu closed");
-    assert_eq!(world.actors[0].battle.mp, 45, "5 MP spent on Flame");
+    assert_eq!(world.battle_ctx.action_state, ActionState::Begin.as_byte());
+    assert_eq!(
+        world.actors[0].battle.mp, 50,
+        "nothing charged at the confirm"
+    );
+    assert_eq!(
+        world.actors[1].battle.hp, 300,
+        "nothing landed at the confirm"
+    );
+    tick_until_cast_folds(&mut world);
+    assert_eq!(world.actors[0].battle.mp, 45, "5 MP spent on Flame, once");
     assert!(
         world.actors[1].battle.hp < 300,
         "Flame should have damaged the monster"
     );
-    assert_eq!(
-        world.battle_ctx.action_state,
-        ActionState::EndOfAction.as_byte(),
-        "turn parked at EndOfAction so the loop cycles"
+    assert!(
+        world.battle_ctx.action_state >= ActionState::MagicAnimChain.as_byte(),
+        "the fold is the band's 0x29 exit, not the confirm"
     );
     let fx = world.drain_battle_hit_fx();
     assert_eq!(fx.len(), 1);
@@ -337,6 +348,8 @@ fn battle_magic_cast_applies_mp_half_ability_bit() {
     world.set_pad(0);
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_spell_menu();
+    // The band's 0x28 charges the cost.
+    tick_until_cast_folds(&mut world);
 
     // Flame is 5 MP; the MP-half bit charges `5 - (5>>1) = 3` (retail rounds
     // up on odd costs, not floor 5/2 = 2), so 50 -> 47 (vs 45 flat).
@@ -637,10 +650,25 @@ fn battle_magic_escape_returns_to_field() {
         0,
     ));
 
-    // SelfOnly target resolves immediately, so one Cross casts Warp.
+    // SelfOnly target resolves immediately, so one Cross commits Warp; the
+    // band folds it at its 0x29 exit and the live loop ends the encounter
+    // on that frame.
     world.set_pad(0);
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_spell_menu();
+    assert_eq!(
+        world.mode,
+        SceneMode::Battle,
+        "the confirm only arms the band"
+    );
+    tick_until_cast_folds(&mut world);
+    for _ in 0..4 {
+        if world.mode != SceneMode::Battle {
+            break;
+        }
+        world.set_pad(0);
+        let _ = world.tick();
+    }
 
     // Same exit hold as the escape item: the field returns through the
     // sequencer's `0x67` arm, `VICTORY_EXIT_PHASE` ticks later.

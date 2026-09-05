@@ -75,6 +75,31 @@ pub const SUMMON_FLASH_OUT: SummonFadeTemplate = SummonFadeTemplate {
 /// the quad at.
 pub const SUMMON_FADE_ID: i16 = 1;
 
+/// The sound cue the flash-in arm fires the frame it spawns the fade
+/// (`li a0,0x63; jal 0x8004fcc8` at `0x801E4AA8..0x801E4AB8`, right after
+/// `ctx[7] = 0x34`).
+pub const SUMMON_FLASH_CUE: u16 = 0x63;
+
+/// The spell-id split inside the party cast trigger `FUN_801DBF9C`
+/// (`sltiu v0,a1,0x25; beq v0,zero,0x801dc064` at `0x801DBFA0`): an id at
+/// or above this takes the summon arm - `actor[+0x1E0] = 9` (the sub-route
+/// byte the pre-cast wait tests to reach [`ActionState::SummonInvoke`]),
+/// `+0x1E1 = 0x12`, `+0x1E2 = 0xFF` - so **every** player Seru id
+/// (`0x81..=0xA0`) is a summon in retail's eyes, healing casts included. An
+/// id below it copies a per-spell anim-pair list out of the overlay table
+/// at `0x801F4E64` / `0x801F4EDC` into `params[1..]` instead.
+///
+/// REF: FUN_801DBF9C
+pub const SPELL_TRIGGER_SUMMON_MIN_ID: u8 = 0x25;
+
+/// The anim byte the trigger's summon arm stages at `params[1]`
+/// (`li v1,0x12; sb v1,0x1e1(a0)` at `0x801DC088`): the argument the band
+/// then hands `FUN_801DC0A0` every frame of `0x33` / `0x34` while the caster
+/// stays on clip `9` - a cast-effect id, not a clip id.
+///
+/// REF: FUN_801DBF9C
+pub const SUMMON_CAST_EFFECT_ID: u8 = 0x12;
+
 /// Retail's per-slot predicate for the `0x34` hide loop and the `0x36`
 /// restore loop (`0x801E4B30..0x801E4B6C` / `0x801E4CDC..0x801E4D28`): a party
 /// seat is always touched, a monster seat only while it is alive
@@ -128,6 +153,13 @@ pub(super) fn summon_fade_in<H: BattleActionHost + ?Sized>(
         return stay(ctx);
     }
     host.spawn_screen_fade(&SUMMON_FLASH_IN, SUMMON_FADE_ID);
+    // `0x801E4AA8..0x801E4AB8`: the flash cue goes out on the same frame,
+    // after the state byte is stamped. The `sb zero,0x1da(s3)` in the call's
+    // delay slot clears retail's *staged* byte, whose "nothing staged" zero
+    // is not the port's "go idle" zero (`commit_staged_battle_anim` would
+    // cut clip 9 short) - so the port leaves the staged id alone and lets
+    // the clip run to its end, which is what `0x34` waits on.
+    host.one_shot_sfx(SUMMON_FLASH_CUE);
     transition(ctx, ActionState::SummonActorFreeze)
 }
 

@@ -1667,20 +1667,15 @@ impl LegaiaRuntime {
         // bands and the move-FX afterimage streak. Mutually exclusive with
         // the intro in practice (transition vs. live battle).
         prims.extend(self.battle_fx_screen_prims());
-        // The live full-screen fade the model steps in `World::screen_fade`
-        // (the battle-end / escape template, the leader-swap fades): the
-        // fade actor's quad, blended with the template's kind as its ABR
-        // mode - the same prim the native window pushes.
-        if let Some(f) = self
+        // The world's one live full-screen fade (the summon band's two
+        // flashes, the escape white-out) through the same `fade_prim` kernel
+        // the native window composites it with.
+        if let Some((rgb, abr, ot)) = self
             .scene_host
             .as_ref()
-            .and_then(|h| h.world.screen_fade.as_ref())
+            .and_then(|h| h.world.screen_fade_draw())
         {
-            prims.push(legaia_engine_ui::screen_prim::screen_fade_prim(
-                f.rgb(),
-                f.abr(),
-                f.ot_layer(),
-            ));
+            prims.push(legaia_engine_ui::screen_prim::fade_prim(rgb, abr, ot));
         }
         self.battle_intro_geom = (!prims.is_empty()).then(|| {
             (

@@ -71,8 +71,14 @@ fn enter_battle(w: &mut World) {
     panic!("no encounter triggered in 6000 field ticks");
 }
 
-fn wait_for_prompt(w: &mut World) -> bool {
+/// Tick until the command session reopens, draining the summon-creature
+/// spawn request the cast band's stager raises mid-band (its `0x34` entry)
+/// into `spawn_requests`.
+fn wait_for_prompt(w: &mut World, spawn_requests: &mut usize) -> bool {
     for _ in 0..0x400 {
+        if w.take_pending_summon_spawn().is_some() {
+            *spawn_requests += 1;
+        }
         if w.battle_command.is_some() {
             return true;
         }
@@ -137,7 +143,7 @@ fn seru_cast_accrues_xp_and_crosses_its_level_threshold() {
     let mut casts = 0usize;
     let mut summon_requests = 0usize;
     for _ in 0..12 {
-        if !wait_for_prompt(&mut w) {
+        if !wait_for_prompt(&mut w, &mut summon_requests) {
             panic!(
                 "command session never reopened (cast {casts}); active={} state={:02X} spell_menu={} item_menu={} arts={} mode={:?} monster_hp={}",
                 w.battle_ctx.active_actor,
@@ -170,11 +176,21 @@ fn seru_cast_accrues_xp_and_crosses_its_level_threshold() {
             "the Magic arm should open the spell submenu (cast {casts})"
         );
         press(&mut w, PadButton::Cross); // spell row 0 (Gimard) -> target
-        press(&mut w, PadButton::Cross); // target confirm -> cast
+        press(&mut w, PadButton::Cross); // target confirm -> the band is armed
         casts += 1;
-        if w.take_pending_summon_spawn().is_some() {
-            summon_requests += 1;
+        // The outcome (and its XP) folds at the stager's strike, inside the
+        // summon band - run the band out before reading the record.
+        for _ in 0..0x400 {
+            if w.pending_cast.is_none() {
+                break;
+            }
+            if w.take_pending_summon_spawn().is_some() {
+                summon_requests += 1;
+            }
+            w.set_pad(0);
+            let _ = w.tick();
         }
+        assert!(w.pending_cast.is_none(), "cast {casts} never folded");
         leveled.extend(w.drain_magic_level_ups());
         if !leveled.is_empty() {
             break;

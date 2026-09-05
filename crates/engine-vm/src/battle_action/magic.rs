@@ -175,6 +175,28 @@ pub(super) fn magic_cast_begin<H: BattleActionHost + ?Sized>(
     transition(ctx, ActionState::MagicPreCastWait)
 }
 
+/// State `0x29` - the pre-cast wait and the cast's first anim pull
+/// (`0x801E4598..0x801E4758`).
+///
+/// On the timer's expiry: a party caster runs the trigger `FUN_801DBF9C`,
+/// which writes the cast's anim stream behind the spell id (`params[1..]`)
+/// and, for a Seru id, the summon sub-route (`actor[+0x1E0] = 9`, read back
+/// here as the `0x32` route). Then the stream cursor is **bumped before the
+/// read** (`lbu v0,0x4(s5); addiu v0,v0,0x1; sb v0,0x4(s5)` at
+/// `0x801E4644..0x801E4650`), so the first anim byte is `params[1]`, and
+/// that byte is staged into `+0x1DA` at once (`sb v0,0x1da(s3)` at
+/// `0x801E4664`); a `0xFF` there clears the stage and ends the action
+/// (`sb zero,0x1da; ctx[7] = 0x50`). A non-Seru id (`< 0x81`) then bumps
+/// the cursor again and hands the next byte to the cast-effect driver
+/// `FUN_801DC0A0` ([`BattleActionHost::spell_anim_sustain`]) with the
+/// `+0x1FA` / `+0x1DC` bookkeeping and the three id-keyed one-shot cues
+/// (`0x3F -> 0x14C`, `0x2C -> 0x144`, `0x6A -> 0x15E`, `0x801E46DC..0x801E4740`).
+///
+/// The earlier port read `params[0]` - the spell id itself - as the first
+/// anim byte and never staged it, which is why no cast could carry a clip
+/// through this band.
+///
+/// PORT: FUN_801E295C (`0x801E4598..0x801E4758`)
 pub(super) fn magic_pre_cast_wait<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
@@ -189,17 +211,60 @@ pub(super) fn magic_pre_cast_wait<H: BattleActionHost + ?Sized>(
         host.spell_anim_trigger(slot, spell_id);
     }
 
-    // Summon-route check.
+    // Summon-route check (`lbu v1,0x1e0(s3); li v0,0x9; bne` at
+    // `0x801E45EC`).
     let sub_route = host.actor(slot).map(|a| a.sub_route).unwrap_or(0);
     if sub_route == 9 {
         return transition(ctx, ActionState::SummonInvoke);
     }
 
-    // Pull next anim from params.
-    let next_byte = host.actor(slot).map(|a| a.read_param(0)).unwrap_or(0xFF);
+    // Bump, then read + stage (`0x801E4644..0x801E4664`).
+    let next_byte = match host.actor_mut(slot) {
+        Some(actor) => {
+            actor.strike_index = actor.strike_index.saturating_add(1);
+            let b = actor.read_param(0);
+            actor.queued_anim = b;
+            b
+        }
+        None => 0xFF,
+    };
     if next_byte == 0xFF {
+        if let Some(actor) = host.actor_mut(slot) {
+            actor.queued_anim = 0;
+        }
+        host.pose(slot, Pose::Idle);
         return transition(ctx, ActionState::DoneCleanup);
     }
+    if spell_id < 0x81 {
+        // `0x801E469C..0x801E46D8`: second bump, the effect driver on the
+        // byte it lands on, then the bookkeeping.
+        let effect_byte = match host.actor_mut(slot) {
+            Some(actor) => {
+                actor.strike_index = actor.strike_index.saturating_add(1);
+                actor.read_param(0)
+            }
+            None => 0xFF,
+        };
+        host.spell_anim_sustain(slot, effect_byte);
+        if let Some(actor) = host.actor_mut(slot) {
+            actor.spell_iter = actor.spell_iter.saturating_add(1);
+            actor.flag_bits.set(ActorFlags::WINDUP_DONE);
+        }
+        let cue = match spell_id {
+            0x3F => Some(0x14C),
+            0x2C => Some(0x144),
+            0x6A => Some(0x15E),
+            _ => None,
+        };
+        if let Some(cue) = cue {
+            host.one_shot_sfx(cue);
+        }
+    } else if let Some(actor) = host.actor_mut(slot) {
+        // `0x801E4744`: a Seru id that did not take the summon route stages
+        // nothing.
+        actor.queued_anim = 0;
+    }
+    host.pose(slot, Pose::Idle);
     transition(ctx, ActionState::MagicAnimChain)
 }
 

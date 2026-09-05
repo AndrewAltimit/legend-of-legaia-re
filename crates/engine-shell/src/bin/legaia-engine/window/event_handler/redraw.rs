@@ -1710,6 +1710,16 @@ impl PlayWindowApp {
                     if in_battle && self.battle_stage_mesh.is_some() && !actor.active {
                         continue;
                     }
+                    // The summon band's hide (`+0x21C = 0xFF` with the prim
+                    // word zeroed, `0x801E4B30..0x801E4B6C`): every party
+                    // seat and living monster is off screen while the
+                    // creature performs, restored at `0x36`.
+                    if in_battle
+                        && actor.battle.render_flag
+                            == legaia_engine_vm::battle_target_group::RENDER_FLAG_HIDDEN
+                    {
+                        continue;
+                    }
                     // Board-owned tile actors draw once per cell through the
                     // deferred tile-board pass above; their own transform
                     // only holds the LAST repositioned cell (and a slot the
@@ -2293,17 +2303,10 @@ impl PlayWindowApp {
             // trail only draws once a swing clip plays inside the battle).
             let mut screen_prims = battle_intro_prims;
             screen_prims.extend(self.weapon_trail_screen_prims(r));
-            // The live full-screen fade the model steps in `World::screen_fade`
-            // (the battle-end / escape template, the leader-swap fades): the
-            // fade actor's quad, blended with the template's kind as its ABR
-            // mode - the same prim the browser play page pushes.
-            if let Some(f) = self.session.host.world.screen_fade.as_ref() {
-                screen_prims.push(legaia_engine_render::screen_overlay::screen_fade_prim(
-                    f.rgb(),
-                    f.abr(),
-                    f.ot_layer(),
-                ));
-            }
+            // The world's one live full-screen fade (the summon band's two
+            // flashes, the escape white-out), drawn through the same kernel
+            // the intro fades use so the ABR mode is honoured.
+            screen_prims.extend(self.screen_fade_screen_prim());
             let target = |scene| present_target(scene, &screen_prims);
             // Periodic sweep (`--screenshot-every`): capture a frame every N
             // ticks into the sweep dir (named for the tick), keep running,

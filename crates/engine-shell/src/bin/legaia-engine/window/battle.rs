@@ -1397,6 +1397,22 @@ impl PlayWindowApp {
                 .world
                 .set_actor_battle_animation(slot, player);
         }
+        // The creature's archive-order clip set, so the stager's staged ids
+        // (the walk, clip 1) resolve through the same commit as a monster's.
+        if let Ok(Some(anims)) = legaia_asset::monster_archive::animations(&archive, creature)
+            && !anims.is_empty()
+        {
+            let clips: Vec<_> = anims.into_iter().map(Some).collect();
+            self.session
+                .host
+                .world
+                .set_actor_battle_action_clips(slot, std::sync::Arc::new(clips));
+        }
+        // Hand the seat to the world: a cast in its summon band places the
+        // creature at the stager's spawn point (behind the caster, facing
+        // the enemy - the capture's slot-7 record) and retires it when the
+        // choreography ends; a debug spawn keeps the placement above.
+        self.session.host.world.seat_summon_actor(slot);
         log::info!(
             "play-window: summon spell {spell_id:#04x} -> battle_data creature {creature} \
              (mesh slot {idx}, tex slot {tex_slot}, actor slot {slot})"

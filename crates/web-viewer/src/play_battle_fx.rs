@@ -633,6 +633,20 @@ impl LegaiaRuntime {
         {
             host.world.set_actor_battle_animation(slot, player);
         }
+        // The creature's archive-order clip set, so the stager's staged ids
+        // (the walk, clip 1) resolve through the same commit as a monster's
+        // - the native window's seat, leg for leg.
+        if let Ok(Some(anims)) = legaia_asset::monster_archive::animations(&archive, creature)
+            && !anims.is_empty()
+        {
+            let clips: Vec<_> = anims.into_iter().map(Some).collect();
+            host.world
+                .set_actor_battle_action_clips(slot, std::sync::Arc::new(clips));
+        }
+        // Hand the seat to the world: a cast in its summon band places the
+        // creature at the stager's spawn point and retires it when the
+        // choreography ends; a debug spawn keeps the placement above.
+        host.world.seat_summon_actor(slot);
 
         let Some(br) = self.battle_render.as_mut() else {
             return;

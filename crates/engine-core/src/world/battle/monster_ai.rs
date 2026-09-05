@@ -109,34 +109,25 @@ impl World {
                 // A confused caster's spell lands on the opposite side.
                 self.confuse_retarget_cast(slot, &mut targets);
                 let def = self.spell_catalog.get(spell_id).cloned();
-                if let Some(def) = def {
-                    // Mark where this cast's damage popups start, so the
-                    // status applier below can tell which targets the move
-                    // actually reached impact on (see
-                    // [`Self::apply_enemy_move_status`]).
-                    let hit_fx_start = self.battle_hit_fx.len();
-                    if self.cast_spell_on_slots(slot, &def, &targets) {
-                        self.apply_enemy_move_status(slot, def.id, hit_fx_start);
-                        self.apply_enemy_agl_status(slot, def.id, &targets);
-                        self.battle_ctx.action_state = ActionState::EndOfAction.as_byte();
-                        // NOT cycled here: take_monster_turn is itself called
-                        // from `cycle_battle_turn`'s re-arm. But the SM's
-                        // 0x5A self-advance WILL re-seed this actor's staged
-                        // action on the next tick, and a category-2 re-seed
-                        // runs the magic band's `MagicCastBegin` - a second
-                        // MP debit. Neutralise the category (0 seeds the
-                        // inert TacticalArts arm); the staged spell id in
-                        // `params[0]` is left in place - it is the observable
-                        // the AI-pick oracles read, and the cat-0 arm never
-                        // consumes it.
-                        if let Some(a) = self.actors.get_mut(slot as usize) {
-                            a.battle.action_category = 0;
-                        }
-                        return;
-                    }
+                let mp = self
+                    .actors
+                    .get(slot as usize)
+                    .map(|a| a.battle.mp)
+                    .unwrap_or(0);
+                if let Some(def) = def
+                    && mp >= u16::from(def.mp_cost)
+                {
+                    // The cast is the action SM's Magic band, as in retail:
+                    // `0x28` faces the target, raises the monster-only
+                    // spell-name label and debits the MP, `0x29` waits and
+                    // stages the cast clip, and the outcome folds the frame
+                    // the band leaves `0x29` (`World::settle_cast_band`) -
+                    // the impact-status and AGL procs ride the same fold.
+                    self.arm_monster_cast(slot, &def, targets);
+                    return;
                 }
-                // Cast didn't fold (no catalog entry / unaffordable after the
-                // pick) - fall through to a physical strike.
+                // No catalog entry / unaffordable after the pick - fall
+                // through to a physical strike.
                 self.arm_monster_physical(slot);
             }
             MonsterAction::Physical { target } => {

@@ -2032,15 +2032,15 @@ fn full_magic_flow_round_trips() {
         assert!(iters < 1000, "stuck in MagicPreCastWait");
     }
     assert_eq!(ctx.action_state, ActionState::MagicAnimChain.as_byte());
+    // The wait's exit bumped the cursor past the spell id and staged the
+    // first anim byte (`0x801E4644..0x801E4664`): `params[1] = 0x21` is on
+    // the stage, and for a non-Seru id the second bump parked the cursor on
+    // the terminator. The spell id itself is never staged as a clip.
+    assert_eq!(host.actors[1].queued_anim, 0x21, "0x29 stages params[1]");
+    assert_eq!(host.actors[1].strike_index, 2);
 
-    // MagicAnimChain reads `params[strike_index]` then increments. We
-    // have `params = [0x10, 0x21, 0xFF, ...]` and `strike_index = 0`,
-    // so three iterations: params[0]=0x10 queued, params[1]=0x21
-    // queued, params[2]=0xFF terminator transitions.
-    step(&mut host, &mut ctx);
-    assert_eq!(ctx.action_state, ActionState::MagicAnimChain.as_byte());
-    step(&mut host, &mut ctx);
-    assert_eq!(ctx.action_state, ActionState::MagicAnimChain.as_byte());
+    // MagicAnimChain reads `params[strike_index]`: the terminator, so the
+    // chain transitions on its first step.
     step(&mut host, &mut ctx);
     assert_eq!(ctx.action_state, ActionState::MagicSustain.as_byte());
 

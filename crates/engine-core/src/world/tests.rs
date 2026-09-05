@@ -8,6 +8,24 @@ use vm::battle_action::BattleActionHost;
 
 /// Tile-board world: 3x3 board, all floor except a wall at (1,1);
 /// player actor in slot 0 placed at its start-tile centre.
+/// Run the live loop until the armed cast's owed outcome has folded - the
+/// band's `0x29` exit for a non-summon cast, the stager's strike for a Seru
+/// one (`World::pending_cast` goes `None`). A world with nothing armed
+/// returns at once.
+fn tick_until_cast_folds(w: &mut World) {
+    for _ in 0..0x400 {
+        if w.pending_cast.is_none() {
+            return;
+        }
+        w.set_pad(0);
+        let _ = w.tick();
+    }
+    panic!(
+        "the cast never folded (state {:#04x}, actor {})",
+        w.battle_ctx.action_state, w.battle_ctx.active_actor
+    );
+}
+
 fn tile_board_world() -> World {
     let mut w = World::new();
     w.mode = SceneMode::Field;
@@ -234,6 +252,7 @@ mod battle_stone_gaze;
 mod battle_turns_items;
 mod battle_tutorial_flow;
 mod battle_xp_attack;
+mod cast_band;
 mod core;
 mod dialogue_runner_fx;
 mod effects_actors;

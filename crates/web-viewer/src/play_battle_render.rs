@@ -1274,7 +1274,13 @@ impl LegaiaRuntime {
     /// are RAW battle world units - the page multiplies by
     /// [`Self::play_battle_world_scale`] (retail composes the same 4x on
     /// the actor camera).
+    ///
+    /// `active` is the draw gate: it also carries the summon band's hide
+    /// (`+0x21C = 0xFF`, `RENDER_FLAG_HIDDEN`) - every party seat and living
+    /// monster is off screen while the creature performs - the browser twin
+    /// of the native draw loop's skip.
     pub fn play_battle_actor_transforms(&self) -> Vec<f32> {
+        use legaia_engine_vm::battle_target_group::RENDER_FLAG_HIDDEN;
         let (Some(br), Some(host)) = (self.battle_render.as_ref(), self.scene_host.as_ref()) else {
             return Vec::new();
         };
@@ -1286,7 +1292,11 @@ impl LegaiaRuntime {
                     actor.move_state.world_y as f32,
                     actor.move_state.world_z as f32,
                     if a.monster { 1.0 } else { 0.0 },
-                    if actor.active { 1.0 } else { 0.0 },
+                    if actor.active && actor.battle.render_flag != RENDER_FLAG_HIDDEN {
+                        1.0
+                    } else {
+                        0.0
+                    },
                 ]),
                 None => out.extend_from_slice(&[0.0; 5]),
             }

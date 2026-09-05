@@ -257,6 +257,9 @@ species and at the disc's authored heap-cost maximum.
 | What spawns the battle XA voice selector `FUN_8004DA00`? | resolved | `disassembly` | Nothing calls it - it is the `+0x08` tick of the [static actor template](functions/runtime-libs.md#static-actor-templates) at `0x800767F4`, and the battle scene-loader `FUN_800513F0` spawns that record into the system actor pool at `0x80051D3C` as its last act before returning. The selector is therefore a per-frame pass resident for the whole battle. Port `legaia_engine_audio::battle_voice`; the same reading corrects the template's base and tick offset (the `+0x0C`-from-`0x800767F0` frame was skewed 4 bytes low). |
 | Effect-VM pass-1 "state token algebra" (`FUN_801E0088`) | resolved + ported | `capture` | [details ↓](#effect-vm-pass-1-state-token-algebra-fun_801e0088) |
 | Seru-magic summon visual (e.g. Tail Fire) | resolved (player visual; wired) | `capture` | [details ↓](#seru-magic-summon-visual-eg-tail-fire) |
+| The party cast trigger `FUN_801DBF9C` - outcome producer or params stager? | resolved (a params stager; every Seru id takes the summon arm) | `disassembly` | [details ↓](#the-party-cast-trigger-is-a-params-stager) |
+| Player-summon presentation - label, readout, hide, flashes, creature seat | resolved (ported behind the band's own seams) | `capture` + `disassembly` | [details ↓](#player-summon-presentation) |
+| Fade-actor hold word `-1` - "no hold" or "hold until killed"? | resolved (hold until the actor is killed) | `disassembly` | [details ↓](#the-fade-actors-hold-word) |
 | `summon.dat` / `readef.DAT` side-band streaming | resolved (entries + format) | `disassembly` | [details ↓](#summondat--readefdat-side-band-streaming) |
 | Monster steal item (Evil God Icon) | resolved | `capture` | [details ↓](#monster-steal-item-evil-god-icon) |
 | Battle face-stamp issuing site | resolved | `capture` | [details ↓](#battle-face-stamp-issuing-site) |
@@ -1308,6 +1311,62 @@ The **high block `0x99..=0xA0`** (Juggernaut / Palma / Mule / Horn / Jedo / Meta
 **This supersedes the old move-VM `SummonScene` model and the PROT-905-overlay reading** for the *visual*: the faithful summon render is the battle creature drawn through `monster_archive::battle_render_mesh` + `MonsterAnimPlayer` + `tmd_to_vram_mesh_posed_rot` (mesh + texture + animation all from PROT 867), not the stager scene-graph. (PROT 905 is still the magnitude/effect stager - see the per-spell-power thread.) The flame-atlas loader site is now pinned:
 
 **`FUN_80020050`** (SCUS `0x80020050`) uploads PROT entry `0x366` into VRAM twice via `FUN_8001fc00` (→ `FUN_8003e8a8`, the PROT-index loader), with the VRAM region set up by `FUN_80017888` / `FUN_8001e54c` (param `0xf000`); it is gated on `_DAT_8007b868 == 0` (the same field-camera / mode gate `FUN_801dbe9c` reads) and is independent of the `FUN_800520F0` battle-bundle path (which pulls `0x367..0x36d`).
+
+### The party cast trigger is a params stager
+
+`FUN_801DBF9C(party, spell_id)` runs at the end of state `0x29`'s wait for a
+party caster. Its disassembly (`overlay_battle_action_801dbf9c.txt`) has two
+arms on `sltiu v0,a1,0x25`: at or above `0x25` it stores `actor[+0x1E0] = 9`,
+`+0x1E1 = 0x12`, `+0x1E2 = 0xFF` and returns (`0x801DC064..0x801DC09C`);
+below it, it indexes `0x801F4E64 + id - 1` for an 8-byte anim-pair list at
+`0x801F4EDC` and copies the pairs into `+0x1E0..` until the `0xFF`
+terminator. No store touches HP, MP or a target. So the trigger writes the
+cast's anim stream and the summon sub-route the same state reads back
+(`lbu v1,0x1e0(s3); li v0,0x9; bne` at `0x801E45EC`); the outcome is the
+streamed module's. Every player Seru id is `>= 0x25`, so every player cast -
+healing included - is a summon to this routine. The `0x12` it stages is the
+argument the summon band hands `FUN_801DC0A0` each frame while the caster's
+`+0x1D9` stays `9` (capture `gimard_summon_start`): a cast-effect id, not a
+clip. Port: `BattleHostImpl::spell_anim_trigger` (engine-core), which arms the
+engine's stager on the summon arm; the `< 0x25` table is not parsed.
+
+### Player-summon presentation
+
+Read off the capture corpus and the summon band's disassembly:
+
+- **No spell-name label for a party caster.** `0x28`'s label block is
+  skipped for an acting id `< 3` (`sltiu v0,v0,0x3; bne v0,zero,0x801e4460`
+  at `0x801E43D8`); the mednafen `theeder_summon_mid_cast` /
+  `meta_summon_mid_cast` display crops show the acting-actor plaque, the
+  caster close-up and the additive burst, no label, and **no party readout**.
+- **The hide.** `0x34` zeroes the prim word and sets `+0x21C = 0xFF` on
+  every party seat and every living monster (`0x801E4B30..0x801E4B6C`); the
+  PCSX `gimard_summon_visible` / `_burning_attack` states read exactly that
+  on slots 0..3 while the creature at slot 7 stays drawn; `0x36` restores.
+- **The creature seat.** Slot 7 at `x=185, z=-2272` (caster `82, -542`) with
+  the caster's facing on the idle clip at stager phase 6, then `z=-1606` on
+  clip `1` at phase 11: it walks in from behind the party toward the target.
+- **The two flashes.** Flash-in at `0x33` (additive, delay `0x14`, ramp
+  `0x14` black → white, hold `-1`, id `1`) plus cue `0x63`; flash-out at
+  `0x34` (additive, ramp `0x78` white → black, hold `1`). The `visible` state
+  carries the flash-out actor finished (`+0x10 & 8`, hold counted below 0).
+- **The duck.** `_DAT_8007B910` reads `161` against level `215` in both
+  mid-cast states - the `75/100` floor of `0x35`, exactly.
+
+Port: the summon band (`engine-vm::battle_action::summon`), the stager and
+the hide/fade seams (`engine-core::world::battle::cast_band`), both hosts'
+draw gates and `fade_prim` composition.
+
+### The fade actor's hold word
+
+`FUN_80020C14` (`80020c14.txt`): after the duration goes negative it sets
+`actor[+0x62] |= 0x100`, then `lh v0,0x1e(a1); bltz v0,0x80020cd4` - a
+negative hold skips the countdown entirely and the tick goes on ramping and
+drawing; a non-negative hold counts down and, on expiry, sets
+`actor[+0x10] |= 8` (finished) and returns `-1` (draw nothing). So `-1` means
+**hold the landed colour until the actor is killed**, which is why the
+escape white-out persists until the battle unloads and the summon flash-in
+persists until `0x34` kills it. Port: `engine-core::fade::FadeState::step`.
 
 ### `summon.dat` / `readef.DAT` side-band streaming
 

@@ -231,6 +231,8 @@ fn battle_special_attack_requests_move_fx_spawn() {
 
         world.take_monster_turn(1);
         assert_eq!(world.actors[1].battle.params[0], 0x20, "picker chose Flame");
+        // The request rides the fold, which is the band's 0x29 exit.
+        tick_until_cast_folds(&mut world);
         // A non-summon move never requests a summon-creature spawn.
         assert!(world.pending_summon_spawn.is_none());
         world.pending_move_fx_spawn
