@@ -1101,6 +1101,15 @@ fn step_toward(v: f32, target: f32, rate: f32) -> f32 {
     }
 }
 
+/// Action-SM state bands the yaw-counter ladder keys on (`ctx[7]`, the
+/// [`crate::battle_action`] state byte): the seed pass, the Attack band's
+/// bounds, the strike loop, and the Done band that closes every category.
+const ACTION_SEED_STATE: u8 = 0x0C;
+const ATTACK_BAND_FIRST: u8 = 0x14;
+const ATTACK_BAND_LAST: u8 = 0x20;
+const STRIKE_LOOP_STATE: u8 = 0x1E;
+const ACTION_DONE_STATE: u8 = 0x50;
+
 /// The phase-scripted battle camera state. Created on battle entry, stepped
 /// once per 2 retail display frames (`World::field_frames`), dropped on exit.
 #[derive(Debug)]
@@ -1393,8 +1402,14 @@ impl BattleCamera {
     /// doc:
     ///
     /// - `0x00` (round begin, `0x801E2B40`): `0`.
-    /// - `0x0C` (action seed, `0x801E2CF8`): `0x800`.
-    /// - `0x14` (Attack chain entry, `0x801E2F20`): `0x200`.
+    /// - The `0x0C` seed pass: `0x800` for every category (`0x801E2CF8`),
+    ///   and the Attack branch stores `0x200` **in the same pass** as it
+    ///   sets `ctx[7] = 0x14` (`0x801E2F18..0x801E2F20`). So the edge is
+    ///   "an action band was entered from the setup / done bands", not "the
+    ///   SM sat in `0x0C`" - a host's SM may run the seed pass and the band
+    ///   entry inside one tick (the engine's does: `0x0A -> 0x14` for a party
+    ///   attack, `0x00 -> 0x15` for a monster's), and the camera only sees
+    ///   the state at the tick boundary.
     /// - `0x1E` with a party attacker: `(rand() % 2) * 0x800 + 0x280` and
     ///   `ctx[+0xD] = 0`, which is `FUN_8004E13C`'s seed at the first
     ///   swing-clip commit (`0x8004E288..0x8004E2B4`, gated on the clip
@@ -1406,25 +1421,38 @@ impl BattleCamera {
     ///
     /// A monster's attack therefore frames from the `0x200` base and a party
     /// attack from `0x280` / `0xA80`, both drifting at the SM's rate
-    /// ([`Self::advance_to`]). Other categories keep the seed's `0x800`.
-    /// The coin comes from the same PsyQ `rand()` stream as the attack
-    /// camera's column flip; retail draws both from the process-wide
-    /// generator, so no particular sequence is being reproduced.
+    /// ([`Self::advance_to`]). Other categories keep the seed's `0x800`; an
+    /// attack-band entry from another action band (no seed pass between)
+    /// stores nothing, as retail's does not. The coin comes from the same
+    /// PsyQ `rand()` stream as the attack camera's column flip; retail draws
+    /// both from the process-wide generator, so no particular sequence is
+    /// being reproduced.
     pub fn observe_action_state(&mut self, state: u8) {
-        if state == self.last_action_state {
+        let prev = self.last_action_state;
+        if state == prev {
             return;
         }
         self.last_action_state = state;
-        match state {
-            0x00 => self.action_yaw = 0,
-            0x0C => self.action_yaw = 0x800,
-            0x14 => self.action_yaw = 0x200,
-            0x1E if self.action.party_slot => {
-                let coin = crate::battle_formulas::psyq_rand_step(&mut self.attack.seed) & 1;
-                self.action_yaw = i32::from(coin) * 0x800 + 0x280;
-                self.action.style = 0;
-            }
-            _ => {}
+        if state == 0x00 {
+            self.action_yaw = 0;
+            return;
+        }
+        // The seed pass `0x0C` opens every category's band; `0x50` (Done)
+        // closes them. The Attack band is `0x14..=0x20`.
+        let in_action = |s: u8| (ACTION_SEED_STATE..ACTION_DONE_STATE).contains(&s);
+        let in_attack = |s: u8| (ATTACK_BAND_FIRST..=ATTACK_BAND_LAST).contains(&s);
+        // Came through the seed pass: from outside the action bands, or from
+        // the seed states themselves (`0x0C..0x14`).
+        let via_seed = !in_action(prev) || prev < ATTACK_BAND_FIRST;
+        if in_attack(state) && via_seed {
+            self.action_yaw = 0x200;
+        } else if in_action(state) && !in_action(prev) {
+            self.action_yaw = 0x800;
+        }
+        if state == STRIKE_LOOP_STATE && self.action.party_slot {
+            let coin = crate::battle_formulas::psyq_rand_step(&mut self.attack.seed) & 1;
+            self.action_yaw = i32::from(coin) * 0x800 + 0x280;
+            self.action.style = 0;
         }
     }
 
@@ -2883,6 +2911,69 @@ mod tests {
         // Round begin zeroes it again.
         feed(&mut monster, 0x00, false);
         assert_eq!(monster.as_ref().unwrap().action_yaw_base(), 2);
+    }
+
+    /// The seed pass and the band entry can land inside one host tick, so
+    /// the observer keys on **band entry**: a monster attack seen as
+    /// `0x00 -> 0x15` and a party attack seen as `0x5A -> 0x0A -> 0x14` both
+    /// land on the `0x200` base (the `0x801E2F20` store is in the `0x0C`
+    /// pass), a spell band entered the same way keeps `0x800`, and an
+    /// attack-band entry from another action band - no seed pass between -
+    /// stores nothing.
+    #[test]
+    fn the_yaw_counter_seeds_on_band_entry_when_states_are_skipped() {
+        let mut frames = 0u64;
+        let mut feed = |slot: &mut Option<BattleCamera>, state: u8, party: bool| {
+            frames += 2;
+            drive(
+                slot,
+                true,
+                BattleCamInputs {
+                    phase: phase_for_state(false, false, state),
+                    acting: Some(BattleCamActor::default()),
+                    action: ActionFraming {
+                        party_slot: party,
+                        ..Default::default()
+                    },
+                    action_state: state,
+                    ..Default::default()
+                },
+                frames,
+                None,
+            );
+        };
+        // Monster: the engine's SM runs `0x0A -> 0x0C -> 0x14` inside the
+        // tick, and the camera first sees the walk state.
+        let mut monster: Option<BattleCamera> = None;
+        feed(&mut monster, 0x00, false);
+        feed(&mut monster, 0x15, false);
+        assert_eq!(monster.as_ref().unwrap().action_yaw_base(), 0x202);
+        feed(&mut monster, 0x1E, false);
+        assert_eq!(
+            monster.as_ref().unwrap().action_yaw_base(),
+            0x204,
+            "monster: no coin"
+        );
+        // Party, overworld shape: `0x5A -> 0x0A -> 0x14`.
+        let mut party: Option<BattleCamera> = None;
+        feed(&mut party, 0x5A, true);
+        feed(&mut party, 0x0A, true);
+        assert_eq!(
+            party.as_ref().unwrap().action_yaw_base(),
+            // (the creating feed elapses nothing; the second adds 2)
+            2,
+            "setup band: untouched"
+        );
+        feed(&mut party, 0x14, true);
+        assert_eq!(party.as_ref().unwrap().action_yaw_base(), 0x202);
+        // A spell band entered from the setup band keeps the seed's 0x800.
+        let mut caster: Option<BattleCamera> = None;
+        feed(&mut caster, 0x0A, true);
+        feed(&mut caster, 0x28, true);
+        assert_eq!(caster.as_ref().unwrap().action_yaw_base(), 0x802);
+        // ... and crossing into the attack band from there is not a seed.
+        feed(&mut caster, 0x14, true);
+        assert_eq!(caster.as_ref().unwrap().action_yaw_base(), 0x804);
     }
 
     /// The battle-over arm frames from behind the actor at a constant depth,
