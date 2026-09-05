@@ -44,6 +44,9 @@ fn battle_awaiting_command() -> World {
         w.actors.push(Actor::default());
     }
     w.party_count = 3;
+    // The zeroed records seed HP 0 / no seat, so they go in FIRST: retail's
+    // member walk (`FUN_801DB81C`) hands no ring to a member with no HP.
+    w.load_party(legaia_save::Party::zeroed(3));
     for i in 0..3 {
         w.actors[i].active = true;
         w.actors[i].battle.hp = 30_000;
@@ -51,7 +54,6 @@ fn battle_awaiting_command() -> World {
         w.actors[i].battle.liveness = 1;
         w.set_battle_attack(i as u8, 120);
     }
-    w.load_party(legaia_save::Party::zeroed(3));
     w.set_formation_table(vanilla_formation_table(), vanilla_monster_catalog());
 
     w.player_actor_slot = Some(0);
@@ -316,17 +318,25 @@ fn damage_lands_exactly_once_per_queued_swing() {
 
     let hp_before = w.actors[target].battle.hp;
     let mut hits: Vec<u16> = Vec::new();
-    // Run the action out. Stop the moment the loop parks for the *next* party
-    // command, so only this Attack's hits are counted.
+    // Run this member's turn out. The execution band dispatches every
+    // committed command before the next prompt (retail `0xFE`), so the other
+    // members' swings land on the same target afterwards: count only while
+    // this member is the acting actor, and read the target's HP the moment
+    // the turn passes on.
+    let mut acted = false;
+    let mut hp_after = w.actors[target].battle.hp;
     for _ in 0..8000 {
         w.set_pad(0);
         w.tick();
+        let acting = w.battle_ctx.active_actor as usize == slot;
         for fx in w.drain_battle_hit_fx() {
-            if fx.target_slot as usize == target && !fx.is_heal {
+            if acting && fx.target_slot as usize == target && !fx.is_heal {
                 hits.push(fx.amount);
             }
         }
-        if w.battle_command.is_some() {
+        acted |= acting;
+        hp_after = w.actors[target].battle.hp;
+        if (acted && !acting) || w.battle_command.is_some() {
             break;
         }
     }
@@ -341,10 +351,10 @@ fn damage_lands_exactly_once_per_queued_swing() {
     assert!(hits.iter().all(|&d| d > 0), "each swing connects: {hits:?}");
     let total: u32 = hits.iter().map(|&d| d as u32).sum();
     assert_eq!(
-        u32::from(hp_before) - u32::from(w.actors[target].battle.hp),
+        u32::from(hp_before) - u32::from(hp_after),
         total,
-        "HP loss must equal the sum of the reported swings - a second \
-         application path would show up as an unreported extra"
+        "HP loss over this member's turn must equal the sum of the reported \
+         swings - a second application path would show up as an unreported extra"
     );
 }
 

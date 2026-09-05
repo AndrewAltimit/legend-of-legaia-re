@@ -48,6 +48,9 @@ fn build_world() -> World {
         w.actors.push(Actor::default());
     }
     w.party_count = 3;
+    // The zeroed records seed HP 0 / no seat, so they go in FIRST: retail's
+    // member walk (`FUN_801DB81C`) hands no ring to a member with no HP.
+    w.load_party(legaia_save::Party::zeroed(3));
     for i in 0..3 {
         w.actors[i].active = true;
         w.actors[i].battle.hp = 100;
@@ -55,7 +58,6 @@ fn build_world() -> World {
         w.actors[i].battle.liveness = 1;
         w.set_battle_attack(i as u8, 90);
     }
-    w.load_party(legaia_save::Party::zeroed(3));
     w.set_formation_table(vanilla_formation_table(), vanilla_monster_catalog());
 
     // Vahn's Tri-Somersault = Somersault (Art27) -> Cyclone (Art1F) ->

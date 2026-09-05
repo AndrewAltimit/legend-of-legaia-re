@@ -34,6 +34,9 @@ fn build_world() -> World {
         w.actors.push(Actor::default());
     }
     w.party_count = 3;
+    // The zeroed records seed HP 0 / no seat, so they go in FIRST: retail's
+    // member walk (`FUN_801DB81C`) hands no ring to a member with no HP.
+    w.load_party(legaia_save::Party::zeroed(3));
     for i in 0..3 {
         w.actors[i].active = true;
         w.actors[i].battle.hp = 100;
@@ -41,7 +44,6 @@ fn build_world() -> World {
         w.actors[i].battle.liveness = 1;
         w.set_battle_attack(i as u8, 60);
     }
-    w.load_party(legaia_save::Party::zeroed(3));
     w.set_formation_table(vanilla_formation_table(), vanilla_monster_catalog());
 
     w.player_actor_slot = Some(0);
@@ -139,30 +141,46 @@ fn item_use_runs_the_sm_item_band_to_the_cast_states() {
 
     // Inventory submenu: Cross on the Healing Leaf row -> target select;
     // Cross on the first target row (slot 0) -> the use commits.
+    let user = w.battle_ctx.active_actor as usize;
     press(&mut w, PadButton::Cross, &mut trace);
     press(&mut w, PadButton::Cross, &mut trace);
 
-    // The commit must ARM the SM, not park it: category 1 with the item id
-    // staged as the action parameter.
+    // The commit stamps retail's `+0x1DE = 1` on the member and consumes the
+    // copy (the item window's own write); the effect and the band wait for
+    // the member's dispatch, after the last member commits
+    // (`0x6E -> 0xFE`).
     assert_eq!(
-        w.actors[w.battle_ctx.active_actor as usize]
-            .battle
-            .action_category,
+        w.actors[user].battle.action_category,
         ActionCategory::Item.as_byte(),
-        "the committed item use arms a category-1 action"
+        "the commit stamps the category-1 action on the member"
     );
-    assert_eq!(
-        w.actors[w.battle_ctx.active_actor as usize].battle.params[0], 0x77,
-        "the staged action parameter is the item id"
-    );
-
-    // Simulation effects landed at commit (the fold precedes the band).
-    assert_eq!(w.actors[0].battle.hp, 100, "Healing Leaf healed the target");
     assert_eq!(
         w.inventory.get(&0x77).copied(),
         Some(1),
-        "exactly one copy consumed"
+        "exactly one copy consumed at the commit"
     );
+    assert_eq!(w.actors[0].battle.hp, 40, "the heal waits for the dispatch");
+    // The other two members Spirit (the ring's down arm) so the round
+    // begins; with flat turn tokens slot 0 dispatches first.
+    for _ in 0..2 {
+        assert!(
+            w.battle_command.is_some(),
+            "the ring walks on to the next member"
+        );
+        press(&mut w, PadButton::Down, &mut trace);
+    }
+    assert!(
+        w.battle_command.is_none(),
+        "the last commit begins the round"
+    );
+
+    // The dispatch ARMS the SM, not parks it: the item id staged as the
+    // action parameter, and the simulation fold ahead of the band.
+    assert_eq!(
+        w.actors[user].battle.params[0], 0x77,
+        "the staged action parameter is the item id"
+    );
+    assert_eq!(w.actors[0].battle.hp, 100, "Healing Leaf healed the target");
 
     // Let the band run. SpiritPostDamage alone holds 0x80 frames.
     idle_ticks(&mut w, 0x140, &mut trace);

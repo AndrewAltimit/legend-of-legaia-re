@@ -26,6 +26,9 @@ fn build_world() -> World {
         w.actors.push(Actor::default());
     }
     w.party_count = 3;
+    // The zeroed records seed HP 0 / no seat, so they go in FIRST: retail's
+    // member walk (`FUN_801DB81C`) hands no ring to a member with no HP.
+    w.load_party(legaia_save::Party::zeroed(3));
     for i in 0..3 {
         w.actors[i].active = true;
         w.actors[i].battle.hp = 100;
@@ -33,7 +36,6 @@ fn build_world() -> World {
         w.actors[i].battle.liveness = 1;
         w.set_battle_attack(i as u8, 60);
     }
-    w.load_party(legaia_save::Party::zeroed(3));
     w.set_formation_table(vanilla_formation_table(), vanilla_monster_catalog());
 
     w.player_actor_slot = Some(0);
@@ -176,8 +178,21 @@ fn seru_cast_accrues_xp_and_crosses_its_level_threshold() {
             "the Magic arm should open the spell submenu (cast {casts})"
         );
         press(&mut w, PadButton::Cross); // spell row 0 (Gimard) -> target
-        press(&mut w, PadButton::Cross); // target confirm -> the band is armed
+        press(&mut w, PadButton::Cross); // target confirm -> the commit
         casts += 1;
+        // The cast lands at the caster's dispatch, after the last member
+        // commits (retail `0x6E -> 0xFE`): the other members Spirit so the
+        // round begins, and with flat turn tokens slot 0 dispatches first.
+        for _ in 0..3 {
+            if w.battle_command.is_none() {
+                break;
+            }
+            press(&mut w, PadButton::Down); // ring: Spirit arm
+        }
+        assert!(
+            w.battle_command.is_none(),
+            "the last commit begins the round (cast {casts})"
+        );
         // The outcome (and its XP) folds at the stager's strike, inside the
         // summon band - run the band out before reading the record.
         for _ in 0..0x400 {

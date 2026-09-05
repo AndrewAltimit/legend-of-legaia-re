@@ -52,6 +52,31 @@ fn tap(world: &mut World, button: PadButton) {
     world.tick();
 }
 
+/// Walk every member still owing this round a command to a plain Attack
+/// commit - the ring's `Attack` arm (Left from the seated arm), `Auto`, the
+/// target cursor's confirm - until no session is open, which is the round
+/// beginning (`0x6E -> 0xFE`). Nothing the earlier members committed lands
+/// before that.
+fn commit_attacks_for_rest_of_round(world: &mut World) {
+    use legaia_engine_core::battle_input::{BattleCommand, CommandPhase};
+    for _ in 0..64 {
+        let Some(session) = world.battle_command.as_ref() else {
+            break;
+        };
+        let button = match session.phase {
+            CommandPhase::Menu { .. } if session.menu_command() != Some(BattleCommand::Attack) => {
+                PadButton::Left
+            }
+            _ => PadButton::Cross,
+        };
+        tap(world, button);
+    }
+    assert!(
+        world.battle_command.is_none(),
+        "the round never began - a member is still on a command surface"
+    );
+}
+
 /// Tick with a neutral pad until `f` holds. Returns whether it did.
 fn settle_until(world: &mut World, ticks: usize, f: impl Fn(&World) -> bool) -> bool {
     for _ in 0..ticks {
@@ -300,6 +325,15 @@ fn a_battle_item_heal_keeps_the_readout_and_the_turn_pump_alive() {
         }
         tap(&mut world, PadButton::Cross);
     }
+    // The copy went at the commit; the heal lands when the member dispatches,
+    // which is after the last member commits (retail: nothing acts before
+    // `0x6E -> 0xFE`). Commit a plain Attack for the two members still owing
+    // a command, and the round begins - slot 0's item is the first dispatch.
+    assert_eq!(
+        world.actors[0].battle.hp, 20000,
+        "the heal waits for the member's dispatch"
+    );
+    commit_attacks_for_rest_of_round(&mut world);
 
     let healed = world.actors[0].battle.hp;
     assert!(healed > 20000, "the item healed nothing (hp {healed})");
