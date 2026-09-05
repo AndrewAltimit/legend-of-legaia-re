@@ -50,6 +50,7 @@ use magic::*;
 
 mod summon;
 use summon::*;
+pub use summon::{SUMMON_FADE_ID, SUMMON_FLASH_IN, SUMMON_FLASH_OUT, SummonFadeTemplate};
 
 mod spirit;
 use spirit::*;

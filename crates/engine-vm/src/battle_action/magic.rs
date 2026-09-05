@@ -141,9 +141,16 @@ pub(super) fn magic_cast_begin<H: BattleActionHost + ?Sized>(
     // Stage frame timer for pre-cast wait.
     ctx.frame_timer = 0x14;
 
-    // For party, fire spell-name HUD label.
+    // The spell-name HUD label (`FUN_801D8DE8(0x4C, 0)`) is **monster-only**:
+    // `lbu v0,0x2(s5); sltiu v0,v0,0x3; bne v0,zero,0x801e4460` at
+    // `0x801E43D0..0x801E43DC` branches PAST the name lookup + the element
+    // fire for an acting id `< 3` (a party seat). A party cast raises no
+    // `0x4C` label anywhere - the retail mid-cast states carry an empty
+    // descriptor (`0x80077344 == 0`) for every player summon and a live
+    // string pointer only for the monster Tail Fire cast. The earlier port
+    // had the branch sense inverted.
     let party_count = host.party_count();
-    if slot < party_count {
+    if slot >= party_count {
         host.ui_element(0x4C, 0);
     }
 

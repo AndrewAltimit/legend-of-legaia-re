@@ -174,6 +174,22 @@ pub trait BattleActionHost {
     /// animation. Default no-op.
     fn spell_anim_sustain(&mut self, _actor_id: u8, _anim_id: u8) {}
 
+    /// Equivalent of `FUN_80024E80(template, id)` - stage a full-screen fade
+    /// actor from a [`SummonFadeTemplate`]. The summon band spawns two: the
+    /// flash-in at `0x33` and the flash-out at `0x34`. Default no-op.
+    fn spawn_screen_fade(&mut self, _template: &SummonFadeTemplate, _id: i16) {}
+
+    /// Equivalent of `FUN_801F1ED4()` - one tick of the player-summon
+    /// stager keyed on the acting actor's spell id. Called once at `0x34`
+    /// (phase start), every frame through `0x35`, and every frame at `0x36`,
+    /// where the SM **holds while this returns `true`** (still busy:
+    /// `bne v0,zero,<exit>` at `0x801E4CB0`). The stager itself is overlay
+    /// code; a host answers with its own summon choreography. Default:
+    /// never busy, so a host with no choreography passes straight through.
+    fn summon_stager_tick(&mut self) -> bool {
+        false
+    }
+
     /// Equivalent of `func_0x800402F4(class, tier, target_slot, party_index)` -
     /// the item / restore **applier**, retail's damage-and-effect primitive.
     ///
