@@ -209,6 +209,12 @@ fn player_file_records_carry_only_routed_selectors() {
             .iter()
             .map(|r| (r.index, r.anim_id, r.impact_class))
             .collect();
+        for r in arts.iter().filter(|r| r.impact_class != 0) {
+            eprintln!(
+                "[census] {name}: art record {} anim {:#x} class {} combo {:?} name {:?}",
+                r.index, r.anim_id, r.impact_class, r.combo, r.name
+            );
+        }
         for &(_, _, _, c) in &basic {
             *seen.entry(c).or_default() += 1;
         }

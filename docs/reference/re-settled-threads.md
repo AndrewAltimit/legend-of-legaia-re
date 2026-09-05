@@ -153,7 +153,12 @@ also in disassembly).
   `+0x0C = 0x1000`, `2` to the capture fade, `5` to a hold. Two consecutive
   captures (`battle_gimard_tail_fire_b` -> `_a`) hold Vahn at `+0x21F = 1`,
   `+0x0C = 0x1000` with the red lane at `0x35F` then `0x31F` - eight frames
-  of the ease.
+  of the ease. The converse pin: `battle_melee_hit_spark` (Vahn's
+  Somersault landing on Gimard) holds Gimard at the neutral word, `+0x0C =
+  0`, `+0x21F = 0` - a selector-0 record tints nothing, and on the disc
+  every player-file **basic** entry and every Somersault-class art is
+  selector `0`; only five Vahn art records (selector `1`) and two Gala
+  records (selector `2`) tint their target.
 - **The pixel.** `FUN_8004A908` packs the lanes into the render node's
   `+0x74` and copies `+0x0C` into `+0x78`; `FUN_80048A08` stages them as far
   colour + `IR0` (`gp[0x9D8]` / `gp[0x9DC]`). The struck Vahn in that
