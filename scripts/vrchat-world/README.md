@@ -336,9 +336,24 @@ no casino coin bank to cash out to).
    medallions, reel-stop pedestals, marquee panel + mascots, the 21
    dot-matrix messages, the paytable board, and `slot-machine.json`
    (payout table + the disc's own geometry tables).
-2. Put a cabinet mesh in the scene (the kit was drafted against a
-   modelled cabinet glb with three button nodes named `Circle.001` /
-   `Circle.002` / `Circle.003`).
+2. Put a cabinet mesh in the scene. The repo ships no cabinet (ours
+   carries disc-derived side art, so it can't) - any model works if it
+   meets the builder's contract, and every part of it has a fallback:
+
+   - a node named `screen` (the **Screen node** field): a flat face
+     looking along the cabinet's **+Z** that the composition snaps to.
+     Without one, clear the field and place the screen by hand via the
+     position/yaw/width fields;
+   - three button nodes (default `Circle.001;Circle.002;Circle.003`,
+     the **Button nodes** field), wired left-to-right as the player
+     sees them. Missing nodes get generated fallback pads;
+   - no cabinet at all also builds - the machine lands at the scene
+     root with fallback pads, ready to be framed by any prop.
+
+   A Blender-baked cabinet often fails glTFast's import with `UVMulti`
+   errors (materials sampling UV set 2/3; web viewers render the same
+   file fine) - run `python fix-glb-uvsets.py in.glb out.glb` on it
+   first, and again after any re-export.
 3. Menu **Legaia > Build Slot Machine...**, point it at the cabinet root
    and the art folder, **Build slot machine**. The whole screen
    composition is parented *directly onto the cabinet's screen face* -
@@ -369,7 +384,11 @@ no casino coin bank to cash out to).
    on) converts the cabinet's imported glTFast PBR materials to the
    kit's lit vertex-color shaders so the prop sits under the same sun
    and ambient as the scene; the screen composition stays unlit - it
-   is a display, it should glow.
+   is a display, it should glow. The HUD uses TextMeshPro (legacy
+   TextMesh is not exposed to Udon): accept Unity's **Import TMP
+   Essentials** prompt when it appears, or the balance/status text
+   renders nothing - then rebuild once so the text components pick up
+   the default font.
 
 Sync model: a player takes ownership of the machine by pressing a button
 **while it is idle**, and holds it through the spin - one seat per

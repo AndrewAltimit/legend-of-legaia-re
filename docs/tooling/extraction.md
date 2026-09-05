@@ -162,6 +162,7 @@ asset tmd-scan       <DIR>                            # bulk byte-search for TMD
 asset tim-scan       <DIR>                            # bulk byte-search for TIM magic (per-entry, lenient)
 asset tim-catalog    <PROT.DAT> [--out f.tsv|f.json]  # flat strict-validated TIM catalog (jPSXdec parity)
 asset tim-deep-catalog <PROT.DAT> [--out f.tsv|f.json] # TIMs inside LZS-compressed sections
+asset slot-art       <0975_*.BIN> <1200_*.BIN> --out <dir>  # casino slot machine art + manifest
 ```
 
 `tim-catalog` scans the whole `PROT.DAT` image (not per-entry), strict-validates
@@ -179,6 +180,18 @@ strict-parse **and** decode to RGBA - LZS "decodes without error" is never a
 validity signal (the ring buffer inits to zeros). It has its own committed
 reference + disc-gated regression. See
 [`formats/tim.md`](../formats/tim.md#deep-catalog-tims-inside-lzs-compressed-sections).
+
+`slot-art` decodes the casino slot machine's art and scene data out of the slot
+overlay (PROT 0975) + its art pack (PROT 1200): the 10 reel symbols and 10
+bonus numerals (each through its own CLUT column), the payline lamps /
+medallions / reel-stop pedestals / marquee billboards, the 21 dot-matrix
+messages, the paytable board and the digit strip - plus `slot-machine.json`,
+the manifest carrying the payout table, the disc's geometry tables and the
+retail projection constants
+([`minigame-slot-machine.md`](../subsystems/minigame-slot-machine.md)). It is
+the feed for the VRChat world kit's cabinet builder
+([`scripts/vrchat-world/`](../../scripts/vrchat-world/README.md)); the output
+is disc-decoded and stays out of any repo, like `extracted/` itself.
 
 ### MES dialog (`mes`)
 
