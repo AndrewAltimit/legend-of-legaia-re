@@ -53,7 +53,7 @@ pub fn resolve_action_queue(
     command_input: &[legaia_art::Command],
     chained_arts: &[legaia_art::ActionConstant],
 ) -> legaia_art::ActionQueue {
-    use legaia_art::{ActionConstant, ActionQueue, MiracleMatcher};
+    use legaia_art::{ActionConstant, ActionQueue};
 
     // Step 1: build the raw byte window. Retail's build loop is bounded by
     // the same 16-byte scan window the appliers use.
@@ -70,24 +70,8 @@ pub fn resolve_action_queue(
         *slot = b;
     }
 
-    // Step 2: Miracle Art replacement. Retail's gate is the per-slot marker
-    // `ctx[+0x25F + slot]`, armed by the input recognizer; the engine's
-    // equivalent is the whole-string match against the character's Miracle
-    // command table.
-    if MiracleMatcher::with_default_table()
-        .find(character, command_input)
-        .is_some()
-    {
-        apply_miracle_replace(&mut bytes, &miracle_row_for(character));
-    }
-
-    // Step 3: the MSB-clear sweep.
-    clear_queue_msb(&mut bytes);
-
-    // Step 4: the Super tail-replace, once, in table order.
-    let (find_rows, replace_rows) = super_rows_for(character);
-    let mut starter_marks = [0u32; ACTION_QUEUE_CAP];
-    apply_super_tail_replace(&mut bytes, &mut starter_marks, &find_rows, &replace_rows);
+    // Steps 2-4: the Miracle / MSB / Super finish on the window.
+    finish_action_queue(character, command_input, &mut bytes);
 
     // Step 5: decode up to the terminator.
     let mut queue = ActionQueue::new();
@@ -104,6 +88,44 @@ pub fn resolve_action_queue(
         queue.push(action);
     }
     queue
+}
+
+/// The **finish** of the retail queue-builder `FUN_801EED1C` on a caller-built
+/// queue window - the three passes that run after the per-command build
+/// loop, in retail order:
+///
+/// 1. the Miracle replacement (`0x801EF4E8..0x801EF524`, [`apply_miracle_replace`]) -
+///    retail's gate is the per-slot marker `ctx[+0x25F + slot]` armed by the
+///    input recognizer; the engine's stand-in is the whole-string match of
+///    `command_input` against the character's Miracle command table;
+/// 2. the MSB-clear sweep (`0x801EF85C..0x801EF898`, [`clear_queue_msb`]);
+/// 3. the Super tail-replace (`jal 0x801EF9E4` at `0x801EF9AC`,
+///    [`apply_super_tail_replace`]), once, first matching row in table order.
+///
+/// `bytes` is the window the build loop produced - for the live arts path
+/// that is [`legaia_art::tokenize`]'s output (the leading arrows kept, the
+/// `0x19` / `0x1A` starter over each matched art's last arrow, the art
+/// constant inserted after it), copied into the 19-byte stream shape.
+/// [`resolve_action_queue`] is the structural caller (arrows + already-chained
+/// art constants); the engine's arts arming is the byte-exact one.
+///
+/// REF: FUN_801EED1C (the builder whose tail this is)
+pub fn finish_action_queue(
+    character: legaia_art::Character,
+    command_input: &[legaia_art::Command],
+    bytes: &mut [u8; ACTION_QUEUE_CAP],
+) {
+    use legaia_art::MiracleMatcher;
+    if MiracleMatcher::with_default_table()
+        .find(character, command_input)
+        .is_some()
+    {
+        apply_miracle_replace(bytes, &miracle_row_for(character));
+    }
+    clear_queue_msb(bytes);
+    let (find_rows, replace_rows) = super_rows_for(character);
+    let mut starter_marks = [0u32; ACTION_QUEUE_CAP];
+    apply_super_tail_replace(bytes, &mut starter_marks, &find_rows, &replace_rows);
 }
 
 /// Dispatch one frame of the battle action state machine.

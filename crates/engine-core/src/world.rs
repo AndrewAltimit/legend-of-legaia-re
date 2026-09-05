@@ -26,7 +26,7 @@
 
 use std::sync::Arc;
 
-use crate::battle_events::{BattleEvent, BattleHitFx, BattleSfxCue};
+use crate::battle_events::{BattleEvent, BattleHitEvent, BattleHitFx, BattleSfxCue};
 use crate::field_events::FieldEvent;
 use crate::input;
 use crate::levelup::{LevelUpBanner, LevelUpResult, LevelUpTracker};

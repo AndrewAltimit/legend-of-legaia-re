@@ -761,16 +761,24 @@ fn staged_art_ids_select_bank_record_q_minus_0x10() {
 }
 
 #[test]
-fn staged_ids_0x10_and_0x1a_install_at_slot_0x11_others_at_0x10() {
-    // The FUN_8004AD80 rewrite: q == 0x10 / 0x1A -> dynamic slot B
-    // (0x11); every other art id -> dynamic slot A (0x10).
+fn staged_ids_0x10_0x1a_and_art_constants_install_at_slot_0x11_base_ids_at_0x10() {
+    // The FUN_8004AD80 rewrite, read off the slot register: `0x10`, the
+    // `0x1A` SpecialStarter and every art constant `>= 0x1B` -> dynamic slot
+    // B (0x11, the delay-slot `li s2,0x11` stores at 0x8004B76C / 0x8004BB58
+    // / 0x8004BBC0); the plain base ids `0x11..=0x19` (the `0x19` regular
+    // starter among them) keep the delay-slot default -> slot A (0x10). A
+    // live Tri-Somersault capture agrees: 0x27 / 0x1F / 0x2B at 0x11, 0x19
+    // at 0x10.
     let slot_of = |q: u8| match resolve_staged_anim(q) {
         StagedAnimTarget::ArtBank { slot, .. } => slot,
         other => panic!("id {q:#x} resolved to {other:?}"),
     };
     assert_eq!(slot_of(0x10), DYNAMIC_ART_SLOT_B);
     assert_eq!(slot_of(0x1A), DYNAMIC_ART_SLOT_B);
-    for q in [0x11u8, 0x12, 0x19, 0x1B, 0x1C, 0x2F, 0x3F] {
-        assert_eq!(slot_of(q), DYNAMIC_ART_SLOT_A, "id {q:#x}");
+    for q in [0x1Bu8, 0x1C, 0x1F, 0x27, 0x2B, 0x2F, 0x3F] {
+        assert_eq!(slot_of(q), DYNAMIC_ART_SLOT_B, "art constant {q:#x}");
+    }
+    for q in [0x11u8, 0x12, 0x18, 0x19] {
+        assert_eq!(slot_of(q), DYNAMIC_ART_SLOT_A, "base id {q:#x}");
     }
 }

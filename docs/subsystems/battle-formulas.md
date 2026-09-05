@@ -401,12 +401,13 @@ The stages, each cited to `overlay_battle_action_801ec3e4.txt` /
 the attack roll down (the party-defender elemental-guard ladder at
 `0x801ED844` is [`damage_finish`](#engine-side-mirror---engine-vmbattle_formulas)'s
 resist stage and stays there), and `battle_formulas::arms_weapon_atk_fold`
-ports the equipment fold. `World::apply_basic_attack` runs every physical
-swing - party and monster - through both: the attacker's `battle_attack` is the
-un-equipped base (`seed_party_battle_stats` subtracts the equipment sum the
-menu aggregator adds) and `apply_one_basic_strike` adds the halved slot for the
-command it executes from `World::battle_equip_atk`; the state-machine art path
-(`apply_art_strike`) adds the `0x11` all-slots arm. RNG draws follow retail
+ports the equipment fold. `World::land_melee_hit` runs every physical
+hit - party and monster, swing and art - through both, once per hit event the
+anim tick admits: the attacker's `battle_attack` is the un-equipped base
+(`seed_party_battle_stats` subtracts the equipment sum the menu aggregator
+adds) and the fold adds the halved slot for the committed command from
+`World::battle_equip_atk` (a committed art clip, `+0x1D9 > 0x10`, takes the
+`0x11` all-slots arm). RNG draws follow retail
 call order: attack roll, guard roll, then the rewrite draw and the chip-floor
 draw only when those arms fire. The finisher's *post* stages (equipment
 resists, the zeroed-hit floor, the cap) run on top by default - retail's

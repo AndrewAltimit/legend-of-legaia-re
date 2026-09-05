@@ -872,10 +872,15 @@ at `bank + 4` - `FUN_8004AD80`'s install arithmetic
 name read at `−0xCF0` (= record `+0x10`), stream-source byte at `−0xCF6`
 (= record `+0x0A`); `FUN_80052FA0`'s attach scan reads the keys at
 `bank + 4 + k*0xD0 + 0x9B` (decomps `8004ad80.txt` / `80052fa0.txt`). A
-staged anim id `q >= 0x10` selects record `q − 0x10`; ids `0x10` and
-`0x1A` install at slot `0x11`, every other id at `0x10`; ids `> 0x1A`
+staged anim id `q >= 0x10` selects record `q − 0x10`; ids `0x10`, `0x1A` and
+every art constant `>= 0x1B` install at slot `0x11`, the plain base ids
+`0x11..=0x19` at `0x10` (the slot register's delay-slot stores:
+`_li s2,0x10` at `0x8004B720` as the default, `0x11` at `0x8004B76C` /
+`0x8004BB58` / `0x8004BBC0`); ids `> 0x1A`
 drive the HUD art-name display from `+0x10` and
-`FUN_8004C650(char, id − 0x1B)`. Retail banks: Vahn 33 / Noa 35 / Gala 32 /
+`FUN_8004C650(char, id − 0x1B)`. The entry's `+0x10..+0x13` list is the
+clip's hit events and `+0x00..+0x03` the power byte each one resolves
+with ([monster-animation.md](monster-animation.md#event-frame-list-entry-0x100x13)). Retail banks: Vahn 33 / Noa 35 / Gala 32 /
 Terra 9 records; the named band (records 11+) carries the Hyper/Miracle
 Art names (`Vahn Rondo`, `Fiery Miyawaki`, `Mirage Lancer`, …).
 

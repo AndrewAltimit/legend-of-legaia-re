@@ -487,9 +487,16 @@ impl World {
         let target = self.first_living_opponent_of(slot).unwrap_or(slot);
         self.battle_ctx.queued_action = 3;
         self.battle_ctx.action_state = ActionState::Begin.as_byte();
+        let picks = std::mem::take(&mut self.monster_strike_entries);
         if let Some(a) = self.actors.get_mut(slot as usize) {
             a.battle.active_target = target;
             a.battle.action_category = 3;
+            // The picked attack entries into the stream (retail: the AI
+            // picker's physical branch writes its picks to `+0x1DF..`), the
+            // `0x00` terminator kept inside the window.
+            let n = picks.len().min(a.battle.params.len().saturating_sub(1));
+            a.battle.params[..n].copy_from_slice(&picks[..n]);
+            a.battle.params[n] = 0;
         }
         self.maybe_confuse_retarget(slot);
     }
@@ -510,13 +517,14 @@ impl World {
     ///
     /// PORT: FUN_801E9FD4
     pub(in crate::world) fn arm_monster_strike_budget(&mut self, slot: u8) {
-        let (catalog_agl, costs) = self
+        let (catalog_agl, costs, entries) = self
             .actors
             .get(slot as usize)
             .and_then(|a| a.battle_monster_id)
             .and_then(|id| self.monster_catalog.get(id))
-            .map(|d| (d.agl, d.action_costs.clone()))
-            .unwrap_or((0, Vec::new()));
+            .map(|d| (d.agl, d.action_costs.clone(), d.action_entries.clone()))
+            .unwrap_or((0, Vec::new(), Vec::new()));
+        self.monster_strike_entries.clear();
         // The gauge retail spends is the actor's **live** `+0x154`, which the
         // round boundary (`BattleRound::boundary`, the port of `FUN_801D88CC`)
         // restores from `+0x156` once per round. A slot whose base `+0x156` was
@@ -549,6 +557,16 @@ impl World {
                     a.battle.agl = a.battle.agl.saturating_sub(spent);
                 }
             }
+            // The picks themselves, as archive entry indices: retail's
+            // picker writes them into the monster's action stream, and the
+            // attack band stages each one as its own clip (the hit events
+            // of that entry are the swing's damage). Without the aligned
+            // entry list (the synthetic catalog) the stream stays empty and
+            // the budget count drives immediate swings instead.
+            self.monster_strike_entries = stream
+                .iter()
+                .filter_map(|&pick| entries.get(pick as usize).copied())
+                .collect();
             (stream.len() as u8).max(1)
         } else {
             1

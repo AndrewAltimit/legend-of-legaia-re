@@ -443,6 +443,13 @@ pub struct World {
     ///
     /// REF: FUN_801E9FD4
     pub monster_strike_budget: u8,
+    /// The AGL-budget picks of the monster whose physical strike is being
+    /// armed, as archive **entry indices** (the anim ids the attack band
+    /// stages) - filled by [`World::arm_monster_strike_budget`] alongside
+    /// [`Self::monster_strike_budget`] and moved into the monster's action
+    /// stream by its arming. Empty when the catalog carries no aligned
+    /// entry list.
+    pub monster_strike_entries: Vec<u8>,
 
     /// "Previous action cleared" gate - toggled by the engine when an
     /// animation transition completes.
@@ -660,6 +667,14 @@ pub struct World {
     /// drive the floating-number / status overlay. Drained by the host via
     /// [`World::drain_battle_hit_fx`]; cleared on battle exit.
     pub battle_hit_fx: Vec<BattleHitFx>,
+
+    /// The hit events the attack band resolved this frame - one
+    /// [`BattleHitEvent`] per `FUN_801EC3E4` resolution (index, power byte,
+    /// damage, running combo total, whether the total landed on HP). The
+    /// impact-FX and HIT / TOTAL counter layers consume it; cosmetic, like
+    /// [`Self::battle_hit_fx`]. Drained via
+    /// [`World::drain_battle_hit_events`]; cleared on battle exit.
+    pub battle_hit_events: Vec<BattleHitEvent>,
 
     /// Per-strike battle sound cues surfaced this frame for the host to play
     /// through its SFX bank (the art-record `HitCue` sound cues that
@@ -2816,6 +2831,7 @@ impl World {
             battle_accuracy: [0; 8],
             battle_evasion: [0; 8],
             monster_strike_budget: 1,
+            monster_strike_entries: Vec::new(),
             prev_action_cleared: true,
             sound_bank_ready: true,
             party_count: 3,
@@ -2840,6 +2856,7 @@ impl World {
             pending_actor_spawns: Vec::new(),
             pending_battle_events: Vec::new(),
             battle_hit_fx: Vec::new(),
+            battle_hit_events: Vec::new(),
             battle_sfx_cues: Vec::new(),
             battle_xa_cues: Vec::new(),
             battle_xa_busy_frames: 0,

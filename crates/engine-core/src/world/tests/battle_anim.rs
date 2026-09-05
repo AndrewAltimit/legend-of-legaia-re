@@ -386,7 +386,7 @@ fn staged_swing_finish_clears_gate_and_resumes_idle() {
 
 #[test]
 fn attack_chain_paces_strikes_by_staged_clip_completion() {
-    use vm::battle_action::{ActionState, StepOutcome};
+    use vm::battle_action::{ActionState, ActorFlags, StepOutcome};
     // Full SM-driven check: a two-swing strike script holds in AttackChain
     // while each staged swing plays, reads the next byte only after the
     // clip-end signal, and exits to recovery on the terminator.
@@ -410,26 +410,51 @@ fn attack_chain_paces_strikes_by_staged_clip_completion() {
     assert_eq!(world.step_battle(), StepOutcome::Stay);
     assert_eq!(world.actors[0].battle.strike_index, 1, "no byte read");
 
-    // Finish the swing: the gate opens, the next step reads 0x0D.
+    // Finish the swing: the gate opens. The next step stages 0x0D and, with
+    // the terminator at the new cursor, leaves the loop on the SAME step
+    // (`0x801E3998..0x801E39AC` -> `0x1F`): the last clip is still owed, so
+    // recovery is entered with the latch set.
     world.actors[0].battle_animation.as_mut().unwrap().step = 4096;
     world.tick_battle_animations();
     world.tick_battle_animations();
     assert!(world.actors[0].battle_staged_anim.is_none());
-    assert_eq!(world.step_battle(), StepOutcome::Stay);
+    let out = world.step_battle();
+    assert!(
+        matches!(out, StepOutcome::Transition { to, .. }
+            if to == ActionState::AttackRecovery.as_byte()),
+        "last byte staged + terminator -> recovery, got {out:?}"
+    );
+    assert_eq!(
+        world.actors[0].battle.strike_index, 2,
+        "cursor on the terminator"
+    );
+    assert!(
+        world.actors[0]
+            .battle
+            .flag_bits
+            .has(ActorFlags::ADVANCE_DONE)
+    );
     world.tick_battle_animations();
     assert_eq!(world.actors[0].battle_staged_anim, Some(0x0D));
-    assert_eq!(world.actors[0].battle.strike_index, 2);
 
-    // Finish the second swing; the terminator exits the band.
+    // Recovery holds while the last clip plays (`0x801E3AEC..0x801E3AF8`).
+    assert_eq!(world.step_battle(), StepOutcome::Stay);
+    // Its natural end releases the latch; the next step stages idle over it
+    // and parks the cursor at 0xFF on the way out (`0x801E3B04..0x801E3B1C`).
     world.actors[0].battle_animation.as_mut().unwrap().step = 4096;
     world.tick_battle_animations();
     world.tick_battle_animations();
     let out = world.step_battle();
     assert!(
         matches!(out, StepOutcome::Transition { to, .. }
-            if to == ActionState::AttackRecovery.as_byte()),
-        "terminator -> recovery, got {out:?}"
+            if to == ActionState::AttackReturn.as_byte()),
+        "recovery -> return once the last clip is done, got {out:?}"
     );
+    assert_eq!(
+        world.actors[0].battle.strike_index,
+        vm::battle_action::STRIKE_CURSOR_PARKED
+    );
+    assert_eq!(world.actors[0].battle.queued_anim, 0, "idle staged");
 }
 
 // --- effect-script walk (FUN_801DEA50 via the animation tick) ---------------
@@ -490,8 +515,16 @@ fn committed_clip_effect_script_queues_a_positioned_spawn() {
     assert!(world.drain_battle_effect_spawns().is_empty());
 
     // A new commit resets the walk (retail FUN_8004AD80 `sb zero,0x1f5`).
+    // Idle staged over the still-playing swing waits for a clip boundary
+    // (retail commits only from the tick's natural-end / event paths); the
+    // boundary commit itself is what zeroes the cursor.
     world.actors[0].battle.queued_anim = 0;
     world.commit_staged_battle_anim(0);
+    assert_eq!(
+        world.actors[0].battle_effect_cursor, 1,
+        "no boundary yet - the swing is still in flight"
+    );
+    world.commit_staged_battle_anim_at_boundary(0);
     assert_eq!(world.actors[0].battle_effect_cursor, 0);
 }
 

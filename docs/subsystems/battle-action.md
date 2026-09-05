@@ -2468,13 +2468,15 @@ art constant `art_id + 0x1B` is *inserted* after it, shifting the tail right by
 one. Every direction before it stays in the stream and still executes as its own
 swing.
 
-**This falsifies the port's arts damage model.** `engine-core`'s
-`arts_command_input::resolve_entered_commands` has a matched art *consume* its
-directions, contributing only the record's power bytes for the whole matched
-run. Retail charges the leading directions as plain swings **and** the art. A
-three-direction art is two swings plus an art in retail, one art in the port.
-The port's shape is the one the balance is currently tuned against, so this is
-recorded as a measured divergence rather than silently changed.
+The port builds the same stream. `World::build_arts_action_queue`
+(`engine-core`, `world/battle/command_flow.rs`) runs the entered arrows through
+`legaia_art::tokenize` (leading arrows kept, the starter over the last matched
+arrow, the constant inserted after it), the learn-on-use verdict per accepted
+art (`0x1A` for a newly learned one), and the Miracle / MSB-clear / Super finish
+(`legaia_engine_vm::battle_action::finish_action_queue`), so a three-direction
+art is two swings plus the art on both sides. The older reading - the port's
+entry resolver folding the leading directions into the art - is what
+[What the port does](#what-the-port-does) replaced.
 
 A second commit path exists at `0x801EF5BC..0x801EF644`, gated on
 `ctx[+0x25F + slot] != 0`, which writes `0x1A` at the *start* of the match and
@@ -2542,27 +2544,54 @@ unchanged. `+0x1DB` is the byte the per-art attack camera dispatches on
 which is why the camera is unreachable for any action whose stream carries only
 direction swings.
 
-### What the port does instead
+### What the port does
 
-`World::run_battle_art` (`engine-core`, `world/battle/command_flow.rs`) arms the
-attack band for a resolved arts entry: category `3`, target, `Begin`, and an
-action-parameter stream of **one byte per resolved strike**, each carrying the
-turn's action constant. `BattleActor::art_power` carries the entry's per-strike
-power profile alongside, and `attack_chain` resolves the art from the staged
-byte itself, falling back to `chosen_art`. Two divergences, both deliberate:
+The same three things, in the same seats:
 
-- **One byte per hit, not one byte per art.** Retail stages the art once and
-  lets the clip's hit events pace `FUN_801EC3E4`. The port has no per-clip
-  hit-event driver on this path, so the stream carries the hit count instead.
-  Same hit count, same power bytes, different pacing.
-- **The stream carries no leading direction bytes and no `0x19`/`0x1A`
-  starter.** That follows from the model divergence in §1: the port's entry
-  resolver already folded those directions into the art.
+- **The queue is byte-exact.** `World::build_arts_action_queue` tokenizes the
+  entered arrows (§1), runs the learn-on-use verdict per accepted art and the
+  Miracle / MSB-clear / Super finish, and `arm_battle_art_action` copies the
+  window verbatim into the actor's action-parameter stream under category `3`.
+  A saved-chain row is armed from its directional string through the same
+  builder, so there is one arts path.
+- **The strike loop only stages.** `attack_chain` (`engine-vm`,
+  `battle_action/attack.rs`) stages one byte per clip behind the `+0x1DC`
+  bit-1 latch, tests the terminator at the new cursor, and never touches HP;
+  `attack_recovery` waits for the last clip's commit, stages idle over it and
+  parks the cursor at `0xFF` (`STRIKE_CURSOR_PARKED`).
+- **Damage is the anim tick's.** `World::tick_battle_hit_events`
+  (`world/battle/loop_driver.rs`) is the engine seat of the per-frame
+  `FUN_801EC3E4` call. For every actor whose committed clip is in flight it
+  runs the kernel's head guard chain
+  (`legaia_engine_vm::battle_action::hit_event_admits`: `ctx[7] != 0x5A`,
+  `entry[0]` in `0x0C..=0x1F`, `+0x1F4 < 4`, `entry[0x10 + idx] != 0`,
+  `frame + 1 >= entry[0x10 + idx]`) against the playing clip's own head bytes
+  (`MonsterAnimPlayer::hit_source`), resolves an admitted hit with the entry's
+  power byte at that index (`land_melee_hit`: the weapon fold, the melee roll,
+  the accumulate into the target's combo word `+0x0` and its HP bar), bumps
+  `+0x1F4`, and lands the accumulated total on live HP **once** - on the hit
+  that is its clip's last listed beat while the cursor is parked
+  (`apply_combo_total`, retail's `0x801EE9A4..0x801EEA78` arm). The same pass
+  runs the tick's event-path commit (`event_commit_due`:
+  `entry[0x10] + 2 < frame` with `entry[+0x76] == 0`), which is what chains
+  one swing into the next mid-clip. Each resolved hit is surfaced as a
+  `BattleHitEvent` (`engine-core::battle_events`) carrying its index, power
+  byte, damage and running total for the impact-FX and HIT / TOTAL layers.
 
-A direction swing (`0x0C..0x0F`) staged in the stream never dispatches the
-art-strike hook even while `chosen_art` is set - it resolves through the host's
-melee seam - so an entry that mixes plain swings with arts cannot charge a
-direction twice.
+A direction swing's entry carries its own power byte at `+0x00` (Vahn's high
+swing reads `0x18`, his low swing `0x1D`) and one beat, so a swing is exactly
+one hit resolved from the clip, not from the command; an art record's embedded
+entry carries up to four. The art record is consulted only for what the entry
+does not carry - the status effect and the per-hit sound cue - and the art is
+identified from the latched staged id (`staged_art_constant`), party slots
+only, so a monster's `0x1B+` clip indices never read as art constants.
+
+Two fallbacks keep clip-less hosts and the synthetic catalog playable, both
+disclosed at the code: a staged byte whose clip has no entry head resolves its
+hits at stage time (`resolve_zero_length_clip_hits`), and a monster whose
+catalog carries no attack entries keeps the AGL-budget immediate swings
+(`apply_basic_attack`, still accumulate-then-apply). Neither is reachable with
+disc data, where every entry carries its head.
 
 ## Engine port
 
@@ -2579,10 +2608,21 @@ direction twice.
 
 ### Staged-anim playback (the attack band plays in-engine)
 
-The ids the SM stages into `actor.queued_anim` actually play on the battle actors. The id → slot/record ladder of the retail commit `FUN_8004AD80` is `legaia_engine_vm::anim_vm::resolve_staged_anim`: ids `< 0x10` play their action-table entry directly (`0` idle, `1` walk/approach, `0xC..0xF` the equipment-spliced weapon swings); ids `>= 0x10` materialize **art-bank record `id − 0x10`** into dynamic slot `0x10`/`0x11` (ids `0x10` and `0x1A` install at `0x11`) and the staged id is rewritten to the slot number.
+The ids the SM stages into `actor.queued_anim` actually play on the battle
+actors. The id → slot/record ladder of the retail commit `FUN_8004AD80` is
+`legaia_engine_vm::anim_vm::resolve_staged_anim`: ids `< 0x10` play their
+action-table entry directly (`0` idle, `1` walk/approach, `0xC..0xF` the
+equipment-spliced weapon swings); ids `>= 0x10` materialize **art-bank record
+`id − 0x10`** into dynamic slot `0x10`/`0x11` - `0x11` for `0x10`, for the
+`0x1A` SpecialStarter and for every art constant `>= 0x1B`, `0x10` for the
+plain base ids `0x11..=0x19` (read off the slot register's delay-slot stores
+at `0x8004B720` / `0x8004B76C` / `0x8004BB58` / `0x8004BBC0`; a live
+Tri-Somersault capture reads `+0x1D9 = 0x11` under `0x27`, `0x1F` and `0x2B`
+and `0x10` under the `0x19` starter) - and the staged id is rewritten to the
+slot number.
 
 `World::commit_staged_battle_anims` (called from `step_battle` pre-step and from `tick_battle_animations`) applies that ladder per actor: a staged swing/art plays as a one-shot `MonsterAnimPlayer` (rate from the record's entry `+0x78` byte through the same `step_for_rate` path as the idle clips), the id pair converges on the committed value, and the in-flight clip outranks the SM's per-frame `pose()` requests (the same precedence rule hit reactions use).
-The clip's finish is the engine's anim-end signal: `ADVANCE_DONE` clears (opening the `0x801E370C` read gate for the next strike byte), the id pair converges back to idle `0`, and the idle loop resumes. An actor with no usable clip for a staged id converges immediately (a zero-length swing), so clip-less hosts keep the pre-animation pacing.
+A commit happens only at a clip boundary, as in retail: the natural end (`tick_battle_animations`, the `0x80047B54` call) or the event-path cut (`tick_battle_hit_events`, `0x80047900..0x80047948`). Either one zeroes the per-clip hit index `+0x1F4` and releases the stage latch `ADVANCE_DONE` (bit 1 of `+0x1DC`), which is what opens the `0x801E370C` read gate for the next byte; a byte staged over a still-playing one-shot waits for that boundary (`commit_staged_battle_anim`), and a natural end with a byte behind the clip commits it in the same tick. An actor with no usable clip for a staged id releases the latch at once (a zero-length swing), so clip-less hosts keep the pre-animation pacing.
 
 Clip sources, decoded at battle entry next to the mesh assembly (`play-window`): the record[0] action streams + `swing_battle_animations` (per equipped item, runtime slots `0xC..0xF`) feed `World::set_actor_battle_action_clips`; the art bank (`art_animation_bank`, streams resolved through the `readef.DAT` `"ME"` archives via `art_me_archive`/`art_animation`) feeds `World::set_actor_battle_art_bank`.
 Monsters install no bank, so their staged ids stay plain archive entry indices across the whole range. Playback *stepping* follows the `+0x78` rate like every other entry (see [battle-data-pack.md § Art-animation bank](../formats/battle-data-pack.md#art-animation-bank-record0-0x58)).
@@ -2606,7 +2646,7 @@ The sentinel `0xFF` additionally marks the eight base-archive records
 `rate_alt`, and its doc comment carries the correction. See
 `ghidra/scripts/funcs/8004ad80.txt` and `ghidra/scripts/funcs/80047430.txt`.
 
-The port does not read the loop count: it approximates with a staged-id rule, where staged id `1` (the approach walk) loops and every other staged id plays once.
+The port reads it: `MonsterAnimPlayer::new` seeds `loop_budget = count << 4` and the `[+0x85, +0x86]` window from the entry head (`MonsterAnimation::entry_loop_window`), and `apply_loop_window` runs the window test before the natural-end test exactly as the tick does - a `start == end` window parks the cursor and spends the overshoot, a real window rewinds by the span once per whole unit. `release_loop_window` is the `+0x176` / `+0x21B` clear a cast module performs to end an authored park early.
 
 ### Where an action leaves its combatants
 
@@ -2614,7 +2654,7 @@ An action does **not** return its combatants to their authored formation seats. 
 
 The capture evidence is four save states of one solo fight. Two read the authored formation (party `z = -800`, monster `z = +800`, 1600 apart); two later ones read the party member at `z ~ -540` and the monster at `z ~ -250`, ~300 apart and both far off the formation. Across every mid-battle state in the library each actor's `+0x3C`/`+0x40` pair sits within ~110 units of its live `+0x34`/`+0x38` pair, so the reference pair cannot be a seat the actor has walked away from.
 
-Holding the seat still for the *duration* of an action and committing it at the end is what keeps the range law honest: the approach has a fixed goal and the separation pass a stable reference while the action runs, and once it ends a parked actor is again *at* the pair the gate measures - so the next attacker walks at where its target actually stands. Retail's recovery backstep (the recover clip's own negative-speed root motion) is deliberately not modelled: it is clip-timed and no clip-duration source is decoded, so the attacker ends on the range boundary the arrival shove pushed its target out to.
+Holding the seat still for the *duration* of an action and committing it at the end is what keeps the range law honest: the approach has a fixed goal and the separation pass a stable reference while the action runs, and once it ends a parked actor is again *at* the pair the gate measures - so the next attacker walks at where its target actually stands. Retail's recovery backstep is the recover clip's own negative `+0x0C` root speed, and `tick_battle_locomotion` drives it off the playing clip (`drive_playing_root_motion`, the signed `0x80047D20..0x80047E18` term: `bltz` routes a negative speed straight to the step with no range test, a positive one steps only while the range poll fails, and the `+0x1DC` bit-3 knockdown latch blocks both).
 
 ### The sound a melee swing makes, and which half of it the port has
 
@@ -2627,7 +2667,7 @@ A physical swing's whole sound is one call: `li a0,0x10c` / `jal 0x8004fe5c` at 
 
 Two gates guard the submit. The target must be playing a plain action-table clip (`+0x1D9 < 0x10`, `0x801EEB88`), so a hit landing during an art-bank animation is silent. And `_DAT_8007BD84` selects between this cue and the per-character `XA30` grunt immediately above it (`FUN_8003D53C(0x1D, ch, dur)` at `0x801EEB18..0x801EEB44`, channel and duration keyed on `DAT_8007BD10[slot]`).
 
-The port's live gameplay loop resolves melee damage inline rather than through the art-strike event, so nothing downstream of `World::fold_battle_event` used to see a swing at all and a whole fight produced **zero** cues. `World::apply_one_basic_strike` now runs the funnel at retail's site, which is what makes `sfx_cue::route_sfx_cue` a live port rather than a caller-less one. The engine's compacted monster seating has to be re-based into retail's `0..=2` / `3..=7` index space first, or a monster seated at index 1 takes the party leg.
+The port's live gameplay loop resolves melee damage inline rather than through the art-strike event, so nothing downstream of `World::fold_battle_event` used to see a swing at all and a whole fight produced **zero** cues. `World::land_melee_hit` runs the funnel at retail's site - once per resolved hit event - which is what makes `sfx_cue::route_sfx_cue` a live port rather than a caller-less one. The engine's compacted monster seating has to be re-based into retail's `0..=2` / `3..=7` index space first, or a monster seated at index 1 takes the party leg.
 
 **Which half that is.** The cue site is one of the kernel's two sound emissions, and
 `_DAT_8007BD84` picks which. While the word is zero the routine takes the per-character
@@ -2829,7 +2869,7 @@ Both passes are from-scratch ports in `legaia_art::MiracleMatcher` / `legaia_art
 
 ### Miracle / Super in the live player-driven Arts submenu
 
-Both matchers run against a flat **directional command string** with no connector bytes. The live path produces that string two ways: the retail per-press [Arts command input](battle.md#arts-command-input) hands `World::resolve_arts_input_entry` the buffer the player typed, and the legacy saved-chain list (`legaia_engine_core::battle_arts`, behind `LEGAIA_ARTS_SAVED_LIST=1`) hands `World::build_battle_arts_rows` a stored `legaia_save::SavedChainRecord`. Everything below applies to both - "the chain" is whichever string reached the matcher. Two trigger paths interact with that model differently:
+Both matchers run against a flat **directional command string** with no connector bytes. The live path produces that string two ways: the retail per-press [Arts command input](battle.md#arts-command-input) hands `World::build_arts_action_queue` the buffer the player typed, and the legacy saved-chain list (`legaia_engine_core::battle_arts`, behind `LEGAIA_ARTS_SAVED_LIST=1`) hands the same builder a stored `legaia_save::SavedChainRecord`'s directional string (`ArtRow::sequence`). Everything below applies to both - "the chain" is whichever string reached the matcher. Two trigger paths interact with that model differently:
 
 - **Miracle Arts are wired.** A Miracle Art's trigger *is* an exact directional-string match (`MiracleMatcher::find`), so `battle_arts::miracle_for_chain` recognises a saved chain whose command string equals the caster's Miracle Art and flags the menu row (`ArtRow::miracle = Some(name)`). `World::build_battle_arts_rows` then resolves the row's per-strike profile from the Miracle's finisher-replacement queue via `resolve_action_queue`: each art constant in the replacement contributes its staged [`ArtRecord`](../formats/art-data.md) power bytes + status effect, or one tier-0 (`x12`) synthetic strike when that art's record isn't loaded (the same graceful-degradation fallback the no-disc-data path uses). The native `play-window` HUD shows the Miracle name on the row.
 - **Super Arts are wired, with the queue connectors abstracted.** A Super fires when the player chains several named arts ending on a known combination. `SuperMatcher`'s `find` patterns match the **tail** of a queue with the *interleaved* shape `Starter Art <dir> Starter Art <dir> Starter Art` (e.g. Vahn's Tri-Somersault `find` = `19 27 0F 19 1F 0E 19 27` = `Starter Somersault Up Starter Cyclone Down Starter Somersault`; see [art-data.md](../formats/art-data.md#super-arts) § Super Arts). The live submenu reaches that match in two steps:
@@ -2910,10 +2950,11 @@ re-invokes it for the next queued actor of a multi-actor turn). The full retail 
    (`0x801EFCD4`). Returns `1` when already known, `0` when unknown and not learnable.
    Byte-level port: `legaia_engine_vm::battle_action::check_and_learn_art`.
    The engine runs it: `engine-core`'s `TacticalArtsTracker` holds the `+0x74D` count and the
-   `+0x74E..` ascending id list per character, and both art-execution paths - the action SM's
-   `BattleActionHost::apply_art_strike` and the player-driven arts menu's `apply_battle_art` -
-   call `World::notify_art_used` for the art they just performed. So an art is learned on its
-   first successful performance, and the learn banner fires once. Two retail inputs are
+   `+0x74E..` ascending id list per character, and the queue builder
+   `World::build_arts_action_queue` calls `World::notify_art_used` once per accepted art in queue
+   order, rewriting that art's starter to `0x1A` when the call just learned it - retail's own seat
+   (`jal 0x801efbfc` at `0x801EF44C`, verdict `+ 0x18` at `0x801EF6F0`). So an art is learned on
+   its first performance, and the learn banner fires once. Two retail inputs are
    supplied rather than read: the gate `ctx[+0x266 + slot]` has no engine analogue and reads as
    clear (gate open), and the innate cap at `0x801F686C` is un-parsed battle-overlay disc data
    that defaults to `0` until a host sets it.

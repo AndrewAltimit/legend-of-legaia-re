@@ -57,11 +57,6 @@ const DEFAULT_SPEED_SCALE: u8 = 4;
 /// nudge from authored seats either way.
 const PARTY_SEPARATION_RADIUS: i16 = 14 << 5;
 
-/// Byte offset of the root-motion speed halfword inside a committed clip's
-/// effect-script head (the per-action entry's `+0xC`, carried by
-/// `MonsterAnimation::effect_script`).
-const ENTRY_SPEED_OFFSET: usize = 0xC;
-
 impl World {
     /// The monster record `+0x1F` size class seated in `slot`, `0` for a
     /// party slot / empty slot / unresolved catalog (the same resolution the
@@ -161,30 +156,32 @@ impl World {
         }
     }
 
-    /// The root-motion `(entry_speed, scale)` of `slot`'s committed clip:
-    /// the effect-script head's `+0xC` halfword and the actor's `+0x21D`
-    /// scale ([`DEFAULT_SPEED_SCALE`] when unset); [`FALLBACK_APPROACH`]
-    /// when no committed clip carries a speed.
-    fn battle_root_motion_of(&self, slot: usize) -> (i16, u8) {
-        let Some(a) = self.actors.get(slot) else {
-            return FALLBACK_APPROACH;
+    /// The signed root-motion speed (`+0x0C`) of the clip `slot` is
+    /// **playing** - read off the player itself, so a pose / reaction /
+    /// staged clip each answer their own entry - with the actor's `+0x21D`
+    /// scale ([`DEFAULT_SPEED_SCALE`] when unset). `None` when no clip is
+    /// playing or the playing clip carries no speed.
+    fn battle_playing_root_motion(&self, slot: usize) -> Option<(i16, u8)> {
+        let a = self.actors.get(slot)?;
+        let speed = a.battle_animation.as_ref()?.root_speed();
+        if speed == 0 {
+            return None;
+        }
+        let scale = if a.battle.anim_rate.get() != 0 {
+            a.battle.anim_rate.get()
+        } else {
+            DEFAULT_SPEED_SCALE
         };
-        let speed = a
-            .battle_effect_script
-            .as_ref()
-            .and_then(|s| s.get(ENTRY_SPEED_OFFSET..ENTRY_SPEED_OFFSET + 2))
-            .map(|b| i16::from_le_bytes([b[0], b[1]]))
-            .filter(|&s| s != 0);
-        match speed {
-            Some(s) => {
-                let scale = if a.battle.anim_rate.get() != 0 {
-                    a.battle.anim_rate.get()
-                } else {
-                    DEFAULT_SPEED_SCALE
-                };
-                (s, scale)
-            }
-            None => FALLBACK_APPROACH,
+        Some((speed, scale))
+    }
+
+    /// The approach drive's `(entry_speed, scale)`: the playing clip's
+    /// positive speed, else [`FALLBACK_APPROACH`] (a clip-less host, or a
+    /// walk staged but not yet playing).
+    fn battle_root_motion_of(&self, slot: usize) -> (i16, u8) {
+        match self.battle_playing_root_motion(slot) {
+            Some((s, scale)) if s > 0 => (s, scale),
+            _ => FALLBACK_APPROACH,
         }
     }
 
@@ -226,11 +223,18 @@ impl World {
     /// gate measures - survives by the same route retail keeps it, and the
     /// next attacker walks at where its target actually stands.
     ///
-    /// What is deliberately **not** modelled is retail's recovery backstep
-    /// (the recover clip's own negative-speed root motion): it is clip-timed
-    /// and no clip-duration source is decoded, so the attacker ends the action
-    /// on the range boundary the arrival shove pushed the target out to rather
-    /// than a step behind it.
+    /// ## The backstep
+    ///
+    /// The retail term is signed (`lh v0,0xc(s3)` at `0x80047D34`):
+    /// `bltz` routes a **negative** speed straight to the step
+    /// (`0x80047D64`) with no range test, a positive one steps only while
+    /// the range poll still fails. The recover clip (action slot 8) carries
+    /// a negative speed, which is the backstep an attacker takes after its
+    /// last swing; the party arts carry positive ones (a Somersault reads
+    /// `+4`, a Cyclone `+6`) and drift the attacker into its target as they
+    /// play. [`Self::drive_playing_root_motion`] applies that law to every
+    /// actor whose playing clip carries a speed, except a knocked-down one
+    /// (retail's `+0x1DC` bit 3 latch, `0x80047D20`).
     pub(in crate::world) fn tick_battle_locomotion(&mut self) {
         use vm::battle_action::ActionState;
         self.seed_battle_seats();
@@ -245,9 +249,49 @@ impl World {
         if approaching && active < self.actors.len() {
             self.drive_attack_approach(active);
         }
+        for i in 0..self.actors.len() {
+            if approaching && i == active {
+                // The approach drive above already walked this clip.
+                continue;
+            }
+            self.drive_playing_root_motion(i);
+        }
         if state == ActionState::DoneCleanup {
             self.commit_battle_ground();
         }
+    }
+
+    /// One tick of the playing clip's signed root motion for a non-approach
+    /// actor (see [`Self::tick_battle_locomotion`] § The backstep): a
+    /// negative speed steps back along the facing unconditionally, a
+    /// positive one steps forward only while out of range of the actor's
+    /// target. A knocked-down actor (reaction tag 4, retail's `+0x1DC` bit
+    /// 3) does not move.
+    // PORT: FUN_80047430 (`0x80047D20..0x80047E18`, the signed root-motion
+    // term; the approach half is `drive_attack_approach`)
+    fn drive_playing_root_motion(&mut self, slot: usize) {
+        let Some((speed, scale)) = self.battle_playing_root_motion(slot) else {
+            return;
+        };
+        let (facing, target, knocked_down) = {
+            let a = &self.actors[slot];
+            (
+                a.battle.facing_angle,
+                a.battle.active_target,
+                a.battle_reaction == Some(4),
+            )
+        };
+        if knocked_down {
+            return;
+        }
+        if speed > 0 && self.battle_range_metric(slot as u8, target) == 0 {
+            return;
+        }
+        let (sin, cos) = motion::trig12(facing);
+        let (dx, dz) = motion::root_motion_step(sin, cos, speed, 1, scale);
+        let ms = &mut self.actors[slot].move_state;
+        ms.world_x = ms.world_x.wrapping_add(dx as i16);
+        ms.world_z = ms.world_z.wrapping_add(dz as i16);
     }
 
     /// Re-take every living actor's seat pair from its live pair - the

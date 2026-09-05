@@ -88,41 +88,151 @@ pub struct MonsterAnimation {
     pub frame_count: usize,
     /// `frame_count` frames, each `part_count` [`PartPose`]s (`frames[f][p]`).
     pub frames: Vec<Vec<PartPose>>,
-    /// The per-action entry's head bytes (`+0x00..+0x54`,
-    /// [`EFFECT_SCRIPT_HEAD_BYTES`]), whose `+0x14..+0x53` region is the
-    /// action's **battle effect script**: up to eight 8-byte
+    /// The per-action entry's **head bytes** - everything below the stream
+    /// pointer, `+0x00..+0x88` ([`EFFECT_SCRIPT_HEAD_BYTES`]). The name is
+    /// historical (the slice used to stop at `+0x54`): its `+0x14..+0x53`
+    /// region is the action's **battle effect script** - up to eight 8-byte
     /// `[frame_gate, effect_id, i16 x, i16 y, i16 z]` records the battle
     /// anim-node tick walks each frame to place the action's visual effects
     /// (`FUN_801DEA50`, reached from `FUN_80047430`; engine stepper
     /// `legaia_engine_core::action_effect_script::step_effect_script`, which
-    /// reads records at `RECORD_BASE = 0x14` of exactly this slice). Empty
-    /// when the source carries no entry header (field ANM adapters, synthetic
-    /// clips) - the stepper then finds no records and does nothing.
+    /// reads records at `RECORD_BASE = 0x14` of exactly this slice) - and
+    /// the rest of the head is what the other per-frame consumers of the
+    /// committed entry read: the power run (`+0x00..+0x04`) and hit-event
+    /// frames (`+0x10..+0x14`) the damage kernel `FUN_801EC3E4` gates on,
+    /// the root-motion speed `+0x0C` and end-step `+0x0E` the tick's
+    /// position term applies, the event-commit lock `+0x76`, the loop window
+    /// `+0x84..+0x87` and the solo/freeze byte `+0x87` the commit
+    /// `FUN_8004AD80` installs. The typed accessors below (`entry_*`) read
+    /// them; each answers `None` when the head is too short. Empty when the
+    /// source carries no entry header (field ANM adapters, synthetic clips) -
+    /// the stepper then finds no records and does nothing, and every
+    /// accessor answers `None`.
     pub effect_script: Vec<u8>,
 }
+
+/// Offset of the per-hit **power run** inside a per-action entry
+/// (`+0x00..+0x04`): the four bytes `FUN_801EC3E4` indexes with the actor's
+/// hit index `+0x1F4` (`0x801EC494`); byte 0 doubles as the entry's action
+/// tag on the record[0] / archive entries.
+pub const ENTRY_POWER_RUN_OFFSET: usize = 0x00;
+/// Offset of the signed root-motion speed halfword (`+0x0C`) the anim tick
+/// applies per frame while the clip plays (`0x80047D34..0x80047E18`): a
+/// positive speed steps toward the target only while out of range, a
+/// negative one steps back unconditionally (the recover clip's backstep).
+pub const ENTRY_ROOT_SPEED_OFFSET: usize = 0x0C;
+/// Offset of the signed end-of-clip displacement halfword (`+0x0E`), applied
+/// at the commit paths in proportion to how far the clip got.
+pub const ENTRY_END_STEP_OFFSET: usize = 0x0E;
+/// Offset of the event-commit lock byte (`+0x76`): the tick's mid-clip
+/// "commit at the event frame" path (`+0x1DC` bit 1) runs only while it is
+/// zero (`0x80047940`).
+pub const ENTRY_EVENT_LOCK_OFFSET: usize = 0x76;
+/// Offset of the loop window (`+0x84` count, `+0x85` start, `+0x86` end).
+pub const ENTRY_LOOP_WINDOW_OFFSET: usize = 0x84;
+/// Offset of the solo / freeze byte (`+0x87`) the commit hands to
+/// `FUN_8004E13C`, which writes battle ctx `+0x243`.
+pub const ENTRY_SOLO_FLAG_OFFSET: usize = 0x87;
 
 impl MonsterAnimation {
     /// The poses for frame `f` (one per part), or `None` if out of range.
     pub fn frame(&self, f: usize) -> Option<&[PartPose]> {
         self.frames.get(f).map(|v| v.as_slice())
     }
+
+    fn head_u8(&self, off: usize) -> Option<u8> {
+        self.effect_script.get(off).copied()
+    }
+
+    fn head_i16(&self, off: usize) -> Option<i16> {
+        let b = self.effect_script.get(off..off + 2)?;
+        Some(i16::from_le_bytes([b[0], b[1]]))
+    }
+
+    /// `true` when the clip carries a real entry header, i.e. at least the
+    /// power run and the hit-event list (`+0x00..+0x14`). A clip built
+    /// without one (a synthetic / test clip, a field-ANM adapter) has no hit
+    /// events for the damage kernel to fire on.
+    pub fn has_entry_head(&self) -> bool {
+        self.effect_script.len() >= EVENT_FRAME_LIST_OFFSET + 4
+    }
+
+    /// The entry's four **power bytes** (`+0x00..+0x04`) - one per hit event,
+    /// indexed by the actor's `+0x1F4` hit index in `FUN_801EC3E4`. On the
+    /// record[0] / archive entries byte 0 is also the action tag, which is
+    /// how a swing entry's first hit resolves with the swing's own command
+    /// byte and a reaction / idle entry (tag `< 0x0C`) never deals damage.
+    pub fn entry_power_run(&self) -> Option<[u8; 4]> {
+        let b = self
+            .effect_script
+            .get(ENTRY_POWER_RUN_OFFSET..ENTRY_POWER_RUN_OFFSET + 4)?;
+        Some([b[0], b[1], b[2], b[3]])
+    }
+
+    /// The entry's zero-terminated **hit-event frame list** (`+0x10..+0x14`),
+    /// in whole clip frames (the tick's `cursor >> 4`). See
+    /// `docs/formats/monster-animation.md` § Event-frame list.
+    pub fn entry_event_frames(&self) -> Option<[u8; 4]> {
+        let b = self
+            .effect_script
+            .get(EVENT_FRAME_LIST_OFFSET..EVENT_FRAME_LIST_OFFSET + 4)?;
+        Some([b[0], b[1], b[2], b[3]])
+    }
+
+    /// The signed root-motion speed (`+0x0C`); `None` for a headless clip.
+    pub fn entry_root_speed(&self) -> Option<i16> {
+        self.head_i16(ENTRY_ROOT_SPEED_OFFSET)
+    }
+
+    /// The signed end-of-clip displacement (`+0x0E`).
+    pub fn entry_end_root_step(&self) -> Option<i16> {
+        self.head_i16(ENTRY_END_STEP_OFFSET)
+    }
+
+    /// The event-commit lock byte (`+0x76`).
+    pub fn entry_event_commit_lock(&self) -> Option<u8> {
+        self.head_u8(ENTRY_EVENT_LOCK_OFFSET)
+    }
+
+    /// The authored **loop window** `(count, start_frame, end_frame)` from
+    /// `+0x84..+0x87`, or `None` when the head is too short or the count is
+    /// zero (no window). `count` is taken literally - the eight base-archive
+    /// art records carry `0xFF`, which the commit installs as a 255-cycle
+    /// hold budget. Validity against the frame count is the player's
+    /// business ([`animation_loop_windows`] applies the stricter disc-census
+    /// filter).
+    pub fn entry_loop_window(&self) -> Option<(u8, u8, u8)> {
+        let b = self
+            .effect_script
+            .get(ENTRY_LOOP_WINDOW_OFFSET..ENTRY_LOOP_WINDOW_OFFSET + 3)?;
+        (b[0] != 0).then_some((b[0], b[1], b[2]))
+    }
+
+    /// The solo / freeze byte (`+0x87`).
+    pub fn entry_solo_flag(&self) -> Option<u8> {
+        self.head_u8(ENTRY_SOLO_FLAG_OFFSET)
+    }
 }
 
 /// Offset of the packed animation stream inside a per-action entry.
 const ANIM_STREAM_OFFSET: usize = 0x8c;
-/// Bytes of a per-action entry's head that carry the battle effect script:
-/// the eight 8-byte records live at `+0x14..+0x53`, so `0x54` bytes cover the
-/// whole scriptable region (record base + 8 records; `FUN_801DEA50` scales
-/// its cursor by `8` and adds `0x14`, cursor bound `8`). Shared by the
-/// monster archive's entries and the player battle files' record[0] entries
-/// (whose keyframe stream sits at `+0xAC` instead of `+0x8C`, but whose head
-/// layout below `+0x8C` is the same family).
-pub const EFFECT_SCRIPT_HEAD_BYTES: usize = 0x54;
+/// Bytes of a per-action entry's head [`MonsterAnimation::effect_script`]
+/// carries: everything below the entry's stream pointer (`+0x88`). The
+/// battle effect script's eight 8-byte records live at `+0x14..+0x53`
+/// (`FUN_801DEA50` scales its cursor by `8` and adds `0x14`, cursor bound
+/// `8`), and the rest of the head - power run, hit-event list, root speed,
+/// event lock, loop window, solo byte - is read by the anim tick and the
+/// damage kernel off the committed entry (see the `entry_*` accessors).
+/// Shared by the monster archive's entries and the player battle files'
+/// record[0] entries (whose keyframe stream sits at `+0xAC` instead of
+/// `+0x8C`, but whose head layout below `+0x88` is the same family).
+pub const EFFECT_SCRIPT_HEAD_BYTES: usize = 0x88;
 
-/// Slice a per-action entry's effect-script head (`entry+0x00..+0x54`) out of
-/// its containing block, clamped to the block end. An entry cut short by the
+/// Slice a per-action entry's head (`entry+0x00..+0x88`) out of its
+/// containing block, clamped to the block end. An entry cut short by the
 /// block boundary yields the truncated prefix (the engine stepper bounds every
-/// record read itself); an out-of-range offset yields an empty vec.
+/// record read itself, and the typed accessors answer `None`); an
+/// out-of-range offset yields an empty vec.
 pub(crate) fn effect_script_head(block: &[u8], entry_off: usize) -> Vec<u8> {
     let end = entry_off
         .saturating_add(EFFECT_SCRIPT_HEAD_BYTES)

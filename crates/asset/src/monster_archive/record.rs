@@ -7,6 +7,10 @@ use super::{MIN_RECORD_BYTES, SLOT_STRIDE, decode_block};
 /// One spell entry referenced by a monster record's `+0x4C` offset array.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MonsterSpell {
+    /// Index of this entry in the `+0x4C` offset array - the raw anim id the
+    /// battle engine stages into `actor[+0x1DA]` to play it (the AI picker's
+    /// physical branch queues these indices into the action stream).
+    pub entry_index: u8,
     /// Spell/action id (entry `+0x00`). Ids `2,3,4,5,0x0B` mark an elemental
     /// resist/affinity, `0x0C..=0x1F` are offensive castable spells, `0x23`
     /// (`'#'`) is a special category.
@@ -297,6 +301,7 @@ fn parse_spells(block: &[u8], magic_count: u8) -> Vec<MonsterSpell> {
             continue;
         };
         out.push(MonsterSpell {
+            entry_index: i as u8,
             id,
             agl_cost,
             offset,
@@ -449,6 +454,7 @@ mod tests {
             rec.spells,
             vec![
                 MonsterSpell {
+                    entry_index: 0,
                     id: 0x0D,
                     agl_cost: 12,
                     offset: 0x100,
@@ -456,6 +462,7 @@ mod tests {
                     aux_offset: None,
                 },
                 MonsterSpell {
+                    entry_index: 1,
                     id: 0x03,
                     agl_cost: 0xFF,
                     offset: 0x180,

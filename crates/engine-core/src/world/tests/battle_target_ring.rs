@@ -248,9 +248,17 @@ fn performing_an_art_learns_it_once() {
     assert!(w.battle_arts_menu.is_none(), "arts menu closed");
     // The confirm arms the SM's attack band; the learn-on-use check runs off
     // the strike that band produces, so the band has to be let run.
+    // Retail's queue for a one-arrow art: the arrow becomes the starter -
+    // `0x1A`, since this performance learns the art - and the constant is
+    // inserted after it (`FUN_801EED1C` `0x801EF6F0..0x801EF7A0`).
     assert_eq!(
-        w.actors[0].battle.params[0], art_id,
-        "the art constant is staged into the action-parameter stream"
+        &w.actors[0].battle.params[..3],
+        &[
+            legaia_art::ActionConstant::SpecialStarter.as_byte(),
+            art_id,
+            0
+        ],
+        "the learned-on-use starter and the art constant are staged into the stream"
     );
     assert_eq!(w.actors[0].battle.action_category, 3, "attack band armed");
     let learned: Vec<_> = run_armed_action(&mut w, 400)

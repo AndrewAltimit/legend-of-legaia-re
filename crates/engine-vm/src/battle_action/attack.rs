@@ -1,7 +1,6 @@
 //! Physical-attack band of the battle-action state machine (face / short-step / windup / chain).
 
 use super::*;
-use crate::battle_formulas::{arms_resolver_admits, arms_weapon_atk_fold};
 
 // --- attack band ------------------------------------------------------------
 
@@ -183,13 +182,24 @@ pub(super) fn attack_chain<H: BattleActionHost + ?Sized>(
     // terminates on a `0x00` byte (the magic band is the one that uses `-1`;
     // overlay_battle_action_801e295c, strike-loop arm); `0xFF` additionally
     // terminates as this port's out-of-range sentinel. Otherwise stage the
-    // byte as the queued anim and fire damage.
+    // byte as the queued anim.
+    //
+    // **This state stages; it never resolves damage.** `jal 0x801ec3e4`
+    // does not occur anywhere in `FUN_801E295C`: the damage kernel is called
+    // from the anim tick `FUN_80047430` (`0x800478A0` / `0x80047BF0`) on
+    // every frame the committed clip plays, and its own head decides which
+    // frames are that clip's hit events (`crate::battle_action::hit_event`).
+    // The engine's driver for that call sits beside its anim tick
+    // (`engine-core`'s `World::tick_battle_hit_events`); a host that plays
+    // no clips resolves the staged byte's hits as a zero-length clip
+    // instead. Either way nothing in this arm touches HP.
     let slot = ctx.active_actor;
     // Strike pacing gate: while ADVANCE_DONE is still set the previous
     // staged swing is in flight - skip the byte read and hold (the anim
-    // system clears the bit when the staged clip finishes; for the engine
-    // that's `World::tick_battle_animations`' staged-clip end handling, or
-    // an immediate clear when the actor carries no clips).
+    // system clears the bit when the staged clip's event-path commit fires
+    // or the clip ends; for the engine that's `World::tick_battle_hit_events`
+    // / `World::tick_battle_animations`, or an immediate clear when the
+    // actor carries no clips).
     // PORT: overlay_battle_action_801e295c (strike-pacing gate, interior).
     // The retail gate (battle-action overlay, file +0x370C) reads `lbu +0x1DC;
     // andi 0x2; bne -> skip` to guard the next-byte read at `+0x1DF + +0x15`.
@@ -202,147 +212,41 @@ pub(super) fn attack_chain<H: BattleActionHost + ?Sized>(
     }
     let next_byte = host.actor(slot).map(|a| a.read_param(0)).unwrap_or(0xFF);
     if next_byte == 0x00 || next_byte == 0xFF {
+        // An empty / exhausted stream: retail stages the zero it read and
+        // falls to `0x1F` on the same step; nothing plays and nothing is
+        // owed, so the gate is released here. The cursor is left where it
+        // is - retail never rewinds it in this band (ActionSeed zeroes it,
+        // `0x801E2CF0`; the `0x1F -> 0x20` edge parks it at `0xFF`).
         if let Some(actor) = host.actor_mut(slot) {
-            actor.strike_index = 0;
             actor.flag_bits.clear(ActorFlags::ADVANCE_DONE);
         }
         return transition(ctx, ActionState::AttackRecovery);
     }
-    let (target, strike_index_pre, character, chosen_art, staged_power, staged_effect) = host
-        .actor(slot)
-        .map(|a| {
-            (
-                a.active_target,
-                a.strike_index,
-                a.character,
-                a.chosen_art,
-                a.art_power.get(a.strike_index as usize).copied().flatten(),
-                a.art_enemy_effect,
-            )
-        })
-        .unwrap_or((
-            0,
-            0,
-            legaia_art::Character::default(),
-            None,
-            None,
-            legaia_art::EnemyEffect::None,
-        ));
+    // The stage site (`0x801E3734..0x801E3764`): cursor post-increment by
+    // exactly one, `+0x1DC |= 2` (the one-per-clip latch, bit 1 - the
+    // "commit at the event frame" request the anim tick consumes), and the
+    // byte into `+0x1DA`. Retail's stream alphabet for a party attack is
+    // direction swings `0x0C..0x0F`, the art starters `0x19`/`0x1A` and the
+    // art action constants `0x1B+` (`FUN_801EED1C` writes them inline, see
+    // `docs/subsystems/battle-action.md` § A Tactical Art is an ordinary
+    // attack-band action); a monster's bytes are archive entry indices. The
+    // byte itself names the clip, and the anim commit latches it into
+    // `+0x1DB` for the per-art attack camera - and the hit-event driver -
+    // to key on.
     if let Some(actor) = host.actor_mut(slot) {
         actor.queued_anim = next_byte;
         actor.flag_bits.set(ActorFlags::ADVANCE_DONE);
         actor.strike_index = actor.strike_index.saturating_add(1);
     }
-    // Arms execution-time weapon fold. Retail runs this in FUN_801EC3E4,
-    // which SCUS calls at 0x800478A0 once per committed arms command - a
-    // separate call edge from FUN_801E295C, not a subroutine of it. The port
-    // drives it from here because this is the engine's equivalent point: the
-    // strike loop is where one recorded command byte is consumed and staged.
-    // The head guards are evaluated against the same state retail reads
-    // (ctx[7], the command byte, the actor's +0x1F4 cursor, the slot), with
-    // this strike as the record's last step.
-    // PORT: FUN_801EC3E4 (call site for the ATK-working weapon fold)
-    // REF: FUN_801E295C (the state machine this call site sits in)
-    let (input_cursor, current_command) = host
-        .actor(slot)
-        .map(|a| (a.input_cursor, a.current_anim))
-        .unwrap_or((0, 0));
-    if arms_resolver_admits(ctx.action_state, next_byte, 0, 1, input_cursor, slot) {
-        let bonuses = host.equip_attack_bonuses(slot);
-        if let Some(delta) = arms_weapon_atk_fold(current_command, &bonuses)
-            && let Some(actor) = host.actor_mut(slot)
-        {
-            actor.atk_working = actor.atk_working.wrapping_add(delta);
-        }
-    }
-    // Fire swing-apex damage for this strike. (Retail seeds this byte stream
-    // at action start via FUN_801eed1c - the party action-stream setup hook
-    // that copies the entered direction commands, strips status-sealed
-    // directions, and rewrites matched arts into action constants; the
-    // stream bytes here are direction swings `0x0C..0x0F`, art starters
-    // `0x19`/`0x1A`, and art constants `0x1B+`.)
-    //
-    // The strike loop resolves damage through `FUN_801EC3E4` (the fold
-    // above and the host's art-strike hook), NOT through the item / restore
-    // applier: `jal 0x800402f4` occurs exactly once in `FUN_801E295C`, at
-    // `0x801E4134` in the spirit band, and it is passed an effect class where
-    // this loop would have passed an animation byte. The port used to call
-    // `apply_damage(next_byte, 0, target, slot)` from here; that call site
-    // does not exist in retail and is gone.
-    //
-    // Which art - if any - this staged byte belongs to.
-    //
-    // Retail's stream alphabet for a party attack is direction swings
-    // `0x0C..0x0F`, the art starters `0x19`/`0x1A` and art action constants
-    // `0x1B+` (`docs/subsystems/battle-action.md` § Attack chain - strike
-    // loop), so a Tactical-Arts turn stages its constants **inline**: the
-    // byte itself names the art, and it is the byte the anim commit latches
-    // into `+0x1DB` for the per-art attack camera to dispatch on. That
-    // inline id is therefore authoritative here; `chosen_art` stays the
-    // fallback for a caller that stages plain anim ids instead.
-    //
-    // A **direction swing** is a plain committed arms command and never an
-    // art hit - it resolves through the host's own melee seam - so no art
-    // strike is dispatched for one even while `chosen_art` is set. Without
-    // that guard an arts turn's unmatched directions would be charged twice,
-    // once as a swing and once as an art strike.
-    //
-    // The inline read is **party-only**. A monster's stream carries archive
-    // entry indices over the whole byte range, so the same `0x1B+` value that
-    // names an art on a party slot names a plain clip on a monster - and the
-    // slot's `character` key is meaningless there. Retail draws the same line:
-    // `FUN_801EED1C` is the party setup hook, and the per-art camera's own
-    // gate requires a party seat.
-    let party_slot = slot < host.party_count();
-    let inline_art = legaia_art::ActionConstant::from_byte(next_byte)
-        .filter(|_| party_slot)
-        .filter(|a| a.is_art());
-    let strike_art = if is_swing_command(next_byte) {
-        None
-    } else {
-        inline_art.or(chosen_art)
-    };
-    // Dispatch [`BattleActionHost::apply_art_strike`] with the per-strike
-    // power/timing/effect/hit-cue values. Generic-attack callers ignore this
-    // hook (default no-op); callers wired up to art data drive HP deduction,
-    // status application, and SFX timing from it.
-    //
-    // The power comes from the staged profile when the engine put one on the
-    // actor ([`BattleActor::art_power`]) and from the art record otherwise,
-    // so a Miracle / Super finisher - whose per-strike profile is a property
-    // of its replacement queue, not of any single record - resolves through
-    // the same seam as a plain named art.
-    if let Some(art) = strike_art {
-        let info = {
-            let rec = host.art_record(character, art);
-            let idx = strike_index_pre as usize;
-            let power = staged_power.or_else(|| rec.and_then(|r| r.power.get(idx).copied()));
-            let effect = if staged_effect != legaia_art::EnemyEffect::None {
-                staged_effect
-            } else {
-                rec.map(|r| r.enemy_effect).unwrap_or_default()
-            };
-            // Nothing to resolve at all - no staged profile and no record -
-            // is the pre-carrier "art data unavailable" case, which stays a
-            // no-op. A source that *exists* but runs out of power bytes at
-            // this index still dispatches with `power: None`, which is the
-            // documented "this anim plays but does no damage" strike.
-            (staged_power.is_some() || rec.is_some()).then_some(ArtStrikeInfo {
-                strike_index: strike_index_pre,
-                anim_byte: next_byte,
-                actor_slot: slot,
-                target_slot: target,
-                character,
-                art,
-                power,
-                dmg_timing: rec.and_then(|r| r.dmg_timing.get(idx).copied()),
-                enemy_effect: effect,
-                hit_cue: rec.and_then(|r| r.hit_cues.get(idx).copied()),
-            })
-        };
-        if let Some(info) = info {
-            host.apply_art_strike(info);
-        }
+    // The terminator is tested at the **new** cursor on the same step
+    // (`0x801E3998..0x801E39AC`, `0x00` routing to `0x1F` at `0x801E3A7C`):
+    // the last byte is staged and the band leaves the loop together, so the
+    // recovery wait below is what holds until that last clip commits. (The
+    // `0x19` Miracle-continuation refill at `0x801E3A20..0x801E3A64` is not
+    // ported.)
+    let exhausted = host.actor(slot).map(|a| a.read_param(0)).unwrap_or(0) == 0;
+    if exhausted {
+        return transition(ctx, ActionState::AttackRecovery);
     }
     stay(ctx)
 }
@@ -353,12 +257,21 @@ pub(super) fn attack_recovery<H: BattleActionHost + ?Sized>(
 ) -> StepOutcome {
     let slot = ctx.active_actor;
     host.pose(slot, Pose::Recover);
+    // `0x1F` waits for `+0x1DC` bit 1 to clear (`0x801E3AEC..0x801E3AF8`) -
+    // i.e. for the last staged byte's clip to commit - then stages idle over
+    // it (`sb zero,0x1da` at `0x801E3B04`; the anim tick commits that at
+    // the clip's own boundary) and parks the cursor at `0xFF`
+    // (`0x801E3B14..0x801E3B1C`) on its way to `0x20`.
     let advance_done = host
         .actor(slot)
         .map(|a| a.flag_bits.has(ActorFlags::ADVANCE_DONE))
         .unwrap_or(false);
     if advance_done {
         return stay(ctx);
+    }
+    if let Some(actor) = host.actor_mut(slot) {
+        actor.queued_anim = 0;
+        actor.strike_index = STRIKE_CURSOR_PARKED;
     }
     transition(ctx, ActionState::AttackReturn)
 }

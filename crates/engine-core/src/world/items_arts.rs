@@ -114,6 +114,7 @@ impl World {
                     .find(|a| a.is_art());
                     return ArtRow {
                         name: c.name.clone(),
+                        sequence: c.sequence.clone(),
                         power,
                         enemy_effect,
                         miracle: Some(miracle.name),
@@ -143,6 +144,7 @@ impl World {
                         .find(|a| a.is_art());
                     return ArtRow {
                         name: c.name.clone(),
+                        sequence: c.sequence.clone(),
                         power,
                         enemy_effect,
                         miracle: None,
@@ -161,6 +163,7 @@ impl World {
                         let (power, enemy_effect) = power_from_record(rec);
                         ArtRow {
                             name: c.name.clone(),
+                            sequence: c.sequence.clone(),
                             power,
                             enemy_effect,
                             miracle: None,
@@ -171,6 +174,7 @@ impl World {
                     }
                     None => ArtRow {
                         name: c.name.clone(),
+                        sequence: c.sequence.clone(),
                         power: synthetic_power(&c.sequence),
                         enemy_effect: legaia_art::EnemyEffect::None,
                         miracle: None,

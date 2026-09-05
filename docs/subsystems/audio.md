@@ -1013,8 +1013,8 @@ The engine wires this end-to-end:
 
 - **Cue emission** (`engine-core`): executing arts through the live battle Arts
   command input pushes one `BattleShoutCue { cslot, action }` **per art the turn
-  performs** (`apply_battle_art`), each keyed on that art's own record action
-  constant. Retail stages every art's animation separately and the materialiser
+  performs** (`arm_battle_art_action`, from the art constants the built queue
+  carries), each keyed on that art's own record action constant. Retail stages every art's animation separately and the materialiser
   calls the cue selector per staging, so a three-art entry - the ordinary case,
   since entry runs until the AP pool is spent - requests three shouts. The port
   has no per-art animation timeline in the live loop, so the list is requested

@@ -76,6 +76,39 @@ pub struct MonsterAnimPlayer {
     looping: bool,
     /// One-shot completion latch (see [`Self::new_one_shot`]).
     finished: bool,
+    /// The entry's authored **loop window** - retail's `+0x84` count seeded
+    /// into `actor+0x176` (as `count << 4`, one whole 12.4 unit per cycle)
+    /// and the `[+0x85, +0x86]` frame pair - carried in this player's phase
+    /// units: `loop_budget` = cycles remaining × [`PHASE_ONE`],
+    /// `loop_start` / `loop_end` = the window's frames × [`PHASE_ONE`].
+    /// A zero budget is "no window" (the idle / walk / swing case).
+    loop_budget: u32,
+    loop_start: u32,
+    loop_end: u32,
+    /// The entry's signed root-motion speed (`+0x0C`), `0` for a headless
+    /// clip - what the anim tick's position term multiplies per frame
+    /// (`FUN_80047430` `0x80047D34..0x80047E18`).
+    root_speed: i16,
+    /// The entry's power run (`+0x00..+0x04`) and hit-event frame list
+    /// (`+0x10..+0x14`) plus the `+0x76` event-commit lock, kept on the
+    /// player so the per-frame hit-event driver reads them off the clip
+    /// that is actually playing (retail: the node's committed entry
+    /// `node[+0x4C]`). `None` for a clip built without an entry head.
+    hit_source: Option<HitEventSource>,
+}
+
+/// The committed entry's hit-event side, as the damage kernel `FUN_801EC3E4`
+/// and the anim tick's event-path commit read it
+/// ([`legaia_engine_vm::battle_action::hit_event_admits`] /
+/// [`legaia_engine_vm::battle_action::event_commit_due`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HitEventSource {
+    /// Entry `+0x00..+0x04` - one power byte per hit.
+    pub power_run: [u8; 4],
+    /// Entry `+0x10..+0x14` - the zero-terminated hit-frame list.
+    pub event_frames: [u8; 4],
+    /// Entry `+0x76` - non-zero locks the mid-clip event-path commit.
+    pub event_lock: u8,
 }
 
 /// Retail-pinned **base** per-tick phase advance for an entry rate byte:
@@ -107,9 +140,36 @@ impl MonsterAnimPlayer {
         if anim.frame_count == 0 || anim.part_count == 0 {
             return None;
         }
+        // The loop window (`+0x84..+0x87`): the commit `FUN_8004AD80` seeds
+        // `actor+0x176 = count << 4` and `+0x21B = count`
+        // (`0x8004BDEC..0x8004BE0C`); the tick's window test needs
+        // `start <= end`, and a window past the stream is left to the
+        // natural end (the disc census filter `animation_loop_windows`
+        // applies is the same bound).
+        let frames = anim.frame_count as u32;
+        let (loop_budget, loop_start, loop_end) = match anim.entry_loop_window() {
+            Some((count, start, end))
+                if u32::from(start) <= u32::from(end) && u32::from(end) <= frames =>
+            {
+                (
+                    u32::from(count) * PHASE_ONE,
+                    u32::from(start) * PHASE_ONE,
+                    u32::from(end) * PHASE_ONE,
+                )
+            }
+            _ => (0, 0, 0),
+        };
+        let hit_source = match (anim.entry_power_run(), anim.entry_event_frames()) {
+            (Some(power_run), Some(event_frames)) => Some(HitEventSource {
+                power_run,
+                event_frames,
+                event_lock: anim.entry_event_commit_lock().unwrap_or(0),
+            }),
+            _ => None,
+        };
         Some(Self {
             frames: anim.frames.clone(),
-            frame_count: anim.frame_count as u32,
+            frame_count: frames,
             part_count: anim.part_count,
             action_id: anim.action_id,
             attach_key: anim.attach_key,
@@ -119,7 +179,38 @@ impl MonsterAnimPlayer {
             step: step_for_rate(anim.rate),
             looping: true,
             finished: false,
+            loop_budget,
+            loop_start,
+            loop_end,
+            root_speed: anim.entry_root_speed().unwrap_or(0),
+            hit_source,
         })
+    }
+
+    /// The entry's signed root-motion speed (`+0x0C`); `0` for a headless
+    /// clip.
+    pub fn root_speed(&self) -> i16 {
+        self.root_speed
+    }
+
+    /// The committed entry's hit-event side, or `None` for a clip built
+    /// without an entry head (which then has no hit events at all).
+    pub fn hit_source(&self) -> Option<HitEventSource> {
+        self.hit_source
+    }
+
+    /// Cycles the loop window still owes, in whole clip frames - retail's
+    /// `actor+0x21B` mirror (`+0x176 >> 4`). `0` when the clip carries no
+    /// window or has spent it.
+    pub fn loop_cycles_remaining(&self) -> u8 {
+        (self.loop_budget / PHASE_ONE).min(255) as u8
+    }
+
+    /// Release the loop window early - the `actor+0x176` / `+0x21B` clear a
+    /// cast module performs to end an authored park (the Delilas modules do
+    /// this; see `docs/formats/monster-animation.md` § Playback).
+    pub fn release_loop_window(&mut self) {
+        self.loop_budget = 0;
     }
 
     /// Build a **one-shot** player: the clip plays once, the cursor clamps at
@@ -136,6 +227,12 @@ impl MonsterAnimPlayer {
     /// `false` for a looping player.
     pub fn finished(&self) -> bool {
         self.finished
+    }
+
+    /// `true` for a looping player (the idle / walk cycles), `false` for a
+    /// one-shot.
+    pub fn is_looping(&self) -> bool {
+        self.looping
     }
 
     /// Number of animated parts (= TMD objects the pose addresses).
@@ -214,17 +311,52 @@ impl MonsterAnimPlayer {
         self.advance(step)
     }
 
+    /// The retail loop-window test (`FUN_80047430` `0x80047768..0x8004783C`),
+    /// run on the advanced cursor **before** the natural-end test: while the
+    /// hold budget (`actor+0x176`) is non-zero and the cursor has reached
+    /// `end`, a `start == end` window parks the cursor on `start` and
+    /// spends the overshoot from the budget (`0x800477A4..0x800477D4`), and
+    /// a real window rewinds by the span once per whole budget unit until
+    /// the cursor is back below `end` or the budget is spent
+    /// (`0x800477EC..0x8004783C`).
+    // PORT: FUN_80047430 (the +0x176 loop-window arm)
+    fn apply_loop_window(&mut self, mut phase: u32) -> u32 {
+        if self.loop_budget == 0 || phase < self.loop_end {
+            return phase;
+        }
+        if self.loop_end == self.loop_start {
+            let over = phase - self.loop_start;
+            self.loop_budget = if over < self.loop_budget {
+                self.loop_budget - over
+            } else {
+                0
+            };
+            return self.loop_start;
+        }
+        let span = self.loop_end - self.loop_start;
+        loop {
+            phase = phase.saturating_sub(span);
+            self.loop_budget = self.loop_budget.saturating_sub(PHASE_ONE);
+            if self.loop_budget == 0 || phase < self.loop_end {
+                break;
+            }
+        }
+        phase
+    }
+
     fn advance(&mut self, step: u32) -> PoseFrame {
         let total = self.frame_count * PHASE_ONE;
         let (f0, f1);
+        // Window before natural end, exactly like the tick.
+        let raw = self.apply_loop_window(self.phase + step);
         if self.looping {
-            self.phase = (self.phase + step) % total;
+            self.phase = raw % total;
             f0 = (self.phase >> PHASE_FRAC_BITS) as usize % self.frames.len();
             f1 = (f0 + 1) % self.frames.len();
         } else {
             // One-shot: clamp the cursor on the final keyframe.
             let last = (self.frame_count - 1) * PHASE_ONE;
-            self.phase = (self.phase + step).min(last);
+            self.phase = raw.min(last);
             self.finished = self.phase >= last;
             f0 = (self.phase >> PHASE_FRAC_BITS) as usize % self.frames.len();
             f1 = (f0 + 1).min(self.frames.len() - 1);
@@ -450,5 +582,90 @@ mod one_shot_tests {
             assert!(!p.tick().finished);
         }
         assert!(!p.finished());
+    }
+
+    /// A clip whose entry head carries a loop window `[start, end]` with
+    /// `count` cycles (`+0x84..+0x87`), a root speed and a hit-event pair.
+    fn windowed_clip(frames: usize, count: u8, start: u8, end: u8) -> MonsterAnimation {
+        let mut c = clip(frames);
+        let mut head = vec![0u8; legaia_asset::monster_archive::EFFECT_SCRIPT_HEAD_BYTES];
+        head[0] = 0x0C; // power byte 0 (in band)
+        head[0x0C..0x0E].copy_from_slice(&(-20i16).to_le_bytes());
+        head[0x10] = 3; // hit frame
+        head[0x76] = 1; // event-commit lock
+        head[0x84] = count;
+        head[0x85] = start;
+        head[0x86] = end;
+        c.effect_script = head;
+        c
+    }
+
+    #[test]
+    fn loop_window_replays_its_frames_the_authored_number_of_times() {
+        // 10-frame one-shot, window [4, 6] x 2: the cursor runs 0..6, rewinds
+        // to 4 twice, then continues to the end.
+        let mut p = MonsterAnimPlayer::new_one_shot(&windowed_clip(10, 2, 4, 6)).unwrap();
+        p.step = 256;
+        assert_eq!(p.loop_cycles_remaining(), 2);
+        let mut seen = Vec::new();
+        for _ in 0..16 {
+            p.tick();
+            seen.push(p.current_frame());
+            if p.finished() {
+                break;
+            }
+        }
+        assert_eq!(seen, vec![1, 2, 3, 4, 5, 4, 5, 4, 5, 6, 7, 8, 9]);
+        assert_eq!(p.loop_cycles_remaining(), 0);
+        assert!(p.finished());
+    }
+
+    #[test]
+    fn a_parking_window_holds_the_cursor_until_the_budget_is_spent() {
+        // [5, 5] x 3: park on frame 5 for three frames of budget, then run.
+        let mut p = MonsterAnimPlayer::new_one_shot(&windowed_clip(8, 3, 5, 5)).unwrap();
+        p.step = 256;
+        let mut seen = Vec::new();
+        for _ in 0..14 {
+            p.tick();
+            seen.push(p.current_frame());
+            if p.finished() {
+                break;
+            }
+        }
+        assert_eq!(seen, vec![1, 2, 3, 4, 5, 5, 5, 5, 6, 7]);
+    }
+
+    #[test]
+    fn release_loop_window_lets_the_clip_run_out() {
+        let mut p = MonsterAnimPlayer::new_one_shot(&windowed_clip(8, 0xFF, 5, 5)).unwrap();
+        p.step = 256;
+        for _ in 0..40 {
+            p.tick();
+        }
+        assert_eq!(p.current_frame(), 5, "an 0xFF budget parks for a long time");
+        p.release_loop_window();
+        for _ in 0..4 {
+            p.tick();
+        }
+        assert!(p.finished());
+    }
+
+    #[test]
+    fn the_player_carries_the_entry_head_the_drivers_read() {
+        let p = MonsterAnimPlayer::new(&windowed_clip(8, 1, 2, 3)).unwrap();
+        assert_eq!(p.root_speed(), -20);
+        assert_eq!(
+            p.hit_source(),
+            Some(HitEventSource {
+                power_run: [0x0C, 0, 0, 0],
+                event_frames: [3, 0, 0, 0],
+                event_lock: 1,
+            })
+        );
+        let bare = MonsterAnimPlayer::new(&clip(3)).unwrap();
+        assert_eq!(bare.root_speed(), 0);
+        assert_eq!(bare.hit_source(), None);
+        assert_eq!(bare.loop_cycles_remaining(), 0);
     }
 }

@@ -206,6 +206,7 @@ impl World {
         // Stale damage popups + sound cues must not bleed into the next
         // encounter / field.
         self.battle_hit_fx.clear();
+        self.battle_hit_events.clear();
         self.battle_sfx_cues.clear();
         self.battle_effect_spawns.clear();
         self.battle_shout_cues.clear();

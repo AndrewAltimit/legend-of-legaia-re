@@ -185,6 +185,44 @@ pub struct BattleEffectSpawn {
     pub facing: u16,
 }
 
+/// One **hit event** the attack band resolved this tick - the retail
+/// `FUN_801EC3E4` call the anim tick made on the frame a committed clip
+/// reached one of its `+0x10..+0x13` beats (`legaia_engine_vm::battle_action::hit_event`).
+///
+/// This is the channel the impact-FX and HIT / TOTAL counter layers consume:
+/// one entry per resolved hit, in resolution order, carrying the hit's index
+/// inside its clip, the power byte it rolled with, the damage it rolled, and
+/// the target's running combo total afterwards (retail `target[+0x0]`, the
+/// word the HUD's `TOTAL` reads). `applied` marks the hit that subtracted the
+/// whole total from live HP (`+0x14C`) - the last listed hit of the action's
+/// last clip; every earlier hit only accumulated and drained the HP bar.
+/// Cosmetic in the [`BattleHitFx`] sense: the state mutation has already
+/// happened when an entry lands here. Drained via
+/// [`crate::world::World::drain_battle_hit_events`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BattleHitEvent {
+    /// The attacker's actor-table index.
+    pub attacker_slot: u8,
+    /// The target the hit landed on.
+    pub target_slot: u8,
+    /// The hit's index inside its clip (`actor[+0x1F4]` at resolution).
+    pub hit_index: u8,
+    /// The clip entry's power byte for this hit (`entry[+hit_index]`).
+    pub power_byte: u8,
+    /// The damage this hit rolled (after the finisher; `0` for an absorbed
+    /// or no-damage hit).
+    pub damage: u16,
+    /// The target's combo total after this hit (retail `target[+0x0]`),
+    /// `0` once [`Self::applied`] has zeroed it.
+    pub running_total: u16,
+    /// `true` when this hit wrote the accumulated total to live HP.
+    pub applied: bool,
+    /// `true` when the committed clip was a party Tactical Art (the latched
+    /// staged id was an art constant), `false` for a direction swing or a
+    /// monster clip.
+    pub is_art: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BattleSfxCue {
     /// SfxBank cue id (the art `HitCue::kind`).

@@ -206,6 +206,11 @@ impl World {
     /// starter's own terms.
     pub fn drain_battle_xa_cues(&mut self) -> Vec<crate::sfx_cue::XaVoiceClip> {
         std::mem::take(&mut self.battle_xa_cues)
+    /// Drain the hit events the attack band resolved
+    /// ([`crate::battle_events::BattleHitEvent`]; one per damage-kernel
+    /// resolution). Cosmetic: the accumulate / apply has already happened.
+    pub fn drain_battle_hit_events(&mut self) -> Vec<crate::battle_events::BattleHitEvent> {
+        std::mem::take(&mut self.battle_hit_events)
     }
 
     pub fn drain_battle_sfx_cues(&mut self) -> Vec<BattleSfxCue> {

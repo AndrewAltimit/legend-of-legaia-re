@@ -61,6 +61,25 @@ below.
 | "The port's `0x51` Done-band residency is unbounded" | falsified (bounded at `ctx[+0x6D8] = 0x3C`, as retail) | The 60-70 frames a sample shows is **one** action's countdown plus the HP-bar settle freeze; a multi-action sample sums several of them. Counting frames in a band without splitting them by action reads a per-action budget as a park. [details](../subsystems/battle-action.md#three-readings-the-port-already-satisfied) |
 | "The sparring tutorial reopens the command session, so the cursor cannot move" | falsified (the cursor walks `0..5`; a *waiting* prompt box parks the tick) | The session is reopened only on a rejected resolution. What pins the cursor on screen is retail's own `ctx[+0x6B2]` box guard, which the port reproduces. [details](../subsystems/battle-action.md#three-readings-the-port-already-satisfied) |
 | An action returns its combatants to their authored formation seats | falsified (retail leaves them on the ground the action ended on) | Two library states of one solo fight read the authored formation 1600 apart; two later ones read the same pair ~300 apart and both far off it, with every actor's `+0x3C`/`+0x40` pair within ~110 units of its live `+0x34`/`+0x38`. The port's walk-home leg is gone; the seat is committed from the live pair at `DoneCleanup`. [details](../subsystems/battle-action.md#where-an-action-leaves-its-combatants) |
+| Staged ids `0x10` and `0x1A` **alone** install at dynamic slot `0x11`, every other art-bank id at `0x10` | falsified (`0x10`, `0x1A` and every art constant `>= 0x1B` install at `0x11`; only the base ids `0x11..=0x19` take `0x10`) | [details ↓](#the-dynamic-slot-rewrite-was-never-0x10-and-0x1a-only) |
+
+### The dynamic-slot rewrite was never "`0x10` and `0x1A` only"
+
+The decompiled C of `FUN_8004AD80` shows two `0x11` assignments and the
+reading took them for the whole set, so `resolve_staged_anim` installed every
+art constant at slot `0x10`. The slot register `s2` is written in **delay
+slots**, which the C folds away: `_li s2,0x10` under the `0x1A` test at
+`0x8004B720` is the default, `0x8004B76C` (the `0x1A` arm) and `0x8004BB58`
+(the `0x10` test) set `0x11`, and the art-constant arm - entered for every
+staged id `>= 0x1B` at `0x8004BB5C` - sets `0x11` in the delay slot of its
+name-width call (`jal 0x80035f04 ; _li s2,0x11` at `0x8004BBBC..0x8004BBC0`)
+before the install at `0x8004BC4C`. A live Tri-Somersault capture agrees:
+`+0x1D9` reads `0x11` under `0x27`, `0x1F` and `0x2B`, and `0x10` under the
+`0x19` starter. The narrow reading survived for as long as no art constant was
+ever staged through the port's attack band; the first one that was landed on
+the wrong slot. The `+0x1D9 == +0x1DA` equality checks compare slot numbers,
+so the slot an id lands on is what decides whether the SM sees its clip as
+committed.
 
 ### A level-up is not a heal
 

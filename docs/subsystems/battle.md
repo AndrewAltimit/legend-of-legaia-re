@@ -4117,16 +4117,17 @@ enemy HP and downs it at zero, `CaptureRolled` reuses `World::resolve_capture`
 - **Arts** opens the per-press [Arts command input](#arts-command-input) on
 `World::battle_arts_input` - the player *types* the chain, one d-pad press per
 command, and the entry ends itself when the AP pool can no longer afford a
-press. `World::resolve_arts_input_entry` then runs the entered buffer through
-the retail matcher order (Miracle string → Super tail → per-art greedy
-longest-match, unmatched directions staying plain synthetic swings) to a
-per-strike **power profile** (`Vec<PowerByte>` + `EnemyEffect`) plus the list of
-named arts the turn performs. `World::apply_battle_art` drives each power byte
-through `crate::art_strike::apply_art_strike`, so the byte's multiplier tier +
-UDF/LDF target decode, `resolve_battle_defense` picks the matching defense half,
-and the art's status effect lands on a hit. Art records come from
+press. `World::build_arts_action_queue` then builds retail's action queue
+from the entered buffer (`legaia_art::tokenize` + the learn-on-use verdict +
+the Miracle / MSB-clear / Super finish) and `arm_battle_art_action` hands it to
+the action SM's attack band verbatim: each swing, starter and art constant is
+its own staged clip, and the clip's hit events resolve the damage
+(`World::tick_battle_hit_events`; see
+[battle-action.md](battle-action.md#what-the-port-does)). Art records come from
 `World::art_records`, keyed by `(Character, ActionConstant)` and populated from
-disc PROT entry `0x05C4` via `World::set_art_record`.
+disc PROT entry `0x05C4` via `World::set_art_record`; the hit-event driver reads
+them for the status effect and per-hit cue only - the power bytes are the
+clip entry's own.
   Because an entry runs until the pool is spent, performing **several** arts in
 one turn is the ordinary case, and the performed-art list is what the shout cue
 and the learn-on-use check are keyed on - once per art, not once per turn (see

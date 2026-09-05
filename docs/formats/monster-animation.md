@@ -171,6 +171,17 @@ non-zero, and only four entries carry a value at or past their own
 `frame_count`. Frames, not sixteenths - these are compared against the anim
 tick's integer frame, `cursor >> 4`.
 
+The damage kernel `FUN_801EC3E4` reads the list directly, indexed by the
+actor's per-clip hit index `+0x1F4`: called from the anim tick every frame a
+battle clip plays (`0x800478A0`, `0x80047BF0`, with `cursor >> 4` in `a2`),
+it fires one hit on the first frame with `frame + 1 >= entry[+0x10 + idx]`
+(`0x801EC45C..0x801EC484`), resolves it with the power byte at the same index
+of `+0x00..+0x03`, and bumps `+0x1F4` in its epilogue; every commit zeroes the
+index (`0x8004B064`). A swing entry's single beat is therefore its one hit and
+an art entry's ascending run its combo, paced by the clip rather than by the
+action stream ([battle-action.md](../subsystems/battle-action.md#3-damage-is-one-power-byte-per-animation-hit-event)).
+The two `FUN_80050E00` consumers below are the other readers.
+
 Both traced consumers are in the anim tick `FUN_80047430`, and both locate the
 slot through the helper `FUN_80050E00(entry + 0x10)`
 (`ghidra/scripts/funcs/80050e00.txt`), which walks `+0x11..+0x13`. Read the
@@ -478,7 +489,13 @@ normal `frame_dt = 1`, `+0x21D = 4` case); the engine also plays the
 hit-reaction family - `World::queue_battle_reaction` mirrors the
 `FUN_800402F4` staging and `tick_battle_animations` the knockdown → get-up
 chain. The decoder's cross-blend into the queued clip is a known engine
-simplification (transitions restart at frame 0 without the tween).
+simplification (transitions restart at frame 0 without the tween). The player
+also carries the entry head the tick and the damage kernel read off the
+committed entry: the `+0x84..+0x86` loop window (`apply_loop_window`, run
+before the natural-end test as the tick does), the signed `+0x0C` root speed
+(`root_speed`, driven by `World::tick_battle_locomotion`) and the
+`+0x00..+0x03` / `+0x10..+0x13` / `+0x76` hit-event side (`hit_source`, read
+by `World::tick_battle_hit_events`).
 
 ## Export
 

@@ -83,6 +83,9 @@ pub use queue_applier::*;
 mod flash_ramp;
 pub use flash_ramp::*;
 
+mod hit_event;
+pub use hit_event::*;
+
 mod target_cursor;
 pub use target_cursor::*;
 

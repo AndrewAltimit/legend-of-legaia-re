@@ -299,6 +299,42 @@ species and at the disc's authored heap-cost maximum.
 | How an NPC's facing changes **after** spawn - snap vs ramp, and which writer wins | resolved (two laws; order-of-execution priority) | `disassembly` | [details ↓](#npc-dynamic-facing---two-laws-and-an-execution-order) |
 | dolk2/rikuroa MAN source (the "v12-embedded MAN" was an over-read) | resolved (streaming carrier) | `capture` | Their own `base+3` bundles are the MAN-less count=4 form `[1,2,6,0x14]`; the "embedded MAN at 0x1000" inside their SceneV12Table entries is an over-read onto the next scene's bundle (suimon's / geremi's; [scene-v12-table.md](../formats/scene-v12-table.md) § over-read). Retail sources their partition scripts from the block's standalone `data_field_streaming` entry's type-3 chunk (`dolk2` ext 70 `[29,73,17]`, `rikuroa` ext 157 `[13,29,64]`; live script-heap byte-match at the Caruban beat). Engine: `field_man_payload` streaming fallback (`streaming_man_payloads`) + retail-frame `Scene::load` windows; pins `v12_bundle_man_disc.rs`. |
 | kor-family op-0x49 flag window `[0x138..0x13F]` - what the 8 flags gate | resolved (Uru Mais warp-pad destination memory) | `disassembly` | [details ↓](#kor-family-op-0x49-flag-window-0x1380x13f---uru-mais-warp-pad-picker) |
+| Attack-band damage pacing - who calls `FUN_801EC3E4`, what paces the hits, when the total lands | resolved (the anim tick calls it every frame; the clip's `+0x10..+0x13` beats fire the hits; one HP write per combo) | `disassembly` | [details ↓](#attack-band-damage-pacing---the-hit-event-model) |
+
+### Attack-band damage pacing - the hit-event model
+
+*Status:* resolved - disassembly (`FUN_801EC3E4` head `0x801EC41C..0x801EC494`, apply arm
+`0x801EE984..0x801EEA78`, epilogue `0x801EECDC..0x801EECE8`; `FUN_80047430` call sites
+`0x800478A0` / `0x80047BF0` and the bit-1 cut `0x80047900..0x80047948`; `FUN_8004AD80` `0x8004B064`)
++ capture (two PCSX-Redux hit-event timelines, a plain Somersault and a Tri-Somersault Super)
+
+The strike loop of the action SM (`FUN_801E295C` state `0x1E`) stages one byte into `+0x1DA`
+and sets `+0x1DC` bit 1; it never calls a damage kernel. The kernel runs from the **anim
+tick**, every frame a battle clip plays, with the cursor frame in `a2`, and its own head decides
+whether that frame is a hit: `ctx[7] != 0x5A`, the committed entry's byte 0 in `0x0C..=0x1F`,
+the per-clip hit index `+0x1F4 < 4`, `entry[+0x10 + idx] != 0`, and `frame + 1 >=
+entry[+0x10 + idx]`. An admitted hit resolves with `entry[idx]` as its power byte, adds the
+damage to the target's combo word `+0x0` and its HP-bar word `+0x10` (`0x801EDB40` /
+`0x801EDB58`) and bumps `+0x1F4`; every commit zeroes the index. Live HP moves **once**: the hit
+that lands after the strike loop has parked the cursor at `0xFF` (`ctx[+0x15]`, `0x801EE9A4`)
+and that is its clip's last listed beat (`entry[+0x11 + idx] == 0 || idx == 3`) subtracts the
+whole accumulator from `+0x14C` and zeroes it (`0x801EEA10..0x801EEA74`). The tick's bit-1 cut
+commits the next staged byte once `entry[+0x10] + 2 < frame` with `entry[+0x76] == 0`, which is
+what chains one swing into the next mid-clip; the art records carry `+0x76 = 1` and play to
+their natural end.
+
+Both captures read exactly that. A plain three-arrow Somersault: swing `0F` commits, its hit
+fires at frame 6 (`e0 = 7`), swing `0E` commits 8 vsyncs later at frame 10, hits at frame 6,
+the `0x19` starter plays with no events, `0x27` installs at slot `0x11` and hits at frame 4
+(`e0 = 5`) while the SM sits in `0x20` - and the target's HP falls 76 → 23 in that one frame.
+The Tri-Somersault Super stacks seven hits across `0F`, the two-hit `0x1F`, `0E`, `0x1A` and
+three `0x2B` clips and lands 3542 → 2318 on the last one. One probe artifact worth knowing:
+`*(actor + 0x22C)` alternates between two draw nodes on consecutive vsyncs, so a per-vsync
+cursor sample can read the node the tick did not advance (three frames behind); the in-sync
+stream satisfies the head guard on every hit. Engine seats: `legaia_engine_vm::battle_action::hit_event`
+(the head), `World::tick_battle_hit_events` / `land_melee_hit` / `apply_combo_total`
+(`engine-core`); write-up in
+[battle-action.md](../subsystems/battle-action.md#a-tactical-art-is-an-ordinary-attack-band-action).
 
 ### The battle HUD's per-phase surfaces are the sub-draw script table
 

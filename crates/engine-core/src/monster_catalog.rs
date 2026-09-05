@@ -71,6 +71,14 @@ pub struct MonsterDef {
     /// gauge. Empty (the synthetic default) means the monster falls back to one
     /// swing per turn.
     pub action_costs: Vec<u8>,
+    /// Sibling of [`Self::action_costs`], index-aligned: the archive
+    /// **entry index** of each candidate swing action - the raw anim id the
+    /// picker queues into the monster's action stream (`actor[+0x1DF..]`)
+    /// and the attack band stages into `+0x1DA`
+    /// ([`legaia_asset::monster_archive::MonsterSpell::entry_index`]).
+    /// Empty on the synthetic catalog, which then keeps the budget-only
+    /// immediate swings.
+    pub action_entries: Vec<u8>,
     /// Intelligence (record `stats[4]` / `+0x18`, actor `+0x168`), unclamped -
     /// the bestiary **INT** stat. Seeds the summon-damage roll when this
     /// creature is the spell's summon body (`FUN_801dd0ac` summon branch reads
@@ -131,6 +139,7 @@ impl MonsterDef {
             speed: 0,
             agl: 0,
             action_costs: Vec::new(),
+            action_entries: Vec::new(),
             intel: 70,
             accuracy: 70,
             evasion: 10,
@@ -262,12 +271,13 @@ pub fn monster_def_from_record(rec: &legaia_asset::monster_archive::MonsterRecor
     // The picker's physical branch counts a record as a candidate swing when its
     // tag byte (`+0x0`, parsed as `MonsterSpell::id`) is in `0x0C..=0x1F` and
     // its `+0x74` AGL cost is not the `0xFF` "not-an-attack" sentinel.
-    def.action_costs = rec
+    let candidates: Vec<_> = rec
         .spells
         .iter()
         .filter(|s| (0x0C..=0x1F).contains(&s.id) && s.agl_cost != 0xFF)
-        .map(|s| s.agl_cost)
         .collect();
+    def.action_costs = candidates.iter().map(|s| s.agl_cost).collect();
+    def.action_entries = candidates.iter().map(|s| s.entry_index).collect();
     def.intel = bs[4];
     let int_byte = bs[4].min(u8::MAX as u16) as u8;
     def.accuracy = int_byte;
@@ -473,6 +483,7 @@ pub fn vanilla_monster_catalog() -> MonsterCatalog {
             // from the disc archive via `monster_def_from_record`.
             agl: 0,
             action_costs: Vec::new(),
+            action_entries: Vec::new(),
             intel: acc as u16,
             accuracy: acc,
             evasion: eva,

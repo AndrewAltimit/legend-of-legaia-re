@@ -266,11 +266,10 @@ pub enum RoundPhase {
 pub enum PendingPartyAction {
     /// The plain strike (category `3`) against `target`, an engine actor slot.
     Attack { target: u8 },
-    /// A Tactical-Arts entry (category `3` with a staged art profile).
+    /// A Tactical-Arts entry (category `3`): the entered direction string,
+    /// built into retail's action queue at the dispatch.
     Art {
-        power: Vec<legaia_art::PowerByte>,
-        enemy_effect: legaia_art::EnemyEffect,
-        actions: Vec<legaia_art::ActionConstant>,
+        sequence: Vec<u8>,
         target_row: crate::target_picker::CursorRow,
         target_slot: u8,
     },

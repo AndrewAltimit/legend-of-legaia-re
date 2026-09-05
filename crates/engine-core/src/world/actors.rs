@@ -226,6 +226,14 @@ impl World {
                 if a.battle.queued_anim == id {
                     a.battle.queued_anim = 0;
                     a.battle.current_anim = 0;
+                } else {
+                    // A byte was staged behind this clip (the retail one-ahead
+                    // stream): the natural-end commit installs it right here,
+                    // in the same tick, exactly as `FUN_8004AD80` is called
+                    // from the tick's natural-end path (`0x80047B54`). Leaving
+                    // it to the next frame's pair-inequality commit would let
+                    // the SM overwrite the queued byte first.
+                    self.commit_staged_battle_anim_at_boundary(i);
                 }
             }
             // A finished one-shot action clip falls back to the idle loop -
@@ -723,14 +731,60 @@ impl World {
 
     /// Single-actor arm of [`Self::commit_staged_battle_anims`]. Public so
     /// tests can drive one slot deterministically.
+    ///
+    /// Retail commits only at a **clip boundary**: `FUN_8004AD80` is called
+    /// from the anim tick's natural-end path and its bit-1 event-path cut
+    /// (and directly on a bit-0 "commit now"), never merely because
+    /// `+0x1DA != +0x1D9`. So while a staged one-shot clip is still in
+    /// flight, a byte staged behind it waits here - the natural end
+    /// ([`Self::tick_battle_animations`]) or the event cut
+    /// (`World::tick_battle_hit_events`) then calls
+    /// [`Self::commit_staged_battle_anim_at_boundary`]. A looping player
+    /// (the walk) is exempt: retail replays it by re-committing at every
+    /// cycle end, and the engine's player has no cycle edge to hand over
+    /// on, so a byte staged over the walk commits at once (the pre-boundary
+    /// pacing).
     pub fn commit_staged_battle_anim(&mut self, i: usize) {
+        let Some(actor) = self.actors.get(i) else {
+            return;
+        };
+        if actor.battle.queued_anim == actor.battle.current_anim {
+            return;
+        }
+        let in_flight = actor.battle_staged_anim.is_some()
+            && actor
+                .battle_animation
+                .as_ref()
+                .is_some_and(|p| !p.finished() && !p.is_looping());
+        if in_flight {
+            return;
+        }
+        self.commit_staged_battle_anim_at_boundary(i);
+    }
+
+    /// The commit body, run at a clip boundary (see
+    /// [`Self::commit_staged_battle_anim`]). With the staged byte equal to
+    /// the committed id this is retail's **re-commit** of a still-queued
+    /// clip: the same entry is re-installed with its cursor and hit index
+    /// zeroed (`0x8004B064..0x8004B068`) - the port rewinds the in-flight
+    /// player in place. Either way the stage latch `+0x1DC` bit 1
+    /// (`ADVANCE_DONE`) clears, which is what lets the strike loop read its
+    /// next byte.
+    // PORT: FUN_8004AD80 (the commit body; boundary selection is the tick's)
+    pub(in crate::world) fn commit_staged_battle_anim_at_boundary(&mut self, i: usize) {
         use vm::anim_vm::{StagedAnimTarget, resolve_staged_anim};
         use vm::battle_action::ActorFlags;
-        let Some(actor) = self.actors.get(i) else {
+        let Some(actor) = self.actors.get_mut(i) else {
             return;
         };
         let q = actor.battle.queued_anim;
         if q == actor.battle.current_anim {
+            if let Some(p) = actor.battle_animation.as_mut() {
+                p.rewind();
+            }
+            actor.battle_effect_cursor = 0;
+            actor.battle.input_cursor = 0;
+            actor.battle.flag_bits.clear(ActorFlags::ADVANCE_DONE);
             return;
         }
         // `+0x1DB = +0x1DA` (`FUN_8004AD80` `0x8004AEB0..0x8004AEB8`), taken
@@ -771,6 +825,15 @@ impl World {
                 rl::CommitRateEffect::None => {}
             }
         }
+        // Every commit zeroes the per-clip hit index (`sb zero,0x1f4` at
+        // `0x8004B064`) and releases the stage latch (bit 1 of `+0x1DC`,
+        // the `andi 0xFC` / `0xF8` at the two commit paths): the strike loop
+        // may now read the byte behind this one. Idle included.
+        {
+            let a = &mut self.actors[i];
+            a.battle.input_cursor = 0;
+            a.battle.flag_bits.clear(ActorFlags::ADVANCE_DONE);
+        }
         let actor = &self.actors[i];
         // Staged idle: converge and resume the loop. A staged clip in
         // flight is dropped (retail: the commit replaces the playing
@@ -810,6 +873,24 @@ impl World {
                 (clip, q)
             }
         };
+        // The entry's solo / freeze byte (`+0x87`): a non-zero value is
+        // handed to `FUN_8004E13C` right after the loop-window seed
+        // (`0x8004BE18..0x8004BE2C`), which stores it into battle ctx
+        // `+0x243` (`sb s0,0x243` at `0x8004E2C0`) - the marker the art
+        // constant's rate arm reads (`ctx[+0x243]` armed -> quarter speed)
+        // and the SM's Done arm clears. The routine's other half, the
+        // per-actor pause flag `+0x21C` on every non-acting, non-target
+        // slot, has no engine field; the SpecialStarter's freeze covers the
+        // visible case through the rate arm above.
+        // PORT: FUN_8004E13C (the `+0x243` store; the `+0x21C` sweep and the
+        // value-2 coin re-roll into `+0x6DA` are not modelled)
+        if let Some(v) = clip
+            .as_ref()
+            .and_then(|c| c.entry_solo_flag())
+            .filter(|&v| v != 0)
+        {
+            self.battle_ctx.gauge_rearm_latch = v;
+        }
         let a = &mut self.actors[i];
         // The FUN_8004AD80 rewrite: both id fields hold the committed slot
         // number, so the SM's equality checks compare post-rewrite values.
@@ -859,9 +940,10 @@ impl World {
                 a.battle_effect_cursor = 0;
             }
             None => {
-                // No usable clip: a zero-length swing - fire the anim-end
-                // signal immediately so the attack chain's read gate opens.
-                a.battle.flag_bits.clear(ActorFlags::ADVANCE_DONE);
+                // No usable clip: a zero-length swing - nothing plays, the
+                // latch above is already clear so the attack chain's read
+                // gate is open; the live loop resolves the byte's hits at
+                // stage time (`World::resolve_zero_length_clip_hits`).
             }
         }
     }

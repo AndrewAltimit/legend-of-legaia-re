@@ -48,6 +48,9 @@ const SYNTH_LDF_X12: u8 = 0x1B;
 pub struct ArtRow {
     /// Display name of the saved chain.
     pub name: String,
+    /// The chain's directional command string (`1..=4` bytes) - what the
+    /// queue-builder runs when the row is confirmed.
+    pub sequence: Vec<u8>,
     /// Per-strike damage power bytes the art deals, in strike order. Driven
     /// through [`crate::art_strike::apply_art_strike`] when the art runs.
     pub power: Vec<PowerByte>,
@@ -298,6 +301,7 @@ pub fn rows_from_chains(actor: u8, chains: &[legaia_save::SavedChainRecord]) -> 
         .filter(|c| c.char_slot == actor)
         .map(|c| ArtRow {
             name: c.name.clone(),
+            sequence: c.sequence.clone(),
             power: synthetic_power(&c.sequence),
             enemy_effect: EnemyEffect::None,
             miracle: miracle_for_chain(character_for_slot(actor), &c.sequence).map(|m| m.name),
