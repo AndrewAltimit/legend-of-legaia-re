@@ -2486,11 +2486,13 @@ byte `*(_DAT_8007BD24)[0]`:
    `engine-vm::battle_formulas::tint_sm_step`, driven by the same tick).
    The same triple is what a **landing hit** stamps on the struck actor:
    the melee / arts routine `FUN_801EC3E4` reads the acting record's
-   `+0x7A` impact class (`0x801EE3D4..0x801EE43C`, gated `0 < class < 6`
-   by `sltiu v0,v0,0x6`; every connecting swing reaches it - there is no
-   exit ahead of the arm), the monster special-attack tick `FUN_801E09F8`
-   reads the move-power record's `+0x0A` at each arm's impact phase
-   (`0x801E15AC..0x801E15EC`). Port `World::arm_impact_tint`, called from
+   `+0x7A` status / impact selector (`0x801EE3D4..0x801EE43C`, the tint
+   gated `0 < sel < 6` by `sltiu v0,v0,0x6` because selector `6` is the
+   tint-less Curse arm at `0x801EE690`; every connecting swing reaches it -
+   there is no exit ahead of the arm), the monster special-attack tick
+   `FUN_801E09F8` reads the move-power record's `+0x0A` at each arm's
+   impact phase (`0x801E15AC..0x801E15EC`, unguarded - that ladder ends at
+   `5`). Port `World::arm_impact_tint`, called from
    the basic-strike kernel, the `ApplyArtStrike` fold and the enemy
    status-proc arm; the class rides the clip as
    `MonsterAnimation::impact_class`. How the words reach the pixel is in

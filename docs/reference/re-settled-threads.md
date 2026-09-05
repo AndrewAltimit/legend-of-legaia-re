@@ -135,10 +135,14 @@ the pixel law read off two consecutive save states; every write and gate
 also in disassembly).
 
 - **The stamp.** `FUN_801EC3E4` `0x801EE3D4..0x801EE43C`: `+0x04 =
-  0x801F53D4[class - 1]`, `+0x21F = class`, `+0x0C = 0x1000`, with `class
-  = record[+0x7A]`, `beq zero` past the arm and `sltiu v0,v0,0x6` bounding
+  0x801F53D4[sel - 1]`, `+0x21F = sel`, `+0x0C = 0x1000`, with `sel =
+  record[+0x7A]`, `beq zero` past the arm and `sltiu v0,v0,0x6` bounding
   it; no exit precedes the arm, so every connecting swing (a Stone-absorbed
-  one included) reaches it. `FUN_801E09F8` `0x801E15AC..0x801E15EC` is the
+  one included) reaches it. The bound is a route, not a table guard: the
+  disc carries `6` on six archive entries and `6` is the tint-less Curse
+  arm (`0x801EE690`, a 1-in-4 `+0x16E |= 0x1000` roll) - a census that
+  asserted "never past the table" failed on the data and was rewritten
+  (`battle_afterimage_gate_real.rs`). `FUN_801E09F8` `0x801E15AC..0x801E15EC` is the
   monster-special twin off `move_power[+0x0A]`, at each arm's impact phase
   (`ctx[+0x24E + i] == 3`). The clip-`0x18` arms of `FUN_8004CE2C` stamp
   the same three words (`0x8004D1D4..0x8004D1E4`, `0x8004D28C..0x8004D29C`).

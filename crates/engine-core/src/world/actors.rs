@@ -462,11 +462,14 @@ impl World {
     /// table skips all three writes; callers apply that gate, see
     /// [`crate::move_power::IMPACT_CLASS_LIMIT`]). The monster special-attack arm
     /// `FUN_801E09F8` (`0x801E15AC..0x801E15EC`, at each arm's impact phase)
-    /// reads the move-power record's `+0x0A` and stamps unguarded; a zero
-    /// selector arms nothing in either (`beq v0,zero` past the writes). A
-    /// selector past the 5-entry table with no gate leaves the colour word
-    /// alone here (retail would read past the table - nothing on the disc
-    /// does).
+    /// reads the move-power record's `+0x0A` and stamps unguarded (its
+    /// selector ladder ends at `5`, so that byte never carries a `6`); a
+    /// zero selector arms nothing in either (`beq v0,zero` past the writes).
+    /// The `+0x7A` byte is the hit routine's whole **status / impact
+    /// selector**, and the disc does carry `6` on it (the melee-path Curse
+    /// arm at `0x801EE690`: a 1-in-4 `+0x16E |= 0x1000` roll and no tint) -
+    /// that is what the `sltiu` gate is for. A selector past the table
+    /// with no gate leaves the colour word alone here.
     ///
     /// The tint then decays through [`Self::tick_battle_impact_fx`]'s
     /// presentation SM (`FUN_80050120` arm 0): colour eases to neutral, the

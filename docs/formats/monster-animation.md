@@ -375,13 +375,20 @@ with `+0x87 == 1` gets ring id `0x11` (otherwise `+0x77 + 0x10`), which is
 what lets the ghost walk `FUN_80049348` trail that clip - see
 [battle-action.md](../subsystems/battle-action.md#the-after-image-ghost-walk-fun_80049348).
 Parser field `MonsterAnimation::solo_flag`. Entry `+0x7A` is the action's
-**impact-effect class**: when the action lands, the melee / arts routine
-`FUN_801EC3E4` stamps `0x801F53D4[class - 1]` into the struck actor's
-`+0x04` tint word with `+0x21F = class` and `+0x0C = 0x1000` (gated
-`0 < class < 6`) - see
+**status / impact selector** - the same enum space as a move-power record's
+`+0x0A`. When the action lands, the melee / arts routine `FUN_801EC3E4`
+stamps `0x801F53D4[sel - 1]` into the struck actor's `+0x04` tint word with
+`+0x21F = sel` and `+0x0C = 0x1000` for `0 < sel < 6` (`sltiu v0,v0,0x6`
+at `0x801EE3E0`), then routes the selector to its status arm: `3` / `4`
+roll `+0x16E |= 1` / `|= 2` one in eight, `5` rolls a rot-limb bit on a
+party target, and `6` (`0x801EE690`) rolls `+0x16E |= 0x1000` one in four
+with **no** tint - the Curse class, carried on the disc by six archive
+entries (two three-member families, all on attack tag `0x10`), which is
+what the `sltiu` guard exists for. See
 [battle.md](../subsystems/battle.md#how-the-tint-words-reach-the-pixel).
 Parser field `MonsterAnimation::impact_class`; the player-file art records
-carry the same byte (`ArtAnimRecord::impact_class`).
+carry the same byte (`ArtAnimRecord::impact_class`). Census:
+`crates/engine-core/tests/battle_afterimage_gate_real.rs`.
 
 Three consequences of that commit shape:
 

@@ -58,6 +58,10 @@ fn monster_ring_id_gate_matches_the_disc_records() {
     let mut flag87 = 0usize;
     let mut b77_hist = std::collections::BTreeMap::<u8, usize>::new();
     let mut b7a_hist = std::collections::BTreeMap::<u8, usize>::new();
+    // `(monster id, action tag, class)` for every entry with a non-zero
+    // selector, so a regression names the record.
+    let mut class_carriers = Vec::<(u16, u8, u8)>::new();
+    let mut class6_carriers = Vec::<(u16, u8, u8)>::new();
     for id in 1..=194u16 {
         let Some(rows) = entry_bytes(&entry, id) else {
             continue;
@@ -70,6 +74,12 @@ fn monster_ring_id_gate_matches_the_disc_records() {
             entries += 1;
             *b77_hist.entry(b77).or_default() += 1;
             *b7a_hist.entry(b7a).or_default() += 1;
+            if b7a != 0 {
+                class_carriers.push((id, tag, b7a));
+            }
+            if b7a == 6 {
+                class6_carriers.push((id, tag, b7a));
+            }
             if b87 == 1 {
                 flag87 += 1;
             }
@@ -90,21 +100,41 @@ fn monster_ring_id_gate_matches_the_disc_records() {
     eprintln!(
         "[census] {monsters} monsters, {entries} entries, +0x87==1: {flag87}, \
          idle eligible: {idle_eligible}, non-idle eligible: {non_idle_eligible}, \
-         +0x77 histogram: {b77_hist:?}, +0x7A (impact class) histogram: {b7a_hist:?}"
+         +0x77 histogram: {b77_hist:?}, +0x7A (status / impact selector) histogram: {b7a_hist:?}"
     );
+    eprintln!("[census] non-zero +0x7A carriers (id, tag, class): {class_carriers:?}");
     assert!(
         monsters > 100,
         "archive walk found only {monsters} monsters"
     );
-    // The melee routine's `sltiu v0,v0,0x6` bound on the record's `+0x7A`
-    // (`FUN_801EC3E4` 0x801EE3E0): the disc never carries a class the
-    // 5-entry `0x801F53D4` table cannot serve, so the "read past the
-    // table" arm is unreachable from retail data.
+    // The action record's `+0x7A` is the hit routine's **status / impact
+    // selector**, not a tint index: `FUN_801EC3E4` stamps the impact-tint
+    // triple only for `0 < class < 6` (`sltiu v0,v0,0x6` at `0x801EE3E0`)
+    // and then routes every class to its own status arm - `3` / `4` roll
+    // `+0x16E |= 1` / `|= 2` one in eight, `5` rolls a rot-limb bit on a
+    // party target, and `6` (`0x801EE690`) rolls `+0x16E |= 0x1000` one in
+    // four with **no** tint. So the disc legitimately carries `6` (it is
+    // what the `sltiu` guard is for), and nothing past `6` has an arm. The
+    // port's `IMPACT_CLASS_LIMIT` gate is that same `sltiu`: class 6 must
+    // exist on the disc for the gate to be non-vacuous, and no class may
+    // exceed the last routed value.
+    const LAST_ROUTED_CLASS: u8 = 6;
+    assert_eq!(
+        legaia_engine_core::move_power::IMPACT_CLASS_LIMIT,
+        LAST_ROUTED_CLASS,
+        "the tint gate is `< 6`: class 6 is the status-only arm"
+    );
     assert!(
-        b7a_hist
-            .keys()
-            .all(|&c| c < legaia_engine_core::move_power::IMPACT_CLASS_LIMIT),
-        "a monster entry carries an impact class past the table: {b7a_hist:?}"
+        b7a_hist.keys().all(|&c| c <= LAST_ROUTED_CLASS),
+        "a monster entry carries a selector with no retail arm: {b7a_hist:?}"
+    );
+    assert!(
+        b7a_hist.contains_key(&LAST_ROUTED_CLASS),
+        "no disc entry carries class 6 - the `sltiu 0x6` tint gate would be vacuous: {b7a_hist:?}"
+    );
+    assert!(
+        !class6_carriers.is_empty() && class6_carriers.iter().all(|&(_, tag, _)| tag != 0),
+        "class 6 rides attack entries, never the idle loop: {class6_carriers:?}"
     );
     // The observable retail behaviour the gate exists for: an idle monster
     // never ghosts.
