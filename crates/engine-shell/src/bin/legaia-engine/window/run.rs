@@ -464,6 +464,28 @@ pub(super) fn cmd_play_window_with_record(
         log::info!("play-window: --seed-party seeded {seeded} roster member(s)");
     }
 
+    // Debug learn path: `LEGAIA_LEARN_SPELLS=0x81,0x9e` prepends those spell
+    // ids (level 1) onto the lead character's record, so a seeded New Game
+    // party can reach the Magic arm and cast - the cast-presentation
+    // screenshot harness. An env var rather than a flag: a development aid
+    // for the parity sweeps, not a player surface.
+    if let Ok(list) = std::env::var("LEGAIA_LEARN_SPELLS") {
+        let parse = |s: &str| {
+            let s = s.trim();
+            s.strip_prefix("0x")
+                .or_else(|| s.strip_prefix("0X"))
+                .map_or_else(|| s.parse::<u8>().ok(), |h| u8::from_str_radix(h, 16).ok())
+        };
+        let mut learned = 0usize;
+        for id in list.split(',').filter_map(parse) {
+            if let Some(lead) = session.host.world.roster.members.first_mut() {
+                legaia_engine_core::magic_xp::learn_spell_prepend(lead, id);
+                learned += 1;
+            }
+        }
+        log::info!("play-window: LEGAIA_LEARN_SPELLS taught the lead {learned} spell(s)");
+    }
+
     // Debug start-position override: `LEGAIA_START_TILE=X,Z` seats the player
     // at that tile's centre after boot (tile*128+0x40, the op-0x3F entry-tile
     // mapping). Useful for parking on the overworld continent - a direct
