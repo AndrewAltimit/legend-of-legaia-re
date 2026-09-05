@@ -297,6 +297,22 @@ capture branch, a dead caster) folds at the band's end, so no turn spends MP
 for nothing. An escape spell that folds this way ends the encounter from the
 live loop on the same frame, as the item path's fold already did.
 
+#### The monster's cast is only as real as the catalog
+
+A monster's cast is picked before the band is armed: `pick_monster_action`
+rolls the record's `+0x21..=+0x23` magic ids (retail's generic core of
+`FUN_801E9FD4`) and `take_monster_turn` keeps the pick only when
+`World::spell_catalog` resolves the id at an affordable cost - otherwise the
+turn is a physical strike, silently. The boot catalog
+(`retail_magic::seru_magic_catalog_from_scus`) therefore carries every named,
+non-capture id below the player block as the SCUS table names it (Gimard's
+`+0x21` is `0x27` = Tail Fire, 16 MP, one enemy), with the disc as the single
+source: a vanilla placeholder on a real id under another name is replaced, a
+vanilla record on its real id under the same name keeps its effect class and
+takes the disc's cost. The magnitude and impact status of the fold are the
+move-power record's (`World::enemy_move_power`, installed at scene entry).
+Disc-gated oracle: `spell_model_single_source_disc::the_boot_catalog_resolves_every_monster_special_the_archive_casts`.
+
 #### The party cast trigger `FUN_801DBF9C`
 
 The trigger is a **params stager, not an outcome producer**. Read off its

@@ -486,6 +486,26 @@ pub(super) fn cmd_play_window_with_record(
         log::info!("play-window: LEGAIA_LEARN_SPELLS taught the lead {learned} spell(s)");
     }
 
+    // Debug RNG seed override: `LEGAIA_RNG_SEED=<u32>` (decimal or `0x` hex)
+    // replaces the world's boot seed, so a sweep can be re-rolled onto a
+    // different deterministic stream - the way to reach an AI branch (a
+    // monster cast) the default seed never picks. A development aid for the
+    // parity sweeps, not a player surface.
+    if let Ok(spec) = std::env::var("LEGAIA_RNG_SEED") {
+        let spec = spec.trim();
+        let seed = spec
+            .strip_prefix("0x")
+            .or_else(|| spec.strip_prefix("0X"))
+            .map_or_else(
+                || spec.parse::<u32>().ok(),
+                |h| u32::from_str_radix(h, 16).ok(),
+            );
+        if let Some(seed) = seed {
+            session.host.world.rng_state = seed;
+            log::info!("play-window: LEGAIA_RNG_SEED reseeded the world RNG to {seed:#010x}");
+        }
+    }
+
     // Debug start-position override: `LEGAIA_START_TILE=X,Z` seats the player
     // at that tile's centre after boot (tile*128+0x40, the op-0x3F entry-tile
     // mapping). Useful for parking on the overworld continent - a direct
