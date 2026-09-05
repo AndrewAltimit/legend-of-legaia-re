@@ -965,7 +965,7 @@ catalogued mednafen Tetsu battle states; one camera step spans **2 vsyncs**:
 
 | Phase | pitch | yaw | TR | motion |
 |---|---|---|---|---|
-| tutorial dialogue up | 0 | 0 | `(0, 1280, 1638)` | held static |
+| tutorial dialogue up | 0 | 0 | `(0, 1280, 1638)`, focus the speaking monster's seat `(0, 800)` | held static |
 | dialogue dismiss | 0→32, `+6`/step | orbit resumes | z 1638→7680, `+864`/step | rate-clamped glide |
 | Begin/Run menu | 32 | free | `(0, 1280, z)` | idle orbit `-4` yaw/step |
 | command submenu | 32 | **2288** | `(-512, 1152, 2457)` | 6-step glide in, then held |
@@ -982,14 +982,27 @@ in the disassembly: the action SM subtracts `DAT_1F800393 * 2` from
 phase-script condition for the orbit rather than an inference.
 
 **The action framing (`FUN_801D5854` case 6)** is the one the action SM arms at
-almost every state, and it forks on `_DAT_8007BD71 == 0xFE && slot < 3`. The
-party arm frames from behind the actor (`yaw = 0x800 − actor[+0x46]`) at a
-height of `−5 × actor[+0x3E]`, floored at `0x280` with a quarter of the
-shortfall added to the pitch so the camera tilts down instead of sinking
-(`0x801D6494`). Between the base pose and that floor it runs a per-character
-script dispatched at `0x801D5D50` (`0x801D5DAC` / `0x801D5FC0` / `0x801D61E8` /
-`0x801D6440`, rejoining at `0x801D645C`) which reads `actor[+0x1DB]` over the
-band `0x11..=0x18` (bias `-0x11`, bound `8`).
+almost every state, and it forks on `DAT_8007BD71 == 0xFE && slot < 3`
+(`0x801D5CEC..0x801D5CFC`). `DAT_8007BD71` is the **battle-end signal**
+([battle-action.md](battle-action.md#state-table)):
+the `0x5A` wipe scans and the `0x66` escape teardown raise `0xFE`, SCUS
+`0x80056014` zeroes it at battle init, and it reads `0xFF` for the whole of a
+running fight - twelve battle save states (five Begin/Run prompts, two
+mid-strike frames, three mid-approach parks, the arts-input close-up and the
+tutorial open) all carry `0xFF`. So **while a fight runs, every action, party
+or monster, takes the `0x801D64C4` arm**; the `0x801D5CFC` arm is the
+end-of-battle framing. That arm frames from behind the actor (`yaw = 0x800 −
+actor[+0x46]`) at a height of `−5 × actor[+0x3E]`, floored at `0x280` with a
+quarter of the shortfall added to the pitch so the camera tilts down instead
+of sinking (`0x801D6494`), and between the base pose and that floor runs a
+per-character script dispatched at `0x801D5D50` (`0x801D5DAC` / `0x801D5FC0`
+/ `0x801D61E8` / `0x801D6440`, rejoining at `0x801D645C`) which reads
+`actor[+0x1DB]` over the win-pose band `0x11..=0x18` (bias `-0x11`, bound
+`8`). The port carries it behind `ActionFraming::battle_over`, which no host
+raises yet. An earlier reading of `0xFE` as "the in-battle state" sent every
+party action through this arm - eye `prescale(0x500)` behind the actor, i.e.
+inside whichever combatant stood there - and is recorded in
+[re-do-not-re-walk.md](../reference/re-do-not-re-walk.md#the-case-6-party-arm-is-the-battle-over-framing).
 **Which states hand it the camera is a band, not a byte list.** `FUN_801E295C`
 arms per band: the setup band (`0x00`, `0x0B`) arms nothing and runs the
 prologue orbit, the seed (`0x0C`) and action (`0x14..=0x48`) bands arm case
@@ -1023,16 +1036,34 @@ against 4x-scaled stage coordinates the whole formation leaves the frustum,
 several combatants behind the eye. `BattleCamera::retarget_action_glide` is
 the port's re-arm; it carries the armed segment's remaining step count over,
 so a framing whose actor stands still still arrives on target at
-`ACTION_STEPS`. One visible consequence: the fallback arm's yaw now follows
-the live `ctx[+0x6DA]` drift instead of freezing on its value at the phase
-change.
+`ACTION_STEPS`. One visible consequence: the in-fight arm's yaw follows the
+live `ctx[+0x6DA]` drift instead of freezing on its value at the phase change.
 
-The fallback arm frames on the seat position at `ctx[+0x6D0]` - the depth
-`FUN_801F0348` derives from the framed monster's size class - with a style byte
+The in-fight arm (`0x801D64C4`) frames on the live position `actor[+0x34/+0x38]`
+with the focus height left at the stage floor, pitch `0`, `TR = (0, 0x500,
+ctx[+0x6D0])` - the depth `FUN_801F0348` derives from the framed monster's
+size class - and `yaw = ctx[+0x6DA] − actor[+0x46]`, with a style byte
 `ctx[+0xD]` selecting three tweaks and character id `4` overriding the whole
-translation. `ctx[+0x6DA]` is not a constant: the SM's prologue advances it
-about one unit per display frame (`0x801E29E4..0x801E2A24`), so successive enemy
-actions frame from a slowly drifting angle.
+translation. Three PCSX-Redux captures parked in `ctx[7] == 0x19` with Gaza
+acting pin it byte-exact: `TR (0, 1280, 5324)` from `ctx[+0x6D0] = 0xD00`, the
+focus trio the negated `+0x34/+0x38` pair, the `ctx[+0xD] == 2` capture at
+pitch `0x80` over `TR.y = 0x400`, and the live yaw eight units behind the
+counter - the per-pass re-arm chases it. `ctx[+0x6DA]` is a **per-action
+ladder**, not a free drift from battle entry: the `0x00` round-begin arm
+zeroes it (`0x801E2B40`), the `0x0C` seed arm stores `0x800` (`0x801E2CF8`),
+the seed's Attack branch stores `0x200` as it enters `0x14` (`0x801E2F20`),
+and a **party** attacker's first swing-clip commit re-seeds `(rand() % 2) ×
+0x800 + 0x280` with `ctx[+0xD] = 0` (`FUN_8004E13C` `0x8004E288..0x8004E2B4`,
+from the anim commit `FUN_8004AD80` at `0x8004BE28`, gated on the clip header
+byte `+0x87 == 2`, the previous commit's not, and `ctx[+0x13] < 3`); on top of
+that the SM's prologue adds `max(1, 4 × frame_step / 3)` per pass
+(`0x801E29E4..0x801E2A24`), about one unit per display frame. A monster's
+melee is therefore filmed from the `0x200` base and a party member's from
+`0x280` or `0xA80` - a three-quarter view that keeps both combatants in frame
+- while a spell or item keeps the seed's `0x800`. The
+`battle_melee_hit_spark` capture reads `0x298`, `0x280` plus 24 frames. Engine:
+`BattleCamera::observe_action_state` applies the ladder on the action-state
+edges, standing the swing-clip commit in with the edge into `0x1E`.
 
 **The framing-case table.** `FUN_801D5854`'s mode argument indexes a
 ten-entry jump table at `0x801CEA00` (PROT 0898 file `0x1E8`), and modes `4`
@@ -1044,7 +1075,7 @@ and `5` are the same no-op tail slot:
 | `1` | `0x801D5A6C` | submenu-exit swing | acting actor |
 | `2` / `3` | `0x801D5BB0` / `0x801D5BD4` | menu-driver transitions | acting actor |
 | `4` / `5` | `0x801D7138` | nothing - straight to the shared tail | - |
-| `6` | `0x801D5CE8` | per-action framing (two arms) | acting actor |
+| `6` | `0x801D5CE8` | per-action framing (in-fight arm; the battle-over arm only under `DAT_8007BD71 == 0xFE`) | acting actor |
 | `7` | `0x801D65DC` | post-strike **two-shot** | attacker-target **midpoint** |
 | `8` | `0x801D67D0` | end-of-action | the target |
 | `9` | `0x801D6EF4` | far Begin/Run framing | formation centre |

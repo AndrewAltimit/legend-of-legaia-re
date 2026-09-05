@@ -158,6 +158,7 @@ species and at the disc's authored heap-cost maximum.
 | The status-element badge sheet `0x18..=0x20` | resolved (nine 48x16 word tags; ladder assignment independently confirmed) | `disassembly` + `capture` | [details ↓](#the-status-element-badge-sheet-0x180x20) |
 | Does the battle ground grid roll per-cell randomness? | resolved (no - a four-entry table walk) | `disassembly` | No. `func_0x801d02c0` builds sixteen literal UV words into scratchpad `0x1f800034` (`0x801d0304..0x801d03a0`) and the emit loop reads group `n` for quad `n`, advancing `0x10` each time. They decode to four fixed 32x32 sub-tiles of the `(192..=255)^2` window walked in `sub_row * 2 + sub_col` order, copied into the packet verbatim - no roll, no corner mirror. The grid origin also carries an extra `-0x200` bias on `z`, and pass 1's cull is a view-`z` bracket with **no** screen-space term (that is a separate pass-2 test). See [battle.md](../subsystems/battle.md#the-grids-own-constants-read-off-the-emitter). |
 | Endless camera orbit (Gaza 2 softlock) - the `0x19` attack-approach park | resolved (caught live; root-caused; disc fix shipped) | `capture` + `disassembly` | [details ↓](#endless-camera-orbit---the-0x19-attack-approach-park) |
+| Which `FUN_801D5854` case-6 arm a running fight takes, and where `ctx[+0x6DA]` is seeded | resolved | `capture` + `disassembly` | [details ↓](#the-in-fight-action-framing-and-the-yaw-counter-ladder) |
 | `0x19` fallback approach drive - which anim-driver field does summon staging leave stale? | resolved (pinned + causally reproduced on the parked save) | `capture` + `disassembly` | [details ↓](#the-summon-then-melee-park-trigger---the-stale-field-is-0x1dc-bit-2) |
 | Super / Miracle Arts trigger chain | resolved (all 15 Supers live-executed) | `disassembly` + `capture` | [details ↓](#super--miracle-arts-trigger-chain) |
 | Xain "Bloody Horns"/"Terio Punch" ignore elemental guards (community mystery) | resolved | `disassembly` + `capture` | Not an element drop - a **resist-ladder bypass**. Capture-class casts (spell byte `+0` = `'c'`) run per-spell modules (PROT 944..966) whose damage calls pass the caster's seat but pick one of two wrappers: `FUN_801DD4B0` (finisher `param_5=0`, resist ladder runs) or `FUN_801DD6B4` (`param_5=1`, the whole party-defender jewel/guard block is skipped). BH (952) / TP (953) use the bypass wrapper for their main hits; enemy ESM (966) uses the respecting one (hence Cort reads as Dark). Element attribution law + live confirmation: [battle-formulas.md](../subsystems/battle-formulas.md); cast classes: [spell-table.md](../formats/spell-table.md#cast-classes-record-byte-0). |
@@ -622,6 +623,48 @@ its candidate generators
 `0x19` class explains the community exhibits without any HP desync. Stated
 limit: whether any retail sequence can still produce a `0x51` park is unproven
 either way; nothing observed requires it.
+
+### The in-fight action framing and the yaw-counter ladder
+
+**Question.** `FUN_801D5854` case 6 has two arms; which one films an ordinary
+action, and what is the yaw base `ctx[+0x6DA]` it subtracts the facing from?
+
+**Answer.** The `0x801D64C4` arm, for party and monster alike, for the whole
+of a running fight. The fork byte `DAT_8007BD71` (`0x801D5CEC..0x801D5CF4`)
+is the battle-end signal and reads `0xFF` until a wipe or an escape; see the
+falsified reading in
+[re-do-not-re-walk.md](re-do-not-re-walk.md#the-case-6-party-arm-is-the-battle-over-framing).
+The arm's pose is `pitch 0`, `yaw = (ctx[+0x6DA] − actor[+0x46]) & 0xFFF`,
+`TR = (0, 0x500, ctx[+0x6D0])` (the depth prescaled by `FUN_801D829C`), focus
+the negated `actor[+0x34/+0x38]` pair with the height left at zero, then the
+`ctx[+0xD]` style tweaks (`1`/`3` add a half turn; `2`/`3` set `TR.y = 0x400`
+and add `0x80` of pitch) and the character-`4` override.
+
+**Evidence.** Three PCSX-Redux `.sstate` captures parked in `ctx[7] == 0x19`
+with Gaza (seat 3) acting read the rotation / translation / focus trios
+directly: `TR (0, 1280, 5324)` = `prescale(0xD00)` with `ctx[+0x6D0] = 0xD00`
+in all three; focus `(−433, 0, −291)` / `(785, 0, −39)` / `(0, 0, −1490)`
+against Gaza's `+0x34/+0x38` of `(433, 291)` / `(−785, 39)` / `(0, 1490)`;
+the `ctx[+0xD] == 2` capture at pitch `0x80` over `TR.y = 0x400`; and in each
+the live yaw eight units behind `(ctx[+0x6DA] − actor[+0x46]) & 0xFFF`
+(`1657` vs `1665`, `1412` vs `1420`, `574` vs `582`) - the per-pass re-arm
+chasing a counter that moves. The counter's seeds are stores in the action
+SM and one SCUS routine, each read off the instruction: `sh zero,0x4(s7)` in
+the round-begin arm (`0x801E2B40`), `li 0x800` in the `0x0C` seed arm
+(`0x801E2CF8`), `li 0x200` beside the `ctx[7] = 0x14` store (`0x801E2F20`),
+and `FUN_8004E13C`'s `(rand() % 2) << 11 + 0x280` (`0x8004E288..0x8004E2B0`)
+under a three-way gate - argument `2`, `ctx[+0x243] != 2`, `ctx[+0x13] < 3` -
+whose argument is the committed clip's header byte `+0x87` from
+`FUN_8004AD80` (`0x8004BE18..0x8004BE2C`). The `battle_melee_hit_spark`
+capture reads `ctx[+0x6DA] = 0x298` mid-art: `0x280` plus 24 frames of the
+prologue's `max(1, 4 × frame_step / 3)` advance (`0x801E29E4..0x801E2A24`).
+
+**Engine side.** `legaia_engine_vm::battle_cam_script`: `ActionFraming::
+battle_over` names the fork byte truthfully, `action_framing` drops the
+focus height, and `BattleCamera::observe_action_state` applies the seed
+ladder on the action-state edges (the swing-clip commit stood in by the edge
+into `0x1E`, since the engine's animation player does not expose the clip
+header byte). Both hosts feed the same `action_state`.
 
 ### The summon-then-melee park trigger - the stale field is `+0x1DC` bit 2
 

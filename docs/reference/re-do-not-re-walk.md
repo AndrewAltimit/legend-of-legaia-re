@@ -34,6 +34,7 @@ below.
 | A level-up **refills** the live HP / MP pools (the captures' "settle" phase at `+0x106` / `+0x10A`) | falsified (the settle write is the battle-end resync; both currents stand still) | [details ↓](#a-level-up-is-not-a-heal) |
 | A streamed signature-attack cast module cannot run from a party slot because "a party actor has no monster block" | falsified (it has a first-class equivalent) | `FUN_8004AD80` resolves the staged raw anim index down two arms, and the party one (`DAT_801C9360[slot]`) carries the indices PROT 960 stages. The module's only monster-block touch is a hardcoded **seat-0** write unrelated to the caster. [details ↓](#the-cast-module-blocker-was-named-wrong) |
 | An art whose attack camera films flat has the wrong **arm**, so the fix is to select a better-choreographed one | falsified (every arm is timed for a ~20-frame swing, and not one is spare) | [details ↓](#the-attack-camera-was-never-an-arm-choice) |
+| `FUN_801D5854` case 6's `0x801D5CFC` arm is the per-action **party** framing, gated on `DAT_8007BD71 == 0xFE` as "the in-battle state" | falsified (`0xFE` is the battle-END signal; a running fight takes the `0x801D64C4` arm for everyone) | [details ↓](#the-case-6-party-arm-is-the-battle-over-framing) |
 | Navmesh / per-scene navigation data | falsified | `0x80108EA4..0x80109550` is per-scene GPU primitive scratch, not a 24-byte stride navmesh. Pointer hunts find zero RAM cells pointing into the window. Real per-scene region / collision / event-trigger data lives in the field-file preamble (a count + `u16` offset table + records - **not** the field-pack schema slots, which are a global-constant template; see [field-pack](../formats/field-pack.md)); the collision grid is the `+0x4000` MAP region; the encounter-record path lives at `actor[+0x94]`. |
 | Op-`0x4E` sub-ops 4..8 "absolute jump" / "rand -> next PC" readings | falsified (all sub-ops 0..9 are the 7-byte compare-and-skip) | [details ↓](#op-0x4e-sub-op-family---every-sub-op-09-is-a-compare) |
 | `801d58f0` / `801d63b0` as single shared port blockers | falsified (VA-aliasing artifact) | The two addresses host different code in different overlays (byte-verified: 80/228/124/308/1 B and 208/1036 B across 0897/baka/cutscene/debug-menu/fishing/slot/dance) - the port-catalog's bare-VA keying aggregated their refs into phantom top blockers. Tracked per-overlay via `overlay_<label>_<addr>` identities; catalog ignore category `va_aliased_overlay_local`. |
@@ -397,6 +398,44 @@ axis the defect lies on. These differ in shot *count* and agree on clip
 two-thirds dead slots reads as spare capacity while the things those slots
 would point at are fully subscribed - emptiness in the index is not slack in
 what it indexes.
+
+### The case-6 party arm is the battle-over framing
+
+The reading: `FUN_801D5854` case 6 forks at `0x801D5CF4` on `DAT_8007BD71 ==
+0xFE` and at `0x801D5CFC` on `ctx[+0x13] < 3`, so "in-battle flow state and a
+party seat" takes the `0x801D5CFC` arm - eye `prescale(0x500)` straight behind
+the actor at `-5 × actor[+0x3E]`, a per-character script over
+`actor[+0x1DB]` - and everything else the `0x801D64C4` arm. Read as the
+per-action party framing, with `0xFE` glossed as the battle-flow SM's
+"in-battle" value, and the port shipped it that way with the flag hard-wired
+`true`.
+
+Why it was plausible: the fork *is* keyed on a party seat, the arm *does*
+read the acting actor's anim id through a per-character dispatch, and `0xFE`
+next to a `0xFF` reads naturally as one live state beside another.
+
+Why it is wrong: `DAT_8007BD71` is the byte the rest of the repo already
+names the **battle-end signal**. Its writers are the action SM's `0x5A` wipe
+scans (`0x801E65D8` party wipe, `0x801E6674` monster wipe, beside the cause
+in `_DAT_8007BD2C`), the `0x66` escape teardown (`0x801E5A94`, right after
+`ctx[7] = 0x67`), and the capture-effect module (`0x801F7318`); SCUS
+`0x80056014` zeroes it at battle init, and the effect-VM walker
+(`FUN_801E0088`) runs only while it reads `0xFF`. Twelve battle save states -
+five Begin/Run prompts, the arts-input close-up, the tutorial open, two
+mid-strike frames and three `ctx[7] == 0x19` approach parks - all read `0xFF`.
+So during a fight the `0x801D5CFC` arm is unreachable for anyone, and the anim
+band its script keys on (`0x11..=0x18`) is the win-pose band: it is the
+end-of-battle framing. The three `0x19` parks with Gaza acting confirm the
+other arm byte-exact (`TR (0, 0x500, prescale(ctx[+0x6D0]))`, yaw
+`ctx[+0x6DA] − actor[+0x46]`, focus the negated `+0x34/+0x38` pair).
+
+What the wrong arm did to the port: a party member's strike put the eye
+2048 projection units behind the actor - inside whichever combatant stood
+there, since the target had closed to melee range - with `ndc.y` past `-2`
+for the other actor. The fix is one boolean with the right name
+(`ActionFraming::battle_over`, `false` while a fight runs), not a camera-model
+change. Corrected reading in
+[battle.md](../subsystems/battle.md#battle-camera-exact).
 
 ## Audio / sound driver
 
