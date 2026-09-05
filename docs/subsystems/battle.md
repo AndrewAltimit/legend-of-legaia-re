@@ -4140,7 +4140,18 @@ The `legaia-engine play-window` host ships the loop **on**, matching the browser
 | `+336` | exit-fade template (kind 2, `0x40` frames, black → white), phase halfword from 2 | `screen_fade` = the escape template, drawn by both hosts |
 | `+402` | `ctx[+0x6CE] >= 0x43`: `game_mode = 2` | `finish_battle`, windows come down |
 
-The pose actor is `ctx[+0x13]`, and the party **leader** poses: no store in the battle overlay writes a seat there (every store is a round-boundary zero or the magic menu's MP-cost scratch), and the three-member `noa_levelup_banner` capture reads `ctx[+0x13] == 0` with seat 0 carrying the staged pose while Noa is the one who levelled. The pose id comes from the SCUS table at `0x800788A0` through the HP-quarter tier, aged by the round count and forced weak by the `0x107B` status mask (`victory_pose_tier` / `victory_pose_column`); the clip is one of the eight base-archive records the art-bank ladder already resolves for ids `0x11..=0x18`. The hero's voice line (`monster.snd` tail clips) is not staged - no engine bank carries `monster.snd`.
+The pose actor is `ctx[+0x13]`, and the party **leader** poses: no store in the battle overlay
+writes a seat there (every store is a round-boundary zero or the magic menu's MP-cost scratch),
+and the three-member `noa_levelup_banner` capture reads `ctx[+0x13] == 0` with seat 0 carrying
+the staged pose while Noa is the one who levelled. The pose id comes from the SCUS table at
+`0x800788A0` through the HP-quarter tier, aged by the round count and forced weak by the
+`0x107B` status mask (`victory_pose_tier` / `victory_pose_column`); the clip is one of the eight
+base-archive records the art-bank ladder already resolves for ids `0x11..=0x18`. The port
+commits that record the way it commits every art-bank record - as a one-shot that hands back to
+the idle loop when it ends - so the pose is struck once on the results frame rather than held
+for the `0x100` hold; holding it needs the record's own loop window (`+0x85..+0x86`), which
+`MonsterAnimation` does not model yet. The hero's voice line (`monster.snd` tail clips) is not
+staged - no engine bank carries `monster.snd`.
 
 An **escape** runs the sequencer's `0x67` arm: no results, the phase halfword counts up from the fade the SM's `0x66` teardown spawned, same `0x43` gate. A **party wipe** runs the annihilated arm: the same `0x100` hold and fade, every member floored at 1 HP on the fade frame (`0x8004FB94..0x8004FBA4` - a scripted loss returns to the field standing), then the MAIN INIT game-over gate `finish_battle` folds.
 
@@ -4149,7 +4160,7 @@ the quad's blend: the fade actor's tick `FUN_80025000` hands it to the quad emit
 `FUN_80024EE4` as the second argument, which folds it into the draw-mode packet's ABR bits (`sll
 a3,a1,0x5; ori a3,a3,0xe` at `0x80024FB0`) - the same law the battle-intro styles obey (`abr ==
 1` brightens to a white-out, `abr == 2` darkens). Kind 2 is `B - F`, so the black → white ramp
-subtracts more of the scene each frame while the result windows stay drawn on top. Both hosts
+subtracts more each frame, over the scene and the result windows alike (the template's trailing id word, `0`, is the quad's OT bucket - the nearest one). Both hosts
 draw `World::screen_fade` through `engine-ui::screen_prim::screen_fade_prim` in their
 screen-overlay pass (the native window's redraw overlay, the play page's intro/FX prim pass); a
 host that hand-rolls the quad is how the blend gets lost.
