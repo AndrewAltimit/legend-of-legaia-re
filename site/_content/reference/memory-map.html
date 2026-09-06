@@ -445,12 +445,13 @@ document.addEventListener('DOMContentLoaded', () => {
       <table class="layout">
         <thead><tr><th>Offset</th><th>Field</th></tr></thead>
         <tbody>
-          <tr><td><code>+0x00</code></td><td>element id pair (two bytes, usually equal)</td></tr>
-          <tr><td><code>+0x02</code> / <code>+0x04</code></td><td>x / y</td></tr>
-          <tr><td><code>+0x06</code> / <code>+0x08</code></td><td>content width / box height (<code>0x0C</code> for the plate-run family; roster panels 50, framed windows 120 / 42 / 28 / 26)</td></tr>
-          <tr><td><code>+0x0A</code> / <code>+0x0C</code></td><td>staging x / y - the pair offset by a screen width</td></tr>
-          <tr><td><code>+0x0E</code></td><td>kind pair</td></tr>
-          <tr><td><code>+0x14</code></td><td>payload pointer (content, or the acting actor's animation descriptor on the battle pose path)</td></tr>
+          <tr><td><code>+0x00</code> / <code>+0x01</code></td><td>element id, seat A / seat B (usually equal; records 41 / 42 carry them byte-swapped)</td></tr>
+          <tr><td><code>+0x02</code> / <code>+0x04</code></td><td>seat A x / y</td></tr>
+          <tr><td><code>+0x06</code> / <code>+0x08</code></td><td>content width / box height, shared by both seats (<code>0x0C</code> for the plate-run family; roster panels 50, framed windows 120 / 42 / 28 / 26)</td></tr>
+          <tr><td><code>+0x0A</code> / <code>+0x0C</code></td><td>seat B x / y - the pair <code>FUN_801D5778</code> pushes by a screen width; which seat is parked is per record, so "from / to" is the safe name</td></tr>
+          <tr><td><code>+0x0E</code> / <code>+0x0F</code></td><td>kind, seat A / seat B</td></tr>
+          <tr><td><code>+0x10</code> / <code>+0x12</code></td><td><code>13</code> on the framed-window and roster rows, else <code>0</code>, and no spawn arm reads it / zero in all 103 records</td></tr>
+          <tr><td><code>+0x14</code></td><td>content <strong>string</strong> pointer, measured by the rendered-width kernel <code>FUN_80035F04</code> into <code>+0x06</code>; the battle name plaque points it at the actor's display-name buffer <code>actor+0x1BC</code> (not an animation descriptor)</td></tr>
         </tbody>
       </table>
       <p>103 initialised records run <code>0x80076C10..0x800775B8</code>; index 129 would be the steal table, and the placement shape stops at 103 (every coordinate within &plusmn;416). A record is a content box; the chrome is derived, not stored - <code>pen = (x, y - 2)</code>, <code>plate = (x - 8, y - 6)</code> sized <code>(w + 16, 20)</code>. Parser <code>legaia_asset::screen_elements</code>; packet evidence on <a href="../subsystems/battle.html">battle</a>.</p>

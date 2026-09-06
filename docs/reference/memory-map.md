@@ -428,18 +428,27 @@ is either null or a pointer into the `0x8007B6xx` gp-pool band.
 
 | Offset | Field |
 |---|---|
-| `+0x00` | element id pair (two bytes, usually equal) |
-| `+0x02` / `+0x04` | x / y |
-| `+0x06` / `+0x08` | content width / box height |
-| `+0x0A` / `+0x0C` | staging x / y - the pair `FUN_801D5778` offsets by a screen width |
-| `+0x0E` | kind pair |
-| `+0x14` | payload pointer (content, or the acting actor's `+0x1BC` animation descriptor when the battle pose path owns the row) |
+| `+0x00` / `+0x01` | element id, seat A / seat B (usually equal; records 41 / 42 carry them byte-swapped) |
+| `+0x02` / `+0x04` | seat A x / y |
+| `+0x06` / `+0x08` | content width / box height (shared by both seats) |
+| `+0x0A` / `+0x0C` | seat B x / y - the pair `FUN_801D5778` pushes by a screen width. "From / to" is the safe name: the plaque, chip and panel families park at B, record 42 parks at A |
+| `+0x0E` / `+0x0F` | kind, seat A / seat B |
+| `+0x10` | `13` on the framed-window and roster rows (kinds `0x03` / `0x07` / `0x44`), `0` elsewhere; no spawn arm reads it |
+| `+0x12` | zero in all 103 records |
+| `+0x14` | content **string** pointer - measured by the rendered-width kernel `FUN_80035F04` into `+0x06`; the battle name plaque points it at the acting actor's display-name buffer `actor+0x1BC` (not an animation descriptor) |
+
+The record is a **two-seat pair**: `FUN_801D8DE8` has one spawn arm per seat
+(`0x801D92E8` for A, `0x801D935C` for B, chosen by `mode & 1`) and arms the
+glide `FUN_801DB7B0` toward the seat it did not spawn from. Three movers copy
+records around the table: `FUN_801D5718` (land: seat B into both seats),
+`FUN_801D5778` (launch: seat B pushed `-0x140`), `FUN_801D57E8` (clone).
 
 The array holds **103 initialised records**, `0x80076C10..0x800775B8`; parser
 `legaia_asset::screen_elements`, disc-gated oracle
 `crates/asset/tests/screen_elements_real.rs`. Records 41/42 (`+0x3D8` /
-`+0x3F0`) are the pair `FUN_801D5854` copies inline; the copy helpers are
-`FUN_801D5778` (re-mapped) and `FUN_801D57E8` (straight).
+`+0x3F0`) are the pair `FUN_801D5854` shifts inline (42 inherits 41's string,
+width and seat-B x; 41 takes `actor+0x1BC`, is measured, and re-seated at
+centre x 232 with a right clamp at 304 and a park at 328 or beyond).
 
 Two earlier readings of the extent are corrected by the disc bytes. The run is
 **not** 200 records to `0x80077ED0`: index 129 is `0x80077828`, the per-monster

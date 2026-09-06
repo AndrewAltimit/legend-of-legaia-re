@@ -2649,12 +2649,17 @@ runs a different switch - on `actor[+0x56]` (render mode `1..0xB`):
     stride, `0x2C`); colour comes from record `+0xC..+0x12`. Ends by zeroing a
     `0x14`-word tail. A pure record→packet transform; not ported (raw GP0
     packet layout belongs to `engine-render`, not `engine-vm`).
-  - bit `0x2000` → `FUN_801CFA48` (overlay-resident). The only accessible
-    dumps are the **menu / battle-action** overlays, where `0x801CFA48` is a
-    *mid-function citation* inside `FUN_801CF88C`, not an entry - it is
-    VA-aliased to a different overlay's function (see
-    [`call-target-integrity.md`](../tooling/call-target-integrity.md)), so no
-    clean world-map dump exists to port from.
+  - bit `0x2000` → `FUN_801CFA48` (overlay-resident). It is a function entry
+    (`addiu sp,sp,-0x70`) in the **battle-action** overlay PROT 0898 and in no
+    other image on the disc - probing that VA across every extracted overlay
+    finds the prologue only there, and the routine's signature occurs once
+    archive-wide. It is the lightning **effect-ribbon emitter** the PROT 0973
+    dev harness labels `THERNDER1`; the arm therefore resolves only while the
+    battle overlay is resident. Decoded in
+    [`battle-action.md`](battle-action.md#overlay-local-prng-fun_801d0290);
+    an earlier note here calling it "a mid-function citation inside
+    `FUN_801CF88C`, VA-aliased to another overlay" was wrong on all three
+    counts.
   - else → `FUN_80028158` (SCUS, `80028158.txt`, 1395 instructions; distinct
     from the 6692-byte motion bytecode VM `FUN_80038158`). The **multi-
     primitive** default shape: walks the source record and emits a batch of

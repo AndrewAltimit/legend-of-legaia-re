@@ -515,6 +515,27 @@ seat. See
 [`battle.md`](../subsystems/battle.md#the-battle-intro-enemy-name-banner) and
 [`re-settled-threads.md`](re-settled-threads.md#the-battle-intro-enemy-name-banner).
 
+### `0x801CFA48` is a mid-function citation aliased to another overlay
+
+*Falsified by disassembly.*
+
+The reading (`world-map.md`, per-actor render dispatcher): the `0x2000` arm's
+target `FUN_801CFA48` is a mid-function address inside `FUN_801CF88C` in the
+menu / battle-action dumps, VA-aliased to some other overlay's routine, so no
+clean dump exists to port from.
+
+Why it looked right: slot-A overlays share base `0x801CE818`, and
+`overlay_0897` dumps do print bodies at nearby VAs that are label artifacts.
+
+What is true: `0x801CFA48` opens with `addiu sp,sp,-0x70` in
+`overlay_battle_action_0898.bin` and in no other extracted overlay image, and
+the routine's 12-word signature occurs in exactly one image on the disc. It is
+the lightning effect-ribbon emitter (`THERNDER1` in PROT 0973's dev harness),
+resident only with the battle overlay. The neighbouring name `FUN_801CFB94`
+is the artifact - a branch label inside this routine colliding with a real
+entry in PROT 0970. See
+[`battle-action.md`](../subsystems/battle-action.md#overlay-local-prng-fun_801d0290).
+
 ## Audio / sound driver
 
 | Thread | Verdict | Why |
