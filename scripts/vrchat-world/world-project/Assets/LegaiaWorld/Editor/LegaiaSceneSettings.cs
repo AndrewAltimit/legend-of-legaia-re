@@ -19,7 +19,7 @@
 //       prop_53_anim8, not every glb's object_1). Searched under the
 //       built root (children of Legaia_<scene>, inactive included) and
 //       the kit's top-level containers (Legaia_camp_props,
-//       Legaia_night_torches, Legaia_equipment). Generated objects are
+//       Legaia_night_torches, Legaia_equipment, Legaia_common_prefabs). Generated objects are
 //       destroyed (they come back next build for a scene whose settings
 //       drop the name); prefab-instance children (world/prop glb nodes)
 //       are disabled instead, since Unity forbids deleting them without
@@ -53,6 +53,31 @@
 //       marker after the build. Defaults to TRUE (with or without a
 //       settings file) - it only acts when a descriptor exists in the
 //       scene, so a bare Unity project is unaffected.
+//
+//   "prefab_transforms": {"tv": {"position": [x, y, z], "rotation": [0, yaw, 0]}, ...}
+//       Absolute placement for the builder's common prefabs and the camp
+//       settings panel (keys: mirror, tv, card_table, pens, the prefab
+//       name of an extra slot, menu), replacing the spawn-relative
+//       offsets and the face-the-spawn rotation. These objects live
+//       under top-level containers at the origin, so the values are
+//       EXACTLY the object's Inspector position and rotation (world ==
+//       local there - no mirror to trip over). "rotation" is optional.
+//       "Legaia > Snapshot placements to scene settings" writes this
+//       block (and spawn_position) from the current scene, so the loop
+//       is: place by hand, snapshot, port the file back into the kit.
+//       The older "prefab_positions": {"tv": [x, y, z]} form still reads.
+//
+//   "slot_machine": {"cabinet": "Assets/Prefabs/legaia slot machine.glb",
+//                    "art": "Assets/LegaiaImports/slot-art",
+//                    "position": [x, y, z], "rotation": [0, yaw, 0], "scale": 0.012}
+//       The casino cabinet: which model asset to instantiate (falls back
+//       to a project-wide search by file name when the path moved), the
+//       `asset slot-art` folder to build the minigame from, and the
+//       cabinet's Inspector placement + uniform scale. With this block the
+//       common-prefabs pass places the cabinet and runs the slot-machine
+//       builder on it, so the minigame comes back on every rebuild. Also
+//       written by the snapshot menu (it finds the cabinet through its
+//       LegaiaSlotGame rig, wherever it sits).
 
 using System.Collections.Generic;
 using System.IO;
@@ -61,6 +86,28 @@ using UnityEngine;
 
 namespace LegaiaWorld
 {
+    /// One prefab_transforms entry: Inspector position + optional
+    /// Inspector Euler rotation (degrees).
+    public struct LegaiaPrefabTransform
+    {
+        public Vector3 position;
+        public bool hasRotation;
+        public Vector3 rotation;
+    }
+
+    /// The slot_machine block: cabinet asset, art folder, placement.
+    public class LegaiaSlotPlacement
+    {
+        public string cabinetAsset;
+        public string artDir;
+        public bool hasPosition;
+        public Vector3 position;
+        public bool hasRotation;
+        public Vector3 rotation;
+        public bool hasScale;
+        public float scale = 1f;
+    }
+
     public class LegaiaSceneSettings
     {
         public const string DIR = "Assets/LegaiaWorld/Settings";
@@ -73,6 +120,12 @@ namespace LegaiaWorld
         /// LegaiaSpawn's root-local position - what its Inspector shows.
         public Vector3 spawnLocal;
         public bool setDescriptorSpawn = true;
+        /// Absolute placements for the common-prefab items + the camp
+        /// menu, by key (see the header).
+        public Dictionary<string, LegaiaPrefabTransform> prefabTransforms =
+            new Dictionary<string, LegaiaPrefabTransform>();
+        /// The slot_machine block, or null when the file has none.
+        public LegaiaSlotPlacement slotMachine;
         /// Asset path the settings were read from; null = no file (every
         /// list empty, defaults only).
         public string path;
@@ -101,13 +154,92 @@ namespace LegaiaWorld
             }
             if (MiniJson.Get(m, "set_descriptor_spawn") is bool b)
                 s.setDescriptorSpawn = b;
+            var pp = MiniJson.AsObj(MiniJson.Get(m, "prefab_positions"));
+            if (pp != null)
+                foreach (var kv in pp)
+                {
+                    var l = MiniJson.AsList(kv.Value);
+                    if (l != null && l.Count >= 3)
+                        s.prefabTransforms[kv.Key] = new LegaiaPrefabTransform
+                        {
+                            position = ReadVec(l),
+                        };
+                }
+            var sm = MiniJson.AsObj(MiniJson.Get(m, "slot_machine"));
+            if (sm != null)
+            {
+                var slot = new LegaiaSlotPlacement
+                {
+                    cabinetAsset = MiniJson.AsStr(MiniJson.Get(sm, "cabinet")),
+                    artDir = MiniJson.AsStr(MiniJson.Get(sm, "art")),
+                };
+                var slotPos = MiniJson.AsList(MiniJson.Get(sm, "position"));
+                if (slotPos != null && slotPos.Count >= 3)
+                {
+                    slot.hasPosition = true;
+                    slot.position = ReadVec(slotPos);
+                }
+                var slotRot = MiniJson.AsList(MiniJson.Get(sm, "rotation"));
+                if (slotRot != null && slotRot.Count >= 3)
+                {
+                    slot.hasRotation = true;
+                    slot.rotation = ReadVec(slotRot);
+                }
+                if (MiniJson.Get(sm, "scale") is double sc)
+                {
+                    slot.hasScale = true;
+                    slot.scale = (float)sc;
+                }
+                s.slotMachine = slot;
+            }
+            var pt = MiniJson.AsObj(MiniJson.Get(m, "prefab_transforms"));
+            if (pt != null)
+                foreach (var kv in pt)
+                {
+                    var pos = MiniJson.AsList(MiniJson.Get(kv.Value, "position"));
+                    if (pos == null || pos.Count < 3)
+                        continue;
+                    var rot = MiniJson.AsList(MiniJson.Get(kv.Value, "rotation"));
+                    s.prefabTransforms[kv.Key] = new LegaiaPrefabTransform
+                    {
+                        position = ReadVec(pos),
+                        hasRotation = rot != null && rot.Count >= 3,
+                        rotation = rot != null && rot.Count >= 3 ? ReadVec(rot) : Vector3.zero,
+                    };
+                }
             Debug.Log("[Legaia] scene settings " + p + ": " +
                 s.deleteObjects.Count + " deletion(s), " +
                 s.staticNpcs.Count + " static NPC rule(s), " +
                 s.removeNpcs.Count + " removed NPC rule(s), " +
                 s.freezeNpcs.Count + " frozen NPC rule(s)" +
-                (s.hasSpawn ? ", spawn override " + s.spawnLocal : "") + ".");
+                (s.hasSpawn ? ", spawn override " + s.spawnLocal : "") +
+                (s.prefabTransforms.Count > 0
+                    ? ", " + s.prefabTransforms.Count + " placement(s)" : "") +
+                (s.slotMachine != null ? ", slot machine" : "") + ".");
             return s;
+        }
+
+        static Vector3 ReadVec(List<object> l)
+        {
+            return new Vector3(
+                (float)MiniJson.AsNum(l[0]),
+                (float)MiniJson.AsNum(l[1]),
+                (float)MiniJson.AsNum(l[2]));
+        }
+
+        /// Apply a placement override to a built object: position always,
+        /// rotation when the entry carries one. Returns false when there
+        /// is no entry for `key` (the object keeps its computed placement).
+        public static bool ApplyPlacement(Dictionary<string, LegaiaPrefabTransform> t,
+            string key, Transform target)
+        {
+            LegaiaPrefabTransform p;
+            if (t == null || !t.TryGetValue(key, out p))
+                return false;
+            target.localPosition = p.position;
+            if (p.hasRotation)
+                target.localRotation = Quaternion.Euler(p.rotation);
+            return true;
         }
 
         /// JSON list entries may be numbers (NPC indices) or strings
@@ -173,7 +305,8 @@ namespace LegaiaWorld
             var targets = new List<GameObject>();
             var scopes = new List<GameObject> { root };
             foreach (string top in new[]
-                     { "Legaia_camp_props", "Legaia_night_torches", "Legaia_equipment" })
+                     { "Legaia_camp_props", "Legaia_night_torches", "Legaia_equipment",
+                       LegaiaCommonPrefabs.CONTAINER })
             {
                 var go = GameObject.Find(top);
                 if (go != null)

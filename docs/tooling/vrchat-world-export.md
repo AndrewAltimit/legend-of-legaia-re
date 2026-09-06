@@ -254,6 +254,15 @@ on - unticking them all restores the faithful retail-shaded build - and
 everything is generated from scratch on top of the export, documented in
 [`scripts/vrchat-world/README.md`](../../scripts/vrchat-world/README.md#optional-realism-enhancements).
 
+The same builder also spawns the furniture most VRChat worlds end up
+with - a mirror (off by default, local, auto-off), a synced video TV
+over the SDK's AVPro + Unity players, a card table with sittable stools
+and a 52-card pickup deck - all built from primitives, generated
+textures and SDK components, plus a slot list for any prefab asset
+already installed in the project (the SDK's pen system, QvPen, ProTV,
+a community deck). Guide + the community-prefab survey with licences:
+[`scripts/vrchat-world/README.md`](../../scripts/vrchat-world/README.md#common-prefabs).
+
 Hand-tuned corrections a specific scene needs (delete a generated object,
 keep listed NPCs from wandering, drop an NPC, override the spawn, aim the
 VRC scene descriptor at the spawn marker) live in a per-scene kit file,

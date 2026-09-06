@@ -267,7 +267,8 @@ namespace LegaiaWorld
         /// with PBR defaults. Materials already on any Legaia* shader (the
         /// kit's unlit screen shaders included) pass through untouched, so
         /// the call is idempotent and never converts the screen composition.
-        public static void ConvertPropToLit(GameObject root, string genDir)
+        public static void ConvertPropToLit(GameObject root, string genDir,
+            System.Func<Renderer, bool> include = null)
         {
             var cutout = Shader.Find("Legaia/Lit Vertex Color (Cutout)");
             var transparent = Shader.Find("Legaia/Lit Vertex Color (Transparent)");
@@ -284,12 +285,19 @@ namespace LegaiaWorld
             int converted = 0;
             foreach (var r in root.GetComponentsInChildren<Renderer>(true))
             {
+                if (include != null && !include(r))
+                    continue;
                 var mats = r.sharedMaterials;
                 bool changed = false;
                 for (int i = 0; i < mats.Length; i++)
                 {
+                    // Skip the kit's own shaders and display surfaces: a
+                    // VRC mirror (FX/MirrorReflection) or a video screen
+                    // (Video/RealtimeEmissiveGamma) must keep its shader.
                     if (mats[i] == null || (mats[i].shader != null &&
-                        mats[i].shader.name.StartsWith("Legaia")))
+                        (mats[i].shader.name.StartsWith("Legaia") ||
+                         mats[i].shader.name.StartsWith("FX/") ||
+                         mats[i].shader.name.StartsWith("Video/"))))
                         continue;
                     var lit = LitVariant(mats[i], cutout, transparent, null,
                         genDir, cache, ref idx);

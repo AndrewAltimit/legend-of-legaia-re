@@ -5,5 +5,30 @@
   "remove_npcs": [28, 10, 11],
   "freeze_npcs": [47, 48],
   "spawn_position": [-24.85, 1.75, 12.22],
-  "set_descriptor_spawn": true
+  "set_descriptor_spawn": true,
+  "prefab_transforms": {
+    "mirror": {
+      "position": [14.04, 1.51, 19.77],
+      "rotation": [0, -91.263, 0]
+    },
+    "tv": {
+      "position": [40.68, -0.003, 15.14],
+      "rotation": [0, 89.265, 0]
+    },
+    "card_table": {
+      "position": [29.271, 0.984, 37.342],
+      "rotation": [0, 175.764, 0]
+    },
+    "menu": {
+      "position": [34.978, 0.801, 19.277],
+      "rotation": [0, -0.422, 0]
+    }
+  },
+  "slot_machine": {
+    "cabinet": "Assets/Prefabs/legaia slot machine.glb",
+    "art": "Assets/LegaiaImports/slot-art",
+    "position": [37, 0.979, 36.416],
+    "rotation": [0, -71.178, 0],
+    "scale": 0.012
+  }
 }

@@ -84,6 +84,11 @@ namespace LegaiaWorld
         float musicVolume = 0.5f;
         bool campProps = true;
 
+        // Common prefabs (LegaiaCommonPrefabs.cs): mirror, TV, card table,
+        // the SDK's pen system, and any prefab assets the user lists.
+        LegaiaCommonPrefabOptions commonPrefabs = new LegaiaCommonPrefabOptions();
+        bool showCommonPrefabs = true;
+
         // Optional realism layer (LegaiaRealism.cs) - every pass defaults
         // on; untick everything in the foldout for the faithful
         // retail-shaded scene.
@@ -195,6 +200,9 @@ namespace LegaiaWorld
                 campProps);
 
             GUILayout.Space(8);
+            CommonPrefabsGUI();
+
+            GUILayout.Space(8);
             RealismGUI();
 
             GUILayout.Space(8);
@@ -207,6 +215,145 @@ namespace LegaiaWorld
                     Build();
             }
             EditorGUILayout.EndScrollView();
+        }
+
+        void CommonPrefabsGUI()
+        {
+            showCommonPrefabs = EditorGUILayout.Foldout(showCommonPrefabs,
+                "Common prefabs (mirror, TV, cards, pens, your own)", true);
+            if (!showCommonPrefabs)
+                return;
+            EditorGUI.indentLevel++;
+            var o = commonPrefabs;
+            o.mirror = EditorGUILayout.Toggle(
+                new GUIContent("Mirror",
+                    "A framed VRC mirror with Off / On / Players-only buttons. " +
+                    "Starts off, the choice is per player, and it switches " +
+                    "itself off when you walk away (a mirror renders the " +
+                    "scene twice)"),
+                o.mirror);
+            using (new EditorGUI.DisabledScope(!o.mirror))
+                o.mirrorOffset = EditorGUILayout.Vector3Field("  Offset from spawn", o.mirrorOffset);
+            o.tv = EditorGUILayout.Toggle(
+                new GUIContent("TV (video player)",
+                    "A synced video player on the SDK's AVPro (PC) + Unity " +
+                    "(Android) players: URL field, Play/Pause - Stop - Resync " +
+                    "buttons. YouTube / Twitch links resolve in the VRChat " +
+                    "client (not in the editor)"),
+                o.tv);
+            using (new EditorGUI.DisabledScope(!o.tv))
+                o.tvOffset = EditorGUILayout.Vector3Field("  Offset from spawn", o.tvOffset);
+            o.cardTable = EditorGUILayout.Toggle(
+                new GUIContent("Card table",
+                    "A round table with stools you can sit on (VRC stations) " +
+                    "and a 52-card deck of grabbable cards (hold + Use flips " +
+                    "a card) with Shuffle / Gather buttons. Faces are generated"),
+                o.cardTable);
+            using (new EditorGUI.DisabledScope(!o.cardTable))
+            {
+                o.cardTableOffset = EditorGUILayout.Vector3Field("  Offset from spawn", o.cardTableOffset);
+                o.seats = EditorGUILayout.IntSlider("  Stools", o.seats, 0, 8);
+            }
+            bool havePens = AssetDatabase.LoadAssetAtPath<GameObject>(
+                LegaiaCommonPrefabs.SDK_PEN_PREFAB) != null;
+            using (new EditorGUI.DisabledScope(!havePens))
+                o.sdkPens = EditorGUILayout.Toggle(
+                    new GUIContent("SDK pen system",
+                        havePens
+                            ? "Spawn the VRChat SDK's own SimplePenSystem sample prefab"
+                            : "The SDK sample prefab was not found in this project"),
+                    o.sdkPens && havePens);
+            using (new EditorGUI.DisabledScope(!o.sdkPens))
+                o.pensOffset = EditorGUILayout.Vector3Field("  Offset from spawn", o.pensOffset);
+            o.slotMachine = EditorGUILayout.Toggle(
+                new GUIContent("Slot machine (cabinet + minigame)",
+                    "Instantiate the casino cabinet model and run the slot-machine " +
+                    "builder on it (needs the `asset slot-art` export). The scene " +
+                    "settings' slot_machine block overrides the asset, art folder " +
+                    "and placement below"),
+                o.slotMachine);
+            using (new EditorGUI.DisabledScope(!o.slotMachine))
+            {
+                o.slotCabinetPath = EditorGUILayout.TextField(
+                    new GUIContent("  Cabinet asset",
+                        "Model asset path; a moved file is found again by name"),
+                    o.slotCabinetPath);
+                o.slotArtDir = EditorGUILayout.TextField("  Slot art folder", o.slotArtDir);
+                o.slotOffset = EditorGUILayout.Vector3Field("  Offset from spawn", o.slotOffset);
+                o.slotScale = EditorGUILayout.FloatField("  Cabinet scale", o.slotScale);
+            }
+
+            EditorGUILayout.LabelField(
+                new GUIContent("Extra prefabs",
+                    "Any prefab asset installed in this project (QvPen, a ProTV " +
+                    "or USharpVideo player, a community card deck...) - dropped " +
+                    "at the offset, turned to face the spawn plus the yaw"));
+            for (int i = 0; i < o.extras.Count; i++)
+            {
+                var e = o.extras[i];
+                EditorGUILayout.BeginHorizontal();
+                e.prefab = (GameObject)EditorGUILayout.ObjectField(
+                    e.prefab, typeof(GameObject), false, GUILayout.MinWidth(120));
+                e.offset = EditorGUILayout.Vector3Field(GUIContent.none, e.offset,
+                    GUILayout.MinWidth(150));
+                e.yaw = EditorGUILayout.FloatField(e.yaw, GUILayout.Width(50));
+                if (GUILayout.Button("-", GUILayout.Width(22)))
+                {
+                    o.extras.RemoveAt(i);
+                    EditorGUILayout.EndHorizontal();
+                    break;
+                }
+                EditorGUILayout.EndHorizontal();
+            }
+            if (GUILayout.Button("+ Add prefab slot", GUILayout.Width(140)))
+                o.extras.Add(new LegaiaExtraPrefab
+                {
+                    offset = new Vector3(3f + 1.5f * o.extras.Count, 0f, -3.5f),
+                });
+
+            GUILayout.Space(4);
+            using (new EditorGUI.DisabledScope(string.IsNullOrEmpty(manifestPath)))
+            {
+                if (GUILayout.Button("Place common prefabs near spawn (existing root)"))
+                    PlaceCommonPrefabs();
+            }
+            if (GUILayout.Button(new GUIContent(
+                    "Snapshot placements to scene settings",
+                    "Write the current Inspector position + rotation of every " +
+                    "common prefab, the camp settings panel and LegaiaSpawn " +
+                    "into Assets/LegaiaWorld/Settings/<scene>.settings.json, " +
+                    "so the next build reproduces the hand placement. Port the " +
+                    "file back into the kit afterwards")))
+                LegaiaSettingsSnapshot.Snapshot();
+            EditorGUI.indentLevel--;
+        }
+
+        /// Rebuild just the common-prefab container against an already-built
+        /// root (so moving the TV doesn't force a full scene rebuild).
+        void PlaceCommonPrefabs()
+        {
+            object m = MiniJson.Parse(File.ReadAllText(manifestPath));
+            string sceneName = MiniJson.AsStr(MiniJson.Get(m, "scene")) ?? "scene";
+            var root = GameObject.Find("Legaia_" + sceneName);
+            var spawnT = root != null ? root.transform.Find("LegaiaSpawn") : null;
+            if (spawnT == null)
+            {
+                EditorUtility.DisplayDialog("Legaia World Builder",
+                    "No built root 'Legaia_" + sceneName +
+                    "' with a LegaiaSpawn in this scene - build first.", "OK");
+                return;
+            }
+            if (!commonPrefabs.AnyEnabled)
+            {
+                LegaiaCommonPrefabs.Remove();
+                return;
+            }
+            EnsureUdonProgramAssets();
+            var settings = LegaiaSceneSettings.Load(sceneName);
+            LegaiaCommonPrefabs.Build("Assets/LegaiaGenerated/" + sceneName,
+                spawnT.position, commonPrefabs, settings.prefabTransforms,
+                settings.slotMachine);
+            settings.ApplyDeletions(root);
         }
 
         void EquipmentGUI()
@@ -722,7 +869,8 @@ namespace LegaiaWorld
             // U# refuses to attach a behaviour whose script has no
             // UdonSharpProgramAsset - and bare .cs files copied into a
             // project have none. Create any missing ones before wiring.
-            if (wireTeleports || openDoorsOnApproach || campProps || realism.NeedsUdon)
+            if (wireTeleports || openDoorsOnApproach || campProps || realism.NeedsUdon ||
+                commonPrefabs.AnyEnabled)
                 EnsureUdonProgramAssets();
 
             var root = new GameObject("Legaia_" + sceneName);
@@ -1062,13 +1210,24 @@ namespace LegaiaWorld
             // positions.
             if (campProps)
                 LegaiaCampProps.Build("Assets/LegaiaGenerated/" + sceneName,
-                    sceneName, spawnGo.transform.position, musicSrc);
+                    sceneName, spawnGo.transform.position, musicSrc,
+                    settings.prefabTransforms);
             else
             {
                 var oldCamp = GameObject.Find(LegaiaCampProps.CONTAINER);
                 if (oldCamp != null)
                     Undo.DestroyObjectImmediate(oldCamp);
             }
+
+            // Common prefabs (mirror, TV, card table, pens, extras): same
+            // rules as the camp props - world space, own top-level
+            // container, after the colliders stand.
+            if (commonPrefabs.AnyEnabled)
+                LegaiaCommonPrefabs.Build("Assets/LegaiaGenerated/" + sceneName,
+                    spawnGo.transform.position, commonPrefabs, settings.prefabTransforms,
+                    settings.slotMachine);
+            else
+                LegaiaCommonPrefabs.Remove();
 
             // Optional realism layer, after the final mirror stands (its
             // passes sample and scatter in the finished world frame).
@@ -1391,7 +1550,9 @@ namespace LegaiaWorld
                      { "LegaiaDoorway", "LegaiaDoor", "LegaiaNpcWander",
                        "LegaiaDayNight", "LegaiaPickupProp", "LegaiaTorch",
                        "LegaiaWorldMenu", "LegaiaFlicker",
-                       "LegaiaSlotMachine", "LegaiaSlotButton" })
+                       "LegaiaSlotMachine", "LegaiaSlotButton",
+                       "LegaiaEventButton", "LegaiaMirror", "LegaiaSeat",
+                       "LegaiaCard", "LegaiaCardDeck", "LegaiaVideoTv" })
             {
                 var t = FindType("LegaiaWorld." + name);
                 if (t == null) continue;
