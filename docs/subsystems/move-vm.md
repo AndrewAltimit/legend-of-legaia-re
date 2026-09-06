@@ -283,7 +283,7 @@ carrying structure are called out below the table.
 | `0x1D` | 2 | `DAT_8007B6DE = v1` (a global, not an actor field) |
 | `0x1E` | 8 | render-mode-4 VRAM-beam setup: `+0x5A = 4`, `+0xC4/+0xCC..+0xD6 = v1..v7` |
 | `0x1F` | 8 | morph install: `+0x9E \|= byte`, `+0xB0/+0xB2/+0xA8/+0xAA/+0xAC/+0xAE = v2..v7` |
-| `0x20` | 3 | **indirect call** `(*(gp+0x714))(actor, v1, v2)` - a per-build function-pointer hook |
+| `0x20` | 3 | **indirect call** `(*(gp+0x714))(actor, v1, v2)` - the **slot-B module hook**. In battle the SM installs the paged module's spawn stager from the 64-word entry table `PTR_801F6734[row]` (row = extraction - 903; `0x801E44C8` / `0x801E4630`) and the `jalr` at SCUS `0x80023764` calls it; in the fishing / Baka Fighter minigames the overlay installs its own per-frame sprite callback. Same `gp[+0x714]` slot (`0x8007BA2C`), different tenant. See [`cast-module.md`](cast-module.md#the-two-entries-and-where-their-addresses-live). |
 | `0x21` | 7 | per-id record write to `DAT_8007BE60 + v1*0xC` (5 halfwords + i32); `+0x6D = v1` |
 | `0x22` | 1 | continue-epilogue (no-op that advances PC) |
 | `0x23` | 0xD | render-mode-2 child spawn (`+0x9E = v1 \| 0x4000`) + tween block |

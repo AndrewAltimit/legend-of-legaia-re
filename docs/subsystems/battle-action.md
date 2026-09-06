@@ -1676,7 +1676,7 @@ The 3D visual of a player Seru-magic cast (the summoned Seru and its attack mesh
 
 ```c
 _DAT_8007bd24[7] = 0x32;                                   // advance to the cast band
-_DAT_8007ba2c = (&PTR_s_re_check_801f6734)[id - 0x81];     // per-summon effect-data pointer
+_DAT_8007ba2c = (&PTR_s_re_check_801f6734)[id - 0x81];     // the module's move-VM entry VA (a code pointer, called by op 0x20)
 FUN_8003ec70(id - 0x79, 0);                                // overlay loader B: PROT (id - 0x79 + 0x381)
 ```
 
