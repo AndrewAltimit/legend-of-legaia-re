@@ -1822,6 +1822,15 @@ pad-only probe watches the mode walk `0x03 -> 0x08 -> 0x09 -> 0x14 -> 0x15`
 with no input of its own having any effect. Its exit is established from the
 bytes plus the already-pinned FMV hand-off, not from a capture.
 
+**In-engine.** With the destination case fold in `clean_scene_name` and
+authored `0x4A` waits discounted from the timeline's anti-hang cap, four of
+the five leave headlessly to the destinations above (`uru` → `map03`,
+`urudre1` / `urudre3` → `uru`, `jouine` → FMV 8 → `town0e`), measured by
+`chapter1_frontier_ladder`. `urudre2` does not: its only gate-1 record is the
+4,703-byte King Nebular dream whose `0x3F` → `map01` is the record's tail, and
+the port's timeline replays the conversation without passing body `0xB8C` -
+a port limit, not a disc fact.
+
 #### Loading the kingdom geometry (engine port)
 
 The engine port loads the scene's **kingdom-bundle slot-1 landmark TMD pack**

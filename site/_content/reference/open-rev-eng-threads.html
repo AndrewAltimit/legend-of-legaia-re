@@ -57,8 +57,6 @@
       <tr><td><a href="#d-region-gate-families">Region story-flag gate families</a></td><td><span class="tag tag-partial">partial</span> - structure settled; a shrunken play-order residual owed</td><td>One flag-firehose session from an early save, walking the four never-visited regions.</td></tr>
       <tr><td><a href="#d-teien">teien hedge-base ground fill</a></td><td><span class="tag tag-open">open</span> - blocked on one save state</td><td>A <strong>mednafen</strong> field-run state inside <code>teien</code>; join its ground primitives against the live object grid.</td></tr>
       <tr><td><a href="#d-coplanar">Coplanar residual: sliver tail</a></td><td><span class="tag tag-partial">partial</span> - the curved-shell half is answered; slivers remain</td><td>A second field-run state per <code>jou</code> scene at a different camera would retire the last caveat; <code>chitei2</code> is unmeasured.</td></tr>
-      <tr><td><a href="#d-tmd-pack-grow">Can a scene TMD pack member be grown in place?</a></td><td><span class="tag tag-open">open</span></td><td>Enumerate what outside the pack holds a byte offset into it (scene-bundle descriptor, scene ANM records).</td></tr>
-      <tr><td><a href="#d-signature-cast">Is any enemy signature-cast choreography data-driven?</a></td><td><span class="tag tag-open">open</span></td><td>Read the hardcoded spawn sites' parameter blocks; decide whether a duplicated block plus one spawn site can be driven from the art path.</td></tr>
       <tr><td><code>bse.dat</code>'s second record family</td><td><span class="tag tag-open">open</span> - reader unpinned</td><td>The gp-relative / lui+load sweep over the bytes past <code>0x94C</code> of the loaded buffer.</td></tr>
       <tr><td><a href="#d-other5-other6">What are PROT 1221 / 1222 (<code>other5</code> / <code>other6</code>)?</a></td><td><span class="tag tag-open">open</span> - BGR555 colour data, loader unknown</td><td>Scan for the raw TOC literals <code>0x4C7</code> / <code>0x4C8</code> at the byindex-loader call sites.</td></tr>
       <tr><td>Publisher-logo routine <code>FUN_801CE9C0</code> (PROT 0895) - per-logo quads</td><td><span class="tag tag-open">open</span> - narrow</td><td>Read the draw calls from the image; add the 0895 overlay row.</td></tr>
@@ -185,12 +183,10 @@
 
 <section class="doc-section" id="battle-rendering" data-doc="battle--rendering">
   <h2>Battle / rendering</h2>
-  <p>Battles run in their own overlay with their own screen chrome - the enemy-name banner at the top, the party panels, the arts announcements. Most of that chrome is now pinned sprite by sprite; the questions left are about how far the disc's data can be bent by a mod, plus two narrow runtime writers.</p>
+  <p>Battles run in their own overlay with their own screen chrome - the enemy-name banner at the top, the party panels, the arts announcements. Most of that chrome is now pinned sprite by sprite; the questions left are two narrow runtime writers and the un-extracted slot-B modules.</p>
   <table>
     <thead><tr><th>Thread</th><th>Status</th><th>What would close it</th></tr></thead>
     <tbody>
-      <tr><td>Can a scene TMD pack member be grown in place?</td><td><span class="tag tag-open">open</span></td><td><a href="#d-tmd-pack-grow">details &darr;</a></td></tr>
-      <tr><td>Is any of an enemy signature cast's choreography data-driven?</td><td><span class="tag tag-open">open</span></td><td><a href="#d-signature-cast">details &darr;</a></td></tr>
       <tr><td>What moves the evolved-Cort battle off flow <code>ctx[+0x06] = 0x0C</code>?</td><td><span class="tag tag-open">open</span> - narrow</td><td>The flow-<code>0x0A</code> arm skips the banner composer for monster-slot-0 id <code>0xB5</code> and parks <code>0x0C</code>, a value the ladder at <code>0x801D0C84</code> has no arm for; a pad-free run stays parked, yet the fight opens in play. A write-watch on <code>ctx+0x06</code> from <code>cort_evolved_pre_battle</code> with the pad driven.</td></tr>
       <tr><td>What is the byte at <code>actor[+0x22C] + 0x80</code> the SFX-cue router folds into the category?</td><td><span class="tag tag-open">open</span> - low priority</td><td>Named "the attacker's element byte" by inference; its destination is the descriptor's category column, and the monster element byte is record <code>+0x1D</code>. Needs a read of the <code>+0x22C</code> sub-struct.</td></tr>
       <tr><td>The 51 slot-B modules without an extracted image, and how a capture-class module's tick is entered</td><td><span class="tag tag-open">open</span></td><td>PROT 904, 906, 908..923, 925, 926, 935..956, 958..966 lack a <code>static-overlays.toml</code> row; the <code>0x801F6734</code> / <code>0x801CF4EC</code> entry pair is a cheap identity test (row = extraction - 903). The cast-tick switch stops at 0934, so the capture-class modules reach their tick another way.</td></tr>
@@ -199,29 +195,7 @@
 
   <p>Recently closed in this area: the battle-<strong>intro</strong> enemy-name banner - the question had a false premise. No placement record raises it; the flow-<code>0x0A</code> composer <code>FUN_801D9D3C</code> places its labels with immediate geometry at y = 48, nothing slides, and the intro timer tears them down (<a href="re-settled-threads.html#t-the-battle-intro-enemy-name-banner">settled</a>, <a href="re-do-not-re-walk.html#x-the-battle-intro-banner-is-raised-from-a-top-seated-0x0303-placement-record">falsified reading</a>). Before it, the <code>+0x0E</code> kind-pair mapping and the element-badge palette selector both fell out of the widget-class table, and the status-element badge sheet <code>0x18..=0x20</code> is pinned cell by cell.</p>
 
-  <h3 id="d-tmd-pack-grow">Can a scene TMD pack member be grown in place?</h3>
-  <p><em>Status:</em> open.</p>
-  <p>A scene's environment meshes ship in one tightly packed TMD pack. Swapping a mesh for a <em>larger</em> one means rebuilding the pack - which already works - and the remaining question is whether anything outside the pack points into it by byte offset and would break.</p>
-  <details class="disclosure"><summary>What is known and what would close it</summary><div class="disclosure-body">
-    <p>Members <code>106</code>/<code>107</code>/<code>108</code> of PROT entry <code>0639</code> are the Delilas siblings' field NPC meshes; the pack's 112 members tile its declared <code>347476</code>-byte stream with zero internal slack, so a larger mesh needs the pack rebuilt rather than patched - which is how the Nivora field-form swap ships (members re-emitted by <code>legaia_patcher::nivora_field</code>, disc oracle <code>nivora_field_real</code>). What keeps this thread open is only the enumeration: placements name a member <em>index</em>, but the scene bundle's descriptor and the scene ANM records are unchecked. The same question for a MAN is answered on <a href="../formats/man-relocation.html">MAN relocation</a>.</p>
-  </div></details>
-
-  <h3 id="d-signature-cast">Is any of an enemy signature cast's choreography data-driven?</h3>
-  <p><em>Status:</em> open.</p>
-  <p>The Delilas siblings' signature attacks - the fire, the lift, the camera - are staged by streamed code modules. Reskinning such a move onto a player art carries the damage but not the show, because nothing on the art path can name the module's effects.</p>
-  <details class="disclosure"><summary>What is known and what would close it</summary><div class="disclosure-body">
-    <p>The three Delilas cast modules reach the pool spawner <code>FUN_80050ED4</code> from hardcoded <code>jal</code> sites - 15 in PROT <code>0958</code>, 41 in <code>0959</code>, 24 in <code>0960</code> - each passing a module-resident record by absolute pointer, the shape <code>summon_overlay::parse</code> already walks. Nothing on that path takes an id, so a player art's eight-record effect script has no way to name one. Closing it means reading the spawn sites' parameter blocks and deciding whether a duplicated parameter block plus one reachable spawn site can be driven from the art path.</p>
-  </div></details>
-
-  <div class="see-also">
-    <span class="see-also-label">Reference</span>
-    <a href="../subsystems/battle.html">Battle</a>
-    <a href="../subsystems/battle-action.html">Battle action SM</a>
-    <a href="../subsystems/effect-vm.html">Effect VM</a>
-    <a href="../formats/scene-bundles.html">Scene bundles</a>
-    <a href="../formats/man-relocation.html">MAN relocation</a>
-    <a href="../tooling/randomizer.html">Randomizer</a>
-  </div>
+  <p>Recently closed in this area: pack-member growth (nothing outside a scene TMD pack holds a byte offset into it, so a rebuild is the only cost) and the signature-cast choreography question (the spawn layer is data in the art path's own record format; the lift and camera are module code) - both on <a href="re-settled-threads.html">the settled page</a>.</p>
 </section>
 
 <section class="doc-section" id="audio" data-doc="audio--bgm">
