@@ -680,9 +680,10 @@ disassembling each extracted image at base `0x801CE818` (file offset
 `0x1680`, inside 0971's own `0x1800` bytes, so this is genuine
 co-residency and not the 0971 → 0972 over-read).
 
-**Nothing on the disc registers it, and nothing needs to.** The wrapper is
-one entry of the libpress `DecDCT*` API the linker pulled into the overlay
-whole. Its twin sits at the very next address: `0x801CFEBC` is the same
+**Nothing on the disc registers it, and nothing needs to.** What the shape
+and the neighbourhood say - an inference, not a symbol - is that this is one
+entry of the libpress `DecDCT*` surface, linked in as a unit with the entries
+the overlay does call. Its twin sits at the very next address: `0x801CFEBC` is the same
 nine instructions with the channel immediate `1` instead of `0` - MDEC**out**,
 the decoded-data path - and *that* one the STR overlay calls twice itself,
 at `0x801CF524` (with `a0 = 0`, clearing the callback) and at `0x801CF9C4`
