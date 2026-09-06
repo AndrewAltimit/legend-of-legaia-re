@@ -78,7 +78,10 @@ path of the scene-asset loader `FUN_8001F7C0` issues a `0x28`-sector request
 (`li a1,0x28`, byte total `0x14000` - `lui s1,0x1` / `ori s1,s1,0x4000`), which
 is `0x2000` bytes more than the map. Those trailing sectors are the *next* PROT
 entry's leading bytes, and `FUN_801D5630` searches them with the same header
-shape when the primary block misses. The same loader stages
+shape when the primary block misses. In practice that window is the scene's
+own `.PCH` ([`scene-v12-table.md`](scene-v12-table.md)), and a sidecar-only row
+is live-confirmed to fire: `uru`'s exit band `(36, 5, 42, 1)` exists in no
+`.MAP` record and reaches `FUN_8003BDE0` from the fallback read. The same loader stages
 `DATA\FIELD\<scene>.PCH` at `+0x12000` (zero-filling `0x800` bytes when the open
 fails - `lui v0,0x1` / `ori v0,v0,0x2000`, `li a2,0x800`) and sets
 `_DAT_8007B8D0 = base + 0x12800` (`lui a0,0x1` / `ori a0,a0,0x2800`), which is

@@ -72,6 +72,12 @@ Rows the last audit wave overturned. They are listed here rather than filed
 silently into the settled page, because a claim that was wrong once is the
 cheapest place to look for a claim that is still wrong.
 
+- **The five "sealed" chapter-1 scenes were never sealed.** `uru`, `urudre1..3`
+  and `jouine` all carry walk-on exits in their `.PCH` trigger sidecar; the
+  clean MAN walk desynced in inline text before the `0x3F`, the tile sweep
+  capped at 48 tiles below the exit bands, and the 24-tick exit budget could
+  not reach a tail behind 300 frames of waits. Live-confirmed for `uru`
+  ([settled](re-settled-threads.md#the-uru-mais-chain-and-jouine-exits)).
 - **The battle-intro enemy-name banner is raised by no placement record.** The
   runbook presumed a top-seated `0x0303` record with a runtime width overwrite
   and a park-to-live slide; capture shows the flow-`0x0A` composer
@@ -156,7 +162,6 @@ with the instruction evidence cited.
 |---|---|---|
 | Region story-flag gate families (record-header C1/C2 gates) | partial - structure settled; play order capture-confirmed for most spokes, a shrunken residual set still owed | [details ↓](#region-story-flag-gate-families) |
 | teien hedge-base ground fill (kind-2 tile-trigger cells) | open - blocked on one `teien` field-run mednafen state | [details ↓](#teien-hedge-base-ground-fill) |
-| How a player leaves the Uru Mais chain (`uru`, `urudre1..3`) and `jouine` | open - the exit mechanism is unidentified; those five are one-way in the port | A mechanism that is neither a walk-on band nor a record run from its own start. `chapter1_frontier_ladder` establishes the negative on both: no gate-1 tile in the five fires a transition, no clean per-partition walk finds a `0x3F` in their MANs, and 160 executed record bodies reach no scene change. The four Uru Mais rooms' destinations survive only as destination-*table* entries. None of the five carries a **variant** MAN, so a second script carrier is not where the exit hides. Nearest known shape is the `kor`-family warp-pad picker, an interact record; a retail capture would settle it. |
 
 Recently closed here: Rim Elm's south gate. Neither of its two walk-on bands
 was the mechanism the symptom suggested - the exit record is ungated and the

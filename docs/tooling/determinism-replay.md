@@ -334,22 +334,17 @@ like), and the ladder's own `.MAP` gate-1 trigger → partition-2 record →
 `0x3F` join (what a door the player can *walk onto* looks like).
 
 Ordinary interiors have all three. The Uru Mais chain (`uru`, `urudre1`,
-`urudre2`, `urudre3`) has only the middle one: the clean walk finds no `0x3F`
-anywhere in those four MANs, so their destinations are known to this project
-as table entries and not as decoded ops. `jouine` has none of the three.
-
-Two further probes turn that from a decoder note into a playability one.
-Stepping onto every gate-1 walk-on tile the five carry fires **nothing**, and
-executing 160 of their own partition-1 and partition-2 record bodies through
-the field VM reaches no scene change either. In the port as it stands,
-entering the Uru Mais chain or `jouine` is one-way, and the four Uru Mais
-graph edges rest on weaker footing than the rest of the closure.
-
-How retail leaves them is unidentified, and the record probe bounds its own
-claim: a warp behind a story gate, an inventory check or an actor-motion wait
-a headless world never satisfies would not be reached from a 180-frame run
-either. "No record this probe executed warped" is the measurement; "the bytes
-contain no warp" is not.
+`urudre2`, `urudre3`) and `jouine` read as having fewer, and that reading is
+the ladder measuring its own caps rather than the disc: the clean walk desyncs
+in inline `0x1F` text kilobytes before each `0x3F`, the tile sweep stops at 48
+deduped gate-1 tiles below `uru`'s exit band, and the 24-tick post-step budget
+cannot reach a tail behind 300+ frames of waits. All five carry walk-on exits
+in their `.PCH` trigger sidecar (`jouine`'s is the FMV hand-off, not a
+`0x3F`), and `uru`'s fired live - see
+[`world-map.md`](../subsystems/world-map.md#uru-mais-and-jouine-exits-carried-by-the-pch-sidecar).
+Until the ladder's Part E constants and baseline are raised, its "sealed"
+assertion is a statement about the probe. "No record this probe executed
+warped" is the measurement; "the bytes contain no warp" is not.
 
 ## See also
 

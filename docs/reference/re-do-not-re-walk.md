@@ -1089,6 +1089,28 @@ routine is also printed at `0x801E8B10` by the `overlay_0896` batch at its
 `+0x5818` delta, and two independent phantoms landing on one VA is the check that
 pins it - see [`phantom-print-index.md`](../tooling/phantom-print-index.md).
 
+### A scene with no `0x3F` in its MAN has no door
+
+*Falsified twice over, by disassembly and by capture.*
+
+The reading: the chapter-1 frontier ladder's clean per-partition walk finds no
+`0x3F` in `uru` / `urudre1..3` and nothing at all in `jouine`, its tile sweep
+fires no transition, and 160 executed record bodies reach no scene change - so
+those five scenes are sealed and the port may treat them as one-way.
+
+Why it looked right: three independent instruments agreed, and each one is
+right about what it measured.
+
+What is true: the `0x3F` ops sit `0x124C` / `0x1A8F` / `0x2034` bytes into
+record bodies, past inline `0x1F` text the fall-through walk desyncs on; the
+tile sweep stops at 48 deduped gate-1 tiles while `uru` carries 118 with its
+exit band at positions 63..66; and the 24-tick post-step budget cannot reach a
+tail behind 300+ frames of explicit waits. `jouine` has no `0x3F` because its
+exit is the FMV hand-off `4C E2 08`, already on the FMV dispatch table. All
+five exits are carried by the scene's `.PCH` sidecar, and `uru`'s fired live.
+Ask the `.PCH` before calling a scene sealed. See
+[`re-settled-threads.md`](re-settled-threads.md#the-uru-mais-chain-and-jouine-exits).
+
 ## No overlay function lives below `0x801CE818`
 
 **Falsified:** "an undocumented address in the `0x801C0164`..`0x801CE000`

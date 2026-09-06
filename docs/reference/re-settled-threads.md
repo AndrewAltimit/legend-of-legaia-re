@@ -1813,7 +1813,8 @@ skips the composer and parks `ctx[+0x06] = 0x0C`, a value the flow ladder at
 | Mid-visit NPC re-arrangement beats (dolk2 market crowd; garmel pre-Zeto staging) | resolved | `disassembly` + `capture` | dolk2: the swap is `P2[11]`, spawned by the `.MAP` fallback walk-on-trigger rows (C1=[`0x27C`], C2=[`0x142`]) - eight `CC <crowd> E3 <day>` seats (op `4C` nE sub-3, `0x801E3108`) put P1[53..60] on the day cohort's tiles and `A3` parks the day cohort at `(127,127)`. garmel: the Zeto stager `P2[12]` materializes P1[3]/P1[4] beside the player (n3 sub-7 player-coord copy `0x801E0FB0`); post-battle re-entries run `P1[0]`'s flag-consume arms. See [script-vm.md](../subsystems/script-vm.md#mid-visit-npc-re-arrangement-beats-dolk2-market-swap--garmel-boss-staging); pinned by `engine-core/tests/man_midvisit_rearrangement_disc.rs`. |
 | Region story-flag gate families (record-header C1/C2 gates) | resolved as structure (play-order residual on the open page) | `capture` | [details ↓](#region-story-flag-gate-families) |
 | Extraction-0874 §2 (`player.lzs`) F-variant pixels | resolved - installing event named | `capture` + `disassembly` | [details ↓](#extraction-0874-2-playerlzs-f-variant-pixels---a-one-shot-opening-face-frame-stamp-not-a-menu-writer) |
-| Which chapter-1 scenes the engine can load, script, walk and leave | resolved as a per-scene verdict; one open exit mechanism named | `disassembly` + `capture` | The chapter-1 closure is 27 scenes with one kingdom boundary (`jiji` → `map02`), and all 27 load, enter and settle. Five stop at the exit rung, and not only in the decoder: no walk-on tile and no executed record leaves the Uru Mais chain or `jouine`, so in the port they are one-way. How retail leaves them is open. [details ↓](#chapter-1-scene-frontier) |
+| Which chapter-1 scenes the engine can load, script, walk and leave | resolved as a per-scene verdict; the five "sealed" scenes have `.PCH`-carried exits | `disassembly` + `capture` | The chapter-1 closure is 27 scenes with one kingdom boundary (`jiji` → `map02`), and all 27 load, enter and settle. Five stop at the exit rung, and not only in the decoder: no walk-on tile and no executed record leaves the Uru Mais chain or `jouine`, so in the port they are one-way. How retail leaves them is open. [details ↓](#chapter-1-scene-frontier) |
+| How a player leaves the Uru Mais chain (`uru`, `urudre1..3`) and `jouine` | resolved (all five have walk-on exits carried by the scene's `.PCH` trigger sidecar) | `disassembly` + `capture` | [details ↓](#the-uru-mais-chain-and-jouine-exits) |
 | Who latches the clip-end bit for a conversation's cross-context clip pokes | resolved (port residual named) | `disassembly` + `capture` | The **poked actor's own anim tick**, on the poked actor's own `+0x62`. `FUN_8003C83C` short-circuits target `0xF8` to the live player object out of `_DAT_8007C364` before its actor-list walk, so an NPC record's `A2 F8 <clip>` / `AC F8 08` / `AD F8 08` reads and writes the *player's* clip words. [details ↓](#clip-end-latch-for-cross-context-clip-pokes) |
 | What is the `scene_asset_table` header's `+0x04` word? | resolved (sum of the descriptors' decompressed sizes; never read) | `disassembly` | Equals `Σ descriptor.size` in all 105 containers of the family on the disc and exceeds the carrying entry in every one; `FUN_80020224` reads `+0x00` (`lw s3,0x0(s4)` at `0x80020288`) and steps descriptors from `+0x08`, and a corpus sweep for loads off `*(0x8007B85C)` finds offset `0` only. |
 | How does a scene bundle reach `_DAT_8007B85C`? | resolved (whole-sector block copy) | `disassembly` | `FUN_8003D26C(*(0x8007B85C), *(0x8007B8C4), sectors << 6)` at `0x801D6918` (32 B per iteration = `sectors * 0x800`), into the `0x62C00` arena `FUN_8001E1B4` allocates at `0x8001E28C`. |
@@ -1822,7 +1823,7 @@ skips the composer and parks `ctx[+0x06] = 0x0C`, a value the flow ladder at
 
 ### Chapter-1 scene frontier
 
-*Status:* resolved as a per-scene verdict; one open question named below - how retail leaves the five sealed scenes
+*Status:* resolved as a per-scene verdict; the five scenes that read as sealed are not - see [the Uru Mais and jouine exits](#the-uru-mais-chain-and-jouine-exits)
 
 The chapter-1 reachable set is the BFS closure of `town01` over each scene's
 own decoded `0x3F` destinations, and it terminates at exactly one kingdom
@@ -1843,24 +1844,18 @@ and the `.MAP` gate-1 trigger to partition-2 record to `0x3F` join:
 | shape | scenes | what has a door |
 |---|---|---|
 | op, table and walk-on trigger | 22 of 27 | all three decoders |
-| destination-table entry only | `uru`, `urudre1`, `urudre2`, `urudre3` | the table pass alone; the clean walk finds no `0x3F` anywhere in those MANs |
-| none | `jouine` | nothing; whatever leaves it is not a named scene change |
+| op past a text desync, trigger in the `.PCH` sidecar | `uru`, `urudre1`, `urudre2`, `urudre3` | the table pass and the sidecar; the clean fall-through walk desyncs in inline `0x1F` text kilobytes before the `0x3F` |
+| FMV hand-off, trigger in the `.PCH` sidecar | `jouine` | no `0x3F` at all - the exit is `4C E2 08` (FMV 8 → `town0e`), already on the FMV dispatch table |
 
-Two further probes make the bottom two rows a playability statement rather
-than a decoder note. Stepping onto every gate-1 walk-on tile those five scenes
-carry fires **nothing**, and executing 160 of their own partition-1 and
-partition-2 record bodies through the field VM reaches no scene change either.
-So in the port as it stands, entering the Uru Mais chain or `jouine` is
-one-way, and the four Uru Mais graph edges rest on weaker footing than the
-rest of the closure.
-
-How retail leaves them is **not** established here, and the record probe
-bounds its own claim: a warp behind a story gate, an inventory check or an
-actor-motion wait a headless world never satisfies would not be reached from a
-180-frame run either. The `kor`-family dream-shrine warp pads are the nearest
-known shape and are interact records rather than bands - see the
-[Uru Mais warp-pad picker](#kor-family-op-0x49-flag-window-0x1380x13f---uru-mais-warp-pad-picker)
-thread.
+All 27 have a door. The two probes that once made the bottom rows a
+playability statement were measuring their own caps: the walk-on sweep stops
+at 48 deduped gate-1 tiles (`uru` carries 118 and its exit band sits at
+positions 63..66, `urudre2` carries 186), and the 24-tick post-step budget
+cannot run a record whose body spends 300+ frames in explicit waits or, for
+`jouine`, a 6.8 KB boss cutscene. The `.MAP` gate-1 join was also only half
+the join: every one of these exits is carried by the scene's `.PCH` trigger
+sidecar, which the fallback read of `FUN_801D5630` reaches. Details and the
+live pin: [the Uru Mais and jouine exits](#the-uru-mais-chain-and-jouine-exits).
 
 One locomotion residual, and it is a script rather than a defect: on a **first
 visit** `izumi`'s C1-gated spring record relocates the player about thirty
@@ -1870,6 +1865,49 @@ released-pad control. A revisit probe walks normally.
 Measured by `crates/engine-core/tests/chapter1_frontier_ladder.rs`; nine of
 the closure's scenes are additionally cross-checked against the capture
 library's own main RAM, and all nine enter in-engine.
+
+### The Uru Mais chain and jouine exits
+
+*Status:* resolved - grade `disassembly` + `capture` (the `uru` exit fired live).
+
+Every one of the five carries a walk-on exit, and every exit band lives in the
+scene's `.PCH` sidecar ([`scene-v12-table.md`](../formats/scene-v12-table.md)),
+not its `.MAP` - `urudre2`'s alone is doubled into the `.MAP`:
+
+| scene | exit record | gate-1 band | tail op (MAN offset) | destination |
+|---|---|---|---|---|
+| `uru` | `P2[42]` | `(36..39, 5)`, `.PCH` rows 23..26 | `0x3F` at `0x0D4B7` | `MAP03` `(0x24, 0x46)` |
+| `uru` | `P2[37]` (`C2 = [0x36F]`) | `(37..39, 44)` | `4C E2 07` at `0x0CB11` | `uru2` via FMV 7 |
+| `urudre1` | `P2[2]` | `(35..37, 22..24)` | `0x3F` at `0x01804` | `uru` `(0x40, 0x40)` |
+| `urudre2` | `P2[9]` | `(26, 14)` + `(24, 13)` | `0x3F` at `0x01D78` | `map01` `(0x26, 0x51)` |
+| `urudre3` | `P2[0]` | `(51, 90)` | `0x3F` at `0x02461` | `uru` `(0x40, 0x40)` |
+| `jouine` | `P2[16]` | `(17, 17..19)`, `.PCH` rows 3..5 | `4C E2 08` at `0x03E90` | `town0e` via FMV 8 |
+
+`uru` also carries the three dream entrances (`P2[29]` → `urudre1`, `P2[33]` →
+`urudre2`, `P2[31]` → `urudre3`), all `.PCH`-only and ungated. The four `0x3F`
+records share one byte-exact tail: `B1 F8 13` (set flag 19), `34 05 FF FF FF
+41 00` (white fade), the `0x3F`, then the `26 FF FF` / `21` / `26 FE FF` park
+pair. `jouine` has no `0x3F` anywhere; its exit is the FMV hand-off the
+[`str-fmv-table.md`](../formats/str-fmv-table.md) row already pins
+(`0689_jouine` → `fmv_id 8` → `MV6.STR` → `town0e`, door `0x2E5`), which the
+engine's `fmv_post_play_handoff` already maps.
+
+Live pin: from `uru_field_run` (tile `(38, 6)`), holding the pad toward
+`(38, 5)` fires `FUN_8003BDE0(36, 5, 42, 1)` and then `FUN_8001FD44("MAP03")`
+with `ra = 0x801DEB1C` - the field VM's `0x3F` arm - and the scene leaves
+`uru → map03` (probe `scripts/pcsx-redux/autorun_uru_exit_probe.lua`). The
+row `(36, 5, 42, 1)` exists only in the `.PCH`; `uru`'s `.MAP` gate-1 records
+are `[1, 3, 43]`. `jouine` cannot be pad-probed from the catalogued state,
+which is already inside `P2[16]` running the evolved-Cort fight ahead of the
+FMV tail.
+
+What is ruled out: no `0x3E` door warp with `op0 >= 100` in any of the five,
+no `0x4C` staged-menu-warp arm, no kind-0 teleport rows in any of the five
+`.PCH` files, and the scripted-motion VM has no scene-change opcode at all.
+One decoded oddity stands unexplained: `urudre2` returns to `map01` (Drake)
+while `uru` itself exits to `MAP03` (Karisto). Layout and the three
+instrument artifacts that produced the "sealed" reading:
+[`world-map.md`](../subsystems/world-map.md#uru-mais-and-jouine-exits-carried-by-the-pch-sidecar).
 
 ### Clip-end latch for cross-context clip pokes
 
