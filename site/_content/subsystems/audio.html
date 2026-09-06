@@ -174,7 +174,7 @@
     </tbody>
   </table>
   <p><strong>Engine.</strong> Executing an art pushes one <code>BattleShoutCue</code>; boot demuxes <code>XA2 / XA4 / XA6</code> from the raw 2352-byte sectors (disc-image boots only); <code>AudioBgmDirector::play_art_shout</code> resolves the pool pick and <code>AudioOut::play_xa_shout</code> mixes the PCM the way the CD input does, never through the 24 voices. Two timing behaviours model the CD contract: a ~150&nbsp;ms response delay (the shout trails the animation) and back-to-back requests queue rather than cut. The cue tables are parsed by <code>legaia_art::arts_voice</code>.</p>
-  <p><strong>Gap.</strong> The melee grunt and the impact cue are not yet staged: no <code>XA30</code> bank at boot, and the live battle loop emits no cue for a plain swing (only the <code>BattleSession</code> path folds strike cues). A whole fight driven by the play window or the play page produces music but zero effect cues.</p>
+  <p><strong>Shipped.</strong> The melee grunt and the impact cue are staged: boot demuxes the <code>XA27</code> / <code>XA30</code> clip banks (<code>read_battle_xa_clip_bank</code>) and the live battle loop fires the per-strike cue (<code>World::fire_melee_impact_cue</code>) - the <code>XA30</code> grunt on an ordinary swing, the <code>0x10C</code> sting only when the effect handle <code>_DAT_8007BD84</code> is non-null, the <code>s7</code> pose gate honoured as retail's per-strike condition.</p>
 </section>
 
 <section class="doc-section" id="ssapi">

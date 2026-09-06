@@ -250,7 +250,9 @@ impl ItemWindow {
     /// - [`Low`](Self::Low) / [`High`](Self::High) (`len == 128 <= 255`): not
     ///   forbidden by the ceiling, but the half window is only installed in the
     ///   transient single-member / story-flag-clear state and the real disc item
-    ///   population is far below 128, so no normal-play path fills it -
+    ///   population is 250 named ids, so the id space does not forbid a fill; what
+    ///   bounds it is how much of that is obtainable while a character travels
+    ///   alone (a progress bound, unmeasured) - so no normal-play path fills it -
     ///   [`GatedBySelectorState`].
     ///
     /// [`Unreachable`]: OobReachability::Unreachable
@@ -1036,7 +1038,8 @@ mod tests {
     fn half_windows_are_gated_by_selector_state_not_the_id_ceiling() {
         // 128 <= 255, so the id ceiling alone does not forbid a fill; retail
         // only installs these in the single-member / flag-20-clear state, whose
-        // reachable inventory is far below 128.
+        // inventory obtainable during the solo phase is far below 128 (a progress
+        // bound - the item table itself carries 250 named ids).
         for w in [ItemWindow::Low, ItemWindow::High] {
             assert_eq!(w.len(), 128);
             assert!(w.len() as u16 <= MAX_DISTINCT_ITEM_IDS);

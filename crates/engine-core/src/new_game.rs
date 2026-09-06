@@ -253,7 +253,7 @@ impl World {
 /// | `flag_at_0x434` | `_DAT_80084574` | `1` |
 /// | `brightness_ref` | `_DAT_8008457C` | `0xD7` (full-brightness reference the battle fades clamp against) |
 /// | `voice_volume` | `_DAT_80084580` | `200` (voice/SFX volume config) |
-/// | `screen_brightness` | `_DAT_8007B910` | `0xD7` (live brightness, ramped by battle-action fades) |
+/// | `screen_brightness` | `_DAT_8007B910` | `0xD7` - the live **audio level** (`FUN_80062004` = `SsSeqSetVol` operand), not brightness; the field keeps its historical name |
 /// | `bgm_volume_raw` | `DAT_8007B6EC` | `-1` (field-BGM volume; see [`crate::scene::bgm_reattach_volume`]) |
 ///
 /// `DAT_8007B750` and `_DAT_8007BAD0` are also cleared to `0` (already
