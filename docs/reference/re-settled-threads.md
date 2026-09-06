@@ -229,7 +229,7 @@ pose `0x14` while Noa levelled. Evidence: `disassembly` + `capture`. Details:
 
 ### What a normal party attack sounds like
 
-*Status:* resolved - the `XA30` grunt on an ordinary swing; the `0x10C` sting only when `_DAT_8007BD84` is non-null; the `s7` gate is a real per-strike condition, and `_DAT_8007BD84` is a pointer
+*Status:* resolved - an ordinary swing emits **neither** cue (four captured party swings all fail the `s7` gate); the `XA30` grunt is the arm for a strike that commits the defender's `+0x1F3` reaction; the `0x10C` sting only when the effect handle `_DAT_8007BD84` is non-null
 
 `FUN_801EC3E4` picks one of two emissions on `_DAT_8007BD84`: zero takes `FUN_8003D53C(0x1D,
 chan, dur)` at `0x801EEB44` (per-character `(0,0x26)` / `(4,0x2E)` / `(6,0x1A)` off
@@ -250,9 +250,17 @@ module, so the cell reads null. The earlier "grunt latch always passing" is
 **falsified**: `0x801EEA88` / `0x801EEAA0` require `s7 != 0` and `s7 ==
 actor[s4][+0x1F3]`, `s7` being the staged pose byte committed to `+0x1DA` at
 `0x801EEC6C`, and only one of the fourteen definitions reaching the compare
-loads `+0x1F3`. The grunt's seat is `s6` (`0x801EEA70`), the sting's `s4`; a
-third gate `0x801EEAB8 slti v0,v0,0x2` over `_DAT_8007BC20` mutes the grunt at
-level 2. Shipped:
+loads `+0x1F3`. The grunt's seat is `s6` (`0x801EEA70`), the sting's `s4`. The
+third gate `0x801EEAB8 slti v0,v0,0x2` reads `_DAT_8007BC20`, which is the
+executable's own `xa_flag` debug counter (XA-drive state - `FUN_80016B6C`
+prints it at `0x80016EB8..0x80016EC0`, `FUN_8004DA00` zeroes it on five arms),
+not a character level. Live (`capture`, N = 4, probe
+`autorun_w4d_melee_grunt_gate.lua`): every captured party swing skipped the
+gate - `s7` came from the `+0x1EF` / `+0x1F0` / `+0x1F1` reaction-pose loads,
+never `+0x1F3` - and neither `FUN_8003D53C` nor `FUN_8004FE5C` was called, so
+"the grunt on an ordinary swing" was too strong: the grunt fires when a strike
+commits the `+0x1F3` reaction (behind `sltu s0,s1` at `0x801EC878`), whose
+threshold is not yet pinned. Shipped:
 `World::fire_melee_impact_cue` + `read_battle_xa_clip_bank`.
 
 ### `FUN_8003EAE4` is a seek plus bookkeeping - and the driver is not untraced
@@ -383,6 +391,9 @@ species and at the disc's authored heap-cost maximum.
 | What does item-effect flag bit `0x40` mean? | resolved (the descriptor's target side - set = the enemy party) | `disassembly` | Read once, at `0x801D18E0` in `FUN_801D0748` (PROT 0898), forked with `andi 0x20` at `0x801D18E8` into phases `0x5B` / `0x5D` / `0x64` / `0x66` (one enemy / all enemies / one ally / all allies); the spell table's `+2` byte runs the same ladder at `0x801D1C50` / `0x801D1C58`. The five carriers are the Point Card and the two summon-flute pairs. `FUN_801D0F1C` never reads the bit (see the falsified row). |
 | What is the arts-name table's `+4` halfword (`DAT_80075EC4`)? | resolved (an authored tier constant with no reader) | `disassembly` | Eight sites materialise the table base; a delta-tracked walk of every load off them reaches only `+0` / `+1` / `+2` / `+8` / `+0xC` / `+0x10`, and a five-form sweep of `0x80075EC8` finds no reference. The values are a per-art tier ladder keyed to list position (`60000` Miracle, `50000..30000` the elemental arts, `20000`, `15000..5000` by input count, `1` terminator) - neither AP nor input count. |
 | What is the byte at `actor[+0x22C] + 0x80` the SFX-cue router folds into the category? | resolved (the actor's display object's sound-bank category, values `{0, 7, 8}` - not an element byte) | `disassembly` | [details ↓](#the-display-objects-sound-bank-category) |
+| What moves the evolved-Cort battle off flow `ctx[+0x06] = 0x0C`? | resolved (the boss stage module hands the flow back after its own intro countdown; no input involved) | `capture` + `disassembly` | [details ↓](#the-evolved-cort-flow-park) |
+| Is `_DAT_8007B64B` clear during a Muscle Dome contest? | resolved (yes - the dust decal is trimmed) | `capture` | `FUN_800513F0` entered once (`ra = 0x80046F7C`) with the byte `0x00`; at `0x80051ACC` the trim arm ran, and a write watch logged zero writes over 1800 vsyncs (`koin1`, modes `0x03 → 0x18 → 0x19 → 0x14 → 0x15`). The field handoff `FUN_801D9E1C` never runs on the arena path. Probe `autorun_w4d_dome_decal_flag.lua`. |
+| Do the renderer's light-capable prim kinds 8..11 ever execute? | resolved-negative (no live light path) | `capture` | Zero hits on `0x8004409C` / `0x8004423C` / `0x80044434` / `0x800445B0` over 1111 `map03` overworld frames, 347 + 470 field frames (`map02`, `ropeway`) and ~1160 battle frames. The control had to change with the scene: a kingdom overworld never enters the SCUS prim-dispatch family at all (13 handlers armed, zero hits) - it renders through PROT 0901's eight replacements, all of which fired in the same run. Probe `autorun_w4d_light_kind_hits.lua`; [`renderer.md`](../subsystems/renderer.md). |
 | What are PROT 1221 / 1222 (`other5` / `other6`)? | resolved (`int.tim` / `int2.tim` - the Muscle Dome's two ringside panel stills) | `disassembly` | [details ↓](#dome-ringside-panel-stills-prot-1221-and-1222) |
 | What do the higher readef groups' aux slots carry? | resolved (no new kind - textures, the four ME archives, or a never-staged actor record) | `disassembly` | `FUN_801F12D0` is an 8-stage machine (jump table `0x801CF4CC`): stage 2 uploads slot `base` to CLUT row 488 / page `x = 512`, stage 4 uploads `base+1` to row 490 / `x = 640`, gated at `0x801F1500` / `0x801F150C` on `base >= 0x42 \|\| 0x0C <= base <= 0x36`. That gate partitions the file exactly: textures inside it, the four ME archives below it, and in the three excluded groups (`base` `0x39` / `0x3C` / `0x3F`, actions `0x14..0x16`) an actor record byte-identical to its `base+2` twin, which the applier never stages. See [`summon-readef.md`](../formats/summon-readef.md). |
 | Is `cutscene_str` (PROT 0970)'s 123 KB code gap un-dumped code? | resolved (a zero-filled reservation) | `disassembly` | `0x801D1878..0x801F1A00` is 32,793 zero words of 32,866 - a `.bss`-shaped hole. The image's real un-dumped code is about 1.3 KB. Recorded in [`disc-coverage.md`](../tooling/disc-coverage.md). |
@@ -1974,6 +1985,19 @@ at `0x80052238..` and `0x800522D0..`), each loop paired with `jal 0x8003E104`
 carrying the same literal in `a1` - the bank-load slot. The router copies it
 into the descriptor's category column (`0x8004FFD8..0x8004FFE4`,
 `0x80050070..0x8005007C`). The monster element byte is record `+0x1D`.
+
+### The evolved-Cort flow park
+
+*Status:* resolved - grade `capture` + `disassembly`
+
+The `0x0A` arm writes `0x0B` unconditionally and overwrites `0x0C` for formation
+`0xB5` (`0x801D0DE0..0x801D0E14`); the ladder idles on it. PROT 0968 (loader-B
+tracker `0x49`) runs a 7-phase intro cinematic off `ctx[+0x289]` (jump table at
+`0x801F69D8`) and writes `0x0B` back at `0x801F713C` (`ra = 0x800564A0`) when a
+dt countdown on its local word `0x801F73F8` expires - 3207 vsyncs later in the
+capture, with `0x0B → 0x14 → 0x1E` following at once. A ten-button sweep
+produced zero writes. Probe `autorun_w4d_cort_flow_writer.lua`; see
+[`battle.md`](../subsystems/battle.md#flow-0x0c-is-the-boss-stage-modules-baton).
 
 ## Field / locomotion
 

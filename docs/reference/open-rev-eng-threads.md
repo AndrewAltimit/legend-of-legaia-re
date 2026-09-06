@@ -81,6 +81,11 @@ cheapest place to look for a claim that is still wrong.
   reader enumeration (125 sites, six images, closed). `_DAT_8007BD84` is an
   effect handle, not a mode word; `FUN_8003EAE4`'s driver is `FUN_8003D764`;
   and the item table carries 250 names, not "far below 128".
+- **Four runtime questions closed by capture.** The evolved-Cort flow `0x0C`
+  park is the boss stage module's own intro countdown handing the flow back;
+  the dome decal flag is clear live; an ordinary party swing emits neither
+  cue (the grunt is the `+0x1F3` reaction-commit arm, and "level 2" was the
+  `xa_flag` debug counter); and the light-capable prim kinds 8..11 never run.
 - **The whole slot-B band was dumpable all along.** Sixty-one of the
   sixty-four cast / summon modules now carry a map row and dumps; the missing
   piece was a third link-time table (`0x801CF56C`, keyed on the spell record's
@@ -373,7 +378,6 @@ process-matching helpers in
 
 | Thread | Status | What would close it |
 |---|---|---|
-| What moves the evolved-Cort battle off flow `ctx[+0x06] = 0x0C`? | open (narrow) | The flow-`0x0A` arm skips the banner composer for monster-slot-0 id `0xB5` and parks `0x0C`, a value the ladder at `0x801D0C84` has no arm for; a pad-free run stays parked, yet the fight opens in play (`cort_evolved_battle_first_menu` sits at `0x1E`). Find the writer: a write-watch on `ctx+0x06` from `cort_evolved_pre_battle` with the pad driven. |
 
 Recently closed in this area: the battle-**intro** enemy-name banner - the
 question had a false premise, no placement record raises it, the composer

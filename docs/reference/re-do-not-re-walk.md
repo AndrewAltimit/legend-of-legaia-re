@@ -46,6 +46,19 @@ prim handler. The `attr`-is-unread register-width argument swept a function
 that never sees these bytes. See
 [`re-settled-threads.md`](re-settled-threads.md#kingdom-slot-4---per-record-semantic).
 
+### The world-map slot-4 landmark meshes are the consumer of the lit prim handlers
+
+*Falsified twice over.*
+
+The renderer's kinds 8..11 are the only handlers with an `NCC*` light op, and
+the presumed consumer was the kingdom bundles' slot-4 "landmark meshes". Slot
+4 is the scene's animation bank, not a mesh library; and exec breakpoints on
+all four handlers over two kingdom overworlds, a field scene and a battle
+return zero while the overworld's real handlers (PROT 0901's eight
+replacements) fire in the same run. A kingdom overworld never enters the SCUS
+prim-dispatch family at all. See
+[`re-settled-threads.md`](re-settled-threads.md#battle--arts--level-up).
+
 ## Battle / arts / level-up
 
 | Thread | Verdict | Why |
