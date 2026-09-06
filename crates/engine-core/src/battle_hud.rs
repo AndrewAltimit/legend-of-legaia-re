@@ -908,7 +908,8 @@ pub fn sync_battle_hud_rows(hud: &mut BattleHud, world: &crate::world::World) {
 
 /// Build the deduplicated enemy target-menu rows straight off the live
 /// world's monster slots - the host-facing entry to
-/// [`crate::target_picker::enemy_menu_rows`] (retail `FUN_801D9D3C`).
+/// [`crate::target_picker::enemy_menu_rows`] (retail `FUN_801D9D3C`, the
+/// intro-banner composer's dedup pass reused for the picker).
 ///
 /// The engine seats a formation's monsters directly after the party
 /// (`World::enter_battle`), and the pickers the hosts drive index enemies

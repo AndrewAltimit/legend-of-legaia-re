@@ -492,6 +492,29 @@ reads the far framing. Corrected reading in
 [battle.md](../subsystems/battle.md#battle-camera-exact) and
 [re-settled-threads.md](re-settled-threads.md#the-done-band-framing-and-the-two-orbit-writers).
 
+### The battle-intro banner is raised from a top-seated `0x0303` placement record
+
+*Falsified by capture.*
+
+The reading: the intro banner is one of the placement records that park at
+`(16, -24)` and live at `(16, 14)` with kind `0x0303` - records 67, 69..75, 89,
+101, 102 - with the runtime overwriting the disc width with the measured enemy
+name and sliding the element down from the park seat.
+
+Why it was plausible: every *other* battle-HUD element does come from that
+table through `FUN_801D8DE8`, which forwards the record field for field and
+then glides it park-to-live; those records are exactly the right shape; and one
+of them, record 68, really does get its width overwritten at runtime (disc
+`w = 0`, spawned at the measured name width). So the shape existed, the
+overwrite existed, and the slide existed - just not on this path.
+
+What is true instead: `FUN_801D9D3C` places the intro labels itself with
+immediates and never reads the table; the width is a call argument, not a
+table write; and there is no slide, the labels appearing and vanishing at one
+seat. See
+[`battle.md`](../subsystems/battle.md#the-battle-intro-enemy-name-banner) and
+[`re-settled-threads.md`](re-settled-threads.md#the-battle-intro-enemy-name-banner).
+
 ## Audio / sound driver
 
 | Thread | Verdict | Why |
@@ -566,6 +589,20 @@ identifies a *shape*, never a format. Where the shape encodes an ordering
 separates the format from its look-alikes. The `monster_sound_bank` class is kept
 and pinned at zero matches so the shape stays named rather than being
 re-derived by accident.
+
+### bse.dat: three readings the gp+0x678 trace overturned
+
+*Falsified by disassembly.*
+
+| Reading | Why it looked right | What is true |
+|---|---|---|
+| `bse.dat` record `+4` is a `u32 v` taking only 0 and 2 | Reading `+4..+7` as one word; `+5..+7` are zero in every retail row | `+4` is a `u8` category (the VAB-slot selector) plus three bytes no reader touches; "0 and 2" described the authored defaults, and the cue router rewrites the byte per cue |
+| `bse.dat` is loaded once at sound-init and held for the session | `FUN_8001FA88` has the shape of a sound-init routine and also loads the per-set `.dpk` | Its one caller on the whole disc is battle init `FUN_800513F0`; the bank reloads per battle, and the buffer slot `0x8007B8D0` is repointed at every field load |
+| The `bse_bank` detector's "`u32` at `+4` under `0x100`" gate is a value bound | It reads as a range check on the trailing field | A category byte can never exceed `0xFF`, so the bound could only fail on a non-zero trailer - it is a zero-trailer test |
+
+The consumer was "untraced" only because every reader forms `0x8007B990` with
+`lui` + `lw`, a pair the five-form address scan does not accept. Details:
+[`re-settled-threads.md`](re-settled-threads.md#bsedat-record-columns-and-the-gp0x678-consumers).
 
 ## Containers / placeholder slots
 

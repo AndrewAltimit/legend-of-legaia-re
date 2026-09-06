@@ -72,6 +72,16 @@ Rows the last audit wave overturned. They are listed here rather than filed
 silently into the settled page, because a claim that was wrong once is the
 cheapest place to look for a claim that is still wrong.
 
+- **The battle-intro enemy-name banner is raised by no placement record.** The
+  runbook presumed a top-seated `0x0303` record with a runtime width overwrite
+  and a park-to-live slide; capture shows the flow-`0x0A` composer
+  `FUN_801D9D3C` spawning its labels with immediate geometry at y = 48, no
+  slide, torn down by the intro timer. The width overwrite belongs to record 68.
+- **`bse.dat` loads at battle init, not at boot, and its columns are pinned.**
+  Three pages said "once at init"; `FUN_8001FA88`'s only caller is battle init
+  `FUN_800513F0`. The consumer of the record table read as untraced because
+  every reader forms `0x8007B990` with `lui`+`lw`, a pair the five-form address
+  scan does not accept - `find-gp-relative-refs.py` closes that blind spot.
 - **Debug flag `_DAT_8007B8C2` had its branch sense backwards**, and one arm
   was named for the wrong loader. Every site reads the flag with `lh` and takes
   the **zero** arm to the debug-station host trap, the **non-zero** arm to the
@@ -332,53 +342,17 @@ process-matching helpers in
 
 | Thread | Status | What would close it |
 |---|---|---|
-| The battle-**intro** enemy-name banner - which placement record raises it | mostly resolved (chrome, seat and frame law captured on the same surface mid-fight; only the record identity is owed) | [details ↓](#the-battle-intro-enemy-name-banner) |
 | Can a scene TMD pack member be grown in place? | open | Enumerate what outside the pack holds a byte offset *into* it. Members `106`/`107`/`108` of PROT entry `0639` are the Delilas siblings' field NPC meshes; the pack's 112 members tile its declared `347476`-byte stream with zero internal slack, so a larger mesh needs the pack rebuilt rather than patched - which is how the Nivora field-form swap ships (members `106/107/108` re-emitted by `legaia_patcher::nivora_field`, disc oracle `nivora_field_real`); what keeps this thread open is only the enumeration itself. Placements name a member *index*, but the scene bundle's descriptor and the scene ANM records are unchecked. The same question for a MAN is answered in [`man-relocation.md`](../formats/man-relocation.md). |
 | Is any of an enemy signature cast's choreography data-driven? | open | Read the spawn sites' parameter blocks. The three Delilas cast modules reach the pool spawner `FUN_80050ED4` from hardcoded `jal` sites - 15 in PROT `0958`, 41 in `0959`, 24 in `0960` - each passing a module-resident record by absolute pointer, the shape `summon_overlay::parse` already walks. Nothing on that path takes an id, so a player art's eight-record effect script has no way to name one, and the fire / lift / camera of a reskinned signature move stay behind. Closing it means deciding whether a duplicated parameter block plus one reachable spawn site can be driven from the art path. |
+| What moves the evolved-Cort battle off flow `ctx[+0x06] = 0x0C`? | open (narrow) | The flow-`0x0A` arm skips the banner composer for monster-slot-0 id `0xB5` and parks `0x0C`, a value the ladder at `0x801D0C84` has no arm for; a pad-free run stays parked, yet the fight opens in play (`cort_evolved_battle_first_menu` sits at `0x1E`). Find the writer: a write-watch on `ctx+0x06` from `cort_evolved_pre_battle` with the pad driven. |
+| What is the byte at `actor[+0x22C] + 0x80` that the SFX-cue router folds into the category? | open (low priority) | `functions/battle.md` names it the attacker's element byte; its destination is now pinned as the descriptor's category column (the VAB-slot selector), and the documented monster element byte is record `+0x1D`, not this. Needs a read of the `+0x22C` sub-struct in `FUN_8004FE5C`'s callers. |
 
-### The battle-intro enemy-name banner
-
-*Status:* the chrome, the seat and the frame arithmetic are captured - on the
-same banner surface, mid-fight. What is owed is only which placement record
-the intro instance raises.
-
-The thread opened as "chrome and seat unknown, blocked on a live frame", on
-the premise that no manifest state catches the surface. That premise was
-wrong about the surface rather than about the intro: a corner-sweep of the
-whole save library finds the battle's **full-width top message banner** live
-in two states - `rim_elm_gimard_seru_capture_after` (the mid-battle Seru
-"captured!" banner) and `noa_levelup_banner`.
-
-Both draw the same thing, and it is the frame the thread described. It is the
-widget table's **class-0 9-slice window**, tile-set 0, sub-palette 2: 4x4
-corners and 24x4 / 4x24 edges cut from one 32x32 patch at texels `(160, 0)`,
-content pen `(16, 12)`, frame origin `(8, 4)`, interior 20 tall, top and
-bottom edges tiled 24 wide from `x = 12` with the last tile clipped. Every
-placement record whose kind byte is `0x03` / `0x04` / `0x44` frames itself
-that way. Table and law:
-[`battle.md`](../subsystems/battle.md#the-widget-class-table---where-every-chrome-sprite-comes-from).
-
-One sub-claim in the old row is **falsified** by those frames: there is no
-blue interior. Retail draws the border sprites and the glyph run and nothing
-else - no fill primitive of any kind under the window, so the scene shows
-through. The blue-marbled 32x32 patch that made "gold border over a blue
-interior" a natural reading is the fill the framed *menu* windows use.
-
-Residual: the intro instance is transient, so which top-seated `0x0303`
-record it raises - the candidates park at `(16, -24)` and live at `(16, 14)`,
-and the runtime overwrites the disc width with the measured enemy name - is
-still capture-owed. The runbook is unchanged: drive
-`v0_1_battle_loading_tetsu` forward under PCSX-Redux and dump main RAM on the
-first frames after the mode flips. The read-out is mechanical -
-[`scripts/mednafen/widget-draw-sweep.py`](../../scripts/mednafen/widget-draw-sweep.py)
-joins any frame's sprites back to the widget records that drew them.
-
-Two operating notes apply to any run: PCSX-Redux probes **do not exit on their
-own** ([`pcsx-redux-automation.md`](../tooling/pcsx-redux-automation.md)), and
-`pgrep -f` matches the caller's own command line
-([`shell-observer-traps.md`](../tooling/shell-observer-traps.md)).
-
-Recently closed in this area: the `+0x0E` kind-pair mapping and the
+Recently closed in this area: the battle-**intro** enemy-name banner - the
+question had a false premise, no placement record raises it, the composer
+`FUN_801D9D3C` places its labels with immediates
+([settled](re-settled-threads.md#the-battle-intro-enemy-name-banner),
+[falsified reading](re-do-not-re-walk.md#the-battle-intro-banner-is-raised-from-a-top-seated-0x0303-placement-record)).
+Before it, the `+0x0E` kind-pair mapping and the
 element-badge palette selector both fell out of the widget-class table, and the
 status-element badge sheet `0x18..=0x20` is pinned cell by cell. Before them,
 the ground grid's depth-cue far colour and the battle-intro tile shatter's

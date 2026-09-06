@@ -198,7 +198,7 @@ Documented under the [field VM](script-vm.md) → "BGM lookup table" section. Th
 
 ## Sound bank loader (`FUN_8001FA88`)
 
-The sound subsystem init / `.dpk` loader. Documented under [sound-driver path-string cluster](../formats/sound-driver.md). Loads the `bse.dat` master bank once at boot, then per-scene `.dpk` files via the path-based opener with `h:\main\bg\domepack\<name>.dpk`. Dev builds bypass the path-builder and load PROT index `0x37A` (`sound_data2`) plus `param_1 + 5` for per-scene variations directly.
+The sound subsystem init / `.dpk` loader. Documented under [sound-driver path-string cluster](../formats/sound-driver.md). Loads `bse.dat` - the battle occupant of the runtime SFX descriptor bank, reloaded at battle-scene setup (its one caller is battle init `FUN_800513F0`, see [`bse-dat.md`](../formats/bse-dat.md)) - then per-scene `.dpk` files via the path-based opener with `h:\main\bg\domepack\<name>.dpk`. Dev builds bypass the path-builder and load PROT index `0x37A` (`sound_data2`) plus `param_1 + 5` for per-scene variations directly.
 
 ## Streaming-asset loader (`FUN_8001FC00`)
 

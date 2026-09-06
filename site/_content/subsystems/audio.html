@@ -14,7 +14,7 @@
     <dt>Libraries</dt><dd>PsyQ libsnd (SsAPI sequencer, <code>0x80061..0x80067</code>) and libspu (<code>0x80068..0x8006D</code>), statically linked and traceable</dd>
     <dt>Port</dt><dd><code>crates/engine-audio</code>: from-scratch SPU (ADSR, ADPCM, reverb network), sample-locked <code>Sequencer</code>, SFX bank + scheduler, XA mixing; WebAudio backend for the browser</dd>
     <dt>Oracle</dt><dd><code>legaia-engine audio-trace</code> - per-frame voice activity against save states and PCSX-Redux captures</dd>
-    <dt>Confidence</dt><dd>Confirmed for dispatch, banks, cues and the sequencer; the <code>bse.dat</code> record columns are Unknown</dd>
+    <dt>Confidence</dt><dd>Confirmed for dispatch, banks, cues and the sequencer; the <code>bse.dat</code> record columns are the SFX-table columns, pinned by the shared decoder <code>FUN_80016B6C</code></dd>
   </dl>
 </section>
 
@@ -72,7 +72,7 @@
     <thead><tr><th>Piece</th><th>What it does</th></tr></thead>
     <tbody>
       <tr><td>Path-string cluster</td><td>Eight extensions the sound code appends to scene-asset paths - <code>.spk</code>, <code>.LZS</code>, <code>.dpk</code>, <code>.MAP</code>, <code>.PCH</code>, <code>.pac</code>, <code>STR</code> - plus the master file <code>bse.dat</code>. Layout on <a href="../formats/sound-driver.html">sound-driver outputs</a></td></tr>
-      <tr><td>Sound init / <code>.dpk</code> loader</td><td>Loads the <code>bse.dat</code> master bank at init and keeps a pointer into it for the session, then the per-scene <code>.dpk</code></td></tr>
+      <tr><td>Sound init / <code>.dpk</code> loader</td><td>Loads <code>bse.dat</code> (the battle occupant of the <code>&gt;= 0x200</code> SFX descriptor bank) at battle-scene setup - its only caller is battle init <code>FUN_800513F0</code> - then the per-scene <code>.dpk</code></td></tr>
       <tr><td>Streaming-asset loader</td><td>Builds paths under <code>sound\</code>; the XA / <code>.pac</code> / <code>STR</code> consumer and the streamer every VAB-slot install goes through</td></tr>
     </tbody>
   </table>
@@ -275,7 +275,7 @@
   <table class="data-table">
     <thead><tr><th>Function</th><th>Address</th><th>What it proves</th><th>Dump / probe</th></tr></thead>
     <tbody>
-      <tr><td>Sound init / <code>.dpk</code> loader</td><td><code>FUN_8001FA88</code></td><td><code>bse.dat</code> at init, dev / retail split on <code>_DAT_8007B8C2</code></td><td><code>ghidra/scripts/funcs/8001fa88.txt</code></td></tr>
+      <tr><td>Sound init / <code>.dpk</code> loader</td><td><code>FUN_8001FA88</code></td><td><code>bse.dat</code> at battle init (caller <code>FUN_800513F0</code>), dev / retail split on <code>_DAT_8007B8C2</code></td><td><code>ghidra/scripts/funcs/8001fa88.txt</code></td></tr>
       <tr><td>Streaming-asset loader</td><td><code>FUN_8001FC00</code></td><td>The <code>sound\</code> path builder every bank install goes through</td><td><code>8001fc00.txt</code></td></tr>
       <tr><td>Bank installer</td><td><code>FUN_8001E54C</code> / <code>FUN_8002630C</code></td><td>Category to mixer record to slot; open through <code>SsVabOpenHead</code></td><td><code>8001e54c.txt</code>, <code>8002630c.txt</code></td></tr>
       <tr><td>Record initialiser / SPU bases</td><td><code>FUN_8001D424</code> / <code>FUN_800265E8</code></td><td>Twelve records, four pairs sharing a header and a base</td><td><code>8001d424.txt</code>, <code>800265e8.txt</code></td></tr>
@@ -294,7 +294,7 @@
 <section class="doc-section" id="whats-left">
   <h2>What's left</h2>
   <ul class="bullets">
-    <li>The <code>bse.dat</code> master bank: header word and record stride are pinned; the record columns are Unknown (<a href="../formats/sound-driver.html">sound-driver outputs</a>).</li>
+    <li>The <code>bse.dat</code> battle bank: header word, record stride and the record columns (the SFX-table columns; <code>+4</code> is the category byte the cue router <code>FUN_8004FE5C</code> rewrites per cue through <code>gp+0x678</code>) are pinned (<a href="../formats/sound-driver.html">sound-driver outputs</a>).</li>
     <li>The melee grunt and impact cue in the engine: an <code>XA30</code> bank at boot and cue emission from the live battle loop.</li>
     <li>The <code>.MAP</code> / <code>.PCH</code> PsyQ SoundArtist intermediates are dev-side inputs, not separate retail chunks; nothing to port.</li>
   </ul>

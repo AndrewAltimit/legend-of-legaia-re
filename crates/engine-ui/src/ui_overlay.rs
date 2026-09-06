@@ -1822,9 +1822,12 @@ pub struct EnemyTargetRowView<'a> {
     pub selected: bool,
 }
 
-/// Stage Y of the enemy target strip. An approximation: retail's row Y comes
-/// from the caller-side text-actor placement, not from the row builder
-/// `FUN_801D9D3C` itself; the band sits above the party panels.
+/// Stage Y of the enemy target strip. An engine seat: the row layout the
+/// strip reuses is `FUN_801D9D3C`'s, and that routine is the flow-`0x0A`
+/// battle-**intro** enemy-name banner composer (its only reference is the
+/// `jal` at `0x801D0DFC`), which places its own labels at y = 48 for the
+/// intro timer and never draws the target picker. Retail's target-select
+/// strip builder is unpinned; the band sits above the party panels.
 pub const ENEMY_MENU_STAGE_Y: i32 = 166;
 
 /// Row pitch a displaced enemy strip steps by ([`enemy_target_menu_rows_y`]).
@@ -1839,8 +1842,8 @@ const ENEMY_MENU_STEP: i32 = 14;
 /// is style `5` - centred, bottom-anchored at `0xB0` - so a three-line hint
 /// puts its own last row on **exactly** that Y. The two then draw on the same
 /// pixels, which is what "Tetsu" reading through `...only one target.` is.
-/// Retail's strip Y is caller-side and unpinned, so rather than guess a new
-/// fixed seat the strip steps up in whole text rows until it clears the box's
+/// Retail's target-strip builder is unpinned (`FUN_801D9D3C` is the intro
+/// banner's composer, not the picker's), so rather than guess a new fixed seat the strip steps up in whole text rows until it clears the box's
 /// drawn footprint (skin included). It never moves when no box is up, so a
 /// frame without a prompt is unchanged.
 pub fn enemy_target_menu_rows_y(host_box: Option<(i32, i32, i32, i32)>) -> i32 {
@@ -1861,8 +1864,9 @@ pub fn enemy_target_menu_rows_y(host_box: Option<(i32, i32, i32, i32)>) -> i32 {
 /// caller-chosen stage row - the seat [`enemy_target_menu_rows_y`] picks,
 /// which is [`ENEMY_MENU_STAGE_Y`] unless a host box shares the strip's row.
 ///
-/// The row *content* is retail's: dedup labels from `FUN_801D9D3C` and the
-/// centre/relax/clamp X layout from its second half
+/// The row *content* is retail's intro-banner law: dedup labels from
+/// `FUN_801D9D3C` (the flow-`0x0A` enemy-name banner composer, reused here for
+/// the picker) and the centre/relax/clamp X layout from its second half
 /// (`target_picker::layout_enemy_menu_rows`), both run by the caller. This
 /// builder only projects the laid-out rows onto the surface: each label at
 /// its stage X (integer-upscaled + centred, the same transform as the battle

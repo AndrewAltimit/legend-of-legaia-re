@@ -300,6 +300,7 @@ species and at the disc's authored heap-cost maximum.
 | dolk2/rikuroa MAN source (the "v12-embedded MAN" was an over-read) | resolved (streaming carrier) | `capture` | Their own `base+3` bundles are the MAN-less count=4 form `[1,2,6,0x14]`; the "embedded MAN at 0x1000" inside their SceneV12Table entries is an over-read onto the next scene's bundle (suimon's / geremi's; [scene-v12-table.md](../formats/scene-v12-table.md) § over-read). Retail sources their partition scripts from the block's standalone `data_field_streaming` entry's type-3 chunk (`dolk2` ext 70 `[29,73,17]`, `rikuroa` ext 157 `[13,29,64]`; live script-heap byte-match at the Caruban beat). Engine: `field_man_payload` streaming fallback (`streaming_man_payloads`) + retail-frame `Scene::load` windows; pins `v12_bundle_man_disc.rs`. |
 | kor-family op-0x49 flag window `[0x138..0x13F]` - what the 8 flags gate | resolved (Uru Mais warp-pad destination memory) | `disassembly` | [details ↓](#kor-family-op-0x49-flag-window-0x1380x13f---uru-mais-warp-pad-picker) |
 | Attack-band damage pacing - who calls `FUN_801EC3E4`, what paces the hits, when the total lands | resolved (the anim tick calls it every frame; the clip's `+0x10..+0x13` beats fire the hits; one HP write per combo) | `disassembly` | [details ↓](#attack-band-damage-pacing---the-hit-event-model) |
+| The battle-**intro** enemy-name banner - which placement record raises it | resolved (**none does** - the composer places it itself) | `disassembly` + `capture` | [details ↓](#the-battle-intro-enemy-name-banner) |
 
 ### Attack-band damage pacing - the hit-event model
 
@@ -1742,6 +1743,38 @@ This relies on the **runtime actor frame == MAN placement frame** finding: `FUN_
   hits are false decodes in the desyncing dialog region.)
 - *Yes/No selection (not a field-VM opcode):* the spar Yes/No is an MES-embedded option picker inside the NPC's inline `0x1F` dialog segment - a `0x29` menu-open followed by an `N*2`-byte signed relative-jump table (handler `FUN_80038050`, the `FUN_80039B7C` dialog-SM family). The commit branch is computed directly: `new_pc = (open + 1 + index*2) + i16_LE(entry[index])`. Ported as `legaia_mes::Picker::jump_target` + `InlineDialogueRunner::last_choice` (`crates/engine-core/src/inline_dialogue.rs`). There is no separate read-and-compare opcode - which is why these interaction records desync under linear disasm (the picker/text bytes alias opcodes).
 
+### The battle-intro enemy-name banner
+
+*Status:* resolved - the question had a false premise.
+
+No placement record raises it. `FUN_801D9D3C` - the flow-`0x0A` composer, whose
+only reference in the whole corpus is the `jal` at `0x801D0DFC` - lays its
+labels out itself and hands each straight to the text-actor spawner
+`FUN_8003541C` with **immediate** geometry: one label per distinct monster
+group, id = group index `0..=3`, class `0`, kind `3`, pen `(laid-out x, 48)`,
+box `measured width x 12`. The only placement-table field the intro touches is
+record 67's `+0x14` string-pointer cell, which holds the back-attack /
+pre-emptive line the same routine then draws under id `4` at pen `(16, 12)`
+288 wide - record 67's own fields, again as literals. Record 67 proper is
+opened only afterwards, by the post-intro sub-draw, under its `+0x01` id
+`0x2B`.
+
+Live capture (`scripts/pcsx-redux/autorun_battle_intro_banner.lua`,
+breakpointing the spawner and the teardown sweep `FUN_800355F0` and walking
+the text-actor list at `gp[+0x148]`): an ambush raises `Queen Bee` at
+`(176, 48)` 55 wide, `Killer Bee * 3` at `(78, 48)` 79 wide and `Ambushed!` at
+`(16, 12)` 288 wide, all from `$ra` inside the composer, all holding those
+exact seats for 120 frames; an ordinary encounter raises two labels for 90
+frames and no line at all. Nothing glides - the composer calls neither
+`FUN_801D8DE8` nor the glide `FUN_801DB7B0`. The width overwrite the old
+residual described belongs to record 68 (disc `w = 0`, spawned at the measured
+name width), not to the intro. Full law, naming rule and seat arithmetic on
+[`battle.md`](../subsystems/battle.md#the-battle-intro-enemy-name-banner).
+
+One monster suppresses the banner: monster-slot-0 id `0xB5` (evolved Cort)
+skips the composer and parks `ctx[+0x06] = 0x0C`, a value the flow ladder at
+`0x801D0C84` has no arm for - the writer that moves it on is an open row.
+
 ## Field / locomotion
 
 | Thread | Status | Evidence | Answer |
@@ -2553,6 +2586,10 @@ The port was never wrong here: `player_anm.rs` has always decoded `bytes[4] & 0x
 | XA clip-table writer + `(clip_id, chan)` cue census | resolved (writer pinned statically; census in `audio.md`) | `disassembly` | [details ↓](#xa-clip-table-writer--clip_id-chan-cue-census) |
 | Hyper Arts fanfare selector - what audio fires when a Hyper executes | resolved (per-(char, art) coin flip over a fixed channel pair of the even-slot fanfare bank) | `disassembly` | [details ↓](#hyper-arts-fanfare-selector) |
 | Op-`0x35` sub-op `0xA` - what the "unhalt-pause toggle" waits on | resolved (it is the track-swap commit; both globals pinned; ported) | `disassembly` | [details ↓](#op-0x35-sub-op-0xa-is-the-track-swap-commit) |
+| What do `bse.dat`'s record columns mean? | resolved (the static SFX-table columns; `+4` is a `u8` category) | `disassembly` | [details ↓](#bsedat-record-columns-and-the-gp0x678-consumers) |
+| Who consumes the `bse.dat` record-table pointer `gp+0x678` (`0x8007B990`)? | resolved (cue router `FUN_8004FE5C` + the overlay-0971 sound test, via `lui`+`lw` the word scan cannot see) | `disassembly` | [details ↓](#bsedat-record-columns-and-the-gp0x678-consumers) |
+| When does `bse.dat` load? | resolved (battle-scene setup, not boot) | `disassembly` | `FUN_8001FA88`'s only caller on the disc is `0x80051A3C` in battle init `FUN_800513F0`, reached from the battle tick `FUN_80046A20` at `0x80046F74` under `ctx[+0x11] == 0`. |
+| `bse.dat` 888 vs its 1195 sibling | resolved (one format, two occupants of the `>= 0x200` bank role) | `disassembly` | 888 is the battle occupant; a scene prescript's record 0 fills the same slot in the field (`FUN_8001F7C0` at `0x8001F864` repoints it). 1195 is such a prescript and the detector should keep matching it. |
 
 ### Op-`0x35` sub-op `0xA` is the track-swap commit
 
@@ -2886,6 +2923,33 @@ Across all 45 mednafen states (field / town / battle / summon / title / minigame
 - **Per-voice reverb-send (`EON`) is broad** - 15–22 of 24 voices in any state, BGM + SFX alike. Reverb is the default routing, not a per-cue effect.
 
 So the blocker (the per-cue enable source) dissolves: there is nothing to trace. **Wired:** the live engine calls `Spu::set_retail_reverb` once at SPU init (`StreamResampler::new`) - `ReverbMode::StudioC` + every voice routed. The PCM oracle's retail-side reverb is also fixed (it previously mis-read the EON mask as a mode byte and ran `Off`). Residual is only the output-depth tuning (`SpuSetReverbDepth`, `vLIN`/`vROUT`; the engine uses a fixed half-scale approximation). Falsifies the earlier "Spirit-Arts / echo cues opt in, everything else dry" reading in [`audio.md`](../subsystems/audio.md#retail-reverb-routing---studio-c-always-on-capture-confirmed).
+
+### bse.dat record columns and the gp+0x678 consumers
+
+*Status:* resolved - grade `disassembly`.
+
+`gp = 0x8007B318` (`lui gp,0x8008; addiu gp,gp,-0x4ce8` at `0x80026CA8`), so
+the record-table pointer `FUN_8001FA88` stores at `0x8001FBC0`
+(`sw a0,0x678(gp)`) lives at `0x8007B990`. Seven readers exist and every one
+forms the address as `lui rX,0x8008` + `lw rY,-0x4670(rX)` - the pair the
+five-form address scan does not accept, which is why the consumer read as
+untraced: `0x8004FFAC` / `0x8004FFE0` / `0x80050078` in the battle SFX-cue
+router `FUN_8004FE5C`, and `0x801CEE48` / `0x801CEFC0` / `0x801CF038` /
+`0x801CF0A0` in the overlay-0971 debug sound test. Sweep:
+`scripts/ghidra-analysis/find-gp-relative-refs.py`.
+
+The columns are the static SFX-table columns, pinned by **shared code** rather
+than analogy: `FUN_80016B6C` picks its arm at `0x80016C24` (`slti v0,s0,0x200`),
+resolves either `0x8006F198 + id*8` or `record[id - 0x200]` off `gp[0x5B8]`,
+and then falls into one block of field reads from `0x80016CB0` - `+0` program,
+`+1` tone (`+i` per voice), `+2` note level, `+3` low-5 voice count / `0x20`
+sustained, `+4` category into the 12-byte mixer record `0x80091508 + cat*12`.
+`+4` is a `u8`: `+5..+7` are zero in every retail row. The router's two tinted
+legs (`sb v1,-0x31c(v0)` at `0x8004FFEC`, `sb v1,0x40c(v0)` at `0x80050084`)
+both reduce to `record[cue_id - 0x200] + 4`, and the sound test stores `7` at
+`0xDC(gp[0x678])` before enqueuing cue `0x21B` = `0x200 + 27` - row index is
+cue id minus `0x200`, and the category byte is rewritten per cue. Layout and
+carriers: [`bse-dat.md`](../formats/bse-dat.md).
 
 ## Title / boot / overlays
 

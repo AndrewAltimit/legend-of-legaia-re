@@ -57,8 +57,8 @@ const EXPECTED_CLASS_COUNTS: &[(&str, usize)] = &[
     // `lzs_container` 34 → 33: one entry's descriptor walk no longer
     // completes inside its own sectors.
     ("lzs_container", 33),
-    // `bse_bank` - the `bse.dat` master sound bank (extraction 888, the loader's
-    // raw TOC `0x37A`) plus its uncalled sibling at 1195.
+    // `bse_bank` - the `bse.dat` battle SFX descriptor bank (extraction 888, the
+    // loader's raw TOC `0x37A`) plus 1195, a scene prescript of the same shape.
     ("bse_bank", 2),
     // `efect_pack` - the runtime `efect.dat` 2-pack (extraction 0873). One entry.
     ("efect_pack", 1),

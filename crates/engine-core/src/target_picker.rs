@@ -590,6 +590,11 @@ pub struct EnemyMenuRow {
 ///
 /// PORT: FUN_801D9D3C (`0x801d9d84..0x801d9f0c`).
 ///
+/// Provenance: `FUN_801D9D3C` is the flow-`0x0A` battle-**intro** enemy-name
+/// banner composer (sole reference: the `jal` at `0x801D0DFC`). Retail's
+/// target-select strip is built elsewhere (unpinned); the engine reuses the
+/// composer's group/dedup/label pass for the picker rows.
+///
 /// `formation` is the four-byte monster-id table `_DAT_8007BD0C`; a zero id is
 /// an empty slot and is skipped without ending the walk. `name_of` supplies the
 /// per-slot display name (retail copies it from the battle actor's `+0x1BC`),
@@ -672,6 +677,10 @@ pub fn enemy_menu_rows(
 /// Place the enemy menu rows across the screen.
 ///
 /// PORT: FUN_801D9D3C (`0x801d9f1c..0x801da1ac`).
+///
+/// This is the intro banner composer's seat law (labels centred over their
+/// enemies at y = 48, relaxed apart, clamped to the screen), reused by the
+/// engine for the target picker's X layout.
 ///
 /// Three passes, in order:
 ///

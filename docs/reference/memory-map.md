@@ -139,7 +139,8 @@ patching an instruction. Useful Ghidra anchors.
 | `0x8007B888` | MOVE buffer base. |
 | `0x8007B750` | u32 - Sound flag word coordinating the BGM track-swap handshake (bit 1 = pause, bit 3 = load settled, bit 4 = release ack); full bit map + writer census in [`audio.md`](../subsystems/audio.md#the-track-swap-handshake-fun_800243f0--op-0x35-sub-op-0xa). |
 | `0x8007B868` | u32 - Dev/dual-mode gate the actor-sound family and several loaders check (`retail 0`). No static writer sets it - its only store, in `FUN_8001DCF8` (`0x8001E008`), clears bit 1. |
-| `0x8007B8D0` | u32 - `bse.dat` master bank pointer (0x1800-byte buffer). |
+| `0x8007B8D0` | u32 - sound subsystem current-bundle pointer (`gp+0x5B8`): `bse.dat`'s 0x1800-byte buffer during battle, repointed at the scene's prescript bundle on every field load (`FUN_8001F7C0` at `0x8001F864`). See [`bse-dat.md`](../formats/bse-dat.md). |
+| `0x8007B990` | ptr - runtime SFX descriptor-bank record table (`gp+0x678`); `bse.dat`'s in battle. Written once by `FUN_8001FA88` at `0x8001FBC0`; read only by the cue router `FUN_8004FE5C` and the overlay-0971 debug sound test, both rewriting byte `+4` (category) of `record[cue_id - 0x200]`. Readers form it with `lui`+`lw`, invisible to the word scan. |
 | `0x8007BAC8` | u16 - BGM ID written by field-VM op 0x35 sub-1. |
 | `0x8007BC64` | u16 - Global BGM pool base for IDs ≥ 2000. |
 | `0x8007BD30` | 5008 bytes - Effect-runtime pool: 16-byte head + 128 child slots + 32 master slots. |

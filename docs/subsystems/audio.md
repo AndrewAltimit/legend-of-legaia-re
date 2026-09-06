@@ -47,7 +47,7 @@ The string cluster at `0x8007B380` holds the file extensions the sound subsystem
 
 | Function | Role |
 |---|---|
-| `FUN_8001FA88` | **Sound subsystem init / `.dpk` loader.** Loads `bse.dat` master bank, then per-scene `.dpk` from `h:\main\bg\domepack\…`. |
+| `FUN_8001FA88` | **Battle sound-bank / `.dpk` loader.** Loads `bse.dat` (the battle occupant of the `>= 0x200` SFX descriptor bank - called only from battle init `FUN_800513F0`, not at boot), then per-scene `.dpk` from `h:\main\bg\domepack\…`. |
 | `FUN_8001FC00` | **Streaming-asset loader.** Builds paths under the `sound\` prefix; the XA / `.pac` / `STR` consumer. |
 
 `FUN_8001EBEC` was previously listed here as a third "mode-aware extension dispatcher"; that is a misread. The decomp shows it is the graphics-side character-TMD equipment-conditional group-transform swap (it reads `DAT_8007C018[_DAT_8007B824 + 0..2]`, the loaded battle-character TMD pointers), not a sound consumer - see [`formats/sound-driver.md`](../formats/sound-driver.md#consumers) and [`formats/character-mesh.md`](../formats/character-mesh.md#10-group-cap--equipment-conditional-swap).

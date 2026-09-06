@@ -11,7 +11,7 @@ The SCUS string cluster at RAM `0x8007B380` (file offset `0x6BB80`) holds the fi
 | `0x8007B394` | `".spk"` | SPU sample bank. |
 | `0x8007B39C` | `".LZS"` | Compressed wrapper (per-file). |
 | `0x8007B3A4` | 8 bytes | **Not sound data.** This window holds the per-character equipment-swap selector bytes (3 equip-condition offsets at `0x8007B3A4` + 3 group indices at `0x8007B3A8`) consumed by the graphics-side `FUN_8001EBEC` - see [character-mesh.md § equipment-conditional group-transform swap](character-mesh.md#10-group-cap--equipment-conditional-swap). Adjacent to the path cluster in BSS but unrelated to it. |
-| `0x8007B3AC` | `"bse.dat"` | Master sound-bank file name (loaded once at sound-init). |
+| `0x8007B3AC` | `"bse.dat"` | Battle SFX descriptor-bank file name (loaded at battle init, see [`bse-dat.md`](bse-dat.md)). |
 | `0x8007B3B4` | `".dpk"` | Per-scene sound pack - the format `FUN_8001FA88` loads. |
 | `0x8007B3BC` | `".MAP"` | Sound bank map (PsyQ SoundArtist output). |
 | `0x8007B3C4` | `".PCH"` | Patch / instrument data (PsyQ output). |
@@ -41,7 +41,7 @@ Only the retail branch runs on a real disc; the dev branch is a build-time artef
 
 ## `bse.dat` master-bank header (from `FUN_8001FA88`)
 
-`FUN_8001FA88`'s body (`ghidra/scripts/funcs/8001fa88.txt`) loads the master sound bank `bse.dat` into the 0x1800-byte buffer `_DAT_8007B8D0`, then derives a second pointer from a single `u16` at offset `+2`:
+`FUN_8001FA88`'s body (`ghidra/scripts/funcs/8001fa88.txt`) loads the battle SFX descriptor bank `bse.dat` ([`bse-dat.md`](bse-dat.md); called from battle init, not at boot) into the 0x1800-byte buffer `_DAT_8007B8D0`, then derives a second pointer from a single `u16` at offset `+2`:
 
 ```text
 count     = *(u16 *)(bse_base + 2)
