@@ -80,7 +80,7 @@
   <h2>Lighting: painted, not computed</h2>
   <p>Legaia's towns look lit - shadowed alleys, bright plazas, a glow around lamps - but none of it is computed at run time. The artists painted a brightness into every polygon, and the console multiplies the texture by it. Any "helpful" light a renderer adds makes the game look wrong.</p>
   <ul>
-    <li><strong>One colour op.</strong> The two TMD renderers issue exactly one GTE colour instruction, <code>DPCS</code> (depth cue). No <code>NC*</code> op ever runs on the field path, so the light matrices - which are populated - are consumed only by the world-map slot-4 mesh handlers.</li>
+    <li><strong>One colour op.</strong> The two TMD renderers issue exactly one GTE colour instruction, <code>DPCS</code> (depth cue). No <code>NC*</code> op ever runs on the field path, and the light matrices - which are populated - have <em>no</em> confirmed consumer: the four <code>NC*</code> prim handlers exist in the executable, but exec breakpoints on all four catch nothing executing across two kingdom overworlds, an ordinary field scene or a battle. The world map was the presumed consumer and is not one.</li>
     <li><strong>The colour word.</strong> Every prim carries <code>[R][G][B][GP0 code]</code>; gouraud prims carry one per corner. <code>0x80</code> is neutral, lower darkens, higher brightens up to 2&times;. Across the field environment packs roughly four fifths of components sit below <code>0x80</code> - that headroom is why retail has more contrast than an unlit render.</li>
     <li><strong>Depth cue.</strong> <code>DPCS</code> blends the colour toward the far colour by <code>IR0</code>; an unfogged field scene passes <code>IR0 = 0</code>, so the cue is the identity and a capture's corner colours leave the op byte-unchanged.</li>
   </ul>
@@ -180,7 +180,7 @@
       <tr><td>Light-source sibling</td><td><code>FUN_80029888</code></td><td>Same op set; no <code>NC*</code> either</td><td><code>funcs/80029888.txt</code></td></tr>
       <tr><td>Descriptor table</td><td><code>DAT_8007326C</code></td><td>Six 8-byte rows; byte3 shape, byte4 vertex offset, byte1 colour base</td><td>SCUS data</td></tr>
       <tr><td>Per-prim dispatch</td><td><code>FUN_80043390</code></td><td>Stages far / back colour per object</td><td><code>funcs/80043390.txt</code></td></tr>
-      <tr><td>Light matrices</td><td><code>FUN_8005B648 / B678</code></td><td>Populated, but consumed only by world-map handlers <code>FUN_8004409C / 423C / 4434 / 45B0</code></td><td><code>funcs/8004409c.txt</code></td></tr>
+      <tr><td>Light matrices</td><td><code>FUN_8005B648 / B678</code></td><td>Populated; the only <code>NC*</code> consumers <code>FUN_8004409C / 423C / 4434 / 45B0</code> execute on no observed scene</td><td><code>funcs/8004409c.txt</code></td></tr>
       <tr><td>Screen constants</td><td>GTE control file, GPU registers</td><td><code>OFX/OFY</code>, clip, offsets, display window constant across a save-state corpus</td><td><code>gte_projection_real.rs</code></td></tr>
       <tr><td>Depth cue identity</td><td>town0c capture</td><td>A GT3 prim's corner colours leave <code>DPCS</code> byte-unchanged at <code>IR0 = 0</code></td><td>mednafen state</td></tr>
       <tr><td>Dither bit</td><td><code>0x8002004C</code>, <code>0x80017208</code>, <code>0x8001D520</code>, <code>0x801E350C</code></td><td>Init stamps 0; frame driver re-stamps from <code>_DAT_8007BA66</code> (boots 1); a field op writes it</td><td><code>funcs/80016b6c.txt</code></td></tr>

@@ -755,8 +755,10 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
                 grid sampling the backdrop's own dirt tile. That stream's second object - a ring
                 of dust decals - is omitted here, and retail omits it too: its battle scene
                 loader drops object&nbsp;1 from the backdrop's bound part list unless the
-                encounter record's own option bit asks for it, and the retail match capture
-                shows no dust. The sound is the dome's own cue set
+                encounter record's own option bit asks for it. A live capture of a dome
+                contest reads that option byte as clear at the loader's own test and sees it
+                written not once all match, so the trim really is what retail does here -
+                and the retail match capture shows no dust. The sound is the dome's own cue set
                 (PROT&nbsp;0868 UI blips, the shared PROT&nbsp;0869 impact cue) with the battle
                 theme as BGM.
               </p>

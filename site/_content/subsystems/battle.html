@@ -92,6 +92,7 @@
 <section class="doc-section" id="scene-loader">
   <h2>Loading the fight</h2>
   <p>Before the first prompt the loader ticks through an asynchronous ladder, one <code>PROT.DAT</code> entry per state. The stage overlay step is skipped for every retail fight except the Tetsu sparring tutorial and the Cort fight.</p>
+  <p>When a stage overlay <em>is</em> paged in it takes the fight over. The evolved-Cort intro leaves the command-flow byte on a value the battle menu has no handler for, and the menu simply idles: the stage module runs its own camera move, its own banner and its own multi-frame countdown, then writes the flow byte back to a value the menu understands with the intro timer already zeroed - so the fight opens the moment the module is finished, and no button press hurries it. A live capture holding all ten pad buttons in turn moves the byte not at all.</p>
   <div class="flow">
     <span class="num">1</span><span class="layer">Stage pack</span><span class="desc">the paired battle stage pack</span><span class="crate">PROT 0869 / 0875</span>
     <span class="num">2</span><span class="layer">Texture pack</span><span class="desc"><code>etim.dat</code>, the effect textures</span><span class="crate">PROT 0872</span>
