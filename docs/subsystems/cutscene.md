@@ -1861,11 +1861,13 @@ Why the switch is worth reaching rather than a curiosity: in `nilboa` the
 leader flags `0x10` / `0x11` / `0x12` and installs *that leader's* destination
 banner and tile walls. The leader is the player's choice of where to go.
 
-One overlap to know about: the port latches its field **run** modifier off
-Square too, so inside an armed talk one press does both. The swap bit is
-disassembly-pinned and the run mask word `0x800846DC` is explicitly not
-([`field-locomotion.md`](field-locomotion.md)), so the run modifier is the
-intruder there.
+One overlap used to be worth flagging here and is now gone: the port latched
+its field **run** modifier off Square too, so inside an armed talk one press
+did both. The run mask now defaults to retail's `Cross | R1`
+([`field-locomotion.md`](field-locomotion.md#base-step-selection-walk--run)),
+which does not include the swap bit, so nothing else fires on the leader-swap
+press. Square stays in the port's mask as an alternate run binding, which is
+the one way to reproduce the old double-fire.
 
 ### `FUN_801D5E20` rotates a mesh's own colour words
 

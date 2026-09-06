@@ -226,18 +226,30 @@ pub struct World {
     /// with Run selected the button walks. See
     /// [`World::field_run_active`].
     pub field_move_run_default: bool,
-    /// `true` while the field run button is held this frame. Fed by the host
-    /// from its own binding each tick, alongside the rest of the pad.
+    /// `true` while the field run button is held this frame. Derived from the
+    /// pad word inside [`World::set_pad`], so no host wires it separately.
     ///
     /// Retail reads it as `pad_held & mask`, where the held-pad word is
-    /// `_DAT_8007B850` and the mask is the config word `0x800846DC`. That
-    /// mask is `0x48` = **Cross | R1** in the packed pad layout: the new-game
-    /// data-init `FUN_80034A6C` seeds it at `0x80034AB8` and nothing else on
-    /// the disc writes it, so it is not configurable. The engine binds the
-    /// button host-side anyway (see [`World::set_pad`]), which is a host
-    /// choice and not a decode; the XOR structure around it in
-    /// [`World::field_run_active`] is pinned as well.
+    /// `_DAT_8007B850` and the mask is the config word `0x800846DC` - `0x48`
+    /// = **Cross | R1** in the packed pad layout, seeded once by the new-game
+    /// data-init `FUN_80034A6C` at `0x80034AB8` and written by nothing else
+    /// on the disc, so retail's run button is not configurable. The port's
+    /// mask is [`Self::field_run_button_mask`], and it defaults to those two
+    /// buttons. The XOR structure around the flag, in
+    /// [`World::field_run_active`], is pinned as well.
     pub field_run_button_held: bool,
+    /// Which pad buttons count as "the run button" for
+    /// [`Self::field_run_button_held`].
+    ///
+    /// Defaults to
+    /// [`FIELD_RUN_BUTTON_MASK_DEFAULT`](crate::world::config::FIELD_RUN_BUTTON_MASK_DEFAULT)
+    /// = retail's `Cross | R1` plus **Square**, the port's historical
+    /// binding, kept as an alternate. Assign
+    /// [`FIELD_RUN_BUTTON_MASK_RETAIL`](crate::world::config::FIELD_RUN_BUTTON_MASK_RETAIL)
+    /// for the retail button set exactly. Which *key* produces each of those
+    /// buttons is the host's binding table
+    /// (`legaia-engine config set --binding`), not this mask.
+    pub field_run_button_mask: u16,
     /// Forced-slow gate: retail's `_DAT_8007B6A8` arm of the base-step
     /// selector. Non-zero there selects base step
     /// [`crate::world::config::FIELD_BASE_STEP_FORCED_SLOW`] and **skips the
@@ -2799,6 +2811,7 @@ impl World {
             precise_movement: false,
             field_move_run_default: false,
             field_run_button_held: false,
+            field_run_button_mask: crate::world::config::FIELD_RUN_BUTTON_MASK_DEFAULT,
             field_forced_slow: false,
             entry_pulse_enabled: true,
             precise_move_carry: (0.0, 0.0),

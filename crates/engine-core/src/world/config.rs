@@ -46,6 +46,39 @@ pub(crate) const FIELD_GRID_LEN: usize = FIELD_GRID_STRIDE * 0x80;
 /// reach this path; the bound keeps a *derived* seat's correction local
 /// enough to still be the spot the caller named.
 pub(crate) const SEAT_RESCUE_RADIUS_SUBCELLS: i32 = 8;
+/// Retail's field **run-button mask**, in this crate's `PadButton` bit
+/// layout: `Cross | R1`. Hold either to invert the Field Move option (the
+/// XOR in [`crate::world::World::field_run_active`]).
+///
+/// Retail keeps it as the config word `0x800846DC` (= `0x80084140 + 0x59C`),
+/// whose value is the *packed* pad word's `0x48` - `li v0,0x48` /
+/// `sw v0,0x59c(s0)` at `0x80034AB4`/`0x80034AB8` in the new-game data init
+/// `FUN_80034A6C`, read at `lw v1,0x59c(a0)` / `and v0,v0,v1` against the
+/// held pad `_DAT_8007B850` at `0x801D0364`. `FUN_80034A6C` is its only
+/// writer anywhere on the disc, so retail's run button is not configurable;
+/// the port's is, because the pad word is assembled from the host's key
+/// bindings (`legaia-engine config set --binding W=R1`) rather than from a
+/// PSX controller.
+///
+/// See [`field-locomotion.md`](../../../../docs/subsystems/field-locomotion.md).
+///
+/// REF: FUN_80034A6C
+pub const FIELD_RUN_BUTTON_MASK_RETAIL: u16 =
+    crate::input::PadButton::Cross as u16 | crate::input::PadButton::R1 as u16;
+
+/// The engine's default run-button mask: retail's two buttons plus **Square**
+/// as an alternate.
+///
+/// Square is not retail's - it is the *debug turbo* bit (`_DAT_8007B850 &
+/// 0x80`, the arm at `0x801D03DC` that the port records and never takes) and
+/// it was for a while the port's only run binding, which is the divergence
+/// this default removes. It stays in the mask so a player who learned the
+/// port's binding keeps it; a host that wants the retail button set exactly
+/// assigns [`FIELD_RUN_BUTTON_MASK_RETAIL`] to
+/// [`crate::world::World::field_run_button_mask`].
+pub const FIELD_RUN_BUTTON_MASK_DEFAULT: u16 =
+    FIELD_RUN_BUTTON_MASK_RETAIL | crate::input::PadButton::Square as u16;
+
 /// Base walk step (retail `base_step = 8` in `FUN_801d01b0`). Scaled by the
 /// player's `+0x72` speed multiplier and the per-frame delta scalar.
 ///

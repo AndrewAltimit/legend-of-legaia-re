@@ -153,12 +153,12 @@ impl World {
     ///   host-substituted by "a dialogue owns the pad", so a switch never
     ///   arms under an open text box.
     ///
-    ///   The port also latches its field **run** modifier off Square
-    ///   ([`Self::field_run_button_held`]), so inside an armed talk one press
-    ///   does both. That is the run modifier intruding, not the swap: the
-    ///   swap bit is disassembly-pinned, and so is the run mask word
-    ///   `0x800846DC` (`0x48` = Cross | R1) - the port's Square binding is a
-    ///   host choice that diverges from it.
+    ///   The port latches its field **run** modifier off the same pad word
+    ///   ([`Self::field_run_button_held`], mask
+    ///   [`Self::field_run_button_mask`]), so inside an armed talk one press
+    ///   does both. Retail behaves the same way - its run mask word
+    ///   `0x800846DC` is `0x48` = Cross | R1, and Cross is also the talk
+    ///   button - so this is the retail overlap, not a port divergence.
     /// - **1** - hold [`LEADER_SWAP_FADE_FRAMES`] behind the fade-to-white
     ///   ([`Self::screen_fade`] carries the retail template: kind 2, `0x20`
     ///   frames, black -> white, `801d29c8..801d2a00`).
@@ -678,14 +678,19 @@ impl World {
     /// per-host derivation is exactly the shape the UI-drift gate exists to
     /// catch, and this way there is nothing to keep in sync.
     ///
-    /// The button is **Square**, which is a host binding rather than the
-    /// retail one: the run mask config word `0x800846DC` is `0x48` = Cross |
-    /// R1 (see [`Self::field_run_button_held`]). Square is retail's *debug
-    /// turbo* bit `0x80` on the same base-step selector, which is where the
-    /// choice came from.
+    /// The buttons are [`Self::field_run_button_mask`], which **defaults to
+    /// retail's** `Cross | R1` (the config word `0x800846DC` = `0x48`, seeded
+    /// by `FUN_80034A6C` and read at `0x801D0364`), plus Square as an
+    /// alternate. Square alone was the port's binding for a while and is not
+    /// retail's - it is the debug-turbo bit `0x80` on the same selector - so
+    /// the default now leads with the retail pair. Rebinding is a *key*
+    /// question, not a button one: `legaia-engine config set --binding
+    /// W=R1` moves which key produces R1.
+    ///
+    /// REF: FUN_80034A6C
     pub fn set_pad(&mut self, mask: u16) {
         self.input.set_pad(mask);
-        self.field_run_button_held = mask & input::PadButton::Square.mask() != 0;
+        self.field_run_button_held = mask & self.field_run_button_mask != 0;
     }
 
     /// Per-frame world tick. Drives whichever scene-mode VMs are live.

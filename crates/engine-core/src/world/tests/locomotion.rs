@@ -638,6 +638,76 @@ fn set_pad_latches_the_run_button() {
     assert!(!world.field_run_button_held);
 }
 
+/// The default run button is **retail's**: the config word `0x800846DC` is
+/// `0x48` = Cross | R1 in the packed pad layout (`li v0,0x48` /
+/// `sw v0,0x59c(s0)` at `0x80034AB4`, read at `0x801D0364`), and holding
+/// either has to run. The port latched only Square for a while, which is the
+/// debug-turbo bit on the same selector and not a run button at all.
+#[test]
+fn the_default_run_button_is_the_retail_pair() {
+    use crate::world::config::{FIELD_RUN_BUTTON_MASK_DEFAULT, FIELD_RUN_BUTTON_MASK_RETAIL};
+
+    assert_eq!(
+        FIELD_RUN_BUTTON_MASK_RETAIL,
+        input::PadButton::Cross.mask() | input::PadButton::R1.mask(),
+        "retail's mask word 0x800846DC is 0x48 = Cross | R1"
+    );
+
+    let mut world = World::new();
+    assert_eq!(world.field_run_button_mask, FIELD_RUN_BUTTON_MASK_DEFAULT);
+    assert_eq!(
+        FIELD_RUN_BUTTON_MASK_DEFAULT & FIELD_RUN_BUTTON_MASK_RETAIL,
+        FIELD_RUN_BUTTON_MASK_RETAIL,
+        "the default has to contain the retail pair"
+    );
+
+    // Both retail buttons run, out of the box.
+    for btn in [input::PadButton::Cross, input::PadButton::R1] {
+        world.set_pad(btn.mask());
+        assert!(
+            world.field_run_button_held,
+            "{} is a retail run button",
+            btn.name()
+        );
+        assert!(world.field_run_active(), "Walk selected + button = run");
+        assert_eq!(world.field_base_step(), 0xc);
+    }
+
+    // Square stays bound as the port's alternate.
+    world.set_pad(input::PadButton::Square.mask());
+    assert!(
+        world.field_run_button_held,
+        "Square is kept as an alternate"
+    );
+
+    // A host that wants the retail set exactly drops the alternate, and then
+    // Square is just Square.
+    world.field_run_button_mask = FIELD_RUN_BUTTON_MASK_RETAIL;
+    world.set_pad(input::PadButton::Square.mask());
+    assert!(!world.field_run_button_held);
+    world.set_pad(input::PadButton::Cross.mask());
+    assert!(world.field_run_button_held);
+
+    // Nothing else on the pad runs, under either mask.
+    for m in [FIELD_RUN_BUTTON_MASK_DEFAULT, FIELD_RUN_BUTTON_MASK_RETAIL] {
+        world.field_run_button_mask = m;
+        for btn in [
+            input::PadButton::Up,
+            input::PadButton::Circle,
+            input::PadButton::Triangle,
+            input::PadButton::L1,
+            input::PadButton::Start,
+        ] {
+            world.set_pad(btn.mask());
+            assert!(
+                !world.field_run_button_held,
+                "{} must not run under mask {m:#06x}",
+                btn.name()
+            );
+        }
+    }
+}
+
 #[test]
 fn running_covers_more_ground_per_frame_than_walking() {
     let step = |run: bool| {

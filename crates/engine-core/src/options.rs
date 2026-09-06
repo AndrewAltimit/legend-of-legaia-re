@@ -121,6 +121,15 @@ pub enum BattleCommandOpt {
 }
 
 /// Field movement default (config word `0x800846CC`).
+///
+/// This is the *default*, not the state: the run button inverts it, so with
+/// `Run` selected the button walks (the XOR at `0x801D0370` / `0x801D0398`;
+/// [`World::field_run_active`](crate::world::World::field_run_active)). The
+/// button itself is the separate config word `0x800846DC` = `0x48` =
+/// Cross | R1, which retail seeds once and never exposes as an option row -
+/// the port mirrors that pair as its default run mask
+/// ([`FIELD_RUN_BUTTON_MASK_DEFAULT`](crate::world::config::FIELD_RUN_BUTTON_MASK_DEFAULT))
+/// and rebinds it at the key level instead.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum FieldMoveOpt {
     #[default]
