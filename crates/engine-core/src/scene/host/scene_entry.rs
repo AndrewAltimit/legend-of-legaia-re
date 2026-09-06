@@ -267,6 +267,23 @@ impl SceneHost {
         self.world.field_channels.clear();
         self.world.field_channels_man = None;
         self.world.field_npc_anim_cues.clear();
+        // An in-flight ledge hop is scene-scoped, and its steering lock is
+        // one-way: `start_field_ledge_hop` ORs `0x0008_0000` into the player's
+        // `move_state.flags` (retail `0x801D25A8..0x801D25B8` on the player
+        // context's `+0x10`) and only the hop phase machine's end arm clears
+        // it. A scene change that lands while the hop is still in flight tears
+        // the phase machine down without that arm ever running, so the lock
+        // survives into the next scene - and `step_field_locomotion` returns
+        // early on it, which means the player never walks again for the rest
+        // of the session. Retail cannot reach the state (the hop always
+        // finishes before a transition); the port can, so scene entry drops
+        // the hop and its lock together.
+        self.world.field_ledge_hop = None;
+        if let Some(slot) = self.world.player_actor_slot
+            && let Some(actor) = self.world.actors.get_mut(slot as usize)
+        {
+            actor.move_state.flags &= !0x0008_0000;
+        }
         // Reset the persistent op-0x45 camera-param set so a new scene's
         // cutscene shots start clean (the params now MERGE per-slot across beats
         // in `camera_configure`, so a stale set would leak the prior scene's
