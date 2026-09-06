@@ -133,6 +133,42 @@ at ~94% plausible opcodes and ~0% pointer density, and the large gaps reported
 as code match that signature while the head of the segment (87% printable ASCII,
 48% plausible) does not.
 
+### Where an image's span comes from
+
+A coverage figure is a fraction, and the denominator has to be the image's own
+length. For `SCUS_942.54` that is the PS-X EXE header's `t_size`. For an overlay
+it is `content_bytes` in
+[`crates/asset/data/static-overlays.toml`](../../crates/asset/data/static-overlays.toml):
+the PROT entry's own sector extent, `(toc[p+3] - toc[p+2]) * 2048`
+([`prot.md`](../formats/prot.md)), which is exactly the slice the runtime loader
+streams into the overlay window. It is disc-reproducible with no dump corpus and
+no capture, and it agrees byte-for-byte with the extracted
+`overlay_<label>_<entry>.bin`, because the extraction reader computes the same
+span.
+
+`content_bytes` is deliberately **not** `clean_copy_bytes`. The two answer
+different questions and conflating them produces a wrong number rather than an
+imprecise one:
+
+| Field | Answers | Present on |
+|---|---|---|
+| `content_bytes` | how long the image **is** | every row |
+| `clean_copy_bytes` | how much of it a resident RAM capture has **byte-verified** | the two `verified` rows |
+
+On PROT 0899 they differ by `0x_f174` bytes. Measuring the menu overlay against
+the shorter figure reported a coverage number for its RAM-verified prefix while
+calling it the overlay, and it also hid every un-dumped run above that offset
+from the worklist - the failure is silent in both directions, because a shorter
+denominator makes the percentage *better*.
+
+The same cut governs [byte attribution](#byte-level-attribution): with
+`clean_copy_bytes` as the menu image's own content, the sweep answered "the menu
+overlay does not hold these bytes" for every extent above `0x801E46A4`, which is
+a large part of that overlay.
+
+An overlay row without a cited own-content length is skipped rather than guessed
+at, so a new row is unmeasured until someone states its length.
+
 ### What the `SCUS_942.54` gap turned out to be
 
 Worth stating as a result rather than as method, because it is the clearest
@@ -169,12 +205,14 @@ material the game does not call.
 Subtracting the dumps leaves a remainder, and the obvious reading - "these are
 the routines nobody has looked at" - is right for most of the bytes and wrong for
 the tail. The report therefore classifies each code gap by *shape*, and only one
-of the six shapes is work:
+shape is work:
 
 | Shape | What it is |
 |---|---|
 | `code` | genuinely un-dumped instructions |
 | `padding` | every word is `nop`: inter-function alignment |
+| `mostly_padding` | at least half the words are zero |
+| `no_exit` | 1024 bytes or more with no `jr ra` in them |
 | `return_tail` | a `jr ra` (+ `nop`) the preceding routine's analysed body stops short of |
 | `bios_thunk_slot` | the delay slot of a `jr $t2` PSX BIOS-call thunk |
 | `psyq_lib_stamp` | an 8-byte `Ps` + id + word record: the PSY-Q librarian's version stamp between link modules |
@@ -203,6 +241,47 @@ Together they are why the figure asymptotes short of 100%, and saying so on the
 report is what stops the last fraction of a percent reading as a worklist. The
 shapes are **reported, not subtracted**: the denominator stays as it was so the
 ratcheted figure remains comparable across changes to this classifier.
+
+#### The two shapes that exist because the opcode statistic is blind to them
+
+`mostly_padding` and `no_exit` are not refinements of taste. Each names a case
+the statistical test scores as code with room to spare, and each is a structural
+fact about MIPS rather than another threshold to calibrate:
+
+- A word of zeros decodes to `nop` - a plausible primary opcode with no pointer
+  density - so a region that is *mostly* zeros passes the code test outright.
+  The menu overlay's tail from `0x801E43E8` is 82% zeros, and the classifier
+  called all 62512 bytes of it un-dumped code. That run was the largest entry on
+  the worklist, and disassembling it returns hundreds of `nop`s followed by
+  non-code.
+- Every MIPS function body ends in `jr ra`. Measured over `SCUS_942.54`'s text
+  head and the menu overlay's code region, known code carries one per ~500-750
+  bytes; a data table carries none. The SCUS sound-effect descriptor table at
+  `0x8006F198` is 5120 bytes of small-integer records with no `jr ra` and no
+  prologue, and it scored as code.
+
+The floor for `no_exit` is set above one function's worth of bytes so a gap
+holding the *interior* of one long body is not demoted by it, and a demoted run
+is not hidden: it stays in `undumped-runs.csv` under its shape, and only leaves
+the ranked worklist.
+
+#### Why the worklist classifies at a finer grain than the denominator
+
+The statistical test answers for whatever span it is given. Over a
+function-sized gap that is the right question; over a 62 KB gap spanning a code
+tail, a data region and a padding region it answers for the mixture, and the
+mixture is decided by whichever component is largest. So the **worklist** splits
+each gap into 256-byte windows, classifies each, and merges adjacent windows of
+the same class - which turns "one 62 KB un-dumped run" into the function-sized
+runs a dumping session can actually consume.
+
+The **denominator** deliberately does not do this. Re-classifying `SCUS_942.54`
+in windows moves its code denominator by ~28 KB in the *other* direction - the
+windowed test scores several of its rodata tables as code - and which of the two
+readings of that image's rodata is right is a separate claim this instrument
+cannot settle. The ratchet is written against the whole-gap classification, and
+a granularity change to it would be a silent re-baselining of every figure on
+the page.
 
 ### An instrument's private header regex is a claim about the corpus
 
@@ -262,10 +341,32 @@ overlay and the field overlay at different moments. Attributing by address alone
 counts a dump for every image whose span contains it.
 
 Rather than publish a number that quietly double-counts, each overlay row
-carries the share of its extents that could not be placed. Above 50% the
-coverage figure is replaced by **not meaningful**, and such rows are excluded
-from the ratchet baseline - a figure that moves with attribution rather than with
-real coverage would produce failures nobody can act on.
+carries the share of its extents that could not be placed. Above 50% the *upper
+bound* is replaced by **not meaningful**, and such rows are excluded from the
+`code` ratchet - a figure that moves with attribution rather than with real
+coverage would produce failures nobody can act on.
+
+### Two bounds, because one of them is defined for every row
+
+Withholding the upper bound leaves nothing on the row, and "no defensible upper
+bound" and "unmeasured" are different states that a blank cell would conflate.
+So each image reports both ends of the interval it is actually known to lie in:
+
+| Column | Credits | Reads |
+|---|---|---|
+| **covered** | every extent in the span the bytes did not place elsewhere, including residue | upper bound |
+| **at least** | only the extents the bytes NAME for this image | floor |
+
+The floor is well defined for every image, including the ones whose upper bound
+is withheld, and it is the number the `code_floor` ratchet tracks. A row where
+the two ends are far apart is *imprecise*, not unmeasured. A row whose floor is
+`0.0%` is saying something sharper than either: nothing in the dump corpus is
+attributable to that image at all, so the whole image is un-dumped, and the
+dumps printing at its VAs belong to its siblings.
+
+The [worklist](#the-per-overlay-dump-worklist) is cut against the floor for
+exactly this reason - cutting it against the upper bound would hide one
+overlay's gaps behind a sibling's dumps.
 
 ### Byte-level attribution
 
@@ -290,11 +391,9 @@ does not rot when a dump lands, is renamed, or is re-dumped at the same address.
 Two consequences worth stating plainly, because the first one used to be the
 whole story and the second one never goes away:
 
-- Most of what was being counted against the two measured overlays belongs to
-  images the gate does not measure at all - the field overlay, the minigame
-  overlays, the gameover overlay. Those extents now leave the row entirely
-  rather than inflating it, which is what makes the outer of the two measured
-  spans reportable.
+- Most of what was being counted against a given overlay belongs to one of its
+  VA-alias siblings. Those extents leave the row entirely rather than inflating
+  it, which is what makes the outer of two nested spans reportable.
 - The inner of two nested spans **starts** at total ambiguity. The menu overlay's
   span lies wholly inside the battle overlay's, so every extent in it falls in
   both by construction and no address arithmetic will ever separate them. That
@@ -366,7 +465,7 @@ The table carries two counts that look like they should agree and do not, so it
 says which is which on the page rather than leaving a reader to reconcile them:
 
 - **dumps** is per dump *file*. With attribution present it counts only the dump
-  files whose bytes the CSV places in this image.
+  files whose bytes the CSV places in this image, or that it left as residue.
 - **VA-ambiguous** is per **distinct extent**. One extent can back dozens of dump
   files - the mis-based print batches are the extreme case - and weighting the
   ambiguity by how often the same bytes happened to be dumped measures the
@@ -377,6 +476,36 @@ artifact can be read directly against each other. Reading the same ambiguity per
 dump file instead lands far lower on both rows - low enough that even the inner
 nested span reads as reportable - for no reason except that the mis-based
 batches are large. That is the number not to quote.
+
+## The per-overlay dump worklist
+
+Each run writes two files next to the report in the gitignored
+`target/disc-coverage/`. Both carry addresses, byte counts and shape names only -
+the same things the committed docs carry - and neither is committed.
+
+| File | What it is |
+|---|---|
+| `dump-worklist.md` | ranked worklist: `code`-shaped runs of 64 bytes or more, per image, largest first |
+| `undumped-runs.csv` | the full inventory: every run of every shape, so a headline "un-dumped" figure can be checked against how much of it is `padding` |
+
+A row is a run of an image's own bytes that no dump the byte attribution places
+in that image covers. Columns:
+
+| Column | Meaning |
+|---|---|
+| `shape` | `code` is work; `padding` / `return_tail` / `bios_thunk_slot` / `psyq_lib_stamp` / `constant_table` / `data` are structural, and persist however much is dumped |
+| `ambiguous` | some dump does print at that VA, but the bytes could not place it in this image - a sibling overlay at the same base is the other candidate |
+| `spans_at_start` | how many measured images map the run's start VA |
+
+`ambiguous` is a property of each run rather than of the gap it came from: a run
+is split wherever the upper-bound crediting changes, so one 40-byte residue
+extent inside a 62 KB gap no longer marks the whole gap ambiguous. Start with the
+`no` rows - nothing in the corpus covers those at any VA.
+
+**Do not sum the worklist across images.** Nineteen overlays load at
+`0x801CE818` and thirteen at `0x801F69D8`, so the same VA appears under several
+headings holding *different* bytes each time. Each is real work; the total is not
+a total.
 
 ## Running it
 
@@ -413,7 +542,15 @@ point. If a dump is legitimately removed, re-run with `--update-baseline` and
 say why in the commit message - the baseline moving down is a claim that needs a
 reason.
 
-A useful side effect: the report lists the largest un-dumped **code** runs in
-`SCUS_942.54` by size. That is a dump worklist derived from the bytes rather
-than from what anyone happened to cite, which is the one worklist the citation
-graph structurally cannot produce.
+The baseline has three sections. `code` holds the upper bounds that are
+defensible (the rows not marked "not meaningful"); `code_floor` holds every
+image's floor, including those rows; `data` holds the format-recognition share.
+A **method** change moves the baseline without any dump being lost - widening an
+image's span to its whole PROT entry lowers its percentage while measuring more
+of it - so a `--update-baseline` for that reason has to say which method changed,
+not just that the number moved.
+
+A useful side effect: the run emits a dump worklist for **every** measured image
+(see [the per-overlay dump worklist](#the-per-overlay-dump-worklist)), derived
+from the bytes rather than from what anyone happened to cite - the one worklist
+the citation graph structurally cannot produce.

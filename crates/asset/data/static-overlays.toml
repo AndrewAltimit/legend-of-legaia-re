@@ -50,6 +50,27 @@
 # 0x801CF650 is a "Give" string in 0897 but the equip aggregator in 0899 -- the
 # exact aliasing this pipeline exists to disambiguate.
 #
+# content_bytes / content_source: the overlay's OWN content length in bytes --
+# the denominator every byte-denominated instrument over this image needs
+# (scripts/ci/disc-coverage.py, scripts/ghidra-analysis/attribute-dump-extents.py).
+# This is NOT `clean_copy_bytes`, and conflating the two produces a wrong
+# number: `clean_copy_bytes` is how much of a row has been RAM-byte-verified (a
+# strength-of-evidence claim, present on two rows and shorter than the image on
+# one of them), while `content_bytes` is how long the image IS. For PROT 0899
+# they differ by 0x_f174 bytes, and measuring that overlay against the shorter
+# figure silently drops a third of it.
+#   content_source values:
+#     prot_entry_extent - the entry's own sectors, `(toc[p+3] - toc[p+2]) * 2048`
+#                         (docs/formats/prot.md), which is exactly the slice the
+#                         runtime loader streams into the overlay window. Every
+#                         row today. Disc-reproducible with no dump corpus and no
+#                         capture, and it agrees byte-for-byte with the extracted
+#                         `overlay_<label>_<entry>.bin` on disc: the extraction
+#                         reader is the same corrected span.
+# A row's `notes` carry any independent corroboration (a live capture that shows
+# the overlay resident to exactly that length) or correction (a pre-correction
+# own-content figure the entry extent falsifies).
+#
 # eligibility:
 #   verified  - RAM byte-matched against a resident save-state image: the base
 #               is RAM-confirmed and the .text+.rodata prefix
@@ -80,16 +101,20 @@ prot_index = 898
 label = "battle_action"
 base_va = 0x801CE818
 form = "raw"
+content_bytes = 0x28800
+content_source = "prot_entry_extent"
 clean_copy_bytes = 0x28800
 eligibility = "verified"
 fingerprint_sha256 = "079a946fbd8c8b07c639f1e1805a3d2ea1bac830518219da7145cb719a18f730"
-notes = "Battle / battle-action overlay. Per-actor state machine FUN_801E295C (base+0x14144), battle main dispatcher FUN_801D0748, effect VM cluster FUN_801DE914/801DFDF8/801E0088. RAM-matched vs a live battle save: code-first layout, .text+.rodata (0x28800 of 0x29800 bytes) byte-identical, only the trailing 0x1000-byte .bss diverges. Base recovered statically (44 corroborating call targets)."
+notes = "Battle / battle-action overlay. Per-actor state machine FUN_801E295C (base+0x14144), battle main dispatcher FUN_801D0748, effect VM cluster FUN_801DE914/801DFDF8/801E0088. RAM-matched vs a live battle save: code-first layout, .text+.rodata byte-identical. The '0x28800 of 0x29800 bytes, only the trailing 0x1000-byte .bss diverges' reading was measured on the pre-correction over-read footprint: the entry is 0x28800 bytes exactly (81 sectors), so the diverging 0x1000 tail is entry 0899's first two sectors, not this overlay's .bss. content_bytes and clean_copy_bytes therefore coincide here. Base recovered statically (44 corroborating call targets)."
 
 [[overlays]]
 prot_index = 897
 label = "field"
 base_va = 0x801CE818
 form = "raw"
+content_bytes = 0x25000
+content_source = "prot_entry_extent"
 eligibility = "static"
 fingerprint_sha256 = "0b39d892d783ffcc89dac06ee395540be0a7392c5cbc79fb9ba3442daccc09f6"
 notes = "Town / field / dialog / inventory / OVERWORLD overlay. OWN CONTENT IS 0x25000 BYTES (VA 0x801CE818..0x801F3818): PROT 0898's image is byte-identical to this entry's file from +0x25000 for its whole length, so everything above 0x801F3818 in this extraction is over-read, not field code. The long-cited 'inventory hub FUN_801F5748' is a casualty of that: file 0x26F30 sits 0x1F30 into the tail, i.e. it is PROT 0898's battle dispatcher FUN_801D0748 (2777 vs 2781 instructions, same body, dumped from four independent captures at 0x801D0748) printed at a phantom VA. Where the FIELD inventory hub lives is open. Field/event VM FUN_801DE840 (base+0x10028), MAIN INIT FUN_801D6704 (base+0x07eec, clean prologue), MES renderer. Also hosts the WORLD-MAP / overworld controller FUN_801E76D4 (base+0x18EBC) + the player free-movement controller FUN_801d01b0 + collision FUN_801cfe4c -- i.e. 'world-map' is a SUBSYSTEM of this overlay, not a separate PROT entry (its signature byte-matches PROT 0897 file 0x18EBC, implied base 0x801CE818; `asset overlay find-sig`). The same bytes alias into PROT 0896's over-read footprint at that overlay's own base. Data-section-first (leading EVC debug strings); a live town capture has runtime-mutated globals so the clean region is not a single prefix, but the head (7844 B) is byte-identical in RAM and both function anchors align. Base recovered statically (60 corroborating call targets)."
@@ -99,10 +124,12 @@ prot_index = 899
 label = "menu"
 base_va = 0x801CE818
 form = "raw"
+content_bytes = 0x25000
+content_source = "prot_entry_extent"
 clean_copy_bytes = 0x15e8c
 eligibility = "verified"
 fingerprint_sha256 = "6ffd69a87fb351ff1c01cc9879276624c954801cd4d5353898882ca6e1a0f172"
-notes = "Options / pause / inventory-equipment-status / SAVE / SHOP menu overlay (the real one; NOT PROT 0896). Equipment stat aggregator FUN_801CF650 at base+0x0e38; menu functions span base+0x0db8..base+0x15b44. Also hosts the SAVE-slot select + write dispatcher FUN_801DC6B4 (base+0xDE9C, signature byte-matches PROT 0899 only; `asset overlay find-sig`) and the SHOP/buy session (FUN_801CF5D0 record-offset preload + the shared FUN_801CF650 aggregator) -- 'save' and 'shop' are SUBSYSTEMS of this overlay, not separate PROT entries. The casino PRIZE-EXCHANGE session is hosted here too: a save inside the ticket-counter prize shop holds game_mode 0x17 with this overlay's clean prefix byte-identical at slot A (the prize table itself is in this entry's data segment at file 0x15D00 / VA 0x801E4518). VA-alias sibling of the field overlay (0897) in slot A: the menu overlay REPLACES the field overlay at 0x801CE818 (in a menu-open capture the field VM at 0x801DE840 is not a prologue while FUN_801CF650 is). RAM-matched vs six menu-open saves (equipment/status/options x field map01 + town town01): the clean prefix 0x15e8c (89740 B of 0x25000) is byte-identical in all six (99.99% total; only runtime globals diverge). PROT 0899's trailing footprint additionally carries the title-screen overlay code in its unindexed gap (a separate overlay at its own base; see boot.md). Base also recovered statically (30 corroborating call targets)."
+notes = "Options / pause / inventory-equipment-status / SAVE / SHOP menu overlay (the real one; NOT PROT 0896). Equipment stat aggregator FUN_801CF650 at base+0x0e38; menu functions span base+0x0db8..base+0x15b44. Also hosts the SAVE-slot select + write dispatcher FUN_801DC6B4 (base+0xDE9C, signature byte-matches PROT 0899 only; `asset overlay find-sig`) and the SHOP/buy session (FUN_801CF5D0 record-offset preload + the shared FUN_801CF650 aggregator) -- 'save' and 'shop' are SUBSYSTEMS of this overlay, not separate PROT entries. The casino PRIZE-EXCHANGE session is hosted here too: a save inside the ticket-counter prize shop holds game_mode 0x17 with this overlay's clean prefix byte-identical at slot A (the prize table itself is in this entry's data segment at file 0x15D00 / VA 0x801E4518). VA-alias sibling of the field overlay (0897) in slot A: the menu overlay REPLACES the field overlay at 0x801CE818 (in a menu-open capture the field VM at 0x801DE840 is not a prologue while FUN_801CF650 is). RAM-matched vs six menu-open saves (equipment/status/options x field map01 + town town01): the clean prefix 0x15e8c (89740 B of 0x25000) is byte-identical in all six (99.99% total; only runtime globals diverge). content_bytes is the whole 0x25000 entry, NOT clean_copy_bytes: 0x15e8c is how much of it a RAM capture has verified, and measuring the overlay against that figure drops the 0x_f174 bytes above it. The 'trailing footprint carries the title-screen overlay code in its unindexed gap' reading rests on the pre-correction footprint: the corrected TOC partitions PROT.DAT with zero unindexed gaps (every entry's extent abuts the next across all rows), so whether that title-screen code sits inside 0899's own 0x25000 or in a neighbouring entry needs re-deriving (see boot.md). Base also recovered statically (30 corroborating call targets)."
 
 # --- More slot-A overlays (same swappable slot as field/battle/menu; base
 #     0x801CE818, *DAT_8001038C). These are the cutscene + minigame VA-alias
@@ -125,6 +152,8 @@ prot_index = 970
 label = "cutscene_str"
 base_va = 0x801CE818
 form = "raw"
+content_bytes = 0x24800
+content_source = "prot_entry_extent"
 eligibility = "static"
 fingerprint_sha256 = "366f76dd7371e69309aeb8038f7fa63922d4f6018d6cbb2392d7acf6886bedc3"
 notes = "STR / MDEC FMV cutscene overlay (game modes 26/27 STR INIT/MODE). Decisive identity from the leading ISO9660 movie paths (\\DATA\\MOV.STR;1, \\MOV\\MV1..MV6.STR) + the MDEC decoder strings (MDEC_in_sync / MDEC_out_sync / 'MDEC_rest:bad option(%d)' / the DMA + FIFO trace). This is the overlay behind the long-capture-blocked F-FMV hunt -- now Ghidra-importable straight from the disc (`asset overlay ghidra`), so the static-analysis half of the STR-mode master-dispatch + per-scene FMV-id trigger work no longer needs a capture. Base recovered statically (16 corroborating call targets); the overlay was never captured resident, so the strings + jal-recovery are the evidence (no anchor_va)."
@@ -134,6 +163,8 @@ prot_index = 971
 label = "debug_menu"
 base_va = 0x801CE818
 form = "raw"
+content_bytes = 0x1800
+content_source = "prot_entry_extent"
 eligibility = "static"
 base_source = "capture"
 anchor_va = 0x801CF730
@@ -145,6 +176,8 @@ prot_index = 972
 label = "fishing"
 base_va = 0x801CE818
 form = "raw"
+content_bytes = 0xB000
+content_source = "prot_entry_extent"
 eligibility = "static"
 anchor_va = 0x801CF3BC
 fingerprint_sha256 = "1949cd5f6aa4a711572fc38199ca7212cc7a6e037263a8134594cb6b545e4f98"
@@ -155,6 +188,8 @@ prot_index = 973
 label = "other2_dev"
 base_va = 0x801CE818
 form = "raw"
+content_bytes = 0x800
+content_source = "prot_entry_extent"
 eligibility = "static"
 base_source = "cross_ref"
 anchor_va = 0x801CE8A0
@@ -166,6 +201,8 @@ prot_index = 974
 label = "other3_dev"
 base_va = 0x801CE818
 form = "raw"
+content_bytes = 0x3800
+content_source = "prot_entry_extent"
 eligibility = "static"
 base_source = "cross_ref"
 anchor_va = 0x801CEE80
@@ -177,6 +214,8 @@ prot_index = 975
 label = "slot_machine"
 base_va = 0x801CE818
 form = "raw"
+content_bytes = 0x6000
+content_source = "prot_entry_extent"
 eligibility = "static"
 base_source = "capture"
 anchor_va = 0x801CF0D8
@@ -188,6 +227,8 @@ prot_index = 976
 label = "baka_fighter"
 base_va = 0x801CE818
 form = "raw"
+content_bytes = 0xE000
+content_source = "prot_entry_extent"
 eligibility = "static"
 anchor_va = 0x801D3B18
 fingerprint_sha256 = "c4a254eb18217908741b4d92c884a6a3ce9b0a1bc70af62c6e93d317ae9d3ea5"
@@ -198,6 +239,8 @@ prot_index = 980
 label = "dance"
 base_va = 0x801CE818
 form = "raw"
+content_bytes = 0x8000
+content_source = "prot_entry_extent"
 eligibility = "static"
 anchor_va = 0x801CF470
 fingerprint_sha256 = "0a3da15ea4d5e921c30943c4efb76465a77310394ce6725182254da7bd718295"
@@ -208,17 +251,21 @@ prot_index = 977
 label = "arena_init"
 base_va = 0x801CE818
 form = "raw"
+content_bytes = 0x3800
+content_source = "prot_entry_extent"
 eligibility = "static"
 base_source = "cross_ref"
 anchor_va = 0x801D0F60
 fingerprint_sha256 = "d9d3ad6338050756034bea9f533b55ac9aadc26af4723bd65953f35d3d0497ac"
-notes = "Muscle Dome arena roster/init slot-A overlay (mode-24 door-warp sub-id path, dev module 'other6'; the arena MATCH SM lives in the battle-action overlay 0898, see docs/subsystems/minigame-muscle-dome.md). Head is the sim-battle opponent name roster ('Ronginus', 'Viguro Lv2', ...); 5 in-file string anchors into that roster corroborate the base (pointer_resolution 89/93; the anchor prologue is the decisive check -- the raw two-slot string-vote count is confounded here because 0977's code also references the CO-RESIDENT slot-B field_back_read module's head strings at 0x801F69D8+{0,0x20,0x84}, which alias onto the roster's own head offsets). Carries the contest settlement + one-shot War God Icon prize FUN_801D0F60 (file +0x2748, the anchor; historically mis-cited as FUN_801C2748 from a 0x801C0000-band import). Own content ~0x4800; the extraction footprint over-reads into 0979 from +0x4800."
+notes = "Muscle Dome arena roster/init slot-A overlay (mode-24 door-warp sub-id path, dev module 'other6'; the arena MATCH SM lives in the battle-action overlay 0898, see docs/subsystems/minigame-muscle-dome.md). Head is the sim-battle opponent name roster ('Ronginus', 'Viguro Lv2', ...); 5 in-file string anchors into that roster corroborate the base (pointer_resolution 89/93; the anchor prologue is the decisive check -- the raw two-slot string-vote count is confounded here because 0977's code also references the CO-RESIDENT slot-B field_back_read module's head strings at 0x801F69D8+{0,0x20,0x84}, which alias onto the roster's own head offsets). Carries the contest settlement + one-shot War God Icon prize FUN_801D0F60 (file +0x2748, the anchor; historically mis-cited as FUN_801C2748 from a 0x801C0000-band import). Own content is 0x3800 (7 sectors, the corrected entry extent). The earlier '~0x4800, over-reads into 0979 from +0x4800' figure folded in entry 0978's two sectors: 0977 ends at +0x3800, where PROT 0978 (field_back_read) begins, and 0979 begins at +0x4800."
 
 [[overlays]]
 prot_index = 979
 label = "field_battle_intro"
 base_va = 0x801CE818
 form = "raw"
+content_bytes = 0x4000
+content_source = "prot_entry_extent"
 eligibility = "static"
 base_source = "cross_ref"
 anchor_va = 0x801D0370
@@ -230,6 +277,8 @@ prot_index = 902
 label = "gameover"
 base_va = 0x801CE818
 form = "raw"
+content_bytes = 0x800
+content_source = "prot_entry_extent"
 eligibility = "static"
 base_source = "cross_ref"
 anchor_va = 0x801CE844
@@ -269,6 +318,8 @@ prot_index = 900
 label = "summon_render"
 base_va = 0x801F69D8
 form = "raw"
+content_bytes = 0x2800
+content_source = "prot_entry_extent"
 eligibility = "static"
 base_source = "capture"
 fingerprint_sha256 = "9304f0452ed0384c0021d9c04a822b1da3b8f44c5c6451762eae196979701f17"
@@ -279,6 +330,8 @@ prot_index = 901
 label = "world_map_render"
 base_va = 0x801F69D8
 form = "raw"
+content_bytes = 0x2800
+content_source = "prot_entry_extent"
 eligibility = "verified"
 base_source = "cross_ref"
 fingerprint_sha256 = "6368ca4dd20d1a067902ca1f230209d711dcee14557990b24c2e03ded35c44d3"
@@ -289,6 +342,8 @@ prot_index = 967
 label = "battle_tutorial"
 base_va = 0x801F69D8
 form = "raw"
+content_bytes = 0x1800
+content_source = "prot_entry_extent"
 eligibility = "verified"
 base_source = "capture"
 fingerprint_sha256 = "d61bc6f685ad43c3a63950a32251ba3df95c2e55099ae08750b9bde92677278a"
@@ -299,6 +354,8 @@ prot_index = 903
 label = "summon_gimard"
 base_va = 0x801F69D8
 form = "raw"
+content_bytes = 0x1000
+content_source = "prot_entry_extent"
 eligibility = "static"
 base_source = "cross_ref"
 fingerprint_sha256 = "e0d373440bdcee01def91e0f0428d64e291e702c7f89f4b1196ca5c2bd3dc5b9"
@@ -309,6 +366,8 @@ prot_index = 905
 label = "summon_stager_x83"
 base_va = 0x801F69D8
 form = "raw"
+content_bytes = 0x2000
+content_source = "prot_entry_extent"
 eligibility = "static"
 base_source = "cross_ref"
 fingerprint_sha256 = "5673dd4cb11eaeb973ec13cebffc03141605b3501a3d6b816628dad2cdb2d29d"
@@ -319,6 +378,8 @@ prot_index = 907
 label = "summon_nighto"
 base_va = 0x801F69D8
 form = "raw"
+content_bytes = 0x2000
+content_source = "prot_entry_extent"
 eligibility = "static"
 base_source = "cross_ref"
 fingerprint_sha256 = "0e3bf04d6593a2a6b1a308401cf74482e04bdd65be6ede03c36403da46510bd8"
@@ -329,6 +390,8 @@ prot_index = 924
 label = "stager_ultimate_rave"
 base_va = 0x801F69D8
 form = "raw"
+content_bytes = 0x1800
+content_source = "prot_entry_extent"
 eligibility = "static"
 base_source = "cross_ref"
 fingerprint_sha256 = "21f688219359f5ab2e11263ab3e3784a287200e726f3a44cd05cc0e7ec93980d"
@@ -339,6 +402,8 @@ prot_index = 927
 label = "summon_juggernaut"
 base_va = 0x801F69D8
 form = "raw"
+content_bytes = 0x3800
+content_source = "prot_entry_extent"
 eligibility = "static"
 base_source = "cross_ref"
 fingerprint_sha256 = "ad6d29950d531c4a32ce3baf2341f953fea96676ef5919de814196b4d97fee42"
@@ -349,6 +414,8 @@ prot_index = 928
 label = "summon_palma"
 base_va = 0x801F69D8
 form = "raw"
+content_bytes = 0x3800
+content_source = "prot_entry_extent"
 eligibility = "static"
 base_source = "cross_ref"
 fingerprint_sha256 = "f54ea8ee6da3a3d1a29e1286871eb914ea9721f4c7c522ac91ea50fb9cbfe6f4"
@@ -359,6 +426,8 @@ prot_index = 929
 label = "summon_mule"
 base_va = 0x801F69D8
 form = "raw"
+content_bytes = 0x3800
+content_source = "prot_entry_extent"
 eligibility = "static"
 base_source = "cross_ref"
 fingerprint_sha256 = "a6e22c7c93d3f15fc0a2cf41f14dfc5f606f73682b93579a62424fa75ba1d09c"
@@ -369,6 +438,8 @@ prot_index = 930
 label = "summon_horn"
 base_va = 0x801F69D8
 form = "raw"
+content_bytes = 0x3000
+content_source = "prot_entry_extent"
 eligibility = "static"
 base_source = "cross_ref"
 fingerprint_sha256 = "6b6cc08b88c673e3ceb8ea7c03e4ba3042a7d96845fcd6e828db7739d922d021"
@@ -379,6 +450,8 @@ prot_index = 931
 label = "summon_jedo"
 base_va = 0x801F69D8
 form = "raw"
+content_bytes = 0x3000
+content_source = "prot_entry_extent"
 eligibility = "static"
 base_source = "cross_ref"
 fingerprint_sha256 = "40b7ec309b3203788b6ccd39cf818aca831043fbd11f55882f18a2c51c82718d"
@@ -389,6 +462,8 @@ prot_index = 932
 label = "summon_meta"
 base_va = 0x801F69D8
 form = "raw"
+content_bytes = 0x2800
+content_source = "prot_entry_extent"
 eligibility = "static"
 base_source = "cross_ref"
 fingerprint_sha256 = "392a270efcd42d44c18c5a10790a5e1ccca804bd2462aa2d9e0fdafe9753f9e9"
@@ -399,6 +474,8 @@ prot_index = 933
 label = "summon_terra"
 base_va = 0x801F69D8
 form = "raw"
+content_bytes = 0x3000
+content_source = "prot_entry_extent"
 eligibility = "static"
 base_source = "cross_ref"
 fingerprint_sha256 = "cc1d4b685659016dba0f63dfd3008954b88b209d5f9ac62df4c4a1cd304b7c68"
@@ -409,6 +486,8 @@ prot_index = 934
 label = "summon_ozma"
 base_va = 0x801F69D8
 form = "raw"
+content_bytes = 0x4000
+content_source = "prot_entry_extent"
 eligibility = "static"
 base_source = "cross_ref"
 fingerprint_sha256 = "3d1a2e13d071887dae11899855a7ec2d29868f1f831c9486a02ecc96e5cbbd1a"
@@ -419,6 +498,8 @@ prot_index = 957
 label = "summon_effect_table"
 base_va = 0x801F69D8
 form = "raw"
+content_bytes = 0x4000
+content_source = "prot_entry_extent"
 eligibility = "static"
 base_source = "cross_ref"
 fingerprint_sha256 = "0a7bf973e0521e4850a9b98786b9e2bc456f146622a18ad03d6daed27f42bfab"
@@ -429,7 +510,9 @@ prot_index = 978
 label = "field_back_read"
 base_va = 0x801F69D8
 form = "raw"
+content_bytes = 0x1000
+content_source = "prot_entry_extent"
 eligibility = "static"
 base_source = "cross_ref"
 fingerprint_sha256 = "aa39ba5f9b850f0ecde157893462251af3dc016017498933867f7865c30b5949"
-notes = "Slot-B 'FIELD BACK READ' staged-loader overlay: head strings 'f_read %d size %d KB' / 'h:\\prot\\field\\other6\\tim\\int.tim' / 'FIELD BACK READ NOW'. Entry FUN_801F6B24 (file +0x14C, a leaf -- no addiu-sp prologue, so no anchor_va) is called from SCUS FUN_80025358 state 2, which pins the base externally; 12 in-file string anchors into its own dev-path strings corroborate (string_anchor_votes 12 at slot B, 1 at slot A; pointer_resolution 25/25). Own content < 0x1000; the 0xE000 footprint over-reads into 0979 (field_battle_intro, from +0x1000) and 0980 (dance, from +0x5000) -- dumps of that tail printed under a 0x801C0000-band import carry wrong-base addresses (docs/tooling/dump-corpus-integrity.md)."
+notes = "Slot-B 'FIELD BACK READ' staged-loader overlay: head strings 'f_read %d size %d KB' / 'h:\\prot\\field\\other6\\tim\\int.tim' / 'FIELD BACK READ NOW'. Entry FUN_801F6B24 (file +0x14C, a leaf -- no addiu-sp prologue, so no anchor_va) is called from SCUS FUN_80025358 state 2, which pins the base externally; 12 in-file string anchors into its own dev-path strings corroborate (string_anchor_votes 12 at slot B, 1 at slot A; pointer_resolution 25/25). Own content is 0x1000 (2 sectors, the corrected entry extent) -- the module's code stops well short of that, but the sectors are the overlay's own. The 0xE000 pre-correction footprint over-read into 0979 (field_battle_intro, from +0x1000) and 0980 (dance, from +0x5000) -- dumps of that tail printed under a 0x801C0000-band import carry wrong-base addresses (docs/tooling/dump-corpus-integrity.md)."

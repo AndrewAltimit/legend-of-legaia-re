@@ -99,20 +99,26 @@ CDBI = None  # set in main(), after arg parsing, so --help needs no capstone
 class Image:
     """One extracted image, cut down to the bytes its PROT entry owns.
 
-    An extraction is the entry's `read_entry` footprint and runs into its
-    neighbours' sectors, so the raw file answers for VAs its overlay never loads
-    - with a neighbour's code. Two independent cuts are available and they are
-    not equally good:
+    An extraction taken through the superseded entry-size expression is the
+    entry's over-read footprint and runs into its neighbours' sectors, so the
+    raw file answers for VAs its overlay never loads - with a neighbour's code.
+    Three cuts are available and they are not equally good:
 
-    * `clean_copy_bytes` from `static-overlays.toml`, a cited own-content
-      length. Only two rows carry one.
+    * `content_bytes` from `static-overlays.toml`: the entry's own sector
+      extent, `(toc[p+3] - toc[p+2]) * 2048` (docs/formats/prot.md), which is
+      exactly the slice the runtime loader streams. Every row carries one, and
+      it is the cut used.
     * the offset at which another image's head appears, sector-aligned. That is
-      the neighbour's start, so it bounds the over-read.
+      the neighbour's start, so it bounds an over-read. Kept as the fallback for
+      a row with no cited length.
+    * the whole file.
 
-    Where both exist they agree (`battle_action`: `0x28800` either way), which is
-    what makes the second usable where the first is absent. `own_source` records
-    which one a row used, because a `trim` cut is an inference and a
-    `clean_copy_bytes` cut is a citation.
+    `clean_copy_bytes` is deliberately NOT one of them. It answers a different
+    question - how much of a row a RAM capture has byte-verified - and on PROT
+    0899 it is 0x_f174 bytes shorter than the image, which would make this sweep
+    answer "menu does not hold these bytes" for 178 extents that are in menu's
+    own content. `own_source` records which cut a row used, because a `trim` cut
+    is an inference and a `content_bytes` cut is a citation.
     """
 
     def __init__(self, label, prot, base, data, own_end, own_source):
@@ -173,9 +179,9 @@ def load_images(extracted):
             at = data.find(head)
             if 0 < at < cut and at % 0x800 == 0:
                 cut = at
-        clean = row.get("clean_copy_bytes")
-        if clean and clean <= len(data):
-            own, src = clean, "clean_copy_bytes"
+        content = row.get("content_bytes")
+        if content and content <= len(data):
+            own, src = content, "content_bytes"
         elif cut < len(data):
             own, src = cut, "trim"
         else:
@@ -198,7 +204,7 @@ def load_images(extracted):
 def measured_spans(extracted):
     """The spans `disc-coverage.py` measures - the ones an extent is ambiguous over.
 
-    Its filter is exactly `base_va` and `clean_copy_bytes` both present and an
+    Its filter is exactly `base_va` and `content_bytes` both present and an
     extracted image on disk; a row without a cited own-content length has no
     honest denominator and is skipped there rather than guessed.
     """
@@ -207,7 +213,7 @@ def measured_spans(extracted):
         return spans
     with open(OVERLAY_MAP, "rb") as fh:
         for row in tomllib.load(fh).get("overlays", []):
-            base, span, label = (row.get("base_va"), row.get("clean_copy_bytes"),
+            base, span, label = (row.get("base_va"), row.get("content_bytes"),
                                  row.get("label"))
             if not base or not span or not label:
                 continue

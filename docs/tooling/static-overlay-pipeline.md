@@ -107,12 +107,42 @@ is the entry→base map - one record per overlay:
 | `prot_index` | `PROT.DAT` entry the overlay is extracted from (the identity). |
 | `base_va` | Load base inside the overlay window; statically recovered, RAM-confirmed where a capture exists. |
 | `form` | `raw` (entry bytes are the as-loaded bytes) or `lzs` (decompress; needs `decompressed_size`). |
-| `clean_copy_bytes` | Length of the RAM-verified `.text`+`.rodata` prefix (for `verified` rows). |
+| `content_bytes` | The overlay's own content length: its PROT entry's sector extent, `(toc[p+3] - toc[p+2]) * 2048`. Present on every row; the denominator every byte-denominated instrument over the image uses. |
+| `content_source` | How `content_bytes` was derived. `prot_entry_extent` on every row today. |
+| `clean_copy_bytes` | Length of the RAM-verified `.text`+`.rodata` prefix (for `verified` rows). A strength-of-evidence figure, **not** a length - see below. |
 | `eligibility` | `verified` (RAM byte-matched) / `static` (base-recovered + function-anchored, not RAM-prefix-verified) / `ineligible` (runtime-relocated - keep on the dynamic path). |
 | `base_source` | How `base_va` was determined: `jal` (internal call-graph recovery - default; the reproducibility test asserts the recovery agrees), `capture` (byte-matched a resident RAM anchor/region), `cross_ref` (taken from another pinned RE result in-tree). |
 | `anchor_va` | Optional known function VA that must land on a function prologue (`addiu sp, sp, -X`) at `base_va` - a capture-free, disc-reproducible base cross-check. Decisive for `cross_ref`/`capture` rows where the jal-recovery assertion is skipped (e.g. a slot-A minigame sibling anchored by a documented minigame function). |
 | `fingerprint_sha256` | sha256 of the as-loaded bytes - the disc-derived reproducibility anchor. |
 | `notes` | Which subsystems / entry points live here. |
+
+### `content_bytes` is not `clean_copy_bytes`
+
+The two fields look interchangeable and are not, and the failure mode is silent
+in the flattering direction.
+
+- `content_bytes` says **how long the image is**. It comes from the entry's own
+  sector extent ([`prot.md`](../formats/prot.md)), which is exactly the slice the
+  runtime loader streams into the overlay window, and it needs neither a dump
+  corpus nor a capture to derive.
+- `clean_copy_bytes` says **how much of the image a resident RAM capture has
+  byte-verified**. On PROT 0898 the two coincide, because every byte of the entry
+  matches RAM. On PROT 0899 they differ by `0x_f174` bytes.
+
+Using `clean_copy_bytes` as a length makes an overlay's measured coverage look
+*better* (a smaller denominator) while measuring less of it, so nothing about
+the result signals the mistake. Both instruments that need an image's length -
+[`disc-coverage.py`](disc-coverage.md) and the byte-attribution sweep
+`scripts/ghidra-analysis/attribute-dump-extents.py` - therefore take
+`content_bytes`.
+
+Several `notes` figures for an overlay's own content predate the PROT entry-size
+correction and were measured on the over-read footprint. Where such a figure
+disagrees with the entry extent, the entry extent is right and the note records
+what the old figure had folded in: the arena-init overlay's "own content
+~`0x4800`" had absorbed PROT 0978's two sectors, and the battle overlay's
+"`0x28800` of `0x29800`, trailing `0x1000` .bss" had absorbed PROT 0899's first
+two sectors.
 
 ### Slot A vs slot B
 
