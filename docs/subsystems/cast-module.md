@@ -205,6 +205,64 @@ a monster (or any multi-target future) inherits friendly fire from these
 sites. The same seat-0 assumption shapes the finale: a dead-victim arm
 declares game over on the spot, correct only while the victim is a hero.
 
+## What of the choreography is data, and what is code
+
+A signature cast is **half data**. Its particle layer is a record in exactly the
+format a player art already names by id; its lift and its camera are the
+module's own instructions and nothing outside the module can reach them.
+
+**The spawn layer is data, in the art path's own format.** Each module reaches
+the pool spawner `FUN_80050ED4` from hardcoded `jal` sites - 15 in PROT `0958`,
+41 in `0959`, 24 in `0960` - and at every one of them `a2` is a **constant
+module-resident pointer** and `a3` is a scale literal (`0x1000` at every 958 and
+960 site; 959 also uses `0x0C00` four times and `0x0800` once). The pointers land
+in each module's data band and nowhere else: `0x801F8EB8..0x801F9348` in 958 (13
+distinct records for 15 sites), `0x801F884C..0x801F95CC` in 959 (41 for 41),
+`0x801F8768..0x801F8E0C` in 960 (21 for 24). What they point at is the **summon
+part-record shape** the whole spawn stack shares - `[i16 model_sel][u16 flags]
+[move-VM bytecode]`, `model_sel = -1` on the pure-transform records, a real index
+on the modelled ones (960's `0x801F8CB8` carries `27`) - i.e. byte-for-byte the
+shape of the art path's own effect prototypes
+([move-power.md](../formats/move-power.md#effect-prototype-records---the-spawn-path)).
+
+**The art path is id-driven over the same shape.** A move's effect-list byte
+`0x01..=0x63` spawns `0x801F6324[id]` through the same `FUN_80050ED4` at scale
+`0x1000` and copies the CLUT row `0x801F6418[id]`. That table is 61 entries
+(`(0x6418 - 0x6324) / 4`), **every one populated** - no null slot to claim - and
+all 61 resolve to 54 distinct records in the battle overlay's own data band
+`0x801F5484..0x801F62C0`, seven ids aliasing a shared record (`00/30/31`,
+`04/05/06`, `0E/22/23/24`). So the art path can already name a record of this
+shape; what it cannot do is name one of *these* records.
+
+**Why not: the module's band is not resident when an art plays.** The three
+modules link at slot-B base `0x801F69D8` and their parameter blocks all sit above
+it, whereas the prototype table and its 54 records sit **below** it, inside the
+battle overlay that is resident for the whole fight. A `0x801F6324` entry pointing
+at `0x801F8EB8` would read whatever occupies slot B at that moment. A duplicated
+block therefore has to be copied into overlay-resident space, and the battle
+overlay has **247 bytes** of it: two zero runs of 64 bytes or more in the whole
+`0x28800`-byte image, `131` B at `0x801F4FC3` and `116` B at `0x801F6960` (the
+latter being the tail immediately below the slot-B base). That fits one small
+block, not a move's worth.
+
+**And the rest is not in the record at all.** The lift - the victim's knockdown
+and the caster's clip chain - is clip staging written by module instructions:
+`sb` into the staged-action byte `+0x1DA` 16 / 6 / 8 times across 958 / 959 / 960,
+each paired with a `+0x1DC` restage bump (15 / 7 / 7), read back through the
+`+0x1D9` confirm gates and the victim's `+0x1F1` reaction map. The camera is the
+same shape - a `ctx+0x279` phase arm, not a record field. A spawn record is passed
+`(world_pos, src_pos, record, scale)` and has no way to express either.
+
+**Verdict (thread closed).** *Partially.* Reskinning a signature move's **fire**
+is a data edit the art path can already drive: duplicate the parameter block into
+overlay-resident space and repoint one `0x801F6324` id at it - with the caveats
+that no id is free, so an alias group must be split or an existing id retargeted,
+and that only ~131 contiguous bytes of overlay slack exist without moving
+something. Its **lift and camera are code**: they live in the module's phase
+machine, reachable only through the capture-class `0x63` action arm that pages
+PROT `935..966`, and no eight-record art effect script can name them. A full
+reskin is a module edit, not a data edit.
+
 ## Provenance
 
 Disassembly of the PROT 958/959/960 images (offsets above); the commit

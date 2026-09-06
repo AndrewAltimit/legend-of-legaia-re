@@ -128,6 +128,59 @@ rest are residual sector-crossers whose deficit is under one 2048-byte sector;
 supplying that sector is a disc-level relayout (what the PAL discs did at
 mastering - see [pal-localizations.md](../tooling/pal-localizations.md)).
 
+## The same question for an `asset::pack`: growing a mesh member
+
+A scene's TMD [pack](pack.md) poses the relocation question in its simplest
+form, and the answer is the opposite of the MAN's: **nothing outside the pack
+holds a byte offset into it**, so growing a member costs a rebuild of the pack
+entry and nothing else.
+
+The worked case is the Nivora Ravine duel scene's NPC mesh pack, PROT entry
+`0639` - the entry a `Flag(0x0A)` descriptor streams from the block's `+4` slot
+([scene-bundles.md](scene-bundles.md#a-flag-descriptor-streams-an-extra-file)).
+Its layout is a DATA_FIELD chunk header over a bare pack: `[u32 (0x02 << 24) |
+347476][u32 count = 112][u32 word_offsets[112]]`, and the 112 members tile the
+declared length exactly - member 0 begins at byte `452` (the header's own size,
+`4 + 4 * 112`) and the last member's end is the declared length, with no member
+zero-sized and no slack between any pair. Members `106` / `107` / `108` are the
+Delilas siblings' field rigs (Gi / Che / Lu; byte offsets `0x49690`, `0x4B880`,
+`0x4E8B4`, sizes `8688` / `12340` / `9248`).
+
+**The external references are all by index, never by offset.** Each is a
+different structure and each was checked:
+
+| Structure | What it names | Byte offset into the pack? |
+|---|---|---|
+| The pack's own `word_offsets[i]` | member start `/ 4` | yes - **internal** |
+| Mesh pool `DAT_8007C018` | one slot per member, in pack order (`FUN_8001F05C` loops `i in 0..count` calling `FUN_80026B4C(buf + offsets[i] * 4)`) | no - a runtime pointer rebuilt on every scene load |
+| Placement records (`legaia_asset::field_objects`) | pool slot = member index + `FIELD_ACTOR_PACK_BIAS` | no |
+| Scene ANM records | an ANM **record number**, paired to a member by the placement's anim byte | no |
+| The bundle's `scene_asset_table` descriptors | `data_offset` / `size` inside the **bundle entry** (`0638`) | no - the pack is a separate PROT entry |
+| The bundle header's `+0x04` word | `Σ descriptor.size`, and never read | no |
+
+A byte scan agrees with the structural reading and sharpens it: across all 1233
+PROT entries, each of members `106` / `107` / `108`'s word offsets occurs
+**exactly once** - in `0639`'s own offset array - the byte-offset form occurs
+**zero** times anywhere, and the declared length `347476` occurs zero times
+outside the chunk header that encodes it. The twelve entries of the `nilboa`
+block (`0634..0645`, the 352 KB bundle `0638` included) carry no word equal to
+any of the 112 members' byte offsets.
+
+So the cost of growing a member is: rewrite `word_offsets[i..]` for every member
+at or after the grown one, rewrite the chunk header's declared length, and keep
+the result inside the entry's sector footprint. That is exactly what
+`legaia_asset::party_swap::nivora_field` does when it re-emits members
+`106/107/108` (disc oracle `nivora_field_real`), and it is why the swap budgets
+the *contiguous span of the three retail members* rather than patching in place.
+
+Two qualifications. First, the same pack **inside a bundle** (the `Tmd`
+descriptor form, `town01`'s 114-mesh environment pack) adds two words to the
+list, both in the carrying entry: that descriptor's `size` - its decompressed
+byte count - and the header's `+0x04` sum, plus the requirement that the
+recompressed LZS stream still fits its span. Second, the budget is the same one
+the MAN faces above: the retail scene entries are sector-aligned with no
+padding, so a member that grows has to be paid for by another member shrinking.
+
 ## See also
 
 - [Randomizer](../tooling/randomizer.md) - the door feature this enables.
