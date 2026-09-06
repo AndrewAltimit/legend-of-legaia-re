@@ -846,11 +846,11 @@ writes the same four slots, either from four explicit operands (`sub-op 0x24`) o
 3-byte form, as a window symmetric about the camera of half-width `operand >> 1` per axis
 (`0x801DF2AC..0x801DF350` in the field overlay).
 
-Four consumers read them, all disassembly-traced:
+The consumers, all disassembly-traced:
 
 | Consumer | What it does with the window |
 |---|---|
-| `FUN_801F7088`, the per-cell decoration pass in the slot-B render library (PROT 0900 / 0901) | Clamps the window against the current walk-region AABB at `0x1F800384..87`, then places the emit origin at `sub_x + (E8 << 7) − 0x40` / `sub_z + (E9 << 7) − 0x140` (`0x801F7434..0x801F746C` in the 0900 image) and walks `(EA − E8) + 1` columns out from it. This is what makes them *the* window rather than an arbitrary box. |
+| `FUN_801F7088`, the per-cell decoration pass in the slot-B render library (PROT 0900 / 0901) | Clamps the window against the current walk-region AABB at `0x1F800384..87`, then places the emit origin at `sub_x + (E8 << 7) − 0x40` / `sub_z + (E9 << 7) − 0x140` (`0x801F7434..0x801F746C` in the 0900 image) and walks `(EA - E8) + 1` columns out from it - which is what makes the four bytes *the* window rather than an arbitrary box. Sibling emitters in the same library read the same four scratchpad bytes (`0x801F6A10`, `0x801F6D6C` in 0900). |
 | `FUN_801DAA50`, in the co-resident camera cluster (11 `jal` sites: 2 in SCUS, 9 in the field overlay) | Clamps the negated camera focus `_DAT_80089118` (X) / `_DAT_80089120` (Z) so the window stays inside that same walk-region AABB. Gated on `DAT_1F80037C != 0`, skipped outright when the camera mode nibble `DAT_8007B607 >> 4` is `5` (fixed scripted shot), and overridden afterwards by `_DAT_8007B628` / `_DAT_8007B62A` when either is non-zero. |
 | `FUN_801D6058`, the ambient particle emitter | Samples spawn points across `(EA − E8) − 1` by `(EB − E9) − 1` tiles, i.e. only inside the drawn window. |
 | `FUN_801EAD98` dev-menu rows `0x12..0x15` | Prints all four as signed decimals; `FUN_801E9F64` is the `±1` editor behind those rows. |
