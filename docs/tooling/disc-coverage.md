@@ -424,6 +424,24 @@ The middle row is the one with a route forward, and it is the
 [static overlay pipeline](static-overlay-pipeline.md)'s job rather than this
 page's.
 
+There is a fourth shape, and it is a **defect in the comparison, not a fact
+about the corpus**: a dump whose opening window contains GTE (COP2) ops lands in
+that middle row no matter which image it came from. The canonicaliser both sides
+share (`canon` in `check-dump-base-integrity.py`) reads the dump's *printed*
+disassembly on one side and re-decodes the image's bytes with capstone on the
+other, and the two spell COP2 differently: Ghidra prints `mtc2 t7, 0x800`
+(register + control-register number) where capstone prints `mtc2 $t7, $at`, and
+a raw `cop2` op decodes to `.byte` under capstone and to `COP2` under Ghidra. Any
+window carrying one of those cannot match, so the extent is classed `unresolved`
+- "no extracted image holds these bytes at this VA or anywhere" - about bytes
+that demonstrably do. This is the same failure mode the `break 0x1c00`
+division-guard fold already fixes for one op; GTE is the unfolded case, and it
+bites the GPU/GTE emitters hardest, which is exactly where the remaining
+un-dumped runs are. The world-map render image (PROT 0901) is the visible
+casualty: its 6372-byte draw-leaf family is dumped, from that image, at that
+base, and still scores as residue, which drags the row's `code` floor **down**
+when the dump lands.
+
 ### The signature floor guards one question, not both
 
 The sweep asks two questions of a dump's opening window and they have opposite

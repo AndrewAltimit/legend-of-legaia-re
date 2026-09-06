@@ -37,13 +37,20 @@ that word sees `0x001000E2` (empty - that is what 0898's own image holds
 there), then the module's word 0 at paging. Word 0 is **not** an entry VA:
 where the module heads with a jump table it is that table's arm 0, and
 where it does not it is the first instruction. Both real entries are named
-from outside the image - see [the two entries](#the-two-entries-and-where-their-addresses-live).
+from outside the image - see [the entry tables](#the-entry-tables-and-where-the-addresses-live).
 
-| Module | Size | Head shape | Entry |
-|---|---|---|---|
-| PROT 958 | `0x3000` B | 256-entry VA dispatch table fills file `0x0..0x400` (default arm `0x801F8CFC`) | `0x801F6E9C` = file `+0x4C4` |
-| PROT 959 | `0x3000` B | 6-entry head table (`0x801F8290, 82C4, 8478, 850C, 8600, 878C`), its own dispatcher at `0x801F8250` | file `+0x18B8` |
-| PROT 960 | `0x2800` B | none - code at file `+0` | `0x801F69D8` (= base) |
+| Module | Size | Head shape | Tick trampoline | Tick body |
+|---|---|---|---|---|
+| PROT 958 | `0x3000` B | 256-entry VA dispatch table fills file `0x0..0x400` (default arm `0x801F8CFC`) | `0x801F8E60` | `0x801F6DD8` = file `+0x400`, 8024 B |
+| PROT 959 | `0x3000` B | 6-entry head table (`0x801F8290, 82C4, 8478, 850C, 8600, 878C`), its own **stager** dispatcher at `0x801F8250` | `0x801F87F4` | `0x801F69F0` = file `+0x18`, 6240 B |
+| PROT 960 | `0x2800` B | none - code at file `+0` | `0x801F8638` | `0x801F74E4` (`0x7B` Plasma Strike, 4436 B) / `0x801F69D8` (`0xA6` Neo Star Slash, 2828 B) |
+
+Two figures in that table **correct** earlier entries here. 958's tick body is
+file `+0x400` (the first word past the head table), not `+0x4C4` - `0x801F6E9C`
+is 0xC4 bytes INTERIOR to it, inside the register-save block. 959's was given as
+file `+0x18B8` (`0x801F8290`), which is interior to its 1444-byte **stager**
+`0x801F8250`, not a tick at all. Both are now read off PROT 0898's own arm
+table (below) rather than inferred from the head table.
 
 Module code cites below are given as file offsets with their VA
 (`0x801F69D8 + off`); the three images share the base, so an offset is
@@ -51,14 +58,15 @@ meaningless without naming its module. The ~936-byte tail region past
 `~+0x2A00` is **shared library code** across the modules (the same words in
 958 and 959), not per-move logic.
 
-## The two entries, and where their addresses live
+## The entry tables, and where the addresses live
 
 A module is a **library, not a program**: nothing inside it names its own
-entry points. Neither entry VA appears anywhere in any extracted image - not
+entry points. No entry VA appears anywhere in any extracted image - not
 as a word, not as a `lui`+`addiu` pair, not as a `jal`/`j` target (five-form
 sweep, `scripts/ghidra-analysis/find-address-word-refs.py`) - except inside
-**PROT 0898**, where both are fixed at link time. A module therefore has two
-callable routines, reached by two different mechanisms.
+**PROT 0898**, where they are fixed at link time. Every module therefore has
+two callable routines, and **three** tables in 0898 name them: two tick tables
+(one per band) and one stager table.
 
 **The cast tick.** `FUN_801F1ED4` (0898, file `+0x236BC`) loads the caster
 `actor_table[ctx+0x13]` from `0x801C9370`, takes its queued action byte
@@ -91,35 +99,71 @@ band `0x81..0xA0` covers 0903..0934, the capture-class `sub_id + 0x20` band
 covers 0935..0966, and the pager's own `id - 0x79` (`FUN_8003EC70`, `+0x381`
 into TOC space) agrees with both.
 
-The `0x801CF4EC` switch reaches only PROT 0903..0934. How a **capture-class**
-module's tick is entered is not settled by this: that band is driven through
-battle phase `0x70` as described above, and no hard-coded `jal` into it was
-found.
+**The capture-class cast tick.** The `0x801CF4EC` switch reaches only PROT
+0903..0934, and the rest of the band has its own dispatcher: `FUN_801F2160`
+(0898, file `+0x23948`; `0x801F2160..0x801F2410`, 688 B with its arms and epilogue). It derives the
+caster the same way, then - instead of `id - 0x81` - reads the queued action id
+`caster[+0x1DF]`, indexes the **static spell table** `0x800754C8` at `id * 12`,
+takes the record's `+1` byte (the capture-class sub-id), bounds it
+`sltiu v0, sub_id, 0x20`, and jumps through a second 32-slot table at
+**`0x801CF56C`**. Arm `i` = extraction PROT `935 + i`, each a hard-coded
+`jal` into the resident module plus `s0 = v0`, with the epilogue at
+`0x801F23D8` mirroring `0x801F2128` exactly (`ctx[+0x27A] != 0` ->
+`FUN_801F2410`, return `s0`). The battle SM calls it from **one** site,
+`0x801E50C8`, against the summon dispatcher's three.
 
-That rule is checkable against the disc, and it checks out on every
-extracted module: for the thirteen slot-B images in
-`crates/asset/data/static-overlays.toml`, all thirteen `0x801F6734` rows and
-all twelve `0x801CF4EC` arms that have an extracted image land exactly on a
-function prologue recovered from that image's own bytes. It is also the
-cheapest identity test available for the fifty-one modules nobody has
-extracted yet.
+This **settles** what this page previously recorded as open ("no hard-coded
+`jal` into the capture-class band was found"). The sweep that found none looked
+for a second copy of the `0x801CF4EC` shape keyed on `id - 0x81`; the table is
+keyed on the spell record's sub-id instead, so it sits at a different index
+space and was missed.
+
+**The capture-class arm is a trampoline, not the body.** Where a summon module's
+`0x801CF4EC` arm calls the tick directly, most capture-class arms land on an
+88..204-byte routine that re-reads `caster[+0x1DF]`, compares it against the
+module's own spell ids, and `jal`s the matching tick body - the shape PROT 0957
+was already documented with, generalised across the band. PROT 0960 is the clear
+case: its trampoline `0x801F8638` sends `0x7B` (Plasma Strike) to `0x801F74E4`
+and `0xA6` (Neo Star Slash) to `0x801F69D8`, so a "multi-spell cell" is two
+whole choreographies in one image, not one body branching internally. Modules
+whose cell holds a single spell (0935, 0936, 0937, 0939) skip the trampoline and
+the arm points straight at the body.
+
+That rule is checkable against the disc, and it checks out on the whole band.
+For every one of the 64 entries, the `0x801F6734` row and the arm from whichever
+tick table covers it land on a function head recovered from that image's own
+bytes and from no other image - all 64 stager rows, all 31 `0x801CF4EC` arms
+(id `0x98` has none) and all 32 `0x801CF56C` arms. That is the identity test the
+map rows in [`static-overlays.toml`](../../crates/asset/data/static-overlays.toml)
+rest on; it needs no capture and no dump corpus, only the disc.
+
+Two arms need one refinement: a module's entry can sit a few instructions
+**above** its prologue, where the routine materialises the battle ctx
+`0x8007BD24` and the frame-delta scalar `0x1F800393` before setting up the
+frame. PROT 0946 and 0953 both enter at `0x801F69FC` with the prologue at
+`0x801F6A0C`. A prologue scan alone reports the later address; the table is the
+authority.
 
 ## Image anatomy, recovered from the bytes
 
-These images have **no internal `jal` at all** (0957 is the single
-exception, two): every call leaves for SCUS or for the resident battle
-overlay. Ghidra's auto-analysis therefore finds at most the routine some
-other reference reaches, and the dumps have to be driven from an address
-list rather than from the call graph.
+Most of these images carry **no internal `jal` at all**: every call leaves
+for SCUS or for the resident battle overlay, so Ghidra's auto-analysis finds
+at most the routine some other reference reaches, and the dumps have to be
+driven from an address list rather than from a call graph. That is not
+uniform across the band, though - **25 of the 64** images do have internal
+calls, and the trampoline shape above is why: a capture-class module that
+serves several spells calls its own bodies. (This page previously said 0957
+was the single exception with two; it is one of 25.)
 
-The bytes supply that list. In every one of the thirteen images the count of
-`addiu sp, sp, -X` words equals the count of `jr ra` words, and they
-interleave: function `i` runs from prologue `i` to prologue `i + 1`, and the
-last ends 8 bytes past the last `jr ra`. That partition is exact - every
-range so cut ends on a `jr ra` plus its delay slot - and it is what the
-entry tables then confirm. So a module is **two functions** (0903 has one
-real function plus a `jr ra; nop` stub at its `0x801F6734` row; 0957 has
-four), laid out as:
+The bytes supply the address list. A function starts at `addiu sp, sp, -F` and
+ends at the first `jr ra` whose delay slot restores the **same** `F`. That
+frame-matched pairing is exact over the whole band and, unlike a
+count-and-interleave rule, it survives the three shapes that break the counts:
+a frameless leaf, an early `jr ra` inside a body, and a `jr ra` word that is
+just data in the image's tail (PROT 0906 has one at `0x801F8070`). The
+partition recovers **196 framed functions** across the 64 images, between one
+(0903, 0926, 0939, 0947, 0954) and eight (0955) each; the entry tables then
+confirm it. A module is laid out as:
 
 | Region | Contents |
 |---|---|
@@ -131,13 +175,43 @@ four), laid out as:
 Which switch owns the head table varies, and the arm count settles it: PROT
 0934's table is 26 words and its tick bounds on `sltiu a0, 0x1A`, while PROT
 0929's is 9 words and its **stager** bounds on `sltiu a1, 9` (0928: 7 and 7).
-Reading the head table as the tick's is therefore wrong half the time; read
-the `sltiu` immediate.
+Reading the head table as the tick's is therefore wrong about half the time;
+read the `sltiu` immediate. Mechanised over the band, that test resolves the
+head table for 19 images - the tick's in 8 (0921, 0922, 0925, 0930..0934) and
+the stager's in 11 (0906, 0909, 0910, 0913, 0914, 0916, 0917, 0928, 0929,
+0941, 0959) - and 25 images head with code and no table at all. The per-image
+answer is in the table on
+[`functions/battle.md`](../reference/functions/battle.md#slot-b-summon--cast-modules-prot-09030966).
 
 The tail is the bulk of the residue `disc-coverage.py` still reports on
 these images, and it is data: PROT 0934's is `0x801F9C08..0x801FA9D8`, and
 the `lui 0x8020` + negative-displacement operands its stager passes as `a2`
 resolve into exactly that span.
+
+### The three unmapped entries
+
+61 of the 64 entries carry a
+[`static-overlays.toml`](../../crates/asset/data/static-overlays.toml) row and a
+dump. Three do not - **0915** (spell `0x8D` Mushura), **0926** (spell `0x98`,
+the id with no tick arm and no spell-table record) and **0935** (capture sub-id
+`0x00`, Earthquake) - because the committed slot-B base cross-check in
+`crates/asset/tests/static_overlay_extract.rs` rejects them. That check counts
+each image's `lui 0x801f`/`0x8020` + `addiu` pairs and requires 60% of them to
+resolve **inside** the image (100% when the sample is under eight). The three
+fail it for reasons that are not about the base:
+
+| Entry | Ratio | Where the misses point |
+|---|---|---|
+| 0915 | 6/13 | `0x801F6978` / `0x801F6980` - *below* the slot-B base, inside PROT 0898's own data |
+| 0935 | 11/19 | `0x801FA320..0x801FA3B8` - above the image end, the post-image `.bss` working storage in the slot-B buffer the check's own comment names |
+| 0926 | 1/3 | a 1-sector stub whose stager row is a bare `jr ra`; almost nothing to measure |
+
+The check is one-sided: it treats every reference that leaves the image as
+evidence against the base, and a module legitimately references both its
+host overlay's globals and scratch above its own end. All three entries pass
+the stronger test - their `0x801F6734` row (and, for 0915, their `0x801CF4EC`
+arm) lands on a byte-recovered function head - so their entries are known and
+only their dumps are missing.
 
 ## The module phase byte (`ctx + 0x279`)
 

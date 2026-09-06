@@ -284,6 +284,16 @@ base_source = "cross_ref"
 anchor_va = 0x801CE844
 fingerprint_sha256 = "7082f84593357111b573a516eb7e6a154d5ca8cdb70da4a664e718588f1e7148"
 notes = "GAME OVER overlay (game-mode 18/19 GAMEOVER INIT/MODE -- retail-unreachable dev harness; a party wipe routes to the CARD/CONTINUE title flow instead, see docs/subsystems/battle.md). A SLOT-A overlay: the mode-18 handler FUN_80025B30 is overlay_loader_a(7,0) -> PROT 902 followed by jal 0x801CE844 = file +0x2C, the first prologue (the anchor). String anchors corroborate the base: in-file pointers 0x801CE820 -> the 'gameover.pak' source-path string at +0x8 and 0x801CEC48 -> the 'GAME OVER' caption at +0x430 decode to string starts only under 0x801CE818 (static_overlay::string_anchor_votes: 2 at slot A, 0 at slot B). Its high-band jals (0x801D5854..0x801F8B84) are external calls into the co-resident battle-band images, which is what mis-scored the old slot-B row: pointer_resolution counted 44/48 external references to fixed 0x801F7724..0x801F90FC structures as in-file self-pointers under the slot-B base. Sparse internal jal graph -- base is loader-chain cross_ref, not jal-recovered."
+[[overlays]]
+prot_index = 895
+label = "boot_init_pak"
+base_va = 0x801CE818
+form = "raw"
+content_bytes = 0x25800
+content_source = "prot_entry_extent"
+eligibility = "static"
+fingerprint_sha256 = "caed7ba03419583322362827cb5fe17afed8927ece5c52a9384ee8fe716f7c57"
+notes = "Boot / publisher-logo overlay -- the `init.pak` payload (head string 'h:\\prot\\field\\init\\init.pak'; the CDNAME label on this entry is `bat_back_dat`, which is the block name, not this entry's content). A SLOT-A overlay: base 0x801CE818 recovered from its own internal jal graph (8 corroborating targets), corroborated by 22/25 in-file pointer resolution and 7 string anchors at that base vs 1/12 and 0 at slot B. Mode 16 (READ INIT) FUN_8002612C is a bare trampoline -- frame, `jal 0x801CE9C0`, epilogue -- into this image's FIRST function at file +0x1A8 (a clean `addiu sp,sp,-0x230` prologue, 784 B). That entry is NOT usable as anchor_va: `static_overlay::is_prologue` only accepts immediates 0xFF80..0xFFF8, i.e. frames up to 0x100, and this one is 0x230 -- the base rests on jal-recovery (8 votes) plus the string-anchor cross-check (7 at slot A, 0 at slot B) instead, which builds the logo sprite pass from four in-image primitive records and ends by storing game mode 0x11 at 0x801CEC94. Layout: head data + dev path strings 0x0..0x1A8, code 0x1A8..0x216C (18 frame-matched functions plus the frameless leaves the internal jal graph names), pad, then five TIMs at file 0x21C4 / 0xD3E4 / 0x18E04 / 0x1CE44 / 0x21044. This row CORRECTS the reading in docs/reference/functions/game-modes.md that 0x801CE9C0 'is an entry point in no image, mid-way through the debug-menu overlay's FUN_801CE97C' -- that was VA aliasing at the shared slot-A base, the exact failure this map exists to resolve."
 
 # --- Slot-B overlays (the second swappable overlay slot, *DAT_80010390; link
 #     base 0x801F69D8, summon_overlay::SUMMON_OVERLAY_LINK_BASE). These are the
@@ -504,6 +514,653 @@ eligibility = "static"
 base_source = "cross_ref"
 fingerprint_sha256 = "0a7bf973e0521e4850a9b98786b9e2bc456f146622a18ad03d6daed27f42bfab"
 notes = "Slot-B capture-class cast module for Death Game (spell 0x76) + Thunder Storm (0x77) -- sub-id 0x16 in the SCUS spell table's capture-class module index (docs/formats/spell-table.md; extraction = 935 + sub_id). The head string table ['Dies','Puera','Both','Damage','Recover'] is Death Game's roulette OUTCOME label set, resolving the previously open role question ('per-summon effect descriptor vs debug/test table'); NOT a dance song (corrects an earlier overlay-ptr-table reading that grouped 0957 with the Disco King songs). No direct FUN_80021B04 part-spawn calls, but 19 FUN_80050ED4 pool-wrapper spawn calls -- the enemy-module spawn shape (docs/subsystems/battle-action.md) -- plus one guard-respecting damage-wrapper call (Thunder Storm's). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (93%). The 'summon_effect_table' label is the historical name, kept for filename stability."
+
+# --- The rest of the slot-B cast-module band (PROT 0903..0966). Every entry in
+#     the band is one module: extraction `903 + i` is row `i` of PROT 0898's
+#     64-word move-VM entry table `0x801F6734`, and for `i < 0x20` also arm `i`
+#     of the 32-slot cast-tick table `0x801CF4EC` (see
+#     docs/subsystems/cast-module.md). Those two tables are the identity test
+#     these rows rest on: both VAs land on a function head recovered from the
+#     module's OWN bytes at base 0x801F69D8, and on no other extracted image.
+#     Names come from the disc - `0x81..0xA0` from the SCUS spell table's player
+#     summon block, `0935..0966` from its capture-class sub-id index
+#     (docs/formats/spell-table.md).
+#
+#     Three entries in the band are deliberately NOT mapped here, because the
+#     committed slot-B pointer-resolution check in
+#     `crates/asset/tests/static_overlay_extract.rs` rejects them while the
+#     entry tables place them exactly like their neighbours:
+#       0915 (spell 0x8D Mushura)   6/13 - the seven misses are 0x801F6978 /
+#                                   0x801F6980, i.e. BELOW the slot-B base,
+#                                   inside PROT 0898's own data.
+#       0935 (capture sub-id 0x00)  11/19 - the eight misses are
+#                                   0x801FA320..0x801FA3B8, above the image end:
+#                                   the post-image `.bss` working storage in the
+#                                   slot-B buffer the check's own comment names.
+#       0926 (spell 0x98, unused)   1/3 - a 1-sector stub whose stager row is a
+#                                   bare `jr ra`, so it carries almost no
+#                                   self-pointers to measure.
+#     None of the three is evidence against the base; the check is one-sided
+#     about references that leave the image. ---
+
+[[overlays]]
+prot_index = 904
+label = "summon_theeder"
+base_va = 0x801F69D8
+form = "raw"
+content_bytes = 0x3000
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801F69D8
+fingerprint_sha256 = "2d1384235f50ef56f893f27c714f8c782f4734fc7265bfef733b2d42481fb993"
+notes = "Slot-B cast module on the Theeder arithmetic slot (spell id 0x82; extraction = 903 + (id - 0x81)). Cast tick 0x801F69D8, from PROT 0898's 0x801CF4EC arm at 0x801F1F4C; move-VM stager 0x801F8EAC, from the 0x801F6734 row 1. 7 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (7/10) and by the entry table VAs landing on recovered function heads."
+
+[[overlays]]
+prot_index = 906
+label = "summon_gizam"
+base_va = 0x801F69D8
+form = "raw"
+content_bytes = 0x1800
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801F69F4
+fingerprint_sha256 = "8c2aa942c62c63e6e2a08b51986f07e44b1496bc4404c2b1e752c7333a44d43f"
+notes = "Slot-B cast module on the Gizam arithmetic slot (spell id 0x84; extraction = 903 + (id - 0x81)). Cast tick 0x801F69F4, from PROT 0898's 0x801CF4EC arm at 0x801F1F6C; move-VM stager 0x801F7740, from the 0x801F6734 row 3. 3 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (12/15) and by the entry table VAs landing on recovered function heads."
+
+[[overlays]]
+prot_index = 908
+label = "summon_zenoir"
+base_va = 0x801F69D8
+form = "raw"
+content_bytes = 0x2800
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801F69D8
+fingerprint_sha256 = "5b2bfc0f6625959ae8e065b04c5e4dbd54908cb26c478bf79f5d7fd4820cb894"
+notes = "Slot-B cast module on the Zenoir arithmetic slot (spell id 0x86; extraction = 903 + (id - 0x81)). Cast tick 0x801F69D8, from PROT 0898's 0x801CF4EC arm at 0x801F1F8C; move-VM stager 0x801F8310, from the 0x801F6734 row 5. 3 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (21/33) and by the entry table VAs landing on recovered function heads."
+
+[[overlays]]
+prot_index = 909
+label = "summon_viguro"
+base_va = 0x801F69D8
+form = "raw"
+content_bytes = 0x2000
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801F69F4
+fingerprint_sha256 = "5eeffc8f3a815166028e35c411553f5770cbaf6960e89c89e9f6dc043b020c51"
+notes = "Slot-B cast module on the Viguro arithmetic slot (spell id 0x87; extraction = 903 + (id - 0x81)). Cast tick 0x801F69F4, from PROT 0898's 0x801CF4EC arm at 0x801F1F9C; move-VM stager 0x801F7AF4, from the 0x801F6734 row 6. 5 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (14/15) and by the entry table VAs landing on recovered function heads."
+
+[[overlays]]
+prot_index = 910
+label = "summon_swordie"
+base_va = 0x801F69D8
+form = "raw"
+content_bytes = 0x2800
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801F69EC
+fingerprint_sha256 = "d30090500a1de11bde1b8a3d4b6d9d43be699dc7fc128949e7e93af1acc5e54b"
+notes = "Slot-B cast module on the Swordie arithmetic slot (spell id 0x88; extraction = 903 + (id - 0x81)). Cast tick 0x801F69EC, from PROT 0898's 0x801CF4EC arm at 0x801F1FAC; move-VM stager 0x801F89D4, from the 0x801F6734 row 7. 6 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (25/25) and by the entry table VAs landing on recovered function heads."
+
+[[overlays]]
+prot_index = 911
+label = "summon_orb"
+base_va = 0x801F69D8
+form = "raw"
+content_bytes = 0x2000
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801F69D8
+fingerprint_sha256 = "10849d872726929aa9037191cb9d102f29eeb4b9ba84fe643cbb9ca45ad7873c"
+notes = "Slot-B cast module on the Orb arithmetic slot (spell id 0x89; extraction = 903 + (id - 0x81)). Cast tick 0x801F69D8, from PROT 0898's 0x801CF4EC arm at 0x801F1FBC; move-VM stager 0x801F7FE8, from the 0x801F6734 row 8. 3 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (21/22) and by the entry table VAs landing on recovered function heads."
+
+[[overlays]]
+prot_index = 912
+label = "summon_freed"
+base_va = 0x801F69D8
+form = "raw"
+content_bytes = 0x3000
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801F69D8
+fingerprint_sha256 = "ee33dd887c28f88bf3b29a337c4ccdca2125e4fdbc0eec0c53b70e86c7a3627a"
+notes = "Slot-B cast module on the Freed arithmetic slot (spell id 0x8A; extraction = 903 + (id - 0x81)). Cast tick 0x801F69D8, from PROT 0898's 0x801CF4EC arm at 0x801F1FCC; move-VM stager 0x801F835C, from the 0x801F6734 row 9. 3 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (33/37) and by the entry table VAs landing on recovered function heads."
+
+[[overlays]]
+prot_index = 913
+label = "summon_nova"
+base_va = 0x801F69D8
+form = "raw"
+content_bytes = 0x2800
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801F69F0
+fingerprint_sha256 = "2df0934b518fa2611ecd9fa4e4497f5448f4090c6b1e43128de3b9b6a0ee291f"
+notes = "Slot-B cast module on the Nova arithmetic slot (spell id 0x8B; extraction = 903 + (id - 0x81)). Cast tick 0x801F69F0, from PROT 0898's 0x801CF4EC arm at 0x801F1FDC; move-VM stager 0x801F864C, from the 0x801F6734 row 10. 2 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (34/34) and by the entry table VAs landing on recovered function heads."
+
+[[overlays]]
+prot_index = 914
+label = "summon_gola_gola"
+base_va = 0x801F69D8
+form = "raw"
+content_bytes = 0x1800
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801F69F0
+fingerprint_sha256 = "a415a57c879153f938ac3d661d2849fefd0f8cfaa28e2bcac3f5d54414dc1005"
+notes = "Slot-B cast module on the Gola Gola arithmetic slot (spell id 0x8C; extraction = 903 + (id - 0x81)). Cast tick 0x801F69F0, from PROT 0898's 0x801CF4EC arm at 0x801F1FEC; move-VM stager 0x801F7A80, from the 0x801F6734 row 11. 2 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (9/11) and by the entry table VAs landing on recovered function heads."
+
+[[overlays]]
+prot_index = 916
+label = "summon_aluru"
+base_va = 0x801F69D8
+form = "raw"
+content_bytes = 0x2800
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801F69F8
+fingerprint_sha256 = "d10e3555124011c402b1184bfe9d7972b2eaae687ce3d1397a961dd522d14f9b"
+notes = "Slot-B cast module on the Aluru arithmetic slot (spell id 0x8E; extraction = 903 + (id - 0x81)). Cast tick 0x801F69F8, from PROT 0898's 0x801CF4EC arm at 0x801F200C; move-VM stager 0x801F88F8, from the 0x801F6734 row 13. 2 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (22/22) and by the entry table VAs landing on recovered function heads."
+
+[[overlays]]
+prot_index = 917
+label = "summon_barra"
+base_va = 0x801F69D8
+form = "raw"
+content_bytes = 0x3000
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801F6A30
+fingerprint_sha256 = "11434e9f4d7307c2e104ed3e6a5ede6ed3ff40000c54d807a2bc24d17a372221"
+notes = "Slot-B cast module on the Barra arithmetic slot (spell id 0x8F; extraction = 903 + (id - 0x81)). Cast tick 0x801F6A30, from PROT 0898's 0x801CF4EC arm at 0x801F201C; move-VM stager 0x801F82D8, from the 0x801F6734 row 14. 3 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (47/50) and by the entry table VAs landing on recovered function heads."
+
+[[overlays]]
+prot_index = 918
+label = "summon_kemaro"
+base_va = 0x801F69D8
+form = "raw"
+content_bytes = 0x3000
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801F6C70
+fingerprint_sha256 = "ffda706e369032ca14e4fb27adfa6a2db2e44e65a01ac7d2163c62ceeee9acdb"
+notes = "Slot-B cast module on the Kemaro arithmetic slot (spell id 0x90; extraction = 903 + (id - 0x81)). Cast tick 0x801F6C70, from PROT 0898's 0x801CF4EC arm at 0x801F202C; move-VM stager 0x801F8AB0, from the 0x801F6734 row 15. 3 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (37/41) and by the entry table VAs landing on recovered function heads."
+
+[[overlays]]
+prot_index = 919
+label = "summon_spoon"
+base_va = 0x801F69D8
+form = "raw"
+content_bytes = 0x2800
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801F69D8
+fingerprint_sha256 = "93bf6c713763253b93787bae6924d2cdb407b2293279db78a391cd187996aeb0"
+notes = "Slot-B cast module on the Spoon arithmetic slot (spell id 0x91; extraction = 903 + (id - 0x81)). Cast tick 0x801F69D8, from PROT 0898's 0x801CF4EC arm at 0x801F203C; move-VM stager 0x801F8578, from the 0x801F6734 row 16. 2 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (30/30) and by the entry table VAs landing on recovered function heads."
+
+[[overlays]]
+prot_index = 920
+label = "summon_slippery"
+base_va = 0x801F69D8
+form = "raw"
+content_bytes = 0x2000
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801F69D8
+fingerprint_sha256 = "f20bc1061cace323309e8a2ef4be1cb3e51fa785bd58fd43d37b2b71e2a40b90"
+notes = "Slot-B cast module on the Slippery arithmetic slot (spell id 0x92; extraction = 903 + (id - 0x81)). Cast tick 0x801F69D8, from PROT 0898's 0x801CF4EC arm at 0x801F204C; move-VM stager 0x801F81E8, from the 0x801F6734 row 17. 3 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (17/20) and by the entry table VAs landing on recovered function heads."
+
+[[overlays]]
+prot_index = 921
+label = "summon_iota"
+base_va = 0x801F69D8
+form = "raw"
+content_bytes = 0x2800
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801F6A08
+fingerprint_sha256 = "1538a4580e1f33a5d79498c90b6d990af56f04447c22a8eca80a5790e46e9216"
+notes = "Slot-B cast module on the Iota arithmetic slot (spell id 0x93; extraction = 903 + (id - 0x81)). Cast tick 0x801F6A08, from PROT 0898's 0x801CF4EC arm at 0x801F205C; move-VM stager 0x801F800C, from the 0x801F6734 row 18. 2 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (46/46) and by the entry table VAs landing on recovered function heads."
+
+[[overlays]]
+prot_index = 922
+label = "summon_puera"
+base_va = 0x801F69D8
+form = "raw"
+content_bytes = 0x3800
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801F6A3C
+fingerprint_sha256 = "1eabebfea067aead49abe62c241517de6df8ea13b87d53892f5850f8816014ef"
+notes = "Slot-B cast module on the Puera arithmetic slot (spell id 0x94; extraction = 903 + (id - 0x81)). Cast tick 0x801F6A3C, from PROT 0898's 0x801CF4EC arm at 0x801F206C; move-VM stager 0x801F90E4, from the 0x801F6734 row 19. 2 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (63/63) and by the entry table VAs landing on recovered function heads."
+
+[[overlays]]
+prot_index = 923
+label = "summon_gilium"
+base_va = 0x801F69D8
+form = "raw"
+content_bytes = 0x4000
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801F69D8
+fingerprint_sha256 = "2539492b242a391c4bb6de2c2e960c720dbde7504025d8f2699e0b6999277ed9"
+notes = "Slot-B cast module on the Gilium arithmetic slot (spell id 0x95; extraction = 903 + (id - 0x81)). Cast tick 0x801F69D8, from PROT 0898's 0x801CF4EC arm at 0x801F207C; move-VM stager 0x801F8B90, from the 0x801F6734 row 20. 2 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (62/68) and by the entry table VAs landing on recovered function heads."
+
+[[overlays]]
+prot_index = 925
+label = "summon_spikefish"
+base_va = 0x801F69D8
+form = "raw"
+content_bytes = 0x1800
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801F6A00
+fingerprint_sha256 = "7a97d9847003a1dd38ff4258d40b17b96147e09e6acd63377daf52b4d7f138d4"
+notes = "Slot-B cast module on the Spikefish arithmetic slot (spell id 0x97; extraction = 903 + (id - 0x81)). Cast tick 0x801F6A00, from PROT 0898's 0x801CF4EC arm at 0x801F209C; move-VM stager 0x801F7AE8, from the 0x801F6734 row 22. 2 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (15/15) and by the entry table VAs landing on recovered function heads."
+
+[[overlays]]
+prot_index = 936
+label = "cast_hyper_crush"
+base_va = 0x801F69D8
+form = "raw"
+content_bytes = 0x1800
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801F7BD0
+fingerprint_sha256 = "fd738e94c5d52581253ec215e13cac55f7fd0c5a67faf1d455fc45a9d8586241"
+notes = "Capture-class cast module, spell-table sub-id 0x01 (extraction = 935 + sub_id): 0x4B Hyper Crush. Move-VM stager 0x801F7BD0, from PROT 0898's 0x801F6734 row 33; the 0x801CF4EC tick switch stops at 0934, so this band's tick is re-entered through battle phase 0x70 (docs/subsystems/cast-module.md). 2 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (15/15) and by the entry table VAs landing on recovered function heads."
+
+[[overlays]]
+prot_index = 937
+label = "cast_hyper_lightning"
+base_va = 0x801F69D8
+form = "raw"
+content_bytes = 0x1800
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801F7850
+fingerprint_sha256 = "1fd7fdc07d50f41b4f3b8ef5d234dd79b9100ea09da6d35f60b24bce5dc5b4c6"
+notes = "Capture-class cast module, spell-table sub-id 0x02 (extraction = 935 + sub_id): 0x4C Hyper Lightning. Move-VM stager 0x801F7850, from PROT 0898's 0x801F6734 row 34; the 0x801CF4EC tick switch stops at 0934, so this band's tick is re-entered through battle phase 0x70 (docs/subsystems/cast-module.md). 2 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (21/21) and by the entry table VAs landing on recovered function heads."
+
+[[overlays]]
+prot_index = 938
+label = "cast_chaos_breath"
+base_va = 0x801F69D8
+form = "raw"
+content_bytes = 0x1800
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801F7AB8
+fingerprint_sha256 = "5a2c6d985ad58158fc2d723825c2b3b680ad3ffd0bdbdbc78e4c3f1097ba1a6b"
+notes = "Capture-class cast module, spell-table sub-id 0x03 (extraction = 935 + sub_id): 0x4E Chaos Breath; 0xB7 Mystic Circle. Move-VM stager 0x801F7AB8, from PROT 0898's 0x801F6734 row 35; the 0x801CF4EC tick switch stops at 0934, so this band's tick is re-entered through battle phase 0x70 (docs/subsystems/cast-module.md). 4 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (17/17) and by the entry table VAs landing on recovered function heads."
+
+[[overlays]]
+prot_index = 939
+label = "cast_spore_gas"
+base_va = 0x801F69D8
+form = "raw"
+content_bytes = 0x1800
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "cross_ref"
+fingerprint_sha256 = "bf1bc4ee9dc674ea0500aed0648ae88cbcdcd3abeb3d47c9e631d6096d9e4704"
+notes = "Capture-class cast module, spell-table sub-id 0x04 (extraction = 935 + sub_id): 0x4F Spore Gas. Move-VM stager 0x801F74B4, from PROT 0898's 0x801F6734 row 36; the 0x801CF4EC tick switch stops at 0934, so this band's tick is re-entered through battle phase 0x70 (docs/subsystems/cast-module.md). 1 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (12/12) and by the entry table VAs landing on recovered function heads."
+
+[[overlays]]
+prot_index = 940
+label = "cast_glare_divide"
+base_va = 0x801F69D8
+form = "raw"
+content_bytes = 0x2000
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "cross_ref"
+fingerprint_sha256 = "734add74a6658d7891dd9acc851298621c73cdf080268604978fdc1e859ad6d9"
+notes = "Capture-class cast module, spell-table sub-id 0x05 (extraction = 935 + sub_id): 0x3C Glare; 0x50 Divide; 0xAC Mystic Shield; 0xAE Clone. Move-VM stager 0x801F82CC, from PROT 0898's 0x801F6734 row 37; the 0x801CF4EC tick switch stops at 0934, so this band's tick is re-entered through battle phase 0x70 (docs/subsystems/cast-module.md). 4 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (19/22) and by the entry table VAs landing on recovered function heads."
+
+[[overlays]]
+prot_index = 941
+label = "cast_steal"
+base_va = 0x801F69D8
+form = "raw"
+content_bytes = 0x2000
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801F7DB0
+fingerprint_sha256 = "62de695d6f8a2b52f28d37e0c2e22b3180251ced38a6a514cdd091c9ab6b09e7"
+notes = "Capture-class cast module, spell-table sub-id 0x06 (extraction = 935 + sub_id): 0x51 Steal; 0xB9 Stone Circle. Move-VM stager 0x801F7DB0, from PROT 0898's 0x801F6734 row 38; the 0x801CF4EC tick switch stops at 0934, so this band's tick is re-entered through battle phase 0x70 (docs/subsystems/cast-module.md). 4 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (27/30) and by the entry table VAs landing on recovered function heads."
+
+[[overlays]]
+prot_index = 942
+label = "cast_power_up"
+base_va = 0x801F69D8
+form = "raw"
+content_bytes = 0x2000
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801F8118
+fingerprint_sha256 = "342b02894221e9158136b1f19b18a786d61c42f62e1ce51c7e602ce046bf52b5"
+notes = "Capture-class cast module, spell-table sub-id 0x07 (extraction = 935 + sub_id): 0x52 Power Up; 0xAA Dark Typhoon. Move-VM stager 0x801F8118, from PROT 0898's 0x801F6734 row 39; the 0x801CF4EC tick switch stops at 0934, so this band's tick is re-entered through battle phase 0x70 (docs/subsystems/cast-module.md). 4 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (30/30) and by the entry table VAs landing on recovered function heads."
+
+[[overlays]]
+prot_index = 943
+label = "cast_curse"
+base_va = 0x801F69D8
+form = "raw"
+content_bytes = 0x1800
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801F769C
+fingerprint_sha256 = "71d5eca2290f19ad5184ea5b95ad40f389f277182de0a5d4c9559b535ec3b835"
+notes = "Capture-class cast module, spell-table sub-id 0x08 (extraction = 935 + sub_id): 0x40 Curse; 0xB5 Lapis Wave. Move-VM stager 0x801F769C, from PROT 0898's 0x801F6734 row 40; the 0x801CF4EC tick switch stops at 0934, so this band's tick is re-entered through battle phase 0x70 (docs/subsystems/cast-module.md). 7 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (14/18) and by the entry table VAs landing on recovered function heads."
+
+[[overlays]]
+prot_index = 944
+label = "cast_guilty_cross"
+base_va = 0x801F69D8
+form = "raw"
+content_bytes = 0x2000
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801F7F2C
+fingerprint_sha256 = "238bbaf207a0444f3a076009e2736df68824c2eabf0830223fe72f4500e91504"
+notes = "Capture-class cast module, spell-table sub-id 0x09 (extraction = 935 + sub_id): 0x37 Guilty Cross; 0x53 Curse All. Move-VM stager 0x801F7F2C, from PROT 0898's 0x801F6734 row 41; the 0x801CF4EC tick switch stops at 0934, so this band's tick is re-entered through battle phase 0x70 (docs/subsystems/cast-module.md). 4 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (15/15) and by the entry table VAs landing on recovered function heads."
+
+[[overlays]]
+prot_index = 945
+label = "cast_water_column"
+base_va = 0x801F69D8
+form = "raw"
+content_bytes = 0x1800
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801F776C
+fingerprint_sha256 = "1dd4acc1c47b546aa9e6f28e02ce209257b066d752bda7a530073a8ed1a426a2"
+notes = "Capture-class cast module, spell-table sub-id 0x0A (extraction = 935 + sub_id): 0x54 Water Column; 0xBA Jugger Power. Move-VM stager 0x801F776C, from PROT 0898's 0x801F6734 row 42; the 0x801CF4EC tick switch stops at 0934, so this band's tick is re-entered through battle phase 0x70 (docs/subsystems/cast-module.md). 6 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (22/24) and by the entry table VAs landing on recovered function heads."
+
+[[overlays]]
+prot_index = 946
+label = "cast_call_wave"
+base_va = 0x801F69D8
+form = "raw"
+content_bytes = 0x1800
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801F76C4
+fingerprint_sha256 = "ce3ca8bc21ea17f3e13a16e6a6cefdd5a5b00b67a6606587009f00a5261cf53f"
+notes = "Capture-class cast module, spell-table sub-id 0x0B (extraction = 935 + sub_id): 0x55 Call Wave; 0x56 Big Wave. Move-VM stager 0x801F76C4, from PROT 0898's 0x801F6734 row 43; the 0x801CF4EC tick switch stops at 0934, so this band's tick is re-entered through battle phase 0x70 (docs/subsystems/cast-module.md). 2 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (28/29) and by the entry table VAs landing on recovered function heads."
+
+[[overlays]]
+prot_index = 947
+label = "cast_v_windhash"
+base_va = 0x801F69D8
+form = "raw"
+content_bytes = 0x1800
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "cross_ref"
+fingerprint_sha256 = "ff47d1943e3aa9354526f6e5692085c3a1e631b18ccc179963d705ceb56c1e57"
+notes = "Capture-class cast module, spell-table sub-id 0x0C (extraction = 935 + sub_id): 0x57 V-Windhash; 0xA7 Neo Windhash. Move-VM stager 0x801F78F8, from PROT 0898's 0x801F6734 row 44; the 0x801CF4EC tick switch stops at 0934, so this band's tick is re-entered through battle phase 0x70 (docs/subsystems/cast-module.md). 1 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (20/21) and by the entry table VAs landing on recovered function heads."
+
+[[overlays]]
+prot_index = 948
+label = "cast_cross_beam"
+base_va = 0x801F69D8
+form = "raw"
+content_bytes = 0x2000
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801F8504
+fingerprint_sha256 = "dd621b7886a8eccff86c7be80bb26fe79dc96ee73c55833ebefcf3a947e6c290"
+notes = "Capture-class cast module, spell-table sub-id 0x0D (extraction = 935 + sub_id): 0x58 Cross Beam. Move-VM stager 0x801F8504, from PROT 0898's 0x801F6734 row 45; the 0x801CF4EC tick switch stops at 0934, so this band's tick is re-entered through battle phase 0x70 (docs/subsystems/cast-module.md). 3 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (9/9) and by the entry table VAs landing on recovered function heads."
+
+[[overlays]]
+prot_index = 949
+label = "cast_water_crystals"
+base_va = 0x801F69D8
+form = "raw"
+content_bytes = 0x2000
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "cross_ref"
+fingerprint_sha256 = "9948e53c786d46fd3b48327961e0959342765e9f698a864d740b84c1b5353baa"
+notes = "Capture-class cast module, spell-table sub-id 0x0E (extraction = 935 + sub_id): 0x59 Water Crystals. Move-VM stager 0x801F75BC, from PROT 0898's 0x801F6734 row 46; the 0x801CF4EC tick switch stops at 0934, so this band's tick is re-entered through battle phase 0x70 (docs/subsystems/cast-module.md). 2 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (33/33) and by the entry table VAs landing on recovered function heads."
+
+[[overlays]]
+prot_index = 950
+label = "cast_rolling_flare"
+base_va = 0x801F69D8
+form = "raw"
+content_bytes = 0x2000
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801F8208
+fingerprint_sha256 = "08ee851ba0edce2b34d874e2272d655724b99c9b0dcaf2b8c465f4293cc7c435"
+notes = "Capture-class cast module, spell-table sub-id 0x0F (extraction = 935 + sub_id): 0x5A Rolling Flare; 0xAB Shadow Break. Move-VM stager 0x801F8208, from PROT 0898's 0x801F6734 row 47; the 0x801CF4EC tick switch stops at 0934, so this band's tick is re-entered through battle phase 0x70 (docs/subsystems/cast-module.md). 4 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (22/22) and by the entry table VAs landing on recovered function heads."
+
+[[overlays]]
+prot_index = 951
+label = "cast_chaos_flare"
+base_va = 0x801F69D8
+form = "raw"
+content_bytes = 0x2800
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801F81DC
+fingerprint_sha256 = "57e9d3ff73392c0c27c58b9bcc8abb5297f8143cb4e851aa531cde233a35d3ed"
+notes = "Capture-class cast module, spell-table sub-id 0x10 (extraction = 935 + sub_id): 0x36 Chaos Flare; 0x5B Scythe Wind. Move-VM stager 0x801F81DC, from PROT 0898's 0x801F6734 row 48; the 0x801CF4EC tick switch stops at 0934, so this band's tick is re-entered through battle phase 0x70 (docs/subsystems/cast-module.md). 4 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (34/43) and by the entry table VAs landing on recovered function heads."
+
+[[overlays]]
+prot_index = 952
+label = "cast_bloody_horns"
+base_va = 0x801F69D8
+form = "raw"
+content_bytes = 0x1800
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "cross_ref"
+fingerprint_sha256 = "a18eba32fa8ccefc086675519e46f20b52c75f3114d4e4beade6eda8cfd3e09b"
+notes = "Capture-class cast module, spell-table sub-id 0x11 (extraction = 935 + sub_id): 0x5C Bloody Horns; 0xB8 Astral Slash. Move-VM stager 0x801F7BA0, from PROT 0898's 0x801F6734 row 49; the 0x801CF4EC tick switch stops at 0934, so this band's tick is re-entered through battle phase 0x70 (docs/subsystems/cast-module.md). 4 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (21/27) and by the entry table VAs landing on recovered function heads."
+
+[[overlays]]
+prot_index = 953
+label = "cast_terio_punch"
+base_va = 0x801F69D8
+form = "raw"
+content_bytes = 0x1800
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801F7624
+fingerprint_sha256 = "c34e74fcd60961be185ed6da674fd4f28a22c4298fa35206f451f42dc729b715"
+notes = "Capture-class cast module, spell-table sub-id 0x12 (extraction = 935 + sub_id): 0x5D Terio Punch; 0x5E Bull Charge. Move-VM stager 0x801F7624, from PROT 0898's 0x801F6734 row 50; the 0x801CF4EC tick switch stops at 0934, so this band's tick is re-entered through battle phase 0x70 (docs/subsystems/cast-module.md). 3 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (23/23) and by the entry table VAs landing on recovered function heads."
+
+[[overlays]]
+prot_index = 954
+label = "cast_fatal_decision"
+base_va = 0x801F69D8
+form = "raw"
+content_bytes = 0x2800
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "cross_ref"
+fingerprint_sha256 = "6a7732fa4b60cd657d9c9cebe33b66b5ff1bafac29610e250a209606566ea137"
+notes = "Capture-class cast module, spell-table sub-id 0x13 (extraction = 935 + sub_id): 0x5F Fatal Decision. Move-VM stager 0x801F85D4, from PROT 0898's 0x801F6734 row 51; the 0x801CF4EC tick switch stops at 0934, so this band's tick is re-entered through battle phase 0x70 (docs/subsystems/cast-module.md). 1 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (43/45) and by the entry table VAs landing on recovered function heads."
+
+[[overlays]]
+prot_index = 955
+label = "cast_white_shield"
+base_va = 0x801F69D8
+form = "raw"
+content_bytes = 0x3800
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801F9370
+fingerprint_sha256 = "19ca95cf502d8e670a72ee1dc802c1886d015d8867723912696f6653cb43890c"
+notes = "Capture-class cast module, spell-table sub-id 0x14 (extraction = 935 + sub_id): 0x60 White Shield; 0x6E Kiss of Death; 0x6F Melt Spray; 0x70 Terror Scream; 0x72 Power Charge; 0x73 Void Accessories. Move-VM stager 0x801F9370, from PROT 0898's 0x801F6734 row 52; the 0x801CF4EC tick switch stops at 0934, so this band's tick is re-entered through battle phase 0x70 (docs/subsystems/cast-module.md). 8 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (33/33) and by the entry table VAs landing on recovered function heads."
+
+[[overlays]]
+prot_index = 956
+label = "cast_water_hazard"
+base_va = 0x801F69D8
+form = "raw"
+content_bytes = 0x2000
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801F7EC4
+fingerprint_sha256 = "f5b7f25022765df8504e12dc4045c94064bcc3de3c57cb2b3ed783c4ae7ab6f7"
+notes = "Capture-class cast module, spell-table sub-id 0x15 (extraction = 935 + sub_id): 0x71 Water Hazard; 0x75 Paralyzing Wave. Move-VM stager 0x801F7EC4, from PROT 0898's 0x801F6734 row 53; the 0x801CF4EC tick switch stops at 0934, so this band's tick is re-entered through battle phase 0x70 (docs/subsystems/cast-module.md). 4 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (23/28) and by the entry table VAs landing on recovered function heads."
+
+[[overlays]]
+prot_index = 958
+label = "cast_blazing_slash"
+base_va = 0x801F69D8
+form = "raw"
+content_bytes = 0x3000
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801F8D30
+fingerprint_sha256 = "1efaaab99af17b9294e6355b207c303806cbb19c01251af09221e9f99b0d708a"
+notes = "Capture-class cast module, spell-table sub-id 0x17 (extraction = 935 + sub_id): 0x79 Blazing Slash. Move-VM stager 0x801F8D30, from PROT 0898's 0x801F6734 row 55; the 0x801CF4EC tick switch stops at 0934, so this band's tick is re-entered through battle phase 0x70 (docs/subsystems/cast-module.md). 3 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (17/17) and by the entry table VAs landing on recovered function heads."
+
+[[overlays]]
+prot_index = 959
+label = "cast_megaton_press"
+base_va = 0x801F69D8
+form = "raw"
+content_bytes = 0x3000
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801F8250
+fingerprint_sha256 = "717d7d98683c485e0ce7af7acaa8ed1ae037c4d1c762399e2bc88c697b3d2289"
+notes = "Capture-class cast module, spell-table sub-id 0x18 (extraction = 935 + sub_id): 0x7A Megaton Press. Move-VM stager 0x801F8250, from PROT 0898's 0x801F6734 row 56; the 0x801CF4EC tick switch stops at 0934, so this band's tick is re-entered through battle phase 0x70 (docs/subsystems/cast-module.md). 3 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (45/45) and by the entry table VAs landing on recovered function heads. Head ASCII: '@c$!(@'."
+
+[[overlays]]
+prot_index = 960
+label = "cast_plasma_strike"
+base_va = 0x801F69D8
+form = "raw"
+content_bytes = 0x2800
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801F86B0
+fingerprint_sha256 = "fbd8488001cc1bb56f3e355d197e18fac7c2f021445ff3402f74c670d88dce06"
+notes = "Capture-class cast module, spell-table sub-id 0x19 (extraction = 935 + sub_id): 0x7B Plasma Strike; 0xA6 Neo Star Slash. Move-VM stager 0x801F86B0, from PROT 0898's 0x801F6734 row 57; the 0x801CF4EC tick switch stops at 0934, so this band's tick is re-entered through battle phase 0x70 (docs/subsystems/cast-module.md). 4 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (26/26) and by the entry table VAs landing on recovered function heads."
+
+[[overlays]]
+prot_index = 961
+label = "cast_dead_end_crisis"
+base_va = 0x801F69D8
+form = "raw"
+content_bytes = 0x2000
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801F78A4
+fingerprint_sha256 = "c0e7c9d1b1bd91df8c60b1a869a1533273124dc5cb3b8779fdcd2ee56588c6d7"
+notes = "Capture-class cast module, spell-table sub-id 0x1A (extraction = 935 + sub_id): 0xA1 Dead End Crisis; 0xB4 Final Crisis. Move-VM stager 0x801F78A4, from PROT 0898's 0x801F6734 row 58; the 0x801CF4EC tick switch stops at 0934, so this band's tick is re-entered through battle phase 0x70 (docs/subsystems/cast-module.md). 5 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (29/31) and by the entry table VAs landing on recovered function heads."
+
+[[overlays]]
+prot_index = 962
+label = "cast_blade_breath"
+base_va = 0x801F69D8
+form = "raw"
+content_bytes = 0x2800
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801F813C
+fingerprint_sha256 = "a2d74c75c09ea826de7e3033f123d21e34c07fc20d9bd688fabe0f77a26d1bb7"
+notes = "Capture-class cast module, spell-table sub-id 0x1B (extraction = 935 + sub_id): 0xA2 Blade Breath; 0xA3 Thunder Needle; 0xA4 Gigaton Press; 0xA5 Ultra Charge. Move-VM stager 0x801F813C, from PROT 0898's 0x801F6734 row 59; the 0x801CF4EC tick switch stops at 0934, so this band's tick is re-entered through battle phase 0x70 (docs/subsystems/cast-module.md). 6 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (25/25) and by the entry table VAs landing on recovered function heads."
+
+[[overlays]]
+prot_index = 963
+label = "cast_genocidal_cannon"
+base_va = 0x801F69D8
+form = "raw"
+content_bytes = 0x3000
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801F81A0
+fingerprint_sha256 = "92e772afa3ba3644d2aa15725b46ed918995c80580d70c5f4ba93fd4ab270476"
+notes = "Capture-class cast module, spell-table sub-id 0x1C (extraction = 935 + sub_id): 0xB3 Genocidal Cannon. Move-VM stager 0x801F81A0, from PROT 0898's 0x801F6734 row 60; the 0x801CF4EC tick switch stops at 0934, so this band's tick is re-entered through battle phase 0x70 (docs/subsystems/cast-module.md). 3 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (50/50) and by the entry table VAs landing on recovered function heads."
+
+[[overlays]]
+prot_index = 964
+label = "cast_element_change"
+base_va = 0x801F69D8
+form = "raw"
+content_bytes = 0x3800
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801F8BF8
+fingerprint_sha256 = "67132be04dca67f7f55bcad1ae488a76b234d644dc5abdb10b9177134ac03bd9"
+notes = "Capture-class cast module, spell-table sub-id 0x1D (extraction = 935 + sub_id): 0xAF Element Change; 0xB0 Rogue Wind; 0xB1 Rogue Thunder; 0xB2 Rogue Flame. Move-VM stager 0x801F8BF8, from PROT 0898's 0x801F6734 row 61; the 0x801CF4EC tick switch stops at 0934, so this band's tick is re-entered through battle phase 0x70 (docs/subsystems/cast-module.md). 5 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (42/42) and by the entry table VAs landing on recovered function heads."
+
+[[overlays]]
+prot_index = 965
+label = "cast_doomsday"
+base_va = 0x801F69D8
+form = "raw"
+content_bytes = 0x2000
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801F7B74
+fingerprint_sha256 = "766d74fa24435fb9265be3bb321b6f0430dd7606b5b38fd59158baf01a1c7b37"
+notes = "Capture-class cast module, spell-table sub-id 0x1E (extraction = 935 + sub_id): 0xB6 Doomsday. Move-VM stager 0x801F7B74, from PROT 0898's 0x801F6734 row 62; the 0x801CF4EC tick switch stops at 0934, so this band's tick is re-entered through battle phase 0x70 (docs/subsystems/cast-module.md). 4 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (28/35) and by the entry table VAs landing on recovered function heads."
+
+[[overlays]]
+prot_index = 966
+label = "cast_evil_seru_magic"
+base_va = 0x801F69D8
+form = "raw"
+content_bytes = 0x4000
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801F8D64
+fingerprint_sha256 = "96125d10691d236906db8e07022afa2a7462d06225af1e9ee0e4ba56a75dc229"
+notes = "Capture-class cast module, spell-table sub-id 0x1F (extraction = 935 + sub_id): 0xAD Evil Seru Magic. Move-VM stager 0x801F8D64, from PROT 0898's 0x801F6734 row 63; the 0x801CF4EC tick switch stops at 0934, so this band's tick is re-entered through battle phase 0x70 (docs/subsystems/cast-module.md). 2 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (74/78) and by the entry table VAs landing on recovered function heads."
+
 
 [[overlays]]
 prot_index = 978

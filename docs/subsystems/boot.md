@@ -230,15 +230,25 @@ MONSTER TEST INIT hands straight back to CONFIG - the debug menu it was
 entered from - and mode 5 `MONSTER MODE` is never reached. Same body as the
 mode-14 column's `FUN_8002B904`.
 
-**Mode 16 jumps into overlay slot A blind.** `0x801CE9C0` is not a function
-entry in any image on the disc. The only one whose bytes cover it is the
-debug-menu overlay, where it is slot-A base `0x801CE818` + `0x1A8` - the
-`lui at,0x8008 / sw zero,-0x4748(at)` pair inside `FUN_801CE97C`'s global-clear
-block. Because `FUN_8002612C` never calls the loader `FUN_8003EBE4`, mode 16
-executes whatever sits at slot A + `0x1A8` at the time, which is a
-retail-stripped dev path rather than a callable target. The address sweep
-(`scripts/ghidra-analysis/locate-entry-image.py`) finds no frame and no
-in-image `jal` for it across all 31 based overlays.
+**Mode 16 calls into the `init.pak` overlay.** `0x801CE9C0` **is** a function
+entry: it is PROT **0895** file `+0x1A8`, a clean `addiu sp, sp, -0x230`
+prologue at the slot-A base, and `FUN_8002612C` is nothing but a frame, that
+`jal`, and an epilogue - so the mode's whole body is that routine. What the
+handler does not do is *stage* the overlay: it never calls the loader
+`FUN_8003EBE4`, so mode 16 assumes PROT 0895 is already resident at slot A,
+which the boot path leaves it. See
+[the `init.pak` overlay](#boot-initpak-prot-0895) for the image and
+[`functions/battle.md`](../reference/functions/battle.md#boot--initpak-overlay-prot-0895)
+for the per-function rows.
+
+This **corrects** an earlier reading recorded here and in
+[`functions/game-modes.md`](../reference/functions/game-modes.md): that
+`0x801CE9C0` "is not a function entry in any image", the only bytes covering it
+being the debug-menu overlay's `FUN_801CE97C` global-clear block, and that mode
+16 was therefore a retail-stripped dev path. Both halves were VA aliasing at the
+shared slot-A base `0x801CE818` - the failure the static overlay map exists to
+resolve. The sweep that reported "no frame, no in-image `jal`" ran over the
+overlay set as it was mapped then, and PROT 0895 was not in it.
 
 **Mode 20 is the one live row of the three.** `FUN_80055B6C` is the battle
 scene setup entry and is resident in `SCUS_942.54`, so BATTLE INIT is an
@@ -858,6 +868,16 @@ The per-logo grid is captured by [`legaia_engine_core::publisher_logos::STRIP_GR
 Source strips are stored **column-major** in the bitmap; the output grid is row-major, so source strip `s = c * rows + r` lands at output cell `(col c, row r)`. PROKION's two halves combine into `PROK ☉ KION` (the green hemispheres in each half complete a single sun in the middle when adjacent). SCEA's four 32-row strips read top-line `Sony Computer Entertainment America` + bottom-line `Presents`.
 
 The retail boot code that draws them is **not** the title tick: it is `FUN_801CE9C0`, this entry's own routine at file `+0x1A8`, reached from mode 16 `READ INIT` (`FUN_8002612C`). It forms each TIM header `+8` (`0x801D09E4` / `0x801DBC04` / `0x801E7624` / `0x801EB664`), writes the `RECT` `+4`/`+6` halfwords and uploads through `FUN_800198E0`. The `STRIP_GRID` constants are still hypothesis-fit-to-visible-content rather than read off that routine's draw calls - decoding its per-logo quads is what would pin them.
+
+### The code region, and where it ends
+
+The entry is mapped in [`static-overlays.toml`](../../crates/asset/data/static-overlays.toml) as `boot_init_pak`, slot A, base `0x801CE818` - recovered from the image's own internal call graph (23 internal `jal`s, 8 of them landing on prologues; whole-file pointer resolution 22/25 and 7 string anchors at slot A against 1/12 and 0 at slot B). That makes the base a disc fact rather than an inference from the mode-16 call.
+
+The code is one contiguous region, file `+0x1A8..+0x216C` (VA `0x801CE9C0..0x801D0984`, 8132 bytes), and the first TIM starts at `+0x21C4` - so every byte of plausible MIPS ahead of the logo payload is accounted for, with 88 bytes of padding between. It partitions into **20 functions**, all dumped (`overlay_boot_init_pak_0895_<addr>.txt`); the roll is in [`functions/battle.md`](../reference/functions/battle.md#boot--initpak-overlay-prot-0895).
+
+Two of them write the game-mode word `_DAT_8007B83C`: the mode-16 body stores `0x11` (17) at `0x801CEC94` as its last act, and the third function stores `0x16` (22, `CARD INIT`) at `0x801CF4D4`. So the boot chain out of `READ INIT` is set inside this overlay, not by the mode table's `next` column.
+
+One caveat on `anchor_va`: the map row carries none, because `static_overlay::is_prologue` only accepts `addiu sp, sp, -X` immediates in `0xFF80..0xFFF8` (frames up to `0x100`) and this entry's frame is `0x230`. The base rests on jal-recovery plus the string-anchor cross-check instead.
 
 The `h:\prot\field\title\title.pak` string is **only a debug-print referent** - the title-screen content lives in **PROT 0888** (`sound_data2` per CDNAME, see the title-overlay-state section above) referenced by integer constant from SCUS boot code, not by string lookup. SCUS does not contain the literal string `title.pak` anywhere. The mismatch between the debug path and the actual PROT entry is the same pattern as PROT 0895 being labelled `bat_back_dat` while actually carrying `init.pak`: CDNAME labels are misleading for several entries, so always cross-validate against the loader-call constant or the file's magic bytes.
 

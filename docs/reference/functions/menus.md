@@ -153,6 +153,16 @@ Callees of the pause/field menu overlay (loaded by the mode-22 CARD pair via `FU
 | `801E36A0` | 9-instruction thunk into the menu routine `FUN_801DD35C`. `see ghidra/scripts/funcs/overlay_menu_801e36a0.txt`. |
 | `801E4138` | Empty stub - 2-instruction `jr ra; nop`. `see ghidra/scripts/funcs/overlay_menu_801e4138.txt`. |
 
+Three runs in this image's tail that `disc-coverage.py` ranks as **code** are
+**data** - the menu overlay's own tables, recorded here so the worklist is not
+re-walked: `0x801E4530..0x801E4630`, `0x801E4C30..0x801E4F30` and
+`0x801E5030..0x801E5130`. Each decodes as short little-endian records with a
+zero high half (the shape a `u16` table takes when read as MIPS), the frame
+partition places no function anywhere in them, and none contains a single
+`jr ra`. The window-descriptor table
+([`field-menu.md`](../../subsystems/field-menu.md)) and the sprite geometry
+table `0x801E5048` live in exactly this band.
+
 ## Function details
 
 Full write-ups for the rows above whose detail outgrew a table cell. Linked from each section table by **[details ↓]**.

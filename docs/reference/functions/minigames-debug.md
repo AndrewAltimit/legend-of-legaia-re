@@ -9,7 +9,8 @@ Each minigame's per-frame controller, with the full per-overlay function tables 
 | Address | Role |
 |---|---|
 | `801CF3BC` | **Fishing** per-frame mode driver; `DAT_801d926c` state machine (rod-select / cast / reel / catch / exit). See [`minigame-fishing.md`](../../subsystems/minigame-fishing.md). `overlay_fishing_801cf3bc.txt`. |
-| `801CF0D8` | **Slot machine** per-frame reel state machine (states 0..100; commits the overlay-local balance to coin bank `0x800845A4` on cash-out). See [`minigame-slot-machine.md`](../../subsystems/minigame-slot-machine.md). `overlay_slot_machine_801cf0d8.txt`. |
+| `801CF070` | **Fishing bring-up**, the routine immediately below the driver (PROT 0972, base + `0x858`, 844 B). Arms audio (`FUN_80062004` with a pitch from `_DAT_8007B910`, `FUN_8005FB84` x3), streams three assets through `FUN_8001FC00`, and calls `FUN_8003DE7C` six times - the per-actor stage helper - before the state machine at `0x801CF3BC` takes over. It ends exactly where that driver begins, so the two are adjacent halves of the overlay's entry path. `overlay_fishing_0972_801cf070.txt`. |
+| `801CF0D8` | **Slot machine** per-frame reel state machine (states 0..100; commits the overlay-local balance to coin bank `0x800845A4` on cash-out). The body is **3864 bytes** (`0x801CF0D8..0x801CFFF0`, frame `0x50`), not the 3060 the earlier capture dump reported - the last 804 bytes were carved off, which is what the byte worklist's `0x801CFF88` run was. See [`minigame-slot-machine.md`](../../subsystems/minigame-slot-machine.md). `overlay_slot_machine_0975_801cf0d8.txt`. |
 | `801D3380` | **Slot machine** payline draw. Emits the five paylines as `LINE_F2` prims (GP0 `0x43` - flat, semi-transparent) from the 5 x 16-byte geometry table `DAT_801d3680`, each endpoint projected on its own. Idle colour `0x808080`; the line whose index equals `DAT_801d3c8c` has only its three colour bytes overwritten with `(0xFF, 0xFF, 0x80)`, so a lit line keeps the `0x43` code. Ported as `legaia_engine_core::slot_machine::payline_prims`. See [`minigame-slot-machine.md`](../../subsystems/minigame-slot-machine.md#the-paylines-are-3d-lines---fun_801d3380). `overlay_slot_machine_801d3380.txt`. |
 | `801CF388` | **Baka Fighter** cabinet mode state machine - the overlay's top-level per-frame driver, a 37-way switch on `DAT_801DBF44`. See [`minigame-baka-fighter.md`](../../subsystems/minigame-baka-fighter.md#cabinet-state-machine-fun_801cf388). `overlay_baka_fighter_801cf388.txt`. |
 | `801D3468` | **Baka Fighter** round/match resolution state machine (rock-paper-scissors exchange of attack types). See [`minigame-baka-fighter.md`](../../subsystems/minigame-baka-fighter.md). `overlay_baka_fighter_801d3468.txt`. |
@@ -83,6 +84,24 @@ Ports: `legaia_engine_ui::other_game_hud` (the two quad emitters + the decimal r
 | `801D0CD4` | **Course menu** - walks all three descriptors, using each `+0x00` count as its loop bound and each round record's `+0x00` label pointer through the text drawer `0x80036888`; also clamps `DAT_801D1A94` against the count. Correctly based dump `overlay_arena_init_0977_801d0cd4.txt` (516 B). |
 
 The static PROT 0977 image also gives a correctly based dump of the corner-anchored quad emitter, `overlay_arena_init_0977_801d08ec.txt` (1000 B) - the same routine the `801D08EC` row above documents. `0x801D1EF0..0x801D2018`, which the byte-denominated worklist ranks as an un-dumped code run, is **not** code: it sits in the image's tail past the last `jr ra` and carries no function.
+
+## Dev modules OTHER2 / OTHER3 (PROT 0973 / 0974)
+
+The mode-24 door-warp sub-id 1 and 2 slot-A occupants (base `0x801CE818`; see
+the sub-id table in [`script-vm.md`](../../subsystems/script-vm.md)). Both are
+primitive/clip test harnesses rather than game content - `OTHER2` heads with the
+string list `OTHER2 / CICLE1 / SPRITE1 / THERNDER1 / NORMAL / COLOR / NOT BACK
+CLIP / 3D CLIP / SPREAD / GT4 DIV16`. Neither had a dump attributable to its
+image before; both partition cleanly at their own base.
+
+| Address | Role |
+|---|---|
+| `801CE8A0` | **OTHER2 init** (PROT 0973, base + `0x88`, 76 B) - the documented sub-id-1 entry. Display env `FUN_8001DAF8(0x140)`, boot-mode init `FUN_8001DCF8(0xB)`, one actor spawn `FUN_80020DE0` from the in-image descriptor at `0x801CEFD0`, then the packet/OT allocator `FUN_8001E3B8(0x32000)`. `overlay_other2_dev_0973_801ce8a0.txt`. |
+| `801CE8EC` | **OTHER2 per-frame tick** (620 B). Prints its head string through the dev-print `FUN_8001A068`, tests the debug pad word for bit `0x100` before calling `FUN_80026018`, and drives the worker below. `overlay_other2_dev_0973_801ce8ec.txt`. |
+| `801CEB58` | **OTHER2 primitive/clip worker** (1144 B, frame `0xC0`) - the harness body, opening with a `FUN_80017888(0, 0x5000)` scratch allocation. The one function the OTHER2 image's own internal `jal` names. `overlay_other2_dev_0973_801ceb58.txt`. |
+| `801CE85C` | **OTHER3 bring-up** (PROT 0974, base + `0x44`, 1292 B) - the largest routine in the image: three dev prints, four `FUN_8001FC00` asset streams, three `FUN_8001E54C` SEQ arms, six `FUN_8005FB84` audio calls and five `FUN_8003DE7C` actor stages. `overlay_other3_dev_0974_801ce85c.txt`. |
+| `801CED68` | **OTHER3 primitive emitter** (280 B). Takes the scratchpad draw context `0x1F800314`, bumps its `+0x8C` packet cursor by `0x18` per primitive, writes a GP0 command word built from `0x28800080`, and links through `FUN_8003D2C4`. `overlay_other3_dev_0974_801ced68.txt`. |
+| `801CEE80` | **OTHER3 init** (164 B) - the sub-id-2 entry, same shape as OTHER2's: `FUN_8001DAF8(0x140)`, `FUN_8001DCF8(0xB)`, one `FUN_80020DE0` spawn from `0x801CEF24`, then the CD/streaming arms `FUN_800654D8(4)` / `FUN_800655AC`. `overlay_other3_dev_0974_801cee80.txt`. |
 
 ## FIELD BACK READ overlay (PROT 0978)
 

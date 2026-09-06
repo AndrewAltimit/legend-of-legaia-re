@@ -166,26 +166,109 @@ are the way into the whole band. Dumps are one Ghidra program per PROT entry
 | `801F1ED4` | **Cast-tick dispatcher** (0898, file `+0x236BC`, 652 B). `()`. Loads the caster from the actor table `0x801C9370` at `ctx[+0x13]`, reads its queued action byte `actor[+0x1DF]`, and - when `id - 0x81 < 0x20` - jumps through the 32-slot table at `0x801CF4EC`. Every arm is a **hard-coded `jal` into the resident module** plus `s0 = v0`; id `0x98` has no arm (its slot points at the epilogue). The epilogue `0x801F2128` calls `FUN_801F2410` when `ctx[+0x27A] != 0`, then returns `s0`. Called by the battle SM `FUN_801E295C` at `0x801E4B1C` (cast start; zeroes `ctx+0x278`/`+0x279` and seeds the countdown `s7[+2] = 0x78`), `0x801E4C7C` (per-frame; countdown expiry forces battle phase `0x36`) and `0x801E4CA8` (advance only on return `0`). `overlay_battle_action_0898` image. |
 | `0x801F6734` (data) | **Module move-VM entry table** (0898, file `+0x27F1C`): 64 words, one routine VA per module, bounded by byte tables below and ASCII above. Row `i` = extraction PROT `903 + i`. The SM copies a row into `gp[+0x714]` (`0x8007BA2C`) at `0x801E44C8` (capture class, row `sub_id + 0x20`) and `0x801E4630` (row `move_id - 0x81`); **move-VM opcode `0x20`** then calls it (`lw v0, 0x714(gp); jalr v0` at SCUS `0x80023764`) with `a0` = actor and `a1`/`a2` = the move instruction's two halfwords. Corrects the older "per-summon effect-data pointer" reading of `0x8007BA2C` - it is a code pointer. |
 | `0x801CF4EC` (data) | **Cast-tick arm table** (0898): 32 words, the jump targets of `FUN_801F1ED4`'s switch, one per action id `0x81..0xA0` = PROT 0903..0934. |
+| `801F2160` | **Capture-class cast-tick dispatcher** (0898, file `+0x23948`; `0x801F2160..0x801F2410`, 688 B with arms + epilogue). `()`. Same caster derivation as `FUN_801F1ED4`, but the key is different: it reads `caster[+0x1DF]`, indexes the static spell table `0x800754C8` at `id * 12`, takes the record's `+1` **capture-class sub-id**, bounds it `sltiu v0, sub_id, 0x20` and jumps through the 32-slot table at `0x801CF56C`. Arms are hard-coded `jal`s plus `s0 = v0`; the epilogue `0x801F23D8` mirrors `0x801F2128`. Called from **one** SM site, `0x801E50C8`. This is how the capture-class band's tick is entered - the question [`cast-module.md`](../../subsystems/cast-module.md#the-entry-tables-and-where-the-addresses-live) recorded as open. |
+| `0x801CF56C` (data) | **Capture-class arm table** (0898): 32 words, the jump targets of `FUN_801F2160`'s switch, arm `i` = PROT `935 + i`. Every arm lands on a function head recovered from that module's own bytes. |
 
-Per module, the tick (from `0x801CF4EC`) and the stager (from `0x801F6734`).
-Both entry VAs are independently reproduced by a prologue scan of the module's
-own bytes, which is what pins each pair to its PROT entry.
+Per module: the tick, the stager, and what the image's own bytes say about it.
+The tick comes from `0x801CF4EC` for PROT 0903..0934 and from `0x801CF56C` for
+0935..0966, and in the capture-class band the arm usually lands on a small
+**trampoline** that picks a body by `caster[+0x1DF]`, not on the body itself -
+so a "tick" of 88..204 B is a selector, and the bodies it calls are the big
+routines. A size is the **frame-matched body**: a function runs from its
+`addiu sp, sp, -F` prologue to the first `jr ra` whose delay slot (or, in a few
+images, the word just before it) restores the same `F`. All 31 `0x801CF4EC`
+arms, all 32 `0x801CF56C` arms and all 64 `0x801F6734` rows land on a function
+head recovered that way from the module's own bytes and from no other extracted
+image - that is the identity test for the whole band. An arm count is the
+module's own `sltiu` bound, read out of the routine, not the head table's
+length. Action id `0x98` (PROT 0926) is the one id with no tick arm: its
+`0x801CF4EC` slot points straight at the dispatcher epilogue.
+
+Three entries carry no [`static-overlays.toml`](../../../crates/asset/data/static-overlays.toml)
+row and therefore no dump, because the committed slot-B pointer-resolution check
+rejects them ([`cast-module.md`](../../subsystems/cast-module.md#the-three-unmapped-entries)).
+Their entry VAs are still known: those come from PROT 0898, not from the image.
 
 | PROT | Tick | Stager | Notes |
 |---|---|---|---|
-| 0903 | `801F69D8` (3404 B) | `801F771C` | Action id `0x81`. The stager row is a bare `jr ra; nop` **stub** - this module has nothing to spawn from a move script. Tick spawns via `FUN_80021B04` (×7) and drives the pose camera `FUN_801D5854`. |
-| 0905 | `801F69D8` (5792 B) | `801F8078` (364 B) | Action id `0x83`. 20 `FUN_80021B04` part spawns in the tick. |
-| 0907 | `801F69E8` (5568 B) | `801F7FA8` (552 B) | Action id `0x85`. Tick leans on `FUN_80019B28` (×13) rather than the pool wrapper. |
-| 0924 | `801F6A18` (3592 B) | `801F7820` (92 B) | Action id `0x96`. Smallest stager in the extracted set. |
-| 0927 | `801F6A84` (6948 B, 29 arms) | `801F85A8` (992 B, 9 arms) | Action id `0x99`. 39 `FUN_80050ED4` pool spawns. |
-| 0928 | `801F69F4` (9332 B) | `801F8E68` (928 B, 7 arms) | Action id `0x9A`. Head table (7 words) is the **stager's**, not the tick's. |
-| 0929 | `801F69FC` (8756 B) | `801F8C30` (1140 B, 9 arms) | Action id `0x9B`. Head table (9 words) is the stager's. |
-| 0930 | `801F6A74` (5168 B, 31 arms) | `801F7EA4` (1752 B, 7 arms) | Action id `0x9C`. |
-| 0931 | `801F6A58` (8324 B, 32 arms) | `801F8ADC` (140 B) | Action id `0x9D`. |
-| 0932 | `801F6A34` (6768 B, 23 arms) | `801F84A4` (56 B) | Action id `0x9E`. |
-| 0933 | `801F6A30` (7448 B, 22 arms) | `801F8748` (212 B) | Action id `0x9F`. |
-| 0934 | `801F6A40` (10348 B, 26 arms) | `801F92AC` (2396 B, 4 arms) | Action id `0xA0`. Head table (26 words at the base) is the tick's phase switch; the stager's `a2` records resolve into the image's own data tail `0x801F9C08..0x801FA9D8`. |
-| 0957 | see notes | `801F99F4` (436 B, 5 arms) | Capture-class `sub_id 0x16`, so it has no `0x801CF4EC` arm. Two tick-shaped functions - `801F6A14` (3960 B) and `801F798C` (8296 B) - are selected by `801F9BA8`, a 30-instruction trampoline that reads `caster[+0x1DF]` and calls `801F798C` for `0x76`, `801F6A14` for `0x77`, else returns its argument. That trampoline is the image's only internal `jal`, and nothing in the corpus reaches it. |
+| 903 | `801F69D8` (3396 B) | `801F771C` (8 B) | Action id `0x81` (Gimard). 1 framed function. Spawns: `FUN_80021B04` x7. Stager row is a bare `jr ra; nop` stub. Tick also drives the pose camera `FUN_801D5854`. |
+| 904 | `801F69D8` (6020 B) | `801F8EAC` (56 B) | Action id `0x82` (Theeder). 7 framed functions. Spawns: `FUN_80021B04` x4. 6 internal `jal`. |
+| 905 | `801F69D8` (5792 B) | `801F8078` (364 B) | Action id `0x83` (Vera). 2 framed functions. Spawns: `FUN_80021B04` x22. |
+| 906 | `801F69F4` (3404 B) | `801F7740` (676 B, 7 arms) | Action id `0x84` (Gizam). 3 framed functions. Head table (7 words) is the stager's. Spawns: `FUN_80021B04` x7. |
+| 907 | `801F69E8` (5568 B) | `801F7FA8` (552 B) | Action id `0x85` (Nighto). 2 framed functions. Spawns: `FUN_80021B04` x7. Head ASCII `Hell's Music`. Tick leans on `FUN_80019B28` (x13) rather than a spawn wrapper. |
+| 908 | `801F69D8` (6456 B) | `801F8310` (532 B) | Action id `0x86` (Zenoir). 3 framed functions. Spawns: `FUN_80021B04` x21. |
+| 909 | `801F69F4` (3924 B) | `801F7AF4` (468 B, 7 arms) | Action id `0x87` (Viguro). 5 framed functions. Head table (7 words) is the stager's. Spawns: `FUN_80021B04` x7. |
+| 910 | `801F69EC` (4652 B) | `801F89D4` (172 B, 5 arms) | Action id `0x88` (Swordie). 6 framed functions. Head table (5 words) is the stager's. Spawns: `FUN_80021B04` x9. 9 internal `jal`. |
+| 911 | `801F69D8` (5648 B) | `801F7FE8` (100 B) | Action id `0x89` (Orb). 3 framed functions. Spawns: `FUN_80021B04` x4, `FUN_80050ED4` x12. |
+| 912 | `801F69D8` (6532 B) | `801F835C` (464 B) | Action id `0x8A` (Freed). 3 framed functions. Spawns: `FUN_80021B04` x42. |
+| 913 | `801F69F0` (7260 B) | `801F864C` (324 B, 6 arms) | Action id `0x8B` (Nova). 2 framed functions. Head table (6 words) is the stager's. Spawns: `FUN_80021B04` x26. |
+| 914 | `801F69F0` (4240 B) | `801F7A80` (296 B, 6 arms) | Action id `0x8C` (Gola Gola). 2 framed functions. Head table (6 words) is the stager's. Spawns: `FUN_80021B04` x4. |
+| 915 | `801F69D8` (5468 B) | `801F7F34` (100 B) | Action id `0x8D` (Mushura). 2 framed functions. Spawns: `FUN_80021B04` x5. **Not mapped**: the committed slot-B pointer-resolution check rejects it, so it has no `static-overlays.toml` row and no dump. |
+| 916 | `801F69F8` (7936 B) | `801F88F8` (580 B, 8 arms) | Action id `0x8E` (Aluru). 2 framed functions. Head table (8 words) is the stager's. Spawns: `FUN_80021B04` x15. |
+| 917 | `801F6A30` (6312 B) | `801F82D8` (736 B, 5 arms) | Action id `0x8F` (Barra). 3 framed functions. Head table (5 words) is the stager's. Spawns: `FUN_80021B04` x19. |
+| 918 | `801F6C70` (7744 B) | `801F8AB0` (216 B) | Action id `0x90` (Kemaro). 3 framed functions. Spawns: `FUN_80021B04` x20. Its tick entry `801F6C70` is 664 bytes past the base - the widest head gap in the band, and the VA the battle-tutorial overlay (0967) aliases. |
+| 919 | `801F69D8` (7072 B) | `801F8578` (244 B) | Action id `0x91` (Spoon). 2 framed functions. Spawns: `FUN_80021B04` x26. |
+| 920 | `801F69D8` (4528 B) | `801F81E8` (8 B) | Action id `0x92` (Slippery). 3 framed functions. Spawns: `FUN_80021B04` x8. Stager row is a bare `jr ra; nop` stub. |
+| 921 | `801F6A08` (5636 B, 12 arms) | `801F800C` (276 B) | Action id `0x93` (Iota). 2 framed functions. Head table (12 words) is the tick's. Spawns: `FUN_80021B04` x32. |
+| 922 | `801F6A3C` (9896 B, 25 arms) | `801F90E4` (32 B) | Action id `0x94` (Puera). 2 framed functions. Head table (25 words) is the tick's. Spawns: `FUN_80021B04` x36. |
+| 923 | `801F69D8` (8632 B) | `801F8B90` (292 B) | Action id `0x95` (Gilium). 2 framed functions. Spawns: `FUN_80021B04` x67. |
+| 924 | `801F6A18` (3592 B) | `801F7820` (92 B) | Action id `0x96` (Lippian). 2 framed functions. Spawns: `FUN_80050ED4` x10. Head ASCII `Ultimate Rave`. |
+| 925 | `801F6A00` (4328 B, 10 arms) | `801F7AE8` (596 B) | Action id `0x97` (Spikefish). 2 framed functions. Head table (10 words) is the tick's. Spawns: `FUN_80050ED4` x10. |
+| 926 | - | `801F69D8` (8 B) | Action id `0x98` ((no record)). 1 framed function. Stager row is a bare `jr ra; nop` stub. **Not mapped**: the committed slot-B pointer-resolution check rejects it, so it has no `static-overlays.toml` row and no dump. |
+| 927 | `801F6A84` (6948 B) | `801F85A8` (992 B, 9 arms) | Action id `0x99` (Evil Seru Magic). 2 framed functions. Spawns: `FUN_80021B04` x2, `FUN_80050ED4` x44. Head ASCII `Dark Eclipse`. |
+| 928 | `801F69F4` (9332 B) | `801F8E68` (928 B, 7 arms) | Action id `0x9A` (Palma). 2 framed functions. Head table (7 words) is the stager's. Spawns: `FUN_80021B04` x40. |
+| 929 | `801F69FC` (8756 B) | `801F8C30` (1140 B, 9 arms) | Action id `0x9B` (Mule). 2 framed functions. Head table (9 words) is the stager's. Spawns: `FUN_80021B04` x27. |
+| 930 | `801F6A74` (5168 B, 31 arms) | `801F7EA4` (1752 B, 7 arms) | Action id `0x9C` (Horn). 2 framed functions. Head table (31 words) is the tick's. Spawns: `FUN_80021B04` x1, `FUN_80050ED4` x43. |
+| 931 | `801F6A58` (8324 B, 32 arms) | `801F8ADC` (140 B) | Action id `0x9D` (Jedo). 2 framed functions. Head table (32 words) is the tick's. Spawns: `FUN_80021B04` x1, `FUN_80050ED4` x33. |
+| 932 | `801F6A34` (6768 B, 23 arms) | `801F84A4` (56 B) | Action id `0x9E` (Meta). 2 framed functions. Head table (23 words) is the tick's. Spawns: `FUN_80021B04` x7, `FUN_80050ED4` x20. |
+| 933 | `801F6A30` (7448 B, 22 arms) | `801F8748` (212 B) | Action id `0x9F` (Terra). 2 framed functions. Head table (22 words) is the tick's. Spawns: `FUN_80021B04` x13, `FUN_80050ED4` x17. |
+| 934 | `801F6A40` (10348 B, 26 arms) | `801F92AC` (2396 B) | Action id `0xA0` (Ozma). 2 framed functions. Head table (26 words) is the tick's. Spawns: `FUN_80021B04` x9, `FUN_80050ED4` x33. The stager's `a2` records resolve into the image's own data tail `0x801F9C08..0x801FA9D8`. |
+| 935 | `801F69D8` (5656 B) | `801F7FF0` (56 B) | Capture sub-id `0x00`: 0x4A Earthquake. 2 framed functions. Spawns: `FUN_80021B04` x14. **Not mapped**: the committed slot-B pointer-resolution check rejects it, so it has no `static-overlays.toml` row and no dump. |
+| 936 | `801F69D8` (4600 B) | `801F7BD0` (252 B) | Capture sub-id `0x01`: 0x4B Hyper Crush. 2 framed functions. Spawns: `FUN_80021B04` x15. |
+| 937 | `801F69D8` (3704 B) | `801F7850` (396 B) | Capture sub-id `0x02`: 0x4C Hyper Lightning. 2 framed functions. Spawns: `FUN_80021B04` x21. |
+| 938 | `801F7A40` (120 B) | `801F7AB8` (272 B) | Capture sub-id `0x03`: 0x4E Chaos Breath; 0xB7 Mystic Circle. 4 framed functions. Spawns: `FUN_80021B04` x4, `FUN_80050ED4` x9. 2 internal `jal`. |
+| 939 | `801F69D8` (2780 B) | `801F74B4` (8 B) | Capture sub-id `0x04`: 0x4F Spore Gas. 1 framed function. Spawns: `FUN_80021B04` x10. Stager row is a bare `jr ra; nop` stub. |
+| 940 | `801F8228` (164 B) | `801F82CC` (8 B) | Capture sub-id `0x05`: 0x3C Glare; 0x50 Divide; 0xAC Mystic Shield; 0xAE Clone. 4 framed functions. Spawns: `FUN_80021B04` x2, `FUN_80050ED4` x9. 3 internal `jal`. Stager row is a bare `jr ra; nop` stub. |
+| 941 | `801F7D38` (120 B) | `801F7DB0` (192 B, 5 arms) | Capture sub-id `0x06`: 0x51 Steal; 0xB9 Stone Circle. 4 framed functions. Head table (5 words) is the stager's. Spawns: `FUN_80050ED4` x11. 2 internal `jal`. |
+| 942 | `801F80A0` (120 B) | `801F8118` (160 B) | Capture sub-id `0x07`: 0x52 Power Up; 0xAA Dark Typhoon. 4 framed functions. Spawns: `FUN_80021B04` x5, `FUN_80050ED4` x13. 2 internal `jal`. |
+| 943 | `801F7624` (120 B) | `801F769C` (212 B) | Capture sub-id `0x08`: 0x40 Curse; 0xB5 Lapis Wave. 7 framed functions. Spawns: `FUN_80021B04` x5, `FUN_80050ED4` x7. 4 internal `jal`. |
+| 944 | `801F7EBC` (112 B) | `801F7F2C` (164 B) | Capture sub-id `0x09`: 0x37 Guilty Cross; 0x53 Curse All. 4 framed functions. Spawns: `FUN_80021B04` x3, `FUN_80050ED4` x10. 2 internal `jal`. |
+| 945 | `801F76F4` (120 B) | `801F776C` (164 B) | Capture sub-id `0x0A`: 0x54 Water Column; 0xBA Jugger Power. 6 framed functions. Spawns: `FUN_80021B04` x12, `FUN_80050ED4` x9. 4 internal `jal`. |
+| 946 | `801F69FC` (3272 B) | `801F76C4` (520 B) | Capture sub-id `0x0B`: 0x55 Call Wave; 0x56 Big Wave. 2 framed functions. Spawns: `FUN_80021B04` x20. |
+| 947 | `801F69F0` (3848 B) | `801F78F8` (8 B) | Capture sub-id `0x0C`: 0x57 V-Windhash; 0xA7 Neo Windhash. 1 framed function. Spawns: `FUN_80021B04` x15. Stager row is a bare `jr ra; nop` stub. |
+| 948 | `801F69F0` (2172 B) | `801F8504` (96 B) | Capture sub-id `0x0D`: 0x58 Cross Beam. 3 framed functions. Spawns: `FUN_80021B04` x8. 1 internal `jal`. |
+| 949 | `801F6A10` (2988 B) | `801F75BC` (116 B, 8 arms) | Capture sub-id `0x0E`: 0x59 Water Crystals. 2 framed functions. Spawns: `FUN_80021B04` x30. |
+| 950 | `801F8190` (120 B) | `801F8208` (56 B) | Capture sub-id `0x0F`: 0x5A Rolling Flare; 0xAB Shadow Break. 4 framed functions. Spawns: `FUN_80050ED4` x12. 2 internal `jal`. |
+| 951 | `801F816C` (112 B) | `801F81DC` (272 B) | Capture sub-id `0x10`: 0x36 Chaos Flare; 0x5B Scythe Wind. 4 framed functions. Spawns: `FUN_80021B04` x4, `FUN_80050ED4` x16. 2 internal `jal`. |
+| 952 | `801F7B28` (120 B) | `801F7BA0` (8 B) | Capture sub-id `0x11`: 0x5C Bloody Horns; 0xB8 Astral Slash. 4 framed functions. 4 internal `jal`. Stager row is a bare `jr ra; nop` stub. |
+| 953 | `801F69FC` (3112 B) | `801F7624` (420 B) | Capture sub-id `0x12`: 0x5D Terio Punch; 0x5E Bull Charge. 3 framed functions. Spawns: `FUN_80021B04` x17. 2 internal `jal`. |
+| 954 | `801F6A58` (7036 B) | `801F85D4` (8 B) | Capture sub-id `0x13`: 0x5F Fatal Decision. 1 framed function. Spawns: `FUN_80021B04` x5. Stager row is a bare `jr ra; nop` stub. |
+| 955 | `801F92A4` (204 B) | `801F9370` (100 B) | Capture sub-id `0x14`: 0x60 White Shield; 0x6E Kiss of Death; 0x6F Melt Spray; 0x70 Terror Scream; 0x72 Power Charge; 0x73 Void Accessories. 8 framed functions. Spawns: `FUN_80021B04` x17. 6 internal `jal`. |
+| 956 | `801F7E4C` (120 B) | `801F7EC4` (260 B) | Capture sub-id `0x15`: 0x71 Water Hazard; 0x75 Paralyzing Wave. 4 framed functions. Spawns: `FUN_80021B04` x7, `FUN_80050ED4` x12. 2 internal `jal`. |
+| 957 | `801F9BA8` (120 B) | `801F99F4` (436 B, 5 arms) | Capture sub-id `0x16`: 0x76 Death Game; 0x77 Thunder Storm. 4 framed functions. Spawns: `FUN_80050ED4` x19. 2 internal `jal`. Head ASCII `Puera`; `Damage`; `Recover`. The tick column is the trampoline: it picks `801F798C` (8296 B) for `0x76` and `801F6A14` (3960 B) for `0x77`. It IS reached - by arm 22 of `0x801CF56C`, at 0x801F233C - correcting the earlier 'nothing in the corpus reaches it'. |
+| 958 | `801F8E60` (88 B) | `801F8D30` (304 B) | Capture sub-id `0x17`: 0x79 Blazing Slash. 3 framed functions. Spawns: `FUN_80050ED4` x15. 1 internal `jal`. |
+| 959 | `801F87F4` (88 B) | `801F8250` (1444 B, 6 arms) | Capture sub-id `0x18`: 0x7A Megaton Press. 3 framed functions. Head table (6 words) is the stager's. Spawns: `FUN_80050ED4` x41. 1 internal `jal`. |
+| 960 | `801F8638` (120 B) | `801F86B0` (184 B) | Capture sub-id `0x19`: 0x7B Plasma Strike; 0xA6 Neo Star Slash. 4 framed functions. Spawns: `FUN_80050ED4` x24. 2 internal `jal`. |
+| 961 | `801F7A54` (96 B) | `801F78A4` (432 B) | Capture sub-id `0x1A`: 0xA1 Dead End Crisis; 0xB4 Final Crisis. 5 framed functions. Spawns: `FUN_80050ED4` x23. 3 internal `jal`. |
+| 962 | `801F8080` (188 B) | `801F813C` (172 B) | Capture sub-id `0x1B`: 0xA2 Blade Breath; 0xA3 Thunder Needle; 0xA4 Gigaton Press; 0xA5 Ultra Charge. 6 framed functions. Spawns: `FUN_80050ED4` x21. 4 internal `jal`. |
+| 963 | `801F8438` (88 B) | `801F81A0` (664 B) | Capture sub-id `0x1C`: 0xB3 Genocidal Cannon. 3 framed functions. Spawns: `FUN_80021B04` x3, `FUN_80050ED4` x46. 1 internal `jal`. |
+| 964 | `801F8E3C` (124 B) | `801F8BF8` (580 B) | Capture sub-id `0x1D`: 0xAF Element Change; 0xB0 Rogue Wind; 0xB1 Rogue Thunder; 0xB2 Rogue Flame. 5 framed functions. Spawns: `FUN_80021B04` x5, `FUN_80050ED4` x30. 4 internal `jal`. |
+| 965 | `801F7B1C` (88 B) | `801F7B74` (184 B) | Capture sub-id `0x1E`: 0xB6 Doomsday. 4 framed functions. Spawns: `FUN_80021B04` x1, `FUN_80050ED4` x20. 1 internal `jal`. |
+| 966 | `801F6A74` (8944 B) | `801F8D64` (1020 B, 9 arms) | Capture sub-id `0x1F`: 0xAD Evil Seru Magic. 2 framed functions. Spawns: `FUN_80021B04` x2, `FUN_80050ED4` x49. |
+
+## Boot / `init.pak` overlay (PROT 0895)
+
+The publisher-logo + boot overlay, slot A at `0x801CE818`
+([`boot.md`](../../subsystems/boot.md#boot-initpak-prot-0895)). Dumps are
+`overlay_boot_init_pak_0895_<addr>.txt`.
+
+| Address | Role |
+|---|---|
+| `801CE9C0` | **Mode-16 (READ INIT) body** (0895 file `+0x1A8`, 784 B, 196 instructions). `()`. The whole of SCUS `FUN_8002612C` is a frame, `jal 0x801CE9C0` and an epilogue, so this is the mode's real handler. Sets up four in-image sprite/primitive records (`0x801E7624`, `0x801EB664`, `0x801D09E4`, `0x801DBC04`), each a pair `(rec, rec + 0x2C)` or `(rec, rec + 0x20C)` whose `+4`/`+6` halfwords it fills with screen extents, drawing each through `FUN_800198E0` + `FUN_80058104`. Also calls `FUN_8001DAF8` (display env), `FUN_8001E3B8(0x19000)` (packet/OT), `FUN_8001DCF8(0xA)` / `FUN_8001FFA4` (boot init) and `FUN_8001822C` (pad). Ends by storing game mode `0x11` to `_DAT_8007B83C` at `0x801CEC94` and `-1` to `0x801F39A0`. |
+| `801CECD0` | Second function (772 B). |
+| `801CEFD4` | Third function (`0x801CEFD4..0x801CF540`, 1388 B). Two things live in it: the call to SCUS `FUN_8003F120` (a `jr ra; nop` null leaf), and the store of game mode `0x16` (22, CARD INIT) to `_DAT_8007B83C` at `0x801CF4D4` - so this image sets **two** game modes, `0x11` from the mode-16 body and `0x16` from here. |
+| `801CF540` | Fourth function (700 B). |
+| `801CFA78` / `801CFBB8` / `801CFF68` / `801D00A4` / `801D0414` / `801D0460` / `801D0584` / `801D0630` / `801D06E0` / `801D0738` / `801D07D0` / `801D0828` / `801D0868` / `801D08F0` | The image's leaf helpers, reached by its own internal `jal`s (23 of them, 8 landing on prologues - the votes that recover the base). Sizes 64..944 B. |
 
 ## Battle on-screen elements (HUD + 2D sprite/effect list)
 
@@ -236,13 +319,13 @@ so an empty prompt still measures one line, and a `0xC0..=0xCF` byte is a
 two-byte escape lead whose follower is consumed untested - a `0x7C` there is
 data, not a line break.
 
-Identity + base are pinned by a live-battle-RAM (`s5_tetsu_battle`) vs static-blob byte fingerprint (`overlay_effect_0967_*.txt`, imported at `0x801F69D8`). Its shifted sibling is PROT **0965** (`0965[0x5FE8:] == 0967[0x0:]`, 911/1024 identical over the first 4 KB at shift `0x5FE8`) — the same render-library re-imaging per game-mode context as `0900↔0901`; 0965 shares the code but at a different base offset. The overlay's tutorial-script strings are Sony text (not reproduced here).
+Identity + base are pinned by a live-battle-RAM (`s5_tetsu_battle`) vs static-blob byte fingerprint (`overlay_effect_0967_*.txt`, imported at `0x801F69D8`). The "shifted sibling PROT **0965**" reading (`0965[0x5FE8:] == 0967[0x0:]`) is **falsified**: shift `0x5FE8` lies wholly past 0965's real `0x2000`-byte extent, so that window compared 0967's bytes with themselves (the pre-correction entry size, see [`prot.md`](../../formats/prot.md)). The corrected entries share no content, and 0965 is the Doomsday (`0xB6`) capture-class cast module - the `static-overlays.toml` row it now carries. The overlay's tutorial-script strings are Sony text (not reproduced here).
 
 | Address | Role |
 |---|---|
 | `801F71E0` | **Not an entry point** - a `bne` target inside the tutorial-message routine, and the second half of a `lui`/`lw` pair split across it. [Details ↓](#801f71e0-is-a-label-not-an-entry). The **pacing tail** that begins here is what the S5 trace hits: it decrements the message timer `ctx[+0x6B4]` (`_DAT_8007BD24`) by `DAT_1F800393 * DAT_1F80037D` (frame-count × rate) each frame; on underflow it advances the tutorial step (`ctx[+0x289]`/step index `ctx[+0x28A]`, loading the next line pointer from `ctx[+0x88C]` into `_DAT_8007B874`) and clears the pad latches (`0x8007B874`/`B938`/`B850`). A confirm-press (`_DAT_8007B874 != 0`, with `ctx[+0x6B2]==0`) skips the current timer. Sets `ctx[+0x6AE]=0` (line counter) / `ctx[+0x6B0]=1` (active). |
 | `801F6C70` / `801F6D48` | **Tutorial-step text emitters.** Call the box helper `FUN_801F747C(str, mode)` with the step's message and run the same pacing tail as `FUN_801F71E0`. `FUN_801F6D48` dispatches on the step index (`0/1/2/3` → the attack-mode / item / spirit / Hyper-Arts lessons; step 2 also calls `FUN_801F7628`). Host (VA-aliasing): these emitters are the Tetsu-tutorial-battle slot-B overlay at `0x801F69D8` (this section's header), **not** PROT 0900 — at these same VAs PROT 0900's bytes are the field render library (`0x801F6D48` is a ground/tile renderer there). See the 0900 row in `crates/asset/data/static-overlays.toml` for the byte evidence. |
-| `801F747C` | **Tutorial text-box display helper** `(str, style)`. Measures the prompt (`FUN_8003CBA8` lines, `FUN_80035F04` width) and registers it as a sized kind-`0xD` text actor: `FUN_8003541C(1 + waits, 0xD, str, x, y, width, lines*14 - 4, 0x44 - waits)`. Host (VA-aliasing): this is the PROT 0967 tutorial-battle occupant. `0x801F747C` is a genuine function head **only** in the 0967 image; in PROT 0900 the same VA falls *inside* `FUN_801F7088` (the field static-object/decoration renderer) — mid its scroll-window-clamp prologue (`lui v1,0x1f80; lb v1,0x3ea(v1)`), not a callable entry — and in PROT 0897 inside the inventory-hub body. So the "tutorial" reading is 0967-only, and this exact VA has hosted three distinct occupants at different times. |
+| `801F747C` | **Tutorial text-box display helper** `(str, style)`. Measures the prompt (`FUN_8003CBA8` lines, `FUN_80035F04` width) and registers it as a sized kind-`0xD` text actor: `FUN_8003541C(1 + waits, 0xD, str, x, y, width, lines*14 - 4, 0x44 - waits)`. Host (VA-aliasing): this is the PROT 0967 tutorial-battle occupant. `0x801F747C` is a genuine function head **only** in the 0967 image; in PROT 0900 the same VA falls *inside* `FUN_801F7088` (the field decoration renderer), not a callable entry, and in PROT 0897 inside the inventory-hub body - three distinct occupants at one VA. Now dumped from the based static image as `overlay_battle_tutorial_0967_801f747c.txt` (428 B, `0x801F747C..0x801F7628`). |
 
 ### `801F71E0` is a label, not an entry
 
