@@ -21,13 +21,39 @@
 //! `x = 384`. The staging buffers alternate between `_DAT_8007B728` and
 //! `_DAT_8007B72C`, both offset `+0x28000`.
 //!
-//! The dev source path is `h:\prot\field\other6\tim\int.tim` /
-//! `tim_int2.tim`; the retail branch resolves PROT index `0x4C7 + variant`
-//! through `FUN_8003E8A8` instead, with `variant` from
-//! [`backread_texture_variant`].
+//! ## Which entries it streams
+//!
+//! The two textures are named, both on the disc and in the image's own dev
+//! strings. `FUN_8003E8A8` is called with `0x4C7 + variant`, and that is a
+//! **RAM TOC index**, so the CDNAME `+2` frame skew applies: the two
+//! candidates are extraction entries **1221** and **1222**, in the `other6`
+//! block (`#define other6 1222` -> extraction 1220, `#define other7 1228` ->
+//! extraction 1226, so the block is 1220..=1225). Both entries are exactly
+//! `0x28000` bytes - four `0xA000` slices, which is the whole staged read and
+//! the staging buffer's `+0x28000` offset - and both open on raw 16-bit pixel
+//! data with no TIM header, matching the raw-rect upload path.
+//!
+//! The image carries exactly two path strings, and they are the dev sources
+//! for those two entries in order: `h:\prot\field\other6\tim\int.tim` and
+//! `h:\prot\field\other6\tim\int2.tim`. (The second was previously written
+//! here as `tim_int2.tim`, which is not a string in the image.)
+//!
+//! | `variant` | PROT index | extraction entry | dev source | when |
+//! |---|---|---|---|---|
+//! | `0` | `0x4C7` | 1221 | `int.tim` | slot 0's HP is at or above half |
+//! | `1` | `0x4C8` | 1222 | `int2.tim` | slot 0's HP is below half |
+//!
+//! `variant` is [`backread_texture_variant`]'s `s0`, computed once at
+//! `0x801F6B8C..0x801F6BAC`: `lhu v0,0x4824(v0)` / `srl v0,v0,0x1` /
+//! `lhu v1,0x480e(v1)` / `sltu s0,v1,v0`. Those two globals are party slot 0's
+//! record (`0x80084708`) at `+0x11C` (`hp_max_record`) and `+0x106`
+//! (`hp_curr_live`), so the halved max is compared against live HP and the
+//! damaged half of the party gets the second backdrop.
 //!
 //! ## NOT WIRED
 //!
+//! REF: FUN_8003E8A8 - the PROT-index loader the retail branch resolves
+//! `0x4C7 + variant` through.
 //! REF: FUN_80025358 - the only caller, itself unported.
 //! REF: FUN_80056208 - the caller above that, ported (and itself NOT WIRED) as
 //! `legaia_engine_render::battle_sideband`.
@@ -70,11 +96,15 @@ pub const BACKREAD_RECT_H: i16 = 0x40;
 /// PROT index the retail branch resolves: `0x4C7 + variant`.
 pub const BACKREAD_PROT_BASE: u32 = 0x4C7;
 
-/// Which of the two background textures this party state selects.
+/// Which of the two background textures this party state selects: `0` =
+/// extraction entry 1221 (`int.tim`), `1` = 1222 (`int2.tim`). See the module
+/// doc for the entry table.
 ///
-/// Retail computes `sltu (u16)_DAT_8008480E, (u16)_DAT_80084824 >> 1` - a
-/// halfword of the first party record against half a halfword of a later one.
-/// The comparison is unsigned and the shift is logical.
+/// Retail computes `sltu (u16)_DAT_8008480E, (u16)_DAT_80084824 >> 1`. Both
+/// halfwords are in party slot 0's record at `0x80084708`: `+0x106`
+/// (`hp_curr_live`) against `+0x11C` (`hp_max_record`) halved - so the
+/// variant is "slot 0 is below half HP". The comparison is unsigned and the
+/// shift is logical.
 ///
 /// PORT: FUN_801f6b24 (`lhu 0x4824`/`lhu 0x480e`/`srl`/`sltu`)
 pub fn backread_texture_variant(lhs: u16, rhs: u16) -> u32 {
