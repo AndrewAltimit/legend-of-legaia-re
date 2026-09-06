@@ -542,6 +542,14 @@ pub(crate) const CUTSCENE_TIMELINE_STEP_BUDGET: u32 = 256;
 /// Frame cap for a cutscene timeline that must return control (the `town01`
 /// opening). If the spawned context never reaches its terminal within this
 /// many frames (≈20 s at 60 fps), the engine forces it complete.
+///
+/// It is an **anti-hang** cap, not a record-length one: the frames a timeline
+/// spends in real authored playout do not count toward it. `World::step_cutscene_timeline`
+/// discounts a walk park, a rotate park, a narration hold and an authored
+/// `0x4A WAIT_FRAMES` hold, and a dialogue park freezes the counter outright.
+/// Counting the `WAIT_FRAMES` holds turned this into a length cap and cut two
+/// real door records - `urudre3` `P2[0]` and `jouine` `P2[16]` need ~5400 and
+/// ~4900 stepping frames to reach their exits - before their tails.
 pub(crate) const CUTSCENE_TIMELINE_MAX_FRAMES: u32 = 1200;
 
 /// Frame cap for the `opdeene` prologue timeline. The record arms the

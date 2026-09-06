@@ -1566,6 +1566,24 @@ impl World {
                     tl.done = true;
                 }
                 if stop {
+                    // An authored `0x4A WAIT_FRAMES` hold is real playout, not
+                    // a hang - the same carve-out the walk / rotate / narration
+                    // parks above take. The op is bounded by construction
+                    // (`ctx.wait_accum` grows by `frame_delta` every tick until
+                    // it reaches the operand, then the op advances), so it
+                    // cannot spin, and a record that spends its time in one is
+                    // playing, not stuck. Counting those ticks made the
+                    // anti-hang cap a *record-length* cap instead: `urudre3`
+                    // P2[0] and `jouine` P2[16] need ~5400 and ~4900 stepping
+                    // frames to reach their exits and were cut at 1200, so the
+                    // forced completion dropped both records before their tail
+                    // and those rooms read as one-way.
+                    if (opcode_byte & 0x7F) == 0x4A
+                        && matches!(kind, crate::cutscene_timeline::TraceResult::Halt)
+                        && next_pc == pc
+                    {
+                        tl.frames = tl.frames.saturating_sub(1);
+                    }
                     break;
                 }
             }
