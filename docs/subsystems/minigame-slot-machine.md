@@ -704,11 +704,20 @@ its high byte; a gouraud prim's other corners carry their own):
 | `#080808` / `#000000` | 12 | the black recesses |
 | `#000057` / `#00002D` | 2 | the navy marquee backing |
 
-Those are the same four families the capture-measured composition uses, and one
-of them lands quantitatively: the measured navy `rgb(0, 0, 72)` sits between the
+**It is machine-shaped, and that is the identification.** The mesh's vertices
+span `x` +-853, `y` -732..+737, `z` +-653 about the same origin the rest of the
+machine is authored around - a box that encloses every piece of glass furniture
+this page already pins: the five paylines (`x` +-640, `z = -768`), the
+dot-matrix grid (`x` -429..418, `y` -640..-496), the three reel cylinders
+(`x` -512..512) and the reel-stop pedestals (`y = 480`). A model that surrounds
+all of them and nothing else is the cabinet.
+
+The colour families are the same four the capture-measured composition uses, and
+one lands quantitatively: the measured navy `rgb(0, 0, 72)` sits between the
 mesh's two navy corners, which is what a gouraud span across them gives.
-Absolute values are **not** asserted to match - the capture measures a shaded
-frame, and reconciling it needs the shading pass, not the mesh.
+Absolute values are **not** asserted to match - the capture's greys read darker
+than the mesh's `#6F6F6F`, so a shading term sits between the packet colour and
+the framebuffer, and reconciling them needs that pass rather than the mesh.
 
 The install chain, all of it outside the slot overlay's own draw code:
 

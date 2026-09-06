@@ -34,9 +34,10 @@ the arena.
   disc are the two cast dispatchers' epilogues, `FUN_801F1ED4` at `0x801F2144`
   and `FUN_801F2160` at `0x801F23F4`, each gated on `ctx[+0x27A] != 0`
   ([`cast-module.md`](cast-module.md)). It builds screen-wide `POLY_G4` packets
-  (`0x38` code word, span `x = 0..0x13F`) straight onto the scratchpad OT cursor
-  at `0x1F80031C+0x8C`, colouring them `ctx[+0x27E..+0x280] * ctx[+0x27A] / 255`
-  and scrolling them by `ctx[+0x32A]`, which `ctx[+0x27C]` selects a mode for.
+  - GP0 code `0x38` OR'd into the colour word, tag length `8`, right-hand
+  vertices pinned to `x = 0x13F` - straight onto the scratchpad packet cursor
+  `*(0x1F8003A0)`, colouring them `ctx[+0x27E..+0x280] * ctx[+0x27A] / 255` and
+  scrolling them by `ctx[+0x32A]`, which `ctx[+0x27C]` selects a mode for.
   It is cast presentation, not a HUD number emitter and not the dome's.
 - **`FUN_801f2e10`** - the oriented-quad "beam" emitter (see
   [Key functions](#key-functions)). It has **no reference of any kind** in SCUS
@@ -670,6 +671,11 @@ The two halves, both in the battle overlay:
   review** (phase `0x5A`), copies the 16-byte queue back into the same record
   field - `+0x1A7` or `+0x1B7` by the same `+0x156 < +0x154` test - for a live
   actor whose action state `+0x1DE == 3` (`0x801DA638` / `0x801DA69C`).
+
+Both halves are already in the function directory as the battle system's
+command-block restore / persist pair
+([`functions/battle.md`](../reference/functions/battle.md)); what was missing is
+that they *are* the Auto arm - nothing else supplies its string.
 
 So Auto = *repeat the last string you confirmed for this character, in this AP
 band*. Two corollaries fall out of the same code and are worth stating because
