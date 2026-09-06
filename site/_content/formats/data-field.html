@@ -130,9 +130,16 @@ terminator</code></pre>
   <p>What is <strong>not</strong> modelled yet:</p>
   <ul class="bullets">
     <li>Cross-entry pointers (NPC references that point into other PROT entries - the asset chain in <a href="../subsystems/asset-loader.html">asset loader</a> is best-effort).</li>
-    <li>The runtime-reconstructed slot-to-asset mapping inside <a href="field-pack.html">field-pack</a> containers (magic <code>0x01059B84</code>, 124 entries) - known shape, unknown slot semantics.</li>
-    <li>The retail engine's per-scene "asset table" indirection (the <code>SceneAssetTable</code> detector fires on a small fraction of entries; a full reverse needs an overlay capture of <code>FUN_8001f7c0</code> at scene-load time).</li>
+    <li>Which function consumes the post-terminator trailer bytes.</li>
   </ul>
+  <p>Two long-standing entries on that list are closed, and both closed by shrinking rather than by new machinery. The
+  <a href="field-pack.html">field-pack</a> "slot semantics" were this page's own chunk format plus the
+  <a href="pack.html">pack</a> format: the <code>0x01059B84</code> "magic" is a
+  <code>(TIM_LIST &lt;&lt; 24) | size</code> chunk header and the "97-entry schema" is that chunk's
+  <code>[count][word offsets]</code> table; the "124 entries" figure came from the superseded over-reading
+  <a href="prot.html">entry size</a>. And the per-scene asset-table indirection needs no capture: the walk is
+  positional, and <code>+0x04</code> of the header is the sum of the descriptor sizes - see
+  <a href="scene-bundles.html">scene bundles</a>.</p>
   <p>The categorize sweep classifies every PROT entry to <em>something</em>; the items above are the residual edge. See <a href="../subsystems/engine.html">the engine page</a> for how scene loading consumes these shapes.</p>
   <details class="disclosure">
     <summary>History: the "scripted asset table" class</summary>

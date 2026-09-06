@@ -166,7 +166,7 @@ The on-disc form of the scene asset table that the field loader reads when enter
 
 ```text
 +0x00   u32  count                  ; descriptor count (6 or 7)
-+0x04   u32  meta1                  ; varies - purpose unknown
++0x04   u32  total_decompressed_size ; = Σ descriptor sizes (see below)
 +0x08   count × (u32 type_size, u32 data_offset)
                                     ; each pair packs `(type<<24)|size`
 +H      asset payload region        ; LZS-compressed in some entries,
@@ -188,6 +188,23 @@ Each descriptor is `(type_size, data_offset)`:
   - Descriptor 0's offset is always the header end `8 + count*8`.
   - **A bundle is one entry, not a span of them.** Across the corpus, 90 CDNAME blocks each carry exactly one MAN-bearing table, always at offset 0 of its entry, and no table's descriptor payload reaches past that entry's end. Offsets do run past what the historical `toc[p+5] - toc[p+3] + 4` expression claimed - `0588_juui1`'s `desc[4].data_offset` is 177413 against that expression's 67584 - but they are inside the 186368-byte entry.
   - `size` is the **decompressed** byte count passed to [`legaia_lzs::decompress`].
+
+#### `+0x04` is the bundle's total decompressed size
+
+The header's second word equals `sum(descriptor[i].size)` exactly - each `size` being
+that descriptor's *decompressed* byte count - so the word is how many bytes the bundle
+unpacks to in total. The identity holds in **every** table of this family on the disc:
+the 88 entries classed `scene_asset_table` plus the 17 classed `lzs_container` (the
+`count`-4/5 MAN-less v12-family form and the character / effect containers
+`legaia_asset::parse_player_lzs` reads), 105 of 105. It exceeds the carrying entry's byte
+length in all 105, which rules out the "file size" and "sector count" readings.
+
+Retail never reads it. `FUN_80020224` takes `count` from `+0x00` (`80020288`
+`lw s3,0x0(s4)`) and steps descriptors from `+0x08` (`8002029c` `lw a0,0xc(s0)` /
+`lw a1,0x8(s0)`, `s0 += 8` per iteration), skipping `+0x04`; a sweep of every dumped
+function for a load off `*(0x8007b85c)` finds reads at offset `0x0` only. So the field is
+an authoring total, Confirmed as a format fact and inert at runtime - which is what makes
+it a **consistency check** an editor must maintain: `SceneAssetTable::total_size_is_consistent`.
 
 The **`Tmd` descriptor (type 2)** carries the scene's **environment geometry** - an `asset::pack` of Legaia TMDs (terrain, buildings, props) inside that descriptor's LZS stream (`town01` = 114 meshes).
 
@@ -220,6 +237,24 @@ Type-sequence variants (count=7 unless noted):
 | `(10, 2, 3, 5, 6, 7)` | **count-6** early-town variant (`town0c`): leading `Flag(0xA)`, MAN at index 2. |
 
 Sizes ~60 KB to ~452 KB.
+
+#### A `Flag` descriptor streams an extra file
+
+Types `0x0A` / `0x0F` / `0x14` allocate nothing and parse nothing: the
+[dispatcher](asset-type.md) returns `(descriptor_low_byte) + (case << 8)` and exits
+(`FUN_8001F05C` at `8001f574` / `8001f60c` / `8001f658`). `FUN_80020224` ORs every
+descriptor's return into its status word, and the field init shifts that right by 8 and
+calls `FUN_8002541C` with it (`801d6bf8` `sra s1, s4, 0x8`). `FUN_8002541C` then loads
+one more file through `FUN_800255B8`, choosing the path by that mode: `0x0A` =
+`h:\PROT\FIELD\<scene>\tim.dat`, `0x0F` = `…\move.mdt`, `0x14` =
+`DATA\FIELD\<scene>.pac`.
+
+So a `Flag` in the descriptor list is a *request to stream the scene's `+4` block entry*,
+and the corpus matches block by block: of the 100 blocks whose `+3` entry parses as a
+table, 28 carry `Flag(0x14)` and hold a DATA_FIELD stream at `+4`, 4 carry `Flag(0x0A)`
+and hold a bare [`asset::pack`](pack.md) there, and 64 carry no `Flag` and reserve `+4`
+with a one-sector [pochi filler](pochi.md). Details + the two exceptions:
+[`field-pack.md`](field-pack.md#the-bundles-flag-descriptor-is-the-mode-argument).
 
 In the **world-map kingdom bundles** (PROT 0086 / 0245 / 0392) the type-6 slot
 (**slot 5**) is not a field-actor ANM pack: it is the **CLUT-walk animation
@@ -341,15 +376,27 @@ The frame-opener rate is a **quality** signal, not an identity one, so the detec
                                           ; record; the bulk open with the
                                           ; `0xFFFF 0x0000` header sentinel
                                           ; and terminate with a `0x0008` word
-...                                       ; bulk asset payload after the
-                                          ; prescript (per-scene secondary
-                                          ; header; format unconfirmed -
-                                          ; appears to be a small `(count,
-                                          ; descriptor[count])` table at
-                                          ; the next 0x800 boundary, with
-                                          ; alternating `(type, size)` and
-                                          ; runtime-buffer offset pairs)
+...                                       ; zero padding to the entry's
+                                          ; sector-aligned end. There is NO
+                                          ; second header here - see below.
 ```
+
+**There is no "per-scene secondary header" after the prescript.** This page used to
+describe a `(count, descriptor[count])` table at the next `0x800` boundary, with
+alternating `(type, size)` and buffer-offset pairs. That is the *next PROT entry's*
+[scene_asset_table](#scene_asset_table---count-prefixed-asset-bundle) at its own offset
+0, reached through the superseded over-reading entry size ([`prot.md`](prot.md)) - the
+same failure shape recorded for [scene-v12-table](scene-v12-table.md) and
+[pochi](pochi.md).
+
+Three measurements over the entry's own sectors say so. For **all 101** carriers the very
+next PROT entry begins with a descriptor table at offset 0 (`count` in `1..=8`, first
+`data_offset == 8 + count*8`) - 87 classed `scene_asset_table`, 14 the `count`-4 MAN-less
+form. For **99 of 101** the first `0x800` boundary at or past the last record offset is
+already at or past the entry's end, so nothing is there to read. The two exceptions
+(`0226_station`, `0587_juui1`) have record bodies running past that boundary; neither
+reads as a descriptor table (`station`'s words there give a count of 65537). Prescript
+entries are 2048 / 4096 / 6144 bytes - one to three sectors, prescript plus zero pad.
 
 Detection, `detect` (high-confidence tier):
 1. Prescript shape valid (count `3..=4096`, `offsets[0] == 2 + count*2`, monotonic, in-bounds).

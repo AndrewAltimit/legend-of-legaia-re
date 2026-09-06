@@ -159,3 +159,99 @@ fn scene_asset_table_walk_reproduces_runtime_dispatch() {
         "scene_scripted_asset_table matched {scripted} entries - the phantom is back"
     );
 }
+
+/// `+0x04` of a descriptor-container header is the **sum of the descriptors'
+/// decompressed sizes** - not an offset, not a file size, not a sector count.
+///
+/// Swept over the whole archive rather than over one detector's hits, because
+/// the identity is a property of the container family, not of the `count`-6/7
+/// scene-bundle shape: it holds for the `count`-4/5 MAN-less v12-family tables
+/// and the character / effect containers too. Retail never reads the word
+/// (`FUN_80020224` takes `count` from `+0x00` and descriptors from `+0x08`),
+/// so this is a format fact an editor must maintain, not one retail enforces.
+#[test]
+fn header_word_four_is_the_sum_of_descriptor_sizes() {
+    let Some(prot_dat) = extracted_prot_dat() else {
+        eprintln!("[skip] extracted/PROT.DAT missing");
+        return;
+    };
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    }
+
+    let mut archive = Archive::open(&prot_dat).expect("open PROT.DAT");
+    let entries = archive.entries.clone();
+    let mut buf = Vec::new();
+
+    let mut checked = 0usize;
+    let mut exceeds_entry = 0usize;
+    for entry in &entries {
+        archive.read_entry(entry, &mut buf).expect("read entry");
+        let Some(header) = container_header(&buf) else {
+            continue;
+        };
+        let (total, sizes) = header;
+        let sum: u32 = sizes.iter().copied().sum();
+        assert_eq!(
+            total,
+            sum,
+            "PROT {}: header +0x04 = {total} but the {} descriptor sizes sum to {sum}",
+            entry.index,
+            sizes.len()
+        );
+        if total as usize > buf.len() {
+            exceeds_entry += 1;
+        }
+        checked += 1;
+    }
+
+    eprintln!(
+        "[header-total] {checked} descriptor containers, {exceeds_entry} whose total \
+         exceeds their own entry"
+    );
+    assert!(checked >= 100, "expected >=100 containers, saw {checked}");
+    // Every one exceeds its entry's byte length, which is what rules out the
+    // "file size" / "sector count" readings of the word.
+    assert_eq!(
+        exceeds_entry, checked,
+        "the total must exceed the entry in every container"
+    );
+}
+
+/// Read a descriptor-container header off a raw entry: `[u32 count][u32 total]`
+/// then `count` 8-byte `(type_size, data_offset)` pairs, anchored on
+/// `data_offset[0] == 8 + count*8`. Returns `(total, sizes)`.
+fn container_header(buf: &[u8]) -> Option<(u32, Vec<u32>)> {
+    let word = |i: usize| -> Option<u32> {
+        buf.get(i..i + 4)
+            .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
+    };
+    let count = word(0)?;
+    if !(1..=8).contains(&count) {
+        return None;
+    }
+    let count = count as usize;
+    let header_end = 8 + count * 8;
+    if buf.len() < header_end || word(12)? as usize != header_end {
+        return None;
+    }
+    let mut sizes = Vec::with_capacity(count);
+    let mut prev_off = 0u32;
+    for i in 0..count {
+        let type_size = word(8 + i * 8)?;
+        let off = word(12 + i * 8)?;
+        if matches!(
+            AssetType::from_byte(((type_size >> 24) & 0xFF) as u8),
+            AssetType::Unknown(_)
+        ) {
+            return None;
+        }
+        if off < prev_off || off as usize > buf.len() + 64 {
+            return None;
+        }
+        prev_off = off;
+        sizes.push(type_size & 0x00FF_FFFF);
+    }
+    Some((word(4)?, sizes))
+}

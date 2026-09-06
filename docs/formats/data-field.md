@@ -60,7 +60,7 @@ The CDNAME block for a typical field/town scene (e.g. `town01`, `bubu1`) carries
 |---|---|---|
 | 0 / 1 | `SceneTmdStream` or `TmdSizePrefix` | scene mesh (room geometry) |
 | 1 / 2 | `Pack` (TIM-pack) | scene textures / sprite atlas |
-| 2 / 3 | `SceneEventScripts` or `SceneScriptedAssetTable` | per-event field-VM bytecode |
+| 2 / 3 | `SceneEventScripts` | per-scene move-VM stager records (not field-VM bytecode) |
 | 3 / 4 | `MesContainer` | dialog text |
 | 4 / 5 | `Pack` (ANM-pack) | per-actor animation sets |
 | 5..7 | `PochiFiller` | reserved-but-unused dev fillers |
@@ -68,8 +68,21 @@ The CDNAME block for a typical field/town scene (e.g. `town01`, `bubu1`) carries
 
 What's **NOT** modelled yet:
 - Cross-entry pointers (NPC references that point into other PROT entries - the asset chain in [asset-loader.md](../subsystems/asset-loader.md) is best-effort).
-- The runtime-reconstructed slot-to-asset mapping inside `field-pack` containers (magic `0x01059B84`, 124 entries) - known shape, unknown slot semantics.
-- The retail engine's per-scene "asset table" indirection (`SceneAssetTable` and `SceneScriptedAssetTable` detectors fire on a small fraction of entries; full reverse needs an overlay capture of `FUN_8001f7c0` at scene-load time).
+- Which function consumes the post-terminator trailer bytes (see [Trailer data](#trailer-data)).
+
+Two entries on this list are now closed, and both closed by shrinking rather than by new
+machinery:
+
+- **The `field-pack` "slot semantics"** were the pack format on this page. The
+  `0x01059B84` "magic" is a `(TIM_LIST << 24) | size` chunk header, the "97-entry schema"
+  is that chunk's `[u32 count][u32 word_offsets]` [pack](pack.md) table, and the "124
+  entries" figure came from the superseded over-reading entry size - 23 blocks carry such
+  a file, one apiece. See [field-pack.md](field-pack.md).
+- **The per-scene asset-table indirection** needs no capture: the walk is positional
+  (`FUN_80020224`, `count` at `+0x00`, 8-byte descriptors from `+0x08`) and the bundle
+  reaches the walker's base by a whole-sector block copy of the entry. `+0x04` is the sum
+  of the descriptor sizes. `SceneScriptedAssetTable` fires on nothing - it was the same
+  over-read. See [scene-bundles.md](scene-bundles.md#scene_asset_table---count-prefixed-asset-bundle).
 
 The categorize sweep covers the bulk of bytes - every PROT entry classifies to *something*, and ~95% of bytes fall into known classes. Refining the residual classes is the work tracked under "Reverse-engineer DATA_FIELD per-scene layout" in [`docs/subsystems/engine.md`](../subsystems/engine.md).
 

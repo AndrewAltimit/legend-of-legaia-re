@@ -1,67 +1,70 @@
-//! Field-pack container - a magic-stamped block carried by a handful of
-//! field/town scene PROT entries.
+//! "Field-pack" - the classifier for a scene's streamed TIM / TMD pack.
 //!
-//! ## Format
+//! **There is no field-pack format.** These entries are ordinary
+//! [DATA_FIELD streaming](crate::parse_streaming) files whose single chunk is
+//! an [`asset::pack`](crate::pack) of PSX TIMs or Legaia TMDs. The word
+//! [`MAGIC`] (`0x01059B84`) that named the format is that chunk's
+//! `(type << 24) | size` header - `type = 0x01` (`TIM_LIST`),
+//! `size = 0x059B84` = the payload's byte length - so it is not a magic at
+//! all, which is why a SCUS + overlay scan finds nothing comparing against it.
 //!
-//! The magic `0x01059B84` appears **raw in exactly four PROT entries**
-//! (`0002_gameover_data`, `0003`/`0004`/`0005_town01`); the 97-entry schema
-//! *signature* appears in **eight** (the other four - `0020_town0b`,
-//! `0021`/`0022`/`0023_town0c` - carry it **without** the magic prefix). The
-//! magic is a build-tool stamp, not a runtime parser anchor (a SCUS + overlay
-//! scan finds zero references to it). Layout of a carrier:
+//! ## Layout
 //!
 //! ```text
-//! [file start]
-//!   ...preamble - the PER-SCENE payload (count + u16 offset table + records)...
-//!   [u32 LE = MAGIC = 0x01059B84]   (present in only 4 of the 8 carriers)
-//!   [97 × u32 LE - schema table, byte-identical everywhere]
-//!   [≈ 91 KB schema-indexed region - a byte-identical GLOBAL CONSTANT block]
-//!   [packed TIMs / TMDs - in some files]
-//! [file end]
+//! ; chunk-headered (18 carriers)
+//! +0x00   u32  chunk_header       ; (type << 24) | size
+//! +0x04   u32  count              ; pack member count
+//! +0x08   u32  word_offset[count] ; byte offset = word_offset[i] * 4, rel. +0x04
+//! ...     members, packed back-to-back, then zero pad to the sector end
+//!
+//! ; bare (5 carriers) - identical minus the chunk header
+//! +0x00   u32  count
+//! +0x04   u32  word_offset[count]
 //! ```
 //!
-//! The 97 schema entries are ascending u32 LE values from `0x60` to `0x16651`,
-//! the same in every carrier. **The ≈ 91 KB region the schema indexes is a
-//! global constant** - byte-identical (FNV/SHA `c85d6a44d742…`) across town01
-//! AND town0c. So the schema slots are a fixed template, **not** filled
-//! per-scene; the per-scene field data is the preamble. (Corrected from a raw
-//! disc scan - the earlier "124 entries / preamble fills the slots" reading was
-//! wrong; see `docs/formats/field-pack.md` and `tests/field_pack_real.rs`.)
-//! This parser locates the magic-prefixed schema + the packed asset region
-//! after it.
+//! A carrier sits at raw-TOC offset `+4` of its scene's CDNAME block
+//! (extraction index `#define + 2`); scenes without one reserve the slot with
+//! a one-sector pochi filler. Runtime consumers: `FUN_800255B8` loads the file
+//! into the scene asset buffer `*(0x8007B85C)`, and `FUN_8002541C` reads it -
+//! mode `0x0A` walks a bare pack calling `FUN_800198E0` (`LoadImage`) per
+//! member, mode `0x14` walks the chunk chain through `FUN_8001F05C`.
 //!
-//! ## What this gives us
+//! ## What the legacy API means
 //!
-//! - Reliable detection (`detect`) with no false positives - the magic plus
-//!   the strict ascending-u32 schema is a high-bar signature.
-//! - Boundary information: where the preamble ends, where the TIMs start,
-//!   how many sub-record slots the schema declares, and the implied size of
-//!   each slot from `offset[i+1] - offset[i]`.
-//! - A per-PROT-entry classifier so downstream tooling can route fieldpack
-//!   PROT entries through this parser and everything else through the older
-//!   detectors in [`crate::categorize`].
+//! [`detect`] / [`FieldPack`] / [`CANONICAL_SCHEMA`] are kept because
+//! [`crate::categorize`] and the `asset field-pack` CLI are built on them, but
+//! their names predate the correction:
 //!
-//! ## What this doesn't do
+//! - [`CANONICAL_SCHEMA`] is town01's pack table verbatim. `CANONICAL_SCHEMA[0]`
+//!   (`0x60`) is the member **count**, not an offset; entries `1..=96` are the
+//!   96 member word offsets.
+//! - [`SchemaSlot::size`] and [`SlotKind`] therefore cluster members by size in
+//!   **words**: `0x2088` is the standard `0x8220`-byte 64x256 4bpp atlas,
+//!   `0x218` is a 2144-byte 16x64 sprite. The old "NPC record / event trigger /
+//!   collision box" reading of those clusters was reading TIM sizes.
+//! - The "byte-identical global constant region" is town01 and town0c sharing
+//!   the first three members of their texture packs - the same Rim Elm atlases.
+//!   Their offset tables diverge at the fifth word.
+//! - The "per-scene preamble" was the superseded over-reading entry size: those
+//!   bytes are the block's earlier entries (the prescript and the scene asset
+//!   table). On its own sectors `0005_town01` starts with the chunk header.
 //!
-//! - Decode the **preamble** (the per-scene payload before the magic). It is a
-//!   count + `u16` offset table + records - the same shape the magic-less
-//!   town0b / town0c field files open with - i.e. a scene event/actor
-//!   structure, not yet fully decoded here. (There is no "map preamble bytes to
-//!   schema slots" step: the schema-indexed region is a global constant, so the
-//!   slots are a fixed template, not per-scene-filled. The earlier
-//!   "runtime-reconstructed projection" framing was based on the false premise
-//!   that the slots hold per-scene data.)
-//! - Walk the TIM region. [`crate::tim_scan`] already enumerates TIMs by
-//!   magic-scanning the raw bytes, which is sufficient for now.
+//! [`scene_pack`] is the corrected reader; prefer it for new code. Full
+//! write-up: `docs/formats/field-pack.md`.
 
 use serde::Serialize;
 
-/// Magic word that immediately precedes the 97-entry schema table.
+use crate::AssetType;
+
+/// The word `0x01059B84` this format was named for. It is not a magic: it
+/// is town01's DATA_FIELD chunk header, `(TIM_LIST << 24) | 0x059B84`,
+/// whose low 24 bits are that carrier's payload length. Kept because
+/// [`detect`] (and through it [`crate::categorize`]) keys on it.
 pub const MAGIC: u32 = 0x0105_9B84;
 
-/// Structural interpretation of a field-pack schema slot, derived from its
-/// byte size.  The size-to-kind mapping is based on the cluster analysis in
-/// `docs/formats/field-pack.md`.
+/// Legacy size-clustering of a carrier's pack members, kept for the
+/// `asset field-pack --groups` CLI. The sizes are **word** counts, so the
+/// names below describe TIM sizes, not record kinds - see the module docs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum SlotKind {
     /// Single-byte flag / type marker (size 1, always slot 0).
@@ -115,11 +118,11 @@ pub const SCHEMA_FIRST: u32 = 0x60;
 /// Last value in the schema (= start of the 97th abstract record).
 pub const SCHEMA_LAST: u32 = 0x16651;
 
-/// The 97 schema slot offsets. Byte-identical across every carrier (the 8
-/// schema-bearing PROT entries; MD5 `edcfdf1575889d63d2077c396089d7f3`);
-/// exposed as a static array so callers can interpret schema slots without
-/// parsing a concrete file. Sourced from `0005_town01.BIN` which has the
-/// schema table at byte offset 0x4 (preamble-less, template-only layout).
+/// town01's pack table verbatim, read from `0005_town01.BIN` at byte offset
+/// `0x4` (immediately after its chunk header). Entry 0 (`0x60`) is the member
+/// **count**; entries `1..=96` are the 96 member word offsets. It is NOT
+/// byte-identical across carriers - town0b's is 98 words with count 97 - and
+/// it is not a schema; see the module docs.
 #[rustfmt::skip]
 pub const CANONICAL_SCHEMA: [u32; RECORD_COUNT] = [
     0x00060, 0x00061, 0x020E9, 0x04171, 0x061F9, 0x06609, 0x06821, 0x06A39,
@@ -153,6 +156,129 @@ pub fn iter_canonical_slots() -> impl Iterator<Item = (usize, SlotKind, u32, Opt
         let (off, size) = canonical_slot(i).unwrap();
         (i, SlotKind::from_size(size), off, size)
     })
+}
+
+/// A scene's streamed asset pack - the corrected reading of a "field-pack"
+/// carrier.
+///
+/// Two on-disc forms, both an [`asset::pack`](crate::pack):
+///
+/// - **chunk-headered** - a 4-byte `(type << 24) | size` DATA_FIELD chunk
+///   header at offset 0, pack immediately after it. `chunk_header` is `Some`.
+/// - **bare** - the pack at offset 0, no header. `chunk_header` is `None`.
+///
+/// Retail reads the first through `FUN_8002541C` mode `0x14` (chunk walk into
+/// `FUN_8001F05C`) and the second through mode `0x0A` (`count = base[0]`, then
+/// `FUN_800198E0` per member).
+#[derive(Debug, Clone, Serialize)]
+pub struct ScenePack {
+    /// The `(type << 24) | size` word, when the carrier has one.
+    pub chunk_header: Option<u32>,
+    /// Byte offset of the pack's `count` word - `4` with a chunk header, `0`
+    /// without.
+    pub pack_base: usize,
+    /// Byte ranges of the pack members, in table order, absolute in the buffer
+    /// the pack was read from.
+    pub members: Vec<std::ops::Range<usize>>,
+}
+
+impl ScenePack {
+    /// Asset type the chunk header selects, or `None` for a bare carrier.
+    /// Retail carriers are `TimList` (`0x01`) or `Tmd` (`0x02`), and the type
+    /// always agrees with the members' own magic.
+    pub fn asset_type(&self) -> Option<AssetType> {
+        self.chunk_header
+            .map(|h| AssetType::from_byte(((h >> 24) & 0xFF) as u8))
+    }
+
+    /// Declared payload length from the chunk header's low 24 bits.
+    pub fn declared_size(&self) -> Option<u32> {
+        self.chunk_header.map(|h| h & 0x00FF_FFFF)
+    }
+
+    /// Byte offset one past the pack's offset table - where member 0 starts.
+    pub fn header_end(&self) -> usize {
+        self.pack_base + 4 + 4 * self.members.len()
+    }
+}
+
+/// Largest member count a carrier may declare. The retail range is 30..=173.
+const MAX_PACK_MEMBERS: u32 = 8192;
+
+/// Read a scene pack from a whole PROT entry, trying the chunk-headered form
+/// first and falling back to the bare form.
+///
+/// Gates on the pack's own anchor - `word_offset[0] * 4 == 4 + 4 * count` -
+/// plus strictly ascending in-bounds offsets, and (chunk-headered form only) a
+/// legal [`AssetType`] byte whose declared size fits the buffer. That anchor is
+/// what makes the two forms distinguishable: reading a chunk-headered carrier
+/// as bare puts the header word in `count`.
+pub fn scene_pack(buf: &[u8]) -> Option<ScenePack> {
+    if let Some(header) = legaia_bytes::u32_le(buf, 0) {
+        let type_byte = ((header >> 24) & 0xFF) as u8;
+        let size = header & 0x00FF_FFFF;
+        let legal_type = !matches!(AssetType::from_byte(type_byte), AssetType::Unknown(_));
+        if legal_type
+            && size as usize + 4 <= buf.len()
+            && let Some(members) = read_pack_at(buf, 4)
+        {
+            return Some(ScenePack {
+                chunk_header: Some(header),
+                pack_base: 4,
+                members,
+            });
+        }
+    }
+    let members = read_pack_at(buf, 0)?;
+    Some(ScenePack {
+        chunk_header: None,
+        pack_base: 0,
+        members,
+    })
+}
+
+/// Parse `[u32 count][u32 word_offset[count]]` at `base`, returning absolute
+/// member ranges. Word offsets are relative to `base`.
+fn read_pack_at(buf: &[u8], base: usize) -> Option<Vec<std::ops::Range<usize>>> {
+    let count = legaia_bytes::u32_le(buf, base)?;
+    if count == 0 || count > MAX_PACK_MEMBERS {
+        return None;
+    }
+    let count = count as usize;
+    let table_end = 4usize.checked_add(4 * count)?;
+    if base.checked_add(table_end)? > buf.len() {
+        return None;
+    }
+    let mut byte_offsets = Vec::with_capacity(count);
+    let mut prev: Option<usize> = None;
+    for i in 0..count {
+        let word = legaia_bytes::u32_le(buf, base + 4 + i * 4)? as usize;
+        let off = word.checked_mul(4)?;
+        if let Some(p) = prev
+            && off <= p
+        {
+            return None;
+        }
+        prev = Some(off);
+        if base.checked_add(off)? >= buf.len() {
+            return None;
+        }
+        byte_offsets.push(off);
+    }
+    // The anchor: member 0 starts exactly where the offset table ends.
+    if byte_offsets[0] != table_end {
+        return None;
+    }
+    let mut members = Vec::with_capacity(count);
+    for i in 0..count {
+        let start = base + byte_offsets[i];
+        let end = match byte_offsets.get(i + 1) {
+            Some(next) => base + next,
+            None => buf.len(),
+        };
+        members.push(start..end);
+    }
+    Some(members)
 }
 
 /// Parsed location and slot layout of a fieldpack inside a PROT entry buffer.
@@ -483,6 +609,87 @@ mod tests {
         for (_kind, bytes) in fp.iter_slots(&buf) {
             assert!(bytes.is_empty());
         }
+    }
+
+    /// `[u32 count][u32 word_offsets][members]`, optionally behind a
+    /// `(type << 24) | size` chunk header.
+    fn synthetic_pack(chunk_type: Option<u8>, member_sizes: &[usize]) -> Vec<u8> {
+        let n = member_sizes.len();
+        let mut pack = Vec::new();
+        pack.extend_from_slice(&(n as u32).to_le_bytes());
+        let mut off = 4 + 4 * n;
+        for sz in member_sizes {
+            pack.extend_from_slice(&((off / 4) as u32).to_le_bytes());
+            off += sz;
+        }
+        for (i, sz) in member_sizes.iter().enumerate() {
+            pack.extend(std::iter::repeat_n(i as u8 + 1, *sz));
+        }
+        match chunk_type {
+            None => pack,
+            Some(t) => {
+                let mut out = Vec::new();
+                let header = ((t as u32) << 24) | pack.len() as u32;
+                out.extend_from_slice(&header.to_le_bytes());
+                out.extend_from_slice(&pack);
+                out
+            }
+        }
+    }
+
+    #[test]
+    fn scene_pack_reads_the_bare_form() {
+        let buf = synthetic_pack(None, &[16, 32, 8]);
+        let p = scene_pack(&buf).expect("bare pack");
+        assert!(p.chunk_header.is_none());
+        assert_eq!(p.pack_base, 0);
+        assert_eq!(p.members.len(), 3);
+        assert_eq!(p.header_end(), 16);
+        assert_eq!(p.members[0], 16..32);
+        assert_eq!(p.members[1], 32..64);
+        // The last member runs to the buffer end.
+        assert_eq!(p.members[2].end, buf.len());
+    }
+
+    #[test]
+    fn scene_pack_reads_the_chunk_headered_form() {
+        let buf = synthetic_pack(Some(0x01), &[16, 32, 8]);
+        let p = scene_pack(&buf).expect("chunk-headered pack");
+        assert_eq!(p.pack_base, 4);
+        assert_eq!(p.asset_type(), Some(AssetType::TimList));
+        assert_eq!(p.declared_size(), Some(buf.len() as u32 - 4));
+        assert_eq!(p.members.len(), 3);
+        assert_eq!(p.members[0].start, 4 + 16);
+    }
+
+    #[test]
+    fn scene_pack_rejects_a_buffer_with_no_pack_anchor() {
+        // count/offset table present but member 0 does not start at the
+        // table end - the anchor the two forms are told apart by.
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&2u32.to_le_bytes());
+        buf.extend_from_slice(&99u32.to_le_bytes());
+        buf.extend_from_slice(&100u32.to_le_bytes());
+        buf.extend(std::iter::repeat_n(0u8, 512));
+        assert!(scene_pack(&buf).is_none());
+    }
+
+    #[test]
+    fn magic_word_decodes_as_a_tim_list_chunk_header() {
+        // The former "magic" is town01's chunk header: TIM_LIST + a size.
+        assert_eq!(
+            AssetType::from_byte((MAGIC >> 24) as u8),
+            AssetType::TimList
+        );
+        assert_eq!(MAGIC & 0x00FF_FFFF, 0x059B84);
+    }
+
+    #[test]
+    fn canonical_schema_first_entry_is_the_member_count() {
+        // 0x60 members, then 96 word offsets: the first offset lands exactly
+        // at the end of the `[count][offsets]` table.
+        assert_eq!(CANONICAL_SCHEMA[0], 96);
+        assert_eq!(CANONICAL_SCHEMA[1] * 4, 4 + 4 * 96);
     }
 
     #[test]

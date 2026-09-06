@@ -54,7 +54,7 @@
       <rect x="110" y="100" width="70" height="34" class="sb-box"/>
       <text x="145" y="117" class="sb-m">count</text>
       <rect x="180" y="100" width="70" height="34" class="sb-box"/>
-      <text x="215" y="117" class="sb-m">meta1</text>
+      <text x="215" y="117" class="sb-m">total size</text>
       <rect x="250" y="100" width="230" height="34" class="sb-box"/>
       <text x="365" y="117" class="sb-t">count x (type|size, offset)</text>
       <rect x="480" y="100" width="380" height="34" class="sb-dim"/>
@@ -150,7 +150,7 @@ for c in scene_tmd_stream::battle_tim_chunks(&amp;buf) {
     <thead><tr><th>Offset</th><th>Field</th><th>Meaning</th></tr></thead>
     <tbody>
       <tr><td><code>+0x00</code></td><td><code>u32 count</code></td><td>6 or 7 descriptors</td></tr>
-      <tr><td><code>+0x04</code></td><td><code>u32 meta1</code></td><td>varies; purpose unknown</td></tr>
+      <tr><td><code>+0x04</code></td><td><code>u32 total_decompressed_size</code></td><td>the sum of the descriptors' decompressed sizes (see below)</td></tr>
       <tr><td><code>+0x08</code></td><td><code>count &times; (u32 type_size, u32 data_offset)</code></td><td><code>type_size = (type &lt;&lt; 24) | decompressed_size</code>, the packing the <a href="asset-type.html">asset-type dispatcher</a> takes directly; <code>data_offset</code> is file-relative</td></tr>
       <tr><td><code>+8 + count*8</code></td><td>payloads</td><td>descriptor 0 starts here; later ones often run past the TOC-indexed end into the trailing sectors</td></tr>
     </tbody>
@@ -168,6 +168,27 @@ for c in scene_tmd_stream::battle_tim_chunks(&amp;buf) {
       <tr><td><code>(10, 2, 3, 5, 6, 7)</code></td><td>count-6 early town (<code>town0c</code>): MAN at index 2</td></tr>
     </tbody>
   </table>
+  <h3 id="header-total-decompressed-size">+0x04 is the bundle's total decompressed size</h3>
+  <p>The header's second word equals <code>sum(descriptor[i].size)</code> exactly - each size being that descriptor's
+  <em>decompressed</em> byte count - so it records how many bytes the bundle unpacks to. The identity holds in every
+  table of this family on the disc: the 88 classed <code>scene_asset_table</code> plus the 17 classed
+  <code>lzs_container</code> (the count-4/5 MAN-less dungeon form and the character / effect containers), 105 of 105. It
+  exceeds the carrying entry's byte length in all 105, which rules out the "file size" and "sector count" readings.</p>
+  <p>Retail never reads it: the walker takes <code>count</code> from <code>+0x00</code> and steps descriptors from
+  <code>+0x08</code>, and a sweep of every dumped function for a load off the table base finds reads at offset
+  <code>0x0</code> only. So it is an authoring total - a consistency check an editor must maintain
+  (<code>SceneAssetTable::total_size_is_consistent</code>), not something the game enforces.</p>
+  <h3 id="flag-descriptor-streams-a-file">A Flag descriptor streams an extra file</h3>
+  <p>Types <code>0x0A</code> / <code>0x0F</code> / <code>0x14</code> allocate nothing: the
+  <a href="asset-type.html">dispatcher</a> returns <code>(case &lt;&lt; 8)</code> and exits. The walker ORs every
+  descriptor's return into one status word, and the field init shifts that right by 8 and passes it to
+  <code>FUN_8002541C</code>, which loads one more file by that mode - <code>0x0A</code> =
+  <code>tim.dat</code>, <code>0x0F</code> = <code>move.mdt</code>, <code>0x14</code> =
+  <code>&lt;scene&gt;.pac</code>. So a <code>Flag</code> in the descriptor list is a request to stream the block's
+  <code>+4</code> entry, and the corpus matches block by block: 28 blocks with <code>Flag(0x14)</code> hold a
+  DATA_FIELD stream there, 4 with <code>Flag(0x0A)</code> hold a bare <a href="pack.html">pack</a>, and 64 with no
+  <code>Flag</code> reserve the slot with a <a href="pochi.html">pochi filler</a>. Details:
+  <a href="field-pack.html">field-pack</a>.</p>
   <h3 id="mesh-pool-descriptor-walk">The mesh pool is the descriptor walk</h3>
   <p>The <code>Tmd</code> descriptor is an <a href="pack.html"><code>asset::pack</code></a> of every static mesh in the scene (<code>town01</code>: 121 meshes). The runtime mesh pool gains one slot per pack member, in pack order, after the five resident party / save-point meshes - Rim Elm is 5 + 114 = 119 slots. Placement of those meshes comes from the field map object table (<a href="../subsystems/field-locomotion.html">field locomotion</a>). A byte sweep for TMD magic is <em>not</em> a substitute: a scene block's bytes carry meshes the walk never registers. Parser <code>scene_asset_table::mesh_pool</code>.</p>
   <details class="disclosure">
