@@ -476,12 +476,17 @@ impl World {
     /// (`gp+0x814`). [`Self::tick`] counts it down by the frame step.
     ///
     /// Retail's arm half writes five `gp` cells, not three: on top of the
-    /// timer's armed flag / deadline / elapsed it latches the live brightness
-    /// word `_DAT_8007B910` and the caller's tag, then tail-calls the libsnd
-    /// volume shim with `(level >> 1, deadline | 1)`. Those two extra cells
-    /// land in [`Self::sound_arm`] so a host driving the shim has the exact
-    /// arguments; the engine has no live brightness ramp of its own, so the
-    /// latched level is the cold-reset value retail boots `_DAT_8007B910` to.
+    /// timer's armed flag (`gp+0x808`) / deadline (`gp+0x814`) / elapsed
+    /// (`gp+0x81C`) it latches the caller's tag (`gp+0x810`) and the live
+    /// **audio level** `_DAT_8007B910` (`lw a1,-0x46f0(a1)` at `0x800267B0`
+    /// into `gp+0x80C`), then tail-calls the libsnd volume shim
+    /// `FUN_80062004(*(i16*)0x80070536, (level << 15) >> 16, deadline | 1)`
+    /// (`0x800267E4`). Those two extra cells land in [`Self::sound_arm`] so a
+    /// host driving the shim has the exact arguments; the engine has no live
+    /// volume ramp of its own, so the latched level is the cold-reset value
+    /// retail boots `_DAT_8007B910` to - `0xD7`, still carried here under the
+    /// stale field name `screen_brightness` (the cell is a volume, not screen
+    /// brightness; `FUN_80062004` tail-calls `SsSeqSetVol`).
     ///
     /// PORT: FUN_800267A8
     /// REF: FUN_800267FC, FUN_80062004

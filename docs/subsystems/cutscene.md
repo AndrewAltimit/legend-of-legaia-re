@@ -1201,11 +1201,30 @@ the tick it is set) + the timeout fallback.
 
 **Player-channel (`0xF8`) ExecMove / halt-acquire completion.** Door-cutscene records drive the
 **player** through the same handshake: `A2 F8 <move_id>` (ExecMove) pokes a move-table clip onto
-the player object, then `C3 F8 <sub> …` (op `0x43` sub-0/1/A/B halt-acquire) halts the caller and
-state-resumes it at the operand s16 once the move completes - a resume PC pointing **backward**
-into the poke loop (jou's castle-door record `P2[5]`: `C3 F8 00 5E E2 50` at `+0x60` resumes at
-`+0x50`; the record's terminal `0x3F` to `jouina` sits at `+0xD0`). Retail resolves `0xF8` to the
-live player object (`_DAT_8007C364`, `FUN_8003C83C`); the engine spawns no player channel, so
+the player object, then `C3 F8 <sub> …` (op `0x43` sub-0/1/A/B halt-acquire) halts the caller
+until that motion finishes (jou's castle-door record `P2[5]` at `+0x60`; the record's terminal
+`0x3F` to `jouina` sits at `+0xD0`). Retail resolves `0xF8` to the live player object
+(`_DAT_8007C364`, `FUN_8003C83C`, `li v0,0xf8` / `lw v0,-0x3c9c(v0)`; the same compare is inlined
+twice more in the halt-resume kernel `FUN_8003774C`, at `0x800377A0` and `0x80037E04`).
+
+Three parts of the retail side were previously described from the port's model rather than from
+the arms, and the disassembly does not support them. **ExecMove arms nothing.** The `0x22` arm at
+`0x801DE998` writes only the target's `+0x5C` / `+0x5E` / `+0x56`, calls the clip selector
+`FUN_800204F8` and advances - it never sets the `0x400` halt bit or a wait field. **The
+halt-acquire is what creates the wait object**: `0x801DF384` saves the op pointer into `+0x94`
+and ORs `0x400` into `+0x10` for the target (and, when the target is the player, for the calling
+record too, `0x801DF404`), then `0x801DF5AC jal 0x801d25ec` spawns the glide actor plus a release
+helper (handler `0x801D5D60`) carrying `watch` / `owner` / `mask = 0x400`. The helper polls the
+glide actor's done bit (`0x801D5DB4 andi v0,v0,8`) and clears the halt (`0x801D5DD4`, plus the
+player's own at `0x801D5DFC`). **The record does not park on the acquire**: the acquire advances
+(`0x801DF5B8 addiu s8,s8,0x8`, so 9 bytes extended for sub-0/1 and 11 for sub-A/B; a failed
+predicate advances 0), and the park happens at the *next* cross-context op through the VM
+prologue's generic busy gate `0x801DE90C..0x801DE944`, which returns the unadvanced PC that the
+run loop reads as "stop this frame" (`0x8003CFF0`). So there is no backward resume PC: the two
+halfwords at operand `+3` / `+5` are `FUN_801D25EC` tween arguments read by `FUN_8003CE9C`, not a
+jump target.
+
+The engine spawns no player channel, so
 [`field_channels::resolve_target`](../../crates/engine-core/src/field_channels.rs) keeps its
 `None`-for-`0xF8` contract and `run_spawned_record_slice` models the two ops directly: the
 ExecMove emits the same `ExecMove` field event and arms a short in-flight countdown

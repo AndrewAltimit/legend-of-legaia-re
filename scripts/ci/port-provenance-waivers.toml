@@ -658,3 +658,34 @@ distinctive addresses `0x801F4E64` / `0x801F4EDC` are exactly the `< 0x25`
 anim-pair table the doc comment names as the un-parsed arm. The host trait's
 other hooks are dispatcher-side routines that share nothing with it by design.
 """
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/battle.md:801e91e8:801c9348"
+reason = """
+DAT_801C9348 is the caller's monster-record table, not this routine's. The
+row's evidence is a call site one level up, verified in the caller's dump:
+overlay_battle_action_801ec3e4.txt line 1844 is `801ee2c0  jal 0x801e91e8`,
+reached with `801ee2bc  lbu a0,0x3e(v0)` off `s1 = (&DAT_801C9348)[slot-3]`
+(formed at `801ee23c  lui v0,0x801d` / `801ee240  addiu v0,v0,-0x6cb8`).
+FUN_801E91E8's own 61 instructions form only 0x8007BD24, 0x8007BAC0,
+0x8007BD10 and the character-record base 0x80084140 - a caller's table and a
+caller's instruction address cannot appear in them. The row names both dumps
+so the citation is locatable.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-core/src/world/frame_tick.rs:800267a8"
+reason = """
+Correct tag; the module is a host dispatcher, which is the shape the signal's
+own DF_LADDER comment says it cannot read. `arm_sound_release` implements the
+21-instruction SCUS leaf FUN_800267A8 exactly: the five gp cells it writes are
+`sw v0,0x808(gp)` (armed=1), `sw a0,0x810(gp)` (tag), `sw a2,0x814(gp)`
+(deadline), `sw zero,0x81c(gp)` (elapsed) and `sw a1,0x80c(gp)` (the latched
+level read at `800267b0  lw a1,-0x46f0(a1)` = _DAT_8007B910), followed by the
+tail call `800267e4  jal 0x80062004` with `a0 = *(i16*)0x80070536` and
+`a1 = (level << 15) >> 16`. Those are the routine's only distinctive data
+(0x80070536, 0x8007B910) and its only callee (0x80062004), and no other module
+claims either - the corroboration half of the shop shape is absent. The
+module's other ten tags are minigame and walk state machines it ticks per
+frame, so sharing nothing with them is by construction.
+"""

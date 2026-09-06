@@ -11,7 +11,7 @@
     <dt>Archive directory</dt><dd>First three sectors of <code>PROT.DAT</code> (6 KB) land at <code>0x801C70F0</code>; every later load is a table lookup</dd>
     <dt>Mode machine</dt><dd>28-entry table at <code>0x8007078C</code>: 14 modes, each an INIT / per-frame pair; the mode word is <code>_DAT_8007B83C</code></dd>
     <dt>Overlay window</dt><dd>Slot A at <code>0x801CE818</code> holds one of field / menu / cutscene / minigame code at a time; slot B holds the summon-render pair</dd>
-    <dt>Title screen</dt><dd>Not a mode - its tick is the tail of PROT 0899, streamed raw before the mode table runs</dd>
+    <dt>Title screen</dt><dd>No row is named for it, but it is a mode - the <code>CARD</code> pair (22/23), whose init streams PROT 0899 into slot A</dd>
     <dt>NEW GAME</dt><dd>Writes mode 2 (field), loads PROT 0897 and opens the prologue scene <code>opdeene</code>; name entry comes later, in <code>town01</code></dd>
     <dt>Port</dt><dd><code>engine-shell::BootSession</code> (init), <code>engine-core::mode::ModeDriver</code> (the table), <code>engine-vm::title_overlay</code> (the title tick)</dd>
     <dt>Confidence</dt><dd>Confirmed - mode table read off the disc; title tick and launch write pinned by live watchpoints</dd>
@@ -65,7 +65,7 @@
         <text x="229" y="66">mode word</text>
         <text x="580" y="140" text-anchor="end">streams a PROT entry</text>
         <text x="830" y="140" text-anchor="end">skipped by pause menu</text>
-        <text x="20" y="236" text-anchor="start">Title screen: runs before this loop, from its own overlay tick</text>
+        <text x="20" y="236" text-anchor="start">Title screen: modes 22/23 (CARD), as a spawned actor tick</text>
       </g>
     </svg>
     <figcaption>One loop, one table: a mode&rsquo;s INIT handler streams code into the overlay window, its per-frame handler runs the game, and writing the mode word is the only way to switch.</figcaption>
@@ -76,7 +76,7 @@
     <span class="num">3</span><span class="layer">Name map</span><span class="desc">CDNAME.TXT fills the scene-name table so &ldquo;town01&rdquo; resolves to an entry index</span><span class="crate">CDNAME primer</span>
     <span class="num">4</span><span class="layer">Asset router</span><span class="desc">the type-byte dispatcher&rsquo;s buffer pointers become valid</span><span class="crate">asset dispatcher</span>
     <span class="num">5</span><span class="layer">Publisher logos</span><span class="desc">four textures in <code>init.pak</code> fade in / hold / fade out</span><span class="crate">legaia_asset::init_pak</span>
-    <span class="num">6</span><span class="layer">Title overlay</span><span class="desc">PROT 0899&rsquo;s tail streams raw into slot A; the attract loop ticks</span><span class="crate">title tick</span>
+    <span class="num">6</span><span class="layer">Title overlay</span><span class="desc">mode 22 <code>CARD INIT</code> streams PROT 0899 into slot A; the attract loop ticks</span><span class="crate">title tick</span>
     <span class="num">7</span><span class="layer">Mode machine</span><span class="desc">NEW GAME writes mode 2; the master loop dispatches the table from here on</span><span class="crate">ModeDriver</span>
   </div>
   <p>Almost every PlayStation game bundles its small files into one archive so the disc can stream them; Legaia&rsquo;s is <code>PROT.DAT</code>, with a table of contents saying &ldquo;entry N starts at sector S&rdquo;. Reading that table is job one. Job two is the <em>asset-type dispatcher</em>: each entry&rsquo;s first byte is a type tag, and one router hands the bytes to the matching parser (<a href="../formats/asset-type.html">asset-type</a>). Job three is the mode machine below.</p>
@@ -192,7 +192,7 @@
 
 <section class="doc-section" id="title-overlay-state">
   <h2>The title screen</h2>
-  <p>The title screen is a small program of its own: an attract countdown that eventually plays the opening movie, a two-row menu, a memory-card check, and the NEW GAME / CONTINUE launch. It is <strong>not one of the 14 modes</strong> - its tick is loaded by a pre-dispatch boot routine, so &ldquo;which mode-table row is the title screen?&rdquo; has an empty answer.</p>
+  <p>The title screen is a small program of its own: an attract countdown that eventually plays the opening movie, a two-row menu, a memory-card check, and the NEW GAME / CONTINUE launch. It runs under the <strong><code>CARD</code> pair, modes 22/23</strong>: that mode&rsquo;s init loads PROT 0899 and spawns an actor whose handler calls the tick every frame. What is empty is the <em>name</em> search - none of the 28 dev names says &ldquo;title&rdquo;, which is why the row looked missing.</p>
   <table class="data-table">
     <thead><tr><th>Piece</th><th>Where</th><th>Note</th></tr></thead>
     <tbody>
