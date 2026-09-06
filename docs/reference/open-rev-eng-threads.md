@@ -81,6 +81,11 @@ cheapest place to look for a claim that is still wrong.
   reader enumeration (125 sites, six images, closed). `_DAT_8007BD84` is an
   effect handle, not a mode word; `FUN_8003EAE4`'s driver is `FUN_8003D764`;
   and the item table carries 250 names, not "far below 128".
+- **Two tooling rows closed by the wave's own last commits.** The slot-B
+  pointer-resolution gate now counts only references that land inside another
+  mapped image, so every one of the 64 modules carries a map row; and the dump
+  canonicaliser folds the COP2 family, so GTE-bearing windows attribute (the
+  `world_map_render` floor went from 36% to 100% on that fix alone).
 - **Four runtime questions closed by capture.** The evolved-Cort flow `0x0C`
   park is the boss stage module's own intro countdown handing the flow back;
   the dome decal flag is clear live; an ordinary party swing emits neither
@@ -433,8 +438,6 @@ PCSX-Redux `.sstate` via `pcsxr-state`, dispatched on file extension).
 
 | Thread | Status | What would close it |
 |---|---|---|
-| The slot-B pointer-resolution gate rejects three real modules (PROT 0915 / 0926 / 0935) | open | `crates/asset/tests/static_overlay_extract.rs` counts every out-of-image reference against the recovered base, so a module that reads PROT 0898's data below the base (0915), its own post-image `.bss` (0935), or is a one-sector stub (0926) fails it. One predicate change - count only references that land inside another mapped image - admits all three, whose entry VAs and partitions are already documented. |
-| Dump attribution is blind to GTE ops | open | `attribute-dump-extents.py` / `check-dump-base-integrity.py` canonicalise Ghidra's printed text against a capstone re-decode, and the two spell every `mtc2` / `cop2` differently, so any window holding a COP2 op is classed unresolved about bytes that demonstrably match (measured on `overlay_world_map_render_0901_801f7644.txt`: 16 tokens agree, 6 GTE tokens disagree). Folding COP2 the way `break` is already folded recovers the GPU / GTE emitters, where most of the remaining un-dumped runs live, and lifts `world_map_render`'s floor back above 42%. |
 | PROT 0901's middle band is a shared-tail leaf family | open | `0x801F7644..0x801F8EB4` has six `jal`s and no `jr ra` - every leaf `j`s to one exit - so neither a prologue partition nor a cut-at-`jr ra` walk splits it; it is dumped as one range. Splitting needs the `j`-target graph. |
 
 ## Adding a thread

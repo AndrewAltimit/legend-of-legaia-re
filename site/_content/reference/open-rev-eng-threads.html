@@ -225,8 +225,6 @@
   <table>
     <thead><tr><th>Thread</th><th>Status</th><th>What would close it</th></tr></thead>
     <tbody>
-      <tr><td>The slot-B pointer-resolution gate rejects three real modules (PROT 0915 / 0926 / 0935)</td><td><span class="tag tag-open">open</span></td><td>The extraction test counts every out-of-image reference against the base; counting only references that land inside another mapped image admits all three.</td></tr>
-      <tr><td>Dump attribution is blind to GTE ops</td><td><span class="tag tag-open">open</span></td><td>The canonicaliser spells <code>mtc2</code> / <code>cop2</code> differently on its two sides, so windows holding GTE ops read as unresolved; folding COP2 the way <code>break</code> is folded recovers the GPU / GTE emitters.</td></tr>
       <tr><td>PROT 0901's middle band is a shared-tail leaf family</td><td><span class="tag tag-open">open</span></td><td>Six <code>jal</code>s and no <code>jr ra</code> in <code>0x801F7644..0x801F8EB4</code>; splitting it needs the <code>j</code>-target graph.</td></tr>
     </tbody>
   </table>

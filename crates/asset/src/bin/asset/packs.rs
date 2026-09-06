@@ -524,9 +524,10 @@ pub(crate) fn scene_v12_one(input: &Path, dump_scripts: bool, max_scripts: usize
     println!();
     println!();
 
-    // Event-script prescript at +0x800.
+    // The sister prescript is the NEXT PROT entry; the old '+0x800' reading
+    // was the over-reading entry size appending the neighbour.
     println!(
-        "event scripts @ +0x800: {} records, frame-opener rate {:.0}%",
+        "sister prescript (the next PROT entry): {} records, frame-opener rate {:.0}%",
         t.scripts.len(),
         100.0 * t.frame_opener_rate()
     );

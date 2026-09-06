@@ -672,8 +672,9 @@ enum Cmd {
         desc_count: usize,
     },
     /// Inspect a single PROT entry as a scene v12 table: print the header
-    /// fields, the inline records at `+0x14`, and a summary of the
-    /// event-script prescript at `+0x800`.
+    /// fields, the inline records at `+0x14`, and a summary of the sister
+    /// prescript (the NEXT PROT entry - `0x800` is this entry's size, not a
+    /// field inside it).
     SceneV12 {
         input: PathBuf,
         /// Print every event-script record's bytecode head (first 16 bytes)

@@ -6,7 +6,9 @@ Diff a captured runtime RAM window (from
 scripts/pcsx-redux/autorun_field_pack_projection.lua) against the
 on-disc PROT bytes for the same scene's field-pack entry.
 
-The field-pack format is documented at docs/formats/field-pack.md. The
+The entries this walks are the scene texture packs at raw-TOC +4 of a
+CDNAME block - an asset::pack behind a DATA_FIELD chunk header, NOT a
+distinct format (docs/formats/field-pack.md records the dissolved reading). The
 loader (FUN_8001F7C0) transforms the on-disc preamble into a runtime
 structure that mixes GP0-shaped GPU primitive packets, the asset
 descriptor table, and the asset region. Reading the post-load runtime
@@ -16,8 +18,8 @@ projection. The probe captures the runtime RAM window after the loader
 returns; this tool compares it byte-by-byte against the disc bytes
 the loader read from.
 
-Output is a per-slot summary keyed by the canonical 97-slot field-pack
-schema, listing for each slot:
+Output is a per-slot summary keyed by the pack's offset table (once
+misread as a 97-slot field-pack schema), listing for each slot:
   * bytes_total
   * bytes_changed (post-load RAM != on-disc PROT)
   * first_diff_offset (relative to slot start)
