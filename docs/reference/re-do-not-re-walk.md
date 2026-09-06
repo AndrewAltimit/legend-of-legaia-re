@@ -536,6 +536,20 @@ is the artifact - a branch label inside this routine colliding with a real
 entry in PROT 0970. See
 [`battle-action.md`](../subsystems/battle-action.md#overlay-local-prng-fun_801d0290).
 
+### `_DAT_8007BD84` is a mode word the melee kernel branches on
+
+*Falsified by disassembly.*
+
+It is an **effect-instance handle**. Its only non-zero writer disc-wide is
+PROT 0940's Cort "Mystic Shield" stager at `0x801F7678`, storing a
+`FUN_80021B04` return; `FUN_8004CE2C` dereferences it at `+0x10` / `+0x56` /
+`+0x72` and clears it when it fires cue `0x10D`. The two SCUS writers only
+zero it. Callers that read it as a flag are testing that handle for null. The
+companion reading - "the grunt's `s7` latch always passes" - is false too:
+`s7` must equal `actor[+0x1F3]`, and only one of fourteen reaching definitions
+loads it. See
+[`re-settled-threads.md`](re-settled-threads.md#what-a-normal-party-attack-sounds-like).
+
 ## Audio / sound driver
 
 | Thread | Verdict | Why |
@@ -624,6 +638,43 @@ re-derived by accident.
 The consumer was "untraced" only because every reader forms `0x8007B990` with
 `lui` + `lw`, a pair the five-form address scan does not accept. Details:
 [`re-settled-threads.md`](re-settled-threads.md#bsedat-record-columns-and-the-gp0x678-consumers).
+
+## Title / boot / overlays
+
+### The title screen is loaded before the mode table is consulted
+
+*Falsified by disc bytes and `main()`'s disassembly.*
+
+The 28 mode-table rows carry no name resembling "title", so the screen was
+read as running ahead of the dispatcher from its own pre-mode-dispatch boot
+load. Both halves are false. The one pre-loop overlay load in `main()` is
+`0x8001612C jal 0x8003ebe4` with `a0 = 0`, which is extraction 0895
+(`init.pak`, the publisher logos) reached by mode 16 `READ`; the title overlay
+PROT 0899 is loaded by mode 22 `CARD` (`0x800258B4`, `a0 = 4`) and its tick
+runs as a spawned actor under mode 23. The name search was the dead end, not
+the table. See
+[`re-settled-threads.md`](re-settled-threads.md#title-screen-mode-table-prot).
+
+### `FUN_801DD35C` lives in an unindexed PROT.DAT gap between entries 899 and 900
+
+*Falsified by TOC arithmetic and a byte search.*
+
+There is no such gap - an entry's size is the sector span to the next, so the
+TOC partitions `PROT.DAT` without one (899 ends at sector 47301 where 900
+begins). The tick's 48-byte prologue occurs exactly once on the disc, inside
+entry **0899** at file `+0xEB44`. Another coordinate measured under the
+superseded entry-size expression.
+
+### `FUN_8003EAE4`'s flags are consumed by an untraced CD driver
+
+*Falsified by disassembly.*
+
+`gp+0x910` and `gp+0x890` have no reader anywhere in SCUS or the 1233 PROT
+entries - every access is a store. The real CD-callback sequencer
+`FUN_8003D764` reads none of the three cells; it dispatches on `gp+0x928`,
+which only `FUN_8003D53C` writes and which `FUN_8003EAE4` merely reads as a
+no-op entry gate. See
+[`re-settled-threads.md`](re-settled-threads.md#fun_8003eae4-is-a-seek-plus-bookkeeping---and-the-driver-is-not-untraced).
 
 ## Containers / placeholder slots
 
@@ -1165,6 +1216,15 @@ image at its mapped base, and only from there.
 |---|---|---|
 | Retail's op-`0x49` arm spawns a driver actor that **opens the pause menu itself** for the kind-`0x0D` entry context | falsified (row `0x0D` of the dispatch table is `-1`; nothing opens) | The reading explained why the port could not reach `ContextNotice` / `ContextReady` and pointed at a pending-request channel as the fix. But the submode dispatcher indexes a **signed** 14-byte table at `0x801F33A4` with the parked operand's first byte and returns on `-1` (`0x801F1468..0x801F1470`) *before* it writes the driver's state or clears `_DAT_8007B450`. So a `0x0D` park simply stands, and the player's own Start is what enters the menu it gates. The port's own close-tick fallback for that row was the defect: it retired within a few frames and took the context with it. |
 | Actor VM = "the title screen's sprite-walk interpreter", with an ANM-trigger opcode | falsified (it is the menu overlay's window-widget script interpreter) | Two readings fell together. `FUN_801D6628` is resident in PROT 0899 (the menu overlay), and its base materialisation `lui 0x801e / addiu 0x4738` indexes the **window descriptor table** - instruction byte 1 is a window id, not a sprite-actor slot. And no arm of the 13-way dispatch hands off an ANM id (`see ghidra/scripts/funcs/overlay_menu_801d6628.txt`); "trigger animation" was a guess from the sprite-VM framing. Programs are overlay-resident data ([window-script.md](../formats/window-script.md)), so "find the per-scene carrier" was never answerable. |
+
+### The disc's item population is far below 128, so a half-window bag cannot fill
+
+*Falsified by disc bytes.*
+
+The static item-name table carries 250 non-empty names over its 256 ids. The
+half-window OOB is still unreached in normal play, but the reason is progress
+during the solo phase, not the size of the id space. See
+[`re-settled-threads.md`](re-settled-threads.md#full-window-item-add-oob-reachability).
 
 ## Measurement readings
 

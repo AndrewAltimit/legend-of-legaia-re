@@ -53,7 +53,7 @@ every address, capture, and correction - lives in that section, under its own
 | World-map walk-view continent ground render | resolved | `capture` | [details ↓](#world-map-walk-view-continent-ground-render) |
 | Walk-view decoration draw gate - which grid bit stamps the `.MAP` record meshes on the overworld? | resolved (`0x2000` alone; no flag or mesh-0 test) | `disassembly` + `capture` | The resident slot-B kernel `FUN_801F69D8` (PROT 0901, byte-matched against a `map01` walk capture) tests only `cell & 0x2000` at `0x801F6ECC`, skips placed records, and reads `+0x10` with no zero test and no flag-`0x2` test; Y is the 2x2 corner average. Mode 3 reaches it through `FUN_80026CE4`, which picks it over the field sibling `FUN_801F7088` on `_DAT_8007BA90`. The big enterable mountains are `0x2000`-only cells, so the port's `0x1000` gate dropped exactly them - addresses and the cell census in [world-map.md](../subsystems/world-map.md#placing-the-continent-terrain-engine-port). |
 | Walk-view untextured landmark prims - does retail draw the `F*`/`G*` colour prims of the slot-1 pack meshes (Rim Elm's hut roofs)? | resolved (yes, same per-prim dispatch as the textured prims) | `disassembly` | `FUN_80043390` selects the renderer by the group header's `flags >> 1` (`0x80043614`) and skips a group only on a null table entry. Slots 12..=15 (F3 / F4 / G3 / G4) are populated in the SCUS row `0x8007657C` and in the world-map overlay row `0x801F8968` (`0x801F7644 / 0x801F7838 / 0x801F7F78 / 0x801F8198`, cued like the textured leaves). Rim Elm (Drake slot 29) is 24 `G3` roof triangles over textured walls; 34 slots across the three packs carry colour prims - [world-map.md](../subsystems/world-map.md#top-view-bulk-terrain-render-path-overlay-replaced-per-prim-renderers). |
-| `DAT_8007C018[45..53]` mid-load vertex-pool pointers | resolved (structural) | `inference` | The liveness rule settles it without a snapshot: `DAT_8007C018[i]` is meaningful only for `i <= DAT_8007BB38` (the walker/install counter). Entries above the counter - which includes `45..53` in small field scenes like town01 - are stale carryover from prior game state, never dereferenced; there is no per-index "vertex-pool pointer" semantic. The historical "`[45..53]` = `(-6,-6)` vertex data" reading was a Drake mid-warp snapshot taken *past* the counter. The `field_load_first_town` state the probe would use was never actually captured (no file in the catalogue), so the structural rule supersedes it. |
+| `DAT_8007C018[45..53]` mid-load vertex-pool pointers | resolved (structural) | `disassembly` | [details ↓](#dat_8007c018-liveness-rule) |
 | Field decoration path - does it dispatch the NCC light handlers? | resolved (no field light; depth-cue only) | `capture` | [details ↓](#field-decoration-path---does-it-dispatch-the-ncc-light-handlers) |
 | Kingdom slot 4 - per-record semantic + consumer | resolved (read in place; `attr` render-unused) | `capture` + `disassembly` | [details ↓](#kingdom-slot-4---per-record-semantic) |
 | MAN sections 2 and 5 - what do `_DAT_801C6EA0` / `DAT_80073EE0` carry? | resolved (both are place-name carriers) | `disassembly` + `capture` | Section 2's body is the **scene display name** the on-entry banner draws (and the save screen's location row); section 5, the universal zero-length terminator, leaves its pointer on the **world-map location table** the kingdom MANs trail - 29 records of `region + map x/y + discovery flag + 24-byte name`, walked by the label pass that draws each place's name at its map position. Together with the SCUS quick-travel cells that makes **three** independent carriers of one place name, which is why a rename has to edit all three. Layout + provenance: [place-names.md](../formats/place-names.md). |
@@ -122,6 +122,21 @@ vertex-index extraction or output-packet write, none reading the pool `word1` hi
 So `attr` (real per-vertex data) is ignored by the entire world-map render path -
 reserved/authoring data with no live consumer.
 
+### DAT_8007C018 liveness rule
+
+*Status:* resolved (structural) - grade `disassembly`
+
+The liveness rule is in the instructions. The registrar `FUN_80026B4C` writes
+`DAT_8007C018[cursor]` (`sw a0,0x0(v1)` at `0x80026BA8`, `v1 = 0x8007C018 +
+cursor*4`) and mirrors the **pre-increment** cursor into `gp+0x820` =
+`_DAT_8007BB38` (`0x80026BBC`); the pool walker `FUN_801D8280` loads that
+counter (`0x801D8284`) and runs `i = 0 ..= counter`, stepping the base by 4.
+Entries above the counter are never visited, so there is no per-index semantic
+and `45..53` in a small field scene is stale carryover. An all-forms sweep finds
+exactly **one** store of the counter corpus-wide and it is `gp`-relative - which
+is why an absolute-only scan found no writer. Per-stage reset: `FUN_8001E1B4` at
+`0x8001E3AC`.
+
 ## Battle / arts / level-up
 
 ### The battle hit tint - what a landing hit writes and how it reaches the pixel
@@ -189,7 +204,7 @@ pose `0x14` while Noa levelled. Evidence: `disassembly` + `capture`. Details:
 
 ### What a normal party attack sounds like
 
-*Status:* resolved - the `XA30` grunt on an ordinary swing; the `0x10C` sting only when `_DAT_8007BD84` is non-zero; the `s7` latch on the grunt is not decoded
+*Status:* resolved - the `XA30` grunt on an ordinary swing; the `0x10C` sting only when `_DAT_8007BD84` is non-null; the `s7` gate is a real per-strike condition, and `_DAT_8007BD84` is a pointer
 
 `FUN_801EC3E4` picks one of two emissions on `_DAT_8007BD84`: zero takes `FUN_8003D53C(0x1D,
 chan, dur)` at `0x801EEB44` (per-character `(0,0x26)` / `(4,0x2E)` / `(6,0x1A)` off
@@ -198,15 +213,41 @@ grunt (`0x801EEAC8`) into `FUN_8004FE5C(0x10C, seat)` at `0x801EEBE8`, whose voi
 further gated on `FUN_8003DE7C(1) == 0` (`0x8004FE9C`). The word is the same cell the damage
 finisher reads as the enemy-defender halve; its only dumped stores are zeros (battle start,
 round reset). `XA27` is an eight-channel stereo sting bank, `XA30` a ten-channel mono grunt bank
-(disc demux). Evidence: `disassembly` for the selector and gates, `inference` for the grunt
-latch always passing and for the word staying zero in an ordinary fight. Shipped:
+(disc demux). Evidence: `disassembly` throughout. `_DAT_8007BD84` is an
+**effect-instance handle**, not a mode word: an all-forms sweep (the `gp` form
+`0xA6C(gp)` yields zero) over SCUS, all 1233 PROT entries and the overlay images
+finds exactly three stores - `0x8004D658` and `0x80056080`, both `sw zero`, and
+one non-zero at PROT 0940 file `+0xCA0` = `0x801F7678`, the Cort "Mystic Shield"
+stager saving the `FUN_80021B04` handle it spawned. `FUN_8004CE2C` dereferences
+it (`0x8004D548`; `+0x56` / `+0x72` written, `+0x10` read) and consume-releases
+it at `0x8004D658` alongside cue `0x10D`; an ordinary swing pages in no capture
+module, so the cell reads null. The earlier "grunt latch always passing" is
+**falsified**: `0x801EEA88` / `0x801EEAA0` require `s7 != 0` and `s7 ==
+actor[s4][+0x1F3]`, `s7` being the staged pose byte committed to `+0x1DA` at
+`0x801EEC6C`, and only one of the fourteen definitions reaching the compare
+loads `+0x1F3`. The grunt's seat is `s6` (`0x801EEA70`), the sting's `s4`; a
+third gate `0x801EEAB8 slti v0,v0,0x2` over `_DAT_8007BC20` mutes the grunt at
+level 2. Shipped:
 `World::fire_melee_impact_cue` + `read_battle_xa_clip_bank`.
 
-### `FUN_8003EAE4` is a seek plus driver flags, not a stream start
+### `FUN_8003EAE4` is a seek plus bookkeeping - and the driver is not untraced
 
-*Status:* partial - the routine seeks (`CdlSeekL`) and arms `gp+0x908` / `gp+0x910` / `gp+0x890`; the driver that consumes those flags is untraced
+*Status:* resolved - the routine seeks and raises `gp+0x908`; the CD-callback sequencer it does **not** arm is `FUN_8003D764`. Grade `disassembly`.
 
-The starter the resident battle voice selector `FUN_8004DA00` hands its clip to cancels any in-flight read, positions the drive on the clip file's slot record (`FUN_8005C160(2, slot, ..)`) and issues CD command `0x15` (`li a0,0x15; jal 0x8005C034` at `0x8003EB68`), then stores `1` at `gp+0x908` and `gp+0x910` and the slot at `gp+0x890`. Nothing in the routine reads a sector; whatever plays is the CD-callback driver's response to those flags, which no dump follows. `battle_voice_step`'s `Arm` outcome therefore has a device-side sequence behind it the engine does not model - it stays a decision without a driver. Evidence: `disassembly` for the seek and the flag stores, `inference` for what the driver does next.
+`FUN_8003EAE4` cancels any in-flight read, positions the drive on the clip
+file's record (`FUN_8005C160(2, 0x801C6ED8 + slot*8, 0x8007BC10)` - the argument
+is the record pointer, not the slot index), issues CD command `0x15` (`li
+a0,0x15; jal 0x8005C034` at `0x8003EB68`) and stores `1` at `gp+0x908` /
+`gp+0x910` and the slot at `gp+0x890`. The "which no dump follows" reading is
+falsified in both halves. The driver is `FUN_8003D764` (dumped;
+`functions/script-vms.md`), it dispatches solely on the state ring `gp+0x928`,
+and the only writer of `gp+0x928` is `FUN_8003D53C` (`0x8003D6F4`,
+`0x8003D724`), which also registers the callback. `FUN_8003EAE4` never writes
+`gp+0x928` - it reads it as an entry gate that makes the whole routine a no-op
+while a clip is armed. Of its own three cells only `gp+0x908` has any reader (a
+"streamed clip busy" level); `gp+0x910` and `gp+0x890` are write-only across
+`SCUS_942.54` and all 1233 PROT entries. So a lone `FUN_8003EAE4` call seeks and
+books, and streams nothing.
 
 ### Formation species limit - what the battle setup does with 3 distinct monster ids
 
@@ -278,7 +319,7 @@ species and at the disc's authored heap-cost maximum.
 | Battle stage backdrop: which `scene_tmd_stream` a scene fights in | resolved | `capture` | A scene bundle carries one stage stream per sub-area, and the battle's is not uniformly the block's first - `map01` uses bundle slot 5 (entry 88), Rim Elm `town01` slot 6 (entry **7**). Engine `ProtIndex::battle_stage_entry_for_scene`. [details ↓](../subsystems/battle.md#which-stage-stream-a-scene-fights-in) |
 | Battle stage backdrop: is the authored half completed, and how | resolved (two actors; per-stage transform; object 1 dropped) | `capture` + `disassembly` | `FUN_800513F0` registers the shell TMD once and allocates **two** actors from it (`ctx+0x106C` / `+0x1070`), both drawn. Copy B takes a half turn unless the stage is on the `DAT_80078B50` table, which mirrors it in X instead. Confirmed live in 15 battle saves: both pointers non-null and distinct, object lists identical, the split matching the table every time. Retracts "drawn once, so nothing completes it" ([re-do-not-re-walk.md](re-do-not-re-walk.md#the-backdrop-shell-is-drawn-once-so-no-completion-exists)). [details ↓](../subsystems/battle.md#backdrop-shell---two-copies-of-one-mesh). |
 | Battle-stage overlay band (`+0x47`) | resolved | `disassembly` | `FUN_800520F0` pages a per-stage slot-B overlay via `FUN_8003EC70(_DAT_8007B64A + 0x47)`, skipped when the id is `0` (which every catalogued battle but the Tetsu tutorial reads). Engine `engine-core::overlay_loader::battle_stage_overlay_entry`. [details ↓](../subsystems/battle.md#stage-overlay-dispatch-the-0x47-loader-band) |
-| Battle-intro tutorial boxes (Tetsu sparring fight) | resolved (machine pinned, ported and wired) | `disassembly` (exclusivity `inference`) | The prompts are resident in stage overlay 967, so porting the battle SM alone could never emit them - though "**only** in 967" is corpus-exhaustiveness, not an instruction claim, and is graded separately. `FUN_801F6B70` is a 91-entry jump-table hook on the flow-state byte `ctx[+0x06]` with just **nine** live slots; each switches on `ctx[+0x28A]` - the battle-mode counter, read here as a lesson index - making the script a `(state × lesson)` cross-product. Port `engine-core::battle_tutorial` reads the prompt text off the user's disc. [details ↓](../subsystems/battle.md#the-sparring-tutorial-prompt-machine-overlay-967) |
+| Battle-intro tutorial boxes (Tetsu sparring fight) | resolved (machine pinned, ported and wired) | `disassembly` (machine exclusivity byte-anchored; prompt pool shared with 0968) | [details ↓](#tutorial-prompt-machine-exclusivity) |
 | What arms the battle-stage id `1` (sparring tutorial) | resolved | `disassembly` + disc bytes | Not the formation, scene or monster: a one-shot system-flag arm. `FUN_801DA51C`'s battle-entry tail defaults the stage-id byte to `0` in a delay slot, tests flag `0x19`, and on a set flag writes `1` and clears the flag. The disc's only setter is town01's Tetsu record (`50 19`, two ops before its `3E FF` battle-entry op). Port `battle_tutorial::TUTORIAL_ARM_FLAG`. [details ↓](../subsystems/battle.md#who-writes-stage-id-1---the-one-shot-arm-flag-0x19) |
 | Mid-battle second `_DAT_8007B64A` stage-id writer (the `0x801fd514` phantom) | resolved (coordinate re-keyed) | `disassembly` | `FUN_801E6968`'s tail arm (the Lost Grail Final Heal sweep's epilogue; `sb` at `0x801E6D2C`, battle-SM cleanup state `0x50`): formation head still `0xB5` (Cort) + first monster seat dead → stage id `3` (entry 969, the form-transition module), slot-B page-in issued same-frame. Port `overlay_loader::boss_transition_stage_id` via `World::battle_stage_id`. `0x801fd514` was a phantom printing off a base-tag-less dump; the trap stays on [re-do-not-re-walk.md](re-do-not-re-walk.md#a-second-stage-id-writer-at-0x801fd514-in-the-0897-band). [details ↓](../subsystems/battle.md#stage-overlay-dispatch-the-0x47-loader-band) |
 | "No party seated" vs "party dead" in the wipe scan | resolved (port-only state; guarded) | `disassembly` + `capture` | Retail's `0x5A` wipe scan (0898 `0x801E6510..0x801E664C`) walks the actor table for exactly the seated count at `*(0x8007BD24)` - the `beq` at `0x801E6524` would fall straight into the wipe compare on a zero count; retail is saved by the count (never zero after battle load), not by a guard. "No party seated" is a **port-only state**, once read as a party wipe on the first end-of-action. `BattleActionHost::slot_seated` gates `PartyWipe` on `party_seated > 0` (`MonsterWipe` still resolves), and the pad ladders seed the retail New Game roster. Disc-free pin: `unseeded_battle_wipe_guard.rs`. [details ↓](../subsystems/battle.md#an-unseeded-party-reads-as-a-dead-one) |
@@ -288,8 +329,8 @@ species and at the disc's authored heap-cost maximum.
 | Spine flag `0x482` (Drake mist-wall) writer | resolved (writer-less; "direct code path" presumption falsified) | `capture` | [details ↓](#spine-flag-0x482-drake-mist-wall-writer) |
 | CDNAME scene-window frame (`raw = extraction + 2`) in `Scene::load` | resolved (engine converts; misattributions corrected) | `capture` | Engine scene windows used raw-TOC defines as extraction indices - two entries late, dropping each block's first two retail entries and bleeding in the next block's. Corrections that fell out: the `.MAP` is the retail block's FIRST entry (not "two below"); "suimon == dolk2 MAN" and "rikuroa MAN = [18,70,20]" were next-block sidecars under the wrong label; "urudre1 tests 0x15E" and "0x63A has no writer" are falsified; "0x1BE = rikuroa Zeto gate" was geremi's arrival one-shot. Head blocks (defines 0/1, inside the TOC header rows) keep legacy windows. See [cdname.md](../formats/cdname.md#numbering-space). |
 | Motion-VM (`FUN_80038158`) bytecode carrier + flag census | resolved (carrier pinned; spine flags negative) | `capture` | The second motion VM's bytecode source is **MAN tail-section 1** (installer `FUN_8003A9D4`; parser `legaia_asset::man_motion`; layout + op table in [`motion-vm.md`](../subsystems/motion-vm.md#the-second-motion-vm---fun_80038158)). Disc-wide op-7/op-8 census (`--motion-flag-census`): overworld walking-band choreography + one `town0b` clear; `0x142`/`0x482`/`0x1BE` and `549` appear in NO stream - the "549 set by op-7 bytecode" carrier claim is **falsified**. Anchor test `motion_flag_census_disc.rs`. |
-| Debug-menu "STR trigger teleports + sets flags" mechanism | resolved (no per-FMV event table; dev-menu tools explain it) | `disassembly` (two sub-clauses `inference`) | The two direct `_DAT_8007BA78` store sites (op `4C E2` at `0x801E30F4`, title tick at `0x801DDCE8`) are corpus-exhaustive over a raw-byte sweep of 1,248 files: 24 hits, 6 distinct sites, zero in SCUS. Two stated limits - the sweep cannot see code inside an LZS section, and `fmv_dispatch` decodes only 20 of each slot's 32 bytes. The teleport+flag application is the 0897 dev-menu toolset (warp appliers + the EVENT FLAG editor `FUN_801dbd04`); those corpus states came from its register-pointer editing, invisible to static scans. Do not re-walk the "per-FMV event table" shape. See [cutscene.md](../subsystems/cutscene.md). |
-| Spawned-record player-channel (`0xF8`) ExecMove/HaltAcquire handshake | resolved (engine completion model) | `inference` | The timeline stepper models the handshake directly: `A2 F8` ExecMove arms an in-flight countdown (`CutsceneTimeline::player_move_frames`) and `C3 F8` HaltAcquire parks at the op until it drains, then steps past by encoded width (`resolve_target` keeps its `None` contract for `0xF8`) - so door-cutscene records reach their trailing `0x3F` and driven hops land (`jou`→`jouina`, and the full castle chain to `jouinc`, in `chapter1_hub_depth_oracle.rs` part J + `chapter1_hub_breadth_oracle.rs` part F). See [cutscene.md](../subsystems/cutscene.md) § player-channel completion. |
+| Debug-menu "STR trigger teleports + sets flags" mechanism | resolved (no per-FMV event table; dev-menu tools explain it) | `disassembly` | [details ↓](#the-_dat_8007ba78-census-is-closed) |
+| Spawned-record player-channel (`0xF8`) ExecMove/HaltAcquire handshake | resolved (retail machine traced; the port's model diverges) | `disassembly` | [details ↓](#the-0xf8-halt-acquire-handshake) |
 | Equipment stat-bonus table - slot model | resolved (slot model + passives) | `disassembly` | The stat-bonus table (`DAT_80074F68`, 8-byte stride) is decoded from `FUN_801CF650`/`FUN_801CF5D0` (`legaia_asset::equip_stats`): `+0`=INT, `+1`=ATK, `+2`=UDF, `+3`=LDF, `+4`=SPD (the earlier AGL/evasion reading is falsified). Five `lbu`/add pairs at `0x801CF6C0..0x801CF72C`; note the asymmetry that rules out a linearised-C reading - `equip+0` lands on the *last* accumulator, out of sequence with `+1..+4`. AGL takes no equipment add at all. The four `+7` categories are Legaia's four weapon/armour slots (body/head/footwear exact by name; none of the 77 accessories appear in this table). Wired: `DiscEquipInfo` gates `EquipSession`'s per-character list. |
 | Flag `0x63A` - the vell/vozz `P2[7]` gate with NO script writer | resolved (script writers exist; the "no writer" premise was the CDNAME +2 skew) | `capture` | [details ↓](#flag-0x63a---the-vellvozz-p27-gate-with-no-script-writer) |
 | cave01 `P2[16]` (the `0x15D` entry-key setter) - what spawns it | resolved (slot-counted spawn chain) | `capture` | [details ↓](#cave01-p216-spawner---the-slot-counted-interact-chain) |
@@ -1778,6 +1819,59 @@ One monster suppresses the banner: monster-slot-0 id `0xB5` (evolved Cort)
 skips the composer and parks `ctx[+0x06] = 0x0C`, a value the flow ladder at
 `0x801D0C84` has no arm for - the writer that moves it on is an open row.
 
+### Tutorial prompt machine exclusivity
+
+*Status:* resolved - the machine is byte-exclusive to 0967; the prompt pool is shared with 0968. Grade `disassembly`
+
+The prompts are resident in stage overlay 967, so porting the battle SM alone
+could never emit them. Exclusivity of the **machine** is byte-decided:
+`FUN_801F6B70` is entry 967 file `+0x198` (`0x801F69D8 + 0x198` reproduces the
+VA), and five needles from 48 to 2316 bytes - one a 116-byte window free of
+`lui`/`j`/`jal`, which a relinked copy could not evade - return **one** physical
+copy across every PROT entry, SCUS and DMY.DAT (967 is stored raw). The prompt
+**pool** is not exclusive: entry 0968 carries a byte-identical 852-byte prefix
+of it at the same offset `0xCAC`, inside a `0x5D8`-byte run the two entries
+share; 0968 has its own 7-entry dispatcher and no copy of the machine.
+`FUN_801F6B70` is a 91-entry jump-table hook on `ctx[+0x06]` with nine live
+slots, each switching on `ctx[+0x28A]`. Port `engine-core::battle_tutorial`.
+[details ↓](../subsystems/battle.md#the-sparring-tutorial-prompt-machine-
+overlay-967)
+
+### The _DAT_8007BA78 census is closed
+
+*Status:* resolved - grade `disassembly`
+
+The `_DAT_8007BA78` census is closed, not surveyed: a sweep in every reference
+form over SCUS, all 1233 PROT entries and the overlay images - including the
+`gp`-relative `0x760(gp)` an absolute-only scan cannot see, which yields
+**zero** - finds exactly two stores (`0x801E30F4` = PROT 0897 `+0x148DC`, the
+`4C E2` op; `0x801DDCE8` = PROT 0899 `+0xF4D0`, the title tick), four loads (all
+PROT 0970), and one literal-word reference at PROT 0971 `+0x1238` = `0x801CFA50`
+- the debug menu's editable-globals pointer table, the **static** witness for
+the dev-menu editing the corpus states came from. The "PROT 0896 carries the
+same span shifted by `0x9000`" note goes with the entry-size correction. A raw
+scan cannot see code inside an LZS section. See
+[cutscene.md](../subsystems/cutscene.md).
+
+### The 0xF8 halt-acquire handshake
+
+*Status:* resolved - retail machine traced; the port's model diverges. Grade `disassembly`
+
+`0xF8` resolves to the player object `_DAT_8007C364` (`FUN_8003C83C`: `li
+v0,0xf8` / `lw v0,-0x3c9c(v0)`; inlined again at `0x800377A0` and `0x80037E04`).
+Three parts of the older description came from the port, not the arms:
+**ExecMove arms nothing** (`0x801DE998` writes only `+0x5C` / `+0x5E` / `+0x56`
+and calls `FUN_800204F8`); **the halt-acquire creates the wait object**
+(`0x801DF384` sets `+0x94` and ORs `0x400` into `+0x10`, plus the caller's when
+the target is the player at `0x801DF404`; `0x801DF5AC jal 0x801d25ec` spawns the
+glide actor and the release helper `0x801D5D60`, which polls `andi v0,v0,8` at
+`0x801D5DB4` and clears the halt at `0x801D5DD4` / `0x801D5DFC`); and **the
+record parks at the next cross-context op**, in the prologue busy gate
+`0x801DE90C..0x801DE944` whose unadvanced PC the run loop reads as "stop"
+(`0x8003CFF0`) - the acquire itself advances 9 bytes (11 for sub-A/B), 0 on
+failure. No backward resume PC: the operand `+3` / `+5` halfwords are
+`FUN_801D25EC` tween arguments. See [cutscene.md](../subsystems/cutscene.md).
+
 ## Field / locomotion
 
 | Thread | Status | Evidence | Answer |
@@ -3005,9 +3099,9 @@ carriers: [`bse-dat.md`](../formats/bse-dat.md).
 | `_DAT_8007B8C2` polarity, and its writer | resolved (docs were backwards) | `disassembly` + `capture` | [details ↓](#_dat_8007b8c2-polarity-and-its-writer) |
 | Actor-VM (`FUN_801D6628`) program source - which carrier, what selects one | resolved (menu-overlay-resident program table) | `disassembly` | The interpreted programs are data in PROT 0899's own data segment (file `0x16260..0x16740`), one per `jal FUN_801D6628` caller via `lui`+`addiu` (or a forwarded register); byte 1 of each instruction indexes the window descriptor table at `0x801E4738`, making the VM the menu's window-widget choreographer. No per-scene carrier exists - resolution is per-boot. Spec [window-script.md](../formats/window-script.md); scanner `legaia_asset::widget_script::scan`; engine wiring `engine-core::menu_widget`. Superseded sprite-VM readings: [re-do-not-re-walk.md](re-do-not-re-walk.md#menus--ui). |
 | `title.pak` PROT entry | resolved | `capture` | [details ↓](#titlepak-prot-entry) |
-| Title screen mode-table PROT | resolved (no such entry) | `inference` | [details ↓](#title-screen-mode-table-prot) |
+| Title screen mode-table PROT | resolved (no row is named for it - it runs under the `CARD` mode pair 22/23; `FUN_801DD35C` is PROT 0899 `+0xEB44`) | `disassembly` | [details ↓](#title-screen-mode-table-prot) |
 | Load-screen panel 9-slice geometry | resolved (engine renders byte-perfect) | `capture` | Pinned in [`subsystems/save-screen.md`](../subsystems/save-screen.md#pinned-9-slice-tile-rects-system-ui-tim-clut-row-2): retail composes the 81×29 panel at dst `(6, 4)` from 14 textured-sprite primitives (GP0 cmd `0x64`) sampling the system-UI sheet with CLUT `(32, 511)`. The exact per-tile rects are exported as `legaia_asset::title_pak::OVERLAY_SYSTEM_UI_PANEL_*` and emitted by `legaia_engine_render::save_select_chrome_draws_for` (covered by `save_select_chrome_emits_9slice_panel_and_pills` test). No interior fill sprite is drawn - the "marbled blue" look is the dimmed title art bleeding through the empty middle of the frame. |
-| Key-item area consumers (`0x800859E8..0x80085A40`) | resolved (narrow negative); reader list incomplete | `disassembly` (enumeration `inference`) | [details ↓](#key-item-area-consumers) |
+| Key-item area consumers (`0x800859E8..0x80085A40`) | resolved (narrow negative; the reader enumeration is closed) | `disassembly` | [details ↓](#key-item-area-consumers) |
 | XP-table source + reader | resolved + ported | `capture` | [details ↓](#xp-table-source--reader) |
 | New-game world-state seed store widths (`FUN_80034A6C`) | resolved (port confirmed, no change) | `disassembly` | [details ↓](#new-game-world-state-seed-store-widths) |
 | Overlay identity from the disc (static extraction) | resolved (pipeline landed) | `capture` | [details ↓](#overlay-identity-from-the-disc-static-extraction) |
@@ -3677,7 +3771,7 @@ for the absolute-only-sweep artifact this produced.
 
 ### Key-item area consumers
 
-*Status:* resolved on the narrow negative; the reader enumeration is incomplete
+*Status:* resolved on the narrow negative; the reader enumeration is closed by three measured structural facts
 
 The range is inventory slots `>= 72` of `&DAT_80085958`. Readers mask the slot
 `& 0x3ff` and use the id byte as an index into 256-entry, 12-byte-stride item
@@ -3694,9 +3788,30 @@ bound their scan by the live item count" is true of the *scans* and false of the
 id store at `0x800422BC`: when the free-slot loop at `0x80042270` finds no empty
 slot, the index exits equal to the window limit and `sb` writes one slot past the
 scanned window. The `slt` guard at `0x800422C0` is downstream and gates only the
-quantity byte. Second, the reader list is incomplete - an indexed sweep over SCUS
-plus all 1,233 PROT entries (156 hits across 11 files) finds an undocumented band
-at `0x8004220C..0x800430A0` plus **51 sites in menu overlay 0899**, none named here.
+quantity byte. Second, **the enumeration is closed, by three measured structural
+facts.** The array sits `0xA640` above `gp` and ends at `gp + 0xA840`, so no
+`imm(gp)` instruction can address any byte of it - the one form that has
+produced false negatives elsewhere is arithmetically impossible here. Neither
+`0x80085958` nor the block base `0x80084140` occurs as a literal 32-bit word
+anywhere in SCUS or the 1233 PROT entries, so no pointer table offers an
+indirect route. And every access materialises the block base inline
+(`lui`+`addiu 0x4140`, `sll slot,1`, `addu`, `lbu|lb|sb ...,0x1818/0x1819`).
+Decoding for that displacement pair gives **125 sites over six images**: SCUS
+51 (13 functions, `0x8003004C..0x800430A0`), PROT 0899 **55** (19 functions;
+four hide behind a `lui` in a branch delay slot), 0897 5, 0898 2, and the cast
+modules 0941 7 / 0954 5. Every other based overlay and every other PROT entry:
+zero. The earlier "156 hits across 11 files" is reproducible as a
+displacement-only match whose tail is 31 data-byte coincidences in five scene
+entries. Two absolute sites exist, both the new-game seed's slot 0
+(`0x80034B10` / `0x80034B18`); **no instruction on the disc names an address
+inside the key-item band**. Consumers the old list missed: cast modules **PROT
+0941** (Steal) and **PROT 0954** (Fatal Decision) read the bag with no active
+window - 0941 clamps its random slot against a live count (`0x801F7828`), 0954
+does not (`rand & 0xFF` over all 256 slots, `0x801F81A4..0x801F81B0`, retry
+cap `0x400`), making it the only reader that reaches the key-item band outside
+the menu window. The `& 0x3ff` mask belongs to four packed-handle sites, not to
+readers generally, and it admits slot 1023 - `0x5FE` past the array - so it is
+not a 256-slot bound.
 
 **Bearing on the re-opened ACE/OOB thread:** this locates the mechanism precisely
 without strengthening it. The overflow index derives from the window-limit
@@ -3718,21 +3833,38 @@ and the **options/config-menu bundle** is **PROT 899** (`xxx_dat`) - its indexed
 
 ### Title screen mode-table PROT
 
-*Status:* resolved (no such entry)
+*Status:* resolved - **no row is named for it, but it is a mode**: the `CARD` pair, 22/23. Grade `disassembly` + disc bytes.
 
-**The premise is wrong**: there is no title-screen entry in the 28-entry mode table at `0x8007078C`. Per [`subsystems/boot.md`](../subsystems/boot.md#title-screen-is-not-in-the-mode-table) the title overlay is loaded by a **pre-mode-dispatch boot routine** ahead of the mode table being consulted at all - its tick `FUN_801DD35C` lives in the unindexed 60-sector PROT.DAT gap between TOC entries 899 and 900
+The narrow negative stands and is now an enumeration rather than an inference:
+the 28 x 24-byte records at `0x8007078C` are a fixed-size array, and every
+`+0x00` name pointer read out of `SCUS_942.54` yields the fourteen even/odd
+pairs `CONFIG / MAIN / MONSTER / TMD / EFECT / TEST / MAPDSIP / MAP / READ /
+GAME OVER / BATTLE / CARD / OTHER / STR`. None says "title", which is why the
+row looked missing.
 
-**Open sub-question - which overlay owns `FUN_801DD35C`.** That function's
-disassembly is identical across the `overlay_menu`, `overlay_title`,
-`overlay_save_ui_*` and `overlay_shop_save` dumps - the same
-one-resident-function-under-many-scenario-labels shape that settled the `0x2F`
-residency thread - and `crates/engine-vm` ports it twice under incompatible
-descriptions (`menu.rs` as the menu overlay's dispatcher, `title_overlay.rs` as
-the title tick). The residency evidence points at one shared slot-A overlay
-generation rather than separate copies, but that is an inference from dumps, not
-a capture. Closing it needs the same check the `0x2F` thread used: read the fixed
-VA out of each candidate overlay's disc image. See
-[vm-inventory.md](../subsystems/vm-inventory.md#one-function-two-ports) ([`legaia_asset::title_pak`](https://github.com/altimit-mii/legend-of-legaia-re/tree/main/crates/asset/src/title_pak.rs) reads the wordmark TIM out of PROT 888/890; PROT 899 carries the options-menu config bundle). NEW GAME is how control crosses from the title overlay into the mode table at mode 2. Row kept so the "title entry is unresolved" framing isn't re-opened.
+The mechanism attached to that negative is **falsified**. `main()` seeds
+`_DAT_8007B83C = 0x10` (mode 16 `READ`) in `FUN_8001D424` at `0x8001D5B8`, and
+its one pre-loop overlay load is `0x8001612C jal 0x8003ebe4` with `a0 = 0` -
+loader param 0 = extraction **0895**, the boot `init.pak`, not the title.
+Mode 16's init `FUN_8002612C` calls `0x801CE9C0` (0895 file `+0x1A8`), the
+publisher-logo pass, which sets mode 17 at `0x801CEC94`; 0895 writes mode 22
+at `0x801CF4D4`; mode 22's init `FUN_8002574C` loads PROT 0899 (`0x800258B4`,
+`a0 = 4`), spawns descriptor `0x800706D4` whose handler `0x801E36A0` (0899
+`+0x14E88`) calls the title tick every frame (`jal 0x801dd35c` at 0899
+`+0x14E94`), and sets mode 23. A consequence for the loader census in
+[`boot.md`](../subsystems/boot.md): param 0 *is* producible - by `main()` -
+so 0895 is statically reachable; 0896 still is not.
+
+**The ownership sub-question is closed.** `FUN_801DD35C`'s 48-byte prologue
+occurs exactly once in all of `PROT.DAT`, at extraction entry **0899** file
+`+0xEB44`, and `0x801CE818 + 0xEB44` reproduces the printed VA; it is absent
+from `SCUS_942.54`. Its own master-mode stores are `0x801DDCF0` (`0x1A`,
+attract → STR) and `0x801DFC00` (`2`, NEW GAME → field). The
+`overlay_801dd35c.txt` dump that reads differently is a 436-byte routine
+`FUN_801DD310` from PROT **0897**, a VA alias, not a second copy. The engine
+still ports the routine twice (`menu.rs` and `title_overlay.rs`, see
+[vm-inventory.md](../subsystems/vm-inventory.md#one-function-two-ports)); that
+is now a code-hygiene item, not an RE question.
 
 ### XP-table source + reader
 
@@ -3917,7 +4049,7 @@ Recorded so the same entries aren't re-flagged:
 ### Full-window item-add OOB reachability
 
 *Status:* resolved - the write primitive is real; normal play cannot reach it.
-Grade: `disassembly` (full window) + `inference` (the half-window sub-case).
+Grade: `disassembly` (full window) + `inference` (the half-window sub-case, on a *different* ground than before).
 
 The OOB *write* is confirmed from `FUN_800421D4`'s disassembly: the id store
 `sb t0,0x1818(a0)` at `0x800422BC` is unconditional and precedes the `slt`/`beq`
@@ -3944,8 +4076,16 @@ holds:
   unreachable here.
 - **Half windows `[0,128)` / `[128,256)`** (installed only for a single
   playable member with story flag 20 clear; a transient early/solo phase). 128
-  `<= 255` so the id ceiling alone does not forbid a fill, but the real disc item
-  population is far below 128, so the scan still terminates on a hole.
+  `<= 255` so the id ceiling does not forbid a fill, and the earlier reason -
+  "the real disc item population is far below 128" - is **false**: the static
+  item-name table `0x80074368` carries **250** non-empty names over its 256 ids
+  (blank: `0x00`, `0x12`, `0x1A`, `0x52`, `0xB9`, `0xFD`), so 128 distinct live
+  ids is arithmetically reachable. What bounds the half-window case is how much
+  of that population is obtainable while a character travels alone - a progress
+  bound, not a capacity one, and nobody has measured it. That is the residual
+  `inference`. One reader reaches the whole array with no window and no
+  live-count clamp: cast module PROT 0954 (Fatal Decision), `rand & 0xFF`
+  over 256 slots.
 
 A non-add path (debug menu, cheat engine, or a crafted save seeding duplicate
 live ids) could still force the exit with an attacker-influenced byte - outside

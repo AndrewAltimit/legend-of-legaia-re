@@ -72,6 +72,15 @@ Rows the last audit wave overturned. They are listed here rather than filed
 silently into the settled page, because a claim that was wrong once is the
 cheapest place to look for a claim that is still wrong.
 
+- **The title screen was never "ahead of the mode table".** It runs under the
+  `CARD` mode pair 22/23; `main()`'s one pre-loop overlay load is the boot
+  `init.pak` 0895, and `FUN_801DD35C` is inside PROT 0899 at `+0xEB44`. Four
+  more `inference`-graded rows were re-derived from instructions in the same
+  pass: the `DAT_8007C018` liveness rule, the `_DAT_8007BA78` census, the
+  `0xF8` halt-acquire handshake (three parts corrected) and the key-item
+  reader enumeration (125 sites, six images, closed). `_DAT_8007BD84` is an
+  effect handle, not a mode word; `FUN_8003EAE4`'s driver is `FUN_8003D764`;
+  and the item table carries 250 names, not "far below 128".
 - **The five "sealed" chapter-1 scenes were never sealed.** `uru`, `urudre1..3`
   and `jouine` all carry walk-on exits in their `.PCH` trigger sidecar; the
   clean MAN walk desynced in inline text before the `0x3F`, the tile sweep
@@ -377,7 +386,11 @@ resolved as the track-swap **commit** and moved to
 
 ## Title / boot / overlays
 
-No open threads. The last one - PROT 0968 identity, the one slot-B cluster
+| Thread | Status | What would close it |
+|---|---|---|
+| Does the mode-16 publisher-logo routine `FUN_801CE9C0` (PROT 0895 `+0x1A8`) pin the per-logo quads? | open (narrow) | The routine forms `+8` into each of the four `init.pak` TIMs (`+0x21C4` / `+0xD3E4` / `+0x18E04` / `+0x1CE44`) and uploads through `FUN_800198E0`; its draw calls are now locatable, so the logo pass's quad geometry can be read from the image instead of a capture. PROT 0895 has no `static-overlays.toml` row yet; base `0x801CE818` is byte-anchored by that call. |
+
+The previous thread here - PROT 0968 identity, the one slot-B cluster
 entry without a residency capture - closed by capture: the
 `cort_evolved_battle_first_menu` PCSX-Redux state (first command menu of the
 evolved-Cort fight, before any cast) shows the loader-B tracker `0x8007BC4C`

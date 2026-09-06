@@ -36,6 +36,7 @@
   <table>
     <thead><tr><th>The reading that looked right</th><th>Verdict</th><th>Write-up</th></tr></thead>
     <tbody>
+      <tr id="x-_dat_8007bd84-is-a-mode-word"><td><code>_DAT_8007BD84</code> is a mode word the melee kernel branches on</td><td>an effect-instance handle; its one non-zero writer is the Cort "Mystic Shield" stager, and the grunt's <code>s7</code> gate is a real condition</td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-do-not-re-walk.md#_dat_8007bd84-is-a-mode-word-the-melee-kernel-branches-on" target="_blank" rel="noopener">doc</a></td></tr>
       <tr id="x-move-vm-op-0x2f-extension-dispatcher---per-overlay-copies"><td>Move-VM op <code>0x2F</code> extension dispatcher - per-overlay copies?</td><td>one copy, field overlay 0897 only</td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/move-vm-overlay-ext.md#overlay-residency---one-copy-in-the-field-overlay-only" target="_blank" rel="noopener">doc</a></td></tr>
       <tr id="x-fun_801f3894-spiritmagic-damage-roll-state-0x3d-chain-caller"><td>"<code>FUN_801F3894</code> spirit/magic damage roll" (state-<code>0x3D</code> chain caller)</td><td>VA-aliased dump</td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/battle-formulas.md#initiative-key-seeding-fun_801da780" target="_blank" rel="noopener">doc</a></td></tr>
       <tr id="x-the-battle-intro-banner-is-raised-from-a-top-seated-0x0303-placement-record"><td>The battle-intro enemy-name banner is one of the top-seated <code>0x0303</code> placement records, width overwritten at runtime, slid park-to-live</td><td>the composer <code>FUN_801D9D3C</code> spawns its labels with immediates at y = 48; no table read, no slide; the width overwrite is record 68's</td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-do-not-re-walk.md#the-battle-intro-banner-is-raised-from-a-top-seated-0x0303-placement-record" target="_blank" rel="noopener">doc</a></td></tr>
@@ -71,11 +72,25 @@
   <table>
     <thead><tr><th>The reading that looked right</th><th>Verdict</th><th>Write-up</th></tr></thead>
     <tbody>
+      <tr id="x-fun_8003eae4-flags-untraced-driver"><td><code>FUN_8003EAE4</code>'s flags are consumed by an untraced CD driver</td><td>two of the three cells are write-only; the sequencer <code>FUN_8003D764</code> dispatches on <code>gp+0x928</code>, which only <code>FUN_8003D53C</code> writes</td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-do-not-re-walk.md#fun_8003eae4s-flags-are-consumed-by-an-untraced-cd-driver" target="_blank" rel="noopener">doc</a></td></tr>
       <tr id="x-bsedat-three-readings"><td><code>bse.dat</code> is loaded once at sound-init and held for the session; record <code>+4</code> is a <code>u32</code> taking only 0 and 2; the detector's "<code>+4</code> under <code>0x100</code>" gate is a value bound</td><td>battle init is its only caller; <code>+4</code> is a <code>u8</code> category rewritten per cue; the gate is a zero-trailer test</td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-do-not-re-walk.md#bsedat-three-readings-the-gp0x678-trace-overturned" target="_blank" rel="noopener">doc</a></td></tr>
       <tr id="x-fun_80068d94-as-sssepopen--sep-loader-with-fun_80068b98-as-ssseqopen"><td><code>FUN_80068D94</code> as "<code>SsSepOpen</code> / SEP loader" (with <code>FUN_80068B98</code> as "<code>SsSeqOpen</code>")</td><td>it is the VAB-open head</td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/vab.md#program-slots-vs-packed-tone-pages" target="_blank" rel="noopener">doc</a></td></tr>
       <tr id="x-the-256-slot-spu-address-run-that-was-really-a-clut"><td>The entry that matches "<code>[u32 format == 2][u16 spu_addr[256]]</code>, every address <code>&gt;= 0x8000</code>" is <code>monster.snd</code></td><td>it is <code>summon.dat</code>; <code>monster.snd</code> is a multi-bank VAB two entries away</td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-do-not-re-walk.md#the-256-slot-spu-address-run-that-was-really-a-clut" target="_blank" rel="noopener">doc</a></td></tr>
       <tr id="a-op35"><td>Op-<code>0x35</code> sub-op 9 is a <strong>queue</strong>, triggered by the next scene entry</td><td>it is a start behind an asset-load barrier</td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-do-not-re-walk.md#op-0x35-sub-op-9-was-never-a-queue" target="_blank" rel="noopener">doc</a></td></tr>
       <tr id="x-_dat_8007b910-is-the-live-screen-brightness"><td><code>_DAT_8007B910</code> is the live screen brightness</td><td>it is the live <strong>audio level</strong></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-do-not-re-walk.md#audio--sound-driver" target="_blank" rel="noopener">doc</a></td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section class="doc-section" id="title-boot-overlays" data-doc="title--boot--overlays">
+  <h2>Title / boot / overlays</h2>
+  <div style="overflow-x:auto">
+  <table>
+    <thead><tr><th>The reading that looked right</th><th>Verdict</th><th>Write-up</th></tr></thead>
+    <tbody>
+      <tr id="x-the-title-screen-is-loaded-before-the-mode-table-is-consulted"><td>The title screen is loaded before the mode table is consulted (no row is named "title")</td><td>it runs under the <code>CARD</code> pair 22/23; <code>main()</code>'s pre-loop load is the boot <code>init.pak</code> 0895</td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-do-not-re-walk.md#the-title-screen-is-loaded-before-the-mode-table-is-consulted" target="_blank" rel="noopener">doc</a></td></tr>
+      <tr id="x-fun_801dd35c-lives-in-an-unindexed-gap"><td><code>FUN_801DD35C</code> lives in an unindexed <code>PROT.DAT</code> gap between entries 899 and 900</td><td>no gap exists; the prologue occurs once, inside entry 0899 at <code>+0xEB44</code></td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-do-not-re-walk.md#fun_801dd35c-lives-in-an-unindexed-protdat-gap-between-entries-899-and-900" target="_blank" rel="noopener">doc</a></td></tr>
     </tbody>
   </table>
   </div>
@@ -150,6 +165,7 @@
   <table>
     <thead><tr><th>The reading that looked right</th><th>Verdict</th><th>Write-up</th></tr></thead>
     <tbody>
+      <tr id="x-item-population-far-below-128"><td>The disc's item population is far below 128, so a half-window bag cannot fill</td><td>the item-name table carries 250 names; the bound is progress during the solo phase, not the id space</td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-do-not-re-walk.md#the-discs-item-population-is-far-below-128-so-a-half-window-bag-cannot-fill" target="_blank" rel="noopener">doc</a></td></tr>
       <tr id="x-retails-op-0x49-arm-spawns-a-driver-actor-that-opens-the-pause-menu-itself-for-the-kind-0x0d-entry-context"><td>Retail's op-<code>0x49</code> arm spawns a driver actor that <strong>opens the pause menu itself</strong> for the kind-<code>0x0D</code> entry context</td><td>row <code>0x0D</code> of the dispatch table is <code>-1</code>; nothing opens</td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-do-not-re-walk.md#menus--ui" target="_blank" rel="noopener">doc</a></td></tr>
       <tr id="m-actor-vm"><td>Actor VM = "the title screen's sprite-walk interpreter", with an ANM-trigger opcode</td><td>it is the menu overlay's window-widget script interpreter</td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/window-script.md" target="_blank" rel="noopener">doc</a></td></tr>
     </tbody>

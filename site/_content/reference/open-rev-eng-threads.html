@@ -61,7 +61,7 @@
       <tr><td><a href="#d-signature-cast">Is any enemy signature-cast choreography data-driven?</a></td><td><span class="tag tag-open">open</span></td><td>Read the hardcoded spawn sites' parameter blocks; decide whether a duplicated block plus one spawn site can be driven from the art path.</td></tr>
       <tr><td><code>bse.dat</code>'s second record family</td><td><span class="tag tag-open">open</span> - reader unpinned</td><td>The gp-relative / lui+load sweep over the bytes past <code>0x94C</code> of the loaded buffer.</td></tr>
       <tr><td><a href="#d-other5-other6">What are PROT 1221 / 1222 (<code>other5</code> / <code>other6</code>)?</a></td><td><span class="tag tag-open">open</span> - BGR555 colour data, loader unknown</td><td>Scan for the raw TOC literals <code>0x4C7</code> / <code>0x4C8</code> at the byindex-loader call sites.</td></tr>
-      <tr><td>Title / boot / overlays</td><td colspan="2"><em>No open threads.</em></td></tr>
+      <tr><td>Publisher-logo routine <code>FUN_801CE9C0</code> (PROT 0895) - per-logo quads</td><td><span class="tag tag-open">open</span> - narrow</td><td>Read the draw calls from the image; add the 0895 overlay row.</td></tr>
     </tbody>
   </table>
   </div>
@@ -102,6 +102,9 @@
   <p>Claims that stood on these pages and were overturned. They stay listed - a claim that was wrong once is the cheapest place to look for a claim that is still wrong - and each stands corrected on <a href="re-settled-threads.html">settled threads</a> or <a href="re-do-not-re-walk.html">do not re-walk</a>.</p>
   <details class="disclosure"><summary>History: the overturned claims</summary><div class="disclosure-body">
     <ul class="bullets">
+      <li><strong>The title screen was never "ahead of the mode table".</strong> It runs under the <code>CARD</code> mode pair 22/23; <code>main()</code>'s one pre-loop overlay load is the boot <code>init.pak</code> 0895, and <code>FUN_801DD35C</code> is inside PROT 0899 at <code>+0xEB44</code>. Four more inference-graded rows were re-derived from instructions in the same pass; <code>_DAT_8007BD84</code> is an effect handle, not a mode word, and the item table carries 250 names, not "far below 128".</li>
+      <li><strong>The five "sealed" chapter-1 scenes were never sealed.</strong> <code>uru</code>, <code>urudre1..3</code> and <code>jouine</code> carry walk-on exits in their <code>.PCH</code> sidecar; the ladder's own caps produced the verdict. Live-confirmed for <code>uru</code>.</li>
+      <li><strong>The battle-intro enemy-name banner is raised by no placement record</strong>; the composer <code>FUN_801D9D3C</code> spawns its labels with immediate geometry. <code>bse.dat</code> loads at battle init, not boot, and its columns are pinned.</li>
       <li><strong>Debug flag <code>_DAT_8007B8C2</code> had its branch sense backwards</strong>, and one arm was named for the wrong loader. Every site reads the flag with <code>lh</code> and takes the <strong>zero</strong> arm to the debug-station host trap, the <strong>non-zero</strong> arm to the index resolver. Settled on that polarity, writer and all.</li>
       <li><strong>The VA-aliasing corollary was too narrow.</strong> It read as an <code>0x801Fxxxx</code> problem; <code>801e23ec</code> is a settled casualty in the <code>0x801E</code> band, and its aliased reading had silently dropped all three initiative modifier terms.</li>
       <li><strong>The op-<code>0x2F</code> "seven byte-identical dumps" shorthand was compressing.</strong> The capture-derived dumps agree with each other; the static 0897 dump is a strict <em>subset</em> of them, not a twin.</li>
@@ -248,7 +251,13 @@
 
 <section class="doc-section" id="title-boot-overlays" data-doc="title--boot--overlays">
   <h2>Title / boot / overlays</h2>
-  <p>No open threads. The last one - the identity of PROT 0968 - closed by capture.</p>
+  <table>
+    <thead><tr><th>Thread</th><th>Status</th><th>What would close it</th></tr></thead>
+    <tbody>
+      <tr><td>Does the mode-16 publisher-logo routine <code>FUN_801CE9C0</code> (PROT 0895 <code>+0x1A8</code>) pin the per-logo quads?</td><td><span class="tag tag-open">open</span> - narrow</td><td>Its draw calls are now locatable (it forms <code>+8</code> into each of the four <code>init.pak</code> TIMs and uploads through <code>FUN_800198E0</code>), so the logo pass's geometry can be read from the image. PROT 0895 still lacks a <code>static-overlays.toml</code> row.</td></tr>
+    </tbody>
+  </table>
+  <p>The previous thread here - the identity of PROT 0968 - closed by capture.</p>
   <details class="disclosure"><summary>History: how PROT 0968 closed</summary><div class="disclosure-body">
     <p>The <code>cort_evolved_battle_first_menu</code> PCSX-Redux state (first command menu of the evolved-Cort fight, before any cast) shows the loader-B tracker <code>0x8007BC4C</code> reading <code>0x49</code> and entry 968 100% byte-resident at <code>0x801F69D8</code> over its own <code>0xA28</code> extent, with the field-side ladder states bracketing the page-in to the battle load. See <a href="re-settled-threads.html">settled threads &sect; PROT 0968</a>; the instrument is <code>scripts/mednafen/check-0968-residency.py</code>, which reads either emulator's states (dispatched on file extension).</p>
   </div></details>

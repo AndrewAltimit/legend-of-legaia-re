@@ -85,12 +85,12 @@ same entry. The outer dispatch both must be describing is the 25-slot jump
 table at `0x801CF244`, guarded by the `sltiu` bound at `0x801DD7F8`; the nested
 switches deeper in the body are what the two descriptions disagree about.
 
-Which overlay *owns* the function is the open part. The residency evidence
-points at one shared slot-A overlay generation rather than separate title and
-menu copies - the [actor VM](actor-vm.md) driver shows the same identical-
-across-labels pattern in the same dump set - but that is an inference from the
-dumps, not a capture. Settling it needs the residency check the `0x2F` thread
-used: read the fixed VA out of each candidate overlay's disc image.
+Which overlay *owns* the function is settled by a byte search: its 48-byte
+prologue occurs exactly once on the disc, inside PROT **0899** at file
+`+0xEB44` (`0x801CE818 + 0xEB44` reproduces the VA), and it is absent from
+`SCUS_942.54`. The many-labelled dumps are one resident copy under scenario
+labels; the one that reads differently is a VA alias from PROT 0897. The
+double port is therefore a code-hygiene item: one routine, one description.
 
 ## Ported but inert
 
