@@ -3556,7 +3556,7 @@ match skips the composer entirely, arming the same `0x5A` timer but setting
 idles on it; the fight still opens, so a writer outside that ladder moves the
 byte on. Driving `cort_evolved_pre_battle` forward reproduces it exactly: flow
 `0x0A` at the intro edge, then flow `0x0C` with the timer at 90 and the
-text-actor list **empty**, where the queen-bee run had three labels.
+text-actor list **empty**, where the queen-bee run had three elements.
 
 **Capture.** `scripts/pcsx-redux/autorun_w1d_intro_banner.lua` breakpoints
 `FUN_8003541C` and `FUN_800355F0` and walks the live text-actor list
@@ -3567,8 +3567,8 @@ spawns land in one frame, two from `$ra = 0x801DA220` and one from
 `(78, 48)` 79 wide, and `Ambushed!` at `(16, 12)` 288 wide, every one class 0
 kind 3. All three hold those seats for 120 frames (`ctx[+0x290] = 1`), and the
 teardown then fires at `$ra = 0x801D0E84`. A live run is needed because no
-catalogued save state is at flow `0x0A` or `0x0B` - the whole state library
-sits at `0x1E` or later.
+catalogued save state is at flow `0x0A` or `0x0B` - every battle-phase state
+in the library sits at `0x14` or later.
 
 The ordinary-round bracket is the same probe walked right out of
 `karisto_sol_pre_encounter` into a random encounter: **two** labels, `Moldy
@@ -3576,7 +3576,7 @@ Worm` at `(86, 48)` 66 wide and `Acid Slime` at `(171, 48)` 59 wide, both from
 `0x801DA220`, and **no id-`4` line at all** because `ctx[+0x290]` is `0`. They
 hold for 90 frames and go down through the expiry's other sweep site,
 `$ra = 0x801D0EBC`, after which the round prompt builds `Begin` / `Run` on ids
-`3` and `4` - the ids the intro was using one frame earlier.
+`3` and `4` - the id space the intro was drawing from moments earlier.
 
 ### The status-element badge sheet
 
