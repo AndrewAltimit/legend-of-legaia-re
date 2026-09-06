@@ -33,5 +33,5 @@ The [standalone TIM-pack](tim-pack.md) form is structurally similar but uses an 
 ## See also
 
 - [prot::timpack](tim-pack.md) - the structurally similar standalone-PROT pack.
-- [field-pack](field-pack.md) - the magic-prefixed Legaia bundle, a third distinct pack.
+- [field-pack](field-pack.md) - **not** a third pack: the `0x01059B84` word is a DATA_FIELD chunk header wrapping an `asset::pack` of scene TIMs (this page's format).
 - [DATA_FIELD streaming](data-field.md) - the streaming container these packs live inside.

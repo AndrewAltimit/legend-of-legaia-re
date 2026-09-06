@@ -62,7 +62,7 @@ Examples (verified by mednafen save-state diff against `_DAT_8007B888`):
 | `suimon` (77) | `0078_suimon.BIN` | `0x09A0` (2464) | Loaded as `MOVE` at `0x801355D0` (Suimon-block saves). |
 | `map01` (85) | `0086_map01.BIN` | `0x7E30` (32304) | Loaded as `MOVE` at `0x8011A624` (every `map01`-resident save, including the menu and battle states layered on top of `map01`). |
 
-The `meta1` u32 in the scene_asset_table header is the per-scene meta value the loader carries forward.
+The `+0x04` u32 in the scene_asset_table header is the sum of the descriptors' decompressed sizes; retail never reads it (`FUN_80020224` reads `+0x00` then steps from `+0x08`) - see [scene-bundles.md](scene-bundles.md#scene_asset_table---count-prefixed-asset-bundle).
 
 - Each descriptor (including `desc[4]` = Move) is its own independently LZS-compressed stream at `data_offset` bytes into the bundle entry's **extended on-disc footprint** (`Archive::read_entry`), decompressing to exactly `size` bytes.
 - Several scenes have Move descriptor offsets that fall past the TOC-indexed end and into trailing-overlay sectors - readers must use the extended footprint (or `ProtIndex::entry_bytes_extended`) rather than `Archive::read_entry_indexed`.

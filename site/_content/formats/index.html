@@ -62,8 +62,8 @@
       <div class="card-body">A near-identical multi-texture bundle in some standalone PROT entries with different header math (<code>byte_offset = word_index*4 + 4</code>). Includes the boot-UI bundle at the head of the archive.</div>
     </a>
     <a class="card" href="field-pack.html">
-      <div class="card-title"><span>Field-pack format</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">A magic-prefixed (<code>0x01059B84</code>) TIM/TMD bundle whose 97-slot indexed block is a byte-identical shared template across all four carrier entries. The field overlay reads its slots at hard-coded offsets and never checks the magic.</div>
+      <div class="card-title"><span>&ldquo;Field-pack&rdquo;</span> <span class="tag tag-done">Confirmed</span></div>
+      <div class="card-body">Not a format: the <code>0x01059B84</code> word is a DATA_FIELD chunk header (type byte + payload length) wrapping an <code>asset::pack</code> of one scene's TIM atlases at raw-TOC <code>+4</code> of its block. The page keeps the reading that made it look like a magic-prefixed bundle.</div>
     </a>
     <a class="card" href="battle-data-pack.html">
       <div class="card-title"><span>Player battle files</span> <span class="tag tag-done">Confirmed</span></div>

@@ -411,7 +411,7 @@ Pinned from the save-state catalogue:
 - The bank **varies per scene** - across catalogued captures the open bank is 13
   distinct VABs (used-program counts ranging `1..=16`).
 - For a `music_01`-scene state the live bank is **byte-identical to the disc**
-  `music_01` VAB ([`field-pack`](field-pack.md)-style stream, PROT 1004 at
+  `music_01` VAB ([DATA_FIELD](data-field.md)-style stream, PROT 1004 at
   offset `+4`): the `VabHdr` and every program's `ProgAtr` attribute bytes
   (`+0..7`) match exactly; only the PsyQ reserved per-program pointer field
   (`ProgAtr +8..15`) is runtime-patched to the RAM `VagAtr` address.

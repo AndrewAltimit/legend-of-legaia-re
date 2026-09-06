@@ -40,7 +40,7 @@ below.
 | An art whose attack camera films flat has the wrong **arm**, so the fix is to select a better-choreographed one | falsified (every arm is timed for a ~20-frame swing, and not one is spare) | [details ↓](#the-attack-camera-was-never-an-arm-choice) |
 | `FUN_801D5854` case 6's `0x801D5CFC` arm is the per-action **party** framing, gated on `DAT_8007BD71 == 0xFE` as "the in-battle state" | falsified (`0xFE` is the battle-END signal; a running fight takes the `0x801D64C4` arm for everyone) | [details ↓](#the-case-6-party-arm-is-the-battle-over-framing) |
 | The Done band (`0x50` / `0x51`) is idle for the camera - keep it on the far framing so the "per-action close-up" does not own half the fight | falsified (retail re-arms case `6` / `8` per category there; the close-up was the wrong arm) | [details ↓](#the-done-band-is-not-idle) |
-| Navmesh / per-scene navigation data | falsified | `0x80108EA4..0x80109550` is per-scene GPU primitive scratch, not a 24-byte stride navmesh. Pointer hunts find zero RAM cells pointing into the window. Real per-scene region / collision / event-trigger data lives in the field-file preamble (a count + `u16` offset table + records - **not** the field-pack schema slots, which are a global-constant template; see [field-pack](../formats/field-pack.md)); the collision grid is the `+0x4000` MAP region; the encounter-record path lives at `actor[+0x94]`. |
+| Navmesh / per-scene navigation data | falsified | `0x80108EA4..0x80109550` is per-scene GPU primitive scratch, not a 24-byte stride navmesh. Pointer hunts find zero RAM cells pointing into the window. Real per-scene region / collision / event-trigger data lives in the field-file preamble (a count + `u16` offset table + records - **not** the scene texture pack at block `+4` (the former "field-pack schema", which is an `asset::pack` of TIMs); see [field-pack](../formats/field-pack.md)); the collision grid is the `+0x4000` MAP region; the encounter-record path lives at `actor[+0x94]`. |
 | Op-`0x4E` sub-ops 4..8 "absolute jump" / "rand -> next PC" readings | falsified (all sub-ops 0..9 are the 7-byte compare-and-skip) | [details ↓](#op-0x4e-sub-op-family---every-sub-op-09-is-a-compare) |
 | `801d58f0` / `801d63b0` as single shared port blockers | falsified (VA-aliasing artifact) | The two addresses host different code in different overlays (byte-verified: 80/228/124/308/1 B and 208/1036 B across 0897/baka/cutscene/debug-menu/fishing/slot/dance) - the port-catalog's bare-VA keying aggregated their refs into phantom top blockers. Tracked per-overlay via `overlay_<label>_<addr>` identities; catalog ignore category `va_aliased_overlay_local`. |
 | A monster's after-image ghosts (`FUN_80049348`) fire on **any non-idle clip tag** | falsified (the gate is two record bytes, `+0x77` and `+0x87`) | Plausible: the party gate is committed slot `>= 0x11` = "an art is playing", so "ring id = clip tag + 0x10" read as the same idea. But the anim tick stamps `record[+0x77] + 0x10` (`+0x87 == 1` forces `0x11`), and `+0x77` is the attach-key byte, zero on almost every monster entry; no idle entry on the disc qualifies. Gating on the engine's "is a clip staged" proxy ghosted every monster through its approach walk and idle loop (the permanent yellow halo). Lesson: when retail reads a record byte, port the byte, not the state that usually accompanies it ([battle-action.md](../subsystems/battle-action.md#the-after-image-ghost-walk-fun_80049348)). |
@@ -817,6 +817,45 @@ those yaws both models predict a full frame, so only the fourth carried any
 information. A statistic pooled over angles hid that. Before a capture
 statistic closes a thread, state the reading it would have refuted, and check
 that the samples can tell the two readings apart.
+
+### "Field-pack" was never a format
+
+*Falsified by disc bytes.*
+
+The reading: magic `0x01059B84` opens a Legaia-specific bundle - a 97-entry
+strict schema, a byte-identical ~91 KB template block shared by every carrier,
+and the per-scene payload in a preamble ahead of packed TIMs/TMDs.
+
+Why it looked right: the word occurs exactly once on the disc, which is what a
+magic does; the table after it is regular; and two carriers really do share
+tens of kilobytes byte-for-byte.
+
+What is true: the word is a DATA_FIELD chunk header, `(TIM_LIST = 0x01) << 24 |
+0x059B84`, and `0x059B84` is town01's payload length - it is unique because
+every carrier's length differs. The "schema" is that chunk's `asset::pack`
+table `[u32 count = 96][u32 word_offset[96]]` (`0x60` is the count), every
+member a PSX TIM; the "byte sizes" of its clusters were word deltas; the shared
+block is town01 and town0c carrying the same three leading Rim Elm atlases; and
+the "preamble" was the superseded over-reading entry size reading the block's
+prescript and asset table ahead of the real entry. A carrier sits at raw-TOC
+`+4` of its CDNAME block, loaded by `FUN_800255B8` / `FUN_8002541C`. See
+[`field-pack.md`](../formats/field-pack.md).
+
+### The prescript's "per-scene secondary header" is the next entry
+
+*Falsified by disc bytes.*
+
+The reading: after a `scene_event_scripts` prescript, a small `(count,
+descriptor[count])` table sits at the next `0x800` boundary, alternating
+`(type, size)` and runtime-buffer offset pairs - a per-scene secondary header.
+
+What is true: for all 101 carriers the **next PROT entry** begins with exactly
+that table at its own offset 0 (87 `scene_asset_table`, 14 the count-4 form),
+and for 99 of the 101 the first `0x800` boundary at or past the last record is
+already at or past the entry's end - there are no bytes there to be a header.
+The same shape as the `.PCH` "+0x800 prescript" and the pochi "stale TIM"
+readings: the over-reading entry size appending the neighbour. See
+[`scene-bundles.md`](../formats/scene-bundles.md#scene_event_scripts---prescript-only).
 
 ## Field / locomotion
 

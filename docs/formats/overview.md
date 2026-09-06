@@ -35,7 +35,7 @@ A page may mix levels, and the good ones say so per-field rather than per-page: 
 | [Pack format](pack.md) | Confirmed | `u32 count + u32 offsets[]` used inside DATA_FIELD chunks |
 | [Standalone TIM-pack](tim-pack.md) | Confirmed | Distinct outer container with `(magic_lo, magic_hi, count<16, marker=0x01)` header |
 
-The three pack formats are unrelated despite the shared name - `pack.md` (inside DATA_FIELD chunks), `tim-pack.md` (standalone PROT entries), and [field-pack](field-pack.md) (magic-prefixed bundle) each use different header math. Applying the wrong one yields plausible garbage.
+The two pack formats are unrelated despite the shared name - `pack.md` (inside DATA_FIELD chunks) and `tim-pack.md` (standalone PROT entries) use different header math. The former "field-pack" ([field-pack](field-pack.md)) is a DATA_FIELD chunk wrapping an `asset::pack`, not a third format.
 
 ## Per-asset formats
 
@@ -85,7 +85,7 @@ Static `SCUS_942.54` rodata tables that drive stats, items, and magic. These are
 | [Per-scene field map](field-map.md) | Confirmed | `DATA\FIELD\<scene>.MAP` - the fixed `0x12000`-byte slot 0 of every scene block. Four regions (object descriptors, collision + floor grid, object-index map, trigger block) whose sizes sum to the footprint exactly. |
 | [Effect bundles](effect.md) | Confirmed | Both the on-disc bundle (magic `0x02018B0C`) and the runtime 2-pack wrapper used by `efect.dat` |
 | [summon.dat / readef.DAT](summon-readef.md) | Confirmed | Battle side-band streaming slots (`0x10800` bytes each): per-special-attack CLUTs + 4bpp texture pages + summon-creature actor records. Extraction PROT 893 / 894 (retail TOC `0x37F` / `0x380`) |
-| [Field-pack format](field-pack.md) | Confirmed | Magic `0x01059B84` plus a 97-entry strict schema preceding packed TIMs/TMDs |
+| [Field-pack](field-pack.md) | Confirmed | Not a format: a DATA_FIELD `TIM_LIST` chunk (`0x01059B84` = type byte + payload length) holding an `asset::pack` of one scene's TIMs at raw-TOC `+4` of its block; loaded by `FUN_800255B8` / `FUN_8002541C` |
 | [Player battle files](battle-data-pack.md) | Confirmed | `data\battle\PLAYER1..4` (extraction 863..866). Header + LZS `record[0]` + 12-byte `[id, offset, size]` descriptor table + per-slot LZS streams decoding to `[header + Legaia TMD + texture pool]`. |
 | [Row-479 NPC CLUTs](npc-palette.md) | Confirmed | Plain PSX TIMs in scene PROT entries with CLUT block at `(fb_x=0, fb_y=479, w=256, h=1)`. Uploaded via the targeted-upload CLUT pass with merge-zeros semantics, so multiple scene-pack TIMs on the same row coexist. |
 | [Encounter record](encounter.md) | Confirmed | Layout `[3 reserved][count: u8][monster_ids: u8[count]]`. Installed at `actor[+0x94]` by the script-VM, read by `FUN_801DA51C` to populate the formation cell at `0x8007BD0C`. |
