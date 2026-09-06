@@ -478,91 +478,86 @@ impl LegaiaViewer {
         vec![cx, cy, cz, r]
     }
 
-    /// Decode the slot-4 world-map overlay wireframe for the kingdom at
-    /// `prot_base` and return a packed line-segment list for top-down
-    /// rendering.
+    /// Decode the kingdom's slot-4 **animation bank** at `prot_base` and
+    /// return its translation paths as a packed 2D line-segment list.
     ///
-    /// The wireframe is the dev-menu top-view overlay - coastline curves
-    /// (Drake body 12 = 1200-vertex outline) and the ±32K world-boundary
-    /// frame (Drake body 13). Loaded verbatim into RAM at `0x8011A624` for
-    /// Drake (32304 bytes); format is fully reversed (see
-    /// [`docs/formats/world-map-overlay.md`]).
+    /// Slot 4 is an asset-type-`0x05` ANM container of world-map actor clips,
+    /// not a mesh library and not coastlines: each 8-byte entry is a rigid
+    /// transform - three packed 12-bit translations plus three 8-bit angles
+    /// (see [`docs/formats/world-map-overlay.md`]). One segment is therefore
+    /// one step of a single animated part's decoded translation between two
+    /// consecutive frames of its clip, projected onto the requested axis
+    /// pair. These are object-local model-space offsets - a motion curve
+    /// about the actor origin, not a world position.
     ///
-    /// `style` selects the polyline-construction mode:
-    /// `"row"` (each group as one polyline), `"col"` (each record-slot as
-    /// one polyline across groups), `"pairs"` (every 2 consecutive
-    /// records emit one segment), or `"grid"` (both row and column
-    /// edges of the `count_a x count_b` vertex grid). Unknown values
-    /// fall back to `"row"`.
+    /// This used to emit `top_down_lines`, which plots raw `i16` field pairs
+    /// straddling the entry's packed nibble boundaries: a byte-diffing aid,
+    /// never geometry. The `style` (polyline-mode) argument went with it -
+    /// the topology is now fixed, one polyline per (clip, part).
+    ///
+    /// `axes` picks the projected pair out of the decoded `(tx, ty, tz)`:
+    /// `"xz"` (default), `"xy"`, `"zy"`, and so on.
     ///
     /// Output layout (single packed `Vec<u8>`, little-endian):
     ///
     /// ```text
     /// [u32 line_count]
     /// [Line; line_count]   ; struct, 12 bytes each:
-    ///     u8  body_index
-    ///     u8  group_index_low   ; group_index = (low | (high << 8))
-    ///     u8  group_index_high
+    ///     u8  body_index        ; the clip
+    ///     u8  rate_low          ; rate = (low | (high << 8)) - the clip's
+    ///     u8  rate_high         ;   sub-frame divisor (1 / 2 / 4)
     ///     u8  _pad
-    ///     i16 x0
-    ///     i16 z0
-    ///     i16 x1
-    ///     i16 z1
+    ///     i16 a0
+    ///     i16 b0
+    ///     i16 a1
+    ///     i16 b1
     /// ```
     ///
     /// Returns an empty buffer when slot 4 is missing or fails to parse.
-    /// The JS-side renderer assigns per-body colors based on `body_index`.
-    pub fn slot4_wireframe_lines(&self, prot_base: u32, style: &str, axes: &str) -> Vec<u8> {
+    /// The JS-side renderer assigns per-clip colors based on `body_index`.
+    pub fn slot4_wireframe_lines(&self, prot_base: u32, axes: &str) -> Vec<u8> {
         let Some(decoded) = self.decode_kingdom_slot4(prot_base) else {
             return Vec::new();
         };
         let Ok(slot) = legaia_asset::world_map_overlay::parse(&decoded) else {
             return Vec::new();
         };
-        let mode = match style {
-            "col" => legaia_asset::world_map_overlay::PolylineMode::ColumnMajor,
-            "pairs" => legaia_asset::world_map_overlay::PolylineMode::PairWise,
-            "grid" => legaia_asset::world_map_overlay::PolylineMode::Grid,
-            _ => legaia_asset::world_map_overlay::PolylineMode::RowMajor,
-        };
-        let opts = legaia_asset::world_map_overlay::WireframeOptions {
-            mode,
-            axes: parse_axes(axes),
-            ..Default::default()
-        };
-        let lines = legaia_asset::world_map_overlay::top_down_lines(&slot, &opts);
+        let (ah, av) = parse_axes(axes);
+        let segs = legaia_asset::world_map_overlay::translation_path_segments(&slot);
 
-        let mut out = Vec::with_capacity(4 + lines.len() * 12);
-        out.extend_from_slice(&(lines.len() as u32).to_le_bytes());
-        for l in &lines {
-            out.push(l.body_index);
-            out.push((l.group_index & 0xFF) as u8);
-            out.push((l.group_index >> 8) as u8);
+        let mut out = Vec::with_capacity(4 + segs.len() * 12);
+        out.extend_from_slice(&(segs.len() as u32).to_le_bytes());
+        for sg in &segs {
+            out.push(sg.body_index);
+            out.push((sg.kind & 0xFF) as u8);
+            out.push((sg.kind >> 8) as u8);
             out.push(0); // pad
-            out.extend_from_slice(&l.x0.to_le_bytes());
-            out.extend_from_slice(&l.z0.to_le_bytes());
-            out.extend_from_slice(&l.x1.to_le_bytes());
-            out.extend_from_slice(&l.z1.to_le_bytes());
+            out.extend_from_slice(&axis_of(sg.a, ah).to_le_bytes());
+            out.extend_from_slice(&axis_of(sg.a, av).to_le_bytes());
+            out.extend_from_slice(&axis_of(sg.b, ah).to_le_bytes());
+            out.extend_from_slice(&axis_of(sg.b, av).to_le_bytes());
         }
         out
     }
 
-    /// Decode the slot-4 world-map overlay as a topology-free point cloud.
-    /// Useful when the on-disc draw-mode dispatch isn't fully reverse-
-    /// engineered: the points themselves are byte-verified against live
-    /// RAM, so plotting them straight is the most honest visualization.
+    /// The same clip bank as a topology-free point cloud: every decoded
+    /// per-frame translation of every part, projected onto the axis pair.
+    ///
+    /// This used to emit `record_points`, the raw-`i16` byte-inspection view;
+    /// it now emits `Slot4Record::transform`'s translations, which is what the
+    /// runtime decoder `FUN_8001BE80` reads.
     ///
     /// Output layout (little-endian):
     ///
     /// ```text
     /// [u32 point_count]
     /// [Point; point_count] ; 8 bytes each:
-    ///     u8  body_index
-    ///     u8  group_index_low
-    ///     u8  group_index_high
+    ///     u8  body_index    ; the clip
+    ///     u8  frame_low     ; frame = (low | (high << 8))
+    ///     u8  frame_high
     ///     u8  _pad
-    ///     i16 x
-    ///     i16 z
+    ///     i16 a
+    ///     i16 b
     /// ```
     pub fn slot4_wireframe_points(&self, prot_base: u32, axes: &str) -> Vec<u8> {
         let Some(decoded) = self.decode_kingdom_slot4(prot_base) else {
@@ -571,30 +566,42 @@ impl LegaiaViewer {
         let Ok(slot) = legaia_asset::world_map_overlay::parse(&decoded) else {
             return Vec::new();
         };
-        let opts = legaia_asset::world_map_overlay::WireframeOptions {
-            axes: parse_axes(axes),
-            ..Default::default()
-        };
-        let pts = legaia_asset::world_map_overlay::record_points(&slot, &opts);
+        let (ah, av) = parse_axes(axes);
 
-        let mut out = Vec::with_capacity(4 + pts.len() * 8);
-        out.extend_from_slice(&(pts.len() as u32).to_le_bytes());
-        for (body, group, x, z) in &pts {
-            out.push(*body);
-            out.push((*group & 0xFF) as u8);
-            out.push((*group >> 8) as u8);
-            out.push(0); // pad
-            out.extend_from_slice(&x.to_le_bytes());
-            out.extend_from_slice(&z.to_le_bytes());
+        let mut out = Vec::new();
+        let mut n = 0u32;
+        for body in &slot.bodies {
+            let parts = body.part_count();
+            for frame in 0..body.frame_count() {
+                for part in 0..parts {
+                    let Some(rec) = body.entry(frame, part) else {
+                        continue;
+                    };
+                    let t = rec.transform();
+                    let p = [t.tx, t.ty, t.tz];
+                    out.push(body.index as u8);
+                    out.push((frame & 0xFF) as u8);
+                    out.push(((frame >> 8) & 0xFF) as u8);
+                    out.push(0); // pad
+                    out.extend_from_slice(&axis_of(p, ah).to_le_bytes());
+                    out.extend_from_slice(&axis_of(p, av).to_le_bytes());
+                    n += 1;
+                }
+            }
         }
-        out
+        let mut packed = Vec::with_capacity(4 + out.len());
+        packed.extend_from_slice(&n.to_le_bytes());
+        packed.extend_from_slice(&out);
+        packed
     }
 
-    /// Bounding box of every non-zero record in the kingdom's slot-4
-    /// wireframe, as `[amin, bmin, amax, bmax]` (i32) for the requested
-    /// axis pair (`"xz"` / `"xy"` / `"zy"`, etc). Useful for re-framing
-    /// the top-down camera when the overlay is toggled on. Empty vec
-    /// when slot 4 can't be decoded.
+    /// Bounding box of every **decoded translation** in the kingdom's slot-4
+    /// clip bank, as `[amin, bmin, amax, bmax]` (i32) for the requested axis
+    /// pair (`"xz"` / `"xy"` / `"zy"`, etc). Frames the point / path plots
+    /// above. Empty vec when slot 4 can't be decoded or holds no entry.
+    ///
+    /// Previously `axis_bounds`, which measures the raw `i16` field view and
+    /// therefore reports a range the entries never take.
     pub fn slot4_wireframe_bounds(&self, prot_base: u32, axes: &str) -> Vec<i32> {
         let Some(decoded) = self.decode_kingdom_slot4(prot_base) else {
             return Vec::new();
@@ -603,12 +610,23 @@ impl LegaiaViewer {
             return Vec::new();
         };
         let (ah, av) = parse_axes(axes);
-        match legaia_asset::world_map_overlay::axis_bounds(&slot, ah, av) {
-            Some((amin, bmin, amax, bmax)) => {
-                vec![amin as i32, bmin as i32, amax as i32, bmax as i32]
+        let (mut amin, mut bmin) = (i32::MAX, i32::MAX);
+        let (mut amax, mut bmax) = (i32::MIN, i32::MIN);
+        for body in &slot.bodies {
+            for rec in &body.records {
+                let t = rec.transform();
+                let p = [t.tx, t.ty, t.tz];
+                let (a, b) = (i32::from(axis_of(p, ah)), i32::from(axis_of(p, av)));
+                amin = amin.min(a);
+                amax = amax.max(a);
+                bmin = bmin.min(b);
+                bmax = bmax.max(b);
             }
-            None => Vec::new(),
         }
+        if amin > amax {
+            return Vec::new();
+        }
+        vec![amin, bmin, amax, bmax]
     }
 
     /// Per-body inventory of the slot-4 wireframe, as a JSON string.

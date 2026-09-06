@@ -2144,14 +2144,17 @@ object) rigid transforms, decoded in
 [`world-map-overlay.md`](../formats/world-map-overlay.md). It is decoded onto
 [`SceneResources::world_map_slot4`] for every `SceneLoadKind::WorldMap` scene
 (and only those). With `LEGAIA_WORLDMAP_SLOT4=1`, `play-window` builds a
-`LineList` from
-[`legaia_asset::world_map_overlay::wireframe_segments_3d`] and merges it into
-the world-map overlay-lines buffer. **That draw is meaningless and should be
-re-pointed**: it plots raw `i16` field pairs that straddle the entries' packed
-12-bit nibble boundaries, a leftover of the falsified "GTE vertex pool"
-reading. `legaia_asset::world_map_overlay::translation_path_segments` is the
-real curve (each animated object's translation path over its clip). Off by
-default.
+`LineList` and merges it into the world-map overlay-lines buffer. That draw is
+now [`legaia_asset::world_map_overlay::translation_path_segments`] - one
+polyline per (clip, part) through the decoded 12-bit translations, the only
+geometric reading actually in the bytes. It used to be
+[`legaia_asset::world_map_overlay::wireframe_segments_3d`], which plots raw
+`i16` field pairs straddling the entries' packed nibble boundaries: a leftover
+of the falsified "GTE vertex pool" reading and a byte-diffing aid, never
+geometry. The same correction applies to the web-viewer's
+`slot4_wireframe_{lines,points,bounds}` exports. The paths are object-local
+model space and no actor owns them yet, so they draw about the world origin.
+Off by default.
 
 ### Ground texturing
 

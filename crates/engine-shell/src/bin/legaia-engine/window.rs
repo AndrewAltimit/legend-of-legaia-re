@@ -663,15 +663,17 @@ struct PlayWindowApp {
     /// orbit vantage (`camera_mvp`) instead of the retail follow camera
     /// (`field_follow_camera_mvp`). Defaults to the retail view.
     field_debug_camera: bool,
-    /// Kingdom slot-4 vertex-pool inspection wireframe, as raw line geometry
+    /// Kingdom slot-4 clip-bank inspection overlay, as raw line geometry
     /// `(positions, colors, line-indices)` in world space. `Some` only on a
     /// world-map scene when `LEGAIA_WORLDMAP_SLOT4=1` is set; `None`
     /// otherwise. Merged into the per-frame world-map `overlay_lines` buffer
-    /// alongside the entity/player markers. This visualises the decoded
-    /// per-kingdom object-mesh library (`SceneResources::world_map_slot4`);
-    /// the segments use the group-polyline inspection convention because the
-    /// faithful triangle topology + per-object placement transform live in an
-    /// unpinned cluster-A command stream (see docs/formats/world-map-overlay.md).
+    /// alongside the entity/player markers.
+    ///
+    /// Slot 4 is the world map's **animation bank**, not an object-mesh
+    /// library, so each segment is a step of one animated part's decoded
+    /// 12-bit translation across its clip (`translation_path_segments`) -
+    /// object-local model space, drawn about the world origin because no
+    /// actor owns these paths yet. See docs/formats/world-map-overlay.md.
     world_map_slot4_lines: Option<LineGeometry>,
     /// World-map water/CLUT-cell animation. `Some` for a world-map kingdom
     /// scene: normally the disc-derived slot-5 CLUT-walk table (eight
