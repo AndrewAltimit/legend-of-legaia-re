@@ -390,11 +390,40 @@ fn scene_change_consumes_inline_payload_and_recovers_name() {
 
 #[test]
 fn scene_change_name_rejects_text_desync_phantom() {
-    // A 0x3F whose "name" bytes are uppercase/punctuation (a literal '?'
+    // A 0x3F whose "name" bytes carry punctuation or a space (a literal '?'
     // landing inside message text) is not a clean CDNAME label.
     let bc = [0x3Fu8, 0, 0, 4, b'H', b'i', b'!', b' ', 0x00, 0x00, 0x00];
     let insn = decode(&bc, 0).unwrap();
     assert_eq!(scene_change_name(&bc, &insn), None);
+    // Mixed case is message text too - the disc carries no mixed-case `0x3F`
+    // name run at all.
+    let bc = [
+        0x3Fu8, 0, 0, 5, b'J', b'e', b't', b't', b'e', 0x00, 0x00, 0x00,
+    ];
+    let insn = decode(&bc, 0).unwrap();
+    assert_eq!(scene_change_name(&bc, &insn), None);
+    // And a run shorter than the shortest CDNAME label (`jou` / `kor` / `son`
+    // / `uru`) is a phantom: `J`, `L8` and `L9L` are the three the raw byte
+    // scan turns up, and none survives a real instruction walk.
+    let bc = [0x3Fu8, 0, 0, 2, b'L', b'8', 0x00, 0x00, 0x00];
+    let insn = decode(&bc, 0).unwrap();
+    assert_eq!(scene_change_name(&bc, &insn), None);
+}
+
+#[test]
+fn scene_change_name_accepts_uppercase_and_folds_it() {
+    // Retail never compares the operand against a name table: `FUN_8001FD44`
+    // copies it into the next-scene global and the field asset loader
+    // (`FUN_8001F7C0` at `0x8001F7E8..0x8001F88C`) concatenates it into the
+    // ISO path `DATA\FIELD\<name>.MAP` for `FUN_8003E6BC` -> `FUN_800608F0`.
+    // ISO 9660 identifiers are upper case, so the operand's case is invisible
+    // to the disc - and roughly half of it is written upper case, `uru`'s own
+    // `MAP03` exit included. The gate folds to the CDNAME index's lower case.
+    let bc = [
+        0x3Fu8, 0x87, 0x01, 5, b'M', b'A', b'P', b'0', b'3', 0x24, 0x46, 0x00,
+    ];
+    let insn = decode(&bc, 0).unwrap();
+    assert_eq!(scene_change_name(&bc, &insn).as_deref(), Some("map03"));
 }
 
 #[test]

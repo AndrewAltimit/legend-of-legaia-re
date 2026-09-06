@@ -143,21 +143,37 @@ pub fn scene_change_name(bytecode: &[u8], insn: &Insn) -> Option<String> {
 }
 
 /// The clean-CDNAME-label gate shared by [`scene_change_name`] and the field-VM
-/// `0x3F` executor. A genuine destination name is short, non-empty, and a
-/// lowercase-ASCII / digit CDNAME label (`town01`, `dolk`, `rikuroa`, …).
-/// Rejects anything else - the desync guard for a literal `?` (`0x3F`) landing
-/// inside message text, which would otherwise decode a bogus "name". Returns the
-/// owned name on success.
+/// `0x3F` executor. A genuine destination name is a short, **uniformly cased**
+/// ASCII-alphanumeric CDNAME label - `town01` / `dolk` / `rikuroa`, and equally
+/// `MAP03` / `KOR3` / `RETOCKIN`. Returns the name **folded to lower case**, the
+/// index space [`crate::cdname`] keys on.
+///
+/// The case fold is not cosmetic. Retail never compares the operand against a
+/// name table: `FUN_8001FD44` `strcpy`s it into the next-scene global and the
+/// field asset loader (`FUN_8001F7C0` at `0x8001F7E8..0x8001F88C`) `strcat`s it
+/// into the ISO path `DATA\FIELD\<name>.MAP` for `FUN_8003E6BC` ->
+/// `FUN_800608F0` (the CD file open). ISO 9660 identifiers are upper case, so
+/// the operand's case is invisible to the disc and roughly half the disc's
+/// `0x3F` operands are written upper case - every `map03` exit, the `kor`
+/// warp-pad chain, the `dream` hub and the whole `ed*` ending chain among them.
+/// A lower-case-only gate silently drops all of them.
+///
+/// The gate is still a desync guard - the linear walk hits literal `?` (`0x3F`)
+/// bytes inside message text. Three properties keep it one: at most 12 bytes, at
+/// least 3 (the shortest CDNAME labels are `jou` / `kor` / `son` / `uru`), and a
+/// single case throughout. English message text is mixed case, so a run that is
+/// uniformly cased ASCII-alphanumeric and 3..=12 bytes long is a label shape,
+/// not a sentence; the disc carries **no** mixed-case `0x3F` name run at all.
 pub fn clean_scene_name(raw: &[u8]) -> Option<String> {
-    if raw.is_empty()
-        || raw.len() > 12
-        || !raw
-            .iter()
-            .all(|&b| b.is_ascii_lowercase() || b.is_ascii_digit())
-    {
+    if raw.len() < 3 || raw.len() > 12 || !raw.iter().all(u8::is_ascii_alphanumeric) {
         return None;
     }
-    Some(String::from_utf8_lossy(raw).into_owned())
+    let uniform_case =
+        raw.iter().all(|b| !b.is_ascii_uppercase()) || raw.iter().all(|b| !b.is_ascii_lowercase());
+    if !uniform_case {
+        return None;
+    }
+    Some(String::from_utf8_lossy(raw).to_ascii_lowercase())
 }
 
 /// Map a retail FMV index to its filename via the FMV dispatch table at
