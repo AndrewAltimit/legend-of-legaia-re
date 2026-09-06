@@ -230,12 +230,13 @@ pub struct World {
     /// from its own binding each tick, alongside the rest of the pad.
     ///
     /// Retail reads it as `pad_held & mask`, where the held-pad word is
-    /// `_DAT_8007B850` and the mask is the config word `0x800846DC`. The mask
-    /// WORD's value is not pinned - nothing materialises that address (it is
-    /// reached as `0x80084140 + 0x59c`, so an address scan cannot see it) and
-    /// it is not one of the ten option rows. So the engine takes the run
-    /// button as a host-bound input rather than claiming a retail bit; the
-    /// XOR structure around it in [`World::field_run_active`] IS pinned.
+    /// `_DAT_8007B850` and the mask is the config word `0x800846DC`. That
+    /// mask is `0x48` = **Cross | R1** in the packed pad layout: the new-game
+    /// data-init `FUN_80034A6C` seeds it at `0x80034AB8` and nothing else on
+    /// the disc writes it, so it is not configurable. The engine binds the
+    /// button host-side anyway (see [`World::set_pad`]), which is a host
+    /// choice and not a decode; the XOR structure around it in
+    /// [`World::field_run_active`] is pinned as well.
     pub field_run_button_held: bool,
     /// Forced-slow gate: retail's `_DAT_8007B6A8` arm of the base-step
     /// selector. Non-zero there selects base step

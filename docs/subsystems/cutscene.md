@@ -665,7 +665,7 @@ Pinned data structures inside the residency window (captured from a save state d
 | `0x801CE810` | ~150 B | variable | Path-string table (\\DATA\\MOV.STR;1, \\DATA\\MOV15.STR;1, \\MOV\\MV1A.STR;1, \\MOV\\MV6..MV1.STR;1) |
 | `0x801CE8AC` | ~50 B | variable | Post-FMV return-scene labels (CDNAME shape) |
 
-### MDECin DMA-callback hook (`FUN_801CFE98`)
+### MDECin DMA-callback hook (`FUN_801CFE98`) - linked, never registered
 
 `FUN_801CFE98` is a nine-instruction wrapper that forwards its single
 argument to the PsyQ `DMACallback` entry `FUN_8005FDE8` with the channel
@@ -678,9 +678,33 @@ The wrapper is byte-identical, and at the same VA, in PROT **0970**
 (`cutscene_str`) and PROT **0971** (`debug_menu`) - both verified by
 disassembling each extracted image at base `0x801CE818` (file offset
 `0x1680`, inside 0971's own `0x1800` bytes, so this is genuine
-co-residency and not the 0971 → 0972 over-read). No static caller appears
-in either image; the callback is installed from a code path this corpus
-does not cover, so **who** registers it is Unknown.
+co-residency and not the 0971 → 0972 over-read).
+
+**Nothing on the disc registers it, and nothing needs to.** The wrapper is
+one entry of the libpress `DecDCT*` API the linker pulled into the overlay
+whole. Its twin sits at the very next address: `0x801CFEBC` is the same
+nine instructions with the channel immediate `1` instead of `0` - MDEC**out**,
+the decoded-data path - and *that* one the STR overlay calls twice itself,
+at `0x801CF524` (with `a0 = 0`, clearing the callback) and at `0x801CF9C4`
+(installing one). `0x801CFEE0`, the reset entry, is called from
+`0x801CFC34`. Retail therefore drives MDEC-in synchronously and only ever
+hooks the out-channel, which leaves the in-channel registrar linked and
+unreferenced - the same shape as the two sync wrappers `0x801CFE20` /
+`0x801CFE5C` next door
+([`address-reference-scan.md`](../tooling/address-reference-scan.md#the-retail-unreachable-set)).
+
+The negative is a closed sweep, not a failed search: `0x801CFE98` collects
+**zero** hits in any reference form - literal word, `lui`+`addiu`/`ori`,
+`jal`, `j`, PC-relative branch, `disp(gp)`, `lui`+load, and materialised
+base plus displacement - across `SCUS_942.54`, all 31 based overlay images
+and all 1202 remaining extracted PROT entries. (Its one apparent hit, a
+branch at `0x801CFE84` in the slot-machine overlay, is an aliased branch
+from an image that does not hold the routine and cannot reach it.) Both
+sweeps are
+[`find-address-word-refs.py`](../../scripts/ghidra-analysis/find-address-word-refs.py)
+`801cfe98 --prot --home cutscene_str` and
+[`find-gp-relative-refs.py`](../../scripts/ghidra-analysis/find-gp-relative-refs.py)
+`--va 0x801cfe98 --prot`.
 
 ### Directory-record cache
 

@@ -16,6 +16,11 @@ band is invisible in both:
     commonest way retail touches a named global, and the sibling tool skips
     it: its pair scan accepts only `addiu` (op `0x09`) and `ori` (op `0x0D`)
     as the second half.
+  * **`lui rX, hi` + `ori/addiu rX` + `<mem> rY, disp(rX)`** - the same thing
+    with the low half *split* between the register and the operand, so no
+    instruction carries either the address or its low half. Every scratchpad
+    access retail makes has this shape: `lui a0,0x1f80; ori a0,a0,0x314;
+    sb v0,0xd4(a0)` writes `0x1F8003E8`. `--no-base-disp` turns it off.
 
 Those two blind spots compose. `gp[0x678]` (the battle sound bank's record
 table) had exactly one gp-relative writer and seven `lui`+`lw` readers, and
@@ -26,6 +31,7 @@ word, no jump, no branch, no materialisation pair - in any image".
     scripts/ghidra-analysis/find-gp-relative-refs.py --va 0x8007b990
     scripts/ghidra-analysis/find-gp-relative-refs.py 0x678 --dumps
     scripts/ghidra-analysis/find-gp-relative-refs.py 0x5b8 --prot
+    scripts/ghidra-analysis/find-gp-relative-refs.py --va 0x1f8003e8
     scripts/ghidra-analysis/find-gp-relative-refs.py --find-gp
 
 ## What `$gp` is, and why it must be recovered rather than assumed
@@ -108,6 +114,8 @@ REG_NAMES = (
 
 # How many instructions after a `lui` its load/store partner may sit.
 LUI_PAIR_WINDOW = 8
+# How far the base-plus-displacement walk carries a materialised register.
+BASE_DISP_WINDOW = 24
 # How far either side of a hit to tally code markers.
 CODE_WINDOW = 0x200
 
@@ -263,6 +271,122 @@ def scan_lui_mem(image: Image, target: int) -> list[tuple[int, int, str]]:
     return out
 
 
+def _writes_reg(word: int) -> int | None:
+    """Which GPR an instruction clobbers, for the register walk below.
+
+    Only the forms that matter to a base-register walk are decoded exactly;
+    anything else that plausibly writes a register returns its destination so
+    the walk drops the base rather than trusting a stale value.
+    """
+    op = word >> 26
+    rt = (word >> 16) & 0x1F
+    if op == 0x00:  # SPECIAL
+        funct = word & 0x3F
+        if funct in (0x08, 0x0C, 0x0D):  # jr, syscall, break
+            return None
+        if funct in (0x18, 0x19, 0x1A, 0x1B, 0x11, 0x13):  # mult/div, mthi/mtlo
+            return None
+        return (word >> 11) & 0x1F  # rd
+    if op == 0x01:  # REGIMM - the `*al` forms link
+        return 31 if (rt & 0x1E) == 0x10 else None
+    if op == 0x03:  # jal
+        return 31
+    if 0x08 <= op <= 0x0F:  # addi/addiu/slti/sltiu/andi/ori/xori/lui
+        return rt
+    if op in (0x10, 0x11, 0x12, 0x13):  # coprocessor: mfc/cfc write rt
+        return rt if ((word >> 21) & 0x1F) in (0x00, 0x02) else None
+    if 0x20 <= op <= 0x26:  # loads
+        return rt
+    return None
+
+
+def scan_base_disp(image: Image, target: int) -> list[tuple[int, str]]:
+    """`lui rX, hi` [`ori`/`addiu` rX] + `<mem> rY, disp(rX)` reaching `target`.
+
+    The generalisation of the `lui`+load pair: the low half of the address is
+    split between the register-forming instructions and the memory operand's
+    own displacement, so neither half equals the target's low half. Retail
+    forms every scratchpad access this way - `lui a0,0x1f80; ori a0,a0,0x314;
+    sb v0,0xd4(a0)` writes `0x1F8003E8` while carrying neither `0x3e8` nor
+    the whole address anywhere in the instruction stream.
+
+    A register that *holds* the target is reported too, which closes the
+    sibling tool's documented "split materialisation" gap - an address built
+    in more than two steps is not a `lui`+`addiu` pair and that scan walks
+    past it.
+
+    Returns `(memop_offset, text)`. The walk is linear and stops a register at
+    its next writer, so a hit inside a branch shadow is a candidate to read,
+    not a proof; `code` and the disassembly settle it.
+    """
+    out = []
+    seen = set()
+    for off in range(0, len(image.data) - 3, 4):
+        word = struct.unpack_from("<I", image.data, off)[0]
+        if (word >> 26) != 0x0F:
+            continue
+        reg = (word >> 16) & 0x1F
+        if reg == 0:
+            continue
+        regs = {reg: ((word & 0xFFFF) << 16) & 0xFFFFFFFF}
+        for k in range(1, BASE_DISP_WINDOW + 1):
+            at = off + 4 * k
+            nxt = image.word(at)
+            if nxt is None:
+                break
+            op = nxt >> 26
+            rs = (nxt >> 21) & 0x1F
+            rt = (nxt >> 16) & 0x1F
+            imm = nxt & 0xFFFF
+            simm = imm - 0x10000 if imm & 0x8000 else imm
+            if op in MEM_OPS and rs in regs:
+                if (regs[rs] + simm) & 0xFFFFFFFF == target and at not in seen:
+                    seen.add(at)
+                    out.append(
+                        (
+                            at,
+                            "%s %s,%#x(%s)  [base 0x%08x from lui @ +0x%x]"
+                            % (
+                                MEM_OPS[op],
+                                REG_NAMES[rt],
+                                simm,
+                                REG_NAMES[rs],
+                                regs[rs],
+                                off,
+                            ),
+                        )
+                    )
+            if op in ADDR_OPS and rs in regs:
+                val = ((regs[rs] | imm) if op == 0x0D else (regs[rs] + simm)) & 0xFFFFFFFF
+                regs[rt] = val
+                # The address itself in a register: the two-step form the
+                # sibling tool already reports, and the multi-step form it
+                # explicitly cannot ("split materialisation").
+                if val == target and at not in seen:
+                    seen.add(at)
+                    out.append(
+                        (
+                            at,
+                            "%s %s,%s,%#x  [= 0x%08x, from lui @ +0x%x]"
+                            % (
+                                ADDR_OPS[op],
+                                REG_NAMES[rt],
+                                REG_NAMES[rs],
+                                imm,
+                                val,
+                                off,
+                            ),
+                        )
+                    )
+                continue
+            dest = _writes_reg(nxt)
+            if dest is not None:
+                regs.pop(dest, None)
+            if not regs:
+                break
+    return out
+
+
 def scan_dumps(disps: set[int]) -> list[tuple[str, str]]:
     """`grep -E '[-]?0x<disp>\\(gp\\)'` over the committed dump corpus.
 
@@ -285,6 +409,28 @@ def scan_dumps(disps: set[int]) -> list[tuple[str, str]]:
     return out
 
 
+def scan_dumps_abs(target: int) -> list[tuple[str, str]]:
+    """Grep the dump corpus for the target's bare hex, either case.
+
+    A `lui`/`ori` base plus a displacement never prints the whole address in
+    the disassembly, but Ghidra's decompiler folds it back into a `DAT_`
+    symbol - so the C half of a dump names the address the assembly does not.
+    """
+    out = []
+    if not FUNCS_DIR.is_dir():
+        return out
+    pattern = re.compile("%08x" % target, re.IGNORECASE)
+    for path in sorted(FUNCS_DIR.glob("*.txt")):
+        try:
+            text = path.read_text(errors="replace")
+        except OSError:
+            continue
+        for line in text.splitlines():
+            if pattern.search(line):
+                out.append((path.name, line.strip()))
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         description="Find gp-relative and lui+load references to a global."
@@ -296,6 +442,11 @@ def main() -> int:
     ap.add_argument("--prot", action="store_true", help="also sweep every extracted PROT entry")
     ap.add_argument("--dumps", action="store_true", help="also grep ghidra/scripts/funcs/*.txt")
     ap.add_argument("--no-lui", action="store_true", help="skip the absolute lui+load pair scan")
+    ap.add_argument(
+        "--no-base-disp",
+        action="store_true",
+        help="skip the materialised-base + displacement walk",
+    )
     args = ap.parse_args()
 
     scus = load_scus()
@@ -312,10 +463,21 @@ def main() -> int:
         return 0
 
     gp = int(args.gp, 16)
-    disps = {int(d, 16) for d in args.disps}
-    for va in args.va:
-        disps.add(int(va, 16) - gp)
-    if not disps:
+    # A target is `(label, absolute VA, gp displacement or None)`. Only an
+    # address inside the small-data window has a meaningful displacement, and
+    # a scratchpad address never does - `--va 0x1f8003e8` is an absolute-form
+    # query, not a claim that `$gp` reaches it.
+    targets = []
+    for d in args.disps:
+        disp = int(d, 16)
+        targets.append((f"gp+0x{disp:x}", (gp + disp) & 0xFFFFFFFF, disp))
+    for v in args.va:
+        va = int(v, 16)
+        disp = va - gp
+        disp = disp if -0x8000 <= disp < 0x8000 else None
+        label = f"gp+0x{disp:x}" if disp is not None else "abs"
+        targets.append((label, va & 0xFFFFFFFF, disp))
+    if not targets:
         ap.error("give at least one displacement, or --va, or --find-gp")
 
     images = [scus] + load_overlays()
@@ -323,26 +485,42 @@ def main() -> int:
         images += load_prot_entries({im.name.split("/")[0] for im in images[1:]})
 
     total = 0
-    for disp in sorted(disps):
-        target = (gp + disp) & 0xFFFFFFFF
-        print(f"\n=== gp+0x{disp:x} = 0x{target:08x} " + "=" * 34)
+    for label, target, disp in targets:
+        print(f"\n=== {label} = 0x{target:08x} " + "=" * 34)
         hits = 0
         for image in images:
-            for off, text in scan_gp_relative(image, {disp}):
+            for off, text in scan_gp_relative(image, {disp} if disp is not None else set()):
                 marks = image.code_markers(off)
                 print(f"  GP   {image.where(off)}  {text}   code={marks}")
                 hits += 1
             if not args.no_lui:
+                pair_sites = set()
                 for _, at, text in scan_lui_mem(image, target):
+                    pair_sites.add(at)
                     marks = image.code_markers(at)
                     print(f"  LUI  {image.where(at)}  {text}   code={marks}")
                     hits += 1
+                if not args.no_base_disp:
+                    for at, text in scan_base_disp(image, target):
+                        if at in pair_sites:
+                            continue
+                        marks = image.code_markers(at)
+                        print(f"  BASE {image.where(at)}  {text}   code={marks}")
+                        hits += 1
         if args.dumps:
-            for name, line in scan_dumps({disp}):
+            for name, line in scan_dumps({disp} if disp is not None else set()):
+                print(f"  DUMP {name}: {line}")
+                hits += 1
+            for name, line in scan_dumps_abs(target):
                 print(f"  DUMP {name}: {line}")
                 hits += 1
         if hits == 0:
-            print("  (no gp-relative access, no lui+load pair - in any image)")
+            forms = ["no gp-relative access"]
+            if not args.no_lui:
+                forms.append("no lui+load pair")
+                if not args.no_base_disp:
+                    forms.append("no base+displacement")
+            print("  (%s - in any image)" % ", ".join(forms))
         total += hits
 
     print(f"\n# {len(images)} images scanned, {total} hits")

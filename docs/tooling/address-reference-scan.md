@@ -167,10 +167,15 @@ against a known answer before trusting a "nothing found":
   `addiu`/`ori` with the exact low half, within a few instructions. An address
   assembled in more than two steps, or reached as `table_base + index`, is not
   a pair and will not be found - which is why a per-record negative over a
-  table needs the table *base* scanned too before it means anything.
-- **`$gp` and `lui`+load.** Two forms this tool does not decode at all - a
-  `disp(gp)` access, and a `lui`/load pair whose low half rides the load
-  instead of an `addiu`. Both are in the sibling sweep
+  table needs the table *base* scanned too before it means anything. The
+  register walk in the sibling sweep [below](#the-gp-relative-and-luiload-forms)
+  covers the multi-step case; `table_base + index` is still out of reach for
+  both, because the index is a runtime value.
+- **`$gp`, `lui`+load, and a materialised base plus a displacement.** Three
+  forms this tool does not decode at all - a `disp(gp)` access, a `lui`/load
+  pair whose low half rides the load instead of an `addiu`, and an access
+  whose low half is *split* between the base register and the operand's own
+  displacement. All three are in the sibling sweep
   [below](#the-gp-relative-and-luiload-forms); run it before reading a
   five-form negative as "nothing references this".
 - **The verdict is triage.** A `dispatch-table` classification says the
@@ -192,6 +197,17 @@ covers the two forms the five-form sweep is structurally blind to.
   global puts the low half on the *load*. The five-form pair scan accepts only
   `addiu` (op `0x09`) and `ori` (op `0x0D`) as the second half, so it walks past
   every one of these.
+- **`lui rX, hi` + `ori`/`addiu rX` + `<mem> rY, disp(rX)`.** The same thing
+  with the low half *split* between the register and the operand, so no
+  instruction carries the address or even its low half. This is how retail
+  reaches every scratchpad byte and every field of a struct held in a
+  register: `lui a0,0x1f80; ori a0,a0,0x314; sb v0,0xd4(a0)` writes
+  `0x1F8003E8`, and `lui a0,0x8008; addiu a0,a0,0x4140; lw v1,0x59c(a0)`
+  reads `0x800846DC`. The sweep decodes it by walking the register forward
+  from each `lui` until something else writes it, which also recovers the
+  multi-step materialisation the five-form scan lists as a limit - an
+  `addiu`/`ori` result that *equals* the target is reported too. `--no-base-disp`
+  turns the walk off.
 
 The two compose into a silent negative. `gp+0x678` - the battle sound bank's
 record table, [`bse-dat.md`](../formats/bse-dat.md) - has one gp-relative writer
@@ -207,6 +223,10 @@ scripts/ghidra-analysis/find-gp-relative-refs.py --find-gp
 scripts/ghidra-analysis/find-gp-relative-refs.py 0x678
 scripts/ghidra-analysis/find-gp-relative-refs.py --va 0x8007b990
 
+# An address `$gp` does not reach: scratchpad, or a struct field off a
+# materialised base. `--va` takes it as an absolute-form query.
+scripts/ghidra-analysis/find-gp-relative-refs.py --va 0x1f8003e8
+
 # Widen to every extracted PROT entry, and grep the dump corpus too.
 scripts/ghidra-analysis/find-gp-relative-refs.py 0x5b8 --prot --dumps
 ```
@@ -219,6 +239,18 @@ over base-less PROT entries - the encoding carries no address, so it is
 base-independent by construction. The cost of that is coincidence: a raw byte
 scan over scene data will produce hits with `code=0` around them. Read the
 disassembly at a hit before calling it a reference.
+
+The register walk has one soft edge of its own: it is linear, so it follows a
+`lui` straight through a branch it should not have taken. A hit is therefore a
+site to read, not a proof, and the `code` count plus the disassembly settle it
+the same way they do for the five-form scan.
+
+Both silent-negative shapes on this page have now produced a corrected doc.
+`gp+0x678` is the small-data one. The base-plus-displacement one is the camera
+zone loader's scratchpad side-write at `0x1F8003E8..EB`
+([`encounter.md`](../formats/encounter.md#the-scratchpad-window-0x1f8003e8eb)),
+whose four readers were recorded as "consumer Unknown" for exactly as long as
+the only sweep available could not see a `0xd4(a0)`.
 
 ## The retail-unreachable set
 

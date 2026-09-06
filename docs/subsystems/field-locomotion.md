@@ -242,9 +242,22 @@ The forced-slow arm is not just first, it is exclusive: `0x801D0350` `j`s to `0x
 
 **Run is an exclusive or, not a button.** The two inputs are the held run button (`_DAT_8007B850 &` the mask config word `0x800846DC`) and the Field Move option word `0x800846CC` (= `0x80084140 + 0x58c`, the pause menu's Walk / Run row - see [`field-menu.md`](field-menu.md#options-screen)). The paired branches encode XOR: from the button-held side (`bnez` at `0x801D0370` → `0x801D0390`) a set option jumps *past* the `$s4 = 0xc` store, and from the button-clear side it falls *into* it. So the option sets the default and the button inverts it - hold to run when Walk is selected, hold to **walk** when Run is.
 
-The mask word `0x800846DC` is **not pinned**. It is reached as a base-plus-offset off `0x80084140`, so nothing materialises the address and an [address-reference scan](../tooling/address-reference-scan.md) returns nothing in any image; it is also not one of the ten option rows. Its value is therefore Unknown, and the port binds the run button host-side rather than claiming a retail bit.
+The mask word `0x800846DC` is **`0x48` = Cross | R1** - hold either to invert the option. It is the last of four button-mask config words the new-game data-init `FUN_80034A6C` seeds into the live game-state window at `0x80084140` (`0x80034A9C..0x80034AB8` in `SCUS_942.54`):
 
-**Engine port.** `World::field_base_step` (the selector) over `World::field_run_active` (the XOR), with the four constants in `engine-core::world::config`. The option arrives as `World::field_move_run_default` (hosts mirror `OptionsState::field_move`); the button as `World::field_run_button_held`, latched inside `World::set_pad` so every host that feeds a pad gets it without wiring anything. `World::field_forced_slow` is ported but **NOT WIRED** - no host drives `_DAT_8007B6A8`'s equivalent - and the turbo arm is recorded as a constant and never taken.
+| word | value | packed bits | seeded at | one read site |
+|---|---|---|---|---|
+| `+0x590` = `0x800846D0` | `0x44` | Cross \| L1 | `0x80034AA0` | the heading-directed field interact test `0x801D0818` |
+| `+0x594` = `0x800846D4` | `0x21` | Circle \| L2 | `0x80034AA8` | menus test `0x590 \| 0x594` together - `0x801D8590` (menu overlay), `0x80032328` (SCUS) |
+| `+0x598` = `0x800846D8` | `0x10` | Triangle | `0x80034AB0` | the field controller's own press test at `0x801D0250`, widened to `\| 0x100` (Select) on the fall-through |
+| `+0x59C` = `0x800846DC` | `0x48` | Cross \| R1 | `0x80034AB8` | the run test here, `0x801D0364` |
+
+The bit names are the packed pad layout `FUN_8001822C` builds (`0x40` Cross, `0x20` Circle, `0x10` Triangle, `0x08` R1, `0x04` L1, `0x01` L2 - see [`minigame-fishing.md`](minigame-fishing.md)). The run word is ANDed against the *held* mask `_DAT_8007B850`; the other three against the *edge* mask `_DAT_8007B874`, which is what makes them press tests rather than hold tests. The confirm / cancel reading of the first pair is an inference from those sites, not from a name; the values and the wiring are disassembly.
+
+**The run button is not configurable.** `FUN_80034A6C` is the only writer of any of the four words in `SCUS_942.54` or in any of the 31 based overlay images, and none of them is one of the ten option rows. The word does sit inside the `0x1A18`-byte block a save is composed from ([`save-screen.md`](save-screen.md)), so a load restores whatever the save carried - which, absent another writer, is always `0x48`.
+
+The earlier "not pinned" reading came from the address form, not from the bytes: `0x800846DC` is reached as `lui`+`addiu` to `0x80084140` followed by `lw v1,0x59c(a0)`, so neither the address nor its low half `0x46dc` appears in any instruction and the five-form [address-reference scan](../tooling/address-reference-scan.md) is structurally blind to it. The base-plus-displacement walk in [`find-gp-relative-refs.py`](../../scripts/ghidra-analysis/find-gp-relative-refs.py) finds the one writer and the one reader.
+
+**Engine port.** `World::field_base_step` (the selector) over `World::field_run_active` (the XOR), with the four constants in `engine-core::world::config`. The option arrives as `World::field_move_run_default` (hosts mirror `OptionsState::field_move`); the button as `World::field_run_button_held`, latched inside `World::set_pad` so every host that feeds a pad gets it without wiring anything. That latch currently reads **Square**, which is not the retail mask above - a host-side binding choice, not a decode. `World::field_forced_slow` is ported but **NOT WIRED** - no host drives `_DAT_8007B6A8`'s equivalent - and the turbo arm is recorded as a constant and never taken.
 
 ### Motion-derived locomotion animation
 
