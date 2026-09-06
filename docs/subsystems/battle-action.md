@@ -2766,13 +2766,15 @@ unflagged leg and the `XA27` channel-4 sting is the flagged case.
 not a formality, and a capture says which way it falls.
 `scripts/pcsx-redux/autorun_w4d_melee_grunt_gate.lua` breakpoints every `s7`
 definition, the gate, both emission sites and the `+0x1DA` commit. Across
-`party_basic_attack_vs_gobu_gobu` and `battle_gaza2_prompt`, **three** party-seat
-visits to `0x801EEA88` were caught and every one skipped at the `+0x1F3` compare:
-`s7` read `0x04` / `0x02` / `0x03` against an `s4` actor whose `+0x1F3` read `0x06`,
-and the live reaching definition was `0x801EDE5C` / `0x801EDE78` (`+0x1EF` /
-`+0x1F0`) or `0x801EE3B4` (`+0x1F1`) - never `0x801EC884`, the one definition that
-loads `+0x1F3`. Neither `FUN_8003D53C` nor `FUN_8004FE5C` was reached in either
-fight.
+`party_basic_attack_vs_gobu_gobu`, `battle_gaza2_prompt` and
+`arts_bar_astral_sword_vahn`, **four** party-seat visits to `0x801EEA88` were caught
+and every one skipped at the `+0x1F3` compare: `s7` read `0x04` / `0x02` / `0x03` /
+`0x03` against an `s4` actor whose `+0x1F3` read `0x06` three times and `0x00` once
+- a defender whose `+0x1F3` is zero can never satisfy the gate, since `s7` must be
+non-zero too. The live reaching definition was `0x801EDE5C` / `0x801EDEA8` /
+`0x801EDE78` (`+0x1EF` / `+0x1F0`) or `0x801EE374` / `0x801EE3B4` (`+0x1F1`) - never
+`0x801EC884`, the one definition that loads `+0x1F3`. Neither `FUN_8003D53C` nor
+`FUN_8004FE5C` was reached in any of the three fights.
 
 That makes the byte family concrete: `+0x1EF`, `+0x1F0`, `+0x1F1` and `+0x1F3` are
 four reaction-pose ids on the **defender**, and this routine commits one of them to
@@ -2782,7 +2784,7 @@ the defender's `+0x1DA`. The `+0x1EF` / `+0x1F0` pair is picked by the mod-10 te
 `+0x16E & 0x400` guard-disable bit forcing `s0 = s1` first. Since the gate compares
 the committed pose against `+0x1F3`, the grunt goes out exactly when a strike
 commits the `+0x1F3` reaction, and an ordinary directional swing that commits
-`+0x1EF` / `+0x1F0` / `+0x1F1` is silent. Three swings is enough to retire "every
+`+0x1EF` / `+0x1F0` / `+0x1F1` is silent. Four swings is enough to retire "every
 ordinary swing grunts"; it does not pin the `s0` / `s1` threshold that opens the
 `+0x1F3` arm.
 
