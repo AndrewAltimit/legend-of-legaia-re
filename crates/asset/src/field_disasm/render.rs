@@ -159,18 +159,25 @@ pub fn scene_change_name(bytecode: &[u8], insn: &Insn) -> Option<String> {
 /// A lower-case-only gate silently drops all of them.
 ///
 /// The gate is still a desync guard - the linear walk hits literal `?` (`0x3F`)
-/// bytes inside message text. Three properties keep it one: at most 12 bytes, at
-/// least 3 (the shortest CDNAME labels are `jou` / `kor` / `son` / `uru`), and a
-/// single case throughout. English message text is mixed case, so a run that is
-/// uniformly cased ASCII-alphanumeric and 3..=12 bytes long is a label shape,
-/// not a sentence; the disc carries **no** mixed-case `0x3F` name run at all.
+/// bytes inside message text - and the lower-case half of it is unchanged: at
+/// most 12 bytes, non-empty, ASCII-alphanumeric. The **newly admitted**
+/// upper-case half carries one extra property, because it is new surface: at
+/// least 3 bytes, the length of the shortest CDNAME labels (`jou` / `kor` /
+/// `son` / `uru`). A raw byte sweep of the disc turns up exactly three
+/// shorter-than-3 upper-case runs (`J`, `L8`, `L9L`), all inside message text
+/// and none reached by a real instruction walk. Mixed case is refused on both
+/// halves: English message text is mixed case, and the disc carries **no**
+/// mixed-case `0x3F` name run at all.
 pub fn clean_scene_name(raw: &[u8]) -> Option<String> {
-    if raw.len() < 3 || raw.len() > 12 || !raw.iter().all(u8::is_ascii_alphanumeric) {
+    if raw.is_empty() || raw.len() > 12 || !raw.iter().all(u8::is_ascii_alphanumeric) {
         return None;
     }
-    let uniform_case =
-        raw.iter().all(|b| !b.is_ascii_uppercase()) || raw.iter().all(|b| !b.is_ascii_lowercase());
-    if !uniform_case {
+    let has_upper = raw.iter().any(u8::is_ascii_uppercase);
+    let has_lower = raw.iter().any(u8::is_ascii_lowercase);
+    if has_upper && has_lower {
+        return None;
+    }
+    if has_upper && raw.len() < 3 {
         return None;
     }
     Some(String::from_utf8_lossy(raw).to_ascii_lowercase())
