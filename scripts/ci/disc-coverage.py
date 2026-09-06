@@ -484,9 +484,9 @@ def overlay_reports(extracted, extents, attrib=None):
         out.append(row)
         spans.append((base, base + span, label))
 
-    # Overlays alias in VA space (several share 0x801CE818, and the two measured
-    # spans are nested), so an extent can fall inside more than one image's span
-    # and be counted by each. That is a real ambiguity, not something to paper
+    # Overlays alias in VA space (nineteen share 0x801CE818 and thirteen share
+    # 0x801F69D8, and their spans nest), so an extent can fall inside more than
+    # one image's span and be counted by each. That is a real ambiguity, not something to paper
     # over: quantify it and let the reader discount accordingly.
     #
     # This whole block counts DISTINCT extents, not dump files. One extent can
@@ -849,7 +849,7 @@ def render(scus, overlays, amb_totals, data, rejects, attributed):
         add("### Overlay caveat")
         add("")
         add("Overlay images alias in VA space - several share base `0x801CE818`, "
-            "and the two measured spans are nested - so an extent in that band "
+            "and their spans nest - so an extent in that band "
             f"cannot be attributed by address. **{resolved}** of the "
             f"**{ambiguous}** ambiguous extents are resolved by bytes against the "
             "extracted images "
