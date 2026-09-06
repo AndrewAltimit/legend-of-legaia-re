@@ -55,8 +55,11 @@ const EXPECTED_CLASS_COUNTS: &[(&str, usize)] = &[
     // sole pure field_pack.
     ("field_pack", 1),
     // `lzs_container` 34 → 33: one entry's descriptor walk no longer
-    // completes inside its own sectors.
-    ("lzs_container", 33),
+    // completes inside its own sectors. Then 33 → 31: extraction 0408
+    // (`bubu1`) and 0811 (`edbubu`) are `count = 5` scene asset tables that
+    // carry a MAN, so they class as `scene_asset_table` now that the detector
+    // no longer bounds `count` to 6 or 7 (see `scene-bundles.md`).
+    ("lzs_container", 31),
     // `bse_bank` - the `bse.dat` battle SFX descriptor bank (extraction 888, the
     // loader's raw TOC `0x37A`) plus 1195, a scene prescript of the same shape.
     ("bse_bank", 2),
@@ -112,9 +115,12 @@ const EXPECTED_CLASS_COUNTS: &[(&str, usize)] = &[
     // `pochi_filler` - reserved dev filler slots, incl. the final TOC entry
     // (index 1232, the archive's last data sector).
     ("pochi_filler", 266),
-    // `scene_asset_table` 88, unchanged - every one of them sits at offset 0
-    // of its own entry with every descriptor payload inside it.
-    ("scene_asset_table", 88),
+    // `scene_asset_table` 88 → 90: every one of them sits at offset 0 of its
+    // own entry with every descriptor payload inside it, and the two new
+    // members are the `count = 5` MAN-bearing bundles of `bubu1` (0408) and
+    // `edbubu` (0811). They are the only sub-6 tables on the disc that carry a
+    // MAN; the thirteen that do not keep their class.
+    ("scene_asset_table", 90),
     // `scene_tmd_stream` **182**. Three of these (63, 71, 701) were briefly
     // counted as `field_map` because they are exactly `0x12000` bytes and the
     // zero-header escape hatch accepted them; they lead `[u32 size]` then the
