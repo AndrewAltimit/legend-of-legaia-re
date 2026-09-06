@@ -14,8 +14,11 @@ folklore "72-slot" bound.
   so it rides verbatim into every memory-card save.
 - **Access.** Nothing indexes the array raw. Every producer and consumer
   (pause menu, field VM `GIVE_ITEM`, battle rewards, shops, equip swap-back)
-  goes through five `SCUS_942.54` helpers that scan and bound-check only
-  inside the active window.
+  goes through the `SCUS_942.54` helpers that scan and bound-check only
+  inside the active window - five of them carry the add / consume / capacity /
+  reserve / normalize contract, but thirteen SCUS functions touch the array in
+  all (see [the reference census](#every-reference-to-the-array)), and two
+  capture-class cast modules reach it without the window at all.
 - **Window.** Three `gp`-relative halfwords - `gp[+0x2D2]` start,
   `gp[+0x2D4]` end, `gp[+0x2D6]` span - written by exactly one function,
   `FUN_8004313C`, from the party roster: `[0, 256)` with two or more members,
@@ -145,6 +148,51 @@ reachability thread. Two cautions the earlier work established:
 Closing the question needs a bag genuinely filled to `end` (256 with a
 multi-member party) with the hit shown to land past the guard. The thread's
 state is tracked in [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).
+
+### Every reference to the array
+
+The array is reachable in exactly one addressing idiom, and the enumeration of
+its users is closed by three measured structural facts rather than by a survey.
+
+- **The `gp`-relative form is arithmetically impossible.** `0x80085958 - gp`
+  is `0xA640` and the array ends at `gp + 0xA840`; a signed 16-bit
+  displacement reaches only `gp + 0x7FFF`. No `imm(gp)` instruction can name
+  any byte of it - which removes, a priori, the one reference form that has
+  produced false negatives elsewhere in this repo.
+- **The literal-word form has zero occurrences.** Neither `0x80085958` nor the
+  block base `0x80084140` appears as a 32-bit word anywhere in `SCUS_942.54`
+  or the 1233 `PROT` entries, so no pointer table offers an indirect route in.
+- **Every access materialises the block base inline**, as
+  `lui rX,0x8008` / `addiu rX,rX,0x4140` then `sll slot,1` / `addu` /
+  `lbu|lb|sb rW,0x1818(rZ)` (id) or `0x1819` (count). Nothing reads a slot as
+  a halfword or word.
+
+Decoding every instruction of the based images for that displacement pair
+gives **125 sites across six images**: `SCUS_942.54` 51 (13 functions,
+`0x8003004C..0x800430A0`), PROT 0899 menu 55 (19 functions - four of them
+behind a `lui` in a branch delay slot, which a linear scan misses), PROT 0897
+field 5, PROT 0898 battle 2, and the two cast modules below. Every other based
+overlay and every other PROT entry: zero. Exactly two of the 125 are absolute
+rather than indexed, and both are the new-game seed's slot-0 write
+(`0x80034B10` / `0x80034B18`); **no instruction on the disc names an address
+inside the key-item band** - it is only ever reached through a runtime index.
+
+The **two cast modules** are the consumers no window bounds.
+[PROT 0941](../formats/spell-table.md) (Steal / Stone Circle) picks a random
+slot and clamps it against a live count (`lh v1,0xB5EA(a1)` at `0x801F7828`);
+PROT 0954 (Fatal Decision) does not - `0x801F81A4` leaves `rand & 0xFF`, so it
+samples the **whole** 256-slot array, accepting the first slot whose id, count
+and item-record price (`+2`) are all non-zero, retrying up to `0x400` times
+(`0x801F81FC`). It is the only reader that reaches the key-item band without
+going through the menu window.
+
+Two habits of the older prose the census corrects. The `& 0x3ff` slot mask
+belongs to 4 sites, not to readers in general - the SCUS packed-handle
+decoders `FUN_8002FF8C` / `FUN_800302E4` / `FUN_80032A44`, where the handle's
+low bits carry the slot and its high nibble carries a tag
+(`0x800302F4 andi v1,a1,0xf000`). And that mask is **not** a 256-slot bound:
+`0x3FF` admits slot 1023, i.e. `0x5FE` past the array's end, so what confines
+those reads is whoever builds the handle, not the mask.
 
 The two windows fail differently, and only one of them is settled by
 arithmetic. `FUN_800421D4`'s merge pass keys on the id byte, so each non-zero

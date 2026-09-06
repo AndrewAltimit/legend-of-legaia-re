@@ -10,7 +10,7 @@
     <dt>Where</dt><dd>Main RAM <code>0x80085958</code>; save block offset <code>+0x1818</code> (rides verbatim into every memory-card save)</dd>
     <dt>Size</dt><dd>256 slots &times; 2 bytes: <code>[item id][count]</code>; id <code>0</code> = free; stacks cap at 99</dd>
     <dt>Window</dt><dd>Three halfwords <code>gp[+0x2D2]</code> start, <code>gp[+0x2D4]</code> end, <code>gp[+0x2D6]</code> span - one writer</dd>
-    <dt>Accessors</dt><dd>Five <code>SCUS_942.54</code> helpers (add / consume / capacity / reserve / normalize); nothing touches the array raw</dd>
+    <dt>Accessors</dt><dd>Five <code>SCUS_942.54</code> helpers (add / consume / capacity / reserve / normalize); 125 references disc-wide across six images, and only two of them - both cast modules - skip the window</dd>
     <dt>Engine</dt><dd><code>engine-core</code> inventory kernel (<code>apply_battle_loot</code>, <code>buy_from_shop</code>, field-VM <code>GIVE_ITEM</code>)</dd>
     <dt>Confidence</dt><dd>Confirmed - disassembly of every helper plus a live three-member window read</dd>
     <dt>Used by</dt><dd><a href="field-menu.html">Field menu</a>, <a href="shop.html">Shop</a>, <a href="script-vm.html">Field script VM</a>, <a href="battle.html#inventory">Battle item use</a></dd>
@@ -45,7 +45,7 @@
 
 <section class="doc-section" id="storage">
   <h2>Storage and access</h2>
-  <p>Nothing indexes the array directly. The pause menu, chests and scripts (the field VM&rsquo;s <code>GIVE_ITEM</code> op), battle rewards, shops and the equip swap-back all go through the same small helper family, passing item ids or helper-returned slot numbers. There is no raw-index sort or swap primitive anywhere in retail.</p>
+  <p>Nothing indexes the array directly. The pause menu, chests and scripts (the field VM&rsquo;s <code>GIVE_ITEM</code> op), battle rewards, shops and the equip swap-back all go through the same small helper family, passing item ids or helper-returned slot numbers. There is no raw-index sort or swap primitive anywhere in retail. The reference census is closed rather than sampled: the array sits <code>0xA640</code> above <code>gp</code>, so no <code>gp</code>-relative instruction can reach it; neither its base nor the block base appears as a literal word anywhere on the disc; and every one of the 125 accesses materialises the block base inline. Two capture-class cast modules are the exception to the window - PROT 0941 (Steal) clamps its random slot against a live count, PROT 0954 (Fatal Decision) samples all 256 slots unclamped.</p>
   <table class="data-table">
     <thead><tr><th>Helper</th><th>What it does</th></tr></thead>
     <tbody>

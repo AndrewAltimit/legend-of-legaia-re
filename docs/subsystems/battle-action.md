@@ -2742,17 +2742,20 @@ A physical swing's whole sound is one call: `li a0,0x10c` / `jal 0x8004fe5c` at 
 | Party (`category < 3`) | CD-XA voice | `0x10C` → clip `26`, channel `4` - i.e. `XA27` |
 | Monster (`category >= 3`) | element-tinted high leg | ring id `0x10C + 0x19C = 0x2A8`, plus the attacker's element byte into that id's runtime-bank descriptor |
 
-Two gates guard the submit. The target must be playing a plain action-table clip (`+0x1D9 < 0x10`, `0x801EEB88`), so a hit landing during an art-bank animation is silent. And `_DAT_8007BD84` selects between this cue and the per-character `XA30` grunt immediately above it (`FUN_8003D53C(0x1D, ch, dur)` at `0x801EEB18..0x801EEB44`, channel and duration keyed on `DAT_8007BD10[slot]`).
+Two gates guard the submit. The target must be playing a plain action-table clip (`+0x1D9 < 0x10`, `0x801EEB88`), so a hit landing during an art-bank animation is silent. And `_DAT_8007BD84` selects between this cue and the per-character `XA30` grunt immediately above it (`FUN_8003D53C(0x1D, ch, dur)` at `0x801EEB18..0x801EEB44`, channel and duration keyed on `DAT_8007BD10[slot]`). That cell is a **pointer**, not a mode word - an effect-instance handle whose only non-zero writer on the disc is the Cort "Mystic Shield" stager (PROT 0940 file `+0xCA0` = `0x801F7678`), dereferenced and released by `FUN_8004CE2C`; every caller here is testing it for null. Census in [`audio.md`](audio.md#what-a-normal-attack-sounds-like).
 
 The port's live gameplay loop resolves melee damage inline rather than through the art-strike event, so nothing downstream of `World::fold_battle_event` used to see a swing at all and a whole fight produced **zero** cues. `World::land_melee_hit` runs the funnel at retail's site - once per resolved hit event - which is what makes `sfx_cue::route_sfx_cue` a live port rather than a caller-less one. The engine's compacted monster seating has to be re-based into retail's `0..=2` / `3..=7` index space first, or a monster seated at index 1 takes the party leg.
 
 **Which half that is.** The cue site is one of the kernel's two sound emissions, and
 `_DAT_8007BD84` picks which. While the word is zero the routine takes the per-character
 **grunt** (`0x801EEAD0..0x801EEB44`), `FUN_8003D53C(0x1D, chan, dur)` - clip slot `0x1D` =
-`XA30.XA`, a ten-channel mono bank; the seat's 1-based character id picks `(0, 0x26)` Vahn /
-`(4, 0x2E)` Noa / `(6, 0x1A)` Gala, gated on a per-strike latch (`s7`, `0x801EEA84`, written
-from the target's `+0x1EF..+0x1F1` / `+0x1F3` bytes and two immediates - not decoded) and on
-`_DAT_8007BC20 < 2` - and the re-read at `0x801EEB60` then skips the cue. While the word is
+`XA30.XA`, a ten-channel mono bank; the seat (`s6`, `0x801EEA70` - not the `s4` seat the
+`0x10C` cue uses) picks `(0, 0x26)` Vahn / `(4, 0x2E)` Noa / `(6, 0x1A)` Gala, gated on
+`_DAT_8007BC20 < 2` (`0x801EEAB8`) and on a per-strike equality rather than a latch: `s7` must
+be non-zero **and** equal the `s4` actor's `+0x1F3` (`0x801EEA88` / `0x801EEAA0`). `s7` is the
+staged pose byte this routine commits to `+0x1DA` at `0x801EEC6C`; of the fourteen definitions
+that reach the compare only `0x801EC884` loads `+0x1F3`, so the condition really can fail. The
+re-read at `0x801EEB60` then skips the cue. While the word is
 non-zero, `bne v0,zero,0x801EEB70` at `0x801EEAC8` jumps over the grunt into the `0x10C` cue,
 gated on the target clip test and, inside the funnel, on the drive being idle
 (`FUN_8003DE7C(1) == 0`, `0x8004FE9C`). The word's only dumped stores are zeros (the

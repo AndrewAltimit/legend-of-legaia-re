@@ -1239,11 +1239,17 @@ two** emissions from one routine, selected by the `_DAT_8007BD84` word.
   arms select `(0, 0x26)` / `(4, 0x2E)` / `(6, 0x1A)` off the seat's 1-based
   character id, the same character-indexed channel spacing the XA2/XA4/XA6
   shout banks use. `XA30.XA` is a ten-channel mono 37.8 kHz bank of ~1.5 s
-  clips; `dur` cuts Vahn's to `0x26` vsyncs. Taken while `_DAT_8007BD84` is
-  **zero** - every ordinary swing: the battle-start sweep and the round reset
-  store zero there and no dumped routine stores anything else - and further
-  gated on a per-strike latch (`s7`, `0x801EEA84`) whose writers are not
-  decoded and on the voice pass's in-flight counter `_DAT_8007BC20 < 2`.
+  clips; `dur` cuts Vahn's to `0x26` vsyncs. The seat here is `s6`
+  (`0x801EEA70 andi a0,s6,0xff`), not the `s4` seat the sting uses. Taken
+  while `_DAT_8007BD84` is **zero** - every ordinary swing, see the writer
+  census below - and further gated on the voice pass's in-flight level
+  (`0x801EEAB8 slti v0,v0,0x2` over `_DAT_8007BC20`, so a level of `2` mutes
+  the grunt while `1` does not) and on a per-strike equality: `s7` must be
+  non-zero and equal the `s4` actor's `+0x1F3` (`0x801EEA88` / `0x801EEAA0`).
+  `s7` is the staged pose byte the routine later commits to `+0x1DA`
+  (`0x801EEC6C`); fourteen definitions reach the compare and only one of them
+  (`0x801EC884`) loads `+0x1F3`, so this is a real per-strike condition and
+  not a latch that always passes.
   Tabulated under the [one-shot cue census](#one-shot-cue-census-fun_8003d53c).
 - `FUN_8004FE5C(0x10C, cat)` at `0x801EEBE8`, the cue router. `0x10C` is above
   `0x100`, so for a party attacker it takes the router's **XA voice** leg -
@@ -1259,10 +1265,25 @@ two** emissions from one routine, selected by the `_DAT_8007BD84` word.
 Both are `see ghidra/scripts/funcs/overlay_0898_801ec3e4.txt` (disassembly,
 not the C). The word decides, never the order: after the grunt the routine
 re-reads `_DAT_8007BD84` at `0x801EEB60` and, still zero, skips the cue at
-`0x801EEB68`, so one strike never attempts both. The word is the same cell
-the damage finisher reads as the enemy-defender halve. Note what that makes
+`0x801EEB68`, so one strike never attempts both. Note what that makes
 retail's ordinary impact sound: a **streamed CD-XA clip** (the grunt), not
 an SPU descriptor one-shot.
+
+**`_DAT_8007BD84` is a pointer, and its writers are enumerable.** A sweep in
+every reference form (`lui`-absolute, `lui`+`addiu`/`ori` materialise, literal
+word, and the `gp`-relative `0xA6C(gp)` that an absolute-only scan cannot see -
+zero hits in that form) over `SCUS_942.54`, all 1233 `PROT` entries and the
+extracted overlay images finds exactly **three** stores: `0x8004D658` and
+`0x80056080`, both `sw zero` (the per-frame actor pass `FUN_8004CE2C` and the
+battle setup `FUN_80055B6C`), and one non-zero store at PROT 0940 file `+0xCA0`
+= `0x801F7678` under that slot-B module's base `0x801F69D8` - the Cort "Mystic
+Shield" stager, storing the `FUN_80021B04` effect handle it just spawned.
+`FUN_8004CE2C` then *dereferences* the cell (`0x8004D548`, writing `+0x56` and
+`+0x72`, reading `+0x10`) and consumes it - `0x8004D658` clears it in the same
+block that fires cue `0x10D`. So the cell holds an effect-instance handle, and
+an ordinary party swing - which pages in no capture-class module - reads it as
+null. Callers that treat it as a mode flag (the melee selector here, and the
+damage finisher's enemy-defender halve) are testing that handle for null.
 
 The port carries the producer (`World::fire_melee_impact_cue`: the selector
 on `MonsterAiState::flag_bd84`, the grunt request or the routed `0x10C`, a
@@ -1277,12 +1298,23 @@ no XA lane (the requests are consumed, as the arts shouts already are), and
 the monster leg's `0x2A8` is a runtime-bank id no engine bank models (the
 per-scene record-0 descriptor bank plus the `monster.snd` slots 7 / 8).
 
-`FUN_8004DA00`, the resident per-frame selector `battle_voice` ports, is
-still a decision without a driver: the starter it hands its clip to,
-`FUN_8003EAE4`, seeks the drive to the clip file (`CdlSeekL`, `li a0,0x15`
-at `0x8003EB68`) and raises `gp+0x908` / `gp+0x910` for the CD-callback
-driver, and what that driver then streams is not traced. The engine has no
-drive to seek and no driver to poll those flags.
+`FUN_8004DA00`, the resident per-frame selector `battle_voice` ports, hands
+its clip to `FUN_8003EAE4`, which seeks the drive to the clip file (`CdlSeekL`,
+`li a0,0x15` at `0x8003EB68`) and raises `gp+0x908` / `gp+0x910` / `gp+0x890`.
+Those three cells are **not** what drives playback, and the driver is not
+untraced. The CD-callback sequencer is `FUN_8003D764`
+([`functions/script-vms.md`](../reference/functions/script-vms.md)), it
+dispatches solely on the state ring `gp+0x928`, and the only writer of `gp+0x928`
+is `FUN_8003D53C` (`0x8003D6F4`, `0x8003D724`), which also registers the
+callback. `FUN_8003EAE4` never writes `gp+0x928` - it only *reads* it, as an
+entry gate that makes the whole routine a no-op while a clip is already armed
+(`0x8003EAE4 lw v0,0x928(gp)` / `0x8003EAF8 bne v0,zero,<epilogue>`). Of its own
+three cells, `gp+0x908` is read widely as a "streamed clip busy" level (the
+grunt gate above is one reader), while `gp+0x910` and `gp+0x890` have **no
+reader anywhere** in SCUS or the 1233 PROT entries - every access to them on the
+disc is a store. What `FUN_8003EAE4` alone does is therefore a seek plus
+bookkeeping; without a `FUN_8003D53C` arm nothing streams. The engine models the
+busy level and has no drive to seek.
 
 ## Audio-trace parity oracle
 

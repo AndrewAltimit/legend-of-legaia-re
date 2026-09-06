@@ -197,9 +197,32 @@ What overlay 967 *does* is emit the in-battle "how to fight" boxes of the Tetsu
 sparring fight. The hook table and every prompt string address are resident in
 967, and neither the battle-scene script, MES text, nor the battle overlay
 `0898` carries them - which is why porting the battle SM alone never produces
-the boxes. **Exclusivity itself is a corpus claim, not an instruction claim:**
-what the disassembly shows is where these prompts *are*, not that no other
-overlay could emit a prompt. Read it as consistent with 967-only, not as proof.
+the boxes.
+
+**The machine's exclusivity is byte-anchored.** `FUN_801F6B70` is entry 967 file
+`+0x198`, and `0x801F69D8 + 0x198` reproduces the printed VA exactly, so the
+needle can be taken straight out of the image rather than hand-assembled.
+Searching for it across all 1233 `PROT` entries, `SCUS_942.54`, `DMY.DAT` and
+the extracted overlay images returns **one** physical copy - at five needle
+lengths from 48 bytes to the whole 2316-byte body, and including a 116-byte
+interior window that contains no `lui`, `j` or `jal` and would therefore still
+match a copy relinked at a different base. (The other two hits are that copy
+seen twice more: the static-overlay-pipeline duplicate, byte-identical to the
+entry, and the entry's own bytes inside `PROT.DAT` at its LBA. PROT 0967 is
+stored raw - the sector slice equals the extracted file - and every row in
+`static-overlays.toml` is `form = "raw"`, so no code image on this disc hides
+inside LZS.)
+
+**The prompt pool is not exclusive, and its neighbour is why.** All 28 string
+pointers the machine forms land inside 967's own `0x1800`-byte image, in a
+30-string pool at file `0xCAC..0x1389`. But entry **0968** carries a
+byte-identical 852-byte prefix of that pool at the same offset, inside a
+`0x5D8`-byte run (`0xA28..0x1000`) it shares with 967 - a run that also covers
+the machine's own 124-byte epilogue. 0968 is a sibling slot-B image at the same
+base with its own, 7-entry dispatcher and no copy of the machine
+(`sltiu v0,v1,0x5b` appears in 967 at file `0x200` and nowhere in 0968). So
+"only in 967" is exact for the tick and its dispatch, and needs the 0968
+qualification for the text.
 
 Its tick `FUN_801F6B70` is a jump-table hook on the battle **flow-state byte**
 `ctx[+0x06]` (`ctx = _DAT_8007BD24`), not a linear script:
