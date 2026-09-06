@@ -22,6 +22,7 @@ Implementation: [`crates/art`](../../crates/art/README.md).
 - [Miracle Arts](#miracle-arts)
 - [Super Arts](#super-arts)
 - [Arts-name table (`DAT_80075EC4`)](#arts-name-table-dat_80075ec4)
+  - [`+4` is authored data with no runtime reader](#4-is-authored-data-with-no-runtime-reader)
   - [Command-glyph string (`+8`)](#command-glyph-string-8)
   - [Validation oracle](#validation-oracle)
 - [See also](#see-also)
@@ -542,7 +543,7 @@ character, matching `(record[+0], record[+1])` against the key, and returns the
 | `+1` | u8 | art display index within the character |
 | `+2` | u8 | **AP cost - display only**; see [below](#the-ap-byte-is-a-display-mirror) |
 | `+3` | u8 | padding |
-| `+4` | u16 | round value (≈ power/score; exact meaning unconfirmed) |
+| `+4` | u16 | per-art tier constant - **no reader on the disc**; see [below](#4-is-authored-data-with-no-runtime-reader) |
 | `+6` | u16 | zero |
 | `+8` | u32 | pointer to the command-input display string (MES arrow-glyph sequence; its first byte is the input count) |
 | `+0xC` | u32 | pointer to the name string |
@@ -556,6 +557,43 @@ A `(99, 99)` record named `"End"` terminates the table. Each character's index
 The AP costs are byte-exact against the curated [`gamedata`](../reference/gamedata.md)
 arts table (every matched art agrees), which makes this the on-disc provenance
 for that table's `ap` column + the canonical art display order.
+
+### `+4` is authored data with no runtime reader
+
+The `+4` halfword has **zero readers** across `SCUS_942.54` and all 80 based
+overlay images. Eight sites materialise the table base (`addiu rX, rY, 0x5ec4` at
+`0x8003445C`, `0x800360D8`, `0x80036338`, `0x800365E4`, `0x80036764`,
+`0x8004C680`, `0x8004C6BC`, and `0x801D447C` in PROT 0899); walking every load
+whose base register descends from one of them, with the accumulated
+displacement tracked through the `addiu`/`addu`/`sll` chain, reaches the record
+only at `+0` (character), `+1` (art index), `+2` (the AP display byte, at
+`0x801D4524`), `+8`, `+0xC` and `+0x10` (the three string pointers). Nothing
+loads `+4` or `+6`, and a five-form address sweep for `0x80075EC8` returns no
+word, jump, branch or materialisation pair in any image.
+
+What the values *are* is still readable off the disc: `+4` is a per-art tier
+constant, monotone with the art's position in its character's list, and it is
+keyed to that position rather than to AP or to the combo length.
+
+| `+4` | Arts carrying it |
+|---|---|
+| `60000` | each character's index-0 Miracle Art |
+| `50000` / `40000` / `30000` | the three elemental arts, in list order |
+| `20000` | Noa's Tempest Break only |
+| `15000` | the six-input arts |
+| `10000` | the five-input arts |
+| `5000` | the four-input arts |
+| `1` | the `(99, 99)` "End" terminator record |
+
+Two independent facts rule the obvious readings out. It is not an AP mirror:
+Noa's 70-AP index-1 art and Vahn's 50-AP index-1 art both carry `50000`, and
+Gala's index-3 and index-4 arts share AP `30` across `30000` and `15000`. It is
+not the input count either: five-input arts appear at both `40000` (Fire Blow)
+and `10000` (Cyclone), and Tempest Break's seven inputs sit below the
+six-input `15000` band. The old "≈ power/score" gloss was a guess from the
+round numbers; the per-strike damage powers live in the `0xD0`-stride art
+record's `+0x24` run instead, and that page already records that retail keeps
+no display copy of them.
 
 ### The AP byte is a display mirror
 

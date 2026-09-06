@@ -109,7 +109,7 @@
       <tr><td><code>+0x122</code> .. <code>+0x12C</code></td><td>6&times;2</td><td><code>agl/atk/udf/ldf/spd/int_record</code></td><td>record copies, same order as the live block</td></tr>
       <tr><td><code>+0x12E</code></td><td>2</td><td><code>battle_status_flags</code></td><td>the packed ailment word, mirrored from the battle actor (<a href="#status-word">note</a>)</td></tr>
       <tr><td><code>+0x130</code></td><td>1</td><td><code>level_displayed</code></td><td>the displayed character level - "Level 99" target (<a href="#level-byte">note</a>)</td></tr>
-      <tr><td><code>+0x131</code></td><td>1</td><td>magic-rank candidate</td><td>unconfirmed; the new-game seed inits it to 1. <code>+0x132..+0x13B</code> unmapped</td></tr>
+      <tr><td><code>+0x131</code></td><td>1</td><td>unread</td><td>the new-game seed inits it to 1 (<code>sb $v0, 0x6F9($s0)</code> at <code>0x800561C8</code>) and nothing on the disc reads it. <code>+0x132..+0x13B</code> unmapped</td></tr>
       <tr><td><code>+0x13C</code></td><td>1</td><td><code>learned_spell_count</code></td><td>length byte of the id list below - "Magic Slot Activator" writes <code>0x24</code> here (<a href="#spell-count">note</a>)</td></tr>
       <tr><td><code>+0x13D</code> / <code>+0x149</code> / <code>+0x155</code></td><td>3&times;12</td><td><code>magic_group_0..2</code></td><td>"Magic Modifier 1..12" - three copies of the slot</td></tr>
       <tr><td><code>+0x161</code></td><td>16</td><td><code>summon_levels</code></td><td>"All Summons Level 9" - one byte per summon id (<a href="#summon-levels">note</a>); <code>+0x179..+0x184</code> unmapped</td></tr>
@@ -178,7 +178,7 @@
     <summary>History: superseded readings</summary>
     <div class="disclosure-body">
       <ul class="bullets">
-        <li>"<code>+0x130</code> is Magic Rank, not character level" - reconciled the per-event <code>+1</code> tick with the Level 99 cheat the wrong way round; falsified by the starting-level boot test. If a magic-rank byte exists it is the unconfirmed <code>+0x131</code>.</li>
+        <li>"<code>+0x130</code> is Magic Rank, not character level" - reconciled the per-event <code>+1</code> tick with the Level 99 cheat the wrong way round; falsified by the starting-level boot test. The magic-rank byte is not the adjacent <code>+0x131</code> either: that byte has one writer (<code>0x800561C8</code>) and no reader in any image, while a save-pair capture pins the magic-rank counter at record <code>+0x9C</code>.</li>
         <li>"The level-up logic reads <code>+0x004</code> as cumulative XP" - conflated the threshold the applier reads with the XP it compares against.</li>
         <li>"<code>+0x161..+0x184</code> is a parallel spell-level array" - it is the 16-summon level array.</li>
       </ul>

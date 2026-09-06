@@ -146,9 +146,16 @@
       <tr><td><code>+0x0</code> (u32)</td><td>cumulative experience</td><td>0</td></tr>
       <tr><td><code>+0x4</code> (u32)</td><td>next-level threshold (the status screen's &ldquo;next&rdquo;)</td><td>Vahn/Terra 121, Noa 102, Gala 140 - the per-slot <a href="../subsystems/level-up.html">level-up</a> correction, not a per-character curve</td></tr>
       <tr><td><code>+0x130</code> (u8)</td><td><strong>displayed level</strong>; the applier adds 1 per level-up</td><td>1</td></tr>
-      <tr><td><code>+0x131</code> (u8)</td><td>second per-character byte (magic-rank candidate, unconfirmed)</td><td>1</td></tr>
+      <tr><td><code>+0x131</code> (u8)</td><td>second per-character byte - seeded, then read by nothing on the disc (see below)</td><td>1</td></tr>
     </tbody>
   </table>
+  <p><code>+0x131</code> is <strong>write-only</strong>. The seed's <code>li $v0, 0x1</code> at <code>0x800561C4</code> feeds
+  <code>sb $v0, 0x6F9($s0)</code> (<code>+0x131</code>) at <code>0x800561C8</code> and <code>sb $v0, 0x6F8($s0)</code>
+  (<code>+0x130</code>) at <code>0x800561CC</code>, and <code>0x800561C8</code> is the only instruction anywhere on the disc that
+  touches the byte: sweeping <code>SCUS_942.54</code> plus all 80 based overlay images for a <code>lb</code>/<code>lbu</code>/<code>sb</code>
+  at displacement <code>0x131</code>, or at the four slots' <code>0x6F9</code>/<code>0xB0D</code>/<code>0xF21</code>/<code>0x1335</code> off the
+  <code>0x80084140</code> game-state block, returns that store alone, and no wider access covers it. The "magic-rank candidate" reading is
+  therefore retired - the magic-rank counter is capture-pinned at record <code>+0x9C</code>.</p>
   <details class="disclosure">
     <summary>Details: how the starting-level option retargets the seed</summary>
     <div class="disclosure-body">

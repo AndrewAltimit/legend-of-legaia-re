@@ -504,8 +504,10 @@ impl CharacterRecord {
     /// level-up event (the captured Noa/Gala four-level jumps bumped it by one, so it
     /// can lag the XP-derived level after a rare multi-level grant). The earlier
     /// "Magic Rank, level derived from XP" reading is superseded for the level
-    /// question; a separate magic-rank byte may live at the adjacent `+0x131` (the
-    /// new-game seed inits both to 1) but is unconfirmed.
+    /// question, and the adjacent `+0x131` is not the magic-rank byte: the new-game
+    /// seed's `sb $v0, 0x6f9($s0)` at `0x800561C8` is its only writer on the disc and
+    /// nothing reads it, while the magic-rank counter is capture-pinned at record
+    /// `+0x9C`. See `docs/formats/save-record.md`.
     pub fn magic_rank(&self) -> u8 {
         self.raw[0x130]
     }

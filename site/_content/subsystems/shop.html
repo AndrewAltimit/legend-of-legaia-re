@@ -104,7 +104,7 @@
   <details class="disclosure">
     <summary>Details: what spends the Point Card</summary>
     <div class="disclosure-body">
-      <p>The bank&rsquo;s only debit is a <em>battle</em> effect arm: entry 14 of the effect jump table takes <code>min(bank, 9999)</code>, subtracts it from the bank and applies it as damage to the target - the Point Card strike. No item descriptor on the disc selects arm 14; the battle-action caller passes the actor&rsquo;s <code>+0x1E8</code> byte as the selector. The card&rsquo;s descriptor carries flag bit <code>0x40</code>, shared only with the summon flutes; its meaning is unpinned.</p>
+      <p>The bank&rsquo;s only debit is a <em>battle</em> effect arm: entry 14 of the effect jump table takes <code>min(bank, 9999)</code>, subtracts it from the bank and applies it as damage to the target - the Point Card strike. No item descriptor on the disc selects arm 14; the battle-action caller passes the actor&rsquo;s <code>+0x1E8</code> byte as the selector. The card&rsquo;s descriptor carries flag bit <code>0x40</code>, shared only with the summon flutes: that bit is the descriptor&rsquo;s <strong>target side</strong> (set = the enemy party), read at <code>0x801D18E0</code> in <code>FUN_801D0748</code> and forked with <code>0x20</code> into four target modes - so the five carriers are exactly the enemy-directed consumables.</p>
     </div>
   </details>
 </section>

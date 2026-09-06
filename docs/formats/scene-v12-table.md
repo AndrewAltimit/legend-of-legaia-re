@@ -317,12 +317,20 @@ For Drake `map01` (`n = 85`) that is extraction `0084` + `0085`; the
 historical pairing of `0085` with `0093` crossed a block boundary
 (`0093` is garmel's `.PCH` - see the naming caveat above).
 
-The two prescript tables likely serve different scopes (scene-enter
-triggers vs. per-actor / per-region triggers), or they're "early-load"
-and "late-load" splits of one logical script set. The exact runtime split
-isn't pinned down; note the `.PCH`-resident copy at `+0x800` is dead via
-the retail staging path (efect.dat overwrites it - see
-[Runtime staging](#runtime-staging---the-pch-sidecar)).
+That sister entry is the scene's **only** prescript - there is no second copy
+to split a runtime role with. The "copy at this file's `+0x800`" was the
+over-reading entry size showing the sister entry through the `.PCH`'s buffer;
+the `.PCH` ends at `0x800`. The record installer confirms it directly:
+`FUN_800252EC` takes its `[count][offsets]` table from `_DAT_8007B8D0`
+(`lw a3, -0x4730(a3)` at `0x800252F4`, then `lhu v0, 0x2(a0)` for
+`offsets[id]` and `addu a2, a3, v1` for the record pointer), and the field
+asset loader sets that global to `*(0x1F8003EC) + 0x12800` - the `efect.dat`
+window, one sector *past* the `.PCH` - with `sw v0, -0x4730(at)` at
+`0x8001F864`. Since the offsets are non-negative, the `.PCH` window at
+`+0x12000` can never be the source. `_DAT_8007B8D0` has one other SCUS writer,
+`0x8001FAC8`, which points it at the `0x1800`-byte `bse.dat` bank buffer
+([`bse-dat.md`](bse-dat.md)) - the battle occupant of the same slot, not a
+second field prescript.
 
 ## Reading the parsed structure
 
@@ -404,14 +412,14 @@ Still open:
   `data_field_streaming` sibling's type-3 chunk is the scene's MAN
   (live byte-match at the Caruban beat; see the over-read section
   above for what the `.PCH` windows are instead).
-- **Two prescript tables per scene** - the sister offset-0
-  `scene_event_scripts` entry (raw `n + 2`) and this file's offset-`0x800`
-  copy carry the same move-VM stager records, both consumed via
-  `FUN_800252EC` → `FUN_80021B04`
-  (see [scene_event_scripts](scene-bundles.md#scene_event_scripts---prescript-only)).
-  The runtime split is unpinned; the `.PCH` copy is unreachable via the
-  retail staging path (efect.dat overwrites `+0x800..`), pointing at the
-  sister entry / the `.LZS` scripted-table prefix as the live copies.
+- ~~Two prescript tables per scene~~ - closed: there is one. The "copy at this
+  file's `+0x800`" was the over-read showing the sister `scene_event_scripts`
+  entry (raw `n + 2`) through the `.PCH`'s buffer, and the installer picks that
+  sister entry by construction - `FUN_800252EC` reads its table from
+  `_DAT_8007B8D0` (`0x800252F4`), which the field asset loader points at the
+  `efect.dat` window `*(0x1F8003EC) + 0x12800` at `0x8001F864`, one sector past
+  the `.PCH`. See [Sister formats](#sister-formats) and
+  [scene_event_scripts](scene-bundles.md#scene_event_scripts---prescript-only).
 
 ## Related
 
