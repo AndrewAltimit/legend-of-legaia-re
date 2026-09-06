@@ -162,10 +162,37 @@ fn battle_item_escape_returns_to_field() {
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_item_menu(); // confirm
 
-    assert_eq!(world.mode, SceneMode::Field, "escaped back to the field");
-    assert!(!world.battle_escaped, "escape flag reset by finish_battle");
+    // Retail does not leave the battle on the confirm frame: the `0x66`
+    // teardown spawns the exit fade and parks the SM in the `0x67` hold, and
+    // the results sequencer's escape arm then counts `ctx[+0x6CE]` up from
+    // zero until `FUN_80046A20`'s `0x43` exit gate returns to the field
+    // (`world::battle::victory`).
+    assert_eq!(
+        world.mode,
+        SceneMode::Battle,
+        "the exit hold keeps the battle scene up"
+    );
+    assert!(
+        world.battle_end_sequence_active(),
+        "the escape arm is armed"
+    );
     assert!(world.battle_item_menu.is_none(), "battle menus cleared");
     assert_eq!(world.inventory.get(&0x12).copied(), None, "item consumed");
+    let mut exit_tick = None;
+    for i in 1..=(usize::from(World::VICTORY_EXIT_PHASE) + 8) {
+        world.tick();
+        if world.mode != SceneMode::Battle {
+            exit_tick = Some(i);
+            break;
+        }
+    }
+    assert_eq!(
+        exit_tick,
+        Some(usize::from(World::VICTORY_EXIT_PHASE)),
+        "the `0x43` gate fires once the phase halfword reaches it"
+    );
+    assert_eq!(world.mode, SceneMode::Field, "escaped back to the field");
+    assert!(!world.battle_escaped, "escape flag reset by finish_battle");
 }
 
 #[test]
@@ -213,21 +240,32 @@ fn battle_magic_cast_damages_monster_spends_mp_and_cycles_turn() {
     world.tick_battle_spell_menu();
     assert!(world.battle_spell_menu.is_some(), "still picking a target");
 
-    // Frame 2: Cross confirms the monster; the cast resolves.
+    // Frame 2: Cross confirms the monster; the confirm arms the action SM's
+    // Magic band (nothing lands yet - retail's confirm commits the action,
+    // the band charges the MP at 0x28 and the outcome folds at its seam).
     world.set_pad(0);
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_spell_menu();
 
     assert!(world.battle_spell_menu.is_none(), "spell menu closed");
-    assert_eq!(world.actors[0].battle.mp, 45, "5 MP spent on Flame");
+    assert_eq!(world.battle_ctx.action_state, ActionState::Begin.as_byte());
+    assert_eq!(
+        world.actors[0].battle.mp, 50,
+        "nothing charged at the confirm"
+    );
+    assert_eq!(
+        world.actors[1].battle.hp, 300,
+        "nothing landed at the confirm"
+    );
+    tick_until_cast_folds(&mut world);
+    assert_eq!(world.actors[0].battle.mp, 45, "5 MP spent on Flame, once");
     assert!(
         world.actors[1].battle.hp < 300,
         "Flame should have damaged the monster"
     );
-    assert_eq!(
-        world.battle_ctx.action_state,
-        ActionState::EndOfAction.as_byte(),
-        "turn parked at EndOfAction so the loop cycles"
+    assert!(
+        world.battle_ctx.action_state >= ActionState::MagicAnimChain.as_byte(),
+        "the fold is the band's 0x29 exit, not the confirm"
     );
     let fx = world.drain_battle_hit_fx();
     assert_eq!(fx.len(), 1);
@@ -310,6 +348,8 @@ fn battle_magic_cast_applies_mp_half_ability_bit() {
     world.set_pad(0);
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_spell_menu();
+    // The band's 0x28 charges the cost.
+    tick_until_cast_folds(&mut world);
 
     // Flame is 5 MP; the MP-half bit charges `5 - (5>>1) = 3` (retail rounds
     // up on odd costs, not floor 5/2 = 2), so 50 -> 47 (vs 45 flat).
@@ -610,16 +650,49 @@ fn battle_magic_escape_returns_to_field() {
         0,
     ));
 
-    // SelfOnly target resolves immediately, so one Cross casts Warp.
+    // SelfOnly target resolves immediately, so one Cross commits Warp; the
+    // band folds it at its 0x29 exit and the live loop ends the encounter
+    // on that frame.
     world.set_pad(0);
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_spell_menu();
+    assert_eq!(
+        world.mode,
+        SceneMode::Battle,
+        "the confirm only arms the band"
+    );
+    tick_until_cast_folds(&mut world);
+    world.set_pad(0);
 
-    assert_eq!(world.mode, SceneMode::Field, "escape returns to the field");
+    // Same exit hold as the escape item: the field returns through the
+    // sequencer's `0x67` arm, `VICTORY_EXIT_PHASE` ticks later.
+    assert_eq!(
+        world.mode,
+        SceneMode::Battle,
+        "the exit hold keeps the battle scene up"
+    );
+    assert!(
+        world.battle_end_sequence_active(),
+        "the escape arm is armed"
+    );
     assert!(
         world.battle_spell_menu.is_none(),
         "submenu dropped on escape"
     );
+    let mut exit_tick = None;
+    for i in 1..=(usize::from(World::VICTORY_EXIT_PHASE) + 8) {
+        world.tick();
+        if world.mode != SceneMode::Battle {
+            exit_tick = Some(i);
+            break;
+        }
+    }
+    assert_eq!(
+        exit_tick,
+        Some(usize::from(World::VICTORY_EXIT_PHASE)),
+        "the `0x43` gate fires once the phase halfword reaches it"
+    );
+    assert_eq!(world.mode, SceneMode::Field, "escape returns to the field");
     assert!(
         !world.battle_escaped,
         "escape flag cleared by finish_battle"

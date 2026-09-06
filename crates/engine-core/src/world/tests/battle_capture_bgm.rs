@@ -346,6 +346,7 @@ fn arts_editor_chain_round_trips_through_save_into_the_battle_menu() {
 #[test]
 fn battle_arts_synthetic_chain_runs_through_art_power_path_and_cycles_turn() {
     use crate::input::PadButton;
+    use legaia_engine_vm::battle_action::ActionState;
 
     let mut world = World {
         party_count: 1,
@@ -389,22 +390,70 @@ fn battle_arts_synthetic_chain_runs_through_art_power_path_and_cycles_turn() {
     world.tick_battle_arts_menu();
 
     assert!(world.battle_arts_menu.is_none(), "arts menu closed");
-    // Three synthetic ×12 hits: (40*12/16 - 10) = 20 each => 60 total.
-    let per_hit = legaia_engine_vm::battle_formulas::art_strike_damage_default(40, 10, 12);
-    assert_eq!(world.actors[1].battle.hp, 500 - per_hit * 3);
-    // The arts fallback claims the cycle in the same tick
-    // (`World::cycle_battle_turn`) instead of parking at EndOfAction - the
-    // park was re-seeded with stale action bytes by the SM's 0x5A
-    // self-advance next tick (the free-bonus-attack defect).
-    assert_ne!(
-        world.battle_ctx.active_actor, 0,
-        "the art consumed the turn and the cycle moved on"
+    // The confirm arms the SM's attack band with the queue the builder made
+    // of the three arrows - three swings and the terminator, retail's own
+    // answer to a string that matches no art (`0x0B + dir`).
+    assert_eq!(&world.actors[0].battle.params[..4], &[0x0C, 0x0D, 0x0E, 0]);
+    assert_eq!(
+        world.actors[1].battle.hp, 500,
+        "nothing lands before the band runs"
     );
-    let fx = world.drain_battle_hit_fx();
-    assert_eq!(fx.len(), 1, "one summed popup for the combo");
-    assert!(!fx[0].is_heal);
-    assert_eq!(fx[0].amount, per_hit * 3);
-    assert_eq!(fx[0].target_slot, 1);
+    // Walk the band exactly as the play window's live loop does. A
+    // clip-less world resolves each staged byte as a zero-length clip: one
+    // hit per swing with the swing's own byte as its power byte, accumulated
+    // on the target, and the total landing on the last byte (retail's
+    // `ctx[+0x15] == 0xFF` + last-beat apply in `FUN_801EC3E4`).
+    let mut ended = false;
+    for _ in 0..400 {
+        if world.battle_ctx.action_state == ActionState::EndOfAction.as_byte()
+            || world.battle_command.is_some()
+        {
+            ended = true;
+            break;
+        }
+        world.set_pad(0);
+        world.live_battle_tick();
+        let _ = world.drain_battle_events();
+    }
+    assert!(ended, "the armed action ran to its end");
+    let hits = world.drain_battle_hit_events();
+    assert_eq!(hits.len(), 3, "one hit event per swing: {hits:?}");
+    assert_eq!(
+        hits.iter().map(|h| h.power_byte).collect::<Vec<_>>(),
+        vec![0x0C, 0x0D, 0x0E],
+        "each swing resolves with its own byte"
+    );
+    assert!(
+        hits.iter().all(|h| h.hit_index == 0),
+        "each swing is its own clip"
+    );
+    assert!(
+        hits.iter()
+            .all(|h| h.attacker_slot == 0 && h.target_slot == 1 && !h.is_art)
+    );
+    assert_eq!(
+        hits.iter().map(|h| h.applied).collect::<Vec<_>>(),
+        vec![false, false, true],
+        "the total lands on the last swing only"
+    );
+    let total: u32 = hits.iter().map(|h| u32::from(h.damage)).sum();
+    assert!(total > 0, "ATK 40 vs DEF 10 lands");
+    assert_eq!(
+        u32::from(hits[1].running_total),
+        u32::from(hits[0].damage) + u32::from(hits[1].damage),
+        "the running total accumulates hit by hit"
+    );
+    assert_eq!(hits[2].running_total, 0, "zeroed once applied");
+    assert_eq!(u32::from(world.actors[1].battle.hp), 500 - total);
+    // Through the SM the popups are per hit, like retail's rising numerals.
+    let fx: Vec<_> = world
+        .drain_battle_hit_fx()
+        .into_iter()
+        .filter(|f| f.target_slot == 1)
+        .collect();
+    assert_eq!(fx.len(), 3, "one popup per hit");
+    assert!(fx.iter().all(|f| !f.is_heal));
+    assert_eq!(fx.iter().map(|f| u32::from(f.amount)).sum::<u32>(), total);
 }
 
 #[test]
@@ -429,9 +478,11 @@ fn battle_arts_uses_staged_art_record_power_tiers_and_status() {
     // UDF / LDF split so the record's per-strike target picks the right half.
     world.set_battle_defense_split(1, Some((10, 40)));
 
-    // Stage a Vahn art: two damage strikes (UDF ×28, LDF ×28) that burns.
+    // Stage a Vahn art: two damage strikes (UDF ×28, LDF ×28) that burns. A
+    // normal-art constant (`0x1F+`): the queue-builder tokenizes only those
+    // (the Miracle / Hyper ordinals take retail's other arm).
     let rec = legaia_art::ArtRecord {
-        action: ActionConstant::Art1B,
+        action: ActionConstant::Art1F,
         commands: vec![Command::Up, Command::Up],
         anim_index: 0,
         anim_extra: vec![],
@@ -447,7 +498,7 @@ fn battle_arts_uses_staged_art_record_power_tiers_and_status() {
         background: 0,
         runtime_address: None,
     };
-    world.set_art_record(legaia_art::Character::Vahn, ActionConstant::Art1B, rec);
+    world.set_art_record(legaia_art::Character::Vahn, ActionConstant::Art1F, rec);
 
     // Saved chain ending in the art's command string (Up, Up).
     world.saved_chains.push(legaia_save::SavedChainRecord {
@@ -471,24 +522,27 @@ fn battle_arts_uses_staged_art_record_power_tiers_and_status() {
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_arts_menu();
 
-    // The confirm no longer resolves the damage: it stages the art constant
-    // into the action-parameter stream and arms the SM's attack band
-    // (`World::run_battle_art`). One stream byte per resolved strike, each
-    // carrying the art's own constant - which is the byte the anim commit
-    // latches into `+0x1DB` and the per-art attack camera dispatches on.
+    // The confirm resolves no damage: it builds retail's action queue from
+    // the row's arrows and arms the SM's attack band with it verbatim. The
+    // leading Left stays a swing (`0x0C`), Up-Up matches the art - its last
+    // arrow becomes the starter and the constant is inserted after it - and
+    // the starter is `0x1A`, not `0x19`, because this performance is the one
+    // that learns the art (`FUN_801EFBFC` verdict 2, `+ 0x18`).
     assert_eq!(
-        &world.actors[0].battle.params[..3],
+        &world.actors[0].battle.params[..5],
         &[
-            ActionConstant::Art1B.as_byte(),
-            ActionConstant::Art1B.as_byte(),
+            0x0C,
+            0x0F,
+            ActionConstant::SpecialStarter.as_byte(),
+            ActionConstant::Art1F.as_byte(),
             0
         ],
-        "two staged art strikes and the 0x00 terminator"
+        "swing, swing-turned-starter, the constant, the terminator"
     );
     assert_eq!(world.actors[0].battle.action_category, 3);
-    assert_eq!(
-        world.actors[0].battle.chosen_art,
-        Some(ActionConstant::Art1B)
+    assert!(
+        world.actors[0].battle.chosen_art.is_none(),
+        "the art is identified from the staged byte, not a side field"
     );
     assert_eq!(
         world.actors[1].battle.hp, 4000,
@@ -496,10 +550,14 @@ fn battle_arts_uses_staged_art_record_power_tiers_and_status() {
     );
 
     // Let the band walk the stream, exactly as the play window's live loop
-    // does.
+    // does - and stop the moment the art's own turn is over. The round runs
+    // on from there (the monster's turn, then the round end and the next
+    // round start's per-round Toxic DoT tick on this very target), so the
+    // HP read has to land before the turn moves on.
     for _ in 0..400 {
         if world.battle_ctx.action_state == ActionState::EndOfAction.as_byte()
             || world.battle_command.is_some()
+            || world.battle_ctx.active_actor != 0
         {
             break;
         }
@@ -511,15 +569,35 @@ fn battle_arts_uses_staged_art_record_power_tiers_and_status() {
         let _ = world.drain_battle_events();
     }
 
-    // UDF ×28 vs udf=10: 64*28/16 - 10 = 112 - 10 = 102.
-    // LDF ×28 vs ldf=40: 64*28/16 - 40 = 112 - 40 = 72.
-    let expect = (102u16 + 72u16) as u32;
-    assert_eq!(world.actors[1].battle.hp, 4000 - expect as u16);
+    // Four hits: the two leading swings with their own bytes, then the
+    // art's two power bytes (UDF x28, LDF x28) walked by hit index - the
+    // starter carries no event and hits nothing. The total lands once, on
+    // the art's last hit.
+    let hits = world.drain_battle_hit_events();
+    assert_eq!(
+        hits.iter()
+            .map(|h| (h.power_byte, h.hit_index, h.is_art))
+            .collect::<Vec<_>>(),
+        vec![
+            (0x0C, 0, false),
+            (0x0F, 0, false),
+            (0x1A, 0, true),
+            (0x1F, 1, true)
+        ],
+        "{hits:?}"
+    );
+    assert_eq!(
+        hits.iter().map(|h| h.applied).collect::<Vec<_>>(),
+        vec![false, false, false, true]
+    );
+    let total: u32 = hits.iter().map(|h| u32::from(h.damage)).sum();
+    assert!(hits.iter().all(|h| h.damage > 0), "ATK 64 lands every hit");
+    assert_eq!(u32::from(world.actors[1].battle.hp), 4000 - total);
     assert!(
         world.status_effects.is_afflicted(1),
         "the art's Toxic effect was applied to the target"
     );
-    // Through the SM the popups are per strike, like the melee seam's, rather
+    // Through the SM the popups are per hit, like the melee seam's, rather
     // than one summed number for the whole turn. (The turn cycles to the
     // monster once the band parks, so filter to the art's own target.)
     let fx: Vec<_> = world
@@ -527,9 +605,9 @@ fn battle_arts_uses_staged_art_record_power_tiers_and_status() {
         .into_iter()
         .filter(|f| f.target_slot == 1)
         .collect();
-    assert_eq!(fx.len(), 2, "one popup per landed strike");
+    assert_eq!(fx.len(), 4, "one popup per landed hit");
     assert!(fx.iter().all(|f| !f.is_heal));
-    assert_eq!(fx.iter().map(|f| u32::from(f.amount)).sum::<u32>(), expect);
+    assert_eq!(fx.iter().map(|f| u32::from(f.amount)).sum::<u32>(), total);
 }
 
 #[test]

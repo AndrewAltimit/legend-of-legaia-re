@@ -765,7 +765,10 @@ fn attack_chain_walks_param_stream_until_terminator() {
     );
     host.actors[1].flag_bits.clear(ActorFlags::ADVANCE_DONE);
 
-    // Third step: terminator → recovery; SM clears ADVANCE_DONE.
+    // Third step: terminator → recovery; SM clears ADVANCE_DONE. The cursor
+    // is NOT rewound - retail never touches `ctx[+0x15]` in the `0x1E` loop
+    // beyond its post-increment (`0x801E3734..0x801E3748`); it stays on the
+    // terminator index until `0x1F -> 0x20` parks it at `0xFF`.
     let out = step(&mut host, &mut ctx);
     assert!(matches!(
         out,
@@ -774,8 +777,29 @@ fn attack_chain_walks_param_stream_until_terminator() {
             ..
         } if to == ActionState::AttackRecovery.as_byte()
     ));
-    assert_eq!(host.actors[1].strike_index, 0);
+    assert_eq!(
+        host.actors[1].strike_index, 2,
+        "cursor left on the terminator"
+    );
     assert!(!host.actors[1].flag_bits.has(ActorFlags::ADVANCE_DONE));
+
+    // `0x1F`: nothing in flight, so idle is staged over the last clip and the
+    // cursor parks at `0xFF` on the way to `0x20`
+    // (`0x801E3B04..0x801E3B1C`).
+    ctx.action_state = ActionState::AttackRecovery.as_byte();
+    let out = step(&mut host, &mut ctx);
+    assert!(matches!(
+        out,
+        StepOutcome::Transition {
+            to,
+            ..
+        } if to == ActionState::AttackReturn.as_byte()
+    ));
+    assert_eq!(host.actors[1].strike_index, STRIKE_CURSOR_PARKED);
+    assert_eq!(
+        host.actors[1].queued_anim, 0,
+        "idle staged over the last clip"
+    );
 }
 
 #[test]
@@ -2032,15 +2056,15 @@ fn full_magic_flow_round_trips() {
         assert!(iters < 1000, "stuck in MagicPreCastWait");
     }
     assert_eq!(ctx.action_state, ActionState::MagicAnimChain.as_byte());
+    // The wait's exit bumped the cursor past the spell id and staged the
+    // first anim byte (`0x801E4644..0x801E4664`): `params[1] = 0x21` is on
+    // the stage, and for a non-Seru id the second bump parked the cursor on
+    // the terminator. The spell id itself is never staged as a clip.
+    assert_eq!(host.actors[1].queued_anim, 0x21, "0x29 stages params[1]");
+    assert_eq!(host.actors[1].strike_index, 2);
 
-    // MagicAnimChain reads `params[strike_index]` then increments. We
-    // have `params = [0x10, 0x21, 0xFF, ...]` and `strike_index = 0`,
-    // so three iterations: params[0]=0x10 queued, params[1]=0x21
-    // queued, params[2]=0xFF terminator transitions.
-    step(&mut host, &mut ctx);
-    assert_eq!(ctx.action_state, ActionState::MagicAnimChain.as_byte());
-    step(&mut host, &mut ctx);
-    assert_eq!(ctx.action_state, ActionState::MagicAnimChain.as_byte());
+    // MagicAnimChain reads `params[strike_index]`: the terminator, so the
+    // chain transitions on its first step.
     step(&mut host, &mut ctx);
     assert_eq!(ctx.action_state, ActionState::MagicSustain.as_byte());
 
@@ -2245,12 +2269,12 @@ fn synthetic_art_record(
 }
 
 #[test]
-fn attack_chain_dispatches_apply_art_strike_when_art_chosen() {
-    // Setup: party slot 0 (Vahn) has chosen Art1B (Vahn's Craze).
-    // Strike script in `params` has anim bytes [0x10, 0x11, 0xFF].
-    // The art has 2 power bytes + 2 dmg_timings; the strike chain
-    // should fire `apply_art_strike` for both bytes (with the second
-    // having a None power if we only stage 1).
+fn attack_chain_stages_art_bytes_and_calls_no_damage_kernel() {
+    // Retail's strike loop (`FUN_801E295C` state 0x1E) never calls
+    // `FUN_801EC3E4`: `jal 0x801ec3e4` does not occur in its 4099
+    // instructions. The SM stages one byte per clip and leaves damage to the
+    // anim tick's hit-event driver. With an art record staged AND a chosen
+    // art, the band still resolves nothing itself.
     use legaia_art::{ActionConstant, Character, PowerTarget};
 
     let mut host = RecHost::with_n_actors(3);
@@ -2279,139 +2303,148 @@ fn attack_chain_dispatches_apply_art_strike_when_art_chosen() {
     ctx.action_state = ActionState::AttackChain.as_byte();
     ctx.active_actor = 0;
 
-    // Tick 1: consumes params[0] = 0x10 → fires both apply_art_strike
-    // and apply_damage. Between ticks the anim system signals each
-    // staged swing's clip end by clearing ADVANCE_DONE (the 0x801E370C
-    // read gate).
     step(&mut host, &mut ctx);
-    host.actors[0].flag_bits.clear(ActorFlags::ADVANCE_DONE);
-    // Tick 2: params[1] = 0x11 → fires for second strike.
-    step(&mut host, &mut ctx);
-    host.actors[0].flag_bits.clear(ActorFlags::ADVANCE_DONE);
-    // Tick 3: params[2] = 0xFF terminator → transitions to AttackRecovery.
-    step(&mut host, &mut ctx);
-
-    let events = host.take();
-    let strikes: Vec<&ArtStrikeInfo> = events
-        .iter()
-        .filter_map(|e| match e {
-            Event::ApplyArtStrike(info) => Some(info),
-            _ => None,
-        })
-        .collect();
-    assert_eq!(strikes.len(), 2, "two art strikes should fire");
-    let s0 = strikes[0];
-    assert_eq!(s0.strike_index, 0);
-    assert_eq!(s0.anim_byte, 0x10);
-    assert_eq!(s0.actor_slot, 0);
-    assert_eq!(s0.target_slot, 1);
-    assert_eq!(s0.character, Character::Vahn);
-    assert_eq!(s0.art, ActionConstant::Art1B);
-    assert_eq!(s0.dmg_timing, Some(0x08));
-    assert_eq!(s0.enemy_effect, legaia_art::EnemyEffect::Toxic);
-    assert!(matches!(
-        s0.power,
-        Some(legaia_art::PowerByte::Damage(legaia_art::ArtPower {
-            multiplier: 18,
-            ..
-        }))
-    ));
-    assert!(s0.hit_cue.is_some());
-
-    let s1 = strikes[1];
-    assert_eq!(s1.strike_index, 1);
-    assert_eq!(s1.anim_byte, 0x11);
-    assert_eq!(s1.dmg_timing, Some(0x14));
-    // 2nd strike has no hit_cue staged at index 1 (only one in the
-    // synthetic record), so this is None.
-    assert!(s1.hit_cue.is_none());
-    // The art-strike hook is the strike loop's only damage channel; the
-    // item / restore applier is not called from the attack band at all.
-    let damages: Vec<_> = events
-        .iter()
-        .filter_map(|e| match e {
-            Event::ApplyDamage(..) => Some(()),
-            _ => None,
-        })
-        .collect();
-    assert!(damages.is_empty(), "the applier is not an attack-band call");
-}
-
-#[test]
-fn attack_chain_skips_apply_art_strike_when_no_art_chosen() {
-    // Default actor has chosen_art = None - the strike chain stages the
-    // anim and fires neither hook.
-    let mut host = RecHost::with_n_actors(3);
-    host.actors[0].params[0] = 0x10;
-    host.actors[0].params[1] = 0xFF;
-
-    let mut ctx = BattleActionCtx::new();
-    ctx.action_state = ActionState::AttackChain.as_byte();
-    ctx.active_actor = 0;
-
-    step(&mut host, &mut ctx);
-    // Clip-end signal between strikes (the 0x801E370C read gate).
+    assert_eq!(host.actors[0].queued_anim, 0x10, "byte 0 staged");
+    assert_eq!(host.actors[0].strike_index, 1);
+    assert!(host.actors[0].flag_bits.has(ActorFlags::ADVANCE_DONE));
     host.actors[0].flag_bits.clear(ActorFlags::ADVANCE_DONE);
     step(&mut host, &mut ctx);
+    assert_eq!(host.actors[0].queued_anim, 0x11, "byte 1 staged");
+    host.actors[0].flag_bits.clear(ActorFlags::ADVANCE_DONE);
+    let out = step(&mut host, &mut ctx);
+    assert!(matches!(out, StepOutcome::Transition { to, .. }
+        if to == ActionState::AttackRecovery.as_byte()));
 
-    let events = host.take();
-    let strikes = events
-        .iter()
-        .filter(|e| matches!(e, Event::ApplyArtStrike(_)))
-        .count();
-    let damages = events
-        .iter()
-        .filter(|e| matches!(e, Event::ApplyDamage(..)))
-        .count();
-    assert_eq!(strikes, 0);
-    assert_eq!(damages, 0);
-}
-
-#[test]
-fn attack_chain_no_art_strike_when_record_missing() {
-    // chosen_art = Some but the host returns None for art_record.
-    // The SM stages the anim and dispatches neither hook.
-    use legaia_art::ActionConstant;
-    let mut host = RecHost::with_n_actors(3);
-    host.actors[0].chosen_art = Some(ActionConstant::Art1B);
-    host.actors[0].params[0] = 0x10;
-    host.actors[0].params[1] = 0xFF;
-    // No insert into art_records → host returns None.
-
-    let mut ctx = BattleActionCtx::new();
-    ctx.action_state = ActionState::AttackChain.as_byte();
-    ctx.active_actor = 0;
-
-    step(&mut host, &mut ctx);
     let events = host.take();
     assert!(
         events
             .iter()
-            .all(|e| !matches!(e, Event::ApplyArtStrike(_))),
-        "no art strike should fire when art_record returns None"
+            .all(|e| !matches!(e, Event::ApplyArtStrike(_) | Event::ApplyDamage(..))),
+        "the strike loop is not a damage call site: {events:?}"
     );
-    assert!(
-        events.iter().all(|e| !matches!(e, Event::ApplyDamage(..))),
-        "the applier has no attack-band call site"
+    assert_eq!(
+        host.actors[0].input_cursor, 0,
+        "the hit index is the tick's"
     );
+}
+
+/// The hit-event driver's resolution for one admitted art hit: the power
+/// byte and beat come from the **clip entry** (what `FUN_801EC3E4` reads),
+/// the status effect and cue from the record the host resolves.
+#[test]
+fn art_strike_info_for_hit_reads_the_clip_power_and_the_record_side_data() {
+    use legaia_art::{ActionConstant, Character, PowerTarget};
+
+    let mut host = RecHost::with_n_actors(3);
+    host.actors[0].character = Character::Vahn;
+    host.actors[0].active_target = 1;
+    host.actors[0].latched_anim = ActionConstant::Art1B.as_byte();
+    host.art_records.insert(
+        (
+            character_byte(Character::Vahn),
+            ActionConstant::Art1B.as_byte(),
+        ),
+        synthetic_art_record(
+            ActionConstant::Art1B,
+            vec![
+                dmg_byte(PowerTarget::Udf, 18),
+                dmg_byte(PowerTarget::Ldf, 22),
+            ],
+            vec![0x08, 0x14],
+        ),
+    );
+    // The clip entry's power run / event list - an art record's embedded
+    // entry: UDF x28 then LDF x28 at frames 6 and 12.
+    let power_run = [0x1A, 0x1F, 0, 0];
+    let events = [6, 12, 0, 0];
+    let hit0 = hit_event_admits(0x1E, &power_run, &events, 0, 5).expect("beat 0");
+    let art = staged_art_constant(host.actors[0].latched_anim, None, true).unwrap();
+    let info = art_strike_info_for_hit(&host, 0, art, &hit0);
+    assert_eq!(info.strike_index, 0);
+    assert_eq!(info.anim_byte, ActionConstant::Art1B.as_byte());
+    assert_eq!(info.actor_slot, 0);
+    assert_eq!(info.target_slot, 1);
+    assert_eq!(info.character, Character::Vahn);
+    assert_eq!(info.art, ActionConstant::Art1B);
+    assert_eq!(
+        info.dmg_timing,
+        Some(6),
+        "the clip's beat, not the record's"
+    );
+    assert_eq!(info.enemy_effect, legaia_art::EnemyEffect::Toxic);
+    assert!(info.hit_cue.is_some());
+    assert!(matches!(
+        info.power,
+        Some(legaia_art::PowerByte::Damage(legaia_art::ArtPower {
+            multiplier: 28,
+            target: PowerTarget::Udf,
+            ..
+        }))
+    ));
+    let hit1 = hit_event_admits(0x1E, &power_run, &events, 1, 11).expect("beat 1");
+    let info = art_strike_info_for_hit(&host, 0, art, &hit1);
+    assert_eq!(info.strike_index, 1);
+    assert!(matches!(
+        info.power,
+        Some(legaia_art::PowerByte::Damage(legaia_art::ArtPower {
+            target: PowerTarget::Ldf,
+            ..
+        }))
+    ));
+    // Only one cue in the synthetic record: the second hit carries none.
+    assert!(info.hit_cue.is_none());
+}
+
+#[test]
+fn art_strike_info_without_a_record_still_resolves_the_clip_power() {
+    use legaia_art::ActionConstant;
+    let mut host = RecHost::with_n_actors(3);
+    host.actors[0].active_target = 1;
+    host.actors[0].latched_anim = ActionConstant::Art1B.as_byte();
+    let hit = hit_event_admits(0x1E, &[0x16, 0, 0, 0], &[3, 0, 0, 0], 0, 2).unwrap();
+    let info = art_strike_info_for_hit(&host, 0, ActionConstant::Art1B, &hit);
+    assert!(matches!(
+        info.power,
+        Some(legaia_art::PowerByte::Damage(legaia_art::ArtPower {
+            multiplier: 12,
+            ..
+        }))
+    ));
+    assert_eq!(info.enemy_effect, legaia_art::EnemyEffect::None);
+    assert!(info.hit_cue.is_none());
 }
 
 // --- arms execution-time weapon fold ----------------------------------------
 // REF: FUN_801EC3E4 (kernel + `// PORT:` tags live in
-// `battle_formulas::arms_fold`; these drive it through the state machine)
+// `battle_formulas::arms_fold`; these drive it through the hit-event driver,
+// the seat retail runs it from - the SM's strike loop never calls it)
+
+/// The admitted hit a swing entry produces at its beat: power byte = the
+/// committed command, one event frame.
+fn swing_hit(command: u8) -> HitEvent {
+    hit_event_admits(
+        ActionState::AttackChain.as_byte(),
+        &[command, 0, 0, 0],
+        &[6, 0, 0, 0],
+        0,
+        5,
+    )
+    .expect("a swing entry admits its single hit")
+}
 
 #[test]
 fn arms_command_folds_the_equipped_weapon_into_atk_working() {
-    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);
-    ctx.action_state = ActionState::AttackChain.as_byte();
+    let (ctx, mut host) = fresh(ActionCategory::Attack, 1);
     // Command 0x0C reads equipment slot 2 and folds half its ATK bonus.
-    host.actors[1].params[0] = 0x0C;
-    host.actors[1].params[1] = 0xFF;
     host.actors[1].current_anim = 0x0C;
     host.actors[1].atk_working = 100;
     host.equip_atk.insert(1, [0, 0, 30, 0, 0]);
 
-    assert_eq!(step(&mut host, &mut ctx), StepOutcome::Stay);
+    let hit = swing_hit(0x0C);
+    assert_eq!(
+        fold_weapon_atk_on_hit(&mut host, 1, ctx.action_state, &hit),
+        Some(15)
+    );
     assert_eq!(
         host.actors[1].atk_working, 115,
         "slot 2 bonus 30 folds as 30 >> 1 = 15"
@@ -2420,62 +2453,64 @@ fn arms_command_folds_the_equipped_weapon_into_atk_working() {
 
 #[test]
 fn arms_command_0x11_folds_half_the_sum_of_every_slot() {
-    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);
-    ctx.action_state = ActionState::AttackChain.as_byte();
-    host.actors[1].params[0] = 0x11;
-    host.actors[1].params[1] = 0xFF;
+    let (ctx, mut host) = fresh(ActionCategory::Attack, 1);
     host.actors[1].current_anim = 0x11;
     host.equip_atk.insert(1, [10, 20, 30, 40, 50]);
 
-    assert_eq!(step(&mut host, &mut ctx), StepOutcome::Stay);
+    let hit = swing_hit(0x11);
+    fold_weapon_atk_on_hit(&mut host, 1, ctx.action_state, &hit);
     assert_eq!(host.actors[1].atk_working, 75, "(10+20+30+40+50) >> 1");
 }
 
 #[test]
 fn non_arms_commands_leave_atk_working_alone() {
-    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);
-    ctx.action_state = ActionState::AttackChain.as_byte();
+    let (ctx, mut host) = fresh(ActionCategory::Attack, 1);
     // 0x19 is an art starter - admitted by the head gate (0x0C..=0x1F) but
     // outside the six-arm dispatch table, so it folds nothing.
-    host.actors[1].params[0] = 0x19;
-    host.actors[1].params[1] = 0xFF;
     host.actors[1].current_anim = 0x19;
     host.actors[1].atk_working = 100;
     host.equip_atk.insert(1, [10, 20, 30, 40, 50]);
 
-    assert_eq!(step(&mut host, &mut ctx), StepOutcome::Stay);
+    let hit = swing_hit(0x19);
+    assert_eq!(
+        fold_weapon_atk_on_hit(&mut host, 1, ctx.action_state, &hit),
+        None
+    );
     assert_eq!(host.actors[1].atk_working, 100);
 }
 
 #[test]
 fn arms_fold_is_gated_by_the_input_cursor_bound() {
-    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);
-    ctx.action_state = ActionState::AttackChain.as_byte();
-    host.actors[1].params[0] = 0x0C;
-    host.actors[1].params[1] = 0xFF;
+    let (ctx, mut host) = fresh(ActionCategory::Attack, 1);
     host.actors[1].current_anim = 0x0C;
     host.actors[1].atk_working = 100;
     // Cursor at the bound: the resolver's head guard rejects `+0x1F4 >= 4`.
     host.actors[1].input_cursor = 4;
     host.equip_atk.insert(1, [0, 0, 30, 0, 0]);
 
-    assert_eq!(step(&mut host, &mut ctx), StepOutcome::Stay);
+    let hit = swing_hit(0x0C);
+    assert_eq!(
+        fold_weapon_atk_on_hit(&mut host, 1, ctx.action_state, &hit),
+        None
+    );
     assert_eq!(host.actors[1].atk_working, 100, "cursor 4 bails");
 }
 
 #[test]
 fn arms_fold_does_not_run_for_enemy_slots() {
     // Slot 3 and above take the resolver's enemy branch, which performs no
-    // equipment fold.
-    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 3);
-    ctx.action_state = ActionState::AttackChain.as_byte();
-    host.actors[3].params[0] = 0x0C;
-    host.actors[3].params[1] = 0xFF;
+    // equipment fold - the hit itself still resolves (the branch only skips
+    // the fold), so the kernel admits it and the fold answers `None`.
+    let (ctx, mut host) = fresh(ActionCategory::Attack, 3);
     host.actors[3].current_anim = 0x0C;
     host.actors[3].atk_working = 100;
     host.equip_atk.insert(3, [0, 0, 30, 0, 0]);
 
-    assert_eq!(step(&mut host, &mut ctx), StepOutcome::Stay);
+    let hit = swing_hit(0x0C);
+    assert_eq!(
+        fold_weapon_atk_on_hit(&mut host, 3, ctx.action_state, &hit),
+        None
+    );
     assert_eq!(host.actors[3].atk_working, 100);
 }
 
@@ -2556,86 +2591,70 @@ fn target_cursor_disable_clears_tint() {
 /// `art_id + 0x1B` into `actor[+0x1DF..]` (`0x801EF7A0`) and the strike loop
 /// stages that byte into `+0x1DA` (`0x801E3764`).
 #[test]
-fn an_inline_art_constant_drives_the_strike_and_stages_itself_as_the_anim() {
-    use legaia_art::{ActionConstant, Character, PowerTarget};
+fn an_inline_art_constant_stages_itself_as_the_anim_and_keys_the_hit_driver() {
+    use legaia_art::{ActionConstant, Character};
 
     let mut host = RecHost::with_n_actors(4);
     host.actors[0].character = Character::Vahn;
     host.actors[0].active_target = 3;
-    // Two strikes of Art1C, then the terminator - no `chosen_art`, no record.
+    // The retail queue shape: two swings, the starter, the art constant,
+    // the terminator - `FUN_801EED1C` keeps the leading arrows and inserts
+    // the constant after the 0x19 it writes over the last one.
     let art = ActionConstant::Art1C;
-    host.actors[0].params[0] = art.as_byte();
-    host.actors[0].params[1] = art.as_byte();
-    host.actors[0].params[2] = 0x00;
-    host.actors[0].stage_art_profile(
-        None,
-        &[
-            dmg_byte(PowerTarget::Udf, 20),
-            dmg_byte(PowerTarget::Ldf, 30),
-        ],
-        legaia_art::EnemyEffect::Numb,
-    );
+    host.actors[0].params[0] = crate::battle_action::SWING_HIGH;
+    host.actors[0].params[1] = ActionConstant::RegularStarter.as_byte();
+    host.actors[0].params[2] = art.as_byte();
+    host.actors[0].params[3] = 0x00;
 
     let mut ctx = BattleActionCtx::new();
     ctx.action_state = ActionState::AttackChain.as_byte();
     ctx.active_actor = 0;
 
-    step(&mut host, &mut ctx);
-    // The staged byte is the art constant itself - the id the anim commit
-    // latches into `+0x1DB` and the attack camera dispatches on.
-    assert_eq!(host.actors[0].queued_anim, art.as_byte());
-    host.actors[0].flag_bits.clear(ActorFlags::ADVANCE_DONE);
-    step(&mut host, &mut ctx);
-    host.actors[0].flag_bits.clear(ActorFlags::ADVANCE_DONE);
-    step(&mut host, &mut ctx);
-
-    let events = host.take();
-    let strikes: Vec<&ArtStrikeInfo> = events
-        .iter()
-        .filter_map(|e| match e {
-            Event::ApplyArtStrike(info) => Some(info),
-            _ => None,
-        })
-        .collect();
-    assert_eq!(strikes.len(), 2, "one strike per staged art byte");
-    assert!(strikes.iter().all(|s| s.art == art));
-    assert!(
-        strikes
-            .iter()
-            .all(|s| s.enemy_effect == legaia_art::EnemyEffect::Numb),
-        "the staged profile's effect, with no record to read one from"
+    let mut staged = Vec::new();
+    for _ in 0..3 {
+        step(&mut host, &mut ctx);
+        staged.push(host.actors[0].queued_anim);
+        // The anim commit's latch (`+0x1DB = +0x1DA`, FUN_8004AD80) - the
+        // engine's commit does this; the recording host has none.
+        host.actors[0].latched_anim = host.actors[0].queued_anim;
+        host.actors[0].flag_bits.clear(ActorFlags::ADVANCE_DONE);
+    }
+    assert_eq!(
+        staged,
+        vec![
+            crate::battle_action::SWING_HIGH,
+            ActionConstant::RegularStarter.as_byte(),
+            art.as_byte()
+        ],
+        "every byte stages as itself: swings, starter and constant alike"
     );
-    assert!(matches!(
-        strikes[0].power,
-        Some(legaia_art::PowerByte::Damage(legaia_art::ArtPower {
-            multiplier: 20,
-            ..
-        }))
-    ));
-    assert!(matches!(
-        strikes[1].power,
-        Some(legaia_art::PowerByte::Damage(legaia_art::ArtPower {
-            multiplier: 30,
-            ..
-        }))
-    ));
-
-    // ...and that constant is inside the band the per-art attack camera
-    // dispatches on, with a live arm for this character. Every action whose
-    // stream carries only direction swings answers `None` here, which is why
-    // the channel measured as dead before the Arts path was routed through
-    // this band.
+    assert!(
+        host.take()
+            .iter()
+            .all(|e| !matches!(e, Event::ApplyArtStrike(_) | Event::ApplyDamage(..))),
+        "the band resolves nothing; the clip's hit events do"
+    );
+    // The latched constant is what the hit-event driver keys the art on ...
+    assert_eq!(
+        staged_art_constant(host.actors[0].latched_anim, None, true),
+        Some(art)
+    );
+    // ... and it is inside the band the per-art attack camera dispatches
+    // on, with a live arm for this character. Every action whose stream
+    // carries only direction swings answers `None` here, which is why the
+    // channel measured as dead before the Arts path was routed through this
+    // band.
     use crate::battle_attack_camera::{CharacterArm, art_arm};
     assert!(art_arm(CharacterArm::One, art.as_byte()).is_some());
 }
 
-/// A **direction swing** in the stream never dispatches an art strike, even
-/// with `chosen_art` set - it is a committed arms command and resolves through
-/// the host's melee seam. Without this an arts entry's unmatched directions
-/// would be charged twice.
+/// A **direction swing** in the stream never resolves as an art hit, even
+/// with `chosen_art` set - it is a committed arms command and resolves
+/// through the melee seam with its own command byte. Without this an arts
+/// entry's leading arrows would be charged twice.
 #[test]
-fn a_direction_swing_never_dispatches_an_art_strike() {
-    use legaia_art::{ActionConstant, Character, PowerTarget};
+fn a_direction_swing_never_keys_an_art_strike() {
+    use legaia_art::{ActionConstant, Character};
 
     let mut host = RecHost::with_n_actors(4);
     host.actors[0].character = Character::Vahn;
@@ -2643,11 +2662,6 @@ fn a_direction_swing_never_dispatches_an_art_strike() {
     host.actors[0].chosen_art = Some(ActionConstant::Art1C);
     host.actors[0].params[0] = crate::battle_action::SWING_LEFT;
     host.actors[0].params[1] = 0x00;
-    host.actors[0].stage_art_profile(
-        Some(ActionConstant::Art1C),
-        &[dmg_byte(PowerTarget::Udf, 20)],
-        legaia_art::EnemyEffect::None,
-    );
 
     let mut ctx = BattleActionCtx::new();
     ctx.action_state = ActionState::AttackChain.as_byte();
@@ -2655,10 +2669,13 @@ fn a_direction_swing_never_dispatches_an_art_strike() {
     step(&mut host, &mut ctx);
 
     assert_eq!(host.actors[0].queued_anim, crate::battle_action::SWING_LEFT);
-    assert!(
-        host.take()
-            .iter()
-            .all(|e| !matches!(e, Event::ApplyArtStrike(_))),
+    assert_eq!(
+        staged_art_constant(
+            crate::battle_action::SWING_LEFT,
+            host.actors[0].chosen_art,
+            true
+        ),
+        None,
         "a swing byte is not an art hit"
     );
 }
@@ -2668,18 +2685,13 @@ fn a_direction_swing_never_dispatches_an_art_strike() {
 /// as one there - the slot's `character` key is meaningless for a monster.
 #[test]
 fn a_monster_slot_never_reads_its_stream_bytes_as_art_constants() {
-    use legaia_art::{ActionConstant, PowerTarget};
+    use legaia_art::ActionConstant;
 
     let mut host = RecHost::with_n_actors(5);
     // Slot 3 is a monster (`party_count` is 3 by default).
     host.actors[3].active_target = 0;
     host.actors[3].params[0] = ActionConstant::Art1C.as_byte();
     host.actors[3].params[1] = 0x00;
-    host.actors[3].stage_art_profile(
-        None,
-        &[dmg_byte(PowerTarget::Udf, 99)],
-        legaia_art::EnemyEffect::None,
-    );
 
     let mut ctx = BattleActionCtx::new();
     ctx.action_state = ActionState::AttackChain.as_byte();
@@ -2687,10 +2699,11 @@ fn a_monster_slot_never_reads_its_stream_bytes_as_art_constants() {
     step(&mut host, &mut ctx);
 
     assert_eq!(host.actors[3].queued_anim, ActionConstant::Art1C.as_byte());
-    assert!(
-        host.take()
-            .iter()
-            .all(|e| !matches!(e, Event::ApplyArtStrike(_))),
+    let party = 3 < host.party_count();
+    assert!(!party);
+    assert_eq!(
+        staged_art_constant(host.actors[3].queued_anim, None, party),
+        None,
         "a monster's clip index is not an art constant"
     );
 }

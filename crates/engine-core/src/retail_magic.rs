@@ -245,7 +245,76 @@ pub fn seru_magic_catalog_from_scus(scus: &[u8]) -> Option<SpellCatalog> {
         }
         c.insert(def);
     }
+    insert_monster_specials(&mut c, &table);
     Some(c)
+}
+
+/// Every named, non-capture id below the player block (`0x01..=0x80`) as the
+/// disc names it: the **monster specials** a record's `+0x21..=+0x23` magic
+/// slots and the picker's scripted arms emit (Gimard's `+0x21` is `0x27` =
+/// Tail Fire). The disc is the single source for this block, so a vanilla
+/// placeholder that happens to sit on a real id under another name (`0x26`
+/// "Crash" on the disc's Thunderbolt) is replaced, while a vanilla record on
+/// its real id under the same name (the clean-room monster block - Divide /
+/// Steal / Power Up / Curse All / ...) keeps its effect class and target and
+/// takes the disc's cost.
+///
+/// MP, target shape and name are the table's. The effect class of a fresh
+/// record follows the shape's side - enemy side = damage, ally side = heal -
+/// because the table carries no effect byte; the magnitude and the impact
+/// status of a live cast are the move-power record's once the 0898 catalog
+/// is installed at scene entry (`World::enemy_move_power` /
+/// `apply_enemy_move_status`), and the vanilla block's MP-scaled placeholder
+/// otherwise. Capture-class records are not inserted: their fold is the
+/// streamed module's and the SM's capture branch keys on the class byte, not
+/// on a catalog record. Id `0x00` is the table's template row ("Magic", the
+/// MES-substituted elemental tiers' head) and stays out - `params[0] == 0`
+/// is "no spell" to the action stream.
+///
+/// Without this block every monster whose magic slot names such an id
+/// degrades to a physical strike at `take_monster_turn`'s catalog lookup, in
+/// every disc-booted fight - the roll picks the cast, the lookup discards it.
+fn insert_monster_specials(
+    c: &mut SpellCatalog,
+    table: &legaia_asset::spell_names::SpellNameTable,
+) {
+    for id in 0x01..=0x80u8 {
+        let Some(e) = table.entry(id) else {
+            continue;
+        };
+        if e.is_capture_class() {
+            continue;
+        }
+        let Some(name) = e.name.as_deref().map(str::trim).filter(|n| !n.is_empty()) else {
+            continue;
+        };
+        if let Some(mut v) = c.get(id).cloned()
+            && v.name.eq_ignore_ascii_case(name)
+        {
+            v.mp_cost = e.mp;
+            c.insert(v);
+            continue;
+        }
+        let target = target_from_shape(e.target_shape());
+        let mp = u16::from(e.mp);
+        let effect = match target {
+            SpellTarget::OneAlly => SpellEffect::Heal { amount: mp * 8 },
+            SpellTarget::AllAllies => SpellEffect::HealAll { amount: mp * 6 },
+            _ => SpellEffect::Damage {
+                base_power: mp * 2,
+                element: SpellElement::Neutral,
+            },
+        };
+        c.insert(SpellDef {
+            id,
+            name: name.to_string(),
+            mp_cost: e.mp,
+            element: SpellElement::Neutral,
+            target,
+            effect,
+            ..Default::default()
+        });
+    }
 }
 
 #[cfg(test)]

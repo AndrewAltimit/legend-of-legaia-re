@@ -238,7 +238,7 @@ pub fn art_animation(
     let stream = archive
         .entry(record.stream_source as usize)
         .with_context(|| format!("art record {} stream", record.index))?;
-    crate::monster_archive::parse_animation_stream(
+    let mut anim = crate::monster_archive::parse_animation_stream(
         &stream,
         record.anim_id,
         record.rate,
@@ -252,7 +252,12 @@ pub fn art_animation(
             record.index,
             record.stream_source
         )
-    })
+    })?;
+    // The record head's `+0x7A` impact class rides the clip exactly like
+    // its `+0x77` attach key: the hit routine reads both off the acting
+    // actor's committed record.
+    anim.impact_class = record.impact_class;
+    Ok(anim)
 }
 
 /// Re-index an animation's pose channels **per assembled object**: output
@@ -278,6 +283,8 @@ pub fn expand_animation_for_objects(
     crate::monster_archive::MonsterAnimation {
         action_id: anim.action_id,
         attach_key: anim.attach_key,
+        solo_flag: anim.solo_flag,
+        impact_class: anim.impact_class,
         rate: anim.rate,
         part_count: anm_bones.len(),
         frame_count: anim.frame_count,

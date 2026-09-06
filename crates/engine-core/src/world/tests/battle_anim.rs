@@ -9,6 +9,8 @@ fn pose_test_clip(action_id: u8, frames: usize, tx: i16) -> MonsterAnimation {
         action_id,
         rate: 2,
         attach_key: 0,
+        solo_flag: 0,
+        impact_class: 0,
         effect_script: Vec::new(),
         part_count: 1,
         frame_count: frames,
@@ -384,7 +386,7 @@ fn staged_swing_finish_clears_gate_and_resumes_idle() {
 
 #[test]
 fn attack_chain_paces_strikes_by_staged_clip_completion() {
-    use vm::battle_action::{ActionState, StepOutcome};
+    use vm::battle_action::{ActionState, ActorFlags, StepOutcome};
     // Full SM-driven check: a two-swing strike script holds in AttackChain
     // while each staged swing plays, reads the next byte only after the
     // clip-end signal, and exits to recovery on the terminator.
@@ -404,29 +406,82 @@ fn attack_chain_paces_strikes_by_staged_clip_completion() {
     world.tick_battle_animations();
     assert_eq!(world.actors[0].battle_staged_anim, Some(0x0C));
 
-    // While the swing is in flight the chain holds (the 0x801E370C gate).
-    assert_eq!(world.step_battle(), StepOutcome::Stay);
-    assert_eq!(world.actors[0].battle.strike_index, 1, "no byte read");
-
-    // Finish the swing: the gate opens, the next step reads 0x0D.
-    world.actors[0].battle_animation.as_mut().unwrap().step = 4096;
-    world.tick_battle_animations();
-    world.tick_battle_animations();
-    assert!(world.actors[0].battle_staged_anim.is_none());
-    assert_eq!(world.step_battle(), StepOutcome::Stay);
-    world.tick_battle_animations();
-    assert_eq!(world.actors[0].battle_staged_anim, Some(0x0D));
-    assert_eq!(world.actors[0].battle.strike_index, 2);
-
-    // Finish the second swing; the terminator exits the band.
-    world.actors[0].battle_animation.as_mut().unwrap().step = 4096;
-    world.tick_battle_animations();
-    world.tick_battle_animations();
+    // The commit released the stage latch (`FUN_8004AD80`'s `andi 0xF8` /
+    // `sb 0x1dc` at the tick's commit paths), so the `0x801E370C` read gate
+    // is open WHILE 0x0C is still in flight. Retail stages one ahead: the
+    // next step reads 0x0D at once (both captures: the next byte is staged
+    // 2-4 vsyncs after the previous commit, `0E` behind a playing `0F`) and,
+    // with the terminator at the new cursor, leaves the loop on the SAME
+    // step (`0x801E3998..0x801E39AC` -> `0x1F`). The queued byte does not
+    // commit yet - retail commits only from the tick's natural-end / event
+    // paths, never because `+0x1DA != +0x1D9`.
+    assert!(
+        !world.actors[0]
+            .battle
+            .flag_bits
+            .has(ActorFlags::ADVANCE_DONE),
+        "the commit released the latch"
+    );
     let out = world.step_battle();
     assert!(
         matches!(out, StepOutcome::Transition { to, .. }
             if to == ActionState::AttackRecovery.as_byte()),
-        "terminator -> recovery, got {out:?}"
+        "next byte staged one-ahead + terminator -> recovery, got {out:?}"
+    );
+    assert_eq!(
+        world.actors[0].battle.strike_index, 2,
+        "cursor on the terminator"
+    );
+    assert!(
+        world.actors[0]
+            .battle
+            .flag_bits
+            .has(ActorFlags::ADVANCE_DONE)
+    );
+    assert_eq!(world.actors[0].battle.queued_anim, 0x0D);
+    world.tick_battle_animations();
+    assert_eq!(
+        world.actors[0].battle_staged_anim,
+        Some(0x0C),
+        "0x0D waits for 0x0C's clip boundary"
+    );
+
+    // Recovery holds while the latch is set (`0x801E3AEC..0x801E3AF8`).
+    assert_eq!(world.step_battle(), StepOutcome::Stay);
+
+    // 0x0C's natural end commits 0x0D in the same tick and releases the
+    // latch again.
+    world.actors[0].battle_animation.as_mut().unwrap().step = 4096;
+    world.tick_battle_animations();
+    world.tick_battle_animations();
+    assert_eq!(world.actors[0].battle_staged_anim, Some(0x0D));
+    assert_eq!(world.actors[0].battle.current_anim, 0x0D);
+    assert!(
+        !world.actors[0]
+            .battle
+            .flag_bits
+            .has(ActorFlags::ADVANCE_DONE)
+    );
+
+    // The next step stages idle over the playing 0x0D and parks the cursor
+    // at 0xFF on the way to 0x20 (`0x801E3B04..0x801E3B1C`); the idle waits
+    // for 0x0D's own boundary, which is why the last clip's hit lands with
+    // the cursor already parked (the kernel's apply gate).
+    let out = world.step_battle();
+    assert!(
+        matches!(out, StepOutcome::Transition { to, .. }
+            if to == ActionState::AttackReturn.as_byte()),
+        "recovery -> return once the last clip has committed, got {out:?}"
+    );
+    assert_eq!(
+        world.actors[0].battle.strike_index,
+        vm::battle_action::STRIKE_CURSOR_PARKED
+    );
+    assert_eq!(world.actors[0].battle.queued_anim, 0, "idle staged");
+    assert_eq!(
+        world.actors[0].battle_staged_anim,
+        Some(0x0D),
+        "the last clip is still playing under the staged idle"
     );
 }
 
@@ -488,8 +543,16 @@ fn committed_clip_effect_script_queues_a_positioned_spawn() {
     assert!(world.drain_battle_effect_spawns().is_empty());
 
     // A new commit resets the walk (retail FUN_8004AD80 `sb zero,0x1f5`).
+    // Idle staged over the still-playing swing waits for a clip boundary
+    // (retail commits only from the tick's natural-end / event paths); the
+    // boundary commit itself is what zeroes the cursor.
     world.actors[0].battle.queued_anim = 0;
     world.commit_staged_battle_anim(0);
+    assert_eq!(
+        world.actors[0].battle_effect_cursor, 1,
+        "no boundary yet - the swing is still in flight"
+    );
+    world.commit_staged_battle_anim_at_boundary(0);
     assert_eq!(world.actors[0].battle_effect_cursor, 0);
 }
 
@@ -626,6 +689,8 @@ fn trail_test_clip(attach_key: u8, frames: usize) -> MonsterAnimation {
         action_id: 0xC,
         rate: 2,
         attach_key,
+        solo_flag: 0,
+        impact_class: 0,
         part_count: parts,
         frame_count: frames,
         frames: (0..frames)
@@ -814,8 +879,13 @@ fn gala_clip_key_0x18_freezes_the_target_in_window() {
     assert_eq!(world2.actors[1].battle.anim_rate.get(), RATE_NORMAL);
 }
 
-/// The armed tint eases back to the neutral word and the selector clears -
-/// the FUN_80050120 arm-0 decay over the FUN_80050F30 per-lane ease.
+/// The armed tint eases back to the neutral word, the blend drains, and
+/// the selector retires - `FUN_80050120` arm 0 over the `FUN_80050F30`
+/// per-lane ease, in the disassembly's order (`0x800501A4..0x80050210`):
+/// the eased word is compared against `0x20080200` on the SAME frame it
+/// was eased, a non-zero `+0x0C` then drains by `0x20`, and only a zero
+/// `+0x0C` clears `+0x21F`. So with no blend armed the selector clears on
+/// the arrival frame itself, not a frame later.
 #[test]
 fn impact_tint_decays_to_neutral_and_clears() {
     use vm::battle_impact_fx as ifx;
@@ -829,19 +899,41 @@ fn impact_tint_decays_to_neutral_and_clears() {
         world.actors[0].battle.render_color,
         ifx::IMPACT_NEUTRAL_STATE + 0x8
     );
+    assert_eq!(world.actors[0].battle.impact_state, 2);
     world.tick_battle_animations();
     assert_eq!(
         world.actors[0].battle.render_color,
         ifx::IMPACT_NEUTRAL_STATE
     );
     assert_eq!(
-        world.actors[0].battle.impact_state, 2,
-        "clears a frame later"
+        world.actors[0].battle.impact_state, 0,
+        "no blend armed: the selector retires on the arrival frame (`sb zero,0x21f` at 0x80050210)"
+    );
+    // With the retail hit triple armed the blend drains first: 0x1000 at
+    // 0x20 per frame is 128 frames of blend after the colour arrives, and
+    // the selector waits for all of them.
+    world.actors[0].battle.impact_state = 1;
+    world.actors[0].battle.render_color = ifx::IMPACT_NEUTRAL_STATE + 0x8;
+    world.actors[0].battle.render_blend = 0x1000;
+    world.tick_battle_animations();
+    assert_eq!(
+        world.actors[0].battle.render_color,
+        ifx::IMPACT_NEUTRAL_STATE
+    );
+    assert_eq!(world.actors[0].battle.render_blend, 0x1000 - 0x20);
+    assert_eq!(world.actors[0].battle.impact_state, 1);
+    for _ in 0..(0x1000 / 0x20 - 1) {
+        world.tick_battle_animations();
+    }
+    assert_eq!(world.actors[0].battle.render_blend, 0);
+    assert_eq!(
+        world.actors[0].battle.impact_state, 1,
+        "the frame the blend hit zero"
     );
     world.tick_battle_animations();
     assert_eq!(world.actors[0].battle.impact_state, 0);
-    // A render-flag override (the target cursor) suspends the ease -
-    // retail's +0x21C dispatch skips arm 0.
+    // A render-flag override (the target cursor's `5`) is a hold arm -
+    // retail's +0x21C dispatch never reaches the ease.
     world.actors[0].battle.impact_state = 1;
     world.actors[0].battle.render_color = ifx::IMPACT_NEUTRAL_STATE + 0x20;
     world.actors[0].battle.render_flag = 5;

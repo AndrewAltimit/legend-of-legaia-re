@@ -1586,9 +1586,10 @@ The wire's own limits, stated so the next reader does not re-derive them:
   the workspace parses that table.
 - The pass is live but **does not fire in ordinary play**, for a reason that
   sits upstream of every address on this page: the port has no monster-side
-  `enemy_effect` source. The only production `stage_art_profile` call is the
-  party-caster path `World::arm_party_art`, so status flows party -> monster
-  and never monster -> party, and rows `481..=483` are the party's. Reachable
+  `enemy_effect` source. The only production art-record lookup for a status
+  effect is the hit-event driver's party arm (`World::apply_art_hit_side_data`,
+  keyed on the latched art constant of a party slot), so status flows party ->
+  monster and never monster -> party, and rows `481..=483` are the party's. Reachable
   and non-trivial is not the same as exercised; both are worth saying.
 
 ## See also

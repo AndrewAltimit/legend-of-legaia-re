@@ -171,6 +171,17 @@ non-zero, and only four entries carry a value at or past their own
 `frame_count`. Frames, not sixteenths - these are compared against the anim
 tick's integer frame, `cursor >> 4`.
 
+The damage kernel `FUN_801EC3E4` reads the list directly, indexed by the
+actor's per-clip hit index `+0x1F4`: called from the anim tick every frame a
+battle clip plays (`0x800478A0`, `0x80047BF0`, with `cursor >> 4` in `a2`),
+it fires one hit on the first frame with `frame + 1 >= entry[+0x10 + idx]`
+(`0x801EC45C..0x801EC484`), resolves it with the power byte at the same index
+of `+0x00..+0x03`, and bumps `+0x1F4` in its epilogue; every commit zeroes the
+index (`0x8004B064`). A swing entry's single beat is therefore its one hit and
+an art entry's ascending run its combo, paced by the clip rather than by the
+action stream ([battle-action.md](../subsystems/battle-action.md#3-damage-is-one-power-byte-per-animation-hit-event)).
+The two `FUN_80050E00` consumers below are the other readers.
+
 Both traced consumers are in the anim tick `FUN_80047430`, and both locate the
 slot through the helper `FUN_80050E00(entry + 0x10)`
 (`ghidra/scripts/funcs/80050e00.txt`), which walks `+0x11..+0x13`. Read the
@@ -369,7 +380,26 @@ after the release - the park is timing choreography, not a terminal hold. Entry 
 solo/freeze dispatcher - it writes battle ctx `+0x243` and raises the
 other actors' pause flag `+0x21C` (the "everyone freezes during a
 special" spotlight; value 2 additionally re-rolls a coin into ctx
-`+0x6DA` when a party member is acting).
+`+0x6DA` when a party member is acting). The anim tick reads the same
+byte again when it stamps the after-image history ring: a monster record
+with `+0x87 == 1` gets ring id `0x11` (otherwise `+0x77 + 0x10`), which is
+what lets the ghost walk `FUN_80049348` trail that clip - see
+[battle-action.md](../subsystems/battle-action.md#the-after-image-ghost-walk-fun_80049348).
+Parser field `MonsterAnimation::solo_flag`. Entry `+0x7A` is the action's
+**status / impact selector** - the same enum space as a move-power record's
+`+0x0A`. When the action lands, the melee / arts routine `FUN_801EC3E4`
+stamps `0x801F53D4[sel - 1]` into the struck actor's `+0x04` tint word with
+`+0x21F = sel` and `+0x0C = 0x1000` for `0 < sel < 6` (`sltiu v0,v0,0x6`
+at `0x801EE3E0`), then routes the selector to its status arm: `3` / `4`
+roll `+0x16E |= 1` / `|= 2` one in eight, `5` rolls a rot-limb bit on a
+party target, and `6` (`0x801EE690`) rolls `+0x16E |= 0x1000` one in four
+with **no** tint - the Curse class, carried on the disc by six archive
+entries (two three-member families, all on attack tag `0x10`), which is
+what the `sltiu` guard exists for. See
+[battle.md](../subsystems/battle.md#how-the-tint-words-reach-the-pixel).
+Parser field `MonsterAnimation::impact_class`; the player-file art records
+carry the same byte (`ArtAnimRecord::impact_class`). Census:
+`crates/engine-core/tests/battle_afterimage_gate_real.rs`.
 
 Three consequences of that commit shape:
 
@@ -459,7 +489,18 @@ normal `frame_dt = 1`, `+0x21D = 4` case); the engine also plays the
 hit-reaction family - `World::queue_battle_reaction` mirrors the
 `FUN_800402F4` staging and `tick_battle_animations` the knockdown → get-up
 chain. The decoder's cross-blend into the queued clip is a known engine
-simplification (transitions restart at frame 0 without the tween).
+simplification (transitions restart at frame 0 without the tween). The player
+also carries the entry head the tick and the damage kernel read off the
+committed entry: the `+0x84..+0x86` loop window (`apply_loop_window`, run
+before the natural-end test as the tick does), the signed `+0x0C` root speed
+(`root_speed`, driven by `World::tick_battle_locomotion`) and the
+`+0x00..+0x03` / `+0x10..+0x13` / `+0x76` hit-event side (`hit_source`, read
+by `World::tick_battle_hit_events`). The hosts install a monster's clips
+**positionally** (`monster_archive::animations_by_entry`, one slot per `+0x4C`
+index with holes kept): a monster's staged anim id is that index - the AI
+picker queues its swing entries by it and `FUN_8004AD80` reads
+`action_table[slot][id]` - so the compacted `animations` list would
+mis-address every entry after the first undecodable one.
 
 ## Export
 

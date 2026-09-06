@@ -252,7 +252,8 @@ impl World {
                 }
                 LeaderSwapEffect::SpawnFadeOut => {
                     // `801d29c8..801d2a00`: kind 2, 0x20 frames, black ->
-                    // white, no start delay / no hold.
+                    // white, no start delay, a `-1` hold - the landed white
+                    // persists until the state-2 fade-in replaces it.
                     self.screen_fade =
                         Some(crate::fade::FadeState::load(&crate::fade::FadeTemplate {
                             kind: 2,
@@ -881,10 +882,14 @@ impl World {
                 self.pending_sound_release = true;
             }
         }
-        // Step the active full-screen fade (escape teardown ramp); drop it
-        // once the ramp lands on its target so hosts stop drawing the overlay.
+        // Step the active full-screen fade. A template with a hold countdown
+        // is dropped once the ramp lands (hosts stop drawing the overlay); one
+        // whose hold word is `-1` - the battle-end / escape template - keeps
+        // its end colour up until the battle teardown clears it
+        // (`FadeState::holds_at_end`, `finish_battle`).
         if let Some(fade) = &mut self.screen_fade
             && !fade.step()
+            && !fade.holds_at_end()
         {
             self.screen_fade = None;
         }

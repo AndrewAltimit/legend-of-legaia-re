@@ -13,7 +13,8 @@
 //! mednafen Tetsu battle states:
 //!
 //! - **Dialogue** (tutorial / stage-overlay text up): held close-up,
-//!   pitch `0`, yaw `0`, TR `(0, 1280, 1638)` - static, no orbit.
+//!   pitch `0`, yaw `0`, TR `(0, 1280, 1638)`, focus the speaking monster's
+//!   seat (`(0, 800)` in both Tetsu captures) - static, no orbit.
 //! - **Menu** (top Begin/Run framing, and any time no menu owns the pad):
 //!   pitch `32`, TR `(0, 1280, z)` with `z` sized to the live formation (the
 //!   traced solo fight lands on `7680`), idle orbit `-4` yaw units per
@@ -96,7 +97,7 @@
 //! that particular fight - a measurement of one formation, not a constant.
 //! See [`menu_framing`].
 //!
-//! ## The action framing is case `6`, and it has two arms
+//! ## The action framing is case `6`, and a live fight takes ONE arm
 //!
 //! `FUN_801D5854` is called with mode `6` from almost every arm of the
 //! action state machine `FUN_801E295C` (`0x801E2D50`, `0x801E3060`,
@@ -105,30 +106,72 @@
 //! It is therefore *the* per-action framing, and it forks immediately:
 //!
 //! ```text
-//! 801d5ce8  lbu  v1,-0x428f(v0)     ; _DAT_8007BD71, the battle-flow SM state
-//! 801d5cf4  bne  v1,0xFE,0x801d64c4 ; not the in-battle state -> fallback arm
-//! 801d5cfc  beq  (slot < 3)==0, 0x801d64c4  ; monster slot -> fallback arm
+//! 801d5ce8  lbu  v1,-0x428f(v0)     ; DAT_8007BD71, the battle-END signal
+//! 801d5cf4  bne  v1,0xFE,0x801d64c4 ; fight still running -> in-fight arm
+//! 801d5cfc  beq  (slot < 3)==0, 0x801d64c4  ; monster slot -> in-fight arm
 //! ```
 //!
-//! **Party arm** (`0x801D5CFC`, the base before the per-character / per-art
-//! adjustments): pitch `0`, yaw `0x800 - actor[+0x46]` (over the actor's
-//! shoulder from behind), TR `(0, -5 * actor[+0x3E], 0x500)`, focus the
-//! actor's *display* position `actor[+0x3C/+0x3E/+0x40]`. It then runs a
-//! per-character (`DAT_8007BD10[slot]`) and per-art (`actor[+0x1DB]`) script
-//! and finishes on a **height floor with a pitch compensation**
-//! (`0x801D6494`): a TR.y below `0x280` is raised to `0x280` and a quarter of
-//! the shortfall is added to the pitch, so the camera tilts down instead of
-//! sinking into the ground. Character `2` casting art `0x16` skips the floor.
+//! `DAT_8007BD71` is **not** an "in-battle" state: `0xFE` is the battle-end
+//! signal. Its writers are the action SM's successful-escape teardown
+//! (`0x801E5A94`, right after `ctx[7] = 0x67`), its `0x5A` party-wipe and
+//! monster-wipe scans (`0x801E65D8` / `0x801E6674`, beside the wipe cause in
+//! `_DAT_8007BD2C`) and the capture-effect module (`0x801F7318`); SCUS
+//! `0x80056014` zeroes it at battle init. Twelve battle save states - five
+//! Begin/Run prompts, two mid-strike frames, three mid-approach parks, the
+//! arts-input close-up and the tutorial open - all read `0xFF`. So while a
+//! fight runs, **every** action, party or monster, frames through the
+//! `0x801D64C4` arm; the `0x801D5CFC` arm is the end-of-battle framing (its
+//! per-character script keys on the win-pose anim band `0x11..=0x18`).
 //!
-//! **Fallback arm** (`0x801D64C4`): pitch `0`, yaw `ctx[+0x6DA] - facing`,
-//! TR `(0, 0x500, ctx[+0x6D0])`, focus the actor's *seat* position
-//! `actor[+0x34/+0x38]`, then a style byte `ctx[+0xD]` selects one of three
-//! tweaks and a character id of `4` overrides the whole translation. This is
-//! the arm that reads `ctx[+0x6D0]` - the depth `FUN_801F0348` computes at
-//! action seed from the framed monster's size class
-//! ([`crate::battle_formulas::camera_height_for_frame`], mirrored on the
-//! engine side as `World::battle_camera_frame_height`). See
-//! [`ActionFraming`].
+//! **In-fight arm** (`0x801D64C4`): pitch `0`, yaw `ctx[+0x6DA] - facing`,
+//! TR `(0, 0x500, ctx[+0x6D0])`, focus the actor's live position
+//! `actor[+0x34/+0x38]` with the height left at the stage floor (`sp+0x22`
+//! is zeroed in the prologue and never written here), then a style byte
+//! `ctx[+0xD]` selects one of three tweaks and a character id of `4`
+//! overrides the whole translation. This is the arm that reads `ctx[+0x6D0]` -
+//! the depth `FUN_801F0348` computes at action seed from the framed
+//! monster's size class ([`crate::battle_formulas::camera_height_for_frame`],
+//! mirrored on the engine side as `World::battle_camera_frame_height`).
+//! Pinned byte-exact by three PCSX-Redux `ctx[7] == 0x19` captures (Gaza
+//! acting): `TR (0, 0x500, prescale(ctx[+0x6D0]))` with `0x6D0 = 0xD00`
+//! landing on `5324`, yaw `(ctx[+0x6DA] - actor[+0x46]) & 0xFFF` eight units
+//! behind the live counter (the tween chases it), focus the negated
+//! `+0x34/+0x38` pair, and the `ctx[+0xD] == 2` capture reading pitch `0x80`
+//! over `TR.y = 0x400`. See [`ActionFraming`].
+//!
+//! **Battle-over arm** (`0x801D5CFC`): pitch `0`, yaw `0x800 - actor[+0x46]`
+//! (over the actor's shoulder from behind), TR `(0, -5 * actor[+0x3E],
+//! 0x500)`, focus the actor's display position `actor[+0x3C/+0x3E/+0x40]`,
+//! then a per-character (`DAT_8007BD10[slot]`) / per-anim (`actor[+0x1DB]`)
+//! script and a **height floor with a pitch compensation** (`0x801D6494`): a
+//! TR.y below `0x280` is raised to `0x280` and a quarter of the shortfall is
+//! added to the pitch. Character `2` in anim `0x16` skips the floor. The
+//! port carries the arm behind [`ActionFraming::battle_over`], which no host
+//! raises yet - the victory-pose sequence is not modelled.
+//!
+//! ## The yaw counter `ctx[+0x6DA]` is re-seeded per action
+//!
+//! The in-fight arm's yaw base is a counter the action SM both advances and
+//! re-seeds, so the angle a strike is filmed from is a ladder of stores, not
+//! a drift from battle entry:
+//!
+//! | Site | When | `ctx[+0x6DA]` |
+//! |---|---|---|
+//! | `0x801E2B40` | the `0x00` round-begin arm | `0` |
+//! | `0x801E2CF8` | the `0x0C` seed arm, every category | `0x800` |
+//! | `0x801E2F20` | the seed's Attack branch, as it stores `ctx[7] = 0x14` | `0x200` |
+//! | `FUN_8004E13C` `0x8004E2B0` | a **party** attacker's first swing-clip commit | `(rand() % 2) * 0x800 + 0x280`, and `ctx[+0xD] = 0` |
+//! | `0x801E2A24` | every SM pass | `+= max(1, 4 * frame_step / 3)` |
+//!
+//! `FUN_8004E13C` runs from the anim commit `FUN_8004AD80` (`0x8004BE28`)
+//! with the committed clip's header byte `+0x87` as its argument, and seeds
+//! only when that byte is `2`, the previous commit's was not
+//! (`ctx[+0x243]`), and `ctx[+0x13] < 3`. A monster's attack therefore keeps
+//! the `0x200` base; a party attack lands on `0x280` or `0xA80`. The
+//! `battle_melee_hit_spark` capture reads `0x298` mid-art - `0x280` plus 24
+//! frames of drift. The port keys the same ladder on the action-state edges
+//! it observes ([`BattleCamera::observe_action_state`]); the swing-clip
+//! commit is stood in for by the edge into the strike loop `0x1E`.
 //!
 //! ## Every glide duration is retail's own `a3`
 //!
@@ -219,7 +262,17 @@ pub enum BattleCamPhase {
 /// it pins *when* the orbit runs - only while the SM is idling between
 /// actions.
 ///
-/// ## The test is a **band**, not a deny-list
+/// The battle tick `FUN_801D0748` carries the same store in its own
+/// prologue (`0x801D07AC..0x801D07CC`), gated on the command-flow byte
+/// `ctx[+6]` being `0x1E` / `0x32` / `0x6E` / `0xFE` - the Begin/Run prompt
+/// among them. The two never add up: while the flow byte owns the frame the
+/// action SM is not run at all. A 240-vsync PCSX-Redux trace parked at the
+/// `battle_gaza2_prompt` state (`scripts/pcsx-redux/autorun_battle_cam_orbit.lua`)
+/// counts the dispatcher's store once per battle tick and the SM's store
+/// never, the yaw stepping `-2 * DAT_1F800393` each time - `-2` per display
+/// frame, i.e. [`ORBIT_STEP`] per camera step, from either writer alone.
+///
+/// ## The test is a **band**
 ///
 /// The `ctx[7]` space is banded, and `FUN_801E295C`'s own arms arm the camera
 /// per band rather than per byte:
@@ -229,34 +282,39 @@ pub enum BattleCamPhase {
 /// | Setup | `0x00`, `0x0B` | nothing; the prologue orbit runs |
 /// | Seed | `0x0C` | `FUN_801D5854(ctx[0x13], 6)` (`0x801E6464` arm) |
 /// | Action | `0x14..=0x48` | case `6` per state (`0x14`: `jal 0x801d5854` at `0x801E32E4`) |
-/// | Done | `0x50..=0x5A` | case `6`/`8`, under a **bounded** tail timer |
+/// | Done | `0x50..=0x52` | case `6` / `8` **per category** ([`done_band_phase`]), under the `ctx[+0x6D8]` tail timer |
+/// | End of action | `0x5A` | nothing - the far framing, retail's between-action pose |
 /// | Run | `0x64..=0x67` | case `9` + the orbit (`jal 0x801d5854`, `li a1,0x9` at `0x801E5BDC`) |
 ///
-/// The Done band is the one the port classifies differently, and the reason
-/// is a *duration*, not a missing timer. Retail seeds `ctx[+0x6D8] = 0x3C` in
-/// the `0x50` arm and decrements it by the frame step each `0x51` pass,
-/// leaving for `0x5A` when it goes negative - at most ~60 display frames of
-/// per-action framing past the strike. **The port has that timer too**
-/// (`done_cleanup` seeds it, `done_fade_down` ticks it), and it is bounded:
-/// ~39 display frames per turn, measured.
+/// **The Done band is a per-action framing, not an idle.** The `0x50` arm
+/// (`0x801E5E90..0x801E5EF4`) and the `0x51` arm (`0x801E5FC0..0x801E6018`)
+/// both fork on `actor[+0x1DE]`: category `5` (Run) skips the framing call
+/// and runs the yaw orbit instead, category `3` (Attack) takes `li a1,0x8`, a
+/// party slot whose target's live HP `+0x14C` reads zero takes `0x8` too, and
+/// everything else `li a1,0x6` - re-armed every pass for the
+/// `ctx[+0x6D8] = 0x3C` display frames the tail lasts. A retail save parked
+/// in `0x51` after a monster's spell (`zora_glare_petrify_post`) reads case
+/// 6's in-fight pose - pitch `0`, `TR (0, 0x500, prescale(ctx[+0x6D0]))`
+/// with the tween one step short, focus the caster's own seat, yaw
+/// `ctx[+0x6DA] - actor[+0x46]` - not the far framing.
 ///
-/// What differs is how much of a *fight* that band owns. Two measurements of
-/// the same `--no-player-battle` rikuroa fight, both correct and easy to read
-/// as contradicting each other: **~39 frames per turn** (the timer works) and
-/// **133 of ~270 sampled frames**, i.e. about half the fight (several turns,
-/// each with a Done band long relative to everything else). Classifying the
-/// band as "an action is executing" therefore pins the camera in the
-/// per-action close-up for roughly half the fight - one actor filling the
-/// frame, the rest of the formation off it or behind the eye, and no idle
-/// orbit. The band is idle here for that reason. Re-measure before moving it:
-/// the per-turn number alone makes the change look free, and it is not.
+/// An earlier port reading kept the whole Done band on the far framing
+/// because "the per-action close-up" would otherwise own about half of a
+/// fight's frames. That close-up was the battle-over arm applied to a
+/// running fight (see the module doc); the in-fight arm frames both
+/// combatants, so holding it through the tail is the retail look, and the
+/// tail is bounded by the same `0x3C`-frame timer the port ticks.
+///
+/// Between actions retail *is* on the far framing: a save parked at
+/// `ctx[7] == 0x0A` with the flow byte at `0xFF`
+/// (`evil_medallion_rage_battle`) reads pitch `32`, `TR (0, 1280, 7920)`,
+/// focus at the origin - case 9 over its `+-825` seats - so `0x5A` and the
+/// setup states stay idle here. (`0x0A` precedes the seed on both sides;
+/// `FUN_801E295C` has no arm for it.)
 ///
 /// The Run band is idle on retail's own authority, not as a deviation: both
 /// the category-`5` seed arm and the `0x50`/`0x51` arms skip the framing call
 /// for `actor[+0x1DE] == 5` and run the yaw orbit instead.
-///
-/// `0x0A` (`PreActionWait`) is a port-only state - `FUN_801E295C` has no
-/// `0x0A` arm at all - and it precedes the seed, so no action is executing.
 ///
 /// The retail orbit pair stays as [`RETAIL_ORBIT_STATES`] so the difference
 /// between retail's gate and this band model is visible rather than folded
@@ -264,10 +322,10 @@ pub enum BattleCamPhase {
 pub const fn action_state_frames_the_action(action_state: u8) -> bool {
     !matches!(
         action_state,
-        // Setup band: nothing committed yet (`0x0A` is port-only).
+        // Setup band: nothing committed yet.
         0x00 | 0x0A | 0x0B
-        // Done band: bounded on both sides, but ~half of a fight's frames.
-        | 0x50 | 0x51 | 0x52 | 0x5A
+        // End of action: the far framing until the next actor's seed.
+        | 0x5A
         // Run band: retail arms case 9 + the orbit here itself.
         | 0x64
             ..=0x67
@@ -277,8 +335,8 @@ pub const fn action_state_frames_the_action(action_state: u8) -> bool {
 }
 
 /// The two `ctx[7]` values retail's own orbit gate accepts
-/// (`0x801E2A3C..0x801E2A6C`). [`action_state_frames_the_action`] treats a
-/// whole band more as idle - see its note for why the port needs it.
+/// (`0x801E2A3C..0x801E2A6C`). [`action_state_frames_the_action`] is the
+/// band model built on it - see its note.
 pub const RETAIL_ORBIT_STATES: [u8; 2] = [0x00, 0x0B];
 
 /// The retail phase for one frame of battle state. Both hosts feed the same
@@ -315,25 +373,69 @@ pub fn phase_for(dialogue_up: bool, submenu_open: bool, action_executing: bool) 
 /// with `ctx[+0xD] == 2` it reads pitch `0x80` and `TR.y = 0x400` - case 7's
 /// style-2 tweak - over `TR.z = prescale(ctx[+0x6D0])`.
 ///
-/// The Done band's `0x51` is deliberately **not** here even though it can
-/// arm a per-action framing: the port's residency in that state is unbounded
-/// where retail's is `ctx[+0x6D8] = 0x3C` frames, so the whole band stays
-/// idle - see [`action_state_frames_the_action`].
+/// The Done band's `0x50` / `0x51` are not here: their arm forks per
+/// category ([`done_band_phase`]) and never reaches case `7`.
 pub const RECOVER_STATES: [u8; 2] = [0x1F, 0x20];
 
 /// `ctx[7]` values whose arm hands `FUN_801D5854` mode **`8`**
-/// ([`action_end_framing`]).
+/// unconditionally ([`action_end_framing`]): `0x52` (multi-cast
+/// continuation) and `0xFD` (idle hold), both `li a1,0x8` at `0x801E5F74`.
+/// The Done-cleanup pair forks per category instead - [`DONE_STATES`] and
+/// [`done_band_phase`].
+pub const ACTION_END_STATES: [u8; 2] = [0x52, 0xFD];
+
+/// The Done-cleanup pair: `0x50` (cleanup; seeds the `ctx[+0x6D8] = 0x3C`
+/// tail timer) and `0x51` (fade-down; ticks it). Their framing call forks on
+/// the action category - [`done_band_phase`].
+pub const DONE_STATES: [u8; 2] = [0x50, 0x51];
+
+/// What the Done-band arms read before choosing a framing case
+/// (`0x801E5E90..0x801E5EF4` in `0x50`, `0x801E5FC0..0x801E6018` in `0x51`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct DoneBandInputs {
+    /// `actor[+0x1DE]` - the committed action category (`1` item, `3`
+    /// attack, `4` spirit, `5` run).
+    pub category: u8,
+    /// `ctx[+0x13] < 3` - the acting slot is a party seat.
+    pub party_slot: bool,
+    /// The acting actor's target reads zero live HP (`s8[+0x14C] == 0`).
+    pub target_dead: bool,
+}
+
+/// `actor[+0x1DE]` value the Done band runs the orbit for instead of a framing.
+pub const DONE_CATEGORY_RUN: u8 = 5;
+/// `actor[+0x1DE]` value the Done band hands case `8` for.
+pub const DONE_CATEGORY_ATTACK: u8 = 3;
+
+/// The framing case the Done band's per-category fork arms, as a phase.
+/// Read off the `0x50` arm (the `0x51` arm at `0x801E5FC0` is the same
+/// ladder):
 ///
-/// The Done-cleanup arm forks on the action category
-/// (`0x801E5FC0..0x801E6018`): `actor[+0x1DE] == 3` (Attack) branches
-/// straight to `li a1,0x8`, as does a party slot whose target's live-HP
-/// halfword has reached zero; anything else takes `li a1,0x6`. `0x52`
-/// (multi-cast continuation) and `0xFD` (idle hold) arm `8` unconditionally
-/// (`0x801E5F74`).
+/// ```text
+/// 801e5ea0  li   v0,0x5
+/// 801e5ea4  beq  v1,v0,0x801e5f00     ; category 5 (Run): no framing, orbit
+/// 801e5ea8  _li  v0,0x3
+/// 801e5eac  beq  v1,v0,0x801e5ed8     ; category 3 (Attack): case 8
+/// 801e5eb4  lw   t2,0x20(sp)          ; ctx[+0x13]
+/// 801e5ebc  sltu v0,t2,v0             ; < 3 ?
+/// 801e5ec0  beq  v0,zero,0x801e5eec   ; monster slot: case 6
+/// 801e5ec8  lhu  v0,0x14c(s8)         ; the target's live HP
+/// 801e5ed0  bne  v0,zero,0x801e5eec   ; alive: case 6
+/// 801e5edc  jal  0x801d5854           ; a1 = 8: party slot, dead target
+/// 801e5ef0  jal  0x801d5854           ; a1 = 6
+/// ```
 ///
-/// Both `0x50` and `0x52` are single-frame transits in a measured fight, so
-/// classifying them as a close-up cannot pin the camera the way `0x51` would.
-pub const ACTION_END_STATES: [u8; 3] = [0x50, 0x52, 0xFD];
+/// The Run category's `Menu` is the far framing with the idle orbit: the
+/// `0x801E5F00` arm runs the same `yaw -= step * 2` store the prologue does.
+pub const fn done_band_phase(done: DoneBandInputs) -> BattleCamPhase {
+    if done.category == DONE_CATEGORY_RUN {
+        BattleCamPhase::Menu
+    } else if done.category == DONE_CATEGORY_ATTACK || (done.party_slot && done.target_dead) {
+        BattleCamPhase::ActionEnd
+    } else {
+        BattleCamPhase::Action
+    }
+}
 
 /// The retail phase for one frame of battle state, over the live `ctx[7]`.
 ///
@@ -353,10 +455,16 @@ pub const ACTION_END_STATES: [u8; 3] = [0x50, 0x52, 0xFD];
 ///
 /// **The post-strike band is case 7 / case 8, not case 6.** See
 /// [`RECOVER_STATES`] and [`ACTION_END_STATES`].
+///
+/// **The Done band frames per category.** `0x50` / `0x51` arm case `8` for
+/// an Attack (or a party slot over a dead target), the orbit for a Run, and
+/// case `6` for everything else - [`done_band_phase`] over `done`, which
+/// both hosts fill from the acting actor.
 pub fn phase_for_state(
     dialogue_up: bool,
     input_menu_open: bool,
     action_state: u8,
+    done: DoneBandInputs,
 ) -> BattleCamPhase {
     if dialogue_up {
         BattleCamPhase::Dialogue
@@ -364,6 +472,8 @@ pub fn phase_for_state(
         BattleCamPhase::Submenu
     } else if RECOVER_STATES.contains(&action_state) {
         BattleCamPhase::Recover
+    } else if DONE_STATES.contains(&action_state) {
+        done_band_phase(done)
     } else if ACTION_END_STATES.contains(&action_state) {
         BattleCamPhase::ActionEnd
     } else if action_state_frames_the_action(action_state) {
@@ -390,13 +500,34 @@ pub struct BattleCamPose {
     pub focus: [f32; 3],
 }
 
-/// Tutorial-dialogue close-up (trace frames 1..45: 240+ frames static).
+/// Tutorial-dialogue close-up (trace frames 1..45: 240+ frames static),
+/// before its focus is filled in by [`dialogue_pose`].
 const DIALOGUE_POSE: BattleCamPose = BattleCamPose {
     pitch: 0.0,
     yaw: 0.0,
     tr: [0.0, 1280.0, 1638.0],
     focus: [0.0; 3],
 };
+
+/// The monster seat the dialogue close-up frames when a host has no
+/// formation to read it from: the retail solo-fight seat `(0, 800)`.
+const DIALOGUE_FOCUS_FALLBACK: [f32; 3] = [0.0, 0.0, 800.0];
+
+/// The tutorial-dialogue close-up for a formation. The focus is the
+/// speaking monster's seat, not the formation centre: both Tetsu-tutorial
+/// captures (`v0_1_battle_start_tetsu`, `s5_tetsu_battle`) read the focus
+/// trio `0x80089118` as the negated `(0, 0, 800)` - Tetsu's `+0x34/+0x38` -
+/// under `TR (0, 1280, 1638)`, so the eye sits `prescale(0x400)` in front of
+/// his face. The monster row is the formation's far-Z edge (party seats at
+/// `-Z`, monsters at `+Z`, [`crate::battle_seats`]-style), centred in X.
+pub fn dialogue_pose(formation: Option<FormationBox>) -> BattleCamPose {
+    BattleCamPose {
+        focus: formation
+            .map(|b| [(b.min[0] + b.max[0]) * 0.5, 0.0, b.max[1]])
+            .unwrap_or(DIALOGUE_FOCUS_FALLBACK),
+        ..DIALOGUE_POSE
+    }
+}
 /// Far Begin/Run framing, `FUN_801D5854` case `9`. Pitch and TR.x / TR.y are
 /// the case's constants; yaw free-orbits and TR.z is formation-sized.
 const MENU_PITCH: f32 = 32.0; // 0x20
@@ -554,18 +685,18 @@ pub fn menu_framing(bbox: Option<FormationBox>, yaw: f32) -> BattleCamPose {
 /// Yaw base the **party** arm subtracts the actor facing from: half a turn,
 /// i.e. the camera sits behind the acting character (`0x801D5D10`).
 pub const ACTION_PARTY_YAW_BASE: i32 = 0x800;
-/// Raw eye-space Z the party arm seeds (`0x801D5D00`).
+/// Raw eye-space Z the battle-over arm seeds (`0x801D5D00`).
 pub const ACTION_PARTY_TR_Z_RAW: i32 = 0x500;
-/// The party arm's TR.y is `-5 * actor[+0x3E]` - a `sll 2` + `addu` pair
+/// The battle-over arm's TR.y is `-5 * actor[+0x3E]` - a `sll 2` + `addu` pair
 /// (`0x801D5D24..0x801D5D2C`), not a table lookup.
 pub const ACTION_PARTY_HEIGHT_SCALE: f32 = 5.0;
-/// Height floor the party arm clamps TR.y up to (`0x801D64A4`).
+/// Height floor the battle-over arm clamps TR.y up to (`0x801D64A4`).
 pub const ACTION_HEIGHT_FLOOR: f32 = 0x280 as f32;
 /// TR.y the **fallback** arm seeds (`0x801D64CC`).
 pub const ACTION_TR_Y: f32 = 0x500 as f32;
-/// TR.y the fallback arm's style-2/3 tweak substitutes (`0x801D6564`).
+/// TR.y the in-fight arm's style-2/3 tweak substitutes (`0x801D6564`).
 pub const ACTION_STYLE_TR_Y: f32 = 0x400 as f32;
-/// Pitch the fallback arm's style-2/3 tweak adds (`0x801D656C`).
+/// Pitch the in-fight arm's style-2/3 tweak adds (`0x801D656C`).
 pub const ACTION_STYLE_PITCH: f32 = 0x80 as f32;
 /// Character id whose fallback framing is overridden wholesale
 /// (`0x801D65A4`: pitch `0x80`, raw depth `0xC00`, TR.y `0x300`).
@@ -605,19 +736,21 @@ pub struct AttackCamChannels {
 /// The non-pose inputs `FUN_801D5854` case `6` reads out of the battle
 /// context. Every field is a retail context byte / halfword; the engine
 /// supplies what it models and leaves the rest at the [`Default`], which
-/// reproduces the arm retail takes for an ordinary party attack.
+/// reproduces the arm retail takes for an ordinary action in a running fight.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ActionFraming {
     /// `ctx[+0x13] < 3` - the acting slot is a party seat.
     pub party_slot: bool,
-    /// `_DAT_8007BD71 == 0xFE` - the battle-flow state machine is in its
-    /// in-battle state. Together with [`Self::party_slot`] this selects the
-    /// party arm; either one false takes the fallback arm.
-    pub flow_active: bool,
+    /// `DAT_8007BD71 == 0xFE` - the **battle-end signal** (the `0x5A` wipe
+    /// scans and the successful-escape teardown raise it; it reads `0xFF`
+    /// for the whole of a running fight). Together with [`Self::party_slot`]
+    /// this selects the battle-over arm; while a fight runs every action
+    /// takes the in-fight arm. No host raises it yet.
+    pub battle_over: bool,
     /// `ctx[+0x6D0]` - the raw eye-space depth `FUN_801F0348` derives from
-    /// the framed monster's size class. Only the fallback arm reads it.
+    /// the framed monster's size class. Only the in-fight arm reads it.
     pub depth_raw: i32,
-    /// `ctx[+0x6DA]` - the yaw base the fallback arm subtracts the actor
+    /// `ctx[+0x6DA]` - the yaw base the in-fight arm subtracts the actor
     /// facing from.
     ///
     /// It is not a constant: the action SM's prologue advances it every tick
@@ -641,7 +774,7 @@ impl Default for ActionFraming {
     fn default() -> Self {
         ActionFraming {
             party_slot: true,
-            flow_active: true,
+            battle_over: false,
             depth_raw: crate::battle_formulas::CAMERA_HEIGHT_MIN as i32,
             yaw_base: 0,
             style: 0,
@@ -651,14 +784,17 @@ impl Default for ActionFraming {
 }
 
 impl ActionFraming {
-    /// Which of case 6's two arms this input takes.
+    /// Which of case 6's two arms this input takes: the battle-over arm
+    /// (`0x801D5CFC`) needs a party seat **and** the battle-end signal;
+    /// anything else - every action of a running fight - is the in-fight
+    /// arm (`0x801D64C4`).
     pub const fn takes_party_arm(self) -> bool {
-        self.party_slot && self.flow_active
+        self.party_slot && self.battle_over
     }
 
     /// The framing's eye-space Z in **raw world units**, before the
     /// projection prescale - the value retail's case 6 hands the tween
-    /// builder. The party arm's is a constant; the fallback arm's is
+    /// builder. The battle-over arm's is a constant; the in-fight arm's is
     /// `ctx[+0x6D0]`, or the character-`4` override.
     pub const fn raw_z(self) -> i32 {
         if self.takes_party_arm() {
@@ -674,17 +810,20 @@ impl ActionFraming {
 /// Retail's case-6 action framing for the acting actor.
 ///
 /// Ports `0x801D5CE8..0x801D65D8`: the arm fork, both arms' base poses, the
-/// fallback arm's style tweaks and character override, and the party arm's
-/// height floor with its pitch compensation. What is **not** here is the
-/// per-character / per-art script that runs between the party arm's base and
-/// its floor - those arms read the disc track table
-/// `legaia_asset::battle_attack_camera_table` and are ported in
-/// [`crate::battle_attack_camera`].
+/// in-fight arm's style tweaks and character override, and the battle-over
+/// arm's height floor with its pitch compensation. What is **not** here is
+/// the battle-over arm's per-character / per-anim script between its base
+/// and its floor. (The per-art attack camera is a different routine,
+/// `FUN_801D71B8`, run from the shared tail after either arm - see
+/// [`crate::battle_attack_camera`].)
 ///
-/// `actor.world` stands in for both position trios retail reads: the party
-/// arm focuses on the display position `actor[+0x3C/+0x3E/+0x40]` and the
-/// fallback arm on the seat position `actor[+0x34/+0x38]`. The engine's
-/// battle actors carry one position, so both resolve to it.
+/// `actor.world` stands in for both position trios retail reads: the
+/// battle-over arm focuses on the display position
+/// `actor[+0x3C/+0x3E/+0x40]` and the in-fight arm on the live position
+/// `actor[+0x34/+0x38]`, whose focus height stays at the stage floor - the
+/// prologue zeroes `sp+0x22` and the arm never writes it. The engine's
+/// battle actors carry one position, so both resolve to it (the in-fight
+/// arm with its Y dropped).
 ///
 /// REF: FUN_801D5854 (case 6)
 pub fn action_framing(actor: BattleCamActor, f: ActionFraming) -> BattleCamPose {
@@ -730,7 +869,9 @@ pub fn action_framing(actor: BattleCamActor, f: ActionFraming) -> BattleCamPose 
         pitch,
         yaw: wrap(yaw),
         tr: [0.0, tr_y, prescale_tr_z(tr_z_raw)],
-        focus: actor.world,
+        // `sh v0,0x20(sp)` / `sh v0,0x24(sp)` only (`0x801D64F0..0x801D650C`):
+        // X and Z from `+0x34`/`+0x38`, the focus height left at zero.
+        focus: [actor.world[0], 0.0, actor.world[2]],
     }
 }
 
@@ -740,7 +881,7 @@ pub fn action_framing(actor: BattleCamActor, f: ActionFraming) -> BattleCamPose 
 
 /// The half-turn both post-strike cases add for framing styles `1` and `3`
 /// (`0x801D66D4` / `0x801D68D8`) - the same `ctx[+0xD]` fork case 6's
-/// fallback arm runs.
+/// in-fight arm runs.
 const POST_STYLE_HALF_TURN: i32 = 0x800;
 /// Case 7's yaw pre-rotation before the unwrap (`0x801D6708`).
 const RECOVER_YAW_BIAS: i32 = -0x700;
@@ -1027,6 +1168,15 @@ fn step_toward(v: f32, target: f32, rate: f32) -> f32 {
     }
 }
 
+/// Action-SM state bands the yaw-counter ladder keys on (`ctx[7]`, the
+/// [`crate::battle_action`] state byte): the seed pass, the Attack band's
+/// bounds, the strike loop, and the Done band that closes every category.
+const ACTION_SEED_STATE: u8 = 0x0C;
+const ATTACK_BAND_FIRST: u8 = 0x14;
+const ATTACK_BAND_LAST: u8 = 0x20;
+const STRIKE_LOOP_STATE: u8 = 0x1E;
+const ACTION_DONE_STATE: u8 = 0x50;
+
 /// The phase-scripted battle camera state. Created on battle entry, stepped
 /// once per 2 retail display frames (`World::field_frames`), dropped on exit.
 #[derive(Debug)]
@@ -1054,6 +1204,10 @@ pub struct BattleCamera {
     /// (`0x801E29E4..0x801E2A24`). Advanced one unit per display frame for
     /// as long as the battle runs, exactly like the SM's own prologue.
     action_yaw: i32,
+    /// The last `ctx[7]` [`Self::observe_action_state`] saw, so the yaw
+    /// counter's per-action seeds fire on the state **edges** the way
+    /// retail's arms store them once on entry.
+    last_action_state: u8,
     /// Live screen shake (`FUN_801D9D30`), held beside the pose.
     shake: ShakeState,
     /// The per-art attack camera's channel: the disc track table, the battle
@@ -1151,6 +1305,10 @@ pub struct BattleCamInputs {
     /// each occluding the other. Retail cannot start there; a host that
     /// seeds `0` does, for the ~6 seconds the `-4`/step orbit needs to leave.
     pub entry_yaw: f32,
+    /// The live action-SM state `ctx[7]`, the same byte [`phase_for_state`]
+    /// classifies. The camera reads it for the edges that re-seed the yaw
+    /// counter `ctx[+0x6DA]` ([`BattleCamera::observe_action_state`]).
+    pub action_state: u8,
 }
 
 /// Drive one host's battle camera for a frame - the single shared entry both
@@ -1198,6 +1356,7 @@ pub fn drive(
     cam.set_post_action_target(inputs.target);
     cam.set_formation(inputs.formation);
     cam.set_action_framing(inputs.action);
+    cam.observe_action_state(inputs.action_state);
     cam.set_shake_amplitude(inputs.shake_amplitude);
     cam.set_attack_channels(inputs.attack, tracks);
     cam.set_phase(inputs.phase);
@@ -1229,7 +1388,7 @@ impl BattleCamera {
         let action = ActionFraming::default();
         let yaw = entry_yaw.rem_euclid(4096.0);
         let pose = match phase {
-            BattleCamPhase::Dialogue => DIALOGUE_POSE,
+            BattleCamPhase::Dialogue => dialogue_pose(formation),
             BattleCamPhase::Submenu => actor.submenu_pose(),
             BattleCamPhase::Action => action_framing(actor, action),
             BattleCamPhase::Recover => recover_framing(actor, None, action, yaw, false),
@@ -1247,6 +1406,7 @@ impl BattleCamera {
             target: None,
             action,
             action_yaw: 0,
+            last_action_state: 0,
             shake: ShakeState {
                 seed: SHAKE_SEED,
                 ..Default::default()
@@ -1304,6 +1464,71 @@ impl BattleCamera {
         self.action = action;
     }
 
+    /// Observe the live action-SM state and apply the yaw counter's
+    /// per-action seeds on its edges - the `ctx[+0x6DA]` ladder in the module
+    /// doc:
+    ///
+    /// - `0x00` (round begin, `0x801E2B40`): `0`.
+    /// - The `0x0C` seed pass: `0x800` for every category (`0x801E2CF8`),
+    ///   and the Attack branch stores `0x200` **in the same pass** as it
+    ///   sets `ctx[7] = 0x14` (`0x801E2F18..0x801E2F20`). So the edge is
+    ///   "an action band was entered from the setup / done bands", not "the
+    ///   SM sat in `0x0C`" - a host's SM may run the seed pass and the band
+    ///   entry inside one tick (the engine's does: `0x0A -> 0x14` for a party
+    ///   attack, `0x00 -> 0x15` for a monster's), and the camera only sees
+    ///   the state at the tick boundary.
+    /// - `0x1E` with a party attacker: `(rand() % 2) * 0x800 + 0x280` and
+    ///   `ctx[+0xD] = 0`, which is `FUN_8004E13C`'s seed at the first
+    ///   swing-clip commit (`0x8004E288..0x8004E2B4`, gated on the clip
+    ///   header byte `+0x87 == 2`, the previous commit's not, and
+    ///   `ctx[+0x13] < 3`). The engine's animation player does not expose
+    ///   that header byte, so the edge into the strike loop - the state that
+    ///   stages the swing - stands in for the commit; the value and the
+    ///   party-only gate are retail's.
+    ///
+    /// A monster's attack therefore frames from the `0x200` base and a party
+    /// attack from `0x280` / `0xA80`, both drifting at the SM's rate
+    /// ([`Self::advance_to`]). Other categories keep the seed's `0x800`; an
+    /// attack-band entry from another action band (no seed pass between)
+    /// stores nothing, as retail's does not. The coin comes from the same
+    /// PsyQ `rand()` stream as the attack camera's column flip; retail draws
+    /// both from the process-wide generator, so no particular sequence is
+    /// being reproduced.
+    pub fn observe_action_state(&mut self, state: u8) {
+        let prev = self.last_action_state;
+        if state == prev {
+            return;
+        }
+        self.last_action_state = state;
+        if state == 0x00 {
+            self.action_yaw = 0;
+            return;
+        }
+        // The seed pass `0x0C` opens every category's band; `0x50` (Done)
+        // closes them. The Attack band is `0x14..=0x20`.
+        let in_action = |s: u8| (ACTION_SEED_STATE..ACTION_DONE_STATE).contains(&s);
+        let in_attack = |s: u8| (ATTACK_BAND_FIRST..=ATTACK_BAND_LAST).contains(&s);
+        // Came through the seed pass: from outside the action bands, or from
+        // the seed states themselves (`0x0C..0x14`).
+        let via_seed = !in_action(prev) || prev < ATTACK_BAND_FIRST;
+        if in_attack(state) && via_seed {
+            self.action_yaw = 0x200;
+        } else if in_action(state) && !in_action(prev) {
+            self.action_yaw = 0x800;
+        }
+        if state == STRIKE_LOOP_STATE && self.action.party_slot {
+            let coin = crate::battle_formulas::psyq_rand_step(&mut self.attack.seed) & 1;
+            self.action_yaw = i32::from(coin) * 0x800 + 0x280;
+            self.action.style = 0;
+        }
+    }
+
+    /// The live yaw counter `ctx[+0x6DA]` the in-fight framings subtract the
+    /// actor facing from (16-bit, free-running).
+    pub fn action_yaw_base(&self) -> i32 {
+        self.action_yaw
+    }
+
     /// Install `_DAT_8007B630`, the screen-shake amplitude.
     ///
     /// The **only** retail writer of that global is the field-VM opcode
@@ -1355,13 +1580,30 @@ impl BattleCamera {
 
     /// Case 7's framing for the live actor / target pair, on the live yaw
     /// counter and the live camera yaw (which its one-way unwrap reads).
+    ///
+    /// The "pull in" tweak (`0x801D6724..0x801D67BC`) is gated on
+    /// `_DAT_800846C0 == 0` and then, for a party seat, on the acting
+    /// actor's **live** anim id `+0x1D9` being `0x11` - the dynamic art-bank
+    /// slot the commit ladder materialises a staged id `>= 0x1A` into for a
+    /// party actor (`FUN_8004AD80` `0x8004B6E8..0x8004B76C`; the
+    /// `battle_melee_hit_spark` capture reads `+0x1D9 = 0x11` under the
+    /// latched `+0x1DB = 0x27`, mid-way into the pulled-in pose). The port's
+    /// actor keeps the raw staged id, so the same test is "the latched id is
+    /// the SpecialStarter or an art constant". A monster seat pulls in on
+    /// `ctx[+0x243] != 0` - the last committed clip's header byte - which the
+    /// engine does not carry, so a monster's two-shot never pulls in here.
     fn recover_pose(&self) -> BattleCamPose {
+        let pull_in = self.action.party_slot
+            && self
+                .attack
+                .actor
+                .is_some_and(|c| c.art_id >= crate::battle_attack_camera::FIRST_ART);
         recover_framing(
             self.actor,
             self.target,
             self.live_action_framing(),
             self.pose.yaw,
-            false,
+            pull_in,
         )
     }
 
@@ -1546,8 +1788,8 @@ impl BattleCamera {
             BattleCamPhase::Dialogue => {
                 // Retail never re-enters the dialogue close-up mid-battle;
                 // snap defensively.
-                self.pose = DIALOGUE_POSE;
-                from = DIALOGUE_POSE;
+                self.pose = dialogue_pose(self.formation);
+                from = self.pose;
             }
         }
         self.pose = from;
@@ -2276,7 +2518,20 @@ mod tests {
     fn dialogue_close_up_holds_static() {
         let mut cam = BattleCamera::new(BattleCamPhase::Dialogue, 0);
         steps(&mut cam, 120);
-        assert_eq!(cam.pose(), DIALOGUE_POSE);
+        assert_eq!(cam.pose(), dialogue_pose(None));
+        assert_eq!(cam.pose().focus, [0.0, 0.0, 800.0], "Tetsu's seat");
+        // With a formation the focus is the monster row's centre.
+        let cam = BattleCamera::new_with_formation(
+            BattleCamPhase::Dialogue,
+            Some(FormationBox {
+                min: [-600.0, -812.0],
+                max: [600.0, 813.0],
+            }),
+            0.0,
+            0,
+        );
+        assert_eq!(cam.pose().focus, [0.0, 0.0, 813.0]);
+        assert_eq!(cam.pose().tr, DIALOGUE_POSE.tr);
     }
 
     /// Dialogue dismiss reproduces the traced glide: pitch +6/step to 32,
@@ -2448,32 +2703,348 @@ mod tests {
         assert_eq!(phase_for(false, false, false), BattleCamPhase::Menu);
     }
 
-    /// Case 6's arm fork: `_DAT_8007BD71 == 0xFE` **and** a party slot takes
-    /// the party arm; either one false takes the fallback.
+    /// Case 6's arm fork: the battle-end signal `DAT_8007BD71 == 0xFE`
+    /// **and** a party slot take the battle-over arm; a running fight
+    /// (`0xFF`) takes the in-fight arm for party and monster alike.
     #[test]
     fn action_arm_fork_needs_both_conditions() {
         let f = ActionFraming::default();
-        assert!(f.takes_party_arm(), "the ordinary party attack");
+        assert!(
+            !f.takes_party_arm(),
+            "an ordinary party attack in a running fight is the in-fight arm"
+        );
+        let over = ActionFraming {
+            battle_over: true,
+            ..f
+        };
+        assert!(over.takes_party_arm(), "battle over, party seat");
         assert!(
             !ActionFraming {
                 party_slot: false,
-                ..f
+                ..over
             }
             .takes_party_arm(),
             "monster slot"
         );
+    }
+
+    /// **The in-fight arm, pinned against retail RAM.** Three PCSX-Redux
+    /// captures parked in `ctx[7] == 0x19` with Gaza (seat 3) acting read the
+    /// rotation / translation / focus trios directly; each is reproduced here
+    /// from the context bytes the same captures carry (`ctx[+0x6DA]`,
+    /// `ctx[+0x6D0]`, `ctx[+0xD]`, `actor[+0x46]`, `actor[+0x34/+0x38]`).
+    /// The live yaw trails the counter by the tween's lag, so the yaw is
+    /// checked against the counter the arm computes from, which is what the
+    /// walker converges on.
+    #[test]
+    fn in_fight_arm_reproduces_the_gaza_captures() {
+        // gaza2_park_0x19: rot (0, 1657), TR (0, 1280, 5324), focus (-433, 0,
+        // -291) stored negated; 6DA 4352, 6D0 3328, D 0, facing 2687.
+        let a = action_framing(
+            BattleCamActor {
+                facing: 2687,
+                world: [433.0, -410.0, 291.0],
+                height: None,
+            },
+            ActionFraming {
+                party_slot: false,
+                yaw_base: 4352,
+                depth_raw: 3328,
+                ..Default::default()
+            },
+        );
+        assert_eq!(a.pitch, 0.0);
+        assert_eq!(a.yaw, ((4352 - 2687) & 0xFFF) as f32);
+        assert_eq!(a.tr, [0.0, 1280.0, 5324.0]);
+        assert_eq!(a.focus, [433.0, 0.0, 291.0], "focus height is the floor");
+        // gaza2_park_0x19_summon_melee: rot (0, 1412), same TR, focus (785,
+        // 0, -39); 6DA 2476, facing 1056.
+        let b = action_framing(
+            BattleCamActor {
+                facing: 1056,
+                world: [-785.0, 0.0, 39.0],
+                height: None,
+            },
+            ActionFraming {
+                party_slot: false,
+                yaw_base: 2476,
+                depth_raw: 3328,
+                ..Default::default()
+            },
+        );
+        assert_eq!(b.yaw, 1420.0);
+        assert_eq!(b.focus, [-785.0, 0.0, 39.0]);
+        // gaza2_park_0x19_target_vahn: rot (128, 574), TR (0, 1024, 5324),
+        // focus (0, 0, -1490); 6DA 6726, D 2, facing 2048.
+        let c = action_framing(
+            BattleCamActor {
+                facing: 2048,
+                world: [0.0, 0.0, 1490.0],
+                height: None,
+            },
+            ActionFraming {
+                party_slot: false,
+                yaw_base: 6726,
+                depth_raw: 3328,
+                style: 2,
+                ..Default::default()
+            },
+        );
+        assert_eq!(c.pitch, 128.0);
+        assert_eq!(c.yaw, ((6726 - 2048) & 0xFFF) as f32);
+        assert_eq!(c.tr, [0.0, 1024.0, 5324.0]);
+        assert_eq!(c.focus, [0.0, 0.0, 1490.0]);
+    }
+
+    /// The reading this replaces put a party attacker through the
+    /// battle-over arm: eye `prescale(0x500)` = 2048 projection units behind
+    /// the actor, which parked the camera inside whichever combatant stood
+    /// there. A party seat in a running fight frames at the framed
+    /// monster's depth like everyone else, and the old value must not come
+    /// back.
+    #[test]
+    fn a_party_attack_in_a_running_fight_is_not_the_battle_over_close_up() {
+        let vahn = BattleCamActor {
+            facing: 0,
+            world: [0.0, 0.0, -800.0],
+            height: None,
+        };
+        let live = action_framing(
+            vahn,
+            ActionFraming {
+                yaw_base: 0x280,
+                depth_raw: 0xC00,
+                ..Default::default()
+            },
+        );
+        assert_eq!(
+            live.tr[2],
+            prescale_tr_z(0xC00),
+            "the framed monster's depth"
+        );
+        assert_ne!(live.tr[2], prescale_tr_z(ACTION_PARTY_TR_Z_RAW));
+        assert_eq!(live.tr[1], ACTION_TR_Y);
+        assert_eq!(
+            live.yaw, 0x280 as f32,
+            "counter minus facing, not 0x800 - facing"
+        );
+        // The same seat once the battle-end signal is up is the close-up.
+        let over = action_framing(
+            vahn,
+            ActionFraming {
+                battle_over: true,
+                ..Default::default()
+            },
+        );
+        assert_eq!(over.tr[2], prescale_tr_z(ACTION_PARTY_TR_Z_RAW));
+        assert_eq!(over.yaw, 0x800 as f32);
+    }
+
+    /// **The screen-space consequence, pinned through the retail projection.**
+    /// A party melee at the range retail's own mid-art capture measures
+    /// (`battle_melee_hit_spark`: attacker `(-21, 136)`, target `(-6, 405)`,
+    /// 270 apart) is filmed by the in-fight arm at the framed monster's
+    /// depth (`ctx[+0x6D0] = 0xC00` in that fight) from the party seed
+    /// `0x280`; both combatants must land inside the 320x240 frame, feet
+    /// and head. The arm the port shipped before - the battle-over arm with
+    /// its `prescale(0x500)` eye behind the attacker - puts the eye 968
+    /// projection units short of the target, whose body then spans more
+    /// than the whole frame ("223 of 240 scanlines covered, ndc.y = -1.63"
+    /// was the earlier measurement). The two arms are projected through the
+    /// same [`battle_vp`] so the assertion is on the picture, not the pose.
+    #[test]
+    fn a_party_melee_keeps_both_combatants_in_frame() {
+        // Retail party model height stand-in: ~200 stage units (the display
+        // trio reads `-215` for a seated party member's origin), Y-down.
+        const HEAD: f32 = -200.0;
+        let attacker = BattleCamActor {
+            facing: 0,
+            world: [0.0, 0.0, 530.0],
+            height: None,
+        };
+        let target = [0.0, 0.0, 800.0];
+        let live = action_framing(
+            attacker,
+            ActionFraming {
+                yaw_base: 0x280,
+                depth_raw: 0xC00,
+                ..Default::default()
+            },
+        );
+        // Actor draw class: the hosts compose `scale(4) * FLIP` under the
+        // camera (see `battle_vp_matches_the_handrolled_retail_projection`).
+        let scale4: [f32; 16] = [
+            4.0, 0.0, 0.0, 0.0, //
+            0.0, 4.0, 0.0, 0.0, //
+            0.0, 0.0, 4.0, 0.0, //
+            0.0, 0.0, 0.0, 1.0,
+        ];
+        let model = mat_mul(&scale4, &FLIP);
+        let vp = battle_vp(&live, 4.0, 4.0 / 3.0);
+        let inside = |v: [f32; 3]| -> (f32, f32) {
+            let (x, y) = project(&vp, &model, v).expect("in front of the eye");
+            assert!(
+                (0.0..=320.0).contains(&x) && (0.0..=240.0).contains(&y),
+                "{v:?} projects off-frame at ({x:.1}, {y:.1})"
+            );
+            (x, y)
+        };
+        let (_, a_feet) = inside(attacker.world);
+        let (_, a_head) = inside([attacker.world[0], HEAD, attacker.world[2]]);
+        let (_, t_feet) = inside(target);
+        let (_, t_head) = inside([target[0], HEAD, target[2]]);
+        assert!(a_head < a_feet && t_head < t_feet, "upright");
+        // Neither body dominates the frame: retail's mid-art frame shows both
+        // fighters at well under half the frame height.
+        assert!(a_feet - a_head < 120.0, "attacker {}", a_feet - a_head);
+        assert!(t_feet - t_head < 120.0, "target {}", t_feet - t_head);
+
+        // The arm the port used to take for the same swing.
+        let over = action_framing(
+            attacker,
+            ActionFraming {
+                battle_over: true,
+                ..Default::default()
+            },
+        );
+        let vp = battle_vp(&over, 4.0, 4.0 / 3.0);
+        let (_, t_feet) = project(&vp, &model, target).expect("target in front of the eye");
+        let t_head = project(&vp, &model, [target[0], HEAD, target[2]]).map(|p| p.1);
+        // Feet below the frame or head above it: the target's body spans
+        // more than the whole frame - the belly close-up.
+        let spans_frame = t_feet > 240.0 || t_head.is_none_or(|y| y < 0.0);
         assert!(
-            !ActionFraming {
-                flow_active: false,
-                ..f
-            }
-            .takes_party_arm(),
-            "flow SM not in its in-battle state"
+            spans_frame,
+            "the battle-over arm must reproduce the old close-up (feet {t_feet:.1}, head {t_head:?})"
         );
     }
 
-    /// The party arm frames from behind the actor at a constant depth, and
-    /// the height floor tilts the pitch instead of sinking the camera.
+    /// The yaw counter's per-action ladder, driven through the shared entry
+    /// on the action-state edges: round begin `0`, seed `0x800`, Attack entry
+    /// `0x200`, and a party attacker's strike loop `0x280` / `0xA80`. A
+    /// monster attacker keeps the `0x200` base through its own strike loop.
+    #[test]
+    fn the_yaw_counter_is_reseeded_on_the_action_state_edges() {
+        let mut slot: Option<BattleCamera> = None;
+        let mut frames = 0u64;
+        let mut feed = |slot: &mut Option<BattleCamera>, state: u8, party: bool| {
+            frames += 2;
+            drive(
+                slot,
+                true,
+                BattleCamInputs {
+                    phase: phase_for_state(false, false, state, DoneBandInputs::default()),
+                    acting: Some(BattleCamActor::default()),
+                    action: ActionFraming {
+                        party_slot: party,
+                        ..Default::default()
+                    },
+                    action_state: state,
+                    ..Default::default()
+                },
+                frames,
+                None,
+            );
+        };
+        // Retail's counter advances one unit per display frame, so each fed
+        // frame pair adds 2 on top of the seed (the creating frame elapses
+        // nothing).
+        feed(&mut slot, 0x00, true);
+        assert_eq!(slot.as_ref().unwrap().action_yaw_base(), 0, "round begin");
+        feed(&mut slot, 0x0C, true);
+        assert_eq!(slot.as_ref().unwrap().action_yaw_base(), 0x802);
+        feed(&mut slot, 0x14, true);
+        assert_eq!(slot.as_ref().unwrap().action_yaw_base(), 0x202);
+        feed(&mut slot, 0x16, true);
+        feed(&mut slot, 0x16, true);
+        assert_eq!(
+            slot.as_ref().unwrap().action_yaw_base(),
+            0x206,
+            "no edge, drift only"
+        );
+        feed(&mut slot, 0x1E, true);
+        let seeded = slot.as_ref().unwrap().action_yaw_base() - 2;
+        assert!(
+            seeded == 0x280 || seeded == 0xA80,
+            "party strike loop seeds 0x280 or 0xA80, got {seeded:#x}"
+        );
+        // A fresh camera, monster attacker: the strike loop leaves 0x200.
+        let mut monster: Option<BattleCamera> = None;
+        feed(&mut monster, 0x0C, false);
+        assert_eq!(monster.as_ref().unwrap().action_yaw_base(), 0x800);
+        feed(&mut monster, 0x14, false);
+        feed(&mut monster, 0x1E, false);
+        assert_eq!(monster.as_ref().unwrap().action_yaw_base(), 0x204);
+        // Round begin zeroes it again.
+        feed(&mut monster, 0x00, false);
+        assert_eq!(monster.as_ref().unwrap().action_yaw_base(), 2);
+    }
+
+    /// The seed pass and the band entry can land inside one host tick, so
+    /// the observer keys on **band entry**: a monster attack seen as
+    /// `0x00 -> 0x15` and a party attack seen as `0x5A -> 0x0A -> 0x14` both
+    /// land on the `0x200` base (the `0x801E2F20` store is in the `0x0C`
+    /// pass), a spell band entered the same way keeps `0x800`, and an
+    /// attack-band entry from another action band - no seed pass between -
+    /// stores nothing.
+    #[test]
+    fn the_yaw_counter_seeds_on_band_entry_when_states_are_skipped() {
+        let mut frames = 0u64;
+        let mut feed = |slot: &mut Option<BattleCamera>, state: u8, party: bool| {
+            frames += 2;
+            drive(
+                slot,
+                true,
+                BattleCamInputs {
+                    phase: phase_for_state(false, false, state, DoneBandInputs::default()),
+                    acting: Some(BattleCamActor::default()),
+                    action: ActionFraming {
+                        party_slot: party,
+                        ..Default::default()
+                    },
+                    action_state: state,
+                    ..Default::default()
+                },
+                frames,
+                None,
+            );
+        };
+        // Monster: the engine's SM runs `0x0A -> 0x0C -> 0x14` inside the
+        // tick, and the camera first sees the walk state.
+        let mut monster: Option<BattleCamera> = None;
+        feed(&mut monster, 0x00, false);
+        feed(&mut monster, 0x15, false);
+        assert_eq!(monster.as_ref().unwrap().action_yaw_base(), 0x202);
+        feed(&mut monster, 0x1E, false);
+        assert_eq!(
+            monster.as_ref().unwrap().action_yaw_base(),
+            0x204,
+            "monster: no coin"
+        );
+        // Party, overworld shape: `0x5A -> 0x0A -> 0x14`.
+        let mut party: Option<BattleCamera> = None;
+        feed(&mut party, 0x5A, true);
+        feed(&mut party, 0x0A, true);
+        assert_eq!(
+            party.as_ref().unwrap().action_yaw_base(),
+            // (the creating feed elapses nothing; the second adds 2)
+            2,
+            "setup band: untouched"
+        );
+        feed(&mut party, 0x14, true);
+        assert_eq!(party.as_ref().unwrap().action_yaw_base(), 0x202);
+        // A spell band entered from the setup band keeps the seed's 0x800.
+        let mut caster: Option<BattleCamera> = None;
+        feed(&mut caster, 0x0A, true);
+        feed(&mut caster, 0x28, true);
+        assert_eq!(caster.as_ref().unwrap().action_yaw_base(), 0x802);
+        // ... and crossing into the attack band from there is not a seed.
+        feed(&mut caster, 0x14, true);
+        assert_eq!(caster.as_ref().unwrap().action_yaw_base(), 0x804);
+    }
+
+    /// The battle-over arm frames from behind the actor at a constant depth,
+    /// and the height floor tilts the pitch instead of sinking the camera.
     #[test]
     fn party_action_arm_floors_the_height_and_tilts_the_pitch() {
         let ground = BattleCamActor {
@@ -2481,7 +3052,11 @@ mod tests {
             world: [100.0, 0.0, -800.0],
             height: None,
         };
-        let p = action_framing(ground, ActionFraming::default());
+        let over = ActionFraming {
+            battle_over: true,
+            ..Default::default()
+        };
+        let p = action_framing(ground, over);
         assert_eq!(p.yaw, (0x800 - 0x200) as f32, "0x800 - facing");
         assert_eq!(p.tr[0], 0.0);
         assert_eq!(p.tr[2], prescale_tr_z(ACTION_PARTY_TR_Z_RAW));
@@ -2497,12 +3072,12 @@ mod tests {
             world: [0.0, -200.0, 0.0],
             ..ground
         };
-        let q = action_framing(airborne, ActionFraming::default());
+        let q = action_framing(airborne, over);
         assert_eq!(q.tr[1], 1000.0, "-5 * -200");
         assert_eq!(q.pitch, 0.0, "clear of the floor, no compensation");
     }
 
-    /// The fallback arm is the one that reads `ctx[+0x6D0]` - the depth
+    /// The in-fight arm is the one that reads `ctx[+0x6D0]` - the depth
     /// `camera_height_for_frame` derives from the framed monster's size.
     #[test]
     fn fallback_action_arm_reads_the_computed_depth() {
@@ -2561,8 +3136,7 @@ mod tests {
     #[test]
     fn fallback_character_four_override_replaces_the_translation() {
         let f = ActionFraming {
-            flow_active: false, // party slot, but the flow SM is elsewhere
-            char_id: ACTION_OVERRIDE_CHAR_ID,
+            char_id: ACTION_OVERRIDE_CHAR_ID, // party slot, fight running
             depth_raw: 0x1400,
             style: 2,
             ..Default::default()
@@ -2611,11 +3185,29 @@ mod tests {
         let p = cam.framing_pose();
         assert_eq!(p.pitch, want.pitch);
         assert_eq!(p.tr, want.tr);
-        assert_eq!(p.yaw.rem_euclid(4096.0), want.yaw);
         assert_eq!(p.focus, want.focus);
+        // The in-fight arm's yaw is `ctx[+0x6DA] - facing`, and the counter
+        // advances one unit per display frame while the framing is re-armed
+        // every pass - so the yaw the glide lands on is the counter's value
+        // at the landing step (two frames per step), not the one it started
+        // from.
+        assert_eq!(cam.action_yaw_base(), 2 * ACTION_STEPS as i32);
+        assert_eq!(p.yaw.rem_euclid(4096.0), cam.action_yaw_base() as f32);
         // Held while the action runs - no idle orbit in the Action phase.
+        // Pitch, translation and focus stand still; the yaw keeps chasing
+        // the drifting counter (the three retail `0x19` parks read it eight
+        // units behind the counter, so the drift is retail's, not a
+        // settling residue).
         steps(&mut cam, 20);
-        assert_eq!(cam.framing_pose(), p);
+        let held = cam.framing_pose();
+        assert_eq!((held.pitch, held.tr, held.focus), (p.pitch, p.tr, p.focus));
+        // 20 steps = 40 counter units; the re-armed 6-step tween trails the
+        // moving target by a few units between its exact landings.
+        let drift = held.yaw.rem_euclid(4096.0) - p.yaw;
+        assert!(
+            (28.0..=40.0).contains(&drift),
+            "yaw chased the counter: {drift}"
+        );
         // End of action: back to the far framing over 7 steps.
         cam.set_phase(BattleCamPhase::Menu);
         steps(&mut cam, SWING_RETURN_STEPS as u64);
@@ -2624,7 +3216,7 @@ mod tests {
     }
 
     /// The action framing pulls in on the actor - the whole point of the
-    /// phase - and the fallback arm's depth is the one thing that can push
+    /// phase - and the in-fight arm's depth is the one thing that can push
     /// it back out again.
     #[test]
     fn action_framing_pulls_in_except_for_the_bulkiest_monsters() {
@@ -2655,11 +3247,9 @@ mod tests {
     /// than over raw bytes, so a state added to the SM lands on one side of
     /// the line deliberately.
     ///
-    /// The **Done band** is the load-bearing case: reading it as an action
-    /// leaves both hosts in the per-action close-up for an entire fight,
-    /// because it is the band a port battle *rests* in - retail bounds it
-    /// with the `ctx[+0x6D8]` tail timer, the port waits on the HP-bar
-    /// display cursor and has no bound at all.
+    /// The **Done band** is on the framed side: its arms re-arm case 6 / 8
+    /// every pass under the `ctx[+0x6D8]` tail timer, and the end-of-action
+    /// gate `0x5A` is where the far framing takes over.
     #[test]
     fn the_idle_states_leave_the_action_framing() {
         use crate::battle_action::ActionState;
@@ -2667,9 +3257,6 @@ mod tests {
             ActionState::Begin,
             ActionState::PreActionWait,
             ActionState::QueuedFromMenu,
-            ActionState::DoneCleanup,
-            ActionState::DoneFadeDown,
-            ActionState::DoneMultiCast,
             ActionState::EndOfAction,
             ActionState::RunBegin,
         ] {
@@ -2685,6 +3272,9 @@ mod tests {
             ActionState::AttackStrike,
             ActionState::MagicHitLoop,
             ActionState::SummonSustain,
+            ActionState::DoneCleanup,
+            ActionState::DoneFadeDown,
+            ActionState::DoneMultiCast,
         ] {
             assert!(
                 action_state_frames_the_action(s.as_byte()),
@@ -2697,7 +3287,7 @@ mod tests {
         }
     }
 
-    /// The fallback arm's yaw drifts with the action SM's own counter, so
+    /// The in-fight arm's yaw drifts with the action SM's own counter, so
     /// successive enemy actions do not all frame from the same angle.
     #[test]
     fn action_yaw_counter_drifts_one_unit_per_display_frame() {
@@ -2902,7 +3492,7 @@ mod tests {
             0,
             None,
         );
-        assert_eq!(slot.as_ref().unwrap().pose(), DIALOGUE_POSE);
+        assert_eq!(slot.as_ref().unwrap().pose(), dialogue_pose(None));
         let mut slot: Option<BattleCamera> = None;
         // Opening straight into a submenu still enters at the menu framing
         // and glides in (retail's loading pose resolves at the far framing).
@@ -3084,12 +3674,18 @@ mod tests {
     #[test]
     fn only_the_input_pickers_take_the_close_up() {
         assert_eq!(
-            phase_for_state(false, false, 0x5A),
+            phase_for_state(false, false, 0x5A, DoneBandInputs::default()),
             BattleCamPhase::Menu,
             "the command chooser is retail's case 9, not the case-0 close-up"
         );
-        assert_eq!(phase_for_state(false, true, 0x5A), BattleCamPhase::Submenu);
-        assert_eq!(phase_for_state(true, true, 0x5A), BattleCamPhase::Dialogue);
+        assert_eq!(
+            phase_for_state(false, true, 0x5A, DoneBandInputs::default()),
+            BattleCamPhase::Submenu
+        );
+        assert_eq!(
+            phase_for_state(true, true, 0x5A, DoneBandInputs::default()),
+            BattleCamPhase::Dialogue
+        );
     }
 
     /// **The resting yaw is the free-running orbit, not a captured
@@ -3168,27 +3764,136 @@ mod tests {
         );
     }
 
-    /// The two post-strike states hand the camera to case 7, and the Done
-    /// cleanup / idle hold to case 8 - `FUN_801E295C`'s own arms.
+    /// The two post-strike states hand the camera to case 7, the multi-cast
+    /// continuation / idle hold to case 8, and the Done-cleanup pair to
+    /// whichever case its category fork picks - `FUN_801E295C`'s own arms.
     #[test]
     fn the_post_strike_states_arm_the_two_shot() {
+        let none = DoneBandInputs::default();
         for s in RECOVER_STATES {
             assert_eq!(
-                phase_for_state(false, false, s),
+                phase_for_state(false, false, s, none),
                 BattleCamPhase::Recover,
                 "state 0x{s:02X} arms FUN_801D5854 case 7"
             );
         }
         for s in ACTION_END_STATES {
             assert_eq!(
-                phase_for_state(false, false, s),
+                phase_for_state(false, false, s, none),
                 BattleCamPhase::ActionEnd,
                 "state 0x{s:02X} arms FUN_801D5854 case 8"
             );
         }
-        // The Done fade-down stays idle - the port's residency there is
-        // unbounded where retail's is `ctx[+0x6D8] = 0x3C` frames.
-        assert_eq!(phase_for_state(false, false, 0x51), BattleCamPhase::Menu);
+        // The Done-cleanup pair: `0x801E5EA0..0x801E5EF4`'s ladder.
+        let attack = DoneBandInputs {
+            category: DONE_CATEGORY_ATTACK,
+            party_slot: true,
+            target_dead: false,
+        };
+        let run = DoneBandInputs {
+            category: DONE_CATEGORY_RUN,
+            ..attack
+        };
+        let monster_spell = DoneBandInputs {
+            category: 2,
+            party_slot: false,
+            target_dead: false,
+        };
+        let party_over_corpse = DoneBandInputs {
+            category: 1,
+            party_slot: true,
+            target_dead: true,
+        };
+        let monster_over_corpse = DoneBandInputs {
+            party_slot: false,
+            ..party_over_corpse
+        };
+        for s in DONE_STATES {
+            assert_eq!(
+                phase_for_state(false, false, s, attack),
+                BattleCamPhase::ActionEnd
+            );
+            assert_eq!(phase_for_state(false, false, s, run), BattleCamPhase::Menu);
+            assert_eq!(
+                phase_for_state(false, false, s, monster_spell),
+                BattleCamPhase::Action
+            );
+            assert_eq!(
+                phase_for_state(false, false, s, party_over_corpse),
+                BattleCamPhase::ActionEnd
+            );
+            assert_eq!(
+                phase_for_state(false, false, s, monster_over_corpse),
+                BattleCamPhase::Action,
+                "the dead-target arm is gated on ctx[+0x13] < 3"
+            );
+        }
+        // The far framing still owns the end-of-action gate.
+        assert_eq!(
+            phase_for_state(false, false, 0x5A, attack),
+            BattleCamPhase::Menu
+        );
+    }
+
+    /// **Capture pin for the Done band.** `zora_glare_petrify_post` is a
+    /// retail save parked in `ctx[7] == 0x51` after a monster's spell (slot
+    /// 3, `ctx[+0xD] = 0`, `ctx[+0x6D0] = 0xC00`, `ctx[+0x6DA] = 1966`,
+    /// Zora at `+0x34/+0x38 = (649, -47)` facing `3297`). Its camera trio
+    /// reads pitch `0`, yaw `2735`, `TR (0, 1275, 4820)`, focus the negated
+    /// `(624, 0, -40)` - a tween one step short of case 6's in-fight pose,
+    /// nowhere near the far framing (pitch `32`, `TR.z` sized to the
+    /// formation, focus at the bbox centre; the two share `TR.y = 0x500`).
+    /// The Done band with a non-attack category is therefore
+    /// case 6 over the caster, and this is the pose the port targets.
+    #[test]
+    fn a_monster_spell_done_tail_reads_the_zora_capture() {
+        let done = DoneBandInputs {
+            category: 2,
+            party_slot: false,
+            target_dead: false,
+        };
+        assert_eq!(
+            phase_for_state(false, false, 0x51, done),
+            BattleCamPhase::Action
+        );
+        let zora = BattleCamActor {
+            facing: 3297,
+            world: [649.0, 0.0, -47.0],
+            height: None,
+        };
+        let f = ActionFraming {
+            party_slot: false,
+            depth_raw: 0xC00,
+            yaw_base: 1966,
+            style: 0,
+            char_id: 0,
+            ..Default::default()
+        };
+        let pose = action_framing(zora, f);
+        assert_eq!(pose.pitch, 0.0);
+        assert_eq!(
+            pose.yaw,
+            ((1966 - 3297) & 0xFFF) as f32,
+            "2765, the live 2735 chasing it"
+        );
+        assert_eq!(pose.tr, [0.0, 0x500 as f32, prescale_tr_z(0xC00)]);
+        assert!(
+            (pose.tr[2] - 4915.0).abs() < 1.0,
+            "4820 in the capture, one step short"
+        );
+        assert_eq!(pose.focus, [649.0, 0.0, -47.0]);
+        // The far framing this band used to take is a different pose on
+        // every axis the capture reads.
+        let far = menu_framing(
+            Some(FormationBox {
+                min: [-829.0, -319.0],
+                max: [830.0, 319.0],
+            }),
+            2735.0,
+        );
+        assert_ne!(far.pitch, pose.pitch, "32 vs 0");
+        assert_ne!(far.tr[2], pose.tr[2], "formation-sized vs ctx[+0x6D0]");
+        assert_ne!(far.focus, pose.focus, "bbox centre vs the caster");
     }
 
     /// **Case 7 orbits the midpoint, and that is what keeps both combatants
@@ -3275,18 +3980,16 @@ mod tests {
     }
 
     /// The action framing owns the camera **per band**, and the Done band is
-    /// not one of them.
+    /// one of them.
     ///
     /// The band boundaries are `FUN_801E295C`'s own (see
-    /// [`action_state_frames_the_action`]). What this pins is the one place
-    /// the port classifies differently: `DoneFadeDown` (`0x51`) is retail's
-    /// bounded action tail (`ctx[+0x6D8]`, seeded `0x3C` at `0x50`), and the
-    /// port's is bounded too - but it still owns about half of a fight's
-    /// frames, so classifying it as "an action is executing" hands it the
-    /// per-action close-up for half the battle.
+    /// [`action_state_frames_the_action`]). `DoneFadeDown` (`0x51`) is
+    /// retail's bounded action tail (`ctx[+0x6D8]`, seeded `0x3C` at `0x50`),
+    /// re-armed on case 6 / 8 every pass; the far framing takes over at the
+    /// end-of-action gate `0x5A`, not before.
     #[test]
-    fn the_done_band_does_not_own_the_action_framing() {
-        for idle in [0x00u8, 0x0A, 0x0B, 0x50, 0x51, 0x52, 0x5A, 0xFD, 0xFE, 0xFF] {
+    fn the_done_band_owns_the_action_framing_until_end_of_action() {
+        for idle in [0x00u8, 0x0A, 0x0B, 0x5A, 0xFD, 0xFE, 0xFF] {
             assert!(
                 !action_state_frames_the_action(idle),
                 "state 0x{idle:02X} is idle - the far framing owns it"
@@ -3301,7 +4004,8 @@ mod tests {
         // The action bands DO own it - the seed arm and every attack state
         // re-arm case 6 (`0x801E6464`, `0x801E32E4`).
         for act in [
-            0x0Cu8, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1E, 0x1F, 0x28, 0x3C, 0x46,
+            0x0Cu8, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1E, 0x1F, 0x28, 0x3C, 0x46, 0x50, 0x51,
+            0x52,
         ] {
             assert!(
                 action_state_frames_the_action(act),
@@ -3310,21 +4014,23 @@ mod tests {
         }
     }
 
-    /// **The residency law the phase script exists to satisfy.** A fight
-    /// whose action SM walks a real state sequence must spend a real share
-    /// of its frames in the far framing - that is where the whole formation
-    /// is on screen and where the idle orbit lives.
+    /// **The residency law the phase script exists to satisfy.** A turn's
+    /// Done tail is filmed by the per-action framing (case 8 for an attack)
+    /// and hands back to the far framing at the end-of-action gate, where the
+    /// formation is on screen and the idle orbit lives.
     ///
     /// The sequence below is a measured `--no-player-battle` turn from the
-    /// native play-window (`LEGAIA_DIAG_BATCAM`): seed, the attack band,
-    /// then the long `DoneFadeDown` settle before the next actor's `Begin`.
-    /// Classifying that settle as an action left the far framing owning
-    /// **one frame of 274** across the whole fight; the band model gives it
-    /// the majority.
+    /// native play-window (`LEGAIA_DIAG_BATCAM`): seed, the attack band, the
+    /// `DoneFadeDown` tail, then `0x5A` and the next `Begin`. An earlier
+    /// reading kept the tail on the far framing so that it owned most of the
+    /// fight's frames; retail's `0x51` arm re-arms case 6 / 8 every pass
+    /// (`0x801E5FC0..0x801E6018`), and with the in-fight arm right that is a
+    /// two-shot, not a close-up. What must hold: no tail frame is on the far
+    /// framing, and every frame from `0x5A` on is.
     #[test]
-    fn a_real_turn_spends_most_of_its_frames_in_the_far_framing() {
+    fn a_real_turn_films_its_done_tail_and_hands_back_at_end_of_action() {
         // (state byte, display frames spent there) - one measured turn.
-        let turn: [(u8, u32); 8] = [
+        let turn: [(u8, u32); 10] = [
             (0x00, 2),  // Begin
             (0x0C, 1),  // ActionSeed
             (0x14, 1),  // AttackFace
@@ -3332,11 +4038,18 @@ mod tests {
             (0x17, 1),  // AttackCloseRange
             (0x18, 1),  // AttackStrike
             (0x1E, 2),  // AttackChain
-            (0x51, 48), // DoneFadeDown - the port's unbounded settle
+            (0x50, 1),  // DoneCleanup
+            (0x51, 48), // DoneFadeDown - the bounded settle
+            (0x5A, 2),  // EndOfAction
         ];
+        let done = DoneBandInputs {
+            category: DONE_CATEGORY_ATTACK,
+            party_slot: true,
+            target_dead: false,
+        };
         let mut slot: Option<BattleCamera> = None;
         let mut frames = 0u64;
-        let (mut far, mut total) = (0u32, 0u32);
+        let (mut tail_far, mut tail, mut gate_far, mut gate) = (0u32, 0u32, 0u32, 0u32);
         for _round in 0..2 {
             for (state, dwell) in turn {
                 for _ in 0..dwell {
@@ -3344,24 +4057,38 @@ mod tests {
                     let inputs = BattleCamInputs {
                         target: None,
                         entry_yaw: 0.0,
-                        phase: phase_for(false, false, action_state_frames_the_action(state)),
+                        phase: phase_for_state(false, false, state, done),
                         acting: Some(BattleCamActor::default()),
                         formation: Some(traced_formation()),
                         action: ActionFraming::default(),
                         shake_amplitude: 0,
                         attack: None,
+                        action_state: state,
                     };
                     drive(&mut slot, true, inputs, frames, None);
-                    total += 1;
-                    if slot.as_ref().map(|c| c.phase()) == Some(BattleCamPhase::Menu) {
-                        far += 1;
+                    let far = slot.as_ref().map(|c| c.phase()) == Some(BattleCamPhase::Menu);
+                    if DONE_STATES.contains(&state) {
+                        tail += 1;
+                        tail_far += u32::from(far);
+                    } else if state == 0x5A || state == 0x00 {
+                        gate += 1;
+                        gate_far += u32::from(far);
                     }
                 }
             }
         }
-        assert!(
-            far * 2 > total,
-            "far framing owned {far} of {total} frames - the fight is a permanent close-up"
+        assert_eq!(
+            tail_far, 0,
+            "the Done tail is a per-action framing ({tail} frames)"
+        );
+        assert_eq!(
+            gate_far, gate,
+            "end of action and Begin are the far framing"
+        );
+        assert_eq!(
+            slot.as_ref().unwrap().phase(),
+            BattleCamPhase::Menu,
+            "the round closes on the far framing"
         );
     }
 

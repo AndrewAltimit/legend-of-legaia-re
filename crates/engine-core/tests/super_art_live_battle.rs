@@ -3,28 +3,30 @@
 //!
 //! Drives the same `World::tick` path the windowed app uses: walk into a
 //! battle, navigate the command menu to Arts, and *type* Vahn's Tri-Somersault
-//! combo (Somersault → Cyclone → Somersault = Up Down Up) into the retail
-//! per-press Arts command input. Three presses is also the AP pool's own end
-//! at the disc-free fallback (100 AP, favored-class cost 0x1E), so the entry
-//! auto-ends on the third press exactly like retail's `0x50 -> 0x5A` edge -
-//! no confirm involved.
+//! input (`↑↓↑↑↑↓↑` - Somersault `↑↓↑`, Cyclone `↓↑↑↑` and Somersault again,
+//! sharing arrows) into the retail per-press Arts command input. Seven presses
+//! is also the AP pool's own end (100 AP at the disc-free fallback, swing
+//! costs seeded at 14), so the entry auto-ends on the seventh press exactly
+//! like retail's `0x50 -> 0x5A` edge - no confirm involved.
 //!
-//! What proves the Super fired is the **shout cue's action constant**: the
-//! Super path keys the cue on the combo's finisher (`0x2B`, Tri-Somersault's
-//! `replace` tail), while three unrecognized-as-a-Super Somersaults would key
-//! three cues on `0x27`. The test then asserts the entry deals damage and
-//! resolves the battle. Disc-free; runs in CI.
+//! What proves the Super fired is the **shout cue list**: the byte-exact
+//! queue-builder tokenizes the input to the find row `19 27 0F 19 1F 0E 19 27`
+//! and the tail-replace rewrites its closing `19 27` to `1A 2B 2B 2B`, so the
+//! constants the queue stages - one shout each - read `27 1F 2B 2B 2B`;
+//! without the Super match the same seven presses would close on a third
+//! `0x27`. The test then asserts the entry deals damage and resolves the
+//! battle. Disc-free; runs in CI.
 
 use legaia_engine_core::arts_command_input::ArtsInputScreen;
 use legaia_engine_core::input::{InputState, PadButton};
 use legaia_engine_core::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
 use legaia_engine_core::world::{Actor, SceneMode, World};
 
-fn stage_vahn_art(w: &mut World, byte: u8, cmd: legaia_art::Command, strikes: usize) {
+fn stage_vahn_art(w: &mut World, byte: u8, cmds: &[legaia_art::Command], strikes: usize) {
     let action = legaia_art::ActionConstant::from_byte(byte).unwrap();
     let rec = legaia_art::ArtRecord {
         action,
-        commands: vec![cmd],
+        commands: cmds.to_vec(),
         anim_index: 0,
         anim_extra: vec![],
         name: None,
@@ -48,6 +50,9 @@ fn build_world() -> World {
         w.actors.push(Actor::default());
     }
     w.party_count = 3;
+    // The zeroed records seed HP 0 / no seat, so they go in FIRST: retail's
+    // member walk (`FUN_801DB81C`) hands no ring to a member with no HP.
+    w.load_party(legaia_save::Party::zeroed(3));
     for i in 0..3 {
         w.actors[i].active = true;
         w.actors[i].battle.hp = 100;
@@ -55,14 +60,27 @@ fn build_world() -> World {
         w.actors[i].battle.liveness = 1;
         w.set_battle_attack(i as u8, 90);
     }
-    w.load_party(legaia_save::Party::zeroed(3));
     w.set_formation_table(vanilla_formation_table(), vanilla_monster_catalog());
 
     // Vahn's Tri-Somersault = Somersault (Art27) -> Cyclone (Art1F) ->
-    // Somersault (Art27). Give each component art a one-direction command so a
-    // flat Up-Down-Up entry recognizes the sequence.
-    stage_vahn_art(&mut w, 0x27, legaia_art::Command::Up, 2);
-    stage_vahn_art(&mut w, 0x1F, legaia_art::Command::Down, 1);
+    // Somersault (Art27), with the component arts' REAL command strings
+    // (Somersault `↑↓↑`, Cyclone `↓↑↑↑`): the queue-builder is byte-exact,
+    // and only the retail input `↑↓↑↑↑↓↑` tokenizes to the Super's find row
+    // `19 27 0F 19 1F 0E 19 27` (`legaia_art::tokenize`).
+    {
+        use legaia_art::Command::{Down, Up};
+        stage_vahn_art(&mut w, 0x27, &[Up, Down, Up], 2);
+        stage_vahn_art(&mut w, 0x1F, &[Down, Up, Up, Up], 1);
+    }
+    // A Super's find row is written with `0x19` starters, and the builder
+    // writes `0x1A` over the starter of an art this very performance learns
+    // (`FUN_801EFBFC` verdict 2), so the component arts must already be
+    // known - retail's own "no NEW arts in a Super" rule.
+    w.tactical_arts.mark_known(0, 0x27);
+    w.tactical_arts.mark_known(0, 0x1F);
+    // Seven presses on the disc-free 100-AP pool: 14 each spends 98, the
+    // eighth is unaffordable and the entry ends by itself.
+    w.battle_swing_costs[0] = [14; 4];
 
     w.player_actor_slot = Some(0);
     w.actors[0].move_state.world_x = 300;
@@ -118,7 +136,17 @@ fn live_arts_input_types_and_fires_a_super() {
     // --- Drive command -> Arts -> type Up Down Up -> Begin -> target. ---
     // Edge-triggered: emit a button only on alternate "press" frames, choosing
     // it from the live session state so navigation is deterministic.
-    let combo = [PadButton::Up, PadButton::Down, PadButton::Up];
+    // The retail Tri-Somersault input (walkthrough string, capture-pinned
+    // queue `0F 0E 19 27 0F 19 1F 0E 1A 2B 2B 2B` after the replacement).
+    let combo = [
+        PadButton::Up,
+        PadButton::Down,
+        PadButton::Up,
+        PadButton::Up,
+        PadButton::Up,
+        PadButton::Down,
+        PadButton::Up,
+    ];
     let mut next_dir = 0usize;
     let mut press = true;
     let mut opened_input = false;
@@ -201,21 +229,23 @@ fn live_arts_input_types_and_fires_a_super() {
     );
     assert!(
         auto_ended_without_confirm,
-        "three presses spend the pool, so the entry ends by itself"
+        "seven presses spend the pool, so the entry ends by itself"
     );
     assert_eq!(arts_turns, 1, "exactly one arts entry was driven");
-    // The Super replaced the recognized art tail: one cue keyed on the combo's
-    // finisher constant. Without the Super match the same three directions
-    // would perform three plain Somersaults and queue three `0x27` cues.
+    // The Super replaced the recognized tail: the queue's art constants are
+    // the replace row's - the leading Somersault and Cyclone survive as the
+    // find prefix, the closing `19 27` is rewritten to `1A 2B 2B 2B` - and
+    // the shout list is one cue per art constant the queue stages, exactly
+    // as the materialiser is called once per commit. Without the Super
+    // match the same seven directions would end on a third `0x27`.
     assert_eq!(
-        shouts.len(),
-        1,
-        "a Super replacement is one performed finisher: {shouts:?}"
+        shouts.iter().map(|s| s.action).collect::<Vec<_>>(),
+        vec![0x27, 0x1F, 0x2B, 0x2B, 0x2B],
+        "the replaced queue's constants, Tri-Somersault x3 closing: {shouts:?}"
     );
-    assert_eq!(shouts[0].cslot, 0, "Vahn = character slot 0 (XA2 bank)");
-    assert_eq!(
-        shouts[0].action, 0x2B,
-        "Tri-Somersault's finisher constant, not a component art's"
+    assert!(
+        shouts.iter().all(|s| s.cslot == 0),
+        "Vahn = character slot 0 (XA2 bank)"
     );
     assert!(
         resolved,

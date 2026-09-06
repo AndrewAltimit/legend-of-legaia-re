@@ -105,6 +105,121 @@ impl World {
         self.battle_tutorial_boxes.front()
     }
 
+    /// Every box on screen this frame: the **front group** of the queue.
+    ///
+    /// One retail hook dispatch registers all of its boxes at once - the
+    /// lesson intro at the top and its explainer at the bottom share the
+    /// frame at `Begin | Run` - and each is its own text actor, so a host
+    /// draws the whole group, not the queue's head. A later dispatch's boxes
+    /// wait behind the group until it has been dismissed.
+    pub fn battle_tutorial_boxes_on_screen(&self) -> impl Iterator<Item = &ActiveTutorialBox> + '_ {
+        let group = self.battle_tutorial_boxes.front().map(|b| b.group);
+        self.battle_tutorial_boxes
+            .iter()
+            .take_while(move |b| Some(b.group) == group)
+    }
+
+    /// The next free dispatch group id for the box queue.
+    pub(in crate::world) fn next_battle_tutorial_group(&self) -> u32 {
+        self.battle_tutorial_boxes
+            .back()
+            .map_or(0, |b| b.group.wrapping_add(1))
+    }
+
+    /// The sparring fight's opening caption - the SCUS battle side-band
+    /// tick's stage-1 arm (`FUN_80056208`), which the flow SM's round start
+    /// waits behind.
+    ///
+    /// Retail keys the arm on the stage-1 phase byte `ctx[+0x289]`:
+    ///
+    /// ```text
+    /// 800562c8  lbu  v1,0x6(a2)          ; phase 0: wait for ctx[+0x06] == 0x14
+    /// 800562d0  bne  v1,v0,...           ;   (the round-start state the 0x0B timer stores)
+    /// 800562e8  sb   v0,0x289(a2)        ; phase = 1
+    /// 800562f8  sh   v0,0x6ae(a2)        ; hold timer = 0xB40 (drains 8 per frame)
+    /// 80056318  addiu v0,v0,-0x734c      ; the caption string (SCUS 0x80078CB4)
+    /// 80056320  _sw  v0,0x7494(v1)       ; -> the HUD caption pointer _DAT_80077494
+    /// 8005631c  jal  0x801d8de8          ; raise HUD element 0x5A
+    /// 80056360  jal  0x801d829c          ; aim the camera at the first monster seat
+    /// 80056370  ...                      ; phase 1: timer -= 8/frame, ANY pad press zeroes it
+    /// 80056400  sh   s0,0x6ae(v1)        ;   expired -> phase = 2 (the overlay-967 hook runs)
+    /// 800565c4  sh   s0,0x6b0(v0)        ; ctx[+0x6B0] = 1 through phases 0..1
+    /// ```
+    ///
+    /// `ctx[+0x6B0] != 0` is what parks the flow SM: `FUN_801D0748` tests it
+    /// at `0x801D0BDC` and returns before its state switch, so the `0x14`
+    /// arm - the actor sweep, the initiative seed, `Begin | Run` - does not
+    /// run until the caption has gone. Phase `2` is the only phase that
+    /// ticks the prompt machine (`jal 0x801f6b70` at `0x80056418`).
+    ///
+    /// The engine's box queue is the caption's carrier (both hosts already
+    /// draw it, framed and text-measured), placed by the retail frame: the
+    /// caption sits centred at the bottom anchor `0xCC`, which is the
+    /// emitter's style `9` corner. Returns `true` when the round start has
+    /// to wait; [`Self::tick_battle_tutorial_boxes`] advances the phase to
+    /// `2` when the caption is dismissed and opens the round then.
+    ///
+    /// A world with no caption text (no disc) skips the hold outright rather
+    /// than showing an empty window.
+    ///
+    /// PORT: FUN_80056208 (stage-1 arm; phases 0 and 1)
+    pub(in crate::world) fn raise_sparring_caption_if_due(&mut self) -> bool {
+        use crate::battle_tutorial::{SPARRING_CAPTION_FRAMES, SPARRING_CAPTION_STYLE};
+        if self.battle_tutorial.is_none() || self.battle_sparring_phase != 0 {
+            return false;
+        }
+        let Some(text) = self
+            .battle_ui_strings
+            .get(legaia_asset::battle_ui_strings::BattleUiLabel::SparringIntro)
+            .map(str::to_string)
+        else {
+            self.battle_sparring_phase = 2;
+            return false;
+        };
+        self.battle_sparring_phase = 1;
+        let group = self.next_battle_tutorial_group();
+        self.battle_tutorial_boxes.push_back(ActiveTutorialBox {
+            text,
+            style: SPARRING_CAPTION_STYLE,
+            waits_for_input: false,
+            frames_remaining: SPARRING_CAPTION_FRAMES,
+            group,
+            any_press_dismisses: true,
+        });
+        true
+    }
+
+    /// Replay the one-shot system-flag arm the record that enters formation
+    /// row `formation_id` raises before its `3E FF <row>` battle-entry op,
+    /// for a direct entry into that row (`--battle <row>`), which runs the
+    /// entry without the record.
+    ///
+    /// The disc-side condition is the pairing itself: the scene's own
+    /// field-VM script carries a `SET` of
+    /// [`crate::battle_tutorial::TUTORIAL_ARM_FLAG`] within a few coherently
+    /// decoded ops of a `3E FF` that enters `formation_id`
+    /// ([`Self::scene_battle_entry_arms`], read off the MAN at carrier
+    /// install; the shape is [`crate::man_field_scripts::BattleEntryArm`]).
+    /// A disc-wide census finds that SET in exactly one record - town01's
+    /// sparring record, `50 19` three ops before its `3E FF 04` - so this
+    /// raises the flag for the Tetsu fight and for nothing else. Returns
+    /// `true` when it armed.
+    ///
+    /// The faithful path needs none of this: the field VM executing the
+    /// record raises the flag itself ([`Self::take_battle_tutorial_arm`]).
+    pub fn replay_scripted_battle_arm(&mut self, formation_id: u16) -> bool {
+        use crate::battle_tutorial::TUTORIAL_ARM_FLAG;
+        let armed = self
+            .scene_battle_entry_arms
+            .iter()
+            .any(|a| a.flag == TUTORIAL_ARM_FLAG && u16::from(a.row) == formation_id);
+        if !armed {
+            return false;
+        }
+        self.system_flag_set(TUTORIAL_ARM_FLAG);
+        true
+    }
+
     /// The lesson the sparring fight is currently teaching, when armed.
     pub fn battle_tutorial_lesson(&self) -> Option<TutorialLesson> {
         self.battle_tutorial.as_ref().map(BattleTutorial::lesson)
@@ -113,24 +228,61 @@ impl World {
     /// Age the box queue one frame. Returns `true` when a box is (still) up and
     /// the battle loop must park.
     ///
-    /// A waiting box (styles `2..=7`) dismisses on Cross; a non-waiting box
-    /// (`0`, `1`, `8`, `9`) counts itself down, and Cross skips it early so the
-    /// player is never made to sit through a burst of them.
+    /// The whole front group ages together (one dispatch's boxes are on
+    /// screen at once - [`Self::battle_tutorial_boxes_on_screen`]). Inside
+    /// it, a waiting box (styles `2..=7`) dismisses on Cross; a non-waiting
+    /// box (`0`, `1`, `8`, `9`) counts itself down, and Cross skips it early
+    /// so the player is never made to sit through a burst of them. The
+    /// sparring caption is the one box any pad press dismisses - retail's
+    /// `FUN_80056208` phase-1 test is on the whole packed pad word.
+    ///
+    /// When the caption goes, the side-band phase advances to `2` and the
+    /// round it was holding back opens (retail: `ctx[+0x6B0]` drops and the
+    /// flow SM's `0x14` arm finally runs).
     pub(in crate::world) fn tick_battle_tutorial_boxes(&mut self) -> bool {
         use crate::input::PadButton;
 
-        let Some(front) = self.battle_tutorial_boxes.front_mut() else {
+        let Some(group) = self.battle_tutorial_boxes.front().map(|b| b.group) else {
             return false;
         };
         let confirm = self.input.just_pressed(PadButton::Cross);
-        let done = if front.waits_for_input {
-            confirm
-        } else {
-            front.frames_remaining = front.frames_remaining.saturating_sub(1);
-            confirm || front.frames_remaining == 0
+        let any_press = self.input.pad() & !self.input.pad_prev() != 0;
+        for b in self
+            .battle_tutorial_boxes
+            .iter_mut()
+            .take_while(|b| b.group == group)
+        {
+            if !b.waits_for_input {
+                b.frames_remaining = b.frames_remaining.saturating_sub(1);
+            }
+        }
+        let done = |b: &ActiveTutorialBox| {
+            if b.waits_for_input {
+                confirm
+            } else {
+                confirm || (b.any_press_dismisses && any_press) || b.frames_remaining == 0
+            }
         };
-        if done {
-            self.battle_tutorial_boxes.pop_front();
+        // Drop the finished members of the front group only; the ones behind
+        // it are a later dispatch and keep their frames.
+        let keep_from = self
+            .battle_tutorial_boxes
+            .iter()
+            .position(|b| b.group != group)
+            .unwrap_or(self.battle_tutorial_boxes.len());
+        let mut i = 0;
+        let mut end = keep_from;
+        while i < end {
+            if done(&self.battle_tutorial_boxes[i]) {
+                self.battle_tutorial_boxes.remove(i);
+                end -= 1;
+            } else {
+                i += 1;
+            }
+        }
+        if self.battle_sparring_phase == 1 && self.battle_tutorial_boxes.is_empty() {
+            self.battle_sparring_phase = 2;
+            self.begin_battle_round();
         }
         true
     }
@@ -170,6 +322,8 @@ impl World {
         };
         let tick = tut.tick(state.raw());
         let rewind = tick.emission.rewind;
+        // One dispatch = one group: its boxes share the frame.
+        let group = self.next_battle_tutorial_group();
         for b in &tick.emission.boxes {
             let Some(text) = self.battle_tutorial_script.text(b.message) else {
                 // No disc text for this VA - skip it rather than showing a
@@ -182,6 +336,8 @@ impl World {
                 style: b.style,
                 waits_for_input,
                 frames_remaining: TUTORIAL_BOX_AUTO_FRAMES,
+                group,
+                any_press_dismisses: false,
             });
         }
         let over = tick.battle_over;

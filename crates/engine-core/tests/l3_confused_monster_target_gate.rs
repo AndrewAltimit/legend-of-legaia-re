@@ -84,6 +84,17 @@ fn armed_actions(w: &mut World, slot: u8, frames: usize) -> Vec<(u8, u8)> {
         if w.mode != SceneMode::Battle {
             break;
         }
+        // Sample only while the action SM is executing this slot's turn. The
+        // round-start sweep (`FUN_801D88CC`, loop B) parks every party slot
+        // on category 0 between rounds, its target left where the last turn
+        // put it - retail's idle, not an armed action, and not the retarget
+        // arm this measures.
+        if w.battle_ctx.active_actor != slot
+            || w.battle_ctx.action_state
+                == legaia_engine_vm::battle_action::ActionState::EndOfAction.as_byte()
+        {
+            continue;
+        }
         let a = &w.actors[slot as usize];
         let rec = (a.battle.action_category, a.battle.active_target);
         // Skip the pre-turn idle: category 0 targeting slot 0 is the state a
@@ -336,11 +347,21 @@ fn a_confused_party_member_is_flipped_the_other_way() {
                 any = true;
             }
         }
-        assert!(
-            w.battle_command.is_none(),
-            "seed {seed:#x}: a fully confused party must never be handed the \
-             command menu"
-        );
+        // Every round start ticks the status durations (retail `FUN_801E752C`
+        // from `0x14`), so a confusion can wear off inside the sampling
+        // window and the cured member owes the next round a command. The menu
+        // is off-limits only while the member holds the status.
+        if let Some(session) = w.battle_command.as_ref() {
+            let still_confused = w
+                .status_effects
+                .statuses(session.actor)
+                .iter()
+                .any(|s| s.kind == StatusKind::Confuse);
+            assert!(
+                !still_confused,
+                "seed {seed:#x}: a still-confused member was handed the command menu"
+            );
+        }
     }
     assert!(
         any,

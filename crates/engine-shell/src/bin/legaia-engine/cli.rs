@@ -915,13 +915,14 @@ pub(crate) enum Cmd {
         /// moving NPC's collision box follows its live position).
         #[arg(long, default_value_t = false)]
         live_npcs: bool,
-        /// Route live basic-attack damage through the retail damage finisher
-        /// (`FUN_801ddb30`): adds the 9999 cap and the rand-based no-damage
-        /// floor on top of the raw roll. Off by default (flat path, 0xFFFF cap,
-        /// min-floor 1). Equipment resistance / guard aren't modelled yet, so
-        /// only the cap + floor stages contribute today.
+        /// Skip the retail damage finisher (`FUN_801ddb30`) on live
+        /// basic-attack damage. Retail always runs it - the party defender's
+        /// equipment elemental-resistance ladder, the `rand()%9+8` floor on
+        /// a hit mitigation zeroed, the 9999 cap - so the finisher is the
+        /// default; this flag keeps the flat pre-finisher path (min-floor 1,
+        /// no resistance ladder) for A/B comparison.
         #[arg(long, default_value_t = false)]
-        damage_finish: bool,
+        no_damage_finish: bool,
         /// BGM id to cross-fade to when a live-loop encounter starts; the
         /// field track resumes when the battle ends. Routed through the same
         /// BGM director as field op-`0x35` starts: scene-local ids resolve

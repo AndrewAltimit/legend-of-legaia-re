@@ -325,6 +325,201 @@ pub fn value_cells(value: u16, centre_x: i32, start_y: i32, age: u16) -> Vec<Val
         .collect()
 }
 
+// ---------------------------------------------------------------------------
+// The combo cluster - `N HIT` / `TOTAL x` and `DAMAGE x`
+// ---------------------------------------------------------------------------
+//
+// The right-hand counter cluster a landed action puts up, read out of two
+// retail display lists (a RAM image is the frame's packet stream):
+//
+// * `player_steal_skeleton_banner` (the frame after Vahn's art chain
+//   resolves): `7703/0027` quads at `(240..263, 142..165)` - the 24x24 hit
+//   count `5`, right edge 264; `(272..303, 152..167)` - the 32x16 `HIT`
+//   label; `(216..263, 170..185)` - the 48x16 `TOTAL` label; and two 16x16
+//   digit cells `7` / `2` at `(272, 168)` and `(288, 168)`.
+// * `battle_gimard_tail_fire_a` (a monster cast mid-flight): the 56x16
+//   `DAMAGE` label at `(208..263, 170..185)` and the same two 16x16 digit
+//   seats carrying `16`.
+// * `battle_melee_hit_spark` (mid-chain): the same `HIT`/`TOTAL` cluster
+//   with every packet 40 px to the right - the cluster is mid-glide.
+//
+// So the value row is one law for both styles: 16x16 cells, 16-px pitch,
+// ending at x = 304 (two captures, both two digits - a longer value's
+// alignment is inferred from the label's fixed seat). The hit count is a
+// separate 24x24 run ending at x = 264 on row 142. The physical attack band
+// gets `HIT` + `TOTAL`; a cast gets `DAMAGE` alone.
+//
+// The glide is retail's own and it is pinned, not chosen. The cluster hangs
+// off screen-element placement record 80 (`0x80076C10 + 80 * 0x18`: seat A
+// `(328, 170)`, seat B `(168, 170)`), opened at mode 0 - spawn at A, glide to
+// B - and closed in the action SM's `0x51` band (`FUN_801D8DE8(0x50, 1)` at
+// `0x801E6360`, gated on the damage finisher's `_DAT_8007BD14`). The glide
+// stepper `FUN_801D9BBC` walks `ctx[+0x11B4 + slot * 0xC]`: `[total][elapsed]
+// .. [target x][target y][start x][start y]`, position = start + (target -
+// start) * elapsed / total, snapping on arrival. `battle_melee_hit_spark`
+// carries that record live: total `0x10`, elapsed `0x0C`, start `(328, 168)`,
+// target `(168, 168)`, and the handle at `x = 208` - which is exactly the
+// `+40` every packet of the cluster shows. So the cluster slides 160 px in
+// over 16 frames, linearly, and every label / cell seat below is measured
+// against the settled anchor `(168, 168)`.
+
+/// Right edge the hit-count cells end at (the 24x24 run on row
+/// [`COMBO_COUNT_Y`]).
+pub const COMBO_COUNT_RIGHT_X: i32 = 264;
+/// Top row of the hit-count cells.
+pub const COMBO_COUNT_Y: i32 = 142;
+/// Screen seat of the `HIT` label (32x16, [`LABEL_HIT`]).
+pub const COMBO_HIT_LABEL_SEAT: (i32, i32) = (272, 152);
+/// Screen seat of the `TOTAL` label (48x16, [`LABEL_TOTAL`]).
+pub const COMBO_TOTAL_LABEL_SEAT: (i32, i32) = (216, 170);
+/// Screen seat of the `DAMAGE` label (56x16, [`LABEL_DAMAGE`]).
+pub const COMBO_DAMAGE_LABEL_SEAT: (i32, i32) = (208, 170);
+/// Right edge the value cells (`TOTAL` / `DAMAGE`) end at.
+pub const COMBO_VALUE_RIGHT_X: i32 = 304;
+/// Top row of the value cells.
+pub const COMBO_VALUE_Y: i32 = 168;
+/// Drawn size of one value cell - the 24-texel digit blitted at 16 px.
+pub const COMBO_VALUE_CELL: u32 = 16;
+/// Screen x the cluster's anchor (placement record 80) settles at - its
+/// seat B, the glide target `battle_melee_hit_spark` carries.
+pub const COMBO_ANCHOR_REST_X: i32 = 168;
+/// Screen x the anchor spawns at - record 80's seat A, the glide start.
+pub const COMBO_ANCHOR_START_X: i32 = 328;
+/// Horizontal offset the cluster starts at before it settles: the anchor's
+/// whole glide, `328 - 168`.
+pub const COMBO_SLIDE_IN_X: i32 = COMBO_ANCHOR_START_X - COMBO_ANCHOR_REST_X;
+
+/// Frames the anchor's glide record runs for - the `total` byte of the
+/// live glide record in `battle_melee_hit_spark` (`0x10`).
+pub const COMBO_SLIDE_FRAMES: u16 = 16;
+
+/// Horizontal offset of the cluster `age` frames after it appeared -
+/// `FUN_801D9BBC`'s linear step from the start seat to the target, holding
+/// at `0` once the record has snapped.
+///
+/// PORT: FUN_801D9BBC (the per-handle step, applied to record 80)
+pub fn combo_slide(age: u16) -> i32 {
+    if age >= COMBO_SLIDE_FRAMES {
+        return 0;
+    }
+    // start + (target - start) * elapsed / total, expressed as the offset
+    // that remains from the rest seat.
+    COMBO_SLIDE_IN_X - COMBO_SLIDE_IN_X * i32::from(age) / i32::from(COMBO_SLIDE_FRAMES)
+}
+
+/// Which pair of labels the cluster wears.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ComboStyle {
+    /// A physical / arts chain: the hit count over `HIT`, the running
+    /// damage over `TOTAL`.
+    HitTotal,
+    /// A cast: `DAMAGE` and the value alone.
+    Damage,
+}
+
+/// One label blit of the cluster: an inclusive texel rect on
+/// [`GLYPH_TPAGE`] and its screen seat, drawn 1:1.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ComboLabel {
+    /// Inclusive texel rect `(u0, v0, u1, v1)`.
+    pub uv: (u8, u8, u8, u8),
+    pub x: i32,
+    pub y: i32,
+    /// Which word the rect carries - the font fallback's text.
+    pub word: &'static str,
+}
+
+impl ComboLabel {
+    /// Drawn width / height (the rect is inclusive).
+    pub const fn size(&self) -> (u32, u32) {
+        (
+            (self.uv.2 - self.uv.0) as u32 + 1,
+            (self.uv.3 - self.uv.1) as u32 + 1,
+        )
+    }
+}
+
+/// The laid-out cluster: its labels and every digit cell.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ComboCluster {
+    pub labels: Vec<ComboLabel>,
+    pub cells: Vec<ValueCell>,
+}
+
+/// Right-aligned run of digit cells, `pitch` apart, the last cell's right
+/// edge at `right_x`.
+fn right_aligned_cells(value: u16, right_x: i32, y: i32, size: u32, pitch: i32) -> Vec<ValueCell> {
+    let digits = decimal_digits(value);
+    let n = digits.len() as i32;
+    let left = right_x - (n - 1) * pitch - size as i32;
+    digits
+        .iter()
+        .enumerate()
+        .map(|(i, &d)| ValueCell {
+            digit: d,
+            x: left + i as i32 * pitch,
+            y,
+            w: size,
+            h: size,
+            u: digit_cell_u(d),
+            v: DIGIT_ROW_V,
+            cell: DIGIT_CELL,
+        })
+        .collect()
+}
+
+/// Lay the combo cluster out at its rest seats, shifted right by `slide`
+/// (`0` once settled, [`COMBO_SLIDE_IN_X`] on the first frame).
+///
+/// `hits` is the landed-hit count (only drawn for [`ComboStyle::HitTotal`]);
+/// `total` the running damage the value row shows. Cells past `u16::MAX`
+/// saturate rather than wrap.
+pub fn combo_cluster(style: ComboStyle, hits: u16, total: u32, slide: i32) -> ComboCluster {
+    let total = total.min(u32::from(u16::MAX)) as u16;
+    let mut out = ComboCluster::default();
+    match style {
+        ComboStyle::HitTotal => {
+            out.labels.push(ComboLabel {
+                uv: LABEL_HIT,
+                x: COMBO_HIT_LABEL_SEAT.0 + slide,
+                y: COMBO_HIT_LABEL_SEAT.1,
+                word: "HIT",
+            });
+            out.labels.push(ComboLabel {
+                uv: LABEL_TOTAL,
+                x: COMBO_TOTAL_LABEL_SEAT.0 + slide,
+                y: COMBO_TOTAL_LABEL_SEAT.1,
+                word: "TOTAL",
+            });
+            // The count is the full-size 24-px cell, one gap apart like the
+            // floating numeral's run.
+            out.cells.extend(right_aligned_cells(
+                hits,
+                COMBO_COUNT_RIGHT_X + slide,
+                COMBO_COUNT_Y,
+                u32::from(DIGIT_CELL),
+                i32::from(DIGIT_CELL) + DIGIT_GAP,
+            ));
+        }
+        ComboStyle::Damage => {
+            out.labels.push(ComboLabel {
+                uv: LABEL_DAMAGE,
+                x: COMBO_DAMAGE_LABEL_SEAT.0 + slide,
+                y: COMBO_DAMAGE_LABEL_SEAT.1,
+                word: "DAMAGE",
+            });
+        }
+    }
+    out.cells.extend(right_aligned_cells(
+        total,
+        COMBO_VALUE_RIGHT_X + slide,
+        COMBO_VALUE_Y,
+        COMBO_VALUE_CELL,
+        COMBO_VALUE_CELL as i32,
+    ));
+    out
+}
+
 /// The label quad, drawn once per readout pass (only for the first slot).
 ///
 /// Geometry, straight off the stores at `0x801E8208..0x801E82AC`: the quad spans
@@ -349,6 +544,85 @@ pub fn label_quad(widget_x: u16, widget_y: u16) -> ReadoutQuad {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn combo_cluster_reproduces_the_steal_banner_packets() {
+        // `player_steal_skeleton_banner`: `5 HIT` / `TOTAL 72` at rest.
+        let c = combo_cluster(ComboStyle::HitTotal, 5, 72, 0);
+        let hit = c.labels.iter().find(|l| l.word == "HIT").unwrap();
+        let total = c.labels.iter().find(|l| l.word == "TOTAL").unwrap();
+        assert_eq!((hit.x, hit.y, hit.size()), (272, 152, (32, 16)));
+        assert_eq!((total.x, total.y, total.size()), (216, 170, (48, 16)));
+        // The count: one 24x24 cell whose right edge is 264.
+        let count: Vec<_> = c.cells.iter().filter(|k| k.y == COMBO_COUNT_Y).collect();
+        assert_eq!(count.len(), 1);
+        assert_eq!((count[0].x, count[0].w, count[0].digit), (240, 24, 5));
+        // The value: `7` at 272, `2` at 288, both 16x16.
+        let value: Vec<_> = c.cells.iter().filter(|k| k.y == COMBO_VALUE_Y).collect();
+        assert_eq!(
+            value
+                .iter()
+                .map(|k| (k.x, k.w, k.digit))
+                .collect::<Vec<_>>(),
+            vec![(272, 16, 7), (288, 16, 2)]
+        );
+    }
+
+    #[test]
+    fn combo_cluster_reproduces_the_tail_fire_packets() {
+        // `battle_gimard_tail_fire_a`: `DAMAGE 16`.
+        let c = combo_cluster(ComboStyle::Damage, 0, 16, 0);
+        assert_eq!(c.labels.len(), 1);
+        let d = &c.labels[0];
+        assert_eq!((d.x, d.y, d.size(), d.word), (208, 170, (56, 16), "DAMAGE"));
+        assert_eq!(
+            c.cells
+                .iter()
+                .map(|k| (k.x, k.y, k.w, k.digit))
+                .collect::<Vec<_>>(),
+            vec![(272, 168, 16, 1), (288, 168, 16, 6)]
+        );
+    }
+
+    #[test]
+    fn combo_cluster_slides_in_from_the_right() {
+        // `battle_melee_hit_spark`: the anchor's glide record reads total
+        // 16, elapsed 12, start x 328, target x 168, and its handle sits at
+        // x = 208 - every packet of the cluster is 40 px right of rest.
+        assert_eq!(combo_slide(12), 40);
+        assert_eq!(combo_slide(0), COMBO_SLIDE_IN_X);
+        assert_eq!(COMBO_SLIDE_IN_X, 160);
+        assert_eq!(combo_slide(COMBO_SLIDE_FRAMES), 0);
+        assert_eq!(combo_slide(200), 0);
+        let rest = combo_cluster(ComboStyle::HitTotal, 1, 15, 0);
+        let sliding = combo_cluster(ComboStyle::HitTotal, 1, 15, combo_slide(12));
+        for (a, b) in rest.labels.iter().zip(&sliding.labels) {
+            assert_eq!(b.x - a.x, 40);
+            assert_eq!(a.y, b.y);
+        }
+        for (a, b) in rest.cells.iter().zip(&sliding.cells) {
+            assert_eq!(b.x - a.x, 40);
+        }
+    }
+
+    #[test]
+    fn combo_glide_is_linear_over_the_pinned_frame_count() {
+        // FUN_801D9BBC: start + (target - start) * elapsed / total.
+        for age in 0..COMBO_SLIDE_FRAMES {
+            let expect = 160 - 160 * i32::from(age) / 16;
+            assert_eq!(combo_slide(age), expect, "age {age}");
+        }
+    }
+
+    #[test]
+    fn combo_value_cells_grow_leftward_from_the_pinned_right_edge() {
+        let c = combo_cluster(ComboStyle::Damage, 0, 1234, 0);
+        let xs: Vec<i32> = c.cells.iter().map(|k| k.x).collect();
+        assert_eq!(xs, vec![240, 256, 272, 288]);
+        // The cells sample the 24-texel strip at the digit's own column.
+        assert_eq!(c.cells[0].u, digit_cell_u(1));
+        assert_eq!(c.cells[0].cell, DIGIT_CELL);
+    }
 
     #[test]
     fn teardown_needs_the_flag_and_a_nonzero_value() {

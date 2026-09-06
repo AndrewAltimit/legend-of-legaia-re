@@ -271,6 +271,25 @@ impl World {
         let mut host = BattleHostImpl { world: self };
         let out = vm::battle_action::step(&mut host, &mut ctx);
         self.battle_ctx = ctx;
+        if let StepOutcome::Transition { from, to } = out
+            && log::log_enabled!(log::Level::Debug)
+        {
+            let slot = self.battle_ctx.active_actor;
+            let (latch, queued, cursor) = self
+                .actors
+                .get(usize::from(slot))
+                .map(|a| {
+                    (
+                        a.battle.flag_bits.0,
+                        a.battle.queued_anim,
+                        a.battle.strike_index,
+                    )
+                })
+                .unwrap_or_default();
+            log::debug!(
+                "battle sm: slot {slot} {from:#04x} -> {to:#04x} (flags {latch:#04x}, queued {queued:#04x}, cursor {cursor:#04x})"
+            );
+        }
         out
     }
 

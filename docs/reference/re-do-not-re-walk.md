@@ -29,14 +29,21 @@ below.
 
 | Thread | Verdict | Why |
 |---|---|---|
+| The battle exit (the `0x66` escape teardown / the results sequencer's `+336` frame) is a **white-out** | falsified (a fade to black) | The template is kind `2`, black → white, and the fade actor's tick passes the kind as `FUN_80024EE4`'s second argument, which the emitter folds into the draw-mode packet's ABR bits (`sll a3,a1,0x5; ori a3,a3,0xe` at `0x80024FB0`) - the law the intro styles already obey (`abr == 1` white-out, `abr == 2` to black). Kind 2 is `B - F`, so a rising black → white ramp subtracts more each frame: the scene - result windows included - darkens to black. "White-out" came from reading the ramp's end colour as the screen's end colour. |
+| Retail plays a victory **fanfare BGM** when a battle is won | falsified (the battle theme runs through the results; the only jingle is cue `0x50` on a level-up) | The one call in `FUN_8004E568`'s results frame that looked like a music start, `FUN_8003CE08(0x35)` at `0x8004EECC`, is the story-flag setter (`DAT_80085758[idx >> 3] \|= 0x80 >> (idx & 7)`). The frame's only cue is `FUN_8004FCC8(0x50)` behind the level-up test; the hero's "fanfare" is a `monster.snd` voice clip streamed into slot 7. |
+| The member who landed the killing blow strikes the victory pose | falsified (the leader poses) | The pose actor is `ctx[+0x13]`; every store to it in the battle overlay is a round-boundary zero or the magic menu's MP-cost scratch, and the three-member `noa_levelup_banner` capture reads `0` with seat 0 posing while Noa levelled. |
+| A party melee's whole sound is the `XA27` channel-4 sting (`0x10C`) | falsified (an ordinary swing is the `XA30` grunt; the sting needs `_DAT_8007BD84 != 0`) | `FUN_801EC3E4` selects **one** of the two on `_DAT_8007BD84`: zero takes the grunt at `0x801EEB44` and the re-read at `0x801EEB60` then skips the cue; non-zero branches over the grunt straight into the `0x10C` path (`bne v0,zero,0x801EEB70` at `0x801EEAC8`). The word is zeroed by the battle-start sweep and the round reset and no dumped routine sets it. A second reading - "the grunt fires first and the sting is dropped behind its CD read" - was the decompiled C's flattening of that branch; the two are never both attempted on one strike. |
 | Move-VM op `0x2F` extension dispatcher - per-overlay copies? | falsified (one copy, field overlay 0897 only) | The **capture-derived** `_801d362c` dumps are identical to each other (0897 observed under world-map / dialog / cutscene scenario labels); the `0897` **static** dump is a strict *subset* of them, not a byte-identical twin (Ghidra could not follow the JT flow). Substance is unchanged: every other mapped slot-A overlay + the title overlay carries unrelated bytes at the fixed call VA and no JT at `0x801CE868`, so op `0x2F` is executable only while 0897 is resident and battle-side move records cannot use it. See [move-vm-overlay-ext.md](../subsystems/move-vm-overlay-ext.md#overlay-residency---one-copy-in-the-field-overlay-only). |
 | "`FUN_801F3894` spirit/magic damage roll" (state-`0x3D` chain caller) | falsified (VA-aliased dump) | The `overlay_0897_801f3894` dump is `FUN_801DD0AC` byte-for-byte under a double VA shift, so the already-ported damage kernel surfaces at a fake entry VA. The real state-`0x3D` callee `FUN_801F3990` is a cast **audio-cue dispatcher**; spirit damage is state `0x3E`'s inline formula. **Corollary, widened: `801Exxxx` dumps are suspect too, not just the `0x801F` band** - `801f0348` and `801e23ec` are settled casualties, the latter's aliased reading having dropped all three initiative modifier terms; `0x801F1ED4`/`0x801F45A4` unverified. See [battle-formulas.md](../subsystems/battle-formulas.md#initiative-key-seeding-fun_801da780). |
 | A level-up **refills** the live HP / MP pools (the captures' "settle" phase at `+0x106` / `+0x10A`) | falsified (the settle write is the battle-end resync; both currents stand still) | [details ↓](#a-level-up-is-not-a-heal) |
 | A streamed signature-attack cast module cannot run from a party slot because "a party actor has no monster block" | falsified (it has a first-class equivalent) | `FUN_8004AD80` resolves the staged raw anim index down two arms, and the party one (`DAT_801C9360[slot]`) carries the indices PROT 960 stages. The module's only monster-block touch is a hardcoded **seat-0** write unrelated to the caster. [details ↓](#the-cast-module-blocker-was-named-wrong) |
 | An art whose attack camera films flat has the wrong **arm**, so the fix is to select a better-choreographed one | falsified (every arm is timed for a ~20-frame swing, and not one is spare) | [details ↓](#the-attack-camera-was-never-an-arm-choice) |
+| `FUN_801D5854` case 6's `0x801D5CFC` arm is the per-action **party** framing, gated on `DAT_8007BD71 == 0xFE` as "the in-battle state" | falsified (`0xFE` is the battle-END signal; a running fight takes the `0x801D64C4` arm for everyone) | [details ↓](#the-case-6-party-arm-is-the-battle-over-framing) |
+| The Done band (`0x50` / `0x51`) is idle for the camera - keep it on the far framing so the "per-action close-up" does not own half the fight | falsified (retail re-arms case `6` / `8` per category there; the close-up was the wrong arm) | [details ↓](#the-done-band-is-not-idle) |
 | Navmesh / per-scene navigation data | falsified | `0x80108EA4..0x80109550` is per-scene GPU primitive scratch, not a 24-byte stride navmesh. Pointer hunts find zero RAM cells pointing into the window. Real per-scene region / collision / event-trigger data lives in the field-file preamble (a count + `u16` offset table + records - **not** the field-pack schema slots, which are a global-constant template; see [field-pack](../formats/field-pack.md)); the collision grid is the `+0x4000` MAP region; the encounter-record path lives at `actor[+0x94]`. |
 | Op-`0x4E` sub-ops 4..8 "absolute jump" / "rand -> next PC" readings | falsified (all sub-ops 0..9 are the 7-byte compare-and-skip) | [details ↓](#op-0x4e-sub-op-family---every-sub-op-09-is-a-compare) |
 | `801d58f0` / `801d63b0` as single shared port blockers | falsified (VA-aliasing artifact) | The two addresses host different code in different overlays (byte-verified: 80/228/124/308/1 B and 208/1036 B across 0897/baka/cutscene/debug-menu/fishing/slot/dance) - the port-catalog's bare-VA keying aggregated their refs into phantom top blockers. Tracked per-overlay via `overlay_<label>_<addr>` identities; catalog ignore category `va_aliased_overlay_local`. |
+| A monster's after-image ghosts (`FUN_80049348`) fire on **any non-idle clip tag** | falsified (the gate is two record bytes, `+0x77` and `+0x87`) | Plausible: the party gate is committed slot `>= 0x11` = "an art is playing", so "ring id = clip tag + 0x10" read as the same idea. But the anim tick stamps `record[+0x77] + 0x10` (`+0x87 == 1` forces `0x11`), and `+0x77` is the attach-key byte, zero on almost every monster entry; no idle entry on the disc qualifies. Gating on the engine's "is a clip staged" proxy ghosted every monster through its approach walk and idle loop (the permanent yellow halo). Lesson: when retail reads a record byte, port the byte, not the state that usually accompanies it ([battle-action.md](../subsystems/battle-action.md#the-after-image-ghost-walk-fun_80049348)). |
 | Charm battle softlock = unbounded reroll in `FUN_801E7320` | falsified (cannot spin from any reachable state) | The reroll loops are unbounded in isolation, but every reachable caller state has an exit: the scheduler `FUN_801DABA4` never seeds a dead actor (predicate `+0x14C != 0 && !(+0x16E & 0x4)`), the acting `0x380` monster is itself an in-band self-pick exit (`0x801E73E8` clears `+0x1DE`), and a band with zero living members means the previous `0x5A` already fired the wipe. The real defect is downstream in the `0x5A` victory arm's roster indexing ([battle.md](../subsystems/battle.md#enemy-ally-charm-at-the-end-of-action-gate-the-charm-battle-softlock)). Lesson: an unbounded loop hangs only under a reachable all-invalid state - check the predicates feeding it first. |
 | Gaza 2 `0x51` park: clamp asymmetry as a standalone retail generator | falsified (amplifier only; its exhibit was a phased mid-action state) | [details ↓](#gaza-2-0x51-park---the-two-falsified-generators) |
 | Gaza 2 `0x51` park: the Final Heal revive lands "at the worst possible moment" (mid-drain) | falsified on the Gaza 2 move set (12/12 revives found the accumulator already drained) | [details ↓](#gaza-2-0x51-park---the-two-falsified-generators) |
@@ -47,10 +54,32 @@ below.
 | Screen-element kinds named by what sits at their seat (`0x32`/`0x33` = "the roster panels") | falsified (naming by seat named the wrong record) | [details ↓](#a-kind-named-by-its-seat-can-name-the-wrong-record) |
 | The battle message banner is "a gold border over a blue interior" | falsified (border only - no fill primitive under it) | [details ↓](#the-battle-message-banner-has-no-interior-fill) |
 | `FUN_801E2524` / `FUN_801E2650` are a full-screen flash / fade ramp | falsified (they are the **Arts announcement banner**) | [details ↓](#the-flash-ramp-is-the-arts-announcement-banner) |
+| `battle_gimard_tail_fire_a/_b` are frames of a **party** Seru summon | falsified (the enemy Gimard's Tail Fire) | The acting-actor plaque top-left reads `Gimard`, the pill readout is Vahn at 154/180 after `DAMAGE 16`, and the states' loader-B id is `5` (PROT 0900, the move-FX module), not a stager. A party summon draws no label (and no readout while its seats are hidden); its frames are the `*_summon_mid_cast` states. Reading these two as the player-summon reference put the enemy's chrome on the player's cast. |
+| `FUN_801DBF9C` (the `0x29` party trigger) applies the spell's outcome | falsified (it stages the anim stream and the summon sub-route) | No store in it reaches HP, MP or a target; it writes `+0x1E0..+0x1E2` (`9`, `0x12`, `0xFF`) for any id `>= 0x25` and copies an overlay anim-pair list below that. The outcome is the streamed module's - the summon stager's strike for a Seru id. [details](re-settled-threads.md#the-party-cast-trigger-is-a-params-stager) |
+| `FUN_801DC0A0(actor, id)` stages the cast clip | falsified (it is the cast-effect driver) | The summon band calls it with `0x12` every frame of `0x33` / `0x34` while the caster's `+0x1D9` reads `9` (`gimard_summon_start`); the clip stage is the SM's own `+0x1DA` store at `0x29` / `0x2A`. |
 | "The port never latches the art id, so `actor[+0x1DB]` reads `0x00` all fight" | falsified (it latches `0x01`, then `0x0D`, then `0x0C`) | Those are the rolled arm swings a basic Attack queues, and a retail mid-swing Attack state reads the same band. `0x1A..=0x2D` - the per-art camera's band - is reached by action-constant queue bytes, i.e. an arts chain, so the camera not arming on two arm swings is retail. [details](../subsystems/battle-action.md#three-readings-the-port-already-satisfied) |
 | "The port's `0x51` Done-band residency is unbounded" | falsified (bounded at `ctx[+0x6D8] = 0x3C`, as retail) | The 60-70 frames a sample shows is **one** action's countdown plus the HP-bar settle freeze; a multi-action sample sums several of them. Counting frames in a band without splitting them by action reads a per-action budget as a park. [details](../subsystems/battle-action.md#three-readings-the-port-already-satisfied) |
 | "The sparring tutorial reopens the command session, so the cursor cannot move" | falsified (the cursor walks `0..5`; a *waiting* prompt box parks the tick) | The session is reopened only on a rejected resolution. What pins the cursor on screen is retail's own `ctx[+0x6B2]` box guard, which the port reproduces. [details](../subsystems/battle-action.md#three-readings-the-port-already-satisfied) |
 | An action returns its combatants to their authored formation seats | falsified (retail leaves them on the ground the action ended on) | Two library states of one solo fight read the authored formation 1600 apart; two later ones read the same pair ~300 apart and both far off it, with every actor's `+0x3C`/`+0x40` pair within ~110 units of its live `+0x34`/`+0x38`. The port's walk-home leg is gone; the seat is committed from the live pair at `DoneCleanup`. [details](../subsystems/battle-action.md#where-an-action-leaves-its-combatants) |
+| Staged ids `0x10` and `0x1A` **alone** install at dynamic slot `0x11`, every other art-bank id at `0x10` | falsified (`0x10`, `0x1A` and every art constant `>= 0x1B` install at `0x11`; only the base ids `0x11..=0x19` take `0x10`) | [details ↓](#the-dynamic-slot-rewrite-was-never-0x10-and-0x1a-only) |
+
+### The dynamic-slot rewrite was never "`0x10` and `0x1A` only"
+
+The decompiled C of `FUN_8004AD80` shows two `0x11` assignments and the
+reading took them for the whole set, so `resolve_staged_anim` installed every
+art constant at slot `0x10`. The slot register `s2` is written in **delay
+slots**, which the C folds away: `_li s2,0x10` under the `0x1A` test at
+`0x8004B720` is the default, `0x8004B76C` (the `0x1A` arm) and `0x8004BB58`
+(the `0x10` test) set `0x11`, and the art-constant arm - entered for every
+staged id `>= 0x1B` at `0x8004BB5C` - sets `0x11` in the delay slot of its
+name-width call (`jal 0x80035f04 ; _li s2,0x11` at `0x8004BBBC..0x8004BBC0`)
+before the install at `0x8004BC4C`. A live Tri-Somersault capture agrees:
+`+0x1D9` reads `0x11` under `0x27`, `0x1F` and `0x2B`, and `0x10` under the
+`0x19` starter. The narrow reading survived for as long as no art constant was
+ever staged through the port's attack band; the first one that was landed on
+the wrong slot. The `+0x1D9 == +0x1DA` equality checks compare slot numbers,
+so the slot an id lands on is what decides whether the SM sees its clip as
+committed.
 
 ### A level-up is not a heal
 
@@ -137,6 +166,56 @@ draw the same pixels, and no amount of further capture would have; only the
 index arithmetic (`0x800732A4 + kind * 0x0C`, `FUN_8002C69C` at
 `0x8002C7A0`) does. Resolution:
 [`re-settled-threads.md`](re-settled-threads.md#the-chrome-kind-byte-is-an-index-into-the-widget-class-table).
+
+### `FUN_801DBB8C` is not the party readout's registration
+
+The battle overlay's `FUN_801DBB8C` registers one retained SCUS text actor
+through `FUN_8003541C` and stashes the handle at `_DAT_801F4E0C`, and it sits
+among the party-panel build and teardown leaves. Reading it as the readout's
+own registration - the actor the arts input then parks at `y = 230` - was
+the natural next step, and a brief carried it as a fact.
+
+Its one caller says otherwise. `FUN_801D0748` calls it at `0x801D1660`, on the
+ring's `0x28 -> 0x50` arm, immediately after `FUN_801D388C(9)` has built the
+arts-entry screen - and the arguments it passes are `(0, 0xC, 0, -146, 36,
+138, 144, 3)`: a 138x144 box parked one screen to the left, which is the arts
+list window the Triangle page slides in. The party readouts are placement
+records 7 and 6 / 78 / 79, opened by the sub-draw script through
+`FUN_801D8DE8` like every other chrome element.
+
+**Lesson:** a registration is identified by the rect it registers and the
+transition that calls it, not by the leaves it is compiled beside.
+
+### The item window shows the pill
+
+Retail's item-use *action* shows the full-width pill (`captures/tetsu_idle`),
+and the ring the window opens from shows it too, so "pill while the item
+window is up" read as the obvious interpolation. The sub-draw step the
+`0x28 -> 0x3C` arm runs (`FUN_801D388C(5)`, `0x801D13F0`) says the opposite:
+`06/0 4E/0 4F/0 07/1` - the roster panels come **back up** and the bar parks.
+The window's target step (`0x64`, step `0x18`) is where the bar returns,
+re-pointed at the member the cursor names. The magic window (step 7) has the
+same shape.
+
+**Lesson:** a menu state's surfaces are a table row, not a neighbour's; read
+the step, not the frames either side of it.
+
+### The magic chip's gate reads the weapon byte
+
+`FUN_80053CB8` writes `ctx[+0x25F + member]` after an `lbu` at `+0x760` off
+`0x80084140 + (char_id - 1) * 0x414`, and `0x80084140 + 0x760` is the live
+record's `+0x198` - the equipment byte the save-record table names
+`weapon_id`. So the first reading was "the element chip is live when a weapon
+is equipped". Twenty-nine states say no: `player_steal_skeleton_pre` has the
+gate at `1` with `+0x198 = 0` and `+0x199 = 1`. The store at `0x80054270` is
+the **second** arm; the first (`0x800541E0..0x80054218`) reads `+0x761` -
+`+0x199`, the Ra-Seru slot - and every state's gate equals that byte's
+non-zero test. The `+0x760` arm is reached only for `char_id == 2` - the
+`beq v0,a3` at `0x800541E4` on `DAT_8007BD10[member]` - so it is Noa's byte,
+not the weapon rule.
+
+**Lesson:** one `lbu` in a two-arm predicate is not the predicate; check the
+reading against a state whose bytes disagree with it.
 
 ### `FUN_801DBC30` is not the battle name plate
 
@@ -347,6 +426,71 @@ axis the defect lies on. These differ in shot *count* and agree on clip
 two-thirds dead slots reads as spare capacity while the things those slots
 would point at are fully subscribed - emptiness in the index is not slack in
 what it indexes.
+
+### The case-6 party arm is the battle-over framing
+
+The reading: `FUN_801D5854` case 6 forks at `0x801D5CF4` on `DAT_8007BD71 ==
+0xFE` and at `0x801D5CFC` on `ctx[+0x13] < 3`, so "in-battle flow state and a
+party seat" takes the `0x801D5CFC` arm - eye `prescale(0x500)` straight behind
+the actor at `-5 × actor[+0x3E]`, a per-character script over
+`actor[+0x1DB]` - and everything else the `0x801D64C4` arm. Read as the
+per-action party framing, with `0xFE` glossed as the battle-flow SM's
+"in-battle" value, and the port shipped it that way with the flag hard-wired
+`true`.
+
+Why it was plausible: the fork *is* keyed on a party seat, the arm *does*
+read the acting actor's anim id through a per-character dispatch, and `0xFE`
+next to a `0xFF` reads naturally as one live state beside another.
+
+Why it is wrong: `DAT_8007BD71` is the byte the rest of the repo already
+names the **battle-end signal**. Its writers are the action SM's `0x5A` wipe
+scans (`0x801E65D8` party wipe, `0x801E6674` monster wipe, beside the cause
+in `_DAT_8007BD2C`), the `0x66` escape teardown (`0x801E5A94`, right after
+`ctx[7] = 0x67`), and the capture-effect module (`0x801F7318`); SCUS
+`0x80056014` zeroes it at battle init, and the effect-VM walker
+(`FUN_801E0088`) runs only while it reads `0xFF`. Twelve battle save states -
+five Begin/Run prompts, the arts-input close-up, the tutorial open, two
+mid-strike frames and three `ctx[7] == 0x19` approach parks - all read `0xFF`.
+So during a fight the `0x801D5CFC` arm is unreachable for anyone, and the anim
+band its script keys on (`0x11..=0x18`) is the win-pose band: it is the
+end-of-battle framing. The three `0x19` parks with Gaza acting confirm the
+other arm byte-exact (`TR (0, 0x500, prescale(ctx[+0x6D0]))`, yaw
+`ctx[+0x6DA] − actor[+0x46]`, focus the negated `+0x34/+0x38` pair).
+
+What the wrong arm did to the port: a party member's strike put the eye
+2048 projection units behind the actor - inside whichever combatant stood
+there, since the target had closed to melee range - with `ndc.y` past `-2`
+for the other actor. The fix is one boolean with the right name
+(`ActionFraming::battle_over`, `false` while a fight runs), not a camera-model
+change. Corrected reading in
+[battle.md](../subsystems/battle.md#battle-camera-exact).
+
+### The Done band is not idle
+
+The reading: `FUN_801E295C`'s Done band (`0x50` cleanup, `0x51` fade-down)
+is where a port fight rests, and a measured auto-resolved fight spent about
+half its frames there; classifying it as "an action is executing" left both
+hosts in the per-action close-up for the whole fight, so the port treated
+the band as idle and put the far framing (case 9) on it.
+
+Why it was plausible: the band *is* long relative to the port's short action
+band, the far framing *is* where the formation and the idle orbit live, and
+the per-action framing at the time really was a close-up.
+
+Why it is wrong: that close-up was the battle-over arm applied to a running
+fight (see [above](#the-case-6-party-arm-is-the-battle-over-framing)). With
+the in-fight arm, case 6 sits at `prescale(ctx[+0x6D0])` - `4915` for a
+`0xC00` depth - with both combatants in frame, while the far framing over a
+formation collapsed by a melee sits at its `0x800` floor, `3276`, closer than
+the arm it was standing in for; every torso close-up in the port's Done band
+was the far framing. Retail's own `0x50` / `0x51` arms fork on the category
+(`0x801E5E90..0x801E5EF4`, `0x801E5FC0..0x801E6018`): Run → orbit, Attack →
+case 8, party slot over a dead target → case 8, else case 6, re-armed every
+pass; `zora_glare_petrify_post` (`ctx[7] == 0x51`) reads case 6's pose on the
+caster and `evil_medallion_rage_battle` (`ctx[7] == 0x0A`, between actions)
+reads the far framing. Corrected reading in
+[battle.md](../subsystems/battle.md#battle-camera-exact) and
+[re-settled-threads.md](re-settled-threads.md#the-done-band-framing-and-the-two-orbit-writers).
 
 ## Audio / sound driver
 

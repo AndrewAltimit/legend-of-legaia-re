@@ -789,8 +789,19 @@ fn rung9_battle(rt: &mut LegaiaRuntime, tally: &mut Tally) -> Result<(), String>
         if !rt.play_battle_active() {
             break;
         }
+        // Retail lets nobody act before the round's last command commits:
+        // `Left` seats `Begin`, the ring's `Attack` arm and the `Auto` chip
+        // on their prompts (spatial one-press commits), `Cross` confirms the
+        // target. `Left, Left, Left, Cross` never lands a Cross on the ring,
+        // whose default chip is `Item` - an empty bag's window has no way
+        // out but Cancel.
         if i.is_multiple_of(8) {
-            tap(rt, tally, PadButton::Cross.mask());
+            let mask = if (i / 8) % 4 == 3 {
+                PadButton::Cross.mask()
+            } else {
+                PadButton::Left.mask()
+            };
+            tap(rt, tally, mask);
         } else {
             step(rt, tally);
         }

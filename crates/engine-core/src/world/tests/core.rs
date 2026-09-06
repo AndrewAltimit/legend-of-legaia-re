@@ -123,12 +123,41 @@ fn battle_party_wipe_signals_end_via_world() {
     let out = world.tick();
     assert_eq!(out, Some(StepOutcome::BattleComplete));
     // `tick` drives the battle to resolution unconditionally (see
-    // `frame_tick.rs`'s Battle arm), so the raised cause is consumed by
-    // `finish_battle` in the same tick: `battle_end` clears, `game_over`
-    // latches, and the wipe hold parks the world in Battle mode so hosts
-    // freeze on the final battle frame (retail holds the wipe frame while
-    // mode 22 CARD INIT streams the menu overlay). Read the *effect* of the
-    // wipe, not the transient cause byte.
+    // `frame_tick.rs`'s Battle arm) - but not on the signal frame. Retail's
+    // tick stops stepping the action SM once `DAT_8007BD71 == 0xFE` and runs
+    // the results sequencer `FUN_8004E568` instead; a wipe lands on its
+    // annihilated arm - the loss window, the `0x100` results hold, the
+    // exit fade with the phase halfword seeded at 2, then the `0x43` exit
+    // gate - before `finish_battle` folds the MAIN INIT game-over
+    // (`world::battle::victory`).
+    assert!(
+        world.battle_end_sequence_active(),
+        "the annihilated arm is armed on the signal frame"
+    );
+    assert!(!world.game_over, "nothing resolves before the exit gate");
+    assert_eq!(world.mode, SceneMode::Battle);
+    let mut resolved_at = None;
+    for i in 1..=(0x100 + 0x43 + 8) {
+        world.tick();
+        if world.game_over {
+            resolved_at = Some(i);
+            break;
+        }
+    }
+    assert_eq!(
+        resolved_at,
+        Some(
+            usize::from(World::VICTORY_RESULTS_HOLD_FRAMES)
+                + usize::from(World::VICTORY_EXIT_PHASE)
+                - usize::from(World::VICTORY_FADE_PHASE_SEED)
+        ),
+        "results hold + exit-fade phase walk, in vsyncs (retail: 321 from the results frame)"
+    );
+    // Then the cause is consumed by `finish_battle`: `battle_end` clears,
+    // `game_over` latches, and the wipe hold parks the world in Battle mode
+    // so hosts freeze on the final battle frame (retail holds the wipe frame
+    // while mode 22 CARD INIT streams the menu overlay). Read the *effect*
+    // of the wipe, not the transient cause byte.
     assert_eq!(world.battle_end, None, "the cause is consumed on resolve");
     assert!(world.game_over, "a party wipe raises game over");
     assert!(world.game_over_hold, "the field restore is deferred");

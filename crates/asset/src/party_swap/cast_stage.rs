@@ -738,6 +738,8 @@ mod tests {
             action_id: 0x23,
             rate,
             attach_key: 0,
+            solo_flag: 0,
+            impact_class: 0,
             part_count: 15,
             frame_count: frames,
             frames: Vec::new(),

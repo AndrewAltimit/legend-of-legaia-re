@@ -132,12 +132,41 @@ fn derive_battle_cam(
     // keeps the far framing. Same call the native window makes - see
     // `script::phase_for_state` for the two retail framebuffers that separate
     // case 0 from case 9, and for the case-7 / case-8 post-strike bands.
+    // Cases 7 / 8 frame against the acting actor's target (`actor[+0x1DD]`
+    // through the 8-slot actor table) - the browser mirror of the native
+    // `battle_post_action_target`.
+    let target = world
+        .actors
+        .get(acting_slot as usize)
+        .map(|a| a.battle.active_target)
+        .filter(|s| usize::from(*s) < 8)
+        .and_then(|s| world.actors.get(usize::from(s)))
+        .map(|t| script::PostActionTarget {
+            world: [
+                t.move_state.world_x as f32,
+                t.move_state.world_y as f32,
+                t.move_state.world_z as f32,
+            ],
+            live: t.active && t.battle.hp > 0,
+        });
+    // The Done band's per-category fork (`FUN_801E295C` `0x50` / `0x51`
+    // arms): category `actor[+0x1DE]`, party seat, dead target - the browser
+    // mirror of the native `battle_done_band`.
+    let done = script::DoneBandInputs {
+        category: world
+            .actors
+            .get(usize::from(acting_slot))
+            .map_or(0, |a| a.battle.action_category),
+        party_slot: usize::from(acting_slot) < world.party_count as usize,
+        target_dead: target.is_some_and(|t| !t.live),
+    };
     let phase = script::phase_for_state(
         world.current_dialog.is_some() || world.inline_dialogue.is_some(),
         world.battle_arts_menu.is_some()
             || world.battle_spell_menu.is_some()
             || world.battle_item_menu.is_some(),
         world.battle_ctx.action_state,
+        done,
     );
     let actor_at = |slot: u8, party_slot: Option<u8>| {
         let a = world.actors.get(slot as usize)?;
@@ -194,26 +223,10 @@ fn derive_battle_cam(
     // `FUN_801D5854` case 6: `party_slot` is retail's `ctx[+0x13] < 3` over
     // the engine's party band, `char_id` its `DAT_8007BD10[slot]`, and
     // `depth_raw` is `ctx[+0x6D0]` - what `camera_height_for_frame` last
-    // computed. `flow_active` is `_DAT_8007BD71 == 0xFE`, which the engine
-    // has no byte for and which is true whenever it runs this camera.
+    // computed. `battle_over` is `DAT_8007BD71 == 0xFE`, the battle-end
+    // signal - `0xFF` for the whole of a running fight, so `false` here
+    // (same as the native host; the victory-pose arm is not modelled).
     let party = usize::from(acting_slot) < pc;
-    // Cases 7 / 8 frame against the acting actor's target (`actor[+0x1DD]`
-    // through the 8-slot actor table) - the browser mirror of the native
-    // `battle_post_action_target`.
-    let target = world
-        .actors
-        .get(acting_slot as usize)
-        .map(|a| a.battle.active_target)
-        .filter(|s| usize::from(*s) < 8)
-        .and_then(|s| world.actors.get(usize::from(s)))
-        .map(|t| script::PostActionTarget {
-            world: [
-                t.move_state.world_x as f32,
-                t.move_state.world_y as f32,
-                t.move_state.world_z as f32,
-            ],
-            live: t.active && t.battle.hp > 0,
-        });
     script::BattleCamInputs {
         phase,
         acting,
@@ -221,7 +234,7 @@ fn derive_battle_cam(
         formation,
         action: script::ActionFraming {
             party_slot: party,
-            flow_active: true,
+            battle_over: false,
             depth_raw: world.battle_camera_frame_height as i32,
             yaw_base: 0,
             style: 0,
@@ -233,6 +246,10 @@ fn derive_battle_cam(
         entry_yaw: f32::from(world.field_camera_azimuth & 0xFFF),
         shake_amplitude: world.camera_shake_amplitude,
         attack: attack_channels(world, world.battle_ctx.active_actor),
+        // The yaw counter `ctx[+0x6DA]` is re-seeded on the action SM's
+        // state edges (`BattleCamera::observe_action_state`) - same field
+        // the native host fills.
+        action_state: world.battle_ctx.action_state,
     }
 }
 
@@ -446,6 +463,11 @@ struct PendingClips {
     idle: Option<legaia_asset::monster_archive::MonsterAnimation>,
     action_clips: Option<Vec<Option<legaia_asset::monster_archive::MonsterAnimation>>>,
     art_bank: Option<Vec<Option<legaia_asset::monster_archive::MonsterAnimation>>>,
+    /// The art bank's records (the arts the queue-builder matches), party
+    /// members only; empty for a monster.
+    art_records: Vec<legaia_asset::battle_char_assembly::ArtAnimRecord>,
+    /// Character slot the records belong to (`0..=2` = Vahn / Noa / Gala).
+    cslot: usize,
 }
 
 /// Flatten one animation frame to the `[tx, ty, tz, rx, ry, rz] x parts`
@@ -643,11 +665,13 @@ impl LegaiaRuntime {
                 .and_then(|a| a.frames.first())
                 .map(|f| flatten_frame(f))
                 .unwrap_or_default();
-            let action_clips = match legaia_asset::monster_archive::animations(&archive, monster_id)
-            {
-                Ok(Some(anims)) if !anims.is_empty() => Some(anims.into_iter().map(Some).collect()),
-                _ => None,
-            };
+            // Positional (one slot per `+0x4C` entry, holes kept): a monster's
+            // staged anim ids are these indices.
+            let action_clips =
+                match legaia_asset::monster_archive::animations_by_entry(&archive, monster_id) {
+                    Ok(Some(anims)) if anims.iter().any(Option::is_some) => Some(anims),
+                    _ => None,
+                };
             actors.push(BattleActorRender {
                 actor_idx,
                 monster: true,
@@ -660,6 +684,8 @@ impl LegaiaRuntime {
                 idle,
                 action_clips,
                 art_bank: None,
+                art_records: Vec::new(),
+                cslot: usize::MAX,
             });
         }
 
@@ -738,6 +764,18 @@ impl LegaiaRuntime {
                 if let Some(bank) = p.art_bank.filter(|b| !b.is_empty()) {
                     host.world
                         .set_actor_battle_art_bank(p.actor_idx, std::sync::Arc::new(bank));
+                }
+                // The bank's records are the arts the queue-builder matches:
+                // install them so the live arts input tokenizes real arts.
+                if let Some(character) = [
+                    legaia_art::Character::Vahn,
+                    legaia_art::Character::Noa,
+                    legaia_art::Character::Gala,
+                ]
+                .get(p.cslot)
+                {
+                    host.world
+                        .install_art_bank_records(*character, &p.art_records);
                 }
             }
         }
@@ -912,7 +950,7 @@ impl LegaiaRuntime {
             }
             // Art-animation bank (record[0] +0x58) through the character's
             // readef.DAT "ME" archives, so staged ids >= 0x10 resolve.
-            let art_bank = self.party_art_bank_web(host, raw, cslot, &anm_bones);
+            let (art_bank, art_records) = self.party_art_bank_web(host, raw, cslot, &anm_bones);
             return Some((
                 BattleActorRender {
                     actor_idx: member,
@@ -926,6 +964,8 @@ impl LegaiaRuntime {
                     idle,
                     action_clips: Some(clips),
                     art_bank: Some(art_bank),
+                    art_records,
+                    cslot,
                 },
             ));
         }
@@ -972,6 +1012,8 @@ impl LegaiaRuntime {
                 idle: None,
                 action_clips: None,
                 art_bank: None,
+                art_records: Vec::new(),
+                cslot: usize::MAX,
             },
         ))
     }
@@ -1021,16 +1063,19 @@ impl LegaiaRuntime {
         raw: &[u8],
         cslot: usize,
         anm_bones: &[u8],
-    ) -> Vec<Option<legaia_asset::monster_archive::MonsterAnimation>> {
+    ) -> (
+        Vec<Option<legaia_asset::monster_archive::MonsterAnimation>>,
+        Vec<legaia_asset::battle_char_assembly::ArtAnimRecord>,
+    ) {
         use legaia_asset::battle_char_assembly as bca;
         let Ok(record0) = bca::decode_record0(raw) else {
-            return Vec::new();
+            return (Vec::new(), Vec::new());
         };
         let Ok(records) = bca::art_animation_bank(&record0) else {
-            return Vec::new();
+            return (Vec::new(), Vec::new());
         };
         let Ok(readef) = host.index.entry_bytes_extended(READEF_PROT_INDEX) else {
-            return Vec::new();
+            return (Vec::new(), records);
         };
         let main = bca::art_me_archive(&readef, cslot, false);
         let base = bca::art_me_archive(&readef, cslot, true);
@@ -1046,7 +1091,7 @@ impl LegaiaRuntime {
                 bank[rec.index] = Some(bca::expand_animation_for_objects(&anim, anm_bones));
             }
         }
-        bank
+        (bank, records)
     }
 }
 
@@ -1257,7 +1302,13 @@ impl LegaiaRuntime {
     /// are RAW battle world units - the page multiplies by
     /// [`Self::play_battle_world_scale`] (retail composes the same 4x on
     /// the actor camera).
+    ///
+    /// `active` is the draw gate: it also carries the summon band's hide
+    /// (`+0x21C = 0xFF`, `RENDER_FLAG_HIDDEN`) - every party seat and living
+    /// monster is off screen while the creature performs - the browser twin
+    /// of the native draw loop's skip.
     pub fn play_battle_actor_transforms(&self) -> Vec<f32> {
+        use legaia_engine_vm::battle_target_group::RENDER_FLAG_HIDDEN;
         let (Some(br), Some(host)) = (self.battle_render.as_ref(), self.scene_host.as_ref()) else {
             return Vec::new();
         };
@@ -1269,7 +1320,11 @@ impl LegaiaRuntime {
                     actor.move_state.world_y as f32,
                     actor.move_state.world_z as f32,
                     if a.monster { 1.0 } else { 0.0 },
-                    if actor.active { 1.0 } else { 0.0 },
+                    if actor.active && actor.battle.render_flag != RENDER_FLAG_HIDDEN {
+                        1.0
+                    } else {
+                        0.0
+                    },
                 ]),
                 None => out.extend_from_slice(&[0.0; 5]),
             }

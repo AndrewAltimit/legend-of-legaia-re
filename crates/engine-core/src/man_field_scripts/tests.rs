@@ -940,3 +940,55 @@ fn placement_yield_step_rejects_far_walk_to_tile() {
     let p = &mf.actor_placements(&man)[0];
     assert_eq!(placement_yield_step(&mf, &man, p), None);
 }
+
+/// The retail shape of the sparring arm: dialogue bytes, a wait, three
+/// system SETs, then the `3E FF <row>` entry - the SET -> entry pairing is
+/// what [`walk_battle_entry_arms`] keys on, so the `0x19` write pairs with
+/// row 4 although the linear walk is still resynchronising after the text.
+#[test]
+fn battle_entry_arm_pairs_the_flag_set_with_the_entry_row() {
+    let mut script = vec![0x1F];
+    script.extend_from_slice(b"Come at me! Now you are ready.");
+    script.push(0x00);
+    // WaitFrames 16, SET 0x019, SET 0x000, SET 0x23C, Interact FF row 4, halt.
+    script.extend_from_slice(&[
+        0x4A, 0x10, 0x00, 0x50, 0x19, 0x50, 0x00, 0x52, 0x3C, 0x3E, 0xFF, 0x04, 0x21,
+    ]);
+    let (mf, man) = man_with_placement_script(&script);
+    let arms = walk_battle_entry_arms(&mf, &man);
+    let flags: Vec<(u16, u8)> = arms.iter().map(|a| (a.flag, a.row)).collect();
+    assert!(
+        flags.contains(&(0x19, 4)),
+        "the 0x19 SET pairs with row 4: {flags:?}"
+    );
+    assert!(flags.contains(&(0x23C, 4)), "the nearer SET pairs too");
+    assert!(
+        arms.iter().all(|a| a.partition == 1 && a.record == 1),
+        "every arm is in the placement record: {arms:?}"
+    );
+    // The gflag census reports the same site as not-yet-coherent, which is
+    // why the arm census cannot key on it.
+    let site = walk_partition_gflag_sites(&mf, &man, 1)
+        .into_iter()
+        .find(|s| s.bank == FlagBank::System && s.flag == 0x19)
+        .expect("the census still lists the SET");
+    assert!(!site.clean, "the SET sits inside the resync window");
+}
+
+/// A SET with no battle entry behind it, one whose entry lies past the
+/// window, and one followed by the door-warp form of `0x3E` are not arms.
+#[test]
+fn battle_entry_arm_needs_a_scripted_entry_within_the_window() {
+    // No entry at all.
+    let (mf, man) = man_with_placement_script(&[0x50, 0x19, 0x21]);
+    assert!(walk_battle_entry_arms(&mf, &man).is_empty());
+    // The entry sits BATTLE_ENTRY_ARM_WINDOW + 1 instructions past the SET.
+    let mut far = vec![0x50, 0x19];
+    far.resize(far.len() + BATTLE_ENTRY_ARM_WINDOW + 1, 0x25); // Nops
+    far.extend_from_slice(&[0x3E, 0xFF, 0x04, 0x21]);
+    let (mf, man) = man_with_placement_script(&far);
+    assert!(walk_battle_entry_arms(&mf, &man).is_empty());
+    // A door warp (`op0 >= 100`) is not a battle entry.
+    let (mf, man) = man_with_placement_script(&[0x50, 0x19, 0x3E, 103, 0, 0, 0, 0, 0x21]);
+    assert!(walk_battle_entry_arms(&mf, &man).is_empty());
+}

@@ -8,11 +8,16 @@ into the pose it hands the tween builder.
 The second halfword is **not** a later phase of the same swing. `ctx[+0x26D]`,
 the byte that selects the column, has exactly one writer in the corpus -
 `FUN_8004E13C` in `SCUS_942.54` (`0x8004E2DC`), which stores `rand() % 2`
-beside `ctx[+0x6DA] = (rand() % 2) * 0x800 + 0x280` and `ctx[+0xD] = 0`. So a
-row holds **two alternative offsets and retail coin-flips between them once per
-action**, which is why the same swing frames from two visibly different angles
-on successive turns. `FUN_801D5854` forces the column to `0` when the acting
-character id is `3` (`0x801D6A5C`).
+on every call. It is called from the anim commit `FUN_8004AD80` (`0x8004BE28`)
+with the committed clip's header byte `+0x87` as its argument, whenever that
+byte is non-zero; its other store - `ctx[+0x6DA] = (rand() % 2) * 0x800 +
+0x280` with `ctx[+0xD] = 0` - is gated harder (`0x8004E25C..0x8004E280`: the
+byte is `2`, the previous commit's `ctx[+0x243]` was not, and `ctx[+0x13] <
+3`), which is the party attacker's first swing-clip commit. So a row holds
+**two alternative offsets and retail coin-flips between them at each such
+commit**, which is why the same swing frames from two visibly different
+angles on successive turns. `FUN_801D5854` forces the column to `0` when the
+acting character id is `3` (`0x801D6A5C`).
 
 Parser: `legaia_asset::battle_attack_camera_table`. Engine side:
 `legaia-engine-vm::battle_attack_camera`.

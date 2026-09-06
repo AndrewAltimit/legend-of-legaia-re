@@ -68,6 +68,9 @@ fn the_queued_swing_byte_resolves_a_move_power_record() {
         w.actors.push(Actor::default());
     }
     w.party_count = 3;
+    // The zeroed records seed HP 0 / no seat, so they go in FIRST: retail's
+    // member walk (`FUN_801DB81C`) hands no ring to a member with no HP.
+    w.load_party(legaia_save::Party::zeroed(3));
     for i in 0..3 {
         w.actors[i].active = true;
         w.actors[i].battle.hp = 30_000;
@@ -75,7 +78,6 @@ fn the_queued_swing_byte_resolves_a_move_power_record() {
         w.actors[i].battle.liveness = 1;
         w.set_battle_attack(i as u8, 120);
     }
-    w.load_party(legaia_save::Party::zeroed(3));
     w.set_formation_table(vanilla_formation_table(), vanilla_monster_catalog());
     w.player_actor_slot = Some(0);
     w.actors[0].move_state.world_x = 300;
@@ -102,7 +104,26 @@ fn the_queued_swing_byte_resolves_a_move_power_record() {
             break;
         }
     }
-    assert!(w.battle_command.is_some(), "command session never opened");
+    assert_eq!(w.mode, SceneMode::Battle, "the walk never entered a battle");
+    // The round's first party command opens on `Begin | Run` - unless the
+    // entry rolled a **back attack**, where retail's `0x0B -> 0xFE` jump
+    // gives the monsters the whole first round and the prompt opens with
+    // round two. Settle with no input until a session is up: nothing acts
+    // on a prompt without a press, so the first open is the one observed.
+    let advantage = w.battle_formation_latched();
+    let mut opened = w.battle_command.is_some();
+    for _ in 0..4000 {
+        if opened {
+            break;
+        }
+        w.set_pad(0);
+        w.tick();
+        opened = w.battle_command.is_some();
+    }
+    assert!(
+        opened,
+        "command session never opened (formation advantage {advantage:?})"
+    );
     let slot = w.battle_ctx.active_actor as usize;
 
     // Walk retail's open flow to a committed swing: `Begin` on the round

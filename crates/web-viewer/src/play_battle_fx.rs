@@ -633,6 +633,20 @@ impl LegaiaRuntime {
         {
             host.world.set_actor_battle_animation(slot, player);
         }
+        // The creature's archive-order clip set, so the stager's staged ids
+        // (the walk, clip 1) resolve through the same commit as a monster's
+        // - the native window's seat, leg for leg.
+        if let Ok(Some(anims)) = legaia_asset::monster_archive::animations(&archive, creature)
+            && !anims.is_empty()
+        {
+            let clips: Vec<_> = anims.into_iter().map(Some).collect();
+            host.world
+                .set_actor_battle_action_clips(slot, std::sync::Arc::new(clips));
+        }
+        // Hand the seat to the world: a cast in its summon band places the
+        // creature at the stager's spawn point and retires it when the
+        // choreography ends; a debug spawn keeps the placement above.
+        host.world.seat_summon_actor(slot);
 
         let Some(br) = self.battle_render.as_mut() else {
             return;
@@ -775,40 +789,36 @@ impl LegaiaRuntime {
         let mut out = Vec::with_capacity(br.actor_slots().len() * 6);
         for actor_idx in br.actor_slots() {
             let b = host.world.actors.get(actor_idx).map(|a| &a.battle);
-            // Per-clip impact tint (`FUN_8004CE2C` pass 2 via
-            // `engine-vm::battle_impact_fx`): while the +0x21F selector is
-            // armed the packed +0x04 word rides the same cue row the
-            // cursor uses - the browser twin of the native window's arm.
-            // The same arm renders the item/spirit cue-group flash
-            // (`FUN_801E22C8` stamps colour + a `0x2000` blend the world
-            // tick drains), strength weighted by the live blend so the
-            // flash fades out.
+            // Retail's one tint seam (the native window's twin in
+            // `redraw.rs` carries the instruction cites): a non-zero
+            // `+0x0C` makes the `+0x04` lanes the GTE far colour and the
+            // blend the IR0, so the mesh's modulation colour is pushed
+            // toward the tint by `blend / 0x1000` and the texel still
+            // multiplies through. One rule for every writer - the impact
+            // triple, the cue-group flash, the presentation SM's colour
+            // arms. `render_flag == 2` (the capture / defeat fade) is left
+            // un-cued: retail draws it additive and the page has no
+            // per-draw blend override; colour `0` is the summon-hide's
+            // "not drawn" word and is left alone too.
+            if let Some(b) = b
+                && b.render_blend != 0
+                && b.render_color != 0
+                && !matches!(
+                    b.render_flag,
+                    ba::CURSOR_FLAG_SELECTED | ba::CURSOR_FLAG_DIMMED | 2
+                )
             {
                 use legaia_engine_vm::battle_impact_fx as ifx;
-                if let Some(b) = b {
-                    let blend_armed = b.render_flag == 0 && b.render_blend != 0;
-                    if (b.impact_state != 0 || blend_armed)
-                        && b.render_color != ifx::IMPACT_NEUTRAL_STATE
-                        && b.render_color != 0
-                    {
-                        let strength = if b.impact_state != 0 {
-                            ifx::IMPACT_TINT_CUE_STRENGTH
-                        } else {
-                            ifx::IMPACT_TINT_CUE_STRENGTH
-                                * (b.render_blend.min(0x1000) as f32 / 4096.0)
-                        };
-                        let c = ifx::unpack_actor_state_rgb(b.render_color);
-                        out.extend_from_slice(&[
-                            1.0,
-                            f32::from(c[0]) / 255.0,
-                            f32::from(c[1]) / 255.0,
-                            f32::from(c[2]) / 255.0,
-                            strength,
-                            1.0,
-                        ]);
-                        continue;
-                    }
-                }
+                let c = ifx::unpack_actor_state_rgb(b.render_color);
+                out.extend_from_slice(&[
+                    1.0,
+                    f32::from(c[0]) / 255.0,
+                    f32::from(c[1]) / 255.0,
+                    f32::from(c[2]) / 255.0,
+                    ifx::tint_ir0(b.render_blend),
+                    1.0,
+                ]);
+                continue;
             }
             match b.map(|b| b.render_flag) {
                 Some(ba::CURSOR_FLAG_SELECTED) => {

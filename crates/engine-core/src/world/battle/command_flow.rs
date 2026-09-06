@@ -4,6 +4,13 @@
 
 use super::*;
 
+/// The first **normal**-art action constant (art ordinal `4`). The queue
+/// builder `FUN_801EED1C` tokenizes only ordinals `>= 4`: the Miracle Art
+/// (ordinal `0`) and the three Hyper Arts (`1..=3`) take its other arm
+/// (`sltiu a1,a0,0x4` at `0x801EF330`), which writes nothing unless the
+/// slot's `+0x25F` Miracle marker is armed.
+const NORMAL_ART_MIN_CONSTANT: u8 = 0x1F;
+
 impl World {
     /// Open the player-driven command menu for party member `actor` and park
     /// the action SM. The action context's `active_actor` is set now; the
@@ -58,6 +65,7 @@ impl World {
     /// so the loop never deadlocks.
     pub(in crate::world) fn tick_battle_command(&mut self) {
         use crate::battle_input::{BattleCommandInput, Resolution};
+        use crate::battle_round::PendingPartyAction;
         use crate::input::PadButton;
         use crate::target_picker::CursorRow;
 
@@ -78,6 +86,8 @@ impl World {
             right: self.input.just_pressed(PadButton::Right),
             cross: self.input.just_pressed(PadButton::Cross),
             circle: self.input.just_pressed(PadButton::Circle),
+            // The ring's Attack arm reads the option word with the pad.
+            select_attack: self.battle_select_attack,
         };
         session.input(ev, party, monsters);
         // Target-cursor tint: retail stamps the four monster slots bright /
@@ -119,8 +129,8 @@ impl World {
 
         match session.resolved() {
             Some(Resolution::Confirmed {
-                // v0.1 only enables Attack, so `command` is always Attack here;
-                // Arts/Magic/Item aren't wired into the live loop yet.
+                // Only Attack reaches Confirmed with a target: Arts / Magic /
+                // Item hand off to their own submenus above.
                 command: _,
                 target_row,
                 target_slot,
@@ -130,21 +140,16 @@ impl World {
                     CursorRow::Ally => target_slot,
                 };
                 let actor = session.actor;
-                // A freshly-armed action starts from an empty strike script -
-                // see [`World::clear_action_stream`] for the soft-lock a
-                // carried-over byte produces.
-                self.clear_action_stream(actor);
+                // Retail's target confirm (`0x5A`) writes the target byte
+                // `+0x1DD` and the category, then walks the ring on to the
+                // next member; the swing stream is seeded when the action SM
+                // dispatches the member (`FUN_801EED1C` from state `0x0C`),
+                // which is where `dispatch_pending_party_action` seeds it.
                 if let Some(a) = self.actors.get_mut(actor as usize) {
                     a.battle.active_target = target;
                     a.battle.action_category = 3; // Attack
                 }
-                // ... and then seeds it, which is what makes the attack band's
-                // strike loop a loop instead of an immediate exit.
-                self.seed_basic_attack_queue(actor, target);
-                self.battle_ctx.active_actor = actor;
-                self.battle_ctx.queued_action = 3;
-                self.battle_ctx.action_state = vm::battle_action::ActionState::Begin.as_byte();
-                // Session done; SM resumes next tick.
+                self.commit_party_command(actor, PendingPartyAction::Attack { target });
             }
             Some(Resolution::OpenArtsMenu) => {
                 // Player picked Arts: open the retail-model per-press command
@@ -186,65 +191,40 @@ impl World {
                 self.battle_item_menu = Some(self.build_battle_item_session());
             }
             Some(Resolution::SpiritGuard) => {
-                // Player picked Spirit: charge the AP gauge (+5, idempotent
-                // per turn - the retail Square-press kernel) and raise the
-                // guard stance (retail pending-action byte +0x1DE = 4, the
-                // damage finisher's guard-halve input). The stance holds
-                // until this actor's next turn starts. Spirit is the whole
-                // turn: park at EndOfAction so the loop cycles.
+                // Player picked Spirit: the guard stance (retail's pending
+                // category `+0x1DE = 4`, the melee kernel's tripled guard
+                // roll) is up from the commit - it protects against every
+                // monster that dispatches ahead of this member - and lasts
+                // until the next round's sweep clears the category. The AP
+                // charge is the Spirit band's own, at dispatch.
                 let actor = session.actor;
-                if let Some(gauge) = self.ap_gauges.get_mut(actor as usize) {
-                    gauge.charge_spirit();
+                if let Some(a) = self.actors.get_mut(actor as usize) {
+                    a.battle.action_category = 4;
                 }
                 if let Some(guard) = self.battle_guarding.get_mut(actor as usize) {
                     *guard = true;
                 }
-                self.battle_ctx.active_actor = actor;
-                self.battle_ctx.action_state =
-                    vm::battle_action::ActionState::EndOfAction.as_byte();
-                // Claim the turn NOW (see `World::cycle_battle_turn`): a
-                // parked EndOfAction is re-seeded by the SM's 0x5A
-                // self-advance next tick, which made Spirit a guard PLUS a
-                // free attack off the stale entry queue.
-                self.cycle_battle_turn();
+                self.commit_party_command(actor, PendingPartyAction::Spirit);
             }
             Some(Resolution::RunAway) => {
-                // Player picked Run: roll the escape and arm the action SM's
-                // run band (category 5 -> RunBegin/RunWait/RunEscape, retail
-                // 0x64..0x66). The SM carries the roll outcome on
-                // `multi_cast_gate` (success floors downed party HP at 1 and
-                // tears the battle down `Escaped`; failure consumes the turn
-                // via the Done band). The roll is the retail `FUN_801E791C`
-                // formula (the writer of `_DAT_8007726C`): party SPD*1.5 +
-                // missing-HP/16 vs enemy SPD + missing-HP/32, two rand draws,
-                // Chicken Heart/King accessory bits folded from the living
-                // party members' second ability word.
-                let actor = session.actor;
-                let escaped = self.roll_battle_escape();
-                if let Some(a) = self.actors.get_mut(actor as usize) {
-                    a.battle.action_category = 5; // Run band
-                }
-                self.battle_ctx.active_actor = actor;
-                self.battle_ctx.queued_action = 5;
-                self.battle_ctx.multi_cast_gate = u8::from(escaped);
-                self.battle_ctx.action_state = vm::battle_action::ActionState::Begin.as_byte();
+                // Player picked Run: retail's `0x32` confirm stamps category
+                // `5` on every party actor and begins the round at once
+                // (`commit_party_command` does both); the escape roll is the
+                // run band's own, at each member's dispatch.
+                self.commit_party_command(session.actor, PendingPartyAction::Run);
             }
             Some(Resolution::Aborted) => {
-                // No valid target the player could pick - arm a default strike
-                // on the first living monster so the loop progresses.
+                // No valid target the player could pick - commit a default
+                // strike on the first living monster so the round progresses.
                 let actor = session.actor;
                 let target = (party_count..self.actors.len() as u8)
                     .find(|&i| self.actors[i as usize].battle.liveness != 0)
                     .unwrap_or(party_count);
-                self.clear_action_stream(actor);
                 if let Some(a) = self.actors.get_mut(actor as usize) {
                     a.battle.active_target = target;
                     a.battle.action_category = 3;
                 }
-                self.seed_basic_attack_queue(actor, target);
-                self.battle_ctx.active_actor = actor;
-                self.battle_ctx.queued_action = 3;
-                self.battle_ctx.action_state = vm::battle_action::ActionState::Begin.as_byte();
+                self.commit_party_command(actor, PendingPartyAction::Attack { target });
             }
             None => {
                 // Still selecting - keep the session open for the next frame.
@@ -389,10 +369,9 @@ impl World {
     /// Drive the open battle Arts submenu one frame from [`World::input`].
     ///
     /// Edge-triggered pad → one [`crate::battle_arts::BattleArtsInput`] per
-    /// frame. On a confirmed execution the art runs via [`Self::apply_battle_art`]
-    /// (driving each strike's power byte through the real `apply_art_strike`
-    /// path) and the action SM parks at `EndOfAction` so the live loop cycles to
-    /// the next combatant. Backing out reopens the command menu.
+    /// frame. A confirmed row commits its direction string
+    /// ([`Self::run_battle_art`]); the queue is built and the attack band
+    /// armed at the caster's dispatch. Backing out reopens the command menu.
     pub(in crate::world) fn tick_battle_arts_menu(&mut self) {
         use crate::battle_arts::{ArtsResolution, BattleArtsInput};
         use crate::input::PadButton;
@@ -421,23 +400,15 @@ impl World {
                 target_slot,
             }) => {
                 let caster = menu.actor;
-                let (power, enemy_effect, action) = menu
+                // A saved-chain row is its directional string: the same
+                // arrows the command input would have produced, run through
+                // the same queue-builder.
+                let sequence = menu
                     .arts
                     .get(art_index as usize)
-                    .map(|a| (a.power.clone(), a.enemy_effect, a.action))
+                    .map(|a| a.sequence.clone())
                     .unwrap_or_default();
-                // A saved-chain row collapses to a single executed art (the
-                // row's own matched constant), so its shout list is that one
-                // constant - or empty for a synthetic row.
-                let actions: Vec<legaia_art::ActionConstant> = action.into_iter().collect();
-                self.run_battle_art(
-                    caster,
-                    &power,
-                    enemy_effect,
-                    &actions,
-                    target_row,
-                    target_slot,
-                );
+                self.run_battle_art(caster, &sequence, target_row, target_slot);
             }
             Some(ArtsResolution::Aborted) => {
                 let actor = self.battle_ctx.active_actor;
@@ -532,11 +503,11 @@ impl World {
 
     /// Drive the open Arts command input one frame from [`World::input`].
     ///
-    /// On a confirmed Begin the entered sequence resolves through the
-    /// matcher family ([`Self::resolve_arts_input_entry`]) and runs via
-    /// [`Self::apply_battle_art`]; the SM parks at `EndOfAction` so the
-    /// live loop cycles. Backing out (empty buffer + Circle, or no valid
-    /// target) reopens the command menu.
+    /// On a confirmed Begin the entered sequence is committed
+    /// ([`Self::run_battle_art`]); retail's queue-builder runs over it at
+    /// the caster's dispatch and the attack band stages the result. Backing
+    /// out (empty buffer + Circle, or no valid target) reopens the command
+    /// menu.
     pub(in crate::world) fn tick_battle_arts_input(&mut self) {
         use crate::arts_command_input::{ArtsCommandPad, ArtsInputResolution};
         use crate::input::PadButton;
@@ -562,16 +533,7 @@ impl World {
                 target_slot,
             }) => {
                 let caster = session.actor;
-                let (power, enemy_effect, actions) =
-                    self.resolve_arts_input_entry(caster, &session.buffer);
-                self.run_battle_art(
-                    caster,
-                    &power,
-                    enemy_effect,
-                    &actions,
-                    target_row,
-                    target_slot,
-                );
+                self.run_battle_art(caster, &session.buffer, target_row, target_slot);
             }
             Some(ArtsInputResolution::Aborted) => {
                 let actor = self.battle_ctx.active_actor;
@@ -583,196 +545,198 @@ impl World {
         }
     }
 
-    /// Resolve an entered directional buffer to a per-strike power profile
-    /// through the retail matcher order: exact **Miracle** string replaces
-    /// the whole queue, a recognized art sequence ending on a **Super**
-    /// combination replaces the tail, and otherwise each recognized named
-    /// art contributes its record's strikes with unmatched directions
-    /// staying plain swings
-    /// ([`crate::arts_command_input::resolve_entered_commands`]).
+    /// Build the action queue retail's queue-builder `FUN_801EED1C` writes
+    /// into `actor[+0x1DF..]` for an entered arrow string - byte-exact, not
+    /// structural:
     ///
-    /// The third element is the turn's **shout list**: one action constant
-    /// per art the entry performs, in performed order. Retail's entry runs
-    /// until the AP pool is spent, so a plain entry routinely performs
-    /// several named arts, and each one is a separately staged animation
-    /// whose materialiser calls the cue selector - hence one constant per
-    /// art, not one for the whole turn. A Miracle / Super replacement
-    /// answers a single constant (its finisher), which is the pinned key
-    /// for those two paths; the per-constant staging inside a replacement
-    /// queue is not captured, so it is deliberately not expanded here.
+    /// 1. the tokenizer pass ([`legaia_art::tokenize`]): the arrows become
+    ///    `0x0C..0x0F` swings, each matched art gets the `0x19` starter
+    ///    written over its **last** arrow and its constant inserted after
+    ///    it, leading arrows stay and arts overlap (`↑↓↑` -> `0F 0E 19 27`);
+    /// 2. the learn-on-use check per accepted art (`FUN_801EFBFC`, `jal` at
+    ///    `0x801EF44C`): a newly learned art's starter is `0x1A` instead
+    ///    (`addiu v1,t3,0x18` with `t3 = 2`, `0x801EF6F0`);
+    /// 3. the finish ([`vm::battle_action::finish_action_queue`]): the
+    ///    Miracle replacement, the MSB-clear sweep and the Super
+    ///    tail-replace, in that order.
     ///
-    /// REF: FUN_801EED1C
-    /// REF: FUN_8004C140
-    fn resolve_arts_input_entry(
-        &self,
+    /// Returns the 19-byte stream window and the art constants it performs,
+    /// in order (the shout-cue list). A character with no art catalog gets
+    /// its arrows as plain swings, which is retail's own answer for an
+    /// unmatched string.
+    ///
+    /// PORT: FUN_801EED1C (the player path: normalise + learn + finish;
+    /// the tokenizer body is `legaia_art::tokenize`, the finish passes
+    /// `legaia_engine_vm::battle_action::queue_applier`)
+    pub(in crate::world) fn build_arts_action_queue(
+        &mut self,
         caster: u8,
-        buffer: &[u8],
+        commands: &[legaia_art::Command],
     ) -> (
-        Vec<legaia_art::PowerByte>,
-        legaia_art::EnemyEffect,
+        [u8; vm::battle_action::ACTION_QUEUE_CAP],
         Vec<legaia_art::ActionConstant>,
     ) {
-        use crate::battle_arts::{miracle_for_chain, super_for_chain};
-        let char_slot = self.party_roster_slot(caster as usize) as u8;
-        let character = self.caster_character(char_slot);
-        if let Some(miracle) = miracle_for_chain(character, buffer) {
-            let (power, effect) = self.miracle_strike_profile(character, miracle);
-            let action = legaia_engine_vm::battle_action::resolve_action_queue(
-                character,
-                miracle.commands,
-                &[],
-            )
-            .actions()
-            .iter()
-            .rev()
-            .copied()
-            .find(|a| a.is_art());
-            return (power, effect, action.into_iter().collect());
-        }
-        let caster_records = || {
-            self.art_records
-                .iter()
-                .filter(|((ch, _), _)| *ch == character)
-                .map(|(_, rec)| rec)
-        };
-        if let Some(sa) = super_for_chain(character, buffer, caster_records()) {
-            let (power, effect) = self.super_strike_profile(character, sa);
-            let action = sa
-                .replace
-                .iter()
-                .rev()
-                .filter_map(|&b| legaia_art::ActionConstant::from_byte(b))
-                .find(|a| a.is_art());
-            return (power, effect, action.into_iter().collect());
-        }
-        let records: Vec<(legaia_art::ActionConstant, legaia_art::ArtRecord)> = self
+        use legaia_art::ActionConstant;
+        use vm::battle_action::ACTION_QUEUE_CAP;
+        let roster = self.party_roster_slot(caster as usize) as u8;
+        let character = self.caster_character(roster);
+        // The character's art catalog in grid order (ascending constant),
+        // the order the builder's inner loop walks (`s3 = 0xB..`).
+        let mut catalog: Vec<(ActionConstant, Vec<legaia_art::Command>)> = self
             .art_records
             .iter()
-            .filter(|((ch, _), _)| *ch == character)
-            .map(|((_, action), rec)| (*action, rec.clone()))
+            .filter(|((ch, action), rec)| {
+                // Only the **normal** arts (ordinal `>= 4`, constants
+                // `0x1F+`): the builder's inner loop routes the Miracle Art
+                // and the three Hyper Arts (ordinals `0..=3`) through a
+                // different arm (`sltiu a1,a0,0x4` at `0x801EF330`) that,
+                // with the slot's `+0x25F` marker clear, writes nothing -
+                // their combo bytes never tokenize as arts.
+                // ... and only combos of two arrows or more: a fully matched
+                // one-arrow string takes the builder's `s1 == 1` exit
+                // (`0x801EF420..0x801EF434`) with no rewrite - the disc's
+                // one-arrow record is the Miracle finisher's, and letting it
+                // match would steal an arrow from every art containing it.
+                *ch == character
+                    && rec.commands.len() >= 2
+                    && action.as_byte() >= NORMAL_ART_MIN_CONSTANT
+            })
+            .map(|((_, action), rec)| (*action, rec.commands.clone()))
             .collect();
-        let entry = crate::arts_command_input::resolve_entered_commands(&records, buffer);
-        // One shout per recognized art, in performed order - `matched` is
-        // exactly that list, and unmatched directions (plain swings) carry
-        // no constant, so they stay silent as retail's no-cue-entry arts do.
-        (entry.power, entry.enemy_effect, entry.matched)
+        catalog.sort_by_key(|(a, _)| a.as_byte());
+        let entries: Vec<legaia_art::tokenize::ArtEntry<'_>> =
+            catalog.iter().map(|(a, c)| (*a, c.as_slice())).collect();
+        let tokens = legaia_art::tokenize(&entries, commands);
+        log::debug!(
+            "arts queue: {:?} over {:?} -> {:02x?}",
+            commands,
+            catalog
+                .iter()
+                .map(|(a, c)| (a.as_byte(), c.as_slice()))
+                .collect::<Vec<_>>(),
+            &tokens[..]
+        );
+        let mut bytes = [0u8; ACTION_QUEUE_CAP];
+        bytes[..tokens.len()].copy_from_slice(&tokens);
+        // Learn-on-use per accepted art, in queue order. Retail's insert
+        // gate (`ctx[+0x266 + slot]`) has no engine analogue and reads open.
+        for i in 0..tokens.len().saturating_sub(1) {
+            if bytes[i] != ActionConstant::RegularStarter.as_byte() {
+                continue;
+            }
+            let Some(art) = ActionConstant::from_byte(bytes[i + 1]).filter(|a| a.is_art()) else {
+                continue;
+            };
+            let id = art.as_byte();
+            let known = self.tactical_arts.is_learned(roster, id);
+            self.notify_art_used(roster, id);
+            if !known && self.tactical_arts.is_learned(roster, id) {
+                bytes[i] = ActionConstant::SpecialStarter.as_byte();
+            }
+        }
+        vm::battle_action::finish_action_queue(character, commands, &mut bytes);
+        let actions: Vec<ActionConstant> = bytes
+            .iter()
+            .take_while(|&&b| b != 0)
+            .filter_map(|&b| ActionConstant::from_byte(b))
+            .filter(|a| a.is_art())
+            .collect();
+        (bytes, actions)
     }
 
-    /// Run a resolved Tactical-Arts turn against the picked target.
-    ///
-    /// **This is the seam the Arts path used to bypass.** The entry resolver
-    /// hands over a per-strike power profile; the turn is then *executed* by
-    /// the battle-action state machine's attack band - the same band a
-    /// physical Attack runs - by staging the art's action constant into the
-    /// actor's action-parameter stream and arming category `3`
-    /// ([`Self::arm_battle_art_action`]). Everything the band owns therefore
-    /// applies to an art as well: the face / approach / strike-pace states,
-    /// the staged art-bank animation, and - because the anim commit latches
-    /// the staged constant into `+0x1DB` - the per-art attack camera, whose
-    /// jump tables are keyed on exactly that byte
-    /// (`docs/formats/battle-attack-camera-table.md`).
-    ///
-    /// The pre-SM behaviour (resolve every strike inline, park the SM at
-    /// `EndOfAction`) survives as [`Self::apply_battle_art`] and is taken for
-    /// an entry that performs **no named art** - a synthetic / demo row has
-    /// no action constant to stage, so there is no animation, no camera arm
-    /// and nothing for the band to walk.
+    /// Commit an entered Tactical-Arts string (`sequence` = the direction
+    /// command bytes `1..=4`, the arts input's buffer or a saved chain's
+    /// string) against the picked target: the arts screen's commit (`0x50`
+    /// -> `0x5A` -> the ring walk). The entry executes at the caster's
+    /// dispatch ([`Self::execute_battle_art`]), once every member has
+    /// committed (retail `0x6E -> 0xFE`).
     pub(in crate::world) fn run_battle_art(
         &mut self,
         caster: u8,
-        power: &[legaia_art::PowerByte],
-        enemy_effect: legaia_art::EnemyEffect,
+        sequence: &[u8],
+        target_row: crate::target_picker::CursorRow,
+        target_slot: u8,
+    ) {
+        if let Some(a) = self.actors.get_mut(caster as usize) {
+            a.battle.action_category = 3;
+        }
+        self.commit_party_command(
+            caster,
+            crate::battle_round::PendingPartyAction::Art {
+                sequence: sequence.to_vec(),
+                target_row,
+                target_slot,
+            },
+        );
+    }
+
+    /// Execute a committed Tactical-Arts turn at the caster's dispatch:
+    /// build retail's action queue ([`Self::build_arts_action_queue`]) and
+    /// arm the action SM's attack band with it
+    /// ([`Self::arm_battle_art_action`]). The band then stages the queue
+    /// byte by byte - each swing, starter and art constant its own clip -
+    /// and the hit-event driver resolves damage on each clip's own beats,
+    /// so a three-arrow art is two swings and the art, paced by the clips,
+    /// exactly as retail runs it.
+    fn execute_battle_art(
+        &mut self,
+        caster: u8,
+        sequence: &[u8],
+        target_row: crate::target_picker::CursorRow,
+        target_slot: u8,
+    ) {
+        let commands: Vec<legaia_art::Command> = sequence
+            .iter()
+            .filter_map(|&b| legaia_art::Command::from_byte(b))
+            .collect();
+        let (queue, actions) = self.build_arts_action_queue(caster, &commands);
+        self.arm_battle_art_action(caster, &queue, &actions, target_row, target_slot);
+    }
+
+    /// Stage a built action queue on the acting actor and arm the action
+    /// SM's attack band for it: category `3`, the target, `Begin`. The
+    /// stream is the queue **verbatim** (retail's `+0x1DF..` window), with
+    /// the `0x00` terminator the band stops on guaranteed inside the
+    /// stream. An empty queue still arms: the band reads its terminator on
+    /// byte 0 and drops to recovery, consuming the turn - retail's own
+    /// answer to an input with nothing in it.
+    ///
+    /// REF: FUN_801E295C (state `0x0C` ActionSeed, which calls the builder
+    /// for the acting party slot and seeds category 3)
+    fn arm_battle_art_action(
+        &mut self,
+        caster: u8,
+        queue: &[u8],
         actions: &[legaia_art::ActionConstant],
         target_row: crate::target_picker::CursorRow,
         target_slot: u8,
     ) {
-        if self.arm_battle_art_action(
-            caster,
-            power,
-            enemy_effect,
-            actions,
-            target_row,
-            target_slot,
-        ) {
-            // The SM owns the turn from here; the live loop's next step
-            // drives the attack band and cycles the turn at its own
-            // `EndOfAction`.
-            return;
-        }
-        self.apply_battle_art(
-            caster,
-            power,
-            enemy_effect,
-            actions,
-            target_row,
-            target_slot,
-        );
-        self.battle_ctx.action_state = vm::battle_action::ActionState::EndOfAction.as_byte();
-        // Claim the turn NOW (see `World::cycle_battle_turn`).
-        self.cycle_battle_turn();
-    }
-
-    /// Stage a Tactical-Arts turn on the acting actor and arm the action SM's
-    /// attack band for it. Returns `false` when the entry performs no named
-    /// art, in which case the caller falls back to the inline resolver.
-    ///
-    /// The stream is **one byte per resolved strike**, each carrying the
-    /// turn's action constant. That is the port's reading of retail's stream
-    /// alphabet - direction swings `0x0C..0x0F`, art starters `0x19`/`0x1A`,
-    /// art action constants `0x1B+`, walked one byte per staged swing
-    /// (`docs/subsystems/battle-action.md` § Attack chain - strike loop) -
-    /// with the per-strike power carried alongside in
-    /// [`vm::battle_action::BattleActor::art_power`] rather than re-derived
-    /// from a record, because the entry resolver has already folded the
-    /// Miracle / Super and no-record degradations the record alone cannot
-    /// answer.
-    ///
-    /// **Disclosed approximation.** A multi-art entry stages every strike
-    /// under `actions[0]`. That is not new: the inline resolver keys
-    /// `ArtStrikeInfo::art` the same way, because the flat power list the
-    /// entry resolver returns carries no per-hit attribution back to the art
-    /// that produced it.
-    fn arm_battle_art_action(
-        &mut self,
-        caster: u8,
-        power: &[legaia_art::PowerByte],
-        enemy_effect: legaia_art::EnemyEffect,
-        actions: &[legaia_art::ActionConstant],
-        target_row: crate::target_picker::CursorRow,
-        target_slot: u8,
-    ) -> bool {
         use crate::target_picker::CursorRow;
-        let Some(art) = actions.first().copied() else {
-            return false;
-        };
         let party_count = self.party_count.clamp(1, 3);
         let target = match target_row {
             CursorRow::Enemy => party_count + target_slot,
             CursorRow::Ally => target_slot,
         };
-        if usize::from(target) >= self.actors.len() || power.is_empty() {
-            return false;
+        if usize::from(target) >= self.actors.len() {
+            return;
         }
-        // The **roster**-slot keying `resolve_arts_input_entry` resolved the
-        // entry under, not the battle ordinal: the SM looks the art record up
-        // by this key, so the two have to agree or a three-member party reads
+        // The **roster**-slot keying the queue was built under, not the
+        // battle ordinal: the hit-event driver looks the art record up by
+        // this key, so the two have to agree or a three-member party reads
         // the wrong character's table.
         let char_slot = self.party_roster_slot(caster as usize) as u8;
         let character = self.caster_character(char_slot);
         self.push_art_shout_cues(caster, actions);
         // A freshly-armed action starts from an empty strike script - see
         // `World::clear_action_stream` for the soft-lock a carried-over byte
-        // produces. It also drops the previous turn's staged art profile.
+        // produces.
         self.clear_action_stream(caster);
         let Some(a) = self.actors.get_mut(caster as usize) else {
-            return false;
+            return;
         };
-        // Leave room for the `0x00` terminator the attack band stops on.
-        let hits = power.len().min(a.battle.params.len().saturating_sub(1));
-        for slot in a.battle.params.iter_mut().take(hits) {
-            *slot = art.as_byte();
-        }
-        a.battle.params[hits] = 0;
+        let n = queue.len().min(a.battle.params.len().saturating_sub(1));
+        a.battle.params[..n].copy_from_slice(&queue[..n]);
+        a.battle.params[n] = 0;
         a.battle.strike_index = 0;
         a.battle.active_target = target;
         a.battle.action_category = 3;
@@ -780,12 +744,158 @@ impl World {
         // an unset slot would resolve every character's arts against Vahn's
         // table.
         a.battle.character = character;
-        a.battle
-            .stage_art_profile(Some(art), &power[..hits], enemy_effect);
+        a.battle.chosen_art = None;
         self.battle_ctx.active_actor = caster;
         self.battle_ctx.queued_action = 3;
         self.battle_ctx.action_state = vm::battle_action::ActionState::Begin.as_byte();
-        true
+    }
+
+    /// Dispatch the command `actor` committed this round - the engine's
+    /// counterpart of the action SM's `0x0C` seed for a party slot, run when
+    /// the initiative pick lands on the member. Everything the old commit
+    /// sites armed on the spot is armed here instead: the swing stream
+    /// (`FUN_801EED1C`), the art profile, the cast, the item effect + its
+    /// cast band, the Spirit charge, the escape roll + run band.
+    ///
+    /// REF: FUN_801E295C (state `0x0C`, the party-slot `jal 0x801EED1C`)
+    /// REF: FUN_801EED1C
+    pub(in crate::world) fn dispatch_pending_party_action(
+        &mut self,
+        actor: u8,
+        action: crate::battle_round::PendingPartyAction,
+    ) {
+        use crate::battle_round::PendingPartyAction as Pending;
+        use vm::battle_action::ActionState;
+        self.battle_ctx.active_actor = actor;
+        match action {
+            Pending::Attack { target } => {
+                // A freshly-armed action starts from an empty strike script -
+                // see [`World::clear_action_stream`] for the soft-lock a
+                // carried-over byte produces.
+                self.clear_action_stream(actor);
+                if let Some(a) = self.actors.get_mut(actor as usize) {
+                    a.battle.active_target = target;
+                    a.battle.action_category = 3; // Attack
+                }
+                // ... and then seeds it, which is what makes the attack band's
+                // strike loop a loop instead of an immediate exit.
+                self.seed_basic_attack_queue(actor, target);
+                self.battle_ctx.queued_action = 3;
+                self.battle_ctx.action_state = ActionState::Begin.as_byte();
+            }
+            Pending::Art {
+                sequence,
+                target_row,
+                target_slot,
+            } => self.execute_battle_art(actor, &sequence, target_row, target_slot),
+            Pending::Spell {
+                spell_id,
+                target_row,
+                target_slot,
+            } => {
+                // The dispatch commits the category-2 action; the action SM's
+                // Magic band carries it from here - facing, the MP debit and
+                // the `0x14`-frame wait at `0x28`/`0x29`, the summon band for
+                // a Seru id - and the outcome folds at retail's seam
+                // (`World::settle_cast_band` / the stager's strike). An
+                // escape spell's success ends the encounter from the live
+                // loop the frame it folds, through the escape teardown.
+                match self.spell_catalog.get(spell_id).cloned() {
+                    Some(def) => {
+                        let targets = self.spell_targets_for(&def, target_row, target_slot);
+                        self.arm_player_cast(actor, &def, targets);
+                    }
+                    None => {
+                        // Not a catalog spell (the submenu only lists catalog
+                        // ids, so this is defensive): the turn is spent.
+                        self.battle_ctx.action_state = ActionState::EndOfAction.as_byte();
+                        self.cycle_battle_turn();
+                    }
+                }
+            }
+            Pending::Item {
+                item_id,
+                used_slots,
+            } => {
+                // Apply to every affected slot (the copy went at the commit).
+                for &target_slot in &used_slots {
+                    let outcome = self.apply_battle_item(item_id, target_slot);
+                    self.push_item_use_fx(target_slot, outcome);
+                }
+                if self.battle_escaped {
+                    // Escape item succeeded: leave the encounter (no loot, no
+                    // game-over) through the escape teardown's fade + exit
+                    // hold instead of cycling the turn.
+                    self.battle_end = Some(BattleEndCause::Escaped);
+                    self.begin_battle_end_sequence();
+                    return;
+                }
+                // Using an item is the actor's whole turn - and in retail the
+                // turn *is* the action SM's Item band: the committed
+                // category-1 action seeds through `FUN_801E295C`'s item arm
+                // (`item_seed_band`) into the `0x3C..0x40` cast states, which
+                // fire the cast-audio cue (`FUN_801F3990` via `spirit_wait`),
+                // stamp the item's effect-descriptor `(class, tier)` pair, and
+                // expand the item's cue group (`FUN_800402F4`'s eleven
+                // `FUN_801E22C8` sites via `place_cue_group`). The simulation
+                // fold stays above; the band's own `apply_damage` hook is the
+                // presentation seam. The two SummonFlute ids (`0x98`/`0x99`)
+                // reroute inside `action_seed` to the summon band, which the
+                // live loop's settle glue (`live_battle_tick`) walks to
+                // completion.
+                let target = if used_slots.len() > 1 {
+                    vm::battle_cue_group::TARGET_PARTY_WIDE
+                } else {
+                    used_slots.first().copied().unwrap_or(actor)
+                };
+                self.clear_action_stream(actor);
+                if let Some(a) = self.actors.get_mut(actor as usize) {
+                    a.battle.active_target = target;
+                    a.battle.action_category = vm::battle_action::ActionCategory::Item.as_byte();
+                    a.battle.params[0] = item_id;
+                }
+                self.battle_ctx.queued_action = vm::battle_action::ActionCategory::Item.as_byte();
+                self.battle_ctx.action_state = ActionState::Begin.as_byte();
+            }
+            Pending::Spirit => {
+                // The AP charge (+5, idempotent per turn - the retail
+                // Square-press kernel). The guard stance has been up since
+                // the commit.
+                if let Some(gauge) = self.ap_gauges.get_mut(actor as usize) {
+                    gauge.charge_spirit();
+                }
+                if let Some(guard) = self.battle_guarding.get_mut(actor as usize) {
+                    *guard = true;
+                }
+                self.battle_ctx.action_state = ActionState::EndOfAction.as_byte();
+                self.cycle_battle_turn();
+            }
+            Pending::Run => {
+                // Roll the escape and arm the action SM's run band (category
+                // 5 -> RunBegin/RunWait/RunEscape, retail 0x64..0x66). The SM
+                // carries the roll outcome on `multi_cast_gate` (success
+                // floors downed party HP at 1 and tears the battle down
+                // `Escaped`; failure consumes the turn via the Done band).
+                // The roll is the retail `FUN_801E791C` formula (the writer of
+                // `_DAT_8007726C`): party SPD*1.5 + missing-HP/16 vs enemy SPD
+                // + missing-HP/32, two rand draws, Chicken Heart/King accessory
+                // bits folded from the living party members' second ability
+                // word. Retail rolls it inside the run band (`0x801E57C8`),
+                // once per party member that dispatches with category 5.
+                let escaped = self.roll_battle_escape();
+                if let Some(a) = self.actors.get_mut(actor as usize) {
+                    a.battle.action_category = 5; // Run band
+                }
+                self.battle_ctx.queued_action = 5;
+                self.battle_ctx.multi_cast_gate = u8::from(escaped);
+                self.battle_ctx.action_state = ActionState::Begin.as_byte();
+            }
+            Pending::StandBy => {
+                // Category 0 dispatches straight to the Done band.
+                self.battle_ctx.action_state = ActionState::EndOfAction.as_byte();
+                self.cycle_battle_turn();
+            }
+        }
     }
 
     /// Arts-voice shout: one cue **per art the turn performs**, on that
@@ -815,163 +925,6 @@ impl World {
                     cslot: cslot as u8,
                     action: action.as_byte(),
                 });
-        }
-    }
-
-    /// Execute an art against the picked target through the real art-power
-    /// path, **without** the action state machine - the fallback
-    /// [`Self::run_battle_art`] takes for an entry that performs no named
-    /// art (a synthetic / demo row).
-    ///
-    /// Each [`legaia_art::PowerByte`] in `power` drives one strike through
-    /// [`crate::art_strike::apply_art_strike`]: the byte's multiplier tier +
-    /// UDF/LDF target are decoded, [`Self::resolve_battle_defense`] picks the
-    /// matching defense half (when a UDF/LDF split is configured), and the
-    /// per-strike damage is deducted. The art's `enemy_effect` is applied once
-    /// after a landing hit (if the target survives). Summed damage surfaces as
-    /// one HUD popup; the target is downed if its HP reaches zero.
-    ///
-    /// `power` comes from the matched art record when one is staged, else a
-    /// synthetic per-direction profile (see [`Self::build_battle_arts_rows`]),
-    /// so the same kernel handles both real and demo arts.
-    ///
-    /// `actions` is the list of **named arts this turn performs**, in
-    /// performed order - one entry per recognized art in a per-press entry,
-    /// a single finisher constant for a Miracle / Super replacement, and
-    /// empty for a synthetic art with no matched record. It is not a
-    /// display list: it drives one shout cue and one learn-on-use check per
-    /// art, both of which retail runs per art rather than per turn.
-    fn apply_battle_art(
-        &mut self,
-        caster: u8,
-        power: &[legaia_art::PowerByte],
-        enemy_effect: legaia_art::EnemyEffect,
-        actions: &[legaia_art::ActionConstant],
-        target_row: crate::target_picker::CursorRow,
-        target_slot: u8,
-    ) {
-        use crate::target_picker::CursorRow;
-        use legaia_engine_vm::battle_action::ArtStrikeInfo;
-        let party_count = self.party_count.clamp(1, 3);
-        let target = match target_row {
-            CursorRow::Enemy => party_count + target_slot,
-            CursorRow::Ally => target_slot,
-        } as usize;
-        if target >= self.actors.len() {
-            return;
-        }
-        let attack = self
-            .battle_attack
-            .get(caster as usize)
-            .copied()
-            .unwrap_or(0);
-        let character = self.caster_character(caster);
-        // One shout per art the turn performs (the SM-routed path pushes the
-        // same list at arm time).
-        self.push_art_shout_cues(caster, actions);
-        let roster = self.party_roster_slot(caster as usize) as u8;
-        for action in actions {
-            // Learn-on-use, likewise per art. This path reaches
-            // `art_strike::apply_art_strike` directly rather than through
-            // `BattleActionHost::apply_art_strike`, so retail's per-art check
-            // (`FUN_801EFBFC`, wired in the host impl and run once per
-            // accepted art in the queue-builder walk) has to be run here too.
-            // A synthetic art contributes no constant and is skipped - there
-            // is no real art id to insert.
-            self.notify_art_used(roster, action.as_byte());
-        }
-        let action = actions.first().copied();
-        // Selector-9 accuracy/evasion terms (retail actor `+0x168`): the
-        // attacker's accuracy vs the target's evasion. The roll engages only
-        // when the ATTACKER has a seeded accuracy stat; an unseeded attacker
-        // (`acc == 0`, the synthetic case) auto-hits AND consumes no RNG, so it
-        // can't be made to whiff against a positive-evasion target and battles
-        // without seeded stats keep their bit-identical streams.
-        let attacker_acc = self
-            .battle_accuracy
-            .get(caster as usize)
-            .copied()
-            .unwrap_or(0);
-        let target_eva = self.battle_evasion.get(target).copied().unwrap_or(0);
-        let mut total: u32 = 0;
-        let mut landed: u8 = 0;
-        for (i, pb) in power.iter().enumerate() {
-            if self.actors[target].battle.liveness == 0 {
-                break;
-            }
-            // Minimal per-strike info: `apply_art_strike` + `resolve_battle_defense`
-            // only read `power` + `enemy_effect`. `art` carries the turn's
-            // first performed art when one exists; the placeholder only
-            // remains for synthetic entries, and the live loop doesn't drive
-            // the per-art animation script either way, so a multi-art entry's
-            // later strikes are not re-keyed (nothing downstream reads it).
-            let info = ArtStrikeInfo {
-                strike_index: i as u8,
-                anim_byte: 0,
-                actor_slot: caster,
-                target_slot: target as u8,
-                character,
-                art: action.unwrap_or(legaia_art::ActionConstant::Art1B),
-                power: Some(*pb),
-                dmg_timing: None,
-                enemy_effect,
-                hit_cue: None,
-            };
-            let defense = self.resolve_battle_defense(target as u8, &info);
-            let outcome = crate::art_strike::apply_art_strike(attack, defense, &info);
-            if let Some(dmg) = outcome.damage {
-                // Roll the strike against the target's evasion. Only consume
-                // RNG when the roll is meaningful (some stat seeded), so the
-                // unseeded auto-hit path leaves the RNG stream untouched.
-                let hit = if attacker_acc == 0 {
-                    true
-                } else {
-                    let mut seed = self.next_rng();
-                    legaia_engine_vm::battle_formulas::accuracy_roll(
-                        attacker_acc,
-                        target_eva,
-                        &mut seed,
-                    )
-                };
-                if hit {
-                    // A petrified target (Stone) absorbs the hit - no HP loss
-                    // (Stone is invulnerable at every damage entry point). The
-                    // strike still counts as landed (it connected, then was
-                    // nullified), matching the basic-attack / spell paths.
-                    let applied = if self.actor_is_petrified(target as u8) {
-                        0
-                    } else {
-                        dmg
-                    };
-                    self.apply_battle_hp_delta(target, i32::from(applied));
-                    total = total.saturating_add(applied as u32);
-                    landed = landed.saturating_add(1);
-                }
-            }
-        }
-        if landed > 0
-            && enemy_effect != legaia_art::EnemyEffect::None
-            && self.actors[target].battle.liveness != 0
-        {
-            let applied = self
-                .status_effects
-                .apply_from_enemy_effect(target as u8, enemy_effect);
-            // Rot's applier rolls the disabled limb (`rand % 3`, the retail
-            // `1 << (rand%3 + 3)` bit pick).
-            if applied == Some(legaia_engine_vm::status_effects::StatusKind::Rot) {
-                let limb = (self.next_rng() % 3) as u8;
-                self.status_effects.set_rot_limb(target as u8, limb);
-            }
-        }
-        if total > 0 {
-            self.battle_hit_fx.push(BattleHitFx {
-                target_slot: target as u8,
-                amount: total.min(u16::MAX as u32) as u16,
-                is_heal: false,
-                is_crit: landed > 1,
-            });
-            let survives = self.actors[target].battle.hp > 0;
-            self.queue_battle_reaction(target, survives);
         }
     }
 
@@ -1030,11 +983,11 @@ impl World {
     /// Drive the open battle Magic submenu one frame from [`World::input`].
     ///
     /// Edge-triggered pad → one [`crate::battle_magic::BattleSpellInput`] per
-    /// frame. On a confirmed cast the spell applies via [`Self::apply_battle_spell`]
-    /// (MP deducted, HP / heal / cure / revive folded, popups surfaced) and the
-    /// action SM parks at `EndOfAction` so the live loop cycles to the next
-    /// combatant - a cast is the caster's whole turn, no strike fires. Backing
-    /// out reopens the command menu for the same actor.
+    /// frame. On a confirmed cast the action SM's Magic band is armed with the
+    /// committed spell and its resolved targets ([`Self::arm_player_cast`]);
+    /// the band charges the MP, plays the cast, and the outcome folds at
+    /// retail's seam - a cast is the caster's whole turn, no strike fires.
+    /// Backing out reopens the command menu for the same actor.
     pub(in crate::world) fn tick_battle_spell_menu(&mut self) {
         use crate::battle_magic::{BattleSpellInput, SpellResolution};
         use crate::input::PadButton;
@@ -1062,20 +1015,20 @@ impl World {
                 target_row,
                 target_slot,
             }) => {
+                // The magic window's commit (`0x46` -> its sub-cursor ->
+                // the ring walk): the cast itself is the caster's dispatch.
                 let caster = menu.actor;
-                self.apply_battle_spell(caster, spell_id, target_row, target_slot);
-                if self.battle_escaped {
-                    // Escape spell succeeded: leave the encounter now (no loot,
-                    // no game-over) instead of cycling the turn.
-                    self.finish_battle();
-                } else {
-                    self.battle_ctx.action_state =
-                        vm::battle_action::ActionState::EndOfAction.as_byte();
-                    // Claim the turn NOW: left parked, the SM's own 0x5A
-                    // self-advance re-seeds this actor's stale action bytes
-                    // next tick (see `World::cycle_battle_turn`).
-                    self.cycle_battle_turn();
+                if let Some(a) = self.actors.get_mut(caster as usize) {
+                    a.battle.action_category = 2;
                 }
+                self.commit_party_command(
+                    caster,
+                    crate::battle_round::PendingPartyAction::Spell {
+                        spell_id,
+                        target_row,
+                        target_slot,
+                    },
+                );
             }
             Some(SpellResolution::Aborted) => {
                 let actor = self.battle_ctx.active_actor;
@@ -1085,42 +1038,6 @@ impl World {
                 self.battle_spell_menu = Some(menu);
             }
         }
-    }
-
-    /// Cast `spell_id` from `caster` against the picked target and fold the
-    /// outcome into world state. MP is deducted once up-front; the spell's
-    /// [`crate::spells::SpellTarget`] shape decides which slots are affected
-    /// (single → the picked slot; `AllEnemies` / `AllAllies` → the whole band),
-    /// each resolved through [`crate::spells::cast_spell`]. Caster magic comes
-    /// from [`Self::battle_magic`]; target magic-defense reuses
-    /// [`Self::battle_defense`]. Damage / heal / cure / revive / buff / capture
-    /// / escape all fold through [`Self::fold_spell_outcome`].
-    fn apply_battle_spell(
-        &mut self,
-        caster: u8,
-        spell_id: u8,
-        target_row: crate::target_picker::CursorRow,
-        target_slot: u8,
-    ) {
-        use crate::spells::SpellTarget;
-        use crate::target_picker::CursorRow;
-
-        let Some(def) = self.spell_catalog.get(spell_id).cloned() else {
-            return;
-        };
-        let party_count = self.party_count.clamp(1, 3);
-        let targets: Vec<u8> = match def.target {
-            SpellTarget::OneEnemy | SpellTarget::OneAlly | SpellTarget::SelfOnly => {
-                let abs = match target_row {
-                    CursorRow::Enemy => party_count + target_slot,
-                    CursorRow::Ally => target_slot,
-                };
-                vec![abs]
-            }
-            SpellTarget::AllEnemies => (party_count..self.actors.len() as u8).collect(),
-            SpellTarget::AllAllies => (0..party_count).collect(),
-        };
-        self.cast_spell_on_slots(caster, &def, &targets);
     }
 
     /// Build the battle-context inventory submenu from live world state:
@@ -1317,54 +1234,31 @@ impl World {
         let used_slots = menu.used_slots.clone();
 
         if !used_slots.is_empty() {
-            if let Some(item_id) = item_before {
-                // Apply to every affected slot, but consume only one copy.
-                for &target_slot in &used_slots {
-                    let outcome = self.apply_battle_item(item_id, target_slot);
-                    self.push_item_use_fx(target_slot, outcome);
+            // The item window's commit. Retail consumes the copy here - the
+            // `0x6E` step-back and the dead-actor sweep both *refund* it
+            // through `FUN_800421D4` - and the effect lands when the member
+            // dispatches: the committed category-1 action seeds through
+            // `FUN_801E295C`'s item arm (`item_seed_band`) into the
+            // `0x3C..0x40` cast states (`dispatch_pending_party_action`).
+            let actor = self.battle_ctx.active_actor;
+            match item_before {
+                Some(item_id) => {
+                    self.consume_item(item_id);
+                    if let Some(a) = self.actors.get_mut(actor as usize) {
+                        a.battle.action_category =
+                            vm::battle_action::ActionCategory::Item.as_byte();
+                    }
+                    self.commit_party_command(
+                        actor,
+                        crate::battle_round::PendingPartyAction::Item {
+                            item_id,
+                            used_slots,
+                        },
+                    );
                 }
-                self.consume_item(item_id);
-            }
-            if self.battle_escaped {
-                // Escape item succeeded: leave the encounter now (no loot, no
-                // game-over) instead of cycling the turn.
-                self.finish_battle();
-            } else if let Some(item_id) = item_before {
-                // Using an item is the actor's whole turn - and in retail the
-                // turn *is* the action SM's Item band: the committed category-1
-                // action seeds through `FUN_801E295C`'s item arm
-                // (`item_seed_band`) into the `0x3C..0x40` cast states, which
-                // fire the cast-audio cue (`FUN_801F3990` via `spirit_wait`),
-                // stamp the item's effect-descriptor `(class, tier)` pair, and
-                // expand the item's cue group (`FUN_800402F4`'s eleven
-                // `FUN_801E22C8` sites via `place_cue_group`). Parking straight
-                // at EndOfAction skipped all of it - no cast cue, no cue-group
-                // spawns, no `0x4C` HUD label - on every battle item use.
-                //
-                // The simulation fold stays above (the menu applies the item's
-                // effect and consumes the copy, exactly as before); the band's
-                // own `apply_damage` hook is the presentation seam. The two
-                // SummonFlute ids (`0x98`/`0x99`) reroute inside `action_seed`
-                // to the summon band, which the live loop's settle glue
-                // (`live_battle_tick`) walks to completion.
-                let actor = self.battle_ctx.active_actor;
-                let target = if used_slots.len() > 1 {
-                    vm::battle_cue_group::TARGET_PARTY_WIDE
-                } else {
-                    used_slots[0]
-                };
-                self.clear_action_stream(actor);
-                if let Some(a) = self.actors.get_mut(actor as usize) {
-                    a.battle.active_target = target;
-                    a.battle.action_category = vm::battle_action::ActionCategory::Item.as_byte();
-                    a.battle.params[0] = item_id;
-                }
-                self.battle_ctx.queued_action = vm::battle_action::ActionCategory::Item.as_byte();
-                self.battle_ctx.action_state = vm::battle_action::ActionState::Begin.as_byte();
-            } else {
-                // No item id resolved (defensive) - consume the turn directly.
-                self.battle_ctx.action_state =
-                    vm::battle_action::ActionState::EndOfAction.as_byte();
+                // No item id resolved (defensive) - the member stands by.
+                None => self
+                    .commit_party_command(actor, crate::battle_round::PendingPartyAction::StandBy),
             }
             return;
         }

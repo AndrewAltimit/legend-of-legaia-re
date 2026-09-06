@@ -21,6 +21,15 @@ impl PlayWindowApp {
     pub(super) fn drain_and_log_battle_events(&mut self) {
         let events = self.session.host.world.drain_battle_events();
         for ev in events {
+            // The audio duck: the summon / capture arms lower the BGM to 75%
+            // of its reference, the Done band's `0x51` arm raises it back.
+            // The director ramps one retail unit per frame (`tick_duck`).
+            if let legaia_engine_core::battle_events::BattleEvent::DuckAudioLevel { target_pct } =
+                &ev
+                && let Some(bgm) = self.session.bgm.as_mut()
+            {
+                bgm.set_duck_pct(*target_pct);
+            }
             // Surface in the HUD ring.
             if self.battle_event_log.len() >= Self::BATTLE_EVENT_LOG_CAP {
                 self.battle_event_log.pop_front();
@@ -53,6 +62,29 @@ impl PlayWindowApp {
                 .push_back(format!("slot {} {}{} HP", f.target_slot, sign, f.amount));
         }
 
+        // Per-hit events of the attack band (`World::tick_battle_hit_events`,
+        // one per damage-kernel resolution): the channel the impact-FX and
+        // HIT / TOTAL counter layers read. Drained here so the world never
+        // accumulates it; each surfaces as a diag line (the ring only draws
+        // under `LEGAIA_DIAG_HUD` / `F1`, so this is off by default).
+        let hits = self.session.host.world.drain_battle_hit_events();
+        for h in hits {
+            if self.battle_event_log.len() >= Self::BATTLE_EVENT_LOG_CAP {
+                self.battle_event_log.pop_front();
+            }
+            self.battle_event_log.push_back(format!(
+                "hit {} {}->{} pb {:#04x} dmg {} total {}{}{}",
+                h.hit_index,
+                h.attacker_slot,
+                h.target_slot,
+                h.power_byte,
+                h.damage,
+                h.running_total,
+                if h.applied { " APPLIED" } else { "" },
+                if h.is_art { " art" } else { "" },
+            ));
+        }
+
         // Battle sound cues: the art-strike outcomes resolve per-strike SFX
         // cues (kind = the SfxBank id, played directly without classify_cue).
         // Enqueue each into the director's SfxScheduler at its strike-relative
@@ -67,7 +99,56 @@ impl PlayWindowApp {
         // shout with the modeled CD-response delay, so the voice trails the
         // animation (the retail contract) instead of leading it.
         let shouts = self.session.host.world.drain_battle_shout_cues();
+        // One-shot CD-XA clip requests (the melee grunt / attack sting):
+        // `(clip_slot, channel, dur)` in the retail starter's terms, played
+        // off the boot-staged clip bank through the same XA mixing path.
+        let xa_cues = self.session.host.world.drain_battle_xa_cues();
+        // The level-up jingle's bank (PROT 0889, cue `0x50`, category 11)
+        // is loaded at results time in retail and lives nowhere resident in
+        // the port's SFX region; stage it transiently behind the battle
+        // theme the moment the results frame asks for it.
+        let wants_reward_bank = cues
+            .iter()
+            .any(|c| c.kind == legaia_engine_core::world::LEVEL_UP_CUE);
+        if wants_reward_bank
+            && let Some(bgm) = self.session.bgm.as_mut()
+            && !bgm.has_sfx_vab_slot(legaia_engine_shell::bgm::TRANSIENT_REWARD_SLOT)
+        {
+            match self
+                .session
+                .host
+                .index
+                .entry_bytes_extended(legaia_asset::sfx_table::SLOT11_REWARD_BANK_PROT_INDEX)
+            {
+                Ok(bytes) => {
+                    let ok = bgm.stage_transient_sfx_vab(
+                        legaia_engine_shell::bgm::TRANSIENT_REWARD_SLOT,
+                        &bytes,
+                    );
+                    log::info!(
+                        "level-up jingle bank (PROT 0889) {}",
+                        if ok {
+                            "staged behind the BGM"
+                        } else {
+                            "did not fit behind the BGM"
+                        }
+                    );
+                }
+                Err(e) => log::warn!("level-up jingle bank (PROT 0889) read: {e:#}"),
+            }
+        }
         if let Some(bgm) = self.session.bgm.as_mut() {
+            bgm.tick_duck();
+            for xa in &xa_cues {
+                let fired = bgm.play_xa_clip(xa.clip, xa.channel, xa.duration_sectors);
+                log::debug!(
+                    "battle XA clip slot {} ch {} dur {} -> {}",
+                    xa.clip,
+                    xa.channel,
+                    xa.duration_sectors,
+                    if fired { "playing" } else { "not staged" }
+                );
+            }
             for cue in &cues {
                 bgm.enqueue_sfx(cue.kind, cue.timing_frames, cue.actor_slot, cue.target_slot);
             }
@@ -580,12 +661,14 @@ impl PlayWindowApp {
                             log::warn!("play-window: monster {monster_id} idle anim decode: {e:#}")
                         }
                     }
-                    // Install the full archive-order action-clip set so the
+                    // Install the full archive-order action-clip set -
+                    // positional, one slot per `+0x4C` entry with holes
+                    // kept, since a monster's staged anim ids (the AI
+                    // picker's swing entries) are these indices - so the
                     // hit-reaction family (action tags 2..5, the retail
-                    // `+0x1EF` map) can play when this monster takes damage.
-                    match legaia_asset::monster_archive::animations(&archive, monster_id) {
-                        Ok(Some(anims)) if !anims.is_empty() => {
-                            let clips: Vec<_> = anims.into_iter().map(Some).collect();
+                    // `+0x1EF` map) and the picked swings can play.
+                    match legaia_asset::monster_archive::animations_by_entry(&archive, monster_id) {
+                        Ok(Some(clips)) if clips.iter().any(Option::is_some) => {
                             self.session.host.world.set_actor_battle_action_clips(
                                 actor_idx,
                                 std::sync::Arc::new(clips),
@@ -704,12 +787,15 @@ impl PlayWindowApp {
                     None;
                 let mut art_face_tracks: Vec<Option<legaia_asset::face_anim::FaceTracks>> =
                     Vec::new();
-                if let Some((asm, uploads, idle, clips, bank, faces, art_faces)) =
+                let mut art_records: Vec<legaia_asset::battle_char_assembly::ArtAnimRecord> =
+                    Vec::new();
+                if let Some((asm, uploads, idle, clips, bank, faces, art_faces, records)) =
                     self.assembled_party_battle_mesh(cslot, member)
                 {
                     tex_uploads = uploads;
                     action_clips = Some(clips);
                     art_bank = Some(bank);
+                    art_records = records;
                     face_tracks = Some(faces);
                     art_face_tracks = art_faces;
                     match legaia_tmd::parse(&asm.tmd) {
@@ -898,6 +984,15 @@ impl PlayWindowApp {
                                 .host
                                 .world
                                 .set_actor_battle_art_bank(member, std::sync::Arc::new(bank));
+                        }
+                        // The bank's records are the arts the queue-builder
+                        // matches: install them so the live arts input
+                        // tokenizes this character's real arts.
+                        if let Some(character) = party_art_character(cslot) {
+                            self.session
+                                .host
+                                .world
+                                .install_art_bank_records(character, &art_records);
                         }
                         // Facial animation (FUN_8004C7B4): register the
                         // member's per-action face tracks so the per-tick
@@ -1172,8 +1267,17 @@ impl PlayWindowApp {
         // (main slot 3*char+1, base slot 3*char+2 for rate_alt == 0xFF
         // records). The staged-anim commit materializes bank record
         // `id - 0x10` into dynamic slot 0x10/0x11 (FUN_8004AD80).
-        let (art_bank, art_faces) = self.party_art_bank(&raw, cslot, &asm.anm_bones);
-        Some((asm, uploads, idle, clips, art_bank, faces, art_faces))
+        let (art_bank, art_faces, art_records) = self.party_art_bank(&raw, cslot, &asm.anm_bones);
+        Some((
+            asm,
+            uploads,
+            idle,
+            clips,
+            art_bank,
+            faces,
+            art_faces,
+            art_records,
+        ))
     }
 
     /// Decode one character's art-animation bank into commit-ready clips
@@ -1188,19 +1292,20 @@ impl PlayWindowApp {
     ) -> (
         Vec<Option<legaia_asset::monster_archive::MonsterAnimation>>,
         Vec<Option<legaia_asset::face_anim::FaceTracks>>,
+        Vec<legaia_asset::battle_char_assembly::ArtAnimRecord>,
     ) {
         let record0 = match legaia_asset::battle_char_assembly::decode_record0(raw) {
             Ok(r) => r,
             Err(e) => {
                 log::warn!("play-window: party {cslot} record[0] decode for art bank: {e:#}");
-                return (Vec::new(), Vec::new());
+                return (Vec::new(), Vec::new(), Vec::new());
             }
         };
         let records = match legaia_asset::battle_char_assembly::art_animation_bank(&record0) {
             Ok(r) => r,
             Err(e) => {
                 log::warn!("play-window: party {cslot} art-bank parse: {e:#}");
-                return (Vec::new(), Vec::new());
+                return (Vec::new(), Vec::new(), Vec::new());
             }
         };
         // The embedded entries' face tracks (record +0xB0 / +0xBC) come
@@ -1213,7 +1318,7 @@ impl PlayWindowApp {
             Ok(b) => b,
             Err(e) => {
                 log::warn!("play-window: readef.DAT (PROT 894) read: {e:#}");
-                return (Vec::new(), faces);
+                return (Vec::new(), faces, records);
             }
         };
         let main = legaia_asset::battle_char_assembly::art_me_archive(&readef, cslot, false);
@@ -1241,7 +1346,7 @@ impl PlayWindowApp {
                 ),
             }
         }
-        (bank, faces)
+        (bank, faces, records)
     }
 
     /// Spawn the player Seru-magic summon as a battle creature, the faithful
@@ -1339,6 +1444,22 @@ impl PlayWindowApp {
                 .world
                 .set_actor_battle_animation(slot, player);
         }
+        // The creature's archive-order clip set, so the stager's staged ids
+        // (the walk, clip 1) resolve through the same commit as a monster's.
+        if let Ok(Some(anims)) = legaia_asset::monster_archive::animations(&archive, creature)
+            && !anims.is_empty()
+        {
+            let clips: Vec<_> = anims.into_iter().map(Some).collect();
+            self.session
+                .host
+                .world
+                .set_actor_battle_action_clips(slot, std::sync::Arc::new(clips));
+        }
+        // Hand the seat to the world: a cast in its summon band places the
+        // creature at the stager's spawn point (behind the caster, facing
+        // the enemy - the capture's slot-7 record) and retires it when the
+        // choreography ends; a debug spawn keeps the placement above.
+        self.session.host.world.seat_summon_actor(slot);
         log::info!(
             "play-window: summon spell {spell_id:#04x} -> battle_data creature {creature} \
              (mesh slot {idx}, tex slot {tex_slot}, actor slot {slot})"
@@ -2051,6 +2172,19 @@ use legaia_engine_vm::battle_intro_particles::IntroEnv;
 /// the field actor table (`World::end_battle`'s `field_return` restore), the
 /// same channel `exit_battle_render` already relies on.
 // REF: FUN_800513F0 (battle setup: the battle's own registration set)
+/// The [`legaia_art::Character`] whose art tables a player-file character
+/// slot (`0..=2` = Vahn / Noa / Gala) resolves against; `None` for Terra
+/// (slot `3`), who has no arts catalog.
+fn party_art_character(cslot: usize) -> Option<legaia_art::Character> {
+    [
+        legaia_art::Character::Vahn,
+        legaia_art::Character::Noa,
+        legaia_art::Character::Gala,
+    ]
+    .get(cslot)
+    .copied()
+}
+
 pub(super) fn unregister_non_battle_meshes(
     world: &mut legaia_engine_core::world::World,
     registered: &[usize],

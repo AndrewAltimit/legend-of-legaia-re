@@ -613,12 +613,12 @@ One thing the pair still gets wrong:
   banner. The banner needs a queue the world drains one at a time; the report
   window's per-character lines are what makes the loss visible rather than
   silent.
-- **Both surfaces draw over the FIELD.** The port grants XP after the mode has
-  already flipped back from `Battle`, so the banner and the report land on the
-  returned field scene. Retail raises its result screen while still in battle -
-  the windows are at the right rects with the right text, over the wrong scene.
-  This is the ordering difference `engine-shell`'s `battle_banner_message`
-  already documents at its own call site, seen from the other end.
+Both surfaces now draw over the **battle**, on the results frame of the
+end-of-battle sequence and for as long as retail keeps them up - the
+sequencer `FUN_8004E568`'s timeline, the leader's victory pose and the exit
+gate are in [battle.md](battle.md#battle-end-retails-way---the-results-sequencer).
+The earlier shape - XP granted after the mode had flipped back, so the
+windows landed on the returned field - is gone.
 
 ## See also
 

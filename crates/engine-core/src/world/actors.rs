@@ -226,6 +226,14 @@ impl World {
                 if a.battle.queued_anim == id {
                     a.battle.queued_anim = 0;
                     a.battle.current_anim = 0;
+                } else {
+                    // A byte was staged behind this clip (the retail one-ahead
+                    // stream): the natural-end commit installs it right here,
+                    // in the same tick, exactly as `FUN_8004AD80` is called
+                    // from the tick's natural-end path (`0x80047B54`). Leaving
+                    // it to the next frame's pair-inequality commit would let
+                    // the SM overwrite the queued byte first.
+                    self.commit_staged_battle_anim_at_boundary(i);
                 }
             }
             // A finished one-shot action clip falls back to the idle loop -
@@ -251,27 +259,26 @@ impl World {
                 let idle = actor.battle.current_anim == 0 && actor.battle_reaction.is_none();
                 let pose = player.tick_rated(rate, idle);
                 let after = player.current_frame();
-                let clip_tag = player.action_id();
                 // History-ring push (retail `FUN_80047430`
                 // `0x80047E58..0x80048060`): slot 0 takes this frame's pose
                 // + position; the arts after-image walk samples it. The
-                // ring-id gate: party ghosts only on the committed dynamic
-                // slot `0x11` (the Super / Miracle SpecialStarter dash);
-                // monster ring ids are `clip_tag + 0x10`, so any non-idle
-                // tag is eligible.
-                // Retail's monster ring id is the committed clip's tag; the
-                // engine's ambient monster loop is `idle_animation`'s pick,
-                // which (because `animations` filters malformed entries) may
-                // wear a non-zero tag - so the loop-player state, not the
-                // tag alone, is what maps retail's "id 0 = idle" here.
-                let non_idle =
-                    actor.battle_staged_anim.is_some() || actor.battle_reaction.is_some();
+                // ring id is retail's own: a party seat stamps the
+                // committed dynamic slot `+0x1D9` (`0x80047FCC`), a monster
+                // seat stamps the committed record's `+0x77` byte `+ 0x10`,
+                // or `0x11` when the record's `+0x87` solo byte is `1`
+                // (`0x80048044..0x80048060`); the walk draws ids `>= 0x11`.
+                // Both are read off the playing clip's own disc bytes - the
+                // engine's staging / reaction state is not consulted, because
+                // retail never consults it (gating on "is a clip staged"
+                // ghosted every monster on every frame of its approach walk
+                // and its idle loop after it: the permanent yellow halo).
                 let clip_key = player.attach_key();
-                let ghost_eligible = if actor.battle_monster_id.is_none() {
-                    actor.battle.current_anim == vm::anim_vm::DYNAMIC_ART_SLOT_B
+                let ring_id = if actor.battle_monster_id.is_none() {
+                    crate::battle_afterimage::party_ring_id(actor.battle.current_anim)
                 } else {
-                    non_idle && clip_tag != 0
+                    crate::battle_afterimage::monster_ring_id(clip_key, player.solo_flag())
                 };
+                let ghost_eligible = crate::battle_afterimage::ghost_eligible(ring_id);
                 actor.battle_pose_history.push_front(BattleGhostFrame {
                     pose: pose.clone(),
                     pos: [
@@ -453,49 +460,121 @@ impl World {
         out
     }
 
-    /// Per-frame **impact freeze + tint** maintenance - the engine seat of
-    /// `FUN_8004CE2C` pass 2 (kernel `legaia_engine_vm::battle_impact_fx`)
-    /// plus the tint's neutral decay (`FUN_80050120` arm 0 via the
-    /// `FUN_80050F30` ease).
+    /// Arm the retail **impact tint triple** on `target`: `+0x04 = impact
+    /// table[selector - 1]`, `+0x21F = selector`, `+0x0C = 0x1000` - the
+    /// writes both impact arms perform when a hit lands. The melee / arts
+    /// routine `FUN_801EC3E4` (`0x801EE3D4..0x801EE43C`) reads the selector
+    /// off the acting actor's action record `+0x7A`
+    /// ([`crate::battle_anim::MonsterAnimPlayer::impact_class`]) and gates it
+    /// `0 < sel < 6` (`sltiu v0,v0,0x6` at `0x801EE3E0` - a class past the
+    /// table skips all three writes; callers apply that gate, see
+    /// [`crate::move_power::IMPACT_CLASS_LIMIT`]). The monster special-attack arm
+    /// `FUN_801E09F8` (`0x801E15AC..0x801E15EC`, at each arm's impact phase)
+    /// reads the move-power record's `+0x0A` and stamps unguarded (its
+    /// selector ladder ends at `5`, so that byte never carries a `6`); a
+    /// zero selector arms nothing in either (`beq v0,zero` past the writes).
+    /// The `+0x7A` byte is the hit routine's whole **status / impact
+    /// selector**, and the disc does carry `6` on it (the melee-path Curse
+    /// arm at `0x801EE690`: a 1-in-4 `+0x16E |= 0x1000` roll and no tint) -
+    /// that is what the `sltiu` gate is for. A selector past the table
+    /// with no gate leaves the colour word alone here.
     ///
-    /// Decay runs first so an in-window arm's rewrite owns the frame, the
-    /// retail steady state. The engine folds retail's `+0x0C` intensity
-    /// drain (an unmodeled brightness channel) into the selector clear,
-    /// and gates the ease on its own selector so the target-cursor /
-    /// cue-group colour writers are never fought (retail separates the
-    /// same writers through the `+0x21C` dispatch).
+    /// The tint then decays through [`Self::tick_battle_impact_fx`]'s
+    /// presentation SM (`FUN_80050120` arm 0): colour eases to neutral, the
+    /// blend drains, the selector retires. Retail captures of the armed
+    /// state: `battle_gimard_tail_fire_a` / `_b` (Vahn at `+0x21F = 1`,
+    /// `+0x0C = 0x1000`, the red word eight lane-units apart between the two
+    /// frames).
+    // PORT: FUN_801EC3E4 (the `+0x7A` impact-tint arm only; the damage /
+    // status body is the battle loop's)
+    // REF: FUN_801E09F8 (the move-power sibling arm - same three writes)
+    pub fn arm_impact_tint(&mut self, target: usize, selector: u8) {
+        if selector == 0 {
+            return;
+        }
+        let word = self
+            .move_power
+            .as_ref()
+            .and_then(|t| t.impact_table())
+            .and_then(|t| t.get(usize::from(selector - 1)).copied());
+        let Some(a) = self.actors.get_mut(target) else {
+            return;
+        };
+        if let Some(word) = word {
+            a.battle.render_color = word;
+        }
+        a.battle.impact_state = selector;
+        a.battle.render_blend = vm::battle_formulas::TINT_BLEND_FULL;
+    }
+
+    /// Per-frame **presentation tint + impact freeze** maintenance: the
+    /// per-actor arms of `FUN_80050120` (kernel
+    /// `legaia_engine_vm::battle_formulas::tint_sm_step`) followed by
+    /// `FUN_8004CE2C` pass 2's per-clip impact arms (kernel
+    /// `legaia_engine_vm::battle_impact_fx`).
+    ///
+    /// The SM runs on every seated battle actor and dispatches on the
+    /// render flag `+0x21C` exactly as retail's jump table does: `0` eases
+    /// the colour word to neutral, then drains the `+0x0C` blend, then
+    /// retires the `+0x21F` selector (one phase per frame, in that order);
+    /// `1`/`3`/`4`/`6..=10` ease toward their fixed colours with the full
+    /// blend stamped; `2` runs the defeat / capture fade; `5` and every
+    /// out-of-table value (the cursor's `200`, the summon-hide `0xFF`)
+    /// leave the words alone. The ease is unconditional on flag `0` -
+    /// retail has no "was it armed" test, so a colour word any writer left
+    /// off-neutral (the retired target cursor's dim word included) eases
+    /// back at the same rate.
+    ///
+    /// Runs before the per-clip arms so an in-window arm's rewrite owns the
+    /// frame - the retail order (`FUN_80046A20` calls `FUN_8004CE2C`, then
+    /// the presentation tick, then the next frame's arms re-stamp).
     // PORT: FUN_8004CE2C (pass 2 - per-clip impact arms; pass 4 is
     // `crate::battle_status_clut`)
-    // REF: FUN_80050120 (arm 0 - the decay driver this folds)
+    // REF: FUN_80050120 (the per-actor arms, ported as `tint_sm_step`; this is
+    // the per-frame walk over the actor table that drives them)
     fn tick_battle_impact_fx(&mut self) {
+        use vm::battle_formulas::{FadeInputs, TintWords, tint_sm_step};
         use vm::battle_impact_fx as ifx;
         if self.mode != SceneMode::Battle {
             return;
         }
-        // Decay pass. Retail arm 0 runs on render flag `0` only: ease the
-        // colour word toward neutral, then drain the `+0x0C` blend
-        // intensity by `0x20`/frame, then retire the selector. The ease
-        // stays gated on "something armed it" (the impact selector or a
-        // live cue-group blend) so unrelated colour writers are never
-        // fought (retail separates the same writers through the `+0x21C`
-        // dispatch).
         for a in self.actors.iter_mut() {
+            // `+0x22C == 0` (no battle record) skips the slot.
             if !a.active {
                 continue;
             }
+            let party = a.battle_monster_id.is_none();
             let b = &mut a.battle;
-            if b.render_flag != 0 {
-                continue;
-            }
-            if b.render_color != ifx::IMPACT_NEUTRAL_STATE
-                && (b.impact_state != 0 || b.render_blend != 0)
-            {
-                b.render_color =
-                    ifx::ease_actor_state(b.render_color, [0x80; 3], ifx::IMPACT_EASE_STEP);
-            } else if b.render_blend != 0 {
-                b.render_blend = b.render_blend.saturating_sub(ifx::BLEND_DRAIN_STEP);
-            } else if b.impact_state != 0 {
-                b.impact_state = 0;
+            let words = TintWords {
+                color: b.render_color,
+                blend: b.render_blend,
+                selector: b.impact_state,
+            };
+            // The arm-2 gate compares the committed anim against the cached
+            // knockdown entry `+0x1F1`; the engine plays a knockdown through
+            // the reaction channel without re-pointing `current_anim`, so
+            // the reaction latch stands in for that equality.
+            let fade = FadeInputs {
+                party,
+                committed_anim: b.current_anim,
+                knockdown_entry: if a.battle_reaction == Some(4) {
+                    b.current_anim
+                } else {
+                    0xFF
+                },
+                captured: b.capture_state != 0,
+            };
+            let (next, fx) = tint_sm_step(b.render_flag, words, fade, 1);
+            b.render_color = next.color;
+            b.render_blend = next.blend;
+            b.impact_state = next.selector;
+            if fx.party_fade_done {
+                // `0x80050344..0x80050354`: state 0, staged anim 0, the
+                // `+0x1DC` fade-done bit, blend `0x800` (already in `next`).
+                b.render_flag = 0;
+                b.queued_anim = 0;
+                b.flag_bits =
+                    vm::battle_action::ActorFlags(vm::battle_action::ActorFlags::WINDUP_DONE);
             }
         }
         // The per-clip arms: acting party actor's committed record key +
@@ -538,9 +617,24 @@ impl World {
         if let Some(word) = tint {
             t.battle.render_color = word;
         }
-        // The selector arms even without disc data (the freeze is
-        // data-free; the tint word just has nothing to carry).
+        // The selector + full blend arm even without disc data (the freeze
+        // is data-free; the tint word just has nothing to carry). Both arms
+        // stamp `+0x0C = 0x1000` (`sw v0,0xc(s1)` at `0x8004D1DC` /
+        // `0x8004D294`).
         t.battle.impact_state = w.impact_selector;
+        t.battle.render_blend = vm::battle_formulas::TINT_BLEND_FULL;
+    }
+
+    /// The acting actor's impact-effect class for a landing hit - the
+    /// `+0x7A` byte of its committed action record, read off the playing
+    /// clip; `0` when nothing is playing (a synthetic battle) or the clip
+    /// carries no class.
+    pub(in crate::world) fn attacker_impact_class(&self, attacker: usize) -> u8 {
+        self.actors
+            .get(attacker)
+            .and_then(|a| a.battle_animation.as_ref())
+            .map(|p| p.impact_class())
+            .unwrap_or(0)
     }
 
     /// Plan this frame's weapon-trail sweeps - the engine seat of the
@@ -637,14 +731,70 @@ impl World {
 
     /// Single-actor arm of [`Self::commit_staged_battle_anims`]. Public so
     /// tests can drive one slot deterministically.
+    ///
+    /// Retail commits only at a **clip boundary**: `FUN_8004AD80` is called
+    /// from the anim tick's natural-end path and its bit-1 event-path cut
+    /// (and directly on a bit-0 "commit now"), never merely because
+    /// `+0x1DA != +0x1D9`. So while a staged one-shot clip is still in
+    /// flight, a byte staged behind it waits here - the natural end
+    /// ([`Self::tick_battle_animations`]) or the event cut
+    /// (`World::tick_battle_hit_events`) then calls
+    /// [`Self::commit_staged_battle_anim_at_boundary`]. A looping player
+    /// (the walk) is exempt: retail replays it by re-committing at every
+    /// cycle end, and the engine's player has no cycle edge to hand over
+    /// on, so a byte staged over the walk commits at once (the pre-boundary
+    /// pacing).
     pub fn commit_staged_battle_anim(&mut self, i: usize) {
+        let Some(actor) = self.actors.get(i) else {
+            return;
+        };
+        if actor.battle.queued_anim == actor.battle.current_anim {
+            return;
+        }
+        let in_flight = actor.battle_staged_anim.is_some()
+            && actor
+                .battle_animation
+                .as_ref()
+                .is_some_and(|p| !p.finished() && !p.is_looping());
+        if in_flight {
+            if let Some(p) = actor.battle_animation.as_ref() {
+                log::trace!(
+                    "battle anim: slot {i} staged {:#04x} waits for the boundary of {:?} (frame {} / {}, loop cycles left {})",
+                    actor.battle.queued_anim,
+                    actor.battle_staged_anim,
+                    p.current_frame(),
+                    p.frame_count(),
+                    p.loop_cycles_remaining()
+                );
+            }
+            return;
+        }
+        self.commit_staged_battle_anim_at_boundary(i);
+    }
+
+    /// The commit body, run at a clip boundary (see
+    /// [`Self::commit_staged_battle_anim`]). With the staged byte equal to
+    /// the committed id this is retail's **re-commit** of a still-queued
+    /// clip: the same entry is re-installed with its cursor and hit index
+    /// zeroed (`0x8004B064..0x8004B068`) - the port rewinds the in-flight
+    /// player in place. Either way the stage latch `+0x1DC` bit 1
+    /// (`ADVANCE_DONE`) clears, which is what lets the strike loop read its
+    /// next byte.
+    // PORT: FUN_8004AD80 (the commit body; boundary selection is the tick's)
+    pub(in crate::world) fn commit_staged_battle_anim_at_boundary(&mut self, i: usize) {
         use vm::anim_vm::{StagedAnimTarget, resolve_staged_anim};
         use vm::battle_action::ActorFlags;
-        let Some(actor) = self.actors.get(i) else {
+        let Some(actor) = self.actors.get_mut(i) else {
             return;
         };
         let q = actor.battle.queued_anim;
         if q == actor.battle.current_anim {
+            if let Some(p) = actor.battle_animation.as_mut() {
+                p.rewind();
+            }
+            actor.battle_effect_cursor = 0;
+            actor.battle.input_cursor = 0;
+            actor.battle.flag_bits.clear(ActorFlags::ADVANCE_DONE);
             return;
         }
         // `+0x1DB = +0x1DA` (`FUN_8004AD80` `0x8004AEB0..0x8004AEB8`), taken
@@ -685,6 +835,15 @@ impl World {
                 rl::CommitRateEffect::None => {}
             }
         }
+        // Every commit zeroes the per-clip hit index (`sb zero,0x1f4` at
+        // `0x8004B064`) and releases the stage latch (bit 1 of `+0x1DC`,
+        // the `andi 0xFC` / `0xF8` at the two commit paths): the strike loop
+        // may now read the byte behind this one. Idle included.
+        {
+            let a = &mut self.actors[i];
+            a.battle.input_cursor = 0;
+            a.battle.flag_bits.clear(ActorFlags::ADVANCE_DONE);
+        }
         let actor = &self.actors[i];
         // Staged idle: converge and resume the loop. A staged clip in
         // flight is dropped (retail: the commit replaces the playing
@@ -704,6 +863,12 @@ impl World {
                     .as_ref()
                     .and_then(|b| b.get(record as usize))
                     .and_then(|c| c.clone());
+                if clip.is_none() {
+                    log::warn!(
+                        "battle actor {i}: staged art id {q:#04x} -> bank record {record} \
+                         carries no clip (zero-length commit)"
+                    );
+                }
                 (clip, slot)
             }
             // Direct entries - and, for an actor without an art bank (a
@@ -718,6 +883,24 @@ impl World {
                 (clip, q)
             }
         };
+        // The entry's solo / freeze byte (`+0x87`): a non-zero value is
+        // handed to `FUN_8004E13C` right after the loop-window seed
+        // (`0x8004BE18..0x8004BE2C`), which stores it into battle ctx
+        // `+0x243` (`sb s0,0x243` at `0x8004E2C0`) - the marker the art
+        // constant's rate arm reads (`ctx[+0x243]` armed -> quarter speed)
+        // and the SM's Done arm clears. The routine's other half, the
+        // per-actor pause flag `+0x21C` on every non-acting, non-target
+        // slot, has no engine field; the SpecialStarter's freeze covers the
+        // visible case through the rate arm above.
+        // PORT: FUN_8004E13C (the `+0x243` store; the `+0x21C` sweep and the
+        // value-2 coin re-roll into `+0x6DA` are not modelled)
+        if let Some(v) = clip
+            .as_ref()
+            .and_then(|c| c.entry_solo_flag())
+            .filter(|&v| v != 0)
+        {
+            self.battle_ctx.gauge_rearm_latch = v;
+        }
         let a = &mut self.actors[i];
         // The FUN_8004AD80 rewrite: both id fields hold the committed slot
         // number, so the SM's equality checks compare post-rewrite values.
@@ -750,6 +933,15 @@ impl World {
         });
         match player {
             Some(p) => {
+                log::debug!(
+                    "battle anim: slot {i} commits {committed:#04x} (staged {q:#04x}): {} frames, loop window {:?}, events {:?}, power {:?}, lock {:?}, speed {}",
+                    p.frame_count(),
+                    clip.as_ref().and_then(|c| c.entry_loop_window()),
+                    clip.as_ref().and_then(|c| c.entry_event_frames()),
+                    clip.as_ref().and_then(|c| c.entry_power_run()),
+                    clip.as_ref().and_then(|c| c.entry_event_commit_lock()),
+                    p.root_speed()
+                );
                 a.battle_animation = Some(p);
                 a.battle_pose = None;
                 // The marker keeps the SM's per-frame pose() requests from
@@ -767,9 +959,10 @@ impl World {
                 a.battle_effect_cursor = 0;
             }
             None => {
-                // No usable clip: a zero-length swing - fire the anim-end
-                // signal immediately so the attack chain's read gate opens.
-                a.battle.flag_bits.clear(ActorFlags::ADVANCE_DONE);
+                // No usable clip: a zero-length swing - nothing plays, the
+                // latch above is already clear so the attack chain's read
+                // gate is open; the live loop resolves the byte's hits at
+                // stage time (`World::resolve_zero_length_clip_hits`).
             }
         }
     }
@@ -1274,6 +1467,10 @@ impl World {
         self.battle_tutorial = None;
         self.battle_tutorial_boxes.clear();
         self.battle_flow = crate::battle_flow::BattleFlowState::Idle;
+        self.battle_round_flow = crate::battle_round::RoundFlow::default();
+        // `ctx[+0x289]`: the side-band's stage-1 phase starts at 0 with the
+        // rest of the battle context.
+        self.battle_sparring_phase = 0;
         let armed_by_disc = self.take_battle_tutorial_arm();
         if self.battle_tutorial_pending || armed_by_disc {
             self.arm_battle_tutorial();

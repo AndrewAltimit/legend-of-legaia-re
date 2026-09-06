@@ -260,6 +260,8 @@ type AssembledPartyMesh = (
     Vec<Option<legaia_asset::monster_archive::MonsterAnimation>>,
     Vec<Option<legaia_asset::face_anim::FaceTracks>>,
     Vec<Option<legaia_asset::face_anim::FaceTracks>>,
+    // The art bank's records - the arts the queue-builder matches.
+    Vec<legaia_asset::battle_char_assembly::ArtAnimRecord>,
 );
 
 /// The uploaded mesh slots of one **posed** static-object placement: the

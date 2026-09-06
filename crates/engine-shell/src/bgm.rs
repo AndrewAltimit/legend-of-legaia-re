@@ -23,7 +23,7 @@ use anyhow::{Context, Result};
 use legaia_asset::sfx_table::FALLBACK_VAB_SLOT;
 use legaia_engine_audio::{
     ArtsShoutBank, AudioOut, PendingCue, SHOUT_CD_RESPONSE_DELAY, Sequencer, SfxBank, SfxScheduler,
-    VabBank,
+    VabBank, XaClipBank,
 };
 use legaia_engine_core::scene::BgmDirector;
 use legaia_seq::Seq;
@@ -85,7 +85,30 @@ pub struct AudioBgmDirector {
     /// image); shout requests then no-op, leaving arts silent - the same
     /// degradation retail applies to an unvoiced art.
     shout_bank: Option<ArtsShoutBank>,
+    /// Generic CD-XA **clip** bank keyed on `(clip_slot, channel)` - the
+    /// battle's `XA27` attack stings and `XA30` grunts (`FUN_8003D53C`
+    /// requests the melee kernel makes). Same staging caveat as the shout
+    /// bank: disc image only.
+    xa_clip_bank: Option<XaClipBank>,
+    /// The battle audio duck, in retail's own units: `_DAT_8007B910` is the
+    /// live level (seeded `0xD7` = [`DUCK_LEVEL_REF`] by the cold reset
+    /// `FUN_8001FFA4`), ramped one unit per vsync toward a target the action
+    /// SM sets - `ref * 75 / 100` under a summon, back to `ref` in the Done
+    /// band's `0x51` arm - and applied to the BGM through `SsSeqSetVol`.
+    /// `duck_level` mirrors the cell; `duck_target` the arm's clamp.
+    duck_level: u8,
+    duck_target: u8,
 }
+
+/// `_DAT_8007B910`'s reference value (`0xD7`, `FUN_8001FFA4`): the un-ducked
+/// level the `0x51` arm ramps back to.
+pub const DUCK_LEVEL_REF: u8 = 0xD7;
+
+/// VAB slot the battle-end reward bank (PROT 0889, cue `0x50`) is installed
+/// in - retail streams it at results time (`FUN_8004E568` phase 4,
+/// `FUN_8001E54C(0xB, ...)`), and the port stages it transiently the same
+/// way ([`AudioBgmDirector::stage_transient_sfx_vab`]).
+pub const TRANSIENT_REWARD_SLOT: u8 = 11;
 
 impl AudioBgmDirector {
     pub fn new(audio: Arc<AudioOut>) -> Self {
@@ -101,6 +124,9 @@ impl AudioBgmDirector {
             sfx_vabs: BTreeMap::new(),
             sfx_sched: SfxScheduler::new(),
             shout_bank: None,
+            xa_clip_bank: None,
+            duck_level: DUCK_LEVEL_REF,
+            duck_target: DUCK_LEVEL_REF,
         }
     }
 
@@ -135,6 +161,146 @@ impl AudioBgmDirector {
             SHOUT_CD_RESPONSE_DELAY,
         );
         Some(channel)
+    }
+
+    /// Install the generic CD-XA clip bank (demuxed + decoded from the disc
+    /// at boot; see [`crate::boot::read_battle_xa_clip_bank`]).
+    pub fn set_xa_clip_bank(&mut self, bank: XaClipBank) {
+        self.xa_clip_bank = Some(bank);
+    }
+
+    /// `true` once a CD-XA clip bank is staged.
+    pub fn has_xa_clip_bank(&self) -> bool {
+        self.xa_clip_bank.is_some()
+    }
+
+    /// Play one CD-XA clip request - the engine's `FUN_8003D53C(clip,
+    /// channel, dur)`: the staged `(slot, channel)` PCM, cut at the retail
+    /// read span (`XaClipBank::cut_frames`), through the same XA mixing
+    /// path the arts shouts take, with the same modelled CD-response start
+    /// delay. A request while a clip is sounding queues behind it (the
+    /// mixer's back-to-back path). Returns `false` when no bank is staged
+    /// or the `(slot, channel)` is not in it.
+    // REF: FUN_8003D53C
+    pub fn play_xa_clip(&mut self, clip_slot: u32, channel: u32, duration_sectors: u32) -> bool {
+        let Some(bank) = self.xa_clip_bank.as_ref() else {
+            return false;
+        };
+        let (Ok(slot), Ok(ch)) = (u8::try_from(clip_slot), u8::try_from(channel)) else {
+            return false;
+        };
+        let Some(clip) = bank.clip(slot, ch) else {
+            return false;
+        };
+        let frames = bank
+            .cut_frames(slot, ch, duration_sectors)
+            .unwrap_or(0)
+            .max(1);
+        let take = if clip.stereo { frames * 2 } else { frames };
+        let pcm = clip.pcm[..take.min(clip.pcm.len())].to_vec();
+        if pcm.is_empty() {
+            return false;
+        }
+        let channels = if clip.stereo {
+            legaia_xa::Channels::Stereo
+        } else {
+            legaia_xa::Channels::Mono
+        };
+        self.audio.play_xa_shout(
+            pcm,
+            clip.sample_rate,
+            channels,
+            0x4000,
+            SHOUT_CD_RESPONSE_DELAY,
+        );
+        true
+    }
+
+    /// Set the audio duck's target as a percentage of the reference level
+    /// (`BattleEvent::DuckAudioLevel`): `75` under a summon / magic capture,
+    /// `100` when the Done band ramps it back. The ramp itself runs in
+    /// [`Self::tick_duck`].
+    pub fn set_duck_pct(&mut self, pct: u8) {
+        let pct = u32::from(pct.min(100));
+        self.duck_target = (u32::from(DUCK_LEVEL_REF) * pct / 100) as u8;
+    }
+
+    /// One frame of the duck ramp: step the live level one unit toward the
+    /// target (retail `DAT_1F800393` per vsync, the `0x35` / `0x51` arms)
+    /// and re-apply it to the BGM as `master_vol * level / ref` - the
+    /// `FUN_800267A8` -> `SsSeqSetVol` re-apply, which halves the cell into
+    /// the 0..127 volume domain the same way `master_vol` already is.
+    pub fn tick_duck(&mut self) {
+        if self.duck_level == self.duck_target {
+            return;
+        }
+        self.duck_level = if self.duck_level < self.duck_target {
+            self.duck_level + 1
+        } else {
+            self.duck_level - 1
+        };
+        let vol =
+            u32::from(self.master_vol) * u32::from(self.duck_level) / u32::from(DUCK_LEVEL_REF);
+        self.audio.set_sequencer_master_vol(vol.min(127) as u8);
+    }
+
+    /// The live duck level in `_DAT_8007B910` units (for tests / traces).
+    pub fn duck_level(&self) -> u8 {
+        self.duck_level
+    }
+
+    /// Whether a VAB is staged in `slot`.
+    pub fn has_sfx_vab_slot(&self, slot: u8) -> bool {
+        self.sfx_vabs.contains_key(&slot)
+    }
+
+    /// Stage a VAB into `slot` **behind the resident BGM bank**, in the free
+    /// tail of the BGM region - the port's version of retail's results-time
+    /// load of PROT 0889 into slot 11 (`FUN_8001FC00(0x37B, 0xB, ..)` +
+    /// `FUN_8001E54C(0xB, ..)` in `FUN_8004E568` phases 2 / 4). The SFX
+    /// region is full (its two pinned banks leave ~2.5 KB), so the reward
+    /// bank borrows BGM room instead, exactly as long as the current track
+    /// leaves any: it is dropped again the moment a track restages
+    /// ([`Self::stage_owned_vab`] / [`Self::set_bank`]). Returns `false` when
+    /// the entry has no VAB header or the tail is too small.
+    // REF: FUN_8001E54C, FUN_8004E568
+    pub fn stage_transient_sfx_vab(&mut self, slot: u8, entry_bytes: &[u8]) -> bool {
+        let Some((report, vab_off)) = [4usize, 0]
+            .into_iter()
+            .find_map(|o| legaia_vab::parse(entry_bytes, o).ok().map(|r| (r, o)))
+        else {
+            return false;
+        };
+        // The BGM region runs from the reserved head up to the SFX region;
+        // the resident bank's samples end where the free tail begins.
+        let region_end = crate::boot::SPU_RAM_BYTES - crate::boot::SFX_BANK_SPU_BYTES;
+        let used_end = self
+            .bank
+            .as_ref()
+            .map(|b| {
+                b.samples
+                    .iter()
+                    .flatten()
+                    .map(|s| s.addr + s.size)
+                    .max()
+                    .unwrap_or(crate::boot::SPU_RESERVED_BYTES)
+            })
+            .unwrap_or(crate::boot::SPU_RESERVED_BYTES);
+        let base = used_end.div_ceil(16) * 16;
+        if base >= region_end {
+            return false;
+        }
+        let body_total: u32 = report.vag_samples.iter().map(|v| v.size as u32).sum();
+        if body_total > region_end - base {
+            return false;
+        }
+        let body = &entry_bytes[vab_off..];
+        let bank = self.audio.with_spu(|spu| {
+            let mut alloc = legaia_engine_audio::SpuAllocator::new(base, region_end - base);
+            VabBank::upload(spu, &mut alloc, &report, body)
+        });
+        self.sfx_vabs.insert(slot, bank);
+        true
     }
 
     /// Install the sound-effect descriptor bank (decoded from the user's
@@ -274,6 +440,9 @@ impl AudioBgmDirector {
     /// [`legaia_engine_core::scene::SceneHost::scene_vab_bytes`]; the bank
     /// is uploaded into the SPU and stored here for subsequent SEQ starts.
     pub fn set_bank(&mut self, bank: VabBank) {
+        // The BGM region is re-owned wholesale; a transient reward bank in
+        // its tail is gone with it.
+        self.sfx_vabs.remove(&TRANSIENT_REWARD_SLOT);
         self.bank = Some(bank);
     }
 
@@ -310,6 +479,9 @@ impl AudioBgmDirector {
             );
             VabBank::upload(spu, &mut alloc, &report, body)
         });
+        // A restaged track reclaims the whole BGM region, transient tail
+        // included.
+        self.sfx_vabs.remove(&TRANSIENT_REWARD_SLOT);
         self.bank = Some(bank);
         Some(entry_bytes[vab_off + seq_rel..].to_vec())
     }

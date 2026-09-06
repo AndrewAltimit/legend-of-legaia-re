@@ -124,6 +124,90 @@ reserved/authoring data with no live consumer.
 
 ## Battle / arts / level-up
 
+### The battle hit tint - what a landing hit writes and how it reaches the pixel
+
+*Status:* resolved - a landing hit stamps a three-word tint triple on the
+struck actor from the acting record's `+0x7A` (party melee / arts) or the
+move-power `+0x0A` (monster specials); the presentation SM eases it back;
+the draw stages the words as GTE far colour + `IR0` so the texel is
+modulated, not replaced. Grade: **capture** (the triple, its ease rate and
+the pixel law read off two consecutive save states; every write and gate
+also in disassembly).
+
+- **The stamp.** `FUN_801EC3E4` `0x801EE3D4..0x801EE43C`: `+0x04 =
+  0x801F53D4[sel - 1]`, `+0x21F = sel`, `+0x0C = 0x1000`, with `sel =
+  record[+0x7A]`, `beq zero` past the arm and `sltiu v0,v0,0x6` bounding
+  it; no exit precedes the arm, so every connecting swing (a Stone-absorbed
+  one included) reaches it. The bound is a route, not a table guard: the
+  disc carries `6` on six archive entries and `6` is the tint-less Curse
+  arm (`0x801EE690`, a 1-in-4 `+0x16E |= 0x1000` roll) - a census that
+  asserted "never past the table" failed on the data and was rewritten
+  (`battle_afterimage_gate_real.rs`). `FUN_801E09F8` `0x801E15AC..0x801E15EC` is the
+  monster-special twin off `move_power[+0x0A]`, at each arm's impact phase
+  (`ctx[+0x24E + i] == 3`). The clip-`0x18` arms of `FUN_8004CE2C` stamp
+  the same three words (`0x8004D1D4..0x8004D1E4`, `0x8004D28C..0x8004D29C`).
+- **The ease.** `FUN_80050120` arm 0 (`0x800501A4..0x80050210`): the word
+  eases to `0x20080200` at `1 * dt * 8` lane units per frame, then `+0x0C`
+  drains by `dt << 5`, then `+0x21F` clears; the jump table at
+  `0x8001532C` routes states `1`/`3`/`4`/`6..=10` to fixed colours with
+  `+0x0C = 0x1000`, `2` to the capture fade, `5` to a hold. Two consecutive
+  captures (`battle_gimard_tail_fire_b` -> `_a`) hold Vahn at `+0x21F = 1`,
+  `+0x0C = 0x1000` with the red lane at `0x35F` then `0x31F` - eight frames
+  of the ease. The converse pin: `battle_melee_hit_spark` (Vahn's
+  Somersault landing on Gimard) holds Gimard at the neutral word, `+0x0C =
+  0`, `+0x21F = 0` - a selector-0 record tints nothing, and on the disc
+  every player-file **basic** entry and every Somersault-class art is
+  selector `0`; only five Vahn art records (selector `1`) and two Gala
+  records (selector `2`) tint their target.
+- **The pixel.** `FUN_8004A908` packs the lanes into the render node's
+  `+0x74` and copies `+0x0C` into `+0x78`; `FUN_80048A08` stages them as far
+  colour + `IR0` (`gp[0x9D8]` / `gp[0x9DC]`). The struck Vahn in that
+  capture reads red `160..248` over green / blue `8..80` across his texture
+  - modulation, not a flat fill.
+
+Port: `engine-vm::battle_formulas::tint_sm_step` (the SM),
+`World::arm_impact_tint` at the three hit seats, `MonsterAnimation::
+impact_class` carrying `+0x7A`, and both hosts staging `IR0 = blend /
+0x1000` toward the unpacked lanes (`battle_impact_fx::tint_ir0`). The
+native window's former white "hit flash" and the hosts' fixed `0.6`
+strength were engine inventions and are gone. Details in
+[battle.md](../subsystems/battle.md#how-the-tint-words-reach-the-pixel).
+### Battle end - the results sequencer's timeline, and who strikes the pose
+
+*Status:* resolved - `FUN_8004E568` runs every frame the signal is `0xFE`, the exit is `ctx[+0x6CE] >= 0x43`, and the **leader** poses; shipped as `world::battle::victory`
+
+`FUN_80046A20` stops stepping the action SM once `DAT_8007BD71 == 0xFE` (`0x80047040`) and calls
+`FUN_8004E568` every frame (`0x800470D0..0x800470E8`); it exits the battle at `slti v0,v0,0x43`
+on `ctx[+0x6CE]` (`0x80046DAC`). `_DAT_8007BD2C` doubles as the sequencer's phase word (jump
+table `0x800152FC`: `0 -> 2 -> 4 -> 5` through two CD loads for a victory; a wipe's `5` lands on
+the annihilated arm directly). The results frame stages the pose into `+0x1DA` of the seat
+`ctx[+0x13]` names, and no store in the battle overlay writes a seat there. Measured on
+`rim_elm_gimard_victory` (PCSX-Redux poll, N=1): signal v322, results v402, exit fade v657, exit
+v723. The three-member `noa_levelup_banner` state reads `ctx[+0x13] == 0` with seat 0 carrying
+pose `0x14` while Noa levelled. Evidence: `disassembly` + `capture`. Details:
+[battle.md](../subsystems/battle.md#battle-end-retails-way---the-results-sequencer).
+
+### What a normal party attack sounds like
+
+*Status:* resolved - the `XA30` grunt on an ordinary swing; the `0x10C` sting only when `_DAT_8007BD84` is non-zero; the `s7` latch on the grunt is not decoded
+
+`FUN_801EC3E4` picks one of two emissions on `_DAT_8007BD84`: zero takes `FUN_8003D53C(0x1D,
+chan, dur)` at `0x801EEB44` (per-character `(0,0x26)` / `(4,0x2E)` / `(6,0x1A)` off
+`DAT_8007BD10[seat]`) and the re-read at `0x801EEB60` skips the cue; non-zero branches over the
+grunt (`0x801EEAC8`) into `FUN_8004FE5C(0x10C, seat)` at `0x801EEBE8`, whose voice leg is
+further gated on `FUN_8003DE7C(1) == 0` (`0x8004FE9C`). The word is the same cell the damage
+finisher reads as the enemy-defender halve; its only dumped stores are zeros (battle start,
+round reset). `XA27` is an eight-channel stereo sting bank, `XA30` a ten-channel mono grunt bank
+(disc demux). Evidence: `disassembly` for the selector and gates, `inference` for the grunt
+latch always passing and for the word staying zero in an ordinary fight. Shipped:
+`World::fire_melee_impact_cue` + `read_battle_xa_clip_bank`.
+
+### `FUN_8003EAE4` is a seek plus driver flags, not a stream start
+
+*Status:* partial - the routine seeks (`CdlSeekL`) and arms `gp+0x908` / `gp+0x910` / `gp+0x890`; the driver that consumes those flags is untraced
+
+The starter the resident battle voice selector `FUN_8004DA00` hands its clip to cancels any in-flight read, positions the drive on the clip file's slot record (`FUN_8005C160(2, slot, ..)`) and issues CD command `0x15` (`li a0,0x15; jal 0x8005C034` at `0x8003EB68`), then stores `1` at `gp+0x908` and `gp+0x910` and the slot at `gp+0x890`. Nothing in the routine reads a sector; whatever plays is the CD-callback driver's response to those flags, which no dump follows. `battle_voice_step`'s `Arm` outcome therefore has a device-side sequence behind it the engine does not model - it stays a decision without a driver. Evidence: `disassembly` for the seek and the flag stores, `inference` for what the driver does next.
+
 ### Formation species limit - what the battle setup does with 3 distinct monster ids
 
 *Status:* resolved - `[a,b,c]` loads as `[c,c,a]` on half of all rolls, verbatim (three streamed blocks) on the other half; randomizer capped at 2 distinct species. Grade: **capture** (write watchpoints + cell readback + heap walk; the rebuild loop also read in disassembly).
@@ -158,6 +242,8 @@ species and at the disc's authored heap-cost maximum.
 | The status-element badge sheet `0x18..=0x20` | resolved (nine 48x16 word tags; ladder assignment independently confirmed) | `disassembly` + `capture` | [details ↓](#the-status-element-badge-sheet-0x180x20) |
 | Does the battle ground grid roll per-cell randomness? | resolved (no - a four-entry table walk) | `disassembly` | No. `func_0x801d02c0` builds sixteen literal UV words into scratchpad `0x1f800034` (`0x801d0304..0x801d03a0`) and the emit loop reads group `n` for quad `n`, advancing `0x10` each time. They decode to four fixed 32x32 sub-tiles of the `(192..=255)^2` window walked in `sub_row * 2 + sub_col` order, copied into the packet verbatim - no roll, no corner mirror. The grid origin also carries an extra `-0x200` bias on `z`, and pass 1's cull is a view-`z` bracket with **no** screen-space term (that is a separate pass-2 test). See [battle.md](../subsystems/battle.md#the-grids-own-constants-read-off-the-emitter). |
 | Endless camera orbit (Gaza 2 softlock) - the `0x19` attack-approach park | resolved (caught live; root-caused; disc fix shipped) | `capture` + `disassembly` | [details ↓](#endless-camera-orbit---the-0x19-attack-approach-park) |
+| Which `FUN_801D5854` case-6 arm a running fight takes, and where `ctx[+0x6DA]` is seeded | resolved | `capture` + `disassembly` | [details ↓](#the-in-fight-action-framing-and-the-yaw-counter-ladder) |
+| Which framing the Done band (`0x50` / `0x51`) takes, and the idle-orbit rate at the Begin/Run prompt | resolved | `capture` + `disassembly` | [details ↓](#the-done-band-framing-and-the-two-orbit-writers) |
 | `0x19` fallback approach drive - which anim-driver field does summon staging leave stale? | resolved (pinned + causally reproduced on the parked save) | `capture` + `disassembly` | [details ↓](#the-summon-then-melee-park-trigger---the-stale-field-is-0x1dc-bit-2) |
 | Super / Miracle Arts trigger chain | resolved (all 15 Supers live-executed) | `disassembly` + `capture` | [details ↓](#super--miracle-arts-trigger-chain) |
 | Xain "Bloody Horns"/"Terio Punch" ignore elemental guards (community mystery) | resolved | `disassembly` + `capture` | Not an element drop - a **resist-ladder bypass**. Capture-class casts (spell byte `+0` = `'c'`) run per-spell modules (PROT 944..966) whose damage calls pass the caster's seat but pick one of two wrappers: `FUN_801DD4B0` (finisher `param_5=0`, resist ladder runs) or `FUN_801DD6B4` (`param_5=1`, the whole party-defender jewel/guard block is skipped). BH (952) / TP (953) use the bypass wrapper for their main hits; enemy ESM (966) uses the respecting one (hence Cort reads as Dark). Element attribution law + live confirmation: [battle-formulas.md](../subsystems/battle-formulas.md); cast classes: [spell-table.md](../formats/spell-table.md#cast-classes-record-byte-0). |
@@ -171,6 +257,10 @@ species and at the disc's authored heap-cost maximum.
 | What spawns the battle XA voice selector `FUN_8004DA00`? | resolved | `disassembly` | Nothing calls it - it is the `+0x08` tick of the [static actor template](functions/runtime-libs.md#static-actor-templates) at `0x800767F4`, and the battle scene-loader `FUN_800513F0` spawns that record into the system actor pool at `0x80051D3C` as its last act before returning. The selector is therefore a per-frame pass resident for the whole battle. Port `legaia_engine_audio::battle_voice`; the same reading corrects the template's base and tick offset (the `+0x0C`-from-`0x800767F0` frame was skewed 4 bytes low). |
 | Effect-VM pass-1 "state token algebra" (`FUN_801E0088`) | resolved + ported | `capture` | [details ↓](#effect-vm-pass-1-state-token-algebra-fun_801e0088) |
 | Seru-magic summon visual (e.g. Tail Fire) | resolved (player visual; wired) | `capture` | [details ↓](#seru-magic-summon-visual-eg-tail-fire) |
+| Why a disc-booted port fight never showed an enemy special | resolved (the boot catalog lacked the disc's monster-special ids) | `capture` | The picker rolled Gimard's `+0x21` Tail Fire (`0x27`, read off the `battle_gimard_tail_fire_a` RAM) on half its turns and `take_monster_turn` discarded it: `SpellCatalog::vanilla()` has no `0x27` and the boot catalog only layered the Seru block over it, while its fabricated placeholders sat on real ids (`0x26` at 9 MP over Thunderbolt's 18). The disc table now fills the block below `0x81`; see [`battle-action.md`](../subsystems/battle-action.md#the-monsters-cast-is-only-as-real-as-the-catalog). |
+| The party cast trigger `FUN_801DBF9C` - outcome producer or params stager? | resolved (a params stager; every Seru id takes the summon arm) | `disassembly` | [details ↓](#the-party-cast-trigger-is-a-params-stager) |
+| Player-summon presentation - label, readout, hide, flashes, creature seat | resolved (ported behind the band's own seams) | `capture` + `disassembly` | [details ↓](#player-summon-presentation) |
+| Fade-actor hold word `-1` - "no hold" or "hold until killed"? | resolved (hold until the actor is killed) | `disassembly` | [details ↓](#the-fade-actors-hold-word) |
 | `summon.dat` / `readef.DAT` side-band streaming | resolved (entries + format) | `disassembly` | [details ↓](#summondat--readefdat-side-band-streaming) |
 | Monster steal item (Evil God Icon) | resolved | `capture` | [details ↓](#monster-steal-item-evil-god-icon) |
 | Battle face-stamp issuing site | resolved | `capture` | [details ↓](#battle-face-stamp-issuing-site) |
@@ -209,6 +299,126 @@ species and at the disc's authored heap-cost maximum.
 | How an NPC's facing changes **after** spawn - snap vs ramp, and which writer wins | resolved (two laws; order-of-execution priority) | `disassembly` | [details ↓](#npc-dynamic-facing---two-laws-and-an-execution-order) |
 | dolk2/rikuroa MAN source (the "v12-embedded MAN" was an over-read) | resolved (streaming carrier) | `capture` | Their own `base+3` bundles are the MAN-less count=4 form `[1,2,6,0x14]`; the "embedded MAN at 0x1000" inside their SceneV12Table entries is an over-read onto the next scene's bundle (suimon's / geremi's; [scene-v12-table.md](../formats/scene-v12-table.md) § over-read). Retail sources their partition scripts from the block's standalone `data_field_streaming` entry's type-3 chunk (`dolk2` ext 70 `[29,73,17]`, `rikuroa` ext 157 `[13,29,64]`; live script-heap byte-match at the Caruban beat). Engine: `field_man_payload` streaming fallback (`streaming_man_payloads`) + retail-frame `Scene::load` windows; pins `v12_bundle_man_disc.rs`. |
 | kor-family op-0x49 flag window `[0x138..0x13F]` - what the 8 flags gate | resolved (Uru Mais warp-pad destination memory) | `disassembly` | [details ↓](#kor-family-op-0x49-flag-window-0x1380x13f---uru-mais-warp-pad-picker) |
+| Attack-band damage pacing - who calls `FUN_801EC3E4`, what paces the hits, when the total lands | resolved (the anim tick calls it every frame; the clip's `+0x10..+0x13` beats fire the hits; one HP write per combo) | `disassembly` | [details ↓](#attack-band-damage-pacing---the-hit-event-model) |
+
+### Attack-band damage pacing - the hit-event model
+
+*Status:* resolved - disassembly (`FUN_801EC3E4` head `0x801EC41C..0x801EC494`, apply arm
+`0x801EE984..0x801EEA78`, epilogue `0x801EECDC..0x801EECE8`; `FUN_80047430` call sites
+`0x800478A0` / `0x80047BF0` and the bit-1 cut `0x80047900..0x80047948`; `FUN_8004AD80` `0x8004B064`)
++ capture (two PCSX-Redux hit-event timelines, a plain Somersault and a Tri-Somersault Super)
+
+The strike loop of the action SM (`FUN_801E295C` state `0x1E`) stages one byte into `+0x1DA`
+and sets `+0x1DC` bit 1; it never calls a damage kernel. The kernel runs from the **anim
+tick**, every frame a battle clip plays, with the cursor frame in `a2`, and its own head decides
+whether that frame is a hit: `ctx[7] != 0x5A`, the committed entry's byte 0 in `0x0C..=0x1F`,
+the per-clip hit index `+0x1F4 < 4`, `entry[+0x10 + idx] != 0`, and `frame + 1 >=
+entry[+0x10 + idx]`. An admitted hit resolves with `entry[idx]` as its power byte, adds the
+damage to the target's combo word `+0x0` and its HP-bar word `+0x10` (`0x801EDB40` /
+`0x801EDB58`) and bumps `+0x1F4`; every commit zeroes the index. Live HP moves **once**: the hit
+that lands after the strike loop has parked the cursor at `0xFF` (`ctx[+0x15]`, `0x801EE9A4`)
+and that is its clip's last listed beat (`entry[+0x11 + idx] == 0 || idx == 3`) subtracts the
+whole accumulator from `+0x14C` and zeroes it (`0x801EEA10..0x801EEA74`). That gate is the
+kernel's `s2 = 0` mode; the same register selects two other arms (`0x801EDEE4..0x801EE130`, and
+its monster-attacker copy at `0x801EE790..0x801EE980`): a look-ahead over every remaining hit of
+the action that finds none able to connect with the target's `+0x1E` size class applies the total
+at once (`s2 != 0`), and the War God Icon's *Attack x2* (ability bit `0x0D`) with `ctx[+0x16] < 2`
+withholds it so the pair lands as one (`s2 = 0xFF`). The tick's bit-1 cut
+commits the next staged byte once `entry[+0x10] + 2 < frame` with `entry[+0x76] == 0`, which is
+what chains one swing into the next mid-clip; the art records carry `+0x76 = 1` and play to
+their natural end. The loop-window arm re-zeroes `+0x1F4` on every rewind for a party slot on
+`0x11` with a latched id `>= 0x2B` (`0x80047840..0x80047878`), so a windowed Hyper / Super clip
+re-fires its hits per cycle.
+
+Both captures (N = 2, `scripts/pcsx-redux/autorun_hit_event_timeline.lua` over the
+`party_basic_attack_vs_gobu_gobu` and `battle_vahn_tri_somersault_super` states) read exactly
+that. A plain three-arrow Somersault: swing `0F` (`p0 = 0x18, e0 = 7`, lock `0`) commits, its hit
+fires at frame 6, swing `0E` (`p0 = 0x13`) commits 8 vsyncs later at frame 10 - the bit-1 cut -
+and hits at frame 6, the `0x19` starter (slot `0x10`, `e0 = 0`) plays with no events, `0x27`
+installs at slot `0x11` (`e0 = 5`, lock `1`) and hits at frame 4 while the SM sits in `0x20` -
+and the target's HP falls 76 → 23 in that one frame. The Tri-Somersault Super stacks seven hits
+across `0F`, the two-hit `0x1F` (`p = [0x17, 0x17]`, `e = [8, 19]`), `0E` (`p0 = 0x1D`), the
+`0x1A` SpecialStarter (slot `0x11`, loop window `[13, 14] x 5`, solo byte `1`) and three `0x2B`
+clips, and lands 3542 → 2318 on the last one. One probe artifact worth knowing:
+`*(actor + 0x22C)` alternates between two draw nodes on consecutive vsyncs, so a per-vsync
+cursor sample can read the node the tick did not advance (three frames behind); the in-sync
+stream satisfies the head guard on every hit. Engine seats: `legaia_engine_vm::battle_action::hit_event`
+(the head), `World::tick_battle_hit_events` / `land_melee_hit` / `apply_combo_total`
+(`engine-core`); write-up in
+[battle-action.md](../subsystems/battle-action.md#a-tactical-art-is-an-ordinary-attack-band-action).
+The port's own timeline (`legaia-engine play-window --battle 4`, `RUST_LOG=legaia_engine_core=debug`,
+N = 2 runs) reads the same shape: a two-swing Auto queue commits `0C`, hits at frame 6 of its `e0 = 7`
+entry and accumulates, commits `0D` at the boundary and lands the total on its hit; a typed `↑↓↑`
+becomes `0F 0E 1A 27`, both swings hit at their beats, the starter parks `[13, 14] x 5` with no hit,
+and the Somersault entry (`p0 = 0x18, e0 = 5`, lock `1`, the capture's bytes) hits at frame 4 and lands
+the total once.
+
+### The battle HUD's per-phase surfaces are the sub-draw script table
+
+*Status:* resolved - `disassembly`, corroborated by the handle lists of sixteen
+states.
+
+The question was which of retail's two party readouts (roster card, full-width
+pill) a given battle frame shows, and when the plaque, the AP plate, the
+target plaque and the move name join them. Retail never computes it: the menu
+SM `FUN_801D0748` runs `FUN_801D388C(step)` on every `ctx[+0x06]` edge
+(`0x801D0EE4`, `0x801D109C`, `0x801D13F0`, `0x801D14C8`, `0x801D1658`, ...),
+and `step` indexes `PTR_DAT_801F4D34` - fifty `[count][anim][panel]` +
+`count` x `(placement record, mode)` records in the battle overlay's rodata,
+walked at `0x801D4BA4..0x801D4CBC`. `anim = 1` hard-resets the handle list
+first, so the pairs are the whole screen. `FUN_801D8DE8(record, mode)` takes
+the record straight into `0x80076C10 + id * 0x18`; mode bit 0 picks the spawn
+seat (`+0x02/+0x04` or `+0x0A/+0x0C`) and the glide runs to the other, bit 1
+suppresses the glide (`0x801D92E0..0x801D93DC`). The action SM's openers are
+the `0x0C` seed (`0x801E2F24`: bar for a party target byte `+0x1DD`, panels
+for `8`) and the Item / Spirit pre-arm `0x3C` (`0x801E3DA0`), with every
+close in the `0x51` band (`0x801E6170..0x801E6364`).
+
+The rule that falls out - card at the round prompt and while a window is
+browsed, pill in the ring and the target steps, nothing during a party
+attack on a monster, the target's pill during a monster cast - is on
+[`battle.md`](../subsystems/battle.md#the-per-phase-rule---what-the-sub-draw-script-builds).
+Each `mednafen` state's `ctx[+0x1074]` walk agrees element for element; the
+disc-gated `crates/engine-core/tests/battle_hud_subdraw_disc.rs` holds the
+port's constants to the table's bytes. One corollary settles a widget that
+had been ported twice: the item window's `0x64` "target strip" is record 7
+again (step `0x12`: `07/0`, `34/1`), and its packet-pinned pens are the
+ring bar's seat for seat - so the port draws the bar there and the item
+window keeps only its breadcrumbs.
+
+### The ring's element chip reads `-` or the Ra-Seru, and the gate is the equipment byte
+
+*Status:* resolved - `disassembly`, corroborated across twenty-nine states.
+
+`FUN_801D8DE8`'s case for record 10 (`0x801D8EC8..0x801D8F2C`) writes the
+chip's string pointer as `0x801F4B9E + char_id * 10` - the run `Meta` /
+`Terra` / `Ozma` at indices `1..=3`, a lone `-` at index 4 - when
+`ctx[+0x25F + member]` is set, and the `-` entry when it is clear. The gate's
+one writer is the party battle-actor init `FUN_80053CB8`
+(`0x800541D0..0x80054270`): `lbu v0,0x761(v0)` off the `0x80084140` display
+alias, which is the live character record's `+0x199`, the Ra-Seru slot of
+the eight equipment bytes at `+0x196` - or `+0x760` (`+0x198`) on the arm
+the member's character id `2` (Noa) takes. In every catalogued state the three
+gate bytes equal `(+0x199 != 0)` for the seated members - `0` in the sparring
+fight, `1` for Vahn from the Meta capture on, `0` for Noa beside Terra, all
+`1` at the level-99 Rage state. Port `engine-core::battle_hud::battle_magic_chip`.
+
+### The combo counter's glide is placement record 80's
+
+*Status:* resolved - `capture` (the live glide record), the stepper by
+`disassembly`.
+
+The `HIT` / `TOTAL` / `DAMAGE` cluster hangs off screen-element record 80,
+seat A `(328, 170)`, seat B `(168, 170)`, opened at mode 0 and closed in the
+`0x51` band (`FUN_801D8DE8(0x50, 1)` at `0x801E6360`, gated on the damage
+finisher's `_DAT_8007BD14`). `battle_melee_hit_spark` carries the glide record
+live at `ctx[+0x11B4 + slot * 0xC]`: total `0x10`, elapsed `0x0C`, start
+`(328, 168)`, target `(168, 168)`, handle at `x = 208` - which is the `+40`
+every packet of the cluster shows against the settled seats of
+`player_steal_skeleton_banner`. `FUN_801D9BBC` steps it linearly
+(`start + (target - start) * elapsed / total`, snap on arrival), so the
+cluster slides 160 px in over sixteen frames. Port
+`engine-vm::battle_value_readout::combo_slide`.
 
 ### The chrome `kind` byte is an index into the widget-class table
 
@@ -555,6 +765,84 @@ its candidate generators
 `0x19` class explains the community exhibits without any HP desync. Stated
 limit: whether any retail sequence can still produce a `0x51` park is unproven
 either way; nothing observed requires it.
+
+### The in-fight action framing and the yaw-counter ladder
+
+**Question.** `FUN_801D5854` case 6 has two arms; which one films an ordinary
+action, and what is the yaw base `ctx[+0x6DA]` it subtracts the facing from?
+
+**Answer.** The `0x801D64C4` arm, for party and monster alike, for the whole
+of a running fight. The fork byte `DAT_8007BD71` (`0x801D5CEC..0x801D5CF4`)
+is the battle-end signal and reads `0xFF` until a wipe or an escape; see the
+falsified reading in
+[re-do-not-re-walk.md](re-do-not-re-walk.md#the-case-6-party-arm-is-the-battle-over-framing).
+The arm's pose is `pitch 0`, `yaw = (ctx[+0x6DA] − actor[+0x46]) & 0xFFF`,
+`TR = (0, 0x500, ctx[+0x6D0])` (the depth prescaled by `FUN_801D829C`), focus
+the negated `actor[+0x34/+0x38]` pair with the height left at zero, then the
+`ctx[+0xD]` style tweaks (`1`/`3` add a half turn; `2`/`3` set `TR.y = 0x400`
+and add `0x80` of pitch) and the character-`4` override.
+
+**Evidence.** Three PCSX-Redux `.sstate` captures parked in `ctx[7] == 0x19`
+with Gaza (seat 3) acting read the rotation / translation / focus trios
+directly: `TR (0, 1280, 5324)` = `prescale(0xD00)` with `ctx[+0x6D0] = 0xD00`
+in all three; focus `(−433, 0, −291)` / `(785, 0, −39)` / `(0, 0, −1490)`
+against Gaza's `+0x34/+0x38` of `(433, 291)` / `(−785, 39)` / `(0, 1490)`;
+the `ctx[+0xD] == 2` capture at pitch `0x80` over `TR.y = 0x400`; and in each
+the live yaw eight units behind `(ctx[+0x6DA] − actor[+0x46]) & 0xFFF`
+(`1657` vs `1665`, `1412` vs `1420`, `574` vs `582`) - the per-pass re-arm
+chasing a counter that moves. The counter's seeds are stores in the action
+SM and one SCUS routine, each read off the instruction: `sh zero,0x4(s7)` in
+the round-begin arm (`0x801E2B40`), `li 0x800` in the `0x0C` seed arm
+(`0x801E2CF8`), `li 0x200` beside the `ctx[7] = 0x14` store (`0x801E2F20`),
+and `FUN_8004E13C`'s `(rand() % 2) << 11 + 0x280` (`0x8004E288..0x8004E2B0`)
+under a three-way gate - argument `2`, `ctx[+0x243] != 2`, `ctx[+0x13] < 3` -
+whose argument is the committed clip's header byte `+0x87` from
+`FUN_8004AD80` (`0x8004BE18..0x8004BE2C`). The `battle_melee_hit_spark`
+capture reads `ctx[+0x6DA] = 0x298` mid-art: `0x280` plus 24 frames of the
+prologue's `max(1, 4 × frame_step / 3)` advance (`0x801E29E4..0x801E2A24`).
+
+**Engine side.** `legaia_engine_vm::battle_cam_script`: `ActionFraming::
+battle_over` names the fork byte truthfully, `action_framing` drops the
+focus height, and `BattleCamera::observe_action_state` applies the seed
+ladder on the action-state edges (the swing-clip commit stood in by the edge
+into `0x1E`, since the engine's animation player does not expose the clip
+header byte). Both hosts feed the same `action_state`.
+
+### The Done band framing and the two orbit writers
+
+**Question.** After an action resolves, `FUN_801E295C` sits in `0x50` /
+`0x51` for the `ctx[+0x6D8]` tail (`0x3C` display frames by default). Is the
+camera on the far framing there, and how fast does the Begin/Run prompt
+orbit?
+
+**Answer.** The tail is a **per-action framing chosen by category**, not the
+far framing. Both Done arms read `actor[+0x1DE]` before the framing call
+(`0x801E5E90..0x801E5EF4` in `0x50`, `0x801E5FC0..0x801E6018` in `0x51`):
+category `5` (Run) takes no framing and runs the yaw orbit, category `3`
+(Attack) `li a1,0x8`, a party slot whose target's live HP `+0x14C` is zero
+`li a1,0x8`, anything else `li a1,0x6` - re-armed every pass. The far framing
+returns at the end-of-action gate `0x5A`. The prompt orbits at `−2` yaw units
+per display frame (`−4` per two-frame camera step).
+
+**Evidence.** `zora_glare_petrify_post` (mednafen, `ctx[7] == 0x51`, slot 3
+acting after a spell, `ctx[+0x6D0] = 0xC00`, `ctx[+0x6DA] = 1966`, Zora at
+`(649, −47)` facing `3297`) reads pitch `0`, yaw `2735`, `TR (0, 1275,
+4820)`, focus the negated `(624, 0, −40)` - case 6's in-fight pose
+`(0, 0x500, 4915)` on the caster's seat with the tween one step short, and
+yaw `(1966 − 3297) & 0xFFF = 2765` being chased. `evil_medallion_rage_battle`
+(`ctx[7] == 0x0A`, flow byte `0xFF`) reads pitch `32`, `TR (0, 1280, 7920)`,
+focus at the origin - case 9 over `±825` seats - so between actions retail is
+on the far framing. The orbit rate: `scripts/pcsx-redux/autorun_battle_cam_orbit.lua`
+on `battle_gaza2_prompt` (240 vsyncs, `ctx[+6] == 0x1E`, `ctx[7] == 0x00`)
+with Exec breakpoints on both `sh v0,0x2(a0)` stores - the SM's at
+`0x801E2A6C` never fires, the battle tick's at `0x801D07CC` fires once per
+tick and the yaw drops `2 × DAT_1F800393` each time (`−6` per 3 vsyncs under
+the interpreter's `step = 3`, i.e. `−2` per vsync).
+
+**Engine side.** `legaia_engine_vm::battle_cam_script::done_band_phase` over
+`DoneBandInputs` (category / party seat / dead target), filled by both hosts;
+`DONE_STATES` split from `ACTION_END_STATES`. The orbit rate was already
+`ORBIT_STEP = 4` per camera step.
 
 ### The summon-then-melee park trigger - the stale field is `+0x1DC` bit 2
 
@@ -1077,6 +1365,65 @@ The **high block `0x99..=0xA0`** (Juggernaut / Palma / Mule / Horn / Jedo / Meta
 **This supersedes the old move-VM `SummonScene` model and the PROT-905-overlay reading** for the *visual*: the faithful summon render is the battle creature drawn through `monster_archive::battle_render_mesh` + `MonsterAnimPlayer` + `tmd_to_vram_mesh_posed_rot` (mesh + texture + animation all from PROT 867), not the stager scene-graph. (PROT 905 is still the magnitude/effect stager - see the per-spell-power thread.) The flame-atlas loader site is now pinned:
 
 **`FUN_80020050`** (SCUS `0x80020050`) uploads PROT entry `0x366` into VRAM twice via `FUN_8001fc00` (→ `FUN_8003e8a8`, the PROT-index loader), with the VRAM region set up by `FUN_80017888` / `FUN_8001e54c` (param `0xf000`); it is gated on `_DAT_8007b868 == 0` (the same field-camera / mode gate `FUN_801dbe9c` reads) and is independent of the `FUN_800520F0` battle-bundle path (which pulls `0x367..0x36d`).
+
+### The party cast trigger is a params stager
+
+`FUN_801DBF9C(party, spell_id)` runs at the end of state `0x29`'s wait for a
+party caster. Its disassembly (`overlay_battle_action_801dbf9c.txt`) has two
+arms on `sltiu v0,a1,0x25`: at or above `0x25` it stores `actor[+0x1E0] = 9`,
+`+0x1E1 = 0x12`, `+0x1E2 = 0xFF` and returns (`0x801DC064..0x801DC09C`);
+below it, it indexes `0x801F4E64 + id - 1` for an 8-byte anim-pair list at
+`0x801F4EDC` and copies the pairs into `+0x1E0..` until the `0xFF`
+terminator. No store touches HP, MP or a target. So the trigger writes the
+cast's anim stream and the summon sub-route the same state reads back
+(`lbu v1,0x1e0(s3); li v0,0x9; bne` at `0x801E45EC`); the outcome is the
+streamed module's. Every player Seru id is `>= 0x25`, so every player cast -
+healing included - is a summon to this routine. The `0x12` it stages is the
+argument the summon band hands `FUN_801DC0A0` each frame while the caster's
+`+0x1D9` stays `9` (capture `gimard_summon_start`): a cast-effect id, not a
+clip. Port: `BattleHostImpl::spell_anim_trigger` (engine-core), which arms the
+engine's stager on the summon arm; the `< 0x25` table is not parsed.
+
+### Player-summon presentation
+
+Read off the capture corpus and the summon band's disassembly:
+
+- **No spell-name label for a party caster.** `0x28`'s label block is
+  skipped for an acting id `< 3` (`sltiu v0,v0,0x3; bne v0,zero,0x801e4460`
+  at `0x801E43D8`); the mednafen `*_summon_mid_cast` display crops show the
+  acting-actor plaque, the caster close-up or the flash's white and the
+  additive burst, and no label. The party readout follows the hide: absent in
+  every `0x33` / `0x34` crop and in `gola_gola` (`0x35`, all seats hidden),
+  back under the caster in `vera` (`0x35`, stager phase 3, the caster's
+  `+0x21C` cleared while the other seats stay `0xFF`).
+- **The hide.** `0x34` zeroes the prim word and sets `+0x21C = 0xFF` on
+  every party seat and every living monster (`0x801E4B30..0x801E4B6C`); the
+  PCSX `gimard_summon_visible` / `_burning_attack` states read exactly that
+  on slots 0..3 while the creature at slot 7 stays drawn; `0x36` restores.
+- **The creature seat.** Slot 7 at `x=185, z=-2272` (caster `82, -542`) with
+  the caster's facing on the idle clip at stager phase 6, then `z=-1606` on
+  clip `1` at phase 11: it walks in from behind the party toward the target.
+- **The two flashes.** Flash-in at `0x33` (additive, delay `0x14`, ramp
+  `0x14` black → white, hold `-1`, id `1`) plus cue `0x63`; flash-out at
+  `0x34` (additive, ramp `0x78` white → black, hold `1`). The `visible` state
+  carries the flash-out actor finished (`+0x10 & 8`, hold counted below 0).
+- **The duck.** `_DAT_8007B910` reads `161` against level `215` in both
+  mid-cast states - the `75/100` floor of `0x35`, exactly.
+
+Port: the summon band (`engine-vm::battle_action::summon`), the stager and
+the hide/fade seams (`engine-core::world::battle::cast_band`), both hosts'
+draw gates and `fade_prim` composition.
+
+### The fade actor's hold word
+
+`FUN_80020C14` (`80020c14.txt`): after the duration goes negative it sets
+`actor[+0x62] |= 0x100`, then `lh v0,0x1e(a1); bltz v0,0x80020cd4` - a
+negative hold skips the countdown entirely and the tick goes on ramping and
+drawing; a non-negative hold counts down and, on expiry, sets
+`actor[+0x10] |= 8` (finished) and returns `-1` (draw nothing). So `-1` means
+**hold the landed colour until the actor is killed**, which is why the
+escape white-out persists until the battle unloads and the summon flash-in
+persists until `0x34` kills it. Port: `engine-core::fade::FadeState::step`.
 
 ### `summon.dat` / `readef.DAT` side-band streaming
 

@@ -62,6 +62,7 @@ mod physical;
 mod round;
 mod stat_init;
 mod summon;
+mod tint_sm;
 mod victory;
 
 pub use actor_tween::*;
@@ -74,6 +75,7 @@ pub use physical::*;
 pub use round::*;
 pub use stat_init::*;
 pub use summon::*;
+pub use tint_sm::*;
 pub use victory::*;
 
 #[cfg(test)]

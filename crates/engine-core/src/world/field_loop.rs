@@ -311,35 +311,14 @@ impl World {
         // Switch to the battle track (if configured) - the host's BGM
         // director cross-fades from the field music.
         self.swap_to_battle_bgm();
-        // Round 1's opener. Retail's next-actor selector `FUN_801DABA4` runs
-        // from the battle's first turn, so whoever holds the highest initiative
-        // key acts first - which is how a fast party member outruns Vahn, how a
-        // fast monster opens on the party, and how a back attack cashes in the
-        // side lockout the seeder just applied.
-        //
-        // Only the SPD path picks. A battle with no SPD anywhere (the synthetic
-        // catalog, the disc-free tests) has no keys to compare and stays on the
-        // round-robin fallback opening at slot 0, exactly as before - the pick
-        // below would otherwise fall through to `next_living_combatant(0)` and
-        // silently hand the opening turn to slot 1.
-        if self.any_battle_speed() {
-            let opener = self.next_combatant_by_initiative().unwrap_or(0);
-            self.battle_ctx.active_actor = opener;
-            if opener >= party_count {
-                // A monster won the opening turn: run the AI pick, which arms
-                // its cast or its swing budget for the SM to execute.
-                self.take_monster_turn(opener);
-            } else if self.battle_player_driven {
-                // Player-driven party opener: don't pre-arm the attack - open
-                // the command menu and let the SM idle until the player
-                // confirms (handled in `live_battle_tick`).
-                self.open_battle_command(opener);
-            } else {
-                self.arm_party_physical(opener);
-            }
-        } else if self.battle_player_driven {
-            self.open_battle_command(0);
-        }
+        // Round 1 - retail `0x0B -> 0x14`, or `0x0B -> 0xFE` on a back
+        // attack: the actor sweep, the keys seeded above (ahead of the latch,
+        // so the side lockout read the unlatched `+0x290`), and `Begin | Run`
+        // for the round's first party command. Nobody - whoever won
+        // initiative - acts before the last member commits
+        // (`World::begin_battle_round`).
+        self.battle_round_flow = crate::battle_round::RoundFlow::default();
+        self.begin_battle_round();
     }
 
     /// Configure the actor at `slot` as the field player and reset the

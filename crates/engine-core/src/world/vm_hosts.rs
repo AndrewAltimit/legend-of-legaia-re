@@ -2170,13 +2170,62 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
             .pending_battle_events
             .push(BattleEvent::LoadCaptureArchive { idx });
     }
+    /// The party cast trigger the pre-cast wait runs on its timer's expiry.
+    ///
+    /// Two arms on the spell id (`sltiu v0,a1,0x25` at `0x801DBFA0`):
+    ///
+    /// * `>= 0x25` - every player Seru id: the summon sub-route
+    ///   (`actor[+0x1E0] = 9`), the cast-effect id `0x12` at `+0x1E1` and the
+    ///   terminator at `+0x1E2` (`0x801DC064..0x801DC09C`). The engine arms
+    ///   its stager here; the outcome is the stager's strike.
+    /// * `< 0x25` - the per-spell anim-pair list at
+    ///   `0x801F4E64` / `0x801F4EDC` copied into `params[1..]`
+    ///   (`0x801DBFAC..0x801DC060`). NOT WIRED: the engine has no parse of
+    ///   that overlay table, so the stream terminates at `params[1]` and the
+    ///   outcome the clips would have carried folds here instead.
+    ///
+    /// PORT: FUN_801DBF9C
     fn spell_anim_trigger(&mut self, party_slot: u8, spell_id: u8) {
+        use vm::battle_action::{SPELL_TRIGGER_SUMMON_MIN_ID, SUMMON_CAST_EFFECT_ID};
         self.world
             .pending_battle_events
             .push(BattleEvent::SpellAnimTrigger {
                 party_slot,
                 spell_id,
             });
+        if spell_id >= SPELL_TRIGGER_SUMMON_MIN_ID {
+            if let Some(a) = self.world.actors.get_mut(party_slot as usize) {
+                a.battle.sub_route = 9;
+                a.battle.params[1] = SUMMON_CAST_EFFECT_ID;
+                a.battle.params[2] = 0xFF;
+            }
+            self.world.arm_summon_stager(party_slot, spell_id);
+        } else {
+            if let Some(a) = self.world.actors.get_mut(party_slot as usize) {
+                a.battle.params[1] = 0xFF;
+            }
+            self.world.fold_pending_cast();
+        }
+    }
+    /// Stage a full-screen fade from the band's template - the summon
+    /// band's flash-in (`0x33`) and flash-out (`0x34`) - on the world's one
+    /// live fade, which both hosts composite through
+    /// [`World::screen_fade_draw`]. Retail's spawn allocates a pool actor
+    /// and runs the loader on its `+0x7C` block; the engine's
+    /// [`crate::fade::FadeState`] is that block.
+    ///
+    /// PORT: FUN_80024E80
+    fn spawn_screen_fade(&mut self, template: &vm::battle_action::SummonFadeTemplate, id: i16) {
+        self.world.screen_fade = Some(crate::fade::FadeState::load(&crate::fade::FadeTemplate {
+            kind: template.kind,
+            duration: template.duration,
+            start_rgb: template.start_rgb,
+            end_rgb: template.end_rgb,
+            mode: [template.delay, template.hold, id],
+        }));
+    }
+    fn summon_stager_tick(&mut self) -> bool {
+        self.world.summon_stager_tick()
     }
     fn spell_anim_sustain(&mut self, actor_id: u8, anim_id: u8) {
         self.world
@@ -2348,14 +2397,11 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     /// `World::art_records`, the same map the entry resolver reads its
     /// per-strike power profile out of.
     ///
-    /// Without this the SM's whole art-strike seam was unreachable from the
-    /// World host: `attack_chain` only dispatches
-    /// [`legaia_engine_vm::battle_action::BattleActionHost::apply_art_strike`]
-    /// for an art it can resolve, and the trait default answers `None` for
-    /// every pair. The record supplies the strike's `dmg_timing` and hit cue;
-    /// the power itself comes from the profile the entry staged on the actor
-    /// (`BattleActor::art_power`), so an art whose record is not loaded still
-    /// resolves its damage.
+    /// The record supplies an art hit's side data - the status effect and
+    /// the per-hit cue (`legaia_engine_vm::battle_action::art_strike_info_for_hit`,
+    /// `World::apply_art_hit_side_data`); the power byte itself is the clip
+    /// entry's, so an art whose record is not loaded still resolves its
+    /// damage. The trait default answers `None` for every pair.
     fn art_record(
         &self,
         character: legaia_art::Character,

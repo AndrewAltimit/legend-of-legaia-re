@@ -455,20 +455,33 @@ pub enum StagedAnimTarget {
 
 /// Resolve a staged anim id through the retail commit ladder: ids below
 /// [`ART_ANIM_ID_BASE`] play their action-table entry directly; ids
-/// `q >= 0x10` select art-bank record `q - 0x10`, installing at dynamic
-/// slot `0x11` for ids `0x10` and `0x1A` and at slot `0x10` for every
-/// other id (the staged id is then rewritten to the slot number, so the
-/// SM's `+0x1D9 == +0x1DA` equality checks compare slot numbers).
+/// `q >= 0x10` select art-bank record `q - 0x10` and install at a dynamic
+/// slot - `0x10` for the plain base ids `0x11..=0x19` (the `0x19` regular
+/// starter among them), `0x11` for `0x10`, for the `0x1A` SpecialStarter
+/// and for **every art constant** `>= 0x1B`. The staged id is then
+/// rewritten to the slot number, so the SM's `+0x1D9 == +0x1DA` equality
+/// checks compare slot numbers.
+///
+/// Read off the register, not the C: the slot register `s2` defaults to
+/// `0x10` in the delay slot of the `0x1A` test (`bne a0,v0 ; _li s2,0x10` at
+/// `0x8004B720`), the `0x1A` arm sets `0x11` at `0x8004B76C`, the `0x10`
+/// test sets `0x11` at `0x8004BB58`, and the art-constant arm (`staged >=
+/// 0x1B`, entered at `0x8004BB5C`) sets `0x11` in the delay slot of its
+/// name-width call (`jal 0x80035f04 ; _li s2,0x11` at `0x8004BBBC..
+/// 0x8004BBC0`) before the install at `0x8004BC4C`. A live Tri-Somersault
+/// capture reads the same: `0x27`, `0x1F` and `0x2B` all commit with
+/// `+0x1D9 = 0x11`, the `0x19` starter with `0x10`. The earlier "`0x10` and
+/// `0x1A` only" reading was the decompiler dropping that delay-slot store.
 // PORT: FUN_8004AD80 (dynamic-art commit arm) - staged id q >= 0x10 reads
 // bank record q - 0x10 (`q*0xD0 + bank + 4 - 0xCDC` install arithmetic),
-// installs at action-table slot 0x11 when q == 0x10 || q == 0x1A else
+// installs at action-table slot 0x11 when q == 0x10 || q >= 0x1A else
 // 0x10, and rewrites the staged byte to the slot number. See
 // docs/formats/battle-data-pack.md § Art-animation bank.
 pub fn resolve_staged_anim(q: u8) -> StagedAnimTarget {
     if q < ART_ANIM_ID_BASE {
         return StagedAnimTarget::Direct { slot: q };
     }
-    let slot = if q == 0x10 || q == 0x1A {
+    let slot = if q == 0x10 || q >= 0x1A {
         DYNAMIC_ART_SLOT_B
     } else {
         DYNAMIC_ART_SLOT_A

@@ -149,6 +149,15 @@ fn battle_complete_propagates_through_world() {
         }
     }
     assert!(completed, "the SM must report BattleComplete through tick");
+    // The wipe runs the battle-end sequencer's hold first (retail keeps the
+    // frozen frame up into CARD INIT); `finish_battle` latches `game_over`
+    // at the sequencer's exit gate, not on the frame the wipe is raised.
+    for _ in 0..20_000 {
+        if world.game_over {
+            break;
+        }
+        world.tick();
+    }
     assert!(world.game_over, "a party wipe raises game over");
     // The wipe teardown defers the field restore so hosts hold the frozen
     // battle frame (`game_over_hold`); the world intentionally stays in

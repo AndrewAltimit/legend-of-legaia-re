@@ -324,29 +324,60 @@ fn fold_battle_event_other_variants_dont_modify_state() {
     assert_eq!(world.actors[0].battle.hp, 100);
 }
 
+/// The party cast trigger (`FUN_801DBF9C`) at the host seam: a non-Seru id
+/// (`< 0x25`) stages nothing and requests nothing; a Seru id writes the summon
+/// sub-route + the `0x12` effect byte and arms the stager, whose FIRST tick
+/// (the band's `0x34` entry) requests the creature spawn behind the caster.
 #[test]
-fn spell_anim_trigger_requests_summon_only_for_seru_ids() {
+fn spell_anim_trigger_stages_the_summon_route_and_the_stager_requests_the_spawn() {
+    use crate::world::vm_hosts::BattleHostImpl;
     let mut world = World::new();
     world.party_count = 1;
     world.actors[0].active = true;
 
-    // A non-summon id (a monster attack) requests nothing.
-    world.fold_battle_event(&BattleEvent::SpellAnimTrigger {
-        party_slot: 0,
-        spell_id: 0x27,
-    });
+    {
+        let mut host = BattleHostImpl { world: &mut world };
+        host.spell_anim_trigger(0, 0x20);
+    }
+    assert_ne!(
+        world.actors[0].battle.sub_route, 9,
+        "no summon route below 0x25"
+    );
+    assert_eq!(world.actors[0].battle.params[1], 0xFF, "stream terminated");
+    assert!(world.summon_stager.is_none());
+    assert!(!world.summon_stager_tick(), "nothing armed: not busy");
     assert!(world.take_pending_summon_spawn().is_none());
 
-    // Gimard Tail Fire (0x81) requests a summon spawn at the caster's pos.
+    // Gimard (0x81): the summon arm.
     world.actors[0].move_state.world_x = 11;
     world.actors[0].move_state.world_y = 22;
     world.actors[0].move_state.world_z = 33;
-    world.fold_battle_event(&BattleEvent::SpellAnimTrigger {
-        party_slot: 0,
-        spell_id: 0x81,
-    });
+    {
+        let mut host = BattleHostImpl { world: &mut world };
+        host.spell_anim_trigger(0, 0x81);
+    }
+    assert_eq!(world.actors[0].battle.sub_route, 9, "+0x1E0 = 9");
+    assert_eq!(world.actors[0].battle.params[1], 0x12, "+0x1E1 = 0x12");
+    assert_eq!(world.actors[0].battle.params[2], 0xFF, "+0x1E2 = 0xFF");
+    assert!(
+        world.summon_stager.is_some(),
+        "the stager is armed, not run"
+    );
+    assert!(
+        world.take_pending_summon_spawn().is_none(),
+        "no spawn before the stager ticks"
+    );
+    // The stager's phase-0 tick (0x34 entry) seats the creature behind the
+    // caster on the party side.
+    assert!(world.summon_stager_tick(), "busy from the first tick");
     let req = world.take_pending_summon_spawn();
-    assert_eq!(req, Some((0x81, [11, 22, 33])));
+    assert_eq!(
+        req,
+        Some((
+            0x81,
+            [11, 22, 33 - crate::world::battle::SUMMON_SPAWN_BEHIND]
+        ))
+    );
     // Taken once.
     assert!(world.take_pending_summon_spawn().is_none());
 }

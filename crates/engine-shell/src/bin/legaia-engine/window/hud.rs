@@ -2,6 +2,12 @@
 
 use super::*;
 
+/// One on-screen sparring-tutorial box with its stage rect `(x, y, w, h)`.
+pub(super) type TutorialStageBox<'a> = (
+    (i32, i32, i32, i32),
+    &'a legaia_engine_core::battle_flow::ActiveTutorialBox,
+);
+
 /// Project the simulation's arts-input phase onto the presentation
 /// crate's. The two enums are deliberately separate types -
 /// `legaia-engine-ui` is a leaf that does not link `engine-core` - so
@@ -18,6 +24,16 @@ fn arts_input_screen(
         Sim::Targeting => Ui::Targeting,
     }
 }
+
+/// The chip cluster a host projects for one frame: the owned `(label,
+/// enabled)` chips in seat order, the cursor index, and the cluster's phase
+/// (`engine-core::battle_hud::BattleCommandChips`, with the phase mapped
+/// onto the leaf crate's own enum).
+pub(super) type CommandChips = (
+    Vec<(String, bool)>,
+    usize,
+    legaia_engine_render::battle_command_ui::ChipPhase,
+);
 
 impl PlayWindowApp {
     /// Keep the rendered dialog panel ([`Self::active_dialog`]) in sync with
@@ -1425,10 +1441,11 @@ impl PlayWindowApp {
                         if let Some((chips, cursor, phase)) = self.battle_command_menu_chips() {
                             use legaia_engine_render::battle_command_ui as bcu;
                             let (origin, scale) = self.save_select_stage(w, h);
+                            let views = bcu::command_chip_views(&chips);
                             out.extend(bcu::battle_command_chip_text(
                                 &self.font,
                                 &bcu::BattleCommandMenuFrame {
-                                    chips: &chips,
+                                    chips: &views,
                                     cursor: Some(cursor),
                                     phase,
                                 },
@@ -1477,8 +1494,13 @@ impl PlayWindowApp {
             // space, so it goes through the stage transform the dialog box and
             // window chrome use. Drawn last inside the battle block so it sits
             // over the menus, which is where retail's message box lands too.
-            if let Some(rect) = self.battle_tutorial_stage_rect() {
-                let tbox = bw.battle_tutorial_box().expect("rect implies a box");
+            //
+            // Every box of the on-screen group draws, not just the front
+            // one: a retail hook dispatch registers all its boxes at once
+            // (the lesson's top-anchored intro and its bottom-anchored
+            // explainer share the frame at `Begin | Run`).
+            let (stage_origin, stage_scale) = self.save_select_stage(w, h);
+            for (rect, tbox) in self.battle_tutorial_stage_boxes() {
                 let mut draws = legaia_engine_render::battle_tutorial_text_draws_for(
                     &self.font, &tbox.text, rect,
                 );
@@ -1493,7 +1515,6 @@ impl PlayWindowApp {
                         dim,
                     ));
                 }
-                let (stage_origin, stage_scale) = self.save_select_stage(w, h);
                 legaia_engine_render::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
                 out.extend(draws);
             }
@@ -1925,6 +1946,23 @@ impl PlayWindowApp {
         Some((x as i32, y as i32, w as i32, h as i32))
     }
 
+    /// Every tutorial box on screen with its stage rect - the front group of
+    /// the world's box queue (one retail hook dispatch registers all of its
+    /// boxes together, so the group draws together).
+    pub(super) fn battle_tutorial_stage_boxes(&self) -> Vec<TutorialStageBox<'_>> {
+        self.session
+            .host
+            .world
+            .battle_tutorial_boxes_on_screen()
+            .filter_map(|tbox| {
+                let width =
+                    legaia_engine_render::battle_tutorial_text_width(&self.font, &tbox.text);
+                let (x, y, w, h) = tbox.rect(width)?;
+                Some(((x as i32, y as i32, w as i32, h as i32), tbox))
+            })
+            .collect()
+    }
+
     /// Sparring-tutorial prompt-box chrome: the same gradient fill + gold
     /// 9-slice frame the dialog reading box wears, at the rect the retail
     /// emitter registers the prompt's text actor with. Sampled from the
@@ -1941,23 +1979,18 @@ impl PlayWindowApp {
         if self.boot_ui.is_active() {
             return Vec::new();
         }
-        let Some(rect) = self.battle_tutorial_stage_rect() else {
-            return Vec::new();
-        };
-        let waits = self
-            .session
-            .host
-            .world
-            .battle_tutorial_box()
-            .is_some_and(|b| b.waits_for_input);
         let (stage_origin, stage_scale) = self.save_select_stage(surface_w, surface_h);
-        legaia_engine_render::battle_tutorial_chrome_draws_for(
-            &assets.rects,
-            rect,
-            waits,
-            stage_origin,
-            stage_scale,
-        )
+        let mut out = Vec::new();
+        for (rect, tbox) in self.battle_tutorial_stage_boxes() {
+            out.extend(legaia_engine_render::battle_tutorial_chrome_draws_for(
+                &assets.rects,
+                rect,
+                tbox.waits_for_input,
+                stage_origin,
+                stage_scale,
+            ));
+        }
+        out
     }
 
     /// Project the live name-entry session into the renderer-agnostic view
@@ -2089,19 +2122,26 @@ impl PlayWindowApp {
         w: u32,
         h: u32,
     ) -> legaia_engine_render::BattleHudDraws {
+        use legaia_engine_core::battle_hud as bh;
+        // The result screen draws neither the party card nor the pill
+        // (retail `noa_levelup_banner`: the two framed windows over the
+        // bare battle scene) - the readout comes down with the last action.
+        if self.session.host.world.battle_result_screen_active() {
+            return legaia_engine_render::BattleHudDraws {
+                text: Vec::new(),
+                sprites: Vec::new(),
+            };
+        }
         let slots = battle_hud_slot_views(&self.battle_hud);
         let popups = battle_hud_popup_views(&self.battle_hud);
         let w_ref = &self.session.host.world;
-        // The arts-input session owns both halves of the park: it names the
-        // actor whose full-width bar shows, and its being open is what sends
-        // the roster panels off-screen.
-        let active = w_ref
-            .arts_input_actor()
-            .and_then(|slot| {
-                legaia_engine_core::battle_hud::battle_active_actor(w_ref)
-                    .map(|(_, name)| (slot, name))
-            })
-            .or_else(|| legaia_engine_core::battle_hud::battle_active_actor(w_ref));
+        // Every per-phase decision is the engine's (`battle_hud`'s
+        // predicates carry retail's sub-draw script + action-SM rule), so
+        // this host and the browser page cannot disagree about which
+        // surface is up.
+        let plaque = bh::battle_active_actor(w_ref);
+        let target_plaque = bh::battle_target_plaque(w_ref);
+        let move_name = bh::battle_move_name(w_ref);
         let badges = self.battle_badge_rects();
         let banner = self.battle_banner_message();
         battle_hud_draws_for(
@@ -2118,11 +2158,11 @@ impl PlayWindowApp {
                 // retail parks the plaque while that window is up (the
                 // battle_item_window capture shows the crumbs alone), so the
                 // frame draws one or the other, never both.
-                plaque: active
+                plaque: plaque
                     .as_ref()
                     .filter(|_| w_ref.battle_item_menu.is_none())
                     .map(|(_, n)| n.as_str()),
-                plaque_badge: legaia_engine_core::battle_hud::battle_plaque_element_badge(w_ref),
+                plaque_badge: bh::battle_plaque_element_badge(w_ref),
                 banner: banner.as_deref(),
                 // The sparring-tutorial prompt is a box the host draws
                 // itself, and its rect starts on the plaque's own content
@@ -2137,10 +2177,12 @@ impl PlayWindowApp {
                 // (188..208) and inside the roster panels (164..212), so the
                 // builder parks whichever one it covers.
                 host_box: self.battle_tutorial_stage_rect(),
-                active_slot: active.as_ref().map(|(s, _)| *s),
-                // Retail parks the status plate off-screen while a command
-                // entry session owns the frame; the port emits no strip.
-                input_session_parked: w_ref.arts_input_active(),
+                active_slot: bh::battle_readout_bar_slot(w_ref),
+                panels_parked: !bh::battle_panels_visible(w_ref),
+                begin_tab: bh::battle_begin_tab_visible(w_ref),
+                move_name: move_name.as_deref(),
+                target_plaque: target_plaque.as_ref().map(|(n, b)| (n.as_str(), *b)),
+                ap_plate_value: bh::battle_ring_ap_plate_value(w_ref),
                 diag: legaia_engine_render::diag_hud_enabled(),
             },
             BATTLE_HUD_PEN,
@@ -2199,21 +2241,6 @@ impl PlayWindowApp {
             .and_then(|b| b.current_banner())
     }
 
-    /// The live battle command surface projected into the shared chip-cluster
-    /// view: one [`legaia_engine_render::battle_command_ui::CommandChipView`]
-    /// per chip of whichever phase is up, the cursor index, and the phase
-    /// itself (which is what names the seats). `None` when no command surface
-    /// owns the frame.
-    ///
-    /// The three phases are retail's three selection states - the round-open
-    /// `Begin | Run` prompt (`0x1E`), the four-arm command ring (`0x28`) and
-    /// the `Auto | Command` attack-mode prompt (`0x78`).
-    ///
-    /// One projector feeds both halves of the cluster - the plate sprites
-    /// and the labels - so the two draw slots cannot disagree about whether
-    /// the menu is up. The suppression rules mirror the text block's
-    /// if-else chain exactly: a dialogue box, an arts-entry session or any
-    /// open submenu parks the command chrome, which is what retail does.
     /// The engine-core battle-item-window projection (shared with the
     /// browser play page - `World::battle_item_menu_model` owns the gating
     /// and text resolution; this window only borrows it into the builder's
@@ -2224,61 +2251,27 @@ impl PlayWindowApp {
         self.session.host.world.battle_item_menu_model()
     }
 
-    pub(super) fn battle_command_menu_chips(
-        &self,
-    ) -> Option<(
-        Vec<legaia_engine_render::battle_command_ui::CommandChipView<'static>>,
-        usize,
-        legaia_engine_render::battle_command_ui::ChipPhase,
-    )> {
-        use legaia_engine_core::battle_input::{
-            AttackMode, BattleCommand, CommandPhase, RoundChoice,
+    /// The live battle command surface projected into the shared chip-cluster
+    /// view: the owned `(label, enabled)` chips of whichever phase is up, the
+    /// cursor index, and the phase (which names the seats). `None` when no
+    /// command surface owns the frame.
+    ///
+    /// The projection itself is `engine-core::battle_hud::battle_command_chips`,
+    /// shared with the browser page, and where the ring's element chip
+    /// becomes the member's Ra-Seru name or `-` off the disc.
+    pub(super) fn battle_command_menu_chips(&self) -> Option<CommandChips> {
+        use legaia_engine_core::battle_hud::{CommandChipPhase, battle_command_chips};
+        use legaia_engine_render::battle_command_ui::ChipPhase;
+        let chips = battle_command_chips(&self.session.host.world)?;
+        // The two enums are separate types because `engine-ui` is a leaf
+        // that does not link `engine-core`; the browser page carries the
+        // same three-line map.
+        let phase = match chips.phase {
+            CommandChipPhase::RoundPrompt => ChipPhase::RoundPrompt,
+            CommandChipPhase::CommandRing => ChipPhase::CommandRing,
+            CommandChipPhase::AttackMode => ChipPhase::AttackMode,
         };
-        use legaia_engine_render::battle_command_ui::{ChipPhase, CommandChipView};
-        let bw = &self.session.host.world;
-        if bw.mode != legaia_engine_core::world::SceneMode::Battle {
-            return None;
-        }
-        if bw.current_dialog.is_some() || bw.inline_dialogue.is_some() {
-            return None;
-        }
-        if bw.arts_input_view().is_some()
-            || bw.battle_arts_menu.is_some()
-            || bw.battle_spell_menu.is_some()
-            || bw.battle_item_menu.is_some()
-        {
-            return None;
-        }
-        let cmd = bw.battle_command.as_ref()?;
-        let no_escape = bw.battle_no_escape;
-        let chip = |label: &'static str, enabled: bool| CommandChipView { label, enabled };
-        match cmd.phase {
-            CommandPhase::RoundPrompt { cursor } => Some((
-                RoundChoice::PROMPT
-                    .iter()
-                    .map(|c| chip(c.label(), !matches!(c, RoundChoice::Run) || !no_escape))
-                    .collect(),
-                cursor as usize,
-                ChipPhase::RoundPrompt,
-            )),
-            CommandPhase::Menu { cursor } => Some((
-                BattleCommand::MENU
-                    .iter()
-                    .map(|c| chip(c.label(), c.available(no_escape)))
-                    .collect(),
-                cursor as usize,
-                ChipPhase::CommandRing,
-            )),
-            CommandPhase::AttackMode { cursor } => Some((
-                AttackMode::PROMPT
-                    .iter()
-                    .map(|m| chip(m.label(), true))
-                    .collect(),
-                cursor as usize,
-                ChipPhase::AttackMode,
-            )),
-            _ => None,
-        }
+        Some((chips.chips, chips.cursor, phase))
     }
 
     /// The battle HUD's chrome sprites (strip + plaque lozenges, gold `HP` /
@@ -2337,10 +2330,11 @@ impl PlayWindowApp {
         {
             use legaia_engine_render::battle_command_ui as bcu;
             let (origin, scale) = self.save_select_stage(surface_w, surface_h);
+            let views = bcu::command_chip_views(&chips);
             out.extend(bcu::battle_command_chip_sprites(
                 &bcu::CommandChipAtlas::from_battle_chrome(&rects),
                 &bcu::BattleCommandMenuFrame {
-                    chips: &chips,
+                    chips: &views,
                     cursor: Some(cursor),
                     phase,
                 },

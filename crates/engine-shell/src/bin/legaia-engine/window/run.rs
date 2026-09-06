@@ -202,6 +202,19 @@ fn arm_requested_battle(session: &mut BootSession, spec: &str) {
         log::info!("play-window: --battle turns the live loop on (it drains the transition)");
         world.live_gameplay_loop = true;
     }
+    // A scripted carrier's fight is entered by its own record, and that
+    // record can raise a one-shot system-flag arm on the way in - the Rim
+    // Elm sparring record's `50 19` two ops before its `3E FF` battle-entry
+    // op, which is retail's whole condition for the sparring tutorial.
+    // `--battle` on that carrier's row replays the entry without running the
+    // record, so the arm is replayed with it; every other row, and a scene
+    // whose script never raises the flag, is untouched.
+    if world.replay_scripted_battle_arm(row) {
+        log::info!(
+            "play-window: --battle {row} is a scripted carrier's fight - its record's \
+             system-flag arm is replayed with the entry"
+        );
+    }
     if world.force_encounter(row) {
         log::info!(
             "play-window: --battle armed formation row {row} in '{}' - the fight opens through \
@@ -402,8 +415,9 @@ pub(super) fn cmd_play_window_with_record(
     // Opt-in: walk field NPCs along their MAN-authored routes through the
     // motion VM. Off by default -> NPCs rest at their placement anchors.
     session.host.world.animate_field_npcs = live_npcs;
-    // Opt-in: route live basic-attack damage through the retail damage
-    // finisher (9999 cap + no-damage floor). Off by default → flat path.
+    // Retail always runs the damage finisher (`FUN_801ddb30`) after the
+    // melee roll, so it is the default; `--no-damage-finish` keeps the flat
+    // pre-finisher path for comparison.
     session.host.world.use_damage_finish = damage_finish;
     // Opt-in, NON-FAITHFUL QoL: redirect a monster's single-target attack to
     // the lowest-HP living party member (the faithful default is a uniform
@@ -464,6 +478,48 @@ pub(super) fn cmd_play_window_with_record(
         log::info!("play-window: --seed-party seeded {seeded} roster member(s)");
     }
 
+    // Debug learn path: `LEGAIA_LEARN_SPELLS=0x81,0x9e` prepends those spell
+    // ids (level 1) onto the lead character's record, so a seeded New Game
+    // party can reach the Magic arm and cast - the cast-presentation
+    // screenshot harness. An env var rather than a flag: a development aid
+    // for the parity sweeps, not a player surface.
+    if let Ok(list) = std::env::var("LEGAIA_LEARN_SPELLS") {
+        let parse = |s: &str| {
+            let s = s.trim();
+            s.strip_prefix("0x")
+                .or_else(|| s.strip_prefix("0X"))
+                .map_or_else(|| s.parse::<u8>().ok(), |h| u8::from_str_radix(h, 16).ok())
+        };
+        let mut learned = 0usize;
+        for id in list.split(',').filter_map(parse) {
+            if let Some(lead) = session.host.world.roster.members.first_mut() {
+                legaia_engine_core::magic_xp::learn_spell_prepend(lead, id);
+                learned += 1;
+            }
+        }
+        log::info!("play-window: LEGAIA_LEARN_SPELLS taught the lead {learned} spell(s)");
+    }
+
+    // Debug RNG seed override: `LEGAIA_RNG_SEED=<u32>` (decimal or `0x` hex)
+    // replaces the world's boot seed, so a sweep can be re-rolled onto a
+    // different deterministic stream - the way to reach an AI branch (a
+    // monster cast) the default seed never picks. A development aid for the
+    // parity sweeps, not a player surface.
+    if let Ok(spec) = std::env::var("LEGAIA_RNG_SEED") {
+        let spec = spec.trim();
+        let seed = spec
+            .strip_prefix("0x")
+            .or_else(|| spec.strip_prefix("0X"))
+            .map_or_else(
+                || spec.parse::<u32>().ok(),
+                |h| u32::from_str_radix(h, 16).ok(),
+            );
+        if let Some(seed) = seed {
+            session.host.world.rng_state = seed;
+            log::info!("play-window: LEGAIA_RNG_SEED reseeded the world RNG to {seed:#010x}");
+        }
+    }
+
     // Debug start-position override: `LEGAIA_START_TILE=X,Z` seats the player
     // at that tile's centre after boot (tile*128+0x40, the op-0x3F entry-tile
     // mapping). Useful for parking on the overworld continent - a direct
@@ -495,8 +551,11 @@ pub(super) fn cmd_play_window_with_record(
     if player_battle {
         let strings =
             legaia_engine_core::battle_open::battle_ui_strings_from_prot(&session.host.index);
-        let n = strings.len();
-        session.host.world.battle_ui_strings = strings;
+        // Merged, not assigned: the SCUS half (the chip words and the
+        // sparring caption) was read at boot (`boot.rs`), this is the overlay
+        // half.
+        session.host.world.battle_ui_strings.merge(&strings);
+        let n = session.host.world.battle_ui_strings.len();
         log::info!("play-window: battle UI labels read off the disc ({n} string(s))");
     }
     // Sparring tutorial: nothing to gate here.

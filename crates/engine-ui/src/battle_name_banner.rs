@@ -24,28 +24,25 @@
 //! the `0xC1` path is the `+0x2A7` field of the `0x414`-byte character
 //! record (`docs/formats/save-record.md`).
 //!
-//! # NOT WIRED
+//! # Wiring
 //!
-//! Nothing builds an Art-name banner draw list. This crate's draw builders are
-//! the pause menu, the title / save rack, the fishing HUD and the shared text
-//! overlay; none of them emits the four banner sub-primitives whose X fields
-//! ([`BANNER_X_FIELD_OFFSETS`]) this module places, and the battle HUD the
-//! engine does draw carries no Art-name row.
+//! [`banner_x`] is live: `ui_overlay::battle_hud_draws_for` centres the
+//! move-name label with it whenever `engine-core::battle_hud::battle_move_name`
+//! names one, on the pen row the retail placement records pin. The row is
+//! not this routine's - it belongs to the two placement records the X is
+//! written into: `0x80076C10 + 76 * 0x18` and `+ 77 * 0x18` (the four
+//! [`BANNER_X_FIELD_OFFSETS`] are their `+0x02` / `+0x0A` seats), whose `y`
+//! is `150` in the initialised table, glyph pen two rows up. The live
+//! handle in every action capture (`battle_melee_hit_spark` `Somersault` at
+//! `(130, 148)`, `battle_gimard_tail_fire_a` `Tail Fire` at `(135, 148)`,
+//! `zora_glare_petrify_post` `Glare` at `(146, 148)`) sits on that row at
+//! `0xA0 - width / 2`, which is this module's X law with no marker.
 //!
-//! The **trigger is not the gap**. `World::drain_battle_shout_cues` already
-//! surfaces "actor `cslot` committed art `action`" once per executed party
-//! art, and the native battle host drains it every frame to fire the CD-XA
-//! shout (`window/battle.rs`), so a banner would raise on exactly the retail
-//! event. Two other things are missing:
-//!
-//! * **A Y.** `FUN_8004C650` writes only X, into four sub-primitive fields
-//!   the engine does not emit; the banner's row comes from whatever staged
-//!   those primitives, which is not this routine and is not ported. That is
-//!   the blocker, and it is the whole blocker.
-//! * **A marked disc string.** The placement measures the record's `+0xC`
-//!   string *with its markers* - the two lead bytes this module branches on do
-//!   not exist in the curated ASCII names, and `legaia_art::arts_table`
-//!   decodes the name to a `String` rather than keeping the raw bytes.
+//! The record's raw marked name is still not what the port measures: the
+//! curated ASCII names carry neither lead byte, so the `0xCF` nudge and the
+//! `0xC1` character-name prefix never fire. Both arms stay ported here for
+//! the day the raw table is read; every retail label captured so far is a
+//! bare name.
 //!
 //! **The id-space bridge is not missing**, and the clause that said so is
 //! withdrawn. It read "nothing in the corpus maps one to the other" on the
@@ -60,10 +57,6 @@
 //! shape of join from the other curated table and skips the names that do not
 //! resolve. A bridge with a hole is still a bridge, and a reader sent hunting
 //! for a mapping that already exists loses more than one told about the hole.
-//!
-//! So the honest worklist entry is "port the banner's owning primitive, and
-//! keep the record's raw marked name", not "find a trigger" and not "build an
-//! id-space bridge".
 
 /// Stride of one arts-name table record (`DAT_80075EC4`).
 pub const ARTS_RECORD_STRIDE: usize = 0x14;
@@ -100,6 +93,16 @@ pub const CHARACTER_NAME_OFFSET: usize = 0x2A7;
 /// PORT: FUN_8004c650
 ///
 /// Locate the arts-name record for `(char_id, art_id)`.
+///
+/// NOT WIRED: the live label does not walk this table. Retail's banner
+/// placer runs this walk over the runtime `0x14`-stride arts-name table to
+/// find the record whose name pointer it stamps; the engine has no staged
+/// copy of that runtime table, so `engine-core::battle_hud::battle_move_name`
+/// resolves the name through the static arts-name table
+/// (`legaia_art::tables::art_name`) and the spell / item catalogs instead,
+/// and seats it with this module's X law ([`banner_x`]). Wiring this walk
+/// means staging the runtime table (the `0x80076C10` placement block's
+/// arts-name run) on the battle host first.
 ///
 /// `table` is the raw `0x14`-stride table starting at record 0. The walk
 /// stops at the first record whose byte `+0x0` is [`ARTS_TABLE_SENTINEL`];

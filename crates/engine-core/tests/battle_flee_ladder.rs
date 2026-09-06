@@ -32,6 +32,9 @@ fn build_world() -> World {
         w.actors.push(Actor::default());
     }
     w.party_count = 3;
+    // The zeroed records seed HP 0 / no seat, so they go in FIRST: retail's
+    // member walk (`FUN_801DB81C`) hands no ring to a member with no HP.
+    w.load_party(legaia_save::Party::zeroed(3));
     for i in 0..3 {
         w.actors[i].active = true;
         w.actors[i].battle.hp = 100;
@@ -39,7 +42,6 @@ fn build_world() -> World {
         w.actors[i].battle.liveness = 1;
         w.set_battle_attack(i as u8, 60);
     }
-    w.load_party(legaia_save::Party::zeroed(3));
     w.set_formation_table(vanilla_formation_table(), vanilla_monster_catalog());
 
     w.player_actor_slot = Some(0);
@@ -152,8 +154,17 @@ fn assured_escape_runs_the_run_band_and_leaves_the_battle() {
         SceneMode::Field,
         "a successful escape returns to the field"
     );
+    // The teardown writes the party's live HP / MP / SP back into the record
+    // (`+0x104..0x110`, the triplet every battle exit syncs) - mask it; the
+    // XP + level fields and everything else must be untouched.
+    let masked = |raw: &[u8]| {
+        let mut v = raw.to_vec();
+        v[0x104..0x110].fill(0);
+        v
+    };
     assert_eq!(
-        w.roster.members[0].raw, xp_before,
+        masked(&w.roster.members[0].raw),
+        masked(&xp_before),
         "fleeing grants no loot / XP (no victory record write)"
     );
     assert_eq!(

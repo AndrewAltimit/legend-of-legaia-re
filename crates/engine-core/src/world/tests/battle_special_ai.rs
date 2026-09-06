@@ -41,15 +41,22 @@ fn monster_ai_casts_a_castable_spell_under_fixed_rng() {
         world.actors[1].battle.params[0], 0x20,
         "picker chose Flame (magic_attacks[0])"
     );
+    // The pick arms the action SM's Magic band; the band charges the MP at
+    // 0x28 and the outcome folds the frame it leaves 0x29.
+    assert_eq!(world.battle_ctx.action_state, ActionState::Begin.as_byte());
+    assert_eq!(
+        world.actors[0].battle.hp, party_hp_before,
+        "nothing lands at the pick"
+    );
+    tick_until_cast_folds(&mut world);
     assert!(
         world.actors[0].battle.hp < party_hp_before,
         "the monster's spell dealt damage to the party"
     );
     assert!(world.actors[1].battle.mp < 10, "the monster spent MP");
-    assert_eq!(
-        world.battle_ctx.action_state,
-        ActionState::EndOfAction.as_byte(),
-        "a cast is the whole turn; SM parks at EndOfAction"
+    assert!(
+        world.battle_ctx.action_state >= ActionState::MagicAnimChain.as_byte(),
+        "a cast is the whole turn; the band runs it out"
     );
     let fx = world.drain_battle_hit_fx();
     assert_eq!(fx.len(), 1, "one damage popup queued");
@@ -185,6 +192,7 @@ fn move_power_table_drives_monster_special_attack_damage() {
         let before = world.actors[0].battle.hp;
         world.take_monster_turn(1);
         assert_eq!(world.actors[1].battle.params[0], 0x20, "picker chose Flame");
+        tick_until_cast_folds(&mut world);
         before - world.actors[0].battle.hp
     }
 
@@ -269,6 +277,7 @@ fn elemental_guard_accessory_halves_matching_monster_special() {
 
         let before = world.actors[0].battle.hp;
         world.take_monster_turn(1);
+        tick_until_cast_folds(&mut world);
         before - world.actors[0].battle.hp
     }
 
@@ -709,6 +718,7 @@ fn element_affinity_scales_monster_special_attack_damage() {
         let before = world.actors[0].battle.hp;
         world.take_monster_turn(1);
         assert_eq!(world.actors[1].battle.params[0], 0x20, "picker chose Flame");
+        tick_until_cast_folds(&mut world);
         before - world.actors[0].battle.hp
     }
 
@@ -1082,6 +1092,7 @@ fn enemy_special_impact_selector_5_rots_the_party_target() {
     // Baseline: selector 0 = "no impact effect" -> no status anywhere.
     let mut none = flame_caster_battle(0);
     none.take_monster_turn(1);
+    tick_until_cast_folds(&mut none);
     assert_eq!(
         none.actors[1].battle.params[0], 0x20,
         "picker chose Flame (magic_attacks[0])"
@@ -1098,6 +1109,7 @@ fn enemy_special_impact_selector_5_rots_the_party_target() {
     // Selector 5: the Rot arm. No 1-in-N gate, so it lands every time.
     let mut rot = flame_caster_battle(5);
     rot.take_monster_turn(1);
+    tick_until_cast_folds(&mut rot);
     assert_eq!(rot.actors[1].battle.params[0], 0x20, "picker chose Flame");
     assert!(
         rot.status_effects.has(0, StatusKind::Rot),
@@ -1125,6 +1137,7 @@ fn enemy_special_rot_is_blocked_by_rot_guard_and_master_guard() {
         let mut world = flame_caster_battle(5);
         world.character_ability_bits[0] = bit;
         world.take_monster_turn(1);
+        tick_until_cast_folds(&mut world);
         assert!(
             !world.status_effects.has(0, StatusKind::Rot),
             "ability bit {bit:#x} (Rot Guard / Master Guard) blocks the Rot arm"
@@ -1134,6 +1147,7 @@ fn enemy_special_rot_is_blocked_by_rot_guard_and_master_guard() {
     let mut world = flame_caster_battle(5);
     world.character_ability_bits[0] = 1 << 0x10; // Steal Attack
     world.take_monster_turn(1);
+    tick_until_cast_folds(&mut world);
     assert!(
         world.status_effects.has(0, StatusKind::Rot),
         "an unrelated passive leaves the Rot arm alone"

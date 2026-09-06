@@ -35,18 +35,46 @@ const CAPTURE_BYPASS_MOVE_IDS: [u8; 7] = [0x37, 0x5C, 0x5D, 0x5E, 0x79, 0x7A, 0x
 
 impl World {
     /// Deduct `def`'s MP cost from `caster` and fold its effect onto each
-    /// absolute actor slot in `targets`. Shared by the player cast path
-    /// ([`Self::apply_battle_spell`], which resolves the cursor rows to slots
-    /// from the player's perspective) and the monster-AI cast path
-    /// ([`Self::apply_monster_spell`], which resolves party slots). MP is spent
+    /// absolute actor slot in `targets`. The direct-fold entry: MP is spent
     /// once up front; each target folds through [`Self::fold_spell_outcome`].
     /// Returns `false` (no MP spent, nothing folded) when the caster can't
     /// afford the cost.
+    ///
+    /// The action SM's cast band folds through
+    /// [`Self::cast_spell_on_slots_prepaid`] instead - the band's `0x28` has
+    /// already charged the same ability-bit-folded cost - so every live path
+    /// is the prepaid one; this direct entry is the oracles' (the kernel
+    /// tests fold a cast without running the band).
+    #[cfg(test)]
     pub(in crate::world) fn cast_spell_on_slots(
         &mut self,
         caster: u8,
         def: &crate::spells::SpellDef,
         targets: &[u8],
+    ) -> bool {
+        self.cast_spell_on_slots_impl(caster, def, targets, true)
+    }
+
+    /// The direct fold (`cast_spell_on_slots`) for a cast whose MP the action SM's
+    /// `MagicCastBegin` already debited: no affordability gate, no second
+    /// debit, and the snapshot's caster MP is the pre-debit value so the
+    /// MP-keyed magnitudes match the direct fold. The summon-creature spawn
+    /// request is the band's stager's, so it is not re-raised here.
+    pub(in crate::world) fn cast_spell_on_slots_prepaid(
+        &mut self,
+        caster: u8,
+        def: &crate::spells::SpellDef,
+        targets: &[u8],
+    ) -> bool {
+        self.cast_spell_on_slots_impl(caster, def, targets, false)
+    }
+
+    fn cast_spell_on_slots_impl(
+        &mut self,
+        caster: u8,
+        def: &crate::spells::SpellDef,
+        targets: &[u8],
+        charge_mp: bool,
     ) -> bool {
         use crate::spells::{SpellSnapshot, cast_spell};
 
@@ -69,15 +97,22 @@ impl World {
         let base_cost = def.mp_cost as u16;
         let modifier = vm::battle_formulas::MpCostModifier::from_ability_flags(ability_bits);
         let cost = vm::battle_formulas::mp_cost_after_ability_bits(base_cost, modifier);
-        let (caster_hp, caster_max_hp, caster_mp_before) = match self.actors.get(caster as usize) {
+        let (caster_hp, caster_max_hp, caster_mp_now) = match self.actors.get(caster as usize) {
             Some(a) => (a.battle.hp, a.battle.max_hp, a.battle.mp),
             None => return false,
         };
-        if caster_mp_before < cost {
-            return false;
-        }
-        if let Some(a) = self.actors.get_mut(caster as usize) {
-            a.battle.mp = a.battle.mp.saturating_sub(cost);
+        let caster_mp_before = if charge_mp {
+            caster_mp_now
+        } else {
+            caster_mp_now.saturating_add(cost)
+        };
+        if charge_mp {
+            if caster_mp_now < cost {
+                return false;
+            }
+            if let Some(a) = self.actors.get_mut(caster as usize) {
+                a.battle.mp = a.battle.mp.saturating_sub(cost);
+            }
         }
         let caster_mag = self.battle_magic.get(caster as usize).copied().unwrap_or(0);
 
@@ -206,8 +241,11 @@ impl World {
         if crate::summon::SERU_SUMMON_IDS.contains(&def.id) {
             // A player Seru-magic id resolves to a per-summon overlay: request
             // the summon-creature spawn (the retail cast band's `FUN_8003EC70`
-            // overlay load - see `crate::summon`).
-            self.request_summon_spawn(def.id, fx_origin);
+            // overlay load - see `crate::summon`). A band-owned cast's spawn
+            // is the stager's (already out and walking by the strike).
+            if charge_mp {
+                self.request_summon_spawn(def.id, fx_origin);
+            }
         } else {
             // Every other move (enemy specials + non-summon spells) that carries
             // a move-power effect list requests its move-FX scene-graph spawn -

@@ -32,7 +32,10 @@ impl World {
     /// its own. Falls back to `Item <id>` / `Member <n>` when a name is
     /// unavailable (a disc-free build's synthetic catalog).
     pub fn battle_spoils_banner(&self) -> Option<BattleSpoilsBanner> {
-        if self.battle_spoils_frames == 0 {
+        // Up for the results frame through the exit while the end-of-battle
+        // sequence runs (retail's windows come down with the battle), and for
+        // the aging window a direct `finish_battle` still arms.
+        if self.battle_spoils_frames == 0 && !self.battle_result_screen_active() {
             return None;
         }
         let r = self.last_battle_rewards.as_ref()?;
@@ -104,7 +107,13 @@ impl World {
             self.battle_end = None;
             return;
         }
-        if self.battle_end == Some(BattleEndCause::MonsterWipe)
+        // A battle that ran the end-of-battle presentation credited its
+        // rewards on the results frame (`world::battle::victory`); a direct
+        // caller (the runner path, tests) credits them here and arms the
+        // aging spoils window instead.
+        let loot_done = std::mem::replace(&mut self.battle_loot_applied, false);
+        if !loot_done
+            && self.battle_end == Some(BattleEndCause::MonsterWipe)
             && let Some(formation) = self.active_formation.clone()
         {
             // `apply_battle_loot` borrows the catalog while mutating self, so
@@ -117,6 +126,11 @@ impl World {
             // ever told the player about them.
             self.battle_spoils_frames = Self::SPOILS_BANNER_FRAMES;
         }
+        self.battle_victory = None;
+        // The fade actor dies with the battle scene: the held black of the
+        // exit / escape template (`holds_at_end`) comes down here, never in
+        // the world tick.
+        self.screen_fade = None;
         // `true` only on the wipe-to-title arm; a wipe under the
         // scripted-loss latch takes the ordinary field return below.
         let mut wipe_to_title = false;
@@ -192,6 +206,7 @@ impl World {
         // Stale damage popups + sound cues must not bleed into the next
         // encounter / field.
         self.battle_hit_fx.clear();
+        self.battle_hit_events.clear();
         self.battle_sfx_cues.clear();
         self.battle_effect_spawns.clear();
         self.battle_shout_cues.clear();

@@ -53,6 +53,21 @@
 //! band (LEFT/RIGHT), with the 3-member HUD parked offscreen (the capture
 //! shows its digit rows at y `234..264`).
 //!
+//! **The strip is the party bar.** Every pinned pen of it - the plate at
+//! `(8, 188)` closing at 312, the name at `(16, 192)`, the gold `HP` / `MP`
+//! label widgets (`#0x07` / `#0x08`) at `(80, 194)` / `(192, 194)`, the
+//! current-value runs ending at 134 / 238 - is the seat the ring's
+//! full-width readout draws at (`ui_overlay`'s `BAR_*`), and the sub-draw
+//! step retail runs into `0x64` opens placement record 7 (`07/0`, the same
+//! record the ring's step 1 opens) for the member the cursor names. So this
+//! module draws **only the breadcrumb trail** at target select; the strip
+//! itself is `battle_hud_draws_for`'s bar, fed by
+//! `engine-core::battle_hud::battle_readout_bar_slot`
+//! (`CommandSurface::ItemTarget`), which is what keeps the blue plate and
+//! the sprite label widgets - not a menu-window skin and text stand-ins -
+//! on the row. The `TARGET_*` constants stay as the capture's record, held
+//! equal to the bar's seats by test.
+//!
 //! Two retail pieces of the same state are NOT this module's and stay
 //! disclosed: the floating name tag beside the targeted actor (a
 //! world-anchored plate - needs the target's projected position, which the
@@ -129,6 +144,11 @@ pub const PAGE_LABEL_INK: [f32; 4] = [0.45, 0.95, 0.75, 1.0];
 pub const ROW_DEAD: [f32; 4] = [1.0, 0.55, 0.55, 1.0];
 
 // ------------------------------------------------- target strip (state 0x64)
+//
+// The capture's record of the strip. Every seat is the party bar's
+// (placement record 7, `ui_overlay`'s `BAR_*` - the pill the HUD builder
+// draws); the test `target_strip_pins_are_the_party_bars_seats` holds the
+// two equal. Nothing in this module draws from them.
 
 /// Target-strip window stage rect - packet-pinned (left cap at x 8, body
 /// tiles to the right cap at 304, one 20-px row at y 188).
@@ -152,8 +172,8 @@ pub const TARGET_MP_CUR_RIGHT: i32 = 238;
 pub const TARGET_MP_MAX_SEAT: (i32, i32) = (250, 192);
 /// Numeral row baseline y (the 8x12 digit sprites sit at y 192).
 pub const TARGET_VALUE_Y: i32 = 192;
-/// The HP/MP label ink (retail draws the gold HUD label widgets; the
-/// port's text stand-in keeps their gold).
+/// The gold of the `HP` / `MP` label widgets the strip carries (the bar
+/// draws the sprite widgets themselves).
 pub const TARGET_LABEL_INK: [f32; 4] = [1.0, 0.85, 0.35, 1.0];
 
 // ------------------------------------------------------------------- views
@@ -249,16 +269,11 @@ pub fn battle_item_window_sprites(
 ) -> Vec<SpriteDraw> {
     let scale = stage_scale.max(1) as i32;
     let mut out = Vec::with_capacity(64);
-    if frame.targets.is_some() {
-        // State 0x64: the item windows close; the surface is the target
-        // strip at the screen's foot (packet-pinned).
-        out.extend(crate::menu_window_chrome_draws_for(
-            rects,
-            TARGET_STRIP_WINDOW,
-            stage_origin,
-            stage_scale,
-        ));
-    } else {
+    // State 0x64: the item windows close and the target strip at the
+    // screen's foot is the party bar (placement record 7), which the HUD
+    // builder draws for the pointed-at member - nothing of it is this
+    // window's (module doc).
+    if frame.targets.is_none() {
         out.extend(crate::menu_window_chrome_draws_for(
             rects,
             LIST_WINDOW,
@@ -398,96 +413,19 @@ pub fn battle_item_window_text(
                 );
             }
         }
-        Some((targets, cursor)) => {
+        Some(_) => {
             // State-0x64 target strip: the pointed-at member's name + HP +
-            // MP at the packet-pinned pens. Only the cursor's target draws
-            // (the strip IS the cursor - stepping it re-inks the one row).
-            let Some(t) = targets.get(cursor).or_else(|| targets.first()) else {
-                return out;
-            };
-            let ink = if t.alive { ROW_SELECTED } else { ROW_DEAD };
-            emit(
-                &mut out,
-                font,
-                t.name,
-                TARGET_NAME_SEAT,
-                ink,
-                stage_origin,
-                scale,
-            );
-            emit(
-                &mut out,
-                font,
-                "HP",
-                TARGET_HP_LABEL_SEAT,
-                TARGET_LABEL_INK,
-                stage_origin,
-                scale,
-            );
-            emit(
-                &mut out,
-                font,
-                "MP",
-                TARGET_MP_LABEL_SEAT,
-                TARGET_LABEL_INK,
-                stage_origin,
-                scale,
-            );
-            let num = |out: &mut Vec<TextDraw>, v: u16, right_x: i32| {
-                let sv = format!("{v}");
-                let w = font.layout_ascii(&sv).advance_x as i32;
-                emit(
-                    out,
-                    font,
-                    &sv,
-                    (right_x - w, TARGET_VALUE_Y),
-                    ink,
-                    stage_origin,
-                    scale,
-                );
-            };
-            num(&mut out, t.hp, TARGET_HP_CUR_RIGHT);
-            emit(
-                &mut out,
-                font,
-                "/",
-                (TARGET_HP_CUR_RIGHT + 2, TARGET_VALUE_Y),
-                ink,
-                stage_origin,
-                scale,
-            );
-            emit(
-                &mut out,
-                font,
-                &format!("{}", t.hp_max),
-                TARGET_HP_MAX_SEAT,
-                ink,
-                stage_origin,
-                scale,
-            );
-            num(&mut out, t.mp, TARGET_MP_CUR_RIGHT);
-            emit(
-                &mut out,
-                font,
-                "/",
-                (TARGET_MP_CUR_RIGHT + 2, TARGET_VALUE_Y),
-                ink,
-                stage_origin,
-                scale,
-            );
-            emit(
-                &mut out,
-                font,
-                &format!("{}", t.mp_max),
-                TARGET_MP_MAX_SEAT,
-                ink,
-                stage_origin,
-                scale,
-            );
+            // MP on the party bar's pens - drawn by the HUD builder as
+            // placement record 7 (`battle_readout_bar_slot`), not here.
+            // The strip IS the cursor: stepping it re-points the bar.
         }
     }
 
-    if let Some(desc) = frame.description {
+    // The description line lives in the description window, which closes
+    // with the list at target select (state 0x64 carries neither).
+    if frame.targets.is_none()
+        && let Some(desc) = frame.description
+    {
         emit(&mut out, font, desc, DESC_SEAT, white, stage_origin, scale);
     }
     out
@@ -669,11 +607,12 @@ mod tests {
     }
 
     /// Target select is the packet-pinned state-0x64 surface: the item
-    /// windows close, the target strip opens at the screen's foot showing
-    /// only the pointed-at member, and the third breadcrumb becomes the
-    /// selected item's name.
+    /// windows close, the hand goes, the third breadcrumb becomes the
+    /// selected item's name - and the target strip at the screen's foot is
+    /// the party bar (placement record 7), which the HUD builder draws, so
+    /// this window emits neither a strip window nor a row of its own.
     #[test]
-    fn target_select_is_the_pinned_target_strip() {
+    fn target_select_hands_the_strip_to_the_party_bar() {
         let r = rects();
         let font = legaia_font::Font::placeholder();
         let all = rows(2);
@@ -699,45 +638,63 @@ mod tests {
         f.targets = Some((&targets, 1));
         let sprites =
             battle_item_window_sprites(&legaia_font::Font::placeholder(), &r, &f, (0, 0), 1);
-        // The strip window frames at the pinned rect; the list window and
-        // the hand cursor are gone.
-        assert!(
-            sprites
-                .iter()
-                .any(|s| (s.dst.0, s.dst.1) == (TARGET_STRIP_WINDOW.0, TARGET_STRIP_WINDOW.1)),
-            "target strip chrome at the pinned seat"
-        );
-        assert!(
-            !sprites
-                .iter()
-                .any(|s| (s.dst.0, s.dst.1) == (LIST_WINDOW.0, LIST_WINDOW.1)),
-            "item-list window closed during target select"
-        );
+        // No strip window, no list window, no description window, no hand:
+        // only the three breadcrumb tabs remain on the sprite layer.
+        for (name, seat) in [
+            (
+                "target strip",
+                (TARGET_STRIP_WINDOW.0, TARGET_STRIP_WINDOW.1),
+            ),
+            ("list window", (LIST_WINDOW.0, LIST_WINDOW.1)),
+            ("description window", (DESC_WINDOW.0, DESC_WINDOW.1)),
+            ("hand cursor", (HAND_SEAT.0, HAND_SEAT.1 + ROW_PITCH)),
+        ] {
+            assert!(
+                !sprites.iter().any(|s| (s.dst.0, s.dst.1) == seat),
+                "{name} is not this window's at target select"
+            );
+        }
+        assert!(!sprites.is_empty(), "the breadcrumb trail stays");
         let draws = battle_item_window_text(&font, &f, (0, 0), 1);
-        // Only the cursor's target draws, on the strip's pinned pens.
+        // No text on the strip's row (the bar's), none in the list band, no
+        // PAGE header, no description line - the crumbs alone.
         let has = |y: i32| draws.iter().any(|d| d.dst.1 == y);
-        assert!(has(TARGET_NAME_SEAT.1), "name on the strip baseline");
-        assert!(has(TARGET_HP_LABEL_SEAT.1), "HP/MP labels on their pens");
-        assert!(
-            !has(ROW_TEXT_SEAT.1),
-            "no roster column in the list window band"
-        );
-        // Current values right-align to the pinned column edges.
-        let hp_pen = TARGET_HP_CUR_RIGHT - font.layout_ascii("80").advance_x as i32;
-        assert!(
-            draws
-                .iter()
-                .any(|d| d.dst.0 == hp_pen && d.dst.1 == TARGET_VALUE_Y),
-            "current HP right-aligned to x={TARGET_HP_CUR_RIGHT}"
-        );
-        assert!(
-            !draws
-                .iter()
-                .any(|d| d.dst.1 == PAGE_SEAT.1 && d.dst.0 >= PAGE_SEAT.0),
-            "no PAGE header during target select"
-        );
+        assert!(!has(TARGET_NAME_SEAT.1), "the bar's row is the HUD's");
+        assert!(!has(TARGET_HP_LABEL_SEAT.1), "no HP/MP text stand-ins");
+        assert!(!has(ROW_TEXT_SEAT.1), "no roster column in the list band");
+        assert!(!has(PAGE_SEAT.1), "no PAGE header during target select");
+        assert!(!has(DESC_SEAT.1), "the description closes with its window");
+        assert!(has(CRUMB_SEAT0.1), "breadcrumb labels drawn");
         // The third breadcrumb is the held item's name, not `Item`.
         assert_eq!(f.third_crumb(), all[1].name);
+        // By contrast, browsing draws the description at its pen.
+        let browse = battle_item_window_text(&font, &frame(&all, 1), (0, 0), 1);
+        assert!(browse.iter().any(|d| d.dst.1 == DESC_SEAT.1));
+    }
+
+    /// The capture's strip pens are the party bar's seats - the same
+    /// placement record (7) on both frames - so the pin lives on in the
+    /// HUD builder's constants and this module's record cannot drift from it.
+    #[test]
+    fn target_strip_pins_are_the_party_bars_seats() {
+        use crate::ui_overlay::{
+            BAR_DIGIT_Y, BAR_HP_CUR_RIGHT, BAR_HP_LABEL, BAR_INTERIOR_W, BAR_MP_CUR_RIGHT,
+            BAR_MP_LABEL, BAR_NAME, BAR_X, BAR_Y, PLATE_CAP_W, PLATE_H,
+        };
+        assert_eq!(TARGET_STRIP_WINDOW.0, BAR_X);
+        assert_eq!(TARGET_STRIP_WINDOW.1, BAR_Y);
+        // The strip's right cap starts where the bar's interior ends.
+        assert_eq!(
+            TARGET_STRIP_WINDOW.2,
+            PLATE_CAP_W + BAR_INTERIOR_W + PLATE_CAP_W
+        );
+        assert_eq!(TARGET_STRIP_WINDOW.3, PLATE_H);
+        assert_eq!(TARGET_NAME_SEAT, BAR_NAME);
+        assert_eq!(TARGET_HP_LABEL_SEAT, BAR_HP_LABEL);
+        assert_eq!(TARGET_MP_LABEL_SEAT, BAR_MP_LABEL);
+        assert_eq!(TARGET_HP_CUR_RIGHT, BAR_HP_CUR_RIGHT);
+        assert_eq!(TARGET_MP_CUR_RIGHT, BAR_MP_CUR_RIGHT);
+        assert_eq!(TARGET_VALUE_Y, BAR_DIGIT_Y);
     }
 
     /// The stage transform multiplies every prim like the sibling chrome

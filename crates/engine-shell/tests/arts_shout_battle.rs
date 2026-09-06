@@ -45,7 +45,11 @@ fn stage_somersault(w: &mut World) {
     let action = legaia_art::ActionConstant::from_byte(0x27).unwrap();
     let rec = legaia_art::ArtRecord {
         action,
-        commands: vec![legaia_art::Command::Up],
+        commands: vec![
+            legaia_art::Command::Up,
+            legaia_art::Command::Down,
+            legaia_art::Command::Up,
+        ],
         anim_index: 0,
         anim_extra: vec![],
         name: None,
@@ -71,6 +75,10 @@ fn build_world(with_record: bool) -> World {
         w.actors.push(Actor::default());
     }
     w.party_count = 3;
+    // Records first: `load_party` seeds HP / liveness from them (zero here),
+    // and retail's member walk (`FUN_801DB81C`) hands no ring to an HP-0
+    // member - the per-slot seeding below has to come after.
+    w.load_party(legaia_save::Party::zeroed(3));
     for i in 0..3 {
         w.actors[i].active = true;
         w.actors[i].battle.hp = 100;
@@ -78,7 +86,6 @@ fn build_world(with_record: bool) -> World {
         w.actors[i].battle.liveness = 1;
         w.set_battle_attack(i as u8, 90);
     }
-    w.load_party(legaia_save::Party::zeroed(3));
     w.set_formation_table(vanilla_formation_table(), vanilla_monster_catalog());
     if with_record {
         stage_somersault(&mut w);
@@ -134,7 +141,7 @@ fn drive_art_and_collect_shouts(
     assert!(entered, "walking should trigger Field -> Battle");
 
     // Somersault's whole command string is one `Up`.
-    let combo = [PadButton::Up];
+    let combo = [PadButton::Up, PadButton::Down, PadButton::Up];
     let mut next_dir = 0usize;
     let mut shouts = Vec::new();
     let mut press = true;

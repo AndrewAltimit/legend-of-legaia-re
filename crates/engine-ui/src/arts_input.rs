@@ -443,6 +443,22 @@ pub fn arts_input_ap_plate_draws(
     stage_origin: (i32, i32),
     stage_scale: u32,
 ) -> Vec<SpriteDraw> {
+    ap_plate_draws(rects, frame.plate_value, stage_origin, stage_scale)
+}
+
+/// The AP plate at its pinned seat, showing `value` out of 100.
+///
+/// One widget, two owners: the arts-entry screen keeps it (sub-draw step 9
+/// snaps placement record 82 in place, `52/3`) and the command ring is
+/// where it first slides in (step 1, `52/0`, from `(328, 174)` to
+/// `(208, 174)`), so the battle HUD builder draws the ring's copy through
+/// this same body.
+pub fn ap_plate_draws(
+    rects: &ApPlateRects,
+    value: u8,
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> Vec<SpriteDraw> {
     let scale = stage_scale.max(1);
     let white = [1.0, 1.0, 1.0, 1.0];
     let mut out: Vec<SpriteDraw> = Vec::new();
@@ -469,7 +485,7 @@ pub fn arts_input_ap_plate_draws(
     );
     // Gouraud fill: the captured span is x 235..285 at a full gauge, so a
     // value of `v` fills `v/100` of that span.
-    let filled = (AP_FILL_W as i64 * frame.plate_value.min(100) as i64 / 100) as i32;
+    let filled = (AP_FILL_W as i64 * value.min(100) as i64 / 100) as i32;
     if filled > 0 {
         push(
             rects.fill,
@@ -485,7 +501,7 @@ pub fn arts_input_ap_plate_draws(
     let (dx, dy, _, dh) = rects.digits;
     let digit_w = title_pak::OVERLAY_SYSTEM_UI_GAUGE_DIGIT_W;
     let pitch = title_pak::OVERLAY_SYSTEM_UI_GAUGE_DIGIT_PITCH;
-    let text = frame.plate_value.to_string();
+    let text = value.to_string();
     let mut cx = box_x + rects.box_.2 as i32 - 3 - (text.len() as i32) * digit_w as i32;
     for ch in text.bytes() {
         let d = (ch - b'0') as u32;

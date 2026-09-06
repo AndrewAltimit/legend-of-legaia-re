@@ -210,6 +210,20 @@ impl World {
     pub(in crate::world) fn live_battle_tick(&mut self) -> Option<StepOutcome> {
         use vm::battle_action::{ActionState, ActorFlags};
 
+        // The modelled CD drive: one clip read span elapses per frame.
+        self.battle_xa_busy_frames = self.battle_xa_busy_frames.saturating_sub(1);
+
+        // The battle has ended and its presentation owns the frame: retail's
+        // battle tick runs the results sequencer instead of the action SM
+        // while `DAT_8007BD71 == 0xFE` (`FUN_80046A20` `0x80047040` /
+        // `0x800470D0`), and nothing else - no round prompt, no turn cycling,
+        // no menu - until the exit gate fires.
+        // REF: FUN_80046A20
+        if self.battle_victory.is_some() {
+            self.tick_battle_end_sequence();
+            return None;
+        }
+
         // Everything already in the battle-event queue belongs to an earlier
         // tick and has been folded once; only this tick's tail may be folded
         // below. See the fold site for what re-folding costs.
@@ -308,6 +322,13 @@ impl World {
         // REF: FUN_80047430 (root-motion term; `World::tick_battle_locomotion`)
         self.tick_battle_locomotion();
 
+        // The hit-event driver - the anim tick's per-frame damage-kernel call
+        // and its event-path commit (`FUN_80047430` -> `FUN_801EC3E4`). Runs
+        // on the cursor the frame tick advanced ahead of this function and
+        // ahead of the SM step, retail's order.
+        // REF: FUN_80047430 (`0x8004787C..0x800478A4`, `0x80047900..0x80047A44`)
+        self.tick_battle_hit_events();
+
         // Final Heal sweep (FUN_801e6968): retail runs it in the cleanup
         // state 0x50 *before* the liveness count resolves a wipe. Run it
         // before the SM step so a party member downed late last tick (a
@@ -347,6 +368,10 @@ impl World {
 
         let outcome = self.step_battle();
 
+        // Cast band: fold the owed outcome at retail's seam (the frame the
+        // band leaves `0x29`; the summon route folds in its stager).
+        self.settle_cast_band(&outcome);
+
         // The all-pairs separation pass, on the line after the action SM -
         // retail's exact slot (`FUN_80046A20` runs `jal 0x801E295C` then
         // `jal 0x80051078`, every live battle frame).
@@ -367,15 +392,14 @@ impl World {
         // driver that drains on redraw - but the queue's contract is "folded
         // once", not "drained promptly".
         let events: Vec<BattleEvent> = self.pending_battle_events.split_off(events_before);
-        let mut art_strike_applied = false;
         for e in &events {
             if let BattleEvent::ApplyArtStrike {
+                actor_slot,
                 target_slot,
                 outcome,
                 ..
             } = e
             {
-                art_strike_applied = true;
                 // Surface the resolved strike damage for HUD popups (the
                 // fold below applies the HP side; this is cosmetic only).
                 if let Some(dmg) = outcome.damage
@@ -387,6 +411,18 @@ impl World {
                         is_heal: false,
                         is_crit: false,
                     });
+                }
+                // A connecting art strike arms the impact-tint triple on
+                // its target from the acting record's `+0x7A` class - the
+                // same `FUN_801EC3E4` arm the basic swing takes (retail
+                // runs that routine once per strike; a zero-damage connect
+                // still reaches it).
+                // REF: FUN_801EC3E4
+                if outcome.damage.is_some() {
+                    let class = self.attacker_impact_class(usize::from(*actor_slot));
+                    if class < crate::move_power::IMPACT_CLASS_LIMIT {
+                        self.arm_impact_tint(usize::from(*target_slot), class);
+                    }
                 }
             }
             self.fold_battle_event(e);
@@ -401,12 +437,13 @@ impl World {
         // this tick's tail stays behind it.
         self.pending_battle_events.extend(events);
 
-        // Chain-driven strike: this frame's `AttackChain` pass staged one
-        // queued swing byte, so one hit resolves for it. Retail's seam is the
-        // same one - `FUN_801EC3E4` runs once per committed arms command and
-        // applies the HP loss itself.
+        // A byte staged this step on an actor that has **no clip** to play
+        // it (a clip-less host, or an engine-synthetic clip without an entry
+        // head): a zero-length clip. Retail cannot have one - every entry on
+        // the disc carries its head - so the port resolves such a byte's
+        // hits at stage time, the pre-hit-event pacing, and applies the
+        // combo total when the byte is the action's last.
         if chain_state_before == ActionState::AttackChain.as_byte()
-            && !art_strike_applied
             && self.battle_ctx.active_actor as usize == chain_actor
         {
             let (cursor_now, staged) = self
@@ -414,26 +451,25 @@ impl World {
                 .get(chain_actor)
                 .map(|a| (a.battle.strike_index, a.battle.queued_anim))
                 .unwrap_or((0, 0));
-            if cursor_now > strike_cursor_before && vm::battle_action::is_swing_command(staged) {
-                self.apply_one_basic_strike(staged);
+            if cursor_now > strike_cursor_before && !self.staged_byte_has_clip(chain_actor, staged)
+            {
+                self.resolve_zero_length_clip_hits(chain_actor as u8, staged);
             }
         }
 
         // Generic physical attack: deal damage on the strike-landed edge when
-        // no art strike already did **and the chain itself struck nothing**.
+        // **the chain itself staged nothing**.
         //
-        // `strike_cursor_before` is the number of swing bytes this action's
-        // chain consumed (the terminator frame is the one that zeroes the
-        // cursor, and this is its pre-step value). A non-zero count means the
-        // per-swing arm above already applied every hit; firing here as well
-        // would charge the action one extra swing. A zero count is an actor
-        // whose stream was never seeded - today the monster band, whose swing
-        // count is the AGL budget rather than a queue - and that keeps its
-        // single edge-triggered application.
+        // `strike_cursor_before` is the number of bytes this action's chain
+        // consumed (the terminator step leaves it at the terminator index).
+        // A zero count is an actor whose stream was never seeded - a monster
+        // whose catalog carries no attack entries (the synthetic catalog), or
+        // a synthetic party slot - and that keeps its single edge-triggered
+        // application: the AGL-budget swings, resolved as immediate hits and
+        // applied as one combo total.
         if let StepOutcome::Transition { from, to } = outcome
             && from == ActionState::AttackChain.as_byte()
             && to == ActionState::AttackRecovery.as_byte()
-            && !art_strike_applied
             && strike_cursor_before == 0
         {
             self.apply_basic_attack();
@@ -480,9 +516,12 @@ impl World {
             let a = &self.actors[attacker];
             let converged_idle =
                 a.battle_staged_anim.is_none() && a.battle.queued_anim == a.battle.current_anim;
-            if self.battle_ctx.action_state == ActionState::AttackRecovery.as_byte()
-                || converged_idle
-            {
+            // Only the converged, clip-less case. `AttackRecovery` itself
+            // must NOT release the latch: retail's `0x1F` waits for the last
+            // staged byte to commit at the playing clip's boundary
+            // (`0x801E3AEC..0x801E3AF8`), and releasing it here dropped that
+            // byte - a two-swing queue played one swing.
+            if converged_idle {
                 self.actors[attacker]
                     .battle
                     .flag_bits
@@ -547,133 +586,325 @@ impl World {
             }
         }
 
+        // An escape spell that folded this tick (Warp and its item twins
+        // land here through the band) ends the encounter now - no loot, no
+        // game-over - the way the item path does on its own fold.
+        if self.battle_escaped && self.mode == SceneMode::Battle {
+            // Through the escape teardown's fade + exit hold, like the item
+            // path - not the instant finish the results sequencer retired.
+            self.battle_end = Some(BattleEndCause::Escaped);
+            self.begin_battle_end_sequence();
+            return Some(outcome);
+        }
+
         self.cycle_battle_turn();
 
         if matches!(outcome, StepOutcome::BattleComplete) {
-            self.finish_battle();
+            // Retail does not leave the battle on the frame the wipe scan
+            // raises the signal: the results sequencer holds the scene for
+            // the load window, the result screen and the exit fade first.
+            self.begin_battle_end_sequence();
         }
         Some(outcome)
     }
 
-    /// Turn cycling for the live loop: the round boundary + the next-combatant
-    /// re-arm, both keyed on the SM idling at `EndOfAction`.
+    /// Turn cycling for the live loop - retail's round machine, keyed on the
+    /// action SM idling at `EndOfAction`.
+    ///
+    /// The round has two bands ([`crate::battle_round::RoundPhase`]) that
+    /// never overlap. In the **command band** the flow SM owns the frame and
+    /// this does nothing: the command tick walks the party through their
+    /// rings and [`Self::begin_round_execution`] hands the round over once the
+    /// last member commits. In the **execution band** every idle is a pick:
+    /// the highest unspent initiative key acts next, party or monster, a party
+    /// member dispatching the command it committed
+    /// ([`Self::dispatch_pending_party_action`]) and a monster its AI pick.
+    /// When no key is left the round ends (`0xFF`: the mode-counter bump +
+    /// the `0x400` waker) and the next one opens (`0x14`: the actor sweep,
+    /// the key re-seed, the DoT tick, `Begin | Run`).
     ///
     /// Extracted so every site that PARKS the SM at `EndOfAction` mid-tick
-    /// (the spell / Spirit / tutorial arms and the monster cast fold, which
-    /// all run in a menu tick that returns before the step) can claim the
-    /// turn in the same tick. The SM's own `end_of_action` handler otherwise
-    /// steps `EndOfAction -> PreActionWait -> ActionSeed` on the NEXT tick
-    /// and re-seeds the same actor's **stale** action bytes - the shape that
+    /// (the spell / Spirit arms and the monster cast fold, which run in a
+    /// tick that returns before the step) can claim the turn in the same
+    /// tick. The SM's own `end_of_action` handler otherwise steps
+    /// `EndOfAction -> PreActionWait -> ActionSeed` on the NEXT tick and
+    /// re-seeds the same actor's **stale** action bytes - the shape that
     /// made every Spirit guard and every spell cast grant its actor a free
     /// bonus attack off the battle-entry queue (caught by the
     /// `seru_cast_magic_xp_ladder` test).
     ///
-    /// REF: FUN_801D0748 (retail's flow SM owns this arming; the SM's 0x5A
-    /// self-advance assumes the flow SM has already staged the next action)
+    /// REF: FUN_801D0748 (states `0x14` / `0x6E` / `0xFE`)
+    /// REF: FUN_801E295C (the `0x5A` re-pick and the `0xFF` round end at
+    /// `0x801E67E8`)
     pub(in crate::world) fn cycle_battle_turn(&mut self) {
+        use crate::battle_round::RoundPhase;
         use vm::battle_action::ActionState;
-        // Re-arm the next combatant when the SM idles at EndOfAction, cycling
-        // across the whole actor table (party AND monsters) in slot order so
-        // monsters take their turns. Only re-arm while BOTH sides still have a
-        // living member - if either side is wiped we leave the SM at
-        // EndOfAction so its liveness scan resolves the wipe into
-        // BattleComplete next step.
+        if self.battle_ctx.action_state != ActionState::EndOfAction.as_byte() {
+            return;
+        }
+        // Only cycle while BOTH sides still have a living member - if either
+        // side is wiped we leave the SM at EndOfAction so its liveness scan
+        // resolves the wipe into BattleComplete next step. A petrified actor
+        // counts as defeated (Stone), so it doesn't keep its side "alive" - a
+        // fully-petrified party is a wipe, not a stuck loop.
+        if !self.battle_both_sides_alive() {
+            return;
+        }
+        match self.battle_round_flow.phase {
+            // The flow SM owns the frame; the command tick advances it.
+            RoundPhase::Command => {}
+            // Battle entry without the formation path (`World::enter_battle`
+            // alone, or a host that staged the SM by hand): the first idle is
+            // the first round start.
+            RoundPhase::Open => self.begin_battle_round(),
+            RoundPhase::Execute => {
+                if let Some(next) = self.next_combatant_by_initiative() {
+                    self.dispatch_battle_turn(next);
+                } else {
+                    self.end_battle_round();
+                    // A DoT can down the last member of a side; the round
+                    // start re-checks before it opens a prompt.
+                    self.begin_battle_round();
+                }
+            }
+        }
+    }
+
+    /// `true` while each side still has a member who is not defeated.
+    pub(in crate::world) fn battle_both_sides_alive(&self) -> bool {
         let party_count = self.party_count.max(1);
         let n = self.actors.len() as u8;
-        // A petrified actor counts as defeated (Stone), so it doesn't keep its
-        // side "alive" - a fully-petrified party is a wipe, not a stuck loop.
-        let mut party_alive = (0..party_count).any(|i| !self.actor_effectively_defeated(i));
-        let mut monsters_alive = (party_count..n).any(|i| !self.actor_effectively_defeated(i));
+        let party_alive = (0..party_count).any(|i| !self.actor_effectively_defeated(i));
+        let monsters_alive = (party_count..n).any(|i| !self.actor_effectively_defeated(i));
+        party_alive && monsters_alive
+    }
 
-        // Round boundary: the SM idles at EndOfAction and no living actor still
-        // holds an initiative key, so a full round just completed. Tick every
-        // actor's status effects once here - DoT damage (Venom / Toxic) plus
-        // duration decay - mirroring the `BattleRound::end` tick the runner path
-        // uses, so poison actually drains HP and afflictions wear off in the
-        // live loop (this is the tick the skip-turn comment below relies on).
-        // RNG-free (DoT is deterministic), so the upcoming reseed's RNG stream
-        // is unchanged; gated on the SPD initiative path (a no-SPD synthetic
-        // battle has no round concept). A DoT can down the last member of a
-        // side, so re-evaluate the wipe flags afterward before arming a turn.
-        if self.battle_ctx.action_state == ActionState::EndOfAction.as_byte()
-            && party_alive
-            && monsters_alive
-            && self.any_battle_speed()
-            && !self.any_living_initiative_key()
-        {
-            // End-of-round handler. Retail reaches it as action-SM state
-            // `0xFF` (`801e67e8`), which the `0x5A` gate arms once every
-            // living actor has acted: it parks the flow byte at `0x14` - the
-            // round-driver state the sweep + DoT tick below stand in for -
-            // then bumps the round counter `ctx[+0x28A]` and calls
-            // `FUN_801F45A4`. Both run here, ahead of the sweep, in that
-            // order. The bump is what walks a multi-phase boss through its
-            // scripted casts (`crate::monster_ai::decide` reads the same
-            // counter); the waker is RNG-free unless an actor carries the
-            // latent `0x400` status, which no retail applier sets.
-            self.advance_battle_mode();
-            // Retail's round-end writes `ctx[+0x06] = 0x14`, and `0x14` opens
-            // the `Begin | Run` prompt (`0x1E`) unconditionally. Park the
-            // port's flow byte on the same state so the next party command of
-            // the new round gets the prompt and the ones after it do not.
-            self.set_battle_flow(crate::battle_flow::BattleFlowState::TurnPrompt);
-            self.tick_status_0x400_wakes();
-            // The actor sweep (`FUN_801D88CC`): action-gauge restore, the
-            // `+0x1DF` action-stream clear, and the party band's stale-target
-            // re-pick. Retail's flow SM runs it here, *before* the initiative
-            // reseed and before the DoT tick (`FUN_801D0748` at `801d0ec4`),
-            // so it goes ahead of `tick_status_effects` below and ahead of the
-            // reseed the picker performs. It draws no RNG, so the reseed's
-            // stream is unchanged.
-            crate::battle_round::BattleRound::boundary(self);
-            self.tick_status_effects();
-            party_alive = (0..party_count).any(|i| !self.actor_effectively_defeated(i));
-            monsters_alive = (party_count..n).any(|i| !self.actor_effectively_defeated(i));
+    /// Retail's round end - the action SM's `ctx[+0x07] == 0xFF` arm
+    /// (`0x801E67E8`), reached once the per-round action cursor has passed
+    /// every living actor: bump the round counter `ctx[+0x28A]` and run the
+    /// `0x400` waker `FUN_801F45A4`. The flow byte it parks at `0x14` is the
+    /// next [`Self::begin_battle_round`].
+    ///
+    /// PORT: FUN_801E295C (state `0xFF`, `0x801E67E8..0x801E6810`)
+    pub(in crate::world) fn end_battle_round(&mut self) {
+        self.advance_battle_mode();
+        self.tick_status_0x400_wakes();
+    }
+
+    /// Retail's round start - `FUN_801D0748` state `0x14` (`0x801D0EC4`):
+    /// the actor sweep `FUN_801D88CC`, the initiative seeder `FUN_801DA780`,
+    /// the per-round DoT ticker `FUN_801E752C` (round index `!= 0`), and the
+    /// unconditional `ctx[+0x06] = 0x1E` that opens `Begin | Run` for the
+    /// round's first party command. Every later member's ring is reached
+    /// through that prompt, and nothing executes until the last commit.
+    ///
+    /// The keys are re-seeded only when none is live: the battle-open path
+    /// ([`World::enter_battle_from_formation`]) seeds them itself ahead of the
+    /// formation latch, because the seeder is the one reader of the unlatched
+    /// `ctx+0x290` and the side lockout would otherwise be lost; every later
+    /// round finds them all spent and re-rolls.
+    ///
+    /// A **back attack** on the opening round takes retail's `0x0B -> 0xFE`
+    /// jump instead of the prompt: the party enters no command, and with its
+    /// keys zeroed by the lockout only the monsters dispatch.
+    ///
+    /// PORT: FUN_801D0748 (state `0x14`, `0x801D0EC4..0x801D0F0C`; the `0x0B`
+    /// back-attack arm at `0x801D0E68..0x801D0EB0`)
+    pub(in crate::world) fn begin_battle_round(&mut self) {
+        use crate::battle_flow::BattleFlowState;
+        use crate::battle_round::RoundPhase;
+        // The sparring fight's opening caption holds the round start back:
+        // retail's side-band tick sees `0x14` stored, raises the caption and
+        // sets `ctx[+0x6B0]`, and `FUN_801D0748` returns on it before its
+        // state switch (`0x801D0BDC`) - so none of the sweep / seed / prompt
+        // below runs until the caption has gone. The box tick reopens the
+        // round when it does.
+        // REF: FUN_80056208 (stage-1 phases 0..1), FUN_801D0748 (`0x801D0BDC`)
+        if self.raise_sparring_caption_if_due() {
+            return;
         }
+        self.battle_round_flow.flat_walk_last = None;
+        // The actor sweep (`FUN_801D88CC`): action-gauge restore, the
+        // `+0x1DF` action-stream clear, and the party band's stale-target
+        // re-pick + category clear. Retail runs it *before* the initiative
+        // seed and before the DoT tick (`801d0ec4..801d0ed8`). It draws no
+        // RNG, so the seeder's stream is unchanged.
+        crate::battle_round::BattleRound::boundary(self);
+        // The Spirit stance is the `+0x1DE == 4` category the sweep just
+        // cleared - it lasts exactly one round.
+        self.battle_guarding = [false; 3];
+        if !self.any_living_initiative_key() {
+            self.reseed_initiative();
+        }
+        self.battle_round_flow.clear_pending();
+        self.battle_round_flow.cursor = 0;
+        // `FUN_801E752C` - the per-round status DoT ticker, skipped on round
+        // 0 (`beq v0,zero` on `ctx[+0x28A]` at `0x801D0EFC`). RNG-free.
+        if self.battle_mode() != 0 {
+            self.tick_status_effects();
+            if !self.battle_both_sides_alive() {
+                return;
+            }
+        }
+        let first_round = self.battle_mode() == 0;
+        let ambushed = first_round
+            && self.battle_formation_latched()
+                == vm::battle_formulas::FormationAdvantage::BackAttack;
+        if ambushed {
+            // `0x0B`'s `ctx[+0x290] == 1` arm stores `0xFE` outright.
+            self.begin_round_execution();
+            return;
+        }
+        self.battle_round_flow.phase = RoundPhase::Command;
+        // `0x14 -> 0x1E`, unconditional.
+        self.set_battle_flow(BattleFlowState::TurnPrompt);
+        if !self.battle_player_driven {
+            // No pad drives the rings: every member strikes at its dispatch
+            // (the auto-fight arm `FUN_801EED1C` seeds), so the round is
+            // armed at once.
+            self.begin_round_execution();
+            return;
+        }
+        match self.next_member_owing_command(None) {
+            Some(first) => self.open_battle_command(first),
+            None => self.begin_round_execution(),
+        }
+    }
 
-        if self.battle_ctx.action_state == ActionState::EndOfAction.as_byte()
-            && party_alive
-            && monsters_alive
-            && let Some(next) = self.next_combatant_by_initiative()
-        {
-            // Start-of-turn: age this actor's buffs / debuffs, reverting any
-            // that expire this turn.
-            self.tick_battle_buffs_on_turn(next);
-            // A Spirit guard stance lasts until the guarding actor's next
-            // turn starts (the retail pending-action byte is overwritten by
-            // the new command).
-            if let Some(guard) = self.battle_guarding.get_mut(next as usize) {
-                *guard = false;
+    /// Hand the round to the action SM - retail's `0x6E` begin arm storing
+    /// `0xFE` (`0x801D31AC`) and `0xFE` storing `ctx[+0x07] = 0`
+    /// (`0x801D3224`). The first pick happens here: retail's seeder made it
+    /// at `0x14` (`FUN_801DA780` ends in `jal 0x801DABA4`) and the SM's
+    /// `0x0C` dispatches whatever `ctx[+0x274]` names; the engine picks and
+    /// dispatches on one call, and the command band draws no RNG in between,
+    /// so the stream is retail's.
+    ///
+    /// PORT: FUN_801D0748 (state `0xFE`, `0x801D31E8..0x801D3224`)
+    pub(in crate::world) fn begin_round_execution(&mut self) {
+        use crate::battle_flow::BattleFlowState;
+        use crate::battle_round::RoundPhase;
+        use vm::battle_action::ActionState;
+        self.battle_round_flow.phase = RoundPhase::Execute;
+        self.battle_round_flow.flat_walk_last = None;
+        self.battle_command = None;
+        self.set_battle_flow(BattleFlowState::Idle);
+        // A round entered without its start (a host or test that opened a
+        // command surface on a hand-built battle) has no keys yet; retail
+        // never reaches `0xFE` without `0x14`'s seed, so seed here rather
+        // than let the first pick read an empty round and drop every
+        // commit. A round that came through `begin_battle_round` finds its
+        // keys live and this is a no-op.
+        if !self.any_living_initiative_key() {
+            self.reseed_initiative();
+        }
+        self.battle_ctx.action_state = ActionState::EndOfAction.as_byte();
+        self.cycle_battle_turn();
+    }
+
+    /// The next party member who still owes this round a command, scanning
+    /// forward from `after` (or from slot 0) - retail `FUN_801DB81C` (from
+    /// `ctx[+0x13] + 1`) and its sibling `FUN_801DBA04` (from zero). Both skip
+    /// a member already committed (`_DAT_8007BD10[i] == 4`), one with no HP,
+    /// and one whose status word carries `+0x16E & 0xF84` - the petrified /
+    /// asleep / numbed band and the `0x380` AI-delegated bits, none of which
+    /// hands the pad a ring.
+    ///
+    /// PORT: FUN_801DB81C
+    /// REF: FUN_801DBA04
+    pub(in crate::world) fn next_member_owing_command(&self, after: Option<u8>) -> Option<u8> {
+        let party_count = self.party_count.clamp(1, 3);
+        let start = after.map_or(0, |a| a.saturating_add(1));
+        (start..party_count).find(|&slot| {
+            let alive = self
+                .actors
+                .get(usize::from(slot))
+                .is_some_and(|a| a.battle.liveness != 0 && a.battle.hp != 0);
+            alive
+                && !self.battle_round_flow.committed(slot)
+                && !self.actor_blocked_from_acting(slot)
+                && !self.actor_is_confused(slot)
+        })
+    }
+
+    /// Commit `action` as `actor`'s command for this round and walk the ring
+    /// on - retail's ten-site commit idiom (`0x801D16AC` and siblings):
+    /// advance to the next member that still owes a command, or begin the
+    /// round. The `Run` commit is the exception retail makes at `0x32`
+    /// (`0x801D1174..0x801D1184`): it stamps category `5` on every party actor
+    /// and begins the round at once.
+    ///
+    /// PORT: FUN_801D0748 (the commit idiom; `0x32`'s run confirm)
+    pub(in crate::world) fn commit_party_command(
+        &mut self,
+        actor: u8,
+        action: crate::battle_round::PendingPartyAction,
+    ) {
+        use crate::battle_round::PendingPartyAction;
+        let party_count = self.party_count.clamp(1, 3);
+        let run = matches!(action, PendingPartyAction::Run);
+        if let Some(slot) = self.battle_round_flow.pending.get_mut(usize::from(actor)) {
+            *slot = Some(action);
+        }
+        self.battle_round_flow.cursor = actor;
+        if run {
+            for slot in 0..party_count {
+                let alive = self
+                    .actors
+                    .get(usize::from(slot))
+                    .is_some_and(|a| a.battle.liveness != 0);
+                if alive {
+                    self.battle_round_flow.pending[usize::from(slot)] =
+                        Some(PendingPartyAction::Run);
+                }
             }
-            let next_is_party = next < party_count;
-            if self.actor_blocked_from_acting(next) {
-                // Sleep / Stone / Faint: the actor loses its turn. Its
-                // initiative key was already consumed by the picker, so the
-                // next advance moves on; advancing `active_actor` also moves
-                // the no-speed round-robin past it. The status duration ticks
-                // once per round at the boundary above (`tick_status_effects`),
-                // so the affliction still wears off. The SM stays at EndOfAction
-                // (no action armed) - exactly the "skipped turn" outcome.
-                self.battle_ctx.active_actor = next;
-            } else if next_is_party && self.actor_is_confused(next) {
-                // Confused party member: it "acts uncontrollably", so the player
-                // does NOT get the command menu - auto-arm a physical strike,
-                // then flip the target to a random living ally (the retarget
-                // runs inside `arm_party_physical`).
-                self.arm_party_physical(next);
-            } else if next_is_party && self.battle_player_driven {
-                // Party turn under player control: pause the SM and let the
-                // player pick the command. `tick_battle_command` arms the SM
-                // on confirm.
-                self.open_battle_command(next);
-            } else if !next_is_party {
-                // Monster turn: the AI picks a spell or a physical strike.
-                self.take_monster_turn(next);
-            } else {
-                // Party turn when not player-driven: arm a generic physical
-                // attack against the first living opponent.
-                self.arm_party_physical(next);
-            }
+            self.begin_round_execution();
+            return;
+        }
+        match self.next_member_owing_command(Some(actor)) {
+            Some(next) => self.open_battle_command(next),
+            None => self.begin_round_execution(),
+        }
+    }
+
+    /// Give `next` its turn in the execution band: age its buffs, then a
+    /// blocked actor loses the turn, a monster runs its AI pick, and a party
+    /// member dispatches the command it committed (a member with none - the
+    /// auto-fight party, or one the member walk skipped - strikes, and a
+    /// confused one strikes and re-targets).
+    ///
+    /// REF: FUN_801E295C (state `0x0C`: `FUN_801EED1C` for a party slot, the
+    /// `0x380` re-target for a delegated one)
+    fn dispatch_battle_turn(&mut self, next: u8) {
+        let party_count = self.party_count.max(1);
+        // Start-of-turn: age this actor's buffs / debuffs, reverting any
+        // that expire this turn.
+        self.tick_battle_buffs_on_turn(next);
+        if self.actor_blocked_from_acting(next) {
+            // Sleep / Stone / Faint: the actor loses its turn. Its
+            // initiative key was already consumed by the picker, so the
+            // next advance moves on; advancing `active_actor` also moves
+            // the no-speed walk past it. The status duration ticks once per
+            // round at the round start (`tick_status_effects`), so the
+            // affliction still wears off. The SM stays at EndOfAction (no
+            // action armed) - exactly the "skipped turn" outcome.
+            self.battle_ctx.active_actor = next;
+            return;
+        }
+        if next >= party_count {
+            self.take_monster_turn(next);
+            return;
+        }
+        if self.actor_is_confused(next) {
+            // Confused party member: it "acts uncontrollably", so the player
+            // never got the ring - auto-arm a physical strike, then flip the
+            // target to a random living ally (the retarget runs inside
+            // `arm_party_physical`).
+            self.arm_party_physical(next);
+            return;
+        }
+        match self.battle_round_flow.pending[usize::from(next)].take() {
+            Some(action) => self.dispatch_pending_party_action(next, action),
+            None => self.arm_party_physical(next),
         }
     }
 
@@ -713,112 +944,413 @@ impl World {
         }
     }
 
-    /// Apply one generic physical strike from the active attacker to the
-    /// first living combatant on the opposing side, resolved through the
-    /// retail melee roll pair
-    /// ([`legaia_engine_vm::battle_formulas::physical_predamage`], the port of
-    /// `FUN_801EC3E4`) - attacker ATK rolled against the defender's UDF/LDF,
-    /// with the underdog rewrite that keeps a weak attacker's hit scaling
-    /// instead of flooring it.
+    /// Apply one generic physical attack from the active attacker to its
+    /// resolved target as an **immediate** combo: every swing of the AGL
+    /// budget rolls through the retail melee kernel
+    /// ([`legaia_engine_vm::battle_formulas::physical_predamage`], the body
+    /// of `FUN_801EC3E4`) and accumulates, then the total lands on live HP
+    /// once - the retail accumulate / apply shape without a clip to pace it.
     ///
-    /// The opposing side is chosen by the attacker's slot: party slots
-    /// (`< party_count`) strike monsters; monster slots strike the party.
+    /// This is the path for an attacker whose stream carries no bytes: a
+    /// monster with no attack entries in its catalog (the synthetic
+    /// catalog), whose swing count is the AGL budget
+    /// ([`Self::arm_monster_strike_budget`]). Every actor with a seeded
+    /// stream is paced by the hit-event driver instead.
     ///
     /// REF: FUN_801EC3E4
     pub(in crate::world) fn apply_basic_attack(&mut self) {
-        let attacker = self.battle_ctx.active_actor as usize;
-        let party_count = self.party_count.max(1) as usize;
-        // Enemy multi-action budget (AGL-driven): a monster attacker lands the
-        // number of swings its per-round AGL gauge affords this turn (computed at
-        // turn arm by `arm_monster_strike_budget` / `enemy_action_budget`, the
-        // port of `FUN_801E9FD4`'s budget loop). A party attacker always swings
-        // once here - its multi-hit is the AP / arts system. An emptied
-        // opposing side ends the loop.
+        let attacker = self.battle_ctx.active_actor;
+        let party_count = self.party_count.max(1);
         let strikes = if attacker >= party_count {
             self.monster_strike_budget.max(1)
         } else {
             1
         };
+        let committed = self
+            .actors
+            .get(attacker as usize)
+            .map(|a| a.battle.current_anim)
+            .unwrap_or(0);
+        let mut target = None;
         for _ in 0..strikes {
-            if !self.apply_one_basic_strike(BASIC_ATTACK_COMMAND) {
+            let Some(t) = self.resolve_attack_target(attacker) else {
                 break;
+            };
+            target = Some(t);
+            self.land_melee_hit(attacker, t, BASIC_ATTACK_COMMAND, committed, false);
+        }
+        if let Some(t) = target {
+            self.apply_combo_total(t);
+        }
+    }
+
+    /// The engine seat of retail's per-frame damage-kernel call. For every
+    /// actor whose committed one-shot clip is in flight, ask the kernel's
+    /// head ([`vm::battle_action::hit_event_admits`]) whether the frame the
+    /// clip is on is one of its `+0x10..+0x13` beats; resolve the hit; then
+    /// run the tick's **event-path commit** - with a byte staged behind the
+    /// clip (`ADVANCE_DONE`, retail `+0x1DC` bit 1) and the entry's `+0x76`
+    /// lock clear, the queued clip commits once the cursor is past the beat
+    /// by more than two frames ([`vm::battle_action::event_commit_due`]),
+    /// cutting the swing short. That cut is the swing chain's pacing: a
+    /// retail two-arrow attack starts its second swing three frames after
+    /// the first one's hit, not at the first clip's end. Locked entries
+    /// (every art record on the disc carries `+0x76 = 1`) play to their
+    /// natural end and the next byte commits there
+    /// ([`Self::tick_battle_animations`]).
+    ///
+    /// PORT: FUN_80047430 (`0x8004787C..0x800478A4`: the per-frame
+    /// `FUN_801EC3E4(actor, entry, cursor >> 4)` call; `0x80047900..
+    /// 0x80047A44`: the bit-1 event-path commit)
+    /// REF: FUN_801EC3E4 (head guard chain ported as
+    /// `legaia_engine_vm::battle_action::hit_event_admits`)
+    pub(in crate::world) fn tick_battle_hit_events(&mut self) {
+        use vm::battle_action::{ActionState, ActorFlags, event_commit_due, hit_event_admits};
+        let state = self.battle_ctx.action_state;
+        // A fresh action starts a fresh combo total on every target.
+        if state == ActionState::Begin.as_byte() {
+            for a in self.actors.iter_mut() {
+                a.battle.damage_accum = 0;
+            }
+        }
+        for i in 0..self.actors.len() {
+            let (source, rewound) = {
+                let a = &mut self.actors[i];
+                match (a.battle_staged_anim, a.battle_animation.as_mut()) {
+                    (Some(_), Some(p)) => (
+                        p.hit_source().map(|src| (src, p.current_frame())),
+                        p.take_loop_rewound(),
+                    ),
+                    _ => (None, false),
+                }
+            };
+            let Some((src, frame)) = source else {
+                continue;
+            };
+            // The loop-window arm's re-zero (`0x80047840..0x80047878`): on a
+            // rewind, a party slot playing dynamic slot `0x11` under a latched
+            // Hyper / Super constant restarts its hit index and effect cursor,
+            // so the windowed clip re-fires its hits each cycle.
+            // PORT: FUN_80047430 (`0x80047840..0x80047878`)
+            if rewound {
+                let a = &mut self.actors[i];
+                if a.battle_monster_id.is_none()
+                    && a.battle.current_anim == vm::anim_vm::DYNAMIC_ART_SLOT_B
+                    && a.battle.latched_anim >= vm::battle_action::LOOP_REZERO_LATCHED_MIN
+                {
+                    a.battle.input_cursor = 0;
+                    a.battle_effect_cursor = 0;
+                }
+            }
+            let frame_u8 = frame.clamp(0, 255) as u8;
+            let hit_index = self.actors[i].battle.input_cursor;
+            if let Some(hit) = hit_event_admits(
+                state,
+                &src.power_run,
+                &src.event_frames,
+                hit_index,
+                frame_u8,
+            ) {
+                // The epilogue bump (`0x801EECDC..0x801EECE8`), on every
+                // resolved call.
+                self.actors[i].battle.input_cursor = hit_index.wrapping_add(1);
+                self.resolve_hit_event(i as u8, hit, src.event_frames);
+            }
+            // The event-path commit: only with a byte staged behind this clip.
+            let staged_behind = self.actors[i]
+                .battle
+                .flag_bits
+                .has(ActorFlags::ADVANCE_DONE);
+            if staged_behind && event_commit_due(&src.event_frames, src.event_lock, frame) {
+                self.commit_staged_battle_anim_at_boundary(i);
             }
         }
     }
 
-    /// Apply a single generic physical strike from the active attacker. Returns
-    /// `false` when there is no living opposing target (the caller stops the
-    /// multi-swing loop). See [`Self::apply_basic_attack`].
+    /// Resolve one admitted hit event of `attacker`'s committed clip: the
+    /// weapon fold, the melee roll with the clip's power byte, the
+    /// accumulate, the art record's side data (status, hit cue) when the
+    /// latched staged id names a Tactical Art, and the retail apply law -
+    /// the hit landing once the band has left the strike loop (cursor parked
+    /// at `0xFF`) that is its clip's last listed hit subtracts the whole
+    /// accumulated total from live HP.
     ///
-    /// `command` is the arms command this swing executes - the byte the attack
-    /// chain staged out of the action queue (`0x0C`..`0x0F`). It picks the
-    /// defence half (`physical_defense_is_udf`) and the command power scalar,
-    /// so a low swing and a high swing resolve against different numbers.
-    /// Callers with no queued byte pass [`BASIC_ATTACK_COMMAND`], the arm
-    /// command, which is what the routine assumed unconditionally before the
-    /// queue existed.
-    ///
-    /// **A melee swing always connects.** The routine that resolves a physical
-    /// hit, `FUN_801EC3E4`, contains no read of the accuracy / evasion
-    /// halfword `+0x168` at all - it rolls ATK against UDF/LDF and applies the
-    /// HP loss. `FUN_800402F4`'s selector-9 roll, which the port used to gate
-    /// this strike on, is the **queued-action interrupt** check: its success
-    /// arm sets the target's `+0x16E` bit `0x4` and clears the target's
-    /// pending action category, which is a stun, not a miss.
-    ///
-    /// Gating melee on that roll was not merely unfaithful, it inverted the
-    /// fight: the engine seeds a party slot's `+0x168` from AGL (~100 at level
-    /// one) and a monster's from its record INT (~12 for the opening
-    /// bestiary), so `acc / (acc + eva)` gave the party an ~89% hit rate and
-    /// the monsters ~11%. Enemies whiffed nine swings in ten.
-    ///
-    /// Retail's "Miss" on a normal attack is the limb-vs-height mismatch (an
-    /// LDF-target swing at a floating enemy, a UDF-target swing at a short
-    /// one - see `legaia_art::power`), which is a size-class gate the port
-    /// does not model yet, not a stat roll.
-    ///
-    /// REF: FUN_801EC3E4 (no `+0x168` read), FUN_800402F4 (selector 9 = the
-    /// action-interrupt roll, ported as `battle_formulas::accuracy_roll`)
-    fn apply_one_basic_strike(&mut self, command: u8) -> bool {
-        let attacker = self.battle_ctx.active_actor as usize;
-        let Some(target) = self.resolve_attack_target(attacker as u8) else {
+    /// PORT: FUN_801EC3E4 (`0x801EE984..0x801EEA40`: the apply gate -
+    /// `ctx[+0x15] == 0xFF` and `entry[0x11 + idx] == 0 || idx == 3`)
+    fn resolve_hit_event(
+        &mut self,
+        attacker: u8,
+        hit: vm::battle_action::HitEvent,
+        event_frames: [u8; 4],
+    ) {
+        use vm::battle_action::{
+            STRIKE_CURSOR_PARKED, fold_weapon_atk_on_hit, staged_art_constant,
+        };
+        let state = self.battle_ctx.action_state;
+        let (party, latched, chosen, committed) = {
+            let a = &self.actors[attacker as usize];
+            (
+                a.battle_monster_id.is_none(),
+                a.battle.latched_anim,
+                a.battle.chosen_art,
+                a.battle.current_anim,
+            )
+        };
+        let art = staged_art_constant(latched, chosen, party);
+        {
+            let mut host = BattleHostImpl { world: self };
+            fold_weapon_atk_on_hit(&mut host, attacker, state, &hit);
+        }
+        let Some(target) = self.resolve_attack_target(attacker) else {
+            return;
+        };
+        let dmg = self.land_melee_hit(attacker, target, hit.power_byte, committed, art.is_some());
+        if let Some(art) = art {
+            self.apply_art_hit_side_data(attacker, target, art, hit.hit_index, dmg);
+        }
+        let cursor_parked =
+            self.actors[attacker as usize].battle.strike_index == STRIKE_CURSOR_PARKED;
+        let last_of_clip = hit.hit_index >= 3
+            || event_frames
+                .get(usize::from(hit.hit_index) + 1)
+                .is_none_or(|&f| f == 0);
+        let applied = cursor_parked && last_of_clip;
+        if applied {
+            self.apply_combo_total(target);
+        }
+        let running_total = self.actors[target as usize].battle.damage_accum;
+        log::debug!(
+            "battle hit: slot {attacker} -> {target} hit {} pb {:#04x} dmg {dmg} total {running_total} applied {applied} (state {state:#04x}, cursor {:#04x}, committed {committed:#04x}, latched {latched:#04x})",
+            hit.hit_index,
+            hit.power_byte,
+            self.actors[attacker as usize].battle.strike_index
+        );
+        self.battle_hit_events
+            .push(crate::battle_events::BattleHitEvent {
+                attacker_slot: attacker,
+                target_slot: target,
+                hit_index: hit.hit_index,
+                power_byte: hit.power_byte,
+                damage: dmg,
+                running_total: running_total.min(u32::from(u16::MAX)) as u16,
+                applied,
+                is_art: art.is_some(),
+            });
+    }
+
+    /// Whether the byte the chain just staged on `slot` has a clip with an
+    /// entry head to play - the test that separates a real, paced clip
+    /// from the zero-length fallback. Mirrors the anim commit's lookup
+    /// ([`Self::commit_staged_battle_anim_at_boundary`]).
+    fn staged_byte_has_clip(&self, slot: usize, staged: u8) -> bool {
+        use vm::anim_vm::{StagedAnimTarget, resolve_staged_anim};
+        let Some(actor) = self.actors.get(slot) else {
             return false;
         };
-        let target = target as usize;
-        // Base ATK (`+0x158`, seeded without equipment) plus the execution-time
-        // equipment fold: half of the one equipment slot this command reads
-        // (`FUN_801EC3E4`'s `PTR_801CF4B4` arms - footwear for High / Low,
-        // slot 2 / 3 for the two arm commands). Party attackers only; the
-        // monster branch of the resolver performs no fold.
-        let mut attack = self.battle_attack.get(attacker).copied().unwrap_or(0);
-        if (attacker as u8) < self.party_count
-            && let Some(bonuses) = self.battle_equip_atk.get(attacker)
-            && let Some(fold) = vm::battle_formulas::arms_weapon_atk_fold(command, bonuses)
-        {
-            attack = attack.saturating_add(fold);
+        let clip = match resolve_staged_anim(staged) {
+            StagedAnimTarget::ArtBank { record, .. } if actor.battle_art_bank.is_some() => actor
+                .battle_art_bank
+                .as_ref()
+                .and_then(|b| b.get(record as usize))
+                .and_then(|c| c.as_ref()),
+            _ => actor
+                .battle_action_clips
+                .as_ref()
+                .and_then(|cl| cl.get(staged as usize))
+                .and_then(|c| c.as_ref()),
+        };
+        clip.is_some_and(|c| c.has_entry_head() && c.frame_count > 0 && c.part_count > 0)
+    }
+
+    /// The zero-length-clip fallback: resolve every hit the staged byte
+    /// would have carried, now. A party art constant walks its record's
+    /// power list (the embedded entry's power run is that list); any other
+    /// byte is one hit with the byte itself as the power byte - the swing
+    /// command's own tier, the pre-clip reading. When the byte is the
+    /// action's last (the terminator is next) the combo total lands.
+    fn resolve_zero_length_clip_hits(&mut self, attacker: u8, staged: u8) {
+        use vm::battle_action::staged_art_constant;
+        let (party, chosen, next_is_end) = {
+            let a = &self.actors[attacker as usize];
+            (
+                a.battle_monster_id.is_none(),
+                a.battle.chosen_art,
+                a.battle.read_param(0) == 0,
+            )
+        };
+        let Some(target) = self.resolve_attack_target(attacker) else {
+            return;
+        };
+        let art = staged_art_constant(staged, chosen, party);
+        let mut hits: Vec<u8> = Vec::new();
+        if let Some(art) = art {
+            let character = self.actors[attacker as usize].battle.character;
+            if let Some(rec) = self.art_records.get(&(character, art)) {
+                hits.extend(rec.power.iter().filter_map(|p| match p {
+                    // Re-encode the decoded power byte for the kernel.
+                    legaia_art::PowerByte::Damage(ap) => Some(power_byte_of(*ap)),
+                    legaia_art::PowerByte::NoDamage => None,
+                }));
+            }
+            hits.truncate(usize::from(vm::battle_action::HIT_EVENT_SLOTS));
         }
-        let defense = self.physical_defense_of(target as u8, command);
+        // Any other byte is one hit with the byte itself as the power byte -
+        // except the `0x19` / `0x1A` art starters, whose records carry no
+        // event frame (a retail starter clip plays with `+0x10 = 0`, capture
+        // and disc alike), and bytes outside the kernel's admitted band.
+        if hits.is_empty()
+            && (0x0C..=0x1F).contains(&staged)
+            && !legaia_art::ActionConstant::from_byte(staged).is_some_and(|a| a.is_starter())
+        {
+            hits.push(staged);
+        }
+        if hits.is_empty() {
+            return;
+        }
+        let n = hits.len();
+        for (i, power) in hits.into_iter().enumerate() {
+            let dmg = self.land_melee_hit(attacker, target, power, staged, art.is_some());
+            if let Some(art) = art {
+                self.apply_art_hit_side_data(attacker, target, art, i as u8, dmg);
+            }
+            let applied = next_is_end && i + 1 == n;
+            if applied {
+                self.apply_combo_total(target);
+            }
+            let running_total = self.actors[target as usize].battle.damage_accum;
+            self.battle_hit_events
+                .push(crate::battle_events::BattleHitEvent {
+                    attacker_slot: attacker,
+                    target_slot: target,
+                    hit_index: i as u8,
+                    power_byte: power,
+                    damage: dmg,
+                    running_total: running_total.min(u32::from(u16::MAX)) as u16,
+                    applied,
+                    is_art: art.is_some(),
+                });
+        }
+    }
+
+    /// The art record's per-hit side data retail's kernel does not carry
+    /// (it reads the clip entry only): the status effect on a landing hit
+    /// and the hit cue at this index, scheduled now (the clip is on the
+    /// beat).
+    fn apply_art_hit_side_data(
+        &mut self,
+        attacker: u8,
+        target: u8,
+        art: legaia_art::ActionConstant,
+        hit_index: u8,
+        dmg: u16,
+    ) {
+        let character = self.actors[attacker as usize].battle.character;
+        let Some(rec) = self.art_records.get(&(character, art)) else {
+            return;
+        };
+        let effect = rec.enemy_effect;
+        let cue = rec.hit_cues.get(usize::from(hit_index)).copied();
+        if dmg > 0
+            && effect != legaia_art::EnemyEffect::None
+            && self.actors[target as usize].battle.liveness != 0
+        {
+            let applied = self.status_effects.apply_from_enemy_effect(target, effect);
+            // Rot's applier rolls the disabled limb (`rand % 3`, the retail
+            // `1 << (rand%3 + 3)` bit pick).
+            if applied == Some(legaia_engine_vm::status_effects::StatusKind::Rot) {
+                let limb = (self.next_rng() % 3) as u8;
+                self.status_effects.set_rot_limb(target, limb);
+            }
+        }
+        if let Some(cue) = cue
+            && cue.is_sound()
+        {
+            self.battle_sfx_cues
+                .push(crate::battle_events::BattleSfxCue {
+                    kind: cue.kind,
+                    timing_frames: 0,
+                    actor_slot: attacker,
+                    target_slot: target,
+                });
+        }
+    }
+
+    /// Roll one melee hit from `attacker` on `target` and **accumulate** it:
+    /// the retail melee kernel `FUN_801EC3E4`'s body. Attacker ATK (plus the
+    /// execution-time equipment fold of the committed command) is rolled
+    /// against the defender's UDF / LDF with the underdog rewrite and the
+    /// finisher's post stages; then the hit's damage goes into the target's
+    /// combo accumulator (`target[+0x0]`, `0x801EDB40`) and HP-bar
+    /// accumulator (`+0x10`, `0x801EDB58`), followed by the Spirit accrual,
+    /// the popup, the impact cue and the flinch. Live HP is **not** touched;
+    /// [`Self::apply_combo_total`] does that once per combo. Returns the
+    /// damage the hit rolled.
+    ///
+    /// `power_byte` is the byte the kernel resolves the hit from - the clip
+    /// entry's `entry[hit_index]` (`0x801EC494`): it picks the defence half
+    /// (`(byte - 0x0C) % 10 < 5` -> UDF, [`vm::battle_formulas::physical_defense_is_udf`])
+    /// and the power scalar (`0x801F64EC[(byte - 0x0C) % 5]`,
+    /// [`vm::battle_formulas::command_power_scalar`]). A swing entry's byte 0
+    /// is a real power byte (Vahn's high swing reads `0x18`, his low swing
+    /// `0x1D`), not the command. `committed` is the attacker's `+0x1D9`
+    /// (the committed anim id): the equipment fold dispatches on it and the
+    /// art scale (`> 0x10`) reads it.
+    ///
+    /// **A melee swing always connects.** The routine contains no read of the
+    /// accuracy / evasion halfword `+0x168` at all. `FUN_800402F4`'s
+    /// selector-9 roll, which the port used to gate this strike on, is the
+    /// **queued-action interrupt** check - a stun, not a miss. Retail's
+    /// "Miss" on a normal attack is the limb-vs-height mismatch (`+0x1E`
+    /// class 2 / 3 against the power byte's class, `0x801EC494..0x801EC554`),
+    /// which the port does not model yet.
+    ///
+    /// PORT: FUN_801EC3E4 (the accumulating body; the head is
+    /// `legaia_engine_vm::battle_action::hit_event_admits`)
+    /// REF: FUN_800402F4 (selector 9 = the action-interrupt roll, ported as
+    /// `battle_formulas::accuracy_roll`)
+    fn land_melee_hit(
+        &mut self,
+        attacker: u8,
+        target: u8,
+        power_byte: u8,
+        committed: u8,
+        _is_art: bool,
+    ) -> u16 {
+        let attacker_i = attacker as usize;
+        let target_i = target as usize;
+        // Base ATK (`+0x158`, seeded without equipment) plus the execution-time
+        // equipment fold: half of the one equipment slot the committed command
+        // reads (`FUN_801EC3E4`'s `PTR_801CF4B4` arms - footwear for High /
+        // Low, slot 2 / 3 for the two arm commands, all five for an art).
+        // Party attackers only; the monster branch performs no fold.
+        let mut attack = self.battle_attack.get(attacker_i).copied().unwrap_or(0);
+        if attacker < self.party_count
+            && let Some(bonuses) = self.battle_equip_atk.get(attacker_i)
+        {
+            let fold_command = if committed > vm::battle_formulas::ART_ANIM_THRESHOLD {
+                vm::battle_formulas::ARMS_ART_COMMAND
+            } else {
+                committed
+            };
+            if let Some(fold) = vm::battle_formulas::arms_weapon_atk_fold(fold_command, bonuses) {
+                attack = attack.saturating_add(fold);
+            }
+        }
+        let defense = self.physical_defense_of(target, power_byte);
         // Spirit guard stance on the defender (a party slot that picked
         // Spirit and hasn't started its next turn).
-        let target_guarding = self.battle_guarding.get(target).copied().unwrap_or(false);
-        // The melee roll pair (`FUN_801EC3E4`). This is the whole damage
-        // model for a physical swing: retail's melee routine rolls attacker
-        // ATK against the defender's UDF/LDF, rewrites a roll that fails to
-        // clear the guard instead of flooring it, and applies the HP loss
-        // itself - it does **not** run through the summon/arts finisher
-        // `FUN_801DDB30`, which is why the Spirit stance arrives here as the
-        // guard-roll triple rather than as the finisher's halve.
+        let target_guarding = self.battle_guarding.get(target_i).copied().unwrap_or(false);
         let hp = self
             .actors
-            .get(attacker)
+            .get(attacker_i)
             .map(|a| a.battle.hp)
             .unwrap_or_default();
         let hit_inputs = vm::battle_formulas::PhysicalHit {
             attacker_atk: attack,
             attacker_hp: hp,
             defender_def: defense,
-            command_scalar: vm::battle_formulas::command_power_scalar(command),
-            staged_anim: command,
+            command_scalar: vm::battle_formulas::command_power_scalar(power_byte),
+            staged_anim: committed,
             defender_guarding: target_guarding,
             ..Default::default()
         };
@@ -838,9 +1370,9 @@ impl World {
             } else {
                 0
             };
-            let attacker_is_party = (attacker as u8) < self.party_count;
-            let target_is_party = (target as u8) < self.party_count;
-            let defender_resist = self.defender_resist(target as u8);
+            let attacker_is_party = attacker < self.party_count;
+            let target_is_party = target < self.party_count;
+            let defender_resist = self.defender_resist(target);
             raw = vm::battle_formulas::damage_finish(&vm::battle_formulas::DamageFinish {
                 predamage: u32::from(raw),
                 attacker_slot: if attacker_is_party { 0 } else { 3 },
@@ -858,61 +1390,110 @@ impl World {
         // Spirit accrues from the pre-nullify hit: retail's finisher fills the
         // gauge before the nullify/absorb stage zeroes the HP loss, so a Stone
         // target's absorbed hit still charges its gauge.
-        self.accrue_spirit_gauge(target as u8, dmg);
+        self.accrue_spirit_gauge(target, dmg);
         // A petrified target (Stone) absorbs the hit - no HP loss.
-        let dmg = if self.actor_is_petrified(target as u8) {
+        let dmg = if self.actor_is_petrified(target) {
             0
         } else {
             dmg
         };
-        self.apply_battle_hp_delta(target, i32::from(dmg));
+        // Accumulate: the combo total and the bar's owed delta, never live HP
+        // (`0x801EDB40` / `0x801EDB58`; the bar ramp is what the player sees
+        // falling hit by hit).
+        let survives = {
+            let t = &mut self.actors[target_i].battle;
+            t.damage_accum = t.damage_accum.saturating_add(u32::from(dmg));
+            t.arm_hp_bar();
+            t.accumulate_hp_bar(i32::from(dmg));
+            t.damage_accum < u32::from(t.hp)
+        };
         // Surface the strike for HUD damage popups.
         self.battle_hit_fx.push(BattleHitFx {
-            target_slot: target as u8,
+            target_slot: target,
             amount: dmg,
             is_heal: false,
             is_crit: false,
         });
-        // ... and its sound. The live loop resolves melee damage inline rather
-        // than through the art-strike event, which is why nothing downstream of
-        // `fold_battle_event` used to see a swing at all.
-        self.fire_melee_impact_cue(attacker as u8, target as u8);
-        if dmg > 0 {
-            let survives = self.actors[target].battle.hp > 0;
-            self.queue_battle_reaction(target, survives);
+        // The impact-tint triple on the struck actor (`FUN_801EC3E4`
+        // `0x801EE3D4..0x801EE43C`): the acting record's `+0x7A` class,
+        // gated `0 < class < 6`. The routine has no exit ahead of this arm
+        // - every connecting swing reaches it, so a Stone-absorbed hit
+        // tints too. Party and monster attackers alike: the monster's basic
+        // swing goes through the same routine with its archive entry as
+        // the record.
+        // REF: FUN_801EC3E4 (`sltiu v0,v0,0x6` at 0x801EE3E0)
+        let class = self.attacker_impact_class(attacker_i);
+        if class < crate::move_power::IMPACT_CLASS_LIMIT {
+            self.arm_impact_tint(target_i, class);
         }
-        true
+        // ... and its sound.
+        self.fire_melee_impact_cue(attacker, target);
+        // The flinch is staged for a target still standing on the accumulated
+        // total (`target[+0x0] < hp`, `0x801EEC18..0x801EEC30`).
+        if dmg > 0 {
+            self.queue_battle_reaction(target_i, survives);
+        }
+        dmg
     }
 
-    /// The melee kernel's own sound cue - retail's `FUN_801EC3E4` tail
-    /// (`0x801EEB5C..0x801EEBEC`), which submits cue id [`MELEE_IMPACT_CUE`]
-    /// with the **attacker slot as the category** through the battle overlay's
-    /// one sound funnel `FUN_8004FE5C`
-    /// ([`crate::sfx_cue::route_sfx_cue`]).
+    /// Land the accumulated combo total on `target`'s live HP - retail's one
+    /// `+0x14C` write per combo (`0x801EEA10..0x801EEA3C`: `hp - total`,
+    /// floored at zero) followed by the accumulator clear (`0x801EEA74`).
+    /// The bar was seeded hit by hit, so this does not touch it.
     ///
-    /// This is the only `jal 0x8004fe5c` in the melee kernel, so it is the
-    /// whole of a physical swing's sound, and the funnel's two legs make the
-    /// two sides of a fight sound different by construction:
+    /// PORT: FUN_801EC3E4 (`0x801EE9F8..0x801EEA78`, the apply arm)
+    pub(in crate::world) fn apply_combo_total(&mut self, target: u8) {
+        let Some(a) = self.actors.get_mut(target as usize) else {
+            return;
+        };
+        let total = a.battle.damage_accum;
+        a.battle.damage_accum = 0;
+        if total == 0 {
+            return;
+        }
+        let before = a.battle.hp;
+        a.battle.hp = if total < u32::from(before) {
+            before - total as u16
+        } else {
+            0
+        };
+        if a.battle.max_hp > 0 && a.battle.hp == 0 {
+            a.battle.liveness = 0;
+        }
+    }
+
+    /// The melee kernel's own sound - retail's `FUN_801EC3E4` tail
+    /// (`0x801EEA80..0x801EEBEC`), **one** of two emissions, selected by the
+    /// `_DAT_8007BD84` word:
     ///
-    /// * a **party** attacker (`category < 3`) takes the CD-XA voice leg -
-    ///   `0x10C` resolves to clip `26` / channel `4`, i.e. `XA27`. Boot stages
-    ///   only `XA2`/`XA4`/`XA6`, so that clip is not resident and the port has
-    ///   no carrier for a raw (clip, channel, duration) request either. The
-    ///   route is run and its outcome discarded rather than faked: a party
-    ///   swing stays silent, and that is a *staging* gap, not a missing
-    ///   producer.
-    /// * a **monster** attacker takes the element-tinted high leg, which
-    ///   enqueues ring id `0x10C + 0x19C = 0x2A8`. That one has a carrier -
-    ///   [`World::battle_sfx_cues`], the queue both hosts drain into their SFX
-    ///   scheduler - so it is pushed.
+    /// * **zero** - every ordinary swing: the battle-start sweep
+    ///   `FUN_80055B6C` and the round reset `FUN_8004CE2C` both store zero
+    ///   there and no dumped routine stores anything else - takes the
+    ///   per-character **grunt**, `FUN_8003D53C(0x1D, chan, dur)` at
+    ///   `0x801EEB44`, the seat's 1-based character id (`DAT_8007BD10[seat]`)
+    ///   selecting `(0, 0x26)` Vahn / `(4, 0x2E)` Noa / `(6, 0x1A)` Gala
+    ///   (`0x801EEAD0..0x801EEB40`); clip slot `0x1D` = `XA30`, the
+    ///   ten-channel mono grunt bank. The fall-through re-reads the word at
+    ///   `0x801EEB60` and, still zero, skips the cue at `0x801EEB68`.
+    /// * **non-zero**: `bne v0,zero,0x801EEB70` at `0x801EEAC8` jumps over
+    ///   the grunt into the cue path - `0x10C` through the battle overlay's
+    ///   one sound funnel `FUN_8004FE5C` ([`crate::sfx_cue::route_sfx_cue`])
+    ///   with the **attacker's actor-table index as the category**
+    ///   (`0x801EEBD8`), so the two sides sound different by construction: a
+    ///   party attacker takes the CD-XA voice leg (`XA27` channel 4, an
+    ///   attack sting), a monster the element-tinted ring leg (`0x2A8`).
     ///
-    /// Two retail gates, one modelled and one not. Modelled: the target must be
-    /// playing a plain action-table clip (`+0x1D9 < 0x10`, `0x801EEB88`), so a
-    /// hit landing during an art-bank animation is silent. Not modelled:
-    /// `_DAT_8007BD84`, the word that selects between this cue and the
-    /// per-character XA30 grunt above it (`0x801EEAC0` / `0x801EEB60`) - it has
-    /// no engine model and no other reader, so the port always takes the cue
-    /// arm.
+    /// The engine mirrors the word as `MonsterAiState::flag_bd84` - the same
+    /// cell the damage finisher reads as the enemy-defender halve and the
+    /// `0xB4` boss-intro cast gates on. Two grunt gates are not modelled -
+    /// the per-strike latch `s7` (`0x801EEA84`, matched against the target's
+    /// `+0x1F3`) and the voice pass's in-flight counter `_DAT_8007BC20 < 2`
+    /// (`0x801EEAB4`) - so the port grunts on every party strike the word
+    /// leaves to the grunt arm. The cue arm keeps its retail gates: the
+    /// target playing a plain action-table clip (`+0x1D9 < 0x10`,
+    /// `0x801EEB88`) and, inside the funnel, the drive being idle
+    /// (`FUN_8003DE7C(1) == 0` at `0x8004FE9C`, modelled as
+    /// [`World::battle_xa_busy_frames`]).
     ///
     /// The ring is transient by design. Its slots are drained in retail by
     /// `FUN_80016B6C`, which the port does not model (the hosts' own SFX
@@ -920,8 +1501,32 @@ impl World {
     /// carry across calls is the `last_played` dedupe word that same drainer
     /// maintains - so a stored ring would sit at zero and dedupe nothing.
     ///
-    /// PORT: FUN_801EC3E4 (`0x801EEBD8..0x801EEBEC`, the cue-submit site)
+    /// PORT: FUN_801EC3E4 (`0x801EEA80..0x801EEBEC`, the two sound sites)
     fn fire_melee_impact_cue(&mut self, attacker: u8, target: u8) {
+        let category = self.retail_actor_category(attacker);
+        if self.monster_ai_state.flag_bd84 == 0 {
+            // The grunt arm. `XA30` channel + read span per character id
+            // (`DAT_8007BD10[seat]`, 1-based); a monster seat names no
+            // character and falls out of the switch silent (`0x801EEAFC`).
+            if category < 3 {
+                let char_id = self.party_roster_slot(attacker as usize) as u8 + 1;
+                let grunt = match char_id {
+                    1 => Some((0u32, 0x26u32)),
+                    2 => Some((4, 0x2E)),
+                    3 => Some((6, 0x1A)),
+                    _ => None,
+                };
+                if let Some((channel, duration_sectors)) = grunt {
+                    self.push_battle_xa_cue(crate::sfx_cue::XaVoiceClip {
+                        clip: GRUNT_CLIP_SLOT,
+                        channel,
+                        duration_sectors,
+                    });
+                }
+            }
+            return;
+        }
+        // The cue arm: `0x10C` through the funnel.
         let target_anim = self
             .actors
             .get(target as usize)
@@ -935,19 +1540,21 @@ impl World {
         // engine compacts seating to `party_count..`, so the slot has to be
         // re-based first or a monster seated at index 1 takes the party leg
         // and the fight goes silent from the wrong side.
-        let category = self.retail_actor_category(attacker);
         let element_of = |cat: u8| {
             let slot = self.engine_slot_of_retail_category(cat);
             self.battle_slot_element(slot).unwrap_or(NEUTRAL_ELEMENT)
         };
-        // The `0x800788B8` per-clip duration table is not parsed; it is read
-        // only on the XA leg, whose request is discarded below.
-        let xa_duration_raw = |_: u32| 0u16;
+        let durations = self.xa_cue_durations.as_deref();
+        let xa_duration_raw = |n: u32| {
+            durations
+                .and_then(|t| t.get(n as usize).copied())
+                .unwrap_or(0)
+        };
         let src = crate::sfx_cue::SfxCueSources {
             element_of: &element_of,
             xa_duration_raw: &xa_duration_raw,
             tutorial_active: self.battle_tutorial.is_some(),
-            cd_read_busy: false,
+            cd_read_busy: self.battle_xa_busy_frames > 0,
         };
         let mut ring = crate::sfx_cue::SfxCueRing::default();
         let out = crate::sfx_cue::route_sfx_cue(&mut ring, MELEE_IMPACT_CUE, category, &src);
@@ -960,6 +1567,19 @@ impl World {
                     target_slot: target,
                 });
         }
+        if let Some(xa) = out.xa
+            && xa.duration_sectors > 0
+        {
+            self.push_battle_xa_cue(xa);
+        }
+    }
+
+    /// Queue one CD-XA clip start and hold the modelled drive busy for its
+    /// read span (`dur` vsyncs - see [`World::battle_xa_busy_frames`]).
+    /// REF: FUN_8003D53C
+    fn push_battle_xa_cue(&mut self, cue: crate::sfx_cue::XaVoiceClip) {
+        self.battle_xa_busy_frames = cue.duration_sectors.min(u16::MAX as u32) as u16;
+        self.battle_xa_cues.push(cue);
     }
 
     /// An engine seat index in **retail's** actor-table index space: party
@@ -1098,6 +1718,45 @@ impl World {
     }
 }
 
+/// Re-encode a decoded [`legaia_art::ArtPower`] into the power byte the
+/// damage kernel reads (`0x801EC494`): the inverse of
+/// [`legaia_art::PowerByte::from_byte`] over the admitted band `0x0C..=0x1F`
+/// (five multiplier tiers x UDF / LDF x the plain / alt range). Used only by
+/// the zero-length-clip fallback, which walks an art record's decoded power
+/// list where a real clip would carry the raw run in its entry head.
+fn power_byte_of(ap: legaia_art::ArtPower) -> u8 {
+    use legaia_art::PowerTarget;
+    let tier = match ap.multiplier {
+        12 => 0,
+        18 => 1,
+        20 => 2,
+        22 => 3,
+        _ => 4,
+    };
+    let base = match (ap.alt_range, ap.target) {
+        (false, PowerTarget::Udf) => 0x16,
+        (false, PowerTarget::Ldf) => 0x1B,
+        (true, PowerTarget::Udf) => 0x0C,
+        (true, PowerTarget::Ldf) => 0x11,
+    };
+    base + tier
+}
+
+#[cfg(test)]
+mod power_byte_tests {
+    use super::*;
+
+    #[test]
+    fn power_byte_of_inverts_the_decoder_over_the_admitted_band() {
+        for b in 0x0Cu8..=0x1F {
+            let legaia_art::PowerByte::Damage(ap) = legaia_art::PowerByte::from_byte(b) else {
+                panic!("{b:#x} is in the damage band");
+            };
+            assert_eq!(power_byte_of(ap), b, "round trip of {b:#x}");
+        }
+    }
+}
+
 #[cfg(test)]
 mod melee_cue_tests {
     use super::*;
@@ -1118,39 +1777,234 @@ mod melee_cue_tests {
         w
     }
 
+    /// The `0x800788B8` duration table with the melee entry (`0x0C`) at its
+    /// retail value, `373` -> `(373 * 60 + 99) / 100 = 224` sectors.
+    fn durations_with_melee_entry() -> Vec<u16> {
+        let mut t = vec![0u16; 0x40];
+        t[0x0C] = 373;
+        t
+    }
+
     #[test]
-    fn a_monster_swing_enqueues_the_melee_impact_cue() {
+    fn an_ordinary_party_swing_grunts_and_requests_no_sting() {
+        let mut w = duel();
+        w.xa_cue_durations = Some(durations_with_melee_entry());
+        w.battle_ctx.active_actor = 0; // the party member attacks
+        assert_eq!(
+            w.monster_ai_state.flag_bd84, 0,
+            "the `_DAT_8007BD84` word is zero at battle start"
+        );
+        {
+            let atk = w.battle_ctx.active_actor;
+            w.land_melee_hit(atk, 1 - atk, BASIC_ATTACK_COMMAND, 0, false);
+        }
+        assert!(
+            w.drain_battle_sfx_cues().is_empty(),
+            "the grunt arm submits nothing to the SPU ring"
+        );
+        let xa = w.drain_battle_xa_cues();
+        assert_eq!(xa.len(), 1, "one swing, one grunt, no sting: {xa:?}");
+        // `FUN_8003D53C(0x1D, 0, 0x26)` - Vahn's `XA30` channel + read span.
+        assert_eq!(
+            (xa[0].clip, xa[0].channel, xa[0].duration_sectors),
+            (0x1D, 0, 0x26)
+        );
+        assert_eq!(
+            w.battle_xa_busy_frames, 0x26,
+            "the modelled drive stays busy for the read span"
+        );
+    }
+
+    #[test]
+    fn an_ordinary_monster_swing_is_silent_at_this_site() {
         let mut w = duel();
         w.battle_ctx.active_actor = 1; // the monster attacks
-        assert!(w.apply_one_basic_strike(BASIC_ATTACK_COMMAND));
+        {
+            let atk = w.battle_ctx.active_actor;
+            w.land_melee_hit(atk, 1 - atk, BASIC_ATTACK_COMMAND, 0, false);
+        }
+        // `sltiu v0,a0,0x3` at `0x801EEA7C` skips the grunt for a monster
+        // seat, and the re-read of the zero word at `0x801EEB60` skips the
+        // cue: a monster's ordinary swing makes no sound from this routine.
+        assert!(w.drain_battle_sfx_cues().is_empty());
+        assert!(w.drain_battle_xa_cues().is_empty());
+    }
+
+    #[test]
+    fn a_flagged_monster_swing_enqueues_the_melee_impact_cue() {
+        let mut w = duel();
+        // Non-zero word: `bne v0,zero,0x801EEB70` at `0x801EEAC8` takes the
+        // cue arm.
+        w.monster_ai_state.flag_bd84 = 1;
+        w.battle_ctx.active_actor = 1; // the monster attacks
+        w.land_melee_hit(1, 0, BASIC_ATTACK_COMMAND, 0, false);
         let cues = w.drain_battle_sfx_cues();
         assert_eq!(cues.len(), 1, "one swing, one cue: {cues:?}");
         // The funnel's element-tinted high leg: `0x10C + 0x19C`.
         assert_eq!(cues[0].kind, 0x2A8);
         assert_eq!(cues[0].actor_slot, 1);
         assert_eq!(cues[0].target_slot, 0);
+        assert!(
+            w.drain_battle_xa_cues().is_empty(),
+            "no grunt on the cue arm"
+        );
     }
 
     #[test]
-    fn a_party_swing_takes_the_xa_leg_and_enqueues_nothing() {
+    fn a_flagged_party_swing_takes_the_xa_leg_and_enqueues_nothing() {
         let mut w = duel();
+        w.monster_ai_state.flag_bd84 = 1;
+        w.xa_cue_durations = Some(durations_with_melee_entry());
         w.battle_ctx.active_actor = 0; // the party member attacks
-        assert!(w.apply_one_basic_strike(BASIC_ATTACK_COMMAND));
+        w.land_melee_hit(0, 1, BASIC_ATTACK_COMMAND, 0, false);
         assert!(
             w.drain_battle_sfx_cues().is_empty(),
             "a party attacker's `0x10C` is a CD-XA voice request, not a ring id"
         );
+        let xa = w.drain_battle_xa_cues();
+        assert_eq!(xa.len(), 1, "the sting, and no grunt: {xa:?}");
+        // Clip `(0x0C >> 3) = 1` remapped to `26` (`XA27`), channel `0x0C & 7`.
+        assert_eq!(
+            (xa[0].clip, xa[0].channel, xa[0].duration_sectors),
+            (26, 4, 224)
+        );
+    }
+
+    #[test]
+    fn a_flagged_party_swing_is_dropped_while_the_drive_is_busy() {
+        let mut w = duel();
+        w.monster_ai_state.flag_bd84 = 1;
+        w.xa_cue_durations = Some(durations_with_melee_entry());
+        w.battle_ctx.active_actor = 0;
+        // `FUN_8003DE7C(1) != 0` at `0x8004FE9C`: a read in flight drops the
+        // voice leg's request.
+        w.battle_xa_busy_frames = 5;
+        {
+            let atk = w.battle_ctx.active_actor;
+            w.land_melee_hit(atk, 1 - atk, BASIC_ATTACK_COMMAND, 0, false);
+        }
+        assert!(w.drain_battle_sfx_cues().is_empty());
+        assert!(w.drain_battle_xa_cues().is_empty());
     }
 
     #[test]
     fn a_target_playing_an_art_bank_clip_is_silent() {
         let mut w = duel();
+        w.monster_ai_state.flag_bd84 = 1;
         w.battle_ctx.active_actor = 1;
         // Retail gate `0x801EEB88`: the cue is submitted only while the target
         // is playing a plain action-table clip.
         w.actors[0].battle.current_anim = 0x11;
-        assert!(w.apply_one_basic_strike(BASIC_ATTACK_COMMAND));
+        w.land_melee_hit(1, 0, BASIC_ATTACK_COMMAND, 0, false);
         assert!(w.drain_battle_sfx_cues().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod impact_tint_arm_tests {
+    use super::*;
+    use crate::battle_anim::MonsterAnimPlayer;
+    use legaia_asset::monster_archive::{MonsterAnimation, PartPose};
+
+    /// A one-part, two-frame clip whose entry head carries `impact_class`.
+    fn clip(impact_class: u8) -> MonsterAnimation {
+        MonsterAnimation {
+            action_id: 0xC,
+            rate: 2,
+            attach_key: 0,
+            solo_flag: 0,
+            impact_class,
+            effect_script: Vec::new(),
+            part_count: 1,
+            frame_count: 2,
+            frames: vec![vec![PartPose::default()], vec![PartPose::default()]],
+        }
+    }
+
+    /// A battle with one party member and one monster, both alive, the
+    /// attacker playing `clip(class)`.
+    fn duel_with_attacker_clip(attacker: usize, class: u8) -> World {
+        let mut w = World::new();
+        w.enter_battle(1, 1);
+        for i in 0..2 {
+            w.actors[i].battle.liveness = 1;
+            w.actors[i].battle.hp = 500;
+            w.actors[i].battle.max_hp = 500;
+        }
+        w.set_battle_attack(0, 80);
+        w.set_battle_attack(1, 80);
+        w.actors[0].battle.active_target = 1;
+        w.actors[1].battle.active_target = 0;
+        w.actors[attacker].battle_animation = MonsterAnimPlayer::new(&clip(class));
+        w.battle_ctx.active_actor = attacker as u8;
+        w
+    }
+
+    /// A connecting swing stamps the retail triple on the STRUCK actor -
+    /// `+0x21F = class`, `+0x0C = 0x1000` - from the attacker's committed
+    /// record `+0x7A` (`FUN_801EC3E4` `0x801EE3D4..0x801EE43C`). No disc
+    /// impact table is installed here, so the colour word is the one
+    /// write with nothing to carry.
+    #[test]
+    fn a_connecting_swing_arms_the_impact_triple_from_the_attackers_clip() {
+        let mut w = duel_with_attacker_clip(0, 1);
+        {
+            let atk = w.battle_ctx.active_actor;
+            w.land_melee_hit(atk, 1 - atk, BASIC_ATTACK_COMMAND, 0, false);
+        }
+        assert_eq!(w.actors[1].battle.impact_state, 1);
+        assert_eq!(
+            w.actors[1].battle.render_blend,
+            legaia_engine_vm::battle_formulas::TINT_BLEND_FULL
+        );
+        assert_eq!(
+            w.actors[0].battle.impact_state, 0,
+            "the attacker is untouched"
+        );
+    }
+
+    /// The monster's basic swing goes through the same routine with its
+    /// archive entry as the record.
+    #[test]
+    fn a_monster_swing_arms_the_party_target_the_same_way() {
+        let mut w = duel_with_attacker_clip(1, 2);
+        {
+            let atk = w.battle_ctx.active_actor;
+            w.land_melee_hit(atk, 1 - atk, BASIC_ATTACK_COMMAND, 0, false);
+        }
+        assert_eq!(w.actors[0].battle.impact_state, 2);
+        assert_eq!(w.actors[0].battle.render_blend, 0x1000);
+    }
+
+    /// Class `0` and a class past the table (`sltiu v0,v0,0x6` at
+    /// `0x801EE3E0`) arm nothing - the swing still lands.
+    #[test]
+    fn class_zero_and_out_of_table_classes_arm_nothing() {
+        for class in [0u8, crate::move_power::IMPACT_CLASS_LIMIT, 0xFF] {
+            let mut w = duel_with_attacker_clip(0, class);
+            let hp_before = w.actors[1].battle.hp;
+            w.land_melee_hit(0, 1, BASIC_ATTACK_COMMAND, 0, false);
+            // Hits accumulate; the combo total is the one live-HP write.
+            w.apply_combo_total(1);
+            assert!(
+                w.actors[1].battle.hp < hp_before,
+                "class {class}: the swing landed"
+            );
+            assert_eq!(w.actors[1].battle.impact_state, 0, "class {class}");
+            assert_eq!(w.actors[1].battle.render_blend, 0, "class {class}");
+        }
+    }
+
+    /// With no clip playing (a synthetic battle) the class reads `0`.
+    #[test]
+    fn no_playing_clip_reads_class_zero() {
+        let mut w = duel_with_attacker_clip(0, 3);
+        w.actors[0].battle_animation = None;
+        {
+            let atk = w.battle_ctx.active_actor;
+            w.land_melee_hit(atk, 1 - atk, BASIC_ATTACK_COMMAND, 0, false);
+        }
+        assert_eq!(w.actors[1].battle.impact_state, 0);
     }
 }
 

@@ -154,3 +154,88 @@ fn the_discs_class_byte_routes_the_capture_branch() {
         "Gimard is not capture-class"
     );
 }
+
+/// The monster archive, `data\battle` PROT entry 867 (extraction numbering,
+/// the space `ProtIndex::entry_bytes` indexes).
+const MONSTER_ARCHIVE_PROT_INDEX: u32 = 867;
+
+/// The boot catalog resolves every monster special the disc's own monster
+/// records cast.
+///
+/// `pick_monster_action` rolls a record's `+0x21..=+0x23` magic ids and
+/// `take_monster_turn` keeps the pick only when the catalog resolves it - a
+/// missing id is a rolled cast that silently becomes a strike, in every
+/// disc-booted fight. Gimard's slot is `0x27` (Tail Fire, the retail
+/// `battle_gimard_tail_fire_a` capture); every live slot across the archive is
+/// held to the same rule, at the table's own MP. Capture-class ids are the
+/// exception the class byte makes: their fold is the streamed module's
+/// (`docs/subsystems/cast-module.md`), keyed by `SpellEffect::Capture`, which
+/// the table cannot supply - the test above covers that branch.
+#[test]
+fn the_boot_catalog_resolves_every_monster_special_the_archive_casts() {
+    let Some(path) = std::env::var_os("LEGAIA_DISC_BIN").map(PathBuf::from) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let Some(scus) = scus() else {
+        return;
+    };
+    let table = legaia_asset::spell_names::SpellNameTable::from_scus(&scus)
+        .expect("the retail spell table decodes");
+    let catalog = legaia_engine_core::retail_magic::seru_magic_catalog_from_scus(&scus)
+        .expect("SCUS parses as a PSX-EXE");
+
+    let host = legaia_engine_core::scene::SceneHost::open_disc(&path).expect("open the disc");
+    let archive = host
+        .index
+        .entry_bytes(MONSTER_ARCHIVE_PROT_INDEX)
+        .expect("PROT 867 reads");
+    let slots = legaia_asset::monster_archive::slot_count(&archive) as u16;
+
+    let mut live = 0usize;
+    let mut missing = Vec::new();
+    for id in 1..=slots {
+        let Ok(Some(rec)) = legaia_asset::monster_archive::record(&archive, id) else {
+            continue;
+        };
+        for &sid in &rec.magic_attacks {
+            if table.entry(sid).is_some_and(|e| e.is_capture_class()) {
+                continue;
+            }
+            live += 1;
+            match catalog.get(sid) {
+                Some(def) => assert_eq!(
+                    def.mp_cost,
+                    table.mp(sid).unwrap_or(0),
+                    "{} ({id}) special {sid:#04x} costs the table's MP",
+                    rec.name
+                ),
+                None => missing.push((id, rec.name.clone(), sid)),
+            }
+        }
+    }
+    assert!(live > 0, "the archive names live magic slots");
+    assert!(
+        missing.is_empty(),
+        "monster specials the boot catalog cannot resolve (each is a rolled \
+         cast that degrades to a strike): {missing:?}"
+    );
+
+    // Gimard, pinned: the record's slot and the table's row agree with the
+    // catalog on id, name and cost.
+    let gimard = legaia_asset::monster_archive::record(&archive, 10)
+        .expect("archive reads")
+        .expect("id 10 is a record");
+    assert!(
+        gimard.magic_attacks.contains(&0x27),
+        "Gimard's +0x21 slot is Tail Fire: {:?}",
+        gimard.magic_attacks
+    );
+    let tail_fire = catalog.get(0x27).expect("Tail Fire is in the boot catalog");
+    assert_eq!(Some(tail_fire.name.as_str()), table.name(0x27));
+    assert_eq!(Some(tail_fire.mp_cost), table.mp(0x27));
+    assert!(
+        gimard.mp >= u16::from(tail_fire.mp_cost),
+        "a fresh Gimard can afford its own special"
+    );
+}

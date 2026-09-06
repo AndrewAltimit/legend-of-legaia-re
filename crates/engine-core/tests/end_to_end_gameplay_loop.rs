@@ -261,6 +261,15 @@ fn drive_battle_to_victory(world: &mut World) -> Result<u32, String> {
         }
 
         if matches!(outcome, Some(StepOutcome::BattleComplete)) {
+            // The monster wipe runs the battle-end sequencer (load hold,
+            // results frame, exit fade) before the field returns; drive it
+            // out so the caller reads the settled post-battle state.
+            for _ in 0..20_000 {
+                if world.mode != SceneMode::Battle {
+                    break;
+                }
+                world.tick();
+            }
             return Ok(strikes);
         }
 
@@ -322,7 +331,6 @@ fn run_full_loop(starting_save: SaveFile) -> (Vec<u8>, SaveFile) {
 
     let pre_money = world.money;
     let pre_story_flags = world.story_flags;
-    let pre_story_flag_bits = world.story_flag_bits.clone();
     let pre_inventory: std::collections::HashMap<u8, u8> = world.inventory.clone();
     let pre_levels: Vec<u8> = world.level_up_tracker.level[..3].to_vec();
 
@@ -446,9 +454,18 @@ fn run_full_loop(starting_save: SaveFile) -> (Vec<u8>, SaveFile) {
         reloaded.story_flags, pre_story_flags,
         "story flags must round-trip"
     );
+    // The battle-end results frame sets story flag `0x35` in the system-flag
+    // bank (retail `FUN_8003CE08(0x35)` writes `DAT_80085758`), and the save
+    // mirrors that bank into the bitmap window at `0x158` - so the merged
+    // image the save wrote, not the pre-battle capture, is what has to come
+    // back, and the bank itself has to survive the reload.
     assert_eq!(
-        reloaded.story_flag_bits, pre_story_flag_bits,
+        reloaded.story_flag_bits, saved.ext.story_flag_bits,
         "retail-sized story-flag bitmap must round-trip"
+    );
+    assert_eq!(
+        reloaded.system_flags, world.system_flags,
+        "the system-flag bank (the results frame's story flag) must round-trip"
     );
     assert_eq!(
         reloaded.money, world.money,

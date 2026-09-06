@@ -263,6 +263,26 @@ pub fn fade_prim(rgb: u32, abr_mode: u8, ot_index: u32) -> ScreenPrim {
     )
 }
 
+/// The full-screen quad the **fade actor** draws for a live screen fade -
+/// `FUN_80025000`'s per-frame `FUN_80024EE4(layer, kind, rgb)` call, the
+/// same emitter the intro styles go through ([`fade_prim`]). The template's
+/// **kind** word is the emitter's second argument, and the emitter folds
+/// that argument into the draw-mode packet's ABR bits (`sll a3,a1,0x5; ori
+/// a3,a3,0xe` at `0x80024FB0`, `see ghidra/scripts/funcs/80024ee4.txt`), so
+/// the kind IS the blend: kind `2` is `B - F`, and the battle-end / escape
+/// template (kind `2`, black -> white) fades the scene to **black** as its
+/// ramp rises - not to white. `layer` is the first argument, the OT bucket
+/// (the template's trailing id word).
+///
+/// Both hosts push this into their screen-overlay pass while
+/// `World::screen_fade` is live; a host that hand-rolls the quad is how the
+/// blend mode gets lost.
+// REF: FUN_80024EE4, FUN_80025000
+pub fn screen_fade_prim(rgb: [u8; 3], kind: u8, layer: u8) -> ScreenPrim {
+    let packed = (u32::from(rgb[0]) << 16) | (u32::from(rgb[1]) << 8) | u32::from(rgb[2]);
+    fade_prim(packed, kind & 3, u32::from(layer))
+}
+
 /// Return the draw order (indices into `prims`) that reproduces the retail
 /// ordering-table walk: farthest OT bucket first, LIFO within a bucket.
 ///
@@ -657,6 +677,37 @@ mod tests {
         let windowed = build_geometry(&[full], 960, 720);
         assert_eq!(windowed.vertices[0].pos, [-1.0, 1.0]);
         assert!(windowed.vertices[3].pos[0] < -0.3);
+    }
+
+    #[test]
+    fn a_live_screen_fade_keeps_its_kind_as_the_blend() {
+        // The battle-end / escape template: kind 2 ramping black -> white
+        // is `B - F` rising to a black-out, linked at the template's id 0.
+        let p = screen_fade_prim([0x40, 0x41, 0x42], 2, 0);
+        assert_eq!(p.blend_class(), BlendClass::Semi(2));
+        assert_eq!(p.ot_index(), 0);
+        assert_eq!(
+            p.corners(),
+            [
+                (0, 0),
+                (PSX_DISPLAY_W, 0),
+                (0, PSX_DISPLAY_H),
+                (PSX_DISPLAY_W, PSX_DISPLAY_H)
+            ]
+        );
+        match p {
+            ScreenPrim::Flat(q) => assert_eq!(q.color, [0x40, 0x41, 0x42, 0xFF]),
+            _ => panic!("a fade is a flat quad"),
+        }
+        // A kind-1 template brightens instead; the kind is masked to ABR.
+        assert_eq!(
+            screen_fade_prim([0xFF; 3], 1, 2).blend_class(),
+            BlendClass::Semi(1)
+        );
+        assert_eq!(
+            screen_fade_prim([0; 3], 6, 0).blend_class(),
+            BlendClass::Semi(2)
+        );
     }
 
     #[test]

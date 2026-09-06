@@ -642,13 +642,34 @@ pub struct BattleHudFrame<'a> {
     /// ([`crate::battle_hud_chrome::BattleBadgeRects`]). Any `None` cell
     /// falls back to the engine's labelled text tag.
     pub badges: Option<&'a crate::battle_hud_chrome::BattleBadgeRects>,
-    /// Retail parks the party status plate off-screen while an arts input
-    /// session owns the frame (`docs/subsystems/minigame-muscle-dome.md` -
-    /// its draws move to `y = 230`, under the 228-line display window), and
-    /// the arts-input reference frame shows the command bar in its place.
-    /// Hosts set this while a command-entry session is up; the builder then
-    /// emits no party strip.
-    pub input_session_parked: bool,
+    /// The roster panels (placement records 6 / 78 / 79) are parked this
+    /// frame - retail's `06/1 4E/1 4F/1`, which sends the cluster to
+    /// `y = 236` under the 228-line display window. The engine stage is 240
+    /// lines, so the builder emits no panel draws instead. Hosts pass the
+    /// inverse of `engine-core::battle_hud::battle_panels_visible`, which
+    /// carries the per-phase rule (up at the round prompt and while an item
+    /// / magic window is browsed, parked by the ring and every action but a
+    /// party-wide one).
+    pub panels_parked: bool,
+    /// The `Begin` breadcrumb tab is up at `(16, 12)` and the plaque sits
+    /// behind it at `(68, 12)` - retail's placement records 1 and 26, the
+    /// shape every command-entry step from the ring on carries
+    /// (`engine-core::battle_hud::battle_begin_tab_visible`). Without it the
+    /// plaque takes its action seat `(16, 12)` (record 68).
+    pub begin_tab: bool,
+    /// The art / spell / item name retail draws under the action
+    /// (placement records 76 / 77): centred on `x = 0xA0` by
+    /// [`crate::battle_name_banner::banner_x`], pen row `148`.
+    pub move_name: Option<&'a str>,
+    /// The bottom-right target plaque (placement record 81): the monster a
+    /// party member's action is aimed at and its element badge, on a blue
+    /// plate whose right cap ends at `x = 312`, on the bar's row.
+    pub target_plaque: Option<(&'a str, Option<u8>)>,
+    /// The ring's AP plate (placement record 82 at `(208, 172)`) and the
+    /// value it shows - the acting member's Spirit gauge - or `None` when
+    /// the plate is off. Drawn from the status screen's own gauge pieces,
+    /// so it needs [`Self::chrome`].
+    pub ap_plate_value: Option<u8>,
     /// Stage rect (`x, y, w, h`) of a box the **host** draws on top of the
     /// battle screen this frame - today the sparring-tutorial prompt, whose
     /// rect is the retail emitter's own (`battle_tutorial::BoxStyle::box_rect`).
@@ -721,43 +742,63 @@ pub fn diag_hud_enabled() -> bool {
 /// marbled panel background and the 8x16 `/` separator have no rect in the
 /// engine's system-UI atlas set yet, so the panel draws in the shared
 /// chrome and the separator as a font glyph.
-const BAR_X: i32 = 8;
+pub(crate) const BAR_X: i32 = 8;
 /// Plate top of the active-actor bar.
-const BAR_Y: i32 = 188;
+pub(crate) const BAR_Y: i32 = 188;
 /// Interior width of the active-actor bar; the plate spans `8 ..= 312`.
-const BAR_INTERIOR_W: i32 = 288;
+pub(crate) const BAR_INTERIOR_W: i32 = 288;
 /// Plate height, every plate run on the battle screen.
-const PLATE_H: i32 = 20;
+pub(crate) const PLATE_H: i32 = 20;
 /// Width a plate run occupies for a given interior (a cap at each end).
-const PLATE_CAP_W: i32 = 8;
+pub(crate) const PLATE_CAP_W: i32 = 8;
 
 /// Name-glyph pen inside the active-actor bar.
-const BAR_NAME: (i32, i32) = (16, 192);
+pub(crate) const BAR_NAME: (i32, i32) = (16, 192);
 /// HP / MP label-sprite seats inside the bar.
-const BAR_HP_LABEL: (i32, i32) = (80, 194);
-const BAR_MP_LABEL: (i32, i32) = (192, 194);
+pub(crate) const BAR_HP_LABEL: (i32, i32) = (80, 194);
+pub(crate) const BAR_MP_LABEL: (i32, i32) = (192, 194);
 /// `/` separator seats - the separator sits four rows above its numerals.
 const BAR_HP_SEPARATOR: (i32, i32) = (136, 188);
 const BAR_MP_SEPARATOR: (i32, i32) = (240, 188);
 /// Numeral pen row, every field in the bar.
-const BAR_DIGIT_Y: i32 = 192;
+pub(crate) const BAR_DIGIT_Y: i32 = 192;
 /// Right edges the four numeral fields are laid out back from. **Both**
 /// halves of a `cur / max` pair are right-aligned - the field grows leftward
 /// one 8-px cell per digit - which is what keeps a four-digit HP inside its
 /// own field. A forward-running maximum is what a capture whose values are
 /// all three digits looks like, and it overruns as soon as they are not.
-const BAR_HP_CUR_RIGHT: i32 = 134;
+pub(crate) const BAR_HP_CUR_RIGHT: i32 = 134;
 const BAR_HP_MAX_RIGHT: i32 = 178;
-const BAR_MP_CUR_RIGHT: i32 = 238;
+pub(crate) const BAR_MP_CUR_RIGHT: i32 = 238;
 const BAR_MP_MAX_RIGHT: i32 = 274;
 
 /// Width and horizontal pitch of one HUD numeral cell - retail's, and the
 /// unit every numeral field above is measured in.
 const DIGIT_W: i32 = 8;
 
-/// Plate top-left of the actor-name plaque - fixed, every battle.
+/// Plate top-left of the actor-name plaque on its action seat (placement
+/// record 68: content `(16, 14)`, plate `(8, 8)`).
 const PLAQUE_X: i32 = 8;
 const PLAQUE_Y: i32 = 8;
+/// Plate x of the plaque when it sits behind the `Begin` tab (placement
+/// record 26: content `(68, 14)`, plate `(60, 8)`).
+const PLAQUE_BEHIND_TAB_X: i32 = 60;
+/// Plate top-left of the `Begin` breadcrumb tab (placement record 1's
+/// target seat: content `(16, 14)`, interior 36, the gold plate class).
+const BEGIN_TAB_X: i32 = 8;
+const BEGIN_TAB_Y: i32 = 8;
+/// Interior width of the `Begin` tab - record 1's `w`, which is the same
+/// 36 the round prompt's `Begin` / `Run` chips are built at.
+const BEGIN_TAB_INTERIOR_W: i32 = 36;
+/// The tab's word - the round prompt's own `Begin` chip label (record 1
+/// keeps the chip's string pointer).
+const BEGIN_TAB_LABEL: &str = "Begin";
+/// Pen row of the move-name label (placement records 76 / 77 at `y = 150`,
+/// glyph pen two rows up).
+const MOVE_NAME_Y: i32 = 148;
+/// Right edge the target plaque's right cap ends at (placement record 81:
+/// `x = 304 - w`, so the `w + 16` plate closes at 312).
+const TARGET_PLAQUE_RIGHT: i32 = 312;
 /// Vertical inset of the plaque's contents from its plate top.
 const PLAQUE_CONTENT_DY: i32 = 4;
 /// Width of the element badge the plaque wears, and the gap between it and
@@ -1226,7 +1267,7 @@ pub fn battle_hud_draws_for(
     // stage is 240 lines, so `y = 230` would still be visible here and the
     // port omits the draws instead.
     let seats = panel_seats(live_party.len().min(3));
-    if !frame.input_session_parked && bar_member.is_none() && !panels_covered {
+    if !frame.panels_parked && bar_member.is_none() && !panels_covered {
         for (ordinal, (i, slot)) in live_party.iter().take(3).enumerate() {
             let px = seats[ordinal];
             let py = PANEL_Y;
@@ -1487,20 +1528,107 @@ pub fn battle_hud_draws_for(
         } else {
             0
         };
+        // From the ring on, the round prompt's `Begin` chip has become a
+        // breadcrumb tab on the plaque's own seat (record 1 glides
+        // `(104, 88)` to `(16, 14)` and takes the gold class), and the
+        // plaque drops in beside it (record 26 at `(68, 14)`) - two gold
+        // plates, `Begin | Vahn`, the trail the item window continues.
+        let plaque_x = if frame.begin_tab {
+            plate_run(
+                &mut text,
+                &mut sprites,
+                BEGIN_TAB_X,
+                BEGIN_TAB_Y,
+                BEGIN_TAB_INTERIOR_W,
+                true,
+            );
+            stage_text(
+                &mut text,
+                font,
+                BEGIN_TAB_LABEL,
+                BEGIN_TAB_X + PLATE_CAP_W,
+                BEGIN_TAB_Y + PLAQUE_CONTENT_DY,
+                white,
+            );
+            PLAQUE_BEHIND_TAB_X
+        } else {
+            PLAQUE_X
+        };
         plate_run(
             &mut text,
             &mut sprites,
-            PLAQUE_X,
+            plaque_x,
             PLAQUE_Y,
             lead + name_w,
             true,
         );
-        let content_x = PLAQUE_X + PLATE_CAP_W;
+        let content_x = plaque_x + PLATE_CAP_W;
         let content_y = PLAQUE_Y + PLAQUE_CONTENT_DY;
         if let Some(src) = badge {
             stage_sprite(&mut sprites, src, content_x, content_y);
         }
         stage_text(&mut text, font, name, content_x + lead, content_y, white);
+    }
+
+    // ---- The move-name label ----
+    //
+    // Placement records 76 / 77: `y = 150`, `w = 0`, and both seats' x
+    // written to `0xA0 - width / 2` before the open (`FUN_8004C650` for an
+    // art, the `0x28` / `0x3C` arms for a spell / item), so the label is
+    // centred and does not glide. Plain glyphs, no plate - the display
+    // list carries the run and nothing around it.
+    if let Some(name) = frame.move_name.filter(|n| !n.is_empty()) {
+        let name_w = font.layout_ascii(name).advance_x as i32;
+        let lead = name.as_bytes()[0];
+        let x = i32::from(crate::battle_name_banner::banner_x(name_w, lead, 0));
+        stage_text(&mut text, font, name, x, MOVE_NAME_Y, white);
+    }
+
+    // ---- The target plaque ----
+    //
+    // Placement record 81: the monster a party member's action is aimed
+    // at, on the blue plate class, its `x` written so the right cap ends
+    // at 312, rising to the bar's row; the name payload carries the
+    // element-badge escape in front of the name, so the interior follows
+    // the same badge law as the top-left plaque.
+    if let Some((name, badge_index)) = frame.target_plaque.filter(|(n, _)| !n.is_empty()) {
+        let name_w = font.layout_ascii(name).advance_x as i32;
+        let badge = badge_index.and_then(|i| frame.badges.and_then(|b| b.element_badge(i)));
+        let lead = if badge.is_some() {
+            PLAQUE_BADGE_W + PLAQUE_BADGE_GAP
+        } else {
+            0
+        };
+        let interior = lead + name_w;
+        let plate_x = TARGET_PLAQUE_RIGHT - (interior + 2 * PLATE_CAP_W);
+        plate_run(&mut text, &mut sprites, plate_x, BAR_Y, interior, false);
+        let content_x = plate_x + PLATE_CAP_W;
+        let content_y = BAR_Y + PLAQUE_CONTENT_DY;
+        if let Some(src) = badge {
+            stage_sprite(&mut sprites, src, content_x, content_y);
+        }
+        stage_text(&mut text, font, name, content_x + lead, content_y, white);
+    }
+
+    // ---- The ring's AP plate ----
+    //
+    // Placement record 82 slides in to `(208, 174)` with the ring and
+    // reads the acting member's Spirit gauge; it is the status screen's
+    // own AP-gauge widget, so it samples the same atlas pieces the arts
+    // input's copy does.
+    if let (Some(value), Some(rects)) = (frame.ap_plate_value, frame.chrome) {
+        sprites.extend(crate::arts_input::ap_plate_draws(
+            &crate::arts_input::ApPlateRects {
+                cap: rects.gauge_cap,
+                trough: rects.gauge_trough,
+                fill: rects.gauge_fill,
+                box_: rects.gauge_box,
+                digits: rects.gauge_digits,
+            },
+            value,
+            origin,
+            scale as u32,
+        ));
     }
 
     // ---- Diagnostic rows (LEGAIA_DIAG_HUD) ----
@@ -1811,6 +1939,56 @@ pub struct ValueCellView {
 /// neutral colour word `0x808080` and take their colour from the texels, so a
 /// host drawing the real cells must not tint them.
 pub const VALUE_READOUT_FALLBACK_COLOR: [f32; 4] = [1.0, 0.78, 0.24, 1.0];
+
+/// One label of the combo counter cluster, as the fallback builder draws
+/// it: the word and its stage seat (`engine-vm::battle_value_readout::
+/// ComboLabel`, minus the texel rect a VRAM-sampling host uses instead).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ComboLabelView<'a> {
+    pub word: &'a str,
+    pub x: i32,
+    pub y: i32,
+}
+
+/// Fallback draw list for the combo counter cluster - `N HIT` / `TOTAL x`
+/// or `DAMAGE x` - for a host without the battle effect atlas resident.
+///
+/// The **layout is retail's** (`engine-vm::battle_value_readout::
+/// combo_cluster`: the label seats, the right-aligned 16-px value cells,
+/// the 24-px hit count, and the anchor's 16-frame glide in from the right)
+/// and only the letterforms differ: the sheet's `HIT` / `TOTAL` / `DAMAGE`
+/// word cells become dialog-font text on the same seats, in the numeral
+/// art's own gold, and the digits go through
+/// [`battle_value_readout_draws_for`]. A host that can sample VRAM draws the
+/// real cells off texture page `0x27` / CLUT `0x7703` and skips this.
+pub fn battle_combo_cluster_draws_for(
+    font: &legaia_font::Font,
+    labels: &[ComboLabelView<'_>],
+    cells: &[ValueCellView],
+    origin: (i32, i32),
+    scale: u32,
+) -> Vec<TextDraw> {
+    let mut out = Vec::new();
+    for l in labels {
+        if l.word.is_empty() {
+            continue;
+        }
+        let layout = font.layout_ascii(l.word);
+        // The word cells are 16 rows tall; the font's 12-row glyphs sit two
+        // rows down inside them.
+        let mut draws = text_draws_for(&layout, (l.x, l.y + 2), VALUE_READOUT_FALLBACK_COLOR);
+        scale_stage_text_draws(&mut draws, origin, scale);
+        out.extend(draws);
+    }
+    out.extend(battle_value_readout_draws_for(
+        font,
+        cells,
+        VALUE_READOUT_FALLBACK_COLOR,
+        origin,
+        scale,
+    ));
+    out
+}
 
 /// Fallback draw list for a floating value readout: the dialog font's digits
 /// scaled into the pinned cells.

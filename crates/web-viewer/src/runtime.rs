@@ -515,6 +515,12 @@ impl LegaiaRuntime {
         // browser draws the port's own fallback wording instead.
         host.world.battle_ui_strings =
             legaia_engine_core::battle_open::battle_ui_strings_from_prot(&host.index);
+        // ... and the SCUS half - the chip words plus the sparring fight's
+        // opening caption (`FUN_80056208` -> `0x80078CB4`), which the tutorial
+        // side-band raises off `battle_ui_strings`.
+        if let Some(s) = scus.as_ref() {
+            host.world.battle_ui_strings.merge_scus(s);
+        }
 
         // Keep the executable bytes for the battle render's per-stage SCUS
         // tables (mirror list / outdoor-cue list). Nothing leaves the browser.
@@ -1908,6 +1914,10 @@ impl LegaiaRuntime {
             // Photosensitivity guard over the ambient palette cyclers
             // (default ON; see `OptionsState::reduce_flashing`).
             host.world.reduce_flashing = self.options_state.reduce_flashing;
+            // Battle "Select Attack" (config word `0x800846C4`): whether the
+            // ring's Attack arm shows the Auto | Command prompt, goes
+            // straight to the target cursor, or straight to the arts entry.
+            host.world.battle_select_attack = self.options_state.battle_select_attack;
         }
     }
 }

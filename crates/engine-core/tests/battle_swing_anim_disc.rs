@@ -12,11 +12,12 @@
 //!
 //! - the actor's pose during the swing window **differs from the idle
 //!   pose** (the staged equipment swing actually deforms the skeleton);
-//! - the chain holds in `AttackChain` while each swing plays (the
-//!   `0x801E370C` `ADVANCE_DONE` read gate) and exits to recovery on the
-//!   terminator;
-//! - after the band the id pair converges back to idle `0` and the idle
-//!   loop resumes;
+//! - the loop stages one ahead (the `0x801E370C` `ADVANCE_DONE` read gate
+//!   opens on each commit): recovery is entered with the first swing still
+//!   in flight and holds until the second commits at the first one's
+//!   boundary, so the swings play across the whole band;
+//! - after the last swing the id pair converges back to idle `0` and the
+//!   idle loop resumes;
 //! - a staged art id (`0x1A`) commits through the bank with the retail
 //!   rewrite to dynamic slot `0x11` and plays its ME-archive stream.
 //!
@@ -153,9 +154,17 @@ fn scripted_party_attack_plays_swings_then_returns_to_idle() {
     world.battle_ctx.active_actor = 0;
     world.battle_ctx.action_state = ActionState::AttackChain.as_byte();
 
+    // Retail stages one ahead: the loop reads its next byte as soon as the
+    // previous one has committed, so with two bytes and a terminator the
+    // band reaches recovery while the FIRST swing is still in flight, and
+    // recovery holds until the second swing commits at the first one's
+    // boundary. The swings therefore play across the whole band, not only
+    // inside the strike loop - count in-flight frames until the band leaves
+    // (`0x1F -> 0x20`).
     let mut swing_frames = 0usize;
     let mut swing_pose_moved = false;
     let mut reached_recovery = false;
+    let mut left_band = false;
     for _ in 0..5000 {
         let out = world.step_battle();
         world.tick_battle_animations();
@@ -171,20 +180,47 @@ fn scripted_party_attack_plays_swings_then_returns_to_idle() {
             if to == ActionState::AttackRecovery.as_byte())
         {
             reached_recovery = true;
+            assert!(
+                world.actors[0].battle_staged_anim.is_some(),
+                "recovery is entered with the first swing still in flight (one-ahead staging)"
+            );
+        }
+        if matches!(out, StepOutcome::Transition { to, .. }
+            if to == ActionState::AttackReturn.as_byte())
+        {
+            left_band = true;
             break;
         }
     }
     assert!(reached_recovery, "attack band must reach recovery");
     assert!(
+        left_band,
+        "recovery must release once the last swing commits"
+    );
+    assert!(
         swing_frames > 2,
-        "the chain holds while each staged swing plays (saw {swing_frames} in-flight frames)"
+        "the staged swings play across the band (saw {swing_frames} in-flight frames)"
     );
     assert!(
         swing_pose_moved,
         "the pose during the swing window differs from the idle rest pose"
     );
 
-    // After the band: staged marker gone, gate open, ids converged to idle.
+    // Leaving the band stages idle OVER the last swing (`sb zero,0x1da` at
+    // `0x801E3B04`); the commit waits for that clip's own boundary, so tick
+    // it out first.
+    assert_eq!(world.actors[0].battle.queued_anim, 0, "idle staged");
+    assert!(
+        world.actors[0].battle_staged_anim.is_some(),
+        "the last swing still plays under the staged idle"
+    );
+    for _ in 0..5000 {
+        world.tick_battle_animations();
+        if world.actors[0].battle_staged_anim.is_none() {
+            break;
+        }
+    }
+    // After the last clip: staged marker gone, gate open, ids converged to idle.
     let a = &world.actors[0];
     assert!(a.battle_staged_anim.is_none());
     assert!(!a.battle.flag_bits.has(ActorFlags::ADVANCE_DONE));

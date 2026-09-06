@@ -55,6 +55,61 @@ impl World {
         self.art_records.insert((character, action), record);
     }
 
+    /// Install a character's art records **from its art-animation bank** -
+    /// the per-character player file's `record[0] +0x58` records
+    /// ([`legaia_asset::battle_char_assembly::art_animation_bank`]), which
+    /// are the records the retail queue-builder walks: record `k` is action
+    /// constant `0x10 + k`, its `+0x00` combo is the arrow string the
+    /// tokenizer matches (`FUN_801EED1C` `0x801EF3BC..0x801EF3EC`) and its
+    /// embedded entry carries the power run the hit-event driver resolves
+    /// from. Only the named art records (`0x1B+`) are installed; the base
+    /// ids below carry no combo. The side data retail's kernel never reads
+    /// (status effect, per-hit cues) stays at its defaults - a host with a
+    /// richer source can overwrite through [`World::set_art_record`].
+    ///
+    /// Both hosts call this at battle entry, next to the bank's clip
+    /// install, so the live arts input tokenizes real arts.
+    pub fn install_art_bank_records(
+        &mut self,
+        character: legaia_art::Character,
+        records: &[legaia_asset::battle_char_assembly::ArtAnimRecord],
+    ) {
+        use legaia_art::{ActionConstant, Command};
+        for rec in records {
+            let Some(action) = ActionConstant::from_byte(rec.anim_id).filter(|a| a.is_art()) else {
+                continue;
+            };
+            let commands: Vec<Command> = rec
+                .combo
+                .iter()
+                .filter_map(|&b| Command::from_byte(b))
+                .collect();
+            let power = if rec.entry_tag == 0 {
+                Vec::new()
+            } else {
+                vec![legaia_art::power::PowerByte::from_byte(rec.entry_tag)]
+            };
+            let record = legaia_art::ArtRecord {
+                action,
+                commands,
+                anim_index: rec.index as u8,
+                anim_extra: Vec::new(),
+                name: (!rec.name.is_empty()).then(|| rec.name.clone()),
+                power,
+                dmg_timing: Vec::new(),
+                effect_cues: Default::default(),
+                hit_cues: Vec::new(),
+                identifier: 0,
+                anim_speed: rec.rate,
+                enemy_effect: legaia_art::EnemyEffect::None,
+                repeat_frames: Default::default(),
+                background: 0,
+                runtime_address: None,
+            };
+            self.art_records.insert((character, action), record);
+        }
+    }
+
     /// Bulk-install art records (see [`World::set_art_record`]). Existing
     /// entries for the same key are replaced.
     pub fn set_art_records(
@@ -114,6 +169,7 @@ impl World {
                     .find(|a| a.is_art());
                     return ArtRow {
                         name: c.name.clone(),
+                        sequence: c.sequence.clone(),
                         power,
                         enemy_effect,
                         miracle: Some(miracle.name),
@@ -143,6 +199,7 @@ impl World {
                         .find(|a| a.is_art());
                     return ArtRow {
                         name: c.name.clone(),
+                        sequence: c.sequence.clone(),
                         power,
                         enemy_effect,
                         miracle: None,
@@ -161,6 +218,7 @@ impl World {
                         let (power, enemy_effect) = power_from_record(rec);
                         ArtRow {
                             name: c.name.clone(),
+                            sequence: c.sequence.clone(),
                             power,
                             enemy_effect,
                             miracle: None,
@@ -171,6 +229,7 @@ impl World {
                     }
                     None => ArtRow {
                         name: c.name.clone(),
+                        sequence: c.sequence.clone(),
                         power: synthetic_power(&c.sequence),
                         enemy_effect: legaia_art::EnemyEffect::None,
                         miracle: None,

@@ -109,34 +109,25 @@ impl World {
                 // A confused caster's spell lands on the opposite side.
                 self.confuse_retarget_cast(slot, &mut targets);
                 let def = self.spell_catalog.get(spell_id).cloned();
-                if let Some(def) = def {
-                    // Mark where this cast's damage popups start, so the
-                    // status applier below can tell which targets the move
-                    // actually reached impact on (see
-                    // [`Self::apply_enemy_move_status`]).
-                    let hit_fx_start = self.battle_hit_fx.len();
-                    if self.cast_spell_on_slots(slot, &def, &targets) {
-                        self.apply_enemy_move_status(slot, def.id, hit_fx_start);
-                        self.apply_enemy_agl_status(slot, def.id, &targets);
-                        self.battle_ctx.action_state = ActionState::EndOfAction.as_byte();
-                        // NOT cycled here: take_monster_turn is itself called
-                        // from `cycle_battle_turn`'s re-arm. But the SM's
-                        // 0x5A self-advance WILL re-seed this actor's staged
-                        // action on the next tick, and a category-2 re-seed
-                        // runs the magic band's `MagicCastBegin` - a second
-                        // MP debit. Neutralise the category (0 seeds the
-                        // inert TacticalArts arm); the staged spell id in
-                        // `params[0]` is left in place - it is the observable
-                        // the AI-pick oracles read, and the cat-0 arm never
-                        // consumes it.
-                        if let Some(a) = self.actors.get_mut(slot as usize) {
-                            a.battle.action_category = 0;
-                        }
-                        return;
-                    }
+                let mp = self
+                    .actors
+                    .get(slot as usize)
+                    .map(|a| a.battle.mp)
+                    .unwrap_or(0);
+                if let Some(def) = def
+                    && mp >= u16::from(def.mp_cost)
+                {
+                    // The cast is the action SM's Magic band, as in retail:
+                    // `0x28` faces the target, raises the monster-only
+                    // spell-name label and debits the MP, `0x29` waits and
+                    // stages the cast clip, and the outcome folds the frame
+                    // the band leaves `0x29` (`World::settle_cast_band`) -
+                    // the impact-status and AGL procs ride the same fold.
+                    self.arm_monster_cast(slot, &def, targets);
+                    return;
                 }
-                // Cast didn't fold (no catalog entry / unaffordable after the
-                // pick) - fall through to a physical strike.
+                // No catalog entry / unaffordable after the pick - fall
+                // through to a physical strike.
                 self.arm_monster_physical(slot);
             }
             MonsterAction::Physical { target } => {
@@ -240,6 +231,11 @@ impl World {
             if let Some(a) = self.actors.get_mut(target as usize) {
                 a.pending_status = Some(legaia_art::record::EnemyEffect::from_byte(selector));
             }
+            // The same three stores are the impact-tint triple
+            // (`0x801E15AC..0x801E15EC`: `+0x21F = sel`, `+0x04 =
+            // 0x801F53D4[sel - 1]`, `+0x0C = 0x1000`) - Tail Fire's red
+            // Vahn in the `battle_gimard_tail_fire_a` capture.
+            self.arm_impact_tint(target as usize, selector);
             let target_is_party = target < party_count;
             let ability_bits = if target_is_party {
                 self.character_ability_bits
@@ -491,9 +487,16 @@ impl World {
         let target = self.first_living_opponent_of(slot).unwrap_or(slot);
         self.battle_ctx.queued_action = 3;
         self.battle_ctx.action_state = ActionState::Begin.as_byte();
+        let picks = std::mem::take(&mut self.monster_strike_entries);
         if let Some(a) = self.actors.get_mut(slot as usize) {
             a.battle.active_target = target;
             a.battle.action_category = 3;
+            // The picked attack entries into the stream (retail: the AI
+            // picker's physical branch writes its picks to `+0x1DF..`), the
+            // `0x00` terminator kept inside the window.
+            let n = picks.len().min(a.battle.params.len().saturating_sub(1));
+            a.battle.params[..n].copy_from_slice(&picks[..n]);
+            a.battle.params[n] = 0;
         }
         self.maybe_confuse_retarget(slot);
     }
@@ -514,13 +517,14 @@ impl World {
     ///
     /// PORT: FUN_801E9FD4
     pub(in crate::world) fn arm_monster_strike_budget(&mut self, slot: u8) {
-        let (catalog_agl, costs) = self
+        let (catalog_agl, costs, entries) = self
             .actors
             .get(slot as usize)
             .and_then(|a| a.battle_monster_id)
             .and_then(|id| self.monster_catalog.get(id))
-            .map(|d| (d.agl, d.action_costs.clone()))
-            .unwrap_or((0, Vec::new()));
+            .map(|d| (d.agl, d.action_costs.clone(), d.action_entries.clone()))
+            .unwrap_or((0, Vec::new(), Vec::new()));
+        self.monster_strike_entries.clear();
         // The gauge retail spends is the actor's **live** `+0x154`, which the
         // round boundary (`BattleRound::boundary`, the port of `FUN_801D88CC`)
         // restores from `+0x156` once per round. A slot whose base `+0x156` was
@@ -553,6 +557,16 @@ impl World {
                     a.battle.agl = a.battle.agl.saturating_sub(spent);
                 }
             }
+            // The picks themselves, as archive entry indices: retail's
+            // picker writes them into the monster's action stream, and the
+            // attack band stages each one as its own clip (the hit events
+            // of that entry are the swing's damage). Without the aligned
+            // entry list (the synthetic catalog) the stream stays empty and
+            // the budget count drives immediate swings instead.
+            self.monster_strike_entries = stream
+                .iter()
+                .filter_map(|&pick| entries.get(pick as usize).copied())
+                .collect();
             (stream.len() as u8).max(1)
         } else {
             1

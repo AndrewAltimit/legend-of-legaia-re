@@ -54,6 +54,12 @@ use legaia_asset::move_power::{
 pub const BATTLE_ACTION_OVERLAY_PROT_ENTRY: u32 =
     move_power::BATTLE_ACTION_OVERLAY_PROT_INDEX as u32;
 
+/// The party melee / arts routine's bound on the action record's `+0x7A`
+/// impact class: `FUN_801EC3E4` stamps the impact-tint triple only for
+/// `0 < class < 6` (`sltiu v0,v0,0x6` at `0x801EE3E0`) - one past the
+/// 5-entry `0x801F53D4` table's length. See `World::arm_impact_tint`.
+pub const IMPACT_CLASS_LIMIT: u8 = IMPACT_EFFECT_TABLE_LEN as u8 + 1;
+
 /// The parsed move-power table + its id → index map, ready for id lookups.
 #[derive(Debug, Clone)]
 pub struct MovePowerCatalog {

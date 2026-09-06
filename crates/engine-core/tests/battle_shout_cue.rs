@@ -21,11 +21,14 @@ use legaia_engine_core::input::{InputState, PadButton};
 use legaia_engine_core::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
 use legaia_engine_core::world::{Actor, SceneMode, World};
 
+/// Vahn's Somersault (`0x27`) with its real `↑↓↑` command - the queue-builder
+/// is byte-exact, so the entry has to be typed the way retail types it.
 fn stage_somersault(w: &mut World) {
+    use legaia_art::Command::{Down, Up};
     let action = legaia_art::ActionConstant::from_byte(0x27).unwrap();
     let rec = legaia_art::ArtRecord {
         action,
-        commands: vec![legaia_art::Command::Up],
+        commands: vec![Up, Down, Up],
         anim_index: 0,
         anim_extra: vec![],
         name: None,
@@ -49,6 +52,9 @@ fn build_world(with_record: bool) -> World {
         w.actors.push(Actor::default());
     }
     w.party_count = 3;
+    // The zeroed records seed HP 0 / no seat, so they go in FIRST: retail's
+    // member walk (`FUN_801DB81C`) hands no ring to a member with no HP.
+    w.load_party(legaia_save::Party::zeroed(3));
     for i in 0..3 {
         w.actors[i].active = true;
         w.actors[i].battle.hp = 100;
@@ -56,7 +62,6 @@ fn build_world(with_record: bool) -> World {
         w.actors[i].battle.liveness = 1;
         w.set_battle_attack(i as u8, 90);
     }
-    w.load_party(legaia_save::Party::zeroed(3));
     w.set_formation_table(vanilla_formation_table(), vanilla_monster_catalog());
     if with_record {
         stage_somersault(&mut w);
@@ -205,8 +210,12 @@ fn drive_arts_entry_and_collect_shouts(
 #[test]
 fn matched_art_emits_one_shout_cue_with_its_action_constant() {
     let mut w = build_world(true);
-    // One Up press = Somersault's whole command string.
-    let shouts = drive_arts_entry_and_collect_shouts(&mut w, &[PadButton::Up]);
+    // Up Down Up = Somersault's whole command string (three presses is also
+    // the disc-free pool's own end: 100 AP at the favored-class cost 0x1E).
+    let shouts = drive_arts_entry_and_collect_shouts(
+        &mut w,
+        &[PadButton::Up, PadButton::Down, PadButton::Up],
+    );
     assert_eq!(shouts.len(), 1, "one cue per executed art: {shouts:?}");
     assert_eq!(shouts[0].cslot, 0, "Vahn = character slot 0 (XA2 bank)");
     assert_eq!(shouts[0].action, 0x27, "the matched record's constant");
@@ -226,15 +235,17 @@ fn synthetic_art_without_record_emits_no_shout_cue() {
 /// keying the cue off the entry instead of off the art silently mutes every
 /// art after the first.
 ///
-/// Three presses is also the pool's own end: at the disc-free fallback pool
-/// (100 AP) and the favored-class press cost (0x1E), the third press leaves
-/// nothing affordable and the entry auto-ends, so this walks retail's
+/// Nine presses (three `↑↓↑`) is also the pool's own end: at the disc-free
+/// fallback pool (100 AP) with the swing costs seeded at 11, the ninth press
+/// leaves nothing affordable and the entry auto-ends, so this walks retail's
 /// no-confirm path end to end.
 #[test]
 fn every_art_in_a_multi_art_entry_gets_its_own_shout_cue() {
+    use PadButton::{Down, Up};
     let mut w = build_world(true);
+    w.battle_swing_costs[0] = [11; 4];
     let shouts =
-        drive_arts_entry_and_collect_shouts(&mut w, &[PadButton::Up, PadButton::Up, PadButton::Up]);
+        drive_arts_entry_and_collect_shouts(&mut w, &[Up, Down, Up, Up, Down, Up, Up, Down, Up]);
     assert_eq!(
         shouts.len(),
         3,

@@ -337,9 +337,27 @@ impl ActorFlags {
 /// Field naming uses the byte-offset convention from `docs/subsystems/battle-action.md`
 /// to keep the link to the decompilation explicit. Engines free to back this
 /// with whatever data structure makes sense - the state machine mutates this
+/// The value the strike cursor `ctx[+0x15]` is parked at once the band has
+/// left the loop (`li v0,0xff ; sb v0,0x4(s5)` at `0x801E3B14..0x801E3B1C`).
+/// The damage kernel reads it to tell a mid-chain hit (accumulate only) from
+/// a hit of the action's last clip (apply the accumulated total) -
+/// `0x801EE9A4`.
+pub const STRIKE_CURSOR_PARKED: u8 = 0xFF;
+
 /// struct directly and dispatches side effects through [`BattleActionHost`].
 #[derive(Debug, Clone, Default)]
 pub struct BattleActor {
+    /// `+0x00` - the **combo damage accumulator**. The damage kernel
+    /// `FUN_801EC3E4` adds every landed hit's damage here (`0x801EDB40`,
+    /// beside the HP-bar seed at `+0x10`) and leaves live HP alone; the
+    /// hit that lands once the action SM has left the strike loop (the
+    /// cursor `ctx[+0x15]` reads `0xFF`, `0x801EE9A4`) and is its clip's
+    /// last listed hit subtracts the whole accumulator from `+0x14C` in one
+    /// write (`0x801EEA10..0x801EEA3C`) and zeroes it (`0x801EEA74`). The
+    /// TOTAL counter the HUD draws is this word. Retail's tail also tests
+    /// it against live HP to decide whether the target is "still standing"
+    /// for the flinch staging (`0x801EC5CC`, `0x801EEC18`).
+    pub damage_accum: u32,
     /// `+0x14C` - liveness flag (non-zero = alive). Read by every state's
     /// "is target valid" check.
     pub liveness: u16,
@@ -505,19 +523,17 @@ pub struct BattleActor {
     pub strike_index: u8,
     /// `+0x16` - combo bit (cleared by `AttackShortStep` when in range).
     pub combo_bit: u8,
-    /// `+0x1F4` - arms input cursor. `FUN_801EC3E4` uses it both to index the
-    /// caller's command record and as a head guard (`< 4`).
-    ///
-    /// It is retail's **per-art hit index**, and it is not the same counter as
-    /// [`Self::strike_index`]. `FUN_801EC3E4` reads it at `0x801EC45C`, bounds
-    /// it with `sltiu v0,v1,0x4` at `0x801EC480`, fetches exactly one power
-    /// byte at that offset, and advances it once in the epilogue
-    /// (`0x801EECDC..0x801EECE8`). Its caller is the **animation** tick
-    /// `FUN_80047430` (`0x800478A0`, `0x80047BF0`) - one call per hit event in
-    /// the staged clip - so a single staged art constant walks its whole power
-    /// list without the stream cursor moving. See
-    /// `docs/subsystems/battle-action.md` § A Tactical Art is an ordinary
-    /// attack-band action for what the port does instead.
+    /// `+0x1F4` - the **per-clip hit index**. `FUN_801EC3E4` reads it at
+    /// `0x801EC45C`, bounds it with `sltiu v0,v1,0x4` at `0x801EC480`, uses
+    /// it to pick the committed entry's event frame (`entry[0x10 + idx]`)
+    /// and power byte (`entry[idx]`), and advances it once in the epilogue
+    /// (`0x801EECDC..0x801EECE8`) of every resolved call. Its caller is the
+    /// **animation** tick `FUN_80047430` (`0x800478A0`, `0x80047BF0`), every
+    /// frame a battle clip plays, and every clip commit zeroes it
+    /// (`FUN_8004AD80`, `0x8004B064`) - so a single staged byte walks its
+    /// clip's whole hit list without the stream cursor
+    /// ([`Self::strike_index`]) moving. Kernel:
+    /// [`crate::battle_action::hit_event_admits`].
     pub input_cursor: u8,
     /// `+0x158` - ATK **working** (the attacker's offense the damage routine
     /// reads; `+0x15A` is the base a buff restores to). The Arms execution
@@ -573,31 +589,13 @@ pub struct BattleActor {
     /// `1`, `2` and `7`, and the byte the cast-cue dispatcher's class-`7` arm
     /// gates on.
     pub cast_sub_class: u8,
-    /// Chosen Tactical Art for this turn. When `Some`, the strike-band
-    /// states call `BattleActionHost::art_record(character, action)` to
-    /// fetch power bytes / hit timings / status effect. `None` falls
-    /// back to generic-attack defaults. Set by the engine when the
-    /// command queue resolves to an art (via `resolve_action_queue`).
+    /// **Port-side fallback, no retail offset.** The art a host that stages
+    /// plain dynamic-slot ids (`0x10` / `0x11`) rather than art constants
+    /// means by them. Retail identifies the art from the staged byte itself
+    /// (the anim commit latches it into `+0x1DB`), and so does the engine's
+    /// hit-event driver ([`crate::battle_action::staged_art_constant`]);
+    /// this is consulted only when the latched id is not an art constant.
     pub chosen_art: Option<legaia_art::ActionConstant>,
-    /// **Port-side carrier, no retail offset.** The per-strike power profile
-    /// the acting party member's Tactical-Arts entry resolved to, staged
-    /// beside [`Self::params`] and read by the same [`Self::strike_index`]
-    /// cursor.
-    ///
-    /// Retail needs no such array: the strike loop stages an art constant and
-    /// the damage resolver reads that art's record. The port's entry resolver
-    /// (`engine-core`'s `resolve_arts_input_entry`) has already folded three
-    /// things the record alone cannot answer - a Miracle / Super finisher's
-    /// replacement queue, an unmatched direction's synthetic plain swing, and
-    /// the tier-0 degradation for an art whose record is not loaded - so the
-    /// profile it produced is the authority for the turn and this is where it
-    /// travels with the action. A slot with `None` here falls back to the art
-    /// record's own `power[strike_index]`, which is the pre-carrier behaviour.
-    pub art_power: [Option<legaia_art::PowerByte>; ACTION_PARAM_BYTES],
-    /// Sibling of [`Self::art_power`]: the status effect the staged entry
-    /// applies on a landing hit. [`legaia_art::EnemyEffect::None`] defers to
-    /// the art record's own `enemy_effect`.
-    pub art_enemy_effect: legaia_art::EnemyEffect,
     /// Which playable character occupies this slot. Used as the lookup
     /// key into the per-character art tables. Defaults to Vahn - engines
     /// must set this for the correct slot before the strike runs.
@@ -616,34 +614,14 @@ impl BattleActor {
         self.params.get(idx).copied().unwrap_or(0xFF)
     }
 
-    /// Drop the staged Tactical-Arts profile ([`Self::art_power`] /
-    /// [`Self::art_enemy_effect`] / [`Self::chosen_art`]).
+    /// Drop the staged Tactical-Arts fallback ([`Self::chosen_art`]).
     ///
     /// Called wherever the action-parameter stream itself is cleared: a
-    /// profile that outlived its stream would re-key the *next* action's
+    /// fallback that outlived its stream would re-key the *next* action's
     /// strikes to the previous turn's art, which is the same carried-over-byte
     /// class of defect the stream clear exists to prevent.
     pub fn clear_art_profile(&mut self) {
-        self.art_power = [None; ACTION_PARAM_BYTES];
-        self.art_enemy_effect = legaia_art::EnemyEffect::None;
         self.chosen_art = None;
-    }
-
-    /// Stage a Tactical-Arts turn's per-strike profile: `power[i]` is the
-    /// power byte the `i`-th staged stream byte resolves damage from. Longer
-    /// lists are truncated to [`ACTION_PARAM_BYTES`].
-    pub fn stage_art_profile(
-        &mut self,
-        art: Option<legaia_art::ActionConstant>,
-        power: &[legaia_art::PowerByte],
-        enemy_effect: legaia_art::EnemyEffect,
-    ) {
-        self.art_power = [None; ACTION_PARAM_BYTES];
-        for (slot, pb) in self.art_power.iter_mut().zip(power.iter()) {
-            *slot = Some(*pb);
-        }
-        self.art_enemy_effect = enemy_effect;
-        self.chosen_art = art;
     }
 
     /// Seed the HP-bar accumulator the way a landed hit does

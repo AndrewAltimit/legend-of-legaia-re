@@ -482,6 +482,112 @@ pub fn walk_partition_gflag_sites(
     out
 }
 
+/// A system flag a field-VM record **SETs on its way into a scripted battle**:
+/// a `0x5x SET` followed, within [`BATTLE_ENTRY_ARM_WINDOW`] coherently
+/// decoded instructions, by the `3E FF <row>` battle-entry op that hands
+/// formation-table row `row` to the entity SM
+/// (`World::trigger_scripted_battle`).
+///
+/// This is the shape of retail's one-shot sparring-tutorial arm: town01's
+/// Tetsu record reads `50 19 · 50 00 · 52 3C · 3E FF 04`, so the flag `0x19`
+/// the entity SM's battle-entry tail tests (`FUN_801DA51C`,
+/// `0x801DA698`) is raised by the very record that enters formation row `4`.
+/// The pairing is what a direct entry into that row (`--battle 4`, which runs
+/// the entry without the record) needs to replay
+/// (`World::replay_scripted_battle_arm`).
+///
+/// The forward re-walk is the coherence test, not [`GFlagSite::clean`]: the
+/// SET sits a few ops past the record's dialogue bytes, where the linear
+/// walk is still resynchronising, so the clean bit is structurally `false`
+/// there - but a phantom SET inside text is not followed by a decodable
+/// `3E FF` within a handful of instructions, and a real one is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BattleEntryArm {
+    /// Partition the carrying record lives in (`0..3`).
+    pub partition: usize,
+    /// Record index within the partition.
+    pub record: usize,
+    /// Absolute byte offset of the SET opcode in the MAN buffer.
+    pub abs_pc: usize,
+    /// The `u16` system flag the SET raises.
+    pub flag: u16,
+    /// The formation-table row the following `3E FF <row>` enters.
+    pub row: u8,
+}
+
+/// How many coherently decoded instructions past a system-flag SET the
+/// `3E FF` battle-entry op may sit for the SET to count as a
+/// [`BattleEntryArm`]. Town01's arm has two SETs between the `0x19` write
+/// and the entry op; the window leaves one to spare.
+pub const BATTLE_ENTRY_ARM_WINDOW: usize = 4;
+
+/// Every [`BattleEntryArm`] in `man`, across all three partitions.
+///
+/// Each partition's records are walked as field-VM scripts; at every system
+/// SET a fresh walk from the instruction after it decodes up to
+/// [`BATTLE_ENTRY_ARM_WINDOW`] instructions and stops at the first decode
+/// error. A `3E` with `op0 == 0xFF` in that run (the scripted-battle form -
+/// the door-warp form `op0 >= 100` is not an entry) pairs the SET with the
+/// op's row operand.
+pub fn walk_battle_entry_arms(man_file: &ManFile, man: &[u8]) -> Vec<BattleEntryArm> {
+    let mut out = Vec::new();
+    for partition in 0..3 {
+        let count = man_file
+            .header
+            .partition_counts
+            .get(partition)
+            .copied()
+            .unwrap_or(0)
+            .max(0) as usize;
+        for index in 0..count {
+            let Some((script_start, pc0, body_len)) =
+                partition_record_span(man_file, man, partition, index)
+            else {
+                continue;
+            };
+            let body = &man[script_start..script_start + body_len];
+            for insn in LinearWalker::new(body, pc0).flatten() {
+                let InsnInfo::SystemFlag {
+                    kind: FlagKind::Set,
+                    idx,
+                    ..
+                } = insn.info
+                else {
+                    continue;
+                };
+                let Some(row) = battle_entry_row_after(body, insn.pc + insn.size) else {
+                    continue;
+                };
+                out.push(BattleEntryArm {
+                    partition,
+                    record: index,
+                    abs_pc: script_start + insn.pc,
+                    flag: idx,
+                    row,
+                });
+            }
+        }
+    }
+    out
+}
+
+/// The row operand of a scripted-battle `3E FF <row>` reached within
+/// [`BATTLE_ENTRY_ARM_WINDOW`] coherently decoded instructions from `pc`, or
+/// `None` when the run ends (a decode error, the body end) first.
+fn battle_entry_row_after(body: &[u8], pc: usize) -> Option<u8> {
+    LinearWalker::new(body, pc)
+        .take(BATTLE_ENTRY_ARM_WINDOW)
+        .map_while(Result::ok)
+        .find_map(|insn| match insn.info {
+            InsnInfo::WarpOrInteract {
+                op0: 0xFF,
+                op1,
+                is_warp: false,
+            } => Some(op1),
+            _ => None,
+        })
+}
+
 /// One walkable MAN payload resolved for a scene - either the scene's
 /// asset-table **bundle** MAN (what [`Scene::field_man_payload`] returns) or
 /// a **variant** MAN carried as a type-3 chunk of a standalone DATA_FIELD

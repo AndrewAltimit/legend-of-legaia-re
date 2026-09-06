@@ -84,6 +84,32 @@ impl World {
         // install_field_carriers cleared the slot map; repopulate for this set.
         self.field_carrier_slots = carrier_slots;
 
+        // The system flags this scene's own records SET on their way into a
+        // `3E FF <row>` scripted battle entry - the disc-side half of a
+        // direct entry into that row replaying the record's arm
+        // (`World::replay_scripted_battle_arm`). Keyed on the SET -> entry-op
+        // pairing rather than the census's `clean` bit: town01's `50 19` sits
+        // just past the record's dialogue bytes, where the linear walk is
+        // still resynchronising and the clean bit is structurally false.
+        self.scene_battle_entry_arms =
+            crate::man_field_scripts::walk_battle_entry_arms(man_file, man);
+        if !self.scene_battle_entry_arms.is_empty() {
+            let arms: Vec<String> = self
+                .scene_battle_entry_arms
+                .iter()
+                .map(|a| {
+                    format!(
+                        "P{}[{}] flag 0x{:03X} -> row {}",
+                        a.partition, a.record, a.flag, a.row
+                    )
+                })
+                .collect();
+            log::info!(
+                "field: scripted battle-entry arm(s) in this scene's script: {}",
+                arms.join(", ")
+            );
+        }
+
         // Capture each actor's inline interaction-script dialogue, keyed by its
         // partition-1 record index (= the `slot` a field-interact op carries),
         // so `field_interact` can open the interacted actor's real dialogue.

@@ -3,11 +3,21 @@
 //!
 //! PORT: FUN_8004DA00
 //!
-//! NOT WIRED: no consumer yet. The engine's battle scene host does not run a
-//! per-frame voice pass, so nothing calls [`battle_voice_step`]. What it
-//! wants is the live battle context's four bytes plus the acting actor's
-//! action pair, which live in `legaia-engine-core`'s battle state; wiring is a
-//! call site there, not a change here.
+//! NOT WIRED: the device half is not modelled. The starter this hands its
+//! clip to, `FUN_8003EAE4`, cancels any in-flight read, positions the drive
+//! on the clip file (`FUN_8005C160(2, slot, ..)` = `CdlSetloc` shape) and
+//! issues CD command `0x15` (`li a0,0x15; jal 0x8005C034` at `0x8003EB68`,
+//! `CdlSeekL`), then raises `gp+0x908` / `gp+0x910` and stores the slot at
+//! `gp+0x890` - driver flags whose consumer (the CD-callback state machine
+//! that would chain a `CdlReadS` once the seek lands) is not traced. So the
+//! stream this arms is a drive-side sequence: a seek, then whatever the
+//! driver does with those flags. The engine has no drive to seek and no
+//! driver to poll them; its clips are pre-decoded
+//! (`legaia_engine_audio::XaClipBank`) and start after a modelled response
+//! delay. The prerequisite for wiring it honestly is that driver's read chain
+//! (`gp+0x908` / `gp+0x910` readers) and the clip it streams - a whole
+//! `XA<n>` channel from the file start, not the cut one-shot the melee kernel's
+//! `FUN_8003D53C` requests take. Grade: `inference` on what the flags start.
 //!
 //! Retail reaches this pass through a **static actor template**
 //! (`docs/reference/functions/runtime-libs.md`), not a call: the battle
@@ -17,9 +27,8 @@
 //! battle. That is why no `jal` in any image targets `0x8004DA00`; its single
 //! reference on the disc is the template word.
 //!
-//! REF: FUN_8003EAE4 - the whole-clip stream starter this hands the chosen
-//! clip id to. The engine equivalent is the host's XA clip player; this module
-//! is device-free and only decides.
+//! REF: FUN_8003EAE4 - the drive seek + driver-flag arm this hands the chosen
+//! clip id to. This module is device-free and only decides.
 //!
 //! REF: FUN_800513F0 - the battle scene loader that spawns the template.
 //!

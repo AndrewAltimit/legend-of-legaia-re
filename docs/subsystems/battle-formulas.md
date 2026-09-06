@@ -401,15 +401,18 @@ The stages, each cited to `overlay_battle_action_801ec3e4.txt` /
 the attack roll down (the party-defender elemental-guard ladder at
 `0x801ED844` is [`damage_finish`](#engine-side-mirror---engine-vmbattle_formulas)'s
 resist stage and stays there), and `battle_formulas::arms_weapon_atk_fold`
-ports the equipment fold. `World::apply_basic_attack` runs every physical
-swing - party and monster - through both: the attacker's `battle_attack` is the
-un-equipped base (`seed_party_battle_stats` subtracts the equipment sum the
-menu aggregator adds) and `apply_one_basic_strike` adds the halved slot for the
-command it executes from `World::battle_equip_atk`; the state-machine art path
-(`apply_art_strike`) adds the `0x11` all-slots arm. RNG draws follow retail
+ports the equipment fold. `World::land_melee_hit` runs every physical
+hit - party and monster, swing and art - through both, once per hit event the
+anim tick admits: the attacker's `battle_attack` is the un-equipped base
+(`seed_party_battle_stats` subtracts the equipment sum the menu aggregator
+adds) and the fold adds the halved slot for the committed command from
+`World::battle_equip_atk` (a committed art clip, `+0x1D9 > 0x10`, takes the
+`0x11` all-slots arm). RNG draws follow retail
 call order: attack roll, guard roll, then the rewrite draw and the chip-floor
-draw only when those arms fire. The `--damage-finish` gate adds only the
-finisher's *post* stages on top (equipment resists); it supplies no guard
+draw only when those arms fire. The finisher's *post* stages (equipment
+resists, the zeroed-hit floor, the cap) run on top by default - retail's
+`FUN_801ddb30` always follows the melee roll - and `--no-damage-finish` keeps
+the flat pre-finisher path for comparison; the finisher supplies no guard
 halve, because the melee kernel already charges the Spirit stance as the
 guard-roll triple. Regressions: `engine-vm/tests/battle_physical_predamage.rs`
 (hand-checked stage arithmetic) and
@@ -541,10 +544,10 @@ The bounded, state-free arithmetic of stages 1 + 2 ports to pure kernels for
 instructions) splits: its **closed-form finalisation arithmetic** now ports too -
 `battle_formulas::damage_finish` (the six damage-rewrite stages above) and
 `spirit_gauge_fill` (the gauge accrual), both with hand-checked unit tests. The
-engine can route the live basic-attack damage through `damage_finish` behind the
-`World::use_damage_finish` gate (the `--damage-finish` play-window flag): the raw
-roll feeds the finisher so the 9999 cap and the `rand()%9+8` no-damage floor
-apply. The **defender resist inputs are live**: `World::defender_resist` reads
+engine routes the live basic-attack damage through `damage_finish` by default
+(`World::use_damage_finish`; the `--no-damage-finish` play-window flag keeps
+the flat path): the raw roll feeds the finisher so the 9999 cap and the
+`rand()%9+8` no-damage floor apply. The **defender resist inputs are live**: `World::defender_resist` reads
 the two resist words off the occupying character's rebuilt ability bitfield
 (`refresh_party_ability_bits`), so an equipped elemental-guard accessory halves
 a matching-element monster special, All Guard applies the 3/4 scale, and the AP
