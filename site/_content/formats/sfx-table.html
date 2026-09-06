@@ -143,7 +143,8 @@
     <div class="disclosure-body">
 <pre><code>id &lt;  0x200:  desc = table + id*8                       ; this page
 id &gt;= 0x200:  desc = bundle + offsets[0] + (id - 0x200)*8 ; current sound bundle, record 0</code></pre>
-      <p>Both readers resolve the high arm through the sound subsystem's current-bundle pointer. At init that is <code>bse.dat</code> (<a href="sound-driver.html">sound-driver formats</a>); the field loader repoints it at the scene's prescript bundle on every field load, so in the field the high bank is the <strong>scene's own record 0</strong>, sized per scene (jou reserves 96 rows and fills 40; rugi carries 21).</p>
+      <p>Both readers resolve the high arm through the sound subsystem's current-bundle pointer, and it has two occupants. In the field the loader repoints it at the scene's prescript bundle on every scene load, so the high bank is the <strong>scene's own record 0</strong>, sized per scene (jou reserves 96 rows and fills 40; rugi carries 21). In battle it is <code>bse.dat</code> (<a href="sound-driver.html">sound-driver formats</a>) - loaded at <strong>battle-scene setup</strong>, not at boot: its one caller anywhere on the disc is inside battle init <code>FUN_800513F0</code>. This page previously said "at init".</p>
+      <p>One column is not static in battle. Before enqueueing a cue the battle cue router <code>FUN_8004FE5C</code> overwrites byte <code>+4</code> (<code>id</code>, the category) of <code>record[cue_id - 0x200]</code> from a per-actor byte, reaching the bank through its own saved pointer <code>gp+0x678</code> rather than through the current-bundle slot. So a live cue's VAB slot is chosen by the actor that fired it, and the authored category is a default.</p>
     </div>
   </details>
   <details class="disclosure">

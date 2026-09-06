@@ -4,7 +4,8 @@ Every actor / battle sound effect is keyed to an 8-byte descriptor in a static
 `SCUS_942.54` rodata table at `DAT_8006F198`. The descriptor tells the sound
 system which VAB program + tone to play, how many SPU voices to fan the cue
 across, and which mixer channel it belongs to. Ids `>= 0x200` come from a
-**per-scene** extension of the same table instead -
+**runtime** extension of the same table instead - a per-scene bank in the field,
+`bse.dat` in battle -
 [below](#ids--0x200-come-from-the-current-bundles-record-0).
 
 ## Table base + record layout
@@ -53,15 +54,28 @@ designer's `"setbl p:%d t:%d l:%d n:%d id:%d"` line off `+0..+4`. The row layout
 is therefore the layout above, and the disc bears it out.
 
 **Which** bundle sits in that slot is the whole content of the claim. It is
-whatever loaded last: `FUN_8001FA88` puts `bse.dat` there at init, and the field
-asset loader repoints it at the scene's prescript bundle on every field load
-(`FUN_8001F7C0` `0x8001F864`). So in field mode the `>= 0x200` bank is the
-**scene's own prescript record 0**, sized and authored per scene - jou reserves
-96 rows and populates 40, `rugi` carries 21 - and it is neither `bse.dat` nor a
-`.dpk` / `monster.snd`. Full treatment, including why record 0 must not be
-spawned as a move-VM stager, in
-[`field-ambient-fx.md`](../subsystems/field-ambient-fx.md#the-master-ambient-record-0---the-per-scene-sfx-descriptor-bank);
-the init-time occupant of the slot in [`bse-dat.md`](bse-dat.md).
+whatever loaded last, and there are two occupants:
+
+- **Field** - the field asset loader repoints the slot at the scene's prescript
+  bundle on every field load (`FUN_8001F7C0` `0x8001F864`), so the `>= 0x200`
+  bank is the **scene's own prescript record 0**, sized and authored per scene -
+  jou reserves 96 rows and populates 40, `rugi` carries 21 - and it is neither
+  `bse.dat` nor a `.dpk` / `monster.snd`. Full treatment, including why record 0
+  must not be spawned as a move-VM stager, in
+  [`field-ambient-fx.md`](../subsystems/field-ambient-fx.md#the-master-ambient-record-0---the-per-scene-sfx-descriptor-bank).
+- **Battle** - `FUN_8001FA88` puts `bse.dat` there. Not at boot: its single
+  caller on the whole disc is `0x80051A3C` inside battle init `FUN_800513F0`, so
+  the bank loads at **battle-scene setup** and reloads per battle. This page
+  previously said "at init"; that rested on the routine's shape, not on its
+  caller. [`bse-dat.md`](bse-dat.md).
+
+One row column is not static in battle. Before enqueueing a cue, the battle cue
+router `FUN_8004FE5C` overwrites byte `+4` (`id`, the category) of
+`record[cue_id - 0x200]` from a per-actor byte, reaching the bank through
+`gp+0x678` - the record-table pointer `FUN_8001FA88` saved at load - rather than
+through `_DAT_8007B8D0`. So a live cue's VAB slot is chosen by the actor that
+fired it, and the authored category is a default. See
+[`bse-dat.md`](bse-dat.md#row-index--cue-id--0x200-and-4-is-rewritten-per-cue).
 
 ## Consumers
 

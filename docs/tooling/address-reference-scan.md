@@ -168,11 +168,57 @@ against a known answer before trusting a "nothing found":
   assembled in more than two steps, or reached as `table_base + index`, is not
   a pair and will not be found - which is why a per-record negative over a
   table needs the table *base* scanned too before it means anything.
+- **`$gp` and `lui`+load.** Two forms this tool does not decode at all - a
+  `disp(gp)` access, and a `lui`/load pair whose low half rides the load
+  instead of an `addiu`. Both are in the sibling sweep
+  [below](#the-gp-relative-and-luiload-forms); run it before reading a
+  five-form negative as "nothing references this".
 - **The verdict is triage.** A `dispatch-table` classification says the
   neighbours look like function entries, not that the runtime indexes them.
 - **Aliased branches.** A `BR` hit in an image that does not hold the routine
   is not a reference to it; pass `--home` and read `branch_alias`
   ([above](#a-branch-cannot-cross-images)).
+
+## The gp-relative and `lui`+load forms
+
+[`scripts/ghidra-analysis/find-gp-relative-refs.py`](../../scripts/ghidra-analysis/find-gp-relative-refs.py)
+covers the two forms the five-form sweep is structurally blind to.
+
+- **`disp(gp)`.** The point of the small-data pointer is that the address never
+  appears in the instruction stream. `sw a0,0x678(gp)` carries a 16-bit
+  displacement and nothing else, so no scan for the absolute address can see it
+  - in either direction, writer or reader.
+- **`lui rX, hi` + `lw rY, lo(rX)`.** The commonest way retail touches a named
+  global puts the low half on the *load*. The five-form pair scan accepts only
+  `addiu` (op `0x09`) and `ori` (op `0x0D`) as the second half, so it walks past
+  every one of these.
+
+The two compose into a silent negative. `gp+0x678` - the battle sound bank's
+record table, [`bse-dat.md`](../formats/bse-dat.md) - has one gp-relative writer
+and seven `lui`+`lw` readers, and a five-form sweep of its absolute address
+`0x8007B990` reports "no word, no jump, no branch, no materialisation pair - in
+any image".
+
+```bash
+# Recover $gp from the runtime's own `lui gp` / `addiu gp` pair.
+scripts/ghidra-analysis/find-gp-relative-refs.py --find-gp
+
+# Every access to one small-data slot, by displacement or by absolute VA.
+scripts/ghidra-analysis/find-gp-relative-refs.py 0x678
+scripts/ghidra-analysis/find-gp-relative-refs.py --va 0x8007b990
+
+# Widen to every extracted PROT entry, and grep the dump corpus too.
+scripts/ghidra-analysis/find-gp-relative-refs.py 0x5b8 --prot --dumps
+```
+
+`$gp` is written once by the runtime and never reloaded, so one constant fixes
+every displacement in the image; `--find-gp` decodes that pair rather than
+trusting a remembered value (retail Legaia: `0x8007B318`, from `0x80026CA8`).
+A displacement scan needs no `$gp` at all, which is what makes it meaningful
+over base-less PROT entries - the encoding carries no address, so it is
+base-independent by construction. The cost of that is coincidence: a raw byte
+scan over scene data will produce hits with `code=0` around them. Read the
+disassembly at a hit before calling it a reference.
 
 ## The retail-unreachable set
 
