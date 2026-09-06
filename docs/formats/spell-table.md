@@ -173,11 +173,14 @@ Two independent bits over a side/scope pair:
 | `0x06` | one ally |
 | `0x26` | all allies |
 
-(The earlier "bit `0x40` = enemies" reading is equivalent for these four
-player-block values but misclassifies the internal enemy-attack tiers, whose
-byte is `0x04`: that has `0x40` clear yet they are enemy-targeting monster
-attacks. The `0x02` / low-nibble reading classifies `0x04` as enemy-side,
-matching their role.)
+(The `0x02` / low-nibble model is a *value correlation*: the runtime target
+picker never tests `0x02`. `FUN_801D0748` reads this byte and tests **`andi
+0x40`** at `0x801D1C50` / `0x801D1C58` (PROT 0898) - the same ladder the
+item-effect descriptors' `+2` bit `0x40` runs at `0x801D18E0` - forking on
+`0x20` into the one-enemy / all-enemies / one-ally / all-allies phases. Both
+readings agree on the four player-block values; the internal enemy-attack tiers
+whose byte is `0x04` never reach the player picker, so the `0x40`-clear reading
+of them is not a contradiction.)
 
 The model holds across the whole named player block and the six offensive
 Ra-Seru summons. One documented exception: the revive Ra-Seru **Horn /

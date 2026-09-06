@@ -186,7 +186,6 @@
     <thead><tr><th>Thread</th><th>Status</th><th>What would close it</th></tr></thead>
     <tbody>
       <tr><td>What moves the evolved-Cort battle off flow <code>ctx[+0x06] = 0x0C</code>?</td><td><span class="tag tag-open">open</span> - narrow</td><td>The flow-<code>0x0A</code> arm skips the banner composer for monster-slot-0 id <code>0xB5</code> and parks <code>0x0C</code>, a value the ladder at <code>0x801D0C84</code> has no arm for; a pad-free run stays parked, yet the fight opens in play. A write-watch on <code>ctx+0x06</code> from <code>cort_evolved_pre_battle</code> with the pad driven.</td></tr>
-      <tr><td>What is the byte at <code>actor[+0x22C] + 0x80</code> the SFX-cue router folds into the category?</td><td><span class="tag tag-open">open</span> - low priority</td><td>Named "the attacker's element byte" by inference; its destination is the descriptor's category column, and the monster element byte is record <code>+0x1D</code>. Needs a read of the <code>+0x22C</code> sub-struct.</td></tr>
     </tbody>
   </table>
 

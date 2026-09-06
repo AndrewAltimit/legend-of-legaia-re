@@ -374,7 +374,6 @@ process-matching helpers in
 | Thread | Status | What would close it |
 |---|---|---|
 | What moves the evolved-Cort battle off flow `ctx[+0x06] = 0x0C`? | open (narrow) | The flow-`0x0A` arm skips the banner composer for monster-slot-0 id `0xB5` and parks `0x0C`, a value the ladder at `0x801D0C84` has no arm for; a pad-free run stays parked, yet the fight opens in play (`cort_evolved_battle_first_menu` sits at `0x1E`). Find the writer: a write-watch on `ctx+0x06` from `cort_evolved_pre_battle` with the pad driven. |
-| What is the byte at `actor[+0x22C] + 0x80` that the SFX-cue router folds into the category? | open (low priority) | `functions/battle.md` names it the attacker's element byte; its destination is now pinned as the descriptor's category column (the VAB-slot selector), and the documented monster element byte is record `+0x1D`, not this. Needs a read of the `+0x22C` sub-struct in `FUN_8004FE5C`'s callers. |
 
 Recently closed in this area: the battle-**intro** enemy-name banner - the
 question had a false premise, no placement record raises it, the composer

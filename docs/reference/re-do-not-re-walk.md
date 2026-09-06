@@ -1350,6 +1350,20 @@ half-window OOB is still unreached in normal play, but the reason is progress
 during the solo phase, not the size of the id space. See
 [`re-settled-threads.md`](re-settled-threads.md#full-window-item-add-oob-reachability).
 
+### Item-effect flag `0x40` is consumed by the item-info panel `FUN_801D0F1C`
+
+*Falsified by disassembly.*
+
+The panel does branch on a `0x40` right where the accessory-passive block is
+chosen, and the five `0x40` subtypes really are the battle specials - so the
+attribution read naturally. But `FUN_801D0F1C` contains no `andi 0x40` at
+all: the instruction is `slti a0, 0x40` at `0x801D107C` / `0x801D1110`, a
+magnitude test on the record's `+3` passive index against the no-passive
+sentinel - a different field and not a mask. The bit's only readers are the
+target-side forks at `0x801D18E0` (items) and `0x801D1C50` (spells) in PROT
+0898. See
+[`re-settled-threads.md`](re-settled-threads.md#battle--arts--level-up).
+
 ## Measurement readings
 
 Falsified claims about the *instruments*, not about the game. They belong here
