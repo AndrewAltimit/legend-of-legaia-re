@@ -280,6 +280,18 @@ def classify_gap(image, base_va, a, b):
     if start < 0 or start + n * 4 > len(image):
         return False
     words = struct.unpack_from("<%dI" % n, image, start)
+    # A zero-dominated run is padding, and padding is not the denominator's
+    # business. The statistic cannot see that on its own: a word of zeros
+    # decodes to `nop`, a plausible primary opcode carrying no pointer, so an
+    # all-zero region scores a PERFECT code score and any gap holding enough of
+    # one is dragged over the line with it. `gap_shape` has named that case
+    # `mostly_padding` all along while the denominator still counted its bytes
+    # as un-dumped code - the menu overlay's largest such run is 82% zeros.
+    # This is not a calibrated threshold on a statistic: no function body is
+    # half `nop`, and an all-zero gap is inter-function alignment by
+    # construction.
+    if sum(1 for w in words if w == 0) * 2 >= n:
+        return False
     plausible = sum(1 for w in words if (w >> 26) in PLAUSIBLE_OPS) / n
     ptrs = sum(1 for w in words if 0x80000000 <= w < 0x80200000) / n
     return plausible >= CODE_PLAUSIBLE_MIN and ptrs < CODE_PTR_MAX
@@ -368,12 +380,22 @@ def cover_image(name, image, base_va, span, extents, attrib=None):
     code_gap = data_gap = 0
     code_gaps = []
     shapes = {}
+    # The shape census covers EVERY gap, not only the ones the denominator
+    # counts. `padding` and `mostly_padding` no longer reach `code_gap` (see
+    # `classify_gap`), and dropping them from the census along with the
+    # denominator would hide exactly the bytes the change is about - a reader
+    # could no longer check that a shrinking code gap went to padding rather
+    # than to a dump. A gap the statistic rejects that carries no structural
+    # shape of its own is `data`.
     for a, b in gaps:
-        if classify_gap(image, base_va, a, b):
+        is_code = classify_gap(image, base_va, a, b)
+        shape = gap_shape(image, base_va, a, b)
+        if not is_code and shape == "code":
+            shape = "data"
+        n, nb = shapes.get(shape, (0, 0))
+        shapes[shape] = (n + 1, nb + b - a)
+        if is_code:
             code_gap += b - a
-            shape = gap_shape(image, base_va, a, b)
-            n, nb = shapes.get(shape, (0, 0))
-            shapes[shape] = (n + 1, nb + b - a)
             if shape == "code":
                 code_gaps.append((a, b))
         else:
@@ -663,6 +685,9 @@ def emit_worklist(out_dir, rows):
 
 GAP_SHAPE_TEXT = {
     "code": "genuinely un-dumped instructions - the only shape that is work",
+    "data": "the opcode statistic rejects it and no structural shape below "
+            "claims it - rodata resident in the text segment. Outside the "
+            "code denominator",
     "padding": "every word is `nop`: inter-function alignment, which no function "
                "body will ever contain",
     "return_tail": "`jr ra` (+ `nop`) that the preceding routine's analysed body "
@@ -731,8 +756,12 @@ def render(scus, overlays, amb_totals, data, rejects, attributed):
     add("")
     add("A gap between dumped functions is classified as code or data by opcode "
         "plausibility and pointer density, so the rodata an executable carries "
-        "inside its text segment does not inflate the denominator. Gaps under "
-        f"{TINY_GAP_WORDS} words are inter-function alignment and count as code.")
+        "inside its text segment does not inflate the denominator. Two rules sit "
+        "outside that statistic because it cannot see them: gaps under "
+        f"{TINY_GAP_WORDS} words are inter-function alignment and count as code, "
+        "and a gap at least half of whose words are zero is padding and counts "
+        "as data - a zero word decodes to `nop`, so the statistic scores it as "
+        "perfect code.")
     add("")
     add("| image | base | span | dumps | in a dump | code gap | data gap | code denom | covered | at least | VA-ambiguous |")
     add("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
@@ -803,19 +832,23 @@ def render(scus, overlays, amb_totals, data, rejects, attributed):
             add("")
             add("Not every gap is an un-analysed routine, and reading the total "
                 "as a worklist overstates what dumping can close. This census "
-                "is the denominator's view: it covers only the gaps the "
-                "whole-gap test classifies as code, so its bytes are a "
-                "breakdown of the `code gap` column and not of the image. The non-`code` "
-                "shapes are properties of where a function *body* ends, or of "
-                "data records the linker left between bodies, rather than of "
-                "what has been analysed, so they persist however much is "
-                "dumped.")
+                "covers **every** gap, whether or not the whole-gap test counts "
+                "it as code, so the `code gap` column is the `code` row plus "
+                "whichever structural shapes still pass that test - never the "
+                "whole table. The other shapes are properties of where a "
+                "function *body* ends, or of data records the linker left "
+                "between bodies, rather than of what has been analysed, so "
+                "they persist however much is dumped. `padding` and "
+                "`mostly_padding` are outside the denominator entirely: a word "
+                "of zeros decodes to `nop`, which the opcode statistic scores "
+                "as perfect code, so a zero-dominated run has to be excluded "
+                "structurally rather than statistically.")
             add("")
             add("| shape | gaps | bytes | what it is |")
             add("|---|---:|---:|---|")
-            for key in ("code", "padding", "mostly_padding", "no_exit",
-                        "return_tail", "bios_thunk_slot", "psyq_lib_stamp",
-                        "constant_table"):
+            for key in ("code", "data", "padding", "mostly_padding",
+                        "no_exit", "return_tail", "bios_thunk_slot",
+                        "psyq_lib_stamp", "constant_table"):
                 if key not in shapes:
                     continue
                 n, nb = shapes[key]

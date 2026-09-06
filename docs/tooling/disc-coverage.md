@@ -94,6 +94,18 @@ So when reading the per-class table:
   its byte statistics look like. Grouping the unclaimed entries by size, and by
   their slot position within the CDNAME block, finds those clusters faster than
   reading any one of them.
+- A **detector-named** class is not a verdict either, and it fails in the
+  opposite direction: a statistical name admits it found nothing, while a
+  format name asserts a format. Three classes asserted one that does not exist.
+  `field_pack` named a `(TIM_LIST << 24) | size` DATA_FIELD chunk header a
+  magic; `tim_pack` keyed on the same header's type byte; `data_field_truncated`
+  named a pack's own `count` word a chunk header. The tell was in the table all
+  along - one member each for `field_pack` and `data_field_truncated`, and a
+  class whose members all sit at the same slot of a CDNAME block. A class with
+  one member is a detector fitted to an entry, and a class that splits one
+  on-disc form across three names is a classifier keying on detectors rather
+  than on formats. All three now classify by form: `data_field_streaming` for
+  the chunk-headered carriers, `pack` for the bare ones.
 - A statistical class can also swallow content by **dilution**. The
   printable-ASCII test that recognises an overlay's string table is a ratio over
   the whole buffer, so an overlay *data* image - mostly bss, with its literals
@@ -207,16 +219,21 @@ the routines nobody has looked at" - is right for most of the bytes and wrong fo
 the tail. The report therefore classifies each code gap by *shape*, and only one
 shape is work:
 
-| Shape | What it is |
-|---|---|
-| `code` | genuinely un-dumped instructions |
-| `padding` | every word is `nop`: inter-function alignment |
-| `mostly_padding` | at least half the words are zero |
-| `no_exit` | 1024 bytes or more with no `jr ra` in them |
-| `return_tail` | a `jr ra` (+ `nop`) the preceding routine's analysed body stops short of |
-| `bios_thunk_slot` | the delay slot of a `jr $t2` PSX BIOS-call thunk |
-| `psyq_lib_stamp` | an 8-byte `Ps` + id + word record: the PSY-Q librarian's version stamp between link modules |
-| `constant_table` | every word one repeated non-`nop` constant: a data table resident in the text segment |
+| Shape | What it is | In the code denominator |
+|---|---|---|
+| `code` | genuinely un-dumped instructions | yes |
+| `data` | the opcode statistic rejects it and no shape below claims it: rodata in the text segment | no |
+| `padding` | every word is `nop`: inter-function alignment | no |
+| `mostly_padding` | at least half the words are zero | no |
+| `no_exit` | 1024 bytes or more with no `jr ra` in them | if the statistic passes it |
+| `return_tail` | a `jr ra` (+ `nop`) the preceding routine's analysed body stops short of | if the statistic passes it |
+| `bios_thunk_slot` | the delay slot of a `jr $t2` PSX BIOS-call thunk | yes (tiny-gap fiat) |
+| `psyq_lib_stamp` | an 8-byte `Ps` + id + word record: the PSY-Q librarian's version stamp between link modules | yes (tiny-gap fiat) |
+| `constant_table` | every word one repeated non-`nop` constant: a data table resident in the text segment | yes (tiny-gap fiat) |
+
+The census covers **every** gap, so the table is a breakdown of the image's
+un-dumped bytes and not of the `code gap` column. The third column says which
+rows the denominator counts.
 
 The first three non-`code` shapes are properties of **where a function body
 ends**, not of what has been analysed, so they persist however much is dumped.
@@ -238,9 +255,11 @@ documented per-window in
 [`runtime-libs.md`](../reference/functions/runtime-libs.md#what-is-left-of-the-scus_94254-code-gap-is-not-code).
 
 Together they are why the figure asymptotes short of 100%, and saying so on the
-report is what stops the last fraction of a percent reading as a worklist. The
-shapes are **reported, not subtracted**: the denominator stays as it was so the
-ratcheted figure remains comparable across changes to this classifier.
+report is what stops the last fraction of a percent reading as a worklist. Most
+of the shapes are **reported, not subtracted** - the denominator keeps them, so
+the ratcheted figure stays comparable across changes to this classifier. The two
+padding shapes are the exception, and they are excluded by a structural rule
+rather than by a statistical one: see below.
 
 #### The two shapes that exist because the opcode statistic is blind to them
 
@@ -250,10 +269,22 @@ fact about MIPS rather than another threshold to calibrate:
 
 - A word of zeros decodes to `nop` - a plausible primary opcode with no pointer
   density - so a region that is *mostly* zeros passes the code test outright.
-  The menu overlay's tail from `0x801E43E8` is 82% zeros, and the classifier
-  called all 62512 bytes of it un-dumped code. That run was the largest entry on
-  the worklist, and disassembling it returns hundreds of `nop`s followed by
-  non-code.
+  The menu overlay's tail from `0x801E43E8` is 82% zeros, and disassembling it
+  returns hundreds of `nop`s followed by non-code.
+
+  Naming that shape was only half the fix. For as long as `mostly_padding` was a
+  *label*, the run it named stayed in the code denominator and stayed the
+  largest entry on the worklist - the census said "padding" while the percentage
+  said "un-dumped code", which is the shape of a measurement that documents its
+  own defect instead of correcting it. `classify_gap` now rejects a
+  majority-zero run outright, before the opcode statistic ever runs, on the
+  structural ground that no function body is half `nop`. The rows the exclusion
+  moves are large: the menu overlay reads 99.9% instead of 63.4%, the casino
+  overlay 100.0% instead of 81.3%, the dance overlay 99.4% instead of 72.2%, and
+  the floors of the three most `.bss`-heavy images (`cutscene_str`,
+  `other3_dev`, `boot_init_pak`) multiply several times over - `cutscene_str`
+  from 9.7% to 63.1%. `padding` and `mostly_padding` stay in the shape census so
+  the bytes remain visible and countable.
 - Every MIPS function body ends in `jr ra`. Measured over `SCUS_942.54`'s text
   head and the menu overlay's code region, known code carries one per ~500-750
   bytes; a data table carries none. The SCUS sound-effect descriptor table at
@@ -522,8 +553,10 @@ extent inside a 62 KB gap no longer marks the whole gap ambiguous. Start with th
 
 ### `cutscene_str` (PROT 0970): a 123 KB code gap that is 99.8% zero
 
-The largest single "code gap" in the overlay table belongs to PROT 0970, and it
-is not work. The entry is `0x24800` bytes; the last `code`-shaped run in it ends
+PROT 0970 is the worked example of a gap that is not work, and it is why the
+majority-zero rule above exists: with that rule the entry's zero hole leaves the
+denominator and the row reads a floor of 63.1% instead of 9.7%. The entry is
+`0x24800` bytes; the last `code`-shaped run in it ends
 at `0x801D1878`, and the span from there to `0x801F1A00` - 131 464 bytes, 88% of
 the image - is **32 793 zero words out of 32 866**, a reserved `.bss`-shaped
 hole the loader never fills from disc. `undumped-runs.csv` accounts for it

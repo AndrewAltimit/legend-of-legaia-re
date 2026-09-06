@@ -149,6 +149,16 @@ un-analysed routine. The classifier recognises both shapes by their bytes and
 reports them as `constant_table` / `psyq_lib_stamp` rather than `code`, which
 is what empties the bytes-derived dump worklist for this image.
 
+These four are what is left of the **code-classified** gap specifically. The
+image's inter-function alignment - 62 gaps, 344 bytes, every word `nop` - is a
+separate matter: it is reported in the shape census as `padding` and is not in
+the code denominator at all, because a zero word decodes to `nop` and would
+otherwise score as perfect code (see
+[`disc-coverage.md`](../../tooling/disc-coverage.md#the-two-shapes-that-exist-because-the-opcode-statistic-is-blind-to-them)).
+Alignment persists however much is dumped, and so do these four windows; the
+difference is that the four ride the tiny-gap fiat into the denominator and the
+alignment does not.
+
 | Window | What the words are |
 |---|---|
 | `0x80026CD4`..`0x80026CE4` | Four identical `0x00200000` words (the 2 MB RAM size) - the `crt0` stack-pointer table [described above](#the-entry-stub-80026c28). The stub reads `0x80026CD8` and ORs in `0x80000000`. Shape `constant_table`. |
