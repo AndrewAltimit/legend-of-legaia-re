@@ -254,22 +254,34 @@ The `dirty_exec_hot` histogram is a sampler, so it can only ever say "not seen".
 Exec breakpoints answer the same question exactly: they cannot miss an execution.
 `scripts/pcsx-redux/autorun_w4d_light_kind_hits.lua` arms one on each of
 `0x8004409C` / `0x8004423C` / `0x80044434` / `0x800445B0` and walks the pad, with a
-**control group** on the bank-0 fog handlers for kinds 12..19 plus kind 16 bank 1 so
-a zero cannot be a dead instrument.
+**control group** beside them so a zero cannot be a dead instrument.
 
-| Run | What it covers | Lit hits (8/9/10/11) | Control |
-|---|---|---|---|
-| `sol_to_karisto_worldmap` | warp in, then walk `map03` for 1111 field frames | 0 / 0 / 0 / 0 | 8 of 9 fired |
-| `octam_to_sebucus_worldmap` | `map02` for 347 frames, then the `ropeway` field scene | 0 / 0 / 0 / 0 | 8 of 9 fired |
-| `karisto_sol_pre_encounter` | rolls straight into a random encounter; ~1160 battle frames | 0 / 0 / 0 / 0 | kind 17 bank 0 fired |
+| Run | What it covers | Lit hits (8/9/10/11) |
+|---|---|---|
+| `sol_to_karisto_worldmap` | warp in, then walk `map03` for 1111 field frames | 0 / 0 / 0 / 0 |
+| `octam_to_sebucus_worldmap` | `map02` for 347 frames, then the `ropeway` field scene | 0 / 0 / 0 / 0 |
+| `karisto_sol_pre_encounter` | rolls straight into a random encounter; ~1160 battle frames | 0 / 0 / 0 / 0 |
 
-Every run's control group hits its cap inside the first 40 primitives, on the same
-scenes, so the breakpoints are live and the zeros are measurements. Two kingdoms, an
-ordinary field scene and a battle therefore agree with the histogram: **no retail
-path observed so far executes a handler carrying a GTE light op.** The four bodies
-are real render modes and stay in any sweep claiming to cover the dispatch family;
-what is now settled by capture rather than by sampling is that the world map is not
-their consumer.
+**The control has to change when the scene does**, which is the part worth copying.
+The first window arms the SCUS bank-0 fog handlers for kinds 12..19 plus kind 16
+bank 1; eight of the nine fire inside the first frame of the town scene, so the
+breakpoints work. But re-arming that same list after the kingdom warp yields
+**zero** hits over 1111 overworld frames - because the overworld renders its bulk
+terrain through PROT 0901's eight overlay-resident replacements, so the SCUS
+handlers are silent there for a reason that has nothing to do with the light path.
+Re-arming instead on those replacements (`0x801F7644` / `7838` / `7AA4` / `7CCC` /
+`7F78` / `8198` / `8454` / `8690`) fires **all eight** on `map03` at vsync 276 of
+the same run that reads zero on the lit set. That is the control the conclusion
+rests on: exec breakpoints are demonstrably live on the kingdom overworld, and the
+lit set still never executes.
+
+So two kingdoms, an ordinary field scene and a battle agree with the histogram:
+**no retail path observed so far executes a handler carrying a GTE light op.** The
+four bodies are real render modes and stay in any sweep claiming to cover the
+dispatch family; what is settled by capture rather than by sampling is that the
+world map is not their consumer. The same run also measures the kind-12..19 story
+the bulk-terrain note above asserts: on a kingdom overworld the SCUS dispatch family
+is not entered at all.
 
 Provenance: the jump table's computed `jr` is not statically resolvable - a static
 recompilation of `SCUS_942.54` *does* emit the handler bodies (verified against the

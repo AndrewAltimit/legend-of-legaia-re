@@ -4676,6 +4676,8 @@ watches the byte from the pre-battle field state; the sequence is:
 | 507 | `0x801D0DDC` writes `0x0A` |
 | 510 | `0x801D0DE4` writes `0x0B`, then `0x801D0E0C` writes `0x0C` in the same frame |
 | 631 | loader-B tracker `0x8007BC4C` goes `0x05` -> `0x49`; slot B's head matches the in-fight state |
+| 3717 | `0x801F713C` (`ra = 0x800564A0`, tracker `0x49`) writes `0x0B`; `0x801D0EB8` writes `0x14` the same frame |
+| 3719 | `0x801D0ED4` writes `0x1E` - the state the in-fight capture is parked on |
 
 Both `0x0A`-arm stores run on the same pass - the arm writes `0x0B` unconditionally
 and the `0xB5` branch **overwrites** it with `0x0C`, it does not choose between them.
@@ -4716,9 +4718,12 @@ reaches the value that arm expects.
 ```
 
 The same block clears the stage id `0x8007B64A` (the `2` that paged this module in,
-`966 + id` in extraction space), which is the module signing off. So it hands the
-flow back as `0x0B` - a value the ladder *does* have an arm for - with the intro
-timer already zeroed, and `0x0B` expires on its next tick into
+`966 + id` in extraction space), which is the module signing off. The write is
+witnessed live at the row above: **3207 vsyncs** - about 53 s of game time - after
+the `0x0C` park, with no input at any point, `ra` naming SCUS `0x800564A0` as the
+caller that ticks the module (the same `FUN_80056208` battle-intro sequencer that
+bumps the phase byte). So it hands the flow back as `0x0B` - a value the ladder
+*does* have an arm for - with the intro timer already zeroed, and `0x0B` expires on its next tick into
 `0x14`, which sets `0x1E` unconditionally. That is exactly where the in-fight capture
 `cort_evolved_battle_first_menu` sits. Flow `0x0C` is therefore not a dead state: it
 is the "a stage module owns this frame" parking value, and what it waits on is that
@@ -4726,11 +4731,13 @@ module's own multi-phase intro, ending on the dt countdown at `0x801F73F8`.
 
 Two cautions for anyone re-running this. Exec breakpoints on slot-B VAs are **not**
 attributable on their own - the same addresses are live code in whichever module is
-resident, so the arm hit counts in the probe's summary include hits taken while the
-0900 co-resident held the slot; the load-bearing evidence here is the data side (the
-phase byte, the timer constant, the tracker) plus the image scan. And the intro is
-long: the park outlasts a 1700-vsync capture window, so a run that ends early reads
-as "stuck forever".
+resident. The run demonstrates it: the breakpoint at `0x801F713C` fires six times,
+five of them in the first thirteen vsyncs while the 0900 co-resident still held the
+slot, and only the sixth is a write to the flow byte. Read those hits beside the
+tracker column, and take the data side (the phase byte, the timer constant, the
+tracker) plus the image scan as the load-bearing evidence. And the intro is long:
+the park outlasts a 3400-vsync capture window, so a run that ends early reads as
+"stuck forever" - which is what an earlier reading of this state concluded.
 
 ### Each surface is a D-pad map
 

@@ -35,8 +35,11 @@
 --   LEGAIA_WARP_BTN      UP/DOWN/LEFT/RIGHT/NONE held until the scene changes
 --                        (default DOWN; NONE = already on the overworld)
 --   LEGAIA_LEG           vsyncs per walk direction (default 90)
---   LEGAIA_CONTROL       comma list of control handler addresses
---   LEGAIA_CONTROL_CAP   control hits before self-disarm (default 40)
+--   LEGAIA_CONTROL       comma list of control handler addresses (first window)
+--   LEGAIA_CONTROL_POST  comma list armed for the post-warp window instead
+--   LEGAIA_CONTROL_CAP   control hits before self-disarm, per window (default 40)
+--   LEGAIA_CONTROL_REARM vsyncs after the warp before the control group is armed
+--                        a second time (default 120)
 --   LEGAIA_OUT_DIR       output directory
 --
 -- Outputs: w4d_light_kinds.csv, w4d_light_kinds.log, w4d_light_kinds.detail.txt
@@ -53,12 +56,25 @@ local CONTROL_S = probe.getenv("LEGAIA_CONTROL",
     "0x80043658,0x80043768,0x800438B8,0x800439E4,0x80043B58,0x80043C6C," ..
     "0x80043DD4,0x80043F10,0x80044C14")
 local CTRL_CAP  = probe.getenv_num("LEGAIA_CONTROL_CAP", 40)
+-- The post-warp control is a DIFFERENT list on purpose. The kingdom overworld
+-- renders its bulk terrain through PROT 0901's eight overlay-resident
+-- replacements for kinds 12..19 (docs/subsystems/world-map.md), so the SCUS
+-- fog handlers are silent there for a reason that has nothing to do with the
+-- light path - they make a useless liveness control on the map itself.
+local CONTROL_POST_S = probe.getenv("LEGAIA_CONTROL_POST",
+    "0x801F7644,0x801F7838,0x801F7AA4,0x801F7CCC," ..
+    "0x801F7F78,0x801F8198,0x801F8454,0x801F8690")
 
-local CONTROLS = {}
-for tok in string.gmatch(CONTROL_S, "[^,%s]+") do
-    local a = tonumber(tok)
-    if a then CONTROLS[#CONTROLS + 1] = a end
+local function parse_addrs(str)
+    local out = {}
+    for tok in string.gmatch(str, "[^,%s]+") do
+        local a = tonumber(tok)
+        if a then out[#out + 1] = a end
+    end
+    return out
 end
+local CONTROLS      = parse_addrs(CONTROL_S)
+local CONTROLS_POST = parse_addrs(CONTROL_POST_S)
 
 local OUT_LOG    = probe.out_path("w4d_light_kinds.log")
 local OUT_CSV    = probe.out_path("w4d_light_kinds.csv")
@@ -124,6 +140,10 @@ local g_elapsed = 0
 local lit_hits = { 0, 0, 0, 0 }
 local ctrl_hits = 0
 local ctrl_bps, ctrl_by_addr = {}, {}
+local ctrl_rearmed, ctrl_rearm_at = false, nil
+local ctrl_window, ctrl_window_base, ctrl_post = {}, 0, {}
+local REARM = probe.getenv_num("LEGAIA_CONTROL_REARM", 120)
+local arm_controls = nil            -- set in on_arm; re-armed once after the warp
 local start_scene, warped = nil, false
 local map_frames, field_frames = 0, 0
 local leg_idx, leg_start = 0, nil
@@ -168,24 +188,33 @@ probe.run({
 
         -- Control group: ordinary depth-cued handlers, so a zero above is a
         -- measurement and not a dead instrument. They share one counter and
-        -- all disarm together at the cap.
-        for _, addr in ipairs(CONTROLS) do
+        -- all disarm together at the cap. The cap is reached in the first frames
+        -- of the run, i.e. before the kingdom warp, so the group is re-armed once
+        -- LEGAIA_CONTROL_REARM vsyncs after the warp: that second window is what
+        -- proves the breakpoints are still live ON THE OVERWORLD, where the lit
+        -- set reads zero.
+        arm_controls = function(tag)
+            ctrl_window, ctrl_window_base = {}, ctrl_hits
+            for _, addr in ipairs(tag == "initial" and CONTROLS or CONTROLS_POST) do
             local a = addr
-            ctrl_by_addr[a] = 0
+            ctrl_by_addr[a] = ctrl_by_addr[a] or 0
+            local post = (tag ~= "initial")
             local d = { addr = a, hits_ref = { n = 0 },
                         name = string.format("control 0x%08X", a) }
             ctrl_bps[#ctrl_bps + 1] = probe.arm_breakpoint(a, "Exec", 4,
                 string.format("control_%08X", a), function()
                 ctrl_hits = ctrl_hits + 1
                 ctrl_by_addr[a] = ctrl_by_addr[a] + 1
+                if post then ctrl_post[a] = (ctrl_post[a] or 0) + 1 end
                 d.hits_ref.n = ctrl_by_addr[a]
-                if ctrl_by_addr[a] == 1 then
-                    logf("CONTROL alive: 0x%08X hit at vsync %d (scene=%s mode=0x%02X)",
-                        a, g_elapsed, scene_name(), probe.read_u8(GAME_MODE) or 0)
+                if ctrl_window[a] == nil then
+                    ctrl_window[a] = g_elapsed
+                    logf("CONTROL alive (%s): 0x%08X hit at vsync %d (scene=%s mode=0x%02X)",
+                        tag, a, g_elapsed, scene_name(), probe.read_u8(GAME_MODE) or 0)
                     csv:row("%d,control,,0x%08X,,%s,0x%02X,first hit",
                         g_elapsed, a, scene_name(), probe.read_u8(GAME_MODE) or 0)
                 end
-                if ctrl_hits >= CTRL_CAP and #ctrl_bps > 0 then
+                if (ctrl_hits - ctrl_window_base) >= CTRL_CAP and #ctrl_bps > 0 then
                     for _, b in ipairs(ctrl_bps) do
                         pcall(function() b:remove() end)
                     end
@@ -193,8 +222,10 @@ probe.run({
                     logf("control breakpoints disarmed after %d shared hits", ctrl_hits)
                 end
             end)
-            descs[#descs + 1] = d
+            if tag == "initial" then descs[#descs + 1] = d end
         end
+        end
+        arm_controls("initial")
         return descs
     end,
 
@@ -246,6 +277,16 @@ probe.run({
             return
         end
 
+        if warped and not ctrl_rearmed then
+            if ctrl_rearm_at == nil then ctrl_rearm_at = elapsed + REARM end
+            if elapsed >= ctrl_rearm_at then
+                ctrl_rearmed = true
+                logf("re-arming the control group at vsync %d (scene=%s)",
+                    elapsed, scene)
+                arm_controls("post-warp")
+            end
+        end
+
         if leg_start and (elapsed - leg_start) >= LEG then
             leg_idx = (leg_idx % #DIRS) + 1
             leg_start = elapsed
@@ -271,9 +312,13 @@ probe.run({
         for i, k in ipairs(LIT_KINDS) do
             logf("  kind %2d  0x%08X  %-16s  %d", k.kind, k.addr, k.op, lit_hits[i])
         end
-        logf("control-group hits: %d (cap %d)", ctrl_hits, CTRL_CAP)
+        logf("control-group hits: %d (cap %d per window, re-armed=%s)",
+            ctrl_hits, CTRL_CAP, tostring(ctrl_rearmed))
         for _, a in ipairs(CONTROLS) do
-            logf("  control 0x%08X  %d", a, ctrl_by_addr[a] or 0)
+            logf("  control        0x%08X  %d", a, ctrl_by_addr[a] or 0)
+        end
+        for _, a in ipairs(CONTROLS_POST) do
+            logf("  post-warp ctrl 0x%08X  %d", a, ctrl_post[a] or 0)
         end
         if ctrl_hits == 0 then
             logf("WARNING: control never fired - this run measures NOTHING about kinds 8..11")

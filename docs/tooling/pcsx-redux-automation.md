@@ -907,6 +907,13 @@ the longer ones (`Probes` + `What it answered`) are written out as
   `LEGAIA_LEG` vsyncs walk the map. See
   [`renderer.md`](../subsystems/renderer.md#no-handler-in-the-lit-set-executes-on-a-kingdom-overworld).
   Interpreter mode.
+- **The control is re-armed after the warp, from a different list**
+  (`LEGAIA_CONTROL_POST`, `LEGAIA_CONTROL_REARM`). The first window's SCUS fog
+  handlers fire in the town scene and then go silent on the overworld, because the
+  kingdom map renders through PROT 0901's overlay-resident replacements - so on the
+  map itself they are a control that proves nothing. The post-warp window arms those
+  eight replacements instead, and all eight fire on `map03`, which is what makes the
+  lit set's zero in the same run a measurement rather than a dead breakpoint.
 
 ##### `autorun_slot4_consumer_pcs.lua`
 
