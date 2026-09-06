@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Find every reference to a global reached through `$gp`, or through a
-`lui`+load/store pair.
+"""Find every reference to a global reached through `$gp`, through a
+`lui`+load/store pair, or through a materialised base plus a displacement.
 
 `find-address-word-refs.py` answers "who references this address?" in five
 forms - literal word, `lui`+`addiu`/`ori`, `jal`, `j`, PC-relative branch.
-Two forms are missing from that list, and a global stored in the small-data
-band is invisible in both:
+Three forms are missing from that list, and a global in the small-data band
+or in the scratchpad is invisible in all of them:
 
   * **`disp($gp)`** - the whole point of the small-data pointer is that the
     address never appears in the instruction stream. `sw a0,0x678(gp)` and
@@ -22,10 +22,14 @@ band is invisible in both:
     access retail makes has this shape: `lui a0,0x1f80; ori a0,a0,0x314;
     sb v0,0xd4(a0)` writes `0x1F8003E8`. `--no-base-disp` turns it off.
 
-Those two blind spots compose. `gp[0x678]` (the battle sound bank's record
-table) had exactly one gp-relative writer and seven `lui`+`lw` readers, and
-a full five-form sweep of its absolute address `0x8007B990` reported "no
-word, no jump, no branch, no materialisation pair - in any image".
+The blind spots compose, and each has already hidden a real answer behind a
+five-form negative. `gp[0x678]` (the battle sound bank's record table) has
+one gp-relative writer and seven `lui`+`lw` readers, and a five-form sweep of
+its absolute address `0x8007B990` reports "no word, no jump, no branch, no
+materialisation pair - in any image". `0x1F8003E8` (the camera zone loader's
+scratchpad window) has four readers and six writers, and reports the same.
+So does `0x800846DC`, the field run-button mask, whose one writer and one
+reader both reach it as `0x80084140 + disp`.
 
     scripts/ghidra-analysis/find-gp-relative-refs.py 0x678
     scripts/ghidra-analysis/find-gp-relative-refs.py --va 0x8007b990
@@ -433,7 +437,10 @@ def scan_dumps_abs(target: int) -> list[tuple[str, str]]:
 
 def main() -> int:
     ap = argparse.ArgumentParser(
-        description="Find gp-relative and lui+load references to a global."
+        description=(
+            "Find references to a global reached through $gp, a lui+load pair, "
+            "or a materialised base plus a displacement."
+        )
     )
     ap.add_argument("disps", nargs="*", help="gp displacements, e.g. 0x678")
     ap.add_argument("--va", action="append", default=[], help="absolute VA instead of a displacement")
