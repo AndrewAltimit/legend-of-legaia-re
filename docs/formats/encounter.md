@@ -842,9 +842,10 @@ consumer loads them with `lb`, and they pair by component - `(E8, EA)` is the X 
 **not** the kind-1 query bbox: `[3]`/`[4]` are the near (negative) X / Z offsets and
 `[1]`/`[2]` the far ones, and the loader's `[3],[4],[1],[2]` order is exactly the
 permutation that lands them in `[E8, E9, EA, EB]`. Field-VM op `0x46`
-writes the same four slots, either from four explicit operands (`sub-op 0x24`) or, in its
-3-byte form, as a window symmetric about the camera of half-width `operand >> 1` per axis
-(`0x801DF2AC..0x801DF350` in the field overlay).
+writes the same four slots (`0x801DF2AC..0x801DF350` in the field overlay), either from
+four explicit operands (`sub-op 0x24`: `[E8, E9, EA, EB] = op[1..4]`) or, in its 3-byte
+form, as a symmetric window of half-width `op[0] >> 1` in X about tile offset `-1` and
+`op[1] >> 1` in Z about `+2`.
 
 The consumers, all disassembly-traced:
 
