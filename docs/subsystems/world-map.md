@@ -1844,7 +1844,8 @@ which walks the scene's main field file (streamed into `_DAT_8007b85c`) and
 dispatches every descriptor through `FUN_8001f05c`. **Only dispatcher cases
 `0x02` (TMD pack) and `0x09` (bare TMD) install** into `DAT_8007C018` via
 `FUN_80026B4C`; the type-`0x05` slot-4 "MOVE" case only allocates a buffer and
-never installs - so slot-4 is *not* the terrain-mesh source.
+publishes it at `_DAT_8007B888` (the scene's animation bank) - so slot-4 is
+*not* the terrain-mesh source.
 
 **The walk-view pool (pinned).** A real `map01` walk-view capture (game mode
 `0x03`, standing on the Drake overworld) settles `DAT_8007C018` to exactly **45
@@ -1906,13 +1907,54 @@ sweeps over the `.MAP` object grid serve two different render modes:
   open rings (the port's shared pack kernel
   `legaia_engine_core::scene_assembly::build_hybrid_pack_mesh` carries both).
 
+#### Placed actors and the mesh resolver
+
 The walk-placer `FUN_8003A55C` (placed flag `0x4`) spawns only the ~51
 interactive objects (distance-culled to ~14 live actors in the capture; most
 live actors are script-spawned, not from the placed-flag set). It allocates via
-`FUN_80024c88` → `FUN_80020de0` (free-list `FUN_80020454`, pool `_DAT_8007c354`),
-stores the record index at actor `+0x60`, and leaves the mesh chain `+0x44` at
-0; the mesh is resolved from the record index by the scene draw loop (resolver
-not yet pinned). These are props/entities, not the bulk continent.
+`FUN_80024c88` → `FUN_80020de0` (free-list `FUN_80020454`, pool `_DAT_8007c354`).
+These are props/entities, not the bulk continent.
+
+**The mesh resolver is `FUN_80020F88`, and it runs inside the allocator,
+not in the draw loop.** `FUN_80020DE0` seeds the actor from its spawn
+descriptor - `actor+0x60 = desc[+0x04]` (`0x80020E7C`),
+`actor+0x64 = desc[+0x04]` (`0x80020E70`), `actor+0x10 = desc[+0x0C] | 2`
+(`0x80020EDC`) - zeroes the mesh chain at `0x80020F04` (`sw zero,0x44(s0)`)
+and then, five instructions later, `jal`s `FUN_80020F88` at `0x80020F18`.
+That call resolves the whole chain before the allocator returns:
+
+1. When `actor[+0x10] & 0x8000`, it reads the `.MAP` object record
+   `rec = *_DAT_1F8003EC + actor[+0x60]*0x20` and sets
+   **`actor+0x64 = rec[+0x10] + DAT_8007B6F8`** (`0x80020FDC..0x80020FF0`),
+   plus `actor+0x58 = rec[+0x1E]` and `actor+0x52 = rec[+0x12] & 0x3E8`.
+   It then bounds-checks `actor+0x64` against `DAT_8007BB38 + 1` and calls the
+   dev error printer at `0x80021034` on overflow - confirming `+0x64` is a
+   `DAT_8007C018` index.
+2. When `actor[+0x10] & 0x00100000`, it re-derives the same and additionally
+   takes the render mode from `rec[+0x12] & 3` (`0 → 0`, `1 → 6`, `2 → 7`,
+   `3 → 8`) into `actor+0x56`, with `actor+0x52 = rec[+0x12] & 0x380`.
+3. For `actor[+0x56] ∈ {1,2,3,4,5,7,8}` it allocates the 0x9C-byte chain block
+   (`FUN_80017888(0, 0x9C)` at `0x80021184`) into `actor+0x44`, and on OOM
+   sets `+0x56 = 0` and `_DAT_8007B828 |= 0x4000`.
+4. Unless `actor[+0x10] & 0x00040000`, it calls **`FUN_80024D78`**, 31
+   instructions that fill the chain from the pool TMD:
+   `tmd = DAT_8007C018[(i16)actor+0x64]` (`lui 0x8008; addiu -0x3FE8`),
+   `chain[0] = tmd[+8]` (`nobj`), `chain[1+i] = tmd + 0xC + i*0x1C`, then
+   `actor[+0x10] |= 0x08000000`.
+
+`FUN_80024E08(actor, model)` is the same resolver's script-driven entry: it
+writes `actor+0x64 = model`, clears `actor[+0x10] & 0x00108000` (the two bits
+step 1 and 2 test) unless `DAT_8007B83C == 15`, and tail-calls `FUN_80020F88`
+at `0x80024E60`. `find-address-word-refs.py 80020f88` finds exactly these two
+callers and no other reference of any form.
+
+So the port's `pool = record[+0x10] + prefix` rule
+([`legaia_asset::field_objects::pack_mesh_index`] plus
+`FIELD_ACTOR_PACK_BIAS`) matches retail exactly, and the sentence this
+paragraph replaces was wrong twice over: the resolver was pinned, and it is
+spawn-time work, not draw-loop work. A live `map01` state agrees - the five
+placed landmarks in the render list carry `+0x60 = 414/430/349/411/474` and
+`+0x64 = 36/34/11/19/21` with `DAT_8007B6F8 = 5`.
 
 Each placed spawn is **gated on a MAN interaction record** for the cell: the
 placer calls the overlay lookup `FUN_801d5630(1, col + rec[+6], row + rec[+7])`
@@ -1979,10 +2021,10 @@ is `actor+0x64` (see below), matched exactly 14/14.
 
 **The per-object pool index is `record[+0x10] + prefix`** (pinned via
 `ghidra/scripts/find_mesh_chain_writer.py`, confirmed 14/14 against the live
-render list). The chain `actor+0x44` is built by `FUN_80024d78` from
-`DAT_8007C018[ *(u16*)(actor+0x64) ]` (the `-0x7ff83fe8` constant resolves to
-`0x8007C018`): `chain[0] = tmd[+8]` (object count), `chain[1+i] = tmd+0xc+i*0x1c`.
-So `actor+0x64` is the `DAT_8007C018` pool index, and `FUN_80020f88` sets it as
+render list). The resolver chain - `FUN_80020F88` reading the `.MAP` record and
+`FUN_80024D78` building `actor+0x44` from `DAT_8007C018[actor+0x64]` - is
+disassembled instruction by instruction under
+[the walk-placer](#placed-actors-and-the-mesh-resolver) above:
 
 ```text
 actor+0x64 = *(s16*)(_DAT_1f8003ec + (actor+0x60)*0x20 + 0x10) + DAT_8007b6f8
@@ -2086,18 +2128,21 @@ build dense (>10k-quad) heightfields with genuine elevation variation. The old
 `walk_terrain_tiles` per-cell pack-mesh sweep - which flooded ~97% of cells
 with pool-5 because the bulk-terrain records carry `+0x10 == 0` - is removed.
 
-**Slot-4 vertex-pool inspection overlay.** The kingdom bundle's slot 4 (the
-per-kingdom object-mesh library - confirmed object-local GTE vertex pools, see
-[`world-map-overlay.md`](../formats/world-map-overlay.md)) is decoded onto
+**Slot-4 inspection overlay - carries no geometry.** The kingdom bundle's
+slot 4 is the scene's **actor animation bank**, not a mesh library: an
+ordinary asset-type-`0x05` ANM container whose 8-byte entries are per-(frame,
+object) rigid transforms, decoded in
+[`world-map-overlay.md`](../formats/world-map-overlay.md). It is decoded onto
 [`SceneResources::world_map_slot4`] for every `SceneLoadKind::WorldMap` scene
 (and only those). With `LEGAIA_WORLDMAP_SLOT4=1`, `play-window` builds a
-colour-by-`kind` `LineList` from
-[`legaia_asset::world_map_overlay::wireframe_segments_3d`] and merges it into the
-world-map overlay-lines buffer, so the decoded pool is visible in the live 3D
-view. It is an **inspection overlay, not faithful world geometry**: the segments
-use the group-polyline topology convention and the records render at their raw
-object-local coordinates, because the per-object placement transform and true
-triangle topology live in the unpinned cluster-A command stream. Off by default.
+`LineList` from
+[`legaia_asset::world_map_overlay::wireframe_segments_3d`] and merges it into
+the world-map overlay-lines buffer. **That draw is meaningless and should be
+re-pointed**: it plots raw `i16` field pairs that straddle the entries' packed
+12-bit nibble boundaries, a leftover of the falsified "GTE vertex pool"
+reading. `legaia_asset::world_map_overlay::translation_path_segments` is the
+real curve (each animated object's translation path over its clip). Off by
+default.
 
 ### Ground texturing
 
@@ -2639,10 +2684,10 @@ targets. Use `--overlay-targets-only` to pipe the eight addresses into
 a Ghidra `dump_funcs.py` `TARGETS` list. See
 [`legaia_mednafen::prim_dispatch`](../../crates/mednafen/src/prim_dispatch.rs).
 
-Slot 4 of each kingdom bundle is **not** the bulk-terrain source. Its
-records are something else (a runtime library of object-local 3D
-meshes, see [`world-map-overlay`](../formats/world-map-overlay.md)) -
-that hunt is independent of the continent terrain emit mechanism.
+Slot 4 of each kingdom bundle is **not** the bulk-terrain source and
+carries no geometry at all: it is the scene's actor animation bank
+(see [`world-map-overlay`](../formats/world-map-overlay.md)) - that
+hunt is independent of the continent terrain emit mechanism.
 
 The horizon emitter is called by direct `jal` from SCUS - it does not
 need function-pointer dispatch. Ghidra's reference manager misses the

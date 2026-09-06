@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; slot-4 records</div>
-  <h1>Slot-4 records (world-map mesh library) <span class="tag tag-partial">Inferred</span></h1>
-  <p class="lede">Each of Legaia's three overworld continents (Drake, Sebucus, Karisto) ships as a &ldquo;kingdom bundle&rdquo; - a per-continent asset bundle whose numbered slots hold the map's textures, meshes and data. Slot 4 is a library of small 3D meshes - the props and landmarks the overworld renderer draws around the walking party. Each mesh is a pool of 8-byte vertices the PlayStation's geometry coprocessor reads straight off the loaded bytes, every frame, with no conversion in between.</p>
+  <h1>Slot-4 records (the world map's animation bank) <span class="tag tag-done">Confirmed</span></h1>
+  <p class="lede">Each of Legaia's three overworld continents (Drake, Sebucus, Karisto) ships as a &ldquo;kingdom bundle&rdquo; - a per-continent asset bundle whose numbered slots hold the map's textures, meshes and data. Slot 4 holds none of those: it is the overworld scene's <strong>animation bank</strong>, the same ordinary container every field scene carries. Each body is one clip, and each 8-byte entry in a clip is the position and rotation of one piece of a moving object in one frame.</p>
 </header>
 
 <section class="doc-section" id="at-a-glance">
@@ -9,21 +9,21 @@
   <dl class="kv">
     <dt>Where on disc</dt><dd>Slot 4 of the kingdom bundles: PROT <code>0086</code> (Drake, <code>map01</code>), <code>0245</code> (Sebucus, <code>map02</code>), <code>0392</code> (Karisto, <code>map03</code>). Type byte <code>0x05</code>.</dd>
     <dt>Magic</dt><dd>None. Every sub-body carries the constant marker <code>0x080C</code> at <code>+4</code>.</dd>
-    <dt>Size</dt><dd>15-16 bodies per kingdom; 24-32 KB decoded; 8 bytes per vertex record.</dd>
-    <dt>In RAM</dt><dd>Loaded verbatim (LZS-decoded, no fixup) at a per-kingdom base - see <a href="#ram-layout">RAM layout</a>.</dd>
+    <dt>Size</dt><dd>15-16 clips per kingdom; 24-32 KB decoded; 8 bytes per (frame, part) entry.</dd>
+    <dt>In RAM</dt><dd>Loaded verbatim (LZS-decoded, no fixup) at the type-<code>0x05</code> buffer pointer <code>_DAT_8007B888</code>, so the base differs per kingdom - see <a href="#ram-layout">RAM layout</a>.</dd>
     <dt>Parser</dt><dd><code>legaia_asset::world_map_overlay</code>; engine <code>SceneResources::world_map_slot4</code>.</dd>
-    <dt>Confidence</dt><dd>Inferred - container and RAM placement byte-verified; consumer pinned reading records in place as GTE vertices; <code>kind</code> / <code>attr</code> characterised, not decoded.</dd>
+    <dt>Confidence</dt><dd>Confirmed - container and RAM placement byte-verified, every header and entry field pinned to the instruction that reads it, clip lookup checked against a live <code>map01</code> state.</dd>
     <dt>Used by</dt><dd><a href="../subsystems/world-map.html">World map</a>, <a href="../subsystems/world-overview-viewer.html">World-overview viewer</a></dd>
   </dl>
 </section>
 
 <section class="doc-section" id="overview">
   <h2>What it is</h2>
-  <p>A kingdom's slot 4 is a small <strong>mesh library</strong>: 15-16 self-contained bodies, each an 8-byte header plus a pool of 3D vertices. The world-map renderer walks the bodies in place each frame, pushes vertices through the GTE (the geometry coprocessor), and emits ordinary triangle and quad packets. The triangle topology is <em>not</em> in the body - a separate command stream indexes into the vertex pool.</p>
+  <p>A kingdom's slot 4 is an <strong>animation bank</strong>: 15-16 self-contained clips, each an 8-byte header plus a table of 8-byte poses laid out frame by frame. An actor on the overworld picks a clip by number, the engine advances a cursor through it, and for each frame it applies one pose to each piece of the actor's model before drawing that piece. The model itself lives elsewhere - slot 4 carries only the motion.</p>
   <ul class="bullets">
+    <li><strong>Not geometry of any kind.</strong> No vertices, no triangles, no coastlines. Slot 4 was read as a vertex pool for a long time; that reading is falsified (see <a href="#falsified">History</a>) and it is why the format looked like it had a missing &ldquo;command stream&rdquo; that nobody could find.</li>
     <li><strong>Not the continent itself.</strong> The bulk terrain (~4300 textured quads in the top view) comes from the kingdom's slot-1 TMD pack, drawn through the overlay-mode dispatch table - see <a href="../subsystems/world-map.html#bulk-continent-terrain-emit-mechanism-pinned">world map - bulk terrain</a>.</li>
-    <li><strong>Not a coastline or map outline.</strong> That reading is falsified; see <a href="#falsified">History</a>.</li>
-    <li><strong>Not a move table</strong>, although the type byte <code>0x05</code> is what <a href="asset-type.html">asset-type</a> labels &ldquo;MOVE&rdquo;. The kingdom-bundle consumer treats each body as a mesh.</li>
+    <li><strong>Not a world-map format.</strong> The type byte <code>0x05</code> is what <a href="asset-type.html">asset-type</a> labels &ldquo;MOVE&rdquo;, and every field scene's type-<code>0x05</code> section has the same shape: the same <code>0x080C</code> marker, the same header fields, the same size law. A town's bank is this format with more clips in it. See <a href="anm.html">ANM</a>.</li>
   </ul>
   <table>
     <thead><tr><th>Bundle</th><th>PROT index</th><th>CDNAME label</th><th>Decoded size</th><th>Bodies</th></tr></thead>
@@ -38,7 +38,7 @@
 <section class="doc-section" id="container">
   <h2>Layout</h2>
   <figure class="overlay-strip">
-    <svg viewBox="0 0 760 200" width="100%" style="max-width:760px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Slot-4 body layout: 8-byte header, vertex records, 8-byte zero trailer; one record expands into four 16-bit fields x, y, z, attr, of which x and y form the GTE VXY register and z the VZ register">
+    <svg viewBox="0 0 760 210" width="100%" style="max-width:760px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Slot-4 clip layout: 8-byte header, one 8-byte entry per part per frame, 8-byte zero trailer; one entry expands into three packed 12-bit translation components sharing a nibble byte, plus three 8-bit rotation angles">
       <style>
         .s4-box  { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.3; }
         .s4-soft { fill: var(--bg-raised); stroke: var(--border); stroke-width: 1.1; stroke-dasharray: 3 3; }
@@ -46,47 +46,59 @@
         .s4-sub  { font: 11px monospace; fill: var(--text-muted); }
         .s4-line { stroke: var(--text-muted); stroke-width: 1; fill: none; }
       </style>
-      <!-- row 1: one body -->
-      <text class="s4-sub" x="8" y="18">one body (8 + 8&#215;count_a&#215;count_b + 8 bytes)</text>
+      <!-- row 1: one clip -->
+      <text class="s4-sub" x="8" y="18">one clip (8 + 8&#215;parts&#215;frames + 8 bytes)</text>
       <rect class="s4-box" x="8" y="28" width="120" height="44"/>
       <text class="s4-lab" x="68" y="46" text-anchor="middle">header</text>
       <text class="s4-sub" x="68" y="62" text-anchor="middle">8 B, marker 0x080C</text>
       <rect class="s4-box" x="132" y="28" width="96" height="44"/>
-      <text class="s4-lab" x="180" y="46" text-anchor="middle">record 0</text>
+      <text class="s4-lab" x="180" y="46" text-anchor="middle">f0 part 0</text>
       <text class="s4-sub" x="180" y="62" text-anchor="middle">8 B</text>
       <rect class="s4-box" x="232" y="28" width="96" height="44"/>
-      <text class="s4-lab" x="280" y="46" text-anchor="middle">record 1</text>
+      <text class="s4-lab" x="280" y="46" text-anchor="middle">f0 part 1</text>
       <text class="s4-sub" x="280" y="62" text-anchor="middle">8 B</text>
       <rect class="s4-soft" x="332" y="28" width="200" height="44"/>
-      <text class="s4-lab" x="432" y="46" text-anchor="middle">&#8230; count_a &#215; count_b</text>
-      <text class="s4-sub" x="432" y="62" text-anchor="middle">records, 8-byte stride</text>
+      <text class="s4-lab" x="432" y="46" text-anchor="middle">&#8230; frame-major</text>
+      <text class="s4-sub" x="432" y="62" text-anchor="middle">parts &#215; frames entries</text>
       <rect class="s4-box" x="536" y="28" width="120" height="44"/>
       <text class="s4-lab" x="596" y="46" text-anchor="middle">trailer</text>
       <text class="s4-sub" x="596" y="62" text-anchor="middle">8 zero bytes</text>
       <!-- zoom lines -->
-      <path class="s4-line" d="M132 72 L60 112"/>
-      <path class="s4-line" d="M228 72 L700 112"/>
-      <!-- row 2: one record -->
-      <text class="s4-sub" x="60" y="104">one record = one GTE vertex</text>
-      <rect class="s4-box" x="60" y="112" width="160" height="44"/>
-      <text class="s4-lab" x="140" y="130" text-anchor="middle">x</text>
-      <text class="s4-sub" x="140" y="146" text-anchor="middle">+0 i16</text>
-      <rect class="s4-box" x="220" y="112" width="160" height="44"/>
-      <text class="s4-lab" x="300" y="130" text-anchor="middle">y</text>
-      <text class="s4-sub" x="300" y="146" text-anchor="middle">+2 i16</text>
-      <rect class="s4-box" x="380" y="112" width="160" height="44"/>
-      <text class="s4-lab" x="460" y="130" text-anchor="middle">z</text>
-      <text class="s4-sub" x="460" y="146" text-anchor="middle">+4 i16</text>
-      <rect class="s4-soft" x="540" y="112" width="160" height="44"/>
-      <text class="s4-lab" x="620" y="130" text-anchor="middle">attr</text>
-      <text class="s4-sub" x="620" y="146" text-anchor="middle">+6 i16, ignored</text>
-      <!-- register brackets -->
-      <path class="s4-line" d="M60 166 L60 172 L380 172 L380 166"/>
-      <text class="s4-sub" x="220" y="188" text-anchor="middle">GTE register VXYn</text>
-      <path class="s4-line" d="M380 166 L380 172 L700 172 L700 166"/>
-      <text class="s4-sub" x="540" y="188" text-anchor="middle">GTE register VZn (high half dropped)</text>
+      <path class="s4-line" d="M132 72 L20 112"/>
+      <path class="s4-line" d="M228 72 L740 112"/>
+      <!-- row 2: one entry, byte by byte -->
+      <text class="s4-sub" x="20" y="104">one entry = one part&#39;s pose in one frame</text>
+      <rect class="s4-box" x="20" y="112" width="90" height="44"/>
+      <text class="s4-lab" x="65" y="130" text-anchor="middle">tx lo</text>
+      <text class="s4-sub" x="65" y="146" text-anchor="middle">byte 0</text>
+      <rect class="s4-box" x="110" y="112" width="90" height="44"/>
+      <text class="s4-lab" x="155" y="130" text-anchor="middle">ty lo</text>
+      <text class="s4-sub" x="155" y="146" text-anchor="middle">byte 1</text>
+      <rect class="s4-box" x="200" y="112" width="90" height="44"/>
+      <text class="s4-lab" x="245" y="130" text-anchor="middle">ty hi | tx hi</text>
+      <text class="s4-sub" x="245" y="146" text-anchor="middle">byte 2 nibbles</text>
+      <rect class="s4-box" x="290" y="112" width="90" height="44"/>
+      <text class="s4-lab" x="335" y="130" text-anchor="middle">tz lo</text>
+      <text class="s4-sub" x="335" y="146" text-anchor="middle">byte 3</text>
+      <rect class="s4-box" x="380" y="112" width="90" height="44"/>
+      <text class="s4-lab" x="425" y="130" text-anchor="middle">-- | tz hi</text>
+      <text class="s4-sub" x="425" y="146" text-anchor="middle">byte 4 nibbles</text>
+      <rect class="s4-soft" x="470" y="112" width="90" height="44"/>
+      <text class="s4-lab" x="515" y="130" text-anchor="middle">rot X</text>
+      <text class="s4-sub" x="515" y="146" text-anchor="middle">byte 5</text>
+      <rect class="s4-soft" x="560" y="112" width="90" height="44"/>
+      <text class="s4-lab" x="605" y="130" text-anchor="middle">rot Y</text>
+      <text class="s4-sub" x="605" y="146" text-anchor="middle">byte 6</text>
+      <rect class="s4-soft" x="650" y="112" width="90" height="44"/>
+      <text class="s4-lab" x="695" y="130" text-anchor="middle">rot Z</text>
+      <text class="s4-sub" x="695" y="146" text-anchor="middle">byte 7</text>
+      <!-- brackets -->
+      <path class="s4-line" d="M20 166 L20 174 L470 174 L470 166"/>
+      <text class="s4-sub" x="245" y="192" text-anchor="middle">three 12-bit signed translations</text>
+      <path class="s4-line" d="M470 166 L470 174 L740 174 L740 166"/>
+      <text class="s4-sub" x="605" y="192" text-anchor="middle">three 8-bit angles (&#215;16 = PSX units)</text>
     </svg>
-    <figcaption>A slot-4 body is a header, a run of 8-byte vertex records, and a zero trailer; the renderer loads each record's two words directly into the GTE vertex registers.</figcaption>
+    <figcaption>A slot-4 clip is a header, one 8-byte entry per part per frame in frame order, and a zero trailer. An entry packs three 12-bit translations across its first five bytes - two of them sharing byte 2's nibbles - and three byte-sized rotation angles after them.</figcaption>
   </figure>
 
   <h3 id="outer-pack">Outer pack</h3>
@@ -99,86 +111,77 @@
     </tbody>
   </table>
 
-  <h3 id="sub-body-header">Sub-body header (8 bytes)</h3>
+  <h3 id="sub-body-header">Clip header (8 bytes)</h3>
   <table class="layout">
     <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
     <tbody>
-      <tr><td><code>+0x00</code></td><td>u8</td><td><code>count_a</code></td><td>Records per group</td></tr>
-      <tr><td><code>+0x01</code></td><td>u8</td><td><code>flag_a</code></td><td>Usually 0; 1 for <code>kind = 4</code> bodies</td></tr>
-      <tr><td><code>+0x02</code></td><td>u8</td><td><code>count_b</code></td><td>Number of groups</td></tr>
-      <tr><td><code>+0x03</code></td><td>u8</td><td><code>flag_b</code></td><td>Usually 0</td></tr>
-      <tr><td><code>+0x04</code></td><td>u16</td><td><code>marker</code></td><td>Constant <code>0x080C</code> in every body</td></tr>
-      <tr><td><code>+0x06</code></td><td>u16</td><td><code>kind</code></td><td>1, 2 or 4 - body class / scope tag</td></tr>
+      <tr><td><code>+0x00</code></td><td>u8</td><td><code>part_count</code></td><td>Pieces posed per frame. Must equal the model&#39;s object count or the whole draw is skipped</td></tr>
+      <tr><td><code>+0x01</code></td><td>u8</td><td><code>flags</code></td><td>Bit 0 enables blending between consecutive frames; no other bit is ever set</td></tr>
+      <tr><td><code>+0x02</code></td><td>u16</td><td><code>frame_count</code></td><td>Clip length in frames (the high byte is 0 in every clip on the disc)</td></tr>
+      <tr><td><code>+0x04</code></td><td>u16</td><td><code>marker</code></td><td>Constant <code>0x080C</code> - the animation-record marker, never read by the game</td></tr>
+      <tr><td><code>+0x06</code></td><td>u16</td><td><code>rate</code></td><td>Sub-frame divisor 1 / 2 / 4; only its low byte is read, and only when blending is on</td></tr>
     </tbody>
   </table>
 
-  <h3 id="body-payload">Body payload</h3>
+  <h3 id="body-payload">Clip payload</h3>
   <table class="layout">
     <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
     <tbody>
-      <tr><td><code>+0x08</code></td><td>8 &times; <code>count_a &times; count_b</code></td><td><code>record[]</code></td><td>GTE vertices <code>(i16 x, i16 y, i16 z, i16 attr)</code></td></tr>
+      <tr><td><code>+0x08</code></td><td>8 &times; <code>parts &times; frames</code></td><td><code>entry[]</code></td><td>Poses in <strong>frame order</strong>: entry <code>(f, p)</code> sits at <code>+8 + (f &times; parts + p) &times; 8</code></td></tr>
       <tr><td>after</td><td>8</td><td>trailer</td><td>Always 8 zero bytes</td></tr>
     </tbody>
   </table>
-  <p>Body size is always <code>8 + count_a &times; count_b &times; 8 + 8</code>; the arithmetic fits every body in all three kingdoms exactly.</p>
+  <p>Clip size is always <code>8 + parts &times; frames &times; 8 + 8</code>; the arithmetic fits every clip in all three kingdoms exactly, and every trailer is zero.</p>
 
-  <h3 id="per-record-semantic">Each record is a GTE vertex</h3>
-  <p>The per-kind handler receives the record region as its vertex pool and indexes it with byte offsets (<code>index &amp; 0x7FF8</code>, an 8-byte stride). It loads the first word into <code>VXYn</code> (X low half, Y high half) and the second into <code>VZn</code> (Z in the low half), then runs RTPT (perspective-transform three vertices) and NCLIP (backface cull). The fourth <code>i16</code> rides in the discarded high half of the <code>VZn</code> word.</p>
+  <h3 id="per-record-semantic">Each entry is one pose</h3>
+  <p>The pose decoder unpacks three <strong>12-bit signed</strong> translation components out of the entry&#39;s first five bytes - byte 2 carries the high nibbles of X and Y, byte 4&#39;s low nibble the high nibble of Z - sign-extends each, and pushes the resulting vector through the GTE against the piece&#39;s rotation matrix. Bytes 5, 6 and 7 are the three rotation angles, each scaled <code>&times; 16</code> into the console&#39;s 4096-per-turn angle units.</p>
   <table class="layout">
     <thead><tr><th>Bytes</th><th>Field</th><th>Role</th></tr></thead>
     <tbody>
-      <tr><td>0..1</td><td><code>x</code></td><td>Model-space X - GTE <code>VXYn</code> low half</td></tr>
-      <tr><td>2..3</td><td><code>y</code></td><td>Model-space Y - GTE <code>VXYn</code> high half</td></tr>
-      <tr><td>4..5</td><td><code>z</code></td><td>Model-space Z - GTE <code>VZn</code></td></tr>
-      <tr><td>6..7</td><td><code>attr</code></td><td>Not a coordinate; the GTE vertex load ignores it</td></tr>
+      <tr><td>0, 1, 3</td><td>translation low bytes</td><td>X, Y and Z low 8 bits</td></tr>
+      <tr><td>2</td><td>shared nibbles</td><td>Low nibble = X high nibble, high nibble = Y high nibble</td></tr>
+      <tr><td>4</td><td>shared nibble + padding</td><td>Low nibble = Z high nibble; <strong>high nibble reserved</strong> and zero in every entry</td></tr>
+      <tr><td>5, 6, 7</td><td>rotation X, Y, Z</td><td><code>angle = byte &lt;&lt; 4</code></td></tr>
     </tbody>
   </table>
-  <p>Coordinate ranges are object-local mesh extents (Sebucus body 0: X in [-20224, -3598], Y in [-6416, 4351], Z in [-17649, 20992]).</p>
+  <p>Translations are small - the whole corpus spans roughly <code>-541 .. 384</code> units - because they are offsets of one piece within a model, not world positions. When blending is on, the decoder also unpacks the next frame&#39;s entry for the same piece and interpolates both translation and rotation with the cursor&#39;s sub-frame fraction, wrapping to frame 0 at the end of the clip unless the actor is set to hold its last frame.</p>
 
-  <h3 id="kind-tag"><code>kind</code> - a class / scope tag</h3>
-  <p><code>kind</code> is not the renderer's primitive kind (that comes from a separate command word). Hashing bodies across the three kingdoms shows what it partitions:</p>
-  <table>
-    <thead><tr><th><code>kind</code></th><th>What the bodies are</th><th>Shared?</th></tr></thead>
-    <tbody>
-      <tr><td>1</td><td>The three leading bodies (0, 1, 2), <code>count_a = 10</code></td><td>Byte-identical in all three kingdoms - a universal mesh set</td></tr>
-      <tr><td>2</td><td>Full-3D kingdom objects</td><td>Some kingdom-specific; one trailing cluster identical in all three; others shared by kingdom pairs</td></tr>
-      <tr><td>4</td><td>Widest-extent meshes (Drake body 13 reaches the &plusmn;32 K world bounds); always <code>flag_a = 1</code></td><td>Shared by kingdom pairs</td></tr>
-    </tbody>
-  </table>
-  <p>So each kingdom's slot 4 is an <strong>assembly</strong> from a shared library plus kingdom-specific bodies. Degenerate bodies (<code>count_a = 1</code>, all-zero records) are empty placeholder slots.</p>
+  <h3 id="kind-tag"><code>rate</code> - the sub-frame divisor</h3>
+  <p>The header&#39;s <code>+0x06</code> field, once read as a body class tag, is the clip&#39;s sub-frame divisor: the cursor advances by <code>ceil(speed &times; 2 / rate)</code> when blending is on, and by the actor&#39;s plain speed when it is off. That is why the field and the blend flag co-vary - every <code>rate = 4</code> clip sets the flag. Values <code>1</code>, <code>2</code> and <code>4</code> are the only ones on the disc.</p>
+  <p>The sharing pattern that reading found is still real: the three leading <code>rate = 1</code> clips are byte-identical in all three kingdoms, a trailing cluster is shared across all three, and other clips are shared between kingdom pairs - the same animation reused wherever the same kind of actor appears. Degenerate clips (one part, all-zero entries) are empty placeholders.</p>
 
-  <h3 id="attr-value"><code>attr</code> - present but unread</h3>
-  <p>The fourth <code>i16</code> varies per vertex, is uncorrelated with position, and is not a neighbour's coordinate. A sweep of every cluster-A handler finds no reader of the pool word's high half, so it is reserved data the render path never uses.</p>
+  <h3 id="attr-value">The one field nothing reads</h3>
+  <p>Every field of the entry is read every frame except the <strong>high nibble of byte 4</strong>, which is zero in all 22 228 entries across the three kingdom banks and a town&#39;s bank - structural padding, not dropped data. The pair of bytes an earlier reading called an unused <code>attr</code> value is the Y and Z rotation.</p>
 
   <details class="disclosure">
-    <summary>Per-kingdom body inventory</summary>
+    <summary>Per-kingdom clip inventory</summary>
     <div class="disclosure-body" id="per-kingdom-inventory">
-      <p>Drake = 15 bodies, Sebucus = 16, Karisto = 16. Bodies 0-2 are the shared <code>kind = 1</code> templates in every kingdom.</p>
+      <p>Drake = 15 clips, Sebucus = 16, Karisto = 16. Clips 0-2 are the shared <code>rate = 1</code> templates in every kingdom, and an actor selects a clip by its index plus one.</p>
       <h4 id="drake-inventory">Drake (<code>map01</code>, PROT 0086)</h4>
       <table>
-        <thead><tr><th>Body</th><th>count_a</th><th>count_b</th><th>kind</th><th>flag_a</th><th>Records</th><th>Notes / X&middot;Y&middot;Z span</th></tr></thead>
+        <thead><tr><th>Clip</th><th>Parts</th><th>Frames</th><th>Rate</th><th>Blend</th><th>Entries</th><th>Notes</th></tr></thead>
         <tbody>
-          <tr><td>0</td><td>10</td><td>20</td><td>1</td><td>0</td><td>200</td><td>16626 &middot; 10767 &middot; 38641; shared template</td></tr>
-          <tr><td>1</td><td>10</td><td>20</td><td>1</td><td>0</td><td>200</td><td>shared template</td></tr>
-          <tr><td>2</td><td>10</td><td>30</td><td>1</td><td>0</td><td>300</td><td>shared template</td></tr>
-          <tr><td>3</td><td>2</td><td>30</td><td>2</td><td>0</td><td>60</td><td>degenerate plane</td></tr>
-          <tr><td>4</td><td>2</td><td>20</td><td>2</td><td>0</td><td>40</td><td>degenerate plane</td></tr>
-          <tr><td>5</td><td>10</td><td>30</td><td>2</td><td>0</td><td>300</td><td>25 unique of 30 groups</td></tr>
-          <tr><td>6</td><td>10</td><td>26</td><td>2</td><td>0</td><td>260</td><td></td></tr>
-          <tr><td>7</td><td>10</td><td>30</td><td>2</td><td>0</td><td>300</td><td>25 unique of 30 groups</td></tr>
-          <tr><td>8</td><td>10</td><td>3</td><td>2</td><td>0</td><td>30</td><td>3 identical groups (filler)</td></tr>
-          <tr><td>9</td><td>12</td><td>30</td><td>2</td><td>0</td><td>360</td><td>10725 &middot; 25856 &middot; 21248; shared with Sebucus / Karisto 12</td></tr>
-          <tr><td>10</td><td>12</td><td>30</td><td>2</td><td>0</td><td>360</td><td>13056 &middot; 18432 &middot; 31503; shared with Sebucus / Karisto 13</td></tr>
-          <tr><td>11</td><td>12</td><td>10</td><td>2</td><td>0</td><td>120</td><td>11492 &middot; 27648 &middot; 24064; shared with Sebucus / Karisto 14</td></tr>
-          <tr><td>12</td><td>10</td><td>120</td><td>2</td><td>0</td><td>1200</td><td>16118 &middot; 4096 &middot; 31473; near-flat</td></tr>
-          <tr><td>13</td><td>14</td><td>15</td><td>4</td><td>1</td><td>210</td><td>65485 &middot; 14336 &middot; 64512; corner-clustered</td></tr>
-          <tr><td>14</td><td>2</td><td>30</td><td>2</td><td>0</td><td>60</td><td></td></tr>
+          <tr><td>0</td><td>10</td><td>20</td><td>1</td><td>no</td><td>200</td><td>shared template</td></tr>
+          <tr><td>1</td><td>10</td><td>20</td><td>1</td><td>no</td><td>200</td><td>shared template</td></tr>
+          <tr><td>2</td><td>10</td><td>30</td><td>1</td><td>no</td><td>300</td><td>shared template</td></tr>
+          <tr><td>3</td><td>2</td><td>30</td><td>2</td><td>no</td><td>60</td><td>half the entries are zero</td></tr>
+          <tr><td>4</td><td>2</td><td>20</td><td>2</td><td>no</td><td>40</td><td>drives a live 2-part actor</td></tr>
+          <tr><td>5</td><td>10</td><td>30</td><td>2</td><td>no</td><td>300</td><td>25 unique of 30 frames</td></tr>
+          <tr><td>6</td><td>10</td><td>26</td><td>2</td><td>no</td><td>260</td><td></td></tr>
+          <tr><td>7</td><td>10</td><td>30</td><td>2</td><td>no</td><td>300</td><td>25 unique of 30 frames</td></tr>
+          <tr><td>8</td><td>10</td><td>3</td><td>2</td><td>no</td><td>30</td><td>3 identical frames (placeholder)</td></tr>
+          <tr><td>9</td><td>12</td><td>30</td><td>2</td><td>no</td><td>360</td><td>shared with Sebucus / Karisto 12</td></tr>
+          <tr><td>10</td><td>12</td><td>30</td><td>2</td><td>no</td><td>360</td><td>shared with Sebucus / Karisto 13; drives a live 12-part actor</td></tr>
+          <tr><td>11</td><td>12</td><td>10</td><td>2</td><td>no</td><td>120</td><td>shared with Sebucus / Karisto 14</td></tr>
+          <tr><td>12</td><td>10</td><td>120</td><td>2</td><td>no</td><td>1200</td><td>the longest clip on any map</td></tr>
+          <tr><td>13</td><td>14</td><td>15</td><td>4</td><td>yes</td><td>210</td><td>drives a live 14-part actor</td></tr>
+          <tr><td>14</td><td>2</td><td>30</td><td>2</td><td>no</td><td>60</td><td>drives a live 2-part actor</td></tr>
         </tbody>
       </table>
       <h4 id="sebucus-inventory">Sebucus (<code>map02</code>, PROT 0245)</h4>
-      <p>16 bodies. Bodies 8-11 are <code>kind = 4</code>, <code>flag_a = 1</code>.</p>
+      <p>16 clips. Clips 8-11 are the blended <code>rate = 4</code> group.</p>
       <h4 id="karisto-inventory">Karisto (<code>map03</code>, PROT 0392)</h4>
-      <p>16 bodies. Bodies 4-9 and 11 are <code>kind = 4</code>, <code>flag_a = 1</code>. Body 10 is the corpus's one <code>kind = 2</code> body with <code>flag_a = 1</code>.</p>
+      <p>16 clips. Clips 4-9 and 11 are blended at <code>rate = 4</code>; clip 10 is the corpus&#39;s one blended <code>rate = 2</code> clip.</p>
       <p>Full dump: <code>asset kingdom-slot &lt;PROT&gt;.BIN --slot 4</code>.</p>
     </div>
   </details>
@@ -186,27 +189,38 @@
 
 <section class="doc-section" id="ram-layout">
   <h2>RAM layout</h2>
-  <p>The LZS decoder writes slot 4 straight to its destination - byte-identical to the disc, no fixup - and the resident base <strong>differs per kingdom</strong>, so a RAM probe must locate the base first. Body 0's records start <code>0x40</code> past the base.</p>
+  <p>The LZS decoder writes slot 4 straight to its destination - byte-identical to the disc, no fixup - and the destination is the asset dispatcher&#39;s type-<code>0x05</code> buffer pointer <code>_DAT_8007B888</code>, freshly allocated per scene load. That is why the base differs per kingdom, and it is also how a RAM probe should find it: read the pointer rather than hunting for the bytes. Clip 0&#39;s entries start <code>0x40</code> past the base.</p>
   <table>
-    <thead><tr><th>Kingdom</th><th>Bundle</th><th>Resident base</th><th>End (excl.)</th><th>Bytes</th></tr></thead>
+    <thead><tr><th>Kingdom</th><th>Bundle</th><th><code>_DAT_8007B888</code></th><th>End (excl.)</th><th>Bytes</th></tr></thead>
     <tbody>
       <tr><td>Drake</td><td><code>map01</code> / 0086</td><td><code>0x8011A624</code></td><td><code>0x80122454</code></td><td>32304</td></tr>
       <tr><td>Sebucus</td><td><code>map02</code> / 0245</td><td><code>0x80119CE4</code></td><td><code>0x80120638</code></td><td>26964</td></tr>
       <tr><td>Karisto</td><td><code>map03</code> / 0392</td><td><code>0x80108D84</code></td><td><code>0x8010ED00</code></td><td>24444</td></tr>
     </tbody>
   </table>
+  <p>In a live Drake overworld save the pointer reads <code>0x8011A624</code> and the 32 304 bytes there match the disc payload exactly - which settles the identity of that address rather than leaving it a coincidence of allocation order.</p>
 </section>
 
 <section class="doc-section" id="consumer">
-  <h2>How it is drawn</h2>
-  <p>The world-map top-view renderer (in the world-map overlay) walks the slot-4 bodies in place every frame and hands each to the SCUS-resident <strong>primitive dispatcher</strong> - a TMD-style display-list walker. The dispatcher reads one command word (a 15-bit primitive kind plus a 16-bit count), optionally re-arms the GTE colour registers, and tail-calls a per-kind handler through a jump table. Each handler transforms 3-4 pool vertices through the GTE, writes one GP0 packet into the scene's primitive pool, and chains to the next command.</p>
+  <h2>How it is played</h2>
+  <p>Four links, each a plain call, each reading a field of what it was handed. The scene loader allocates the bank and publishes the pointer; the actor tick resolves an actor&#39;s clip number into a clip and advances its cursor; the animated-actor renderer works out which frame that cursor lands on and walks the model&#39;s pieces; the pose decoder turns one entry into a translation and a rotation. Only then does the ordinary primitive dispatcher draw the piece.</p>
+  <table>
+    <thead><tr><th>Step</th><th>Routine</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td>install</td><td><code>FUN_8001F05C</code> case 5</td><td>Allocates the buffer and stores it at <code>_DAT_8007B888</code></td></tr>
+      <tr><td>select + clock</td><td><code>FUN_800204F8</code></td><td>Resolves the actor&#39;s clip number to a clip and advances the 1/16-frame cursor</td></tr>
+      <tr><td>draw</td><td><code>FUN_8001B964</code></td><td>Computes the frame, walks the model&#39;s pieces, calls the primitive dispatcher per piece</td></tr>
+      <tr><td>pose</td><td><code>FUN_8001BE80</code></td><td>Decodes one entry into a GTE translation and rotation</td></tr>
+    </tbody>
+  </table>
+  <p>The clip lookup is <strong>one-based</strong>: the actor&#39;s clip number indexes the offset table with no <code>+4</code>, so number 1 reads the first offset. An actor with the party flag set draws from the party bank instead, and numbers above <code>0x3FF</code> from the &ldquo;MOVE2&rdquo; bank - neither of which the overworld uses.</p>
   <ul class="bullets">
-    <li><strong>In place.</strong> A read-watchpoint tiled across the Drake window catches only renderer reads (363 of 365 captures); no copy into a working buffer exists.</li>
-    <li><strong>Generic code.</strong> One dispatcher serves all three kingdoms and the field-character renderer; the world-map overlay swaps in its own handler table for the bulk-terrain route.</li>
-    <li><strong>Four handler banks</strong>, selected per call by fade and command flags; retail world-map play uses only banks 0 and 1.</li>
+    <li><strong>In place.</strong> A read-watchpoint tiled across the Drake window catches only reads (363 of 365 captures); nothing copies the bank anywhere.</li>
+    <li><strong>Six references, image-wide.</strong> The buffer pointer is written twice, read once in the actor tick, and read three times in the Baka Fighter minigame overlay. No world-map overlay touches it, and the primitive dispatcher never receives it.</li>
+    <li><strong>A hard structural check.</strong> If a clip&#39;s part count does not equal the model&#39;s object count, the renderer skips the whole draw. On a live Drake overworld save every animated actor satisfies it - 2, 12, 14 and 2 parts against models of exactly those sizes.</li>
   </ul>
-  <h3 id="per-kind">Primitive kinds</h3>
-  <p>Kinds 8-19 map onto the standard PlayStation polygon packets - flat, gouraud and textured triangles and quads. Kind 18 (an extended textured quad) is the per-frame workhorse in every kingdom. Each command word packs two vertex indices per <code>u32</code>, both masked <code>&amp; 0x7FF8</code>.</p>
+  <h3 id="per-kind">What actually draws the pieces</h3>
+  <p>The primitive dispatcher is a TMD-style display-list walker: it reads one command word (a 15-bit primitive kind plus a 16-bit count), optionally re-arms the GTE colour registers, and tail-calls a per-kind handler through a jump table. Each handler transforms 3-4 vertices through the GTE, writes one GP0 packet into the scene&#39;s primitive pool, and chains to the next command. Its vertex pools are ordinary models from the global TMD table - never slot 4. It is documented here because it is the world map&#39;s renderer and because the capture that first found slot-4 reads recorded return addresses inside its animated caller.</p>
 
   <details class="disclosure">
     <summary>Primitive kinds, bank selection and per-kingdom render load</summary>
@@ -238,18 +252,18 @@
           <tr><td><code>!= 0</code></td><td><code>0x20000000</code></td><td>3 (<code>+0xF0</code>)</td><td>Never observed in retail world-map render</td></tr>
         </tbody>
       </table>
-      <p>Over 19,935 dispatcher entries on Drake, 77% take bank 0 and 23% bank 1; neither high flag bit is ever set. Exec-breakpoint totals over one warp transition (1800 vsyncs, uncapped): Drake 71,331 cluster-A hits, Sebucus 90,096, Karisto 13,593 - tracking scene render volume, not slot-4 size. Kind 18 dominates in every kingdom (Sebucus 20,601 instances, about 80% of its primitives); kind 13 triangles are heavy on Drake (9,465) and nearly absent on Karisto (49).</p>
-      <p id="cross-kingdom-hits">A second reader, &ldquo;cluster B&rdquo; at <code>0x80059DE4</code>, is the generic VRAM <code>LoadImage</code> DMA (<code>FUN_80059BD4</code>) incidentally touching the window - not a slot-4 consumer. The dump file named <code>80059de4.txt</code> is that DMA routine.</p>
+      <p>Over 19,935 dispatcher entries on Drake, 77% take bank 0 and 23% bank 1; neither high flag bit is ever set. Exec-breakpoint totals over one warp transition (1800 vsyncs, uncapped): Drake 71,331 handler hits, Sebucus 90,096, Karisto 13,593 - a measure of per-kingdom render load, not of slot 4. Kind 18 dominates in every kingdom (Sebucus 20,601 instances, about 80% of its primitives); kind 13 triangles are heavy on Drake (9,465) and nearly absent on Karisto (49).</p>
+      <p id="cross-kingdom-hits">A second candidate reader at <code>0x80059DE4</code> is the generic VRAM <code>LoadImage</code> DMA (<code>FUN_80059BD4</code>) incidentally touching the window - not a slot-4 consumer. The dump file named <code>80059de4.txt</code> is that DMA routine.</p>
     </div>
   </details>
 
   <details class="disclosure">
-    <summary>The two callers: top-view dispatcher and per-actor renderer</summary>
+    <summary>The dispatcher&#39;s callers, and where the animation joins them</summary>
     <div class="disclosure-body" id="cluster-a-caller">
-      <p>Two call paths reach the primitive dispatcher with the same three arguments <code>(display_state, cmd_flags, fade_flags)</code>: <code>display_state[0]</code> is the vertex pool, <code>[3]</code> gates colour / light modulation, <code>[4]</code> is the command stream.</p>
+      <p>The primitive dispatcher takes <code>(display_state, cmd_flags, fade_flags)</code>: <code>display_state[0]</code> is the vertex pool, <code>[3]</code> gates colour / light modulation, <code>[4]</code> is the command stream. All of those come from a model in the global TMD table.</p>
       <ol>
-        <li><strong>Top-view dispatcher <code>FUN_801F69D8</code></strong> (world-map overlay, 2572 bytes). Copies a 0x20-byte camera struct into scratchpad, loops over visible tile cells (&plusmn;10 padding) in the scratchpad tile table, dereferences each 0x20-byte object record, applies frustum bounds and visibility flags, projects through the GTE, then calls the dispatcher with colour <code>0xD0D0D0</code> (variants for the record's <code>+0x1E</code> flag and the interactive bit <code>+0x12 &amp; 0x800</code>) and a fog cue <code>clamp((screen_z - 0x5000) &gt;&gt; 3, 0, 0x1000)</code>. This is the path that reads slot 4 in place.</li>
-        <li><strong>Per-actor renderer <code>FUN_8001ADA4</code></strong> (SCUS, 2456 bytes). Walks a linked list of actors; each actor's <code>+0x44</code> mesh table is <code>[u32 count, u32 mesh_ptr[count]]</code> and each pointer is a TMD group-descriptor array. This is the field-character path, sharing the dispatcher but not the slot-4 buffer.</li>
+        <li><strong>Top-view dispatcher <code>FUN_801F69D8</code></strong> (world-map overlay, 2572 bytes). Copies a 0x20-byte camera struct into scratchpad, loops over visible tile cells (&plusmn;10 padding), dereferences each 0x20-byte object record, applies frustum bounds and visibility flags, projects through the GTE, then calls the dispatcher with colour <code>0xD0D0D0</code> (variants for the record&#39;s <code>+0x1E</code> flag and the interactive bit <code>+0x12 &amp; 0x800</code>) and a fog cue <code>clamp((screen_z - 0x5000) &gt;&gt; 3, 0, 0x1000)</code>.</li>
+        <li><strong>Per-actor renderer <code>FUN_8001ADA4</code></strong> (SCUS, 2456 bytes). Walks a linked list of actors and switches on each actor&#39;s render mode. Mode 5 draws the actor&#39;s model chain as-is. <strong>Mode 1 runs an optional screen-space cull and then calls <code>FUN_8001B964</code></strong>, which re-poses every piece from the clip before drawing it - that is the path slot 4 feeds. A third mode, 11, steps a palette-cycling table that happens to live in the same actor field; it is a different format.</li>
       </ol>
     </div>
   </details>
@@ -292,10 +306,10 @@
   <table>
     <thead><tr><th>Tool</th><th>Role</th></tr></thead>
     <tbody>
-      <tr><td><code>asset kingdom-slot &lt;PROT&gt;.BIN --slot 4</code></td><td>Per-body inventory dump</td></tr>
-      <tr><td><code>asset slot4-png --input &lt;PROT&gt;.BIN --out &lt;png&gt;</code></td><td>Container renderer (<code>--style</code>, <code>--axes</code>, <code>--only-body</code>)</td></tr>
-      <tr><td><code>legaia_asset::world_map_overlay</code></td><td>Rust API: <code>parse</code>, <code>wireframe_segments_3d</code>, <code>record_points</code></td></tr>
-      <tr><td><code>LEGAIA_WORLDMAP_SLOT4=1 legaia-engine play-window</code></td><td>Inspection overlay of the decoded pools under the live camera and fog - not faithful geometry</td></tr>
+      <tr><td><code>asset kingdom-slot &lt;PROT&gt;.BIN --slot 4</code></td><td>Per-clip inventory dump (parts / frames / rate / blend flag)</td></tr>
+      <tr><td><code>asset player-anm &lt;PROT&gt;.BIN --desc-count 7</code></td><td>The generic animation-bank detector - it reports a kingdom bundle exactly as it reports any town</td></tr>
+      <tr><td><code>legaia_asset::world_map_overlay</code></td><td>Rust API: <code>parse</code>, the clip header accessors, <code>Slot4Record::transform</code>, <code>translation_path_segments</code></td></tr>
+      <tr><td><code>asset slot4-png</code>, <code>wireframe_segments_3d</code></td><td>The wireframe-era projections. They plot raw 16-bit slices that straddle the entries&#39; packed nibble boundaries - byte-inspection aids, never geometry</td></tr>
       <tr><td><code>scripts/pcsx-redux/</code> slot-4 dump / base-locate / diff scripts</td><td>Dump live RAM, find the per-kingdom base, byte-compare against the disc</td></tr>
     </tbody>
   </table>
@@ -307,14 +321,16 @@
   <table>
     <thead><tr><th>Function / site</th><th>Address</th><th>What it proves</th><th>Evidence</th></tr></thead>
     <tbody>
-      <tr><td>Primitive dispatcher <code>FUN_80043390</code></td><td><code>0x80043390</code>; SCUS jump table <code>0x8007657C</code>, overlay table <code>0x801F8968</code></td><td>Command-word decode, four-bank handler selection</td><td>Disassembly; <code>captures/slot4_dispatcher/</code></td></tr>
-      <tr><td>Kind-16 handler <code>FUN_80044C14</code></td><td><code>0x80044C14</code> (family <code>0x80043658..0x80045988</code>)</td><td>Each 8-byte record is loaded as a GTE vertex; <code>attr</code> unread</td><td>Disassembly sweep of every handler</td></tr>
-      <tr><td>World-map top-view renderer</td><td>return address <code>0x801F78D4</code>; entry <code>FUN_801F69D8</code></td><td>Slot 4 read in place, per frame, 363 / 365 captured reads; 762 of 2153 dispatcher calls take their command pointer from the window</td><td><code>autorun_slot4_source_map.lua</code>, <code>drake_castle_to_worldmap</code> state</td></tr>
-      <tr><td>LZS decoder <code>FUN_8001A55C</code></td><td>writes at <code>0x8001A604</code> etc.</td><td>Sole writer of the slot-4 window: decoded verbatim, no transcoder</td><td><code>autorun_slot4_loader_hunt.lua</code></td></tr>
-      <tr><td>Working-buffer writers <code>FUN_80028158</code>, <code>FUN_8001E54C</code></td><td><code>0x801BA000</code> buffer</td><td>Procedural mesh builder and chunk loader - other streams, never slot-4 pointers</td><td><code>autorun_slot4_transcoder_hunt.lua</code></td></tr>
-      <tr><td>Resident bases</td><td>Drake <code>0x8011A624</code>, Sebucus <code>0x80119CE4</code>, Karisto <code>0x80108D84</code></td><td>Byte-identical to the disc payload for every body</td><td><code>diff_slot4_ram_vs_disc.py</code>, <code>locate_slot4_base.py</code></td></tr>
-      <tr><td>TMD installer <code>FUN_80026B4C</code></td><td>store at <code>0x80026BA8</code></td><td>How <code>DAT_8007C018</code> is filled</td><td><code>find_addr_materializer_dat_8007c018.py</code></td></tr>
-      <tr><td>Party-mesh source</td><td>PROT 0874 section 0</td><td><code>DAT_8007C018[0..4]</code> byte-match the disc pack (6488 bytes on slot 3, 1048-byte prefix on slot 4)</td><td>Drake post-warp RAM dump vs LZS-decoded section</td></tr>
+      <tr><td>Asset dispatcher case 5</td><td><code>0x8001F38C</code>, store at <code>0x8001F3A8</code></td><td>Slot 4 lands at <code>_DAT_8007B888</code>, the generic type-<code>0x05</code> buffer</td><td>Disassembly</td></tr>
+      <tr><td>Clip selector <code>FUN_800204F8</code></td><td>bank pick <code>0x80020534</code>, lookup <code>0x80020584</code></td><td>One-based clip lookup out of that buffer; cursor advance and wrap</td><td>Disassembly; live <code>map01</code> state matches all four animated actors</td></tr>
+      <tr><td>Animated renderer <code>FUN_8001B964</code></td><td>frame math <code>0x8001BAC0</code>, part check <code>0x8001BAF0</code>, draw call <code>0x8001BC84</code></td><td>Frame-major entry indexing; the part-count / model-object-count invariant</td><td>Disassembly; live actor list</td></tr>
+      <tr><td>Pose decoder <code>FUN_8001BE80</code></td><td>translation unpack <code>0x8001BF04</code>, angles <code>0x8001C0CC</code></td><td>Three packed 12-bit translations plus three byte-scaled angles; the blend path</td><td>Disassembly</td></tr>
+      <tr><td>Reference sweep of the buffer pointer</td><td><code>0x8007B888</code></td><td>Six references image-wide, none in a render path</td><td><code>find-gp-relative-refs.py</code> over SCUS + every overlay</td></tr>
+      <tr><td>Resident bases</td><td>Drake <code>0x8011A624</code>, Sebucus <code>0x80119CE4</code>, Karisto <code>0x80108D84</code></td><td>Byte-identical to the disc payload for every clip; each equals that kingdom&#39;s buffer pointer</td><td><code>diff_slot4_ram_vs_disc.py</code>, <code>locate_slot4_base.py</code>, live state read</td></tr>
+      <tr><td>LZS decoder <code>FUN_8001A55C</code></td><td>writes at <code>0x8001A604</code> etc.</td><td>Sole writer of the window: decoded verbatim, no transcoder</td><td><code>autorun_slot4_loader_hunt.lua</code></td></tr>
+      <tr><td>Primitive dispatcher <code>FUN_80043390</code></td><td><code>0x80043390</code>; SCUS jump table <code>0x8007657C</code>, overlay table <code>0x801F8968</code></td><td>Command-word decode and four-bank handler selection - the renderer the posed pieces go through</td><td>Disassembly; <code>captures/slot4_dispatcher/</code></td></tr>
+      <tr><td>TMD installer <code>FUN_80026B4C</code></td><td>store at <code>0x80026BA8</code></td><td>How the global model table is filled</td><td><code>find_addr_materializer_dat_8007c018.py</code></td></tr>
+      <tr><td>Party-mesh source</td><td>PROT 0874 section 0</td><td>The table&#39;s first five entries byte-match the disc pack</td><td>Drake post-warp RAM dump vs LZS-decoded section</td></tr>
     </tbody>
   </table>
   <p>Full capture transcripts and reproduction steps: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/world-map-overlay.md" target="_blank" rel="noopener"><code>docs/formats/world-map-overlay.md</code></a>.</p>
@@ -326,9 +342,11 @@
     <summary>History: the coastline reading and other retired hypotheses</summary>
     <div class="disclosure-body">
       <ul class="bullets">
-        <li><strong>Coastline wireframe / dev-menu outline.</strong> Rendering every body on every projection plane and topology mode produces no map silhouette in any kingdom; the clean <code>xy</code> silhouettes of bodies 9 and 11 are 3D props seen sideways. A <code>count_a &times; count_b</code> heightfield grid fails the same test.</li>
-        <li><strong>&ldquo;Slot 4 is transcoded into the working buffer.&rdquo;</strong> The <code>0x801BA000</code> writes belong to the per-actor procedural stream, and the &ldquo;window full of TMDs&rdquo; snapshot was a <code>dolk</code> field scene, not a world map.</li>
-        <li><strong>&ldquo;Sebucus shows no render reads.&rdquo;</strong> A wrong-base assumption; against the verified base, 171 of 177 reads land in the window.</li>
+        <li><strong>A vertex pool with a missing command stream.</strong> The long-running reading: each 8-byte entry a 3D vertex <code>(x, y, z, attr)</code> loaded straight into the geometry coprocessor, with the triangle topology and object placement in a separate stream nobody had located. The stream was never found because it does not exist - the buffer pointer reaches no renderer, the entry&#39;s field boundaries fall on nibbles rather than 16-bit words, and the pair of bytes called <code>attr</code> is the Y and Z rotation. It came from reading a primitive handler that genuinely works that way and assuming slot 4 was its pool.</li>
+        <li><strong>Coastline wireframe / dev-menu outline.</strong> Rendering every body on every projection plane and topology mode produces no map silhouette in any kingdom - unsurprising, since the plotted values are packed transform fields. A <code>parts &times; frames</code> heightfield grid fails the same test.</li>
+        <li><strong>&ldquo;Slot 4 is transcoded into the working buffer.&rdquo;</strong> The <code>0x801BA000</code> writes belong to the per-actor procedural stream, and the &ldquo;window full of models&rdquo; snapshot was a <code>dolk</code> field scene, not a world map.</li>
+        <li><strong>&ldquo;Sebucus shows no render reads.&rdquo;</strong> A wrong-base assumption; against the verified base, 171 of 177 reads land in the window - and their return address sits in the pose decoder&#39;s caller, which is what identified the reader.</li>
+        <li><strong>&ldquo;The world-map overlay renderer reads it.&rdquo;</strong> A capture recorded a return address of <code>0x801F78D4</code>, but neither slot-B overlay image has a call instruction at the address that would produce it. What that value was is unresolved; it is not evidence of an overlay reader.</li>
         <li><strong>Table entries past the walk counter</strong> are stale pointers, not content.</li>
         <li><strong>PROT 0085 / 0244 / 0391</strong> named the entry an over-read window started in; the bundle is the next entry. See <a href="prot.html">PROT</a>.</li>
       </ul>
@@ -340,9 +358,9 @@
 <section class="doc-section" id="open">
   <h2>Open questions</h2>
   <ul class="bullets">
-    <li>Which caller, if any, selects handler banks 2 and 3 - candidates are debug render modes, battle reuse of the dispatcher, or cutscenes.</li>
-    <li>The exact CDNAME indirection that hands the PROT 0874 party-mesh bytes to the installer; a write breakpoint on <code>DAT_8007C018[0]</code> would settle it.</li>
-    <li>Who calls the asset dispatcher with the &ldquo;freeze&rdquo; argument that latches <code>DAT_8007B824</code> - no static SCUS caller does.</li>
+    <li>Which actor plays which clip. The numbers come from each scene&#39;s script, so naming a clip &ldquo;the windmill&rsquo;s spin&rdquo; needs a script pass, not more format work.</li>
+    <li>Which caller, if any, selects primitive-handler banks 2 and 3 - candidates are debug render modes, battle reuse of the dispatcher, or cutscenes.</li>
+    <li>The exact indirection that hands the party-mesh bytes to the model-table installer; a write breakpoint on the table&#39;s first entry would settle it.</li>
   </ul>
 </section>
 
