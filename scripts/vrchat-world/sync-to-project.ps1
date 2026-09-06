@@ -4,7 +4,7 @@
 #
 # The kit under scripts/vrchat-world/world-project/Assets/LegaiaWorld is the
 # single source of truth; the copy inside the Unity project is build output.
-# This script copies the Udon/, Editor/ and Shaders/ trees over, and REFUSES
+# This script copies the Udon/, Editor/, Shaders/ and Settings/ trees over, and REFUSES
 # to run when any project-side file is newer than its kit counterpart - that
 # means someone edited inside Unity, and clobbering it would silently lose
 # the change. Port the edit back into the repo (or pass -Force to discard).
@@ -28,7 +28,7 @@ if (-not (Test-Path (Join-Path $Project 'Assets'))) {
     throw "not a Unity project (no Assets/): $Project"
 }
 
-$dirs = @('Udon', 'Editor', 'Shaders')
+$dirs = @('Udon', 'Editor', 'Shaders', 'Settings')
 
 # Guard pass: a project-side file newer than the kit's means an in-Unity edit.
 $newerInProject = @()

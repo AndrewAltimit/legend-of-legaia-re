@@ -111,6 +111,29 @@ namespace LegaiaWorld
             GetWindow<LegaiaSlotMachineBuilder>("Legaia Slot Machine");
         }
 
+        /// Build the machine onto `cabinetRoot` from `art` without the
+        /// window - what the scene builder's common-prefabs pass calls
+        /// after placing the cabinet from the scene settings. Every other
+        /// knob keeps its default (screen node "screen", the three
+        /// Circle.00N buttons, world shading on).
+        internal static bool BuildFor(GameObject cabinetRoot, string art)
+        {
+            if (cabinetRoot == null || !Directory.Exists(art ?? ""))
+                return false;
+            var w = CreateInstance<LegaiaSlotMachineBuilder>();
+            try
+            {
+                w.cabinet = cabinetRoot;
+                w.artDir = art;
+                w.Build();
+                return cabinetRoot.transform.Find(RIG_NAME) != null;
+            }
+            finally
+            {
+                DestroyImmediate(w);
+            }
+        }
+
         void OnGUI()
         {
             GUILayout.Label("Casino slot machine (minigame port)", EditorStyles.boldLabel);

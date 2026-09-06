@@ -15,6 +15,7 @@
 //   visible glow orb, the light itself is the effect) and a spatial
 //   crackle loop.
 
+using System.Collections.Generic;
 using System.IO;
 using UnityEditor;
 using UnityEngine;
@@ -27,7 +28,8 @@ namespace LegaiaWorld
         internal const string CONTAINER = "Legaia_camp_props";
 
         internal static void Build(
-            string genDir, string sceneName, Vector3 spawnW, AudioSource music)
+            string genDir, string sceneName, Vector3 spawnW, AudioSource music,
+            Dictionary<string, LegaiaPrefabTransform> placements = null)
         {
             var old = GameObject.Find(CONTAINER);
             if (old != null)
@@ -60,7 +62,7 @@ namespace LegaiaWorld
             BuildCampfire(container, Ground(spawnW + new Vector3(-2.5f, 0f, 2.7f)),
                 fireClip, wood, flameMat, smokeMat, pickupType, syncType, 2);
             BuildMenu(container, spawnW, sceneName, music, dark,
-                pickupType, syncType);
+                pickupType, syncType, placements);
 
             Debug.Log("[Legaia] camp props: settings panel, 2 torches and " +
                 "2 campfires placed near spawn (hold + Use toggles a fire).");
@@ -424,7 +426,8 @@ namespace LegaiaWorld
 
         static void BuildMenu(GameObject container, Vector3 spawnW,
             string sceneName, AudioSource music, Material dark,
-            System.Type pickupType, System.Type syncType)
+            System.Type pickupType, System.Type syncType,
+            Dictionary<string, LegaiaPrefabTransform> placements)
         {
             Vector3 basePos = Ground(spawnW + new Vector3(0.9f, 0f, 0.9f));
             var go = new GameObject("LegaiaMenu");
@@ -436,6 +439,9 @@ namespace LegaiaWorld
             away.y = 0f;
             if (away.sqrMagnitude > 1e-6f)
                 go.transform.rotation = Quaternion.LookRotation(away.normalized);
+            // Per-scene hand placement (settings "prefab_transforms.menu",
+            // captured by Legaia > Snapshot placements) wins over both.
+            LegaiaSceneSettings.ApplyPlacement(placements, "menu", go.transform);
 
             var board = GameObject.CreatePrimitive(PrimitiveType.Cube);
             board.name = "board";
