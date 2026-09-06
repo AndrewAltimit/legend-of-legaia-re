@@ -146,7 +146,7 @@ pub fn scene_change_name(bytecode: &[u8], insn: &Insn) -> Option<String> {
 /// `0x3F` executor. A genuine destination name is a short, **uniformly cased**
 /// ASCII-alphanumeric CDNAME label - `town01` / `dolk` / `rikuroa`, and equally
 /// `MAP03` / `KOR3` / `RETOCKIN`. Returns the name **folded to lower case**, the
-/// index space [`crate::cdname`] keys on.
+/// index space [`legaia_prot::cdname`] keys on.
 ///
 /// The case fold is not cosmetic. Retail never compares the operand against a
 /// name table: `FUN_8001FD44` `strcpy`s it into the next-scene global and the
