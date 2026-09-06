@@ -484,9 +484,8 @@ impl World {
     /// (`0x800267E4`). Those two extra cells land in [`Self::sound_arm`] so a
     /// host driving the shim has the exact arguments; the engine has no live
     /// volume ramp of its own, so the latched level is the cold-reset value
-    /// retail boots `_DAT_8007B910` to - `0xD7`, still carried here under the
-    /// stale field name `screen_brightness` (the cell is a volume, not screen
-    /// brightness; `FUN_80062004` tail-calls `SsSeqSetVol`).
+    /// retail boots `_DAT_8007B910` to - `0xD7`, carried on
+    /// [`crate::new_game::GameStateColdReset::audio_level`].
     ///
     /// PORT: FUN_800267A8
     /// REF: FUN_800267FC, FUN_80062004
@@ -496,7 +495,7 @@ impl World {
         self.sound_arm = Some(crate::scus_leaf_kernels::TimedSoundArm::arm(
             0,
             deadline_vsyncs.max(0) as u32,
-            crate::new_game::GAME_STATE_COLD_RESET.screen_brightness,
+            crate::new_game::GAME_STATE_COLD_RESET.audio_level,
         ));
     }
 
