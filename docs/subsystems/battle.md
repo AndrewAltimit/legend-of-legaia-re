@@ -4683,8 +4683,8 @@ Both `0x0A`-arm stores run on the same pass - the arm writes `0x0B` unconditiona
 and the `0xB5` branch **overwrites** it with `0x0C`, it does not choose between them.
 
 **No input moves it.** The probe sits pad-free through the park and then holds each
-of the ten pad buttons for 60 vsyncs, twice around; the byte takes no further write
-in ~1700 vsyncs of that. The gate is a clock, not a press.
+of the ten pad buttons for 60 vsyncs, twice around; across ~1450 vsyncs of held
+buttons the byte takes no write at all. The gate is a clock, not a press.
 
 **The module that holds the baton is PROT 0968**, the stage overlay for this fight
 (loader-B id `0x49`; extraction index = id + `0x37F`), and the probe catches it
@@ -4693,7 +4693,7 @@ ticking the whole time: its entry `0x801F69F4` re-seeds `ctx[+0x6D6] = 0x100` ev
 tick, which is exactly the constant `256` the probe reads off the intro timer while
 parked. Its head is a **7-word jump table at `0x801F69D8` indexed by `ctx[+0x289]`**
 (`lbu a0,0x289(v1)`, `sltiu v1,a0,7`, `jr`), and that phase byte is observed walking
-`0 -> 1 -> 2` while the flow byte holds `0x0C`. Phase 0's arm advances only once the
+`0` through `6` - roughly 500 vsyncs a phase - while the flow byte holds `0x0C`. Phase 0's arm advances only once the
 camera word `0x800840BC` passes `0xC00` - a dt-driven zoom-in - and then fires cue
 `0x20A` through `FUN_8004FCC8`; a later arm spawns its own centred banner through the
 SCUS text-actor spawner `FUN_8003541C` at `0x801F7098`, which is *why* the `0x0A` arm
