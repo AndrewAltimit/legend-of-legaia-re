@@ -126,7 +126,12 @@ Field offsets are pinned by a fusion of three sources:
 +0x19B  u8       accessory_1_id           ; "Accessory 1 Modifier"
 +0x19C  u8       accessory_2_id           ; "Accessory 2 Modifier"
 +0x19D  u8       accessory_3_id           ; "Accessory 3 Modifier"
-+0x19E  u8[274]  post_equipment_unmapped
++0x19E  u8[9]    post_equipment_unmapped_a
++0x1A7  u8[16]   auto_command_string_a   ; Muscle Dome / battle Auto command string, one AP band
++0x1B7  u8[16]   auto_command_string_b   ; the other AP band (slot picked on actor+0x156 < actor+0x154)
++0x1C7  u8[233]  post_equipment_unmapped_b
+                          ; (+0x1A7 / +0x1B7 loaded by FUN_801DA34C, saved by FUN_801DA59C;
+                          ;  the typed accessor still exposes +0x19E..+0x2B0 as one unmapped block)
 +0x2B0  ...      active_spell_slots[14]   ; 14 × 0x14-byte active-spell
                                            ; runtime slots - covered by the
                                            ; `active_spell_slot()` accessor

@@ -550,6 +550,27 @@ companion reading - "the grunt's `s7` latch always passes" - is false too:
 loads it. See
 [`re-settled-threads.md`](re-settled-threads.md#what-a-normal-party-attack-sounds-like).
 
+### The slot cabinet is in neither the art pack nor any prim a traced slot function emits
+
+*Falsified by a second read of the container.*
+
+Both halves of the sentence were true and pointed the wrong way. PROT 1200 has
+**three** descriptors, and the first read enumerated only descriptor 0 (the
+TIM list); descriptor 1 is a 2160-byte untextured TMD that *is* the cabinet,
+spawned as an ordinary actor by the slot init and drawn by the shared TMD
+renderer - which is exactly why no slot function emits a large untextured quad.
+See [`minigame-slot-machine.md`](../subsystems/minigame-slot-machine.md).
+
+### A phase-gated effect draw is the candidate for the arena's object-1 dust decal
+
+*Falsified by disassembly.*
+
+No effect path touches it. Object 1 is ordinary backdrop geometry that the
+SCUS battle loader `FUN_800513F0` trims from both backdrop actors' part lists
+when `_DAT_8007B64B` is zero; the mist-free arena capture is the default, not
+a phase gate. See
+[`minigame-muscle-dome.md`](../subsystems/minigame-muscle-dome.md).
+
 ## Audio / sound driver
 
 | Thread | Verdict | Why |
