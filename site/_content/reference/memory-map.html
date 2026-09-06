@@ -542,7 +542,11 @@ document.addEventListener('DOMContentLoaded', () => {
       <tr><td><code>0x1F800393</code></td><td>u8</td><td>Per-frame tick byte - the global frame-time scalar read by <code>WAIT_FRAMES</code>, subtracted from the title-attract countdown, and exposed as <code>World::tick_move_vms_with_delta</code> in the port.</td></tr>
       <tr><td><code>0x1F800394</code></td><td>u32</td><td><strong>Field-VM transient flag word</strong> - not persisted, distinct from the saved story-flag bitmap. Set/clear/tested by ops <code>0x2E/0x2F/0x30</code>; lower 16 bits re-seeded on every mode switch. Bit <code>0x40</code> is a scene-transition-pending flag, not a "dialog active" lock.</td></tr>
       <tr><td><code>0x1F8003A0</code></td><td>ptr</td><td>Active primitive/packet write cursor the <code>POLY_*</code> emitters allocate from.</td></tr>
-      <tr><td><code>0x1F8003E8</code></td><td>u32</td><td>Render-config block (op <code>0x46</code>).</td></tr>
+      <tr><td><code>0x1F80037C</code></td><td>u8</td><td>Current walk-region kind; <code>0</code> disables the camera scroll clamp.</td></tr>
+      <tr><td><code>0x1F800384..87</code></td><td>4 &times; u8</td><td>Current walk-region AABB in tiles.</td></tr>
+      <tr><td><code>0x1F8003E8..EB</code></td><td>4 &times; i8</td><td>Camera <strong>visible tile window</strong> <code>[nearX, nearZ, farX, farZ]</code>, signed tile offsets from the camera tile; written by <code>FUN_801DBC20</code> and op <code>0x46</code>, read by the render library's cell emitters, the scroll clamp <code>FUN_801DAA50</code>, the ambient emitter and the dev menu.</td></tr>
+      <tr><td><code>0x801F2778..84</code></td><td>4 &times; i32</td><td>Write-only mirrors of the window; no reader on the disc.</td></tr>
+      <tr><td><code>0x800846D0..DC</code></td><td>4 &times; u32</td><td>Button-mask config words; <code>0x800846DC = 0x48</code> (Cross | R1) is the field run button, seeded once by <code>FUN_80034A6C</code> and never rewritten.</td></tr>
       <tr><td><code>0x1F8003EC</code></td><td>u8[]</td><td>Tile-flag bitmap base used by op <code>0x4C</code> nibble-7 and the walkability grid at <code>+0x4000</code> (<a href="../subsystems/field-locomotion.html">field locomotion</a>).</td></tr>
       <tr><td><code>0x1F8003F8</code> / <code>0x1F8003FA</code></td><td>i16</td><td>Camera-scroll values used by the op <code>0x23</code> player path.</td></tr>
     </tbody>

@@ -267,6 +267,7 @@ reference.
 | `80035274` | SCUS | item / equipment passive-name draw | [`menus.md`](../reference/functions/menus.md#80035274) |
 | `80050D40` | SCUS | 12-bit angle tween | [`battle.md`](../reference/functions/battle.md#unreferenced-scus-entry-points) |
 | `80025054` | SCUS | actor-template tick; unreachable through its record `0x80070614` | [`game-modes.md`](../reference/functions/game-modes.md) |
+| `801CFE98` | 0970 `cutscene_str` | MDEC-**in** DMA-callback registrar (libpress residue); its MDEC-out twin `0x801CFEBC` *is* called by the same overlay | [`cutscene.md`](../subsystems/cutscene.md) |
 | `801CFE20` / `801CFE5C` | 0970 `cutscene_str` | MDEC in / out sync wrappers | [`minigames-debug.md`](../reference/functions/minigames-debug.md) |
 | `801D0230` | 0970 `cutscene_str` | MDEC status-word leaf; both call sites are inside the two wrappers above | [`minigames-debug.md`](../reference/functions/minigames-debug.md) |
 | `801D5780` | 0897 `field` | generic arc-hop spawn | [`runtime-libs.md`](../reference/functions/runtime-libs.md) |

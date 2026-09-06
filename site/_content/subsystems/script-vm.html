@@ -149,7 +149,7 @@
       <tr><td><code>43</code></td><td>ACTOR_CTRL</td><td>var</td><td>22+ sub-ops: halt-acquire, 3-actor talk, camera zone ramps, facing, position tween, actor allocation, emitters</td></tr>
       <tr><td><code>44</code></td><td>SPAWN_RECORD</td><td>2</td><td>Spawn partition-2 record <code>global_index</code> as a new context if its flag gates pass</td></tr>
       <tr><td><code>45</code></td><td>CAMERA</td><td>var</td><td><code>op0 &amp; 0xC0</code>: configure / load / save / apply</td></tr>
-      <tr><td><code>46</code></td><td>RENDER_CFG</td><td>2 / 5</td><td>Fog and render parameters</td></tr>
+      <tr><td><code>46</code></td><td>VIEW_WINDOW</td><td>2 / 5</td><td>Camera visible-tile window (<code>0x1F8003E8..EB</code>): long form writes the four signed tile offsets, short form a half-width window; not fog</td></tr>
       <tr><td><code>47</code></td><td>WALK_TO</td><td>4</td><td>Motion op: walk to tile at step <code>4 &lt;&lt; (b2 &amp; 7)</code>, approach mode in the high nibble</td></tr>
       <tr><td><code>49</code></td><td>STATE_RESUME</td><td>var</td><td>Idle / armed / done machine over the entry context; <code>49 03 n</code> opens the name-entry screen for party slot <code>n</code></td></tr>
       <tr><td><code>4A</code></td><td>WAIT_FRAMES</td><td>2</td><td>Accumulate display frames into <code>ctx+0x54</code>; retry until the operand is reached</td></tr>
