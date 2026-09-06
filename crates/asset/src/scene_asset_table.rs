@@ -481,7 +481,7 @@ pub fn detect(buf: &[u8]) -> Option<SceneAssetTable> {
     // admits exactly those two entries - the other 13 sub-6 tables (the
     // `count`-4/5 MAN-less v12-family form, `0874`'s `count`-3 party pack) all
     // lack a MAN and keep their existing class.
-    if count_u32 < MIN_HEADER_COUNT || count_u32 > HEADER_COUNT {
+    if !(MIN_HEADER_COUNT..=HEADER_COUNT).contains(&count_u32) {
         return None;
     }
     let count = count_u32 as usize;
