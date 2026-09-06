@@ -3310,8 +3310,8 @@ the ribbon at every value. Port:
 The battle animation dispatcher [`FUN_801D388C`](../reference/functions.md)
 moves records inside the **24-byte-stride array based at `0x80076C10`**, the
 table [`memory-map.md`](../reference/memory-map.md#0x80076c10---one-table-three-names)
-settles as a **screen-element placement** table. Two small overlay leaves move
-records around inside it; both take `(dst_index, src_index)`, address
+settles as a **screen-element placement** table. Three small overlay leaves move
+records around inside it; all three take `(dst_index, src_index)`, address
 `0x80076C10 + index * 0x18` by the `(i*2 + i) << 3` idiom, and return nothing.
 
 This section called it a pose-slot table, one of three names three subsystems
@@ -3321,39 +3321,134 @@ survived as long as it did because "pose slot" is simultaneously the right
 name for something else: the actor's animation-pose index, which
 [`battle.md`](battle.md) uses correctly and which is not this table.
 
+### What each halfword is, read off the draw site
+
+The layout no longer rests on the `- 0x140` bias alone. `FUN_801D8DE8`'s
+walker unpacks a record field by field into the text-actor spawner
+`FUN_8003541C`, and it has **one arm per seat** - mode bit 0 picks which seat
+the element spawns at before the glide `FUN_801DB7B0` walks it to the other
+(see [`battle.md`](battle.md#battle-hud-model)). The two arms differ in exactly
+three fields, which is what makes the record a *pair*:
+
+| Field | seat A arm (`mode & 1 == 0`, from `0x801D92E8`) | seat B arm (`mode & 1 == 1`, from `0x801D935C`) |
+|---|---|---|
+| element id | `+0x00` (`lbu a0, 0(rec)`) | `+0x01` (`lbu a0, 1(rec)`) |
+| x / y | `+0x02` / `+0x04` | `+0x0A` / `+0x0C` |
+| widget kind | `+0x0E` (`0x801D9288`) | `+0x0F` (`0x801D92A8`) when `mode & 3 == 1`, else `+0x0E` |
+
+Everything else is shared, and both arms read it the same way:
+
+| Offset | Field | The instruction that fixes it |
+|---|---|---|
+| `+0x06` | content width | `lh v0, 6(rec)` at `0x801D92FC` / `0x801D9370` |
+| `+0x08` | box height | `lh v0, 8(rec)` at `0x801D9308` / `0x801D937C` |
+| `+0x14` | content **string** pointer | `lw a2, 0x14(rec)` at `0x801D9314` / `0x801D9388`; the guard at `0x801D92C4` nulls the field when its first byte is `0` |
+| `+0x10` / `+0x12` | neither arm loads them | - |
+
+Both arms subtract 2 from the seat's y before passing it (`0x801D92F4` /
+`0x801D9368`), which is retail's documented `pen = (x, y - 2)`. Each arm then
+arms the glide at the seat it did **not** spawn from - `FUN_801DB7B0` takes the
+target as arguments, `(+0x0A, +0x0C - 2)` on the A path (`0x801D9344`) and
+`(+0x02, +0x04 - 2)` on the B path (`0x801D93B8`) - which is the mechanical
+sense in which the two seats are one element's endpoints. (The glide's own
+`+0x08`/`+0x0A` start fields are read off the *spawned text actor*, not off the
+placement record: `0x801DB7F4..0x801DB818` dereferences `ctx[+0x1074 + slot*4]`
+first.)
+
+Two corrections fall out of that walk.
+
+`+0x14` is the string being drawn, **not** an animation descriptor.
+`FUN_80035F04` is the rendered-width measurement every name banner in the game
+runs on ([`battle.md`](battle.md)), and what its callers do with the return is
+store it in `+0x06`. The SCUS site at `0x8004AF44..0x8004AF88` is the same
+idiom in the clear: it measures one string, writes `0xA0 - width/2` into both
+seats' x of records 76 and 77, and writes the string pointer itself into both
+records' `+0x14`.
+
+And **which seat is the parked one is per record, not per offset.** The initialised
+table puts seat A off-screen for the families that slide in: record 68, the
+actor-name plaque, ships `(16, -24)` at A against `(16, 14)` at B, and record 8,
+a command chip, ships `372` against `204`. Record 42 ships the mirror
+(`200` at A, `328` at B) precisely so it can slide the *other* way. So calling
+`+0x0A`/`+0x0C` "the staging pair" holds only for the first family; the general
+statement is that the two seats are an element's from / to.
+
+### The three movers
+
 | Function | Fields written into `dst` |
 |---|---|
-| `FUN_801D57E8` | straight clone of `+0x02`, `+0x04`, `+0x06`, `+0x0A`, `+0x0C` (u16) and `+0x14` (u32) |
-| `FUN_801D5778` | re-mapped clone - see below |
+| `FUN_801D5718` | `+0x02 <- src+0x0A`, `+0x04 <- src+0x0C`, `+0x06`, `+0x0A <- src+0x0A`, `+0x14` |
+| `FUN_801D57E8` | `+0x02`, `+0x04`, `+0x06`, `+0x0A`, `+0x0C`, `+0x14` - a straight clone |
+| `FUN_801D5778` | `+0x02 <- src+0x0A`, `+0x04 <- src+0x0C`, `+0x06`, `+0x0A <- src+0x0A - 0x140`, `+0x0C <- src+0x0C`, `+0x14` |
 
-`FUN_801D57E8` is the plain copy: five halfwords plus the word at `+0x14`.
-It deliberately leaves `dst`'s `+0x00`, `+0x08`, `+0x10` and `+0x12`
-alone, so it is a **partial** clone, not a `memcpy`.
+None of the three writes `+0x00`, `+0x08`, `+0x0E`, `+0x10` or `+0x12`, so a
+destination keeps its own id, box height and frame and only the geometry and the
+content move. Read against the two-seat split they are one family, not three
+oddities: `FUN_801D5718` **lands** an element (both of `dst`'s seats become the
+source's seat B, so there is nothing left to glide); `FUN_801D5778` **launches**
+it (seat A becomes the source's seat B and seat B becomes that same point minus
+one display width, so the element glides a screen to the left); `FUN_801D57E8`
+**adopts** a source's whole geometry into a row that keeps its own identity. The
+literal `0x140` is 320, the PSX display width.
 
-`FUN_801D5778` copies the same record but permutes and biases three of the
-fields: `dst[+0x02] = src[+0x0A]`, `dst[+0x04] = src[+0x0C]`,
-`dst[+0x06] = src[+0x06]`, `dst[+0x0A] = src[+0x0A] - 0x140`,
-`dst[+0x0C] = src[+0x0C]`, `dst[+0x14] = src[+0x14]`. The literal `0x140`
-is 320, the PSX display width.
+The call sites inside `FUN_801D388C` say what each one stages:
 
-The camera / view director `FUN_801D5854` performs the *same* moves
-inline between the two adjacent records at `0x80076C10 + 0x3D8` and
-`+ 0x3F0` (records 41 and 42), which is what fixes the 24-byte stride
-independently of the two helpers, and it is also where `+0x14` is shown
-to hold a pointer: `FUN_801D5854` stores `actor + 0x1BC` there before
-feeding it to the per-actor animation lookup `FUN_80035F04`.
+- `FUN_801D57E8(0x29, 0x3D)` at `0x801D4414` and `FUN_801D57E8(0x29, 0x3E)` at
+  `0x801D4434`, each immediately after `FUN_801D5854(0, 4)` / `(0, 5)`. Records
+  61 and 62 are the two fixed target-scope labels - `+0x14` points at the
+  `All` / `All Allies` strings and their widths are already filled in - so the
+  pair swaps the acting plaque's content from a measured actor name to a preset
+  label.
+- `FUN_801D5778` in two identical loops (`0x801D50A0`, `0x801D50F8`) over
+  `i` in `0..3*ctx[+0x1F]`, copying record `0x2B + i` into `0x35 + i` and arming
+  each with `FUN_801D8DE8(0x35 + i, ...)` on the same pass. Each unit is three
+  consecutive records; with a three-member party the loop writes `0x35..0x3D`,
+  and `0x3D` is exactly the straight copy's source.
+- `FUN_801D5718(0x2B + 3n, 0x1A)` at `0x801D4458`, with `n = ctx[+0x1F]` - the
+  landing counterpart at the end of the same run.
 
-Both helpers are called only from `FUN_801D388C` - `FUN_801D57E8` from its
-`0x801D4414` / `0x801D4434` sites, `FUN_801D5778` from `0x801D50A0` /
-`0x801D50F8`. Evidence grade: **Confirmed** for the field moves and the
-call sites (disassembled from PROT entry 0898 at base `0x801CE818`);
-**Unknown** for what the individual halfwords mean, beyond `+0x14` being
-the animation-descriptor pointer.
+### The record-41/42 shift inside `FUN_801D5854`
+
+The per-actor pose driver [`FUN_801D5854`](#fun_801d5854---per-actor-pose-driver)
+performs a two-slot shift between the adjacent records at `0x80076C10 + 0x3D8`
+and `+ 0x3F0` (41 and 42) on two of its arms (`0x801D5B08..0x801D5BAC` and
+`0x801D5C58..0x801D5CE4`), which is what fixes the 24-byte stride independently
+of the leaves:
+
+```
+rec42[+0x14] = rec41[+0x14]         ; the outgoing plaque's string,
+rec42[+0x06] = rec41[+0x06]         ; its measured width
+rec42[+0x0A] = rec41[+0x0A]         ; and its seat-B x
+rec41[+0x14] = actor + 0x1BC        ; the incoming actor's display name
+w = FUN_80035F04(actor + 0x1BC)     ; measured, not looked up
+rec41[+0x06] = w
+rec41[+0x0A] = (0xE8 + w/2 < 0x131) ? 0xE8 - w/2 : 0x130 - w
+rec41[+0x02] = max(rec41[+0x0A] + 0x80, 0x148)
+```
+
+So the content box is **centred on x = 232** while it fits and right-aligned at
+`x + w = 304` when it does not, and seat A is parked at least 8 pixels past the
+right edge of the 320-wide display - the plaque slides in from the right.
+`actor + 0x1BC` is the actor's display-name buffer
+([`battle.md`](battle.md)); the two arms differ only in whose name it is, one
+resolving the actor through the 8-slot table at `0x801C9370` by `actor[+0x1DD]`
+and the other taking the actor it was handed.
+
+The initialised bytes agree that 41 and 42 are a current / previous pair: their
+seats are mirror images (41 is `328` at A and `200` at B, 42 is `200` at A and
+`328` at B) and their id pairs are each other's byte swap (`0x150F` / `0x0F15`).
+
+Evidence grade: **Confirmed** for every field above, for the three movers and
+for the call sites - disassembled from PROT entry 0898 at base `0x801CE818` and
+cross-read against the table's own initialised bytes in `SCUS_942.54`. One field
+stays **Unknown**: `+0x10`, which the disc sets to `13` on the framed-window and
+roster-panel rows (kinds `0x03` / `0x07` / `0x44`) and `0` on the plate run, and
+which neither spawn arm loads. `+0x12` is zero in all 103 records.
 
 ## Overlay-local PRNG `FUN_801D0290`
 
-The battle-action overlay carries a second random-number generator,
-distinct from the SCUS PsyQ-shape `rand()` at `FUN_80056798` that
+The battle-action overlay carries a second random-number generator, distinct
+from the SCUS PsyQ-shape `rand()` at `FUN_80056798` that
 [battle-formulas.md](battle-formulas.md#rng-primitive) documents. It is
 twelve instructions with no frame, and its whole state is the word at
 `0x801F6950` (the overlay's own data tail):
@@ -3371,22 +3466,102 @@ earlier note here saying it is not can be discarded: the `addu` sums `v << 16`,
 whose low sixteen bits are all zero, with `v >> 16`, whose high sixteen bits are
 all zero because the shift is `srl` and not `sra`. The two operands occupy
 disjoint bit ranges, so no carry can arise and the `addu` is bit-for-bit an
-`or`. Five call sites, all in the overlay's leading function `FUN_801CFB94`
-(`0x801CFCE4` / `0x801CFDE8` / `0x801CFED4` / `0x801CFF1C` / `0x801CFF5C`), none
-in SCUS.
+`or`.
 
-Because its state lives in overlay memory rather than the SCUS RNG seed,
-draws from this generator do **not** perturb the `FUN_80056798` stream the
-determinism oracles follow. Which battle quantities it feeds is
-**Unknown**; the arithmetic and the state address are **Confirmed** from
-the disassembly of PROT entry 0898 at base `0x801CE818`.
+### The one caller - and it is not `FUN_801CFB94`
+
+Five call sites (`0x801CFCE4` / `0x801CFDE8` / `0x801CFED4` / `0x801CFF1C` /
+`0x801CFF5C`), none in SCUS, and all five inside a single routine:
+**`FUN_801CFA48`**, the overlay-resident **effect-ribbon geometry emitter**,
+whose body runs `0x801CFA48..0x801D028C` - the function immediately before the
+generator in the image.
+
+`0x801CFB94` is not a function entry. It is a branch target inside that
+routine's plane-select switch: the words there are `j 0x801CFBE4` +
+`addiu t8, t8, 4`, one of four arms, and the enclosing prologue is
+`addiu sp, sp, -0x70` at `0x801CFA48` with a pointer table in the words before
+it. Naming it as the caller is the intra-function-label-promoted-to-fake-`FUN_`
+artifact [`ghidra.md`](../tooling/ghidra.md#decompiler-artifacts-that-have-produced-false-claims)
+catalogues, and it also collides across the slot-A family - `0x801CFB94` **is** a
+real `jal` target inside the cutscene overlay (PROT 0970), which is a different
+routine at the same VA.
+
+### What the draws feed
+
+`FUN_801CFA48` is the `0x2000` arm of the multi-target case of the per-actor
+render dispatcher [`FUN_8001ADA4`](world-map.md#per-actor-render-dispatcher---fun_8001ada4).
+At `0x8001B0F0..0x8001B124` SCUS tests `actor[+0x9E] & 0x2000` and calls it as
+`(scratch, actor[+0x9E], (s16)actor[+0x9C] + (((s16)actor[+0xC8] >> 3) << 8), actor + 0x9C)`,
+which is the same call shape its two SCUS siblings `FUN_8002A5A4` (`& 0x4000`)
+and `FUN_80028158` (neither bit) take. `scratch` is `*_DAT_8007B85C + 0x5DC00`, the
+synthetic-TMD block the [cutscene tile shatter](cutscene.md) builds into as well.
+Which shape each arm draws is settled on the disc rather than by inference: the
+dev harness in PROT 0973 selects the three emitters from one switch and prints
+its own label first - `CICLE1` for `FUN_80028158`, `SPRITE1` for `FUN_8002A5A4`
+and `THERNDER1` for this one (`0x801CED30..0x801CEE10`). It is the **lightning**
+emitter.
+
+What it builds is a synthetic Legaia TMD object - object descriptor at
+`out + 0xC`, vertices from `out + 0x28`, primitives after them, group header
+`count = 6 * segments`, `flags = 0x26`, `ilen = 9`, `mode = 0x3C` - whose shape
+is a jagged random walk. Each segment emits **six** 8-byte vertices at lateral
+offsets `±r`, `±2r` and `±8R` about the walk position (the lateral direction is
+the heading plus a quarter turn, the `+ 0x400` at `0x801CFD00`), and **six**
+9-word Gouraud-textured quads: the core drawn twice, then a mid band and an
+outer band on each side, the outer pair fading to a black vertex colour. The
+five draws are exactly the five things about that walk that are random:
+
+| Site | Draw | What it sets |
+|---|---|---|
+| `0x801CFCE4` | `s0/2 + rng() % s0` | the segment's **inner** half-width `r` - the `±r` and `±2r` vertex pairs |
+| `0x801CFDE8` | `s0 + rng() % s0` | the segment's **outer** half-width `R` - the `±8R` pair |
+| `0x801CFED4` | `rng() & 7` | a 1-in-8 **kink**: on zero the heading accumulator is quartered and negated (`0x801CFEEC..0x801CFF18`) |
+| `0x801CFF1C` | `rng() % m - m/2` | the ordinary per-segment **turn** added to that accumulator, `m = param[+0x0C]` |
+| `0x801CFF5C` | `L + rng() % L` | the segment's **advance length**, `L = (s16)param[+0x1A] >> 1` |
+
+`s0` is the tapered half-width: `(s16)param[+0x18] >> 1` over the first half of
+the run, scaled linearly down to `1` over the second, and `1` at segment 0. So
+the answer to "which battle quantities does it feed" is **none**. Every draw
+lands in vertex geometry; no damage number, target pick, formation slot, camera
+angle or timer is on the far side of any of them.
+
+The state is also **re-seeded on every call**, at `0x801CFC18`:
+`*0x801F6950 = (s16)param[+0x1C] >> 2`, where `param` is `actor + 0x9C`. From a
+caller's point of view the generator is therefore not a stream at all but a
+shape **hash** - the same seed halfword redraws the identical bolt frame after
+frame, which is what lets a growing bolt be rebuilt from scratch each frame with
+one fewer suppressed segment (`FUN_801CFA48` forces the leading
+`total - count` segments to zero width). It is also why the generator can be
+overlay-local: nothing about it has to survive a call. Either way the earlier
+observation holds - draws from it do not perturb the `FUN_80056798` stream the
+determinism oracles follow.
+
+### Nothing outside PROT 0898 touches `0x801F6950`
+
+A byte sweep over `SCUS_942.54`, every extracted overlay image and every PROT
+entry finds exactly **three** machine references to the word, all in PROT 0898:
+the seed store at `0x801CFC18` and the generator's own load and store
+(`0x801D0294` / `0x801D02BC`). The field (0897) and menu (0899) images carry
+none, and the address is not even inside the field overlay's own content, which
+ends at `0x801F3818`.
+
+The four `overlay_0897_*` dumps that look like they reference it do not. Three
+of them (`801F747C`, `801F7628`, `801F5748`) match only because `801f6950`
+occurs as an *instruction address* inside a mis-based print of `FUN_801D0748` -
+a text grep over a dump is not a reference scan. The fourth,
+`overlay_0897_801E63E0`, is the real store re-keyed:
+[`overlay-va-aliases.md`](../reference/overlay-va-aliases.md) already resolves
+`0x801E63E0 - 0x167E8 = 0x801CFBF8`, i.e. **inside `FUN_801CFA48`**, and the
+twelve-word signature at that VA occurs in exactly one image on the disc (PROT
+0898, file `+0x13E0`). There is no cross-overlay read, and no second word living
+at the same VA under a different overlay.
 
 **Read the 0898 image for this one.** There is no `overlay_battle_action_801d0290`
 dump; the only dump at that VA is an `overlay_0897` slice holding a *different*
 five-instruction body that advances a VM PC in `s8` - a field-VM opcode-handler
-fragment, i.e. the intra-function-label-promoted-to-fake-`FUN_` artifact
-[`ghidra.md`](../tooling/ghidra.md#decompiler-artifacts-that-have-produced-false-claims)
-catalogues. Disassemble the routine instead:
+fragment, and one that does not even match the field extraction's own bytes at
+`0x801D0290`, so its program is mis-based as well. Disassemble the routine
+instead:
 
 ```bash
 scripts/ghidra-analysis/disasm-overlay-fn.py \
@@ -3394,7 +3569,8 @@ scripts/ghidra-analysis/disasm-overlay-fn.py \
     --base 0x801CE818 --addr 0x801d0290
 ```
 
-Ported as `engine-vm::battle_action::OverlayRng`.
+Ported as `engine-vm::battle_action::OverlayRng`; the emitter that draws from it
+is ported as `engine-core::effect_ribbon`.
 
 ## Arts announcement banner (`FUN_801E2524` / `FUN_801E2650`)
 

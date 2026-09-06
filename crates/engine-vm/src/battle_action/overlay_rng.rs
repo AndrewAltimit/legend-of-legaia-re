@@ -41,14 +41,30 @@
 //! [`OverlayRng::next_from`] asserts that equivalence over the whole 32-bit
 //! space in the tests below rather than asserting it in prose.
 //!
+//! ## What the draws feed
+//!
+//! All five retail call sites (`0x801CFCE4` / `0x801CFDE8` / `0x801CFED4` /
+//! `0x801CFF1C` / `0x801CFF5C`, none in SCUS) sit inside **`FUN_801CFA48`**,
+//! the effect-ribbon geometry emitter ported as
+//! `legaia_engine_core::effect_ribbon`. `0x801CFB94`, which an earlier note
+//! here named as the caller, is not a function at all - it is a branch target
+//! inside that routine's plane-select switch, and the enclosing prologue is
+//! `addiu sp, sp, -0x70` at `0x801CFA48`.
+//!
+//! The draws are the inner half-width, the outer half-width, a 1-in-8 heading
+//! kink, the ordinary per-segment turn and the per-segment advance length - so
+//! they feed ribbon **vertex geometry** and no battle quantity whatsoever.
+//! `FUN_801CFA48` also **re-seeds** `0x801F6950` from its parameter block's
+//! `+0x1C` halfword (`>> 2`, sign-extended) on every call, so from a caller's
+//! point of view this is a shape hash rather than a stream: the same seed
+//! redraws the identical bolt. See
+//! `docs/subsystems/battle-action.md` (overlay-local PRNG).
+//!
 //! # NOT WIRED
 //!
-//! The five retail call sites are all `jal 0x801d0290` inside `FUN_801CFB94`
-//! (`0x801CFCE4` / `0x801CFDE8` / `0x801CFED4` / `0x801CFF1C` / `0x801CFF5C` in
-//! `ghidra/scripts/funcs/overlay_battle_action_801cfb94.txt`), the battle
-//! overlay's leading function, which is not ported. Nothing else in the corpus
-//! calls it, and which battle quantities the draws feed is still open - so
-//! there is no engine site to attach a draw to without inventing one.
+//! `effect_ribbon` takes its randomness as a parameter and is itself
+//! `NOT WIRED` - nothing in the engine emits actor render-mode-4 primitives
+//! yet - so there is still no live site to attach a draw to.
 
 /// The battle overlay's private LCG-shaped generator (`FUN_801D0290`).
 ///
