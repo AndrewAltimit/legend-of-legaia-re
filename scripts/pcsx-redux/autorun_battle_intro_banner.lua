@@ -1,4 +1,4 @@
--- autorun_w1d_intro_banner.lua
+-- autorun_battle_intro_banner.lua
 --
 -- Who raises the battle-INTRO enemy-name banner, and out of what.
 --
@@ -37,13 +37,13 @@
 --
 -- Run (ambush - both the name labels and the formation line are up):
 --   timeout 1700 bash scripts/pcsx-redux/run_probe.sh \
---       --lua scripts/pcsx-redux/autorun_w1d_intro_banner.lua \
+--       --lua scripts/pcsx-redux/autorun_battle_intro_banner.lua \
 --       --scenario rim_elm_queen_bee_battle --frames 3000 \
 --       --isolate-config --out-dir captures/<run>
 --
 -- Run (ordinary round - walk into a random encounter):
 --   LEGAIA_HOLD_BTN=RIGHT timeout 1500 bash scripts/pcsx-redux/run_probe.sh \
---       --lua scripts/pcsx-redux/autorun_w1d_intro_banner.lua \
+--       --lua scripts/pcsx-redux/autorun_battle_intro_banner.lua \
 --       --scenario karisto_sol_pre_encounter --frames 1500 \
 --       --isolate-config --out-dir captures/<run>
 --

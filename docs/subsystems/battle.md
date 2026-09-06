@@ -3558,7 +3558,7 @@ byte on. Driving `cort_evolved_pre_battle` forward reproduces it exactly: flow
 `0x0A` at the intro edge, then flow `0x0C` with the timer at 90 and the
 text-actor list **empty**, where the queen-bee run had three elements.
 
-**Capture.** `scripts/pcsx-redux/autorun_w1d_intro_banner.lua` breakpoints
+**Capture.** `scripts/pcsx-redux/autorun_battle_intro_banner.lua` breakpoints
 `FUN_8003541C` and `FUN_800355F0` and walks the live text-actor list
 (`gp[+0x148] = 0x8007B460`) every vsync. Driven forward from the
 `rim_elm_queen_bee_battle` state - an ambush, so both surfaces are up - three
