@@ -82,6 +82,29 @@ only disagreement is a `break` operand is a match; anything that compares
 canonicalised tokens should treat a lone `break`-immediate mismatch as noise
 rather than evidence of different code.
 
+The **COP2 (GTE) family** is the same failure one register file over, and it is
+the one that hit hardest, because it disagrees about what the operands *are*
+rather than about a sub-field:
+
+| Word | Ghidra | capstone |
+|---|---|---|
+| `0x488F0800` | `mtc2 t7,0x800` | `mtc2 $t7, $at, 0` |
+| `0x48280030` | `cop2 0x280030` | not decoded - `skipdata` emits `.byte` |
+
+Ghidra renders the cop2 destination as an immediate (`rd << 11`); capstone
+renders the same field as a GPR *name* and appends a zero selector; and for the
+`cop2 <25-bit function>` form - every GTE operation - capstone declines the word
+entirely. Unfolded, a window is unresolvable as soon as it contains one GTE op,
+which is every geometry routine in the game. The world-map bulk-terrain emitter
+`overlay_world_map_render_0901_801f7644` agreed on 18 of 24 tokens and
+disagreed on all 6 of its COP2 words.
+
+The fold keeps the GPR both sides really do spell the same way and drops the
+cop2 register / function field on both sides; the byte side reads the family
+straight out of the encoding (primary opcode `0x12`) instead of asking capstone.
+It moves 17 dumps out of `NOT_FOUND` (66 → 49) - 16 to `MATCH` and one, a `0896`
+window, to `SHIFTED`.
+
 The generalisable point: **a resolver's negative class is where its own bugs
 accumulate**, because a false negative there looks like missing data rather
 than a broken comparison. Validate any change to `canon()` against a dump known
