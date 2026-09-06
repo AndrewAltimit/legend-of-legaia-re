@@ -2410,7 +2410,7 @@ the retail disc has no ISO9660 `DATA\FIELD\` tree, and it is never taken when
 PROT-index dispatch, not the trap. The walk/overview split is just the scene name
 → index: `map01 = 85` (walk, entry `0085`) vs `opmap01 = 768` (overview, block
 `0768..0772`). So the walk `.MAP` is the **raw** records+grid region at PROT.DAT
-`0x655800` (`toc[87]`, no compression); the landmark mesh resolver is `pool =
+`0x655800` (`toc[87]`, no compression); the placed-actor mesh resolver (`FUN_80020F88`, at spawn time) is `pool =
 record[+0x10] + prefix`, and the bulk ground is the `0x1000`-gated heightfield
 (Engine status, above).
 

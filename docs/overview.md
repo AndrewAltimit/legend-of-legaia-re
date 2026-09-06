@@ -25,7 +25,7 @@ Per-entry contents:
    • LZS-compressed                       (crates/lzs)
    • standalone TIM-packs                 (crates/prot::timpack)
    • DATA_FIELD streaming containers      (crates/asset::parse_streaming)
-   • field-pack bundles (0x01059B84)
+   • scene texture packs behind a DATA_FIELD chunk header
    • effect bundles (0x02018B0C)
    • scene_tmd_stream / scene_vab_stream  - per-scene asset prefixes
    • scene_v12_table / scene_asset_table  - per-scene tables

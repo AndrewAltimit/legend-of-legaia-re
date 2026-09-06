@@ -1985,8 +1985,10 @@ stop position `end = start + (dur * 0x96 + 0x95) / 0x3c`, a physical span `~dur 
 `0x801EEB44` (`see ghidra/scripts/funcs/overlay_battle_action_801ec3e4.txt`) reads the acting
 slot's 1-based character id from `DAT_8007BD10[slot]` and fires `FUN_8003D53C(0x1D, chan, dur)`
 (clip slot `0x1D` = `XA/XA30.XA`) with a per-character channel: Vahn chan 0 (`dur 0x26`), Noa
-chan 4 (`0x2E`), Gala chan 6 (`0x1A`). This is the short grunt an ordinary directional attack
-plays; each XA30 hero channel is one clean ~0.4-0.7 s vocalization.
+chan 4 (`0x2E`), Gala chan 6 (`0x1A`). Each XA30 hero channel is one clean ~0.4-0.7 s
+vocalization. It is **not** what every swing plays: the cue is gated on the defender
+committing the `+0x1F3` reaction pose, and a swing that commits `+0x1EF` / `+0x1F0` /
+`+0x1F1` is silent - see [what a melee swing sounds like](#the-sound-a-melee-swing-makes-and-which-half-of-it-the-port-has) below.
 
 **2. Tactical-Arts shout (`XA2` / `XA4` / `XA6`).** When the staged-anim materialiser
 `FUN_8004AD80` runs a party art action, it calls the arts-voice cue selector

@@ -9,7 +9,7 @@
   <dl class="kv">
     <dt>In the game</dt><dd>Every texture: character skins, floors and walls, the world map, UI panels and cursors, menu glyphs and the dialog font.</dd>
     <dt>Magic</dt><dd><code>0x00000010</code> as the first u32</dd>
-    <dt>Lives in</dt><dd>Inside <a href="prot.html">PROT.DAT</a> entries (usually behind <a href="lzs.html">LZS</a>), inside <a href="tim-pack.html">TIM-packs</a> and <a href="field-pack.html">field-packs</a>, and two in the unindexed head gap of <code>PROT.DAT</code> before the first entry (<code>0x018E0</code>, <code>0x11218</code>)</dd>
+    <dt>Lives in</dt><dd>Inside <a href="prot.html">PROT.DAT</a> entries (usually behind <a href="lzs.html">LZS</a>), inside <a href="pack.html">packs</a> - bare, or behind the <a href="field-pack.html">chunk header</a> the <a href="tim-pack.html">TIM-pack reader</a> steps past - and two in the unindexed head gap of <code>PROT.DAT</code> before the first entry (<code>0x018E0</code>, <code>0x11218</code>)</dd>
     <dt>Parser</dt><dd><code>crates/tim</code> (<code>parse</code>, <code>parse_strict</code>, PNG export, <code>encode</code> PNG-to-TIM); catalogs <code>legaia_asset::tim_catalog</code> / <code>tim_deep_catalog</code> / <code>tim_labels</code></dd>
     <dt>Confidence</dt><dd>Confirmed - public format; Legaia's upload habits byte-checked against retail VRAM dumps.</dd>
     <dt>Used by</dt><dd><a href="../subsystems/renderer.html">Renderer</a>, <a href="../viewer.html">Asset viewer</a>, <a href="../tooling/rom-patcher.html">ROM patcher</a></dd>

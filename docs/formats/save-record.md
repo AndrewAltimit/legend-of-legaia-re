@@ -93,7 +93,10 @@ Field offsets are pinned by a fusion of three sources:
 +0x12C  u16 LE   int_record               ; "Max INT"
 +0x12E  u16 LE   battle_status_flags      ; the packed ailment word, mirrored
                                            ; from battle actor +0x16E. See note.
-+0x130  u8       magic_rank               ; "Level 99" cheat target. See note.
++0x130  u8       level                    ; "Level 99" cheat target. The crate
+                                           ; accessor is still named
+                                           ; `magic_rank()`; the byte is the
+                                           ; level. See note.
 +0x131  u8[11]   post_level_unmapped      ; +0x131 is seeded to 1 and read by
                                            ; nothing; +0x132..+0x13B untouched.
                                            ; See note.

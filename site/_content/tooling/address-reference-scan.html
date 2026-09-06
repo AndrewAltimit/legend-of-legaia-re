@@ -133,6 +133,7 @@ find-address-word-refs.py 8004da00 --expect-scus 800767fc   # self-check with ex
   <ul class="bullets">
     <li><strong>Compressed entries.</strong> <code>--prot</code> scans raw bytes, so a reference inside an LZS-compressed entry is invisible. Overlay <em>code</em> is stored raw, so this gap does not cover the images callers actually live in.</li>
     <li><strong>Split materialisation.</strong> The pair scan wants one <code>lui</code> and one <code>addiu</code>/<code>ori</code> within a few instructions. An address assembled in more steps, or reached as <code>table_base + index</code>, is not a pair - a per-record negative over a table needs the table <em>base</em> scanned too before it means anything.</li>
+    <li><strong>A loader parameter is not an address.</strong> A <code>PROT.DAT</code> entry is reached by its index, not its address, and an index the code builds with arithmetic occurs nowhere as a constant. Two entries read as "loaded by nothing" for exactly that reason - their index is formed as <code>addiu a0,s0,0x4c7</code> with a runtime register. Sweep the base of the arithmetic, not the value it produces.</li>
     <li><strong>The verdict is triage.</strong> A <code>dispatch-table</code> classification says the neighbours look like function entries, not that the runtime indexes them.</li>
     <li><strong>Aliased branches.</strong> A <code>BR</code> hit in an image that does not hold the routine is not a reference to it; pass <code>--home</code> and read <code>branch_alias</code>.</li>
   </ul>

@@ -709,9 +709,9 @@ misclassifying hop shows up there as a 42-unit overshoot into the wall.
 |---|---|---|
 | `+0x0000` | object / actor records (0x20-byte stride; up to 512) | scene loader / field VM |
 | `+0x4000` | **collision + floor grid** - 1 byte/tile, `0x80`-byte rows: **high nibble** = 4 sub-cell wall bits, **low nibble** = floor-elevation tier | **base**: the `+0x4000..+0x8000` region of the per-scene `.MAP` file (`FUN_8001f7c0`); **deltas**: field-VM `0x4C` opcode, outer-nibble 7 |
-| `+0x8000` | **per-tile object/attribute map** - `u16`/tile, `0x80`-byte rows: low 9 bits = object-record index into the `+0x0000` table, high bits = per-tile flags (bit `0x400` = object footprint) | object placement at scene load; bit `0x400` ORed in by `FUN_8003aeb0` from field-pack records |
+| `+0x8000` | **per-tile object/attribute map** - `u16`/tile, `0x80`-byte rows: low 9 bits = object-record index into the `+0x0000` table, high bits = per-tile flags (bit `0x400` = object footprint) | object placement at scene load; bit `0x400` ORed in by `FUN_8003aeb0` from the `+0x12000` window's kind-1 records |
 | `+0x10000` | **trigger block** - shared header + four kind sub-tables (teleports / P2-record triggers / elevation overrides / region AABBs; see below) | the `+0x10000..+0x12000` region of the `.MAP` file (`FUN_8001f7c0`) |
-| `+0x12000` | field-pack region; `_DAT_8007b8d0 = base + 0x12800`; also the trigger lookup's **fallback window** (same header shape - see below) | `FUN_8001f7c0` (scene asset loader) |
+| `+0x12000` | the scene's [`.PCH` walk-on trigger sidecar](../formats/scene-v12-table.md) (zero-filled when the scene has none) - the trigger lookup's **fallback window**, same header shape as `+0x10000` (see below). `efect.dat` follows at `+0x12800` (`= _DAT_8007b8d0`). There is no "field-pack" here: the scene's texture pack lives in its own PROT entry ([`field-pack.md`](../formats/field-pack.md)). | `FUN_8001f7c0` (scene asset loader) |
 
 ### Collision byte: walls + floor height
 

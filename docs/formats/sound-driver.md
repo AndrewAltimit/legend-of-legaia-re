@@ -39,7 +39,7 @@ Both `FUN_8001FA88` and `FUN_8001FC00` carry a `_DAT_8007B8C2` (debug-flag) carv
 
 Only the retail branch runs on a real disc; the dev branch is a build-time artefact whose paths are not present in the filesystem. The same dev/retail split appears in [`FUN_800255B8`](../subsystems/asset-loader.md), so it's a pattern that repeats across asset-loading subsystems.
 
-## `bse.dat` master-bank header (from `FUN_8001FA88`)
+## `bse.dat` bank header (from `FUN_8001FA88`)
 
 `FUN_8001FA88`'s body (`ghidra/scripts/funcs/8001fa88.txt`) loads the battle SFX descriptor bank `bse.dat` ([`bse-dat.md`](bse-dat.md); called from battle init, not at boot) into the 0x1800-byte buffer `_DAT_8007B8D0`, then derives a second pointer from a single `u16` at offset `+2`:
 

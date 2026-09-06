@@ -180,6 +180,15 @@ against a known answer before trusting a "nothing found":
   five-form negative as "nothing references this".
 - **The verdict is triage.** A `dispatch-table` classification says the
   neighbours look like function entries, not that the runtime indexes them.
+- **A loader parameter is not an address, and a computed one is not a
+  literal.** This tool answers "who references this address". A PROT entry is
+  not reached by its address but by its *index*, and an index the code forms
+  with arithmetic appears nowhere as a constant - so "no image names entry N"
+  is a statement about the literal, not about the loader. PROT 1221 / 1222 read
+  as unreachable for exactly this reason: raw TOC `0x4C7` / `0x4C8` occur as no
+  literal on the disc, because PROT 0978 forms the index as `addiu a0,s0,0x4c7`
+  with a runtime `s0` (four sites, file `+0x264` / `+0x2F4` / `+0x398` /
+  `+0x440`). Sweep the *base* of the arithmetic, not the value it produces.
 - **Aliased branches.** A `BR` hit in an image that does not hold the routine
   is not a reference to it; pass `--home` and read `branch_alias`
   ([above](#a-branch-cannot-cross-images)).

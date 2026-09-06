@@ -634,10 +634,13 @@ about the file looks incomplete.
 `ghidra/scripts/*.py` still carry each of the three. Repairing dumps without
 repairing the script that wrote them regenerates the defect on the next run.
 
-## A caveat outlives the dump it was written against
+## A caveat outlives the dump it was written against - the first instance
 
 Every failure above is a dump that is *wrong now*. This one is a dump that was
-right, got better, and left a false claim behind it in the source tree.
+right, got better, and left a false claim behind it in the source tree. The
+generalisation, the other two known instances and the checker are
+[below](#a-caveat-outlives-the-dump-it-was-written-against); this section is the
+case that found the class.
 
 A dump's statistics - `size=`, the instruction count, where the printed
 disassembly stops - are properties of the **extraction**, not of the function.
@@ -912,9 +915,11 @@ cases where a base can be self-consistently wrong.
 
 ## A caveat outlives the dump it was written against <a id="a-caveat-outlives-the-dump-it-was-written-against"></a>
 
-Everything above is about a dump's *addresses* being wrong. There is a second,
-quieter failure in the same family: a dump's **header changes under a claim
-already written about it**, and nothing re-reads the claim.
+The [first instance](#a-caveat-outlives-the-dump-it-was-written-against---the-first-instance)
+above is one case of a class worth stating on its own: a dump's **header changes
+under a claim already written about it**, and nothing re-reads the claim. It is
+the second failure family on this page - everything before that section is about
+a dump's *addresses* being wrong.
 
 The corpus is not immutable. Re-extract a dump with a better extent walker and
 it gets longer - which is progress everywhere except in the sentences that

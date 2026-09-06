@@ -21,13 +21,13 @@ Not finding an address here does not mean it is unknown - this directory covers 
 | [`functions/asset-loading.md`](functions/asset-loading.md) | Asset loading + dispatch; per-stage asset table machinery; disc / loader chain; scene / stage init (mode-0x02 loader callees). |
 | [`functions/runtime-libs.md`](functions/runtime-libs.md) | PSX runtime / standard libraries (libgte, BIOS veneers); CD / file-system (libcd-style); helpers; static actor templates (the 24-byte records whose tick pointer is a routine's only reference); stub helpers. |
 | [`functions/game-modes.md`](functions/game-modes.md) | Input + debug subsystem; move / animation subsystem; game-mode state machine; title overlay. |
-| [`functions/battle.md`](functions/battle.md) | Battle subsystem; on-screen elements (HUD + 2D sprite/effect list); per-frame draw; sparring-tutorial overlay (PROT 0967); command-block persistence + target menu (overlay 0898); field->battle transition overlay; unreferenced SCUS entry points. |
+| [`functions/battle.md`](functions/battle.md) | Battle subsystem; slot-B summon / cast modules (PROT 0903..0966); boot / `init.pak` overlay (PROT 0895); on-screen elements (HUD + 2D sprite/effect list); per-frame draw; sparring-tutorial overlay (PROT 0967); command-block persistence + target menu (overlay 0898); field->battle transition overlay; unreferenced SCUS entry points. |
 | [`functions/script-vms.md`](functions/script-vms.md) | Script VMs; field-locomotion math helpers. |
 | [`functions/renderer.md`](functions/renderer.md) | Renderer; renderer / GPU primitives; ANM animation container; MES / dialog text interpreter; dialog-overlay actor-frame helpers. |
 | [`functions/audio.md`](functions/audio.md) | Audio - the libsnd / libspu stack, SsAPI sequencer, SPU transfer engine, XA streaming. |
 | [`functions/menus.md`](functions/menus.md) | Records / stats screen; field-overlay status / equip panels (overlay 0897); inventory / spell list; shop screen panels; menu / HUD globals; menu-overlay callees (PROT 0899). |
 | [`functions/world-map.md`](functions/world-map.md) | World map - controller, dev menu, render pipeline. |
-| [`functions/minigames-debug.md`](functions/minigames-debug.md) | Minigames; debug-menu overlay (PROT 0971, mode-0 CONFIG); other-game minigame overlay (PROT 0977). |
+| [`functions/minigames-debug.md`](functions/minigames-debug.md) | Minigames; debug-menu overlay (PROT 0971, mode-0 CONFIG); other-game minigame overlay (PROT 0977); dev modules OTHER2 / OTHER3 (PROT 0973 / 0974); FIELD BACK READ overlay (PROT 0978). |
 
 ## See also
 

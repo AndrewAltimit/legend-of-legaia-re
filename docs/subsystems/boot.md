@@ -334,9 +334,11 @@ The fresh-state seed is the new-game data-init `FUN_80034A6C` (called via the bo
   The expansion (ported as `legaia_asset::new_game::seed_live_records`) fans each
   template row into **two** stat blocks per live record: a current-stat block at
   record `+0x104`, where HP and MP each occupy a current *and* a max cell so a New
-  Game starts at full health, and a max-stat block at `+0x11C`. Level and magic
-  rank are seeded to `1` at `+0x130` / `+0x131`, and the display name is copied to
-  `+0x2A7`. That is twenty `sh` stores per slot, all `$s0`-relative with `$s0` at
+  Game starts at full health, and a max-stat block at `+0x11C`. `+0x130` (the level) and
+  `+0x131` are both seeded to `1` - `+0x131` is write-only, read nowhere on the
+  disc, and is **not** the magic-rank byte
+  ([`new-game-table.md`](../formats/new-game-table.md#0x131-is-seeded-and-never-read)) -
+  and the display name is copied to `+0x2A7`. That is twenty `sh` stores per slot, all `$s0`-relative with `$s0` at
   the save-context base - which is what the disc-gated `new_game_seed_disc` oracle
   re-derives from the executable's own encodings rather than trusting the
   transcription.

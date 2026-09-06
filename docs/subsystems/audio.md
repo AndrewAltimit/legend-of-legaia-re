@@ -41,7 +41,7 @@ with `SceneAssets::seq_in_stream_entries` / `bgm_seq_offset`.
 
 ## Path-string cluster
 
-The string cluster at `0x8007B380` holds the file extensions the sound subsystem appends to scene-asset paths. Full layout in [`formats/sound-driver.md`](../formats/sound-driver.md). Eight extensions in the cluster: `.spk`, `.LZS`, `.dpk`, `.MAP`, `.PCH`, `.pac`, `STR`, `bse.dat` (master file).
+The string cluster at `0x8007B380` holds the file extensions the sound subsystem appends to scene-asset paths. Full layout in [`formats/sound-driver.md`](../formats/sound-driver.md). Eight extensions in the cluster: `.spk`, `.LZS`, `.dpk`, `.MAP`, `.PCH`, `.pac`, `STR`, `bse.dat` (the battle SFX descriptor bank, [`bse-dat.md`](../formats/bse-dat.md)).
 
 ## SCUS consumers
 

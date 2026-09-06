@@ -386,6 +386,28 @@ and against live RAM in the clean-copy test.
   short of its entry (a small overlay padded out to the next sector boundary)
   still hashes the whole entry; the padding is harmless noise in the Ghidra
   disassembly - the real functions land at their real addresses.
+- **An image with no internal `jal` still partitions - by frame, not by call
+  graph.** Most slot-B modules call nothing inside themselves, so base recovery
+  has no votes to count and Ghidra's analysis has no entry points to follow;
+  the image reads as one undifferentiated blob and every dump of it is
+  unattributable. The bytes still carry the partition: walk from each prologue
+  (`addiu sp, sp, -X`) to the first `jr ra` whose delay slot restores *that*
+  frame, and the extents fall out with no dump corpus and no capture. Two
+  cross-checks make it evidence rather than a guess - each recovered head is
+  named by a row of the host overlay's own entry tables, and it is named in
+  that image and in no other.
+
+  The refinement the band forced: **the table is the authority, not the
+  prologue.** A module's entry can sit a few instructions *above* its prologue,
+  where the routine materialises a global before setting up the frame (PROT
+  0946 and 0953 both enter at `0x801F69FC` with the prologue at `0x801F6A0C`).
+  A prologue scan alone reports the later address and quietly disagrees with
+  the caller.
+- **A reference that leaves the image is not evidence against the base.** The
+  pointer-resolution vote counts in-file pointers that land on plausible
+  content; a module legitimately points at its host overlay's data and at the
+  `.bss` past its own end, and those misses are not base errors. Three rows
+  (PROT 0915 / 0926 / 0935) stay unmapped on that gate alone.
 - This pipeline does **not** address runtime values. The dynamic-capture
   workflow ([`overlay-capture.md`](overlay-capture.md),
   [`pcsx-redux-automation.md`](pcsx-redux-automation.md)) remains essential and

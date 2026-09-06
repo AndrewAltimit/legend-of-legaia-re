@@ -32,6 +32,7 @@
     <li><strong>Wall slide.</strong> When the pad's direction is blocked, three probes 62 units ahead (centre, &plusmn;33 lateral) sweep an offset table across the travel axis and add the slide direction the sweep's sign picks - so the player skids along walls instead of sticking. Pure diagonals and symmetric dead ends add nothing.</li>
     <li><strong>Step loop.</strong> <code>speed = ((base &times; mult) &gt;&gt; 12) &times; frame_scalar</code> units are spent 2 at a time; each axis is committed only if its probe is clear. The loop plays no sound - walking and wall contact are silent.</li>
     <li><strong>Animation follows motion.</strong> A committed step selects the walk (or run) clip; no step selects idle. The pad is never consulted for the clip.</li>
+    <li><strong>Run is a held button, and it is not configurable.</strong> The mask is <code>0x48</code> - Cross or R1 - tested against the <em>held</em> pad, one of four button-mask words the new-game data init seeds and the only writer of any of them. Holding it inverts the walk / run option rather than forcing run. The port currently latches Square instead: a host binding choice, not a decode.</li>
   </ul>
 </section>
 

@@ -315,6 +315,18 @@ first-visit record is neither - it is a helper context - so that predicate
 returns while `izumi`'s spring choreography is still moving the player. The
 frontier ladder waits for the spawned records too.
 
+**An ordered ladder shares state, so one latched bit reads as 28 broken
+scenes.** The rungs run in closure order inside one host, and anything a rung
+leaves set is still set for every rung after it. When the ledge-hop steering
+lock leaked across a scene change, every scene downstream of `tower` reported
+the flag with zero driven tiles - a result that reads as a per-scene property
+and is a property of the ordering. The tell is the shape: a *contiguous run*
+of rungs failing identically, starting at one scene, is a latch, not
+twenty-eight scenes. Confirm it by re-probing one of the later rungs from a
+fresh host; if it walks normally alone, the ladder is measuring its own
+residue. Fix the leak - do not add a per-rung reset that hides it, because the
+same residue is what a real regression would look like.
+
 **A locomotion rung needs a released-pad control.** Without one, "the player
 walked" and "a script moved the player" are the same measurement. Each scene's
 driven probe is scored against a released-pad run of the same length from the

@@ -805,8 +805,11 @@ they lie in the `0898` program (`overlay_battle_action.bin`, spanning
   `0x801F71E0` (62×), `0x801F0740` (16×), the `0x801F0xxx`/`0x801F6xxx` set are
   `inmem=False` in `overlay_battle_action.bin` - but *not* because they are a
   different overlay. The battle overlay `0898` loads at base `0x801CE818` and its
-  PROT entry is `0x28800` bytes (`clean_copy_bytes` in
-  `crates/asset/data/static-overlays.toml`), so it spans
+  PROT entry is `0x28800` bytes (`content_bytes` in
+  `crates/asset/data/static-overlays.toml` - `clean_copy_bytes` is a
+  strength-of-evidence figure, not a length, see
+  [`static-overlay-pipeline.md`](static-overlay-pipeline.md#content_bytes-is-not-clean_copy_bytes)),
+  so it spans
   `0x801CE818..0x801F7018` - the lower `0x801F` hits are inside it. The Ghidra
   program was imported as the window `0x801C0000..0x801EFFFF`, which stops
   `0x7018` bytes
