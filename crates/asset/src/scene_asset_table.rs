@@ -163,6 +163,14 @@ const HEADER_COUNT: u32 = 7;
 /// reads `count` from the file and loops that many descriptors.
 const MAX_DESCRIPTORS: usize = 7;
 
+/// Smallest `count` word the detector will consider. Below `HEADER_COUNT - 1`
+/// a table is admitted only when it carries a MAN (see [`detect`]); this floor
+/// keeps a one- or two-word leading run from ever reaching that test.
+const MIN_HEADER_COUNT: u32 = 4;
+
+/// Asset-type byte of the scene MAN descriptor (dispatcher case `0x03`).
+const MAN_TYPE_BYTE: u8 = 0x03;
+
 /// Header-end byte offset for a table with `count` descriptors: the 8-byte
 /// `[count][meta]` header plus `count` 8-byte descriptor records. The first
 /// descriptor's `data_offset` is always anchored here (`0x40` for count 7,
@@ -457,11 +465,23 @@ impl DescriptorRecord {
 /// match the strict 7-asset header.
 pub fn detect(buf: &[u8]) -> Option<SceneAssetTable> {
     let count_u32 = legaia_bytes::u32_le(buf, 0)?;
-    // Two header shapes in the retail corpus: kingdom bundles use `count = 7`
-    // (canonical), early standalone-town scenes use `count = 6`. Constrain to
-    // the observed values - the anchor check below is the strong signal, but
-    // an unbounded count would let arbitrary small leading words through.
-    if count_u32 != HEADER_COUNT && count_u32 != HEADER_COUNT - 1 {
+    // Retail imposes no bound at all - `FUN_80020224` reads `count` from
+    // `+0x00` and loops that many descriptors - so the bound here is purely a
+    // detector heuristic against arbitrary small leading words, and the anchor
+    // check below is the strong signal. Kingdom bundles use `count = 7`, early
+    // standalone towns `count = 6`, and **two** scenes use `count = 5`:
+    // `bubu1` and `edbubu`, whose tuple is the canonical seven minus `Tmd` and
+    // `Vdf` (`TimList, Man, Move, Anm, Flag(0x14)`) because neither scene owns
+    // an environment mesh pack. A `{6, 7}`-only bound made both resolve no MAN
+    // and read as unloadable.
+    //
+    // The relaxation is deliberately narrow: `count < 6` is admitted only when
+    // the table carries a type-3 MAN descriptor, which is the same
+    // discriminator the v12 embedded-table probe already uses. Disc-wide that
+    // admits exactly those two entries - the other 13 sub-6 tables (the
+    // `count`-4/5 MAN-less v12-family form, `0874`'s `count`-3 party pack) all
+    // lack a MAN and keep their existing class.
+    if count_u32 < MIN_HEADER_COUNT || count_u32 > HEADER_COUNT {
         return None;
     }
     let count = count_u32 as usize;
@@ -507,6 +527,17 @@ pub fn detect(buf: &[u8]) -> Option<SceneAssetTable> {
             size,
             data_offset,
         };
+    }
+
+    // The sub-6 relaxation's gate (see the count bound above): a short table
+    // is a scene bundle only when it carries the MAN the scene loads.
+    if count_u32 < HEADER_COUNT - 1
+        && !descriptors
+            .iter()
+            .take(count)
+            .any(|d| d.type_byte == MAN_TYPE_BYTE)
+    {
+        return None;
     }
 
     Some(SceneAssetTable {

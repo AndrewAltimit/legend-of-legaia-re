@@ -235,6 +235,26 @@ Type-sequence variants (count=7 unless noted):
 | `(1, 2, 3, 4, 6, 7, 0x14)` | Skips Move. |
 | `(2, 3, 5, 6, 7, 0x14)` | **count-6** early-town variant (`town01`): `(Tmd, Man, Move, Anm, Vdf, Flag)`. MAN at index 1. |
 | `(10, 2, 3, 5, 6, 7)` | **count-6** early-town variant (`town0c`): leading `Flag(0xA)`, MAN at index 2. |
+| `(1, 3, 5, 6, 0x14)` | **count-5** variant (`bubu1`, `edbubu`): the canonical seven minus `Tmd` and `Vdf`. MAN at index 1; first `data_offset` is `0x30`. |
+
+#### The `count` word is not always 6 or 7
+
+Retail imposes no bound on it - `FUN_80020224` reads `count` from `+0x00` and
+loops that many descriptors - so any bound in a reader is a detector heuristic,
+and the strong signal is the anchor: descriptor 0's `data_offset` equals
+`8 + count * 8`. Exactly **two** retail scenes ship a `count = 5` table,
+`bubu1` and `edbubu`, and both carry a MAN. A `{6, 7}`-only bound therefore made
+those two scenes resolve no MAN and read as unloadable while every structural
+check on them passed.
+
+`legaia_asset::scene_asset_table::detect` now admits `count` down to `4`, but a
+sub-6 table only when it carries a type-3 MAN descriptor - the same
+discriminator the v12 embedded-table probe uses. Disc-wide that admits exactly
+those two entries: the other thirteen sub-6 tables are MAN-less and keep their
+existing class, and they are the shapes this page already describes - the
+`count`-4 `(TimList, Tmd, Anm, Flag)` v12-family form (`dolk2`, `rikuroa`,
+`rikuroa2`, `rayman`, …), the `count`-5 `(TimList, Tmd, Anm, Vdf, Flag)` pair
+(`balden2`, `ropeway2`), and `0874`'s `count`-3 party pack.
 
 Sizes ~60 KB to ~452 KB.
 
