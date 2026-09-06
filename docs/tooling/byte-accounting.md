@@ -85,6 +85,41 @@ An owner says what kind of thing consumes the bytes, not which module claimed th
 | `pad` | Declared slack inside a fixed-stride slot that the container's own size math covers. |
 | `scan` | Found by a magic sweep over the residue, not by a structural walk. |
 
+### Walking a bundle's sections
+
+A [scene bundle](../formats/scene-bundles.md) is accounted twice: the outer pass
+claims each descriptor's LZS span, and a nested pass accounts the decoded
+payload with the walker its **type byte** selects. Three of those types had no
+walker, so a town bundle's decoded MOVE / VDF / MES sections read 0.0 % and the
+shortfall looked like unwalked format. It was not - all three are containers
+this workspace already parses:
+
+| Type | Section | Walker | What the claims are |
+|---|---|---|---|
+| `0x04` | MES | `mes` | The compact form's magic + fixed header region, then the dialog bytecode; the records form's per-record extents. Several retail bundles carry a 40-byte *empty* compact MES - the magic and 36 zero bytes. |
+| `0x05` | MOVE | `clip_bank` | Per clip: the 8-byte header, `bone_count * frame_count` 8-byte transforms, and the 8-byte record trailer. Despite the dispatcher's "MOVE" label the content is an ANM clip bank ([`anm.md`](../formats/anm.md)), **not** a Tactical-Arts [move table](../formats/mdt.md). |
+| `0x07` | VDF | `offset_pack` | `[u32 count][u32 byte_offset[count]]` with **absolute** byte offsets - the same container as the clip bank, without the `0x080C` record header. |
+
+The clip-bank walker claims a clip's three parts separately rather than its
+whole offset-table extent, so a record that does not satisfy
+`size == 16 + 8 * bones * frames` leaves residue instead of being absorbed. The
+`anm` walker falls back to `offset_pack` for the same reason: a kingdom bundle's
+type-`0x06` section is that container with records `legaia_anm::parse` declines,
+and the member extents are still real.
+
+Do not read `offset_pack` as [`pack`](../formats/pack.md). The offsets differ in
+*units*: `pack`'s are word indices from the pack's own base, `offset_pack`'s are
+byte offsets. The anchor `offsets[0] == 4 + 4 * count` tells them apart - a
+word-offset table would put member 0 four times further on.
+
+A `TIM_LIST` or `TMD` section is likewise not always a single asset: several are
+a [pack](../formats/pack.md) of them, and a pack's head word is a count carrying
+no magic. Choosing the walker from the type byte alone therefore sent those
+payloads to `generic`, where the magic sweep still found the members - so the
+report read `accounted` near 100 % beside `structural` 0.0 %, which is exactly
+the "found by guessing" split the tiering exists to expose. The section walker
+now tests for the pack anchor first, and those payloads walk structurally.
+
 ## Residue shapes
 
 Each uncovered run gets exactly one shape. The tests run in the order below and the order is

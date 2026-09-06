@@ -91,11 +91,25 @@ const CASES: &[(u32, f64, &str)] = &[
     // `summon.dat` / `readef.DAT` - fixed 0x10800 slots.
     (893, 90.0, "summon_readef"),
     (894, 85.0, "summon_readef"),
-    // The one entry the `data_field_truncated` detector matches. It is not a
-    // stream: the runtime walks it as an `asset::pack` of two whole TIMs, so
-    // the walker is selected by index and the accounting is structural. The
-    // shortfall is the 948-byte tail the pack does not reference.
+    // The entry the retired `data_field_truncated` detector used to match. It
+    // is not a stream: the runtime walks it as an `asset::pack` of two whole
+    // TIMs (it now classifies as `pack`), so the walker is selected by index
+    // and the accounting is structural. The shortfall is the 948-byte tail the
+    // pack does not reference.
     (892, 98.0, "card_font_pack"),
+    // The two forms of a scene carrier, one apiece. town01 is chunk-headered
+    // (a single-chunk DATA_FIELD stream, `Flag(0x14)`) and town0c is bare
+    // (`Flag(0x0A)`); before the classifier keyed on the form they sat in
+    // `field_pack` and `lzs_container`. Both must walk structurally - the
+    // chunk-headered one's payload is a pack, and reading it as an opaque blob
+    // put its members in the magic sweep instead (`accounted` near 100 % with
+    // `structural` at 0), which the `structural > 0` assertion below catches.
+    (5, 99.0, "stream"),
+    (23, 99.0, "pack"),
+    // The `befect_data` `etim` / `etmd` packs - the same bare form outside a
+    // scene block, TIM members in one and Legaia TMD members in the other.
+    (870, 99.0, "pack"),
+    (871, 99.0, "pack"),
     // `bse.dat` master bank + its untraced sibling.
     (888, 40.0, "bse_bank"),
     (1195, 2.0, "bse_bank"),

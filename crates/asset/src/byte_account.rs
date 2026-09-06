@@ -300,11 +300,13 @@ pub enum Walker {
     FieldMap,
     SceneV12,
     SceneEventScripts,
-    FieldPack,
     EffectBundle,
     EfectPack,
     TimPack,
     Pack,
+    ClipBank,
+    OffsetPack,
+    Mes,
     CardFontPack,
     Tim,
     Tmd,
@@ -331,11 +333,13 @@ impl Walker {
             Walker::FieldMap => "field_map",
             Walker::SceneV12 => "scene_v12_table",
             Walker::SceneEventScripts => "scene_event_scripts",
-            Walker::FieldPack => "field_pack",
             Walker::EffectBundle => "effect_bundle",
             Walker::EfectPack => "efect_pack",
             Walker::TimPack => "tim_pack",
             Walker::Pack => "pack",
+            Walker::ClipBank => "clip_bank",
+            Walker::OffsetPack => "offset_pack",
+            Walker::Mes => "mes",
             Walker::CardFontPack => "card_font_pack",
             Walker::Tim => "tim",
             Walker::Tmd => "tmd",
@@ -1002,13 +1006,40 @@ fn take_lzs(
     }
 }
 
+/// Pick the walker for a bundle section from its type byte **and** its bytes.
+///
+/// The type byte says what kind of asset the section holds, not whether it
+/// holds one or a [pack](crate::pack) of them, and the retail bundles use both:
+/// a kingdom bundle's `TIM_LIST` section is a pack of atlases, a town bundle's
+/// `TMD` section is one mesh. A pack read as a single asset leaves its offset
+/// table and its inter-member slack in the residue, so the pack test runs
+/// first for the two types that carry one.
+fn walker_for_section(type_byte: u8, payload: &[u8]) -> Walker {
+    if matches!(
+        AssetType::from_byte(type_byte),
+        AssetType::Tim | AssetType::TimList | AssetType::Tmd | AssetType::Tmd2
+    ) && walker_for_payload(payload) == Walker::Pack
+    {
+        return Walker::Pack;
+    }
+    walker_for_type(type_byte)
+}
+
 /// Pick the walker for a decoded payload from its asset type byte.
 fn walker_for_type(type_byte: u8) -> Walker {
     match AssetType::from_byte(type_byte) {
         AssetType::Tim | AssetType::TimList => Walker::Tim,
         AssetType::Tmd | AssetType::Tmd2 => Walker::Tmd,
         AssetType::Man => Walker::Man,
+        // Type `0x05` is labelled MOVE by the dispatcher table but carries an
+        // ANM clip bank, not a Tactical-Arts move table
+        // (`docs/formats/world-map-overlay.md`, `legaia_asset::player_anm`).
+        AssetType::Move | AssetType::Move2 => Walker::ClipBank,
         AssetType::Anm => Walker::Anm,
+        AssetType::Mes => Walker::Mes,
+        // VDF sections are the same `[u32 count][u32 byte_offset[count]]`
+        // container as the clip bank, without the `0x080C` record header.
+        AssetType::Vdf => Walker::OffsetPack,
         _ => Walker::Generic,
     }
 }
@@ -1052,7 +1083,7 @@ fn walk_scene_asset_table(buf: &[u8], sink: &mut Sink, opts: &AccountOptions, de
                 depth,
                 format!("slot {i} {}", AssetType::from_byte(d.type_byte).name()),
                 &out,
-                walker_for_type(d.type_byte),
+                walker_for_section(d.type_byte, &out),
             );
         } else {
             sink.note(format!("{detail}: LZS decode failed"));
@@ -1159,6 +1190,16 @@ fn walker_for_payload(buf: &[u8]) -> Walker {
         Some(0x8000_0002) => Walker::Tmd,
         Some(0x5641_4270) => Walker::Vab,
         _ if buf.starts_with(b"pQES") => Walker::Seq,
+        // A `TIM_LIST` / `TMD` chunk's payload is often a pack rather than a
+        // single asset, and a pack's head word is a count with no magic - so
+        // without this the payload fell to `Generic` and its members were
+        // found only by the magic sweep, i.e. `accounted` near 100 % with
+        // `structural` at 0. The pack anchor is checked before claiming it.
+        _ if crate::pack::parse_pack(buf)
+            .is_ok_and(|e| e.first().is_some_and(|f| f.byte_offset == 4 + 4 * e.len())) =>
+        {
+            Walker::Pack
+        }
         _ => Walker::Generic,
     }
 }
@@ -1631,39 +1672,6 @@ fn walk_scene_event_scripts(buf: &[u8], sink: &mut Sink) {
     }
 }
 
-fn walk_field_pack(buf: &[u8], sink: &mut Sink, opts: &AccountOptions, depth: u8) {
-    let Some(p) = crate::field_pack::detect(buf) else {
-        sink.note("field_pack::detect returned None");
-        return;
-    };
-    sink.claim(p.magic_offset, p.table_offset, OWNER_HEADER, "magic");
-    sink.claim(
-        p.table_offset,
-        p.table_offset + crate::field_pack::SCHEMA_SIZE,
-        OWNER_TOC,
-        format!("{}-slot schema", crate::field_pack::RECORD_COUNT),
-    );
-    for s in &p.slots {
-        let start = p.magic_offset + s.offset as usize;
-        let Some(size) = s.size else { continue };
-        let end = start + size as usize;
-        let owner = buf
-            .get(start..)
-            .map(|b| match legaia_bytes::u32_le(b, 0) {
-                Some(0x0000_0010) => OWNER_TIM,
-                Some(0x8000_0002) => OWNER_TMD,
-                _ => OWNER_RECORD,
-            })
-            .unwrap_or(OWNER_RECORD);
-        sink.claim(start, end, owner, "field-pack slot");
-        if owner == OWNER_TMD
-            && let Some(b) = buf.get(start..end)
-        {
-            sink.nest(opts, depth, "field-pack TMD slot", b, Walker::Tmd);
-        }
-    }
-}
-
 fn walk_effect_bundle(buf: &[u8], sink: &mut Sink) {
     let Some(e) = crate::effect_bundle::detect(buf) else {
         sink.note("effect_bundle::detect returned None");
@@ -1771,9 +1779,168 @@ fn walk_pack(buf: &[u8], sink: &mut Sink) {
         sink.claim(
             e.byte_offset,
             e.byte_offset + e.size,
-            OWNER_RECORD,
+            member_owner(buf, e.byte_offset),
             format!("member {}", e.index),
         );
+    }
+}
+
+/// Owner for a pack member, from its own leading magic.
+fn member_owner(buf: &[u8], start: usize) -> &'static str {
+    match legaia_bytes::u32_le(buf, start) {
+        Some(0x0000_0010) => OWNER_TIM,
+        Some(0x8000_0002) => OWNER_TMD,
+        _ => OWNER_RECORD,
+    }
+}
+
+/// `[u32 count][u32 byte_offset[count]][members]` with **absolute** byte
+/// offsets - the container the bundle's VDF (type `0x07`) and clip-bank
+/// (type `0x05`) sections share, and the fallback when a clip bank's records
+/// do not carry the ANM header. Distinct from [`crate::pack`], whose offsets
+/// are word indices; the anchor `offsets[0] == 4 + 4*count` tells the two
+/// apart because a word-offset table would put member 0 four times further on.
+///
+/// Returns the member ranges it claimed, so a caller can walk inside them.
+fn walk_offset_pack(
+    buf: &[u8],
+    sink: &mut Sink,
+    owner: &'static str,
+    what: &str,
+) -> Vec<std::ops::Range<usize>> {
+    let Some(count) = legaia_bytes::u32_le(buf, 0) else {
+        sink.note("buffer too small for an offset-pack header");
+        return Vec::new();
+    };
+    let count = count as usize;
+    let table_end = 4 + count * 4;
+    if count == 0 {
+        // Several bundles ship an empty section - the count word and nothing
+        // else. That is the whole container, not a parse failure.
+        sink.claim(
+            0,
+            4.min(buf.len()),
+            OWNER_HEADER,
+            "empty container (count 0)",
+        );
+        return Vec::new();
+    }
+    if table_end > buf.len() {
+        sink.note(format!("implausible offset-pack count {count}"));
+        return Vec::new();
+    }
+    let mut offsets = Vec::with_capacity(count);
+    for i in 0..count {
+        let Some(off) = legaia_bytes::u32_le(buf, 4 + i * 4) else {
+            sink.note("offset table truncated");
+            return Vec::new();
+        };
+        let off = off as usize;
+        if off < table_end || off > buf.len() || offsets.last().is_some_and(|&p| off < p) {
+            sink.note(format!("offset[{i}] = 0x{off:X} is not a member start"));
+            return Vec::new();
+        }
+        offsets.push(off);
+    }
+    sink.claim(0, table_end, OWNER_TOC, format!("{count} byte offsets"));
+    let mut out = Vec::with_capacity(count);
+    for i in 0..count {
+        let end = offsets.get(i + 1).copied().unwrap_or(buf.len());
+        sink.claim(offsets[i], end, owner, format!("{what} {i}"));
+        out.push(offsets[i]..end);
+    }
+    out
+}
+
+/// A bundle's type-`0x05` section: the ANM **clip bank**, not a Tactical-Arts
+/// move table. Each clip is an 8-byte [`crate::player_anm`] header followed by
+/// `bone_count * frame_count` 8-byte per-(bone, frame) transforms and an
+/// 8-byte record-boundary trailer, so a clip's claimed extent is
+/// `8 + bones*frames*8 + 8` and any shortfall against the offset table shows
+/// up as residue rather than being absorbed.
+fn walk_clip_bank(buf: &[u8], sink: &mut Sink) {
+    let Ok(bank) = crate::player_anm::parse(buf) else {
+        // Not the `0x080C` record family - still an offset pack, and its
+        // members are still real extents.
+        walk_offset_pack(buf, sink, OWNER_ANM, "clip");
+        return;
+    };
+    let n = bank.record_offsets.len();
+    sink.claim(0, 4 + n * 4, OWNER_TOC, format!("{n} clip offsets"));
+    for i in 0..n {
+        let start = bank.record_offsets[i] as usize;
+        let end = start + bank.record_sizes[i] as usize;
+        let rec = match bank.record(i) {
+            Ok(r) => r,
+            Err(e) => {
+                sink.note(format!("clip {i}: {e}"));
+                continue;
+            }
+        };
+        let body = crate::player_anm::RECORD_HEADER_SIZE
+            + rec.bone_count as usize
+                * rec.frame_count as usize
+                * crate::player_anm::BONE_FRAME_BYTES;
+        sink.claim(
+            start,
+            start + crate::player_anm::RECORD_HEADER_SIZE,
+            OWNER_HEADER,
+            format!("clip {i} header"),
+        );
+        let body_end = (start + body).min(end);
+        sink.claim(
+            start + crate::player_anm::RECORD_HEADER_SIZE,
+            body_end,
+            OWNER_ANM,
+            format!(
+                "clip {i}: {} bones x {} frames",
+                rec.bone_count, rec.frame_count
+            ),
+        );
+        if body_end < end {
+            sink.claim(body_end, end, OWNER_PAD, format!("clip {i} trailer"));
+        }
+    }
+}
+
+/// A bundle's type-`0x04` section - a MES dialog container
+/// (`docs/formats/mes.md`, crate `legaia-mes`).
+///
+/// The `Compact` form leads with the `0x00000404` magic and a fixed header
+/// region; the `Records` form is variable-stride records delimited by the
+/// `0x44 0x78` marker. Several retail bundles carry a 40-byte *empty* compact
+/// MES - the magic and nothing else - which is the shape the header-region
+/// bound below exists for.
+fn walk_mes(buf: &[u8], sink: &mut Sink) {
+    match legaia_mes::detect_format(buf) {
+        Some(legaia_mes::Format::Compact) => {
+            let head = legaia_mes::compact::OFFSET_TABLE_END.min(buf.len());
+            sink.claim(0, 4.min(buf.len()), OWNER_HEADER, "compact magic");
+            sink.claim(4.min(buf.len()), head, OWNER_TOC, "compact header region");
+            if head < buf.len() {
+                sink.claim(head, buf.len(), OWNER_SCRIPT, "dialog bytecode");
+            }
+        }
+        Some(legaia_mes::Format::Records) => {
+            let Ok(blob) = legaia_mes::parse(buf) else {
+                sink.note("mes::parse failed on a records blob");
+                return;
+            };
+            let marks: Vec<usize> = blob
+                .records
+                .unwrap_or_default()
+                .iter()
+                .map(|r| r.offset)
+                .collect();
+            if let Some(&first) = marks.first() {
+                sink.claim(0, first, OWNER_HEADER, "pre-record head");
+            }
+            for (i, &m) in marks.iter().enumerate() {
+                let end = marks.get(i + 1).copied().unwrap_or(buf.len());
+                sink.claim(m, end, OWNER_RECORD, format!("record {i}"));
+            }
+        }
+        None => sink.note("mes::detect_format matched neither layout"),
     }
 }
 
@@ -1907,7 +2074,14 @@ fn walk_anm(buf: &[u8], sink: &mut Sink) {
                 );
             }
         }
-        Err(e) => sink.note(format!("anm::parse: {e}")),
+        Err(e) => {
+            // The kingdom bundles' type-`0x06` sections are the same
+            // `[u32 count][u32 byte_offset[count]]` container without the
+            // `0x080C` record header `legaia_anm::parse` gates on, so the
+            // member extents are still readable.
+            sink.note(format!("anm::parse: {e}"));
+            walk_offset_pack(buf, sink, OWNER_ANM, "record");
+        }
     }
 }
 
@@ -2095,9 +2269,9 @@ pub fn pick_walker(buf: &[u8], class: Class, opts: &AccountOptions) -> Walker {
         Class::FieldMap => Walker::FieldMap,
         Class::SceneV12Table => Walker::SceneV12,
         Class::SceneEventScripts => Walker::SceneEventScripts,
-        Class::FieldPack => Walker::FieldPack,
         Class::EffectBundle => Walker::EffectBundle,
         Class::TimPack => Walker::TimPack,
+        Class::Pack => Walker::Pack,
         Class::TimPassthrough => Walker::Tim,
         Class::SeqContainer => Walker::Seq,
         Class::AnmContainer => Walker::Anm,
@@ -2120,11 +2294,15 @@ fn dispatch(buf: &[u8], walker: Walker, sink: &mut Sink, opts: &AccountOptions, 
         Walker::FieldMap => walk_field_map(buf, sink),
         Walker::SceneV12 => walk_scene_v12(buf, sink),
         Walker::SceneEventScripts => walk_scene_event_scripts(buf, sink),
-        Walker::FieldPack => walk_field_pack(buf, sink, opts, depth),
         Walker::EffectBundle => walk_effect_bundle(buf, sink),
         Walker::EfectPack | Walker::Pack => walk_pack(buf, sink),
         Walker::CardFontPack => walk_card_font_pack(buf, sink),
         Walker::TimPack => walk_tim_pack(buf, sink),
+        Walker::ClipBank => walk_clip_bank(buf, sink),
+        Walker::OffsetPack => {
+            walk_offset_pack(buf, sink, OWNER_RECORD, "member");
+        }
+        Walker::Mes => walk_mes(buf, sink),
         Walker::Tim => walk_tim(buf, sink),
         Walker::Tmd => walk_tmd(buf, sink),
         Walker::Vab => walk_vab(buf, sink),

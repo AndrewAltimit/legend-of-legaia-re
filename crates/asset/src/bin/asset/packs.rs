@@ -5,49 +5,52 @@ use anyhow::Result;
 use legaia_asset::{battle_data_pack, effect_bundle, field_pack};
 use legaia_prot::cdname;
 
+/// Inspect one scene carrier - the entries this CLI's `field-pack` name comes
+/// from. There is no field-pack format and no schema: the word the format was
+/// named for is a `(type << 24) | size` DATA_FIELD chunk header, and the
+/// "97-entry schema" is the `[u32 count][u32 word_offset[count]]` table of the
+/// [`asset::pack`](legaia_asset::pack) behind it (`docs/formats/field-pack.md`).
+/// The output therefore names a chunk header, a pack table and members. The
+/// subcommand keeps its name for CLI stability.
 pub(crate) fn field_pack_one(input: &PathBuf, all_slots: bool, groups: bool) -> Result<()> {
     let raw = crate::common::read_input(input)?;
-    let Some(fp) = field_pack::detect(&raw) else {
+    let Some(pack) = field_pack::scene_pack(&raw) else {
         anyhow::bail!(
-            "no field-pack signature in {} ({} bytes)",
+            "no scene pack in {} ({} bytes): no `[u32 count][u32 word_offsets]` \
+             table anchored at offset 0 or 4",
             input.display(),
             raw.len()
         );
     };
-    let (preamble_lo, preamble_hi) = fp.preamble_range();
-    let (assets_lo, assets_hi) = fp.assets_range();
     println!("file:           {}", input.display());
+    println!("size:           {} bytes (0x{:X})", raw.len(), raw.len());
+    match pack.chunk_header {
+        Some(h) => println!(
+            "chunk header:   0x{:08X} = type 0x{:02X} ({}) | payload {} bytes (0x{:X})",
+            h,
+            (h >> 24) & 0xFF,
+            pack.asset_type().map(|t| t.name()).unwrap_or("?"),
+            h & 0x00FF_FFFF,
+            h & 0x00FF_FFFF
+        ),
+        None => println!("chunk header:   none (bare pack - the mode 0x0A form)"),
+    }
     println!(
-        "size:           {} bytes (0x{:X})",
-        fp.file_size, fp.file_size
+        "pack table:     0x{:X}..0x{:X} (count {} + {} word offsets)",
+        pack.pack_base,
+        pack.header_end(),
+        pack.members.len(),
+        pack.members.len()
     );
     println!(
-        "preamble:       0x{:X}..0x{:X} ({} bytes)",
-        preamble_lo,
-        preamble_hi,
-        preamble_hi - preamble_lo
-    );
-    println!(
-        "magic @         0x{:X} (= 0x{:08X})",
-        fp.magic_offset,
-        field_pack::MAGIC
-    );
-    println!(
-        "schema table:   0x{:X}..0x{:X} ({} entries × 4 = {} bytes)",
-        fp.table_offset,
-        fp.table_offset + field_pack::SCHEMA_SIZE,
-        field_pack::RECORD_COUNT,
-        field_pack::SCHEMA_SIZE
-    );
-    println!(
-        "assets region:  0x{:X}..0x{:X} ({} bytes)",
-        assets_lo,
-        assets_hi,
-        assets_hi - assets_lo
+        "members:        0x{:X}..0x{:X} ({} bytes)",
+        pack.header_end(),
+        raw.len(),
+        raw.len() - pack.header_end()
     );
     println!();
-    println!("schema slots:");
-    let n = fp.slots.len();
+    println!("members:");
+    let n = pack.members.len();
     let show: Vec<usize> = if all_slots {
         (0..n).collect()
     } else {
@@ -65,27 +68,42 @@ pub(crate) fn field_pack_one(input: &PathBuf, all_slots: bool, groups: bool) -> 
             println!("  ...");
             continue;
         }
-        let s = &fp.slots[i];
-        match s.size {
-            Some(sz) => println!(
-                "  [{:>2}] off=0x{:>5X}  size={:>5} (0x{:X})",
-                i, s.offset, sz, sz
-            ),
-            None => println!("  [{:>2}] off=0x{:>5X}  size=  ?", i, s.offset),
-        }
+        let r = &pack.members[i];
+        let magic = legaia_bytes::u32_le(&raw, r.start);
+        let what = match magic {
+            Some(0x0000_0010) => "TIM",
+            Some(0x8000_0002) => "TMD",
+            _ => "?",
+        };
+        println!(
+            "  [{:>2}] off=0x{:>6X}  size={:>6} (0x{:X})  {}",
+            i,
+            r.start,
+            r.end - r.start,
+            r.end - r.start,
+            what
+        );
     }
     if groups {
         println!();
-        println!("slot size groups (slots sharing the same size = same record kind):");
-        for (size, idxs) in fp.slot_size_groups() {
+        println!("member size groups (a repeated size is a repeated sub-asset shape,");
+        println!("e.g. 0x8220 = the standard 64x256 4bpp atlas):");
+        let mut by_size: std::collections::BTreeMap<usize, Vec<usize>> =
+            std::collections::BTreeMap::new();
+        for (i, r) in pack.members.iter().enumerate() {
+            by_size.entry(r.end - r.start).or_default().push(i);
+        }
+        let mut sizes: Vec<_> = by_size.into_iter().collect();
+        sizes.sort_by_key(|(sz, idxs)| (std::cmp::Reverse(idxs.len()), std::cmp::Reverse(*sz)));
+        for (size, idxs) in sizes {
             let head: Vec<String> = idxs.iter().take(10).map(|i| i.to_string()).collect();
             let tail = if idxs.len() > 10 {
-                format!(" … (+{} more)", idxs.len() - 10)
+                format!(" \u{2026} (+{} more)", idxs.len() - 10)
             } else {
                 String::new()
             };
             println!(
-                "  size={:>5} (0x{:X})  count={:>3}  slots={}{}",
+                "  size={:>6} (0x{:X})  count={:>3}  members={}{}",
                 size,
                 size,
                 idxs.len(),
@@ -97,6 +115,7 @@ pub(crate) fn field_pack_one(input: &PathBuf, all_slots: bool, groups: bool) -> 
     Ok(())
 }
 
+/// Sweep a PROT directory for scene carriers, in both forms.
 pub(crate) fn field_pack_scan(dir: &Path, only_hits: bool) -> Result<()> {
     let mut files: Vec<_> = std::fs::read_dir(dir)?
         .filter_map(|e| e.ok().map(|e| e.path()))
@@ -104,8 +123,8 @@ pub(crate) fn field_pack_scan(dir: &Path, only_hits: bool) -> Result<()> {
         .collect();
     files.sort();
     println!(
-        "{:<32}  {:>9}  {:>10}  {:>9}  {:>9}",
-        "entry", "size", "table_off", "preamble", "assets"
+        "{:<32}  {:>9}  {:>10}  {:>8}  {:>9}",
+        "entry", "size", "form", "members", "payload"
     );
     println!("{}", "-".repeat(76));
     let mut hits = 0usize;
@@ -114,23 +133,26 @@ pub(crate) fn field_pack_scan(dir: &Path, only_hits: bool) -> Result<()> {
         total += 1;
         let raw = crate::common::read_input(path)?;
         let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("?");
-        match field_pack::detect(&raw) {
-            Some(fp) => {
+        match field_pack::scene_pack(&raw) {
+            Some(pack) => {
                 hits += 1;
-                let (assets_lo, assets_hi) = fp.assets_range();
+                let form = match pack.asset_type() {
+                    Some(t) => format!("chunk:{}", t.name()),
+                    None => "bare".to_string(),
+                };
                 println!(
-                    "{:<32}  {:>9}  0x{:>8X}  {:>9}  {:>9}",
+                    "{:<32}  {:>9}  {:>10}  {:>8}  {:>9}",
                     stem,
-                    fp.file_size,
-                    fp.table_offset,
-                    fp.magic_offset,
-                    assets_hi - assets_lo,
+                    raw.len(),
+                    form,
+                    pack.members.len(),
+                    raw.len() - pack.header_end(),
                 );
             }
             None => {
                 if !only_hits {
                     println!(
-                        "{:<32}  {:>9}  {:>10}  {:>9}  {:>9}",
+                        "{:<32}  {:>9}  {:>10}  {:>8}  {:>9}",
                         stem,
                         raw.len(),
                         "-",
@@ -142,10 +164,7 @@ pub(crate) fn field_pack_scan(dir: &Path, only_hits: bool) -> Result<()> {
         }
     }
     println!();
-    println!(
-        "{} of {} entries match the field-pack signature",
-        hits, total
-    );
+    println!("{} of {} entries carry a scene pack", hits, total);
     Ok(())
 }
 

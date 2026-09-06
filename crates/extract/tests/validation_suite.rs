@@ -42,24 +42,42 @@ const EXPECTED_CLASS_COUNTS: &[(&str, usize)] = &[
     // `[id, offset, size]` table frame accepts all four, including
     // Terra's 0866 all-default (`id = 0`) table.
     ("battle_data_pack", 4),
-    ("data_field_streaming", 34),
-    // `data_field_truncated` 0 → 1: a streaming entry whose chunk walk runs
-    // to the end of its own sectors. It used to complete only because the
-    // buffer continued into the next entry.
-    ("data_field_truncated", 1),
-    // `field_pack` 2 → 1: one of the two entries (PROT 4) leads with a
-    // count=6 scene-asset table at offset 0 and only carries a field-pack
-    // *region* deeper in the file. The offset-0 scene-table shape is the
-    // authoritative outer classification (same precedence as v12-over-
-    // fieldpack), so it lands in `scene_asset_table`. PROT 5 remains the
-    // sole pure field_pack.
-    ("field_pack", 1),
-    // `lzs_container` 34 → 33: one entry's descriptor walk no longer
-    // completes inside its own sectors. Then 33 → 31: extraction 0408
-    // (`bubu1`) and 0811 (`edbubu`) are `count = 5` scene asset tables that
-    // carry a MAN, so they class as `scene_asset_table` now that the detector
-    // no longer bounds `count` to 6 or 7 (see `scene-bundles.md`).
-    ("lzs_container", 31),
+    // `data_field_streaming` 34 → **49**. The 15 new members are the
+    // chunk-headered scene carriers at raw TOC `+4` of a CDNAME block: a
+    // `(type << 24) | size` DATA_FIELD chunk header wrapping one
+    // `asset::pack`, which is a single-chunk stream and is what retail reads
+    // with `FUN_8002541C` mode `0x14`. They used to scatter across three
+    // classes by their chunk TYPE BYTE - `0x01` satisfied the `tim_pack`
+    // heuristic, `0x02` fell through to `lzs_container`, and town01 alone was
+    // `field_pack` - which is the signature of a classifier keying on a
+    // detector rather than on the format. See `docs/formats/field-pack.md`.
+    ("data_field_streaming", 49),
+    // `data_field_truncated` **0**. Its detector no longer runs. The three
+    // entries its doc named (`0157`, `0228`, `0373`) are ordinary four-chunk
+    // bundles that terminate cleanly against their own sectors, and its one
+    // real hit, `0892`, is an `asset::pack` of two whole TIMs whose header
+    // words the streaming reader took for chunk headers. Pinned at 0 so a
+    // reappearance is a regression.
+    ("data_field_truncated", 0),
+    // `field_pack` **0** - the class is retired. `0x01059B84` is not a magic:
+    // it is town01's chunk header, `(TIM_LIST << 24) | 0x059B84`, and PROT 5
+    // is now `data_field_streaming` with the other 15 carriers.
+    ("field_pack", 0),
+    // `lzs_container` 33 → **18**: the 13 scene carriers that were falling
+    // through to a descriptor-walk heuristic now classify by their own
+    // format - 7 chunk-headered (`data_field_streaming`) and 6 bare (`pack`) -
+    // and extraction 0408 (`bubu1`) / 0811 (`edbubu`) are `count = 5` scene
+    // asset tables that carry a MAN, so they class as `scene_asset_table` now
+    // that the detector no longer bounds `count` to 6 or 7 (`scene-bundles.md`).
+    ("lzs_container", 18),
+    // `pack` **7** - the bare form of the same carrier:
+    // `[u32 count][u32 word_offset[count]]` at offset 0 with no chunk header,
+    // which retail walks with `FUN_8002541C` mode `0x0A` (`count = base[0]`,
+    // then `FUN_800198E0` per member) behind a `Flag(0x0A)` bundle descriptor.
+    // Four are block-`+4` scene carriers, two are the `befect_data` `etim` /
+    // `etmd` packs, and one is `0892` (the card-font pack, previously the
+    // `data_field_truncated` hit).
+    ("pack", 7),
     // `bse_bank` - the `bse.dat` battle SFX descriptor bank (extraction 888, the
     // loader's raw TOC `0x37A`) plus 1195, a scene prescript of the same shape.
     ("bse_bank", 2),
@@ -155,7 +173,14 @@ const EXPECTED_CLASS_COUNTS: &[(&str, usize)] = &[
     ("scene_event_scripts", 101),
     // `summon_readef` - `summon.dat` / `readef.DAT` (extraction 893 / 894).
     ("summon_readef", 2),
-    ("tim_pack", 7),
+    // `tim_pack` 7 → **0**, and nothing was lost. The heuristic
+    // (`byte[3]==0x01 && byte[2]<0x10`, count at `+4`, members at
+    // `word_index * 4 + 4`) is a test for a `TIM_LIST` chunk header followed
+    // by the pack read that skips it, so all seven of its members were
+    // chunk-headered scene carriers and are now `data_field_streaming`. The
+    // reader in `crates/prot/src/timpack.rs` is unaffected and still correct
+    // for that form. Pinned at 0 so a detector-order regression is visible.
+    ("tim_pack", 0),
     // `vab_multi_bank` matches one PROT entry: extraction 891, the content the
     // CDNAME `monster_se` define points at (`h:\mpack\monster.snd`). The
     // `level_up` in its extraction filename is the +2 label shift.
