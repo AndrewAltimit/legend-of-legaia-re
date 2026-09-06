@@ -1992,6 +1992,8 @@ same `s0`. See
 | Which chapter-1 scenes the engine can load, script, walk and leave | resolved as a per-scene verdict; four of the five late "one-way" rooms now leave in-engine | `disassembly` + `capture` | [details ↓](#chapter-1-scene-frontier) |
 | How a player leaves the Uru Mais chain (`uru`, `urudre1..3`) and `jouine` | resolved (all five have walk-on exits carried by the scene's `.PCH` trigger sidecar) | `disassembly` + `capture` | [details ↓](#the-uru-mais-chain-and-jouine-exits) |
 | Why did the port drop roughly half the disc's `0x3F` destinations? | resolved (the clean-label gate was lower-case-only; retail never compares the operand against a name table) | `disassembly` | [details ↓](#the-upper-case-destination-fold) |
+| Why do `bubu1` and `edbubu` resolve no MAN? | resolved (both ship a `count = 5` asset table; the detector bounded `count` to 6 or 7) | `disassembly` + `capture` | [details ↓](#the-count-5-asset-tables) |
+| Why did 28 scenes of the frontier closure become unwalkable at once? | resolved (a scene change mid-ledge-hop leaked the hop's one-way steering lock - an engine bug, fixed) | `disassembly` + `capture` | [details ↓](#the-ledge-hop-lock-leak) |
 | What consumes the scratchpad window `0x1F8003E8..EB`? | resolved (the renderer's visible tile window; the `0x801F2778..84` mirrors are write-only) | `disassembly` | Four signed bytes `[nearX, nearZ, farX, farZ]`, tile offsets from the camera tile, written by the camera-zone loader `FUN_801DBC20` and field-VM op `0x46`. Read by the render library's cell emitters (`FUN_801F7088` at `0x801F7434..0x801F746C` and siblings), the camera scroll clamp `FUN_801DAA50`, the ambient emitter `FUN_801D6058` and dev-menu rows `0x12..0x15`. Invisible to the word scan: every access is `lui 0x1F80; ori 0x314; lb 0xD4(rX)`. Details: [`encounter.md`](../formats/encounter.md#the-scratchpad-window-0x1f8003e8eb). |
 | What is the field run-button mask `0x800846DC`? | resolved (`0x48` = Cross \| R1, seeded once by the new-game data init; not configurable) | `disassembly` | The last of four button-mask words at `0x80084140 + 0x590..0x59C` (`0x44`, `0x21`, `0x10`, `0x48`), stored by `FUN_80034A6C` (`0x80034AA0..0x80034AB8`) and read by the field mover at `0x801D0364` against the held mask `_DAT_8007B850`. No other writer in SCUS or any overlay; it sits inside the saved block. The engine latches run off Square - a divergence disclosed in [`field-locomotion.md`](../subsystems/field-locomotion.md). |
 | Who latches the clip-end bit for a conversation's cross-context clip pokes | resolved (port residual named) | `disassembly` + `capture` | The **poked actor's own anim tick**, on the poked actor's own `+0x62`. `FUN_8003C83C` short-circuits target `0xF8` to the live player object out of `_DAT_8007C364` before its actor-list walk, so an NPC record's `A2 F8 <clip>` / `AC F8 08` / `AD F8 08` reads and writes the *player's* clip words. [details ↓](#clip-end-latch-for-cross-context-clip-pokes) |
@@ -2102,6 +2104,35 @@ one a CDNAME label, and the disc carries **no** mixed-case `0x3F` name run.
 `legaia_asset::field_disasm::clean_scene_name` now accepts a uniformly-cased
 3..=12-byte alphanumeric label and folds it; the chapter-1 closure roughly
 doubles (68 scenes, 20 kingdom-boundary edges).
+
+### The count-5 asset tables
+
+*Status:* resolved - grade `disassembly` + `capture`
+
+Retail bounds the count nowhere - `FUN_80020224` reads `+0x00` and loops that
+many descriptors - so the bound was a detector heuristic; the strong signal is
+descriptor 0's anchor at `8 + count * 8` (`0x30` here). Their tuple is
+`(TimList, Man, Move, Anm, Flag(0x14))`, the canonical seven minus `Tmd` and
+`Vdf`. A census of every PROT entry parsing as this table finds 1 / 2 / 10 / 4 /
+8 / 80 entries at counts 1 / 3 / 4 / 5 / 6 / 7, and of the sub-6 set only these
+two carry a MAN, so the detector now admits `count >= 4` gated on a type-3
+descriptor and exactly two entries change class. See
+[`scene-bundles.md`](../formats/scene-bundles.md).
+
+### The ledge-hop lock leak
+
+*Status:* resolved (engine bug, fixed) - grade `disassembly` + `capture`
+
+`start_field_ledge_hop` ORs `0x0008_0000` into the player's `move_state.flags`
+(retail `0x801D25A8..0x801D25B8` on the player context's `+0x10`) and only the
+hop phase machine's end arm clears it; a transition landing mid-hop tore the
+machine down without that arm, and the locomotion step returned early on the bit
+in every scene afterwards. Retail cannot reach the state - its hop always
+finishes before a transition. Pinned by walking the closure in one host: `tower`
+hops and ends at tile `(0, 0)`, and all 28 scenes after it reported the flag
+with zero driven tiles while each walked normally on a fresh host; three
+isolation builds had ruled out both candidate engine changes first.
+`SceneHost::enter_field_scene` now drops the hop and the lock together.
 
 ### Clip-end latch for cross-context clip pokes
 

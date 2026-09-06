@@ -1272,6 +1272,20 @@ five exits are carried by the scene's `.PCH` sidecar, and `uru`'s fired live.
 Ask the `.PCH` before calling a scene sealed. See
 [`re-settled-threads.md`](re-settled-threads.md#the-uru-mais-chain-and-jouine-exits).
 
+### A frontier-ladder scene that will not walk is a scene or a seat problem
+
+*Falsified by measurement.*
+
+Twenty-eight consecutive scenes of the chapter-1 closure reported zero driven
+tiles, and both engine changes that had just landed (the destination case
+fold and the wait-discounting timeline cap) were the obvious suspects. Three
+isolation builds gave byte-identical results with either reverted, and each
+"broken" scene walked fine on a fresh host. What was latched was one
+player-actor bit - `tower`'s ledge-hop steering lock, leaked across a scene
+change - so the failure was ordered by closure position, not by scene. Before
+blaming a scene, walk it first in the sweep order and alone. See
+[`re-settled-threads.md`](re-settled-threads.md#field--locomotion).
+
 ## No overlay function lives below `0x801CE818`
 
 **Falsified:** "an undocumented address in the `0x801C0164`..`0x801CE000`
