@@ -3472,6 +3472,112 @@ takes the banner wherever the port raises it and the widget is not gated on
 battle mode. A multi-line message grows the interior by the 14-px text pitch
 per extra row and nothing else moves.
 
+### The battle-intro enemy-name banner
+
+The banner that names the enemies while a battle opens is **not** a placement
+record. `FUN_801D9D3C` - the flow-`0x0A` composer, and the only reference to
+that address anywhere in the corpus (a single `jal`, at `0x801D0DFC`; sweep
+`scripts/ghidra-analysis/find-address-word-refs.py`) - lays its labels out
+itself and hands each straight to the text-actor spawner `FUN_8003541C` with
+**immediate** geometry. No field of the
+[screen-element placement table](../reference/memory-map.md#0x80076c10---one-table-three-names)
+is read for it, and the only one written is record 67's `+0x14` string pointer.
+
+| `FUN_8003541C` argument | intro name label | formation line |
+|---|---|---|
+| id | group index `0..=3` | `4` |
+| class | `0` | `0` |
+| pen | `(laid-out x, 48)` | `(16, 12)` |
+| box | measured width x `12` | `288` x `12` |
+| kind | `3` | `3` |
+
+`kind = 3` is widget record `3` - class 0, tile-set 0, sub-palette 2 - so the
+intro wears [the message banner](#the-full-width-message-banner)'s frame, and
+an ordering-table walk of a live intro frame
+([`widget-draw-sweep.py`](../../scripts/mednafen/widget-draw-sweep.py) over a
+save state the probe below writes on the banner's own frames) says it draws
+exactly that and nothing else: per label a 4x4 corner pair from texels
+`(160, 0)` and `(188, 0)`, 24-wide top and bottom edges from `origin + 4` with
+the last tile clipped, 4x20 side columns, every piece on CLUT `(32, 511)` - and
+no fill sprite anywhere in the frame. Frame origin is the pen less `(8, 8)` and
+the right column lands at `pen.x + width + 4`, so `Moldy Worm` on pen
+`(86, 48)` 66 wide frames `(78, 40)` to `(159, 67)` with its top edge tiled at
+x `82` / `106` / `130` and clipped to 2 pixels at `154`. None of those tiles
+matches a widget record's own rect, because a class-0 frame's eight quads come
+from the tile-set pool at `0x80073A00` rather than from the record.
+
+**One label per monster group.** The composer walks the four monster-slot ids
+at `0x8007BD0C` and runs consecutive equal ids together. The first member of a
+run copies the actor's own display name (`actor+0x1BC`); the second drops that
+name's trailing per-instance letter and appends `* 2`; each further member
+increments the appended digit. So three `Killer Bee` actors - the actor-name
+plaque in the same capture reads `Killer Bee B` - reach the banner as the one
+label `Killer Bee * 3`.
+
+**The seat is over the enemy, not over the screen.** A group's label is centred
+on its members' average projected position:
+`x = 0xA0 + avg(actor+0x34) / 8 - width / 2`, where `actor+0x34` is the actor's
+signed screen-X offset from screen centre in eighths of a pixel. A relaxation
+pass then walks every pair, splits an overlap evenly once the gap between two
+labels falls under 20 pixels, clamps each label to `6 <= x <= 0x13A - width`,
+and repeats until a whole pass moves nothing.
+
+**No slide.** The intro labels are spawned at their final seat and never move -
+this path calls neither `FUN_801D8DE8` nor the glide `FUN_801DB7B0`. The
+park-to-live slide belongs to the *other* path: the round HUD that replaces the
+banner is spawned from records 68 and 7 at their disc seats and glides to the
+staging pair over sixteen frames.
+
+**Lifetime is the intro timer.** The labels live from the `0x0A` edge to the
+`0x0B` expiry, where `FUN_800355F0` destroys every text actor in one sweep, so
+the banner's span is `ctx[+0x6D6]` exactly - `0x5A` frames, or `0x78` when
+`ctx[+0x290]` is set.
+
+**The ids collide with the command chips, and the teardown is why that is
+safe.** Placement records `0..=5` carry element ids `0x03` / `0x04`, the same
+values the intro hands out, and `FUN_8003541C` *reuses* a node whose id already
+exists rather than adding one. Nothing overlaps only because the sweep above
+empties the list before the round prompt builds `Begin` / `Run` at the `0x14`
+edge.
+
+**The formation line is record 67's content without record 67.** The
+`ctx[+0x290]` arm at `0x801DA234` stores the chosen line into record 67's
+`+0x14` and then draws it with immediates that reproduce that record exactly -
+pen `(16, 12)`, `288` wide, kind `3` - under id `4`. Record 67 itself is opened
+only afterwards, by the post-intro sub-draw, which re-raises the same string
+under id `0x2B`, the record's `+0x01`. See
+[the formation banner](#the-formation-banner).
+
+**One monster opens its fight with no banner at all.** The `0x0A` arm compares
+monster-slot 0's id (`0x8007BD0C`) against `0xB5` - evolved Cort - and on a
+match skips the composer entirely, arming the same `0x5A` timer but setting
+`ctx[+0x06] = 0x0C` instead of `0x0B`. `0x0C` is a value the
+[state chain](#the-state-chain)'s `beq` ladder has no arm for, so the menu SM
+idles on it; the fight still opens, so a writer outside that ladder moves the
+byte on. Driving `cort_evolved_pre_battle` forward reproduces it exactly: flow
+`0x0A` at the intro edge, then flow `0x0C` with the timer at 90 and the
+text-actor list **empty**, where the queen-bee run had three labels.
+
+**Capture.** `scripts/pcsx-redux/autorun_w1d_intro_banner.lua` breakpoints
+`FUN_8003541C` and `FUN_800355F0` and walks the live text-actor list
+(`gp[+0x148] = 0x8007B460`) every vsync. Driven forward from the
+`rim_elm_queen_bee_battle` state - an ambush, so both surfaces are up - three
+spawns land in one frame, two from `$ra = 0x801DA220` and one from
+`0x801DA31C`: `Queen Bee` at `(176, 48)` 55 wide, `Killer Bee * 3` at
+`(78, 48)` 79 wide, and `Ambushed!` at `(16, 12)` 288 wide, every one class 0
+kind 3. All three hold those seats for 120 frames (`ctx[+0x290] = 1`), and the
+teardown then fires at `$ra = 0x801D0E84`. A live run is needed because no
+catalogued save state is at flow `0x0A` or `0x0B` - the whole state library
+sits at `0x1E` or later.
+
+The ordinary-round bracket is the same probe walked right out of
+`karisto_sol_pre_encounter` into a random encounter: **two** labels, `Moldy
+Worm` at `(86, 48)` 66 wide and `Acid Slime` at `(171, 48)` 59 wide, both from
+`0x801DA220`, and **no id-`4` line at all** because `ctx[+0x290]` is `0`. They
+hold for 90 frames and go down through the expiry's other sweep site,
+`$ra = 0x801D0EBC`, after which the round prompt builds `Begin` / `Run` on ids
+`3` and `4` - the ids the intro was using one frame earlier.
+
 ### The status-element badge sheet
 
 The nine ids the exclusive status ladder emits, `0x18..=0x20`, are **48x16
@@ -4618,6 +4724,13 @@ The singular / plural pick at `0x801DA274` tests the byte at `DAT_8007BD10 + 1`
 (present-party slot 1), so a party with nobody there gets the shorter line. The
 name is substituted into the `0xC1` token by `FUN_8003CBF8`, whose operand is
 `DAT_8007BD10[0] - 1` - the party **leader**, not the acting member.
+
+Record 67's role here is only to *hold* that pointer: the draw at `0x801DA2E4`
+passes the line to `FUN_8003541C` with immediates, never through the record, and
+the same string is re-raised from record 67 proper once the intro is over. The
+whole intro surface - the enemy-name labels this line sits above, their seats
+and their lifetime - is
+[the battle-intro enemy-name banner](#the-battle-intro-enemy-name-banner).
 
 ### Port
 
