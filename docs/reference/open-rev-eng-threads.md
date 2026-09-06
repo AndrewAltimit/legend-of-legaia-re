@@ -81,6 +81,11 @@ cheapest place to look for a claim that is still wrong.
   reader enumeration (125 sites, six images, closed). `_DAT_8007BD84` is an
   effect handle, not a mode word; `FUN_8003EAE4`'s driver is `FUN_8003D764`;
   and the item table carries 250 names, not "far below 128".
+- **The whole slot-B band was dumpable all along.** Sixty-one of the
+  sixty-four cast / summon modules now carry a map row and dumps; the missing
+  piece was a third link-time table (`0x801CF56C`, keyed on the spell record's
+  sub-id) and a frame-matching rule for function extents. Five readings fell
+  with it - see the [do-not-re-walk page](re-do-not-re-walk.md#the-slot-b-band-four-readings-the-whole-band-dump-overturned).
 - **Four "unattributed" blobs were all misread instruments.** PROT 0892 is the
   card screen's kanji font (a two-member pack, not a truncated stream, not
   12 MB); 1221 / 1222 are the dome's `int.tim` / `int2.tim` stills, loaded by
@@ -370,7 +375,6 @@ process-matching helpers in
 |---|---|---|
 | What moves the evolved-Cort battle off flow `ctx[+0x06] = 0x0C`? | open (narrow) | The flow-`0x0A` arm skips the banner composer for monster-slot-0 id `0xB5` and parks `0x0C`, a value the ladder at `0x801D0C84` has no arm for; a pad-free run stays parked, yet the fight opens in play (`cort_evolved_battle_first_menu` sits at `0x1E`). Find the writer: a write-watch on `ctx+0x06` from `cort_evolved_pre_battle` with the pad driven. |
 | What is the byte at `actor[+0x22C] + 0x80` that the SFX-cue router folds into the category? | open (low priority) | `functions/battle.md` names it the attacker's element byte; its destination is now pinned as the descriptor's category column (the VAB-slot selector), and the documented monster element byte is record `+0x1D`, not this. Needs a read of the `+0x22C` sub-struct in `FUN_8004FE5C`'s callers. |
-| The 51 slot-B modules without an extracted image, and how a capture-class module's tick is entered | open | PROT 904, 906, 908..923, 925, 926, 935..956, 958..966 have no `static-overlays.toml` row; the `0x801F6734` / `0x801CF4EC` entry pair is a cheap identity test for each (row = extraction - 903). The `0x801CF4EC` cast-tick switch stops at PROT 0934, so the capture-class modules (`cast-module.md`) reach their tick some other way - read the `ctx+0x279` phase machine's caller. |
 
 Recently closed in this area: the battle-**intro** enemy-name banner - the
 question had a false premise, no placement record raises it, the composer
@@ -421,6 +425,14 @@ PCSX-Redux `.sstate` via `pcsxr-state`, dispatched on file extension).
 | Which routine samples the card-screen kanji page (VRAM `(320..447, 256..511)`, CLUT rows 475..482)? | open | PROT 0892's font is uploaded by `FUN_8002574C` at CARD INIT, but no image materialises its CLUT id `0x76C0`; look for a computed `y << 6` or a sprite-descriptor table in the menu overlay. |
 | What arms the dome's panel-still streamer, and what draws VRAM `(384, 0)` 320x256? | open | `FUN_80025358` runs on battle `ctx[+0xC] == 2`; the writer of that `2` (`0x8004E6E4`) is gated on `ctx[+0x7] == 0x67`, undecoded. |
 | Which enemy specials name readef groups 19..21 through monster record `+0x1C`? | open | Needs a sweep of the LZS-decoded monster blocks' `+0x1C` byte; `monster_archive.rs` does not model that field. |
+
+## Measurement + tooling
+
+| Thread | Status | What would close it |
+|---|---|---|
+| The slot-B pointer-resolution gate rejects three real modules (PROT 0915 / 0926 / 0935) | open | `crates/asset/tests/static_overlay_extract.rs` counts every out-of-image reference against the recovered base, so a module that reads PROT 0898's data below the base (0915), its own post-image `.bss` (0935), or is a one-sector stub (0926) fails it. One predicate change - count only references that land inside another mapped image - admits all three, whose entry VAs and partitions are already documented. |
+| Dump attribution is blind to GTE ops | open | `attribute-dump-extents.py` / `check-dump-base-integrity.py` canonicalise Ghidra's printed text against a capstone re-decode, and the two spell every `mtc2` / `cop2` differently, so any window holding a COP2 op is classed unresolved about bytes that demonstrably match (measured on `overlay_world_map_render_0901_801f7644.txt`: 16 tokens agree, 6 GTE tokens disagree). Folding COP2 the way `break` is already folded recovers the GPU / GTE emitters, where most of the remaining un-dumped runs live, and lifts `world_map_render`'s floor back above 42%. |
+| PROT 0901's middle band is a shared-tail leaf family | open | `0x801F7644..0x801F8EB4` has six `jal`s and no `jr ra` - every leaf `j`s to one exit - so neither a prologue partition nor a cut-at-`jr ra` walk splits it; it is dumped as one range. Splitting needs the `j`-target graph. |
 
 ## Adding a thread
 

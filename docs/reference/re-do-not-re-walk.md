@@ -592,6 +592,22 @@ when `_DAT_8007B64B` is zero; the mist-free arena capture is the default, not
 a phase gate. See
 [`minigame-muscle-dome.md`](../subsystems/minigame-muscle-dome.md).
 
+### The slot-B band: four readings the whole-band dump overturned
+
+*Falsified by disassembly.*
+
+| Reading | What is true |
+|---|---|
+| "No hard-coded `jal` into the capture-class band was found" | The sweep looked for a table keyed `id - 0x81`; the capture-class dispatcher `FUN_801F2160` keys on the spell record's `+1` sub-id and jumps through `0x801CF56C` |
+| "0957's trampoline `0x801F9BA8` is reached by nothing" | It is arm 22 of `0x801CF56C`, at `0x801F233C` |
+| "A slot-B module is two functions and has no internal `jal`" | 196 framed functions across the 64 images, 25 of them with internal calls; the two-function shape was the first thirteen |
+| "PROT 0965 is a shifted sibling of 0967" | A pre-correction over-read; 0965 is the Doomsday module |
+
+Function extents in the band come from frame matching, not from counting
+prologues against `jr ra` words - a frameless leaf, an early `jr ra`, or a
+`jr ra` word in a data tail breaks the count. See
+[`cast-module.md`](../subsystems/cast-module.md).
+
 ## Audio / sound driver
 
 | Thread | Verdict | Why |
@@ -731,6 +747,19 @@ entries - every access is a store. The real CD-callback sequencer
 which only `FUN_8003D53C` writes and which `FUN_8003EAE4` merely reads as a
 no-op entry gate. See
 [`re-settled-threads.md`](re-settled-threads.md#fun_8003eae4-is-a-seek-plus-bookkeeping---and-the-driver-is-not-untraced).
+
+### `0x801CE9C0` is an entry point in no image, so mode 16 is a stripped dev path
+
+*Falsified by disassembly.*
+
+The reading: SCUS `FUN_8002612C` (mode 16) jumps to `0x801CE9C0`, which sat
+mid-way through the debug-menu overlay's `FUN_801CE97C` in every dump, so
+the mode was read as a retail-stripped path jumping into slot A blind.
+
+What is true: it is VA aliasing at the shared slot-A base. `0x801CE9C0` is a
+clean function entry in PROT **0895** (`init.pak`, file `+0x1A8`), the
+publisher-logo pass that mode 16 exists to run. See
+[`boot.md`](../subsystems/boot.md).
 
 ## Containers / placeholder slots
 
