@@ -33,9 +33,9 @@ A page may mix levels, and the good ones say so per-field rather than per-page: 
 | [Asset type dispatcher](asset-type.md) | Confirmed | `FUN_8001F05C` - type-byte table that routes per-asset payloads |
 | [Asset descriptor format](asset-descriptor.md) | Confirmed | `(type_size, data_offset)` pair walker (`FUN_80020224`), reached at runtime from town init `FUN_801D6704`. No top-level PROT entry matches it. |
 | [Pack format](pack.md) | Confirmed | `u32 count + u32 offsets[]` used inside DATA_FIELD chunks |
-| [Standalone TIM-pack](tim-pack.md) | Confirmed | Distinct outer container with `(magic_lo, magic_hi, count<16, marker=0x01)` header |
+| [Standalone TIM-pack](tim-pack.md) | Confirmed | The reader for a pack behind a `TIM_LIST` chunk header - members at `word_index * 4 + 4`. Not a container of its own: the `marker=0x01` it keys on is that chunk header's type byte |
 
-The two pack formats are unrelated despite the shared name - `pack.md` (inside DATA_FIELD chunks) and `tim-pack.md` (standalone PROT entries) use different header math. The former "field-pack" ([field-pack](field-pack.md)) is a DATA_FIELD chunk wrapping an `asset::pack`, not a third format.
+There is **one** pack format and two readers for it. `pack.md` reads it at offset 0 (the bare form); `tim-pack.md` reads it four bytes in, past a `(TIM_LIST << 24) | size` DATA_FIELD chunk header, which is what its `word_index * 4 + 4` and its `marker == 0x01` byte test both encode. The former "field-pack" ([field-pack](field-pack.md)) is the same pack behind that same chunk header, not a third format. `categorize` now classifies by which form an entry is - `data_field_streaming` for the chunk-headered carriers, `pack` for the bare ones - so the `field_pack` and `tim_pack` classes are both empty against retail.
 
 ## Per-asset formats
 
