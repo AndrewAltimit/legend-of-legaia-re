@@ -61,8 +61,8 @@ fn render_mnemonic(insn: &Insn) -> String {
                 format!("Interact op0=0x{op0:02X} op1=0x{op1:02X}")
             }
         }
-        RenderCfg { long, op0, .. } => format!(
-            "RenderCfg {} op0=0x{:02X}",
+        ViewWindow { long, op0, .. } => format!(
+            "ViewWindow {} op0=0x{:02X}",
             if *long { "long" } else { "short" },
             op0
         ),

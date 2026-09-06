@@ -510,7 +510,7 @@ pub fn step<H: FieldHost>(
         // 0x46 - RENDER_CFG. Two forms keyed off `op0`:
         //
         // - Long form (`op0 == 0x24`): `[46, 0x24, b1, b2, b3, b4]`, PC += 6.
-        //   Writes the four bytes via `host.render_cfg_long`.
+        //   Writes the four bytes via `host.view_window_long`.
         //
         // - Short form (anything else): `[46, op0, op1]`, PC += 3.
         //   The VM does the bitfield math:
@@ -535,7 +535,7 @@ pub fn step<H: FieldHost>(
                 let Some(&b4) = bytecode.get(operand + 4) else {
                     return StepResult::Unknown { opcode, pc };
                 };
-                host.render_cfg_long(b1, b2, b3, b4);
+                host.view_window_long(b1, b2, b3, b4);
                 StepResult::Advance {
                     next_pc: pc + header_size + 5,
                 }
@@ -547,7 +547,7 @@ pub fn step<H: FieldHost>(
                 let g = 2u8.wrapping_sub(op1 >> 1);
                 let b = (op0 >> 1).wrapping_sub(1);
                 let packed = (op1 >> 1).wrapping_add(2);
-                host.render_cfg_short(r, g, b, packed);
+                host.view_window_short(r, g, b, packed);
                 StepResult::Advance {
                     next_pc: pc + header_size + 2,
                 }

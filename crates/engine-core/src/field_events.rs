@@ -77,9 +77,9 @@ pub enum FieldEvent {
         frames: Vec<u8>,
     },
     /// Field-VM op 0x46 long-form render config (RGB + packed).
-    RenderCfgLong { b1: u8, b2: u8, b3: u8, b4: u8 },
+    ViewWindowLong { b1: u8, b2: u8, b3: u8, b4: u8 },
     /// Field-VM op 0x46 short-form render config.
-    RenderCfgShort { r: u8, g: u8, b: u8, packed: u8 },
+    ViewWindowShort { r: u8, g: u8, b: u8, packed: u8 },
     /// Field-VM op 0x44 (spawn a MAN partition-2 record as a new context).
     SpawnRecord { global_index: u8 },
     /// Effect-anim trigger (op cluster around 0x32 / 0x4E).
@@ -253,11 +253,11 @@ impl FieldEvent {
                     frames.len()
                 )
             }
-            FieldEvent::RenderCfgLong { b1, b2, b3, b4 } => {
-                format!("RenderCfgLong({b1:#x}, {b2:#x}, {b3:#x}, {b4:#x})")
+            FieldEvent::ViewWindowLong { b1, b2, b3, b4 } => {
+                format!("ViewWindowLong({b1:#x}, {b2:#x}, {b3:#x}, {b4:#x})")
             }
-            FieldEvent::RenderCfgShort { r, g, b, packed } => {
-                format!("RenderCfgShort(r={r}, g={g}, b={b}, packed={packed})")
+            FieldEvent::ViewWindowShort { r, g, b, packed } => {
+                format!("ViewWindowShort(r={r}, g={g}, b={b}, packed={packed})")
             }
             FieldEvent::SpawnRecord { global_index } => format!("SpawnRecord({global_index})"),
             FieldEvent::EffectAnimTrigger { arg } => format!("EffectAnimTrigger({arg})"),
@@ -358,13 +358,13 @@ mod tests {
                 base_id: 0,
                 frames: vec![],
             },
-            FieldEvent::RenderCfgLong {
+            FieldEvent::ViewWindowLong {
                 b1: 0,
                 b2: 0,
                 b3: 0,
                 b4: 0,
             },
-            FieldEvent::RenderCfgShort {
+            FieldEvent::ViewWindowShort {
                 r: 0,
                 g: 0,
                 b: 0,

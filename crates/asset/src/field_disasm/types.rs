@@ -66,8 +66,8 @@ pub enum InsnInfo {
     },
     /// `0x3E` - WARP (op0 >= 100) / INTERACT.
     WarpOrInteract { op0: u8, op1: u8, is_warp: bool },
-    /// `0x46 RENDER_CFG`.
-    RenderCfg {
+    /// `0x46 VIEW_WINDOW` (the camera visible-tile-window setter).
+    ViewWindow {
         long: bool,
         op0: u8,
         bytes: [u8; 5],

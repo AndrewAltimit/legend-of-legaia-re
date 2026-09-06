@@ -219,14 +219,14 @@ pub trait FieldHost {
     /// writes `pbVar47[1..5]` to scratchpad RGB cluster + the matching main
     /// RAM mirrors. The four bytes are passed as-is; semantic interpretation
     /// is host-side.
-    fn render_cfg_long(&mut self, b1: u8, b2: u8, b3: u8, b4: u8) {
+    fn view_window_long(&mut self, b1: u8, b2: u8, b3: u8, b4: u8) {
         let _ = (b1, b2, b3, b4);
     }
 
     /// Render-config write (op 0x46, short form). The VM has done the bitfield
     /// math: `r = !(op0 >> 1)`, `g = 2 - (op1 >> 1)`, `b = (op0 >> 1) - 1`,
     /// `packed = (op1 >> 1) + 2`. Hosts apply to their fog/render state.
-    fn render_cfg_short(&mut self, r: u8, g: u8, b: u8, packed: u8) {
+    fn view_window_short(&mut self, r: u8, g: u8, b: u8, packed: u8) {
         let _ = (r, g, b, packed);
     }
 

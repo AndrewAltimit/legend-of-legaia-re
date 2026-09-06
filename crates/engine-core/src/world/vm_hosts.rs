@@ -1313,16 +1313,16 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         self.world.trigger_field_interact(interact_id, slot);
     }
 
-    fn render_cfg_long(&mut self, b1: u8, b2: u8, b3: u8, b4: u8) {
+    fn view_window_long(&mut self, b1: u8, b2: u8, b3: u8, b4: u8) {
         self.world
             .pending_field_events
-            .push(FieldEvent::RenderCfgLong { b1, b2, b3, b4 });
+            .push(FieldEvent::ViewWindowLong { b1, b2, b3, b4 });
     }
 
-    fn render_cfg_short(&mut self, r: u8, g: u8, b: u8, packed: u8) {
+    fn view_window_short(&mut self, r: u8, g: u8, b: u8, packed: u8) {
         self.world
             .pending_field_events
-            .push(FieldEvent::RenderCfgShort { r, g, b, packed });
+            .push(FieldEvent::ViewWindowShort { r, g, b, packed });
     }
 
     fn scene_register_write(&mut self, slot_10: u8, slot_12: u8, slot_14: u8) {

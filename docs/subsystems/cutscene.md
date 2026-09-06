@@ -874,7 +874,7 @@ Before spawning, `FUN_8003BDE0` checks the P2 record's **C1/C2 story-flag gates*
 
 `opdeene`'s timeline record (partition 2, record 18; record start at MAN offset `0xA47`) is a field-VM script that interleaves:
 
-- camera staging - op `0x45` `Camera Configure` (a 23-byte payload block) and op `0x46` `RenderCfg`;
+- camera staging - op `0x45` `Camera Configure` (a 23-byte payload block) and op `0x46` `ViewWindow` (the camera visible-tile-window setter, [`encounter.md`](../formats/encounter.md#the-scratchpad-window-0x1f8003e8eb));
 - actors - op `0x23` `MoveTo` and op `0x34` `Effect` spawns;
 - the intro-skip arm - op `0x2E` `GFLAG_SET 26` (`2E 1A` at `0xA5E`);
 - **inline narration text** (below);

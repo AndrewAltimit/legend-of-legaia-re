@@ -485,7 +485,7 @@ fn warp_minigame_door_path_advances_6_and_clears_flag() {
 // -- 0x46 RENDER_CFG ------------------------------------------------
 
 #[test]
-fn render_cfg_long_form_advances_6() {
+fn view_window_long_form_advances_6() {
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
     let r = step(
@@ -500,7 +500,7 @@ fn render_cfg_long_form_advances_6() {
 }
 
 #[test]
-fn render_cfg_short_form_advances_3_and_computes_bitfield() {
+fn view_window_short_form_advances_3_and_computes_bitfield() {
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
     // op0 = 0x10, op1 = 0x06.
