@@ -199,8 +199,8 @@
       <div class="card-body">One place name, three carriers: the executable's quick-travel cells, the label table trailing every kingdom MAN, and each scene MAN's banner name. Parser <code>legaia_asset::place_names</code>.</div>
     </a>
     <a class="card" href="world-map-overlay.html">
-      <div class="card-title"><span>World-map slot-4 records</span> <span class="tag tag-partial">Inferred</span></div>
-      <div class="card-body">Slot 4 of each kingdom bundle: a per-kingdom library of small object-local 3D meshes, each 8-byte record a GTE vertex read in place by the renderer. Not the bulk continent terrain.</div>
+      <div class="card-title"><span>World-map slot-4 records</span> <span class="tag tag-done">Confirmed</span></div>
+      <div class="card-body">Slot 4 of each kingdom bundle is the world-map scene's ANM animation bank - the same clip container every field scene carries: 8-byte entries of three 12-bit translations and three 8-bit rotations, frame-major, read by the clip selector and the animated-mesh renderer. Not a mesh library, and not the bulk continent terrain.</div>
     </a>
     <a class="card" href="effect.html">
       <div class="card-title"><span>Effect bundles</span> <span class="tag tag-done">Confirmed</span></div>

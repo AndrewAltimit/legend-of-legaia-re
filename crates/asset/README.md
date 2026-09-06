@@ -451,7 +451,7 @@ See [`character-mesh.md`](../../docs/formats/character-mesh.md) and
 | Module | What it parses |
 |---|---|
 | `kingdom_bundle` | Opens a kingdom PROT entry (`map01`/`map02`/`map03`) and decodes one slot of its 7-asset table. CLI `asset kingdom-slot`. |
-| `world_map_overlay` | Slot-4 container: per-body object-local GTE vertex pools (`(i16 x,y,z,attr)` records, read in place by the renderer). CLI `asset slot4-png` renders a top-down wireframe PNG. See [`world-map-overlay.md`](../../docs/formats/world-map-overlay.md). |
+| `world_map_overlay` | Slot-4 container: the world-map scene's type-`0x05` ANM animation bank - per-clip 8-byte rigid-transform entries (`Slot4Transform`), decoded per part and frame. CLI `asset slot4-png` renders translation paths as a top-down PNG (a byte-inspection aid). See [`world-map-overlay.md`](../../docs/formats/world-map-overlay.md). |
 | `ocean` | Ocean tile texture (4bpp 64×256) + its 13-frame CLUT animation from the kingdom bundles. |
 | `clut_walk` | The type-6 CLUT-walk `MoveImage` walker table + its parked source strips. Not kingdom-only: `from_scene_bundle` / `scene_park_strips` resolve any bundle's slot by type byte (12 carriers, incl. 9 water/waterfall field scenes - [`field-ambient-fx.md`](../../docs/subsystems/field-ambient-fx.md)). |
 | `worldmap_menu` | The quick-travel landmark menu out of `SCUS_942.54`: 16-entry name table (`DAT_80073B18`) + 6-byte placement records (`DAT_80073A98`). CLI `asset worldmap-menu` (`--json` = the web-viewer shape). |

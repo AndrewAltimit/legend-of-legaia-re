@@ -22,8 +22,29 @@ below.
 | Thread | Verdict | Why |
 |---|---|---|
 | Slot-4 → cluster-A converter site | falsified | There is no slot-4 → cluster-A converter. The cluster-A pool (`DAT_8007C018`) is filled exclusively by `FUN_80026B4C`, reached only from `FUN_8001f05c` **case `0x02`** (TMD pack) and **case `0x09`** (bare TMD). Slot-4's type byte is **`0x05`**, whose `FUN_8001f05c` case merely allocates the MOVE buffer `_DAT_8007B888` and never calls `FUN_80026B4C`. So slot-4 bytes never become cluster-A TMDs; the `DAT_8007C018` kingdom entries are the scene's own type-`0x02` field-file TMD pack(s), installed by the single `FUN_80020224` descriptor-walk. |
-| World-map outline / coastline reading | falsified | Visual inspection plus the slot-4 record-semantic work refuted the "world-map overlay outlines / coastline wireframe" interpretation. Bodies are most likely small object-local 3D meshes; treat any future "kingdom border lines" claim with suspicion. |
+| World-map outline / coastline reading | falsified | Visual inspection plus the slot-4 record-semantic work refuted the "world-map overlay outlines / coastline wireframe" interpretation. The replacement guess - "small object-local 3D meshes" - is falsified too: slot 4 is the scene's animation bank (below). Treat any future "kingdom border lines" claim with suspicion. |
 | Walk-view decoration layer = walk-bit (`0x1000`) cells plus a `FLAG_MESH_DRAWN` test | falsified (the gate is `0x2000` alone) | Plausible: every tree / prop cell carries both bits, and the one family the walk-bit sweep wrongly admitted (record 408, a wall down every river) happened to lack flag `0x2`, so a flag test "fixed" it. But the resident kernel (`FUN_801F69D8`, PROT 0901, `andi 0x2000` at `0x801F6ECC`) tests only the draw bit, never `+0x12 & 0x2` - and the big enterable mountains sit on cells with `0x2000` and **no** `0x1000` (the mesh is the ground there), so the walk-bit sweep drew every tree and dropped every mountain while looking complete ([world-map.md](../subsystems/world-map.md#placing-the-continent-terrain-engine-port)). |
+
+### Slot 4 is a GTE vertex pool walked by an unpinned "cluster-A command stream"
+
+*Falsified by disassembly, with a live state agreeing.*
+
+The reading: each 8-byte slot-4 record is a vertex `(i16 x, y, z, attr)` in
+an object-local pool, indexed by a command stream nobody could find, drawn
+in place by the world-map render library; `attr` render-unused.
+
+Why it looked right: `FUN_80044C14`, a real per-kind primitive handler, does
+load two words into the GTE vertex registers exactly that way, and a capture
+showed the slot-4 window read in place with GTE-shaped return addresses.
+
+What is true: there is no stream. `_DAT_8007B888` (the type-`0x05` buffer)
+has six references image-wide, none in a render path; the entry's field
+boundaries fall on **nibbles** (three 12-bit translations, three 8-bit
+angles); `attr` is the Y / Z rotation, read every frame; and the capture's
+return addresses sit inside the animated-mesh renderer `FUN_8001B964`, not a
+prim handler. The `attr`-is-unread register-width argument swept a function
+that never sees these bytes. See
+[`re-settled-threads.md`](re-settled-threads.md#kingdom-slot-4---per-record-semantic).
 
 ## Battle / arts / level-up
 

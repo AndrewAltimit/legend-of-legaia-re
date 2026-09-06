@@ -17,11 +17,12 @@
 
 <section class="doc-section" id="world-map" data-doc="world-map--kingdom-bundles">
   <h2>World map / kingdom bundles</h2>
-  <p>Kingdom bundles and the slot-4 mesh library.</p>
+  <p>Kingdom bundles and the slot-4 animation bank.</p>
   <div style="overflow-x:auto">
   <table>
     <thead><tr><th>The reading that looked right</th><th>Verdict</th><th>Write-up</th></tr></thead>
     <tbody>
+      <tr id="x-slot-4-vertex-pool-cluster-a"><td>Slot 4 is a GTE vertex pool walked by an unpinned "cluster-A command stream"</td><td>no stream exists; the entries are rigid transforms of the scene's animation bank, and the capture's return addresses sit inside the animated-mesh renderer</td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-do-not-re-walk.md#slot-4-is-a-gte-vertex-pool-walked-by-an-unpinned-cluster-a-command-stream" target="_blank" rel="noopener">doc</a></td></tr>
       <tr id="x-slot-4--cluster-a-converter-site"><td>Slot-4 → cluster-A converter site</td><td>falsified</td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-do-not-re-walk.md#world-map--kingdom-bundles" target="_blank" rel="noopener">doc</a></td></tr>
       <tr id="x-world-map-outline--coastline-reading"><td>World-map outline / coastline reading</td><td>falsified</td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/re-do-not-re-walk.md#world-map--kingdom-bundles" target="_blank" rel="noopener">doc</a></td></tr>
     </tbody>

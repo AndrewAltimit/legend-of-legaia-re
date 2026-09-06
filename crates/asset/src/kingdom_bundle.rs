@@ -40,7 +40,7 @@
 //! | 1 | `0x02` TMD pack | Landmark TMDs (40 / 36 / 56 for Drake / Sebucus / Karisto) | [tmd.md] |
 //! | 2 | `0x03` MAN | Entity placement records (50 / 23 / 40 records) | scene-bundles.md |
 //! | 3 | `0x04` HD-OBJ index | Small structural index (~500B); semantic unpinned | - |
-//! | 4 | `0x05` "MOVE" | Object-local 3D-mesh-shaped record bodies; per-record semantic open (old wireframe/coastline reading falsified) | [world-map-overlay.md] |
+//! | 4 | `0x05` "MOVE" | The scene's ANM animation bank: per-clip rigid-transform entries (12-bit translations + 8-bit rotations), read by `FUN_800204F8` / `FUN_8001B964` (the wireframe / coastline / vertex-pool readings are all falsified) | [world-map-overlay.md] |
 //! | 5 | `0x06` "anm" | Ocean CLUT-walk table (8 MoveImage actors; byte-identical across kingdoms) | [`clut_walk`](crate::clut_walk), world-map.md |
 //! | 6 | `0x07` | Unknown | - |
 //!

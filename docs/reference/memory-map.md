@@ -136,8 +136,9 @@ patching an instruction. Useful Ghidra anchors.
 | `0x8007B7F8` | Pointer to the **cosine** view of the shared trig LUT - `0x8007122C`, the sine base offset by a quarter turn. Installed by `FUN_80026BE0` (`0x80026C0C`). |
 | `0x8007B81C` | Pointer to the **sine** base `0x80070A2C` (`FUN_80026BE0` at `0x80026C00`). The table is `4096 * sin(2*pi*i / 4096)` over 5120 `i16` entries, `0x80070A2C..0x8007322C` - one revolution plus the quarter turn the cosine view needs, which is why consumers mask the angle with `0xFFF`. |
 | `0x8007B824` | u32 - Party base index into `DAT_8007C018` (see the fuller entry below); read by `FUN_8001EBEC` to address the three active-party battle-TMD pointers `DAT_8007C018[0x8007B824 + 0..2]`. (Earlier "sound mode index" reading was wrong.) |
-| `0x8007B840` | MOVE2 buffer base. |
-| `0x8007B888` | MOVE buffer base. |
+| `0x8007B840` | MOVE2 buffer base - the type-`0x0B` high-id animation-clip bank (`actor[+0x5C] >= 0x400`). |
+| `0x8007B888` | MOVE buffer base - the type-`0x05` low-id animation-clip bank; on the world map this is kingdom slot 4 (`world-map-overlay.md`). |
+| `0x8007B75C` | Party / character animation-clip bank (`actor[+0x10] & 0x01000000`); live `map01`: `0x801589E4`, 23 clips. |
 | `0x8007B750` | u32 - Sound flag word coordinating the BGM track-swap handshake (bit 1 = pause, bit 3 = load settled, bit 4 = release ack); full bit map + writer census in [`audio.md`](../subsystems/audio.md#the-track-swap-handshake-fun_800243f0--op-0x35-sub-op-0xa). |
 | `0x8007B868` | u32 - Dev/dual-mode gate the actor-sound family and several loaders check (`retail 0`). No static writer sets it - its only store, in `FUN_8001DCF8` (`0x8001E008`), clears bit 1. |
 | `0x8007B8D0` | u32 - sound subsystem current-bundle pointer (`gp+0x5B8`): `bse.dat`'s 0x1800-byte buffer during battle, repointed at the scene's prescript bundle on every field load (`FUN_8001F7C0` at `0x8001F864`). See [`bse-dat.md`](../formats/bse-dat.md). |
@@ -216,7 +217,7 @@ chain. End-to-end walkthrough in [`subsystems/world-map.md`](../subsystems/world
 The global asset-pointer table consumed by the world-map top-view
 renderer (`FUN_801F69D8` → `FUN_80043390`). Live verification: see the
 field-scene snapshot example in
-[`formats/world-map-overlay.md`](../formats/world-map-overlay.md#how-slot-4-bytes-reach-cluster-a).
+[`formats/world-map-overlay.md`](../formats/world-map-overlay.md#consumer-call-sites).
 (The same `DAT_8007C018` table is filled identically by every field-scene load
 - towns, dungeons, and the walk-view world map - via the single descriptor-walk
 `FUN_80020224`; the verification capture is the `dolk` field scene, not a world
@@ -231,7 +232,7 @@ map, but the table layout is scene-independent.)
 | `0x8007B828` | u32 | TMD-magic-mismatch error bits. Set by `FUN_80026B4C` when an input fails the `*(input)==0x80000002` check (only flags the error; does not reject the install). `dolk` / `geremi` field-scene snapshots = `0x00000000` - every installed entry passes the magic check. |
 | `0x8007B6F8` | u32 | **Kingdom-TMD prefix offset.** Count of party-character TMDs that precede the kingdom-bundle TMDs in `DAT_8007C018`. The world-map dispatcher does `DAT_8007C018[(actor_kind8 + DAT_8007B6F8) * 4]`, so this shifts world-map actor-kind indices past the party prefix. Writers: `FUN_80020118` (field-load entry; resets to 0) and `FUN_8001E890` / `FUN_8001E928` (set to `DAT_8007B824 + *player_pack_count`). `dolk` field-scene snapshot = `5`. |
 | `0x8007B7DC` | `void *` | VDF buffer pointer. Set by asset-dispatcher case 7. `FUN_8001FBCC` walks each sub-entry and writes a parallel pointer table at `0x80083E58` (consumed by `FUN_801D77F4` for actor instance bring-up). |
-| `0x8007B888` | `void *` | Slot-4 (MOVE) buffer pointer (set by `FUN_8001f05c` case 5; **not** installed into `DAT_8007C018`). Scene-dependent - a field-scene capture pinned it to `0x8011A624`, but the physical bytes get overwritten by the scene's TMD-pack install before steady state. |
+| `0x8007B888` | `void *` | Type-`0x05` (MOVE) animation-clip bank pointer (set by `FUN_8001F05C` case 5 at `0x8001F3A8`; **not** installed into `DAT_8007C018`). On the world map it is kingdom slot 4 - the scene's ANM bank, read by the clip selector `FUN_800204F8` (1-based lookup) and the animated renderer `FUN_8001B964`; live `map01` pins it at `0x8011A624`. Six references image-wide, none in a render-dispatch path. |
 | `0x80083E58` | `void *[N]` | Parallel VDF sub-entry pointer table. First entry points into VDF buffer; subsequent entries point into the actor-instance area. |
 
 ## Debug flags
