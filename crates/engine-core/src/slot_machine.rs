@@ -1109,6 +1109,12 @@ pub struct PaylinePrim {
 // machine as a text HUD and the browser play page draws its cabinet from JS
 // geometry of its own. A 3D slot-cabinet pass is the prerequisite; the line
 // primitive is the step after it.
+//
+// The cabinet's own geometry is no longer missing: it is PROT 1200 descriptor 1,
+// a 1-object Legaia TMD (65 verts, 76 untextured prims) the overlay init
+// installs into the shared model bank and spawns as an ordinary actor, so a
+// cabinet pass is a model draw rather than a packet builder. See
+// docs/subsystems/minigame-slot-machine.md, "The cabinet is a mesh".
 // PORT: FUN_801d3380 (payline 3D line segments)
 pub fn payline_prims(
     paylines: &[legaia_asset::minigame_slot_scene::PayLine],

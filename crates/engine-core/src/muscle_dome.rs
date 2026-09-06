@@ -702,6 +702,14 @@ impl MuscleDomeSession {
     /// confirm press (recomp capture: three 30-cost commits on a 100 budget
     /// move `ctx+6` `0x50 -> 0x5a` on the third press).
     ///
+    /// Retail's **Auto** arm is not modelled here, and it is not a picker: it
+    /// commits the 16-byte command string `FUN_801DA34C` reloads out of the
+    /// character's own save record (`+0x1A7` / `+0x1B7`, chosen on the
+    /// `actor+0x156 < actor+0x154` AP-band test) and `FUN_801DA59C` writes back
+    /// on the review confirm. A port of it is a record field plus a copy, not a
+    /// selection rule. See docs/subsystems/minigame-muscle-dome.md, "The Auto
+    /// arm picks nothing".
+    ///
     /// REF: FUN_801d0748 phase 0x50
     pub fn selection_exhausted(&self, slot: usize) -> bool {
         self.phase == MusclePhase::Select && (0..HAND_SLOTS).all(|c| !self.can_commit(slot, c))

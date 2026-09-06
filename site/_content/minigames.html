@@ -752,7 +752,11 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
                 Dome's real battle backdrop (PROT&nbsp;1225, the tail slot of the dome's
                 <code>other6.lzs</code> file), drawn with its own texture pages and its lamp-glow
                 prims blended additively the PSX way; the ground is the retail battle ground
-                grid sampling the backdrop's own dirt tile. The sound is the dome's own cue set
+                grid sampling the backdrop's own dirt tile. That stream's second object - a ring
+                of dust decals - is omitted here, and retail omits it too: its battle scene
+                loader drops object&nbsp;1 from the backdrop's bound part list unless the
+                encounter record's own option bit asks for it, and the retail match capture
+                shows no dust. The sound is the dome's own cue set
                 (PROT&nbsp;0868 UI blips, the shared PROT&nbsp;0869 impact cue) with the battle
                 theme as BGM.
               </p>
@@ -771,12 +775,18 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
                 <b>Fitted rather than traced:</b> the base camera seat, fighter spacing and
                 facing; the banner's speed-line rays and the SUPER/MIRACLE word composition
                 (only the HYPER strip is packet-pinned); the chips' glide-in motion; the INTERVAL
-                screen's hold time; which of the three traced UI blips fires on which event; the
+                screen's hold time; the
                 KO clip pick; the opponent's greedy command AI (retail has no dome-specific AI
                 table); the jitter-free level growth (retail adds a zero-mean random spread);
-                the awarded Seru; pennant widths for non-30-cost commands; the <b>Auto</b>
-                picker; the review / Begin-Reselect screen geometry; and the arts list showing
+                the awarded Seru; pennant widths for non-30-cost commands;
+                the review / Begin-Reselect screen geometry; and the arts list showing
                 every table art - the page does not model arts <em>learning</em>.
+                <b>Two of those are now traced instead:</b> the three UI blips are
+                accept (<code>0x21</code>), highlight-moved (<code>0x22</code>) and
+                refused-or-back (<code>0x23</code>); and retail's <b>Auto</b> has no picker
+                at all - it commits the command string saved into the character's own record
+                on the previous round's review confirm, which is also why a reopened input
+                screen starts with the last round's pennants.
                 <b>Two honest gaps:</b> the rules engine resolves each command as a basic strike
                 (retail expands a recognised art through its art records for more damage, so
                 the banner is presentation over real recognition, not an arts damage model), and
@@ -1834,15 +1844,16 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
    * state. The fit was solved on the five payline lamps alone and then predicted,
    * to about a pixel each, every other element's on-screen rect.
    *
-   * THE CABINET IS MEASURED, NOT TRACED, AND THE PAGE SAYS SO: the grey body,
-   * the dark-red face the reels sit in, the navy marquee backing and the lit
-   * floor ramp are drawn by retail every frame, but their emitter is still
-   * unpinned. The old "it's the casino room's geometry" reading is FALSIFIED:
-   * the library capture reaches the machine by a debug warp from town01 - a
-   * RAM census finds town01's meshes resident and none of the koin* casino
-   * bundles' - and the cabinet still draws. Until its table is found, the
-   * page paints the same composition from edges + colours measured off the
-   * retail capture's framebuffer (see slotDrawCabinet).
+   * THE CABINET IS MEASURED HERE, THOUGH ITS SOURCE IS NOW KNOWN, AND THE PAGE
+   * SAYS SO: the grey body, the dark-red face the reels sit in, the navy
+   * marquee backing and the lit floor ramp are an untextured MESH on the disc -
+   * PROT 1200 descriptor 1, a 1-object Legaia TMD (65 verts, 76 prims, flat +
+   * gouraud, no UVs) that the overlay init installs into the shared model bank
+   * and spawns as an ordinary actor, which is why no slot function emits it and
+   * no art page holds it. The old "it's the casino room's geometry" reading
+   * stays FALSIFIED. This page still PAINTS the measured composition rather
+   * than the decoded mesh (see slotDrawCabinet) - drawing the real mesh needs a
+   * projection pass the page does not have.
    */
   const SLOT_START_COINS = 60;
   const SYM_PX = 64;              /* a reel symbol cell, in texels */
@@ -2062,9 +2073,10 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
           'rather than beeping at you. ') +
       'The <b>music</b> is the casino floor’s own track, mixed through the from-scratch SPU off ' +
       'your disc and looped from the first spin. ' +
-      '<br><br><b>Measured rather than read:</b> the cabinet body (its emitter is still ' +
-      'unpinned — it is <em>not</em> the casino room’s geometry — so its edges and colours are ' +
-      'measured off a retail framebuffer capture) and the projection (the GTE control words ' +
+      '<br><br><b>Measured rather than read:</b> the cabinet body (it is a real untextured ' +
+      'mesh on your disc — PROT&nbsp;1200 descriptor&nbsp;1 — but this page paints its edges ' +
+      'and colours as measured off a retail framebuffer capture instead of projecting the ' +
+      'mesh) and the projection (the GTE control words ' +
       'are not in main RAM, so the four scalars are fitted — and then predicted every other ' +
       'element’s rect to about a pixel). Full trace: ' +
       '<code>docs/subsystems/minigame-slot-machine.md</code>.';
@@ -2499,15 +2511,22 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   /* ---- the cabinet, measured off the retail framebuffer ----
    *
    * The cabinet - the grey body, the dark-red face the reels sit in, the navy
-   * marquee backing, the lit floor ramp - is drawn by the retail machine every
-   * frame, but its emitter is still unpinned: it is NOT the casino room's
-   * geometry (the library capture reaches the machine by a debug warp from
-   * town01 - a RAM census finds town01's meshes resident and none of the
-   * koin* casino bundles' - and the cabinet still draws), and no slot-overlay
-   * function emits it. Until the table it comes from is found, this paints the
-   * same composition as a small set of flats + gradients whose every edge and
-   * colour is MEASURED from the retail capture's framebuffer - the same
-   * epistemic status as the fitted projection above, and the page says so.
+   * marquee backing, the lit floor ramp - is a MESH, not a packet: PROT 1200
+   * descriptor 1 is a 1-object Legaia TMD, 65 verts / 76 untextured prims
+   * (flat 0x21/0x29 + gouraud 0x31/0x39), installed into the shared model bank
+   * by the overlay init and spawned as an ordinary actor. That is why no
+   * slot-overlay function emits it and no art page holds it, and it is why the
+   * "it's the casino room's geometry" reading stayed falsified.
+   *
+   * This function still paints the MEASURED composition rather than projecting
+   * that mesh - a set of flats + gradients whose every edge and colour comes
+   * off the retail capture's framebuffer - because the page has no projection
+   * pass for a model. The mesh's own baked packet colours agree with the
+   * measurement in kind (grey #6F6F6F, dark reds #4E2727..#310A0A, navy
+   * #000057 and #00002D, near-black #080808), and the measured navy rgb(0,0,72)
+   * sits between the two navy vertices, which is what a gouraud span across
+   * them gives. Exact on-screen values are not asserted to match: the
+   * measurement is of a shaded frame.
    *
    * Measured anchors (640x240 retail frame, sampled from the
    * minigame_slot_machine capture): body x 28..488 / y 19..218 on black;
@@ -2719,8 +2738,10 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     } else if (did === 'spinup') {
       slotPendingStop = true;                    /* taken as soon as stops open */
     }
-    /* The casino floor's own track ("Sol casino" - the slot overlay starts
-     * none, so retail hears the host scene's) starts with the first spin. */
+    /* The casino floor's own track ("Sol casino", global BGM 2018 - the slot
+     * overlay starts none, so retail hears the host scene's. koin1's entry
+     * script picks it on the casino-floor arm; the Vidna cabinet's host scene
+     * plays that town's track instead). Starts with the first spin. */
     if (did === 'spin' || did === 'spinup') MgBgm.start('slot');
   }
 
