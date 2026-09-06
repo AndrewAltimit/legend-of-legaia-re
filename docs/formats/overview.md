@@ -98,7 +98,7 @@ Static `SCUS_942.54` rodata tables that drive stats, items, and magic. These are
 
 The STR FMV overlay holds **two** tables. The FMV dispatch table at `0x801D0A6C` is the play engine's source: 23 slots of `[path_ptr, depth, start_frame, end_frame, fb_x, fb_y, w, h]`, static overlay data that decodes straight from the disc. The `0x801CAE08` window nearby is the generic libcd directory-record cache - PsyQ `CdlFILE`-shape records, **not** an FMV table.
 
-World-map slot 4 is likewise not what it was first read as. Each 8-byte record is a **GTE vertex** `(i16 x, y, z, attr)` that `FUN_80044c14` loads and `RTPT`-transforms; `attr` is not a coordinate and is render-unused. The container is byte-verified against live RAM and the renderer reads the pool in place, with no transcode. Two earlier readings are falsified: the "coastline wireframe" interpretation, and the idea that slot 4 is the bulk continent terrain source. That terrain mechanism is pinned separately at [world-map § bulk continent terrain emit](../subsystems/world-map.md#top-view-bulk-terrain-render-path-overlay-replaced-per-prim-renderers).
+World-map slot 4 is likewise not what it was first read as - twice. It is neither a coastline wireframe nor a library of small meshes: it is the world-map scene's asset-type-`0x05` **ANM animation bank**, the same clip container every field scene carries, whose 8-byte entries pack three 12-bit translations and three 8-bit rotations (`world-map-overlay.md`). The "GTE vertex `(i16 x, y, z, attr)` walked by `FUN_80044c14`" reading came from assuming that prim handler owned the pool; `attr` is the Y / Z rotation pair, read every frame.
 
 ## Runtime overlay carriers
 
