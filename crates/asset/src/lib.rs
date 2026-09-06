@@ -128,6 +128,9 @@ pub mod world_map_overlay;
 pub mod worldmap_menu;
 pub mod xa_cue_table;
 
+// --- lane W1-B ---
+pub mod byte_account;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum AssetType {
     /// Single TIM texture.

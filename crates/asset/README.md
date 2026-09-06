@@ -14,6 +14,7 @@ common case - handled by `FUN_8001a55c` via [`legaia-lzs`]) or stored raw
 - [Core descriptor + decoder](#core-descriptor--decoder)
 - [Streaming + pack formats](#streaming--pack-formats)
 - [Field-VM disassembler (`field_disasm`)](#field-vm-disassembler-field_disasm)
+- [Byte accounting (`byte_account`)](#byte-accounting-byte_account)
 - [Structural detectors (for `categorize`)](#structural-detectors-for-categorize)
   - [Simple detectors (table)](#simple-detectors-table)
   - [`static_overlay`](#static_overlay)
@@ -61,6 +62,26 @@ stream `FUN_801DE840` executes): the per-opcode width/format decoder plus
 `LinearWalker`. Lives here (next to the MAN/scene parsers that carry the
 bytecode) so disc tooling can walk scripts without the engine; the executing
 VM re-exports it as `legaia_engine_vm::field_disasm`.
+
+## Byte accounting (`byte_account`)
+
+Sibling of `categorize`, one entry at a time. `categorize` answers *what format
+this entry is*; `byte_account` answers *how much of it any parser here actually
+consumes*. It runs the walkers that apply to the entry's class, emits
+`[start, end, owner]` claims, merges them, and classifies every uncovered run by
+shape (zero padding, repeated fill, ASCII pool, pointer table, plausible MIPS,
+low / high entropy). Compressed spans are decoded and accounted in a nested
+pass, and claims found by a magic sweep over the residue are tagged `scan` so
+they never inflate the structural figure.
+
+For an overlay code image the "parser" is the Ghidra dump corpus. The module
+re-implements `dump_header.py`'s header parse in Rust and resolves slot-A VA
+aliasing from the bytes: it re-encodes a dump's first printed instructions and
+compares them to the image at the mapped offset, so an extent that belongs to a
+sibling overlay is dropped rather than credited.
+
+CLI `asset account`; full reference
+[`docs/tooling/byte-accounting.md`](../../docs/tooling/byte-accounting.md).
 
 ## Structural detectors (for `categorize`)
 
@@ -591,6 +612,7 @@ slot table `scene_asset_table` and its `scene_v12_table` variant are in the
 asset describe         <input>            # parse + print descriptor
 asset decode           <input> <output>   # apply the dispatcher
 asset categorize       <PROT.DAT> [--cdname <CDNAME.TXT>]
+asset account          <entry.BIN|index> [--funcs <dir>] [--depth N] [--json]
 asset find-overlay     <PROT.DAT>         # MIPS-code candidate scan
 asset overlay          list|extract|verify|ghidra|scan|find-sig|generate   # static overlay pipeline
 asset tim-scan         <input>            # locate embedded TIMs (per-entry, lenient)
