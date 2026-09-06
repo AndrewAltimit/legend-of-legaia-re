@@ -146,6 +146,19 @@ Closing the question needs a bag genuinely filled to `end` (256 with a
 multi-member party) with the hit shown to land past the guard. The thread's
 state is tracked in [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).
 
+The two windows fail differently, and only one of them is settled by
+arithmetic. `FUN_800421D4`'s merge pass keys on the id byte, so each non-zero
+id occupies at most one slot and `0` is the empty sentinel - at most **255**
+distinct ids can ever be live. The **full** window is 256 slots, so a hole
+always remains and its scan cannot reach `end`. The **half** windows are 128
+slots, and the id space does not save them: the static [item-name
+table](../formats/item-table.md) `PTR_DAT_8007436C` carries **250** non-empty
+names over its 256 ids (only `0x00`, `0x12`, `0x1A`, `0x52`, `0xB9` and `0xFD`
+are blank), so 128 distinct live ids is arithmetically reachable. What actually
+bounds the half-window case is how much of the item population is obtainable
+while a character travels alone - a progress bound, not a capacity one, and
+one nobody has measured.
+
 ## Function map
 
 | Function | Role | Notes |

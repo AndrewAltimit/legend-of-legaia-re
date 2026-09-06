@@ -751,25 +751,37 @@ The two globals it writes are the only side-effects:
 #### `_DAT_8007BA78` has exactly two writers
 
 An instruction-level sweep - not a search over decompiled-C text - finds every
-access to `0x8007BA78` across `SCUS_942.54` and all 1233 extracted `PROT` entries,
-matching any `lb/lh/lw/lbu/lhu/sb/sh/sw` whose effective address resolves through a
-`lui` / `lui`+`addiu` base. The result is six distinct sites:
+access to `0x8007BA78` across `SCUS_942.54`, all 1233 extracted `PROT` entries and
+the extracted overlay images, in **every** reference form: `lui`-based
+`lb/lh/lw/lbu/lhu/sb/sh/sw`, the address materialised into a register by
+`lui`+`addiu`/`ori`, the literal 32-bit word, and - the form an absolute-only scan
+is structurally blind to - the `gp`-relative displacement, here `0x760(gp)` with
+`gp = 0x8007B318`. The `gp` form yields **zero** hits, which is what turns the
+enumeration from a survey into a closed one (that same blindness is what once made
+the dev flag `gp+0x5AA` look writer-less; see
+[`ghidra.md`](../tooling/ghidra.md#decompiler-artifacts-that-have-produced-false-claims)).
 
 | Site | Kind | Where |
 |---|---|---|
-| `0x801E30F4` | store | field overlay, the `4C E2` FMV-trigger op |
-| `0x801DDCE8` | store | menu overlay, the title attract-countdown tick |
-| `0x801CEA74`, `0x801CEC94`, `0x801CECA8`, `0x801CF4E0` | loads | STR overlay dispatch + play loop |
+| `0x801E30F4` (PROT 0897 `+0x148DC`) | store | field overlay, the `4C E2` FMV-trigger op |
+| `0x801DDCE8` (PROT 0899 `+0xF4D0`) | store | menu/title overlay, the title attract-countdown tick |
+| `0x801CEA74`, `0x801CEC94`, `0x801CECA8`, `0x801CF4E0` (PROT 0970 `+0x25C`, `+0x47C`, `+0x490`, `+0xCC8`) | loads | STR overlay dispatch + play loop |
+| `0x801CFA50` (PROT 0971 `+0x1238`) | literal word | debug-menu overlay's editable-globals pointer table |
 
-`SCUS_942.54` itself never touches it. Two apparent extra hits are duplicate
-on-disc copies, not new sites: PROT 0896 carries the same field overlay as 0897
-shifted by `0x9000` (a 0x46800-byte identical span straddles the store), and the
-pre-correction over-read footprints of PROT 0967/0968/0969 each carried the
-head of the STR overlay 0970 (their corrected entries are 6/4/2 KB - the
-battle-tutorial overlay, a slot-B module, and the STR-path table - and hold
+`SCUS_942.54` itself never touches it, in any form. The only non-instruction
+reference is the debug menu's pointer-table word - the static witness for the
+dev-menu `WORK_TBL` editing that a scan over instructions alone cannot see, and
+the mechanism behind corpus states whose `fmv_id` no trigger op explains.
+Apparent extra instruction hits were duplicate on-disc copies under the
+superseded entry-size expression, and none survives it: the corrected PROT 0896
+(`0x9000` bytes) cannot hold the `0x46800`-byte field-overlay span that reading
+attributed to it, and the over-read footprints of PROT 0967/0968/0969 each
+carried the head of the STR overlay 0970 (their corrected entries are 6/4/2 KB -
+the battle-tutorial overlay, a slot-B module, and the STR-path table - and hold
 none of the STR code). This is what rules out
-a per-FMV event table: nothing but the trigger op and the attract tick can set the
-id, so an FMV cannot carry teleport or story-flag side-effects of its own.
+a per-FMV event table: nothing but the trigger op, the attract tick and the dev
+menu can set the id, so an FMV cannot carry teleport or story-flag side-effects
+of its own.
 
 **Coverage limit.** The sweep reads raw bytes, so it cannot see code inside an
 LZS-compressed section. Every code-bearing class in `PROT/categorize.json`
