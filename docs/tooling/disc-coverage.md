@@ -502,6 +502,39 @@ is split wherever the upper-bound crediting changes, so one 40-byte residue
 extent inside a 62 KB gap no longer marks the whole gap ambiguous. Start with the
 `no` rows - nothing in the corpus covers those at any VA.
 
+### `cutscene_str` (PROT 0970): a 123 KB code gap that is 99.8% zero
+
+The largest single "code gap" in the overlay table belongs to PROT 0970, and it
+is not work. The entry is `0x24800` bytes; the last `code`-shaped run in it ends
+at `0x801D1878`, and the span from there to `0x801F1A00` - 131 464 bytes, 88% of
+the image - is **32 793 zero words out of 32 866**, a reserved `.bss`-shaped
+hole the loader never fills from disc. `undumped-runs.csv` accounts for it
+honestly (123 796 B `padding`, 3 492 B `mostly_padding`, 5 156 B `data`,
+1 872 B `no_exit`, against 1 336 B of `code`), which is why the ranked worklist
+shows barely a kilobyte for an image whose gap figure reads six figures. The
+populated remainder is two regions: everything below `0x801D1878` (7.4% zero -
+the real code and rodata), and a second small block at
+`0x801F1A00..0x801F3018` that scores 32.8% zero and classifies as `data` +
+`mostly_padding`, not as instructions. Quote 0970's *shape* breakdown, never its
+gap size.
+
+### A short `code` run with no `jr ra` in it is usually data
+
+The `no_exit` demotion needs 1024 bytes, so a 512-to-800-byte data table in an
+image's tail still ranks as `code`. Reading each such run at its image's own
+base settles it in one look, and several have been settled that way: PROT 0897
+`0x801F23B4` / `0x801F2DB4` / `0x801F30D4`, PROT 0980 `0x801D43A4` /
+`0x801D4AA4`, PROT 0977 `0x801D1EF0` and PROT 0978 `0x801F7624` all decode as
+`.byte` runs, `nop` fields and impossible operands (`j 0x80300000`, `tge`,
+`syscall`), never as a body reaching a `jr ra`. The same is true of every
+`SCUS_942.54` run above `0x80074000`, which is the static-table band
+([`item-table.md`](../formats/item-table.md),
+[`spell-table.md`](../formats/spell-table.md) and neighbours). The one SCUS run
+that *is* code, `0x80045CB4`, is still not a dump target: nothing in any image
+references it, its preceding word is a store in the same instruction stream, and
+the nearest prologue is 11 128 bytes back - the `INTERIOR` verdict of
+[`worklist-classification.md`](worklist-classification.md).
+
 **Do not sum the worklist across images.** Nineteen overlays load at
 `0x801CE818` and thirteen at `0x801F69D8`, so the same VA appears under several
 headings holding *different* bytes each time. Each is real work; the total is not

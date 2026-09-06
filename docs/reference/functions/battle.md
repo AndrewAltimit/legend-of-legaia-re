@@ -150,6 +150,41 @@ image a dump was taken from, never a second routine
 | `801EC3E4` | The arms execution / melee damage kernel, which is where retail decides a capture: it passes the monster record's Seru id `record[+0x3E]` to `FUN_801E91E8` at `0x801EE2C0`. Same 2502-instruction body as `overlay_battle_action_801ec3e4.txt`. See [`battle.md` § the retail capture roll](../../subsystems/battle.md#the-retail-capture-roll-fun_801ec3e4). |
 | `801E9FD4` | The monster-AI action picker documented above, unchanged - its escape leg calls `FUN_801EC0DC` at `0x801EA980`. Byte-identical to `overlay_battle_action_801e9fd4.txt`, 2114 instructions each. |
 
+## Slot-B summon / cast modules (PROT 0903..0966)
+
+The per-spell code overlays paged into the slot-B buffer at base `0x801F69D8`
+([`cast-module.md`](../../subsystems/cast-module.md)). Nothing inside a module
+names its own entry points - both live in **PROT 0898**, so the two rows below
+are the way into the whole band. Dumps are one Ghidra program per PROT entry
+(`overlay_<label>_<entry>_<addr>.txt`), taken with
+`ghidra/scripts/dump_static_overlay.py`.
+
+| Address | Role |
+|---|---|
+| `801F1ED4` | **Cast-tick dispatcher** (0898, file `+0x236BC`, 652 B). `()`. Loads the caster from the actor table `0x801C9370` at `ctx[+0x13]`, reads its queued action byte `actor[+0x1DF]`, and - when `id - 0x81 < 0x20` - jumps through the 32-slot table at `0x801CF4EC`. Every arm is a **hard-coded `jal` into the resident module** plus `s0 = v0`; id `0x98` has no arm (its slot points at the epilogue). The epilogue `0x801F2128` calls `FUN_801F2410` when `ctx[+0x27A] != 0`, then returns `s0`. Called by the battle SM `FUN_801E295C` at `0x801E4B1C` (cast start; zeroes `ctx+0x278`/`+0x279` and seeds the countdown `s7[+2] = 0x78`), `0x801E4C7C` (per-frame; countdown expiry forces battle phase `0x36`) and `0x801E4CA8` (advance only on return `0`). `overlay_battle_action_0898` image. |
+| `0x801F6734` (data) | **Module move-VM entry table** (0898, file `+0x27F1C`): 64 words, one routine VA per module, bounded by byte tables below and ASCII above. Row `i` = extraction PROT `903 + i`. The SM copies a row into `gp[+0x714]` (`0x8007BA2C`) at `0x801E44C8` (capture class, row `sub_id + 0x20`) and `0x801E4630` (row `move_id - 0x81`); **move-VM opcode `0x20`** then calls it (`lw v0, 0x714(gp); jalr v0` at SCUS `0x80023764`) with `a0` = actor and `a1`/`a2` = the move instruction's two halfwords. Corrects the older "per-summon effect-data pointer" reading of `0x8007BA2C` - it is a code pointer. |
+| `0x801CF4EC` (data) | **Cast-tick arm table** (0898): 32 words, the jump targets of `FUN_801F1ED4`'s switch, one per action id `0x81..0xA0` = PROT 0903..0934. |
+
+Per module, the tick (from `0x801CF4EC`) and the stager (from `0x801F6734`).
+Both entry VAs are independently reproduced by a prologue scan of the module's
+own bytes, which is what pins each pair to its PROT entry.
+
+| PROT | Tick | Stager | Notes |
+|---|---|---|---|
+| 0903 | `801F69D8` (3404 B) | `801F771C` | Action id `0x81`. The stager row is a bare `jr ra; nop` **stub** - this module has nothing to spawn from a move script. Tick spawns via `FUN_80021B04` (×7) and drives the pose camera `FUN_801D5854`. |
+| 0905 | `801F69D8` (5792 B) | `801F8078` (364 B) | Action id `0x83`. 20 `FUN_80021B04` part spawns in the tick. |
+| 0907 | `801F69E8` (5568 B) | `801F7FA8` (552 B) | Action id `0x85`. Tick leans on `FUN_80019B28` (×13) rather than the pool wrapper. |
+| 0924 | `801F6A18` (3592 B) | `801F7820` (92 B) | Action id `0x96`. Smallest stager in the extracted set. |
+| 0927 | `801F6A84` (6948 B, 29 arms) | `801F85A8` (992 B, 9 arms) | Action id `0x99`. 39 `FUN_80050ED4` pool spawns. |
+| 0928 | `801F69F4` (9332 B) | `801F8E68` (928 B, 7 arms) | Action id `0x9A`. Head table (7 words) is the **stager's**, not the tick's. |
+| 0929 | `801F69FC` (8756 B) | `801F8C30` (1140 B, 9 arms) | Action id `0x9B`. Head table (9 words) is the stager's. |
+| 0930 | `801F6A74` (5168 B, 31 arms) | `801F7EA4` (1752 B, 7 arms) | Action id `0x9C`. |
+| 0931 | `801F6A58` (8324 B, 32 arms) | `801F8ADC` (140 B) | Action id `0x9D`. |
+| 0932 | `801F6A34` (6768 B, 23 arms) | `801F84A4` (56 B) | Action id `0x9E`. |
+| 0933 | `801F6A30` (7448 B, 22 arms) | `801F8748` (212 B) | Action id `0x9F`. |
+| 0934 | `801F6A40` (10348 B, 26 arms) | `801F92AC` (2396 B, 4 arms) | Action id `0xA0`. Head table (26 words at the base) is the tick's phase switch; the stager's `a2` records resolve into the image's own data tail `0x801F9C08..0x801FA9D8`. |
+| 0957 | see notes | `801F99F4` (436 B, 5 arms) | Capture-class `sub_id 0x16`, so it has no `0x801CF4EC` arm. Two tick-shaped functions - `801F6A14` (3960 B) and `801F798C` (8296 B) - are selected by `801F9BA8`, a 30-instruction trampoline that reads `caster[+0x1DF]` and calls `801F798C` for `0x76`, `801F6A14` for `0x77`, else returns its argument. That trampoline is the image's only internal `jal`, and nothing in the corpus reaches it. |
+
 ## Battle on-screen elements (HUD + 2D sprite/effect list)
 
 Surfaced by the [trace-driven-coverage](../../tooling/playthrough-coverage.md) S5 (Tetsu spar) gap-set run - these SCUS functions are the always-resident on-screen-element helpers the battle HUD draws through (also used by the field/menu HUD; SCUS is shared). All confirmed live at `game_mode 0x15`.

@@ -750,9 +750,14 @@ lookup the right one rather than a guess.
 ## Open
 
 - The exact SCUS mode-24 entry-path call sites that stage the art pack (1230)
-  and `efect.dat` (1228): not in the 0980 image, so they live in the
-  `FUN_80025980` -> `FUN_8003EBE4` chain. The entries themselves are pinned by
-  content + the byte-identical VRAM capture.
+  and `efect.dat` (1228). Partly answered: the overlay's **own** init entry
+  `FUN_801CEF54` (arm 6 of `FUN_80025980`'s 7-arm switch, `jal` at SCUS
+  `0x80025AE0`) calls the field-file loader `FUN_8001F7C0` with index `0x4CC`
+  = 1228 and a name string at `0x801CEDE4` (file `+0x5CC`) - so at least one
+  of the two loads is issued from inside 0980, not from the
+  `FUN_80025980` -> `FUN_8003EBE4` chain. The 1230 call site is still open.
+  The entries themselves are pinned by content + the byte-identical VRAM
+  capture. Disassembly: `overlay_dance_0980_801cef54.txt`.
 - The dancers' **yaw** on the retail floor: the spawn tables pin kind + world
   position
   (see [Dancer bodies](#dancer-bodies-the-retail-cast--choreography-tables))

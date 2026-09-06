@@ -30,11 +30,14 @@ gate can never pass is a softlock
 ([re-do-not-re-walk.md](../reference/re-do-not-re-walk.md)).
 
 All modules link at the slot-B base **`0x801F69D8`**, and while one is
-resident **the word at `0x801F69D8` is the module's own word-0 entry VA** -
-a third meaning for an address the corpus already maps twice (PROT 0900's
+resident **the word at `0x801F69D8` is the module's own word 0** - a third
+meaning for an address the corpus already maps twice (PROT 0900's
 jump-table head, and the world-map band's `FUN_801F69D8`). A probe watching
-that word sees `0x001000E2` (empty), then the module's entry VA at paging,
-then - for a tableless module - its first instruction word.
+that word sees `0x001000E2` (empty - that is what 0898's own image holds
+there), then the module's word 0 at paging. Word 0 is **not** an entry VA:
+where the module heads with a jump table it is that table's arm 0, and
+where it does not it is the first instruction. Both real entries are named
+from outside the image - see [the two entries](#the-two-entries-and-where-their-addresses-live).
 
 | Module | Size | Head shape | Entry |
 |---|---|---|---|
@@ -47,6 +50,94 @@ Module code cites below are given as file offsets with their VA
 meaningless without naming its module. The ~936-byte tail region past
 `~+0x2A00` is **shared library code** across the modules (the same words in
 958 and 959), not per-move logic.
+
+## The two entries, and where their addresses live
+
+A module is a **library, not a program**: nothing inside it names its own
+entry points. Neither entry VA appears anywhere in any extracted image - not
+as a word, not as a `lui`+`addiu` pair, not as a `jal`/`j` target (five-form
+sweep, `scripts/ghidra-analysis/find-address-word-refs.py`) - except inside
+**PROT 0898**, where both are fixed at link time. A module therefore has two
+callable routines, reached by two different mechanisms.
+
+**The cast tick.** `FUN_801F1ED4` (0898, file `+0x236BC`) loads the caster
+`actor_table[ctx+0x13]` from `0x801C9370`, takes its queued action byte
+`actor[+0x1DF]`, bounds-checks `id - 0x81 < 0x20`, and jumps through the
+32-slot table at **`0x801CF4EC`**. Each arm is a hard-coded `jal` into the
+resident module plus `s0 = v0`; the shared epilogue at `0x801F2128` calls
+`FUN_801F2410` when `ctx[+0x27A] != 0` and returns `s0`. Id `0x98` has no
+arm - its slot points straight at the epilogue, so that id ticks nothing.
+The battle SM `FUN_801E295C` calls the dispatcher from three sites:
+`0x801E4B1C` (cast start - zeroes `ctx+0x278` and the module phase
+`ctx+0x279`, seeds the countdown `s7[+2] = 0x78`), `0x801E4C7C` (per-frame
+re-entry; the countdown running out forces battle phase `0x36`), and
+`0x801E4CA8` (proceed only when the tick returns `0`).
+
+**The move-VM extension.** The 64-word table at **`0x801F6734`** (0898, file
+`+0x27F1C`, bounded by byte tables below and ASCII above) holds one routine
+per module. The SM copies the selected row into `gp[+0x714]` = `0x8007BA2C`
+at `0x801E44C8` (capture class, row `sub_id + 0x20`) and `0x801E4630` (row
+`move_id - 0x81`), and **move-VM opcode `0x20`** calls it: `lw v0, 0x714(gp);
+jalr v0` at SCUS `0x80023764`, with `a0` = actor and `a1`/`a2` = the
+move-table instruction's two signed halfwords. Every module's routine here
+opens `sltiu vX, a1, N`, so the operand is an arm index: this entry is the
+per-spell **spawn stager** the move script drives, not the choreography.
+(The corpus previously called `0x8007BA2C` "the per-summon effect-data
+pointer"; it is a code pointer, and `0x801F6734` is a table of entry VAs.)
+
+Both indexings land on the same entry: **table row `i` is extraction entry
+`903 + i`** for `i = 0..0x3F`, i.e. PROT 0903..0966. The `move_id - 0x81`
+band `0x81..0xA0` covers 0903..0934, the capture-class `sub_id + 0x20` band
+covers 0935..0966, and the pager's own `id - 0x79` (`FUN_8003EC70`, `+0x381`
+into TOC space) agrees with both.
+
+The `0x801CF4EC` switch reaches only PROT 0903..0934. How a **capture-class**
+module's tick is entered is not settled by this: that band is driven through
+battle phase `0x70` as described above, and no hard-coded `jal` into it was
+found.
+
+That rule is checkable against the disc, and it checks out on every
+extracted module: for the thirteen slot-B images in
+`crates/asset/data/static-overlays.toml`, all thirteen `0x801F6734` rows and
+all twelve `0x801CF4EC` arms that have an extracted image land exactly on a
+function prologue recovered from that image's own bytes. It is also the
+cheapest identity test available for the fifty-one modules nobody has
+extracted yet.
+
+## Image anatomy, recovered from the bytes
+
+These images have **no internal `jal` at all** (0957 is the single
+exception, two): every call leaves for SCUS or for the resident battle
+overlay. Ghidra's auto-analysis therefore finds at most the routine some
+other reference reaches, and the dumps have to be driven from an address
+list rather than from the call graph.
+
+The bytes supply that list. In every one of the thirteen images the count of
+`addiu sp, sp, -X` words equals the count of `jr ra` words, and they
+interleave: function `i` runs from prologue `i` to prologue `i + 1`, and the
+last ends 8 bytes past the last `jr ra`. That partition is exact - every
+range so cut ends on a `jr ra` plus its delay slot - and it is what the
+entry tables then confirm. So a module is **two functions** (0903 has one
+real function plus a `jr ra; nop` stub at its `0x801F6734` row; 0957 has
+four), laid out as:
+
+| Region | Contents |
+|---|---|
+| head | the jump table of **one** of the two switches, 0 to 256 words; the first function's prologue is the first word past it |
+| tick | the `ctx+0x279` phase machine (function A), reached from `0x801CF4EC` |
+| stager | the `sltiu a1, N` spawn switch (function B), reached from `0x801F6734` |
+| tail | data: the spawn/emitter records the module hands to `FUN_80050ED4` and `FUN_80021B04`, plus its own scratch words |
+
+Which switch owns the head table varies, and the arm count settles it: PROT
+0934's table is 26 words and its tick bounds on `sltiu a0, 0x1A`, while PROT
+0929's is 9 words and its **stager** bounds on `sltiu a1, 9` (0928: 7 and 7).
+Reading the head table as the tick's is therefore wrong half the time; read
+the `sltiu` immediate.
+
+The tail is the bulk of the residue `disc-coverage.py` still reports on
+these images, and it is data: PROT 0934's is `0x801F9C08..0x801FA9D8`, and
+the `lui 0x8020` + negative-displacement operands its stager passes as `a2`
+resolve into exactly that span.
 
 ## The module phase byte (`ctx + 0x279`)
 
@@ -122,3 +213,11 @@ captured per-frame under PCSX-Redux (`autorun_delilas_enemy_cast_watch.lua`)
 pin the staging walks, the loop counter, and the phase-5 confirm gate.
 Patcher mirror: `legaia_patcher::delilas_cast` (expect-verified word edits
 against these images); staged player rows `legaia_asset::party_swap::cast_stage`.
+
+The entry tables and the image partition come from disassembly of the 0898
+image (`FUN_801F1ED4` at file `+0x236BC`, the tables at `0x801CF4EC` and
+`0x801F6734`) plus per-image dumps of the thirteen extracted slot-B modules,
+taken with `ghidra/scripts/dump_static_overlay.py` against one Ghidra program
+per PROT entry - `see ghidra/scripts/funcs/overlay_summon_ozma_0934_801f6a40.txt`
+and its siblings, and `see ghidra/scripts/funcs/80023070.txt` for the
+opcode-`0x20` call site.

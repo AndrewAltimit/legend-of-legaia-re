@@ -10,10 +10,12 @@ entry,bytes,image,class,reason
 801cec94,1092,slot_machine(975),unique,own content of slot_machine(975) reproduces the 24-instruction window at this VA (content_bytes cut)
 801cee80,236,-,misbased,no image holds these bytes at this VA; they live at field(897) 0x801dd698 (delta +0xe818)
 801cef54,24,-,short,"6 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
+801cef54,1308,dance(980),unique,own content of dance(980) reproduces the 24-instruction window at this VA (content_bytes cut)
 801cf00c,8,-,short,"2 instructions, below the 3-instruction at-VA floor for naming an image"
 801cf00c,892,baka_fighter(976),unique,own content of baka_fighter(976) reproduces the 24-instruction window at this VA (content_bytes cut)
 801cf070,152,-,misbased,no image holds these bytes at this VA; they live at field(897) 0x801d4888 (delta +0x5818)
 801cf074,408,arena_init(977),unique,own content of arena_init(977) reproduces the 24-instruction window at this VA (content_bytes cut)
+801cf074,2044,arena_init(977),unique,own content of arena_init(977) reproduces the 24-instruction window at this VA (content_bytes cut)
 801cf098,1236,cutscene_str(970),unique,own content of cutscene_str(970) reproduces the 24-instruction window at this VA (content_bytes cut)
 801cf0d8,3060,slot_machine(975),unique,own content of slot_machine(975) reproduces the 24-instruction window at this VA (content_bytes cut)
 801cf1b0,12,-,short,"3 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
@@ -103,6 +105,7 @@ entry,bytes,image,class,reason
 801d0520,2040,menu(899),unique,own content of menu(899) reproduces the 24-instruction window at this VA (content_bytes cut)
 801d0554,328,slot_machine(975),unique,own content of slot_machine(975) reproduces the 24-instruction window at this VA (content_bytes cut)
 801d0604,212,cutscene_str(970),unique,own content of cutscene_str(970) reproduces the 24-instruction window at this VA (content_bytes cut)
+801d0640,272,dance(980),unique,own content of dance(980) reproduces the 24-instruction window at this VA (content_bytes cut)
 801d069c,256,slot_machine(975),unique,own content of slot_machine(975) reproduces the 24-instruction window at this VA (content_bytes cut)
 801d06c8,612,fishing(972),unique,own content of fishing(972) reproduces the 24-instruction window at this VA (content_bytes cut)
 801d06e0,48,-,misbased,"no image holds these bytes at this VA; they live at field(897) 0x801deef8 (delta +0xe818), field(897) 0x801def90 (delta +0xe8b0)"
@@ -114,6 +117,7 @@ entry,bytes,image,class,reason
 801d08e4,132,-,gapped,"printed addresses are non-contiguous, so the window matches no image as a contiguous run"
 801d08e4,1336,slot_machine(975),unique,own content of slot_machine(975) reproduces the 24-instruction window at this VA (content_bytes cut)
 801d08ec,996,arena_init(977),unique,own content of arena_init(977) reproduces the 24-instruction window at this VA (content_bytes cut)
+801d08ec,1000,arena_init(977),unique,own content of arena_init(977) reproduces the 24-instruction window at this VA (content_bytes cut)
 801d092c,784,fishing(972),unique,own content of fishing(972) reproduces the 24-instruction window at this VA (content_bytes cut)
 801d095c,352,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (content_bytes cut)
 801d095c,564,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (content_bytes cut)
@@ -121,6 +125,7 @@ entry,bytes,image,class,reason
 801d0b90,388,-,misbased,"no image holds these bytes at this VA; they live at field(897) 0x801df3a8 (delta +0xe818), field(897) 0x801e1be4 (delta +0x11054), field(897) 0x801e1ef0 (delta +0x11360)"
 801d0b90,424,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (content_bytes cut)
 801d0c3c,800,fishing(972),unique,own content of fishing(972) reproduces the 24-instruction window at this VA (content_bytes cut)
+801d0cd4,516,arena_init(977),unique,own content of arena_init(977) reproduces the 24-instruction window at this VA (content_bytes cut)
 801d0d18,516,menu(899),unique,own content of menu(899) reproduces the 24-instruction window at this VA (content_bytes cut)
 801d0d24,304,field_battle_intro(979),unique,own content of field_battle_intro(979) reproduces the 24-instruction window at this VA (content_bytes cut)
 801d0d38,1548,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (content_bytes cut)
@@ -235,6 +240,7 @@ entry,bytes,image,class,reason
 801d32bc,392,battle_action(898)|field(897),divergent,"dumps at this extent resolve to different images (battle_action(898), field(897)), so it is genuinely more than one routine"
 801d32c8,184,slot_machine(975),unique,own content of slot_machine(975) reproduces the 24-instruction window at this VA (content_bytes cut)
 801d32f8,528,dance(980),unique,own content of dance(980) reproduces the 24-instruction window at this VA (content_bytes cut)
+801d32f8,1412,dance(980),unique,own content of dance(980) reproduces the 24-instruction window at this VA (content_bytes cut)
 801d3380,252,slot_machine(975),unique,own content of slot_machine(975) reproduces the 24-instruction window at this VA (content_bytes cut)
 801d3390,216,baka_fighter(976),unique,own content of baka_fighter(976) reproduces the 24-instruction window at this VA (content_bytes cut)
 801d33d8,5264,menu(899),unique,own content of menu(899) reproduces the 24-instruction window at this VA (content_bytes cut)
@@ -496,6 +502,7 @@ entry,bytes,image,class,reason
 801da7f0,320,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (content_bytes cut)
 801da8bc,32,-,unresolved,no extracted image holds these bytes at this VA or anywhere - RAM-capture-derived or an un-extracted overlay
 801da8f0,352,-,misbased,no image holds these bytes at this VA; they live at field(897) 0x801e9108 (delta +0xe818)
+801da930,288,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (content_bytes cut)
 801da9f8,884,menu(899),unique,own content of menu(899) reproduces the 24-instruction window at this VA (content_bytes cut)
 801daa50,56,baka_fighter(976),unique,own content of baka_fighter(976) reproduces the 14-instruction window at this VA (content_bytes cut)
 801daa50,320,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (content_bytes cut)
@@ -609,8 +616,10 @@ entry,bytes,image,class,reason
 801dd330,44,menu(899),unique,own content of menu(899) reproduces the 11-instruction window at this VA (content_bytes cut)
 801dd35c,12104,menu(899),unique,own content of menu(899) reproduces the 24-instruction window at this VA (content_bytes cut)
 801dd4b0,516,battle_action(898),unique,own content of battle_action(898) reproduces the 24-instruction window at this VA (content_bytes cut)
+801dd4c4,704,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (content_bytes cut)
 801dd690,196,-,misbased,no image holds these bytes at this VA; they live at field(897) 0x801e2ea8 (delta +0x5818)
 801dd6b4,432,battle_action(898),unique,own content of battle_action(898) reproduces the 24-instruction window at this VA (content_bytes cut)
+801dd784,592,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (content_bytes cut)
 801dd864,144,-,misbased,"no image holds these bytes at this VA; they live at field(897) 0x801eb034 (delta +0xd7d0), field(897) 0x801eb1f4 (delta +0xd990), field(897) 0x801eb534 (delta +0xdcd0)"
 801dd864,716,battle_action(898),unique,own content of battle_action(898) reproduces the 24-instruction window at this VA (content_bytes cut)
 801dd8f0,680,-,misbased,no image holds these bytes at this VA; they live at field(897) 0x801ec108 (delta +0xe818)
@@ -763,6 +772,7 @@ entry,bytes,image,class,reason
 801e4d8c,968,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (content_bytes cut)
 801e5134,32,field(897),unique,own content of field(897) reproduces the 8-instruction window at this VA (content_bytes cut)
 801e5134,972,-,data,opening window is the `$zero`-absolute data signature - a table decoded as opcodes
+801e5154,484,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (content_bytes cut)
 801e5338,804,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (content_bytes cut)
 801e5520,8,-,short,"2 instructions, below the 3-instruction at-VA floor for naming an image"
 801e5668,212,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (content_bytes cut)
@@ -884,12 +894,14 @@ entry,bytes,image,class,reason
 801f03c0,856,-,misbased,no image holds these bytes at this VA; they live at battle_action(898) 0x801d0bd8 (delta +0xfffe0818)
 801f03f0,128,-,gapped,"printed addresses are non-contiguous, so the window matches no image as a contiguous run"
 801f03f0,808,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (content_bytes cut)
+801f03f0,1772,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (content_bytes cut)
 801f0450,3712,battle_action(898),unique,own content of battle_action(898) reproduces the 24-instruction window at this VA (content_bytes cut)
 801f04b0,316,-,gapped,"printed addresses are non-contiguous, so the window matches no image as a contiguous run"
 801f0740,108,-,misbased,no image holds these bytes at this VA; they live at battle_action(898) 0x801d9f58 (delta +0xfffe9818)
 801f07ac,904,-,misbased,no image holds these bytes at this VA; they live at battle_action(898) 0x801d9fc4 (delta +0xfffe9818)
 801f0adc,184,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (content_bytes cut)
 801f0adc,1056,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (content_bytes cut)
+801f0adc,1628,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (content_bytes cut)
 801f1118,40,-,misbased,"no image holds these bytes at this VA; they live at battle_action(898) 0x801da930 (delta +0xfffe9818), battle_action(898) 0x801da9c4 (delta +0xfffe98ac)"
 801f1138,320,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (content_bytes cut)
 801f1278,88,-,no_disassembly,dump carries no instruction stream
@@ -934,15 +946,29 @@ entry,bytes,image,class,reason
 801f30c4,2252,battle_action(898),unique,own content of battle_action(898) reproduces the 24-instruction window at this VA (content_bytes cut)
 801f36a0,352,-,misbased,no image holds these bytes at this VA; they live at summon_stager_x83(905) 0x801f8078 (delta +0x49d8)
 801f69d8,2572,world_map_render(901),unique,own content of world_map_render(901) reproduces the 24-instruction window at this VA (content_bytes cut)
+801f69d8,3404,summon_gimard(903),unique,own content of summon_gimard(903) reproduces the 24-instruction window at this VA (content_bytes cut)
+801f69d8,5792,summon_stager_x83(905),unique,own content of summon_stager_x83(905) reproduces the 24-instruction window at this VA (content_bytes cut)
+801f69e8,5568,summon_nighto(907),unique,own content of summon_nighto(907) reproduces the 24-instruction window at this VA (content_bytes cut)
 801f69ec,860,-,unresolved,no extracted image holds these bytes at this VA or anywhere - RAM-capture-derived or an un-extracted overlay
 801f69f0,4,-,short,"1 instructions, below the 3-instruction at-VA floor for naming an image"
+801f69f4,9332,summon_palma(928),unique,own content of summon_palma(928) reproduces the 24-instruction window at this VA (content_bytes cut)
 801f69fc,4,-,short,"1 instructions, below the 3-instruction at-VA floor for naming an image"
+801f69fc,8756,summon_mule(929),unique,own content of summon_mule(929) reproduces the 24-instruction window at this VA (content_bytes cut)
 801f6a08,4,-,short,"1 instructions, below the 3-instruction at-VA floor for naming an image"
 801f6a10,4,-,short,"1 instructions, below the 3-instruction at-VA floor for naming an image"
+801f6a14,3960,summon_effect_table(957),unique,own content of summon_effect_table(957) reproduces the 24-instruction window at this VA (content_bytes cut)
+801f6a18,3592,stager_ultimate_rave(924),unique,own content of stager_ultimate_rave(924) reproduces the 24-instruction window at this VA (content_bytes cut)
+801f6a30,7448,summon_terra(933),unique,own content of summon_terra(933) reproduces the 24-instruction window at this VA (content_bytes cut)
 801f6a34,4,-,short,"1 instructions, below the 3-instruction at-VA floor for naming an image"
+801f6a34,6768,summon_meta(932),unique,own content of summon_meta(932) reproduces the 24-instruction window at this VA (content_bytes cut)
 801f6a40,4,-,short,"1 instructions, below the 3-instruction at-VA floor for naming an image"
+801f6a40,10348,summon_ozma(934),unique,own content of summon_ozma(934) reproduces the 24-instruction window at this VA (content_bytes cut)
 801f6a58,8,-,short,"2 instructions, below the 3-instruction at-VA floor for naming an image"
+801f6a58,8324,summon_jedo(931),unique,own content of summon_jedo(931) reproduces the 24-instruction window at this VA (content_bytes cut)
+801f6a74,5168,summon_horn(930),unique,own content of summon_horn(930) reproduces the 24-instruction window at this VA (content_bytes cut)
+801f6a84,6948,summon_juggernaut(927),unique,own content of summon_juggernaut(927) reproduces the 24-instruction window at this VA (content_bytes cut)
 801f6b24,328,field_back_read(978),unique,own content of field_back_read(978) reproduces the 24-instruction window at this VA (content_bytes cut)
+801f6b24,2100,field_back_read(978),unique,own content of field_back_read(978) reproduces the 24-instruction window at this VA (content_bytes cut)
 801f6b70,1452,battle_tutorial(967),unique,own content of battle_tutorial(967) reproduces the 24-instruction window at this VA (content_bytes cut)
 801f6b70,2316,battle_tutorial(967),unique,own content of battle_tutorial(967) reproduces the 24-instruction window at this VA (content_bytes cut)
 801f6c70,4,-,short,"1 instructions, below the 3-instruction at-VA floor for naming an image"
@@ -959,7 +985,9 @@ entry,bytes,image,class,reason
 801f7624,208,-,unresolved,no extracted image holds these bytes at this VA or anywhere - RAM-capture-derived or an un-extracted overlay
 801f7644,500,-,unresolved,no extracted image holds these bytes at this VA or anywhere - RAM-capture-derived or an un-extracted overlay
 801f76f4,844,-,unresolved,no extracted image holds these bytes at this VA or anywhere - RAM-capture-derived or an un-extracted overlay
+801f7820,92,stager_ultimate_rave(924),unique,own content of stager_ultimate_rave(924) reproduces the 23-instruction window at this VA (content_bytes cut)
 801f7838,620,-,unresolved,no extracted image holds these bytes at this VA or anywhere - RAM-capture-derived or an un-extracted overlay
+801f798c,8296,summon_effect_table(957),unique,own content of summon_effect_table(957) reproduces the 24-instruction window at this VA (content_bytes cut)
 801f7a40,20,summon_render(900),unique,"own content of summon_render(900) reproduces the 5-instruction window at this VA (short window, at-VA test only)"
 801f7a54,72,summon_render(900),unique,own content of summon_render(900) reproduces the 18-instruction window at this VA (content_bytes cut)
 801f7a9c,120,summon_render(900),unique,own content of summon_render(900) reproduces the 24-instruction window at this VA (content_bytes cut)
@@ -970,10 +998,13 @@ entry,bytes,image,class,reason
 801f7ccc,684,-,unresolved,no extracted image holds these bytes at this VA or anywhere - RAM-capture-derived or an un-extracted overlay
 801f7d38,88,summon_render(900),unique,own content of summon_render(900) reproduces the 22-instruction window at this VA (content_bytes cut)
 801f7e4c,112,summon_render(900),unique,own content of summon_render(900) reproduces the 24-instruction window at this VA (content_bytes cut)
+801f7ea4,1752,summon_horn(930),unique,own content of summon_horn(930) reproduces the 24-instruction window at this VA (content_bytes cut)
 801f7ebc,328,summon_render(900),unique,own content of summon_render(900) reproduces the 24-instruction window at this VA (content_bytes cut)
 801f7f78,544,-,unresolved,no extracted image holds these bytes at this VA or anywhere - RAM-capture-derived or an un-extracted overlay
+801f7fa8,552,summon_nighto(907),unique,own content of summon_nighto(907) reproduces the 24-instruction window at this VA (content_bytes cut)
 801f8004,124,summon_render(900),unique,own content of summon_render(900) reproduces the 24-instruction window at this VA (content_bytes cut)
 801f8004,280,summon_render(900),unique,own content of summon_render(900) reproduces the 24-instruction window at this VA (content_bytes cut)
+801f8078,364,summon_stager_x83(905),unique,own content of summon_stager_x83(905) reproduces the 24-instruction window at this VA (content_bytes cut)
 801f8080,32,summon_render(900),unique,own content of summon_render(900) reproduces the 8-instruction window at this VA (content_bytes cut)
 801f80a0,124,summon_render(900),unique,own content of summon_render(900) reproduces the 24-instruction window at this VA (content_bytes cut)
 801f811c,104,-,gapped,"printed addresses are non-contiguous, so the window matches no image as a contiguous run"
@@ -986,24 +1017,33 @@ entry,bytes,image,class,reason
 801f8454,572,-,unresolved,no extracted image holds these bytes at this VA or anywhere - RAM-capture-derived or an un-extracted overlay
 801f849c,412,summon_render(900),unique,own content of summon_render(900) reproduces the 24-instruction window at this VA (content_bytes cut)
 801f849c,1120,summon_render(900),unique,own content of summon_render(900) reproduces the 24-instruction window at this VA (content_bytes cut)
+801f84a4,56,summon_meta(932),unique,own content of summon_meta(932) reproduces the 14-instruction window at this VA (content_bytes cut)
 801f8580,1328,-,misbased,no image holds these bytes at this VA; they live at battle_action(898) 0x801e1d98 (delta +0xfffe9818)
 801f85a4,420,-,misbased,no image holds these bytes at this VA; they live at battle_action(898) 0x801d35a4 (delta +0xfffdb000)
+801f85a8,992,summon_juggernaut(927),unique,own content of summon_juggernaut(927) reproduces the 24-instruction window at this VA (content_bytes cut)
 801f8638,444,summon_render(900),unique,own content of summon_render(900) reproduces the 24-instruction window at this VA (content_bytes cut)
 801f8690,728,-,unresolved,no extracted image holds these bytes at this VA or anywhere - RAM-capture-derived or an un-extracted overlay
+801f8748,212,summon_terra(933),unique,own content of summon_terra(933) reproduces the 24-instruction window at this VA (content_bytes cut)
 801f87f4,264,summon_render(900),unique,own content of summon_render(900) reproduces the 24-instruction window at this VA (content_bytes cut)
 801f88fc,312,summon_render(900),unique,own content of summon_render(900) reproduces the 24-instruction window at this VA (content_bytes cut)
 801f8a34,792,summon_render(900),unique,own content of summon_render(900) reproduces the 24-instruction window at this VA (content_bytes cut)
 801f8ab0,604,-,misbased,no image holds these bytes at this VA; they live at battle_action(898) 0x801e22c8 (delta +0xfffe9818)
+801f8adc,140,summon_jedo(931),unique,own content of summon_jedo(931) reproduces the 24-instruction window at this VA (content_bytes cut)
+801f8c30,1140,summon_mule(929),unique,own content of summon_mule(929) reproduces the 24-instruction window at this VA (content_bytes cut)
 801f8d0c,288,-,misbased,no image holds these bytes at this VA; they live at battle_action(898) 0x801e2524 (delta +0xfffe9818)
 801f8d4c,240,summon_render(900),unique,own content of summon_render(900) reproduces the 24-instruction window at this VA (content_bytes cut)
 801f8d4c,288,summon_render(900),unique,own content of summon_render(900) reproduces the 24-instruction window at this VA (content_bytes cut)
 801f8e3c,36,summon_render(900),unique,own content of summon_render(900) reproduces the 9-instruction window at this VA (content_bytes cut)
 801f8e60,12,summon_render(900),unique,"own content of summon_render(900) reproduces the 3-instruction window at this VA (short window, at-VA test only)"
+801f8e68,928,summon_palma(928),unique,own content of summon_palma(928) reproduces the 24-instruction window at this VA (content_bytes cut)
 801f8e6c,188,summon_render(900),unique,own content of summon_render(900) reproduces the 24-instruction window at this VA (content_bytes cut)
 801f8e6c,192,-,misbased,"no image holds these bytes at this VA; they live at battle_action(898) 0x801d3e6c (delta +0xfffdb000), battle_action(898) 0x801d4478 (delta +0xfffdb60c)"
 801f8f28,184,summon_render(900)|world_map_render(901),identical,"2 images hold byte-identical code here (summon_render(900), world_map_render(901)) - the window cannot separate them"
 801f90dc,328,summon_render(900)|world_map_render(901),identical,"2 images hold byte-identical code here (summon_render(900), world_map_render(901)) - the window cannot separate them"
 801f90dc,22288,summon_render(900)|world_map_render(901),identical,"2 images hold byte-identical code here (summon_render(900), world_map_render(901)) - the window cannot separate them"
 801f92a4,68,-,misbased,"no image holds these bytes at this VA; they live at battle_action(898) 0x801f4fc4 (delta +0xffffbd20), battle_action(898) 0x801f4fc8 (delta +0xffffbd24), battle_action(898) 0x801f4fcc (delta +0xffffbd28)"
+801f92ac,2396,summon_ozma(934),unique,own content of summon_ozma(934) reproduces the 24-instruction window at this VA (content_bytes cut)
+801f99f4,436,summon_effect_table(957),unique,own content of summon_effect_table(957) reproduces the 24-instruction window at this VA (content_bytes cut)
 801f9ba8,68,-,misbased,"no image holds these bytes at this VA; they live at battle_action(898) 0x801f4fc4 (delta +0xffffb41c), battle_action(898) 0x801f4fc8 (delta +0xffffb420), battle_action(898) 0x801f4fcc (delta +0xffffb424)"
+801f9ba8,120,summon_effect_table(957),unique,own content of summon_effect_table(957) reproduces the 24-instruction window at this VA (content_bytes cut)
 801fa38c,1408,-,misbased,no image holds these bytes at this VA; they live at battle_action(898) 0x801daba4 (delta +0xfffe0818)
