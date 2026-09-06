@@ -122,6 +122,32 @@ pub fn base_byte_for_action(action_id: u8) -> u8 {
     }
 }
 
+/// Whether the applier uploads the group's **`base + 1`** slot as a second
+/// texture page.
+///
+/// `FUN_801F12D0` stage 4 gates the second upload on the base byte before it
+/// looks at the slot at all:
+///
+/// ```text
+/// 801f1500  sltiu v0,v1,0x42
+/// 801f1504  beq   v0,zero,0x801f1518   ; base >= 0x42 -> upload
+/// 801f1508  _addiu v0,v1,-0xc
+/// 801f150c  sltiu v0,v0,0x2b
+/// 801f1510  beq   v0,zero,0x801f163c   ; base outside 0x0C..=0x36 -> skip
+/// ```
+///
+/// `base` is read with `lbu`, so the second test is an unsigned window rather
+/// than a signed range. Every summon base has bit 7 set and so always passes
+/// the first test; inside `readef.DAT` the gate is what separates the groups
+/// whose aux slot is a texture from the ones whose aux slot is an
+/// [`SlotKind::MeArchive`] (`base < 0x0C`) or an [`SlotKind::ActorRecord`]
+/// (`base` = `0x39` / `0x3C` / `0x3F`).
+///
+/// REF: FUN_801F12D0
+pub fn aux_slot_is_texture_upload(base: u8) -> bool {
+    base >= 0x42 || (0x0C..=0x36).contains(&base)
+}
+
 /// Resolve an action id to `(file, starting slot index)` the way the
 /// streaming handler does: bit 7 of the base byte selects the file
 /// (`FUN_801F17F8`), the low 7 bits are the slot index.

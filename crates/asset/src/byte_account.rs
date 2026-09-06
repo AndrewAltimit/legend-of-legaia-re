@@ -305,6 +305,7 @@ pub enum Walker {
     EfectPack,
     TimPack,
     Pack,
+    CardFontPack,
     Tim,
     Tmd,
     Vab,
@@ -335,6 +336,7 @@ impl Walker {
             Walker::EfectPack => "efect_pack",
             Walker::TimPack => "tim_pack",
             Walker::Pack => "pack",
+            Walker::CardFontPack => "card_font_pack",
             Walker::Tim => "tim",
             Walker::Tmd => "tmd",
             Walker::Vab => "vab",
@@ -412,9 +414,10 @@ pub struct Account {
 #[derive(Debug, Clone)]
 pub struct AccountOptions {
     pub label: String,
-    /// PROT extraction index, when known. Selects the two index-keyed
-    /// overrides (the monster archive, which classifies as a generic blob, and
-    /// the overlay-code walker).
+    /// PROT extraction index, when known. Selects the index-keyed overrides:
+    /// the monster archive (which classifies as a generic blob), the card
+    /// font pack (which classifies as a truncated stream), and the
+    /// overlay-code walker.
     pub prot_index: Option<u32>,
     /// Directory of Ghidra dumps (`ghidra/scripts/funcs`). Required for
     /// [`Walker::OverlayCode`].
@@ -1717,6 +1720,46 @@ fn walk_tim_pack(buf: &[u8], sink: &mut Sink) {
     }
 }
 
+/// `asset::pack` whose members are whole TIMs, claimed at their own extent
+/// rather than out to the next member.
+///
+/// [`walk_pack`] ends the last member at the buffer end, which would swallow
+/// any tail the pack does not reference. Entry 0892 has 948 such bytes past
+/// its second TIM, and they are the interesting part of the accounting.
+fn walk_card_font_pack(buf: &[u8], sink: &mut Sink) {
+    let Ok(entries) = crate::pack::parse_pack(buf) else {
+        sink.note("pack::parse_pack failed");
+        return;
+    };
+    let n = entries.len();
+    sink.claim(0, 4 + n * 4, OWNER_TOC, format!("{n} word offsets"));
+    for e in &entries {
+        let member = &buf[e.byte_offset..e.byte_offset + e.size];
+        let mut claimed = false;
+        for h in crate::tim_scan::scan_buffer(member) {
+            if h.offset != 0 {
+                continue;
+            }
+            sink.claim(
+                e.byte_offset,
+                e.byte_offset + h.byte_len,
+                OWNER_TIM,
+                format!("member {} - {}x{} {}bpp", e.index, h.width, h.height, h.bpp),
+            );
+            claimed = true;
+            break;
+        }
+        if !claimed {
+            sink.claim(
+                e.byte_offset,
+                e.byte_offset + e.size,
+                OWNER_RECORD,
+                format!("member {}", e.index),
+            );
+        }
+    }
+}
+
 fn walk_pack(buf: &[u8], sink: &mut Sink) {
     let Ok(entries) = crate::pack::parse_pack(buf) else {
         sink.note("pack::parse_pack failed");
@@ -2007,16 +2050,27 @@ fn walk_generic(buf: &[u8], sink: &mut Sink) {
 /// walker is selected by index rather than by class.
 pub const MONSTER_ARCHIVE_PROT_INDEX: u32 = 867;
 
+/// PROT extraction index of the memory-card screen's kanji-font pack
+/// (`card_data`). It classifies as `data_field_truncated` because its
+/// [`crate::pack`] header words decode as three tiny streaming chunks, so the
+/// walker is selected by index rather than by class - see
+/// [`docs/formats/data-field.md`](https://andrewaltimit.github.io/legend-of-legaia-re/formats/data-field.html).
+pub const CARD_FONT_PROT_INDEX: u32 = 892;
+
 /// Choose the walker for a buffer.
 ///
-/// Class first, then two index-keyed overrides: the monster archive (no
-/// detector fires on it) and any entry with a `static-overlays.toml` row plus
-/// a dump directory (a code image, whose "parser" is the dump corpus).
+/// Class first, then the index-keyed overrides: the monster archive (no
+/// detector fires on it), the card font pack (the wrong detector fires on it),
+/// and any entry with a `static-overlays.toml` row plus a dump directory (a
+/// code image, whose "parser" is the dump corpus).
 pub fn pick_walker(buf: &[u8], class: Class, opts: &AccountOptions) -> Walker {
     if opts.prot_index == Some(MONSTER_ARCHIVE_PROT_INDEX)
         && buf.len() >= crate::monster_archive::SLOT_STRIDE
     {
         return Walker::MonsterArchive;
+    }
+    if opts.prot_index == Some(CARD_FONT_PROT_INDEX) {
+        return Walker::CardFontPack;
     }
     if let (Some(idx), Some(_)) = (opts.prot_index, opts.funcs_dir.as_ref()) {
         let is_overlay = crate::static_overlay::overlay_map()
@@ -2069,6 +2123,7 @@ fn dispatch(buf: &[u8], walker: Walker, sink: &mut Sink, opts: &AccountOptions, 
         Walker::FieldPack => walk_field_pack(buf, sink, opts, depth),
         Walker::EffectBundle => walk_effect_bundle(buf, sink),
         Walker::EfectPack | Walker::Pack => walk_pack(buf, sink),
+        Walker::CardFontPack => walk_card_font_pack(buf, sink),
         Walker::TimPack => walk_tim_pack(buf, sink),
         Walker::Tim => walk_tim(buf, sink),
         Walker::Tmd => walk_tmd(buf, sink),

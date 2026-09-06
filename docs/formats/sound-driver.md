@@ -48,13 +48,17 @@ count     = *(u16 *)(bse_base + 2)
 gp[0x678] = bse_base + (count & ~1)        ; (count/2)*2 -- an even byte offset
 ```
 
-So `bse.dat` leads with `[u16 @0][u16 @2 = even byte-offset to a second section][section A ...][section B at bse_base + (count & ~1)]`. The earlier "`+2` is a record-count divisor" reading was imprecise: the value is used as a **byte offset** that splits `bse.dat` into two sections (the `>>1 … *2` is a round-to-even, not a division of the data), and it indexes into the once-loaded master bank, **not** the per-scene `.dpk`.
+So `bse.dat` leads with `[u16 tag @0][u16 @2 = even byte-offset of the record table][records …]`, and the `>>1 … *2` is a round-to-even of that offset, not a division of the data. The earlier "`+2` is a record-count divisor" reading was imprecise, and so is reading the split as **two sections**: `@2` is `4` in both retail carriers, so the "second section" is simply the record table and there is nothing before it but the header. What follows the table in entry 888 belongs to a different file - see [`bse-dat.md`](bse-dat.md#the-bytes-past-the-table-are-not-this-banks). The pointer indexes the battle-loaded bank, **not** the per-scene `.dpk`.
 
 ## `.dpk` is a streaming-chunk container
 
 `FUN_8001FA88` loads the per-scene `.dpk` into the caller's buffer (`param_3`) and does **not** read it; the **consumer** is `FUN_8001FE70`, which `FUN_800513F0` calls on that same buffer right after the load (`ghidra/scripts/funcs/800513f0.txt:405-413` passes `gp[0xA8C]` to both). `FUN_8001FE70` (`ghidra/scripts/funcs/8001fe70.txt`) is the generic **streaming-chunk walker** the asset dispatcher already models (`legaia_asset` lib docs; `[u32 (type << 24) | (size & 0xFFFFFF)][size bytes, 4-padded]` chunks, advance by `(size & ~3) + 4`, type `1` → `FUN_800198E0`, type `2` = terminator). So the `.dpk` / `sound_data2` per-scene sound pack **is that container**, not a novel layout.
 
-Empirically confirmed against the disc: PROT `0877` (`sound_data2`) walks cleanly as `[type 0: 0x2820][type 1: 0x1BA90][type 2: terminator]` and the type-`2` marker lands inside the file - the same shape `FUN_8001FE70` expects. (`FUN_8001FA88`'s dev branch loads PROT `0x37A` = `sound_data2`, tying the `.dpk` filename to this PROT family.) The difference from the DATA_FIELD walker is **only the terminator**: `FUN_8001FE70` ends on a type-`0x02` chunk (whose `size` is non-zero), whereas `FUN_8002541C` ends on a zero-`size` header - so the DATA_FIELD parser mis-reads a `.dpk`. The walker is `legaia_asset::parse_streaming_with(buf, max, StreamTerminator::TypeTwo)`; the disc-gated `sound_pack_stream_real` test pins the clean type-2 walk of PROT `0877`.
+Empirically confirmed against the disc: PROT `0877` (`sound_data2`) walks cleanly as `[type 0: 0x2820][type 1: 0x1BA90][type 2: terminator]` and the type-`2` marker lands inside the file - the same shape `FUN_8001FE70` expects.
+
+`FUN_8001FA88`'s hardcoded `0x37A` load is **not** the `.dpk` and does not tie the filename to this block, though it does sit in it: raw TOC `0x37A` is extraction 888, which is `bse.dat`, and the load is on the **retail** branch. The `.dpk` is the routine's other load, `param_1 + 5`. See [`bse-dat.md`](bse-dat.md#which-entry-it-is-and-when-it-loads).
+
+The difference from the DATA_FIELD walker is **only the terminator**: `FUN_8001FE70` ends on a type-`0x02` chunk (whose `size` is non-zero), whereas `FUN_8002541C` ends on a zero-`size` header - so the DATA_FIELD parser mis-reads a `.dpk`. The walker is `legaia_asset::parse_streaming_with(buf, max, StreamTerminator::TypeTwo)`; the disc-gated `sound_pack_stream_real` test pins the clean type-2 walk of PROT `0877`.
 
 ## The `.dpk` / `sound_data2` payload is a VAB + SEQ bundle
 

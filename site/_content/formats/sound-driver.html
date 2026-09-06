@@ -102,14 +102,14 @@
   <p>Battle init loads <code>bse.dat</code> into a <code>0x1800</code>-byte buffer and parks the record-table pointer at <code>gp+0x678</code> (<code>0x8007B990</code>); the buffer slot itself is repointed at every field load. A single <code>u16</code> at offset <code>+2</code>, rounded down to even, is the <strong>byte offset</strong> of a second section:</p>
 <pre><code>count     = *(u16 *)(bse_base + 2)
 gp[0x678] = bse_base + (count &amp; ~1)     ; even byte offset, not a divisor</code></pre>
-  <p>So <code>bse.dat</code> leads with <code>[u16 @0][u16 @2 = offset to section B][section A ...][section B]</code>. The offset indexes the master bank itself, not the per-scene <code>.dpk</code>.</p>
+  <p>So <code>bse.dat</code> leads with <code>[u16 tag @0][u16 @2 = byte offset of the record table][records &hellip;]</code>. Reading that split as <strong>two sections</strong> overstates it: <code>@2</code> is <code>4</code> in both retail carriers, so the "second section" is simply the record table and nothing precedes it but the header. What follows the table in entry 888 belongs to a different file - a foreign VAB tone table left in the sector. The pointer indexes the battle-loaded bank, not the per-scene <code>.dpk</code>.</p>
 </section>
 
 <section class="doc-section" id="dev-build-vs-retail-build-paths">
   <h2>Dev-build vs retail-build paths</h2>
   <p>Both path builders carry a debug-flag carve-out (<code>_DAT_8007B8C2</code>):</p>
   <ul class="bullets">
-    <li><strong>Retail branch</strong> (flag non-zero, the value retail boots with) loads sound data by PROT index - <code>0x37A</code> (= <code>sound_data2</code>) plus <code>param_1 + 5</code> for per-scene variations - via the index-based loader.</li>
+    <li><strong>Retail branch</strong> (flag non-zero, the value retail boots with) loads sound data by PROT index via the index-based loader: raw TOC <code>0x37A</code> = extraction 888, which is <code>bse.dat</code> rather than the <code>.dpk</code>, plus <code>param_1 + 5</code> for the per-set pack.</li>
     <li><strong>Dev branch</strong> (flag zero) opens an <code>h:\main\bg\domepack\&lt;name&gt;.dpk</code> path through a helper that is <code>strcpy</code>, a dev-station host trap (<code>break 0x103</code>), then fseek/fread/fclose. Retail hardware cannot service it.</li>
   </ul>
   <p>Only the retail branch runs on a real disc; the dev branch is a build-time artefact whose paths are not in the filesystem. The same split appears in the <a href="../subsystems/asset-loader.html">asset loader</a>, so it is a pattern that repeats across loading subsystems.</p>

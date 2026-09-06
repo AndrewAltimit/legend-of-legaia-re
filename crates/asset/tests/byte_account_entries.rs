@@ -91,10 +91,11 @@ const CASES: &[(u32, f64, &str)] = &[
     // `summon.dat` / `readef.DAT` - fixed 0x10800 slots.
     (893, 90.0, "summon_readef"),
     (894, 85.0, "summon_readef"),
-    // The one truncated DATA_FIELD carrier in the brief's list. Its structural
-    // share is small on purpose: the last chunk's declared size understates the
-    // payload, so the sub-asset is only reached by the magic sweep.
-    (892, 50.0, "stream"),
+    // The one entry the `data_field_truncated` detector matches. It is not a
+    // stream: the runtime walks it as an `asset::pack` of two whole TIMs, so
+    // the walker is selected by index and the accounting is structural. The
+    // shortfall is the 948-byte tail the pack does not reference.
+    (892, 98.0, "card_font_pack"),
     // `bse.dat` master bank + its untraced sibling.
     (888, 40.0, "bse_bank"),
     (1195, 2.0, "bse_bank"),

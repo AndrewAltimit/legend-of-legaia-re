@@ -110,7 +110,8 @@ which finds the writer and all seven readers.
 ```text
 +0x00   u16  tag            ; 1 in both retail carriers
 +0x02   u16  body_offset    ; 4 - byte offset of the record table
-+body   record[]            ; 8 bytes each, terminated by an all-zero record
++body   record[]            ; 8 bytes each; the walk ends at a record whose
+                            ; first four bytes are zero
 ```
 
 The `+0x02` word is consumed as a **byte offset**, not a count. The tail of
@@ -221,10 +222,54 @@ The detector keeps matching 1195, and should: it is genuinely this record
 format. What the class name `bse_bank` means is *the format*, not *the file* -
 `bse.dat` is the carrier that named it.
 
+## The bytes past the table are not this bank's
+
+Entry 888's table ends at `0x94C` (`4 + 297*8`) and the remaining 1,716 bytes
+are neither padding nor a second record family. They are **PsyQ `VagAtr` tone
+rows** - the 32-byte per-tone attribute records of a [VAB](vab.md) - left in
+the sector by whatever occupied this disc slot before `bse.dat` was written
+over its head.
+
+The grid says so before any comparison does. Every row start is `≡ 4 (mod
+0x20)`, which is exactly where a VAB laid out from file offset 4 puts its tone
+table (`0x04` + `0x20` header + `0x800` program table = `0x824`), and the
+fields land where `VagAtr` puts them: `+0x08..+0x0B` (`vibW vibT porW porT`)
+zero on every retail tone, `+0x0E..+0x0F` the builder's `b1 b2` fill,
+`+0x10`/`+0x12` the `0x80FF` / `0x5FC0` default ADSR pair, `+0x14` the program
+number stepping once per 16 rows, and `+0x18..+0x1F` the builder's
+`00C0 00C1 00C2 00C3` fill. Nothing in a row indexes the 297-row bank above it.
+
+The corpus closes it. Sweeping every extracted PROT entry for the `+0x18` fill run
+finds it in **221** entries, and in every one the hit sits at a file offset
+`≡ 0x1C (mod 0x20)` - the `VagAtr[k] + 0x18` phase, with no exceptions. All but
+two of those entries are live VAB carriers. The two that are not are 888 and
+1062, and both are byte-exact copies of a neighbour's tone table at the *same*
+file offsets:
+
+| Entry | Residue | Donor | Match |
+|---|---|---|---|
+| 888 | `0x94C..0x1000`, 1,716 B | `0886` / `1063` (identical files) | 1,716 / 1,716 bytes |
+| 1062 | `0x51B0..0x5800`, 1,616 B | `1056` | 1,614 / 1,616 bytes |
+
+1062's two differing bytes are at `0x51B2..0x51B3`, where its own SEQ's tail
+padding clipped that row's `b1 b2`. This is the same shape already recorded for
+PROT 0968 over 0967 in
+[`re-do-not-re-walk.md`](../reference/re-do-not-re-walk.md).
+
+### Entry 888 has no authored terminator
+
+`detect` stops at 297 records because the four bytes at `0x94C` are zero - and
+those four bytes are the residue row's `vibW vibT porW porT`, which is zero on
+every retail tone. The stop is correct and reliable (the field is structurally
+zero, not incidentally so), but it is a foreign row's field, not a terminator
+the bank's author wrote. Entry 1195 does carry a real zero trailer.
+
 ## Detection
 
 `u16@+0x02 == 4`, a small `u16@+0x00`, and at least six 8-byte records whose
-`+5..+7` are zero, terminated by an all-zero record. Across the PROT corpus that
+`+5..+7` are zero, ending at a record whose first four bytes are zero (an
+authored trailer in 1195; a foreign `VagAtr` field in 888 - see
+[above](#entry-888-has-no-authored-terminator)). Across the PROT corpus that
 matches these two entries and nothing else - the per-scene banks do not match
 because in a scene bundle record 0 sits inside the prescript container rather
 than at offset 0 of the PROT entry.

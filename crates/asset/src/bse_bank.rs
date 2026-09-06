@@ -43,8 +43,26 @@
 //! ```text
 //! +0x00   u16  tag            ; 1 in both retail carriers
 //! +0x02   u16  body_offset    ; 4 - byte offset of the record table
-//! +body   record[]            ; 8 bytes each, terminated by an all-zero record
+//! +body   record[]            ; 8 bytes each; the walk ends at a record whose
+//!                             ; first four bytes are zero
 //! ```
+//!
+//! ### The bytes past the table are not this bank's
+//!
+//! Entry 888's table ends at `0x94C` and the 1,716 bytes after it are **PsyQ
+//! `VagAtr` tone rows** - the 32-byte per-tone records of a VAB - left in the
+//! sector by whatever occupied the disc slot before `bse.dat` overwrote its
+//! head. They are byte-identical to entries 886 / 1063 at the *same* file
+//! offsets, and every row sits on the `0x824 + k*0x20` grid a VAB laid out
+//! from file offset 4 uses. Entry 1062 carries the same shape over entry
+//! 1056's tone table. Nothing in those rows indexes this bank.
+//!
+//! One consequence for [`detect`]: entry 888 has **no authored terminator**.
+//! The walk stops because the four bytes at `0x94C` are zero, and those are a
+//! residue row's `vibW/vibT/porW/porT` field - structurally zero on every
+//! retail tone, so the stop is reliable, but it is a foreign row's field.
+//! Entry 1195 does carry a real zero trailer. See
+//! `docs/formats/bse-dat.md`.
 //!
 //! The `+0x02` word is what the loader consumes, and it consumes it as a **byte
 //! offset**, not a count: the tail of `FUN_8001FA88` computes

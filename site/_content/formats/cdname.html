@@ -115,6 +115,7 @@
       <tr><td>0870..0873</td><td><code>sound_data</code>/<code>befect_data</code></td><td><code>befect_data</code> - <a href="effect.html">effect bundles</a> (<code>etim</code>, <code>etmd</code>+<code>vdf</code>, billboards, <code>efect.dat</code>)</td></tr>
       <tr><td>0874</td><td><code>befect_data</code></td><td><code>player_data</code> - the <em>field</em> <a href="character-mesh.html">character-mesh</a> pack</td></tr>
       <tr><td>0891</td><td><code>level_up</code></td><td><code>monster_se</code> - <code>monster.snd</code>, the 206-bank monster sound archive</td></tr>
+      <tr><td>0892</td><td><code>level_up</code></td><td><code>card_data</code> - the memory-card screen's JIS X 0208 level-1 kanji font, a two-member pack of 4bpp TIMs (<a href="data-field.html#card-font-pack">data-field</a>)</td></tr>
       <tr><td>0893..0894</td><td><code>monster_se</code>/<code>card_data</code></td><td><code>bat_back_dat</code> - <code>summon.dat</code> / <code>readef.DAT</code> (<a href="summon-readef.html">summon-readef</a>)</td></tr>
       <tr><td>0895..0969</td><td><code>bat_back_dat</code>/<code>xxx_dat</code></td><td><code>xxx_dat</code> - slot 0 is the boot <code>init.pak</code>; then the <a href="mips-overlay.html">overlay code blobs</a></td></tr>
       <tr><td>0970..0971</td><td><code>xxx_dat</code></td><td><code>move_program_no</code> - <strong>mov</strong>ie program table (<a href="str-fmv-table.html">STR FMV table</a>), not Tactical Arts</td></tr>
@@ -129,7 +130,7 @@
     <div class="disclosure-body">
       <ul class="bullets">
         <li><code>level_up</code> entry 0890 is a streaming carrier with its VABs wrapped inside, so a bare-magic check misses it at every shift.</li>
-        <li>Entries 0888 (<code>sound_data2</code>) and 1062 (<code>music_01</code>) are unidentified non-VAB blobs.</li>
+        <li>Entries 0888 (<code>sound_data2</code>) and 1062 (<code>music_01</code>) carry no VAB header, and both are identified: 0888 is <code>bse.dat</code>, the battle SFX descriptor bank, and 1062 is a <strong>SEQ-only</strong> <code>music_01</code> entry (sound-test track 72, <code>ALNDRA</code>) that borrows another entry's bank. Each also ends in a foreign tone table copied from a neighbour, which is what a bare-magic sweep sees.</li>
         <li>Only 2 of the 6 <code>other_game</code> entries carry an <code>OTHER&lt;n&gt;</code> banner.</li>
         <li>Entry 0893 (<code>summon.dat</code>) opens with a shape that mimics a sound-address bank; the byte pins show texture streaming slots.</li>
         <li><code>other7</code> (extraction 1226+) is a dev-leftover earlier revision of <code>koin3</code>'s field MAN - a name-exact prefix subset of its records, sharing its gate flags. No code loads it.</li>

@@ -384,9 +384,70 @@ taken. The file's other slots: 1220 = an LZS container whose section 0 is
 the dome's **hub UI art** - two plain TIMs uploading the pages at
 `(320, 0)` / `(320, 256)` with CLUT rows 502/503 (the Welcome / INTERVAL /
 ROUND / course-name strips; see
-[HUD chrome](#hud-chrome-texture-sources-capture-pinned)), 1221/1222 = two
-160 KB blobs (undecoded), 1223/1224 = pochi fillers
-([`pochi.md`](../formats/pochi.md)).
+[HUD chrome](#hud-chrome-texture-sources-capture-pinned)),
+1221/1222 = the two ringside panel stills
+([below](#inttim--int2tim---the-ringside-panel-stills)), 1223/1224 = pochi
+fillers ([`pochi.md`](../formats/pochi.md)).
+
+### `int.tim` / `int2.tim` - the ringside panel stills
+
+Extraction **1221** and **1222** are not blobs. Each is exactly `0x28000`
+bytes, which is `320 * 256 * 2` to the byte, and each is a **16-bit BGR555
+still** that the runtime uploads as one VRAM rectangle at `(384, 0)`.
+
+The overlay that reads them is PROT **0978** (`field_back_read`, slot-B base
+`0x801F69D8`), whose own string pool names both files by their dev paths -
+`h:\prot\field\other6\tim\int.tim` at file `+0x20` and
+`…\int2.tim` at `+0x44` - putting them in this bundle's directory. Its
+streamer `FUN_801F6B24` (file `+0x14C`) is a 12-arm phase machine on a jump
+table at `0x801F6AA8`, counter `_DAT_8007B6C8`.
+
+Nothing materialises the raw TOC index as a literal, which is why a
+literal-only sweep finds no loader. The index is **computed**:
+
+```text
+801f6b90  lhu   v0,0x4824(v0)      ; party slot 0 hp_max_record  (+0x11C)
+801f6b98  lhu   v1,0x480e(v1)      ; party slot 0 hp_curr_live   (+0x106)
+801f6ba4  srl   v0,v0,1
+801f6bac  sltu  s0,v1,v0           ; s0 = current HP < max/2
+...
+801f6c3c  addiu a0,s0,0x4c7        ; raw TOC 0x4C7 + s0
+801f6c40  jal   0x8003e8a8         ; LBA resolver
+```
+
+Raw `0x4C7` / `0x4C8` are extraction **1221** / **1222** under the
+[+2 correction](../formats/cdname.md#numbering-space), so `int.tim` is the
+default and `int2.tim` is the **below-half-HP** variant, chosen from the lead
+character's live record ([`save-record.md`](../formats/save-record.md)). The
+same `s0` selects between the two dev path strings on the dev branch
+(`lh` on `_DAT_8007B8C2` at `0x801F6C38`), which is what ties each index to
+its filename. Four such `addiu a0,s0,0x4c7` sites exist, at file `+0x264`,
+`+0x2F4`, `+0x398` and `+0x440` - one per strip.
+
+The upload is four passes over the same rect. `FUN_8003E964` seeks sector
+`0 / 0x14 / 0x28 / 0x3C` of the entry, `FUN_8003E800` reads 20 sectors
+(`0xA000` = `320 * 64 * 2`) into the staging buffer, and `FUN_800583C8`
+(`LoadImage`) uploads it with the rect's `y` set to `0 / 0x40 / 0x80 / 0xC0`
+in the `jal` delay slot. The rect itself lives at `0x801F735C` and its other
+three fields are written once, at `0x801F6BE4` / `0x801F6BF0` / `0x801F6BFC`:
+`x = 0x180` (384), `w = 0x140` (320), `h = 0x40` (64).
+
+The files' own layout matches the display window. The first five sectors of
+both are the halfword `0x5862` repeated - 5,120 halfwords, i.e. exactly
+**16 scanlines of 320** - then one zero sector, then pixels. So the 240-line
+picture occupies rows 16..255 of the 256-row rectangle, and the constant fill
+is a deliberate top pad rather than dev filler.
+
+Both stills are finished pre-rendered scenes of characters at the ring's
+rope-and-mesh fence, and the `int2` variant differs by their reaction, which is
+consistent with the HP test that selects it. **Confirmed** (disassembly) for
+the loader, the index arithmetic, the variant selector and the upload geometry;
+what the panel is used for on screen is **Inferred** - no draw of the
+`(384, 0)` rect has been traced, and the streamer's arming condition (battle
+context `ctx[+0xC] == 2`, written under `ctx[+0x7] == 0x67`) is undecoded.
+
+Read with `disasm-overlay-fn.py extracted/overlays/overlay_field_back_read_0978.bin
+--base 0x801F69D8 --addr 0x801F6B24`.
 
 ### Object 1 is trimmed by the loader (`_DAT_8007B64B`)
 
@@ -1241,7 +1302,7 @@ to the emitter it names).
 - ~~The Auto arm's command picker~~ **resolved**: there is no picker. Auto commits the 16-byte string `FUN_801DA34C` had already reloaded out of the character record (`+0x1A7` / `+0x1B7`, chosen by the `actor+0x156 < actor+0x154` AP-band test) and `FUN_801DA59C` saves back on the review confirm - see [The Auto arm picks nothing](#the-auto-arm-picks-nothing---it-replays-a-saved-string). Still open on the same screen: the pennant/bar geometry for off-class (non-30) costs - see [Arts command input](#arts-command-input-packet-pinned).
 - ~~The per-arm assignment of the three UI cue ids~~ **resolved**: `0x21` = accept/confirm, `0x22` = highlight moved, `0x23` = refused-or-back, over **37** call sites (not 34) - see [Which blip is which](#which-blip-is-which-0x21--0x22--0x23) for the per-arm table and the two shared tails.
 - A live `_DAT_8007B864` byte-match during a dome contest, to upgrade the arena-backdrop residency (extraction 1225) from Inferred to capture-Confirmed.
-- The two 160 KB blobs at extraction 1221/1222 (the `other6` file's middle slots) - undecoded.
+- What arms the panel-still load - the streamer runs on battle context `ctx[+0xC] == 2`, and the writer of that `2` is itself gated on `ctx[+0x7] == 0x67`, which nothing decodes. No draw site for the VRAM rect the stills land in has been found either; see [the ringside panel stills](#inttim--int2tim---the-ringside-panel-stills).
 - ~~Which runtime path (if any) draws the backdrop stream's **object-1 dust
   decal**~~ **resolved, and the "phase-gated effect draw" candidate is
   falsified**: no effect path touches it. The SCUS battle scene loader binds the

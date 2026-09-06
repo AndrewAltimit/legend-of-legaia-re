@@ -49,8 +49,50 @@ Some entries contain bytes past the streaming terminator. `asset extract` preser
 - The [scene-TMD-prefixed streaming](scene-bundles.md) shape is structurally similar but the leading chunk has no `[u32 type_size]` header and the inner content is a bare TMD instead of a TIM.
 - The [scene-VAB-prefixed streaming](scene-bundles.md) shape uses the same chunk0-header trick but with VAB content.
 - [Pack format](pack.md) lives *inside* TIM_LIST / TMD chunks when the chunk's data is a pack rather than a single asset.
-- One entry (`0892_level_up`) carries the streaming layout but its **final** chunk's declared `size` walks past the entry's end without a terminator on disc - three clean leading chunks, then an over-large fourth header. Detector: `crates/asset/src/data_field_truncated.rs` (class `data_field_truncated`). How the runtime consumes that chunk is not pinned.
+- One entry (extraction `0892`) matches the `data_field_truncated` detector (`crates/asset/src/data_field_truncated.rs`) - three clean leading chunks and an over-large fourth header. It is **not** a streaming carrier: the runtime reads it as an [`asset::pack`](pack.md), and the "chunks" are that pack's own header words. See [below](#entry-0892-card_data-is-a-pack-not-a-truncated-stream).
 - Three scene entries commonly cited in this class - `0157_rikuroa`, `0228_station`, `0373_taiku` - are **not** truncated. Each is one of the four-chunk `MAN / MES / MOVE / VDF` bundles above, and each is a case where the superseded `toc[p+5] - toc[p+3] + 4` span fell *short* of the real entry (`0157` declares 163840 bytes against a real 186368; the other two are short by 69632 and 8192), so the last chunk overran a buffer that ended early. Against their own sectors all three terminate cleanly. See [`prot.md`](prot.md#tocp5---tocp3--4-is-not-an-entrys-size).
+
+## Entry 0892 (`card_data`) is a pack, not a truncated stream
+
+Extraction entry `0892` is the only retail hit for the `data_field_truncated` class, and the hit is an artefact. The entry's first three words are an [`asset::pack`](pack.md) header - `count = 2`, `word_offsets = [3, 0x208B]` - and the streaming reader takes those three words for chunk headers of type `0x00` and sizes 2, 3 and 8331, which walks it to `+0x2094`, inside the first member's pixel data, where the next word declares a body far past the entry. Nothing in the entry is a `[u32 type_size]` chunk. The companion "12 MB LZS container" figure on [`cdname.md`](cdname.md#consequential-relabelings) came from the superseded declared span (`toc[p+5] - toc[p+3] + 4` = 5977 sectors); the entry is 33 sectors, 67,584 bytes.
+
+### What the runtime does
+
+Retail reads the entry as a pack and dispatches each member. Mode-22 `CARD INIT` (`FUN_8002574C`, SCUS-resident) is the only loader:
+
+| Address | What it does |
+|---|---|
+| `0x800257D0` | `jal 0x80017888`, `a1 = 0x19000` (`lui a1,0x1` / `ori a1,a1,0x9000`) - allocate the staging buffer |
+| `0x800257DC` | `lh v1,-0x473e(v1)` - the dev/retail flag `_DAT_8007B8C2`, the same one [`bse.dat`](bse-dat.md#which-entry-it-is-and-when-it-loads) branches on |
+| `0x800257F4` | dev leg: `jal 0x8003e6bc`, the by-name path opener |
+| `0x8002580C` | retail leg: `li a0,0x37e` then `jal 0x8003eb98` - `byindex_sync_loader(0x37E, buf, 1)`. Raw TOC `0x37E` is extraction `0892` under the [+2 correction](cdname.md#numbering-space) |
+| `0x8002581C..0x80025850` | the pack walk: `count = *buf`, then per member `FUN_800198E0(buf + word_offsets[i] * 4)` - the packed-image uploader |
+| `0x80025858` | `jal 0x80017b94` - free the staging buffer. The members live only in VRAM |
+
+`see ghidra/scripts/funcs/8002574c.txt`, `8003eb98.txt`.
+
+The entry-context selector is `gp+0x7E8` (`0x8007BB00`), read twice: `0` skips the whole block (`0x8002576C`, straight to the epilogue that sets game mode `0x17`), `1` takes the disc load (`0x800257C0`), and any other value takes a third arm that instead `MoveImage`s the same VRAM footprint back from a parked copy - `(0,492) 256x1` to `(0,475)` and `(704,0) 128x256` to `(320,256)` (`0x80025880` / `0x800258A8`, `FUN_80058490`).
+
+Every writer of the slot stores `1` (`0x8003B5E0`, `0x8003C808`, field overlay `0x801D84CC`, cutscene overlay `0x801CF048`) and the menu overlay clears it to `0` (`0x801DFB10`), so no retail path reaches that third arm. Its inverse is live: the menu overlay parks the pair the other way - `(0,475) 256x1` to `(0,492)`, then `(320,256) 128x256` to `(704,0)`, at `0x801DDD0C` / `0x801DDD34` - on the way into game mode `0x1A`.
+
+### The two members
+
+Both are complete 4bpp TIMs of exactly `0x8220` bytes:
+
+| Member | Byte offset | CLUT rect | Image rect | Page |
+|---|---|---|---|---|
+| 0 | `0x0C` | `(0, 475) 16x16` | `(320, 256) 64x256` | 256x256 px |
+| 1 | `0x822C` | `(0, 475) 16x16` | `(384, 256) 64x256` | 256x256 px |
+
+Together they tile VRAM `(320..447, 256..511)`, which is exactly the rect both `MoveImage` pairs above move. The 948 bytes past member 1 (from `0x1044C`) are not referenced by the pack and are the entry's own tail slack.
+
+### The content: a JIS X 0208 level-1 kanji font
+
+The CLUT block is byte-identical in the two members and is not a palette bank in the ordinary sense. Rows `0..3` hold the index patterns `0101…`, `0011…`, `00001111…` and `00000000 11111111` against one ink colour, and rows `4..7` repeat them against a darker ink - each row selects **one bit of the 4bpp index**. The texture is therefore a 1bpp bitmap packed four bit-planes deep, and a draw picks its plane by CLUT row (`0..3` light, `4..7` dark). Rows `8..15` are ordinary 16-colour palettes for other content sharing those rows.
+
+Per plane the glyph grid is a 12-pixel pitch with an 11x11 ink box: columns and rows `11, 23, 35, …, 239` carry no ink in any plane, and nothing is inked past column or row 238. That is 20x20 = 400 cells per plane, 4 planes per member, 8 planes in all. Seven planes are full and the last is inked through cell 164, for **2965 inked cells** - exactly the JIS X 0208 level-1 kanji count. Plane 0 confirms the order is the level-1 ku-ten sequence from its first glyph, with cell 21 landing on the 21st glyph of that sequence, so a glyph's cell is `plane = g / 400`, `row = (g % 400) / 20`, `col = g % 20`.
+
+Which routine samples the page is **open**. A sweep of `SCUS_942.54` and the 31 based overlay images for an instruction materialising the base CLUT id `0x76C0` (`475 << 6`) finds none, and the only hits on its row siblings (`0x7700`, `0x7740`) are battle-overlay sprite packets - a different screen's use of the same VRAM rows. So the consumer either computes the id or reads it from a data table. The upload path is live on every mode-22 entry either way.
 
 ## Per-scene field bundles - what's still open
 
