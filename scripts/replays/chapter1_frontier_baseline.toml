@@ -54,16 +54,18 @@
 # prints in full; they are recorded here so the shortfall between
 # `rung_total` and `scenes * 6` is not mistaken for noise):
 #
-# - Two scenes stop at rung 1: `bubu1` and `edbubu` resolve no MAN. They enter
-#   the closure only through the newly-admitted upper-case destinations, so
-#   this is a pre-existing asset-resolution gap that had nothing naming it.
+# - Both scenes that used to stop at rung 1 now load: `bubu1` and `edbubu`
+#   ship a `count = 5` asset table, and the detector bounded `count` to 6 or 7.
 #
-# - The bulk of the shortfall is rung 5 (walk), and it is one shape: a
-#   chapter-2/3 interior whose entry script opens a dialogue the released-pad
-#   settle never closes, so the driven probe cannot beat its control. `izumi`
-#   is the documented member of that class - its C1-gated first-visit record
-#   relocates the player about thirty tiles with the pad released, and the
-#   revisit probe walks four tiles normally.
+# - The rung-5 shortfall was 28 scenes and is now two. It was one defect, not
+#   a class: a scene change that lands while a ledge hop is in flight left the
+#   hop's one-way steering lock (`move_state.flags & 0x0008_0000`) set, and
+#   `step_field_locomotion` returns early on it - so from `tower` onward every
+#   scene in the sweep was unwalkable. Scene entry drops the hop and the lock
+#   together now. What remains is `izumi`, whose C1-gated first-visit record
+#   relocates the player about thirty tiles with the pad released so the driven
+#   run cannot beat its own control (the revisit probe walks four tiles
+#   normally), and `kor5`.
 #
 # - Four of the five late scenes that once read as one-way now leave, and
 #   Parts D/E/E2 say exactly how. `uru` -> `map03`, `urudre1` and `urudre3` ->
@@ -78,6 +80,6 @@
 #   replays the conversation instead of reaching it - the PC never passes body
 #   `0xB8C`, independent of pad cadence and of visit count.
 
-scenes = 68
-rung_total = 333
-full_ladder = 32
+scenes = 74
+rung_total = 426
+full_ladder = 58
