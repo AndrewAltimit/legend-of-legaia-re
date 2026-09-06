@@ -119,11 +119,13 @@ fn shrink_name_relocates_section() {
 #[test]
 fn later_record_offset_is_bumped() {
     // Two P2 records; edit the first, the second's table offset must move.
+    // Names are >= 3 bytes: `clean_scene_name` rejects shorter runs, which
+    // on the disc are only text desyncs (no CDNAME label is that short).
     let mut rec0 = p2_prefix();
-    rec0.extend_from_slice(&scene_change_op(0x01, b"ab", 0, 0, 0));
+    rec0.extend_from_slice(&scene_change_op(0x01, b"abc", 0, 0, 0));
     rec0.push(0x21);
     let mut rec1 = p2_prefix();
-    rec1.extend_from_slice(&scene_change_op(0x02, b"cd", 0, 0, 0));
+    rec1.extend_from_slice(&scene_change_op(0x02, b"cde", 0, 0, 0));
     rec1.push(0x21);
     let man = build_man(&[rec0, rec1]);
     let mf = man_section::parse(&man).unwrap();
@@ -133,7 +135,7 @@ fn later_record_offset_is_bumped() {
     let edit = DestEdit {
         op_pc: op0,
         index: 0x01,
-        name: b"abcdef".to_vec(), // +4
+        name: b"abcdefg".to_vec(), // +4
         entry_x: 0,
         entry_z: 0,
         dir: 0,
@@ -144,12 +146,12 @@ fn later_record_offset_is_bumped() {
     assert_eq!(mf2.partitions[2][0], mf.partitions[2][0]);
     assert_eq!(mf2.partitions[2][1], rec1_off + 4);
     // both ops still decode at their (mapped) positions.
-    assert!(validate(&out, &[(op0, b"abcdef")]));
+    assert!(validate(&out, &[(op0, b"abcdefg")]));
     let op1_new = mf2.data_region_offset + mf2.partitions[2][1] as usize + 6;
     let insn = field_disasm::decode(&out, op1_new).unwrap();
     assert_eq!(
         field_disasm::scene_change_name(&out, &insn).as_deref(),
-        Some("cd")
+        Some("cde")
     );
 }
 

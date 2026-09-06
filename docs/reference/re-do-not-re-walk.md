@@ -681,6 +681,20 @@ The consumer was "untraced" only because every reader forms `0x8007B990` with
 `lui` + `lw`, a pair the five-form address scan does not accept. Details:
 [`re-settled-threads.md`](re-settled-threads.md#bsedat-record-columns-and-the-gp0x678-consumers).
 
+### `bse.dat` carries a second record family with a resident consumer
+
+*Falsified by disc bytes.*
+
+The bytes really do repeat on a fixed stride inside the loaded buffer, and a
+matching run in a second entry looked like a shared footer. Both are the same
+builder's fill inside `VagAtr` tone rows belonging to a *different file* left
+in the sector (888's tail equals 886's and 1063's; 1062's equals 1056's). No
+family, no consumer to find. The companion reading - that `FUN_8001FA88`'s
+**dev** branch loads PROT `0x37A`, tying the `.dpk` name to the `sound_data2`
+family - is wrong the same way: it is the retail branch, and `0x37A` is
+`bse.dat`. See
+[`re-settled-threads.md`](re-settled-threads.md#audio).
+
 ## Title / boot / overlays
 
 ### The title screen is loaded before the mode table is consulted
@@ -970,6 +984,28 @@ already at or past the entry's end - there are no bytes there to be a header.
 The same shape as the `.PCH` "+0x800 prescript" and the pochi "stale TIM"
 readings: the over-reading entry size appending the neighbour. See
 [`scene-bundles.md`](../formats/scene-bundles.md#scene_event_scripts---prescript-only).
+
+### PROT 0892: a 12 MB LZS container, or a truncated DATA_FIELD stream
+
+*Falsified by disassembly and disc bytes.*
+
+Two readings, one entry. The "12 MB container whose content is unpinned" was
+the superseded `toc[p+5] - toc[p+3] + 4` span (5,977 sectors); the entry is 33
+sectors, 67,584 bytes. The "truncated DATA_FIELD stream whose final chunk the
+runtime continues by DMA" matched the detector's own criteria, but the three
+"leading chunks" are an `asset::pack`'s header words (`2`, `3`, `0x208B`) read
+as chunk headers, and the "over-large fourth header" is a word inside member
+0's pixels. Retail walks it as a pack (`FUN_8002574C`, `0x8002581C..`). See
+[`re-settled-threads.md`](re-settled-threads.md#text--fonts--dialog).
+
+### PROT 1221 / 1222 have no loader, because no image names raw TOC `0x4C7` / `0x4C8`
+
+*Falsified by disassembly.*
+
+`0x4C8` is never a literal anywhere; the index is `s0 + 0x4C7` with a runtime
+`s0` (`addiu a0,s0,0x4c7` at `0x801F6C3C` in PROT 0978). A literal-only sweep
+is the wrong instrument for a computed index - the same failure shape as the
+gp-relative blind spot. They are the dome's `int.tim` / `int2.tim` stills.
 
 ## Field / locomotion
 

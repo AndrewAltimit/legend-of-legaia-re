@@ -377,6 +377,8 @@ species and at the disc's authored heap-cost maximum.
 | The dome's three UI cue ids (`0x21` / `0x22` / `0x23`) | resolved (accept / highlight moved / refused-or-back) | `disassembly` | 37 `jal FUN_8004FCC8` sites in `FUN_801D0748` (15 / 7 / 15), not 34. Pinned by content: every cancel-mask (`*(0x800846D4)`) press is `0x23`, every confirm-mask (`*(0x800846D0)`) press `0x21`, and the pre-pass `0x22` sites fire only when the pressed bit differs from `ctx+0x880`. Arm boundaries come from the compare chain `0x801D0C84..0x801D0DCC`. |
 | The arena backdrop's object-1 dust decal | resolved (trimmed by the SCUS battle loader unless `_DAT_8007B64B` is set) | `disassembly` | `FUN_800513F0` spawns two backdrop actors and, when `_DAT_8007B64B` is zero (`0x80051ABC`), decrements both part counts and shifts each list down from index 1 (`0x80051AD4..0x80051BAC`). One writer on the disc, `FUN_801D9E1C` at `0x801DA0AC`. That the arena leaves it clear is `inference` (agrees with the mist-free capture). |
 | `FUN_801F2410` / `FUN_801F2E10` - dome routines or shared? | resolved (neither is the dome's) | `disassembly` | `801F2410` is the cast **colour wash** - screen-wide `POLY_G4` onto `*(0x1F8003A0)` tinted `ctx[+0x27E..+0x280] * ctx[+0x27A] / 255`, called only from the cast dispatchers' epilogues (`0x801F2144`, `0x801F23F4`). `801F2E10` has no reference in SCUS or any overlay; its 11 callers are all in slot-B module PROT 0909. |
+| What are PROT 1221 / 1222 (`other5` / `other6`)? | resolved (`int.tim` / `int2.tim` - the Muscle Dome's two ringside panel stills) | `disassembly` | [details ↓](#dome-ringside-panel-stills-prot-1221-and-1222) |
+| What do the higher readef groups' aux slots carry? | resolved (no new kind - textures, the four ME archives, or a never-staged actor record) | `disassembly` | `FUN_801F12D0` is an 8-stage machine (jump table `0x801CF4CC`): stage 2 uploads slot `base` to CLUT row 488 / page `x = 512`, stage 4 uploads `base+1` to row 490 / `x = 640`, gated at `0x801F1500` / `0x801F150C` on `base >= 0x42 \|\| 0x0C <= base <= 0x36`. That gate partitions the file exactly: textures inside it, the four ME archives below it, and in the three excluded groups (`base` `0x39` / `0x3C` / `0x3F`, actions `0x14..0x16`) an actor record byte-identical to its `base+2` twin, which the applier never stages. See [`summon-readef.md`](../formats/summon-readef.md). |
 | Is `cutscene_str` (PROT 0970)'s 123 KB code gap un-dumped code? | resolved (a zero-filled reservation) | `disassembly` | `0x801D1878..0x801F1A00` is 32,793 zero words of 32,866 - a `.bss`-shaped hole. The image's real un-dumped code is about 1.3 KB. Recorded in [`disc-coverage.md`](../tooling/disc-coverage.md). |
 | Can a scene TMD pack member be grown in place? | resolved (nothing outside the pack holds a byte offset into it - rebuild is the only cost) | `disassembly` | [details ↓](#growing-a-scene-tmd-pack-member) |
 | Is any of an enemy signature cast's choreography data-driven? | resolved (partially - the spawn layer is data in the art path's own record format; the lift and camera are module code) | `disassembly` | [details ↓](#what-of-a-signature-cast-is-data) |
@@ -1935,6 +1937,21 @@ into `+0x1DA` (16 / 6 / 8 sites) from the modules' phase arms, which no record
 can express. See
 [`cast-module.md`](../subsystems/cast-module.md#what-of-the-choreography-is-data-and-what-is-code).
 
+### Dome ringside panel stills PROT 1221 and 1222
+
+*Status:* resolved - grade `disassembly`
+
+Two 320x256 BGR555 stills in the dome's `other6` bundle, streamed in four
+`0xA000` strips by `FUN_801F6B24` (PROT 0978) into VRAM `(384, 0)` (rect
+`0x801F735C`; `320*256*2` = the entry size exactly, the first five sectors a
+16-line top pad). No literal names them: `addiu a0,s0,0x4c7` at `0x801F6C3C`
+with `s0 = (party slot 0 current HP < max / 2)`, so `int2.tim` is the
+below-half-HP variant - the same failure shape as the gp-relative blind spot, a
+computed index a literal sweep cannot see. Corroborated by the overlay's dev
+path strings `h:\prot\field\other6\tim\int.tim` / `int2.tim` selected by the
+same `s0`. See
+[`minigame-muscle-dome.md`](../subsystems/minigame-muscle-dome.md#inttim--int2tim---the-ringside-panel-stills).
+
 ## Field / locomotion
 
 | Thread | Status | Evidence | Answer |
@@ -2689,6 +2706,7 @@ Ports: `World::record_op49_park` / `World::menu_entry_context_kind`,
 | Inline dialog-box format (`0x1F`-lead segments) | resolved (init-arm count corrected; session-end semantics open) | `disassembly` | [details ↓](#inline-dialog-box-format-0x1f-lead-segments) |
 | Tetsu 4-option spar menu mechanism | resolved | `capture` | The menu is a standard `0x29` 4-option **MES inline picker** in the sparring partner's dialogue (cursor `*(0x801C6EA4)+0x0C`; confirming **index 2** "I want to practice with you." starts the spar - live `0x03->0x09->0x15`, driven by the dialog SM not the field VM). It uses the **immediate-labels** form (labels straight after the N jump entries, no continuation byte) - `parse_picker_at` rejected it, now fixed, so town01 decodes the spar menu + its other pickers. Engine: `World::CarrierMenu` presents the picker and engages the carrier only on the index-2 fight option (was any-accept). Tests: `parses_immediate_labels_picker`, `tetsu_spar_picker_disc`, `carrier_spar_menu_*`, the updated `training_battle` legs. |
 | Pause Items/Magic screens: remaining sub-flows | resolved (dim-bit residual closed) | `disassembly` + `capture` | [details ↓](#pause-itemsmagic-screens---remaining-sub-flows) |
+| What does PROT 0892 (`card_data`) carry, and who loads it? | resolved (the memory-card screen's JIS X 0208 level-1 kanji font; an `asset::pack` of two TIMs, not a truncated stream) | `disassembly` + `capture` | [details ↓](#prot-0892-is-the-card-screen-kanji-font) |
 
 ### Pause Items/Magic screens - remaining sub-flows
 
@@ -2766,6 +2784,20 @@ Disc-gated `field_interact_dialogue_disc` pins the prologue map's byte-consisten
 
 Decoded by `legaia_mes::dialog_box` (`pack_box` / `pack_boxes`, `LINES_PER_BOX = 3`, `Dispatch` for the terminating control byte); disc-gated `field_dialog_boxpack_disc` pins it on real town01 bytes (all 561 packed boxes ≤ 3 lines; the Tetsu sparring opening packs as three `0x24`-chained 3-row pages → a 4-option `Picker`; the `Mist appeared, .., but` line survives its `0xC1 0x00`). The contiguous box run stops where the pool hands control back to the field VM (a non-pager control byte → `Dispatch::Unknown`), which the faithful `World::step_inline_dialogue` path runs as bytecode. Nothing further open on this thread.
 
+### PROT 0892 is the card-screen kanji font
+
+*Status:* resolved - grade `disassembly` + `capture`
+
+Loaded only by mode-22 `CARD INIT` `FUN_8002574C`: alloc `0x19000` at
+`0x800257D0`, retail leg `li a0,0x37e` + `jal 0x8003eb98` at `0x8002580C` (raw
+TOC `0x37E` = extraction 0892), then a pack walk at `0x8002581C..0x80025850`
+handing each member to `FUN_800198E0`. Two `0x8220`-byte 4bpp TIMs (CLUT `(0,
+475)`, pages `(320, 256)` / `(384, 256)`) whose CLUT is a bit-plane selector
+over a 1bpp font packed four planes deep - 12 px pitch, 2,965 inked cells = the
+level-1 kanji count, plane 0 in ku-ten order. The "12 MB LZS container" figure
+was the superseded over-reading span; the entry is 33 sectors. See
+[`data-field.md`](../formats/data-field.md).
+
 ## Animation
 
 | Thread | Status | Evidence | Answer |
@@ -2810,6 +2842,7 @@ The port was never wrong here: `player_anm.rs` has always decoded `bytes[4] & 0x
 | Who consumes the `bse.dat` record-table pointer `gp+0x678` (`0x8007B990`)? | resolved (cue router `FUN_8004FE5C` + the overlay-0971 sound test, via `lui`+`lw` the word scan cannot see) | `disassembly` | [details ↓](#bsedat-record-columns-and-the-gp0x678-consumers) |
 | When does `bse.dat` load? | resolved (battle-scene setup, not boot) | `disassembly` | `FUN_8001FA88`'s only caller on the disc is `0x80051A3C` in battle init `FUN_800513F0`, reached from the battle tick `FUN_80046A20` at `0x80046F74` under `ctx[+0x11] == 0`. |
 | `bse.dat` 888 vs its 1195 sibling | resolved (one format, two occupants of the `>= 0x200` bank role) | `disassembly` | 888 is the battle occupant; a scene prescript's record 0 fills the same slot in the field (`FUN_8001F7C0` at `0x8001F864` repoints it). 1195 is such a prescript and the detector should keep matching it. |
+| Is there a second `bse.dat` record family past the table (0888 `0x94C`, 1062 `0x51AD`)? | resolved (no - a neighbouring file's PsyQ `VagAtr` tone rows left in the sector) | `capture` | [details ↓](#no-second-bse-dat-record-family) |
 
 ### Op-`0x35` sub-op `0xA` is the track-swap commit
 
@@ -3170,6 +3203,20 @@ both reduce to `record[cue_id - 0x200] + 4`, and the sound test stores `7` at
 `0xDC(gp[0x678])` before enqueuing cue `0x21B` = `0x200 + 27` - row index is
 cue id minus `0x200`, and the category byte is rewritten per cue. Layout and
 carriers: [`bse-dat.md`](../formats/bse-dat.md).
+
+### No second bse dat record family
+
+*Status:* resolved (negative) - grade `capture`
+
+Entry 888's 1,716-byte tail is byte-identical to entries 886 and 1063 at the
+same file offsets; entry 1062's 1,616-byte tail matches entry 1056 (two bytes
+differ where its SEQ padding clipped a row). The builder fill `C0 00 C1 00 C2 00
+C3 00` occurs in 221 entries, always at offset `≡ 0x1C (mod 0x20)` (`VagAtr +
+0x18`), and only these two carry it without a `pBAV` of their own.
+`bse_bank::detect` stops on a residue row's structurally-zero `vib / por` fields
+- reliable, but a foreign row's field. 1062 as a whole is a SEQ-only `music_01`
+entry (sound-test track 72) borrowing another entry's bank. See
+[`bse-dat.md`](../formats/bse-dat.md).
 
 ## Title / boot / overlays
 

@@ -81,6 +81,12 @@ cheapest place to look for a claim that is still wrong.
   reader enumeration (125 sites, six images, closed). `_DAT_8007BD84` is an
   effect handle, not a mode word; `FUN_8003EAE4`'s driver is `FUN_8003D764`;
   and the item table carries 250 names, not "far below 128".
+- **Four "unattributed" blobs were all misread instruments.** PROT 0892 is the
+  card screen's kanji font (a two-member pack, not a truncated stream, not
+  12 MB); 1221 / 1222 are the dome's `int.tim` / `int2.tim` stills, loaded by
+  a *computed* index no literal scan could see; the "second `bse.dat` family"
+  is a neighbouring file's tone rows left in the sector; and readef's higher
+  aux slots carry nothing new.
 - **The port had been dropping every upper-case `0x3F` destination** - the
   kingdom maps, the dream shrine, the ending chain - because the clean-label
   gate was lower-case-only while retail just `strcat`s the operand into an
@@ -381,9 +387,9 @@ side-face shade page closed by capture. All in
 
 ## Audio / BGM
 
-| Thread | Status | What would close it |
-|---|---|---|
-| `bse.dat`'s second record family | open | PROT 0888 carries 1,716 bytes past the 297-row `bse_bank` table (`0x094C..`), repeating on a longer stride than the 8-byte records, and `1062_music_01` carries the same footer signature past the end of its SEQ (`0x51AD`). Two entries in different CDNAME blocks sharing a footer is a sound-driver structure, not slack, and `0x94C` is inside the `0x1800` buffer `FUN_8001FA88` loads, so a resident consumer exists. Find it the way the first family was found: `find-gp-relative-refs.py` over `gp+0x678` plus the offsets past `0x94C`, then read the reader. Surfaced by `asset account` ([`byte-accounting.md`](../tooling/byte-accounting.md)). |
+No open threads. The last one - a supposed second `bse.dat` record family -
+resolved as a neighbouring file's tone rows left in the sector
+([falsified](re-do-not-re-walk.md#bsedat-carries-a-second-record-family-with-a-resident-consumer)).
 
 The previous thread here - op-`0x35` sub-op `0xA`, the "unhalt-pause toggle" -
 resolved as the track-swap **commit** and moved to
@@ -412,7 +418,9 @@ PCSX-Redux `.sstate` via `pcsxr-state`, dispatched on file extension).
 
 | Thread | Status | What would close it |
 |---|---|---|
-| What are PROT 1221 / 1222 (`other5` / `other6`)? | open | 160 KB each with an identical macro-layout (five sectors of dev fill, one zero sector, a data region, zero tail). Every halfword is below `0x8000`, no word falls in the RAM window, and the ADPCM flag bytes do not cluster - so PSX 15-bit colour data (BGR555, STP clear), not code and not samples; only 1,280 distinct halfwords across 73,728. Their loader is unknown: scan for the raw TOC literals `0x4C7` / `0x4C8` at the byindex-loader call sites in all reference forms, then read what uploads the pages. |
+| Which routine samples the card-screen kanji page (VRAM `(320..447, 256..511)`, CLUT rows 475..482)? | open | PROT 0892's font is uploaded by `FUN_8002574C` at CARD INIT, but no image materialises its CLUT id `0x76C0`; look for a computed `y << 6` or a sprite-descriptor table in the menu overlay. |
+| What arms the dome's panel-still streamer, and what draws VRAM `(384, 0)` 320x256? | open | `FUN_80025358` runs on battle `ctx[+0xC] == 2`; the writer of that `2` (`0x8004E6E4`) is gated on `ctx[+0x7] == 0x67`, undecoded. |
+| Which enemy specials name readef groups 19..21 through monster record `+0x1C`? | open | Needs a sweep of the LZS-decoded monster blocks' `+0x1C` byte; `monster_archive.rs` does not model that field. |
 
 ## Adding a thread
 
