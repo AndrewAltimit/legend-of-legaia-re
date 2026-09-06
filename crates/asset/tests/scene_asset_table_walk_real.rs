@@ -103,9 +103,14 @@ fn scene_asset_table_walk_reproduces_runtime_dispatch() {
         }
 
         let slots: Vec<_> = table.slots().collect();
+        // 7 for the kingdom bundles, 6 for the early standalone towns, and 5
+        // for `bubu1` / `edbubu` - the canonical seven minus `Tmd` and `Vdf`,
+        // the two scenes that own no environment mesh pack. Retail bounds the
+        // count nowhere; a `{6, 7}`-only assertion here encoded the detector's
+        // old bound rather than the disc's shapes.
         assert!(
-            slots.len() == 6 || slots.len() == 7,
-            "table has 6 or 7 slots, got {}",
+            (5..=7).contains(&slots.len()),
+            "table has 5, 6 or 7 slots, got {}",
             slots.len()
         );
 
