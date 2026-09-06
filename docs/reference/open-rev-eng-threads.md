@@ -81,6 +81,12 @@ cheapest place to look for a claim that is still wrong.
   reader enumeration (125 sites, six images, closed). `_DAT_8007BD84` is an
   effect handle, not a mode word; `FUN_8003EAE4`'s driver is `FUN_8003D764`;
   and the item table carries 250 names, not "far below 128".
+- **The port had been dropping every upper-case `0x3F` destination** - the
+  kingdom maps, the dream shrine, the ending chain - because the clean-label
+  gate was lower-case-only while retail just `strcat`s the operand into an
+  ISO path. Folding the case roughly doubles the chapter-1 closure and lets
+  four of the five "one-way" rooms leave in-engine
+  ([settled](re-settled-threads.md#field--locomotion)).
 - **The five "sealed" chapter-1 scenes were never sealed.** `uru`, `urudre1..3`
   and `jouine` all carry walk-on exits in their `.PCH` trigger sidecar; the
   clean MAN walk desynced in inline text before the `0x3F`, the tile sweep
@@ -356,8 +362,6 @@ process-matching helpers in
 
 | Thread | Status | What would close it |
 |---|---|---|
-| Can a scene TMD pack member be grown in place? | open | Enumerate what outside the pack holds a byte offset *into* it. Members `106`/`107`/`108` of PROT entry `0639` are the Delilas siblings' field NPC meshes; the pack's 112 members tile its declared `347476`-byte stream with zero internal slack, so a larger mesh needs the pack rebuilt rather than patched - which is how the Nivora field-form swap ships (members `106/107/108` re-emitted by `legaia_patcher::nivora_field`, disc oracle `nivora_field_real`); what keeps this thread open is only the enumeration itself. Placements name a member *index*, but the scene bundle's descriptor and the scene ANM records are unchecked. The same question for a MAN is answered in [`man-relocation.md`](../formats/man-relocation.md). |
-| Is any of an enemy signature cast's choreography data-driven? | open | Read the spawn sites' parameter blocks. The three Delilas cast modules reach the pool spawner `FUN_80050ED4` from hardcoded `jal` sites - 15 in PROT `0958`, 41 in `0959`, 24 in `0960` - each passing a module-resident record by absolute pointer, the shape `summon_overlay::parse` already walks. Nothing on that path takes an id, so a player art's eight-record effect script has no way to name one, and the fire / lift / camera of a reskinned signature move stay behind. Closing it means deciding whether a duplicated parameter block plus one reachable spawn site can be driven from the art path. |
 | What moves the evolved-Cort battle off flow `ctx[+0x06] = 0x0C`? | open (narrow) | The flow-`0x0A` arm skips the banner composer for monster-slot-0 id `0xB5` and parks `0x0C`, a value the ladder at `0x801D0C84` has no arm for; a pad-free run stays parked, yet the fight opens in play (`cort_evolved_battle_first_menu` sits at `0x1E`). Find the writer: a write-watch on `ctx+0x06` from `cort_evolved_pre_battle` with the pad driven. |
 | What is the byte at `actor[+0x22C] + 0x80` that the SFX-cue router folds into the category? | open (low priority) | `functions/battle.md` names it the attacker's element byte; its destination is now pinned as the descriptor's category column (the VAB-slot selector), and the documented monster element byte is record `+0x1D`, not this. Needs a read of the `+0x22C` sub-struct in `FUN_8004FE5C`'s callers. |
 | The 51 slot-B modules without an extracted image, and how a capture-class module's tick is entered | open | PROT 904, 906, 908..923, 925, 926, 935..956, 958..966 have no `static-overlays.toml` row; the `0x801F6734` / `0x801CF4EC` entry pair is a cheap identity test for each (row = extraction - 903). The `0x801CF4EC` cast-tick switch stops at PROT 0934, so the capture-class modules (`cast-module.md`) reach their tick some other way - read the `ctx+0x279` phase machine's caller. |

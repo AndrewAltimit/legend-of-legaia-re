@@ -378,6 +378,8 @@ species and at the disc's authored heap-cost maximum.
 | The arena backdrop's object-1 dust decal | resolved (trimmed by the SCUS battle loader unless `_DAT_8007B64B` is set) | `disassembly` | `FUN_800513F0` spawns two backdrop actors and, when `_DAT_8007B64B` is zero (`0x80051ABC`), decrements both part counts and shifts each list down from index 1 (`0x80051AD4..0x80051BAC`). One writer on the disc, `FUN_801D9E1C` at `0x801DA0AC`. That the arena leaves it clear is `inference` (agrees with the mist-free capture). |
 | `FUN_801F2410` / `FUN_801F2E10` - dome routines or shared? | resolved (neither is the dome's) | `disassembly` | `801F2410` is the cast **colour wash** - screen-wide `POLY_G4` onto `*(0x1F8003A0)` tinted `ctx[+0x27E..+0x280] * ctx[+0x27A] / 255`, called only from the cast dispatchers' epilogues (`0x801F2144`, `0x801F23F4`). `801F2E10` has no reference in SCUS or any overlay; its 11 callers are all in slot-B module PROT 0909. |
 | Is `cutscene_str` (PROT 0970)'s 123 KB code gap un-dumped code? | resolved (a zero-filled reservation) | `disassembly` | `0x801D1878..0x801F1A00` is 32,793 zero words of 32,866 - a `.bss`-shaped hole. The image's real un-dumped code is about 1.3 KB. Recorded in [`disc-coverage.md`](../tooling/disc-coverage.md). |
+| Can a scene TMD pack member be grown in place? | resolved (nothing outside the pack holds a byte offset into it - rebuild is the only cost) | `disassembly` | [details ↓](#growing-a-scene-tmd-pack-member) |
+| Is any of an enemy signature cast's choreography data-driven? | resolved (partially - the spawn layer is data in the art path's own record format; the lift and camera are module code) | `disassembly` | [details ↓](#what-of-a-signature-cast-is-data) |
 
 ### Attack-band damage pacing - the hit-event model
 
@@ -1905,6 +1907,34 @@ record parks at the next cross-context op**, in the prologue busy gate
 failure. No backward resume PC: the operand `+3` / `+5` halfwords are
 `FUN_801D25EC` tween arguments. See [cutscene.md](../subsystems/cutscene.md).
 
+### Growing a scene TMD pack member
+
+*Status:* resolved - rebuild is the only cost. Grade `disassembly`
+
+Every external reference is an index: the mesh pool is the descriptor walk's
+registration order (`FUN_8001F05C` → `FUN_80026B4C(buf + offsets[i] * 4)`),
+placements name a pool slot, scene ANM records name a record number, and the
+bundle's descriptors hold offsets into the bundle entry, not the separately
+streamed pack. Disc-wide, each of PROT 0639's members `106 / 107 / 108` word
+offsets occurs exactly once - in the pack's own table - the byte-offset form
+zero times, and the declared length `347476` zero times outside its chunk
+header. See
+[`man-relocation.md`](../formats/man-relocation.md#the-same-question-for-an-assetpack-growing-a-mesh-member).
+
+### What of a signature cast is data
+
+*Status:* resolved (partially) - grade `disassembly`
+
+At all 15 / 41 / 24 `jal FUN_80050ED4` sites in PROT 0958 / 0959 / 0960 the
+record pointer `a2` is a module-resident constant and `a3` a scale literal; the
+records are the summon part-record shape the art path's `0x801F6324` prototypes
+use. Blocked by residency and capacity: the prototype table's 61 entries are all
+populated, the module blocks sit above the slot-B base while the prototypes sit
+below it, and the battle overlay has 247 bytes of zero slack. The lift is `sb`
+into `+0x1DA` (16 / 6 / 8 sites) from the modules' phase arms, which no record
+can express. See
+[`cast-module.md`](../subsystems/cast-module.md#what-of-the-choreography-is-data-and-what-is-code).
+
 ## Field / locomotion
 
 | Thread | Status | Evidence | Answer |
@@ -1940,8 +1970,9 @@ failure. No backward resume PC: the operand `+3` / `+5` halfwords are
 | Mid-visit NPC re-arrangement beats (dolk2 market crowd; garmel pre-Zeto staging) | resolved | `disassembly` + `capture` | dolk2: the swap is `P2[11]`, spawned by the `.MAP` fallback walk-on-trigger rows (C1=[`0x27C`], C2=[`0x142`]) - eight `CC <crowd> E3 <day>` seats (op `4C` nE sub-3, `0x801E3108`) put P1[53..60] on the day cohort's tiles and `A3` parks the day cohort at `(127,127)`. garmel: the Zeto stager `P2[12]` materializes P1[3]/P1[4] beside the player (n3 sub-7 player-coord copy `0x801E0FB0`); post-battle re-entries run `P1[0]`'s flag-consume arms. See [script-vm.md](../subsystems/script-vm.md#mid-visit-npc-re-arrangement-beats-dolk2-market-swap--garmel-boss-staging); pinned by `engine-core/tests/man_midvisit_rearrangement_disc.rs`. |
 | Region story-flag gate families (record-header C1/C2 gates) | resolved as structure (play-order residual on the open page) | `capture` | [details ↓](#region-story-flag-gate-families) |
 | Extraction-0874 §2 (`player.lzs`) F-variant pixels | resolved - installing event named | `capture` + `disassembly` | [details ↓](#extraction-0874-2-playerlzs-f-variant-pixels---a-one-shot-opening-face-frame-stamp-not-a-menu-writer) |
-| Which chapter-1 scenes the engine can load, script, walk and leave | resolved as a per-scene verdict; the five "sealed" scenes have `.PCH`-carried exits | `disassembly` + `capture` | The chapter-1 closure is 27 scenes with one kingdom boundary (`jiji` → `map02`), and all 27 load, enter and settle. Five stop at the exit rung, and not only in the decoder: no walk-on tile and no executed record leaves the Uru Mais chain or `jouine`, so in the port they are one-way. How retail leaves them is open. [details ↓](#chapter-1-scene-frontier) |
+| Which chapter-1 scenes the engine can load, script, walk and leave | resolved as a per-scene verdict; four of the five late "one-way" rooms now leave in-engine | `disassembly` + `capture` | [details ↓](#chapter-1-scene-frontier) |
 | How a player leaves the Uru Mais chain (`uru`, `urudre1..3`) and `jouine` | resolved (all five have walk-on exits carried by the scene's `.PCH` trigger sidecar) | `disassembly` + `capture` | [details ↓](#the-uru-mais-chain-and-jouine-exits) |
+| Why did the port drop roughly half the disc's `0x3F` destinations? | resolved (the clean-label gate was lower-case-only; retail never compares the operand against a name table) | `disassembly` | [details ↓](#the-upper-case-destination-fold) |
 | What consumes the scratchpad window `0x1F8003E8..EB`? | resolved (the renderer's visible tile window; the `0x801F2778..84` mirrors are write-only) | `disassembly` | Four signed bytes `[nearX, nearZ, farX, farZ]`, tile offsets from the camera tile, written by the camera-zone loader `FUN_801DBC20` and field-VM op `0x46`. Read by the render library's cell emitters (`FUN_801F7088` at `0x801F7434..0x801F746C` and siblings), the camera scroll clamp `FUN_801DAA50`, the ambient emitter `FUN_801D6058` and dev-menu rows `0x12..0x15`. Invisible to the word scan: every access is `lui 0x1F80; ori 0x314; lb 0xD4(rX)`. Details: [`encounter.md`](../formats/encounter.md#the-scratchpad-window-0x1f8003e8eb). |
 | What is the field run-button mask `0x800846DC`? | resolved (`0x48` = Cross \| R1, seeded once by the new-game data init; not configurable) | `disassembly` | The last of four button-mask words at `0x80084140 + 0x590..0x59C` (`0x44`, `0x21`, `0x10`, `0x48`), stored by `FUN_80034A6C` (`0x80034AA0..0x80034AB8`) and read by the field mover at `0x801D0364` against the held mask `_DAT_8007B850`. No other writer in SCUS or any overlay; it sits inside the saved block. The engine latches run off Square - a divergence disclosed in [`field-locomotion.md`](../subsystems/field-locomotion.md). |
 | Who latches the clip-end bit for a conversation's cross-context clip pokes | resolved (port residual named) | `disassembly` + `capture` | The **poked actor's own anim tick**, on the poked actor's own `+0x62`. `FUN_8003C83C` short-circuits target `0xF8` to the live player object out of `_DAT_8007C364` before its actor-list walk, so an NPC record's `A2 F8 <clip>` / `AC F8 08` / `AD F8 08` reads and writes the *player's* clip words. [details ↓](#clip-end-latch-for-cross-context-clip-pokes) |
@@ -2037,6 +2068,21 @@ One decoded oddity stands unexplained: `urudre2` returns to `map01` (Drake)
 while `uru` itself exits to `MAP03` (Karisto). Layout and the three
 instrument artifacts that produced the "sealed" reading:
 [`world-map.md`](../subsystems/world-map.md#uru-mais-and-jouine-exits-carried-by-the-pch-sidecar).
+
+### The upper-case destination fold
+
+*Status:* resolved - grade `disassembly`
+
+`FUN_8001FD44` `strcpy`s the operand into `0x80084548` and the field asset
+loader `FUN_8001F7C0` (`0x8001F7E8..0x8001F88C`) `strcat`s it into
+`DATA\FIELD\<name>.MAP` for `FUN_8003E6BC` → `FUN_800608F0`, the ISO file open -
+ISO 9660 identifiers are upper case, so case cannot matter. 40+ distinct
+upper-case destination names appear across the 99 scene MANs (`MAP01/02/03`,
+`KOR*`, `DREAM`, `RETOCK*`, `ROPEWAY`, `NILBOA`, the `ED*` ending chain), every
+one a CDNAME label, and the disc carries **no** mixed-case `0x3F` name run.
+`legaia_asset::field_disasm::clean_scene_name` now accepts a uniformly-cased
+3..=12-byte alphanumeric label and folds it; the chapter-1 closure roughly
+doubles (68 scenes, 20 kingdom-boundary edges).
 
 ### Clip-end latch for cross-context clip pokes
 

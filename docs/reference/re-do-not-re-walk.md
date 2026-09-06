@@ -1194,8 +1194,11 @@ those five scenes are sealed and the port may treat them as one-way.
 Why it looked right: three independent instruments agreed, and each one is
 right about what it measured.
 
-What is true: the `0x3F` ops sit `0x124C` / `0x1A8F` / `0x2034` bytes into
-record bodies, past inline `0x1F` text the fall-through walk desyncs on; the
+What is true: `uru`'s `0x3F` is in plain sight - `(2, "MAP03")`, upper-case,
+which the port's lower-case-only label gate rejected; the others sit
+`0x2DC` (`urudre1`) / `0x124C` (`urudre2`) / `0x2034` (`urudre3`) bytes into
+record bodies past inline `0x1F` text the fall-through walk desyncs on, and
+`jouine`'s FMV op at `0x1A8F`; the
 tile sweep stops at 48 deduped gate-1 tiles while `uru` carries 118 with its
 exit band at positions 63..66; and the 24-tick post-step budget cannot reach a
 tail behind 300+ frames of explicit waits. `jouine` has no `0x3F` because its
