@@ -408,6 +408,18 @@ fingerprint_sha256 = "21f688219359f5ab2e11263ab3e3784a287200e726f3a44cd05cc0e7ec
 notes = "Rare-Seru FLUTE summon stager for Lippian (spell id 0x96 -> loader-B 0x1D -> extraction 924; capture-pinned mid-cast, scenario flute_lippian_midcast, probe autorun_flute_cast.lua, with the slot-B head byte-identical to this entry). ASCII title at file offset 0 is 'Ultimate Rave', the attack's FAILED-kill banner -- the landed 1/128 kill shows 'Ultimate Death' (the summon.dat slot-65 actor name); the same title-is-the-attack-name pattern as 0907 'Hell's Music' and 0927 'Dark Eclipse'. Then code with FUN_80021B04 part-spawn calls, the summon-stager shape (the 'dance-song' reading is refuted with 0907's). The earlier 'which action id loads it is OPEN / likeliest another Evil-Seru-Magic creature's stager' reading is SUPERSEDED: SummonFlute items (item-effect classes 126/127) enqueue the spell id directly, so the flutes ride the same stager mechanism as Seru magic and extend the player run unbroken (0x95->923, 0x96->924, 0x97->925, unused 0x98->926, 0x99->927). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (98%)."
 
 [[overlays]]
+prot_index = 926
+label = "summon_stager_x98"
+base_va = 0x801F69D8
+form = "raw"
+content_bytes = 0x800
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "cross_ref"
+fingerprint_sha256 = "8b209ebcee0f8b21d96b024e2a0986022ae8fcaff22b37504813c9a67febe1a7"
+notes = "Slot-B module on action id 0x98 - the one id in 0x81..0xA0 with no spell-table record and no 0x801CF4EC tick arm (its slot points at the dispatcher epilogue). One 2048-byte sector: the move-VM stager at 0x801F69D8 is a bare `jr ra; nop`, immediately followed by a pointer table whose first two words are 0x801F6D4C / 0x801F6DF8. No anchor_va - the entry VA is a stub, not a prologue, so check (3) does not apply and the base rests on the fingerprint plus 1/1 evidential pointer resolution (2 of the 3 scanned pairs target 0x801F7D3C / 0x801F7F2C, past this sector's end and inside the shared slot-B buffer)."
+
+[[overlays]]
 prot_index = 927
 label = "summon_juggernaut"
 base_va = 0x801F69D8
@@ -526,22 +538,19 @@ notes = "Slot-B capture-class cast module for Death Game (spell 0x76) + Thunder 
 #     summon block, `0935..0966` from its capture-class sub-id index
 #     (docs/formats/spell-table.md).
 #
-#     Three entries in the band are deliberately NOT mapped here, because the
-#     committed slot-B pointer-resolution check in
-#     `crates/asset/tests/static_overlay_extract.rs` rejects them while the
-#     entry tables place them exactly like their neighbours:
-#       0915 (spell 0x8D Mushura)   6/13 - the seven misses are 0x801F6978 /
-#                                   0x801F6980, i.e. BELOW the slot-B base,
-#                                   inside PROT 0898's own data.
-#       0935 (capture sub-id 0x00)  11/19 - the eight misses are
-#                                   0x801FA320..0x801FA3B8, above the image end:
-#                                   the post-image `.bss` working storage in the
-#                                   slot-B buffer the check's own comment names.
-#       0926 (spell 0x98, unused)   1/3 - a 1-sector stub whose stager row is a
-#                                   bare `jr ra`, so it carries almost no
-#                                   self-pointers to measure.
-#     None of the three is evidence against the base; the check is one-sided
-#     about references that leave the image. ---
+#     Three entries - 0915, 0926, 0935 - were withheld from this map for a
+#     while, and the reason was a defect in the check rather than a doubt about
+#     them. The slot-B pointer-resolution cross-check counted EVERY reference
+#     that left the image against the base, and a cast module legitimately
+#     reaches two places outside its own bytes: its host overlay's globals
+#     (below the slot-B base, inside PROT 0898 - 0915's seven misses at
+#     0x801F6978 / 0x801F6980) and the post-image working storage in the shared
+#     slot-B buffer (0935's eight at 0x801FA320..0x801FA3B8, 0926's two at
+#     0x801F7D3C / 0x801F7F2C). Excluding those two regions from the
+#     measurement leaves 6/6, 1/1 and 11/11, and let the acceptance floor rise
+#     from 0.60 to 0.90. Their entry VAs were never in doubt - each row of PROT
+#     0898's 0x801F6734 table lands on a function head recovered from the
+#     module's own bytes. ---
 
 [[overlays]]
 prot_index = 904
@@ -661,6 +670,19 @@ fingerprint_sha256 = "a415a57c879153f938ac3d661d2849fefd0f8cfaa28e2bcac3f5d54414
 notes = "Slot-B cast module on the Gola Gola arithmetic slot (spell id 0x8C; extraction = 903 + (id - 0x81)). Cast tick 0x801F69F0, from PROT 0898's 0x801CF4EC arm at 0x801F1FEC; move-VM stager 0x801F7A80, from the 0x801F6734 row 11. 2 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (9/11) and by the entry table VAs landing on recovered function heads."
 
 [[overlays]]
+prot_index = 915
+label = "summon_mushura"
+base_va = 0x801F69D8
+form = "raw"
+content_bytes = 0x1800
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801F69D8
+fingerprint_sha256 = "814fb9af268c5c2c13f0a85cd812762674f5347fca9e0061092410d1e4cf82d8"
+notes = "Slot-B cast module on the Mushura arithmetic slot (spell id 0x8D; extraction = 903 + (id - 0x81)). Cast tick 0x801F69D8, from PROT 0898's 0x801CF4EC arm; move-VM stager 0x801F7F34, from the 0x801F6734 row 12. 2 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (6/6 evidential; 7 of the 13 scanned pairs target 0x801F6978 / 0x801F6980, inside PROT 0898's own image, and are the host overlay's globals rather than self-references) and by the entry table VAs landing on recovered function heads."
+
+[[overlays]]
 prot_index = 916
 label = "summon_aluru"
 base_va = 0x801F69D8
@@ -776,6 +798,19 @@ base_source = "cross_ref"
 anchor_va = 0x801F6A00
 fingerprint_sha256 = "7a97d9847003a1dd38ff4258d40b17b96147e09e6acd63377daf52b4d7f138d4"
 notes = "Slot-B cast module on the Spikefish arithmetic slot (spell id 0x97; extraction = 903 + (id - 0x81)). Cast tick 0x801F6A00, from PROT 0898's 0x801CF4EC arm at 0x801F209C; move-VM stager 0x801F7AE8, from the 0x801F6734 row 22. 2 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (15/15) and by the entry table VAs landing on recovered function heads."
+
+[[overlays]]
+prot_index = 935
+label = "cast_earthquake"
+base_va = 0x801F69D8
+form = "raw"
+content_bytes = 0x2000
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801F69D8
+fingerprint_sha256 = "b4f14ef9326ef0b6ad130c74a03f98aaec756ecef88e79defa4c46f32d877161"
+notes = "Capture-class cast module, spell-table sub-id 0x00 (extraction = 935 + sub_id): 0x4A Earthquake. Cast tick 0x801F69D8 from PROT 0898's 0x801CF56C arm 0; move-VM stager 0x801F7FF0, from the 0x801F6734 row 32. 2 functions recovered from the bytes (prologue / frame-matched `jr ra` partition). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (11/11 evidential; 8 of the 19 scanned pairs target 0x801FA320..0x801FA3B8, above this image's end and inside the shared slot-B buffer's post-image working storage) and by the entry table VAs landing on recovered function heads."
 
 [[overlays]]
 prot_index = 936

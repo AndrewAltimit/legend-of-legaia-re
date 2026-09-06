@@ -180,11 +180,27 @@ and `*DAT_80010390`; see [`prot.md`](../formats/prot.md#overlay-loaders-parallel
   byte-matches RAM, pinning the base) or a cross-referenced RE result
   (`base_source = cross_ref`). The base is cross-checked the **slot-B way**: a
   high fraction of the overlay's internal absolute self-pointers (`lui
-  0x801f/0x8020 ; addiu`) must resolve in-file at the committed base
-  (`static_overlay::pointer_resolution`; 80–100 % for the mapped rows - the
-  reproducibility test asserts ≥ 70 %). This is precisely where static
-  extraction earns its keep: the *disc* entry disassembles cleanly at the link
-  base even though the *runtime* buffer is unusable.
+  0x801f/0x8020 ; addiu`) must resolve in-file at the committed base. This is
+  precisely where static extraction earns its keep: the *disc* entry
+  disassembles cleanly at the link base even though the *runtime* buffer is
+  unusable.
+
+  **A reference that leaves the image is not automatically evidence against
+  the base.** Counting every one of them against it - which the check did -
+  rejects three modules whose entry VAs the PROT 0898 tables place exactly like
+  their neighbours', and rejects them for doing two things a cast module is
+  supposed to do. `0x801F6978` / `0x801F6980` (PROT 0915, seven pairs) are
+  *below* the slot-B base, inside PROT 0898's own image: a module reading its
+  host overlay's globals. `0x801FA320..0x801FA3B8` (PROT 0935, eight pairs) and
+  `0x801F7D3C` / `0x801F7F2C` (PROT 0926, two) are *above* the image's end but
+  inside the shared slot-B buffer: the post-image working storage a PSX overlay
+  reaches past its loaded bytes, `.bss`-shaped and by definition absent from the
+  file. The reproducibility test excludes both regions from the measurement -
+  neither credited nor charged - keeping the ratio a statement about
+  self-references. Those three read 6/6, 1/1 and 11/11 with the exclusion, are
+  mapped, and the acceptance floor rose from 0.60 to 0.90 because the noise the
+  old floor accommodated is gone. The bounds come from the map itself: a
+  committed slot-A row's span, and the longest committed slot-B image.
 
   **`pointer_resolution` is one-sided and needs the string-anchor
   counterpart.** The metric scans only pointers whose `lui` half matches the
