@@ -137,6 +137,13 @@
   <p><strong>Budget = the MAN's on-disc footprint.</strong> Across the retail USA disc the scene-bundle entries are sector-aligned with zero padding and each compressed MAN already fills its footprint, so in-place growth fits only when the rewritten MAN recompresses no larger than the original - a small fraction of scenes. The rest are sector-crossers whose deficit is under one 2048-byte sector; supplying it is a disc-level relayout, which is what the PAL discs did at mastering (<a href="disc.html#full-iso-relayout">disc relayout</a>, <a href="../tooling/translation.html">translation tooling</a>).</p>
 </section>
 
+<section class="doc-section" id="pack-growth">
+  <h2>The same question for a mesh pack</h2>
+  <p>A scene's TMD pack poses the relocation question in its simplest form, and the answer runs the other way: <strong>nothing outside the pack holds a byte offset into it</strong>, so growing a member costs a rebuild of the pack entry and nothing else. The worked case is the Nivora Ravine duel scene's NPC mesh pack, whose 112 members tile its declared stream exactly - the first begins where the header ends and the last ends at the declared length, with no gap between any pair.</p>
+  <p>Every reference from outside is an <em>index</em>. The runtime mesh pool is simply the descriptor walk's registration order, one slot per member; a placement names a pool slot; a scene animation record names a record number; and the scene bundle's own descriptors carry offsets into the bundle, which is a different entry entirely. A byte scan across every entry on the disc agrees and sharpens it: each of the three Delilas members' offsets occurs exactly once, in the pack's own table, and the pack's declared length occurs nowhere outside the header that encodes it.</p>
+  <p>So the cost of growing a member is: rewrite the offset table from that member onward, rewrite the declared length, and keep the result inside the entry's sector footprint. The same pack carried <em>inside</em> a bundle adds two words in the carrying entry - that descriptor's decompressed size and the header's size sum - and the requirement that the recompressed stream still fits its span. The budget is the one the MAN faces above: retail's scene entries are sector-aligned with no padding, so a member that grows is paid for by another member shrinking.</p>
+</section>
+
 <section class="doc-section" id="how-we-know">
   <h2>How we know</h2>
   <table>
