@@ -2759,8 +2759,40 @@ re-read at `0x801EEB60` then skips the cue. While the word is
 non-zero, `bne v0,zero,0x801EEB70` at `0x801EEAC8` jumps over the grunt into the `0x10C` cue,
 gated on the target clip test and, inside the funnel, on the drive being idle
 (`FUN_8003DE7C(1) == 0`, `0x8004FE9C`). The word's only dumped stores are zeros (the
-battle-start sweep `FUN_80055B6C`, the round reset `FUN_8004CE2C`), so an ordinary party swing
-is heard as the grunt; the `XA27` channel-4 sting is the flagged case.
+battle-start sweep `FUN_80055B6C`, the round reset `FUN_8004CE2C`), so the grunt is the
+unflagged leg and the `XA27` channel-4 sting is the flagged case.
+
+**Which arm an ordinary swing takes, measured.** The per-strike equality above is
+not a formality, and a capture says which way it falls.
+`scripts/pcsx-redux/autorun_w4d_melee_grunt_gate.lua` breakpoints every `s7`
+definition, the gate, both emission sites and the `+0x1DA` commit. Across
+`party_basic_attack_vs_gobu_gobu` and `battle_gaza2_prompt`, **three** party-seat
+visits to `0x801EEA88` were caught and every one skipped at the `+0x1F3` compare:
+`s7` read `0x04` / `0x02` / `0x03` against an `s4` actor whose `+0x1F3` read `0x06`,
+and the live reaching definition was `0x801EDE5C` / `0x801EDE78` (`+0x1EF` /
+`+0x1F0`) or `0x801EE3B4` (`+0x1F1`) - never `0x801EC884`, the one definition that
+loads `+0x1F3`. Neither `FUN_8003D53C` nor `FUN_8004FE5C` was reached in either
+fight.
+
+That makes the byte family concrete: `+0x1EF`, `+0x1F0`, `+0x1F1` and `+0x1F3` are
+four reaction-pose ids on the **defender**, and this routine commits one of them to
+the defender's `+0x1DA`. The `+0x1EF` / `+0x1F0` pair is picked by the mod-10 test at
+`0x801EDE40` over the queue byte the per-clip hit index `+0x1F4` selects; the
+`+0x1F3` load at `0x801EC884` sits behind `sltu s0,s1` at `0x801EC878`, with the
+`+0x16E & 0x400` guard-disable bit forcing `s0 = s1` first. Since the gate compares
+the committed pose against `+0x1F3`, the grunt goes out exactly when a strike
+commits the `+0x1F3` reaction, and an ordinary directional swing that commits
+`+0x1EF` / `+0x1F0` / `+0x1F1` is silent. Three swings is enough to retire "every
+ordinary swing grunts"; it does not pin the `s0` / `s1` threshold that opens the
+`+0x1F3` arm.
+
+**The third gate is not a character level.** `slti v0,v0,0x2` at `0x801EEAB8` reads
+`_DAT_8007BC20`, which the executable itself prints as the **`xa_flag`** debug
+counter - `FUN_80016B6C` loads it at `0x80016EB8` and passes it straight to the
+debug printf at `0x80016EC0` whose format string is at `0x80010238` - and which
+`FUN_8004DA00` zeroes on five arms. It is XA-drive state, so the gate reads "don't
+open a voice clip once the streamer is past level 1", not "mute at level 2". The
+capture read it as `2` in one fight and `0` in the other.
 
 The port carries both halves now. `World::fire_melee_impact_cue` selects on
 `MonsterAiState::flag_bd84` (the port's mirror of the word - the damage finisher's

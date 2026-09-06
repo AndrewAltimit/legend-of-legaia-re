@@ -489,11 +489,19 @@ it a second time at `0x80046D34` as `gp+0x333`.)
 So the "candidate: a phase-gated effect draw" guess is **falsified**. There is no
 effect path for object 1 at all. It is ordinary backdrop geometry that the
 loader trims by default, and it draws only for an encounter whose record sets
-bit 5 - a per-battle background option, not a dome feature. That the arena's
-contest leaves the byte clear (it enters battle through the arena's own
-`BattleInit`, not the field handoff, so nothing writes it) is **Inferred**; it
-agrees with the mist-free capture, and a live read of `0x8007B64B` during a
-contest would settle it.
+bit 5 - a per-battle background option, not a dome feature.
+
+**The arena really does leave the byte clear** - measured, not inferred.
+`scripts/pcsx-redux/autorun_w4d_dome_decal_flag.lua` drives the dome contest
+(`koin1`) from its load-transition state through the mode chain
+`0x03 -> 0x18 -> 0x19 -> 0x14 -> 0x15` and breakpoints the consumer. The battle
+scene loader `FUN_800513F0` is entered once, from `ra = 0x80046F7C`, with
+`_DAT_8007B64B` reading `0x00`; at the test `0x80051ACC` the loaded byte is `0x00`,
+so the loader takes the fall-through arm and **trims object index 1** from both
+backdrop actors. A width-1 write watch on the byte logs **zero** writes across the
+whole capture - the field handoff `FUN_801D9E1C` never runs on the arena's path, so
+nothing sets bit 5 and the dust decal is not drawn. The mist-free frame capture and
+the site panel's omission of the decal both agree with the mechanism.
 
 Site consumer: the minigames page's dome panel draws the shell + the retail
 ground grid through `legaia_web_viewer` (`muscle_arena_*` / `muscle_vram`),
@@ -1309,9 +1317,9 @@ to the emitter it names).
   whole backdrop TMD to two spawned actors and then removes object index 1 from
   both part lists unless the byte `_DAT_8007B64B` is set - see
   [Object 1 is trimmed by the loader](#object-1-is-trimmed-by-the-loader-_dat_8007b64b).
-  Its one writer is the field battle handoff `FUN_801D9E1C`; what leaves it
-  clear for a dome contest is Inferred, and a live read during a contest would
-  close it.
+  Its one writer is the field battle handoff `FUN_801D9E1C`, and a live capture of
+  a dome contest closes the last inferred half: the byte reads `0x00` at the
+  loader's test and takes zero writes all run, so the trim arm runs.
 - The per-step script table `&PTR_DAT_801f4d34` (battle-overlay rodata at file offset `0x2651c`) is fully decoded: the record shape is `[u8 count][u8 anim_sel][u8 panel_id/bind_count]` + `count`×`(elem_id, mode)` (see [Round resolution](#round-resolution)), and the individual sub-draw `elem_id`s are labelled by the `FUN_801d8de8` census in [HUD elements](#hud-elements-fun_801d8de8) (Spirit / move-name panels, the four hand-card portraits, the HP-bar values, and the victory reward banner).
 - ~~Which arm of `FUN_801D0CD4` / `FUN_801D0068` decides that a leg was *survived*~~ **resolved**: neither - it is the single byte test `DAT_8007BD60 & 0x80` at `0x801CEDD8`, cleared by the battle's own `0x5A` party-wipe scan and re-raised by the shared minigame-exit routine. `continuing` (`DAT_801D1ADC`) is therefore derived, not prompted: its one raising writer sits behind *course exhausted **and** survived*. See [Which arm decides a leg was survived](#which-arm-decides-a-leg-was-survived).
 - ~~The retail *dome* leg-end condition~~ **resolved**: a knockout, and nothing else. The arena hands the round to an ordinary battle (`FUN_801D1510` sets game mode `0x14`) and the only writers of the battle-end signal are the `0x5A` KO scans; the turn counter never reaches them. See [What ends a leg](#what-ends-a-leg-a-knockout-and-nothing-else).

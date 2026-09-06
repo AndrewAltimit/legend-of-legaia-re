@@ -3576,10 +3576,11 @@ monster-slot 0's id (`0x8007BD0C`) against `0xB5` - evolved Cort - and on a
 match skips the composer entirely, arming the same `0x5A` timer but setting
 `ctx[+0x06] = 0x0C` instead of `0x0B`. `0x0C` is a value the
 [state chain](#the-state-chain)'s `beq` ladder has no arm for, so the menu SM
-idles on it; the fight still opens, so a writer outside that ladder moves the
-byte on. Driving `cort_evolved_pre_battle` forward reproduces it exactly: flow
-`0x0A` at the intro edge, then flow `0x0C` with the timer at 90 and the
-text-actor list **empty**, where the queen-bee run had three elements.
+idles on it. Driving `cort_evolved_pre_battle` forward reproduces it exactly:
+flow `0x0A` at the intro edge, then flow `0x0C` with the timer at 90 and the
+text-actor list **empty**, where the queen-bee run had three elements. What
+carries the fight from there is not the menu SM at all -
+[flow `0x0C` is the boss stage module's baton](#flow-0x0c-is-the-boss-stage-modules-baton).
 
 **Capture.** `scripts/pcsx-redux/autorun_battle_intro_banner.lua` breakpoints
 `FUN_8003541C` and `FUN_800355F0` and walks the live text-actor list
@@ -4660,6 +4661,76 @@ is the only way into it, and the action SM's round end (`0x801E67E8`) writes
 `ctx[+0x06] = 0x14` and bumps the round counter `ctx[+0x28A]`. So every round
 opens with `Begin` / `Run`, and each party member then picks from the ring in
 turn.
+
+### Flow `0x0C` is the boss stage module's baton
+
+The evolved-Cort fight is the one battle whose intro leaves `ctx[+0x06]` on a value
+the ladder above has no arm for, and the byte that unsticks it is written from
+**outside the battle overlay**. `scripts/pcsx-redux/autorun_w4d_cort_flow_writer.lua`
+watches the byte from the pre-battle field state; the sequence is:
+
+| vsync | Event |
+|---|---|
+| 291 | game mode reaches `0x15`; `_DAT_8007BD24` = `0x800EB654` |
+| 444 | `0x80051C94` (battle init) writes `0x00` |
+| 507 | `0x801D0DDC` writes `0x0A` |
+| 510 | `0x801D0DE4` writes `0x0B`, then `0x801D0E0C` writes `0x0C` in the same frame |
+| 631 | loader-B tracker `0x8007BC4C` goes `0x05` -> `0x49`; slot B's head matches the in-fight state |
+
+Both `0x0A`-arm stores run on the same pass - the arm writes `0x0B` unconditionally
+and the `0xB5` branch **overwrites** it with `0x0C`, it does not choose between them.
+
+**No input moves it.** The probe sits pad-free through the park and then holds each
+of the ten pad buttons for 60 vsyncs, twice around; the byte takes no further write
+in ~1700 vsyncs of that. The gate is a clock, not a press.
+
+**The module that holds the baton is PROT 0968**, the stage overlay for this fight
+(loader-B id `0x49`; extraction index = id + `0x37F`), and the probe catches it
+paging into slot B *during* the park, after the flow byte is already `0x0C`. It is
+ticking the whole time: its entry `0x801F69F4` re-seeds `ctx[+0x6D6] = 0x100` every
+tick, which is exactly the constant `256` the probe reads off the intro timer while
+parked. Its head is a **7-word jump table at `0x801F69D8` indexed by `ctx[+0x289]`**
+(`lbu a0,0x289(v1)`, `sltiu v1,a0,7`, `jr`), and that phase byte is observed walking
+`0 -> 1 -> 2` while the flow byte holds `0x0C`. Phase 0's arm advances only once the
+camera word `0x800840BC` passes `0xC00` - a dt-driven zoom-in - and then fires cue
+`0x20A` through `FUN_8004FCC8`; a later arm spawns its own centred banner through the
+SCUS text-actor spawner `FUN_8003541C` at `0x801F7098`, which is *why* the `0x0A` arm
+skips the standard composer for this formation. The phase byte is co-driven: SCUS's
+battle-intro sequencer `FUN_80056208` bumps it at `0x800562E8` once `ctx[+0x06]`
+reaches the value that arm expects.
+
+**The hand-back is a single store.** A scan of the whole 0968 image for
+`sb ?,0x6(?)` finds exactly one, at `0x801F713C`, in the last phase arm
+(`0x801F70D8`):
+
+```
+801F70E4  lbu  v1,0x7f(s3)        ; s3 = 0x1F800314 -> the scratchpad frame-step byte
+801F70E8  lw   v0,0x73f8(a0)      ; a0 = 0x801F0000 -> module-local countdown 0x801F73F8
+801F70F0  subu v0,v0,v1           ; countdown -= dt
+801F70F4  bgtz v0,0x801F71D4      ; still positive -> keep waiting
+801F7120  sb   zero,-0x49b6(v0)   ; stage id 0x8007B64A = 0
+801F7128  sh   zero,0x6d6(v1)     ; intro timer = 0
+801F712C  sb   zero,0x289(v1)     ; phase = 0
+801F7138  addiu v0,zero,0xb
+801F713C  sb   v0,0x6(v1)         ; ctx[+0x06] = 0x0B
+```
+
+The same block clears the stage id `0x8007B64A` (the `2` that paged this module in,
+`966 + id` in extraction space), which is the module signing off. So it hands the
+flow back as `0x0B` - a value the ladder *does* have an arm for - with the intro
+timer already zeroed, and `0x0B` expires on its next tick into
+`0x14`, which sets `0x1E` unconditionally. That is exactly where the in-fight capture
+`cort_evolved_battle_first_menu` sits. Flow `0x0C` is therefore not a dead state: it
+is the "a stage module owns this frame" parking value, and what it waits on is that
+module's own multi-phase intro, ending on the dt countdown at `0x801F73F8`.
+
+Two cautions for anyone re-running this. Exec breakpoints on slot-B VAs are **not**
+attributable on their own - the same addresses are live code in whichever module is
+resident, so the arm hit counts in the probe's summary include hits taken while the
+0900 co-resident held the slot; the load-bearing evidence here is the data side (the
+phase byte, the timer constant, the tracker) plus the image scan. And the intro is
+long: the park outlasts a 1700-vsync capture window, so a run that ends early reads
+as "stuck forever".
 
 ### Each surface is a D-pad map
 

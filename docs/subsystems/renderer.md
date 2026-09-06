@@ -226,10 +226,12 @@ the `DPCS`/`DPCT` depth cue. Kinds 8..11 are the only handlers with an `NCC*` li
 op, but `dirty_exec_hot` never catches them executing on any robustly-sampled scene -
 battle, summon, `map01`, and a cold-boot `town01` field (~46M interp hits, zero NCC;
 see "no light source on the field path" above) - so treat them as the ROM's
-light-*capable* handlers, not a live light path. (The presumed consumer is the
-world-map slot-4 landmark meshes, but `map01` renders through a *different* overlay
-table and never reaches these SCUS handlers, so that consumer is unconfirmed at
-runtime.)
+light-*capable* handlers, not a live light path. The presumed consumer used to be
+named as the world-map kingdom-bundle slot-4 landmark meshes; that reading is
+**dead twice over**. Slot 4 is the world-map scene's ANM animation bank, not a mesh
+library ([`world-map-overlay.md`](../formats/world-map-overlay.md)), and a direct
+breakpoint sweep over both kingdom overworlds finds no execution either - see
+[No handler in the lit set executes on a kingdom overworld](#no-handler-in-the-lit-set-executes-on-a-kingdom-overworld).
 **Topology is parity-based** (definitive from `AVSZ3` vs `AVSZ4`): even kinds are
 triangles, odd kinds are quads, so neither range is a uniform vertex count. Kind
 19 bank 3 (`0x80045BB4`) is a composite/tessellating body (emits both `POLY_G3`
@@ -245,6 +247,29 @@ Unlike the lit `8..11`, the fog-bank bodies **are** on the live path: runtime GT
 sampling of a summon / battle catches kinds 16 (bank 1, `0x80044C14`) and 18/19
 (bank 2, `0x800457C4` / `0x80045988`) executing. The depth-cued rasterizer is the
 hot render path; the `NCC`-lit one is not.
+
+### No handler in the lit set executes on a kingdom overworld
+
+The `dirty_exec_hot` histogram is a sampler, so it can only ever say "not seen".
+Exec breakpoints answer the same question exactly: they cannot miss an execution.
+`scripts/pcsx-redux/autorun_w4d_light_kind_hits.lua` arms one on each of
+`0x8004409C` / `0x8004423C` / `0x80044434` / `0x800445B0` and walks the pad, with a
+**control group** on the bank-0 fog handlers for kinds 12..19 plus kind 16 bank 1 so
+a zero cannot be a dead instrument.
+
+| Run | What it covers | Lit hits (8/9/10/11) | Control |
+|---|---|---|---|
+| `sol_to_karisto_worldmap` | warp in, then walk `map03` for 1111 field frames | 0 / 0 / 0 / 0 | 8 of 9 fired |
+| `octam_to_sebucus_worldmap` | `map02` for 347 frames, then the `ropeway` field scene | 0 / 0 / 0 / 0 | 8 of 9 fired |
+| `karisto_sol_pre_encounter` | rolls straight into a random encounter; ~1160 battle frames | 0 / 0 / 0 / 0 | kind 17 bank 0 fired |
+
+Every run's control group hits its cap inside the first 40 primitives, on the same
+scenes, so the breakpoints are live and the zeros are measurements. Two kingdoms, an
+ordinary field scene and a battle therefore agree with the histogram: **no retail
+path observed so far executes a handler carrying a GTE light op.** The four bodies
+are real render modes and stay in any sweep claiming to cover the dispatch family;
+what is now settled by capture rather than by sampling is that the world map is not
+their consumer.
 
 Provenance: the jump table's computed `jr` is not statically resolvable - a static
 recompilation of `SCUS_942.54` *does* emit the handler bodies (verified against the

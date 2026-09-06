@@ -795,6 +795,10 @@ the longer ones (`Probes` + `What it answered`) are written out as
 | [`autorun_battle_render_capture.lua`](../../scripts/pcsx-redux/autorun_battle_render_capture.lua) | Live-confirms the exact battle camera byte-exact. → [detail](#autorun_battle_render_capturelua) |
 | [`autorun_battle_cam_orbit.lua`](../../scripts/pcsx-redux/autorun_battle_cam_orbit.lua) | Per-vsync battle-camera yaw beside its two retail writers - the idle-orbit rate as a measurement. → [detail](#autorun_battle_cam_orbitlua) |
 | [`autorun_battle_intro_banner.lua`](../../scripts/pcsx-redux/autorun_battle_intro_banner.lua) | Attributes every battle text actor to the routine that made it: exec-bps on the spawner `FUN_8003541C` (logging `$ra`, id, class, seat, box, kind) and the teardown sweep `FUN_800355F0`, plus a per-vsync walk of the live list at `gp[+0x148] = 0x8007B460`. Settled the battle-**intro** enemy-name banner - `FUN_801D9D3C` spawns it with immediates, not from a placement record (see [`battle.md`](../subsystems/battle.md#the-battle-intro-enemy-name-banner)). Env `LEGAIA_FRAMES`; writes `w1d_spawns.csv` + `w1d_list.csv`. Interpreter mode; drive it from a pre-battle state - no catalogued state is parked on the intro. |
+| [`autorun_w4d_cort_flow_writer.lua`](../../scripts/pcsx-redux/autorun_w4d_cort_flow_writer.lua) | What moves the battle command-flow byte off the evolved-Cort park value `0x0C`. &rarr; [detail](#autorun_w4d_cort_flow_writerlua) |
+| [`autorun_w4d_dome_decal_flag.lua`](../../scripts/pcsx-redux/autorun_w4d_dome_decal_flag.lua) | Reads the backdrop object-1 trim flag `_DAT_8007B64B` live during a Muscle Dome contest. &rarr; [detail](#autorun_w4d_dome_decal_flaglua) |
+| [`autorun_w4d_melee_grunt_gate.lua`](../../scripts/pcsx-redux/autorun_w4d_melee_grunt_gate.lua) | Which `s7` definition an ordinary party swing carries into the melee grunt gate. &rarr; [detail](#autorun_w4d_melee_grunt_gatelua) |
+| [`autorun_w4d_light_kind_hits.lua`](../../scripts/pcsx-redux/autorun_w4d_light_kind_hits.lua) | Whether the renderer's four light-capable prim handlers (kinds 8..11) execute at all. &rarr; [detail](#autorun_w4d_light_kind_hitslua) |
 | [`autorun_audio_trace.lua`](../../scripts/pcsx-redux/autorun_audio_trace.lua) | Multi-frame retail-trace input for the audio-trace parity oracle. → [detail](#autorun_audio_tracelua) |
 | [`autorun_summon_model_base.lua`](../../scripts/pcsx-redux/autorun_summon_model_base.lua) | Targets `gp[0x754]`, the `model_sel` additive base read in the shared spawn stager `FUN_80021B04`. Exec-bp the stager during a summon (default `gimard_summon_start`) or an enemy special-attack frame; each hit logs `$gp`, the absolute `gp+0x754` global, the base value, and the part record's `model_sel`/`flags`. The one residual unblocking both summon and move-power effect-FX render (the records share this stager). |
 | [`autorun_battle_moveimage_trace.lua`](../../scripts/pcsx-redux/autorun_battle_moveimage_trace.lua) | Logs every libgpu `MoveImage` request (caller RA + source RECT + dest) via an exec-bp on `FUN_80058490`; `LEGAIA_TRACE_LOADIMAGE=1` adds the `LoadImage` wrapper (slow - it fires every frame on the overworld). Pinned move-VM op `0x40` as the animated-texture strip primitive (see [`move-vm.md`](../subsystems/move-vm.md)). |
@@ -845,6 +849,64 @@ the longer ones (`Probes` + `What it answered`) are written out as
 | [`autorun_battle_mesh_dump.lua`](../../scripts/pcsx-redux/autorun_battle_mesh_dump.lua) | Cold-boot -> **memory-card** load -> forced battle -> full 2 MiB RAM dump. The card (not a save state) is the point: a state replays a stale RAM image and masks what the loader actually built from the disc under test. See [the card-capture tier](#memory-card-capture-tier) below. |
 
 #### Runtime probe details
+
+##### `autorun_w4d_cort_flow_writer.lua`
+
+- **Probes:** width-1 Write watch on `ctx+0x06` (`ctx = *_DAT_8007BD24`), armed the
+  moment the pointer is live; per-vsync poll of flow / action state / intro timer
+  `+0x6D6` / stage phase `+0x289` / loader-B tracker + a 16-word FNV of slot B;
+  with `LEGAIA_STAGE=1`, exec-BPs on the PROT 0968 stage module's entry, its seven
+  phase arms and its hand-back store.
+- **What it answered:** the value logged is the one **about to be stored**, decoded
+  from the store instruction's source register, because the debug hook runs before
+  the store. The run is input-free until the park reproduces and then sweeps ten
+  buttons (`LEGAIA_IDLE` / `LEGAIA_SWEEP`; `LEGAIA_IDLE=-1` never sweeps), which is
+  what separates "waiting for a press" from "waiting for a clock". Settled the park
+  - see [`battle.md`](../subsystems/battle.md#flow-0x0c-is-the-boss-stage-modules-baton).
+  Writes `w4d_cort_flow.csv` / `.log` / `.detail.txt`. Interpreter mode.
+
+##### `autorun_w4d_dome_decal_flag.lua`
+
+- **Probes:** exec-BP at `0x80051ACC` - the branch that consumes the byte, with `v1`
+  still holding it, so each row carries both the value and the arm the loader took;
+  exec-BP on the loader entry `FUN_800513F0`; a width-1 Write watch on
+  `_DAT_8007B64B`.
+- **What it answered:** the write watch is a data watch rather than an exec-BP at
+  the known writer's overlay VA on purpose - slot A is VA-aliased across the field,
+  battle and arena modules, so an address alone names no module. A Cross cadence
+  advances the arena dialogue (`LEGAIA_ADVANCE=0` disables). Upgraded the arena's
+  object-1 trim from Inferred to capture - see
+  [`minigame-muscle-dome.md`](../subsystems/minigame-muscle-dome.md#object-1-is-trimmed-by-the-loader-_dat_8007b64b).
+  Interpreter mode.
+
+##### `autorun_w4d_melee_grunt_gate.lua`
+
+- **Probes:** exec-BPs on all seventeen `s7` definition sites in `FUN_801EC3E4`, on
+  the gate (`0x801EEA88` / `0x801EEAA0`), on both emission sites (`0x801EEB44`
+  grunt / `0x801EEBE8` sting) and on the `+0x1DA` commit `0x801EEC6C`.
+- **What it answered:** each gate visit records the **last definition that
+  executed**, i.e. the live reaching definition rather than an argued one, beside
+  the gate operands, the `s4` actor's `+0x1F3` / `+0x1DA` / `+0x1DB` / `+0x1DE`,
+  `_DAT_8007BC20` and `_DAT_8007BD84`. `LEGAIA_ADVANCE=2` interleaves Cross and
+  Left, which drives both the command ring and the directional arts screen. See
+  [`battle-action.md`](../subsystems/battle-action.md#the-sound-a-melee-swing-makes-and-which-half-of-it-the-port-has).
+  Interpreter mode, battle states only - the addresses are slot-A overlay VAs.
+
+##### `autorun_w4d_light_kind_hits.lua`
+
+- **Probes:** exec-BPs on the four light-capable prim handlers `0x8004409C` /
+  `0x8004423C` / `0x80044434` / `0x800445B0`, plus a control group on the bank-0 fog
+  handlers for kinds 12..19 and kind 16 bank 1.
+- **What it answered:** exec-BPs cannot miss an execution where the `dirty_exec_hot`
+  histogram can only say "not seen". The control group shares one counter and
+  self-disarms at `LEGAIA_CONTROL_CAP` hits, so a zero on the lit set is a
+  measurement and not a dead instrument, and the probe counts field-mode and
+  kingdom-overworld frames separately so a run that spent its budget inside a random
+  encounter cannot read as a clean world-map zero. `LEGAIA_WARP_BTN` is held until
+  the scene changes (`NONE` when already on the overworld), then D-pad legs of
+  `LEGAIA_LEG` vsyncs walk the map. See
+  [`renderer.md`](../subsystems/renderer.md#no-handler-in-the-lit-set-executes-on-a-kingdom-overworld).
+  Interpreter mode.
 
 ##### `autorun_slot4_consumer_pcs.lua`
 
