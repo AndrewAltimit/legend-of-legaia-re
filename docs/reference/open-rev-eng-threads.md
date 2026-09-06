@@ -362,8 +362,12 @@ side-face shade page closed by capture. All in
 
 ## Audio / BGM
 
-No open threads. The most recent one - op-`0x35` sub-op `0xA`, the
-"unhalt-pause toggle" - resolved as the track-swap **commit** and moved to
+| Thread | Status | What would close it |
+|---|---|---|
+| `bse.dat`'s second record family | open | PROT 0888 carries 1,716 bytes past the 297-row `bse_bank` table (`0x094C..`), repeating on a longer stride than the 8-byte records, and `1062_music_01` carries the same footer signature past the end of its SEQ (`0x51AD`). Two entries in different CDNAME blocks sharing a footer is a sound-driver structure, not slack, and `0x94C` is inside the `0x1800` buffer `FUN_8001FA88` loads, so a resident consumer exists. Find it the way the first family was found: `find-gp-relative-refs.py` over `gp+0x678` plus the offsets past `0x94C`, then read the reader. Surfaced by `asset account` ([`byte-accounting.md`](../tooling/byte-accounting.md)). |
+
+The previous thread here - op-`0x35` sub-op `0xA`, the "unhalt-pause toggle" -
+resolved as the track-swap **commit** and moved to
 [`re-settled-threads.md`](re-settled-threads.md#op-0x35-sub-op-0xa-is-the-track-swap-commit).
 
 ## Title / boot / overlays
@@ -380,6 +384,12 @@ the instrument is
 [`check-0968-residency.py`](../../scripts/mednafen/check-0968-residency.py),
 which reads either emulator's states (mednafen via `mednafen-state`,
 PCSX-Redux `.sstate` via `pcsxr-state`, dispatched on file extension).
+
+## Containers / data blobs
+
+| Thread | Status | What would close it |
+|---|---|---|
+| What are PROT 1221 / 1222 (`other5` / `other6`)? | open | 160 KB each with an identical macro-layout (five sectors of dev fill, one zero sector, a data region, zero tail). Every halfword is below `0x8000`, no word falls in the RAM window, and the ADPCM flag bytes do not cluster - so PSX 15-bit colour data (BGR555, STP clear), not code and not samples; only 1,280 distinct halfwords across 73,728. Their loader is unknown: scan for the raw TOC literals `0x4C7` / `0x4C8` at the byindex-loader call sites in all reference forms, then read what uploads the pages. |
 
 ## Adding a thread
 

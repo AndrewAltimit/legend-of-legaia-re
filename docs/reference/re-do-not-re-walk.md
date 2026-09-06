@@ -1144,6 +1144,21 @@ is believed on the strength of its *explanation*. Check the explanation against
 the files, not against its own plausibility - three of the four rows above are a
 correct count with a wrong story attached, and the story is what directed effort.
 
+### Two overlay lengths that were the neighbour's sectors
+
+*Falsified by TOC arithmetic.*
+
+| Reading | Why it looked right | What is true |
+|---|---|---|
+| `arena_init` (PROT 0977) own content is about `0x4800` bytes | The file the old entry size produced was that long and disassembled cleanly to the end | The entry is `0x3800`; the extra `0x1000` is PROT 0978's two sectors, read through the superseded over-reading entry size |
+| The battle overlay (PROT 0898) is `0x28800` of `0x29800` bytes, with a diverging `0x1000` `.bss` tail | A RAM capture matched the first `0x28800` and the tail differed, which is what `.bss` does | The entry is `0x28800`; the diverging tail is PROT 0899's first two sectors |
+
+Both notes lived in `crates/asset/data/static-overlays.toml`, whose rows predate
+the entry-size correction. The general law is on
+[`prot.md`](../formats/prot.md); the measured consequence - the TOC is a
+gapless partition - is on
+[`re-settled-threads.md`](re-settled-threads.md#measurement--corpus).
+
 ## Related pages
 
 - [`open-rev-eng-threads.md`](open-rev-eng-threads.md) - the live hunts.
