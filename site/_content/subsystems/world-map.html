@@ -137,6 +137,23 @@ sw   $tmp,         0x10(&lt;actor&gt;)</code></pre>
     </tbody>
   </table>
   <p>The interior legs (what each town's exits lead to, which deeper rooms are gated) are tabulated on the <a href="history-world-map.html">chapter-1 hub sweep</a> page. NPCs on the map are partition-1 placement records whose dialogue text is inline in the record; talking to one opens that text directly.</p>
+  <h3>The exits that live in the other trigger table</h3>
+  <p>Every scene has <em>two</em> walk-on trigger tables, not one. The first is inside the scene's <code>.MAP</code>; the second is a separate one-sector sidecar file, <code>.PCH</code>, with the same header shape, staged just past the map in memory. The per-tile lookup searches the map's table first and falls through to the sidecar. So a scene can put every one of its doors in a table that is not in its map at all.</p>
+  <p>Five scenes do exactly that, and it made them look one-way: Uru Mais (<code>uru</code>) and its three dream rooms (<code>urudre1..3</code>), plus <code>jouine</code>, the deepest Drake Castle room. Every one of them has a walk-on exit; it is only ever in the sidecar.</p>
+  <table>
+    <thead><tr><th>Scene</th><th>Exit record</th><th>Walk-on band</th><th>Tail op</th><th>Leads to</th></tr></thead>
+    <tbody>
+      <tr><td><code>uru</code></td><td>P2[42]</td><td>tiles (36..39, 5)</td><td><code>0x3F</code> named scene change</td><td><code>MAP03</code> (Karisto overworld)</td></tr>
+      <tr><td><code>uru</code></td><td>P2[37]</td><td>tiles (37..39, 44)</td><td>FMV trigger, movie 7</td><td><code>uru2</code>, after <code>MV5.STR</code></td></tr>
+      <tr><td><code>urudre1</code></td><td>P2[2]</td><td>tiles (35..37, 22..24)</td><td><code>0x3F</code></td><td>back to <code>uru</code></td></tr>
+      <tr><td><code>urudre2</code></td><td>P2[9]</td><td>tiles (26, 14) and (24, 13)</td><td><code>0x3F</code></td><td><code>map01</code></td></tr>
+      <tr><td><code>urudre3</code></td><td>P2[0]</td><td>tile (51, 90)</td><td><code>0x3F</code></td><td>back to <code>uru</code></td></tr>
+      <tr><td><code>jouine</code></td><td>P2[16]</td><td>tiles (17, 17..19)</td><td>FMV trigger, movie 8</td><td><code>town0e</code>, after <code>MV6.STR</code></td></tr>
+    </tbody>
+  </table>
+  <p><code>uru</code> is the chain's hub and carries six doors in total - the two above plus one dream entrance per room, at tiles (110..112, 35), (10..12, 98) and (80..82, 99). All six live in the sidecar. <code>jouine</code> is the only one of the five with no named scene change anywhere in its script: its record ends by firing a movie, and it is the <em>movie's</em> dispatcher that picks the next scene.</p>
+  <p>Three separate decoders read these five as sealed, and each answer was a property of the instrument. A script walk that reads a partition as one stream desyncs inside the first long block of dialogue text and never reaches ops sitting several kilobytes deeper. A tile sweep with a cap stops before the sidecar's rows, which sort after the map's - <code>uru</code>'s exit band is the 63rd of its 118 walk-on tiles. And a short "did anything happen?" budget after stepping on a tile cannot outlast records that spend hundreds of frames in explicit waits, or that run a boss fight first.</p>
+  <p>Confirmed on hardware behaviour: walking four tiles north from Uru Mais's own arrival tile under an emulator probe spawns record 42 and calls the scene-change routine with <code>MAP03</code>, returning into the field VM's <code>0x3F</code> arm. Since that tile exists only in the sidecar, the same capture is the live proof that the fall-through search is real and not just present in the code.</p>
   <details class="disclosure">
     <summary>Deep dive: how the port seeds entities, portals and gates from the disc</summary>
     <div class="disclosure-body">

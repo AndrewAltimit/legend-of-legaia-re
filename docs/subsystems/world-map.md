@@ -23,7 +23,7 @@ below to jump within this page.
 
 **Overworld player + scenes**
 - [Player movement + region-keyed encounters](#overworld-player-movement--region-keyed-encounters) · [collision / walkability](#overworld-collision--walkability) · [not one walk component](#the-overworld-is-not-one-walk-component) · [camera-relative movement remap](#camera-relative-movement-remap) · [axis convention](#overworld-axis-convention) · [boot-path seeding](#boot-path-seeding)
-- [Entity / actor placement table](#entity--actor-placement-table) · [classifying the entity kind](#classifying-the-entity-kind-from-its-script) · [scene destinations](#scene-destinations) · [chapter-1 Drake hub sweep](#chapter-1-drake-hub-sweep)
+- [Entity / actor placement table](#entity--actor-placement-table) · [classifying the entity kind](#classifying-the-entity-kind-from-its-script) · [scene destinations](#scene-destinations) · [chapter-1 Drake hub sweep](#chapter-1-drake-hub-sweep) · [Uru Mais + `jouine` exits](#uru-mais-and-jouine-exits-carried-by-the-pch-sidecar)
 
 **Terrain + geometry**
 - [Loading the kingdom geometry](#loading-the-kingdom-geometry-engine-port) · [placing the continent terrain](#placing-the-continent-terrain-engine-port) · [ground texturing](#ground-texturing) · [rendering the placed entities](#rendering-the-placed-entities) · [auto-engage on walk-over](#auto-engage-on-walk-over)
@@ -1742,6 +1742,85 @@ The remaining hub legs, one level deep, decoded + driven by the disc-gated
   under-reports doors carried only by `P2` records (`jouinb`'s `jouina`
   return door) - the reverse of the `jou` `P2[5]` blind spot; the `P2`
   walker and the strict portal-site join both see them.
+
+#### Uru Mais and `jouine`: exits carried by the `.PCH` sidecar
+
+`uru`, `urudre1`, `urudre2`, `urudre3` and `jouine` read as one-way scenes to a
+decoder that stops at the `.MAP`'s own `+0x10000` trigger block. They are not.
+Each of the five carries a walk-on exit band, and in every case the band lives
+in the **second** trigger table: the scene's
+[`.PCH` sidecar](../formats/scene-v12-table.md), a one-sector file with the same
+four-kind header shape that the loader stages at `+0x12000` - inside the
+`0x28`-sector window it reads from the `.MAP`'s LBA, so the per-tile lookup
+searches it whenever the map's own table misses
+([`field-map.md` § Trigger block](../formats/field-map.md#trigger-block-0x10000)).
+The `.PCH` is the next PROT entry after the `.MAP`, which is why a walk that
+only reads the `.MAP` file sees none of these doors.
+
+| scene | exit record | gate-1 band (tile) | carrier | tail op (MAN offset) | destination |
+|---|---|---|---|---|---|
+| `uru` | `P2[42]` | `(36..39, 5)` | `.PCH` | `0x3F` `0x0D4B7` | `MAP03` at `(0x24,0x46)` |
+| `uru` | `P2[37]` | `(37..39, 44)` | `.PCH` | `4C E2 07` `0x0CB11` | `uru2` via FMV 7 |
+| `urudre1` | `P2[2]` | `(35..37, 22..24)` | `.PCH` | `0x3F` `0x01804` | `uru` at `(0x40,0x40)` |
+| `urudre2` | `P2[9]` | `(26,14)` + `(24,13)` | `.MAP` + `.PCH` | `0x3F` `0x01D78` | `map01` at `(0x26,0x51)` |
+| `urudre3` | `P2[0]` | `(51,90)` | `.PCH` | `0x3F` `0x02461` | `uru` at `(0x40,0x40)` |
+| `jouine` | `P2[16]` | `(17, 17..19)` | `.PCH` | `4C E2 08` `0x03E90` | `town0e` via FMV 8 |
+
+`uru` is the chain's hub and carries six doors, not one: the `MAP03` exit above,
+the story-gated FMV record (`C2=[0x36F]`), and three dream entrances -
+`P2[29]` `(110..112, 35)` to `urudre1`, `P2[33]` `(10..12, 98)` to `urudre2`,
+`P2[31]` `(80..82, 99)` to `urudre3`. All six bands are `.PCH`-only; `uru`'s
+exit band is `.PCH` records 23..26, `jouine`'s is records 3..5.
+
+**The four `0x3F` records share one tail idiom**, which is what makes them
+recognisable past a desync: `B1 F8 13` (set the player's control flag), `34 05
+FF FF FF 41 00` (white fade), the `0x3F` op, then the `26 FF FF` / `21` / `26
+FE FF` park pair. `uru` `P2[42]` is only 41 bytes long and consists of nothing
+else but a leading `0x379` flag test and a `0x6E6` set.
+
+**`jouine` is the one with no `0x3F` at all**, and its exit is not a named scene
+change: `P2[16]` is a 6809-byte cutscene record whose tail fades, stops the BGM
+and fires the FMV-trigger op `4C E2 08`. The hand-off is the FMV master
+dispatch's, not the field VM's - `fmv_id 8` plays `MOV/MV6.STR` and returns to
+`town0e` with door word `0x2E5`
+([`str-fmv-table.md`](../formats/str-fmv-table.md#authoritative-runtime-mapping)).
+That assignment is already the disc-walked `0689_jouine` row of the per-scene
+trigger table, and the port already maps it in
+`engine-core::cutscene::fmv_post_play_handoff`; what was missing was the link
+between that row and the question of how a player leaves the room.
+
+**Why three decoders read the five as sealed.** Each answer is a property of the
+instrument, not of the disc:
+
+- A **clean per-partition fall-through walk** starts at record 0 and desyncs in
+  the first long inline-text block; every exit here is a partition-2 record and
+  three of the six sit `0x124C`, `0x1A8F` and `0x2034` bytes into their bodies, past
+  several kilobytes of `0x1F` text pages. A record-local walk that re-syncs
+  finds all six.
+- A **tile sweep with a cap** never reaches the `.PCH` rows. Deduplicated
+  gate-1 tile counts are 118 for `uru`, 186 for `urudre2`, 55 for `jouine`, and
+  the `.PCH` rows sort after the `.MAP`'s: `uru`'s `MAP03` band is at positions
+  63..66 of its own list and its FMV band at 73..75.
+- A **short post-step tick budget** cannot run these records to their tail.
+  `urudre1` `P2[2]` alone spends 240 + 60 + 60 frames in explicit `WaitFrames`
+  before its `0x3F`, and `jouine` `P2[16]` is a boss cutscene.
+
+**Live confirmation (`uru`).** Driving the pad from the `uru` arrival tile
+`(38, 6)` four tiles north under PCSX-Redux reaches the band and fires the door:
+`FUN_8003BDE0(36, 5, 42, 1)` spawns the record and `FUN_8001FD44("MAP03")` is
+called with `ra = 0x801DEB1C` - the instruction after the `jal 0x8001fd44` in
+the field VM's `0x3F` arm (`0x801DEB14`, `see
+ghidra/scripts/funcs/overlay_0897_801de840.txt`). Since `(36,5,42,1)` exists
+**only** in the `.PCH`, that hit is also the live proof that retail's per-tile
+lookup really does fall through to the staged sidecar. Probe:
+`scripts/pcsx-redux/autorun_uru_exit_probe.lua`, scenario `uru_field_run`.
+
+`jouine` resists the same treatment for a reason that is not a decoder gap: the
+catalogued `jouine` field-run state is already inside `P2[16]`, and the record
+takes the player through the evolved-Cort boss fight before its FMV tail, so a
+pad-only probe watches the mode walk `0x03 -> 0x08 -> 0x09 -> 0x14 -> 0x15`
+with no input of its own having any effect. Its exit is established from the
+bytes plus the already-pinned FMV hand-off, not from a capture.
 
 #### Loading the kingdom geometry (engine port)
 
