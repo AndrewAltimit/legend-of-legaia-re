@@ -64,6 +64,10 @@ fn world_with_somersault() -> World {
         w.actors.push(Actor::default());
     }
     w.party_count = 3;
+    // Records first: `load_party` seeds HP / liveness from them (zero here),
+    // and retail's member walk (`FUN_801DB81C`) hands no ring to an HP-0
+    // member - the per-slot seeding below has to come after.
+    w.load_party(legaia_save::Party::zeroed(3));
     for i in 0..3 {
         w.actors[i].active = true;
         w.actors[i].battle.hp = 100;
@@ -71,7 +75,6 @@ fn world_with_somersault() -> World {
         w.actors[i].battle.liveness = 1;
         w.set_battle_attack(i as u8, 90);
     }
-    w.load_party(legaia_save::Party::zeroed(3));
     w.set_formation_table(vanilla_formation_table(), vanilla_monster_catalog());
 
     let action = legaia_art::ActionConstant::from_byte(SOMERSAULT).expect("0x27 is an action");
@@ -80,7 +83,11 @@ fn world_with_somersault() -> World {
         action,
         legaia_art::ArtRecord {
             action,
-            commands: vec![legaia_art::Command::Up],
+            commands: vec![
+                legaia_art::Command::Up,
+                legaia_art::Command::Down,
+                legaia_art::Command::Up,
+            ],
             anim_index: 0,
             anim_extra: vec![],
             name: None,
@@ -151,7 +158,7 @@ fn drive_the_swing(w: &mut World) -> Swing {
         shouts: Vec::new(),
         clip_frames: Vec::new(),
     };
-    let combo = [PadButton::Up];
+    let combo = [PadButton::Up, PadButton::Down, PadButton::Up];
     let mut next_dir = 0usize;
     let mut press = true;
     let mut opened_input = false;

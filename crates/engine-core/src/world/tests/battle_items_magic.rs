@@ -662,13 +662,7 @@ fn battle_magic_escape_returns_to_field() {
         "the confirm only arms the band"
     );
     tick_until_cast_folds(&mut world);
-    for _ in 0..4 {
-        if world.mode != SceneMode::Battle {
-            break;
-        }
-        world.set_pad(0);
-        let _ = world.tick();
-    }
+    world.set_pad(0);
 
     // Same exit hold as the escape item: the field returns through the
     // sequencer's `0x67` arm, `VICTORY_EXIT_PHASE` ticks later.

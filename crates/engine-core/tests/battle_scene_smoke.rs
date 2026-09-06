@@ -80,6 +80,15 @@ fn battle_complete_fires_on_party_wipe() {
         }
     }
     assert!(completed, "the wipe must resolve through tick");
+    // The wipe runs the battle-end sequencer's hold first (retail keeps the
+    // frozen frame up into CARD INIT); `finish_battle` latches `game_over`
+    // at the sequencer's exit gate, not on the frame the wipe is raised.
+    for _ in 0..20_000 {
+        if world.game_over {
+            break;
+        }
+        world.tick();
+    }
     assert!(world.game_over, "a party wipe raises game over");
 }
 

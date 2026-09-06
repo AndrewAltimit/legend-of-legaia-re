@@ -198,14 +198,60 @@ fn the_play_page_shows_the_sparring_tutorial_under_the_disc_condition() {
     );
 
     // --- 4. a real prompt, with real disc text, at the emitter's rect ------
+    // Retail opens the spar on the sparring caption (SCUS `0x80078CB4`, the
+    // side-band's stage 1: `FUN_80056208`), held until any pad press, and
+    // only then raises lesson 0 next to the round prompt. The caption is the
+    // first box the page composes; the lesson-0 intro is the second.
+    let scus = legaia_web_viewer::disc::extract_scus(&std::fs::read(&disc).expect("disc"))
+        .expect("SCUS_942.54 in disc image");
+    let caption = legaia_asset::battle_ui_strings::BattleUiStrings::from_scus(&scus)
+        .get(legaia_asset::battle_ui_strings::BattleUiLabel::SparringIntro)
+        .expect("sparring caption string in SCUS")
+        .to_string();
+    let norm = |t: &str| -> String {
+        t.split(['|', '\n'])
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
     let t = run_to_first_box(&mut rt, 900).unwrap_or_else(|| {
         panic!("the armed battle never queued a tutorial prompt box");
     });
+    let first = t["box"]["text"]
+        .as_str()
+        .expect("box carries text")
+        .to_string();
+    assert_eq!(
+        norm(&first),
+        norm(&caption),
+        "the first box is the disc's sparring caption, not port wording"
+    );
+    assert_ne!(norm(&first), norm(intro), "the caption precedes lesson 0");
+    // Any press ends the caption; the lesson-0 intro follows it.
+    let mut t = None;
+    for i in 0..900u32 {
+        if i.is_multiple_of(6) {
+            tap(&mut rt, PadButton::Cross.mask());
+        } else {
+            step(&mut rt);
+        }
+        let j = json(&rt.play_battle_tutorial_json());
+        if j["box"].is_object()
+            && j["box"]["text"]
+                .as_str()
+                .is_some_and(|x| norm(x) != norm(&caption))
+        {
+            t = Some(j);
+            break;
+        }
+    }
+    let t = t.unwrap_or_else(|| panic!("the caption never handed over to lesson 0"));
     let b = &t["box"];
     let text = b["text"].as_str().expect("box carries text");
     assert_eq!(
         text, intro,
-        "the first prompt must be the disc's lesson-0 intro, not port wording"
+        "the prompt after the caption must be the disc's lesson-0 intro, not port wording"
     );
     // The rect is the retail emitter's own: left margin 0x10, top anchor
     // 0x0E, height = lines * 14 - 4, width measured from the text.

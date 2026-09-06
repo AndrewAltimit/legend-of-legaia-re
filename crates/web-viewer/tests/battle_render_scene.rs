@@ -23,6 +23,7 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
+use legaia_engine_core::input::PadButton;
 use legaia_web_viewer::runtime::LegaiaRuntime;
 
 fn loaded_in_town() -> Option<LegaiaRuntime> {
@@ -134,12 +135,31 @@ fn battle_render_builds_backdrop_grid_actors_and_camera() {
     // The idle orbit itself is not asserted here: an auto-driven fight has no
     // settled idle window to observe it in. Its law lives in
     // `engine-vm::battle_cam_script` (`ORBIT_STEP` + the phase predicate).
+    // Retail lets nobody act before the round's last command commits, so the
+    // walk has to drive the party: `Left` seats `Begin`, the ring's `Attack`
+    // arm and the `Auto` chip on their prompts (spatial one-press commits),
+    // `Cross` confirms the target and dismisses any tutorial box.
     let pose0 = cam["tr"].clone();
     let mut acted = false;
     let mut moved = false;
     let mut last = cam.clone();
-    for _ in 0..60 {
-        let _ = rt.tick_frame();
+    for i in 0u32..1200 {
+        if i.is_multiple_of(8) {
+            // `Left, Left, Left, Cross`: Begin / Attack / Auto, then the
+            // target confirm - and never a Cross on the ring, whose default
+            // chip is `Item` (an empty bag's window has no way out but
+            // Cancel).
+            let mask = if (i / 8) % 4 == 3 {
+                PadButton::Cross.mask()
+            } else {
+                PadButton::Left.mask()
+            };
+            rt.set_pad(mask);
+            let _ = rt.tick_frame();
+            rt.set_pad(0);
+        } else {
+            let _ = rt.tick_frame();
+        }
         last = serde_json::from_str(&rt.play_battle_camera_json()).expect("camera json 2");
         acted |= last["phase"] == "action";
         moved |= last["tr"] != pose0;
