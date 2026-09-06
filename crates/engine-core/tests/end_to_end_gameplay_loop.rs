@@ -331,7 +331,6 @@ fn run_full_loop(starting_save: SaveFile) -> (Vec<u8>, SaveFile) {
 
     let pre_money = world.money;
     let pre_story_flags = world.story_flags;
-    let pre_story_flag_bits = world.story_flag_bits.clone();
     let pre_inventory: std::collections::HashMap<u8, u8> = world.inventory.clone();
     let pre_levels: Vec<u8> = world.level_up_tracker.level[..3].to_vec();
 

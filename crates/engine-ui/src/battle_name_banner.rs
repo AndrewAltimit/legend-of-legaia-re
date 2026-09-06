@@ -94,6 +94,16 @@ pub const CHARACTER_NAME_OFFSET: usize = 0x2A7;
 ///
 /// Locate the arts-name record for `(char_id, art_id)`.
 ///
+/// NOT WIRED: the live label does not walk this table. Retail's banner
+/// placer runs this walk over the runtime `0x14`-stride arts-name table to
+/// find the record whose name pointer it stamps; the engine has no staged
+/// copy of that runtime table, so `engine-core::battle_hud::battle_move_name`
+/// resolves the name through the static arts-name table
+/// (`legaia_art::tables::art_name`) and the spell / item catalogs instead,
+/// and seats it with this module's X law ([`banner_x`]). Wiring this walk
+/// means staging the runtime table (the `0x80076C10` placement block's
+/// arts-name run) on the battle host first.
+///
 /// `table` is the raw `0x14`-stride table starting at record 0. The walk
 /// stops at the first record whose byte `+0x0` is [`ARTS_TABLE_SENTINEL`];
 /// a sentinel in record 0 means the table is empty and no banner is placed.
