@@ -733,7 +733,42 @@ impl World {
             .filter_map(|&b| legaia_art::Command::from_byte(b))
             .collect();
         let (queue, actions) = self.build_arts_action_queue(caster, &commands);
+        self.charge_art_spirit(caster, &actions);
         self.arm_battle_art_action(caster, &queue, &actions, target_row, target_slot);
+    }
+
+    /// Charge the turn's **art bodies** out of the caster's Spirit gauge
+    /// (`actor[+0x170]`) - the second half of the two-gauge split. The
+    /// direction commands are already paid, out of the entry pool
+    /// (`ctx+0x6DC`, seeded from AGL); this is the price of the arts those
+    /// directions matched, and until it was wired a turn's whole cost was its
+    /// swings and an art body was free.
+    ///
+    /// The amount is [`crate::ap_gauge::arts_turn_spirit_cost`] over the
+    /// caster's builder-order catalog ([`crate::battle_arts::spirit_catalog`])
+    /// and the arts the queue actually performs. Retail accrues it into
+    /// `actor[+0x224]` inside the builder and spends it once in the
+    /// battle-action cleanup arm (`0x801E5D74`); the port charges it here, at
+    /// the commit, which is the same turn and the same total.
+    ///
+    /// A plain attack charges nothing, because an unmatched arrow string
+    /// performs no art and `actions` is empty.
+    ///
+    /// PORT: FUN_801EED1C (Spirit-cost half) / FUN_801E295C (the `+0x224` spend)
+    fn charge_art_spirit(&mut self, caster: u8, actions: &[legaia_art::ActionConstant]) {
+        if actions.is_empty() {
+            return;
+        }
+        let roster = self.party_roster_slot(caster as usize) as u8;
+        let character = self.caster_character(roster);
+        let catalog = crate::battle_arts::spirit_catalog(&self.art_records, character);
+        // Retail's halving gate is the acting actor's `0x800` flag
+        // (`srl t4,t4,0x1` at `0x801EF378`); the port has no carrier for it
+        // yet, so the full-price arm is the one that runs.
+        let cost = crate::ap_gauge::arts_turn_spirit_cost(&catalog, actions, false);
+        if let Some(a) = self.actors.get_mut(caster as usize) {
+            a.battle.spirit_gauge = a.battle.spirit_gauge.saturating_sub(cost);
+        }
     }
 
     /// Stage a built action queue on the acting actor and arm the action
