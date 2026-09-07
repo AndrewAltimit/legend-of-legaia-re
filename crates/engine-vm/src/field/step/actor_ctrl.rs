@@ -23,35 +23,46 @@ pub(super) fn op_43<H: FieldHost>(
         // amount (5 or 9). See `docs/subsystems/script-vm.md`
         // (opcode 0x43, halt-acquire dispatcher).
         0 | 1 | 0xA | 0xB => {
+            // Halt-acquire dispatcher. Operand is `[sub][x][z][s16][s16]` for
+            // sub-0/1 (7 bytes) and `[sub][x][z][s16][s16][s16]` for sub-A/B
+            // (9 bytes) - retail `overlay_0897` `0x801DF384..0x801DF5B8`, whose
+            // shared exit is `j 0x801E3624` with `addiu s8, s8, 8` in the delay
+            // slot plus a `+2` at `0x801DF534` taken only on the `sub >= 0xA`
+            // arm, over an `s8` the prologue has already advanced past the
+            // extended channel byte (`0x801DE948`).
+            //
+            // None of the three `s16`s is a jump target: `+3` and `+5` are
+            // passed straight to `FUN_801D25EC` as `a2` / `a3`, and the sub-A/B
+            // `+7` is negated into the **Y** slot of the coordinate triple at
+            // `sp+0x30`. Reading `+7` as an absolute resume PC sent `urudre2`
+            // `P2[9]` backwards to body `0x00A0` on every arrival - its
+            // `C3 2B 0A 76 70 50 00 32 00 A0` names Y = -160, not PC 160.
             let wide = sub_op == 0xA || sub_op == 0xB;
-            let needed = if wide { 8 } else { 4 };
-            if operand + needed >= bytecode.len() {
+            let operand_len = if wide { 9 } else { 7 };
+            if operand + operand_len > bytecode.len() {
                 return StepResult::Unknown { opcode, pc };
             }
             let coords = [
                 i16::from_le_bytes([bytecode[operand + 1], bytecode[operand + 2]]),
-                0,
-                i16::from_le_bytes([
-                    bytecode.get(operand + 3).copied().unwrap_or(0),
-                    bytecode.get(operand + 4).copied().unwrap_or(0),
-                ]),
+                if wide {
+                    -i16::from_le_bytes([bytecode[operand + 7], bytecode[operand + 8]])
+                } else {
+                    0
+                },
+                i16::from_le_bytes([bytecode[operand + 3], bytecode[operand + 4]]),
             ];
-            let target_offset = if wide { 7 } else { 3 };
+            // Retail falls through to the next instruction on the acquire path;
+            // the context stops running because the acquire raised the halt bit
+            // (`ctx[+0x10] |= 0x400`), not because the PC moved.
+            let next_pc = pc + header_size + operand_len;
             if host.field_halt_acquire_predicate(ctx, sub_op) {
-                let resume = i16::from_le_bytes([
-                    bytecode[operand + target_offset],
-                    bytecode[operand + target_offset + 1],
-                ]) as i32 as usize;
                 ctx.flags |= 0x400;
                 ctx.wait_accum = 0;
                 ctx.saved_pc = pc as u32;
-                host.field_halt_acquire_apply(ctx, sub_op, resume, coords);
-                StepResult::Yield { resume_pc: resume }
+                host.field_halt_acquire_apply(ctx, sub_op, next_pc, coords);
+                StepResult::Yield { resume_pc: next_pc }
             } else {
-                let advance_by = if wide { 9 } else { 5 };
-                StepResult::Advance {
-                    next_pc: pc + header_size + advance_by - 1,
-                }
+                StepResult::Advance { next_pc }
             }
         }
         2 => {

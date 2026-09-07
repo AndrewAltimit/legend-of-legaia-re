@@ -300,8 +300,9 @@ pub trait FieldHost {
     fn camera_save(&mut self) {}
 
     /// Camera op 0x45 APPLY. The original calls `FUN_801dab90` (apply) +
-    /// `FUN_801daa50` (read-back). The VM jumps to the absolute PC encoded
-    /// in `LE_u16(operand[1..3])` afterwards.
+    /// `FUN_801daa50` (read-back), then hands the unaligned `s16` at
+    /// `operand + 1` to `FUN_801de084` as the apply trigger and advances the
+    /// PC by four. It is NOT a jump: the `s16` is a trigger, not a target.
     fn camera_apply(&mut self) {}
 
     /// Scene fade (op 0x36). The VM passes the two 16-bit operands raw and

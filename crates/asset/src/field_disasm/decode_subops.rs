@@ -31,10 +31,10 @@ pub(super) fn decode_actor_ctrl(
     };
     match sub_op {
         0 | 1 => {
-            need(4)?;
+            need(7)?;
             let target_offset_pc = operand + 3;
             mk(
-                header_size + 4,
+                header_size + 7,
                 ActorCtrlKind::HaltAcquire {
                     sub_op,
                     target_offset_pc,
@@ -42,10 +42,10 @@ pub(super) fn decode_actor_ctrl(
             )
         }
         0xA | 0xB => {
-            need(8)?;
+            need(9)?;
             let target_offset_pc = operand + 7;
             mk(
-                header_size + 8,
+                header_size + 9,
                 ActorCtrlKind::HaltAcquire {
                     sub_op,
                     target_offset_pc,

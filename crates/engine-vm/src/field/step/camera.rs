@@ -32,15 +32,36 @@ pub(super) fn op_45<H: FieldHost>(
             }
         }
         0xC0 => {
+            // APPLY: `[45][C0 | mode<<2][s16 apply_trigger]` - four bytes, and
+            // the `s16` is the SAME apply-trigger argument the configure arm
+            // (`0x00`) reads at `operand + 2`, not a jump target.
+            //
+            // Retail's arm is `overlay_0897` `0x801DF210`: it calls
+            // `FUN_801DAB90` (apply) + `FUN_801DAA50` (read-back), reads the
+            // unaligned `s16` at `operand + 1` through `FUN_8003CE9C`, hands it
+            // to `FUN_801DE084(0x801C6EA8, trigger, mode)` - the identical call
+            // the configure arm makes - and exits `j 0x801E3624` with
+            // `addiu s8, s8, 4` in the delay slot. `s8` is the PC cursor, so
+            // the instruction is a plain four-byte advance. The sibling arms
+            // pin the same reading: `0x40` LOAD exits `addiu s8, s8, 0x14`
+            // (20 bytes) and `0x80` SAVE `addiu s8, s8, 2`.
+            //
+            // Reading the `s16` as an absolute jump target made every record
+            // whose trigger is `0` restart from byte 0 forever - `urudre2`
+            // `P2[9]`, whose `45 C0 00 00` sits ~0x670 bytes before the
+            // record's `0x3F` -> `map01` tail, replayed its conversation
+            // instead of ever leaving the scene.
             let Some(&lo) = bytecode.get(operand + 1) else {
                 return StepResult::Unknown { opcode, pc };
             };
             let Some(&hi) = bytecode.get(operand + 2) else {
                 return StepResult::Unknown { opcode, pc };
             };
+            let _apply_trigger = i16::from_le_bytes([lo, hi]);
             host.camera_apply();
-            let target = u16::from_le_bytes([lo, hi]) as usize;
-            StepResult::Advance { next_pc: target }
+            StepResult::Advance {
+                next_pc: pc + header_size + 3,
+            }
         }
         0x00 => {
             let Some(&op1) = bytecode.get(operand + 1) else {
