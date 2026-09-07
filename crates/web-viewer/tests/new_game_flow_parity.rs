@@ -165,11 +165,17 @@ fn name_entry_opens_renders_commits_and_releases_the_field_vm() {
     // ...and the timeline must eventually hand the controls back. This is the
     // other half of "the screen lands with its state": a naming prompt that
     // commits into a timeline which never ends is still a dead page.
+    // The record parks on the elder's first dialog line after naming and
+    // waits for the player; press confirm on alternate frames the way a
+    // player mashes through, instead of relying on the anti-hang cap to skip
+    // the conversation (which is a hang recovery, not a completion).
     let mut ticks = 0;
     while rt.debug_timeline_active() && ticks < 12000 {
+        rt.set_pad(if ticks % 4 < 2 { 0x4000 } else { 0 }); // 0x4000 = Cross
         rt.tick_frame().expect("tick out of the opening timeline");
         ticks += 1;
     }
+    rt.set_pad(0);
     assert!(
         !rt.debug_timeline_active(),
         "the town01 opening timeline must finish after the naming beat, \

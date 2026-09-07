@@ -159,13 +159,18 @@ fn town01_opening_timeline_opens_name_entry_at_op49() {
     //    dropping itself so the view reverts from the cutscene camera.
     host.world.field_player_move_cues.clear();
     let mut more = 0u32;
-    while host.world.cutscene_timeline.is_some() && more < 4000 {
-        host.world.tick();
+    while host.world.cutscene_timeline.is_some() && more < 12000 {
+        tick_pressing_through_dialogs(&mut host.world, more);
         more += 1;
     }
+    let parked = host.world.cutscene_timeline.as_ref().map(|t| {
+        let end = (t.pc + 12).min(t.bytecode.len());
+        (t.pc, t.frames, t.bytecode[t.pc.min(end)..end].to_vec())
+    });
     assert!(
         host.world.cutscene_timeline.is_none(),
-        "the opening timeline completes after naming and is dropped (ticked {more} more)"
+        "the opening timeline completes after naming and is dropped (ticked {more} more); \
+         still parked at (pc, frames, bytes) = {parked:02x?}"
     );
     // The post-confirm beats run the player's scripted animation: the MAN
     // record's `A2 F8 30` (+0x030B) then `A2 F8 31` (+0x0352) ExecMoves -
@@ -181,4 +186,22 @@ fn town01_opening_timeline_opens_name_entry_at_op49() {
     assert!(pos48 < pos49, "ExecMove 48 precedes 49 (got {cues:?})");
     // Sanity: the record index constant matches the disc invariant.
     assert_eq!(World::TOWN01_OPENING_TIMELINE_RECORD, 3);
+}
+
+/// Press confirm on alternate ticks while the timeline is parked on an inline
+/// dialog box - what a player does, and what a headless run cannot do by
+/// itself. Retail's opening parks on the elder's first line after naming; the
+/// anti-hang cap used to skip the whole conversation instead, which is not a
+/// completion, it is a hang recovery.
+fn tick_pressing_through_dialogs(world: &mut legaia_engine_core::world::World, tick: u32) {
+    let parked = world
+        .cutscene_timeline
+        .as_ref()
+        .is_some_and(|t| t.dialog.is_some());
+    if parked && tick % 2 == 0 {
+        world.set_pad(legaia_engine_core::input::PadButton::Cross.mask());
+    } else {
+        world.set_pad(0);
+    }
+    world.tick();
 }

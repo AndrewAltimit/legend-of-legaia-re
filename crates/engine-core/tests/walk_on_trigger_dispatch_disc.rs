@@ -88,8 +88,8 @@ fn run_opening_to_freeroam(host: &mut SceneHost) {
         ..Default::default()
     });
     let mut more = 0u32;
-    while host.world.cutscene_timeline.is_some() && more < 4000 {
-        host.world.tick();
+    while host.world.cutscene_timeline.is_some() && more < 12000 {
+        tick_pressing_through_dialogs(&mut host.world, more);
         more += 1;
     }
     assert!(
@@ -395,4 +395,22 @@ fn gate_flags_survive_save_roundtrip() {
         !reloaded.p2_gate_flag_set(552),
         "an unset chain flag stays clear across the round trip (control)"
     );
+}
+
+/// Press confirm on alternate ticks while the timeline is parked on an inline
+/// dialog box - what a player does, and what a headless run cannot do by
+/// itself. Retail's opening parks on the elder's first line after naming; the
+/// anti-hang cap used to skip the whole conversation instead, which is not a
+/// completion, it is a hang recovery.
+fn tick_pressing_through_dialogs(world: &mut legaia_engine_core::world::World, tick: u32) {
+    let parked = world
+        .cutscene_timeline
+        .as_ref()
+        .is_some_and(|t| t.dialog.is_some());
+    if parked && tick % 2 == 0 {
+        world.set_pad(legaia_engine_core::input::PadButton::Cross.mask());
+    } else {
+        world.set_pad(0);
+    }
+    world.tick();
 }

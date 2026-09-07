@@ -1049,8 +1049,9 @@ fn map03_karisto_region_gate_families() {
         "map03 hub has no gated P2 records (pure router)"
     );
 
-    // bubu1 has no field MAN payload.
-    assert!(payload("bubu1").is_none(), "bubu1 has no field MAN payload");
+    // bubu1 ships a count-5 scene asset table with a MAN; the detector used
+    // to bound `count` to 6 or 7 and read it as MAN-less (`scene-bundles.md`).
+    assert!(payload("bubu1").is_some(), "bubu1 has a field MAN payload");
 
     // bubu2 requires-all chain tail; son / deroa one-shots.
     assert_eq!(all_gates("bubu2")[3], (vec![0x609], vec![0x608, 0x3D3]));
