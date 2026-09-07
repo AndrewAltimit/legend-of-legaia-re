@@ -1593,6 +1593,28 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             let _ = ctx;
             return;
         }
+        // **A spawned record's `0x23` belongs to its own channel, never to
+        // the player.** Retail does not pick the player arm off a ctx class
+        // bit: `0x801DEC7C bne s5,v0` compares the executing ctx **pointer**
+        // against the player context `_DAT_8007C364` (`0x8007C348 + 0x1C`),
+        // and only that identity reaches the camera re-centre `func_0x80017EC8`
+        // (`0x801DEC84..0x801DECA8`); every other ctx falls to `0x801DECAC`,
+        // the `+0x8C`/`+0x8D` facing + movement-init arm on **that** actor.
+        // The port derives `is_player` from `ctx.flags & 0x1000000`, which a
+        // spawned partition-2 record's context inherits - so without this arm
+        // a scene-arrival record's `0x23` yanked the player wherever the
+        // record seated its own actor, the hide box `(127,127)` included.
+        // This is the same law [`Self::op4c_n5_sub1_npc_run`] already carries
+        // for the `4C 51` form; the slice's write-through surfaces the move
+        // into the placement-keyed NPC state.
+        // REF: FUN_8003C83C (cross-context target resolve)
+        if self.world.in_spawned_record_slice
+            && let Some(_slot) = self.world.executing_channel
+        {
+            ctx.world_x = world_x;
+            ctx.world_z = world_z;
+            return;
+        }
         // Player path: also propagate to the active actor slot's
         // move_state so the renderer / collision layer sees the teleport.
         if is_player

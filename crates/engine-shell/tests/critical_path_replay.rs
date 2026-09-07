@@ -1358,7 +1358,22 @@ fn walk_to(
             None => tile_center(goal),
         };
         let pad = pad_for_step(host, (tx - wx).signum(), (tz - wz).signum());
-
+        // Per-frame follower trace (`LEGAIA_CPR_TRACE=1`). Separate from
+        // `LEGAIA_CPR_DEBUG` because it is thousands of lines per leg, and
+        // worth having: a stall report names the tile the leg *ended* on,
+        // which is silent about a mid-leg teleport. The Ravine rung's
+        // scripted-relocation defect showed up here as a single frame
+        // stepping from the arrival tile to the `(127,127)` hide box, and
+        // could not be seen any other way.
+        if std::env::var_os("LEGAIA_CPR_TRACE").is_some() {
+            eprintln!(
+                "[trace] w=({wx},{wz}) tile={here:?} goal={goal:?} want={:?} pad={pad:04x} az={} scripted={scripted} tl={} dlg={}",
+                path.first().map(|&c| tile_of_cell(c)),
+                host.world.field_camera_azimuth,
+                host.world.cutscene_timeline_active(),
+                host.world.dialogue_owns_input(),
+            );
+        }
         host.world.set_pad(pad);
         match host.tick() {
             Ok(SceneTickEvent::SceneEntered { name }) => return Leg::Transitioned(name),
