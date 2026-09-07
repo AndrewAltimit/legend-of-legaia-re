@@ -1926,6 +1926,87 @@ written by case `0x66` of `FUN_801E295C`. What *draws* the still stays open.
 [`minigame-muscle-dome.md`](../subsystems/minigame-muscle-dome.md#what-arms-the-load).
 Grade `disassembly`.
 
+### The Miracle marker is an equipment byte
+
+*Status:* resolved - there is no input recognizer.
+
+`ctx[+0x25F + slot]` has exactly one store in the dump corpus: `sb v1,0x25f(v0)`
+at `0x80054270` inside the SCUS party battle-actor seeding routine
+`FUN_80053CB8`, taken from the acting character's Ra-Seru equipment byte -
+record-relative `+0x199`, or `+0x198` for roster character id `2`
+(`beq v0,a3` at `0x800541E4`, the weapon-index table `_DAT_8007B42C` = `2, 3, 2`
+naming the *other* member of the pair). The marker gates all four special art
+records at `0x801EF4C8`, not only the Miracle. Memory cards corroborate: the
+byte is small and per-character banded, zero for a member not yet bonded.
+Grade `disassembly` (+ `capture` for the card corroboration).
+
+### Two battle-context bytes read wrong
+
+*Status:* resolved.
+
+`ctx[+0x26]` is the **level-up banner's UI element id** (`0x65`): its reader
+`0x801E61B4` passes the byte as `FUN_801D8DE8`'s element-id argument in a run of
+sibling unloads with literal ids; writers `0x801E723C` (the only assignment),
+`0x801E6D3C` (an increment), cleared at `0x801E2CFC`. It drives the Done band's
+`0x50` seed override (`0x96` for `0x3C`) and the `0x51` banner skip (59
+unskippable frames, then a press). `ctx[+0xD]` is the **per-action battle-camera
+angle variant** `0..=3`, a four-way switch at `0x801D6510` / `0x801D6698` /
+`0x801D689C` inside `FUN_801D5854`, seeded `rand() % 4` at ActionSeed and
+narrowed per category from jump table `0x801CF144`. Grade `disassembly`.
+
+### Stone and Curse in the SCUS effect applier
+
+*Status:* resolved.
+
+`FUN_800402F4`'s first-level jump table at `0x80014FA0` (132 entries, guard
+`sltiu 0x84`) sends class `9` to the Stone arm and class `10` to Curse. Stone
+makes three stores after the accuracy roll: `+0x16E |= 4`, a refund of the
+target's reserved item through `FUN_800421D4` gated on `+0x1DE == 1 &&
++0x16C != 0` (`+0x16C` is the initiative key, not a cooldown), then `+0x1DE = 0`.
+Curse sets its bit only. No item-effect record (`0x800752C0`, 130 records)
+carries class `9` or `10`, so both arms are reachable only from the streamed
+capture-class modules. Grade `disassembly`.
+
+### Attack x2, the swing class and the apply-mode arms
+
+*Status:* resolved.
+
+`ctx[+0x16]` has one writer: the strike loop's War God Icon second pass at
+`0x801E3A20..0x801E3A64` (party actor, record `+0xF4 & 0x2000`, counter zero),
+which rewinds the strike cursor and rewrites every marked queue slot to `0x19`.
+Monster record `+0x1E` is the limb-vs-height **swing class**, read through
+`0x801C9348` by `FUN_801EED1C` (class `2` gets one low swing) and by
+`FUN_801EC3E4`'s apply-mode look-ahead (class `2` connects only with power bytes
+`0x01..=0x10`, class `3` only with `0x11..=0x15`); across the archive's 186
+records it reads `0` x127, `1` x1, `2` x52, `3` x6, so both arms are ordinary
+play. Both kernel copies gate everything on a monster target. Grade
+`disassembly` + measurement.
+
+### How a cast reaches its slot-B module
+
+*Status:* resolved; the data half is ported.
+
+Both PROT 0898 tick dispatchers key the same 64-entry band: `FUN_801F1ED4` on
+the queued action id (`0x801CF4EC` row `id - 0x81` = PROT `903 + row`) and
+`FUN_801F2160` on the spell record's `+0x01` byte (`0x801CF56C` row `sub` =
+PROT `935 + sub`; single call site `0x801E50C8`, battle phase `0x70`'s hold).
+The band's DATA half - the spawn records the modules pass `FUN_80050ED4` /
+`FUN_80021B04` - is recoverable with the shared `summon_overlay` reader and
+is an engine pool (`legaia_asset::cast_effect_pool`) staged at both retail
+seams. The module CODE half (lift, camera, phase machine, the two damage
+stagers) stays unported and disclosed. Grade `disassembly`.
+
+### What an art body costs in AP
+
+*Status:* resolved - computed, not disc data.
+
+`FUN_801EED1C` derives it: multiplier `11` / `10` / `6` by the builder's *visit*
+ordinal (`0`, `1..3`, `>= 4`) - not the arts-grid display index - halved before
+the multiply under the actor's `0x800` flag (`srl` at `0x801EF378`), times the
+art's command count; accrued into `actor[+0x224]` and spent from Spirit
+`actor[+0x170]` at `0x801E5D74`. Port `engine-core::ap_gauge::art_spirit_cost`.
+Grade `disassembly`.
+
 ### Tutorial prompt machine exclusivity
 
 *Status:* resolved - the machine is byte-exclusive to 0967; the prompt pool is shared with 0968. Grade `disassembly`
@@ -2006,6 +2087,19 @@ below it, and the battle overlay has 247 bytes of zero slack. The lift is `sb`
 into `+0x1DA` (16 / 6 / 8 sites) from the modules' phase arms, which no record
 can express. See
 [`cast-module.md`](../subsystems/cast-module.md#what-of-the-choreography-is-data-and-what-is-code).
+
+### Op `0x23` MOVE_TO keys on ctx identity
+
+*Status:* resolved.
+
+The player arm is chosen by ctx *pointer* identity: `0x801DEC7C bne s5,v0`
+compares the executing ctx against `_DAT_8007C364` (`0x8007C348 + 0x1C`), and
+only that identity reaches the camera re-centre `func_0x80017EC8`
+(`0x801DEC84..0x801DECA8`); every other ctx takes `0x801DECAC`'s facing +
+movement-init arm on its own actor. A spawned partition-2 record inherits the
+`0x1000000` player-class bit, so keying on the bit teleports the player to
+wherever the record seats its own actor - which is what `keikoku`'s arrival
+record did once op `0x45` stopped restarting it. Grade `disassembly`.
 
 ### Dome ringside panel stills PROT 1221 and 1222
 
@@ -3357,6 +3451,9 @@ entry (sound-test track 72) borrowing another entry's bank. See
 | Actor-VM (`FUN_801D6628`) program source - which carrier, what selects one | resolved (menu-overlay-resident program table) | `disassembly` | The interpreted programs are data in PROT 0899's own data segment (file `0x16260..0x16740`), one per `jal FUN_801D6628` caller via `lui`+`addiu` (or a forwarded register); byte 1 of each instruction indexes the window descriptor table at `0x801E4738`, making the VM the menu's window-widget choreographer. No per-scene carrier exists - resolution is per-boot. Spec [window-script.md](../formats/window-script.md); scanner `legaia_asset::widget_script::scan`; engine wiring `engine-core::menu_widget`. Superseded sprite-VM readings: [re-do-not-re-walk.md](re-do-not-re-walk.md#menus--ui). |
 | `title.pak` PROT entry | resolved | `capture` | [details ↓](#titlepak-prot-entry) |
 | Does `FUN_801CE9C0` pin the per-logo quads? | resolved (no - it uploads; the quads are a descriptor table in the same image) | `disassembly` | [details ↓](#the-publisher-logo-quads) |
+| The title menu's law (`FUN_801DD35C` sub-mode `0x10`) | resolved + ported on both hosts | `disassembly` | [details ↓](#the-title-menus-law) |
+| `FUN_801D71F0` and its "shared armament placer" `0x801E5AE8` | resolved (one routine, `FUN_801E5A08`, unreferenced) | `disassembly` | [details ↓](#fun_801e5a08-the-per-slot-equip-applier) |
+| Save-screen info-panel view mode `4` ("Return") | resolved (dead - the grid has 15 cells) | `disassembly` | [details ↓](#the-dead-return-view-mode) |
 | Title screen mode-table PROT | resolved (no row is named for it - it runs under the `CARD` mode pair 22/23; `FUN_801DD35C` is PROT 0899 `+0xEB44`) | `disassembly` | [details ↓](#title-screen-mode-table-prot) |
 | Load-screen panel 9-slice geometry | resolved (engine renders byte-perfect) | `capture` | Pinned in [`subsystems/save-screen.md`](../subsystems/save-screen.md#pinned-9-slice-tile-rects-system-ui-tim-clut-row-2): retail composes the 81×29 panel at dst `(6, 4)` from 14 textured-sprite primitives (GP0 cmd `0x64`) sampling the system-UI sheet with CLUT `(32, 511)`. The exact per-tile rects are exported as `legaia_asset::title_pak::OVERLAY_SYSTEM_UI_PANEL_*` and emitted by `legaia_engine_render::save_select_chrome_draws_for` (covered by `save_select_chrome_emits_9slice_panel_and_pills` test). No interior fill sprite is drawn - the "marbled blue" look is the dimmed title art bleeding through the empty middle of the frame. |
 | Key-item area consumers (`0x800859E8..0x80085A40`) | resolved (narrow negative; the reader enumeration is closed) | `disassembly` | [details ↓](#key-item-area-consumers) |
@@ -4417,6 +4514,42 @@ order is SCEA, Contrail, PROKION; the fade is the PSX texture blend
 `texel * colour / 128` over a vertex colour scaled by a `0..0x80` level, not
 alpha. Full tables in [`boot.md`](../subsystems/boot.md#the-per-logo-quads).
 Grade `disassembly`; the descriptor table reproduces from the extracted image.
+
+### The title menu's law
+
+`FUN_801DD35C` sub-mode `0x10` (`0x801DDB74..0x801DDCF4`): two rows (`andi 0x1`
+at `0x801DDC00`); Down `0x4000` +1 / Up `0x1000` -1 with cue `0x21`; confirm mask
+`0x844` with cue `0x20`; row 0 -> mode `0x16`, row 1 -> mode `0x18` stashing
+`state[+0x200] = 1`; the `0x5DC` attract countdown is re-armed whenever the held
+word `_DAT_8007B850` is non-zero, decremented by scratchpad `0x1F800393`, the
+input block is skipped while it reads below `0x11`, and underflow writes
+`_DAT_8007BA78 = 0` and mode `0x1A`. Ported as `legaia_engine_vm::title_overlay`'s
+executable half and driven by `engine-core::title` on both hosts. The
+cold-boot default sub-mode is `0x02`, not `0x10` - an open row. Grade
+`disassembly`.
+
+### `FUN_801E5A08`, the per-slot equip applier
+
+`ghidra/scripts/funcs/overlay_0897_801d71f0.txt` (and the `_801d7210` sibling)
+is mis-based by `0xE818`: the bytes are PROT 0897 file `+0x171F0`, true VA
+`0x801E5A08`, 324 bytes. Its four class arms end on `j 0x801E5AE8` /
+`j 0x801E5AEC` - intra-function jumps whose targets print correctly while the
+body prints low, so a self-jump read as a call to a "shared armament placer".
+`0x801E5AE8` is the routine's own inline placer at `+0xE0`. Class -> equipment
+byte: 0 -> 0, 1 -> 1, 2 -> the weapon index (`_DAT_8007B42C`, `2/3/2`), 3 -> 4
+(an `addiu v1,zero,4` in the delay slot at `0x801E5AB0`). No `jal`, data word or
+`addiu` materialisation of `0x801E5A08` exists in any image, so the routine is
+dead; the live equip confirm is `FUN_801D9C14`'s candidate arm. Port
+`legaia_engine_vm::dev_equip_commit::commit_equip`. Grade `disassembly` + bytes.
+
+### The dead Return view mode
+
+`FUN_801E3F74`'s mode `4` ("Return", `0x801CF384`) is real and unreachable: its
+only caller forms the cell as `col + row*5` (`0x801E06D0`), the shared stepper
+clamps `col` to `0..=4` and `row` to `0..=2`, and the linear seed `_DAT_8007B7CC`
+has three references on the disc, all in PROT 0899, whose single writer
+(`0x801DED2C`) stores the same `col + row*5`. Fifteen cells, no sixteenth. Grade
+`disassembly` + bytes.
 
 ## Rendering / camera
 

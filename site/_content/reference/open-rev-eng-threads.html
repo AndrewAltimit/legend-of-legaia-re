@@ -236,6 +236,7 @@
     <thead><tr><th>Thread</th><th>Status</th><th>What would close it</th></tr></thead>
     <tbody>
       <tr><td>What draws the <code>init.pak</code> WARNING screen?</td><td><span class="tag tag-open">open</span> - narrow</td><td>PROT 0895 uploads the health-warning TIM to VRAM <code>(704, 0)</code> and gives it sprite descriptor 1 at <code>0x801F369C</code>, but none of the five <code>FUN_801CFBB8</code> call sites passes id 1 and nothing else references the table. The logo quads themselves are settled.</td></tr>
+      <tr><td>Which title sub-mode does a cold boot show - <code>0x02</code> or <code>0x10</code>?</td><td><span class="tag tag-open">open</span> - narrow</td><td><code>FUN_801DD35C</code>'s init stores sub-mode <code>0x02</code> and overwrites it with <code>0x11</code> only when <code>_DAT_8007BB00 != 0</code>; <code>0x02</code> is itself a two-row menu advancing to <code>0x14</code>, while <code>0x10</code> is the ported New Game / Continue law. A title-entry capture settles it.</td></tr>
     </tbody>
   </table>
   <p>The previous thread here - the identity of PROT 0968 - closed by capture.</p>

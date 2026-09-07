@@ -605,6 +605,55 @@ when `_DAT_8007B64B` is zero; the mist-free arena capture is the default, not
 a phase gate. See
 [`minigame-muscle-dome.md`](../subsystems/minigame-muscle-dome.md).
 
+### `ctx[+0x26]` is a boss phase counter and `ctx[+0xD]` is a dead store
+
+*Falsified by disassembly.*
+
+The "boss phase counter bumped by the Cort form-change arm" reading came from
+the one increment site (`0x801E6D3C`); the byte's unload reader `0x801E61B4`
+passes it as a UI element id, and the only assignment anywhere is `0x65`, the
+level-up banner. The "no port field and no reader" claim about `ctx[+0xD]`
+missed three readers inside `FUN_801D5854` - it is the per-action camera angle
+variant. Both in [`re-settled-threads.md`](re-settled-threads.md#two-battle-context-bytes-read-wrong).
+
+### `0x801E3A20..0x801E3A64` is the Miracle continuation
+
+*Falsified by disassembly.*
+
+`s5` is `ctx + 0x11`, so `0x5(s5)` is `ctx[+0x16]` and the guard chain
+(`ctx[+0x13] < 3`, record `+0xF4 & 0x2000`, counter zero) names the War God
+Icon: this is the Attack x2 second pass, and the sole writer of `ctx[+0x16]`.
+
+### The Miracle marker is armed by an input recognizer (`FUN_801E91E8`'s caller)
+
+*Falsified by disassembly.*
+
+No such writer exists. `+0x25F` has one `sb` in the corpus, in `FUN_80053CB8` at
+battle-actor seeding, from the Ra-Seru equipment byte. `FUN_801E91E8`'s caller
+stages a token into `ctx[+0x269]`, which still has no engine consumer.
+
+### `DAT_8007BD10` is a per-slot control-mode byte
+
+*Falsified by disassembly.*
+
+It is the slot -> roster character id table; three routines index character
+records with it as `0x80084140 + (byte - 1) * 0x414` (`0x801EF344`,
+`0x80053CEC`, `0x801E39CC`). The "`== 4` = an AI-driven member" reading was right
+in effect and wrong about the mechanism.
+
+### The spell record's `+0x01` effect-class byte is undecoded
+
+*Falsified by a read of this repo's own source (`inference`), with the bytes
+confirmed against the disc.*
+
+`legaia_asset::spell_names::SpellEntry::sub_class` has read `+1` for as long as
+it has read `+0`, and `World::spell_table_sub_class` served it to the battle
+host. The gap was a *consumer* gap - nothing turned the byte into a module.
+The companion claim that the player Seru-magic block all shares `cat = 0x32 /
+sub = 0` is false by `SCUS_942.54`: `0x83` Vera is `0x00 / 0x03` and `0x89` Orb
+is `0x01 / 0x04`; only the nine enemy-side spells are `0x32 / 0x00`. Grade
+`disassembly` for the bytes.
+
 ### The slot-B module band shares a library tail
 
 *Falsified by disassembly and byte comparison.*
@@ -1354,6 +1403,9 @@ CONFIGURE arm makes with its `s16` at `operand+2`. The sibling arms corroborate
 (`0x40` `+0x14`, `0x80` `+2`). Cost of the wrong reading: every record whose
 trigger is `0` restarted from byte 0, which is what made `urudre2` read as
 one-way and let four `keikoku` records do nothing.
+It also had `man_edit` refuse to resize any record containing one
+(`AbsoluteRef`) while listing it as relocatable - the field VM stores **no**
+absolute PC anywhere, so every control-flow field shifts with its record.
 
 ### Op `0x43` subs 0/1/A/B resume at an operand `s16`
 
@@ -1419,6 +1471,25 @@ image at its mapped base, and only from there.
 |---|---|---|
 | Retail's op-`0x49` arm spawns a driver actor that **opens the pause menu itself** for the kind-`0x0D` entry context | falsified (row `0x0D` of the dispatch table is `-1`; nothing opens) | The reading explained why the port could not reach `ContextNotice` / `ContextReady` and pointed at a pending-request channel as the fix. But the submode dispatcher indexes a **signed** 14-byte table at `0x801F33A4` with the parked operand's first byte and returns on `-1` (`0x801F1468..0x801F1470`) *before* it writes the driver's state or clears `_DAT_8007B450`. So a `0x0D` park simply stands, and the player's own Start is what enters the menu it gates. The port's own close-tick fallback for that row was the defect: it retired within a few frames and took the context with it. |
 | Actor VM = "the title screen's sprite-walk interpreter", with an ANM-trigger opcode | falsified (it is the menu overlay's window-widget script interpreter) | Two readings fell together. `FUN_801D6628` is resident in PROT 0899 (the menu overlay), and its base materialisation `lui 0x801e / addiu 0x4738` indexes the **window descriptor table** - instruction byte 1 is a window id, not a sprite-actor slot. And no arm of the 13-way dispatch hands off an ANM id (`see ghidra/scripts/funcs/overlay_menu_801d6628.txt`); "trigger animation" was a guess from the sprite-VM framing. Programs are overlay-resident data ([window-script.md](../formats/window-script.md)), so "find the per-scene carrier" was never answerable. |
+
+### The save screen's block grid has a sixteenth Return cell
+
+*Falsified by disassembly.*
+
+The mode-`4` arm is real but unreachable - both cursor words are clamped
+(`col <= 4`, `row <= 2`) and the linear seed's single writer stores
+`col + row*5`. See [settled](re-settled-threads.md#the-dead-return-view-mode).
+
+### `0x801E5AE8` is a shared armament placer that `FUN_801D71F0` calls
+
+*Falsified by bytes.*
+
+A dump mis-based by `0xE818` prints the body low while its `j` targets print
+true, so a self-jump reads as an outbound call. `FUN_801D71F0` is the phantom
+print of `FUN_801E5A08`, and `0x801E5AE8` is that routine's own inline placer.
+The sibling reading "`FUN_801D71F0` is a dead add-item copy" was half right for
+the wrong reason: the routine is dead, but it is the equip applier and its
+`FUN_800421D4` call is a refund.
 
 ### The disc's item population is far below 128, so a half-window bag cannot fill
 

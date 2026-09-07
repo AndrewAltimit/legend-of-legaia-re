@@ -72,6 +72,24 @@ Rows the last audit wave overturned. They are listed here rather than filed
 silently into the settled page, because a claim that was wrong once is the
 cheapest place to look for a claim that is still wrong.
 
+- **The Miracle marker has no input recognizer.** `ctx[+0x25F + slot]` has one
+  store on the disc, in the party battle-actor seeding routine `FUN_80053CB8`,
+  from the character's Ra-Seru equipment byte
+  ([settled](re-settled-threads.md#the-miracle-marker-is-an-equipment-byte)).
+- **`ctx[+0x26]` is the level-up banner's UI element id, and `ctx[+0xD]` is the
+  per-action camera angle variant** - neither a boss phase counter nor a dead
+  store ([settled](re-settled-threads.md#two-battle-context-bytes-read-wrong)).
+- **Field-VM op `0x23` MOVE_TO picks the player arm by ctx pointer identity**,
+  not by the class-flag bit a spawned record inherits - which is what teleported
+  the player into `keikoku`'s hide box once its records ran
+  ([settled](re-settled-threads.md#op-0x23-move_to-keys-on-ctx-identity)).
+- **The spell record's `+0x01` byte was decoded all along**, and the player
+  Seru block does not all share `0x32 / 0`
+  ([falsified](re-do-not-re-walk.md#the-spell-records-0x01-effect-class-byte-is-undecoded)).
+- **`FUN_801D71F0` is a phantom VA** - the bytes are `FUN_801E5A08`, the per-slot
+  equip applier, unreferenced on the disc; and the save screen's block grid has
+  no sixteenth Return cell
+  ([falsified](re-do-not-re-walk.md#menus--ui)).
 - **Field-VM op `0x45` sub `0xC0` (CAMERA APPLY) never jumped.** Its arm exits
   `j 0x801E3624` with `addiu s8, s8, 4` in the delay slot and hands the operand
   `s16` to `FUN_801DE084` as the apply trigger; the "absolute jump" reading came
@@ -437,6 +455,7 @@ resolved as the track-swap **commit** and moved to
 | Thread | Status | What would close it |
 |---|---|---|
 | What draws the `init.pak` WARNING screen? | open (narrow) | PROT 0895 uploads the health-warning TIM to VRAM `(704, 0)` and gives it sprite descriptor 1 in the six-record table at `0x801F369C`, but none of the five `FUN_801CFBB8` call sites in that image passes id 1 and nothing else references the table - so the screen is emitted by another image or another mode. The logo quads themselves are settled ([settled](re-settled-threads.md#the-publisher-logo-quads)). |
+| Which title sub-mode does a cold boot show - `0x02` or `0x10`? | open (narrow) | `FUN_801DD35C`'s init stores sub-mode `0x02` at `0x801DD920` and overwrites it with `0x11` only when `_DAT_8007BB00 != 0`; `0x02` is itself a two-row menu (rows y 107/120, confirm `0x44`) advancing to `0x14`, while `0x10` is the ported New Game / Continue law. Which one a player sees is a mode-graph question a title-entry capture settles. |
 
 The previous thread here - PROT 0968 identity, the one slot-B cluster
 entry without a residency capture - closed by capture: the
