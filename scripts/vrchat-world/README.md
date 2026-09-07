@@ -44,7 +44,7 @@ your disc ──legaia-extract──▶ extracted/ ──legaia-engine export-gl
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaNpcStation.cs` | The station contract of the living town: a place an NPC can go and do something (`kind` 0 use-prop / 1 fishing / 2 seat / 3 chat / 4 viewpoint / 5 carry endpoint / 6 visit), a stand point + facing, an optional handler that receives `OnNpcArrive` / `OnNpcLeave`, visitor-side fields (`arriveIcon`, `glance`, `carryFlow`) and `Claim` / `Release` bookkeeping. Any pass can plant one; the director finds them all. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaTownDirector.cs` | The town's scheduler (one per scene): builds multi-stop errand itineraries, matchmakes conversations onto chat rings *and* on the spot where villagers meet, runs the bubble turn-taking, pairs passing villagers for a greeting or an errand walked side by side, and sends the town indoors at night (and back out at dawn). Asks the navmesh before sending anyone anywhere. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaNpcBrain.cs` | One villager's state machine (stroll / go to station / at station / go chat / chat / go home / door opening / onto the threshold / come out / stand out for the night, plus the daytime states: errand leg, errand stop, greeting, walking beside a companion, ad-hoc meeting), executing the director's decisions through the locomotion controller and the station contract; a build-time personality seed keeps every client's choices aligned. The door trip is a reusable action (`DoorTrip` / `LeaveThrough`) any layer can aim at any doorway pair. |
-| `world-project/Assets/LegaiaWorld/Udon/LegaiaSpeechBubble.cs` | The billboarded icon bubble over a talking villager ("...", "!", "?", heart, music note, laugh, a raised hand, work drops) with the NPC's own first dialog line under it (TextMeshPro); icons swap by enabling one of eight child quads, never by material writes. |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaSpeechBubble.cs` | The billboarded pictogram bubble over a talking villager: six reactions ("...", "!", "?", heart, music note, laugh), the wave and the work drops, and six conversation topics (fish, house, sun, sleep, food, storm). Pictures only, never dialog text; icons swap by enabling one of fourteen child quads, never by material writes. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaNpcCarry.cs` | What a villager is holding: the per-villager item rig at a measured hand point, one child per item, `Show` / `Hide` by `SetActive`, a work sway, and a hard drop deadline so an errand cut short never leaves a bucket welded to somebody's arm. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaNpcHandItem.cs` | The handler behind a kind-5 carry station: hands the arriving villager an item, or takes back the one it is carrying. `keepOnLeave` is what makes a fetch read as one errand instead of two visits. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaVisitSpot.cs` | The handler behind a kind-6 visit station: the fixed resident being called on answers with its own speech bubble, on a beat after the caller's hello, and keeps answering while the caller stands there. |
@@ -53,7 +53,7 @@ your disc ──legaia-extract──▶ extracted/ ──legaia-engine export-gl
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaCardTableHost.cs` | Card-table seat handler: villagers sit at free stools (seated pose approximated by lowering the rig) holding a fanned pair of card backs, and give the table back the moment a player sits down, a card leaves the deck, or the synced *NPCs: sit / shoo* button says so. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaLivingTown.cs` | The **Living town** pass: bakes the villager navmesh, builds the director, per-villager brains + bubbles + carried-item rigs, use-prop stations in front of every one-shot prop (cupboards, drawer, shop door), chat rings indoors and out, path / shoreline / doorstep / visit stand spots, carry endpoints and the seeded home assignment from the manifest's doorway pairs - each home with its doorway tile, a stand spot in front of it and the door prop to swing. Idempotent. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaNavMesh.cs` | The navmesh bake: collects every non-trigger collider under the built root and the kit's prefab containers (NPC capsules and rigidbodies excluded), bakes a villager-sized `NavMeshData` with Unity's runtime builder, saves it under `LegaiaGenerated/<scene>/livingtown/` and wires the loader. Also finds the **ledge links** that let a villager hop between islands the bake leaves unconnected, and the editor-side route check (walks and hops) the batch test uses. |
-| `world-project/Assets/LegaiaWorld/Editor/LegaiaBubbleArt.cs` | Procedural speech-bubble art: the eight icon textures drawn from scratch into an atlas, one material each, and the bubble quad. |
+| `world-project/Assets/LegaiaWorld/Editor/LegaiaBubbleArt.cs` | Procedural speech-bubble art: the fourteen pictogram textures drawn from scratch, one material each, and the bubble quad. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaCarryArt.cs` | The things villagers carry - bucket, broom, firewood bundle, basket - built from Unity primitives with generated flat materials, sized as fractions of each villager's own measured height. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaWeatherBuilder.cs` | The **Weather** pass: builds `<root>/weather` and wires `LegaiaWeather` to the day/night cycle, the grass material, the ambience mixer and the settings panel. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaLivingProps.cs` | The **Living props** pass: finds standable shoreline points from the world mesh alone (water sheet vs land cells, floor ray, clear standing capsule) and plants the fishing stations in `<root>/living_props`. |
@@ -373,10 +373,15 @@ they visit - plus a `speech_bubble` on each villager.
   around one meeting place, so a group of three is an ordinary station
   claim rather than a special case; the director matchmakes two or three
   free villagers onto a free ring, waits for everyone to arrive, and then
-  gives turns. The talker gets a bubble over their head - one of eight
-  generated icons ("...", "!", "?", heart, music note, laugh, a raised
-  hand, work drops), with their own first dialog line from the manifest
-  printed under it (**Bubble dialog text**, untick for icons alone).
+  gives turns. The talker gets a bubble over their head, and the bubbles
+  speak in **pictograms only**, the way The Sims does - no dialog text is
+  ever printed. Each conversation opens on a topic (fish, house, sun,
+  sleep, food, storm cloud) and the replies are reactions ("...", "!",
+  "?", laugh, music note, heart); the topic comes back now and then, or
+  drifts to a new one. Outside conversations the same vocabulary carries
+  the rest of the day: a wave when two villagers cross, work drops at an
+  errand stop, the house on the walk home, a yawn of Zs from a villager
+  with nowhere to go, a fish or a sun at a shore or path viewpoint.
   Three-ways are not left to chance: after two consecutive pairs the next
   conversation *must* be a three, and a forced three-way now **waits**
   for a third free villager instead of settling for a pair - settling

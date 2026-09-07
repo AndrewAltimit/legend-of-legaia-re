@@ -163,6 +163,8 @@ namespace LegaiaWorld
         private int[] convTurn = new int[MAX_GROUPS];
         private float[] convDeadline = new float[MAX_GROUPS];
         private float[] convNextTurn = new float[MAX_GROUPS];
+        private int[] convTopic = new int[MAX_GROUPS];       // pictogram the group is on about
+        private bool[] convTopicShown = new bool[MAX_GROUPS];
 
         // Ring index per station (-1 = not a chat station).
         private int[] ringOf;
@@ -190,8 +192,11 @@ namespace LegaiaWorld
         private int forceWaits;
         // NavMesh.AllAreas is not reachable through Udon's type exposure.
         private const int ALL_AREAS = -1;
-        // LegaiaBubbleArt.ICON_NAMES index of the raised hand.
+        // LegaiaBubbleArt.ICON_NAMES index of the raised hand, and the
+        // band of conversation topics (fish, house, sun, sleep, food, storm).
         private const int ICON_WAVE = 6;
+        private const int ICON_TOPIC_FIRST = 8;
+        private const int ICON_TOPIC_COUNT = 6;
 
         void Start()
         {
@@ -448,6 +453,8 @@ namespace LegaiaWorld
                         convState[g] = 2;
                         convDeadline[g] = Time.time + chatSeconds;
                         convNextTurn[g] = Time.time + 0.4f;
+                        convTopic[g] = ICON_TOPIC_FIRST + NextInt(ICON_TOPIC_COUNT);
+                        convTopicShown[g] = false;
                     }
                     else if (Time.time > convDeadline[g])
                     {
@@ -471,21 +478,35 @@ namespace LegaiaWorld
                 convTurn[g] = (turn + 1) % size;
                 LegaiaNpcBrain speaker = convBrains[g * GROUP_SIZE + (turn % size)];
                 float dur = turnSeconds * (0.7f + NextFloat() * 0.4f);
-                speaker.Speak(PickIcon(), dur);
+                speaker.Speak(PickIcon(g), dur);
                 convNextTurn[g] = Time.time + dur + 0.3f + NextFloat() * 0.6f;
             }
         }
 
-        // 0 "...", 1 "!", 2 "?", 3 heart, 4 music, 5 laugh - weighted so the
-        // plain talk bubble dominates and the flourishes stay occasional.
-        int PickIcon()
+        // The Sims' grammar: the opener names the topic (a fish, a house,
+        // the sun, sleep, food, a storm cloud), the replies are reactions
+        // ("...", "!", "?", laugh, music, heart), and now and then the
+        // topic comes back - or drifts to a new one - so a long chat reads
+        // as a conversation rather than as a slot machine of faces.
+        int PickIcon(int g)
         {
+            if (!convTopicShown[g])
+            {
+                convTopicShown[g] = true;
+                return convTopic[g];
+            }
             int r = NextInt(100);
-            if (r < 45) return 0;
-            if (r < 60) return 1;
-            if (r < 75) return 2;
-            if (r < 84) return 5;
-            if (r < 93) return 4;
+            if (r < 22)
+            {
+                if (NextInt(4) == 0)
+                    convTopic[g] = ICON_TOPIC_FIRST + NextInt(ICON_TOPIC_COUNT);
+                return convTopic[g];
+            }
+            if (r < 55) return 0;
+            if (r < 67) return 1;
+            if (r < 79) return 2;
+            if (r < 87) return 5;
+            if (r < 94) return 4;
             return 3;
         }
 

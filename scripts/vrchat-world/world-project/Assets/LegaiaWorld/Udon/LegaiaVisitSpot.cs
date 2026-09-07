@@ -30,9 +30,6 @@ namespace LegaiaWorld
         [Tooltip("The fixed resident's own speech bubble.")]
         public LegaiaSpeechBubble hostBubble;
 
-        [Tooltip("The host's first dialog line from the manifest.")]
-        public string hostLine = "";
-
         [Tooltip("Icon the host answers with (see LegaiaBubbleArt.ICON_NAMES).")]
         public int hostIcon;
 
@@ -67,7 +64,7 @@ namespace LegaiaWorld
         {
             if (!visiting || hostBubble == null)
                 return;
-            hostBubble.Show(hostIcon, replySeconds, hostLine);
+            hostBubble.Show(hostIcon, replySeconds);
             SendCustomEventDelayedSeconds("HostReply",
                 replyInterval < 3f ? 3f : replyInterval);
         }

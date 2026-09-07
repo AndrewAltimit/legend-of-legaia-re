@@ -723,6 +723,19 @@ namespace LegaiaWorld
                 if (bubbles.Length != 1)
                     Fail(placed.name + " carries " + bubbles.Length +
                          " speech bubble(s), expected exactly 1");
+                else
+                {
+                    // Pictograms only: one quad per icon, and no text
+                    // component anywhere under the bubble.
+                    var quads = ReadVar(bubbles[0], "icons") as GameObject[];
+                    if (quads == null || quads.Length != LegaiaBubbleArt.ICONS)
+                        Fail(placed.name + "'s bubble carries " +
+                             (quads == null ? 0 : quads.Length) +
+                             " icon quad(s), expected " + LegaiaBubbleArt.ICONS);
+                    if (bubbles[0].GetComponentsInChildren<TMPro.TMP_Text>(true).Length != 0)
+                        Fail(placed.name + "'s bubble carries a text label - " +
+                             "bubbles speak in pictograms only");
+                }
                 if (LegaiaCommonPrefabs.BackingUdon(brain) == null)
                     Fail(placed.name + "'s brain has no backing UdonBehaviour");
                 if (ReadVar(brain, "director") == null)

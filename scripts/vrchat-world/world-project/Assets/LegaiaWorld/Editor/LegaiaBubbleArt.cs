@@ -1,9 +1,11 @@
-// Generated art for the living town's speech bubbles: eight icon textures
-// ("...", "!", "?", heart, music note, laugh, a raised hand and a work
-// sweat-drop) drawn from scratch into an atlas plus one material each,
-// and the unit quad the bubble renders on. The last two are the daytime
-// pair: the hand is what a villager waves when it passes a neighbour on a
-// path, the drops are what it shows while it is busy at an errand stop.
+// Generated art for the living town's speech bubbles: fourteen pictogram
+// textures drawn from scratch, one material each, and the unit quad the
+// bubble renders on. Six reactions ("...", "!", "?", heart, music note,
+// laugh), the daytime pair (a raised hand a villager waves when it passes
+// a neighbour, the sweat drops it shows while busy at an errand stop), and
+// six conversation TOPICS (fish, house, sun, sleep, food, storm cloud) the
+// director opens a chat with. Pictograms are the whole language - no
+// dialog text - the way The Sims lets a picture stand for the sentence.
 //
 // Everything here is procedural - no game data, no imported sprite - so the
 // bubbles ship with the kit like the card faces and the slot marquee do.
@@ -28,12 +30,13 @@ namespace LegaiaWorld
 {
     public static class LegaiaBubbleArt
     {
-        public const int ICONS = 8;
+        public const int ICONS = 14;
         const int SIZE = 96;
 
         public static readonly string[] ICON_NAMES =
             { "talk", "excl", "question", "heart", "music", "laugh",
-              "wave", "work" };
+              "wave", "work",
+              "fish", "house", "sun", "sleep", "food", "storm" };
 
         /// Index of the raised hand (LegaiaTownDirector mirrors it as a
         /// constant, since Udon has no reach into an editor class).
@@ -41,6 +44,15 @@ namespace LegaiaWorld
 
         /// Index of the work drops.
         public const int WORK = 7;
+
+        /// The topic band, in ICON_NAMES order (the director mirrors the
+        /// first index and the count as constants).
+        public const int FISH = 8;
+        public const int HOUSE = 9;
+        public const int SUN = 10;
+        public const int SLEEP = 11;
+        public const int FOOD = 12;
+        public const int STORM = 13;
 
         /// One material per icon, created (or refreshed) under `genDir`.
         public static Material[] IconMaterials(string genDir)
@@ -179,6 +191,64 @@ namespace LegaiaWorld
                 Drop(50f, 70f, 11f, ink);
                 Drop(66f, 60f, 8f, ink);
             }
+            else if (icon == FISH)
+            {
+                // A fish swimming left: body, forked tail, one eye.
+                var sea = new Color32(64, 112, 196, 255);
+                Ellipse(44f, 58f, 19f, 10f, sea);
+                Tri(60f, 58f, 76f, 70f, 76f, 46f, sea);
+                Disc(34f, 60f, 3f, fill);
+                Disc(34f, 60f, 1.5f, ink);
+            }
+            else if (icon == HOUSE)
+            {
+                // A hut: walls, a wide roof, a door.
+                Bar(48f, 34f, 58f, 34f, ink);
+                Tri(24f, 56f, 72f, 56f, 48f, 82f, new Color32(168, 74, 52, 255));
+                Bar(48f, 34f, 50f, 9f, fill);
+            }
+            else if (icon == SUN)
+            {
+                // A sun with eight rays.
+                var gold = new Color32(236, 184, 48, 255);
+                for (int i = 0; i < 8; i++)
+                {
+                    float a = i * Mathf.PI / 4f;
+                    Stroke(48f + Mathf.Cos(a) * 17f, 58f + Mathf.Sin(a) * 17f,
+                        48f + Mathf.Cos(a) * 25f, 58f + Mathf.Sin(a) * 25f, 4f, gold);
+                }
+                Disc(48f, 58f, 13f, gold);
+            }
+            else if (icon == SLEEP)
+            {
+                // Three Zs, growing toward the top right.
+                Zed(30f, 44f, 10f, ink);
+                Zed(46f, 58f, 13f, ink);
+                Zed(64f, 72f, 16f, ink);
+            }
+            else if (icon == FOOD)
+            {
+                // A loaf with three scores across the crust.
+                var crust = new Color32(204, 142, 70, 255);
+                Ellipse(48f, 56f, 21f, 12f, ink);
+                Ellipse(48f, 56f, 18f, 9f, crust);
+                Stroke(38f, 62f, 44f, 54f, 3f, ink);
+                Stroke(46f, 63f, 52f, 55f, 3f, ink);
+                Stroke(54f, 62f, 60f, 54f, 3f, ink);
+            }
+            else if (icon == STORM)
+            {
+                // A grey cloud over a yellow bolt: grumbling about the weather.
+                var grey = new Color32(112, 116, 128, 255);
+                Disc(37f, 66f, 9f, grey);
+                Disc(50f, 71f, 11f, grey);
+                Disc(63f, 66f, 9f, grey);
+                Ellipse(50f, 62f, 23f, 7f, grey);
+                var bolt = new Color32(236, 184, 48, 255);
+                Stroke(52f, 56f, 45f, 46f, 4f, bolt);
+                Stroke(45f, 46f, 53f, 46f, 4f, bolt);
+                Stroke(53f, 46f, 45f, 34f, 4f, bolt);
+            }
             else
             {
                 // "^ ^" eyes over a wide grin.
@@ -314,6 +384,15 @@ namespace LegaiaWorld
         static float Side(float px, float py, float ax, float ay, float bx, float by)
         {
             return (px - bx) * (ay - by) - (ax - bx) * (py - by);
+        }
+
+        // A letter Z `size` pixels across, centred on (cx, cy).
+        static void Zed(float cx, float cy, float size, Color32 c)
+        {
+            float h = size / 2f, w = size < 12f ? 3f : 4f;
+            Stroke(cx - h, cy + h, cx + h, cy + h, w, c);
+            Stroke(cx + h, cy + h, cx - h, cy - h, w, c);
+            Stroke(cx - h, cy - h, cx + h, cy - h, w, c);
         }
 
         // A teardrop: a disc with a point on top, `size` pixels tall.

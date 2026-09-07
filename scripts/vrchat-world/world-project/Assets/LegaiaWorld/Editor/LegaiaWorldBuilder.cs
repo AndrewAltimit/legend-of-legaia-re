@@ -806,8 +806,6 @@ namespace LegaiaWorld
                     "  Conversation spots", realism.livingTown.maxChatSpots, 1, 12);
                 realism.livingTown.speechBubbles = EditorGUILayout.Toggle(
                     "  Speech bubbles", realism.livingTown.speechBubbles);
-                realism.livingTown.bubbleText = EditorGUILayout.Toggle(
-                    "  Bubble dialog text", realism.livingTown.bubbleText);
                 realism.livingTown.walkAnimator = EditorGUILayout.Toggle(
                     new GUIContent("  Walk cycle clip",
                         "Bind the measured walk cycle as an idle/walk " +

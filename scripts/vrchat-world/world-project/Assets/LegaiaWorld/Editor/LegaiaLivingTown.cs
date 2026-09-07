@@ -100,8 +100,6 @@ namespace LegaiaWorld
         public float walkSpeed = 0.7f;
         [Tooltip("Speech bubbles over the talker's head.")]
         public bool speechBubbles = true;
-        [Tooltip("Print the NPC's own first dialog line under the bubble icon.")]
-        public bool bubbleText = true;
         [Tooltip("Share of villagers who stay indoors by day as well.")]
         public float daytimeIndoorsShare = 0.18f;
         [Tooltip("Scene-constant seed: home assignment and personalities.")]
@@ -1339,10 +1337,6 @@ namespace LegaiaWorld
                     LegaiaWorldBuilder.SetUdonField(handler, "station", st);
                     if (bubble != null)
                         LegaiaWorldBuilder.SetUdonField(handler, "hostBubble", bubble);
-                    LegaiaWorldBuilder.SetUdonField(handler, "hostLine",
-                        o.bubbleText
-                            ? Shorten(MiniJson.AsStr(MiniJson.Get(n, "label")) ?? "")
-                            : "");
                     LegaiaWorldBuilder.SyncUdonProxy(handler);
                     LegaiaWorldBuilder.SetUdonField(st, "handler", handler);
                 }
@@ -1398,7 +1392,8 @@ namespace LegaiaWorld
                         (low ? "station_shore_" : "station_path_") + made, 4, floor,
                         low ? floor - centre : centre - floor, false,
                         low ? 16f : 11f, null);
-                    Tag(st, -1, low ? "shore" : "path", true);
+                    Tag(st, low ? LegaiaBubbleArt.FISH : LegaiaBubbleArt.SUN,
+                        low ? "shore" : "path", true);
                     taken.Add(floor);
                     made++;
                 }
@@ -1737,7 +1732,6 @@ namespace LegaiaWorld
             // Eligible villagers, in manifest order (deterministic).
             var files = new List<string>();
             var objs = new List<Transform>();
-            var labels = new List<string>();
             var idles = new List<string>();
             foreach (object n in MiniJson.AsList(MiniJson.Get(manifest, "npcs"))
                      ?? new List<object>())
@@ -1754,7 +1748,6 @@ namespace LegaiaWorld
                     continue;
                 files.Add(file);
                 objs.Add(placed);
-                labels.Add(MiniJson.AsStr(MiniJson.Get(n, "label")) ?? "");
                 idles.Add(FirstClip(n));
             }
 
@@ -1896,8 +1889,6 @@ namespace LegaiaWorld
                     dayIn || insideAlready[i]);
                 LegaiaWorldBuilder.SetUdonField(brain, "startIndoors", insideAlready[i]);
                 LegaiaWorldBuilder.SetUdonField(brain, "noRoute", noRoute[i]);
-                LegaiaWorldBuilder.SetUdonField(brain, "firstLine",
-                    o.bubbleText ? Shorten(labels[i]) : "");
                 if (homeOf[i] >= 0)
                 {
                     Home home = homes[homeOf[i]];
@@ -1977,13 +1968,6 @@ namespace LegaiaWorld
             return loco;
         }
 
-        static string Shorten(string label)
-        {
-            if (string.IsNullOrEmpty(label))
-                return "";
-            label = label.Trim();
-            return label.Length <= 26 ? label : label.Substring(0, 24) + "...";
-        }
 
         /// The bubble rig: an always-active holder (a U# call into a
         /// DISABLED behaviour never runs, so the behaviour's own object must
@@ -2027,30 +2011,11 @@ namespace LegaiaWorld
                 q.SetActive(false);
                 iconObjs[i] = q;
             }
-            TMPro.TextMeshPro label = null;
-            if (o.bubbleText)
-            {
-                var lg = new GameObject("label");
-                lg.transform.SetParent(visual.transform, false);
-                lg.transform.localPosition = new Vector3(0f, -0.62f, -0.01f);
-                label = lg.AddComponent<TMPro.TextMeshPro>();
-                label.alignment = TMPro.TextAlignmentOptions.Center;
-                label.fontSize = 1.15f;
-                label.enableWordWrapping = false;
-                label.color = new Color(0.96f, 0.94f, 0.85f);
-                label.text = "";
-                label.rectTransform.sizeDelta = new Vector2(6.5f, 0.4f);
-                var lmr = lg.GetComponent<MeshRenderer>();
-                if (lmr != null)
-                    lmr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            }
             visual.SetActive(false);
 
             var udon = LegaiaWorldBuilder.TryAttachUdon(go, "LegaiaSpeechBubble");
             LegaiaWorldBuilder.SetUdonField(udon, "icons", iconObjs);
             LegaiaWorldBuilder.SetUdonField(udon, "visual", visual);
-            if (label != null)
-                LegaiaWorldBuilder.SetUdonField(udon, "label", label);
             LegaiaWorldBuilder.SyncUdonProxy(udon);
             return udon;
         }

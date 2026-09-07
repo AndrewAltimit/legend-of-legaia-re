@@ -90,9 +90,6 @@ namespace LegaiaWorld
         [Tooltip("This NPC's speech bubble (a child of the NPC).")]
         public LegaiaSpeechBubble bubble;
 
-        [Tooltip("The NPC's first dialog line from the manifest - shown under the bubble icon.")]
-        public string firstLine = "";
-
         [Tooltip("Personality seed (build-time constant, derived from the NPC file name).")]
         public int seed = 1;
 
@@ -364,12 +361,15 @@ namespace LegaiaWorld
             loco.GoTo(slot.StandPosition());
         }
 
-        /// Take a turn in the conversation: an icon over the head, plus this
-        /// NPC's own first dialog line when the bubble carries a label.
+        // LegaiaBubbleArt.ICON_NAMES indices (Udon cannot reach the editor class).
+        private const int ICON_HOUSE = 9;
+        private const int ICON_SLEEP = 11;
+
+        /// Take a turn in the conversation: a pictogram over the head.
         public void Speak(int icon, float seconds)
         {
             if (bubble != null)
-                bubble.Show(icon, seconds, firstLine);
+                bubble.Show(icon, seconds);
         }
 
         // --- Itineraries ------------------------------------------------------
@@ -692,6 +692,8 @@ namespace LegaiaWorld
             tripEmerge = homeEmerge;
             tripIsHome = true;
             StartWalkToDoor();
+            // "Off home": the house pictogram as the walk starts.
+            Speak(ICON_HOUSE, 2.5f);
         }
 
         /// A door trip interrupts the daytime layer: the itinerary is
@@ -782,8 +784,8 @@ namespace LegaiaWorld
         void StandForTheNight()
         {
             state = 9;
-            if (bubble != null)
-                bubble.Hide();
+            // Nowhere to go tonight: a yawn, then quiet.
+            Speak(ICON_SLEEP, 4f);
             Transform look = homeThreshold != null ? homeThreshold : homeDoor;
             if (look != null)
                 loco.FaceToward(look.position);

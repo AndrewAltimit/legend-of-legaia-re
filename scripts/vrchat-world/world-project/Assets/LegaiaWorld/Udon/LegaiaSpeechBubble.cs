@@ -1,7 +1,8 @@
 // One villager's speech bubble: a billboarded quad above the NPC's head
-// that shows an icon ("...", "!", "?", heart, music note, laugh) while the
-// town director gives that NPC a turn in a conversation, with the NPC's own
-// first dialog line optionally printed under the icon.
+// that shows a pictogram ("...", "!", "?", heart, music note, laugh, a
+// wave, work drops, and the conversation topics: fish, house, sun, sleep,
+// food, storm) while the town director gives that NPC a turn. Pictograms
+// only, the way The Sims talks - no dialog text is ever printed.
 //
 // ICON SWAPPING WITHOUT MATERIAL WRITES. The atlas is cut into six child
 // quads, one per icon, each with its own generated material (LegaiaBubbleArt
@@ -29,7 +30,6 @@
 //
 // Requires UdonSharp (bundled with the VRChat worlds SDK).
 
-using TMPro;
 using UdonSharp;
 using UnityEngine;
 using VRC.SDKBase;
@@ -39,16 +39,10 @@ namespace LegaiaWorld
     [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
     public class LegaiaSpeechBubble : UdonSharpBehaviour
     {
-        [Tooltip("One child quad per icon: 0 '...', 1 '!', 2 '?', 3 heart, 4 music, 5 laugh.")]
+        [Tooltip("One child quad per icon, in LegaiaBubbleArt.ICON_NAMES order (0 '...', 1 '!', 2 '?', 3 heart, 4 music, 5 laugh, 6 wave, 7 work, 8 fish, 9 house, 10 sun, 11 sleep, 12 food, 13 storm).")]
         public GameObject[] icons;
 
-        [Tooltip("Optional world-space TextMeshPro under the icon (legacy TextMesh is not exposed to Udon).")]
-        public TextMeshPro label;
-
-        [Tooltip("Longest dialog line shown under the icon; longer lines are cut.")]
-        public int maxLabelChars = 28;
-
-        [Tooltip("Container holding the quads + text: toggled on and off (this behaviour's own object must stay active).")]
+        [Tooltip("Container holding the quads: toggled on and off (this behaviour's own object must stay active).")]
         public GameObject visual;
 
         [Tooltip("Turn to face the local player's head while shown.")]
@@ -75,9 +69,8 @@ namespace LegaiaWorld
                 - transform.TransformPoint(Vector3.zero);
         }
 
-        /// Show icon `icon` (index into `icons`) for `seconds`, with an
-        /// optional line of text under it.
-        public void Show(int icon, float seconds, string text)
+        /// Show icon `icon` (index into `icons`) for `seconds`.
+        public void Show(int icon, float seconds)
         {
             if (icons == null || icons.Length == 0)
                 return;
@@ -93,14 +86,6 @@ namespace LegaiaWorld
                 if (icons[icon] != null)
                     icons[icon].SetActive(true);
                 shown = icon;
-            }
-            if (label != null)
-            {
-                if (text == null)
-                    text = "";
-                if (text.Length > maxLabelChars)
-                    text = text.Substring(0, maxLabelChars);
-                label.text = text;
             }
             hideAt = Time.time + seconds;
             Aim();
