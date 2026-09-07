@@ -1731,6 +1731,7 @@ namespace LegaiaWorld
 
             // Eligible villagers, in manifest order (deterministic).
             var files = new List<string>();
+            var glbs = new List<string>();
             var objs = new List<Transform>();
             var idles = new List<string>();
             foreach (object n in MiniJson.AsList(MiniJson.Get(manifest, "npcs"))
@@ -1747,6 +1748,7 @@ namespace LegaiaWorld
                 if (placed == null)
                     continue;
                 files.Add(file);
+                glbs.Add(LegaiaSceneSettings.NpcGlb(n, dir));
                 objs.Add(placed);
                 idles.Add(FirstClip(n));
             }
@@ -1862,7 +1864,7 @@ namespace LegaiaWorld
                 // one - after the controller exists, so its animator field
                 // is set on a component that is certainly there.
                 if (o.walkAnimator && walkWired.Add(files[i]))
-                    if (WireWalkAnimator(npc.gameObject, dir + "/" + files[i],
+                    if (WireWalkAnimator(npc.gameObject, glbs[i],
                             idles[i], o.walkClip, genDir))
                         walked++;
 

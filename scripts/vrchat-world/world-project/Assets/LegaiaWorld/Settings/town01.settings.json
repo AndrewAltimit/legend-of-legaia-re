@@ -4,6 +4,11 @@
   "static_npcs": [26, 27, 45, 46, 29, 12],
   "remove_npcs": [28, 10, 11],
   "freeze_npcs": [17, 47, 48],
+  "replace_npcs": {"14": {"scene": "kor3", "model": 127}},
+  "add_npcs": [
+    {"scene": "bylon", "model": 103, "position": [-95.5, 0, 59.7], "label": "Maya"}
+  ],
+  "mesh_npcs": {"mesh_55": {"scene": "balden", "model": 151}},
   "spawn_position": [-24.85, 1.75, 12.22],
   "set_descriptor_spawn": true,
   "living_town": {

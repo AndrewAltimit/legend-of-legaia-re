@@ -108,6 +108,9 @@ namespace LegaiaWorld
             // Re-apply the pass, so the kit under test is what runs (the
             // scene on disk may carry an older build of it).
             var settings = LegaiaSceneSettings.Load(sceneName);
+            string manifestDir = "Assets/LegaiaImports/" + sceneName;
+            settings.ApplyNpcOverrides(manifest, manifestDir, rootT.gameObject);
+            LegaiaWorldBuilder.ReconcileNpcs(manifest, manifestDir, rootT.gameObject, sceneName, settings);
             var applied = LegaiaLivingTown.Apply(rootT.gameObject, manifest, sceneName,
                 new LegaiaLivingTownOptions(), settings);
             if (applied == null)

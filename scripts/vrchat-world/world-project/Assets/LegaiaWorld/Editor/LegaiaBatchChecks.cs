@@ -491,6 +491,40 @@ namespace LegaiaWorld
 
             LegaiaWorldBuilder.EnsureUdonProgramAssets();
             var settings = LegaiaSceneSettings.Load(sceneName);
+            // Model overrides fold into the manifest and onto the built
+            // root exactly as the builder's apply path does them.
+            string manifestDir = "Assets/LegaiaImports/" + sceneName;
+            settings.ApplyNpcOverrides(manifest, manifestDir, root);
+            LegaiaWorldBuilder.ReconcileNpcs(manifest, manifestDir, root, sceneName, settings);
+            int overridden = 0;
+            foreach (object n in MiniJson.AsList(MiniJson.Get(manifest, "npcs")) ?? new List<object>())
+            {
+                if (string.IsNullOrEmpty(MiniJson.AsStr(MiniJson.Get(n, "model_glb"))))
+                    continue;
+                overridden++;
+                string tag = LegaiaSceneSettings.ModelTag(
+                    MiniJson.AsStr(MiniJson.Get(n, "model_scene")),
+                    (int)MiniJson.AsNum(MiniJson.Get(n, "model_index"), -1));
+                Vector3 at = LegaiaWorldBuilder.G2U(MiniJson.GetVec3(n, "position"));
+                bool found = false;
+                var npcsT = rootT.Find("npcs");
+                if (npcsT != null)
+                    foreach (Transform c in npcsT)
+                        if ((c.localPosition - at).sqrMagnitude < 1e-3f && c.name.Contains(tag))
+                        {
+                            found = true;
+                            if (c.GetComponentInChildren<MeshRenderer>(true) == null
+                                && c.GetComponentInChildren<SkinnedMeshRenderer>(true) == null)
+                                Fail(c.name + " has no renderer - the override glb is empty");
+                        }
+                if (!found)
+                    Fail("model override " + MiniJson.AsStr(MiniJson.Get(n, "file")) +
+                         " is not standing on the built root at " + at);
+            }
+            if (settings.ModelOverrideCount > 0 && overridden < settings.ModelOverrideCount)
+                Fail("only " + overridden + " of " + settings.ModelOverrideCount +
+                     " model override(s) resolved - see the warnings above");
+            Debug.Log("[Legaia] living town: " + overridden + " model override(s) in place.");
             var o = new LegaiaLivingTownOptions();
             settings.ApplyLivingTown(o);
             // Apply TWICE: the pass must refresh, not stack. Every assert

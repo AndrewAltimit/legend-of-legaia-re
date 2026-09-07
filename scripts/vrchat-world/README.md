@@ -291,6 +291,25 @@ All keys optional (`town01.settings.json` is the worked example):
   record visibly walks the prop in place (town01's npc_47 tree paces
   ~10 cm side to side on `record_37`). Takes effect on the next full
   build, like `remove_npcs`.
+- **`replace_npcs`** - `{"14": {"scene": "kor3", "model": 127}}` puts
+  another scene's model on a placed villager: the key follows the
+  matching rules above, the value names an export folder under
+  `Assets/LegaiaImports/` and the `model_index` its manifest lists for a
+  placement. Position, label and every rule keyed on the number stay with
+  the original; mesh, rig and idle clips come from the source.
+- **`add_npcs`** - `[{"scene": "bylon", "model": 103, "position": [x, y, z],
+  "yaw": 0, "label": "Maya"}]` places a brand-new villager from another
+  scene's export at an Inspector position under the built root (the
+  `spawn_position` convention). It joins the manifest as `npc_1NN` so the
+  other rules can name it, and the living town treats it as any talk
+  villager.
+- **`mesh_npcs`** - `{"mesh_55": {"scene": "balden", "model": 151}}` turns
+  a world-glb mesh (a villager the scene baked as scenery) into a live
+  one: the mesh is hidden and the source model stands on its footprint.
+  The source scene must be exported and copied in first (`legaia-engine
+  export-glb --scene balden --out <dir> --no-props`, then `manifest.json`
+  + `npcs/` into `Assets/LegaiaImports/balden/`). Scene names are the
+  disc's: Biron Monastery is `bylon`.
 - **`spawn_position`** - overrides the manifest's suggested spawn:
   **exactly what LegaiaSpawn's Inspector shows** (its local position
   under the built root). Drag the marker where you want it, copy its
@@ -324,9 +343,10 @@ All keys optional (`town01.settings.json` is the worked example):
   without a settings file; a no-op until the `VRCWorld` prefab is in the
   scene).
 
-Deletions and the descriptor assignment also re-run after "Apply
-enhancements to the already-built root", so tuning a rule doesn't force
-a full rebuild - except `remove_npcs`/`freeze_npcs`/`spawn_position`,
+Deletions, the descriptor assignment and the three model-override rules
+also re-run after "Apply enhancements to the already-built root" (an
+overridden villager is swapped in place there), so tuning a rule doesn't
+force a full rebuild - except `remove_npcs`/`freeze_npcs`/`spawn_position`,
 which take effect on the next **Build scene**.
 
 ## Making it feel alive

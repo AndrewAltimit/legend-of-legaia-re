@@ -886,12 +886,15 @@ namespace LegaiaWorld
             }
             if (realism.NeedsUdon)
                 EnsureUdonProgramAssets();
+            var settings = LegaiaSceneSettings.Load(sceneName);
+            string dir = Path.GetDirectoryName(manifestPath).Replace('\\', '/');
+            settings.ApplyNpcOverrides(m, dir, root);
+            ReconcileNpcs(m, dir, root, sceneName, settings);
             LegaiaRealism.Apply(root, m, sceneName, realism);
             // The passes above regenerate what per-scene deletions target
             // (interior shells, lamps) - re-apply them, and refresh the
             // descriptor spawn (a VRCWorld prefab added after the build
             // picks up LegaiaSpawn here without a full rebuild).
-            var settings = LegaiaSceneSettings.Load(sceneName);
             settings.ApplyDeletions(root);
             var spawnT = root.transform.Find("LegaiaSpawn");
             if (settings.setDescriptorSpawn && spawnT != null)
@@ -1021,6 +1024,12 @@ namespace LegaiaWorld
             }
 
             // --- NPCs ---
+            // Per-scene model overrides (another scene's model on a
+            // villager, added villagers, a static mesh turned villager)
+            // become ordinary manifest entries first, so every pass below
+            // sees them - the world is in, which is where a mesh footprint
+            // is measured.
+            settings.ApplyNpcOverrides(m, dir, root);
             var npcRoot = new GameObject("npcs");
             npcRoot.transform.SetParent(root.transform, false);
             int npcCount = 0;
@@ -1032,27 +1041,9 @@ namespace LegaiaWorld
                 string file = MiniJson.AsStr(MiniJson.Get(n, "file"));
                 if (settings.NpcIsRemoved(file))
                     continue;
-                var go = InstantiateGlb(dir + "/" + file, npcRoot.transform);
-                if (go == null) continue;
-                // Negative Z: the handedness mirror (see header note);
-                // instScale covers legacy raw-PSX-unit exports.
-                go.transform.localScale =
-                    new Vector3(instScale, instScale, PROP_NPC_SCALE_Z * instScale);
-                go.transform.localPosition = G2U(MiniJson.GetVec3(n, "position"));
-                string label = MiniJson.AsStr(MiniJson.Get(n, "label"));
-                if (!string.IsNullOrEmpty(label))
-                    go.name += " (" + label + ")";
-                var clips = MiniJson.AsList(MiniJson.Get(n, "clips"));
-                // A frozen NPC (per-scene settings) holds its rest pose:
-                // prop-kind actors can carry a generic locomotion record
-                // in their bundle slot, and looping it walks the prop.
-                if (loopNpcClips && clips != null && clips.Count > 0
-                    && !settings.NpcIsFrozen(file))
-                    AttachLoopingClip(go, dir + "/" + file,
-                        MiniJson.AsStr(clips[0]), dir, sceneName);
-                if (addNpcCapsules)
-                    AddCapsule(go);
-                npcCount++;
+                if (PlaceNpc(n, dir, npcRoot.transform, settings, sceneName,
+                        instScale, loopNpcClips, addNpcCapsules) != null)
+                    npcCount++;
             }
 
             // --- Animated props ---
@@ -1433,6 +1424,108 @@ namespace LegaiaWorld
 
         /// Instantiate the glTFast-imported prefab at `assetPath` (null when
         /// the asset is missing or not yet imported).
+        /// Place one manifest NPC entry under `npcRoot`: the glb the entry
+        /// renders with (its own, or a model override's), the handedness
+        /// mirror, the manifest position, an optional Inspector yaw, the
+        /// looping idle clip and the capsule. Shared by the full build
+        /// and the apply-to-built-root path.
+        internal static GameObject PlaceNpc(object n, string dir, Transform npcRoot,
+            LegaiaSceneSettings settings, string sceneName, float instScale,
+            bool loopClips, bool capsules)
+        {
+            string file = MiniJson.AsStr(MiniJson.Get(n, "file"));
+            string glb = LegaiaSceneSettings.NpcGlb(n, dir);
+            var go = InstantiateGlb(glb, npcRoot);
+            if (go == null)
+            {
+                if (glb != dir + "/" + file)
+                    Debug.LogWarning("[Legaia] NPC model override: " + glb +
+                        " did not load as a model - is the export imported?");
+                return null;
+            }
+            // Negative Z: the handedness mirror (see header note);
+            // instScale covers legacy raw-PSX-unit exports.
+            go.transform.localScale =
+                new Vector3(instScale, instScale, PROP_NPC_SCALE_Z * instScale);
+            go.transform.localPosition = G2U(MiniJson.GetVec3(n, "position"));
+            if (MiniJson.Get(n, "yaw") is double yaw)
+                go.transform.localRotation = Quaternion.Euler(0f, (float)yaw, 0f);
+            // An overridden entry keeps its own identity in the name (the
+            // stem every rule and log keys on) and carries the model tag.
+            string modelScene = MiniJson.AsStr(MiniJson.Get(n, "model_scene"));
+            if (!string.IsNullOrEmpty(modelScene))
+                go.name = Path.GetFileNameWithoutExtension(file) +
+                    LegaiaSceneSettings.ModelTag(modelScene,
+                        (int)MiniJson.AsNum(MiniJson.Get(n, "model_index"), -1));
+            string label = MiniJson.AsStr(MiniJson.Get(n, "label"));
+            if (!string.IsNullOrEmpty(label))
+                go.name += " (" + label + ")";
+            var clips = MiniJson.AsList(MiniJson.Get(n, "clips"));
+            // A frozen NPC (per-scene settings) holds its rest pose:
+            // prop-kind actors can carry a generic locomotion record
+            // in their bundle slot, and looping it walks the prop.
+            if (loopClips && clips != null && clips.Count > 0
+                && !settings.NpcIsFrozen(file))
+                AttachLoopingClip(go, glb, MiniJson.AsStr(clips[0]), dir, sceneName);
+            if (capsules)
+                AddCapsule(go);
+            return go;
+        }
+
+        /// Bring an already-built root's npcs/ container in line with the
+        /// manifest's model overrides: an entry whose model was swapped,
+        /// or which the settings added, is placed (the original standing
+        /// at that spot removed) unless an object carrying that model tag
+        /// is already there. Returns how many were placed.
+        public static int ReconcileNpcs(object manifest, string dir, GameObject root,
+            string sceneName, LegaiaSceneSettings settings)
+        {
+            var npcRoot = root != null ? root.transform.Find("npcs") : null;
+            if (npcRoot == null)
+                return 0;
+            bool capsules = false, loops = false;
+            foreach (Transform c in npcRoot)
+            {
+                if (c.GetComponent<CapsuleCollider>() != null) capsules = true;
+                if (c.GetComponent<Animator>() != null) loops = true;
+            }
+            float scale = MiniJson.GetNum(manifest, "scale", 1f);
+            bool scaledAssets = MiniJson.AsStr(MiniJson.Get(
+                MiniJson.Get(manifest, "conventions"), "npc_prop_units")) == "scaled";
+            float instScale = scaledAssets ? 1f : scale;
+            int placed = 0;
+            foreach (object n in MiniJson.AsList(MiniJson.Get(manifest, "npcs")) ?? new List<object>())
+            {
+                if (string.IsNullOrEmpty(MiniJson.AsStr(MiniJson.Get(n, "model_glb"))))
+                    continue;
+                string file = MiniJson.AsStr(MiniJson.Get(n, "file"));
+                if (settings.NpcIsRemoved(file))
+                    continue;
+                Vector3 local = G2U(MiniJson.GetVec3(n, "position"));
+                string tag = LegaiaSceneSettings.ModelTag(
+                    MiniJson.AsStr(MiniJson.Get(n, "model_scene")),
+                    (int)MiniJson.AsNum(MiniJson.Get(n, "model_index"), -1));
+                Transform existing = null;
+                foreach (Transform c in npcRoot)
+                    if ((c.localPosition - local).sqrMagnitude < 1e-3f
+                        && !c.name.EndsWith("_approach"))
+                    {
+                        existing = c;
+                        break;
+                    }
+                if (existing != null && existing.name.Contains(tag))
+                    continue;
+                if (existing != null)
+                    Undo.DestroyObjectImmediate(existing.gameObject);
+                if (PlaceNpc(n, dir, npcRoot, settings, sceneName, instScale, loops, capsules) != null)
+                    placed++;
+            }
+            if (placed > 0)
+                Debug.Log("[Legaia] model overrides: " + placed +
+                    " villager(s) placed on the built root.");
+            return placed;
+        }
+
         static GameObject InstantiateGlb(string assetPath, Transform parent)
         {
             var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(assetPath);

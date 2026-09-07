@@ -39,6 +39,33 @@
 //       For prop-kind actors (trees, signs) whose bundle slot carries a
 //       generic locomotion record: looping it walks the prop in place.
 //
+//   "replace_npcs":    {"14": {"scene": "kor3", "model": 127}}
+//       Swap a placed NPC's model for one exported from ANOTHER scene.
+//       The key follows the static_npcs matching rules; the value names
+//       the source scene's export folder under Assets/LegaiaImports/ and
+//       the `model_index` its manifest lists for a placement. Position,
+//       label, kind and every rule keyed on the NPC's number stay with
+//       the original; mesh, rig and idle clips come from the source.
+//
+//   "add_npcs":        [{"scene": "bylon", "model": 103,
+//                        "position": [-95.5, 0, 59.7], "yaw": 0, "label": "Maya"}]
+//       A brand-new villager from another scene's export, standing at an
+//       Inspector position under the built root (the spawn_position
+//       convention). It joins the manifest as npc_1NN in list order so
+//       the other rules can name it; "yaw" (degrees) and "label" are
+//       optional. The living town treats it as any other talk villager.
+//
+//   "mesh_npcs":       {"mesh_55": {"scene": "balden", "model": 151}}
+//       Replace a world-glb mesh (a villager the scene baked as static
+//       scenery) with a live NPC: the mesh is hidden and the source model
+//       stands on its footprint (npc_15N).
+//
+//       The source scene must be exported and copied in first:
+//         legaia-engine export-glb --scene kor3 --out <dir> --no-props
+//         -> Assets/LegaiaImports/kor3/{manifest.json, npcs/}
+//       All three take effect on a full build AND on "Apply enhancements
+//       to the already-built root" (the placed object is swapped there).
+//
 //   "spawn_position":  [-24.85, 1.75, 12.22]
 //       Overrides the manifest's suggested spawn: EXACTLY the value the
 //       Inspector shows on LegaiaSpawn (its local position under the
@@ -147,9 +174,33 @@ namespace LegaiaWorld
         public float scale = 1f;
     }
 
+    /// One replace_npcs / add_npcs / mesh_npcs entry: a model from
+    /// another scene's export, plus (for add_npcs) where it stands.
+    public class LegaiaNpcModelRef
+    {
+        public string scene;
+        public int model = -1;
+        public bool hasPosition;
+        /// Inspector-local position under the built root.
+        public Vector3 position;
+        public bool hasYaw;
+        public float yaw;
+        public string label;
+    }
+
     public class LegaiaSceneSettings
     {
         public const string DIR = "Assets/LegaiaWorld/Settings";
+
+        /// Model overrides (see the header): NPC token -> source model,
+        /// new villagers, world mesh name -> source model.
+        public Dictionary<string, LegaiaNpcModelRef> replaceNpcs =
+            new Dictionary<string, LegaiaNpcModelRef>();
+        public List<LegaiaNpcModelRef> addNpcs = new List<LegaiaNpcModelRef>();
+        public Dictionary<string, LegaiaNpcModelRef> meshNpcs =
+            new Dictionary<string, LegaiaNpcModelRef>();
+        public int ModelOverrideCount =>
+            replaceNpcs.Count + addNpcs.Count + meshNpcs.Count;
 
         public List<string> deleteObjects = new List<string>();
         public List<string> staticNpcs = new List<string>();
@@ -203,6 +254,36 @@ namespace LegaiaWorld
             ReadTokens(MiniJson.Get(m, "static_npcs"), s.staticNpcs);
             ReadTokens(MiniJson.Get(m, "remove_npcs"), s.removeNpcs);
             ReadTokens(MiniJson.Get(m, "freeze_npcs"), s.freezeNpcs);
+            var rn = MiniJson.AsObj(MiniJson.Get(m, "replace_npcs"));
+            if (rn != null)
+                foreach (var kv in rn)
+                {
+                    var r = ReadModelRef(kv.Value, "replace_npcs " + kv.Key);
+                    if (r != null)
+                        s.replaceNpcs[kv.Key] = r;
+                }
+            foreach (object e in MiniJson.AsList(MiniJson.Get(m, "add_npcs"))
+                     ?? new List<object>())
+            {
+                var r = ReadModelRef(e, "add_npcs");
+                if (r == null)
+                    continue;
+                if (!r.hasPosition)
+                {
+                    Debug.LogWarning("[Legaia] add_npcs entry (" + r.scene + " model " +
+                        r.model + ") has no \"position\" - skipped.");
+                    continue;
+                }
+                s.addNpcs.Add(r);
+            }
+            var mn = MiniJson.AsObj(MiniJson.Get(m, "mesh_npcs"));
+            if (mn != null)
+                foreach (var kv in mn)
+                {
+                    var r = ReadModelRef(kv.Value, "mesh_npcs " + kv.Key);
+                    if (r != null)
+                        s.meshNpcs[kv.Key] = r;
+                }
             var sp = MiniJson.AsList(MiniJson.Get(m, "spawn_position"))
                 ?? MiniJson.AsList(MiniJson.Get(m, "spawn_world")); // old key
             if (sp != null && sp.Count >= 3)
@@ -314,6 +395,8 @@ namespace LegaiaWorld
                 s.staticNpcs.Count + " static NPC rule(s), " +
                 s.removeNpcs.Count + " removed NPC rule(s), " +
                 s.freezeNpcs.Count + " frozen NPC rule(s)" +
+                (s.ModelOverrideCount > 0
+                    ? ", " + s.ModelOverrideCount + " model override(s)" : "") +
                 (s.hasSpawn ? ", spawn override " + s.spawnLocal : "") +
                 (s.prefabTransforms.Count > 0
                     ? ", " + s.prefabTransforms.Count + " placement(s)" : "") +
@@ -412,6 +495,278 @@ namespace LegaiaWorld
                 o.daytimeIndoorsShare = livingTownDaytimeIndoors;
             if (!string.IsNullOrEmpty(livingTownWalkClip))
                 o.walkClip = livingTownWalkClip;
+        }
+
+        static LegaiaNpcModelRef ReadModelRef(object v, string where)
+        {
+            var o = MiniJson.AsObj(v);
+            if (o == null)
+                return null;
+            var r = new LegaiaNpcModelRef
+            {
+                scene = MiniJson.AsStr(MiniJson.Get(o, "scene")),
+                model = (int)MiniJson.AsNum(MiniJson.Get(o, "model"), -1),
+                label = MiniJson.AsStr(MiniJson.Get(o, "label")),
+            };
+            if (string.IsNullOrEmpty(r.scene) || r.model < 0)
+            {
+                Debug.LogWarning("[Legaia] " + where +
+                    ": a model override needs \"scene\" and \"model\" - skipped.");
+                return null;
+            }
+            var pos = MiniJson.AsList(MiniJson.Get(o, "position"));
+            if (pos != null && pos.Count >= 3)
+            {
+                r.hasPosition = true;
+                r.position = ReadVec(pos);
+            }
+            if (MiniJson.Get(o, "yaw") is double yaw)
+            {
+                r.hasYaw = true;
+                r.yaw = (float)yaw;
+            }
+            return r;
+        }
+
+        // --- Model overrides ---------------------------------------------
+
+        /// Marker in an overridden NPC's object name, so a pass over an
+        /// existing root can tell the placed source model from the
+        /// original it replaced.
+        public static string ModelTag(string scene, int model)
+        {
+            return " [model " + scene + ":" + model + "]";
+        }
+
+        /// The glb an NPC manifest entry renders with: its own file, or
+        /// the source model a replace / add / mesh rule swapped in.
+        public static string NpcGlb(object entry, string dir)
+        {
+            string mg = MiniJson.AsStr(MiniJson.Get(entry, "model_glb"));
+            if (!string.IsNullOrEmpty(mg))
+                return mg;
+            return dir + "/" + MiniJson.AsStr(MiniJson.Get(entry, "file"));
+        }
+
+        class SourceModel
+        {
+            public string glb;
+            public List<object> clips;
+            public object animId;
+        }
+
+        /// Fold the model overrides into a parsed manifest (mutating its
+        /// "npcs" list) so every pass downstream - the builder's
+        /// placement, the living town, the batch checks - sees swapped
+        /// models and added villagers as ordinary manifest entries. `root`
+        /// is the built root: its world instance is where a mesh_npcs
+        /// footprint is measured (and the mesh hidden); null before the
+        /// world exists, which skips those. Safe to call more than once
+        /// on the same parsed manifest.
+        public void ApplyNpcOverrides(object manifest, string dir, GameObject root)
+        {
+            if (ModelOverrideCount == 0)
+                return;
+            var npcs = MiniJson.AsList(MiniJson.Get(manifest, "npcs"));
+            if (npcs == null)
+                return;
+
+            foreach (var kv in replaceNpcs)
+            {
+                bool hit = false;
+                foreach (object n in npcs)
+                {
+                    var e = MiniJson.AsObj(n);
+                    if (e == null)
+                        continue;
+                    string file = MiniJson.AsStr(MiniJson.Get(e, "file"));
+                    if (!NpcMatch(new List<string> { kv.Key }, file))
+                        continue;
+                    hit = true;
+                    if (e.ContainsKey("model_glb"))
+                        continue;
+                    var src = ResolveModel(kv.Value);
+                    if (src != null)
+                        Stamp(e, src, kv.Value);
+                }
+                if (!hit)
+                    Debug.LogWarning("[Legaia] replace_npcs: no NPC matches '" + kv.Key + "'.");
+            }
+
+            int k = 0;
+            foreach (var r in addNpcs)
+            {
+                string file = "npcs/npc_" + (100 + k) + "_add_" + r.scene + "-" + r.model + ".glb";
+                k++;
+                if (HasFile(npcs, file))
+                    continue;
+                var src = ResolveModel(r);
+                if (src == null)
+                    continue;
+                npcs.Add(NewEntry(file, r, src, InspectorToManifest(r.position),
+                    r.label ?? (r.scene + " model " + r.model)));
+            }
+
+            k = 0;
+            foreach (var kv in meshNpcs)
+            {
+                string file = "npcs/npc_" + (150 + k) + "_" + kv.Key + "_" +
+                    kv.Value.scene + "-" + kv.Value.model + ".glb";
+                k++;
+                Vector3 foot;
+                Transform meshT = FindWorldMesh(root, kv.Key, out foot);
+                if (meshT == null)
+                {
+                    if (root != null)
+                        Debug.LogWarning("[Legaia] mesh_npcs: no world mesh named '" +
+                            kv.Key + "' under " + root.name + ".");
+                    continue;
+                }
+                if (meshT.gameObject.activeSelf)
+                {
+                    Undo.RecordObject(meshT.gameObject, "Legaia scene settings");
+                    meshT.gameObject.SetActive(false);
+                }
+                if (HasFile(npcs, file))
+                    continue;
+                var src = ResolveModel(kv.Value);
+                if (src == null)
+                    continue;
+                npcs.Add(NewEntry(file, kv.Value, src, InspectorToManifest(foot),
+                    kv.Value.label ?? (kv.Key + " as " + kv.Value.scene + " model " + kv.Value.model)));
+            }
+        }
+
+        static bool HasFile(List<object> npcs, string file)
+        {
+            foreach (object n in npcs)
+                if (MiniJson.AsStr(MiniJson.Get(n, "file")) == file)
+                    return true;
+            return false;
+        }
+
+        /// The builder places entries at G2U(position) = (-x, y, z), which
+        /// is its own inverse: an Inspector-local point goes back the
+        /// same way.
+        static Vector3 InspectorToManifest(Vector3 p)
+        {
+            return new Vector3(-p.x, p.y, p.z);
+        }
+
+        static Dictionary<string, object> NewEntry(string file, LegaiaNpcModelRef r,
+            SourceModel src, Vector3 manifestPos, string label)
+        {
+            var e = new Dictionary<string, object>
+            {
+                ["file"] = file,
+                ["kind"] = "talk",
+                ["label"] = label,
+                ["conditional"] = false,
+                ["position"] = new List<object>
+                    { (double)manifestPos.x, (double)manifestPos.y, (double)manifestPos.z },
+                ["target_map"] = null,
+            };
+            Stamp(e, src, r);
+            if (r.hasYaw)
+                e["yaw"] = (double)r.yaw;
+            return e;
+        }
+
+        static void Stamp(Dictionary<string, object> e, SourceModel src, LegaiaNpcModelRef r)
+        {
+            e["model_glb"] = src.glb;
+            e["model_scene"] = r.scene;
+            e["model_index"] = (double)r.model;
+            e["clips"] = src.clips;
+            e["anim_id"] = src.animId;
+        }
+
+        /// The source placement for a model reference: the first
+        /// unconditional placement of that model index in the source
+        /// scene's export (a conditional one when that is all there is).
+        static SourceModel ResolveModel(LegaiaNpcModelRef r)
+        {
+            string sdir = "Assets/LegaiaImports/" + r.scene;
+            string mp = sdir + "/manifest.json";
+            if (!File.Exists(mp))
+            {
+                Debug.LogWarning("[Legaia] NPC model override: no export for scene '" +
+                    r.scene + "' at " + mp + " - run `legaia-engine export-glb --scene " +
+                    r.scene + " --out <dir> --no-props` and copy manifest.json + npcs/ there.");
+                return null;
+            }
+            object sm = MiniJson.Parse(File.ReadAllText(mp));
+            Dictionary<string, object> best = null;
+            foreach (object n in MiniJson.AsList(MiniJson.Get(sm, "npcs")) ?? new List<object>())
+            {
+                var e = MiniJson.AsObj(n);
+                if (e == null || (int)MiniJson.AsNum(MiniJson.Get(e, "model_index"), -1) != r.model)
+                    continue;
+                bool cond = MiniJson.Get(e, "conditional") is bool b && b;
+                if (best == null)
+                    best = e;
+                if (!cond)
+                {
+                    best = e;
+                    break;
+                }
+            }
+            if (best == null)
+            {
+                Debug.LogWarning("[Legaia] NPC model override: scene '" + r.scene +
+                    "' has no placement with model_index " + r.model + ".");
+                return null;
+            }
+            string glb = sdir + "/" + MiniJson.AsStr(MiniJson.Get(best, "file"));
+            if (!File.Exists(glb))
+            {
+                Debug.LogWarning("[Legaia] NPC model override: " + glb + " is missing - " +
+                    "copy the export's npcs/ folder in.");
+                return null;
+            }
+            return new SourceModel
+            {
+                glb = glb,
+                clips = MiniJson.AsList(MiniJson.Get(best, "clips")) ?? new List<object>(),
+                animId = MiniJson.Get(best, "anim_id"),
+            };
+        }
+
+        /// The world-glb node rendering the mesh called `meshName`, and
+        /// the root-local point at the middle of its footprint (bounds
+        /// centre in X/Z, bounds bottom in Y) - where a villager standing
+        /// in for it belongs.
+        static Transform FindWorldMesh(GameObject root, string meshName, out Vector3 foot)
+        {
+            foot = Vector3.zero;
+            if (root == null)
+                return null;
+            foreach (var mf in root.GetComponentsInChildren<MeshFilter>(true))
+            {
+                // The node carries the glb mesh name; the mesh itself may
+                // have been re-lit into "<name>_lit_N" by the light pass.
+                if (mf.sharedMesh == null)
+                    continue;
+                string mn = mf.sharedMesh.name;
+                if (mf.name != meshName && mn != meshName && !mn.StartsWith(meshName + "_lit_"))
+                    continue;
+                Bounds b = mf.sharedMesh.bounds;
+                var min = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue);
+                var max = new Vector3(float.MinValue, float.MinValue, float.MinValue);
+                for (int i = 0; i < 8; i++)
+                {
+                    var c = new Vector3(
+                        (i & 1) == 0 ? b.min.x : b.max.x,
+                        (i & 2) == 0 ? b.min.y : b.max.y,
+                        (i & 4) == 0 ? b.min.z : b.max.z);
+                    Vector3 l = root.transform.InverseTransformPoint(mf.transform.TransformPoint(c));
+                    min = Vector3.Min(min, l);
+                    max = Vector3.Max(max, l);
+                }
+                foot = new Vector3((min.x + max.x) * 0.5f, min.y, (min.z + max.z) * 0.5f);
+                return mf.transform;
+            }
+            return null;
         }
 
         public bool NpcIsStatic(string file) => NpcMatch(staticNpcs, file);
