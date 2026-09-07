@@ -84,7 +84,30 @@ Ports: `legaia_engine_ui::other_game_hud` (the two quad emitters + the decimal r
 | `801D1510` | **Opponent installer** - indexes the course descriptor table `0x801D1A08` by `DAT_801D1A90`, its `+4` round pointer by `DAT_801D1A94`, `lbu`s the round record's `+4` monster id and `sb`s it into formation slot 0 at `0x8007BD0C` (clearing slots 1..3, and writing `0x14` to the stage word `0x8007B83C`). The arena's opponent, per (course, round). [details](../../subsystems/minigame-muscle-dome.md#course-ladder-the-opponent-per-course-round). |
 | `801D0CD4` | **Course menu** - walks all three descriptors, using each `+0x00` count as its loop bound and each round record's `+0x00` label pointer through the text drawer `0x80036888`; also clamps `DAT_801D1A94` against the count. Correctly based dump `overlay_arena_init_0977_801d0cd4.txt` (516 B). |
 
-The static PROT 0977 image also gives a correctly based dump of the corner-anchored quad emitter, `overlay_arena_init_0977_801d08ec.txt` (1000 B) - the same routine the `801D08EC` row above documents. `0x801D1EF0..0x801D2018`, which the byte-denominated worklist ranks as an un-dumped code run, is **not** code: it sits in the image's tail past the last `jr ra` and carries no function.
+The static PROT 0977 image also gives a correctly based dump of the corner-anchored quad emitter, `overlay_arena_init_0977_801d08ec.txt` (1000 B) - the same routine the `801D08EC` row above documents.
+
+### What the rest of PROT 0977's byte worklist turned out to be
+
+`0x801D1EF0..0x801D2018` **is** code, correcting an earlier claim on this page
+that it sits past the image's last `jr ra` and carries no function. The first
+half of that reading is true and the second does not follow: PROT 0977's extent
+is sector-granular, so the routine's body is cut at the image's last word and its
+`jr ra` is simply not in the file. It opens `lui s0, 0x8008;
+lhu v1, -0x46F0(s0)`, sets up a `0x300` / `0x1` pair on the stack and calls
+`0x8006BCB4`, `0x80026018` and `0x80024EE4` - the settlement screen's own
+bring-up, entered from the hub's `0x32` state.
+`overlay_arena_init_0977_801d1ef0.txt`.
+
+The image's other worklist runs are **interior slices of routines this page
+already documents**, not new entries, and each is now dumped at the correct base
+so the byte census stops re-proposing it:
+
+| Extent | What it is part of |
+|---|---|
+| `0x801CEAC4` | the contest entry `801CEA6C` - its audio (`FUN_80062004`) + actor-spawn (`FUN_80020DE0`) arm |
+| `0x801CEF6C` | the bring-up ahead of the tally screen `801CF074`: three `FUN_8005FB84` audio arms, two `FUN_800266E0` / `FUN_80026520` pairs, one `FUN_8001FC00` stream |
+| `0x801CFF44` | the contest hub `801CF870` - the arm that `j`s to the `(course, round)` re-pack at `0x801D0098` and calls `0x801D00F8` |
+| `0x801D0344` | the ROUND banner family - five `jal 0x801D15C8` digit draws bounded by `DAT_801D1A94` |
 
 ## Dev modules OTHER2 / OTHER3 (PROT 0973 / 0974)
 
