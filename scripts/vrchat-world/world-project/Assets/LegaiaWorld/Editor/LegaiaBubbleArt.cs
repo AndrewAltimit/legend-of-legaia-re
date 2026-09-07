@@ -1,6 +1,9 @@
-// Generated art for the living town's speech bubbles: six icon textures
-// ("...", "!", "?", heart, music note, laugh) drawn from scratch into an
-// atlas plus one material each, and the unit quad the bubble renders on.
+// Generated art for the living town's speech bubbles: eight icon textures
+// ("...", "!", "?", heart, music note, laugh, a raised hand and a work
+// sweat-drop) drawn from scratch into an atlas plus one material each,
+// and the unit quad the bubble renders on. The last two are the daytime
+// pair: the hand is what a villager waves when it passes a neighbour on a
+// path, the drops are what it shows while it is busy at an errand stop.
 //
 // Everything here is procedural - no game data, no imported sprite - so the
 // bubbles ship with the kit like the card faces and the slot marquee do.
@@ -25,11 +28,19 @@ namespace LegaiaWorld
 {
     public static class LegaiaBubbleArt
     {
-        public const int ICONS = 6;
+        public const int ICONS = 8;
         const int SIZE = 96;
 
         public static readonly string[] ICON_NAMES =
-            { "talk", "excl", "question", "heart", "music", "laugh" };
+            { "talk", "excl", "question", "heart", "music", "laugh",
+              "wave", "work" };
+
+        /// Index of the raised hand (LegaiaTownDirector mirrors it as a
+        /// constant, since Udon has no reach into an editor class).
+        public const int WAVE = 6;
+
+        /// Index of the work drops.
+        public const int WORK = 7;
 
         /// One material per icon, created (or refreshed) under `genDir`.
         public static Material[] IconMaterials(string genDir)
@@ -149,6 +160,24 @@ namespace LegaiaWorld
                 Ellipse(38f, 44f, 11f, 8f, ink);
                 Bar(48f, 44f, 82f, 5f, ink);
                 Tri(48f, 82f, 68f, 74f, 48f, 68f, ink);
+            }
+            else if (icon == 6)
+            {
+                // A raised open hand: palm plus four fingers and a thumb.
+                Bar(48f, 40f, 62f, 26f, ink);        // palm
+                Disc(48f, 40f, 13f, ink);            // heel of the hand
+                Bar(34f, 60f, 74f, 7f, ink);         // fingers
+                Bar(44f, 60f, 78f, 7f, ink);
+                Bar(54f, 60f, 78f, 7f, ink);
+                Bar(64f, 60f, 72f, 7f, ink);
+                Stroke(36f, 46f, 26f, 58f, 8f, ink); // thumb
+            }
+            else if (icon == 7)
+            {
+                // Effort: three drops, the way a hand-drawn sprite sweats.
+                Drop(34f, 62f, 9f, ink);
+                Drop(50f, 70f, 11f, ink);
+                Drop(66f, 60f, 8f, ink);
             }
             else
             {
@@ -285,6 +314,15 @@ namespace LegaiaWorld
         static float Side(float px, float py, float ax, float ay, float bx, float by)
         {
             return (px - bx) * (ay - by) - (ax - bx) * (py - by);
+        }
+
+        // A teardrop: a disc with a point on top, `size` pixels tall.
+        static void Drop(float cx, float cy, float size, Color32 c)
+        {
+            Disc(cx, cy - size * 0.25f, size * 0.55f, c);
+            Tri(cx, cy + size * 0.9f,
+                cx - size * 0.42f, cy - size * 0.1f,
+                cx + size * 0.42f, cy - size * 0.1f, c);
         }
 
         // The classic implicit heart, scaled to `size` pixels across.

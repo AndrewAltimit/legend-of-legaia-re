@@ -534,6 +534,13 @@ namespace LegaiaWorld
             var stationType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaNpcStation");
             var npcRoot = rootT.Find("npcs");
             int propStations = 0, chatStations = 0, otherStations = 0;
+            int carryStations = 0, visitStations = 0, indoorChat = 0;
+            var handItemType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaNpcHandItem");
+            var visitType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaVisitSpot");
+            if (handItemType == null || visitType == null)
+                Fail("LegaiaNpcHandItem / LegaiaVisitSpot are not compiled - read " +
+                     "the [UdonSharp] lines above: one U# compile error fails every wire");
+            var openStands = new List<Transform>();
             foreach (var st in container.GetComponentsInChildren(stationType, true))
             {
                 int kind = (int)stationType.GetField("kind").GetValue(st);
@@ -564,18 +571,113 @@ namespace LegaiaWorld
                             " has no handler (its prop carries no LegaiaDoor)");
                 }
                 else if (kind == 3)
+                {
                     chatStations++;
+                    if ((bool)stationType.GetField("indoors").GetValue(st))
+                        indoorChat++;
+                }
                 else
+                {
                     otherStations++;
+                    // Every stand spot the daytime pass builds is a place a
+                    // villager is asked to STAND: floor under it, room for a
+                    // body in it, and level with what it stands on. The
+                    // use-prop block above says the same of kind 0; these
+                    // are the ones this pass adds.
+                    bool indoors = (bool)stationType.GetField("indoors").GetValue(st);
+                    // A LOW ray, the same one the builders place against
+                    // (LegaiaLivingTown.SnapFloorNear): a doorstep stand
+                    // spot legitimately sits under the hut's eave, and a
+                    // ray started at chest height finds the eave, not the
+                    // floor - which reads as "stands 1.4 m off its floor".
+                    RaycastHit sh;
+                    if (!Physics.Raycast(p + Vector3.up * 0.6f, Vector3.down,
+                            out sh, 2.6f, ~0, QueryTriggerInteraction.Ignore))
+                        Fail(Path(st.transform) + " floats: no floor under " + p);
+                    if (Mathf.Abs(sh.point.y - p.y) > 0.35f)
+                        Fail(Path(st.transform) + " stands " +
+                             (p.y - sh.point.y).ToString("0.00") + " m off its floor");
+                    if (sh.normal.y < 0.7f)
+                        Fail(Path(st.transform) + " stands on a wall (normal " +
+                             sh.normal + ")");
+                    foreach (var c in Physics.OverlapSphere(p + Vector3.up * 0.55f,
+                                 0.26f, ~0, QueryTriggerInteraction.Ignore))
+                        if (npcRoot == null || !c.transform.IsChildOf(npcRoot))
+                            Fail(Path(st.transform) + " has no standing room: " +
+                                 c.name + " is in the way");
+                    if (!indoors)
+                        openStands.Add(st.transform);
+
+                    if (kind == 5)
+                    {
+                        carryStations++;
+                        // The handler contract: a kind-5 station's item work
+                        // is done by a LegaiaNpcHandItem whose `station`
+                        // field reached its BACKING behaviour (a proxy-only
+                        // edit runs nothing in-world), and which the station
+                        // actually names as its handler.
+                        var h = st.GetComponent(handItemType);
+                        if (h == null)
+                            Fail(Path(st.transform) + " is a kind-5 carry station " +
+                                 "with no LegaiaNpcHandItem handler");
+                        if (LegaiaCommonPrefabs.BackingUdon(h) == null)
+                            Fail(Path(st.transform) + "'s hand-item handler has no " +
+                                 "backing UdonBehaviour");
+                        if (ReadVar(h, "station") == null)
+                            Fail(Path(st.transform) + "'s hand-item handler does not " +
+                                 "reference its station on the backing behaviour");
+                        var named = stationType.GetField("handler").GetValue(st) as Object;
+                        if (named != (Object)h)
+                            Fail(Path(st.transform) + " does not name its " +
+                                 "LegaiaNpcHandItem as the station handler");
+                        int ik = (int)handItemType.GetField("itemKind").GetValue(h);
+                        bool drop = (bool)handItemType.GetField("dropItem").GetValue(h);
+                        if (ik < 0 && !drop)
+                            Fail(Path(st.transform) + " neither hands over an item " +
+                                 "nor takes one back - it is a plain stand spot");
+                        if (ik >= LegaiaCarryArt.ITEMS)
+                            Fail(Path(st.transform) + " hands over item " + ik +
+                                 ", only " + LegaiaCarryArt.ITEMS + " exist");
+                    }
+                    else if (kind == 6)
+                    {
+                        visitStations++;
+                        var h = st.GetComponent(visitType);
+                        if (h == null)
+                            Fail(Path(st.transform) + " is a kind-6 visit station " +
+                                 "with no LegaiaVisitSpot handler");
+                        if (LegaiaCommonPrefabs.BackingUdon(h) == null)
+                            Fail(Path(st.transform) + "'s visit handler has no " +
+                                 "backing UdonBehaviour");
+                        if (ReadVar(h, "station") == null)
+                            Fail(Path(st.transform) + "'s visit handler does not " +
+                                 "reference its station on the backing behaviour");
+                        if (ReadVar(h, "hostBubble") == null)
+                            Fail(Path(st.transform) + " has no host bubble - the " +
+                                 "fixed resident it calls on cannot answer");
+                    }
+                }
             }
             if (propStations < 1)
                 Fail("no use-prop stations built - every one-shot prop was skipped");
             if (chatStations < 3)
                 Fail("only " + chatStations + " chat stand point(s): a group of " +
                      "three needs at least one full ring");
+            if (carryStations < 1)
+                Fail("no carry/errand endpoints built - the day has nothing to " +
+                     "fetch and nothing to put down");
+            if (chatStations - indoorChat < 2)
+                Fail("every conversation ring is indoors - the villagers who " +
+                     "walk the village have nowhere to be matchmade to");
+            if (openStands.Count < 4)
+                Fail("only " + openStands.Count + " outdoor stand spot(s): the " +
+                     "daytime villagers have nowhere to walk to");
 
             // --- Brains ---------------------------------------------------------
             var brainType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaNpcBrain");
+            var carryType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaNpcCarry");
+            if (carryType == null)
+                Fail("LegaiaNpcCarry is not compiled");
             int eligible = 0, wired = 0, homed = 0, insideAlready = 0, unroutable = 0;
             var unroutableNpcs = new List<Transform>();
             var perDoor = new Dictionary<Object, int>();
@@ -616,6 +718,67 @@ namespace LegaiaWorld
                          "on its backing behaviour");
                 if (ReadVar(brain, "loco") == null)
                     Fail(placed.name + "'s brain has no locomotion controller");
+
+                // --- the carried-item rig --------------------------------
+                // Everything a villager can hold is a CHILD of that
+                // villager (so it follows without a line of per-frame code)
+                // and every one of them is off at build time - a bucket
+                // visible on a villager who is not on a fetch errand is the
+                // failure this asserts away.
+                var carries = placed.GetComponents(carryType);
+                if (carries.Length != 1)
+                    Fail(placed.name + " carries " + carries.Length +
+                         " LegaiaNpcCarry rig(s), expected exactly 1");
+                var carry = carries[0];
+                if (LegaiaCommonPrefabs.BackingUdon(carry) == null)
+                    Fail(placed.name + "'s carry rig has no backing UdonBehaviour");
+                if (ReadVar(brain, "carry") == null)
+                    Fail(placed.name + "'s brain does not reference its carry rig " +
+                         "on the backing behaviour");
+                var hand = ReadVar(carry, "hand") as Transform;
+                if (hand == null)
+                    Fail(placed.name + "'s carry rig has no hand node");
+                if (!hand.IsChildOf(placed))
+                    Fail(placed.name + "'s hand node is not parented under the NPC");
+                var heldArr = ReadVar(carry, "items") as System.Array;
+                if (heldArr == null || heldArr.Length != LegaiaCarryArt.ITEMS)
+                    Fail(placed.name + "'s carry rig holds " +
+                         (heldArr == null ? -1 : heldArr.Length) + " item(s), expected " +
+                         LegaiaCarryArt.ITEMS);
+                for (int k = 0; k < heldArr.Length; k++)
+                {
+                    var item = heldArr.GetValue(k) as GameObject;
+                    if (item == null)
+                        Fail(placed.name + "'s carry item " + k +
+                             " is null on the backing behaviour");
+                    if (!item.transform.IsChildOf(placed))
+                        Fail(Path(item.transform) + " is not parented under " + placed.name);
+                    if (item.activeSelf)
+                        Fail(Path(item.transform) + " is visible at build - every " +
+                             "carried item must start hidden");
+                    if (item.GetComponentsInChildren<Collider>(true).Length > 0)
+                        Fail(Path(item.transform) + " has a collider - a carried prop " +
+                             "would shove the villager holding it");
+                }
+                // The hand must be ON the villager: measured against its
+                // own rendered body, not against an assumed human.
+                var bodyRends = placed.GetComponentsInChildren<Renderer>();
+                if (bodyRends.Length > 0)
+                {
+                    Bounds body = bodyRends[0].bounds;
+                    for (int k = 1; k < bodyRends.Length; k++)
+                        body.Encapsulate(bodyRends[k].bounds);
+                    float bh = body.size.y;
+                    float dy = hand.position.y - body.min.y;
+                    if (dy < bh * 0.10f || dy > bh * 0.85f)
+                        Fail(placed.name + "'s hand sits at " +
+                             (dy / bh).ToString("0.00") + " of its height - not an arm");
+                    Vector2 off = new Vector2(hand.position.x - placed.position.x,
+                        hand.position.z - placed.position.z);
+                    if (off.magnitude > bh * 0.5f)
+                        Fail(placed.name + "'s hand is " + off.magnitude.ToString("0.00") +
+                             " m out from the body (height " + bh.ToString("0.00") + ")");
+                }
                 wired++;
                 if (ReadVar(brain, "startIndoors") is bool inside && inside)
                 {
@@ -673,6 +836,31 @@ namespace LegaiaWorld
             var routeFailures = new List<string>();
             try
             {
+                // Every OUTDOOR stand spot must be walkable-to by somebody:
+                // the spawn, or one of the villagers themselves (town01's
+                // beach sits on its own island of navmesh, and a spot only
+                // the two beach villagers can use is a good spot, not a
+                // broken one). A spot nobody can reach reads in-world as a
+                // villager walking into a bank until its walk times out.
+                var anchors = new List<Vector3> { spawn.transform.position };
+                foreach (Transform child in npcRoot)
+                    if (child.GetComponent(brainType) != null)
+                        anchors.Add(child.position);
+                var stranded = new List<string>();
+                foreach (var stand in openStands)
+                {
+                    bool reach = false;
+                    string reason;
+                    for (int i = 0; i < anchors.Count && !reach; i++)
+                        reach = LegaiaNavMesh.Reachable(anchors[i], stand.position,
+                            1.2f, out reason);
+                    if (!reach)
+                        stranded.Add(Path(stand));
+                }
+                if (stranded.Count > 0)
+                    Fail(stranded.Count + " outdoor stand spot(s) nobody can walk to: " +
+                         string.Join(", ", stranded));
+
                 foreach (object n in MiniJson.AsList(MiniJson.Get(manifest, "npcs"))
                          ?? new List<object>())
                 {
@@ -766,7 +954,10 @@ namespace LegaiaWorld
                 " cut off from every door, " +
                 routes + " navmesh route(s) home complete, " + stationArr.Length +
                 " station(s) on the director (" + propStations + " use-prop, " +
-                chatStations + " chat, " + otherStations + " other), scene " +
+                chatStations + " chat of which " + indoorChat + " indoors, " +
+                carryStations + " carry/errand, " + visitStations + " visit, " +
+                (otherStations - carryStations - visitStations) + " stand spot), " +
+                openStands.Count + " of them outdoors and all reachable, scene " +
                 sceneName + " (not saved).");
         }
 

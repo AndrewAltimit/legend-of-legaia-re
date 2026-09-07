@@ -74,7 +74,24 @@ namespace LegaiaWorld
         public int maxChatSpots = 5;
         [Tooltip("Open-air spots to stand and look, so daytime has errands " +
                  "even where every usable prop is indoors.")]
-        public int outdoorViewpoints = 6;
+        public int outdoorViewpoints = 10;
+        [Tooltip("Stand spots along the village paths, further out than the " +
+                 "viewpoint ring and spread over the whole walkable area.")]
+        public int landmarkStands = 10;
+        [Tooltip("A stand spot beside each house door, so a villager can call " +
+                 "on a neighbour (it stands a step to the side and knocks).")]
+        public bool doorwayStands = true;
+        [Tooltip("A stand spot in front of each of the village's fixed " +
+                 "residents, so walking villagers go and see them.")]
+        public bool visitSpots = true;
+        [Tooltip("Give villagers things to carry: a bucket fetched from the " +
+                 "low ground, a broom at a doorway, firewood between two points.")]
+        public bool carryItems = true;
+        [Tooltip("Conversation spots inside the interior rooms, one per home " +
+                 "landing, so two villagers in one room talk to each other.")]
+        public bool indoorChatRings = true;
+        [Tooltip("Stand spots per interior landing.")]
+        public int indoorViewpoints = 3;
         [Tooltip("Radius of a conversation ring (meters).")]
         public float chatRingRadius = 0.85f;
         [Tooltip("How far in front of a prop the NPC stands (meters).")]
@@ -177,28 +194,49 @@ namespace LegaiaWorld
 
             var stationsRoot = new GameObject("stations");
             stationsRoot.transform.SetParent(container.transform, false);
-            int propStations = BuildPropStations(root, manifest, stationsRoot.transform,
-                spawn, o);
-            int chatStations = BuildChatRings(root, manifest, stationsRoot.transform,
-                settings, spawn, o);
-            int viewStations = BuildIndoorViewpoints(root, stationsRoot.transform,
-                homes, o);
-            viewStations += BuildOutdoorViewpoints(root, stationsRoot.transform,
-                spawn, o);
 
-            // Wire the brains with the bake live, so a home is only ever
-            // assigned to a villager who can walk to its door.
+            // The bake goes live for the WHOLE of the station + brain build,
+            // not only for home assignment: an outdoor stand spot no
+            // villager can walk to is not an activity, it is a villager
+            // walking at a bank until its walk times out (town01's beach
+            // sits 1.2 m below the village in the collider and nothing
+            // connects the two). s_reach below is what rejects those.
             var navData = nav != null ? LegaiaNavMesh.LoadData(sceneName) : null;
             var navInst = navData != null
                 ? LegaiaNavMesh.Register(navData) : new UnityEngine.AI.NavMeshDataInstance();
+            int propStations, chatStations, viewStations, carryStations, visitStations;
             List<Component> brains;
             try
             {
+                s_reachFrom = navData != null
+                    ? ReachAnchors(root, manifest, settings, spawn) : null;
+                propStations = BuildPropStations(root, manifest, stationsRoot.transform,
+                    spawn, o);
+                chatStations = BuildChatRings(root, manifest, stationsRoot.transform,
+                    settings, spawn, o);
+                chatStations += EnsureOutdoorRing(root, stationsRoot.transform,
+                    spawn, o);
+                if (o.indoorChatRings)
+                    chatStations += BuildIndoorChatRings(root, stationsRoot.transform,
+                        homes, o);
+                viewStations = BuildIndoorViewpoints(root, stationsRoot.transform,
+                    homes, o);
+                viewStations += BuildOutdoorViewpoints(root, stationsRoot.transform,
+                    spawn, o);
+                viewStations += BuildLandmarkStands(root, stationsRoot.transform,
+                    spawn, o);
+                carryStations = o.doorwayStands
+                    ? BuildDoorwayStands(root, stationsRoot.transform, homes, o) : 0;
+                visitStations = o.visitSpots
+                    ? BuildVisitSpots(root, manifest, sceneName, genDir, settings,
+                        stationsRoot.transform, spawn, o) : 0;
+                carryStations += AssignErrandRoles(stationsRoot.transform, root, spawn, o);
                 brains = WireBrains(root, manifest, sceneName, genDir, settings, o, homes,
                     navData != null);
             }
             finally
             {
+                s_reachFrom = null;
                 if (navData != null)
                     UnityEngine.AI.NavMesh.RemoveNavMeshData(navInst);
             }
@@ -221,7 +259,9 @@ namespace LegaiaWorld
                 homes.Count + " home(s) (cap " + o.homeCap + ", " + doorProps +
                 " with a door prop to swing), " +
                 propStations + " prop station(s), " + chatStations +
-                " chat stand point(s), " + viewStations + " viewpoint(s)" +
+                " chat stand point(s), " + viewStations + " viewpoint(s), " +
+                carryStations + " carry/errand endpoint(s), " + visitStations +
+                " visit spot(s)" +
                 (nav != null ? ", navmesh baked" : ", no navmesh") + ".");
             if (director == null)
                 Debug.LogWarning("[Legaia] living town: no director behaviour " +
@@ -245,6 +285,10 @@ namespace LegaiaWorld
             foreach (Transform npc in npcRoot)
             {
                 StripUdon(npc.gameObject, "LegaiaNpcBrain");
+                StripUdon(npc.gameObject, "LegaiaNpcCarry");
+                var held = npc.Find("carry");
+                if (held != null)
+                    Undo.DestroyObjectImmediate(held.gameObject);
                 var bubble = npc.Find("speech_bubble");
                 if (bubble != null)
                 {
@@ -535,6 +579,53 @@ namespace LegaiaWorld
         // The scene's `npcs` container while a pass runs (see StandingRoom).
         static Transform s_npcRoot;
 
+        // --- Reachability -----------------------------------------------------------
+        // Every place a villager can START from: the spawn, and each
+        // eligible villager's own authored position. A stand spot is worth
+        // building only if SOMEBODY can walk to it - and "somebody" cannot
+        // be the spawn alone, because town01's two beach villagers live on
+        // an island of navmesh the village never reaches, and a spot only
+        // they can use is exactly the spot they should be given.
+        // Null while no bake is registered: then everything counts as
+        // reachable and the pass behaves as it did before the bake existed.
+        static List<Vector3> s_reachFrom;
+
+        static List<Vector3> ReachAnchors(GameObject root, object manifest,
+            LegaiaSceneSettings settings, Vector3 spawn)
+        {
+            var pts = new List<Vector3> { SnapFloor(root.transform.TransformPoint(spawn)) };
+            var npcRoot = root.transform.Find("npcs");
+            if (npcRoot == null)
+                return pts;
+            foreach (object n in MiniJson.AsList(MiniJson.Get(manifest, "npcs"))
+                     ?? new List<object>())
+            {
+                if (MiniJson.AsStr(MiniJson.Get(n, "kind")) != "talk")
+                    continue;
+                string file = MiniJson.AsStr(MiniJson.Get(n, "file")) ?? "";
+                if (settings.NpcIsRemoved(file) || settings.NpcIsStatic(file)
+                    || settings.NpcIsFrozen(file))
+                    continue;
+                Vector3 local = LegaiaWorldBuilder.G2U(MiniJson.GetVec3(n, "position"));
+                Transform placed = FindAt(npcRoot, local, false);
+                if (placed != null)
+                    pts.Add(placed.position);
+            }
+            return pts;
+        }
+
+        /// Can anybody actually walk to this spot?
+        static bool Reachable(Vector3 stand)
+        {
+            if (s_reachFrom == null)
+                return true;
+            string why;
+            for (int i = 0; i < s_reachFrom.Count; i++)
+                if (LegaiaNavMesh.Reachable(s_reachFrom[i], stand, 1.2f, out why))
+                    return true;
+            return false;
+        }
+
         // --- Stations -------------------------------------------------------------
 
         static Component MakeStation(Transform parent, string name, int kind,
@@ -785,6 +876,66 @@ namespace LegaiaWorld
             return made;
         }
 
+        /// The village square: one conversation ring OUT OF DOORS, built
+        /// only when the NPC-cluster pass produced none. It nearly always
+        /// produces none in a village like town01, where eleven of the
+        /// fifteen talkers were authored inside the houses, so every
+        /// cluster it finds is a room - and an outdoor villager would then
+        /// have no ring to be matchmade onto at all. The spot is the first
+        /// open, reachable place near the spawn with room for three.
+        static int EnsureOutdoorRing(GameObject root, Transform parent,
+            Vector3 spawn, LegaiaLivingTownOptions o)
+        {
+            var stationType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaNpcStation");
+            if (stationType == null)
+                return 0;
+            foreach (Transform t in parent)
+            {
+                var st = t.GetComponent(stationType);
+                if (st == null)
+                    continue;
+                if ((int)stationType.GetField("kind").GetValue(st) == 3
+                    && !(bool)stationType.GetField("indoors").GetValue(st))
+                    return 0; // the village already has one
+            }
+            Vector3 centre = root.transform.TransformPoint(spawn);
+            for (int ring = 0; ring < 6; ring++)
+            {
+                float r = ring * 2.5f;
+                for (int k = 0; k < 8; k++)
+                {
+                    Vector3 dir = Quaternion.AngleAxis(k * 45f + ring * 17f,
+                        Vector3.up) * Vector3.forward;
+                    Vector3 centreFloor;
+                    if (!HasFloor(centre + dir * r, out centreFloor))
+                        continue;
+                    if (IsInterior(root.transform.InverseTransformPoint(centreFloor),
+                            spawn, o) || !Reachable(centreFloor))
+                        continue;
+                    int made = 0;
+                    for (int i = 0; i < 3; i++)
+                    {
+                        Vector3 d = Quaternion.AngleAxis(i * 120f, Vector3.up)
+                                    * Vector3.forward;
+                        Vector3 floor;
+                        Vector3 cand = centreFloor + d * o.chatRingRadius;
+                        if (!HasFloor(cand, out floor) || !StandingRoom(floor)
+                            || !Reachable(floor))
+                            continue;
+                        MakeStation(parent, "station_chat_square_" + i, 3, floor,
+                            centreFloor - floor, false, 20f, null);
+                        made++;
+                    }
+                    if (made >= 2)
+                        return made;
+                    for (int i = parent.childCount - 1; i >= 0; i--)
+                        if (parent.GetChild(i).name.StartsWith("station_chat_square_"))
+                            Undo.DestroyObjectImmediate(parent.GetChild(i).gameObject);
+                }
+            }
+            return 0;
+        }
+
         /// Open-air places to stand and look. town01's usable props all
         /// sit INSIDE the houses (the four cupboards, the drawer, the
         /// shop's upstairs door), so without these a daytime villager has
@@ -824,10 +975,11 @@ namespace LegaiaWorld
                             crowded = true;
                             break;
                         }
-                    if (crowded)
+                    if (crowded || !Reachable(floor))
                         continue;
-                    MakeStation(parent, "station_view_out_" + made, 4, floor,
+                    var st = MakeStation(parent, "station_view_out_" + made, 4, floor,
                         floor - centre, false, 14f, null);
+                    Tag(st, -1, "view", true);
                     taken.Add(floor);
                     made++;
                 }
@@ -846,22 +998,566 @@ namespace LegaiaWorld
                 Transform landing = homes[i].landingT;
                 if (landing == null)
                     continue;
+                int want = Mathf.Clamp(o.indoorViewpoints, 1, 6);
                 int here = 0;
-                for (int k = 0; k < 8 && here < 2; k++)
+                for (int k = 0; k < 12 && here < want; k++)
                 {
-                    Vector3 dir = Quaternion.AngleAxis(k * 45f + i * 23f,
+                    Vector3 dir = Quaternion.AngleAxis(k * 30f + i * 23f,
                         Vector3.up) * landing.forward;
-                    Vector3 cand = landing.position + dir * (1.1f + 0.4f * here);
+                    Vector3 cand = landing.position + dir * (1.1f + 0.35f * here);
                     Vector3 floor;
                     if (!HasFloor(cand, out floor) || !StandingRoom(floor))
                         continue;
-                    MakeStation(parent, "station_view_" + i + "_" + here, 4,
+                    var st = MakeStation(parent, "station_view_" + i + "_" + here, 4,
                         floor, landing.position - floor, true, 18f, null);
+                    Tag(st, -1, "room", true);
                     here++;
                     made++;
                 }
             }
             return made;
+        }
+
+        // --- Errand furniture -------------------------------------------------------
+        // Everything below exists because of one measurement: town01 has
+        // four villagers who can walk outdoors and NOT ONE usable prop out
+        // of doors - every cupboard retail authored is inside a house. A
+        // village whose only outdoor activity is "stand in a circle" reads
+        // as aimless however good the walking is, so the pass builds the
+        // outdoor half of the day itself: doorsteps to call at, paths to
+        // walk, low ground to fetch water from, and the village's fixed
+        // residents to go and see.
+
+        /// Set the visitor-side fields on a station the builders make.
+        static void Tag(Component station, int arriveIcon, string role, bool glance)
+        {
+            if (station == null)
+                return;
+            LegaiaWorldBuilder.SetUdonField(station, "arriveIcon", arriveIcon);
+            LegaiaWorldBuilder.SetUdonField(station, "role", role);
+            LegaiaWorldBuilder.SetUdonField(station, "glance", glance);
+            LegaiaWorldBuilder.SyncUdonProxy(station);
+        }
+
+        /// Attach a carry handler (LegaiaNpcHandItem) to a station and turn
+        /// it into a kind-5 errand endpoint.
+        static Component MakeCarryHandler(Component station, int itemKind,
+            bool dropItem, bool keepOnLeave, int action)
+        {
+            if (station == null)
+                return null;
+            var handler = LegaiaWorldBuilder.TryAttachUdon(
+                station.gameObject, "LegaiaNpcHandItem");
+            if (handler == null)
+                return null;
+            LegaiaWorldBuilder.SetUdonField(handler, "station", station);
+            LegaiaWorldBuilder.SetUdonField(handler, "itemKind", itemKind);
+            LegaiaWorldBuilder.SetUdonField(handler, "dropItem", dropItem);
+            LegaiaWorldBuilder.SetUdonField(handler, "keepOnLeave", keepOnLeave);
+            LegaiaWorldBuilder.SetUdonField(handler, "action", action);
+            LegaiaWorldBuilder.SyncUdonProxy(handler);
+            LegaiaWorldBuilder.SetUdonField(station, "kind", 5);
+            LegaiaWorldBuilder.SetUdonField(station, "carryFlow",
+                dropItem ? 2 : (itemKind >= 0 && keepOnLeave ? 1 : 0));
+            LegaiaWorldBuilder.SetUdonField(station, "handler", handler);
+            LegaiaWorldBuilder.SyncUdonProxy(station);
+            return handler;
+        }
+
+        /// A stand spot beside each house door, facing the doorway: the
+        /// "call on a neighbour" stop. It stands a step to the SIDE of the
+        /// night routine's own door stand spot rather than on it, so a
+        /// villager sweeping a doorstep at dusk is never parked in the way
+        /// of the villager trying to get through that door.
+        static int BuildDoorwayStands(GameObject root, Transform parent,
+            List<Home> homes, LegaiaLivingTownOptions o)
+        {
+            int made = 0;
+            for (int i = 0; i < homes.Count; i++)
+            {
+                Transform door = homes[i].doorT;
+                Transform tile = homes[i].thresholdT;
+                if (door == null || tile == null)
+                    continue;
+                Vector3 toTile = tile.position - door.position;
+                toTile.y = 0f;
+                if (toTile.sqrMagnitude < 1e-4f)
+                    continue;
+                toTile = toTile.normalized;
+                Vector3 side = Vector3.Cross(Vector3.up, toTile);
+                bool placed = false;
+                for (int k = 0; k < 2 && !placed; k++)
+                {
+                    Vector3 cand = door.position + side * (k == 0 ? 0.7f : -0.7f);
+                    Vector3 floor;
+                    if (!HasFloorNear(cand, out floor) || !StandingRoom(floor))
+                        continue;
+                    if (Mathf.Abs(floor.y - door.position.y) > 0.35f)
+                        continue;
+                    if (!Reachable(floor))
+                        continue;
+                    // Half sweep the step (a broom changes hands, so those
+                    // are kind 5 with a handler), half simply call at it - a
+                    // kind-4 stand spot whose arriveIcon is the wave, which
+                    // needs no behaviour at all.
+                    bool sweep = o.carryItems && (i % 2) == 0;
+                    var st = MakeStation(parent, "station_door_" + i, 4, floor,
+                        tile.position - floor, false, sweep ? 14f : 9f, null);
+                    if (sweep)
+                    {
+                        MakeCarryHandler(st, 1, false, false, 1);
+                        Tag(st, LegaiaBubbleArt.WORK, "doorstep_sweep", false);
+                    }
+                    else
+                    {
+                        Tag(st, LegaiaBubbleArt.WAVE, "doorstep_call", false);
+                    }
+                    made++;
+                    placed = true;
+                }
+            }
+            return made;
+        }
+
+        /// A stand spot in front of every FIXED resident, and a speech
+        /// bubble on the resident itself so the visit is an exchange rather
+        /// than one villager talking at a statue. The resident never moves:
+        /// where it faces is measured off its own transform chain (mirrors
+        /// included - TransformDirection would drop them) and the caller is
+        /// placed in front of that and turned back toward it.
+        static int BuildVisitSpots(GameObject root, object manifest, string sceneName,
+            string genDir, LegaiaSceneSettings settings, Transform parent,
+            Vector3 spawn, LegaiaLivingTownOptions o)
+        {
+            var npcRoot = root.transform.Find("npcs");
+            if (npcRoot == null)
+                return 0;
+            Material[] icons = o.speechBubbles
+                ? LegaiaBubbleArt.IconMaterials(genDir) : null;
+            Mesh quad = o.speechBubbles ? LegaiaBubbleArt.QuadMesh(genDir) : null;
+            int made = 0, idx = 0;
+            foreach (object n in MiniJson.AsList(MiniJson.Get(manifest, "npcs"))
+                     ?? new List<object>())
+            {
+                if (MiniJson.AsStr(MiniJson.Get(n, "kind")) != "talk")
+                    continue;
+                string file = MiniJson.AsStr(MiniJson.Get(n, "file")) ?? "";
+                if (!settings.NpcIsStatic(file) || settings.NpcIsRemoved(file)
+                    || settings.NpcIsFrozen(file))
+                    continue;
+                Vector3 local = LegaiaWorldBuilder.G2U(MiniJson.GetVec3(n, "position"));
+                Transform host = FindAt(npcRoot, local, false);
+                if (host == null)
+                    continue;
+                idx++;
+                Vector3 front = host.TransformPoint(Vector3.forward)
+                    - host.TransformPoint(Vector3.zero);
+                front.y = 0f;
+                if (front.sqrMagnitude < 1e-6f)
+                    front = Vector3.forward;
+                else
+                    front = front.normalized;
+
+                // In front first; if the resident stands against a wall,
+                // try around it rather than skipping the visit.
+                Vector3 stand = Vector3.zero;
+                bool found = false;
+                for (int k = 0; k < 8 && !found; k++)
+                {
+                    float ang = (k + 1) / 2 * 45f * ((k % 2) == 0 ? 1f : -1f);
+                    Vector3 dir = Quaternion.AngleAxis(ang, Vector3.up) * front;
+                    Vector3 floor;
+                    if (!HasFloor(host.position + dir * 0.85f, out floor))
+                        continue;
+                    if (!StandingRoom(floor) || !Reachable(floor))
+                        continue;
+                    stand = floor;
+                    found = true;
+                }
+                if (!found)
+                    continue;
+
+                var st = MakeStation(parent, "station_visit_" + idx, 6, stand,
+                    host.position - stand,
+                    IsInterior(root.transform.InverseTransformPoint(stand), spawn, o),
+                    16f, null);
+                var handler = LegaiaWorldBuilder.TryAttachUdon(
+                    st.gameObject, "LegaiaVisitSpot");
+                if (handler != null)
+                {
+                    Component bubble = null;
+                    if (o.speechBubbles && host.Find("speech_bubble") == null)
+                        bubble = BuildBubble(host, icons, quad, o);
+                    else if (o.speechBubbles)
+                        bubble = host.Find("speech_bubble").GetComponent(
+                            LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaSpeechBubble"));
+                    LegaiaWorldBuilder.SetUdonField(handler, "station", st);
+                    if (bubble != null)
+                        LegaiaWorldBuilder.SetUdonField(handler, "hostBubble", bubble);
+                    LegaiaWorldBuilder.SetUdonField(handler, "hostLine",
+                        o.bubbleText
+                            ? Shorten(MiniJson.AsStr(MiniJson.Get(n, "label")) ?? "")
+                            : "");
+                    LegaiaWorldBuilder.SyncUdonProxy(handler);
+                    LegaiaWorldBuilder.SetUdonField(st, "handler", handler);
+                }
+                Tag(st, LegaiaBubbleArt.WAVE, "visit", false);
+                made++;
+            }
+            return made;
+        }
+
+        /// Stand spots spread over the walkable OUTDOORS, further out than
+        /// the viewpoint ring: the village paths, the gate, the low ground
+        /// by the water. Sampled on a spiral, kept only where there is real
+        /// floor, standing room, separation from what is already built, and
+        /// a walkable route from somebody. A spot that sits well BELOW the
+        /// spawn's own floor is shoreline: it faces outward (at the water)
+        /// and is tagged so the errand-role pass can make it a water source.
+        static int BuildLandmarkStands(GameObject root, Transform parent,
+            Vector3 spawn, LegaiaLivingTownOptions o)
+        {
+            if (o.landmarkStands <= 0)
+                return 0;
+            Vector3 centre = root.transform.TransformPoint(spawn);
+            Vector3 centreFloor;
+            float baseY = HasFloor(centre, out centreFloor) ? centreFloor.y : centre.y;
+            var taken = new List<Vector3>();
+            foreach (Transform t in parent)
+                taken.Add(t.position);
+            int made = 0;
+            for (int ring = 0; ring < 8 && made < o.landmarkStands; ring++)
+            {
+                float r = 7f + ring * 4f;
+                for (int k = 0; k < 12 && made < o.landmarkStands; k++)
+                {
+                    Vector3 dir = Quaternion.AngleAxis(k * 30f + ring * 13f,
+                        Vector3.up) * Vector3.forward;
+                    Vector3 floor;
+                    if (!HasFloor(centre + dir * r, out floor) || !StandingRoom(floor))
+                        continue;
+                    if (IsInterior(root.transform.InverseTransformPoint(floor),
+                            spawn, o))
+                        continue;
+                    bool crowded = false;
+                    for (int i = 0; i < taken.Count; i++)
+                        if (Vector3.Distance(taken[i], floor) < 3.5f)
+                        {
+                            crowded = true;
+                            break;
+                        }
+                    if (crowded || !Reachable(floor))
+                        continue;
+                    bool low = floor.y < baseY - 0.6f;
+                    var st = MakeStation(parent,
+                        (low ? "station_shore_" : "station_path_") + made, 4, floor,
+                        low ? floor - centre : centre - floor, false,
+                        low ? 16f : 11f, null);
+                    Tag(st, -1, low ? "shore" : "path", true);
+                    taken.Add(floor);
+                    made++;
+                }
+            }
+            return made;
+        }
+
+        /// A conversation ring inside each interior room, so the villagers
+        /// retail parked in one room talk to each other instead of only
+        /// taking turns at the room's cupboard.
+        static int BuildIndoorChatRings(GameObject root, Transform parent,
+            List<Home> homes, LegaiaLivingTownOptions o)
+        {
+            int made = 0, spot = 0;
+            for (int i = 0; i < homes.Count; i++)
+            {
+                Transform landing = homes[i].landingT;
+                if (landing == null)
+                    continue;
+                Vector3 centreFloor;
+                if (!HasFloorNear(landing.position + landing.forward * 1.2f,
+                        out centreFloor)
+                    && !HasFloorNear(landing.position, out centreFloor))
+                    continue;
+                // A ring the outdoor/NPC-cluster pass already put in this
+                // room would be merged with this one by the director's
+                // proximity grouping - one ring per room, not two.
+                bool already = false;
+                foreach (Transform t in parent)
+                {
+                    if (!t.name.StartsWith("station_chat_"))
+                        continue;
+                    if (Vector3.Distance(t.position, centreFloor) < 4f)
+                    {
+                        already = true;
+                        break;
+                    }
+                }
+                if (already)
+                    continue;
+                int here = 0;
+                for (int k = 0; k < 3; k++)
+                {
+                    Vector3 dir = Quaternion.AngleAxis(k * 120f + i * 41f,
+                        Vector3.up) * Vector3.forward;
+                    Vector3 floor;
+                    if (!HasFloorNear(centreFloor + dir * o.chatRingRadius, out floor)
+                        || !StandingRoom(floor))
+                        continue;
+                    MakeStation(parent, "station_chat_in" + spot + "_" + k, 3,
+                        floor, centreFloor - floor, true, 20f, null);
+                    here++;
+                }
+                if (here >= 2)
+                {
+                    made += here;
+                    spot++;
+                }
+                else
+                {
+                    for (int k = parent.childCount - 1; k >= 0; k--)
+                        if (parent.GetChild(k).name
+                                .StartsWith("station_chat_in" + spot + "_"))
+                            Undo.DestroyObjectImmediate(parent.GetChild(k).gameObject);
+                }
+            }
+            return made;
+        }
+
+        /// Turn a few of the plain stand spots into CARRY endpoints, so the
+        /// day has fetching and hauling in it and not only standing:
+        ///
+        ///   - the lowest outdoor spot (a shoreline one where the scene has
+        ///     water) becomes the water source: a bucket is filled there;
+        ///   - the doorway stand furthest from it becomes where the bucket
+        ///     is set down;
+        ///   - the two outdoor spots furthest apart become a firewood run,
+        ///     one picking the bundle up and one putting it down.
+        ///
+        /// Roles are picked by MEASUREMENT (lowest, furthest apart) rather
+        /// than by scene-specific coordinates, so the same code gives any
+        /// scene a plausible pair of errands.
+        static int AssignErrandRoles(Transform parent, GameObject root,
+            Vector3 spawn, LegaiaLivingTownOptions o)
+        {
+            if (!o.carryItems)
+                return 0;
+            var stationType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaNpcStation");
+            if (stationType == null)
+                return 0;
+            var open = new List<Component>();
+            foreach (Transform t in parent)
+            {
+                var st = t.GetComponent(stationType);
+                if (st == null)
+                    continue;
+                int kind = (int)stationType.GetField("kind").GetValue(st);
+                bool indoors = (bool)stationType.GetField("indoors").GetValue(st);
+                if (kind == 4 && !indoors)
+                    open.Add(st);
+            }
+            if (open.Count < 2)
+                return 0;
+
+            // Water: the lowest-lying open spot. In a scene with a shore
+            // that is the water's edge; in one without, it is still the
+            // bottom of the village, which is where a well would be.
+            int water = 0;
+            for (int i = 1; i < open.Count; i++)
+                if (open[i].transform.position.y < open[water].transform.position.y)
+                    water = i;
+
+            // Firewood: the two spots furthest from each other, so the run
+            // crosses the village rather than being two steps.
+            int a = -1, b = -1;
+            float best = -1f;
+            for (int i = 0; i < open.Count; i++)
+            {
+                if (i == water)
+                    continue;
+                for (int j = i + 1; j < open.Count; j++)
+                {
+                    if (j == water)
+                        continue;
+                    float d = Vector3.Distance(open[i].transform.position,
+                        open[j].transform.position);
+                    if (d > best)
+                    {
+                        best = d;
+                        a = i;
+                        b = j;
+                    }
+                }
+            }
+
+            int made = 0;
+            MakeCarryHandler(open[water], 0, false, true, 0);
+            Tag(open[water], LegaiaBubbleArt.WORK, "water_fill", true);
+            open[water].gameObject.name = "station_water";
+            made++;
+            if (a >= 0 && b >= 0)
+            {
+                MakeCarryHandler(open[a], 2, false, true, 0);
+                Tag(open[a], LegaiaBubbleArt.WORK, "wood_take", false);
+                open[a].gameObject.name = "station_wood_take";
+                MakeCarryHandler(open[b], -1, true, false, 0);
+                Tag(open[b], -1, "wood_drop", true);
+                open[b].gameObject.name = "station_wood_drop";
+                made += 2;
+            }
+            // Somewhere for the bucket to end up: the doorway stand
+            // furthest from the water, which reads as carrying it home.
+            Component drop = null;
+            float far = -1f;
+            foreach (Transform t in parent)
+            {
+                if (!t.name.StartsWith("station_door_"))
+                    continue;
+                var st = t.GetComponent(stationType);
+                if (st == null || st.GetComponent(
+                        LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaNpcHandItem")) != null)
+                    continue;
+                float d = Vector3.Distance(t.position, open[water].transform.position);
+                if (d > far)
+                {
+                    far = d;
+                    drop = st;
+                }
+            }
+            if (drop != null)
+            {
+                MakeCarryHandler(drop, -1, true, false, 0);
+                Tag(drop, -1, "water_drop", true);
+                made++;
+            }
+            return made;
+        }
+
+        // --- The carried-item rig ----------------------------------------------------
+
+        /// Build one villager's hand + items and wire LegaiaNpcCarry.
+        ///
+        /// FINDING THE HAND. These rigs have no skeleton: the instance is a
+        /// flat set of mesh nodes (head, torso, two arm segments a side, and
+        /// on the full humanoid two leg segments a side). Their NAMES carry
+        /// no meaning across families - the arm is nodes 2-5 on the
+        /// ten-node humanoid and the six-node robed rig but 3-6 on the
+        /// short skirted one - so the hand is found by SHAPE: among the
+        /// body's nodes at arm height, the ones standing widest of the
+        /// centreline, and of those the LOWEST, which is a forearm or a
+        /// hand on every family measured. Everything is done in the NPC's
+        /// own local frame, so the mirrors on the instance and on the built
+        /// root never enter the arithmetic.
+        // How the hand point was arrived at, over the pass (reported once,
+        // so the heuristic above is a measurement in the log rather than an
+        // assumption in the code).
+        static int s_handArm, s_handTorso;
+        static float s_handFraction;
+
+        static Component BuildCarry(Transform npc, string genDir,
+            LegaiaLivingTownOptions o)
+        {
+            var rends = npc.GetComponentsInChildren<Renderer>(true);
+            if (rends.Length == 0)
+                return null;
+            Bounds wb = rends[0].bounds;
+            for (int i = 1; i < rends.Length; i++)
+                wb.Encapsulate(rends[i].bounds);
+            float lossyY = Mathf.Abs(npc.lossyScale.y);
+            if (lossyY < 1e-4f)
+                lossyY = 1f;
+
+            // Body height in the NPC's LOCAL units, measured off the body
+            // nodes alone: the speech bubble's icon quads are children too
+            // and they sit well above the head.
+            var filters = npc.GetComponentsInChildren<MeshFilter>(true);
+            float top = 0f;
+            for (int i = 0; i < filters.Length; i++)
+            {
+                if (filters[i].sharedMesh == null || IsBubblePart(filters[i].transform))
+                    continue;
+                Vector3 c = npc.InverseTransformPoint(
+                    filters[i].transform.TransformPoint(filters[i].sharedMesh.bounds.center));
+                if (c.y > top)
+                    top = c.y;
+            }
+            float h = top > 0.05f ? top * 1.12f : wb.size.y / lossyY;
+            h = Mathf.Clamp(h, 0.25f, 3f);
+
+            // Widest node at arm height, then the lowest of those.
+            float widest = 0f;
+            for (int i = 0; i < filters.Length; i++)
+            {
+                if (filters[i].sharedMesh == null || IsBubblePart(filters[i].transform))
+                    continue;
+                Vector3 c = npc.InverseTransformPoint(
+                    filters[i].transform.TransformPoint(filters[i].sharedMesh.bounds.center));
+                if (c.y < h * 0.22f || c.y > h * 0.80f)
+                    continue;
+                float ax = Mathf.Abs(c.x);
+                if (ax > widest)
+                    widest = ax;
+            }
+            Vector3 hand;
+            if (widest >= h * 0.08f)
+            {
+                s_handArm++;
+                float bestY = float.MaxValue;
+                Vector3 pick = Vector3.zero;
+                for (int i = 0; i < filters.Length; i++)
+                {
+                    if (filters[i].sharedMesh == null || IsBubblePart(filters[i].transform))
+                        continue;
+                    Vector3 c = npc.InverseTransformPoint(
+                        filters[i].transform.TransformPoint(filters[i].sharedMesh.bounds.center));
+                    if (c.y < h * 0.22f || c.y > h * 0.80f)
+                        continue;
+                    if (Mathf.Abs(c.x) < widest * 0.85f)
+                        continue;
+                    if (c.y < bestY)
+                    {
+                        bestY = c.y;
+                        pick = c;
+                    }
+                }
+                // A hand's width out from the arm node, so the item hangs
+                // beside the body rather than inside it.
+                hand = pick + new Vector3(Mathf.Sign(pick.x) * h * 0.06f,
+                    -h * 0.05f, 0f);
+            }
+            else
+            {
+                // No arm to find (a signpost, a two-node rig): beside the
+                // torso at the same height. A LATERAL offset needs no guess
+                // about which way the model faces.
+                s_handTorso++;
+                hand = new Vector3(h * 0.17f, h * 0.42f, 0f);
+            }
+
+            s_handFraction += h > 1e-4f ? hand.y / h : 0f;
+            var holder = new GameObject("carry");
+            holder.transform.SetParent(npc, false);
+            holder.transform.localPosition = hand;
+            holder.transform.localRotation = Quaternion.identity;
+
+            var items = LegaiaCarryArt.Build(holder.transform, genDir, h);
+            var udon = LegaiaWorldBuilder.TryAttachUdon(
+                npc.gameObject, "LegaiaNpcCarry");
+            if (udon == null)
+                return null;
+            LegaiaWorldBuilder.SetUdonField(udon, "hand", holder.transform);
+            LegaiaWorldBuilder.SetUdonField(udon, "items", items);
+            LegaiaWorldBuilder.SyncUdonProxy(udon);
+            return udon;
+        }
+
+        /// A node belonging to the speech-bubble rig rather than to the
+        /// villager's body (it is a child of this pass's own bubble object).
+        static bool IsBubblePart(Transform t)
+        {
+            for (var u = t; u != null; u = u.parent)
+                if (u.name == "speech_bubble" || u.name == "carry")
+                    return true;
+            return false;
         }
 
         // --- Villagers -------------------------------------------------------------
@@ -978,6 +1674,9 @@ namespace LegaiaWorld
             }
 
             var walkWired = new HashSet<string>();
+            s_handArm = 0;
+            s_handTorso = 0;
+            s_handFraction = 0f;
             int walked = 0;
             int indoorsWanted = Mathf.RoundToInt(files.Count *
                 Mathf.Clamp01(o.daytimeIndoorsShare));
@@ -1006,12 +1705,18 @@ namespace LegaiaWorld
                     continue;
                 Component bubble = o.speechBubbles
                     ? BuildBubble(npc, icons, quad, o) : null;
+                // The carry rig is measured off the BODY, so it is built
+                // before the bubble's icon quads would be counted as nodes
+                // (BuildCarry skips them explicitly too).
+                Component held = o.carryItems ? BuildCarry(npc, genDir, o) : null;
                 bool dayIn = homeOf[i] >= 0 && indoorsMade < indoorsWanted;
                 if (dayIn)
                     indoorsMade++;
 
                 LegaiaWorldBuilder.SetUdonField(brain, "loco", loco);
                 LegaiaWorldBuilder.SetUdonField(brain, "bubble", bubble);
+                if (held != null)
+                    LegaiaWorldBuilder.SetUdonField(brain, "carry", held);
                 LegaiaWorldBuilder.SetUdonField(brain, "seed", seed);
                 LegaiaWorldBuilder.SetUdonField(brain, "daytimeIndoors",
                     dayIn || insideAlready[i]);
@@ -1033,6 +1738,12 @@ namespace LegaiaWorld
                 LegaiaWorldBuilder.SyncUdonProxy(brain);
                 brains.Add(brain);
             }
+            if (o.carryItems && s_handArm + s_handTorso > 0)
+                Debug.Log("[Legaia] living town: hand point measured from an ARM " +
+                    "node on " + s_handArm + " rig(s), from a torso offset on " +
+                    s_handTorso + " (no arm in the node set); mean hand height " +
+                    (s_handFraction / (s_handArm + s_handTorso)).ToString("0.00") +
+                    " of body height.");
             if (o.walkAnimator)
                 Debug.Log("[Legaia] living town: walk cycle '" + o.walkClip +
                     "' bound on " + walked + " of " + files.Count +
