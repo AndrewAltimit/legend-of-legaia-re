@@ -394,6 +394,14 @@ namespace LegaiaWorld
                         b.GoHome();
                         budget--;
                     }
+                    else if (!b.HasHome() && b.OnErrand())
+                    {
+                        // Nowhere to go in (town01's beach pair is cut off
+                        // from every door): settle where it is rather than
+                        // keep running errands round an empty village.
+                        b.StopActivity();
+                        budget--;
+                    }
                 }
                 else if (b.Indoors() && !b.daytimeIndoors)
                 {
@@ -670,6 +678,11 @@ namespace LegaiaWorld
                     Vector3 d = where[i] - where[j];
                     d.y = 0f;
                     if (d.sqrMagnitude > r2)
+                        continue;
+                    // Survey's flags are up to a decision old; ask both
+                    // again now that a pair is actually in reach, so one of
+                    // them can never bow to somebody who walked straight on.
+                    if (!brains[i].Greetable() || !brains[j].Greetable())
                         continue;
                     pairFreeAt[i * n + j] = now + pairCooldown;
                     if (NextFloat() > greetChance)

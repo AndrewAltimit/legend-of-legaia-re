@@ -283,12 +283,13 @@ namespace LegaiaWorld
         }
 
         /// Out on a walk and free to be stopped for a passing greeting: on
-        /// an errand leg or walking beside one, and not fresh from greeting
-        /// this same neighbour (the director rate-limits per PAIR too).
+        /// an errand leg, and not fresh from greeting somebody else (the
+        /// director rate-limits per PAIR on top of this). A COMPANION is
+        /// deliberately not greetable - it walks at its leader's shoulder,
+        /// so the two of them would greet each other on a timer forever.
         public bool Greetable()
         {
-            return started && (state == 10 || state == 13)
-                   && Time.time >= greetFreeAt;
+            return started && state == 10 && Time.time >= greetFreeAt;
         }
 
         // --- Director commands ----------------------------------------------
@@ -393,9 +394,11 @@ namespace LegaiaWorld
             BackToStroll(restMin + NextFloat() * (restMax - restMin));
         }
 
-        /// Cancel whatever daytime activity is running (the director uses
-        /// this to break up a companion pair, and to clear a villager that
-        /// is about to be given something else).
+        /// Cancel whatever daytime activity is running. The night routine
+        /// owns states 5-8 and is never interrupted; the director uses this
+        /// to settle a villager that has no home to walk to when the town
+        /// goes indoors, so it stops running errands round an empty
+        /// village instead.
         public void StopActivity()
         {
             if (state == 5 || state == 6 || state == 7 || state == 8)
@@ -431,20 +434,13 @@ namespace LegaiaWorld
                 return;
             if (bubble != null)
                 bubble.Hide();
-            // Resume rather than restart: an errand leg re-issues the walk
-            // to the SAME stop it was already claiming, and a companion
-            // falls back in beside its leader.
+            // Resume rather than restart: the errand leg re-issues its
+            // walk to the SAME stop it was already claiming.
             if (greetResume == 10 && station != null)
             {
                 state = 10;
                 giveUpAt = Time.time + walkTimeout;
                 loco.GoTo(station.StandPosition());
-                return;
-            }
-            if (greetResume == 13 && leader != null)
-            {
-                state = 13;
-                followNext = 0f;
                 return;
             }
             BackToStroll(0.5f + NextFloat() * 2f);

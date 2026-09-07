@@ -44,7 +44,7 @@ namespace LegaiaWorld
         [Tooltip("Drop whatever is held after this long, whatever happens - " +
                  "so an errand cut short by nightfall never leaves a villager " +
                  "carrying a bucket for the rest of the world's life.")]
-        public float maxCarrySeconds = 150f;
+        public float maxCarrySeconds = 240f;
 
         [Tooltip("Work sway: degrees either side of rest (action 1).")]
         public float swayDegrees = 17f;
