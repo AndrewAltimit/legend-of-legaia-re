@@ -760,3 +760,45 @@ extracted/overlays/overlay_gameover_0902.bin at that base puts a clean
 matching the row's 244 bytes. The body was re-read at the same time and the
 row corrected: the sub-state switch on `+0x5A` is two switches, not one.
 """
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/battle.md:801f1ed4:801e4b1c+801e4c7c+801e4ca8"
+reason = """
+All three are the routine's CALLER sites, named as such by the row: each word is
+`jal 0x801F1ED4` (0x0C07C7B5) inside FUN_801E295C's bytes in
+extracted/overlays/overlay_battle_action_0898.bin at base 0x801CE818. A caller's
+jal site is never an operand of the callee, so no dump of it carries them.
+"""
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/battle.md:801f2410:801f2144+801f23f4"
+reason = """
+Both are caller sites: each word is `jal 0x801F2410` (0x0C07C904), in the two
+cast dispatchers' epilogues (FUN_801F1ED4 / FUN_801F2160) in
+overlay_battle_action_0898.bin. Same shape as the 801f1ed4 waiver.
+"""
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/battle.md:801f2160:801f2128+801e50c8"
+reason = """
+0x801E50C8 holds `jal 0x801F2160` (a caller site in FUN_801E295C). 0x801F2128
+is FUN_801F1ED4's own epilogue - `lui v0,0x8008; lw v0,-0x42DC(v0); lbu v0,0x27A(v0)`
+- which the row names as the shared tail both dispatchers converge on. Neither
+is an operand of FUN_801F2160.
+"""
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/battle.md:801d5718:801d4458"
+reason = """
+0x801D4458 holds `jal 0x801D5718` (0x0C0755C6) in overlay_battle_action_0898.bin
+- the caller site the row cites as provenance, not an operand of the routine.
+"""
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/battle.md:801f69f4:80056498+800562e8+8005640c"
+reason = """
+0x80056498 holds `jal 0x801F69F4` in FUN_80056208 (extracted/SCUS_942.54, base
+0x80010000, header 0x800); 0x800562E8 / 0x8005640C are the `sb rt,0x289(rs)`
+phase-byte stores in the same caller that the row describes. All three are
+caller-side addresses; the callee's dumps cannot carry them.
+"""
