@@ -2752,8 +2752,10 @@ A chest gives its item via the field-VM **`GIVE_ITEM` opcode `0x39`**, encoded
 `[0x39, item_id]` - the item id is a **single inline operand byte** in the
 per-scene field-VM script bytecode, not a per-scene table. (Pinned in the
 dispatcher `FUN_801DE840` case `0x39` at `0x801E0448`: inventory-window setup
-`FUN_8004313C` then add-by-id `FUN_800421D4(item_id, 1)`, PC += 2. The standalone
-`FUN_801D71F0` add-item copy is dead/uncalled. See
+`FUN_8004313C` then add-by-id `FUN_800421D4(item_id, 1)`, PC += 2. The routine
+printed `FUN_801D71F0` is not an add-item copy - it is the field overlay's
+unreferenced per-slot equip applier `FUN_801E5A08` under a mis-based VA, and
+its `FUN_800421D4` call is a refund. See
 [script-vm.md](../subsystems/script-vm.md).) The give sites live in the MAN
 partition-1 per-actor interaction scripts (a chest is an interactable actor).
 

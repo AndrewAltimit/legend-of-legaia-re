@@ -337,6 +337,7 @@ pub(crate) fn cmd_title(script: &str, no_save: bool, fade_frames: u16) -> Result
                 TitleEvent::ContinueSelected => println!("  tick {i}: Continue"),
                 TitleEvent::OptionsSelected => println!("  tick {i}: Options"),
                 TitleEvent::FadeInDone => println!("  tick {i}: fade-in done"),
+                TitleEvent::AttractTimeout => println!("  tick {i}: attract countdown fired"),
             }
         }
     }

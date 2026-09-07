@@ -207,6 +207,32 @@ the words themselves did, at full strength. `0x801E5134` is the aliasing
 exemplar: two dumps print the same VA from different programs, one correct
 (a real field routine) and one a phantom of 0898's `0x801CE94C`.
 
+### `0x801D71F0` - the equip applier
+
+A `0xE818` re-key with a second symptom: it turns an intra-function jump into
+a call to a function that does not exist.
+
+`ghidra/scripts/funcs/overlay_0897_801d71f0.txt` (and its `_801d7210`
+sibling, the same body requested at an interior address) prints an
+81-instruction routine at `0x801D71F0`. The bytes are 0897's per-slot equip
+applier at file `+0x171F0`, true VA **`0x801E5A08`** - printed `+ 0xE818`,
+the first error in [the two errors](#the-two-errors). The body's own
+epilogue confirms the extent: it ends at `0x801E5B48`, one instruction
+before `0x801E5B4C`, which [the boundary-band
+sweep](#the-boundary-band-near-0x801e5000) already lists as a correct 0897
+print and which `legaia_engine_vm::world_map_overlay` ports as a function
+entry.
+
+Inside it, four class arms end on `j 0x801e5ae8` / `j 0x801e5aec`. A jump
+target decodes from the instruction bytes, so those print **correctly**
+while the body prints `0xE818` low - which puts the target `0xE818` past the
+printed body and makes it read as a call out to a shared placer. There is
+none: `0x801E5AE8` is this routine's own inline placer at `+0xE0`. The only
+dump answering for that VA is a four-instruction stub in the mis-based
+`overlay_0896_bat_back_dat` image, which is why the classifier flags it
+PHANTOM - a second mis-based image answering for a VA neither owns.
+Decoded in [`field-menu.md`](../subsystems/field-menu.md#manual-equip-applier-fun_801e5a08).
+
 ### `0x8020D05C`
 
 The dump carries zero instructions (`size=1 bytes, 0 instructions`,

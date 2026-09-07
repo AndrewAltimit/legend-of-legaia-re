@@ -1448,7 +1448,7 @@ impl LegaiaRuntime {
                 // nothing rather than leaving it blank.
                 if view.is_none()
                     && let Some(b) = blocks.get(cell as usize)
-                    && let Some(caption) = SlotInfoMode::for_slot(b).caption(s.mode())
+                    && let Some(caption) = SlotInfoMode::for_grid_cell(cell, b).caption(s.mode())
                 {
                     d.extend(ui::slot_info_caption_draws_for(
                         font, caption, y_off, origin, scale,

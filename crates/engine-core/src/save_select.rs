@@ -925,11 +925,10 @@ pub fn card_frame_tick(
 /// What the bottom info panel shows for the focused grid cell.
 ///
 /// Retail passes this to the panel renderer as a `view_mode` int; the
-/// variants below carry the retail numbers. Two retail modes have no port
-/// equivalent and are deliberately absent: `4` ("Return") belongs to a
-/// sixteenth cell the 5x3 block grid does not have, and `100` (blank) is
-/// forced while the "Now checking" dialog is up, which the port models as a
-/// separate [`SelectPhase`] that does not draw the panel at all.
+/// variants below carry the retail numbers. One retail mode has no port
+/// equivalent and is deliberately absent: `100` (blank) is forced while the
+/// "Now checking" dialog is up, which the port models as a separate
+/// [`SelectPhase`] that does not draw the panel at all.
 ///
 /// PORT: FUN_801E3F74 (selector) + FUN_801E08D8 (`view_mode` param).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -940,10 +939,25 @@ pub enum SlotInfoMode {
     NotLegaiaSave,
     /// Retail `3`: the block is free.
     FreeBlock,
+    /// Retail `4`: the "Return" caption, selected by cell index alone -
+    /// `FUN_801E3F74`'s very first test (`li v0,0xf; bne a0,v0` at
+    /// `0x801E3F74..0x801E3F84`), ahead of every content test.
+    ///
+    /// **Retail never reaches it.** See [`Self::for_grid_cell`].
+    Return,
 }
 
+/// The grid cell index `FUN_801E3F74` answers [`SlotInfoMode::Return`] for.
+///
+/// Retail's own grid cursor cannot produce it - see
+/// [`SlotInfoMode::for_grid_cell`] - so this is the constant the dead arm
+/// tests, not a cell any host has to draw.
+pub const SLOT_INFO_RETURN_CELL: u8 = 0x0F;
+
 impl SlotInfoMode {
-    /// Pick the mode for a slot. Mirrors FUN_801E3F74's branch order.
+    /// Pick the mode for a slot. Mirrors FUN_801E3F74's branch order from
+    /// its second test onward - the cell-index test that precedes it is
+    /// [`Self::for_grid_cell`].
     pub fn for_slot(snap: &SlotSnapshot) -> Self {
         match snap.content {
             SlotContent::LegaiaSave => Self::Preview,
@@ -953,6 +967,32 @@ impl SlotInfoMode {
             SlotContent::Foreign => Self::NotLegaiaSave,
             SlotContent::Free => Self::FreeBlock,
         }
+    }
+
+    /// The whole of `FUN_801E3F74`: cell [`SLOT_INFO_RETURN_CELL`] captions
+    /// [`Self::Return`] whatever the block holds, every other cell falls to
+    /// [`Self::for_slot`].
+    ///
+    /// The `0xF` arm is **unreachable in retail**, and nothing in the port
+    /// drives a cursor to it either. `FUN_801E3F74`'s only caller is the
+    /// grid wrapper `FUN_801E06C0`, which is called once per frame as
+    /// `FUN_801E06C0(state[+0x1F4], state[+0x1F8])` (`0x801DFD88`) and
+    /// forms the cell as `col + row*5`. Both cursor words are clamped by
+    /// the tick's shared stepper - `col` to `0..=4` (`slti v0,v0,0x5` at
+    /// `0x801E017C`/`0x801E0190`) and `row` to `0..=2` (`slti v0,v0,0x3` at
+    /// `0x801E01B0`/`0x801E01C0`) - so the cell tops out at `14`. The
+    /// linear seed the two words are re-derived from (`_DAT_8007B7CC`) has
+    /// exactly one writer on the whole disc, `sw s2,-0x4834(v0)` at
+    /// `0x801DED2C`, and it stores that same `col + row*5`; a byte scan for
+    /// the `0xB7CC` displacement over every extracted image finds three
+    /// references, all three in PROT 0899 and all three in this tick.
+    ///
+    /// PORT: FUN_801E3F74
+    pub fn for_grid_cell(cell: u8, snap: &SlotSnapshot) -> Self {
+        if cell == SLOT_INFO_RETURN_CELL {
+            return Self::Return;
+        }
+        Self::for_slot(snap)
     }
 
     /// The panel's centred caption, or `None` for [`Self::Preview`], which
@@ -970,6 +1010,10 @@ impl SlotInfoMode {
                 SaveSelectMode::Save => "Able to save.",
                 SaveSelectMode::Load => "No data",
             }),
+            // `0x801CF384` in the menu overlay's rodata, drawn through the
+            // same centred `FUN_801E3EE0(caption, 0xA0, panel_y + 0x18)`
+            // tail as modes 2 and 3 (`0x801E0F70..0x801E0F88`).
+            Self::Return => Some("Return"),
         }
     }
 }
@@ -2174,6 +2218,42 @@ mod tests {
 
         snap.content = SlotContent::LegaiaSave;
         assert_eq!(SlotInfoMode::for_slot(&snap), SlotInfoMode::Preview);
+    }
+
+    #[test]
+    fn return_cell_captions_return_whatever_the_block_holds() {
+        // `FUN_801E3F74` tests the cell index before it touches either
+        // per-slot array, so the Return caption wins over every content
+        // class - a readable save in cell 0xF would still caption Return.
+        for content in [
+            SlotContent::LegaiaSave,
+            SlotContent::Foreign,
+            SlotContent::Free,
+        ] {
+            let mut snap = SlotSnapshot::empty(SLOT_INFO_RETURN_CELL);
+            snap.content = content;
+            snap.present = content == SlotContent::LegaiaSave;
+            assert_eq!(
+                SlotInfoMode::for_grid_cell(SLOT_INFO_RETURN_CELL, &snap),
+                SlotInfoMode::Return
+            );
+        }
+        for m in [SaveSelectMode::Load, SaveSelectMode::Save] {
+            assert_eq!(SlotInfoMode::Return.caption(m), Some("Return"));
+        }
+    }
+
+    #[test]
+    fn every_other_cell_falls_through_to_the_content_selector() {
+        let mut snap = SlotSnapshot::empty(0);
+        snap.content = SlotContent::Free;
+        for cell in 0..SLOT_INFO_RETURN_CELL {
+            assert_eq!(
+                SlotInfoMode::for_grid_cell(cell, &snap),
+                SlotInfoMode::for_slot(&snap),
+                "cell {cell} must not shortcut to Return"
+            );
+        }
     }
 
     #[test]
