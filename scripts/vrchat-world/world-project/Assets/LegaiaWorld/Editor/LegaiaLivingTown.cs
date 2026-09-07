@@ -270,6 +270,13 @@ namespace LegaiaWorld
                     LegaiaWorldBuilder.SyncUdonProxy(brain);
                 }
 
+            // Portraits for the card table's seat panel, then the bounty
+            // layer (weapon hitboxes on the villagers, the coin-drop pool):
+            // own files, see their headers. Both run after the brains are
+            // wired because both hang off them.
+            LegaiaPortraits.Apply(root, brains, sceneName, genDir);
+            LegaiaBounty.Apply(root, container.transform, brains, o, settings);
+
             int doorProps = 0;
             foreach (var h in homes)
                 if (h.doorProp != null)
@@ -298,6 +305,7 @@ namespace LegaiaWorld
             if (old != null)
                 Undo.DestroyObjectImmediate(old.gameObject);
             LegaiaNavMesh.Remove(root);
+            LegaiaBounty.Remove(root);
             var npcRoot = root.transform.Find("npcs");
             if (npcRoot == null)
                 return;
@@ -1734,6 +1742,7 @@ namespace LegaiaWorld
             var glbs = new List<string>();
             var objs = new List<Transform>();
             var idles = new List<string>();
+            var labels = new List<string>();
             foreach (object n in MiniJson.AsList(MiniJson.Get(manifest, "npcs"))
                      ?? new List<object>())
             {
@@ -1750,6 +1759,8 @@ namespace LegaiaWorld
                 files.Add(file);
                 glbs.Add(LegaiaSceneSettings.NpcGlb(n, dir));
                 objs.Add(placed);
+                labels.Add(MiniJson.AsStr(MiniJson.Get(n, "label"))
+                    ?? Path.GetFileNameWithoutExtension(file));
                 idles.Add(FirstClip(n));
             }
 
@@ -1887,6 +1898,7 @@ namespace LegaiaWorld
                 if (held != null)
                     LegaiaWorldBuilder.SetUdonField(brain, "carry", held);
                 LegaiaWorldBuilder.SetUdonField(brain, "seed", seed);
+                LegaiaWorldBuilder.SetUdonField(brain, "label", labels[i]);
                 LegaiaWorldBuilder.SetUdonField(brain, "daytimeIndoors",
                     dayIn || insideAlready[i]);
                 LegaiaWorldBuilder.SetUdonField(brain, "startIndoors", insideAlready[i]);

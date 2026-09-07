@@ -129,13 +129,15 @@ namespace LegaiaWorld
         }
 
         /// Everything the soak does not simulate but a -nographics editor
+        /// (shared with the card-game soak, which needs exactly the same
+        /// teardown before it enters play mode)
         /// still tries to draw. `-batchmode -nographics` enters play mode
         /// with no graphics device, and the shadow-map pass over an
         /// offscreen camera (a VRChat mirror's reflection camera is one)
         /// dereferences it: the run dies with SIGSEGV in
         /// GfxDeviceClient::DrawSharedGeometryJobs before a single frame of
         /// the town is simulated. None of it is under test here.
-        static void StripRendering()
+        internal static void StripRendering()
         {
             QualitySettings.shadows = ShadowQuality.Disable;
             QualitySettings.shadowDistance = 0f;

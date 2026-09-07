@@ -126,6 +126,10 @@ namespace LegaiaWorld
             }
 
             var built = new List<string>();
+            // The coin purse first: every minigame below pays into it, and
+            // the ones built by other passes find it by this path at
+            // runtime (Legaia_common_prefabs/wallet - keep the name).
+            BuildWallet(container);
             if (o.mirror)
             {
                 Finish(BuildMirror(container, genDir, Place("mirror", o.mirrorOffset), spawnW),
@@ -765,6 +769,31 @@ namespace LegaiaWorld
             }
         }
 
+        // --- Wallet --------------------------------------------------------------
+
+        internal const string WALLET_NAME = "wallet";
+
+        /// The per-player coin purse (LegaiaWallet): one behaviour, no
+        /// visuals, persisted through VRChat PlayerData. Consumers built
+        /// here are wired to it; consumers built by other passes resolve
+        /// `GameObject.Find("Legaia_common_prefabs/wallet")` in their Start.
+        static Component BuildWallet(GameObject container)
+        {
+            var go = new GameObject(WALLET_NAME);
+            go.transform.SetParent(container.transform, false);
+            var wallet = LegaiaWorldBuilder.TryAttachUdon(go, "LegaiaWallet");
+            LegaiaWorldBuilder.SyncUdonProxy(wallet);
+            return wallet;
+        }
+
+        /// The wallet built by this pass (null when the container is not built).
+        internal static Component FindWallet()
+        {
+            var c = GameObject.Find(CONTAINER + "/" + WALLET_NAME);
+            var t = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaWallet");
+            return c != null && t != null ? c.GetComponent(t) : null;
+        }
+
         // --- Card table ---------------------------------------------------------
 
         const float CARD_W = 0.063f, CARD_L = 0.088f, CARD_T = 0.0005f;
@@ -869,6 +898,12 @@ namespace LegaiaWorld
             LegaiaWorldBuilder.SetUdonField(deck, "cards", ToTypedArray(cards, "LegaiaCard"));
             LegaiaWorldBuilder.SetUdonField(deck, "stackAnchor", anchor.transform);
             LegaiaWorldBuilder.SyncUdonProxy(deck);
+
+            // The game itself (dealer, AI opponents, betting, the seat
+            // panel): own file, see its header. It hangs a `game` child
+            // off the table root - the director links to it by that path.
+            LegaiaCardGameBuilder.Build(root, genDir, spawnW, host, deck,
+                seatStations, seatChairs, cards, FindWallet());
             return root;
         }
 

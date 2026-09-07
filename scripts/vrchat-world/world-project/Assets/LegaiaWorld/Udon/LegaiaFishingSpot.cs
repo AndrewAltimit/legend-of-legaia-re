@@ -1,19 +1,31 @@
-// The handler behind a shoreline LegaiaNpcStation (kind 1): while a
-// villager stands here, it holds a rod out over the water with a line
-// down to a bobbing float, ripple rings spread where the float sits, and
-// every now and then something bites.
+// The handler behind a shoreline LegaiaNpcStation (kind 1), and the
+// rod a PLAYER picks up there.
 //
-// The NPC rigs are rigid-node models with no hand bone (see the wander
-// behaviour's facing note), so the rod is NOT parented to the NPC: it
-// lives under the station and is positioned each frame relative to
+// NPC SIDE: while a villager stands here, it holds a rod out over the
+// water with a line down to a bobbing float, ripple rings spread where
+// the float sits, and every now and then something bites. The NPC rigs
+// are rigid-node models with no hand bone (see the wander behaviour's
+// facing note), so the rod is NOT parented to the NPC: it lives under
+// the station and is positioned each frame relative to
 // `station.currentNpc` at hand height - measured from the NPC's own
 // rendered bounds at arrival, so it tracks any export scale.
 //
-// The station calls us:
 //   OnNpcArrive  - show the gear, size it to this NPC, start fishing
 //   OnNpcLeave   - hide it again
-// Everything here is cosmetic and per-client (no sync): two players may
-// see the float dip on different seconds, which nobody can tell.
+//
+// PLAYER SIDE: Interact on the stake beside the spot ("Fish") hands the
+// same gear to the local player - the rod now tracks their right hand
+// (their head, on a desktop rig where the bone reads zero) and the
+// station is marked unavailable so no villager walks into them. The
+// float bobs, and after a wait a BITE opens a short window: Interact
+// during it lands a fish and pays a few coins into the purse, Interact
+// outside it packs up. Walking away packs up too.
+//
+// Everything here is cosmetic and LOCAL (no sync, no ownership): two
+// players may see the float dip on different seconds, which nobody can
+// tell, and each fishes their own spot. The one thing that is real is
+// the wallet credit, which is a local write to the player's own purse -
+// the same anti-cheat shape as every other earner in the kit.
 //
 // Requires UdonSharp (bundled with the VRChat worlds SDK).
 
@@ -59,12 +71,40 @@ namespace LegaiaWorld
         [Tooltip("Hand height as a fraction of the NPC's measured height.")]
         public float handHeightFraction = 0.55f;
 
-        [Tooltip("Shortest / longest wait before a bite, seconds.")]
+        [Tooltip("Shortest / longest wait before a bite, seconds (villagers).")]
         public float minBiteSeconds = 20f;
         public float maxBiteSeconds = 60f;
 
         [Tooltip("Free the station while a player stands within this radius of the stand point (0 = never).")]
         public float playerBlockRadius = 1f;
+
+        // --- player fishing ---------------------------------------------------
+
+        [Tooltip("The world's coin purse (builder-wired; resolved by path in Start when the prefabs pass ran later).")]
+        public LegaiaWallet wallet;
+
+        [Tooltip("World-space label over the stake: the bite cue and the reward line.")]
+        public TMPro.TextMeshPro rewardText;
+
+        [Tooltip("Shortest / longest wait before a bite when a PLAYER is fishing, seconds.")]
+        public float playerMinBiteSeconds = 6f;
+        public float playerMaxBiteSeconds = 20f;
+
+        [Tooltip("How long the bite window stays open - Interact inside it lands the fish.")]
+        public float biteWindowSeconds = 1.6f;
+
+        [Tooltip("Fewest / most coins a catch is worth.")]
+        public int rewardMin = 2;
+        public int rewardMax = 8;
+
+        [Tooltip("Seconds the '+n coins' line stays up.")]
+        public float rewardShowSeconds = 2f;
+
+        [Tooltip("Walk further than this from the stand point and the rod is packed up, metres.")]
+        public float playerLeaveDistance = 3f;
+
+        [Tooltip("Coins this player has landed here (statistics for the checks).")]
+        [HideInInspector] public int playerCatches;
 
         private bool fishing;
         private float npcHeight = 1.6f;
@@ -75,15 +115,32 @@ namespace LegaiaWorld
         private float playerClock;
         private bool blocked;
 
+        private bool playerFishing;
+        private float pNextBite;
+        private float pBiteUntil;
+        private float pCatchUntil;
+        private float rewardUntil;
+
         void Start()
         {
             if (station == null)
                 station = GetComponent<LegaiaNpcStation>();
+            if (wallet == null)
+            {
+                GameObject g = GameObject.Find("Legaia_common_prefabs/wallet");
+                if (g != null)
+                    wallet = g.GetComponent<LegaiaWallet>();
+            }
+            InteractionText = "Fish";
             if (gear != null)
                 gear.SetActive(false);
             if (fish != null)
                 fish.gameObject.SetActive(false);
+            if (rewardText != null)
+                rewardText.text = "";
         }
+
+        // --- the villager -----------------------------------------------------
 
         public void OnNpcArrive()
         {
@@ -117,9 +174,196 @@ namespace LegaiaWorld
                 fish.gameObject.SetActive(false);
         }
 
+        // --- the player -------------------------------------------------------
+
+        public override void Interact()
+        {
+            if (station == null)
+                return;
+            // A villager already has the rod: the player only ever blocks
+            // the spot (BlockForPlayers), never takes it out of its hands.
+            if (station.currentNpc != null)
+                return;
+            if (!playerFishing)
+            {
+                StartPlayerFishing();
+                return;
+            }
+            if (Time.time < pBiteUntil)
+                LandCatch();
+            else
+                StopPlayerFishing();
+        }
+
+        void StartPlayerFishing()
+        {
+            playerFishing = true;
+            // Held, not borrowed: the station stays ours until we pack up,
+            // whatever the proximity poll thinks.
+            station.available = false;
+            CastPlayerFloat();
+            if (gear != null)
+                gear.SetActive(true);
+            if (ripples != null)
+                ripples.Play();
+            if (fish != null)
+                fish.gameObject.SetActive(false);
+            pBiteUntil = 0f;
+            pCatchUntil = 0f;
+            pNextBite = Time.time +
+                Random.Range(playerMinBiteSeconds, playerMaxBiteSeconds);
+            ShowLabel("", 0f);
+        }
+
+        void StopPlayerFishing()
+        {
+            playerFishing = false;
+            if (ripples != null)
+                ripples.Stop();
+            if (gear != null)
+                gear.SetActive(false);
+            if (fish != null)
+                fish.gameObject.SetActive(false);
+            ShowLabel("", 0f);
+            if (station != null)
+                station.available = true;
+            // Let the proximity poll re-decide from scratch: standing here
+            // still blocks the spot, walking off frees it.
+            blocked = false;
+        }
+
+        void CastPlayerFloat()
+        {
+            Vector3 stand = station.StandPosition();
+            Vector3 fwd = station.StandForward();
+            castPoint = new Vector3(
+                stand.x + fwd.x * castDistance, waterY, stand.z + fwd.z * castDistance);
+            if (bobber != null)
+                bobber.position = castPoint;
+        }
+
+        void LandCatch()
+        {
+            int n = Random.Range(rewardMin, rewardMax + 1);
+            if (wallet != null)
+                wallet.Add(n);
+            playerCatches++;
+            float t = Time.time;
+            pBiteUntil = 0f;
+            pCatchUntil = t + 0.9f;   // the fish arcs up out of the water
+            pNextBite = pCatchUntil +
+                Random.Range(playerMinBiteSeconds, playerMaxBiteSeconds);
+            ShowLabel("+" + n + " coins", rewardShowSeconds);
+        }
+
+        void ShowLabel(string text, float seconds)
+        {
+            rewardUntil = seconds > 0f ? Time.time + seconds : 0f;
+            if (rewardText != null)
+                rewardText.text = text;
+        }
+
+        void TickPlayer()
+        {
+            float t = Time.time;
+            VRCPlayerApi local = Networking.LocalPlayer;
+            if (local != null)
+            {
+                Vector3 d = local.GetPosition() - station.StandPosition();
+                d.y = 0f;
+                if (d.sqrMagnitude >
+                    playerLeaveDistance * playerLeaveDistance)
+                {
+                    StopPlayerFishing();
+                    return;
+                }
+            }
+
+            bool biting = t < pBiteUntil;
+            Vector3 fwd = station.StandForward();
+            if (rod != null)
+            {
+                rod.position = HandPoint(local, fwd);
+                float jerk = biting ? -22f : 0f;
+                rod.rotation = Quaternion.LookRotation(fwd, Vector3.up) *
+                               Quaternion.Euler(58f + jerk, 0f, 0f);
+            }
+            DrawFloat(t, biting);
+            DrawLine();
+            DrawFish(t, pBiteUntil, pCatchUntil);
+
+            if (t > pNextBite && !biting && t > pCatchUntil)
+            {
+                pBiteUntil = t + biteWindowSeconds;
+                // Missed the window? The next one is a fresh wait away.
+                pNextBite = pBiteUntil +
+                    Random.Range(playerMinBiteSeconds, playerMaxBiteSeconds);
+                ShowLabel("!", biteWindowSeconds);
+            }
+            if (rewardUntil > 0f && t > rewardUntil)
+                ShowLabel("", 0f);
+        }
+
+        /// Where the rod is held: the local player's right hand, or - on a
+        /// rig that reports no hand bone (desktop, a half-tracked avatar) -
+        /// a point out in front of their head.
+        Vector3 HandPoint(VRCPlayerApi local, Vector3 fwd)
+        {
+            if (local == null)
+                return station.StandPosition() + Vector3.up * 1.1f;
+            Vector3 hand = local.GetBonePosition(HumanBodyBones.RightHand);
+            if (hand.sqrMagnitude > 1e-6f)
+                return hand;
+            VRCPlayerApi.TrackingData head =
+                local.GetTrackingData(VRCPlayerApi.TrackingDataType.Head);
+            return head.position + fwd * 0.35f - Vector3.up * 0.25f;
+        }
+
+        // --- shared drawing ---------------------------------------------------
+
+        void DrawFloat(float t, bool biting)
+        {
+            if (bobber == null)
+                return;
+            float y = waterY + Mathf.Sin(t * 1.7f) * 0.018f
+                    + Mathf.Sin(t * 0.63f) * 0.01f;
+            if (biting)
+                y -= 0.055f + Mathf.Abs(Mathf.Sin(t * 14f)) * 0.02f;
+            bobber.position = new Vector3(castPoint.x, y, castPoint.z);
+        }
+
+        void DrawLine()
+        {
+            if (line == null || rodTip == null || bobber == null)
+                return;
+            line.SetPosition(0, rodTip.position);
+            line.SetPosition(1, bobber.position);
+        }
+
+        void DrawFish(float t, float from, float until)
+        {
+            if (fish == null)
+                return;
+            bool show = t > from && t < until;
+            if (show != fish.gameObject.activeSelf)
+                fish.gameObject.SetActive(show);
+            if (!show || bobber == null)
+                return;
+            float k = 1f - (until - t) / 0.9f; // 0..1 over the arc
+            Vector3 p = Vector3.Lerp(bobber.position,
+                rodTip != null ? rodTip.position : bobber.position, k * 0.55f);
+            fish.position = p + Vector3.up * (Mathf.Sin(k * Mathf.PI) * 0.5f);
+            fish.rotation = Quaternion.Euler(0f, t * 220f, 25f);
+        }
+
         void Update()
         {
             BlockForPlayers();
+            if (playerFishing)
+            {
+                TickPlayer();
+                return;
+            }
             if (!fishing || station == null)
                 return;
             Transform npc = station.currentNpc;
@@ -145,20 +389,8 @@ namespace LegaiaWorld
                 rod.rotation = Quaternion.LookRotation(fwd, Vector3.up) *
                                Quaternion.Euler(58f + jerk, 0f, 0f);
             }
-            // Float: a slow bob, a sharp dip while something is on.
-            if (bobber != null)
-            {
-                float y = waterY + Mathf.Sin(t * 1.7f) * 0.018f
-                        + Mathf.Sin(t * 0.63f) * 0.01f;
-                if (biting)
-                    y -= 0.055f + Mathf.Abs(Mathf.Sin(t * 14f)) * 0.02f;
-                bobber.position = new Vector3(castPoint.x, y, castPoint.z);
-            }
-            if (line != null && rodTip != null && bobber != null)
-            {
-                line.SetPosition(0, rodTip.position);
-                line.SetPosition(1, bobber.position);
-            }
+            DrawFloat(t, biting);
+            DrawLine();
             // The catch: the float dips, then a fish flashes up on the line.
             if (t > nextBite && !biting && t > catchUntil)
             {
@@ -166,26 +398,13 @@ namespace LegaiaWorld
                 catchUntil = t + 2.0f;
                 nextBite = t + Random.Range(minBiteSeconds, maxBiteSeconds);
             }
-            if (fish != null)
-            {
-                bool show = t > biteUntil && t < catchUntil;
-                if (show != fish.gameObject.activeSelf)
-                    fish.gameObject.SetActive(show);
-                if (show && bobber != null)
-                {
-                    float k = 1f - (catchUntil - t) / 0.9f; // 0..1 over the arc
-                    Vector3 p = Vector3.Lerp(bobber.position,
-                        rodTip != null ? rodTip.position : bobber.position, k * 0.55f);
-                    fish.position = p + Vector3.up * (Mathf.Sin(k * Mathf.PI) * 0.5f);
-                    fish.rotation = Quaternion.Euler(0f, t * 220f, 25f);
-                }
-            }
+            DrawFish(t, biteUntil, catchUntil);
         }
 
         // Keep an NPC from fishing through a player standing on the spot.
         void BlockForPlayers()
         {
-            if (playerBlockRadius <= 0f || station == null)
+            if (playerBlockRadius <= 0f || station == null || playerFishing)
                 return;
             playerClock += Time.deltaTime;
             if (playerClock < 0.4f)

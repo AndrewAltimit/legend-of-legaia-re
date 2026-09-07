@@ -385,6 +385,11 @@ namespace LegaiaWorld
             W("dotCols", (int)dotCols);
             W("dotRows", (int)dotRows);
             W("projectionDistance", projZ0);
+            // The bank: the world's persistent coin purse, when the common
+            // prefabs pass has already built it. Left null the machine
+            // resolves it by path in its own Start, and failing that keeps
+            // the old per-cabinet balance.
+            W("wallet", LegaiaCommonPrefabs.FindWallet());
             LegaiaWorldBuilder.SyncUdonProxy(machine);
 
             WireButtons(rig, machine, worldUnit);

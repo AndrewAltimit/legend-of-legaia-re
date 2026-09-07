@@ -4,6 +4,12 @@
 // spots; the card table's seat stations live on the stools instead (they
 // are part of the common-prefabs pass).
 //
+// A fishing spot is for PLAYERS too: each one gets a stake with a bucket
+// beside the stand point, carrying the Interact box ("Fish") and a
+// world-space label the handler writes the bite cue and the reward line
+// into. The stake stands off to one side so it never intersects whoever
+// is standing on the spot, villager or player.
+//
 // FINDING A FISHING SPOT, from the world mesh alone (no authored data):
 //
 //   1. Water = the same sheet the collider pass keeps a floor over: a
@@ -40,6 +46,9 @@ namespace LegaiaWorld
     {
         internal const string CONTAINER = "living_props";
         const float CELL = 0.75f;
+        /// Metres to the right of the stand point the stake goes, clear of
+        /// whoever is standing on the spot.
+        const float STAKE_SIDE = 0.55f;
 
         internal static void Remove(GameObject root)
         {
@@ -330,6 +339,37 @@ namespace LegaiaWorld
             fish.SetActive(false);
             gear.SetActive(false);
 
+            // The player's way in: a stake and a bucket a step to the
+            // right of the stand point, and the Interact box on the spot
+            // itself (an Udon behaviour is only reached through a collider
+            // on its OWN GameObject). Trigger, so nobody walks into it.
+            var stake = new GameObject("stake");
+            stake.transform.SetParent(spot.transform, false);
+            stake.transform.localPosition = new Vector3(STAKE_SIDE, 0f, 0f);
+            Prim(PrimitiveType.Cylinder, "post", stake.transform,
+                new Vector3(0f, 0.45f, 0f), new Vector3(0.05f, 0.45f, 0.05f), wood);
+            Prim(PrimitiveType.Cylinder, "bucket", stake.transform,
+                new Vector3(0.22f, 0.11f, 0f), new Vector3(0.20f, 0.11f, 0.20f), wood);
+            var box = spot.AddComponent<BoxCollider>();
+            box.isTrigger = true;
+            box.center = new Vector3(STAKE_SIDE, 0.5f, 0f);
+            box.size = new Vector3(0.4f, 1.0f, 0.4f);
+
+            // The label faces back down the spot's -Z: the stand point
+            // looks out over the water, so that is the reader's side.
+            var labelGo = new GameObject("reward_label");
+            labelGo.transform.SetParent(stake.transform, false);
+            labelGo.transform.localPosition = new Vector3(0f, 1.12f, 0f);
+            labelGo.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
+            var label = labelGo.AddComponent<TMPro.TextMeshPro>();
+            label.text = "";
+            label.fontSize = 1.6f;
+            label.alignment = TMPro.TextAlignmentOptions.Center;
+            label.color = new Color(1f, 0.93f, 0.6f);
+            label.rectTransform.sizeDelta = new Vector2(1.4f, 0.4f);
+            label.GetComponent<MeshRenderer>().shadowCastingMode =
+                UnityEngine.Rendering.ShadowCastingMode.Off;
+
             var station = LegaiaWorldBuilder.TryAttachUdon(spot, "LegaiaNpcStation");
             LegaiaWorldBuilder.SetUdonField(station, "kind", 1); // fishing
             LegaiaWorldBuilder.SetUdonField(station, "standPoint", spot.transform);
@@ -346,6 +386,11 @@ namespace LegaiaWorld
             LegaiaWorldBuilder.SetUdonField(handler, "ripples", ripples);
             LegaiaWorldBuilder.SetUdonField(handler, "fish", fish.transform);
             LegaiaWorldBuilder.SetUdonField(handler, "waterY", waterY);
+            LegaiaWorldBuilder.SetUdonField(handler, "rewardText", label);
+            // The purse, when the common-prefabs pass has already built it;
+            // the handler resolves it by path in Start otherwise.
+            LegaiaWorldBuilder.SetUdonField(handler, "wallet",
+                LegaiaCommonPrefabs.FindWallet());
             LegaiaWorldBuilder.SyncUdonProxy(handler);
 
             LegaiaWorldBuilder.SetUdonField(station, "handler", handler);

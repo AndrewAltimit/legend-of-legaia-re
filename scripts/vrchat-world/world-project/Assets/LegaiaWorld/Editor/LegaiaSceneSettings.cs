@@ -97,7 +97,9 @@
 //   "living_town": {"home_cap": 4, "chat_spots": 5, "seed": 20260907,
 //                   "daytime_indoors_share": 0.18, "walk_clip": "record_36",
 //                   "home_doors": [3], "exclude_doors": [12],
-//                   "nav_links": [[[x,y,z],[x,y,z]]]}
+//                   "nav_links": [[[x,y,z],[x,y,z]]],
+//                   "bounty": true, "respawn_seconds": 120,
+//                   "coin_drop": [5, 15]}
 //       Living-town tuning, overriding the builder foldout's values so a
 //       scene keeps them across rebuilds: villagers per house door, how
 //       many conversation spots to build, the scene-constant seed that
@@ -115,6 +117,12 @@
 //       manifest-frame points a villager may HOP between when no walkable
 //       route connects them (the shore below a bank). The bake finds these
 //       on its own; a hand-pinned pair is for the one it misses.
+//
+//       `bounty` is the weapon layer: false takes the hitboxes and the
+//       coin pool out of the scene entirely, `respawn_seconds` is how long
+//       a slain villager stays down before it walks back in at its spawn,
+//       and `coin_drop` is the [min, max] a strike is worth. Defaults:
+//       on, 120 s, 5-15 coins.
 //
 //   "npc_homes": {"npc_12": 2, "grandmother": 0}
 //       Pin individual villagers to a house door by index into the homes
@@ -227,6 +235,15 @@ namespace LegaiaWorld
         public int livingTownSeed;
         public float livingTownDaytimeIndoors = -1f;
         public string livingTownWalkClip;
+        /// living_town/bounty: villagers can be struck down for coins.
+        public bool bounty = true;
+        /// living_town/respawn_seconds: seconds a slain villager stays
+        /// down (negative = the bounty pass's own default).
+        public float bountyRespawnSeconds = -1f;
+        /// living_town/coin_drop: [min, max] coins one strike is worth
+        /// (negative = the bounty pass's own defaults).
+        public int bountyCoinMin = -1;
+        public int bountyCoinMax = -1;
         /// living_town/home_doors: teleport indices to accept as houses
         /// whatever the door-leaf / exit-band test says.
         public List<int> homeDoors = new List<int>();
@@ -346,6 +363,16 @@ namespace LegaiaWorld
                 if (MiniJson.Get(lt, "daytime_indoors_share") is double di)
                     s.livingTownDaytimeIndoors = (float)di;
                 s.livingTownWalkClip = MiniJson.AsStr(MiniJson.Get(lt, "walk_clip"));
+                if (MiniJson.Get(lt, "bounty") is bool bt)
+                    s.bounty = bt;
+                if (MiniJson.Get(lt, "respawn_seconds") is double rs)
+                    s.bountyRespawnSeconds = (float)rs;
+                var coinDrop = MiniJson.AsList(MiniJson.Get(lt, "coin_drop"));
+                if (coinDrop != null && coinDrop.Count >= 2)
+                {
+                    s.bountyCoinMin = (int)MiniJson.AsNum(coinDrop[0], -1);
+                    s.bountyCoinMax = (int)MiniJson.AsNum(coinDrop[1], -1);
+                }
                 ReadIntList(MiniJson.Get(lt, "home_doors"), s.homeDoors);
                 ReadIntList(MiniJson.Get(lt, "exclude_doors"), s.excludeDoors);
                 foreach (object pair in MiniJson.AsList(MiniJson.Get(lt, "nav_links"))

@@ -460,7 +460,7 @@ namespace LegaiaWorld
 
             var charRow = new Dictionary<string, int>();
             var charCursor = new Dictionary<string, float>();
-            int placed = 0, missing = 0;
+            int placed = 0, missing = 0, weapons = 0;
             foreach (object it in items)
             {
                 string label = MiniJson.AsStr(MiniJson.Get(it, "section_label")) ?? "";
@@ -566,7 +566,16 @@ namespace LegaiaWorld
                         go.AddComponent(pickupType);
                         if (syncType != null)
                             go.AddComponent(syncType);
-                        SyncUdonProxy(TryAttachUdon(go, "LegaiaPickupProp"));
+                        // The manifest's section label is what separates a
+                        // sword from a shield, and only a weapon counts as
+                        // a strike on a villager (the bounty layer's
+                        // LegaiaNpcHitbox reads this flag).
+                        bool isWeapon = label.Contains("Weapon");
+                        var propUdon = TryAttachUdon(go, "LegaiaPickupProp");
+                        SetUdonField(propUdon, "weapon", isWeapon);
+                        SyncUdonProxy(propUdon);
+                        if (isWeapon)
+                            weapons++;
                     }
                 }
                 placed++;
@@ -577,7 +586,8 @@ namespace LegaiaWorld
                     "(with its character subfolders) next to the items " +
                     "manifest and let Unity import first.");
             Debug.Log("[Legaia] placed " + placed + " equipment prop(s) on " +
-                      "the rack near LegaiaSpawn.");
+                      "the rack near LegaiaSpawn (" + weapons +
+                      " of them weapons a villager can be struck with).");
         }
 
         /// One combined mesh of the geometry as it actually RENDERS right
@@ -1705,23 +1715,13 @@ namespace LegaiaWorld
             var getPa = utilType.GetMethod(
                 "GetUdonSharpProgramAsset", new[] { typeof(System.Type) });
             bool created = false;
-            foreach (string name in new[]
-                     { "LegaiaDoorway", "LegaiaDoor", "LegaiaNpcWander",
-                       "LegaiaDayNight", "LegaiaPickupProp", "LegaiaTorch",
-                       "LegaiaWorldMenu", "LegaiaFlicker",
-                       "LegaiaAmbienceMixer",
-                       "LegaiaSlotMachine", "LegaiaSlotButton",
-                       "LegaiaEventButton", "LegaiaMirror", "LegaiaSeat",
-                       "LegaiaCard", "LegaiaCardDeck", "LegaiaVideoTv",
-                       "LegaiaNpcStation", "LegaiaWeather",
-                       "LegaiaFishingSpot", "LegaiaCardTableHost",
-                       "LegaiaNpcBrain", "LegaiaTownDirector",
-                       "LegaiaSpeechBubble", "LegaiaNavMeshLoader",
-                       "LegaiaNpcCarry", "LegaiaNpcHandItem",
-                       "LegaiaVisitSpot" })
+            // Every UdonSharpBehaviour the kit ships, found by reflection
+            // rather than kept as a list here: a script added to Udon/
+            // without a matching entry used to be attachable in the editor
+            // and silently program-less in the build.
+            foreach (var t in KitUdonTypes())
             {
-                var t = FindType("LegaiaWorld." + name);
-                if (t == null) continue;
+                string name = t.Name;
                 if (getPa != null && getPa.Invoke(null, new object[] { t }) != null)
                     continue; // already has one
                 MonoScript script = null;
@@ -1785,6 +1785,30 @@ namespace LegaiaWorld
                 ?.GetMethod("CompileSync");
             if (compile != null)
                 compile.Invoke(null, new object[] { null });
+        }
+
+        /// The kit's U# classes: every concrete UdonSharpBehaviour subclass
+        /// in the LegaiaWorld namespace, in name order.
+        internal static List<System.Type> KitUdonTypes()
+        {
+            var usb = FindType("UdonSharp.UdonSharpBehaviour");
+            var list = new List<System.Type>();
+            if (usb == null)
+                return list;
+            foreach (var asm in System.AppDomain.CurrentDomain.GetAssemblies())
+            {
+                System.Type[] types;
+                try { types = asm.GetTypes(); }
+                catch (System.Reflection.ReflectionTypeLoadException e)
+                { types = e.Types; }
+                catch { continue; }
+                foreach (var t in types)
+                    if (t != null && !t.IsAbstract && t.Namespace == "LegaiaWorld"
+                        && usb.IsAssignableFrom(t))
+                        list.Add(t);
+            }
+            list.Sort((a, b) => string.CompareOrdinal(a.Name, b.Name));
+            return list;
         }
 
         /// UdonSharpProgramAsset.ClearProgramAssetCache() (internal) - the

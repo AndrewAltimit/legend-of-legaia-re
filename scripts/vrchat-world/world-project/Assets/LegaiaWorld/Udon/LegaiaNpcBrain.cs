@@ -27,9 +27,23 @@
 //                  of retrying for ever (which reads as aimless wandering
 //                  around the house)
 //
+//  40 DEAD       - struck down by a player's weapon (LegaiaNpcHitbox ->
+//                   Slay, broadcast as SlainAt to every client): the
+//                   villager topples where it stood, fades out, and walks
+//                   back in at its own spawn `respawnSeconds` later. Coins
+//                   are dropped through the loose `bounty` link (a
+//                   LegaiaCoinDrops pool) on every client at the same spot.
+//
 // STATE NUMBERING is a shared space: 0-9 and 30+ belong to this file,
 // 10-29 to the daytime social layer that adds its own `else if` arms to
 // BrainTick. Keep any new state inside those bands.
+//
+// OTHER PASSES HOLD A VILLAGER IN PLACE through `HoldStation(seconds)`:
+// the card table calls it for every seated villager while a hand is being
+// played, so the dwell timer never walks a player's opponent away
+// mid-hand. `Seated()` / `AtStation()` / `Dead()` are the matching
+// queries; `label` and `portrait` are what a panel shows for this
+// villager (the manifest label and a build-time head render).
 //
 // THE DOOR TRIP IS REUSABLE. `DoorTrip(door, threshold, prop, landing)`
 // runs stand spot -> swing -> tile -> teleport for ANY doorway pair, and
@@ -75,6 +89,8 @@
 
 using UdonSharp;
 using UnityEngine;
+using VRC.SDK3.UdonNetworkCalling;
+using VRC.Udon.Common.Interfaces;
 
 namespace LegaiaWorld
 {
@@ -83,6 +99,24 @@ namespace LegaiaWorld
     {
         [Tooltip("The town director that schedules this villager.")]
         public LegaiaTownDirector director;
+
+        [Tooltip("Display name for panels (the manifest's label; builder-set).")]
+        public string label = "";
+
+        [Tooltip("Head-and-shoulders portrait for the card table's seat panel (LegaiaPortraits renders it at build time; null = no picture).")]
+        public Texture2D portrait;
+
+        [Tooltip("Seconds a slain villager stays down before it walks back in at its spawn.")]
+        public float respawnSeconds = 120f;
+
+        [Tooltip("Seconds the topple takes; the body fades out a moment after.")]
+        public float fallSeconds = 0.7f;
+
+        [Tooltip("The coin-drop pool (LegaiaCoinDrops; loose link, builder-wired): receives dropX/dropY/dropZ/dropCoins then SpawnDrop.")]
+        public UdonSharpBehaviour bounty;
+
+        [Tooltip("Times this villager has been slain (statistics for the soak / checks).")]
+        [HideInInspector] public int slainCount;
 
         [Tooltip("This NPC's locomotion controller (same GameObject).")]
         public LegaiaNpcWander loco;
@@ -183,6 +217,15 @@ namespace LegaiaWorld
         private int state;
         private bool indoors;
         private float leaveAt;
+        // Death: where to come back, how the topple plays, when to return.
+        private Vector3 spawnPos;
+        private Vector3 spawnFacing;
+        private Quaternion fallFrom;
+        private Vector3 fallAxis;
+        private float fallStart;
+        private float deadUntil;
+        private bool faded;
+        private Renderer[] bodyRenderers;
         private float giveUpAt;
         private float busyUntil;
         private Vector3 outdoorHome;
@@ -227,6 +270,9 @@ namespace LegaiaWorld
             if (carry == null)
                 carry = GetComponent<LegaiaNpcCarry>();
             outdoorHome = transform.position;
+            spawnPos = transform.position;
+            spawnFacing = transform.forward;
+            bodyRenderers = GetComponentsInChildren<Renderer>(true);
             indoors = startIndoors;
             if (loco != null)
             {
@@ -324,6 +370,146 @@ namespace LegaiaWorld
         public bool Walking()
         {
             return loco != null && loco.Walking();
+        }
+
+        /// Standing at a claimed station (a single stop or an itinerary stop).
+        public bool AtStation()
+        {
+            return state == 2 || state == 11;
+        }
+
+        /// Sitting on a card-table stool (a kind-2 station it has arrived at).
+        public bool Seated()
+        {
+            return AtStation() && station != null && station.kind == 2;
+        }
+
+        /// The station this villager holds right now (null when none).
+        public LegaiaNpcStation CurrentStation()
+        {
+            return station;
+        }
+
+        /// Struck down and not yet back.
+        public bool Dead()
+        {
+            return state == 40;
+        }
+
+        /// Keep this villager where it stands for at least `seconds` more:
+        /// the dwell timer of the station it is at is pushed out (never
+        /// pulled in). No effect unless it is standing at a station.
+        public void HoldStation(float seconds)
+        {
+            if (!AtStation())
+                return;
+            float until = Time.time + seconds;
+            if (until > leaveAt)
+                leaveAt = until;
+        }
+
+        // --- Bounty -----------------------------------------------------------
+
+        /// A player's weapon connected (LegaiaNpcHitbox, on the STRIKING
+        /// client only). Every client is told, with the spot the coins
+        /// land on, so the drop is in one place for everyone even though
+        /// each client walks its own copy of the villager.
+        public void Slay(int coins)
+        {
+            if (state == 40)
+                return;
+            Vector3 p = transform.position;
+            SendCustomNetworkEvent(NetworkEventTarget.All, nameof(SlainAt),
+                p.x, p.y, p.z, coins);
+        }
+
+        [NetworkCallable]
+        public void SlainAt(float x, float y, float z, int coins)
+        {
+            if (state == 40 || loco == null)
+                return;
+            ReleaseStation();
+            DropDaytime();
+            if (bubble != null)
+                bubble.Hide();
+            loco.Stop();
+            // The controller's facing servo and floor snap would fight the
+            // topple: it is switched off for the duration and given the
+            // body back at the respawn teleport.
+            loco.enabled = false;
+            state = 40;
+            slainCount++;
+            fallStart = Time.time;
+            fallFrom = transform.rotation;
+            Vector3 f = loco.Facing();
+            f.y = 0f;
+            if (f.sqrMagnitude < 1e-6f)
+                f = transform.forward;
+            fallAxis = Vector3.Cross(Vector3.up, f.normalized);
+            if (fallAxis.sqrMagnitude < 1e-6f)
+                fallAxis = Vector3.right;
+            fallAxis.Normalize();
+            faded = false;
+            deadUntil = Time.time + (respawnSeconds < 5f ? 5f : respawnSeconds);
+            if (bounty != null && coins > 0)
+            {
+                bounty.SetProgramVariable("dropX", x);
+                bounty.SetProgramVariable("dropY", y);
+                bounty.SetProgramVariable("dropZ", z);
+                bounty.SetProgramVariable("dropCoins", coins);
+                bounty.SendCustomEvent("SpawnDrop");
+            }
+        }
+
+        void TickDead()
+        {
+            float t = Time.time - fallStart;
+            float dur = fallSeconds < 0.1f ? 0.1f : fallSeconds;
+            if (t < dur)
+            {
+                // Tip over backwards about the feet (the root sits at the
+                // floor), easing out like something heavy going down.
+                float k = t / dur;
+                k = 1f - (1f - k) * (1f - k);
+                transform.rotation =
+                    Quaternion.AngleAxis(-88f * k, fallAxis) * fallFrom;
+                return;
+            }
+            if (!faded && t > dur + 2.5f)
+            {
+                faded = true;
+                ShowBody(false);
+            }
+            if (Time.time >= deadUntil)
+                Respawn();
+        }
+
+        void ShowBody(bool on)
+        {
+            if (bodyRenderers == null)
+                return;
+            for (int i = 0; i < bodyRenderers.Length; i++)
+                if (bodyRenderers[i] != null)
+                    bodyRenderers[i].enabled = on;
+            if (!on && bubble != null)
+                bubble.Hide();
+        }
+
+        void Respawn()
+        {
+            transform.rotation = fallFrom;
+            ShowBody(true);
+            indoors = startIndoors;
+            homeRetries = 0;
+            if (loco != null)
+            {
+                loco.enabled = true;
+                loco.radius = startIndoors ? indoorRadius : outdoorRadius;
+                loco.Teleport(spawnPos, spawnFacing);
+                loco.SetHome(spawnPos);
+            }
+            outdoorHome = spawnPos;
+            BackToStroll(1.5f);
         }
 
         /// Out on a walk and free to be stopped for a passing greeting: on
@@ -674,7 +860,8 @@ namespace LegaiaWorld
                 return;
             // Already on the way (the director asks every tick): restarting
             // the trip here would re-open the door and reset the walk.
-            if (OnDoorTrip() || state == 9)
+            // A slain villager stays down until it respawns.
+            if (OnDoorTrip() || state == 9 || state == 40)
                 return;
             // Bounded: a villager whose door it cannot reach used to be
             // sent back at it every few seconds for the whole night.
@@ -719,7 +906,7 @@ namespace LegaiaWorld
         /// Come back out at dawn.
         public void ComeOut()
         {
-            if (!indoors || loco == null)
+            if (!indoors || loco == null || state == 40)
                 return;
             if (state == 6)
                 return; // already walking to the way out
@@ -765,6 +952,8 @@ namespace LegaiaWorld
                 TickGoMeet();
             else if (state == 21)
                 TickMeet();
+            else if (state == 40)
+                TickDead();
         }
 
         // Gave up on the door for tonight: stand where it got to, facing

@@ -49,8 +49,13 @@ your disc ──legaia-extract──▶ extracted/ ──legaia-engine export-gl
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaNpcHandItem.cs` | The handler behind a kind-5 carry station: hands the arriving villager an item, or takes back the one it is carrying. `keepOnLeave` is what makes a fetch read as one errand instead of two visits. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaVisitSpot.cs` | The handler behind a kind-6 visit station: the fixed resident being called on answers with its own speech bubble, on a beat after the caller's hello, and keeps answering while the caller stands there. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaWeather.cs` | Clock-synced weather schedule (clear / overcast / windy spells): ambient + fog greying multiplied over the day/night cycle, grass gust strength, and the `windLevel` feed into the ambience mixer. `JumpToClear` is the settings panel's button. |
-| `world-project/Assets/LegaiaWorld/Udon/LegaiaFishingSpot.cs` | Fishing-station handler: while a villager stands on a shoreline station it holds a generated rod over the water, a line to a bobbing float with ripples, and an occasional catch; steps aside when a player stands on the spot. |
-| `world-project/Assets/LegaiaWorld/Udon/LegaiaCardTableHost.cs` | Card-table seat handler: villagers sit at free stools (seated pose approximated by lowering the rig) holding a fanned pair of card backs, and give the table back the moment a player sits down, a card leaves the deck, or the synced *NPCs: sit / shoo* button says so. |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaFishingSpot.cs` | Fishing-station handler: while a villager stands on a shoreline station it holds a generated rod over the water, a line to a bobbing float with ripples, and an occasional catch; steps aside when a player stands on the spot. Players fish here too (Interact on the stake): bite, window, catch, coins into the purse. See "Coins" below. |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaCardTableHost.cs` | Card-table seat handler: villagers sit at free stools (seated pose approximated by lowering the rig) holding a fanned pair of card backs; a seated player is an invitation, not a shoo, and the synced *NPCs: sit / shoo* button is the override. |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaCardGame.cs` | The card table's dealer: five-card draw poker and blackjack with the 52 real card pickups, villagers summoned to the free stools and held through a hand, AI opponents, betting from the coin purse, a seat panel. The object's owner is the master; presses travel as network events. See "Common prefabs" below. |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaWallet.cs` | The per-player coin purse: the local player's balance persisted through VRChat PlayerData (`legaia.coins`), read for any player through `CoinsOf`, written only by its own client. Every minigame pays into and out of it. See "Coins" below. |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaNpcHitbox.cs` | The trigger capsule on each villager: a rack weapon held by the local player and swung fast enough strikes the villager down through the brain's `Slay`, which broadcasts the fall and the coin drop to every client. |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaCoinDrops.cs` | The pooled coin drops under `living_town/coins`: the brain hands it a spot and a value on every client, it floor-snaps a free coin there and expires it after 90 s. |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaCoinDrop.cs` | One coin on the ground: spins, bobs, Interact takes it - one server-ordered network event, so only the first taker is paid and every client agrees which. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaLivingTown.cs` | The **Living town** pass: bakes the villager navmesh, builds the director, per-villager brains + bubbles + carried-item rigs, use-prop stations in front of every one-shot prop (cupboards, drawer, shop door), chat rings indoors and out, path / shoreline / doorstep / visit stand spots, carry endpoints and the seeded home assignment from the manifest's doorway pairs - each home with its doorway tile, a stand spot in front of it and the door prop to swing. Idempotent. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaNavMesh.cs` | The navmesh bake: collects every non-trigger collider under the built root and the kit's prefab containers (NPC capsules and rigidbodies excluded), bakes a villager-sized `NavMeshData` with Unity's runtime builder, saves it under `LegaiaGenerated/<scene>/livingtown/` and wires the loader. Also finds the **ledge links** that let a villager hop between islands the bake leaves unconnected, and the editor-side route check (walks and hops) the batch test uses. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaBubbleArt.cs` | Procedural speech-bubble art: the fourteen pictogram textures drawn from scratch, one material each, and the bubble quad. |
@@ -62,7 +67,7 @@ your disc ──legaia-extract──▶ extracted/ ──legaia-engine export-gl
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaWorldMenu.cs` | The settings panel's behaviour: `ToggleMusic` (mutes the BGM locally - a personal preference), `SetDay`/`SetNight` (jump the shared cycle for everyone). |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaTorch.cs` | Torch/campfire pickup: hold + Use toggles the flame container (fire + smoke particles, a Perlin-flickered point light - no glow orb) and a spatial crackle loop; `lit` is synced so a fire someone lights burns for everyone. Spawn-kinematic like the rack pickups. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaFlicker.cs` | Firelight flicker for the always-burning night torches: no sync, no interaction - just the two-octave Perlin intensity wobble on the flame's point light. |
-| `world-project/Assets/LegaiaWorld/Udon/LegaiaPickupProp.cs` | UdonSharp equipment-rack pickup: the prop spawns kinematic (frozen on the rack) and only becomes a free physics object the first time a player drops it - so a rack of dozens of bodies can't tunnel through the thin ground during world-load hitches. |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaPickupProp.cs` | UdonSharp equipment-rack pickup: the prop spawns kinematic (frozen on the rack) and only becomes a free physics object the first time a player drops it - so a rack of dozens of bodies can't tunnel through the thin ground during world-load hitches. Weapon rows carry `weapon` and measure their own swing speed while held. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaCommonPrefabs.cs` | The **Common prefabs** foldout: builds the mirror, the TV and the card table from primitives + generated textures + the SDK's own components, spawns the SDK's sample pen system, and drops any prefab assets you list (QvPen, ProTV, a community deck...) near spawn. See "Common prefabs" below. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaSettingsSnapshot.cs` | Menu `Legaia > Snapshot placements to scene settings`: writes the hand-placed Inspector transforms of the common prefabs, the camp settings panel and LegaiaSpawn into `Settings/<scene>.settings.json` (`prefab_transforms` + `spawn_position`), preserving the file's other keys. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaSoak.cs` | The PLAY-MODE soak (`LegaiaBatchChecks.Soak`): enters play mode with ClientSim, pins the day/night clock to night or day, samples every brain at 2 Hz into a per-villager timeline, and asserts the night routine ran (in through the door, door swung, out again at dawn) or reports a day's station visits and conversations. The only check here that actually runs a villager. |
@@ -70,11 +75,16 @@ your disc ──legaia-extract──▶ extracted/ ──legaia-engine export-gl
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaEventButton.cs` | A collider button: Interact sends one named event into a target behaviour. Every common-prefab button uses it (no world-space UI, so no pickup-collider-steals-the-click trap). |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaMirror.cs` | Mirror controller: Off / full / players-only surfaces, local choice, auto-off when the player walks away. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaVideoTv.cs` | Synced video player over the SDK's AVPro (PC) + Unity (Android) players: owner-synced URL + playhead origin, late-joiner seek, 5-second load rate limit honoured, error retry. |
-| `world-project/Assets/LegaiaWorld/Udon/LegaiaSeat.cs` | Interact sits the local player in this object's VRC station (the SDK chair wire). |
-| `world-project/Assets/LegaiaWorld/Udon/LegaiaCard.cs` | One playing card: pickup, hold + Use flips it (synced), spawn-kinematic until first drop, re-parked by the deck. |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaSeat.cs` | Interact sits the local player in this object's VRC station (the SDK chair wire); mirrors who sits there for the card game. |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaCard.cs` | One playing card: pickup, hold + Use flips it (synced), spawn-kinematic until first drop, re-parked (dealt, revealed) by the deck and the game. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaCardDeck.cs` | Deck controller: Shuffle (seeded Fisher-Yates) / Gather restack every card face-down at the anchor by taking ownership of each card. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaSlotMachineBuilder.cs` | Editor menu `Legaia > Build Slot Machine...`: assembles the playable casino slot minigame directly onto a cabinet mesh's screen face from the `asset slot-art` export - retail reel drums, glass furniture, dot-matrix marquee, HUD, buttons. See "The casino slot machine" below. |
-| `world-project/Assets/LegaiaWorld/Udon/LegaiaSlotMachine.cs` | UdonSharp port of the engine's slot-machine rules kernel (`engine-core::slot_machine`): the retail LCG + reel strips, feature rolls, stop plans, five-payline evaluation, bonus rounds, coin balance, and the retail per-frame reel-drum face derivation. Owner-synced with synced RNG streams; reels animate locally on every client from the same deterministic strips. |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaSlotMachine.cs` | UdonSharp port of the engine's slot-machine rules kernel (`engine-core::slot_machine`): the retail LCG + reel strips, feature rolls, stop plans, five-payline evaluation, bonus rounds, and the retail per-frame reel-drum face derivation. Owner-synced with synced RNG streams; reels animate locally on every client from the same deterministic strips. Spins and payouts move the seated player's purse. |
+| `world-project/Assets/LegaiaWorld/Editor/LegaiaCardGameBuilder.cs` | Builds the card table's `game` child, the per-stool hand anchors and the seat panel (world-space canvas on a post beside the table). |
+| `world-project/Assets/LegaiaWorld/Editor/LegaiaPortraits.cs` | Villager portraits for the seat panel: one orthographic head render per villager from its measured visible front, saved under `LegaiaGenerated/<scene>/portraits/`; a drawn silhouette when there is no graphics device. |
+| `world-project/Assets/LegaiaWorld/Editor/LegaiaBounty.cs` | The bounty layer of the living town: the weapon hitbox on every villager, the coin-drop pool, the brain links; per-scene `bounty` / `respawn_seconds` / `coin_drop` keys. |
+| `world-project/Assets/LegaiaWorld/Editor/LegaiaCardGameChecks.cs` | Headless `LegaiaCardGameChecks.Run` (wiring, panel facing, portraits, the poker evaluator and blackjack settlement against fixed cases) and `.Soak` (play mode: villagers play hands among themselves, pot conservation asserted). |
+| `world-project/Assets/LegaiaWorld/Editor/LegaiaEconomyChecks.cs` | Headless `LegaiaEconomyChecks.Run` (purse, slot-machine link, fishing stakes, hitboxes, coin pool, weapon flags), `.Soak` (play mode: strike a villager, see the coin, see it respawn) and `.SlotRules` (the rules fixture replayed against the class). |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaSlotButton.cs` | One cabinet face button: forwards Interact to the machine with its reel index (idle = spin, reels running = stop reel N, payout = collect). |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaSlotTools.cs` | Menus `Legaia > Verify Slot Rules` (replays the committed rules-parity fixture against the actual UdonSharp class, in the editor, no play mode) and `Legaia > Slot Screen Snapshot` (films the on-cabinet screen composition head-on to a PNG for visual comparison against the site's minigames page). |
 | `world-project/Assets/LegaiaWorld/Editor/slot-verify.json` | The rules-parity fixture: scripted spin/stop traces with every outcome field, generated by the repo's `engine-core` test `slot_verify_fixture.rs`. Pure arithmetic from committed seeds + a synthetic payout table - no disc data. |
@@ -334,7 +344,9 @@ All keys optional (`town01.settings.json` is the worked example):
   as HOUSES - the pass otherwise decides from a door leaf on the tile or a
   single-tile way out, and logs every rejection with its index) and
   `nav_links` (`[[[x,y,z],[x,y,z]], ...]` in manifest coordinates: ledge
-  links to add by hand where the bake's own search misses one).
+  links to add by hand where the bake's own search misses one), and the
+  bounty layer's `bounty` / `respawn_seconds` / `coin_drop` (see
+  "Coins").
 - **`npc_homes`** - pin a villager to a house door by index into the
   homes the pass keeps (`living_town/homes/home_N`). Note the indices
   shift when a teleport is rejected as not-a-house.
@@ -706,17 +718,58 @@ and the SDK's own components - no third-party package, no game data:
   trips on it again.
   Each stool is also a `LegaiaNpcStation` (kind 2) on one
   `LegaiaCardTableHost`, so villagers sit down and hold a fanned pair
-  of card backs when nobody is playing. The host frees every seat the
-  moment a player takes a stool (`LegaiaSeat` mirrors the station's
-  own enter / exit callbacks - VRChat exposes no "is this chair in
-  use" query) or a card leaves the deck anchor, and the table's
-  third button (*NPCs: sit / shoo*) toggles them off entirely, synced.
-  A freed seat is not a teleport: the station goes unavailable and the
-  NPC brain walks its villager away by itself. The seated pose is an
+  of card backs. Sitting down yourself is an **invitation**: while
+  anyone is at the table the free stools stay open and the game calls
+  the nearest idle villagers over to play (`LegaiaTownDirector.Summon`),
+  and holds them there through a hand. The table's third button
+  (*NPCs: sit / shoo*) is the override - shoo, and the stools are
+  withdrawn and nobody is called. The seated pose is an
   **approximation** - the exported rigs carry no sit clip, so the host
   nudges the NPC onto the stool centre and drops it by ~35% of its own
   measured height, which reads as seated from any normal angle and is
   undone when it leaves.
+
+  **The game** (`LegaiaCardGame`, on the table's `game` child) plays
+  **five-card draw poker** (default) and **blackjack** with those 52
+  pickups, for the coins in your purse (see "Coins" below). A panel on a
+  post beside the table shows the mode, each seat (a villager's rendered
+  **face**, name and chips; a player's silhouette, VRChat name and real
+  coins), the pot and a message line, and carries the buttons:
+  - **Deal** starts a hand, **Mode** switches games between hands; both
+    need you seated.
+  - Poker: ante 2, five cards each, a betting round (Check/Call,
+    Bet/Raise +2 with at most three raises, Fold), then pick the cards
+    to keep with the five card buttons and **Draw**, a second betting
+    round, showdown. Best hand takes the pot, ties split it. Villagers
+    play by hand strength with a nerve of their own (from their
+    personality seed): the bold ones bluff, the timid ones fold to a
+    raise.
+  - Blackjack: stake 2, the table deals itself two cards (one up) and
+    draws to 17 standing on soft 17; **Hit** / **Stand**; 1:1, a natural
+    pays 3:2 rounded down, a push returns the stake.
+  - Buttons that do not apply are greyed. A seat that does nothing for
+    25 s is checked (or folded, if the call costs) so one AFK player
+    never stalls the table. A seat that cannot cover the ante sits the
+    hand out.
+  - Nothing is taken until the hand settles: the whole hand is one net
+    change to your purse at the showdown, applied by your own client;
+    the dealer never writes anyone's coins. Stand up mid-hand and the
+    hand is voided, nobody charged. Villagers play with virtual chips
+    (60 when they sit) and never touch a player's coins.
+  - With nobody at the table the villagers keep playing among
+    themselves, a hand every few seconds, so the table looks alive from
+    across the square (`npcSelfPlay` on the game turns it off).
+
+  Say these out loud to your players: **your cards are dealt face up**
+  (the deck is 52 real pickups anyone can walk round and pick up, so a
+  hidden hand is not possible and the game does not pretend otherwise;
+  villagers' cards are dealt face down and flip at the showdown). You
+  can still carry a card off - the game tracks cards by identity, not
+  position, and re-stacks them at the end of the hand. Which villager is
+  in a seat is decided per client (every client walks its own copy of
+  the town), while the seat, cards, pot and money are the same for
+  everyone. The panel faces outward from its side of the table and
+  turns with it when you move the table.
 
 The rest are spawned **from prefabs already in your project**:
 
@@ -917,6 +970,76 @@ is dropped, an unclaimed payout auto-collects after a hold
 (`autoCollect` off restores retail's wait-for-input), the `richer_odds`
 widen roll is not modelled, and the machine's sound cues are not yet
 wired.
+
+## Coins
+
+Every player carries one purse (`LegaiaWallet`, at
+`Legaia_common_prefabs/wallet`), kept in VRChat **PlayerData** under
+`legaia.coins` and restored when you join - the balance you leave with
+is the balance you come back to, on any instance, on any day. A first
+visit is seeded with 70 coins, retail's casino entry balance. A client
+can only ever write its own purse, which is the anti-cheat model rather
+than a limitation: nothing in the world can spend or grant another
+player's coins, and a panel that shows what someone else holds reads it
+straight from their replicated PlayerData. Consumers are wired to the
+purse at build time and fall back to finding it by that path at
+runtime, so pass order does not matter. Persistence needs a worlds SDK
+with PlayerData (3.7.4+); before the restore lands, a few seconds after
+joining, the purse holds the seed in memory and writes through
+afterwards.
+
+Where coins go and come from:
+
+- **The slot machine spends and pays the purse.** The cabinet has no
+  balance of its own any more: a spin takes 3 coins (1 on a bonus or
+  feature spin) from the seated player and a collect pays them. The
+  number on the glass is the OWNER's coins, whoever is at the machine,
+  updated within half a second of the purse changing anywhere. Out of
+  coins means out of coins: the machine shows `OUT OF COINS` and refuses
+  (a refusal draws nothing, so the RNG stream sits where the next
+  affordable spin finds it). The old free-play refill only applies to a
+  cabinet built without a purse, and the retail rules are untouched
+  (`LegaiaEconomyChecks.SlotRules` replays the fixture against the class).
+- **The card table** bets from it - see "Common prefabs" above.
+- **Fishing** is the reliable earner. Every shoreline fishing spot has a
+  stake with a bucket beside it: Interact ("Fish") to start. The rod
+  tracks your right hand (your head on desktop), the float casts out,
+  villagers stay off the spot while you have it. After 6-20 s something
+  bites: the float dips and a `!` shows over the stake for 1.6 s -
+  Interact inside that window to land it, 2-8 coins and a `+n coins`
+  line, then the float goes back out. Interact outside the window, or
+  walk more than 3 m away, to pack up. A villager already fishing there
+  keeps the spot. Fishing is entirely local: two players on the same
+  shore see their own float and bites, and only their own purse is
+  credited.
+- **Hunting** is the fast, rude earner. Take a **weapon** off the
+  equipment rack (only the manifest's Weapon rows count - a shield will
+  not do it) and swing it through a villager at 2.5 m/s or more. The
+  villager topples where it stood, fades out after ~3 s and drops 5-15
+  coins there; Interact the coin ("Take coins") to pocket it. A drop
+  lies for 90 s, at most twelve are on the ground at once (the oldest
+  gives up its place), and two players clicking the same coin resolve
+  the same way on every client - the take is one server-ordered network
+  event and only the first is paid. The villager **respawns after 120 s**
+  at its own spawn point and goes back to its routine; one swing through
+  a body is one strike (a 1.5 s per-villager cooldown), and only the
+  swinging player's own client registers it. A rack placed before this
+  layer existed carries no weapon flags - re-run **Place equipment rack
+  near spawn** once.
+
+Per-scene tuning, in the settings file's `living_town` block:
+`"bounty": false` removes the hitboxes and the coin pool (a scene where
+villagers cannot be struck), `"respawn_seconds"` sets how long a slain
+villager stays down (120), `"coin_drop": [min, max]` what one strike is
+worth (5-15). There is no coin sink other than the two games yet:
+fishing and hunting only ever add.
+
+Headless checks: `LegaiaWorld.LegaiaEconomyChecks.Run` (edit mode),
+`.SlotRules`, and `.Soak` (play mode, no `-quit`: strikes a villager
+through the hitbox's debug hook, sees the coin land and the villager
+come back); `LegaiaWorld.LegaiaCardGameChecks.Run` and `.Soak` (play
+mode, no `-quit`, `-legaiaCardSeconds N -legaiaCardScale S`: villagers
+play hands among themselves, pot conservation asserted, both modes).
 
 ## Optional realism enhancements
 

@@ -45,6 +45,7 @@
 using UdonSharp;
 using UnityEngine;
 using UnityEngine.AI;
+using VRC.Udon;
 
 namespace LegaiaWorld
 {
@@ -220,7 +221,73 @@ namespace LegaiaWorld
                 (stations == null ? 0 : stations.Length) + " station(s), " +
                 (brains == null ? 0 : brains.Length) + " villager(s), " +
                 ringCount + " chat ring(s).");
+            LinkCardGame();
             SendCustomEventDelayedSeconds("DirectorTick", 2f);
+        }
+
+        /// The card table's game (another pass's object, under the kit's
+        /// top-level prefab container) gets a back reference by NAME: it
+        /// asks this director for company through Summon, and neither file
+        /// has to name the other's type. Nothing happens when the table
+        /// (or its game) is not built.
+        void LinkCardGame()
+        {
+            GameObject g = GameObject.Find("Legaia_common_prefabs/card_table/game");
+            if (g == null)
+                return;
+            UdonBehaviour[] all = g.GetComponents<UdonBehaviour>();
+            for (int i = 0; i < all.Length; i++)
+                if (all[i] != null)
+                    all[i].SetProgramVariable("director", this);
+        }
+
+        /// Company for the card table (or any station that wants a
+        /// villager NOW rather than whenever the errand picker gets to
+        /// it): the nearest free villager on the outdoor side that can
+        /// reach `s` is claimed and sent. Returns it, or null when nobody
+        /// is free within `maxDistance` metres.
+        public LegaiaNpcBrain Summon(LegaiaNpcStation s, float maxDistance)
+        {
+            if (s == null || brains == null || !s.IsFree())
+                return null;
+            Vector3 to = s.StandPosition();
+            float bestD = maxDistance * maxDistance;
+            // Nearest-first over the free villagers; a candidate that fails
+            // the route check drops out and the next nearest is tried.
+            for (int tries = 0; tries < 4; tries++)
+            {
+                LegaiaNpcBrain best = null;
+                float d0 = bestD;
+                for (int i = 0; i < brains.Length; i++)
+                {
+                    LegaiaNpcBrain b = brains[i];
+                    if (b == null || !b.Available() || b.Indoors() != s.indoors)
+                        continue;
+                    float d = (b.transform.position - to).sqrMagnitude;
+                    if (d < d0)
+                    {
+                        d0 = d;
+                        best = b;
+                    }
+                }
+                if (best == null)
+                    return null;
+                routeBudget = 1;
+                if (!Routable(best, best.transform.position, to))
+                {
+                    // Try the next nearest: shrink the radius to just under
+                    // this one so it is not picked again.
+                    bestD = d0 - 0.01f;
+                    if (bestD <= 0f)
+                        return null;
+                    continue;
+                }
+                if (!s.Claim(best.transform, best))
+                    return null;
+                best.SendToStation(s);
+                return best;
+            }
+            return null;
         }
 
         int NextInt(int n)

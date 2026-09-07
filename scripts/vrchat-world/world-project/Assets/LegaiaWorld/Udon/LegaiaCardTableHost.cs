@@ -1,19 +1,25 @@
 // The card table's NPC host: the single handler behind the four stool
 // LegaiaNpcStations (kind 2). Villagers drift over, sit down and hold a
-// fanned pair of cards; the moment players want the table they get it
-// back.
+// fanned pair of cards - and a player sitting down is an INVITATION, not
+// an eviction: the free stools stay available while people play, and the
+// card game (LegaiaCardGame) summons villagers into them.
 //
-// "The table is in use" is decided from two signals, because VRChat
-// exposes no "is this station occupied" query:
-//   - a player sat down: LegaiaSeat's OnStationEntered / OnStationExited
-//     overrides flip its `occupied` flag, which this host polls;
-//   - a card left the deck: the deck's cards are ordinary pickups on
-//     their own Object Sync, so a card sitting further than
-//     `cardAwayRadius` from the deck anchor means a hand is in play.
-// Either one (or the synced `npcsAllowed` toggle on the table button)
-// makes every seat station unavailable. An NPC already seated is not
-// teleported off: the station goes unavailable and the NPC brain, which
-// re-checks `available` while dwelling, walks it away on its own.
+// That is the one rule that changed when the table got a game. The host
+// used to withdraw every station the moment a player sat or a card left
+// the deck, on the theory that the table was "in use"; the game wants the
+// opposite - company. So availability now turns on exactly two things:
+// the synced `npcsAllowed` toggle behind the table's "NPCs: sit / shoo"
+// button, and whether a PLAYER is sitting on that particular stool
+// (LegaiaSeat's `occupied`, mirrored on every client by the station
+// callbacks). Cards scattered across the felt shoo nobody any more.
+//
+// `gameActive` is still published for anything that wants "is the table
+// busy" - it is true while a player sits or a card is out of the deck
+// (the deck's cards are ordinary pickups on their own Object Sync, so a
+// card further than `cardAwayRadius` from the anchor means a hand is in
+// play) - but nothing in this file gates on it. An NPC already seated is
+// never teleported off: its station goes unavailable and the NPC brain,
+// which re-checks `available` while dwelling, walks it away on its own.
 //
 // Seated pose: the exported rigs have no sit clip (they are rigid-node
 // models playing a looping spawn clip), so sitting is APPROXIMATED - the
@@ -124,7 +130,10 @@ namespace LegaiaWorld
             if (CardsInPlay())
                 lastCardMotion = Time.time;
             gameActive = players || (Time.time - lastCardMotion) < gameIdleSeconds;
-            bool allow = npcsAllowed && !gameActive;
+            // Invitation, not eviction: only the toggle withdraws the
+            // stools, and only the stool a player is actually sitting on
+            // is taken out of the villagers' reach.
+            bool allow = npcsAllowed;
 
             for (int i = 0; i < seats.Length; i++)
             {
