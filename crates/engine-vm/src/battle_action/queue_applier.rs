@@ -59,6 +59,67 @@ pub const SUPER_ROWS: usize = 5;
 /// by the roster char id minus one).
 pub const MIRACLE_ROW_STRIDE: usize = 16;
 
+/// The 8 equipment-slot bytes of a character record (`+0x196..=+0x19D`
+/// record-relative, `0x80084140 + (id-1)*0x414 + 0x75E..` in RAM).
+pub const EQUIP_SLOT_COUNT: usize = 8;
+
+/// The equipment-slot index [`miracle_marker_armed`] reads for roster char id
+/// `2`, and the one it reads for every other id. Retail's two arms load
+/// `+0x760` and `+0x761` off the record base `0x80084140 + (id-1)*0x414`,
+/// i.e. record-relative `+0x198` and `+0x199` - equipment slots 2 and 3.
+pub const MIRACLE_GATE_SLOT_ID2: usize = 2;
+/// See [`MIRACLE_GATE_SLOT_ID2`].
+pub const MIRACLE_GATE_SLOT_OTHER: usize = 3;
+/// The roster char id whose gate reads [`MIRACLE_GATE_SLOT_ID2`]
+/// (`beq v0,a3,0x80054228` with `a3 = 2` at `0x800541E4`).
+pub const MIRACLE_GATE_SWAPPED_ID: u8 = 2;
+
+/// PORT: FUN_80053CB8 (`0x800541D0..0x80054274`) - the arm of the party
+/// battle-actor seeding routine that raises the per-slot Miracle marker
+/// `ctx[+0x25F + slot]`.
+///
+/// The marker is **not** set by an input recognizer. It is written exactly
+/// once in the corpus, by the routine that seats a party member's battle
+/// actor (the same body that copies the record's HP `+0x6CE` into actor
+/// `+0x14C`, its MP `+0x6CC` into `+0x14E` and its name `+0x86F` into
+/// `+0x1BC`, which is what pins the `-0x5C8` skew between the RAM base
+/// `0x80084140` and the record offsets `docs/formats/save-record.md`
+/// tabulates). It reads one equipment byte and stores `1`:
+///
+/// ```text
+/// 800541dc  lbu   v0,0x0(a1)       ; a1 = 0x8007BD10 + slot -> roster char id
+/// 800541e4  beq   v0,a3,80054228   ;   id == 2 -> the +0x760 arm
+/// 80054210  lbu   v0,0x761(v0)     ; else record +0x761  (equip slot 3)
+/// 80054218  bne   v0,zero,80054260 ;   occupied -> set
+/// 80054220  bne   a2,a3,80054278   ;   else skip (a2 != 2 always here)
+/// 80054250  lbu   v0,0x760(v0)     ; id == 2: record +0x760  (equip slot 2)
+/// 80054258  beq   v0,zero,80054278 ;   empty -> skip
+/// 80054270  sb    v1,0x25f(v0)     ; ctx[+0x25F + slot] = 1
+/// ```
+///
+/// Which byte that is: `crates/save/src/character.rs` records the per-character
+/// weapon index `_DAT_8007B42C` as `2, 3, 2` for Vahn / Noa / Gala, so the slot
+/// this gate reads is in every case the **other** member of the `{2, 3}` pair -
+/// the non-weapon byte, which `docs/formats/save-record.md` names
+/// `accessory_or_seru_lock` (the Ra-Seru slot) at record `+0x199`. The gate is
+/// therefore "this character's Ra-Seru slot is occupied", expressed in retail
+/// as a per-id slot index rather than a lookup.
+///
+/// The marker gates every **special** art record, not only the Miracle: the
+/// builder routes ordinal `0` (Miracle) and ordinals `1..=3` (the Hyper Arts)
+/// through the same `+0x25F` test at `0x801EF4C8`, and with it clear that arm
+/// writes nothing (`bne t5,zero,0x801EF7B4` at `0x801EF6E0`).
+///
+/// `equip` is the record's 8 slot bytes in record order (`+0x196..=+0x19D`).
+pub fn miracle_marker_armed(roster_char_id: u8, equip: &[u8; EQUIP_SLOT_COUNT]) -> bool {
+    let slot = if roster_char_id == MIRACLE_GATE_SWAPPED_ID {
+        MIRACLE_GATE_SLOT_ID2
+    } else {
+        MIRACLE_GATE_SLOT_OTHER
+    };
+    equip[slot] != 0
+}
+
 /// PORT: FUN_801EED1C (the Miracle applier block `0x801EF4E8..0x801EF528`)
 ///
 /// Overwrite the whole 16-byte queue window from the acting character's
@@ -110,6 +171,11 @@ pub fn clear_queue_msb(queue: &mut [u8; ACTION_QUEUE_CAP]) {
 /// `0x801EF8E4..0x801EF8E8`).
 pub const SPECIAL_STARTER: u8 = 0x1A;
 
+/// The **known** art starter (`FUN_801EFBFC` verdict `1`). The Attack x2
+/// refill rewrites every marked slot to this byte (`li a0,0x19` at
+/// `0x801E3A28`), so a second pass never re-fires the learn banner.
+pub const REGULAR_STARTER: u8 = 0x19;
+
 /// The mark value the build loop writes at an accepted art's starter index
 /// (`li v0,0x1` / `sw v0,0x0(v1)` at `0x801EF788..0x801EF78C`). The Super
 /// applier writes `4` at its own starters, but it runs *after* the reorder,
@@ -143,7 +209,7 @@ pub const REORDER_SCAN_LEN: usize = 0xF;
 pub fn build_starter_marks(queue: &[u8; ACTION_QUEUE_CAP]) -> [u32; ACTION_QUEUE_CAP] {
     let mut marks = [0u32; ACTION_QUEUE_CAP];
     for i in 0..QUEUE_SCAN_LEN {
-        if queue[i] == SPECIAL_STARTER || queue[i] == 0x19 {
+        if queue[i] == SPECIAL_STARTER || queue[i] == REGULAR_STARTER {
             marks[i] = BUILD_STARTER_MARK;
         }
     }
@@ -596,11 +662,12 @@ pub fn check_and_learn_art(
 /// a dump's printed addresses are a property of its load base, so counting
 /// caller *sites* across differently-based dumps of one image inflates them.
 ///
-/// The engine's Miracle gate is the whole-string match in
-/// [`resolve_action_queue`](super::resolve_action_queue), and its execution
-/// point (`attack_chain`) models neither the per-slot marker `ctx[+0x25F +
-/// slot]` nor `ctx[+0x269]`, so the per-token position has no consumer until
-/// that context state exists.
+/// The engine's Miracle gate is now both halves of retail's: the per-slot
+/// marker `ctx[+0x25F + slot]` ([`miracle_marker_armed`]) and the whole-string
+/// match in [`finish_action_queue`](super::finish_action_queue). What still
+/// has no consumer is `ctx[+0x269]` - the reward byte this lookup's single
+/// caller stages a zero-position token into - so the per-token position itself
+/// remains unconsumed.
 ///
 /// PORT: FUN_801E91E8 - Miracle-command token position lookup.
 ///
@@ -757,6 +824,29 @@ mod queue_applier_tests {
                 (0x0C..=0x0F).contains(&b),
                 "byte {b:#04x}"
             );
+        }
+    }
+
+    #[test]
+    fn the_miracle_gate_reads_slot_three_except_for_roster_id_two() {
+        let mut slot2 = [0u8; EQUIP_SLOT_COUNT];
+        slot2[MIRACLE_GATE_SLOT_ID2] = 0x40;
+        let mut slot3 = [0u8; EQUIP_SLOT_COUNT];
+        slot3[MIRACLE_GATE_SLOT_OTHER] = 0x40;
+        for id in 1u8..=4 {
+            let expect_two = id == MIRACLE_GATE_SWAPPED_ID;
+            assert_eq!(miracle_marker_armed(id, &slot2), expect_two, "id {id}");
+            assert_eq!(miracle_marker_armed(id, &slot3), !expect_two, "id {id}");
+        }
+        // Every other slot is inert - the gate reads exactly one byte.
+        for i in 0..EQUIP_SLOT_COUNT {
+            if i == MIRACLE_GATE_SLOT_ID2 || i == MIRACLE_GATE_SLOT_OTHER {
+                continue;
+            }
+            let mut eq = [0u8; EQUIP_SLOT_COUNT];
+            eq[i] = 0xFF;
+            assert!(!miracle_marker_armed(1, &eq), "slot {i} must be inert");
+            assert!(!miracle_marker_armed(2, &eq), "slot {i} must be inert");
         }
     }
 

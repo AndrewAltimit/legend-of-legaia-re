@@ -819,6 +819,28 @@ pub struct BattleActionCtx {
     /// REF: FUN_801E295C (`ctx[+0x1A]`; the `PORT:` anchor for the seeding
     /// arm is `battle_action::dispatch`'s `seed_turn_cursor`)
     pub turn_cursor: u8,
+    /// `[+0x16]` - the **Attack x2 pass counter** the War God Icon's pair
+    /// runs on.
+    ///
+    /// Written by exactly one site in the corpus: the strike loop's
+    /// end-of-stream arm (`FUN_801E295C`, `0x801E3A20..0x801E3A64`), reached
+    /// only for a party actor (`ctx[+0x13] < 3`) whose character record
+    /// carries `+0xF4 & 0x2000` and whose counter still reads `0`. That arm
+    /// rewinds the strike cursor, bumps this byte and rewrites every marked
+    /// queue slot to `0x19`, so the whole action stream replays once.
+    ///
+    /// Its reader is the damage kernel's apply-mode arm
+    /// ([`crate::battle_action::apply_mode`], `0x801EE114`): while the pair is
+    /// running (`< 2`) the action applies nothing and its combo total carries
+    /// into the second pass.
+    ///
+    /// An earlier revision of `docs/subsystems/battle-action.md` read the
+    /// `0x801E3A20` arm as a "Miracle continuation". It is not - `s5` is
+    /// `ctx + 0x11`, so `0x4(s5)` is the strike cursor `+0x15` and `0x5(s5)`
+    /// is this byte, and the arm's own guard chain is the War God Icon bit.
+    ///
+    /// REF: FUN_801E295C (`0x801E3A20`), FUN_801EC3E4 (`0x801EE0C0`)
+    pub attack_x2_pass: u8,
     /// `[+0x276]` - menu-open flag (gates the `QueuedFromMenu`/`PreActionWait`
     /// transition). Non-zero while a menu is still drawing.
     pub menu_open: u8,

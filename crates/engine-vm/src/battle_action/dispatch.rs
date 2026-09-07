@@ -72,8 +72,12 @@ pub fn resolve_action_queue(
         *slot = b;
     }
 
-    // Steps 2-4: the Miracle / MSB / Super finish on the window.
-    finish_action_queue(character, command_input, &mut bytes);
+    // Steps 2-4: the Miracle / MSB / Super finish on the window. This
+    // structural entry point has no character record to read the Miracle
+    // marker off, so it runs with the marker **armed** - which is what it
+    // did before the gate existed. The live arts path
+    // (`World::build_arts_action_queue`) reads the real marker.
+    finish_action_queue(character, command_input, true, &mut bytes);
 
     // Step 5: decode up to the terminator.
     let mut queue = ActionQueue::new();
@@ -97,9 +101,12 @@ pub fn resolve_action_queue(
 /// loop, in retail order:
 ///
 /// 1. the Miracle replacement (`0x801EF4E8..0x801EF524`, [`apply_miracle_replace`]) -
-///    retail's gate is the per-slot marker `ctx[+0x25F + slot]` armed by the
-///    input recognizer; the engine's stand-in is the whole-string match of
-///    `command_input` against the character's Miracle command table;
+///    gated on **both** halves of retail's condition: `miracle_armed` is the
+///    per-slot marker `ctx[+0x25F + slot]` ([`miracle_marker_armed`], written
+///    at battle-actor seeding from the character's Ra-Seru equipment byte),
+///    and the whole-string match of `command_input` against the character's
+///    Miracle command table stands in for the builder's own combo compare
+///    against the ordinal-`0` art record;
 /// 2. the MSB-clear sweep (`0x801EF85C..0x801EF898`, [`clear_queue_msb`]) and
 ///    the marked-starter reorder (`0x801EF8A0..0x801EF968`,
 ///    [`reorder_marked_starters`]) over [`build_starter_marks`];
@@ -117,6 +124,7 @@ pub fn resolve_action_queue(
 pub fn finish_action_queue(
     character: legaia_art::Character,
     command_input: &[legaia_art::Command],
+    miracle_armed: bool,
     bytes: &mut [u8; ACTION_QUEUE_CAP],
 ) {
     use legaia_art::MiracleMatcher;
@@ -125,9 +133,10 @@ pub fn finish_action_queue(
     // touch it, so it is reconstructed here - before the copy overwrites the
     // window it describes.
     let mut starter_marks = build_starter_marks(bytes);
-    if MiracleMatcher::with_default_table()
-        .find(character, command_input)
-        .is_some()
+    if miracle_armed
+        && MiracleMatcher::with_default_table()
+            .find(character, command_input)
+            .is_some()
     {
         apply_miracle_replace(bytes, &miracle_row_for(character));
     }

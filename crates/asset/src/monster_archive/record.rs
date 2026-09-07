@@ -107,6 +107,25 @@ pub struct MonsterRecord {
     /// reproduce exactly; water/earth/light/dark corroborate per-element), and
     /// by the byte taking *only* values `0..=7` across every populated record.
     pub element: u8,
+    /// Limb-vs-height **swing class** (`+0x1E`). Read record-direct through
+    /// the same `0x801C9348` pointer table as [`Self::element`] and
+    /// [`Self::size_class`], never copied into a live-actor field, and read by
+    /// exactly two kernels:
+    ///
+    /// - the no-directional-input attack-queue arm `FUN_801EED1C`
+    ///   (`lbu v1,0x1e(v0)` at `0x801EEFC8`): a class-`2` target is struck with
+    ///   one low swing (`0x0E`) instead of two rolled arm swings;
+    /// - the damage kernel's apply-mode look-ahead `FUN_801EC3E4`
+    ///   (`0x801EE080`): a class-`2` target can only be connected with by a
+    ///   power byte in `0x01..=0x10` and a class-`3` target only by one in
+    ///   `0x11..=0x15`, so an action with nothing of that class left lands its
+    ///   accumulated total early instead of waiting for the clip's last beat.
+    ///
+    /// Every other value connects with everything, which is why `0` is a safe
+    /// stand-in wherever the byte is unavailable. Across the archive's 186
+    /// decodable records the byte reads `0` for 127, `1` for one, `2` for 52
+    /// and `3` for six, so both branching classes are ordinary enemies.
+    pub swing_class: u8,
     /// Body-size / bulk class (`+0x1F`). Like [`Self::element`] this byte is
     /// read **record-direct** through the per-enemy record-pointer table
     /// `0x801C9348[slot-3]` and is never copied into a live-actor field.
@@ -262,6 +281,7 @@ pub(super) fn parse_block(id: u16, block: &[u8]) -> Option<MonsterRecord> {
     ];
     let readef_group = *block.get(0x1C)?;
     let element = *block.get(0x1D)?;
+    let swing_class = *block.get(0x1E)?;
     let size_class = *block.get(0x1F)?;
     let gold = legaia_bytes::u16_le(block, 0x44)?;
     let exp = legaia_bytes::u16_le(block, 0x46)?;
@@ -285,6 +305,7 @@ pub(super) fn parse_block(id: u16, block: &[u8]) -> Option<MonsterRecord> {
         stats,
         readef_group,
         element,
+        swing_class,
         size_class,
         gold,
         exp,
@@ -502,6 +523,7 @@ mod tests {
             stats: [128, 288, 222, 200, 220, 146],
             readef_group: 15,
             element: 6,
+            swing_class: 0,
             size_class: 26,
             gold: 30000,
             exp: 42000,

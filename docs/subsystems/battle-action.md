@@ -2588,8 +2588,19 @@ And the terminator is tested at the **new** cursor
 **`FUN_801E295C` never calls a damage kernel.** `jal 0x801ec3e4` does not
 appear anywhere in its 4099 instructions; case `0x1E`'s only calls are
 `FUN_801D8DE8`, `FUN_801EED1C`, `FUN_801D5854` and the atan2 `FUN_80019B28`.
-The `0x19` refill loop at `0x801E3A20..0x801E3A64` is the Miracle continuation:
-it rewinds the cursor (`sb zero,0x4(s5)`) and rewrites marked slots to `0x19`.
+The `0x19` refill loop at `0x801E3A20..0x801E3A64` is the **War God Icon's
+Attack x2 second pass**, not a Miracle continuation. Its guard chain settles
+it: the acting slot must be a party one (`sltiu v0,v0,0x3` on `0x2(s5)` =
+`ctx[+0x13]` at `0x801E39BC`), the acting character's record `+0xF4` must carry
+bit `0x2000` (`0x801E39FC..0x801E3A08`) and `0x5(s5)` = `ctx[+0x16]` must still
+read zero (`0x801E3A18`). It then rewinds the strike cursor
+(`sb zero,0x4(s5)` = `ctx[+0x15]`), bumps `ctx[+0x16]`, and rewrites every
+queue slot the builder's side array `0x801F6990` marked to `0x19` - so the
+whole action stream replays once with the newly-learned starters demoted, and
+the learn verdict fires on the first pass only. `ctx[+0x16]` is the counter the
+damage kernel's carry arm reads (`s2 = 0xFF` while it is `< 2`). Port:
+`legaia_engine_vm::battle_action`'s `attack_chain` (`attack_x2_refill`), with
+the counter on `BattleActionCtx::attack_x2_pass`.
 
 ### 3. Damage is one power byte per animation hit event
 
@@ -2631,11 +2642,22 @@ attacker branches):
   this entry's power run, then every remaining stream byte's entry) found none
   whose class bits can connect with the target's `+0x1E` size class
   (`0x801EE060..0x801EE0B4`, the limb-vs-height "Miss" law): the total lands
-  **now**, since nothing after this hit can add to it.
+  **now**, since nothing after this hit can add to it. The class bits are
+  `0x1` for a power byte in `0x01..=0x10`, `0x2` for one in `0x11..=0x15`, and
+  both (ending the scan) for `>= 0x16`; a class-`2` target needs bit `0x1`
+  present and a class-`3` target bit `0x2`. In the stream half of the walk a
+  byte `>= 0x10` - an art starter or art constant - sets both bits and ends
+  the scan, while a direction swing has its entry's whole power run folded.
 - `s2 = 0xFF` - the attacker's ability bitfield (`char +0xF4`) carries bit
   `0x0D` (the War God Icon's *Attack x2*) and `ctx[+0x16] < 2`
   (`0x801EE0C0..0x801EE120`): the first action of the pair never applies, its
   total carries into the second.
+
+Both copies of the kernel gate the whole of this on a **monster** target
+(`sltiu` on the target slot against `3` at `0x801EDEB8` and `0x801EE724`, each
+branching past the look-ahead *and* past the War God arm), which is what makes
+the record-direct `0x801C9348[target - 3]` read in the decision well-defined: a
+party target is always the `s2 = 0` arm.
 
 A swing entry's power byte 0 is **equipment-spliced**, not the command: the
 swing clips are per-item (`swing_battle_animations`), and the same `0x0E` reads
@@ -2701,16 +2723,24 @@ catalog carries no attack entries keeps the AGL-budget immediate swings
 (`apply_basic_attack`, still accumulate-then-apply). Neither is reachable with
 disc data, where every entry carries its head.
 
-Of the apply-mode law in §3 the port implements the `s2 = 0` arm and the
-loop-window re-zero of `+0x1F4` (`MonsterAnimPlayer::take_loop_rewound`, read
-by `tick_battle_hit_events` under the same party / slot `0x11` / latched
-`>= 0x2B` gate). Two arms are **not wired**, each with a concrete
-prerequisite: the `s2 != 0` early apply needs the size-class Miss model
-(`+0x1E` class 2 / 3 against a power byte's class), which the port has no
-seat for yet - with every hit able to connect, retail's look-ahead answers
-`s2 = 0`, so the port's behaviour is retail's for every target the port can
-represent; and the War God Icon's `s2 = 0xFF` carry-over needs the icon's
-*Attack x2* pair itself (`ctx[+0x16]`), which the engine does not model.
+All three arms of the apply-mode law in §3 are wired, beside the loop-window
+re-zero of `+0x1F4` (`MonsterAnimPlayer::take_loop_rewound`, read by
+`tick_battle_hit_events` under the same party / slot `0x11` / latched
+`>= 0x2B` gate). `World::hit_apply_mode` runs the look-ahead and the mode
+decision on every admitted hit
+(`legaia_engine_vm::battle_action::remaining_hit_class_bits` +
+`apply_mode`), and `resolve_hit_event` routes on the result: `APPLY_MODE_EARLY`
+lands the total on this hit, `APPLY_MODE_CARRY` lands nothing, anything else
+keeps the cursor-parked / last-beat pair.
+
+The size-class byte the early arm needs is now carried:
+`legaia_asset::monster_archive::MonsterRecord::swing_class` parses record
+`+0x1E` and `MonsterDef::swing_class` projects it into the catalog, which is
+also what fills the no-input attack queue's own class input
+(`World::attack_swing_class_of`). A synthetic catalog leaves it `0` - the class
+that connects with everything - so a disc-free session behaves exactly as it
+did. The `ctx[+0x16]` pair counter the carry arm reads is written by the strike
+loop's own Attack x2 refill, described in §2.
 
 **What the builder tokenizes against.** The records retail's inner loop walks
 are the character's art-animation bank records (`record[0] +0x58`,
@@ -3145,9 +3175,12 @@ re-invokes it for the next queued actor of a multi-actor turn). The full retail 
    Byte-level port: `legaia_engine_vm::battle_action::check_and_learn_art`.
    The engine runs it: `engine-core`'s `TacticalArtsTracker` holds the `+0x74D` count and the
    `+0x74E..` ascending id list per character, and the queue builder
-   `World::build_arts_action_queue` calls `World::notify_art_used` once per accepted art in queue
-   order, rewriting that art's starter to `0x1A` when the call just learned it - retail's own seat
-   (`jal 0x801efbfc` at `0x801EF44C`, verdict `+ 0x18` at `0x801EF6F0`). So an art is learned on
+   `World::build_arts_action_queue` calls `World::notify_art_used` once per accepted art in the
+   builder's own **tail-first** order, rewriting that art's starter to `0x1A` when the call just
+   learned it - retail's own seat (`jal 0x801efbfc` at `0x801EF44C`, verdict `+ 0x18` at
+   `0x801EF6F0`). The order is load-bearing for one queue shape: with the same art entered twice
+   the *last* occurrence is the one the check sees unknown, so it is the one that gets the `0x1A`
+   - and step 4's reorder is what walks that verdict back to the art's first performance. So an art is learned on
    its first performance, and the learn banner fires once. Two retail inputs are
    supplied rather than read: the gate `ctx[+0x266 + slot]` has no engine analogue and reads as
    clear (gate open), and the innate cap at `0x801F686C` is un-parsed battle-overlay disc data
@@ -3213,10 +3246,28 @@ The engine's entry point `legaia_engine_vm::battle_action::resolve_action_queue`
 `ACTION_QUEUE_CAP`-wide byte window, so the live path is the byte applier's arithmetic rather
 than the structural `legaia_art` matchers'. Two retail laws that reach the simulation through
 that change: the Super scan takes the **first matching row in resident-table order** (not the
-longest `find`), and it applies **once** (not to a fixpoint). Retail's Miracle gate is the
-per-slot marker `ctx[+0x25F + slot]`, armed by the input recognizer; the engine's stand-in is a
-whole-string match against the character's Miracle command table, because that recognizer
-(`FUN_801E91E8`'s caller) is not ported.
+longest `find`), and it applies **once** (not to a fixpoint). Retail's Miracle gate has two halves and the port
+now runs both. The per-slot marker `ctx[+0x25F + slot]` is **not** written by an input
+recognizer - it has exactly one writer in the corpus, the party battle-actor seeding routine
+`FUN_80053CB8` (`sb v1,0x25f(v0)` at `0x80054270`), which raises it when one equipment byte of
+the acting character's record is occupied: `+0x761` (record-relative `+0x199`) for every roster
+char id except `2`, and `+0x760` (`+0x198`) for id `2` (`beq v0,a3,0x80054228` with `a3 = 2` at
+`0x800541E4`). Since `crates/save/src/character.rs` records the per-character weapon index
+`_DAT_8007B42C` as `2, 3, 2`, the byte this gate reads is in every case the **other** member of
+that pair - the slot the equip screen's row map never exposes, i.e. the Ra-Seru. Real memory-card
+saves agree: the gate byte is small and per-character-banded (Vahn `1` early, `7`/`9` at the end;
+Noa `15`/`17`; Gala `23`/`25`) while the paired weapon byte carries the ordinary shop ids, and it
+reads zero for a member who has not bonded with a Ra-Seru yet. Port
+`legaia_engine_vm::battle_action::miracle_marker_armed`, read at queue-build time by
+`World::miracle_marker_armed_for` (the byte cannot change between battle entry and an arts
+commit). The second half is the builder's own combo compare against the ordinal-`0` art record,
+for which the engine keeps its whole-string match against the character's Miracle command table.
+
+The marker gates more than the Miracle: the builder routes **every** special record - ordinal `0`
+(Miracle) and ordinals `1..=3` (the three Hyper Arts) - through the same `+0x25F` test at
+`0x801EF4C8`, and with the marker clear that arm writes nothing at all (`bne t5,zero,0x801EF7B4`
+at `0x801EF6E0`). So a party member without a Ra-Seru can enter a Hyper or Miracle string and get
+an ordinary chain out of it.
 
 The consuming side is unchanged: the strike loop reads `actor[+0x1DF + +0x15]` and the round
 driver's queue clear runs the `sb zero,0x1df(v0)` loop at `0x801D89D8` inside `FUN_801D88CC`
@@ -3227,9 +3278,13 @@ no-directional-input arm below) share the same emission sites.
 ### The no-directional-input attack queue
 
 `FUN_801EED1C` has one arm that produces a complete attack queue from **no player input at
-all**. Its head selects the arm on the acting slot's control byte
-`(&DAT_8007BD10)[slot] == 4` - an AI-driven party member - at `0x801EEE40..0x801EEE48`; the
+all**. Its head selects the arm on `(&DAT_8007BD10)[slot] == 4` at `0x801EEE40..0x801EEE48`; the
 same table's `!= 4` fall-through is the ordinary player path that normalizes recorded arrows.
+`DAT_8007BD10` is the slot -> **roster character id** table, not a control-mode byte: three
+routines index the character records with it as `0x80084140 + (byte - 1)*0x414`
+(`0x801EF344..0x801EF360` here, `0x80053CEC..0x80053D10` in the actor seeding, and
+`0x801E39CC..0x801E39F8` in the strike loop). So the arm's condition is "the character seated in
+this slot is roster id 4" - the AI-driven guest - rather than a mode flag.
 
 The arm's own body is short, and every store in it is a queue store:
 
@@ -3260,19 +3315,27 @@ against a target whose record `+0x1E` reads `2`. The `% 2` is retail's signed-sa
 `v0 - (v0/2)*2` idiom at `0x801EEFE0..0x801EEFF0`. No terminator is written: the window is
 already zeroed by the round-boundary clear, and `0x00` is what the attack band stops on.
 
-`+0x1E` sits between the record's element byte `+0x1D` and its size class `+0x1F` and is not
-parsed by `legaia_asset::monster_archive`. The disassembly establishes its *effect* only - a
-class-`2` target is struck low instead of with the arm - which reads as the height / posture
-class behind retail's limb-vs-height "Miss", but nothing here pins that name.
+`+0x1E` sits between the record's element byte `+0x1D` and its size class `+0x1F`, and is parsed
+as `legaia_asset::monster_archive::MonsterRecord::swing_class`. It is not a rare byte: across the
+186 decodable records of the archive it reads `0` for 127, `1` for one, **`2` for 52** and
+**`3` for six** - so both of the classes the two kernels branch on are ordinary enemies, and both
+arms are reachable in normal play. Two kernels read it, both
+record-direct through `0x801C9348` and never off the actor: this arm, and the damage kernel's
+apply-mode look-ahead (§3, `0x801EE080`), where a class-`2` target connects only with power bytes
+in `0x01..=0x10` and a class-`3` target only with `0x11..=0x15`. Together they read as the
+height / posture class behind retail's limb-vs-height "Miss"; the disassembly pins the two
+effects, not the name.
 
 **Port.** `legaia_engine_vm::battle_action::basic_attack_queue`, byte-for-byte including the
 two-draws / no-draws RNG split. `engine-core`'s `World::seed_basic_attack_queue` calls it from
 both party arming sites - the command menu's Attack confirm (and its no-valid-target fallback)
 and the auto / confused party turn `arm_party_physical`. The engine's Attack command is
 precisely this situation: it resolves a target and carries no direction input, so this is the
-retail kernel that applies. The record `+0x1E` class has no engine carrier, so the port passes
-`0` and always takes the two-arm-swing shape - retail's own answer for every non-class-`2`
-target.
+retail kernel that applies. The `+0x1E` class reaches it through
+`World::attack_swing_class_of` - the seated monster id resolved through
+`MonsterDef::swing_class` - so a class-`2` disc target takes the single low swing. A party
+target, an empty slot or a synthetic catalog reads `0` and takes the two-arm-swing shape, which
+is retail's own answer for every non-class-`2` target.
 
 #### Why the seed is load-bearing, and where the damage goes
 

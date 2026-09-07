@@ -281,17 +281,52 @@ impl World {
         written
     }
 
+    /// The acting slot's Miracle marker `ctx[+0x25F + slot]`, as retail's
+    /// party battle-actor seeding writes it: `1` when the character's Ra-Seru
+    /// equipment byte is occupied.
+    ///
+    /// Retail arms it **once per battle** in `FUN_80053CB8`; the port reads it
+    /// at queue-build time instead, which is the same value - the byte it
+    /// depends on is a character-record equipment slot, and equipment cannot
+    /// change between battle entry and an arts commit. A roster slot with no
+    /// record (a synthetic party, a zeroed roster) reads unarmed, which is
+    /// retail's answer for an empty Ra-Seru slot.
+    ///
+    /// PORT: FUN_80053CB8 (`0x800541D0..0x80054274`, via
+    /// [`vm::battle_action::miracle_marker_armed`])
+    pub(in crate::world) fn miracle_marker_armed_for(&self, roster_slot: u8) -> bool {
+        let Some(record) = self.roster.members.get(roster_slot as usize) else {
+            return false;
+        };
+        // Retail's table `0x8007BD10` holds a **1-based** char id; the
+        // engine's `active_party` mirror holds the 0-based roster slot.
+        vm::battle_action::miracle_marker_armed(
+            roster_slot.wrapping_add(1),
+            &record.equipment().slots,
+        )
+    }
+
     /// The target's swing class - retail's monster record `+0x1E`, read
     /// record-direct through the `0x801C9348` pointer table by
     /// `FUN_801EED1C`'s no-input attack arm.
     ///
-    /// Always `0` today: the byte is not parsed by
-    /// `legaia_asset::monster_archive` and has no
-    /// [`crate::monster_catalog::MonsterDef`] field, so there is nothing to
-    /// read it from. `0` is the ordinary-target answer, which is what every
-    /// non-class-`2` monster gives in retail too.
-    fn attack_swing_class_of(&self, _target: u8) -> u8 {
-        0
+    /// Resolved through the slot's seated monster id and the catalog's
+    /// [`crate::monster_catalog::MonsterDef::swing_class`] (record `+0x1E`).
+    /// A party target, an empty slot, or a synthetic catalog with no disc
+    /// record reads `0` - the class that takes the ordinary two-swing attack,
+    /// which is retail's answer for every non-class-`2` target.
+    pub(in crate::world) fn attack_swing_class_of(&self, target: u8) -> u8 {
+        let Some(id) = self
+            .actors
+            .get(target as usize)
+            .and_then(|a| a.battle_monster_id)
+        else {
+            return 0;
+        };
+        self.monster_catalog
+            .get(id)
+            .map(|d| d.swing_class)
+            .unwrap_or(0)
     }
 
     /// Stamp (or clear) the retail target-select tint across the monster
@@ -618,9 +653,16 @@ impl World {
         );
         let mut bytes = [0u8; ACTION_QUEUE_CAP];
         bytes[..tokens.len()].copy_from_slice(&tokens);
-        // Learn-on-use per accepted art, in queue order. Retail's insert
-        // gate (`ctx[+0x266 + slot]`) has no engine analogue and reads open.
-        for i in 0..tokens.len().saturating_sub(1) {
+        // Learn-on-use per accepted art, in the builder's own **tail-first**
+        // order (`s8` from 15 down, `0x801EF848`, restarting at `s8 + 1`
+        // after each match): when one art appears twice in a queue, the
+        // *last* occurrence is the one `FUN_801EFBFC` sees first and so the
+        // one that gets the `0x1A` newly-learned starter. The marked-starter
+        // reorder in `finish_action_queue` then walks it back to the art's
+        // first occurrence, which is what makes that pass load-bearing rather
+        // than a no-op. Retail's insert gate (`ctx[+0x266 + slot]`) has no
+        // engine analogue and reads open.
+        for i in (0..tokens.len().saturating_sub(1)).rev() {
             if bytes[i] != ActionConstant::RegularStarter.as_byte() {
                 continue;
             }
@@ -634,7 +676,8 @@ impl World {
                 bytes[i] = ActionConstant::SpecialStarter.as_byte();
             }
         }
-        vm::battle_action::finish_action_queue(character, commands, &mut bytes);
+        let miracle_armed = self.miracle_marker_armed_for(roster);
+        vm::battle_action::finish_action_queue(character, commands, miracle_armed, &mut bytes);
         let actions: Vec<ActionConstant> = bytes
             .iter()
             .take_while(|&&b| b != 0)

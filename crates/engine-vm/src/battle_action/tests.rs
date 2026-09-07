@@ -800,6 +800,62 @@ fn attack_face_out_of_range_monster_routes_to_windup() {
 }
 
 #[test]
+fn the_attack_x2_refill_replays_the_stream_once_and_demotes_the_starters() {
+    // Retail's `0x801E39B4..0x801E3A64` arm: a party actor whose character
+    // record carries the War God Icon bit replays the whole action stream
+    // once, with every marked starter demoted from 0x1A to 0x19.
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);
+    ctx.action_state = ActionState::AttackChain.as_byte();
+    host.ability_bits
+        .insert(1, crate::battle_action::WAR_GOD_ATTACK_X2_BIT);
+    host.actors[1].params[0] = 0x1A;
+    host.actors[1].params[1] = 0x27;
+
+    // Stage both bytes; the second step reads the terminator at the new
+    // cursor and takes the refill instead of dropping to recovery.
+    for _ in 0..2 {
+        assert_eq!(step(&mut host, &mut ctx), StepOutcome::Stay);
+        host.actors[1].flag_bits.clear(ActorFlags::ADVANCE_DONE);
+    }
+    assert_eq!(
+        ctx.action_state,
+        ActionState::AttackChain.as_byte(),
+        "the refill keeps the band in the strike loop"
+    );
+    assert_eq!(ctx.attack_x2_pass, 1);
+    assert_eq!(host.actors[1].strike_index, 0, "the cursor is rewound");
+    assert_eq!(
+        host.actors[1].params[0], 0x19,
+        "the marked starter is demoted for the second pass"
+    );
+    assert_eq!(host.actors[1].params[1], 0x27, "the art constant is kept");
+
+    // The second pass runs to the terminator and then drops to recovery -
+    // the counter is no longer zero, so the arm does not fire twice.
+    for _ in 0..2 {
+        step(&mut host, &mut ctx);
+        host.actors[1].flag_bits.clear(ActorFlags::ADVANCE_DONE);
+    }
+    assert_eq!(ctx.action_state, ActionState::AttackRecovery.as_byte());
+    assert_eq!(ctx.attack_x2_pass, 1, "the pair runs exactly twice");
+}
+
+#[test]
+fn without_the_war_god_bit_the_stream_is_not_replayed() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);
+    ctx.action_state = ActionState::AttackChain.as_byte();
+    host.actors[1].params[0] = 0x1A;
+    host.actors[1].params[1] = 0x27;
+    for _ in 0..2 {
+        step(&mut host, &mut ctx);
+        host.actors[1].flag_bits.clear(ActorFlags::ADVANCE_DONE);
+    }
+    assert_eq!(ctx.action_state, ActionState::AttackRecovery.as_byte());
+    assert_eq!(ctx.attack_x2_pass, 0);
+    assert_eq!(host.actors[1].params[0], 0x1A, "the queue is untouched");
+}
+
+#[test]
 fn attack_chain_walks_param_stream_until_terminator() {
     let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);
     ctx.action_state = ActionState::AttackChain.as_byte();

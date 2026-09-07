@@ -1054,7 +1054,7 @@ impl World {
                 // The epilogue bump (`0x801EECDC..0x801EECE8`), on every
                 // resolved call.
                 self.actors[i].battle.input_cursor = hit_index.wrapping_add(1);
-                self.resolve_hit_event(i as u8, hit, src.event_frames);
+                self.resolve_hit_event(i as u8, hit, src.power_run, src.event_frames);
             }
             // The event-path commit: only with a byte staged behind this clip.
             let staged_behind = self.actors[i]
@@ -1081,6 +1081,7 @@ impl World {
         &mut self,
         attacker: u8,
         hit: vm::battle_action::HitEvent,
+        power_run: [u8; 4],
         event_frames: [u8; 4],
     ) {
         use vm::battle_action::{
@@ -1114,7 +1115,18 @@ impl World {
             || event_frames
                 .get(usize::from(hit.hit_index) + 1)
                 .is_none_or(|&f| f == 0);
-        let applied = cursor_parked && last_of_clip;
+        // Retail's apply **mode**, computed after every admitted hit
+        // (`0x801EE060..0x801EE128`). The ordinary arm is the cursor-parked /
+        // last-beat pair above; the early arm lands the total now because
+        // nothing left in the action can connect with the target's size
+        // class; the carry arm lands nothing at all while the War God Icon's
+        // Attack x2 pair is still running.
+        let mode = self.hit_apply_mode(attacker, target, &power_run, hit.hit_index);
+        let applied = match mode {
+            vm::battle_action::APPLY_MODE_CARRY => false,
+            vm::battle_action::APPLY_MODE_EARLY => true,
+            _ => cursor_parked && last_of_clip,
+        };
         if applied {
             self.apply_combo_total(target);
         }
@@ -1136,6 +1148,86 @@ impl World {
                 applied,
                 is_art: art.is_some(),
             });
+    }
+
+    /// The apply mode of one admitted hit - retail's `s2`
+    /// (`legaia_engine_vm::battle_action::apply_mode`).
+    ///
+    /// The look-ahead it feeds walks the rest of this clip's power run and
+    /// then every stream byte the strike cursor has not reached, resolving
+    /// each byte's action entry through the same clip lookup the anim commit
+    /// uses. `hit.hit_index + 1` is the index retail seeds from
+    /// `actor[+0x1F4]`: the engine bumps that counter before resolving, so the
+    /// two agree.
+    ///
+    /// PORT: FUN_801EC3E4 (`0x801EDEE4..0x801EE128`)
+    pub(in crate::world) fn hit_apply_mode(
+        &self,
+        attacker: u8,
+        target: u8,
+        power_run: &[u8; 4],
+        hit_index: u8,
+    ) -> u8 {
+        let Some(a) = self.actors.get(attacker as usize) else {
+            return vm::battle_action::APPLY_MODE_NORMAL;
+        };
+        // **Both** copies of the kernel gate on a monster target before they
+        // compute anything: `sltiu v0,a0,0x3` on the target slot at
+        // `0x801EDEB8` and `0x801EE724`, each branching past the look-ahead
+        // *and* past the War God arm. Retail's literal is `3`; the port asks
+        // for the seated party width. A party target therefore always takes
+        // the ordinary arm - which is what makes the record-direct
+        // `0x801C9348[target - 3]` read in the decision well-defined.
+        if usize::from(target) < usize::from(self.party_count.clamp(1, 3)) {
+            return vm::battle_action::APPLY_MODE_NORMAL;
+        }
+        let cursor = a.battle.strike_index;
+        let queue = a.battle.params;
+        let bits = vm::battle_action::remaining_hit_class_bits(
+            power_run,
+            hit_index.wrapping_add(1),
+            &queue,
+            cursor,
+            |b| self.entry_power_run_for(attacker as usize, b),
+        );
+        // Retail reads the attacker's ability word `+0xF4` for the War God
+        // Icon bit; a monster attacker has no character record, so the word
+        // reads 0 and the carry arm cannot fire for it.
+        let ability = if a.battle_monster_id.is_none() {
+            self.character_ability_bits
+                .get(attacker as usize)
+                .copied()
+                .unwrap_or(0)
+        } else {
+            0
+        };
+        vm::battle_action::apply_mode(
+            bits,
+            self.attack_swing_class_of(target),
+            ability,
+            self.battle_ctx.attack_x2_pass,
+        )
+    }
+
+    /// The four power bytes of the action entry a stream byte names
+    /// (retail `0x801C9360[slot][byte]` -> `entry[+0x00..+0x04]`), resolved
+    /// through the same clip lookup [`Self::staged_byte_has_clip`] uses.
+    fn entry_power_run_for(&self, slot: usize, staged: u8) -> Option<[u8; 4]> {
+        use vm::anim_vm::{StagedAnimTarget, resolve_staged_anim};
+        let actor = self.actors.get(slot)?;
+        let clip = match resolve_staged_anim(staged) {
+            StagedAnimTarget::ArtBank { record, .. } if actor.battle_art_bank.is_some() => actor
+                .battle_art_bank
+                .as_ref()
+                .and_then(|b| b.get(record as usize))
+                .and_then(|c| c.as_ref()),
+            _ => actor
+                .battle_action_clips
+                .as_ref()
+                .and_then(|cl| cl.get(staged as usize))
+                .and_then(|c| c.as_ref()),
+        }?;
+        clip.entry_power_run()
     }
 
     /// Whether the byte the chain just staged on `slot` has a clip with an

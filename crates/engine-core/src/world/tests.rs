@@ -246,6 +246,7 @@ mod battle_capture_class_disc;
 mod battle_effects_ai2;
 mod battle_items_magic;
 mod battle_loot_use_item;
+mod battle_queue_gates;
 mod battle_special_ai;
 mod battle_status;
 mod battle_stone_gaze;

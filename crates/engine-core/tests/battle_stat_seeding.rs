@@ -34,6 +34,7 @@ fn gaza_record() -> MonsterRecord {
         stats: [128, 288, 222, 200, 220, 146],
         readef_group: 15,
         element: 6,
+        swing_class: 0,
         size_class: 26,
         gold: 30000,
         exp: 42000,
