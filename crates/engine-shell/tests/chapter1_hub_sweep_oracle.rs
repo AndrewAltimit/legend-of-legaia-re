@@ -176,20 +176,23 @@ const HUB_LEGS: &[(&str, [i16; 3])] = &[
 // ---------------------------------------------------------------------
 
 #[test]
-fn part_a_dolk2_onward_destination_is_map01_only() {
+fn part_a_dolk2_onward_destinations_are_map01_and_dream() {
     let Some(host) = open_host() else {
         return;
     };
     let index = host.index.clone();
     // dolk2's real MAN is the streaming variant carrier (ext 70, partitions
-    // [29, 73, 17]); its only named 0x3F destination is back to map01.
+    // [29, 73, 17]); its named 0x3F destinations are back to map01 and the
+    // upper-case `DREAM` (the Uru Mais dream shrine) that the lower-case-only
+    // label gate used to drop - case is invisible to retail's ISO path open
+    // (see `re-settled-threads.md`, the upper-case destination fold).
     assert_scene_man(&index, "dolk2", [29, 73, 17]);
     let dests = scene_dest_names(&index, "dolk2");
     assert_eq!(
         dests,
-        BTreeSet::from(["map01".to_string()]),
-        "dolk2 is a terminal interior: its single 0x3F leads back to the \
-         overworld, got {dests:?}"
+        BTreeSet::from(["dream".to_string(), "map01".to_string()]),
+        "dolk2's 0x3F destinations are the overworld exit and the dream \
+         shrine, got {dests:?}"
     );
     eprintln!("[ok] Part A: dolk2 onward destination set = {{map01}}");
 }

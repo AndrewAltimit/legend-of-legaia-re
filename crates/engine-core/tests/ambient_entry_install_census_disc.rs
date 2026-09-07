@@ -216,7 +216,10 @@ fn entry_census_is_a_strict_widening_of_the_shape_filter_or_skip() {
     }
 
     assert!(checked > 90, "surveyed {checked} scenes");
-    assert_eq!(with_pure, 22, "scenes the shape filter already covered");
+    // 23, not 22: `bubu1` / `edbubu` ship a count-5 scene asset table that
+    // the detector once bounded away (`scene-bundles.md`), so their MANs now
+    // resolve and one of them carries a shape-filter install.
+    assert_eq!(with_pure, 23, "scenes the shape filter already covered");
 
     // The scenes the widening adds, pinned so the set is reviewable rather
     // than merely "more". Every one carries the install in a placement's
@@ -226,9 +229,9 @@ fn entry_census_is_a_strict_widening_of_the_shape_filter_or_skip() {
         vec![
             "izumi", "vell", "bylon", "dolk", "dolk2", "garmel", "keikoku", "jiji", "stone",
             "balden", "conc", "ropeway", "dohaty", "station", "map02", "jagaroom", "tunnelc",
-            "balden2", "concnow", "map03", "bubu2", "uru", "uru2", "kor3", "koin2", "koin4",
-            "juui1", "conc2", "nilboa", "nilboa2", "jouina", "jouinc", "jouind", "chitei2",
-            "town0e", "opdeene", "opstati", "opurud", "koin1b", "edlast", "edkorout",
+            "balden2", "concnow", "map03", "bubu1", "bubu2", "uru", "uru2", "kor3", "koin2",
+            "koin4", "juui1", "conc2", "nilboa", "nilboa2", "jouina", "jouinc", "jouind",
+            "chitei2", "town0e", "opdeene", "opstati", "opurud", "koin1b", "edlast", "edkorout",
         ],
         "scenes whose ambient tree the entry census recovers"
     );

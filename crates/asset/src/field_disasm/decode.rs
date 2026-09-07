@@ -363,7 +363,7 @@ pub fn decode(bytecode: &[u8], pc: usize) -> Result<Insn, DisasmError> {
                 need(5)?;
                 mk(
                     header_size + 5,
-                    InsnInfo::RenderCfg {
+                    InsnInfo::ViewWindow {
                         long: true,
                         op0,
                         bytes: [
@@ -380,7 +380,7 @@ pub fn decode(bytecode: &[u8], pc: usize) -> Result<Insn, DisasmError> {
                 need(2)?;
                 mk(
                     header_size + 2,
-                    InsnInfo::RenderCfg {
+                    InsnInfo::ViewWindow {
                         long: false,
                         op0,
                         bytes: [bytecode[operand + 1], 0, 0, 0, 0],

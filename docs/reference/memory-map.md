@@ -33,6 +33,7 @@ Plus the PSX-specific scratchpad at `0x1F800000-0x1F8003FF` (1 KB) which Legaia 
 | `0x80084594` | u8 | Party member count. |
 | `0x80084598` | u8[] | Party member IDs (sorted insertion, cap 4). |
 | `0x80084628` | i16 | Set by op 0x4C nibble-8 sub-8. |
+| `0x800846D0..DC` | 4 × u32 | Button-mask config words: `0x44` Cross\|L1, `0x21` Circle\|L2, `0x10` Triangle, `0x48` Cross\|R1 (the field run button, tested against the held mask `_DAT_8007B850`). Seeded once by the new-game data init `FUN_80034A6C`; inside the saved block; no other writer. |
 | `0x80085758` | u8[] | **Fourth flag bank** - bitfield accessed via SET / CLEAR / TEST `(idx >> 3, 0x80 >> (idx & 7))` (`FUN_8003CE08`/`_CE34`/`_CE64`). The field-VM opcode encoding spans `idx = 0x000..=0xFFF` plus `0x8000..=0x8FFF` (extended-prefix opcodes `0xD0..=0xFF`), so it is **not** a fixed 256-bit array. The earlier `0x80086D70` was a double-count of the `0x1618` save displacement onto `0x80085758` (which itself already `= 0x80084140 + 0x1618`); see [`subsystems/script-vm.md`](../subsystems/script-vm.md). |
 | `0x80077828` | u8[] | **Per-monster steal table** (`DAT_80077828`). Indexed by 1-based monster id at `+id*2`; each entry is `[steal_chance_pct: u8, steal_item_id: u8]` (chance first). What the Evil God Icon steals - NOT in the PROT 867 record. See [`docs/formats/steal-table.md`](../formats/steal-table.md); parser `legaia_asset::steal_table`. |
 | `0x80087AF8` | u32 | Result of `FUN_80020224` descriptor walker, set by town-overlay MAIN INIT. |
@@ -135,11 +136,18 @@ patching an instruction. Useful Ghidra anchors.
 | `0x8007B7F8` | Pointer to the **cosine** view of the shared trig LUT - `0x8007122C`, the sine base offset by a quarter turn. Installed by `FUN_80026BE0` (`0x80026C0C`). |
 | `0x8007B81C` | Pointer to the **sine** base `0x80070A2C` (`FUN_80026BE0` at `0x80026C00`). The table is `4096 * sin(2*pi*i / 4096)` over 5120 `i16` entries, `0x80070A2C..0x8007322C` - one revolution plus the quarter turn the cosine view needs, which is why consumers mask the angle with `0xFFF`. |
 | `0x8007B824` | u32 - Party base index into `DAT_8007C018` (see the fuller entry below); read by `FUN_8001EBEC` to address the three active-party battle-TMD pointers `DAT_8007C018[0x8007B824 + 0..2]`. (Earlier "sound mode index" reading was wrong.) |
-| `0x8007B840` | MOVE2 buffer base. |
-| `0x8007B888` | MOVE buffer base. |
+| `0x8007B840` | MOVE2 buffer base - the type-`0x0B` high-id animation-clip bank (`actor[+0x5C] >= 0x400`). |
+| `0x8007B888` | MOVE buffer base - the type-`0x05` low-id animation-clip bank; on the world map this is kingdom slot 4 (`world-map-overlay.md`). |
+| `0x8007B75C` | Party / character animation-clip bank (`actor[+0x10] & 0x01000000`); live `map01`: `0x801589E4`, 23 clips. |
 | `0x8007B750` | u32 - Sound flag word coordinating the BGM track-swap handshake (bit 1 = pause, bit 3 = load settled, bit 4 = release ack); full bit map + writer census in [`audio.md`](../subsystems/audio.md#the-track-swap-handshake-fun_800243f0--op-0x35-sub-op-0xa). |
 | `0x8007B868` | u32 - Dev/dual-mode gate the actor-sound family and several loaders check (`retail 0`). No static writer sets it - its only store, in `FUN_8001DCF8` (`0x8001E008`), clears bit 1. |
-| `0x8007B8D0` | u32 - `bse.dat` master bank pointer (0x1800-byte buffer). |
+| `0x8007B8D0` | u32 - sound subsystem current-bundle pointer (`gp+0x5B8`): `bse.dat`'s 0x1800-byte buffer during battle, repointed at the scene's prescript bundle on every field load (`FUN_8001F7C0` at `0x8001F864`). See [`bse-dat.md`](../formats/bse-dat.md). |
+| `0x8007B64B` | u8 - **backdrop last-object keep flag** (`gp+0x333`). Zero means the battle scene loader `FUN_800513F0` removes object index 1 from both backdrop actors' part lists (`0x80051ABC..0x80051BAC`) - the Muscle Dome arena's dust decal is trimmed this way. One writer: the field handoff `FUN_801D9E1C` at `0x801DA0AC`, `(s2[+8] >> 5) & 1`. Readers `0x80051ABC`, `0x80046D34`, 0979 `0x801CF700`. Capture-confirmed `0x00` through a Muscle Dome contest (zero writes). |
+| `0x8007B64A` | u8 - battle **stage id**; cleared by the stage module itself (`0x801F7120` in PROT 0968) when it hands the flow back. |
+| `0x8007BC20` | u32 - the executable's **`xa_flag`** debug counter (XA-drive state): `FUN_80016B6C` loads it at `0x80016EB8` for the debug printf at `0x80016EC0` (format string `0x80010238`); `FUN_8004DA00` zeroes it on five arms. The melee grunt gate `0x801EEAB8` reads it as `< 2`. Not a character level. |
+| `0x801F73F8` | u32 - PROT 0968 stage-module-local dt countdown (module base `0x801F69D8` + `0xA20`); its expiry hands `ctx[+0x06]` back to `0x0B` at `0x801F713C`. |
+| `0x801CF56C` | u32[32] - **capture-class cast-tick arm table** (PROT 0898 data; sibling of the `0x801CF4EC` table behind `FUN_801F1ED4`). Read by `FUN_801F2160`, indexed by the spell record's `+1` sub-id; arm `i` calls into PROT `935 + i`. |
+| `0x8007B990` | ptr - runtime SFX descriptor-bank record table (`gp+0x678`); `bse.dat`'s in battle. Written once by `FUN_8001FA88` at `0x8001FBC0`; read only by the cue router `FUN_8004FE5C` and the overlay-0971 debug sound test, both rewriting byte `+4` (category) of `record[cue_id - 0x200]`. Readers form it with `lui`+`lw`, invisible to the word scan. |
 | `0x8007BAC8` | u16 - BGM ID written by field-VM op 0x35 sub-1. |
 | `0x8007BC64` | u16 - Global BGM pool base for IDs ≥ 2000. |
 | `0x8007BD30` | 5008 bytes - Effect-runtime pool: 16-byte head + 128 child slots + 32 master slots. |
@@ -213,7 +221,7 @@ chain. End-to-end walkthrough in [`subsystems/world-map.md`](../subsystems/world
 The global asset-pointer table consumed by the world-map top-view
 renderer (`FUN_801F69D8` → `FUN_80043390`). Live verification: see the
 field-scene snapshot example in
-[`formats/world-map-overlay.md`](../formats/world-map-overlay.md#how-slot-4-bytes-reach-cluster-a).
+[`formats/world-map-overlay.md`](../formats/world-map-overlay.md#consumer-call-sites).
 (The same `DAT_8007C018` table is filled identically by every field-scene load
 - towns, dungeons, and the walk-view world map - via the single descriptor-walk
 `FUN_80020224`; the verification capture is the `dolk` field scene, not a world
@@ -228,7 +236,7 @@ map, but the table layout is scene-independent.)
 | `0x8007B828` | u32 | TMD-magic-mismatch error bits. Set by `FUN_80026B4C` when an input fails the `*(input)==0x80000002` check (only flags the error; does not reject the install). `dolk` / `geremi` field-scene snapshots = `0x00000000` - every installed entry passes the magic check. |
 | `0x8007B6F8` | u32 | **Kingdom-TMD prefix offset.** Count of party-character TMDs that precede the kingdom-bundle TMDs in `DAT_8007C018`. The world-map dispatcher does `DAT_8007C018[(actor_kind8 + DAT_8007B6F8) * 4]`, so this shifts world-map actor-kind indices past the party prefix. Writers: `FUN_80020118` (field-load entry; resets to 0) and `FUN_8001E890` / `FUN_8001E928` (set to `DAT_8007B824 + *player_pack_count`). `dolk` field-scene snapshot = `5`. |
 | `0x8007B7DC` | `void *` | VDF buffer pointer. Set by asset-dispatcher case 7. `FUN_8001FBCC` walks each sub-entry and writes a parallel pointer table at `0x80083E58` (consumed by `FUN_801D77F4` for actor instance bring-up). |
-| `0x8007B888` | `void *` | Slot-4 (MOVE) buffer pointer (set by `FUN_8001f05c` case 5; **not** installed into `DAT_8007C018`). Scene-dependent - a field-scene capture pinned it to `0x8011A624`, but the physical bytes get overwritten by the scene's TMD-pack install before steady state. |
+| `0x8007B888` | `void *` | Type-`0x05` (MOVE) animation-clip bank pointer (set by `FUN_8001F05C` case 5 at `0x8001F3A8`; **not** installed into `DAT_8007C018`). On the world map it is kingdom slot 4 - the scene's ANM bank, read by the clip selector `FUN_800204F8` (1-based lookup) and the animated renderer `FUN_8001B964`; live `map01` pins it at `0x8011A624`. Six references image-wide, none in a render-dispatch path. |
 | `0x80083E58` | `void *[N]` | Parallel VDF sub-entry pointer table. First entry points into VDF buffer; subsequent entries point into the actor-instance area. |
 
 ## Debug flags
@@ -327,7 +335,10 @@ The PSX has 1 KB of fast scratchpad RAM mapped here. Legaia uses the high end:
 | `0x1F800393` | u8 | Per-frame tick byte. Global frame-time scalar. Read by op 0x4A `WAIT_FRAMES` and the 0xFFFF sentinel in op 0x4C nibble-C sub-B/C. Also subtracted from the title-attract countdown at `0x801EF16C` every tick (see [`subsystems/boot.md`](../subsystems/boot.md#tick-function)) and exposed via `World::tick_move_vms_with_delta` in the engine port. |
 | `0x1F800394` | u32 | **Field-VM transient flag word** (32-bit; **not** persisted - distinct from the saved story-flag bitmap at `0x80085600..0x80085800`, ops `FUN_8003CE08/CE34/CE64`). Script-VM bits are set/clear/tested by `GFLAG_SET` / `GFLAG_CLR` / `GFLAG_TST` (ops 0x2E / 0x2F / 0x30, `1 << (idx & 0x1f)` at `FUN_801DE840:5280/5284`); also gates op 0x4C nibble-4 sub-9's tristate dispatch via bits `0x01000000` / `0x02000000`. The **lower 16 bits** are re-seeded on every mode switch from `mode_table[_DAT_8007B83C].param` (`+0x14`) by `FUN_8001DCF8 @ 0x8001E17C` - its sole non-RMW writer (see [`save-screen.md`](../subsystems/save-screen.md)). Bit 0x40 is set by the scene-change packet `FUN_8001FD44` (a scene-transition-pending flag, **not** a "dialog active" lock - an earlier mislabel). |
 | `0x1F8003A0` | ptr | **Active primitive/packet write cursor** (`[0x1F800314]+0x8C`). The `POLY_*` emitters (`FUN_8003C43C` G4, `FUN_8003C510` G3, `FUN_8002BDC4` gradient tile, and the TMD per-primitive emitter `FUN_80027C6C`) allocate their packet here, post-increment by the packet size, then link it through `FUN_8003D2C4`. |
-| `0x1F8003E8` | u32 | Render-config block (op 0x46). |
+| `0x1F80037C` | u8 | Current walk-region kind (SCUS `FUN_800180EC`); `0` disables the camera scroll clamp. |
+| `0x1F800384..87` | 4 × u8 | Current walk-region AABB in tiles, store order `rec[0], [3], [2], [1]`; default `0, 0, 0x7F, 0x7F`. |
+| `0x1F8003E8..EB` | 4 × i8 | Camera **visible tile window** `[nearX, nearZ, farX, farZ]`, signed tile offsets from the camera tile. Written by `FUN_801DBC20` and field-VM op `0x46`; read by the render library's cell emitters, `FUN_801DAA50`, `FUN_801D6058` and dev-menu rows `0x12..0x15`. Formed as `lui 0x1F80; ori 0x314; lb 0xD4(rX)`, so the word scan never sees it. |
+| `0x801F2778 / 7C / 80 / 84` | 4 × i32 | Write-only mirrors of the window above; no reader on the disc. |
 | `0x1F8003EC` | u8[] | Tile-flag bitmap base used by op 0x4C nibble-7 (rectangle SET/CLEAR over `+0x4000` offset). |
 | `0x1F8003F8` / `0x1F8003FA` | i16 | Camera-scroll values used by op 0x23 player path. |
 
@@ -427,18 +438,27 @@ is either null or a pointer into the `0x8007B6xx` gp-pool band.
 
 | Offset | Field |
 |---|---|
-| `+0x00` | element id pair (two bytes, usually equal) |
-| `+0x02` / `+0x04` | x / y |
-| `+0x06` / `+0x08` | content width / box height |
-| `+0x0A` / `+0x0C` | staging x / y - the pair `FUN_801D5778` offsets by a screen width |
-| `+0x0E` | kind pair |
-| `+0x14` | payload pointer (content, or the acting actor's `+0x1BC` animation descriptor when the battle pose path owns the row) |
+| `+0x00` / `+0x01` | element id, seat A / seat B (usually equal; records 41 / 42 carry them byte-swapped) |
+| `+0x02` / `+0x04` | seat A x / y |
+| `+0x06` / `+0x08` | content width / box height (shared by both seats) |
+| `+0x0A` / `+0x0C` | seat B x / y - the pair `FUN_801D5778` pushes by a screen width. "From / to" is the safe name: the plaque, chip and panel families park at B, record 42 parks at A |
+| `+0x0E` / `+0x0F` | kind, seat A / seat B |
+| `+0x10` | `13` on the framed-window and roster rows (kinds `0x03` / `0x07` / `0x44`), `0` elsewhere; no spawn arm reads it |
+| `+0x12` | zero in all 103 records |
+| `+0x14` | content **string** pointer - measured by the rendered-width kernel `FUN_80035F04` into `+0x06`; the battle name plaque points it at the acting actor's display-name buffer `actor+0x1BC` (not an animation descriptor) |
+
+The record is a **two-seat pair**: `FUN_801D8DE8` has one spawn arm per seat
+(`0x801D92E8` for A, `0x801D935C` for B, chosen by `mode & 1`) and arms the
+glide `FUN_801DB7B0` toward the seat it did not spawn from. Three movers copy
+records around the table: `FUN_801D5718` (land: seat B into both seats),
+`FUN_801D5778` (launch: seat B pushed `-0x140`), `FUN_801D57E8` (clone).
 
 The array holds **103 initialised records**, `0x80076C10..0x800775B8`; parser
 `legaia_asset::screen_elements`, disc-gated oracle
 `crates/asset/tests/screen_elements_real.rs`. Records 41/42 (`+0x3D8` /
-`+0x3F0`) are the pair `FUN_801D5854` copies inline; the copy helpers are
-`FUN_801D5778` (re-mapped) and `FUN_801D57E8` (straight).
+`+0x3F0`) are the pair `FUN_801D5854` shifts inline (42 inherits 41's string,
+width and seat-B x; 41 takes `actor+0x1BC`, is measured, and re-seated at
+centre x 232 with a right clamp at 304 and a park at 328 or beyond).
 
 Two earlier readings of the extent are corrected by the disc bytes. The run is
 **not** 200 records to `0x80077ED0`: index 129 is `0x80077828`, the per-monster

@@ -197,9 +197,32 @@ What overlay 967 *does* is emit the in-battle "how to fight" boxes of the Tetsu
 sparring fight. The hook table and every prompt string address are resident in
 967, and neither the battle-scene script, MES text, nor the battle overlay
 `0898` carries them - which is why porting the battle SM alone never produces
-the boxes. **Exclusivity itself is a corpus claim, not an instruction claim:**
-what the disassembly shows is where these prompts *are*, not that no other
-overlay could emit a prompt. Read it as consistent with 967-only, not as proof.
+the boxes.
+
+**The machine's exclusivity is byte-anchored.** `FUN_801F6B70` is entry 967 file
+`+0x198`, and `0x801F69D8 + 0x198` reproduces the printed VA exactly, so the
+needle can be taken straight out of the image rather than hand-assembled.
+Searching for it across all 1233 `PROT` entries, `SCUS_942.54`, `DMY.DAT` and
+the extracted overlay images returns **one** physical copy - at five needle
+lengths from 48 bytes to the whole 2316-byte body, and including a 116-byte
+interior window that contains no `lui`, `j` or `jal` and would therefore still
+match a copy relinked at a different base. (The other two hits are that copy
+seen twice more: the static-overlay-pipeline duplicate, byte-identical to the
+entry, and the entry's own bytes inside `PROT.DAT` at its LBA. PROT 0967 is
+stored raw - the sector slice equals the extracted file - and every row in
+`static-overlays.toml` is `form = "raw"`, so no code image on this disc hides
+inside LZS.)
+
+**The prompt pool is not exclusive, and its neighbour is why.** All 28 string
+pointers the machine forms land inside 967's own `0x1800`-byte image, in a
+30-string pool at file `0xCAC..0x1389`. But entry **0968** carries a
+byte-identical 852-byte prefix of that pool at the same offset, inside a
+`0x5D8`-byte run (`0xA28..0x1000`) it shares with 967 - a run that also covers
+the machine's own 124-byte epilogue. 0968 is a sibling slot-B image at the same
+base with its own, 7-entry dispatcher and no copy of the machine
+(`sltiu v0,v1,0x5b` appears in 967 at file `0x200` and nowhere in 0968). So
+"only in 967" is exact for the tick and its dispatch, and needs the 0968
+qualification for the text.
 
 Its tick `FUN_801F6B70` is a jump-table hook on the battle **flow-state byte**
 `ctx[+0x06]` (`ctx = _DAT_8007BD24`), not a linear script:
@@ -3472,6 +3495,113 @@ takes the banner wherever the port raises it and the widget is not gated on
 battle mode. A multi-line message grows the interior by the 14-px text pitch
 per extra row and nothing else moves.
 
+### The battle-intro enemy-name banner
+
+The banner that names the enemies while a battle opens is **not** a placement
+record. `FUN_801D9D3C` - the flow-`0x0A` composer, and the only reference to
+that address anywhere in the corpus (a single `jal`, at `0x801D0DFC`; sweep
+`scripts/ghidra-analysis/find-address-word-refs.py`) - lays its labels out
+itself and hands each straight to the text-actor spawner `FUN_8003541C` with
+**immediate** geometry. No field of the
+[screen-element placement table](../reference/memory-map.md#0x80076c10---one-table-three-names)
+is read for it, and the only one written is record 67's `+0x14` string pointer.
+
+| `FUN_8003541C` argument | intro name label | formation line |
+|---|---|---|
+| id | group index `0..=3` | `4` |
+| class | `0` | `0` |
+| pen | `(laid-out x, 48)` | `(16, 12)` |
+| box | measured width x `12` | `288` x `12` |
+| kind | `3` | `3` |
+
+`kind = 3` is widget record `3` - class 0, tile-set 0, sub-palette 2 - so the
+intro wears [the message banner](#the-full-width-message-banner)'s frame, and
+an ordering-table walk of a live intro frame
+([`widget-draw-sweep.py`](../../scripts/mednafen/widget-draw-sweep.py) over a
+save state the probe below writes on the banner's own frames) says it draws
+exactly that and nothing else: per label a 4x4 corner pair from texels
+`(160, 0)` and `(188, 0)`, 24-wide top and bottom edges from `origin + 4` with
+the last tile clipped, 4x20 side columns, every piece on CLUT `(32, 511)` - and
+no fill sprite anywhere in the frame. Frame origin is the pen less `(8, 8)` and
+the right column lands at `pen.x + width + 4`, so `Moldy Worm` on pen
+`(86, 48)` 66 wide frames `(78, 40)` to `(159, 67)` with its top edge tiled at
+x `82` / `106` / `130` and clipped to 2 pixels at `154`. None of those tiles
+matches a widget record's own rect, because a class-0 frame's eight quads come
+from the tile-set pool at `0x80073A00` rather than from the record.
+
+**One label per monster group.** The composer walks the four monster-slot ids
+at `0x8007BD0C` and runs consecutive equal ids together. The first member of a
+run copies the actor's own display name (`actor+0x1BC`); the second drops that
+name's trailing per-instance letter and appends `* 2`; each further member
+increments the appended digit. So three `Killer Bee` actors - the actor-name
+plaque in the same capture reads `Killer Bee B` - reach the banner as the one
+label `Killer Bee * 3`.
+
+**The seat is over the enemy, not over the screen.** A group's label is centred
+on its members' average projected position:
+`x = 0xA0 + avg(actor+0x34) / 8 - width / 2`, where `actor+0x34` is the actor's
+signed screen-X offset from screen centre in eighths of a pixel. A relaxation
+pass then walks every pair, splits an overlap evenly once the gap between two
+labels falls under 20 pixels, clamps each label to `6 <= x <= 0x13A - width`,
+and repeats until a whole pass moves nothing.
+
+**No slide.** The intro labels are spawned at their final seat and never move -
+this path calls neither `FUN_801D8DE8` nor the glide `FUN_801DB7B0`. The
+park-to-live slide belongs to the *other* path: the round HUD that replaces the
+banner is spawned from records 68 and 7 at their disc seats and glides to the
+staging pair over sixteen frames.
+
+**Lifetime is the intro timer.** The labels live from the `0x0A` edge to the
+`0x0B` expiry, where `FUN_800355F0` destroys every text actor in one sweep, so
+the banner's span is `ctx[+0x6D6]` exactly - `0x5A` frames, or `0x78` when
+`ctx[+0x290]` is set.
+
+**The ids collide with the command chips, and the teardown is why that is
+safe.** Placement records `0..=5` carry element ids `0x03` / `0x04`, the same
+values the intro hands out, and `FUN_8003541C` *reuses* a node whose id already
+exists rather than adding one. Nothing overlaps only because the sweep above
+empties the list before the round prompt builds `Begin` / `Run` at the `0x14`
+edge.
+
+**The formation line is record 67's content without record 67.** The
+`ctx[+0x290]` arm at `0x801DA234` stores the chosen line into record 67's
+`+0x14` and then draws it with immediates that reproduce that record exactly -
+pen `(16, 12)`, `288` wide, kind `3` - under id `4`. Record 67 itself is opened
+only afterwards, by the post-intro sub-draw, which re-raises the same string
+under id `0x2B`, the record's `+0x01`. See
+[the formation banner](#the-formation-banner).
+
+**One monster opens its fight with no banner at all.** The `0x0A` arm compares
+monster-slot 0's id (`0x8007BD0C`) against `0xB5` - evolved Cort - and on a
+match skips the composer entirely, arming the same `0x5A` timer but setting
+`ctx[+0x06] = 0x0C` instead of `0x0B`. `0x0C` is a value the
+[state chain](#the-state-chain)'s `beq` ladder has no arm for, so the menu SM
+idles on it. Driving `cort_evolved_pre_battle` forward reproduces it exactly:
+flow `0x0A` at the intro edge, then flow `0x0C` with the timer at 90 and the
+text-actor list **empty**, where the queen-bee run had three elements. What
+carries the fight from there is not the menu SM at all -
+[flow `0x0C` is the boss stage module's baton](#flow-0x0c-is-the-boss-stage-modules-baton).
+
+**Capture.** `scripts/pcsx-redux/autorun_battle_intro_banner.lua` breakpoints
+`FUN_8003541C` and `FUN_800355F0` and walks the live text-actor list
+(`gp[+0x148] = 0x8007B460`) every vsync. Driven forward from the
+`rim_elm_queen_bee_battle` state - an ambush, so both surfaces are up - three
+spawns land in one frame, two from `$ra = 0x801DA220` and one from
+`0x801DA31C`: `Queen Bee` at `(176, 48)` 55 wide, `Killer Bee * 3` at
+`(78, 48)` 79 wide, and `Ambushed!` at `(16, 12)` 288 wide, every one class 0
+kind 3. All three hold those seats for 120 frames (`ctx[+0x290] = 1`), and the
+teardown then fires at `$ra = 0x801D0E84`. A live run is needed because no
+catalogued save state is at flow `0x0A` or `0x0B` - every battle-phase state
+in the library sits at `0x14` or later.
+
+The ordinary-round bracket is the same probe walked right out of
+`karisto_sol_pre_encounter` into a random encounter: **two** labels, `Moldy
+Worm` at `(86, 48)` 66 wide and `Acid Slime` at `(171, 48)` 59 wide, both from
+`0x801DA220`, and **no id-`4` line at all** because `ctx[+0x290]` is `0`. They
+hold for 90 frames and go down through the expiry's other sweep site,
+`$ra = 0x801D0EBC`, after which the round prompt builds `Begin` / `Run` on ids
+`3` and `4` - the id space the intro was drawing from moments earlier.
+
 ### The status-element badge sheet
 
 The nine ids the exclusive status ladder emits, `0x18..=0x20`, are **48x16
@@ -4323,7 +4453,7 @@ stated by the concrete writes.
 | `FUN_8004A908` | Battle-actor tint: writes the colour word `+0x74` and blink halfword `+0x78` from the actor's transformed depth vs the monster-object depth threshold, with hard overrides for the `+0x16E` status bits (`0x01`→red, `0x02`→red-violet, `0x380`→magenta) and a greyscale-invert path gated on `DAT_8007BDA8`. The two arithmetic cores are ported (with tests): the per-channel depth-brightness ramp as `scus_battle_helpers::depth_cue_scale_channel` (min-4 dim floor, clamp-to-base), the negative-colour recolour as `scus_battle_helpers::invert_bgr24`. The GTE transform (`FUN_8003D344`) and colour-word packing stay render-track. |
 | `FUN_80046A20` | **Not a small helper** - this is the battle-scene per-frame tick (2576 bytes, 644 instructions), listed here only because the rows below are the routines it drives. It calls the scene loader `FUN_800520F0`, the seat stager `FUN_800513F0`, the party-file loader `FUN_80054A6C`, the main dispatcher `FUN_801D0748`, the action SM `FUN_801E295C`, the separation driver `FUN_80051078` and the actor-presentation tick `FUN_80050120`. Its one self-contained kernel is the HP/MP gauge-fill colour selector keyed on `+0x172`/`+0x174` vs `+0x14E>>1`/`>>2` and the status word `+0x16E`, ported as `battle_gauge::gauge_colors`. Full row in [`functions/battle.md`](../reference/functions/battle.md). |
 | `FUN_8004DC68` | Target-highlight pass: OR/clears the actor draw-flag bits `0x83000000` by 2D distance from the acting actor (angle+radius via `FUN_80019B28`), dimming out-of-range targets during command selection; boss/target ids are special-cased. |
-| `FUN_8004C650` | Battle name-banner placement: measures a name string width (`FUN_80035F04`) and centres its four banner X coords around `0xA0`, with `0xCF`/`0xC1` leading-byte nudges. |
+| `FUN_8004C650` | **Move-name** banner placement (placement records 76/77 - captured as the art name, e.g. `Poisonous Sting`, at `(117, 148)`; not the enemy-name banner, which `FUN_801D9D3C` composes): measures a name string width (`FUN_80035F04`) and centres its four banner X coords around `0xA0`, with `0xCF`/`0xC1` leading-byte nudges. |
 | `FUN_8004CCD4` | Per-command display resolver (battle-data-pack): for each of the actor's up-to-2 command slots, tests a threshold value against the `+0xA4` range pairs and writes the matching `+0x1034` (hit) or `+0x1030` (fallback) display pointer into the caller's output table. |
 | `FUN_80046978` | Screen-flash colour submit: when trigger `gp[0x9D4]` is set, scales stored colour `gp[0x9D0]` by scratch byte `0x1F800393` and submits via `FUN_80024EE4`. The per-channel saturating scale is ported as `scale_rgb24`; the trigger + submit stay caller-side. |
 | `FUN_80050120` | Per-actor battle-presentation tick: walks the actor table `DAT_801C9370`, skips actors with no `+0x22C` sub-struct, and dispatches on the actor state byte `+0x21C` (11-entry jump table at `0x8001532C`). Arm 0 eases `+0x04` to neutral, then drains `+0x0C`, then clears `+0x21F`; arms `1`/`3`/`4`/`6..=10` ease toward fixed colours (dim / red / blue / magenta / soft red / green / yellow / white) with `+0x0C = 0x1000`; arm 2 is the defeat / capture fade to black. Ported as `engine-vm::battle_formulas::tint_sm_step` (arm table in its module docs), driven per frame by `World::tick_battle_impact_fx`. |
@@ -4532,6 +4662,83 @@ is the only way into it, and the action SM's round end (`0x801E67E8`) writes
 opens with `Begin` / `Run`, and each party member then picks from the ring in
 turn.
 
+### Flow `0x0C` is the boss stage module's baton
+
+The evolved-Cort fight is the one battle whose intro leaves `ctx[+0x06]` on a value
+the ladder above has no arm for, and the byte that unsticks it is written from
+**outside the battle overlay**. `scripts/pcsx-redux/autorun_w4d_cort_flow_writer.lua`
+watches the byte from the pre-battle field state; the sequence is:
+
+| vsync | Event |
+|---|---|
+| 291 | game mode reaches `0x15`; `_DAT_8007BD24` = `0x800EB654` |
+| 444 | `0x80051C94` (battle init) writes `0x00` |
+| 507 | `0x801D0DDC` writes `0x0A` |
+| 510 | `0x801D0DE4` writes `0x0B`, then `0x801D0E0C` writes `0x0C` in the same frame |
+| 631 | loader-B tracker `0x8007BC4C` goes `0x05` -> `0x49`; slot B's head matches the in-fight state |
+| 3717 | `0x801F713C` (`ra = 0x800564A0`, tracker `0x49`) writes `0x0B`; `0x801D0EB8` writes `0x14` the same frame |
+| 3719 | `0x801D0ED4` writes `0x1E` - the state the in-fight capture is parked on |
+
+Both `0x0A`-arm stores run on the same pass - the arm writes `0x0B` unconditionally
+and the `0xB5` branch **overwrites** it with `0x0C`, it does not choose between them.
+
+**No input moves it.** The probe sits pad-free through the park and then holds each
+of the ten pad buttons for 60 vsyncs, twice around; across ~1450 vsyncs of held
+buttons the byte takes no write at all. The gate is a clock, not a press.
+
+**The module that holds the baton is PROT 0968**, the stage overlay for this fight
+(loader-B id `0x49`; extraction index = id + `0x37F`), and the probe catches it
+paging into slot B *during* the park, after the flow byte is already `0x0C`. It is
+ticking the whole time: its entry `0x801F69F4` re-seeds `ctx[+0x6D6] = 0x100` every
+tick, which is exactly the constant `256` the probe reads off the intro timer while
+parked. Its head is a **7-word jump table at `0x801F69D8` indexed by `ctx[+0x289]`**
+(`lbu a0,0x289(v1)`, `sltiu v1,a0,7`, `jr`), and that phase byte is observed walking
+`0` through `6` - roughly 500 vsyncs a phase - while the flow byte holds `0x0C`. Phase 0's arm advances only once the
+camera word `0x800840BC` passes `0xC00` - a dt-driven zoom-in - and then fires cue
+`0x20A` through `FUN_8004FCC8`; a later arm spawns its own centred banner through the
+SCUS text-actor spawner `FUN_8003541C` at `0x801F7098`, which is *why* the `0x0A` arm
+skips the standard composer for this formation. The phase byte is co-driven: SCUS's
+battle-intro sequencer `FUN_80056208` bumps it at `0x800562E8` once `ctx[+0x06]`
+reaches the value that arm expects.
+
+**The hand-back is a single store.** A scan of the whole 0968 image for
+`sb ?,0x6(?)` finds exactly one, at `0x801F713C`, in the last phase arm
+(`0x801F70D8`):
+
+```
+801F70E4  lbu  v1,0x7f(s3)        ; s3 = 0x1F800314 -> the scratchpad frame-step byte
+801F70E8  lw   v0,0x73f8(a0)      ; a0 = 0x801F0000 -> module-local countdown 0x801F73F8
+801F70F0  subu v0,v0,v1           ; countdown -= dt
+801F70F4  bgtz v0,0x801F71D4      ; still positive -> keep waiting
+801F7120  sb   zero,-0x49b6(v0)   ; stage id 0x8007B64A = 0
+801F7128  sh   zero,0x6d6(v1)     ; intro timer = 0
+801F712C  sb   zero,0x289(v1)     ; phase = 0
+801F7138  addiu v0,zero,0xb
+801F713C  sb   v0,0x6(v1)         ; ctx[+0x06] = 0x0B
+```
+
+The same block clears the stage id `0x8007B64A` (the `2` that paged this module in,
+`966 + id` in extraction space), which is the module signing off. The write is
+witnessed live at the row above: **3207 vsyncs** - about 53 s of game time - after
+the `0x0C` park, with no input at any point, `ra` naming SCUS `0x800564A0` as the
+caller that ticks the module (the same `FUN_80056208` battle-intro sequencer that
+bumps the phase byte). So it hands the flow back as `0x0B` - a value the ladder
+*does* have an arm for - with the intro timer already zeroed, and `0x0B` expires on its next tick into
+`0x14`, which sets `0x1E` unconditionally. That is exactly where the in-fight capture
+`cort_evolved_battle_first_menu` sits. Flow `0x0C` is therefore not a dead state: it
+is the "a stage module owns this frame" parking value, and what it waits on is that
+module's own multi-phase intro, ending on the dt countdown at `0x801F73F8`.
+
+Two cautions for anyone re-running this. Exec breakpoints on slot-B VAs are **not**
+attributable on their own - the same addresses are live code in whichever module is
+resident. The run demonstrates it: the breakpoint at `0x801F713C` fires six times,
+five of them in the first thirteen vsyncs while the 0900 co-resident still held the
+slot, and only the sixth is a write to the flow byte. Read those hits beside the
+tracker column, and take the data side (the phase byte, the timer constant, the
+tracker) plus the image scan as the load-bearing evidence. And the intro is long:
+the park outlasts a 3400-vsync capture window, so a run that ends early reads as
+"stuck forever" - which is what an earlier reading of this state concluded.
+
 ### Each surface is a D-pad map
 
 There is no face-button map. Every chip is seated on a **D-pad arm** and its
@@ -4618,6 +4825,13 @@ The singular / plural pick at `0x801DA274` tests the byte at `DAT_8007BD10 + 1`
 (present-party slot 1), so a party with nobody there gets the shorter line. The
 name is substituted into the `0xC1` token by `FUN_8003CBF8`, whose operand is
 `DAT_8007BD10[0] - 1` - the party **leader**, not the acting member.
+
+Record 67's role here is only to *hold* that pointer: the draw at `0x801DA2E4`
+passes the line to `FUN_8003541C` with immediates, never through the record, and
+the same string is re-raised from record 67 proper once the intro is over. The
+whole intro surface - the enemy-name labels this line sits above, their seats
+and their lifetime - is
+[the battle-intro enemy-name banner](#the-battle-intro-enemy-name-banner).
 
 ### Port
 

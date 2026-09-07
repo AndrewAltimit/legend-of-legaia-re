@@ -14,6 +14,7 @@ common case - handled by `FUN_8001a55c` via [`legaia-lzs`]) or stored raw
 - [Core descriptor + decoder](#core-descriptor--decoder)
 - [Streaming + pack formats](#streaming--pack-formats)
 - [Field-VM disassembler (`field_disasm`)](#field-vm-disassembler-field_disasm)
+- [Byte accounting (`byte_account`)](#byte-accounting-byte_account)
 - [Structural detectors (for `categorize`)](#structural-detectors-for-categorize)
   - [Simple detectors (table)](#simple-detectors-table)
   - [`static_overlay`](#static_overlay)
@@ -62,6 +63,26 @@ stream `FUN_801DE840` executes): the per-opcode width/format decoder plus
 bytecode) so disc tooling can walk scripts without the engine; the executing
 VM re-exports it as `legaia_engine_vm::field_disasm`.
 
+## Byte accounting (`byte_account`)
+
+Sibling of `categorize`, one entry at a time. `categorize` answers *what format
+this entry is*; `byte_account` answers *how much of it any parser here actually
+consumes*. It runs the walkers that apply to the entry's class, emits
+`[start, end, owner]` claims, merges them, and classifies every uncovered run by
+shape (zero padding, repeated fill, ASCII pool, pointer table, plausible MIPS,
+low / high entropy). Compressed spans are decoded and accounted in a nested
+pass, and claims found by a magic sweep over the residue are tagged `scan` so
+they never inflate the structural figure.
+
+For an overlay code image the "parser" is the Ghidra dump corpus. The module
+re-implements `dump_header.py`'s header parse in Rust and resolves slot-A VA
+aliasing from the bytes: it re-encodes a dump's first printed instructions and
+compares them to the image at the mapped offset, so an extent that belongs to a
+sibling overlay is dropped rather than credited.
+
+CLI `asset account`; full reference
+[`docs/tooling/byte-accounting.md`](../../docs/tooling/byte-accounting.md).
+
 ## Structural detectors (for `categorize`)
 
 The dispatcher `categorize` runs every detector below and tags each entry's
@@ -78,8 +99,8 @@ The dispatcher `categorize` runs every detector below and tags each entry's
 | `effect_bundle` | The on-disc effect bundle - magic `0x02018B0C`. |
 | `efect_pack` | The *runtime* `efect.dat` 2-pack (`[u32 pack0_off][u32 pack1_off][sprite atlas][pack0][pack1]`), recognised on the pack tables' own self-consistency. Distinct from `effect_bundle`; see [`docs/formats/effect.md`](../../docs/formats/effect.md). |
 | `field_map` | Per-scene `DATA\FIELD\<scene>.MAP` - the fixed `0x12000`-byte slot 0 of every scene block. Region map + trigger-block header; detected on the trigger block's sub-table chain, not on the footprint (111 entries share it, 101 are maps). See [`docs/formats/field-map.md`](../../docs/formats/field-map.md). |
-| `field_pack` | Field bundles - magic `0x01059B84`. |
-| `bse_bank` | The `bse.dat` master sound bank `FUN_8001FA88` loads at sound-init - `[u16 tag][u16 body_offset = 4][8-byte records]`. Two entries: extraction 888 (the loader's raw TOC `0x37A`) and an uncalled sibling at 1195. See [`docs/formats/bse-dat.md`](../../docs/formats/bse-dat.md). |
+| `field_pack` | **Not a format** - kept as the reader for the scene texture packs at raw-TOC `+4` of a CDNAME block (`scene_pack` / `ScenePack`). The `0x01059B84` word is town01's DATA_FIELD `TIM_LIST` chunk header, `(type << 24) \| payload_len`, over an ordinary `asset::pack`; chunk-headered carriers classify `data_field_streaming`, bare ones `pack`. See [`docs/formats/field-pack.md`](../../docs/formats/field-pack.md). |
+| `bse_bank` | `bse.dat`, the **battle** occupant of the runtime SFX descriptor bank (cue ids `>= 0x200`), loaded at battle init by `FUN_8001FA88` (raw TOC `0x37A` = extraction 888) - `[u16 tag][u16 body_offset = 4][8-byte records]` whose columns are the `sfx-table.md` columns (`program`, `tone`, `level`, `flags`, `category`). Extraction 1195 is a scene prescript of the same shape. See [`docs/formats/bse-dat.md`](../../docs/formats/bse-dat.md). |
 | `battle_data_pack` | Player battle files (`PLAYER1..4`, extraction 863..866 = retail `battle_data` block): header + 12-byte descriptor table + per-slot LZS streams of `[header + TMD + texture pool]`. |
 | `stage_geom` | Stage geometry: 12-byte prefix + 8-byte u16 quad records. |
 | `scene_tmd_stream` | `[u32 chunk0][bare TMD][streaming chunks]`. `sub_streams` enumerates the concatenated, `0x800`-aligned `[TMD][TIM chunks][terminator]` blocks (the entry holds N, not one continuation list). |
@@ -92,7 +113,7 @@ The dispatcher `categorize` runs every detector below and tags each entry's
 | `inn_costs` | Scripted gold charges (inn stays, tours, rides, casino coin buys) inside a scene MAN: op `0x4E` gold-gate (sub-3 u16 / sub-10 u32 literal vs `_DAT_8008459C`) paired with a negative op `0x3A` `ADD_MONEY` debit. `scan` byte-scans a decompressed MAN; `locate` decompresses a bundle entry's MAN and returns its [`GoldCharge`]s. Retail has no inn cost table - the costs are these script literals (`docs/subsystems/inn.md`). |
 | `scene_scripted_asset_table` | Composite shape pairing a `[u16 count][u16 offsets[count]]` prescript with a canonical 7-asset table at the next sector boundary. |
 | `scene_event_scripts` | The `[u16 count][u16 offsets]` prescript entry a scene block seats at slot 2. Two tiers: `detect` (shape + frame-opener rate) and `detect_structural` (shape only). Records are move-VM stager records, NOT field-VM bytecode. |
-| `data_field_truncated` | Sister of `parse_streaming`: leading chunks decode cleanly but the last chunk's declared size walks past EOF. |
+| `data_field_truncated` | Retired class (produced by nothing): its one hit, 0892, is an `asset::pack` of two TIMs whose header words the streaming reader took for chunk headers, and the three entries once named as members are ordinary four-chunk bundles. Pinned at zero in the validation suite. |
 | `tmd_size_prefix` | Sister of `scene_tmd_stream`: `[u32 prefix][TMD]` with no trailing stream. |
 | `anm_detect` | On-disc ANM (asset type 0x06) shape check wrapping `legaia_anm::parse`. |
 | `vab_multi_bank` | Multi-bank VAB archive: `[u32 reserved][u32 count][u32 sector_nums[N]]` (PROT 0889-0891). |
@@ -430,7 +451,7 @@ See [`character-mesh.md`](../../docs/formats/character-mesh.md) and
 | Module | What it parses |
 |---|---|
 | `kingdom_bundle` | Opens a kingdom PROT entry (`map01`/`map02`/`map03`) and decodes one slot of its 7-asset table. CLI `asset kingdom-slot`. |
-| `world_map_overlay` | Slot-4 container: per-body object-local GTE vertex pools (`(i16 x,y,z,attr)` records, read in place by the renderer). CLI `asset slot4-png` renders a top-down wireframe PNG. See [`world-map-overlay.md`](../../docs/formats/world-map-overlay.md). |
+| `world_map_overlay` | Slot-4 container: the world-map scene's type-`0x05` ANM animation bank - per-clip 8-byte rigid-transform entries (`Slot4Transform`), decoded per part and frame. CLI `asset slot4-png` renders translation paths as a top-down PNG (a byte-inspection aid). See [`world-map-overlay.md`](../../docs/formats/world-map-overlay.md). |
 | `ocean` | Ocean tile texture (4bpp 64×256) + its 13-frame CLUT animation from the kingdom bundles. |
 | `clut_walk` | The type-6 CLUT-walk `MoveImage` walker table + its parked source strips. Not kingdom-only: `from_scene_bundle` / `scene_park_strips` resolve any bundle's slot by type byte (12 carriers, incl. 9 water/waterfall field scenes - [`field-ambient-fx.md`](../../docs/subsystems/field-ambient-fx.md)). |
 | `worldmap_menu` | The quick-travel landmark menu out of `SCUS_942.54`: 16-entry name table (`DAT_80073B18`) + 6-byte placement records (`DAT_80073A98`). CLI `asset worldmap-menu` (`--json` = the web-viewer shape). |
@@ -591,6 +612,7 @@ slot table `scene_asset_table` and its `scene_v12_table` variant are in the
 asset describe         <input>            # parse + print descriptor
 asset decode           <input> <output>   # apply the dispatcher
 asset categorize       <PROT.DAT> [--cdname <CDNAME.TXT>]
+asset account          <entry.BIN|index> [--funcs <dir>] [--depth N] [--json]
 asset find-overlay     <PROT.DAT>         # MIPS-code candidate scan
 asset overlay          list|extract|verify|ghidra|scan|find-sig|generate   # static overlay pipeline
 asset tim-scan         <input>            # locate embedded TIMs (per-entry, lenient)

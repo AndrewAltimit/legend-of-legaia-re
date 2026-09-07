@@ -31,26 +31,50 @@ pub enum Class {
     TimPassthrough,
     /// Parses as a DATA_FIELD streaming container (FUN_8002541c 0x14 branch).
     DataFieldStreaming,
-    /// Sister of [`Class::DataFieldStreaming`] - leading chunks parse cleanly
-    /// (all known types, all magic-OK) but the final chunk's declared `size`
-    /// walks past EOF without a terminator. Real PROT entries (`0157_rikuroa`,
-    /// `0228_station`, `0373_taiku`) carry a per-scene secondary table whose
-    /// declared size exceeds the on-disc body - the runtime extends the chunk
-    /// via streaming DMA continuation rather than a literal terminator.
-    /// See [`crate::data_field_truncated`].
+    /// **Retired - [`classify`] never returns this.** It was read as a
+    /// truncated [`Class::DataFieldStreaming`]: leading chunks parsing cleanly
+    /// and a final chunk whose declared `size` walks past EOF. Neither half of
+    /// that reading survived. The three entries its doc named as members
+    /// (`0157_rikuroa`, `0228_station`, `0373_taiku`) are ordinary four-chunk
+    /// `MAN / MES / MOVE / VDF` bundles that terminate cleanly against their
+    /// own sectors - they overran only while the superseded
+    /// `toc[p+5] - toc[p+3] + 4` span cut the buffer short. Its one real hit,
+    /// extraction `0892`, is an [`asset::pack`](crate::pack) of two whole TIMs
+    /// that the streaming reader mistook for chunk headers: the pack's
+    /// `count = 2` and `word_offsets = [3, 0x208B]` read as three chunks of
+    /// type `0x00`. See [`docs/formats/data-field.md`].
+    ///
+    /// The variant survives only because `legaia_engine_core::scene_bundle`
+    /// still names it in a `matches!`; nothing produces it.
     DataFieldTruncated,
-    /// Matches the standalone TIM-pack heuristic (`byte[3]==0x01 && byte[2]<0x10`).
-    /// See `crates/prot/src/timpack.rs`.
+    /// The standalone TIM-pack heuristic - `byte[3]==0x01 && byte[2]<0x10`,
+    /// count at `+4`, members at `word_index * 4 + 4`
+    /// (`crates/prot/src/timpack.rs`).
+    ///
+    /// **Matches no retail PROT entry**, and the reason is the heuristic's own
+    /// shape: `byte[3]==0x01` with a small `byte[2]` is a `(TIM_LIST << 24) |
+    /// size` DATA_FIELD chunk header, and `word_index * 4 + 4` is the pack read
+    /// that skips it. Every entry it used to claim is a scene carrier at raw
+    /// TOC `+4` of its CDNAME block, which the scene-pack arm now classifies as
+    /// the single-chunk [`Class::DataFieldStreaming`] retail reads with
+    /// `FUN_8002541C` mode `0x14`. The reader stays - it is the correct reader
+    /// for that form, and `walk_tim_pack` / `prot-extract` still use it - but
+    /// nothing needs a class of its own for it. Kept so the shape stays named
+    /// and a detector-order regression that re-steals a carrier is visible.
     TimPack,
+    /// Bare [`asset::pack`](crate::pack) - `[u32 count][u32 word_offset[count]]`
+    /// at offset 0, members packed back-to-back, every member carrying the
+    /// same magic (PSX TIM or Legaia TMD). This is the form retail walks with
+    /// `FUN_8002541C` mode `0x0A` (`count = base[0]`, then `FUN_800198E0` per
+    /// member), reached by a `Flag(0x0A)` descriptor in the scene's bundle.
+    /// See [`crate::field_pack::scene_pack`] and [`docs/formats/pack.md`].
+    Pack,
     /// Parses as a player.lzs-style descriptor container at some count
     /// (1, 2, 3, 4, 8, 16) and at least one descriptor decodes via LZS.
     LzsContainer,
     /// Contains a stage-geometry table (12-byte fixed prefix + 8-byte
     /// payload at 20-byte stride). See [`crate::stage_geom`].
     StageGeometry,
-    /// Field-pack container - 4-byte magic + 97-entry schema followed by
-    /// packed TIMs and TMDs. See [`crate::field_pack`].
-    FieldPack,
     /// Effect-bundle container - magic `0x02018B0C` + constant header words +
     /// 28-entry schema followed by packed TMD primitive groups + TIMs.
     /// See [`crate::effect_bundle`].
@@ -215,9 +239,9 @@ impl Class {
             Class::DataFieldStreaming => "data_field_streaming",
             Class::DataFieldTruncated => "data_field_truncated",
             Class::TimPack => "tim_pack",
+            Class::Pack => "pack",
             Class::LzsContainer => "lzs_container",
             Class::StageGeometry => "stage_geometry",
-            Class::FieldPack => "field_pack",
             Class::EffectBundle => "effect_bundle",
             Class::SeqContainer => "seq_container",
             Class::AnmContainer => "anm_container",
@@ -272,6 +296,43 @@ pub struct FileReport {
     pub stage_geom_records: Option<usize>,
     /// For tmd_size_prefix: claimed total in-RAM size from the leading u32.
     pub tmd_size_prefix_total: Option<u32>,
+}
+
+/// PSX TIM magic, as the leading u32 of a pack member.
+const MEMBER_MAGIC_TIM: u32 = 0x0000_0010;
+/// Legaia TMD magic, as the leading u32 of a pack member.
+const MEMBER_MAGIC_TMD: u32 = 0x8000_0002;
+
+/// A scene's streamed asset pack, admitted only when every member carries one
+/// magic and (chunk-headered form) that magic agrees with the chunk type byte.
+///
+/// [`crate::field_pack::scene_pack`] gates on the pack's own anchor, which is
+/// enough to *read* a known carrier but not to *claim* an arbitrary entry: a
+/// two-word head of `[2, 3]` satisfies the anchor. Requiring uniform member
+/// magic is the identity test the disc actually supports - all 23 retail
+/// carriers are all-TIM under chunk type `0x01` or all-Legaia-TMD under `0x02`
+/// (`crates/asset/tests/field_pack_real.rs`).
+fn scene_carrier_pack(buf: &[u8]) -> Option<crate::field_pack::ScenePack> {
+    let pack = crate::field_pack::scene_pack(buf)?;
+    let want = match pack.asset_type() {
+        Some(AssetType::TimList) => Some(MEMBER_MAGIC_TIM),
+        Some(AssetType::Tmd) => Some(MEMBER_MAGIC_TMD),
+        // A chunk header of any other type is not a carrier.
+        Some(_) => return None,
+        // Bare form: the members pick the magic, they just have to agree.
+        None => None,
+    };
+    let first = legaia_bytes::u32_le(buf, pack.members.first()?.start)?;
+    let want = want.unwrap_or(first);
+    if want != MEMBER_MAGIC_TIM && want != MEMBER_MAGIC_TMD {
+        return None;
+    }
+    for r in &pack.members {
+        if legaia_bytes::u32_le(buf, r.start) != Some(want) {
+            return None;
+        }
+    }
+    Some(pack)
 }
 
 /// Classify a single buffer.
@@ -450,13 +511,24 @@ pub fn classify(buf: &[u8]) -> FileReport {
         return report;
     }
 
-    // Sister of `data_field_streaming` - leading chunks decode cleanly but
-    // the final chunk's declared size walks past EOF without a terminator.
-    // Strict structural detector: requires >= MIN_LEADING_CHUNKS leading chunks, all known
-    // types and magic-OK, plus a partial trailing chunk with a known type.
-    if let Some(t) = crate::data_field_truncated::detect(buf) {
+    // A scene's streamed asset pack (`docs/formats/field-pack.md`) - one
+    // `asset::pack` of PSX TIMs or Legaia TMDs, in the two forms retail reads
+    // it: behind a `(type << 24) | size` DATA_FIELD chunk header (mode `0x14`,
+    // a single-chunk stream) or bare (mode `0x0A`). Both are gated on the
+    // pack's own anchor plus every member carrying one magic that agrees with
+    // the chunk type, which is what keeps this off the weaker `tim_pack` /
+    // `lzs_container` heuristics that used to split the 23 carriers four ways.
+    //
+    // Runs AFTER the multi-chunk streaming arm on purpose: a carrier whose
+    // trailing bytes parse as further chunks is a richer reading and keeps its
+    // real chunk count.
+    if let Some(p) = scene_carrier_pack(buf) {
         let mut report = mk(
-            Class::DataFieldTruncated,
+            if p.chunk_header.is_some() {
+                Class::DataFieldStreaming
+            } else {
+                Class::Pack
+            },
             size,
             head,
             first_u32,
@@ -464,7 +536,9 @@ pub fn classify(buf: &[u8]) -> FileReport {
             leading_zeros,
             zero_fraction,
         );
-        report.stream_chunks = Some(t.leading_chunks);
+        if p.chunk_header.is_some() {
+            report.stream_chunks = Some(1);
+        }
         return report;
     }
 
@@ -585,23 +659,8 @@ pub fn classify(buf: &[u8]) -> FileReport {
         );
     }
 
-    // Field-pack: magic + 97-entry schema. Detect before TimPack /
-    // stage_geometry / lzs_container - fieldpack files often satisfy
-    // weaker heuristics, so the most-specific signature wins.
-    if crate::field_pack::detect(buf).is_some() {
-        return mk(
-            Class::FieldPack,
-            size,
-            head,
-            first_u32,
-            entropy_bits,
-            leading_zeros,
-            zero_fraction,
-        );
-    }
-
-    // Effect-bundle: same logic as field-pack - strict-schema detector
-    // gates this before the weaker heuristics.
+    // Effect-bundle: a strict-schema detector, gated before the weaker
+    // heuristics so the most-specific signature wins.
     if crate::effect_bundle::detect(buf).is_some() {
         return mk(
             Class::EffectBundle,
@@ -1084,6 +1143,89 @@ mod tests {
         }
         let r = classify(&buf);
         assert_ne!(r.class, Class::MostlyZeros);
+    }
+
+    /// `[u32 count][u32 word_offset[count]]` + `count` members of `member_len`
+    /// bytes each, every one opening with `magic`. `chunk_type` prepends the
+    /// `(type << 24) | payload_len` DATA_FIELD chunk header the chunk-headered
+    /// carriers lead with.
+    fn synthetic_scene_pack(
+        count: usize,
+        member_len: usize,
+        magic: u32,
+        chunk_type: Option<u8>,
+    ) -> Vec<u8> {
+        let mut pack = Vec::new();
+        pack.extend_from_slice(&(count as u32).to_le_bytes());
+        let table_end = 4 + 4 * count;
+        for i in 0..count {
+            let byte_off = table_end + i * member_len;
+            pack.extend_from_slice(&((byte_off / 4) as u32).to_le_bytes());
+        }
+        for _ in 0..count {
+            pack.extend_from_slice(&magic.to_le_bytes());
+            pack.resize(pack.len() + member_len - 4, 0x5A);
+        }
+        match chunk_type {
+            Some(t) => {
+                let mut out = Vec::new();
+                out.extend_from_slice(&(((t as u32) << 24) | pack.len() as u32).to_le_bytes());
+                out.extend_from_slice(&pack);
+                // Sector pad, as on disc - and the streaming walker's
+                // terminator.
+                out.resize(out.len().next_multiple_of(0x800), 0);
+                out
+            }
+            None => pack,
+        }
+    }
+
+    /// A carrier behind a `TIM_LIST` chunk header is a single-chunk DATA_FIELD
+    /// stream, which is what retail reads it as (`FUN_8002541C` mode `0x14`).
+    #[test]
+    fn chunk_headered_scene_pack_is_a_stream() {
+        let buf = synthetic_scene_pack(8, 0x40, MEMBER_MAGIC_TIM, Some(0x01));
+        let r = classify(&buf);
+        assert_eq!(r.class, Class::DataFieldStreaming);
+        assert_eq!(r.stream_chunks, Some(1));
+    }
+
+    /// The bare form - no chunk header - is the mode-`0x0A` pack.
+    #[test]
+    fn bare_scene_pack_is_a_pack() {
+        let buf = synthetic_scene_pack(8, 0x40, MEMBER_MAGIC_TMD, None);
+        assert_eq!(classify(&buf).class, Class::Pack);
+    }
+
+    /// The pack anchor alone is not enough to claim an entry: the members have
+    /// to agree on one magic, and (chunk-headered) agree with the type byte.
+    #[test]
+    fn scene_pack_needs_uniform_member_magic() {
+        let mut buf = synthetic_scene_pack(8, 0x40, MEMBER_MAGIC_TIM, None);
+        let table_end = 4 + 4 * 8;
+        buf[table_end..table_end + 4].copy_from_slice(&0xDEAD_BEEFu32.to_le_bytes());
+        assert_ne!(classify(&buf).class, Class::Pack);
+    }
+
+    /// A `TIM_LIST` header over Legaia TMD members is not a carrier - the type
+    /// byte and the member magic must agree, as they do in all 23 retail ones.
+    #[test]
+    fn scene_pack_rejects_a_type_byte_the_members_contradict() {
+        let buf = synthetic_scene_pack(8, 0x40, MEMBER_MAGIC_TMD, Some(0x01));
+        assert_ne!(classify(&buf).class, Class::DataFieldStreaming);
+    }
+
+    /// The two retired classes are produced by nothing.
+    #[test]
+    fn retired_classes_are_never_produced() {
+        for buf in [
+            synthetic_scene_pack(8, 0x40, MEMBER_MAGIC_TIM, Some(0x01)),
+            synthetic_scene_pack(2, 0x8220, MEMBER_MAGIC_TIM, None),
+        ] {
+            let c = classify(&buf).class;
+            assert_ne!(c, Class::DataFieldTruncated);
+            assert_ne!(c, Class::TimPack);
+        }
     }
 
     #[test]

@@ -180,7 +180,7 @@ if (bgm_id &lt; 2000) {
   <table>
     <thead><tr><th>Loader</th><th>Role</th></tr></thead>
     <tbody>
-      <tr><td>Sound bank</td><td>Loads the <code>bse.dat</code> master bank once at boot, then per-scene <code>.dpk</code> files by path (dev builds load by PROT index directly).</td></tr>
+      <tr><td>Sound bank</td><td>Loads <code>bse.dat</code> (the battle SFX descriptor bank) at battle-scene setup, then per-scene <code>.dpk</code> files by path (dev builds load by PROT index directly).</td></tr>
       <tr><td>Streaming assets</td><td>Builds paths under the <code>sound\</code> prefix; the XA / <code>.pac</code> / STR consumer. Same dev / retail split as the field loader.</td></tr>
     </tbody>
   </table>

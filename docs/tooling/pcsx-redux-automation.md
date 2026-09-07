@@ -748,6 +748,7 @@ the longer ones (`Probes` + `What it answered`) are written out as
 | Script | What it answered |
 |---|---|
 | `autorun_pad_walk.lua` | Drives a scripted pad sequence (`LEGAIA_PAD_SCRIPT="<vsync>:<BUTTON>[:<hold>]"` list) and traces where it lands: every `game_mode` transition, optional exec-BP watches (`LEGAIA_WATCH_FN`), player position, and the distinct pad words seen. The way to reach a screen no save state is parked on. The pad-word census is the load-bearing part: >1 distinct word proves the presses reached the game, so a walk that does nothing can be told apart from one whose buttons never arrived. |
+| [`autorun_uru_exit_probe.lua`](../../scripts/pcsx-redux/autorun_uru_exit_probe.lua) | Drives a field-run state onto a scene's walk-on exit band. Sweeps the four D-pad directions for `LEGAIA_SWEEP` vsyncs each - the pad is camera-relative, so the direction toward `LEGAIA_TARGET_X`/`_Z` is measured, not assumed - then holds the winner until the scene changes. Exec-BPs on `FUN_8003BDE0` (`x, z, record, gate`) and `FUN_8001FD44` (destination name + caller `ra`). Settled the Uru Mais exit: band `(36,5)`, record 42, `ra = 0x801DEB1C` in the field VM's `0x3F` arm, and with it that retail really falls through to the `.PCH` trigger sidecar ([`world-map.md`](../subsystems/world-map.md#uru-mais-and-jouine-exits-carried-by-the-pch-sidecar)). Interpreter mode. |
 | `autorun_identify_state.lua` | Says what a save state actually **is** - `game_mode`, CDNAME scene, and which overlay entry points tick. First aid for "my breakpoint never fired", which usually means the state is not on the screen its filename implies (states get overwritten; see [the save-state library](#save-state-library-immutable-backups)). |
 | `autorun_confirm_dialog_dump.lua` | Captures the save screen's confirm prompt ("Do you wish to load?") parked at its retail rest position, and logs the panel drawer's live args. Pinned both `FUN_801E1C1C` mode-3 panels - see [`save-screen.md`](../subsystems/save-screen.md#messagebox-panel-geometry-fun_801e36c4). Walks field → pause menu (**SELECT**) → Save/Load row → block, since no state is parked on that screen. Pairs with `scan_panel_rects.py` (gold-border rect measurement) and `decode_load_screen.py --stem`. |
 | `autorun_world_map_probe.lua` | Pins the world-map POLY_FT4 emitter's one-shot gate flag + the three-param block driving it. Reads at `_DAT_8007BCD0..D8` (gate-arm params), gate flag `_DAT_801F351C` writes, and four `FUN_801D7EA0` entries. |
@@ -760,7 +761,7 @@ the longer ones (`Probes` + `What it answered`) are written out as
 | `autorun_slot4_consumer_pcs.lua` | Kingdom-agnostic slot-4 consumer PCs. → [detail](#autorun_slot4_consumer_pcslua) |
 | `autorun_slot4_dispatcher_args.lua` | Captures the original cluster-A dispatcher call args before the kind handlers clobber them. → [detail](#autorun_slot4_dispatcher_argslua) |
 | `autorun_dump_slot4.lua` | Dumps the slot-4 RAM region directly. Produces the ground-truth byte buffer for `verify_slot4_in_ram.py`. |
-| `autorun_slot4_source_map.lua` | Read bps tiled across the slot-4 RAM window + an Exec bp on the `FUN_8001E54C` streaming dispatcher, driving the held-direction warp itself. Each read records the full GPR set, so the destination (if any) is recoverable. Showed slot-4 is read **in place** by the world-map renderer - no transcode; see [`world-map-overlay.md`](../formats/world-map-overlay.md#slot-4-is-read-in-place---there-is-no-transcode-drake-capture). NB: tile the read bps at the **per-kingdom** slot-4 base (it varies) - locate it first with the pair below. |
+| `autorun_slot4_source_map.lua` | Read bps tiled across the slot-4 RAM window + an Exec bp on the `FUN_8001E54C` streaming dispatcher, driving the held-direction warp itself. Each read records the full GPR set, so the destination (if any) is recoverable. Showed slot-4 is read **in place** (no transcode); the readers are the animated-mesh renderer `FUN_8001B964` and its pose decoder `FUN_8001BE80`, not a world-map prim handler - slot 4 is the scene's ANM bank (`world-map-overlay.md`). |
 | `autorun_dump_full_ram_hold.lua` | Holds a pad direction for `LEGAIA_HOLD` vsyncs (so a pre-transition save drives its warp), then dumps the full 2 MiB main RAM post-warp. Paired with `locate_slot4_base.py`. |
 | `locate_slot4_base.py` | Byte-locates a kingdom's slot-4 resident base by searching the post-warp RAM dump for the disc-decoded payload (unanimous body vote). Pins Drake `0x8011A624` / Sebucus `0x80119CE4` / Karisto `0x80108D84`. |
 | `autorun_xp_table_reader.lua` | Tiled read-bp scan over `0x8007123C..0x80071300`; **superseded** by the `DAT_80076AF4` XP curve. → [detail](#autorun_xp_table_readerlua) |
@@ -793,6 +794,11 @@ the longer ones (`Probes` + `What it answered`) are written out as
 | [`autorun_battle_party_mesh_install.lua`](../../scripts/pcsx-redux/autorun_battle_party_mesh_install.lua) | Pins the battle-form party-mesh install callsite. → [detail](#autorun_battle_party_mesh_installlua) |
 | [`autorun_battle_render_capture.lua`](../../scripts/pcsx-redux/autorun_battle_render_capture.lua) | Live-confirms the exact battle camera byte-exact. → [detail](#autorun_battle_render_capturelua) |
 | [`autorun_battle_cam_orbit.lua`](../../scripts/pcsx-redux/autorun_battle_cam_orbit.lua) | Per-vsync battle-camera yaw beside its two retail writers - the idle-orbit rate as a measurement. → [detail](#autorun_battle_cam_orbitlua) |
+| [`autorun_battle_intro_banner.lua`](../../scripts/pcsx-redux/autorun_battle_intro_banner.lua) | Attributes every battle text actor to the routine that made it: exec-bps on the spawner `FUN_8003541C` (logging `$ra`, id, class, seat, box, kind) and the teardown sweep `FUN_800355F0`, plus a per-vsync walk of the live list at `gp[+0x148] = 0x8007B460`. Settled the battle-**intro** enemy-name banner - `FUN_801D9D3C` spawns it with immediates, not from a placement record (see [`battle.md`](../subsystems/battle.md#the-battle-intro-enemy-name-banner)). Env `LEGAIA_FRAMES`; writes `w1d_spawns.csv` + `w1d_list.csv`. Interpreter mode; drive it from a pre-battle state - no catalogued state is parked on the intro. |
+| [`autorun_w4d_cort_flow_writer.lua`](../../scripts/pcsx-redux/autorun_w4d_cort_flow_writer.lua) | What moves the battle command-flow byte off the evolved-Cort park value `0x0C`. &rarr; [detail](#autorun_w4d_cort_flow_writerlua) |
+| [`autorun_w4d_dome_decal_flag.lua`](../../scripts/pcsx-redux/autorun_w4d_dome_decal_flag.lua) | Reads the backdrop object-1 trim flag `_DAT_8007B64B` live during a Muscle Dome contest. &rarr; [detail](#autorun_w4d_dome_decal_flaglua) |
+| [`autorun_w4d_melee_grunt_gate.lua`](../../scripts/pcsx-redux/autorun_w4d_melee_grunt_gate.lua) | Which `s7` definition an ordinary party swing carries into the melee grunt gate. &rarr; [detail](#autorun_w4d_melee_grunt_gatelua) |
+| [`autorun_w4d_light_kind_hits.lua`](../../scripts/pcsx-redux/autorun_w4d_light_kind_hits.lua) | Whether the renderer's four light-capable prim handlers (kinds 8..11) execute at all. &rarr; [detail](#autorun_w4d_light_kind_hitslua) |
 | [`autorun_audio_trace.lua`](../../scripts/pcsx-redux/autorun_audio_trace.lua) | Multi-frame retail-trace input for the audio-trace parity oracle. → [detail](#autorun_audio_tracelua) |
 | [`autorun_summon_model_base.lua`](../../scripts/pcsx-redux/autorun_summon_model_base.lua) | Targets `gp[0x754]`, the `model_sel` additive base read in the shared spawn stager `FUN_80021B04`. Exec-bp the stager during a summon (default `gimard_summon_start`) or an enemy special-attack frame; each hit logs `$gp`, the absolute `gp+0x754` global, the base value, and the part record's `model_sel`/`flags`. The one residual unblocking both summon and move-power effect-FX render (the records share this stager). |
 | [`autorun_battle_moveimage_trace.lua`](../../scripts/pcsx-redux/autorun_battle_moveimage_trace.lua) | Logs every libgpu `MoveImage` request (caller RA + source RECT + dest) via an exec-bp on `FUN_80058490`; `LEGAIA_TRACE_LOADIMAGE=1` adds the `LoadImage` wrapper (slow - it fires every frame on the overworld). Pinned move-VM op `0x40` as the animated-texture strip primitive (see [`move-vm.md`](../subsystems/move-vm.md)). |
@@ -844,6 +850,71 @@ the longer ones (`Probes` + `What it answered`) are written out as
 
 #### Runtime probe details
 
+##### `autorun_w4d_cort_flow_writer.lua`
+
+- **Probes:** width-1 Write watch on `ctx+0x06` (`ctx = *_DAT_8007BD24`), armed the
+  moment the pointer is live; per-vsync poll of flow / action state / intro timer
+  `+0x6D6` / stage phase `+0x289` / loader-B tracker + a 16-word FNV of slot B;
+  with `LEGAIA_STAGE=1`, exec-BPs on the PROT 0968 stage module's entry, its seven
+  phase arms and its hand-back store.
+- **What it answered:** the value logged is the one **about to be stored**, decoded
+  from the store instruction's source register, because the debug hook runs before
+  the store. The run is input-free until the park reproduces and then sweeps ten
+  buttons (`LEGAIA_IDLE` / `LEGAIA_SWEEP`; `LEGAIA_IDLE=-1` never sweeps), which is
+  what separates "waiting for a press" from "waiting for a clock". Settled the park
+  - see [`battle.md`](../subsystems/battle.md#flow-0x0c-is-the-boss-stage-modules-baton).
+  Writes `w4d_cort_flow.csv` / `.log` / `.detail.txt`. Interpreter mode.
+
+##### `autorun_w4d_dome_decal_flag.lua`
+
+- **Probes:** exec-BP at `0x80051ACC` - the branch that consumes the byte, with `v1`
+  still holding it, so each row carries both the value and the arm the loader took;
+  exec-BP on the loader entry `FUN_800513F0`; a width-1 Write watch on
+  `_DAT_8007B64B`.
+- **What it answered:** the write watch is a data watch rather than an exec-BP at
+  the known writer's overlay VA on purpose - slot A is VA-aliased across the field,
+  battle and arena modules, so an address alone names no module. A Cross cadence
+  advances the arena dialogue (`LEGAIA_ADVANCE=0` disables). Upgraded the arena's
+  object-1 trim from Inferred to capture - see
+  [`minigame-muscle-dome.md`](../subsystems/minigame-muscle-dome.md#object-1-is-trimmed-by-the-loader-_dat_8007b64b).
+  Interpreter mode.
+
+##### `autorun_w4d_melee_grunt_gate.lua`
+
+- **Probes:** exec-BPs on all seventeen `s7` definition sites in `FUN_801EC3E4`, on
+  the gate (`0x801EEA88` / `0x801EEAA0`), on both emission sites (`0x801EEB44`
+  grunt / `0x801EEBE8` sting) and on the `+0x1DA` commit `0x801EEC6C`.
+- **What it answered:** each gate visit records the **last definition that
+  executed**, i.e. the live reaching definition rather than an argued one, beside
+  the gate operands, the `s4` actor's `+0x1F3` / `+0x1DA` / `+0x1DB` / `+0x1DE`,
+  `_DAT_8007BC20` and `_DAT_8007BD84`. `LEGAIA_ADVANCE=2` interleaves Cross and
+  Left, which drives both the command ring and the directional arts screen. See
+  [`battle-action.md`](../subsystems/battle-action.md#the-sound-a-melee-swing-makes-and-which-half-of-it-the-port-has).
+  Interpreter mode, battle states only - the addresses are slot-A overlay VAs.
+
+##### `autorun_w4d_light_kind_hits.lua`
+
+- **Probes:** exec-BPs on the four light-capable prim handlers `0x8004409C` /
+  `0x8004423C` / `0x80044434` / `0x800445B0`, plus a control group on the bank-0 fog
+  handlers for kinds 12..19 and kind 16 bank 1.
+- **What it answered:** exec-BPs cannot miss an execution where the `dirty_exec_hot`
+  histogram can only say "not seen". The control group shares one counter and
+  self-disarms at `LEGAIA_CONTROL_CAP` hits, so a zero on the lit set is a
+  measurement and not a dead instrument, and the probe counts field-mode and
+  kingdom-overworld frames separately so a run that spent its budget inside a random
+  encounter cannot read as a clean world-map zero. `LEGAIA_WARP_BTN` is held until
+  the scene changes (`NONE` when already on the overworld), then D-pad legs of
+  `LEGAIA_LEG` vsyncs walk the map. See
+  [`renderer.md`](../subsystems/renderer.md#no-handler-in-the-lit-set-executes-on-a-kingdom-overworld).
+  Interpreter mode.
+- **The control is re-armed after the warp, from a different list**
+  (`LEGAIA_CONTROL_POST`, `LEGAIA_CONTROL_REARM`). The first window's SCUS fog
+  handlers fire in the town scene and then go silent on the overworld, because the
+  kingdom map renders through PROT 0901's overlay-resident replacements - so on the
+  map itself they are a control that proves nothing. The post-warp window arms those
+  eight replacements instead, and all eight fire on `map03`, which is what makes the
+  lit set's zero in the same run a measurement rather than a dead breakpoint.
+
 ##### `autorun_slot4_consumer_pcs.lua`
 
 - **Probes:** Exec bps at the cluster-A + cluster-B LW PCs identified during the slot-4 RE.
@@ -862,7 +933,7 @@ the longer ones (`Probes` + `What it answered`) are written out as
 ##### `autorun_field_pack_projection.lua`
 
 - **Probes:** Exec bp at `FUN_8001F7C0` (scene asset loader) entry; one-shot Exec bp at the loader's return address; dumps post-load RAM window.
-- **What it answered:** Captures the loader's on-disc &rarr; RAM projection that a single save state can't observe. `LEGAIA_HOLD_BUTTON` / `LEGAIA_HOLD` drive the warp-tile input from inside the probe; the run quits ~30 vsyncs after the first post-load dump. Diff via [`scripts/pcsx-redux/diff_field_pack_projection.py`](../../scripts/pcsx-redux/diff_field_pack_projection.py) against the on-disc PROT bytes. World-map scenes (`map01` / `map02` / `map03`) are not field-pack-formatted - running against them produces a 75 KB GP0-primitive pool projection at `_DAT_8007B8D0 - 0x12800` instead.
+- **What it answered:** Captures the loader's on-disc &rarr; RAM projection that a single save state can't observe. `LEGAIA_HOLD_BUTTON` / `LEGAIA_HOLD` drive the warp-tile input from inside the probe; the run quits ~30 vsyncs after the first post-load dump. Diff via [`scripts/pcsx-redux/diff_field_pack_projection.py`](../../scripts/pcsx-redux/diff_field_pack_projection.py) against the on-disc PROT bytes. What that window actually holds is the scene's GP0-primitive scratch, on every scene - `_DAT_8007B8D0 - 0x12800` is the field-file scratch base, not a pack base ([`field-pack.md`](../formats/field-pack.md)), which is why world-map scenes look no different from towns here.
 
 ##### `autorun_boot_walk_snapshots.lua`
 
@@ -977,7 +1048,7 @@ the longer ones (`Probes` + `What it answered`) are written out as
 | `verify_slot4_in_ram.py` | `autorun_dump_slot4.lua` output | Confirms the live RAM region matches the disc-decoded slot-4 sub-bodies byte-for-byte. |
 | `diff_slot4_ram_vs_disc.py` | Live + disc slot-4 bytes | Generates the byte-level diff visualisation. |
 | `match_prim_groups_to_disc.py` | Live prim-pool dump + disc TMD pack | Matches POLY_FT4 prim groups back to their source TMD bodies. |
-| [`diff_field_pack_projection.py`](../../scripts/pcsx-redux/diff_field_pack_projection.py) | `.post.NN.bin` + `.meta` from the field-pack projection probe; on-disc LZS-decoded PROT entry | Walks the canonical 97-slot field-pack schema; for each slot, compares runtime RAM bytes against on-disc bytes and prints a per-slot diff sorted by changed-byte count, plus a hex preview of the first divergence per slot. |
+| [`diff_field_pack_projection.py`](../../scripts/pcsx-redux/diff_field_pack_projection.py) | `.post.NN.bin` + `.meta` from the field-pack projection probe; on-disc LZS-decoded PROT entry | Walks `town01`'s pack offset table (`CANONICAL_SCHEMA`, 96 members - the tool still calls it a "97-slot schema", counting the leading count word as a slot); for each member, compares runtime RAM bytes against on-disc bytes and prints a per-member diff sorted by changed-byte count, plus a hex preview of the first divergence. Both this tool and its probe predate the [field-pack correction](../formats/field-pack.md): the window they capture is the scene's **primitive scratch**, not a projection of the pack. |
 | [`decode_pcsx_screen.py`](../../scripts/pcsx-redux/decode_pcsx_screen.py) | `<OUT>.screen` + `.screen.meta` from `autorun_countdown_trigger.lua` (or any probe that calls `PCSX.GPU.takeScreenShot()`) | PNG of the visible framebuffer at the capture moment. Decodes BGR555 (`bpp=16`) or BGR888 (`bpp=24`). Pillow required for PNG output; falls back to raw RGB888 if Pillow is missing. |
 | [`decode_load_screen.py`](../../scripts/pcsx-redux/decode_load_screen.py) | `load_screen_fb.raw` + `.meta` from `autorun_load_screen_dump.lua` | PNG of the rendered load-screen framebuffer. Dependency-free (uses stdlib `zlib` + manual PNG chunks); pixel coordinates match PSX 320×240 framebuffer 1:1. Pairs with the panel-source RE in `subsystems/save-screen.md`. |
 | [`extract_audio_trace_from_sstates.py`](../../scripts/pcsx-redux/extract_audio_trace_from_sstates.py) | The `LEGSPU01`-magic binary stream from `autorun_audio_trace.lua` | JSONL stream of `AudioTraceFrame` records consumed by `legaia-engine audio-trace --retail-jsonl` and the disc-gated `audio_trace_multi` integration test. Walks PCSX-Redux's SPU protobuf schema: 24 × Channel sub-messages (Chan::Data + ADSRInfo + ADSRInfoEx) plus the 512-byte SPU register file (MainVol_L / MainVol_R at offset 0x180/0x182, Reverb_Mode at 0x1AA). Voice "audible" = `Chan::Data.on || Chan::Data.stop`; `ADSRInfoEx.state` is the configured envelope shape and reads as Sustain for unused voices, so it is not a reliable audibility signal. |

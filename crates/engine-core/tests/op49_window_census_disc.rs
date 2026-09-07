@@ -127,7 +127,9 @@ fn op49_window_census_pins_the_corpus_shape() {
     // " s", `0x746E` "nt"), the text-decoded-as-op-0x49 noise class. No
     // site was gained anywhere, and the kor sub-4 family below is untouched
     // at 24.
-    assert_eq!(sites.len(), 236, "op-0x49 site count changed");
+    // 238: `bubu1` / `edbubu` resolve their MANs since the scene-asset-table
+    // detector admits `count = 5`, and each carries one op-0x49 site.
+    assert_eq!(sites.len(), 238, "op-0x49 site count changed");
 
     // The carrier that dissolved with the entry-size correction stays gone.
     // Its reappearance means a reader is over-reading into a neighbour

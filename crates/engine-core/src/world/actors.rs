@@ -1198,7 +1198,7 @@ impl World {
     /// **exclusive or** of two things:
     ///
     /// - the run button - held pad `_DAT_8007B850` AND the mask config word
-    ///   `[0x800846DC]`;
+    ///   `[0x800846DC]`, which is `0x48` = Cross | R1;
     /// - the Field Move option word `[0x800846CC]` (= `0x80084140 + 0x58c`,
     ///   the pause menu's Walk / Run row).
     ///

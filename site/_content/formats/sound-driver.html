@@ -8,7 +8,7 @@
   <h2>At a glance</h2>
   <dl class="kv">
     <dt>Magic</dt><dd>none - a string cluster in <code>SCUS_942.54</code> at RAM <code>0x8007B380</code> (file offset <code>0x6BB80</code>)</dd>
-    <dt>Where on disc</dt><dd>The <code>.dpk</code> payloads are the <code>sound_data2</code> PROT family (<code>0877</code>..<code>0885</code>); <code>bse.dat</code> is the master bank the sound subsystem loads once at init</dd>
+    <dt>Where on disc</dt><dd>The <code>.dpk</code> payloads are the <code>sound_data2</code> PROT family (<code>0877</code>..<code>0885</code>); <code>bse.dat</code> is the battle SFX descriptor bank, loaded from battle init (<code>FUN_800513F0</code>), not at boot</dd>
     <dt>Parser</dt><dd><code>legaia_asset::sound_pack</code> (<code>extract</code> returns the reconstituted VAB + SEQ); walker <code>parse_streaming_with(.., StreamTerminator::TypeTwo)</code></dd>
     <dt>Confidence</dt><dd>Confirmed - loader, path builders and chunk walker traced (<a href="#how-we-know">how we know</a>); VAB reconstitution byte-verified across <code>0877</code>..<code>0885</code></dd>
     <dt>Used by</dt><dd><a href="../subsystems/audio.html">Audio stack</a></dd>
@@ -85,7 +85,7 @@
       <tr><td><code>0x8007B394</code></td><td><code>".spk"</code></td><td>SPU sample bank.</td></tr>
       <tr><td><code>0x8007B39C</code></td><td><code>".LZS"</code></td><td>Compressed wrapper (per-file).</td></tr>
       <tr><td><code>0x8007B3A4</code></td><td>8 bytes</td><td><strong>Not sound data</strong> - the per-character equipment-swap selector bytes read by a graphics-side routine; adjacent in BSS but unrelated (<a href="#not-a-sound-consumer">trap below</a>).</td></tr>
-      <tr><td><code>0x8007B3AC</code></td><td><code>"bse.dat"</code></td><td>Master sound-bank file name (loaded once at sound-init).</td></tr>
+      <tr><td><code>0x8007B3AC</code></td><td><code>"bse.dat"</code></td><td>Battle SFX descriptor-bank file name (loaded at battle init).</td></tr>
       <tr><td><code>0x8007B3B4</code></td><td><code>".dpk"</code></td><td>Per-scene sound pack - the VAB + SEQ bundle above.</td></tr>
       <tr><td><code>0x8007B3BC</code></td><td><code>".MAP"</code></td><td>Sound bank map (PsyQ SoundArtist output; dev-only).</td></tr>
       <tr><td><code>0x8007B3C4</code></td><td><code>".PCH"</code></td><td>Patch / instrument data (PsyQ output; dev-only).</td></tr>
@@ -99,17 +99,17 @@
 
 <section class="doc-section" id="bse-dat-header">
   <h2><code>bse.dat</code> master-bank header</h2>
-  <p>The sound init loads <code>bse.dat</code> once into a <code>0x1800</code>-byte buffer and keeps a pointer into it for the whole session. A single <code>u16</code> at offset <code>+2</code>, rounded down to even, is the <strong>byte offset</strong> of a second section:</p>
+  <p>Battle init loads <code>bse.dat</code> into a <code>0x1800</code>-byte buffer and parks the record-table pointer at <code>gp+0x678</code> (<code>0x8007B990</code>); the buffer slot itself is repointed at every field load. A single <code>u16</code> at offset <code>+2</code>, rounded down to even, is the <strong>byte offset</strong> of a second section:</p>
 <pre><code>count     = *(u16 *)(bse_base + 2)
 gp[0x678] = bse_base + (count &amp; ~1)     ; even byte offset, not a divisor</code></pre>
-  <p>So <code>bse.dat</code> leads with <code>[u16 @0][u16 @2 = offset to section B][section A ...][section B]</code>. The offset indexes the master bank itself, not the per-scene <code>.dpk</code>.</p>
+  <p>So <code>bse.dat</code> leads with <code>[u16 tag @0][u16 @2 = byte offset of the record table][records &hellip;]</code>. Reading that split as <strong>two sections</strong> overstates it: <code>@2</code> is <code>4</code> in both retail carriers, so the "second section" is simply the record table and nothing precedes it but the header. What follows the table in entry 888 belongs to a different file - a foreign VAB tone table left in the sector. The pointer indexes the battle-loaded bank, not the per-scene <code>.dpk</code>.</p>
 </section>
 
 <section class="doc-section" id="dev-build-vs-retail-build-paths">
   <h2>Dev-build vs retail-build paths</h2>
   <p>Both path builders carry a debug-flag carve-out (<code>_DAT_8007B8C2</code>):</p>
   <ul class="bullets">
-    <li><strong>Retail branch</strong> (flag non-zero, the value retail boots with) loads sound data by PROT index - <code>0x37A</code> (= <code>sound_data2</code>) plus <code>param_1 + 5</code> for per-scene variations - via the index-based loader.</li>
+    <li><strong>Retail branch</strong> (flag non-zero, the value retail boots with) loads sound data by PROT index via the index-based loader: raw TOC <code>0x37A</code> = extraction 888, which is <code>bse.dat</code> rather than the <code>.dpk</code>, plus <code>param_1 + 5</code> for the per-set pack.</li>
     <li><strong>Dev branch</strong> (flag zero) opens an <code>h:\main\bg\domepack\&lt;name&gt;.dpk</code> path through a helper that is <code>strcpy</code>, a dev-station host trap (<code>break 0x103</code>), then fseek/fread/fclose. Retail hardware cannot service it.</li>
   </ul>
   <p>Only the retail branch runs on a real disc; the dev branch is a build-time artefact whose paths are not in the filesystem. The same split appears in the <a href="../subsystems/asset-loader.html">asset loader</a>, so it is a pattern that repeats across loading subsystems.</p>

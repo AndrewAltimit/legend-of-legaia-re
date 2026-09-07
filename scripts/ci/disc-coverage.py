@@ -185,6 +185,12 @@ def merge(intervals):
 
 
 MIPS_JR_RA = 0x03E00008
+# Floor for the `no_exit` shape (see `gap_shape`). Known code carries a `jr ra`
+# every ~500-750 bytes, so a run twice that long with none is a data table; the
+# floor is set above one function's worth so a gap holding the interior of one
+# long body is not demoted by it. A demoted run is not hidden - it stays in
+# `undumped-runs.csv` under its shape, it only leaves the ranked worklist.
+NO_EXIT_MIN_BYTES = 1024
 # `addiu $t2, $zero, imm` - the register a PSX BIOS-call thunk loads its jump
 # vector into before `jr $t2`.
 _ADDIU_T2_ZERO = 0x240A0000
@@ -205,6 +211,8 @@ def gap_shape(image, base_va, a, b):
     | `bios_thunk_slot` | the delay slot of a `jr $t2` BIOS-call thunk. The body ends at the `jr` because the target is a register, so the slot falls outside it. |
     | `psyq_lib_stamp` | an 8-byte record opening with ASCII `Ps`: the PSY-Q librarian's version stamp between link modules. Data the linker left in the text segment. |
     | `constant_table` | every word one repeated non-`nop` constant: a data table resident in text (`crt0`'s stack-pointer table at `0x80026CD4`, four words of the 2 MB RAM size). |
+    | `mostly_padding` | at least half the words are zero. A word of zeros is a plausible opcode with no pointer density, so the statistical test scores a zero-dominated region as code; a function body is not half `nop`. |
+    | `no_exit` | 2048 bytes or more with no `jr ra` in them. Every MIPS body ends in one, and known code carries one per ~500-750 bytes, so a run this long with none is a data table the opcode statistic scored as code. |
     | `code` | genuinely un-dumped instructions. |
 
     The non-`code` shapes are properties of where a function *body* ends or of
@@ -240,6 +248,26 @@ def gap_shape(image, base_va, a, b):
     # documented stack-pointer table (4 x 0x00200000).
     if n >= 2 and words[0] != 0 and all(w == words[0] for w in words):
         return "constant_table"
+    # Two shapes the opcode statistic cannot see, because both of them look
+    # like plausible opcodes to it. Neither is a calibrated threshold on a
+    # statistic - both are structural facts about MIPS.
+    #
+    # `mostly_padding`: a word of zeros decodes to `nop`, which is a plausible
+    # primary opcode with no pointer density, so a region that is majority
+    # zeros passes the code test with room to spare. A function body is not
+    # half `nop`. The menu overlay's whole 0x801E43E8 tail is 82% zeros and the
+    # gap classifier called all 62512 bytes of it code.
+    if sum(1 for w in words if w == 0) * 2 >= n:
+        return "mostly_padding"
+    # `no_exit`: every MIPS function body ends in `jr ra`. Known code carries
+    # one per ~500-750 bytes (measured over SCUS's text head and the menu
+    # overlay's code region); a data table carries none. A run this long with
+    # none is not one or more function bodies - the SCUS sound-effect
+    # descriptor table at 0x8006F198 is the worked example, 5120 bytes of
+    # small-integer records the opcode statistic scores as code. The floor is
+    # long enough that a gap holding one partial body is not caught by it.
+    if n * 4 >= NO_EXIT_MIN_BYTES and not any(w == MIPS_JR_RA for w in words):
+        return "no_exit"
     return "code"
 
 
@@ -252,9 +280,56 @@ def classify_gap(image, base_va, a, b):
     if start < 0 or start + n * 4 > len(image):
         return False
     words = struct.unpack_from("<%dI" % n, image, start)
+    # A zero-dominated run is padding, and padding is not the denominator's
+    # business. The statistic cannot see that on its own: a word of zeros
+    # decodes to `nop`, a plausible primary opcode carrying no pointer, so an
+    # all-zero region scores a PERFECT code score and any gap holding enough of
+    # one is dragged over the line with it. `gap_shape` has named that case
+    # `mostly_padding` all along while the denominator still counted its bytes
+    # as un-dumped code - the menu overlay's largest such run is 82% zeros.
+    # This is not a calibrated threshold on a statistic: no function body is
+    # half `nop`, and an all-zero gap is inter-function alignment by
+    # construction.
+    if sum(1 for w in words if w == 0) * 2 >= n:
+        return False
     plausible = sum(1 for w in words if (w >> 26) in PLAUSIBLE_OPS) / n
     ptrs = sum(1 for w in words if 0x80000000 <= w < 0x80200000) / n
     return plausible >= CODE_PLAUSIBLE_MIN and ptrs < CODE_PTR_MAX
+
+
+# The classifier is a statistic, so it needs a window it can be a statistic ABOUT.
+# Run over a whole multi-kilobyte gap it answers for the mixture rather than for
+# any part of it, and the mixture is dominated by whichever component is larger.
+# A word of zeros decodes to `nop`, which is a plausible opcode with zero pointer
+# density, so a long alignment/padding region drags any gap containing it to
+# "code": the menu overlay's largest reported un-dumped run opened with hundreds
+# of `nop`s and then non-code, and the whole-gap test called all 28756 bytes
+# code. Classifying in windows and merging adjacent same-class windows keeps the
+# same test and gives it a scale it can answer at.
+GAP_WINDOW_WORDS = 64
+
+
+def split_gap(image, base_va, a, b):
+    """`[(start, end, is_code)]` for one gap, classified window by window.
+
+    Adjacent windows of the same class are merged, so a real function is one run
+    rather than a dozen, and a padding region between two functions separates
+    them instead of joining them.
+    """
+    if (b - a) // 4 <= GAP_WINDOW_WORDS:
+        return [(a, b, classify_gap(image, base_va, a, b))]
+    out = []
+    step = GAP_WINDOW_WORDS * 4
+    pos = a
+    while pos < b:
+        end = min(pos + step, b)
+        is_code = classify_gap(image, base_va, pos, end)
+        if out and out[-1][2] == is_code:
+            out[-1] = (out[-1][0], end, is_code)
+        else:
+            out.append((pos, end, is_code))
+        pos = end
+    return out
 
 
 def cover_image(name, image, base_va, span, extents, attrib=None):
@@ -266,7 +341,7 @@ def cover_image(name, image, base_va, span, extents, attrib=None):
     (`SCUS_942.54`): the filter must not touch a row that is already exact.
     """
     lo, hi = base_va, base_va + span
-    mine, dropped = [], 0
+    mine, floor, dropped = [], [], 0
     for a, b in extents:
         if not lo <= a < hi:
             continue
@@ -275,44 +350,110 @@ def cover_image(name, image, base_va, span, extents, attrib=None):
             dropped += 1
             continue
         mine.append((a, min(b, hi)))
+        # The floor takes only extents the bytes NAME for this image. An
+        # unambiguous image (`attrib is None`, i.e. SCUS) has nothing to
+        # attribute, so its floor is its numerator.
+        if attrib is None or (owners != "residue" and name in owners):
+            floor.append((a, min(b, hi)))
     merged = merge(mine)
     covered = sum(b - a for a, b in merged)
 
-    gaps, prev = [], lo
-    for a, b in merged:
-        if a > prev:
-            gaps.append((prev, a))
-        prev = b
-    if prev < hi:
-        gaps.append((prev, hi))
+    def gaps_of(intervals):
+        out, prev = [], lo
+        for a, b in intervals:
+            if a > prev:
+                out.append((prev, a))
+            prev = b
+        if prev < hi:
+            out.append((prev, hi))
+        return out
 
+    gaps = gaps_of(merged)
+
+    # The DENOMINATOR keeps the whole-gap classification. Its calibration is
+    # controlled (see docs/tooling/disc-coverage.md) and the ratchet is written
+    # against it; re-classifying in windows moves `SCUS_942.54`'s code
+    # denominator by ~28 KB in the other direction, which is a separate claim
+    # about that image's rodata and not one this instrument can settle. The
+    # window split is applied only where granularity is what makes the output
+    # usable - the worklist below.
     code_gap = data_gap = 0
     code_gaps = []
     shapes = {}
+    # The shape census covers EVERY gap, not only the ones the denominator
+    # counts. `padding` and `mostly_padding` no longer reach `code_gap` (see
+    # `classify_gap`), and dropping them from the census along with the
+    # denominator would hide exactly the bytes the change is about - a reader
+    # could no longer check that a shrinking code gap went to padding rather
+    # than to a dump. A gap the statistic rejects that carries no structural
+    # shape of its own is `data`.
     for a, b in gaps:
-        if classify_gap(image, base_va, a, b):
+        is_code = classify_gap(image, base_va, a, b)
+        shape = gap_shape(image, base_va, a, b)
+        if not is_code and shape == "code":
+            shape = "data"
+        n, nb = shapes.get(shape, (0, 0))
+        shapes[shape] = (n + 1, nb + b - a)
+        if is_code:
             code_gap += b - a
-            shape = gap_shape(image, base_va, a, b)
-            n, nb = shapes.get(shape, (0, 0))
-            shapes[shape] = (n + 1, nb + b - a)
             if shape == "code":
                 code_gaps.append((a, b))
         else:
             data_gap += b - a
 
+    # The worklist is cut against the FLOOR, not against `merged`. `merged`
+    # credits every extent the byte attribution could not place to each span
+    # containing it, so on a row whose dumps are mostly some sibling overlay's
+    # it papers over the image's real gaps with another image's dumps - the
+    # summon-stager rows would report almost no work while nothing in the corpus
+    # is attributable to them at all. Each run therefore carries whether an
+    # unattributed extent overlaps it: `ambiguous` runs are un-dumped unless one
+    # of the ambiguous extents at that VA turns out to be this image's, and the
+    # rest are un-dumped outright.
+    floor_merged = merge(floor)
+    runs = []
+    for a, b in gaps_of(floor_merged):
+        # Split the run where the upper-bound crediting changes, so `ambiguous`
+        # is a property of each piece rather than of the whole gap. A single
+        # flag over a 62 KB gap that one 40-byte residue extent touches would
+        # read as "all of this is ambiguous" and bury the part nothing covers.
+        cuts = [a, b]
+        for x, y in merged:
+            if x < b and a < y:
+                cuts += [max(a, x), min(b, y)]
+        cuts = sorted(set(cuts))
+        for u, v in zip(cuts, cuts[1:]):
+            amb = any(x < v and u < y for x, y in merged)
+            for p, q, is_code in split_gap(image, base_va, u, v):
+                shape = gap_shape(image, base_va, p, q) if is_code else "data"
+                runs.append((p, q, shape, amb))
+
     denom = covered + code_gap
+    # Lower bound on the same image. `mine` credits an extent the byte
+    # attribution could not place to EVERY span containing it, which is the
+    # upper bound the row is labelled with. `floor` credits only the extents
+    # the bytes actually name for this image (plus the ones no other measured
+    # span contains, which need no attribution). The truth is between the two,
+    # and a row whose upper bound is withheld as "not meaningful" still has a
+    # defensible floor - which is the difference between an unmeasured overlay
+    # and one that is merely imprecise.
+    floor_cov = sum(b - a for a, b in floor_merged)
     return {
         "name": name,
         "base_va": base_va,
         "span": span,
         "dumps": len(mine),
+        "dumps_attributed": len(floor),
         "attributed_out": dropped,
         "covered": covered,
+        "covered_attributed": floor_cov,
         "code_gap": code_gap,
         "data_gap": data_gap,
         "code_denominator": denom,
         "pct": (100.0 * covered / denom) if denom else 0.0,
+        "pct_floor": (100.0 * floor_cov / denom) if denom else 0.0,
         "gap_shapes": shapes,
+        "runs": runs,
         "top_code_gaps": sorted(code_gaps, key=lambda g: g[0] - g[1])[:8],
     }
 
@@ -339,12 +480,19 @@ def overlay_reports(extracted, extents, attrib=None):
     spans = []
     for row in rows:
         base = row.get("base_va")
-        span = row.get("clean_copy_bytes")
+        # `content_bytes` is the overlay's OWN content length - its PROT entry's
+        # sector extent, which is exactly the slice the runtime loader streams
+        # into the overlay window. NOT `clean_copy_bytes`, which answers how
+        # much of a row a RAM capture has byte-verified: on PROT 0899 that is
+        # 0x_f174 bytes shorter than the image, and measuring the menu overlay
+        # against it silently drops a third of the overlay from the
+        # denominator AND from the worklist. `clean_copy_bytes` stays as the
+        # fallback so a hand-written map with only the old key still measures.
+        span = row.get("content_bytes") or row.get("clean_copy_bytes")
         label = row.get("label")
         if not base or not span or not label:
-            # `field` (0897) has no clean_copy_bytes: its own content length is
-            # not established, so it has no honest denominator. Skipped rather
-            # than guessed.
+            # A row with no cited own-content length has no honest denominator,
+            # so it is skipped rather than guessed at.
             continue
         candidates = sorted(glob.glob(
             os.path.join(extracted, "overlays", "overlay_%s_*.bin" % label)))
@@ -358,9 +506,9 @@ def overlay_reports(extracted, extents, attrib=None):
         out.append(row)
         spans.append((base, base + span, label))
 
-    # Overlays alias in VA space (several share 0x801CE818, and the two measured
-    # spans are nested), so an extent can fall inside more than one image's span
-    # and be counted by each. That is a real ambiguity, not something to paper
+    # Overlays alias in VA space (nineteen share 0x801CE818 and thirteen share
+    # 0x801F69D8, and their spans nest), so an extent can fall inside more than
+    # one image's span and be counted by each. That is a real ambiguity, not something to paper
     # over: quantify it and let the reader discount accordingly.
     #
     # This whole block counts DISTINCT extents, not dump files. One extent can
@@ -436,8 +584,110 @@ def data_report(extracted):
     }
 
 
+# Runs shorter than this are inter-function alignment, not a dump target. The
+# markdown worklist drops them; the CSV keeps every run so the two can be
+# reconciled.
+WORKLIST_MIN_BYTES = 64
+
+
+def emit_worklist(out_dir, rows):
+    """Per-image un-dumped run inventory + the ranked dump worklist.
+
+    Two files, because they answer two questions. `undumped-runs.csv` is the
+    inventory: every run in every measured image with its shape, so a reader can
+    check that a headline "un-dumped" figure is not mostly `padding`. The
+    markdown is the worklist: `code`-shaped runs only, largest first, which is
+    what a dumping session consumes.
+
+    Both are cut against the byte-attributed floor (see `cover_image`), so the
+    `ambiguous` column is load-bearing rather than decorative: a run marked
+    ambiguous is covered by SOME dump at that VA which the bytes could not place
+    in this image, and a sibling overlay at the same base is the other candidate.
+    Ranking without that column would put the whole VA-aliased slot-A band at the
+    top of every one of nineteen overlays' worklists.
+
+    Neither file is committed - both land in the gitignored `target/` tree, and
+    both carry only addresses, byte counts and shape names.
+    """
+    spans = [(r["base_va"], r["base_va"] + r["span"]) for r in rows]
+
+    def n_spans(va):
+        return sum(1 for lo, hi in spans if lo <= va < hi)
+
+    csv_path = os.path.join(out_dir, "undumped-runs.csv")
+    with open(csv_path, "w", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(["image", "start_va", "end_va", "bytes", "instructions",
+                    "shape", "ambiguous", "spans_at_start"])
+        for r in rows:
+            for a, b, shape, amb in r["runs"]:
+                w.writerow(["%s" % r["name"], "%08x" % a, "%08x" % b, b - a,
+                            (b - a) // 4, shape, "yes" if amb else "no",
+                            n_spans(a)])
+
+    L = []
+    add = L.append
+    add("# Bytes-derived dump worklist")
+    add("")
+    add("Generated by `scripts/ci/disc-coverage.py`. Every row is a run of an "
+        "image's own bytes that **no dump the byte attribution places in that "
+        "image** covers, and whose contents classify as code rather than data. "
+        "This is a worklist, not a defect list.")
+    add("")
+    add("`ambiguous = yes` means some dump does print at that VA but the bytes "
+        "could not place it in this image - a sibling overlay at the same base "
+        "is the other candidate. Those runs are the weaker half of the list: "
+        "start with the `no` rows, which nothing in the corpus covers at all.")
+    add("")
+    add("Runs under %d bytes are inter-function alignment and are dropped here; "
+        "`undumped-runs.csv` next to this file keeps every run, of every shape, "
+        "with a `spans_at_start` column saying how many measured images map that "
+        "VA." % WORKLIST_MIN_BYTES)
+    add("")
+    add("**Do not sum these figures across images.** Nineteen overlays load at "
+        "`0x801CE818` and thirteen at `0x801F69D8`, so the same VA appears under "
+        "several headings - holding *different* bytes each time. Each is real "
+        "work; the total is not a total.")
+    add("")
+    for r in rows:
+        work = [(a, b, amb) for a, b, shape, amb in r["runs"]
+                if shape == "code" and b - a >= WORKLIST_MIN_BYTES]
+        work.sort(key=lambda g: g[0] - g[1])
+        total = sum(b - a for a, b, _ in work)
+        firm = sum(b - a for a, b, amb in work if not amb)
+        add("## `%s`" % r["name"])
+        add("")
+        add("Base `0x%08X`, own content %d bytes. Dumps the bytes place here: "
+            "%d of the %d whose printed address lands in this span. Un-dumped "
+            "code runs: %d bytes over %d runs, of which %d bytes are covered by "
+            "no dump at that VA at all."
+            % (r["base_va"], r["span"], r["dumps_attributed"], r["dumps"],
+               total, len(work), firm))
+        add("")
+        if not work:
+            add("No un-dumped code run reaches %d bytes." % WORKLIST_MIN_BYTES)
+            add("")
+            continue
+        add("| range | bytes | instructions | ambiguous |")
+        add("|---|---:|---:|---|")
+        for a, b, amb in work[:24]:
+            add("| `0x%08X`..`0x%08X` | %d | %d | %s |"
+                % (a, b, b - a, (b - a) // 4, "yes" if amb else "no"))
+        if len(work) > 24:
+            add("")
+            add("%d further runs in `undumped-runs.csv`." % (len(work) - 24))
+        add("")
+    md_path = os.path.join(out_dir, "dump-worklist.md")
+    with open(md_path, "w") as fh:
+        fh.write("\n".join(L) + "\n")
+    return csv_path, md_path
+
+
 GAP_SHAPE_TEXT = {
     "code": "genuinely un-dumped instructions - the only shape that is work",
+    "data": "the opcode statistic rejects it and no structural shape below "
+            "claims it - rodata resident in the text segment. Outside the "
+            "code denominator",
     "padding": "every word is `nop`: inter-function alignment, which no function "
                "body will ever contain",
     "return_tail": "`jr ra` (+ `nop`) that the preceding routine's analysed body "
@@ -450,6 +700,14 @@ GAP_SHAPE_TEXT = {
     "constant_table": "every word one repeated non-`nop` constant: a data table "
                       "resident in text (`crt0`'s stack-pointer table, four "
                       "words of the 2 MB RAM size)",
+    "mostly_padding": "at least half the words are zero - a zero word is a "
+                      "plausible opcode with no pointer density, so the "
+                      "statistical test scores such a region as code, and a "
+                      "function body is not half `nop`",
+    "no_exit": "2048 bytes or more containing no `jr ra`: every MIPS body ends "
+               "in one and known code carries one per ~500-750 bytes, so a run "
+               "this long without one is a data table the opcode statistic "
+               "scored as code",
 }
 
 REJECT_TEXT = {
@@ -498,17 +756,23 @@ def render(scus, overlays, amb_totals, data, rejects, attributed):
     add("")
     add("A gap between dumped functions is classified as code or data by opcode "
         "plausibility and pointer density, so the rodata an executable carries "
-        "inside its text segment does not inflate the denominator. Gaps under "
-        f"{TINY_GAP_WORDS} words are inter-function alignment and count as code.")
+        "inside its text segment does not inflate the denominator. Two rules sit "
+        "outside that statistic because it cannot see them: gaps under "
+        f"{TINY_GAP_WORDS} words are inter-function alignment and count as code, "
+        "and a gap at least half of whose words are zero is padding and counts "
+        "as data - a zero word decodes to `nop`, so the statistic scores it as "
+        "perfect code.")
     add("")
-    add("| image | base | span | dumps | in a dump | code gap | data gap | code denom | covered | VA-ambiguous |")
-    add("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|")
+    add("| image | base | span | dumps | in a dump | code gap | data gap | code denom | covered | at least | VA-ambiguous |")
+    add("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
     rows = ([scus] if scus else []) + overlays
     for r in rows:
         amb = r.get("ambiguous_pct")
         # An image whose dumps are mostly claimable by a sibling overlay has no
-        # defensible figure. Say that ON THE ROW - a caveat in prose underneath
-        # does not travel when the table is quoted on its own.
+        # defensible UPPER bound. Say that ON THE ROW - a caveat in prose
+        # underneath does not travel when the table is quoted on its own. The
+        # floor is still reported there, because "no defensible upper bound"
+        # and "unmeasured" are different states and a blank cell conflates them.
         if amb is None:
             cover, ambcell = "**%.1f%%**" % r["pct"], "-"
         elif amb >= 50.0:
@@ -517,9 +781,24 @@ def render(scus, overlays, amb_totals, data, rejects, attributed):
             cover, ambcell = "<= %.1f%%" % r["pct"], "%.1f%%" % amb
         else:
             cover, ambcell = "**%.1f%%**" % r["pct"], "0%"
-        add("| `%s` | `0x%08X` | %d | %d | %d | %d | %d | %d | %s | %s |" % (
+        add("| `%s` | `0x%08X` | %d | %d | %d | %d | %d | %d | %s | %.1f%% | %s |" % (
             r["name"], r["base_va"], r["span"], r["dumps"], r["covered"],
-            r["code_gap"], r["data_gap"], r["code_denominator"], cover, ambcell))
+            r["code_gap"], r["data_gap"], r["code_denominator"], cover,
+            r["pct_floor"], ambcell))
+    add("")
+    add("**span** is the overlay's own content length - its PROT entry's sector "
+        "extent, `(toc[p+3] - toc[p+2]) * 2048`, which is exactly the slice the "
+        "runtime loader streams into the overlay window (`content_bytes` in "
+        "`crates/asset/data/static-overlays.toml`). It is deliberately not "
+        "`clean_copy_bytes`: that field says how much of a row a RAM capture has "
+        "byte-verified, and on PROT 0899 it is 0x_f174 bytes short of the image.")
+    add("")
+    add("**covered** is an upper bound and **at least** is its floor. The upper "
+        "bound credits an extent the bytes could not place to every span "
+        "containing it; the floor credits only the extents the bytes NAME for "
+        "this image. A row where the two are far apart is imprecise, not "
+        "unmeasured - and the dump worklist is cut against the floor, so it "
+        "never hides one overlay's gap behind a sibling's dump.")
     add("")
     if attributed:
         add("**VA-ambiguous** is the share of an image's extents that the *bytes* "
@@ -552,15 +831,23 @@ def render(scus, overlays, amb_totals, data, rejects, attributed):
             add("### What the `SCUS_942.54` code gap is")
             add("")
             add("Not every gap is an un-analysed routine, and reading the total "
-                "as a worklist overstates what dumping can close. The non-`code` "
-                "shapes are properties of where a function *body* ends, or of "
-                "data records the linker left between bodies, rather than of "
-                "what has been analysed, so they persist however much is "
-                "dumped.")
+                "as a worklist overstates what dumping can close. This census "
+                "covers **every** gap, whether or not the whole-gap test counts "
+                "it as code, so the `code gap` column is the `code` row plus "
+                "whichever structural shapes still pass that test - never the "
+                "whole table. The other shapes are properties of where a "
+                "function *body* ends, or of data records the linker left "
+                "between bodies, rather than of what has been analysed, so "
+                "they persist however much is dumped. `padding` and "
+                "`mostly_padding` are outside the denominator entirely: a word "
+                "of zeros decodes to `nop`, which the opcode statistic scores "
+                "as perfect code, so a zero-dominated run has to be excluded "
+                "structurally rather than statistically.")
             add("")
             add("| shape | gaps | bytes | what it is |")
             add("|---|---:|---:|---|")
-            for key in ("code", "padding", "return_tail", "bios_thunk_slot",
+            for key in ("code", "data", "padding", "mostly_padding",
+                        "no_exit", "return_tail", "bios_thunk_slot",
                         "psyq_lib_stamp", "constant_table"):
                 if key not in shapes:
                     continue
@@ -568,8 +855,9 @@ def render(scus, overlays, amb_totals, data, rejects, attributed):
                 add("| `%s` | %d | %d | %s |" % (key, n, nb, GAP_SHAPE_TEXT[key]))
             add("")
         if scus["top_code_gaps"]:
-            add("Largest un-dumped **code** runs in `SCUS_942.54` - this is a dump "
-                "worklist, not a defect list:")
+            add("Largest un-dumped **code** runs in `SCUS_942.54` at the "
+                "denominator's own granularity - a dump worklist, not a defect "
+                "list:")
             add("")
             add("| range | bytes | instructions |")
             add("|---|---:|---:|")
@@ -577,15 +865,24 @@ def render(scus, overlays, amb_totals, data, rejects, attributed):
                 add("| `0x%08X`..`0x%08X` | %d | %d |" % (a, b, b - a, (b - a) // 4))
             add("")
         else:
-            add("No un-dumped **code** runs remain in `SCUS_942.54`: every "
-                "residual gap has one of the structural shapes above, so the "
-                "bytes-derived dump worklist for this image is empty.")
+            add("At the denominator's granularity no un-dumped **code** run "
+                "remains in `SCUS_942.54`: every gap it classifies as code has "
+                "one of the structural shapes above.")
             add("")
+        add("That is the whole-gap classification, and it is not the last word "
+            "for any image. The ranked worklist in `dump-worklist.md` next to "
+            "this file re-classifies each gap in 256-byte windows, which splits "
+            "a long mixed gap into function-sized runs and finds runs a "
+            "whole-gap verdict of `data` had absorbed. `undumped-runs.csv` "
+            "carries every run of every shape behind it. The two granularities "
+            "answer different questions and are expected to disagree - see "
+            "[`disc-coverage.md`](../../docs/tooling/disc-coverage.md).")
+        add("")
     if overlays and attributed:
         add("### Overlay caveat")
         add("")
         add("Overlay images alias in VA space - several share base `0x801CE818`, "
-            "and the two measured spans are nested - so an extent in that band "
+            "and their spans nest - so an extent in that band "
             f"cannot be attributed by address. **{resolved}** of the "
             f"**{ambiguous}** ambiguous extents are resolved by bytes against the "
             "extracted images "
@@ -688,14 +985,21 @@ def render(scus, overlays, amb_totals, data, rejects, attributed):
 
 
 def snapshot(scus, overlays, data):
-    out = {"code": {}, "data": {}}
+    out = {"code": {}, "code_floor": {}, "data": {}}
     for r in ([scus] if scus else []) + overlays:
-        # Only ratchet figures that mean something. A VA-ambiguous overlay row
-        # moves with dump attribution rather than with real coverage, so
-        # baselining it would produce failures nobody can act on.
-        if r.get("ambiguous_pct", 0.0) >= 50.0:
-            continue
-        out["code"][r["name"]] = round(r["pct"], 2)
+        # `code` only ratchets figures that mean something as an UPPER bound. A
+        # row most of whose extents are claimable by a sibling overlay moves
+        # with dump attribution rather than with real coverage, so baselining
+        # its upper bound would produce failures nobody can act on.
+        if r.get("ambiguous_pct", 0.0) < 50.0:
+            out["code"][r["name"]] = round(r["pct"], 2)
+        # `code_floor` ratchets every image, including the ones with no
+        # defensible upper bound. The floor counts only extents the bytes NAME
+        # for the image, so it is well defined for every row - which is the
+        # point: an overlay nothing is attributed to reads 0.0% here rather than
+        # dropping out of the baseline and being indistinguishable from one that
+        # is fully covered.
+        out["code_floor"][r["name"]] = round(r["pct_floor"], 2)
     if data:
         out["data"]["pct_parsed"] = round(data["pct_parsed"], 2)
     return out
@@ -751,6 +1055,8 @@ def main():
     md_path = os.path.join(args.out, "disc-coverage.md")
     with open(md_path, "w") as fh:
         fh.write(report)
+    work_csv, work_md = emit_worklist(
+        args.out, ([scus] if scus else []) + overlays)
     if args.md:
         sys.stdout.write(report)
 
@@ -764,16 +1070,20 @@ def main():
         for r in overlays:
             amb = r.get("ambiguous_pct", 0.0)
             if amb >= 50.0:
-                print("[disc-coverage] overlay %-22s not meaningful "
-                      "(%.1f%% of its extents are VA-ambiguous)" % (r["name"], amb))
+                print("[disc-coverage] overlay %-22s >= %5.1f%%, no upper bound "
+                      "(%.1f%% of its extents are VA-ambiguous)"
+                      % (r["name"], r["pct_floor"], amb))
             else:
-                print("[disc-coverage] overlay %-22s %.1f%%%s" % (
+                print("[disc-coverage] overlay %-22s %5.1f%%%s" % (
                     r["name"], r["pct"],
-                    "" if amb == 0 else " (<=, %.1f%% VA-ambiguous)" % amb))
+                    "" if amb == 0 else " (<=, >= %.1f%%, %.1f%% VA-ambiguous)"
+                    % (r["pct_floor"], amb)))
         if data:
             print("[disc-coverage] PROT data parsed to a named format: %.1f%% "
                   "(unexplained %.1f%%)" % (data["pct_parsed"], data["pct_unexplained"]))
         print("[disc-coverage] wrote %s" % md_path)
+        print("[disc-coverage] wrote %s" % work_md)
+        print("[disc-coverage] wrote %s" % work_csv)
 
     current = snapshot(scus, overlays, data)
     if args.update_baseline:
@@ -795,7 +1105,7 @@ def main():
         base = json.load(open(BASELINE))
         bad = []
         absent = []
-        for section in ("code", "data"):
+        for section in ("code", "code_floor", "data"):
             for key, was in base.get(section, {}).items():
                 now = current.get(section, {}).get(key)
                 if now is None:
@@ -819,11 +1129,11 @@ def main():
                   "legitimately removed, re-run with --update-baseline and say "
                   "why in the commit message.")
             return 1
+        total_keys = sum(len(base.get(s, {}))
+                         for s in ("code", "code_floor", "data"))
         print("[disc-coverage] OK - %d/%d baselined figure(s) compared, none "
               "regressed beyond %.2f pp."
-              % (sum(len(base.get(s, {})) for s in ("code", "data")) - len(absent),
-                 sum(len(base.get(s, {})) for s in ("code", "data")),
-                 args.tolerance))
+              % (total_keys - len(absent), total_keys, args.tolerance))
     return 0
 
 

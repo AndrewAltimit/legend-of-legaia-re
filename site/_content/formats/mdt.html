@@ -71,7 +71,7 @@
     <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
     <tbody>
       <tr><td><code>+0x00</code></td><td>4</td><td><code>count</code></td><td><code>7</code></td></tr>
-      <tr><td><code>+0x04</code></td><td>4</td><td><code>meta1</code></td><td>Per-scene meta value the loader carries forward</td></tr>
+      <tr><td><code>+0x04</code></td><td>4</td><td><code>total_decompressed_size</code></td><td>Sum of the descriptors' decompressed sizes; never read by retail</td></tr>
       <tr><td><code>+0x08</code></td><td>7 &times; 8</td><td>descriptors</td><td><code>(u32 type_size, u32 data_offset)</code> each; <code>descriptor[4].type_byte == 0x05</code> is the Move payload</td></tr>
       <tr><td><code>data_offset</code></td><td><code>size</code></td><td>payload</td><td>Independently <a href="lzs.html">LZS</a>-compressed stream decompressing to exactly <code>size</code> bytes</td></tr>
     </tbody>

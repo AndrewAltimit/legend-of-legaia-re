@@ -385,13 +385,19 @@ Confidence: **Confirmed** (disassembly). What each row's `p` / `t` selects
 inside the scene's VAB is the open half - that is the same question the
 static table leaves open, not a record-0 question.
 
-Two knock-ons worth carrying: `0x8007B8D0` is a shared *current-bundle*
-slot, not one subsystem's pointer (the boot sound-bank loader
-`FUN_8001FA88` puts its own `0x1800`-byte buffer there and immediately
-saves that bank's record-0 address at `gp+0x678`, because the next scene
-load overwrites the slot); and record 0 being data is why it must **not**
-be spawned as a stager - walking it as move-VM bytecode reads the `0x0003`
-category word as `WORLD_ROTATE_ADD` and dies on the next row.
+Two knock-ons worth carrying. First, `0x8007B8D0` is a shared
+*current-bundle* slot, not one subsystem's pointer: the **battle**
+sound-bank loader `FUN_8001FA88` puts its own `0x1800`-byte buffer there
+and saves that bank's record-0 address at `gp+0x678`, because the next
+scene load overwrites the slot. (This page previously called that a *boot*
+loader. Its one caller anywhere on the disc is `0x80051A3C` inside battle
+init `FUN_800513F0`, so `bse.dat` occupies the slot per battle, not per
+session; the saved `gp+0x678` pointer is what the battle cue router
+`FUN_8004FE5C` writes each cue's category through -
+[`bse-dat.md`](../formats/bse-dat.md).) Second, record 0 being data is why
+it must **not** be spawned as a stager - walking it as move-VM bytecode
+reads the `0x0003` category word as `WORLD_ROTATE_ADD` and dies on the next
+row.
 
 ## Mechanism 3 - strip cycling and vertex morphs
 

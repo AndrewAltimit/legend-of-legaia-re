@@ -1,8 +1,8 @@
 //! The battle **open banner** - what the screen says about the formation roll
 //! before anyone gets to act.
 //!
-//! Retail's flow state `0x0A` calls `FUN_801D9D3C`, which lays out the party
-//! plates and then reads `ctx[+0x290]` (the formation advantage
+//! Retail's flow state `0x0A` calls `FUN_801D9D3C`, which lays out the enemy-name
+//! labels and then reads `ctx[+0x290]` (the formation advantage
 //! [`legaia_engine_vm::battle_formulas::FormationAdvantage`] models) to pick a
 //! banner string. The arm at `0x801DA234` is three-way:
 //!

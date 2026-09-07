@@ -167,12 +167,99 @@ against a known answer before trusting a "nothing found":
   `addiu`/`ori` with the exact low half, within a few instructions. An address
   assembled in more than two steps, or reached as `table_base + index`, is not
   a pair and will not be found - which is why a per-record negative over a
-  table needs the table *base* scanned too before it means anything.
+  table needs the table *base* scanned too before it means anything. The
+  register walk in the sibling sweep [below](#the-gp-relative-and-luiload-forms)
+  covers the multi-step case; `table_base + index` is still out of reach for
+  both, because the index is a runtime value.
+- **`$gp`, `lui`+load, and a materialised base plus a displacement.** Three
+  forms this tool does not decode at all - a `disp(gp)` access, a `lui`/load
+  pair whose low half rides the load instead of an `addiu`, and an access
+  whose low half is *split* between the base register and the operand's own
+  displacement. All three are in the sibling sweep
+  [below](#the-gp-relative-and-luiload-forms); run it before reading a
+  five-form negative as "nothing references this".
 - **The verdict is triage.** A `dispatch-table` classification says the
   neighbours look like function entries, not that the runtime indexes them.
+- **A loader parameter is not an address, and a computed one is not a
+  literal.** This tool answers "who references this address". A PROT entry is
+  not reached by its address but by its *index*, and an index the code forms
+  with arithmetic appears nowhere as a constant - so "no image names entry N"
+  is a statement about the literal, not about the loader. PROT 1221 / 1222 read
+  as unreachable for exactly this reason: raw TOC `0x4C7` / `0x4C8` occur as no
+  literal on the disc, because PROT 0978 forms the index as `addiu a0,s0,0x4c7`
+  with a runtime `s0` (four sites, file `+0x264` / `+0x2F4` / `+0x398` /
+  `+0x440`). Sweep the *base* of the arithmetic, not the value it produces.
 - **Aliased branches.** A `BR` hit in an image that does not hold the routine
   is not a reference to it; pass `--home` and read `branch_alias`
   ([above](#a-branch-cannot-cross-images)).
+
+## The gp-relative and `lui`+load forms
+
+[`scripts/ghidra-analysis/find-gp-relative-refs.py`](../../scripts/ghidra-analysis/find-gp-relative-refs.py)
+covers the two forms the five-form sweep is structurally blind to.
+
+- **`disp(gp)`.** The point of the small-data pointer is that the address never
+  appears in the instruction stream. `sw a0,0x678(gp)` carries a 16-bit
+  displacement and nothing else, so no scan for the absolute address can see it
+  - in either direction, writer or reader.
+- **`lui rX, hi` + `lw rY, lo(rX)`.** The commonest way retail touches a named
+  global puts the low half on the *load*. The five-form pair scan accepts only
+  `addiu` (op `0x09`) and `ori` (op `0x0D`) as the second half, so it walks past
+  every one of these.
+- **`lui rX, hi` + `ori`/`addiu rX` + `<mem> rY, disp(rX)`.** The same thing
+  with the low half *split* between the register and the operand, so no
+  instruction carries the address or even its low half. This is how retail
+  reaches every scratchpad byte and every field of a struct held in a
+  register: `lui a0,0x1f80; ori a0,a0,0x314; sb v0,0xd4(a0)` writes
+  `0x1F8003E8`, and `lui a0,0x8008; addiu a0,a0,0x4140; lw v1,0x59c(a0)`
+  reads `0x800846DC`. The sweep decodes it by walking the register forward
+  from each `lui` until something else writes it, which also recovers the
+  multi-step materialisation the five-form scan lists as a limit - an
+  `addiu`/`ori` result that *equals* the target is reported too. `--no-base-disp`
+  turns the walk off.
+
+The two compose into a silent negative. `gp+0x678` - the battle sound bank's
+record table, [`bse-dat.md`](../formats/bse-dat.md) - has one gp-relative writer
+and seven `lui`+`lw` readers, and a five-form sweep of its absolute address
+`0x8007B990` reports "no word, no jump, no branch, no materialisation pair - in
+any image".
+
+```bash
+# Recover $gp from the runtime's own `lui gp` / `addiu gp` pair.
+scripts/ghidra-analysis/find-gp-relative-refs.py --find-gp
+
+# Every access to one small-data slot, by displacement or by absolute VA.
+scripts/ghidra-analysis/find-gp-relative-refs.py 0x678
+scripts/ghidra-analysis/find-gp-relative-refs.py --va 0x8007b990
+
+# An address `$gp` does not reach: scratchpad, or a struct field off a
+# materialised base. `--va` takes it as an absolute-form query.
+scripts/ghidra-analysis/find-gp-relative-refs.py --va 0x1f8003e8
+
+# Widen to every extracted PROT entry, and grep the dump corpus too.
+scripts/ghidra-analysis/find-gp-relative-refs.py 0x5b8 --prot --dumps
+```
+
+`$gp` is written once by the runtime and never reloaded, so one constant fixes
+every displacement in the image; `--find-gp` decodes that pair rather than
+trusting a remembered value (retail Legaia: `0x8007B318`, from `0x80026CA8`).
+A displacement scan needs no `$gp` at all, which is what makes it meaningful
+over base-less PROT entries - the encoding carries no address, so it is
+base-independent by construction. The cost of that is coincidence: a raw byte
+scan over scene data will produce hits with `code=0` around them. Read the
+disassembly at a hit before calling it a reference.
+
+The register walk has one soft edge of its own: it is linear, so it follows a
+`lui` straight through a branch it should not have taken. A hit is therefore a
+site to read, not a proof, and the `code` count plus the disassembly settle it
+the same way they do for the five-form scan.
+
+Both silent-negative shapes on this page have now produced a corrected doc.
+`gp+0x678` is the small-data one. The base-plus-displacement one is the camera
+zone loader's scratchpad side-write at `0x1F8003E8..EB`
+([`encounter.md`](../formats/encounter.md#the-scratchpad-window-0x1f8003e8eb)),
+whose four readers were recorded as "consumer Unknown" for exactly as long as
+the only sweep available could not see a `0xd4(a0)`.
 
 ## The retail-unreachable set
 
@@ -189,6 +276,7 @@ reference.
 | `80035274` | SCUS | item / equipment passive-name draw | [`menus.md`](../reference/functions/menus.md#80035274) |
 | `80050D40` | SCUS | 12-bit angle tween | [`battle.md`](../reference/functions/battle.md#unreferenced-scus-entry-points) |
 | `80025054` | SCUS | actor-template tick; unreachable through its record `0x80070614` | [`game-modes.md`](../reference/functions/game-modes.md) |
+| `801CFE98` | 0970 `cutscene_str` | MDEC-**in** DMA-callback registrar (libpress residue); its MDEC-out twin `0x801CFEBC` *is* called by the same overlay | [`cutscene.md`](../subsystems/cutscene.md) |
 | `801CFE20` / `801CFE5C` | 0970 `cutscene_str` | MDEC in / out sync wrappers | [`minigames-debug.md`](../reference/functions/minigames-debug.md) |
 | `801D0230` | 0970 `cutscene_str` | MDEC status-word leaf; both call sites are inside the two wrappers above | [`minigames-debug.md`](../reference/functions/minigames-debug.md) |
 | `801D5780` | 0897 `field` | generic arc-hop spawn | [`runtime-libs.md`](../reference/functions/runtime-libs.md) |

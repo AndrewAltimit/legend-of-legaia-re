@@ -453,9 +453,11 @@ impl PlayWindowApp {
                 tmd_color_emitters,
             )
         };
-        // Kingdom slot-4 inspection wireframe (env-gated). Build the
-        // world-space line geometry once at scene load; the per-frame
-        // world-map render merges it into the overlay-lines buffer.
+        // Kingdom slot-4 inspection overlay (env-gated): the decoded
+        // translation path of every animated part in the world-map actor
+        // clip bank, NOT a mesh wireframe (slot 4 is an ANM container).
+        // Built once at scene load; the per-frame world-map render merges
+        // it into the overlay-lines buffer.
         let world_map_slot4_lines = if std::env::var_os("LEGAIA_WORLDMAP_SLOT4").is_some() {
             res.world_map_slot4.as_ref().and_then(|slot| {
                 let (p, c, i) = world_map_slot4_line_geometry(slot);
@@ -463,7 +465,7 @@ impl PlayWindowApp {
                     None
                 } else {
                     log::info!(
-                        "play-window: world-map slot-4 wireframe {} bodies, {} segments",
+                        "play-window: world-map slot-4 clip bank {} clips, {} translation-path segments",
                         slot.bodies.len(),
                         i.len() / 2
                     );

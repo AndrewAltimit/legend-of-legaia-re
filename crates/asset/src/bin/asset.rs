@@ -4,7 +4,7 @@
 
 use std::path::PathBuf;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 
 #[path = "asset/actors.rs"]
@@ -52,7 +52,7 @@ use worldmap::*;
 const AFTER_HELP: &str = "\
 SUBCOMMAND GROUPS:
   Pipeline basics (start here):
-    describe, decode, stream, extract, categorize, validate
+    describe, decode, stream, extract, categorize, validate, account
   Game-data dumps (readable tables and exports):
     monster-archive (3D monsters, --glb), character-pack, battle-char-pack,
     item-tables, shop-stock, spell-names, steal-table, accessory-passive,
@@ -472,8 +472,9 @@ enum Cmd {
         only_hits: bool,
     },
     /// Inspect a single PROT entry for the field-pack container shape
-    /// (97-entry schema after `0x01059B84` magic). Reports preamble size,
-    /// schema slot summary, and bytes-after-table.
+    /// (the scene texture pack at raw-TOC `+4` of a block - an `asset::pack`,
+    /// optionally behind a DATA_FIELD chunk header). Reports the pack table,
+    /// the member summary, and bytes-after-table.
     FieldPack {
         input: PathBuf,
         /// Print all 97 slot offsets/sizes (otherwise only first/last 8).
@@ -671,8 +672,9 @@ enum Cmd {
         desc_count: usize,
     },
     /// Inspect a single PROT entry as a scene v12 table: print the header
-    /// fields, the inline records at `+0x14`, and a summary of the
-    /// event-script prescript at `+0x800`.
+    /// fields, the inline records at `+0x14`, and a summary of the sister
+    /// prescript (the NEXT PROT entry - `0x800` is this entry's size, not a
+    /// field inside it).
     SceneV12 {
         input: PathBuf,
         /// Print every event-script record's bytecode head (first 16 bytes)
@@ -1057,6 +1059,44 @@ enum Cmd {
         #[command(subcommand)]
         cmd: OverlayCmd,
     },
+
+    // --- lane W1-B ---
+    /// Byte-account one PROT entry: which bytes a parser claims, and what
+    /// shape the rest has.
+    ///
+    /// `asset categorize` says what format an entry IS; this says how much of
+    /// it any parser in this workspace actually consumes, and classifies the
+    /// leftover by shape. See `docs/tooling/byte-accounting.md`.
+    Account {
+        /// Extracted PROT entry `.BIN`, or a bare extraction index resolved
+        /// against `--prot-dir`.
+        input: String,
+        /// Directory of extracted PROT entries, for the bare-index form.
+        #[arg(long, default_value = "extracted/PROT")]
+        prot_dir: PathBuf,
+        /// Override the extraction index (normally taken from the filename).
+        /// Selects the monster-archive and overlay-code walkers.
+        #[arg(long)]
+        prot_index: Option<u32>,
+        /// Ghidra dump directory, for overlay-code entries.
+        #[arg(long)]
+        funcs: Option<PathBuf>,
+        /// Nesting depth for decoded (LZS / chunk) payloads.
+        #[arg(long, default_value_t = 1)]
+        depth: u8,
+        /// Skip the TIM/TMD/VAB/SEQ magic sweep over the residue.
+        #[arg(long)]
+        no_rescan: bool,
+        /// Shortest residue run to list individually.
+        #[arg(long, default_value_t = 64)]
+        min_residue: usize,
+        /// Keep the largest individual claims in the report.
+        #[arg(long)]
+        claims: bool,
+        /// Emit JSON instead of the text report.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1169,10 +1209,99 @@ fn reset_sigpipe() {
     }
 }
 
+/// Resolve `input` to an extracted PROT entry: a path if it exists, else a
+/// bare extraction index looked up under `prot_dir`.
+fn resolve_prot_entry(input: &str, prot_dir: &std::path::Path) -> Result<PathBuf> {
+    let direct = PathBuf::from(input);
+    if direct.is_file() {
+        return Ok(direct);
+    }
+    let idx: u32 = input
+        .parse()
+        .map_err(|_| anyhow::anyhow!("{input} is neither a file nor an extraction index"))?;
+    let prefix = format!("{idx:04}_");
+    for ent in
+        std::fs::read_dir(prot_dir).with_context(|| format!("reading {}", prot_dir.display()))?
+    {
+        let path = ent?.path();
+        if path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n.starts_with(&prefix))
+        {
+            return Ok(path);
+        }
+    }
+    anyhow::bail!("no entry {prefix}*.BIN under {}", prot_dir.display())
+}
+
+// --- lane W1-B ---
+#[allow(clippy::too_many_arguments)]
+fn account_cmd(
+    input: &str,
+    prot_dir: &std::path::Path,
+    prot_index: Option<u32>,
+    funcs: Option<PathBuf>,
+    depth: u8,
+    rescan: bool,
+    min_residue: usize,
+    keep_claims: bool,
+    json: bool,
+) -> Result<()> {
+    use legaia_asset::byte_account::{AccountOptions, account, prot_index_from_name, render_text};
+
+    let path = resolve_prot_entry(input, prot_dir)?;
+    let bytes = std::fs::read(&path).with_context(|| format!("reading {}", path.display()))?;
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("<entry>")
+        .to_string();
+    let opts = AccountOptions {
+        prot_index: prot_index.or_else(|| prot_index_from_name(&name)),
+        label: name,
+        funcs_dir: funcs,
+        depth,
+        rescan,
+        min_residue,
+        keep_claims,
+        max_nested: if json { 4 } else { 8 },
+    };
+    let acc = account(&bytes, &opts);
+    if json {
+        println!("{}", serde_json::to_string_pretty(&acc)?);
+    } else {
+        print!("{}", render_text(&acc, 0));
+    }
+    Ok(())
+}
+
 fn main() -> Result<()> {
     reset_sigpipe();
     match Cli::parse().cmd {
         Cmd::Describe { input, count } => describe(&input, count),
+        // --- lane W1-B ---
+        Cmd::Account {
+            input,
+            prot_dir,
+            prot_index,
+            funcs,
+            depth,
+            no_rescan,
+            min_residue,
+            claims,
+            json,
+        } => account_cmd(
+            &input,
+            &prot_dir,
+            prot_index,
+            funcs,
+            depth,
+            !no_rescan,
+            min_residue,
+            claims,
+            json,
+        ),
         Cmd::Decode {
             input,
             type_size,

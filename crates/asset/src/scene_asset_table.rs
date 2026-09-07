@@ -12,7 +12,7 @@
 //!
 //! ```text
 //! +0x00   u32  count = 7              ; literal `07 00 00 00`
-//! +0x04   u32  meta1                  ; varies - not a file-relative offset
+//! +0x04   u32  total_decompressed_size ; = the sum of the descriptors' sizes
 //! +0x08   7 × (u32 type_size, u32 data_offset)
 //!                                     ; each pair packs `(type<<24)|size`
 //!                                     ; first descriptor's `data_offset` = 0x40
@@ -110,11 +110,41 @@
 //! at `base + data_offset`, and its handler is selected by `type_size`'s high
 //! byte. [`SceneAssetTable::slots`] reproduces this walk and
 //! [`SceneAssetTable::payload_range`] resolves a slot's payload span against a
-//! caller-supplied base. The relocation into `_DAT_8007b85c` and the exact
-//! base handed to the walker for the prescript-prefixed
-//! [`crate::scene_scripted_asset_table`] variant are runtime values (the
-//! capture-blocked residual); [`resolve`] gives callers the same
-//! base-relative walk for both variants by computing the table base statically.
+//! caller-supplied base. The relocation into `_DAT_8007b85c` is a whole-sector
+//! block copy of the entry (next section), so the static base-relative walk
+//! [`resolve`] performs is the runtime walk.
+//!
+//! ### `+0x04` is the bundle's total decompressed size
+//!
+//! The header's second word - long carried as an unexplained `meta1` - equals
+//! `sum(descriptor[i].size)` exactly, in **every** table of this family on the
+//! disc: all 88 entries the categorizer classes `scene_asset_table` plus the
+//! 17 it classes `lzs_container` (the `count`-4/5 MAN-less v12-family form and
+//! the character/effect containers `crate::parse_player_lzs` reads), 105 of
+//! 105. Since `size` is the *decompressed* byte count of each descriptor's own
+//! LZS stream, the word is the bundle's total unpacked footprint - an
+//! authoring total, not a file offset and not a sector count (it exceeds the
+//! entry's byte length in all 105).
+//!
+//! **Retail never reads it.** `FUN_80020224` loads `count` from `+0x00`
+//! (`80020288`: `lw s3,0x0(s4)`) and steps descriptors from `+0x08`
+//! (`8002029c`: `lw a0,0xc(s0)` / `lw a1,0x8(s0)` with `s0 = s4`, `s0 += 8`
+//! per iteration), so the word at `+0x04` is skipped. Sweeping every dumped
+//! function for a load off `*(0x8007b85c)` finds reads at offset `0x0` only -
+//! the walker's count, `FUN_8002541C`'s pack count, and two debug prints. So
+//! the field is Confirmed as a *format* fact and is inert at runtime.
+//!
+//! ### How the table reaches `_DAT_8007b85c`
+//!
+//! `FUN_8001E1B4` allocates the buffer once - `8001e24c..8001e290`:
+//! `FUN_80017888(0, 0x62C00)` then `sw v0, -0x47a4(at)` - so `_DAT_8007b85c`
+//! is a *pointer* to a `0x62C00`-byte arena. The bundle is placed at that
+//! arena's offset 0 by a plain 32-byte-per-iteration block copy,
+//! `FUN_8003D26C(*(0x8007b85c), *(0x8007b8c4), sectors << 6)` at `801d6918`
+//! in the field init, where `sectors = *(0x8007b6fc)` (cleared right after, at
+//! `801d6c48`). `sectors << 6` iterations x 32 bytes = `sectors * 0x800`, so
+//! the copy is whole sectors of the entry, verbatim - which is why the on-disc
+//! `count` word lands exactly at the walker's `base`.
 //!
 //! See `docs/formats/scene-bundles.md` for the full byte-level spec.
 
@@ -132,6 +162,14 @@ const HEADER_COUNT: u32 = 7;
 /// descriptor `Tmd`/type-0x0A). Both are walked by `FUN_80020224`, which
 /// reads `count` from the file and loops that many descriptors.
 const MAX_DESCRIPTORS: usize = 7;
+
+/// Smallest `count` word the detector will consider. Below `HEADER_COUNT - 1`
+/// a table is admitted only when it carries a MAN (see [`detect`]); this floor
+/// keeps a one- or two-word leading run from ever reaching that test.
+const MIN_HEADER_COUNT: u32 = 4;
+
+/// Asset-type byte of the scene MAN descriptor (dispatcher case `0x03`).
+const MAN_TYPE_BYTE: u8 = 0x03;
 
 /// Header-end byte offset for a table with `count` descriptors: the 8-byte
 /// `[count][meta]` header plus `count` 8-byte descriptor records. The first
@@ -158,9 +196,11 @@ const MAX_DATA_OFFSET: u32 = 16 * 1024 * 1024;
 /// Detection result.
 #[derive(Debug, Clone, Serialize)]
 pub struct SceneAssetTable {
-    /// `meta[1]` from the 8-byte header. Not currently understood; surfaced
-    /// for future runtime tracing.
-    pub meta1: u32,
+    /// The header's second word (`+0x04`): the **sum of every descriptor's
+    /// decompressed `size`**, i.e. how many bytes this bundle unpacks to in
+    /// total. See the module-level section for the corpus identity and for
+    /// why retail never reads it.
+    pub total_decompressed_size: u32,
     /// Number of real descriptors (`6` or `7`). Only `descriptors[..count]`
     /// are populated; the rest are zero padding.
     pub count: usize,
@@ -192,6 +232,21 @@ impl SceneAssetTable {
     /// zero padding that follows for the `count == 6` variant.
     pub fn used(&self) -> &[DescriptorRecord] {
         &self.descriptors[..self.count]
+    }
+
+    /// Sum of every populated descriptor's decompressed `size` - what the
+    /// header's [`total_decompressed_size`](Self::total_decompressed_size)
+    /// word records.
+    pub fn descriptor_size_sum(&self) -> u32 {
+        self.used().iter().map(|d| d.size).sum()
+    }
+
+    /// Whether `+0x04` agrees with [`Self::descriptor_size_sum`]. True for
+    /// every table of this family on the retail disc; a false here means the
+    /// buffer is not a bundle header (or an editor rewrote sizes without
+    /// re-summing the header).
+    pub fn total_size_is_consistent(&self) -> bool {
+        self.total_decompressed_size == self.descriptor_size_sum()
     }
 
     /// Byte offset, within the bundle entry, of descriptor `index`'s
@@ -410,11 +465,23 @@ impl DescriptorRecord {
 /// match the strict 7-asset header.
 pub fn detect(buf: &[u8]) -> Option<SceneAssetTable> {
     let count_u32 = legaia_bytes::u32_le(buf, 0)?;
-    // Two header shapes in the retail corpus: kingdom bundles use `count = 7`
-    // (canonical), early standalone-town scenes use `count = 6`. Constrain to
-    // the observed values - the anchor check below is the strong signal, but
-    // an unbounded count would let arbitrary small leading words through.
-    if count_u32 != HEADER_COUNT && count_u32 != HEADER_COUNT - 1 {
+    // Retail imposes no bound at all - `FUN_80020224` reads `count` from
+    // `+0x00` and loops that many descriptors - so the bound here is purely a
+    // detector heuristic against arbitrary small leading words, and the anchor
+    // check below is the strong signal. Kingdom bundles use `count = 7`, early
+    // standalone towns `count = 6`, and **two** scenes use `count = 5`:
+    // `bubu1` and `edbubu`, whose tuple is the canonical seven minus `Tmd` and
+    // `Vdf` (`TimList, Man, Move, Anm, Flag(0x14)`) because neither scene owns
+    // an environment mesh pack. A `{6, 7}`-only bound made both resolve no MAN
+    // and read as unloadable.
+    //
+    // The relaxation is deliberately narrow: `count < 6` is admitted only when
+    // the table carries a type-3 MAN descriptor, which is the same
+    // discriminator the v12 embedded-table probe already uses. Disc-wide that
+    // admits exactly those two entries - the other 13 sub-6 tables (the
+    // `count`-4/5 MAN-less v12-family form, `0874`'s `count`-3 party pack) all
+    // lack a MAN and keep their existing class.
+    if !(MIN_HEADER_COUNT..=HEADER_COUNT).contains(&count_u32) {
         return None;
     }
     let count = count_u32 as usize;
@@ -422,7 +489,7 @@ pub fn detect(buf: &[u8]) -> Option<SceneAssetTable> {
     if buf.len() < table_end {
         return None;
     }
-    let meta1 = legaia_bytes::u32_le(buf, 4)?;
+    let total_decompressed_size = legaia_bytes::u32_le(buf, 4)?;
 
     let mut descriptors = [DescriptorRecord {
         type_byte: 0,
@@ -462,8 +529,19 @@ pub fn detect(buf: &[u8]) -> Option<SceneAssetTable> {
         };
     }
 
+    // The sub-6 relaxation's gate (see the count bound above): a short table
+    // is a scene bundle only when it carries the MAN the scene loads.
+    if count_u32 < HEADER_COUNT - 1
+        && !descriptors
+            .iter()
+            .take(count)
+            .any(|d| d.type_byte == MAN_TYPE_BYTE)
+    {
+        return None;
+    }
+
     Some(SceneAssetTable {
-        meta1,
+        total_decompressed_size,
         count,
         descriptors,
     })
@@ -591,7 +669,8 @@ mod tests {
         let count = types.len() as u32;
         let mut buf = Vec::with_capacity(total_size);
         buf.extend_from_slice(&count.to_le_bytes());
-        buf.extend_from_slice(&0u32.to_le_bytes()); // meta1
+        // +0x04 = sum of the descriptor sizes below (each 0x100).
+        buf.extend_from_slice(&(count * 0x100).to_le_bytes());
         let mut data_off: u32 = header_end(count);
         for &t in types {
             let sz: u32 = 0x100;
@@ -806,18 +885,18 @@ mod tests {
 
     #[test]
     fn accepts_real_world_head_pattern_izumi() {
-        // 0031_izumi.BIN head: `07 00 00 00 28 F2 04 00 94 5C 02 01 40 00 00 00 …`
+        // 0031_izumi.BIN head, verbatim through descriptor 6.
         // Descriptor 0: type_size = 0x01025c94, off = 0x40 → type=0x01, size=0x025c94.
         let mut buf = vec![
             0x07, 0x00, 0x00, 0x00, // count = 7
-            0x28, 0xF2, 0x04, 0x00, // meta1
+            0x28, 0xF2, 0x04, 0x00, // total_decompressed_size = 0x0004F228
             0x94, 0x5C, 0x02, 0x01, 0x40, 0x00, 0x00, 0x00, // desc 0
             0xA8, 0xE5, 0x01, 0x02, 0xC1, 0x3A, 0x01, 0x00, // desc 1
             0xBC, 0x40, 0x00, 0x03, 0xBE, 0x28, 0x02, 0x00, // desc 2
             0x28, 0x00, 0x00, 0x04, 0x5C, 0x49, 0x02, 0x00, // desc 3
-            0xC8, 0x00, 0x00, 0x05, 0x84, 0x49, 0x02, 0x00, // desc 4
-            0xCC, 0x00, 0x00, 0x06, 0x4C, 0x4A, 0x02, 0x00, // desc 5
-            0x18, 0x00, 0x00, 0x07, 0x18, 0x4B, 0x02, 0x00, // desc 6
+            0x04, 0x64, 0x00, 0x05, 0x65, 0x49, 0x02, 0x00, // desc 4
+            0x04, 0x00, 0x00, 0x06, 0x02, 0x68, 0x02, 0x00, // desc 5
+            0x00, 0x0B, 0x00, 0x07, 0x05, 0x68, 0x02, 0x00, // desc 6
         ];
         // Pad enough that all descriptor offsets fit (plus trailing slack).
         buf.resize(0x30000, 0);
@@ -826,5 +905,20 @@ mod tests {
         assert_eq!(s.descriptors[1].type_byte, 2);
         assert_eq!(s.descriptors[6].type_byte, 7);
         assert_eq!(s.descriptors[0].data_offset, 0x40);
+        // `+0x04` is the sum of the seven decompressed sizes, not an offset.
+        assert_eq!(s.total_decompressed_size, 0x0004_F228);
+        assert_eq!(s.descriptor_size_sum(), 0x0004_F228);
+        assert!(s.total_size_is_consistent());
+        // ...and it is larger than the entry it sits in (159744 bytes) - the
+        // property that rules out "file size" / "sector count" readings.
+        assert!(s.total_decompressed_size as usize > 159_744);
+    }
+
+    #[test]
+    fn synthetic_tables_carry_a_consistent_total() {
+        let buf = synth([1, 2, 3, 4, 5, 6, 7], 0x4000);
+        let s = detect(&buf).expect("synthetic detect");
+        assert!(s.total_size_is_consistent());
+        assert_eq!(s.descriptor_size_sum(), 7 * 0x100);
     }
 }

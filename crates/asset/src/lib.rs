@@ -128,6 +128,8 @@ pub mod world_map_overlay;
 pub mod worldmap_menu;
 pub mod xa_cue_table;
 
+pub mod byte_account;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum AssetType {
     /// Single TIM texture.
@@ -261,8 +263,9 @@ pub fn decode(buffer: &[u8], desc: &Descriptor, mode: DecodeMode) -> Result<Vec<
     }
 }
 
-/// Parse a `player.lzs`-style container: `[meta0, meta1, (size0, off0), (size1, off1), ...]`
-/// where each `(size, off)` pair is a [`Descriptor`].
+/// Parse a `player.lzs`-style container: `[count, total_size, (size0, off0), (size1, off1), ...]`
+/// where each `(size, off)` pair is a [`Descriptor`] and `total_size` is the sum of the
+/// descriptors' decompressed sizes (a word retail never reads - see `scene_asset_table`).
 ///
 /// The header has 2 metadata u32s (purpose currently unknown) before the
 /// descriptor pairs. `count` is how many descriptors to read; player.lzs uses 3.

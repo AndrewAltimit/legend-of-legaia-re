@@ -1649,9 +1649,20 @@ family `FUN_8002B994`, whose *kind* is decoded from the state word
   on the first row and `1` on the second.
 
 The panel is content-only, like every renderer in this table - the frame
-is drawn by the caller. Which screen owns it is **Unknown**; the two-row
-shape and the packed state word read as a settings pair, but nothing in
-the corpus opens window 46.
+is drawn by the caller. It is the **casino prize counter's Yes/No confirm**:
+the two rows are the Yes / No labels and the heading is the "Is this OK?"
+prompt, and the open script `0x801E4F2C` (`01 2E 00 00`, one command) is
+handed to the widget VM by `FUN_801DC1CC` - `lui a0, 0x801e` at `0x801DC3F4`
++ `addiu a0, a0, 0x4f2c` at `0x801DC408`, `jal 0x801D6628` at `0x801DC41C`,
+with `sw s2, 0x46d0(v1)` at `0x801DC414` staging the very state word
+`_DAT_801E46D0` the marker decode above reads. `FUN_801DC1CC` is index `0x20`
+of the sub-screen pointer table at `0x801E4F40`, and sub-screen `0x20` is
+written at exactly one site (`0x801DC8C8`/`0x801DC8CC`, on entry-context kind
+`7`) - the same pairing the [screen map](#which-screen-opens-a-window) below
+records. The earlier "which screen owns it is Unknown; nothing in the corpus
+opens window 46" reading predates that sweep: the `01 2E` command is in the
+overlay's widget-script pool, with a `04 2E` close command three words later at
+`0x801E4F38` that no site in any image references.
 
 ### Ported painters
 

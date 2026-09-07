@@ -151,6 +151,23 @@ fn cold_spawn_is_reachable_across_all_field_scenes() {
         if !matches!(host.world.mode, SceneMode::Field) {
             continue; // a scripted transition took over; nothing to assert
         }
+        if !host.world.helper_contexts.is_empty() || host.world.cutscene_timeline.is_some() {
+            // A spawned record or the scene's own cutscene timeline is still
+            // playing (the ending scenes hide the player for a long authored
+            // cinematic - `WaitFrames` holds no longer count toward the
+            // anti-hang cap), so the stranded-player rescue has not run yet;
+            // there is nothing to assert about a player a script is
+            // deliberately holding off-map.
+            continue;
+        }
+        let hide = legaia_engine_core::world::FIELD_OFFMAP_HIDE_XZ;
+        if player_xz(&host) == (hide, hide) {
+            // The entry script parked the player at the off-map hide box and
+            // ended there (the ending scenes' cinematics do this by design):
+            // retail never hands the pad back in these scenes, so a "cold
+            // spawn" is not a state a player reaches.
+            continue;
+        }
         let (x1, z1) = player_xz(&host);
         let comp1 = host.world.field_walk_component_size(x1, z1);
         if comp1 == 0 {

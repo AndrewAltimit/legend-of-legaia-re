@@ -253,8 +253,10 @@ impl World {
 /// | `flag_at_0x434` | `_DAT_80084574` | `1` |
 /// | `brightness_ref` | `_DAT_8008457C` | `0xD7` (full-brightness reference the battle fades clamp against) |
 /// | `voice_volume` | `_DAT_80084580` | `200` (voice/SFX volume config) |
-/// | `screen_brightness` | `_DAT_8007B910` | `0xD7` (live brightness, ramped by battle-action fades) |
+/// | `audio_level` | `_DAT_8007B910` | `0xD7` - the live **audio level**: `FUN_800267A8` reads it at `0x800267B0` and passes `(level << 15) >> 16` to the libsnd volume shim `FUN_80062004`. The field was called `screen_brightness`, which the cell never was |
 /// | `bgm_volume_raw` | `DAT_8007B6EC` | `-1` (field-BGM volume; see [`crate::scene::bgm_reattach_volume`]) |
+///
+/// REF: FUN_800267A8, FUN_80062004
 ///
 /// `DAT_8007B750` and `_DAT_8007BAD0` are also cleared to `0` (already
 /// covered by the engine's default state). The engine analog of steps 1 + 3
@@ -268,8 +270,9 @@ pub struct GameStateColdReset {
     pub brightness_ref: i32,
     /// `_DAT_80084580` - voice/SFX volume config.
     pub voice_volume: i32,
-    /// `_DAT_8007B910` - live screen brightness.
-    pub screen_brightness: i32,
+    /// `_DAT_8007B910` - the live audio level (a volume operand, not a
+    /// brightness; see the table on [`GameStateColdReset`]).
+    pub audio_level: i32,
     /// `DAT_8007B6EC` - field-BGM volume raw global.
     pub bgm_volume_raw: i32,
 }
@@ -279,7 +282,7 @@ pub const GAME_STATE_COLD_RESET: GameStateColdReset = GameStateColdReset {
     flag_at_0x434: 1,
     brightness_ref: 0xD7,
     voice_volume: 200,
-    screen_brightness: 0xD7,
+    audio_level: 0xD7,
     bgm_volume_raw: -1,
 };
 
@@ -296,9 +299,10 @@ mod tests {
         assert_eq!(d.flag_at_0x434, 1);
         assert_eq!(d.brightness_ref, 0xD7);
         assert_eq!(d.voice_volume, 200);
-        // Boot: live brightness starts at the full-brightness reference
-        // (both stores source the same 0xD7 register).
-        assert_eq!(d.screen_brightness, d.brightness_ref);
+        // Boot: the live audio level and the full-brightness reference
+        // are stored from the same 0xD7 register, so they start equal
+        // despite being unrelated cells.
+        assert_eq!(d.audio_level, d.brightness_ref);
         assert_eq!(d.bgm_volume_raw, -1);
         // The level the BGM re-attach (FUN_80019898) derives from the
         // boot-value raw global.

@@ -665,7 +665,7 @@ Pinned data structures inside the residency window (captured from a save state d
 | `0x801CE810` | ~150 B | variable | Path-string table (\\DATA\\MOV.STR;1, \\DATA\\MOV15.STR;1, \\MOV\\MV1A.STR;1, \\MOV\\MV6..MV1.STR;1) |
 | `0x801CE8AC` | ~50 B | variable | Post-FMV return-scene labels (CDNAME shape) |
 
-### MDECin DMA-callback hook (`FUN_801CFE98`)
+### MDECin DMA-callback hook (`FUN_801CFE98`) - linked, never registered
 
 `FUN_801CFE98` is a nine-instruction wrapper that forwards its single
 argument to the PsyQ `DMACallback` entry `FUN_8005FDE8` with the channel
@@ -678,9 +678,34 @@ The wrapper is byte-identical, and at the same VA, in PROT **0970**
 (`cutscene_str`) and PROT **0971** (`debug_menu`) - both verified by
 disassembling each extracted image at base `0x801CE818` (file offset
 `0x1680`, inside 0971's own `0x1800` bytes, so this is genuine
-co-residency and not the 0971 → 0972 over-read). No static caller appears
-in either image; the callback is installed from a code path this corpus
-does not cover, so **who** registers it is Unknown.
+co-residency and not the 0971 → 0972 over-read).
+
+**Nothing on the disc registers it, and nothing needs to.** What the shape
+and the neighbourhood say - an inference, not a symbol - is that this is one
+entry of the libpress `DecDCT*` surface, linked in as a unit with the entries
+the overlay does call. Its twin sits at the very next address: `0x801CFEBC` is the same
+nine instructions with the channel immediate `1` instead of `0` - MDEC**out**,
+the decoded-data path - and *that* one the STR overlay calls twice itself,
+at `0x801CF524` (with `a0 = 0`, clearing the callback) and at `0x801CF9C4`
+(installing one). `0x801CFEE0`, the reset entry, is called from
+`0x801CFC34`. Retail therefore drives MDEC-in synchronously and only ever
+hooks the out-channel, which leaves the in-channel registrar linked and
+unreferenced - the same shape as the two sync wrappers `0x801CFE20` /
+`0x801CFE5C` next door
+([`address-reference-scan.md`](../tooling/address-reference-scan.md#the-retail-unreachable-set)).
+
+The negative is a closed sweep, not a failed search: `0x801CFE98` collects
+**zero** hits in any reference form - literal word, `lui`+`addiu`/`ori`,
+`jal`, `j`, PC-relative branch, `disp(gp)`, `lui`+load, and materialised
+base plus displacement - across `SCUS_942.54`, all 31 based overlay images
+and all 1202 remaining extracted PROT entries. (Its one apparent hit, a
+branch at `0x801CFE84` in the slot-machine overlay, is an aliased branch
+from an image that does not hold the routine and cannot reach it.) Both
+sweeps are
+[`find-address-word-refs.py`](../../scripts/ghidra-analysis/find-address-word-refs.py)
+`801cfe98 --prot --home cutscene_str` and
+[`find-gp-relative-refs.py`](../../scripts/ghidra-analysis/find-gp-relative-refs.py)
+`--va 0x801cfe98 --prot`.
 
 ### Directory-record cache
 
@@ -726,25 +751,37 @@ The two globals it writes are the only side-effects:
 #### `_DAT_8007BA78` has exactly two writers
 
 An instruction-level sweep - not a search over decompiled-C text - finds every
-access to `0x8007BA78` across `SCUS_942.54` and all 1233 extracted `PROT` entries,
-matching any `lb/lh/lw/lbu/lhu/sb/sh/sw` whose effective address resolves through a
-`lui` / `lui`+`addiu` base. The result is six distinct sites:
+access to `0x8007BA78` across `SCUS_942.54`, all 1233 extracted `PROT` entries and
+the extracted overlay images, in **every** reference form: `lui`-based
+`lb/lh/lw/lbu/lhu/sb/sh/sw`, the address materialised into a register by
+`lui`+`addiu`/`ori`, the literal 32-bit word, and - the form an absolute-only scan
+is structurally blind to - the `gp`-relative displacement, here `0x760(gp)` with
+`gp = 0x8007B318`. The `gp` form yields **zero** hits, which is what turns the
+enumeration from a survey into a closed one (that same blindness is what once made
+the dev flag `gp+0x5AA` look writer-less; see
+[`ghidra.md`](../tooling/ghidra.md#decompiler-artifacts-that-have-produced-false-claims)).
 
 | Site | Kind | Where |
 |---|---|---|
-| `0x801E30F4` | store | field overlay, the `4C E2` FMV-trigger op |
-| `0x801DDCE8` | store | menu overlay, the title attract-countdown tick |
-| `0x801CEA74`, `0x801CEC94`, `0x801CECA8`, `0x801CF4E0` | loads | STR overlay dispatch + play loop |
+| `0x801E30F4` (PROT 0897 `+0x148DC`) | store | field overlay, the `4C E2` FMV-trigger op |
+| `0x801DDCE8` (PROT 0899 `+0xF4D0`) | store | menu/title overlay, the title attract-countdown tick |
+| `0x801CEA74`, `0x801CEC94`, `0x801CECA8`, `0x801CF4E0` (PROT 0970 `+0x25C`, `+0x47C`, `+0x490`, `+0xCC8`) | loads | STR overlay dispatch + play loop |
+| `0x801CFA50` (PROT 0971 `+0x1238`) | literal word | debug-menu overlay's editable-globals pointer table |
 
-`SCUS_942.54` itself never touches it. Two apparent extra hits are duplicate
-on-disc copies, not new sites: PROT 0896 carries the same field overlay as 0897
-shifted by `0x9000` (a 0x46800-byte identical span straddles the store), and the
-pre-correction over-read footprints of PROT 0967/0968/0969 each carried the
-head of the STR overlay 0970 (their corrected entries are 6/4/2 KB - the
-battle-tutorial overlay, a slot-B module, and the STR-path table - and hold
+`SCUS_942.54` itself never touches it, in any form. The only non-instruction
+reference is the debug menu's pointer-table word - the static witness for the
+dev-menu `WORK_TBL` editing that a scan over instructions alone cannot see, and
+the mechanism behind corpus states whose `fmv_id` no trigger op explains.
+Apparent extra instruction hits were duplicate on-disc copies under the
+superseded entry-size expression, and none survives it: the corrected PROT 0896
+(`0x9000` bytes) cannot hold the `0x46800`-byte field-overlay span that reading
+attributed to it, and the over-read footprints of PROT 0967/0968/0969 each
+carried the head of the STR overlay 0970 (their corrected entries are 6/4/2 KB -
+the battle-tutorial overlay, a slot-B module, and the STR-path table - and hold
 none of the STR code). This is what rules out
-a per-FMV event table: nothing but the trigger op and the attract tick can set the
-id, so an FMV cannot carry teleport or story-flag side-effects of its own.
+a per-FMV event table: nothing but the trigger op, the attract tick and the dev
+menu can set the id, so an FMV cannot carry teleport or story-flag side-effects
+of its own.
 
 **Coverage limit.** The sweep reads raw bytes, so it cannot see code inside an
 LZS-compressed section. Every code-bearing class in `PROT/categorize.json`
@@ -837,7 +874,7 @@ Before spawning, `FUN_8003BDE0` checks the P2 record's **C1/C2 story-flag gates*
 
 `opdeene`'s timeline record (partition 2, record 18; record start at MAN offset `0xA47`) is a field-VM script that interleaves:
 
-- camera staging - op `0x45` `Camera Configure` (a 23-byte payload block) and op `0x46` `RenderCfg`;
+- camera staging - op `0x45` `Camera Configure` (a 23-byte payload block) and op `0x46` `ViewWindow` (the camera visible-tile-window setter, [`encounter.md`](../formats/encounter.md#the-scratchpad-window-0x1f8003e8eb));
 - actors - op `0x23` `MoveTo` and op `0x34` `Effect` spawns;
 - the intro-skip arm - op `0x2E` `GFLAG_SET 26` (`2E 1A` at `0xA5E`);
 - **inline narration text** (below);
@@ -1176,11 +1213,30 @@ the tick it is set) + the timeout fallback.
 
 **Player-channel (`0xF8`) ExecMove / halt-acquire completion.** Door-cutscene records drive the
 **player** through the same handshake: `A2 F8 <move_id>` (ExecMove) pokes a move-table clip onto
-the player object, then `C3 F8 <sub> …` (op `0x43` sub-0/1/A/B halt-acquire) halts the caller and
-state-resumes it at the operand s16 once the move completes - a resume PC pointing **backward**
-into the poke loop (jou's castle-door record `P2[5]`: `C3 F8 00 5E E2 50` at `+0x60` resumes at
-`+0x50`; the record's terminal `0x3F` to `jouina` sits at `+0xD0`). Retail resolves `0xF8` to the
-live player object (`_DAT_8007C364`, `FUN_8003C83C`); the engine spawns no player channel, so
+the player object, then `C3 F8 <sub> …` (op `0x43` sub-0/1/A/B halt-acquire) halts the caller
+until that motion finishes (jou's castle-door record `P2[5]` at `+0x60`; the record's terminal
+`0x3F` to `jouina` sits at `+0xD0`). Retail resolves `0xF8` to the live player object
+(`_DAT_8007C364`, `FUN_8003C83C`, `li v0,0xf8` / `lw v0,-0x3c9c(v0)`; the same compare is inlined
+twice more in the halt-resume kernel `FUN_8003774C`, at `0x800377A0` and `0x80037E04`).
+
+Three parts of the retail side were previously described from the port's model rather than from
+the arms, and the disassembly does not support them. **ExecMove arms nothing.** The `0x22` arm at
+`0x801DE998` writes only the target's `+0x5C` / `+0x5E` / `+0x56`, calls the clip selector
+`FUN_800204F8` and advances - it never sets the `0x400` halt bit or a wait field. **The
+halt-acquire is what creates the wait object**: `0x801DF384` saves the op pointer into `+0x94`
+and ORs `0x400` into `+0x10` for the target (and, when the target is the player, for the calling
+record too, `0x801DF404`), then `0x801DF5AC jal 0x801d25ec` spawns the glide actor plus a release
+helper (handler `0x801D5D60`) carrying `watch` / `owner` / `mask = 0x400`. The helper polls the
+glide actor's done bit (`0x801D5DB4 andi v0,v0,8`) and clears the halt (`0x801D5DD4`, plus the
+player's own at `0x801D5DFC`). **The record does not park on the acquire**: the acquire advances
+(`0x801DF5B8 addiu s8,s8,0x8`, so 9 bytes extended for sub-0/1 and 11 for sub-A/B; a failed
+predicate advances 0), and the park happens at the *next* cross-context op through the VM
+prologue's generic busy gate `0x801DE90C..0x801DE944`, which returns the unadvanced PC that the
+run loop reads as "stop this frame" (`0x8003CFF0`). So there is no backward resume PC: the two
+halfwords at operand `+3` / `+5` are `FUN_801D25EC` tween arguments read by `FUN_8003CE9C`, not a
+jump target.
+
+The engine spawns no player channel, so
 [`field_channels::resolve_target`](../../crates/engine-core/src/field_channels.rs) keeps its
 `None`-for-`0xF8` contract and `run_spawned_record_slice` models the two ops directly: the
 ExecMove emits the same `ExecMove` field event and arms a short in-flight countdown
@@ -1805,11 +1861,13 @@ Why the switch is worth reaching rather than a curiosity: in `nilboa` the
 leader flags `0x10` / `0x11` / `0x12` and installs *that leader's* destination
 banner and tile walls. The leader is the player's choice of where to go.
 
-One overlap to know about: the port latches its field **run** modifier off
-Square too, so inside an armed talk one press does both. The swap bit is
-disassembly-pinned and the run mask word `0x800846DC` is explicitly not
-([`field-locomotion.md`](field-locomotion.md)), so the run modifier is the
-intruder there.
+One overlap used to be worth flagging here and is now gone: the port latched
+its field **run** modifier off Square too, so inside an armed talk one press
+did both. The run mask now defaults to retail's `Cross | R1`
+([`field-locomotion.md`](field-locomotion.md#base-step-selection-walk--run)),
+which does not include the swap bit, so nothing else fires on the leader-swap
+press. Square stays in the port's mask as an alternate run binding, which is
+the one way to reproduce the old double-fire.
 
 ### `FUN_801D5E20` rotates a mesh's own colour words
 

@@ -7,16 +7,18 @@ mode state machine that drives every screen thereafter, and the title / name-ent
 
 **Where it lives.** Boot proper is SCUS-resident - the TOC loader
 (`FUN_8003E4E8`), the asset-type dispatcher (`FUN_8001F05C`), and the mode
-dispatch table at `0x8007078C`. The title screen itself is *not*; it lives in an
-overlay, which is why it has no row in the mode table.
+dispatch table at `0x8007078C`. The title screen itself is overlay-resident
+(PROT 0899), but it is still mode-table-driven: it runs under the `CARD` pair,
+modes 22/23, which is simply not *named* for it.
 
 **Port counterpart.** `engine-core`'s `BootSession` + the mode/menu dispatch;
 `legaia_asset::mode_table` reads the mode table straight off the disc.
 
 **The three things that catch people out:**
 
-- **The title screen is not in the mode table.** Looking for its mode row is a
-  dead end - see [Title screen is not in the mode table](#title-screen-is-not-in-the-mode-table).
+- **No mode-table row is named for the title screen** - it runs under `CARD`
+  (22/23). Searching the 28 dev names for one is the dead end, not the table;
+  see [The title screen runs under the `CARD` pair](#the-title-screen-runs-under-the-card-pair-modes-2223).
 - **The TOC has different strides on disc and in RAM.** They are not the same
   structure; see [`formats/prot.md`](../formats/prot.md).
 - **The pad mask is not the layout you expect.** See
@@ -27,7 +29,7 @@ overlay, which is why it has no row in the mode table.
 - [The main loop (`FUN_80015E90`)](#the-main-loop-fun_80015e90)
 - [TOC loader (`FUN_8003E4E8`)](#toc-loader-fun_8003e4e8)
 - [Asset-type dispatcher (`FUN_8001F05C`)](#asset-type-dispatcher-fun_8001f05c)
-- [Game-mode state machine](#game-mode-state-machine) - [full handler map](#full-handler-map-recovered-from-the-disc) · [New Game boot chain](#new-game-boot-chain-title--field) · [title is not in the table](#title-screen-is-not-in-the-mode-table) · [CD-read API stack](#cd-read-api-stack) · [system-UI gap](#pre-init_data-system-ui-gap-menu-glyph-atlas--boot-cursors) · [title-overlay source](#title-overlay-source-on-disc)
+- [Game-mode state machine](#game-mode-state-machine) - [full handler map](#full-handler-map-recovered-from-the-disc) · [New Game boot chain](#new-game-boot-chain-title--field) · [title runs under `CARD`](#the-title-screen-runs-under-the-card-pair-modes-2223) · [CD-read API stack](#cd-read-api-stack) · [system-UI gap](#pre-init_data-system-ui-gap-menu-glyph-atlas--boot-cursors) · [title-overlay source](#title-overlay-source-on-disc)
 - [Title-screen overlay state](#title-screen-overlay-state) - [tick](#tick-function) · [sub-mode dispatcher](#sub-mode-dispatcher) · [opening scene chain + intro skip](#the-opening-scene-chain--the-fun_801d1344-intro-skip) · [name-entry overlay](#name-entry-overlay) · [sprite-emit helpers](#sprite-emit-helpers) · [state struct](#state-struct-extended) · [pad-mask layout](#pad-mask-layout-important)
 - [Boot init.pak (PROT 0895)](#boot-initpak-prot-0895) · [strip-grid unfolding](#strip-grid-unfolding)
 - [Debug flags](#debug-flags)
@@ -171,8 +173,11 @@ sites (with the `a0` setup decoded) finds 16 callsites. Constant params: 2 / 3 /
 SM's special-attack (`+0x28`) and summon-stager (`id - 0x79`) bands, the battle stage band
 (`+0x47`), and the slot-B default `FUN_80025BA0` (param 5 or 6 by flag `DAT_8007B6A8` →
 extraction 0900/0901, the summon-render pair - agreeing with 0900's byte-residency in mid-cast
-saves). No site can produce param 0 or 1, so extraction entries 0895/0896 are unreachable from
-any static loader call (see the 0896 row in
+saves). Param **0** has exactly one producer and it is `main()` itself -
+`0x8001612C jal 0x8003ebe4` with `a0 = 0` (`0x80016128 addu a0,zero,zero`), the pre-mode-loop
+load of the boot `init.pak` extraction entry **0895**; the earlier "no site can produce param 0
+or 1" reading came from a census that skipped the boot call. Param **1** still has no producer,
+so extraction entry 0896 remains unreachable from any static loader call (see the 0896 row in
 [re-settled-threads.md](../reference/re-settled-threads.md#prot-0896-bat_back_dat-identity)).
 
 | Mode | Init handler | Loader call | PROT idx | Content (verified) |
@@ -225,15 +230,25 @@ MONSTER TEST INIT hands straight back to CONFIG - the debug menu it was
 entered from - and mode 5 `MONSTER MODE` is never reached. Same body as the
 mode-14 column's `FUN_8002B904`.
 
-**Mode 16 jumps into overlay slot A blind.** `0x801CE9C0` is not a function
-entry in any image on the disc. The only one whose bytes cover it is the
-debug-menu overlay, where it is slot-A base `0x801CE818` + `0x1A8` - the
-`lui at,0x8008 / sw zero,-0x4748(at)` pair inside `FUN_801CE97C`'s global-clear
-block. Because `FUN_8002612C` never calls the loader `FUN_8003EBE4`, mode 16
-executes whatever sits at slot A + `0x1A8` at the time, which is a
-retail-stripped dev path rather than a callable target. The address sweep
-(`scripts/ghidra-analysis/locate-entry-image.py`) finds no frame and no
-in-image `jal` for it across all 31 based overlays.
+**Mode 16 calls into the `init.pak` overlay.** `0x801CE9C0` **is** a function
+entry: it is PROT **0895** file `+0x1A8`, a clean `addiu sp, sp, -0x230`
+prologue at the slot-A base, and `FUN_8002612C` is nothing but a frame, that
+`jal`, and an epilogue - so the mode's whole body is that routine. What the
+handler does not do is *stage* the overlay: it never calls the loader
+`FUN_8003EBE4`, so mode 16 assumes PROT 0895 is already resident at slot A,
+which the boot path leaves it. See
+[the `init.pak` overlay](#boot-initpak-prot-0895) for the image and
+[`functions/battle.md`](../reference/functions/battle.md#boot--initpak-overlay-prot-0895)
+for the per-function rows.
+
+This **corrects** an earlier reading recorded here and in
+[`functions/game-modes.md`](../reference/functions/game-modes.md): that
+`0x801CE9C0` "is not a function entry in any image", the only bytes covering it
+being the debug-menu overlay's `FUN_801CE97C` global-clear block, and that mode
+16 was therefore a retail-stripped dev path. Both halves were VA aliasing at the
+shared slot-A base `0x801CE818` - the failure the static overlay map exists to
+resolve. The sweep that reported "no frame, no in-image `jal`" ran over the
+overlay set as it was mapped then, and PROT 0895 was not in it.
 
 **Mode 20 is the one live row of the three.** `FUN_80055B6C` is the battle
 scene setup entry and is resident in `SCUS_942.54`, so BATTLE INIT is an
@@ -319,9 +334,11 @@ The fresh-state seed is the new-game data-init `FUN_80034A6C` (called via the bo
   The expansion (ported as `legaia_asset::new_game::seed_live_records`) fans each
   template row into **two** stat blocks per live record: a current-stat block at
   record `+0x104`, where HP and MP each occupy a current *and* a max cell so a New
-  Game starts at full health, and a max-stat block at `+0x11C`. Level and magic
-  rank are seeded to `1` at `+0x130` / `+0x131`, and the display name is copied to
-  `+0x2A7`. That is twenty `sh` stores per slot, all `$s0`-relative with `$s0` at
+  Game starts at full health, and a max-stat block at `+0x11C`. `+0x130` (the level) and
+  `+0x131` are both seeded to `1` - `+0x131` is write-only, read nowhere on the
+  disc, and is **not** the magic-rank byte
+  ([`new-game-table.md`](../formats/new-game-table.md#0x131-is-seeded-and-never-read)) -
+  and the display name is copied to `+0x2A7`. That is twenty `sh` stores per slot, all `$s0`-relative with `$s0` at
   the save-context base - which is what the disc-gated `new_game_seed_disc` oracle
   re-derives from the executable's own encodings rather than trusting the
   transcription.
@@ -340,7 +357,69 @@ The engine port also applies this seed on a **cold scene boot** - entering a sce
 
 #### Title screen is not in the mode table
 
-The title screen is not one of the 28 modes - its tick (`FUN_801DD35C`) is loaded by a pre-mode-dispatch boot routine, ahead of the mode table being consulted at all. NEW GAME is how control crosses from that title overlay into the mode table (at mode 2). The title overlay code lives in the unindexed 60-sector gap inside `PROT.DAT` between TOC entries 899 and 900 (see [§ Title-overlay source on disc](#title-overlay-source-on-disc) below). The title *wordmark* TIM is PROT 888/890 (read by `legaia_asset::title_pak`); PROT 899 carries the options-menu config bundle. So the recurring "which mode-table row is the title screen?" question has an empty answer - there isn't one.
+*Superseded, and the heading is kept because both the question and the links to
+it persist.* The title screen **is** driven by the mode table - it runs under
+the `CARD` pair, modes 22/23. What is true, and what made the old reading look
+right, is that no mode-table row is *named* for it: the 28 dev names are
+`CONFIG` / `MAIN` / `MONSTER` / `TMD` / `EFECT` / `TEST` / `MAPDSIP` / `MAP` /
+`READ` / `GAME OVER` / `BATTLE` / `CARD` / `OTHER` / `STR`, and looking for a
+row called anything like "title" finds nothing. See
+[The title screen runs under the `CARD` pair](#the-title-screen-runs-under-the-card-pair-modes-2223).
+
+#### The title screen runs under the `CARD` pair (modes 22/23)
+
+The mode-table negative is decided by the table itself, not inferred: the
+28 x 24-byte records at `0x8007078C` are a fixed-size array, and reading every
+`+0x00` name pointer out of `SCUS_942.54` yields the fourteen even/odd name
+pairs tabulated above and nothing else. That part of the old reading stands.
+
+The mechanism it attached to the negative does not. There **is** exactly one
+overlay load ahead of the mode loop, and it is not the title's:
+
+- `main()` seeds the master mode index before the loop. `FUN_8001D424`
+  (called at `0x80016024`) writes `_DAT_8007B83C = 0x10` - mode 16, `READ` -
+  at `0x8001D5B8` (`sh s0,-0x47c4(at)`, `s0` set to `0x10` one instruction
+  earlier).
+- A full `jal` census of the two overlay loaders over `SCUS_942.54` finds 16
+  call sites. The only one before the loop is `0x8001612C jal 0x8003ebe4`
+  with `a0 = 0` (`0x80016128 addu a0,zero,zero`) - loader parameter `0`, which
+  is extraction entry **0895**, the boot `init.pak`. The loop's first read of
+  the table is `0x8001616C addiu s0,v0,0x78c`, forty instructions later.
+- Mode 16's own init handler is `FUN_8002612C`, eight instructions whose only
+  call is `jal 0x801CE9C0` - PROT 0895 file `+0x1A8` under the slot-A base
+  `0x801CE818`, a clean `addiu sp,sp,-0x230` prologue. That routine is the
+  **publisher-logo boot pass**: it forms `0x801D09E4` / `0x801DBC04` /
+  `0x801E7624` / `0x801EB664`, which are `+8` into each of the four TIMs the
+  [init.pak layout](#boot-initpak-prot-0895) tabulates (file `+0x21C4` /
+  `+0xD3E4` / `+0x18E04` / `+0x1CE44`), writes their `RECT` `+4`/`+6`
+  halfwords, uploads each through `FUN_800198E0`, spawns two actors from
+  descriptors at `0x801D09AC` / `0x801D09C4`, and closes by writing
+  `_DAT_8007B83C = 0x11` (mode 17, `READ MODE`) at `0x801CEC94`.
+- PROT 0895 stores the master-mode cell at exactly three sites; the second,
+  `0x801CF4D4`, writes `0x16` = **22**, handing the front-end to `CARD`.
+- Mode 22's init `FUN_8002574C` loads PROT 0899 (`0x800258B4 jal 0x8003ebe4`,
+  `a0 = 4`), spawns the actor for spawn-descriptor `0x800706D4`
+  (`0x800257A0 jal 0x80020de0`) whose `+8` handler word is `0x801E36A0`, and
+  ends `_DAT_8007B83C = 0x17` (mode 23) at `0x80025974`. `FUN_801E36A0` is
+  0899 file `+0x14E88`, and the `jal 0x801dd35c` inside it is 0899 `+0x14E94`.
+  So the title tick runs as a spawned actor under the mode-23 per-frame
+  handler, one mode-table row like any other.
+
+The tick's home is byte-decided too. `FUN_801DD35C`'s 48-byte prologue occurs
+**once** in the whole of `PROT.DAT`, at extraction entry 0899 file `+0xEB44`,
+and `0x801CE818 + 0xEB44` reproduces the printed VA exactly; it is absent from
+`SCUS_942.54`. Its own two master-mode stores are `0x801DDCF0` (`0x1A` = mode
+26, the attract underflow into STR) and `0x801DFC00` (`2` = mode 2, NEW GAME
+into the field), which is exactly the [New Game boot
+chain](#new-game-boot-chain-title--field). The older "unindexed 60-sector gap
+between TOC entries 899 and 900" reading has no disc behind it either - the TOC
+partitions `PROT.DAT` without gaps, entry 899 ending at sector 47301 where 900
+begins (see [§ Title-overlay source on disc](#title-overlay-source-on-disc)).
+
+The title *wordmark* TIM is PROT 888/890 (read by `legaia_asset::title_pak`);
+PROT 899 carries the options-menu config bundle **and** this overlay code, which
+is why the title screen, the memory-card manager and the in-field pause menu all
+share one mode pair and one overlay.
 
 ### CD-read API stack
 
@@ -472,7 +551,7 @@ The engine reads the slice directly via `ProtIndex::prot_dat_raw_bytes(byte_offs
 
 #### Loader pathway (hypothesis)
 
-These TIMs land in main RAM at vaddrs `0x80105000..0x80110200` (well below the `0x801C0000+` overlay window), which means they're treated as **shared static assets**, loaded once at boot before any overlay. The loader has not been pinned function-by-function yet; the most likely candidate is the same CD-DMA-channel-3 read primitive (`FUN_8005D9A0`) that delivers the title overlay, driven from the SCUS-side boot sequence. (There is no separate "bulk-initializer" - the `FUN_8005DA40` of earlier notes is a Ghidra-promoted intra-function label inside `FUN_8005D9A0`; see the negative findings below.)
+These TIMs land in main RAM at vaddrs `0x80105000..0x80110200` (well below the `0x801C0000+` overlay window), which means they're treated as **shared static assets**, loaded once at boot before any overlay. The loader has not been pinned function-by-function yet; the most likely candidate is the CD-DMA-channel-3 read primitive (`FUN_8005D9A0`), driven from the SCUS-side boot sequence. It is **not** the path the title overlay takes: PROT 0899 arrives through the ordinary overlay loader, `0x800258B4 jal 0x8003ebe4` with `a0 = 4`, inside mode 22's init `FUN_8002574C`. (There is no separate "bulk-initializer" - the `FUN_8005DA40` of earlier notes is a Ghidra-promoted intra-function label inside `FUN_8005D9A0`; see the negative findings below.)
 Confirming this requires a Write-breakpoint capture targeting the `0x80105000..0x80110200` range on cold boot, mirroring the title-overlay hunt in [`scripts/pcsx-redux/autorun_title_overlay_writer_hunt.lua`](../../scripts/pcsx-redux/autorun_title_overlay_writer_hunt.lua).
 
 ### Title-overlay source on disc
@@ -523,7 +602,7 @@ The script VM that drives every running script is **not** in `SCUS_942.54` - it 
 
 ## Title-screen overlay state
 
-The title-screen overlay loads into `0x801E0000+` during the boot sequence and keeps its mode state in a struct at `0x801EF018`. Known fields:
+The title-screen overlay is PROT 0899, streamed into the slot-A window at base `0x801CE818` by mode 22's init (`FUN_8002574C`, `0x800258B4 jal 0x8003ebe4` with `a0 = 4`); its mode state is a struct at `0x801EF018`, i.e. entry-0899 file `+0x20800`. Known fields:
 
 | Offset | Width | Field |
 |---|---|---|
@@ -534,7 +613,7 @@ Initial values are **disc bytes**: the CD-DMA-channel-3 primitive `FUN_8005D9A0`
 
 ### Tick function
 
-The per-frame tick function is `FUN_801DD35C` (entry `0x801DD35C`, 12 104 bytes / 3 026 instructions, in the title overlay at `0x801C0000+`, **not** in SCUS). Pinned via a PCSX-Redux watchpoint on the countdown - the BP captured `pc=0x801DDCCC` on the exact `sw v0, -0xe94(a0)` instruction that writes the decremented value back. Full disassembly + decompile in `ghidra/scripts/funcs/overlay_title_801ddccc.txt`; capture pipeline in `scripts/pcsx-redux/autorun_countdown_trigger.lua` (defaults to slot-8 save state; outputs RAM + screenshot + regs to `captures/boot_walk/overlay_title.bin*`).
+The per-frame tick function is `FUN_801DD35C` (entry `0x801DD35C`, 12 104 bytes / 3 026 instructions, PROT 0899 file `+0xEB44` under base `0x801CE818`, **not** in SCUS - the 48-byte prologue occurs exactly once in `PROT.DAT`). Pinned via a PCSX-Redux watchpoint on the countdown - the BP captured `pc=0x801DDCCC` on the exact `sw v0, -0xe94(a0)` instruction that writes the decremented value back. Full disassembly + decompile in `ghidra/scripts/funcs/overlay_title_801ddccc.txt`; capture pipeline in `scripts/pcsx-redux/autorun_countdown_trigger.lua` (defaults to slot-8 save state; outputs RAM + screenshot + regs to `captures/boot_walk/overlay_title.bin*`).
 
 Decrement sequence (around `0x801DDCB0..0x801DDCCC`):
 
@@ -790,12 +869,22 @@ The per-logo grid is captured by [`legaia_engine_core::publisher_logos::STRIP_GR
 
 Source strips are stored **column-major** in the bitmap; the output grid is row-major, so source strip `s = c * rows + r` lands at output cell `(col c, row r)`. PROKION's two halves combine into `PROK ☉ KION` (the green hemispheres in each half complete a single sun in the middle when adjacent). SCEA's four 32-row strips read top-line `Sony Computer Entertainment America` + bottom-line `Presents`.
 
-The actual on-screen layout the retail boot code uses still has to be RE'd from the unlocated title-overlay tick body - the `STRIP_GRID` constants are hypothesis-fit-to-visible-content, not pinned to specific GPU draw commands.
+The retail boot code that draws them is **not** the title tick: it is `FUN_801CE9C0`, this entry's own routine at file `+0x1A8`, reached from mode 16 `READ INIT` (`FUN_8002612C`). It forms each TIM header `+8` (`0x801D09E4` / `0x801DBC04` / `0x801E7624` / `0x801EB664`), writes the `RECT` `+4`/`+6` halfwords and uploads through `FUN_800198E0`. The `STRIP_GRID` constants are still hypothesis-fit-to-visible-content rather than read off that routine's draw calls - decoding its per-logo quads is what would pin them.
+
+### The code region, and where it ends
+
+The entry is mapped in [`static-overlays.toml`](../../crates/asset/data/static-overlays.toml) as `boot_init_pak`, slot A, base `0x801CE818` - recovered from the image's own internal call graph (23 internal `jal`s, 8 of them landing on prologues; whole-file pointer resolution 22/25 and 7 string anchors at slot A against 1/12 and 0 at slot B). That makes the base a disc fact rather than an inference from the mode-16 call.
+
+The code is one contiguous region, file `+0x1A8..+0x216C` (VA `0x801CE9C0..0x801D0984`, 8132 bytes), and the first TIM starts at `+0x21C4` - so every byte of plausible MIPS ahead of the logo payload is accounted for, with 88 bytes of padding between. It partitions into **20 functions**, all dumped (`overlay_boot_init_pak_0895_<addr>.txt`); the roll is in [`functions/battle.md`](../reference/functions/battle.md#boot--initpak-overlay-prot-0895).
+
+Two of them write the game-mode word `_DAT_8007B83C`: the mode-16 body stores `0x11` (17) at `0x801CEC94` as its last act, and the third function stores `0x16` (22, `CARD INIT`) at `0x801CF4D4`. So the boot chain out of `READ INIT` is set inside this overlay, not by the mode table's `next` column.
+
+One caveat on `anchor_va`: the map row carries none, because `static_overlay::is_prologue` only accepts `addiu sp, sp, -X` immediates in `0xFF80..0xFFF8` (frames up to `0x100`) and this entry's frame is `0x230`. The base rests on jal-recovery plus the string-anchor cross-check instead.
 
 The `h:\prot\field\title\title.pak` string is **only a debug-print referent** - the title-screen content lives in **PROT 0888** (`sound_data2` per CDNAME, see the title-overlay-state section above) referenced by integer constant from SCUS boot code, not by string lookup. SCUS does not contain the literal string `title.pak` anywhere. The mismatch between the debug path and the actual PROT entry is the same pattern as PROT 0895 being labelled `bat_back_dat` while actually carrying `init.pak`: CDNAME labels are misleading for several entries, so always cross-validate against the loader-call constant or the file's magic bytes.
 
 The dev-tree `title.pak` is split across two retail PROT entries, both confirmed by the init.pak fingerprint method against the `title_screen_new_game` save state (sweep RAM for TIM headers, fingerprint each CLUT, grep the PROT corpus): the **title wordmark** TIM is **PROT 0888/0890** (the big-logo RAM TIM fingerprint-matches it), and the **options / config-menu bundle** is **PROT 0899** (`xxx_dat`). Entry 0899's indexed payload opens with the config-menu string pool - `Display Off` / `Gradual` / `Immediate` / `Field HP Display` / `Encounters` / `Battles` / `Vibration Off`/`On` / `Dual Shock` / `Voices Off`/`On` / `Battle Camera` / `Monaural` / `Stereo` / `Sound` - followed by the small config-screen TIMs (CLUTs byte-matched at 0899 offsets `0x169DC` and `0x1F91C`+).
-The title-overlay *code* lives in the unindexed gap immediately after entry 0899 (see [`legaia_asset::title_pak`](../../crates/asset/src/title_pak.rs) and the title-overlay-source notes). So 0888 = title image, 0899 = options/config bundle + trailing overlay code.
+The title-overlay *code* lives inside entry 0899 at `+0xEB44` (the "unindexed gap after 0899" was the old over-reading entry size, see the negative findings below) (see [`legaia_asset::title_pak`](../../crates/asset/src/title_pak.rs) and the title-overlay-source notes). So 0888 = title image, 0899 = options/config bundle + trailing overlay code.
 
 The TIM-upload helper for these (and for the title overlay's per-frame sprites) is `FUN_800198E0` - it consumes a packed struct with custom magic `0x11` OR a real PSX TIM (flags bit 3 = "has CLUT"), and dispatches to `FUN_800583C8` (the `LoadImage` wrapper, identified by the literal string `s_LoadImage_800156d4` it references for debug logging).
 

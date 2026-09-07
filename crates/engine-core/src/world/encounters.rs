@@ -1164,7 +1164,7 @@ impl World {
             // `_DAT_8007B910` - the live audio level. The engine models no
             // field-mode duck, so the level sits at retail's cold-reset value
             // (`0xD7`; `docs/subsystems/battle-action.md` § audio duck).
-            audio_level: crate::new_game::GAME_STATE_COLD_RESET.screen_brightness,
+            audio_level: crate::new_game::GAME_STATE_COLD_RESET.audio_level,
             ..Default::default()
         };
         let tick = tick_transition(&mut entity, &globals, &TransitionResponses::default());

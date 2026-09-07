@@ -73,16 +73,16 @@ offset[1]:       8b 20 00 00    word offset 0x208B -&gt; byte 0x822C (= start of
 
 <section class="doc-section" id="distinction-from-the-standalone-tim-pack">
   <h2>Distinction from the standalone TIM-pack (and the third sibling)</h2>
-  <p>Three pack formats coexist on the disc. They look alike in a hex dump and each has its own header math, so apply the one that matches the source:</p>
+  <p>Two pack formats coexist on the disc. They look alike in a hex dump and each has its own header math, so apply the one that matches the source. The former &ldquo;field-pack&rdquo; is not a third one: its <code>0x01059B84</code> word is a DATA_FIELD chunk header wrapping an <code>asset::pack</code> of one scene's TIMs.</p>
   <table>
-    <thead><tr><th></th><th><a href="pack.html">asset::pack</a> (this page)</th><th><a href="tim-pack.html">Standalone TIM-pack</a></th><th><a href="field-pack.html">Field-pack</a></th></tr></thead>
+    <thead><tr><th></th><th><a href="pack.html">asset::pack</a> (this page)</th><th><a href="tim-pack.html">Standalone TIM-pack</a></th><th><a href="field-pack.html">&ldquo;Field-pack&rdquo;</a> (an <code>asset::pack</code> inside a DATA_FIELD chunk)</th></tr></thead>
     <tbody>
-      <tr><td>Lives</td><td>inside a DATA_FIELD TIM_LIST / TMD chunk</td><td>as a whole standalone <code>PROT.DAT</code> entry</td><td>as a whole <code>PROT.DAT</code> entry (scene TIM/TMD bundle)</td></tr>
-      <tr><td>Identified by</td><td>the enclosing chunk's type byte</td><td><code>byte[3] == 0x01</code>, <code>byte[2] &lt; 0x10</code></td><td>magic <code>0x01059B84</code></td></tr>
-      <tr><td>Header</td><td><code>u32 count</code> at <code>+0</code></td><td>4 discriminator bytes, then <code>u32 count</code> at <code>+4</code></td><td>magic-prefixed; see its page</td></tr>
-      <tr><td>Offset table at</td><td><code>+4</code></td><td><code>+8</code></td><td>see its page</td></tr>
-      <tr><td>Member offset</td><td><code>word_index * 4</code></td><td><code>word_index * 4 + 4</code></td><td>see its page</td></tr>
-      <tr><td>Parser</td><td><code>crates/asset::pack</code></td><td><code>crates/prot::timpack</code></td><td><code>crates/asset</code> field-pack detector</td></tr>
+      <tr><td>Lives</td><td>inside a DATA_FIELD TIM_LIST / TMD chunk</td><td>as a whole standalone <code>PROT.DAT</code> entry</td><td>at raw-TOC <code>+4</code> of a scene's CDNAME block, as a DATA_FIELD <code>TIM_LIST</code> chunk</td></tr>
+      <tr><td>Identified by</td><td>the enclosing chunk's type byte</td><td><code>byte[3] == 0x01</code>, <code>byte[2] &lt; 0x10</code></td><td>the chunk header <code>(0x01 &lt;&lt; 24) | payload_len</code> - <code>0x01059B84</code> only for town01</td></tr>
+      <tr><td>Header</td><td><code>u32 count</code> at <code>+0</code></td><td>4 discriminator bytes, then <code>u32 count</code> at <code>+4</code></td><td><code>u32 count</code> at chunk <code>+4</code> (the <code>asset::pack</code> header)</td></tr>
+      <tr><td>Offset table at</td><td><code>+4</code></td><td><code>+8</code></td><td>chunk <code>+8</code> (this page's math, shifted by the 4-byte chunk header)</td></tr>
+      <tr><td>Member offset</td><td><code>word_index * 4</code></td><td><code>word_index * 4 + 4</code></td><td><code>word_index * 4</code> from the pack start</td></tr>
+      <tr><td>Parser</td><td><code>crates/asset::pack</code></td><td><code>crates/prot::timpack</code></td><td><code>legaia_asset::field_pack::scene_pack</code></td></tr>
     </tbody>
   </table>
   <p>The two header shapes side by side:</p>

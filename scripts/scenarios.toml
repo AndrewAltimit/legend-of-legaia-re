@@ -2484,3 +2484,23 @@ expected_game_mode = 0x15
 expected_active_scene = "vozz"
 description = "DELILAS PARTY SWAP MOD savestate - same rom/session. Gi mid-Spirit with distorted/stretched torso mesh on a disc that has NO 0xFE extras (the ordinal-overrun fix is on this rom and the runtime assembly confirms it) - a SECOND streak mechanism, pose-time like the hand/hammer gaps. Streaks flash within ~1s of loading."
 topics = ["delilas", "battle", "pose-time", "spirit streaks", "probe state"]
+
+# ----------------------------------------------------------------------
+# Uru Mais exit capture. The four Uru Mais rooms and `jouine` carry their
+# exits in partition-2 records that only the scene's `.PCH` walk-on trigger
+# sidecar names (the second table, staged past the `.MAP` and searched when
+# the map's own misses), so a sweep of the `.MAP` table reads them as sealed.
+# `uru_field_run` parks the player on uru's arrival tile, four tiles south
+# of the gate-1 band that spawns the MAP03 exit record.
+# Probe: scripts/pcsx-redux/autorun_uru_exit_probe.lua.
+# ----------------------------------------------------------------------
+
+[[scenarios]]
+slot = 255
+label = "uru_field_run"
+backup_fingerprint = "6889b1c9d1ecf990b30a8cc24c6a2aefef2835ee6baffb0fc77c5329284f4719"
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "uru"
+description = "Free field run inside Uru Mais (scene uru), player parked at world (4864, 880) = tile (38, 6) - the arrival tile the map03 entrance record writes. The gate-1 walk-on band at tiles (36..39, 5) is four tiles north; it spawns partition-2 record 42, whose 41-byte body ends in the 0x3F named scene change back to MAP03 at entry (0x24, 0x46)."
+topics = ["field", "uru", "Uru Mais", "walk-on trigger", "scene exit", "probe state"]

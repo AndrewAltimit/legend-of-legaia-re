@@ -115,12 +115,34 @@ randomizer):
 | `+0x0` (u32) | cumulative experience (the "Max Exp" cheat target / "Experience" readout; the level-up applier compares it against the threshold) | `0` |
 | `+0x4` (u32) | next-level XP threshold (the status screen's "next" readout) | `reach(L2)`: Vahn/Terra `121`, Noa `102`, Gala `140` |
 | `+0x130` (u8) | **displayed character level** - what "LV" shows and the `Level 99` cheat targets; the applier maintains it `+1` per level-up event | `1` |
-| `+0x131` (u8) | a second per-character byte the seed also inits to `1` (magic-rank candidate, unconfirmed) | `1` |
+| `+0x131` (u8) | a second per-character byte the seed also inits to `1` - **write-only, no reader on the disc** (see below) | `1` |
 
 `+0x100` stays zero and is unrelated to the level (the engine port uses it as its
 own internal level cell). The shown level is read from `+0x130` directly, **not**
 re-derived from experience at a New Game - confirmed live: a record with level-10
 experience + stats but `+0x130 == 1` still shows LV 1.
+
+### `+0x131` is seeded and never read
+
+The seed's `li $v0, 0x1` at `0x800561C4` feeds two byte stores in the same
+four-record loop - `sb $v0, 0x6f9($s0)` (`+0x131`) at `0x800561C8` and
+`sb $v0, 0x6f8($s0)` (`+0x130`) at `0x800561CC` - so the two bytes are written
+from one register, in that order. `0x800561C8` is the **only** instruction on the
+disc that touches `+0x131`: an opcode-decoding sweep for a `lb`/`lbu`/`sb` whose
+displacement is `0x131` (record-relative) or `0x6f9`/`0xb0d`/`0xf21`/`0x1335`
+(the four slots' displacements off the `0x80084140` game-state block the menu
+overlay addresses records through) finds that one store and nothing else across
+`SCUS_942.54` plus all 80 based overlay images, and no wider access covers the
+byte either - every level read in the corpus is a `lbu` at the `+0x130` /
+`0x6f8` form, never a halfword or word spanning `+0x130..+0x131`. Widening the
+sweep to the whole `+0x131..+0x13B` span leaves only false positives inside
+asset entries. So the record's displayed level is `+0x130` alone and `+0x131`
+carries no runtime meaning.
+
+That also retires the "magic-rank candidate" reading. The magic-rank counter is
+a *different* byte and is already capture-pinned at record `+0x9C`
+(`0x09 → 0x0A` across a magic-rank-up save pair; see
+[battle.md](../subsystems/battle.md)).
 
 The starting-level randomizer seeds the whole growth-capable party
 (Vahn / Noa / Gala) at level `N` with same-size in-place edits to the seed routine.

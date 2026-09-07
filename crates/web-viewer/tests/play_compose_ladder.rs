@@ -479,8 +479,11 @@ fn rung2_opening_name_entry(rt: &mut LegaiaRuntime, tally: &mut Tally) -> Result
         );
     }
     // Let the timeline finish so the field hands the pad back.
+    // Press confirm on alternate frames while the record plays: after naming
+    // it parks on the elder's first dialog line and waits for the player.
     let mut ticks = 0u32;
     while rt.debug_timeline_active() && ticks < 12000 {
+        rt.set_pad(if ticks % 4 < 2 { 0x4000 } else { 0 }); // 0x4000 = Cross
         if ticks.is_multiple_of(8) {
             step(rt, tally);
         } else {
@@ -488,6 +491,7 @@ fn rung2_opening_name_entry(rt: &mut LegaiaRuntime, tally: &mut Tally) -> Result
         }
         ticks += 1;
     }
+    rt.set_pad(0);
     if rt.debug_timeline_active() {
         return Err("opening timeline never finished after the naming beat".into());
     }

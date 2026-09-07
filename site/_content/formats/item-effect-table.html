@@ -50,12 +50,13 @@
   <thead><tr><th>Bit</th><th>Meaning</th></tr></thead>
   <tbody>
     <tr><td><code>0x80</code></td><td>populated - set on every descriptor that has an effect</td></tr>
-    <tr><td><code>0x40</code></td><td>draws its own info-panel body instead of the passive block - exactly five subtypes: the Point Card and the two summon-flute pairs (the Point Card arm prints the live points bank; see <a href="../subsystems/shop.html">shop</a>)</td></tr>
-    <tr><td><code>0x20</code></td><td>whole-party target (all-targets validator)</td></tr>
+    <tr><td><code>0x40</code></td><td>target <strong>side</strong> is the enemy party (clear = the ally party); paired with <code>0x20</code> it selects one of four target modes - set on exactly five subtypes, the Point Card and the two summon-flute pairs (see <a href="../subsystems/shop.html">shop</a>)</td></tr>
+    <tr><td><code>0x20</code></td><td><strong>all</strong> targets on the selected side (clear = one)</td></tr>
     <tr><td><code>0x04</code></td><td>usable from the <strong>battle</strong> item menu</td></tr>
     <tr><td><code>0x02</code></td><td>usable from the <strong>field</strong> item menu</td></tr>
   </tbody>
   </table>
+  <p>The <code>0x40</code>/<code>0x20</code> pair is read in exactly one place: the battle Item command in <code>FUN_801D0748</code> (PROT 0898) loads the flag byte at <code>0x801D18D8</code> and forks on <code>andi 0x40</code> / <code>andi 0x20</code> at <code>0x801D18E0</code>/<code>0x801D18E8</code> into phase <code>0x5B</code> (one enemy), <code>0x5D</code> (all enemies), <code>0x64</code> (one ally) or <code>0x66</code> (all allies). The magic arm runs the identical ladder on the spell table’s <code>+2</code> byte at <code>0x801D1C50</code>, and the two tables’ low nibbles agree - an item’s <code>0xC4</code> is the spell table’s “one enemy” <code>0x44</code> with the <code>0x80</code> bit added. Sweeping every image for a <code>+2</code> load followed by <code>andi 0x40</code> finds those two sites and nothing else; the item-info panel <code>FUN_801D0F1C</code> contains no <code>andi 0x40</code> at all, and its <code>slti 0x40</code> tests the record’s <code>+3</code> passive index against the no-passive sentinel, a different field.</p>
   <p>Healers carry <code>0x04 | 0x02</code>; permanent stat-ups and field-utility items carry <code>0x02</code> only; status-cures and revive carry <code>0x04</code> only. Key items resolve to a descriptor with <strong>neither</strong> usability bit (e.g. flag <code>0x89</code>), which is how the menu greys them out. The class byte is meaningful only together with the usability flags - many key items funnel to class <code>0</code> with no usability bit, so "class 0" alone is not "an HP potion".</p>
 </section>
 

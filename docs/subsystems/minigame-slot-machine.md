@@ -679,14 +679,101 @@ on-screen rect of every other element, none of which entered the fit (the
 medallion column, the marquee panel, the two mascots, the three reel windows, the
 reel-stop pedestals, and the dot-matrix grid).
 
+### The cabinet is a mesh - PROT 1200 descriptor 1
+
+The machine's **body** - the grey shell, the dark-red face the reels sit in, the
+navy marquee backing and the floor ramp - is not emitted by any slot function
+and is not on any texture page. It is an ordinary **Legaia TMD** shipped as
+descriptor 1 of the machine's own asset entry, installed into the shared model
+bank and drawn by the shared TMD renderer like any other actor. That is why a
+primitive-emitter sweep of PROT 0975 reports nothing -
+`scripts/ghidra-analysis/find-addprim-emitters.py` over the image returns **0
+hits**: there is nothing to find, the overlay never builds a cabinet packet.
+
+The mesh: **1 object, 65 vertices, 76 primitives** (38 tri + 38 quad) in four
+groups, every one of them **untextured** - modes `0x21` (flat tri), `0x29`
+(flat quad), `0x31` (gouraud tri), `0x39` (gouraud quad), no UVs, no CBA/TSB.
+Its baked packet colours are the machine's palette. Tallying the **leading**
+colour word of each of the 76 prims (the one that carries the GP0 code byte in
+its high byte; a gouraud prim's other corners carry their own):
+
+| leading packet colour | prims | what it is |
+|---|---|---|
+| `#4E2727` / `#472121` / `#3A1D1D` / `#310A0A` / `#1D0000` | 48 | the dark-red reel face and its shading ramp |
+| `#6F6F6F` | 14 | the grey body |
+| `#080808` / `#000000` | 12 | the black recesses |
+| `#000057` / `#00002D` | 2 | the navy marquee backing |
+
+**It is machine-shaped, and that is the identification.** The mesh's vertices
+span `x` +-853, `y` -732..+737, `z` +-653 about the same origin the rest of the
+machine is authored around - a box that encloses every piece of glass furniture
+this page already pins: the five paylines (`x` +-640, `z = -768`), the
+dot-matrix grid (`x` -429..418, `y` -640..-496), the three reel cylinders
+(`x` -512..512) and the reel-stop pedestals (`y = 480`). A model that surrounds
+all of them and nothing else is the cabinet.
+
+The colour families are the same four the capture-measured composition uses, and
+one lands quantitatively: the measured navy `rgb(0, 0, 72)` sits between the
+mesh's two navy corners, which is what a gouraud span across them gives.
+Absolute values are **not** asserted to match - the capture's greys read darker
+than the mesh's `#6F6F6F`, so a shading term sits between the packet colour and
+the framebuffer, and reconciling them needs that pass rather than the mesh.
+
+The install chain, all of it outside the slot overlay's own draw code:
+
+1. `FUN_801CEC94` reads the entry - `FUN_8003EB98(0x4B2, *(0x8007B85C), 1)` at
+   `0x801CEE2C`.
+2. `FUN_80020224(0)` at `0x801CEE44` walks the descriptor table and hands each
+   `(payload, type)` to the asset dispatcher `FUN_8001F05C`
+   ([`asset-type.md`](../formats/asset-type.md)); type `0x02` registers the TMD
+   into the shared model bank `0x8007C018[n++]` (`n` at `0x8007B774`).
+3. `FUN_80020DE0(0x801D3618, *(0x8007C34C))` at `0x801CEEA8` spawns an actor
+   from the overlay's own template, after writing the model-slot index into
+   `template+4` (`0x801CEEA0..0x801CEEAC`, the value `0`). The spawn copies
+   `template+4` into `actor+0x64` (`0x80020E70`).
+4. `FUN_80021B04` reads `actor+0x64`, indexes the bank, and binds **every**
+   object of that model into the actor's part array `actor+0x44` - count at
+   word `0`, one descriptor pointer per slot after it (`0x80021BF4..0x80021C58`).
+
+So the cabinet's "emitter" is the engine's actor renderer, reached through the
+same `(model bank, template, part array)` triple the battle backdrop uses
+([`minigame-muscle-dome.md` § Arena backdrop](minigame-muscle-dome.md#arena-backdrop-extraction-1225)).
+The earlier "in neither the art pack nor any prim a traced slot function emits"
+reading is **superseded**: the art pack does carry it - in a descriptor the
+first read of the container never enumerated, because it stopped at descriptor
+0. The "it is the casino room's own 3D geometry" reading stays falsified for
+the same reason it always was.
+
+Descriptor 2 (`MOVE`, 2924 B) is a 2-record ANM bundle in the canonical
+`marker_1 = 0x080C` shape - the animation keyed to the same model.
+
+Confidence: the container's descriptor table, the mesh census and its packet
+colours are **Confirmed** (structural decode of the user's own disc entry); the
+four install steps are **Confirmed** (disassembly, each cited at its
+instruction). That the per-frame draw of those bound parts is the shared TMD
+renderer ([`renderer.md`](renderer.md)) is **Inferred** - it is the only
+consumer of an actor part array, and it is the same path the battle backdrop
+takes, but no frame has been traced from `actor+0x44` to a GP0 word at the
+machine.
+
 ## Art pack (PROT 1200)
 
-The overlay init `FUN_801CEC94` loads the machine's textures from **extraction
-PROT entry 1200** (raw TOC `0x4B2`). The entry is a descriptor container whose
-descriptor 0 (`TIM_LIST`, type `0x01`) LZS-decodes to a [`pack`](../formats/pack.md)
-of **five standard PSX TIMs**. Their framebuffer destinations *are* the texture
-pages and CLUT rows the reel renderer and the HUD rasteriser sample, which closes
-the per-page fb-coordinate question:
+The overlay init `FUN_801CEC94` loads the machine's assets from **extraction
+PROT entry 1200** (raw TOC `0x4B2`, read at `0x801CEE2C` by
+`FUN_8003EB98(0x4B2, *(0x8007B85C), 1)`). The entry is a descriptor container
+with **three** descriptors, not one - and the two beyond the texture list are
+what the earlier reading missed:
+
+| desc | type | size | role |
+|---|---|---|---|
+| 0 | `0x01` `TIM_LIST` | 166584 | the five PSX TIMs decoded below |
+| 1 | `0x02` `TMD` | 2160 | the **cabinet mesh** - see [The cabinet is a mesh](#the-cabinet-is-a-mesh---prot-1200-descriptor-1) |
+| 2 | `0x05` `MOVE` | 2924 | a 2-record ANM bundle (`marker_1 = 0x080C`) keyed to the same model |
+
+Descriptor 0 LZS-decodes to a [`pack`](../formats/pack.md) of **five standard
+PSX TIMs**. Their framebuffer destinations *are* the texture pages and CLUT
+rows the reel renderer and the HUD rasteriser sample, which closes the per-page
+fb-coordinate question:
 
 | pack | image fb | CLUT row | texpage attr | role |
 |---|---|---|---|---|
@@ -696,10 +783,11 @@ the per-page fb-coordinate question:
 | 3 | `(832, 256)` | 493 | `0x1D` | dot-matrix message bank + the marquee's lamp swatches + cursor |
 | 4 | `(640, 0)` | 494 | `0x8A` | the paytable / coin info panel - sampled **8bpp** |
 
-Page 4 is **not the cabinet** (see [Open](#open)): it is the paytable board the
-HUD rasteriser draws on the right of the machine, and its texpage attribute has
-the GPU's 8-bit colour bit set, so it is 128 texels wide with one 256-entry
-palette - not the 4bpp its TIM header declares.
+Page 4 is **not the cabinet**: it is the paytable board the HUD rasteriser draws
+on the right of the machine, and its texpage attribute has the GPU's 8-bit
+colour bit set, so it is 128 texels wide with one 256-entry palette - not the
+4bpp its TIM header declares. The cabinet is not on any page because it carries
+no texture at all - it is descriptor 1's untextured mesh.
 
 Every image block is **byte-identical to a retail VRAM dump** taken at the machine
 (`minigame_slot_machine` capture), so `texpage 0x0C = (768,0)` / `0x0D = (832,0)`
@@ -762,35 +850,70 @@ volume `0x28`) as the reels start, and releases the voice on all-reels-stop.
 Decode it with `SfxCueBank::decode_tone` (constants
 `minigame_sfx::SLOT_SPIN_*`).
 
-The slot machine starts **no BGM** - it inherits the host scene's: the casino
-floor `0543_koin1` starts BGM id `2018` via field-VM op `0x35` = `music_01`
-sound-test slot 18 ("Sol casino", extraction 1006 - the bank map is piecewise,
-so a slot in this range is extraction `988 + slot`, not `990 + slot`;
-`legaia_asset::slot_payout::SLOT_HOST_BGM_PROT_INDEX`). Parser
-[`legaia_asset::minigame_sfx`].
+The slot machine starts **no BGM** - it inherits the host scene's, and the host
+scene is authored disc script, so the track is readable without a capture.
+
+The host is `koin1` (**PROT 543**), Sol Tower's minigame floor: its MAN carries
+the mode-24 door-warps for all three cabinets - `0x3E` with `op0 = 103` (slot
+machine), `104` (Baka Fighter) and `105` (Muscle Dome), three sites each
+([`script-vm.md` § 0x3E WARP](script-vm.md#0x3e-warp-mode-24-minigame-door-warp)).
+
+`koin1`'s scene-entry script (partition 1, record 0) sets the track **three
+ways**, chosen by where the player spawns, so quoting one id flat is not the
+whole rule:
+
+| record offset | op | picked when |
+|---|---|---|
+| `+0x000C` | `0x35` id `2018` | unconditional, at scene entry |
+| `+0x00E1` | `0x35` id `2018` | spawn inside the bbox `(16,37)-(32,67)` - the casino floor, where the cabinets stand |
+| `+0x00E8` | `0x35` id `2024` | spawn inside `(24,4)-(41,18)` - Sol's bar |
+| `+0x00DA` | `0x35` id `2045` | otherwise (also clears system flag `0x4B6`) |
+
+So the Sol machine's in-game track is **`2018`** = `music_01` sound-test slot 18,
+`M16` "Sub-game" / **Sol casino** ([`music-tracks.md`](../reference/music-tracks.md)).
+The bank map is piecewise, so a slot in this range is extraction `988 + slot`,
+not `990 + slot` - id `2018` resolves to extraction **1006**
+(`legaia_asset::slot_payout::SLOT_HOST_BGM_PROT_INDEX`). The other two arms are
+the bar (`2024` = `M23`) and Sol (`2045` = `M100`); the dome and the Baka
+Fighter cabinet share the floor, so they inherit the same `2018` at the moment
+of their warp.
+
+**There is no single answer, because there are two hosts.** The Vidna cabinet's
+scene (`balden` / `balden2`) is an ordinary town, not a casino, and its entry
+script plays `2058` (`M114` "Ordinary town 2" / Vidna) or, on the mist story
+state (`SysFlag 0x1D4` / `0x1D5`), `2010` (`M10` "Mist outbreak"). Same machine,
+same overlay, different music - which is what "inherits the host scene's" means
+in practice. Parser [`legaia_asset::minigame_sfx`].
 
 ## Open
 
-- The machine's own **in-game BGM** is unpinned: the overlay never starts a track,
-  and every library capture reaches the minigame through a debug warp from
-  `town01`, so the inherited track in those states is Rim Elm's, not the casino's.
-  Pinning it needs a capture taken by walking into the Sol casino.
-- The machine's **cabinet** - the grey body, the dark-red face the reels sit in,
-  the navy marquee backing and the lit floor ramp - has **no pinned emitter**. It
-  is in neither the art pack nor any prim a traced slot function emits: no slot
-  function emits a large untextured quad or a body mesh, no slot art page holds
-  cabinet art, and the live prim pool at the machine carries ~950 `POLY_FT4` +
-  several hundred gouraud prims per frame that no traced slot function accounts
-  for. The earlier "it is the casino room's own 3D geometry (`koin1`..`koin6`)"
-  reading is **falsified**: the `minigame_slot_machine` capture reaches the
-  machine by a debug warp from `town01`, a RAM TMD census over that capture finds
-  town01's env meshes resident (56 of 114 body-slice matches) and effectively
-  none of any `koin*` bundle's, and both framebuffers still carry the fully-drawn
-  cabinet - so the casino room's geometry cannot be what draws it. The emitter is
-  either an untraced slot/overlay-host function or a shared-renderer table loaded
-  with mode 24; pinning it needs a prim-pool-to-code trace at the machine. The
-  site's minigames page draws the cabinet as a composition **measured off the
-  capture's framebuffer** (edges + colours), and says so.
+- ~~The machine's own **in-game BGM**~~ **resolved from disc script, no capture
+  needed**: the overlay starts no track and the host scene authors one. `koin1`
+  (PROT 543) is the floor that carries the machine's door-warp, and its
+  scene-entry script's casino-floor arm plays id `2018`; the Vidna cabinet's
+  host (`balden`) plays `2058` instead - see [Sound](#sound). The library
+  captures still reach the machine by a debug warp from `town01`, so their
+  *resident* track is Rim Elm's; that is a property of the captures, not of the
+  machine.
+- ~~The machine's **cabinet** has no pinned emitter~~ **resolved**: it is a
+  **mesh**, not a packet - PROT 1200 descriptor 1, spawned as an ordinary actor
+  and drawn by the shared TMD renderer. See
+  [The cabinet is a mesh](#the-cabinet-is-a-mesh---prot-1200-descriptor-1) for
+  the mesh census, the packet-colour match against the capture, and the
+  four-step install chain. Two premises of the old reading were wrong and both
+  are worth keeping: "no slot function emits a large untextured quad" was true
+  and *pointed the wrong way* (nothing emits one because the geometry is a
+  bound model, not a built packet), and "it is in neither the art pack nor any
+  prim" was false - the container has three descriptors and the first read
+  enumerated only descriptor 0. What survives unchanged: page 4 is the paytable
+  board, and the "it is the casino room's own 3D geometry (`koin1`..`koin6`)"
+  reading stays **falsified** (the `minigame_slot_machine` capture reaches the
+  machine by a debug warp from `town01`; a RAM TMD census over it finds town01's
+  env meshes resident, 56 of 114 body-slice matches, and effectively none of any
+  `koin*` bundle's, yet both framebuffers carry the fully-drawn cabinet).
+- The site's minigames page still **draws** the cabinet as a composition
+  measured off the capture's framebuffer rather than as the decoded mesh, and
+  says so; routing it through the disc mesh is open work, not an open question.
 
 ## See also
 

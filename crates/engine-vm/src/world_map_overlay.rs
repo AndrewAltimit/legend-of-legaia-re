@@ -144,10 +144,10 @@ pub enum DevMenuRow {
     PlayerParam,     // 0x0F
     PlayerChar,      // 0x10 - reads _DAT_8007B8F8
     EventFlag,       // 0x11 - reads _DAT_801F2AA0 (flag grid)
-    Coord0,          // 0x12 - reads DAT_1F8003E8
-    Coord1,          // 0x13 - reads DAT_1F8003E9
-    Coord2,          // 0x14 - reads DAT_1F8003EA
-    Coord3,          // 0x15 - reads DAT_1F8003EB
+    Coord0,          // 0x12 - reads DAT_1F8003E8 (visible tile window: near X)
+    Coord1,          // 0x13 - reads DAT_1F8003E9 (visible tile window: near Z)
+    Coord2,          // 0x14 - reads DAT_1F8003EA (visible tile window: far X)
+    Coord3,          // 0x15 - reads DAT_1F8003EB (visible tile window: far Z)
     PlayPos,         // 0x16 - reads _DAT_8007C364+0x14 / +0x18
     ResetErrors,     // 0x17
 }

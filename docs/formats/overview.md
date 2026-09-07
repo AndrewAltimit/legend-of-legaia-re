@@ -33,9 +33,9 @@ A page may mix levels, and the good ones say so per-field rather than per-page: 
 | [Asset type dispatcher](asset-type.md) | Confirmed | `FUN_8001F05C` - type-byte table that routes per-asset payloads |
 | [Asset descriptor format](asset-descriptor.md) | Confirmed | `(type_size, data_offset)` pair walker (`FUN_80020224`), reached at runtime from town init `FUN_801D6704`. No top-level PROT entry matches it. |
 | [Pack format](pack.md) | Confirmed | `u32 count + u32 offsets[]` used inside DATA_FIELD chunks |
-| [Standalone TIM-pack](tim-pack.md) | Confirmed | Distinct outer container with `(magic_lo, magic_hi, count<16, marker=0x01)` header |
+| [Standalone TIM-pack](tim-pack.md) | Confirmed | The reader for a pack behind a `TIM_LIST` chunk header - members at `word_index * 4 + 4`. Not a container of its own: the `marker=0x01` it keys on is that chunk header's type byte |
 
-The three pack formats are unrelated despite the shared name - `pack.md` (inside DATA_FIELD chunks), `tim-pack.md` (standalone PROT entries), and [field-pack](field-pack.md) (magic-prefixed bundle) each use different header math. Applying the wrong one yields plausible garbage.
+There is **one** pack format and two readers for it. `pack.md` reads it at offset 0 (the bare form); `tim-pack.md` reads it four bytes in, past a `(TIM_LIST << 24) | size` DATA_FIELD chunk header, which is what its `word_index * 4 + 4` and its `marker == 0x01` byte test both encode. The former "field-pack" ([field-pack](field-pack.md)) is the same pack behind that same chunk header, not a third format. `categorize` now classifies by which form an entry is - `data_field_streaming` for the chunk-headered carriers, `pack` for the bare ones - so the `field_pack` and `tim_pack` classes are both empty against retail.
 
 ## Per-asset formats
 
@@ -80,25 +80,25 @@ Static `SCUS_942.54` rodata tables that drive stats, items, and magic. These are
 | Page | Confidence | What it covers |
 |---|---|---|
 | [DATA_FIELD streaming](data-field.md) | Confirmed | `[type, size, data]` chunk stream consumed by `FUN_8002541C` |
-| [Scene bundles](scene-bundles.md) | Confirmed | Scene-prefixed wrappers (`scene_tmd_stream`, `scene_vab_stream`, `scene_v12_table`, `scene_asset_table`) - the dominant per-scene asset shapes |
+| [Scene bundles](scene-bundles.md) | Confirmed | Scene-prefixed wrappers (`scene_tmd_stream`, `scene_vab_stream`, `scene_v12_table`, `scene_asset_table`) - the dominant per-scene asset shapes. Descriptor count is unbounded in retail (two scenes ship `count = 5`); the anchor is descriptor 0 at `8 + count*8`, and the header's `+0x04` word is `Σ descriptor.size`, never read |
 | [scene_v12_table](scene-v12-table.md) | Confirmed | Per-scene `.PCH` walk-on trigger sidecar: a four-kind sub-table directory + the kind-1 trigger records, one `0x800` sector exactly. 97 PROT entries (one per scene); the event-script prescript is the **next** entry. |
 | [Per-scene field map](field-map.md) | Confirmed | `DATA\FIELD\<scene>.MAP` - the fixed `0x12000`-byte slot 0 of every scene block. Four regions (object descriptors, collision + floor grid, object-index map, trigger block) whose sizes sum to the footprint exactly. |
 | [Effect bundles](effect.md) | Confirmed | Both the on-disc bundle (magic `0x02018B0C`) and the runtime 2-pack wrapper used by `efect.dat` |
 | [summon.dat / readef.DAT](summon-readef.md) | Confirmed | Battle side-band streaming slots (`0x10800` bytes each): per-special-attack CLUTs + 4bpp texture pages + summon-creature actor records. Extraction PROT 893 / 894 (retail TOC `0x37F` / `0x380`) |
-| [Field-pack format](field-pack.md) | Confirmed | Magic `0x01059B84` plus a 97-entry strict schema preceding packed TIMs/TMDs |
+| [Field-pack](field-pack.md) | Confirmed | Not a format: a DATA_FIELD `TIM_LIST` chunk (`0x01059B84` = type byte + payload length) holding an `asset::pack` of one scene's TIMs at raw-TOC `+4` of its block; loaded by `FUN_800255B8` / `FUN_8002541C` |
 | [Player battle files](battle-data-pack.md) | Confirmed | `data\battle\PLAYER1..4` (extraction 863..866). Header + LZS `record[0]` + 12-byte `[id, offset, size]` descriptor table + per-slot LZS streams decoding to `[header + Legaia TMD + texture pool]`. |
 | [Row-479 NPC CLUTs](npc-palette.md) | Confirmed | Plain PSX TIMs in scene PROT entries with CLUT block at `(fb_x=0, fb_y=479, w=256, h=1)`. Uploaded via the targeted-upload CLUT pass with merge-zeros semantics, so multiple scene-pack TIMs on the same row coexist. |
-| [Encounter record](encounter.md) | Confirmed | Layout `[3 reserved][count: u8][monster_ids: u8[count]]`. Installed at `actor[+0x94]` by the script-VM, read by `FUN_801DA51C` to populate the formation cell at `0x8007BD0C`. |
+| [Encounter record](encounter.md) | Confirmed | Layout `[3 reserved][count: u8][monster_ids: u8[count]]`. Installed at `actor[+0x94]` by the script-VM, read by `FUN_801DA51C` to populate the formation cell at `0x8007BD0C`. Also the MAN section-3 camera-region table and the camera's visible tile window `0x1F8003E8..EB` (field-VM op `0x46`; not fog). |
 | [MAN relocation](man-relocation.md) | Confirmed | Variable-length editing of a decompressed MAN - how to resize a `0x3F` door destination and keep every internal offset valid. Powers the door randomizer. |
 | [STR FMV table](str-fmv-table.md) | Confirmed | FMV dispatch table at `0x801D0A6C` - 23 × 32-byte slots, of which nine are the retail `fmv_id 0..=8`. See below for the neighbouring table it is easily confused with. |
-| [World-map slot-4 records](world-map-overlay.md) | Inferred | Slot 4 of each kingdom bundle (PROT 0086 / 0245 / 0392, type byte `0x05`): a per-kingdom library of small object-local 3D meshes. See below. |
+| [World-map slot-4 records](world-map-overlay.md) | Confirmed | Slot 4 of each kingdom bundle (PROT 0086 / 0245 / 0392, type byte `0x05`): the world-map scene's ANM animation bank - per-clip rigid transforms (12-bit translations + 8-bit rotations), consumed by `FUN_800204F8` / `FUN_8001B964` |
 | [Per-scene primitive scratch buffer](navmesh.md) | Inferred | Documented negative finding - `0x80108EA4..0x80109550` is per-scene rendering scratch, not navmesh data. Reproduction commands included. |
 
 ### Two easily-confused windows
 
 The STR FMV overlay holds **two** tables. The FMV dispatch table at `0x801D0A6C` is the play engine's source: 23 slots of `[path_ptr, depth, start_frame, end_frame, fb_x, fb_y, w, h]`, static overlay data that decodes straight from the disc. The `0x801CAE08` window nearby is the generic libcd directory-record cache - PsyQ `CdlFILE`-shape records, **not** an FMV table.
 
-World-map slot 4 is likewise not what it was first read as. Each 8-byte record is a **GTE vertex** `(i16 x, y, z, attr)` that `FUN_80044c14` loads and `RTPT`-transforms; `attr` is not a coordinate and is render-unused. The container is byte-verified against live RAM and the renderer reads the pool in place, with no transcode. Two earlier readings are falsified: the "coastline wireframe" interpretation, and the idea that slot 4 is the bulk continent terrain source. That terrain mechanism is pinned separately at [world-map § bulk continent terrain emit](../subsystems/world-map.md#top-view-bulk-terrain-render-path-overlay-replaced-per-prim-renderers).
+World-map slot 4 is likewise not what it was first read as - twice. It is neither a coastline wireframe nor a library of small meshes: it is the world-map scene's asset-type-`0x05` **ANM animation bank**, the same clip container every field scene carries, whose 8-byte entries pack three 12-bit translations and three 8-bit rotations (`world-map-overlay.md`). The "GTE vertex `(i16 x, y, z, attr)` walked by `FUN_80044c14`" reading came from assuming that prim handler owned the pool; `attr` is the Y / Z rotation pair, read every frame.
 
 ## Runtime overlay carriers
 
@@ -112,7 +112,7 @@ World-map slot 4 is likewise not what it was first read as. Each 8-byte record i
 | Page | Confidence | What it covers |
 |---|---|---|
 | [Sound-driver path-string cluster](sound-driver.md) | Confirmed | The string-builder cluster at `0x8007B38C` and the eight file extensions the runtime resolves through it (`.spk`, `.LZS`, `.dpk`, `.MAP`, `.PCH`, `.pac`, `STR`, `bse.dat`) |
-| [`bse.dat` master sound bank](bse-dat.md) | Confirmed | The bank `FUN_8001FA88` loads once at sound-init: `[u16 tag][u16 body_offset][8-byte records]`. Extraction 888 (the loader's `0x37A`) plus an uncalled sibling at 1195. Record columns are shape, not semantics. |
+| [`bse.dat` battle SFX bank](bse-dat.md) | Confirmed | The **battle** occupant of the runtime SFX descriptor bank (cue ids `>= 0x200`): `[u16 tag][u16 body_offset][8-byte records]`, loaded per battle by `FUN_8001FA88` from battle init `FUN_800513F0` - not at boot. Row index = `cue id - 0x200`; the columns are the [`sfx-table`](sfx-table.md) columns, `+4` a `u8` category the cue router rewrites through `gp+0x678`. Extraction 888 (the loader's `0x37A`); 1195 is a scene prescript filling the same slot in the field. |
 
 The dispatch chain *into* these formats is fully traced. The byte-level layout of the individual `.spk` / `.dpk` / `.MAP` / `.PCH` files is still open.
 

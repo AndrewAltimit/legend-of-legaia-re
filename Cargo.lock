@@ -1192,6 +1192,7 @@ dependencies = [
  "legaia-anm",
  "legaia-bytes",
  "legaia-lzs",
+ "legaia-mes",
  "legaia-prot",
  "legaia-seq",
  "legaia-tim",

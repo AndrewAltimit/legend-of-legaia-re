@@ -27,7 +27,8 @@ impl BattleSession {
 
     /// Rebuild [`Self::enemy_menu_rows`] from the live monster slots.
     ///
-    /// PORT: FUN_801D9D3C (the formation walk + dedup + label pass).
+    /// PORT: FUN_801D9D3C (the formation walk + dedup + label pass of the
+    /// battle-intro enemy-name banner composer, reused for the picker).
     ///
     /// The engine's formation is the monster slot array rather than retail's
     /// `_DAT_8007BD0C` id table, so occupancy stands in for the id: an empty or

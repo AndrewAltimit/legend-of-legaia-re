@@ -380,8 +380,11 @@ with helpers `read_record_stats` / `read_rank_counter` / `read_xp_u16`.
   jumps bumped it by one, so it can momentarily lag the XP-derived level after a rare
   multi-level grant), but for single-level play and the new-game seed it equals the
   level. This supersedes the earlier "`+0x130` = magic rank, level derived from
-  cumulative XP" reading for the *level* question; whether a separate magic-rank byte
-  lives at the adjacent `+0x131` (which the seed also inits to 1) is unconfirmed.
+  cumulative XP" reading for the *level* question, and the adjacent `+0x131` (which
+  the seed also inits to 1) is **not** the magic-rank byte: `0x800561C8` is its only
+  writer on the disc and it has no reader in any image, while the magic-rank counter
+  is capture-pinned at record `+0x9C` (see
+  [`save-record.md`](../formats/save-record.md#0x130-is-the-displayed-character-level)).
   NB the engine port tracks its own level at `+0x100` (always zero in retail, where
   the live byte is `+0x130`) - self-consistent for the port's own LGSF saves, a
   deliberate divergence from the retail byte, not a mirror of it.

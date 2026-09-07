@@ -252,12 +252,16 @@ fn part_v_vozz_destinations_and_gate_census() {
     let man = load_man(&index, "vozz");
     let mf = legaia_asset::man_section::parse(&man).expect("parse vozz MAN");
 
-    // (1) The 0x3F chain offers exactly one destination: back to map01.
+    // (1) The 0x3F chain offers two destinations: back to map01, and the
+    // upper-case `BYLON` (Biron Monastery) that the lower-case-only label
+    // gate used to drop - retail `strcat`s the operand into an ISO path, so
+    // case is invisible to it (see `re-settled-threads.md`, the upper-case
+    // destination fold).
     let dests = scene_dest_names(&index, "vozz");
     assert_eq!(
         dests,
-        BTreeSet::from(["map01".to_string()]),
-        "vozz's only 0x3F destination is the overworld exit"
+        BTreeSet::from(["bylon".to_string(), "map01".to_string()]),
+        "vozz's 0x3F destinations are the overworld exit and bylon"
     );
 
     // (2) The exit record: P2[10] scene-changes to map01 (index 85) at +0x14,

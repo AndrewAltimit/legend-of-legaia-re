@@ -1,43 +1,57 @@
-//! Menu state-machine port - clean-room reimplementation of the menu
-//! overlay's top-level dispatcher (`FUN_801DD35C` in the captured
-//! `overlay_menu` program).
+//! The engine's pause / shop / inn menu state machine.
 //!
-//! PORT: FUN_801DD35C
-//!
-//! Shape: not an opcode VM (the menu doesn't run bytecode like the field
-//! / move VMs), but a state machine driven by input + a frame counter,
-//! with an outer `switch(state)` over ~28 numeric states. Mirrors the
-//! battle-action state machine in [`super::battle_action`].
-//!
-//! State numbering follows the case labels in the captured dispatcher
-//! (`overlay_menu_801de234.txt`): outer switch on `state` reads through
-//! `FUN_801E38D0(_DAT_801F0204)` which is the active-menu-id resolver.
-//! State bytes ≥ `0x70` are control / transition words (e.g. `0x70` is
-//! the close-and-deactivate path the dispatcher takes when the player
-//! cancels with Triangle).
-//!
-//! This module establishes the typed surface (state enum + host trait +
-//! step entry point) plus the per-screen routing graph. [`commit_route`]
-//! and [`back_route`] encode the dispatcher's `_DAT_801F0204 = N` writes:
-//! the multi-step shop (browse -> quantity -> confirm -> back-to-list /
-//! exit) and inn (confirm -> sleep) flows advance on Cross and back up one
-//! screen on Triangle, on top of the host's commit kernels. Status
-//! sub-screens back up to the status top-level. Per-screen specifics that
-//! still need a side-effect kernel (item-use apply, the standalone
-//! save/load progress states - the live save UI is driven separately by
-//! the save-select session) stay as pass-through screens for now.
-//!
-//! See [`docs/subsystems/`] for the menu-VM doc page (TODO: add when
-//! the second pass lands).
+//! REF: FUN_801DD35C
 //! REF: FUN_801E38D0
+//!
+//! **This module is not a port of `FUN_801DD35C`, and used to say it was.**
+//! That routine is the *title-screen* tick - one resident copy, PROT 0899
+//! file `+0xEB44` - and the module that describes it is
+//! [`super::title_overlay`], which carries the `PORT:` tag for it. Two
+//! things falsify the old reading, both read off the disassembly in
+//! `overlay_menu_801dd35c.txt` (12104 bytes / 3026 instructions,
+//! `entry=801dd35c`; `overlay_menu_801de234.txt` is the same dump requested
+//! at an interior address, not a second routine):
+//!
+//! - Its 56 `sw ..,0x204(..)` sub-mode writes only ever store `0x02..=0x18`,
+//!   inside the 25-slot jump table's `sltiu v0,s2,0x19` bound at
+//!   `0x801DD7F8`. None of this module's `0x19..=0x25` shop / inn / item
+//!   screens, and neither `0x6E` nor `0x70` / `0x71`, is ever written by it.
+//!   The `0x70` literals in its body are the `y = 0x70` argument of the
+//!   centred-text helper `FUN_801E1C1C`, not state bytes.
+//! - Its two master-mode stores are `sh v0,-0x47c4(v1)` (= `0x8007B83C`)
+//!   carrying `0x1A` at `0x801DDCF0` (attract -> STR) and `2` at
+//!   `0x801DFC00` (NEW GAME -> field), and its only caller is the
+//!   nine-instruction per-frame wrapper `FUN_801E36A0`, which is
+//!   `jal 0x801dd35c` with both arguments zeroed. Those are title-screen
+//!   transitions, not menu ones.
+//!
+//! What this module actually is: the engine's own screen graph for the
+//! pause menu, shop and inn - a state machine driven by input plus a frame
+//! counter, in the shape of [`super::battle_action`]'s. Its state bytes are
+//! engine-chosen (one of them, `MenuState::ShopTrade`, is a randomizer
+//! feature retail has no screen for), and the per-screen behaviour is
+//! retail-sourced from the subsystem page for each screen - `shop.md`,
+//! `inn.md`, `field-menu.md` - rather than from one dispatcher.
+//!
+//! The module establishes the typed surface (state enum + host trait + step
+//! entry point) plus the per-screen routing graph. [`commit_route`] and
+//! [`back_route`] encode that graph: the multi-step shop (browse ->
+//! quantity -> confirm -> back-to-list / exit) and inn (confirm -> sleep)
+//! flows advance on Cross and back up one screen on Triangle, on top of the
+//! host's commit kernels. Status sub-screens back up to the status
+//! top-level. Per-screen specifics that still need a side-effect kernel
+//! (item-use apply, the standalone save/load progress states - the live
+//! save UI is driven separately by the save-select session) stay as
+//! pass-through screens for now.
 
 // Menu is a state machine, not an opcode VM - no shared host dependency
 // with the actor / move / field VMs.
 
-/// Top-level menu state. The byte values match the case labels in
-/// `overlay_menu_801de234.txt`'s outer `switch(uVar6)` block. Values not
-/// listed here are still routed through [`step`] but treated as
-/// pass-through transitions (the dispatcher's "default" arm).
+/// Top-level menu state. The byte values are the engine's own - retail's
+/// title tick `FUN_801DD35C` writes only `0x02..=0x18` to its sub-mode
+/// word, so it is not their source (see the module doc). Values not listed
+/// here are still routed through [`step`] but treated as pass-through
+/// transitions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum MenuState {
@@ -163,10 +177,11 @@ impl MenuState {
 /// side effect in place (a status sub-screen mutation, a save-slot pick)
 /// but the menu doesn't move.
 ///
-/// PORT: the per-case `_DAT_801F0204 = N` writes in `FUN_801DD35C`. The
-/// shop flow returns to the buy list after every confirm (the player buys
-/// repeatedly and leaves with Triangle); the inn rest routes through the
-/// sleep fade only on "yes".
+/// The routing is engine-designed, not lifted from a retail dispatcher:
+/// the shop flow returns to the buy list after every confirm (the player
+/// buys repeatedly and leaves with Triangle), and the inn rest routes
+/// through the sleep fade only on "yes". The retail behaviour each screen
+/// has to match is on `shop.md` / `inn.md`, per screen.
 pub fn commit_route(state: MenuState, slot: u8) -> Option<MenuState> {
     match state {
         // Shop: pick an item (buy or sell), choose a quantity, confirm,
@@ -193,7 +208,7 @@ pub fn commit_route(state: MenuState, slot: u8) -> Option<MenuState> {
 /// [`MenuState::Closing`] also fires [`MenuHost::cancel`] so the engine
 /// can tear down the active session.
 ///
-/// PORT: the Triangle-handling arms of `FUN_801DD35C`.
+/// Engine-designed, as [`commit_route`] is.
 pub fn back_route(state: MenuState) -> MenuState {
     match state {
         // Shop: step back through the purchase flow.
@@ -228,9 +243,9 @@ fn is_transient(state: MenuState) -> bool {
     matches!(state, MenuState::ShopExit | MenuState::InnSleep)
 }
 
-/// Menu input - narrowed to the buttons the dispatcher actually reads.
-/// The full PSX pad has more, but the menu only checks Cross / Circle /
-/// Triangle / Square + the d-pad.
+/// Menu input - narrowed to the buttons the menu screens read. The full
+/// PSX pad has more, but the menu only checks Cross / Circle / Triangle /
+/// Square + the d-pad.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct MenuInput {
     pub cross: bool,
@@ -243,10 +258,9 @@ pub struct MenuInput {
     pub right: bool,
 }
 
-/// Menu execution context - analogue of the menu overlay's RAM scratch
-/// at `_DAT_801F0204`. Holds per-frame state the dispatcher reads and
-/// writes (active state byte, cursor position within the current screen,
-/// frame counter for animations, etc.).
+/// Menu execution context. Holds per-frame state the state machine reads
+/// and writes (active state byte, cursor position within the current
+/// screen, frame counter for animations, etc.).
 #[derive(Debug, Clone, Copy, Default)]
 pub struct MenuCtx {
     pub state: u8,
@@ -293,9 +307,9 @@ pub trait MenuHost {
     fn cancel(&mut self) {}
 
     /// Number of frames the [`MenuState::Closing`] hold runs before the
-    /// VM transitions to [`MenuState::Deactivate`]. The retail dispatcher
-    /// at `_DAT_801f0204 = 0` is an immediate set; the menu render layer
-    /// drives a separate per-frame fade buffer (alpha ramp on the panel
+    /// VM transitions to [`MenuState::Deactivate`]. Closing is an
+    /// immediate state clear in retail; the menu render layer drives a
+    /// separate per-frame fade buffer (alpha ramp on the panel
     /// background) and the SM here represents that fade as a hold timer.
     /// Default `16` matches the 0x10-frame fade that engine-render uses
     /// for `MenuState::Closing` panel alpha; engines that drive their own
@@ -338,17 +352,16 @@ pub fn step<H: MenuHost + ?Sized>(host: &mut H, ctx: &mut MenuCtx, input: MenuIn
         }
         // Closing: hold for `host.close_hold_frames()` ticks while the
         // render layer fades out the panel, then transition to
-        // `Deactivate`. The retail dispatcher's `_DAT_801f0204 = 0` is
-        // immediate; the visible fade lives in the panel renderer, which
-        // we model here as an SM hold.
+        // `Deactivate`. The retail state clear is immediate; the visible
+        // fade lives in the panel renderer, which we model here as an SM
+        // hold.
         Some(MenuState::Closing) if ctx.frame >= host.close_hold_frames() => {
             ctx.state = MenuState::Deactivate.as_byte();
             ctx.frame = 0;
         }
         Some(MenuState::Closing) => {}
         // Deactivate: one tick to release the menu, then back to
-        // `Closed`. Mirrors the dispatcher's `_DAT_801F0204 = 0; return`
-        // tail.
+        // `Closed`.
         Some(MenuState::Deactivate) => {
             ctx.state = MenuState::Closed.as_byte();
             ctx.frame = 0;

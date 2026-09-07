@@ -69,19 +69,22 @@ python3 scripts/ci/disc-coverage.py --update-baseline</code></pre>
   <h2>How code coverage is computed</h2>
   <p>Every Ghidra dump header carries an entry address and a byte length (<code>== FUN_800402f4 ... size=7904 bytes, 1976 instructions ==</code>), so the dumped functions are real intervals over an image's address space. The script merges them, subtracts them from the image's extent, and splits the remainder into <strong>code</strong> and <strong>data</strong> - a PS-X EXE's text segment carries read-only data in the same span, and counting string tables as "un-decompiled code" would understate coverage badly. Each gap is classified statistically (share of plausible MIPS opcodes, density of <code>0x80xxxxxx</code> pointer words), checked against a known-code control region.</p>
   <h3>A code gap is not automatically un-analysed code</h3>
-  <p>The report classifies each code gap by <em>shape</em>, and only one of six is work:</p>
+  <p>The report classifies each code gap by <em>shape</em>, and only one of them is work:</p>
   <table>
-    <thead><tr><th>Shape</th><th>What it is</th></tr></thead>
+    <thead><tr><th>Shape</th><th>What it is</th><th>In the code denominator</th></tr></thead>
     <tbody>
-      <tr><td><code>code</code></td><td>genuinely un-dumped instructions - the work</td></tr>
-      <tr><td><code>padding</code></td><td>every word is <code>nop</code>: inter-function alignment</td></tr>
-      <tr><td><code>return_tail</code></td><td>a <code>jr ra</code> (+ <code>nop</code>) the preceding routine's analysed body stops short of</td></tr>
-      <tr><td><code>bios_thunk_slot</code></td><td>the delay slot of a <code>jr $t2</code> PSX BIOS-call thunk</td></tr>
-      <tr><td><code>psyq_lib_stamp</code></td><td>an 8-byte librarian version stamp between link modules</td></tr>
-      <tr><td><code>constant_table</code></td><td>one repeated non-<code>nop</code> constant: a data table resident in the text segment</td></tr>
+      <tr><td><code>code</code></td><td>genuinely un-dumped instructions - the work</td><td>yes</td></tr>
+      <tr><td><code>data</code></td><td>the opcode statistic rejects it: rodata in the text segment</td><td>no</td></tr>
+      <tr><td><code>padding</code></td><td>every word is <code>nop</code>: inter-function alignment</td><td>no</td></tr>
+      <tr><td><code>mostly_padding</code></td><td>at least half the words are zero</td><td>no</td></tr>
+      <tr><td><code>no_exit</code></td><td>1024 bytes or more with no <code>jr ra</code> in them</td><td>if the statistic passes it</td></tr>
+      <tr><td><code>return_tail</code></td><td>a <code>jr ra</code> (+ <code>nop</code>) the preceding routine's analysed body stops short of</td><td>if the statistic passes it</td></tr>
+      <tr><td><code>bios_thunk_slot</code></td><td>the delay slot of a <code>jr $t2</code> PSX BIOS-call thunk</td><td>yes (tiny-gap fiat)</td></tr>
+      <tr><td><code>psyq_lib_stamp</code></td><td>an 8-byte librarian version stamp between link modules</td><td>yes (tiny-gap fiat)</td></tr>
+      <tr><td><code>constant_table</code></td><td>one repeated non-<code>nop</code> constant: a data table resident in the text segment</td><td>yes (tiny-gap fiat)</td></tr>
     </tbody>
   </table>
-  <p>The middle three are properties of where a function body ends, so they persist however much is dumped; the last two are data the linker left inside the text segment. Together they are why the figure asymptotes short of 100%. The shapes are <strong>reported, not subtracted</strong>, so the ratcheted figure stays comparable across classifier changes.</p>
+  <p>The end-of-body and linker shapes persist however much is dumped, which is why the figure asymptotes short of 100%. Most shapes are <strong>reported, not subtracted</strong> - the denominator keeps them, so the ratcheted figure stays comparable across classifier changes. The padding shapes are the exception, excluded by a structural rule rather than by the opcode statistic: a word of zeros decodes to <code>nop</code>, so a majority-zero run passes the code test outright and would otherwise sit at the top of the worklist while the census called it padding.</p>
   <h3>What the executable's gap turned out to be</h3>
   <p>Working the <code>SCUS_942.54</code> gap list until it stopped yielding produced on the order of a hundred function entries. A five-form reference sweep (<a href="address-reference-scan.html">address-reference scan</a>) over them splits three ways:</p>
   <table>

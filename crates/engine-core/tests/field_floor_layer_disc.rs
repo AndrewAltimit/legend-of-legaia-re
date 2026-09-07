@@ -66,7 +66,9 @@ const FIELD_MAP_BLOCKS: usize = 101;
 ///   one-sector entry read under the historical `toc[p+5] - toc[p+3] + 4`
 ///   size ran into `town01`'s bundle
 ///   ([`docs/formats/prot.md`](../../../docs/formats/prot.md)).
-const NO_MAN: &[&str] = &["bubu1", "edbubu", "gameover_data"];
+// `bubu1` / `edbubu` left this set when the scene-asset-table detector
+// stopped bounding `count` to 6 or 7: both ship a count-5 table with a MAN.
+const NO_MAN: &[&str] = &["gameover_data"];
 
 /// The two field-map blocks whose object layer is placements only - no visible
 /// terrain cells and no heightfield. Both are the Karisto castle exterior

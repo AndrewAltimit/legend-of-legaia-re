@@ -72,6 +72,58 @@ Rows the last audit wave overturned. They are listed here rather than filed
 silently into the settled page, because a claim that was wrong once is the
 cheapest place to look for a claim that is still wrong.
 
+- **The title screen was never "ahead of the mode table".** It runs under the
+  `CARD` mode pair 22/23; `main()`'s one pre-loop overlay load is the boot
+  `init.pak` 0895, and `FUN_801DD35C` is inside PROT 0899 at `+0xEB44`. Four
+  more `inference`-graded rows were re-derived from instructions in the same
+  pass: the `DAT_8007C018` liveness rule, the `_DAT_8007BA78` census, the
+  `0xF8` halt-acquire handshake (three parts corrected) and the key-item
+  reader enumeration (125 sites, six images, closed). `_DAT_8007BD84` is an
+  effect handle, not a mode word; `FUN_8003EAE4`'s driver is `FUN_8003D764`;
+  and the item table carries 250 names, not "far below 128".
+- **Two tooling rows closed by the wave's own last commits.** The slot-B
+  pointer-resolution gate now counts only references that land inside another
+  mapped image, so every one of the 64 modules carries a map row; and the dump
+  canonicaliser folds the COP2 family, so GTE-bearing windows attribute (the
+  `world_map_render` floor went from 36% to 100% on that fix alone).
+- **Four runtime questions closed by capture.** The evolved-Cort flow `0x0C`
+  park is the boss stage module's own intro countdown handing the flow back;
+  the dome decal flag is clear live; an ordinary party swing emits neither
+  cue (the grunt is the `+0x1F3` reaction-commit arm, and "level 2" was the
+  `xa_flag` debug counter); and the light-capable prim kinds 8..11 never run.
+- **The whole slot-B band was dumpable all along.** Sixty-one of the
+  sixty-four cast / summon modules now carry a map row and dumps; the missing
+  piece was a third link-time table (`0x801CF56C`, keyed on the spell record's
+  sub-id) and a frame-matching rule for function extents. Five readings fell
+  with it - see the [do-not-re-walk page](re-do-not-re-walk.md#the-slot-b-band-four-readings-the-whole-band-dump-overturned).
+- **Four "unattributed" blobs were all misread instruments.** PROT 0892 is the
+  card screen's kanji font (a two-member pack, not a truncated stream, not
+  12 MB); 1221 / 1222 are the dome's `int.tim` / `int2.tim` stills, loaded by
+  a *computed* index no literal scan could see; the "second `bse.dat` family"
+  is a neighbouring file's tone rows left in the sector; and readef's higher
+  aux slots carry nothing new.
+- **The port had been dropping every upper-case `0x3F` destination** - the
+  kingdom maps, the dream shrine, the ending chain - because the clean-label
+  gate was lower-case-only while retail just `strcat`s the operand into an
+  ISO path. Folding the case roughly doubles the chapter-1 closure and lets
+  four of the five "one-way" rooms leave in-engine
+  ([settled](re-settled-threads.md#field--locomotion)).
+- **The five "sealed" chapter-1 scenes were never sealed.** `uru`, `urudre1..3`
+  and `jouine` all carry walk-on exits in their `.PCH` trigger sidecar; the
+  clean MAN walk desynced in inline text before the `0x3F`, the tile sweep
+  capped at 48 tiles below the exit bands, and the 24-tick exit budget could
+  not reach a tail behind 300 frames of waits. Live-confirmed for `uru`
+  ([settled](re-settled-threads.md#the-uru-mais-chain-and-jouine-exits)).
+- **The battle-intro enemy-name banner is raised by no placement record.** The
+  runbook presumed a top-seated `0x0303` record with a runtime width overwrite
+  and a park-to-live slide; capture shows the flow-`0x0A` composer
+  `FUN_801D9D3C` spawning its labels with immediate geometry at y = 48, no
+  slide, torn down by the intro timer. The width overwrite belongs to record 68.
+- **`bse.dat` loads at battle init, not at boot, and its columns are pinned.**
+  Three pages said "once at init"; `FUN_8001FA88`'s only caller is battle init
+  `FUN_800513F0`. The consumer of the record table read as untraced because
+  every reader forms `0x8007B990` with `lui`+`lw`, a pair the five-form address
+  scan does not accept - `find-gp-relative-refs.py` closes that blind spot.
 - **Debug flag `_DAT_8007B8C2` had its branch sense backwards**, and one arm
   was named for the wrong loader. Every site reads the flag with `lh` and takes
   the **zero** arm to the debug-station host trap, the **non-zero** arm to the
@@ -146,7 +198,6 @@ with the instruction evidence cited.
 |---|---|---|
 | Region story-flag gate families (record-header C1/C2 gates) | partial - structure settled; play order capture-confirmed for most spokes, a shrunken residual set still owed | [details ↓](#region-story-flag-gate-families) |
 | teien hedge-base ground fill (kind-2 tile-trigger cells) | open - blocked on one `teien` field-run mednafen state | [details ↓](#teien-hedge-base-ground-fill) |
-| How a player leaves the Uru Mais chain (`uru`, `urudre1..3`) and `jouine` | open - the exit mechanism is unidentified; those five are one-way in the port | A mechanism that is neither a walk-on band nor a record run from its own start. `chapter1_frontier_ladder` establishes the negative on both: no gate-1 tile in the five fires a transition, no clean per-partition walk finds a `0x3F` in their MANs, and 160 executed record bodies reach no scene change. The four Uru Mais rooms' destinations survive only as destination-*table* entries. None of the five carries a **variant** MAN, so a second script carrier is not where the exit hides. Nearest known shape is the `kor`-family warp-pad picker, an interact record; a retail capture would settle it. |
 
 Recently closed here: Rim Elm's south gate. Neither of its two walk-on bands
 was the mechanism the symptom suggested - the exit record is ungated and the
@@ -332,53 +383,13 @@ process-matching helpers in
 
 | Thread | Status | What would close it |
 |---|---|---|
-| The battle-**intro** enemy-name banner - which placement record raises it | mostly resolved (chrome, seat and frame law captured on the same surface mid-fight; only the record identity is owed) | [details ↓](#the-battle-intro-enemy-name-banner) |
-| Can a scene TMD pack member be grown in place? | open | Enumerate what outside the pack holds a byte offset *into* it. Members `106`/`107`/`108` of PROT entry `0639` are the Delilas siblings' field NPC meshes; the pack's 112 members tile its declared `347476`-byte stream with zero internal slack, so a larger mesh needs the pack rebuilt rather than patched - which is how the Nivora field-form swap ships (members `106/107/108` re-emitted by `legaia_patcher::nivora_field`, disc oracle `nivora_field_real`); what keeps this thread open is only the enumeration itself. Placements name a member *index*, but the scene bundle's descriptor and the scene ANM records are unchecked. The same question for a MAN is answered in [`man-relocation.md`](../formats/man-relocation.md). |
-| Is any of an enemy signature cast's choreography data-driven? | open | Read the spawn sites' parameter blocks. The three Delilas cast modules reach the pool spawner `FUN_80050ED4` from hardcoded `jal` sites - 15 in PROT `0958`, 41 in `0959`, 24 in `0960` - each passing a module-resident record by absolute pointer, the shape `summon_overlay::parse` already walks. Nothing on that path takes an id, so a player art's eight-record effect script has no way to name one, and the fire / lift / camera of a reskinned signature move stay behind. Closing it means deciding whether a duplicated parameter block plus one reachable spawn site can be driven from the art path. |
 
-### The battle-intro enemy-name banner
-
-*Status:* the chrome, the seat and the frame arithmetic are captured - on the
-same banner surface, mid-fight. What is owed is only which placement record
-the intro instance raises.
-
-The thread opened as "chrome and seat unknown, blocked on a live frame", on
-the premise that no manifest state catches the surface. That premise was
-wrong about the surface rather than about the intro: a corner-sweep of the
-whole save library finds the battle's **full-width top message banner** live
-in two states - `rim_elm_gimard_seru_capture_after` (the mid-battle Seru
-"captured!" banner) and `noa_levelup_banner`.
-
-Both draw the same thing, and it is the frame the thread described. It is the
-widget table's **class-0 9-slice window**, tile-set 0, sub-palette 2: 4x4
-corners and 24x4 / 4x24 edges cut from one 32x32 patch at texels `(160, 0)`,
-content pen `(16, 12)`, frame origin `(8, 4)`, interior 20 tall, top and
-bottom edges tiled 24 wide from `x = 12` with the last tile clipped. Every
-placement record whose kind byte is `0x03` / `0x04` / `0x44` frames itself
-that way. Table and law:
-[`battle.md`](../subsystems/battle.md#the-widget-class-table---where-every-chrome-sprite-comes-from).
-
-One sub-claim in the old row is **falsified** by those frames: there is no
-blue interior. Retail draws the border sprites and the glyph run and nothing
-else - no fill primitive of any kind under the window, so the scene shows
-through. The blue-marbled 32x32 patch that made "gold border over a blue
-interior" a natural reading is the fill the framed *menu* windows use.
-
-Residual: the intro instance is transient, so which top-seated `0x0303`
-record it raises - the candidates park at `(16, -24)` and live at `(16, 14)`,
-and the runtime overwrites the disc width with the measured enemy name - is
-still capture-owed. The runbook is unchanged: drive
-`v0_1_battle_loading_tetsu` forward under PCSX-Redux and dump main RAM on the
-first frames after the mode flips. The read-out is mechanical -
-[`scripts/mednafen/widget-draw-sweep.py`](../../scripts/mednafen/widget-draw-sweep.py)
-joins any frame's sprites back to the widget records that drew them.
-
-Two operating notes apply to any run: PCSX-Redux probes **do not exit on their
-own** ([`pcsx-redux-automation.md`](../tooling/pcsx-redux-automation.md)), and
-`pgrep -f` matches the caller's own command line
-([`shell-observer-traps.md`](../tooling/shell-observer-traps.md)).
-
-Recently closed in this area: the `+0x0E` kind-pair mapping and the
+Recently closed in this area: the battle-**intro** enemy-name banner - the
+question had a false premise, no placement record raises it, the composer
+`FUN_801D9D3C` places its labels with immediates
+([settled](re-settled-threads.md#the-battle-intro-enemy-name-banner),
+[falsified reading](re-do-not-re-walk.md#the-battle-intro-banner-is-raised-from-a-top-seated-0x0303-placement-record)).
+Before it, the `+0x0E` kind-pair mapping and the
 element-badge palette selector both fell out of the widget-class table, and the
 status-element badge sheet `0x18..=0x20` is pinned cell by cell. Before them,
 the ground grid's depth-cue far colour and the battle-intro tile shatter's
@@ -388,13 +399,21 @@ side-face shade page closed by capture. All in
 
 ## Audio / BGM
 
-No open threads. The most recent one - op-`0x35` sub-op `0xA`, the
-"unhalt-pause toggle" - resolved as the track-swap **commit** and moved to
+No open threads. The last one - a supposed second `bse.dat` record family -
+resolved as a neighbouring file's tone rows left in the sector
+([falsified](re-do-not-re-walk.md#bsedat-carries-a-second-record-family-with-a-resident-consumer)).
+
+The previous thread here - op-`0x35` sub-op `0xA`, the "unhalt-pause toggle" -
+resolved as the track-swap **commit** and moved to
 [`re-settled-threads.md`](re-settled-threads.md#op-0x35-sub-op-0xa-is-the-track-swap-commit).
 
 ## Title / boot / overlays
 
-No open threads. The last one - PROT 0968 identity, the one slot-B cluster
+| Thread | Status | What would close it |
+|---|---|---|
+| Does the mode-16 publisher-logo routine `FUN_801CE9C0` (PROT 0895 `+0x1A8`) pin the per-logo quads? | open (narrow) | The routine forms `+8` into each of the four `init.pak` TIMs (`+0x21C4` / `+0xD3E4` / `+0x18E04` / `+0x1CE44`) and uploads through `FUN_800198E0`; its draw calls are now locatable, so the logo pass's quad geometry can be read from the image instead of a capture. PROT 0895 has no `static-overlays.toml` row yet; base `0x801CE818` is byte-anchored by that call. |
+
+The previous thread here - PROT 0968 identity, the one slot-B cluster
 entry without a residency capture - closed by capture: the
 `cort_evolved_battle_first_menu` PCSX-Redux state (first command menu of the
 evolved-Cort fight, before any cast) shows the loader-B tracker `0x8007BC4C`
@@ -406,6 +425,20 @@ the instrument is
 [`check-0968-residency.py`](../../scripts/mednafen/check-0968-residency.py),
 which reads either emulator's states (mednafen via `mednafen-state`,
 PCSX-Redux `.sstate` via `pcsxr-state`, dispatched on file extension).
+
+## Containers / data blobs
+
+| Thread | Status | What would close it |
+|---|---|---|
+| Which routine samples the card-screen kanji page (VRAM `(320..447, 256..511)`, CLUT rows 475..482)? | open | PROT 0892's font is uploaded by `FUN_8002574C` at CARD INIT, but no image materialises its CLUT id `0x76C0`; look for a computed `y << 6` or a sprite-descriptor table in the menu overlay. |
+| What arms the dome's panel-still streamer, and what draws VRAM `(384, 0)` 320x256? | open | `FUN_80025358` runs on battle `ctx[+0xC] == 2`; the writer of that `2` (`0x8004E6E4`) is gated on `ctx[+0x7] == 0x67`, undecoded. |
+| Which enemy specials name readef groups 19..21 through monster record `+0x1C`? | open | Needs a sweep of the LZS-decoded monster blocks' `+0x1C` byte; `monster_archive.rs` does not model that field. |
+
+## Measurement + tooling
+
+| Thread | Status | What would close it |
+|---|---|---|
+| PROT 0901's middle band is a shared-tail leaf family | open | `0x801F7644..0x801F8EB4` has six `jal`s and no `jr ra` - every leaf `j`s to one exit - so neither a prologue partition nor a cut-at-`jr ra` walk splits it; it is dumped as one range. Splitting needs the `j`-target graph. |
 
 ## Adding a thread
 

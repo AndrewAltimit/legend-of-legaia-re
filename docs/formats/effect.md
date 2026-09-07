@@ -13,7 +13,7 @@ Two distinct formats share the "effect" name - the on-disc bundle (magic `0x0201
   - [Runtime pool layout](#runtime-pool-layout-_dat_8007bd30-5008-bytes-total)
   - [Side-band streaming-effect handler](#side-band-streaming-effect-handler)
   - [Open questions](#open-questions)
-- [Field-pack format (magic `0x01059B84`)](#field-pack-format-magic-0x01059b84)
+- [The `0x01059B84` word is not this bundle's sibling magic](#the-0x01059b84-word-is-not-this-bundles-sibling-magic)
 - [See also](#see-also)
 
 ## On-disc effect bundle (magic `0x02018B0C`)
@@ -406,9 +406,17 @@ compared against the extraction numbering - the two index spaces differ by 2.
   - The engine now reads the atlas in the right order, so the billboards sample the resident PROT 870 / `etim` texels.
 - **summon.dat / readef.dat formats - RESOLVED.** Pinned to extraction PROT entries 893 / 894 and decoded; see [`summon-readef.md`](summon-readef.md). Still open there: the consumer of the low-band `readef.DAT` aux slots.
 
-## Field-pack format (magic `0x01059B84`)
+## The `0x01059B84` word is not this bundle's sibling magic
 
-A small number of PROT entries lead with magic `0x01059B84` followed by a 97-entry strict schema preceding packed TIMs/TMDs. The preamble→slot mapping is unknown - likely runtime-reconstructed from the schema's offset hints. Detector + dispatch live in `crates/asset/src/field_pack.rs`.
+`0x02018B0C` above is a real magic. `0x01059B84` is not, and the two were once
+filed together as a pair of magic-prefixed bundle formats. It is a
+[DATA_FIELD](data-field.md) chunk header - `(TIM_LIST << 24) | payload_len` - on
+one scene's texture pack, so its value differs per carrier and the "97-entry
+strict schema" behind it is that pack's own `[u32 count][u32 word_offsets]`
+table. The word appears once in a corpus scan because it encodes `town01`'s
+payload length (`0x059B84`), not because it marks a format. See
+[`field-pack.md`](field-pack.md); the detector in
+`crates/asset/src/field_pack.rs` survives as the classifier for those entries.
 
 ## See also
 

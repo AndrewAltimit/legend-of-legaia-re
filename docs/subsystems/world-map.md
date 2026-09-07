@@ -23,7 +23,7 @@ below to jump within this page.
 
 **Overworld player + scenes**
 - [Player movement + region-keyed encounters](#overworld-player-movement--region-keyed-encounters) · [collision / walkability](#overworld-collision--walkability) · [not one walk component](#the-overworld-is-not-one-walk-component) · [camera-relative movement remap](#camera-relative-movement-remap) · [axis convention](#overworld-axis-convention) · [boot-path seeding](#boot-path-seeding)
-- [Entity / actor placement table](#entity--actor-placement-table) · [classifying the entity kind](#classifying-the-entity-kind-from-its-script) · [scene destinations](#scene-destinations) · [chapter-1 Drake hub sweep](#chapter-1-drake-hub-sweep)
+- [Entity / actor placement table](#entity--actor-placement-table) · [classifying the entity kind](#classifying-the-entity-kind-from-its-script) · [scene destinations](#scene-destinations) · [chapter-1 Drake hub sweep](#chapter-1-drake-hub-sweep) · [Uru Mais + `jouine` exits](#uru-mais-and-jouine-exits-carried-by-the-pch-sidecar)
 
 **Terrain + geometry**
 - [Loading the kingdom geometry](#loading-the-kingdom-geometry-engine-port) · [placing the continent terrain](#placing-the-continent-terrain-engine-port) · [ground texturing](#ground-texturing) · [rendering the placed entities](#rendering-the-placed-entities) · [auto-engage on walk-over](#auto-engage-on-walk-over)
@@ -1743,6 +1743,94 @@ The remaining hub legs, one level deep, decoded + driven by the disc-gated
   return door) - the reverse of the `jou` `P2[5]` blind spot; the `P2`
   walker and the strict portal-site join both see them.
 
+#### Uru Mais and `jouine`: exits carried by the `.PCH` sidecar
+
+`uru`, `urudre1`, `urudre2`, `urudre3` and `jouine` read as one-way scenes to a
+decoder that stops at the `.MAP`'s own `+0x10000` trigger block. They are not.
+Each of the five carries a walk-on exit band, and in every case the band lives
+in the **second** trigger table: the scene's
+[`.PCH` sidecar](../formats/scene-v12-table.md), a one-sector file with the same
+four-kind header shape that the loader stages at `+0x12000` - inside the
+`0x28`-sector window it reads from the `.MAP`'s LBA, so the per-tile lookup
+searches it whenever the map's own table misses
+([`field-map.md` § Trigger block](../formats/field-map.md#trigger-block-0x10000)).
+The `.PCH` is the next PROT entry after the `.MAP`, which is why a walk that
+only reads the `.MAP` file sees none of these doors.
+
+| scene | exit record | gate-1 band (tile) | carrier | tail op (MAN offset) | destination |
+|---|---|---|---|---|---|
+| `uru` | `P2[42]` | `(36..39, 5)` | `.PCH` | `0x3F` `0x0D4B7` | `MAP03` at `(0x24,0x46)` |
+| `uru` | `P2[37]` | `(37..39, 44)` | `.PCH` | `4C E2 07` `0x0CB11` | `uru2` via FMV 7 |
+| `urudre1` | `P2[2]` | `(35..37, 22..24)` | `.PCH` | `0x3F` `0x01804` | `uru` at `(0x40,0x40)` |
+| `urudre2` | `P2[9]` | `(26,14)` + `(24,13)` | `.MAP` + `.PCH` | `0x3F` `0x01D78` | `map01` at `(0x26,0x51)` |
+| `urudre3` | `P2[0]` | `(51,90)` | `.PCH` | `0x3F` `0x02461` | `uru` at `(0x40,0x40)` |
+| `jouine` | `P2[16]` | `(17, 17..19)` | `.PCH` | `4C E2 08` `0x03E90` | `town0e` via FMV 8 |
+
+`uru` is the chain's hub and carries six doors, not one: the `MAP03` exit above,
+the story-gated FMV record (`C2=[0x36F]`), and three dream entrances -
+`P2[29]` `(110..112, 35)` to `urudre1`, `P2[33]` `(10..12, 98)` to `urudre2`,
+`P2[31]` `(80..82, 99)` to `urudre3`. All six bands are `.PCH`-only; `uru`'s
+exit band is `.PCH` records 23..26, `jouine`'s is records 3..5.
+
+**The four `0x3F` records share one tail idiom**, which is what makes them
+recognisable past a desync: `B1 F8 13` (set the player's control flag), `34 05
+FF FF FF 41 00` (white fade), the `0x3F` op, then the `26 FF FF` / `21` / `26
+FE FF` park pair. `uru` `P2[42]` is only 41 bytes long and consists of nothing
+else but a leading `0x379` flag test and a `0x6E6` set.
+
+**`jouine` is the one with no `0x3F` at all**, and its exit is not a named scene
+change: `P2[16]` is a 6809-byte cutscene record whose tail fades, stops the BGM
+and fires the FMV-trigger op `4C E2 08`. The hand-off is the FMV master
+dispatch's, not the field VM's - `fmv_id 8` plays `MOV/MV6.STR` and returns to
+`town0e` with door word `0x2E5`
+([`str-fmv-table.md`](../formats/str-fmv-table.md#authoritative-runtime-mapping)).
+That assignment is already the disc-walked `0689_jouine` row of the per-scene
+trigger table, and the port already maps it in
+`engine-core::cutscene::fmv_post_play_handoff`; what was missing was the link
+between that row and the question of how a player leaves the room.
+
+**Why three decoders read the five as sealed.** Each answer is a property of the
+instrument, not of the disc:
+
+- A **clean per-partition fall-through walk** starts at record 0 and desyncs in
+  the first long inline-text block; every exit here is a partition-2 record and
+  three of the six sit `0x124C`, `0x1A8F` and `0x2034` bytes into their bodies, past
+  several kilobytes of `0x1F` text pages. A record-local walk that re-syncs
+  finds all six.
+- A **tile sweep with a cap** never reaches the `.PCH` rows. Deduplicated
+  gate-1 tile counts are 118 for `uru`, 186 for `urudre2`, 55 for `jouine`, and
+  the `.PCH` rows sort after the `.MAP`'s: `uru`'s `MAP03` band is at positions
+  63..66 of its own list and its FMV band at 73..75.
+- A **short post-step tick budget** cannot run these records to their tail.
+  `urudre1` `P2[2]` alone spends 240 + 60 + 60 frames in explicit `WaitFrames`
+  before its `0x3F`, and `jouine` `P2[16]` is a boss cutscene.
+
+**Live confirmation (`uru`).** Driving the pad from the `uru` arrival tile
+`(38, 6)` four tiles north under PCSX-Redux reaches the band and fires the door:
+`FUN_8003BDE0(36, 5, 42, 1)` spawns the record and `FUN_8001FD44("MAP03")` is
+called with `ra = 0x801DEB1C` - the instruction after the `jal 0x8001fd44` in
+the field VM's `0x3F` arm (`0x801DEB14`, `see
+ghidra/scripts/funcs/overlay_0897_801de840.txt`). Since `(36,5,42,1)` exists
+**only** in the `.PCH`, that hit is also the live proof that retail's per-tile
+lookup really does fall through to the staged sidecar. Probe:
+`scripts/pcsx-redux/autorun_uru_exit_probe.lua`, scenario `uru_field_run`.
+
+`jouine` resists the same treatment for a reason that is not a decoder gap: the
+catalogued `jouine` field-run state is already inside `P2[16]`, and the record
+takes the player through the evolved-Cort boss fight before its FMV tail, so a
+pad-only probe watches the mode walk `0x03 -> 0x08 -> 0x09 -> 0x14 -> 0x15`
+with no input of its own having any effect. Its exit is established from the
+bytes plus the already-pinned FMV hand-off, not from a capture.
+
+**In-engine.** With the destination case fold in `clean_scene_name` and
+authored `0x4A` waits discounted from the timeline's anti-hang cap, four of
+the five leave headlessly to the destinations above (`uru` → `map03`,
+`urudre1` / `urudre3` → `uru`, `jouine` → FMV 8 → `town0e`), measured by
+`chapter1_frontier_ladder`. `urudre2` does not: its only gate-1 record is the
+4,703-byte King Nebular dream whose `0x3F` → `map01` is the record's tail, and
+the port's timeline replays the conversation without passing body `0xB8C` -
+a port limit, not a disc fact.
+
 #### Loading the kingdom geometry (engine port)
 
 The engine port loads the scene's **kingdom-bundle slot-1 landmark TMD pack**
@@ -1765,7 +1853,8 @@ which walks the scene's main field file (streamed into `_DAT_8007b85c`) and
 dispatches every descriptor through `FUN_8001f05c`. **Only dispatcher cases
 `0x02` (TMD pack) and `0x09` (bare TMD) install** into `DAT_8007C018` via
 `FUN_80026B4C`; the type-`0x05` slot-4 "MOVE" case only allocates a buffer and
-never installs - so slot-4 is *not* the terrain-mesh source.
+publishes it at `_DAT_8007B888` (the scene's animation bank) - so slot-4 is
+*not* the terrain-mesh source.
 
 **The walk-view pool (pinned).** A real `map01` walk-view capture (game mode
 `0x03`, standing on the Drake overworld) settles `DAT_8007C018` to exactly **45
@@ -1827,13 +1916,54 @@ sweeps over the `.MAP` object grid serve two different render modes:
   open rings (the port's shared pack kernel
   `legaia_engine_core::scene_assembly::build_hybrid_pack_mesh` carries both).
 
+#### Placed actors and the mesh resolver
+
 The walk-placer `FUN_8003A55C` (placed flag `0x4`) spawns only the ~51
 interactive objects (distance-culled to ~14 live actors in the capture; most
 live actors are script-spawned, not from the placed-flag set). It allocates via
-`FUN_80024c88` → `FUN_80020de0` (free-list `FUN_80020454`, pool `_DAT_8007c354`),
-stores the record index at actor `+0x60`, and leaves the mesh chain `+0x44` at
-0; the mesh is resolved from the record index by the scene draw loop (resolver
-not yet pinned). These are props/entities, not the bulk continent.
+`FUN_80024c88` → `FUN_80020de0` (free-list `FUN_80020454`, pool `_DAT_8007c354`).
+These are props/entities, not the bulk continent.
+
+**The mesh resolver is `FUN_80020F88`, and it runs inside the allocator,
+not in the draw loop.** `FUN_80020DE0` seeds the actor from its spawn
+descriptor - `actor+0x60 = desc[+0x04]` (`0x80020E7C`),
+`actor+0x64 = desc[+0x04]` (`0x80020E70`), `actor+0x10 = desc[+0x0C] | 2`
+(`0x80020EDC`) - zeroes the mesh chain at `0x80020F04` (`sw zero,0x44(s0)`)
+and then, five instructions later, `jal`s `FUN_80020F88` at `0x80020F18`.
+That call resolves the whole chain before the allocator returns:
+
+1. When `actor[+0x10] & 0x8000`, it reads the `.MAP` object record
+   `rec = *_DAT_1F8003EC + actor[+0x60]*0x20` and sets
+   **`actor+0x64 = rec[+0x10] + DAT_8007B6F8`** (`0x80020FDC..0x80020FF0`),
+   plus `actor+0x58 = rec[+0x1E]` and `actor+0x52 = rec[+0x12] & 0x3E8`.
+   It then bounds-checks `actor+0x64` against `DAT_8007BB38 + 1` and calls the
+   dev error printer at `0x80021034` on overflow - confirming `+0x64` is a
+   `DAT_8007C018` index.
+2. When `actor[+0x10] & 0x00100000`, it re-derives the same and additionally
+   takes the render mode from `rec[+0x12] & 3` (`0 → 0`, `1 → 6`, `2 → 7`,
+   `3 → 8`) into `actor+0x56`, with `actor+0x52 = rec[+0x12] & 0x380`.
+3. For `actor[+0x56] ∈ {1,2,3,4,5,7,8}` it allocates the 0x9C-byte chain block
+   (`FUN_80017888(0, 0x9C)` at `0x80021184`) into `actor+0x44`, and on OOM
+   sets `+0x56 = 0` and `_DAT_8007B828 |= 0x4000`.
+4. Unless `actor[+0x10] & 0x00040000`, it calls **`FUN_80024D78`**, 31
+   instructions that fill the chain from the pool TMD:
+   `tmd = DAT_8007C018[(i16)actor+0x64]` (`lui 0x8008; addiu -0x3FE8`),
+   `chain[0] = tmd[+8]` (`nobj`), `chain[1+i] = tmd + 0xC + i*0x1C`, then
+   `actor[+0x10] |= 0x08000000`.
+
+`FUN_80024E08(actor, model)` is the same resolver's script-driven entry: it
+writes `actor+0x64 = model`, clears `actor[+0x10] & 0x00108000` (the two bits
+step 1 and 2 test) unless `DAT_8007B83C == 15`, and tail-calls `FUN_80020F88`
+at `0x80024E60`. `find-address-word-refs.py 80020f88` finds exactly these two
+callers and no other reference of any form.
+
+So the port's `pool = record[+0x10] + prefix` rule
+([`legaia_asset::field_objects::pack_mesh_index`] plus
+`FIELD_ACTOR_PACK_BIAS`) matches retail exactly, and the sentence this
+paragraph replaces was wrong twice over: the resolver was pinned, and it is
+spawn-time work, not draw-loop work. A live `map01` state agrees - the five
+placed landmarks in the render list carry `+0x60 = 414/430/349/411/474` and
+`+0x64 = 36/34/11/19/21` with `DAT_8007B6F8 = 5`.
 
 Each placed spawn is **gated on a MAN interaction record** for the cell: the
 placer calls the overlay lookup `FUN_801d5630(1, col + rec[+6], row + rec[+7])`
@@ -1900,10 +2030,10 @@ is `actor+0x64` (see below), matched exactly 14/14.
 
 **The per-object pool index is `record[+0x10] + prefix`** (pinned via
 `ghidra/scripts/find_mesh_chain_writer.py`, confirmed 14/14 against the live
-render list). The chain `actor+0x44` is built by `FUN_80024d78` from
-`DAT_8007C018[ *(u16*)(actor+0x64) ]` (the `-0x7ff83fe8` constant resolves to
-`0x8007C018`): `chain[0] = tmd[+8]` (object count), `chain[1+i] = tmd+0xc+i*0x1c`.
-So `actor+0x64` is the `DAT_8007C018` pool index, and `FUN_80020f88` sets it as
+render list). The resolver chain - `FUN_80020F88` reading the `.MAP` record and
+`FUN_80024D78` building `actor+0x44` from `DAT_8007C018[actor+0x64]` - is
+disassembled instruction by instruction under
+[the walk-placer](#placed-actors-and-the-mesh-resolver) above:
 
 ```text
 actor+0x64 = *(s16*)(_DAT_1f8003ec + (actor+0x60)*0x20 + 0x10) + DAT_8007b6f8
@@ -2007,18 +2137,24 @@ build dense (>10k-quad) heightfields with genuine elevation variation. The old
 `walk_terrain_tiles` per-cell pack-mesh sweep - which flooded ~97% of cells
 with pool-5 because the bulk-terrain records carry `+0x10 == 0` - is removed.
 
-**Slot-4 vertex-pool inspection overlay.** The kingdom bundle's slot 4 (the
-per-kingdom object-mesh library - confirmed object-local GTE vertex pools, see
-[`world-map-overlay.md`](../formats/world-map-overlay.md)) is decoded onto
+**Slot-4 inspection overlay - carries no geometry.** The kingdom bundle's
+slot 4 is the scene's **actor animation bank**, not a mesh library: an
+ordinary asset-type-`0x05` ANM container whose 8-byte entries are per-(frame,
+object) rigid transforms, decoded in
+[`world-map-overlay.md`](../formats/world-map-overlay.md). It is decoded onto
 [`SceneResources::world_map_slot4`] for every `SceneLoadKind::WorldMap` scene
 (and only those). With `LEGAIA_WORLDMAP_SLOT4=1`, `play-window` builds a
-colour-by-`kind` `LineList` from
-[`legaia_asset::world_map_overlay::wireframe_segments_3d`] and merges it into the
-world-map overlay-lines buffer, so the decoded pool is visible in the live 3D
-view. It is an **inspection overlay, not faithful world geometry**: the segments
-use the group-polyline topology convention and the records render at their raw
-object-local coordinates, because the per-object placement transform and true
-triangle topology live in the unpinned cluster-A command stream. Off by default.
+`LineList` and merges it into the world-map overlay-lines buffer. That draw is
+now [`legaia_asset::world_map_overlay::translation_path_segments`] - one
+polyline per (clip, part) through the decoded 12-bit translations, the only
+geometric reading actually in the bytes. It used to be
+[`legaia_asset::world_map_overlay::wireframe_segments_3d`], which plots raw
+`i16` field pairs straddling the entries' packed nibble boundaries: a leftover
+of the falsified "GTE vertex pool" reading and a byte-diffing aid, never
+geometry. The same correction applies to the web-viewer's
+`slot4_wireframe_{lines,points,bounds}` exports. The paths are object-local
+model space and no actor owns them yet, so they draw about the world origin.
+Off by default.
 
 ### Ground texturing
 
@@ -2274,7 +2410,7 @@ the retail disc has no ISO9660 `DATA\FIELD\` tree, and it is never taken when
 PROT-index dispatch, not the trap. The walk/overview split is just the scene name
 → index: `map01 = 85` (walk, entry `0085`) vs `opmap01 = 768` (overview, block
 `0768..0772`). So the walk `.MAP` is the **raw** records+grid region at PROT.DAT
-`0x655800` (`toc[87]`, no compression); the landmark mesh resolver is `pool =
+`0x655800` (`toc[87]`, no compression); the placed-actor mesh resolver (`FUN_80020F88`, at spawn time) is `pool =
 record[+0x10] + prefix`, and the bulk ground is the `0x1000`-gated heightfield
 (Engine status, above).
 
@@ -2560,10 +2696,10 @@ targets. Use `--overlay-targets-only` to pipe the eight addresses into
 a Ghidra `dump_funcs.py` `TARGETS` list. See
 [`legaia_mednafen::prim_dispatch`](../../crates/mednafen/src/prim_dispatch.rs).
 
-Slot 4 of each kingdom bundle is **not** the bulk-terrain source. Its
-records are something else (a runtime library of object-local 3D
-meshes, see [`world-map-overlay`](../formats/world-map-overlay.md)) -
-that hunt is independent of the continent terrain emit mechanism.
+Slot 4 of each kingdom bundle is **not** the bulk-terrain source and
+carries no geometry at all: it is the scene's actor animation bank
+(see [`world-map-overlay`](../formats/world-map-overlay.md)) - that
+hunt is independent of the continent terrain emit mechanism.
 
 The horizon emitter is called by direct `jal` from SCUS - it does not
 need function-pointer dispatch. Ghidra's reference manager misses the
@@ -2649,12 +2785,17 @@ runs a different switch - on `actor[+0x56]` (render mode `1..0xB`):
     stride, `0x2C`); colour comes from record `+0xC..+0x12`. Ends by zeroing a
     `0x14`-word tail. A pure record→packet transform; not ported (raw GP0
     packet layout belongs to `engine-render`, not `engine-vm`).
-  - bit `0x2000` → `FUN_801CFA48` (overlay-resident). The only accessible
-    dumps are the **menu / battle-action** overlays, where `0x801CFA48` is a
-    *mid-function citation* inside `FUN_801CF88C`, not an entry - it is
-    VA-aliased to a different overlay's function (see
-    [`call-target-integrity.md`](../tooling/call-target-integrity.md)), so no
-    clean world-map dump exists to port from.
+  - bit `0x2000` → `FUN_801CFA48` (overlay-resident). It is a function entry
+    (`addiu sp,sp,-0x70`) in the **battle-action** overlay PROT 0898 and in no
+    other image on the disc - probing that VA across every extracted overlay
+    finds the prologue only there, and the routine's signature occurs once
+    archive-wide. It is the lightning **effect-ribbon emitter** the PROT 0973
+    dev harness labels `THERNDER1`; the arm therefore resolves only while the
+    battle overlay is resident. Decoded in
+    [`battle-action.md`](battle-action.md#overlay-local-prng-fun_801d0290);
+    an earlier note here calling it "a mid-function citation inside
+    `FUN_801CF88C`, VA-aliased to another overlay" was wrong on all three
+    counts.
   - else → `FUN_80028158` (SCUS, `80028158.txt`, 1395 instructions; distinct
     from the 6692-byte motion bytecode VM `FUN_80038158`). The **multi-
     primitive** default shape: walks the source record and emits a batch of

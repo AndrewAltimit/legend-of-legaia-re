@@ -1,20 +1,34 @@
-//! Title-overlay sub-mode dispatcher.
+//! Title-screen per-frame tick - the sub-mode dispatcher.
 //!
-//! REF: FUN_801DD35C
+//! PORT: FUN_801DD35C
+//! REF: FUN_801E36A0
+//! REF: FUN_801DD310
 //!
-//! Tagged `REF:` rather than `PORT:` because `menu.rs` carries the
-//! `PORT:` for this address and the catalog counts occurrences - one
-//! address cannot have two port sites. The two dumps are the same
-//! function: `overlay_menu_801dd35c.txt` and `overlay_title_801ddccc.txt`
-//! differ in zero lines (both 12104 bytes / 3026 instructions), and
-//! `overlay_save_ui_*` / `overlay_shop_save` carry it too. **Which
-//! overlay actually hosts it is an open question** - the dump evidence
-//! points at one shared slot-A generation, but settling it needs the
-//! disc-image check the move-VM `0x2F` thread used, not dump inference.
+//! **Ownership is settled, and this module is the one description of the
+//! routine.** Its 48-byte prologue occurs exactly once in all of
+//! `PROT.DAT`, at extraction entry **0899** file `+0xEB44`
+//! (`0x801CE818 + 0xEB44` reproduces the printed VA), and is absent from
+//! `SCUS_942.54`: one resident copy in the menu overlay's image, reached
+//! every frame from the nine-instruction wrapper `FUN_801E36A0` (0899
+//! `+0x14E88`, `jal 0x801dd35c` with both arguments zeroed) that master
+//! mode 22 spawns. The many dumps that carry it - `overlay_menu_801dd35c`,
+//! `overlay_title_801ddccc`, `overlay_save_ui_*`, `overlay_shop_save`, all
+//! 12104 bytes / 3026 instructions - are that one copy under scenario
+//! labels; the short `overlay_801dd35c.txt` that reads differently is a
+//! 436-byte PROT 0897 routine `FUN_801DD310` at an aliased VA, not a
+//! second copy.
 //!
-//! The title-overlay per-frame tick `FUN_801DD35C` (in
-//! `ghidra/scripts/funcs/overlay_title_801ddccc.txt`) fans out via a
-//! 25-entry jump table at PSX virtual address `0x801CF244`. The selector
+//! Hosting it in the menu overlay's image is what made
+//! [`super::menu`] describe it as the *menu's* dispatcher. That reading is
+//! falsified by the routine's own operands: it writes only `0x02..=0x18`
+//! to its sub-mode word (inside the jump table's `sltiu v0,s2,0x19`
+//! bound), never the pause-menu / shop screens `menu.rs` enumerates, and
+//! its two master-mode stores are title transitions - `0x1A` (attract ->
+//! STR) at `0x801DDCF0` and `2` (NEW GAME -> field) at `0x801DFC00`, both
+//! into `0x8007B83C`. `menu.rs` now carries a `REF:` and says so.
+//!
+//! The tick fans out via a 25-entry jump table at PSX virtual address
+//! `0x801CF244`. The selector
 //! lives at offset `+0x204` of the title-overlay state struct (base
 //! `0x801F0000`, sibling region at `0x801EF014..0x801EF200` reached via
 //! negative displacements off the same `lui 0x801f` base).
@@ -107,13 +121,11 @@
 //!
 //! ## Provenance
 //!
-//! - JT extracted from the captured `overlay_title.bin` window
-//!   (see `memory/project_title_overlay_tick_pinned.md` for the
-//!   reproducible capture pipeline).
-//! - Handler PC list tabulated in the same memory file under
-//!   "Top-of-tick sub-mode dispatcher".
-//! - State struct field offsets sourced from disassembly observation
-//!   in `overlay_title_801ddccc.txt`.
+//! - JT read out of the captured `overlay_title.bin` window at
+//!   `0x801CF244`, 25 words; the same table is reachable statically from
+//!   PROT 0899 at file `+0xEB44 + (0x801CF244 - 0x801DD35C)`.
+//! - Handler PC list and state-struct field offsets sourced from the
+//!   disassembly in `overlay_title_801ddccc.txt`.
 //!
 //! Both globals above are reached by a `lui 0x8008` paired with a
 //! **negative** displacement, so the resolved address is one 64 KB page
@@ -732,8 +744,7 @@ mod tests {
     #[test]
     fn well_known_modes_match_captured_pcs() {
         // Spot-check the four labelled modes against the JT entries
-        // extracted from `overlay_title.bin` (see
-        // `memory/project_title_overlay_tick_pinned.md`).
+        // read out of `overlay_title.bin` at 0x801CF244.
         assert_eq!(TitleOverlaySubMode::Init.handler_pc(), 0x801D_D820);
         assert_eq!(TitleOverlaySubMode::Idle.handler_pc(), 0x801D_FC3C);
         assert_eq!(TitleOverlaySubMode::AttractIdle.handler_pc(), 0x801D_DB0C);
@@ -777,9 +788,9 @@ mod tests {
     #[test]
     fn state_field_addresses_decode_to_known_offsets() {
         // The sibling region uses negative displacements off `lui 0x801f`,
-        // so reachable addresses live below STATE_BASE_ADDR. The "Off
-        // (struct)" column in the memory file decodes to these literal
-        // addresses; sanity-check the table.
+        // so reachable addresses live below STATE_BASE_ADDR; each
+        // displacement decodes to one of these literal addresses.
+        // Sanity-check the table.
         assert_eq!(
             STATE_HORIZ_SLIDER_X_ADDR,
             0x801F_0000u32.wrapping_sub(0xEB4)

@@ -105,6 +105,7 @@ import glob
 import json
 import os
 import re
+import struct
 import sys
 from collections import Counter, defaultdict
 
@@ -177,6 +178,49 @@ TOK = re.compile(r"[a-zA-Z_][a-zA-Z0-9_]*")
 # when the two instruments were cross-checked.
 NO_IMM = frozenset(("break", "syscall"))
 
+# The COP2 (GTE) family is the same failure one register file over, and it is
+# the one that hits the render code hardest. The two disassemblers do not
+# disagree about a sub-field here - they disagree about what the operands ARE:
+#
+#   word 0x488F0800   Ghidra `mtc2 t7,0x800`      capstone `mtc2 $t7, $at, 0`
+#   word 0x48280030   Ghidra `cop2 0x280030`      capstone (does not decode it)
+#
+# Ghidra renders the cop2 destination as an immediate (`rd << 11`); capstone
+# renders the same field as a GPR NAME (`$at` for rd 1) and appends a zero
+# selector; and for the `cop2 <25-bit function>` form - every GTE operation -
+# capstone emits nothing at all and `skipdata` turns the word into `.byte`.
+# Unfolded, a window is unresolvable as soon as it contains one GTE op, which
+# is every geometry routine in the game: the world-map bulk-terrain emitter
+# `overlay_world_map_render_0901_801f7644` agrees on 18 of 24 tokens and
+# disagrees on all 6 of its COP2 words.
+#
+# The fold keeps what both sides really do spell the same way - the GPR the
+# instruction moves to or from - and drops the cop2 register / function field
+# on BOTH sides. `cop2 <func>` keeps no operand at all.
+COP2_MNEMONICS = frozenset(("cop2", "mtc2", "mfc2", "ctc2", "cfc2"))
+
+# MIPS primary opcode of the whole COP2 family, and the ABI register names the
+# byte side needs to spell `rt` the way the text side does.
+COP2_OPCODE = 0x12
+GPR_NAMES = (
+    "zero at v0 v1 a0 a1 a2 a3 t0 t1 t2 t3 t4 t5 t6 t7"
+    " s0 s1 s2 s3 s4 s5 s6 s7 t8 t9 k0 k1 gp sp fp ra"
+).split()
+
+
+def cop2_token_from_word(word):
+    """The folded COP2 token for one instruction word.
+
+    `rs` bit 25 set is the `cop2 <25-bit function>` form (a GTE operation),
+    which names no GPR. Everything else is a move to/from a cop2 register and
+    names `rt`.
+    """
+    if ((word >> 21) & 0x1F) & 0x10:
+        return "COP2||"
+    name = GPR_NAMES[(word >> 16) & 0x1F]
+    name = RCLASS.get(name, name)
+    return "COP2|%s|" % ("" if name == "zero" else name)
+
 _md = capstone.Cs(capstone.CS_ARCH_MIPS, capstone.CS_MODE_MIPS32 + capstone.CS_MODE_LITTLE_ENDIAN)
 _md.skipdata = True
 
@@ -185,6 +229,12 @@ def canon(mnem, ops):
     """Base-independent token for one instruction."""
     mnem = mnem.lower().lstrip("_")
     ops = ops.replace("$", "").replace(" ", "").lower()
+    if mnem in COP2_MNEMONICS:
+        # Keep the first GPR the two spellings share; drop the cop2 register
+        # (an immediate on one side, a GPR name on the other) and the selector.
+        first = next((RCLASS.get(t, t) for t in TOK.findall(ops)
+                      if t in REGS and t != "zero"), "")
+        return "COP2|%s|" % first
     cls = MCLASS.get(mnem, mnem.upper())
     regs = [RCLASS.get(t, t) for t in TOK.findall(ops) if t in REGS and t != "zero"]
     # Strip register names before reading immediates: `s8` and `a1` carry
@@ -209,7 +259,19 @@ def canon(mnem, ops):
 def canon_bytes(data, n_insns):
     out = []
     for ins in _md.disasm(data, 0x80000000):
-        out.append(canon(ins.mnemonic, ins.op_str))
+        off = ins.address - 0x80000000
+        word = None
+        if ins.size == 4 and off + 4 <= len(data):
+            word = struct.unpack_from("<I", data, off)[0]
+        if word is not None and (word >> 26) == COP2_OPCODE:
+            # capstone declines half this family and renames the other half's
+            # operands, so the word is folded from the encoding directly. The
+            # `size == 4` guard keeps the substitution off any build whose
+            # `skipdata` splits a word into byte-sized items - there the token
+            # stays whatever capstone gave, unfixed rather than misaligned.
+            out.append(cop2_token_from_word(word))
+        else:
+            out.append(canon(ins.mnemonic, ins.op_str))
         if len(out) >= n_insns:
             break
     return out

@@ -49,15 +49,56 @@ overlay-resident apply handler, not in the dumped corpus" reading.)
 | Bit | Meaning |
 |---|---|
 | `0x80` | base / "has an effect" - set on every populated descriptor |
-| `0x40` | draws its own info-panel body instead of the passive block |
-| `0x20` | effect applies to the **whole party** (all-targets validator) |
+| `0x40` | target **side** is the enemy party (clear = the ally party) |
+| `0x20` | **all** targets on the selected side (clear = one) |
 | `0x04` | usable from the **battle** item menu |
 | `0x02` | usable from the **field** item menu |
 
-`0x40` is set on exactly five subtypes: the Point Card and the two summon-flute
-pairs. Its consumer is the item-info panel `FUN_801D0F1C`, which branches past
-the accessory-passive block for these - the Point Card's arm prints the live
-`_DAT_800845B4` bank ([`shop.md`](../subsystems/shop.md)).
+### `0x40` is the target side, and it has exactly one reader
+
+The battle Item command forks on `0x40` and `0x20` together, at
+`0x801D18E0..0x801D18EC` inside the battle dispatcher `FUN_801D0748`
+(PROT 0898). The chain is all in the instructions: the bag slot's item id
+(`lbu a0, 0x1818(...)` off the `0x80084140` block), the item record's `+1`
+effect subtype (`0x80074368 + id*0xC`), then this table (`lui a1, 0x8007` at
+`0x801D1898` + `addiu a1, a1, 0x52c0` at `0x801D18CC`), `lbu v1, 0x2(v0)` at
+`0x801D18D8`, and the pair `andi v0, v1, 0x40` / `andi v0, v1, 0x20`. The four
+combinations select four target modes, each writing a different phase byte and
+entering a different picker:
+
+| `0x40` | `0x20` | Phase | Target mode |
+|---|---|---|---|
+| set | clear | `0x5B` | one enemy - picker armed with `a0 = 0x12` |
+| set | set | `0x5D` | all enemies - `actor[+0x1DD] = 9`, no picker |
+| clear | clear | `0x64` | one ally - picker at `0x801D2D1C`, `a0 = 0x16` |
+| clear | set | `0x66` | all allies - the `0x801D1D50` arm |
+
+The **spell** table shares the encoding and the fork: `FUN_801D0748`'s magic arm
+reads `DAT_800754C8 + id*0xC` `+2` at `0x801D1C48` and runs the identical
+`0x40`/`0x20` ladder at `0x801D1C50`/`0x801D1C58` into phases `0x5C` / `0x5E` /
+`0x65` / `0x67`. That is what pins the sense of the bit: the two tables' `+2`
+low nibbles agree (an item's `0xC4` is `0x80 | 0x44` = the spell table's "one
+enemy", `0xE4` is `0x80 | 0x64` = "all enemies", `0x86`/`0xA6` are `0x80 | 0x06`
+/ `0x80 | 0x26` = one / all allies), and the five `0x40` subtypes are exactly
+the enemy-directed consumables - the Point Card (subtype `0x7E`, flag `0xC4`)
+and the two summon-flute pairs, whose class-`126` member carries `0xC4`/`0xC6`
+(one enemy) and whose class-`127` member carries `0xE4`/`0xE6` (all enemies).
+
+An opcode-decoding sweep of `SCUS_942.54` plus all 80 based overlay images for a
+`+2` byte load followed within five instructions by `andi ..., 0x40` finds
+`0x801D18E0` and `0x801D1C50` and nothing else. In particular the item-info
+panel `FUN_801D0F1C` does **not** read the bit - it contains no `andi 0x40` at
+all. The earlier attribution ("its consumer is the item-info panel, which
+branches past the accessory-passive block") mistook that panel's
+`slti a0, 0x40` at `0x801D107C` / `0x801D1110` for a flag test; that instruction
+compares the record's `+3` **passive index** against the `>= 0x40` no-passive
+sentinel ([accessory-passive-table.md](accessory-passive-table.md)), a different
+field and a magnitude compare rather than a mask.
+
+Bit `0x08` is a sixth populated bit this table does not name. It is read at
+`0x800308D8` / `0x80030BB4` (the bag-list builder, gating a consumable into the
+third menu list at `0x801C6420`) and at `0x801D1164` (the sell/info panel,
+selecting between two glyph ids); what it selects is not pinned here.
 
 Healers carry `0x04 | 0x02` (field + battle); permanent stat-ups and the
 field-utility items carry `0x02` only; status-cures and revive carry `0x04`

@@ -315,6 +315,18 @@ first-visit record is neither - it is a helper context - so that predicate
 returns while `izumi`'s spring choreography is still moving the player. The
 frontier ladder waits for the spawned records too.
 
+**An ordered ladder shares state, so one latched bit reads as 28 broken
+scenes.** The rungs run in closure order inside one host, and anything a rung
+leaves set is still set for every rung after it. When the ledge-hop steering
+lock leaked across a scene change, every scene downstream of `tower` reported
+the flag with zero driven tiles - a result that reads as a per-scene property
+and is a property of the ordering. The tell is the shape: a *contiguous run*
+of rungs failing identically, starting at one scene, is a latch, not
+twenty-eight scenes. Confirm it by re-probing one of the later rungs from a
+fresh host; if it walks normally alone, the ladder is measuring its own
+residue. Fix the leak - do not add a per-rung reset that hides it, because the
+same residue is what a real regression would look like.
+
 **A locomotion rung needs a released-pad control.** Without one, "the player
 walked" and "a script moved the player" are the same measurement. Each scene's
 driven probe is scored against a released-pad run of the same length from the
@@ -333,23 +345,30 @@ looks like), the recovering destination-table pass (what a door *entry* looks
 like), and the ladder's own `.MAP` gate-1 trigger → partition-2 record →
 `0x3F` join (what a door the player can *walk onto* looks like).
 
-Ordinary interiors have all three. The Uru Mais chain (`uru`, `urudre1`,
-`urudre2`, `urudre3`) has only the middle one: the clean walk finds no `0x3F`
-anywhere in those four MANs, so their destinations are known to this project
-as table entries and not as decoded ops. `jouine` has none of the three.
+Ordinary interiors have all three, and so does `uru` - its `MAP03` exit record
+`P2[42]` is 41 bytes with no text to desync on. `urudre1` / `urudre2` /
+`urudre3` have only the destination-table pass, because each of their exits
+sits `0x2DC` / `0x124C` / `0x2034` bytes into a partition-2 record behind
+kilobytes of inline `0x1F` text; `jouine` has none of the three, because its
+exit is not a named scene change at all but the FMV hand-off `4C E2 08`.
 
-Two further probes turn that from a decoder note into a playability one.
-Stepping onto every gate-1 walk-on tile the five carry fires **nothing**, and
-executing 160 of their own partition-1 and partition-2 record bodies through
-the field VM reaches no scene change either. In the port as it stands,
-entering the Uru Mais chain or `jouine` is one-way, and the four Uru Mais
-graph edges rest on weaker footing than the rest of the closure.
+Part E answers the question the decoders cannot: it steps onto **every** gate-1
+tile the five carry - the `.MAP` table and the `.PCH` sidecar both - and four of
+them leave, each for the destination the disc names (`uru` → `map03`, `urudre1`
+and `urudre3` → `uru`, `jouine` → FMV 8 → `town0e` through
+`cutscene::fmv_post_play_handoff`). Three caps had to go first, and each was a
+property of the ladder rather than of the disc: the tile sweep stopped at 48
+deduplicated tiles while `uru`'s exit band is at positions 63..66 of its own
+118; the post-step budget was 24 ticks while `urudre1`'s record alone waits
+240 + 60 + 60 frames before its `0x3F`; and watching only for a scene change
+could never see an FMV tail.
 
-How retail leaves them is unidentified, and the record probe bounds its own
-claim: a warp behind a story gate, an inventory check or an actor-motion wait
-a headless world never satisfies would not be reached from a 180-frame run
-either. "No record this probe executed warped" is the measurement; "the bytes
-contain no warp" is not.
+`urudre2` is the one that stays put, and it is a port limit, not a disc one:
+its only gate-1 record is the 4703-byte King Nebular dream whose `0x3F` →
+`map01` is its tail, and the port's timeline replays the conversation instead -
+the PC never passes body `0xB8C`, independent of pad cadence and of visit
+count. Layout and the live `uru` pin:
+[`world-map.md`](../subsystems/world-map.md#uru-mais-and-jouine-exits-carried-by-the-pch-sidecar).
 
 ## See also
 

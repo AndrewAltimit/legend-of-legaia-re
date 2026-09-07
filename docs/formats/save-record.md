@@ -93,8 +93,13 @@ Field offsets are pinned by a fusion of three sources:
 +0x12C  u16 LE   int_record               ; "Max INT"
 +0x12E  u16 LE   battle_status_flags      ; the packed ailment word, mirrored
                                            ; from battle actor +0x16E. See note.
-+0x130  u8       magic_rank               ; "Level 99" cheat target. See note.
-+0x131  u8[11]   post_level_unmapped
++0x130  u8       level                    ; "Level 99" cheat target. The crate
+                                           ; accessor is still named
+                                           ; `magic_rank()`; the byte is the
+                                           ; level. See note.
++0x131  u8[11]   post_level_unmapped      ; +0x131 is seeded to 1 and read by
+                                           ; nothing; +0x132..+0x13B untouched.
+                                           ; See note.
 +0x13C  u8       learned_spell_count      ; "Magic Slot Activator" target,
                                            ; cheat sets to 0x24 to enable
                                            ; the spell list. Runtime role:
@@ -126,7 +131,12 @@ Field offsets are pinned by a fusion of three sources:
 +0x19B  u8       accessory_1_id           ; "Accessory 1 Modifier"
 +0x19C  u8       accessory_2_id           ; "Accessory 2 Modifier"
 +0x19D  u8       accessory_3_id           ; "Accessory 3 Modifier"
-+0x19E  u8[274]  post_equipment_unmapped
++0x19E  u8[9]    post_equipment_unmapped_a
++0x1A7  u8[16]   auto_command_string_a   ; Muscle Dome / battle Auto command string, one AP band
++0x1B7  u8[16]   auto_command_string_b   ; the other AP band (slot picked on actor+0x156 < actor+0x154)
++0x1C7  u8[233]  post_equipment_unmapped_b
+                          ; (+0x1A7 / +0x1B7 loaded by FUN_801DA34C, saved by FUN_801DA59C;
+                          ;  the typed accessor still exposes +0x19E..+0x2B0 as one unmapped block)
 +0x2B0  ...      active_spell_slots[14]   ; 14 × 0x14-byte active-spell
                                            ; runtime slots - covered by the
                                            ; `active_spell_slot()` accessor
@@ -196,8 +206,17 @@ event (the captured `engine_core::levelup::observations::{noa,gala}_4_level_jump
 bumped it by one across a four-level grant, so it can momentarily lag the XP-derived
 level after a rare multi-level jump), but for single-level play and the new-game seed
 it equals the level. This supersedes the earlier "`+0x130` = Magic Rank" reading for
-the level question; whether a separate magic-rank byte lives at the adjacent `+0x131`
-(which the new-game seed also inits to 1) is unconfirmed. The runtime accessor
+the level question, and the adjacent `+0x131` is **not** the missing magic-rank
+byte. `+0x131` is written once on the whole disc - the new-game seed's
+`sb $v0, 0x6f9($s0)` at `0x800561C8`, sharing its `li $v0, 0x1` with the `+0x130`
+store two instructions later - and read nowhere. A displacement sweep over
+`SCUS_942.54` and all 80 based overlay images for any `lb`/`lbu`/`sb` at `0x131`
+(record-relative) or at `0x6f9`/`0xb0d`/`0xf21`/`0x1335` (the four slots'
+displacements off the `0x80084140` block the menu overlay addresses records
+through) returns that single store, and no halfword or word access spans
+`+0x130..+0x131` either - every level reader in the corpus is a `lbu` at `+0x130`
+/ `0x6f8`. The magic-rank counter is a different byte, capture-pinned at record
+`+0x9C` ([battle.md](../subsystems/battle.md)). The runtime accessor
 `legaia_save::CharacterRecord::magic_rank()` reads this byte, so it is in fact the
 **level** byte under a legacy name; the crate's `level()` reads `+0x100`, which is
 always zero in retail (the engine port uses it as its own internal level cell).

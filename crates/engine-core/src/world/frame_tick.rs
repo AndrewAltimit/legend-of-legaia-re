@@ -153,11 +153,12 @@ impl World {
     ///   host-substituted by "a dialogue owns the pad", so a switch never
     ///   arms under an open text box.
     ///
-    ///   The port also latches its field **run** modifier off Square
-    ///   ([`Self::field_run_button_held`]), so inside an armed talk one press
-    ///   does both. That is the run modifier intruding, not the swap: the
-    ///   swap bit is disassembly-pinned and the run mask word `0x800846DC`
-    ///   is explicitly not.
+    ///   The port latches its field **run** modifier off the same pad word
+    ///   ([`Self::field_run_button_held`], mask
+    ///   [`Self::field_run_button_mask`]), so inside an armed talk one press
+    ///   does both. Retail behaves the same way - its run mask word
+    ///   `0x800846DC` is `0x48` = Cross | R1, and Cross is also the talk
+    ///   button - so this is the retail overlap, not a port divergence.
     /// - **1** - hold [`LEADER_SWAP_FADE_FRAMES`] behind the fade-to-white
     ///   ([`Self::screen_fade`] carries the retail template: kind 2, `0x20`
     ///   frames, black -> white, `801d29c8..801d2a00`).
@@ -475,12 +476,16 @@ impl World {
     /// (`gp+0x814`). [`Self::tick`] counts it down by the frame step.
     ///
     /// Retail's arm half writes five `gp` cells, not three: on top of the
-    /// timer's armed flag / deadline / elapsed it latches the live brightness
-    /// word `_DAT_8007B910` and the caller's tag, then tail-calls the libsnd
-    /// volume shim with `(level >> 1, deadline | 1)`. Those two extra cells
-    /// land in [`Self::sound_arm`] so a host driving the shim has the exact
-    /// arguments; the engine has no live brightness ramp of its own, so the
-    /// latched level is the cold-reset value retail boots `_DAT_8007B910` to.
+    /// timer's armed flag (`gp+0x808`) / deadline (`gp+0x814`) / elapsed
+    /// (`gp+0x81C`) it latches the caller's tag (`gp+0x810`) and the live
+    /// **audio level** `_DAT_8007B910` (`lw a1,-0x46f0(a1)` at `0x800267B0`
+    /// into `gp+0x80C`), then tail-calls the libsnd volume shim
+    /// `FUN_80062004(*(i16*)0x80070536, (level << 15) >> 16, deadline | 1)`
+    /// (`0x800267E4`). Those two extra cells land in [`Self::sound_arm`] so a
+    /// host driving the shim has the exact arguments; the engine has no live
+    /// volume ramp of its own, so the latched level is the cold-reset value
+    /// retail boots `_DAT_8007B910` to - `0xD7`, carried on
+    /// [`crate::new_game::GameStateColdReset::audio_level`].
     ///
     /// PORT: FUN_800267A8
     /// REF: FUN_800267FC, FUN_80062004
@@ -490,7 +495,7 @@ impl World {
         self.sound_arm = Some(crate::scus_leaf_kernels::TimedSoundArm::arm(
             0,
             deadline_vsyncs.max(0) as u32,
-            crate::new_game::GAME_STATE_COLD_RESET.screen_brightness,
+            crate::new_game::GAME_STATE_COLD_RESET.audio_level,
         ));
     }
 
@@ -673,14 +678,19 @@ impl World {
     /// per-host derivation is exactly the shape the UI-drift gate exists to
     /// catch, and this way there is nothing to keep in sync.
     ///
-    /// The button is **Square**. Retail's held-pad speed modifier - the
-    /// debug-turbo arm of the same base-step selector - reads packed bit
-    /// `0x80`, which the fishing controller pins as Square, so it is the
-    /// retail-adjacent choice; the run mask config word `0x800846DC` itself
-    /// is unpinned (see [`Self::field_run_button_held`]).
+    /// The buttons are [`Self::field_run_button_mask`], which **defaults to
+    /// retail's** `Cross | R1` (the config word `0x800846DC` = `0x48`, seeded
+    /// by `FUN_80034A6C` and read at `0x801D0364`), plus Square as an
+    /// alternate. Square alone was the port's binding for a while and is not
+    /// retail's - it is the debug-turbo bit `0x80` on the same selector - so
+    /// the default now leads with the retail pair. Rebinding is a *key*
+    /// question, not a button one: `legaia-engine config set --binding
+    /// W=R1` moves which key produces R1.
+    ///
+    /// REF: FUN_80034A6C
     pub fn set_pad(&mut self, mask: u16) {
         self.input.set_pad(mask);
-        self.field_run_button_held = mask & input::PadButton::Square.mask() != 0;
+        self.field_run_button_held = mask & self.field_run_button_mask != 0;
     }
 
     /// Per-frame world tick. Drives whichever scene-mode VMs are live.

@@ -658,3 +658,78 @@ distinctive addresses `0x801F4E64` / `0x801F4EDC` are exactly the `< 0x25`
 anim-pair table the doc comment names as the un-parsed arm. The host trait's
 other hooks are dispatcher-side routines that share nothing with it by design.
 """
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/battle.md:801e91e8:801c9348"
+reason = """
+DAT_801C9348 is the caller's monster-record table, not this routine's. The
+row's evidence is a call site one level up, verified in the caller's dump:
+overlay_battle_action_801ec3e4.txt line 1844 is `801ee2c0  jal 0x801e91e8`,
+reached with `801ee2bc  lbu a0,0x3e(v0)` off `s1 = (&DAT_801C9348)[slot-3]`
+(formed at `801ee23c  lui v0,0x801d` / `801ee240  addiu v0,v0,-0x6cb8`).
+FUN_801E91E8's own 61 instructions form only 0x8007BD24, 0x8007BAC0,
+0x8007BD10 and the character-record base 0x80084140 - a caller's table and a
+caller's instruction address cannot appear in them. The row names both dumps
+so the citation is locatable.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-core/src/world/frame_tick.rs:800267a8"
+reason = """
+Correct tag; the module is a host dispatcher, which is the shape the signal's
+own DF_LADDER comment says it cannot read. `arm_sound_release` implements the
+21-instruction SCUS leaf FUN_800267A8 exactly: the five gp cells it writes are
+`sw v0,0x808(gp)` (armed=1), `sw a0,0x810(gp)` (tag), `sw a2,0x814(gp)`
+(deadline), `sw zero,0x81c(gp)` (elapsed) and `sw a1,0x80c(gp)` (the latched
+level read at `800267b0  lw a1,-0x46f0(a1)` = _DAT_8007B910), followed by the
+tail call `800267e4  jal 0x80062004` with `a0 = *(i16*)0x80070536` and
+`a1 = (level << 15) >> 16`. Those are the routine's only distinctive data
+(0x80070536, 0x8007B910) and its only callee (0x80062004), and no other module
+claims either - the corroboration half of the shop shape is absent. The
+module's other ten tags are minigame and walk state machines it ticks per
+frame, so sharing nothing with them is by construction.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-core/src/world/battle/monster_ai.rs:801e9fd4"
+reason = """
+Correct tag, read against the disassembly rather than the C. The dump
+overlay_battle_action_801e9fd4.txt reports entry=801e9fd4 with a standard
+prologue (`addiu sp,sp,-0x70`) and spans 8456 bytes / 2114 instructions, and
+both tagged functions implement interior bands of it:
+`arm_monster_strike_budget` is the AGL-gauge spending loop at
+0x801EA344..0x801EA3CC - `lhu v0,0x154(s4)` compared against the per-entry cost
+`lbu v1,0x74(v1)`, the accepted pick stored with `sb a0,0x1df(v0)`, the gauge
+debited with `subu v0,v0,v1` / `sh v0,0x154(s4)`, and the loop bound
+`sltiu v0,v0,0x10`; `pick_monster_action` is the decision core immediately
+after it at 0x801EA3D0..0x801EA444 - the `lbu v0,0x21(v0)` scan over the
+record's three magic-attack ids with `sltiu v0,v0,0x2` liveness and `sltiu
+v0,v0,0x3` bound, then `jal 0x80056798` / `div v0,v1` / `mfhi v1` for
+`rand % (1 + live_count)`. Nothing in those bands is shared with the module's
+two corroborating siblings by construction: FUN_801E295C is the action state
+machine and FUN_801E7320 the target resolver, so they touch the actor struct
+and not the monster record or the entry-cost table. The one dump that does NOT
+carry this routine's data at all, overlay_0896_801e9fd4.txt (996 bytes, opens
+mid-body with `lbu v0,0x3(v0)`), is a VA alias in a different image and is not
+what the tag names - see docs/reference/overlay-va-aliases.md.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-core/src/world/battle/monster_ai.rs:801e09f8"
+reason = """
+Correct tag, read against the disassembly. overlay_battle_action_801e09f8.txt
+reports entry=801e09f8, 4280 bytes / 1070 instructions, running to 0x801E1AAC,
+so the impact-effect ladder the tag calls out as an interior is inside it.
+`enemy_impact_status_proc` reproduces that ladder instruction for instruction:
+the selector load `lbu v1,0xa(v0)` at 0x801E15F8, the `li v0,0x4` / `beq` arm
+to 0x801E1660, the `slti v0,v1,0x5` split, the two DoT arms at 0x801E1630 and
+0x801E1660 (`jal 0x80056798`, `andi v0,v0,0x7`, `ori 0x1` / `ori 0x2` into
+`+0x16E`), and the Rot arm at 0x801E1690 (`sltiu v0,a1,0x3` seat test, the
+`lw v1,0x6bc(v0)` ability bitfield read guarded by `lui v0,0x100` and
+`lui v0,0x1000` *before* the draw, then `1 << (rand%3 + 3)` built by the
+0x55555556 reciprocal at 0x801E1704..0x801E173C). The absence of a selector-6
+Curse arm is visible as the ladder ending at 5 with `j 0x801E178C`. Sharing no
+data with the module's siblings is structural: this band reads the move-power
+record and the character ability bitfield, which the action state machine
+FUN_801E295C and the target resolver FUN_801E7320 never touch.
+"""

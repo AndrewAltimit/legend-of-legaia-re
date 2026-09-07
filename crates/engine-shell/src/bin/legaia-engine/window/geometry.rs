@@ -326,33 +326,43 @@ pub(crate) fn world_map_player_line_geometry(
     (pos, col, idx)
 }
 
-/// Build a LineList wireframe of a kingdom's decoded slot-4 vertex pool
+/// Build a LineList plot of a kingdom's slot-4 **animation bank**
 /// (`SceneResources::world_map_slot4`), as world-space `(positions, colors,
-/// indices)`. Each body's records are emitted at their raw object-local
-/// coordinates (no per-object placement transform - the cluster-A command
-/// stream that supplies those is unpinned), at raw retail Y-down
-/// coordinates (the world-map cameras compose the single world negation). Colour is keyed by body `kind`
-/// (`1` = the shared universal mesh set, `2` = kingdom-specific objects,
-/// `4` = wide-extent bodies) so the per-kingdom assembly structure reads
-/// at a glance. Returns empty geometry when no body yields a segment.
+/// indices)`.
 ///
-/// This is an env-gated inspection overlay (`LEGAIA_WORLDMAP_SLOT4=1`); the
-/// group-polyline segment topology is the documented inspection convention,
-/// not the faithful triangle topology (see
-/// `legaia_asset::world_map_overlay::wireframe_segments_3d`).
+/// Slot 4 is not a mesh library: it is an asset-type-`0x05` ANM container of
+/// world-map actor clips, and each 8-byte entry is a rigid transform - three
+/// packed 12-bit translations plus three 8-bit angles
+/// ([`world-map-overlay.md`](../../../../../../docs/formats/world-map-overlay.md)).
+/// So what this draws is one polyline per (clip, part) through that part's
+/// decoded translation across the clip's frames -
+/// `legaia_asset::world_map_overlay::translation_path_segments`, the only
+/// geometric reading actually in the bytes. It used to call
+/// `wireframe_segments_3d`, which plots raw `i16` slices straddling the
+/// entry's nibble boundaries: a byte-diffing aid, not geometry.
+///
+/// The values are object-local model-space offsets, so a path is a motion
+/// curve about the actor origin, not a world position; they are emitted at
+/// raw retail Y-down coordinates (the world-map cameras compose the single
+/// world negation). Colour is keyed by the body's sub-frame divisor
+/// (`Segment3d::kind` = the header `+0x06` rate, `1` / `2` / `4`) so clips
+/// that step at different cadences read apart. Returns empty geometry when no
+/// clip has a moving part.
+///
+/// This is an env-gated inspection overlay (`LEGAIA_WORLDMAP_SLOT4=1`); it is
+/// not a render path.
 pub(crate) fn world_map_slot4_line_geometry(
     slot: &legaia_asset::world_map_overlay::KingdomSlot4,
 ) -> LineGeometry {
-    let opts = legaia_asset::world_map_overlay::WireframeOptions::default();
-    let segs = legaia_asset::world_map_overlay::wireframe_segments_3d(slot, &opts);
+    let segs = legaia_asset::world_map_overlay::translation_path_segments(slot);
     let mut pos: Vec<[f32; 3]> = Vec::with_capacity(segs.len() * 2);
     let mut col: Vec<[u8; 4]> = Vec::with_capacity(segs.len() * 2);
     let mut idx: Vec<u32> = Vec::with_capacity(segs.len() * 2);
     for s in &segs {
         let c = match s.kind {
-            1 => [120u8, 200, 255, 255], // shared universal bodies (cyan)
-            2 => [255u8, 160, 90, 255],  // kingdom-specific objects (orange)
-            4 => [200u8, 120, 255, 255], // wide-extent bodies (violet)
+            1 => [120u8, 200, 255, 255], // every-frame clips (cyan)
+            2 => [255u8, 160, 90, 255],  // half-rate clips (orange)
+            4 => [200u8, 120, 255, 255], // quarter-rate clips (violet)
             _ => [180u8, 180, 180, 255],
         };
         let base = pos.len() as u32;

@@ -183,7 +183,7 @@ for (i, rec) in t.records.iter().enumerate() {
       <ul class="bullets">
         <li><strong>The empty sub-table bodies.</strong> Whether any runtime writer fills the zero words at <code>+N..+N+4</code> needs a targeted capture of the <code>+0x12000</code> window.</li>
         <li><strong>Empty kinds 0 / 2 / 3.</strong> No retail <code>.PCH</code> populates teleports, elevation overrides or region boxes; those live only in the <code>.MAP</code> block.</li>
-        <li><strong>Prescript scope.</strong> The next-entry prescript and the <code>.LZS</code> bundle's scripted-table prefix both carry stager records; which each supplies at runtime is unpinned.</li>
+        <li><strong>Prescript scope</strong> - closed for the id-installer path. <code>FUN_800252EC</code> reads its <code>[count][offsets]</code> table from <code>_DAT_8007B8D0</code> (<code>0x800252F4</code>), and the field asset loader points that global at the <code>efect.dat</code> window <code>*(0x1F8003EC) + 0x12800</code> at <code>0x8001F864</code> - one sector past the <code>.PCH</code>. So a record installed by id comes from the next-entry prescript, never from the <code>.PCH</code> window.</li>
       </ul>
       <p>Falsified leads, kept so they are not re-walked: the <code>_DAT_8007B8D0</code> relocation is the <code>efect.dat</code> stager; the type-dispatch loader never sees the <code>.PCH</code> (it is a top-level PROT entry, not a typed chunk); <code>FUN_8002541C</code> is a generic streaming driver.</p>
     </div>

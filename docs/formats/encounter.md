@@ -14,6 +14,7 @@ The on-disc encounter record installed onto a field actor when the script VM tri
 - [Scripted-battle id path (`FUN_8005567c`)](#scripted-battle-id-path-fun_8005567c)
 - [Random-encounter trigger path](#random-encounter-trigger-path)
 - [MAN section 3: the camera-region table](#man-section-3-the-camera-region-table)
+  - [The scratchpad window `0x1F8003E8..EB`](#the-scratchpad-window-0x1f8003e8eb)
 - [What this doesn't tell us](#what-this-doesnt-tell-us)
 - [Random vs scripted formations (the MAN encounter section)](#random-vs-scripted-formations-the-man-encounter-section)
 - [Files referencing this format](#files-referencing-this-format)
@@ -766,8 +767,9 @@ alias different bytes at this VA). Consumers: `overlay_cutscene_dialogue_801dab9
   anchor `(rec[1], rec[2])` (kind 0).
 - For mask kinds with `byte[1] != 0`, the loader side-copies `bytes[3],[4],[1],[2]` to
   scratchpad `0x1F8003E8..EB` and the mirror words `0x801F2778/80/7C/84` before the
-  split. The writes are **Confirmed**; their consumer is **Unknown** (untraced in the
-  current dump corpus).
+  split. Those four bytes are the camera's **visible tile window** - see
+  [the scratchpad window](#the-scratchpad-window-0x1f8003e8eb) below, which also says
+  why the earlier "consumer Unknown" reading survived as long as it did.
 
 **Camera payload `bytes[5..17]`** - `byte[5]` is stored whole to the camera **mode byte**
 `DAT_8007B607`; its high nibble selects both the loader split and the `FUN_801DAB90` build
@@ -828,8 +830,54 @@ positions in world units, one tile = `0x80`):
 `B618 = 0x300`.
 
 Confidence: the three byte splits and the global routing are **Confirmed** (direct
-disassembly + the builder's consumption); the mask-kind scratchpad side-write consumer is
-**Unknown**.
+disassembly + the builder's consumption), as is the mask-kind scratchpad side-write and
+its four consumers.
+
+### The scratchpad window `0x1F8003E8..EB`
+
+The four bytes the mask-kind arm side-copies are the **visible tile window**: signed tile
+offsets from the camera's own tile to the edges of the ground the renderer draws. Every
+consumer loads them with `lb`, and they pair by component - `(E8, EA)` is the X pair and
+`(E9, EB)` the Z pair, near edge first. A mask-kind record's `bytes[1..4]` are therefore
+**not** the kind-1 query bbox: `[3]`/`[4]` are the near (negative) X / Z offsets and
+`[1]`/`[2]` the far ones, and the loader's `[3],[4],[1],[2]` order is exactly the
+permutation that lands them in `[E8, E9, EA, EB]`. Field-VM op `0x46`
+writes the same four slots (`0x801DF2AC..0x801DF350` in the field overlay), either from
+four explicit operands (`sub-op 0x24`: `[E8, E9, EA, EB] = op[1..4]`) or, in its 3-byte
+form, as a symmetric window of half-width `op[0] >> 1` in X about tile offset `-1` and
+`op[1] >> 1` in Z about `+2`.
+
+The consumers, all disassembly-traced:
+
+| Consumer | What it does with the window |
+|---|---|
+| `FUN_801F7088`, the per-cell decoration pass in the slot-B render library (PROT 0900 / 0901) | Clamps the window against the current walk-region AABB at `0x1F800384..87`, then places the emit origin at `sub_x + (E8 << 7) − 0x40` / `sub_z + (E9 << 7) − 0x140` (`0x801F7434..0x801F746C` in the 0900 image) and walks `(EA - E8) + 1` columns out from it - which is what makes the four bytes *the* window rather than an arbitrary box. Sibling emitters in the same library read the same four scratchpad bytes (`0x801F6A10`, `0x801F6D6C` in 0900). |
+| `FUN_801DAA50`, in the co-resident camera cluster (11 `jal` sites: 2 in SCUS, 9 in the field overlay) | Clamps the negated camera focus `_DAT_80089118` (X) / `_DAT_80089120` (Z) so the window stays inside that same walk-region AABB. Gated on `DAT_1F80037C != 0`, skipped outright when the camera mode nibble `DAT_8007B607 >> 4` is `5` (fixed scripted shot), and overridden afterwards by `_DAT_8007B628` / `_DAT_8007B62A` when either is non-zero. |
+| `FUN_801D6058`, the ambient particle emitter | Samples spawn points across `(EA − E8) − 1` by `(EB − E9) − 1` tiles, i.e. only inside the drawn window. |
+| `FUN_801EAD98` dev-menu rows `0x12..0x15` | Prints all four as signed decimals; `FUN_801E9F64` is the `±1` editor behind those rows. |
+
+The **mirror words `0x801F2778 / 7C / 80 / 84`** are `i32` copies with **no reader**. All
+three writers (the loader here, and op `0x46`'s two arms) store the byte and the word from
+the same register; the `DAT_1f8003e8 = (byte)DAT_801f2778` shape in the decompiled C is
+value re-use, not a load. A sweep in every reference form - literal word, `lui`+`addiu`,
+`jal`, `j`, branch, `disp(gp)`, `lui`+load, and materialised-base plus displacement - over
+`SCUS_942.54` and all 31 based overlay images returns those three store sites and nothing
+else.
+
+Provenance: `see ghidra/scripts/funcs/overlay_fishing_801daa50.txt` (clamp),
+`overlay_dance_801f7088.txt` (decoration pass),
+`overlay_cutscene_dialogue_801d6058.txt` (ambient emitter),
+`overlay_0897_801ead98.txt` + `overlay_cutscene_mapview_801e9f64.txt` (dev menu). The
+walk-region AABB the clamp works against is the kind-3 `.MAP` region table refreshed by
+SCUS `FUN_800180EC` - see [`field-map.md`](field-map.md) and
+[`field-locomotion.md`](../subsystems/field-locomotion.md).
+
+**Why "consumer Unknown" stood.** Retail forms every scratchpad access as `lui rX,0x1f80;
+ori rX,rX,0x314; sb/lb rY,0xd4(rX)`, so neither `0x1F8003E8` nor its low half `0x3e8` is
+present in any instruction, and the five-form scan cannot see the access at all. The
+base-plus-displacement walk in
+[`find-gp-relative-refs.py`](../../scripts/ghidra-analysis/find-gp-relative-refs.py) is
+what makes the readers visible ([`address-reference-scan.md`](../tooling/address-reference-scan.md#the-gp-relative-and-luiload-forms)).
 
 ## What this doesn't tell us
 

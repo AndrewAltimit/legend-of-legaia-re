@@ -237,12 +237,13 @@
       <tr><td><code>+0</code></td><td>u8</td><td>character: <code>0</code> Vahn, <code>1</code> Noa, <code>2</code> Gala</td></tr>
       <tr><td><code>+1</code></td><td>u8</td><td>art display index</td></tr>
       <tr><td><code>+2</code></td><td>u8</td><td>AP cost - a <strong>display mirror</strong>; the battle path computes <code>multiplier &times; command count</code> from code immediates and retail keeps the two consistent by authoring (<a href="../subsystems/arts-command-gauge.html">arts gauge</a>)</td></tr>
-      <tr><td><code>+4</code></td><td>u16</td><td>round value (meaning unconfirmed)</td></tr>
+      <tr><td><code>+4</code></td><td>u16</td><td>per-art tier constant with <strong>no reader anywhere on the disc</strong> - see below</td></tr>
       <tr><td><code>+8</code></td><td>u32</td><td>pointer to the arrow-glyph string: <code>[count]</code> then two-byte glyphs <code>0x81A9</code> L, <code>0x81A8</code> R, <code>0x81AB</code> D, <code>0x81AA</code> U; a <code>0xFF06</code> / <code>0xFF09</code> marker is not a direction</td></tr>
       <tr><td><code>+0xC</code></td><td>u32</td><td>pointer to the name string</td></tr>
       <tr><td><code>+0x10</code></td><td>u32</td><td>aux string pointer</td></tr>
     </tbody>
   </table>
+  <p>The <code>+4</code> halfword is authored data the runtime never consults. Eight sites materialise the table base (<code>addiu rX, rY, 0x5EC4</code>); walking every load whose base descends from one of them, with the displacement tracked through the <code>addiu</code>/<code>addu</code>/<code>sll</code> chain, reaches the record only at <code>+0</code>, <code>+1</code>, <code>+2</code>, <code>+8</code>, <code>+0xC</code> and <code>+0x10</code> - never <code>+4</code> or <code>+6</code> - and a five-form sweep for <code>0x80075EC8</code> finds no reference in any image. The values are a per-art tier ladder keyed to the art&rsquo;s position in its character&rsquo;s list: <code>60000</code> for the Miracle Art, <code>50000</code>/<code>40000</code>/<code>30000</code> for the three elemental arts, <code>20000</code> for Noa&rsquo;s Tempest Break, then <code>15000</code>/<code>10000</code>/<code>5000</code> for the six-, five- and four-input arts, and <code>1</code> on the terminator. It is not an AP mirror (Noa&rsquo;s 70-AP and Vahn&rsquo;s 50-AP index-1 arts share <code>50000</code>) and not the input count (five-input arts appear at both <code>40000</code> and <code>10000</code>).</p>
   <p>The glyph string stores the <strong>physical</strong> direction (Noa's Arms / Ra-Seru are swapped) and is the oracle for both the record parser and the curated <a href="../reference/gamedata.html">gamedata</a> arts table - every AP agrees, and one walkthrough error surfaces (Vahn's Hyper Elbow is <code>L R L</code> on disc). Decoder <code>legaia_art::arts_table::parse_from_scus</code>; dump with <code>art arts-table</code>.</p>
 </section>
 

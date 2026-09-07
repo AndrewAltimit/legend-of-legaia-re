@@ -107,12 +107,42 @@ is the entry→base map - one record per overlay:
 | `prot_index` | `PROT.DAT` entry the overlay is extracted from (the identity). |
 | `base_va` | Load base inside the overlay window; statically recovered, RAM-confirmed where a capture exists. |
 | `form` | `raw` (entry bytes are the as-loaded bytes) or `lzs` (decompress; needs `decompressed_size`). |
-| `clean_copy_bytes` | Length of the RAM-verified `.text`+`.rodata` prefix (for `verified` rows). |
+| `content_bytes` | The overlay's own content length: its PROT entry's sector extent, `(toc[p+3] - toc[p+2]) * 2048`. Present on every row; the denominator every byte-denominated instrument over the image uses. |
+| `content_source` | How `content_bytes` was derived. `prot_entry_extent` on every row today. |
+| `clean_copy_bytes` | Length of the RAM-verified `.text`+`.rodata` prefix (for `verified` rows). A strength-of-evidence figure, **not** a length - see below. |
 | `eligibility` | `verified` (RAM byte-matched) / `static` (base-recovered + function-anchored, not RAM-prefix-verified) / `ineligible` (runtime-relocated - keep on the dynamic path). |
 | `base_source` | How `base_va` was determined: `jal` (internal call-graph recovery - default; the reproducibility test asserts the recovery agrees), `capture` (byte-matched a resident RAM anchor/region), `cross_ref` (taken from another pinned RE result in-tree). |
 | `anchor_va` | Optional known function VA that must land on a function prologue (`addiu sp, sp, -X`) at `base_va` - a capture-free, disc-reproducible base cross-check. Decisive for `cross_ref`/`capture` rows where the jal-recovery assertion is skipped (e.g. a slot-A minigame sibling anchored by a documented minigame function). |
 | `fingerprint_sha256` | sha256 of the as-loaded bytes - the disc-derived reproducibility anchor. |
 | `notes` | Which subsystems / entry points live here. |
+
+### `content_bytes` is not `clean_copy_bytes`
+
+The two fields look interchangeable and are not, and the failure mode is silent
+in the flattering direction.
+
+- `content_bytes` says **how long the image is**. It comes from the entry's own
+  sector extent ([`prot.md`](../formats/prot.md)), which is exactly the slice the
+  runtime loader streams into the overlay window, and it needs neither a dump
+  corpus nor a capture to derive.
+- `clean_copy_bytes` says **how much of the image a resident RAM capture has
+  byte-verified**. On PROT 0898 the two coincide, because every byte of the entry
+  matches RAM. On PROT 0899 they differ by `0x_f174` bytes.
+
+Using `clean_copy_bytes` as a length makes an overlay's measured coverage look
+*better* (a smaller denominator) while measuring less of it, so nothing about
+the result signals the mistake. Both instruments that need an image's length -
+[`disc-coverage.py`](disc-coverage.md) and the byte-attribution sweep
+`scripts/ghidra-analysis/attribute-dump-extents.py` - therefore take
+`content_bytes`.
+
+Several `notes` figures for an overlay's own content predate the PROT entry-size
+correction and were measured on the over-read footprint. Where such a figure
+disagrees with the entry extent, the entry extent is right and the note records
+what the old figure had folded in: the arena-init overlay's "own content
+~`0x4800`" had absorbed PROT 0978's two sectors, and the battle overlay's
+"`0x28800` of `0x29800`, trailing `0x1000` .bss" had absorbed PROT 0899's first
+two sectors.
 
 ### Slot A vs slot B
 
@@ -150,11 +180,27 @@ and `*DAT_80010390`; see [`prot.md`](../formats/prot.md#overlay-loaders-parallel
   byte-matches RAM, pinning the base) or a cross-referenced RE result
   (`base_source = cross_ref`). The base is cross-checked the **slot-B way**: a
   high fraction of the overlay's internal absolute self-pointers (`lui
-  0x801f/0x8020 ; addiu`) must resolve in-file at the committed base
-  (`static_overlay::pointer_resolution`; 80–100 % for the mapped rows - the
-  reproducibility test asserts ≥ 70 %). This is precisely where static
-  extraction earns its keep: the *disc* entry disassembles cleanly at the link
-  base even though the *runtime* buffer is unusable.
+  0x801f/0x8020 ; addiu`) must resolve in-file at the committed base. This is
+  precisely where static extraction earns its keep: the *disc* entry
+  disassembles cleanly at the link base even though the *runtime* buffer is
+  unusable.
+
+  **A reference that leaves the image is not automatically evidence against
+  the base.** Counting every one of them against it - which the check did -
+  rejects three modules whose entry VAs the PROT 0898 tables place exactly like
+  their neighbours', and rejects them for doing two things a cast module is
+  supposed to do. `0x801F6978` / `0x801F6980` (PROT 0915, seven pairs) are
+  *below* the slot-B base, inside PROT 0898's own image: a module reading its
+  host overlay's globals. `0x801FA320..0x801FA3B8` (PROT 0935, eight pairs) and
+  `0x801F7D3C` / `0x801F7F2C` (PROT 0926, two) are *above* the image's end but
+  inside the shared slot-B buffer: the post-image working storage a PSX overlay
+  reaches past its loaded bytes, `.bss`-shaped and by definition absent from the
+  file. The reproducibility test excludes both regions from the measurement -
+  neither credited nor charged - keeping the ratio a statement about
+  self-references. Those three read 6/6, 1/1 and 11/11 with the exclusion, are
+  mapped, and the acceptance floor rose from 0.60 to 0.90 because the noise the
+  old floor accommodated is gone. The bounds come from the map itself: a
+  committed slot-A row's span, and the longest committed slot-B image.
 
   **`pointer_resolution` is one-sided and needs the string-anchor
   counterpart.** The metric scans only pointers whose `lui` half matches the
@@ -340,6 +386,28 @@ and against live RAM in the clean-copy test.
   short of its entry (a small overlay padded out to the next sector boundary)
   still hashes the whole entry; the padding is harmless noise in the Ghidra
   disassembly - the real functions land at their real addresses.
+- **An image with no internal `jal` still partitions - by frame, not by call
+  graph.** Most slot-B modules call nothing inside themselves, so base recovery
+  has no votes to count and Ghidra's analysis has no entry points to follow;
+  the image reads as one undifferentiated blob and every dump of it is
+  unattributable. The bytes still carry the partition: walk from each prologue
+  (`addiu sp, sp, -X`) to the first `jr ra` whose delay slot restores *that*
+  frame, and the extents fall out with no dump corpus and no capture. Two
+  cross-checks make it evidence rather than a guess - each recovered head is
+  named by a row of the host overlay's own entry tables, and it is named in
+  that image and in no other.
+
+  The refinement the band forced: **the table is the authority, not the
+  prologue.** A module's entry can sit a few instructions *above* its prologue,
+  where the routine materialises a global before setting up the frame (PROT
+  0946 and 0953 both enter at `0x801F69FC` with the prologue at `0x801F6A0C`).
+  A prologue scan alone reports the later address and quietly disagrees with
+  the caller.
+- **A reference that leaves the image is not evidence against the base.** The
+  pointer-resolution vote counts in-file pointers that land on plausible
+  content; a module legitimately points at its host overlay's data and at the
+  `.bss` past its own end, and those misses are not base errors. Three rows
+  (PROT 0915 / 0926 / 0935) stay unmapped on that gate alone.
 - This pipeline does **not** address runtime values. The dynamic-capture
   workflow ([`overlay-capture.md`](overlay-capture.md),
   [`pcsx-redux-automation.md`](pcsx-redux-automation.md)) remains essential and

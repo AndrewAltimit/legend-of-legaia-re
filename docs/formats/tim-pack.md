@@ -1,6 +1,13 @@
 # Standalone TIM-pack format
 
-A multi-TIM container used by certain standalone PROT entries. Distinct from the [pack format](pack.md) used inside streaming chunks.
+A reader for the multi-TIM scene texture packs that sit at raw-TOC `+4` of a
+CDNAME block. It is **not a distinct container**: the `byte[3] == 0x01` marker
+and the `word_index * 4 + 4` member math are a DATA_FIELD `TIM_LIST` chunk
+header `(0x01 << 24) | payload_len` followed by an ordinary [pack](pack.md),
+read with the 4-byte header skipped. Every retail member is such a carrier, and
+`categorize` now classes them `data_field_streaming` (chunk-headered) or `pack`
+(bare) rather than `tim_pack`. The reader below stays correct; the page keeps
+the header math because that is what the code does.
 
 Implementation: `crates/prot/src/timpack.rs`.
 

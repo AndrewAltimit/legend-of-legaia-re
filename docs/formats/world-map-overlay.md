@@ -1,36 +1,40 @@
-# Slot-4 records (per-record semantic decoded)
+# Slot-4 records (the world-map scene's animation bank)
 
-> Slot 4 of each kingdom bundle is **a per-kingdom library of small
-> object-local 3D meshes** the world-map renderer transforms via the
-> GTE and emits as GP0 primitive packets into the active scene
-> primitive pool. Container confirmed (byte-verified against live
-> RAM); consumer pinned to two SCUS reader clusters via a
-> transition-time Read-breakpoint capture - see
-> [Consumer call sites](#consumer-call-sites); per-record semantic
-> decoded (each 8-byte record is a GTE vertex - see
-> [Per-record semantic](#per-record-semantic---each-record-is-a-gte-vertex-decoded)).
-> The slot-4 records are read **in place, per-frame**, by the
-> world-map renderer (`0x801F78D4`) + the SCUS cluster-A GTE prim path
-> - there is **no record → working-buffer transcode** (see
-> [Slot-4 is read in place](#slot-4-is-read-in-place---there-is-no-transcode-drake-capture)).
-> The historical "world-map wireframe / coastline" reading is
-> falsified.
+> Slot 4 of each kingdom bundle is the world-map scene's **actor
+> animation bank** - an ordinary asset-type-`0x05` ("MOVE") ANM
+> container, the same shape every field scene carries, not a
+> world-map-specific format. Each body is one animation clip:
+> `frame_count x part_count` 8-byte entries, each entry a **rigid
+> transform** (three packed 12-bit signed translation components plus
+> three 8-bit rotation angles) applied to one object of an actor's mesh.
+> Container byte-verified against live RAM; consumer chain pinned end to
+> end from the disassembly and confirmed on a live `map01` state - see
+> [Per-entry semantic](#per-entry-semantic---one-rigid-transform-decoded)
+> and [Consumer call sites](#consumer-call-sites).
 >
-> The bulk continent terrain itself - the ~4300 POLY_FT4 prims that
-> tile the kingdom continent in the dev-menu top-view - is *not*
-> sourced from slot 4. It comes from the same kingdom slot-1 TMD pack
-> the landmarks draw from, routed through `FUN_80043390`'s
-> overlay-mode dispatch table at `0x801F8968` whose eight high-mode
-> renderers replace the SCUS variants when the world-map overlay is
-> paged in. See
+> Two earlier readings of these bytes are **falsified**. The
+> "world-map wireframe / coastline" one, and the "each 8-byte record is
+> a GTE vertex `(i16 x, y, z, attr)` whose triangle topology lives in an
+> unpinned cluster-A command stream" one: there is no slot-4 command
+> stream, no slot-4 topology and no slot-4 geometry. The `attr` i16 that
+> reading called render-unused is bytes 6-7 of the entry - the Y and Z
+> **rotation angles**, read every frame.
+>
+> The geometry an animated actor poses is a `DAT_8007C018` pool TMD
+> selected by the actor, and the bulk continent terrain comes from the
+> kingdom slot-1 TMD pack routed through `FUN_80043390`'s overlay-mode
+> dispatch table at `0x801F8968`. Neither is in slot 4. See
 > [`subsystems/world-map.md`](../subsystems/world-map.md#top-view-bulk-terrain-render-path-overlay-replaced-per-prim-renderers).
 
 ## Contents
 
 - [Container layout (confirmed)](#container-layout-confirmed)
-- [Per-kingdom body inventory](#per-kingdom-body-inventory)
+  - [Per-entry semantic](#per-entry-semantic---one-rigid-transform-decoded)
+- [Per-kingdom clip inventory](#per-kingdom-clip-inventory)
 - [RAM layout (confirmed)](#ram-layout-confirmed)
 - [Consumer call sites](#consumer-call-sites)
+  - [Live `map01` actor list](#live-map01-actor-list-slot-4-in-use)
+  - [Where `FUN_80043390` fits](#where-fun_80043390-fits)
   - [Cluster A internals](#cluster-a-internals)
   - [How slot-4 bytes reach cluster A](#how-slot-4-bytes-reach-cluster-a)
   - [Cross-kingdom hit-count comparison](#cross-kingdom-hit-count-comparison)
@@ -66,9 +70,14 @@ entry's offset 0. Constants: `legaia_asset::kingdom_bundle::BUNDLE_ENTRIES`.
 The 7-asset bundle is the standard
 [`scene_asset_table`](scene-bundles.md#scene_asset_table---count-prefixed-asset-bundle)
 shape with type sequence `(1, 2, 3, 4, 5, 6, 7)`. Slot 4's type byte
-is `0x05` per [asset-type](asset-type.md) - the standard table calls
-this "MOVE", but the kingdom-bundle consumer interprets the bytes as
-something else (see "Falsified hypotheses" below).
+is `0x05` per [asset-type](asset-type.md) - "MOVE" - and the
+kingdom-bundle consumer reads it exactly the way every other scene's
+type-`0x05` section is read: as the per-scene actor
+[**ANM**](anm.md) bank. `asset player-anm extracted/PROT/0086_map01.BIN
+--desc-count 7` reports the Drake bundle as one player-ANM bundle
+(`count=15`, `record0 marker_1=0x080C`), and `town01`'s type-`0x05`
+section has the same record shape, the same `0x080C` marker and the same
+size law. There is no world-map-specific slot-4 format.
 
 ## Container layout (confirmed)
 
@@ -85,225 +94,255 @@ something else (see "Falsified hypotheses" below).
 Drake decodes to 32304 bytes with `count = 15`. First entry is
 `0x40 = 4 + 4*15` (right after the header).
 
-### Sub-body header (8 bytes)
+### Sub-body header (8 bytes) - the ANM clip header
 
 ```text
-+0x00   u8   count_a              ; records per group
-+0x01   u8   flag_a               ; usually 0; 1 for kind=4 bodies
-+0x02   u8   count_b              ; number of groups
-+0x03   u8   flag_b               ; usually 0
-+0x04   u16  marker               ; constant 0x080C across all bodies
-+0x06   u16  kind                 ; 1, 2, or 4 (semantic ambiguous)
++0x00   u8   part_count       ; objects posed per frame   (was "count_a")
++0x01   u8   flags            ; bit 0 = sub-frame interpolation on
+                              ;                            (was "flag_a")
++0x02   u16  frame_count      ; clip length in frames   (was "count_b" +
+                              ;                          "flag_b" = its
+                              ;                          always-zero high byte)
++0x04   u16  marker           ; 0x080C - the ANM record marker
++0x06   u16  rate             ; low byte = sub-frame divisor, 1 / 2 / 4
+                              ;                            (was "kind")
 ```
+
+Every field is read by name in the disassembly: `part_count` at
+`0x8001BACC` (`lbu a0,0(fp)`) and `0x8001BEF4`, `flags` bit 0 at
+`0x800205B4` and `0x8001BF70`, `frame_count` at `0x8001BEB0`
+(`lhu v1,2(a2)`) and `0x800206E4`, `rate`'s low byte at `0x800205CC`
+(`lbu v1,6(a1)`). `marker` is never read by the runtime - it is a
+format tag the offline detectors key on.
 
 ### Body payload
 
 ```text
-+0x08   record[count_a * count_b] ; each record is 8 bytes
-                                  ; ( i16 x, i16 y, i16 z, i16 attr )
-+...    trailer (8 bytes)         ; always 8 zero bytes
++0x08   entry[frame_count * part_count]   ; 8 bytes each, FRAME-major:
+                                          ; entry(f, p) at
+                                          ; +8 + (f*part_count + p)*8
++...    trailer (8 bytes)                 ; always 8 zero bytes
 ```
 
-Total body size is always `8 + count_a * count_b * 8 + 8`. The math
-fits every body in all three kingdoms exactly.
+Total body size is always `8 + part_count * frame_count * 8 + 8`. The
+math fits every body in all three kingdoms exactly, and every trailer is
+eight zero bytes (47/47 bodies). Frame-major order is the indexing the
+pose reader computes at `0x8001BAC0..0x8001BAEC`:
+`frame = (i16)actor[+0x68] >> 4`, `entry0 = rec + 8 + frame*part_count*8`,
+then `+8` per part.
 
-### Per-record semantic - each record is a GTE vertex (decoded)
+### Per-entry semantic - one rigid transform (decoded)
 
-The 8-byte records are an **object-local vertex pool**: each record is a
-3D vertex the cluster-A prim handlers transform through the GTE. Traced
-from the handler `FUN_80044c14` (one of the per-kind emitters the
-`0x8007657C` dispatch table reaches from `FUN_80043390`), which receives
-the body's record region as the **vertex pool** (`param_3`):
+Each 8-byte entry is the pose of **one object of the actor's mesh in one
+frame**: a translation and a rotation, decoded by `FUN_8001BE80`
+(`0x8001BE80..0x8001C200`, called from the animated-actor renderer
+`FUN_8001B964` at `0x8001BB20`).
 
-```c
-// pool word pairs loaded straight into the GTE vertex registers:
-puVar = pool + (cmd_index & 0x7ff8);   // index = byte offset, 8-byte stride
-setCopReg(2, 0x0000, pool_word0);      // VXY0  = (i16 X | i16 Y << 16)
-setCopReg(2, 0x0800, pool_word1);      // VZ0   = (i16 Z) in the low half
-// ... V1, V2 the same ...
-copFunction(2, 0x280030);              // RTPT  - perspective-transform 3 verts
-copFunction(2, 0x1400006);             // NCLIP - backface cull
+```text
+byte 0   translation X, low 8 bits
+byte 1   translation Y, low 8 bits
+byte 2   bits 0-3 = X high nibble, bits 4-7 = Y high nibble
+byte 3   translation Z, low 8 bits
+byte 4   bits 0-3 = Z high nibble; bits 4-7 RESERVED (zero in every entry)
+byte 5   rotation X   (PSX angle = byte << 4; 4096 = one turn)
+byte 6   rotation Y
+byte 7   rotation Z
 ```
 
-So a record's first word is the GTE `VXYn` register (`X` low, `Y` high)
-and its second word is `VZn` (`Z` in the low 16 bits). Mapping the 8
-bytes back to the parser's `i16` fields:
+The three translation components are **12-bit signed** (`-2048..2047`),
+sign-extended by the `andi 0x800` / `ori 0xF000` pairs at
+`0x8001BF44..0x8001BF6C`:
 
-| bytes | field | role |
-|---|---|---|
-| 0..1 | `x` | model-space X - GTE `VXYn` low half |
-| 2..3 | `y` | model-space Y - GTE `VXYn` high half |
-| 4..5 | `z` | model-space Z - GTE `VZn` |
-| 6..7 | `attr` | high half of the `VZn` word - **not** a coordinate; the GTE vertex load ignores it |
+```text
+8001BF04  lbu v1,2(t3)          ; byte 2
+8001BF08  lbu a0,0(t3)          ; byte 0
+8001BF0C  andi v0,v1,0xf        ; X high nibble
+8001BF10  sll  v0,v0,8
+8001BF14  or   a0,a0,v0         ; X = byte0 | (byte2 & 0x0F) << 8
+8001BF1C  andi v1,v1,0xf0       ; Y high nibble
+8001BF20  lbu  v0,1(t3)         ; byte 1
+8001BF24  sll  v1,v1,4
+8001BF28  or   a3,v0,v1         ; Y = byte1 | (byte2 & 0xF0) << 4
+8001BF30  lbu  v0,4(t3)         ; byte 4
+8001BF34  lbu  v1,3(t3)         ; byte 3
+8001BF38  andi v0,v0,0xf        ; Z high nibble  (byte 4's HIGH nibble unread)
+8001BF3C  sll  v0,v0,8
+8001BF40  or   v1,v1,v0         ; Z = byte3 | (byte4 & 0x0F) << 8
+```
 
-The X/Y/Z ranges bear this out (e.g. Sebucus body 0: X∈[-20224,-3598],
-Y∈[-6416,4351], Z∈[-17649,20992] - object-local mesh extents). The
-**triangle topology is not in the body**: the per-kind handler reads its
-vertex indices (the `& 0x7ff8` byte offsets) from a *separate* cluster-A
-command stream and indexes them into this pool, then emits a `POLY` packet.
+The decoded `(X, Y, Z)` is written to the scratchpad vector at
+`0x1F8002C0` and pushed through the GTE as `MVMVA`
+(`0x4A480012` at `0x8001C0E0`) against the rotation matrix at
+`0x1F8002D4` - i.e. it is an object-local **translation**, not a vertex.
+The three angles are written to `0x1F8002C8/CA/CC` as `byte << 4`
+(`0x8001C1D4..0x8001C1DC` on the non-interpolated path).
 
-### `kind` (1/2/4) - a body class/scope tag (characterized)
+The same packing is what the *other* ANM family writes: the
+`actor[+0x5A] == 6` keyframe interpolator inside the actor tick
+`FUN_80021DF4` emits exactly these 8-byte entries at
+`0x80022FC4..0x80023030` (`sb` of the low byte, then
+`sra 8; andi 0xf` and `sra 4; andi 0xf0` recombined into the shared
+nibble byte). Two producers, one entry layout.
 
-`kind` is the body header's `+0x06` field and is **not** the dispatcher's
-prim-kind (`8..19`, computed from a separate command word). Hashing each body's
-bytes across the three kingdoms shows `kind` partitions bodies by **scope and
-class**:
+**Sub-frame interpolation.** When header `flags & 1` is set, the
+decoder also decodes the *next* frame's entry for the same part and
+lerps: the next-entry pointer is `entry + part_count*8` for any frame
+but the last (`0x8001BEF4`), and wraps to frame 0's entry for that part
+(`0x8001BEE0`) unless `actor[+0x62] & 8` (hold-last), in which case it
+repeats the current entry. The blend weight is the cursor's low nibble
+(`actor[+0x68] & 0xF`), so `out = cur + ((next - cur) * frac) >> 4`
+(`0x8001BFF0..0x8001C06C`). Angles interpolate through
+`FUN_8001D088(next<<4, cur<<4, frac, axis)`, which handles wrap-around
+and accumulates a total-delta guard in `_DAT_8007BD28`.
 
-- **`kind = 1`** - the three leading bodies (0, 1, 2) are **byte-identical
-  across all three kingdoms** (sha256-matched): a shared, universal mesh set
-  present on every kingdom map.
-- **`kind = 2`** - full-3D kingdom objects. Some are kingdom-specific; a trailing
-  cluster (Drake bodies 9–11 ≡ Sebucus/Karisto bodies 12–14) is **byte-identical
-  across all three** - another globally shared set. Other kind-2 bodies are
-  shared between adjacent kingdom *pairs* (Drake↔Sebucus, Sebucus↔Karisto).
-- **`kind = 4`** - always carries `flag_a = 1` (the only `flag_a = 1` exception
-  in the corpus is one kind-2 body). Often the widest-extent meshes (Drake body
-  13 reaches the ±32 K world bounds); shared between kingdom pairs.
+**The clip cursor.** `FUN_800204F8` advances `actor[+0x68]`, a
+1/16-frame fixed-point cursor, by `_DAT_1F800393` (the per-tick frame
+delta) times a step: `actor[+0x6A]` normally, or
+`ceil(actor[+0x6A] * 2 / rate)` when `flags & 1`
+(`0x800205C8..0x800205E0`). It wraps at `frame_count << 4`
+(`0x800206E4..0x8002072C`), or clamps when `actor[+0x62] & 8`, and sets
+`actor[+0x62] |= 0x100` on each wrap. `actor[+0x62] & 0x80` runs the
+clip backwards; `& 2` freezes it; `& 0x200` requests a restart.
 
-So a kingdom's slot 4 is a per-kingdom **assembly** drawn from a shared mesh
-library (`kind 1` universal + shared `kind 2/4`) plus kingdom-specific bodies,
-with `kind` tagging each body's category. Degenerate bodies (`count_a = 1`,
-all-zero records) are empty placeholder slots.
+**Structural invariant.** The renderer refuses to draw when the clip's
+`part_count` does not equal the mesh's object count:
+`0x8001BAF0` (`bne v1,a0,0x8001BDCC`) compares `chain[0]` - the `nobj`
+of the actor's `DAT_8007C018` pool TMD - against the header's
+`part_count` and skips the entire draw on a mismatch. A live `map01`
+state satisfies it for every animated actor (see
+[Live map01 actor list](#live-map01-actor-list-slot-4-in-use)).
 
-### `attr` - a per-vertex non-coordinate value (characterized)
+### `rate` (1/2/4) - the sub-frame divisor (decoded)
 
-The 4th `i16` is genuinely **per-vertex** (not constant within a `count_a` group:
-0/20 groups have a uniform `attr`), is **not** a function of the vertex position
-(`corr(attr, x/y/z) ≈ 0.1`), and is not a copy of a neighbouring vertex's
-coordinate. It varies smoothly across the `count_b` groups (consecutive groups'
-`attr` at the same slot track closely - e.g. Drake body 0 group 0 vs 1:
-`29953→30465`, `1286→1286`). It rides in the high half of the `VZn` word, and
-`VZ0`/`VZ1`/`VZ2` (cop2r1/3/5) are **16-bit** registers - so that half is
-dropped by the register width on write. `attr` cannot reach the GTE whatever
-the surrounding code does. It is real per-vertex data (135 distinct values in
-one Sebucus body) that the renderer is structurally unable to see: reserved /
-authoring data. The argument is made in full under "`attr` - render-unused"
-below.
+The header's `+0x06` field, previously called `kind` and read as a body
+class tag, is the animation's **sub-frame divisor**. Its low byte is the
+`rate` in `FUN_800204F8`'s step formula above, and it is only consulted
+when `flags & 1` is set. That is why the two fields co-vary: in the
+corpus `rate = 4` bodies always carry `flags = 1`, and the single
+`rate = 2` body with `flags = 1` is the "exception" an earlier pass
+recorded. `rate` values `1 / 2 / 4` are the only ones on the disc.
 
-**`kind`/`count` consumer - pinned.** A Read-watchpoint on body 0's header
-(`0x8011A664`, the `count`/`kind` words) during the Drake warp catches the
-**cluster-A handler chain reading it in place**: `ra = 0x801F78D4` (the world-map
-overlay renderer), PC `0x8004568C` / `0x800456F4` inside `FUN_80045584`, with the
-record pointers in `a1`/`a2` also in slot-4 (`0x8011A674` / `0x8011A6C0`). The
-handler `lw`s header word 0 (`count`) and word 1 (`marker`/`kind`) and does an
-`andi 0x40` bit-test on a header field to gate a branch. So there is **no
-separate command-stream builder**: each slot-4 body is a self-contained render
-packet (8-byte header + indexed vertex records) that the renderer walks **in
-place**, dispatching per `count_b`-derived prim-kind and consuming the header in
-the same pass. (This is the same handler family as `FUN_80044c14`, whose tail
-reads the next body's header to chain - consistent with an in-place body walk.)
+The body-level observations that reading produced still hold as data,
+they just do not mean what they were labelled:
 
-**`attr` - render-unused.** The load-bearing fact is a register width, not a
-sweep result. The prim handlers load a record's second word (`z | attr<<16`)
-into the GTE as `VZ0`/`VZ1`/`VZ2` (cop2r1/3/5) or `IR0` (cop2r8). **Every one
-of those is a 16-bit register**, so the high half is discarded on write. No
-sweep can be incomplete enough to overturn that: `attr` is unreachable by the
-render path by construction, independent of what any handler does with it.
+- the three leading `rate = 1` bodies (0, 1, 2) are **byte-identical
+  across all three kingdoms** - three shared animation clips shipped in
+  every kingdom bundle;
+- a trailing cluster (Drake bodies 9-11, Sebucus/Karisto 12-14) is
+  likewise byte-identical across all three, and other bodies are shared
+  between adjacent kingdom *pairs* - the same clip reused by the same
+  actor type on more than one map;
+- degenerate bodies (`part_count = 1`, all-zero entries) are empty
+  placeholder clips.
 
-The byte-level sweep is corroboration, and it agrees. Word-wise disassembly of
-`SCUS_942.54` (`0x80043390..0x80046498`) and of the whole PROT 0901
-`world_map_render` overlay (`0x801F69D8..0x801FA1D8`) covers all 23 handlers in
-the four SCUS banks at `0x8007657C` (including bank-3 kind-19 `0x80045BB4`) and
-all eight overlay-resident replacements at `0x801F8968`
-(`0x801F7644..0x801F8690`). Pool pointers are formed as
-`addu rX, a2, idx & 0x7ff8`, hence always 8-byte aligned, so displacement
-mod 8 **is** the record field offset. Across the family every pool-derived load
-is at field +0 (99 loads) or +4 (118 loads), always a full word; there are **no
-loads at field +6/+7** and **no shift or mask is ever applied to a pool-loaded
-value**.
+### The one genuinely unread field - byte 4's high nibble
 
-The instructions that most resemble an `attr` access are `lhu 0xE($a1)` and
-`lhu 0x16($a1)` - displacement `8+6` and `16+6`, exactly the shape a reader of
-`attr` through an advanced pointer would take. All 12 of them (10 in SCUS, 2 in
-0901) are on `$a1`, the **command stream**, and all feed `addu rX, $a2, rX`:
-they are vertex indices, not field reads. Anyone re-deriving this claim should
-expect to meet them and should check the base register before concluding.
+The entry's only field the runtime never reads is the **high nibble of
+byte 4**. It is `0` in every entry of every body in all three kingdom
+slot-4 payloads and in `town01`'s type-`0x05` bundle (22 228 entries
+checked), so it is structural padding, not dropped data.
 
-**Scope.** This bounds the **render path only**. The slot-4 base is held in a
-runtime pointer with no static `LUI+ADDIU` reference and varies per kingdom
-(see [RAM layout](#ram-layout-confirmed)), so no byte sweep can enumerate
-non-render holders of it. A non-render consumer of `attr` remains
-**unexcluded**.
+The earlier "`attr` is a per-vertex non-coordinate the render path
+cannot see" analysis was measuring the wrong thing: `attr` was bytes
+6-7 read as one `i16`, i.e. the Y and Z **rotation angles**. They are
+read every frame at `0x8001C0E4`/`0x8001C0E8`. The register-width
+argument that made `attr` "unreachable by construction" was about
+`FUN_80044c14`'s GTE `VZn` loads - a function that never sees these
+bytes. The `corr(attr, x/y/z) ~ 0.1`, "135 distinct values", and
+"varies smoothly across groups" observations are all consistent with a
+rotation channel sampled per frame, which is what they were measuring.
 
-**The existing capture does not close that gap, and should not be read as if
-it does.** The `autorun_slot4_source_map.lua` Read watchpoints tile at
-`base + k*0x800`: 16 sampled addresses out of 32304 bytes, none of them on
-`+6`/`+7` alignment within a record. That capture is good evidence for *where
-the buffer is read from* and worthless as evidence about *which field* is read.
-What would settle the residual question: a Read-watchpoint capture armed
-specifically on record `+6`/`+7` addresses across a full world-map session,
-asserting zero hits outside the render PCs.
+## Per-kingdom clip inventory
 
-## Per-kingdom body inventory
+Drake = 15 clips; Sebucus = 16; Karisto = 16. The clip id an actor plays
+is 1-based into this table (`actor[+0x5C] = k + 1` selects body `k` -
+see [Consumer call sites](#consumer-call-sites)). The leading three
+clips (`rate = 1`, `part_count = 10`) are byte-identical across all three
+kingdoms.
 
-Drake = 15 bodies; Sebucus = 16; Karisto = 16. The leading three
-bodies (`kind = 1`, `count_a = 10`) are byte-identical templates
-across all three kingdoms - whatever they encode, the engine ships
-the same generic shape in every bundle.
+The X / Y / Z "span" columns this table used to carry are deleted, not
+recomputed: they measured bytes 0-1 / 2-3 / 4-5 as three `i16`, a
+partitioning that straddles the packed 12-bit translation fields (see
+[Per-entry semantic](#per-entry-semantic---one-rigid-transform-decoded)),
+so every figure in them - including the "body 13 reaches the full +-32K
+world bounds" reading - was an artifact of the split. The real
+translation range across all three kingdoms is `-541..384` units.
 
 ### Drake (`map01`, PROT 0086)
 
-| Body | count_a | count_b | kind | flag_a | records | X span | Y span | Z span |
-|---|---|---|---|---|---|---:|---:|---:|
-| 0 | 10 | 20 | 1 | 0 | 200 | 16626 | 10767 | 38641 |
-| 1 | 10 | 20 | 1 | 0 | 200 | - | - | - |
-| 2 | 10 | 30 | 1 | 0 | 300 | - | - | - |
-| 3 | 2 | 30 | 2 | 0 | 60 | 0 | 0 | 0 (pinned plane) |
-| 4 | 2 | 20 | 2 | 0 | 40 | - | - | - |
-| 5 | 10 | 30 | 2 | 0 | 300 | - | - | - |
-| 6 | 10 | 26 | 2 | 0 | 260 | - | - | - |
-| 7 | 10 | 30 | 2 | 0 | 300 | - | - | - |
-| 8 | 10 | 3 | 2 | 0 | 30 | - | - | - (3 identical groups - filler/padding) |
-| 9 | 12 | 30 | 2 | 0 | 360 | 10725 | **25856** | 21248 |
-| 10 | 12 | 30 | 2 | 0 | 360 | 13056 | 18432 | 31503 |
-| 11 | 12 | 10 | 2 | 0 | 120 | 11492 | **27648** | 24064 |
-| 12 | 10 | 120 | 2 | 0 | 1200 | 16118 | 4096 | 31473 |
-| 13 | 14 | 15 | 4 | 1 | 210 | 65485 | 14336 | 64512 |
-| 14 | 2 | 30 | 2 | 0 | 60 | - | - | - |
-
-Bodies 9 / 10 / 11 have Y spans comparable to the X/Z scale - 3D mesh
-extent, not 2D contour data. Body 12 is nearly flat (Y span 4K).
-Body 13 reaches the full ±32K world bounds on X and Z and clusters in
-the corners.
+| Body | parts | frames | rate | flags | entries |
+|---|---:|---:|---:|---:|---:|
+| 0 | 10 | 20 | 1 | 0 | 200 |
+| 1 | 10 | 20 | 1 | 0 | 200 |
+| 2 | 10 | 30 | 1 | 0 | 300 |
+| 3 | 2 | 30 | 2 | 0 | 60 |
+| 4 | 2 | 20 | 2 | 0 | 40 |
+| 5 | 10 | 30 | 2 | 0 | 300 |
+| 6 | 10 | 26 | 2 | 0 | 260 |
+| 7 | 10 | 30 | 2 | 0 | 300 |
+| 8 | 10 | 3 | 2 | 0 | 30 |
+| 9 | 12 | 30 | 2 | 0 | 360 |
+| 10 | 12 | 30 | 2 | 0 | 360 |
+| 11 | 12 | 10 | 2 | 0 | 120 |
+| 12 | 10 | 120 | 2 | 0 | 1200 |
+| 13 | 14 | 15 | 4 | 1 | 210 |
+| 14 | 2 | 30 | 2 | 0 | 60 |
 
 ### Sebucus (`map02`, PROT 0245)
 
-| Body | count_a | count_b | kind | flag_a | records |
-|---|---|---|---|---|---|
-| 0-3 | 10/10/10/2 | 20/20/30/30 | 1/1/1/2 | 0 | 200/200/300/60 |
-| 4-7 | 10/10/10/10 | 30/26/30/3 | 2/2/2/2 | 0 | 300/260/300/30 |
-| 8-11 | 11/11/1/1 | 30/15/30/15 | 4/4/4/4 | 1 | 330/165/30/15 |
-| 12-15 | 12/12/12/10 | 30/30/10/30 | 2/2/2/2 | 0 | 360/360/120/300 |
+| Body | parts | frames | rate | flags |
+|---|---|---|---|---|
+| 0-3 | 10/10/10/2 | 20/20/30/30 | 1/1/1/2 | 0 |
+| 4-7 | 10/10/10/10 | 30/26/30/3 | 2/2/2/2 | 0 |
+| 8-11 | 11/11/1/1 | 30/15/30/15 | 4/4/4/4 | 1 |
+| 12-15 | 12/12/12/10 | 30/30/10/30 | 2/2/2/2 | 0 |
 
 ### Karisto (`map03`, PROT 0392)
 
-| Body | count_a | count_b | kind | flag_a | records |
-|---|---|---|---|---|---|
-| 0-3 | 10/10/10/1 | 20/20/30/15 | 1/1/1/2 | 0 | 200/200/300/15 |
-| 4-7 | 14/14/11/11 | 15/15/30/15 | 4/4/4/4 | 1 | 210/210/330/165 |
-| 8-11 | 1/1/10/10 | 15/30/5/15 | 4/4/2/4 | 1/1/1/1 | 15/30/50/150 |
-| 12-15 | 12/12/12/10 | 30/30/10/30 | 2/2/2/2 | 0 | 360/360/120/300 |
+| Body | parts | frames | rate | flags |
+|---|---|---|---|---|
+| 0-3 | 10/10/10/1 | 20/20/30/15 | 1/1/1/2 | 0 |
+| 4-7 | 14/14/11/11 | 15/15/30/15 | 4/4/4/4 | 1 |
+| 8-11 | 1/1/10/10 | 15/30/5/15 | 4/4/2/4 | 1 |
+| 12-15 | 12/12/12/10 | 30/30/10/30 | 2/2/2/2 | 0 |
 
 ## RAM layout (confirmed)
 
-Slot 4 is loaded **verbatim into RAM** with zero per-byte diffs vs
-disc, and the **resident base varies per kingdom** - each is pinned by
-byte-matching the disc-decoded payload against a post-warp full-RAM dump
-(`scripts/pcsx-redux/locate_slot4_base.py`, all bodies agreeing
-unanimously):
+Slot 4 is loaded **verbatim into RAM** with zero per-byte diffs vs disc,
+and its resident address is **`_DAT_8007B888`** - the asset dispatcher's
+type-`0x05` buffer pointer, `malloc`ed per scene load, which is why it
+varies per kingdom. The dispatcher's case-5 arm is a five-instruction
+allocate-and-store:
 
-| Kingdom | bundle | resident base | end (excl.) | bytes | bodies matched |
+```text
+8001F38C  ori   s4,s4,0x10          ; asset-present bit for type 5
+8001F394  addiu a1,s3,3
+8001F398  srl   a1,a1,2
+8001F39C  jal   FUN_80017888        ; malloc(0, round_up4(size))
+8001F3A0  sll   a1,a1,2
+8001F3A8  sw    v0,-0x4778(at)      ; _DAT_8007B888 = buffer
+```
+
+Bases pinned by byte-matching the disc-decoded payload against a
+post-warp full-RAM dump (`scripts/pcsx-redux/locate_slot4_base.py`, all
+bodies agreeing unanimously):
+
+| Kingdom | bundle | `_DAT_8007B888` | end (excl.) | bytes | bodies matched |
 |---|---|---|---|---|---|
 | Drake   | `map01` / 0086 | `0x8011A624` | `0x80122454` | 32304 | 15/15 |
 | Sebucus | `map02` / 0245 | `0x80119CE4` | `0x80120638` | 26964 | 16/16 |
 | Karisto | `map03` / 0392 | `0x80108D84` | `0x8010ED00` | 24444 | 16/16 |
 
-Body 0's records start `0x40` past the base (after the 4-byte count and
-15-16 × 4-byte offsets). No runtime fixup is applied. Because the base
-is not constant, a probe that arms breakpoints on the slot-4 RAM window
-**must locate the base for that kingdom first** (the
-`octam_to_sebucus_worldmap` / `sol_to_karisto_worldmap` saves drive the
-Sebucus / Karisto warps; `drake_castle_to_worldmap` drives Drake).
+Body 0's entries start `0x40` past the base (after the 4-byte count and
+15-16 x 4-byte offsets). No runtime fixup is applied. Because the base is
+not constant, a probe that arms breakpoints on the slot-4 RAM window
+**must locate the base for that kingdom first** - or simply read
+`_DAT_8007B888`, which is the base by definition. In a `map01` field-run
+PCSX-Redux state (`pcsxr-state extract`) `_DAT_8007B888` reads
+`0x8011A624` and the 32304 bytes there are byte-identical to the
+disc-decoded slot-4 payload, which is what settles the identity of that
+address: it is the type-`0x05` buffer, not a coincidence of allocation
+order.
 
 The Drake load was originally verified by
 `scripts/pcsx-redux/diff_slot4_ram_vs_disc.py` (every byte of all 15
@@ -314,44 +353,105 @@ search).
 
 ## Consumer call sites
 
-Two distinct SCUS-resident reader functions consume slot 4. Both are
-**byte-identical across all three kingdoms** - same PC ranges, same
-caller RAs - proving the consumer is generic SCUS code, not per-
-kingdom overlay code.
+The consumer is one SCUS chain, and it is an **animation** chain, not a
+render one. Each link is a plain `jal` and each reads a field of the
+record it was handed:
 
-| Reader | PC range | RA | What it reads |
-|---|---|---|---|
-| **Cluster A - TMD-style primitive renderer (`FUN_80043390` + handlers)** | dispatcher entry `0x80043390`; per-kind handler bodies at `0x80043658..0x80045988` | `0x8001B47C` (inside `FUN_8001ada4`), `0x801F78D4` (world-map overlay) - both present in every kingdom; Drake additionally captured `0x8001BC8C` | the outer count, body word offsets, and per-body record bytes - see [Cluster A internals](#cluster-a-internals) below |
-| **Cluster B - secondary mid-body reader** | `0x80059DE4` | `0x80059C00` (SCUS) - identical across all three kingdoms | body 4 records start, body 4 mid (+0x800), body 9 region, body 12 later (+0x2800) |
+| Step | Function | What it does |
+|---|---|---|
+| install | `FUN_8001F05C` case 5 (`0x8001F38C`) | `_DAT_8007B888` = the LZS-decoded slot-4 buffer |
+| select + clock | `FUN_800204F8` | resolves `actor[+0x5C]` to a clip and advances the cursor `actor[+0x68]` |
+| draw | `FUN_8001B964` (`0x8001B964..0x8001BE7C`) | render mode `actor[+0x56] == 1`: computes the frame, walks the parts, calls `FUN_80043390` per object |
+| pose | `FUN_8001BE80` | decodes one 8-byte entry into the GTE translation + rotation |
+
+**Clip selection** (`0x80020534..0x80020598`). `FUN_800204F8` picks one
+of three banks and indexes it 1-based:
+
+```text
+if      (actor[+0x10] & 0x01000000)  bank = _DAT_8007B75C   ; party bank
+else if ((i16)actor[+0x5C] <  0x400) bank = _DAT_8007B888   ; type 0x05 - SLOT 4
+else                                 bank = _DAT_8007B840   ; type 0x0B "MOVE2"
+rec = bank + *(u32*)(bank + (actor[+0x5C] & 0x3FF) * 4);
+actor[+0x4C] = rec;  actor[+0x68] = 0;  actor[+0x56] = 1;
+```
+
+The missing `+4` in `bank + id*4` is what makes the id 1-based: id `1`
+reads `offsets[0]`. Verified on the live `map01` state below.
+
+`_DAT_8007B888` has exactly **six** references in the whole image corpus
+(SCUS + every extracted overlay): the case-5 store above, a reset in
+`FUN_8002541C` (`0x800254E8`), the `FUN_800204F8` read (`0x8002055C`),
+and three reads in the Baka Fighter overlay 0976
+(`scripts/ghidra-analysis/find-gp-relative-refs.py --va 0x8007b888`).
+**No world-map overlay reads it, and `FUN_80043390` never sees it.**
+
+### Live `map01` actor list (slot 4 in use)
+
+Walking the live actor list (`*_DAT_8007C354`, chained through `+0x00`)
+in a `map01` field-run state gives 14 actors, and every one that plays an
+animation resolves into the type-5 buffer through the rule above:
+
+| `+0x5C` id | `+0x4C` | offset in slot 4 | body | header `parts` | `chain[0]` = pool `nobj` |
+|---:|---|---:|---:|---:|---:|
+| 5 | `0x8011BE64` | `0x1840` | 4 | 2 | 2 |
+| 11 | `0x8011E714` | `0x40F0` | 10 | 12 | 12 |
+| 14 | `0x80121BC4` | `0x75A0` | 13 | 14 | 14 |
+| 15 | `0x80122264` | `0x7C40` | 14 | 2 | 2 |
+
+Each `+0x4C` equals `base + offsets[id - 1]` exactly, and each clip's
+`part_count` equals the `nobj` of the actor's `DAT_8007C018` pool TMD -
+the invariant `0x8001BAF0` enforces. The other five drawn actors are the
+placed landmarks (render mode `+0x56 == 5`), which carry no clip at all
+(`+0x5C = 0`, `+0x4C = 0`). Three more are the party, animating out of
+the `_DAT_8007B75C` bank (`0x801589E4`, 23 clips) under the
+`actor[+0x10] & 0x01000000` arm.
+
+### Where `FUN_80043390` fits
+
+`FUN_80043390` **is** in the loop - `FUN_8001B964` calls it once per
+posed object at `0x8001BC84` - but it receives a `DAT_8007C018` pool TMD
+group pointer, never a slot-4 address. The sections below document that
+dispatcher because it is the world map's prim renderer and because the
+capture that first found slot-4 reads recorded return addresses inside
+`FUN_8001B964`; they are **not** a description of how slot 4 is read.
 
 > **Cluster-B provenance caveat.** The dump file `ghidra/scripts/funcs/80059de4.txt`
 > is **mislabeled**: its function entry is `FUN_80059BD4`, which is a **generic
 > VRAM `LoadImage` DMA**, not a slot-4-specific reader. The Exec-bp hits at
 > `0x80059DE4` fall inside that DMA routine, so "cluster B" is the generic
 > image-upload path incidentally touching the slot-4 RAM window, not a dedicated
-> slot-4 consumer. The real slot-4 render path is cluster A.
+> slot-4 consumer.
 
-Cluster A's code window contains GTE opcodes (`4A280030` = MVMVA,
+`FUN_80043390`'s code window contains GTE opcodes (`4A280030` = MVMVA,
 `4B400006` = NCLIP, `4812C000` = SWC2/load) interleaved with `LW` reads
-of slot-4 record fields - this is the GTE-driven 3D primitive emitter
-that consumes slot-4 records and writes GP0 packets. The post-load RAM
-window for `map01` is a 75 KB **GP0-primitive pool** (records at 0x20-
-byte stride with command bytes like 0x7d / 0x7f for textured triangles),
-confirming that the slot-4 records are consumed to produce GPU
-primitives in that pool. The pool base is `_DAT_8007B8D0 - 0x12800`
-while the overlay is paged in.
+of its vertex pool - it is the GTE-driven 3D primitive emitter that
+turns a TMD group into GP0 packets. The post-load RAM window for `map01`
+holds a 75 KB **GP0-primitive pool** (records at `0x20`-byte stride with
+command bytes like `0x7D` / `0x7F` for textured triangles) at
+`_DAT_8007B8D0 - 0x12800` while the overlay is paged in. That pool is
+where the *posed* world-map objects land; its inputs are pool TMDs, not
+slot-4 bytes.
 
 ### Cluster A internals
 
+> **Scope.** Everything from here to
+> [Reproducing the capture](#reproducing-the-capture) documents
+> `FUN_80043390`, the world map's **TMD primitive dispatcher**. It is
+> the function the posed objects are drawn through, and it is worth
+> having decoded, but it never receives a slot-4 pointer: its inputs are
+> `DAT_8007C018` pool TMDs. Read "slot-4 records" in the paragraphs below
+> as "TMD vertex-pool records"; where a capture's numbers are about the
+> prim dispatcher rather than about slot 4, the surrounding text says so.
+
 `FUN_80043390` (712 bytes / 178 instructions; see
-`ghidra/scripts/funcs/80043390.txt`) is the slot-4-consuming primitive
+`ghidra/scripts/funcs/80043390.txt`) is the world-map primitive
 renderer. It takes three arguments:
 
 ```c
 void FUN_80043390(struct *display_state, u32 cmd_flags, u32 fade_flags);
 //   display_state[0]   -> vertex pool base  (a2 in handlers = param_3)
 //   display_state[3]   -> non-zero gates the color/light-modulation path
-//   display_state[4]   -> command-stream pointer (where slot-4 records feed in)
+//   display_state[4]   -> command-stream pointer (a TMD group's prim section)
 ```
 
 The function reads one command word from the stream
@@ -505,8 +605,9 @@ The Drake-tuned probe's per-PC labels (`A_lw_count_word`,
 `A_lw_body0_offset`, etc.) describe **what RAM region the LW happened
 to touch** at the moment of the first hit, not the role of the field
 in the underlying handler. Those reads are the handler's normal
-load-vertex-from-pool operation; the pool just happened to be backed by
-slot-4 record bytes during the kingdom-bundle scene-load transition.
+load-vertex-from-pool operation over a TMD; the labels' "body 0 offset"
+framing is a leftover of the falsified slot-4-vertex-pool reading and
+names nothing in slot 4.
 
 [`autorun_slot4_dispatcher_args.lua`](../../scripts/pcsx-redux/autorun_slot4_dispatcher_args.lua)
 captures the *dispatcher prologue* (`0x80043390`) directly - `a0`,
@@ -517,6 +618,13 @@ that probe to characterise per-call dispatch behaviour; use
 of primitives emitted per kind).
 
 ### How slot-4 bytes reach cluster A
+
+**They don't.** No slot-4 address ever reaches `FUN_80043390`. The
+type-`0x05` buffer pointer `_DAT_8007B888` has six references across
+SCUS and every extracted overlay and none of them is in a render path
+(see [Consumer call sites](#consumer-call-sites)); what
+`FUN_80043390` receives is always a `DAT_8007C018` TMD group pointer.
+The section title is kept because other pages link to this anchor.
 
 The cluster-A input pointer originates from `DAT_8007C018` (the global
 asset-pointer table - see [reference/memory-map](../reference/memory-map.md)).
@@ -535,18 +643,17 @@ Two parallel call paths funnel into the same dispatcher:
    actor-allocator path.
 
 This `DAT_8007C018` table serves the *character-mesh* and per-tile
-world-map TMD objects. It is a **separate** path from the slot-4
-render: the kingdom slot-4 body (`type = 0x05` = MOVE) is read **in
-place** at its per-kingdom resident base by the world-map renderer
-(`ra 0x801F78D4`), not routed through `DAT_8007C018` - see
+world-map TMD objects, and it is the **only** thing the dispatcher is
+handed. The kingdom slot-4 payload is read in place at `_DAT_8007B888`
+by the animation chain instead - see
 [Slot-4 is read in place](#slot-4-is-read-in-place---there-is-no-transcode-drake-capture).
-(An earlier reading held that the slot-4 buffer was overwritten by
-later TMD-pack installs and that cluster A read TMDs at addresses that
-had once held slot-4 bytes; that was a wrong-base sampling artifact
-the in-place Read-watchpoint capture corrected.)
 
-The slot-4 body header `kind ∈ {1, 2, 4}` has **no link** to the
-cluster-A bank selector (see
+The two paths meet only at the actor: `FUN_8001B964` reads the clip out
+of `_DAT_8007B888` to build the object's matrix, then hands that
+object's `DAT_8007C018` TMD group to `FUN_80043390` to draw.
+
+The clip header's `rate` field (the old `kind ∈ {1, 2, 4}`) has **no
+link** to the cluster-A bank selector (see
 [Banks exercised in retail world-map play](#banks-exercised-in-retail-world-map-play));
 the bank is chosen by the per-call `fade_flags` / `cmd_flags` args,
 not by any slot-4 field.
@@ -556,6 +663,11 @@ for the `DAT_8007C018` snapshot breakdown and the kingdom-TMD prefix
 counter `DAT_8007B6F8`.
 
 ### Cross-kingdom hit-count comparison
+
+These counts measure **prim-dispatcher work per kingdom**, not slot-4
+reads: the PCs are inside `FUN_80043390`'s kind handlers, whose vertex
+pools are TMDs. They are kept because they characterise the world map's
+per-kingdom render load, which is the question they actually answer.
 
 Exec-breakpoint hit counts at the eight cluster-A LW PCs + the
 cluster-B LW PC during a single warp-tile transition. All three
@@ -653,103 +765,84 @@ so the partial capture remains usable even after an explicit kill.
 
 ## Falsified hypotheses
 
-The container is solved. **What slot 4 *encodes* is not.** Three
-interpretations were systematically tested and falsified by visual
-inspection (PNG renders of every body × every projection plane ×
-every topology mode):
+Both readings below treated the 8 bytes as **geometry**. They are a
+transform, so every projection of them is meaningless by construction -
+which is why no projection ever matched anything.
 
-1. **Top-down dev-menu wireframe / continent coastline.** The
-   strongest historical claim: that body 12 traces a continent
-   coastline, body 13 traces the world boundary frame, and the
-   remaining bodies are inner contours / decorative outlines visible
-   in the developer top-view. Projecting all 15 bodies onto `xz`
-   produces no recognizable map silhouette in any kingdom; matching
-   PNG renders against the dev-menu top-view captured from PCSX-Redux
-   save states found no agreement.
+1. **Top-down dev-menu wireframe / continent coastline.** That body 12
+   traces a continent coastline, body 13 the world boundary frame, and
+   the rest inner contours visible in the developer top-view. Projecting
+   all bodies onto `xz` produces no recognizable map silhouette in any
+   kingdom; PNG renders matched against the dev-menu top-view captured
+   from PCSX-Redux save states found no agreement. Sub-variants tested
+   and equally falsified: a `count_a x count_b` heightfield grid, and a
+   heterogeneous set readable in some single non-`xz` projection (the
+   "vertical pillars" that appear in `xy` for Drake bodies 9 and 11 are
+   an artifact of plotting packed translation nibbles as an `i16`).
 
-2. **`count_a × count_b` heightfield grid.** Drake body 12 records
-   pair up at fixed X-bands and consecutive groups looked like
-   differential Z-updates over a shared topology, suggesting a
-   coarse 10 × 120 terrain mesh. Rendering body 12 as a grid quad-
-   mesh wireframe (`row + column edges`) produces the wrong silhouette;
-   pair-wise edge interpretation (`(r0,r1) (r2,r3) ...`) likewise
-   doesn't yield a coastline-like contour.
+2. **A vertex pool indexed by an unpinned cluster-A command stream.**
+   That each entry is a GTE vertex `(i16 x, y, z, attr)` loaded straight
+   into `VXYn`/`VZn` by `FUN_80044c14`, with the triangle topology and
+   per-object placement living in a separate command stream nobody had
+   found. This one came from reading a prim handler that *does* work
+   that way and assuming slot 4 was its pool. The stream was never found
+   because it does not exist: `_DAT_8007B888` reaches no renderer
+   (six references image-wide, none in a render path), the entry's real
+   field boundaries fall on nibbles rather than `i16`s, and the byte
+   pairs that reading called `attr` are the Y/Z rotation angles.
 
-3. **Heterogeneous via a single non-`xz` projection.** Rendering on
-   `xy` (front side view) surfaces clean vertical pillar/column
-   silhouettes for bodies 9 and 11 (which have 25K-27K Y span). The
-   `xy` all-bodies overlay also looks more map-like than `xz` overall.
-   But no single axis pair produces a coherent map across **all** 15
-   bodies, and the recognizable shapes in `xy` look like 3D objects
-   seen sideways - not map outlines.
+Both are recorded in
+[`reference/re-do-not-re-walk.md`](../reference/re-do-not-re-walk.md).
 
 ## Current working hypothesis
 
-Slot 4 is most likely a **runtime library of small object-local 3D
-meshes** the world-map controller / dev-menu top-view places at world
-coordinates. Plausible roles for individual bodies: collision hulls,
-instantiable decoration meshes, particle-emitter shapes, debug-overlay
-geometry, or animation rigs. This is consistent with:
+None - the format is decoded, so this section records only what remains
+*unlabelled* rather than unknown.
 
-- bodies 9 / 11 having full 3D mesh-scale Y extents while body 12 is
-  near-flat (different kinds of objects, not 2D contour vs 2D outline)
-- the leading three bodies being byte-identical templates across all
-  three kingdoms (shared generic objects, not kingdom-specific data)
-- the corner-clustered point distribution in body 13 (kind = 4):
-  could be four corner-anchored objects, not a single ±32K boundary
-  frame
-- the in-game-object silhouettes visible in side projections - the
-  user identified body-9 features that resemble specific game props
-
-**Consumer pinned to two SCUS-resident reader functions, byte-
-identical across all three kingdoms; per-record semantic decoded
-(GTE vertex - see
-[Per-record semantic](#per-record-semantic---each-record-is-a-gte-vertex-decoded)).**
-The reader accesses the buffer via a runtime pointer, not a static
-`LUI+ADDIU` reference - which is why the static sweep returned empty.
-Exec-breakpoint capture at the identified reader PCs during the
-kingdom-bundle scene-load transition (warp into each of Drake /
-Sebucus / Karisto, from one save state per kingdom) hits all three
-with the same PCs and the same caller RAs - see
-[consumer call sites](#consumer-call-sites) above. Slot 4 is not
-re-read from a cache: the warp Read-watchpoint shows the renderer
-reading the records in place, every frame, transforming each through
-the GTE and emitting GP0 primitive packets into the scene's primitive
-pool (see
-[Slot-4 is read in place](#slot-4-is-read-in-place---there-is-no-transcode-drake-capture)).
+Every field of the container and of the 8-byte entry is pinned to an
+instruction that reads it, the clip-id lookup is verified against a live
+`map01` state, and the invariant tying a clip's `part_count` to its
+mesh's `nobj` is enforced by the renderer. What is not pinned is
+**which actor plays which clip**: the ids come from the scene's MAN
+script (`actor[+0x5C]`), so naming Drake clip 11 "the windmill's spin"
+rather than "the clip actor `+0x64 = 39` plays" needs a scene-script
+pass, not more format work. The three leading clips being byte-identical
+across all three kingdoms says they belong to an actor type every
+kingdom has; it does not say which.
 
 ## Tooling
 
-These remain useful for future RE work even though their original
-purpose ("render the world-map wireframe") is no longer valid:
+The wireframe-era tools still parse the container correctly; only their
+*interpretation* of the entries was wrong, so they are kept for byte
+inspection and round-trip work:
 
 | Tool | Role |
 |---|---|
-| `cargo run -p legaia-asset --bin asset -- slot4-png --input <PROT>.BIN --out <png>` | Container PNG renderer. `--style row\|col\|pairs\|grid\|points` toggles between topology interpretations; `--axes xz\|xy\|zy` switches projection plane; `--only-body N` / `--frame-body N` isolate a single body. `--from-raw <bin>` renders a previously-dumped slot-4 payload. |
-| `cargo run -p legaia-asset --bin asset -- kingdom-slot <PROT>.BIN --slot 4` | Per-body inventory dump (counts, ranges, kind / flag_a). |
-| `legaia_asset::world_map_overlay::{parse, top_down_lines, wireframe_segments_3d, record_points, body_axis_range}` | Rust API. `wireframe_segments_3d` emits the full-3D segment list (group-polyline topology, all three model-space coordinates kept) the live-engine inspection overlay consumes. |
+| `cargo run -p legaia-asset --bin asset -- kingdom-slot <PROT>.BIN --slot 4` | Per-body inventory dump (parts / frames / rate / flags). `--out` writes the decoded payload. |
+| `cargo run -p legaia-asset --bin asset -- player-anm <PROT>.BIN --desc-count 7` | The generic ANM detector - reports a kingdom bundle exactly the way it reports any scene's type-`0x05` section. |
+| `legaia_asset::world_map_overlay::{parse, Slot4Body, Slot4Transform, translation_path_segments}` | Rust API. `Slot4Body::{part_count, frame_count, interpolates, subframe_divisor, entry}` expose the header; `Slot4Record::transform()` decodes one entry; `translation_path_segments` emits each part's translation path across the clip. |
+| `legaia_asset::world_map_overlay::{top_down_lines, wireframe_segments_3d, record_points, body_axis_range}` | The wireframe-era projections. They plot raw `i16` field pairs that straddle the entry's real boundaries - byte-inspection aids only, never geometry. |
+| `cargo run -p legaia-asset --bin asset -- slot4-png --input <PROT>.BIN --out <png>` | PNG renderer over those projections. `--style row\|col\|pairs\|grid\|points`, `--axes xz\|xy\|zy`, `--only-body N`, `--from-raw <bin>`. |
 | `scripts/pcsx-redux/run_probe.sh --lua scripts/pcsx-redux/autorun_dump_slot4.lua` | PCSX-Redux closed-loop dumper: loads a save state, dumps the live slot-4 RAM region, quits. |
-| `scripts/pcsx-redux/autorun_dump_full_ram.lua` | Full 2 MiB main RAM dump. Use when the load base is unknown for a new build / state - signature-scan the dump for the 64-byte outer pack prefix. |
+| `scripts/pcsx-redux/autorun_dump_full_ram.lua` | Full 2 MiB main RAM dump. Use when the load base is unknown for a new build / state - or just read `_DAT_8007B888`. |
 | `scripts/pcsx-redux/diff_slot4_ram_vs_disc.py` | Byte-compare a RAM dump against the disc-decoded payload. |
 
-The world-overview web viewer does not expose slot 4 (the wireframe
-interpretation is falsified). The WASM exports
+The world-overview web viewer does not expose slot 4. The WASM exports
 (`slot4_wireframe_lines` / `slot4_wireframe_points` /
-`slot4_wireframe_bounds`) remain available to re-enable a slot-4 draw
-if a future RE pass identifies the correct interpretation.
+`slot4_wireframe_bounds`) sit on the falsified projections and should be
+retired or re-pointed at `translation_path_segments` before any page
+draws them.
 
 **Live-engine inspection overlay.** The from-scratch engine decodes slot 4
 for every world-map scene onto `SceneResources::world_map_slot4` (resolved
 only for `SceneLoadKind::WorldMap`; `None` everywhere else). When
 `LEGAIA_WORLDMAP_SLOT4=1` is set, `legaia-engine play-window` builds a
 `LineList` from `wireframe_segments_3d` and merges it into the world-map
-overlay-lines buffer (colour-keyed by body `kind`), so the decoded
-vertex pool can be inspected in the live 3D view under the real camera /
-fog. This is an inspection overlay, not faithful geometry: the segments
-use the group-polyline topology convention, and the records are drawn at
-their raw object-local coordinates because the per-object placement
-transform (and the true triangle topology) lives in the unpinned
-cluster-A command stream described above. Off by default.
+overlay-lines buffer. **That draw is meaningless**: it plots the entries'
+raw `i16` pairs, which straddle the packed nibble boundaries, so what
+appears in the view is neither geometry nor motion. It is off by default
+and should be re-pointed at `translation_path_segments` (each part's
+object-local translation path over the clip), which is a real curve.
 
 ### Slot-4 loader (loader-hunt probe)
 
@@ -818,52 +911,58 @@ model built on these writers is superseded by the in-place capture.)
 
 ### Slot-4 is read IN PLACE - there is no transcode (Drake capture)
 
-The finer probe above was run: `scripts/pcsx-redux/autorun_slot4_source_map.lua`
-arms Read bps tiled across the Drake slot-4 RAM window
-(`0x8011A624 + k*0x800`) plus an Exec bp on the `FUN_8001E54C` streaming-chunk
-dispatcher, and drives the held-Up warp itself from the
-`drake_castle_to_worldmap` save. Result (365 captured rows):
+The heading's claim holds: the bytes are read where they were decoded,
+every frame, with no intermediate buffer. The **reader** in the original
+write-up was misattributed, and the corrected identification is what
+finally explained the capture's own return addresses.
 
-- **363 of the captured accesses are slot-4 reads by the renderer**, none a
-  copy. The faulting source addresses span almost the whole window
-  (`0x8011A624`..`0x80121E24`, 14 distinct tiled offsets, 8 of 16 read bps
-  hitting their per-bp cap - i.e. reads occur throughout the window, every
-  frame), and the live `a1`/`a2` registers at each read hold pointers *inside*
-  the slot-4 window (`0x8011A608`, `0x80121614`, `0x80121BF4`, …).
-- The read PCs are the SCUS cluster-A prim dispatcher's GTE mesh path
-  (`0x80044C70 = lw s5,0x10(a1); lhu s6,0xE(a1)` feeding `cop2`/GTE ops), and
-  the return addresses are **`0x801F78D4` (the world-map top-view overlay
-  renderer; 276 reads) and `0x8001BC8C` (the SCUS render path; 78 reads)**.
-- The `FUN_8001E54C` dispatcher fired only twice, and both times its data
-  pointer was `0x80184BD0` - **not** in the slot-4 window. So `FUN_8001E54C`
-  does not copy the slot-4 records.
+`scripts/pcsx-redux/autorun_slot4_source_map.lua` arms Read bps tiled
+across the Drake slot-4 RAM window (`0x8011A624 + k*0x800`) plus an Exec
+bp on the `FUN_8001E54C` streaming-chunk dispatcher, and drives the
+held-Up warp from the `drake_castle_to_worldmap` save. Result (365 rows):
 
-**So the slot-4 records are consumed in place as per-frame render geometry by
-the world-map renderer (`0x801F78D4` → cluster-A prim dispatcher `0x80043390`
-→ GTE mesh emit at `0x80044xxx`); there is no record → working-buffer
-transcode.** The working-buffer writes the earlier hunt saw (`FUN_80028158` at
-`0x801BA000`; `FUN_8001E54C` chunk copies) are *other* data streams - they
-never carried slot-4 pointers, exactly as that hunt already noted. This pins
-the long-open consumer and retires the "transcode" framing for slot 4. The
-in-place read is corroborated by the dispatcher capture itself: of 2153
-`FUN_80043390` calls during the Drake warp, **762 take their command pointer
-`a0` from inside the slot-4 window** (`0x8011A624`..`0x80122454`) - slot-4 is
-walked in place as command streams, not just as the vertex source - while the
-`0x801BA000` (615 calls) and `0x8014Dxxx` cluster are the *separate* procedural /
-non-slot-4 streams.
+- **363 of the captured accesses are reads, none a copy.** The faulting
+  addresses span almost the whole window (`0x8011A624`..`0x80121E24`,
+  14 distinct tiled offsets, 8 of 16 read bps hitting their per-bp cap),
+  so the buffer is read throughout, every frame.
+- The `FUN_8001E54C` dispatcher fired twice and both times its data
+  pointer was `0x80184BD0` - **not** in the slot-4 window. Nothing
+  copies the records.
 
-**Cross-kingdom - confirmed.** The slot-4 resident base is now byte-pinned for
-all three kingdoms (see the RAM-layout table above: Drake `0x8011A624`, Sebucus
-`0x80119CE4`, Karisto `0x80108D84`). A Sebucus warp dispatcher capture confirms
-the world-map renderer drives cluster-A there too (1090 of 1698 `FUN_80043390`
-calls return into `0x801F7xxx`), and re-reading the Sebucus `slot4_source_map`
-reads against the *correct* base shows **171 of 177 reads land inside the
-byte-verified Sebucus window** (`0x80119CE4`..`0x80120638`), from the cluster-A
-render path (`ra 0x8001BB28`) - slot-4 is read in place for Sebucus exactly as
-for Drake; the earlier "no render reads" was purely the wrong-base assumption.
-Karisto's slot-4 is byte-verified resident at `0x80108D84` and driven by the same
-renderer. The remaining piece is the per-record `[x, y, z, attr]` field
-semantic - how each 8-byte record drives the GTE prim.
+The reads are the animation chain. The Sebucus run of the same probe
+records `ra 0x8001BB28` for its in-window reads, and `0x8001BB28` is the
+return address of `jal FUN_8001BE80` at `0x8001BB20` inside the
+animated-actor renderer `FUN_8001B964` - i.e. the entry decoder reading
+the clip. The Drake run's `0x8001BC8C` is the return of
+`jal FUN_80043390` at `0x8001BC84`, six instructions later in the *same*
+function. Both RAs place the caller in `FUN_8001B964`, which is exactly
+where an animation reader belongs and is not a top-view terrain pass.
+
+Two of that write-up's inferences do **not** survive:
+
+- "The read PCs are the cluster-A prim dispatcher's GTE mesh path
+  (`0x80044C70`)" - `0x80044C70` is a prim handler's vertex load, and a
+  prim handler is only ever handed a `DAT_8007C018` TMD. A read bp fires
+  on an address, not on a provenance; a TMD allocated into the same heap
+  region as the animation bank will trip a window bp all the same.
+- "`ra = 0x801F78D4` (the world-map top-view overlay renderer)" - under
+  the recovered base `0x801F69D8` for PROT 0901, `0x801F78D0` decodes as
+  `swc2 $1,4($t6)`, not a `jal`, and the same VA in the sibling image
+  0900 is `addu $t6,$zero,$zero`. No `jal` at `0x801F78D0` exists in
+  either slot-B image, so no call in either can produce that return
+  address. What the value was is unresolved; it is not evidence that a
+  world-map overlay routine reads slot 4.
+
+The "762 of 2153 `FUN_80043390` calls take `a0` from inside the slot-4
+window" figure is the same address-vs-identity confusion: `a0` there is
+a TMD group pointer, and during the warp the heap put TMDs in that
+address range.
+
+**Cross-kingdom.** The resident base is byte-pinned for all three
+kingdoms (Drake `0x8011A624`, Sebucus `0x80119CE4`, Karisto
+`0x80108D84`) and each equals that kingdom's `_DAT_8007B888`. The
+Sebucus re-read against the correct base shows 171 of 177 reads inside
+the byte-verified window, from `ra 0x8001BB28` as above.
 
 ### Cluster-A caller (`FUN_8001ada4`)
 
@@ -911,17 +1010,27 @@ if (*puVar5 != 0) {
 }
 ```
 
+**The animated sibling.** `FUN_8001ADA4` switches on `actor[+0x56]`
+through an 11-entry jump table at `0x8001042C` (`0x8001AE60..0x8001AE8C`).
+Case 5 is the *static* mesh-chain draw quoted above - each object drawn
+at the actor's own matrix. Case 1 runs an optional screen-space cull
+(`FUN_8001B73C`, a bounding-box RTPT leaf, when `actor[+0x10] & 4`) and
+then calls **`FUN_8001B964`** at `0x8001B198` - the *animated* chain
+draw, which walks the same `actor+0x44` chain but re-poses each object
+from the clip at `actor[+0x4C]` first. That is the routine slot 4 feeds;
+see
+[Consumer call sites](#consumer-call-sites). (Case 11 is a third,
+unrelated user of an `actor[+0x4C]` record: the type-`0x06` CLUT-walk
+`MoveImage` stepper at `0x8001B664`, whose record layout is a `[u8
+count]` header plus 8-byte `(x, y)` source cells.)
+
 The Exec-bp register snapshots from `autorun_slot4_consumer_pcs.lua`
 captured `a1 = 0x801BA8E4` and `a2 = 0x801BA7F8` at the cluster-A LW
-PCs - both in the **`0x801BA000`-ish working buffer**, not in slot 4's
-documented RAM base (`0x8011A624..0x80122454` for Drake). Those hits
-belong to the *per-actor* renderer path (`FUN_8001ada4` walking
-`actor+0x44` mesh tables over the procedurally-built working buffer) -
-a **separate, non-slot-4 stream**. The slot-4 records themselves are
-read in place at their resident base (see
-[Slot-4 is read in place](#slot-4-is-read-in-place---there-is-no-transcode-drake-capture));
-the "slot 4 is transcoded into working-buffer mesh structs" reading
-these snapshots once supported is superseded.
+PCs - both in the **`0x801BA000`-ish working buffer**, not in the
+type-5 buffer (`0x8011A624..0x80122454` for Drake). Those hits belong to
+the *per-actor* renderer path (`FUN_8001ada4` walking `actor+0x44` mesh
+tables over the procedurally-built working buffer) - a **separate,
+non-slot-4 stream**.
 
 ## DAT_8007C018 - global TMD pointer table (the *actual* cluster-A source)
 
@@ -1176,21 +1285,22 @@ table content - producing the previously-reported "[45..53] FFFAFFFA",
 
 ### Implication for slot 4 - resolved
 
-The `DAT_8007C018` table serves the character-mesh and per-tile
-world-map TMD objects; it is a **separate path** from the slot-4
-render. The kingdom slot-4 body is read **in place** at its
-per-kingdom resident base by the world-map renderer (`ra
-0x801F78D4`), never routed through `DAT_8007C018` and never
-overwritten by TMD-pack installs (the "overwritten slot-4 buffer"
-reading was the field-scene-snapshot conflation noted above plus a
-wrong-base sampling artifact). See
+The `DAT_8007C018` table holds the *geometry*; slot 4 holds the
+*motion*. They are separate buffers reached through separate globals
+(`DAT_8007C018` vs `_DAT_8007B888`), and the only place they meet is
+`FUN_8001B964`, which poses an object from a clip and then draws that
+object's TMD. Slot 4 is never routed through `DAT_8007C018`, never
+overwritten by TMD-pack installs, and never handed to `FUN_80043390`.
+A live `map01` state shows the two occupying disjoint address ranges -
+the type-5 buffer at `0x8011A624..0x80122454`, the pool's kingdom TMDs
+`[5..44]` from `0x80125150` upward. See
 [Slot-4 is read in place](#slot-4-is-read-in-place---there-is-no-transcode-drake-capture).
 
 ## Open work
 
 1. **~~Slot-4 → TMD converter~~ - dissolved; ~~kingdom `[5..N]` populate~~ - resolved.**
-   There is no converter: the slot-4 records are read in place by the
-   world-map renderer, and the kingdom-derived `DAT_8007C018` entries come
+   There is no converter: the slot-4 records are animation clips read in
+   place by `FUN_8001B964`, and the kingdom-derived `DAT_8007C018` entries come
    from the scene's TMD packs, not from slot 4. **The `[5..N]` populate is the
    same generic descriptor walk every town uses - there is no kingdom-specific
    installer.** The world-map loader `FUN_801D6704`
@@ -1210,21 +1320,19 @@ wrong-base sampling artifact). See
    across SCUS + every captured overlay dump under
    `ghidra/scripts/funcs/`):
 
-   - **`_DAT_8007B888` (MOVE-buffer pointer set by `FUN_8001F05C` case 5):**
-     7 accessor sites in the entire dump corpus. SCUS: `FUN_8001F05C`
-     (writer, the case-5 store), `FUN_8002541C` (writer, streaming-walker
-     reset), `FUN_800204F8` (reader - Tactical Arts move-table parser).
-     Overlays: 4 reader sites, **all in `overlay_baka_fighter`** (the
-     boxing minigame). **Zero readers in any `overlay_world_map*` dump.**
-     If the kingdom slot-4 → world-map pipeline went through the
-     standard MOVE buffer, the world-map controller would need to read
-     `_DAT_8007B888` somewhere - and it doesn't, statically. So the
-     converter either runs *before* the warp's overlay swap-in (in
-     SCUS code that doesn't read the MOVE pointer by name - e.g. via
-     a function-pointer table populated at boot), or the slot-4 MOVE
-     bytes are consumed via the asset-loader chain itself (a hook
-     inside `FUN_8002541C` or its descriptor-walker sibling
-     `FUN_80020224`) before the world-map overlay even sees them.
+   - **`_DAT_8007B888` (type-`0x05` buffer pointer set by `FUN_8001F05C`
+     case 5):** six sites across SCUS and every extracted overlay image
+     (`find-gp-relative-refs.py --va 0x8007b888`). SCUS: the case-5 store
+     `0x8001F3A8`, the `FUN_8002541C` reset `0x800254E8`, and the single
+     reader `0x8002055C` inside `FUN_800204F8`. Overlays: three reads,
+     **all in PROT 0976 (Baka Fighter)**. **Zero in any world-map
+     overlay.** That measurement was right, and its conclusion - "so the
+     converter must run somewhere else" - was the mistake: there is no
+     converter to find, because `FUN_800204F8` is not a "Tactical Arts
+     move-table parser" but the **animation clip selector**, and the
+     world-map controller has no reason to read the pointer. The buffer
+     is reached by every animated actor, on every map, through the actor
+     tick. See [Consumer call sites](#consumer-call-sites).
    - **`DAT_8007C018[94..113]` (the index range whose live snapshot
      once held slot-4-body-aligned pointers):** zero specialized
      readers - no function statically materializes any address in
@@ -1235,21 +1343,21 @@ wrong-base sampling artifact). See
      only through the generic table walkers that iterate
      `[0..DAT_8007BB38]`.
 
-2. **~~Per-record 4th `i16` (`attr`)~~ - resolved (render-unused).** `attr`
-   is the high half of the record's `VZn` word (0 for body 4, 22 distinct
-   values in body 5, 214 distinct in body 12; body-12 values cluster at
-   `±1280, ±1792, 1793, ±1281, ±1025`, like packed tags). A full sweep of the
-   cluster-A handler family finds **no reader** of the pool word's high half:
-   the 43 `>> 0x10` hits in the family are all command-word index extraction,
-   and each record `word1` is loaded whole into the GTE `VZn` register with the
-   high 16 bits discarded (`grep puVar[1] >> 0x10` = zero). So `attr` is
-   **render-unused reserved per-vertex data** - real per-vertex authoring data
-   the engine never reads on any render path. (Separately, there is **no** body
-   `kind ↔ cmd_flags` bank link: Drake's dispatcher probe never sets
-   `0x04000000` / `0x20000000`, so only banks `0x00` and `0x50` are exercised -
-   see [Banks exercised in retail world-map play](#banks-exercised-in-retail-world-map-play).
-   Body `kind ∈ {1, 2, 4}` is slot-4-internal, unlinked to cluster-A bank
-   dispatch.)
+2. **~~Per-record 4th `i16` (`attr`)~~ - dissolved.** There is no 4th
+   `i16`. Bytes 6 and 7 are the Y and Z rotation angles and are read
+   every frame at `0x8001C0E4` / `0x8001C0E8`. The sweep that found "no
+   reader of the pool word's high half" was sweeping the prim-handler
+   family, which never sees these bytes, so it could not have found one;
+   the "body-12 values cluster at `+-1280, +-1792, ...` like packed
+   tags" observation was `rotY | rotZ << 8` read as one word. The one
+   field nothing reads is byte 4's **high nibble**, zero in all 22 228
+   entries on the disc - see
+   [The one genuinely unread field](#the-one-genuinely-unread-field---byte-4s-high-nibble).
+   (Separately, there is **no** clip `rate` ↔ `cmd_flags` bank link:
+   Drake's dispatcher probe never sets `0x04000000` / `0x20000000`, so
+   only banks `0x00` and `0x50` are exercised - see
+   [Banks exercised in retail world-map play](#banks-exercised-in-retail-world-map-play).
+   `rate ∈ {1, 2, 4}` is a clip field, unrelated to bank dispatch.)
 
 3. **Banks 2 (`0xA0`) and 3 (`0xF0`).** Banks reachable in the
    dispatcher but never observed during retail world-map play.
@@ -1339,4 +1447,5 @@ wrong-base sampling artifact). See
 
 - [`subsystems/world-map.md`](../subsystems/world-map.md) - the world-map controller and render pipeline.
 - [`subsystems/world-overview-viewer.md`](../subsystems/world-overview-viewer.md) - the static-site WebGL viewer.
-- [Legaia TMD](tmd.md) - the candidate mesh format for the slot-4 records.
+- [ANM animation container](anm.md) - the same container, in its per-scene form.
+- [Legaia TMD](tmd.md) - the mesh format the posed objects are drawn from.

@@ -41,7 +41,7 @@ disassembly (`sltiu` immediate before the `jr`), not off the port.
 | [Tile-board walk SM](tile-board.md) | `overlay_0897_801EF2B0` | 15 states, JT at `0x801CF65C` | resolved | yes - `legaia_engine_core::tile_board` | yes |
 | Per-actor anim dispatch | `FUN_80021DF4` | 7 dispatch bytes `0x01..=0x07` at `actor[+0x5A]` | resolved | yes - `anim_vm` / `actor_tick` | yes |
 | Ambient facing channel | `FUN_80038158` ops `0x04` / `0x0D` | 2 of the 32-slot table | resolved | yes - `ambient_motion` | yes |
-| Sub-mode dispatcher | `FUN_801DD35C` | 25-slot JT `0x801CF244` | contested - see [below](#one-function-two-ports) | **twice** - `menu` and `title_overlay` | `menu` yes, `title_overlay` **inert** |
+| [Title-screen tick](#one-function-two-ports) | `FUN_801DD35C` | 25-slot JT `0x801CF244`, sub-mode word `+0x204` | resolved | yes - `title_overlay` | **inert** |
 | Per-prim render dispatch | `FUN_80043390` | 20 kind slots × 4 alpha banks | resolved | yes - `prim_dispatch` | yes |
 | Status-effect ticker | `FUN_801E752C` | per-actor condition set | resolved | yes - `status_effects` | yes |
 
@@ -78,19 +78,33 @@ and `overlay_shop_save` dumps - the same one-resident-function-under-many-
 scenario-labels shape that settled the [`0x2F` residency
 question](move-vm-overlay-ext.md#overlay-residency---one-copy-in-the-field-overlay-only).
 
-`crates/engine-vm` ports it twice, under two incompatible descriptions:
-`menu.rs` calls it the menu overlay's top-level dispatcher, `title_overlay.rs`
-calls it the title-overlay per-frame tick. Both cite dumps that resolve to the
-same entry. The outer dispatch both must be describing is the 25-slot jump
-table at `0x801CF244`, guarded by the `sltiu` bound at `0x801DD7F8`; the nested
-switches deeper in the body are what the two descriptions disagree about.
+Which overlay *owns* it is settled by a byte search: its 48-byte prologue
+occurs exactly once on the disc, inside PROT **0899** at file `+0xEB44`
+(`0x801CE818 + 0xEB44` reproduces the VA), and it is absent from
+`SCUS_942.54`. The many-labelled dumps are one resident copy under scenario
+labels; the short `overlay_801dd35c.txt` that reads differently is a 436-byte
+PROT 0897 routine `FUN_801DD310` at an aliased VA.
 
-Which overlay *owns* the function is the open part. The residency evidence
-points at one shared slot-A overlay generation rather than separate title and
-menu copies - the [actor VM](actor-vm.md) driver shows the same identical-
-across-labels pattern in the same dump set - but that is an inference from the
-dumps, not a capture. Settling it needs the residency check the `0x2F` thread
-used: read the fixed VA out of each candidate overlay's disc image.
+**What it does is the title-screen tick**, and `crates/engine-vm` used to
+describe it two ways - `title_overlay.rs` as the title tick, `menu.rs` as the
+menu overlay's top-level dispatcher. Hosting it in the menu overlay's image is
+what made the second reading look right; the routine's own operands falsify it:
+
+- Its 56 `sw ..,0x204(..)` sub-mode writes store only `0x02..=0x18`, inside
+  the jump table's `sltiu v0,s2,0x19` bound at `0x801DD7F8`. The pause-menu,
+  shop and inn screen bytes `menu.rs` enumerates are never written by it, and
+  the `0x70` literals in its body are the `y` argument of the centred-text
+  helper `FUN_801E1C1C`.
+- Its two master-mode stores into `0x8007B83C` are `0x1A` at `0x801DDCF0`
+  (attract -> STR) and `2` at `0x801DFC00` (NEW GAME -> field), and its only
+  caller is `FUN_801E36A0` (0899 `+0x14E88`), nine instructions that are
+  `jal 0x801dd35c` with both arguments zeroed, spawned by master mode 22.
+
+So `title_overlay.rs` carries the `PORT:` and `menu.rs` a `REF:` plus the
+correction. `menu.rs` remains the engine's own pause / shop / inn screen graph
+- state bytes engine-chosen, per-screen behaviour sourced from
+[`shop.md`](shop.md), [`inn.md`](inn.md) and
+[`field-menu.md`](field-menu.md) - it is simply not a port of this routine.
 
 ## Ported but inert
 
@@ -113,8 +127,10 @@ calls them. Inert is a reachability statement, not a correctness one.
   `canonical_size` width table is the disassembly-sourced mirror that
   `move_vm::ext` is tested against, and `engine-core`'s VDF-pulse scanner
   reads it to skip `0x2F` instructions.
-- **`title_overlay`** - superseded in practice by `menu`, which ports the same
-  function and does have callers.
+- **`title_overlay`** - the sole port of the title tick `FUN_801DD35C`
+  ([above](#one-function-two-ports)). Its decoded sub-mode table and
+  state-struct offsets have no consumer: the port's own title screen is
+  driven by `engine-core`'s save-select session instead.
 - **`title_prim`**, **`vram_rect_copy`**, **`cutscene_trigger`** - supporting
   primitive and catalogue modules on the same footing.
 

@@ -25,14 +25,31 @@ Representative confusables (each dumped under several non-dome overlays, so **sh
 | `FUN_801f3c34` | **Queued-magic message trigger**, not a guard: it rejects nothing, returns nothing and touches no queue state. Reads the active actor's queued `+0x1df`, and on a spell-level test of `>= 3` *fires* the message via `FUN_801d8de8(0x66,0)`, sets `ctx[+0x18] = 0x66` and installs a hook pointer at `0x800775B4` - also dumped under dance / Baka Fighter / fishing / slot | [`battle-action.md`](battle-action.md) |
 | `FUN_801f3d3c` | The **installer half** of the pair above - it writes the two globals `FUN_801F3C34` gates on. See [The queued-magic pair](#the-queued-magic-pair) | [`battle-action.md`](battle-action.md) |
 
-Two entries are dumped **only** under `overlay_muscle_dome`, both render-track and
-both dome-vs-shared unconfirmed. `FUN_801f2410` (593 instructions, 31 GPU-primitive
-builds, reads the shared battle ctx `_DAT_8007bd24`) is a **HUD/number emitter** -
-documented-not-ported by the port boundary, its status unconfirmed precisely
-because the context it draws from is the shared battle one. `FUN_801f2e10` is an
-**oriented-quad "beam" emitter** (see [Key functions](#key-functions)); it
-references no dome ctx at all, so its status is likewise open. The genuinely
-dome-unique controller / presentation set is the [Key functions](#key-functions) table below (`FUN_801d0748`'s dome arms, `FUN_801d388c`, `FUN_801d5854`, `FUN_801d8de8`, and the panel helpers); everything else in the dump directory is battle-overlay furniture.
+Two entries are dumped **only** under `overlay_muscle_dome`, and both were
+carried here as "dome-vs-shared unconfirmed". Neither is the dome's; a caller
+sweep settles both, and the filename was the only thing that ever tied them to
+the arena.
+
+- **`FUN_801f2410`** - the **cast colour-wash emitter**. Its only callers on the
+  disc are the two cast dispatchers' epilogues, `FUN_801F1ED4` at `0x801F2144`
+  and `FUN_801F2160` at `0x801F23F4`, each gated on `ctx[+0x27A] != 0`
+  ([`cast-module.md`](cast-module.md)). It builds screen-wide `POLY_G4` packets
+  - GP0 code `0x38` OR'd into the colour word, tag length `8`, right-hand
+  vertices pinned to `x = 0x13F` - straight onto the scratchpad packet cursor
+  `*(0x1F8003A0)`, colouring them `ctx[+0x27E..+0x280] * ctx[+0x27A] / 255` and
+  scrolling them by `ctx[+0x32A]`, which `ctx[+0x27C]` selects a mode for.
+  It is cast presentation, not a HUD number emitter and not the dome's.
+- **`FUN_801f2e10`** - the oriented-quad "beam" emitter (see
+  [Key functions](#key-functions)). It has **no reference of any kind** in SCUS
+  or in any overlay image; its only callers on the whole disc are **11 `jal`
+  sites inside PROT 0909**, a slot-B summon module, whose `FUN_801F7948`
+  (`0x801F7980` onward at base `0x801F69D8`) paces widening pairs of beams
+  against the counter `_DAT_8007BD1C`. It is summon-cast presentation.
+
+The genuinely dome-unique controller / presentation set is the
+[Key functions](#key-functions) table below (`FUN_801d0748`'s dome arms,
+`FUN_801d388c`, `FUN_801d5854`, `FUN_801d8de8`, and the panel helpers);
+everything else in the dump directory is battle-overlay furniture.
 
 ### The queued-magic pair
 
@@ -350,9 +367,13 @@ resident in the dome's own data file:
   and even a correct ABR-1 additive draw reads as a white cloud band. The
   retail match capture shows a mist-free interior (fence, wooden wall,
   light-grey floor; capture: the `minigame_muscle_dome_pcsx` scenario run
-  forward into the live match), so the retail backdrop path evidently does
-  not draw object 1 as static geometry. Which runtime path (if any) does
-  draw it is open. The lamp glows stay with the shell and blend additively.
+  forward into the live match). The lamp glows stay with the shell and blend
+  additively.
+
+  **The path that would draw it, and the gate that does not.** Object 1 is
+  dropped by the battle scene loader itself, one object at a time, and the
+  rule is not dome-specific - see
+  [Object 1 is trimmed by the loader](#object-1-is-trimmed-by-the-loader-_dat_8007b64b).
 
 Confidence: the load chain, carrier shape and texture address are **Confirmed**
 (disassembly + structural decode of the entry); that a live contest's
@@ -363,9 +384,124 @@ taken. The file's other slots: 1220 = an LZS container whose section 0 is
 the dome's **hub UI art** - two plain TIMs uploading the pages at
 `(320, 0)` / `(320, 256)` with CLUT rows 502/503 (the Welcome / INTERVAL /
 ROUND / course-name strips; see
-[HUD chrome](#hud-chrome-texture-sources-capture-pinned)), 1221/1222 = two
-160 KB blobs (undecoded), 1223/1224 = pochi fillers
-([`pochi.md`](../formats/pochi.md)).
+[HUD chrome](#hud-chrome-texture-sources-capture-pinned)),
+1221/1222 = the two ringside panel stills
+([below](#inttim--int2tim---the-ringside-panel-stills)), 1223/1224 = pochi
+fillers ([`pochi.md`](../formats/pochi.md)).
+
+### `int.tim` / `int2.tim` - the ringside panel stills
+
+Extraction **1221** and **1222** are not blobs. Each is exactly `0x28000`
+bytes, which is `320 * 256 * 2` to the byte, and each is a **16-bit BGR555
+still** that the runtime uploads as one VRAM rectangle at `(384, 0)`.
+
+The overlay that reads them is PROT **0978** (`field_back_read`, slot-B base
+`0x801F69D8`), whose own string pool names both files by their dev paths -
+`h:\prot\field\other6\tim\int.tim` at file `+0x20` and
+`…\int2.tim` at `+0x44` - putting them in this bundle's directory. Its
+streamer `FUN_801F6B24` (file `+0x14C`) is a 12-arm phase machine on a jump
+table at `0x801F6AA8`, counter `_DAT_8007B6C8`.
+
+Nothing materialises the raw TOC index as a literal, which is why a
+literal-only sweep finds no loader. The index is **computed**:
+
+```text
+801f6b90  lhu   v0,0x4824(v0)      ; party slot 0 hp_max_record  (+0x11C)
+801f6b98  lhu   v1,0x480e(v1)      ; party slot 0 hp_curr_live   (+0x106)
+801f6ba4  srl   v0,v0,1
+801f6bac  sltu  s0,v1,v0           ; s0 = current HP < max/2
+...
+801f6c3c  addiu a0,s0,0x4c7        ; raw TOC 0x4C7 + s0
+801f6c40  jal   0x8003e8a8         ; LBA resolver
+```
+
+Raw `0x4C7` / `0x4C8` are extraction **1221** / **1222** under the
+[+2 correction](../formats/cdname.md#numbering-space), so `int.tim` is the
+default and `int2.tim` is the **below-half-HP** variant, chosen from the lead
+character's live record ([`save-record.md`](../formats/save-record.md)). The
+same `s0` selects between the two dev path strings on the dev branch
+(`lh` on `_DAT_8007B8C2` at `0x801F6C38`), which is what ties each index to
+its filename. Four such `addiu a0,s0,0x4c7` sites exist, at file `+0x264`,
+`+0x2F4`, `+0x398` and `+0x440` - one per strip.
+
+The upload is four passes over the same rect. `FUN_8003E964` seeks sector
+`0 / 0x14 / 0x28 / 0x3C` of the entry, `FUN_8003E800` reads 20 sectors
+(`0xA000` = `320 * 64 * 2`) into the staging buffer, and `FUN_800583C8`
+(`LoadImage`) uploads it with the rect's `y` set to `0 / 0x40 / 0x80 / 0xC0`
+in the `jal` delay slot. The rect itself lives at `0x801F735C` and its other
+three fields are written once, at `0x801F6BE4` / `0x801F6BF0` / `0x801F6BFC`:
+`x = 0x180` (384), `w = 0x140` (320), `h = 0x40` (64).
+
+The files' own layout matches the display window. The first five sectors of
+both are the halfword `0x5862` repeated - 5,120 halfwords, i.e. exactly
+**16 scanlines of 320** - then one zero sector, then pixels. So the 240-line
+picture occupies rows 16..255 of the 256-row rectangle, and the constant fill
+is a deliberate top pad rather than dev filler.
+
+Both stills are finished pre-rendered scenes of characters at the ring's
+rope-and-mesh fence, and the `int2` variant differs by their reaction, which is
+consistent with the HP test that selects it. **Confirmed** (disassembly) for
+the loader, the index arithmetic, the variant selector and the upload geometry;
+what the panel is used for on screen is **Inferred** - no draw of the
+`(384, 0)` rect has been traced, and the streamer's arming condition (battle
+context `ctx[+0xC] == 2`, written under `ctx[+0x7] == 0x67`) is undecoded.
+
+Read with `disasm-overlay-fn.py extracted/overlays/overlay_field_back_read_0978.bin
+--base 0x801F69D8 --addr 0x801F6B24`.
+
+### Object 1 is trimmed by the loader (`_DAT_8007B64B`)
+
+Nothing in the arena's own code touches the backdrop. `_DAT_8007B864` - the
+pointer `FUN_8001FE70` writes at `0x8001FEC0` after copying the stream's leading
+TMD chunk out to its own buffer - has exactly **two** references on the whole
+disc, and the second is the SCUS battle scene loader `FUN_800513F0` reading it
+at `0x80051A5C`. The arena-init overlay 0977 and the battle-action overlay 0898
+reference it in no form (word, `lui`+load, `jal`, `j`, branch, `gp`-relative).
+
+What `FUN_800513F0` does with it, in order:
+
+1. `FUN_80026B4C(_DAT_8007B864, 0)` at `0x80051A60` - magic-checks `0x80000002`,
+   relocates **every** object via `FUN_800268DC`, and registers the whole TMD
+   into the shared model bank `0x8007C018[n++]` (`n` at `0x8007B774`).
+2. Writes the returned slot index into the backdrop template `0x8007680C+4`
+   (`0x80051A80`) and spawns **two** backdrop actors from it
+   (`FUN_80020DE0` at `0x80051A7C` / `0x80051AA8`), parked at battle-ctx
+   `+0x106C` and `+0x1070`. The spawn copies `template+4` into `actor+0x64`
+   (`0x80020E70`), and `FUN_80021B04` binds every object of that model into the
+   actor's part array `actor+0x44` - count at word `0`, one descriptor per slot
+   after it.
+3. Tests the byte `_DAT_8007B64B` at `0x80051ABC`. **When it is zero** - and only
+   then - it decrements both actors' part counts (`0x80051AD4..0x80051B10`) and
+   then shifts each list down one slot from index `1`
+   (`0x80051B14..0x80051BAC`). The net effect for any object count is the same:
+   **object index 1 is removed from the draw list.** A non-zero byte skips both
+   loops and every object stays.
+
+`_DAT_8007B64B` has **one writer on the disc**: the field overlay's battle
+handoff `FUN_801D9E1C` at `0x801DA0AC`, `= (s2[+8] >> 5) & 1` - bit 5 of the
+handoff's per-encounter setup byte, written only on the
+`(*_DAT_801C6EA4)[+0x5F] >= 0xC` arm. It is one of three options packed into
+that byte: bit 7 clears the render flag `0x00100000` on the actor's `+0x80`
+(`0x801DA0B8`) and bit 6 takes a third arm (`0x801DA0D8`). (The
+field-battle-intro overlay 0979 reads the byte too, at `0x801CF700`; SCUS reads
+it a second time at `0x80046D34` as `gp+0x333`.)
+
+So the "candidate: a phase-gated effect draw" guess is **falsified**. There is no
+effect path for object 1 at all. It is ordinary backdrop geometry that the
+loader trims by default, and it draws only for an encounter whose record sets
+bit 5 - a per-battle background option, not a dome feature.
+
+**The arena really does leave the byte clear** - measured, not inferred.
+`scripts/pcsx-redux/autorun_w4d_dome_decal_flag.lua` drives the dome contest
+(`koin1`) from its load-transition state through the mode chain
+`0x03 -> 0x18 -> 0x19 -> 0x14 -> 0x15` and breakpoints the consumer. The battle
+scene loader `FUN_800513F0` is entered once, from `ra = 0x80046F7C`, with
+`_DAT_8007B64B` reading `0x00`; at the test `0x80051ACC` the loaded byte is `0x00`,
+so the loader takes the fall-through arm and **trims object index 1** from both
+backdrop actors. A width-1 write watch on the byte logs **zero** writes across the
+whole capture - the field handoff `FUN_801D9E1C` never runs on the arena's path, so
+nothing sets bit 5 and the dust decal is not drawn. The mist-free frame capture and
+the site panel's omission of the decal both agree with the mechanism.
 
 Site consumer: the minigames page's dome panel draws the shell + the retail
 ground grid through `legaia_web_viewer` (`muscle_arena_*` / `muscle_vram`),
@@ -571,11 +707,68 @@ cost (menu-atlas 8x12 digits, right-aligned ending x=152) through the
 the SCUS arts-name table's own columns
 ([`art-data.md`](../formats/art-data.md#arts-name-table-dat_80075ec4)).
 
-Still unpinned here: the Auto arm's command picker, the pennant geometry
-for non-30-cost commands (only the favored-class pitch is captured), the
-exact pennant spawn anchor (it spawns at the fighter and glides in via
-`FUN_801d9bbc`), and the review / Begin-Reselect screens' piece
-decomposition (screenshot-read only).
+Still unpinned here: the pennant geometry for non-30-cost commands (only the
+favored-class pitch is captured), the exact pennant spawn anchor (it spawns at
+the fighter and glides in via `FUN_801d9bbc`), and the review / Begin-Reselect
+screens' piece decomposition (screenshot-read only). The **Auto arm** is pinned
+below.
+
+### The Auto arm picks nothing - it replays a saved string
+
+There is no command picker, no RNG roll, no fixed cycle and no favored-class
+rule behind Auto. The string it commits was **already in the actor's queue**
+before the Auto/Command menu opened, copied there out of the character's own
+save record, and Auto's whole job is to skip the editing screen.
+
+The two halves, both in the battle overlay:
+
+- **Load.** `FUN_801DA34C` is called at `0x801D15C8`, on the phase-`0x28`
+  **Attack confirm** - in the same breath as the `actor+0x1DE = 3` stamp
+  (`0x801D15CC`) the saver below requires - and before that arm branches on the
+  option global. Gated on
+  `_DAT_8007BD04`, it copies **16 bytes** out of the acting character's record
+  (`0x80084140 + 0x414*(char-1)`, stride matching the `0x414` party records)
+  into `actor+0x1DF..+0x1EE`. It prefers record field **`+0x1A7`** when
+  `actor+0x156 < actor+0x154` and field **`+0x1B7`** otherwise, falls back from
+  `+0x1A7` to `+0x1B7` when the first byte is zero, and zero-fills the queue
+  when neither is set (`0x801DA3CC` / `0x801DA41C` / `0x801DA4C4` /
+  `0x801DA51C`). The two AP-band slots exist because the round budget is not
+  the pool: `FUN_801D88CC` writes `actor+0x154 = (7 * actor+0x156) / 10 + 8`
+  (clamped at `0x120`) on the restricted arm and `= actor+0x156` on the other
+  (`0x801D8954..0x801D89BC`).
+- **Save.** `FUN_801DA59C(fighter)` at `0x801D22BC`, on the **confirm at queue
+  review** (phase `0x5A`), copies the 16-byte queue back into the same record
+  field - `+0x1A7` or `+0x1B7` by the same `+0x156 < +0x154` test - for a live
+  actor whose action state `+0x1DE == 3` (`0x801DA638` / `0x801DA69C`).
+
+Both halves are already in the function directory as the battle system's
+command-block restore / persist pair
+([`functions/battle.md`](../reference/functions/battle.md)); what was missing is
+that they *are* the Auto arm - nothing else supplies its string.
+
+So Auto = *repeat the last string you confirmed for this character, in this AP
+band*. Two corollaries fall out of the same code and are worth stating because
+they read as separate features:
+
+- The doc's "previous round's pennants persist in the bar when the input
+  reopens" is this same reload, seen from the Command side.
+- Confirming in the entry screen with **nothing entered** accepts the reloaded
+  string outright: `0x801D1FA0` checks the same `_DAT_8007BD04`, that no
+  direction has been entered yet (`ctx+0x19 == 0`) and that `actor[+0x1DF]` is
+  non-zero, then measures the string's length into `ctx+0x19` and jumps to
+  phase `0x5A`.
+
+What the `0x78` arm itself does is only bookkeeping: the Command branch
+(`s2 & 0x2000`) calls `FUN_801da34c` again, sets phase `0x50`, writes the
+per-fighter Auto flag `ctx[+0x266 + ctx[+0x13]] = 0` and opens the entry screen
+(`FUN_801dbb8c`); the Auto branch (`s2 & 0x8000`, or the confirm mask
+`*(0x800846D0)`) sets phase `0x5A` and writes that flag `1`. The flag is a
+*memo*, not a mode: its only behavioural reader is the cancel arm of phase
+`0x5A` at `0x801D23A0`, which returns to `0x78` when it is set and to `0x50`
+when it is clear; the two other readers (`0x801D5198`, `0x801D54BC`) only gate
+a HUD element. Whether the pick screen is shown at all comes from the option
+global `*(0x800846C4)` at `0x801D15DC` - `0` opens the `0x78` menu, `1` goes
+straight to review, `2` takes a third arm.
 
 Because the dome runs this screen verbatim, its geometry is **not** dome
 data: the composition (chip anchors, D-pad seat, bar and pennant seats, AP
@@ -653,11 +846,15 @@ and the browser page drives its own page-side timings.
 
 **Cues.** The match SM fires its UI blips through the one-arg cue funnel
 `FUN_8004fcc8`, whose `< 0x40` leg enqueues `id - 1` as the static descriptor
-row ([`sfx-table.md`](../formats/sfx-table.md)). `FUN_801d0748` carries **34**
-immediate call sites - ids `0x21` (13 sites), `0x22` (7), `0x23` (14) - i.e.
-static rows `0x20`/`0x21`/`0x22`, whose category byte routes them to the slot-0
-system bank (extraction PROT **0868**). Which id belongs to which phase arm is
-not per-arm labelled (see Open). The **melee impact** is the shared battle
+row (`sltiu $s0, 0x40` at `0x8004FD94`, `addiu $a1, $s0, -1` at `0x8004FD9C`,
+ring append at `0x8004FE28`; [`sfx-table.md`](../formats/sfx-table.md)).
+`FUN_801d0748` carries **37** immediate call sites - ids `0x21` (15 sites),
+`0x22` (7), `0x23` (15) - i.e. static rows `0x20`/`0x21`/`0x22`, whose category
+byte routes them to the slot-0 system bank (extraction PROT **0868**). *(The
+earlier "34 sites - 13 / 7 / 14" count is superseded; a `jal 0x8004fcc8` census
+over the disassembled body returns 37, and both undercounted classes were the
+outcome arms.)* Which blip is which is
+[pinned below](#which-blip-is-which-0x21--0x22--0x23). The **melee impact** is the shared battle
 path's: an entered direction resolves through the same battle-action machinery as an
 ordinary strike, and the shared battle/duel bank's impact cue is static row
 `0x09` (category 2 -> extraction PROT **0869**; pinned at the top of the Baka
@@ -666,7 +863,67 @@ stages). The dome's basic swing commands map to move-power record 0, whose
 per-move sound-cue byte (`+0x0d`) is **0** - so no per-move cue overrides the
 shared impact.
 
+### Which blip is which (`0x21` / `0x22` / `0x23`)
+
+Every site is inside a `ctx+6` phase arm (or the input pre-pass that runs before
+the dispatch at `0x801D0C84`), and the arms' address ranges come straight from
+the compare chain `0x801D0C84..0x801D0DCC`. Reading the sites in context gives
+one meaning per id, consistent across all 37:
+
+| id | static row | meaning | representative site |
+|---|---|---|---|
+| `0x21` | `0x20` | **accept / confirm** - a direction press taken into the string, and every confirm that advances the phase byte | `0x801D20D4` (phase `0x50`: the accepted press, and the exhausted-budget commit to `0x5A`) |
+| `0x22` | `0x21` | **highlight moved** - the pre-pass fires it when the pressed direction differs from the latched `ctx+0x880`, and the target-select arms when the cursor changes seat | `0x801D082C` (pre-pass, `s2 & 0x8000`) |
+| `0x23` | `0x22` | **refused / back** - a direction the actor's status mask `+0x16E` blocks, and every press of the cancel mask `*(0x800846D4)` | `0x801D1EA0` (phase `0x50`: `+0x16E & 8` set, so the press is rejected) |
+
+Per-arm, with the arm each site's address falls in:
+
+| phase | `0x21` (accept) | `0x22` (move) | `0x23` (refuse/back) |
+|---|---|---|---|
+| pre-pass | - | `082C` `08D0` `0988` `0A40` (one per direction bit `0x8000` / `0x2000` / `0x4000` / `0x1000`) | - |
+| `0x32` | `1158` | - | `1130` |
+| `0x28` | `15D0` | - | - |
+| `0x78` | `175C` (Command) `17CC` (Auto) | - | via the shared tail `2968` |
+| `0x50` | `20D4` | - | `1EA0` `1EE8` `1F30` `1F78` (one per blocked direction) + `2104` (cancel) |
+| `0x5A` | `22B0` | - | `2320` |
+| `0x5B` / `0x5C` / `0x5D` | `24AC` / `2690` / `2828` | - / `263C` / - | `2560` / `26F4` / - |
+| `0x5E` / `0x64` / `0x65` | `29B8` / `2AA4` / `2D6C` | - / - / `2BE8` `2C78` | `2968` / `2A1C` / `2B58` |
+| `0x66` / `0x67` / `0x6E` | `2E5C` / `2FDC` / `31A4` | - | `2DD0` / `2F10` / `3054` |
+
+Two caveats the address-interval method has to state. `0x801D20D4` is a `j`
+target from twice inside its own arm, which is harmless; `0x801D2968` is a `j`
+target from phase `0x78`'s cancel branch at `0x801D1720`, so it is a **shared
+back tail** and belongs to both arms. Those are the only two cue sites any `j`
+in the function targets.
+
+The arm boundaries the attribution rests on. `FUN_801d0748` dispatches `ctx+6`
+through a **compare chain**, not a jump table, so the arms are laid out in
+source order rather than numeric order - which is why `0x32` precedes `0x28` and
+`0x78` sits between `0x28` and `0x3C`:
+
+| phase | arm | phase | arm | phase | arm |
+|---|---|---|---|---|---|
+| `0x00` | `0x801D0DD0` | `0x50` | `0x801D1D84` | `0x64` | `0x801D2A00` |
+| `0x0A` | `0x801D0DE0` | `0x5A` | `0x801D21CC` | `0x65` | `0x801D2B3C` |
+| `0x0B` | `0x801D0E3C` | `0x5B` | `0x801D23F0` | `0x66` | `0x801D2DB4` |
+| `0x14` | `0x801D0EC4` | `0x5C` | `0x801D2590` | `0x67` | `0x801D2EF4` |
+| `0x1E` | `0x801D102C` | `0x5D` | `0x801D278C` | `0x6E` | `0x801D3024` |
+| `0x32` | `0x801D10F8` | `0x5E` | `0x801D28C0` | `0xFE` | `0x801D31E8` |
+| `0x28` | `0x801D1188` | `0x3C` | `0x801D17DC` | default | `0x801D3290` |
+| `0x78` | `0x801D16E8` | `0x46` | `0x801D19F8` | | |
+
+The pre-pass ahead of the dispatch has one arm per direction bit and its own
+gate: the `0x4000` arm is skipped when `ctx+0x275 < 4` and the `0x1000` arm when
+`ctx+0x275 < 3`, so a panel with fewer than four slots takes fewer directions
+and plays no blip for the missing ones.
+
 **BGM.** The arena loads **no BGM track of its own** - a full sweep of the muscle-dome function dumps finds no streaming-loader call (`8001fc00`) and no BGM-id write. It inherits the **battle theme** its entry set, exactly as it reuses the battle engine wholesale: the music is whichever `music_01` battle track the mode-24 sub-id-5 arena setup (the `0977` door/init slot) had playing when the contest starts. There is no dedicated muscle-dome cue to pin; this is the same "host-scene-inherited BGM" shape as the [slot machine](minigame-slot-machine.md), one class up (battle rather than field). The engine/site can represent it with the standard battle theme (`M26B1`, global BGM `2026`).
+
+The *field* track the player hears on the way in is the host scene's, and that
+scene is now named: the arena's three door-warps (`0x3E`, `op0 = 105`) all sit
+in `koin1`'s MAN (PROT 543), alongside the slot-machine and Baka Fighter doors,
+and `koin1`'s casino-floor entry arm plays global BGM `2018`
+([`minigame-slot-machine.md` § Sound](minigame-slot-machine.md#sound)).
 
 ## Match state machine
 
@@ -964,7 +1221,7 @@ All offsets are relative to the context base `_DAT_8007bd24` unless noted otherw
 | `FUN_801d99bc` | Panel-sprite table hard reset + rebuild: zeroes all `0x28` handle slots (ptr `ctx+0x1074`, flags `ctx+0x11b7`/`ctx+0x11b4`) and the 16-word scratch `DAT_801c8fa0`, then re-creates the panel sprites | `overlay_muscle_dome_801d99bc.txt` |
 | `FUN_801d9ae8` | Panel-sprite teardown: for each of the `0x28` slots with flag `ctx+0x11b7` set and a live handle at `ctx+0x1074[i]`, destroys the sprite via the shared object destructor `FUN_800319a8(handle+8)` and clears its slot, then zeroes the 16-word scratch `DAT_801c8fa0` | `overlay_muscle_dome_801d9ae8.txt` |
 | `FUN_801f19ec` | Fighter model installer: relocates a TMD model bundle, uploads it, and binds it to a dome actor | `overlay_muscle_dome_801f19ec.txt` |
-| `FUN_801f2e10` | **Oriented-quad "beam" emitter** (render-track): draws one textured `POLY_FT4` between two endpoints - angle+length from an atan2 helper (`func_0x80019b28`) plus the SCUS sin/cos LUTs (`_DAT_8007b7f8` / `_DAT_8007b81c`), width jittered per-edge via BIOS `rand` (`func_0x80056798`), a random 32px texture column, greyscale tint from an arg, OT depth from an arg. Touches no dome ctx; dome-vs-shared status open (see [The dump set is the whole battle overlay](#the-dump-set-is-the-whole-battle-overlay---a-filename-prefix-is-not-dome-evidence)) | `overlay_muscle_dome_801f2e10.txt` |
+| `FUN_801f2e10` | **Oriented-quad "beam" emitter** (render-track): draws one textured `POLY_FT4` between two endpoints - angle+length from an atan2 helper (`func_0x80019b28`) plus the SCUS sin/cos LUTs (`_DAT_8007b7f8` / `_DAT_8007b81c`), width jittered per-edge via BIOS `rand` (`func_0x80056798`), a random 32px texture column, greyscale tint from an arg, OT depth from an arg. Touches no dome ctx, and it is **not the dome's**: its only callers on the disc are 11 `jal` sites in the slot-B summon module PROT 0909 (see [The dump set is the whole battle overlay](#the-dump-set-is-the-whole-battle-overlay---a-filename-prefix-is-not-dome-evidence)). Listed here only because the dump directory is where it was found | `overlay_muscle_dome_801f2e10.txt` |
 
 ## Hand deck decoded
 
@@ -1050,14 +1307,19 @@ to the emitter it names).
 ## Open
 
 - The exact phase ordering and meaning of every `ctx+6` value - partially confirmed. The **input chain is now capture-pinned**: `0x1e` menu idle -> `0x28` command cluster -> `0x78` Auto|Command -> `0x50` direction entry -> `0x5a` queue review -> `0x6e` Begin|Reselect -> `0xfe/0xff` playback -> `0x1e` (recomp phase-byte watch across a driven round); the deal/interval arms outside that chain remain to be walked.
-- The Auto arm's command picker, and the pennant/bar geometry for off-class (non-30) costs - see [Arts command input](#arts-command-input-packet-pinned).
-- The per-arm assignment of the three UI cue ids (`0x21`/`0x22`/`0x23` across the 34 `FUN_8004fcc8` sites in `FUN_801d0748`) - the id set is pinned, which blip belongs to pick / commit / deny is not.
+- ~~The Auto arm's command picker~~ **resolved**: there is no picker. Auto commits the 16-byte string `FUN_801DA34C` had already reloaded out of the character record (`+0x1A7` / `+0x1B7`, chosen by the `actor+0x156 < actor+0x154` AP-band test) and `FUN_801DA59C` saves back on the review confirm - see [The Auto arm picks nothing](#the-auto-arm-picks-nothing---it-replays-a-saved-string). Still open on the same screen: the pennant/bar geometry for off-class (non-30) costs - see [Arts command input](#arts-command-input-packet-pinned).
+- ~~The per-arm assignment of the three UI cue ids~~ **resolved**: `0x21` = accept/confirm, `0x22` = highlight moved, `0x23` = refused-or-back, over **37** call sites (not 34) - see [Which blip is which](#which-blip-is-which-0x21--0x22--0x23) for the per-arm table and the two shared tails.
 - A live `_DAT_8007B864` byte-match during a dome contest, to upgrade the arena-backdrop residency (extraction 1225) from Inferred to capture-Confirmed.
-- The two 160 KB blobs at extraction 1221/1222 (the `other6` file's middle slots) - undecoded.
-- Which runtime path (if any) draws the backdrop stream's **object-1 dust
-  decal** - the live-match capture shows it absent from the static backdrop
-  (see [Arena backdrop](#arena-backdrop-extraction-1225)); a candidate is a
-  phase-gated effect draw, unpinned.
+- What arms the panel-still load - the streamer runs on battle context `ctx[+0xC] == 2`, and the writer of that `2` is itself gated on `ctx[+0x7] == 0x67`, which nothing decodes. No draw site for the VRAM rect the stills land in has been found either; see [the ringside panel stills](#inttim--int2tim---the-ringside-panel-stills).
+- ~~Which runtime path (if any) draws the backdrop stream's **object-1 dust
+  decal**~~ **resolved, and the "phase-gated effect draw" candidate is
+  falsified**: no effect path touches it. The SCUS battle scene loader binds the
+  whole backdrop TMD to two spawned actors and then removes object index 1 from
+  both part lists unless the byte `_DAT_8007B64B` is set - see
+  [Object 1 is trimmed by the loader](#object-1-is-trimmed-by-the-loader-_dat_8007b64b).
+  Its one writer is the field battle handoff `FUN_801D9E1C`, and a live capture of
+  a dome contest closes the last inferred half: the byte reads `0x00` at the
+  loader's test and takes zero writes all run, so the trim arm runs.
 - The per-step script table `&PTR_DAT_801f4d34` (battle-overlay rodata at file offset `0x2651c`) is fully decoded: the record shape is `[u8 count][u8 anim_sel][u8 panel_id/bind_count]` + `count`×`(elem_id, mode)` (see [Round resolution](#round-resolution)), and the individual sub-draw `elem_id`s are labelled by the `FUN_801d8de8` census in [HUD elements](#hud-elements-fun_801d8de8) (Spirit / move-name panels, the four hand-card portraits, the HP-bar values, and the victory reward banner).
 - ~~Which arm of `FUN_801D0CD4` / `FUN_801D0068` decides that a leg was *survived*~~ **resolved**: neither - it is the single byte test `DAT_8007BD60 & 0x80` at `0x801CEDD8`, cleared by the battle's own `0x5A` party-wipe scan and re-raised by the shared minigame-exit routine. `continuing` (`DAT_801D1ADC`) is therefore derived, not prompted: its one raising writer sits behind *course exhausted **and** survived*. See [Which arm decides a leg was survived](#which-arm-decides-a-leg-was-survived).
 - ~~The retail *dome* leg-end condition~~ **resolved**: a knockout, and nothing else. The arena hands the round to an ordinary battle (`FUN_801D1510` sets game mode `0x14`) and the only writers of the battle-end signal are the `0x5A` KO scans; the turn counter never reaches them. See [What ends a leg](#what-ends-a-leg-a-knockout-and-nothing-else).

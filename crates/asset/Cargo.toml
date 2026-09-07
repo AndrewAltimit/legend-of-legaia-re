@@ -20,6 +20,9 @@ serde_json.workspace = true
 legaia-anm = { path = "../anm" }
 legaia-bytes.workspace = true
 legaia-lzs = { path = "../lzs" }
+# `byte_account`'s MES walker: a scene bundle's type-0x04 section is a MES
+# dialog container, and its record extents are what the accounting claims.
+legaia-mes = { path = "../mes" }
 legaia-prot = { path = "../prot" }
 legaia-tim = { path = "../tim" }
 legaia-tmd = { path = "../tmd" }

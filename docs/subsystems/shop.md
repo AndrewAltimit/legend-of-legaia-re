@@ -91,11 +91,15 @@ against the obvious reading:
   class byte" model in
   [item-effect-table.md](../formats/item-effect-table.md) describes only the
   field item-use caller.
-- **The Point Card's descriptor carries flag bit `0x40`**, which that page's
-  flag table does not list. Across the whole table the bit is set on exactly
-  five subtypes: the Point Card and the two summon-flute pairs - the
-  battle-only specials. Its meaning is unpinned; that it separates the
-  specials from the heals is the observation, not a decoded semantic.
+- **The Point Card's descriptor carries flag bit `0x40`**, and that bit is the
+  descriptor's **target side**: set means the enemy party. The battle Item
+  command reads it at `0x801D18E0` in `FUN_801D0748` and forks with `0x20`
+  (all vs. one) into four target modes; the same fork runs on the spell table's
+  `+2` byte at `0x801D1C50`. So the five `0x40` subtypes - the Point Card and
+  the two summon-flute pairs - are simply the consumables that point at the
+  enemies rather than the party, which is the same reason the Point Card's
+  effect is staged from the battle side. Decoded in
+  [item-effect-table.md](../formats/item-effect-table.md#0x40-is-the-target-side-and-it-has-exactly-one-reader).
 
 ### Retail quantity pickers (menu-overlay sub-screens)
 

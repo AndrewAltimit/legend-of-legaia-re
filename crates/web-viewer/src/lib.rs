@@ -110,6 +110,22 @@ fn parse_axes(
     (a, b)
 }
 
+/// Project a decoded slot-4 translation `[tx, ty, tz]` onto one [`Axis`].
+///
+/// [`legaia_asset::world_map_overlay::Axis::pick`] selects out of the raw
+/// four-`i16` byte view of an entry, which is not what the runtime reads; the
+/// slot-4 emitters project the decoded transform instead, so they need this.
+///
+/// [`Axis`]: legaia_asset::world_map_overlay::Axis
+fn axis_of(t: [i16; 3], axis: legaia_asset::world_map_overlay::Axis) -> i16 {
+    use legaia_asset::world_map_overlay::Axis;
+    match axis {
+        Axis::X => t[0],
+        Axis::Y => t[1],
+        Axis::Z => t[2],
+    }
+}
+
 /// One entry's metadata + its first viewable TIM hit (if any).
 #[derive(Clone)]
 struct ViewerEntry {

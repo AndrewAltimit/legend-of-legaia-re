@@ -280,8 +280,11 @@ fn mode4_scene_entry_carrier_census_or_skip() {
     assert_eq!(
         names,
         vec![
-            "vell", "dolk", "dolk2", "keikoku", "jiji", "dohaty", "station", "tunnelc", "korout",
-            "koin3", "deroa", "jou", "jouinb", "jouind", "jouine", "noaru", "opdeene", "other7"
+            "vell", "dolk", "dolk2", "keikoku", "jiji", "dohaty", "station", "tunnelc",
+            // `bubu1` ships a count-5 asset table; its MAN resolves since the
+            // detector stopped bounding `count` to 6 or 7.
+            "bubu1", "korout", "koin3", "deroa", "jou", "jouinb", "jouind", "jouine", "noaru",
+            "opdeene", "other7"
         ],
         "scene-entry mode-4 carriers"
     );

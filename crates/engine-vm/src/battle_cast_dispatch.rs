@@ -14,10 +14,18 @@
 //! should not be read as one - the per-item notes carry the disclosures.
 //!
 //! **The two dispatchers** resolve to something the engine has no channel for.
-//! Both return a **retail VA**: the emitter is overlay code in the battle
-//! image, unported, so there is nothing callable at the other end; turning them
-//! into a wire needs an engine-side cast-effect pool keyed by spell id / effect
-//! class first. `FUN_801F2160` additionally reads the spell record's `+0x01`
+//! Both return a **retail VA**, and it is worth being precise about what that
+//! VA is: not battle-image code, but the **cast-tick entry of a paged slot-B
+//! module** - one PROT entry per spell, streamed into the overlay buffer at
+//! `0x801F69D8` for the duration of the cast. Extraction `903 + row` for
+//! `row = 0..0x3F` (PROT 0903..0966); every one of those images is mapped in
+//! `crates/asset/data/static-overlays.toml` and dumped as
+//! `overlay_<label>_<entry>_<addr>.txt`, and the per-module table is on
+//! `docs/reference/functions/battle.md`. The module anatomy - phase machine,
+//! staging ABI, damage shape - is `docs/subsystems/cast-module.md`. So the
+//! "unported emitter" is 61 dumped images' worth of choreography, not one
+//! missing function; turning these dispatchers into a wire needs an
+//! engine-side cast-effect pool keyed by spell id / sub-id first. `FUN_801F2160` additionally reads the spell record's `+0x01`
 //! effect-class byte, which nothing decodes: `legaia_engine_core::retail_magic`
 //! carries name / MP / target only, and `legaia_asset::spell_names` reads
 //! `+0`, `+2`, `+3`, `+4` and `+8` but skips `+1`. Note that is a decode gap,
@@ -74,6 +82,10 @@
 //! | `FUN_801F1ED4` | the queued action id `actor[+0x1DF]` itself | `0x81..=0xA0` |
 //! | `FUN_801F2160` | the **effect class** byte `spell_table[id].+0x01` | `0x00..=0x1F` |
 //!
+//! `docs/formats/spell-table.md` calls that `+0x01` byte the **capture-class
+//! sub-id** and uses it the same way: `935 + sub_id` is the PROT entry. Two
+//! names, one byte.
+//!
 //! `0x81..=0xA0` is the player Seru-magic block of the spell-id space (see
 //! `docs/formats/spell-table.md`); `FUN_801F1ED4` therefore hard-wires one
 //! emitter per player spell, while `FUN_801F2160` routes *any* cast - a
@@ -86,15 +98,26 @@
 //! returned (`0` when the key falls outside the table).
 //!
 //! Handlers are named here by their retail VA because none of them is ported
-//! yet. Keeping the VA is what makes the table checkable against the dump.
+//! yet, and the VA is what makes the table checkable against the dump. Each is
+//! a **module entry**, not a loose address: for `FUN_801F1ED4` the arm for
+//! action id `n` calls the tick of PROT `903 + (n - 0x81)`, and for
+//! `FUN_801F2160` the arm for sub-id `k` calls PROT `935 + k` - where, in that
+//! band, the arm usually lands on a small trampoline that re-reads
+//! `actor[+0x1DF]` and picks one of the module's bodies by spell id (a
+//! multi-spell cell is several whole choreographies in one image). Checking a
+//! row therefore means opening that module's dump, not searching the battle
+//! image.
 //!
 //! ## Dump provenance and a decompiler artifact
 //!
-//! Read from the disassembly of `overlay_muscle_dome_801f1ed4.txt` /
-//! `overlay_muscle_dome_801f2160.txt` - the only per-function dumps that
-//! carry these two entries (the `overlay_0897` image has *different*
-//! functions at those VAs, `FUN_801F1CC8` and `FUN_801F20DC`, so it is a VA
-//! collision and must not be read for these). The battle-action image's own
+//! Read from the disassembly of `overlay_battle_action_0898_801f1ed4.txt` /
+//! `overlay_battle_action_0898_801f2160.txt` - the battle-action image at its
+//! own recovered base, so the dump's name carries the identity the shared
+//! slot-A base cannot. Two other dumps print at these VAs and neither should be
+//! read for them: `overlay_muscle_dome_*` is the same bytes under a
+//! capture-derived name that says nothing about which image they are, and the
+//! `overlay_0897` image has *different* functions there (`FUN_801F1CC8` /
+//! `FUN_801F20DC`) - a VA collision. The battle-action image's own
 //! `FUN_801E295C` dump confirms both addresses as live `jal` targets, which
 //! is what pins the identity.
 //!

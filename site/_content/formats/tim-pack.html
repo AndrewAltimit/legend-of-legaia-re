@@ -1,6 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; standalone tim-pack format</div>
   <h1>Standalone TIM-pack format <span class="tag tag-done">Confirmed</span></h1>
+  <p><strong>Not a distinct container.</strong> The <code>byte[3] == 0x01</code> marker and the <code>word_index * 4 + 4</code> member math are a DATA_FIELD <code>TIM_LIST</code> chunk header <code>(0x01 &lt;&lt; 24) | payload_len</code> followed by an ordinary <a href="pack.html">pack</a>, read with the 4-byte header skipped; every retail member is a scene texture pack at raw-TOC <code>+4</code> of its block, and the classifier now files them as streams or packs. The reader stays correct.</p>
   <p class="lede">A container that bundles several TIMs (the PlayStation's standard texture image) into one entry of <code>PROT.DAT</code>, the disc's main asset archive. "Standalone" distinguishes it from the near-identical <a href="pack.html">pack format</a> found <em>inside</em> streaming chunks - same idea, different header math. Its most notable instance is the pair of hidden entries at the very head of the archive holding the cursor, menu glyphs and sprite sheets you see from the title screen onward.</p>
 </header>
 

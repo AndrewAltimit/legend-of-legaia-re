@@ -163,7 +163,7 @@ Per-entry content claims in this repo stay in extraction space (unambiguous); th
 | 0875..0888 | `player_data`/`sound_data2` | `sound_data2` (VAB streams) |
 | 0889..0890 | `sound_data2`/`level_up` | `level_up` (large VAB carriers) |
 | 0891 | `level_up` | `monster_se` = `monster.snd`, the 206-bank monster-SE archive |
-| 0892 | `level_up` | `card_data` (12 MB LZS container; content not yet pinned) |
+| 0892 | `level_up` | `card_data` - the memory-card screen's **JIS X 0208 level-1 kanji font**, a two-member [`asset::pack`](pack.md) of 4bpp TIMs. Loaded by raw TOC `0x37E` at mode-22 CARD INIT; see [data-field.md](data-field.md#entry-0892-card_data-is-a-pack-not-a-truncated-stream). The "12 MB LZS container, content not yet pinned" reading was the [superseded entry-size expression](prot.md#tocp5---tocp3--4-is-not-an-entrys-size); the entry is 67,584 bytes |
 | 0893..0894 | `monster_se`/`card_data` | `bat_back_dat` = `summon.dat`/`readef.DAT` mid-cast backdrop streams |
 | 0895..0969 | `bat_back_dat`/`xxx_dat` | `xxx_dat` - slot 0 (extraction 0895) is the boot `init.pak` bundle loaded through overlay-slot param 0 ([`boot.md`](../subsystems/boot.md#boot-initpak-prot-0895)); overlay code blobs follow ([MIPS overlay](mips-overlay.md), [overlay pointer-table](overlay-ptr-table.md)) |
 | 0970..0971 | `xxx_dat` | `move_program_no` - a `\DATA\MOV*.STR` FMV program/path table + debug strings. Dissolves the old "move_program_no doesn't match `move.mdt`" puzzle: the block names **MOV**ie program numbers ([str-fmv-table.md](str-fmv-table.md)), not Tactical-Arts moves, and the extraction files `0972/0973` it was tested against are `other_game` overlays |
@@ -175,7 +175,7 @@ Per-entry content claims in this repo stay in extraction space (unambiguous); th
 Honest residue from the quantitative pass (none of it contradicts the uniform −2):
 
 - `level_up` → extraction 0890 is a DATA_FIELD streaming carrier (its VABs are wrapped inside), so bare-magic checks miss it at *every* shift.
-- Extraction 0888 (in `sound_data2`) and 1062 (in `music_01`) are unidentified non-VAB blobs under any shift.
+- Extraction 0888 (in `sound_data2`) and 1062 (in `music_01`) carry no VAB header at any shift, and both are identified: 0888 is [`bse.dat`](bse-dat.md), the battle SFX descriptor bank, and 1062 is a **SEQ-only** `music_01` entry - sound-test track 72 (`ALNDRA`, one of the borrowed placeholder cues in [`music-tracks.md`](../reference/music-tracks.md#notable-entries)), which borrows another entry's bank instead of shipping one. Each also ends in a foreign `VagAtr` tail copied from a neighbour, which is what a bare-magic sweep sees; see [`bse-dat.md`](bse-dat.md#the-bytes-past-the-table-are-not-this-banks).
 - `other_game`: only 2 of 6 entries carry an `OTHER<n>` banner; the rest are banner-less minigame data, undecidable by name.
 - Extraction 0893 (`summon.dat`) opens with a `[u32 2][u16 table…]` shape that mimics a sound-address bank - a shift-0 reading "confirms" `monster_se` on it spuriously; the byte-pins show texture streaming slots. Trust byte-pins over shape coincidences.
 - One v12-shaped header sits at extraction 1227 (`other7` region), outside the scene region.

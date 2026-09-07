@@ -332,13 +332,49 @@ On every retail art slot the bytes between the archive's last body and the
 `0x10800` slot boundary are zero padding - the reader walks only the size
 chain, so an archive re-authored in place may grow into that tail freely.
 
-The aux slots of the **higher** readef groups (the enemy-special bands) are
-still unattributed as content; the bytes LZS-decode plausibly but no consumer
-is pinned. The group *selection* is now traced - each monster record names
-its readef group at byte `+0x1C`, staged per enemy turn by `FUN_801DABA4`
-(see [Streaming state machine](#streaming-state-machine)) - which narrows
-the hunt to that group's `base+1` slot
-(see [open threads](../reference/open-rev-eng-threads.md)).
+### The higher readef groups' `base+1` slot
+
+The aux slots of the **higher** readef groups (the enemy-special bands) carry
+no new kind. Every one is a [texture slot](#texture-slot-u32-mode--0-1-2) or an
+[actor record](#actor-record-slot-last-streamed-slot-of-a-group), and which of
+the two it is falls out of the applier's own gate.
+
+`FUN_801F12D0` stage 4 - the consumer of `base+1` - tests the base byte before
+uploading anything:
+
+```text
+801f14f8  lbu   v1,0x277(v0)     ; base
+801f1500  sltiu v0,v1,0x42
+801f1504  beq   v0,zero,0x801f1518   ; base >= 0x42 -> upload
+801f1508  _addiu v0,v1,-0xc
+801f150c  sltiu v0,v0,0x2b
+801f1510  beq   v0,zero,0x801f163c   ; base outside 0x0C..0x36 -> skip
+```
+
+so the second texture upload runs for `0x0C <= base <= 0x36` and for
+`base >= 0x42`, and is skipped otherwise
+(`legaia_asset::summon_readef::aux_slot_is_texture_upload`). The file's own content agrees slot
+for slot: every readef group inside the gate holds a texture in `base+1`;
+groups 0..3 (`base < 0x0C`) hold the character ME archives; and the three
+groups the gate excludes from above - `base = 0x39`, `0x3C`, `0x3F`, i.e.
+action ids `0x14`, `0x15`, `0x16` - hold an **actor record** there instead.
+Those three records are byte-identical to the same group's `base+2` slot
+(slot pairs 58/59, 61/62 and 64/65 hash equal), which the applier never
+stages for a readef group because it stops at stage 4.
+
+Streaming a slot is not the same as installing it. The only routine that
+installs an actor record is `FUN_801F19EC`, which rebases the record's three
+header offsets in place and stores the buffer pointer at `0x801C9358`. That is
+`0x801C9348 + (seat - 3)*4` for **seat 7** - the same enemy-record table
+`FUN_801DABA4` reads `+0x1C` from at `0x801DB098` / `0x801DB0C8`, which is how
+a streamed record becomes the group byte the next turn resolves against. Every
+one of `FUN_801F19EC`'s **34** callers disc-wide is a slot-B module in
+the `0903..0966` band (`find-address-word-refs.py 801f19ec --prot`: 34 `jal`,
+no word / `j` / branch / materialisation), and slot B is loaded for the
+`summon.dat` bands. So on a readef-band cast the `base+1` actor record
+arrives in `*0x8007BD74` and nothing reads it; which enemy specials name
+groups 19..21 through their record's `+0x1C`, and whether any of them runs
+with a slot-B module co-resident, is open.
 
 ## Tooling
 
