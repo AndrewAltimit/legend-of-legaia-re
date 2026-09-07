@@ -67,7 +67,8 @@ namespace LegaiaWorld
         /// `wallet` the LegaiaWallet (may be null when UdonSharp is missing).
         internal static GameObject Build(GameObject tableRoot, string genDir, Vector3 spawnW,
             Component host, Component deck, List<Component> seatStations,
-            List<Component> seatChairs, List<Component> cards, Component wallet)
+            List<Component> seatChairs, List<Component> cards, Component wallet,
+            Dictionary<string, LegaiaPrefabTransform> placements = null)
         {
             if (tableRoot == null)
                 return null;
@@ -76,6 +77,10 @@ namespace LegaiaWorld
             var go = new GameObject("game");
             go.transform.SetParent(tableRoot.transform, false);
             var game = LegaiaWorldBuilder.TryAttachUdon(go, "LegaiaCardGame");
+            // The villagers' lines live on the same object (see its header).
+            var talk = LegaiaWorldBuilder.TryAttachUdon(go, "LegaiaTableTalk");
+            if (talk != null)
+                LegaiaWorldBuilder.SyncUdonProxy(talk);
 
             // Felt anchors: one fan spot per seat, one dealer row.
             var handAnchors = new Transform[seats];
@@ -94,6 +99,7 @@ namespace LegaiaWorld
             var stack = tableRoot.transform.Find("deck_anchor");
 
             var panel = BuildPanel(tableRoot, genDir, spawnW, game, seats);
+            // (the settings placement is applied after wiring, below)
 
             LegaiaWorldBuilder.SetUdonField(game, "host", host);
             LegaiaWorldBuilder.SetUdonField(game, "deck", deck);
@@ -107,9 +113,26 @@ namespace LegaiaWorld
             LegaiaWorldBuilder.SetUdonField(game, "handAnchors", handAnchors);
             LegaiaWorldBuilder.SetUdonField(game, "dealerAnchor", dealer.transform);
             LegaiaWorldBuilder.SetUdonField(game, "stackAnchor", stack);
+            if (talk != null)
+                LegaiaWorldBuilder.SetUdonField(game, "talk", talk);
             foreach (var kv in panel)
                 LegaiaWorldBuilder.SetUdonField(game, kv.Key, kv.Value);
             LegaiaWorldBuilder.SyncUdonProxy(game);
+
+            // A hand-placed panel: the settings file's `prefab_transforms`
+            // entry `card_table_panel` is the panel root's LOCAL transform
+            // under the table (Inspector values, digit for digit), so the
+            // panel can stand wherever the scene wants it - and turns with
+            // the table like everything else on it. Which way it then
+            // reads is the scene's choice: forward into the table = read
+            // from outside (the default), forward away = read from the
+            // stools.
+            var panelRoot = tableRoot.transform.Find("panel");
+            if (panelRoot != null &&
+                LegaiaSceneSettings.ApplyPlacement(placements, "card_table_panel", panelRoot))
+                Debug.Log("[Legaia] card table: panel placed from settings at local " +
+                    panelRoot.localPosition + " / yaw " +
+                    panelRoot.localEulerAngles.y.ToString("0.0") + ".");
             return go;
         }
 
@@ -266,10 +289,17 @@ namespace LegaiaWorld
             w["btnStand"] = Btn(c, font, backing, "UiStand", "Stand",
                 new Vector2(186f, -262f), new Vector2(176f, 52f), out _);
 
+            // Table talk: the villagers' lines, two at most, newest first.
+            var talkText = Label(c, font, "talk", "", 17,
+                new Vector2(0f, -318f), new Vector2(516f, 66f),
+                new Color(0.88f, 0.84f, 0.72f), TextAnchor.UpperLeft);
+            talkText.horizontalOverflow = HorizontalWrapMode.Wrap;
+            talkText.fontStyle = FontStyle.Italic;
+            w["talkText"] = talkText;
+
             Label(c, font, "hint",
-                "Sit on a stool to play. Villagers join on their own.\n" +
-                "Bets are paid from your coin purse.", 16,
-                new Vector2(0f, -332f), new Vector2(520f, 60f),
+                "Sit on a stool to play - bets come from your coin purse.", 15,
+                new Vector2(0f, -370f), new Vector2(520f, 28f),
                 new Color(0.65f, 0.63f, 0.58f), TextAnchor.MiddleCenter);
             return w;
         }

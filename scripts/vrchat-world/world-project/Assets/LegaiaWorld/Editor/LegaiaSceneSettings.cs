@@ -54,6 +54,11 @@
 //       convention). It joins the manifest as npc_1NN in list order so
 //       the other rules can name it; "yaw" (degrees) and "label" are
 //       optional. The living town treats it as any other talk villager.
+//       "label" is the villager's NAME (the card table prints it and
+//       LegaiaTableTalk keys on "Vahn" / "Noa"); a source export whose
+//       manifest carries `name` (the `export-glb --party` one:
+//       `{"scene": "party", "model": 0}` = Vahn, 1 = Noa, 2 = Gala)
+//       supplies it when the entry does not.
 //
 //   "mesh_npcs":       {"mesh_55": {"scene": "balden", "model": 151}}
 //       Replace a world-glb mesh (a villager the scene baked as static
@@ -255,6 +260,10 @@ namespace LegaiaWorld
         public List<Vector3[]> navLinks = new List<Vector3[]>();
         /// npc_homes: villager token -> home index.
         public Dictionary<string, int> npcHomes = new Dictionary<string, int>();
+
+        /// `living_town.names`: NPC token -> display name (the card table
+        /// and any panel print it; LegaiaLivingTown names the rest).
+        public Dictionary<string, string> npcNames = new Dictionary<string, string>();
         /// Asset path the settings were read from; null = no file (every
         /// list empty, defaults only).
         public string path;
@@ -375,6 +384,14 @@ namespace LegaiaWorld
                 }
                 ReadIntList(MiniJson.Get(lt, "home_doors"), s.homeDoors);
                 ReadIntList(MiniJson.Get(lt, "exclude_doors"), s.excludeDoors);
+                var names = MiniJson.AsObj(MiniJson.Get(lt, "names"));
+                if (names != null)
+                    foreach (var kv in names)
+                    {
+                        string nm = MiniJson.AsStr(kv.Value);
+                        if (!string.IsNullOrEmpty(nm))
+                            s.npcNames[kv.Key.Trim()] = nm.Trim();
+                    }
                 foreach (object pair in MiniJson.AsList(MiniJson.Get(lt, "nav_links"))
                          ?? new List<object>())
                 {
@@ -494,6 +511,19 @@ namespace LegaiaWorld
             }
         }
 
+        /// The display name pinned for this villager in `living_town.names`,
+        /// or null. Key matching follows the static_npcs rules.
+        public string NameOverride(string file)
+        {
+            foreach (var kv in npcNames)
+            {
+                var one = new List<string> { kv.Key };
+                if (NpcMatch(one, file))
+                    return kv.Value;
+            }
+            return null;
+        }
+
         /// The home index pinned for this villager in `npc_homes`, or -1.
         /// Key matching follows the static_npcs rules.
         public int HomeOverride(string file)
@@ -580,6 +610,12 @@ namespace LegaiaWorld
             public string glb;
             public List<object> clips;
             public object animId;
+            /// The clip to bind as the walk cycle (a per-file property of
+            /// the party export; scene rigs carry none and use the family
+            /// constant).
+            public string walkClip;
+            /// A display name the source export supplies (party export).
+            public string name;
         }
 
         /// Fold the model overrides into a parsed manifest (mutating its
@@ -631,7 +667,7 @@ namespace LegaiaWorld
                 if (src == null)
                     continue;
                 npcs.Add(NewEntry(file, r, src, InspectorToManifest(r.position),
-                    r.label ?? (r.scene + " model " + r.model)));
+                    r.label ?? src.name ?? (r.scene + " model " + r.model)));
             }
 
             k = 0;
@@ -706,6 +742,10 @@ namespace LegaiaWorld
             e["model_index"] = (double)r.model;
             e["clips"] = src.clips;
             e["anim_id"] = src.animId;
+            if (!string.IsNullOrEmpty(src.walkClip))
+                e["walk_clip"] = src.walkClip;
+            if (!string.IsNullOrEmpty(src.name))
+                e["name"] = src.name;
         }
 
         /// The source placement for a model reference: the first
@@ -756,6 +796,8 @@ namespace LegaiaWorld
                 glb = glb,
                 clips = MiniJson.AsList(MiniJson.Get(best, "clips")) ?? new List<object>(),
                 animId = MiniJson.Get(best, "anim_id"),
+                walkClip = MiniJson.AsStr(MiniJson.Get(best, "walk_clip")),
+                name = MiniJson.AsStr(MiniJson.Get(best, "name")),
             };
         }
 

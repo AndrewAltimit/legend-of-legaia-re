@@ -192,6 +192,21 @@ namespace LegaiaWorld
             string sceneName;
             GameObject root;
             var spawn = OpenBuiltScene(out sceneName, out root);
+            // The living town first, as the soak does: the names and
+            // portraits under test are the ones THIS kit assigns, not
+            // whatever the saved scene carries from an older build.
+            string manifestPath = "Assets/LegaiaImports/" + sceneName + "/manifest.json";
+            if (File.Exists(manifestPath))
+            {
+                object manifest = MiniJson.Parse(File.ReadAllText(manifestPath));
+                var sceneSettings = LegaiaSceneSettings.Load(sceneName);
+                string manifestDir = "Assets/LegaiaImports/" + sceneName;
+                sceneSettings.ApplyNpcOverrides(manifest, manifestDir, root);
+                LegaiaWorldBuilder.ReconcileNpcs(manifest, manifestDir, root, sceneName,
+                    sceneSettings);
+                LegaiaLivingTown.Apply(root, manifest, sceneName,
+                    new LegaiaLivingTownOptions(), sceneSettings);
+            }
             var container = BuildPrefabs(spawn, sceneName);
 
             var table = container.transform.Find("card_table");
@@ -235,8 +250,9 @@ namespace LegaiaWorld
             foreach (string b in new[] { "btnDeal", "btnMode", "btnCall", "btnRaise",
                                          "btnFold", "btnDraw", "btnHit", "btnStand" })
                 CheckRef(proxy, backing, b);
-            foreach (string t in new[] { "modeText", "potText", "msgText",
-                                         "btnCallText", "btnRaiseText", "btnDealText" })
+            foreach (string t in new[] { "modeText", "potText", "msgText", "talkText",
+                                         "btnCallText", "btnRaiseText", "btnDealText",
+                                         "talk" })
                 CheckRef(proxy, backing, t);
 
             // The panel's clicks must land on the BACKING behaviour: a
@@ -282,24 +298,51 @@ namespace LegaiaWorld
             var canvas = table.Find("panel/canvas");
             if (panel == null || canvas == null)
                 Fail("no panel/canvas beside the card table");
+            // The canvas sits on the panel root's -Z face whatever the
+            // placement: that is the side the text reads from.
+            if (canvas.localPosition.z > -0.005f)
+                Fail("the seat panel's canvas is not on its root's -Z face");
             Vector3 out2 = canvas.position - table.position;
             out2.y = 0f;
             float facing = Vector3.Dot(canvas.forward, out2.normalized);
-            if (facing > -0.85f)
-                Fail("the seat panel's canvas presents its +Z to the outside of " +
-                     "the table (dot " + facing.ToString("0.00") + ") - the text " +
-                     "reads mirrored and the buttons reject every press");
-            // ... and the canvas must stand on the outside of the board, not
-            // between the board and the table, or the board hides it.
-            Vector3 boardOut = canvas.position - panel.position;
-            boardOut.y = 0f;
-            if (Vector3.Dot(boardOut, out2.normalized) < 0.005f)
-                Fail("the seat panel's canvas is on the table side of its board");
-            Vector3 toSpawn = spawn.transform.position - canvas.position;
-            toSpawn.y = 0f;
-            Debug.Log("[Legaia] CARDS: panel reads from outside the table (canvas +Z " +
-                "into the table, dot " + facing.ToString("0.00") + "), spawn side dot " +
-                Vector3.Dot(-canvas.forward, toSpawn.normalized).ToString("0.00") + ".");
+            var settings = LegaiaSceneSettings.Load(sceneName);
+            LegaiaPrefabTransform panelPlace;
+            if (settings.prefabTransforms.TryGetValue("card_table_panel", out panelPlace))
+            {
+                // Hand-placed: the settings value must come back digit for
+                // digit, and which way it reads is the scene's choice.
+                if ((panel.localPosition - panelPlace.position).magnitude > 1e-3f)
+                    Fail("card_table_panel: built at local " + panel.localPosition +
+                         ", settings say " + panelPlace.position);
+                if (panelPlace.hasRotation &&
+                    Quaternion.Angle(panel.localRotation,
+                        Quaternion.Euler(panelPlace.rotation)) > 0.1f)
+                    Fail("card_table_panel: built at local rotation " +
+                         panel.localEulerAngles + ", settings say " + panelPlace.rotation);
+                Debug.Log("[Legaia] CARDS: panel hand-placed from settings at local " +
+                    panel.localPosition + " / yaw " +
+                    panel.localEulerAngles.y.ToString("0.0") + " - it reads from " +
+                    (facing < 0f ? "OUTSIDE the table" : "the STOOLS (inside)") +
+                    " (canvas +Z vs outward dot " + facing.ToString("0.00") + ").");
+            }
+            else
+            {
+                if (facing > -0.85f)
+                    Fail("the seat panel's canvas presents its +Z to the outside of " +
+                         "the table (dot " + facing.ToString("0.00") + ") - the text " +
+                         "reads mirrored and the buttons reject every press");
+                // ... and the canvas must stand on the outside of the board, not
+                // between the board and the table, or the board hides it.
+                Vector3 boardOut = canvas.position - panel.position;
+                boardOut.y = 0f;
+                if (Vector3.Dot(boardOut, out2.normalized) < 0.005f)
+                    Fail("the seat panel's canvas is on the table side of its board");
+                Vector3 toSpawn = spawn.transform.position - canvas.position;
+                toSpawn.y = 0f;
+                Debug.Log("[Legaia] CARDS: panel reads from outside the table (canvas +Z " +
+                    "into the table, dot " + facing.ToString("0.00") + "), spawn side dot " +
+                    Vector3.Dot(-canvas.forward, toSpawn.normalized).ToString("0.00") + ".");
+            }
             // ... and it must not stand where a player sits.
             for (int i = 0; i < 4; i++)
             {
@@ -314,6 +357,8 @@ namespace LegaiaWorld
             }
 
             CheckPortraits(root, sceneName);
+            CheckNames(root);
+            CheckTalk(game.gameObject);
             CheckPoker();
             CheckBlackjack();
             Debug.Log("[Legaia] CARDS: seat panel wired (" + wired +
@@ -374,6 +419,89 @@ namespace LegaiaWorld
                 if (cam.name.StartsWith("~legaia-portrait"))
                     Fail("portraits: a temporary camera was left in the scene");
             Debug.Log("[Legaia] CARDS: " + made + " villager portrait(s) set.");
+        }
+
+        /// Every villager's `label` is a NAME now, never the retail dialogue
+        /// fragment the manifest carries ("Tetsu: You were a child when the",
+        /// "I am a dummy.") - short, no sentence punctuation, unique.
+        static void CheckNames(GameObject root)
+        {
+            var brainType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaNpcBrain");
+            if (brainType == null)
+                return;
+            var seen = new HashSet<string>();
+            var cast = new List<string>();
+            foreach (var c in root.GetComponentsInChildren(brainType, true))
+            {
+                string label = Field(c, "label") as string;
+                if (string.IsNullOrEmpty(label))
+                    Fail("names: " + c.gameObject.name + " has no label");
+                if (label.IndexOfAny(new[] { ':', '.', '!', ',', '?' }) >= 0 ||
+                    label.Length > 20 || label.Split(' ').Length > 2)
+                    Fail("names: " + c.gameObject.name + " is labelled '" + label +
+                         "' - that is dialogue, not a name");
+                if (!seen.Add(label))
+                    Fail("names: two villagers are both called '" + label + "'");
+                cast.Add(label);
+            }
+            Debug.Log("[Legaia] CARDS: cast of " + cast.Count + " - " +
+                string.Join(", ", cast) + ".");
+        }
+
+        /// The table talk composes a line of the right shape for every kind
+        /// and every voice, talks ABOUT the heroes when they sit, and never
+        /// repeats itself back to back.
+        static void CheckTalk(GameObject game)
+        {
+            var talk = game.GetComponent<LegaiaTableTalk>();
+            if (talk == null)
+                Fail("talk: the game object carries no LegaiaTableTalk");
+            int longest = talk.LongestLine();
+            if (longest > talk.maxLength)
+                Fail("talk: a pool line runs " + longest + " characters, panel holds " +
+                     talk.maxLength);
+            for (int k = 0; k < LegaiaTableTalk.KIND_COUNT; k++)
+            {
+                string v = talk.Compose(k, "Bram", "", k * 3 + 1);
+                if (!v.StartsWith("Bram: ") || v.Length < 12)
+                    Fail("talk: villager kind " + k + " composed '" + v + "'");
+                string vahn = talk.Compose(k, "Vahn", "", k * 5 + 2);
+                if (vahn.Length < 8 || !vahn.Contains("Vahn") || vahn.Contains(":") ||
+                    vahn.Contains("*"))
+                    Fail("talk: Vahn kind " + k + " composed '" + vahn +
+                         "' - he never speaks a quoted word");
+                string noa = talk.Compose(k, "Noa", "", k * 7 + 3);
+                if (!noa.StartsWith("Noa: ") || noa.IndexOf("Noa", 5) < 0)
+                    Fail("talk: Noa kind " + k + " composed '" + noa + "'");
+            }
+            bool aboutVahn = false, aboutNoa = false, aboutBoth = false;
+            for (int salt = 0; salt < 64; salt += 2)
+            {
+                string a = talk.Compose(LegaiaTableTalk.T_SIT, "Bram", "vahn", salt);
+                if (a.Contains("Vahn") || a.Contains("Val") || a.Contains("Meta"))
+                    aboutVahn = true;
+                string b = talk.Compose(LegaiaTableTalk.T_IDLE, "Bram", "player|noa", salt);
+                if (b.Contains("Noa") || b.Contains("wolf") || b.Contains("Snowdrift"))
+                    aboutNoa = true;
+                string c = talk.Compose(LegaiaTableTalk.T_DEAL, "Bram", "vahn|noa", salt);
+                if (c.Contains("Vahn") && c.Contains("Noa"))
+                    aboutBoth = true;
+            }
+            if (!aboutVahn || !aboutNoa || !aboutBoth)
+                Fail("talk: the villagers never talked about the heroes at the table " +
+                     "(Vahn " + aboutVahn + ", Noa " + aboutNoa + ", both " + aboutBoth + ")");
+            string prev = null;
+            for (int i = 0; i < 40; i++)
+            {
+                string line = talk.Compose(LegaiaTableTalk.T_IDLE, "Bram", "", i * 7 + 3);
+                if (line == prev)
+                    Fail("talk: the same idle line twice in a row ('" + line + "')");
+                prev = line;
+            }
+            Debug.Log("[Legaia] CARDS: table talk composes for " +
+                LegaiaTableTalk.KIND_COUNT + " kinds x 3 voices, longest line " +
+                longest + " chars; e.g. '" +
+                talk.Compose(LegaiaTableTalk.T_SIT, "Rena", "vahn", 4) + "'");
         }
 
         // --- rules ------------------------------------------------------------------
@@ -569,6 +697,11 @@ namespace LegaiaWorld
         static float s_wallStart, s_simStart, s_seconds, s_scale, s_nextLine;
         static Component s_game;
         static Component s_host;
+        static Transform[] s_stools;
+        static Component[] s_stations;
+        static int s_seatedSamples;
+        static float s_minSeatY = 99f, s_maxSeatY = -99f;
+        static readonly HashSet<string> s_talkSeen = new HashSet<string>();
         static bool[] s_sawNpc;
         static int s_lastSettle = -1;
         static int s_settlements;
@@ -625,6 +758,23 @@ namespace LegaiaWorld
             var hostType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaCardTableHost");
             if (hostType != null)
                 s_host = Object.FindObjectOfType(hostType, true) as Component;
+            // The stools and their stations: the seated-pose check reads
+            // each station's `currentNpc` off the live heap.
+            var stationType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaNpcStation");
+            s_stools = new Transform[4];
+            s_stations = new Component[4];
+            for (int i = 0; i < 4; i++)
+            {
+                var stool = GameObject.Find("Legaia_common_prefabs/card_table/stool_" + i);
+                s_stools[i] = stool != null ? stool.transform : null;
+                var st = stool != null && stationType != null
+                    ? stool.GetComponent(stationType) as Component : null;
+                s_stations[i] = LegaiaCommonPrefabs.BackingUdon(st);
+            }
+            s_seatedSamples = 0;
+            s_minSeatY = 99f;
+            s_maxSeatY = -99f;
+            s_talkSeen.Clear();
 
             ForceDay();
             s_sawNpc = new bool[4];
@@ -699,6 +849,45 @@ namespace LegaiaWorld
                 for (int i = 0; i < kind.Length && i < s_sawNpc.Length; i++)
                     if (kind[i] == 2)
                         s_sawNpc[i] = true;
+
+            // Seated villagers sit ON the stool: never below the floor the
+            // stool stands on (the first cut sank them to the waist), never
+            // standing on top of it either.
+            for (int i = 0; i < 4; i++)
+            {
+                if (s_stools[i] == null || s_stations[i] == null)
+                    continue;
+                var npc = Var(s_stations[i], "currentNpc") as Transform;
+                if (npc == null)
+                    continue;
+                Vector3 d = npc.position - s_stools[i].position;
+                float lift = d.y;
+                d.y = 0f;
+                if (d.magnitude > 0.35f)
+                    continue;   // still walking up
+                s_seatedSamples++;
+                s_minSeatY = Mathf.Min(s_minSeatY, lift);
+                s_maxSeatY = Mathf.Max(s_maxSeatY, lift);
+                if (lift < -0.03f)
+                {
+                    Finish(1, npc.name + " sits " + (-lift).ToString("0.00") +
+                        " m BELOW the floor of stool_" + i);
+                    return;
+                }
+                if (lift > 0.5f)
+                {
+                    Finish(1, npc.name + " stands " + lift.ToString("0.00") +
+                        " m above stool_" + i + "'s floor - on the seat, not in it");
+                    return;
+                }
+            }
+
+            // What the table says: names in front, never the retail line.
+            string said = Var(s_game, "talkLine") as string;
+            if (!string.IsNullOrEmpty(said))
+                foreach (string line in said.Split('\n'))
+                    if (line.Length > 0 && s_talkSeen.Add(line))
+                        Debug.Log("[Legaia] CARDS: talk - " + line);
 
             // Chips can never go below zero, hand or no hand.
             var chips = VarInts(s_game, "seatChips");
@@ -830,8 +1019,32 @@ namespace LegaiaWorld
                     hands + " total, " + s_handsAtSwitch + " before it)");
                 return;
             }
+            if (s_seatedSamples == 0)
+            {
+                Finish(1, "no villager was ever sampled sitting on a stool");
+                return;
+            }
+            foreach (string line in s_talkSeen)
+            {
+                bool named = line.IndexOf(": ") > 0 && line.IndexOf(": ") <= 22;
+                bool direction = !line.Contains(":");   // Vahn's stage directions
+                if (!named && !direction)
+                {
+                    Finish(1, "table talk line without a name in front: '" + line + "'");
+                    return;
+                }
+            }
+            if (s_talkSeen.Count < 4)
+            {
+                Finish(1, "only " + s_talkSeen.Count + " distinct table-talk line(s) " +
+                    "seen over " + hands + " hand(s)");
+                return;
+            }
             Debug.Log("[Legaia] CARDS: " + s_handsAtSwitch + " poker hand(s) + " +
-                (hands - s_handsAtSwitch) + " blackjack hand(s).");
+                (hands - s_handsAtSwitch) + " blackjack hand(s); seated villagers " +
+                "sampled " + s_seatedSamples + "x at " + s_minSeatY.ToString("0.00") +
+                ".." + s_maxSeatY.ToString("0.00") + " m above the stool floor; " +
+                s_talkSeen.Count + " distinct table-talk lines.");
             Finish(0, null);
         }
 

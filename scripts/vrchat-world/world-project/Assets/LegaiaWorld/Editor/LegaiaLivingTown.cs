@@ -1742,7 +1742,10 @@ namespace LegaiaWorld
             var glbs = new List<string>();
             var objs = new List<Transform>();
             var idles = new List<string>();
+            var walks = new List<string>();
             var labels = new List<string>();
+            var usedNames = new HashSet<string>();
+            int nameCursor = Mathf.Abs(o.seed) % NAME_POOL.Length;
             foreach (object n in MiniJson.AsList(MiniJson.Get(manifest, "npcs"))
                      ?? new List<object>())
             {
@@ -1759,9 +1762,9 @@ namespace LegaiaWorld
                 files.Add(file);
                 glbs.Add(LegaiaSceneSettings.NpcGlb(n, dir));
                 objs.Add(placed);
-                labels.Add(MiniJson.AsStr(MiniJson.Get(n, "label"))
-                    ?? Path.GetFileNameWithoutExtension(file));
+                labels.Add(VillagerName(n, file, settings, usedNames, ref nameCursor));
                 idles.Add(FirstClip(n));
+                walks.Add(MiniJson.AsStr(MiniJson.Get(n, "walk_clip")) ?? o.walkClip);
             }
 
             var order = SeededOrder(files.Count, o.seed);
@@ -1783,6 +1786,36 @@ namespace LegaiaWorld
                 homeOf[i] = -1;
                 insideAlready[i] = InsideAHome(objs[i].position, homes);
             }
+            // A house is only handed out when the whole night routine can
+            // be walked: the door's stand spot onto the doorway tile, and
+            // (inside) the landing to the way out. town01's sixth house
+            // has a doorway tile the bake leaves off the mesh; with four
+            // villagers it was never reached, with six the round-robin
+            // handed it out and the check caught the villager stuck at
+            // the door. Decided once here, so the report names the house.
+            var homeUsable = new bool[homes.Count];
+            for (int c = 0; c < homes.Count; c++)
+            {
+                homeUsable[c] = true;
+                if (!navLive)
+                    continue;
+                string why;
+                Home hm = homes[c];
+                if (hm.doorT != null && hm.thresholdT != null &&
+                    !LegaiaNavMesh.Reachable(hm.doorT.position, hm.thresholdT.position,
+                        1.2f, out why))
+                    homeUsable[c] = false;
+                else if (hm.landingT != null && hm.exitT != null &&
+                         !LegaiaNavMesh.Reachable(hm.landingT.position, hm.exitT.position,
+                             1.2f, out why))
+                    homeUsable[c] = false;
+                else
+                    continue;
+                Debug.LogWarning("[Legaia] living town: home_" + c + " (teleport " +
+                    hm.teleport + ") is not handed out - its night route has no " +
+                    "complete navmesh path: " + why);
+            }
+
             // Round-robin the shuffled villagers over the houses, capped.
             if (homes.Count > 0 && o.homeCap > 0)
             {
@@ -1805,6 +1838,8 @@ namespace LegaiaWorld
                     for (int tries = 0; tries < homes.Count; tries++)
                     {
                         int cand = (h + tries) % homes.Count;
+                        if (!homeUsable[cand])
+                            continue;
                         if (navLive)
                         {
                             string why;
@@ -1876,7 +1911,7 @@ namespace LegaiaWorld
                 // is set on a component that is certainly there.
                 if (o.walkAnimator && walkWired.Add(files[i]))
                     if (WireWalkAnimator(npc.gameObject, glbs[i],
-                            idles[i], o.walkClip, genDir))
+                            idles[i], walks[i], genDir))
                         walked++;
 
                 var brain = LegaiaWorldBuilder.TryAttachUdon(
@@ -1931,8 +1966,8 @@ namespace LegaiaWorld
                     (s_handFraction / (s_handArm + s_handTorso)).ToString("0.00") +
                     " of body height.");
             if (o.walkAnimator)
-                Debug.Log("[Legaia] living town: walk cycle '" + o.walkClip +
-                    "' bound on " + walked + " of " + files.Count +
+                Debug.Log("[Legaia] living town: walk cycle ('" + o.walkClip +
+                    "', or the entry's own walk_clip) bound on " + walked + " of " + files.Count +
                     " villager(s) (the rigs whose family carries one).");
             return brains;
         }
@@ -2107,6 +2142,100 @@ namespace LegaiaWorld
             for (int i = 0; i < comps.Count; i++)
                 arr.SetValue(comps[i], i);
             return arr;
+        }
+
+        // --- Names ---------------------------------------------------------------------
+
+        // Short, Legaia-shaped names for the villagers the manifest leaves
+        // nameless. Retail's Rim Elm names are two syllables at most (Val,
+        // Nene, Mei, Juno); these follow the pattern without borrowing a
+        // named character.
+        static readonly string[] NAME_POOL =
+        {
+            "Bram", "Tilo", "Rena", "Osha", "Dorn", "Pella", "Kato", "Mira",
+            "Guld", "Sayo", "Tam", "Lidda", "Roan", "Ines", "Barto", "Wren",
+            "Hollis", "Petra", "Corin", "Ada", "Jory", "Fenna", "Ulf", "Maren",
+        };
+
+        /// The villager's display NAME - what the card table's panel and its
+        /// table talk print. Never the manifest label: that label is the
+        /// first line of the actor's retail dialogue (a cutscene fragment -
+        /// "Tetsu: You were a child when the", "I am a dummy."), which is
+        /// what the panel used to show. In order: the settings file's
+        /// `living_town.names` pin; a `name` the source export supplies (the
+        /// party export names Vahn / Noa / Gala); an `add_npcs` label that
+        /// reads as a name; the speaker prefix of the dialogue line when it
+        /// has one ("Val: I'm sorry" -> Val - retail's own naming of the
+        /// actor); "Crow" for the birds; else the next name from the pool,
+        /// starting at a seed-chosen offset so a scene's cast is stable
+        /// across builds. Names are unique per scene.
+        static string VillagerName(object n, string file, LegaiaSceneSettings settings,
+            HashSet<string> used, ref int cursor)
+        {
+            string token = Path.GetFileNameWithoutExtension(file);
+            string name = settings != null ? settings.NameOverride(token) : null;
+            if (string.IsNullOrEmpty(name))
+                name = MiniJson.AsStr(MiniJson.Get(n, "name"));
+            string label = MiniJson.AsStr(MiniJson.Get(n, "label"));
+            if (string.IsNullOrEmpty(name) && !string.IsNullOrEmpty(label))
+            {
+                bool added = !string.IsNullOrEmpty(
+                    MiniJson.AsStr(MiniJson.Get(n, "model_scene")));
+                if (added && LooksLikeName(label))
+                    name = label;
+                else
+                {
+                    name = SpeakerOf(label);
+                    if (name == null && label.StartsWith("Caw"))
+                        name = "Crow";
+                }
+            }
+            if (string.IsNullOrEmpty(name))
+            {
+                name = NAME_POOL[cursor % NAME_POOL.Length];
+                cursor++;
+                while (used.Contains(name))
+                {
+                    name = NAME_POOL[cursor % NAME_POOL.Length];
+                    cursor++;
+                }
+            }
+            string unique = name;
+            for (int k = 2; used.Contains(unique); k++)
+                unique = name + " " + k;
+            used.Add(unique);
+            return unique;
+        }
+
+        /// "Val: I'm sorry, , but my" -> "Val"; null when the line has no
+        /// speaker prefix.
+        static string SpeakerOf(string label)
+        {
+            int colon = label.IndexOf(':');
+            if (colon < 1 || colon > 12)
+                return null;
+            string head = label.Substring(0, colon).Trim();
+            return LooksLikeName(head) ? head : null;
+        }
+
+        /// One or two capitalised words of letters, no punctuation - a name,
+        /// not a sentence and not the "<scene> model N" default.
+        static bool LooksLikeName(string s)
+        {
+            if (string.IsNullOrEmpty(s) || s.Length > 20 || s.Contains(" model "))
+                return false;
+            string[] words = s.Split(' ');
+            if (words.Length > 2)
+                return false;
+            foreach (string w in words)
+            {
+                if (w.Length == 0 || !char.IsUpper(w[0]))
+                    return false;
+                foreach (char c in w)
+                    if (!char.IsLetter(c) && c != '\'' && c != '-')
+                        return false;
+            }
+            return true;
         }
 
         // --- Walk animator --------------------------------------------------------------

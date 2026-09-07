@@ -23,9 +23,15 @@
 //
 // Seated pose: the exported rigs have no sit clip (they are rigid-node
 // models playing a looping spawn clip), so sitting is APPROXIMATED - the
-// NPC root is nudged onto the stool centre and dropped by `sitDrop` of
-// its own measured height, which reads as seated from any normal angle
-// and is restored when it leaves. The README says so out loud.
+// NPC root is nudged onto the stool centre and set so its HIPS land on
+// the stool's seat: root height = seat top - `hipFraction` of the rig's
+// own measured height, never below the floor it stood on. The first cut
+// dropped the whole rig 35% of its height BELOW the floor instead, on the
+// theory that a lower head reads as sitting; it read as a villager sunk
+// to the waist in the ground, head level with the felt. Hips on the seat
+// puts a short rig's feet dangling in front of the stool leg and a tall
+// one's on the floor, and every head above the table. Restored when the
+// villager leaves. The README says so out loud.
 //
 // Seat bookkeeping is reconciled by polling the stations a few times a
 // second rather than from the arrive / leave events alone: one handler
@@ -64,8 +70,11 @@ namespace LegaiaWorld
         [Tooltip("The table stays 'in use' this long after the last card came back.")]
         public float gameIdleSeconds = 60f;
 
-        [Tooltip("How far the seated NPC sinks, as a fraction of its own height.")]
-        public float sitDrop = 0.35f;
+        [Tooltip("Height of the stool's seat above the stool's own origin (metres) - the builder's stool geometry.")]
+        public float seatHeight = 0.475f;
+
+        [Tooltip("Where a standing rig's hips sit, as a fraction of its measured height; the root is placed so the hips land on the seat.")]
+        public float hipFraction = 0.45f;
 
         [Tooltip("Synced: villagers may take a free stool. The table button toggles it.")]
         [UdonSynced] public bool npcsAllowed = true;
@@ -155,13 +164,19 @@ namespace LegaiaWorld
         void SitDown(int i, Transform npc)
         {
             float h = MeasureHeight(npc);
-            float drop = h * Mathf.Clamp01(sitDrop);
             Vector3 p = npc.position;
             Vector3 stand = seats[i].StandPosition();
-            // Onto the stool centre, then down onto the seat.
-            npc.position = new Vector3(stand.x, p.y - drop, stand.z);
+            // Onto the stool centre, hips on the seat: root = seat top minus
+            // the hip height, never below the stool's own floor. Measured
+            // from the STOOL, not from where the rig is: it walked onto the
+            // stool's collider to get here, so its own height is the seat
+            // top already, and "never below where it stands" would leave it
+            // standing on the seat.
+            float y = stand.y + Mathf.Max(0f, seatHeight - h * Mathf.Clamp01(hipFraction));
+            npc.position = new Vector3(stand.x, y, stand.z);
             seated[i] = npc;
-            drops[i] = drop;
+            // What StandUp adds back (negative: the rig was lifted).
+            drops[i] = p.y - y;
             if (seatHands != null && i < seatHands.Length && seatHands[i] != null)
                 seatHands[i].SetActive(true);
         }

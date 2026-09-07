@@ -16,6 +16,7 @@ as `extracted/`.
 legaia-engine export-glb --scene town01 --out glb-export       # one scene
 legaia-engine export-glb --all-scenes --out glb-export         # everything
 legaia-engine export-glb --items --out glb-export              # every equipment item
+legaia-engine export-glb --party --out glb-export              # Vahn, Noa, Gala field forms
 ```
 
 Reads `extracted/` (default) or `--disc <image.bin>`. Flags: `--scale`
@@ -25,7 +26,8 @@ against real player scale, retail's field proportions being generous;
 equipment-item glbs are raw PSX units regardless, scaled at placement
 time by the Unity builder), `--include-sky` (keep the sky-backdrop
 shells the site viewers hide), `--no-npcs`, `--no-props`, `--items` (the
-equipment export below - standalone or combined with scenes).
+equipment export below - standalone or combined with scenes), `--party`
+(the party's field forms below - likewise standalone).
 `--all-scenes` skips cutscene labels, reports each scene's yield, and
 continues past failures.
 
@@ -117,6 +119,25 @@ and section labels when readable; without it, ids stand in. Unlike the
 scene NPC / prop glbs (which bake the export scale onto their root),
 item glbs ship in **raw PSX units** - matching the site's character
 downloads they share a kernel with.
+
+## `--party`: the party's field forms
+
+`--party` exports Vahn, Noa and Gala **as they walk the towns**: the
+PROT 0874 §0 field mesh of each active-party slot (retail's 10-live-group
+cap applied and the equipment-swap template folded in at the cold
+new-game equip byte - [`character-mesh.md`](../formats/character-mesh.md)),
+textured from the §2 field pages, with the character's own 7-clip
+locomotion bank ([`anm.md`](../formats/anm.md)) baked as named takes:
+`Idle` first (frame 0 = the rest pose), `Walk` second, the unpinned rest
+as `Locomotion N`. Files land as `<out>/party/npcs/<vahn|noa|gala>.glb`
+with the export scale on their root node, exactly like a scene's villager
+glbs, and `party/manifest.json` carries an `npcs[]` roster in the same
+shape as a scene manifest (`model_index` = the pack slot, `label` and
+`name` = the character, `clips`, plus `walk_clip` naming the walk take)
+so a consumer that resolves villagers from other scenes resolves these
+the same way - the Unity kit's `add_npcs` rule takes `{"scene": "party",
+"model": 1}` and Noa joins the living town. Same kernel as the site's
+characters-page field-form download (`web-viewer::character`).
 
 ## Manifest
 

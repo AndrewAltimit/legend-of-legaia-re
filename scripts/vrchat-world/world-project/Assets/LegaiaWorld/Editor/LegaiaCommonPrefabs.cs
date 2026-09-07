@@ -145,7 +145,7 @@ namespace LegaiaWorld
             {
                 Finish(BuildCardTable(container, genDir,
                     Place("card_table", o.cardTableOffset), spawnW,
-                    Mathf.Clamp(o.seats, 0, 8)), "card_table");
+                    Mathf.Clamp(o.seats, 0, 8), placements), "card_table");
                 built.Add("card table");
             }
             if (o.sdkPens)
@@ -799,7 +799,7 @@ namespace LegaiaWorld
         const float CARD_W = 0.063f, CARD_L = 0.088f, CARD_T = 0.0005f;
 
         static GameObject BuildCardTable(GameObject container, string genDir, Vector3 pos,
-            Vector3 spawnW, int seats)
+            Vector3 spawnW, int seats, Dictionary<string, LegaiaPrefabTransform> placements = null)
         {
             var wood = LegaiaCampProps.EnsureMat(genDir, "camp_wood", "Standard",
                 new Color(0.36f, 0.24f, 0.13f));
@@ -903,7 +903,7 @@ namespace LegaiaWorld
             // panel): own file, see its header. It hangs a `game` child
             // off the table root - the director links to it by that path.
             LegaiaCardGameBuilder.Build(root, genDir, spawnW, host, deck,
-                seatStations, seatChairs, cards, FindWallet());
+                seatStations, seatChairs, cards, FindWallet(), placements);
             return root;
         }
 

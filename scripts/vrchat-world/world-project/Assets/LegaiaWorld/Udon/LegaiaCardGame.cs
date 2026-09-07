@@ -57,6 +57,14 @@
 // The RNG is an int LCG seeded and synced by the master, so a client that
 // takes over mid-hand rebuilds exactly the same undealt remainder.
 //
+// TABLE TALK. The panel's bottom block prints what the seated villagers
+// say - composed by LegaiaTableTalk on the master at the moments that
+// matter (sitting down, the deal, a raise, a fold, the pot going one
+// way, a player joining, between hands) and synced as plain text, so
+// every client reads the same words. The names in front of the lines
+// are the villagers' names (LegaiaLivingTown), never their retail
+// dialogue; see the talk file for why, and for Vahn and Noa.
+//
 // Requires UdonSharp (bundled with the VRChat worlds SDK).
 
 using UdonSharp;
@@ -85,6 +93,9 @@ namespace LegaiaWorld
         [Tooltip("The world coin purse (Legaia_common_prefabs/wallet).")]
         public LegaiaWallet wallet;
 
+        [Tooltip("The villagers' lines (on this object; builder-wired). Null = a silent table.")]
+        public LegaiaTableTalk talk;
+
         [Tooltip("Seat stations, one per stool (same order as chairs / handAnchors).")]
         public LegaiaNpcStation[] stations;
 
@@ -108,6 +119,7 @@ namespace LegaiaWorld
         public Text modeText;
         public Text potText;
         public Text msgText;
+        public Text talkText;
         public RawImage[] rowPortrait;
         public Text[] rowName;
         public Text[] rowCoins;
@@ -155,6 +167,12 @@ namespace LegaiaWorld
         [Tooltip("Villagers keep playing at an empty table.")]
         public bool npcSelfPlay = true;
 
+        [Tooltip("How long the last table-talk line stays on the panel after the villagers go quiet (seconds).")]
+        public float talkHold = 14f;
+
+        [Tooltip("Gap between idle remarks while the table waits between hands (seconds).")]
+        public float idleTalkGap = 16f;
+
         [Tooltip("Virtual chips a villager sits down with (refilled every time it takes a stool).")]
         public int npcStartChips = 60;
 
@@ -181,6 +199,7 @@ namespace LegaiaWorld
         [UdonSynced] public int handsCompleted;
         [UdonSynced] public int dealerUpCount;   // dealer cards revealed so far
         [UdonSynced] public string message = "";
+        [UdonSynced] public string talkLine = "";   // newest line first, at most two
 
         [UdonSynced] public int[] seatKind;      // 0 empty, 1 player, 2 npc
         [UdonSynced] public int[] seatPlayerId;
@@ -208,6 +227,11 @@ namespace LegaiaWorld
                   CAT_STRAIGHT = 4, CAT_FLUSH = 5, CAT_FULL = 6, CAT_QUADS = 7,
                   CAT_SFLUSH = 8;
 
+        // Table-talk kinds (mirror LegaiaTableTalk.T_*).
+        const int T_SIT = 0, T_DEAL = 1, T_RAISE = 2, T_CALL = 3, T_FOLD = 4,
+                  T_WIN = 5, T_LOSE = 6, T_BUST = 7, T_NATURAL = 8, T_IDLE = 9,
+                  T_PLAYER = 10, T_LEAVE = 11;
+
         // --- local (never synced) ----------------------------------------------
 
         private int seatCount;
@@ -223,6 +247,11 @@ namespace LegaiaWorld
         private int appliedSerial;
         private bool handHadPlayer;
         private LegaiaNpcBrain[] brainAt;
+        private string[] seatLabel;     // last villager name seen per seat
+        private float talkClearAt;
+        private float nextIdleTalk;
+        private int talkSalt;
+        private string talkFirst = "";
 
         void Start()
         {
@@ -230,6 +259,8 @@ namespace LegaiaWorld
                 : (stations != null ? stations.Length : 0);
             EnsureArrays();
             brainAt = new LegaiaNpcBrain[seatCount < 1 ? 1 : seatCount];
+            seatLabel = new string[seatCount < 1 ? 1 : seatCount];
+            nextIdleTalk = Time.time + 6f;
             deckOrder = new int[52];
             for (int i = 0; i < 52; i++)
                 deckOrder[i] = i;
@@ -352,6 +383,8 @@ namespace LegaiaWorld
                         b = null;
                 }
                 brainAt[i] = b;
+                if (b != null && seatLabel != null)
+                    seatLabel[i] = b.label;
             }
         }
 
@@ -398,6 +431,7 @@ namespace LegaiaWorld
         void MasterTick()
         {
             UpdateSeatModel();
+            TalkTick();
             if (phase == PH_IDLE)
             {
                 MaybeAutoDeal();
@@ -460,10 +494,17 @@ namespace LegaiaWorld
                     if (turnSeat == i)
                         AdvanceTurnNoSync();
                 }
-                if (kind == K_NPC && seatKind[i] != K_NPC)
+                int was = seatKind[i];
+                if (kind == K_NPC && was != K_NPC)
                     seatChips[i] = npcStartChips; // refill on every re-seat
                 seatKind[i] = kind;
                 seatPlayerId[i] = id;
+                if (kind == K_NPC && was != K_NPC)
+                    Say(T_SIT, i);
+                else if (kind == K_EMPTY && was == K_NPC)
+                    Say(T_LEAVE, i);
+                else if (kind == K_PLAYER && was != K_PLAYER)
+                    SayAny(T_PLAYER);
                 if (kind == K_EMPTY)
                 {
                     seatState[i] = H_OUT;
@@ -630,6 +671,7 @@ namespace LegaiaWorld
                     PlaceCard(i, c, card, seatKind[i] == K_PLAYER);
                 }
             message = "Betting";
+            SayAny(T_DEAL);
             BeginBetRound(PH_BET1);
         }
 
@@ -650,9 +692,19 @@ namespace LegaiaWorld
             }
             dealerUpCount = 1;
             // A natural stands itself.
+            bool spoke = false;
             for (int i = 0; i < seatCount; i++)
                 if (seatState[i] == H_IN && HandValue(i) == 21)
+                {
                     seatState[i] = H_STAND;
+                    if (seatKind[i] == K_NPC && !spoke)
+                    {
+                        Say(T_NATURAL, i);
+                        spoke = true;
+                    }
+                }
+            if (!spoke)
+                SayAny(T_DEAL);
             phase = PH_BET1;
             message = "Hit or stand";
             turnSeat = FirstActor(-1);
@@ -958,6 +1010,15 @@ namespace LegaiaWorld
                 ? "Split pot - " + CategoryName(bestScore / 759375)
                 : SeatName(best) + " wins " + given + " (" +
                   CategoryName(bestScore / 759375) + ")";
+            if (seatKind[best] == K_NPC)
+                Say(T_WIN, best);
+            for (int i = 0; i < seatCount; i++)
+                if (i != best && seatState[i] == H_IN && seatKind[i] == K_NPC &&
+                    ScoreSeat(i) != bestScore)
+                {
+                    Say(T_LOSE, i);
+                    break;
+                }
             Settle();
             ReactToResult();
             showUntil = Time.time + showSeconds;
@@ -1016,6 +1077,22 @@ namespace LegaiaWorld
                     seatChips[i] += won;
             }
             message = "Dealer " + (dv > 21 ? "busts" : "" + dv);
+            bool won1 = false, lost1 = false;
+            for (int i = 0; i < seatCount; i++)
+            {
+                if (seatKind[i] != K_NPC || seatPaid[i] <= 0)
+                    continue;
+                if (seatWon[i] > seatPaid[i] && !won1)
+                {
+                    Say(T_WIN, i);
+                    won1 = true;
+                }
+                else if (seatWon[i] == 0 && !lost1 && seatState[i] != H_BUST)
+                {
+                    Say(T_LOSE, i);
+                    lost1 = true;
+                }
+            }
             Settle();
             ReactToResult();
             showUntil = Time.time + showSeconds;
@@ -1185,6 +1262,8 @@ namespace LegaiaWorld
             if (HandValue(seat) > 21)
             {
                 seatState[seat] = H_BUST;
+                if (seatKind[seat] == K_NPC)
+                    Say(T_BUST, seat);
                 AdvanceTurn();
                 return;
             }
@@ -1249,27 +1328,21 @@ namespace LegaiaWorld
             if (cat >= CAT_TRIPS)
             {
                 if (canRaise)
-                {
-                    if (DoRaise(seat) && brainAt != null && brainAt[seat] != null)
-                        brainAt[seat].Speak(1, 2.5f);
-                }
+                    NpcRaise(seat);
                 else
-                    DoCall(seat);
+                    NpcCall(seat);
             }
             else if (cat == CAT_TWOPAIR)
             {
                 if (canRaise && nerve > 60)
-                {
-                    if (DoRaise(seat) && brainAt != null && brainAt[seat] != null)
-                        brainAt[seat].Speak(1, 2.5f);
-                }
+                    NpcRaise(seat);
                 else
-                    DoCall(seat);
+                    NpcCall(seat);
             }
             else if (cat == CAT_PAIR)
             {
                 if (owed <= betStep || nerve > 70)
-                    DoCall(seat);
+                    NpcCall(seat);
                 else
                     Fold(seat);
             }
@@ -1279,19 +1352,31 @@ namespace LegaiaWorld
                 {
                     // A free look: a bold villager takes a swing at it.
                     if (canRaise && nerve > 85 && raises == 0)
-                    {
-                        if (DoRaise(seat) && brainAt != null && brainAt[seat] != null)
-                            brainAt[seat].Speak(1, 2.5f);
-                    }
+                        NpcRaise(seat);
                     else
-                        DoCall(seat);
+                        NpcCall(seat);
                 }
                 else if (nerve > 92 && raises == 0 && CanCover(seat, owed))
-                    DoCall(seat);   // a bluff-call
+                    NpcCall(seat);   // a bluff-call
                 else
                     Fold(seat);
             }
             AdvanceTurn();
+        }
+
+        void NpcRaise(int seat)
+        {
+            if (!DoRaise(seat))
+                return;
+            if (brainAt != null && brainAt[seat] != null)
+                brainAt[seat].Speak(1, 2.5f);
+            Say(T_RAISE, seat);
+        }
+
+        void NpcCall(int seat)
+        {
+            DoCall(seat);
+            SayMaybe(T_CALL, seat, 35);
         }
 
         void Fold(int seat)
@@ -1299,6 +1384,7 @@ namespace LegaiaWorld
             DoFold(seat);
             if (brainAt != null && brainAt[seat] != null)
                 brainAt[seat].Speak(0, 2f);
+            SayMaybe(T_FOLD, seat, 70);
         }
 
         /// Nerve, 0..99, from the villager's own personality seed - the same
@@ -1910,10 +1996,108 @@ namespace LegaiaWorld
                     : "Pot " + pot;
             if (msgText != null)
                 msgText.text = message;
+            if (talkText != null)
+                talkText.text = talkLine == null ? "" : talkLine;
 
             for (int i = 0; i < seatCount; i++)
                 RefreshRow(i);
             RefreshButtons();
+        }
+
+        // --- table talk ---------------------------------------------------------
+
+        /// Seat `seat` speaks (a villager; players never do). The master
+        /// composes, the synced string carries it. Callers sync.
+        void Say(int kind, int seat)
+        {
+            if (!isLocalOwner || talk == null || seat < 0 || seat >= seatCount)
+                return;
+            if (seatKind[seat] != K_NPC && kind != T_LEAVE)
+                return;
+            string name = seatLabel != null && seatLabel[seat] != null &&
+                          seatLabel[seat].Length > 0 ? seatLabel[seat] : "Villager";
+            talkSalt++;
+            string line = talk.Compose(kind, name, OthersAt(seat), talkSalt ^ shuffleSeed);
+            if (line == null || line.Length == 0)
+                return;
+            talkLine = talkFirst.Length > 0 ? line + "\n" + talkFirst : line;
+            talkFirst = line;
+            talkClearAt = Time.time + talkHold;
+        }
+
+        /// One of the seated villagers speaks - a different one each time.
+        void SayAny(int kind)
+        {
+            if (seatCount < 1)
+                return;
+            talkSalt++;
+            for (int k = 0; k < seatCount; k++)
+            {
+                int i = (talkSalt + k) % seatCount;
+                if (seatKind[i] == K_NPC)
+                {
+                    Say(kind, i);
+                    return;
+                }
+            }
+        }
+
+        /// Speak about `percent` of the time (calls would drown the panel).
+        void SayMaybe(int kind, int seat, int percent)
+        {
+            talkSalt++;
+            if (((talkSalt * 37 + shuffleSeed) & 0x7FFF) % 100 < percent)
+                Say(kind, seat);
+        }
+
+        /// Everyone else at the table, lower-case, '|'-joined - what lets a
+        /// villager talk ABOUT Vahn or Noa when they sit here.
+        string OthersAt(int seat)
+        {
+            string s = "";
+            for (int i = 0; i < seatCount; i++)
+            {
+                if (i == seat)
+                    continue;
+                string who = null;
+                if (seatKind[i] == K_NPC && seatLabel != null && seatLabel[i] != null &&
+                    seatLabel[i].Length > 0)
+                    who = seatLabel[i].ToLower();
+                else if (seatKind[i] == K_PLAYER)
+                    who = "player";
+                if (who == null)
+                    continue;
+                s = s.Length == 0 ? who : s + "|" + who;
+            }
+            return s;
+        }
+
+        bool AnyNpcSeated()
+        {
+            for (int i = 0; i < seatCount; i++)
+                if (seatKind[i] == K_NPC)
+                    return true;
+            return false;
+        }
+
+        /// Master: fade the last lines, and let the table mutter between hands.
+        void TalkTick()
+        {
+            if (talkLine != null && talkLine.Length > 0 && Time.time >= talkClearAt)
+            {
+                talkLine = "";
+                talkFirst = "";
+                Sync();
+            }
+            if (phase == PH_IDLE && Time.time >= nextIdleTalk)
+            {
+                nextIdleTalk = Time.time + idleTalkGap + (talkSalt % 5) * 2f;
+                if (AnyNpcSeated())
+                {
+                    SayAny(T_IDLE);
+                    Sync();
+                }
+            }
         }
 
         void RefreshRow(int i)

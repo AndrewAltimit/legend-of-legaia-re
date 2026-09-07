@@ -52,6 +52,7 @@ your disc ──legaia-extract──▶ extracted/ ──legaia-engine export-gl
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaFishingSpot.cs` | Fishing-station handler: while a villager stands on a shoreline station it holds a generated rod over the water, a line to a bobbing float with ripples, and an occasional catch; steps aside when a player stands on the spot. Players fish here too (Interact on the stake): bite, window, catch, coins into the purse. See "Coins" below. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaCardTableHost.cs` | Card-table seat handler: villagers sit at free stools (seated pose approximated by lowering the rig) holding a fanned pair of card backs; a seated player is an invitation, not a shoo, and the synced *NPCs: sit / shoo* button is the override. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaCardGame.cs` | The card table's dealer: five-card draw poker and blackjack with the 52 real card pickups, villagers summoned to the free stools and held through a hand, AI opponents, betting from the coin purse, a seat panel. The object's owner is the master; presses travel as network events. See "Common prefabs" below. |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaTableTalk.cs` | What the villagers say at the card table: new lines written for the world (the Mist, the wall, the Genesis Tree, hunters), a stage-direction voice for Vahn (who never speaks in retail) and a wolf-raised voice for Noa, plus what the villagers say ABOUT the two when they sit down. Composed by the master, synced as text. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaWallet.cs` | The per-player coin purse: the local player's balance persisted through VRChat PlayerData (`legaia.coins`), read for any player through `CoinsOf`, written only by its own client. Every minigame pays into and out of it. See "Coins" below. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaNpcHitbox.cs` | The trigger capsule on each villager: a rack weapon held by the local player and swung fast enough strikes the villager down through the brain's `Slay`, which broadcasts the fall and the coin drop to every client. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaCoinDrops.cs` | The pooled coin drops under `living_town/coins`: the brain hands it a spot and a value on every client, it floor-snaps a free coin there and expires it after 90 s. |
@@ -102,6 +103,8 @@ cargo build --release -p legaia-engine-shell
 ./target/release/legaia-engine export-glb --all-scenes --out glb-export
 # every equipment item (grabbable weapons and the rest):
 ./target/release/legaia-engine export-glb --items --out glb-export
+# Vahn, Noa and Gala as they walk the towns (field forms + idle/walk):
+./target/release/legaia-engine export-glb --party --out glb-export
 ```
 
 Reads `extracted/` by default (`--disc "Legend of Legaia (USA).bin"` works
@@ -310,9 +313,23 @@ All keys optional (`town01.settings.json` is the worked example):
 - **`add_npcs`** - `[{"scene": "bylon", "model": 103, "position": [x, y, z],
   "yaw": 0, "label": "Maya"}]` places a brand-new villager from another
   scene's export at an Inspector position under the built root (the
-  `spawn_position` convention). It joins the manifest as `npc_1NN` so the
-  other rules can name it, and the living town treats it as any talk
-  villager.
+  `spawn_position` convention). It joins the manifest as `npc_1NN` so
+  the other rules can name it, and the living town treats it as any talk
+  villager. `label` is the villager's **name** (the card table prints it
+  and its table talk keys on it). **The party** comes in the same way:
+  `export-glb --party` writes `party/{manifest.json, npcs/}` (Vahn, Noa
+  and Gala's field forms with their real idle and walk cycles); copy it
+  to `Assets/LegaiaImports/party/` and add `{"scene": "party", "model":
+  0}` (Vahn), `1` (Noa) or `2` (Gala) - the export names them, so
+  `label` is optional. They walk, chat, go home and sit at the card
+  table like anyone else, and the table knows who they are.
+- **`living_town.names`** - `{"npc_07": "Tetsu"}` pins a villager's
+  display name. Without a pin the living town names everyone itself:
+  the speaker prefix of the actor's retail line when it has one ("Val:
+  I'm sorry" is Val), "Crow" for the birds, else a short Legaia-shaped
+  name from a pool (Bram, Tilo, Rena, ...) chosen by the scene seed.
+  Never the retail line itself - the panel used to print "Tetsu: You
+  were a child when the" and "I am a dummy." as names.
 - **`mesh_npcs`** - `{"mesh_55": {"scene": "balden", "model": 151}}` turns
   a world-glb mesh (a villager the scene baked as scenery) into a live
   one: the mesh is hidden and the source model stands on its footprint.
@@ -725,9 +742,13 @@ and the SDK's own components - no third-party package, no game data:
   (*NPCs: sit / shoo*) is the override - shoo, and the stools are
   withdrawn and nobody is called. The seated pose is an
   **approximation** - the exported rigs carry no sit clip, so the host
-  nudges the NPC onto the stool centre and drops it by ~35% of its own
-  measured height, which reads as seated from any normal angle and is
-  undone when it leaves.
+  nudges the NPC onto the stool centre and sets it so its hips land on
+  the seat (root height = seat top minus 45% of the rig's own measured
+  height, never below the floor it stood on): a short villager's feet
+  dangle in front of the stool leg, a tall one's rest on the ground,
+  and every head is above the felt. (The first cut sank the whole rig
+  a third of its height into the ground instead.) Undone when it
+  leaves.
 
   **The game** (`LegaiaCardGame`, on the table's `game` child) plays
   **five-card draw poker** (default) and **blackjack** with those 52
@@ -769,7 +790,32 @@ and the SDK's own components - no third-party package, no game data:
   in a seat is decided per client (every client walks its own copy of
   the town), while the seat, cards, pot and money are the same for
   everyone. The panel faces outward from its side of the table and
-  turns with it when you move the table.
+  turns with it when you move the table; to put it somewhere else, drag
+  the table's `panel` child where you want it and pin its Inspector
+  transform in the scene settings as `prefab_transforms.card_table_panel`
+  (`{"position": [x, y, z], "rotation": [0, yaw, 0]}`, the panel root's
+  LOCAL values under the table). Which way it then reads is yours: the
+  board's readable face is the panel root's -Z side, so forward into
+  the table reads from outside (the default) and forward away from it
+  reads from the stools.
+
+  **Table talk.** The bottom of the panel prints what the seated
+  villagers say - at sitting down, the deal, a raise, a fold, the pot
+  going one way, a real player joining, and now and then between hands.
+  The lines are new, written for the world rather than lifted from it:
+  retail Rim Elm has no card table, and each actor's manifest line is a
+  cutscene fragment. So the talk is light and generic with the town's
+  references (the Mist and the wall, the Genesis Tree, Hunter's Spring,
+  Biron up the road, Val's leg, Mei's sewing). Two voices are their
+  own: **Vahn** never speaks a word in retail, so his lines are stage
+  directions (*Vahn nods to the table and sits.*); **Noa** was raised
+  by a wolf in Snowdrift Cave and talks like it. When either sits down
+  the other villagers talk *about* them (Val's boy, the wolf girl) every
+  other line. Which pool applies is decided by the seat's name - so an
+  `add_npcs` entry labelled `Vahn` or `Noa` (the party export names
+  them) gets the voice, and a joke villager named Noa would too. Text
+  is composed by the table's master and synced, so everyone reads the
+  same words (`LegaiaTableTalk`).
 
 The rest are spawned **from prefabs already in your project**:
 
@@ -1439,10 +1485,12 @@ clip instead of running their field-VM scripts, non-door props free-run
 instead of waiting for script triggers, a door's full record choreography
 collapses to open-on-approach + teleport, script-door arms are frozen at
 the cold-entry story-flag state, and the shoreline's arming cadence is the
-engine's scene-entry pulse enhancement. Dialog lines from the MES corpus
-and shop counters remain the natural next Udon layer - the manifest
-already carries each NPC's kind (`talk`/`door`/`prop`) and dialog first
-line to seed it.
+engine's scene-entry pulse enhancement. The card table's talk is new
+writing keyed to the town (the manifest's dialog first line only supplies
+a villager's *name* when it carries a speaker prefix); the retail MES
+dialogue and shop counters remain the natural next Udon layer - the
+manifest already carries each NPC's kind (`talk`/`door`/`prop`) and
+dialog first line to seed it.
 
 The realism foldout sits entirely on the *enhancement* side of this line:
 lighting, sky, grass, shells, ambience and wander are deliberate
