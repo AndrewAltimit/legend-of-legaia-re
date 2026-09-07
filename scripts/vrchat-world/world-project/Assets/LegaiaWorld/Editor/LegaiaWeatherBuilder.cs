@@ -101,6 +101,22 @@ namespace LegaiaWorld
             LegaiaWorldBuilder.SetUdonField(weather, "ambienceMixer", mixer);
             LegaiaWorldBuilder.SyncUdonProxy(weather);
 
+            // The settings panel's "Clear sky" / "Rain" buttons jump this
+            // schedule - wire its weather reference (the panel lives in the
+            // builder's top-level camp container, if built), the same way
+            // the realism pass hands it the day/night cycle.
+            var menuGo = GameObject.Find("LegaiaMenu");
+            if (menuGo != null)
+            {
+                var menuType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaWorldMenu");
+                var menu = menuType != null ? menuGo.GetComponent(menuType) : null;
+                if (menu != null)
+                {
+                    LegaiaWorldBuilder.SetUdonField(menu, "weather", weather);
+                    LegaiaWorldBuilder.SyncUdonProxy(menu);
+                }
+            }
+
             Debug.Log("[Legaia] weather: rain + lightning + thunder wired" +
                 (dn != null ? " (multiplying the day/night ambient)" : "") +
                 (mixer != null ? " (feeding the ambience mixer)" : "") + ".");

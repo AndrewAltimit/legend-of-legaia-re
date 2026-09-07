@@ -7,6 +7,9 @@
 // - SetDay / SetNight - jumps the shared day/night cycle to noon /
 //   midnight for EVERYONE (the cycle itself is derived from the server
 //   clock, so the jump is a synced offset on LegaiaDayNight).
+// - SetClear / SetRain - the same jump on the shared weather schedule
+//   (LegaiaWeather): the next clear spell / the next rain spell, for
+//   everyone. Inert until the weather pass builds the schedule.
 //
 // Requires UdonSharp (bundled with the VRChat worlds SDK).
 
@@ -24,6 +27,9 @@ namespace LegaiaWorld
 
         [Tooltip("The realism pass's day/night behaviour - SetDay/SetNight jump its synced cycle. Left null when the day/night cycle is not built.")]
         public LegaiaDayNight dayNight;
+
+        [Tooltip("The weather pass's schedule behaviour - SetClear/SetRain jump its synced spell. Left null when the weather pass is not built.")]
+        public LegaiaWeather weather;
 
         [Tooltip("Label on the music button - updated to show the current on/off state.")]
         public Text musicLabel;
@@ -47,6 +53,18 @@ namespace LegaiaWorld
         {
             if (dayNight != null)
                 dayNight.JumpToNight();
+        }
+
+        public void SetClear()
+        {
+            if (weather != null)
+                weather.JumpToClear();
+        }
+
+        public void SetRain()
+        {
+            if (weather != null)
+                weather.JumpToRain();
         }
     }
 }

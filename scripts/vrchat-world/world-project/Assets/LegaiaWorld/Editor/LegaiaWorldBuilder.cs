@@ -814,6 +814,28 @@ namespace LegaiaWorld
                         "Animator on the rig family that carries one"),
                     realism.livingTown.walkAnimator);
             }
+            realism.weather = EditorGUILayout.Toggle(
+                new GUIContent("Weather",
+                    "Clock-synced spells of clear / overcast / rain / storm / " +
+                    "windy weather: head-following rain, greyed ambient and " +
+                    "fog, lightning + thunder, grass gusts, and the rain / " +
+                    "wind feed into the ambience mixer (needs the VRChat SDK)"),
+                realism.weather);
+            using (new EditorGUI.DisabledScope(!realism.weather))
+            {
+                realism.weatherRainEmission = EditorGUILayout.Slider(
+                    "  Rain density (drops/s)", realism.weatherRainEmission, 100f, 2000f);
+                realism.weatherLightning = EditorGUILayout.Toggle(
+                    "  Lightning + thunder", realism.weatherLightning);
+                realism.weatherSpellMinutes = EditorGUILayout.Slider(
+                    "  Typical spell (minutes)", realism.weatherSpellMinutes, 1f, 20f);
+            }
+            realism.fishingSpots = EditorGUILayout.IntSlider(
+                new GUIContent("Fishing spots",
+                    "Shoreline stations where villagers fish (0 = none); " +
+                    "found on the world mesh where standable ground meets " +
+                    "the water sheet"),
+                realism.fishingSpots, 0, 8);
 
             GUILayout.Space(4);
             using (new EditorGUI.DisabledScope(
@@ -1632,10 +1654,31 @@ namespace LegaiaWorld
             utilType.GetMethod("ResetCaches",
                 System.Reflection.BindingFlags.NonPublic |
                 System.Reflection.BindingFlags.Static)?.Invoke(null, null);
+            // The COMPILER has its own cache: CompileSync enumerates
+            // UdonSharpProgramAsset.GetAllUdonSharpPrograms(), a static
+            // array filled once per domain reload. A program asset created
+            // in this same session is not in it, so the compile below would
+            // skip it, its CompiledVersion would stay Unknown, and every
+            // CopyProxyToUdon on that behaviour would refuse with "outdated
+            // behaviour version" until the NEXT build - the first build
+            // after adding a kit script wired nothing for it. Clear that
+            // cache first so the new assets compile now.
+            ClearUdonProgramAssetCache(paType);
             var compile = FindType("UdonSharp.Compiler.UdonSharpCompilerV1")
                 ?.GetMethod("CompileSync");
             if (compile != null)
                 compile.Invoke(null, new object[] { null });
+        }
+
+        /// UdonSharpProgramAsset.ClearProgramAssetCache() (internal) - the
+        /// compiler's program list, refreshed so assets created this session
+        /// are compiled by the next CompileSync.
+        static void ClearUdonProgramAssetCache(System.Type paType)
+        {
+            paType?.GetMethod("ClearProgramAssetCache",
+                System.Reflection.BindingFlags.NonPublic |
+                System.Reflection.BindingFlags.Public |
+                System.Reflection.BindingFlags.Static)?.Invoke(null, null);
         }
 
         internal static Component TryAttachUdon(GameObject go, string typeName)
@@ -1778,6 +1821,9 @@ namespace LegaiaWorld
                 "UdonSharp compile before syncing proxies...");
             try
             {
+                // A stale stamp on an asset the compiler's cached list does
+                // not know about would survive the compile - refresh first.
+                ClearUdonProgramAssetCache(FindType("UdonSharp.UdonSharpProgramAsset"));
                 // Optional-parameter defaults (null options) via reflection.
                 mi.Invoke(null, new object[mi.GetParameters().Length]);
                 return true;

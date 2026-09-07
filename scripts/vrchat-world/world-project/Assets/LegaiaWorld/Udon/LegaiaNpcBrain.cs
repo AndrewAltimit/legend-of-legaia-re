@@ -271,10 +271,15 @@ namespace LegaiaWorld
 
         void TickAtStation()
         {
-            if (Time.time < leaveAt)
+            // A handler may withdraw the station while the villager is on
+            // it - the card table when players sit down or press "shoo",
+            // a fishing spot when a player walks onto it. Leave at once
+            // rather than at the end of the dwell.
+            bool revoked = station != null && !station.available;
+            if (Time.time < leaveAt && !revoked)
                 return;
             ReleaseStation();
-            BackToStroll(1f + NextFloat() * 4f);
+            BackToStroll(revoked ? 0.5f : 1f + NextFloat() * 4f);
         }
 
         void TickGoChat()
