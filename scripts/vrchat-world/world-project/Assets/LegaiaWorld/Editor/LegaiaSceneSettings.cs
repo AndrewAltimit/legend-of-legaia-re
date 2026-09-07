@@ -67,6 +67,32 @@
 //       is: place by hand, snapshot, port the file back into the kit.
 //       The older "prefab_positions": {"tv": [x, y, z]} form still reads.
 //
+//   "living_town": {"home_cap": 4, "chat_spots": 5, "seed": 20260907,
+//                   "daytime_indoors_share": 0.18, "walk_clip": "record_36"}
+//       Living-town tuning, overriding the builder foldout's values so a
+//       scene keeps them across rebuilds: villagers per house door, how
+//       many conversation spots to build, the scene-constant seed that
+//       fixes home assignment and personalities, the share of villagers
+//       who stay indoors by day, and the clip name bound as the walk
+//       cycle. Every key optional.
+//
+//   "npc_homes": {"npc_12": 2, "grandmother": 0}
+//       Pin individual villagers to a house door by index into the homes
+//       the pass derives from the manifest's teleports (the same order
+//       the `living_town/homes/home_N` markers are numbered in). Matching
+//       follows the static_npcs rules: a number token matches npc_<NN>,
+//       any other token is a file-name substring. Everyone else is spread
+//       by the seeded shuffle.
+//
+//   "ambience": {"day": "Assets/LegaiaWorld/Audio/day.wav", "night": ...}
+//       User-supplied ambience loops, replacing the synthesized ones for
+//       the roles named. Keys (all optional): day, night, base, rain,
+//       waves, wind_gust, tree_birds, night_wildlife, windmill. Each
+//       value is the asset path of any AudioClip in the project; a role
+//       with no entry (or an entry that does not load) keeps the clip
+//       LegaiaAudioGen generates. Drop better field recordings in and the
+//       ambience layer uses them with no code change.
+//
 //   "slot_machine": {"cabinet": "Assets/Prefabs/legaia slot machine.glb",
 //                    "art": "Assets/LegaiaImports/slot-art",
 //                    "position": [x, y, z], "rotation": [0, yaw, 0], "scale": 0.012}
@@ -126,6 +152,19 @@ namespace LegaiaWorld
             new Dictionary<string, LegaiaPrefabTransform>();
         /// The slot_machine block, or null when the file has none.
         public LegaiaSlotPlacement slotMachine;
+        /// The "ambience" block: role -> AudioClip asset path (see the
+        /// header). Empty when the file has none, and the ambience pass
+        /// then generates every role.
+        public Dictionary<string, string> ambienceClips =
+            new Dictionary<string, string>();
+        /// living_town overrides; negative / null = keep the option value.
+        public int livingTownHomeCap = -1;
+        public int livingTownChatSpots = -1;
+        public int livingTownSeed;
+        public float livingTownDaytimeIndoors = -1f;
+        public string livingTownWalkClip;
+        /// npc_homes: villager token -> home index.
+        public Dictionary<string, int> npcHomes = new Dictionary<string, int>();
         /// Asset path the settings were read from; null = no file (every
         /// list empty, defaults only).
         public string path;
@@ -192,6 +231,32 @@ namespace LegaiaWorld
                 }
                 s.slotMachine = slot;
             }
+            var lt = MiniJson.AsObj(MiniJson.Get(m, "living_town"));
+            if (lt != null)
+            {
+                if (MiniJson.Get(lt, "home_cap") is double hc)
+                    s.livingTownHomeCap = (int)hc;
+                if (MiniJson.Get(lt, "chat_spots") is double cs)
+                    s.livingTownChatSpots = (int)cs;
+                if (MiniJson.Get(lt, "seed") is double sd)
+                    s.livingTownSeed = (int)sd;
+                if (MiniJson.Get(lt, "daytime_indoors_share") is double di)
+                    s.livingTownDaytimeIndoors = (float)di;
+                s.livingTownWalkClip = MiniJson.AsStr(MiniJson.Get(lt, "walk_clip"));
+            }
+            var nh = MiniJson.AsObj(MiniJson.Get(m, "npc_homes"));
+            if (nh != null)
+                foreach (var kv in nh)
+                    if (kv.Value is double hi)
+                        s.npcHomes[kv.Key] = (int)hi;
+            var ab = MiniJson.AsObj(MiniJson.Get(m, "ambience"));
+            if (ab != null)
+                foreach (var kv in ab)
+                {
+                    string clipPath = MiniJson.AsStr(kv.Value);
+                    if (!string.IsNullOrEmpty(clipPath))
+                        s.ambienceClips[kv.Key.Trim()] = clipPath.Trim();
+                }
             var pt = MiniJson.AsObj(MiniJson.Get(m, "prefab_transforms"));
             if (pt != null)
                 foreach (var kv in pt)
@@ -215,7 +280,9 @@ namespace LegaiaWorld
                 (s.hasSpawn ? ", spawn override " + s.spawnLocal : "") +
                 (s.prefabTransforms.Count > 0
                     ? ", " + s.prefabTransforms.Count + " placement(s)" : "") +
-                (s.slotMachine != null ? ", slot machine" : "") + ".");
+                (s.slotMachine != null ? ", slot machine" : "") +
+                (s.ambienceClips.Count > 0
+                    ? ", " + s.ambienceClips.Count + " ambience override(s)" : "") + ".");
             return s;
         }
 
@@ -260,6 +327,36 @@ namespace LegaiaWorld
                     into.Add(((int)d).ToString());
                 }
             }
+        }
+
+        /// The home index pinned for this villager in `npc_homes`, or -1.
+        /// Key matching follows the static_npcs rules.
+        public int HomeOverride(string file)
+        {
+            foreach (var kv in npcHomes)
+            {
+                var one = new List<string> { kv.Key };
+                if (NpcMatch(one, file))
+                    return kv.Value;
+            }
+            return -1;
+        }
+
+        /// Fold the file's living_town block over the foldout's options.
+        public void ApplyLivingTown(LegaiaLivingTownOptions o)
+        {
+            if (o == null)
+                return;
+            if (livingTownHomeCap >= 0)
+                o.homeCap = livingTownHomeCap;
+            if (livingTownChatSpots >= 0)
+                o.maxChatSpots = livingTownChatSpots;
+            if (livingTownSeed != 0)
+                o.seed = livingTownSeed;
+            if (livingTownDaytimeIndoors >= 0f)
+                o.daytimeIndoorsShare = livingTownDaytimeIndoors;
+            if (!string.IsNullOrEmpty(livingTownWalkClip))
+                o.walkClip = livingTownWalkClip;
         }
 
         public bool NpcIsStatic(string file) => NpcMatch(staticNpcs, file);

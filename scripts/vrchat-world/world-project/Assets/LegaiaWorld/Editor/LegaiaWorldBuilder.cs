@@ -792,6 +792,28 @@ namespace LegaiaWorld
                         "the trim survives rebuilds"),
                     realism.wanderFacingOverrides);
             }
+            realism.livingTown.livingTown = EditorGUILayout.Toggle(
+                new GUIContent("Living town",
+                    "Villagers meet and talk in twos and threes, walk to " +
+                    "props and open them, and go indoors at night through " +
+                    "the doorway pairs (needs the VRChat SDK)"),
+                realism.livingTown.livingTown);
+            using (new EditorGUI.DisabledScope(!realism.livingTown.livingTown))
+            {
+                realism.livingTown.homeCap = EditorGUILayout.IntSlider(
+                    "  Villagers per house", realism.livingTown.homeCap, 1, 10);
+                realism.livingTown.maxChatSpots = EditorGUILayout.IntSlider(
+                    "  Conversation spots", realism.livingTown.maxChatSpots, 1, 12);
+                realism.livingTown.speechBubbles = EditorGUILayout.Toggle(
+                    "  Speech bubbles", realism.livingTown.speechBubbles);
+                realism.livingTown.bubbleText = EditorGUILayout.Toggle(
+                    "  Bubble dialog text", realism.livingTown.bubbleText);
+                realism.livingTown.walkAnimator = EditorGUILayout.Toggle(
+                    new GUIContent("  Walk cycle clip",
+                        "Bind the measured walk cycle as an idle/walk " +
+                        "Animator on the rig family that carries one"),
+                    realism.livingTown.walkAnimator);
+            }
 
             GUILayout.Space(4);
             using (new EditorGUI.DisabledScope(
@@ -1550,11 +1572,14 @@ namespace LegaiaWorld
                      { "LegaiaDoorway", "LegaiaDoor", "LegaiaNpcWander",
                        "LegaiaDayNight", "LegaiaPickupProp", "LegaiaTorch",
                        "LegaiaWorldMenu", "LegaiaFlicker",
+                       "LegaiaAmbienceMixer",
                        "LegaiaSlotMachine", "LegaiaSlotButton",
                        "LegaiaEventButton", "LegaiaMirror", "LegaiaSeat",
                        "LegaiaCard", "LegaiaCardDeck", "LegaiaVideoTv",
                        "LegaiaNpcStation", "LegaiaWeather",
-                       "LegaiaFishingSpot", "LegaiaCardTableHost" })
+                       "LegaiaFishingSpot", "LegaiaCardTableHost",
+                       "LegaiaNpcBrain", "LegaiaTownDirector",
+                       "LegaiaSpeechBubble" })
             {
                 var t = FindType("LegaiaWorld." + name);
                 if (t == null) continue;

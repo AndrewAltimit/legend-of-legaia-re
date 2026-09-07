@@ -9,6 +9,13 @@
 // the already-built root, rebuilds the common prefabs, and asserts the
 // wiring reached the backing behaviours.
 //
+// LivingTown opens the same scene, runs the living-town pass over the
+// built root and asserts the village is wired: a director with a non-empty
+// typed station array on its BACKING behaviour, a brain on every eligible
+// villager pointing back at that director, use-prop stations standing on
+// real floor with room to stand, and a home for every villager within the
+// per-door cap.
+//
 // CommonPrefabs opens the scene, finds the built root's LegaiaSpawn,
 // builds every common prefab next to it with the SDK types the project
 // has, and asserts the result is fully wired: the expected components
@@ -458,6 +465,375 @@ namespace LegaiaWorld
             Debug.Log("[Legaia] SELFTEST OK: weather rig + " + spots.Length +
                       " fishing station(s) + 4 seat stations, " + proxies +
                       " U# proxies wired (scene " + sceneName + ", not saved).");
+        }
+
+        // --- Living town ---------------------------------------------------
+
+        public static void LivingTown()
+        {
+            string scenePath = Arg("-legaiaScene", "Assets/Scenes/VRCDefaultWorldScene.unity");
+            EditorSceneManager.OpenScene(scenePath, OpenSceneMode.Single);
+
+            GameObject spawn = null;
+            foreach (var t in Object.FindObjectsOfType<Transform>())
+                if (t.name == "LegaiaSpawn")
+                {
+                    spawn = t.gameObject;
+                    break;
+                }
+            if (spawn == null)
+                Fail("no LegaiaSpawn in " + scenePath + " - build the scene first");
+            var rootT = spawn.transform.parent;
+            if (rootT == null || !rootT.name.StartsWith("Legaia_"))
+                Fail("LegaiaSpawn is not under a Legaia_<scene> root");
+            GameObject root = rootT.gameObject;
+            string sceneName = rootT.name.Substring("Legaia_".Length);
+
+            string manifestPath = "Assets/LegaiaImports/" + sceneName + "/manifest.json";
+            if (!System.IO.File.Exists(manifestPath))
+                Fail("no manifest at " + manifestPath +
+                     " - copy the exported scene folder into the project first");
+            object manifest = MiniJson.Parse(System.IO.File.ReadAllText(manifestPath));
+
+            LegaiaWorldBuilder.EnsureUdonProgramAssets();
+            var settings = LegaiaSceneSettings.Load(sceneName);
+            var o = new LegaiaLivingTownOptions();
+            settings.ApplyLivingTown(o);
+            var container = LegaiaLivingTown.Apply(
+                root, manifest, sceneName, new LegaiaLivingTownOptions(), settings);
+            if (container == null)
+                Fail("living town built nothing");
+
+            // --- The director ------------------------------------------------
+            var dirType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaTownDirector");
+            if (dirType == null)
+                Fail("LegaiaTownDirector is not compiled - read the [UdonSharp] " +
+                     "lines above: one U# compile error fails every wire");
+            var directors = container.GetComponentsInChildren(dirType, true);
+            if (directors.Length != 1)
+                Fail("expected exactly 1 town director, found " + directors.Length);
+            var director = directors[0];
+            if (LegaiaCommonPrefabs.BackingUdon(director) == null)
+                Fail("the town director has no backing UdonBehaviour");
+            CheckVar(container, "LegaiaWorld.LegaiaTownDirector", "stations");
+            CheckVar(container, "LegaiaWorld.LegaiaTownDirector", "brains");
+
+            // The PROXY field must be a typed array (an object[] never
+            // deserializes onto the backing variable); U# then stores the
+            // BACKING UdonBehaviours, so the runtime array's element type is
+            // Component - what matters there is that every slot is filled.
+            var stationsField = dirType.GetField("stations");
+            if (stationsField == null ||
+                stationsField.FieldType.GetElementType().Name != "LegaiaNpcStation")
+                Fail("LegaiaTownDirector.stations is not a LegaiaNpcStation[]");
+            var stationArr = ReadVar(director, "stations") as System.Array;
+            if (stationArr == null || stationArr.Length == 0)
+                Fail("director.stations did not deserialize as an array");
+            for (int i = 0; i < stationArr.Length; i++)
+                if (stationArr.GetValue(i) == null)
+                    Fail("director.stations[" + i + "] is null on the backing " +
+                         "behaviour - the array did not survive serialization");
+            var brainArr = ReadVar(director, "brains") as System.Array;
+
+            // --- Stations ------------------------------------------------------
+            var stationType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaNpcStation");
+            var npcRoot = rootT.Find("npcs");
+            int propStations = 0, chatStations = 0, otherStations = 0;
+            foreach (var st in container.GetComponentsInChildren(stationType, true))
+            {
+                int kind = (int)stationType.GetField("kind").GetValue(st);
+                var standPoint = stationType.GetField("standPoint").GetValue(st) as Transform;
+                if (standPoint == null)
+                    Fail(Path(st.transform) + " has no standPoint");
+                Vector3 p = standPoint.position;
+                if (kind == 0)
+                {
+                    propStations++;
+                    RaycastHit hit;
+                    if (!Physics.Raycast(p + Vector3.up * 1.5f, Vector3.down,
+                            out hit, 4f, ~0, QueryTriggerInteraction.Ignore))
+                        Fail(Path(st.transform) + " floats: no floor under " + p);
+                    if (Mathf.Abs(hit.point.y - p.y) > 0.35f)
+                        Fail(Path(st.transform) + " stands " +
+                             (p.y - hit.point.y).ToString("0.00") + " m off its floor");
+                    if (hit.normal.y < 0.7f)
+                        Fail(Path(st.transform) + " stands on a wall (normal " +
+                             hit.normal + ")");
+                    foreach (var c in Physics.OverlapSphere(p + Vector3.up * 0.55f,
+                                 0.26f, ~0, QueryTriggerInteraction.Ignore))
+                        if (npcRoot == null || !c.transform.IsChildOf(npcRoot))
+                            Fail(Path(st.transform) + " has no standing room: " +
+                                 c.name + " is in the way");
+                    if (stationType.GetField("handler").GetValue(st) == null)
+                        Debug.LogWarning("[Legaia] selftest: " + Path(st.transform) +
+                            " has no handler (its prop carries no LegaiaDoor)");
+                }
+                else if (kind == 3)
+                    chatStations++;
+                else
+                    otherStations++;
+            }
+            if (propStations < 1)
+                Fail("no use-prop stations built - every one-shot prop was skipped");
+            if (chatStations < 3)
+                Fail("only " + chatStations + " chat stand point(s): a group of " +
+                     "three needs at least one full ring");
+
+            // --- Brains ---------------------------------------------------------
+            var brainType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaNpcBrain");
+            int eligible = 0, wired = 0, homed = 0;
+            var perDoor = new Dictionary<Object, int>();
+            foreach (object n in MiniJson.AsList(MiniJson.Get(manifest, "npcs"))
+                     ?? new List<object>())
+            {
+                if (MiniJson.AsStr(MiniJson.Get(n, "kind")) != "talk")
+                    continue;
+                string file = MiniJson.AsStr(MiniJson.Get(n, "file")) ?? "";
+                if (settings.NpcIsRemoved(file) || settings.NpcIsStatic(file) ||
+                    settings.NpcIsFrozen(file))
+                    continue;
+                Vector3 local = LegaiaWorldBuilder.G2U(MiniJson.GetVec3(n, "position"));
+                Transform placed = null;
+                foreach (Transform child in npcRoot)
+                    if ((child.localPosition - local).sqrMagnitude <= 1e-3f)
+                    {
+                        placed = child;
+                        break;
+                    }
+                if (placed == null)
+                    continue; // not placed in this build (conditional villagers)
+                eligible++;
+                var brain = placed.GetComponent(brainType);
+                if (brain == null)
+                    Fail(placed.name + " is an eligible villager with no brain");
+                if (LegaiaCommonPrefabs.BackingUdon(brain) == null)
+                    Fail(placed.name + "'s brain has no backing UdonBehaviour");
+                if (ReadVar(brain, "director") == null)
+                    Fail(placed.name + "'s brain does not reference the director " +
+                         "on its backing behaviour");
+                if (ReadVar(brain, "loco") == null)
+                    Fail(placed.name + "'s brain has no locomotion controller");
+                wired++;
+                var door = ReadVar(brain, "homeDoor") as Object;
+                if (door != null)
+                {
+                    homed++;
+                    int c;
+                    perDoor.TryGetValue(door, out c);
+                    perDoor[door] = c + 1;
+                }
+            }
+            if (wired != eligible)
+                Fail(wired + " brains for " + eligible + " eligible villagers");
+            if (brainArr == null || brainArr.Length != wired)
+                Fail("director.brains holds " +
+                     (brainArr == null ? -1 : brainArr.Length) + " of " + wired +
+                     " villagers");
+
+            var homesRoot = container.transform.Find("homes");
+            int homes = homesRoot != null ? homesRoot.childCount : 0;
+            int cap = o.homeCap;
+            foreach (var kv in perDoor)
+                if (kv.Value > cap)
+                    Fail("home door " + kv.Key.name + " holds " + kv.Value +
+                         " villagers, cap is " + cap);
+            if (homed < wired)
+            {
+                // Short of capacity is allowed; a free slot left over is not.
+                if (homes * cap > homed)
+                    Fail(homed + " of " + wired + " villagers have a home while " +
+                         (homes * cap - homed) + " slot(s) sit free");
+                Debug.LogWarning("[Legaia] selftest: " + (wired - homed) +
+                    " villager(s) have no home - " + homes + " door(s) x cap " +
+                    cap + " cannot seat " + wired);
+            }
+
+            Debug.Log("[Legaia] SELFTEST OK: living town wired - " + wired +
+                " villager(s), " + homed + " homed across " + homes +
+                " door(s) (cap " + cap + "), " + stationArr.Length +
+                " station(s) on the director (" + propStations + " use-prop, " +
+                chatStations + " chat, " + otherStations + " other), scene " +
+                sceneName + " (not saved).");
+        }
+
+        /// The value of `varName` on a U# proxy's BACKING UdonBehaviour -
+        /// CheckVar's reader without the assertion, for checks that need the
+        /// value itself.
+        static object ReadVar(Component proxy, string varName)
+        {
+            var backing = LegaiaCommonPrefabs.BackingUdon(proxy);
+            if (backing == null)
+                return null;
+            const System.Reflection.BindingFlags ANY =
+                System.Reflection.BindingFlags.Public |
+                System.Reflection.BindingFlags.NonPublic |
+                System.Reflection.BindingFlags.Instance;
+            var bt = backing.GetType();
+            object pv = bt.GetField("publicVariables", ANY)?.GetValue(backing)
+                        ?? bt.GetProperty("publicVariables", ANY)?.GetValue(backing);
+            if (pv == null)
+                return null;
+            foreach (var mi in pv.GetType().GetMethods())
+                if (mi.Name == "TryGetVariableValue" && !mi.IsGenericMethod &&
+                    mi.GetParameters().Length == 2)
+                {
+                    var args = new object[] { varName, null };
+                    return (bool)mi.Invoke(pv, args) ? args[1] : null;
+                }
+            return null;
+        }
+
+        /// Ambience layer: rebuild it over the already-built root and assert
+        /// the clips, the emitters and the mixer wiring all landed.
+        ///
+        ///   Unity.exe -batchmode -nographics -quit -projectPath <project>
+        ///       -executeMethod LegaiaWorld.LegaiaBatchChecks.Ambience
+        ///       [-legaiaScene Assets/Scenes/<scene>.unity] -logFile <log>
+        public static void Ambience()
+        {
+            string scenePath = Arg("-legaiaScene", "Assets/Scenes/VRCDefaultWorldScene.unity");
+            EditorSceneManager.OpenScene(scenePath, OpenSceneMode.Single);
+
+            GameObject spawn = null;
+            foreach (var t in Object.FindObjectsOfType<Transform>())
+                if (t.name == "LegaiaSpawn")
+                {
+                    spawn = t.gameObject;
+                    break;
+                }
+            if (spawn == null)
+                Fail("no LegaiaSpawn in " + scenePath + " - build the scene first");
+            var root = spawn.transform.parent != null
+                ? spawn.transform.parent.gameObject : null;
+            if (root == null || !root.name.StartsWith("Legaia_"))
+                Fail("LegaiaSpawn is not under a built Legaia_<scene> root");
+            string sceneName = root.name.Substring("Legaia_".Length);
+
+            LegaiaWorldBuilder.EnsureUdonProgramAssets();
+            var o = new LegaiaRealismOptions();
+            LegaiaRealism.ApplyAmbienceOnly(root, sceneName, o);
+
+            var ambT = root.transform.Find(LegaiaRealism.AMBIENCE);
+            if (ambT == null)
+                Fail("no \"" + LegaiaRealism.AMBIENCE + "\" container under " + root.name);
+            var amb = ambT.gameObject;
+
+            // --- The five 2D beds, each with its generated clip ----------
+            // Durations come from LegaiaAudioGen's own constants, so a clip
+            // that failed to import (or imported as the stale 16 s bed) is
+            // caught here rather than in-world.
+            AudioSource Bed(string name, int seconds)
+            {
+                var t = ambT.Find(name);
+                if (t == null)
+                    Fail("no " + name + " under the ambience container");
+                var src = t.GetComponent<AudioSource>();
+                if (src == null)
+                    Fail(name + " has no AudioSource");
+                if (src.clip == null)
+                    Fail(name + " has no clip - generation or import failed");
+                if (Mathf.Abs(src.clip.length - seconds) > 0.25f)
+                    Fail(name + " is " + src.clip.length.ToString("F2") +
+                         " s, expected " + seconds + " s");
+                if (!src.loop || !src.playOnAwake)
+                    Fail(name + " must loop and play on awake");
+                if (src.spatialBlend != 0f)
+                    Fail(name + " is a 2D bed but has spatialBlend " + src.spatialBlend);
+                return src;
+            }
+            Bed(LegaiaRealism.BED_BASE, LegaiaAudioGen.BASE_SECONDS);
+            Bed(LegaiaRealism.BED_DAY, LegaiaAudioGen.DAY_SECONDS);
+            Bed(LegaiaRealism.BED_NIGHT, LegaiaAudioGen.NIGHT_SECONDS);
+            Bed(LegaiaRealism.BED_RAIN, LegaiaAudioGen.RAIN_SECONDS);
+            Bed(LegaiaRealism.BED_WIND, LegaiaAudioGen.GUST_SECONDS);
+
+            // --- Spatial emitter groups ----------------------------------
+            int waves = 0, birds = 0, wildlife = 0, mills = 0, spatial = 0;
+            foreach (var src in amb.GetComponentsInChildren<AudioSource>(true))
+            {
+                string n = src.name;
+                if (n.StartsWith("bed_"))
+                    continue;
+                spatial++;
+                if (src.clip == null)
+                    Fail(n + " has no clip");
+                if (src.spatialBlend < 0.99f)
+                    Fail(n + " is an emitter but its spatialBlend is " + src.spatialBlend);
+                if (!src.loop || !src.playOnAwake)
+                    Fail(n + " must loop and play on awake");
+                if (src.maxDistance <= src.minDistance)
+                    Fail(n + " has Far " + src.maxDistance + " <= Near " + src.minDistance);
+                if (n.StartsWith("waves_")) waves++;
+                else if (n.StartsWith("birds_")) birds++;
+                else if (n.StartsWith("wildlife_")) wildlife++;
+                else if (n.StartsWith("windmill_")) mills++;
+                else Fail("unexpected source " + n + " under the ambience container");
+            }
+            if (waves < 1)
+                Fail("no shore wave emitters - no water sheet found near spawn");
+            if (birds < 1)
+                Fail("no tree bird emitters - no canopy cluster found");
+            if (wildlife < 1)
+                Fail("no night wildlife emitters");
+
+            // --- VRC spatial compliance on EVERY source ------------------
+            // The SDK deprecates a bare AudioSource: 2D beds carry the
+            // component disabled (the SDK Auto Fix shape), emitters carry it
+            // enabled and configured.
+            var spatialType =
+                LegaiaWorldBuilder.FindType("VRC.SDK3.Components.VRCSpatialAudioSource")
+                ?? LegaiaWorldBuilder.FindType("VRC.SDKBase.VRC_SpatialAudioSource");
+            if (spatialType == null)
+                Fail("VRCSpatialAudioSource type not found - the SDK is missing");
+            foreach (var src in amb.GetComponentsInChildren<AudioSource>(true))
+            {
+                var comp = src.GetComponent(spatialType);
+                if (comp == null)
+                    Fail(Path(src.transform) + " has no VRC spatial audio component");
+                var beh = comp as Behaviour;
+                bool wantEnabled = !src.name.StartsWith("bed_");
+                if (beh != null && beh.enabled != wantEnabled)
+                    Fail(src.name + "'s VRC spatial component is " +
+                         (beh.enabled ? "enabled" : "disabled") + ", expected the opposite");
+            }
+
+            // --- The mixer owns every volume -----------------------------
+            var mixerType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaAmbienceMixer");
+            if (mixerType == null)
+                Fail("LegaiaAmbienceMixer is not compiled");
+            if (amb.GetComponent(mixerType) == null)
+                Fail("no LegaiaAmbienceMixer on the ambience container");
+            foreach (string f in new[]
+                     { "baseBed", "dayBed", "nightBed", "rainBed", "windBed",
+                       "daySources", "nightSources", "anySources",
+                       "dayGroupVolume", "nightGroupVolume", "anyGroupVolume" })
+                CheckVar(amb, "LegaiaWorld.LegaiaAmbienceMixer", f);
+
+            // The day/night behaviour must hand the mixer the cycle, and
+            // must NOT keep driving the two beds itself (one writer each).
+            var sunT = root.transform.Find("LegaiaSun");
+            var dnType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaDayNight");
+            if (sunT != null && dnType != null && sunT.GetComponent(dnType) != null)
+            {
+                CheckVar(amb, "LegaiaWorld.LegaiaAmbienceMixer", "dayNight");
+                var dn = sunT.GetComponent(dnType);
+                var dnDay = dnType.GetField("dayAmbience")?.GetValue(dn);
+                var dnNight = dnType.GetField("nightAmbience")?.GetValue(dn);
+                if (dnDay as Object != null || dnNight as Object != null)
+                    Fail("LegaiaDayNight still holds bed references while the " +
+                         "mixer is present - two writers on one AudioSource");
+            }
+            else
+            {
+                Debug.Log("[Legaia] selftest: no LegaiaDayNight on this root " +
+                          "(day/night off) - the mixer stays on permanent day.");
+            }
+
+            Debug.Log("[Legaia] SELFTEST OK: ambience = 5 bed(s) + " + spatial +
+                      " spatial emitter(s) (" + waves + " shore, " + birds +
+                      " bird, " + wildlife + " wildlife, " + mills +
+                      " windmill) under " + Path(ambT) + " (scene " + sceneName +
+                      ", not saved).");
         }
 
         /// Read `varName` off the backing UdonBehaviour of the first proxy

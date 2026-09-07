@@ -27,7 +27,7 @@ your disc ──legaia-extract──▶ extracted/ ──legaia-engine export-gl
 |---|---|
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaWorldBuilder.cs` | Editor menu `Legaia > Build Scene From Manifest...`: instantiates the world, adds colliders, places NPCs + animated props, builds doorway-teleport triggers, wires proximity doors + the shoreline morph clip + the BGM loop, drops a spawn marker; also the **Equipment props** rack (the `--items` export placed as grabbable pickups near the spawn) and the camp props (below). |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaCampProps.cs` | The **Camp props** pass: a carry-able settings panel (world-space buttons - local music mute, synced day/night jumps; grab collider confined to a bottom handle so it can't shadow the UI) plus two carry-able torches and two campfires near spawn, all primitives + generated materials, in a top-level container outside the mirrored root (mirrored UI text would render backwards). |
-| `world-project/Assets/LegaiaWorld/Editor/LegaiaAudioGen.cs` | Synthesized audio (fire crackle, day breeze + birds, night crickets - seamless loops, no disc audio) and the `VRC_SpatialAudioSource` compliance helper (the SDK deprecates bare AudioSources; 2D beds get the disabled component the SDK's own Auto Fix adds, spatial sources a configured one). |
+| `world-project/Assets/LegaiaWorld/Editor/LegaiaAudioGen.cs` | Synthesized ambience: the long day / night / base / rain / storm-gust beds, the shore-wave, tree-bird, night-wildlife and windmill emitter clips, and the camp fire crackle - seeded Poisson events under multi-octave value-noise envelopes, seam-crossfaded, no disc audio. Also the `VRC_SpatialAudioSource` compliance helper (the SDK deprecates bare AudioSources; 2D beds get the disabled component its Auto Fix adds, spatial sources a configured one). |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaRealism.cs` | The builder's "Realism enhancements" foldout: lit materials + generated normals + sun, day/night wiring + night doorway lamps, sky + fog, procedural grass, interior room shells, texture smoothing, synthesized ambience, wander wiring. Every pass defaults on; untick for the faithful look. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaSceneSettings.cs` | Per-scene refinements from `Settings/<scene>.settings.json` (see "Per-scene settings" below): delete named objects after the build, keep listed NPCs static (idle clip, no wandering), drop listed NPCs entirely, override the spawn point in Unity world space, and point the VRC Scene Descriptor's `Spawns[0]` at LegaiaSpawn automatically. |
 | `world-project/Assets/LegaiaWorld/Settings/town01.settings.json` | The town01 refinements (kit-authored tuning data, no game content). |
@@ -41,6 +41,7 @@ your disc ──legaia-extract──▶ extracted/ ──legaia-engine export-gl
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaDoor.cs` | UdonSharp proximity door: first approach plays the door's swing clip once and holds it open. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaNpcWander.cs` | Optional UdonSharp stroll behaviour: an NPC wanders a small radius around its spawn between pauses - collision-aware (strolls clamp against walls, a waist-height ray stops a blocked walk, a downward ray follows the floor). |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaDayNight.cs` | Optional UdonSharp day/night cycle: sweeps the realism sun on a fixed cycle, synced across players via server time; night dims the trilight ambient + fog to a moonlit fraction, enables the night-lamp container, and crossfades the day/night ambience beds. `JumpToDay`/`JumpToNight` apply a synced offset (the settings panel's buttons). |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaAmbienceMixer.cs` | Owns every ambient volume: crossfades the day and night beds on the cycle `LegaiaDayNight` publishes, fades the day-only and night-only spatial emitter groups, and takes `rainLevel` / `windLevel` from the weather layer to bring the rain and gust beds in and duck the birds. See "Ambient audio". |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaWorldMenu.cs` | The settings panel's behaviour: `ToggleMusic` (mutes the BGM locally - a personal preference), `SetDay`/`SetNight` (jump the shared cycle for everyone). |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaTorch.cs` | Torch/campfire pickup: hold + Use toggles the flame container (fire + smoke particles, a Perlin-flickered point light - no glow orb) and a spatial crackle loop; `lit` is synced so a fire someone lights burns for everyone. Spawn-kinematic like the rack pickups. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaFlicker.cs` | Firelight flicker for the always-burning night torches: no sync, no interaction - just the two-octave Perlin intensity wobble on the flame's point light. |
@@ -282,6 +283,12 @@ All keys optional (`town01.settings.json` is the worked example):
 - **`slot_machine`** - the casino cabinet: model asset, `asset slot-art`
   folder, placement + scale. The common-prefabs pass places the cabinet
   and builds the minigame on it. See "Common prefabs".
+- **`ambience`** - user-supplied ambience loops by role:
+  `{"day": "Assets/Audio/day.wav", "night": ..., "base": ..., "rain": ...,
+  "waves": ..., "wind_gust": ..., "tree_birds": ..., "night_wildlife": ...,
+  "windmill": ...}`. Each key optional, each value the asset path of any
+  AudioClip in the project. A named role uses that clip instead of the
+  synthesized one, which is then never generated. See "Ambient audio".
 - **`set_descriptor_spawn`** - point the VRC Scene Descriptor's
   `Spawns[0]` at `LegaiaSpawn` after the build (default true, also
   without a settings file; a no-op until the `VRCWorld` prefab is in the
@@ -322,6 +329,80 @@ which take effect on the next **Build scene**.
 - **More clips**: every NPC glb carries *all* the scene-bundle clips whose
   bone count matches (`record_N` takes) - retarget the Animator the
   builder generated at any of them.
+
+### Living town
+
+The realism foldout's **Living town** option (default on) layers a small
+village routine over the stroll: villagers meet and talk in twos and
+threes, walk to things and use them, and go indoors at night. It builds a
+`living_town` child under the built root - a `LegaiaTownDirector`, one
+`LegaiaNpcBrain` per villager, and the `LegaiaNpcStation` destinations
+they visit - plus a `speech_bubble` on each villager.
+
+- **Conversations.** A conversation spot is a *ring* of three stand points
+  around one meeting place, so a group of three is an ordinary station
+  claim rather than a special case; the director matchmakes two or three
+  free villagers onto a free ring, waits for everyone to arrive, and then
+  gives turns. The talker gets a bubble over their head - one of six
+  generated icons ("...", "!", "?", heart, music note, laugh), with their
+  own first dialog line from the manifest printed under it (**Bubble
+  dialog text**, untick for icons alone). Three-ways are not left to
+  chance: after two consecutive pairs the next conversation with three
+  candidates in range *must* be a three.
+- **Using props.** Every one-shot, non-door prop - Rim Elm's four
+  cupboards, the drawer, the shop's upstairs door - gets a stand point in
+  front of it whose station handler is the prop's own `LegaiaDoor`. A
+  villager who walks up opens it and closes it again on the way out
+  (`NpcOpen` / `NpcClose`, the swing clip played forward then at speed
+  -1). A door a *player* opened stays open, as before, and two villagers
+  at one cupboard close it once.
+- **Night.** Homes come from the manifest's own doorway teleports: a
+  trigger outside paired with a landing inside is a front door, and the
+  interior-side teleport nearest that landing is the way back out. At
+  nightfall (`LegaiaDayNight.isNight`) - or when an optional weather
+  behaviour reports rain over the shelter threshold - villagers walk to
+  their door and step through it exactly as a player does, then potter
+  about the room; at dawn they come back out the same way. A share of
+  them (**default 18%**) stay in during the day as well. Home assignment
+  is a **seeded shuffle at build time**, capped per door
+  (**Villagers per house**, default 4), so every client agrees on who
+  lives where without a single synced variable - town01's seven doors
+  seat its 28 eligible villagers exactly.
+- **Stations are shared ground.** The director picks free stations
+  generically by kind, indoors flag and `IsFree()`, so the shoreline
+  fishing spots and card-table seats other passes build against the same
+  `LegaiaNpcStation` contract are visited too - it only ever *creates*
+  use-prop, chat and viewpoint stations. (In town01 every usable prop is
+  indoors, which is why the pass also scatters a few open-air viewpoints:
+  without them a daytime villager would have nothing but conversations.)
+- **Walking.** Every NPC glb carries the scene bundle's whole clip set,
+  and on the 11-node humanoid rig (17 of town01's villagers) `record_36`
+  measures as a genuine walk cycle: the two legs alternate at exactly half
+  a period (correlation +0.99 after a half-period shift), the arms swing
+  contralaterally (-0.99 against the same-side leg), head and torso
+  amplitude are *zero*, the body centroid moves 0.000 m in x, and the
+  first and last frames meet to 0.005 m - a stride in place, which is what
+  a locomotion state needs. Those villagers get a two-state idle/walk
+  Animator and the controller crossfades as they start and stop. The other
+  four rig families have no leg pair at all (one body mesh, or a purely
+  axial chain), so nothing in their clip set can be a walk and they keep
+  looping their spawn clip - **Walk cycle clip** turns the binding off
+  entirely.
+
+`LegaiaNpcWander` is the locomotion controller under all of this: it keeps
+its autonomous stroll and its measured-facing recipe unchanged, and adds a
+command API (`GoTo` / `FaceToward` / `Arrived` / `Blocked` / `Stop` /
+`Teleport` / `SetIdle`) plus obstacle steering - a fan of probe rays either
+side of a blocked line - so an errand across the village arrives instead of
+grinding into a hut. Brains decide at 10 Hz and only move per frame while
+actually stepping.
+
+Per-scene tuning lives in the settings file (`living_town` for the cap,
+the number of conversation spots, the seed, the daytime-indoors share and
+the walk clip name; `npc_homes` pins named villagers to a particular
+door - see "Per-scene settings"). Headless check:
+`Unity -batchmode -executeMethod LegaiaWorld.LegaiaBatchChecks.LivingTown`.
+
 
 ## Common prefabs
 
@@ -695,15 +776,14 @@ pass is idempotent (it refreshes rather than stacks).
   under the root, instead of the exports' PSX point sampling. This edits
   the imported texture objects in place, so a glb **reimport resets it** -
   rerun the pass after one.
-- **Ambient audio beds**: three quiet synthesized loops on 2D sources
-  (filtered noise + sines, loop-crossfaded, written to
-  `LegaiaGenerated/`) - a wind/surf base that always plays, a daytime
-  bed (breeze, leaf rustle, a few soft bird chirps) and a night bed
-  (two interleaved cricket voices over a faint cool breeze). With the
-  day/night cycle on, `LegaiaDayNight` crossfades day against night
-  with the sun; without it the day bed simply stays up. Generated
-  audio, not from the disc - the atmosphere holds even with the music
-  muted from the settings panel.
+- **Ambient audio**: five long synthesized 2D beds (a wind/surf base, a
+  day bed, a night bed and two weather beds) plus spatial emitters at the
+  shoreline, in the tree canopies and on the windmill, all driven by one
+  `LegaiaAmbienceMixer` behaviour that crossfades them with the sun and
+  takes the weather layer's rain and wind levels. Generated audio, not
+  from the disc - the atmosphere holds even with the music muted from the
+  settings panel, and any role can be swapped for your own recording.
+  Details, loop lengths and the settings block: "Ambient audio" below.
 - **Villagers wander**: wires `LegaiaNpcWander` on every talk-kind NPC
   from the manifest (matched by spawn position), so the town strolls
   instead of standing still. The behaviour is collision-aware: strolls are
@@ -799,6 +879,84 @@ via `Window > Rendering > Lighting`, and delete the root's `LegaiaSun` /
 VRChat SDK, same as doors and teleports. And the grass + realtime shadows
 budget is a PC-world budget - trim density and shadow strength for a Quest
 target.
+
+### Ambient audio
+
+The ambience pass builds an `ambience` container under the built root and
+puts one `LegaiaAmbienceMixer` Udon behaviour on it. That behaviour owns
+every ambient volume in the world, so the day/night cycle, the weather
+layer and distance never fight over the same `AudioSource`.
+
+Five flat 2D beds, all synthesized into
+`Assets/LegaiaGenerated/<scene>/realism/`:
+
+| Bed | Loop | What it is |
+|---|---|---|
+| `bed_base` | 75 s | Wind over distant surf. Always audible. |
+| `bed_day` | 100 s | Breeze, leaf rustle, distant birds. Faded in with the sun. |
+| `bed_night` | 100 s | Cricket chorus whose density drifts, plus frogs and a far owl. |
+| `bed_rain` | 72 s | Rain wash, spatter texture, drips. Silent until the weather layer asks for it. |
+| `bed_wind_gust` | 32 s | Storm gusts with two resonant howls. Silent until asked for. |
+
+Spatial emitters, placed from the scene's own geometry:
+
+| Emitter | Loop | Where it goes |
+|---|---|---|
+| `waves_*` | 90 s | Three to five along the water edge nearest the village, nudged onto the land side. Water sheets are recognised the way the collider pass recognises them: a large, flat, semi-transparent submesh is the sea, any other semi-transparent shape is a window light shaft. Far 42 m. |
+| `birds_*` | 52 s | Up to six tree canopies (the night-torch pass's canopy clusters), 3.5 m up the trunk. Day only, and ducked hard while it rains. Far 25 m. |
+| `wildlife_*` | 64 s | Owls, frogs and crickets by the further trees and at the water. Night only. Far 28 m. |
+| `windmill_*` | 12 s | Each free-running animated prop over 3 m tall: a whoosh per blade pass on a 4 s rotation, plus one timber creak per turn. Far 26 m. |
+
+**Why they are long, and why they do not tick.** The first generation of
+these beds was 12-16 s of filtered noise gain-modulated by sine LFOs at a
+whole number of cycles per loop, and it read as a fast, annoying repeat.
+Nothing here is driven by a sine LFO or sits on a fixed grid. All the slow
+motion comes from multi-octave value noise (0.02-0.5 Hz) whose control
+points wrap circularly over the clip: the envelope is exactly periodic at
+the *loop* length and carries no shorter period. Every discrete sound -
+bird call, wave wash, cricket chirp, drip, owl hoot - is Poisson-scheduled
+from a seeded RNG with its pitch, length, note count and rhythm jittered
+per event, and bird calls draw from five different voices (swept chirp,
+trill, two-note whistle, peep, a rare distant crow). Continuous layers are
+rendered past the end and crossfaded onto the head; events wrap the seam
+instead of dodging it, so there is no density dip at the loop point.
+Generation is seeded and deterministic, takes well under a second per
+clip, and writes 22050 Hz mono wavs that are re-imported as streaming
+Vorbis.
+
+**Volumes.** The foldout's **Ambient volume** stays the master: every
+level is a multiple of it, the beds land near 0.14-0.22, and the emitters
+sit lower still at the listener. The beds are normalized to about
+-18 dBFS RMS so the BGM stays on top of them.
+
+**Weather.** The mixer exposes two floats the weather layer writes,
+`rainLevel` and `windLevel`, both 0..1 and both slewed here so a caller
+may step them instantly. Rain fades `bed_rain` in, ducks the bird group by
+85% and takes the top off the other beds; wind fades `bed_wind_gust` in
+and lifts the base bed.
+
+**Your own audio.** Nothing here ships third-party audio, and the
+synthesized beds are a floor, not a ceiling - a good field recording will
+beat them. Drop any AudioClip into the project and name it per role in
+`Settings/<scene>.settings.json`:
+
+```json
+"ambience": {
+  "day": "Assets/LegaiaWorld/Audio/day.wav",
+  "night": "Assets/LegaiaWorld/Audio/night.wav",
+  "base": "...", "rain": "...", "waves": "...", "wind_gust": "...",
+  "tree_birds": "...", "night_wildlife": "...", "windmill": "..."
+}
+```
+
+Every key is optional and a role with no entry keeps its synthesized clip
+(the wav for a replaced role is never generated). Aim for seamless loops
+of a minute or more. Vetted places to find CC0 / royalty-free ambience:
+freesound.org with the licence filter set to CC0, Pixabay's sound
+section, and OpenGameArt's CC0 tag. Check the licence on the individual
+file - a CC-BY clip needs attribution in your world description, and the
+kit itself ships no third-party audio.
+
 
 ## Troubleshooting
 
