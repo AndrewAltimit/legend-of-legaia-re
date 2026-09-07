@@ -68,13 +68,26 @@
 //       The older "prefab_positions": {"tv": [x, y, z]} form still reads.
 //
 //   "living_town": {"home_cap": 4, "chat_spots": 5, "seed": 20260907,
-//                   "daytime_indoors_share": 0.18, "walk_clip": "record_36"}
+//                   "daytime_indoors_share": 0.18, "walk_clip": "record_36",
+//                   "home_doors": [3], "exclude_doors": [12],
+//                   "nav_links": [[[x,y,z],[x,y,z]]]}
 //       Living-town tuning, overriding the builder foldout's values so a
 //       scene keeps them across rebuilds: villagers per house door, how
 //       many conversation spots to build, the scene-constant seed that
-//       fixes home assignment and personalities, the share of villagers
-//       who stay indoors by day, and the clip name bound as the walk
-//       cycle. Every key optional.
+//       fixes home assignment and personalities, the share of HOMED
+//       villagers who stay indoors by day, and the clip name bound as the
+//       walk cycle. Every key optional.
+//
+//       `home_doors` / `exclude_doors` pin which outside->inside teleports
+//       count as HOUSES, by index into the manifest's `teleports` array.
+//       The pass otherwise decides for itself (a door-leaf prop on the
+//       tile, or a single-tile way out); a cave mouth or a passage is
+//       rejected, and every rejection is logged with its index.
+//
+//       `nav_links` adds ledge links by hand: each entry is a pair of
+//       manifest-frame points a villager may HOP between when no walkable
+//       route connects them (the shore below a bank). The bake finds these
+//       on its own; a hand-pinned pair is for the one it misses.
 //
 //   "npc_homes": {"npc_12": 2, "grandmother": 0}
 //       Pin individual villagers to a house door by index into the homes
@@ -163,6 +176,15 @@ namespace LegaiaWorld
         public int livingTownSeed;
         public float livingTownDaytimeIndoors = -1f;
         public string livingTownWalkClip;
+        /// living_town/home_doors: teleport indices to accept as houses
+        /// whatever the door-leaf / exit-band test says.
+        public List<int> homeDoors = new List<int>();
+        /// living_town/exclude_doors: teleport indices never to treat as a
+        /// house (a cave mouth, a passage the test happens to pass).
+        public List<int> excludeDoors = new List<int>();
+        /// living_town/nav_links: hand-pinned ledge links, each a pair of
+        /// manifest-frame points [[x,y,z],[x,y,z]].
+        public List<Vector3[]> navLinks = new List<Vector3[]>();
         /// npc_homes: villager token -> home index.
         public Dictionary<string, int> npcHomes = new Dictionary<string, int>();
         /// Asset path the settings were read from; null = no file (every
@@ -243,6 +265,21 @@ namespace LegaiaWorld
                 if (MiniJson.Get(lt, "daytime_indoors_share") is double di)
                     s.livingTownDaytimeIndoors = (float)di;
                 s.livingTownWalkClip = MiniJson.AsStr(MiniJson.Get(lt, "walk_clip"));
+                ReadIntList(MiniJson.Get(lt, "home_doors"), s.homeDoors);
+                ReadIntList(MiniJson.Get(lt, "exclude_doors"), s.excludeDoors);
+                foreach (object pair in MiniJson.AsList(MiniJson.Get(lt, "nav_links"))
+                         ?? new List<object>())
+                {
+                    var ends = MiniJson.AsList(pair);
+                    if (ends == null || ends.Count < 2)
+                        continue;
+                    var linkA = MiniJson.AsList(ends[0]);
+                    var linkB = MiniJson.AsList(ends[1]);
+                    if (linkA == null || linkA.Count < 3 ||
+                        linkB == null || linkB.Count < 3)
+                        continue;
+                    s.navLinks.Add(new[] { ReadVec(linkA), ReadVec(linkB) });
+                }
             }
             var nh = MiniJson.AsObj(MiniJson.Get(m, "npc_homes"));
             if (nh != null)
@@ -284,6 +321,24 @@ namespace LegaiaWorld
                 (s.ambienceClips.Count > 0
                     ? ", " + s.ambienceClips.Count + " ambience override(s)" : "") + ".");
             return s;
+        }
+
+        static void ReadIntList(object node, List<int> into)
+        {
+            foreach (object v in MiniJson.AsList(node) ?? new List<object>())
+                if (v is double d)
+                    into.Add((int)d);
+        }
+
+        /// A teleport index the scene file pins as a house / never a house.
+        public bool DoorIsForced(int teleport)
+        {
+            return homeDoors.Contains(teleport);
+        }
+
+        public bool DoorIsExcluded(int teleport)
+        {
+            return excludeDoors.Contains(teleport);
         }
 
         static Vector3 ReadVec(List<object> l)

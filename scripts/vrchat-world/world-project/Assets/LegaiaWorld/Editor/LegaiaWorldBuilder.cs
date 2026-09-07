@@ -830,6 +830,17 @@ namespace LegaiaWorld
                         new GUIContent("    Max slope (deg)",
                             "Steepest ground a villager walks up"),
                         realism.livingTown.navMaxSlope, 10f, 60f);
+                    realism.livingTown.navJumpHeight = EditorGUILayout.Slider(
+                        new GUIContent("    Jump height (m)",
+                            "Tallest ledge a villager will HOP up or drop " +
+                            "off where no walk connects the two sides (the " +
+                            "shore below a village bank). 0 leaves the " +
+                            "islands unconnected"),
+                        realism.livingTown.navJumpHeight, 0f, 3f);
+                    realism.livingTown.navJumpDistance = EditorGUILayout.Slider(
+                        new GUIContent("    Jump distance (m)",
+                            "Widest gap a villager will hop across"),
+                        realism.livingTown.navJumpDistance, 0.3f, 3f);
                 }
             }
             realism.weather = EditorGUILayout.Toggle(

@@ -32,6 +32,17 @@
 // or a target no mesh reaches, falls back to the straight-line walk below,
 // so nothing depends on the navmesh existing.
 //
+// LEDGE HOPS: the bake leaves a drop the agent cannot climb as two
+// separate islands (town01's beach sits 1.2 m below the village), and no
+// route crosses between them. LegaiaNavMesh finds the places where the
+// gap is short enough to jump and hands them here as `linkFrom` /
+// `linkTo` marker pairs; when a straight CalculatePath does not complete,
+// the walk is re-composed as a CHAIN of walks and hops (up to MAX_HOPS of
+// them - town01's shore needs two, the bank up onto the path and a step
+// off the path into the village). The hop itself is a scripted parabola
+// (mode 6), not a physics jump: the floor ray is off while airborne so
+// the villager clears the bank instead of being dragged back onto it.
+//
 // STEERING (commanded walks only): the local reactive layer under the
 // route. When the line to the next corner is blocked within
 // `probeDistance` (another villager's capsule, a player-moved prop), a
@@ -40,6 +51,15 @@
 // clear, or progress stalls, the route is re-planned once from where the
 // NPC stands; failing that, Blocked() goes true and the brain picks
 // something else (it never teleports through the wall).
+//
+// The steering is switched OFF on the final approach - inside a stride of
+// the target with no corner left to turn. A doorway is narrower than the
+// probe fan can read as passable, so every lane but the straight one is
+// blocked, and a villager that keeps re-picking lanes circles a step
+// short of its own front door for ever. Two watchdogs back that up: the
+// old displacement one, and a PROGRESS one that ends the command when the
+// walk has not come closer to its target in five seconds - the only test
+// a sidestepping livelock cannot pass.
 //
 // FACING - measured, not derived. The exported NPC glbs have no skins:
 // each TMD object is a rigid mesh on its own animated node, and the node
@@ -138,6 +158,23 @@ namespace LegaiaWorld
         [Tooltip("How close to a route corner counts as having turned it (meters).")]
         public float cornerRadius = 0.22f;
 
+        [Tooltip("Village-side end of each ledge link the bake found (LegaiaNavMesh), " +
+                 "paired index-for-index with linkTo. A route that no walk connects " +
+                 "is retried as walk -> hop -> walk over one of these.")]
+        public Transform[] linkFrom;
+
+        [Tooltip("Far end of each ledge link (see linkFrom).")]
+        public Transform[] linkTo;
+
+        [Tooltip("How long one ledge hop takes (seconds).")]
+        public float hopSeconds = 0.6f;
+
+        [Tooltip("How high the hop arcs over its higher end (meters).")]
+        public float hopApex = 0.3f;
+
+        // Ledge hops taken - published for the play-mode soak harness.
+        [HideInInspector] public int hops;
+
         [Tooltip("Optional Animator with 'idle' and 'walk' states - crossfaded " +
                  "as stepping starts and stops. Null keeps the builder's " +
                  "looping spawn clip.")]
@@ -177,7 +214,8 @@ namespace LegaiaWorld
         // --- Command state ------------------------------------------------
         // mode 0 = autonomous stroll (the default), 1 = commanded walk to
         // `commandTarget`, 2 = idle (frozen in place), 3 = turn in place
-        // toward `faceDir` and then hold.
+        // toward `faceDir` and then hold, 4 = unused, 5 = scripted slide
+        // (the step through a doorway), 6 = a ledge hop over a link.
         private int mode;
         private Vector3 commandTarget;
         private Vector3 faceDir = Vector3.forward;
@@ -198,6 +236,32 @@ namespace LegaiaWorld
         private int cornerIndex;
         private bool havePath;
         private bool replanned;
+        // Per-command arrive radius (GoToWithin); 0 = the field default.
+        private float commandArrive;
+        // Progress watchdog: the closest this command has ever been to its
+        // target, and when that record was last beaten. A steering livelock
+        // (sidestep left, sidestep right, forever, half a metre short of a
+        // doorway) moves plenty and gets no closer, so a per-frame
+        // displacement test never catches it - this does.
+        private float bestDist;
+        private float betterAt;
+        private int watchedCorner = -1;
+        // The chain of ledge hops this route takes, near end and far end
+        // per hop, and which of them is next. A route is walked one LEG at
+        // a time (this position -> the next hop's near end, or the target)
+        // and the leg after a hop is planned on landing, so no jagged
+        // corner arrays are needed.
+        private const int MAX_HOPS = 3;
+        private Vector3[] chainP = new Vector3[MAX_HOPS];
+        private Vector3[] chainQ = new Vector3[MAX_HOPS];
+        private int chainCount;
+        private int chainIndex;
+        private bool haveHop;
+        private Vector3 hopA, hopB;
+        private float hopStart;
+        // Scripted slide (mode 5).
+        private Vector3 slideFrom, slideTo;
+        private float slideStart, slideSeconds;
         // 0 = not yet probed, 1 = a navmesh is registered here, 2 = none.
         // Probed lazily: the loader registers the bake in its own Start,
         // and Start order across behaviours is not defined.
@@ -304,7 +368,19 @@ namespace LegaiaWorld
         /// `arriveRadius`; Blocked() goes true when no route opens up.
         public void GoTo(Vector3 worldPos)
         {
+            GoToWithin(worldPos, arriveRadius);
+        }
+
+        /// GoTo with a per-command arrive radius. A stand spot a step out
+        /// from a doorway cannot be reached to the default 0.3 m: the hut
+        /// wall and the closed door leaf are both inside the probe fan's
+        /// reach there, so the steering keeps finding a lane a hand's width
+        /// off the line and never converges. The brain asks for a wider
+        /// circle on the last leg of the door trip instead.
+        public void GoToWithin(Vector3 worldPos, float arrive)
+        {
             commandTarget = worldPos;
+            commandArrive = arrive < 0.05f ? arriveRadius : arrive;
             mode = 1;
             arrived = false;
             blocked = false;
@@ -312,7 +388,36 @@ namespace LegaiaWorld
             replanned = false;
             progressMark = transform.position;
             progressAt = Time.time;
+            watchedCorner = -1;
             PlanRoute();
+        }
+
+        /// A scripted straight step over a short distance (the walk through
+        /// a doorway): position is interpolated, the mesh faces the way it
+        /// goes, and the floor ray still runs - but no probe, no lane and
+        /// no route. Only for the last metre through an opening the local
+        /// steering cannot read as passable; Arrived() goes true at the end.
+        public void SlideTo(Vector3 worldPos, float seconds)
+        {
+            slideFrom = transform.position;
+            slideTo = worldPos;
+            slideStart = Time.time;
+            slideSeconds = seconds < 0.1f ? 0.1f : seconds;
+            mode = 5;
+            arrived = false;
+            blocked = false;
+            havePath = false;
+            haveHop = false;
+            Vector3 d = worldPos - transform.position;
+            d.y = 0f;
+            if (d.sqrMagnitude > 1e-6f)
+                faceDir = d.normalized;
+        }
+
+        /// Ledge hops taken since load (the soak harness reads this).
+        public int Hops()
+        {
+            return hops;
         }
 
         // --- Navmesh route ---------------------------------------------------
@@ -341,6 +446,7 @@ namespace LegaiaWorld
         void PlanRoute()
         {
             havePath = false;
+            haveHop = false;
             cornerIndex = 0;
             if (!NavAvailable())
                 return;
@@ -349,27 +455,127 @@ namespace LegaiaWorld
                 return;
             if (!NavMesh.SamplePosition(commandTarget, out to, navSnapRadius, ALL_AREAS))
                 return;
-            if (path == null)
-                path = new NavMeshPath();
-            if (!NavMesh.CalculatePath(from.position, to.position, ALL_AREAS, path))
+            Vector3[] direct = RouteBetween(from.position, to.position);
+            if (direct != null)
+            {
+                corners = direct;
+                cornerIndex = 1;
+                havePath = true;
                 return;
-            if (path.status == NavMeshPathStatus.PathInvalid)
+            }
+            // Nothing walkable connects the two: the goal is on another
+            // island of the mesh (the beach below the village bank is one).
+            // Retry as a CHAIN of walks and hops over the ledge links the
+            // bake found.
+            if (!PlanChain(from.position, to.position))
                 return;
-            corners = path.corners;
-            if (corners == null || corners.Length < 2)
+            chainIndex = 0;
+            hopA = chainP[0];
+            hopB = chainQ[0];
+            haveHop = true;
+            PlanLegTo(hopA);
+        }
+
+        /// Plan the current leg: this position to `goal`, on the navmesh.
+        void PlanLegTo(Vector3 goal)
+        {
+            havePath = false;
+            cornerIndex = 0;
+            NavMeshHit here;
+            if (!NavMesh.SamplePosition(transform.position, out here,
+                    navSnapRadius, ALL_AREAS))
                 return;
-            // corners[0] is where the NPC already stands.
+            Vector3[] c = RouteBetween(here.position, goal);
+            if (c == null)
+                return;
+            corners = c;
             cornerIndex = 1;
             havePath = true;
         }
 
-        /// The point the walk is currently heading for: the next route
-        /// corner, or the target itself on a straight-line walk / the last
-        /// leg. Advances past corners as they are reached.
+        /// Greedy best-first chain of at most MAX_HOPS ledge links from `a`
+        /// to `b`: at each step, of the links whose near end this leg can
+        /// still walk to, take the one whose far end lands nearest the
+        /// goal. town01's shore needs two of them - the bank up to the path
+        /// and a step off the path into the village - which is why a
+        /// single-hop composition left the two shore villagers homeless
+        /// even with the bank link baked.
+        bool PlanChain(Vector3 a, Vector3 b)
+        {
+            chainCount = 0;
+            if (linkFrom == null || linkTo == null)
+                return false;
+            int n = linkFrom.Length < linkTo.Length ? linkFrom.Length : linkTo.Length;
+            if (n == 0)
+                return false;
+            bool[] used = new bool[n];
+            Vector3 cur = a;
+            for (int step = 0; step < MAX_HOPS; step++)
+            {
+                int bestLink = -1;
+                bool bestFlip = false;
+                float bestScore = 1e9f;
+                for (int i = 0; i < n; i++)
+                {
+                    if (used[i] || linkFrom[i] == null || linkTo[i] == null)
+                        continue;
+                    for (int dir = 0; dir < 2; dir++)
+                    {
+                        Vector3 p = dir == 0 ? linkFrom[i].position : linkTo[i].position;
+                        Vector3 q = dir == 0 ? linkTo[i].position : linkFrom[i].position;
+                        float score = Vector3.Distance(q, b);
+                        if (score >= bestScore)
+                            continue;
+                        if (RouteBetween(cur, p) == null)
+                            continue;
+                        bestScore = score;
+                        bestLink = i;
+                        bestFlip = dir == 1;
+                    }
+                }
+                if (bestLink < 0)
+                    return false;
+                used[bestLink] = true;
+                Vector3 near = bestFlip
+                    ? linkTo[bestLink].position : linkFrom[bestLink].position;
+                Vector3 far = bestFlip
+                    ? linkFrom[bestLink].position : linkTo[bestLink].position;
+                chainP[chainCount] = near;
+                chainQ[chainCount] = far;
+                chainCount++;
+                cur = far;
+                if (RouteBetween(cur, b) != null)
+                    return true;
+            }
+            chainCount = 0;
+            return false;
+        }
+
+        /// The corner list of a COMPLETE route, or null. corners[0] is the
+        /// start, so a caller walks from index 1.
+        Vector3[] RouteBetween(Vector3 a, Vector3 b)
+        {
+            if (path == null)
+                path = new NavMeshPath();
+            if (!NavMesh.CalculatePath(a, b, ALL_AREAS, path))
+                return null;
+            if (path.status != NavMeshPathStatus.PathComplete)
+                return null;
+            Vector3[] c = path.corners;
+            return c == null || c.Length < 2 ? null : c;
+        }
+
+        /// What this LEG of the walk ends at: the near side of the ledge
+        /// link when the route hops, otherwise the commanded target.
+        Vector3 LegTarget()
+        {
+            return haveHop ? hopA : commandTarget;
+        }
+
         Vector3 CurrentAim()
         {
             if (!havePath)
-                return commandTarget;
+                return LegTarget();
             int last = corners.Length - 1;
             while (cornerIndex < last)
             {
@@ -381,7 +587,7 @@ namespace LegaiaWorld
             }
             // The final corner is the navmesh's snap of the target; the
             // exact target is what the brain asked for.
-            return cornerIndex >= last ? commandTarget : corners[cornerIndex];
+            return cornerIndex >= last ? LegTarget() : corners[cornerIndex];
         }
 
         /// Turn in place until the MESH faces `worldPos` (no translation).
@@ -421,6 +627,8 @@ namespace LegaiaWorld
             walking = false;
             steerUntil = 0f;
             havePath = false;
+            haveHop = false;
+            commandArrive = 0f;
             target = transform.position;
             pauseUntil = Time.time + Random.Range(0.2f, 1.2f);
         }
@@ -449,6 +657,8 @@ namespace LegaiaWorld
             arrived = false;
             blocked = false;
             havePath = false;
+            haveHop = false;
+            commandArrive = 0f;
             home = transform.position;
             target = home;
         }
@@ -492,6 +702,16 @@ namespace LegaiaWorld
         public bool Walking()
         {
             return walking;
+        }
+
+        /// The direction the MESH visibly faces, flattened to the ground
+        /// plane. Measured through the anchor's transform chain, so it is
+        /// steady while the body turns - a follower that differences the
+        /// leader's positions instead jitters whenever the leader pivots
+        /// in place.
+        public Vector3 Facing()
+        {
+            return VisualForward();
         }
 
         // --- Facing measurement --------------------------------------------
@@ -565,6 +785,21 @@ namespace LegaiaWorld
                 dir, out hit, dist, ~0, QueryTriggerInteraction.Ignore);
         }
 
+        // The same probe, recording WHAT it hit: `probeHitNpc` is true when
+        // the obstacle is another villager's capsule rather than the world.
+        // (No `out` parameter - Udon method signatures stay plain.)
+        private bool probeBlocked;
+        private bool probeHitNpc;
+
+        void Probe(Vector3 dir, float dist)
+        {
+            RaycastHit hit;
+            probeBlocked = Physics.Raycast(transform.position + Vector3.up * rayHeight,
+                dir, out hit, dist, ~0, QueryTriggerInteraction.Ignore);
+            probeHitNpc = probeBlocked &&
+                hit.collider.GetType() == typeof(CapsuleCollider);
+        }
+
         void Update()
         {
             if (mode == 1)
@@ -573,6 +808,10 @@ namespace LegaiaWorld
                 walking = false;
             else if (mode == 3)
                 FaceStep();
+            else if (mode == 5)
+                SlideStep();
+            else if (mode == 6)
+                HopStep();
             else
                 StrollStep();
             DriveAnimator();
@@ -601,17 +840,27 @@ namespace LegaiaWorld
 
         void CommandStep()
         {
-            Vector3 to = commandTarget - transform.position;
+            float arriveR = commandArrive < 0.05f ? arriveRadius : commandArrive;
+            Vector3 to = LegTarget() - transform.position;
             to.y = 0f;
             float dist = to.magnitude;
-            if (dist < arriveRadius)
+            if (haveHop)
+            {
+                // The near side of a ledge link: stop walking and jump.
+                if (dist < Mathf.Max(cornerRadius, 0.3f))
+                {
+                    StartHop();
+                    return;
+                }
+            }
+            else if (dist < arriveR)
             {
                 arrived = true;
                 walking = false;
                 havePath = false;
                 return;
             }
-            // Head for the next route corner (or the target itself).
+            // Head for the next route corner (or the leg's own target).
             Vector3 leg = CurrentAim() - transform.position;
             leg.y = 0f;
             float legDist = leg.magnitude;
@@ -622,25 +871,53 @@ namespace LegaiaWorld
             }
             Vector3 aim = leg / legDist;
 
+            // FINAL APPROACH. Inside a stride of the target, with no route
+            // corner left to turn, aim straight at it and stop looking for
+            // lanes. A doorway is a gap narrower than the probe fan can
+            // read as passable: every ray but the straight one hits the
+            // frame, so the steering picks a lane, commits to it, re-aims,
+            // picks the other lane - and the villager circles a step short
+            // of its own front door forever. That is the "wandering
+            // aimlessly near the house" the night routine looked like.
+            bool lastLeg = !havePath || cornerIndex >= corners.Length - 1;
+            bool finalApproach = lastLeg && dist < arriveR + 0.8f;
+
             // Steering: commit to a detour lane for a moment, then re-aim.
+            //
+            // ON A ROUTE, only another VILLAGER is worth a detour. The bake
+            // used this villager's own radius and height, so the corners it
+            // returns are walkable by construction - and sidestepping the
+            // world anyway is what jammed a villager thirteen metres from
+            // its door, shuffling between two lanes beside a hut wall the
+            // route was going to round on its own. A wall the route walks
+            // past is not an obstacle; a wall in the way of a straight-line
+            // fallback still is, and so is anyone standing in the road.
             Vector3 dir = aim;
-            if (Time.time < steerUntil)
+            if (finalApproach)
+            {
+                steerUntil = 0f;
+            }
+            else if (Time.time < steerUntil)
             {
                 dir = steerDir;
             }
-            else if (!PathClear(aim, Mathf.Min(probeDistance, legDist + wallClearance)))
+            else
             {
-                dir = PickLane(aim);
-                if (dir.sqrMagnitude < 0.5f)
+                Probe(aim, Mathf.Min(probeDistance, legDist + wallClearance));
+                if (probeBlocked && (!havePath || probeHitNpc))
                 {
-                    if (Replan())
+                    dir = PickLane(aim);
+                    if (dir.sqrMagnitude < 0.5f)
+                    {
+                        if (Replan())
+                            return;
+                        blocked = true;
+                        walking = false;
                         return;
-                    blocked = true;
-                    walking = false;
-                    return;
+                    }
+                    steerDir = dir;
+                    steerUntil = Time.time + 0.7f;
                 }
-                steerDir = dir;
-                steerUntil = Time.time + 0.7f;
             }
 
             float abs = ServoToward(dir);
@@ -672,6 +949,120 @@ namespace LegaiaWorld
                 progressMark = transform.position;
                 progressAt = Time.time;
             }
+
+            // PROGRESS watchdog. The displacement test above cannot see a
+            // steering livelock - a villager sidestepping between two lanes
+            // covers plenty of ground. This one measures whether the walk
+            // has come closer to the corner it is currently heading for.
+            //
+            // The corner, NOT the target: a route round the back of a hut
+            // walks AWAY from the door for ten metres by design, and
+            // measuring the target would call that a stall and abandon the
+            // trip - which is what stranded the villager whose front door
+            // sits on the raised hut. Every corner, by contrast, is
+            // approached monotonically, and the record resets as each one
+            // is turned.
+            if (cornerIndex != watchedCorner)
+            {
+                watchedCorner = cornerIndex;
+                bestDist = legDist;
+                betterAt = Time.time;
+            }
+            else if (legDist < bestDist - 0.2f)
+            {
+                bestDist = legDist;
+                betterAt = Time.time;
+            }
+            else if (Time.time - betterAt > 5f)
+            {
+                betterAt = Time.time;
+                bestDist = legDist;
+                if (!Replan())
+                {
+                    blocked = true;
+                    walking = false;
+                }
+            }
+        }
+
+        // --- Ledge hop (mode 6) ----------------------------------------------
+
+        void StartHop()
+        {
+            hopStart = Time.time;
+            hopA = transform.position;
+            mode = 6;
+            walking = false;
+            hops++;
+            Vector3 d = hopB - hopA;
+            d.y = 0f;
+            if (d.sqrMagnitude > 1e-6f)
+                faceDir = d.normalized;
+        }
+
+        // A plain parabola between the link's two ends: the NPC leaves the
+        // ground, arcs `hopApex` over the higher end and lands on the far
+        // side. No floor ray while airborne (it would drag the villager
+        // back down onto the ledge it is clearing); one on landing.
+        void HopStep()
+        {
+            float span = hopSeconds < 0.1f ? 0.1f : hopSeconds;
+            float u = (Time.time - hopStart) / span;
+            ServoToward(faceDir);
+            if (u >= 1f)
+            {
+                transform.position = hopB;
+                SnapToFloor();
+                // The next leg: on to the following hop in the chain, or
+                // the last stretch to the target itself.
+                chainIndex++;
+                if (chainIndex < chainCount)
+                {
+                    hopA = chainP[chainIndex];
+                    hopB = chainQ[chainIndex];
+                    haveHop = true;
+                    PlanLegTo(hopA);
+                }
+                else
+                {
+                    haveHop = false;
+                    PlanLegTo(commandTarget);
+                }
+                mode = 1;
+                watchedCorner = -1;
+                progressMark = transform.position;
+                progressAt = Time.time;
+                return;
+            }
+            Vector3 p = Vector3.Lerp(hopA, hopB, u);
+            float top = (hopA.y > hopB.y ? hopA.y : hopB.y) + hopApex;
+            // Height: the straight line plus a hump that peaks mid-flight
+            // and reaches `top` there.
+            float lineY = Mathf.Lerp(hopA.y, hopB.y, u);
+            float hump = 4f * u * (1f - u);
+            p.y = lineY + hump * (top - Mathf.Lerp(hopA.y, hopB.y, 0.5f));
+            transform.position = p;
+            walking = true;
+        }
+
+        // --- Scripted slide (mode 5) -------------------------------------------
+
+        void SlideStep()
+        {
+            float u = (Time.time - slideStart) / slideSeconds;
+            ServoToward(faceDir);
+            if (u >= 1f)
+            {
+                transform.position = slideTo;
+                SnapToFloor();
+                arrived = true;
+                walking = false;
+                mode = 2;
+                return;
+            }
+            transform.position = Vector3.Lerp(slideFrom, slideTo, u);
+            SnapToFloor();
+            walking = true;
         }
 
         // One fresh route from the current position; false when it has
@@ -682,6 +1073,7 @@ namespace LegaiaWorld
                 return false;
             replanned = true;
             steerUntil = 0f;
+            watchedCorner = -1;
             PlanRoute();
             progressMark = transform.position;
             progressAt = Time.time;

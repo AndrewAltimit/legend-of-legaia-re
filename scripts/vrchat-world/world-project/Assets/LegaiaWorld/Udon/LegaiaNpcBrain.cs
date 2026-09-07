@@ -22,6 +22,20 @@
 //                  behind unless a player opened it
 //   6 GO_EXIT    - the reverse, at dawn: walk to the interior-side
 //                  doorway, teleport out, the door swings behind
+//   9 NIGHT_IDLE - the door trip failed `homeRetryLimit` times: stand
+//                  where it got to, facing its door, until dawn, instead
+//                  of retrying for ever (which reads as aimless wandering
+//                  around the house)
+//
+// STATE NUMBERING is a shared space: 0-9 and 30+ belong to this file,
+// 10-29 to the daytime social layer that adds its own `else if` arms to
+// BrainTick. Keep any new state inside those bands.
+//
+// THE DOOR TRIP IS REUSABLE. `DoorTrip(door, threshold, prop, landing)`
+// runs stand spot -> swing -> tile -> teleport for ANY doorway pair, and
+// `LeaveThrough(exit, prop, emerge)` runs it backwards; `GoHome` /
+// `ComeOut` are those two aimed at this villager's own home. A daytime
+// errand that calls at a house uses the same pair.
 //
 // Ticks at 10 Hz through SendCustomEventDelayedSeconds (staggered per NPC
 // by the personality seed), so ~30 villagers cost 300 decisions a second
@@ -97,6 +111,29 @@ namespace LegaiaWorld
         [Tooltip("Give up on a walk that takes longer than this (seconds).")]
         public float walkTimeout = 45f;
 
+        [Tooltip("How close to the door stand spot counts as arrived (meters). " +
+                 "Wider than a plain walk's: the spot sits a step out from a " +
+                 "doorway, between the hut wall and the door leaf, and the " +
+                 "steering cannot thread a 0.3 m circle in there.")]
+        public float doorArriveRadius = 0.6f;
+
+        [Tooltip("Seconds the scripted step from the stand spot onto the doorway " +
+                 "tile takes (a straight slide, not a steered walk - the tile sits " +
+                 "inside the frame).")]
+        public float thresholdStepSeconds = 0.9f;
+
+        [Tooltip("How many times a failed door trip is retried before the villager " +
+                 "gives up for the night and stands at its door (state 9).")]
+        public int homeRetryLimit = 3;
+
+        // Published for the play-mode soak harness (Editor/LegaiaSoak.cs):
+        // decisions taken, so a soak can check that Udon's delayed-event
+        // scheduler really does follow Time.timeScale before trusting a
+        // time-compressed run; and door-trip retries, which is what
+        // "wandering aimlessly near the house" measures as.
+        [HideInInspector] public int tickCount;
+        [HideInInspector] public int homeRetries;
+
         private int state;
         private bool indoors;
         private float leaveAt;
@@ -107,6 +144,16 @@ namespace LegaiaWorld
         private LegaiaNpcStation station;
         private int rng;
         private bool started;
+
+        // The doorway pair the trip in flight is using. GoHome / ComeOut
+        // point these at this villager's own home; DoorTrip / LeaveThrough
+        // point them anywhere, which is what makes the sequence reusable.
+        private Transform tripDoor;
+        private Transform tripThreshold;
+        private Transform tripLanding;
+        private LegaiaDoor tripProp;
+        private Transform tripEmerge;
+        private bool tripIsHome;
 
         void Start()
         {
@@ -221,6 +268,58 @@ namespace LegaiaWorld
             BackToStroll(2f + NextFloat() * 6f);
         }
 
+        /// True while a door trip (either direction) is running - the
+        /// daytime layer checks this before starting an errand.
+        public bool OnDoorTrip()
+        {
+            return state == 5 || state == 6 || state == 7 || state == 8;
+        }
+
+        /// Walk in through ANY doorway pair: to `door` (the village-side
+        /// stand spot), swing `prop`, step onto `threshold` (the teleport
+        /// tile) and come out at `landing`, ending in state 0 indoors.
+        /// `threshold` and `prop` may be null (a bare doorway). Returns
+        /// false when the trip cannot be started.
+        public bool DoorTrip(Transform door, Transform threshold,
+            LegaiaDoor prop, Transform landing)
+        {
+            if (loco == null || door == null || landing == null || indoors)
+                return false;
+            if (OnDoorTrip())
+                return false;
+            ReleaseStation();
+            tripDoor = door;
+            tripThreshold = threshold;
+            tripProp = prop;
+            tripLanding = landing;
+            tripEmerge = null;
+            tripIsHome = false;
+            StartWalkToDoor();
+            return true;
+        }
+
+        /// The reverse: from inside, walk to `exit` (the interior-side
+        /// doorway), swing `prop` and step back out at `emerge`.
+        public bool LeaveThrough(Transform exit, LegaiaDoor prop, Transform emerge)
+        {
+            if (loco == null || !indoors)
+                return false;
+            if (state == 6)
+                return false;
+            ReleaseStation();
+            tripProp = prop;
+            tripEmerge = emerge;
+            if (exit == null)
+            {
+                EmergeNow();
+                return true;
+            }
+            state = 6;
+            giveUpAt = Time.time + walkTimeout;
+            loco.GoToWithin(exit.position, doorArriveRadius);
+            return true;
+        }
+
         /// Head home for the night.
         public void GoHome()
         {
@@ -228,12 +327,31 @@ namespace LegaiaWorld
                 return;
             // Already on the way (the director asks every tick): restarting
             // the trip here would re-open the door and reset the walk.
-            if (state == 5 || state == 7 || state == 8)
+            if (OnDoorTrip() || state == 9)
                 return;
+            // Bounded: a villager whose door it cannot reach used to be
+            // sent back at it every few seconds for the whole night.
+            if (homeRetries >= homeRetryLimit)
+            {
+                StandForTheNight();
+                return;
+            }
             ReleaseStation();
+            tripDoor = homeDoor;
+            tripThreshold = homeThreshold;
+            tripProp = homeDoorProp;
+            tripLanding = homeLanding;
+            tripEmerge = homeEmerge;
+            tripIsHome = true;
+            StartWalkToDoor();
+        }
+
+        void StartWalkToDoor()
+        {
             state = 5;
             giveUpAt = Time.time + walkTimeout;
-            loco.GoTo(homeDoor.position);
+            // A wider circle than a plain errand: see doorArriveRadius.
+            loco.GoToWithin(tripDoor.position, doorArriveRadius);
         }
 
         /// Come back out at dawn.
@@ -243,17 +361,8 @@ namespace LegaiaWorld
                 return;
             if (state == 6)
                 return; // already walking to the way out
-            ReleaseStation();
-            if (homeExit != null)
-            {
-                state = 6;
-                giveUpAt = Time.time + walkTimeout;
-                loco.GoTo(homeExit.position);
-                return;
-            }
-            // No interior-side doorway was paired with this home: step
-            // straight back out at the village landing (or the door).
-            EmergeNow();
+            tripIsHome = true;
+            LeaveThrough(homeExit, homeDoorProp, homeEmerge);
         }
 
         // --- Machine ----------------------------------------------------------
@@ -261,6 +370,7 @@ namespace LegaiaWorld
         public void BrainTick()
         {
             SendCustomEventDelayedSeconds("BrainTick", 0.1f);
+            tickCount++;
             if (loco == null)
                 return;
             if (state == 1)
@@ -279,6 +389,50 @@ namespace LegaiaWorld
                 TickDoorOpening();
             else if (state == 8)
                 TickGoThreshold();
+            else if (state == 9)
+                TickNightIdle();
+        }
+
+        // Gave up on the door for tonight: stand where it got to, facing
+        // the doorway, until the town stops sheltering. Standing still by
+        // its own front door reads as "waiting"; the alternative - being
+        // sent back at an unreachable door every few seconds - is the
+        // aimless wandering this replaces.
+        void TickNightIdle()
+        {
+            if (director != null && !director.Sheltering())
+            {
+                homeRetries = 0;
+                BackToStroll(1f);
+            }
+        }
+
+        void StandForTheNight()
+        {
+            state = 9;
+            if (bubble != null)
+                bubble.Hide();
+            Transform look = homeThreshold != null ? homeThreshold : homeDoor;
+            if (look != null)
+                loco.FaceToward(look.position);
+            else
+                loco.SetIdle(true);
+        }
+
+        /// A door trip that did not work out: count it, and stop trying
+        /// once the budget is spent.
+        void DoorTripFailed()
+        {
+            homeRetries++;
+            if (tripIsHome && homeRetries >= homeRetryLimit)
+            {
+                Debug.Log("[Legaia] " + gameObject.name + " could not reach its " +
+                    "front door in " + homeRetries + " tries - standing out " +
+                    "for the night.");
+                StandForTheNight();
+                return;
+            }
+            BackToStroll(6f + NextFloat() * 6f);
         }
 
         void TickGoStation()
@@ -347,12 +501,12 @@ namespace LegaiaWorld
                 // At the stand spot: turn onto the doorway and open the
                 // door the way a player's approach does, then wait for the
                 // swing before stepping onto the tile.
-                Vector3 tile = homeThreshold != null
-                    ? homeThreshold.position : homeDoor.position;
+                Vector3 tile = tripThreshold != null
+                    ? tripThreshold.position : tripDoor.position;
                 loco.FaceToward(tile);
-                if (homeDoorProp != null)
+                if (tripProp != null)
                 {
-                    homeDoorProp.NpcOpen();
+                    tripProp.NpcOpen();
                     state = 7;
                     leaveAt = Time.time + Mathf.Max(0.1f, doorSwingSeconds);
                     return;
@@ -361,7 +515,7 @@ namespace LegaiaWorld
                 return;
             }
             if (loco.Blocked() || Time.time > giveUpAt)
-                BackToStroll(15f + NextFloat() * 15f); // try again later
+                DoorTripFailed();
         }
 
         void TickDoorOpening()
@@ -376,14 +530,21 @@ namespace LegaiaWorld
         // through from the stand spot.
         void StepOntoThreshold()
         {
-            if (homeThreshold == null)
+            if (tripThreshold == null)
             {
                 EnterHome();
                 return;
             }
             state = 8;
-            giveUpAt = Time.time + 12f;
-            loco.GoTo(homeThreshold.position);
+            giveUpAt = Time.time + thresholdStepSeconds + 2f;
+            // A SCRIPTED slide, not a steered walk. The tile sits inside
+            // the door frame with the hut wall on both sides and the
+            // (visually open, but still solid in the merged world
+            // collider) leaf beside it, so the probe fan reads the opening
+            // as a wall and the villager sidesteps instead of walking in.
+            // The step is under a metre, straight ahead, and still follows
+            // the floor - it is what a player does at the same tile.
+            loco.SlideTo(tripThreshold.position, thresholdStepSeconds);
         }
 
         void TickGoThreshold()
@@ -399,12 +560,13 @@ namespace LegaiaWorld
         // (NpcClose defers to a player-opened latch and other users).
         void EnterHome()
         {
-            Vector3 facing = homeLanding.forward;
-            loco.Teleport(homeLanding.position, facing);
+            Vector3 facing = tripLanding.forward;
+            loco.Teleport(tripLanding.position, facing);
             indoors = true;
+            homeRetries = 0;
             loco.radius = indoorRadius;
-            loco.SetHome(homeLanding.position);
-            if (homeDoorProp != null)
+            loco.SetHome(tripLanding.position);
+            if (tripProp != null)
                 SendCustomEventDelayedSeconds("CloseHomeDoor", 0.7f);
             BackToStroll(1f);
         }
@@ -412,8 +574,8 @@ namespace LegaiaWorld
         /// Deferred door close after going in or coming out.
         public void CloseHomeDoor()
         {
-            if (homeDoorProp != null)
-                homeDoorProp.NpcClose();
+            if (tripProp != null)
+                tripProp.NpcClose();
         }
 
         void TickGoExit()
@@ -429,17 +591,17 @@ namespace LegaiaWorld
 
         void EmergeNow()
         {
-            Vector3 pos = homeEmerge != null
-                ? homeEmerge.position
-                : (homeDoor != null ? homeDoor.position : outdoorHome);
-            Vector3 facing = homeEmerge != null
-                ? homeEmerge.forward
+            Vector3 pos = tripEmerge != null
+                ? tripEmerge.position
+                : (tripDoor != null ? tripDoor.position : outdoorHome);
+            Vector3 facing = tripEmerge != null
+                ? tripEmerge.forward
                 : (outdoorHome - pos);
             // Out through the door: it swings open as the villager appears
             // on the village side and shuts again a moment later.
-            if (homeDoorProp != null)
+            if (tripProp != null)
             {
-                homeDoorProp.NpcOpen();
+                tripProp.NpcOpen();
                 SendCustomEventDelayedSeconds("CloseHomeDoor", 1.6f);
             }
             loco.Teleport(pos, facing);

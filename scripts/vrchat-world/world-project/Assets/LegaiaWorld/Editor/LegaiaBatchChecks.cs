@@ -451,6 +451,18 @@ namespace LegaiaWorld
 
         // --- Living town ---------------------------------------------------
 
+        /// The PLAY-MODE soak (LegaiaSoak): enters play mode with ClientSim,
+        /// forces the clock, and watches the villagers actually run. Unlike
+        /// every other method here it must be invoked WITHOUT `-quit` - it
+        /// exits the editor itself once the run is over. Args:
+        /// `-legaiaSoakMode night|day`, `-legaiaSoakSeconds N`,
+        /// `-legaiaSoakScale S`, `-legaiaSoakLog <path>`. Recipe in
+        /// Editor/LegaiaSoak.cs's header.
+        public static void Soak()
+        {
+            LegaiaSoak.Run();
+        }
+
         public static void LivingTown()
         {
             string scenePath = Arg("-legaiaScene", "Assets/Scenes/VRCDefaultWorldScene.unity");
@@ -669,7 +681,8 @@ namespace LegaiaWorld
             if (navData == null)
                 Fail("the navmesh asset was not saved under LegaiaGenerated/" + sceneName);
             var navInstance = LegaiaNavMesh.Register(navData);
-            int routes = 0, doorProps = 0, thresholds = 0;
+            var navLinks = LegaiaNavMesh.LinksOf(root);
+            int routes = 0, doorProps = 0, thresholds = 0, hopHomes = 0;
             var routeFailures = new List<string>();
             try
             {
@@ -703,10 +716,20 @@ namespace LegaiaWorld
                     if (ReadVar(brain, "homeDoorProp") != null)
                         doorProps++;
                     string why;
-                    if (!LegaiaNavMesh.Reachable(placed.position, door.position, 1.2f, out why))
+                    bool hopped;
+                    // A COMPLETE route may include one ledge hop: that is
+                    // how the shore villagers below the village bank get
+                    // home at all, and the locomotion controller composes
+                    // exactly the same walk -> hop -> walk at runtime.
+                    if (!LegaiaNavMesh.ReachableWithLinks(placed.position, door.position,
+                            1.2f, navLinks, out hopped, out why))
                         routeFailures.Add(placed.name + " -> " + door.parent.name + "/door: " + why);
                     else
+                    {
                         routes++;
+                        if (hopped)
+                            hopHomes++;
+                    }
                     if (!LegaiaNavMesh.Reachable(door.position, threshold.position, 1.2f, out why))
                         routeFailures.Add(door.parent.name + " door -> threshold: " + why);
                     var landing = ReadVar(brain, "homeLanding") as Transform;
@@ -727,10 +750,12 @@ namespace LegaiaWorld
                         {
                             var d = home.Find("door");
                             string why;
-                            if (d != null && LegaiaNavMesh.Reachable(npc.position,
-                                    d.position, 1.2f, out why))
+                            bool hopped;
+                            if (d != null && LegaiaNavMesh.ReachableWithLinks(npc.position,
+                                    d.position, 1.2f, navLinks, out hopped, out why))
                                 Fail(npc.name + " is flagged noRoute but " + home.name +
-                                     "/door is reachable from its spawn");
+                                     "/door is reachable from its spawn" +
+                                     (hopped ? " over a ledge link" : ""));
                         }
                 }
                 finally
@@ -763,7 +788,8 @@ namespace LegaiaWorld
                 " villager(s), " + homed + " homed across " + homes +
                 " door(s) (cap " + cap + ", " + doorProps + " with a door prop), " +
                 insideAlready + " living indoors already, " + unroutable +
-                " cut off from every door, " +
+                " cut off from every door, " + navLinks.Count + " ledge link(s) (" +
+                hopHomes + " villager(s) get home over one), " +
                 routes + " navmesh route(s) home complete, " + stationArr.Length +
                 " station(s) on the director (" + propStations + " use-prop, " +
                 chatStations + " chat, " + otherStations + " other), scene " +

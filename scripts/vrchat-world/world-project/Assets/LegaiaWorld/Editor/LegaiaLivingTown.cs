@@ -107,6 +107,15 @@ namespace LegaiaWorld
         public float navMaxSlope = 40f;
         [Tooltip("How far in front of the doorway tile the villager stops to open the door (meters).")]
         public float doorStandDistance = 0.8f;
+        /// How near a doorway tile a door-LEAF prop counts as standing on
+        /// it (meters, XZ) - what separates a house from a cave mouth.
+        public float doorLeafRadius = 2.5f;
+        /// Ledge links: the tallest step a villager will hop up (meters).
+        public float navJumpHeight = 1.5f;
+        /// Ledge links: the widest gap a villager will hop across (meters).
+        public float navJumpDistance = 1.6f;
+        /// Most ledge links to keep in one scene.
+        public int navMaxLinks = 64;
 
         /// A working copy, so a scene settings override never mutates the
         /// builder window's own options object.
@@ -133,6 +142,12 @@ namespace LegaiaWorld
             public Vector3 emerge;
             public Vector3 emergeFace;
             public int occupants;
+            // Index into the manifest's `teleports` array - the coordinate
+            // the settings file's home_doors / exclude_doors overrides
+            // name, and what a rejection is logged as.
+            public int teleport;
+            public bool hasLeaf;    // a door-leaf prop stands on this tile
+            public int exitBand;    // interior-side exits sharing this way out
             // doorT = the stand spot in front of the tile, thresholdT = the
             // tile itself; doorProp = the LegaiaDoor swung on the way through.
             public Transform doorT, thresholdT, landingT, exitT, emergeT;
@@ -162,43 +177,53 @@ namespace LegaiaWorld
             // The navmesh first: every collider the villagers walk against
             // exists by now (this pass runs last), and the home markers
             // below are placed against the same floors it is baked from.
-            GameObject nav = o.navMesh ? LegaiaNavMesh.Apply(root, sceneName, o) : null;
+            GameObject nav = o.navMesh
+                ? LegaiaNavMesh.Apply(root, sceneName, o, settings) : null;
+            var navLinks = nav != null
+                ? LegaiaNavMesh.LinksOf(root) : new List<LegaiaNavMesh.Link>();
 
             s_npcRoot = root.transform.Find("npcs");
             s_doorStand = Mathf.Max(0.3f, o.doorStandDistance);
             Vector3 spawn = LegaiaWorldBuilder.G2U(
                 MiniJson.GetVec3(MiniJson.Get(manifest, "spawn"), "position"));
 
-            var homes = ReadHomes(manifest, spawn, o);
-            var homesRoot = new GameObject("homes");
-            homesRoot.transform.SetParent(container.transform, false);
-            for (int i = 0; i < homes.Count; i++)
-                MakeHomeMarkers(root.transform, homesRoot.transform, homes[i], i);
-
-            var stationsRoot = new GameObject("stations");
-            stationsRoot.transform.SetParent(container.transform, false);
-            int propStations = BuildPropStations(root, manifest, stationsRoot.transform,
-                spawn, o);
-            int chatStations = BuildChatRings(root, manifest, stationsRoot.transform,
-                settings, spawn, o);
-            int viewStations = BuildIndoorViewpoints(root, stationsRoot.transform,
-                homes, o);
-            viewStations += BuildOutdoorViewpoints(root, stationsRoot.transform,
-                spawn, o);
-
-            // Wire the brains with the bake live, so a home is only ever
-            // assigned to a villager who can walk to its door.
+            // The bake stays REGISTERED for the whole build below, not just
+            // for the brain wiring: the door stand spots are snapped onto
+            // it (a spot no villager can stand on is a night spent at the
+            // wrong side of a wall), and a home is only ever assigned to a
+            // villager who can walk or hop to its door.
             var navData = nav != null ? LegaiaNavMesh.LoadData(sceneName) : null;
             var navInst = navData != null
                 ? LegaiaNavMesh.Register(navData) : new UnityEngine.AI.NavMeshDataInstance();
+            s_navLive = navData != null;
+            List<Home> homes;
             List<Component> brains;
+            int propStations, chatStations, viewStations;
             try
             {
+                homes = ReadHomes(manifest, spawn, o, settings);
+                var homesRoot = new GameObject("homes");
+                homesRoot.transform.SetParent(container.transform, false);
+                for (int i = 0; i < homes.Count; i++)
+                    MakeHomeMarkers(root.transform, homesRoot.transform, homes[i], i);
+
+                var stationsRoot = new GameObject("stations");
+                stationsRoot.transform.SetParent(container.transform, false);
+                propStations = BuildPropStations(root, manifest, stationsRoot.transform,
+                    spawn, o);
+                chatStations = BuildChatRings(root, manifest, stationsRoot.transform,
+                    settings, spawn, o);
+                viewStations = BuildIndoorViewpoints(root, stationsRoot.transform,
+                    homes, o);
+                viewStations += BuildOutdoorViewpoints(root, stationsRoot.transform,
+                    spawn, o);
+
                 brains = WireBrains(root, manifest, sceneName, genDir, settings, o, homes,
-                    navData != null);
+                    navData != null, navLinks);
             }
             finally
             {
+                s_navLive = false;
                 if (navData != null)
                     UnityEngine.AI.NavMesh.RemoveNavMeshData(navInst);
             }
@@ -281,16 +306,30 @@ namespace LegaiaWorld
         /// Pair the manifest's teleports into homes: an outside->inside
         /// teleport is a front door, and the inside->outside teleport whose
         /// trigger is nearest that landing is its way back out.
+        ///
+        /// NOT EVERY doorway is a HOUSE. Retail's outside->inside teleports
+        /// also cover caves and passages - town01's has its trigger 1.2 m
+        /// below village level and a three-tile-wide way out - and a
+        /// villager sent "home" to one walks to the cave mouth and stands
+        /// there, which is exactly what the night routine looked like. A
+        /// home must therefore look like a house: either a door LEAF prop
+        /// stands on its doorway tile, or its way out is a single tile
+        /// (one interior-side teleport, not a band). The settings file's
+        /// `home_doors` / `exclude_doors` pin the verdict per teleport
+        /// index when a scene needs it.
         static List<Home> ReadHomes(object manifest, Vector3 spawn,
-            LegaiaLivingTownOptions o)
+            LegaiaLivingTownOptions o, LegaiaSceneSettings settings)
         {
             var entries = new List<Home>();
             var exitTrig = new List<Vector3>();
             var exitDest = new List<Vector3>();
             var exitFace = new List<Vector3>();
+            var leaves = DoorLeafPositions(manifest);
+            int tpIndex = -1;
             foreach (object tp in MiniJson.AsList(MiniJson.Get(manifest, "teleports"))
                      ?? new List<object>())
             {
+                tpIndex++;
                 Vector3 trig = LegaiaWorldBuilder.G2U(
                     MiniJson.GetVec3(MiniJson.Get(tp, "trigger"), "position"));
                 Vector3 dest = LegaiaWorldBuilder.G2U(
@@ -309,6 +348,8 @@ namespace LegaiaWorld
                         door = trig,
                         landing = dest,
                         landingFace = face,
+                        teleport = tpIndex,
+                        hasLeaf = NearAny(leaves, trig, o.doorLeafRadius),
                     });
                 }
                 else if (trigIn && !destIn)
@@ -338,6 +379,14 @@ namespace LegaiaWorld
                 entries[i].exit = exitTrig[best];
                 entries[i].emerge = exitDest[best];
                 entries[i].emergeFace = exitFace[best];
+                // How many interior-side exits stand shoulder to shoulder
+                // with the one that was picked: 1 = a doorway, more = a
+                // passage's exit band.
+                int band = 0;
+                for (int j = 0; j < exitTrig.Count; j++)
+                    if (Vector3.Distance(exitTrig[best], exitTrig[j]) < 2.5f)
+                        band++;
+                entries[i].exitBand = band;
                 // No authored arrival facing: look into the room, i.e. away
                 // from the door you just came through.
                 if (entries[i].landingFace.sqrMagnitude < 1e-6f)
@@ -346,7 +395,62 @@ namespace LegaiaWorld
             foreach (var h in entries)
                 if (h.emergeFace.sqrMagnitude < 1e-6f)
                     h.emergeFace = h.emerge - h.door;
-            return entries;
+
+            // --- Houses only ------------------------------------------------
+            var homes = new List<Home>();
+            foreach (var h in entries)
+            {
+                string why = null;
+                if (settings != null && settings.DoorIsExcluded(h.teleport))
+                    why = "excluded by the scene settings";
+                else if (settings != null && settings.DoorIsForced(h.teleport))
+                    why = null;
+                else if (!h.hasLeaf && h.exitBand > 1)
+                    why = "no door leaf on the tile and a " + h.exitBand +
+                          "-tile way out - a passage, not a house";
+                else if (!h.hasLeaf && !h.hasExit)
+                    why = "no door leaf and no interior-side way out";
+                if (why == null)
+                {
+                    homes.Add(h);
+                    continue;
+                }
+                Debug.Log("[Legaia] living town: teleport " + h.teleport +
+                    " at " + h.door + " is not a home - " + why + ".");
+            }
+            return homes;
+        }
+
+        /// Every door-LEAF prop position in the manifest frame: an animated
+        /// prop the exporter marked `is_door`. Read from the manifest
+        /// rather than from the scene because the homes are derived before
+        /// anything looks at the built props.
+        static List<Vector3> DoorLeafPositions(object manifest)
+        {
+            var list = new List<Vector3>();
+            foreach (object p in MiniJson.AsList(MiniJson.Get(manifest, "animated_props"))
+                     ?? new List<object>())
+                foreach (object inst in MiniJson.AsList(MiniJson.Get(p, "instances"))
+                         ?? new List<object>())
+                {
+                    // `is_door` is a per-INSTANCE flag: the same leaf mesh
+                    // is placed on several doorways and on scenery.
+                    if (!(MiniJson.Get(inst, "is_door") is bool d) || !d)
+                        continue;
+                    list.Add(LegaiaWorldBuilder.G2U(MiniJson.GetVec3(inst, "position")));
+                }
+            return list;
+        }
+
+        static bool NearAny(List<Vector3> pts, Vector3 p, float radius)
+        {
+            foreach (var q in pts)
+            {
+                float dx = q.x - p.x, dz = q.z - p.z;
+                if (dx * dx + dz * dz <= radius * radius)
+                    return true;
+            }
+            return false;
         }
 
         static void MakeHomeMarkers(Transform root, Transform parent, Home h, int index)
@@ -389,9 +493,39 @@ namespace LegaiaWorld
         /// when nothing around it has floor and standing room.
         static Vector3 DoorStandSpot(Vector3 tile, float dist)
         {
+            // Try the asked-for distance first, then closer in. A doorway
+            // on a raised hut has no open floor a full stride out - the
+            // porch is one step deep - and returning the tile itself there
+            // (the old fallback) leaves the villager walking at a spot it
+            // cannot reach, which is a night spent shuffling outside.
+            for (int attempt = 0; attempt < 3; attempt++)
+            {
+                float d = dist - attempt * 0.2f;
+                if (d < 0.3f)
+                    break;
+                Vector3 spot;
+                if (StandSpotAt(tile, d, out spot))
+                    return spot;
+            }
+            // Nothing open around the tile: the nearest walkable ground the
+            // bake knows about, which at least is somewhere a villager can
+            // be. Failing even that, the tile.
+            if (s_navLive)
+            {
+                UnityEngine.AI.NavMeshHit onMesh;
+                if (UnityEngine.AI.NavMesh.SamplePosition(tile, out onMesh, 1.5f,
+                        UnityEngine.AI.NavMesh.AllAreas))
+                    return onMesh.position;
+            }
+            return tile;
+        }
+
+        static bool StandSpotAt(Vector3 tile, float dist, out Vector3 spot)
+        {
             Vector3 eye = tile + Vector3.up * 0.45f;
             float bestScore = -1f;
-            Vector3 best = tile;
+            spot = tile;
+            bool found = false;
             for (int k = 0; k < 16; k++)
             {
                 Vector3 dir = Quaternion.AngleAxis(k * 22.5f, Vector3.up) * Vector3.forward;
@@ -410,14 +544,29 @@ namespace LegaiaWorld
                 if (Mathf.Abs(floor.y - tile.y) > 0.35f)
                     continue;
                 float score = clear - Mathf.Abs(floor.y - tile.y) * 2f;
+                // A spot the bake calls walkable beats a merely clear one:
+                // the villager has to be able to ROUTE there.
+                if (s_navLive)
+                {
+                    UnityEngine.AI.NavMeshHit onMesh;
+                    if (!UnityEngine.AI.NavMesh.SamplePosition(floor, out onMesh, 0.4f,
+                            UnityEngine.AI.NavMesh.AllAreas))
+                        continue;
+                    floor = onMesh.position;
+                    score += 2f;
+                }
                 if (score > bestScore)
                 {
                     bestScore = score;
-                    best = floor;
+                    spot = floor;
+                    found = true;
                 }
             }
-            return best;
+            return found;
         }
+
+        // True while this pass holds the bake registered (see Apply).
+        static bool s_navLive;
 
         /// The LegaiaDoor (on the approach trigger the builder parks at a
         /// door prop's origin) nearest the doorway tile, within a couple of
@@ -881,7 +1030,8 @@ namespace LegaiaWorld
 
         static List<Component> WireBrains(GameObject root, object manifest,
             string sceneName, string genDir, LegaiaSceneSettings settings,
-            LegaiaLivingTownOptions o, List<Home> homes, bool navLive)
+            LegaiaLivingTownOptions o, List<Home> homes, bool navLive,
+            List<LegaiaNavMesh.Link> navLinks)
         {
             var brains = new List<Component>();
             var npcRoot = root.transform.Find("npcs");
@@ -926,6 +1076,10 @@ namespace LegaiaWorld
             // villager on the beach below the village bank, say): no home,
             // it stays out at night rather than clip up the bank.
             var noRoute = new bool[files.Count];
+            // Homed only because a ledge link bridges the gap (the shore
+            // villagers below the village bank) - reported, so a scene's
+            // hop routes are visible without reading the timeline.
+            var hoppedHome = new bool[files.Count];
             for (int i = 0; i < homeOf.Length; i++)
             {
                 homeOf[i] = -1;
@@ -949,15 +1103,24 @@ namespace LegaiaWorld
                         continue;
                     }
                     bool anyRoute = false;
+                    string firstWhy = null;
                     for (int tries = 0; tries < homes.Count; tries++)
                     {
                         int cand = (h + tries) % homes.Count;
                         if (navLive)
                         {
                             string why;
-                            if (!LegaiaNavMesh.Reachable(objs[idx].position,
-                                    homes[cand].doorT.position, 1.2f, out why))
+                            bool hopped;
+                            if (!LegaiaNavMesh.ReachableWithLinks(objs[idx].position,
+                                    homes[cand].doorT.position, 1.2f, navLinks,
+                                    out hopped, out why))
+                            {
+                                if (firstWhy == null)
+                                    firstWhy = why;
                                 continue;
+                            }
+                            if (hopped)
+                                hoppedHome[idx] = true;
                         }
                         anyRoute = true;
                         if (homes[cand].occupants >= o.homeCap)
@@ -971,16 +1134,31 @@ namespace LegaiaWorld
                     {
                         noRoute[idx] = true;
                         Debug.LogWarning("[Legaia] living town: " + objs[idx].name +
+                            " at " + objs[idx].position.ToString("F2") +
                             " has no walkable route to any front door - it keeps " +
-                            "no home and stays out at night.");
+                            "no home and stays out at night. First door tried: " +
+                            (firstWhy ?? "?"));
                     }
                 }
             }
 
+            Transform[] linkFrom = LegaiaNavMesh.LinkEnds(root, "from");
+            Transform[] linkTo = LegaiaNavMesh.LinkEnds(root, "to");
             var walkWired = new HashSet<string>();
             int walked = 0;
-            int indoorsWanted = Mathf.RoundToInt(files.Count *
-                Mathf.Clamp01(o.daytimeIndoorsShare));
+            // The daytime-indoors share is a share of the villagers who
+            // actually HAVE a front door, not of every villager: measured
+            // against all 15 in town01 it rounds to 3, and with only 2
+            // homed both of them stayed in - so nobody ever came out at
+            // dawn and the night routine had no visible second half. Never
+            // the last one either, so at least one villager walks out.
+            int homedCount = 0;
+            for (int i = 0; i < homeOf.Length; i++)
+                if (homeOf[i] >= 0)
+                    homedCount++;
+            int indoorsWanted = Mathf.Clamp(
+                Mathf.FloorToInt(homedCount * Mathf.Clamp01(o.daytimeIndoorsShare)),
+                0, Mathf.Max(0, homedCount - 1));
             int indoorsMade = 0;
             for (int k = 0; k < order.Length; k++)
             {
@@ -991,7 +1169,7 @@ namespace LegaiaWorld
                 // The locomotion controller: the wander pass normally wired
                 // it already; wire it here when that pass is off, so the
                 // living town never depends on the order of the two.
-                var loco = EnsureLoco(npc.gameObject, o);
+                var loco = EnsureLoco(npc.gameObject, o, linkFrom, linkTo);
                 // Bind the measured walk cycle where this rig family has
                 // one - after the controller exists, so its animator field
                 // is set on a component that is certainly there.
@@ -1033,6 +1211,13 @@ namespace LegaiaWorld
                 LegaiaWorldBuilder.SyncUdonProxy(brain);
                 brains.Add(brain);
             }
+            int hopHomes = 0;
+            for (int i = 0; i < hoppedHome.Length; i++)
+                if (hoppedHome[i] && homeOf[i] >= 0)
+                    hopHomes++;
+            Debug.Log("[Legaia] living town: " + homedCount + " villager(s) homed (" +
+                hopHomes + " of them only because a ledge link bridges the gap), " +
+                indoorsWanted + " of the homed stay in by day.");
             if (o.walkAnimator)
                 Debug.Log("[Legaia] living town: walk cycle '" + o.walkClip +
                     "' bound on " + walked + " of " + files.Count +
@@ -1065,7 +1250,8 @@ namespace LegaiaWorld
 
         /// The NPC's locomotion controller, wired if the wander pass did not
         /// (its facing overrides and radius are that pass's business).
-        static Component EnsureLoco(GameObject npc, LegaiaLivingTownOptions o)
+        static Component EnsureLoco(GameObject npc, LegaiaLivingTownOptions o,
+            Transform[] linkFrom, Transform[] linkTo)
         {
             var t = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaNpcWander");
             Component loco = t != null ? npc.GetComponent(t) : null;
@@ -1076,6 +1262,10 @@ namespace LegaiaWorld
                     return null;
             }
             LegaiaWorldBuilder.SetUdonField(loco, "walkSpeed", o.walkSpeed);
+            // The ledge links: a walk that no route connects is re-composed
+            // as walk -> hop -> walk over one of these.
+            LegaiaWorldBuilder.SetUdonField(loco, "linkFrom", linkFrom);
+            LegaiaWorldBuilder.SetUdonField(loco, "linkTo", linkTo);
             LegaiaWorldBuilder.SyncUdonProxy(loco);
             return loco;
         }

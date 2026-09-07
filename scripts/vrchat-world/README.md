@@ -39,17 +39,17 @@ your disc ──legaia-extract──▶ extracted/ ──legaia-engine export-gl
 | `world-project/Assets/LegaiaWorld/Shaders/LegaiaInteriorShell.shader` | Unlit black, front faces only: the interior-room dome, wound inward so it reads as black space from inside and is invisible (backface-culled) from outside. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaDoorway.cs` | UdonSharp doorway teleport: walking into the trigger repositions the local player at the landing marker with the authored arrival facing - the retail intra-scene door mechanism. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaDoor.cs` | UdonSharp proximity door: first approach by a player plays the door's swing clip once and holds it open; `NpcOpen` / `NpcClose` (the `OnNpcArrive` / `OnNpcLeave` station events) let a villager open a cupboard while it stands there and close it again on leaving, refcounted so two villagers at one cupboard close it once. |
-| `world-project/Assets/LegaiaWorld/Udon/LegaiaNpcWander.cs` | The NPC locomotion controller: the autonomous small-radius stroll (collision-aware, floor-following, forward-only) plus the command API the living-town brain drives (`GoTo` / `FaceToward` / `Arrived` / `Blocked` / `Stop` / `Teleport`). A commanded walk follows a route over the baked navmesh corner by corner, with a probe-ray steering fan as the local reactive layer and one re-plan on a stall; the idle/walk Animator crossfade covers rigs with a measured walk clip. Facing is measured off the rendered torso, never derived. |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaNpcWander.cs` | The NPC locomotion controller: the autonomous small-radius stroll (collision-aware, floor-following, forward-only) plus the command API the living-town brain drives (`GoTo` / `GoToWithin` / `SlideTo` / `FaceToward` / `Arrived` / `Blocked` / `Stop` / `Teleport` / `Facing`). A commanded walk follows a route over the baked navmesh corner by corner, hopping the bake's ledge links where no walk connects; the probe-ray steering fan only detours around another villager while on a route, and two watchdogs (no displacement, no progress toward the current corner) end a walk that cannot get through. Facing is measured off the rendered torso, never derived. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaNavMeshLoader.cs` | Registers the baked villager navmesh (`NavMeshData` asset) with the runtime `NavMesh` at load - the one-liner that stands in for the AI Navigation package's surface component. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaNpcStation.cs` | The station contract of the living town: a place an NPC can go and do something (`kind` 0 use-prop / 1 fishing / 2 seat / 3 chat / 4 viewpoint), a stand point + facing, an optional handler that receives `OnNpcArrive` / `OnNpcLeave`, and `Claim` / `Release` bookkeeping. Any pass can plant one; the director finds them all. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaTownDirector.cs` | The town's scheduler (one per scene): matchmakes 2- or 3-way conversations onto chat rings and runs the bubble turn-taking, hands idle villagers free stations of any kind, and sends the town indoors at night (and back out at dawn). |
-| `world-project/Assets/LegaiaWorld/Udon/LegaiaNpcBrain.cs` | One villager's state machine (stroll / go to station / at station / go chat / chat / go home / door opening / onto the threshold / come out), executing the director's decisions through the locomotion controller and the station contract; a build-time personality seed keeps every client's choices aligned. |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaNpcBrain.cs` | One villager's state machine (stroll / go to station / at station / go chat / chat / go home / door opening / onto the threshold / come out / stand out for the night), executing the director's decisions through the locomotion controller and the station contract; a build-time personality seed keeps every client's choices aligned. The door trip is a reusable action (`DoorTrip` / `LeaveThrough`) any layer can aim at any doorway pair. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaSpeechBubble.cs` | The billboarded icon bubble over a talking villager ("...", "!", "?", heart, music note, laugh) with the NPC's own first dialog line under it (TextMeshPro); icons swap by enabling one of six child quads, never by material writes. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaWeather.cs` | Clock-synced weather schedule (clear / overcast / windy spells): ambient + fog greying multiplied over the day/night cycle, grass gust strength, and the `windLevel` feed into the ambience mixer. `JumpToClear` is the settings panel's button. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaFishingSpot.cs` | Fishing-station handler: while a villager stands on a shoreline station it holds a generated rod over the water, a line to a bobbing float with ripples, and an occasional catch; steps aside when a player stands on the spot. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaCardTableHost.cs` | Card-table seat handler: villagers sit at free stools (seated pose approximated by lowering the rig) holding a fanned pair of card backs, and give the table back the moment a player sits down, a card leaves the deck, or the synced *NPCs: sit / shoo* button says so. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaLivingTown.cs` | The **Living town** pass: bakes the villager navmesh, builds the director, per-villager brains + bubbles, use-prop stations in front of every one-shot prop (cupboards, drawer, shop door), chat rings, viewpoints and the seeded home assignment from the manifest's doorway pairs - each home with its doorway tile, a stand spot in front of it and the door prop to swing. Idempotent. |
-| `world-project/Assets/LegaiaWorld/Editor/LegaiaNavMesh.cs` | The navmesh bake: collects every non-trigger collider under the built root and the kit's prefab containers (NPC capsules and rigidbodies excluded), bakes a villager-sized `NavMeshData` with Unity's runtime builder, saves it under `LegaiaGenerated/<scene>/livingtown/` and wires the loader. Also the editor-side route check the batch test uses. |
+| `world-project/Assets/LegaiaWorld/Editor/LegaiaNavMesh.cs` | The navmesh bake: collects every non-trigger collider under the built root and the kit's prefab containers (NPC capsules and rigidbodies excluded), bakes a villager-sized `NavMeshData` with Unity's runtime builder, saves it under `LegaiaGenerated/<scene>/livingtown/` and wires the loader. Also finds the **ledge links** that let a villager hop between islands the bake leaves unconnected, and the editor-side route check (walks and hops) the batch test uses. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaBubbleArt.cs` | Procedural speech-bubble art: the six icon textures drawn from scratch into an atlas, one material each, and the bubble quad. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaWeatherBuilder.cs` | The **Weather** pass: builds `<root>/weather` and wires `LegaiaWeather` to the day/night cycle, the grass material, the ambience mixer and the settings panel. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaLivingProps.cs` | The **Living props** pass: finds standable shoreline points from the world mesh alone (water sheet vs land cells, floor ray, clear standing capsule) and plants the fishing stations in `<root>/living_props`. |
@@ -61,6 +61,7 @@ your disc ──legaia-extract──▶ extracted/ ──legaia-engine export-gl
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaPickupProp.cs` | UdonSharp equipment-rack pickup: the prop spawns kinematic (frozen on the rack) and only becomes a free physics object the first time a player drops it - so a rack of dozens of bodies can't tunnel through the thin ground during world-load hitches. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaCommonPrefabs.cs` | The **Common prefabs** foldout: builds the mirror, the TV and the card table from primitives + generated textures + the SDK's own components, spawns the SDK's sample pen system, and drops any prefab assets you list (QvPen, ProTV, a community deck...) near spawn. See "Common prefabs" below. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaSettingsSnapshot.cs` | Menu `Legaia > Snapshot placements to scene settings`: writes the hand-placed Inspector transforms of the common prefabs, the camp settings panel and LegaiaSpawn into `Settings/<scene>.settings.json` (`prefab_transforms` + `spawn_position`), preserving the file's other keys. |
+| `world-project/Assets/LegaiaWorld/Editor/LegaiaSoak.cs` | The PLAY-MODE soak (`LegaiaBatchChecks.Soak`): enters play mode with ClientSim, pins the day/night clock to night or day, samples every brain at 2 Hz into a per-villager timeline, and asserts the night routine ran (in through the door, door swung, out again at dawn) or reports a day's station visits and conversations. The only check here that actually runs a villager. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaBatchChecks.cs` | Headless self-test (`Unity -batchmode -executeMethod LegaiaWorld.LegaiaBatchChecks.CommonPrefabs`): builds the common prefabs against the scene's built root and asserts every SDK component and every UdonSharp field wiring reached the backing behaviour. Never saves the scene. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaEventButton.cs` | A collider button: Interact sends one named event into a target behaviour. Every common-prefab button uses it (no world-space UI, so no pickup-collider-steals-the-click trap). |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaMirror.cs` | Mirror controller: Off / full / players-only surfaces, local choice, auto-off when the player walks away. |
@@ -304,6 +305,16 @@ All keys optional (`town01.settings.json` is the worked example):
   "windmill": ...}`. Each key optional, each value the asset path of any
   AudioClip in the project. A named role uses that clip instead of the
   synthesized one, which is then never generated. See "Ambient audio".
+- **`living_town`** - the village layer's per-scene tuning:
+  `home_cap`, `chat_spots`, `seed`, `daytime_indoors_share`, `walk_clip`,
+  plus `home_doors` / `exclude_doors` (teleport indices to force or refuse
+  as HOUSES - the pass otherwise decides from a door leaf on the tile or a
+  single-tile way out, and logs every rejection with its index) and
+  `nav_links` (`[[[x,y,z],[x,y,z]], ...]` in manifest coordinates: ledge
+  links to add by hand where the bake's own search misses one).
+- **`npc_homes`** - pin a villager to a house door by index into the
+  homes the pass keeps (`living_town/homes/home_N`). Note the indices
+  shift when a teleport is rejected as not-a-house.
 - **`set_descriptor_spawn`** - point the VRC Scene Descriptor's
   `Spawns[0]` at `LegaiaSpawn` after the build (default true, also
   without a settings file; a no-op until the `VRCWorld` prefab is in the
@@ -436,15 +447,93 @@ ambles off the quay. A scene with no bake, or a target no mesh reaches,
 falls back to the straight-line walk. Brains decide at 10 Hz and only move
 per frame while actually stepping.
 
+### The night trip, and what makes it work
+
+At nightfall a villager walks to a stand spot in front of its home's
+doorway tile, faces the tile, the door leaf swings open, it steps onto the
+tile, teleports to the interior landing and the door shuts behind it; at
+dawn the reverse. Four things had to hold before that read as a routine
+rather than as milling about outside:
+
+- **A home is a HOUSE.** Retail's outside-to-inside teleports also cover
+  caves and passages - town01's has its trigger 1.2 m below village level
+  and a three-tile way out - and a villager sent "home" to one walks to
+  the cave mouth and stands there. A home now needs a door LEAF prop on
+  its tile or a single-tile way out; every rejection is logged with its
+  teleport index, and `living_town/home_doors` / `exclude_doors` pin the
+  verdict per scene.
+- **The last stride is not steered.** A doorway is narrower than the
+  probe fan can read as passable, so the steering picked a lane, committed
+  to it, re-aimed, picked the other lane - and the villager circled a step
+  short of its own front door for ever. Inside a stride of the target the
+  lane picking is off; on a navmesh route it only ever detours around
+  another VILLAGER, because the bake already used this villager's radius
+  and height. The step from the stand spot onto the tile is a scripted
+  slide, since the tile sits inside the frame with the (visually open,
+  still solid) leaf beside it.
+- **Giving up is bounded.** A failed trip is retried three times and then
+  the villager stands at its door until dawn (brain state 9) instead of
+  being sent back at an unreachable door every few seconds.
+- **The shore is reachable.** See ledge links below.
+
+### Ledge links (villagers jump)
+
+A drop the agent cannot climb leaves the bake as two islands with no route
+between them - town01's shore sits 1.2 m under the village, and the two
+villagers standing on it had nowhere to go at night. The bake now finds
+**ledge links**: pairs of points on its own boundary edges, close enough
+together and short enough a drop to jump, with clear air over the gap and
+no walk already connecting them. They are kept as a spanning structure
+(cheapest first, one per join) so every island that can be reached is,
+written as `living_town/navmesh/links/link_N` marker pairs, and
+`living_town/nav_links` in the settings file pins one by hand. **Jump
+height** and **Jump distance** are in the builder panel.
+
+`LegaiaNpcWander` composes a route no walk completes as a CHAIN of walks
+and hops over those links (up to three - town01's shore needs two), and
+the hop itself is a scripted parabola with the floor ray off while
+airborne, so the villager clears the bank instead of being dragged back
+down it. `NavMesh.AddLink` IS exposed to Udon, but `NavMeshLinkData` has
+no constructor extern, so a link cannot be built inside Udon at all -
+composing the route keeps the hop under the kit's control anyway.
+
 Per-scene tuning lives in the settings file (`living_town` for the cap,
-the number of conversation spots, the seed, the daytime-indoors share and
-the walk clip name; `npc_homes` pins named villagers to a particular
-door - see "Per-scene settings"). Headless check:
+the number of conversation spots, the seed, the daytime-indoors share, the
+walk clip name, the house overrides and the hand-pinned ledge links;
+`npc_homes` pins named villagers to a particular door - see "Per-scene
+settings"). Headless check:
 `Unity -batchmode -executeMethod LegaiaWorld.LegaiaBatchChecks.LivingTown` -
-which also registers the bake and asserts a *complete* navmesh route from
-every homed villager's spawn to its door stand spot, from there onto the
-doorway tile, and from the landing to the way out, so a door nobody can
-walk to fails the build instead of clipping in-world.
+which also registers the bake and asserts a *complete* route (walks and
+hops) from every homed villager's spawn to its door stand spot, from there
+onto the doorway tile, and from the landing to the way out, so a door
+nobody can reach fails the build instead of clipping in-world.
+
+### The play-mode soak
+
+The checks above are edit-mode geometry: they never run a villager. The
+**soak** does - it enters play mode with ClientSim, pins the day/night
+clock, samples every brain at 2 Hz into a timeline file and asserts the
+night routine actually happened:
+
+```
+Unity.exe -batchmode -nographics -projectPath <copy>
+    -executeMethod LegaiaWorld.LegaiaBatchChecks.Soak
+    -legaiaSoakMode night -legaiaSoakSeconds 300
+    [-legaiaSoakScale 2] [-legaiaSoakLog <copy>\Logs\soak.timeline.log]
+    -logFile <copy>\Logs\soak.log
+```
+
+No `-quit`: the run drives itself from `EditorApplication.update` and
+exits the editor itself (0 pass, 1 an assertion failed, 3 play mode never
+started, 4 the wall-clock watchdog). `night` forces night for the first
+65% of the budget then dawn, and fails on a villager that never got
+inside, never came back out, whose door never swung, or that gave up on
+the trip. `day` forces day for the whole budget and REPORTS instead -
+station visits, conversations, ledge hops, blocked walks and metres
+walked per villager - which is the mode to run over a merged kit when a
+new daytime layer lands. Udon's delayed events follow `Time.timeScale`
+(the summary prints brain ticks per simulated second, ~10 either way), so
+`-legaiaSoakScale 2` really does buy twice the simulated time.
 
 
 ## Common prefabs
