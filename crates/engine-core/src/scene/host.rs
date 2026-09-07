@@ -146,6 +146,9 @@ pub struct SceneHost {
     /// Tracks whether the sparring-tutorial prompt corpus install was
     /// attempted, so the disc read (PROT 0967) only happens once per host.
     battle_tutorial_loaded: bool,
+    /// Tracks whether the cast-effect pool install was attempted, so the 64
+    /// band reads (PROT 0903..0966) only happen once per host.
+    cast_effect_pool_loaded: bool,
     /// What the last **mode-24 minigame door-warp** drain did, if one has run.
     ///
     /// Deliberately a host field rather than a [`SceneTickEvent`] variant: the

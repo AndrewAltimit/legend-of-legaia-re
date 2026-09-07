@@ -443,8 +443,54 @@ rope-and-mesh fence, and the `int2` variant differs by their reaction, which is
 consistent with the HP test that selects it. **Confirmed** (disassembly) for
 the loader, the index arithmetic, the variant selector and the upload geometry;
 what the panel is used for on screen is **Inferred** - no draw of the
-`(384, 0)` rect has been traced, and the streamer's arming condition (battle
-context `ctx[+0xC] == 2`, written under `ctx[+0x7] == 0x67`) is undecoded.
+`(384, 0)` rect has been traced.
+
+#### What arms the load
+
+`ctx[+0xC]` is a battle-teardown state byte, and the SCUS post-battle routine
+`FUN_8004E568` drives the last two of its three values from two places
+(`0x8004E670..0x8004E6E4` and `0x8004F840..0x8004F8B0`, the same block twice):
+
+| `ctx[+0xC]` | What runs |
+|---|---|
+| `1` | Free the four enemy record buffers `0x801C9348[0..3]` (each gated on `ctx[+0x02 + i] != 0`) through `FUN_80017B94`, free the side-band stream buffer `*0x8007BD74`, then write `2`. |
+| `2` | Tick `FUN_80025358` once a frame, storing its "still loading" return in `ctx[+0xB]`. That is the staged load of PROT 0978, whose `FUN_801F6B24` streams the still into the space the `1` arm just freed. |
+
+The arm itself is neither of those. Sweeping `SCUS_942.54` and every statically
+based overlay image for the `li rX, 1` / `sb rX, 0xC(rY)` pair returns exactly
+one site, `0x800474CC` - the **per-frame battle anim-node tick**
+`FUN_80047430`, which writes `ctx[+0xC] = 1` for an enemy node only (`node[+0x5A] >= 3`) and under two further
+gates - `gp[+0xA48] & 0x80` set, and the per-battle enemy id byte `gp[+0x9F4]`
+not `0xB5`. The same two instructions also set the node's early-return flag
+(`node[+0x10] |= 8`), so the enemy stops ticking in the same frame the load is
+armed. `gp[+0xA48] |= 0x80` comes from the battle-end spoils path at
+`0x8004EDE0` (`FUN_8004E568`) and from a pad-gated branch at `0x80046D98`
+(`FUN_80046A20`, under `_DAT_8007B98C != 0` and pad mask `0x100`).
+
+So the load is a **battle-teardown** step: the still is streamed into slot B
+after the enemy records are freed, on either battle-end path. The
+`ctx[+0x7] == 0x67` gate on the first of the two blocks is not a separate
+condition on the streamer - it is the **escape** path's entry into the same
+shared teardown. `0x67` is written in one place: case `0x66` of the
+battle-action SM `FUN_801E295C` (`0x801E5A84`), the successful-escape teardown,
+which spawns the fade template at `DAT_801C9070` and raises the battle-end
+signal `DAT_8007BD71 = 0xFE`. `0x67` has no case body of its own
+([`battle-action.md`](battle-action.md)), so it is a terminal hold meaning "the
+party ran and the fade is playing". The second block
+(`0x8004F7A4..0x8004F8B0`) is the ordinary victory tail, reached under
+`gp[+0xA54] >= 0x100`, `ctx[+0xB] == 0` and `ctx[+0x6CE] == 1`; a third tick
+site sits in the battle side-band pass `FUN_80056208` at `0x80056428` (stage
+`_DAT_8007B64A == 1`, phase `ctx[+0x289] == 3`).
+
+**What is still open is only the draw.** No image on the disc materialises
+`384` as a primitive or display coordinate outside the two loaders themselves:
+sweeping every statically based overlay image plus `SCUS_942.54` for
+`addiu rX, zero, 0x180` / `ori rX, rX, 0x180` yields 33 sites, and the only
+ones that pair it with `(384, 0)` are `FUN_801F6B24`'s own two rect writes
+(`0x801F6BE4`, `0x801F6FC8`), the dev VRAM round-trip utility `FUN_8001E890`
+(which `StoreImage`s `(384, 0)` 256x256 back out in four `0x8000`-byte strips),
+and the battle scene loader `FUN_800542C8` at `0x80054928`, whose rect is
+`(384, **256**)` - a different page.
 
 Read with `disasm-overlay-fn.py extracted/overlays/overlay_field_back_read_0978.bin
 --base 0x801F69D8 --addr 0x801F6B24`.
@@ -1310,7 +1356,7 @@ to the emitter it names).
 - ~~The Auto arm's command picker~~ **resolved**: there is no picker. Auto commits the 16-byte string `FUN_801DA34C` had already reloaded out of the character record (`+0x1A7` / `+0x1B7`, chosen by the `actor+0x156 < actor+0x154` AP-band test) and `FUN_801DA59C` saves back on the review confirm - see [The Auto arm picks nothing](#the-auto-arm-picks-nothing---it-replays-a-saved-string). Still open on the same screen: the pennant/bar geometry for off-class (non-30) costs - see [Arts command input](#arts-command-input-packet-pinned).
 - ~~The per-arm assignment of the three UI cue ids~~ **resolved**: `0x21` = accept/confirm, `0x22` = highlight moved, `0x23` = refused-or-back, over **37** call sites (not 34) - see [Which blip is which](#which-blip-is-which-0x21--0x22--0x23) for the per-arm table and the two shared tails.
 - A live `_DAT_8007B864` byte-match during a dome contest, to upgrade the arena-backdrop residency (extraction 1225) from Inferred to capture-Confirmed.
-- What arms the panel-still load - the streamer runs on battle context `ctx[+0xC] == 2`, and the writer of that `2` is itself gated on `ctx[+0x7] == 0x67`, which nothing decodes. No draw site for the VRAM rect the stills land in has been found either; see [the ringside panel stills](#inttim--int2tim---the-ringside-panel-stills).
+- ~~What arms the panel-still load~~ **resolved**: `ctx[+0xC] = 1` is written only by the per-frame battle anim-node tick `FUN_80047430` (`0x800474C4`) for an enemy seat under `gp[+0xA48] & 0x80`, and `ctx[+0x7] == 0x67` is the escape path's entry into the same shared teardown, not a condition of its own - see [What arms the load](#what-arms-the-load). Still open on the same page: no draw site for the VRAM rect the stills land in, and no image outside the loaders names `(384, 0)` at all.
 - ~~Which runtime path (if any) draws the backdrop stream's **object-1 dust
   decal**~~ **resolved, and the "phase-gated effect draw" candidate is
   falsified**: no effect path touches it. The SCUS battle scene loader binds the

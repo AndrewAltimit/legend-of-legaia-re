@@ -530,10 +530,12 @@ fn part_j_jou_jouina_door_decode() {
         "map01 exit trigger tiles"
     );
 
-    // (6) Named finding: the strict portal-site join misses the jouina door -
-    // P2[5] has an undecodable byte region before +0xD0, so the strict linear
-    // pre-scan bails while the resync walker (2) above reaches the op. Pinned
-    // so a decoder change that closes the blind spot trips this oracle.
+    // (6) The portal-site join sees BOTH doors. It used to see only the exit
+    // record: `P2[5]` has an undecodable byte region before `+0xD0` and the
+    // join's own walk was `decode(..).ok()?`, so it abandoned the record at
+    // the first such byte while the resync walker (2) above steps over it and
+    // reaches the op. The join now shares the walker's advance rule, which
+    // closes the blind spot here and on 66 other partition-2 records disc-wide.
     let sites = overworld_portal_sites(&mf, &man, &triggers);
     let site_dests: BTreeSet<(String, u8)> = sites
         .iter()
@@ -541,8 +543,8 @@ fn part_j_jou_jouina_door_decode() {
         .collect();
     assert_eq!(
         site_dests,
-        BTreeSet::from([("map01".to_string(), 6)]),
-        "strict join sees only the exit record (the P2[5] blind spot)"
+        BTreeSet::from([("jouina".to_string(), 5), ("map01".to_string(), 6)]),
+        "the join sees the jouina door as well as the map01 exit"
     );
     eprintln!("[ok] Part J: jou P2[5] -> jouina behind C2=[0x44D]; beat chain P2[2..=4] decoded");
 }

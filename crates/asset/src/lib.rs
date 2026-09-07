@@ -32,6 +32,7 @@ pub mod battle_ui_strings;
 pub mod befect_cluster;
 pub mod boot_overlay;
 pub mod bse_bank;
+pub mod cast_effect_pool;
 pub mod categorize;
 pub mod character_gltf;
 pub mod character_pack;

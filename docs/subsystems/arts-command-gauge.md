@@ -332,7 +332,7 @@ itself, since retail moves the status plate off-screen for the whole session.
 | ending entry | auto-end, **or** confirm mask | same |
 | cancel, buffer typed | clears the entry, refunds the pool | same |
 | cancel, buffer empty | leaves to `0x78` / `0x28` | leaves to the command menu |
-| art body | paid from **Spirit** `+0x170` | free - the swings are the whole price |
+| art body | paid from **Spirit** `+0x170` | same, at the commit rather than at the cleanup arm |
 | target | pre-picked with the command | picked after Begin |
 
 The first two rows are the gap this closes: the old `ap_gauge` model counted a
@@ -348,9 +348,16 @@ the instructions. The port already matched retail on the confirm and on the
 empty-buffer cancel; what it was actually missing, undisclosed, was the
 typed-buffer cancel, and that is now wired.
 
-The one real remaining gap is the un-closed half of the
-[two-gauge split](#what-an-art-costs-in-ap): the port does not yet charge the
-art body out of Spirit, so a turn's whole cost is its swings.
+The [two-gauge split](#what-an-art-costs-in-ap) is closed on both halves.
+`engine-core::ap_gauge::art_spirit_cost` is the builder's three-immediate
+multiplier and `arts_turn_spirit_cost` sums it over the arts a turn performs,
+each at its **visit** ordinal in `battle_arts::spirit_catalog` (the builder's
+walk order, not the arts grid's display index); `World::charge_art_spirit`
+debits `actor[+0x170]` when the turn commits. Two disclosed departures:
+retail accrues into `actor[+0x224]` and spends it once in the battle-action
+cleanup arm rather than at the commit - the same turn and the same total,
+observable only by a mid-action read - and the actor's `0x800` halving flag
+has no engine carrier yet, so the full-price arm is the one that runs.
 
 ### Leaving state `0x50`
 

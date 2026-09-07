@@ -112,6 +112,20 @@ pub struct MonsterDef {
     /// `matrix[attacker][defender]`. Defaults to `7` (neutral) for synthetic
     /// monsters; [`monster_def_from_record`] sets it from the record.
     pub element: u8,
+    /// Limb-vs-height **swing class** (monster record `+0x1E`; see
+    /// [`legaia_asset::monster_archive::MonsterRecord::swing_class`]). Two
+    /// consumers, both in `crates/engine-vm`'s battle-action layer: the
+    /// no-input attack queue (`basic_attack_queue` - a class-`2` target takes
+    /// one low swing) and the damage kernel's apply-mode look-ahead
+    /// (`apply_mode` - a class-`2` / `3` target only connects with power bytes
+    /// of its own class).
+    ///
+    /// Defaults to `0` for synthetic monsters: the class that connects with
+    /// everything and takes the ordinary two-swing attack, so a disc-free
+    /// catalog behaves exactly as it did before the byte was carried.
+    ///
+    /// REF: FUN_801EED1C, FUN_801EC3E4
+    pub swing_class: u8,
     /// Body-size / bulk class (monster record `+0x1F`; see
     /// [`legaia_asset::monster_archive::MonsterRecord::size_class`]). The
     /// battle camera frames on it - `FUN_801F0348` writes
@@ -150,6 +164,7 @@ impl MonsterDef {
             seru_id: None,
             magic_attacks: Vec::new(),
             element: 7,
+            swing_class: 0,
             size_class: 0,
         }
     }
@@ -290,6 +305,9 @@ pub fn monster_def_from_record(rec: &legaia_asset::monster_archive::MonsterRecor
     // the parser already filters out the empty `<= 1` slots.
     def.magic_attacks = rec.magic_attacks.clone();
     def.element = rec.element;
+    // Record `+0x1E` - the limb-vs-height class the queue builder and the
+    // damage kernel's apply-mode look-ahead both read record-direct.
+    def.swing_class = rec.swing_class;
     // Record `+0x1F` - the battle camera's framing input (`FUN_801F0348`).
     def.size_class = rec.size_class;
     def
@@ -494,6 +512,7 @@ pub fn vanilla_monster_catalog() -> MonsterCatalog {
             seru_id: None,
             magic_attacks: Vec::new(),
             element: 7,
+            swing_class: 0,
             size_class: 0,
         };
         cat.insert(def_struct);

@@ -968,11 +968,12 @@ pub enum ModeInitBare {
 /// reason the debug menu's monster-test entry appears to do nothing. The
 /// store is `sh`, matching every other retail writer of that word.
 ///
-/// **Mode 16 jumps into slot A blind.** Unlike modes 0/2/18/24 it never calls
-/// the overlay loader `FUN_8003EBE4`, so `0x801CE9C0` is whatever image
-/// happens to be resident in overlay slot A - and that VA is not an entry
-/// point in any of them (see [`READ_INIT_TARGET`]). A retail-stripped dev
-/// path.
+/// **Mode 16 jumps into slot A without loading it.** Unlike modes 0/2/18/24
+/// it never calls the overlay loader `FUN_8003EBE4`, so `0x801CE9C0` is
+/// whatever image is resident in overlay slot A. That does **not** make it a
+/// dead jump: in PROT 0895 (`init.pak`) the VA is a real entry with a clean
+/// `addiu sp,sp,-0x230` prologue, and it is the publisher-logo boot pass -
+/// see [`READ_INIT_TARGET`] and `crate::publisher_logos`.
 ///
 /// **Mode 20 is the one live row.** `FUN_80055B6C` is the battle-scene setup
 /// entry, resident in `SCUS_942.54`, so BATTLE INIT is a real call and not a
@@ -990,12 +991,14 @@ pub fn mode_init_bare(mode: GameMode) -> Option<ModeInitBare> {
 
 /// The VA mode 16 READ INIT `jal`s.
 ///
-/// It is an **interior** address, not an entry: the only image whose bytes
-/// cover it is the debug-menu overlay, where it is `0x801CE818 + 0x1A8` -
-/// mid-way through the `sw zero` global-clear block of `FUN_801CE97C`. No
-/// based overlay image holds a frame or an in-image `jal` there. Because
-/// `FUN_8002612C` performs no overlay load of its own, what mode 16 actually
-/// jumps into depends on which image slot A last received.
+/// It resolves per image, because `FUN_8002612C` performs no overlay load of
+/// its own: whatever slot A last received is what mode 16 enters. In the boot
+/// overlay PROT 0895 (`init.pak`) it is a **real entry** - slot-A base
+/// `0x801CE818` + `0x1A8`, opening `addiu sp,sp,-0x230` - and it is the body
+/// that uploads the four publisher-logo TIMs, spawns the two boot actors, and
+/// leaves game mode `0x11`. In the debug-menu overlay the same VA is interior
+/// to `FUN_801CE97C`'s global-clear block, which is the reading this constant
+/// used to carry and which held only because 0895 was not yet mapped.
 pub const READ_INIT_TARGET: u32 = 0x801C_E9C0;
 
 /// The mid-frame driver a per-frame mode handler calls between the

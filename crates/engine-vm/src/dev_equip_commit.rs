@@ -1,10 +1,22 @@
-//! Dev-menu **equip commit** - the write half of the debug equipment editor.
+//! Per-slot **equip commit** - one routine that carries the whole law of an
+//! accepted item pick.
 //!
-//! `FUN_801E5A08` in the field overlay (PROT 0897, base `0x801CE818`) is the
-//! routine the dev menu's `EQUIP <char>` rows call once a bag id has been
-//! picked. Its sibling [`crate::world_map_overlay`] already carries the
-//! *browse* half (row model, stat aggregation, slot resolution); this module
-//! is the commit that mutates the character record.
+//! `FUN_801E5A08` in the field overlay (PROT 0897, base `0x801CE818`, file
+//! `+0x171F0`). Its sibling [`crate::world_map_overlay`] carries the *browse*
+//! half (row model, stat aggregation, slot resolution); this module is the
+//! commit that mutates the character record.
+//!
+//! **Nothing on the disc calls it.** A five-form reference sweep plus a raw
+//! byte scan over every extracted image finds no `jal` (encoding
+//! `0x0C079682`), no data word `0x801E5A08`, and no `lui`/`addiu`
+//! materialisation pair. The routine is complete, self-consistent and dead;
+//! what makes it worth porting is that it spells the destination routing,
+//! the refund and the confirm cue out in one place, and the live committers
+//! (`FUN_801D9C14`'s candidate arm, `FUN_801CF760` behind Best Equipment)
+//! agree with it row for row. The VA `0x801D71F0` some dumps print for it is
+//! the same bytes read at base `0x801C0000` - `0xE818` low - which is also
+//! why its intra-function `j 0x801e5ae8` reads as a call to a separate
+//! "armament placer" that does not exist.
 //!
 //! The body reads, in order:
 //!

@@ -467,6 +467,20 @@ pub trait BattleActionHost {
         1
     }
 
+    /// Any pad activity this frame, as retail's packed pair
+    /// `_DAT_8007B874 | _DAT_8007B938` (see
+    /// `docs/subsystems/arts-command-gauge.md` on the packed layout). The
+    /// Done band's fade-down reads exactly that `or` and only for
+    /// zero-vs-non-zero (`0x801E6088..0x801E609C`), so a host that has no
+    /// pad word can return `1` for "something is held" and `0` for idle.
+    ///
+    /// Default `0` - an unattended host never cuts the level-up banner
+    /// short, which is the same tail retail gives a player who does not
+    /// press anything.
+    fn pad_word(&self) -> u16 {
+        0
+    }
+
     /// Iteration helper - number of party slots in the table (slots `0..3`
     /// are party). Default is 3. Engines override if the layout differs.
     fn party_count(&self) -> u8 {

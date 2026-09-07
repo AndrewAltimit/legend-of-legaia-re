@@ -756,27 +756,38 @@ Retail does no bounds check on the index. The port
 out-of-range index rather than reading past the table, which is the safe
 reading of the same outcome.
 
-That port is **not wired**, and what blocks it is the mailbox's *reader*.
-The producer side is present: `World::field_prop_dir_probe` is the port of
-`FUN_801CFC40` and already reports which placement a probe touched, and
-`World::check_field_walk_touch` is the `FUN_801D5B5C` post, running from
-the locomotion step. What no engine state models is `DAT_80073F1C`
-itself, because its only consumer is the wait-for-touch arm above, and
-the engine's slice of `FUN_80038158` is the ambient facing channel plus
-the static MAN decode - that arm is decoded but unported. A call added
-ahead of it would fill a mailbox nothing reads, so the arm is the
-prerequisite.
-
-**`0x8003882C` is one op with two halves, and the port has the other one.**
+**`0x8003882C` is one op with two halves, and the port has both.**
 The block is a *wait-until-touched-or-elapsed*: it opens on the mailbox
 (`lw v1, 0x3f1c(a1)`, the `0xFF` empty test, then the `+0x50` match and the
 `0x8C` class test), and only when that fails does it fall to `0x80038864`,
-where it decrements the op's own operand byte by the vsync delta
-`DAT_1F800393`. `AmbientMotion`'s `Wait` arm
-(`legaia_engine_vm::ambient_motion`) ports the countdown half and cites the
-block's head address, so both citations are of the same op - the ambient
-port simply has no mailbox to consult. That is the same gap stated from the
-consumer's side, not a second one.
+where it rewrites the op's own cursor to `duration - DAT_1F800393` so the
+countdown immediately below (`0x80038880`) lands exactly on the duration and
+expires the wait on that frame, then stores the `0xFF` sentinel back
+(`sw a0,0x3f1c(a1)` at `0x8003887C`).
+
+Both halves are wired. `AmbientMotion::take_touch_wake`
+(`legaia_engine_vm::ambient_motion`) is the head, replaying retail's three
+gates in retail's order, and `AmbientMotion::pending_touch` is the mailbox -
+a per-channel `Option` rather than one global word, which carries the same
+information because every actor's arm tests the word against its own `+0x50`
+and at most one can ever match. The producer is
+`World::post_ambient_motion_touch`, run from the locomotion step alongside
+`World::check_field_walk_touch`; it assembles the `0x801C6470` class-byte
+arena from the **live** channels' op-`0x17` records rather than from the
+static harvest `World::field_npc_default_moves`, because a stream that has
+not run its `0x17` yet still holds the `0x8C` sentinel there and retail's
+guard reads the live arena. End-to-end anchor:
+`crates/engine-core/tests/ambient_touch_wake.rs`, whose two cases differ only
+in where the NPC stands.
+
+### Ops the ambient channel steps over
+
+`AmbientMotion` executes `0x01`, `0x03`, `0x04`, `0x05`, `0x0D`, `0x17`,
+`0x18`, `0x19` and `0x20`. Every other op in `man_motion::op_width`'s space -
+`0x02`, `0x06`..`0x0C`, `0x0E`..`0x16` - is stepped over **by width without
+consuming the tick**, which is the correct answer for the facing channel the
+module drives and a disclosed gap for everything else. A per-tick op budget
+stops a stream whose only yielding op is one of those from spinning.
 
 Provenance: `ghidra/scripts/funcs/8003d038.txt`; the consumer at
 `0x8003882C` is inside `ghidra/scripts/funcs/80038158.txt`.

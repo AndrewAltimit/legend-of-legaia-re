@@ -37,6 +37,14 @@
 //! +0x1A  u16  stat5=SPD     ; -> actor +0x164/+0x166  (turn-order speed)
 //! +0x1D  u8   element       ; element id 0..7; read record-DIRECT by affinity scale
 //!                           ; FUN_801dd864 (record-ptr table 0x801C9348, NOT copied to actor)
+//! +0x1E  u8   swing_class   ; limb-vs-height class; read record-DIRECT through the
+//!                           ; same 0x801C9348 table by the no-input attack-queue
+//!                           ; arm (FUN_801eed1c `0x801eefc8`: class 2 is struck with
+//!                           ; one low swing instead of two arm swings) and by the
+//!                           ; damage kernel's apply-mode look-ahead (FUN_801ec3e4
+//!                           ; `0x801ee080`: class 2 connects only with power bytes
+//!                           ; 0x01..=0x10, class 3 only with 0x11..=0x15). Not
+//!                           ; copied to the actor.
 //! +0x1F  u8   size_class    ; body-size / bulk class; read record-DIRECT through the
 //!                           ; same 0x801C9348 table by the battle-camera framing
 //!                           ; FUN_801f0348 (`ctx+0x6D0 = size << 7`, clamped

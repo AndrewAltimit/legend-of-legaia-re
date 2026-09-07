@@ -198,9 +198,18 @@ pub fn battle_init_stage_override(formation_slot0_monster_id: u8) -> Option<u8> 
 /// It then issues the loader-B call itself (`jal 0x8003EC70` at
 /// `0x801E6D14` with `a0 = 0x4A` `= 3 + 0x47`, paging extraction entry 969
 /// immediately rather than waiting for the dispatch reader), writes stage id
-/// `3` (`sb v0,-0x49b6(a0)` at `0x801E6D2C`), bumps the battle ctx phase
-/// counter `ctx[+0x26]`, forces the flow-state byte `ctx[+0x7] = 0xFD`, and
-/// zeroes the dead seat's `+0x21C` / `+0x225` bytes.
+/// `3` (`sb v0,-0x49b6(a0)` at `0x801E6D2C`), **increments** `ctx[+0x26]`,
+/// forces the flow-state byte `ctx[+0x7] = 0xFD`, and zeroes the dead seat's
+/// `+0x21C` / `+0x225` bytes.
+///
+/// `ctx[+0x26]` is **not** a phase counter, which is how this arm's increment
+/// used to read it. Its three readers all sit in the action machine's Done
+/// band and the last of them, `0x801E61B4`, passes the byte as the element-id
+/// argument of `FUN_801D8DE8(id, 1)` alongside sibling unloads that pass
+/// literal ids - so it is a UI element id, and `0x65` (the "magic level
+/// increased" banner, stored at `0x801E723C`) is the only value anything
+/// assigns. See `docs/subsystems/battle-action.md`. What this increment is
+/// *for* is unsettled; to every reader it only reads as non-zero.
 ///
 /// Monster id `0xB5` is **Cort** (archive id 181; the spell-id collision
 /// with Lapis Wave is settled in `docs/reference/re-settled-threads.md`), so

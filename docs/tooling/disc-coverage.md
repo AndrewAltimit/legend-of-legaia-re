@@ -225,6 +225,7 @@ shape is work:
 | `data` | the opcode statistic rejects it and no shape below claims it: rodata in the text segment | no |
 | `padding` | every word is `nop`: inter-function alignment | no |
 | `mostly_padding` | at least half the words are zero | no |
+| `data_segment` | at or above the image's last `jr ra`, and holding no `lui $rt, 0x80xx` | no |
 | `no_exit` | 1024 bytes or more with no `jr ra` in them | if the statistic passes it |
 | `return_tail` | a `jr ra` (+ `nop`) the preceding routine's analysed body stops short of | if the statistic passes it |
 | `bios_thunk_slot` | the delay slot of a `jr $t2` PSX BIOS-call thunk | yes (tiny-gap fiat) |
@@ -295,6 +296,52 @@ The floor for `no_exit` is set above one function's worth of bytes so a gap
 holding the *interior* of one long body is not demoted by it, and a demoted run
 is not hidden: it stays in `undumped-runs.csv` under its shape, and only leaves
 the ranked worklist.
+
+#### `data_segment`: the bytes past an image's last `jr ra`
+
+`no_exit` asks whether one *run* holds a return. The stronger question is where
+the image stops holding them at all. Every MIPS body ends in `jr ra`, so the
+word after an image's **last** `jr ra` and its delay slot is the floor of that
+image's data segment: below it a body may sit un-dumped, at or above it none can
+end. That floor is a decode of the bytes, not a threshold - `data_floor` in
+`scripts/ci/disc-coverage.py`.
+
+The floor alone is not enough, because one case it cannot exclude is a body the
+**entry boundary cut short**. Two measured images end exactly that way: PROT
+0902 (`gameover`) and PROT 0977 (`arena_init`) each stop mid-routine at the last
+word of their sector extent, with no `jr ra` left to close the body. So the shape
+takes a second leg: the run must also hold no `lui $rt, 0x8001..0x801F`. That is
+the only way MIPS I can materialise a RAM address, so every routine that touches
+a global issues one, and a record table, a texture or a string pool does not
+carry the word at instruction alignment. Measured over each image's whole
+above-floor tail the two populations separate cleanly - zero such words in the
+data segments of `SCUS_942.54`, `battle_action`, `field`, `menu`, `fishing`,
+`baka_fighter`, `boot_init_pak` and thirteen slot-B modules; dozens in the
+truncated tails of `gameover`, `arena_init`, `field_battle_intro`,
+`slot_machine` and `other3_dev`.
+
+The verdict is taken over the whole above-floor part of a **gap**, never window
+by window: a truncated body is a mixture, only some of whose windows address a
+global, and a per-window probe slices the routine into pieces. `gameover`'s GTE
+transform block is the worked example - it carries no `lui` of its own at all.
+
+An independent check that the floor lands where a function partition does: the
+thirteen slot-B modules whose extents were recovered by FRAME MATCHING in
+`ghidra/scripts/dump_static_overlay.py` all have their last recorded range end at
+exactly `data_floor`. Two instruments that share no test put the code/data
+boundary in the same place.
+
+What the shape names is recognisable in every case:
+`SCUS_942.54` above `0x8006F180` is the static-table band
+([`equipment-table.md`](../formats/equipment-table.md),
+[`spell-table.md`](../formats/spell-table.md),
+[`steal-table.md`](../formats/steal-table.md),
+[`new-game-table.md`](../formats/new-game-table.md) and neighbours) plus the
+function-pointer tables those routines are dispatched through; the menu
+overlay above `0x801E43E8` opens on the casino prize table at `0x801E4518`; and
+`boot_init_pak` above `0x801D0984` is 141 KB of `init.pak` payload whose first
+bytes are the memory-card filename string and whose four publisher-logo TIMs sit
+at file `+0x21C4` / `+0xD3E4` / `+0x18E04` / `+0x1CE44`.
 
 #### Why the worklist classifies at a finer grain than the denominator
 
@@ -571,20 +618,55 @@ gap size.
 
 ### A short `code` run with no `jr ra` in it is usually data
 
-The `no_exit` demotion needs 1024 bytes, so a 512-to-800-byte data table in an
-image's tail still ranks as `code`. Reading each such run at its image's own
-base settles it in one look, and several have been settled that way: PROT 0897
-`0x801F23B4` / `0x801F2DB4` / `0x801F30D4`, PROT 0980 `0x801D43A4` /
-`0x801D4AA4`, PROT 0977 `0x801D1EF0` and PROT 0978 `0x801F7624` all decode as
-`.byte` runs, `nop` fields and impossible operands (`j 0x80300000`, `tge`,
-`syscall`), never as a body reaching a `jr ra`. The same is true of every
-`SCUS_942.54` run above `0x80074000`, which is the static-table band
-([`item-table.md`](../formats/item-table.md),
-[`spell-table.md`](../formats/spell-table.md) and neighbours). The one SCUS run
-that *is* code, `0x80045CB4`, is still not a dump target: nothing in any image
-references it, its preceding word is a store in the same instruction stream, and
-the nearest prologue is 11 128 bytes back - the `INTERIOR` verdict of
-[`worklist-classification.md`](worklist-classification.md).
+The `no_exit` demotion needs 1024 bytes, so a 512-to-800-byte data table still
+ranks as `code` wherever `data_segment` does not reach it. Reading each such run
+at its image's own base settles it in one look, and several have been settled
+that way: PROT 0897 `0x801F23B4` / `0x801F2EB4` / `0x801F30D4`, PROT 0980
+`0x801D43A4` / `0x801D4AA4` / `0x801D4EA4` and PROT 0978 `0x801F7624` decode as
+`.byte` runs, `nop` fields and impossible operands, never as a body reaching a
+`jr ra`. The same is true of every `SCUS_942.54` run above `0x80074000`, which is
+the static-table band ([`item-table.md`](../formats/item-table.md),
+[`spell-table.md`](../formats/spell-table.md) and neighbours). Runs that reach a
+verdict this way and sit past their image's last `jr ra` are now the
+`data_segment` shape and leave the ranked worklist by rule rather than by
+footnote.
+
+Two runs this section previously listed under that verdict do not belong to it,
+and the corrections matter because each was an instruction to skip real work.
+
+- **PROT 0977 `0x801D1EF0` is code.** It is the arena overlay's contest-settlement
+  entry, and it opens `lui s0, 0x8008; lhu v1, -0x46F0(s0)` before calling
+  `0x8006BCB4`, `0x80026018` and `0x80024EE4`. It has no `jr ra` because the
+  2048-byte-granular PROT extent cuts the body at the image's last word, which is
+  the same shape `gameover` shows and the reason `data_segment` needs its second
+  leg. See `ghidra/scripts/funcs/overlay_arena_init_0977_801d1ef0.txt`.
+- **`0x80045CB4` is interior to a routine that starts 256 bytes earlier, not
+  11 KB.** `FUN_80045BB4` is a 1272-byte frameless GTE primitive emitter that
+  ends in `j 0x80045E54` rather than `jr ra`, which is why the gap classifier
+  reported its middle as two runs with a hole between them. It is also
+  **referenced**: its address is the twelfth word of the function-pointer table
+  at `0x8007668C` (`0x800766B8`), whose other eleven slots are the already-dumped
+  `0x8004409C`..`0x800453BC` emitters. Dumped as
+  `ghidra/scripts/funcs/80045bb4.txt`; the interior address `0x80045CB4` stays a
+  non-target, but for the ordinary `INTERIOR` reason of
+  [`worklist-classification.md`](worklist-classification.md).
+
+### Data the shape rules still do not reach
+
+Two regions classify as `code` and are not. Both sit *below* their image's data
+floor, so `data_segment` cannot claim them, and both are broken into runs shorter
+than the `no_exit` floor by VA-ambiguous dumps that print at those addresses from
+other programs. They are recorded here so nobody dumps them:
+
+- **PROT 0970 `0x801D0E94`..`0x801D1978`** - the cutscene overlay's MDEC decode
+  tables. The region opens with the hardware-port words `0x1F801824` and
+  `0x1F8010F0`, and the rest is 16-bit `(bucket, value)` pairs whose high
+  halfword walks `0x14`, `0x18`, `0x1C`, `0x20`, `0x2C` - bit-length buckets, not
+  opcodes. It scores as code because those high halfwords decode to `bne`,
+  `blez`, `bgtz` and `sltiu`.
+- **PROT 0980 `0x801D43A4` / `0x801D4AA4` / `0x801D4EA4`** - the dance minigame's
+  step-chart and choreography records
+  ([`minigame-dance.md`](../subsystems/minigame-dance.md)).
 
 **Do not sum the worklist across images.** Nineteen overlays load at
 `0x801CE818` and thirteen at `0x801F69D8`, so the same VA appears under several

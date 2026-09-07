@@ -1353,9 +1353,12 @@ impl World {
                         && matches!(sub, 0 | 1 | 0xA | 0xB)
                     {
                         // Encoded width: extended header (2) + sub-0/1
-                        // operand (4) or sub-A/B operand (8) - the VM's own
-                        // predicate-failure stride.
-                        let width = if sub == 0xA || sub == 0xB { 10 } else { 6 };
+                        // operand (7) or sub-A/B operand (9) - the VM's own
+                        // stride (`overlay_0897` `0x801DF5B8` `addiu s8,s8,8`
+                        // plus the `sub >= 0xA` `+2` at `0x801DF534`, over an
+                        // `s8` the prologue already advanced past the extended
+                        // channel byte).
+                        let width = if sub == 0xA || sub == 0xB { 11 } else { 9 };
                         if pc < tl.visited.len() {
                             tl.visited[pc] = true;
                         }
@@ -1510,31 +1513,17 @@ impl World {
                     && next_pc <= pc
                     && tl.visited.get(next_pc).copied().unwrap_or(false)
                 {
-                    // Camera-apply loop-back (`45 C0 <s16>`): retail's
-                    // sub-`0xC0` arm applies the camera solve and jumps to the
-                    // operand s16 - in the Drake-castle door records that is a
-                    // camera-tracking repeat over the walk-through poke loop,
-                    // and the record's door-state tail (`54 BE`-family latches
-                    // + the `60 0F` mutex release) lives AFTER the op. Since
-                    // the engine's choreography completes synchronously, break
-                    // the loop ONCE per site: fall through past the op (plain
-                    // width 4 / extended 5) so the tail executes. A second
-                    // arrival wraps as usual - the resident-loop completion
-                    // shape (the town01 Mei beat) still terminates.
+                    // There used to be a carve-out here for a `45 C0 <s16>`
+                    // "camera-apply loop-back", on the reading that retail's
+                    // sub-`0xC0` arm jumps to the operand `s16`. It does not:
+                    // the arm is a four-byte fall-through and the `s16` is the
+                    // apply trigger (`docs/subsystems/script-vm.md`,
+                    // "0x45 CAMERA arm widths"). With the VM's arm corrected
+                    // the op can no longer produce a backward `Advance` at all,
+                    // so the carve-out was rescuing a loop the port invented.
                     // REF: FUN_801dab90
-                    let header_size = if opcode_byte & 0x80 != 0 { 2 } else { 1 };
-                    let is_camera_apply = (opcode_byte & 0x7F) == 0x45
-                        && tl
-                            .bytecode
-                            .get(pc + header_size)
-                            .is_some_and(|b| b & 0xC0 == 0xC0);
-                    if is_camera_apply && !tl.camera_loop_broken.contains(&pc) {
-                        tl.camera_loop_broken.push(pc);
-                        next_pc = pc + header_size + 3;
-                    } else {
-                        tl.done = true;
-                        stop = true;
-                    }
+                    tl.done = true;
+                    stop = true;
                 }
                 if tl.trace_enabled {
                     if std::env::var_os("LEGAIA_DIAG_TIMELINE").is_some()
@@ -1581,6 +1570,26 @@ impl World {
                     if (opcode_byte & 0x7F) == 0x4A
                         && matches!(kind, crate::cutscene_timeline::TraceResult::Halt)
                         && next_pc == pc
+                    {
+                        tl.frames = tl.frames.saturating_sub(1);
+                    }
+                    // Same carve-out for an op-`0x43` halt-acquire park
+                    // (sub-0/1/A/B). Retail's arm raises the context's halt bit
+                    // and hands the actor its walk target
+                    // (`FUN_801D25EC`); the context then sits out however many
+                    // frames the actor's leg takes. That is authored playout,
+                    // and it cannot spin here - the port's arm advances the PC
+                    // past the op, so the parks a record can spend are bounded
+                    // by its own instruction count. Counting them turned the
+                    // anti-hang cap back into a length cap on exactly the
+                    // record the cap's own note names: `jouine` `P2[16]`
+                    // stopped three bytes short of its `4C E2 08` FMV tail.
+                    if (opcode_byte & 0x7F) == 0x43
+                        && matches!(kind, crate::cutscene_timeline::TraceResult::Yield)
+                        && tl
+                            .bytecode
+                            .get(pc + if opcode_byte & 0x80 != 0 { 2 } else { 1 })
+                            .is_some_and(|s| matches!(s, 0 | 1 | 0xA | 0xB))
                     {
                         tl.frames = tl.frames.saturating_sub(1);
                     }
@@ -2931,17 +2940,16 @@ mod tests {
 
     /// Build a timeline whose record drives the **player-anchor channel**
     /// (`0xF8`) with the jou castle-door shape: `A2 F8 06` ExecMove, the
-    /// `C3 F8 00 …` halt-acquire whose operand s16 resumes BACKWARD (offset
-    /// 0 here), the retail filler bytes, then the trailing `0x3F` scene
-    /// change to `jouina` and the record's terminal backward-jump park.
+    /// nine-byte `C3 F8 00 …` halt-acquire (its operand `s16`s are the walk
+    /// dispatcher's arguments, not a resume PC), then the trailing `0x3F`
+    /// scene change to `jouina` and the record's terminal backward-jump park.
     fn timeline_with_player_channel_door() -> World {
         use crate::cutscene_timeline::CutsceneTimeline;
         let mut w = World::new();
         let mut bc = vec![
             0xA2, 0xF8, 0x06, // ExecMove move_id=6 against the player anchor
-            0xC3, 0xF8, 0x00, 0x5E, 0xE2,
-            0x00, // halt-acquire sub-0, resume s16 = 0 (backward)
-            0x00, 0x1E, 0x00, // filler region (consumed by the terminator skip)
+            0xC3, 0xF8, 0x00, 0x5E, 0xE2, 0x00, 0x00, 0x1E,
+            0x00, // halt-acquire sub-0 (9 bytes)
         ];
         // `0x3F` SceneChange -> "jouina", entry (0x84, 0x14), dir 0.
         bc.extend_from_slice(&[
@@ -3018,9 +3026,12 @@ mod tests {
         // next op.
         use crate::cutscene_timeline::CutsceneTimeline;
         let mut w = World::new();
+        // Nine bytes: extended header (2) + sub + tile x + tile z + two `s16`
+        // walk-dispatcher arguments - retail `overlay_0897` `0x801DF5B8`
+        // (`addiu s8,s8,8`) over an `s8` already advanced past the channel
+        // byte at `0x801DE948`.
         let bc = vec![
-            0xC3, 0xF8, 0x00, 0x5E, 0xE2, 0x00, // halt-acquire sub-0
-            0x00, // filler (terminator skip)
+            0xC3, 0xF8, 0x00, 0x5E, 0xE2, 0x00, 0x00, 0x00, 0x00, // halt-acquire sub-0
             0x4A, 0xFF, 0x7F, // WAIT_FRAMES target 0x7FFF (keeps it installed)
         ];
         w.cutscene_timeline = Some(CutsceneTimeline::new(bc, 0));
@@ -3031,8 +3042,8 @@ mod tests {
             .expect("timeline still installed");
         assert!(tl.player_wait.is_none(), "no park without a move in flight");
         assert_eq!(
-            tl.pc, 7,
-            "stepped past the 6-byte halt-acquire (+ filler) onto WAIT_FRAMES"
+            tl.pc, 9,
+            "stepped past the 9-byte halt-acquire onto WAIT_FRAMES"
         );
     }
 

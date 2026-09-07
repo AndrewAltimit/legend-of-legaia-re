@@ -368,6 +368,45 @@ mod tests {
         assert_eq!(step_grid_cursor(SLOT_GRID_CELLS, 0), SLOT_GRID_CELLS - 1);
     }
 
+    /// Retail's grid cursor cannot address `SLOT_INFO_RETURN_CELL`, so the
+    /// port's must not either.
+    ///
+    /// The two clamps in the tick's shared stepper bound the cursor words
+    /// to `col in 0..=4` (`slti v0,v0,0x5`, `0x801E017C`) and
+    /// `row in 0..=2` (`slti v0,v0,0x3`, `0x801E01B0`), and the wrapper
+    /// forms the cell as `col + row*5` (`0x801E06D0`), so `14` is the
+    /// ceiling. Sweeping every cursor against every direction combination
+    /// is the port-side statement of that bound.
+    #[test]
+    fn grid_cursor_never_reaches_the_return_cell() {
+        let dirs = [
+            PadButton::Left.mask(),
+            PadButton::Right.mask(),
+            PadButton::Up.mask(),
+            PadButton::Down.mask(),
+        ];
+        for cursor in 0..=u8::MAX {
+            for combo in 0..(1u16 << dirs.len()) {
+                let mut edge = 0u16;
+                for (i, d) in dirs.iter().enumerate() {
+                    if combo & (1 << i) != 0 {
+                        edge |= d;
+                    }
+                }
+                let next = step_grid_cursor(cursor, edge);
+                assert!(
+                    next < SLOT_GRID_CELLS,
+                    "cursor {cursor} + edge {edge:#06x} left the 5x3 grid at {next}"
+                );
+                assert_ne!(
+                    next,
+                    crate::save_select::SLOT_INFO_RETURN_CELL,
+                    "cursor {cursor} + edge {edge:#06x} reached the dead Return cell"
+                );
+            }
+        }
+    }
+
     /// The read is asked for once per port, not once per frame.
     #[test]
     fn pending_read_asks_once_per_port() {

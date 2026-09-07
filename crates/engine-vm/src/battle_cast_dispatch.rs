@@ -10,32 +10,43 @@
 //! REF: FUN_801DCEAC (a control for the reference scan below),
 //! REF: FUN_801F1CC8, FUN_801F20DC (the field image's twins at the same VAs)
 //!
-//! Two of the three ports here are inert and one is wired, for reasons that
-//! should not be read as one - the per-item notes carry the disclosures.
+//! All three ports here are now wired, but to different depths, and the
+//! per-item notes carry what each still owes.
 //!
-//! **The two dispatchers** resolve to something the engine has no channel for.
-//! Both return a **retail VA**, and it is worth being precise about what that
-//! VA is: not battle-image code, but the **cast-tick entry of a paged slot-B
-//! module** - one PROT entry per spell, streamed into the overlay buffer at
-//! `0x801F69D8` for the duration of the cast. Extraction `903 + row` for
-//! `row = 0..0x3F` (PROT 0903..0966); every one of those images is mapped in
+//! **The two dispatchers** resolve a cast to a **paged slot-B module** - one
+//! PROT entry per spell, streamed into the overlay buffer at `0x801F69D8` for
+//! the duration of the cast. Extraction `903 + row` for `row = 0..0x3F`
+//! (PROT 0903..0966); every one of those images is mapped in
 //! `crates/asset/data/static-overlays.toml` and dumped as
 //! `overlay_<label>_<entry>_<addr>.txt`, and the per-module table is on
 //! `docs/reference/functions/battle.md`. The module anatomy - phase machine,
-//! staging ABI, damage shape - is `docs/subsystems/cast-module.md`. So the
-//! "unported emitter" is 61 dumped images' worth of choreography, not one
-//! missing function; turning these dispatchers into a wire needs an
-//! engine-side cast-effect pool keyed by spell id / sub-id first. `FUN_801F2160` additionally reads the spell record's `+0x01`
-//! effect-class byte, which nothing decodes: `legaia_engine_core::retail_magic`
-//! carries name / MP / target only, and `legaia_asset::spell_names` reads
-//! `+0`, `+2`, `+3`, `+4` and `+8` but skips `+1`. Note that is a decode gap,
-//! not a reach gap - [`spell_effect_class`] takes raw bytes, and
-//! `legaia_asset::spell_names::stats_file_offset` already locates them in a
-//! SCUS image the hosts hold. Beware also that `+0` is called "the cast class"
-//! there while `+1` is "the effect class" here; two different bytes, one word.
-//! Both dispatchers really are reached in retail (`jal 0x801f1ed4` at
-//! `0x801E4B1C` / `0x801E4C7C` / `0x801E4CA8`), so a host that grew that pool
-//! would have somewhere to put them.
+//! staging ABI, damage shape - is `docs/subsystems/cast-module.md`.
+//!
+//! Each dispatcher therefore answers with **two** things, and the port carries
+//! both: the retail emitter VA (what the `jr` table's arm jumps to, the fact
+//! the dump pins) and the **band entry** that VA lives in
+//! ([`CastDispatch::module`]) - which is a pool handle, because
+//! `legaia_asset::cast_effect_pool` indexes the band's spawn records by PROT
+//! entry. `legaia_engine_core::world::World::spawn_cast_module_fx` stages the
+//! resolved module's records through the same move-VM effect stand-in the
+//! summon path uses, at the paging seam and at the stager's first tick.
+//!
+//! What stays unported is the module's **code** half - the lift (the staged
+//! `+0x1DA` clip chain), the camera arm, the `ctx+0x279` phase machine and the
+//! damage shape - i.e. every row `docs/subsystems/cast-module.md`'s worklist
+//! marks **PORT** rather than **DATA**. Those are module instructions and no
+//! record can express them; [`CastDispatch::emitter`] names where they live.
+//!
+//! Two claims an earlier revision of this note made are **wrong** and are
+//! corrected here. It said the `+0x01` effect-class byte "nothing decodes":
+//! `legaia_asset::spell_names::SpellEntry` has read it as `sub_class` for as
+//! long as it has read `+0`, and `World::spell_table_sub_class` already serves
+//! it to the battle host. And it said `retail_magic` "carries name / MP /
+//! target only": it now carries the byte as
+//! `legaia_engine_core::retail_magic::RetailSpell::effect_class`. What was
+//! true, and what the pool fixes, is that no consumer turned the byte into a
+//! module. Beware also that `+0` is called "the cast class" in the parser
+//! while `+1` is "the effect class" here; two different bytes, one word.
 //!
 //! **`FUN_801DBA90` is different: retail reaches it from nowhere.** It is a
 //! genuine function entry - `27bdffe8 afb00010` at `0x801DBA90` in the
@@ -223,7 +234,20 @@ pub struct CastDispatch {
     /// Retail VA of the emitter to run, or `None` when the key fell outside
     /// the table (or hit the `0x98` hole). Retail then leaves `s0` at its
     /// seed and returns `0`.
+    ///
+    /// This is where the module's **code** half lives (lift, camera, the
+    /// `ctx+0x279` phase machine); it is kept because it is what makes a row
+    /// checkable against the module's own dump, not because anything jumps to
+    /// it. The engine-runnable half is [`Self::module`].
     pub emitter: Option<u32>,
+    /// The band entry the emitter lives in - the **pool handle**
+    /// [`legaia_asset::cast_effect_pool`] keys the module's spawn records by.
+    /// `None` when the key fell outside the dispatcher's `sltiu ..., 0x20`
+    /// bound.
+    ///
+    /// Independent of [`Self::emitter`] being `Some`: action id `0x98` has no
+    /// tick arm but its band row (PROT 0926) is a real entry - the null stub.
+    pub module: Option<u32>,
     /// Whether the shared tail `FUN_801F2410` runs. Gated on `ctx[+0x27A]`.
     pub run_tail: bool,
 }
@@ -239,16 +263,17 @@ pub const CAST_DISPATCH_TAIL: u32 = 0x801F_2410;
 /// gates it with `sltiu ..., 0x20`, so ids below `0x81` wrap to a large
 /// unsigned value and fail the bound exactly as ids above `0xA0` do.
 ///
-/// NOT WIRED: it returns a **retail VA** - overlay code in the battle image
-/// the port does not run - so there is nothing callable at the other end.
-/// Wiring needs an engine-side cast-effect pool keyed by spell id first; see
-/// the module note.
+/// Wired: the `module` it resolves is the pool handle
+/// `legaia_engine_core::world::World::spawn_cast_module_fx` stages, at the
+/// stager's first tick (retail's `0x801E4B1C`). The `emitter` VA it also
+/// carries names the module's unported code half - see the module note.
 ///
 /// PORT: FUN_801F1ED4
 pub fn seru_spell_emitter(action_id: u8, ctx_27a: u8) -> CastDispatch {
     let index = action_id.wrapping_sub(SERU_SPELL_ID_MIN) as usize;
     CastDispatch {
         emitter: SERU_SPELL_EMITTERS.get(index).copied().flatten(),
+        module: legaia_asset::cast_effect_pool::seru_module_prot(action_id),
         run_tail: ctx_27a != 0,
     }
 }
@@ -259,15 +284,18 @@ pub fn seru_spell_emitter(action_id: u8, ctx_27a: u8) -> CastDispatch {
 /// selects (`0x800754C8 + id * 0x0C + 1`). Retail bounds it with
 /// `sltiu ..., 0x20`.
 ///
-/// NOT WIRED: the same missing channel as [`seru_spell_emitter`], plus its
-/// key has no live source - the engine's spell catalog carries name / MP /
-/// target only, so [`spell_effect_class`] is never handed bytes. See the
-/// module note.
+/// Wired: the key's live source is the disc spell table
+/// (`World::spell_table_sub_class` - the same `+0x01` byte the pager
+/// `FUN_8003EC70(record[+1] + 0x28)` resolves), and the `module` it names is
+/// staged at the capture band's paging seam
+/// (`BattleActionHost::load_capture_archive`, retail's `0x6E` arm; the tick
+/// call itself is `jal 0x801f2160` at `0x801E50C8`).
 ///
 /// PORT: FUN_801F2160
 pub fn spell_class_emitter(effect_class: u8, ctx_27a: u8) -> CastDispatch {
     CastDispatch {
         emitter: SPELL_CLASS_EMITTERS.get(effect_class as usize).copied(),
+        module: legaia_asset::cast_effect_pool::capture_module_prot(effect_class),
         run_tail: ctx_27a != 0,
     }
 }
@@ -384,6 +412,28 @@ mod tests {
             Some(0x801F_6A10),
             "disassembly, not the C's thunk rendering"
         );
+    }
+
+    #[test]
+    fn each_dispatch_names_its_band_entry() {
+        // FUN_801F1ED4 arm `i` is PROT 903 + i over the whole action span.
+        assert_eq!(seru_spell_emitter(0x81, 0).module, Some(903));
+        assert_eq!(seru_spell_emitter(0xA0, 0).module, Some(934));
+        assert_eq!(seru_spell_emitter(0x80, 0).module, None);
+        assert_eq!(seru_spell_emitter(0xA1, 0).module, None);
+        // The one id with no tick arm still has a band row - the null stub.
+        let hole = seru_spell_emitter(0x98, 0);
+        assert!(hole.emitter.is_none());
+        assert_eq!(hole.module, Some(926));
+        // FUN_801F2160 arm `k` is PROT 935 + k.
+        assert_eq!(spell_class_emitter(0, 0).module, Some(935));
+        assert_eq!(spell_class_emitter(0x1F, 0).module, Some(966));
+        assert_eq!(spell_class_emitter(0x20, 0).module, None);
+        // The two bands are contiguous and disjoint.
+        for class in 0u8..0x20 {
+            let m = spell_class_emitter(class, 0).module.unwrap();
+            assert!((935..=966).contains(&m));
+        }
     }
 
     #[test]

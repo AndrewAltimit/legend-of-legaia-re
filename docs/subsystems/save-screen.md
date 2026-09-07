@@ -1280,7 +1280,7 @@ the result to the panel as `view_mode`. Branch order:
 
 | Test | Mode |
 |---|---|
-| `slot == 0xF` | `4` - the sixteenth cell is the Return row, not a block. |
+| `slot == 0xF` | `4` - a Return caption. Unreachable; see [below](#the-mode-4-arm-is-dead-code). |
 | `0x801F2A68[slot] == 0` | `2` - the slot has not been read off the card yet. |
 | `0x801F2A48[slot] == 1` | `1` - a readable Legaia save. |
 | `0x801F2A48[slot] == 0` | `2` - occupied by a save the game cannot read. |
@@ -1298,8 +1298,9 @@ block (`FUN_801DD35C` case `0xE`), which is save-creation, and it is set from
 `FUN_801DD35C`'s second parameter (`1` → `0`, `2` → `1`).
 
 Ported as `engine-core::save_select::{SlotContent, SlotInfoMode}` +
-`engine-ui::slot_info_caption_draws_for`. The port has no mode `4` (its block
-grid has no Return cell) and models mode `100` as a phase that skips the panel.
+`engine-ui::slot_info_caption_draws_for`; `SlotInfoMode::for_grid_cell` is the
+whole selector including the cell test, and both hosts caption through it.
+Mode `100` is modelled as a phase that skips the panel.
 
 The class byte's job falls to whichever scanner builds the `SlotSnapshot`, and
 both answer it the same way: **only positive evidence of absence yields
@@ -1313,6 +1314,32 @@ other failure to read a slot means something occupies
 it, so it classifies `SlotContent::Foreign` and captions as mode `2` rather
 than inviting a save into a block whose contents were never read. Both build
 foreign slots through `SlotSnapshot::foreign` so the two paths cannot drift.
+
+### The mode-`4` arm is dead code
+
+`FUN_801E3F74`'s first test is `slot == 0xF`, ahead of every content test, and
+it captions the panel `Return` (`0x801CF384`, drawn through the same centred
+`FUN_801E3EE0(caption, 0xA0, panel_y + 0x18)` tail as modes `2` and `3`).
+**Retail never reaches it**, so there is no sixteenth cell to draw and no
+Return row to select - the earlier reading of this branch as a sixteenth grid
+cell was an inference from the constant, with no path behind it.
+
+The selector's only caller is the grid wrapper `FUN_801E06C0`, called once per
+frame as `FUN_801E06C0(state[+0x1F4], state[+0x1F8])` (`0x801DFD88`) and
+forming the cell as `col + row*5` (`0x801E06D0`). Both cursor words are
+clamped in the tick's shared stepper - `col` to `0..=4` (`slti v0,v0,0x5` at
+`0x801E017C` / `0x801E0190`), `row` to `0..=2` (`slti v0,v0,0x3` at
+`0x801E01B0` / `0x801E01C0`) - so the cell tops out at `14`. The linear seed
+those two words are re-derived from on entry (`_DAT_8007B7CC`, divided and
+remaindered by `5` at `0x801DD918..0x801DD964`) has exactly **one** writer on
+the disc, `sw s2,-0x4834(v0)` at `0x801DED2C`, and it stores that same
+`col + row*5`. A byte sweep for the `0xB7CC` displacement over every extracted
+image finds three references, all three inside PROT 0899 and all three in this
+tick - the two seed reads and that write.
+
+`engine-core::save_screen`'s `grid_cursor_never_reaches_the_return_cell`
+sweeps every cursor value against every direction combination and asserts the
+same bound on the port side.
 
 ### Title row layout (mode 1, valid save)
 

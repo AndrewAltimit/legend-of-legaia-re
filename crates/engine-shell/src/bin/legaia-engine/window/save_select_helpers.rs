@@ -155,7 +155,8 @@ pub(crate) fn save_select_phase_text_draws(
             // than leaving it empty.
             if view.is_none()
                 && let Some(snap) = blocks.get(cell as usize)
-                && let Some(caption) = SlotInfoMode::for_slot(snap).caption(session.mode())
+                && let Some(caption) =
+                    SlotInfoMode::for_grid_cell(cell, snap).caption(session.mode())
             {
                 out.extend(legaia_engine_render::slot_info_caption_draws_for(
                     font,

@@ -84,8 +84,8 @@ Each row: `ctx[7]` value, what runs during that frame, and the next state(s). Al
 | `0x46` | **Spirit super-arts - entry variant** | `FUN_801D5854(actor, 6)`. Sets `actor[+0x1DC] = 2` (overrides flags). Stages anim `actor[+0x1DA] = actor[+0x1E7]`. Computes damage = `((target_HP * 7) / 5) + 8` (capped 0x120 / 100); HP-bar target = `actor[+0x170] + 0x20` (or `+0x28`/`+0x23` per ability-flag bits). | `0x47`. |
 | `0x47` | Spirit-arts - sustain | `FUN_801D5854(actor, 6)`. When `actor[+0x1D9] != 0`, clears `actor[+0x1DA]`. Decrements `ctx[+0x6D8]`. While running: ramps damage-popup HP/widget; when expired and `actor[+0x1F9] == 0` (no spirit-shield), advances HP-bar at `ctx[+0x1074]+0xE`. | `0x48` once exit-flag (`actor[+0x1DC] == 0`) and timers settle. |
 | `0x48` | Spirit-arts - flush | Final ramp of HP-bar / damage-popup. When all targets read zero AND timer expired AND anim flags clear → done. | `0x50`. |
-| `0x50` | **Done - cleanup phase** | The universal "action concluded, clean up" arm. Calls `FUN_801E6968` (the Lost Grail **Final Heal** auto-revive; engine `World::apply_final_heal_revives`), counts living party + monster actors (`+0x14C != 0 && (+0x16E & 4) == 0`); if any survivors → `FUN_801DABA4` (recompute battle ordering). Resets `actor[+0x224] = 8` (or `0x20` for spirits/`+0x1DE == 4`). Adjusts `actor[+0x170]` (HP-bar target) by ability-flag bits `0x100`/`0x200`. Clamps `actor[+0x170]` at 100. OR's `actor[+0x1DC] |= 4`. Per category: `+0x1DE == 5` (run) → screen-shake; `+0x1DE == 3` (attack) or party with dead s8 → pose 8; otherwise pose 6. Sets `ctx[+0x6D8] = 0x3C` (or `0x96` if shake, `+0x26 != 0`). If `ctx[7] == 0x50`, advances to `0x51`. | `0x51`. |
-| `0x51` | Done - fade-down | Ramps `_DAT_8007B910` back up to `_DAT_8008457C` (the configured [audio level](#the-_dat_8007b910-ramps-are-an-audio-duck)). Per-category pose updates. Calls `FUN_801E7250` (?); decrements `ctx[+0x6D8]`. When < 0 and `ctx[+0x276] == 0`: if `ctx[+0x269] == 0` → `0x5A` (next-actor / end-of-action); else → `0x52` (continue queue). When timer < 0xC, calls `FUN_801D99BC` and unloads all UI elements: `FUN_801D8DE8(actor[+0x18], 1)` (anim), `+0x4E/+0x4F` if anim was 6, `actor[+0x26]`, `+0xF/+0x52` (damage), `+0x44`, `+0x59` (queue marker), `+0x51`/`+0x50` (banner). For multi-cast (`_DAT_801F6974 != 0`), iterates queue at `((+0x6974)-1)*4 + -0x7FE097CC` firing every queued effect's terminate marker. | `0x52` or `0x5A`. |
+| `0x50` | **Done - cleanup phase** | The universal "action concluded, clean up" arm. Calls `FUN_801E6968` (the Lost Grail **Final Heal** auto-revive; engine `World::apply_final_heal_revives`), counts living party + monster actors (`+0x14C != 0 && (+0x16E & 4) == 0`); if any survivors → `FUN_801DABA4` (recompute battle ordering). Resets `actor[+0x224] = 8` (or `0x20` for spirits/`+0x1DE == 4`). Adjusts `actor[+0x170]` (HP-bar target) by ability-flag bits `0x100`/`0x200`. Clamps `actor[+0x170]` at 100. OR's `actor[+0x1DC] |= 4`. Per category: `+0x1DE == 5` (run) → screen-shake; `+0x1DE == 3` (attack) or party with dead s8 → pose 8; otherwise pose 6. Sets `ctx[+0x6D8] = 0x3C` (or `0x96` when the level-up banner byte `ctx[+0x26]` is set). If `ctx[7] == 0x50`, advances to `0x51`. | `0x51`. |
+| `0x51` | Done - fade-down | Ramps `_DAT_8007B910` back up to `_DAT_8008457C` (the configured [audio level](#the-_dat_8007b910-ramps-are-an-audio-duck)). Per-category pose updates. Calls `FUN_801E7250` (?); decrements `ctx[+0x6D8]`. When < 0 and `ctx[+0x276] == 0`: if `ctx[+0x269] == 0` → `0x5A` (next-actor / end-of-action); else → `0x52` (continue queue). When timer < 0xC, calls `FUN_801D99BC` and unloads all UI elements: `FUN_801D8DE8(actor[+0x18], 1)` (anim), `+0x4E/+0x4F` if anim was 6, `ctx[+0x26]` (the level-up banner), `+0xF/+0x52` (damage), `+0x44`, `+0x59` (queue marker), `+0x51`/`+0x50` (banner). For multi-cast (`_DAT_801F6974 != 0`), iterates queue at `((+0x6974)-1)*4 + -0x7FE097CC` firing every queued effect's terminate marker. | `0x52` or `0x5A`. |
 | `0x52` | Done - multi-cast continuation | `FUN_801D5854(actor, 8)` (action-end pose). Decrements `ctx[+0x6D8]`. If timer > 0x13 and screen-shake active (`_DAT_8007B874 != 0`), clamps timer at 0x13. When < 0: clears `ctx[+0x269]`, advances to `0x5A`. When < 0x14 and `actor[+0x17] != 0` (was running), unloads the queue marker. | `0x5A`. |
 | `0x5A` | **End-of-action gate** | Iterates 8-actor table clearing per-actor anim flag bits (`+0x8 &= 0x7CFFFFFF`, `+0x21F = 0`). Resets dead/inactive actors' `+0x36 = 0`, `+0x21C = 0`, `+0x225 = 0`. Counts living actors per side: if all party or all monsters dead, sets `DAT_8007BD71 = 0xFE` (battle-end signal) + `_DAT_8007BD2C = 5` (party wipe) or `0` (monster wipe), AND's `DAT_8007BD60 &= 0x7F`. Otherwise, picks the next active actor: bumps the [turn cursor](#the-turn-cursor-ctx0x1a) `ctx[+0x1A]++`; if it is `< (party_count + monster_count - ctx[+0x25])`, advances to `0x0A` (next action); else → `0xFF` (round boundary - see below). | `0x0A` (next actor) / `0xFF` (round ends). |
 | `0x64` (100) | **Run - flee anim begin** | Calls `FUN_801E791C` ([the escape roll](#the-escape-roll-fun_801e791c) - decides the flee, writes `_DAT_8007726C`). Sets `ctx[+0x6D8] = 0x3C`. Fires `FUN_801D8DE8(0x43, 0)` (run UI). Advances the [turn cursor](#the-turn-cursor-ctx0x1a) past each monster with a rotation trigger (`+0x16C != 0`) that isn't immune (`(&DAT_8007BD10)[i] != 4`). If party-side ran (`_DAT_8007726C != ctx + 0x189`, the run roll succeeded): screen-shake, and **floors every party actor's live HP at 1** (`+0x14C == 0` → `1`, loop bound = party count) - the mechanism behind "escape restores a Stoned member". Ported: `RunBegin` + `StatusEffectTracker::cure_stone_on_escape`. Else screen-shake only. | `0x65`. |
@@ -264,12 +264,46 @@ The `rand()` draw is unconditional and its result reaches `ctx[+0xD]` only -
 the branch tests the item id, so calling the override "RNG-conditional" reads
 a data dependency that is not there. Ids `0x98` / `0x99` are the two
 summon-invoking items: they enter the cast band already staged as a summon, so
-state `0x29`'s sub-route test sends them to `0x32`.
+state `0x29`'s sub-route test sends them to `0x32`; that arm also re-stamps
+`ctx[+0xD] = 0` (`sb zero,0xd(v0)` at `0x801E2E94`).
 
-**Port.** `item_seed_band` in `legaia_engine_vm::battle_action::dispatch`.
-The `ctx[+0xD]` store has no port field and no reader, but the **draw** does
-move the shared `rand()` cursor and the port does not make it - an RNG-stream
-divergence on every item action, recorded here rather than papered over.
+**Port.** `item_seed_band` in `legaia_engine_vm::battle_action::dispatch`,
+including the draw and both stores.
+
+### `ctx[+0xD]` - the per-action camera-angle variant
+
+`ctx[+0xD]` is not a spare byte. Three sites read it as a four-way switch
+(`0x801D6510`, `0x801D6698`, `0x801D689C`), all three inside the **battle
+camera** `FUN_801D5854` - the only prologue in `0x801D5854..0x801D6A00` is its
+own: variants
+`1` and `3` add `0x800` - a half-turn - to the staged yaw, variant `2` raises
+the staged pitch by `0x80` and stamps roll `0x400`, variant `0` leaves the
+framing alone. So the byte is what makes two runs of the same action frame
+from different sides.
+
+`ActionSeed` rolls it `rand() % 4` before the category dispatch
+(`jal 0x80056798` / `sb v0,0xd(a0)` at `0x801E2D04..0x801E2D30`), and each
+category arm then narrows it:
+
+| category arm | store | site |
+|---|---|---|
+| `0` Tactical Arts | `0` | `0x801E2E1C` |
+| `1` Item | `(rand % 2) * 2`, then `0` on the summon route | `0x801E2E60` / `0x801E2E94` |
+| `2` Magic | `0`, ahead of both of its routes | `0x801E2EC8` |
+| `4` Spirit | `(rand % 2) * 2` | `0x801E3024` |
+
+Attack (`3`) and Run (`5`) make no store of their own, so they keep the seed
+roll. (The arm addresses come from the seed's own category jump table at
+`0x801CF144`, six words indexed by `+0x1DE`, guard `sltiu v0,v1,0x6` at
+`0x801E2D68`.) A later band masks the byte to bit 0 (`lbu` / `andi 1` / `sb`
+at `0x801E321C..0x801E322C`).
+
+**Port.** `BattleActionCtx::camera_variant`. The seed roll, the Item arm's
+draw and its two stores, and the Tactical-Arts / Magic zeroes are carried; the
+Spirit arm's draw at `0x801E2FFC` and the bit-0 mask are not, so the port's
+shared `rand()` cursor still falls one draw behind retail's per Spirit action.
+Nothing in the port reads the variant yet - the battle camera does not fork on
+it - so the value is currently modelled, not consumed.
 
 ### Magic in the port: which half of the cast the SM owns
 
@@ -1152,9 +1186,53 @@ countdown that can no longer start is the same park by a different route.
 
 The `0x50` seed itself is `0x3C` on all three of its paths (`0x801E5EE8` /
 `0x801E5EFC` / `0x801E5F24` all converge on the store at `0x801E5F28`), with one
-override the port does not carry: `lbu v0,0x15(s5)` at `0x801E5F2C` re-seeds
-`0x96` when `ctx[+0x26]` is non-zero. That byte has no other reader in the
-ported band, so the engine always takes the `0x3C` arm.
+override: `lbu v0,0x15(s5)` at `0x801E5F2C` re-seeds `0x96` when `ctx[+0x26]`
+is non-zero. See [the level-up banner tail](#ctx0x26---the-level-up-banner-tail)
+for what that byte is and what else reads it; the port carries the override on
+`BattleActionCtx::levelup_banner_element`.
+
+### `ctx[+0x26]` - the level-up banner tail
+
+`ctx[+0x26]` is a **UI element id** - `0` means no element, and the only value
+retail ever assigns is `0x65`, the *"<spell>'s magic level increased"* banner.
+The reading is pinned by its third reader, not by its writers: `0x801E61B4`
+passes the byte as the first argument of the UI-element unload,
+`FUN_801D8DE8(ctx[+0x26], 1)`, in a run of sibling unloads that pass literal
+element ids (`0x4E`, `0xF`, `0x52`, `0x44`).
+
+Three sites write it. A `sb`-at-`ctx+0x26` sweep over `SCUS_942.54` and every
+statically-based overlay image (tracking the ctx pointer from its
+`0x8007BD24` load and any `addiu`-derived base) finds no others:
+
+| site | what it does |
+|---|---|
+| `0x801E723C` | the in-battle magic level-up arm of `FUN_801E70BC` stores `0x65`, right after raising that element with `FUN_801D8DE8(0x65, 0)` at `0x801E722C` |
+| `0x801E6D3C` | the Final Heal tail (`FUN_801E6968`) **increments** it on the arm gated `first_monster_id == 0xB5`, alongside `ctx[7] = 0xFD` |
+| `0x801E2CFC` | `ActionSeed` clears it (`sb zero,0x15(s5)`, `s5 = ctx + 0x11`) at the head of every action |
+
+and three read it, all inside the Done band:
+
+| site | what it does |
+|---|---|
+| `0x801E5F2C` | the `0x50` seed above: `0x96` frames instead of `0x3C` |
+| `0x801E6078` | the `0x51` fade-down's **banner skip**: once the countdown has sunk below `0x5B`, any pad activity (`_DAT_8007B874 \| _DAT_8007B938`, tested only for non-zero) snaps the timer to `-1` |
+| `0x801E61B4` | the `0x51` teardown unloads the element it names |
+
+The seed and the skip together are what make the tail read as a banner rather
+than a fudge factor: `0x96 - 0x5B` = 59 frames the player cannot skip, then
+the press ends it.
+
+What the `0x801E6D3C` **increment** is for is not settled by any of the three
+readers - to them it is just "non-zero", so on that boss arm it lengthens the
+fade-down and unloads element `1`. Reading the byte as a boss phase counter
+does not survive the unload site, and reading the increment as intentional
+element selection does not survive `0x65` being the only assignment.
+
+**Port.** `legaia_engine_vm::battle_action::done`'s `DONE_LEVELUP_BANNER_FRAMES` /
+`DONE_BANNER_SKIP_BELOW`, over `BattleActionHost::pad_word`. The writer is
+`World::accrue_summon_spell_xp` (`engine-core`), the port of `FUN_801E70BC`.
+The `0x801E61B4` unload is **not** ported: the port's Done band models no part
+of the `< 0xC` UI-element teardown block that store sits in.
 
 ## The `0x19` attack-approach park - a second, distinct softlock class
 
@@ -2510,8 +2588,19 @@ And the terminator is tested at the **new** cursor
 **`FUN_801E295C` never calls a damage kernel.** `jal 0x801ec3e4` does not
 appear anywhere in its 4099 instructions; case `0x1E`'s only calls are
 `FUN_801D8DE8`, `FUN_801EED1C`, `FUN_801D5854` and the atan2 `FUN_80019B28`.
-The `0x19` refill loop at `0x801E3A20..0x801E3A64` is the Miracle continuation:
-it rewinds the cursor (`sb zero,0x4(s5)`) and rewrites marked slots to `0x19`.
+The `0x19` refill loop at `0x801E3A20..0x801E3A64` is the **War God Icon's
+Attack x2 second pass**, not a Miracle continuation. Its guard chain settles
+it: the acting slot must be a party one (`sltiu v0,v0,0x3` on `0x2(s5)` =
+`ctx[+0x13]` at `0x801E39BC`), the acting character's record `+0xF4` must carry
+bit `0x2000` (`0x801E39FC..0x801E3A08`) and `0x5(s5)` = `ctx[+0x16]` must still
+read zero (`0x801E3A18`). It then rewinds the strike cursor
+(`sb zero,0x4(s5)` = `ctx[+0x15]`), bumps `ctx[+0x16]`, and rewrites every
+queue slot the builder's side array `0x801F6990` marked to `0x19` - so the
+whole action stream replays once with the newly-learned starters demoted, and
+the learn verdict fires on the first pass only. `ctx[+0x16]` is the counter the
+damage kernel's carry arm reads (`s2 = 0xFF` while it is `< 2`). Port:
+`legaia_engine_vm::battle_action`'s `attack_chain` (`attack_x2_refill`), with
+the counter on `BattleActionCtx::attack_x2_pass`.
 
 ### 3. Damage is one power byte per animation hit event
 
@@ -2553,11 +2642,22 @@ attacker branches):
   this entry's power run, then every remaining stream byte's entry) found none
   whose class bits can connect with the target's `+0x1E` size class
   (`0x801EE060..0x801EE0B4`, the limb-vs-height "Miss" law): the total lands
-  **now**, since nothing after this hit can add to it.
+  **now**, since nothing after this hit can add to it. The class bits are
+  `0x1` for a power byte in `0x01..=0x10`, `0x2` for one in `0x11..=0x15`, and
+  both (ending the scan) for `>= 0x16`; a class-`2` target needs bit `0x1`
+  present and a class-`3` target bit `0x2`. In the stream half of the walk a
+  byte `>= 0x10` - an art starter or art constant - sets both bits and ends
+  the scan, while a direction swing has its entry's whole power run folded.
 - `s2 = 0xFF` - the attacker's ability bitfield (`char +0xF4`) carries bit
   `0x0D` (the War God Icon's *Attack x2*) and `ctx[+0x16] < 2`
   (`0x801EE0C0..0x801EE120`): the first action of the pair never applies, its
   total carries into the second.
+
+Both copies of the kernel gate the whole of this on a **monster** target
+(`sltiu` on the target slot against `3` at `0x801EDEB8` and `0x801EE724`, each
+branching past the look-ahead *and* past the War God arm), which is what makes
+the record-direct `0x801C9348[target - 3]` read in the decision well-defined: a
+party target is always the `s2 = 0` arm.
 
 A swing entry's power byte 0 is **equipment-spliced**, not the command: the
 swing clips are per-item (`swing_battle_animations`), and the same `0x0E` reads
@@ -2623,16 +2723,24 @@ catalog carries no attack entries keeps the AGL-budget immediate swings
 (`apply_basic_attack`, still accumulate-then-apply). Neither is reachable with
 disc data, where every entry carries its head.
 
-Of the apply-mode law in §3 the port implements the `s2 = 0` arm and the
-loop-window re-zero of `+0x1F4` (`MonsterAnimPlayer::take_loop_rewound`, read
-by `tick_battle_hit_events` under the same party / slot `0x11` / latched
-`>= 0x2B` gate). Two arms are **not wired**, each with a concrete
-prerequisite: the `s2 != 0` early apply needs the size-class Miss model
-(`+0x1E` class 2 / 3 against a power byte's class), which the port has no
-seat for yet - with every hit able to connect, retail's look-ahead answers
-`s2 = 0`, so the port's behaviour is retail's for every target the port can
-represent; and the War God Icon's `s2 = 0xFF` carry-over needs the icon's
-*Attack x2* pair itself (`ctx[+0x16]`), which the engine does not model.
+All three arms of the apply-mode law in §3 are wired, beside the loop-window
+re-zero of `+0x1F4` (`MonsterAnimPlayer::take_loop_rewound`, read by
+`tick_battle_hit_events` under the same party / slot `0x11` / latched
+`>= 0x2B` gate). `World::hit_apply_mode` runs the look-ahead and the mode
+decision on every admitted hit
+(`legaia_engine_vm::battle_action::remaining_hit_class_bits` +
+`apply_mode`), and `resolve_hit_event` routes on the result: `APPLY_MODE_EARLY`
+lands the total on this hit, `APPLY_MODE_CARRY` lands nothing, anything else
+keeps the cursor-parked / last-beat pair.
+
+The size-class byte the early arm needs is now carried:
+`legaia_asset::monster_archive::MonsterRecord::swing_class` parses record
+`+0x1E` and `MonsterDef::swing_class` projects it into the catalog, which is
+also what fills the no-input attack queue's own class input
+(`World::attack_swing_class_of`). A synthetic catalog leaves it `0` - the class
+that connects with everything - so a disc-free session behaves exactly as it
+did. The `ctx[+0x16]` pair counter the carry arm reads is written by the strike
+loop's own Attack x2 refill, described in §2.
 
 **What the builder tokenizes against.** The records retail's inner loop walks
 are the character's art-animation bank records (`record[0] +0x58`,
@@ -3067,9 +3175,12 @@ re-invokes it for the next queued actor of a multi-actor turn). The full retail 
    Byte-level port: `legaia_engine_vm::battle_action::check_and_learn_art`.
    The engine runs it: `engine-core`'s `TacticalArtsTracker` holds the `+0x74D` count and the
    `+0x74E..` ascending id list per character, and the queue builder
-   `World::build_arts_action_queue` calls `World::notify_art_used` once per accepted art in queue
-   order, rewriting that art's starter to `0x1A` when the call just learned it - retail's own seat
-   (`jal 0x801efbfc` at `0x801EF44C`, verdict `+ 0x18` at `0x801EF6F0`). So an art is learned on
+   `World::build_arts_action_queue` calls `World::notify_art_used` once per accepted art in the
+   builder's own **tail-first** order, rewriting that art's starter to `0x1A` when the call just
+   learned it - retail's own seat (`jal 0x801efbfc` at `0x801EF44C`, verdict `+ 0x18` at
+   `0x801EF6F0`). The order is load-bearing for one queue shape: with the same art entered twice
+   the *last* occurrence is the one the check sees unknown, so it is the one that gets the `0x1A`
+   - and step 4's reorder is what walks that verdict back to the art's first performance. So an art is learned on
    its first performance, and the learn banner fires once. Two retail inputs are
    supplied rather than read: the gate `ctx[+0x266 + slot]` has no engine analogue and reads as
    clear (gate open), and the innate cap at `0x801F686C` is un-parsed battle-overlay disc data
@@ -3091,8 +3202,22 @@ re-invokes it for the next queued actor of a multi-actor turn). The full retail 
    array `0x801F6990` and, for each marked index `i > 0` whose queue byte is a `SpecialStarter`
    (`0x1A`), scans `j < i` and swaps `queue[j]` with `queue[i]` wherever
    `queue[j + 1] == queue[i + 1]` - no early exit, so the swap can fire more than once per `i`.
-   The marks it reads come from the build loop, not from the Super applier, which runs later.
-   Port: `legaia_engine_vm::battle_action::clear_queue_msb` (the reorder is not ported).
+   The marks it reads come from the build loop, not from the Super applier, which runs later:
+   each accepted art writes `1` at the index its starter lands on (`li v0,0x1` / `sw v0,0x0(v1)`
+   at `0x801EF788..0x801EF78C`), the array is zeroed at the builder's head
+   (`0x801EED5C..0x801EED74`) and every insert shift moves a mark with its byte
+   (`0x801EF69C..0x801EF6B0`, `0x801EF730..0x801EF744`). Two details a paraphrase loses: the outer
+   bound is `0xF`, not `0x10` (`sltiu v0,v0,0xf` at `0x801EF960` - index `i` always reads
+   `queue[i + 1]`), and the inner loop reloads both compared bytes every iteration.
+   Ports: `legaia_engine_vm::battle_action::clear_queue_msb`,
+   `reorder_marked_starters` over `build_starter_marks`, both run by `finish_action_queue`
+   between the Miracle copy and the Super applier.
+
+   What the reorder accomplishes in queue terms: when one art appears more than once in a built
+   queue, the `0x1A` newly-learned starter is exchanged with the `0x19` starter of the same art
+   earlier in the stream, so the learn verdict travels to the art's **first** performance of the
+   turn. Because the inner scan never exits early, a queue with three same-art slots swaps twice
+   and the *last* match decides what index `i` keeps.
 5. **Super find→tail-replace (helper call).** At its end (`jal 0x801EF9E4` at `0x801EF9AC`) the
    builder invokes **`FUN_801EF9E4`** (file `+0x211CC`;
    `see ghidra/scripts/funcs/overlay_battle_action_801ef9e4.txt`), which measures the queue
@@ -3121,10 +3246,28 @@ The engine's entry point `legaia_engine_vm::battle_action::resolve_action_queue`
 `ACTION_QUEUE_CAP`-wide byte window, so the live path is the byte applier's arithmetic rather
 than the structural `legaia_art` matchers'. Two retail laws that reach the simulation through
 that change: the Super scan takes the **first matching row in resident-table order** (not the
-longest `find`), and it applies **once** (not to a fixpoint). Retail's Miracle gate is the
-per-slot marker `ctx[+0x25F + slot]`, armed by the input recognizer; the engine's stand-in is a
-whole-string match against the character's Miracle command table, because that recognizer
-(`FUN_801E91E8`'s caller) is not ported.
+longest `find`), and it applies **once** (not to a fixpoint). Retail's Miracle gate has two halves and the port
+now runs both. The per-slot marker `ctx[+0x25F + slot]` is **not** written by an input
+recognizer - it has exactly one writer in the corpus, the party battle-actor seeding routine
+`FUN_80053CB8` (`sb v1,0x25f(v0)` at `0x80054270`), which raises it when one equipment byte of
+the acting character's record is occupied: `+0x761` (record-relative `+0x199`) for every roster
+char id except `2`, and `+0x760` (`+0x198`) for id `2` (`beq v0,a3,0x80054228` with `a3 = 2` at
+`0x800541E4`). Since `crates/save/src/character.rs` records the per-character weapon index
+`_DAT_8007B42C` as `2, 3, 2`, the byte this gate reads is in every case the **other** member of
+that pair - the slot the equip screen's row map never exposes, i.e. the Ra-Seru. Real memory-card
+saves agree: the gate byte is small and per-character-banded (Vahn `1` early, `7`/`9` at the end;
+Noa `15`/`17`; Gala `23`/`25`) while the paired weapon byte carries the ordinary shop ids, and it
+reads zero for a member who has not bonded with a Ra-Seru yet. Port
+`legaia_engine_vm::battle_action::miracle_marker_armed`, read at queue-build time by
+`World::miracle_marker_armed_for` (the byte cannot change between battle entry and an arts
+commit). The second half is the builder's own combo compare against the ordinal-`0` art record,
+for which the engine keeps its whole-string match against the character's Miracle command table.
+
+The marker gates more than the Miracle: the builder routes **every** special record - ordinal `0`
+(Miracle) and ordinals `1..=3` (the three Hyper Arts) - through the same `+0x25F` test at
+`0x801EF4C8`, and with the marker clear that arm writes nothing at all (`bne t5,zero,0x801EF7B4`
+at `0x801EF6E0`). So a party member without a Ra-Seru can enter a Hyper or Miracle string and get
+an ordinary chain out of it.
 
 The consuming side is unchanged: the strike loop reads `actor[+0x1DF + +0x15]` and the round
 driver's queue clear runs the `sb zero,0x1df(v0)` loop at `0x801D89D8` inside `FUN_801D88CC`
@@ -3135,9 +3278,13 @@ no-directional-input arm below) share the same emission sites.
 ### The no-directional-input attack queue
 
 `FUN_801EED1C` has one arm that produces a complete attack queue from **no player input at
-all**. Its head selects the arm on the acting slot's control byte
-`(&DAT_8007BD10)[slot] == 4` - an AI-driven party member - at `0x801EEE40..0x801EEE48`; the
+all**. Its head selects the arm on `(&DAT_8007BD10)[slot] == 4` at `0x801EEE40..0x801EEE48`; the
 same table's `!= 4` fall-through is the ordinary player path that normalizes recorded arrows.
+`DAT_8007BD10` is the slot -> **roster character id** table, not a control-mode byte: three
+routines index the character records with it as `0x80084140 + (byte - 1)*0x414`
+(`0x801EF344..0x801EF360` here, `0x80053CEC..0x80053D10` in the actor seeding, and
+`0x801E39CC..0x801E39F8` in the strike loop). So the arm's condition is "the character seated in
+this slot is roster id 4" - the AI-driven guest - rather than a mode flag.
 
 The arm's own body is short, and every store in it is a queue store:
 
@@ -3168,19 +3315,27 @@ against a target whose record `+0x1E` reads `2`. The `% 2` is retail's signed-sa
 `v0 - (v0/2)*2` idiom at `0x801EEFE0..0x801EEFF0`. No terminator is written: the window is
 already zeroed by the round-boundary clear, and `0x00` is what the attack band stops on.
 
-`+0x1E` sits between the record's element byte `+0x1D` and its size class `+0x1F` and is not
-parsed by `legaia_asset::monster_archive`. The disassembly establishes its *effect* only - a
-class-`2` target is struck low instead of with the arm - which reads as the height / posture
-class behind retail's limb-vs-height "Miss", but nothing here pins that name.
+`+0x1E` sits between the record's element byte `+0x1D` and its size class `+0x1F`, and is parsed
+as `legaia_asset::monster_archive::MonsterRecord::swing_class`. It is not a rare byte: across the
+186 decodable records of the archive it reads `0` for 127, `1` for one, **`2` for 52** and
+**`3` for six** - so both of the classes the two kernels branch on are ordinary enemies, and both
+arms are reachable in normal play. Two kernels read it, both
+record-direct through `0x801C9348` and never off the actor: this arm, and the damage kernel's
+apply-mode look-ahead (§3, `0x801EE080`), where a class-`2` target connects only with power bytes
+in `0x01..=0x10` and a class-`3` target only with `0x11..=0x15`. Together they read as the
+height / posture class behind retail's limb-vs-height "Miss"; the disassembly pins the two
+effects, not the name.
 
 **Port.** `legaia_engine_vm::battle_action::basic_attack_queue`, byte-for-byte including the
 two-draws / no-draws RNG split. `engine-core`'s `World::seed_basic_attack_queue` calls it from
 both party arming sites - the command menu's Attack confirm (and its no-valid-target fallback)
 and the auto / confused party turn `arm_party_physical`. The engine's Attack command is
 precisely this situation: it resolves a target and carries no direction input, so this is the
-retail kernel that applies. The record `+0x1E` class has no engine carrier, so the port passes
-`0` and always takes the two-arm-swing shape - retail's own answer for every non-class-`2`
-target.
+retail kernel that applies. The `+0x1E` class reaches it through
+`World::attack_swing_class_of` - the seated monster id resolved through
+`MonsterDef::swing_class` - so a class-`2` disc target takes the single low swing. A party
+target, an empty slot or a synthetic catalog reads `0` and takes the two-arm-swing shape, which
+is retail's own answer for every non-class-`2` target.
 
 #### Why the seed is load-bearing, and where the damage goes
 

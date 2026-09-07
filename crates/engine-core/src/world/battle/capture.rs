@@ -4,6 +4,11 @@
 
 use super::*;
 
+/// The UI element id retail raises for the "magic level increased" banner
+/// (`FUN_801D8DE8(0x65, 0)` at `0x801E722C`, then stored on the battle
+/// context at `0x801E723C`).
+const LEVELUP_BANNER_ELEMENT: u8 = 0x65;
+
 impl World {
     /// Default chance (percent) that a capturable enemy spawns shiny.
     /// Matches the `--shiny-seru` randomizer default and the rare-encounter
@@ -231,6 +236,17 @@ impl World {
             thresholds.as_ref().map(|t| t.as_slice()),
         ) {
             self.magic_level_ups.push((caster, spell_id, up.new_level));
+            // `sb v0,0x26(v1)` at `0x801E723C`: the level-up arm records the
+            // banner element on the battle context, and the action state
+            // machine's Done band reads it - the `0x50` seed takes `0x96`
+            // frames instead of `0x3C`
+            // (`legaia_engine_vm::battle_action::done`), so the banner this
+            // level-up raises is on screen long enough to read. Cleared by
+            // the next `ActionSeed`, exactly as retail clears it.
+            //
+            // PORT: FUN_801E70BC (`0x801E7228..0x801E723C` - the UI raise +
+            // the context store; the accrual/threshold half is above)
+            self.battle_ctx.levelup_banner_element = LEVELUP_BANNER_ELEMENT;
             // Retail composes "<spell>'s magic level increased." into the
             // shared message buffer and raises UI element 0x65
             // (`FUN_801F452C`). The engine has one banner channel; the line

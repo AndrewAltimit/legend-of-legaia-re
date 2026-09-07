@@ -170,6 +170,7 @@ tracked there.
 | `0x801CEAF8` | `0x801DD310` | field | camera-mover install, [`cutscene.md`](../subsystems/cutscene.md) |
 | `0x801D516C` | `0x801E3984` | field | world-map span draw, [`world-map.md`](../subsystems/world-map.md) |
 | `0x801D5C58` | `0x801E4470` | field | attached-sprite projection tick, [`actor-vm.md`](../subsystems/actor-vm.md) |
+| `0x801D71F0` | `0x801E5A08` | field | per-slot equip applier, [`field-menu.md`](../subsystems/field-menu.md#manual-equip-applier-fun_801e5a08); its `j 0x801e5ae8` arms are self-jumps, not a call |
 | `0x801D886C` | `0x801DE084` | field | camera-param commit, [`cutscene.md`](../subsystems/cutscene.md) |
 | `0x801D8B24` | `0x801E733C` | field | two-field value panel, [`functions.md`](../reference/functions.md) |
 | `0x801DFB10` | `0x801EE328` | field | `ON RULA` travel-art actor, [`world-map.md`](../subsystems/world-map.md) |

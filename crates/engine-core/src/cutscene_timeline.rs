@@ -235,10 +235,11 @@ pub struct CutsceneTimeline {
     pub player_move_frames: u32,
     /// `Some(step_past_width)` while the timeline is PARKED at a
     /// **player-channel halt-acquire** (`C3 F8 <sub> …` = op `0x43`
-    /// sub-0/1/A/B against `0xF8`). Retail halts the caller and resumes it at
-    /// the operand s16 once the player move completes - a resume PC pointing
-    /// BACKWARD into the poke loop (jou's castle-door record `P2[5]`:
-    /// `C3 F8 00 5E E2 50` at `+0x60` resumes at `+0x50`). The engine parks
+    /// sub-0/1/A/B against `0xF8`). Retail raises the caller's halt bit and
+    /// hands the actor its walk target; the context sits out the leg and then
+    /// resumes at the **next instruction** - the operand halfwords are the
+    /// walk dispatcher's arguments, not a resume PC (see
+    /// `docs/subsystems/script-vm.md`, "0x43 sub-0/1/A/B"). The engine parks
     /// at the op until [`Self::player_move_frames`] drains, then steps PAST
     /// it by this encoded width - the completion side of the halt-acquire /
     /// state-resume handshake - so the record reaches its trailing ops (the
@@ -256,20 +257,6 @@ pub struct CutsceneTimeline {
     /// her; retail leaves her hidden until the next scene entry re-runs her
     /// spawn prologue), and restoring would resurrect the ghost in-room.
     pub restore_hidden_on_complete: bool,
-    /// PCs of `45 C0 <s16>` camera-apply ops whose backward loop-jump has
-    /// already been broken once. Retail's sub-`0xC0` arm applies the camera
-    /// solve and RETURNS the operand s16 as the next PC - in the Drake-castle
-    /// door records that target points back into the walk-through poke loop
-    /// (a camera-tracking repeat riding the player's real walk-out), and the
-    /// door-state tail (`4C CD` + the `54 BE`-family latches + the mutex
-    /// release) lives AFTER the op. The engine's choreography completes
-    /// synchronously, so the loop-back must not wrap-complete the record
-    /// before that tail runs: the first backward-onto-visited jump per site
-    /// falls through past the op instead (see the wrap detection in
-    /// `run_spawned_record_slice`); a second arrival wraps as usual (the
-    /// resident-loop completion the Mei-beat shape relies on).
-    // REF: FUN_801dab90 (the case-0x45 sub-0xC0 camera solve)
-    pub camera_loop_broken: Vec<usize>,
     /// `Some` while the timeline is PARKED on a cross-context **walk-to-tile
     /// yield** (`C7 <id> <tx> <tz> <mode>` = op `0x47` against an NPC channel
     /// or the player anchor `0xF8`). Retail's dispatcher saves the yield-op
@@ -363,7 +350,6 @@ impl CutsceneTimeline {
             player_move_frames: 0,
             player_wait: None,
             restore_hidden_on_complete: false,
-            camera_loop_broken: Vec::new(),
             walk_wait: None,
             facing_wait: None,
         }

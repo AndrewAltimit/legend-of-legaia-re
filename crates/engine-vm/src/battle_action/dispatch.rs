@@ -19,7 +19,9 @@ use super::*;
 ///    Miracle string, the whole 16-byte window is overwritten from the
 ///    resident Miracle row, padding included.
 /// 3. **MSB clear** ([`clear_queue_msb`], the `0x801EF85C` sweep) - strips
-///    the on-disc `0x8C..0x8F` quirk off the Miracle row's direction bytes.
+///    the on-disc `0x8C..0x8F` quirk off the Miracle row's direction bytes,
+///    then the **marked-starter reorder** ([`reorder_marked_starters`], the
+///    `0x801EF8A0` sweep) over the build loop's side-array marks.
 /// 4. **Super Art find/replace at tail** ([`apply_super_tail_replace`], the
 ///    `jal 0x801EF9E4` at `0x801EF9AC`), run **once** and in **table order**,
 ///    unconditionally - retail does not skip it after a Miracle, and the
@@ -70,8 +72,12 @@ pub fn resolve_action_queue(
         *slot = b;
     }
 
-    // Steps 2-4: the Miracle / MSB / Super finish on the window.
-    finish_action_queue(character, command_input, &mut bytes);
+    // Steps 2-4: the Miracle / MSB / Super finish on the window. This
+    // structural entry point has no character record to read the Miracle
+    // marker off, so it runs with the marker **armed** - which is what it
+    // did before the gate existed. The live arts path
+    // (`World::build_arts_action_queue`) reads the real marker.
+    finish_action_queue(character, command_input, true, &mut bytes);
 
     // Step 5: decode up to the terminator.
     let mut queue = ActionQueue::new();
@@ -95,10 +101,15 @@ pub fn resolve_action_queue(
 /// loop, in retail order:
 ///
 /// 1. the Miracle replacement (`0x801EF4E8..0x801EF524`, [`apply_miracle_replace`]) -
-///    retail's gate is the per-slot marker `ctx[+0x25F + slot]` armed by the
-///    input recognizer; the engine's stand-in is the whole-string match of
-///    `command_input` against the character's Miracle command table;
-/// 2. the MSB-clear sweep (`0x801EF85C..0x801EF898`, [`clear_queue_msb`]);
+///    gated on **both** halves of retail's condition: `miracle_armed` is the
+///    per-slot marker `ctx[+0x25F + slot]` ([`miracle_marker_armed`], written
+///    at battle-actor seeding from the character's Ra-Seru equipment byte),
+///    and the whole-string match of `command_input` against the character's
+///    Miracle command table stands in for the builder's own combo compare
+///    against the ordinal-`0` art record;
+/// 2. the MSB-clear sweep (`0x801EF85C..0x801EF898`, [`clear_queue_msb`]) and
+///    the marked-starter reorder (`0x801EF8A0..0x801EF968`,
+///    [`reorder_marked_starters`]) over [`build_starter_marks`];
 /// 3. the Super tail-replace (`jal 0x801EF9E4` at `0x801EF9AC`,
 ///    [`apply_super_tail_replace`]), once, first matching row in table order.
 ///
@@ -113,18 +124,25 @@ pub fn resolve_action_queue(
 pub fn finish_action_queue(
     character: legaia_art::Character,
     command_input: &[legaia_art::Command],
+    miracle_armed: bool,
     bytes: &mut [u8; ACTION_QUEUE_CAP],
 ) {
     use legaia_art::MiracleMatcher;
-    if MiracleMatcher::with_default_table()
-        .find(character, command_input)
-        .is_some()
+    // The side array `0x801F6990` as the build loop leaves it. Retail writes
+    // it incrementally during the build and the Miracle copy does **not**
+    // touch it, so it is reconstructed here - before the copy overwrites the
+    // window it describes.
+    let mut starter_marks = build_starter_marks(bytes);
+    if miracle_armed
+        && MiracleMatcher::with_default_table()
+            .find(character, command_input)
+            .is_some()
     {
         apply_miracle_replace(bytes, &miracle_row_for(character));
     }
     clear_queue_msb(bytes);
+    reorder_marked_starters(bytes, &starter_marks);
     let (find_rows, replace_rows) = super_rows_for(character);
-    let mut starter_marks = [0u32; ACTION_QUEUE_CAP];
     apply_super_tail_replace(bytes, &mut starter_marks, &find_rows, &replace_rows);
 }
 
@@ -541,7 +559,15 @@ fn raise_target_banner<H: BattleActionHost + ?Sized>(
 /// non-override branch.
 ///
 /// REF: FUN_801E295C (`0x801E2EB0..0x801E2F08`)
-fn magic_seed_band<H: BattleActionHost + ?Sized>(host: &H, actor_slot: u8) -> ActionState {
+fn magic_seed_band<H: BattleActionHost + ?Sized>(
+    host: &H,
+    ctx: &mut BattleActionCtx,
+    actor_slot: u8,
+) -> ActionState {
+    // `sb zero,0xd(v0)` at `0x801E2EC8` - the Magic arm pins the camera
+    // variant to `0` ahead of both of its routes, so a cast is never framed
+    // from the mirrored side.
+    ctx.camera_variant = 0;
     let spell_id = host.actor(actor_slot).map_or(0, |a| a.params[0]);
     match host.spell_class_byte(spell_id) {
         Some(class) if class < 0x14 && spell_id < 0x65 => ActionState::SpiritPreArm,
@@ -559,20 +585,32 @@ fn magic_seed_band<H: BattleActionHost + ?Sized>(host: &H, actor_slot: u8) -> Ac
 /// pre-cast wait tests to reach `SummonInvoke`) and `actor[+0x1DF] -= 2`, so
 /// the cast band sees id `0x96` / `0x97`.
 ///
-/// Not ported from the same arm: the `jal 0x80056798` at `0x801E2E3C` and the
-/// `ctx[+0xD] = (rand % 2) * 2` it feeds. `BattleActionCtx` has no `+0xD`
-/// field and nothing in the engine reads one, so porting the store would be
-/// dead - but the **draw** is not dead, it advances the shared `rand()`
-/// cursor, and the port currently skips it. That is an RNG-stream divergence
-/// for every item action, tracked as its own gap rather than smuggled in
-/// here.
+/// The arm also carries the action's **camera-angle variant**
+/// ([`BattleActionCtx::camera_variant`], retail `ctx[+0xD]`): an
+/// unconditional `jal 0x80056798` at `0x801E2E3C` folded to `(rand % 2) * 2`
+/// and stored at `0x801E2E60`, then overwritten with `0` on the summon route
+/// (`sb zero,0xd(v0)` at `0x801E2E94`). The draw is unconditional and its
+/// result never reaches the branch - the id test at `0x801E2E6C` is what
+/// picks the route - but it does advance the shared `rand()` cursor, so a
+/// port that skips it desynchronises the stream from the first item action
+/// onwards.
 ///
 /// REF: FUN_801E295C (`0x801E2E30..0x801E2EAC`)
-fn item_seed_band<H: BattleActionHost + ?Sized>(host: &mut H, actor_slot: u8) -> ActionState {
+fn item_seed_band<H: BattleActionHost + ?Sized>(
+    host: &mut H,
+    ctx: &mut BattleActionCtx,
+    actor_slot: u8,
+) -> ActionState {
+    // `0x801E2E3C..0x801E2E60` - the draw comes first, before the id test,
+    // and lands as `(rand % 2) * 2` (so `0` or `2`, the two variants whose
+    // camera keeps the default yaw).
+    ctx.camera_variant = ((host.rng() % 2) * 2) as u8;
     let item_id = host.actor(actor_slot).map_or(0, |a| a.params[0]);
     if item_id.wrapping_add(0x68) >= 2 {
         return ActionState::SpiritPreArm;
     }
+    // The summon route re-stamps the variant to `0` (`0x801E2E94`).
+    ctx.camera_variant = 0;
     if let Some(actor) = host.actor_mut(actor_slot) {
         actor.sub_route = 9;
         actor.params[0] = item_id.wrapping_sub(2);
@@ -624,6 +662,20 @@ pub(super) fn action_seed<H: BattleActionHost + ?Sized>(
         host.monster_setup(actor_slot);
     }
 
+    // Retail's next straight-line block, between the setup hooks
+    // (`jal 0x801EED1C` / `jal 0x801E7320` at `0x801E2C7C` / `0x801E2CA0`)
+    // and the framing call below - the draw order matters because
+    // `monster_setup` is itself an RNG consumer.
+    //
+    // `sb zero,0x15(s5)` at `0x801E2CFC` (`s5 = ctx + 0x11`): every action
+    // starts with the level-up banner element cleared, so the extended Done
+    // tail belongs to the action that actually raised a banner.
+    ctx.levelup_banner_element = 0;
+    // `jal 0x80056798` / `sb v0,0xd(a0)` at `0x801E2D04..0x801E2D30` - the
+    // per-action camera-angle variant, rolled `rand() % 4` before the
+    // category dispatch. Each category arm below may narrow it further.
+    ctx.camera_variant = (host.rng() % 4) as u8;
+
     // Per-action camera framing (`FUN_801F0348` at `801e2d2c`). Retail runs
     // this unconditionally on the seed path, ahead of - and independent of -
     // the gated `FUN_801EFE44` bounds walk below.
@@ -656,11 +708,14 @@ pub(super) fn action_seed<H: BattleActionHost + ?Sized>(
     // Dispatch into the appropriate band.
     let next = match category {
         ActionCategory::TacticalArts => {
-            // Skip - UI input chain handles the chain.
+            // Skip - UI input chain handles the chain. Retail's category-0
+            // arm still stamps the UI cursor anchor and pins the camera
+            // variant to `0` (`sb zero,0xd(v1)` at `0x801E2E1C`).
+            ctx.camera_variant = 0;
             ActionState::DoneCleanup
         }
-        ActionCategory::Item => item_seed_band(host, actor_slot),
-        ActionCategory::Magic => magic_seed_band(host, actor_slot),
+        ActionCategory::Item => item_seed_band(host, ctx, actor_slot),
+        ActionCategory::Magic => magic_seed_band(host, ctx, actor_slot),
         ActionCategory::Attack => {
             // Set ctx combo timer and emit weapon-slash UI for party.
             ctx.combo_timer = 2;

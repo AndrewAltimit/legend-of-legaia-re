@@ -284,16 +284,28 @@ impl World {
     /// Faithful shape per the disassembly (`800402f4.txt`
     /// `0x80041C70..0x80041FB0`): party seats only, one `rand()` draw per
     /// rolled target, `target_agl < rand % (attacker_agl + target_agl)`
-    /// lands the bit. Two engine-model equivalences, both disclosed: the
-    /// guard accessories gate at infliction (retail's applier writes the bit
-    /// unconditionally and the per-frame guard sweep `FUN_8004CE2C` clears
-    /// it next frame - same steady state); and the group arm's queued-action
-    /// drop (`sb zero,0x1de`) rides the engine's status block gates (a
-    /// petrified actor's turn is skipped), while its reserved-item refund
-    /// (`FUN_800421D4(id, 1)`) is not modelled.
+    /// lands the bit. One engine-model equivalence, disclosed: the guard
+    /// accessories gate at **infliction** here, where retail's applier writes
+    /// the bit unconditionally and the per-frame guard sweep `FUN_8004CE2C`
+    /// clears it the next frame - the same steady state, one frame apart.
+    ///
+    /// **The Stone arm's tail is asymmetric with the Curse one, and both
+    /// halves are ported.** Between the roll and the exit the class-9 arm
+    /// makes exactly three stores (`0x80041CEC..0x80041D4C` for the single
+    /// target, `0x80041DE0..0x80041E38` for the all-party loop, byte-identical
+    /// bodies): `+0x16E |= 4`; then, **only** when the target had a queued
+    /// **Item** action (`+0x1DE == 1`) that has not been spent yet (its
+    /// initiative key `+0x16C != 0`), `FUN_800421D4(target[+0x1DF], 1)` puts
+    /// the reserved item back in the bag; then `+0x1DE = 0` unconditionally,
+    /// cancelling whatever the target had queued. The class-10 (Curse) arm
+    /// (`0x80041EE0..0x80041EEC`) makes **one** store - the bit - and neither
+    /// refunds nor cancels, which is why Curse only grays the Magic command
+    /// while Stone eats the turn outright.
     ///
     /// PORT: FUN_800402F4 (class-9 / class-10 arms - live wiring; the roll
     /// kernel carries the instruction-level cite)
+    /// REF: FUN_800421D4 (the bag-add primitive the refund calls; kernel
+    /// mirrored in `legaia_save::retail_inventory`)
     pub(in crate::world) fn apply_enemy_agl_status(
         &mut self,
         caster: u8,
@@ -343,6 +355,48 @@ impl World {
                 continue;
             }
             self.status_effects.apply(t, kind);
+            if kind == StatusKind::Stone {
+                self.stone_cancels_queued_action(t);
+            }
+        }
+    }
+
+    /// The two stores the class-9 (Stone) arm makes **after** the bit, and
+    /// that the class-10 (Curse) arm does not.
+    ///
+    /// `0x80041CFC..0x80041D4C`: reload the target, and if its action
+    /// category is Item (`+0x1DE == 1`) *and* its initiative key is still
+    /// live (`+0x16C != 0` - i.e. the queued turn has not been taken), hand
+    /// the reserved item id (`+0x1DF`) back to the bag through
+    /// `FUN_800421D4(id, 1)`; then clear `+0x1DE` whether or not the refund
+    /// fired. Both stores are repeated verbatim per slot in the all-party
+    /// loop at `0x80041DF0..0x80041E38`.
+    ///
+    /// The refund is what stops a petrify from eating the item as well as
+    /// the turn. It is deliberately *not* gated on the item being a real
+    /// catalog entry - retail adds whatever byte sits at `+0x1DF`, and the
+    /// bag is a byte array - but id `0` is the empty-slot sentinel whose
+    /// quantity bump the add primitive itself skips (`andi v0,t0,0xff` /
+    /// `beq v0,zero` at `0x800422D4..0x800422D8`), so it adds nothing here
+    /// either.
+    ///
+    /// PORT: FUN_800402F4 (`0x80041CFC..0x80041D4C`)
+    fn stone_cancels_queued_action(&mut self, target: u8) {
+        use vm::battle_action::ActionCategory;
+        let Some(actor) = self.actors.get_mut(target as usize) else {
+            return;
+        };
+        let refund = (actor.battle.action_category == ActionCategory::Item.as_byte()
+            && actor.battle.init_key != 0)
+            .then_some(actor.battle.params[0])
+            .filter(|&id| id != 0);
+        // `sb zero,0x1de(v0)` at `0x80041D4C` - unconditional on the success
+        // arm, so a petrified actor loses its turn even when nothing was
+        // refundable.
+        actor.battle.action_category = 0;
+        if let Some(item_id) = refund {
+            let slot = self.inventory.entry(item_id).or_insert(0);
+            *slot = slot.saturating_add(1).min(legaia_save::STACK_CAP);
         }
     }
 

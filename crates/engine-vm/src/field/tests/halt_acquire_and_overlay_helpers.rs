@@ -5,26 +5,32 @@ use super::*;
 // -- 0x43 sub-0/1/A/B halt-acquire ----------------------------------
 
 #[test]
-fn op_43_sub_0_halt_acquire_yields_to_resume_pc() {
-    // [43, 0, x_byte, z_byte, lo, hi] → resume_pc = signed_16(lo, hi) = 0x100
-    let bytecode = [0x43u8, 0x00, 0x10, 0x20, 0x00, 0x01];
+fn op_43_sub_0_halt_acquire_yields_to_the_next_instruction() {
+    // `[43, 0, x, z, s16, s16]` - eight bytes. The two `s16`s are the walk
+    // dispatcher's arguments (retail `FUN_801D25EC` `a2` / `a3`), NOT a resume
+    // PC: the arm exits `j 0x801E3624` with `addiu s8, s8, 8`
+    // (`overlay_0897` `0x801DF5B4`), so the acquire falls through and the
+    // context stops on its halt bit rather than on a moved PC. A `0x0100` in
+    // the first `s16` must therefore NOT send the PC to `0x100`.
+    let bytecode = [0x43u8, 0x00, 0x10, 0x20, 0x00, 0x01, 0x00, 0x00];
     let mut host = TestHost {
         halt_acquire_predicate: true,
         ..TestHost::default()
     };
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &bytecode, 0);
-    assert_eq!(r, StepResult::Yield { resume_pc: 0x100 });
+    assert_eq!(r, StepResult::Yield { resume_pc: 8 });
     assert!(ctx.is_halted());
     assert_eq!(ctx.saved_pc, 0);
     assert_eq!(host.halt_acquire_calls.len(), 1);
     assert_eq!(host.halt_acquire_calls[0].0, 0u8);
-    assert_eq!(host.halt_acquire_calls[0].1, 0x100);
+    assert_eq!(host.halt_acquire_calls[0].1, 8);
 }
 
 #[test]
-fn op_43_sub_a_halt_acquire_uses_offset_7_target() {
-    // [43, 0xA, x, z, _, _, _, _, lo, hi]
+fn op_43_sub_a_halt_acquire_negates_the_offset_7_s16_into_y() {
+    // `[43, 0xA, x, z, s16, s16, s16]` - ten bytes; the `+7` halfword is the
+    // target's **Y**, negated (`overlay_0897` `0x801DF524..0x801DF530`).
     let bytecode = [0x43u8, 0x0A, 0x10, 0x20, 0, 0, 0, 0, 0x34, 0x12];
     let mut host = TestHost {
         halt_acquire_predicate: true,
@@ -32,25 +38,33 @@ fn op_43_sub_a_halt_acquire_uses_offset_7_target() {
     };
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &bytecode, 0);
-    assert_eq!(r, StepResult::Yield { resume_pc: 0x1234 });
+    assert_eq!(r, StepResult::Yield { resume_pc: 10 });
     assert!(ctx.is_halted());
+    assert_eq!(
+        host.halt_acquire_calls[0].1, 10,
+        "resume is the fall-through"
+    );
+    assert_eq!(
+        host.halt_acquire_calls[0].2[1], -0x1234,
+        "the +7 s16 is the negated Y, not a jump target"
+    );
 }
 
 #[test]
-fn op_43_sub_0_predicate_false_advances_5_bytes() {
-    let bytecode = [0x43u8, 0x00, 0, 0, 0, 0];
+fn op_43_sub_0_predicate_false_advances_8_bytes() {
+    let bytecode = [0x43u8, 0x00, 0, 0, 0, 0, 0, 0];
     let mut host = TestHost {
         halt_acquire_predicate: false,
         ..TestHost::default()
     };
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &bytecode, 0);
-    assert_eq!(r, StepResult::Advance { next_pc: 5 });
+    assert_eq!(r, StepResult::Advance { next_pc: 8 });
     assert!(!ctx.is_halted());
 }
 
 #[test]
-fn op_43_sub_b_predicate_false_advances_9_bytes() {
+fn op_43_sub_b_predicate_false_advances_10_bytes() {
     let bytecode = [0x43u8, 0x0B, 0, 0, 0, 0, 0, 0, 0, 0];
     let mut host = TestHost {
         halt_acquire_predicate: false,
@@ -58,7 +72,7 @@ fn op_43_sub_b_predicate_false_advances_9_bytes() {
     };
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &bytecode, 0);
-    assert_eq!(r, StepResult::Advance { next_pc: 9 });
+    assert_eq!(r, StepResult::Advance { next_pc: 10 });
 }
 
 // -- Round 16: helper-driven sub-ops --------------------------------

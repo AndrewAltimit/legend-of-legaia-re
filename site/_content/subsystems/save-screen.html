@@ -155,7 +155,7 @@
           <tr><td>4</td><td>Card-format dialog</td><td><code>(576, 112)</code> &rarr; <code>(160, 112)</code></td></tr>
         </tbody>
       </table>
-      <p><strong>Bottom info panel <code>FUN_801E08D8</code>.</strong> Slides vertically from 394 to 138 once "Now checking" retracts; draws the slot's kingdom, play time and up to three party columns 96 px apart (portrait, name, LV, HP, MP; HP/MP go yellow at half and red at a quarter). The view mode per cell comes from <code>FUN_801E3F74</code>: readable save, foreign block, free block, or the Return cell. Slot data is read from <code>0x801EF1B8 + N &times; 0x100</code> (kingdom name <code>+0</code>, seconds <code>+0x24</code>, party count <code>+0x28</code>, names <code>+0x54 + i &times; 0xC</code>).</p>
+      <p><strong>Bottom info panel <code>FUN_801E08D8</code>.</strong> Slides vertically from 394 to 138 once "Now checking" retracts; draws the slot's kingdom, play time and up to three party columns 96 px apart (portrait, name, LV, HP, MP; HP/MP go yellow at half and red at a quarter). The view mode per cell comes from <code>FUN_801E3F74</code>: readable save, foreign block, or free block. Its fourth arm, a &quot;Return&quot; caption for cell <code>0xF</code>, is dead code &mdash; the grid cursor is clamped to <code>col 0..4</code> / <code>row 0..2</code>, so the cell index tops out at 14 and nothing ever asks for 15. Slot data is read from <code>0x801EF1B8 + N &times; 0x100</code> (kingdom name <code>+0</code>, seconds <code>+0x24</code>, party count <code>+0x28</code>, names <code>+0x54 + i &times; 0xC</code>).</p>
     </div>
   </details>
 </section>

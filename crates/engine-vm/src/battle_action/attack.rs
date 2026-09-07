@@ -241,14 +241,85 @@ pub(super) fn attack_chain<H: BattleActionHost + ?Sized>(
     // The terminator is tested at the **new** cursor on the same step
     // (`0x801E3998..0x801E39AC`, `0x00` routing to `0x1F` at `0x801E3A7C`):
     // the last byte is staged and the band leaves the loop together, so the
-    // recovery wait below is what holds until that last clip commits. (The
-    // `0x19` Miracle-continuation refill at `0x801E3A20..0x801E3A64` is not
-    // ported.)
+    // recovery wait below is what holds until that last clip commits.
     let exhausted = host.actor(slot).map(|a| a.read_param(0)).unwrap_or(0) == 0;
     if exhausted {
+        if attack_x2_refill(host, ctx) {
+            return stay(ctx);
+        }
         return transition(ctx, ActionState::AttackRecovery);
     }
     stay(ctx)
+}
+
+/// PORT: FUN_801E295C (`0x801E39B4..0x801E3A64`) - the strike loop's
+/// end-of-stream **Attack x2 refill**.
+///
+/// Reached on the step the stream terminator is read. Retail's guard chain,
+/// in order (`s5` is `ctx + 0x11`, so `0x2(s5)` is `ctx[+0x13]` and `0x5(s5)`
+/// is `ctx[+0x16]`):
+///
+/// ```text
+/// 801e39bc  sltiu v0,v0,0x3        ; ctx[+0x13] < 3   - a party actor
+/// 801e39fc  lw    v0,0x6bc(v0)     ; char record +0xF4
+/// 801e3a04  andi  v0,v0,0x2000     ;   War God Icon "Attack x2"
+/// 801e3a18  bne   v0,zero,801e3a74 ; ctx[+0x16] != 0  - the pair already ran
+/// 801e3a38  sb    zero,0x4(s5)     ; strike cursor = 0
+/// 801e3a40  sb    v0,0x5(s5)       ; ctx[+0x16] += 1
+/// 801e3a4c  bne   v0,a1,801e3a58   ; marks[i] == 1
+/// 801e3a54  _sb   a0,0x1df(v0)     ;   queue[i] = 0x19
+/// ```
+///
+/// So the *whole* action stream replays once, with every marked starter
+/// demoted from the newly-learned `0x1A` to the plain `0x19` - the learn
+/// verdict fires on the first pass only. The marks are the queue builder's
+/// side array, reconstructed here by
+/// [`crate::battle_action::build_starter_marks`] exactly as the reorder pass
+/// reads them.
+///
+/// Returns `true` when the refill ran, in which case the band stays in
+/// `AttackChain` and walks the stream again from byte 0.
+///
+/// This arm was previously read as a "Miracle continuation"; the guard chain
+/// above is what settles it.
+///
+/// One named deviation. Retail's marks survive from the build loop, where an
+/// accepted art writes `1`, while the Super tail-replace writes `4` at its own
+/// `0x1A` starters afterwards - so a Super-written starter is **not** demoted
+/// on the second pass. The engine reconstructs the marks from the queue bytes
+/// and cannot tell the two apart, so it demotes a Super's starter too. Closing
+/// it means carrying the side array on the actor from the builder to the
+/// strike loop, which nothing else needs yet.
+fn attack_x2_refill<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &mut BattleActionCtx) -> bool {
+    // Retail's literal is `ctx[+0x13] < 3`; the engine asks the host for the
+    // seated party width instead, which is the same set of ordinals for a
+    // full party and does not admit a monster seated at ordinal 2 in a
+    // short one.
+    let slot = ctx.active_actor;
+    if usize::from(slot) >= usize::from(host.party_count()) {
+        return false;
+    }
+    if host.character_ability_bits(slot) & WAR_GOD_ATTACK_X2_BIT == 0 {
+        return false;
+    }
+    if ctx.attack_x2_pass != 0 {
+        return false;
+    }
+    let Some(actor) = host.actor_mut(slot) else {
+        return false;
+    };
+    let mut queue = [0u8; ACTION_QUEUE_CAP];
+    let n = actor.params.len().min(queue.len());
+    queue[..n].copy_from_slice(&actor.params[..n]);
+    let marks = build_starter_marks(&queue);
+    for (i, m) in marks.iter().enumerate().take(n) {
+        if *m == BUILD_STARTER_MARK {
+            actor.params[i] = REGULAR_STARTER;
+        }
+    }
+    actor.strike_index = 0;
+    ctx.attack_x2_pass = ctx.attack_x2_pass.saturating_add(1);
+    true
 }
 
 pub(super) fn attack_recovery<H: BattleActionHost + ?Sized>(

@@ -1593,6 +1593,28 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             let _ = ctx;
             return;
         }
+        // **A spawned record's `0x23` belongs to its own channel, never to
+        // the player.** Retail does not pick the player arm off a ctx class
+        // bit: `0x801DEC7C bne s5,v0` compares the executing ctx **pointer**
+        // against the player context `_DAT_8007C364` (`0x8007C348 + 0x1C`),
+        // and only that identity reaches the camera re-centre `func_0x80017EC8`
+        // (`0x801DEC84..0x801DECA8`); every other ctx falls to `0x801DECAC`,
+        // the `+0x8C`/`+0x8D` facing + movement-init arm on **that** actor.
+        // The port derives `is_player` from `ctx.flags & 0x1000000`, which a
+        // spawned partition-2 record's context inherits - so without this arm
+        // a scene-arrival record's `0x23` yanked the player wherever the
+        // record seated its own actor, the hide box `(127,127)` included.
+        // This is the same law [`Self::op4c_n5_sub1_npc_run`] already carries
+        // for the `4C 51` form; the slice's write-through surfaces the move
+        // into the placement-keyed NPC state.
+        // REF: FUN_8003C83C (cross-context target resolve)
+        if self.world.in_spawned_record_slice
+            && let Some(_slot) = self.world.executing_channel
+        {
+            ctx.world_x = world_x;
+            ctx.world_z = world_z;
+            return;
+        }
         // Player path: also propagate to the active actor slot's
         // move_state so the renderer / collision layer sees the teleport.
         if is_player
@@ -1952,6 +1974,15 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     fn rng(&mut self) -> u32 {
         self.world.next_rng()
     }
+    /// Retail reads `_DAT_8007B874 | _DAT_8007B938` and only tests it for
+    /// zero-vs-non-zero (`0x801E6088..0x801E609C`). The port models the first
+    /// of the pair - the newly-pressed mask the retail pad pump writes
+    /// (`crate::retail_pad::RetailPadState::pressed`) - and has no analogue
+    /// for the second, so this is the press edge alone. That is the stricter
+    /// half: it can only ever *decline* to cut the banner short.
+    fn pad_word(&self) -> u16 {
+        self.world.input.retail_pad().pressed as u16
+    }
     fn previous_action_cleared(&self, _: u8) -> bool {
         self.world.prev_action_cleared
     }
@@ -2165,10 +2196,39 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
             .pending_battle_events
             .push(BattleEvent::RecomputeBattleOrder);
     }
+    /// The capture band's **pager** (`0x6E` arm): retail calls
+    /// `FUN_8003EC70(record[+1] + 0x28)`, streaming the cast's own slot-B
+    /// module in before `0x70` starts re-entering its tick
+    /// (`jal 0x801f2160` at `0x801E50C8`).
+    ///
+    /// `idx` is the acting actor's `params[0]`, i.e. the queued action id - the
+    /// same value retail indexes the spell table with to reach `+1`. So this is
+    /// the seam where the module becomes resident, and it is where the engine
+    /// stages that module's spawn records: `spawn_cast_module_fx` resolves the
+    /// id through `FUN_801F2160`'s `935 + sub_id` row and seats the records at
+    /// the caster. The paging *event* still goes to the host, which owns the
+    /// capture archive itself.
+    ///
+    /// REF: FUN_8003EC70 (the pager this seam stands for; the pool holds the
+    /// band's records instead of streaming one image)
     fn load_capture_archive(&mut self, idx: u8) {
         self.world
             .pending_battle_events
             .push(BattleEvent::LoadCaptureArchive { idx });
+        let slot = self.world.battle_ctx.active_actor as usize;
+        let origin = self
+            .world
+            .actors
+            .get(slot)
+            .map(|a| {
+                [
+                    a.move_state.world_x,
+                    a.move_state.world_y,
+                    a.move_state.world_z,
+                ]
+            })
+            .unwrap_or([0, 0, 0]);
+        self.world.spawn_cast_module_fx(idx, origin);
     }
     /// The party cast trigger the pre-cast wait runs on its timer's expiry.
     ///
