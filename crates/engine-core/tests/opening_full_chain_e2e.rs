@@ -315,7 +315,7 @@ fn tick_pressing_through_dialogs(world: &mut legaia_engine_core::world::World, t
         .cutscene_timeline
         .as_ref()
         .is_some_and(|t| t.dialog.is_some());
-    if parked && tick % 2 == 0 {
+    if parked && tick.is_multiple_of(2) {
         world.set_pad(legaia_engine_core::input::PadButton::Cross.mask());
     } else {
         world.set_pad(0);
