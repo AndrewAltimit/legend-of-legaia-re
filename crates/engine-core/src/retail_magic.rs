@@ -28,11 +28,20 @@
 //! spells - neither is reproduced here.
 //!
 //! Per-spell base **power** is *not* in this table, and there is no separate
-//! static multiplier array to capture. The player Seru block all share
-//! `cat = 0x32 / sub = 0`, and the cast-begin state (`0x28`) reads only MP +
-//! capture flag + name; the per-summon effect (and its damage) is dispatched by
-//! `(id - 0x81)` through `PTR_801f6734` in state `0x29`, i.e. it lives in the
-//! battle effect scripts, not a scalar table. The static atk/def kernel
+//! static multiplier array to capture. The cast-begin state (`0x28`) reads only
+//! MP + capture flag + name; the per-summon effect (and its damage) is
+//! dispatched by `(id - 0x81)` through `PTR_801f6734` in state `0x29`, i.e. it
+//! lives in the battle effect scripts, not a scalar table.
+//!
+//! An earlier revision of this note said the player Seru block "all share
+//! `cat = 0x32 / sub = 0`". It does not, and the exceptions are the two
+//! **ally-side** spells: read off `SCUS_942.54`, `0x83` Vera is `+0 = 0x00 /
+//! +1 = 0x03` and `0x89` Orb is `+0 = 0x01 / +1 = 0x04`, while the nine
+//! enemy-side spells are `0x32 / 0x00`. Both bytes are pinned per record in
+//! [`RetailSpell`] ([`RetailSpell::cast_class`] / [`RetailSpell::effect_class`])
+//! rather than asserted once for the block, because `+1` is the key
+//! `FUN_801F2160` dispatches a cast's module on
+//! ([`legaia_asset::cast_effect_pool`]). The static atk/def kernel
 //! `FUN_801ec3e4` is melee/arts-only (gated on an action-queue head in
 //! `0xC..=0x1F`). See `docs/formats/spell-table.md` for the full trace. The
 //! `base_power` figures below are therefore explicit MP-scaled placeholders.
@@ -69,6 +78,17 @@ pub struct RetailSpell {
     pub mp: u8,
     /// Target shape (decoded from the table's `target` byte).
     pub target: SpellTarget,
+    /// **Cast class**, table `+0`. `'c'` (`0x63`) marks a capture-class
+    /// record; no player Seru spell is one.
+    pub cast_class: u8,
+    /// **Effect class**, table `+1` - the byte `FUN_801F2160` bounds with
+    /// `sltiu ..., 0x20` and jumps through `0x801CF56C` on, selecting the cast
+    /// module PROT `935 + class`
+    /// ([`legaia_asset::cast_effect_pool::capture_module_prot`]). A player Seru
+    /// cast does not route through that dispatcher - its module comes from the
+    /// action id through `FUN_801F1ED4` - but the byte is table data and is
+    /// pinned here because it is the *only* live key the capture band has.
+    pub effect_class: u8,
 }
 
 /// Player Seru-magic block, spell ids `0x81..=0x8b`. Order matches ascending
@@ -81,6 +101,8 @@ pub const SERU_MAGIC: &[RetailSpell] = &[
         element: SpellElement::Fire,
         mp: 10,
         target: SpellTarget::OneEnemy,
+        cast_class: 0x32,
+        effect_class: 0x00,
     },
     RetailSpell {
         id: 0x82,
@@ -88,6 +110,8 @@ pub const SERU_MAGIC: &[RetailSpell] = &[
         element: SpellElement::Thunder,
         mp: 24,
         target: SpellTarget::OneEnemy,
+        cast_class: 0x32,
+        effect_class: 0x00,
     },
     RetailSpell {
         id: 0x83,
@@ -95,6 +119,8 @@ pub const SERU_MAGIC: &[RetailSpell] = &[
         element: SpellElement::Light,
         mp: 6,
         target: SpellTarget::OneAlly,
+        cast_class: 0x00,
+        effect_class: 0x03,
     },
     RetailSpell {
         id: 0x84,
@@ -102,6 +128,8 @@ pub const SERU_MAGIC: &[RetailSpell] = &[
         element: SpellElement::Water,
         mp: 28,
         target: SpellTarget::AllEnemies,
+        cast_class: 0x32,
+        effect_class: 0x00,
     },
     RetailSpell {
         id: 0x85,
@@ -109,6 +137,8 @@ pub const SERU_MAGIC: &[RetailSpell] = &[
         element: SpellElement::Dark,
         mp: 13,
         target: SpellTarget::OneEnemy,
+        cast_class: 0x32,
+        effect_class: 0x00,
     },
     RetailSpell {
         id: 0x86,
@@ -116,6 +146,8 @@ pub const SERU_MAGIC: &[RetailSpell] = &[
         element: SpellElement::Fire,
         mp: 36,
         target: SpellTarget::OneEnemy,
+        cast_class: 0x32,
+        effect_class: 0x00,
     },
     RetailSpell {
         id: 0x87,
@@ -123,6 +155,8 @@ pub const SERU_MAGIC: &[RetailSpell] = &[
         element: SpellElement::Thunder,
         mp: 64,
         target: SpellTarget::AllEnemies,
+        cast_class: 0x32,
+        effect_class: 0x00,
     },
     RetailSpell {
         id: 0x88,
@@ -130,6 +164,8 @@ pub const SERU_MAGIC: &[RetailSpell] = &[
         element: SpellElement::Wind,
         mp: 32,
         target: SpellTarget::OneEnemy,
+        cast_class: 0x32,
+        effect_class: 0x00,
     },
     RetailSpell {
         id: 0x89,
@@ -137,6 +173,8 @@ pub const SERU_MAGIC: &[RetailSpell] = &[
         element: SpellElement::Light,
         mp: 18,
         target: SpellTarget::AllAllies,
+        cast_class: 0x01,
+        effect_class: 0x04,
     },
     RetailSpell {
         id: 0x8a,
@@ -144,6 +182,8 @@ pub const SERU_MAGIC: &[RetailSpell] = &[
         element: SpellElement::Water,
         mp: 40,
         target: SpellTarget::AllEnemies,
+        cast_class: 0x32,
+        effect_class: 0x00,
     },
     RetailSpell {
         id: 0x8b,
@@ -151,6 +191,8 @@ pub const SERU_MAGIC: &[RetailSpell] = &[
         element: SpellElement::Wind,
         mp: 48,
         target: SpellTarget::OneEnemy,
+        cast_class: 0x32,
+        effect_class: 0x00,
     },
 ];
 
@@ -165,6 +207,18 @@ pub fn get(id: u8) -> Option<&'static RetailSpell> {
 /// is elemental damage. The damage figure is an MP-scaled placeholder (see the
 /// module docs).
 fn spell_def_with(s: &RetailSpell, mp: u8, target: SpellTarget) -> SpellDef {
+    spell_def_with_class(s, mp, target, s.effect_class)
+}
+
+/// [`spell_def_with`] with the record's `+0x01` **effect class** supplied
+/// explicitly, so a disc-sourced catalog carries the disc's byte rather than
+/// the pinned one (a patched / localised table may differ).
+fn spell_def_with_class(
+    s: &RetailSpell,
+    mp: u8,
+    target: SpellTarget,
+    effect_class: u8,
+) -> SpellDef {
     let effect = match target {
         SpellTarget::OneAlly => SpellEffect::Heal {
             amount: (mp as u16) * 8,
@@ -187,6 +241,7 @@ fn spell_def_with(s: &RetailSpell, mp: u8, target: SpellTarget) -> SpellDef {
         // anim id == real table anim (0x25 + block index), kept aligned so a
         // future anim-table port can drive the same trigger.
         anim_id: 0x25 + (s.id - 0x81),
+        effect_class,
     }
 }
 
@@ -233,11 +288,13 @@ pub fn seru_magic_catalog_from_scus(scus: &[u8]) -> Option<SpellCatalog> {
     let table = legaia_asset::spell_names::SpellNameTable::from_scus(scus)?;
     let mut c = SpellCatalog::vanilla();
     for s in SERU_MAGIC {
-        let (mp, target) = match table.entry(s.id) {
-            Some(e) => (e.mp, target_from_shape(e.target_shape())),
-            None => (s.mp, s.target),
+        let (mp, target, class) = match table.entry(s.id) {
+            // `sub_class` is the record's `+0x01` byte - the cast-module key
+            // `FUN_801F2160` dispatches on.
+            Some(e) => (e.mp, target_from_shape(e.target_shape()), e.sub_class),
+            None => (s.mp, s.target, s.effect_class),
         };
-        let mut def = spell_def_with(s, mp, target);
+        let mut def = spell_def_with_class(s, mp, target, class);
         // Prefer the disc's own name string (localised on a JP/EU disc); fall
         // back to the pinned English name for empty / missing slots.
         if let Some(name) = table.name(s.id) {
@@ -292,6 +349,7 @@ fn insert_monster_specials(
             && v.name.eq_ignore_ascii_case(name)
         {
             v.mp_cost = e.mp;
+            v.effect_class = e.sub_class;
             c.insert(v);
             continue;
         }
@@ -312,6 +370,7 @@ fn insert_monster_specials(
             element: SpellElement::Neutral,
             target,
             effect,
+            effect_class: e.sub_class,
             ..Default::default()
         });
     }
@@ -346,6 +405,63 @@ mod tests {
             assert_eq!(s.mp, mp, "mp for {name}");
         }
         assert_eq!(SERU_MAGIC.len(), expect.len());
+    }
+
+    /// The `+0` / `+1` byte pair of every pinned player Seru record, and the
+    /// module each `+1` would name if the record were capture-class.
+    ///
+    /// Two things this locks. First, the block is **not** uniform: an earlier
+    /// note here claimed `cat = 0x32 / sub = 0` for all eleven, and the two
+    /// ally-side spells break it (`0x83` Vera = `0x00 / 0x03`, `0x89` Orb =
+    /// `0x01 / 0x04`). Second, no player Seru record is capture-class, so a
+    /// player cast's module comes from `FUN_801F1ED4`'s action-id row, not
+    /// from `FUN_801F2160`'s `+1` row - `seru_module_prot` is the right
+    /// arithmetic for them and `capture_module_prot` is not.
+    #[test]
+    fn pinned_effect_class_bytes_and_their_band_rows() {
+        use legaia_asset::cast_effect_pool::{capture_module_prot, seru_module_prot};
+        use legaia_asset::spell_names::CAPTURE_CLASS;
+        let expect: &[(u8, u8, u8)] = &[
+            (0x81, 0x32, 0x00),
+            (0x82, 0x32, 0x00),
+            (0x83, 0x00, 0x03),
+            (0x84, 0x32, 0x00),
+            (0x85, 0x32, 0x00),
+            (0x86, 0x32, 0x00),
+            (0x87, 0x32, 0x00),
+            (0x88, 0x32, 0x00),
+            (0x89, 0x01, 0x04),
+            (0x8a, 0x32, 0x00),
+            (0x8b, 0x32, 0x00),
+        ];
+        for &(id, cast, class) in expect {
+            let s = get(id).unwrap_or_else(|| panic!("missing spell {id:#04x}"));
+            assert_eq!(s.cast_class, cast, "+0 for {}", s.name);
+            assert_eq!(s.effect_class, class, "+1 for {}", s.name);
+            assert_ne!(
+                s.cast_class, CAPTURE_CLASS,
+                "{} is not capture-class",
+                s.name
+            );
+            // Every `+1` in the block is inside the capture dispatcher's
+            // `sltiu ..., 0x20` bound even though no player cast uses it.
+            assert!(capture_module_prot(s.effect_class).is_some());
+            // The row a player cast actually takes.
+            assert_eq!(seru_module_prot(id), Some(903 + u32::from(id - 0x81)));
+        }
+        // The block is not uniform - the claim this test replaced.
+        assert!(
+            SERU_MAGIC.iter().any(|s| s.effect_class != 0),
+            "at least one player Seru record carries a non-zero +1"
+        );
+    }
+
+    #[test]
+    fn catalog_carries_the_effect_class() {
+        let c = retail_seru_magic_catalog();
+        assert_eq!(c.get(0x81).map(|d| d.effect_class), Some(0x00));
+        assert_eq!(c.get(0x83).map(|d| d.effect_class), Some(0x03));
+        assert_eq!(c.get(0x89).map(|d| d.effect_class), Some(0x04));
     }
 
     #[test]

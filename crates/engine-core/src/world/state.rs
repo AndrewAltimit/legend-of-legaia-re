@@ -1802,6 +1802,16 @@ pub struct World {
     /// as the capture-archive load).
     pub pending_summon_spawn: Option<(u8, [i16; 3])>,
 
+    /// The **cast-effect pool**: the DATA half of the slot-B cast-module band
+    /// (PROT 0903..0966), keyed by PROT entry. Both of PROT 0898's tick
+    /// dispatchers resolve a cast into this band
+    /// ([`legaia_engine_vm::battle_cast_dispatch`]), and
+    /// [`World::spawn_cast_module_fx`] stages the resolved module's spawn
+    /// records. Installed once per host by the scene host (which holds the
+    /// PROT index); `None` on a disc-free host, where every cast simply stages
+    /// no module records.
+    pub cast_effect_pool: Option<Arc<legaia_asset::cast_effect_pool::CastEffectPool>>,
+
     /// The engine's player-summon stager while a Seru cast is in the action
     /// SM's summon band - the body behind `BattleActionHost::summon_stager_tick`
     /// (see `crate::world::battle::cast_band`).
@@ -2854,6 +2864,7 @@ impl World {
             rng_state: 0x1234_5678,
             active_summon: None,
             pending_summon_spawn: None,
+            cast_effect_pool: None,
             summon_stager: None,
             summon_actor_slot: None,
             pending_cast: None,

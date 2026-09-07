@@ -25,6 +25,7 @@ impl SceneHost {
             monster_archive_cache: None,
             move_power_loaded: false,
             battle_tutorial_loaded: false,
+            cast_effect_pool_loaded: false,
             last_minigame_warp: None,
             scene_destinations: Vec::new(),
             field_triggers: (Vec::new(), Vec::new()),

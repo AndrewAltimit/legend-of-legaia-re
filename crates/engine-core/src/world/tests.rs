@@ -236,6 +236,7 @@ fn gimard_spell_def() -> crate::spells::SpellDef {
             element: SpellElement::Neutral,
         },
         anim_id: 0,
+        ..Default::default()
     }
 }
 

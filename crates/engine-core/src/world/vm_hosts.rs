@@ -2174,10 +2174,39 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
             .pending_battle_events
             .push(BattleEvent::RecomputeBattleOrder);
     }
+    /// The capture band's **pager** (`0x6E` arm): retail calls
+    /// `FUN_8003EC70(record[+1] + 0x28)`, streaming the cast's own slot-B
+    /// module in before `0x70` starts re-entering its tick
+    /// (`jal 0x801f2160` at `0x801E50C8`).
+    ///
+    /// `idx` is the acting actor's `params[0]`, i.e. the queued action id - the
+    /// same value retail indexes the spell table with to reach `+1`. So this is
+    /// the seam where the module becomes resident, and it is where the engine
+    /// stages that module's spawn records: `spawn_cast_module_fx` resolves the
+    /// id through `FUN_801F2160`'s `935 + sub_id` row and seats the records at
+    /// the caster. The paging *event* still goes to the host, which owns the
+    /// capture archive itself.
+    ///
+    /// REF: FUN_8003EC70 (the pager this seam stands for; the pool holds the
+    /// band's records instead of streaming one image)
     fn load_capture_archive(&mut self, idx: u8) {
         self.world
             .pending_battle_events
             .push(BattleEvent::LoadCaptureArchive { idx });
+        let slot = self.world.battle_ctx.active_actor as usize;
+        let origin = self
+            .world
+            .actors
+            .get(slot)
+            .map(|a| {
+                [
+                    a.move_state.world_x,
+                    a.move_state.world_y,
+                    a.move_state.world_z,
+                ]
+            })
+            .unwrap_or([0, 0, 0]);
+        self.world.spawn_cast_module_fx(idx, origin);
     }
     /// The party cast trigger the pre-cast wait runs on its timer's expiry.
     ///

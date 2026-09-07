@@ -95,22 +95,22 @@
   <h3 id="player-block">Player Seru-magic block (<code>0x81..=0x8B</code>)</h3>
   <p>MP and target are byte-exact from the executable; element comes from the curated <a href="../reference/gamedata.html">game-data chart</a>, which matches on every MP value.</p>
   <table>
-  <thead><tr><th>Id</th><th>Name</th><th>Element</th><th>MP</th><th>Target</th></tr></thead>
+  <thead><tr><th>Id</th><th>Name</th><th>Element</th><th>MP</th><th>Target</th><th><code>+0</code></th><th><code>+1</code></th></tr></thead>
   <tbody>
-    <tr><td><code>0x81</code></td><td>Gimard</td><td>fire</td><td>10</td><td>one enemy</td></tr>
-    <tr><td><code>0x82</code></td><td>Theeder</td><td>thunder</td><td>24</td><td>one enemy</td></tr>
-    <tr><td><code>0x83</code></td><td>Vera</td><td>light</td><td>6</td><td>one ally</td></tr>
-    <tr><td><code>0x84</code></td><td>Gizam</td><td>water</td><td>28</td><td>all enemies</td></tr>
-    <tr><td><code>0x85</code></td><td>Nighto</td><td>dark</td><td>13</td><td>one enemy</td></tr>
-    <tr><td><code>0x86</code></td><td>Zenoir</td><td>fire</td><td>36</td><td>one enemy</td></tr>
-    <tr><td><code>0x87</code></td><td>Viguro</td><td>thunder</td><td>64</td><td>all enemies</td></tr>
-    <tr><td><code>0x88</code></td><td>Swordie</td><td>wind</td><td>32</td><td>one enemy</td></tr>
-    <tr><td><code>0x89</code></td><td>Orb</td><td>light</td><td>18</td><td>all allies</td></tr>
-    <tr><td><code>0x8A</code></td><td>Freed</td><td>water</td><td>40</td><td>all enemies</td></tr>
-    <tr><td><code>0x8B</code></td><td>Nova</td><td>wind</td><td>48</td><td>one enemy</td></tr>
+    <tr><td><code>0x81</code></td><td>Gimard</td><td>fire</td><td>10</td><td>one enemy</td><td><code>0x32</code></td><td><code>0x00</code></td></tr>
+    <tr><td><code>0x82</code></td><td>Theeder</td><td>thunder</td><td>24</td><td>one enemy</td><td><code>0x32</code></td><td><code>0x00</code></td></tr>
+    <tr><td><code>0x83</code></td><td>Vera</td><td>light</td><td>6</td><td>one ally</td><td><code>0x00</code></td><td><code>0x03</code></td></tr>
+    <tr><td><code>0x84</code></td><td>Gizam</td><td>water</td><td>28</td><td>all enemies</td><td><code>0x32</code></td><td><code>0x00</code></td></tr>
+    <tr><td><code>0x85</code></td><td>Nighto</td><td>dark</td><td>13</td><td>one enemy</td><td><code>0x32</code></td><td><code>0x00</code></td></tr>
+    <tr><td><code>0x86</code></td><td>Zenoir</td><td>fire</td><td>36</td><td>one enemy</td><td><code>0x32</code></td><td><code>0x00</code></td></tr>
+    <tr><td><code>0x87</code></td><td>Viguro</td><td>thunder</td><td>64</td><td>all enemies</td><td><code>0x32</code></td><td><code>0x00</code></td></tr>
+    <tr><td><code>0x88</code></td><td>Swordie</td><td>wind</td><td>32</td><td>one enemy</td><td><code>0x32</code></td><td><code>0x00</code></td></tr>
+    <tr><td><code>0x89</code></td><td>Orb</td><td>light</td><td>18</td><td>all allies</td><td><code>0x01</code></td><td><code>0x04</code></td></tr>
+    <tr><td><code>0x8A</code></td><td>Freed</td><td>water</td><td>40</td><td>all enemies</td><td><code>0x32</code></td><td><code>0x00</code></td></tr>
+    <tr><td><code>0x8B</code></td><td>Nova</td><td>wind</td><td>48</td><td>one enemy</td><td><code>0x32</code></td><td><code>0x00</code></td></tr>
   </tbody>
   </table>
-  <p>The whole player block shares <code>class = 0x32, sub = 0</code>: the table cannot tell Gimard from Nova, which is the first sign that damage lives elsewhere. Which Seru teaches which id is wired in <code>engine-core::seru_learning::SeruRegistry::retail</code>.</p>
+  <p>The nine enemy-side spells share <code>+0 = 0x32, +1 = 0x00</code>: the table cannot tell Gimard from Nova, which is the first sign that damage lives elsewhere. The block is <strong>not</strong> uniform, though - an earlier revision of this page said the whole block shared that pair, and the two ally-side spells break it (<code>0x83</code> Vera is <code>0x00 / 0x03</code>, <code>0x89</code> Orb is <code>0x01 / 0x04</code>). Which Seru teaches which id is wired in <code>engine-core::seru_learning::SeruRegistry::retail</code>.</p>
 </section>
 
 <section class="doc-section" id="target-shape">
@@ -145,6 +145,7 @@
   </tbody>
   </table>
   <p>Because the sub-index is static table data, the identity of every capture-class module is readable from the executable alone (<code>spell_names::capture_class_records</code>). The 32 modules (PROT 935..966) are shared: a multi-spell module dispatches per spell id at its head.</p>
+  <p>The byte has <strong>two</strong> readers, and they agree. The pager streams the module in; the battle image&#39;s cast-tick dispatcher <code>FUN_801F2160</code> re-reads the acting actor&#39;s queued id, indexes this table, takes <code>+1</code>, bounds it with <code>sltiu &hellip;, 0x20</code> and jumps through a 32-slot table - the same PROT <code>935 + sub</code> entry, ticked once per frame while the cast runs. Outside the capture class nothing dispatches on the byte, because no other class reaches that routine.</p>
   <details class="disclosure">
     <summary>Capture-class module index (PROT 935..966)</summary>
     <div class="disclosure-body">

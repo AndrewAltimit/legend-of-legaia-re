@@ -182,6 +182,13 @@ pub struct SpellDef {
     /// Animation id wired to `BattleActionHost::spell_anim_trigger`.
     /// `0` = no animation.
     pub anim_id: u8,
+    /// Spell-table `+0x01` **effect class** - the key `FUN_801F2160` bounds
+    /// with `sltiu ..., 0x20` and dispatches a capture-class cast's module on
+    /// (PROT `935 + class`, see
+    /// [`legaia_asset::cast_effect_pool::capture_module_prot`]). `0` on the
+    /// placeholder catalog and on any record built without the disc table;
+    /// [`crate::retail_magic`] fills it from `SCUS_942.54`.
+    pub effect_class: u8,
 }
 
 impl Default for SpellDef {
@@ -194,6 +201,7 @@ impl Default for SpellDef {
             target: SpellTarget::OneEnemy,
             effect: SpellEffect::default(),
             anim_id: 0,
+            effect_class: 0,
         }
     }
 }
@@ -277,6 +285,7 @@ impl SpellCatalog {
                 element: SpellElement::Fire,
             },
             anim_id: 0x40,
+            ..Default::default()
         });
         c.insert(SpellDef {
             id: 0x21,
@@ -289,6 +298,7 @@ impl SpellCatalog {
                 element: SpellElement::Fire,
             },
             anim_id: 0x41,
+            ..Default::default()
         });
         c.insert(SpellDef {
             id: 0x22,
@@ -301,6 +311,7 @@ impl SpellCatalog {
                 element: SpellElement::Water,
             },
             anim_id: 0x42,
+            ..Default::default()
         });
         c.insert(SpellDef {
             id: 0x23,
@@ -313,6 +324,7 @@ impl SpellCatalog {
                 element: SpellElement::Thunder,
             },
             anim_id: 0x43,
+            ..Default::default()
         });
         c.insert(SpellDef {
             id: 0x24,
@@ -325,6 +337,7 @@ impl SpellCatalog {
                 element: SpellElement::Wind,
             },
             anim_id: 0x44,
+            ..Default::default()
         });
         c.insert(SpellDef {
             id: 0x25,
@@ -337,6 +350,7 @@ impl SpellCatalog {
                 element: SpellElement::Ice,
             },
             anim_id: 0x45,
+            ..Default::default()
         });
         c.insert(SpellDef {
             id: 0x26,
@@ -349,6 +363,7 @@ impl SpellCatalog {
                 element: SpellElement::Earth,
             },
             anim_id: 0x46,
+            ..Default::default()
         });
         // Buff / debuff spells.
         c.insert(SpellDef {

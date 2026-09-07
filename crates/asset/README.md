@@ -536,6 +536,17 @@ CLI `asset summon-overlay <stager .BIN> [--trim 0xNNNN]`. See
 [`open-rev-eng-threads.md`](../../docs/reference/open-rev-eng-threads.md) (Seru-magic
 summon visual).
 
+`cast_effect_pool` - the whole slot-B cast-module band (PROT 0903..0966) as one
+index, keyed by the PROT entry either of PROT 0898's tick dispatchers names:
+`seru_module_prot(action_id)` = `903 + (id - 0x81)` (`FUN_801F1ED4`, table
+`0x801CF4EC`) and `capture_module_prot(sub_id)` = `935 + sub_id`
+(`FUN_801F2160`, table `0x801CF56C`, keyed on the spell record's `+0x01` byte).
+`CastEffectPool::insert` parses one entry's spawn records through
+`summon_overlay::parse` - this is the band's **DATA** layer only, the records
+those modules hand `FUN_80050ED4` / `FUN_80021B04`; the modules' code half
+(lift, camera, phase machine, damage) is not expressible as a record. See
+[`cast-module.md`](../../docs/subsystems/cast-module.md#what-the-port-runs).
+
 `summon_readef` - the battle side-band streaming files `summon.dat` /
 `readef.DAT` (extraction PROT 893 / 894 = retail TOC `0x37F` / `0x380`,
 CDNAME block `bat_back_dat`): `0x10800`-byte slots carrying per-special-attack

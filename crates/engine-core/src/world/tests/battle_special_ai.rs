@@ -775,6 +775,7 @@ fn element_affinity_scales_player_summon_cast_by_creature_element() {
                 element: SpellElement::Neutral,
             },
             anim_id: 0,
+            ..Default::default()
         }
     }
 
@@ -955,6 +956,7 @@ fn player_summon_cast_matches_the_summon_kernel_composition() {
             element: SpellElement::Neutral,
         },
         anim_id: 0,
+        ..Default::default()
     };
     let before = world.actors[1].battle.hp;
     world.cast_spell_on_slots(0, &spell, &[1]);

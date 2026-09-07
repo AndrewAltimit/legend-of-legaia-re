@@ -492,6 +492,46 @@ repo:
   to the tick body of an image that carries no dump at all (PROT 0915, 0935).
   Not one is an un-dumped function of the image it is filed under.
 
+## What the port runs
+
+The worklist's DATA/PORT split is also the port's split, and the engine runs
+the DATA half of the whole band.
+
+**The pool.** `legaia_asset::cast_effect_pool` indexes all 64 entries by PROT
+number and parses each image's spawn records with the reader the spawn stack
+already shares (`legaia_asset::summon_overlay::parse`, which scans both
+`jal FUN_80021B04` and `jal FUN_80050ED4` sites and follows each one's `a2`).
+The scene host builds it once (`ensure_cast_effect_pool`, PROT 0903..0966) and
+installs it on the world; a host with no disc simply holds none.
+
+**The key.** `legaia_engine_vm::battle_cast_dispatch`'s two dispatchers each
+answer with the emitter VA *and* the band entry it lives in, using this page's
+own arithmetic - `FUN_801F1ED4` row `id - 0x81` = PROT `903 + row`,
+`FUN_801F2160` row `sub_id` = PROT `935 + sub_id`. `World::cast_module_for`
+picks between them exactly as retail does, on the record's `+0` class byte:
+capture class `'c'` goes to the `+1` row, anything else to the action-id row.
+
+**The stage.** `World::spawn_cast_module_fx` seats the resolved module's
+records as a move-VM scene (`SummonScene`), which is the same stand-in the
+summon and move-FX paths run, so both hosts tick and draw them with no host
+change. It fires at the two seams retail uses: the capture band's pager
+(`load_capture_archive`, the `0x6E` arm, ahead of the `0x801E50C8` tick loop)
+and the summon stager's first tick (`0x801E4B1C`).
+
+**What is still not run.** Every **PORT** row above - the six tick bodies and
+the seven state-touching stagers. They write things a spawn record cannot express -
+the staged-clip bytes `+0x1DA` / `+0x1DC` (the lift), the module phase
+`ctx+0x279` and `ctx+0x278` (the phase machine and its camera arms), the HP
+write `+0x14C` and the status byte `+0x16E` (the damage shape). The engine
+folds a cast's HP outcome at its own band seam
+(`World::cast_spell_on_slots_prepaid`) instead, so no outcome is lost - what is
+lost is retail's per-phase *timing* of it, and the choreography around it. The
+**SCOPE-IGNORE** rows stage nothing in retail either.
+
+Two band entries carry no record at all and stage nothing: PROT 0926, the
+1-sector null stub, and PROT 0952, whose two spawn sites both load `a2` out of
+a saved register no static window can see.
+
 ## Provenance
 
 Disassembly of the PROT 958/959/960 images (offsets above); the commit
