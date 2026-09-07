@@ -499,10 +499,23 @@ namespace LegaiaWorld
             var settings = LegaiaSceneSettings.Load(sceneName);
             var o = new LegaiaLivingTownOptions();
             settings.ApplyLivingTown(o);
+            // Apply TWICE: the pass must refresh, not stack. Every assert
+            // below then runs against the second build, so a leaked brain or
+            // a second director shows up as a failure rather than as a
+            // slowly growing scene.
+            LegaiaLivingTown.Apply(
+                root, manifest, sceneName, new LegaiaLivingTownOptions(), settings);
             var container = LegaiaLivingTown.Apply(
                 root, manifest, sceneName, new LegaiaLivingTownOptions(), settings);
             if (container == null)
                 Fail("living town built nothing");
+            int containers = 0;
+            foreach (Transform child in rootT)
+                if (child.name == LegaiaLivingTown.CONTAINER)
+                    containers++;
+            if (containers != 1)
+                Fail(containers + " living_town containers under the root - " +
+                     "re-applying stacked instead of refreshing");
 
             // --- The director ------------------------------------------------
             var dirType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaTownDirector");
@@ -603,9 +616,16 @@ namespace LegaiaWorld
                 if (placed == null)
                     continue; // not placed in this build (conditional villagers)
                 eligible++;
-                var brain = placed.GetComponent(brainType);
-                if (brain == null)
-                    Fail(placed.name + " is an eligible villager with no brain");
+                var brains = placed.GetComponents(brainType);
+                if (brains.Length != 1)
+                    Fail(placed.name + " carries " + brains.Length +
+                         " brain(s), expected exactly 1");
+                var brain = brains[0];
+                var bubbles = placed.GetComponentsInChildren(
+                    LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaSpeechBubble"), true);
+                if (bubbles.Length != 1)
+                    Fail(placed.name + " carries " + bubbles.Length +
+                         " speech bubble(s), expected exactly 1");
                 if (LegaiaCommonPrefabs.BackingUdon(brain) == null)
                     Fail(placed.name + "'s brain has no backing UdonBehaviour");
                 if (ReadVar(brain, "director") == null)

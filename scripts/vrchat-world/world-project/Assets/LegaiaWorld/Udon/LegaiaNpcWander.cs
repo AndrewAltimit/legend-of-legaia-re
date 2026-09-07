@@ -1,6 +1,16 @@
-// Optional Udon behaviour: makes a placed NPC wander a small radius around
-// its spawn point, pausing between strolls - the "town feels inhabited"
-// layer on top of the looping idle clip the builder wires up.
+// The NPC LOCOMOTION CONTROLLER: everything that moves a placed villager
+// around the world. Two ways in:
+//
+//   1. Autonomous stroll (the original behaviour, still the default): the
+//      NPC wanders a small radius around its spawn point, pausing between
+//      strolls - the "town feels inhabited" layer on top of the looping
+//      idle clip the builder wires up. An NPC with nothing else attached
+//      behaves exactly as before.
+//   2. A COMMAND API for the living-town layer (LegaiaNpcBrain drives it,
+//      LegaiaTownDirector schedules it): GoTo / FaceToward / Arrived /
+//      Blocked / Stop / Teleport / SetIdle / SetHome. A commanded walk uses
+//      `walkSpeed` (a purposeful errand, faster than the amble) and steers
+//      around obstacles; Stop() hands the NPC back to the stroll.
 //
 // Collision-aware: strolls are clamped against the world's colliders (the
 // builder's merged double-sided collider included), a short waist-height
@@ -10,6 +20,14 @@
 // wandering NPC neither blocks on them nor fires them. Movement is
 // forward-only: on a direction change the NPC pivots in place until
 // aligned, then steps off - it never translates while mis-facing.
+//
+// STEERING (commanded walks only): when the straight line to the target is
+// blocked within `probeDistance`, a fan of rays at +/-30, +/-60, +/-85
+// degrees looks for a clear lane and the NPC commits to it for a moment
+// before re-aiming at the target - enough to round a hut corner on the way
+// across the village. When no lane is clear, or progress stalls, Blocked()
+// goes true and the brain picks something else (it never teleports through
+// the wall).
 //
 // FACING - measured, not derived. The exported NPC glbs have no skins:
 // each TMD object is a rigid mesh on its own animated node, and the node
@@ -31,6 +49,9 @@
 //     transform yaws +10 degrees (mirrors can flip it), and Update servos
 //     the yaw with the probed sign until visual forward lies on the walk
 //     direction. No rest capture, no calibration frames, no sign algebra.
+// Teleport() uses the same measurement (one servo step of the whole error)
+// rather than assuming any relation between transform.forward and the
+// visible facing.
 //
 // The one convention that must be ASSUMED is the face axis, and the
 // invariant that holds across every town01 model (textured 4-view
@@ -44,11 +65,18 @@
 // that, rest-yaw-0 rigs reduce exactly to the previously verified
 // behaviour and the rotated family lands on its true axis.
 //
+// WALK ANIMATION: with `locoAnimator` wired to an idle/walk controller
+// (the living-town pass generates one when a rig family has a clip that
+// measures as a walk cycle), the controller crossfades between the two
+// states as stepping starts and stops. Left null - which is the case
+// whenever no clip convincingly walks - the NPC keeps looping whatever
+// clip the builder attached, exactly as before.
+//
 // Requires UdonSharp (bundled with the VRChat worlds SDK via the Creator
 // Companion). Drop this component on an NPC instance the builder placed;
 // tune radius/speed per NPC. Movement is local (each player computes it
-// independently from the same deterministic-ish seed of Random) - fine for
-// ambience; use synced variables if you need every player to agree.
+// independently) - fine for ambience; use synced variables if you need
+// every player to agree.
 
 using UdonSharp;
 using UnityEngine;
@@ -64,6 +92,10 @@ namespace LegaiaWorld
         [Tooltip("Walk speed in m/s. Legaia townsfolk amble - keep it low.")]
         public float speed = 0.4f;
 
+        [Tooltip("Speed of a COMMANDED walk (GoTo) in m/s - an errand across " +
+                 "the village is purposeful, not an amble.")]
+        public float walkSpeed = 0.7f;
+
         [Tooltip("Average pause between strolls (seconds).")]
         public float pauseSeconds = 5f;
 
@@ -72,6 +104,26 @@ namespace LegaiaWorld
 
         [Tooltip("Clear space kept between the NPC and any wall (meters).")]
         public float wallClearance = 0.3f;
+
+        [Tooltip("How close to a commanded target counts as arrived (meters).")]
+        public float arriveRadius = 0.3f;
+
+        [Tooltip("How far ahead a commanded walk looks for obstacles (meters).")]
+        public float probeDistance = 0.9f;
+
+        [Tooltip("Optional Animator with 'idle' and 'walk' states - crossfaded " +
+                 "as stepping starts and stops. Null keeps the builder's " +
+                 "looping spawn clip.")]
+        public Animator locoAnimator;
+
+        [Tooltip("Animator state played while standing still.")]
+        public string idleState = "idle";
+
+        [Tooltip("Animator state played while stepping.")]
+        public string walkState = "walk";
+
+        [Tooltip("Crossfade time between idle and walk (seconds).")]
+        public float animCrossfade = 0.15f;
 
         [Tooltip("Tick if this NPC walks exactly backwards: covers a model " +
                  "authored facing -Z in its file where every known rig " +
@@ -94,6 +146,22 @@ namespace LegaiaWorld
         // floor rays stay proportioned to the model at any export scale.
         private float npcHeight = 1.6f;
         private float rayHeight = 0.8f;
+
+        // --- Command state ------------------------------------------------
+        // mode 0 = autonomous stroll (the default), 1 = commanded walk to
+        // `commandTarget`, 2 = idle (frozen in place), 3 = turn in place
+        // toward `faceDir` and then hold.
+        private int mode;
+        private Vector3 commandTarget;
+        private Vector3 faceDir = Vector3.forward;
+        private bool arrived;
+        private bool blocked;
+        private Vector3 progressMark;
+        private float progressAt;
+        private Vector3 steerDir;
+        private float steerUntil;
+        private bool animWalking;
+        private bool animStarted;
 
         void Start()
         {
@@ -185,7 +253,135 @@ namespace LegaiaWorld
                 float resp = Vector3.SignedAngle(f0, f1, Vector3.up);
                 servoSign = resp < 0f ? -1f : 1f;
             }
+            faceDir = VisualForward();
+            progressMark = transform.position;
+            progressAt = Time.time;
         }
+
+        // --- Command API (LegaiaNpcBrain) ---------------------------------
+
+        /// Walk to a world position. Arrived() goes true within
+        /// `arriveRadius`; Blocked() goes true when no route opens up.
+        public void GoTo(Vector3 worldPos)
+        {
+            commandTarget = worldPos;
+            mode = 1;
+            arrived = false;
+            blocked = false;
+            steerUntil = 0f;
+            progressMark = transform.position;
+            progressAt = Time.time;
+        }
+
+        /// Turn in place until the MESH faces `worldPos` (no translation).
+        /// This CANCELS a walk command: a brain calls it on arrival, and
+        /// leaving the walk mode running would keep the arrival test - not
+        /// the facing servo - in charge of the NPC.
+        public void FaceToward(Vector3 worldPos)
+        {
+            Vector3 d = worldPos - transform.position;
+            d.y = 0f;
+            if (d.sqrMagnitude > 1e-6f)
+                faceDir = d.normalized;
+            mode = 3;
+            walking = false;
+        }
+
+        /// True once a commanded walk has reached its target.
+        public bool Arrived()
+        {
+            return arrived;
+        }
+
+        /// True when the commanded walk found no way through (a wall with no
+        /// clear lane, or no forward progress for a few seconds).
+        public bool Blocked()
+        {
+            return blocked;
+        }
+
+        /// Cancel any command and hand the NPC back to its autonomous
+        /// stroll around `home`.
+        public void Stop()
+        {
+            mode = 0;
+            arrived = false;
+            blocked = false;
+            walking = false;
+            steerUntil = 0f;
+            target = transform.position;
+            pauseUntil = Time.time + Random.Range(0.2f, 1.2f);
+        }
+
+        /// Hard reposition (the NPC "walks through" a doorway teleport the
+        /// way a player does). `facing` is a world direction; the visible
+        /// mesh is turned onto it in one step using the same measurement
+        /// the walk servo uses. The NPC is left idle - the brain decides
+        /// what happens on the other side.
+        public void Teleport(Vector3 pos, Vector3 facing)
+        {
+            transform.position = pos;
+            SnapToFloor();
+            facing.y = 0f;
+            if (facing.sqrMagnitude > 1e-6f)
+            {
+                faceDir = facing.normalized;
+                float err = Vector3.SignedAngle(VisualForward(), faceDir, Vector3.up)
+                    + facingYawOffset;
+                transform.rotation =
+                    Quaternion.AngleAxis(servoSign * err, Vector3.up)
+                    * transform.rotation;
+            }
+            mode = 2;
+            walking = false;
+            arrived = false;
+            blocked = false;
+            home = transform.position;
+            target = home;
+        }
+
+        /// Freeze in place (standing at a station) or resume strolling.
+        public void SetIdle(bool idle)
+        {
+            if (idle)
+            {
+                mode = 2;
+                walking = false;
+            }
+            else if (mode == 2)
+            {
+                Stop();
+            }
+        }
+
+        /// Move the stroll circle (an NPC that went indoors strolls around
+        /// the room it landed in, not around its village spawn).
+        public void SetHome(Vector3 pos)
+        {
+            home = pos;
+            target = pos;
+        }
+
+        /// The stroll circle's centre - the brain restores it on the way out.
+        public Vector3 Home()
+        {
+            return home;
+        }
+
+        /// Measured model height (metres) - the brain sizes its speech
+        /// bubble from it instead of assuming a human-sized villager.
+        public float Height()
+        {
+            return npcHeight;
+        }
+
+        /// True while the NPC is actually stepping (drives the walk clip).
+        public bool Walking()
+        {
+            return walking;
+        }
+
+        // --- Facing measurement --------------------------------------------
 
         // The direction the mesh visibly faces, in world space, flattened to
         // the ground plane - read off the anchor node's full transform chain
@@ -215,7 +411,162 @@ namespace LegaiaWorld
             return f;
         }
 
+        // Servo one frame's worth of yaw toward `dir`; returns the absolute
+        // alignment error in degrees BEFORE the step.
+        float ServoToward(Vector3 dir)
+        {
+            float err = Vector3.SignedAngle(VisualForward(), dir, Vector3.up)
+                + facingYawOffset;
+            float step = Mathf.Clamp(err,
+                -turnSpeed * Time.deltaTime, turnSpeed * Time.deltaTime);
+            transform.rotation =
+                Quaternion.AngleAxis(servoSign * step, Vector3.up)
+                * transform.rotation;
+            return Mathf.Abs(err);
+        }
+
+        void SnapToFloor()
+        {
+            Vector3 p = transform.position;
+            RaycastHit ground;
+            if (Physics.Raycast(p + Vector3.up * npcHeight, Vector3.down,
+                    out ground, 3f * npcHeight, ~0, QueryTriggerInteraction.Ignore))
+            {
+                p.y = ground.point.y;
+                transform.position = p;
+            }
+        }
+
+        bool PathClear(Vector3 dir, float dist)
+        {
+            RaycastHit hit;
+            return !Physics.Raycast(transform.position + Vector3.up * rayHeight,
+                dir, out hit, dist, ~0, QueryTriggerInteraction.Ignore);
+        }
+
         void Update()
+        {
+            if (mode == 1)
+                CommandStep();
+            else if (mode == 2)
+                walking = false;
+            else if (mode == 3)
+                FaceStep();
+            else
+                StrollStep();
+            DriveAnimator();
+        }
+
+        // Idle / walk crossfade for the rigs that have a measured walk clip.
+        void DriveAnimator()
+        {
+            if (locoAnimator == null)
+                return;
+            if (!animStarted)
+            {
+                animStarted = true;
+                animWalking = walking;
+                locoAnimator.Play(walking ? walkState : idleState, 0, 0f);
+                return;
+            }
+            if (walking == animWalking)
+                return;
+            animWalking = walking;
+            locoAnimator.CrossFade(walking ? walkState : idleState,
+                animCrossfade, 0);
+        }
+
+        // --- Commanded walk -------------------------------------------------
+
+        void CommandStep()
+        {
+            Vector3 to = commandTarget - transform.position;
+            to.y = 0f;
+            float dist = to.magnitude;
+            if (dist < arriveRadius)
+            {
+                arrived = true;
+                walking = false;
+                return;
+            }
+            Vector3 aim = to / dist;
+
+            // Steering: commit to a detour lane for a moment, then re-aim.
+            Vector3 dir = aim;
+            if (Time.time < steerUntil)
+            {
+                dir = steerDir;
+            }
+            else if (!PathClear(aim, Mathf.Min(probeDistance, dist + wallClearance)))
+            {
+                dir = PickLane(aim);
+                if (dir.sqrMagnitude < 0.5f)
+                {
+                    blocked = true;
+                    walking = false;
+                    return;
+                }
+                steerDir = dir;
+                steerUntil = Time.time + 0.7f;
+            }
+
+            float abs = ServoToward(dir);
+            if (!walking && abs > 3f)
+                return;
+            if (abs > 25f)
+            {
+                walking = false;
+                return;
+            }
+            walking = true;
+            transform.position += dir * (walkSpeed * Time.deltaTime);
+            SnapToFloor();
+
+            // Stall watchdog: a lane that keeps grinding along a wall makes
+            // no progress; report Blocked so the brain re-plans instead of
+            // shuffling forever.
+            if (Time.time - progressAt > 2.5f)
+            {
+                if ((transform.position - progressMark).magnitude < 0.2f)
+                {
+                    blocked = true;
+                    walking = false;
+                }
+                progressMark = transform.position;
+                progressAt = Time.time;
+            }
+        }
+
+        // Fan of probe rays either side of the straight line; the first
+        // clear lane wins, nearest the straight line first, alternating
+        // sides so the NPC does not always dodge the same way.
+        Vector3 PickLane(Vector3 aim)
+        {
+            float side = Random.value < 0.5f ? 1f : -1f;
+            for (int i = 0; i < 3; i++)
+            {
+                float ang = 30f + i * 27.5f;
+                Vector3 a = Quaternion.AngleAxis(ang * side, Vector3.up) * aim;
+                if (PathClear(a, probeDistance))
+                    return a;
+                Vector3 b = Quaternion.AngleAxis(-ang * side, Vector3.up) * aim;
+                if (PathClear(b, probeDistance))
+                    return b;
+            }
+            return Vector3.zero;
+        }
+
+        // --- Turn in place ---------------------------------------------------
+
+        void FaceStep()
+        {
+            walking = false;
+            ServoToward(faceDir);
+        }
+
+        // --- Autonomous stroll ------------------------------------------------
+
+        void StrollStep()
         {
             if (Time.time < pauseUntil)
             {
@@ -235,22 +586,14 @@ namespace LegaiaWorld
             // A wall within clearance directly ahead (waist height; the ray
             // starts inside the NPC's own capsule, which PhysX never reports
             // from the inside): rest, then stroll somewhere else.
-            if (Physics.Raycast(transform.position + Vector3.up * rayHeight,
-                    dir, out RaycastHit blocked, wallClearance,
-                    ~0, QueryTriggerInteraction.Ignore))
+            if (!PathClear(dir, wallClearance))
             {
                 PickNextTarget();
                 return;
             }
 
             // Servo the yaw until the MESH faces the walk direction.
-            float err = Vector3.SignedAngle(VisualForward(), dir, Vector3.up)
-                + facingYawOffset;
-            float step = Mathf.Clamp(err,
-                -turnSpeed * Time.deltaTime, turnSpeed * Time.deltaTime);
-            transform.rotation =
-                Quaternion.AngleAxis(servoSign * step, Vector3.up)
-                * transform.rotation;
+            float abs = ServoToward(dir);
 
             // Turn in place first: no stepping until the body points down
             // the walk direction, so a direction change reads as a pivot
@@ -258,7 +601,6 @@ namespace LegaiaWorld
             // walking, only a gross misalignment (idle sway is compensated
             // live, but a swaying clip can outpace one frame's servo step)
             // pauses the stepping again.
-            float abs = Mathf.Abs(err);
             if (!walking && abs > 3f)
                 return;
             if (abs > 25f)
@@ -272,14 +614,7 @@ namespace LegaiaWorld
 
             // Follow the floor so a stroll across sloped ground doesn't
             // float or sink.
-            Vector3 p = transform.position;
-            if (Physics.Raycast(p + Vector3.up * npcHeight, Vector3.down,
-                    out RaycastHit ground, 3f * npcHeight,
-                    ~0, QueryTriggerInteraction.Ignore))
-            {
-                p.y = ground.point.y;
-                transform.position = p;
-            }
+            SnapToFloor();
         }
 
         // Rest, then pick the next spot inside the circle - shortened to
@@ -299,9 +634,9 @@ namespace LegaiaWorld
                 return;
             }
             Vector3 dir = d / dist;
+            RaycastHit hit;
             if (Physics.Raycast(transform.position + Vector3.up * rayHeight,
-                    dir, out RaycastHit hit, dist,
-                    ~0, QueryTriggerInteraction.Ignore))
+                    dir, out hit, dist, ~0, QueryTriggerInteraction.Ignore))
                 dist = Mathf.Max(0f, hit.distance - wallClearance);
             target = transform.position + dir * dist;
         }

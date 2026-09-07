@@ -6,6 +6,12 @@
   "freeze_npcs": [47, 48],
   "spawn_position": [-24.85, 1.75, 12.22],
   "set_descriptor_spawn": true,
+  "living_town": {
+    "home_cap": 4,
+    "chat_spots": 5,
+    "seed": 20260907,
+    "daytime_indoors_share": 0.18
+  },
   "prefab_transforms": {
     "mirror": {
       "position": [14.04, 1.51, 19.77],
