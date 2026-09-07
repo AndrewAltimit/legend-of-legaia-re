@@ -22,8 +22,8 @@
 //! 2. the MSB-clear sweep over `queue[0..16]` ([`clear_queue_msb`], block
 //!    `0x801EF85C`) - this is what strips the on-disc `0x8C..0x8F` quirk off
 //!    the Miracle row's leading direction bytes;
-//! 3. the marked-starter reorder at `0x801EF8A0` (**not** ported - see the
-//!    module's `NOT PORTED` note below);
+//! 3. the marked-starter reorder at `0x801EF8A0`
+//!    ([`reorder_marked_starters`]);
 //! 4. `jal 0x801EF9E4` ([`apply_super_tail_replace`]) at `0x801EF9AC`,
 //!    unconditionally, with `a0` = actor slot and `a1` = the roster char id
 //!    minus one.
@@ -36,18 +36,6 @@
 //! [`MiracleMatcher`]: legaia_art::MiracleMatcher
 //! [`SuperMatcher`]: legaia_art::SuperMatcher
 //!
-//! # NOT PORTED
-//!
-//! `FUN_801EED1C`'s marked-starter reorder (`0x801EF8A0..0x801EF968`) is not
-//! ported. It walks `0x801F6990[i]`, and for every marked index `i > 0` whose
-//! queue byte is a `SpecialStarter` (`0x1A`) it scans `j < i` and swaps
-//! `queue[j]` with `queue[i]` wherever `queue[j + 1] == queue[i + 1]` (no
-//! early exit, so the swap can run more than once per `i`). The marks it reads
-//! are written by the *build* loop, which this module does not port - the
-//! marks [`apply_super_tail_replace`] writes are consumed later, after this
-//! pass has already run. Porting the reorder without the build loop would add
-//! a second inert routine, so it is recorded here instead.
-
 /// Capacity of the per-actor action-parameter byte stream
 /// (`actor[+0x1DF..+0x1F2]`, 19 bytes). The queue-length scan and the
 /// preseed only ever touch the first [`QUEUE_SCAN_LEN`] bytes; a Super
@@ -111,6 +99,114 @@ pub fn clear_queue_msb(queue: &mut [u8; ACTION_QUEUE_CAP]) {
     for b in queue[..QUEUE_SCAN_LEN].iter_mut() {
         if *b & 0x80 != 0 {
             *b = b.wrapping_add(0x80);
+        }
+    }
+}
+
+/// The byte a marked queue slot must carry for [`reorder_marked_starters`] to
+/// act on it: the **newly learned** art starter (`FUN_801EFBFC` verdict `2`,
+/// `addiu v1,t3,0x18` at `0x801EF6F0`). A known art's starter is `0x19` and
+/// the reorder skips it (`li v0,0x1a` / `bne v1,v0` at
+/// `0x801EF8E4..0x801EF8E8`).
+pub const SPECIAL_STARTER: u8 = 0x1A;
+
+/// The mark value the build loop writes at an accepted art's starter index
+/// (`li v0,0x1` / `sw v0,0x0(v1)` at `0x801EF788..0x801EF78C`). The Super
+/// applier writes `4` at its own starters, but it runs *after* the reorder,
+/// so only this value is ever observed by it.
+pub const BUILD_STARTER_MARK: u32 = 1;
+
+/// The reorder's outer bound: `sltiu v0,v0,0xf` at `0x801EF960` - the sweep
+/// visits indices `0..=14`, one short of the 16-byte scan window, because
+/// index `i` always reads `queue[i + 1]`.
+pub const REORDER_SCAN_LEN: usize = 0xF;
+
+/// Reconstruct the build loop's side-array marks (`0x801F6990`) from a queue
+/// window the build loop produced.
+///
+/// Retail writes the marks incrementally: the array is zeroed at the builder's
+/// head (`sw zero,0x0(v0)` loop at `0x801EED5C..0x801EED74`, 16 words), each
+/// accepted art writes `1` at the index its starter lands on
+/// (`0x801EF788..0x801EF78C`), and every queue shift the insert performs moves
+/// the marks in lockstep with the bytes (`0x801EF69C..0x801EF6B0` and
+/// `0x801EF730..0x801EF744` each copy the byte and its word together). So the
+/// marks the reorder reads sit on exactly the starter bytes of the finished
+/// build window - which is what this reconstructs.
+///
+/// The one detail the reconstruction drops is retail's *push-down* of a stale
+/// mark onto the art constant that follows a starter (`marks[i + 1] =
+/// marks[i]` at `0x801EF77C..0x801EF784`). That mark can only ever land on an
+/// art constant (`0x1B..`), and [`reorder_marked_starters`] admits an index
+/// only when its queue byte is [`SPECIAL_STARTER`], so it is inert.
+///
+/// REF: FUN_801EED1C (the build loop's `0x801F6990` writes)
+pub fn build_starter_marks(queue: &[u8; ACTION_QUEUE_CAP]) -> [u32; ACTION_QUEUE_CAP] {
+    let mut marks = [0u32; ACTION_QUEUE_CAP];
+    for i in 0..QUEUE_SCAN_LEN {
+        if queue[i] == SPECIAL_STARTER || queue[i] == 0x19 {
+            marks[i] = BUILD_STARTER_MARK;
+        }
+    }
+    marks
+}
+
+/// PORT: FUN_801EED1C (the marked-starter reorder `0x801EF8A0..0x801EF968`)
+///
+/// The builder's second sweep, run between the MSB clear and the Super
+/// tail-replace. It walks the per-token side array `0x801F6990` and, for every
+/// marked index `i > 0` whose queue byte is a [`SPECIAL_STARTER`], scans
+/// `j < i` and swaps `queue[j]` with `queue[i]` wherever `queue[j + 1]` equals
+/// `queue[i + 1]`.
+///
+/// Transcribed from the disassembly:
+///
+/// ```text
+/// 801ef8c4  lw    v0,0x0(v0)       ; marks[i]
+/// 801ef8cc  beq   v0,zero,801ef958 ;   unmarked -> next i
+/// 801ef8e0  lbu   v1,0x1df(v0)     ; queue[i]
+/// 801ef8e8  bne   v1,v0,801ef958   ;   != 0x1A  -> next i
+/// 801ef8f0  beq   a0,zero,801ef958 ;   i == 0   -> next i
+/// 801ef8f4  _clear s8              ; j = 0
+/// 801ef910  lbu   a0,0x1e0(v0)     ; queue[j + 1]
+/// 801ef914  lbu   v0,0x1df(v1)     ; queue[i + 1]
+/// 801ef91c  bne   a0,v0,801ef944   ;   differ -> j++
+/// 801ef928  lbu   v0,0x1df(v0)     ; queue[i]
+/// 801ef92c  lbu   t3,0x1df(v1)     ; queue[j]
+/// 801ef930  sb    v0,0x1df(v1)     ; queue[j] = queue[i]
+/// 801ef940  sb    t3,0x1df(v0)     ; queue[i] = old queue[j]
+/// 801ef94c  sltu  v0,v0,t0         ; j < i
+/// 801ef960  sltiu v0,v0,0xf        ; i < 15
+/// ```
+///
+/// Three laws the transcription preserves, each of which a "tidier" rewrite
+/// would lose:
+///
+/// - **no early exit.** The inner loop runs to `j == i - 1` whatever it did,
+///   so the swap can fire more than once for one `i` - each firing moves a
+///   different byte into `queue[i]`, and the *last* match is what stays there.
+/// - **the compare re-reads the queue every iteration.** `queue[j + 1]` and
+///   `queue[i + 1]` are loaded inside the loop, so a swap at `j == i - 1`
+///   (which writes the byte `queue[j + 1]` aliases) is visible to no later
+///   compare only because `j` has run out - the order is load-bearing.
+/// - **the outer bound is 15, not 16** ([`REORDER_SCAN_LEN`]).
+///
+/// What it accomplishes, in queue terms: when one art appears more than once
+/// in a built queue, the `0x1A` "newly learned" starter is exchanged with the
+/// `0x19` starter of the same art earlier in the stream, so the learn verdict
+/// travels to the art's **first** performance in the turn.
+pub fn reorder_marked_starters(
+    queue: &mut [u8; ACTION_QUEUE_CAP],
+    starter_marks: &[u32; ACTION_QUEUE_CAP],
+) {
+    for i in 0..REORDER_SCAN_LEN {
+        if starter_marks[i] == 0 || queue[i] != SPECIAL_STARTER || i == 0 {
+            continue;
+        }
+        for j in 0..i {
+            if queue[j + 1] != queue[i + 1] {
+                continue;
+            }
+            queue.swap(j, i);
         }
     }
 }
@@ -662,6 +758,90 @@ mod queue_applier_tests {
                 "byte {b:#04x}"
             );
         }
+    }
+
+    #[test]
+    fn build_marks_land_on_starters_only() {
+        // `19 27 0F 1A 2B` - two starters, each followed by its art
+        // constant. Retail writes `1` at each starter index.
+        let q = queue_from(&[0x19, 0x27, 0x0F, 0x1A, 0x2B]);
+        let marks = build_starter_marks(&q);
+        assert_eq!(marks[0], BUILD_STARTER_MARK);
+        assert_eq!(marks[3], BUILD_STARTER_MARK);
+        for (i, &m) in marks.iter().enumerate() {
+            if i != 0 && i != 3 {
+                assert_eq!(m, 0, "slot {i} must be unmarked");
+            }
+        }
+    }
+
+    #[test]
+    fn reorder_moves_the_learned_starter_to_the_arts_first_occurrence() {
+        // The same art (`0x27`) performed twice: the second occurrence
+        // carries the newly-learned `0x1A`, the first the plain `0x19`.
+        // Retail's sweep swaps them, so the learn verdict travels to the
+        // art's first performance.
+        let mut q = queue_from(&[0x19, 0x27, 0x1A, 0x27]);
+        let marks = build_starter_marks(&q);
+        reorder_marked_starters(&mut q, &marks);
+        assert_eq!(&q[..4], &[0x1A, 0x27, 0x19, 0x27]);
+    }
+
+    #[test]
+    fn reorder_leaves_an_unmarked_queue_untouched() {
+        // Same bytes, no marks: the `beq v0,zero` at `0x801EF8CC` skips
+        // every index.
+        let before = queue_from(&[0x19, 0x27, 0x1A, 0x27]);
+        let mut q = before;
+        reorder_marked_starters(&mut q, &[0u32; ACTION_QUEUE_CAP]);
+        assert_eq!(q, before);
+    }
+
+    #[test]
+    fn reorder_skips_a_known_starter_and_index_zero() {
+        // `0x19` at a marked index is not a SpecialStarter: no swap.
+        let before = queue_from(&[0x1A, 0x27, 0x19, 0x27]);
+        let mut q = before;
+        let marks = build_starter_marks(&q);
+        reorder_marked_starters(&mut q, &marks);
+        assert_eq!(q, before, "a 0x19 at i does not trigger the swap");
+        // And a marked SpecialStarter at index 0 is skipped by the
+        // `beq a0,zero` guard - there is no j < 0 to swap with.
+        let mut q0 = queue_from(&[0x1A, 0x27]);
+        let marks0 = build_starter_marks(&q0);
+        reorder_marked_starters(&mut q0, &marks0);
+        assert_eq!(&q0[..2], &[0x1A, 0x27]);
+    }
+
+    #[test]
+    fn reorder_swap_can_fire_more_than_once_for_one_index() {
+        // Three slots whose following byte is the same art constant, the
+        // marked SpecialStarter last. The inner loop has no early exit, so
+        // `i = 4` swaps with `j = 0` **and then again** with `j = 2`: slot 4
+        // is written twice (0x1A -> 0x19 -> 0x05) and it is the *last* match
+        // that decides what stays there.
+        let mut q = queue_from(&[0x19, 0x27, 0x05, 0x27, 0x1A, 0x27]);
+        let mut marks = [0u32; ACTION_QUEUE_CAP];
+        marks[4] = BUILD_STARTER_MARK;
+        reorder_marked_starters(&mut q, &marks);
+        assert_eq!(&q[..6], &[0x1A, 0x27, 0x19, 0x27, 0x05, 0x27]);
+    }
+
+    #[test]
+    fn reorder_outer_bound_is_fifteen_not_sixteen() {
+        // Index 15 is outside the sweep (`sltiu v0,v0,0xf` at
+        // `0x801EF960`), so a marked SpecialStarter there never moves.
+        let mut q = [0u8; ACTION_QUEUE_CAP];
+        q[0] = 0x19;
+        q[1] = 0x27;
+        q[15] = SPECIAL_STARTER;
+        q[16] = 0x27;
+        let mut marks = [0u32; ACTION_QUEUE_CAP];
+        marks[0] = BUILD_STARTER_MARK;
+        marks[15] = BUILD_STARTER_MARK;
+        let before = q;
+        reorder_marked_starters(&mut q, &marks);
+        assert_eq!(q, before);
     }
 
     #[test]

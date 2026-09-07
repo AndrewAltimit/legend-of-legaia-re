@@ -3169,8 +3169,22 @@ re-invokes it for the next queued actor of a multi-actor turn). The full retail 
    array `0x801F6990` and, for each marked index `i > 0` whose queue byte is a `SpecialStarter`
    (`0x1A`), scans `j < i` and swaps `queue[j]` with `queue[i]` wherever
    `queue[j + 1] == queue[i + 1]` - no early exit, so the swap can fire more than once per `i`.
-   The marks it reads come from the build loop, not from the Super applier, which runs later.
-   Port: `legaia_engine_vm::battle_action::clear_queue_msb` (the reorder is not ported).
+   The marks it reads come from the build loop, not from the Super applier, which runs later:
+   each accepted art writes `1` at the index its starter lands on (`li v0,0x1` / `sw v0,0x0(v1)`
+   at `0x801EF788..0x801EF78C`), the array is zeroed at the builder's head
+   (`0x801EED5C..0x801EED74`) and every insert shift moves a mark with its byte
+   (`0x801EF69C..0x801EF6B0`, `0x801EF730..0x801EF744`). Two details a paraphrase loses: the outer
+   bound is `0xF`, not `0x10` (`sltiu v0,v0,0xf` at `0x801EF960` - index `i` always reads
+   `queue[i + 1]`), and the inner loop reloads both compared bytes every iteration.
+   Ports: `legaia_engine_vm::battle_action::clear_queue_msb`,
+   `reorder_marked_starters` over `build_starter_marks`, both run by `finish_action_queue`
+   between the Miracle copy and the Super applier.
+
+   What the reorder accomplishes in queue terms: when one art appears more than once in a built
+   queue, the `0x1A` newly-learned starter is exchanged with the `0x19` starter of the same art
+   earlier in the stream, so the learn verdict travels to the art's **first** performance of the
+   turn. Because the inner scan never exits early, a queue with three same-art slots swaps twice
+   and the *last* match decides what index `i` keeps.
 5. **Super find→tail-replace (helper call).** At its end (`jal 0x801EF9E4` at `0x801EF9AC`) the
    builder invokes **`FUN_801EF9E4`** (file `+0x211CC`;
    `see ghidra/scripts/funcs/overlay_battle_action_801ef9e4.txt`), which measures the queue

@@ -19,7 +19,9 @@ use super::*;
 ///    Miracle string, the whole 16-byte window is overwritten from the
 ///    resident Miracle row, padding included.
 /// 3. **MSB clear** ([`clear_queue_msb`], the `0x801EF85C` sweep) - strips
-///    the on-disc `0x8C..0x8F` quirk off the Miracle row's direction bytes.
+///    the on-disc `0x8C..0x8F` quirk off the Miracle row's direction bytes,
+///    then the **marked-starter reorder** ([`reorder_marked_starters`], the
+///    `0x801EF8A0` sweep) over the build loop's side-array marks.
 /// 4. **Super Art find/replace at tail** ([`apply_super_tail_replace`], the
 ///    `jal 0x801EF9E4` at `0x801EF9AC`), run **once** and in **table order**,
 ///    unconditionally - retail does not skip it after a Miracle, and the
@@ -98,7 +100,9 @@ pub fn resolve_action_queue(
 ///    retail's gate is the per-slot marker `ctx[+0x25F + slot]` armed by the
 ///    input recognizer; the engine's stand-in is the whole-string match of
 ///    `command_input` against the character's Miracle command table;
-/// 2. the MSB-clear sweep (`0x801EF85C..0x801EF898`, [`clear_queue_msb`]);
+/// 2. the MSB-clear sweep (`0x801EF85C..0x801EF898`, [`clear_queue_msb`]) and
+///    the marked-starter reorder (`0x801EF8A0..0x801EF968`,
+///    [`reorder_marked_starters`]) over [`build_starter_marks`];
 /// 3. the Super tail-replace (`jal 0x801EF9E4` at `0x801EF9AC`,
 ///    [`apply_super_tail_replace`]), once, first matching row in table order.
 ///
@@ -116,6 +120,11 @@ pub fn finish_action_queue(
     bytes: &mut [u8; ACTION_QUEUE_CAP],
 ) {
     use legaia_art::MiracleMatcher;
+    // The side array `0x801F6990` as the build loop leaves it. Retail writes
+    // it incrementally during the build and the Miracle copy does **not**
+    // touch it, so it is reconstructed here - before the copy overwrites the
+    // window it describes.
+    let mut starter_marks = build_starter_marks(bytes);
     if MiracleMatcher::with_default_table()
         .find(character, command_input)
         .is_some()
@@ -123,8 +132,8 @@ pub fn finish_action_queue(
         apply_miracle_replace(bytes, &miracle_row_for(character));
     }
     clear_queue_msb(bytes);
+    reorder_marked_starters(bytes, &starter_marks);
     let (find_rows, replace_rows) = super_rows_for(character);
-    let mut starter_marks = [0u32; ACTION_QUEUE_CAP];
     apply_super_tail_replace(bytes, &mut starter_marks, &find_rows, &replace_rows);
 }
 
