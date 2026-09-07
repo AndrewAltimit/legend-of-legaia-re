@@ -41,16 +41,20 @@ your disc ──legaia-extract──▶ extracted/ ──legaia-engine export-gl
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaDoor.cs` | UdonSharp proximity door: first approach by a player plays the door's swing clip once and holds it open; `NpcOpen` / `NpcClose` (the `OnNpcArrive` / `OnNpcLeave` station events) let a villager open a cupboard while it stands there and close it again on leaving, refcounted so two villagers at one cupboard close it once. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaNpcWander.cs` | The NPC locomotion controller: the autonomous small-radius stroll (collision-aware, floor-following, forward-only) plus the command API the living-town brain drives (`GoTo` / `FaceToward` / `Arrived` / `Blocked` / `Stop` / `Teleport`). A commanded walk follows a route over the baked navmesh corner by corner, with a probe-ray steering fan as the local reactive layer and one re-plan on a stall; the idle/walk Animator crossfade covers rigs with a measured walk clip. Facing is measured off the rendered torso, never derived. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaNavMeshLoader.cs` | Registers the baked villager navmesh (`NavMeshData` asset) with the runtime `NavMesh` at load - the one-liner that stands in for the AI Navigation package's surface component. |
-| `world-project/Assets/LegaiaWorld/Udon/LegaiaNpcStation.cs` | The station contract of the living town: a place an NPC can go and do something (`kind` 0 use-prop / 1 fishing / 2 seat / 3 chat / 4 viewpoint), a stand point + facing, an optional handler that receives `OnNpcArrive` / `OnNpcLeave`, and `Claim` / `Release` bookkeeping. Any pass can plant one; the director finds them all. |
-| `world-project/Assets/LegaiaWorld/Udon/LegaiaTownDirector.cs` | The town's scheduler (one per scene): matchmakes 2- or 3-way conversations onto chat rings and runs the bubble turn-taking, hands idle villagers free stations of any kind, and sends the town indoors at night (and back out at dawn). |
-| `world-project/Assets/LegaiaWorld/Udon/LegaiaNpcBrain.cs` | One villager's state machine (stroll / go to station / at station / go chat / chat / go home / door opening / onto the threshold / come out), executing the director's decisions through the locomotion controller and the station contract; a build-time personality seed keeps every client's choices aligned. |
-| `world-project/Assets/LegaiaWorld/Udon/LegaiaSpeechBubble.cs` | The billboarded icon bubble over a talking villager ("...", "!", "?", heart, music note, laugh) with the NPC's own first dialog line under it (TextMeshPro); icons swap by enabling one of six child quads, never by material writes. |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaNpcStation.cs` | The station contract of the living town: a place an NPC can go and do something (`kind` 0 use-prop / 1 fishing / 2 seat / 3 chat / 4 viewpoint / 5 carry endpoint / 6 visit), a stand point + facing, an optional handler that receives `OnNpcArrive` / `OnNpcLeave`, visitor-side fields (`arriveIcon`, `glance`, `carryFlow`) and `Claim` / `Release` bookkeeping. Any pass can plant one; the director finds them all. |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaTownDirector.cs` | The town's scheduler (one per scene): builds multi-stop errand itineraries, matchmakes conversations onto chat rings *and* on the spot where villagers meet, runs the bubble turn-taking, pairs passing villagers for a greeting or an errand walked side by side, and sends the town indoors at night (and back out at dawn). Asks the navmesh before sending anyone anywhere. |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaNpcBrain.cs` | One villager's state machine (stroll / go to station / at station / go chat / chat / go home / door opening / onto the threshold / come out, plus the daytime states: errand leg, errand stop, greeting, walking beside a companion, ad-hoc meeting), executing the director's decisions through the locomotion controller and the station contract; a build-time personality seed keeps every client's choices aligned. |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaSpeechBubble.cs` | The billboarded icon bubble over a talking villager ("...", "!", "?", heart, music note, laugh, a raised hand, work drops) with the NPC's own first dialog line under it (TextMeshPro); icons swap by enabling one of eight child quads, never by material writes. |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaNpcCarry.cs` | What a villager is holding: the per-villager item rig at a measured hand point, one child per item, `Show` / `Hide` by `SetActive`, a work sway, and a hard drop deadline so an errand cut short never leaves a bucket welded to somebody's arm. |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaNpcHandItem.cs` | The handler behind a kind-5 carry station: hands the arriving villager an item, or takes back the one it is carrying. `keepOnLeave` is what makes a fetch read as one errand instead of two visits. |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaVisitSpot.cs` | The handler behind a kind-6 visit station: the fixed resident being called on answers with its own speech bubble, on a beat after the caller's hello, and keeps answering while the caller stands there. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaWeather.cs` | Clock-synced weather schedule (clear / overcast / windy spells): ambient + fog greying multiplied over the day/night cycle, grass gust strength, and the `windLevel` feed into the ambience mixer. `JumpToClear` is the settings panel's button. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaFishingSpot.cs` | Fishing-station handler: while a villager stands on a shoreline station it holds a generated rod over the water, a line to a bobbing float with ripples, and an occasional catch; steps aside when a player stands on the spot. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaCardTableHost.cs` | Card-table seat handler: villagers sit at free stools (seated pose approximated by lowering the rig) holding a fanned pair of card backs, and give the table back the moment a player sits down, a card leaves the deck, or the synced *NPCs: sit / shoo* button says so. |
-| `world-project/Assets/LegaiaWorld/Editor/LegaiaLivingTown.cs` | The **Living town** pass: bakes the villager navmesh, builds the director, per-villager brains + bubbles, use-prop stations in front of every one-shot prop (cupboards, drawer, shop door), chat rings, viewpoints and the seeded home assignment from the manifest's doorway pairs - each home with its doorway tile, a stand spot in front of it and the door prop to swing. Idempotent. |
+| `world-project/Assets/LegaiaWorld/Editor/LegaiaLivingTown.cs` | The **Living town** pass: bakes the villager navmesh, builds the director, per-villager brains + bubbles + carried-item rigs, use-prop stations in front of every one-shot prop (cupboards, drawer, shop door), chat rings indoors and out, path / shoreline / doorstep / visit stand spots, carry endpoints and the seeded home assignment from the manifest's doorway pairs - each home with its doorway tile, a stand spot in front of it and the door prop to swing. Idempotent. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaNavMesh.cs` | The navmesh bake: collects every non-trigger collider under the built root and the kit's prefab containers (NPC capsules and rigidbodies excluded), bakes a villager-sized `NavMeshData` with Unity's runtime builder, saves it under `LegaiaGenerated/<scene>/livingtown/` and wires the loader. Also the editor-side route check the batch test uses. |
-| `world-project/Assets/LegaiaWorld/Editor/LegaiaBubbleArt.cs` | Procedural speech-bubble art: the six icon textures drawn from scratch into an atlas, one material each, and the bubble quad. |
+| `world-project/Assets/LegaiaWorld/Editor/LegaiaBubbleArt.cs` | Procedural speech-bubble art: the eight icon textures drawn from scratch into an atlas, one material each, and the bubble quad. |
+| `world-project/Assets/LegaiaWorld/Editor/LegaiaCarryArt.cs` | The things villagers carry - bucket, broom, firewood bundle, basket - built from Unity primitives with generated flat materials, sized as fractions of each villager's own measured height. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaWeatherBuilder.cs` | The **Weather** pass: builds `<root>/weather` and wires `LegaiaWeather` to the day/night cycle, the grass material, the ambience mixer and the settings panel. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaLivingProps.cs` | The **Living props** pass: finds standable shoreline points from the world mesh alone (water sheet vs land cells, floor ray, clear standing capsule) and plants the fishing stations in `<root>/living_props`. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaDayNight.cs` | Optional UdonSharp day/night cycle: sweeps the realism sun on a fixed cycle, synced across players via server time; night dims the trilight ambient + fog to a moonlit fraction, enables the night-lamp container, and crossfades the day/night ambience beds. `JumpToDay`/`JumpToNight` apply a synced offset (the settings panel's buttons). |
@@ -358,12 +362,16 @@ they visit - plus a `speech_bubble` on each villager.
   around one meeting place, so a group of three is an ordinary station
   claim rather than a special case; the director matchmakes two or three
   free villagers onto a free ring, waits for everyone to arrive, and then
-  gives turns. The talker gets a bubble over their head - one of six
-  generated icons ("...", "!", "?", heart, music note, laugh), with their
-  own first dialog line from the manifest printed under it (**Bubble
-  dialog text**, untick for icons alone). Three-ways are not left to
-  chance: after two consecutive pairs the next conversation with three
-  candidates in range *must* be a three.
+  gives turns. The talker gets a bubble over their head - one of eight
+  generated icons ("...", "!", "?", heart, music note, laugh, a raised
+  hand, work drops), with their own first dialog line from the manifest
+  printed under it (**Bubble dialog text**, untick for icons alone).
+  Three-ways are not left to chance: after two consecutive pairs the next
+  conversation *must* be a three, and a forced three-way now **waits**
+  for a third free villager instead of settling for a pair - settling
+  spent the force on a two-way and re-armed it against the same two
+  people, which is why groups of three never appeared in a village of
+  four.
 - **Using props.** Every one-shot, non-door prop - Rim Elm's four
   cupboards, the drawer, the shop's upstairs door - gets a stand point in
   front of it whose station handler is the prop's own `LegaiaDoor`. A
@@ -397,10 +405,82 @@ they visit - plus a `speech_bubble` on each villager.
 - **Stations are shared ground.** The director picks free stations
   generically by kind, indoors flag and `IsFree()`, so the shoreline
   fishing spots and card-table seats other passes build against the same
-  `LegaiaNpcStation` contract are visited too - it only ever *creates*
-  use-prop, chat and viewpoint stations. (In town01 every usable prop is
-  indoors, which is why the pass also scatters a few open-air viewpoints:
-  without them a daytime villager would have nothing but conversations.)
+  `LegaiaNpcStation` contract are visited too.
+
+#### What villagers do by day
+
+Retail put every usable prop in town01 *inside* a house, so the outdoor
+half of the day is furniture this pass builds itself, and the behaviour
+that walks it is an itinerary rather than a single hand-out.
+
+A villager who is free is usually given an **errand**: two to four
+stations, picked one at a time from the last one's position so the round
+crosses the village instead of starring out of one point. It claims each
+stop only as it sets off for it - holding three stations at once would
+starve a village of four - stands at each for the station's dwell,
+glancing about, and rests when the itinerary runs out. A stop it cannot
+reach is dropped and the errand goes on, rather than the villager
+standing against a wall until the walk times out.
+
+Some stops put something in its hands. **Carry endpoints** (kind 5,
+handler `LegaiaNpcHandItem`) hand over a bucket, a broom, a bundle of
+firewood or a basket - primitives generated by `LegaiaCarryArt`, parented
+under the villager at a hand point *measured* off its own rig: among the
+body's mesh nodes at arm height, the widest of the centreline and then
+the lowest of those, which lands on a forearm on every town01 rig family
+(the ten-node humanoid, the six-node robed one and the short skirted one
+whose arms are different node indices). The item stays in hand between
+stops, and `carryFlow` biases the next stop toward one that takes it
+back, so water filled at the low ground is carried to a doorstep rather
+than walked in a circle. Nothing is held per-frame: the items are
+children of the villager and follow it for free.
+
+The new outdoor furniture, all floor- and standing-room-checked like the
+existing builders:
+
+- **doorstep stands** a step to the side of each house door, facing the
+  doorway - half of them sweep it with a broom, half call at it with a
+  wave (they stand *beside* the night routine's own door spot, never on
+  it, so a sweeper is not in the way of somebody trying to get home);
+- **path and shoreline stands** sampled over the walkable area; a spot
+  well below the spawn's floor is shoreline and faces the water;
+- **visit spots** in front of every fixed resident - the ones the scene
+  settings keep static - measured off the resident's own rendered front.
+  The resident does not move, but it gets a speech bubble of its own and
+  answers a beat after the caller's hello (`LegaiaVisitSpot`);
+- **one guaranteed outdoor conversation ring**, because the NPC-cluster
+  ring builder finds only rooms in a village where eleven of the fifteen
+  talkers were authored indoors;
+- indoors: a ring per room and three stand spots per landing, so the
+  villagers retail parked in one room talk to each other as well as
+  taking turns at the room's cupboard.
+
+Villagers also react to **each other**, all of it decided on the
+director's own 1 Hz tick out of one cached position array - there is no
+per-frame proximity work anywhere in the town:
+
+- **passing greetings**: two who walk within arm's reach stop, turn to
+  face each other, one waves, and both *resume* the walk they were on
+  (the interrupted errand leg is re-issued to the stop it had already
+  claimed, not restarted). Rate-limited per pair;
+- **walking together**: an errand is sometimes given a companion, who
+  keeps to the leader's shoulder by re-aiming twice a second at a point
+  offset from where the leader is heading - measured from where the
+  leader *was*, since the locomotion controller exposes no facing - and
+  talks to it when they arrive;
+- **conversations struck up on the spot**: villagers standing near one
+  another talk where they are, with no ring and a centre invented from
+  their own positions. This is what makes three-way groups happen at all
+  in a village that can rarely fill a three-point ring.
+
+**Nobody is sent somewhere they cannot walk.** The editor pass rejects a
+stand spot no villager and not the spawn can reach over the bake, and the
+director asks `NavMesh.CalculatePath` before handing out a station or a
+ring (budgeted per tick, and everything counts as reachable when no bake
+is registered). "Somebody" deliberately includes the villagers
+themselves: town01's beach is an island of navmesh the village never
+reaches, and a spot only the two beach villagers can use is a good spot,
+not a broken one.
 - **Walking.** Every NPC glb carries the scene bundle's whole clip set,
   and on the 11-node humanoid rig (17 of town01's villagers) `record_36`
   measures as a genuine walk cycle: the two legs alternate at exactly half
@@ -444,7 +524,13 @@ door - see "Per-scene settings"). Headless check:
 which also registers the bake and asserts a *complete* navmesh route from
 every homed villager's spawn to its door stand spot, from there onto the
 doorway tile, and from the landing to the way out, so a door nobody can
-walk to fails the build instead of clipping in-world.
+walk to fails the build instead of clipping in-world. It asserts the
+daytime layer the same way: every stand spot on real floor with room for
+a body, every outdoor one reachable from the spawn or from some villager,
+every carry endpoint carrying a `LegaiaNpcHandItem` whose wiring reached
+its backing behaviour, every visit spot able to answer, at least one
+conversation ring out of doors, and every villager's items parented under
+it, collider-free and hidden at build.
 
 
 ## Common prefabs
