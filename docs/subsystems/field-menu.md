@@ -715,31 +715,87 @@ every character's weapons as Vahn's. Without the overlay the table stays
 empty and the check scores `0` for every weapon - which is the retail
 routine's own empty-table arm, and Best Equipment then ranks on raw ATK.
 
-### Manual equip applier (`FUN_801D71F0`)
+### Manual equip applier (`FUN_801E5A08`)
 
-The per-slot equip commit behind an accepted item pick (field overlay
-0897; `ghidra/scripts/funcs/overlay_0897_801d71f0.txt`). Signature
-`FUN_801D71F0(item_id, char, slot_hint)`; returns `1` on success, `0` if
-the bag pull fails. It pulls the item from the bag (`FUN_80042EE0(item_id
-& 0xFF)`, sentinel `0x100` = failure → early `0`) then finalises the
-decrement (`FUN_80043048`). Slot resolution: when `slot_hint < 4` it
-reads the item's equip class - equip-stat record `+7` bits `(0x60) >> 5`,
-the same field the Best-Equipment scan permutes - from the item-record
-`+1` index into the equipment table `0x80074F68`; armament classes route
-to the shared armament placer at `0x801E5AE8` (class `2` first indexing
-the per-character weapon-slot table `0x8007B42C[char]`), while class `0`
-and every `slot_hint >= 4` Goods slot (destination `slot_hint + 1`) fall
-to the inline placer. The inline placer writes the character equip array
-at `record[0x196 + slot]` (`0x80084140 + char*0x414 + 0x75E`): a prior
-occupant is returned to the bag (`FUN_800421D4`), the new id is stored,
-and SFX `0x24` plays (`FUN_80035BD0`) - the confirm cue the equip
-sub-screen (`0x13`) uses. Not ported; the engine's equip session applies
-the Best-Equipment pick via `equip_session` rather than this per-slot
-retail applier, and the `0x801E5AE8` armament tail is a separate function
-outside this dump. The classifier flags `0x801E5AE8` PHANTOM: the only dump
-at that VA is a 4-instruction stub (in the mis-based
-`overlay_0896_bat_back_dat` image, exit `0x801EC96C`), so the placer body is
-not recovered there - the routing above is a call edge, not a dumped body.
+A whole per-slot equip commit - bag pull, class-routed destination, refund,
+confirm cue - resident in the field overlay (PROT 0897, base `0x801CE818`,
+file `+0x171F0`, 324 bytes / 81 instructions). Signature
+`FUN_801E5A08(item_id, char, slot_row)`; returns `1` on success, `0` if the
+bag pull fails.
+
+**Nothing on the disc calls it.** A five-form reference sweep plus a raw byte
+scan over every extracted image finds no `jal` (encoding `0x0C079682`), no
+data word `0x801E5A08`, and no `lui`/`addiu` materialisation pair - so the
+equip sub-screen's confirm cue does **not** come from here. The live commit is
+`FUN_801D9C14`'s candidate-list arm (the Remove / bag-row / write-slot block
+described above), with `FUN_801CF760` behind Best Equipment. What this routine
+is good for is the law it spells out in one place, which is why the port
+mirrors it.
+
+The body reads:
+
+1. `FUN_80042EE0(item_id & 0xFF)` locates the id in the bag; the `0x100`
+   sentinel is the miss, and the routine returns `0` having changed nothing.
+2. `FUN_80043048(bag_index, 1)` takes one.
+3. **Destination.** `slot_row >= 4` (a Goods row) writes equip byte
+   `slot_row + 1` verbatim. Otherwise the destination comes from the item's
+   equip class - equip-stat record `+7` bits `(0x60) >> 5`, reached through
+   the item record's `+1` index into `0x80074F68` - not from the row the
+   player confirmed from.
+4. The prior occupant of that byte, read at `record[0x196 + slot]`
+   (`0x80084140 + char*0x414 + 0x75E`), goes back to the bag through
+   `FUN_800421D4(old, 1)` when it is non-zero.
+5. The new id is stored and SFX `0x24` plays (`FUN_80035BD0`).
+
+The class → equip-byte map, with the branch addresses:
+
+| Equip class `(+7 & 0x60) >> 5` | Equip byte | Branch |
+|---|---|---|
+| `0` body | `0` | `bnez v0,0x801E5AE8` at `0x801E5A9C`, `a2 = v1 = 0` |
+| `1` head | `1` | `beq v1,1` at `0x801E5A94` → `0x801E5ADC`, `a2 = v1 = 1` |
+| `2` weapon | `*(i16*)(0x8007B42C + char*2)` = `2` / `3` / `2` | `0x801E5AC0..0x801E5AD8` |
+| `3` footwear | `4` | `beq v1,3` at `0x801E5AB0` → `0x801E5ADC` |
+
+Class `3` landing on byte `4` rather than byte `3` is a **delay-slot** effect
+and reads as an off-by-one until the slot is accounted for: the branch that
+takes class `3` to the shared `move a2,v1` carries `addiu v1,zero,4` in its
+delay slot, so `v1` is `4`, not `3`, by the time the move runs. Byte `4` is
+footwear in the `DAT_801E43E8` row map (`00 01 00 04 05 06 07`) above, so
+the delay slot is what makes the map consistent.
+
+Port: `legaia_engine_vm::dev_equip_commit::commit_equip` (body + host
+bindings) over `world_map_overlay::resolve_equip_slot` (the class routing).
+`legaia_engine_core::equip_session::EquipSession::commit` runs it for the
+field menu's per-slot confirm on both hosts, staging the record's `+0x196`
+window in retail order around the call, and
+`retail_destination_slot` exposes the class routing on its own. In the live
+flow the two answers coincide: the candidate list is already category-gated
+per slot, so an item that can be picked for a row is an item whose class
+routes to that row's byte.
+
+#### Why `0x801E5AE8` is not a second function
+
+`0x801E5AE8` is this routine's own inline placer at `+0xE0`, reached by the
+intra-function `j 0x801e5ae8` / `j 0x801e5aec` the class arms end on - not a
+"shared armament placer" the routine calls. Two artifacts made it read as one:
+
+- The dump `ghidra/scripts/funcs/overlay_0897_801d71f0.txt` is **mis-based by
+  `0xE818`** - it was produced against base `0x801C0000` instead of the field
+  overlay's `0x801CE818`, so every printed body address is `0xE818` low
+  (`0x801D71F0` = `0x801E5A08`, `0x801D72D0` = `0x801E5AE8`). Its `j` targets
+  are not: a jump target is decoded from the instruction bytes, so they print
+  correctly and land `0xE818` **above** the printed body, which is exactly the
+  shape of a call to somewhere else. See
+  [`call-target-integrity.md`](../tooling/call-target-integrity.md) and
+  [`dump-corpus-integrity.md`](../tooling/dump-corpus-integrity.md).
+- Searching that VA then found only a 4-instruction stub in the mis-based
+  `overlay_0896_bat_back_dat` image, which the classifier flags PHANTOM - a
+  second mis-based image answering for a VA neither of them owns.
+
+The bytes settle it: the 81-instruction prologue occurs at file `+0x171F0` of
+PROT 0897 and the placer at `+0x172D0`, `0xE0` apart, inside one function
+whose epilogue (`lw ra,0x1c(sp)` … `addiu sp,sp,0x20`) restores the frame the
+prologue set up. There is no separate armament placer.
 
 ## Scroll widgets (submenu 2 or 3)
 

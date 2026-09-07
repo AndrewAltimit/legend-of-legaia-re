@@ -1,6 +1,7 @@
 //! Unit tests for the variable-length MAN editor, on synthetic MANs (no disc).
 
 use super::*;
+use crate::field_disasm::CameraKind;
 use crate::man_section::{self, RECORDS_BEGIN_OFFSET};
 
 /// Build a synthetic MAN with `n2` partition-2 records (each the *full* record
@@ -228,6 +229,56 @@ fn non_spanning_jump_delta_is_unchanged() {
     match jmp.info {
         InsnInfo::JmpRel { delta, .. } => assert_eq!(delta, 0xFFFF, "self-loop delta unchanged"),
         other => panic!("expected JmpRel, got {other:?}"),
+    }
+}
+
+/// A `0x45 0xC0` camera-apply in an edited record is **not** a control-flow
+/// field, so a resize must (a) go through rather than refusing, and (b) leave
+/// the apply-trigger halfword byte-identical.
+///
+/// The old reading treated that halfword as an absolute jump target: the
+/// record scan rejected the whole edit (`ManEditError::AbsoluteRef`) and
+/// `control_targets` listed it, so any path that did relocate one would have
+/// rewritten a camera parameter as a shifted PC. Retail's APPLY arm
+/// (`0x801DF254..0x801DF288`) hands that halfword to
+/// `FUN_801DE084(0x801C6EA8, s16, mode)` and exits `addiu s8,s8,0x4` - a
+/// plain fall-through, never a jump.
+#[test]
+fn camera_apply_trigger_survives_a_resize_untouched() {
+    let prefix = p2_prefix();
+    let op = scene_change_op(0x07, b"ab", 0, 0, 0);
+    // `45 C0 34 12` - APPLY with trigger 0x1234, ahead of the edited op so
+    // both its own offset and the op's shift are in play.
+    let mut rec = prefix;
+    rec.extend_from_slice(&[0x45, 0xC0, 0x34, 0x12]);
+    rec.extend_from_slice(&op);
+    let man = build_man(&[rec]);
+    let mf = man_section::parse(&man).unwrap();
+    let apply_pc = mf.data_region_offset + 6;
+    let op_pc = apply_pc + 4;
+    assert_eq!(man[op_pc], 0x3F);
+
+    let edit = DestEdit {
+        op_pc,
+        index: 0x07,
+        name: b"abcdef".to_vec(), // +4
+        entry_x: 0,
+        entry_z: 0,
+        dir: 0,
+    };
+    let out = apply_dest_edits(&man, &[edit]).expect("a camera-apply no longer blocks the edit");
+    match field_disasm::decode(&out, apply_pc).unwrap().info {
+        InsnInfo::Camera {
+            op0,
+            kind: CameraKind::Apply { apply_trigger },
+        } => {
+            assert_eq!(op0, 0xC0);
+            assert_eq!(
+                apply_trigger, 0x1234,
+                "the apply trigger is a camera parameter and must not be relocated"
+            );
+        }
+        other => panic!("expected a camera APPLY, got {other:?}"),
     }
 }
 

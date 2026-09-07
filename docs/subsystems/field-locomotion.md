@@ -168,11 +168,19 @@ Provenance: `ghidra/scripts/funcs/overlay_dialog_mc4_801d6704.txt` (the base-`0x
 
 ### The engine's synthesised cold seat, and why the overworlds need one
 
-Retail has exactly one authored cold seat, and it is `town01`'s. The engine's scene picker enters any scene cold, so `World::resolve_cold_field_spawn` synthesises the rest: it keeps `0xA40` when that coordinate is standable, inside the scene's **main region**, and not on a kind-0 teleport pad, and otherwise falls back to a kind-0 door-arrival anchor and then to the main region's centroid.
+Retail has exactly one authored cold seat, and it is `town01`'s. The engine's scene picker enters any scene cold, so `World::resolve_cold_field_spawn` synthesises the rest: it keeps `0xA40` when that coordinate is standable, inside the scene's **main region**, not on a kind-0 teleport pad, and a seat the player can walk off, and otherwise falls back to a kind-0 door-arrival anchor and then to the main region's centroid. A scene whose grids record no floor at all keeps the retail constant unresolved.
 
 The main region is the largest connected open-floor component **that does not reach three or more of the map's outer edges**. That exclusion is what keeps a kingdom overworld's entry on land.
 
 On `map01` / `map02` / `map03` the collision grid leaves the sea open. Retail can afford that: the coastline is a closed wall ring, and the party only ever arrives on the overworld through a door warp onto land, so the water side is unreachable rather than blocked. The sea is nevertheless each map's largest open region by roughly 4:1 - 25435 sub-cells against the continent's 7201, 29624 against 6733, 27183 against 6859, each sea at 2-3% raised floor against its continent's 83-99%. A size-only pick therefore seated the player offshore with the whole landmass walled off behind the coast, and free-roam wandered open water. The edge rule narrows to exactly those three scenes: a sweep of every `.MAP`-bearing scene on the disc finds no other whose chosen region reaches three map edges.
+
+#### Which object-grid bit records the floor
+
+"Standable" here is two tests, and only one of them is retail's. Retail decides where the player may stand from the collision grid's wall bits alone ([Collision](#collision---fun_801cfe4c)); the port adds an "inside the authored area" filter over the `.MAP` **object grid**, because a cold entry has no door operand to trust and the wall grid on its own leaves large tracts of unauthored space open.
+
+The object grid's cell word carries two draw gates: `CELL_WALK_VISIBLE` (`0x1000`, the walk view's) and `CELL_VISIBLE` (`0x2000`, the overhead one's). Most scenes set `0x1000` on every tile the party may stand on. Eighteen do not - they author `0x2000` and not one `0x1000` cell: `dream`, `edkorout`, `edlast`, `jagaroom`, `jouinb`, `jouinc`, `jouind`, `jouine`, `juui2`, `kor`, `kor3`, `kor4`, `kor5`, `korb2`, `korb3`, `korout`, `noaru`, `tunnela`. A fixed `0x1000` gate reads all eighteen as floorless, which makes the resolver inert in exactly the scenes it is needed in: every component is empty, the retail constant is returned unresolved, and in `kor5` that constant is a tile with all four leading-edge wall probes blocked - the player spawns inside a wall and no pad direction moves.
+
+`World::field_floor_cell_bit` therefore picks the bit each scene actually authored (`0x1000` where any cell has it, `0x2000` otherwise), set once per scene by `World::load_field_object_cells`. Disc-gated coverage: `crates/engine-core/tests/cold_seat_walkable_disc.rs` asserts that every CDNAME scene's cold seat is on the authored floor or is the retail constant, and that none is walled in on all four sides.
 
 The `.MAP` data is retail and is untouched. Disc-gated coverage: `crates/engine-core/tests/field_spawn_ashore_disc.rs` - each overworld spawns on raised ground inside the smaller region, holding any direction for 1500 frames never reaches the larger one, `town01`'s New Game seat stays byte-identical, and the set of scenes seated outside their largest region is exactly the three overworlds.
 

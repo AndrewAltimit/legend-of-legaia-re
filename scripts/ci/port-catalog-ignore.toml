@@ -738,6 +738,7 @@
 "80019890" = "Empty stub (`jr ra; nop`). A stubbed per-frame field hook that does nothing (surfaced by the playthrough gap-set trace running every field frame)."
 "80026c18" = "Empty stub (`jr ra; nop`). A stubbed scene-init hook (mode-0x02 loader chain) that does nothing."
 "8002b92c" = "Two-instruction stub (`jr ra; _clear v0` - returns 0). Retail-stubbed hook, genuine jal target from main; classified PHANTOM in the worklist CSV."
+"8003f120" = "Empty stub (`jr ra; nop`) at SCUS file offset 0x2F920. Exactly one reference on the whole disc - `jal 0x8003f120` at 0x801CF508, inside the boot overlay's publisher-logo sequencer FUN_801CEFD4, on the leg that also runs the memory-card enumeration FUN_801CFA78. A stripped card-side hook; the port's boot pass calls nothing there."
 "8003f084" = "Two-instruction stub (`jr ra; _li v0,1` - returns 1). Retail-stubbed hook, genuine jal target from main; classified PHANTOM in the worklist CSV."
 "8003cc90" = "Two-instruction stub (`jr ra; _clear v0` - returns 0). Retail-stubbed hook in the 8003cxxx dialog-text family, genuine jal target; classified PHANTOM in the worklist CSV. Sibling of 8002b92c."
 "8002b96c" = "Empty stub (`jr ra; nop`). The retail-stripped per-cell tile-sprite emitter of the 8002b9xx family (siblings 8002b93c/944/94c/954); the scene-load tile-window pass 80017ec8 polls it once per cell (1024x in the trace) but it emits nothing. The genuine tile draw is the engine's wgpu field-background path."
@@ -881,6 +882,7 @@
 # overlay_cutscene_dialogue_801d84b4 and overlay_cutscene_mapview_801d84b4, both
 # field-overlay captures - so the padding reason was not even the only dump
 # evidence. An `--audit-ignored` re-read is what turned it up.
+"801ce818" = "The slot-A overlay LOAD BASE, not a routine. Every slot-A image maps here and the bytes differ per image, but the stronger fact is that NO image starts a routine here at all: of the 15 images static-overlays.toml gives base_va = 0x801CE818, not one opens `addiu sp,sp,-N` at offset 0 - they hold a head string (`EVCE `, `DEBU`, `OTHE`, `Rong`, `\\DATA`, ...), zero pad, or, in boot_init_pak 0895, the two 8-byte RECTs of the init.pak header. Consistent with that, the only dump at the VA is overlay_0977_slotA_801ce818.txt, whose own header reads `(no function contains this address; raw window)`, and find-address-word-refs.py reports no word, jal, j, branch or lui+addiu pair for the address anywhere on the disc. Not one port site, and not one routine."
 
 # Worklist addresses that are interior to another function, not entries of their
 # own. Produced by `scripts/ghidra-analysis/classify-worklist.py`; each reason
@@ -893,7 +895,19 @@
 # epilogue, so `jr ra` in the stream is not evidence of a callable entry.
 # See `docs/tooling/worklist-classification.md`.
 [worklist_interior]
-"801ce9c0" = "INTERIOR: the VA mode 16 READ INIT jumps to. Its one citation anywhere is the `jal` inside FUN_8002612C, and `locate-entry-image.py 0x801ce9c0` finds no frame and no in-image `jal` in any of the 31 based overlays. The only image whose bytes cover it is the debug-menu overlay, where it is slot-A base 0x801CE818 + 0x1A8 - the `lui at,0x8008 / sw zero,-0x4748(at)` pair inside FUN_801CE97C's global-clear block, not an entry. FUN_8002612C loads no overlay of its own (unlike modes 0/2/18/24 it never calls FUN_8003EBE4), so mode 16 jumps into slot A + 0x1A8 of whatever image is resident - a retail-stripped dev path with no callable target. Recorded at docs/subsystems/boot.md and mirrored as engine-core::mode::READ_INIT_TARGET. see ghidra/scripts/funcs/overlay_debug_menu_801ce9c0.txt"
+# 801ce9c0 is NOT interior, and the row that said so is deleted rather than
+# edited, because its whole evidence base was an image set that did not yet
+# contain PROT 0895. The old reading - "the only image whose bytes cover it is
+# the debug-menu overlay, where it is inside FUN_801CE97C's global-clear
+# block" - was true of the images then mapped and false of the disc. In
+# boot_init_pak (0895) at the same slot-A base the VA opens
+# `addiu sp,sp,-0x230` and is the mode-16 READ INIT body: it uploads the four
+# publisher-logo TIMs, selects the 640x480 display env, spawns the two boot
+# actors and stores game mode 0x11. Ported as
+# legaia_engine_core::publisher_logos::build_atlas_from_init_pak (the upload
+# half) with the sequencer it spawns at FUN_801CEFD4; written up in
+# docs/subsystems/boot.md. The classifier's --audit-ignored re-raised this row
+# once 0895 was mapped, which is exactly the failure that mode is for.
 "801e28c4" = "INTERIOR: the field VM wait join inside FUN_801DE840; sole predecessor is a `j` at 0x801E1B04, no own frame"
 "801efea0" = "INTERIOR: the tile-board walk SM render tail inside FUN_801EF2B0; 19 in-body branches, runs to that function's epilogue at 0x801F03E8"
 "801ed2d4" = "INTERIOR: shared exit tail of FUN_801ECD0C (world-map picker); Ghidra minted an entry here and cut the parent body at the jump"
@@ -1175,7 +1189,10 @@
 # AND resolves against an image there; see docs/tooling/worklist-classification.md.
 "801d0094" = "SHARED_TAIL: no `jr ra`; body exits `j 0x801e3624` - an entry into a multi-entry routine, not a standalone function"
 "801d03a4" = "SHARED_TAIL: no `jr ra`; body exits `j 0x801e3624`, inside 801e3578 - an entry into a multi-entry routine, not a standalone function"
-"801d06e0" = "SHARED_TAIL: no `jr ra`; body exits `j 0x801dee50` - an entry into a multi-entry routine, not a standalone function"
+# 801d06e0 moved to [boot_init_pak_overlay]. The SHARED_TAIL reading came from
+# a dump taken before PROT 0895 was mapped: in the boot overlay at base
+# 0x801CE818 the VA opens `addiu sp,sp,-0x18`, calls TestEvent four times and
+# returns through its own `jr ra` at 0x801D0730, with no `j 0x801dee50` in it.
 "801d1314" = "SHARED_TAIL: no `jr ra`; body exits `j 0x801e3614`, inside 801e3578 - an entry into a multi-entry routine, not a standalone function"
 "801d1ef0" = "SHARED_TAIL: no `jr ra`; body exits `j 0x801e00bc`, inside 801de840 - an entry into a multi-entry routine, not a standalone function"
 "801d207c" = "SHARED_TAIL: no `jr ra`; body exits `j 0x801e3624` - an entry into a multi-entry routine, not a standalone function"
@@ -1370,6 +1387,49 @@
 # Added by the port-wiring wave.
 "801ce97c" = "Debug-menu per-frame controller in the PROT 0971 DEBUG MODE overlay (docs/tooling/static-overlay-pipeline.md pins that overlay's base and its 'DEBUG MODE' head string). Runs a ~22-row cursor list over _DAT_8007B862 whose row actions are dev instrumentation: eight dev-string formats (8001a068), fi..."
 "801cf338" = "Debug TMD-viewer per-actor tick, same PROT 0971 overlay: D-pad edits the viewed object's translate/rotate fields (actor+0x14/+0x16/+0x18/+0x24/+0x26), sums POLY/VERT counts over the object table at actor+0x44, prints six readouts through the dev decimal drawer 8001abc8 and five through the dev-st..."
+
+# The two `OTHER GAME` dev images, PROT 0973 and 0974 (slot A, base
+# 0x801CE818). Both head with the ASCII `OTHE`/`OTHER GAME` string the
+# static-overlay map names them for, and neither ships a game mode of its own -
+# their content is a dev viewer for the shared GTE + prim helpers.
+"801ceb58" = "PROT 0973 dev viewer's primitive builder, reached by the image's own `jal` at 0x801CEB3C. `(a0, a1, obj, mat)`: allocates a 0x5000-byte block through FUN_80017888, fills a stack descriptor with fixed constants (scale 0x1000/0x1000, 0x7F80, 0x3E8/0x7D0 extents, 0x1F/0x3F flags, colours 0xF0F0F0 and 0x404040), pushes the object through the GTE matrix wrapper FUN_8003D344 and the libgte transform pair FUN_80026988 / FUN_8005B158, and emits the result. Every constant it sets is a GTE/prim-builder field the engine's own renderer owns - the port has no dev viewer to host it. Disassembled from extracted/overlays/overlay_other2_dev_0973.bin at base 0x801CE818."
+"801ce85c" = "PROT 0974 dev viewer's entry (image base + 0x44). Prints two head strings through the dev formatter FUN_8001A068, then branches the whole body on the debug flag words _DAT_8007B874 / _DAT_8007B938 - bits 0x100 / 0x1000 / others - stepping counters in the image's own 0x801D19xx block. Dev instrumentation gated on debug flags retail never sets; same class as the [dev_tool_overlays] rows above. Disassembled from extracted/overlays/overlay_other3_dev_0974.bin at base 0x801CE818."
+"801ced68" = "PROT 0974 dev viewer's HUD bar, reached by the image's own `jal` at 0x801CED30. Emits one flat opaque quad (GP0 code 0x28, tag 0x05000000, colour 0x800080) spanning (0x10, 0x3E)-(0x130, 0x4E) into the scratchpad prim cursor 0x1F8003A0 and links it with FUN_8003D2C4, then repeats down the screen. A dev readout backdrop - a prim builder in the sense of the [prim_builder] section, not game logic."
+
+
+# The boot / init.pak overlay, PROT 0895 (slot A, base 0x801CE818). Its
+# publisher-logo half IS ported - the sequencer FUN_801CEFD4, the quad emitter
+# FUN_801CFBB8 and the two pair drawers FUN_801D0868 / FUN_801D08F0 all carry
+# `// PORT:` tags in crates/engine-core/src/publisher_logos.rs, and the quad
+# table is in docs/subsystems/boot.md. The rows here are the rest of the image:
+# a CD/asset streamer and a PSX memory-card driver, both of which the port
+# replaces wholesale (legaia-iso / legaia-prot / legaia-lzs for the first,
+# legaia-save's LGSF files and card walker for the second).
+[boot_init_pak_overlay]
+"801cecd0" = "Boot asset-load state machine - the `+0x08` tick of the static actor template at 0x801D09AC that FUN_801CE9C0 spawns. A 21-arm switch on actor+0x1A (jump table 0x801CE890) whose arms are heap alloc (FUN_80017888 with 0x32000), the streaming loaders FUN_8001FC00 / FUN_8001E54C / FUN_8003E6BC / FUN_8003EB98 / FUN_8003E9C0 / FUN_8003E800, the CD-idle poll FUN_8003DE7C(1) and the LZS decoder FUN_8001A8B0, plus one DATA_FIELD walk that takes chunks whose type byte is 1 (TIM_LIST), reads the pack's u32 count and uploads each member at `pack + word_offset*4` through FUN_800198E0 and skips every other chunk by its 0x00FFFFFF length. That walk is legaia_asset::pack + legaia_prot::timpack in the port and the rest is transport. Disassembled from extracted/overlays/overlay_boot_init_pak_0895.bin at base 0x801CE818."
+"801cf540" = "Boot-logo effect script, `(actor, op)` over a 7-arm jump table at 0x801CE920 (arms 0x801CF598 / 5B0 / 664 / 6BC / 70C / 718 / 764). Arm 1 spawns 32 effect parts through FUN_80021B04 from the template at 0x801F3764 with RNG-jittered positions (FUN_80056798, `0x3E8 - (r & 0x7FF)` per axis) and per-part rotation / scale writes at part+0x72 / +0x28 / +0x54; arm 6 spawns 8 more along a row, stepping x by 0x1C2 and taking each part's id from the byte table at 0x801F3714 less 0x3F; arm 2 drives two FUN_80024E80 colour ramps between black and white against the OT depth at 0x1F8003A6; arm 5 advances the halfword level at actor+0x24 by the rate at actor+0x26 times the frame delta, clamped to 0..0x80; arm 0 sets bit 1 of 0x801F3EB0 and arm 4 clears two stack fields. Effect-pool choreography with no engine pool behind it - the port drives the logo sequence from publisher_logos::RETAIL_SEQUENCE instead."
+"801d0460" = "Full-screen blend quad. `(ot_slot, abr, rgb)`: emits a GP0 0x2B flat semi-transparent quad (tag 0x05000000, 6 words) whose four corners are (0, 0x18), (w, 0x18), (0, h - 0x14) and (w, h - 0x14) with w/h read from the scratchpad draw-context extents 0x1F800314+0x78 / +0x7A, links it into the OT at `*(0x1F8003F4) + ot_slot*4` through FUN_8003D2C4, then appends a blend-mode word through FUN_80059010 with `(abr << 5) | 0x0E`. The screen fade the sequencer's states 10 and 11 ramp to white; the ot_slot is clamped against the OT length at 0x1F800314+0x92. A prim builder in the sense of the [prim_builder] section: the engine's renderer owns its own fade compositing."
+"801cfa78" = "Memory-card save-file enumeration. Clears 34 eight-byte slots at 0x801C6ED8 and the count at 0x8007BBF8, then for slot index 0..0x21 builds a card path with FUN_800567B8 and probes it with the BIOS directory walker FUN_8005DBB4, copying the found entry's size word and three name bytes into the slot and bumping the count; on a miss it retries up to four times while the dev/retail loader flag _DAT_8007B8C2 is set. PSX memory-card directory I/O, which the port replaces with legaia_save's card walker and its own LGSF files."
+"801cff68" = "Memory-card driver tick. Runs the card state machine FUN_801D00A4 while the driver state 0x801F398C is below 3, then, once armed, walks the 15 x 0x28-byte slot table at 0x801F39A4 comparing each entry's first 0x10 bytes against the game's own card-name prefix at 0x801D098C (FUN_80056748 = strncmp) and counts the matches into 0x801F3978. Card directory bookkeeping; same boundary as 801cfa78."
+"801d00a4" = "Memory-card BIOS state machine, `(port_hi, port_lo)` folded to `a0 << 4 | a1`. Five arms on 0x801F3998 driving the BIOS card calls FUN_8006EE14 / _EE24 / _EE34 (init / read / write) around the event-poll helpers below, retrying up to 5 times before latching an error code into 0x801F3994. PsyQ card API sequencing with no port analogue."
+"801d0414" = "Card-slot free-block count. Sums the `+0x18` size word over the first `n` of the 15 slot records at 0x801F39A4, converts to blocks with `(sum + 0x1FFF) >> 13` and returns `15 - blocks`. Card-geometry arithmetic that only means anything against a real PSX card."
+"801d0584" = "Card-slot lookup by name. Formats a card filename into a stack buffer with FUN_800567B8, blanks all 15 slot records at 0x801F39A4, then walks them with the BIOS B-vector thunks FUN_800566F8 / FUN_80056708 (the `li t2,0xB0; jr t2` family in [bios]) and returns the matching index. Card directory search."
+"801d0630" = "Card-event poll. Tests the four BIOS event handles at 0x8007B9F0..0x8007B9FC with TestEvent (FUN_80056658) and maps the first that fires to a result code 0..4, with a timeout that advances 0x801F397C by the frame delta and forces code 2 past 0x64. libapi event polling."
+"801d06e0" = "Card-event drain - the four TestEvent calls of 801d0630 with the results discarded, used to clear pending completions before re-arming. Was filed under [worklist_shared_tail]; it is a real entry (own 0x18 frame, its own `jr ra`) and the classifier's audit re-raised it, so it is re-filed here as the scope claim it always was."
+"801d0738" = "Second card-event poll, over the other four handles at 0x8007BA04..0x8007BA10, returning 1..4 for the first that fires and spinning on the first handle otherwise. Sibling of 801d0630."
+"801d07d0" = "Drain counterpart of 801d0738 - the same four TestEvent calls with the results discarded."
+"801d0828" = "Card-driver reset. Zeroes the six driver words 0x801F3980 / 0x801F3988 / 0x801F3990 / 0x801F3994 / 0x801F3998 and 0x801D0988, then arms the rescan flag 0x801F396C. Bookkeeping for the state machine above."
+
+
+# Reachability claims of the same kind as `[unreferenced]` at the foot of this
+# file - the routine is real, the port does not cover it another way, and
+# nothing on the disc reaches it. Kept in their own section so the evidence for
+# each stays next to the slot-A work that produced it. Read
+# `docs/tooling/address-reference-scan.md` for what the sweep can and cannot
+# see, and `[unreferenced]`'s own header for why this is a third kind of claim.
+[unreferenced_slot_a_orphans]
+"801ceb50" = "GAME OVER banner tick, PROT 0902 file +0x338. A real entry (`addiu sp,sp,-0x118` at the VA, own `jr ra`), and a tick, so its only expected reference is a static actor template's `+0x08` word - which is exactly what the sweep finds and where the chain then stops. The gameover image holds two 0x18-stride template records: 0x801CED08, whose tick word is 0x801CEB48 (a bare `jr ra; nop` - a null tick), and 0x801CED20, whose tick word is this routine. The image's init FUN_801CE844 - itself reached by `jal 0x801ce844` from SCUS 0x80025B4C - materialises only 0x801CED08 (`lui a0,0x801d / addiu a0,a0,-0x12f8` at 0x801CE8C4, straight into FUN_80020DE0). Nothing anywhere materialises 0x801CED20: find-address-word-refs.py finds one `lui`+`addiu` pair for it and that pair is in the menu overlay 0899 at a VA-aliased address, i.e. different bytes in a different image. So the GAME OVER mode spawns an actor that ticks nothing, and this banner never runs. Same shape as 80025054 in [unreferenced]; documented at docs/reference/functions/game-modes.md."
+"801d0cd4" ="Muscle Dome contest-hub label pass, PROT 0977 file +0x24BC, with zero references of any form. Both sweeps agree: `find-address-word-refs.py 0x801d0cd4` reports no word, no jal, no j, no PC-relative branch and no lui+addiu pair across SCUS_942.54, the based overlay images and every PROT entry, and `find-gp-relative-refs.py 0x801d0cd4` reports no imm(gp) access, no lui+load pair and no base+displacement walk. A real entry all the same - own `addiu sp,sp,-0x38` frame, 129 instructions, its own `jr ra`. It walks three 8-byte `[count, ptr]` descriptors from 0x801D1A08, drawing each element through FUN_80036888 at x = 0x30 stepping 0xD and y stepping 0x68 per row, then branches on the flag word 0x801D1A9C bit 0x8000 to decrement a counter at 0x801D1A90. The live hub renderer is FUN_801CF870 in the same image (docs/subsystems/minigame-muscle-dome.md); this is a second, unreached one."
 
 
 # SCUS-resident CD / libcd transport shims. Same boundary the `[libcd]` table
@@ -1796,3 +1856,25 @@
 "80035274" = "Item / equipment passive-NAME draw. Real entry - `addiu sp,sp,-0x20` frame under a clean `jr ra` / `addiu sp,sp,0x18` epilogue - with zero references of any form. The two routines that survive into retail menus, FUN_80034250 and the menu overlay's window-34 renderer FUN_801D4A80, walk the same item -> passive chain to the accessory-passive record's +0x08 description; only this one takes the +0x04 name. Worth reading rather than porting: it is the sole decoded witness to the item table's leading class / sub-index byte pair (docs/reference/functions/menus.md). see ghidra/scripts/funcs/80035274.txt"
 "80050d40" = "12-bit angle tween, (from, to, weight, slot), with zero references of any form. A frameless leaf - it opens no frame at all - and an entry rather than an interior label because the word above it is the `addiu sp,sp,0x20` delay slot of the previous function's `jr ra`, so nothing falls through into it. Its near-twin FUN_8001D088 is the ANM interpolator every live angle blend uses; the two differ in the short-arc comparison, `srl` vs `sra` on the scaled delta, and a stride-4 slot table at 0x801C9060 against a stride-8 one at 0x800891A8, so a port treating them as one function inherits the wrong sign behaviour on a negative delta. see ghidra/scripts/funcs/80050d40.txt"
 "800260dc" = "Per-mode camera preset, 16 instructions, with zero references of any form - `find-address-word-refs.py 800260dc --prot` reports no word, no jal, no j, no PC-relative branch and no lui+addiu materialisation pair across SCUS_942.54, the 31 based overlay images and all 1233 PROT entries (docs/tooling/address-reference-scan.md). A real entry: `lui v0,0x8008` under the previous routine's `jr ra`, own `jr ra` + nop below. It writes the eye-space translation trio _DAT_800840B8/BC/C0 = (0, -0x252, 0x51F4) and the scroll trio _DAT_8007B790/92/94 = (0x294, 0, 0) - the same two global groups the fishing camera reset FUN_801D78C0 and the cutscene view builder drive with their own constants, so the constants are the whole content and every live writer of those globals is already ported. Documented at docs/reference/functions/game-modes.md. see ghidra/scripts/funcs/800260dc.txt"
+
+
+# Slot-B cast-module code (PROT 0903..0966, base 0x801F69D8). SCOPE claims, not
+# address claims: a routine really does begin at each of these VAs. The band's
+# per-address verdicts - PORT / DATA / SCOPE-IGNORE - are tabulated in
+# docs/subsystems/cast-module.md#the-band-as-a-port-worklist; only the
+# SCOPE-IGNORE rows are listed here.
+#
+# A module has exactly two callable routines, both named from PROT 0898: the
+# cast tick (0x801CF4EC / 0x801CF56C arm) and the move-VM opcode-0x20 spawn
+# stager (0x801F6734 row). Six modules answer the stager call with eight bytes,
+# and one image carries a framed routine nothing in the corpus references.
+[slot_b_cast_module]
+"801f74b4" = "PROT 0939 (Spore Gas) move-VM stager, from the 0x801F6734 row 36. The whole routine is `jr ra` + `nop` - eight bytes, byte-identical to the same stub in PROT 0920 / 0940 / 0947 / 0952 / 0954 (and to PROT 0903's 0x801F771C and PROT 0926's 0x801F69D8, which no dump prints at). The module stages nothing from the move script; its choreography is the tick's. Nothing to port"
+"801f78f8" = "PROT 0947 (V-Windhash) move-VM stager, 0x801F6734 row 44. The same eight-byte `jr ra; nop` stub as 801f74b4 - identical bytes, sha1 of the extent matches. Nothing to port"
+"801f7ba0" = "PROT 0952 (Bloody Horns) move-VM stager, 0x801F6734 row 49. The same eight-byte `jr ra; nop` stub. 0952's real content is its tick body 0x801F6A0C, reached from the 0x801CF56C trampoline 0x801F7B28, which is a PORT row not an ignore row"
+"801f81e8" = "PROT 0920 (Slippery) move-VM stager, 0x801F6734 row 17. The same eight-byte `jr ra; nop` stub. NB the neighbouring worklist address 0x801F8578 is PROT 0919's stager, not 0920's - 0920 only carries a byte-identical copy of it in its inherited tail"
+"801f82cc" = "PROT 0940 (Glare Divide) move-VM stager, 0x801F6734 row 37. The same eight-byte `jr ra; nop` stub"
+"801f85d4" = "PROT 0954 (Fatal Decision) move-VM stager, 0x801F6734 row 51. The same eight-byte `jr ra; nop` stub"
+"801f7948" = "A framed routine in PROT 0909 (Viguro) that nothing reaches. 0909 partitions into five frame-matched functions; two are the tick 0x801F69F4 and the stager 0x801F7AF4 that PROT 0898's tables name, and 0x801F7948 / 0x801F7CC8 / 0x801F7D30 are reached by nothing. The five-form sweep (scripts/ghidra-analysis/find-address-word-refs.py 801f7948 801f7cc8 801f7d30) reports no word, no jal, no j, no lui+addiu pair and no in-image PC-relative branch for any of them across SCUS, the 83 based overlay images and the PROT entries, and 0909 holds no jump table that could reach them. Only this one is on the worklist because only this one has a dump. Real code, unreachable one level up - the shape docs/tooling/address-reference-scan.md exists for"
+"801f7cc8" = "PROT 0909's second unreachable framed routine, 104 B, immediately after 0x801F7948 and of the same shape. The five-form sweep reports no reference of any kind, in any image. Not named by 0x801CF4EC, 0x801CF56C or 0x801F6734"
+"801f7d30" = "PROT 0909's third unreachable framed routine, 232 B. The five-form sweep's only hits are a PC-relative branch inside PROT 0949 (which cannot leave its own image) and a pointer word inside PROT 0958 that means 0958's own arm, so neither reaches 0909's routine. Not named by any of the three PROT 0898 tables"

@@ -523,7 +523,7 @@ Mei out of the conversation frame for the whole beat.
 
 #### 0x39 GIVE_ITEM
 
-`[39, item_id]` - adds one of inline item `item_id` to the inventory: `func_0x8004313C()` (select the active inventory window/page bounds) then `func_0x800421D4(item_id, 1)` (the capacity-checked add-item-by-id primitive). PC advances by 2 (`addiu s8,s8,0x2` at `0x801E044C`; `lbu a0,0(s6)` reads the inline id at `0x801E0450`). This is the **treasure-chest item-give** path - the **granted** item is this single inline operand byte, **not** a per-scene table. `FUN_800421D4` is the inventory adder (see [`functions.md`](../reference/functions.md)), so the earlier `PLAY_SFX` / `func_0x800421D4(sfx_id, 1)` label was wrong. (The standalone `FUN_801D71F0` add-item copy has zero callers - dead/duplicate;
+`[39, item_id]` - adds one of inline item `item_id` to the inventory: `func_0x8004313C()` (select the active inventory window/page bounds) then `func_0x800421D4(item_id, 1)` (the capacity-checked add-item-by-id primitive). PC advances by 2 (`addiu s8,s8,0x2` at `0x801E044C`; `lbu a0,0(s6)` reads the inline id at `0x801E0450`). This is the **treasure-chest item-give** path - the **granted** item is this single inline operand byte, **not** a per-scene table. `FUN_800421D4` is the inventory adder, so the earlier `PLAY_SFX` label was wrong. (`FUN_801D71F0` is not a second add-item site: that VA is a mis-based print of the equip applier [`FUN_801E5A08`](field-menu.md#manual-equip-applier-fun_801e5a08), whose `FUN_800421D4` call is a refund;
 the live give-item is inlined in the dispatcher here.) NB the chest's announcement *text* ("There is a {item}…") names the item from a **separate** `0xC2 <id>` MES item-name token (display only), distinct from this give operand - editing one without the other makes the on-screen message disagree with what lands in the bag (see [randomizer.md](../tooling/randomizer.md)).
 
 #### 0x3F SCENE_CHANGE (named warp)
@@ -570,6 +570,29 @@ for extracting the right image.
 
 The PROT indices follow the corrected overlay-loader arithmetic - `prot_index = param + 0x37F` in extraction index space (see [boot.md § overlay loaders](boot.md#game-mode-state-machine)): the in-RAM TOC at `0x801C70F0` is raw `PROT.DAT` from byte 0 (byte-verified against the `door_warp_town01_to_map01` save state), so the resolver's `toc[idx+2]` start-LBA read sits 2 entries above the extraction's per-entry indexing. The runtime image for each sub-id is the slice `[entry_start, next_entry_start)` (the resolver's size return), which is why the minigame entries' larger extraction footprints over-read into their neighbours.
 
+### 0x45 CAMERA arm widths
+
+The four `op0 & 0xC0` arms are dispatched at `0x801DF0A4` and each exits by
+adding its own width to the PC cursor `s8`
+(`ghidra/scripts/funcs/overlay_0897_801de840.txt`):
+
+| `op0 & 0xC0` | arm | exit | width |
+|---|---|---|---|
+| `0x00` | CONFIGURE | `0x801DF0EC` `addiu s8,s8,5` then `+2` per set mask bit | `5 + 2 * set_bits` |
+| `0x40` | LOAD | `0x801DF298` `addiu s8,s8,0x14` | 20 |
+| `0x80` | SAVE | `0x801DF20C` `addiu s8,s8,2` | 2 |
+| `0xC0` | APPLY | `0x801DF288` `addiu s8,s8,4` | 4 |
+
+The APPLY arm is **not** a jump. Its `s16` at `operand + 1` is read through
+`FUN_8003CE9C` at `0x801DF26C` and handed to `FUN_801DE084(0x801C6EA8, s16,
+mode)` - the identical call the CONFIGURE arm makes with its own `s16` at
+`operand + 2`, i.e. the apply trigger. `mode` is `(op0 >> 2) & 0xF` on both
+arms.
+
+Reading that `s16` as an absolute jump target is what kept `urudre2` one-way in
+the port: the room's only door record carries `45 C0 00 00` about `0x670` bytes
+before its `0x3F` -> `map01` tail, and a target of zero restarted the record.
+
 ### 0x43 ACTOR_CTRL - sub-dispatcher
 
 22+ sub-ops, keyed on operand byte 0:
@@ -593,11 +616,28 @@ if (((ctx[+0x94] != 0) || ctx == _DAT_8007C364) &&
 
 If `pbVar47[1] == 0 && pbVar47[2] == 0`: use ctx's current position (read `+0x14/+0x16/+0x18`); store negated-Y at `ctx[+0x8E]`. Else: decode target XZ from operand bytes via `(b & 0x7F) * 0x80 + 0x40` (or `+0x80` if high bit set); call `func_0x80019278(ctx)` for collision lookup of Y.
 
-Resume PC source:
-- **Sub-0 / sub-1** (`*pbVar47 <= 9`): `func_0x8003CE9C(pbVar47 + 3)` (signed 16-bit at offset +3). 5-byte instruction.
-- **Sub-A / sub-B** (`*pbVar47 > 9`): `func_0x8003CE9C(pbVar47 + 7)` (signed 16-bit at offset +7). 9-byte instruction.
+None of the operand halfwords is a resume PC. All three go through the
+unaligned signed-16 reader `FUN_8003CE9C` and end up as arguments to the walk
+dispatcher `FUN_801D25EC`:
 
-If halt was *not* acquired: falls through to a generic skip-and-return path.
+- `+3` and `+5` are its `a2` / `a3` (read at `0x801DF54C` / `0x801DF558` on the
+  non-player arm and `0x801DF57C` / `0x801DF588` on the player one).
+- `+7` exists only on **sub-A / sub-B** and is **negated into the Y** of the
+  coordinate triple at `sp+0x30` (`0x801DF524..0x801DF530`).
+
+Widths, from the arm's own exits: the shared tail at `0x801DF5B4` leaves
+`j 0x801E3624` with `addiu s8, s8, 8` in the delay slot, and the `sub >= 0xA`
+path adds a further `+2` at `0x801DF534`. So **sub-0 / sub-1 are 8 bytes and
+sub-A / sub-B are 10** (`+1` each for the extended `0x80` header, which the
+prologue at `0x801DE948` has already added to `s8`). See
+`ghidra/scripts/funcs/overlay_0897_801de840.txt`.
+
+The port read `+3` / `+7` as an absolute resume PC and yielded to it, which
+sent `urudre2` `P2[9]` backwards to body `0x00A0` on every arrival - its
+`C3 2B 0A 76 70 50 00 32 00 A0` names `Y = -160`, not `PC = 160`.
+
+If halt was *not* acquired: `j 0x801DEE4C`, which restores `s8` from the
+invocation's entry PC (`s4`) instead of advancing.
 
 #### 0x43 sub-2/3-6/7/8/9/C/D/E/F - actor / sound / face / position cluster
 
@@ -747,7 +787,7 @@ retail data either way.
 | Op | Mnemonic | Notes |
 |---|---|---|
 | 0x44 | `SPAWN_RECORD` | `[44, global_index]`, 2 bytes. Spawns a MAN partition-2 record as a new field-VM context. [Detail](#0x44-spawn_record). |
-| 0x45 | `CAMERA` | Sub-dispatch on `op0 & 0xC0`: `0x00` = configure 10 sub-words, `0x40` = LOAD (`FUN_801DBC20`), `0x80` = SAVE (`FUN_801DE004`), `0xC0` = APPLY (`FUN_801DAB90` + `FUN_801DAA50` then absolute jump). |
+| 0x45 | `CAMERA` | Sub-dispatch on `op0 & 0xC0`: `0x00` = configure 10 sub-words (`5 + 2 * set_bits` bytes), `0x40` = LOAD (`FUN_801DBC20`, 20 bytes), `0x80` = SAVE (`FUN_801DE004`, 2 bytes), `0xC0` = APPLY (`FUN_801DAB90` + `FUN_801DAA50`, 4 bytes). Every arm falls through - see [Detail](#0x45-camera-arm-widths). |
 | 0x46 | `VIEW_WINDOW` | Camera visible-tile-window setter (`0x1F8003E8..EB`, signed `[nearX, nearZ, farX, farZ]` tile offsets from the camera tile - see [`encounter.md`](../formats/encounter.md#the-scratchpad-window-0x1f8003e8eb)). Long form `46 24 n0 n1 f0 f1` writes the four bytes directly; short form `46 a b` builds a window of half-width `a >> 1` in X about offset `-1` and `b >> 1` in Z about `+2`. Not fog. |
 | 0x49 | `STATE_RESUME` | Tristate state machine on `_DAT_8007B450`, sub-cases 0..0xD. [Detail](#0x49-state_resume). |
 | 0x4A | `WAIT_FRAMES` | `ctx[+0x54] += scratch_delta; if (sum < operand) return; else PC += default`. Frame timer. |

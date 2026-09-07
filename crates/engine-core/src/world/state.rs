@@ -140,6 +140,32 @@ pub struct World {
     /// Empty until a field scene supplies it - then every tile reads as a
     /// plain bilinear tile, the pre-override behaviour.
     pub field_object_cells: Vec<u16>,
+    /// Which object-grid cell bit this scene records its **standable floor**
+    /// with - [`legaia_asset::field_objects::CELL_WALK_VISIBLE`] (`0x1000`) for
+    /// the scenes that set it, [`legaia_asset::field_objects::CELL_VISIBLE`]
+    /// (`0x2000`) for the ones that never do.
+    ///
+    /// Both bits are draw gates on the same `u16`; `0x1000` is the walk view's
+    /// and `0x2000` the overhead one's. Most scenes set `0x1000` on every tile
+    /// the party may stand on, but eighteen of the disc's field scenes (the
+    /// Sol / Karisto `kor*` band, the Drake-castle `jouin*` interiors,
+    /// `tunnela`, `jagaroom`, `noaru`, `juui2`, `dream`, `edkorout`, `edlast`)
+    /// carry object grids with `0x2000` cells and **not one** `0x1000` cell.
+    /// Gating the standable test on `0x1000` alone therefore reads those scenes
+    /// as having no floor at all, which makes
+    /// [`World::resolve_cold_field_spawn`] inert there: every component is
+    /// empty, so the retail seat is returned unresolved and `kor5` seats the
+    /// player inside a wall.
+    ///
+    /// Retail never consults this grid to decide where the player may stand -
+    /// standing is the collision grid's wall bits
+    /// ([`World::field_tile_is_wall`]) - so the bit is only ever the port's
+    /// extra "is this inside the authored area" filter, and the filter has to
+    /// use whichever bit the scene actually authored.
+    ///
+    /// Set by [`World::load_field_object_cells`]; `CELL_WALK_VISIBLE` before
+    /// any scene supplies a grid.
+    pub field_floor_cell_bit: u16,
     /// The scene's kind-2 `.MAP` **elevation-override** records, primary
     /// (`+0x10000`) table followed by the fallback (`+0x12000`) one, so a
     /// linear first-match scan reproduces `FUN_801D5630`'s order. Consumed by
@@ -1776,6 +1802,16 @@ pub struct World {
     /// as the capture-archive load).
     pub pending_summon_spawn: Option<(u8, [i16; 3])>,
 
+    /// The **cast-effect pool**: the DATA half of the slot-B cast-module band
+    /// (PROT 0903..0966), keyed by PROT entry. Both of PROT 0898's tick
+    /// dispatchers resolve a cast into this band
+    /// ([`legaia_engine_vm::battle_cast_dispatch`]), and
+    /// [`World::spawn_cast_module_fx`] stages the resolved module's spawn
+    /// records. Installed once per host by the scene host (which holds the
+    /// PROT index); `None` on a disc-free host, where every cast simply stages
+    /// no module records.
+    pub cast_effect_pool: Option<Arc<legaia_asset::cast_effect_pool::CastEffectPool>>,
+
     /// The engine's player-summon stager while a Seru cast is in the action
     /// SM's summon band - the body behind `BattleActionHost::summon_stager_tick`
     /// (see `crate::world::battle::cast_band`).
@@ -2800,6 +2836,7 @@ impl World {
             field_zone_record: None,
             field_floor_height_lut: [0i16; 16],
             field_object_cells: Vec::new(),
+            field_floor_cell_bit: legaia_asset::field_objects::CELL_WALK_VISIBLE,
             field_elevation_overrides: Vec::new(),
             follow_terrain_height: false,
             field_player_anim: None,
@@ -2827,6 +2864,7 @@ impl World {
             rng_state: 0x1234_5678,
             active_summon: None,
             pending_summon_spawn: None,
+            cast_effect_pool: None,
             summon_stager: None,
             summon_actor_slot: None,
             pending_cast: None,

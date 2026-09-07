@@ -23,7 +23,7 @@ higher id resolves to.
 | Offset | Type | Field |
 |---|---|---|
 | `+0` | u8 | **cast-class** byte (see below) |
-| `+1` | u8 | sub-index within the class |
+| `+1` | u8 | sub-index within the class - the **cast-module key** (see below) |
 | `+2` | u8 | target shape (see below) |
 | `+3` | u8 | **MP cost** |
 | `+4` | u8 | info-window **description index** (see below; `0` = none) |
@@ -32,6 +32,30 @@ higher id resolves to.
 
 The display name string carries a leading MES colour-control prefix (`0xCE`,
 an element-colour byte, a space) before the ASCII name.
+
+### The `+1` byte has two readers, and one of them is not the pager
+
+The pager `FUN_8003EC70(record[+1] + 0x28)` is the reader this page's
+capture-class section describes. The **second** reader is the battle image's
+cast-tick dispatcher `FUN_801F2160`, which loads the acting actor's queued id
+`actor[+0x1DF]`, indexes this table at `id * 0xC`, takes `+1`, bounds it with
+`sltiu ..., 0x20` and jumps through the 32-slot table at `0x801CF56C`
+(`0x801F2160..0x801F21D8`; the battle SM's single call site is
+`jal 0x801f2160` at `0x801E50C8`, whose `bne v0,zero` is battle phase `0x70`'s
+per-frame hold). Both land on the same entry - PROT `935 + sub_id` - so the
+byte names the module twice: once to stream it in, once to tick it.
+
+Outside the capture class the byte is still a sub-index and nothing dispatches
+on it, because no other class reaches `FUN_801F2160`. It is not constant per
+class either: in the player Seru block (`0x32` cast class) the nine enemy-side
+spells carry `+1 = 0`, while the two ally-side ones carry a different `+0` as
+well - `0x83` Vera is `0x00 / 0x03` and `0x89` Orb is `0x01 / 0x04`.
+
+Decoders: `legaia_asset::spell_names::SpellEntry::sub_class` (the byte),
+`legaia_asset::cast_effect_pool::capture_module_prot` (the byte -> PROT entry),
+`legaia_engine_core::retail_magic::RetailSpell::effect_class` (the pinned
+player-block column). See
+[cast-module.md](../subsystems/cast-module.md#what-the-port-runs).
 
 ### Cast classes (record byte `+0`)
 

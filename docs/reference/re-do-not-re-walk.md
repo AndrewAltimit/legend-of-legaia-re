@@ -605,6 +605,71 @@ when `_DAT_8007B64B` is zero; the mist-free arena capture is the default, not
 a phase gate. See
 [`minigame-muscle-dome.md`](../subsystems/minigame-muscle-dome.md).
 
+### `ctx[+0x26]` is a boss phase counter and `ctx[+0xD]` is a dead store
+
+*Falsified by disassembly.*
+
+The "boss phase counter bumped by the Cort form-change arm" reading came from
+the one increment site (`0x801E6D3C`); the byte's unload reader `0x801E61B4`
+passes it as a UI element id, and the only assignment anywhere is `0x65`, the
+level-up banner. The "no port field and no reader" claim about `ctx[+0xD]`
+missed three readers inside `FUN_801D5854` - it is the per-action camera angle
+variant. Both in [`re-settled-threads.md`](re-settled-threads.md#two-battle-context-bytes-read-wrong).
+
+### `0x801E3A20..0x801E3A64` is the Miracle continuation
+
+*Falsified by disassembly.*
+
+`s5` is `ctx + 0x11`, so `0x5(s5)` is `ctx[+0x16]` and the guard chain
+(`ctx[+0x13] < 3`, record `+0xF4 & 0x2000`, counter zero) names the War God
+Icon: this is the Attack x2 second pass, and the sole writer of `ctx[+0x16]`.
+
+### The Miracle marker is armed by an input recognizer (`FUN_801E91E8`'s caller)
+
+*Falsified by disassembly.*
+
+No such writer exists. `+0x25F` has one `sb` in the corpus, in `FUN_80053CB8` at
+battle-actor seeding, from the Ra-Seru equipment byte. `FUN_801E91E8`'s caller
+stages a token into `ctx[+0x269]`, which still has no engine consumer.
+
+### `DAT_8007BD10` is a per-slot control-mode byte
+
+*Falsified by disassembly.*
+
+It is the slot -> roster character id table; three routines index character
+records with it as `0x80084140 + (byte - 1) * 0x414` (`0x801EF344`,
+`0x80053CEC`, `0x801E39CC`). The "`== 4` = an AI-driven member" reading was right
+in effect and wrong about the mechanism.
+
+### The spell record's `+0x01` effect-class byte is undecoded
+
+*Falsified by a read of this repo's own source (`inference`), with the bytes
+confirmed against the disc.*
+
+`legaia_asset::spell_names::SpellEntry::sub_class` has read `+1` for as long as
+it has read `+0`, and `World::spell_table_sub_class` served it to the battle
+host. The gap was a *consumer* gap - nothing turned the byte into a module.
+The companion claim that the player Seru-magic block all shares `cat = 0x32 /
+sub = 0` is false by `SCUS_942.54`: `0x83` Vera is `0x00 / 0x03` and `0x89` Orb
+is `0x01 / 0x04`; only the nine enemy-side spells are `0x32 / 0x00`. Grade
+`disassembly` for the bytes.
+
+### The slot-B module band shares a library tail
+
+*Falsified by disassembly and byte comparison.*
+
+The reading: PROT 0958 and 0959 hold the same words past file `~+0x2A00`,
+which read as a library object linked into several modules.
+
+What is true: every one of the 64 module images ends in a byte-identical,
+same-file-offset run of *another* extracted image, ending exactly at the
+shorter image's length - and nine of them end in **PROT 0899's** bytes, a
+slot-A overlay at a different base. That settles direction: mastering residue,
+not linked code. The routine four 12288-byte images carry at printed VA
+`0x801F9458` is the menu overlay's at `0x801D1298`. Seven worklist rows were
+catalogued against an image that only holds the residue. See
+[`cast-module.md`](../subsystems/cast-module.md#a-module-image-ends-in-another-images-bytes).
+
 ### The slot-B band: four readings the whole-band dump overturned
 
 *Falsified by disassembly.*
@@ -773,6 +838,33 @@ What is true: it is VA aliasing at the shared slot-A base. `0x801CE9C0` is a
 clean function entry in PROT **0895** (`init.pak`, file `+0x1A8`), the
 publisher-logo pass that mode 16 exists to run. See
 [`boot.md`](../subsystems/boot.md).
+
+### `FUN_801CE9C0` draws the publisher logos
+
+*Falsified by disassembly.*
+
+It uploads them. Its four `FUN_800198E0` calls are `LoadImage` wrappers over
+rects it forms from each TIM's header, and the routine contains no primitive
+emit. The quads come from the sprite-descriptor table at `0x801F369C`, emitted
+by `FUN_801CFBB8` ([settled](re-settled-threads.md#the-publisher-logo-quads)).
+
+### SCEA unfolds as a 2x2 grid of 32-row strips
+
+*Falsified by disassembly.*
+
+The engine's `STRIP_GRID` `(2, 2)` was fitted to the visible content. Retail's
+descriptors 2 and 3 are two 64-row halves of the 256x128 TIM, and PROKION's
+halves are 127 rows, not 128. Pixel-equivalent by accident; not what retail
+does.
+
+### `0x801D06E0` is a SHARED_TAIL with no `jr ra`
+
+*Falsified by disassembly.*
+
+The worklist row read it as a tail exiting `j 0x801dee50`. In PROT 0895 at the
+same base it is a 22-instruction leaf with its own `addiu sp,sp,-0x18` frame,
+four `TestEvent` calls and its own `jr ra` at `0x801D0730`. Same cause as the
+`0x801CE9C0` entry above: a row filed before its image was mapped.
 
 ## Containers / placeholder slots
 
@@ -1299,6 +1391,32 @@ change - so the failure was ordered by closure position, not by scene. Before
 blaming a scene, walk it first in the sweep order and alone. See
 [`re-settled-threads.md`](re-settled-threads.md#field--locomotion).
 
+### Field-VM op `0x45` sub `0xC0` returns the operand `s16` as the next PC
+
+*Falsified by disassembly.*
+
+The reading is in the decompiled C and was in `script-vm.md`'s own opcode row
+("APPLY ... then absolute jump"). Retail's arm at `overlay_0897` `0x801DF210`
+exits `j 0x801E3624` with `addiu s8, s8, 4` in the delay slot, and the `s16` at
+`operand+1` goes to `FUN_801DE084` as the apply trigger - the identical call the
+CONFIGURE arm makes with its `s16` at `operand+2`. The sibling arms corroborate
+(`0x40` `+0x14`, `0x80` `+2`). Cost of the wrong reading: every record whose
+trigger is `0` restarted from byte 0, which is what made `urudre2` read as
+one-way and let four `keikoku` records do nothing.
+It also had `man_edit` refuse to resize any record containing one
+(`AbsoluteRef`) while listing it as relocatable - the field VM stores **no**
+absolute PC anywhere, so every control-flow field shifts with its record.
+
+### Op `0x43` subs 0/1/A/B resume at an operand `s16`
+
+*Falsified by disassembly.*
+
+The sub table at `0x801CEDA8` vectors subs 0/1/A/B to `0x801DF384`, whose
+shared exit `0x801DF5B4` is `j 0x801E3624` / `addiu s8, s8, 8` (plus `+2` at
+`0x801DF534` for `sub >= 0xA`). The three `s16`s are `FUN_801D25EC` arguments;
+the sub-A/B `+7` is negated into the target's **Y** (`0x801DF524..0x801DF530`).
+Instruction widths are 8 / 10 bytes (9 / 11 extended), not 5 / 9.
+
 ## No overlay function lives below `0x801CE818`
 
 **Falsified:** "an undocumented address in the `0x801C0164`..`0x801CE000`
@@ -1354,6 +1472,25 @@ image at its mapped base, and only from there.
 | Retail's op-`0x49` arm spawns a driver actor that **opens the pause menu itself** for the kind-`0x0D` entry context | falsified (row `0x0D` of the dispatch table is `-1`; nothing opens) | The reading explained why the port could not reach `ContextNotice` / `ContextReady` and pointed at a pending-request channel as the fix. But the submode dispatcher indexes a **signed** 14-byte table at `0x801F33A4` with the parked operand's first byte and returns on `-1` (`0x801F1468..0x801F1470`) *before* it writes the driver's state or clears `_DAT_8007B450`. So a `0x0D` park simply stands, and the player's own Start is what enters the menu it gates. The port's own close-tick fallback for that row was the defect: it retired within a few frames and took the context with it. |
 | Actor VM = "the title screen's sprite-walk interpreter", with an ANM-trigger opcode | falsified (it is the menu overlay's window-widget script interpreter) | Two readings fell together. `FUN_801D6628` is resident in PROT 0899 (the menu overlay), and its base materialisation `lui 0x801e / addiu 0x4738` indexes the **window descriptor table** - instruction byte 1 is a window id, not a sprite-actor slot. And no arm of the 13-way dispatch hands off an ANM id (`see ghidra/scripts/funcs/overlay_menu_801d6628.txt`); "trigger animation" was a guess from the sprite-VM framing. Programs are overlay-resident data ([window-script.md](../formats/window-script.md)), so "find the per-scene carrier" was never answerable. |
 
+### The save screen's block grid has a sixteenth Return cell
+
+*Falsified by disassembly.*
+
+The mode-`4` arm is real but unreachable - both cursor words are clamped
+(`col <= 4`, `row <= 2`) and the linear seed's single writer stores
+`col + row*5`. See [settled](re-settled-threads.md#the-dead-return-view-mode).
+
+### `0x801E5AE8` is a shared armament placer that `FUN_801D71F0` calls
+
+*Falsified by bytes.*
+
+A dump mis-based by `0xE818` prints the body low while its `j` targets print
+true, so a self-jump reads as an outbound call. `FUN_801D71F0` is the phantom
+print of `FUN_801E5A08`, and `0x801E5AE8` is that routine's own inline placer.
+The sibling reading "`FUN_801D71F0` is a dead add-item copy" was half right for
+the wrong reason: the routine is dead, but it is the equip applier and its
+`FUN_800421D4` call is a refund.
+
 ### The disc's item population is far below 128, so a half-window bag cannot fill
 
 *Falsified by disc bytes.*
@@ -1392,6 +1529,9 @@ and each shaped what work looked worth doing.
 | "About 2 % of retail camera beats set a non-zero roll" | falsified (the figure was the scan's own filter) | The number came from a **byte scan** - decode an op-`0x45` CONFIGURE at every offset of every scene MAN - which finds 4257 "sites" where control flow reaches 371. Because junk sites set a junk roll almost every time, the scan applied a post-hoc "credible" filter and then measured roll over the survivors, so the ratio is a property of that filter. Its sibling strict linear sweep reported the opposite (zero non-zero rolls) by reaching 21 sites and none of the eight real ones. The answer - retail *does* roll, in eight scenes - came from executing the records, not decoding them: [`re-settled-threads.md`](re-settled-threads.md#does-any-retail-shot-author-a-non-zero-camera-roll). |
 | An over-strict header regex is one instrument's bug | falsified (every instrument had its own) | Each tool over the dump corpus carried a private header regex, and the corpus spells all four header fields several ways, so each silently rejected a different subset of **real dumps** and reported them as a corpus deficiency. Fixed by one shared parser; see [`dump-corpus-integrity.md`](../tooling/dump-corpus-integrity.md#not-every-file-in-funcs-is-a-dump). |
 | A zero-reference SCUS function is a safe code cave once the five-form address scan and hours of live probing clear it | falsified for `FUN_800605C8` (boot-live) | The libapi VBlank-tier slot has no static reference of any form and every live probe ran clean with it overwritten - yet a **cold boot** parks at boot mode `0x10` the moment its body changes, because the kernel/libapi init invokes it before any save state's world exists. Save-state probes structurally cannot exercise boot, so "unreferenced + probe-verified" still has a boot-shaped hole; a claimed cave must also pass a cold-boot watch (`scripts/pcsx-redux/autorun_boot_watch.lua`, bisect via disc variants). Neighbouring CD-arm caves `FUN_8003EDAC` / `FUN_8003F210` passed the same cold-boot test. |
+| PROT 0977 `0x801D1EF0` is data past the last `jr ra`, carrying no function | falsified (it is the arena settlement bring-up) | A sector-granular PROT extent truncates the body, so a missing `jr ra` is not evidence of data - the tail still carries RAM-page `lui`s and calls `0x8006BCB4` / `0x80026018` / `0x80024EE4`. Same shape in PROT 0902 (`0x801CED68`, a third function) and PROT 0979. |
+| SCUS `0x80045CB4` is interior to a body 11 128 bytes back and nothing references it | falsified (entry `FUN_80045BB4`, 256 bytes back, referenced) | Its address is word 12 of the bank-3 primitive-handler table at `0x8007668C` (kinds 8..19); the routine is a 1272-byte frameless GTE emitter ending in `j 0x80045E54`. The table reproduces from the SCUS bytes. |
+| `overlay_0897_xxx_dat_801f138c.txt` is a routine at `0x801F138C` | falsified (it is `FUN_801DABA4` printed `0x167E8` too high) | Its absolute `j 0x801db0f0` / `j 0x801db0f8` targets give the true base, and an instruction-by-instruction diff against `overlay_battle_action_801daba4.txt` differs only in the 33 PC-relative branch operands. Reading it as a second monster-record `+0x1C` consumer double-counts one routine. |
 
 **Generalises to:** a measurement instrument has no oracle, so a number it prints
 is believed on the strength of its *explanation*. Check the explanation against

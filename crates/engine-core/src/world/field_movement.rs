@@ -166,6 +166,20 @@ impl World {
         for (i, slot) in self.field_object_cells[..n].iter_mut().enumerate() {
             *slot = u16::from_le_bytes([cells[i * 2], cells[i * 2 + 1]]);
         }
+        // Which bit this scene records its authored floor with. See
+        // [`crate::world::World::field_floor_cell_bit`]: eighteen field scenes
+        // author `CELL_VISIBLE` and never `CELL_WALK_VISIBLE`, and reading
+        // those as floorless makes the cold-spawn resolver inert in exactly
+        // the scenes whose retail seat is a wall.
+        self.field_floor_cell_bit = if self
+            .field_object_cells
+            .iter()
+            .any(|c| c & legaia_asset::field_objects::CELL_WALK_VISIBLE != 0)
+        {
+            legaia_asset::field_objects::CELL_WALK_VISIBLE
+        } else {
+            legaia_asset::field_objects::CELL_VISIBLE
+        };
     }
 
     /// Install the scene's kind-2 **elevation-override** records from the
@@ -459,13 +473,18 @@ impl World {
     }
 
     /// Is world `(x, z)` on the scene's authored **walkable floor** - i.e. does
-    /// its plain (unbiased) `.MAP` object-grid cell carry the
-    /// [`legaia_asset::field_objects::CELL_WALK_VISIBLE`] (`0x1000`) bit? This
-    /// is the retail "player may stand on this tile" flag the field walk loader
-    /// gates on ([`Self::field_object_cells`], plain `world >> 7` indexing -
-    /// the same convention [`Self::sample_field_floor_height`] samples the floor
-    /// under). `false` for out-of-range coords and for scenes with no object
-    /// grid loaded (every tile then reads as off-floor void).
+    /// its plain (unbiased) `.MAP` object-grid cell carry this scene's floor
+    /// bit ([`Self::field_floor_cell_bit`]: `CELL_WALK_VISIBLE` `0x1000` where
+    /// the scene authors it, `CELL_VISIBLE` `0x2000` in the eighteen scenes
+    /// that never do)? Plain `world >> 7` indexing - the same convention
+    /// [`Self::sample_field_floor_height`] samples the floor under. `false`
+    /// for out-of-range coords and for scenes with no object grid loaded
+    /// (every tile then reads as off-floor void).
+    ///
+    /// This is the port's "inside the authored area" filter for seating, not
+    /// retail's standing rule: retail decides where the player may stand from
+    /// the collision grid's wall bits ([`Self::field_tile_is_wall`]) and never
+    /// reads this grid for it.
     pub fn field_tile_is_walk_visible(&self, x: i16, z: i16) -> bool {
         if x < 0 || z < 0 {
             return false;
@@ -477,7 +496,7 @@ impl World {
         }
         self.field_object_cells
             .get(tz * FIELD_GRID_STRIDE + tx)
-            .is_some_and(|c| c & legaia_asset::field_objects::CELL_WALK_VISIBLE != 0)
+            .is_some_and(|c| c & self.field_floor_cell_bit != 0)
     }
 
     /// Is world `(x, z)` a valid cold-entry standing spot - on the authored
@@ -671,14 +690,17 @@ impl World {
     /// Selection rule (deterministic per scene):
     ///
     /// 1. Keep the retail seat when it is standable, inside the scene's
-    ///    **main region**, and not on a kind-0 teleport tile
-    ///    (`teleport_tiles`) - town01's New Game opening stays byte-identical.
+    ///    **main region**, not on a kind-0 teleport tile (`teleport_tiles`),
+    ///    and a seat the player can walk off (at least one of the four
+    ///    leading-edge wall probes clear) - town01's New Game opening stays
+    ///    byte-identical.
     /// 2. Otherwise take the first kind-0 teleport **destination** (`anchors`,
     ///    in disc table order) that passes the same checks - a retail-authored
     ///    door-arrival spot.
     /// 3. Otherwise spawn at the main region's own sub-cell nearest its
-    ///    centroid (skipping teleport tiles), i.e. the middle of the scene's
-    ///    biggest enclosed playable region.
+    ///    centroid (skipping teleport tiles and sub-cells the player cannot
+    ///    walk off), i.e. the middle of the scene's biggest enclosed playable
+    ///    region.
     /// 4. A scene with no open floor at all keeps the retail seat (nothing
     ///    better to resolve against).
     ///
@@ -716,6 +738,15 @@ impl World {
             let (tx, tz) = ((x as u16 >> 7) as u8, (z as u16 >> 7) as u8);
             teleport_tiles.iter().any(|&(kx, kz)| (kx, kz) == (tx, tz))
         };
+        // A seat the player cannot walk off is not a seat. The sub-cell
+        // lattice is open-floor granularity; the wall bits the locomotion
+        // controller actually probes are read with retail's `+2` Z bias and
+        // `ceil-1` X rounding ([`Self::field_dir_blocked`]), so a sub-cell can
+        // be "open" while all four leading-edge probes from its centre land on
+        // wall. `kor5`'s retail seat is exactly that, and so is the centroid
+        // `korb3` resolves to without this test.
+        let can_move =
+            |x: i16, z: i16| -> bool { (0..4).any(|d| !self.field_dir_blocked(x, z, d)) };
         let good = |x: i16, z: i16| -> bool {
             if x < 0 || z < 0 || !self.field_spawn_is_valid(x, z) || on_teleport_tile(x, z) {
                 return false;
@@ -724,6 +755,7 @@ impl World {
             labels
                 .get(sz * stride + sx)
                 .is_some_and(|&l| l == largest_label)
+                && can_move(x, z)
         };
         // 1. The retail seat, when it is genuinely standable and reachable.
         if good(default.0, default.1) {
@@ -762,7 +794,10 @@ impl World {
                 if best_any.is_none_or(|(bd, _)| d < bd) {
                     best_any = Some((d, world));
                 }
-                if !on_teleport_tile(world.0, world.1) && best.is_none_or(|(bd, _)| d < bd) {
+                if !on_teleport_tile(world.0, world.1)
+                    && best.is_none_or(|(bd, _)| d < bd)
+                    && can_move(world.0, world.1)
+                {
                     best = Some((d, world));
                 }
             }

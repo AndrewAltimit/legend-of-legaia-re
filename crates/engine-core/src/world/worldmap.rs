@@ -378,10 +378,23 @@ impl World {
     /// its transition arm. Only `Idle` entities are engaged, so one fires once
     /// per visit and the player can stand on the tile without re-triggering.
     /// NPC entities are *not* auto-engaged (they are talk-to, not walk-onto).
-    /// No-op without entity positions, a player actor, or while a dialog owns
-    /// the frame.
+    /// No-op without entity positions, a player actor, while a dialog owns the
+    /// frame, or **while a cutscene timeline is running**.
+    ///
+    /// The timeline clause is the same refusal retail's locomotion controller
+    /// opens with: `FUN_801D01B0`'s first test is the player actor's
+    /// `+0x10 & 0x80000` disabled bit, which a cutscene raises, and a player
+    /// who is not walking crosses no trigger tile
+    /// ([`docs/subsystems/field-locomotion.md`], per-frame flow step 1). The
+    /// opening chain's `map01` fly-in is the case that needs it: the leg seats
+    /// the party on Rim Elm's own overworld entrance tile and plays an aerial
+    /// camera cutscene over it, so an ungated auto-engage warps to `town01` on
+    /// the first tick and the fly-in never runs.
     fn auto_engage_world_map_portals(&mut self) {
-        if self.dialogue_owns_input() || self.world_map_entity_positions.is_empty() {
+        if self.dialogue_owns_input()
+            || self.cutscene_timeline_active()
+            || self.world_map_entity_positions.is_empty()
+        {
             return;
         }
         let Some(slot) = self.player_actor_slot else {

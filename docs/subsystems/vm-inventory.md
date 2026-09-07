@@ -41,7 +41,7 @@ disassembly (`sltiu` immediate before the `jr`), not off the port.
 | [Tile-board walk SM](tile-board.md) | `overlay_0897_801EF2B0` | 15 states, JT at `0x801CF65C` | resolved | yes - `legaia_engine_core::tile_board` | yes |
 | Per-actor anim dispatch | `FUN_80021DF4` | 7 dispatch bytes `0x01..=0x07` at `actor[+0x5A]` | resolved | yes - `anim_vm` / `actor_tick` | yes |
 | Ambient facing channel | `FUN_80038158` ops `0x04` / `0x0D` | 2 of the 32-slot table | resolved | yes - `ambient_motion` | yes |
-| [Title-screen tick](#one-function-two-ports) | `FUN_801DD35C` | 25-slot JT `0x801CF244`, sub-mode word `+0x204` | resolved | yes - `title_overlay` | **inert** |
+| [Title-screen tick](#one-function-two-ports) | `FUN_801DD35C` | 25-slot JT `0x801CF244`, sub-mode word `+0x204` | resolved | yes - `title_overlay` | menu law only - see [below](#one-function-two-ports) |
 | Per-prim render dispatch | `FUN_80043390` | 20 kind slots × 4 alpha banks | resolved | yes - `prim_dispatch` | yes |
 | Status-effect ticker | `FUN_801E752C` | per-actor condition set | resolved | yes - `status_effects` | yes |
 
@@ -101,7 +101,42 @@ what made the second reading look right; the routine's own operands falsify it:
   `jal 0x801dd35c` with both arguments zeroed, spawned by master mode 22.
 
 So `title_overlay.rs` carries the `PORT:` and `menu.rs` a `REF:` plus the
-correction. `menu.rs` remains the engine's own pause / shop / inn screen graph
+correction.
+
+### What of the tick runs on both hosts
+
+`TitleMenuState::step` is the executable half - the `AttractIdle` (`0x10`)
+block at `0x801DDB74..0x801DDCF4`, which is where every player-visible law of
+the title menu lives:
+
+| Law | Retail | Where it is now |
+|---|---|---|
+| Cursor step | `Down 0x4000` `+1` / `Up 0x1000` `-1`, cue `0x21` (`0x801DDB9C..0x801DDBE0`) | `TitleMenuState::step` |
+| Row space | `andi v1,v1,0x1` at `0x801DDC00` - two rows | `TITLE_MENU_ROWS` |
+| Confirm | `pad & 0x844` (Start / L1 / Cross), cue `0x20` (`0x801DDC04`) | `TitleMenuEvent::Confirmed` |
+| Input freeze | whole block skipped while countdown `< 0x11` (`0x801DDB84`) | `ATTRACT_INPUT_FREEZE_BELOW` |
+| Attract countdown | `0x5DC`, re-armed on any held pad, `-= frame scalar` (`0x801DDC74..0x801DDCC8`) | `TitleMenuState::countdown` |
+
+`engine-core::title::TitleSession` owns one and steps it every frame, so the
+native window and the browser play page share it without either host
+changing. Two things around it are still the port's own and say so in the
+module docs: the `FadeIn` / `PressStart` staging (`Init` writes sub-mode
+`0x02` at `0x801DD920` and overwrites it with `0x11` only when the entry word
+`_DAT_8007BB00` is non-zero at `0x801DD97C`, so `0x02 -> 0x14` is the default
+graph and `0x11 -> 0x10` the re-entry one), and the `continue_enabled` row
+skip, which retail does not have.
+
+The attract fire arm is modelled but **off by default**: retail hands the
+screen to master game mode `0x1A`, the opening movie, and neither host has an
+attract-movie destination in its boot UI, so a countdown that fires would
+freeze input for sixteen frames and then do nothing. Turning it on is
+`TitleSession::attract_enabled`.
+
+What is still unported is the dispatcher: 25 handler bodies, 56 sub-mode
+writes, and the mode-graph question of which of `0x02` and `0x10` a cold boot
+puts on screen.
+
+`menu.rs` remains the engine's own pause / shop / inn screen graph
 - state bytes engine-chosen, per-screen behaviour sourced from
 [`shop.md`](shop.md), [`inn.md`](inn.md) and
 [`field-menu.md`](field-menu.md) - it is simply not a port of this routine.
@@ -127,10 +162,11 @@ calls them. Inert is a reachability statement, not a correctness one.
   `canonical_size` width table is the disassembly-sourced mirror that
   `move_vm::ext` is tested against, and `engine-core`'s VDF-pulse scanner
   reads it to skip `0x2F` instructions.
-- **`title_overlay`** - the sole port of the title tick `FUN_801DD35C`
-  ([above](#one-function-two-ports)). Its decoded sub-mode table and
-  state-struct offsets have no consumer: the port's own title screen is
-  driven by `engine-core`'s save-select session instead.
+- **`title_overlay`** - **no longer wholly inert.** Its menu half
+  ([`TitleMenuState`](#what-of-the-tick-runs-on-both-hosts)) runs on both
+  hosts. What stays disclosed is the 25-mode dispatcher itself: the sub-mode
+  table and the state-struct offsets are a decoded description with no
+  interpreter behind them.
 - **`title_prim`**, **`vram_rect_copy`**, **`cutscene_trigger`** - supporting
   primitive and catalogue modules on the same footing.
 

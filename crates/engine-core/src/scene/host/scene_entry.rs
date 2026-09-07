@@ -178,6 +178,44 @@ impl SceneHost {
         }
     }
 
+    /// Install the **cast-effect pool** onto the world - the DATA half of the
+    /// slot-B cast-module band (PROT 0903..0966), once per host.
+    ///
+    /// Retail streams one of these 64 entries per cast, at the cast; the port
+    /// reads all 64 once instead, because the band is small static data and the
+    /// alternative is a disc read inside a battle frame. A cast then resolves
+    /// its module through PROT 0898's own dispatch arithmetic
+    /// (`legaia_engine_vm::battle_cast_dispatch`) and stages that module's
+    /// spawn records ([`crate::world::World::spawn_cast_module_fx`]).
+    ///
+    /// Entries that fail to read are skipped rather than aborting the install -
+    /// a cast whose module is missing simply stages no records, which is the
+    /// disc-free behaviour. `see docs/subsystems/cast-module.md`.
+    fn ensure_cast_effect_pool(&mut self) {
+        use legaia_asset::cast_effect_pool::{
+            CAST_MODULE_PROT_FIRST, CAST_MODULE_PROT_LAST, CastEffectPool,
+        };
+        if self.cast_effect_pool_loaded {
+            return;
+        }
+        self.cast_effect_pool_loaded = true;
+        let mut pool = CastEffectPool::new();
+        for entry in CAST_MODULE_PROT_FIRST..=CAST_MODULE_PROT_LAST {
+            if let Ok(bytes) = self.index.entry_bytes(entry) {
+                pool.insert(entry, &bytes);
+            }
+        }
+        if pool.is_empty() {
+            eprintln!(
+                "[scene] cast-effect pool (PROT {CAST_MODULE_PROT_FIRST}..{CAST_MODULE_PROT_LAST}) \
+                 unreadable - casts stage no module records"
+            );
+            return;
+        }
+        self.world
+            .install_cast_effect_pool(std::sync::Arc::new(pool));
+    }
+
     /// Refresh [`crate::world::World::battle_swing_costs`] from the player
     /// battle files: for each roster character (Vahn / Noa / Gala = PROT
     /// 863 / 864 / 865), splice that character's *equipped* sections and
@@ -638,6 +676,9 @@ impl SceneHost {
                 // per-move power (PROT 0898; falls back to the placeholder if
                 // the disc read fails).
                 self.ensure_move_power_table();
+                // ... and the cast-effect pool, so a cast can stage its own
+                // module's spawn records.
+                self.ensure_cast_effect_pool();
                 // ... and the per-(character, equipped set) swing-cost
                 // bytes the Arts command input charges per press.
                 self.refresh_battle_swing_costs();

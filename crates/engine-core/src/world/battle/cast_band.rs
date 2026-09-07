@@ -51,9 +51,16 @@
 //! stager here does the same with the pieces the engine has: it requests the
 //! namesake creature spawn ([`World::pending_summon_spawn`]) at the spawn
 //! point, idles it, stages the walk clip and glides it to the strike point,
-//! folds the outcome there, lingers, and despawns it. The per-summon effect
-//! parts (the `0x180C` move-VM records) are not staged - that is the open
-//! half, and the tick says so rather than faking it.
+//! folds the outcome there, lingers, and despawns it.
+//!
+//! The per-summon effect parts are staged with it. They used to be the open
+//! half here ("the `0x180C` move-VM records are not staged"); the module's
+//! spawn records now come out of the **cast-effect pool**
+//! ([`legaia_asset::cast_effect_pool`], installed by the scene host) and stage
+//! through [`World::spawn_cast_module_fx`] at the same first tick, because the
+//! records are the shape the summon path already runs. What stays open is the
+//! module's *code* half - lift, camera, phase machine, damage shape - and that
+//! function's `NOT WIRED:` names the worklist rows it covers.
 //!
 //! Timing is the engine's: the retail durations are the stager's own phase
 //! machine and are not dumped, so the frame counts below are chosen to land
@@ -357,6 +364,112 @@ impl World {
         a.battle.current_anim = 0;
     }
 
+    /// Install the cast-effect pool - the DATA half of the slot-B cast-module
+    /// band (PROT 0903..0966), parsed off the disc by the scene host (which
+    /// holds the PROT index; `World` is index-agnostic, the same split
+    /// [`Self::pending_summon_spawn`](crate::world::World::pending_summon_spawn)
+    /// uses). Idempotent; a host that never calls it leaves every cast staging
+    /// no module records, which is the disc-free behaviour.
+    pub fn install_cast_effect_pool(
+        &mut self,
+        pool: std::sync::Arc<legaia_asset::cast_effect_pool::CastEffectPool>,
+    ) {
+        self.cast_effect_pool = Some(pool);
+    }
+
+    /// The band entry a cast of `spell_id` pages - the **pool handle** PROT
+    /// 0898's two tick dispatchers resolve to.
+    ///
+    /// Which dispatcher applies is the record's `+0` class byte, exactly as it
+    /// is for the damage-kernel pick ([`World::spell_table_class`]):
+    ///
+    /// * class `'c'` - the capture band. `FUN_801F2160` reads the record's
+    ///   `+0x01` byte and jumps through `0x801CF56C`, so the module is
+    ///   PROT `935 + sub_id`. Same byte the pager
+    ///   `FUN_8003EC70(record[+1] + 0x28)` resolves.
+    /// * anything else - `FUN_801F1ED4` keys on the queued action id itself
+    ///   and jumps through `0x801CF4EC`, so the module is
+    ///   PROT `903 + (id - 0x81)`.
+    ///
+    /// Without a disc spell table the class byte is unknown and every id is
+    /// treated as the action-id band, which is what a disc-free battle's
+    /// placeholder catalog means anyway.
+    ///
+    /// REF: FUN_801F1ED4, FUN_801F2160
+    pub fn cast_module_for(&self, spell_id: u8) -> Option<u32> {
+        use vm::battle_cast_dispatch::{seru_spell_emitter, spell_class_emitter};
+        if self.spell_table_class(spell_id) == Some(legaia_asset::spell_names::CAPTURE_CLASS) {
+            let sub = self.spell_effect_class(spell_id)?;
+            return spell_class_emitter(sub, 0).module;
+        }
+        seru_spell_emitter(spell_id, 0).module
+    }
+
+    /// The record's `+0x01` **effect class**: the disc table's byte when one is
+    /// installed, else the catalog record's
+    /// ([`crate::spells::SpellDef::effect_class`], which
+    /// [`crate::retail_magic`] fills from `SCUS_942.54`).
+    pub fn spell_effect_class(&self, spell_id: u8) -> Option<u8> {
+        self.spell_table_sub_class(spell_id)
+            .or_else(|| self.spell_catalog.get(spell_id).map(|d| d.effect_class))
+    }
+
+    /// Stage the cast module's **spawn records** at `origin` - the engine's
+    /// answer to the dispatchers, and the half of a cast that is data.
+    ///
+    /// Each record is `[i16 model_sel][u16 flags][move-VM bytecode]`, the shape
+    /// the whole spawn stack shares, so the records run through the same
+    /// [`crate::summon::SummonScene`] the summon and move-FX paths already use
+    /// and both hosts draw and tick them with no host change
+    /// (`active_summon_part_draws` / `tick_summon`).
+    ///
+    /// Returns `false` - staging nothing - when the spell names no band entry,
+    /// no pool is installed (disc-free), or the module carries no record (the
+    /// band's null stub PROT 0926, and PROT 0952 whose two spawn sites load
+    /// their record pointer out of a saved register).
+    ///
+    /// NOT WIRED: the module's **code** half. Of the per-address verdicts in
+    /// `docs/subsystems/cast-module.md`'s worklist this stages the **DATA**
+    /// rows and nothing else - every **PORT** row (the six tick bodies
+    /// `0x801F6A0C` / `0x801F6A14` / `0x801F6DD8` / `0x801F6EDC` / `0x801F74E4`
+    /// / `0x801F798C`, and the seven stagers that also touch state:
+    /// `0x801F75BC`, `0x801F7740`, `0x801F7AF4`, `0x801F85A8`, `0x801F8B90`,
+    /// `0x801F8D64`, `0x801F90E4`) stays unported, because each writes
+    /// simulation state a record cannot express: the staged-clip bytes
+    /// `+0x1DA`/`+0x1DC` (the lift), the module phase `ctx+0x279` and
+    /// `ctx+0x278` (the camera / phase machine), the HP write `+0x14C` and the
+    /// status byte `+0x16E` (the damage shape). The engine's own cast damage
+    /// runs through [`World::cast_spell_on_slots_prepaid`] at the band's seam
+    /// instead, so no HP outcome is lost - only retail's per-phase timing of
+    /// it. The **SCOPE-IGNORE** rows are the six null stagers and the one
+    /// unreferenced routine; there is nothing to stage for them either.
+    ///
+    /// REF: FUN_801F1ED4, FUN_801F2160 (the dispatchers that name the module;
+    /// their emitter arms are the unported half above)
+    /// REF: FUN_80050ED4, FUN_80021B04 (the spawn calls whose `a2` records
+    /// these are)
+    pub fn spawn_cast_module_fx(&mut self, spell_id: u8, origin: [i16; 3]) -> bool {
+        let Some(entry) = self.cast_module_for(spell_id) else {
+            return false;
+        };
+        let Some(pool) = self.cast_effect_pool.clone() else {
+            return false;
+        };
+        let Some(module) = pool.module(entry) else {
+            return false;
+        };
+        if module.parts.is_empty() {
+            return false;
+        }
+        self.active_summon = Some(crate::summon::SummonScene::spawn_parts(
+            &module.parts,
+            &module.bytes,
+            crate::scene::EFFECT_MODEL_LIBRARY_BASE,
+            origin,
+        ));
+        true
+    }
+
     /// One stager tick - the engine body behind
     /// `BattleActionHost::summon_stager_tick`. Returns `true` while the
     /// choreography is still running (retail: the stager's non-zero return
@@ -373,6 +486,12 @@ impl World {
                 // Phase 0: seat the creature (retail: the stager's
                 // `FUN_801F19EC` installs the streamed record as slot 7).
                 self.pending_summon_spawn = Some((st.spell_id, st.spawn));
+                // ...and stage the module's own effect parts. This is the
+                // `0x801E4B1C` site's other half: `FUN_801F1ED4` dispatches
+                // into the paged module, whose spawn records are the cast's
+                // particle layer. Seated where the creature is, since the
+                // records carry summon-local offsets.
+                self.spawn_cast_module_fx(st.spell_id, st.spawn);
                 st.phase = SummonPhase::Approach;
                 st.frames = 0;
                 true

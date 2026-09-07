@@ -353,21 +353,26 @@ kilobytes of inline `0x1F` text; `jouine` has none of the three, because its
 exit is not a named scene change at all but the FMV hand-off `4C E2 08`.
 
 Part E answers the question the decoders cannot: it steps onto **every** gate-1
-tile the five carry - the `.MAP` table and the `.PCH` sidecar both - and four of
-them leave, each for the destination the disc names (`uru` → `map03`, `urudre1`
-and `urudre3` → `uru`, `jouine` → FMV 8 → `town0e` through
-`cutscene::fmv_post_play_handoff`). Three caps had to go first, and each was a
-property of the ladder rather than of the disc: the tile sweep stopped at 48
+tile the five carry - the `.MAP` table and the `.PCH` sidecar both - and all
+five leave, each for the destination the disc names (`uru` → `map03`, `urudre1`
+and `urudre3` → `uru`, `urudre2` → `map01`, `jouine` → FMV 8 → `town0e`
+through `cutscene::fmv_post_play_handoff`). Three of the ladder's own caps had
+to go first, none of them a property of the disc: the tile sweep stopped at 48
 deduplicated tiles while `uru`'s exit band is at positions 63..66 of its own
 118; the post-step budget was 24 ticks while `urudre1`'s record alone waits
 240 + 60 + 60 frames before its `0x3F`; and watching only for a scene change
 could never see an FMV tail.
 
-`urudre2` is the one that stays put, and it is a port limit, not a disc one:
-its only gate-1 record is the 4703-byte King Nebular dream whose `0x3F` →
-`map01` is its tail, and the port's timeline replays the conversation instead -
-the PC never passes body `0xB8C`, independent of pad cadence and of visit
-count. Layout and the live `uru` pin:
+`urudre2` was the last to fall, and what held it was a **field-VM** defect
+rather than a cap. Its only gate-1 record is the 4703-byte King Nebular dream
+whose `0x3F` → `map01` is its tail, and about `0x670` bytes before that tail
+the record carries `45 C0 00 00` - a camera APPLY. The port read op `0x45`
+sub-`0xC0` as an absolute jump to its operand `s16`; retail's arm is a
+four-byte fall-through and the `s16` is the apply trigger, so a trigger of zero
+restarted the record from byte 0 and the conversation replayed forever. With
+the arm corrected the room leaves like the other four. See
+[`script-vm.md`](../subsystems/script-vm.md#0x45-camera-arm-widths); layout and
+the live `uru` pin:
 [`world-map.md`](../subsystems/world-map.md#uru-mais-and-jouine-exits-carried-by-the-pch-sidecar).
 
 ## See also

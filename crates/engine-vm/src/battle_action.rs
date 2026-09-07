@@ -80,6 +80,9 @@ pub use pool_ops::*;
 mod queue_applier;
 pub use queue_applier::*;
 
+mod apply_mode;
+pub use apply_mode::*;
+
 mod flash_ramp;
 pub use flash_ramp::*;
 

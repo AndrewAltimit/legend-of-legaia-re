@@ -315,6 +315,32 @@ pub fn rows_from_chains(actor: u8, chains: &[legaia_save::SavedChainRecord]) -> 
         .collect()
 }
 
+/// The caster's art rows **in the arts queue-builder's walk order** - the
+/// order `FUN_801EED1C`'s inner loop visits them in (`s3 = 0xB..`, i.e.
+/// ascending action constant), paired with each row's command count.
+///
+/// This is the ordinal space [`crate::ap_gauge::art_spirit_cost`] keys its
+/// Spirit multiplier on, and it is **not** the arts grid's display index: the
+/// builder's counter (`[sp+0x40]`) bumps once per row it actually visits, so a
+/// character whose grid skips rows has the two diverge. Every row the catalog
+/// holds is walked, the ordinal-0 Miracle Art included - filtering the list to
+/// the rows that can *tokenize* (which the queue builder does separately, on
+/// `sltiu a1,a0,0x4`) would renumber every art after a gap and mis-price it.
+///
+/// REF: FUN_801EED1C (`0x801EF2EC` row cursor, `0x801EF844` row bump)
+pub fn spirit_catalog(
+    art_records: &std::collections::HashMap<(Character, legaia_art::ActionConstant), ArtRecord>,
+    character: Character,
+) -> Vec<(legaia_art::ActionConstant, u8)> {
+    let mut rows: Vec<(legaia_art::ActionConstant, u8)> = art_records
+        .iter()
+        .filter(|((ch, _), _)| *ch == character)
+        .map(|((_, action), rec)| (*action, rec.commands.len().min(255) as u8))
+        .collect();
+    rows.sort_by_key(|(a, _)| a.as_byte());
+    rows
+}
+
 /// Map a party slot to the [`Character`] whose Tactical-Arts tables apply
 /// (slots 0/1/2 = Vahn/Noa/Gala). Out-of-range slots fall back to Vahn so the
 /// Miracle lookup never panics. Mirrors `World::caster_character`.

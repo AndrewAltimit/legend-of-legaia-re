@@ -39,6 +39,7 @@ struct RecHost {
     sound_ready: bool,
     rng_seq: Vec<u32>,
     rng_pos: RefCell<usize>,
+    pad_word: u16,
     party_count: u8,
     slot_count: u8,
     first_monster_id: u8,
@@ -108,6 +109,9 @@ impl BattleActionHost for RecHost {
     }
     fn victory_stage(&mut self, party_slot: u8) {
         self.record(Event::VictoryStage(party_slot));
+    }
+    fn pad_word(&self) -> u16 {
+        self.pad_word
     }
     fn rng(&mut self) -> u32 {
         let mut p = self.rng_pos.borrow_mut();
@@ -586,6 +590,80 @@ fn action_seed_ordinary_items_stay_on_the_spirit_band() {
     }
 }
 
+/// The seed body's own `rand()` (`0x801E2D04`) plus the Item arm's
+/// (`0x801E2E3C`) are two draws off the shared cursor, in that order - the
+/// property the RNG stream depends on, independent of what the values mean.
+/// A Magic action makes only the seed draw, so the two categories are not
+/// interchangeable in the stream.
+#[test]
+fn action_seed_item_draws_twice_and_magic_once() {
+    for (category, expected) in [
+        (ActionCategory::Item, 2usize),
+        (ActionCategory::Magic, 1),
+        (ActionCategory::Attack, 1),
+        (ActionCategory::TacticalArts, 1),
+    ] {
+        let (mut ctx, mut host) = fresh(category, 1);
+        ctx.action_state = ActionState::ActionSeed.as_byte();
+        host.rng_seq = vec![7, 7, 7, 7];
+        step(&mut host, &mut ctx);
+        assert_eq!(
+            *host.rng_pos.borrow(),
+            expected,
+            "{category:?} draws off the shared cursor"
+        );
+    }
+}
+
+/// `ctx[+0xD]`, the camera-angle variant: the seed rolls `rand() % 4`, then
+/// the category arm narrows it - Item to `(rand % 2) * 2` (so `0` or `2`),
+/// Magic and Tactical Arts to `0` outright.
+#[test]
+fn action_seed_camera_variant_follows_the_category_arm() {
+    // Item, second draw odd -> (1 % 2) * 2 == 2.
+    let (mut ctx, mut host) = fresh(ActionCategory::Item, 1);
+    ctx.action_state = ActionState::ActionSeed.as_byte();
+    host.rng_seq = vec![3, 1];
+    step(&mut host, &mut ctx);
+    assert_eq!(ctx.camera_variant, 2);
+
+    // Item, second draw even -> 0.
+    let (mut ctx, mut host) = fresh(ActionCategory::Item, 1);
+    ctx.action_state = ActionState::ActionSeed.as_byte();
+    host.rng_seq = vec![3, 4];
+    step(&mut host, &mut ctx);
+    assert_eq!(ctx.camera_variant, 0);
+
+    // The summon route re-stamps `0` even on an odd draw (`0x801E2E94`).
+    let (mut ctx, mut host) = fresh(ActionCategory::Item, 1);
+    ctx.action_state = ActionState::ActionSeed.as_byte();
+    host.actors[1].params[0] = 0x98;
+    host.rng_seq = vec![3, 1];
+    step(&mut host, &mut ctx);
+    assert_eq!(ctx.action_state, ActionState::MagicCastBegin.as_byte());
+    assert_eq!(ctx.camera_variant, 0);
+
+    // Magic / Tactical Arts pin `0` whatever the seed rolled.
+    for category in [ActionCategory::Magic, ActionCategory::TacticalArts] {
+        let (mut ctx, mut host) = fresh(category, 1);
+        ctx.action_state = ActionState::ActionSeed.as_byte();
+        host.rng_seq = vec![3];
+        step(&mut host, &mut ctx);
+        assert_eq!(ctx.camera_variant, 0, "{category:?}");
+    }
+}
+
+/// The banner byte is cleared at the head of every action, so a tail extended
+/// by one action's level-up cannot leak into the next one.
+#[test]
+fn action_seed_clears_the_level_up_banner_byte() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);
+    ctx.action_state = ActionState::ActionSeed.as_byte();
+    ctx.levelup_banner_element = 0x65;
+    step(&mut host, &mut ctx);
+    assert_eq!(ctx.levelup_banner_element, 0);
+}
+
 #[test]
 fn action_seed_monster_with_ai_flag_calls_monster_setup() {
     let (mut ctx, mut host) = fresh(ActionCategory::Attack, 4);
@@ -719,6 +797,62 @@ fn attack_face_out_of_range_monster_routes_to_windup() {
             ..
         } if to == ActionState::AttackWindup.as_byte()
     ));
+}
+
+#[test]
+fn the_attack_x2_refill_replays_the_stream_once_and_demotes_the_starters() {
+    // Retail's `0x801E39B4..0x801E3A64` arm: a party actor whose character
+    // record carries the War God Icon bit replays the whole action stream
+    // once, with every marked starter demoted from 0x1A to 0x19.
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);
+    ctx.action_state = ActionState::AttackChain.as_byte();
+    host.ability_bits
+        .insert(1, crate::battle_action::WAR_GOD_ATTACK_X2_BIT);
+    host.actors[1].params[0] = 0x1A;
+    host.actors[1].params[1] = 0x27;
+
+    // Stage both bytes; the second step reads the terminator at the new
+    // cursor and takes the refill instead of dropping to recovery.
+    for _ in 0..2 {
+        assert_eq!(step(&mut host, &mut ctx), StepOutcome::Stay);
+        host.actors[1].flag_bits.clear(ActorFlags::ADVANCE_DONE);
+    }
+    assert_eq!(
+        ctx.action_state,
+        ActionState::AttackChain.as_byte(),
+        "the refill keeps the band in the strike loop"
+    );
+    assert_eq!(ctx.attack_x2_pass, 1);
+    assert_eq!(host.actors[1].strike_index, 0, "the cursor is rewound");
+    assert_eq!(
+        host.actors[1].params[0], 0x19,
+        "the marked starter is demoted for the second pass"
+    );
+    assert_eq!(host.actors[1].params[1], 0x27, "the art constant is kept");
+
+    // The second pass runs to the terminator and then drops to recovery -
+    // the counter is no longer zero, so the arm does not fire twice.
+    for _ in 0..2 {
+        step(&mut host, &mut ctx);
+        host.actors[1].flag_bits.clear(ActorFlags::ADVANCE_DONE);
+    }
+    assert_eq!(ctx.action_state, ActionState::AttackRecovery.as_byte());
+    assert_eq!(ctx.attack_x2_pass, 1, "the pair runs exactly twice");
+}
+
+#[test]
+fn without_the_war_god_bit_the_stream_is_not_replayed() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);
+    ctx.action_state = ActionState::AttackChain.as_byte();
+    host.actors[1].params[0] = 0x1A;
+    host.actors[1].params[1] = 0x27;
+    for _ in 0..2 {
+        step(&mut host, &mut ctx);
+        host.actors[1].flag_bits.clear(ActorFlags::ADVANCE_DONE);
+    }
+    assert_eq!(ctx.action_state, ActionState::AttackRecovery.as_byte());
+    assert_eq!(ctx.attack_x2_pass, 0);
+    assert_eq!(host.actors[1].params[0], 0x1A, "the queue is untouched");
 }
 
 #[test]
@@ -1005,6 +1139,66 @@ fn done_cleanup_rearm_gate_for_a_monster_slot_uses_the_record_flag() {
         host.actors[0].anim_rate.get(),
         crate::battle_gauge_rearm::ARM_WIDTH_SEED
     );
+}
+
+/// The `0x50` seed's one override (`0x801E5F2C..0x801E5F3C`): a level-up
+/// banner on the context re-seeds `0x96` in place of the `0x3C` just stored,
+/// for every category arm.
+#[test]
+fn done_cleanup_extends_the_tail_for_a_level_up_banner() {
+    for category in [
+        ActionCategory::Attack,
+        ActionCategory::Magic,
+        ActionCategory::Run,
+    ] {
+        let (mut ctx, mut host) = fresh(category, 1);
+        ctx.action_state = ActionState::DoneCleanup.as_byte();
+        ctx.levelup_banner_element = 0x65;
+        step(&mut host, &mut ctx);
+        assert_eq!(
+            ctx.frame_timer,
+            crate::battle_action::done::DONE_LEVELUP_BANNER_FRAMES,
+            "{category:?}"
+        );
+    }
+}
+
+/// The banner skip (`0x801E6078..0x801E60B4`) is two gates deep: a pad word
+/// AND a countdown already below `0x5B`. Above the threshold the press does
+/// nothing, so the banner is guaranteed its opening frames.
+#[test]
+fn done_fade_down_banner_skip_needs_both_the_pad_and_the_threshold() {
+    use crate::battle_action::done::{DONE_BANNER_SKIP_BELOW, DONE_LEVELUP_BANNER_FRAMES};
+
+    // Pad held, but the countdown is still above the threshold: no skip.
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);
+    host.pad_word = 0x40;
+    ctx.action_state = ActionState::DoneFadeDown.as_byte();
+    ctx.levelup_banner_element = 0x65;
+    ctx.frame_timer = DONE_LEVELUP_BANNER_FRAMES;
+    step(&mut host, &mut ctx);
+    assert_eq!(ctx.frame_timer, DONE_LEVELUP_BANNER_FRAMES - 1);
+
+    // Below the threshold with the pad held: the tail is cut immediately.
+    ctx.frame_timer = DONE_BANNER_SKIP_BELOW;
+    step(&mut host, &mut ctx);
+    assert_eq!(ctx.frame_timer, -1);
+
+    // Same frame, pad idle: the plain decrement.
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);
+    ctx.action_state = ActionState::DoneFadeDown.as_byte();
+    ctx.levelup_banner_element = 0x65;
+    ctx.frame_timer = DONE_BANNER_SKIP_BELOW;
+    step(&mut host, &mut ctx);
+    assert_eq!(ctx.frame_timer, DONE_BANNER_SKIP_BELOW - 1);
+
+    // Same frame, pad held, but no banner: the skip is banner-gated.
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);
+    host.pad_word = 0x40;
+    ctx.action_state = ActionState::DoneFadeDown.as_byte();
+    ctx.frame_timer = DONE_BANNER_SKIP_BELOW;
+    step(&mut host, &mut ctx);
+    assert_eq!(ctx.frame_timer, DONE_BANNER_SKIP_BELOW - 1);
 }
 
 #[test]

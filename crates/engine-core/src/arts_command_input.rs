@@ -45,12 +45,14 @@
 //!   (`801d3a28 lhu v0,0x154(v0)` -> `801d3a30 sh v0,0x6(s6)`); it falls
 //!   back to [`DEFAULT_POOL`] (the pinned input bar's 100-AP span) only
 //!   when no roster is loaded, which retail never is.
-//! - **Open gap.** The art itself is not additionally charged from the
-//!   Spirit gauge, so the swing costs above are the whole price of the
-//!   turn. Retail pays the art body out of `actor[+0x170]` through the
-//!   accumulator `actor[+0x224]`; the mechanism is decoded in
-//!   `arts-command-gauge.md` § What an art costs in AP but is not wired
-//!   here.
+//! - **Charge point, not amount.** The art body *is* charged from the
+//!   Spirit gauge (`World::charge_art_spirit`, off
+//!   [`crate::ap_gauge::arts_turn_spirit_cost`]), but at the commit
+//!   rather than through retail's accumulator `actor[+0x224]`, which the
+//!   battle-action cleanup arm spends once at `0x801E5D74`. Same turn,
+//!   same total; the difference is only observable by reading `+0x170`
+//!   mid-action. The actor's `0x800` halving flag has no carrier here, so
+//!   the full-price multiplier is the one that runs.
 //!
 //! Two entries previously disclosed here as engine conveniences - "Cross
 //! confirms early" and "Circle backs out" - were **not** divergences: both

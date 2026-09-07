@@ -1028,16 +1028,17 @@ Reads:
 
 Lines 2730-2774. The pattern:
 
-```c
-iVar4 = FUN_80056798();   // RNG (PsyQ-shape rand, see audio.md)
-roll = iVar4 % (caster_accuracy_at_+0x168 + target_evasion_at_+0x168);
-if (target_evasion < roll) {
-    target.status |= 4;            // mark hit
-    if (target.action_category == 1 && target.cooldown != 0) {
-        FUN_800421d4(item_id, 1);  // consume queued item
-    }
-    target.action_category = 0;    // cancel queued action
-}
+```text
+0x80041C90  jal   0x80056798                  ; rand()
+0x80041CC4  lhu   v1,0x168(attacker)          ; attacker INT
+0x80041CC8  lhu   a0,0x168(target)            ; target INT
+0x80041CD4  div   v0,(v1 + a0) ; mfhi v1      ; roll = rand % (att + tgt)
+0x80041CE0  slt   a0,a0,v1 ; beq a0,zero,<no> ; lands when tgt < roll
+0x80041CEC  lhu/ori 0x4/sh 0x16e(target)      ; +0x16E |= 4          (Stone)
+0x80041D04  lbu   v1,0x1de(target) ; == 1?    ; a queued Item action
+0x80041D14  lhu   v0,0x16c(target) ; != 0?    ; ... not yet spent
+0x80041D28  jal   0x800421d4  (a0=+0x1DF,a1=1); refund the reserved item
+0x80041D4C  sb    zero,0x1de(target)          ; cancel the queued action
 ```
 
 `+0x168` is the **accuracy/evasion** halfword in the actor record (one stat field shared by both rolls - caster's at attacker actor, target's at defender actor). The roll is `rand % (caster + target)` so the **success probability** is `caster / (caster + target)`. Standard JRPG-flat-roll model.
@@ -1047,7 +1048,10 @@ target's `+0x16E` bit `0x4`, consumes a queued item, and clears the target's
 pending action category - it stuns the target out of its own turn. The routine
 that resolves a melee hit, [`FUN_801EC3E4`](#the-melee-roll-pair-and-the-underdog-rewrite),
 contains **no read of `+0x168` at all**, so a physical swing does not consult
-this roll and does not miss on it. Retail's "Miss" on a normal attack is the
+this roll and does not miss on it. The `+0x16C` the refund tests is the
+**initiative key**, not a cooldown - `0` means "has acted this round / dead"
+(see [the initiative seeder](#initiative-key-seeding-fun_801da780)), so the refund fires only
+while the queued Item action is still owed a turn. Retail's "Miss" on a normal attack is the
 limb-vs-height mismatch (an LDF-target swing at a floating enemy, a UDF-target
 swing at a short one - see `legaia_art::power`), a size-class gate the port does
 not model yet.
@@ -1271,10 +1275,31 @@ target's own `+0x168` (`div`/`mfhi`/`slt`/`beq` at `0x80041CD4..0x80041CE4`).
 Its success arm goes on to clear the target's `+0x1DE` at `0x80041D4C`, which
 is the second half of the capture above - so the capture and the routine are
 the same event, and the sibling `ori 0x1000` (Curse) arm sits at `0x80041EE8`
-in the same band. `see ghidra/scripts/funcs/800402f4.txt`. This arm is
-**unported** (the port models the roll as
-`battle_formulas::accuracy_roll` and applies no bit), which is why nothing in
-play petrifies a party slot. While the bit
+in the same band. `see ghidra/scripts/funcs/800402f4.txt`.
+
+The two arms are reached through the item/effect applier's first-level jump
+table at `0x80014FA0` (132 entries, indexed by the class byte `a0`, guard
+`sltiu v0,v1,0x84` at `0x80040448`): **class `9` is Stone** and **class `10`
+is Curse**. Each arm has two bodies with identical stores - a single-target
+one gated `sltiu v0,s0,0x3` (party seats only) and an all-party loop taken
+when the target index is `8`.
+
+**No item reaches either arm.** Sweeping the 130 records of the
+[item-effect descriptor table](../formats/item-effect-table.md) (`0x800752C0`,
+`+0` = class) turns up classes `0`-`8`, `11`-`13` and the `0x7E`-`0x83`
+tail - and **no** record with class `9` or `10`. The two arms are therefore
+reachable only from the streamed capture-class cast modules, which pass the
+class as a call literal, which is why the pairing of spell to arm has to be
+inferred from the spell records rather than read off a table.
+
+**Both arms are ported and wired**, at `World::apply_enemy_agl_status`
+(`engine-core::world::battle::monster_ai`), which the monster-cast fold
+`settle_cast_band` calls; the roll itself is
+`vm::status_effects::agl_status_inflict_roll` and `accuracy_roll` keeps the
+same arithmetic as the shared kernel. Stone's asymmetric tail - the item
+refund `FUN_800421D4(+0x1DF, 1)` under `+0x1DE == 1 && +0x16C != 0`, then the
+unconditional `+0x1DE = 0` - is `World::stone_cancels_queued_action`; the
+Curse arm makes neither store. While the bit
 is set the render/update pass `FUN_8004ce2c` (`8004ce2c.txt:1011-1042`) grays
 the afflicted actor's **full sprite** - each texel recoloured to its luminance
 `(r+g+b) >> 2` (5-bit channels) and re-stamped via `MoveImage`.

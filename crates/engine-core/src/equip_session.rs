@@ -44,6 +44,92 @@ pub const REMOVE_ROW_ID: u8 = 0;
 /// does not have - so footwear is engine slot `4`, not `3`.
 pub const ARMAMENT_ENGINE_SLOTS: [usize; 4] = [0, 1, 2, 4];
 
+/// Per-character weapon equip byte, retail's `DAT_8007B42C` halfwords
+/// (`2, 3, 2`): Vahn's and Gala's weapon lives in equip byte `2`, Noa's in
+/// byte `3`.
+pub const RETAIL_WEAPON_EQUIP_BYTE: [i16; 3] = [2, 3, 2];
+
+/// Engine [`EquipSlot`] index each retail `+0x196` equip byte maps to.
+///
+/// Retail's array is `[body, head, weapon, weapon, footwear, goods x3]`;
+/// the engine's is weapon-first with a Hand Guard row retail has no byte
+/// for, so bytes `2` and `3` (the two per-character weapon bytes) both fold
+/// onto engine slot `0` and engine slot `3` has no retail byte at all.
+pub const RETAIL_EQUIP_BYTE_TO_ENGINE_SLOT: [u8; 8] = [2, 1, 0, 0, 4, 5, 6, 7];
+
+/// Engine [`EquipSlot`] index the engine's Hand Guard row occupies. It has
+/// no retail counterpart, so the retail applier cannot resolve a
+/// destination for it and the browse row stands.
+pub const ENGINE_ONLY_HAND_GUARD_SLOT: u8 = 3;
+
+/// The retail equip-screen slot row (`FUN_801E5A08`'s third argument) an
+/// engine [`EquipSlot`] index is confirmed from, or `None` for the engine's
+/// own Hand Guard row.
+///
+/// Retail's rows are `weapon, helmet, armor, boot, goods x3`; rows `0..3`
+/// are the armaments whose destination the applier resolves from the item's
+/// equip class, and rows `>= 4` are the Goods rows it writes verbatim at
+/// `row + 1`.
+pub fn retail_slot_row_for_engine_slot(engine_slot: u8) -> Option<i32> {
+    match engine_slot {
+        0 => Some(0), // weapon
+        1 => Some(1), // helmet
+        2 => Some(2), // body armour
+        4 => Some(3), // footwear
+        5..=7 => Some(engine_slot as i32 - 1),
+        _ => None, // Hand Guard - engine-only row
+    }
+}
+
+/// The equipment-record `+7` slot bits for a disc equip category, i.e. the
+/// inverse of `legaia_asset::equip_stats::EquipBonus::slot`.
+fn slot_bits_of_category(cat: legaia_asset::equip_stats::EquipSlot) -> u8 {
+    use legaia_asset::equip_stats::EquipSlot as Disc;
+    match cat {
+        Disc::Body => 0x00,
+        Disc::Head => 0x20,
+        Disc::Weapon => 0x40,
+        Disc::Footwear => 0x60,
+    }
+}
+
+/// Bag + audio bindings the ported per-slot applier
+/// ([`legaia_engine_vm::dev_equip_commit::commit_equip`]) needs, backed by
+/// an [`EquipSession`]'s own inventory map.
+///
+/// Retail's bag index space is a slot index into the 256-entry bag; the
+/// engine's bag is keyed by item id, so this adapter uses the id itself as
+/// the index. That is injective over the id space and can never collide
+/// with the miss sentinel, which is `0x100` and therefore out of `u8` range.
+struct SessionEquipHost<'a> {
+    inventory: &'a mut HashMap<u8, u8>,
+    /// The cue the applier played, if it reached its tail.
+    sfx: Option<u8>,
+}
+
+impl legaia_engine_vm::dev_equip_commit::EquipCommitHost for SessionEquipHost<'_> {
+    fn find_in_bag(&self, item_id: u8) -> u16 {
+        match self.inventory.get(&item_id) {
+            Some(qty) if *qty > 0 => item_id as u16,
+            _ => legaia_engine_vm::dev_equip_commit::BAG_MISS,
+        }
+    }
+
+    fn take_from_bag(&mut self, bag_index: u16, qty: u8) {
+        if let Some(have) = self.inventory.get_mut(&(bag_index as u8)) {
+            *have = have.saturating_sub(qty);
+        }
+    }
+
+    fn give_to_bag(&mut self, item_id: u8, qty: u8) {
+        *self.inventory.entry(item_id).or_insert(0) += qty;
+    }
+
+    fn play_sfx(&mut self, cue: u8) {
+        self.sfx = Some(cue);
+    }
+}
+
 /// One equippable item the player can choose from in the browse phase.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EquipItem {
@@ -123,6 +209,11 @@ pub enum EquipEvent {
     /// Best Equipment found nothing to change - retail's buzz `0x23`
     /// (`0x801D9B98`).
     BestEquipmentUnchanged,
+    /// The per-slot applier played its confirm cue
+    /// (`FUN_80035BD0(0x24)` at the tail of `FUN_801E5A08`). Hosts turn
+    /// this into a one-shot SFX; it is emitted only on a commit that
+    /// actually wrote the record.
+    ConfirmSfx { cue: u8 },
 }
 
 /// Phase tag for `EquipEvent::CursorMoved`. Avoids needing a clone of
@@ -520,19 +611,163 @@ impl EquipSession {
         }
     }
 
-    /// Commit the swap for `slot → item_id`. Decrements the old item's
-    /// inventory count if non-zero; bumps the previous slot occupant's
-    /// inventory count.
-    fn commit(&mut self, slot: u8, item_id: u8) {
-        let removed = self.record.equip[slot as usize];
-        // Inventory swap: decrement new item, restore old.
-        if let Some(qty) = self.inventory.get_mut(&item_id) {
-            *qty = qty.saturating_sub(1);
+    /// The equip byte the retail per-slot applier would write this pick
+    /// into, expressed as an engine [`EquipSlot`] index.
+    ///
+    /// `FUN_801E5A08` does **not** trust the row the player confirmed from:
+    /// for the four armament rows it re-derives the destination from the
+    /// item's own equipment-record `+7` class (`0x801E5A58..0x801E5AE4`),
+    /// and only the Goods rows (`slot_arg >= 4`) are written verbatim at
+    /// `slot_arg + 1`. The engine's Hand Guard row has no retail
+    /// counterpart, and without disc restrictions there is no `+7` byte to
+    /// read; both cases keep the browse row.
+    ///
+    /// REF: FUN_801E5A08
+    pub fn retail_destination_slot(&self, browse_slot: u8, item_id: u8) -> u8 {
+        if browse_slot == ENGINE_ONLY_HAND_GUARD_SLOT {
+            return browse_slot;
         }
+        let Some(row) = retail_slot_row_for_engine_slot(browse_slot) else {
+            return browse_slot;
+        };
+        if row >= 4 {
+            // Goods: retail writes `row + 1`, which is this engine slot.
+            return browse_slot;
+        }
+        let Some(info) = self.restrictions.as_ref() else {
+            return browse_slot;
+        };
+        let Some(cat) = info.category(item_id) else {
+            return browse_slot;
+        };
+        let byte = legaia_engine_vm::world_map_overlay::resolve_equip_slot(
+            slot_bits_of_category(cat),
+            self.active_party_slot as usize,
+            &RETAIL_WEAPON_EQUIP_BYTE,
+        );
+        RETAIL_EQUIP_BYTE_TO_ENGINE_SLOT
+            .get(byte)
+            .copied()
+            .unwrap_or(browse_slot)
+    }
+
+    /// Commit the swap for `slot → item_id` through the retail per-slot
+    /// applier.
+    ///
+    /// The destination is [`Self::retail_destination_slot`], not the browse
+    /// row, and the bag / refund / confirm-cue half runs through the ported
+    /// body [`legaia_engine_vm::dev_equip_commit::commit_equip`] so the
+    /// field-menu equip screen and the dev menu's `EQUIP` row share one
+    /// kernel. A pick the bag cannot pay for leaves the record untouched
+    /// and emits [`EquipEvent::InvalidConfirm`], which is retail's
+    /// `return 0` arm.
+    ///
+    /// PORT: FUN_801E5A08
+    fn commit(&mut self, slot: u8, item_id: u8) {
+        let weapon_byte = RETAIL_WEAPON_EQUIP_BYTE
+            .get(self.active_party_slot as usize)
+            .copied()
+            .unwrap_or(2) as usize;
+        let Some(row) = retail_slot_row_for_engine_slot(slot) else {
+            // The engine's Hand Guard row has no retail equip byte, so the
+            // applier has no destination to resolve. Commit it in engine
+            // space with the applier's own order of effects.
+            self.commit_engine_only(slot, item_id);
+            return;
+        };
+        let bits = self
+            .restrictions
+            .as_ref()
+            .and_then(|info| info.category(item_id))
+            .map(slot_bits_of_category);
+        let Some(bits) = bits else {
+            // No disc `+7` byte for this id: retail's class routing has no
+            // input, so the browse row stands.
+            self.commit_engine_only(slot, item_id);
+            return;
+        };
+        // Retail's applier addresses the record's own `+0x196` window, so
+        // stage the eight bytes in retail order, run the ported body over
+        // them, and fold the result back into the engine's slot order. The
+        // Hand Guard byte has no retail home and is carried across untouched.
+        let base = legaia_engine_vm::dev_equip_commit::EQUIP_SLOT_BASE;
+        let mut record = vec![0u8; base + 8];
+        {
+            let win = &mut record[base..];
+            win[0] = self.record.equip[2];
+            win[1] = self.record.equip[1];
+            win[weapon_byte] = self.record.equip[0];
+            win[4] = self.record.equip[4];
+            win[5] = self.record.equip[5];
+            win[6] = self.record.equip[6];
+            win[7] = self.record.equip[7];
+        }
+        let mut host = SessionEquipHost {
+            inventory: &mut self.inventory,
+            sfx: None,
+        };
+        let committed = legaia_engine_vm::dev_equip_commit::commit_equip(
+            &mut host,
+            &mut record,
+            item_id,
+            self.active_party_slot as usize,
+            row,
+            bits,
+            &RETAIL_WEAPON_EQUIP_BYTE,
+        );
+        let sfx = host.sfx;
+        let Some(committed) = committed else {
+            // Retail's `return 0`: the bag scan missed, and the record, the
+            // bag and the audio are all untouched.
+            self.events.push(EquipEvent::InvalidConfirm);
+            return;
+        };
+        {
+            let win = &record[base..];
+            self.record.equip[2] = win[0];
+            self.record.equip[1] = win[1];
+            self.record.equip[0] = win[weapon_byte];
+            self.record.equip[4] = win[4];
+            self.record.equip[5] = win[5];
+            self.record.equip[6] = win[6];
+            self.record.equip[7] = win[7];
+        }
+        let slot = RETAIL_EQUIP_BYTE_TO_ENGINE_SLOT
+            .get(committed.slot)
+            .copied()
+            .unwrap_or(slot);
+        let removed = committed.refunded.unwrap_or(0);
+        self.finish_commit(slot, removed, item_id, sfx);
+    }
+
+    /// Commit a swap the retail applier cannot address - the engine's own
+    /// Hand Guard row, and any pick whose `+7` class byte is not on the disc
+    /// (a synthetic session). Same order of effects as
+    /// [`legaia_engine_vm::dev_equip_commit::commit_equip`]: take one from
+    /// the bag, refund the prior occupant, write, cue.
+    fn commit_engine_only(&mut self, slot: u8, item_id: u8) {
+        let owned = self.inventory.get(&item_id).copied().unwrap_or(0);
+        if owned == 0 {
+            self.events.push(EquipEvent::InvalidConfirm);
+            return;
+        }
+        *self.inventory.entry(item_id).or_insert(0) -= 1;
+        let removed = self.record.equip[slot as usize];
         if removed != 0 {
             *self.inventory.entry(removed).or_insert(0) += 1;
         }
         self.record.equip[slot as usize] = item_id;
+        self.finish_commit(
+            slot,
+            removed,
+            item_id,
+            Some(legaia_engine_vm::dev_equip_commit::EQUIP_SFX_CUE),
+        );
+    }
+
+    /// Shared tail of both commit paths: re-aggregate, park the session on
+    /// `Done`, and emit the confirm events.
+    fn finish_commit(&mut self, slot: u8, removed: u8, item_id: u8, sfx: Option<u8>) {
         self.preview_stats = compute_battle_stats(
             &self.record,
             &self.equipment,
@@ -549,6 +784,9 @@ impl EquipSession {
             removed,
             added: item_id,
         });
+        if let Some(cue) = sfx {
+            self.events.push(EquipEvent::ConfirmSfx { cue });
+        }
     }
 
     /// Test-only helper: install an `ItemModifier` that targets a slot

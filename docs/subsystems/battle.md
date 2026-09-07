@@ -1804,6 +1804,8 @@ This is the canonical "monster spawn" path. Engine port reads the record once, p
 | `+0x16` | u16 | **LDF** (lower defense) → actor `+0x160/+0x162` (defender defense, low facet). |
 | `+0x18` | u16 | **INT** → actor `+0x168/+0x16A` (magical damage / magic defense in the summon/arts kernel + the accuracy/evasion seed; the bestiary INT column. Meth962: INT "affects your magical damage and defense against other magical spells"). |
 | `+0x1A` | u16 | **SPD** → actor `+0x164/+0x166` (turn-order initiative seed; buffable). |
+| `+0x1C` | u8 | **readef animation-group index** (`0..=25`). Read **record-direct** through the same `0x801C9348` pointer table, never copied to the actor. The per-turn initiative scheduler `FUN_801DABA4` turns it into the side-band streaming applier's base slot - `base = 3 * group`, then `ctx+0x277 = base` (`overlay_battle_action_801daba4.txt` `0x801db098` / `0x801db0c8`) - so the group names three `readef.DAT` slots. The AI spell picker `FUN_801E9FD4` reads the same byte as a monster-family tag (`0x801ebb90`: `group == 0x17` selects a hardcoded action id). Census + group semantics in [`summon-readef.md`](../formats/summon-readef.md#which-monsters-name-which-readef-group). Parser: `MonsterRecord::readef_group`. |
+| `+0x1D` | u8 | **Element id** (`0..=7`: earth / water / fire / wind / thunder / light / dark / neutral). Read record-direct through `0x801C9348` by the affinity scale `FUN_801DD864` (`overlay_battle_action_801dd864.txt` `0x801dd8dc`), never copied to the actor. Parser: `MonsterRecord::element`; matches `legaia_asset::element_affinity::Element`. |
 | `+0x1F` | u8 | **Size class** - body bulk. Read **record-direct** through the same `0x801C9348` pointer table, never copied to the actor: the battle camera's per-action framing `FUN_801F0348` computes `ctx+0x6D0 = clamp(size << 7, 0x0C00, 0x1400)` and the enemy stager `FUN_800513F0` writes `actor+0x58 = size << 5`. Spans `14..=48` across the roster with no zero and no outlier, and it tracks model bulk rather than any stat - Lapis is 64800 HP at size class `20` against Koru's `48`, so a byte tracking HP could not produce the column. Parser: `MonsterRecord::size_class`. |
 | `+0x21` | u8[3] | **Magic-attack ids** (`+0x21..+0x23`): up to three **global** spell ids the enemy casts. A slot is live when its value is `> 1`. The AI spell picker `FUN_801E9FD4` (`overlay_0898`) reads `record[0x21 + slot]`, writes it into the live actor at `+0x1DF`, and the battle-action SM names it via `&DAT_800754D0 + id*0xC` (`0x27` → `Tail Fire`). These global ids are **distinct** from the local `+0x4C` entry ids (which only gate the AGL cost); they are the names that appear on screen. Parser: `MonsterRecord::magic_attacks` + `legaia_asset::spell_names`. |
 | `+0x3E` | u8 | **Seru id** (`0` = not capturable). Read record-direct through `0x801C9348` by the [killing-blow capture roll](#the-retail-capture-roll-fun_801ec3e4); on success it is written to battle ctx `+0x269`, and the granted spell is global id `seru_id + 0x80` (Gimard's `1` → `0x81`). 63 records carry Seru ids `0x01..=0x15`. Parser: `MonsterRecord::seru_id`. |
@@ -2616,11 +2618,14 @@ byte `*(_DAT_8007BD24)[0]`:
    second fire re-grey the original instead of compounding, exactly as retail
    does by never writing `ctx[+0x894]`.
 
-   Two parts of the pass stay out of the port. The Rot arm's per-character
+   One part of the pass stays out of the port: the Rot arm's per-character
    index window (`DAT_80078630`) has no parser in any crate, so only the
-   Stone arm is ported; and the recolour cannot yet be *triggered* in play,
-   because the port has no monster-side `enemy_effect` source - status flows
-   party -> monster only, and these rows are the party's.
+   Stone arm is ported. The recolour **is** reachable in play - the
+   monster-side source is `World::apply_enemy_agl_status`, the port of
+   `FUN_800402F4`'s class-9 / class-10 arms (see
+   [battle-formulas.md](battle-formulas.md#status-application-the-art--move-record-status-byte)),
+   which the monster-cast fold calls and which lands the `+0x16E` bit on a
+   party seat.
 
 Calls the actor-spawn/move-VM invoker `FUN_80021B04` and helpers
 `FUN_8004FE5C` / `FUN_800583C8` / `FUN_80031D00` / RNG `FUN_80056798`.

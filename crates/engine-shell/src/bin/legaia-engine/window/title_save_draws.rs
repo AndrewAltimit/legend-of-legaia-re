@@ -3,21 +3,24 @@
 use super::*;
 
 impl PlayWindowApp {
-    /// Build the per-strip [`legaia_engine_render::SpriteDraw`] list for
+    /// Build the per-quad [`legaia_engine_render::SpriteDraw`] list for
     /// the active publisher logo.
     ///
-    /// PROKION and SCEA are stored as vertically-packed sprite atlases
-    /// (see [`legaia_engine_core::publisher_logos::STRIPS_PER_LOGO`]);
-    /// retail unfolds them by drawing the `N` strips side-by-side. We
-    /// compute one [`SpriteDraw`] per strip, all sharing the session's
-    /// current alpha, then integer-scale + centre the unfolded layout.
-    /// Returns an empty vec when boot-UI isn't `PublisherLogos` or the
-    /// atlas wasn't uploaded.
+    /// The layout is not computed here: `LOGO_QUADS` carries retail's
+    /// own per-logo source rects and destinations in the 640×480 stage
+    /// the boot pass runs in (`FUN_801CE9C0` selects it with
+    /// `FUN_8001DAF8(0x400)`). This routine only letterboxes that stage
+    /// into the surface. PROKION and SCEA are vertically packed in their
+    /// TIMs and come back as two quads each; WARNING comes back empty,
+    /// because no site in PROT 0895 draws it. Returns an empty vec when
+    /// boot-UI isn't `PublisherLogos` or the atlas wasn't uploaded.
     pub(super) fn publisher_logo_sprite_draws(
         &self,
         surface_w: u32,
         surface_h: u32,
     ) -> Vec<legaia_engine_render::SpriteDraw> {
+        use legaia_engine_core::publisher_logos::STAGE;
+
         let BootUiState::PublisherLogos(session) = &self.boot_ui else {
             return Vec::new();
         };
@@ -28,50 +31,44 @@ impl PlayWindowApp {
         if idx >= legaia_engine_core::publisher_logos::LOGO_COUNT {
             return Vec::new();
         }
-        let (sx, sy, sw, sh) = assets.rects[idx];
-        if sw == 0 || sh == 0 {
+        let quads = session.current_quads();
+        if quads.is_empty() {
             return Vec::new();
         }
-        let (cols, rows) = legaia_engine_core::publisher_logos::STRIP_GRID[idx];
-        let cols = cols.max(1);
-        let rows = rows.max(1);
-        let strips_total = cols * rows;
-        let strip_h_src = sh / strips_total;
-        if strip_h_src == 0 {
+        // Where this logo's TIM sits inside the stacked boot atlas.
+        let (atlas_x, atlas_y, atlas_w, atlas_h) = assets.rects[idx];
+        if atlas_w == 0 || atlas_h == 0 {
             return Vec::new();
         }
-        let unfolded_w = sw * cols;
-        let unfolded_h = strip_h_src * rows;
-        // Integer-multiple up-scale that fits inside the surface, capped
-        // at 4× to keep logos crisp at typical 960×720. `max(1)` falls
-        // back to native size (and accepts clipping) for layouts wider
-        // than the surface.
-        let scale_w = surface_w / unfolded_w.max(1);
-        let scale_h = surface_h / unfolded_h.max(1);
-        let scale = scale_w.min(scale_h).clamp(1, 4);
-        let strip_w_dst = sw * scale;
-        let strip_h_dst = strip_h_src * scale;
-        let dst_w_total = unfolded_w * scale;
-        let dst_h_total = unfolded_h * scale;
-        let dst_x0 = (surface_w as i32 - dst_w_total as i32) / 2;
-        let dst_y0 = (surface_h as i32 - dst_h_total as i32) / 2;
+        // Fit the whole retail stage into the surface, integer-scaled so
+        // the logos stay crisp, then centre it. `max(1)` keeps a
+        // surface smaller than the stage rendering at native size.
+        let scale = (surface_w / STAGE.0).min(surface_h / STAGE.1).max(1);
+        let stage_x0 = (surface_w as i32 - (STAGE.0 * scale) as i32) / 2;
+        let stage_y0 = (surface_h as i32 - (STAGE.1 * scale) as i32) / 2;
         let alpha = session.alpha().clamp(0.0, 1.0);
         let color = [1.0, 1.0, 1.0, alpha];
-        // Source strips are stored column-major: source strip index
-        // `s = c * rows + r` lands at output (col c, row r).
-        let mut out = Vec::with_capacity(strips_total as usize);
-        for r in 0..rows {
-            for c in 0..cols {
-                let s = c * rows + r;
-                let src_y = sy + s * strip_h_src;
-                let dst_x = dst_x0 + (c * strip_w_dst) as i32;
-                let dst_y = dst_y0 + (r * strip_h_dst) as i32;
-                out.push(legaia_engine_render::SpriteDraw {
-                    dst: (dst_x, dst_y, strip_w_dst, strip_h_dst),
-                    src: (sx, src_y, sw, strip_h_src),
-                    color,
-                });
+        let mut out = Vec::with_capacity(quads.len());
+        for q in quads {
+            let (sx, sy, sw, sh) = q.src;
+            // Clip the source rect to the decoded TIM - a descriptor's
+            // w/h can name the last row of a strip that is not there.
+            let sw = sw.min(atlas_w.saturating_sub(sx));
+            let sh = sh.min(atlas_h.saturating_sub(sy));
+            if sw == 0 || sh == 0 {
+                continue;
             }
+            let (dx, dy, dw, dh) = q.dst;
+            out.push(legaia_engine_render::SpriteDraw {
+                dst: (
+                    stage_x0 + dx * scale as i32,
+                    stage_y0 + dy * scale as i32,
+                    dw * scale,
+                    dh * scale,
+                ),
+                src: (atlas_x + sx, atlas_y + sy, sw, sh),
+                color,
+            });
         }
         out
     }

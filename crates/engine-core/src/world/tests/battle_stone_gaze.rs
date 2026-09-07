@@ -125,3 +125,104 @@ fn stone_guard_blocks_the_roll_and_curse_moves_apply_curse() {
     w.apply_enemy_agl_status(3, 0x3C, &[4]);
     assert!(w.status_effects.statuses(4).is_empty());
 }
+
+/// The class-9 arm's tail, which the class-10 one does not have
+/// (`0x80041CFC..0x80041D4C`): a landed Stone hands back the item the target
+/// had reserved for its own turn (`+0x1DE == 1` and the initiative key
+/// `+0x16C` still live) and then clears the queued category outright. HP is
+/// untouched throughout - the arm makes no damage store.
+#[test]
+fn stone_refunds_the_reserved_item_and_cancels_the_queued_turn() {
+    use legaia_engine_vm::battle_action::ActionCategory;
+
+    let mut w = stone_world();
+    const HEALING_LEAF: u8 = 0x01;
+    w.inventory.insert(HEALING_LEAF, 2);
+    // Party slot 0 has an Item action queued and has not acted yet.
+    w.actors[0].battle.action_category = ActionCategory::Item.as_byte();
+    w.actors[0].battle.params[0] = HEALING_LEAF;
+    w.actors[0].battle.init_key = 40;
+    let hp_before = w.actors[0].battle.hp;
+
+    w.apply_enemy_agl_status(3, 0x3C, &[0]);
+
+    assert!(
+        w.status_effects
+            .statuses(0)
+            .iter()
+            .any(|s| s.kind == StatusKind::Stone),
+        "the roll landed (the fixture's pass line is zero)"
+    );
+    assert_eq!(
+        w.actors[0].battle.hp, hp_before,
+        "no damage store in the arm"
+    );
+    assert_eq!(
+        w.actors[0].battle.action_category, 0,
+        "`sb zero,0x1de` - the queued turn is cancelled"
+    );
+    assert_eq!(
+        w.inventory.get(&HEALING_LEAF).copied(),
+        Some(3),
+        "`FUN_800421D4(+0x1DF, 1)` put the reserved item back"
+    );
+}
+
+/// The refund is gated twice, and each gate alone suppresses it while the
+/// `+0x1DE` clear still fires: a non-Item category has nothing reserved, and
+/// a spent initiative key (`+0x16C == 0`) means the turn already happened.
+#[test]
+fn stone_refund_is_gated_on_the_item_category_and_a_live_initiative_key() {
+    use legaia_engine_vm::battle_action::ActionCategory;
+    const HEALING_LEAF: u8 = 0x01;
+
+    // Category 3 (Attack): nothing to refund.
+    let mut w = stone_world();
+    w.inventory.insert(HEALING_LEAF, 2);
+    w.actors[0].battle.action_category = 3;
+    w.actors[0].battle.params[0] = HEALING_LEAF;
+    w.actors[0].battle.init_key = 40;
+    w.apply_enemy_agl_status(3, 0x3C, &[0]);
+    assert_eq!(w.inventory.get(&HEALING_LEAF).copied(), Some(2));
+    assert_eq!(w.actors[0].battle.action_category, 0);
+
+    // Item, but the key is spent.
+    let mut w = stone_world();
+    w.inventory.insert(HEALING_LEAF, 2);
+    w.actors[0].battle.action_category = ActionCategory::Item.as_byte();
+    w.actors[0].battle.params[0] = HEALING_LEAF;
+    w.actors[0].battle.init_key = 0;
+    w.apply_enemy_agl_status(3, 0x3C, &[0]);
+    assert_eq!(w.inventory.get(&HEALING_LEAF).copied(), Some(2));
+    assert_eq!(w.actors[0].battle.action_category, 0);
+}
+
+/// Curse (class 10) shares the roll but not the tail - its arm is one store
+/// (`0x80041EE0..0x80041EEC`), so a cursed actor keeps its queued turn and
+/// its reserved item.
+#[test]
+fn curse_leaves_the_queued_turn_and_the_item_alone() {
+    use legaia_engine_vm::battle_action::ActionCategory;
+    const HEALING_LEAF: u8 = 0x01;
+
+    let mut w = stone_world();
+    w.inventory.insert(HEALING_LEAF, 2);
+    w.actors[0].battle.action_category = ActionCategory::Item.as_byte();
+    w.actors[0].battle.params[0] = HEALING_LEAF;
+    w.actors[0].battle.init_key = 40;
+
+    w.apply_enemy_agl_status(3, 0x53, &[0]);
+
+    assert!(
+        w.status_effects
+            .statuses(0)
+            .iter()
+            .any(|s| s.kind == StatusKind::Curse)
+    );
+    assert_eq!(
+        w.actors[0].battle.action_category,
+        ActionCategory::Item.as_byte(),
+        "Curse does not clear +0x1DE"
+    );
+    assert_eq!(w.inventory.get(&HEALING_LEAF).copied(), Some(2));
+}

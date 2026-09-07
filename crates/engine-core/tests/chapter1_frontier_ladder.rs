@@ -320,7 +320,14 @@ const EXIT_IDLE_TICKS: usize = 4;
 
 /// Exit sites tried per scene before the rung is called failed. Sites are
 /// tried in `.MAP` trigger order and the first success wins.
-const EXIT_SITES_TRIED: usize = 4;
+///
+/// Four was a sample, not a bound: `uru` carries several `urudre*` doors
+/// ahead of the `map03` door Part E finds at trigger position 64 of its 118,
+/// so the rung reported "nothing fired" about doors it never tried. A site
+/// that fires ends the loop, and a quiet tile returns in a handful of ticks
+/// ([`run_to_transition`] leaves as soon as the world goes idle), so the
+/// ceiling costs nothing on the scenes whose first door works.
+const EXIT_SITES_TRIED: usize = 16;
 
 /// Walk-on tiles swept per scene in Part E. Sized to cover **every** gate-1
 /// tile the five carry - the largest list is `urudre2`'s 186, and `uru`'s exit
@@ -336,7 +343,14 @@ const RECORD_RUN_TICKS: usize = EXIT_TICKS;
 
 /// Records per scene in Part E2 that may be re-run on the deep budget - the
 /// ones still executing when the ordinary budget expired.
-const DEEP_RERUNS_PER_SCENE: usize = 6;
+///
+/// Sized to cover every partition-2 record a door scene carries, not a
+/// sample of them: `jouine` has 18 and the one that reaches its exit is
+/// `P2[16]`, so a budget of six was spent on its predecessors and the record
+/// the part exists to find never got the deep run. A record that goes idle
+/// inside the ordinary budget never spends one of these, so the ceiling costs
+/// nothing on the quiet records.
+const DEEP_RERUNS_PER_SCENE: usize = 24;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Mark {
@@ -754,8 +768,16 @@ fn try_exits(
             break;
         }
         step_onto_tile(host, site.overworld_x, site.overworld_z);
-        let entered =
-            run_to_transition(host, EXIT_TICKS).and_then(|f| f.scene().map(str::to_string));
+        // Two budgets, the same shape Part E2 uses: every site gets the
+        // ordinary one, and only a site whose record is STILL RUNNING when it
+        // expires earns the deep one. The door records that need it are the
+        // boss-cutscene-length tails (`urudre3` `P2[0]` alone is ~14.9k
+        // ticks); a tile that spawned nothing has already returned.
+        let mut fired_by = run_to_transition(host, EXIT_TICKS);
+        if fired_by.is_none() && !world_idle(host) {
+            fired_by = run_to_transition(host, DEEP_EXIT_TICKS);
+        }
+        let entered = fired_by.and_then(|f| f.scene().map(str::to_string));
         let on_entry_tile = entered.is_some() && {
             let (x, z) = player_xz(host);
             let (tx, tz) = tile_of(x, z);
@@ -1445,12 +1467,13 @@ fn part_d_which_decoder_sees_each_of_the_five_doors() {
 /// tile is synthetic, and the pad pulse that pages the record's conversation
 /// stands in for a player pressing Confirm.
 ///
-/// Four of the five leave, each to the destination the disc names:
+/// All five leave, each to the destination the disc names:
 ///
 /// | scene | band | record | tail | lands in |
 /// |---|---|---|---|---|
 /// | `uru` | `(36..39, 5)` (`.PCH` rows 23..26) | `P2[42]` | `0x3F` | `map03` |
 /// | `urudre1` | `(35..37, 22..24)` | `P2[2]` | `0x3F` | `uru` |
+/// | `urudre2` | gate-1 band -> `P2[9]` | `0x3F` | `map01` |
 /// | `urudre3` | `(51, 90)` | `P2[0]` | `0x3F` | `uru` |
 /// | `jouine` | `(17, 17..19)` (`.PCH` rows 3..5) | `P2[16]` | `4C E2 08` | `town0e` (FMV 8) |
 ///
@@ -1461,8 +1484,8 @@ fn part_d_which_decoder_sees_each_of_the_five_doors() {
 /// waits 240 + 60 + 60 frames before its `0x3F`; and `jouine`'s tail is not a
 /// `0x3F` at all, so watching only for `SceneEntered` could never see it.
 ///
-/// `urudre2` is the exception and it is a **port** limit, not a disc one - see
-/// the `NOT EXITABLE HEADLESS` note on its row below.
+/// `urudre2` joins them through `P2[9]`'s tail `0x3F` -> `map01`; the row
+/// below records the op-`0x45` misreading that used to keep it in.
 #[test]
 fn part_e_the_five_leave_through_their_pch_bands() {
     let Some(mut host) = open_host() else {
@@ -1501,18 +1524,15 @@ fn part_e_the_five_leave_through_their_pch_bands() {
         // band (35..37, 22..24) -> P2[2] -> `0x3F` uru, behind 360 frames of
         // authored WaitFrames.
         ("urudre1", Some("uru")),
-        // NOT EXITABLE HEADLESS: `urudre2`'s only gate-1 record is `P2[9]`, a
-        // 4703-byte King Nebular dream whose `0x3F` -> `map01` is its very tail
-        // (body `0x124C`). The port's timeline replays the conversation instead
-        // of reaching it: the PC never passes body `0xB8C` (it revisits that
-        // offset ~23 times) and the record ends on the timeline's wrap-
-        // termination rule after ~133k ticks. Independent of pad cadence
-        // (periods 2/3/8/20/40 all stop at `0xB8C`) and of visit count (three
-        // revisits with the flag banks latched stop there too), so it is not an
-        // input or first-visit artifact. The disc's exit is real - the
-        // destination-table pass names `map01` - and this is the port's
-        // remaining gap on the five.
-        ("urudre2", None),
+        // `P2[9]`, a 4703-byte King Nebular dream whose `0x3F` -> `map01` is
+        // its very tail (body `0x124C`). What used to stop the port ~0x670
+        // bytes short of that tail was the field VM's op-`0x45` sub-`0xC0`
+        // CAMERA arm: the record's `45 C0 00 00` at body `0x0BDB` was read as
+        // an absolute jump to the operand `s16`, so a trigger of zero sent the
+        // PC back to byte 0 and the conversation replayed forever. Retail's arm
+        // is a four-byte fall-through (`overlay_0897` `0x801DF210`, exit
+        // `addiu s8, s8, 4`) and the `s16` is the apply trigger.
+        ("urudre2", Some("map01")),
         // band (51, 90) -> P2[0] -> `0x3F` uru; ~14.9k ticks of record.
         ("urudre3", Some("uru")),
         // band (17, 17..19), `.PCH` rows 3..5 -> P2[16] -> `4C E2 08` -> FMV 8
@@ -1575,13 +1595,21 @@ fn part_e_the_five_leave_through_their_pch_bands() {
     }
 
     // The sweep short-circuits a scene as soon as its expected exit fires, so
-    // this is a floor on the work actually done rather than the tile count:
-    // `urudre2`'s 186 tiles all get stepped (nothing fires) and `uru` runs to
-    // its band at position 64 of 118.
+    // this is a floor on the work actually done rather than the tile count -
+    // and now that every one of the five leaves, the count is the sum of five
+    // prefixes rather than of one 186-tile scan that found nothing. Each scene
+    // must still have stepped onto at least one tile for its row to mean
+    // anything, which is the second assert.
     assert!(
-        tried_total > 100,
+        tried_total >= 40,
         "the sweep must actually step onto tiles to mean anything; tried {tried_total}"
     );
+    for (name, _) in EXPECTED {
+        assert!(
+            !walk_on_tiles(&host, name).is_empty(),
+            "{name} must carry at least one gate-1 walk-on tile to step onto"
+        );
+    }
     // The four that leave, and where to. This is what makes the part
     // non-vacuous in the regression direction: if `Scene::field_tile_triggers`
     // stopped reading the `.PCH` fallback half, `uru` / `urudre1` / `urudre3` /
@@ -1611,8 +1639,8 @@ fn part_e_the_five_leave_through_their_pch_bands() {
         }
     }
     eprintln!(
-        "[ok] Part E: four of the five leave through a `.PCH`-carried gate-1 band \
-         ({tried_total} tiles stepped); urudre2 is the port's remaining gap"
+        "[ok] Part E: all five leave through a `.PCH`-carried gate-1 band \
+         ({tried_total} tiles stepped)"
     );
 }
 
@@ -1626,8 +1654,10 @@ fn part_e_the_five_leave_through_their_pch_bands() {
 /// it can prove is that the bytes contain a reachable exit; it cannot prove a
 /// player gets there, which is Part E's job.
 ///
-/// Four of the five carry one. `urudre2` does not, from a run of any length
-/// this test is willing to spend - the same stall Part E's row records.
+/// All five carry one. `jouine`'s is the deepest: its exit record is `P2[16]`
+/// of 18 and needs the deep budget, which is why
+/// [`DEEP_RERUNS_PER_SCENE`] has to cover a whole partition rather than a
+/// sample of it.
 #[test]
 fn part_e2_do_those_scenes_carry_a_record_that_exits_at_all() {
     let Some(mut host) = open_host() else {
@@ -1656,10 +1686,19 @@ fn part_e2_do_those_scenes_carry_a_record_that_exits_at_all() {
                 {
                     continue;
                 }
-                // Re-enter only when the previous record actually left. A
-                // scene load per record turns this into a ten-minute run, and
-                // between records the state that matters - the flag banks and
-                // any still-live spawned context - is reset directly.
+                // Partition-2 records - the door records this part exists to
+                // find - get a FRESH scene entry each. Resetting the flag banks
+                // and the contexts between them is not the same visit: sixteen
+                // preceding records leave the scene's actor channels, camera
+                // and NPC seats where they parked, and `jouine`'s exit record
+                // (`P2[16]` of 18) terminates early in that state while it
+                // reaches its `4C E2 08` tail from a clean entry. Partition 1
+                // keeps the cheap shared-entry walk: those are placement
+                // scripts, and a scene load per record turns this into a
+                // ten-minute run.
+                if partition == 2 {
+                    need_entry = true;
+                }
                 if need_entry {
                     if !enter(&mut host, name, &base) {
                         continue;
@@ -1721,7 +1760,7 @@ fn part_e2_do_those_scenes_carry_a_record_that_exits_at_all() {
         ran_total > 40,
         "the probe must actually execute records; ran {ran_total}"
     );
-    for name in ["uru", "urudre1", "urudre3", "jouine"] {
+    for name in ["uru", "urudre1", "urudre2", "urudre3", "jouine"] {
         assert!(
             exiting.contains_key(name),
             "{name} must carry a record the field VM can run to an exit; \
@@ -1729,14 +1768,6 @@ fn part_e2_do_those_scenes_carry_a_record_that_exits_at_all() {
             exiting.keys().collect::<Vec<_>>()
         );
     }
-    // NOT EXITABLE HEADLESS: same gap as Part E's `urudre2` row - `P2[9]`
-    // replays its conversation and the port never reaches the record's tail.
-    assert!(
-        !exiting.contains_key("urudre2"),
-        "urudre2 now runs a record to an exit ({:?}) - close the gap note on \
-         Part E's EXPECTED row too",
-        exiting.get("urudre2")
-    );
     eprintln!(
         "[ok] Part E2: executed {ran_total} record(s); scenes whose own records \
          reach an exit: {:?}",

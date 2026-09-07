@@ -196,8 +196,84 @@ NO_EXIT_MIN_BYTES = 1024
 _ADDIU_T2_ZERO = 0x240A0000
 BIOS_VECTORS = (0xA0, 0xB0, 0xC0)
 
+# `lui $rt, 0x8001..0x801F` - the upper half of a PSX RAM address, and the only
+# way MIPS I can materialise one. Every routine that touches a global or takes
+# the address of anything issues one; a table of records, a texture, or a string
+# pool does not contain the word at instruction alignment. This is the second
+# leg of the `data_segment` shape below, and it is a decode of one word rather
+# than a statistic over many.
+_LUI_OP = 0x0F
+RAM_PAGE_LO, RAM_PAGE_HI = 0x8001, 0x801F
 
-def gap_shape(image, base_va, a, b):
+
+def _last_return(image):
+    """Word index of the image's last `jr ra`, or -1."""
+    n = len(image) // 4
+    words = struct.unpack_from("<%dI" % n, image, 0)
+    for i in range(n - 1, -1, -1):
+        if words[i] == MIPS_JR_RA:
+            return i
+    return -1
+
+
+def data_floor(image, base_va):
+    """First VA at or above which the image can hold no complete function body.
+
+    Every MIPS body ends in `jr ra`, so the word after the last `jr ra` and its
+    delay slot is the floor of the image's DATA SEGMENT. This is a structural
+    fact about the instruction set, not a threshold: below it a body may sit
+    un-dumped, at or above it none can end.
+
+    Returns `None` for an image with no `jr ra` at all - nothing to anchor on.
+    """
+    last = _last_return(image)
+    if last < 0:
+        return None
+    return base_va + (last + 2) * 4
+
+
+def _has_ram_page_lui(image, base_va, a, b):
+    """Does [a, b) contain a `lui $rt, 0x80xx` RAM-page word?"""
+    n = (b - a) // 4
+    start = a - base_va
+    if n <= 0 or start < 0 or start + n * 4 > len(image):
+        return False
+    for w in struct.unpack_from("<%dI" % n, image, start):
+        if (w >> 26) != _LUI_OP or ((w >> 21) & 0x1F) != 0:
+            continue
+        if RAM_PAGE_LO <= (w & 0xFFFF) <= RAM_PAGE_HI:
+            return True
+    return False
+
+
+def in_data_segment(image, base_va, a, b, floor=None):
+    """True when [a, b) is the image's data segment rather than un-dumped code.
+
+    Two legs, and the second is what makes the first safe:
+
+    1. `a` is at or above `data_floor` - past the image's last `jr ra`, so no
+       COMPLETE function body reaches it.
+    2. the run holds no `lui $rt, 0x80xx`. Leg 1 alone would also swallow a body
+       the ENTRY BOUNDARY cut short, and two measured images end exactly that
+       way: PROT 0902 (`gameover`) and PROT 0977 (`arena_init`) each stop
+       mid-routine at the last byte of their sector extent, with no `jr ra` left
+       to close the body. A truncated body still addresses globals; a data
+       segment does not.
+
+    Corroborated independently by the thirteen slot-B modules whose function
+    partition was recovered by FRAME MATCHING in
+    `ghidra/scripts/dump_static_overlay.py`: in all thirteen the last range ends
+    at exactly `data_floor`, i.e. the frame scan and this rule put the
+    code/data boundary in the same place without sharing a test.
+    """
+    if floor is None:
+        floor = data_floor(image, base_va)
+    if floor is None or a < floor:
+        return False
+    return not _has_ram_page_lui(image, base_va, a, b)
+
+
+def gap_shape(image, base_va, a, b, floor=None, data_seg=None):
     """Why a code gap is a gap. Six shapes, and only one of them is work.
 
     A gap is not automatically an un-analysed routine, and reporting the total
@@ -212,6 +288,7 @@ def gap_shape(image, base_va, a, b):
     | `psyq_lib_stamp` | an 8-byte record opening with ASCII `Ps`: the PSY-Q librarian's version stamp between link modules. Data the linker left in the text segment. |
     | `constant_table` | every word one repeated non-`nop` constant: a data table resident in text (`crt0`'s stack-pointer table at `0x80026CD4`, four words of the 2 MB RAM size). |
     | `mostly_padding` | at least half the words are zero. A word of zeros is a plausible opcode with no pointer density, so the statistical test scores a zero-dominated region as code; a function body is not half `nop`. |
+    | `data_segment` | at or above the image's last `jr ra` and holding no `lui $rt, 0x80xx`. See `in_data_segment`: leg one is that no complete body can end there, leg two is what keeps a body the entry boundary cut short out of the shape. |
     | `no_exit` | 2048 bytes or more with no `jr ra` in them. Every MIPS body ends in one, and known code carries one per ~500-750 bytes, so a run this long with none is a data table the opcode statistic scored as code. |
     | `code` | genuinely un-dumped instructions. |
 
@@ -259,6 +336,15 @@ def gap_shape(image, base_va, a, b):
     # gap classifier called all 62512 bytes of it code.
     if sum(1 for w in words if w == 0) * 2 >= n:
         return "mostly_padding"
+    # `data_segment`: the run sits past the image's last `jr ra`, so no complete
+    # body reaches it, and it addresses no global, so it is not a body the entry
+    # boundary cut short either. This is the shape that names the SCUS static
+    # tables (equipment / spell / steal / new-game, all above 0x8006F180), the
+    # menu overlay's casino prize table, and the `init.pak` publisher-logo TIMs.
+    if data_seg is None:
+        data_seg = in_data_segment(image, base_va, a, b, floor)
+    if data_seg:
+        return "data_segment"
     # `no_exit`: every MIPS function body ends in `jr ra`. Known code carries
     # one per ~500-750 bytes (measured over SCUS's text head and the menu
     # overlay's code region); a data table carries none. A run this long with
@@ -271,13 +357,26 @@ def gap_shape(image, base_va, a, b):
     return "code"
 
 
-def classify_gap(image, base_va, a, b):
-    """True when the bytes in [a, b) look like code rather than data."""
+def classify_gap(image, base_va, a, b, floor=None, data_seg=None):
+    """True when the bytes in [a, b) look like code rather than data.
+
+    `data_seg` overrides the `in_data_segment` verdict. `split_gap` passes one
+    taken over a whole gap, because that test must not be re-run per window.
+    """
     n = (b - a) // 4
+    start = a - base_va
+    in_bounds = n > 0 and start >= 0 and start + n * 4 <= len(image)
+    # The data segment is tested BEFORE the tiny-gap fiat below. "A short gap is
+    # inter-function alignment" is a statement about the code region; above the
+    # data floor there are no function bodies for a gap to sit between, so the
+    # fiat has nothing to be true of there.
+    if data_seg is None:
+        data_seg = in_bounds and in_data_segment(image, base_va, a, b, floor)
+    if data_seg:
+        return False
     if n < TINY_GAP_WORDS:
         return True
-    start = a - base_va
-    if start < 0 or start + n * 4 > len(image):
+    if not in_bounds:
         return False
     words = struct.unpack_from("<%dI" % n, image, start)
     # A zero-dominated run is padding, and padding is not the denominator's
@@ -309,21 +408,31 @@ def classify_gap(image, base_va, a, b):
 GAP_WINDOW_WORDS = 64
 
 
-def split_gap(image, base_va, a, b):
+def split_gap(image, base_va, a, b, floor=None):
     """`[(start, end, is_code)]` for one gap, classified window by window.
 
     Adjacent windows of the same class are merged, so a real function is one run
     rather than a dozen, and a padding region between two functions separates
     them instead of joining them.
     """
+    # The data-segment verdict is taken over the WHOLE above-floor part of the
+    # gap, never window by window. A body the entry boundary cut short is a
+    # mixture: some of its windows address a global and some do not, and a
+    # per-window probe calls the ones that do not "data" and slices the routine
+    # into pieces. `gameover` (PROT 0902) is the worked example - the GTE
+    # transform block at the head of its truncated tail carries no `lui` at all.
+    seg = (floor is not None and b > floor
+           and in_data_segment(image, base_va, max(a, floor), b, floor))
     if (b - a) // 4 <= GAP_WINDOW_WORDS:
-        return [(a, b, classify_gap(image, base_va, a, b))]
+        return [(a, b, classify_gap(image, base_va, a, b, floor,
+                                    data_seg=seg and a >= floor))]
     out = []
     step = GAP_WINDOW_WORDS * 4
     pos = a
     while pos < b:
         end = min(pos + step, b)
-        is_code = classify_gap(image, base_va, pos, end)
+        is_code = classify_gap(image, base_va, pos, end, floor,
+                               data_seg=seg and pos >= floor)
         if out and out[-1][2] == is_code:
             out[-1] = (out[-1][0], end, is_code)
         else:
@@ -341,6 +450,8 @@ def cover_image(name, image, base_va, span, extents, attrib=None):
     (`SCUS_942.54`): the filter must not touch a row that is already exact.
     """
     lo, hi = base_va, base_va + span
+    # One `jr ra` scan per image, threaded into every gap test below.
+    seg_floor = data_floor(image, base_va)
     mine, floor, dropped = [], [], 0
     for a, b in extents:
         if not lo <= a < hi:
@@ -388,8 +499,8 @@ def cover_image(name, image, base_va, span, extents, attrib=None):
     # than to a dump. A gap the statistic rejects that carries no structural
     # shape of its own is `data`.
     for a, b in gaps:
-        is_code = classify_gap(image, base_va, a, b)
-        shape = gap_shape(image, base_va, a, b)
+        is_code = classify_gap(image, base_va, a, b, seg_floor)
+        shape = gap_shape(image, base_va, a, b, seg_floor)
         if not is_code and shape == "code":
             shape = "data"
         n, nb = shapes.get(shape, (0, 0))
@@ -424,8 +535,11 @@ def cover_image(name, image, base_va, span, extents, attrib=None):
         cuts = sorted(set(cuts))
         for u, v in zip(cuts, cuts[1:]):
             amb = any(x < v and u < y for x, y in merged)
-            for p, q, is_code in split_gap(image, base_va, u, v):
-                shape = gap_shape(image, base_va, p, q) if is_code else "data"
+            for p, q, is_code in split_gap(image, base_va, u, v, seg_floor):
+                # `is_code` already carries the gap-level data-segment verdict
+                # (`split_gap`), so the shape must not re-run it per window.
+                shape = (gap_shape(image, base_va, p, q, seg_floor, data_seg=False)
+                         if is_code else "data")
                 runs.append((p, q, shape, amb))
 
     denom = covered + code_gap

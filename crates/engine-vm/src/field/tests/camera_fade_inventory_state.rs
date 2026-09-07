@@ -70,13 +70,19 @@ fn camera_save_advances_2_and_pings_host() {
 }
 
 #[test]
-fn camera_apply_jumps_to_absolute_pc() {
+fn camera_apply_advances_4_and_pings_host() {
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
-    // op0 = 0xC0 → APPLY; absolute target = LE_u16(operand[1..3]) = 0x0042.
+    // op0 = 0xC0 → APPLY. The `s16` is the apply trigger, not a jump target:
+    // retail's arm (`overlay_0897` `0x801DF210`) exits with
+    // `addiu s8, s8, 4`, so the instruction is four bytes wide and the PC
+    // falls through. A trigger of `0x0042` must NOT send the PC to `0x42`.
     let r = step(&mut host, &mut ctx, &[0x45, 0xC0, 0x42, 0x00], 0);
-    assert_eq!(r, StepResult::Advance { next_pc: 0x42 });
+    assert_eq!(r, StepResult::Advance { next_pc: 4 });
     assert_eq!(host.camera_applies, 1);
+    // ... and a trigger of zero must not restart the record.
+    let r0 = step(&mut host, &mut ctx, &[0x45, 0xC0, 0x00, 0x00], 0);
+    assert_eq!(r0, StepResult::Advance { next_pc: 4 });
 }
 
 #[test]

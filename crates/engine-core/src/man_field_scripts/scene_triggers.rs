@@ -129,16 +129,16 @@ pub struct ConditionalDest {
 /// `(index, scene_name, entry_x, entry_z, dir)`.
 type SceneChangeDest = (i16, String, u8, u8, u8);
 
-/// The first `0x3F` named-scene-change destination reached by a clean
-/// fall-through walk of partition-2 record `body` starting at `from_pc`.
+/// The first `0x3F` named-scene-change destination reached by a fall-through
+/// walk of partition-2 record `body` starting at `from_pc`.
 /// `None` when no `0x3F` is reached before the record ends.
+///
+/// The walk is the *recovering* [`LinearWalker`] - the same advance rule the
+/// executing VM's disassembler uses (an undecodable byte costs one byte and
+/// the walk continues) rather than a decode-or-abort loop. See
+/// [`partition2_scene_changes`] for why the difference is load-bearing.
 fn first_scene_change_from(body: &[u8], from_pc: usize) -> Option<SceneChangeDest> {
-    let mut pc = from_pc;
-    while pc < body.len() {
-        let insn = legaia_asset::field_disasm::decode(body, pc).ok()?;
-        if insn.size == 0 {
-            break;
-        }
+    for insn in LinearWalker::new(body, from_pc).flatten() {
         if let InsnInfo::SceneChange {
             index,
             entry_x,
@@ -150,7 +150,6 @@ fn first_scene_change_from(body: &[u8], from_pc: usize) -> Option<SceneChangeDes
         {
             return Some((index, name, entry_x, entry_z, dir));
         }
-        pc += insn.size;
     }
     None
 }
@@ -164,6 +163,19 @@ fn first_scene_change_from(body: &[u8], from_pc: usize) -> Option<SceneChangeDes
 /// The conditional shape is retail's story-progression entrance: an op-`0x70`
 /// `SysFlag.Test` whose taken arm is a different `0x3F` than the linear
 /// fall-through (e.g. `map01`'s dolk/dolk2 dungeon entrance on flag `0x142`).
+///
+/// ## Why the walk resyncs
+///
+/// This is the *static* join that seeds the overworld portal table, and it has
+/// to agree with the *executing* VM about what a record contains. The executing
+/// side decodes with [`LinearWalker`], which spends one byte on an undecodable
+/// opcode and carries on; this join used to `decode(..).ok()?` and abandon the
+/// whole record at the first such byte. A partition-2 door record is mostly
+/// message text and authored waits, and a message body routinely carries bytes
+/// that decode as nothing - so the abort threw away every destination that sat
+/// *after* the first bad byte, which for the long cutscene-shaped exit records
+/// is all of them. Sharing the walker's advance rule is what makes the static
+/// table and the live run answer the same question.
 fn partition2_scene_changes(
     man_file: &ManFile,
     man: &[u8],
@@ -171,15 +183,10 @@ fn partition2_scene_changes(
 ) -> Option<(SceneChangeDest, Option<(u16, SceneChangeDest)>)> {
     let (start, pc0, len) = partition_record_span(man_file, man, 2, record)?;
     let body = &man[start..start + len];
-    let mut pc = pc0;
     // Remember the FIRST op-0x70 flag-test's (flag, taken-target) seen before
     // the primary scene change, so a post-beat alternative can be resolved.
     let mut pending_test: Option<(u16, usize)> = None;
-    while pc < body.len() {
-        let insn = legaia_asset::field_disasm::decode(body, pc).ok()?;
-        if insn.size == 0 {
-            break;
-        }
+    for insn in LinearWalker::new(body, pc0).flatten() {
         match insn.info {
             InsnInfo::SystemFlag {
                 kind: legaia_asset::field_disasm::FlagKind::Test,
@@ -222,7 +229,6 @@ fn partition2_scene_changes(
             }
             _ => {}
         }
-        pc += insn.size;
     }
     None
 }

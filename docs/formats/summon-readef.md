@@ -372,9 +372,60 @@ one of `FUN_801F19EC`'s **34** callers disc-wide is a slot-B module in
 the `0903..0966` band (`find-address-word-refs.py 801f19ec --prot`: 34 `jal`,
 no word / `j` / branch / materialisation), and slot B is loaded for the
 `summon.dat` bands. So on a readef-band cast the `base+1` actor record
-arrives in `*0x8007BD74` and nothing reads it; which enemy specials name
-groups 19..21 through their record's `+0x1C`, and whether any of them runs
-with a slot-B module co-resident, is open.
+arrives in `*0x8007BD74` and nothing reads it.
+
+**No monster names those three groups.** The census below sweeps every
+LZS-decoded record in the PROT 0867 archive: `+0x1C` never takes the values
+19, 20 or 21, so the per-turn seed cannot reach bases `0x39` / `0x3C` /
+`0x3F` at all, and the duplicated actor records in slots 58 / 61 / 64 are
+unreachable through the enemy path. (Earlier notes left this open on the
+assumption that some enemy special selected them.)
+
+### Which monsters name which readef group
+
+`readef.DAT`'s 78 slots are 26 three-slot groups, and a monster record's
+`+0x1C` is the group index (`legaia_asset::monster_archive::MonsterRecord::readef_group`;
+disc-gated census in `crates/asset/tests/monster_readef_group_real.rs`).
+Across the 186 populated records the byte never leaves `0..=25`, which is
+itself the check that the group reading is the right one - a base outside
+`0..=75` would seek past the end of the file.
+
+| Group (base) | Records | Who |
+|---|---|---|
+| `0` (`0x00`) | 119 | the roster default - no dedicated bank; `base < 0x0C` also skips the second upload, so nothing but slot 0 streams |
+| `3` (`0x09`) | 5 | the flying-insect family (Evil Fly / Death Wings / Demon Fly / Poisonous Worm / Moldy Worm) |
+| `4` (`0x0C`) | 1 | Dohati |
+| `6` (`0x12`) | 13 | the lizard / face family (Stone Lizard … Terror Face) |
+| `7` (`0x15`) | 7 | the undead family (Skeleton / Skull Knight / Dead Bone / Ghost Knight / Evil Shadow / Shade …) |
+| `8` (`0x18`) | 1 | Gizam |
+| `9` (`0x1B`) | 3 | Freed and its two variants |
+| `10` (`0x1E`) | 3 | Nova and its two variants |
+| `11` (`0x21`) | 2 | Xain, Cort (one of the multi-record boss set) |
+| `13` (`0x27`) | 3 | the Lippian family |
+| `14` (`0x2A`) | 1 | Gi Delilas |
+| `15` (`0x2D`) | 4 | Gilium (three variants) + Gaza |
+| `16` (`0x30`) | 6 | Iota + Puera (three variants each) |
+| `17` (`0x33`) | 1 | Zora |
+| `18` (`0x36`) | 5 | the Cort boss set |
+| `22` (`0x42`) | 1 | Songi |
+| `24` (`0x48`) | 5 | Mushrin / Mush Mush / Berserker (three variants) |
+| `25` (`0x4B`) | 6 | Gizam variants, Zeto, Slippery (three variants) |
+
+Groups `1`, `2`, `5`, `12`, `19`, `20`, `21` and `23` are named by no record.
+Groups `1` and `2` are two of the four **party** ME-archive groups
+(`3*(char-1)`), so an enemy naming them would be a bug; the other six are
+unreferenced through `+0x1C`.
+
+Two of the unreferenced ones still have a consumer elsewhere. The AI spell
+picker `FUN_801E9FD4` reads the *first enemy seat*'s record byte directly -
+`lw v0,-0x6cb8(s1)` (`0x801C9348[0]`) then `lbu v0,0x1c(v0)` at
+`0x801EBB90` - and compares it against `0x17` (group 23), selecting a
+hardcoded action id for that arm. No retail record carries `0x17`, so that
+arm never fires from the shipped table. And the three groups' actor records
+are not unique to them: slots 58 / 59 / 71 are byte-identical, as are
+64 / 65 / 68, so group 19's creature also sits in group 23's `base+2` slot
+and group 21's in group 22's (Songi's) - the copies the applier's stage-4
+stop never reaches either.
 
 ## Tooling
 

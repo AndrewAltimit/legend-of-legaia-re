@@ -1122,6 +1122,7 @@ mod capture_bypass_tests {
                 element: SpellElement::Neutral,
             },
             anim_id: 0,
+            ..Default::default()
         }
     }
 

@@ -462,6 +462,65 @@ pool actors, not one. Reading `FUN_801D2298` alone leaves the position write
 unaccounted for, which is exactly what happened while `FUN_801D5C08` was
 missing from this page.
 
+### Three timer-driven templates (`0x801F27EC` / `0x801F2840` / `0x801F2858`)
+
+Further up the same field-overlay band sit three more records of the plain
+shape - `+0x06 = 0xFFFF`, a tick at `+0x08`, every other word zero. Each is
+materialised exactly once, and each of the three sites is the same five
+instructions: `lui a0, 0x801f` / `lui v0, 0x8008` / `lw a1, -0x3cb4(v0)` /
+`sw ra` / `jal 0x80020de0` with the `addiu a0, a0, <low>` in the delay slot -
+an allocator call against the actor pool `_DAT_8007C34C`. So all three run.
+All three are per-frame timers driven by the frame delta `_DAT_1F800393`, and
+each spends its timer on something different:
+
+| Template | Tick | Spawn site | What the tick drives |
+|---|---|---|---|
+| `0x801F27EC` | `FUN_801DA930` | `0x801DDE58` | A ping-pong value into a scratchpad draw-context slot |
+| `0x801F2840` | `FUN_801DD4C4` | `0x801DE6BC` | A three-axis eased move of **another** actor |
+| `0x801F2858` | `FUN_801DD784` | `0x801DE770` | The cinematic letterbox bars |
+
+All three are decoded but not ported.
+
+#### `FUN_801DA930` - scratchpad-slot oscillator
+
+Runs while the arm bit `actor[+0x9E] & 0x8000` is set, and only in phase
+`actor[+0x54] == 1` (phase `0` seeds the phase from `actor[+0x6C]`, anything
+else idles). Per frame-delta iteration it adds the step `actor[+0x88]` into
+`actor[+0x84]` in whichever direction keeps `actor[+0x80]` on the near side of
+the bound `actor[+0x8C]`, adds that to `actor[+0x80]`, and stores the high
+halfword into the scratchpad draw context at
+`0x1F800314 + 0x48 + actor[+0x50] * 2`. The sign flip against the bound is
+what makes it a ping-pong rather than a ramp; `actor[+0x50]` is the slot index.
+
+#### `FUN_801DD4C4` - three-axis eased move
+
+`actor[+0x90]` holds a pointer to a **second** actor, and this tick writes that
+actor's position triple `+0x14 / +0x16 / +0x18`. The timer `actor[+0x50]`
+advances by the frame delta toward the duration `actor[+0x9E]`, latching flag
+`0x8` into `actor[+0x10]` on arrival. Each axis then eases from its start
+(`actor[+0x14 + axis*2]`) to its end (`actor[+0x24 + axis*2]`) by `t^2 / d^2` -
+two successive `mult`/`div` pairs, not one - so the motion is quadratic rather
+than linear. An end value of `-1` disables that axis. The Y axis has a rider:
+when the target's `+0x10` carries bit `0x2000`, the negated Y also lands in
+`target[+0x8E]`.
+
+#### `FUN_801DD784` - the cinematic letterbox
+
+The output is not a stored number at all: the tick emits **two flat quads**
+(GP0 `0x28`, tag `0x05000000`, colour bytes zeroed to black) into the
+scratchpad prim cursor `0x1F8003A0`, linked into the OT at
+`*(0x1F8003F4) + 8`. The
+top bar spans `x 0..0x140`, `y -4 .. bar-4`; the bottom spans
+`y 0xE0-bar .. 0xE0`. So `bar` is the bar height in a 320x224 screen and the
+routine is the cinematic letterbox.
+
+`bar` comes from a four-phase envelope: `actor[+0x9E]` steps by the frame delta
+against a per-phase duration at `actor[+0xB8 + phase*2]`, bumping the phase
+`actor[+0x54]` and resetting the timer at each overflow. Phase 0 opens
+(`bar = 115 * t / duration`), phase 1 holds at the constant `0x73` = 115, and
+phases 2 and 3 close against their own duration words, the last of them
+setting flag `0x8` in `actor[+0x10]` when it lands.
+
 ### `801D5780` is shipped dead code
 
 The section above is the reason a bare "no caller" proves nothing here - a

@@ -50,36 +50,53 @@
 # `uru`'s own exit among them. With the gate folding case, the closure grows
 # from the Drake kingdom to most of the `0x3F` graph reachable from `town01`.
 #
+# Four later corrections raised the rung numbers again, each a port defect
+# rather than a cap:
+#
+# - The field VM read op `0x45` sub-`0xC0` (CAMERA APPLY) as an absolute jump
+#   to its `s16` operand. Retail's arm is a four-byte fall-through and the
+#   `s16` is the apply trigger it hands to the camera composer, so a trigger of
+#   zero sent the PC back to byte 0 and the record replayed forever.
+#   `urudre2`'s only door record is one of those, which is why that room read
+#   as one-way.
+#
+# - The same VM read op `0x43` sub-0/1/A/B (the halt-acquire) as yielding to an
+#   absolute PC taken from an operand `s16`. That `s16` is a coordinate: the
+#   sub-A/B one is negated into the target's Y. Retail falls through past the
+#   op and stops the context on the halt bit instead.
+#
+# - The static partition-2 scene-change join abandoned a record at its first
+#   undecodable byte while the executing walker resyncs past it. Message text
+#   is full of such bytes, so every destination behind the first one was lost -
+#   67 partition-2 records disc-wide gained a destination when the join started
+#   sharing the walker's advance rule.
+#
+# - The cold-entry seat resolver gated "is this tile floor" on the object-grid
+#   bit `0x1000`. Eighteen field scenes author `0x2000` and never `0x1000`, so
+#   the resolver was inert in all of them and `kor5` seated the player inside a
+#   wall. The gate now uses whichever bit the scene authored, and a candidate
+#   seat the player cannot walk off is rejected.
+#
 # Where the frontier stops, and why (each of these is a finding the run
 # prints in full; they are recorded here so the shortfall between
 # `rung_total` and `scenes * 6` is not mistaken for noise):
 #
-# - Both scenes that used to stop at rung 1 now load: `bubu1` and `edbubu`
-#   ship a `count = 5` asset table, and the detector bounded `count` to 6 or 7.
+# - The rung-5 shortfall is two scenes. `izumi`'s C1-gated first-visit record
+#   relocates the player about thirty tiles with the pad released, so the
+#   driven run cannot beat its own control (the revisit probe walks four tiles
+#   normally). `korb3` is the one scene the seat fix costs: its object grid has
+#   no `0x1000` cell, so it used to keep the unresolved retail seat and walk
+#   from it, and it now resolves to its main region's centroid, where pad
+#   locomotion does not move. That is a seat-pick question, not a walk one -
+#   the same fix is what makes `kor5` walk and leave.
 #
-# - The rung-5 shortfall was 28 scenes and is now two. It was one defect, not
-#   a class: a scene change that lands while a ledge hop is in flight left the
-#   hop's one-way steering lock (`move_state.flags & 0x0008_0000`) set, and
-#   `step_field_locomotion` returns early on it - so from `tower` onward every
-#   scene in the sweep was unwalkable. Scene entry drops the hop and the lock
-#   together now. What remains is `izumi`, whose C1-gated first-visit record
-#   relocates the player about thirty tiles with the pad released so the driven
-#   run cannot beat its own control (the revisit probe walks four tiles
-#   normally), and `kor5`.
-#
-# - Four of the five late scenes that once read as one-way now leave, and
-#   Parts D/E/E2 say exactly how. `uru` -> `map03`, `urudre1` and `urudre3` ->
-#   `uru` through `.PCH`-carried gate-1 bands, and `jouine` -> `town0e` through
-#   FMV 8 and `cutscene::fmv_post_play_handoff` (its record carries no `0x3F`
-#   at all). Only `uru`'s door is visible to the static exit-site join, so the
-#   other three still stop at rung 6 in the table while Part E drives them out.
-#
-# - `urudre2` is the one that stays put, and it is the port's limit rather
-#   than the disc's: its only gate-1 record is a 4703-byte dream cutscene
-#   whose `0x3F` -> `map01` is the record's tail, and the port's timeline
-#   replays the conversation instead of reaching it - the PC never passes body
-#   `0xB8C`, independent of pad cadence and of visit count.
+# - All five of the late Uru Mais / Drake scenes now leave, and Parts D/E/E2
+#   say exactly how: `uru` -> `map03`, `urudre1` / `urudre3` -> `uru`,
+#   `urudre2` -> `map01` through `.PCH`-carried gate-1 bands, and `jouine` ->
+#   `town0e` through FMV 8 and `cutscene::fmv_post_play_handoff` (its record
+#   carries no `0x3F` at all, so the static exit-site join cannot see it and
+#   the scene still stops at rung 6 in the table while Part E drives it out).
 
 scenes = 74
-rung_total = 426
-full_ladder = 58
+rung_total = 432
+full_ladder = 64

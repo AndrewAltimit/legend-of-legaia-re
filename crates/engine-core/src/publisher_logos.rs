@@ -1,44 +1,180 @@
 //! Publisher-logos boot phase.
 //!
-//! Runs before the title screen. Displays the four TIMs from PROT 0895
-//! (`init.pak`) in sequence: PROKION → Contrail → SCEA → WARNING. Each
-//! logo fades in, holds, fades out before advancing to the next.
+//! Runs before the title screen off the four TIMs in PROT 0895
+//! (`init.pak`). Retail plays them from the overlay's own sequencer - an
+//! actor tick on a 13-arm state machine - and the order it plays is
+//! **SCEA → Contrail → PROKION**, not the order the TIMs sit in the
+//! file. The fourth TIM (WARNING) is uploaded to VRAM and owns a sprite
+//! descriptor, but no site in PROT 0895 emits its quad.
 //!
 //! The session is renderer-free: it owns timing/state only. Engines
-//! query `current_logo()` + `alpha()` each frame to drive the actual
-//! blit. When [`PublisherLogosSession::is_done`] returns true, the
-//! caller transitions to the title screen.
+//! query `current_logo()` + `alpha()` each frame and draw the quads
+//! [`LOGO_QUADS`] names for that logo. When
+//! [`PublisherLogosSession::is_done`] returns true, the caller
+//! transitions to the title screen.
+//!
+//! Retail sources, all in `boot_init_pak` (PROT 0895) at the slot-A base
+//! `0x801CE818`: sequencer `FUN_801CEFD4`, quad emitter `FUN_801CFBB8`,
+//! the SCEA and PROKION pair drawers `FUN_801D0868` / `FUN_801D08F0`,
+//! and the six-record sprite-descriptor table at `0x801F369C` (file
+//! `+0x24E84`, immediately after the fourth TIM). Written up in
+//! `docs/subsystems/boot.md`.
 
-/// Per-logo timing (in frames @ 60 Hz). Tunable; retail timings TBD -
-/// these match a typical PSX boot pacing.
-const FADE_IN_FRAMES: u16 = 30;
-const HOLD_FRAMES: u16 = 90;
-const FADE_OUT_FRAMES: u16 = 30;
-const FRAMES_PER_LOGO: u16 = FADE_IN_FRAMES + HOLD_FRAMES + FADE_OUT_FRAMES;
-
-/// Total number of publisher logos shown during boot.
+/// Total number of publisher-logo TIMs in `init.pak`.
 pub const LOGO_COUNT: usize = 4;
 
-/// Per-logo `(cols, rows)` grid that describes how each TIM is sliced
-/// into strips for on-screen layout.
+/// Atlas / TIM index, in **file** order - the order
+/// [`build_atlas_from_init_pak`] stacks them.
+pub const LOGO_PROKION: usize = 0;
+/// See [`LOGO_PROKION`].
+pub const LOGO_CONTRAIL: usize = 1;
+/// See [`LOGO_PROKION`].
+pub const LOGO_SCEA: usize = 2;
+/// See [`LOGO_PROKION`].
+pub const LOGO_WARNING: usize = 3;
+
+/// The screen retail runs the boot pass in.
 ///
-/// PROKION (176×256) and SCEA (256×128) are stored as vertically-packed
-/// sprite atlases in VRAM - retail boot draws `cols * rows` GPU quads
-/// to unfold them. Source strips are stored in **column-major** order
-/// (top to bottom in the bitmap = column 0 top to column 0 bottom, then
-/// column 1 top to column 1 bottom, …); the output grid is row-major.
+/// `FUN_801CE9C0` calls `FUN_8001DAF8(0x400)`, the 640×480 wide mode,
+/// and only the sequencer's last-but-one state switches back to 320
+/// (`FUN_8001DAF8(0x140)`). Every `dst` rect in [`LOGO_QUADS`] is in
+/// this space.
+pub const STAGE: (u32, u32) = (640, 480);
+
+/// One on-screen quad of one logo.
 ///
-/// Without unfolding, blitting the whole TIM as one quad shows the
-/// packed layout (e.g. PROKION as `PROK` over `KION` instead of
-/// `PROK ☉ KION` side-by-side; SCEA as 4 rows of wrapped text instead
-/// of a 2-line "Sony Computer Entertainment America / Presents" splash).
+/// `src` is a rect in the logo's own decoded-TIM pixel space (the `u/v`
+/// and `w/h` bytes of its descriptor record); `dst` is where retail puts
+/// it in the [`STAGE`] framebuffer. `dst` follows the emitter's own
+/// arithmetic: a descriptor carries a centre plus half-extents `w >> 1`
+/// / `h >> 1`, so an odd source dimension loses its last row or column -
+/// which is why the destination sizes below are not always the source
+/// sizes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LogoQuad {
+    /// `(x, y, w, h)` in the decoded TIM.
+    pub src: (u32, u32, u32, u32),
+    /// `(x, y, w, h)` in the 640×480 stage.
+    pub dst: (i32, i32, u32, u32),
+}
+
+/// Retail per-logo quad layout, indexed by atlas index
+/// (`LOGO_PROKION` … `LOGO_WARNING`).
 ///
-/// Indexed by logo order `[PROKION, Contrail, SCEA, WARNING]`:
-/// - PROKION:  2 cols × 1 row  → 2 strips of 176×128, unfolds to 352×128
-/// - Contrail: 1 col  × 1 row  → full TIM, no slicing
-/// - SCEA:     2 cols × 2 rows → 4 strips of 256×32, unfolds to 512×64
-/// - WARNING:  1 col  × 1 row  → full TIM, no slicing
-pub const STRIP_GRID: [(u32, u32); LOGO_COUNT] = [(2, 1), (1, 1), (2, 2), (1, 1)];
+/// PROKION and SCEA are **vertically packed** in their TIMs: retail
+/// draws the top half and the bottom half as two quads side by side,
+/// centred on the stage's `x = 320`. Contrail draws whole. Reading each
+/// descriptor's `tpage`/`clut` back through the VRAM rects
+/// `FUN_801CE9C0` writes is what assigns a record to a logo -
+/// descriptors 0/5 carry PROKION's `tpage 0x9A` + `clut 0x7ED4`, 2/3
+/// SCEA's `0x0A` / `0x7F14`, 4 Contrail's `0x9C` / `0x7F54` and 1
+/// WARNING's `0x0B` / `0x7E80`.
+///
+/// WARNING's entry is **empty on purpose**: descriptor 1 exists and its
+/// TIM is uploaded, but none of the five `FUN_801CFBB8` call sites in
+/// PROT 0895 passes descriptor id 1, so the overlay never draws it.
+// PORT: FUN_801cfbb8 (the POLY_GT4 logo-quad emitter)
+// PORT: FUN_801d0868 (the SCEA pair draw)
+// PORT: FUN_801d08f0 (the PROKION pair draw)
+pub const LOGO_QUADS: [&[LogoQuad]; LOGO_COUNT] = [
+    // PROKION - descriptors 0 and 5, drawn by FUN_801D08F0 at centres
+    // (232, 228) and (408, 228) with half-extents (88, 63).
+    &[
+        LogoQuad {
+            src: (0, 0, 176, 127),
+            dst: (144, 165, 176, 126),
+        },
+        LogoQuad {
+            src: (0, 128, 176, 127),
+            dst: (320, 165, 176, 126),
+        },
+    ],
+    // Contrail - descriptor 4, drawn straight from the sequencer at
+    // centre (320, 232) with half-extents (92, 127).
+    &[LogoQuad {
+        src: (0, 0, 184, 254),
+        dst: (228, 105, 184, 254),
+    }],
+    // SCEA - descriptors 2 and 3, drawn by FUN_801D0868 at centres
+    // (320 - w/2, 224) and (320 + w/2, 224) with half-extents (126, 32).
+    &[
+        LogoQuad {
+            src: (0, 0, 253, 64),
+            dst: (68, 192, 252, 64),
+        },
+        LogoQuad {
+            src: (0, 64, 252, 64),
+            dst: (320, 192, 252, 64),
+        },
+    ],
+    // WARNING - uploaded, descriptor 1, never drawn by PROT 0895.
+    &[],
+];
+
+/// Neutral brightness in the retail emitter.
+///
+/// The logo quads are **opaque** `POLY_GT4`s (GP0 code `0x3C`); the fade
+/// is the PSX texture blend `texel * colour / 128` applied to a vertex
+/// colour of `(0xFF, 0xFF, 0xFF) * level >> 8`. So `level` runs `0`
+/// (black) to `0x80` (unmodified texel), and no alpha channel is
+/// involved at all.
+pub const LEVEL_FULL: u16 = 0x80;
+
+/// One logo's slot in the retail play order, in frames at 60 Hz.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LogoStep {
+    /// Atlas index (`LOGO_PROKION` … `LOGO_WARNING`).
+    pub logo: usize,
+    /// Frames ramping the brightness level `0` → [`LEVEL_FULL`].
+    pub fade_in: u16,
+    /// Frames at [`LEVEL_FULL`].
+    pub hold: u16,
+    /// Frames ramping back down to `0`.
+    pub fade_out: u16,
+}
+
+impl LogoStep {
+    /// Total frames this step occupies.
+    pub const fn frames(&self) -> u16 {
+        self.fade_in + self.hold + self.fade_out
+    }
+}
+
+/// Retail play order and per-logo pacing, read off the sequencer's own
+/// step sizes (`FUN_801CEFD4`, jump table `0x801CE8E8`).
+///
+/// - SCEA: state 3 adds `8` per frame to `0x80` (16 frames), state 4
+///   counts `0x83` frames, state 5 adds `8` to `0x100` while the level
+///   tracks `0x80 - t/2` (32 frames).
+/// - Contrail: state 7 runs one counter `0` → `0x441` at `8` per frame
+///   with the level clamped at `0x80`, so 16 frames of ramp and 121 of
+///   hold; state 8 walks the same counter back down from `0x80`.
+/// - PROKION: state 9 runs `0` → `0x351` at `8` per frame, again clamped
+///   (16 + 91). Its exit, state 10, is **not** a fade to black - it
+///   holds PROKION at full while a full-screen blend quad
+///   (`FUN_801D0460`) ramps the screen to white over `0x101` at
+///   `4 × frame_delta` per tick. The port ramps the logo down over that
+///   same 65-frame span instead of compositing the blend quad.
+pub const RETAIL_SEQUENCE: [LogoStep; 3] = [
+    LogoStep {
+        logo: LOGO_SCEA,
+        fade_in: 16,
+        hold: 131,
+        fade_out: 32,
+    },
+    LogoStep {
+        logo: LOGO_CONTRAIL,
+        fade_in: 16,
+        hold: 121,
+        fade_out: 16,
+    },
+    LogoStep {
+        logo: LOGO_PROKION,
+        fade_in: 16,
+        hold: 91,
+        fade_out: 65,
+    },
+];
 
 /// One logo's atlas placement: source rect `(x, y, w, h)` in atlas
 /// pixels.
@@ -55,8 +191,9 @@ pub struct LogosAtlas {
     pub rgba: Vec<u8>,
     pub width: u32,
     pub height: u32,
-    /// Source rects in the same order the session walks (`PROKION,
-    /// Contrail, SCEA, WARNING`).
+    /// Source rects in **file** order (`PROKION, Contrail, SCEA,
+    /// WARNING`), indexed by the `LOGO_*` constants - not the order
+    /// [`RETAIL_SEQUENCE`] plays them in.
     pub rects: [LogoRect; LOGO_COUNT],
 }
 
@@ -65,6 +202,17 @@ pub struct LogosAtlas {
 ///
 /// Atlas layout: vertically stacked, widest logo's width. Each logo is
 /// flush-left within its row.
+///
+/// This is the port's stand-in for the **upload** half of the mode-16
+/// `READ INIT` body: retail rewrites each TIM's CLUT and pixel
+/// destination rects and hands the TIM to `FUN_800198E0`, and the
+/// `tpage`/`clut` those rects imply are what bind a descriptor record
+/// to a logo. Sampling an atlas rect replaces the VRAM page, so the
+/// rects themselves live in `docs/subsystems/boot.md` rather than here.
+/// The rest of `FUN_801CE9C0` - the 640×480 display env, the
+/// `ClearImage` of `(0, 0, 640, 500)`, the pad init, the two boot-actor
+/// spawns and the game-mode `0x11` store - is host setup the shell owns.
+// PORT: FUN_801ce9c0 (mode-16 READ INIT body - the publisher-logo upload)
 pub fn build_atlas_from_init_pak(prot_0895_bytes: &[u8]) -> anyhow::Result<LogosAtlas> {
     let pak = legaia_asset::init_pak::parse(prot_0895_bytes)?;
     let mut tims = Vec::with_capacity(LOGO_COUNT);
@@ -110,21 +258,26 @@ pub fn build_atlas_from_init_pak(prot_0895_bytes: &[u8]) -> anyhow::Result<Logos
     })
 }
 
-/// Phase within a single logo.
+/// Phase within a single logo, sized by that logo's [`LogoStep`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LogoPhase {
-    /// Black → full opacity (`FADE_IN_FRAMES` frames).
+    /// Black → [`LEVEL_FULL`], over `LogoStep::fade_in` frames.
     FadeIn,
-    /// Full opacity hold (`HOLD_FRAMES` frames).
+    /// Held at [`LEVEL_FULL`], over `LogoStep::hold` frames.
     Hold,
-    /// Full opacity → black (`FADE_OUT_FRAMES` frames).
+    /// [`LEVEL_FULL`] → black, over `LogoStep::fade_out` frames.
     FadeOut,
 }
 
 /// Boot-time publisher logos state machine.
+///
+/// Walks [`RETAIL_SEQUENCE`], so `step_idx` indexes the play order and
+/// [`PublisherLogosSession::current_logo`] returns the **atlas** index
+/// of whichever logo that step shows.
+// PORT: FUN_801cefd4 (PROT 0895 publisher-logo sequencer)
 #[derive(Debug, Clone)]
 pub struct PublisherLogosSession {
-    logo_idx: u8,
+    step_idx: u8,
     frames_in_logo: u16,
     done: bool,
     /// When true, caller has signalled "skip the rest" (Start pressed).
@@ -141,10 +294,19 @@ impl Default for PublisherLogosSession {
 impl PublisherLogosSession {
     pub fn new() -> Self {
         Self {
-            logo_idx: 0,
+            step_idx: 0,
             frames_in_logo: 0,
             done: false,
             skip_requested: false,
+        }
+    }
+
+    /// The [`RETAIL_SEQUENCE`] step now playing, or `None` when done.
+    pub fn current_step(&self) -> Option<&'static LogoStep> {
+        if self.done {
+            None
+        } else {
+            RETAIL_SEQUENCE.get(self.step_idx as usize)
         }
     }
 
@@ -158,12 +320,16 @@ impl PublisherLogosSession {
             self.done = true;
             return None;
         }
+        let Some(step) = self.current_step() else {
+            self.done = true;
+            return None;
+        };
         let phase = self.phase();
         self.frames_in_logo += 1;
-        if self.frames_in_logo >= FRAMES_PER_LOGO {
+        if self.frames_in_logo >= step.frames() {
             self.frames_in_logo = 0;
-            self.logo_idx += 1;
-            if (self.logo_idx as usize) >= LOGO_COUNT {
+            self.step_idx += 1;
+            if (self.step_idx as usize) >= RETAIL_SEQUENCE.len() {
                 self.done = true;
             }
         }
@@ -180,40 +346,67 @@ impl PublisherLogosSession {
         self.done
     }
 
-    /// Index of the logo currently being displayed (`0..LOGO_COUNT`).
-    /// Returns `LOGO_COUNT` when the session is done.
+    /// **Atlas** index of the logo currently displayed. Returns
+    /// [`LOGO_COUNT`] when the session is done.
     pub fn current_logo(&self) -> usize {
-        if self.done {
-            LOGO_COUNT
-        } else {
-            self.logo_idx as usize
+        self.current_step().map_or(LOGO_COUNT, |s| s.logo)
+    }
+
+    /// The quads to draw for the current logo, in the [`STAGE`] space.
+    pub fn current_quads(&self) -> &'static [LogoQuad] {
+        match self.current_step() {
+            Some(s) => LOGO_QUADS[s.logo],
+            None => &[],
         }
     }
 
     pub fn phase(&self) -> LogoPhase {
-        if self.frames_in_logo < FADE_IN_FRAMES {
+        let Some(step) = self.current_step() else {
+            return LogoPhase::FadeOut;
+        };
+        if self.frames_in_logo < step.fade_in {
             LogoPhase::FadeIn
-        } else if self.frames_in_logo < FADE_IN_FRAMES + HOLD_FRAMES {
+        } else if self.frames_in_logo < step.fade_in + step.hold {
             LogoPhase::Hold
         } else {
             LogoPhase::FadeOut
         }
     }
 
-    /// Opacity in `[0.0, 1.0]` for the current logo this frame.
-    /// `0.0` = fully black, `1.0` = fully visible.
+    /// Retail brightness level for this frame, `0 ..= `[`LEVEL_FULL`].
+    ///
+    /// This is the value the emitter multiplies the descriptor's vertex
+    /// colour by; `LEVEL_FULL` leaves the texel unmodified.
+    pub fn retail_level(&self) -> u16 {
+        let Some(step) = self.current_step() else {
+            return 0;
+        };
+        // `checked_div` covers the zero-length ramps: a zero `fade_in`
+        // is never entered (the phase test is `frames < 0`) and a zero
+        // `fade_out` cuts straight to black.
+        match self.phase() {
+            LogoPhase::FadeIn => (LEVEL_FULL * self.frames_in_logo)
+                .checked_div(step.fade_in)
+                .unwrap_or(LEVEL_FULL),
+            LogoPhase::Hold => LEVEL_FULL,
+            LogoPhase::FadeOut => {
+                let into_fadeout = self.frames_in_logo.saturating_sub(step.fade_in + step.hold);
+                let drop = (LEVEL_FULL * into_fadeout)
+                    .checked_div(step.fade_out)
+                    .unwrap_or(LEVEL_FULL);
+                LEVEL_FULL - drop.min(LEVEL_FULL)
+            }
+        }
+    }
+
+    /// Opacity in `[0.0, 1.0]` for the current logo this frame -
+    /// [`retail_level`](Self::retail_level) normalised by
+    /// [`LEVEL_FULL`]. `0.0` = fully black, `1.0` = fully visible.
     pub fn alpha(&self) -> f32 {
         if self.done {
             return 0.0;
         }
-        match self.phase() {
-            LogoPhase::FadeIn => self.frames_in_logo as f32 / FADE_IN_FRAMES as f32,
-            LogoPhase::Hold => 1.0,
-            LogoPhase::FadeOut => {
-                let into_fadeout = self.frames_in_logo - (FADE_IN_FRAMES + HOLD_FRAMES);
-                1.0 - (into_fadeout as f32 / FADE_OUT_FRAMES as f32)
-            }
-        }
+        self.retail_level() as f32 / LEVEL_FULL as f32
     }
 }
 
@@ -222,71 +415,120 @@ mod tests {
     use super::*;
 
     #[test]
-    fn advances_through_all_four_logos() {
+    fn plays_the_retail_order_scea_contrail_prokion() {
         let mut s = PublisherLogosSession::new();
-        assert_eq!(s.current_logo(), 0);
-        // Tick exactly one logo's worth of frames.
-        for _ in 0..FRAMES_PER_LOGO {
-            assert!(!s.is_done());
-            s.tick();
-        }
-        assert_eq!(s.current_logo(), 1);
-
-        for _ in 0..FRAMES_PER_LOGO {
-            s.tick();
-        }
-        assert_eq!(s.current_logo(), 2);
-
-        for _ in 0..FRAMES_PER_LOGO {
-            s.tick();
-        }
-        assert_eq!(s.current_logo(), 3);
-
-        for _ in 0..FRAMES_PER_LOGO {
+        let mut seen = Vec::new();
+        // Long enough to outrun the whole sequence.
+        for _ in 0..2000 {
+            if s.is_done() {
+                break;
+            }
+            let logo = s.current_logo();
+            if seen.last() != Some(&logo) {
+                seen.push(logo);
+            }
             s.tick();
         }
         assert!(s.is_done());
+        assert_eq!(seen, vec![LOGO_SCEA, LOGO_CONTRAIL, LOGO_PROKION]);
         assert_eq!(s.current_logo(), LOGO_COUNT);
     }
 
     #[test]
-    fn alpha_curves_match_phase_boundaries() {
+    fn each_step_lasts_its_retail_frame_count() {
+        for (i, step) in RETAIL_SEQUENCE.iter().enumerate() {
+            let mut s = PublisherLogosSession::new();
+            // Run out every step before this one.
+            for prev in &RETAIL_SEQUENCE[..i] {
+                for _ in 0..prev.frames() {
+                    s.tick();
+                }
+            }
+            assert_eq!(s.current_logo(), step.logo);
+            for _ in 0..(step.frames() - 1) {
+                s.tick();
+                assert_eq!(s.current_logo(), step.logo);
+            }
+            s.tick();
+            assert_ne!(s.current_logo(), step.logo);
+        }
+    }
+
+    #[test]
+    fn level_ramps_between_zero_and_neutral() {
         let mut s = PublisherLogosSession::new();
-        // FadeIn starts at 0, climbs.
-        assert_eq!(s.alpha(), 0.0);
-        for _ in 0..(FADE_IN_FRAMES - 1) {
+        let step = RETAIL_SEQUENCE[0];
+        assert_eq!(s.retail_level(), 0);
+        assert_eq!(s.phase(), LogoPhase::FadeIn);
+        for _ in 0..step.fade_in {
             s.tick();
         }
-        // Just before Hold begins.
-        let alpha_pre_hold = s.alpha();
-        assert!(
-            (alpha_pre_hold - (FADE_IN_FRAMES - 1) as f32 / FADE_IN_FRAMES as f32).abs() < 1e-6
-        );
-        s.tick();
         assert_eq!(s.phase(), LogoPhase::Hold);
+        assert_eq!(s.retail_level(), LEVEL_FULL);
         assert_eq!(s.alpha(), 1.0);
-
-        // Skip ahead into FadeOut.
-        for _ in 0..HOLD_FRAMES {
+        for _ in 0..step.hold {
             s.tick();
         }
         assert_eq!(s.phase(), LogoPhase::FadeOut);
-        // First FadeOut frame: alpha = 1.0 (just entered).
-        assert!((s.alpha() - 1.0).abs() < 1e-6);
+        // The first fade-out frame is still at full.
+        assert_eq!(s.retail_level(), LEVEL_FULL);
+        for _ in 0..(step.fade_out - 1) {
+            s.tick();
+        }
+        assert!(s.retail_level() < LEVEL_FULL);
+    }
+
+    #[test]
+    fn quads_are_inside_the_retail_stage() {
+        for (idx, quads) in LOGO_QUADS.iter().enumerate() {
+            // WARNING has no draw site in PROT 0895.
+            if idx == LOGO_WARNING {
+                assert!(quads.is_empty());
+                continue;
+            }
+            assert!(!quads.is_empty());
+            for q in quads.iter() {
+                let (x, y, w, h) = q.dst;
+                assert!(x >= 0 && y >= 0, "quad {q:?} starts off-stage");
+                assert!(
+                    x as u32 + w <= STAGE.0 && y as u32 + h <= STAGE.1,
+                    "quad {q:?} runs past the {STAGE:?} stage"
+                );
+                // The emitter's half-extent truncation: dst dimensions
+                // are the source dimensions with the odd bit dropped.
+                assert_eq!(w, q.src.2 & !1);
+                assert_eq!(h, q.src.3 & !1);
+            }
+        }
+    }
+
+    #[test]
+    fn packed_logos_split_their_tim_in_half_across_the_stage_centre() {
+        for idx in [LOGO_PROKION, LOGO_SCEA] {
+            let quads = LOGO_QUADS[idx];
+            assert_eq!(quads.len(), 2, "logo {idx} should draw two quads");
+            // The second strip starts one strip-height down in the TIM.
+            assert_eq!(quads[0].src.1, 0);
+            assert!(quads[1].src.1 >= quads[0].src.3);
+            // Left quad ends where the right one starts, on x = 320.
+            let (x0, _, w0, _) = quads[0].dst;
+            assert_eq!(x0 + w0 as i32, STAGE.0 as i32 / 2);
+            assert_eq!(quads[1].dst.0, STAGE.0 as i32 / 2);
+        }
     }
 
     #[test]
     fn request_skip_ends_on_next_tick() {
         let mut s = PublisherLogosSession::new();
-        // Tick into the middle of logo 1.
-        for _ in 0..(FRAMES_PER_LOGO + 30) {
+        for _ in 0..(RETAIL_SEQUENCE[0].frames() + 30) {
             s.tick();
         }
-        assert_eq!(s.current_logo(), 1);
+        assert_eq!(s.current_logo(), RETAIL_SEQUENCE[1].logo);
         s.request_skip();
         assert!(!s.is_done()); // not done yet
         s.tick();
         assert!(s.is_done());
         assert_eq!(s.current_logo(), LOGO_COUNT);
+        assert!(s.current_quads().is_empty());
     }
 }

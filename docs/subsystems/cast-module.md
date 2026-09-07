@@ -54,9 +54,11 @@ table (below) rather than inferred from the head table.
 
 Module code cites below are given as file offsets with their VA
 (`0x801F69D8 + off`); the three images share the base, so an offset is
-meaningless without naming its module. The ~936-byte tail region past
-`~+0x2A00` is **shared library code** across the modules (the same words in
-958 and 959), not per-move logic.
+meaningless without naming its module. The tail region past `~+0x2A00` is
+words 958 and 959 hold in common, and it is **not** shared library code -
+every image in the band ends in a same-file-offset copy of another extracted
+image's bytes, mastering residue rather than anything the module runs. See
+[the band as a port worklist](#a-module-image-ends-in-another-images-bytes).
 
 ## The entry tables, and where the addresses live
 
@@ -87,9 +89,11 @@ per module. The SM copies the selected row into `gp[+0x714]` = `0x8007BA2C`
 at `0x801E44C8` (capture class, row `sub_id + 0x20`) and `0x801E4630` (row
 `move_id - 0x81`), and **move-VM opcode `0x20`** calls it: `lw v0, 0x714(gp);
 jalr v0` at SCUS `0x80023764`, with `a0` = actor and `a1`/`a2` = the
-move-table instruction's two signed halfwords. Every module's routine here
-opens `sltiu vX, a1, N`, so the operand is an arm index: this entry is the
-per-spell **spawn stager** the move script drives, not the choreography.
+move-table instruction's two signed halfwords. `a1` is an arm index: 15 of the
+64 routines bound it with `sltiu vX, a1, N` and jump through a table, and the
+rest compare it against literals in a `beq` / `slti` chain - either way this
+entry is the per-spell **spawn stager** the move script drives, not the
+choreography.
 (The corpus previously called `0x8007BA2C` "the per-summon effect-data
 pointer"; it is a code pointer, and `0x801F6734` is a table of entry VAs.)
 
@@ -188,30 +192,32 @@ these images, and it is data: PROT 0934's is `0x801F9C08..0x801FA9D8`, and
 the `lui 0x8020` + negative-displacement operands its stager passes as `a2`
 resolve into exactly that span.
 
-### The three unmapped entries
+### The three entries with no dump
 
-61 of the 64 entries carry a
-[`static-overlays.toml`](../../crates/asset/data/static-overlays.toml) row and a
-dump. Three do not - **0915** (spell `0x8D` Mushura), **0926** (spell `0x98`,
-the id with no tick arm and no spell-table record) and **0935** (capture sub-id
-`0x00`, Earthquake) - because the committed slot-B base cross-check in
-`crates/asset/tests/static_overlay_extract.rs` rejects them. That check counts
-each image's `lui 0x801f`/`0x8020` + `addiu` pairs and requires 60% of them to
-resolve **inside** the image (100% when the sample is under eight). The three
-fail it for reasons that are not about the base:
+All 64 entries carry a
+[`static-overlays.toml`](../../crates/asset/data/static-overlays.toml) row and an
+extracted image; three carry no dump - **0915** (spell `0x8D` Mushura), **0926**
+(spell `0x98`, the id with no tick arm and no spell-table record) and **0935**
+(capture sub-id `0x00`, Earthquake).
 
-| Entry | Ratio | Where the misses point |
-|---|---|---|
-| 0915 | 6/13 | `0x801F6978` / `0x801F6980` - *below* the slot-B base, inside PROT 0898's own data |
-| 0935 | 11/19 | `0x801FA320..0x801FA3B8` - above the image end, the post-image `.bss` working storage in the slot-B buffer the check's own comment names |
-| 0926 | 1/3 | a 1-sector stub whose stager row is a bare `jr ra`; almost nothing to measure |
+They were the last three to get a row, because the slot-B base cross-check in
+`crates/asset/tests/static_overlay_extract.rs` used to reject them. That check
+counts each image's `lui 0x801f`/`0x8020` + `addiu` pairs and asks how many
+resolve **inside** the image, and in its one-sided form it counted every
+reference that leaves the image as evidence against the base - which a module
+legitimately makes, in two directions:
 
-The check is one-sided: it treats every reference that leaves the image as
-evidence against the base, and a module legitimately references both its
-host overlay's globals and scratch above its own end. All three entries pass
-the stronger test - their `0x801F6734` row (and, for 0915, their `0x801CF4EC`
-arm) lands on a byte-recovered function head - so their entries are known and
-only their dumps are missing.
+| Entry | Where the misses point |
+|---|---|
+| 0915 | `0x801F6978` / `0x801F6980` - *below* the slot-B base, inside PROT 0898's own data |
+| 0935 | `0x801FA320..0x801FA3B8` - above the image end, the post-image `.bss` working storage in the shared slot-B buffer |
+| 0926 | `0x801F7D3C` / `0x801F7F2C` - the same post-image scratch; a 1-sector stub has almost nothing else to measure |
+
+Excluding both kinds rather than crediting them makes the ratio a statement
+about self-references only, and lets the acceptance floor *rise* from 0.60 to
+0.90. All three then pass, and they already passed the stronger test - their
+`0x801F6734` row (and, for 0915, their `0x801CF4EC` arm) lands on a
+byte-recovered function head.
 
 ## The module phase byte (`ctx + 0x279`)
 
@@ -336,6 +342,195 @@ something. Its **lift and camera are code**: they live in the module's phase
 machine, reachable only through the capture-class `0x63` action arm that pages
 PROT `935..966`, and no eight-record art effect script can name them. A full
 reskin is a module edit, not a data edit.
+
+## The band as a port worklist
+
+Every address the port catalog still lists in this band is one of the two
+routines PROT 0898 names per module, a body one of those two reaches, or an
+artefact. There is no third population: the 65 worklist addresses resolve
+into 58 `0x801F6734` stager entries, 6 tick bodies reached from a module's
+own trampoline, and one framed routine nothing references.
+
+The verdict column says what a port owes each one. **DATA** means the routine
+is an arm switch on the move-VM operand `a1` whose arms do nothing but call
+`FUN_80021B04` / `FUN_80050ED4` / `FUN_801DFDF0` / `FUN_80024E80` with a
+module-resident record pointer and a scale literal - the spawn-record data
+layer, expressible without code. **PORT** means the routine reads or writes
+simulation state: a damage roll through `FUN_801DD0AC` / `FUN_801DD4B0` /
+`FUN_801DD6B4` with the HP clamp, the staged-clip bytes, the module phase
+`ctx+0x279`, `ctx+0x278`, or the victim's own fields. **SCOPE-IGNORE** means
+there is nothing there - six modules' stagers are a bare `jr ra` + `nop`, and
+one address is a routine no table names and no image references.
+
+"Owner" is the image whose PROT 0898 table row or whose own trampoline names
+the VA, established from the bytes, not from a dump's filename. Where the
+same VA carries a byte-identical routine in another image, the "also in"
+column says so; those copies are residue (below), not second call sites.
+
+| VA | owner | what the routine is | also present in | verdict |
+|---|---|---|---|---|
+| `801F6A14` | 957 (`summon_effect_table`) | cast tick body, reached from the module trampoline; damage roll (resist); writes HP `+0x14C`, staged `+0x1DA`, restage `+0x1DC`, `ctx+0x278`, phase `ctx+0x279` | - | **PORT** |
+| `801F74E4` | 960 (`cast_plasma_strike`) | cast tick body, reached from the module trampoline; damage roll (bypass); writes `+0x0C`, HP `+0x14C`, staged `+0x1DA`, restage `+0x1DC`, `ctx+0x278`, phase `ctx+0x279` | - | **PORT** |
+| `801F798C` | 957 (`summon_effect_table`) | cast tick body, reached from the module trampoline; writes `+0x0C`, HP `+0x14C`, staged `+0x1DA`, restage `+0x1DC`, phase `ctx+0x279` | - | **PORT** |
+| `801F81DC` | 951 (`cast_chaos_flare`) | spawn stager, 4 spawn calls | also in 910 | **DATA** |
+| `801F8EAC` | 904 (`summon_theeder`) | spawn stager, 1 spawn call | also in 908,910 | **DATA** |
+| `801F6A0C` | 952 (`cast_bloody_horns`) | cast tick body, reached from the module trampoline; writes staged `+0x1DA`, restage `+0x1DC` | - | **PORT** |
+| `801F6DD8` | 958 (`cast_blazing_slash`) | cast tick body, reached from the module trampoline; damage roll (bypass); writes HP `+0x14C`, staged `+0x1DA`, restage `+0x1DC`, `ctx+0x278` | - | **PORT** |
+| `801F6EDC` | 945 (`cast_water_column`) | cast tick body, reached from the module trampoline; damage roll (resist); writes HP `+0x14C`, status `+0x16E`, staged `+0x1DA`, restage `+0x1DC` | - | **PORT** |
+| `801F7F2C` | 944 (`cast_guilty_cross`) | spawn stager, 3 spawn calls | also in 945 | **DATA** |
+| `801F8118` | 942 (`cast_power_up`) | spawn stager, 2 spawn calls | also in 943 | **DATA** |
+| `801F8504` | 948 (`cast_cross_beam`) | spawn stager, 1 spawn call | also in 949 | **DATA** |
+| `801F8578` | 919 (`summon_spoon`) | spawn stager, 4 spawn calls | also in 920 | **DATA** |
+| `801F86B0` | 960 (`cast_plasma_strike`) | spawn stager, 2 spawn calls | also in 961 | **DATA** |
+| `801F74B4` | 939 (`cast_spore_gas`) | null stager - `jr ra` + `nop`, the whole routine | - | **SCOPE-IGNORE** |
+| `801F75BC` | 949 (`cast_water_crystals`) | spawn stager, `sltiu a1, 8`, 0 spawn calls; writes `+0x0C` | - | **PORT** |
+| `801F769C` | 943 (`cast_curse`) | spawn stager, 3 spawn calls | - | **DATA** |
+| `801F76C4` | 946 (`cast_call_wave`) | spawn stager, 5 spawn calls | - | **DATA** |
+| `801F7740` | 906 (`summon_gizam`) | spawn stager, `sltiu a1, 7`, 3 spawn calls; writes `+0x0C`, phase `ctx+0x279` | - | **PORT** |
+| `801F776C` | 945 (`cast_water_column`) | spawn stager, 2 spawn calls | - | **DATA** |
+| `801F7820` | 924 (`stager_ultimate_rave`) | spawn stager, 1 spawn call | - | **DATA** |
+| `801F7850` | 937 (`cast_hyper_lightning`) | spawn stager, 5 spawn calls | - | **DATA** |
+| `801F78A4` | 961 (`cast_dead_end_crisis`) | spawn stager, 6 spawn calls | - | **DATA** |
+| `801F78F8` | 947 (`cast_v_windhash`) | null stager - `jr ra` + `nop`, the whole routine | - | **SCOPE-IGNORE** |
+| `801F7948` | 909 (`summon_viguro`) | framed routine no table names and nothing references | - | **SCOPE-IGNORE** |
+| `801F7A80` | 914 (`summon_gola_gola`) | spawn stager, `sltiu a1, 6`, 2 spawn calls | - | **DATA** |
+| `801F7AB8` | 938 (`cast_chaos_breath`) | spawn stager, 3 spawn calls | - | **DATA** |
+| `801F7AE8` | 925 (`summon_spikefish`) | spawn stager, 3 spawn calls | - | **DATA** |
+| `801F7AF4` | 909 (`summon_viguro`) | spawn stager, `sltiu a1, 7`, 2 spawn calls; writes `+0x0C`, staged `+0x1DA`, target `+0x1DD`, phase `ctx+0x279` | - | **PORT** |
+| `801F7B74` | 965 (`cast_doomsday`) | spawn stager, 2 spawn calls | - | **DATA** |
+| `801F7BA0` | 952 (`cast_bloody_horns`) | null stager - `jr ra` + `nop`, the whole routine | - | **SCOPE-IGNORE** |
+| `801F7BD0` | 936 (`cast_hyper_crush`) | spawn stager, 4 spawn calls | - | **DATA** |
+| `801F7DB0` | 941 (`cast_steal`) | spawn stager, `sltiu a1, 5`, 2 spawn calls | - | **DATA** |
+| `801F7EA4` | 930 (`summon_horn`) | spawn stager, `sltiu a1, 7`, 8 spawn calls | - | **DATA** |
+| `801F7EC4` | 956 (`cast_water_hazard`) | spawn stager, 5 spawn calls | - | **DATA** |
+| `801F7FA8` | 907 (`summon_nighto`) | spawn stager, 2 spawn calls | - | **DATA** |
+| `801F7FE8` | 911 (`summon_orb`) | spawn stager, 1 spawn call | - | **DATA** |
+| `801F800C` | 921 (`summon_iota`) | spawn stager, 2 spawn calls | - | **DATA** |
+| `801F8078` | 905 (`summon_stager_x83`) | spawn stager, 2 spawn calls | - | **DATA** |
+| `801F813C` | 962 (`cast_blade_breath`) | spawn stager, 3 spawn calls | - | **DATA** |
+| `801F81A0` | 963 (`cast_genocidal_cannon`) | spawn stager, 4 spawn calls | - | **DATA** |
+| `801F81E8` | 920 (`summon_slippery`) | null stager - `jr ra` + `nop`, the whole routine | - | **SCOPE-IGNORE** |
+| `801F8208` | 950 (`cast_rolling_flare`) | spawn stager, 1 spawn call | - | **DATA** |
+| `801F8250` | 959 (`cast_megaton_press`) | spawn stager, `sltiu a1, 6`, 11 spawn calls | - | **DATA** |
+| `801F82CC` | 940 (`cast_glare_divide`) | null stager - `jr ra` + `nop`, the whole routine | - | **SCOPE-IGNORE** |
+| `801F82D8` | 917 (`summon_barra`) | spawn stager, `sltiu a1, 5`, 3 spawn calls | - | **DATA** |
+| `801F8310` | 908 (`summon_zenoir`) | spawn stager, 5 spawn calls | - | **DATA** |
+| `801F835C` | 912 (`summon_freed`) | spawn stager, 3 spawn calls | - | **DATA** |
+| `801F84A4` | 932 (`summon_meta`) | spawn stager, 1 spawn call | - | **DATA** |
+| `801F85A8` | 927 (`summon_juggernaut`) | spawn stager, `sltiu a1, 9`, 7 spawn calls; damage roll (shared); writes HP `+0x14C` | - | **PORT** |
+| `801F85D4` | 954 (`cast_fatal_decision`) | null stager - `jr ra` + `nop`, the whole routine | - | **SCOPE-IGNORE** |
+| `801F864C` | 913 (`summon_nova`) | spawn stager, `sltiu a1, 6`, 3 spawn calls | - | **DATA** |
+| `801F8748` | 933 (`summon_terra`) | spawn stager, 2 spawn calls | - | **DATA** |
+| `801F88F8` | 916 (`summon_aluru`) | spawn stager, `sltiu a1, 8`, 7 spawn calls | - | **DATA** |
+| `801F89D4` | 910 (`summon_swordie`) | spawn stager, `sltiu a1, 5`, 1 spawn call | - | **DATA** |
+| `801F8ADC` | 931 (`summon_jedo`) | spawn stager, 1 spawn call | - | **DATA** |
+| `801F8B90` | 923 (`summon_gilium`) | spawn stager, 3 spawn calls; writes `ctx+0x278` | - | **PORT** |
+| `801F8BF8` | 964 (`cast_element_change`) | spawn stager, 2 spawn calls | - | **DATA** |
+| `801F8C30` | 929 (`summon_mule`) | spawn stager, `sltiu a1, 9`, 10 spawn calls | - | **DATA** |
+| `801F8D30` | 958 (`cast_blazing_slash`) | spawn stager, 7 spawn calls | - | **DATA** |
+| `801F8D64` | 966 (`cast_evil_seru_magic`) | spawn stager, `sltiu a1, 9`, 7 spawn calls; damage roll (resist); writes HP `+0x14C`, staged `+0x1DA`, restage `+0x1DC` | - | **PORT** |
+| `801F8E68` | 928 (`summon_palma`) | spawn stager, `sltiu a1, 7`, 12 spawn calls | - | **DATA** |
+| `801F90E4` | 922 (`summon_puera`) | spawn stager, 0 spawn calls; writes `ctx+0x278` | - | **PORT** |
+| `801F92AC` | 934 (`summon_ozma`) | spawn stager, 11 spawn calls | - | **DATA** |
+| `801F9370` | 955 (`cast_white_shield`) | spawn stager, 1 spawn call | - | **DATA** |
+| `801F99F4` | 957 (`summon_effect_table`) | spawn stager, `sltiu a1, 5`, 3 spawn calls | - | **DATA** |
+
+### Six of the 64 stagers are a null routine
+
+PROT 0920, 0939, 0940, 0947, 0952 and 0954 answer the move-VM's opcode-`0x20`
+call with eight bytes - `jr ra` in the `0x801F6734` row's first word, `nop` in
+the delay slot - and the six are byte-identical. Those spells stage nothing
+from the move script; whatever they put on screen, the tick puts there. PROT
+0903's row (`0x801F771C`) and PROT 0926's (`0x801F69D8`) are the same routine
+and are not on the worklist only because no dump prints at those VAs.
+
+### `0x801F7948` is reachable from nothing
+
+PROT 0909 partitions into five framed functions. Two are the tick
+(`0x801F69F4`) and the stager (`0x801F7AF4`) PROT 0898 names; the other three -
+`0x801F7948`, `0x801F7CC8`, `0x801F7D30` - carry a real `addiu sp, sp, -F`
+prologue under a clean epilogue and are reached by nothing. The five-form
+sweep (`scripts/ghidra-analysis/find-address-word-refs.py`) reports no word, no
+`jal`, no `j`, no PC-relative branch and no `lui`+`addiu` pair for any of them
+in any image, and PROT 0909 holds no jump table that could reach them. Only
+`0x801F7948` is on the worklist, because only it has a dump.
+
+### A module image ends in another image's bytes
+
+Every one of the 64 images ends in a byte-identical, same-file-offset run of
+another extracted image, and the run always ends exactly at the shorter
+image's own length. Nine of them end in **PROT 0899's** bytes - the menu
+overlay, a slot-A image at a different base - which settles the direction:
+the module inherited the bytes, mastered over a buffer that still held the
+previous build. PROT 0926 is the limit case: 2040 of its 2048 bytes are PROT
+0925's, and its own content is the eight-byte null stager at `0x801F69D8`.
+
+Three consequences, and the first two have already put wrong claims in this
+repo:
+
+- **A dump's filename does not name the owner.** Seven worklist addresses were
+  catalogued against an image that only holds the residue: `0x801F6A14` and
+  `0x801F798C` (owner 0957, catalogued from 0964), `0x801F74E4` and
+  `0x801F86B0` (0960, from 0961), `0x801F8118` (0942, from 0943), `0x801F8578`
+  (0919, from 0920) and `0x801F8EAC` (0904, from 0910). The decisive test is
+  the residual trampoline's own `jal` targets: PROT 0961's copy of
+  `0x801F8638` calls `0x801F69D8` and
+  `0x801F74E4`, and in 0961's *own* bytes `0x801F74E4` is interior to the tick
+  body - so the block cannot be 0961's code.
+- **The tail is not shared library code.** This page previously read the
+  region past `~+0x2A00` as library code linked into several modules because
+  958 and 959 hold the same words there. They hold the same words because both
+  inherited them, and in the four 12288-byte images 904 / 912 / 917 / 918 the
+  inherited words are PROT 0899's, at file offset `0x2A80` - a routine that
+  materialises the live game-state window `0x80084140` and tail-jumps to
+  `0x801D1298 + 0x8C`, addresses a cast module has no business reading. Its
+  printed VA under the slot-B base, `0x801F9458`, names no routine at all.
+- **The residue is what `disc-coverage.py` reports as un-dumped code.** Of the
+  137 `ambiguous = no` runs of 64 bytes or more this band still carries, 103
+  are the module's own data tail, 24 are byte-identical residue of a sibling
+  module's real function, 4 are the PROT 0899 tail above, and 6 are interior
+  to the tick body of an image that carries no dump at all (PROT 0915, 0935).
+  Not one is an un-dumped function of the image it is filed under.
+
+## What the port runs
+
+The worklist's DATA/PORT split is also the port's split, and the engine runs
+the DATA half of the whole band.
+
+**The pool.** `legaia_asset::cast_effect_pool` indexes all 64 entries by PROT
+number and parses each image's spawn records with the reader the spawn stack
+already shares (`legaia_asset::summon_overlay::parse`, which scans both
+`jal FUN_80021B04` and `jal FUN_80050ED4` sites and follows each one's `a2`).
+The scene host builds it once (`ensure_cast_effect_pool`, PROT 0903..0966) and
+installs it on the world; a host with no disc simply holds none.
+
+**The key.** `legaia_engine_vm::battle_cast_dispatch`'s two dispatchers each
+answer with the emitter VA *and* the band entry it lives in, using this page's
+own arithmetic - `FUN_801F1ED4` row `id - 0x81` = PROT `903 + row`,
+`FUN_801F2160` row `sub_id` = PROT `935 + sub_id`. `World::cast_module_for`
+picks between them exactly as retail does, on the record's `+0` class byte:
+capture class `'c'` goes to the `+1` row, anything else to the action-id row.
+
+**The stage.** `World::spawn_cast_module_fx` seats the resolved module's
+records as a move-VM scene (`SummonScene`), which is the same stand-in the
+summon and move-FX paths run, so both hosts tick and draw them with no host
+change. It fires at the two seams retail uses: the capture band's pager
+(`load_capture_archive`, the `0x6E` arm, ahead of the `0x801E50C8` tick loop)
+and the summon stager's first tick (`0x801E4B1C`).
+
+**What is still not run.** Every **PORT** row above - the six tick bodies and
+the seven state-touching stagers. They write things a spawn record cannot express -
+the staged-clip bytes `+0x1DA` / `+0x1DC` (the lift), the module phase
+`ctx+0x279` and `ctx+0x278` (the phase machine and its camera arms), the HP
+write `+0x14C` and the status byte `+0x16E` (the damage shape). The engine
+folds a cast's HP outcome at its own band seam
+(`World::cast_spell_on_slots_prepaid`) instead, so no outcome is lost - what is
+lost is retail's per-phase *timing* of it, and the choreography around it. The
+**SCOPE-IGNORE** rows stage nothing in retail either.
+
+Two band entries carry no record at all and stage nothing: PROT 0926, the
+1-sector null stub, and PROT 0952, whose two spawn sites both load `a2` out of
+a saved register no static window can see.
 
 ## Provenance
 

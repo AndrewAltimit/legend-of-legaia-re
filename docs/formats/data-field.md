@@ -92,7 +92,45 @@ The CLUT block is byte-identical in the two members and is not a palette bank in
 
 Per plane the glyph grid is a 12-pixel pitch with an 11x11 ink box: columns and rows `11, 23, 35, …, 239` carry no ink in any plane, and nothing is inked past column or row 238. That is 20x20 = 400 cells per plane, 4 planes per member, 8 planes in all. Seven planes are full and the last is inked through cell 164, for **2965 inked cells** - exactly the JIS X 0208 level-1 kanji count. Plane 0 confirms the order is the level-1 ku-ten sequence from its first glyph, with cell 21 landing on the 21st glyph of that sequence, so a glyph's cell is `plane = g / 400`, `row = (g % 400) / 20`, `col = g % 20`.
 
-Which routine samples the page is **open**. A sweep of `SCUS_942.54` and the 31 based overlay images for an instruction materialising the base CLUT id `0x76C0` (`475 << 6`) finds none, and the only hits on its row siblings (`0x7700`, `0x7740`) are battle-overlay sprite packets - a different screen's use of the same VRAM rows. So the consumer either computes the id or reads it from a data table. The upload path is live on every mode-22 entry either way.
+### Which routine samples the page
+
+Still **open**, but narrowed to a shape. A sampler has to carry two constants,
+and both are now pinned by the members' own headers: the pages are 4bpp at
+`(320, 256)` and `(384, 256)`, so their **tpage ids are `0x15` and `0x16`**
+(`(y >> 8) << 4 | x >> 6`, texture mode `0`), and a glyph draw has to pick its
+bit-plane by CLUT row, so its **CBA is `0x76C0 + plane * 0x40`** for
+`plane` `0..7` (rows `475..482`).
+
+Neither constant appears anywhere on the disc. A byte-level sweep of
+`SCUS_942.54` and all 83 statically based overlay images, in **both** forms - an
+`addi` / `addiu` / `ori` / `lui` immediate, and a bare halfword at any even
+offset, which is what a sprite-descriptor table entry would be - finds:
+
+- **no** materialisation of any of the eight CLUT ids `0x76C0`, `0x7700`, …,
+  `0x7880` outside incidental instruction halves (the `0x7700` / `0x77C0` hits
+  are `lui` upper halves and battle-overlay packet words, a different screen's
+  use of the same VRAM rows);
+- **two** `0x1DB` (`475`) immediates disc-wide, and both are already accounted
+  for: `0x8002586C` in `FUN_8002574C`'s third arm and `0x801DDCF4` in the menu
+  overlay's park - the two `MoveImage` sites above. Every other `0x1DB` in any
+  image is a data halfword in an unrelated ramp table (`0x800702E0..`, a
+  monotonic `+1`-per-six-entries curve) or the upper half of an instruction.
+
+The uploader does not leave a handle behind either: `FUN_800198E0` builds its
+rect straight from the TIM header and calls `LoadImage`; it records no CBA or
+tpage anywhere for a later draw to read
+(`see ghidra/scripts/funcs/800198e0.txt`).
+
+So the consumer, if this build has one, must compose the CBA at runtime from a
+value that is itself not a constant. What would close it is a capture rather
+than another sweep: enter the card screen under PCSX-Redux and watch the GPU
+FIFO for any primitive whose CBA halfword lands in `0x76C0..=0x7880` or whose
+tpage is `0x15` / `0x16`. If none appears, the page is loaded, parked and never
+drawn in this build - which the surrounding code already makes plausible, since
+the live path parks it into the world-map texture region `(704, 0)` on the way
+out, and the save/load screen's own text is pinned to the
+[dialog font](dialog-font.md) page at `(896, 0)`, not to this one
+([`save-screen.md`](../subsystems/save-screen.md)).
 
 ## Per-scene field bundles - what's still open
 
