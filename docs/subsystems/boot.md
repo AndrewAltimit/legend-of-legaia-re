@@ -31,7 +31,7 @@ modes 22/23, which is simply not *named* for it.
 - [Asset-type dispatcher (`FUN_8001F05C`)](#asset-type-dispatcher-fun_8001f05c)
 - [Game-mode state machine](#game-mode-state-machine) - [full handler map](#full-handler-map-recovered-from-the-disc) · [New Game boot chain](#new-game-boot-chain-title--field) · [title runs under `CARD`](#the-title-screen-runs-under-the-card-pair-modes-2223) · [CD-read API stack](#cd-read-api-stack) · [system-UI gap](#pre-init_data-system-ui-gap-menu-glyph-atlas--boot-cursors) · [title-overlay source](#title-overlay-source-on-disc)
 - [Title-screen overlay state](#title-screen-overlay-state) - [tick](#tick-function) · [sub-mode dispatcher](#sub-mode-dispatcher) · [opening scene chain + intro skip](#the-opening-scene-chain--the-fun_801d1344-intro-skip) · [name-entry overlay](#name-entry-overlay) · [sprite-emit helpers](#sprite-emit-helpers) · [state struct](#state-struct-extended) · [pad-mask layout](#pad-mask-layout-important)
-- [Boot init.pak (PROT 0895)](#boot-initpak-prot-0895) · [strip-grid unfolding](#strip-grid-unfolding)
+- [Boot init.pak (PROT 0895)](#boot-initpak-prot-0895) · [the VRAM upload](#the-vram-upload) · [the per-logo quads](#the-per-logo-quads) · [the logo sequencer](#the-logo-sequencer)
 - [Debug flags](#debug-flags)
 
 ## The main loop (`FUN_80015E90`)
@@ -834,7 +834,7 @@ A **town/field subsystem** uses a separate format-string pool at `0x80011079..0x
 PROT entry `0895_bat_back_dat` is the **boot-time `init.pak` bundle** - the `bat_back_dat` label is a CDNAME block-inheritance artifact (in raw-TOC index space the `bat_back_dat 895` define lands on the `summon.dat`/`readef.DAT` battle-backdrop streaming files = extraction 893/894; see [`formats/summon-readef.md`](../formats/summon-readef.md)). The first 16 bytes are a small pack header; the rest is a string pool followed by four uncompressed PSX TIMs:
 
 ```
-+0x0000  16 bytes  pack header (4 × u32 LE)
++0x0000  16 bytes  two PSX RECTs, not a pack header: (0, 500, 16, 1) then (0, 0, 640, 500)
 +0x0010  ~528 byte string pool with embedded dev paths:
            "init program \n"
            "h:\prot\field\init\init.pak"
@@ -854,28 +854,79 @@ CLUT and pixel data are byte-identical to live RAM after boot extraction - only 
 
 A typed parser lives at [`legaia_asset::init_pak`](../../crates/asset/src/init_pak.rs) - call `parse(&prot_0895_bytes)` to get a struct view over the four logos (slice pointers + decoded VRAM rects). The disc-gated unit test (`parses_real_init_pak_when_disc_extracted`) locks the on-disc layout.
 
-### Strip-grid unfolding
+### The VRAM upload
 
-Two of the four TIMs (PROKION, SCEA) are **vertically-packed sprite atlases**: the decoded bitmap stacks several smaller strips that retail unfolds into a horizontal layout via multiple GPU quads. Blitting the whole TIM as one quad shows the packed layout (PROKION as `PROK` over `KION`, SCEA as four wrapped text rows), not the on-screen logo.
+Mode 16 `READ INIT` (`FUN_8002612C`) is a frame, a `jal 0x801CE9C0` and an epilogue, so this entry's own routine at file `+0x1A8` is the mode's real body. It **uploads** the logos; it draws none of them.
 
-The per-logo grid is captured by [`legaia_engine_core::publisher_logos::STRIP_GRID`](../../crates/engine-core/src/publisher_logos.rs):
+For each of the four TIMs it forms the header `+8` (the CLUT block), writes that block's `+4`/`+6` destination halfwords and the pixel block's, then hands the whole TIM to `FUN_800198E0`. The pixel block's offset from the CLUT block is what distinguishes the bit depths: `+0x2C` is a 16-colour CLUT (4bpp), `+0x20C` a 256-colour one (8bpp).
 
-| Logo     | TIM       | Grid `(cols, rows)` | Source strip | Unfolded |
-|----------|-----------|---------------------|--------------|----------|
-| PROKION  | 176×256   | `(2, 1)`            | 176×128      | 352×128  |
-| Contrail | 184×256   | `(1, 1)`            | 184×256      | 184×256  |
-| SCEA     | 256×128   | `(2, 2)`            | 256×32       | 512×64   |
-| WARNING  | 256×256   | `(1, 1)`            | 256×256      | 256×256  |
+| TIM (file) | Logo | Depth | CLUT → VRAM | Pixels → VRAM | `tpage` | `clut` |
+|---|---|---|---|---|---|---|
+| `+0x21C4`  | PROKION  | 8bpp | (320, 507) | (640, 256) | `0x9A` | `0x7ED4` |
+| `+0xD3E4`  | Contrail | 8bpp | (320, 509) | (768, 256) | `0x9C` | `0x7F54` |
+| `+0x18E04` | SCEA     | 4bpp | (320, 508) | (640, 0)   | `0x0A` | `0x7F14` |
+| `+0x1CE44` | WARNING  | 4bpp | (0, 506)   | (704, 0)   | `0x0B` | `0x7E80` |
 
-Source strips are stored **column-major** in the bitmap; the output grid is row-major, so source strip `s = c * rows + r` lands at output cell `(col c, row r)`. PROKION's two halves combine into `PROK ☉ KION` (the green hemispheres in each half complete a single sun in the middle when adjacent). SCEA's four 32-row strips read top-line `Sony Computer Entertainment America` + bottom-line `Presents`.
+SCEA and WARNING are uploaded where their rects are written; PROKION and Contrail have their rects written in the same pass but are uploaded later in the body, after the display env is up. The routine also selects the **640×480** wide display mode (`FUN_8001DAF8(0x400)`), clears VRAM `(0, 0, 640, 500)` to black through `FUN_80058298` with the RECT at file `+0x08`, loads a 16-entry CLUT to VRAM `(0, 500)` from the RECT at file `+0x00` (so the pack "header" is two `RECT`s, not four opaque words), spawns the two boot actors, and stores game mode `0x11`.
 
-The retail boot code that draws them is **not** the title tick: it is `FUN_801CE9C0`, this entry's own routine at file `+0x1A8`, reached from mode 16 `READ INIT` (`FUN_8002612C`). It forms each TIM header `+8` (`0x801D09E4` / `0x801DBC04` / `0x801E7624` / `0x801EB664`), writes the `RECT` `+4`/`+6` halfwords and uploads through `FUN_800198E0`. The `STRIP_GRID` constants are still hypothesis-fit-to-visible-content rather than read off that routine's draw calls - decoding its per-logo quads is what would pin them.
+### The per-logo quads
+
+The quads come from a **six-record sprite-descriptor table** at `0x801F369C` - file `+0x24E84`, which is exactly where the fourth TIM ends, so the table is the entry's last content. Records are 20 bytes:
+
+| Offset | Field |
+|---|---|
+| `+0x00` `u32` | size scale, `0x1000` in every record |
+| `+0x04` `u16` | `tpage` |
+| `+0x06` `u16` | `clut` |
+| `+0x08` `u8` ×4 | `u`, `v`, `w`, `h` in texels |
+| `+0x0C` `u8` ×3 | top-edge vertex colour |
+| `+0x0F` `u8` | semi-transparency select (`0` in every record) |
+| `+0x10` `u8` ×3 | bottom-edge vertex colour |
+| `+0x13` `u8` | `tpage` adder, `<< 5` - the blend-mode bits |
+
+`FUN_801CFBB8(z, cx, cy, desc, level, scale)` turns one record into a `POLY_GT4` (GP0 `0x3C`, 13 words) at the centre `(cx, cy)` with half-extents `(w * 0x1000) >> 13` and `(h * 0x1000) >> 13` - that is `w >> 1` and `h >> 1`, so an odd dimension loses its last row or column. The prim is **opaque**: the fade is the PSX texture blend `texel * colour / 128` over a vertex colour of `record.rgb * level >> 8`, with `level` running `0` (black) to `0x80` (neutral). There is no alpha anywhere in the path.
+
+Matching each record's `tpage`/`clut` against the upload table above assigns every record to a logo:
+
+| Record | Logo | `u, v` | `w × h` | Centre | Screen rect (640×480) |
+|---|---|---|---|---|---|
+| 0 | PROKION  | (0, 0)   | 176×127 | (232, 228) | (144, 165) 176×126 |
+| 5 | PROKION  | (0, 128) | 176×127 | (408, 228) | (320, 165) 176×126 |
+| 4 | Contrail | (0, 0)   | 184×254 | (320, 232) | (228, 105) 184×254 |
+| 2 | SCEA     | (0, 0)   | 253×64  | (194, 224) | (68, 192) 252×64 |
+| 3 | SCEA     | (0, 64)  | 252×64  | (446, 224) | (320, 192) 252×64 |
+| 1 | WARNING  | (0, 0)   | 254×254 | -          | never drawn |
+
+So PROKION and SCEA are **vertically packed**: the top half and the bottom half of the TIM are drawn side by side, meeting on the stage centre `x = 320`. PROKION's two halves complete a single sun in the middle; SCEA's two 64-row halves read `Sony Computer Entertainment America` beside `Presents`. Contrail draws whole. `FUN_801D0868` emits the SCEA pair and `FUN_801D08F0` the PROKION pair, each taking the level as its only argument and reading the centre offsets out of the records' own `w` byte.
+
+**WARNING is uploaded but never drawn by this overlay.** Descriptor 1 exists and its TIM reaches VRAM, but all five `FUN_801CFBB8` call sites in PROT 0895 pass descriptor ids 0, 2, 3, 4 and 5 - none passes 1 - and no other reference to the descriptor table exists in the image (`find-address-word-refs.py 0x801F369C` finds exactly the two `lui`/`addiu` pairs inside `FUN_801CFBB8` and `FUN_801D0868`). Whatever shows the health warning, it is not this code.
+
+### The logo sequencer
+
+`FUN_801CE9C0` spawns two actors from static templates at `0x801D09AC` and `0x801D09C4`. The `+0x08` tick slot of the first is `FUN_801CECD0`, a 21-arm asset-load state machine (CD reads, LZS, and a `TIM_LIST` pack walk that uploads each member through `FUN_800198E0`); the second is `FUN_801CEFD4`, the logo sequencer.
+
+The sequencer is a 13-arm switch on the actor's `+0x1A` state halfword (jump table `0x801CE8E8`), with a per-actor timer at `+0x22` and a shared one at `0x801F3EA8`. Its play order is **SCEA, then Contrail, then PROKION** - not the file order:
+
+| States | Logo | Pacing |
+|---|---|---|
+| 0, 1, 2 | - | two `0x11`-tick settles either side of one `FUN_80058068(0)` |
+| 3, 4, 5 | SCEA | level `+8`/frame to `0x80` (16), hold `0x83` frames, level `0x80 - t/2` as `t` runs `+8` to `0x100` (32) |
+| 6 | - | `0x11`-tick settle |
+| 7, 8 | Contrail | one counter `0` → `0x441` at `+8`/frame with the level clamped at `0x80` (16 up, 121 held), then back down from `0x80` at `-8` (16) |
+| 9, 10 | PROKION | counter `0` → `0x351` at `+8`/frame, again clamped (16 up, 91 held); state 10 holds the logo at full while a full-screen blend quad ramps the screen to white over `0x101` at `4 × frame_delta` per tick |
+| 11, 12 | - | back to the 320-wide display env, both `DRAWENV` backgrounds to white, and a 320×8 black strip cleared at `(0, 232)` - the loading bar |
+
+State 10's blend quad is `FUN_801D0460(ot_slot, abr, rgb)`, a full-screen semi-transparent flat quad (GP0 `0x2B`) sized from the scratchpad draw-context extents and given its blend mode by `FUN_80059010`. The tail of the sequencer leaves game mode `0x16` (CARD INIT) when `_DAT_8007BB00` is set and `0` otherwise.
+
+The port carries all of this in [`legaia_engine_core::publisher_logos`](../../crates/engine-core/src/publisher_logos.rs): `LOGO_QUADS` holds the table above, `RETAIL_SEQUENCE` the order and the frame counts, and `LEVEL_FULL` the `0x80` neutral point. It models state 10 as a fade-down of the logo over the same 65 frames rather than compositing the white blend quad.
 
 ### The code region, and where it ends
 
 The entry is mapped in [`static-overlays.toml`](../../crates/asset/data/static-overlays.toml) as `boot_init_pak`, slot A, base `0x801CE818` - recovered from the image's own internal call graph (23 internal `jal`s, 8 of them landing on prologues; whole-file pointer resolution 22/25 and 7 string anchors at slot A against 1/12 and 0 at slot B). That makes the base a disc fact rather than an inference from the mode-16 call.
 
 The code is one contiguous region, file `+0x1A8..+0x216C` (VA `0x801CE9C0..0x801D0984`, 8132 bytes), and the first TIM starts at `+0x21C4` - so every byte of plausible MIPS ahead of the logo payload is accounted for, with 88 bytes of padding between. It partitions into **20 functions**, all dumped (`overlay_boot_init_pak_0895_<addr>.txt`); the roll is in [`functions/battle.md`](../reference/functions/battle.md#boot--initpak-overlay-prot-0895).
+
+The **tail** closes the same way from the other end. The fourth TIM ends at `+0x24E84` and the six 20-byte sprite descriptors start exactly there, running to `+0x24EFC`. What follows to the entry's `0x25800` end is `0x904` bytes that are three-quarters zero, with no printable run longer than eight bytes - sector padding with a few short tokens in it, not another table.
 
 Two of them write the game-mode word `_DAT_8007B83C`: the mode-16 body stores `0x11` (17) at `0x801CEC94` as its last act, and the third function stores `0x16` (22, `CARD INIT`) at `0x801CF4D4`. So the boot chain out of `READ INIT` is set inside this overlay, not by the mode table's `next` column.
 

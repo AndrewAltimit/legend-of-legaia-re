@@ -733,3 +733,30 @@ data with the module's siblings is structural: this band reads the move-power
 record and the character ability bitfield, which the action state machine
 FUN_801E295C and the target resolver FUN_801E7320 never touch.
 """
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/minigames-debug.md:801cef54:80025ae0+80010ae4"
+reason = """
+Both are SCUS addresses the row names as the routine's *caller*, and both are
+there. Disassembling FUN_80025980 out of extracted/SCUS_942.54 at base
+0x80010000 (header 0x800) gives `80025A64 addiu v0,v0,0xae4` under
+`lui v0,0x8001` - the jump-table base 0x80010AE4 - bounded by
+`sltiu v0,v1,7` at 0x80025A58, and the seventh arm at 0x80025AE0 is
+`jal 0x801cef54`. Reading the seven words at 0x80010AE4 gives
+0x80025A80/0x80025A90/0x80025AA0/0x80025AB0/0x80025AC0/0x80025AD0/0x80025AE0,
+so arm 6 is this routine's. Neither address is an operand of FUN_801CEF54
+itself, which is why no dump of it carries them.
+"""
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/game-modes.md:801ceb50:801ce818"
+reason = """
+0x801CE818 is the slot-A overlay load base the row names as provenance, not an
+operand - the same shape as the already-waived
+`docs/reference/functions/battle.md:801d0f60:801ce818+801c0000` row. The
+arithmetic checks: base + 0x338 = 0x801CEB50, and disassembling
+extracted/overlays/overlay_gameover_0902.bin at that base puts a clean
+`addiu sp,sp,-0x118` prologue there with 61 instructions and its own `jr ra`,
+matching the row's 244 bytes. The body was re-read at the same time and the
+row corrected: the sub-state switch on `+0x5A` is two switches, not one.
+"""

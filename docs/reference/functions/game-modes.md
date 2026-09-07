@@ -58,7 +58,7 @@ The 28 × 24-byte table at `0x8007078C` is detailed in [`subsystems/boot.md` § 
 | `80025044` / `8002504C` | Two `jr ra; nop` leaves used as the null tick slot of a [static actor template](runtime-libs.md#static-actor-templates). `_044` fills the `+0x08` slot of three SCUS records (`0x800706EC`, `0x80070704`, `0x8007680C` - only the last is spawned, by battle init), `_04C` that of the field overlay 0897's record at `0x801F2704`. A template that ticks nothing. `see ghidra/scripts/funcs/80025044.txt`. |
 | `80025054` | Actor-template tick - the `+0x08` slot of the [record](runtime-libs.md#static-actor-templates) at `0x80070614`: clears actor flag bit `0x2` via `FUN_80025344`, writes the heading helper `FUN_80019278`'s result to `actor[+0x16]`, then builds a fixed `0x18`-byte parameter block on the stack (`0xF0`, `0xF0`, `0xF0`, `1`, `0`, `0x40`, `0x20`, `0xA`, `0x10`, `1`, `0x14`) and hands it to the move-buffer setup `FUN_800204F8`. **No site materialises `0x80070614`**, so nothing spawns the actor this ticks - see [`battle.md` § Unreferenced SCUS entry points](battle.md#unreferenced-scus-entry-points). `see ghidra/scripts/funcs/80025054.txt`. |
 | `80015E90` | **`main()` - cold-boot init + master mode loop.** Called once from the entry stub `FUN_80026C28`. Runs the subsystem-init sequence (GTE/GPU/CD/SPU/libsnd, heap, DISPENV, mode table) then loops dispatching the current mode's handler from the `0x8007078C` table until the mode index goes negative. Full walk-through: [`subsystems/boot.md` § The main loop](../../subsystems/boot.md#the-main-loop-fun_80015e90). `see ghidra/scripts/funcs/80015e90.txt`. |
-| `801CEB50` | **GAME OVER banner tick** (PROT 0902, base `0x801CE818` + `0x338`, 244 B). `(actor)`. Advances two of the actor's own halfwords per frame (`+0x24 += 0x14`, `+0x18 += 0x64`), counts `+0x54` down, and when it goes negative branches on the sub-state `+0x5A` (0/1/2) before calling the boot-mode initialiser `FUN_8001FFA4` - the retire path of the retail-unreachable GAMEOVER dev harness. The overlay's other function is `801CE844` (772 B), already dumped. `overlay_gameover_0902_801ceb50.txt`. |
+| `801CEB50` | **GAME OVER banner tick** (PROT 0902, base `0x801CE818` + `0x338`, 244 B). `(actor)`. Advances two of the actor's own halfwords per frame (`+0x24 += 0x14`, `+0x18 += 0x64`) and counts `+0x54` down. Runs **two** switches on the sub-state `+0x5A`, not one: on expiry the first (0/1/2) only reloads the timer - `0x20` / `0x100` / `0x320` frames - then bumps `+0x5A`; the second, on the bumped value, does the work (2 spins the camera yaw `_DAT_8007B792 += 0x20`, 3 idles, 4 calls `FUN_8001FFA4` and stores game mode `0`). **Nothing ever ticks it** - see [below](#the-game-over-banner-is-spawned-out-of-reach). `overlay_gameover_0902_801ceb50.txt`. |
 | `801CE8CC` | **Field battle-intro driver** (PROT 0979, base + `0xB4`, 2276 B, 569 instructions) - the image's largest routine and the one the byte-derived worklist reported in three separate pieces (`0x801CEA08`, `0x801CEF6C`, `0x801CF014`), because Ghidra had carved only its first 316 bytes. Reads the battle-context pointer at `_DAT_8007C438`. `overlay_field_battle_intro_0979_801ce8cc.txt`. |
 | `801CED68` (PROT 0902) | **GAME OVER banner mesh pass** - 492 bytes of GTE code the entry `801CE844` and the tick `801CEB50` do not cover, so the claim that those two are the overlay's only functions does not hold. It loads a per-vertex batch through `lwc2 SXY/SZ`, runs `4A480012` (`NCLIP`-class), emits packets via `swc2`, then calls `FUN_8005B618` (`SetLightMatrix`) and the three primitive helpers `FUN_800461A4` / `FUN_8004629C` / `FUN_8004638C`. It has no `jr ra`: PROT 0902 is one 2048-byte sector and the body is cut at the image's last word, which is what a sector-granular extent does to a routine that starts at `+0x550`. `overlay_gameover_0902_801ced68.txt`. |
 | `801CEF6C` (PROT 0902) | The tail of the same pass: `FUN_800461A4` / `FUN_8004629C` / `FUN_8004638C` again, each guarded on one of the batch record's `+0xC` / `+0xA` / `+0x8` halfwords, `FUN_8005B648` (`SetColorMatrix`), and the scratchpad hand-off through `FUN_8003D20C` / `FUN_8003D1A4` at `0x1F800334` / `0x1F8003A8` / `0x1F800314`. Also truncated by the entry boundary. `overlay_gameover_0902_801cef6c.txt`. |
@@ -275,3 +275,26 @@ on arrival, so a channel lands exactly, never a frame past.
 The earlier "role not established" reading also recorded a read of the frame
 scratch `0x1F80037D`. There is none: every scratch access in the body resolves
 to `0x1F800393` (`0x1F800314 + 0x7F`) or `0x1F800394` (`+ 0x80`).
+
+### The GAME OVER banner is spawned out of reach
+
+Mode 19's overlay, PROT 0902, ships exactly two functions and two
+[static actor template](runtime-libs.md#static-actor-templates) records, and the
+records do not line up with the functions the way the mode needs.
+
+`FUN_801CE844` is the mode init - SCUS reaches it by `jal 0x801ce844` at
+`0x80025B4C` - and it spawns one actor: `lui a0, 0x801d` / `addiu a0, a0,
+-0x12f8` at `0x801CE8C4` forms `0x801CED08`, which goes straight into the
+allocator `FUN_80020DE0` with the actor pool `_DAT_8007C34C`. That record's
+`+0x08` tick word is `0x801CEB48`, and the two instructions there are
+`jr ra` / `nop`. So the actor the GAME OVER mode spawns ticks nothing.
+
+The banner tick `FUN_801CEB50` is the `+0x08` word of the **next** record,
+`0x801CED20`, and nothing on the disc materialises that address. The
+[reference sweep](../../tooling/address-reference-scan.md) finds one
+`lui`+`addiu` pair forming it, in the menu overlay 0899 - a different image at
+an aliased VA, so different bytes. The banner is therefore real, complete and
+unreachable, the same shape as `FUN_80025054`.
+
+What retail actually shows on a game over is drawn elsewhere; this overlay's
+contribution is the mode word and a null-ticking actor.
