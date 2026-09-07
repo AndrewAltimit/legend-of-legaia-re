@@ -420,6 +420,33 @@ namespace LegaiaWorld
             return hops;
         }
 
+        /// Could a walk from `from` reach `to` - by a plain route, or by a
+        /// chain of walks and ledge hops? The director asks this before
+        /// handing out a station or a ring, so a spot up the bank counts
+        /// as reachable for a villager that can hop it (a plain
+        /// CalculatePath calls the beach and the village two islands).
+        /// With no bake near either end everything counts as reachable,
+        /// as before the bake existed. The hop search reuses this walk's
+        /// chain scratch, so it is skipped while a commanded walk is in
+        /// flight - the director only asks about idle villagers.
+        public bool CanReachFrom(Vector3 from, Vector3 to)
+        {
+            if (!NavAvailable())
+                return true;
+            NavMeshHit a, c;
+            if (!NavMesh.SamplePosition(from, out a, navSnapRadius, ALL_AREAS))
+                return true;
+            if (!NavMesh.SamplePosition(to, out c, navSnapRadius, ALL_AREAS))
+                return true;
+            if (RouteBetween(a.position, c.position) != null)
+                return true;
+            if (mode == 1 || mode == 5 || mode == 6)
+                return false;
+            bool ok = PlanChain(a.position, c.position);
+            chainCount = 0;
+            return ok;
+        }
+
         // --- Navmesh route ---------------------------------------------------
 
         /// True when a navmesh is registered under this NPC (probed once,

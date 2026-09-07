@@ -24,6 +24,15 @@
 //   2 = seat (card table stool)
 //   3 = chat spot (meeting point for a 2-3 NPC conversation)
 //   4 = viewpoint (stand and look; no handler)
+//   5 = carry / errand endpoint (LegaiaNpcHandItem: something is picked up
+//       or put down here - a bucket at the shore, a broom at a doorway)
+//   6 = visit (LegaiaVisitSpot: a stand spot in front of one of the
+//       village's fixed residents, whose own bubble answers)
+// The four fields directly under `kind` below are read by the BRAIN and
+// the DIRECTOR rather than by a handler, because they describe what the
+// VISITOR does here rather than what the station does - so a plain stand
+// spot can pop a bubble, glance about, or take its place in a sequenced
+// fetch errand without needing a behaviour of its own.
 // `indoors` marks stations inside an interior room (only reachable through
 // a doorway teleport - the brain routes through the door pair it is given
 // by the director), so daytime pickers can prefer outdoor ones and the
@@ -43,8 +52,20 @@ namespace LegaiaWorld
     [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
     public class LegaiaNpcStation : UdonSharpBehaviour
     {
-        [Tooltip("0 use-prop, 1 fishing, 2 seat, 3 chat spot, 4 viewpoint.")]
+        [Tooltip("0 use-prop, 1 fishing, 2 seat, 3 chat spot, 4 viewpoint, 5 carry/errand endpoint, 6 visit a fixed resident.")]
         public int kind;
+
+        [Tooltip("Bubble icon the ARRIVING villager pops when it gets here (-1 = none). See LegaiaBubbleArt.ICON_NAMES.")]
+        public int arriveIcon = -1;
+
+        [Tooltip("Glance around while standing here (a villager on an errand looks at the view, not through it).")]
+        public bool glance = true;
+
+        [Tooltip("Carry flow, so an itinerary can be SEQUENCED rather than shuffled: 0 nothing changes hands here, 1 something is picked up, 2 something is put down.")]
+        public int carryFlow;
+
+        [Tooltip("Free-text tag for the builder's own bookkeeping (\"shore\", \"doorway\", \"path\"...); nothing reads it at runtime.")]
+        public string role = "";
 
         [Tooltip("Where the NPC stands (position) and faces (+Z) while using the station. Defaults to this transform.")]
         public Transform standPoint;

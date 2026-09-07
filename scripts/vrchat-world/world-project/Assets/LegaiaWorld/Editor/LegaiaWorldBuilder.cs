@@ -1625,7 +1625,9 @@ namespace LegaiaWorld
                        "LegaiaNpcStation", "LegaiaWeather",
                        "LegaiaFishingSpot", "LegaiaCardTableHost",
                        "LegaiaNpcBrain", "LegaiaTownDirector",
-                       "LegaiaSpeechBubble", "LegaiaNavMeshLoader" })
+                       "LegaiaSpeechBubble", "LegaiaNavMeshLoader",
+                       "LegaiaNpcCarry", "LegaiaNpcHandItem",
+                       "LegaiaVisitSpot" })
             {
                 var t = FindType("LegaiaWorld." + name);
                 if (t == null) continue;
