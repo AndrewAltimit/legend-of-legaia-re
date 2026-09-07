@@ -315,24 +315,6 @@ namespace LegaiaWorld
             var weather = LegaiaWeatherBuilder.Apply(root, sceneName, o);
             if (weather == null)
                 Fail("weather pass built nothing");
-            var rain = weather.GetComponentInChildren<ParticleSystem>(true);
-            if (rain == null)
-                Fail("no rain ParticleSystem under " + Path(weather.transform));
-            var flash = weather.GetComponentInChildren<Light>(true);
-            if (flash == null)
-                Fail("no lightning Light under " + Path(weather.transform));
-            if (flash.enabled)
-                Fail("the lightning light must start disabled");
-            var thunderSrc = weather.GetComponentInChildren<AudioSource>(true);
-            if (thunderSrc == null || thunderSrc.clip == null)
-                Fail("thunder AudioSource has no imported clip (generation failed?)");
-            if (thunderSrc.clip.length < 3f)
-                Fail("thunder clip is only " + thunderSrc.clip.length + " s");
-            CheckVar(weather, "LegaiaWorld.LegaiaWeather", "rain");
-            CheckVar(weather, "LegaiaWorld.LegaiaWeather", "rainRoot");
-            CheckVar(weather, "LegaiaWorld.LegaiaWeather", "flashLight");
-            CheckVar(weather, "LegaiaWorld.LegaiaWeather", "thunder");
-            CheckVar(weather, "LegaiaWorld.LegaiaWeather", "maxEmission");
             // The grass shader's gust hook must exist, or wind does nothing.
             var grass = Shader.Find("Legaia/Grass Wind");
             if (grass == null)
@@ -594,7 +576,8 @@ namespace LegaiaWorld
 
             // --- Brains ---------------------------------------------------------
             var brainType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaNpcBrain");
-            int eligible = 0, wired = 0, homed = 0;
+            int eligible = 0, wired = 0, homed = 0, insideAlready = 0, unroutable = 0;
+            var unroutableNpcs = new List<Transform>();
             var perDoor = new Dictionary<Object, int>();
             foreach (object n in MiniJson.AsList(MiniJson.Get(manifest, "npcs"))
                      ?? new List<object>())
@@ -634,6 +617,22 @@ namespace LegaiaWorld
                 if (ReadVar(brain, "loco") == null)
                     Fail(placed.name + "'s brain has no locomotion controller");
                 wired++;
+                if (ReadVar(brain, "startIndoors") is bool inside && inside)
+                {
+                    // Placed inside a house by retail: home already.
+                    if (ReadVar(brain, "homeDoor") != null)
+                        Fail(placed.name + " starts indoors yet was given a front door");
+                    insideAlready++;
+                    continue;
+                }
+                if (ReadVar(brain, "noRoute") is bool cut && cut)
+                {
+                    if (ReadVar(brain, "homeDoor") != null)
+                        Fail(placed.name + " is flagged noRoute yet was given a front door");
+                    unroutable++;
+                    unroutableNpcs.Add(placed);
+                    continue;
+                }
                 var door = ReadVar(brain, "homeDoor") as Object;
                 if (door != null)
                 {
@@ -653,24 +652,119 @@ namespace LegaiaWorld
             var homesRoot = container.transform.Find("homes");
             int homes = homesRoot != null ? homesRoot.childCount : 0;
             int cap = o.homeCap;
+
+            // --- Navmesh + the door trip --------------------------------------
+            // The bake must exist, be wired to its loader, and carry a
+            // COMPLETE route from every villager's spawn to its door stand
+            // spot, from the stand spot onto the doorway tile, and (where
+            // the home has a way out) from the landing to the exit - the
+            // walks the night routine makes. A partial route is exactly the
+            // clipping-through-the-hillside walk this replaces.
+            var navGo = rootT.Find(LegaiaNavMesh.CONTAINER);
+            if (navGo == null)
+                Fail("no " + LegaiaNavMesh.CONTAINER + " container under the root - " +
+                     "the navmesh bake built nothing (no colliders?)");
+            CheckVar(navGo.gameObject, "LegaiaWorld.LegaiaNavMeshLoader", "data");
+            var navData = LegaiaNavMesh.LoadData(sceneName);
+            if (navData == null)
+                Fail("the navmesh asset was not saved under LegaiaGenerated/" + sceneName);
+            var navInstance = LegaiaNavMesh.Register(navData);
+            int routes = 0, doorProps = 0, thresholds = 0;
+            var routeFailures = new List<string>();
+            try
+            {
+                foreach (object n in MiniJson.AsList(MiniJson.Get(manifest, "npcs"))
+                         ?? new List<object>())
+                {
+                    if (MiniJson.AsStr(MiniJson.Get(n, "kind")) != "talk")
+                        continue;
+                    string file = MiniJson.AsStr(MiniJson.Get(n, "file")) ?? "";
+                    if (settings.NpcIsRemoved(file) || settings.NpcIsStatic(file) ||
+                        settings.NpcIsFrozen(file))
+                        continue;
+                    Vector3 local = LegaiaWorldBuilder.G2U(MiniJson.GetVec3(n, "position"));
+                    Transform placed = null;
+                    foreach (Transform child in npcRoot)
+                        if ((child.localPosition - local).sqrMagnitude <= 1e-3f)
+                        {
+                            placed = child;
+                            break;
+                        }
+                    if (placed == null)
+                        continue;
+                    var brain = placed.GetComponent(brainType);
+                    var door = ReadVar(brain, "homeDoor") as Transform;
+                    if (door == null)
+                        continue;
+                    var threshold = ReadVar(brain, "homeThreshold") as Transform;
+                    if (threshold == null)
+                        Fail(placed.name + " has a home door but no doorway tile (homeThreshold)");
+                    thresholds++;
+                    if (ReadVar(brain, "homeDoorProp") != null)
+                        doorProps++;
+                    string why;
+                    if (!LegaiaNavMesh.Reachable(placed.position, door.position, 1.2f, out why))
+                        routeFailures.Add(placed.name + " -> " + door.parent.name + "/door: " + why);
+                    else
+                        routes++;
+                    if (!LegaiaNavMesh.Reachable(door.position, threshold.position, 1.2f, out why))
+                        routeFailures.Add(door.parent.name + " door -> threshold: " + why);
+                    var landing = ReadVar(brain, "homeLanding") as Transform;
+                    var exit = ReadVar(brain, "homeExit") as Transform;
+                    if (landing != null && exit != null &&
+                        !LegaiaNavMesh.Reachable(landing.position, exit.position, 1.2f, out why))
+                        routeFailures.Add(door.parent.name + " landing -> exit: " + why);
+                }
+            }
+            finally
+            {
+                try
+                {
+                    // A noRoute flag must be TRUE: re-derive it, so the flag
+                    // can never hide a villager the bake simply lost.
+                    foreach (var npc in unroutableNpcs)
+                        foreach (Transform home in homesRoot)
+                        {
+                            var d = home.Find("door");
+                            string why;
+                            if (d != null && LegaiaNavMesh.Reachable(npc.position,
+                                    d.position, 1.2f, out why))
+                                Fail(npc.name + " is flagged noRoute but " + home.name +
+                                     "/door is reachable from its spawn");
+                        }
+                }
+                finally
+                {
+                    UnityEngine.AI.NavMesh.RemoveNavMeshData(navInstance);
+                }
+            }
+            if (routeFailures.Count > 0)
+                Fail(routeFailures.Count + " night-routine route(s) have no complete " +
+                     "navmesh path:\n  " + string.Join("\n  ", routeFailures));
+            if (thresholds != homed)
+                Fail(thresholds + " doorway tiles for " + homed + " homed villagers");
             foreach (var kv in perDoor)
                 if (kv.Value > cap)
                     Fail("home door " + kv.Key.name + " holds " + kv.Value +
                          " villagers, cap is " + cap);
-            if (homed < wired)
+            int outside = wired - insideAlready - unroutable;
+            if (homed < outside)
             {
                 // Short of capacity is allowed; a free slot left over is not.
                 if (homes * cap > homed)
-                    Fail(homed + " of " + wired + " villagers have a home while " +
-                         (homes * cap - homed) + " slot(s) sit free");
-                Debug.LogWarning("[Legaia] selftest: " + (wired - homed) +
+                    Fail(homed + " of " + outside + " village-side villagers have a " +
+                         "home while " + (homes * cap - homed) + " slot(s) sit free");
+                Debug.LogWarning("[Legaia] selftest: " + (outside - homed) +
                     " villager(s) have no home - " + homes + " door(s) x cap " +
-                    cap + " cannot seat " + wired);
+                    cap + " cannot seat " + outside);
             }
 
             Debug.Log("[Legaia] SELFTEST OK: living town wired - " + wired +
                 " villager(s), " + homed + " homed across " + homes +
-                " door(s) (cap " + cap + "), " + stationArr.Length +
+                " door(s) (cap " + cap + ", " + doorProps + " with a door prop), " +
+                insideAlready + " living indoors already, " + unroutable +
+                " cut off from every door, " +
+                routes + " navmesh route(s) home complete, " + stationArr.Length +
                 " station(s) on the director (" + propStations + " use-prop, " +
                 chatStations + " chat, " + otherStations + " other), scene " +
                 sceneName + " (not saved).");
@@ -764,16 +858,18 @@ namespace LegaiaWorld
             Bed(LegaiaRealism.BED_BASE, LegaiaAudioGen.BASE_SECONDS);
             Bed(LegaiaRealism.BED_DAY, LegaiaAudioGen.DAY_SECONDS);
             Bed(LegaiaRealism.BED_NIGHT, LegaiaAudioGen.NIGHT_SECONDS);
-            Bed(LegaiaRealism.BED_RAIN, LegaiaAudioGen.RAIN_SECONDS);
             Bed(LegaiaRealism.BED_WIND, LegaiaAudioGen.GUST_SECONDS);
 
             // --- Spatial emitter groups ----------------------------------
-            int waves = 0, birds = 0, wildlife = 0, mills = 0, spatial = 0;
+            int waves = 0, birds = 0, wildlife = 0, mills = 0, spatial = 0, beds = 0;
             foreach (var src in amb.GetComponentsInChildren<AudioSource>(true))
             {
                 string n = src.name;
                 if (n.StartsWith("bed_"))
+                {
+                    beds++;
                     continue;
+                }
                 spatial++;
                 if (src.clip == null)
                     Fail(n + " has no clip");
@@ -824,7 +920,7 @@ namespace LegaiaWorld
             if (amb.GetComponent(mixerType) == null)
                 Fail("no LegaiaAmbienceMixer on the ambience container");
             foreach (string f in new[]
-                     { "baseBed", "dayBed", "nightBed", "rainBed", "windBed",
+                     { "baseBed", "dayBed", "nightBed", "windBed",
                        "daySources", "nightSources", "anySources",
                        "dayGroupVolume", "nightGroupVolume", "anyGroupVolume" })
                 CheckVar(amb, "LegaiaWorld.LegaiaAmbienceMixer", f);
@@ -849,7 +945,10 @@ namespace LegaiaWorld
                           "(day/night off) - the mixer stays on permanent day.");
             }
 
-            Debug.Log("[Legaia] SELFTEST OK: ambience = 5 bed(s) + " + spatial +
+            if (beds != 4)
+                Fail(beds + " 2D beds under the ambience container, expected 4 " +
+                     "(base, day, night, wind gust)");
+            Debug.Log("[Legaia] SELFTEST OK: ambience = " + beds + " bed(s) + " + spatial +
                       " spatial emitter(s) (" + waves + " shore, " + birds +
                       " bird, " + wildlife + " wildlife, " + mills +
                       " windmill) under " + Path(ambT) + " (scene " + sceneName +

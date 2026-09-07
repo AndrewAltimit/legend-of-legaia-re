@@ -7,8 +7,8 @@
 //
 //   - the 2D beds: a base wind/surf bed that always plays, a day bed and
 //     a night bed crossfaded against LegaiaDayNight's published
-//     `dayFactor`, and two weather beds (rain, wind gust) that idle at
-//     volume 0 until the weather layer asks for them;
+//     `dayFactor`, and a wind-gust bed that idles at volume 0 until the
+//     weather layer asks for it;
 //   - the spatial emitter groups: day-only (tree birds), night-only
 //     (owls / frogs / crickets by the trees and the water) and all-hours
 //     (the shore waves, the windmill), each an array with one peak
@@ -25,23 +25,18 @@
 //
 //     LegaiaWorld.LegaiaAmbienceMixer      under <root>/ambience
 //
-// and writes exactly two floats, every frame or whenever they change,
+// and writes exactly one float, every frame or whenever it changes,
 // either typed (a LegaiaAmbienceMixer reference) or through the backing
 // UdonBehaviour:
 //
-//     mixer.SetProgramVariable("rainLevel", 0f..1f);
 //     mixer.SetProgramVariable("windLevel", 0f..1f);
 //
-//   rainLevel  0 = dry, 1 = full downpour. Fades the rain bed in, ducks
-//              the bird group hard (birds shelter in rain), and takes a
-//              little off the day/night beds so the rain reads as the
-//              dominant layer.
-//   windLevel  0 = calm, 1 = storm. Fades the gust bed in and lifts the
-//              base bed slightly.
+//   windLevel  0 = calm, 1 = a blustery spell. Fades the gust bed in and
+//              lifts the base bed slightly.
 //
-// Both are clamped and slewed here (WEATHER_SLEW per second), so the
-// writer may step them instantly without a click. No other field is part
-// of the contract; nothing else writes these two.
+// It is clamped and slewed here (weatherSlew per second), so the writer
+// may step it instantly without a click. No other field is part of the
+// contract; nothing else writes it.
 //
 // LegaiaDayNight keeps working with no mixer in the scene (it fades its
 // own dayAmbience / nightAmbience sources). When the mixer is present the
@@ -68,20 +63,17 @@ namespace LegaiaWorld
         public AudioSource dayBed;
         [Tooltip("Night bed (cricket chorus, cool breeze, frogs, a far owl).")]
         public AudioSource nightBed;
-        [Tooltip("Rain bed - silent until the weather layer raises rainLevel.")]
-        public AudioSource rainBed;
-        [Tooltip("Storm gust bed - silent until the weather layer raises windLevel.")]
+        [Tooltip("Wind gust bed - silent until the weather layer raises windLevel.")]
         public AudioSource windBed;
 
         [Header("Bed peak volumes")]
         public float baseVolume = 0.14f;
         public float dayVolume = 0.16f;
         public float nightVolume = 0.18f;
-        public float rainVolume = 0.22f;
         public float windVolume = 0.2f;
 
         [Header("Spatial emitter groups")]
-        [Tooltip("Day-only emitters (tree birds): faded out at night and ducked in rain.")]
+        [Tooltip("Day-only emitters (tree birds): faded out at night.")]
         public AudioSource[] daySources;
         public float dayGroupVolume = 0.38f;
 
@@ -93,16 +85,13 @@ namespace LegaiaWorld
         public AudioSource[] anySources;
         public float anyGroupVolume = 0.52f;
 
-        // --- Weather inputs (see the contract above) --------------------
-        [Tooltip("0..1, written by the weather layer. Fades the rain bed in and ducks the birds.")]
-        public float rainLevel;
-        [Tooltip("0..1, written by the weather layer. Fades the storm-gust bed in.")]
+        // --- Weather input (see the contract above) ---------------------
+        [Tooltip("0..1, written by the weather layer. Fades the wind-gust bed in.")]
         public float windLevel;
 
         [Tooltip("How fast the weather levels are allowed to move, per second.")]
         public float weatherSlew = 0.35f;
 
-        private float rainNow;
         private float windNow;
 
         void Start()
@@ -113,12 +102,9 @@ namespace LegaiaWorld
             Spread(daySources);
             Spread(nightSources);
             Spread(anySources);
-            // The weather beds start silent whatever the authored volume is.
-            if (rainBed != null)
-                rainBed.volume = 0f;
+            // The gust bed starts silent whatever the authored volume is.
             if (windBed != null)
                 windBed.volume = 0f;
-            rainNow = 0f;
             windNow = 0f;
         }
 
@@ -149,28 +135,20 @@ namespace LegaiaWorld
                 day = Mathf.Clamp01(dayNight.dayFactor);
 
             float dt = Time.deltaTime * (weatherSlew > 0f ? weatherSlew : 0.35f);
-            rainNow = Mathf.MoveTowards(rainNow, Mathf.Clamp01(rainLevel), dt);
             windNow = Mathf.MoveTowards(windNow, Mathf.Clamp01(windLevel), dt);
 
-            // Rain takes the top off everything else so it reads as the
-            // dominant layer instead of piling on top of a full mix.
-            float wet = 1f - 0.3f * rainNow;
-            float birdDuck = 1f - 0.85f * rainNow;
-
             if (baseBed != null)
-                baseBed.volume = baseVolume * wet * (1f + 0.35f * windNow);
+                baseBed.volume = baseVolume * (1f + 0.35f * windNow);
             if (dayBed != null)
-                dayBed.volume = dayVolume * day * wet;
+                dayBed.volume = dayVolume * day;
             if (nightBed != null)
-                nightBed.volume = nightVolume * (1f - day) * wet;
-            if (rainBed != null)
-                rainBed.volume = rainVolume * rainNow;
+                nightBed.volume = nightVolume * (1f - day);
             if (windBed != null)
                 windBed.volume = windVolume * windNow;
 
-            SetGroup(daySources, dayGroupVolume * day * birdDuck);
-            SetGroup(nightSources, nightGroupVolume * (1f - day) * wet);
-            SetGroup(anySources, anyGroupVolume * wet);
+            SetGroup(daySources, dayGroupVolume * day);
+            SetGroup(nightSources, nightGroupVolume * (1f - day));
+            SetGroup(anySources, anyGroupVolume);
         }
 
         void SetGroup(AudioSource[] group, float volume)

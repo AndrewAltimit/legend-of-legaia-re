@@ -13,7 +13,7 @@
 //   every bed comes from LoopNoise: multi-octave value noise whose
 //   control points wrap circularly over the clip, so the envelope is
 //   exactly periodic at the LOOP length (seamless) and has no shorter
-//   period at all. Discrete sounds (birds, waves, crickets, drips) are
+//   period at all. Discrete sounds (birds, waves, crickets) are
 //   Poisson-scheduled from a seeded RNG with per-event parameter jitter.
 // - SEAMLESS. Continuous layers are rendered `fade` samples past the end
 //   and crossfaded onto the head (LoopFade); events are splatted with
@@ -66,7 +66,6 @@ namespace LegaiaWorld
         internal const int BASE_SECONDS = 75;
         internal const int DAY_SECONDS = 100;
         internal const int NIGHT_SECONDS = 100;
-        internal const int RAIN_SECONDS = 72;
         internal const int GUST_SECONDS = 32;
         internal const int WAVES_SECONDS = 90;
         internal const int BIRDS_SECONDS = 52;
@@ -549,83 +548,7 @@ namespace LegaiaWorld
             return bed;
         }
 
-        // --- Rain ------------------------------------------------------------
-
-        /// 72 s rain bed for the weather layer: a broadband wash (highpassed
-        /// noise into a lowpass whose cutoff opens with the intensity), a
-        /// granular spatter term from a second slow-noise source multiplying
-        /// the top band, a ground rumble, and Poisson drip events (a noise
-        /// tick plus a short falling sine). Intensity itself is a four-octave
-        /// LoopNoise, so the shower breathes without a pulse.
-        internal static float[] RainBed()
-        {
-            int sr = BED_SR;
-            int n = sr * RAIN_SECONDS;
-            int fade = sr * 3;
-            var rng = new System.Random(4711);
-            var intenN = LoopNoise(n, sr, rng, 0.03f, 4, 0.55f);
-            var s = new float[n + fade];
-
-            float hp = 0f, l1 = 0f, l2 = 0f, gr1 = 0f, gr2 = 0f, spat = 0f;
-            float aHp = Coeff(220f, sr), aLp = Coeff(4200f, sr);
-            float aGr = Coeff(180f, sr), aSpat = Coeff(1400f, sr);
-            float inten = 0f;
-            for (int i = 0; i < s.Length; i++)
-            {
-                int e = i < n ? i : i - n;
-                if ((i & 63) == 0)
-                {
-                    inten = 0.55f + 0.45f * intenN[e];
-                    aLp = Coeff(2100f + 2400f * inten, sr);
-                }
-                float w = White(rng);
-                hp += aHp * (w - hp);
-                float top = w - hp;
-                l1 += aLp * (top - l1);
-                l2 += aLp * (l1 - l2);
-
-                // Spatter: a slow second noise stream granulates the wash so
-                // it reads as thousands of drops instead of a hiss generator.
-                spat += aSpat * (White(rng) - spat);
-                float grain = 0.62f + 0.85f * Mathf.Abs(spat);
-
-                float w2 = White(rng);
-                gr1 += aGr * (w2 - gr1);
-                gr2 += aGr * (gr1 - gr2);
-
-                s[i] = l2 * 2.6f * inten * grain + gr2 * 2.4f * inten;
-            }
-            var bed = LoopFade(s, n, fade);
-
-            var dr = new System.Random(8125);
-            for (int at = dr.Next(n); at < n; at += Gap(dr, sr, 0.9f, 3.4f))
-                Mix(bed, at, Drip(dr, sr), 0.5f);
-            return bed;
-        }
-
-        /// One drip: a noise tick plus a fast falling sine (the "plink").
-        static float[] Drip(System.Random r, int sr)
-        {
-            int len = Mathf.RoundToInt(sr * 0.09f);
-            var e = new float[len];
-            float f0 = Rand(r, 1100f, 2300f);
-            float f1 = f0 * Rand(r, 0.45f, 0.7f);
-            float ph = 0f, noise = 0f;
-            float aN = Coeff(5000f, sr);
-            for (int i = 0; i < len; i++)
-            {
-                float t = (float)i / len;
-                float env = Mathf.Exp(-9f * t);
-                float f = f0 + (f1 - f0) * t;
-                ph += 2f * Mathf.PI * f / sr;
-                noise += aN * (White(r) - noise);
-                e[i] = (Mathf.Sin(ph) * 0.7f + noise * 0.5f * Mathf.Exp(-40f * t))
-                       * env * 0.35f;
-            }
-            return e;
-        }
-
-        // --- Wind gust (stormy weather) ---------------------------------------
+        // --- Wind gust (windy weather) ----------------------------------------
 
         /// 32 s of stronger gusts for the weather layer: a broadband body
         /// whose cutoff and level track a fast (0.12-0.5 Hz) four-octave gust

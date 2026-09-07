@@ -813,20 +813,33 @@ namespace LegaiaWorld
                         "Bind the measured walk cycle as an idle/walk " +
                         "Animator on the rig family that carries one"),
                     realism.livingTown.walkAnimator);
+                realism.livingTown.navMesh = EditorGUILayout.Toggle(
+                    new GUIContent("  Navmesh routes",
+                        "Bake a navmesh from the world's colliders so every " +
+                        "commanded walk (stations, conversations, the front " +
+                        "door at night) follows a walkable route instead of " +
+                        "a straight line through the hillside"),
+                    realism.livingTown.navMesh);
+                using (new EditorGUI.DisabledScope(!realism.livingTown.navMesh))
+                {
+                    realism.livingTown.navStepHeight = EditorGUILayout.Slider(
+                        new GUIContent("    Step height (m)",
+                            "Highest step a villager climbs without a ramp"),
+                        realism.livingTown.navStepHeight, 0.05f, 0.6f);
+                    realism.livingTown.navMaxSlope = EditorGUILayout.Slider(
+                        new GUIContent("    Max slope (deg)",
+                            "Steepest ground a villager walks up"),
+                        realism.livingTown.navMaxSlope, 10f, 60f);
+                }
             }
             realism.weather = EditorGUILayout.Toggle(
                 new GUIContent("Weather",
-                    "Clock-synced spells of clear / overcast / rain / storm / " +
-                    "windy weather: head-following rain, greyed ambient and " +
-                    "fog, lightning + thunder, grass gusts, and the rain / " +
+                    "Clock-synced spells of clear / overcast / windy " +
+                    "weather: greyed ambient and fog, grass gusts, and the " +
                     "wind feed into the ambience mixer (needs the VRChat SDK)"),
                 realism.weather);
             using (new EditorGUI.DisabledScope(!realism.weather))
             {
-                realism.weatherRainEmission = EditorGUILayout.Slider(
-                    "  Rain density (drops/s)", realism.weatherRainEmission, 100f, 2000f);
-                realism.weatherLightning = EditorGUILayout.Toggle(
-                    "  Lightning + thunder", realism.weatherLightning);
                 realism.weatherSpellMinutes = EditorGUILayout.Slider(
                     "  Typical spell (minutes)", realism.weatherSpellMinutes, 1f, 20f);
             }
@@ -1601,7 +1614,7 @@ namespace LegaiaWorld
                        "LegaiaNpcStation", "LegaiaWeather",
                        "LegaiaFishingSpot", "LegaiaCardTableHost",
                        "LegaiaNpcBrain", "LegaiaTownDirector",
-                       "LegaiaSpeechBubble" })
+                       "LegaiaSpeechBubble", "LegaiaNavMeshLoader" })
             {
                 var t = FindType("LegaiaWorld." + name);
                 if (t == null) continue;

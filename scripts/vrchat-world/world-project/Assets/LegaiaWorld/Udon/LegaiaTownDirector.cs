@@ -13,22 +13,16 @@
 //     (the fishing spots and card-table seats) are picked up without this
 //     file knowing they exist. Only kind 3 (chat) is special-cased,
 //     because a ring is matchmade as a group rather than handed out singly;
-//   - the day/night routine: at nightfall (LegaiaDayNight.isNight) - or
-//     when the optional weather behaviour reports rain over the shelter
-//     threshold - villagers walk to their assigned home door and go inside
-//     through the manifest's own doorway pair, the way a player does, and
-//     come back out at dawn. A few (`daytimeIndoors` on their brain) stay
+//   - the day/night routine: at nightfall (LegaiaDayNight.isNight)
+//     villagers walk to their assigned home door and go inside through
+//     the manifest's own doorway pair, the way a player does, and come
+//     back out at dawn. A few (`daytimeIndoors` on their brain) stay
 //     in by day as well.
 //
 // Homes are assigned at BUILD time (LegaiaLivingTown, seeded shuffle,
 // capped per door) rather than here, so every client agrees on who lives
 // where without a single synced variable - the same reasoning that lets
 // the wander behaviour simulate locally.
-//
-// The WEATHER hook is deliberately loose: any UdonSharpBehaviour with a
-// public `float rainIntensity` can be dropped into `weather`, and a null
-// field (no weather pass built) simply reads as dry. This director never
-// names the weather behaviour's type.
 //
 // Requires UdonSharp (bundled with the VRChat worlds SDK).
 
@@ -49,9 +43,6 @@ namespace LegaiaWorld
         [Tooltip("The day/night cycle to read (dayFactor / isNight). Null = always day.")]
         public LegaiaDayNight dayNight;
 
-        [Tooltip("Optional weather behaviour with a public float `rainIntensity`. Null = dry.")]
-        public UdonSharpBehaviour weather;
-
         [Tooltip("Extra roots scanned for stations at Start (the top-level kit containers, outside this behaviour's own root).")]
         public Transform[] extraStationRoots;
 
@@ -60,9 +51,6 @@ namespace LegaiaWorld
 
         [Tooltip("Seconds between scheduling decisions (movement stays per-frame).")]
         public float decisionInterval = 1f;
-
-        [Tooltip("Rain above this fraction sends villagers to shelter, like nightfall.")]
-        public float rainShelter = 0.5f;
 
         [Tooltip("Chance per decision that an idle villager is offered a conversation.")]
         public float chatChance = 0.5f;
@@ -259,24 +247,10 @@ namespace LegaiaWorld
             AssignStations();
         }
 
-        /// True while the town should be indoors: night, or rain over the
-        /// shelter threshold.
+        /// True while the town should be indoors: night.
         public bool Sheltering()
         {
-            bool night = dayNight != null && dayNight.isNight;
-            return night || RainIntensity() > rainShelter;
-        }
-
-        /// The optional weather behaviour's rain, read loosely by name so
-        /// this file never depends on the weather pass existing.
-        public float RainIntensity()
-        {
-            if (weather == null)
-                return 0f;
-            object v = weather.GetProgramVariable("rainIntensity");
-            if (v == null)
-                return 0f;
-            return (float)v;
+            return dayNight != null && dayNight.isNight;
         }
 
         void RunShelter(bool shelter)

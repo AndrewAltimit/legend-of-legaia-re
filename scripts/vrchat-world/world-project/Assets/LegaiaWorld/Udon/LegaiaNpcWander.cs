@@ -21,13 +21,25 @@
 // forward-only: on a direction change the NPC pivots in place until
 // aligned, then steps off - it never translates while mis-facing.
 //
-// STEERING (commanded walks only): when the straight line to the target is
-// blocked within `probeDistance`, a fan of rays at +/-30, +/-60, +/-85
-// degrees looks for a clear lane and the NPC commits to it for a moment
-// before re-aiming at the target - enough to round a hut corner on the way
-// across the village. When no lane is clear, or progress stalls, Blocked()
-// goes true and the brain picks something else (it never teleports through
-// the wall).
+// PATHFINDING (commanded walks): a GoTo first asks the baked navmesh
+// (LegaiaNavMesh bakes it from the world's colliders at build time and
+// LegaiaNavMeshLoader registers it on load) for a route, and the walk
+// then follows the route's corners one by one. That is what keeps a
+// villager on ground it can stand on: the route climbs the hill by its
+// path and rounds the huts rather than aiming straight at the door and
+// walking into the slope (which the floor ray then read as "the floor is
+// up there" - the clipping-through-terrain look). A world with no bake,
+// or a target no mesh reaches, falls back to the straight-line walk below,
+// so nothing depends on the navmesh existing.
+//
+// STEERING (commanded walks only): the local reactive layer under the
+// route. When the line to the next corner is blocked within
+// `probeDistance` (another villager's capsule, a player-moved prop), a
+// fan of rays at +/-30, +/-60, +/-85 degrees looks for a clear lane and
+// the NPC commits to it for a moment before re-aiming. When no lane is
+// clear, or progress stalls, the route is re-planned once from where the
+// NPC stands; failing that, Blocked() goes true and the brain picks
+// something else (it never teleports through the wall).
 //
 // FACING - measured, not derived. The exported NPC glbs have no skins:
 // each TMD object is a rigid mesh on its own animated node, and the node
@@ -80,11 +92,16 @@
 
 using UdonSharp;
 using UnityEngine;
+using UnityEngine.AI;
 
 namespace LegaiaWorld
 {
     public class LegaiaNpcWander : UdonSharpBehaviour
     {
+        // NavMesh.AllAreas: the constant is not reachable through Udon's
+        // type exposure, so its value is spelled out.
+        const int ALL_AREAS = -1;
+
         [Tooltip("How far from the spawn point the NPC strolls (meters). " +
                  "Default suits the 1 m-per-tile export scale.")]
         public float radius = 1.5f;
@@ -110,6 +127,16 @@ namespace LegaiaWorld
 
         [Tooltip("How far ahead a commanded walk looks for obstacles (meters).")]
         public float probeDistance = 0.9f;
+
+        [Tooltip("Route commanded walks over the baked navmesh (LegaiaNavMesh). " +
+                 "Off, or with no bake in the scene, walks aim straight at the target.")]
+        public bool useNavMesh = true;
+
+        [Tooltip("How far off the navmesh a walk's start / goal may sit and still be snapped onto it (meters).")]
+        public float navSnapRadius = 1.2f;
+
+        [Tooltip("How close to a route corner counts as having turned it (meters).")]
+        public float cornerRadius = 0.22f;
 
         [Tooltip("Optional Animator with 'idle' and 'walk' states - crossfaded " +
                  "as stepping starts and stops. Null keeps the builder's " +
@@ -162,6 +189,19 @@ namespace LegaiaWorld
         private float steerUntil;
         private bool animWalking;
         private bool animStarted;
+
+        // --- Route state ---------------------------------------------------
+        // The navmesh route of the current command: its corners, and the
+        // one the walk is heading for. `havePath` false = straight line.
+        private NavMeshPath path;
+        private Vector3[] corners;
+        private int cornerIndex;
+        private bool havePath;
+        private bool replanned;
+        // 0 = not yet probed, 1 = a navmesh is registered here, 2 = none.
+        // Probed lazily: the loader registers the bake in its own Start,
+        // and Start order across behaviours is not defined.
+        private int navState;
 
         void Start()
         {
@@ -269,8 +309,79 @@ namespace LegaiaWorld
             arrived = false;
             blocked = false;
             steerUntil = 0f;
+            replanned = false;
             progressMark = transform.position;
             progressAt = Time.time;
+            PlanRoute();
+        }
+
+        // --- Navmesh route ---------------------------------------------------
+
+        /// True when a navmesh is registered under this NPC (probed once,
+        /// after the loader has had a chance to run).
+        bool NavAvailable()
+        {
+            if (!useNavMesh)
+                return false;
+            if (navState == 0)
+            {
+                // Give the loader's Start a moment; until then, straight line.
+                if (Time.timeSinceLevelLoad < 0.5f)
+                    return false;
+                NavMeshHit probe;
+                navState = NavMesh.SamplePosition(transform.position, out probe,
+                    Mathf.Max(navSnapRadius, 2f), ALL_AREAS) ? 1 : 2;
+            }
+            return navState == 1;
+        }
+
+        /// Ask the navmesh for a route from here to `commandTarget`. Leaves
+        /// `havePath` false (straight-line walk) when there is no mesh, no
+        /// mesh near either end, or no route at all.
+        void PlanRoute()
+        {
+            havePath = false;
+            cornerIndex = 0;
+            if (!NavAvailable())
+                return;
+            NavMeshHit from, to;
+            if (!NavMesh.SamplePosition(transform.position, out from, navSnapRadius, ALL_AREAS))
+                return;
+            if (!NavMesh.SamplePosition(commandTarget, out to, navSnapRadius, ALL_AREAS))
+                return;
+            if (path == null)
+                path = new NavMeshPath();
+            if (!NavMesh.CalculatePath(from.position, to.position, ALL_AREAS, path))
+                return;
+            if (path.status == NavMeshPathStatus.PathInvalid)
+                return;
+            corners = path.corners;
+            if (corners == null || corners.Length < 2)
+                return;
+            // corners[0] is where the NPC already stands.
+            cornerIndex = 1;
+            havePath = true;
+        }
+
+        /// The point the walk is currently heading for: the next route
+        /// corner, or the target itself on a straight-line walk / the last
+        /// leg. Advances past corners as they are reached.
+        Vector3 CurrentAim()
+        {
+            if (!havePath)
+                return commandTarget;
+            int last = corners.Length - 1;
+            while (cornerIndex < last)
+            {
+                Vector3 c = corners[cornerIndex] - transform.position;
+                c.y = 0f;
+                if (c.magnitude > cornerRadius)
+                    break;
+                cornerIndex++;
+            }
+            // The final corner is the navmesh's snap of the target; the
+            // exact target is what the brain asked for.
+            return cornerIndex >= last ? commandTarget : corners[cornerIndex];
         }
 
         /// Turn in place until the MESH faces `worldPos` (no translation).
@@ -309,6 +420,7 @@ namespace LegaiaWorld
             blocked = false;
             walking = false;
             steerUntil = 0f;
+            havePath = false;
             target = transform.position;
             pauseUntil = Time.time + Random.Range(0.2f, 1.2f);
         }
@@ -336,6 +448,7 @@ namespace LegaiaWorld
             walking = false;
             arrived = false;
             blocked = false;
+            havePath = false;
             home = transform.position;
             target = home;
         }
@@ -425,13 +538,21 @@ namespace LegaiaWorld
             return Mathf.Abs(err);
         }
 
+        // Follow the floor. The ray starts INSIDE the NPC's own capsule
+        // (half height - PhysX never reports a shape a ray starts in), so
+        // it can neither land the villager on its own collider nor miss a
+        // step below waist height. Another villager's capsule is skipped
+        // rather than stood on: two NPCs brushing past each other is not a
+        // change of floor.
         void SnapToFloor()
         {
             Vector3 p = transform.position;
             RaycastHit ground;
-            if (Physics.Raycast(p + Vector3.up * npcHeight, Vector3.down,
+            if (Physics.Raycast(p + Vector3.up * (0.5f * npcHeight), Vector3.down,
                     out ground, 3f * npcHeight, ~0, QueryTriggerInteraction.Ignore))
             {
+                if (ground.collider.GetType() == typeof(CapsuleCollider))
+                    return;
                 p.y = ground.point.y;
                 transform.position = p;
             }
@@ -487,9 +608,19 @@ namespace LegaiaWorld
             {
                 arrived = true;
                 walking = false;
+                havePath = false;
                 return;
             }
-            Vector3 aim = to / dist;
+            // Head for the next route corner (or the target itself).
+            Vector3 leg = CurrentAim() - transform.position;
+            leg.y = 0f;
+            float legDist = leg.magnitude;
+            if (legDist < 1e-3f)
+            {
+                leg = to;
+                legDist = dist;
+            }
+            Vector3 aim = leg / legDist;
 
             // Steering: commit to a detour lane for a moment, then re-aim.
             Vector3 dir = aim;
@@ -497,11 +628,13 @@ namespace LegaiaWorld
             {
                 dir = steerDir;
             }
-            else if (!PathClear(aim, Mathf.Min(probeDistance, dist + wallClearance)))
+            else if (!PathClear(aim, Mathf.Min(probeDistance, legDist + wallClearance)))
             {
                 dir = PickLane(aim);
                 if (dir.sqrMagnitude < 0.5f)
                 {
+                    if (Replan())
+                        return;
                     blocked = true;
                     walking = false;
                     return;
@@ -523,18 +656,36 @@ namespace LegaiaWorld
             SnapToFloor();
 
             // Stall watchdog: a lane that keeps grinding along a wall makes
-            // no progress; report Blocked so the brain re-plans instead of
+            // no progress; re-plan the route once from here, then report
+            // Blocked so the brain picks something else instead of the NPC
             // shuffling forever.
             if (Time.time - progressAt > 2.5f)
             {
                 if ((transform.position - progressMark).magnitude < 0.2f)
                 {
-                    blocked = true;
-                    walking = false;
+                    if (!Replan())
+                    {
+                        blocked = true;
+                        walking = false;
+                    }
                 }
                 progressMark = transform.position;
                 progressAt = Time.time;
             }
+        }
+
+        // One fresh route from the current position; false when it has
+        // already been tried for this command or the navmesh offers none.
+        bool Replan()
+        {
+            if (replanned)
+                return false;
+            replanned = true;
+            steerUntil = 0f;
+            PlanRoute();
+            progressMark = transform.position;
+            progressAt = Time.time;
+            return havePath;
         }
 
         // Fan of probe rays either side of the straight line; the first
@@ -625,6 +776,20 @@ namespace LegaiaWorld
             pauseUntil = Time.time + Random.Range(0.5f, pauseSeconds * 2f);
             Vector2 r = Random.insideUnitCircle * radius;
             Vector3 cand = home + new Vector3(r.x, 0, r.y);
+            // With a navmesh in the scene a stroll only ever aims at ground
+            // the bake calls walkable: the spot is pulled onto the mesh,
+            // and a candidate off it (over the shore, on a roof edge) is
+            // skipped for this rest.
+            if (NavAvailable())
+            {
+                NavMeshHit onMesh;
+                if (!NavMesh.SamplePosition(cand, out onMesh, 0.35f, ALL_AREAS))
+                {
+                    target = transform.position;
+                    return;
+                }
+                cand = onMesh.position;
+            }
             Vector3 d = cand - transform.position;
             d.y = 0;
             float dist = d.magnitude;

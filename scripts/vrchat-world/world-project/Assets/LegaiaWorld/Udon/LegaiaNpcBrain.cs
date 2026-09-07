@@ -13,10 +13,15 @@
 //                  (the station's handler is what makes the cupboard open)
 //   3 GO_CHAT    - walking to a claimed chat-ring slot
 //   4 CHAT       - standing in the ring facing its centre, taking turns
-//   5 GO_DOOR    - walking to the village-side door of the assigned home,
-//                  then teleporting to the interior landing - the same
-//                  doorway pair a player walks through
-//   6 GO_EXIT    - the reverse, at dawn
+//   5 GO_DOOR    - walking (by the navmesh route) to the stand spot in
+//                  front of the assigned home's door
+//   7 DOOR_OPEN  - standing there while the door prop swings open
+//   8 GO_THRESH  - the last step onto the doorway tile itself, then the
+//                  teleport to the interior landing - the same doorway
+//                  pair a player walks through, and the door closes
+//                  behind unless a player opened it
+//   6 GO_EXIT    - the reverse, at dawn: walk to the interior-side
+//                  doorway, teleport out, the door swings behind
 //
 // Ticks at 10 Hz through SendCustomEventDelayedSeconds (staggered per NPC
 // by the personality seed), so ~30 villagers cost 300 decisions a second
@@ -56,8 +61,23 @@ namespace LegaiaWorld
         [Tooltip("This villager stays indoors during the day too (a shopkeeper, someone's grandmother).")]
         public bool daytimeIndoors;
 
-        [Tooltip("Village-side stand spot at this NPC's assigned home door.")]
+        [Tooltip("Retail placed this villager inside a house: it starts indoors and has no front door to walk to.")]
+        public bool startIndoors;
+
+        [Tooltip("Build-time finding: no walkable route from this villager's spawn to any front door, so it has no home (informational).")]
+        public bool noRoute;
+
+        [Tooltip("Village-side stand spot in front of this NPC's assigned home door.")]
         public Transform homeDoor;
+
+        [Tooltip("The doorway tile itself (the teleport trigger) - the last step before going in.")]
+        public Transform homeThreshold;
+
+        [Tooltip("The home's door prop (LegaiaDoor), swung open on the way in and out. Null = no visible door.")]
+        public LegaiaDoor homeDoorProp;
+
+        [Tooltip("How long the NPC waits at the door for it to swing open (seconds).")]
+        public float doorSwingSeconds = 0.9f;
 
         [Tooltip("Interior landing the home door drops you at.")]
         public Transform homeLanding;
@@ -94,8 +114,14 @@ namespace LegaiaWorld
             if (loco == null)
                 loco = GetComponent<LegaiaNpcWander>();
             outdoorHome = transform.position;
+            indoors = startIndoors;
             if (loco != null)
+            {
                 outdoorRadius = loco.radius;
+                // Already in a room: stroll the room's radius from the start.
+                if (startIndoors)
+                    loco.radius = indoorRadius;
+            }
             started = true;
             // Stagger the first tick across the town so 30 brains never land
             // their decisions on the same frame.
@@ -195,10 +221,14 @@ namespace LegaiaWorld
             BackToStroll(2f + NextFloat() * 6f);
         }
 
-        /// Head home for the night (or out of the rain).
+        /// Head home for the night.
         public void GoHome()
         {
             if (indoors || !HasHome() || loco == null)
+                return;
+            // Already on the way (the director asks every tick): restarting
+            // the trip here would re-open the door and reset the walk.
+            if (state == 5 || state == 7 || state == 8)
                 return;
             ReleaseStation();
             state = 5;
@@ -211,6 +241,8 @@ namespace LegaiaWorld
         {
             if (!indoors || loco == null)
                 return;
+            if (state == 6)
+                return; // already walking to the way out
             ReleaseStation();
             if (homeExit != null)
             {
@@ -243,6 +275,10 @@ namespace LegaiaWorld
                 TickGoDoor();
             else if (state == 6)
                 TickGoExit();
+            else if (state == 7)
+                TickDoorOpening();
+            else if (state == 8)
+                TickGoThreshold();
         }
 
         void TickGoStation()
@@ -308,16 +344,76 @@ namespace LegaiaWorld
         {
             if (loco.Arrived())
             {
-                Vector3 facing = homeLanding.forward;
-                loco.Teleport(homeLanding.position, facing);
-                indoors = true;
-                loco.radius = indoorRadius;
-                loco.SetHome(homeLanding.position);
-                BackToStroll(1f);
+                // At the stand spot: turn onto the doorway and open the
+                // door the way a player's approach does, then wait for the
+                // swing before stepping onto the tile.
+                Vector3 tile = homeThreshold != null
+                    ? homeThreshold.position : homeDoor.position;
+                loco.FaceToward(tile);
+                if (homeDoorProp != null)
+                {
+                    homeDoorProp.NpcOpen();
+                    state = 7;
+                    leaveAt = Time.time + Mathf.Max(0.1f, doorSwingSeconds);
+                    return;
+                }
+                StepOntoThreshold();
                 return;
             }
             if (loco.Blocked() || Time.time > giveUpAt)
                 BackToStroll(15f + NextFloat() * 15f); // try again later
+        }
+
+        void TickDoorOpening()
+        {
+            if (Time.time < leaveAt)
+                return;
+            StepOntoThreshold();
+        }
+
+        // The last step: onto the doorway tile (the teleport trigger a
+        // player walks into). No tile paired with this home = go straight
+        // through from the stand spot.
+        void StepOntoThreshold()
+        {
+            if (homeThreshold == null)
+            {
+                EnterHome();
+                return;
+            }
+            state = 8;
+            giveUpAt = Time.time + 12f;
+            loco.GoTo(homeThreshold.position);
+        }
+
+        void TickGoThreshold()
+        {
+            // A step from the door already: blocked or late, go in anyway
+            // rather than leave the door hanging open on an empty step.
+            if (loco.Arrived() || loco.Blocked() || Time.time > giveUpAt)
+                EnterHome();
+        }
+
+        // Through the doorway: the same landing + facing the player's
+        // teleport uses. The door swings shut once the villager is inside
+        // (NpcClose defers to a player-opened latch and other users).
+        void EnterHome()
+        {
+            Vector3 facing = homeLanding.forward;
+            loco.Teleport(homeLanding.position, facing);
+            indoors = true;
+            loco.radius = indoorRadius;
+            loco.SetHome(homeLanding.position);
+            if (homeDoorProp != null)
+                SendCustomEventDelayedSeconds("CloseHomeDoor", 0.7f);
+            BackToStroll(1f);
+        }
+
+        /// Deferred door close after going in or coming out.
+        public void CloseHomeDoor()
+        {
+            if (homeDoorProp != null)
+                homeDoorProp.NpcClose();
         }
 
         void TickGoExit()
@@ -339,6 +435,13 @@ namespace LegaiaWorld
             Vector3 facing = homeEmerge != null
                 ? homeEmerge.forward
                 : (outdoorHome - pos);
+            // Out through the door: it swings open as the villager appears
+            // on the village side and shuts again a moment later.
+            if (homeDoorProp != null)
+            {
+                homeDoorProp.NpcOpen();
+                SendCustomEventDelayedSeconds("CloseHomeDoor", 1.6f);
+            }
             loco.Teleport(pos, facing);
             indoors = false;
             loco.radius = outdoorRadius;

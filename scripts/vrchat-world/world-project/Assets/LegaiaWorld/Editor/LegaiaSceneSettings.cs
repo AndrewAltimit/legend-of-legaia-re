@@ -86,8 +86,8 @@
 //
 //   "ambience": {"day": "Assets/LegaiaWorld/Audio/day.wav", "night": ...}
 //       User-supplied ambience loops, replacing the synthesized ones for
-//       the roles named. Keys (all optional): day, night, base, rain,
-//       waves, wind_gust, tree_birds, night_wildlife, windmill. Each
+//       the roles named. Keys (all optional): day, night, base, waves,
+//       wind_gust, tree_birds, night_wildlife, windmill. Each
 //       value is the asset path of any AudioClip in the project; a role
 //       with no entry (or an entry that does not load) keeps the clip
 //       LegaiaAudioGen generates. Drop better field recordings in and the
