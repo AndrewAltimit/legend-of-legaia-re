@@ -207,9 +207,8 @@ pub(super) fn decode_camera(
         0x80 => mk(header_size + 1, CameraKind::Save),
         0xC0 => {
             need(3)?;
-            let abs_target =
-                u16::from_le_bytes([bytecode[operand + 1], bytecode[operand + 2]]) as usize;
-            mk(header_size + 3, CameraKind::Apply { abs_target })
+            let apply_trigger = u16::from_le_bytes([bytecode[operand + 1], bytecode[operand + 2]]);
+            mk(header_size + 3, CameraKind::Apply { apply_trigger })
         }
         0x00 => {
             need(4)?;

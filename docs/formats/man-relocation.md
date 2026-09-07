@@ -28,7 +28,9 @@ This was pinned by a live PCSX-Redux dispatch trace (`autorun_door_dispatch_trac
 on the `drake_castle_to_worldmap` capture): the executing op's bytecode base
 minus the MAN base equalled `data_region + partition2[0]` exactly. Corpus census
 (clean partition walk, disc-wide): 160 destination ops across 48 scenes, 153 in
-partition 2; **zero absolute-reference ops** at/after any destination op.
+partition 2. (That census also counted "absolute-reference ops" at/after a
+destination op and found none - a measurement of the falsified `0x45 0xC0`
+reading, and moot now that the op has no target to relocate.)
 
 The practical consequence: the destination "index" *is* a structural offset
 table the MAN parser already exposes, so resizing a record is safe - fix the
@@ -66,10 +68,19 @@ fixups (all offsets per [`man_section`](../../crates/asset/src/man_section.rs)):
 
 ## Safety
 
-- **Absolute-reference ops** (`0x45 0xC0` camera-apply, `0x4E` abs-jump) are
-  record-local and can't be relocated blindly; `apply_dest_edits` errors out if
-  it finds one in an edited record (none exist in the retail corpus), and the
-  caller leaves that scene unchanged.
+- **The field VM stores no absolute PC anywhere**, so a same-record shift
+  preserves every control-flow field it has. `0x45 0xC0` camera-apply was read
+  as the exception - an "absolute-reference op" whose trailing halfword named a
+  record-relative PC - and `apply_dest_edits` refused any edited record
+  containing one. That reading is falsified: the APPLY arm at
+  `0x801DF254..0x801DF288` hands the halfword to
+  `FUN_801DE084(0x801C6EA8, trigger, mode)`, the same call the CONFIGURE arm
+  makes with its own apply trigger, and exits `j 0x801E3624` /
+  `addiu s8,s8,0x4` - a 4-byte fall-through, never a jump
+  (`see ghidra/scripts/funcs/overlay_0897_801de840.txt`). It is a camera
+  parameter, and relocating it would corrupt the camera; the editor now leaves
+  it alone and no longer refuses the record. The decoder names the field
+  `apply_trigger` accordingly.
 - **Validate-or-skip**: `man_edit::validate` re-parses + re-walks the rebuilt MAN
   and confirms each edited op now decodes as a `0x3F` carrying the intended name.
 - **Footprint**: the recompressed MAN must fit the original asset's on-disc
@@ -107,10 +118,9 @@ in sync and every relative jump after it is still found + relocated.
 Two invariants keep this safe:
 
 1. **Record-region gate.** Every edit must lie strictly before section 0 (the
-   record region) inside a partition record with no absolute-reference op. Dialog
-   is field-VM script = partition records, never a data section, so an edit that
-   would touch the section chain (whose length prefixes this pass does not fix)
-   or an abs-jump / camera-apply target is refused.
+   record region), inside a partition record. Dialog is field-VM script =
+   partition records, never a data section, so an edit that would touch the
+   section chain (whose length prefixes this pass does not fix) is refused.
 2. **Round-trip backstop.** `man_edit::text_edits_preserve_scripts(original,
    rebuilt)` re-walks every record in both buffers and requires an identical
    instruction stream - same opcodes in order, every control-flow target

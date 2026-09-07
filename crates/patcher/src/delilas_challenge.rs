@@ -105,7 +105,7 @@
 //! The apply's stored PC here is `0`, which sits before the splice point and
 //! therefore never moves.)
 
-use legaia_asset::field_disasm::{self, CameraKind, InsnInfo, InventoryCmpKind};
+use legaia_asset::field_disasm::{self, InsnInfo, InventoryCmpKind};
 use legaia_asset::man_section::{self, ManFile};
 use legaia_asset::scene_asset_table::{self, SceneAssetTable};
 use legaia_mes::{Interpreter, MesEvent, parse_picker_at};
@@ -172,25 +172,16 @@ pub fn sysflag_clear(bit: u16) -> [u8; 2] {
     [0x60 | ((bit >> 8) as u8 & 0x0F), (bit & 0xFF) as u8]
 }
 
-/// How a stored control-flow field encodes its destination.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum RefKind {
-    /// u16 LE delta at `field`; `target = (field + delta) & 0xFFFF`.
-    Relative,
-    /// u16 LE absolute record-relative PC at `field` (camera-apply).
-    Absolute,
-}
-
-/// One control-flow field in a record (record-relative coordinates). Opcode
-/// jump deltas and MES picker jump entries share the [`RefKind::Relative`]
-/// shape exactly.
+/// One control-flow field in a record (record-relative coordinates): a u16 LE
+/// delta at `field`, with `target = (field + delta) & 0xFFFF`. Opcode jump
+/// deltas and MES picker jump entries share that shape exactly, and it is the
+/// only shape the field VM has - no op stores an absolute PC.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct RefSite {
     /// Record-relative offset of the 2-byte field.
     field: usize,
     /// Record-relative destination.
     target: usize,
-    kind: RefKind,
 }
 
 /// A decoded picker inside a walked record (record-relative coordinates).
@@ -373,14 +364,15 @@ fn skip_segment(rec: &[u8], pos: usize) -> Result<usize, String> {
 /// Extract an instruction's control-flow field, if any. Every relative-jump
 /// op stores its u16 delta as the **last two bytes** of the instruction, and
 /// the delta is relative to that field's own offset - the invariant
-/// `docs/formats/man-relocation.md` documents. Camera-apply (`0x45 0xC0`)
-/// stores an absolute PC there instead.
+/// `docs/formats/man-relocation.md` documents. Camera-apply (`0x45 0xC0`) is
+/// deliberately absent: its trailing halfword is the camera **apply trigger**
+/// `FUN_801DE084` consumes, not a destination, and rewriting it as one
+/// corrupts a camera parameter (`0x801DF254..0x801DF288`).
 fn insn_ref(insn: &field_disasm::Insn) -> Option<RefSite> {
     let field = insn.pc + insn.size - 2;
     let rel = |target: usize| RefSite {
         field,
         target: target & 0xFFFF,
-        kind: RefKind::Relative,
     };
     match &insn.info {
         InsnInfo::JmpRel { target, .. } | InsnInfo::CondJmp { target, .. } => Some(rel(*target)),
@@ -394,14 +386,6 @@ fn insn_ref(insn: &field_disasm::Insn) -> Option<RefSite> {
                 | InventoryCmpKind::PartyBank { skip_target, .. },
             ..
         } => Some(rel(*skip_target)),
-        InsnInfo::Camera {
-            kind: CameraKind::Apply { abs_target },
-            ..
-        } => Some(RefSite {
-            field,
-            target: *abs_target,
-            kind: RefKind::Absolute,
-        }),
         _ => None,
     }
 }
@@ -435,7 +419,6 @@ fn walk_record(rec: &[u8], pc0: usize) -> Result<Walk, String> {
                     Some(t) if t < rec.len() => entries.push(RefSite {
                         field: p.open + 1 + i * 2,
                         target: t & 0xFFFF,
-                        kind: RefKind::Relative,
                     }),
                     _ => {
                         ok = false;
@@ -457,16 +440,14 @@ fn walk_record(rec: &[u8], pc0: usize) -> Result<Walk, String> {
         match field_disasm::decode(rec, pos) {
             Ok(insn) if insn.size > 0 => {
                 if let Some(r) = insn_ref(&insn) {
-                    if r.kind == RefKind::Relative {
-                        // Cross-check the "delta is the last two bytes,
-                        // relative to itself" model against the decoder.
-                        let delta = u16::from_le_bytes([rec[r.field], rec[r.field + 1]]) as usize;
-                        if (r.field + delta) & 0xFFFF != r.target {
-                            return Err(format!(
-                                "op 0x{:02X} at +0x{pos:04X}: delta-field model mismatch",
-                                insn.opcode
-                            ));
-                        }
+                    // Cross-check the "delta is the last two bytes, relative to
+                    // itself" model against the decoder.
+                    let delta = u16::from_le_bytes([rec[r.field], rec[r.field + 1]]) as usize;
+                    if (r.field + delta) & 0xFFFF != r.target {
+                        return Err(format!(
+                            "op 0x{:02X} at +0x{pos:04X}: delta-field model mismatch",
+                            insn.opcode
+                        ));
                     }
                     if r.target >= rec.len() {
                         return Err(format!(
@@ -614,7 +595,7 @@ fn locate_narration(man: &[u8], mf: &ManFile) -> Result<NarrationRecord, String>
     let Some(tail_target) = walk
         .refs
         .iter()
-        .find(|r| r.kind == RefKind::Relative && r.field == tail26 + 1)
+        .find(|r| r.field == tail26 + 1)
         .map(|r| r.target)
     else {
         return Err("shared-tail jump carries no decoded target".into());
@@ -1007,10 +988,7 @@ impl DelilasSites {
         for r in &self.refs {
             let f_new = r.field + shift(r.field);
             let t_new = r.target + shift(r.target);
-            let value: u16 = match r.kind {
-                RefKind::Relative => (t_new.wrapping_sub(f_new)) as u16,
-                RefKind::Absolute => t_new as u16,
-            };
+            let value: u16 = (t_new.wrapping_sub(f_new)) as u16;
             let abs = self.rec_start + r.field;
             out[abs..abs + 2].copy_from_slice(&value.to_le_bytes());
         }
@@ -1020,10 +998,7 @@ impl DelilasSites {
         for r in &narr.refs {
             let f_new = r.field + narr_shift(r.field);
             let t_new = r.target + narr_shift_target(r.target);
-            let value: u16 = match r.kind {
-                RefKind::Relative => (t_new.wrapping_sub(f_new)) as u16,
-                RefKind::Absolute => t_new as u16,
-            };
+            let value: u16 = (t_new.wrapping_sub(f_new)) as u16;
             let abs = narr.start + r.field;
             out[abs..abs + 2].copy_from_slice(&value.to_le_bytes());
         }

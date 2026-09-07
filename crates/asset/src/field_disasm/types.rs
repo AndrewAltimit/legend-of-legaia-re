@@ -172,8 +172,19 @@ pub enum YieldKind {
 pub enum CameraKind {
     Load,
     Save,
-    Apply { abs_target: usize },
-    Configure { mask: u16, apply_trigger: u16 },
+    /// `0x45 0xC0` APPLY. The `u16` at `operand + 1` is **not** a jump
+    /// target: `0x801DF254..0x801DF288` reads it through `FUN_8003CE9C` and
+    /// hands it to `FUN_801DE084(0x801C6EA8, trigger, mode)` - the identical
+    /// call the CONFIGURE arm makes with its own `apply_trigger` - then exits
+    /// `j 0x801E3624` / `addiu s8,s8,0x4`, a plain 4-byte fall-through
+    /// (`ghidra/scripts/funcs/overlay_0897_801de840.txt`).
+    Apply {
+        apply_trigger: u16,
+    },
+    Configure {
+        mask: u16,
+        apply_trigger: u16,
+    },
 }
 
 #[derive(Debug, Clone)]

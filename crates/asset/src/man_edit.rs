@@ -34,7 +34,7 @@
 //! finds one in an edited record - the caller then leaves that scene unchanged.
 //! [`validate`] re-parses + re-walks the rebuilt MAN as a final backstop.
 
-use crate::field_disasm::{self, CameraKind, InsnInfo, InventoryCmpKind};
+use crate::field_disasm::{self, InsnInfo, InventoryCmpKind};
 use crate::man_section::{self, ManFile, RECORDS_BEGIN_OFFSET, U24_AT_28_OFFSET};
 
 /// One destination rewrite: replace the `0x3F` op at `op_pc` with a new
@@ -67,9 +67,6 @@ pub enum ManEditError {
     /// `op_pc` couldn't be mapped to a partition record (so its record bounds /
     /// `pc0` are unknown, and intra-record jumps can't be checked).
     RecordNotFound { op_pc: usize },
-    /// An edited record contains an absolute-reference op (`0x45 0xC0` /
-    /// `0x4E` abs-jump) at/after the edit - too risky to relocate.
-    AbsoluteRef { op_pc: usize, ref_pc: usize },
     /// A new name is empty or longer than a u8 length field allows.
     BadName { len: usize },
     /// The MAN failed to parse.
@@ -86,10 +83,6 @@ impl std::fmt::Display for ManEditError {
             Self::RecordNotFound { op_pc } => {
                 write!(f, "no partition record contains op 0x{op_pc:X}")
             }
-            Self::AbsoluteRef { op_pc, ref_pc } => write!(
-                f,
-                "edited record (op 0x{op_pc:X}) has an absolute ref at 0x{ref_pc:X}"
-            ),
             Self::BadName { len } => write!(f, "bad destination name length {len}"),
             Self::Parse => write!(f, "MAN failed to parse"),
         }
@@ -171,16 +164,11 @@ struct RelJump {
     target: usize,
 }
 
-/// Collect the relative jumps + detect absolute refs in `[start+pc0, end)` via a
-/// clean fall-through decode. Returns `Err` (the op_pc for context) on an
-/// absolute ref. A decode error ends the clean walk (the rest is data).
-fn scan_record_refs(
-    man: &[u8],
-    start: usize,
-    pc0: usize,
-    end: usize,
-    op_pc: usize,
-) -> Result<Vec<RelJump>, ManEditError> {
+/// Collect the relative jumps in `[start+pc0, end)` via a clean fall-through
+/// decode. Every control-flow field the field VM stores is a delta relative to
+/// its own offset, so this is the whole fixup set. A decode error ends the clean
+/// walk (the rest is data).
+fn scan_record_refs(man: &[u8], start: usize, pc0: usize, end: usize) -> Vec<RelJump> {
     let mut jumps = Vec::new();
     let mut pc = start + pc0;
     while pc < end {
@@ -232,20 +220,11 @@ fn scan_record_refs(
                 base: skip_target.wrapping_sub(*skip_delta as usize),
                 target: *skip_target,
             }),
-            InsnInfo::Camera {
-                kind: CameraKind::Apply { .. },
-                ..
-            } => {
-                return Err(ManEditError::AbsoluteRef {
-                    op_pc,
-                    ref_pc: insn.pc,
-                });
-            }
             _ => {}
         }
         pc += insn.size;
     }
-    Ok(jumps)
+    jumps
 }
 
 /// One `0x3F` named-scene-change ("door") site located in a decompressed MAN by
@@ -622,7 +601,7 @@ pub fn apply_dest_edits(man: &[u8], edits: &[DestEdit]) -> Result<Vec<u8>, ManEd
 
         let (rstart, pc0, rend) =
             record_for(&mf, man, e.op_pc).ok_or(ManEditError::RecordNotFound { op_pc: e.op_pc })?;
-        jump_fixups.extend(scan_record_refs(man, rstart, pc0, rend, e.op_pc)?);
+        jump_fixups.extend(scan_record_refs(man, rstart, pc0, rend));
 
         splices.push(Splice {
             block_start,
@@ -731,12 +710,11 @@ pub struct Insertion {
 /// partition table / section offset / intra-record jump deltas relocated (the same
 /// fixups as [`apply_dest_edits`], via [`rebuild_man`]).
 ///
-/// Each insertion must sit at an instruction boundary inside a record's script body,
-/// and that record must contain no absolute reference (`0x4E` abs-jump, `0x45 0xC0`
-/// camera-apply, inventory abs-jump) - those store an absolute target that a shift
-/// would invalidate, so the call errors [`ManEditError::AbsoluteRef`] and the caller
-/// leaves the scene unchanged (relative jumps shift with their record and are
-/// preserved). The caller rewrites the external descriptor size after recompressing
+/// Each insertion must sit at an instruction boundary inside a record's script body.
+/// Every control-flow field the field VM stores is a **delta relative to its own
+/// offset**, so a uniform same-record shift preserves it and the fixup re-emits it
+/// regardless; no op stores an absolute PC (`0x45 0xC0` camera-apply stores a camera
+/// apply trigger, not a target). The caller rewrites the external descriptor size after recompressing
 /// and should run [`validate`] / re-walk on the result.
 pub fn apply_insertions(man: &[u8], insertions: &[Insertion]) -> Result<Vec<u8>, ManEditError> {
     let mf = man_section::parse(man).map_err(|_| ManEditError::Parse)?;
@@ -751,10 +729,10 @@ pub fn apply_insertions(man: &[u8], insertions: &[Insertion]) -> Result<Vec<u8>,
         if ins.offset < rstart + pc0 || ins.offset > rend {
             return Err(ManEditError::RecordNotFound { op_pc: ins.offset });
         }
-        // Reuse the record scan to reject absolute refs + collect relative jumps
-        // (which a uniform same-record shift leaves with identical deltas, but the
-        // fixup re-emits them correctly regardless).
-        jump_fixups.extend(scan_record_refs(man, rstart, pc0, rend, ins.offset)?);
+        // Reuse the record scan to collect relative jumps (which a uniform
+        // same-record shift leaves with identical deltas, but the fixup re-emits
+        // them correctly regardless).
+        jump_fixups.extend(scan_record_refs(man, rstart, pc0, rend));
         splices.push(Splice {
             block_start: ins.offset,
             old_len: 0,
@@ -826,7 +804,7 @@ pub fn apply_text_edits(man: &[u8], edits: &[TextEdit]) -> Result<Vec<u8>, ManEd
         }
         // Scan each edited record's control flow exactly once (rejects abs refs).
         if scanned.insert(rstart) {
-            jump_fixups.extend(scan_record_refs(man, rstart, pc0, rend, e.offset)?);
+            jump_fixups.extend(scan_record_refs(man, rstart, pc0, rend));
         }
         splices.push(Splice {
             block_start: e.offset,
@@ -842,8 +820,10 @@ pub fn apply_text_edits(man: &[u8], edits: &[TextEdit]) -> Result<Vec<u8>, ManEd
     rebuild_man(man, &mf, splices, &jump_fixups)
 }
 
-/// Absolute control-flow targets an instruction references (relative jumps +
-/// the absolute camera-apply / abs-jump). Empty for straight-line ops.
+/// Absolute control-flow targets an instruction references (the destinations of
+/// the relative-jump family, resolved). Empty for straight-line ops. The field
+/// VM has no absolute-jump op: `0x45 0xC0`'s halfword is the camera apply
+/// trigger, not a PC (see [`field_disasm::CameraKind::Apply`]).
 fn control_targets(insn: &InsnInfo) -> Vec<usize> {
     match insn {
         InsnInfo::JmpRel { target, .. } | InsnInfo::CondJmp { target, .. } => vec![*target],
@@ -857,10 +837,6 @@ fn control_targets(insn: &InsnInfo) -> Vec<usize> {
                 | InventoryCmpKind::PartyBank { skip_target, .. },
             ..
         } => vec![*skip_target],
-        InsnInfo::Camera {
-            kind: CameraKind::Apply { abs_target },
-            ..
-        } => vec![*abs_target],
         _ => vec![],
     }
 }
