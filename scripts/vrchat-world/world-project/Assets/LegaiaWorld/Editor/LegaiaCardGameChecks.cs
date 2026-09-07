@@ -268,29 +268,38 @@ namespace LegaiaWorld
                 Fail("the seat panel's canvas has no VRCUiShape - its buttons " +
                      "would never receive a pointer");
 
-            // A world-space canvas renders on its +Z. Facing the wrong way
-            // is invisible in a component count and total in-world, so it
-            // is measured: the canvas front must point at the spawn.
+            // A world-space canvas is legible from its -Z side (the viewer
+            // looks along its +Z), and GraphicRaycaster drops rays that
+            // arrive from the +Z side. Facing the wrong way is invisible in
+            // a component count and total in-world (every line mirror-
+            // written, no button takes a press), so the SIGN is measured:
+            // the canvas's +Z must point INTO the table, so that a reader
+            // standing outside it is on the -Z side. The aim is authored in
+            // the table's local frame precisely because the scene's hand
+            // placement re-rotates the root after the builder returns, so
+            // this is measured against the table and not against spawn.
             var panel = table.Find("panel");
             var canvas = table.Find("panel/canvas");
             if (panel == null || canvas == null)
                 Fail("no panel/canvas beside the card table");
-            // Outward from the table, not into it. The aim is authored in
-            // the table's local frame precisely because the scene's hand
-            // placement re-rotates the root after the builder returns, so
-            // this is measured against the table and not against spawn.
             Vector3 out2 = canvas.position - table.position;
             out2.y = 0f;
             float facing = Vector3.Dot(canvas.forward, out2.normalized);
-            if (facing < 0.85f)
-                Fail("the seat panel's canvas does not face out from the table " +
-                     "(dot " + facing.ToString("0.00") + ") - the buttons would " +
-                     "be read from behind");
+            if (facing > -0.85f)
+                Fail("the seat panel's canvas presents its +Z to the outside of " +
+                     "the table (dot " + facing.ToString("0.00") + ") - the text " +
+                     "reads mirrored and the buttons reject every press");
+            // ... and the canvas must stand on the outside of the board, not
+            // between the board and the table, or the board hides it.
+            Vector3 boardOut = canvas.position - panel.position;
+            boardOut.y = 0f;
+            if (Vector3.Dot(boardOut, out2.normalized) < 0.005f)
+                Fail("the seat panel's canvas is on the table side of its board");
             Vector3 toSpawn = spawn.transform.position - canvas.position;
             toSpawn.y = 0f;
-            Debug.Log("[Legaia] CARDS: panel faces out (dot " +
-                facing.ToString("0.00") + "), spawn side dot " +
-                Vector3.Dot(canvas.forward, toSpawn.normalized).ToString("0.00") + ".");
+            Debug.Log("[Legaia] CARDS: panel reads from outside the table (canvas +Z " +
+                "into the table, dot " + facing.ToString("0.00") + "), spawn side dot " +
+                Vector3.Dot(-canvas.forward, toSpawn.normalized).ToString("0.00") + ".");
             // ... and it must not stand where a player sits.
             for (int i = 0; i < 4; i++)
             {

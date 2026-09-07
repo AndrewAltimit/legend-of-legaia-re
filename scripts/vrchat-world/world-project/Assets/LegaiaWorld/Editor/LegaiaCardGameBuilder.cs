@@ -16,12 +16,23 @@
 // to the cards: they are ordinary pickups and the game only ever writes
 // their position.
 //
-// THE PANEL is a world-space UI canvas on a post beside the table, facing
-// OUTWARD from it - the same construction as the camp settings panel
-// (Canvas + VRCUiShape + GraphicRaycaster + a BoxCollider so the pointer
-// has something to hit), and with the same trap avoided: nothing with a
-// grab collider is put in front of it, or every press would become a
-// pickup grab. Every button's onClick is a persistent listener onto the
+// THE PANEL is a world-space UI canvas on a post beside the table, read
+// from OUTSIDE the table - the same construction as the camp settings
+// panel (Canvas + VRCUiShape + GraphicRaycaster + a BoxCollider so the
+// pointer has something to hit), and with the same trap avoided: nothing
+// with a grab collider is put in front of it, or every press would become
+// a pickup grab.
+//
+// WHICH WAY A CANVAS READS. A Unity UI canvas is legible to a viewer on
+// its -Z side, looking along its +Z (the screen-space camera's own
+// geometry), and GraphicRaycaster rejects a ray that arrives from the +Z
+// side. So the panel root's forward points INTO the table, the board's
+// canvas sits on the root's -Z face, and the reader standing outside the
+// table is on the canvas's -Z side. The first cut had the root facing
+// outward with the canvas on its +Z face: it looked right in a component
+// count and in a "faces the player" dot product, and in-world every line
+// of text was mirror-written and no button took a press. The check now
+// measures the sign the UI system actually cares about. Every button's onClick is a persistent listener onto the
 // BACKING UdonBehaviour's SendCustomEvent - a listener on the U# proxy
 // does nothing in-world.
 //
@@ -30,8 +41,8 @@
 // here is wrong by the time anyone sees it: the common-prefab pass applies
 // the scene's hand placement (Legaia > Snapshot placements) to the table
 // root AFTER this builder returns, and every child turns with it - which
-// silently pointed the whole canvas at the back of the board. Facing
-// outward from the table centre is invariant under that, and it is also
+// silently pointed the whole canvas at the back of the board. An aim
+// taken from the table centre is invariant under that, and it is also
 // what a player walking up to that side of the table wants.
 
 using System.Collections.Generic;
@@ -135,17 +146,18 @@ namespace LegaiaWorld
             var root = new GameObject("panel");
             root.transform.SetParent(tableRoot.transform, false);
             root.transform.localPosition = PANEL_AT;
-            // Outward from the table centre, in the table's own frame - see
-            // the header on why a world-space aim does not survive.
+            // Forward INTO the table centre, in the table's own frame (see
+            // the header on why a world-space aim does not survive, and on
+            // why the canvas must present its -Z to the reader outside).
             root.transform.localRotation = Quaternion.LookRotation(
-                new Vector3(PANEL_AT.x, 0f, PANEL_AT.z).normalized, Vector3.up);
+                -new Vector3(PANEL_AT.x, 0f, PANEL_AT.z).normalized, Vector3.up);
 
             // Post + board. The post carries the only collider on this
             // assembly and stands well below the buttons.
             var post = GameObject.CreatePrimitive(PrimitiveType.Cube);
             post.name = "post";
             post.transform.SetParent(root.transform, false);
-            post.transform.localPosition = new Vector3(0f, 0.38f, -0.02f);
+            post.transform.localPosition = new Vector3(0f, 0.38f, 0.02f);
             post.transform.localScale = new Vector3(0.08f, 0.76f, 0.08f);
             post.GetComponent<MeshRenderer>().sharedMaterial = wood;
 
@@ -157,9 +169,11 @@ namespace LegaiaWorld
             board.transform.localScale = new Vector3(0.60f, 0.82f, 0.03f);
             board.GetComponent<MeshRenderer>().sharedMaterial = dark;
 
+            // On the root's -Z face: the outside of the board, presenting
+            // the canvas's -Z (its readable side) to the reader.
             var canvasGo = new GameObject("canvas");
             canvasGo.transform.SetParent(root.transform, false);
-            canvasGo.transform.localPosition = new Vector3(0f, 1.16f, 0.017f);
+            canvasGo.transform.localPosition = new Vector3(0f, 1.16f, -0.017f);
             canvasGo.transform.localScale = Vector3.one * 0.001f;
             var canvas = canvasGo.AddComponent<Canvas>();
             canvas.renderMode = RenderMode.WorldSpace;
