@@ -213,9 +213,8 @@
   <table>
     <thead><tr><th>Thread</th><th>Status</th><th>What would close it</th></tr></thead>
     <tbody>
-      <tr><td>Which routine samples the card-screen kanji page (VRAM <code>(320..447, 256..511)</code>)?</td><td><span class="tag tag-open">open</span></td><td>No image materialises its CLUT id <code>0x76C0</code>; look for a computed <code>y &lt;&lt; 6</code> or a sprite-descriptor table in the menu overlay.</td></tr>
-      <tr><td>What arms the dome's panel-still streamer, and what draws VRAM <code>(384, 0)</code>?</td><td><span class="tag tag-open">open</span></td><td><code>FUN_80025358</code> runs on battle <code>ctx[+0xC] == 2</code>; the writer of that <code>2</code> is gated on <code>ctx[+0x7] == 0x67</code>, undecoded.</td></tr>
-      <tr><td>Which enemy specials name readef groups 19..21 through monster record <code>+0x1C</code>?</td><td><span class="tag tag-open">open</span></td><td>A sweep of the LZS-decoded monster blocks' <code>+0x1C</code> byte.</td></tr>
+      <tr><td>Which routine samples the card-screen kanji page (VRAM <code>(320..447, 256..511)</code>)?</td><td><span class="tag tag-open">open</span> - narrowed</td><td>A sampler must carry tpage <code>0x15</code>/<code>0x16</code> and CBA <code>0x76C0 + plane*0x40</code>; a byte sweep of SCUS + every based overlay finds neither as an immediate or a data halfword, and the uploader records no handle. Closes only on a GPU-FIFO watch at card-screen entry.</td></tr>
+      <tr><td>What draws VRAM <code>(384, 0)</code> 320x256 (the dome panel still)?</td><td><span class="tag tag-open">open</span> - arming resolved</td><td>The arm is <code>ctx[+0xC] = 1</code> at <code>0x800474CC</code> in <code>FUN_80047430</code>, a generic battle-end teardown; no draw site exists statically (33 sites materialise <code>0x180</code>, none with <code>y = 0</code>). Needs a GPU-FIFO capture at battle teardown.</td></tr>
     </tbody>
   </table>
 </section>
@@ -226,6 +225,7 @@
     <thead><tr><th>Thread</th><th>Status</th><th>What would close it</th></tr></thead>
     <tbody>
       <tr><td>PROT 0901's middle band is a shared-tail leaf family</td><td><span class="tag tag-open">open</span></td><td>Six <code>jal</code>s and no <code>jr ra</code> in <code>0x801F7644..0x801F8EB4</code>; splitting it needs the <code>j</code>-target graph.</td></tr>
+      <tr><td>Which resident image does SCUS <code>jal 0x801F7B88</code> (at <code>0x800481A0</code>) mean?</td><td><span class="tag tag-open">open</span> - narrow</td><td><code>0x801F7B88</code> is a real framed routine in PROT 0920 that 0920 never calls; the slot-B band aliases at <code>0x801F69D8</code>, so the <code>jal</code> alone does not name the image.</td></tr>
     </tbody>
   </table>
 </section>
@@ -235,7 +235,7 @@
   <table>
     <thead><tr><th>Thread</th><th>Status</th><th>What would close it</th></tr></thead>
     <tbody>
-      <tr><td>Does the mode-16 publisher-logo routine <code>FUN_801CE9C0</code> (PROT 0895 <code>+0x1A8</code>) pin the per-logo quads?</td><td><span class="tag tag-open">open</span> - narrow</td><td>Its draw calls are now locatable (it forms <code>+8</code> into each of the four <code>init.pak</code> TIMs and uploads through <code>FUN_800198E0</code>), so the logo pass's geometry can be read from the image. PROT 0895 still lacks a <code>static-overlays.toml</code> row.</td></tr>
+      <tr><td>What draws the <code>init.pak</code> WARNING screen?</td><td><span class="tag tag-open">open</span> - narrow</td><td>PROT 0895 uploads the health-warning TIM to VRAM <code>(704, 0)</code> and gives it sprite descriptor 1 at <code>0x801F369C</code>, but none of the five <code>FUN_801CFBB8</code> call sites passes id 1 and nothing else references the table. The logo quads themselves are settled.</td></tr>
     </tbody>
   </table>
   <p>The previous thread here - the identity of PROT 0968 - closed by capture.</p>

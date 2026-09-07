@@ -72,6 +72,27 @@ Rows the last audit wave overturned. They are listed here rather than filed
 silently into the settled page, because a claim that was wrong once is the
 cheapest place to look for a claim that is still wrong.
 
+- **Field-VM op `0x45` sub `0xC0` (CAMERA APPLY) never jumped.** Its arm exits
+  `j 0x801E3624` with `addiu s8, s8, 4` in the delay slot and hands the operand
+  `s16` to `FUN_801DE084` as the apply trigger; the "absolute jump" reading came
+  from the decompiled C and sent every record with a zero trigger back to byte
+  0 - which is what held `urudre2`. Op `0x43` subs 0/1/A/B fall through by 8 the
+  same way. Both in [`re-do-not-re-walk.md`](re-do-not-re-walk.md#field--locomotion).
+- **`FUN_801CE9C0` uploads the publisher logos; it draws nothing.** The quads
+  are a six-record sprite-descriptor table at `0x801F369C`, and retail plays
+  SCEA before Contrail ([settled](re-settled-threads.md#the-publisher-logo-quads)).
+- **The slot-B module band has no shared library tail.** Every module image ends
+  in another image's bytes at the same file offset - nine of them in PROT 0899's -
+  so the tail is mastering residue
+  ([falsified](re-do-not-re-walk.md#the-slot-b-module-band-shares-a-library-tail)).
+- **Monster record `+0x1C` is the readef animation-group index**, and no shipped
+  record names groups 19..21 ([settled](re-settled-threads.md#readef-groups-1921-and-monster-record-0x1c)).
+- **`FUN_80045BB4` is a referenced SCUS entry**, word 12 of the bank-3 primitive
+  handler table at `0x8007668C`; the "interior and unreferenced" reading of
+  `0x80045CB4` is in [`re-do-not-re-walk.md`](re-do-not-re-walk.md#measurement-readings).
+- **The dome panel-still streamer is armed by a generic battle-end teardown**,
+  not by a `ctx[+0x7] == 0x67` condition - that value is the escape path's hold
+  ([settled](re-settled-threads.md#the-dome-panel-still-arming)).
 - **The title screen was never "ahead of the mode table".** It runs under the
   `CARD` mode pair 22/23; `main()`'s one pre-loop overlay load is the boot
   `init.pak` 0895, and `FUN_801DD35C` is inside PROT 0899 at `+0xEB44`. Four
@@ -113,7 +134,11 @@ cheapest place to look for a claim that is still wrong.
   clean MAN walk desynced in inline text before the `0x3F`, the tile sweep
   capped at 48 tiles below the exit bands, and the 24-tick exit budget could
   not reach a tail behind 300 frames of waits. Live-confirmed for `uru`
-  ([settled](re-settled-threads.md#the-uru-mais-chain-and-jouine-exits)).
+  ([settled](re-settled-threads.md#the-uru-mais-chain-and-jouine-exits)); the
+  last holdout, `urudre2`, was a mis-decoded field-VM op-`0x45` CAMERA APPLY
+  (it falls through, it does not jump -
+  [falsified](re-do-not-re-walk.md#field-vm-op-0x45-sub-0xc0-returns-the-operand-s16-as-the-next-pc)),
+  and all five now leave headlessly.
 - **The battle-intro enemy-name banner is raised by no placement record.** The
   runbook presumed a top-seated `0x0303` record with a runtime width overwrite
   and a park-to-live slide; capture shows the flow-`0x0A` composer
@@ -411,7 +436,7 @@ resolved as the track-swap **commit** and moved to
 
 | Thread | Status | What would close it |
 |---|---|---|
-| Does the mode-16 publisher-logo routine `FUN_801CE9C0` (PROT 0895 `+0x1A8`) pin the per-logo quads? | open (narrow) | The routine forms `+8` into each of the four `init.pak` TIMs (`+0x21C4` / `+0xD3E4` / `+0x18E04` / `+0x1CE44`) and uploads through `FUN_800198E0`; its draw calls are now locatable, so the logo pass's quad geometry can be read from the image instead of a capture. PROT 0895 has no `static-overlays.toml` row yet; base `0x801CE818` is byte-anchored by that call. |
+| What draws the `init.pak` WARNING screen? | open (narrow) | PROT 0895 uploads the health-warning TIM to VRAM `(704, 0)` and gives it sprite descriptor 1 in the six-record table at `0x801F369C`, but none of the five `FUN_801CFBB8` call sites in that image passes id 1 and nothing else references the table - so the screen is emitted by another image or another mode. The logo quads themselves are settled ([settled](re-settled-threads.md#the-publisher-logo-quads)). |
 
 The previous thread here - PROT 0968 identity, the one slot-B cluster
 entry without a residency capture - closed by capture: the
@@ -430,15 +455,15 @@ PCSX-Redux `.sstate` via `pcsxr-state`, dispatched on file extension).
 
 | Thread | Status | What would close it |
 |---|---|---|
-| Which routine samples the card-screen kanji page (VRAM `(320..447, 256..511)`, CLUT rows 475..482)? | open | PROT 0892's font is uploaded by `FUN_8002574C` at CARD INIT, but no image materialises its CLUT id `0x76C0`; look for a computed `y << 6` or a sprite-descriptor table in the menu overlay. |
-| What arms the dome's panel-still streamer, and what draws VRAM `(384, 0)` 320x256? | open | `FUN_80025358` runs on battle `ctx[+0xC] == 2`; the writer of that `2` (`0x8004E6E4`) is gated on `ctx[+0x7] == 0x67`, undecoded. |
-| Which enemy specials name readef groups 19..21 through monster record `+0x1C`? | open | Needs a sweep of the LZS-decoded monster blocks' `+0x1C` byte; `monster_archive.rs` does not model that field. |
+| Which routine samples the card-screen kanji page (VRAM `(320..447, 256..511)`, CLUT rows 475..482)? | open (narrowed) | A sampler must carry tpage `0x15`/`0x16` and CBA `0x76C0 + plane*0x40`; a byte sweep of SCUS + every based overlay finds neither as an immediate or as a data halfword, and the uploader `FUN_800198E0` records no handle. Closes only on a GPU-FIFO watch at card-screen entry (mode `0x16 -> 0x17`); if nothing draws it, the page is loaded and parked in the USA build. |
+| What draws VRAM `(384, 0)` 320x256 (the dome panel still)? | open (arming resolved) | The arming chain is decoded - `ctx[+0xC] = 1` at `0x800474CC` in `FUN_80047430`, a generic battle-end teardown ([settled](re-settled-threads.md#the-dome-panel-still-arming)) - but no draw site exists statically: 33 sites disc-wide materialise `0x180` and none pairs it with `y = 0`. Needs a GPU-FIFO capture at battle teardown (`ctx[+0xC]` `1 -> 2`). |
 
 ## Measurement + tooling
 
 | Thread | Status | What would close it |
 |---|---|---|
 | PROT 0901's middle band is a shared-tail leaf family | open | `0x801F7644..0x801F8EB4` has six `jal`s and no `jr ra` - every leaf `j`s to one exit - so neither a prologue partition nor a cut-at-`jr ra` walk splits it; it is dumped as one range. Splitting needs the `j`-target graph. |
+| Which resident image does SCUS `jal 0x801F7B88` (at `0x800481A0`) mean? | open (narrow) | `0x801F7B88` is a real framed routine in PROT 0920 that 0920 itself never calls; the slot-B band aliases at `0x801F69D8`, so the `jal` alone does not name the image. The callee's identity is `inference` until a residency capture pairs the call with the loader-B tracker `0x8007BC4C`. |
 
 ## Adding a thread
 

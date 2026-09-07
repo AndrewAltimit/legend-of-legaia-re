@@ -27,6 +27,8 @@ Plus the PSX-specific scratchpad at `0x1F800000-0x1F8003FF` (1 KB) which Legaia 
 
 | Address | Type | Purpose |
 |---|---|---|
+| `0x8006F180` | data segment start | First byte of the `SCUS_942.54` data segment (50816 bytes to the image end, zero `jr ra`); `disc-coverage.py`'s `data_floor` for SCUS. |
+| `0x8007668C` | u32[12] | Bank-3 cluster-A primitive-handler table, kinds 8..19 (`0x8004409C` .. `0x800453BC`, last slot `FUN_80045BB4`). |
 | `0x800840F8` | u32 | BIOS pad data (read by `FUN_8001822C`). |
 | `0x80084340` | inventory base | Per-page inventory state, 0x414-byte stride. |
 | `0x80084540` | u16 | Current map / scene PROT base index. |
@@ -354,6 +356,7 @@ The 256 KB overlay window is shared between several runtime overlays - only one 
 | `0x801CE818+` | Options / pause / save / shop menu (loaded from PROT entry `0899_xxx_dat`; the historical "PROT 0896 @ `0x801C5818`" attribution is refuted - 0896's recovered base was an over-read artifact, and live field captures hold an ISO9660 directory cache at `0x801C5818`) | In-game menu UI |
 | `0x801EF018` | Title-overlay state struct base | `+0x154` (u32) = title-attract countdown `_DAT_801EF16C` (init `0x8000`, decremented by `_DAT_1F800393` per frame, underflow writes `_DAT_8007B83C = 0x1A` → STR FMV mode 26 → `MV1.STR`); `+0x158` (u32) = title-overlay frame counter `_DAT_801EF170`. |
 | `0x801F0000+` | Battle effect helpers extend into here | `0x801F5D90`, `0x801F5CF8` (effect_id specials), `0x801F8004 / 88FC / 8D4C / 8E6C / 8F28` (particle / emitter cluster) |
+| `0x801F3600+` | PROT 0895 (`init.pak`, mode 16) own globals | `0x801F369C` six-record logo sprite-descriptor table; `0x801F3714` / `0x801F3764` effect-part tables; `0x801F3978..0x801F39A4` memory-card driver state; `0x801F3EA8` fade level; `0x801F3EB0` boot flags. All above the image's code, a cross-check that the slot-A base is right. |
 
 ## Mini-game state regions
 

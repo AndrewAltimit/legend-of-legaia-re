@@ -1877,6 +1877,55 @@ One monster suppresses the banner: monster-slot-0 id `0xB5` (evolved Cort)
 skips the composer and parks `ctx[+0x06] = 0x0C`, a value the flow ladder at
 `0x801D0C84` has no arm for - the writer that moves it on is an open row.
 
+### What a port owes the slot-B module band
+
+*Status:* resolved as a per-address verdict.
+
+Of the 65 catalogued addresses in PROT 0903..0966, 58 are the module's
+`0x801F6734` move-VM spawn-stager entry, 6 are cast tick bodies reached from the
+module's own `0x801CF56C` trampoline, and 1 is a framed routine nothing
+references. Forty-five are pure spawn choreography - an arm switch whose arms
+only call `FUN_80021B04` / `FUN_80050ED4` / `FUN_801DFDF0` / `FUN_80024E80` with a
+module-resident record and a scale literal - and are expressible as the
+spawn-record data layer; thirteen carry game logic (two *stagers* apply damage:
+PROT 0927 through `FUN_801DD0AC(0x12, 7, seat)` and PROT 0966 through
+`FUN_801DD4B0(0x100, ..)`, each with the HP `+0x14C` clamp; four more write
+actor or `ctx` state); seven are empty (`jr ra; nop`). Per-address table on
+[`cast-module.md`](../subsystems/cast-module.md#the-band-as-a-port-worklist).
+Grade `disassembly`.
+
+### readef groups 19..21 and monster record `+0x1C`
+
+*Status:* resolved-negative - nothing names them.
+
+`+0x1C` is the readef animation-group index: the initiative scheduler
+`FUN_801DABA4` reads it record-direct (`lbu v1,0x1c(v0)` at `0x801DB098` /
+`0x801DB0C8`) and seeds the streaming applier's base slot with `3 * group`.
+Across the 186 populated records the byte never leaves `0..=25`, and never takes
+1, 2, 5, 12, 19, 20, 21 or 23; group 0 is the default. A second reader, the AI
+spell picker `FUN_801E9FD4` (`0x801EBB90`), compares the first enemy seat's byte
+against `0x17` and no shipped record satisfies it. Groups 19..21's duplicated
+actor records are therefore unreachable through the enemy path (slots 58/59/71
+and 64/65/68 are byte-identical). Census in
+[`summon-readef.md`](../formats/summon-readef.md#which-monsters-name-which-readef-group);
+parser field `readef_group` in `legaia_asset::monster_archive`. Grade
+`disassembly` + disc census.
+
+### The dome panel-still arming
+
+*Status:* resolved - a generic battle-end teardown, not a dome condition.
+
+`ctx[+0xC] = 1` is written at `0x800474CC` in the per-frame anim-node tick
+`FUN_80047430`, for an enemy node (`node[+0x5A] >= 3`) under `gp[+0xA48] & 0x80`
+and `gp[+0x9F4] != 0xB5`, together with `node[+0x10] |= 8`. `ctx[+0xC]` is then a
+three-value teardown machine: `1` frees the actor table and writes `2`; `2` ticks
+`FUN_80025358`, which stages PROT 0978 into the freed space - from three sites
+(`0x8004E65C` escape, `0x8004F82C` victory tail, `0x80056428` in `FUN_80056208`).
+The `ctx[+0x7] == 0x67` the thread cited is only the successful-escape hold
+written by case `0x66` of `FUN_801E295C`. What *draws* the still stays open.
+[`minigame-muscle-dome.md`](../subsystems/minigame-muscle-dome.md#what-arms-the-load).
+Grade `disassembly`.
+
 ### Tutorial prompt machine exclusivity
 
 *Status:* resolved - the machine is byte-exclusive to 0967; the prompt pool is shared with 0968. Grade `disassembly`
@@ -2058,8 +2107,10 @@ own decoded `0x3F` destinations, and it terminates at exactly one kingdom
 boundary: `jiji -> map02`. It is 27 scenes, and it contains the whole Drake
 kingdom past the Ravine - the boss chain, the four-deep Drake Castle interior,
 the Uru Mais rooms. Every one of the 27 loads its assets, parses its MAN,
-enters in `Field` / `WorldMap`, and settles its entry script; all but one can
-be walked by pad alone.
+enters in `Field` / `WorldMap`, and settles its entry script; all can be walked
+out by pad alone - the last holdout, `urudre2`, was held by a mis-decoded
+op-`0x45` CAMERA APPLY, not by the scene
+([falsified](re-do-not-re-walk.md#field-vm-op-0x45-sub-0xc0-returns-the-operand-s16-as-the-next-pc)).
 
 The closure is a *reachability* partition, not a narrative one, and it is a
 closure over `0x3F` only - scenes reached by the sibling `0x3E` door warp
@@ -3305,6 +3356,7 @@ entry (sound-test track 72) borrowing another entry's bank. See
 | `_DAT_8007B8C2` polarity, and its writer | resolved (docs were backwards) | `disassembly` + `capture` | [details ↓](#_dat_8007b8c2-polarity-and-its-writer) |
 | Actor-VM (`FUN_801D6628`) program source - which carrier, what selects one | resolved (menu-overlay-resident program table) | `disassembly` | The interpreted programs are data in PROT 0899's own data segment (file `0x16260..0x16740`), one per `jal FUN_801D6628` caller via `lui`+`addiu` (or a forwarded register); byte 1 of each instruction indexes the window descriptor table at `0x801E4738`, making the VM the menu's window-widget choreographer. No per-scene carrier exists - resolution is per-boot. Spec [window-script.md](../formats/window-script.md); scanner `legaia_asset::widget_script::scan`; engine wiring `engine-core::menu_widget`. Superseded sprite-VM readings: [re-do-not-re-walk.md](re-do-not-re-walk.md#menus--ui). |
 | `title.pak` PROT entry | resolved | `capture` | [details ↓](#titlepak-prot-entry) |
+| Does `FUN_801CE9C0` pin the per-logo quads? | resolved (no - it uploads; the quads are a descriptor table in the same image) | `disassembly` | [details ↓](#the-publisher-logo-quads) |
 | Title screen mode-table PROT | resolved (no row is named for it - it runs under the `CARD` mode pair 22/23; `FUN_801DD35C` is PROT 0899 `+0xEB44`) | `disassembly` | [details ↓](#title-screen-mode-table-prot) |
 | Load-screen panel 9-slice geometry | resolved (engine renders byte-perfect) | `capture` | Pinned in [`subsystems/save-screen.md`](../subsystems/save-screen.md#pinned-9-slice-tile-rects-system-ui-tim-clut-row-2): retail composes the 81×29 panel at dst `(6, 4)` from 14 textured-sprite primitives (GP0 cmd `0x64`) sampling the system-UI sheet with CLUT `(32, 511)`. The exact per-tile rects are exported as `legaia_asset::title_pak::OVERLAY_SYSTEM_UI_PANEL_*` and emitted by `legaia_engine_render::save_select_chrome_draws_for` (covered by `save_select_chrome_emits_9slice_panel_and_pills` test). No interior fill sprite is drawn - the "marbled blue" look is the dimmed title art bleeding through the empty middle of the frame. |
 | Key-item area consumers (`0x800859E8..0x80085A40`) | resolved (narrow negative; the reader enumeration is closed) | `disassembly` | [details ↓](#key-item-area-consumers) |
@@ -4347,6 +4399,25 @@ Grade `disassembly`: every verdict is a word- or token-exact comparison
 against the corrected-extent extracted images, with each rival reading
 excluded by the same comparison rather than by arithmetic.
 
+### The publisher-logo quads
+
+*Status:* resolved - the routine asked about does not draw.
+
+`FUN_801CE9C0` (PROT 0895 `+0x1A8`) uploads the four `init.pak` TIMs through
+`FUN_800198E0` after writing their CLUT and pixel VRAM rects, selects the
+640x480 display env (`FUN_8001DAF8(0x400)`), and spawns the two boot actors. It
+contains no primitive emit. The quads come from a six-record, 20-byte
+sprite-descriptor table at `0x801F369C` (file `+0x24E84`, immediately after the
+fourth TIM): `[u32 scale][u16 tpage][u16 clut][u8 u,v,w,h][rgb top][stp][rgb bottom][tpage adder]`,
+emitted as opaque `POLY_GT4`s by `FUN_801CFBB8` and sequenced by
+`FUN_801CEFD4` (13-arm jump table at `0x801CE8E8`). Each record's `tpage`/`clut`
+matches one of the rects the uploader wrote (`0x9A/0x7ED4`, `0x9C/0x7F54`,
+`0x0A/0x7F14`, `0x0B/0x7E80`), which is how a record binds to a logo. Retail's
+order is SCEA, Contrail, PROKION; the fade is the PSX texture blend
+`texel * colour / 128` over a vertex colour scaled by a `0..0x80` level, not
+alpha. Full tables in [`boot.md`](../subsystems/boot.md#the-per-logo-quads).
+Grade `disassembly`; the descriptor table reproduces from the extracted image.
+
 ## Rendering / camera
 
 | Thread | Status | Evidence | Answer |
@@ -4479,6 +4550,7 @@ Grade `capture` for the census (a disc-derived executing oracle) and
 | PROT 0867's trailing `0x14000` slots | resolved (raw 4bpp PSX TIMs, not LZS monster blocks) | `capture` | Slots 187..194 open with the TIM magic `0x10` where a block carries `dec_size`: CLUT to VRAM `(0, 482)` 256x1, page to `(384, 0)` 64x256 halfwords, 33,312 bytes, rest zero; row 482 sits under the monster CLUT base 484 and `x = 384` is monster page origin 1. The same TIM shape sits inside PROT 0892. LZS-decoding the magic as a length "succeeds" against the zeroed ring buffer. Instrument: `asset account` ([`byte-accounting.md`](../tooling/byte-accounting.md)). |
 | `summon.dat`'s seven unclassified slots | resolved (the big-summon third members) | `inference` | PROT 0893 slots 77 / 81 / 85 / 89 / 93 / 97 / 101 classify as bare payload, each directly before an actor-record slot, and the big-summon id band `0x9A..=0xA0` has exactly seven ids; the module's `RAW_SLOT_*` constants tile each slot exactly. No consumer read yet. |
 | Do a MAN's partition offset tables tile its data region? | resolved (exactly, data-region-relative) | `inference` | Record offsets are relative to `data_region_offset` and tile `[data_region_offset, data_region_offset + u24_at_28)` with no gaps across five real MANs (one byte of padding left). Measured by `asset account`. |
+| Where does an overlay image's code stop? | resolved (at the word after its last `jr ra`) | `disassembly` | Every complete MIPS body ends in `jr ra`, so the data segment begins after the last one; the only exception is a body the sector-granular PROT extent cut short, which still carries a RAM-page `lui` in its tail (PROT 0902 / 0977 / 0979). Corroborated by the slot-B frame-matched partition ending at the same word in all thirteen images. `disc-coverage.py`'s `data_floor`. |
 
 ### What is in the `SCUS_942.54` code gap
 
