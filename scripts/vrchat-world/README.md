@@ -380,6 +380,19 @@ and the SDK's own components - no third-party package, no game data:
   Object Sync on the same object as a manually synchronized behaviour,
   and the headless self-test asserts the pairing so a build never
   trips on it again.
+  Each stool is also a `LegaiaNpcStation` (kind 2) on one
+  `LegaiaCardTableHost`, so villagers sit down and hold a fanned pair
+  of card backs when nobody is playing. The host frees every seat the
+  moment a player takes a stool (`LegaiaSeat` mirrors the station's
+  own enter / exit callbacks - VRChat exposes no "is this chair in
+  use" query) or a card leaves the deck anchor, and the table's
+  third button (*NPCs: sit / shoo*) toggles them off entirely, synced.
+  A freed seat is not a teleport: the station goes unavailable and the
+  NPC brain walks its villager away by itself. The seated pose is an
+  **approximation** - the exported rigs carry no sit clip, so the host
+  nudges the NPC onto the stool centre and drops it by ~35% of its own
+  measured height, which reads as seated from any normal angle and is
+  undone when it leaves.
 
 The rest are spawned **from prefabs already in your project**:
 
@@ -719,6 +732,64 @@ pass is idempotent (it refreshes rather than stacks).
   (`npc_30:90`, keys matching the NPC glb file name) applies such trims
   durably across rebuilds. Wall/floor ray heights are measured from the
   rendered model at Start, so they track any export scale.
+- **Weather**: a synced-by-clock weather schedule (`LegaiaWeather`), the
+  same trick the day/night cycle uses - every client derives the current
+  spell from the shared server clock, so a squall arrives everywhere at
+  the same second with no networking at all. The schedule is a repeating
+  ring of 16 spells, each 3-8 minutes, kind and length hashed from the
+  entry index (clear / overcast / light rain / storm / windy), with the
+  targets cross-fading over ~45 s at each seam. Four effects, each its
+  own toggle on the behaviour:
+  - **Rain** - one particle emitter (a 12 x 12 m box of stretched drops
+    falling ~9 m/s) that follows the local player's head 8 m up, with
+    the emission rate scaled by the spell's intensity and capped for a
+    PC budget. A ray straight up off the player mutes it under a roof:
+    the interiors are detached rooms far from the huts, so anything
+    overhead within 30 m is cover.
+  - **Sky** - the trilight ambient and the fog colour are greyed and
+    dimmed by cloud cover and the fog pulled in. It runs in
+    `LateUpdate`, multiplying what `LegaiaDayNight` wrote in `Update`
+    that same frame, so the two never fight over the same render
+    settings; with no cycle in the scene the behaviour multiplies its
+    own Start-captured base instead. Either way the darkening applies
+    exactly once per frame and never accumulates.
+  - **Lightning** - flashes during a storm on a **dedicated** directional
+    light rather than the sun (at night the sun points below the horizon
+    and a flash on it would light nothing - the storm you actually want
+    to see), each followed by a synthesized thunder clap after 1-4 s,
+    quieter the longer the delay. The flash slots are hashed off the
+    same clock, so the whole instance sees one strike, not one each.
+  - **Wind** - `_WindGust` on the procedural grass material scales the
+    sway's amplitude and speed, so a squall bends the whole meadow. It
+    is a material property and not a global because
+    `Shader.SetGlobalFloat` is **not exposed to Udon** (`Material.SetFloat`
+    is) - and the property's default of 1 is the right failure mode: a
+    world built without the weather pass sways exactly as it always did.
+
+  The behaviour publishes `rainIntensity` (0..1) for the NPC layer to
+  send villagers indoors, and pushes `rainLevel` / `windLevel` into the
+  ambience mixer when the scene has one. `JumpToClear` / `JumpToRain`
+  jump the shared schedule the way the settings panel's Day / Night
+  buttons jump the sun. Thunder is generated like every other kit clip
+  (a crack, a darkening body, a slow rumble tail - no sampled audio).
+- **Living props**: the shoreline **fishing spots** - 3-4
+  `LegaiaNpcStation`s (kind 1) in a `living_props` container under the
+  built root, where the NPC director finds them. The builder locates
+  them from the world mesh alone: water is the same large-flat-and-
+  horizontal transparent sheet the collider pass keeps a floor over
+  (see "Transparent surfaces"), land is the lowest upward-facing opaque
+  triangle per 0.75 m cell, and a shore cell is a land cell 0.02-2 m
+  above the water with water within ~1.5 m, on the village side of the
+  map. Each candidate then has to survive physics - a floor ray at the
+  expected height and a clear standing capsule - because a raycast
+  alone cannot tell land from water here (the merged collider
+  deliberately includes the sea). While a villager stands at one it
+  holds out a rod with a line down to a bobbing float, ripple rings
+  spread on the water, and every 20-60 s something bites and a fish
+  flashes up the line. The rod is **not** parented to the NPC: these
+  rigs have no hand bone, so it is placed each frame at a hand height
+  measured from the NPC's own rendered bounds. A player standing on the
+  spot frees the station, so nobody gets fished through.
 
 Caveats: the sun / ambient / skybox / fog are **per-Unity-scene render
 settings** - applying them from one built root is global, the last applied

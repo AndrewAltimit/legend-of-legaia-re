@@ -1552,7 +1552,9 @@ namespace LegaiaWorld
                        "LegaiaWorldMenu", "LegaiaFlicker",
                        "LegaiaSlotMachine", "LegaiaSlotButton",
                        "LegaiaEventButton", "LegaiaMirror", "LegaiaSeat",
-                       "LegaiaCard", "LegaiaCardDeck", "LegaiaVideoTv" })
+                       "LegaiaCard", "LegaiaCardDeck", "LegaiaVideoTv",
+                       "LegaiaNpcStation", "LegaiaWeather",
+                       "LegaiaFishingSpot", "LegaiaCardTableHost" })
             {
                 var t = FindType("LegaiaWorld." + name);
                 if (t == null) continue;

@@ -805,8 +805,18 @@ namespace LegaiaWorld
             var pickupType = LegaiaWorldBuilder.FindType("VRC.SDK3.Components.VRCPickup");
             var syncType = LegaiaWorldBuilder.FindType("VRC.SDK3.Components.VRCObjectSync");
 
+            var cardMat = EnsureCardMaterial(genDir);
+            var meshes = EnsureCardMeshes(genDir);
+
+            // Stools: a VRC station for players, and a LegaiaNpcStation
+            // (kind 2) so the town's villagers take a free seat when
+            // nobody is playing - the host below arbitrates between them.
+            var seatStations = new List<Component>();
+            var seatChairs = new List<Component>();
+            var seatHands = new List<GameObject>();
             for (int i = 0; i < seats; i++)
-                BuildStool(root.transform, i, seats, wood, dark);
+                BuildStool(root.transform, i, seats, wood, dark, cardMat, meshes,
+                    seatStations, seatChairs, seatHands);
 
             // Deck: 52 pickups stacked face-down at the anchor.
             var anchor = new GameObject("deck_anchor");
@@ -814,18 +824,38 @@ namespace LegaiaWorld
             anchor.transform.localPosition = new Vector3(0f, 0.766f + CARD_T, 0f);
             var deck = LegaiaWorldBuilder.TryAttachUdon(root, "LegaiaCardDeck");
 
-            var cardMat = EnsureCardMaterial(genDir);
-            var meshes = EnsureCardMeshes(genDir);
             var cardsGo = new GameObject("cards");
             cardsGo.transform.SetParent(root.transform, false);
             var cards = new List<Component>();
+            var cardTransforms = new List<Transform>();
             for (int i = 0; i < 52; i++)
             {
                 var card = BuildCard(cardsGo.transform, i, meshes[i], cardMat,
                     anchor.transform.localPosition + Vector3.up * (0.0007f * i),
                     pickupType, syncType);
                 if (card != null)
+                {
                     cards.Add(card);
+                    cardTransforms.Add(card.transform);
+                }
+            }
+
+            // The NPC host: one behaviour for all four seat stations. It
+            // frees them the moment a player sits down or a card leaves the
+            // deck, and the button shoos the villagers off on demand.
+            var host = LegaiaWorldBuilder.TryAttachUdon(root, "LegaiaCardTableHost");
+            LegaiaWorldBuilder.SetUdonField(host, "seats",
+                ToTypedArray(seatStations, "LegaiaNpcStation"));
+            LegaiaWorldBuilder.SetUdonField(host, "seatChairs",
+                ToTypedArray(seatChairs, "LegaiaSeat"));
+            LegaiaWorldBuilder.SetUdonField(host, "seatHands", seatHands.ToArray());
+            LegaiaWorldBuilder.SetUdonField(host, "deckAnchor", anchor.transform);
+            LegaiaWorldBuilder.SetUdonField(host, "cards", cardTransforms.ToArray());
+            LegaiaWorldBuilder.SyncUdonProxy(host);
+            foreach (var st in seatStations)
+            {
+                LegaiaWorldBuilder.SetUdonField(st, "handler", host);
+                LegaiaWorldBuilder.SyncUdonProxy(st);
             }
 
             var size = new Vector3(0.09f, 0.03f, 0.06f);
@@ -833,6 +863,8 @@ namespace LegaiaWorld
                 size, green, deck, "Shuffle", "Shuffle deck");
             Button(root.transform, "btn_gather", new Vector3(0.12f, 0.775f, -0.46f),
                 size, blue, deck, "Gather", "Gather deck");
+            Button(root.transform, "btn_npcs", new Vector3(0.36f, 0.775f, -0.34f),
+                size, wood, host, "ToggleNpcs", "NPCs: sit / shoo");
 
             LegaiaWorldBuilder.SetUdonField(deck, "cards", ToTypedArray(cards, "LegaiaCard"));
             LegaiaWorldBuilder.SetUdonField(deck, "stackAnchor", anchor.transform);
@@ -853,7 +885,9 @@ namespace LegaiaWorld
             return arr;
         }
 
-        static void BuildStool(Transform root, int i, int n, Material wood, Material dark)
+        static void BuildStool(Transform root, int i, int n, Material wood, Material dark,
+            Material cardMat, Mesh[] cardMeshes, List<Component> seatStations,
+            List<Component> seatChairs, List<GameObject> seatHands)
         {
             float a = (i + 0.5f) / n * Mathf.PI * 2f;
             Vector3 local = new Vector3(Mathf.Sin(a) * 0.98f, 0f, Mathf.Cos(a) * 0.98f);
@@ -888,6 +922,42 @@ namespace LegaiaWorld
             var seat = LegaiaWorldBuilder.TryAttachUdon(stool, "LegaiaSeat");
             LegaiaWorldBuilder.SetUdonField(seat, "station", station);
             LegaiaWorldBuilder.SyncUdonProxy(seat);
+
+            // The villagers' side of the same stool: a LegaiaNpcStation the
+            // town director can send an idle NPC to. The stool already
+            // faces the table centre, so its own transform is the stand
+            // point (position AND facing); the host wires the handler.
+            var npcSeat = LegaiaWorldBuilder.TryAttachUdon(stool, "LegaiaNpcStation");
+            LegaiaWorldBuilder.SetUdonField(npcSeat, "kind", 2); // seat
+            LegaiaWorldBuilder.SetUdonField(npcSeat, "standPoint", stool.transform);
+            LegaiaWorldBuilder.SetUdonField(npcSeat, "dwellSeconds", 90f);
+            LegaiaWorldBuilder.SetUdonField(npcSeat, "indoors", false);
+            LegaiaWorldBuilder.SyncUdonProxy(npcSeat);
+
+            // Cosmetic hand: two card backs fanned in front of a seated
+            // villager (the rigs have no hand bone, so the fan hangs off
+            // the stool - see LegaiaCardTableHost's pose note).
+            var hand = new GameObject("npc_hand");
+            hand.transform.SetParent(stool.transform, false);
+            hand.transform.localPosition = new Vector3(0f, 0.95f, 0.16f);
+            for (int c = 0; c < 2; c++)
+            {
+                var q = new GameObject("held_" + c);
+                q.transform.SetParent(hand.transform, false);
+                q.transform.localPosition = new Vector3((c - 0.5f) * 0.035f, 0f, 0f);
+                q.transform.localRotation =
+                    Quaternion.Euler(70f, 0f, (c - 0.5f) * 26f);
+                q.AddComponent<MeshFilter>().sharedMesh =
+                    cardMeshes[(i * 7 + c) % cardMeshes.Length];
+                var mr = q.AddComponent<MeshRenderer>();
+                mr.sharedMaterial = cardMat;
+                mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            }
+            hand.SetActive(false);
+
+            seatStations.Add(npcSeat);
+            seatChairs.Add(seat);
+            seatHands.Add(hand);
         }
 
         static Component BuildCard(Transform parent, int index, Mesh mesh, Material mat,

@@ -4,6 +4,11 @@
 //       -executeMethod LegaiaWorld.LegaiaBatchChecks.CommonPrefabs
 //       [-legaiaScene Assets/Scenes/<scene>.unity] -logFile <log>
 //
+// Weather does the same for the weather rig, the shoreline fishing
+// stations and the card table's NPC seating: it applies those passes to
+// the already-built root, rebuilds the common prefabs, and asserts the
+// wiring reached the backing behaviours.
+//
 // CommonPrefabs opens the scene, finds the built root's LegaiaSpawn,
 // builds every common prefab next to it with the SDK types the project
 // has, and asserts the result is fully wired: the expected components
@@ -117,7 +122,9 @@ namespace LegaiaWorld
             Expect("LegaiaWorld.LegaiaCardDeck", 1);
             Expect("LegaiaWorld.LegaiaMirror", 1);
             Expect("LegaiaWorld.LegaiaVideoTv", 1);
-            Expect("LegaiaWorld.LegaiaEventButton", 3 + 3 + 2);
+            Expect("LegaiaWorld.LegaiaEventButton", 3 + 3 + 3);
+            Expect("LegaiaWorld.LegaiaNpcStation", 4, table);
+            Expect("LegaiaWorld.LegaiaCardTableHost", 1, table);
             if (o.sdkPens && Count("VRC.Udon.UdonBehaviour") < 1)
                 Fail("SDK pen prefab spawned without any UdonBehaviour");
 
@@ -248,6 +255,10 @@ namespace LegaiaWorld
             CheckVar(container, "LegaiaWorld.LegaiaCardDeck", "cards");
             CheckVar(container, "LegaiaWorld.LegaiaCardDeck", "stackAnchor");
             CheckVar(container, "LegaiaWorld.LegaiaSeat", "station");
+            CheckVar(container, "LegaiaWorld.LegaiaCardTableHost", "seats");
+            CheckVar(container, "LegaiaWorld.LegaiaCardTableHost", "seatChairs");
+            CheckVar(container, "LegaiaWorld.LegaiaCardTableHost", "cards");
+            CheckVar(container, "LegaiaWorld.LegaiaNpcStation", "handler");
             CheckVar(container, "LegaiaWorld.LegaiaEventButton", "target");
 
             // The URL field must call the TV's backing behaviour on end-edit.
@@ -266,6 +277,187 @@ namespace LegaiaWorld
 
             Debug.Log("[Legaia] SELFTEST OK: " + proxies + " U# proxies wired under " +
                       container.name + " (scene " + sceneName + ", not saved).");
+        }
+
+        /// Weather + living props + card-table NPC seating, applied to the
+        /// already-built root, then the common prefabs rebuilt on top.
+        public static void Weather()
+        {
+            string scenePath = Arg("-legaiaScene", "Assets/Scenes/VRCDefaultWorldScene.unity");
+            EditorSceneManager.OpenScene(scenePath, OpenSceneMode.Single);
+
+            GameObject spawn = null;
+            foreach (var t in Object.FindObjectsOfType<Transform>())
+                if (t.name == "LegaiaSpawn")
+                {
+                    spawn = t.gameObject;
+                    break;
+                }
+            if (spawn == null)
+                Fail("no LegaiaSpawn in " + scenePath + " - build the scene first");
+            var root = spawn.transform.parent != null
+                ? spawn.transform.parent.gameObject : null;
+            if (root == null || !root.name.StartsWith("Legaia_"))
+                Fail("LegaiaSpawn is not under a built Legaia_<scene> root");
+            string sceneName = root.name.Substring("Legaia_".Length);
+
+            LegaiaWorldBuilder.EnsureUdonProgramAssets();
+            var o = new LegaiaRealismOptions();
+
+            // --- Weather -------------------------------------------------
+            var weather = LegaiaWeatherBuilder.Apply(root, sceneName, o);
+            if (weather == null)
+                Fail("weather pass built nothing");
+            var rain = weather.GetComponentInChildren<ParticleSystem>(true);
+            if (rain == null)
+                Fail("no rain ParticleSystem under " + Path(weather.transform));
+            var flash = weather.GetComponentInChildren<Light>(true);
+            if (flash == null)
+                Fail("no lightning Light under " + Path(weather.transform));
+            if (flash.enabled)
+                Fail("the lightning light must start disabled");
+            var thunderSrc = weather.GetComponentInChildren<AudioSource>(true);
+            if (thunderSrc == null || thunderSrc.clip == null)
+                Fail("thunder AudioSource has no imported clip (generation failed?)");
+            if (thunderSrc.clip.length < 3f)
+                Fail("thunder clip is only " + thunderSrc.clip.length + " s");
+            CheckVar(weather, "LegaiaWorld.LegaiaWeather", "rain");
+            CheckVar(weather, "LegaiaWorld.LegaiaWeather", "rainRoot");
+            CheckVar(weather, "LegaiaWorld.LegaiaWeather", "flashLight");
+            CheckVar(weather, "LegaiaWorld.LegaiaWeather", "thunder");
+            CheckVar(weather, "LegaiaWorld.LegaiaWeather", "maxEmission");
+            // The grass shader's gust hook must exist, or wind does nothing.
+            var grass = Shader.Find("Legaia/Grass Wind");
+            if (grass == null)
+                Fail("Legaia/Grass Wind shader missing");
+            if (grass.FindPropertyIndex("_WindGust") < 0)
+                Fail("Legaia/Grass Wind has no _WindGust property - the " +
+                     "weather behaviour's only wind hook (Shader.SetGlobalFloat " +
+                     "is not exposed to Udon)");
+            if (AssetDatabase.LoadAssetAtPath<Material>(
+                    "Assets/LegaiaGenerated/" + sceneName + "/realism/grass.mat") != null)
+                CheckVar(weather, "LegaiaWorld.LegaiaWeather", "grassMaterial");
+
+            // --- Living props: shoreline fishing stations ----------------
+            var living = LegaiaLivingProps.Apply(root, sceneName, o);
+            if (living == null)
+                Fail("living props built nothing - no standable shoreline found");
+            var stationType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaNpcStation");
+            if (stationType == null)
+                Fail("LegaiaNpcStation is not compiled");
+            var spots = living.GetComponentsInChildren(stationType, true);
+            if (spots.Length < 3 || spots.Length > 4)
+                Fail("expected 3-4 fishing stations, found " + spots.Length);
+            var spotType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaFishingSpot");
+            if (spotType == null || living.GetComponentsInChildren(spotType, true).Length
+                    != spots.Length)
+                Fail("every fishing station needs its own LegaiaFishingSpot handler");
+            for (int i = 0; i < spots.Length; i++)
+            {
+                var t = spots[i].transform;
+                // On the floor: the collider must be right under it.
+                if (!Physics.Raycast(t.position + Vector3.up * 2f, Vector3.down,
+                        out RaycastHit hit, 4f, -1, QueryTriggerInteraction.Ignore))
+                    Fail(Path(t) + " does not stand on the world collider");
+                if (Mathf.Abs(hit.point.y - t.position.y) > 0.6f)
+                    Fail(Path(t) + " floats " + (t.position.y - hit.point.y) +
+                         " m over the floor");
+                Vector3 d = t.position - spawn.transform.position;
+                d.y = 0f;
+                if (d.magnitude > o.interiorRoomDistance)
+                    Fail(Path(t) + " is " + d.magnitude + " m from the spawn");
+                for (int j = i + 1; j < spots.Length; j++)
+                {
+                    Vector3 e = t.position - spots[j].transform.position;
+                    e.y = 0f;
+                    if (e.magnitude < 2f)
+                        Fail("fishing spots " + i + " and " + j + " are " +
+                             e.magnitude + " m apart");
+                }
+            }
+            CheckVar(living, "LegaiaWorld.LegaiaNpcStation", "handler");
+            CheckVar(living, "LegaiaWorld.LegaiaNpcStation", "standPoint");
+            CheckVar(living, "LegaiaWorld.LegaiaFishingSpot", "station");
+            CheckVar(living, "LegaiaWorld.LegaiaFishingSpot", "gear");
+            CheckVar(living, "LegaiaWorld.LegaiaFishingSpot", "bobber");
+            CheckVar(living, "LegaiaWorld.LegaiaFishingSpot", "line");
+            CheckVar(living, "LegaiaWorld.LegaiaFishingSpot", "rodTip");
+
+            // --- Card table: four seat stations on one host ---------------
+            var opts = new LegaiaCommonPrefabOptions
+            {
+                mirror = false, tv = false, cardTable = true, seats = 4,
+                sdkPens = false, slotMachine = false,
+            };
+            var settings = LegaiaSceneSettings.Load(sceneName);
+            var container = LegaiaCommonPrefabs.Build(
+                "Assets/LegaiaGenerated/" + sceneName, spawn.transform.position, opts,
+                settings.prefabTransforms, null);
+            var table = container.transform.Find("card_table");
+            if (table == null)
+                Fail("no card_table under " + container.name);
+            var seatStations = table.GetComponentsInChildren(stationType, true);
+            if (seatStations.Length != 4)
+                Fail("expected 4 seat stations, found " + seatStations.Length);
+            var hostType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaCardTableHost");
+            if (hostType == null)
+                Fail("LegaiaCardTableHost is not compiled");
+            var host = table.GetComponentInChildren(hostType, true);
+            if (host == null)
+                Fail("no LegaiaCardTableHost on the card table");
+            foreach (var st in seatStations)
+            {
+                var handler = st.GetType().GetField("handler")?.GetValue(st);
+                if (!ReferenceEquals(handler, host))
+                    Fail(Path(st.transform) + "'s handler is not the table host");
+                var kind = st.GetType().GetField("kind")?.GetValue(st);
+                if (!(kind is int k) || k != 2)
+                    Fail(Path(st.transform) + " is not a kind-2 (seat) station");
+            }
+            var btn = table.Find("btn_npcs");
+            if (btn == null)
+                Fail("no btn_npcs on the card table");
+            var btnType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaEventButton");
+            var btnComp = btn.GetComponent(btnType);
+            if (btnComp == null)
+                Fail("btn_npcs carries no LegaiaEventButton");
+            if (!ReferenceEquals(btnType.GetField("target").GetValue(btnComp), host))
+                Fail("btn_npcs does not target the table host");
+            if ((string)btnType.GetField("eventName").GetValue(btnComp) != "ToggleNpcs")
+                Fail("btn_npcs does not send ToggleNpcs");
+            CheckVar(container, "LegaiaWorld.LegaiaCardTableHost", "seats");
+            CheckVar(container, "LegaiaWorld.LegaiaCardTableHost", "seatChairs");
+            CheckVar(container, "LegaiaWorld.LegaiaCardTableHost", "seatHands");
+            CheckVar(container, "LegaiaWorld.LegaiaCardTableHost", "deckAnchor");
+            CheckVar(container, "LegaiaWorld.LegaiaCardTableHost", "cards");
+            CheckVar(container, "LegaiaWorld.LegaiaEventButton", "target");
+
+            // Every U# proxy the three passes created must have a backing
+            // behaviour with a program (the "outdated behaviour version"
+            // symptom shows up here first).
+            var usbType = LegaiaWorldBuilder.FindType("UdonSharp.UdonSharpBehaviour");
+            if (usbType == null)
+                Fail("UdonSharp not present - the checks above cannot mean anything");
+            int proxies = 0;
+            foreach (var scope in new[] { weather, living, container })
+                foreach (var proxy in scope.GetComponentsInChildren(usbType, true))
+                {
+                    proxies++;
+                    var backing = LegaiaCommonPrefabs.BackingUdon(proxy);
+                    if (backing == null)
+                        Fail(proxy.GetType().Name + " on " + proxy.name +
+                             " has no backing UdonBehaviour");
+                    var bt = backing.GetType();
+                    object prog = bt.GetField("programSource")?.GetValue(backing)
+                                  ?? bt.GetProperty("programSource")?.GetValue(backing);
+                    if (prog == null)
+                        Fail(proxy.GetType().Name + " on " + proxy.name +
+                             " has no program source");
+                }
+
+            Debug.Log("[Legaia] SELFTEST OK: weather rig + " + spots.Length +
+                      " fishing station(s) + 4 seat stations, " + proxies +
+                      " U# proxies wired (scene " + sceneName + ", not saved).");
         }
 
         /// Read `varName` off the backing UdonBehaviour of the first proxy

@@ -116,11 +116,19 @@ namespace LegaiaWorld
         // terminator cuts a harsh dark band across the face.
         public float characterLightWrap = 0.75f;
 
+        // --- Weather + living props (LegaiaWeatherBuilder / LegaiaLivingProps) ---
+        public bool weather = true;
+        public float weatherRainEmission = 700f;
+        public bool weatherLightning = true;
+        public float weatherSpellMinutes = 6f;
+        public int fishingSpots = 4;
+
         public bool AnyEnabled =>
             lighting || skyAndFog || foliage || interiorShells || smoothTextures ||
-            ambientAudio || npcWander;
+            ambientAudio || npcWander || weather || fishingSpots > 0;
 
-        public bool NeedsUdon => (lighting && dayNight) || npcWander;
+        public bool NeedsUdon => (lighting && dayNight) || npcWander || weather ||
+                                 fishingSpots > 0;
     }
 
     public static class LegaiaRealism
@@ -163,6 +171,15 @@ namespace LegaiaWorld
                 if (o.npcWander && manifest != null)
                     WireWander(root, manifest, o,
                         LegaiaSceneSettings.Load(sceneName));
+
+                if (o.weather)
+                    LegaiaWeatherBuilder.Apply(root, sceneName, o);
+                else
+                    LegaiaWeatherBuilder.Remove(root);
+                if (o.fishingSpots > 0)
+                    LegaiaLivingProps.Apply(root, sceneName, o);
+                else
+                    LegaiaLivingProps.Remove(root);
             }
             finally
             {
