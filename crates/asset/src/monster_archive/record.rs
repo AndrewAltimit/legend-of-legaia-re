@@ -85,6 +85,16 @@ pub struct MonsterRecord {
     /// `+30` percentage points before the roll. Retail spans `1..=80` across
     /// the 63 capturable records; `0` on every non-Seru monster.
     pub catch_rate_pct: u8,
+    /// readef animation-group index (`+0x1C`): the per-turn initiative
+    /// scheduler `FUN_801DABA4` reads this byte **record-direct** through the
+    /// per-enemy record-pointer table `0x801C9348` and seeds the streaming
+    /// applier's base-slot byte with `3 * readef_group`
+    /// (`overlay_battle_action_801daba4.txt` `0x801db098` / `0x801db0c8`:
+    /// `lbu v1,0x1c(v0); sll v0,v1,0x1; addu v0,v0,v1; sb v0,0x277(..)`).
+    /// The group indexes `readef.DAT`'s three-slot groups, so an enemy's
+    /// specials stream from `readef.DAT` slots `3*g .. 3*g+2`; see
+    /// `docs/formats/summon-readef.md`.
+    pub readef_group: u8,
     /// Element id (`+0x1D`, `0..=7`): the affinity scale `FUN_801dd864` reads
     /// this byte **directly from the record** (via the per-enemy record-pointer
     /// table `0x801C9348[slot-3]`, dump `overlay_battle_action_801dd864.txt`
@@ -250,6 +260,7 @@ pub(super) fn parse_block(id: u16, block: &[u8]) -> Option<MonsterRecord> {
         legaia_bytes::u16_le(block, 0x18)?,
         legaia_bytes::u16_le(block, 0x1A)?,
     ];
+    let readef_group = *block.get(0x1C)?;
     let element = *block.get(0x1D)?;
     let size_class = *block.get(0x1F)?;
     let gold = legaia_bytes::u16_le(block, 0x44)?;
@@ -272,6 +283,7 @@ pub(super) fn parse_block(id: u16, block: &[u8]) -> Option<MonsterRecord> {
         hp,
         mp,
         stats,
+        readef_group,
         element,
         size_class,
         gold,
@@ -488,6 +500,7 @@ mod tests {
             hp: 15000,
             mp: 1200,
             stats: [128, 288, 222, 200, 220, 146],
+            readef_group: 15,
             element: 6,
             size_class: 26,
             gold: 30000,

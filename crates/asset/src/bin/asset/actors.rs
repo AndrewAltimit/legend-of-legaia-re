@@ -360,7 +360,7 @@ pub(crate) fn monster_archive_one(
         };
         println!(
             "  id {:3}  {:<22} HP {:5}  MP {:5}  stats {:?}  magic {}  \
-             gold {:5}  exp {:5}  drop {:3}@{:3}%{}",
+             gold {:5}  exp {:5}  drop {:3}@{:3}%  rdf {:3}{}",
             r.id,
             r.name,
             r.hp,
@@ -371,8 +371,17 @@ pub(crate) fn monster_archive_one(
             r.exp,
             r.drop_item,
             r.drop_chance_pct,
+            r.readef_group,
             seru
         );
+        if !r.magic_attacks.is_empty() {
+            let ids: Vec<String> = r
+                .magic_attacks
+                .iter()
+                .map(|id| format!("0x{id:02X}"))
+                .collect();
+            println!("        magic ids: {}", ids.join(" "));
+        }
         if !r.spells.is_empty() {
             let spells: Vec<String> = r
                 .spells
