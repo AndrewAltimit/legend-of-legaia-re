@@ -2618,11 +2618,14 @@ byte `*(_DAT_8007BD24)[0]`:
    second fire re-grey the original instead of compounding, exactly as retail
    does by never writing `ctx[+0x894]`.
 
-   Two parts of the pass stay out of the port. The Rot arm's per-character
+   One part of the pass stays out of the port: the Rot arm's per-character
    index window (`DAT_80078630`) has no parser in any crate, so only the
-   Stone arm is ported; and the recolour cannot yet be *triggered* in play,
-   because the port has no monster-side `enemy_effect` source - status flows
-   party -> monster only, and these rows are the party's.
+   Stone arm is ported. The recolour **is** reachable in play - the
+   monster-side source is `World::apply_enemy_agl_status`, the port of
+   `FUN_800402F4`'s class-9 / class-10 arms (see
+   [battle-formulas.md](battle-formulas.md#status-application-the-art--move-record-status-byte)),
+   which the monster-cast fold calls and which lands the `+0x16E` bit on a
+   party seat.
 
 Calls the actor-spawn/move-VM invoker `FUN_80021B04` and helpers
 `FUN_8004FE5C` / `FUN_800583C8` / `FUN_80031D00` / RNG `FUN_80056798`.

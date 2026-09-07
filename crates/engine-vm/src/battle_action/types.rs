@@ -913,6 +913,45 @@ pub struct BattleActionCtx {
     pub hp_bar_target: i16,
     /// `[+0x6E6 + i*2]` - per-actor facing offsets (one per slot 0..7).
     pub per_actor_facing: [u16; ACTOR_SLOTS],
+    /// `[+0x0D]` - the per-action **battle-camera angle variant**, `0..=3`.
+    ///
+    /// Rolled once per action at [`ActionState::ActionSeed`]
+    /// (`jal 0x80056798` / `sb v0,0xd(a0)` at `0x801E2D04..0x801E2D30`,
+    /// `rand() % 4`) and then narrowed by the category arm: `0` for Tactical
+    /// Arts (`0x801E2E1C`) and for the Magic arm's `0x28` route
+    /// (`0x801E2EC8`), `(rand % 2) * 2` for Item (`0x801E2E60`) and Spirit
+    /// (`0x801E3024`), and `0` again on the Item arm's summon override
+    /// (`0x801E2E94`). A later band masks it down to bit 0
+    /// (`lbu`/`andi 1`/`sb` at `0x801E321C..0x801E322C`).
+    ///
+    /// The camera setup reads it as a four-way switch - `1` and `3` add
+    /// `0x800` (a half-turn) to the staged yaw, `2` raises the staged pitch
+    /// by `0x80` and stamps roll `0x400`, `0` leaves the framing alone
+    /// (`0x801D6510`, `0x801D6698`, `0x801D689C` - all three inside the
+    /// battle camera `FUN_801D5854`, whose prologue is the only one in
+    /// `0x801D5854..0x801D6A00`). So the byte is what makes two runs of the
+    /// same action frame from different sides.
+    ///
+    /// REF: FUN_801E295C (`0x801E2D30`, `0x801E2E60`, `0x801E2E94`)
+    pub camera_variant: u8,
+    /// `[+0x26]` - the **level-up banner** UI element id, or `0` when no
+    /// banner is up.
+    ///
+    /// Written `0x65` by the in-battle magic level-up check
+    /// (`sb v0,0x26(v1)` at `0x801E723C`, in `FUN_801E70BC` - the routine
+    /// `engine-core`'s `accrue_summon_spell_xp` ports), bumped by the Final
+    /// Heal revive arm's scripted-battle tail (`0x801E6D3C`), and cleared at
+    /// the head of every [`ActionState::ActionSeed`]
+    /// (`sb zero,0x15(s5)` at `0x801E2CFC`, `s5 = ctx + 0x11`).
+    ///
+    /// Three readers, all in the Done band: the `0x50` seed picks `0x96`
+    /// instead of `0x3C` when it is set (`0x801E5F2C`), the `0x51` fade-down
+    /// lets a pad press cut the tail once the countdown is below `0x5B`
+    /// (`0x801E6078`), and the same state unloads the element it names
+    /// (`FUN_801D8DE8(ctx[+0x26], 1)` at `0x801E61B4`).
+    ///
+    /// REF: FUN_801E70BC (the writer)
+    pub levelup_banner_element: u8,
     /// Models the randomizer's enemy-ally ("charm") **victory widen**: the
     /// one-word overlay edit at `0x801E6638` that turns the monster-wipe
     /// scan's down-mask from `andi 0x4` into `andi 0x384`, so a living

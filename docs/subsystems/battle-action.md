@@ -84,8 +84,8 @@ Each row: `ctx[7]` value, what runs during that frame, and the next state(s). Al
 | `0x46` | **Spirit super-arts - entry variant** | `FUN_801D5854(actor, 6)`. Sets `actor[+0x1DC] = 2` (overrides flags). Stages anim `actor[+0x1DA] = actor[+0x1E7]`. Computes damage = `((target_HP * 7) / 5) + 8` (capped 0x120 / 100); HP-bar target = `actor[+0x170] + 0x20` (or `+0x28`/`+0x23` per ability-flag bits). | `0x47`. |
 | `0x47` | Spirit-arts - sustain | `FUN_801D5854(actor, 6)`. When `actor[+0x1D9] != 0`, clears `actor[+0x1DA]`. Decrements `ctx[+0x6D8]`. While running: ramps damage-popup HP/widget; when expired and `actor[+0x1F9] == 0` (no spirit-shield), advances HP-bar at `ctx[+0x1074]+0xE`. | `0x48` once exit-flag (`actor[+0x1DC] == 0`) and timers settle. |
 | `0x48` | Spirit-arts - flush | Final ramp of HP-bar / damage-popup. When all targets read zero AND timer expired AND anim flags clear → done. | `0x50`. |
-| `0x50` | **Done - cleanup phase** | The universal "action concluded, clean up" arm. Calls `FUN_801E6968` (the Lost Grail **Final Heal** auto-revive; engine `World::apply_final_heal_revives`), counts living party + monster actors (`+0x14C != 0 && (+0x16E & 4) == 0`); if any survivors → `FUN_801DABA4` (recompute battle ordering). Resets `actor[+0x224] = 8` (or `0x20` for spirits/`+0x1DE == 4`). Adjusts `actor[+0x170]` (HP-bar target) by ability-flag bits `0x100`/`0x200`. Clamps `actor[+0x170]` at 100. OR's `actor[+0x1DC] |= 4`. Per category: `+0x1DE == 5` (run) → screen-shake; `+0x1DE == 3` (attack) or party with dead s8 → pose 8; otherwise pose 6. Sets `ctx[+0x6D8] = 0x3C` (or `0x96` if shake, `+0x26 != 0`). If `ctx[7] == 0x50`, advances to `0x51`. | `0x51`. |
-| `0x51` | Done - fade-down | Ramps `_DAT_8007B910` back up to `_DAT_8008457C` (the configured [audio level](#the-_dat_8007b910-ramps-are-an-audio-duck)). Per-category pose updates. Calls `FUN_801E7250` (?); decrements `ctx[+0x6D8]`. When < 0 and `ctx[+0x276] == 0`: if `ctx[+0x269] == 0` → `0x5A` (next-actor / end-of-action); else → `0x52` (continue queue). When timer < 0xC, calls `FUN_801D99BC` and unloads all UI elements: `FUN_801D8DE8(actor[+0x18], 1)` (anim), `+0x4E/+0x4F` if anim was 6, `actor[+0x26]`, `+0xF/+0x52` (damage), `+0x44`, `+0x59` (queue marker), `+0x51`/`+0x50` (banner). For multi-cast (`_DAT_801F6974 != 0`), iterates queue at `((+0x6974)-1)*4 + -0x7FE097CC` firing every queued effect's terminate marker. | `0x52` or `0x5A`. |
+| `0x50` | **Done - cleanup phase** | The universal "action concluded, clean up" arm. Calls `FUN_801E6968` (the Lost Grail **Final Heal** auto-revive; engine `World::apply_final_heal_revives`), counts living party + monster actors (`+0x14C != 0 && (+0x16E & 4) == 0`); if any survivors → `FUN_801DABA4` (recompute battle ordering). Resets `actor[+0x224] = 8` (or `0x20` for spirits/`+0x1DE == 4`). Adjusts `actor[+0x170]` (HP-bar target) by ability-flag bits `0x100`/`0x200`. Clamps `actor[+0x170]` at 100. OR's `actor[+0x1DC] |= 4`. Per category: `+0x1DE == 5` (run) → screen-shake; `+0x1DE == 3` (attack) or party with dead s8 → pose 8; otherwise pose 6. Sets `ctx[+0x6D8] = 0x3C` (or `0x96` when the level-up banner byte `ctx[+0x26]` is set). If `ctx[7] == 0x50`, advances to `0x51`. | `0x51`. |
+| `0x51` | Done - fade-down | Ramps `_DAT_8007B910` back up to `_DAT_8008457C` (the configured [audio level](#the-_dat_8007b910-ramps-are-an-audio-duck)). Per-category pose updates. Calls `FUN_801E7250` (?); decrements `ctx[+0x6D8]`. When < 0 and `ctx[+0x276] == 0`: if `ctx[+0x269] == 0` → `0x5A` (next-actor / end-of-action); else → `0x52` (continue queue). When timer < 0xC, calls `FUN_801D99BC` and unloads all UI elements: `FUN_801D8DE8(actor[+0x18], 1)` (anim), `+0x4E/+0x4F` if anim was 6, `ctx[+0x26]` (the level-up banner), `+0xF/+0x52` (damage), `+0x44`, `+0x59` (queue marker), `+0x51`/`+0x50` (banner). For multi-cast (`_DAT_801F6974 != 0`), iterates queue at `((+0x6974)-1)*4 + -0x7FE097CC` firing every queued effect's terminate marker. | `0x52` or `0x5A`. |
 | `0x52` | Done - multi-cast continuation | `FUN_801D5854(actor, 8)` (action-end pose). Decrements `ctx[+0x6D8]`. If timer > 0x13 and screen-shake active (`_DAT_8007B874 != 0`), clamps timer at 0x13. When < 0: clears `ctx[+0x269]`, advances to `0x5A`. When < 0x14 and `actor[+0x17] != 0` (was running), unloads the queue marker. | `0x5A`. |
 | `0x5A` | **End-of-action gate** | Iterates 8-actor table clearing per-actor anim flag bits (`+0x8 &= 0x7CFFFFFF`, `+0x21F = 0`). Resets dead/inactive actors' `+0x36 = 0`, `+0x21C = 0`, `+0x225 = 0`. Counts living actors per side: if all party or all monsters dead, sets `DAT_8007BD71 = 0xFE` (battle-end signal) + `_DAT_8007BD2C = 5` (party wipe) or `0` (monster wipe), AND's `DAT_8007BD60 &= 0x7F`. Otherwise, picks the next active actor: bumps the [turn cursor](#the-turn-cursor-ctx0x1a) `ctx[+0x1A]++`; if it is `< (party_count + monster_count - ctx[+0x25])`, advances to `0x0A` (next action); else → `0xFF` (round boundary - see below). | `0x0A` (next actor) / `0xFF` (round ends). |
 | `0x64` (100) | **Run - flee anim begin** | Calls `FUN_801E791C` ([the escape roll](#the-escape-roll-fun_801e791c) - decides the flee, writes `_DAT_8007726C`). Sets `ctx[+0x6D8] = 0x3C`. Fires `FUN_801D8DE8(0x43, 0)` (run UI). Advances the [turn cursor](#the-turn-cursor-ctx0x1a) past each monster with a rotation trigger (`+0x16C != 0`) that isn't immune (`(&DAT_8007BD10)[i] != 4`). If party-side ran (`_DAT_8007726C != ctx + 0x189`, the run roll succeeded): screen-shake, and **floors every party actor's live HP at 1** (`+0x14C == 0` → `1`, loop bound = party count) - the mechanism behind "escape restores a Stoned member". Ported: `RunBegin` + `StatusEffectTracker::cure_stone_on_escape`. Else screen-shake only. | `0x65`. |
@@ -264,12 +264,46 @@ The `rand()` draw is unconditional and its result reaches `ctx[+0xD]` only -
 the branch tests the item id, so calling the override "RNG-conditional" reads
 a data dependency that is not there. Ids `0x98` / `0x99` are the two
 summon-invoking items: they enter the cast band already staged as a summon, so
-state `0x29`'s sub-route test sends them to `0x32`.
+state `0x29`'s sub-route test sends them to `0x32`; that arm also re-stamps
+`ctx[+0xD] = 0` (`sb zero,0xd(v0)` at `0x801E2E94`).
 
-**Port.** `item_seed_band` in `legaia_engine_vm::battle_action::dispatch`.
-The `ctx[+0xD]` store has no port field and no reader, but the **draw** does
-move the shared `rand()` cursor and the port does not make it - an RNG-stream
-divergence on every item action, recorded here rather than papered over.
+**Port.** `item_seed_band` in `legaia_engine_vm::battle_action::dispatch`,
+including the draw and both stores.
+
+### `ctx[+0xD]` - the per-action camera-angle variant
+
+`ctx[+0xD]` is not a spare byte. Three sites read it as a four-way switch
+(`0x801D6510`, `0x801D6698`, `0x801D689C`), all three inside the **battle
+camera** `FUN_801D5854` - the only prologue in `0x801D5854..0x801D6A00` is its
+own: variants
+`1` and `3` add `0x800` - a half-turn - to the staged yaw, variant `2` raises
+the staged pitch by `0x80` and stamps roll `0x400`, variant `0` leaves the
+framing alone. So the byte is what makes two runs of the same action frame
+from different sides.
+
+`ActionSeed` rolls it `rand() % 4` before the category dispatch
+(`jal 0x80056798` / `sb v0,0xd(a0)` at `0x801E2D04..0x801E2D30`), and each
+category arm then narrows it:
+
+| category arm | store | site |
+|---|---|---|
+| `0` Tactical Arts | `0` | `0x801E2E1C` |
+| `1` Item | `(rand % 2) * 2`, then `0` on the summon route | `0x801E2E60` / `0x801E2E94` |
+| `2` Magic | `0`, ahead of both of its routes | `0x801E2EC8` |
+| `4` Spirit | `(rand % 2) * 2` | `0x801E3024` |
+
+Attack (`3`) and Run (`5`) make no store of their own, so they keep the seed
+roll. (The arm addresses come from the seed's own category jump table at
+`0x801CF144`, six words indexed by `+0x1DE`, guard `sltiu v0,v1,0x6` at
+`0x801E2D68`.) A later band masks the byte to bit 0 (`lbu` / `andi 1` / `sb`
+at `0x801E321C..0x801E322C`).
+
+**Port.** `BattleActionCtx::camera_variant`. The seed roll, the Item arm's
+draw and its two stores, and the Tactical-Arts / Magic zeroes are carried; the
+Spirit arm's draw at `0x801E2FFC` and the bit-0 mask are not, so the port's
+shared `rand()` cursor still falls one draw behind retail's per Spirit action.
+Nothing in the port reads the variant yet - the battle camera does not fork on
+it - so the value is currently modelled, not consumed.
 
 ### Magic in the port: which half of the cast the SM owns
 
@@ -1152,9 +1186,53 @@ countdown that can no longer start is the same park by a different route.
 
 The `0x50` seed itself is `0x3C` on all three of its paths (`0x801E5EE8` /
 `0x801E5EFC` / `0x801E5F24` all converge on the store at `0x801E5F28`), with one
-override the port does not carry: `lbu v0,0x15(s5)` at `0x801E5F2C` re-seeds
-`0x96` when `ctx[+0x26]` is non-zero. That byte has no other reader in the
-ported band, so the engine always takes the `0x3C` arm.
+override: `lbu v0,0x15(s5)` at `0x801E5F2C` re-seeds `0x96` when `ctx[+0x26]`
+is non-zero. See [the level-up banner tail](#ctx0x26---the-level-up-banner-tail)
+for what that byte is and what else reads it; the port carries the override on
+`BattleActionCtx::levelup_banner_element`.
+
+### `ctx[+0x26]` - the level-up banner tail
+
+`ctx[+0x26]` is a **UI element id** - `0` means no element, and the only value
+retail ever assigns is `0x65`, the *"<spell>'s magic level increased"* banner.
+The reading is pinned by its third reader, not by its writers: `0x801E61B4`
+passes the byte as the first argument of the UI-element unload,
+`FUN_801D8DE8(ctx[+0x26], 1)`, in a run of sibling unloads that pass literal
+element ids (`0x4E`, `0xF`, `0x52`, `0x44`).
+
+Three sites write it. A `sb`-at-`ctx+0x26` sweep over `SCUS_942.54` and every
+statically-based overlay image (tracking the ctx pointer from its
+`0x8007BD24` load and any `addiu`-derived base) finds no others:
+
+| site | what it does |
+|---|---|
+| `0x801E723C` | the in-battle magic level-up arm of `FUN_801E70BC` stores `0x65`, right after raising that element with `FUN_801D8DE8(0x65, 0)` at `0x801E722C` |
+| `0x801E6D3C` | the Final Heal tail (`FUN_801E6968`) **increments** it on the arm gated `first_monster_id == 0xB5`, alongside `ctx[7] = 0xFD` |
+| `0x801E2CFC` | `ActionSeed` clears it (`sb zero,0x15(s5)`, `s5 = ctx + 0x11`) at the head of every action |
+
+and three read it, all inside the Done band:
+
+| site | what it does |
+|---|---|
+| `0x801E5F2C` | the `0x50` seed above: `0x96` frames instead of `0x3C` |
+| `0x801E6078` | the `0x51` fade-down's **banner skip**: once the countdown has sunk below `0x5B`, any pad activity (`_DAT_8007B874 \| _DAT_8007B938`, tested only for non-zero) snaps the timer to `-1` |
+| `0x801E61B4` | the `0x51` teardown unloads the element it names |
+
+The seed and the skip together are what make the tail read as a banner rather
+than a fudge factor: `0x96 - 0x5B` = 59 frames the player cannot skip, then
+the press ends it.
+
+What the `0x801E6D3C` **increment** is for is not settled by any of the three
+readers - to them it is just "non-zero", so on that boss arm it lengthens the
+fade-down and unloads element `1`. Reading the byte as a boss phase counter
+does not survive the unload site, and reading the increment as intentional
+element selection does not survive `0x65` being the only assignment.
+
+**Port.** `legaia_engine_vm::battle_action::done`'s `DONE_LEVELUP_BANNER_FRAMES` /
+`DONE_BANNER_SKIP_BELOW`, over `BattleActionHost::pad_word`. The writer is
+`World::accrue_summon_spell_xp` (`engine-core`), the port of `FUN_801E70BC`.
+The `0x801E61B4` unload is **not** ported: the port's Done band models no part
+of the `< 0xC` UI-element teardown block that store sits in.
 
 ## The `0x19` attack-approach park - a second, distinct softlock class
 

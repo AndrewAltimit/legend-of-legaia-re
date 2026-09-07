@@ -29,11 +29,16 @@ pub(super) fn done_cleanup<H: BattleActionHost + ?Sized>(
     // converge on `li v0,0x3c` / `sh v0,0x2(s7)` (`0x801E5EE8` / `0x801E5EFC`
     // / `0x801E5F24` into `0x801E5F28`), so `0x3C` is the seed regardless of
     // which arm the action category took. The one override is
-    // `lbu v0,0x15(s5)` at `0x801E5F2C`: a non-zero `ctx[+0x26]` re-seeds
-    // `0x96` instead. That byte is not modelled on `BattleActionCtx` - it has
-    // no other reader in the ported band - so the port always takes the `0x3C`
-    // arm and the longer tail is a stated gap, not an accident.
-    ctx.frame_timer = 0x3C;
+    // `lbu v0,0x15(s5)` / `beq v0,zero` / `li v0,0x96` / `sh v0,0x2(s7)` at
+    // `0x801E5F2C..0x801E5F3C`: a non-zero `ctx[+0x26]` - the level-up banner
+    // element ([`BattleActionCtx::levelup_banner_element`]) - re-seeds `0x96`
+    // instead, so the "magic level increased" banner the same action raised
+    // stays up long enough to read.
+    ctx.frame_timer = if ctx.levelup_banner_element != 0 {
+        DONE_LEVELUP_BANNER_FRAMES
+    } else {
+        DONE_SEED_FRAMES
+    };
 
     // Per-category pose: run → screen-shake; attack → pose 8; otherwise idle.
     match category {
@@ -217,6 +222,21 @@ pub const DONE_MENU_HOLD_FRAMES: i16 = 0xC;
 /// never satisfy a countdown, which is a park rather than a wait.
 pub const DONE_MULTI_CAST_FRAMES: i16 = 0xB4;
 
+/// The `0x50` seed on every ordinary path: `li v0,0x3c` at `0x801E5EE8` /
+/// `0x801E5EFC` / `0x801E5F24`, stored at `0x801E5F28`.
+pub const DONE_SEED_FRAMES: i16 = 0x3C;
+
+/// The `0x50` seed when a level-up banner is up (`ctx[+0x26] != 0`):
+/// `lbu v0,0x15(s5)` / `li v0,0x96` / `sh v0,0x2(s7)` at
+/// `0x801E5F2C..0x801E5F3C`, which overwrites the `0x3C` just stored.
+pub const DONE_LEVELUP_BANNER_FRAMES: i16 = 0x96;
+
+/// While the banner tail runs, a pad press cuts it - but only once the
+/// countdown has fallen below this (`slti v0,v0,0x5b` at `0x801E60A8`), so
+/// the banner is guaranteed `0x96 - 0x5B` frames on screen before any input
+/// can skip it.
+pub const DONE_BANNER_SKIP_BELOW: i16 = 0x5B;
+
 pub(super) fn done_fade_down<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
@@ -243,6 +263,18 @@ pub(super) fn done_fade_down<H: BattleActionHost + ?Sized>(
     // PORT: FUN_801E295C (`0x801E6044..0x801E6148`)
     if !hp_bar_drain_pending(host, ctx) && ctx.frame_timer >= 0 {
         ctx.frame_timer = ctx.frame_timer.saturating_sub(host.frame_dt());
+        // Banner skip (`0x801E6078..0x801E60B4`), reached only through the
+        // decrement: while a level-up banner is up, any pad activity
+        // (`_DAT_8007B874 | _DAT_8007B938`, tested for non-zero only) snaps
+        // the countdown straight to `-1` - but not until it has already sunk
+        // below `0x5B`, so the banner always gets its first
+        // `DONE_LEVELUP_BANNER_FRAMES - DONE_BANNER_SKIP_BELOW` frames.
+        if ctx.levelup_banner_element != 0
+            && host.pad_word() != 0
+            && ctx.frame_timer < DONE_BANNER_SKIP_BELOW
+        {
+            ctx.frame_timer = -1;
+        }
     }
     if ctx.frame_timer < DONE_MENU_HOLD_FRAMES && ctx.menu_open != 0 {
         ctx.frame_timer = DONE_MENU_HOLD_FRAMES;

@@ -97,6 +97,26 @@ fn summon_kill_accrues_flat_unit_and_levels_up_past_threshold() {
     assert_eq!(world.drain_magic_level_ups(), vec![(0, 0x81, 2)]);
     // The leveled byte is what the next cast's magic-power stage reads.
     assert_eq!(world.caster_magic_power_byte(0, 0x81), 2);
+    // `sb v0,0x26(v1)` at `0x801E723C`: the same arm records the banner
+    // element on the battle context. Its reader is the action machine's Done
+    // band, which seeds `0x96` frames instead of `0x3C` while it is set (see
+    // `battle_action::done`'s own tests). Asserted here at the fold rather
+    // than after a tick, because the next action's `ActionSeed` clears it
+    // (`0x801E2CFC`) and a whole tick can cross that boundary.
+    assert_eq!(world.battle_ctx.levelup_banner_element, 0x65);
+}
+
+/// The contrapositive: a cast that accrues XP without crossing the threshold
+/// raises no banner, so `ctx[+0x26]` stays clear and the Done band keeps its
+/// ordinary tail.
+#[test]
+fn a_cast_that_does_not_level_leaves_the_banner_byte_clear() {
+    let mut world = summon_xp_world(4000, 4000);
+    world.magic_xp_thresholds = Some([17, 50, 92, 144, 208, 288, 392, 536]);
+    let def = gimard_spell_def();
+    world.cast_spell_on_slots(0, &def, &[1]);
+    assert!(world.drain_magic_level_ups().is_empty());
+    assert_eq!(world.battle_ctx.levelup_banner_element, 0);
 }
 
 #[test]

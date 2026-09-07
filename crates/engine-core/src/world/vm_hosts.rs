@@ -1952,6 +1952,15 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     fn rng(&mut self) -> u32 {
         self.world.next_rng()
     }
+    /// Retail reads `_DAT_8007B874 | _DAT_8007B938` and only tests it for
+    /// zero-vs-non-zero (`0x801E6088..0x801E609C`). The port models the first
+    /// of the pair - the newly-pressed mask the retail pad pump writes
+    /// (`crate::retail_pad::RetailPadState::pressed`) - and has no analogue
+    /// for the second, so this is the press edge alone. That is the stricter
+    /// half: it can only ever *decline* to cut the banner short.
+    fn pad_word(&self) -> u16 {
+        self.world.input.retail_pad().pressed as u16
+    }
     fn previous_action_cleared(&self, _: u8) -> bool {
         self.world.prev_action_cleared
     }
