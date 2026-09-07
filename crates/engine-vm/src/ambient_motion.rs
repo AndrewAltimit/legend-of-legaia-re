@@ -123,6 +123,15 @@
 //!   spinning; the tick ends as a yield with no facing change, which is the
 //!   correct facing-channel answer for that frame.
 //!
+//!   NOT WIRED: the stepped-over set, by op number, is `0x02`, `0x06`,
+//!   `0x07`, `0x08`, `0x09`, `0x0A`, `0x0B`, `0x0C`, `0x0E`, `0x0F`, `0x10`,
+//!   `0x11`, `0x12`, `0x13`, `0x14`, `0x15` and `0x16` - every remaining
+//!   entry in [`legaia_asset::man_motion::op_width`]'s space. Their widths
+//!   are known (that is what lets the walk stay in sync) and `0x07` / `0x08`
+//!   are separately decoded as the story-flag writers by the static census
+//!   `legaia-engine man-scripts --motion-flag-census`, but no body here
+//!   executes any of them.
+//!
 //! ## The `0x05` wait is interruptible
 //!
 //! Op `0x05` is not a bare countdown. Its arm opens at `0x8003882C` with a
