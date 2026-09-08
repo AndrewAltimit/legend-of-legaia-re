@@ -14,6 +14,10 @@
 // - Card table: a round table, N stools that are VRC stations (sit on
 //   Interact, LegaiaSeat) and a 52-card deck of pickups with generated
 //   faces (LegaiaCard) plus Shuffle / Gather buttons (LegaiaCardDeck).
+//   The faces are drawn into one atlas at build time in the standard
+//   playing-card arrangement - a ten carries ten pips, the lower half
+//   of them upside down - so a card reads as itself across the felt;
+//   LegaiaBatchChecks.CommonPrefabs counts the ink to prove it.
 //
 // The rest are spawned FROM PREFABS: the SDK's own sample pen system
 // when the package ships it, and any prefab assets the user lists in
@@ -1041,11 +1045,44 @@ namespace LegaiaWorld
         static string CardName(int i) => RANKS[i % 13] + "_" + SUITS[i / 13];
 
         // Atlas: 13 rank columns x (4 suit rows + 1 row for back / edge).
-        const int CW = 96, CH = 136, COLS = 13, ROWS = 5;
+        //
+        // Cell size is exactly 2x the kit's first pass (96x136). A ten has
+        // to carry four pip rows per column plus two interstitial centre
+        // pips AND a corner index at each end; at 96x136 a pip small
+        // enough to fit ten of them was three pixels of ink, which is why
+        // the first pass drew one big centre pip and left the count to the
+        // digits. 192x272 is ~30 px per centimetre of a 6.3 x 8.8 cm card,
+        // which still reads through the mip chain at the half-metre to
+        // metre a seated player looks from.
+        //
+        // That makes the atlas 2496x1360, past the importer's 2048 default
+        // cap - EnsureCardMaterial raises maxTextureSize to 4096 and, more
+        // importantly, turns npotScale OFF: the default ToNearest was
+        // resampling even the OLD 1248x680 atlas down to 1024x512, so the
+        // first pass never reached the GPU at the density it drew. 13x5
+        // cells can never tile a power-of-two texture, so None is the only
+        // setting that keeps the grid.
+        //
+        // COLS/ROWS must NOT change: Cell() turns them into the UVs baked
+        // into cards_meshes.asset. CW/CH appear nowhere in that asset, so
+        // a cell-size change alone leaves the cached meshes valid.
+        const int CW = 192, CH = 272, COLS = 13, ROWS = 5;
+
+        // EnsureCardMaterial only draws when the PNG is missing, so a
+        // project that already built the old faces would keep them for
+        // ever. The file name carries the layout version instead; bump it
+        // (and add the old name to the obsolete list) on every face change.
+        const string CARD_ATLAS = "cards_atlas_v2.png";
+        static readonly string[] CARD_ATLAS_OBSOLETE = { "cards_atlas.png" };
+
+        internal static string CardAtlasPath(string genDir) => genDir + "/" + CARD_ATLAS;
 
         static Material EnsureCardMaterial(string genDir)
         {
-            string texPath = genDir + "/cards_atlas.png";
+            string texPath = CardAtlasPath(genDir);
+            foreach (string stale in CARD_ATLAS_OBSOLETE)
+                if (AssetDatabase.LoadAssetAtPath<Texture2D>(genDir + "/" + stale) != null)
+                    AssetDatabase.DeleteAsset(genDir + "/" + stale);
             if (AssetDatabase.LoadAssetAtPath<Texture2D>(texPath) == null)
             {
                 var tex = new Texture2D(CW * COLS, CH * ROWS, TextureFormat.RGBA32, false);
@@ -1065,6 +1102,17 @@ namespace LegaiaWorld
                     imp.alphaIsTransparency = true;
                     imp.wrapMode = TextureWrapMode.Clamp;
                     imp.mipmapEnabled = true;
+                    // Cutout shader: without coverage-preserving mips the
+                    // pips and the card silhouette dissolve with distance.
+                    imp.mipMapsPreserveCoverage = true;
+                    imp.alphaTestReferenceValue = 0.5f;
+                    // A card on the felt is read at a grazing angle, which
+                    // is exactly where bilinear-only sampling smears the
+                    // corner index into paper.
+                    imp.filterMode = FilterMode.Trilinear;
+                    imp.anisoLevel = 8;
+                    imp.npotScale = TextureImporterNPOTScale.None;
+                    imp.maxTextureSize = 4096;
                     imp.SaveAndReimport();
                 }
             }
@@ -1086,6 +1134,20 @@ namespace LegaiaWorld
             px[ay * w + ax] = col;
         }
 
+        /// Ink over whatever is already there, with `a` coverage. Blending
+        /// is what lets the analytic pip tests be supersampled instead of
+        /// stair-stepped; a pixel outside the card body stays transparent.
+        static void Blend(Color[] px, int w, int h, int c, int r, int x, int y,
+            Color col, float a)
+        {
+            if (x < 0 || y < 0 || x >= CW || y >= CH || a <= 0f) return;
+            int ax = c * CW + x;
+            int ay = h - 1 - (r * CH + y);
+            var dst = px[ay * w + ax];
+            if (dst.a <= 0f) return;
+            px[ay * w + ax] = Color.Lerp(dst, col, Mathf.Clamp01(a));
+        }
+
         static bool InRoundedRect(int x, int y, int w, int h, int rad)
         {
             int cx = x < rad ? rad : (x >= w - rad ? w - 1 - rad : x);
@@ -1093,6 +1155,84 @@ namespace LegaiaWorld
             int dx = x - cx, dy = y - cy;
             return dx * dx + dy * dy <= rad * rad;
         }
+
+        // --- Face layout ------------------------------------------------
+        //
+        // Every coordinate below is a fraction of CW / CH, so the whole
+        // face survives another cell-size change; the batch check reads
+        // the same helpers, so "the pips are where the counter looks" is
+        // one definition, not two.
+
+        const float PIP_TOP = 0.16f, PIP_BOT = 0.84f; // pip field, top / bottom row
+        const float PIP_COL = 0.315f;                 // side pip columns from each edge
+
+        static int Rad() => Mathf.Max(3, Mathf.RoundToInt(CH * 0.059f));
+        static int IndexX() => Mathf.RoundToInt(CW * 0.115f);  // corner column centre
+        static int IndexY() => Mathf.RoundToInt(CH * 0.045f);  // rank glyph top
+        static int IndexPipY() => Mathf.RoundToInt(CH * 0.22f);
+        static int IndexPipS() => Mathf.Max(3, Mathf.RoundToInt(CH * 0.032f));
+        static int BodyPipS() => Mathf.Max(4, Mathf.RoundToInt(CH * 0.058f));
+        static int AcePipS() => Mathf.Max(8, Mathf.RoundToInt(CH * 0.16f));
+        static int ColLeft() => Mathf.RoundToInt(CW * PIP_COL);
+        static int ColRight() => CW - Mathf.RoundToInt(CW * PIP_COL);
+
+        /// Index glyph scale. "10" is the only two-glyph rank and it drops
+        /// a step so the corner column stays as narrow as the single-digit
+        /// ranks - the same thing a real deck does with a condensed 1.
+        static int IndexScale(string rank) =>
+            Mathf.Max(2, Mathf.RoundToInt(CW * (rank.Length > 1 ? 0.023f : 0.026f)));
+
+        /// The corner-index block, top-left; the bottom-right one is its
+        /// 180-degree mirror. Nothing else on the face may enter it - the
+        /// pip counter excludes exactly these two rectangles, so anything
+        /// that leaks out of one counts as a pip.
+        internal static RectInt CardIndexRegion() =>
+            new RectInt(0, 0, Mathf.RoundToInt(CW * 0.22f), Mathf.RoundToInt(CH * 0.28f));
+
+        /// The court cards' frame, and the width of its border stroke.
+        internal static RectInt CardCourtFrame() =>
+            new RectInt(Mathf.RoundToInt(CW * 0.24f), Mathf.RoundToInt(CH * 0.21f),
+                Mathf.RoundToInt(CW * 0.52f), Mathf.RoundToInt(CH * 0.58f));
+
+        internal static int CardCourtStroke() => Mathf.Max(2, Mathf.RoundToInt(CW * 0.021f));
+
+        internal static void CardAtlasLayout(out int cw, out int ch, out int cols, out int rows)
+        {
+            cw = CW; ch = CH; cols = COLS; rows = ROWS;
+        }
+
+        /// Cell-local (x, y), y down from the cell's top - the same
+        /// mapping Px() writes with, so a check can read what was drawn.
+        internal static Color CardPixel(Color[] px, int w, int h, int c, int r, int x, int y)
+            => px[(h - 1 - (r * CH + y)) * w + c * CW + x];
+
+        /// Ink vs paper. Paper is near-white, both inks are dark or deep
+        /// red; the midpoint leaves the supersampled pip edges on the ink
+        /// side down to about a third coverage.
+        internal static bool CardIsInk(Color c)
+            => c.a > 0.5f && (c.r + c.g + c.b) / 3f < 0.7f;
+
+        /// Standard pip layouts for 2..10, as (column, row) pairs: column
+        /// -1 / 0 / +1 = left / centre / right, row 0..1 spanning the pip
+        /// field. The four-row columns of 9 and 10 sit at thirds, 6-8 use
+        /// halves, and the centre pips of 7, 8 and 10 sit BETWEEN two
+        /// column rows - that interstitial placement is what makes a real
+        /// ten read as 4 + 4 + 2 instead of as a grid.
+        static readonly float[][] PIP_LAYOUT =
+        {
+            new[] { 0f, 0f, 0f, 1f },                                                    // 2
+            new[] { 0f, 0f, 0f, 0.5f, 0f, 1f },                                          // 3
+            new[] { -1f, 0f, 1f, 0f, -1f, 1f, 1f, 1f },                                  // 4
+            new[] { -1f, 0f, 1f, 0f, 0f, 0.5f, -1f, 1f, 1f, 1f },                        // 5
+            new[] { -1f, 0f, 1f, 0f, -1f, 0.5f, 1f, 0.5f, -1f, 1f, 1f, 1f },             // 6
+            new[] { -1f, 0f, 1f, 0f, 0f, 0.25f, -1f, 0.5f, 1f, 0.5f, -1f, 1f, 1f, 1f },  // 7
+            new[] { -1f, 0f, 1f, 0f, 0f, 0.25f, -1f, 0.5f, 1f, 0.5f, 0f, 0.75f,          // 8
+                    -1f, 1f, 1f, 1f },
+            new[] { -1f, 0f, 1f, 0f, -1f, 1f / 3f, 1f, 1f / 3f, 0f, 0.5f,                // 9
+                    -1f, 2f / 3f, 1f, 2f / 3f, -1f, 1f, 1f, 1f },
+            new[] { -1f, 0f, 1f, 0f, 0f, 1f / 6f, -1f, 1f / 3f, 1f, 1f / 3f,             // 10
+                    -1f, 2f / 3f, 1f, 2f / 3f, 0f, 5f / 6f, -1f, 1f, 1f, 1f },
+        };
 
         static void DrawCardFace(Color[] px, int w, int h, int col, int row)
         {
@@ -1102,29 +1242,57 @@ namespace LegaiaWorld
             for (int y = 0; y < CH; y++)
                 for (int x = 0; x < CW; x++)
                     Px(px, w, h, col, row, x, y,
-                        InRoundedRect(x, y, CW, CH, 8) ? paper : Color.clear);
+                        InRoundedRect(x, y, CW, CH, Rad()) ? paper : Color.clear);
             string rank = RANKS[col];
-            // Corner indices: rank glyph + small pip, top-left and (rotated)
-            // bottom-right.
-            DrawRank(px, w, h, col, row, rank, 7, 7, 2, ink, false);
-            DrawPip(px, w, h, col, row, row, 13 + (rank == "10" ? 6 : 0), 32, 5, ink, false);
-            DrawRank(px, w, h, col, row, rank, CW - 8, CH - 8, 2, ink, true);
-            DrawPip(px, w, h, col, row, row, CW - 14 - (rank == "10" ? 6 : 0), CH - 33, 5, ink, true);
-            // Centre: one big pip; court cards get a framed big letter.
+
+            // Corner index: the rank glyph with its suit pip directly under
+            // it on ONE column, top-left, and the same column rotated 180
+            // at the bottom-right - what a player reads off a fanned hand.
+            int k = IndexScale(rank);
+            int gw = GlyphWidth(rank, k);
+            DrawRank(px, w, h, col, row, rank, IndexX() - gw / 2, IndexY(), k, ink, false);
+            DrawPip(px, w, h, col, row, row, IndexX(), IndexPipY(), IndexPipS(), ink, false);
+            DrawRank(px, w, h, col, row, rank, CW - 1 - IndexX() + gw / 2,
+                CH - 1 - IndexY(), k, ink, true);
+            DrawPip(px, w, h, col, row, row, CW - 1 - IndexX(), CH - 1 - IndexPipY(),
+                IndexPipS(), ink, true);
+
             if (col >= 10)
             {
-                for (int y = 30; y < CH - 30; y++)
-                    for (int x = 20; x < CW - 20; x++)
-                    {
-                        bool edge = y < 32 || y >= CH - 32 || x < 22 || x >= CW - 22;
-                        if (edge)
+                // Court: a framed big letter with one pip under it.
+                var f = CardCourtFrame();
+                int t = CardCourtStroke();
+                for (int y = f.yMin; y < f.yMax; y++)
+                    for (int x = f.xMin; x < f.xMax; x++)
+                        if (y < f.yMin + t || y >= f.yMax - t ||
+                            x < f.xMin + t || x >= f.xMax - t)
                             Px(px, w, h, col, row, x, y, ink);
-                    }
-                DrawRank(px, w, h, col, row, rank, CW / 2 - 12, CH / 2 - 20, 5, ink, false);
-                DrawPip(px, w, h, col, row, row, CW / 2, CH / 2 + 30, 7, ink, false);
+                int lk = Mathf.Max(3, Mathf.RoundToInt(CW * 0.052f));
+                DrawRank(px, w, h, col, row, rank, CW / 2 - GlyphWidth(rank, lk) / 2,
+                    f.yMin + Mathf.RoundToInt(f.height * 0.12f), lk, ink, false);
+                DrawPip(px, w, h, col, row, row, CW / 2,
+                    f.yMax - Mathf.RoundToInt(f.height * 0.22f), BodyPipS(), ink, false);
+            }
+            else if (col == 0)
+            {
+                // Ace: one large pip, centred.
+                DrawPip(px, w, h, col, row, row, CW / 2, CH / 2, AcePipS(), ink, false);
             }
             else
-                DrawPip(px, w, h, col, row, row, CW / 2, CH / 2, 22, ink, false);
+            {
+                // 2..10: the standard arrangement, lower half upside down.
+                float[] layout = PIP_LAYOUT[col - 1];
+                int yTop = Mathf.RoundToInt(CH * PIP_TOP);
+                int yBot = Mathf.RoundToInt(CH * PIP_BOT);
+                for (int i = 0; i + 1 < layout.Length; i += 2)
+                {
+                    int cx = layout[i] < -0.5f ? ColLeft()
+                        : layout[i] > 0.5f ? ColRight() : CW / 2;
+                    float ty = layout[i + 1];
+                    int cy = Mathf.RoundToInt(yTop + ty * (yBot - yTop));
+                    DrawPip(px, w, h, col, row, row, cx, cy, BodyPipS(), ink, ty > 0.5f);
+                }
+            }
         }
 
         static void DrawCardBack(Color[] px, int w, int h, int col, int row)
@@ -1132,16 +1300,19 @@ namespace LegaiaWorld
             Color teal = new Color(0.10f, 0.40f, 0.44f);
             Color light = new Color(0.55f, 0.78f, 0.80f);
             Color border = new Color(0.94f, 0.93f, 0.88f);
+            int rim0 = Mathf.Max(2, Mathf.RoundToInt(CW * 0.052f));
+            int step = Mathf.Max(6, Mathf.RoundToInt(CW * 0.125f));
+            int bar = Mathf.Max(2, step / 6);
             for (int y = 0; y < CH; y++)
                 for (int x = 0; x < CW; x++)
                 {
-                    if (!InRoundedRect(x, y, CW, CH, 8))
+                    if (!InRoundedRect(x, y, CW, CH, Rad()))
                     {
                         Px(px, w, h, col, row, x, y, Color.clear);
                         continue;
                     }
-                    bool rim = x < 5 || y < 5 || x >= CW - 5 || y >= CH - 5;
-                    bool lattice = (x + y) % 12 < 2 || (x - y + 1000) % 12 < 2;
+                    bool rim = x < rim0 || y < rim0 || x >= CW - rim0 || y >= CH - rim0;
+                    bool lattice = (x + y) % step < bar || (x - y + 10000) % step < bar;
                     Px(px, w, h, col, row, x, y, rim ? border : (lattice ? light : teal));
                 }
         }
@@ -1158,12 +1329,26 @@ namespace LegaiaWorld
         static void DrawPip(Color[] px, int w, int h, int col, int row, int suit,
             int cx, int cy, int s, Color ink, bool flip)
         {
-            for (int y = -s - s / 2 - 2; y <= s + s / 2 + 2; y++)
-                for (int x = -s - 2; x <= s + 2; x++)
+            // 3x3 supersample: the suit tests are analytic, so the only
+            // thing between a clean curve and a staircase is coverage -
+            // and at ten pips a card the staircase is what you notice.
+            const int SS = 3;
+            int ry = s + s / 2 + 2, rx = s + 2;
+            for (int y = -ry; y <= ry; y++)
+                for (int x = -rx; x <= rx; x++)
                 {
-                    float fx = x / (float)s, fy = (flip ? -y : y) / (float)s;
-                    if (PipTest(suit, fx, fy))
-                        Px(px, w, h, col, row, cx + x, cy + y, ink);
+                    int hits = 0;
+                    for (int sy = 0; sy < SS; sy++)
+                        for (int sx = 0; sx < SS; sx++)
+                        {
+                            float fx = (x + (sx + 0.5f) / SS - 0.5f) / s;
+                            float fy = (y + (sy + 0.5f) / SS - 0.5f) / s;
+                            if (PipTest(suit, fx, flip ? -fy : fy))
+                                hits++;
+                        }
+                    if (hits > 0)
+                        Blend(px, w, h, col, row, cx + x, cy + y, ink,
+                            hits / (float)(SS * SS));
                 }
         }
 
@@ -1227,6 +1412,40 @@ namespace LegaiaWorld
             { 'K', new[] { "10001", "10010", "10100", "11000", "10100", "10010", "10001" } },
         };
 
+        /// Inked column range of a glyph. Advancing by the glyph's OWN
+        /// width instead of a fixed 5 is what keeps "10" as narrow as a
+        /// single digit: the '1' bitmap only uses three columns.
+        static void GlyphBounds(string[] g, out int lo, out int hi)
+        {
+            lo = 5; hi = -1;
+            for (int gy = 0; gy < 7; gy++)
+                for (int gx = 0; gx < 5; gx++)
+                    if (g[gy][gx] == '1')
+                    {
+                        if (gx < lo) lo = gx;
+                        if (gx > hi) hi = gx;
+                    }
+            if (hi < lo) { lo = 0; hi = 0; }
+        }
+
+        /// Width in pixels of `rank` at scale `k` - one blank column of
+        /// gap between glyphs, none after the last. Callers need it to
+        /// CENTRE the index on its column instead of carrying a per-rank
+        /// offset, which is what the old "10" special case was.
+        static int GlyphWidth(string rank, int k)
+        {
+            int cursor = 0;
+            foreach (char ch in rank)
+            {
+                string[] g;
+                if (!GLYPHS.TryGetValue(ch, out g))
+                    continue;
+                GlyphBounds(g, out int lo, out int hi);
+                cursor += (hi - lo + 2) * k;
+            }
+            return cursor <= 0 ? 0 : cursor - k;
+        }
+
         /// Draw `rank` at (x0, y0) top-left with pixel scale `k`; `flip`
         /// draws it rotated 180 degrees with (x0, y0) as the bottom-right.
         static void DrawRank(Color[] px, int w, int h, int col, int row, string rank,
@@ -1238,22 +1457,23 @@ namespace LegaiaWorld
                 string[] g;
                 if (!GLYPHS.TryGetValue(ch, out g))
                     continue;
+                GlyphBounds(g, out int lo, out int hi);
                 for (int gy = 0; gy < 7; gy++)
-                    for (int gx = 0; gx < 5; gx++)
+                    for (int gx = lo; gx <= hi; gx++)
                     {
                         if (g[gy][gx] != '1')
                             continue;
                         for (int sy = 0; sy < k; sy++)
                             for (int sx = 0; sx < k; sx++)
                             {
-                                int dx = cursor + gx * k + sx, dy = gy * k + sy;
+                                int dx = cursor + (gx - lo) * k + sx, dy = gy * k + sy;
                                 if (flip)
                                     Px(px, w, h, col, row, x0 - dx, y0 - dy, ink);
                                 else
                                     Px(px, w, h, col, row, x0 + dx, y0 + dy, ink);
                             }
                     }
-                cursor += 6 * k;
+                cursor += (hi - lo + 2) * k;
             }
         }
 
