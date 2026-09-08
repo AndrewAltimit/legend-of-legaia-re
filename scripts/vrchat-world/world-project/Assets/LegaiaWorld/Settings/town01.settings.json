@@ -39,6 +39,22 @@
       "position": [-1.65, 0, 0.88],
       "rotation": [0, 232.747986, 0]
     },
+    "torch_1": {
+      "position": [15.41, 1.75, 21.14],
+      "rotation": [0, 0, 0]
+    },
+    "torch_2": {
+      "position": [25.615, 1.464, 18.908],
+      "rotation": [0, 0, 0]
+    },
+    "campfire_1": {
+      "position": [40.248, 0.13, 13.823],
+      "rotation": [0, 0, 0]
+    },
+    "campfire_2": {
+      "position": [20.74, 0.084, 16.38],
+      "rotation": [0, 0, 0]
+    },
     "menu": {
       "position": [34.978, 0.801, 19.277],
       "rotation": [0, -0.422, 0]

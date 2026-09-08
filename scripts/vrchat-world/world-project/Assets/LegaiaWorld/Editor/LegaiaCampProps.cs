@@ -14,6 +14,13 @@
 //   flame (fire + smoke particles and a flickering point light - no
 //   visible glow orb, the light itself is the effect) and a spatial
 //   crackle loop.
+//
+// Every child of the container is placed from the scene settings file's
+// prefab_transforms when it carries the object's name (torch_1,
+// campfire_2, "menu" for the panel) and from a spawn-relative offset
+// snapped to the ground otherwise - so hand-placing a torch and running
+// "Legaia > Snapshot placements to scene settings" pins it exactly the
+// way the mirror and the TV are pinned.
 
 using System.Collections.Generic;
 using System.IO;
@@ -53,19 +60,32 @@ namespace LegaiaWorld
             var pickupType = LegaiaWorldBuilder.FindType("VRC.SDK3.Components.VRCPickup");
             var syncType = LegaiaWorldBuilder.FindType("VRC.SDK3.Components.VRCObjectSync");
 
-            BuildTorch(container, Ground(spawnW + new Vector3(1.8f, 0f, 1.4f)),
-                fireClip, wood, dark, flameMat, smokeMat, pickupType, syncType, 1);
-            BuildTorch(container, Ground(spawnW + new Vector3(-1.6f, 0f, 1.2f)),
-                fireClip, wood, dark, flameMat, smokeMat, pickupType, syncType, 2);
-            BuildCampfire(container, Ground(spawnW + new Vector3(2.6f, 0f, -2.1f)),
-                fireClip, wood, flameMat, smokeMat, pickupType, syncType, 1);
-            BuildCampfire(container, Ground(spawnW + new Vector3(-2.5f, 0f, 2.7f)),
-                fireClip, wood, flameMat, smokeMat, pickupType, syncType, 2);
+            BuildTorch(container, spawnW + new Vector3(1.8f, 0f, 1.4f),
+                fireClip, wood, dark, flameMat, smokeMat, pickupType, syncType, 1,
+                placements);
+            BuildTorch(container, spawnW + new Vector3(-1.6f, 0f, 1.2f),
+                fireClip, wood, dark, flameMat, smokeMat, pickupType, syncType, 2,
+                placements);
+            BuildCampfire(container, spawnW + new Vector3(2.6f, 0f, -2.1f),
+                fireClip, wood, flameMat, smokeMat, pickupType, syncType, 1,
+                placements);
+            BuildCampfire(container, spawnW + new Vector3(-2.5f, 0f, 2.7f),
+                fireClip, wood, flameMat, smokeMat, pickupType, syncType, 2,
+                placements);
             BuildMenu(container, spawnW, sceneName, music, dark,
                 pickupType, syncType, placements);
 
             Debug.Log("[Legaia] camp props: settings panel, 2 torches and " +
                 "2 campfires placed near spawn (hold + Use toggles a fire).");
+        }
+
+        /// The settings-file key a direct child of the camp container is
+        /// stored under: the props by their own names, the settings panel
+        /// as "menu" (the name it has had in the file since before the
+        /// props were placeable).
+        internal static string SettingsKey(GameObject child)
+        {
+            return child.name == "LegaiaMenu" ? "menu" : child.name;
         }
 
         /// Snap a point to the walkable ground under it (the world colliders
@@ -76,6 +96,21 @@ namespace LegaiaWorld
                     out RaycastHit hit, 40f, ~0, QueryTriggerInteraction.Ignore))
                 return hit.point;
             return p;
+        }
+
+        /// Put a camp prop where the scene settings say, or - with no
+        /// entry for its name - on the ground under its spawn-relative
+        /// default. The container sits at the origin, so the settings
+        /// value IS the Inspector position; a pinned prop keeps the y it
+        /// was left at instead of being re-snapped onto whatever collider
+        /// happens to be under it (a hand-placed torch often stands on a
+        /// crate or a wall ledge, and the raycast would drop it through).
+        static void Place(GameObject go, Vector3 fallback,
+            Dictionary<string, LegaiaPrefabTransform> placements)
+        {
+            if (LegaiaSceneSettings.ApplyPlacement(placements, go.name, go.transform))
+                return;
+            go.transform.position = Ground(fallback);
         }
 
         internal static Material EnsureMat(string genDir, string name, string shader, Color c)
@@ -309,11 +344,12 @@ namespace LegaiaWorld
         static void BuildTorch(GameObject container, Vector3 pos,
             AudioClip fireClip, Material wood, Material dark,
             Material flameMat, Material smokeMat,
-            System.Type pickupType, System.Type syncType, int n)
+            System.Type pickupType, System.Type syncType, int n,
+            Dictionary<string, LegaiaPrefabTransform> placements = null)
         {
             var go = new GameObject("torch_" + n);
             go.transform.SetParent(container.transform, false);
-            go.transform.position = pos;
+            Place(go, pos, placements);
 
             var handle = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             handle.name = "handle";
@@ -341,11 +377,12 @@ namespace LegaiaWorld
         static void BuildCampfire(GameObject container, Vector3 pos,
             AudioClip fireClip, Material wood,
             Material flameMat, Material smokeMat,
-            System.Type pickupType, System.Type syncType, int n)
+            System.Type pickupType, System.Type syncType, int n,
+            Dictionary<string, LegaiaPrefabTransform> placements = null)
         {
             var go = new GameObject("campfire_" + n);
             go.transform.SetParent(container.transform, false);
-            go.transform.position = pos;
+            Place(go, pos, placements);
 
             for (int i = 0; i < 3; i++)
             {

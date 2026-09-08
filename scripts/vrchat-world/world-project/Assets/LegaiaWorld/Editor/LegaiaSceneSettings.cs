@@ -88,9 +88,11 @@
 //
 //   "prefab_transforms": {"tv": {"position": [x, y, z], "rotation": [0, yaw, 0]}, ...}
 //       Absolute placement for the builder's common prefabs and the camp
-//       settings panel (keys: mirror, tv, card_table, pens, the prefab
-//       name of an extra slot, menu), replacing the spawn-relative
-//       offsets and the face-the-spawn rotation. These objects live
+//       props (keys: mirror, tv, card_table, pens, poster_<name>, the
+//       prefab name of an extra slot; torch_N, campfire_N and menu under
+//       the camp container; card_table_panel, which is table-LOCAL),
+//       replacing the spawn-relative offsets, the ground snap and the
+//       face-the-spawn rotation. These objects live
 //       under top-level containers at the origin, so the values are
 //       EXACTLY the object's Inspector position and rotation (world ==
 //       local there - no mirror to trip over). "rotation" is optional.

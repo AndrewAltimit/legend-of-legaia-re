@@ -219,13 +219,37 @@ namespace LegaiaWorld
             }
 
             // Placements from the scene settings file must win over the
-            // computed offsets (position AND rotation).
-            var placements = LegaiaSceneSettings.Load(sceneName).prefabTransforms;
+            // computed offsets (position AND rotation) - for the camp
+            // props (torches, campfires, the settings panel) as well, so
+            // the camp container is rebuilt here from the same settings
+            // the world builder hands it. The scene is never saved, so
+            // rebuilding it costs nothing outside this check.
+            LegaiaCampProps.Build("Assets/LegaiaGenerated/" + sceneName, sceneName,
+                spawn.transform.position, null, settings.prefabTransforms);
+            var camp = GameObject.Find(LegaiaCampProps.CONTAINER);
+            var placements = settings.prefabTransforms;
+            var unmatched = new List<string>();
+            int pinned = 0;
             foreach (var kv in placements)
             {
+                // Three homes for a pinned object: a container child, the
+                // card table's own panel, or a camp prop.
                 var child = container.transform.Find(kv.Key == "pens" ? "sdk_pens" : kv.Key);
+                if (child == null && kv.Key == "card_table_panel")
+                    child = container.transform.Find("card_table/panel");
+                if (child == null && camp != null)
+                    child = camp.transform.Find(kv.Key == "menu" ? "LegaiaMenu" : kv.Key);
                 if (child == null)
-                    continue; // e.g. "menu" lives under the camp container
+                {
+                    // A key for something this build did not make (a
+                    // feature toggled off, a retired prop). The snapshot
+                    // keeps such keys deliberately, so this is a notice,
+                    // not a failure - but it must be visible, or a typo
+                    // in a hand-edited key looks exactly like success.
+                    unmatched.Add(kv.Key);
+                    continue;
+                }
+                pinned++;
                 if ((child.localPosition - kv.Value.position).magnitude > 0.001f)
                     Fail(kv.Key + " placed at " + child.localPosition + ", settings say " +
                          kv.Value.position);
@@ -234,6 +258,11 @@ namespace LegaiaWorld
                     Fail(kv.Key + " rotated " + child.localEulerAngles + ", settings say " +
                          kv.Value.rotation);
             }
+            Debug.Log("[Legaia] selftest: " + pinned + " settings placement(s) honoured" +
+                      (unmatched.Count > 0
+                          ? ", " + unmatched.Count + " key(s) match no built object: " +
+                            string.Join(", ", unmatched.ToArray())
+                          : ""));
 
             // Every U# proxy must have a backing UdonBehaviour with a
             // program, and the wired references must have reached it.

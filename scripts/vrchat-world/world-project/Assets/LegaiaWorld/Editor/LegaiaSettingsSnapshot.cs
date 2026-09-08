@@ -5,13 +5,22 @@
 // Assets/LegaiaWorld/Settings/<scene>.settings.json - so the next
 // export + build reproduces the hand placement automatically.
 //
-// Captured: LegaiaSpawn (spawn_position, root-local as before) and every
-// direct child of the common-prefab container plus the camp settings
-// panel (prefab_transforms, keyed as the builder reads them: mirror /
-// tv / card_table / pens / poster_<name> / <prefab name> / menu).
+// Captured: LegaiaSpawn (spawn_position, root-local as before), every
+// direct child of BOTH top-level containers - the common prefabs
+// (mirror / tv / card_table / pens / poster_<name> / <prefab name>) and
+// the camp props (torch_N / campfire_N / the settings panel as "menu") -
+// and the card table's panel, which is a child of the table rather than
+// of a container and so needs its own line (card_table_panel).
 // Positions are the objects' Inspector values - those containers sit at
 // the origin, so local == world - and rotations are Inspector-style
 // Euler degrees in (-180, 180]. Other keys in the file are preserved.
+//
+// The prefab_transforms block MERGES over what the file already holds:
+// a key whose object is not in the scene right now (a feature toggled
+// off in the builder foldout, a poster not yet built) keeps its stored
+// value instead of being dropped. So snapshotting a partially-built
+// scene cannot silently lose hand tuning - the cost is that a key for
+// something deliberately retired has to be deleted by hand.
 //
 // "Every direct child" is why nothing here knows what a poster is: a
 // wall poster is one more child of that container under its own name
@@ -104,26 +113,52 @@ namespace LegaiaWorld
                 doc["slot_machine"] = entry;
             }
 
+            // Seed from what the file already carries so a key this run
+            // cannot see survives (see the merge note in the header).
             var transforms = new Dictionary<string, object>();
+            var prevTransforms = MiniJson.AsObj(MiniJson.Get(doc, "prefab_transforms"));
+            if (prevTransforms != null)
+                foreach (var kv in prevTransforms)
+                    transforms[kv.Key] = kv.Value;
+            int kept = transforms.Count, captured = 0;
+
             var common = GameObject.Find(LegaiaCommonPrefabs.CONTAINER);
             if (common != null)
+            {
                 foreach (Transform t in common.transform)
                 {
                     if (t.gameObject == cabinet)
                         continue; // carried by the slot_machine block above
                     transforms[LegaiaCommonPrefabs.SettingsKey(t.gameObject)] = Entry(t);
+                    captured++;
                 }
+                // The seat panel hangs off the table, not the container,
+                // so the loop above never reaches it - and its entry is
+                // the panel's LOCAL transform under the table, which is
+                // exactly what Entry() reads.
+                var panel = common.transform.Find("card_table/panel");
+                if (panel != null)
+                {
+                    transforms["card_table_panel"] = Entry(panel);
+                    captured++;
+                }
+            }
             var camp = GameObject.Find(LegaiaCampProps.CONTAINER);
-            var menu = camp != null ? camp.transform.Find("LegaiaMenu") : null;
-            if (menu != null)
-                transforms["menu"] = Entry(menu);
+            if (camp != null)
+                foreach (Transform t in camp.transform)
+                {
+                    transforms[LegaiaCampProps.SettingsKey(t.gameObject)] = Entry(t);
+                    captured++;
+                }
             doc["prefab_transforms"] = transforms;
             doc.Remove("prefab_positions"); // superseded by the entries above
 
             Directory.CreateDirectory(LegaiaSceneSettings.DIR);
             File.WriteAllText(path, Write(doc) + "\n");
             AssetDatabase.ImportAsset(path);
-            Debug.Log("[Legaia] snapshot: " + transforms.Count + " placement(s)" +
+            Debug.Log("[Legaia] snapshot: " + captured + " placement(s) captured, " +
+                      (transforms.Count - captured) + " kept from the file" +
+                      " (" + kept + " were there)" +
                       (cabinet != null ? " + slot machine" : "") + " + spawn -> " +
                       path + " (copy it back into the kit's Settings/ folder).");
             return path;

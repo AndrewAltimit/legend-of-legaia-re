@@ -26,7 +26,7 @@ your disc ──legaia-extract──▶ extracted/ ──legaia-engine export-gl
 | File | Role |
 |---|---|
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaWorldBuilder.cs` | Editor menu `Legaia > Build Scene From Manifest...`: instantiates the world, adds colliders, places NPCs + animated props, builds doorway-teleport triggers, wires proximity doors + the shoreline morph clip + the BGM loop, drops a spawn marker; also the **Equipment props** rack (the `--items` export placed as grabbable pickups near the spawn) and the camp props (below). |
-| `world-project/Assets/LegaiaWorld/Editor/LegaiaCampProps.cs` | The **Camp props** pass: a carry-able settings panel (world-space buttons - local music mute, synced day/night jumps; grab collider confined to a bottom handle so it can't shadow the UI) plus two carry-able torches and two campfires near spawn, all primitives + generated materials, in a top-level container outside the mirrored root (mirrored UI text would render backwards). |
+| `world-project/Assets/LegaiaWorld/Editor/LegaiaCampProps.cs` | The **Camp props** pass: a carry-able settings panel (world-space buttons - local music mute, synced day/night jumps; grab collider confined to a bottom handle so it can't shadow the UI) plus two carry-able torches and two campfires near spawn, all primitives + generated materials, in a top-level container outside the mirrored root (mirrored UI text would render backwards). Each prop takes its place from `prefab_transforms` under its own name (`torch_1`, `campfire_2`, `menu`) when the settings file pins one, and from a spawn-relative offset snapped to the ground otherwise. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaAudioGen.cs` | Synthesized ambience: the long day / night / base / wind-gust beds, the shore-wave, tree-bird, night-wildlife and windmill emitter clips, and the camp fire crackle - seeded Poisson events under multi-octave value-noise envelopes, seam-crossfaded, no disc audio. Also the `VRC_SpatialAudioSource` compliance helper (the SDK deprecates bare AudioSources; 2D beds get the disabled component its Auto Fix adds, spatial sources a configured one). |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaRealism.cs` | The builder's "Realism enhancements" foldout: lit materials + generated normals + sun, day/night wiring + night doorway lamps, sky + fog, procedural grass, interior room shells, texture smoothing, synthesized ambience, wander wiring. Every pass defaults on; untick for the faithful look. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaSceneSettings.cs` | Per-scene refinements from `Settings/<scene>.settings.json` (see "Per-scene settings" below): delete named objects after the build, keep listed NPCs static (idle clip, no wandering), drop listed NPCs entirely, override the spawn point in Unity world space, and point the VRC Scene Descriptor's `Spawns[0]` at LegaiaSpawn automatically. |
@@ -70,7 +70,7 @@ your disc ──legaia-extract──▶ extracted/ ──legaia-engine export-gl
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaFlicker.cs` | Firelight flicker for the always-burning night torches: no sync, no interaction - just the two-octave Perlin intensity wobble on the flame's point light. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaPickupProp.cs` | UdonSharp equipment-rack pickup: the prop spawns kinematic (frozen on the rack) and only becomes a free physics object the first time a player drops it - so a rack of dozens of bodies can't tunnel through the thin ground during world-load hitches. Weapon rows carry `weapon` and measure their own swing speed while held. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaCommonPrefabs.cs` | The **Common prefabs** foldout: builds the mirror, the TV and the card table from primitives + generated textures + the SDK's own components (the 52 card faces are drawn into one versioned atlas, `cards_atlas_v2.png`, in the standard pip arrangement), spawns the SDK's sample pen system, and drops any prefab assets you list (QvPen, ProTV, a community deck...) near spawn. See "Common prefabs" below. |
-| `world-project/Assets/LegaiaWorld/Editor/LegaiaSettingsSnapshot.cs` | Menu `Legaia > Snapshot placements to scene settings`: writes the hand-placed Inspector transforms of the common prefabs, the camp settings panel and LegaiaSpawn into `Settings/<scene>.settings.json` (`prefab_transforms` + `spawn_position`), preserving the file's other keys. |
+| `world-project/Assets/LegaiaWorld/Editor/LegaiaSettingsSnapshot.cs` | Menu `Legaia > Snapshot placements to scene settings`: writes the hand-placed Inspector transforms of both top-level containers' children (common prefabs; camp panel, torches and campfires), the card table's seat panel and LegaiaSpawn into `Settings/<scene>.settings.json` (`prefab_transforms` + `spawn_position`). Other keys in the file are preserved, and `prefab_transforms` merges over what is already there rather than replacing it. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaSoak.cs` | The PLAY-MODE soak (`LegaiaBatchChecks.Soak`): enters play mode with ClientSim, pins the day/night clock to night or day, samples every brain at 2 Hz into a per-villager timeline, and asserts the night routine ran (in through the door, door swung, out again at dawn) or reports a day's station visits and conversations. The only check here that actually runs a villager. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaBatchChecks.cs` | Headless self-tests (`Unity -batchmode -executeMethod LegaiaWorld.LegaiaBatchChecks.CommonPrefabs` builds the common prefabs against the scene's built root and asserts every SDK component and every UdonSharp field wiring reached the backing behaviour; `.LivingTown`, `.Weather`, `.Ambience` likewise; `.RigPose` measures every imported NPC rig and checks the sitting pose's hip turn against the rig's walk clip). Never saves the scene. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaEventButton.cs` | A collider button: Interact sends one named event into a target behaviour. Every common-prefab button uses it (no world-space UI, so no pickup-collider-steals-the-click trap). |
@@ -235,7 +235,11 @@ the VCC setup in more detail if this is your first worlds project.
    to light or snuff it: fire particles, a faint rising smoke plume, a
    warm point light with a Perlin fire flicker (no glow-orb mesh), and a
    spatial synthesized crackle loop; the lit state is synced, so a
-   campfire someone lights burns for the whole instance. Every
+   campfire someone lights burns for the whole instance. Drag a torch
+   or a fire where the town wants it and **Snapshot placements** pins it
+   the way the TV and the mirror are pinned - the rebuild puts it back
+   at those exact Inspector numbers instead of the spawn-relative
+   default. Every
    AudioSource the kit creates also carries the `VRC_SpatialAudioSource`
    component the SDK now expects (disabled on the flat 2D music/ambience
    beds, exactly what the SDK's Auto Fix does - the "2D audio source
@@ -347,9 +351,12 @@ All keys optional (`town01.settings.json` is the worked example):
   Inspector position here, and the rebuild reproduces it digit for
   digit. (Not world space: the root is X-mirrored, so a world value
   would come back with its X sign flipped in the Inspector.)
-- **`prefab_transforms`** - hand placements for the common prefabs and
-  the camp settings panel (`menu`), position + optional rotation in
-  Inspector numbers; written by the snapshot menu. See "Common prefabs".
+- **`prefab_transforms`** - hand placements for the common prefabs, the
+  camp props (`torch_N`, `campfire_N`, the settings panel as `menu`) and
+  the card table's seat panel (`card_table_panel`, table-local), position
+  + optional rotation in Inspector numbers; written by the snapshot menu.
+  A pinned camp prop also skips the ground snap, so a torch left standing
+  on a crate stays on it. See "Common prefabs".
 - **`slot_machine`** - the casino cabinet: model asset, `asset slot-art`
   folder, placement + scale. The common-prefabs pass places the cabinet
   and builds the minigame on it. See "Common prefabs".
@@ -1071,8 +1078,9 @@ collider) and turns to face the spawn. To pin the placement you settle
 on by hand, drag things where you want them, then **Snapshot placements
 to scene settings** (the button under the foldout, or the
 `Legaia > Snapshot placements to scene settings` menu). It writes the
-current Inspector position + rotation of every common prefab, the camp
-settings panel and LegaiaSpawn into the scene's settings file:
+current Inspector position + rotation of every common prefab, every camp
+prop (the settings panel, the torches, the campfires), the card table's
+seat panel and LegaiaSpawn into the scene's settings file:
 
 ```json
 "prefab_transforms": {
@@ -1081,9 +1089,18 @@ settings panel and LegaiaSpawn into the scene's settings file:
 }
 ```
 
-(keys `mirror`, `tv`, `card_table`, `pens`, `menu`, and an extra slot's
-prefab name; values are exactly the Inspector numbers, world == local
-under the origin containers; `rotation` is optional). The slot cabinet
+(keys `mirror`, `tv`, `card_table`, `pens`, `poster_<name>` and an extra
+slot's prefab name from the common container; `torch_N`, `campfire_N` and
+`menu` from the camp container; `card_table_panel` for the seat panel,
+whose numbers are local to the table rather than to a container. Values
+are otherwise exactly the Inspector numbers, world == local under the
+origin containers; `rotation` is optional.) The block **merges**: a key
+whose object is not in the scene at snapshot time - a feature switched
+off in the foldout, a poster not built yet - keeps the value the file
+already holds instead of being dropped, so snapshotting a half-built
+scene cannot quietly lose hand tuning. The trade is that a key for
+something you retired on purpose has to be deleted by hand; the
+CommonPrefabs check names every key that matches no built object. The slot cabinet
 gets its own block, found through its `LegaiaSlotGame` rig wherever it
 sits, with the asset path, art folder and uniform scale alongside:
 
