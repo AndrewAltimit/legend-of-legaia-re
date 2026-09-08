@@ -208,8 +208,33 @@ namespace LegaiaWorld
         public float gaitRoll = 4f;
 
         [Tooltip("Stride the gait is paced by (metres): steps per second = " +
-                 "walk speed / stride.")]
-        public float gaitStride = 0.4f;
+                 "walk speed / stride. The default is the humanoid walk " +
+                 "clip's own measured step, so every rig family keeps the " +
+                 "same cadence at the same speed.")]
+        public float gaitStride = 0.19f;
+
+        [Tooltip("Procedural gait: the upper-arm nodes (left, right) swung " +
+                 "in anti-phase - set by the living-town pass on rigs with " +
+                 "no walk clip.")]
+        public Transform[] gaitUpperArms;
+
+        [Tooltip("Procedural gait: the forearm nodes matching gaitUpperArms; " +
+                 "each follows its upper arm around the shoulder.")]
+        public Transform[] gaitForearms;
+
+        [Tooltip("Arm swing of the procedural gait (degrees each way).")]
+        public float gaitArmSwing = 22f;
+
+        [Tooltip("Set by the living-town pass on rigs with a bound walk clip: " +
+                 "metres one step of the clip covers (the foot's forward " +
+                 "swing). With walkStepsPerSecond the Animator is scaled so " +
+                 "the feet keep up with the ground instead of sliding. 0 = " +
+                 "play the clip at speed 1.")]
+        public float walkStride = 0f;
+
+        [Tooltip("Steps per second the walk clip plays at Animator speed 1 " +
+                 "(steps in the clip over its length).")]
+        public float walkStepsPerSecond = 0f;
 
         /// Why the last commanded walk reported Blocked() - the probe hit,
         /// or the watchdog that fired. Read by the brain's failure record
@@ -235,6 +260,8 @@ namespace LegaiaWorld
         private Quaternion gaitRestRot;
         private float gaitPhase;
         private float gaitWeight;
+        private Vector3[] armRestPos;
+        private Quaternion[] armRestRot;
         // The last thing the straight-ahead probe hit (diagnostics).
         private string lastHit = "";
 
@@ -369,6 +396,26 @@ namespace LegaiaWorld
             {
                 gaitRestPos = gaitNode.localPosition;
                 gaitRestRot = gaitNode.localRotation;
+            }
+            // Arm rest poses (glb defaults = spawn-clip frame 0), the pose
+            // the procedural swing is built on.
+            int na = gaitUpperArms != null ? gaitUpperArms.Length : 0;
+            armRestPos = new Vector3[na * 2];
+            armRestRot = new Quaternion[na * 2];
+            for (int k = 0; k < na; k++)
+            {
+                if (gaitUpperArms[k] != null)
+                {
+                    armRestPos[k] = gaitUpperArms[k].localPosition;
+                    armRestRot[k] = gaitUpperArms[k].localRotation;
+                }
+                Transform fa = gaitForearms != null && k < gaitForearms.Length
+                    ? gaitForearms[k] : null;
+                if (fa != null)
+                {
+                    armRestPos[na + k] = fa.localPosition;
+                    armRestRot[na + k] = fa.localRotation;
+                }
             }
 
             // Model height from the rendered rest bounds: the ray heights
@@ -892,14 +939,32 @@ namespace LegaiaWorld
             DriveAnimator();
         }
 
+        // The procedural gait runs AFTER the Animator has written this
+        // frame's idle pose (LateUpdate), so the arm swing composes on top
+        // of the spawn clip instead of being overwritten by it.
+        void LateUpdate()
+        {
+            if (locoAnimator == null)
+                Gait();
+        }
+
         // Idle / walk crossfade for the rigs that have a measured walk clip;
-        // a procedural gait for the rest.
+        // a procedural gait for the rest (LateUpdate).
         void DriveAnimator()
         {
             if (locoAnimator == null)
-            {
-                Gait();
                 return;
+            // Feet on the ground: the clip's stride and cadence were
+            // measured at build time, so the Animator plays the walk as
+            // fast as the villager actually moves. record_36 is one cycle
+            // of two 0.19 m steps over 2.07 s - at speed 1 the feet slid
+            // almost four to one under a 0.7 m/s walk.
+            if (walkStride > 0f && walkStepsPerSecond > 0f)
+            {
+                float v = mode == 1 ? walkSpeed : speed;
+                locoAnimator.speed = walking
+                    ? Mathf.Clamp(v / walkStride / walkStepsPerSecond, 0.5f, 6f)
+                    : 1f;
             }
             if (!animStarted)
             {
@@ -922,13 +987,17 @@ namespace LegaiaWorld
         // speed over `gaitStride`, eased in and out so a stop does not snap.
         void Gait()
         {
-            if (gaitNode == null || (gaitBob <= 0f && gaitRoll <= 0f))
+            bool arms = gaitArmSwing > 0f && gaitUpperArms != null && gaitUpperArms.Length > 0;
+            bool body = gaitNode != null && (gaitBob > 0f || gaitRoll > 0f);
+            if (!arms && !body)
                 return;
             float dt = Time.deltaTime;
             gaitWeight = Mathf.MoveTowards(gaitWeight, walking ? 1f : 0f, dt * 4f);
             if (gaitWeight <= 0f)
             {
-                if (gaitNode.localPosition != gaitRestPos)
+                // Rest: the body back where it was; the arms are the
+                // Animator's again (it rewrites them every frame).
+                if (body && gaitNode.localPosition != gaitRestPos)
                 {
                     gaitNode.localPosition = gaitRestPos;
                     gaitNode.localRotation = gaitRestRot;
@@ -937,17 +1006,48 @@ namespace LegaiaWorld
             }
             float stride = gaitStride < 0.1f ? 0.1f : gaitStride;
             if (walking)
-                gaitPhase += dt * (walkSpeed / stride) * Mathf.PI;
+                gaitPhase += dt * ((mode == 1 ? walkSpeed : speed) / stride) * Mathf.PI;
             float s = Mathf.Sin(gaitPhase);
-            float bob = gaitBob * npcHeight * Mathf.Abs(s) * gaitWeight;
-            float roll = gaitRoll * s * gaitWeight;
-            // localPosition / localRotation are in THIS instance's frame,
-            // which stands upright and faces the way the model faces at
-            // rest - so `up` is the world's up and the roll is about the
-            // model's own forward axis.
-            gaitNode.localPosition = gaitRestPos + Vector3.up * bob;
-            gaitNode.localRotation =
-                Quaternion.AngleAxis(roll, Vector3.forward) * gaitRestRot;
+            if (body)
+            {
+                float bob = gaitBob * npcHeight * Mathf.Abs(s) * gaitWeight;
+                float roll = gaitRoll * s * gaitWeight;
+                // localPosition / localRotation are in THIS instance's
+                // frame, which stands upright and faces the way the model
+                // faces at rest - so `up` is the world's up and the roll is
+                // about the model's own forward axis.
+                gaitNode.localPosition = gaitRestPos + Vector3.up * bob;
+                gaitNode.localRotation =
+                    Quaternion.AngleAxis(roll, Vector3.forward) * gaitRestRot;
+            }
+            if (!arms)
+                return;
+            // Arm swing, contralateral like the humanoid clip's: each upper
+            // arm turns about the rig's lateral axis (the nodes' local x)
+            // on its REST pose, the forearm rides round the shoulder, and
+            // the result is blended over whatever the idle clip posed this
+            // frame by the gait weight - so a walk starting mid-gesture
+            // eases into the swing, and a stop eases back out.
+            int na = gaitUpperArms.Length;
+            for (int k = 0; k < na; k++)
+            {
+                Transform up = gaitUpperArms[k];
+                if (up == null)
+                    continue;
+                float a = gaitArmSwing * s * (k == 0 ? 1f : -1f);
+                Quaternion q = Quaternion.AngleAxis(a, Vector3.right);
+                Transform fa = gaitForearms != null && k < gaitForearms.Length
+                    ? gaitForearms[k] : null;
+                if (fa != null)
+                {
+                    Vector3 fp = armRestPos[k] + q * (armRestPos[na + k] - armRestPos[k]);
+                    fa.localPosition = Vector3.Lerp(fa.localPosition, fp, gaitWeight);
+                    fa.localRotation = Quaternion.Slerp(fa.localRotation,
+                        q * armRestRot[na + k], gaitWeight);
+                }
+                up.localRotation = Quaternion.Slerp(up.localRotation,
+                    q * armRestRot[k], gaitWeight);
+            }
         }
 
         // --- Commanded walk -------------------------------------------------

@@ -15,6 +15,7 @@
   "spawn_position": [-24.85, 1.75, 12.22],
   "set_descriptor_spawn": true,
   "living_town": {
+    "names": {"npc_14": "Cara"},
     "home_cap": 4,
     "chat_spots": 5,
     "seed": 20260907,

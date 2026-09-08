@@ -549,25 +549,38 @@ themselves: town01's beach is an island of navmesh the village never
 reaches, and a spot only the two beach villagers can use is a good spot,
 not a broken one.
 - **Walking.** Every NPC glb carries the scene bundle's whole clip set,
-  and on the 11-node humanoid rig (17 of town01's villagers) `record_36`
-  measures as a genuine walk cycle: the two legs alternate at exactly half
-  a period (correlation +0.99 after a half-period shift), the arms swing
-  contralaterally (-0.99 against the same-side leg), head and torso
-  amplitude are *zero*, the body centroid moves 0.000 m in x, and the
-  first and last frames meet to 0.005 m - a stride in place, which is what
-  a locomotion state needs. Those villagers get a two-state idle/walk
-  Animator and the controller crossfades as they start and stop. The other
-  four rig families have no leg pair at all (one body mesh, or a purely
-  axial chain), so nothing in their clip set can be a walk and they keep
-  looping their spawn clip - **Walk cycle clip** turns the binding off
-  entirely. Those rigs used to glide: the body slid along at a constant
-  height in its idle pose. They now get a **procedural gait** instead
-  (`LegaiaNpcWander.gaitBob` / `gaitRoll` / `gaitStride`): while the walk
-  is on, the glb's root bobs once per step (3.5% of the rig's height) and
-  rocks a few degrees side to side, alternating each step, paced by the
-  walk speed over a 0.4 m stride and eased in and out so a stop does not
-  snap. It moves the glb root under the instance, so the Animator's
-  nodes, the floor ray and the card table's seat pose are untouched.
+  and what a rig can do on foot is **measured** at build time
+  (`LegaiaLivingTown.MeasureRig`): its nodes are a flat set of rigid
+  TMD objects under the glb's scene root, the mirrored pairs among them
+  are sorted by height (lowest = feet, highest = upper arms), and every
+  clip is sampled for the feet swinging fore and aft in anti-phase - the
+  walk signature, which the idle and the gestures fail on amplitude and a
+  body sway fails on phase. town01 has five families: the 11-node
+  humanoid (arms, forearms, upper and lower legs) whose `record_36` is a
+  genuine stride in place (legs anti-phase at exactly half a period, arms
+  contralateral, head and torso amplitude zero, body centroid fixed); the
+  7-node body-head-arms rig (Cara's family - a one-piece body, no leg
+  pair); the 8-node crows (wings); a 5-node axial chain; and the 2-node
+  birds. A rig with a walking clip gets a two-state idle/walk Animator
+  (the pinned **Walk cycle clip** / entry `walk_clip` wins when it
+  measures as a walk, else the best-scoring clip) and the controller
+  crossfades as it starts and stops. The clip's own **stride** (the
+  foot's peak-to-peak swing, 0.19 m for `record_36`) and **cadence**
+  (steps over length: one cycle of two steps over 2.07 s) go with it,
+  and the controller scales the Animator so the feet keep pace with the
+  ground - at speed 1 the humanoids slid almost four to one under a
+  0.7 m/s walk. Rigs with no leg pair used to glide on their looping
+  spawn clip; they now get a **procedural gait** (`LegaiaNpcWander.gaitBob`
+  / `gaitRoll` / `gaitStride` / `gaitArmSwing`): the glb root bobs once
+  per step and rocks a few degrees side to side, and where the rig has an
+  arm pair the upper arms swing contralaterally about the rig's lateral
+  axis with the forearms riding round the shoulder, blended over the idle
+  clip's pose by the gait weight (LateUpdate, after the Animator has
+  written the frame) and eased in and out so a stop does not snap. The
+  gait is paced by the same 0.19 m stride, so every family steps at the
+  same cadence at the same speed. It moves the glb root and the arm nodes
+  under the instance, so the walk, the floor ray and the card table's
+  seat pose are untouched.
 
 `LegaiaNpcWander` is the locomotion controller under all of this: it keeps
 its autonomous stroll and its measured-facing recipe unchanged, and adds a

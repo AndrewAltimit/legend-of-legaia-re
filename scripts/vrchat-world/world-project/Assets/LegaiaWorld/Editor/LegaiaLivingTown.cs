@@ -1891,6 +1891,9 @@ namespace LegaiaWorld
             s_handTorso = 0;
             s_handFraction = 0f;
             int walked = 0;
+            int armSwung = 0;
+            s_rigCache.Clear();
+            s_rigFamilies.Clear();
             // The daytime-indoors share is a share of the villagers who
             // actually HAVE a front door, not of every villager: measured
             // against all 15 in town01 it rounds to 3, and with only 2
@@ -1915,13 +1918,33 @@ namespace LegaiaWorld
                 // it already; wire it here when that pass is off, so the
                 // living town never depends on the order of the two.
                 var loco = EnsureLoco(npc.gameObject, o, linkFrom, linkTo);
-                // Bind the measured walk cycle where this rig family has
-                // one - after the controller exists, so its animator field
-                // is set on a component that is certainly there.
-                if (o.walkAnimator && walkWired.Add(files[i]))
+                // Bind the measured walk cycle where this rig has one -
+                // after the controller exists, so its animator field is set
+                // on a component that is certainly there. The rig is
+                // MEASURED (MeasureRig): its mirrored node pairs sorted into
+                // legs and arms, every clip sampled for a leg pair swinging
+                // in anti-phase, the stride and cadence of the one chosen.
+                // No leg pair, no walk: the controller's procedural gait
+                // gets the arm pair instead, so the one-piece bodies swing
+                // their arms and bob like the humanoids stride.
+                RigWalk rig = MeasureRig(glbs[i], walks[i]);
+                bool bound = false;
+                if (o.walkAnimator && walkWired.Add(files[i]) && rig.walkClip != null)
                     if (WireWalkAnimator(npc.gameObject, glbs[i],
-                            idles[i], walks[i], genDir))
+                            idles[i], rig.walkClip, genDir, rig.stride, rig.stepsPerSecond))
+                    {
                         walked++;
+                        bound = true;
+                    }
+                if (!bound && rig.upperArms != null && loco != null)
+                {
+                    LegaiaWorldBuilder.SetUdonField(loco, "gaitUpperArms",
+                        FindNodes(npc, rig.upperArms));
+                    LegaiaWorldBuilder.SetUdonField(loco, "gaitForearms",
+                        rig.forearms != null ? FindNodes(npc, rig.forearms) : null);
+                    LegaiaWorldBuilder.SyncUdonProxy(loco);
+                    armSwung++;
+                }
 
                 var brain = LegaiaWorldBuilder.TryAttachUdon(
                     npc.gameObject, "LegaiaNpcBrain");
@@ -1975,8 +1998,9 @@ namespace LegaiaWorld
                     (s_handFraction / (s_handArm + s_handTorso)).ToString("0.00") +
                     " of body height.");
             if (o.walkAnimator)
-                Debug.Log("[Legaia] living town: walk cycle ('" + o.walkClip +
-                    "', or the entry's own walk_clip) bound on " + walked + " of " + files.Count +
+                Debug.Log("[Legaia] living town: " + RigReport() + "; walk cycle ('" + o.walkClip +
+                    "', the entry's own walk_clip, or the measured one) bound on " + walked +
+                    " of " + files.Count + ", procedural arm swing on " + armSwung +
                     " villager(s) (the rigs whose family carries one).");
             return brains;
         }
@@ -2272,14 +2296,308 @@ namespace LegaiaWorld
             return "Assets/LegaiaImports/" + sceneName;
         }
 
+        // --- Rig measurement ---------------------------------------------------
+        //
+        // One villager rig is a flat set of rigid nodes under the glb's
+        // scene root (the exported TMD objects, `object_N`). What a rig can
+        // do on foot follows from its mirrored pairs: town01's 11-node
+        // humanoid has upper arms, forearms, upper legs and lower legs; the
+        // 7-node family has arms on a one-piece body; the crows have wings.
+        // The pairs are sorted by height - the lowest is the feet, the
+        // highest the upper arms - and then every clip is sampled for the
+        // feet swinging fore and aft in anti-phase (the walk signature; the
+        // idle and the gestures fail on amplitude, a sway fails on phase).
+        // The clip chosen carries its own stride (the foot's peak-to-peak
+        // swing) and cadence (steps over length), which the controller
+        // uses to keep the feet on the ground at any walk speed.
+
+        class RigWalk
+        {
+            public string walkClip;       // null = no leg pair swings in any clip
+            public float stride;          // metres per step in that clip
+            public float stepsPerSecond;  // at Animator speed 1
+            public string[] upperArms;    // node names, left then right
+            public string[] forearms;
+            public string family;         // "11-node" etc. for the report
+        }
+
+        static readonly Dictionary<string, RigWalk> s_rigCache = new Dictionary<string, RigWalk>();
+        static readonly Dictionary<string, int> s_rigFamilies = new Dictionary<string, int>();
+
+        static string RigReport()
+        {
+            var parts = new List<string>();
+            foreach (var kv in s_rigFamilies)
+                parts.Add(kv.Value + "x " + kv.Key);
+            parts.Sort();
+            return "rigs: " + string.Join(", ", parts);
+        }
+
+        static RigWalk MeasureRig(string glbPath, string pinnedWalk)
+        {
+            string key = glbPath + "|" + pinnedWalk;
+            RigWalk hit;
+            if (s_rigCache.TryGetValue(key, out hit))
+            {
+                Count(hit.family);
+                return hit;
+            }
+            var rw = new RigWalk();
+            s_rigCache[key] = rw;
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(glbPath);
+            if (prefab == null)
+            {
+                rw.family = "unloaded";
+                Count(rw.family);
+                return rw;
+            }
+            var clips = AssetDatabase.LoadAllAssetsAtPath(glbPath)
+                .OfType<AnimationClip>()
+                .Where(c => !c.name.StartsWith("__preview"))
+                .ToList();
+            GameObject inst = Object.Instantiate(prefab);
+            inst.hideFlags = HideFlags.HideAndDontSave;
+            inst.transform.position = Vector3.zero;
+            inst.transform.rotation = Quaternion.identity;
+            inst.transform.localScale = Vector3.one;
+            try
+            {
+                // The rig root: the transform with the most mesh children.
+                Transform rigRoot = null;
+                int most = -1;
+                foreach (var t in inst.GetComponentsInChildren<Transform>(true))
+                {
+                    int n = 0;
+                    foreach (Transform c in t)
+                        if (c.GetComponent<MeshFilter>() != null)
+                            n++;
+                    if (n > most)
+                    {
+                        most = n;
+                        rigRoot = t;
+                    }
+                }
+                var kids = new List<Transform>();
+                if (rigRoot != null)
+                    foreach (Transform c in rigRoot)
+                        if (c.GetComponent<MeshFilter>() != null)
+                            kids.Add(c);
+                rw.family = kids.Count + 1 + "-node";
+                float h = 0.6f;
+                var rends = inst.GetComponentsInChildren<Renderer>();
+                if (rends.Length > 0)
+                {
+                    Bounds b = rends[0].bounds;
+                    for (int i = 1; i < rends.Length; i++)
+                        b.Encapsulate(rends[i].bounds);
+                    h = Mathf.Max(0.2f, b.size.y);
+                }
+                Transform instT = inst.transform;
+
+                // Mirrored pairs (in the instance frame), sorted by height.
+                var pairs = new List<int[]>();
+                var pairY = new List<float>();
+                for (int i = 0; i < kids.Count; i++)
+                    for (int j = i + 1; j < kids.Count; j++)
+                    {
+                        Vector3 a = instT.InverseTransformPoint(kids[i].position);
+                        Vector3 b = instT.InverseTransformPoint(kids[j].position);
+                        if (Mathf.Abs(a.x + b.x) < 0.06f * h && Mathf.Abs(a.y - b.y) < 0.06f * h &&
+                            Mathf.Abs(a.z - b.z) < 0.1f * h && Mathf.Abs(a.x) > 0.03f * h)
+                        {
+                            pairs.Add(a.x < b.x ? new[] { i, j } : new[] { j, i });
+                            pairY.Add((a.y + b.y) * 0.5f);
+                        }
+                    }
+                var order = Enumerable.Range(0, pairs.Count).OrderBy(k => pairY[k]).ToList();
+                int[] feet = null, upper = null, fore = null;
+                int np = order.Count;
+                if (np >= 3)
+                {
+                    feet = pairs[order[0]];
+                    upper = pairs[order[np - 1]];
+                    fore = pairs[order[np - 2]];
+                }
+                else if (np == 2)
+                {
+                    if (pairY[order[1]] < 0.5f * h)
+                        feet = pairs[order[0]];
+                    else
+                    {
+                        upper = pairs[order[1]];
+                        fore = pairs[order[0]];
+                    }
+                }
+                else if (np == 1)
+                {
+                    if (pairY[order[0]] < 0.5f * h)
+                        feet = pairs[order[0]];
+                    else
+                        upper = pairs[order[0]];
+                }
+                if (upper != null)
+                {
+                    rw.upperArms = new[] { kids[upper[0]].name, kids[upper[1]].name };
+                    if (fore != null)
+                        rw.forearms = new[] { kids[fore[0]].name, kids[fore[1]].name };
+                }
+                if (feet == null || clips.Count == 0)
+                {
+                    rw.family += " (" + (np == 0 ? "no pair" : "no leg pair") + ")";
+                    Count(rw.family);
+                    return rw;
+                }
+
+                // Sample every clip for the feet swinging in anti-phase.
+                const int S = 32;
+                var za = new float[S];
+                var zb = new float[S];
+                float bestScore = 0f;
+                AnimationClip pick = null;
+                float pickStride = 0f, pickSteps = 0f;
+                bool pinnedFound = false;
+                foreach (var clip in clips)
+                {
+                    if (clip.length <= 0.01f)
+                        continue;
+                    Vector3 rootMin = Vector3.positiveInfinity, rootMax = Vector3.negativeInfinity;
+                    for (int k = 0; k < S; k++)
+                    {
+                        clip.SampleAnimation(inst, clip.length * k / S);
+                        za[k] = instT.InverseTransformPoint(kids[feet[0]].position).z;
+                        zb[k] = instT.InverseTransformPoint(kids[feet[1]].position).z;
+                        Vector3 r = instT.InverseTransformPoint(rigRoot.position);
+                        rootMin = Vector3.Min(rootMin, r);
+                        rootMax = Vector3.Max(rootMax, r);
+                    }
+                    float amp = za.Max() - za.Min();
+                    float drift = Mathf.Max(rootMax.x - rootMin.x, rootMax.z - rootMin.z);
+                    float score = AntiPhase(za, zb);
+                    int crossings = Crossings(za);
+                    bool walks = score > 1.0f && amp > 0.04f * h && drift < 0.15f * h && crossings >= 2;
+                    if (!walks)
+                        continue;
+                    bool pinned = !string.IsNullOrEmpty(pinnedWalk) &&
+                                  (clip.name == pinnedWalk || clip.name.EndsWith("_" + pinnedWalk));
+                    if (pinned || (!pinnedFound && score > bestScore))
+                    {
+                        bestScore = score;
+                        pick = clip;
+                        pickStride = amp;
+                        pickSteps = crossings / clip.length;
+                        if (pinned)
+                            pinnedFound = true;
+                    }
+                }
+                if (pick != null)
+                {
+                    rw.walkClip = pick.name;
+                    rw.stride = pickStride;
+                    rw.stepsPerSecond = pickSteps;
+                    rw.family += " (walk " + pick.name + ", " + pickStride.ToString("0.00") +
+                                 " m/step, " + pickSteps.ToString("0.0") + " step/s at speed 1)";
+                }
+                else
+                    rw.family += " (legs, but no clip walks)";
+                Count(rw.family);
+                return rw;
+            }
+            finally
+            {
+                Object.DestroyImmediate(inst);
+            }
+        }
+
+        static void Count(string family)
+        {
+            int n;
+            s_rigFamilies.TryGetValue(family, out n);
+            s_rigFamilies[family] = n + 1;
+        }
+
+        /// Correlation of `a` with `b` shifted half a period, minus the
+        /// direct correlation: +2 for a perfect anti-phase pair, 0 for
+        /// unrelated motion, -2 for the two moving together (a sway).
+        static float AntiPhase(float[] a, float[] b)
+        {
+            int n = a.Length, half = n / 2;
+            float ma = a.Average(), mb = b.Average();
+            float na = 0f, nb = 0f, direct = 0f, shifted = 0f;
+            for (int k = 0; k < n; k++)
+            {
+                float da = a[k] - ma, db = b[k] - mb, ds = b[(k + half) % n] - mb;
+                na += da * da;
+                nb += db * db;
+                direct += da * db;
+                shifted += da * ds;
+            }
+            if (na < 1e-8f || nb < 1e-8f)
+                return 0f;
+            float norm = Mathf.Sqrt(na * nb);
+            return shifted / norm - direct / norm;
+        }
+
+        /// Zero crossings of the mean-removed series over one cyclic pass -
+        /// two per stride cycle, i.e. one per step. With hysteresis: a
+        /// crossing counts only once the series has gone a fifth of its
+        /// amplitude past the mean, so a foot dwelling near the mean does
+        /// not read as several steps (the same clip measured 1 and 3
+        /// steps per second on two rigs without it).
+        static int Crossings(float[] a)
+        {
+            float m = a.Average();
+            float th = 0.2f * (a.Max() - a.Min());
+            if (th <= 1e-6f)
+                return 0;
+            int n = a.Length;
+            // Start from the sample furthest from the mean, so the pass
+            // begins in a definite state.
+            int start = 0;
+            for (int k = 1; k < n; k++)
+                if (Mathf.Abs(a[k] - m) > Mathf.Abs(a[start] - m))
+                    start = k;
+            int state = a[start] - m > 0f ? 1 : -1;
+            int c = 0;
+            for (int i = 1; i <= n; i++)
+            {
+                float v = a[(start + i) % n] - m;
+                if (state < 0 && v > th)
+                {
+                    state = 1;
+                    c++;
+                }
+                else if (state > 0 && v < -th)
+                {
+                    state = -1;
+                    c++;
+                }
+            }
+            return c;
+        }
+
+        static Transform[] FindNodes(Transform npc, string[] names)
+        {
+            var all = npc.GetComponentsInChildren<Transform>(true);
+            var outT = new Transform[names.Length];
+            for (int i = 0; i < names.Length; i++)
+                foreach (var t in all)
+                    if (t.name == names[i])
+                    {
+                        outT[i] = t;
+                        break;
+                    }
+            return outT;
+        }
+
         /// Two-state idle/walk Animator for the rigs that carry a measured
-        /// walk cycle. The walk clip is a rig-FAMILY property (the humanoid
-        /// family's `record_36`: legs anti-phase at exactly half a period,
-        /// arms contralateral, head and torso amplitude zero, body centroid
-        /// fixed in x - a stride in place); rigs without it keep their
-        /// single looping spawn clip, which is why this returns quietly.
+        /// walk cycle (see MeasureRig - the humanoid family's `record_36`:
+        /// legs anti-phase at exactly half a period, arms contralateral,
+        /// head and torso amplitude zero, body centroid fixed in x - a
+        /// stride in place). `stride` / `stepsPerSecond` are what the
+        /// controller scales the Animator by so the feet keep pace.
         static bool WireWalkAnimator(GameObject npc, string glbPath,
-            string idleClipName, string walkClipName, string genDir)
+            string idleClipName, string walkClipName, string genDir,
+            float stride = 0f, float stepsPerSecond = 0f)
         {
             if (string.IsNullOrEmpty(idleClipName) || string.IsNullOrEmpty(walkClipName))
                 return false;
@@ -2329,6 +2647,8 @@ namespace LegaiaWorld
                 LegaiaWorldBuilder.SetUdonField(comp, "locoAnimator", animator);
                 LegaiaWorldBuilder.SetUdonField(comp, "idleState", "idle");
                 LegaiaWorldBuilder.SetUdonField(comp, "walkState", "walk");
+                LegaiaWorldBuilder.SetUdonField(comp, "walkStride", stride);
+                LegaiaWorldBuilder.SetUdonField(comp, "walkStepsPerSecond", stepsPerSecond);
                 LegaiaWorldBuilder.SyncUdonProxy(comp);
             }
             return true;
