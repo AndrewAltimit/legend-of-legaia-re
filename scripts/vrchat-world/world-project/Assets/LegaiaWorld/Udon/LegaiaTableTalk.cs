@@ -11,10 +11,15 @@
 // hunters, Seru, Biron Monastery up the road, Hunter's Spring), with a
 // villager's name in front of it (LegaiaLivingTown names the villagers).
 //
-// Two characters get their own voice. VAHN never speaks in retail - the
+// Three characters get their own voice. VAHN never speaks in retail - the
 // player picks his answers - so his lines are stage directions ("*Vahn
 // nods.*") and never a quoted word. NOA was raised by the wolf Terra in
-// Snowdrift Cave, speaks in bursts, and calls herself Noa. And the
+// Snowdrift Cave, speaks in bursts, and calls herself Noa. CARA is Rim
+// Elm's bold hunter-type girl, and the card table's night game is HERS:
+// she deals it, she posts the four rules on the board beside the table
+// (deal five, best hand wins, no cheating, have fun), and she talks like
+// somebody who would rather be out at the treeline - short, dry, sure of
+// herself, never a shopkeeper's patter. And the
 // villagers notice them: when either sits at the table the others get
 // a pool of lines ABOUT them (Val's boy, the wolf girl), which is what
 // makes the pair feel like they belong to the town rather than to a
@@ -52,10 +57,15 @@ namespace LegaiaWorld
         public const int T_IDLE = 9;     // between hands
         public const int T_PLAYER = 10;  // a real player sat down
         public const int T_LEAVE = 11;   // a villager stands up
-        public const int KIND_COUNT = 12;
+        public const int T_FLOP = 12;    // hold'em: the three come over
+        public const int T_TURN = 13;    // hold'em: the fourth
+        public const int T_RIVER = 14;   // hold'em: the fifth
+        public const int T_BADBEAT = 15; // showed a made hand and still lost
+        public const int T_NIGHT = 16;   // Cara opens her poker night
+        public const int KIND_COUNT = 17;
 
-        [Tooltip("Longest line the panel can hold (characters); longer pool entries are still shown, this only bounds the checks).")]
-        public int maxLength = 120;
+        [Tooltip("Longest line a seat's panel row can hold (characters); longer pool entries are still shown, this only bounds the checks).")]
+        public int maxLength = 104;
 
         // --- villagers ----------------------------------------------------------
 
@@ -70,7 +80,7 @@ namespace LegaiaWorld
         };
         private string[] deal =
         {
-            "Five cards. Let's see what the tree gave me.",
+            "Cards out. Let's see what the tree gave me.",
             "Hm. Could be worse. Could be a Seru.",
             "Don't look at my hand, the Mist isn't THAT thick.",
             "Come on, come on... one good pair.",
@@ -154,6 +164,38 @@ namespace LegaiaWorld
             "I'm off. My supper's getting cold.",
             "Enough for me. Good hands, all.",
             "Off to check the wall. Deal me in tomorrow.",
+        };
+        private string[] flop =
+        {
+            "Three at once. Now we'll see who was bluffing.",
+            "Ohh. That helps somebody. Not me.",
+            "Look at that middle card. Somebody just woke up.",
+            "Three on the felt and my hand got no better.",
+        };
+        private string[] turn =
+        {
+            "One more. Come on, be kind.",
+            "That card changes everything. For someone.",
+            "Fourth one down. Anybody still breathing?",
+        };
+        private string[] river =
+        {
+            "Last card. No more excuses after this.",
+            "There it is. Live or die on that one.",
+            "The river gives and the river takes. Mostly takes.",
+        };
+        private string[] badbeat =
+        {
+            "I had it! I HAD it, right up to the last card!",
+            "You beat THAT? With THAT? Deal again, quickly.",
+            "A good hand and it still loses. That's the Mist for you.",
+            "I'll be thinking about that one all winter.",
+        };
+        private string[] night =
+        {
+            "Cara's rules tonight - five cards, best hand, no cheating.",
+            "Night game, then. Five each and no swapping.",
+            "Five cards and one round. Cara's way. Fine by me.",
         };
 
         // What the villagers say about the two heroes when they are at the
@@ -246,6 +288,31 @@ namespace LegaiaWorld
         {
             "*Vahn stands and goes, the way he came.*",
         };
+        private string[] vahnFlop =
+        {
+            "*Vahn looks at the three cards, then at everyone else's faces.*",
+            "*The flop lands. Vahn does not move at all.*",
+        };
+        private string[] vahnTurn =
+        {
+            "*Vahn watches the fourth card turn and taps the felt once.*",
+            "*Vahn's eyes go to the board, then back down. Nothing given away.*",
+        };
+        private string[] vahnRiver =
+        {
+            "*The last card turns. Vahn is already looking at the pot.*",
+            "*Vahn reads the river and lets out a breath nobody hears.*",
+        };
+        private string[] vahnBadbeat =
+        {
+            "*Vahn turns over a hand that should have won, and lets it go.*",
+            "*Vahn looks a long moment at the board, then pushes his cards away.*",
+        };
+        private string[] vahnNight =
+        {
+            "*Vahn nods at the rules on the board and takes his five.*",
+            "*Night game. Vahn settles in without a word, as usual.*",
+        };
 
         // --- Noa: quick, loud, raised by a wolf --------------------------------
 
@@ -257,7 +324,7 @@ namespace LegaiaWorld
         };
         private string[] noaDeal =
         {
-            "Five! Noa has five! Is five good?",
+            "Cards! Noa has cards! Are they good ones?",
             "These are prettier than the ones at the cave. Noa had rocks.",
             "Noa smells a good hand. Noa can smell things.",
         };
@@ -311,6 +378,129 @@ namespace LegaiaWorld
         {
             "Noa is going. Noa smells fish!",
         };
+        private string[] noaFlop =
+        {
+            "Three more! Are those Noa's too? No? Whose are they?",
+            "Everyone gets those? That is a strange way to hunt.",
+        };
+        private string[] noaTurn =
+        {
+            "Another one! Noa likes this game. So many cards.",
+            "Four. Noa counted. Noa can count to four easily.",
+        };
+        private string[] noaRiver =
+        {
+            "Last one! Terra said the last step matters most.",
+            "That is all of them? Noa wanted more.",
+        };
+        private string[] noaBadbeat =
+        {
+            "Noa had the good one! The good one lost! How?",
+            "Terra never warned Noa about this. Noa is telling Terra.",
+        };
+        private string[] noaNight =
+        {
+            "Night cards! Noa knows this one. Five, and the best wins.",
+            "Noa likes night. Noa sees better than all of you anyway.",
+        };
+
+        // --- Cara: Rim Elm's hunter girl, and the night game is hers ------------
+
+        private string[] caraSit =
+        {
+            "Shove up. I've been on my feet since the treeline.",
+            "One seat, one hand, and I'll take somebody's coins.",
+            "Room? Good. I don't ask twice.",
+        };
+        private string[] caraDeal =
+        {
+            "Cards out. Nobody peek, I'm watching all four of you.",
+            "Right. Let's see who came to play and who came to sit.",
+            "Fine hand. Or it will be by the end. Watch.",
+        };
+        private string[] caraRaise =
+        {
+            "Raise. You can fold now or fold later, up to you.",
+            "Two more. I've tracked worse odds up the mountain.",
+            "Up it goes. Don't look so wounded.",
+        };
+        private string[] caraCall =
+        {
+            "Call. I want to see this through.",
+            "Matched. Go on then.",
+            "I'll pay to look. I usually do.",
+        };
+        private string[] caraFold =
+        {
+            "Out. Even a good hunter walks away from a bad trail.",
+            "Not this one. Take it and be smug quietly.",
+            "Fold. I've wasted arrows on worse.",
+        };
+        private string[] caraWin =
+        {
+            "Mine. Told you I don't miss twice.",
+            "That's the pot and the last word. Deal again.",
+            "Ha! Somebody get the Elder, I'm buying.",
+        };
+        private string[] caraLose =
+        {
+            "Hmph. Fine. That one was yours.",
+            "Take it. I'll have it back before the torches go out.",
+            "Beaten. Say one word about it and you're on the wall watch.",
+        };
+        private string[] caraBust =
+        {
+            "Over. Serves me right for being greedy.",
+            "One card too many. I never learn.",
+        };
+        private string[] caraNatural =
+        {
+            "Twenty-one, first look. Some of us are just quick.",
+            "Straight off the deal. Don't hate me.",
+        };
+        private string[] caraIdle =
+        {
+            "Quiet out there tonight. Too quiet, if you ask me.",
+            "I set snares on the north path. Nobody touch them.",
+            "Sitting still is the hardest hunting there is.",
+            "If the torches burn out we play by the moon. I don't mind.",
+        };
+        private string[] caraPlayer =
+        {
+            "New face. Good. The others had stopped being interesting.",
+            "Sit down then. I'll go easy for one hand. One.",
+        };
+        private string[] caraLeave =
+        {
+            "That's me. Dawn comes early and the deer don't wait.",
+            "Enough. Somebody rack the stools.",
+        };
+        private string[] caraFlop =
+        {
+            "Three down the middle. Now you all get honest.",
+            "There's the flop. Somebody just found their nerve.",
+        };
+        private string[] caraTurn =
+        {
+            "Fourth card. Still time to run, if you're the running sort.",
+            "That one's interesting. Interesting for me, anyway.",
+        };
+        private string[] caraRiver =
+        {
+            "Last card. No more hiding behind it.",
+            "River's out. Show me what you came with.",
+        };
+        private string[] caraBadbeat =
+        {
+            "I had that won two cards ago. Two!",
+            "Beaten on the last card. I'd rather be gored.",
+        };
+        private string[] caraNight =
+        {
+            "My night, my rules: five cards, best hand, no cheating, have fun.",
+            "Cara's poker night. Five each, one round, and I'll know if you cheat.",
+            "Read the board: deal five, best hand takes it, play straight, enjoy it.",
+        };
 
         private int[] lastPick;
 
@@ -350,6 +540,8 @@ namespace LegaiaWorld
                 pool = VahnPool(kind);
             else if (who == "noa")
                 pool = NoaPool(kind);
+            else if (who == "cara")
+                pool = CaraPool(kind);
             if (pool == null)
             {
                 // A villager: every other sit / deal / idle line while a
@@ -428,6 +620,11 @@ namespace LegaiaWorld
                 case T_IDLE: return idle;
                 case T_PLAYER: return player;
                 case T_LEAVE: return leave;
+                case T_FLOP: return flop;
+                case T_TURN: return turn;
+                case T_RIVER: return river;
+                case T_BADBEAT: return badbeat;
+                case T_NIGHT: return night;
             }
             return null;
         }
@@ -448,6 +645,11 @@ namespace LegaiaWorld
                 case T_IDLE: return vahnIdle;
                 case T_PLAYER: return vahnPlayer;
                 case T_LEAVE: return vahnLeave;
+                case T_FLOP: return vahnFlop;
+                case T_TURN: return vahnTurn;
+                case T_RIVER: return vahnRiver;
+                case T_BADBEAT: return vahnBadbeat;
+                case T_NIGHT: return vahnNight;
             }
             return null;
         }
@@ -468,6 +670,36 @@ namespace LegaiaWorld
                 case T_IDLE: return noaIdle;
                 case T_PLAYER: return noaPlayer;
                 case T_LEAVE: return noaLeave;
+                case T_FLOP: return noaFlop;
+                case T_TURN: return noaTurn;
+                case T_RIVER: return noaRiver;
+                case T_BADBEAT: return noaBadbeat;
+                case T_NIGHT: return noaNight;
+            }
+            return null;
+        }
+
+        string[] CaraPool(int kind)
+        {
+            switch (kind)
+            {
+                case T_SIT: return caraSit;
+                case T_DEAL: return caraDeal;
+                case T_RAISE: return caraRaise;
+                case T_CALL: return caraCall;
+                case T_FOLD: return caraFold;
+                case T_WIN: return caraWin;
+                case T_LOSE: return caraLose;
+                case T_BUST: return caraBust;
+                case T_NATURAL: return caraNatural;
+                case T_IDLE: return caraIdle;
+                case T_PLAYER: return caraPlayer;
+                case T_LEAVE: return caraLeave;
+                case T_FLOP: return caraFlop;
+                case T_TURN: return caraTurn;
+                case T_RIVER: return caraRiver;
+                case T_BADBEAT: return caraBadbeat;
+                case T_NIGHT: return caraNight;
             }
             return null;
         }
@@ -482,6 +714,7 @@ namespace LegaiaWorld
                 best = Mathf.Max(best, Longest(VillagerPool(k)));
                 best = Mathf.Max(best, Longest(VahnPool(k)));
                 best = Mathf.Max(best, Longest(NoaPool(k)));
+                best = Mathf.Max(best, Longest(CaraPool(k)));
             }
             best = Mathf.Max(best, Longest(aboutVahn));
             best = Mathf.Max(best, Longest(aboutNoa));

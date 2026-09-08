@@ -11,10 +11,22 @@
 //
 // FELT FURNITURE. Each stool gets a `hand_anchor` on the felt in front of
 // it - an empty whose +Z points at the table centre and whose +X is the
-// tangent, so the dealer fans five cards along it - and the table gets a
-// `dealer_anchor` for the blackjack dealer's own row. Nothing is parented
-// to the cards: they are ordinary pickups and the game only ever writes
-// their position.
+// tangent, so the dealer fans a seat's cards along it - and the table
+// gets a `dealer_anchor` for the blackjack dealer's own row plus
+// `community_anchor_0..4`, the five board spots in a row across the
+// middle of the felt (hold'em). The two rows are kept apart in Z so a
+// blackjack hand and a board never share a card's footprint. Nothing is
+// parented to the cards: they are ordinary pickups and the game only
+// ever writes their position.
+//
+// THE PANEL'S BLOCKS follow the game. Hold'em has no draw, so the five
+// hold buttons and Draw are gone; what stands in their place is the
+// board (the community cards as text, red suits tinted through rich
+// text), the local seat's best hand named, and the pot. And each seat
+// row is tall enough to carry that seat's own speech line under its
+// name - the villagers' talk used to be one italic block at the bottom
+// of the panel, which read as a chat log rather than as four people at
+// a table.
 //
 // THE PANEL is a world-space UI canvas on a post beside the table, read
 // from OUTSIDE the table - the same construction as the camp settings
@@ -96,6 +108,19 @@ namespace LegaiaWorld
             var dealer = new GameObject("dealer_anchor");
             dealer.transform.SetParent(tableRoot.transform, false);
             dealer.transform.localPosition = new Vector3(0f, 0.767f, 0.22f);
+
+            // The board: five spots in a row across the middle of the
+            // felt, clear of the blackjack dealer's row above it and of
+            // every hand anchor (those sit at radius 0.5).
+            var community = new Transform[5];
+            for (int i = 0; i < 5; i++)
+            {
+                var a = new GameObject("community_anchor_" + i);
+                a.transform.SetParent(tableRoot.transform, false);
+                a.transform.localPosition =
+                    new Vector3((i - 2) * 0.085f, 0.767f, -0.06f);
+                community[i] = a.transform;
+            }
             var stack = tableRoot.transform.Find("deck_anchor");
 
             var panel = BuildPanel(tableRoot, genDir, spawnW, game, seats);
@@ -112,6 +137,7 @@ namespace LegaiaWorld
                 Typed(cards, "LegaiaCard"));
             LegaiaWorldBuilder.SetUdonField(game, "handAnchors", handAnchors);
             LegaiaWorldBuilder.SetUdonField(game, "dealerAnchor", dealer.transform);
+            LegaiaWorldBuilder.SetUdonField(game, "communityAnchors", community);
             LegaiaWorldBuilder.SetUdonField(game, "stackAnchor", stack);
             if (talk != null)
                 LegaiaWorldBuilder.SetUdonField(game, "talk", talk);
@@ -214,93 +240,115 @@ namespace LegaiaWorld
             var backing = LegaiaCommonPrefabs.BackingUdon(game);
             Transform c = canvasGo.transform;
 
-            Label(c, font, "title", "CARD TABLE", 30, new Vector2(0f, 352f),
-                new Vector2(520f, 44f), new Color(1f, 0.9f, 0.7f), TextAnchor.MiddleCenter);
-            w["modeText"] = Label(c, font, "mode", "Five-card draw", 22,
-                new Vector2(0f, 312f), new Vector2(520f, 34f),
+            Label(c, font, "title", "CARD TABLE", 28, new Vector2(0f, 358f),
+                new Vector2(520f, 40f), new Color(1f, 0.9f, 0.7f), TextAnchor.MiddleCenter);
+            w["modeText"] = Label(c, font, "mode", "Texas hold'em", 21,
+                new Vector2(0f, 324f), new Vector2(530f, 32f),
                 new Color(0.85f, 0.85f, 0.8f), TextAnchor.MiddleCenter);
 
+            // One row a seat, tall enough for the seat's own speech line
+            // under the name: portrait | name + quote | coins | status.
             var portraits = new RawImage[seats];
             var names = new Text[seats];
             var coins = new Text[seats];
             var status = new Text[seats];
+            var talk = new Text[seats];
             for (int i = 0; i < seats; i++)
             {
-                float y = 258f - i * 62f;
+                float y = 264f - i * 76f;
+                var strip = new GameObject("row_" + i);
+                strip.transform.SetParent(c, false);
+                var srt = strip.AddComponent<RectTransform>();
+                srt.anchoredPosition = new Vector2(0f, y - 8f);
+                srt.sizeDelta = new Vector2(534f, 70f);
+                var sbg = strip.AddComponent<Image>();
+                sbg.color = new Color(0.11f, 0.1f, 0.09f, 0.55f);
+                sbg.raycastTarget = false;   // decoration never eats a press
+
                 var pic = new GameObject("portrait_" + i);
                 pic.transform.SetParent(c, false);
                 var prt = pic.AddComponent<RectTransform>();
-                prt.anchoredPosition = new Vector2(-240f, y);
-                prt.sizeDelta = new Vector2(52f, 52f);
+                prt.anchoredPosition = new Vector2(-238f, y);
+                prt.sizeDelta = new Vector2(48f, 48f);
                 portraits[i] = pic.AddComponent<RawImage>();
                 portraits[i].color = new Color(0.45f, 0.55f, 0.75f, 1f);
                 portraits[i].enabled = false;
 
                 names[i] = Label(c, font, "name_" + i, "-", 20,
-                    new Vector2(-100f, y), new Vector2(200f, 44f),
+                    new Vector2(-104f, y + 12f), new Vector2(196f, 30f),
                     new Color(0.95f, 0.92f, 0.85f), TextAnchor.MiddleLeft);
                 coins[i] = Label(c, font, "coins_" + i, "", 20,
-                    new Vector2(50f, y), new Vector2(70f, 44f),
+                    new Vector2(50f, y + 12f), new Vector2(70f, 30f),
                     new Color(0.95f, 0.85f, 0.4f), TextAnchor.MiddleRight);
-                status[i] = Label(c, font, "status_" + i, "Empty", 18,
-                    new Vector2(185f, y), new Vector2(170f, 44f),
+                status[i] = Label(c, font, "status_" + i, "Empty", 17,
+                    new Vector2(186f, y + 12f), new Vector2(168f, 30f),
                     new Color(0.75f, 0.8f, 0.85f), TextAnchor.MiddleLeft);
+
+                // The speech line: bright, upright, wrapping across the
+                // whole row under the name. Truncated rather than allowed
+                // to bleed into the seat below.
+                talk[i] = Label(c, font, "talk_" + i, "", 16,
+                    new Vector2(24f, y - 20f), new Vector2(470f, 36f),
+                    new Color(1f, 0.97f, 0.88f), TextAnchor.UpperLeft);
+                talk[i].horizontalOverflow = HorizontalWrapMode.Wrap;
+                talk[i].verticalOverflow = VerticalWrapMode.Truncate;
             }
             w["rowPortrait"] = portraits;
             w["rowName"] = names;
             w["rowCoins"] = coins;
             w["rowStatus"] = status;
+            w["rowTalk"] = talk;
 
-            w["potText"] = Label(c, font, "pot", "Pot 0", 24, new Vector2(0f, 22f),
-                new Vector2(520f, 34f), new Color(0.95f, 0.85f, 0.4f),
-                TextAnchor.MiddleCenter);
-            w["msgText"] = Label(c, font, "msg", "", 20, new Vector2(0f, -14f),
-                new Vector2(520f, 34f), new Color(0.9f, 0.9f, 0.85f),
+            // The board block, where the hold buttons used to be.
+            var boardBg = new GameObject("board_bg");
+            boardBg.transform.SetParent(c, false);
+            var brt = boardBg.AddComponent<RectTransform>();
+            brt.anchoredPosition = new Vector2(0f, -48f);
+            brt.sizeDelta = new Vector2(534f, 108f);
+            var bbg = boardBg.AddComponent<Image>();
+            bbg.color = new Color(0.09f, 0.13f, 0.1f, 0.7f);
+            bbg.raycastTarget = false;
+
+            w["communityText"] = Label(c, font, "community", "", 30,
+                new Vector2(0f, -24f), new Vector2(520f, 42f),
+                new Color(0.96f, 0.94f, 0.88f), TextAnchor.MiddleCenter);
+            w["handText"] = Label(c, font, "hand", "", 19,
+                new Vector2(-8f, -62f), new Vector2(400f, 30f),
+                new Color(0.8f, 0.88f, 0.78f), TextAnchor.MiddleLeft);
+            w["potText"] = Label(c, font, "pot", "Pot 0", 23,
+                new Vector2(0f, -62f), new Vector2(520f, 30f),
+                new Color(0.95f, 0.85f, 0.4f), TextAnchor.MiddleRight);
+            w["msgText"] = Label(c, font, "msg", "", 20, new Vector2(0f, -116f),
+                new Vector2(530f, 32f), new Color(0.9f, 0.9f, 0.85f),
                 TextAnchor.MiddleCenter);
 
             Text dealLabel, callLabel, raiseLabel;
             w["btnDeal"] = Btn(c, font, backing, "UiDeal", "Deal",
-                new Vector2(-140f, -60f), new Vector2(260f, 52f), out dealLabel);
+                new Vector2(-140f, -164f), new Vector2(260f, 52f), out dealLabel);
             w["btnDealText"] = dealLabel;
             w["btnMode"] = Btn(c, font, backing, "UiMode", "Mode",
-                new Vector2(140f, -60f), new Vector2(260f, 52f), out _);
+                new Vector2(140f, -164f), new Vector2(260f, 52f), out _);
             w["btnCall"] = Btn(c, font, backing, "UiCall", "Check",
-                new Vector2(-186f, -122f), new Vector2(176f, 52f), out callLabel);
+                new Vector2(-186f, -226f), new Vector2(176f, 52f), out callLabel);
             w["btnCallText"] = callLabel;
             w["btnRaise"] = Btn(c, font, backing, "UiRaise", "Bet",
-                new Vector2(0f, -122f), new Vector2(176f, 52f), out raiseLabel);
+                new Vector2(0f, -226f), new Vector2(176f, 52f), out raiseLabel);
             w["btnRaiseText"] = raiseLabel;
             w["btnFold"] = Btn(c, font, backing, "UiFold", "Fold",
-                new Vector2(186f, -122f), new Vector2(176f, 52f), out _);
-
-            var holds = new Button[5];
-            var holdText = new Text[5];
-            for (int i = 0; i < 5; i++)
-                holds[i] = Btn(c, font, backing, "UiHold" + i, "-",
-                    new Vector2(-216f + i * 108f, -192f), new Vector2(100f, 62f),
-                    out holdText[i], 18);
-            w["btnHold"] = holds;
-            w["btnHoldText"] = holdText;
-
-            w["btnDraw"] = Btn(c, font, backing, "UiDraw", "Draw",
-                new Vector2(-186f, -262f), new Vector2(176f, 52f), out _);
+                new Vector2(186f, -226f), new Vector2(176f, 52f), out _);
             w["btnHit"] = Btn(c, font, backing, "UiHit", "Hit",
-                new Vector2(0f, -262f), new Vector2(176f, 52f), out _);
+                new Vector2(-93f, -288f), new Vector2(176f, 52f), out _);
             w["btnStand"] = Btn(c, font, backing, "UiStand", "Stand",
-                new Vector2(186f, -262f), new Vector2(176f, 52f), out _);
-
-            // Table talk: the villagers' lines, two at most, newest first.
-            var talkText = Label(c, font, "talk", "", 17,
-                new Vector2(0f, -318f), new Vector2(516f, 66f),
-                new Color(0.88f, 0.84f, 0.72f), TextAnchor.UpperLeft);
-            talkText.horizontalOverflow = HorizontalWrapMode.Wrap;
-            talkText.fontStyle = FontStyle.Italic;
-            w["talkText"] = talkText;
+                new Vector2(93f, -288f), new Vector2(176f, 52f), out _);
 
             Label(c, font, "hint",
                 "Sit on a stool to play - bets come from your coin purse.", 15,
-                new Vector2(0f, -370f), new Vector2(520f, 28f),
+                new Vector2(0f, -338f), new Vector2(520f, 26f),
                 new Color(0.65f, 0.63f, 0.58f), TextAnchor.MiddleCenter);
+            Label(c, font, "hint2",
+                "By day: hold'em. After dusk: Cara's poker night.", 15,
+                new Vector2(0f, -362f), new Vector2(520f, 26f),
+                new Color(0.6f, 0.58f, 0.54f), TextAnchor.MiddleCenter);
             return w;
         }
 

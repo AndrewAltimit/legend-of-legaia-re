@@ -7,20 +7,23 @@
 //
 //   Builds the common prefabs on the scene's built root, asserts the
 //   `game` child stands under card_table with every field wired on its
-//   BACKING behaviour (the U# proxy is not what runs in-world), renders a
+//   BACKING behaviour (the U# proxy is not what runs in-world) and the
+//   five community anchors stand clear across the felt, renders a
 //   portrait for every villager in the scene and asserts each brain got
-//   one, and then drives the poker evaluator and the blackjack settlement
-//   as plain C# on a throwaway GameObject - the U# proxy is an ordinary
-//   MonoBehaviour in the editor, so its rules are directly callable with
-//   no Udon runtime and no networking (the same trick LegaiaSlotTools
-//   uses for the slot machine's parity fixture). An off-by-one in a
-//   kicker or a 3:2 rounding slip compiles fine and would otherwise only
-//   show up as somebody quietly losing coins.
+//   one, and then drives the poker evaluator, the best-of-seven wrapper,
+//   the day/night rules switch and the blackjack settlement as plain C#
+//   on a throwaway GameObject - the U# proxy is an ordinary MonoBehaviour
+//   in the editor, so its rules are directly callable with no Udon
+//   runtime and no networking (the same trick LegaiaSlotTools uses for
+//   the slot machine's parity fixture). An off-by-one in a kicker or a
+//   3:2 rounding slip compiles fine and would otherwise only show up as
+//   somebody quietly losing coins.
 //
 //   Soak  (play mode - NO -quit; it exits itself)
 //     Unity.exe -batchmode -nographics -projectPath <copy>
 //         -executeMethod LegaiaWorld.LegaiaCardGameChecks.Soak
 //         [-legaiaCardSeconds 150] [-legaiaCardScale 2]
+//         [-legaiaCardNight 1]
 //         [-legaiaScene Assets/Scenes/<scene>.unity] -logFile <log>
 //
 //   Enters play mode with nobody at the table and lets the villagers play
@@ -29,9 +32,19 @@
 //   only simulation" and runs the dealer side). It samples the game's
 //   BACKING behaviour every frame and asserts: hands actually complete,
 //   every stool was sat in at some point, the pot is exactly what the
-//   seats paid in and exactly what the winners took out, and no villager
-//   ever goes chip-negative. Exits 0 pass / 1 assertion / 3 play mode
-//   never started / 4 watchdog, like LegaiaSoak.
+//   seats paid in and exactly what the winners took out, no villager ever
+//   goes chip-negative, a folded seat holds no card at all, and every
+//   seat that reached a contested showdown has its cards face up on the
+//   FELT (read a beat later, so an animated flip has landed). Exits 0
+//   pass / 1 assertion / 3 play mode never started / 4 watchdog, like
+//   LegaiaSoak.
+//
+//   `-legaiaCardNight 1` runs the same soak under Cara's night rules and
+//   asserts the mirror image: no community card is ever turned over, and
+//   the table stays on poker (the blackjack half-way switch is a daytime
+//   thing). It forces the GAME's `rulesOverride`, not the clock - see
+//   Init for why moving the clock to night would empty the stools and
+//   turn this into a test of the hour.
 
 using System.Collections.Generic;
 using System.Globalization;
@@ -245,12 +258,14 @@ namespace LegaiaWorld
             CheckArray(proxy, backing, "rowName", 4);
             CheckArray(proxy, backing, "rowCoins", 4);
             CheckArray(proxy, backing, "rowStatus", 4);
-            CheckArray(proxy, backing, "btnHold", 5);
-            CheckArray(proxy, backing, "btnHoldText", 5);
+            CheckArray(proxy, backing, "rowTalk", 4);
+            // The board: five spots across the middle of the felt.
+            CheckArray(proxy, backing, "communityAnchors", 5);
             foreach (string b in new[] { "btnDeal", "btnMode", "btnCall", "btnRaise",
-                                         "btnFold", "btnDraw", "btnHit", "btnStand" })
+                                         "btnFold", "btnHit", "btnStand" })
                 CheckRef(proxy, backing, b);
-            foreach (string t in new[] { "modeText", "potText", "msgText", "talkText",
+            foreach (string t in new[] { "modeText", "potText", "msgText",
+                                         "communityText", "handText",
                                          "btnCallText", "btnRaiseText", "btnDealText",
                                          "talk" })
                 CheckRef(proxy, backing, t);
@@ -274,9 +289,11 @@ namespace LegaiaWorld
                         wired++;
                 }
             }
-            if (wired < 13)
-                Fail("only " + wired + " panel button(s) wired into the game " +
-                     "behaviour, expected 13");
+            // Deal / Mode / Check-Call / Bet-Raise / Fold / Hit / Stand. The
+            // five hold buttons and Draw went with five-card draw.
+            if (wired != 7)
+                Fail(wired + " panel button(s) wired into the game behaviour, " +
+                     "expected 7");
 
             var shape = LegaiaWorldBuilder.FindType("VRC.SDK3.Components.VRCUiShape");
             if (shape != null &&
@@ -359,7 +376,10 @@ namespace LegaiaWorld
             CheckPortraits(root, sceneName);
             CheckNames(root);
             CheckTalk(game.gameObject);
+            CheckAnchors(table);
             CheckPoker();
+            CheckHoldem();
+            CheckRules();
             CheckBlackjack();
             Debug.Log("[Legaia] CARDS: seat panel wired (" + wired +
                 " buttons), evaluator and settlement cases pass.");
@@ -473,7 +493,38 @@ namespace LegaiaWorld
                 string noa = talk.Compose(k, "Noa", "", k * 7 + 3);
                 if (!noa.StartsWith("Noa: ") || noa.IndexOf("Noa", 5) < 0)
                     Fail("talk: Noa kind " + k + " composed '" + noa + "'");
+                string cara = talk.Compose(k, "Cara", "", k * 11 + 5);
+                if (!cara.StartsWith("Cara: ") || cara.Length < 14)
+                    Fail("talk: Cara kind " + k + " composed '" + cara + "'");
             }
+            // Her voice is HERS: no line of Cara's is a line any other
+            // villager can say (a missing pool would silently fall back).
+            for (int k = 0; k < LegaiaTableTalk.KIND_COUNT; k++)
+            {
+                var villagerLines = new HashSet<string>();
+                for (int salt = 0; salt < 48; salt++)
+                    villagerLines.Add(talk.Compose(k, "Bram", "", salt).Substring(6));
+                for (int salt = 0; salt < 48; salt++)
+                {
+                    string line = talk.Compose(k, "Cara", "", salt).Substring(6);
+                    if (villagerLines.Contains(line))
+                        Fail("talk: Cara kind " + k + " fell back to the villager " +
+                             "pool ('" + line + "')");
+                }
+            }
+            // Cara's night opener has to be the rules on her poster.
+            bool caraRules = false;
+            for (int salt = 0; salt < 32; salt++)
+            {
+                string line = talk.Compose(LegaiaTableTalk.T_NIGHT, "Cara", "", salt);
+                string low = line.ToLower();
+                if (low.Contains("five") && (low.Contains("best hand") ||
+                        low.Contains("cheat")))
+                    caraRules = true;
+            }
+            if (!caraRules)
+                Fail("talk: Cara never opens her poker night with the rules " +
+                     "(five cards / best hand / no cheating)");
             bool aboutVahn = false, aboutNoa = false, aboutBoth = false;
             for (int salt = 0; salt < 64; salt += 2)
             {
@@ -499,7 +550,7 @@ namespace LegaiaWorld
                 prev = line;
             }
             Debug.Log("[Legaia] CARDS: table talk composes for " +
-                LegaiaTableTalk.KIND_COUNT + " kinds x 3 voices, longest line " +
+                LegaiaTableTalk.KIND_COUNT + " kinds x 4 voices, longest line " +
                 longest + " chars; e.g. '" +
                 talk.Compose(LegaiaTableTalk.T_SIT, "Rena", "vahn", 4) + "'");
         }
@@ -513,6 +564,210 @@ namespace LegaiaWorld
         const int S = 0, H = 1, D = 2, C = 3;
 
         static int Card(int rank, int suit) { return rank + 13 * suit; }
+
+        /// The board stands in the middle of the felt: five spots in a row,
+        /// clear of the blackjack dealer's row and of every seat's fan, and
+        /// all at the felt height the cards are dealt onto.
+        static void CheckAnchors(Transform table)
+        {
+            var seen = new List<Transform>();
+            for (int i = 0; i < 5; i++)
+            {
+                var a = table.Find("community_anchor_" + i);
+                if (a == null)
+                    Fail("no community_anchor_" + i + " under card_table");
+                seen.Add(a);
+            }
+            var dealer = table.Find("dealer_anchor");
+            if (dealer == null)
+                Fail("no dealer_anchor under card_table");
+            for (int i = 0; i < seen.Count; i++)
+            {
+                if (Mathf.Abs(seen[i].localPosition.y - dealer.localPosition.y) > 1e-3f)
+                    Fail("community_anchor_" + i + " is not at the felt height " +
+                         "(y " + seen[i].localPosition.y + " vs dealer " +
+                         dealer.localPosition.y + ")");
+                Vector3 d = seen[i].position - dealer.position;
+                d.y = 0f;
+                if (d.magnitude < 0.11f)
+                    Fail("community_anchor_" + i + " sits " + d.magnitude.ToString("0.00") +
+                         " m from the blackjack dealer row - the two would " +
+                         "share a card's footprint");
+                for (int k = 0; k < 4; k++)
+                {
+                    var hand = table.Find("hand_anchor_" + k);
+                    if (hand == null)
+                        continue;
+                    Vector3 h = seen[i].position - hand.position;
+                    h.y = 0f;
+                    if (h.magnitude < 0.2f)
+                        Fail("community_anchor_" + i + " is " + h.magnitude.ToString("0.00") +
+                             " m from hand_anchor_" + k);
+                }
+                if (i > 0)
+                {
+                    float gap = (seen[i].position - seen[i - 1].position).magnitude;
+                    if (gap < 0.06f || gap > 0.2f)
+                        Fail("community anchors " + (i - 1) + " and " + i +
+                             " are " + gap.ToString("0.000") + " m apart");
+                }
+            }
+            Debug.Log("[Legaia] CARDS: 5 community anchors in a row across the " +
+                "felt, " + (seen[4].position - seen[0].position).magnitude
+                    .ToString("0.00") + " m end to end.");
+        }
+
+        /// Hold'em: the best five out of seven. `Eval5` stays the exact
+        /// evaluator (CheckPoker pins it card for card) and `BestOfSeven`
+        /// is only allowed to pick the best combination out of what it is
+        /// handed - never to invent a better score than one of them.
+        static void CheckHoldem()
+        {
+            var go = new GameObject("~legaia-card-holdem");
+            go.hideFlags = HideFlags.HideAndDontSave;
+            int cases = 0;
+            try
+            {
+                var g = go.AddComponent<LegaiaCardGame>();
+                g.suppressSerialization = true;
+
+                // Two hole cards + a board that makes the nut flush only
+                // when one hole card is used.
+                int flush = g.BestOfSeven(Card(A, H), Card(R4, S),
+                    Card(K, H), Card(R9, H), Card(R2, H), Card(R7, H), Card(Q, S));
+                if (flush / 759375 != 5)
+                    Fail("A-high heart flush out of seven scored as category " +
+                         flush / 759375);
+                cases++;
+                if (flush != g.Eval5(Card(A, H), Card(K, H), Card(R9, H),
+                        Card(R7, H), Card(R2, H)))
+                    Fail("the best of seven is not the five-card score of the " +
+                         "five it should have picked");
+                cases++;
+
+                // A full house beats the flush hiding in the same seven.
+                int full = g.BestOfSeven(Card(K, S), Card(K, D),
+                    Card(K, H), Card(R9, H), Card(R2, H), Card(R7, H), Card(R9, S));
+                if (full / 759375 != 6)
+                    Fail("KKK99 out of seven scored as category " + full / 759375);
+                cases += Order("full house > the flush in the same seven", full, flush);
+
+                // Playing the board: two rags with a straight on the felt
+                // must score exactly the board's own hand.
+                int board = g.Eval5(Card(T, S), Card(J, H), Card(Q, D), Card(K, C),
+                    Card(A, S));
+                int rags = g.BestOfSeven(Card(R2, H), Card(R3, D),
+                    Card(T, S), Card(J, H), Card(Q, D), Card(K, C), Card(A, S));
+                if (rags != board)
+                    Fail("two rags on a broadway board did not score the board " +
+                         "itself (" + rags + " vs " + board + ")");
+                cases++;
+
+                // Fewer than five cards is no hand at all - the pre-flop
+                // state every seat is in before the flop turns over.
+                if (g.BestOfSeven(Card(A, S), Card(K, S), -1, -1, -1, -1, -1) != -1)
+                    Fail("two hole cards and no board scored as a hand");
+                cases++;
+                // Exactly five must agree with Eval5 to the digit.
+                if (g.BestOfSeven(Card(A, S), Card(K, S), Card(Q, S), Card(J, S),
+                        Card(T, S), -1, -1) !=
+                    g.Eval5(Card(A, S), Card(K, S), Card(Q, S), Card(J, S), Card(T, S)))
+                    Fail("BestOfSeven over exactly five disagrees with Eval5");
+                cases++;
+                // Six cards: the sixth may only ever help.
+                int six = g.BestOfSeven(Card(A, S), Card(A, H), Card(A, D),
+                    Card(R7, C), Card(R2, S), Card(A, C), -1);
+                if (six / 759375 != 7)
+                    Fail("four aces out of six scored as category " + six / 759375);
+                cases++;
+
+                // Pre-flop strength: the shape every starting-hand chart has.
+                int aces = g.PreflopStrength(Card(A, S), Card(A, H));
+                int deuces = g.PreflopStrength(Card(R2, S), Card(R2, H));
+                int akSuited = g.PreflopStrength(Card(A, S), Card(K, S));
+                int akOff = g.PreflopStrength(Card(A, S), Card(K, H));
+                int ragsPre = g.PreflopStrength(Card(R7, S), Card(R2, H));
+                cases += Order("a pair of aces > a pair of deuces", aces, deuces);
+                cases += Order("a pair of deuces > ace-king offsuit", deuces, akOff);
+                cases += Order("ace-king suited > ace-king offsuit", akSuited, akOff);
+                cases += Order("ace-king offsuit > seven-deuce", akOff, ragsPre);
+                if (aces > 99 || ragsPre < 0)
+                    Fail("pre-flop strength left the 0..99 band (" + aces + " / " +
+                         ragsPre + ")");
+                cases++;
+            }
+            finally
+            {
+                Object.DestroyImmediate(go);
+            }
+            Debug.Log("[Legaia] CARDS: " + cases + " hold'em best-of-seven case(s) pass.");
+        }
+
+        /// The day/night switch: hold'em by day, Cara's five-card night
+        /// game after dusk, decided by the town clock and never by a
+        /// button. A null director (no living town) is day.
+        static void CheckRules()
+        {
+            var go = new GameObject("~legaia-card-rules-clock");
+            go.hideFlags = HideFlags.HideAndDontSave;
+            var clockGo = new GameObject("~legaia-card-clock");
+            clockGo.hideFlags = HideFlags.HideAndDontSave;
+            int cases = 0;
+            try
+            {
+                var g = go.AddComponent<LegaiaCardGame>();
+                g.suppressSerialization = true;
+                g.PollRules();
+                if (g.rules != 0)
+                    Fail("with no town director the table is not on hold'em (rules " +
+                         g.rules + ")");
+                cases++;
+
+                var director = clockGo.AddComponent<LegaiaTownDirector>();
+                var clock = clockGo.AddComponent<LegaiaDayNight>();
+                director.dayNight = clock;
+                g.director = director;
+                clock.isNight = false;
+                g.PollRules();
+                if (g.rules != 0)
+                    Fail("by day the table is not on hold'em (rules " + g.rules + ")");
+                cases++;
+                if (!g.RulesName().Contains("hold"))
+                    Fail("the day mode line reads '" + g.RulesName() + "'");
+                cases++;
+
+                clock.isNight = true;
+                g.PollRules();
+                if (g.rules != 1)
+                    Fail("after dusk the table did not become the night game (rules " +
+                         g.rules + ")");
+                cases++;
+                if (!g.RulesName().Contains("Cara"))
+                    Fail("the night mode line reads '" + g.RulesName() +
+                         "' - it must name Cara's poker night");
+                cases++;
+
+                // The override the soaks drive, and the only way anything
+                // but the clock decides.
+                g.rulesOverride = 0;
+                g.PollRules();
+                if (g.rules != 0)
+                    Fail("rulesOverride 0 did not force hold'em at night");
+                cases++;
+                g.rulesOverride = 1;
+                clock.isNight = false;
+                g.PollRules();
+                if (g.rules != 1)
+                    Fail("rulesOverride 1 did not force the night game by day");
+                cases++;
+            }
+            finally
+            {
+                Object.DestroyImmediate(go);
+                Object.DestroyImmediate(clockGo);
+            }
+            Debug.Log("[Legaia] CARDS: " + cases + " day/night rules case(s) pass.");
+        }
 
         static void CheckPoker()
         {
@@ -643,6 +898,7 @@ namespace LegaiaWorld
         const string K_ACTIVE = "legaia.cards.active";
         const string K_SECONDS = "legaia.cards.seconds";
         const string K_SCALE = "legaia.cards.scale";
+        const string K_NIGHT = "legaia.cards.night";
 
         public static void Soak()
         {
@@ -669,11 +925,14 @@ namespace LegaiaWorld
             float seconds = ParseFloat(Arg("-legaiaCardSeconds", "200"), 200f);
             float scale = Mathf.Clamp(ParseFloat(Arg("-legaiaCardScale", "2"), 2f),
                 0.25f, 8f);
+            int night = Arg("-legaiaCardNight", "0") == "1" ? 1 : 0;
             SessionState.SetFloat(K_SECONDS, Mathf.Max(20f, seconds));
             SessionState.SetFloat(K_SCALE, scale);
+            SessionState.SetInt(K_NIGHT, night);
             SessionState.SetInt(K_ACTIVE, 1);
             Debug.Log("[Legaia] CARDS: entering play mode - " + seconds +
-                " simulated s at timeScale " + scale + ", villagers only.");
+                " simulated s at timeScale " + scale + ", villagers only, " +
+                (night == 1 ? "Cara's night rules forced." : "hold'em by day."));
             EditorApplication.EnterPlaymode();
         }
 
@@ -723,6 +982,12 @@ namespace LegaiaWorld
         static bool s_switched;
         static int s_handsAtSwitch;
         static int s_exceptions;
+        static bool s_night;
+        static int s_maxCommunity;
+        static int s_showdownsSeen;
+        static float s_verifyAt;
+        static int s_verifySeats;
+        static int s_facesVerified;
         static readonly List<string> s_problems = new List<string>();
 
         static void Drive()
@@ -803,7 +1068,22 @@ namespace LegaiaWorld
             s_walkedIn = 0;
             s_talkSeen.Clear();
 
+            // The CLOCK stays at day even for the night-rules soak: at
+            // night the villagers go home through their doors and there is
+            // nobody outdoors to fill a stool, which would make this a test
+            // of the hour and not of the game. What the night soak forces
+            // instead is the game's own `rulesOverride` - the same switch
+            // PollRules honours, with the clock path covered statically by
+            // CheckRules.
             ForceDay();
+            s_night = SessionState.GetInt(K_NIGHT, 0) == 1;
+            SetVar(s_game, "rulesOverride", s_night ? 1 : 0);
+            s_maxCommunity = 0;
+            s_showdownsSeen = 0;
+            s_verifyAt = 0f;
+            s_verifySeats = 0;
+            s_facesVerified = 0;
+            s_faceReadable = true;
             s_sawNpc = new bool[4];
             s_switched = false;
             s_handsAtSwitch = 0;
@@ -967,12 +1247,57 @@ namespace LegaiaWorld
                 }
             }
 
-            // What the table says: names in front, never the retail line.
-            string said = Var(s_game, "talkLine") as string;
-            if (!string.IsNullOrEmpty(said))
-                foreach (string line in said.Split('\n'))
-                    if (line.Length > 0 && s_talkSeen.Add(line))
-                        Debug.Log("[Legaia] CARDS: talk - " + line);
+            // What the table says, now one line PER SEAT: names in front,
+            // never the retail line.
+            var said = Var(s_game, "seatTalk") as string[];
+            if (said != null)
+                for (int i = 0; i < said.Length; i++)
+                    if (!string.IsNullOrEmpty(said[i]) && s_talkSeen.Add(said[i]))
+                        Debug.Log("[Legaia] CARDS: talk (seat " + i + ") - " + said[i]);
+
+            // The board: how far the community reveal ever got. Hold'em
+            // must reach all five by a contested showdown; the night game
+            // has no board at all and must never turn one card over.
+            int up = VarInt(s_game, "communityUp", 0);
+            if (up > s_maxCommunity)
+                s_maxCommunity = up;
+            if (s_night && up != 0)
+            {
+                Finish(1, "the night game turned " + up + " community card(s) " +
+                    "over - Cara's rules have no board");
+                return;
+            }
+
+            // A folded seat's cards leave the felt AT ONCE - both of them.
+            var states = VarInts(s_game, "seatState");
+            var held = VarInts(s_game, "seatCards");
+            if (states != null && held != null)
+                for (int i = 0; i < states.Length; i++)
+                {
+                    if (states[i] != 2)   // H_FOLD
+                        continue;
+                    for (int c = 0; c < 5 && i * 5 + c < held.Length; c++)
+                        if (held[i * 5 + c] >= 0)
+                        {
+                            Finish(1, "seat " + i + " folded but still holds card " +
+                                held[i * 5 + c] + " in slot " + c);
+                            return;
+                        }
+                }
+
+            // Every seat that reached a contested showdown has its cards
+            // face up on the FELT, not just in the panel. Checked a beat
+            // after the settlement so an animated flip has landed.
+            if (s_verifyAt > 0f && Time.time >= s_verifyAt)
+            {
+                string bad = VerifyFaces(s_verifySeats);
+                s_verifyAt = 0f;
+                if (bad != null)
+                {
+                    Finish(1, bad);
+                    return;
+                }
+            }
 
             // Chips can never go below zero, hand or no hand.
             var chips = VarInts(s_game, "seatChips");
@@ -1026,17 +1351,42 @@ namespace LegaiaWorld
                             return;
                         }
                 }
+                // Arm the face-up verification for the seats that were
+                // still in the hand: a contested poker showdown shows
+                // every one of them, an uncontested pot shows nobody.
+                s_verifySeats = 0;
+                int inHand = 0;
+                var st = VarInts(s_game, "seatState");
+                if (st != null)
+                    for (int i = 0; i < st.Length; i++)
+                        if (st[i] == 1)   // H_IN
+                        {
+                            s_verifySeats |= 1 << i;
+                            inHand++;
+                        }
+                if (VarInt(s_game, "mode", 0) == 0 && inHand > 1)
+                {
+                    s_showdownsSeen++;
+                    s_verifyAt = Time.time + 1.2f;
+                }
+                else
+                {
+                    s_verifySeats = 0;
+                }
                 Debug.Log("[Legaia] CARDS: settlement " + s_settlements + " (" +
                     (VarInt(s_game, "mode", 0) == 0 ? "poker" : "blackjack") +
-                    ") pot " + pot + " paid " + sp + " won " + sw + " net " + sr);
+                    ") pot " + pot + " paid " + sp + " won " + sw + " net " + sr +
+                    " board " + VarInt(s_game, "communityUp", 0) + " contenders " +
+                    inHand);
             }
 
             // Half way through, hand the table to blackjack. Self-play
             // never presses the Mode button (that needs a seated player),
             // so without this the whole blackjack loop - deal, hit/stand,
             // the dealer drawing to 17, the 3:2 settlement - would only
-            // ever be covered by the unit cases.
-            if (!s_switched && t >= s_seconds * 0.5f &&
+            // ever be covered by the unit cases. The night soak stays on
+            // poker: what it is here to watch is Cara's five-card game.
+            if (!s_night && !s_switched && t >= s_seconds * 0.5f &&
                 VarInt(s_game, "phase", -1) == 0)
             {
                 s_switched = true;
@@ -1051,6 +1401,9 @@ namespace LegaiaWorld
                 s_nextLine = t + 10f;
                 Debug.Log("[Legaia] CARDS: t=" + t.ToString("0") +
                     " phase=" + VarInt(s_game, "phase", -1) +
+                    " rules=" + VarInt(s_game, "rules", -1) +
+                    " street=" + VarInt(s_game, "street", -1) +
+                    " board=" + up +
                     " turn=" + VarInt(s_game, "turnSeat", -9) +
                     " pot=" + VarInt(s_game, "pot", -1) +
                     " hands=" + VarInt(s_game, "handsCompleted", -1) +
@@ -1092,16 +1445,40 @@ namespace LegaiaWorld
                     " stools ever had a villager on it");
                 return;
             }
-            if (!s_switched)
+            if (!s_night)
             {
-                Finish(1, "the table never reached an idle moment to switch " +
-                    "to blackjack - the blackjack loop went unexercised");
+                if (!s_switched)
+                {
+                    Finish(1, "the table never reached an idle moment to switch " +
+                        "to blackjack - the blackjack loop went unexercised");
+                    return;
+                }
+                if (hands - s_handsAtSwitch < 1)
+                {
+                    Finish(1, "no blackjack hand completed after the switch (" +
+                        hands + " total, " + s_handsAtSwitch + " before it)");
+                    return;
+                }
+                // Hold'em ran its whole board at least once: three, one and
+                // one, with a betting round between each.
+                if (s_maxCommunity != 5)
+                {
+                    Finish(1, "the community reveal never reached five cards " +
+                        "(deepest board " + s_maxCommunity + ") - the flop / " +
+                        "turn / river staging did not complete");
+                    return;
+                }
+            }
+            else if (s_maxCommunity != 0)
+            {
+                Finish(1, "the night game dealt a board of " + s_maxCommunity +
+                    " - Cara's rules are five cards and one round");
                 return;
             }
-            if (hands - s_handsAtSwitch < 1)
+            if (s_faceReadable && s_showdownsSeen > 0 && s_facesVerified == 0)
             {
-                Finish(1, "no blackjack hand completed after the switch (" +
-                    hands + " total, " + s_handsAtSwitch + " before it)");
+                Finish(1, "no contested showdown was ever sampled with its cards " +
+                    "face up on the felt (" + s_showdownsSeen + " showdown(s))");
                 return;
             }
             if (s_seatedSamples == 0)
@@ -1138,8 +1515,85 @@ namespace LegaiaWorld
                 s_walkedIn + " arrival(s) on foot, " + s_giveUps + " give-up(s); knees ahead on " +
                 s_kneeSamples + " seated sample(s) (worst dot " +
                 (s_kneeSamples > 0 ? s_minKneeDot.ToString("0.00") : "n/a") + "); " +
-                s_talkSeen.Count + " distinct table-talk lines.");
+                s_talkSeen.Count + " distinct table-talk lines; " +
+                (s_night ? "night rules, no board" : "deepest board " +
+                    s_maxCommunity) + ", " + s_showdownsSeen +
+                " contested showdown(s), " + s_facesVerified +
+                " verified face up on the felt.");
             Finish(0, null);
+        }
+
+        /// Every seat in `mask` must have its dealt cards face up on the
+        /// actual card pickups - the panel agreeing is not the same thing.
+        /// Null when they all do.
+        static string VerifyFaces(int mask)
+        {
+            if (mask == 0)
+                return null;
+            var cards = Var(s_game, "cards") as System.Array;
+            var held = VarInts(s_game, "seatCards");
+            if (cards == null || held == null)
+                return null;
+            for (int i = 0; i < 4; i++)
+            {
+                if ((mask & (1 << i)) == 0)
+                    continue;
+                for (int c = 0; c < 5 && i * 5 + c < held.Length; c++)
+                {
+                    int idx = held[i * 5 + c];
+                    if (idx < 0 || idx >= cards.Length)
+                        continue;
+                    bool up;
+                    if (!CardFaceUp(cards.GetValue(idx), out up))
+                    {
+                        if (s_faceReadable)
+                            Debug.LogWarning("[Legaia] CARDS: cannot read a card's " +
+                                "faceUp off the live heap - the showdown face check " +
+                                "is not exercised.");
+                        s_faceReadable = false;
+                        return null;
+                    }
+                    if (!up)
+                        return "seat " + i + " reached a contested showdown with " +
+                               "card " + idx + " still face down on the felt";
+                    s_facesVerified++;
+                }
+            }
+            return null;
+        }
+
+        static bool s_faceReadable = true;
+
+        /// `faceUp` off one card's LIVE heap. The array may hold either the
+        /// backing UdonBehaviours or the U# proxies depending on how the
+        /// field was serialized, and a proxy's own C# field is a stale
+        /// shell in play mode - so the read always goes through
+        /// GetProgramVariable, on the backing behaviour when the entry is
+        /// a proxy.
+        static bool CardFaceUp(object entry, out bool up)
+        {
+            up = false;
+            var comp = entry as Component;
+            if (comp == null)
+                return false;
+            Component udon = comp;
+            if (Method(comp.GetType(), "GetProgramVariable", 1) == null)
+                udon = LegaiaCommonPrefabs.BackingUdon(comp);
+            var m = udon != null ? Method(udon.GetType(), "GetProgramVariable", 1) : null;
+            if (m == null)
+                return false;
+            try
+            {
+                object v = m.Invoke(udon, new object[] { "faceUp" });
+                if (!(v is bool))
+                    return false;
+                up = (bool)v;
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         static Component Wander(Transform npc)
