@@ -31,9 +31,9 @@
     {
       "key": "wiring",
       "label": "Port wiring",
-      "pct": 87.5,
-      "headline": "735 of 840 ported functions reachable",
-      "detail": "A ported function still needs a host that calls it. This is the share reachable from a real entry point; the remaining 105 are implemented but not yet hosted, and each one says so in its source. 39 further ports are excluded from the denominator entirely: the engine does their job by construction (CD DMA, memory-card device I/O, MDEC channel sync, GPU packet queues), so no host will ever call them and each says which mechanism replaced it.",
+      "pct": 87.6,
+      "headline": "736 of 840 ported functions reachable",
+      "detail": "A ported function still needs a host that calls it. This is the share reachable from a real entry point; the remaining 104 are implemented but not yet hosted, and each one says so in its source. 39 further ports are excluded from the denominator entirely: the engine does their job by construction (CD DMA, memory-card device I/O, MDEC channel sync, GPU packet queues), so no host will ever call them and each says which mechanism replaced it.",
       "denominator": "ported functions a host is owed for",
       "href": "subsystems/engine.html"
     }
