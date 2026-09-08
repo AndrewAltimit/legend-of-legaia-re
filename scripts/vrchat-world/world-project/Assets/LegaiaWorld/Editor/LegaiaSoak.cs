@@ -33,6 +33,15 @@
 //          and distance walked per villager. This is the mode to run over
 //          a merged kit when a new daytime layer lands.
 //
+// THE NIGHT HOST is watched separately and is NOT part of the exodus. A
+// villager the settings pinned to a station for the night (town01: Cara at
+// the card table) keeps that station by design, so counting it as a homed
+// villager that never went in would fail every run. Instead the night mode
+// asserts what it IS supposed to do: it reached its station, it held the
+// seat for most of the night, and it never went home through a door. A
+// scene built WITHOUT the station (the card table is another pass's
+// object) leaves the villager ordinary, and it is watched as one.
+//
 // HOW IT SURVIVES THE DOMAIN RELOAD: entering play mode reloads the
 // script domain, so the batch method cannot simply block. The config
 // goes into SessionState (which survives a reload), and the
@@ -219,7 +228,7 @@ namespace LegaiaWorld
             public Component doorUdon;   // the home's LegaiaDoor, backing
             public Animator doorAnim;
             public Transform homeDoor, homeThreshold, homeLanding, homeEmerge;
-            public bool startIndoors, noRoute, hasHome;
+            public bool startIndoors, noRoute, hasHome, daytimeIndoors;
 
             public int lastState = -99;
             public bool lastIndoors, lastBlocked, lastDoorOpen;
@@ -239,6 +248,13 @@ namespace LegaiaWorld
             public int brainRetries;
             public float lastT;
             public bool nightIdle;
+            // The night host (living_town.night_host): the villager pinned
+            // to a station for the whole night instead of going home.
+            public bool nightHost;
+            public string hostPath = "";
+            public float hostSeated;     // simulated seconds seated BEFORE dawn
+            public bool hostEverSeated;
+            public int hostRetries;
         }
 
         static void Drive()
@@ -377,6 +393,17 @@ namespace LegaiaWorld
             }
             if (state == 9)
                 w.nightIdle = true;
+            if (w.nightHost)
+            {
+                w.hostRetries = GetInt(w.brain, "nightHostRetries", w.hostRetries);
+                if (GetBool(w.brain, "nightHostSeated"))
+                {
+                    w.hostEverSeated = true;
+                    // Only the night counts: the seat is released at dawn.
+                    if (t <= s_nightEnd)
+                        w.hostSeated += Mathf.Max(0f, t - w.lastT);
+                }
+            }
             w.lastT = t;
             w.hops = GetInt(w.loco, "hops", w.hops);
             w.brainRetries = GetInt(w.brain, "homeRetries", w.brainRetries);
@@ -448,6 +475,8 @@ namespace LegaiaWorld
         static void Report()
         {
             int homed = 0, wentIn = 0, cameOut = 0, swung = 0, stuck = 0, hops = 0;
+            int hosts = 0, dayIn = 0;
+            float hostSeated = 0f;
             var problems = new List<string>();
             Line("");
             Line("# --- summary ---");
@@ -457,7 +486,8 @@ namespace LegaiaWorld
                 float rate = w.ticks0 >= 0 && s_seconds > 0f
                     ? (w.ticksN - w.ticks0) / s_seconds : -1f;
                 string row = w.name + ": home=" + (w.hasHome ? "yes" : "no") +
-                    " startIndoors=" + w.startIndoors + " noRoute=" + w.noRoute +
+                    " startIndoors=" + w.startIndoors + " dayIn=" + w.daytimeIndoors +
+                    " noRoute=" + w.noRoute +
                     " maxState=" + w.maxState + " goDoor=" + w.sawGoDoor +
                     " swingWait=" + w.sawSwingWait + " threshold=" + w.sawThreshold +
                     " in=" + w.wentIndoors + "@" + w.inAt.ToString("0.0") +
@@ -472,6 +502,33 @@ namespace LegaiaWorld
                     " ticks/s=" + rate.ToString("0.0");
                 Line(row);
                 Debug.Log("[Legaia] soak: " + row);
+                if (w.nightHost && s_mode == "night")
+                {
+                    // The night host is NOT part of the exodus: it keeps its
+                    // station all night by design, so counting it as a homed
+                    // villager that never went in would fail every run.
+                    hosts++;
+                    string hrow = w.name + ": NIGHT HOST " + w.hostPath +
+                        " seated=" + w.hostSeated.ToString("0.0") + "s of " +
+                        s_nightEnd.ToString("0") + "s night, everSeated=" +
+                        w.hostEverSeated + " wentIndoors=" + w.wentIndoors +
+                        " retries=" + w.hostRetries;
+                    Line(hrow);
+                    Debug.Log("[Legaia] soak: " + hrow);
+                    hostSeated = w.hostSeated;
+                    if (!w.hostEverSeated)
+                        problems.Add(w.name + " is the night host but never took " +
+                            w.hostPath + " (" + w.hostRetries + " retries, " +
+                            w.blockedEdges + " blocked walks)");
+                    else if (w.hostSeated < s_nightEnd * 0.5f)
+                        problems.Add(w.name + " held its night station for only " +
+                            w.hostSeated.ToString("0") + " s of a " +
+                            s_nightEnd.ToString("0") + " s night");
+                    if (w.wentIndoors)
+                        problems.Add(w.name + " is the night host but went home " +
+                            "through a door instead of keeping its station");
+                    continue;
+                }
                 if (!w.hasHome)
                     continue;
                 homed++;
@@ -484,8 +541,16 @@ namespace LegaiaWorld
                         " blocked, " + w.doorDwell.ToString("0") + " s at the door)");
                 if (w.cameOut)
                     cameOut++;
-                else if (w.wentIndoors)
+                else if (w.wentIndoors && !w.daytimeIndoors)
                     problems.Add(w.name + " never came back out at dawn");
+                else if (w.wentIndoors)
+                    // `daytimeIndoors` is the share the pass deliberately
+                    // keeps in by day (a shopkeeper, somebody's
+                    // grandmother), and the builder always picks it from
+                    // the HOMED villagers - so a night soak that asserted
+                    // "everybody who went in came out" was asserting
+                    // against the pass's own design.
+                    dayIn++;
                 if (w.doorUdon != null)
                 {
                     if (w.doorOpens > 0 && w.doorCloses > 0)
@@ -524,7 +589,11 @@ namespace LegaiaWorld
                   " homed villager(s) went in, " + cameOut + "/" + homed +
                   " came back out at dawn, " + swung +
                   " door prop(s) swung open and shut, " + hops +
-                  " ledge hop(s), " + stuck + " stuck at a door.";
+                  " ledge hop(s) (" + dayIn + " stayed in by day, as built), " +
+                  stuck + " stuck at a door, " + hosts +
+                  " night host(s) keeping a station (" +
+                  hostSeated.ToString("0") + " s seated of a " +
+                  s_nightEnd.ToString("0") + " s night).";
             Line("");
             Line(summary);
             Debug.Log(summary);
@@ -593,11 +662,18 @@ namespace LegaiaWorld
                 w.homeLanding = Field(proxy, "homeLanding") as Transform;
                 w.homeEmerge = Field(proxy, "homeEmerge") as Transform;
                 w.startIndoors = Field(proxy, "startIndoors") is bool si && si;
+                w.daytimeIndoors = Field(proxy, "daytimeIndoors") is bool di && di;
                 w.noRoute = Field(proxy, "noRoute") is bool nr && nr;
                 w.hasHome = w.homeDoor != null && w.homeLanding != null;
                 var loco = Field(proxy, "loco") as Component;
                 if (loco != null)
                     w.loco = LegaiaCommonPrefabs.BackingUdon(loco);
+                w.hostPath = Field(proxy, "nightHostStationPath") as string ?? "";
+                // Only a host whose station is actually in this scene counts:
+                // the card table is another pass's object, and a scene built
+                // without it leaves the villager an ordinary one.
+                w.nightHost = w.hostPath.Length > 0 &&
+                    GameObject.Find(w.hostPath) != null;
                 var prop = Field(proxy, "homeDoorProp") as Component;
                 if (prop != null)
                 {
