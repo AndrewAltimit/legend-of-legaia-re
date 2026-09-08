@@ -43,6 +43,24 @@
 // the walk, and sitting on that alone teleported villagers onto the
 // stools from across the square.
 //
+// `Seated()` alone is not quite enough either. It is the BRAIN's opinion
+// that its errand is over, and a brain that gave up on a blocked route
+// reports it from wherever it stopped - so the seat is also gated on the
+// villager standing within `sitRadius` of the stool. Beyond that it is
+// left alone to walk (or to be sent somewhere else); a rig that pops onto
+// the felt from two metres away reads as a bug, not as sitting down.
+//
+// Facing: the seated rig is turned toward the table through
+// LegaiaNpcWander.FaceToward, never by writing a rotation here. The
+// villagers' rendered face is not `transform.forward` - the builder's
+// instance mirror flips it, and each rig family rests at its own baked
+// yaw - so the only correct way to aim one at anything is the wander
+// controller's servo, which measures the face off the anchor node's own
+// transform chain. FaceToward also parks the controller in its turn-in-
+// place mode, which is the one mode that neither translates the rig nor
+// re-snaps it to the floor: a stroll step under a seated villager would
+// walk it off the stool and back down onto the ground.
+//
 // Requires UdonSharp (bundled with the VRChat worlds SDK).
 
 using UdonSharp;
@@ -77,6 +95,9 @@ namespace LegaiaWorld
 
         [Tooltip("Where a standing rig's hips sit, as a fraction of its measured height; the root is placed so the hips land on the seat.")]
         public float hipFraction = 0.45f;
+
+        [Tooltip("How close (metres, horizontal) a villager must already be to the stool before it is seated on it.")]
+        public float sitRadius = 0.35f;
 
         [Tooltip("Synced: villagers may take a free stool. The table button toggles it.")]
         [UdonSynced] public bool npcsAllowed = true;
@@ -159,13 +180,16 @@ namespace LegaiaWorld
                 // it alone would sit the villager the moment the table
                 // chose it, snapping it onto the stool from across the
                 // square (which is exactly what it did). Sit only once the
-                // brain reports it has arrived at this seat.
+                // brain reports it has arrived at this seat AND the rig is
+                // actually standing at the stool: Seated() is the brain's
+                // verdict on its errand, and a brain that gave up short of
+                // the stool still returns it.
                 Transform npc = s.currentNpc;
                 bool arrived = false;
                 if (npc != null && s.currentBrain != null)
                 {
                     LegaiaNpcBrain b = s.currentBrain.GetComponent<LegaiaNpcBrain>();
-                    arrived = b != null && b.Seated();
+                    arrived = b != null && b.Seated() && AtStool(i, npc);
                 }
                 if (npc != null && arrived && seated[i] == null)
                     SitDown(i, npc);
@@ -195,7 +219,15 @@ namespace LegaiaWorld
             float y = stand.y + Mathf.Max(0f, seatHeight - hip);
             npc.position = new Vector3(stand.x, y, stand.z);
             if (w != null)
+            {
                 w.SetSeated(true);
+                // Turn the RENDERED face toward the felt. This behaviour
+                // sits on the table root, so its own position is the table
+                // centre - and FaceToward is the mirror-safe way to aim a
+                // rig (see the header) as well as the mode that holds the
+                // villager still on the stool.
+                w.FaceToward(transform.position);
+            }
             seated[i] = npc;
             // What StandUp adds back (negative: the rig was lifted).
             drops[i] = p.y - y;
@@ -217,6 +249,16 @@ namespace LegaiaWorld
             if (d.sqrMagnitude < 0.25f)
                 npc.position = npc.position + Vector3.up * drops[i];
             drops[i] = 0f;
+        }
+
+        /// Is the villager standing at seat `i` already, horizontally?
+        /// Measured flat: the stool's stand point is on the floor and the
+        /// rig's origin is too, but a rig mid-hop is not.
+        bool AtStool(int i, Transform npc)
+        {
+            Vector3 d = npc.position - seats[i].StandPosition();
+            d.y = 0f;
+            return d.sqrMagnitude <= sitRadius * sitRadius;
         }
 
         bool AnyPlayerSeated()
