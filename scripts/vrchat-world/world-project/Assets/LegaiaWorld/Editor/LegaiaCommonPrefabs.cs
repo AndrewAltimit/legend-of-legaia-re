@@ -224,6 +224,12 @@ namespace LegaiaWorld
             return Path.GetFileName(genDir.Replace("\\", "/").TrimEnd('/'));
         }
 
+        /// The TV speaker's field, in metres: full volume inside NEAR,
+        /// silent past FAR. Asserted by LegaiaVideoChecks so a stray edit
+        /// to one of the four places these numbers land cannot pass.
+        internal const float TV_AUDIO_NEAR = 4.5f;
+        internal const float TV_AUDIO_FAR = 48f;
+
         internal const string CONSOLE_NAME = "console";
         internal const string WATCH_NAME = "watch_spot";
 
@@ -591,6 +597,11 @@ namespace LegaiaWorld
             var screenR = screen.GetComponent<Renderer>();
 
             // Speaker: one spatial AudioSource shared by both players.
+            // The radii are three times the kit's original set: a TV is
+            // something a room listens to together, and at 16 m the sound
+            // died about where the card table starts. Linear rolloff, so
+            // the audible field scales straight off maxDistance and the
+            // VRC spatial component's near / far follow the same numbers.
             var spk = new GameObject("speaker");
             spk.transform.SetParent(root.transform, false);
             spk.transform.localPosition = new Vector3(0f, 0.75f, -0.15f);
@@ -598,10 +609,10 @@ namespace LegaiaWorld
             src.playOnAwake = false;
             src.spatialBlend = 1f;
             src.volume = 0.8f;
-            src.minDistance = 1.5f;
-            src.maxDistance = 16f;
+            src.minDistance = TV_AUDIO_NEAR;
+            src.maxDistance = TV_AUDIO_FAR;
             src.rolloffMode = AudioRolloffMode.Linear;
-            LegaiaAudioGen.AddVrcSpatial(spk, true, 10f, 1.5f, 16f);
+            LegaiaAudioGen.AddVrcSpatial(spk, true, 10f, TV_AUDIO_NEAR, TV_AUDIO_FAR);
 
             var unity = AddSdk(root, "VRC.SDK3.Video.Components.VRCUnityVideoPlayer");
             SetProp(unity, "renderMode", 1); // MaterialOverride

@@ -229,7 +229,15 @@ the VCC setup in more detail if this is your first worlds project.
    click then reads as the held pickup's use/drop, with the button still
    animating - the panel looks alive but is dead). Click the buttons
    while the board stands; a held pickup's own UI is not clickable in
-   desktop mode. **Music On/Off** mutes the BGM for you alone,
+   desktop mode. The town theme is built **muted** by default (untick
+   *Start muted* under **Scene music** to have it playing on arrival):
+   a visitor lands in the town's own sound - the shore, the birds, the
+   TV - rather than in the theme, and anyone who wants it presses one
+   button. The clip runs either way, so switching it on joins the loop
+   where everyone else is rather than starting at bar one, and the
+   button's label is read off the source at Start, so it never opens
+   saying *Music: On* over silence. **Music On/Off** mutes the BGM for
+   you alone,
    **Daytime**/**Nighttime** jump the shared day/night cycle for
    everyone (they do nothing until the realism pass builds the cycle),
    and **Clear sky** jumps the shared weather schedule the same way
@@ -865,7 +873,13 @@ and the SDK's own components - no third-party package, no game data:
   `RateLimited` / player errors retry three times. Hosts outside
   VRChat's allow-list need each viewer's **Allow Untrusted URLs**
   setting on - the status line says *access denied* when that is the
-  cause. Audio is one spatial speaker under the screen.
+  cause. Audio is one spatial speaker under the screen, full volume
+  within 4.5 m and silent past 48 m on a linear rolloff - a TV is
+  something a room listens to together, and the kit's original 16 m died
+  about where the card table starts. Both AudioSource radii and the VRC
+  spatial component's near / far carry those numbers, and
+  `LegaiaVideoChecks.Run` asserts all of them (three of the four are
+  silent when wrong: the sound just stops sooner than anyone expects).
 
   **What the TV plays.** It is never dark for long: on entering the
   world it starts the **house playlist** from

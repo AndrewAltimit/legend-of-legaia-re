@@ -82,6 +82,7 @@ namespace LegaiaWorld
         bool playWorldMorphClip = true;
         bool addMusic = true;
         float musicVolume = 0.5f;
+        bool musicStartsMuted = true;
         bool campProps = true;
 
         // Common prefabs (LegaiaCommonPrefabs.cs): mirror, TV, card table,
@@ -189,7 +190,18 @@ namespace LegaiaWorld
                     "scene root as a 2D AudioSource"),
                 addMusic);
             using (new EditorGUI.DisabledScope(!addMusic))
+            {
                 musicVolume = EditorGUILayout.Slider("  Music volume", musicVolume, 0f, 1f);
+                musicStartsMuted = EditorGUILayout.Toggle(
+                    new GUIContent("  Start muted",
+                        "Build the BGM muted, so a visitor arrives to the " +
+                        "town's own sound (and the TV) rather than to the " +
+                        "theme. The settings panel's Music button turns it " +
+                        "on, per player - the clip runs either way, so " +
+                        "switching it on joins the loop where everyone " +
+                        "else is"),
+                    musicStartsMuted);
+            }
             campProps = EditorGUILayout.Toggle(
                 new GUIContent("Camp props (menu, torches, fires)",
                     "A pickup settings panel near spawn (local music mute, " +
@@ -1018,7 +1030,13 @@ namespace LegaiaWorld
                     var src = root.AddComponent<AudioSource>();
                     src.clip = clip;
                     src.loop = true;
+                    // playOnAwake stays ON while muted: the loop runs
+                    // silently, so a player who switches the music on lands
+                    // where the town is rather than at bar one, and
+                    // LegaiaWorldMenu.ToggleMusic (which only flips `mute`)
+                    // works with no changes.
                     src.playOnAwake = true;
+                    src.mute = musicStartsMuted;
                     src.spatialBlend = 0f; // the town theme plays everywhere
                     src.volume = musicVolume;
                     // SDK compliance: a flat 2D source still wants a

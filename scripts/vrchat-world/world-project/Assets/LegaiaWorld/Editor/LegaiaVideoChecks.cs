@@ -569,6 +569,43 @@ namespace LegaiaWorld
                 Fail("the watch spot faces " + off.ToString("0") +
                      " degrees away from the set");
 
+            // The speaker: a TV is something a room listens to together,
+            // so its field is deliberately wide. Four places carry these
+            // numbers (both AudioSource radii and the VRC spatial
+            // component's near / far) and three of them are silent when
+            // wrong - the sound just stops sooner than anyone expects.
+            var spk = tvT.Find("speaker");
+            if (spk == null)
+                Fail("no speaker under the TV");
+            var au = spk.GetComponent<AudioSource>();
+            if (au == null)
+                Fail("the TV speaker has no AudioSource");
+            if (Mathf.Abs(au.minDistance - LegaiaCommonPrefabs.TV_AUDIO_NEAR) > 0.01f ||
+                Mathf.Abs(au.maxDistance - LegaiaCommonPrefabs.TV_AUDIO_FAR) > 0.01f)
+                Fail("the TV speaker carries " + au.minDistance + " / " + au.maxDistance +
+                     " m, the kit says " + LegaiaCommonPrefabs.TV_AUDIO_NEAR + " / " +
+                     LegaiaCommonPrefabs.TV_AUDIO_FAR);
+            if (au.rolloffMode != AudioRolloffMode.Linear)
+                Fail("the TV speaker is on " + au.rolloffMode + " rolloff; the radii " +
+                     "are chosen for Linear, where the field scales off maxDistance");
+            if (au.spatialBlend < 0.99f)
+                Fail("the TV speaker is not fully 3D (spatialBlend " + au.spatialBlend + ")");
+            var vrcSpatial = LegaiaWorldBuilder.FindType(
+                "VRC.SDK3.Components.VRCSpatialAudioSource");
+            var vs = vrcSpatial != null ? spk.GetComponent(vrcSpatial) : null;
+            if (vs != null)
+            {
+                var far = vrcSpatial.GetField("Far")?.GetValue(vs);
+                if (far is float f && Mathf.Abs(f - LegaiaCommonPrefabs.TV_AUDIO_FAR) > 0.01f)
+                    Fail("the VRC spatial component cuts the TV off at " + f +
+                         " m while the AudioSource reaches " +
+                         LegaiaCommonPrefabs.TV_AUDIO_FAR);
+            }
+            Debug.Log("[Legaia] video audio: speaker " +
+                      LegaiaCommonPrefabs.TV_AUDIO_NEAR + " - " +
+                      LegaiaCommonPrefabs.TV_AUDIO_FAR + " m, linear, 3D" +
+                      (vs != null ? ", VRC spatial agrees" : " (no VRC spatial component)"));
+
             // The console: built only when a show wants one, and OFF until
             // one plays.
             var consoleT = tvT.Find(LegaiaCommonPrefabs.CONSOLE_NAME);

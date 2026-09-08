@@ -537,7 +537,8 @@ namespace LegaiaWorld
             var font = MenuFont();
             MakeText(canvasGo.transform, font, sceneName, 24, new Vector2(0f, 130f),
                 new Vector2(380f, 44f), new Color(1f, 0.9f, 0.7f));
-            Text musicLabel = MakeButton(canvasGo.transform, font, "Music: On",
+            Text musicLabel = MakeButton(canvasGo.transform, font,
+                music != null && music.mute ? "Music: Off" : "Music: On",
                 new Vector2(0f, 55f), backing, "ToggleMusic");
             // Two columns: the day/night jumps on the left, the weather
             // jump on the right. Both are inert until the realism passes
