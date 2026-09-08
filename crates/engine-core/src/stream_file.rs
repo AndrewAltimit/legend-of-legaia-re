@@ -210,15 +210,17 @@ impl StreamFileHost {
     ///
     /// PORT: FUN_800558FC
     ///
-    /// NOT WIRED: the prerequisite is a production owner of a
-    /// [`StreamFileHost`]. The type has exactly one non-test mention in the
-    /// workspace - its own `impl` line - and every construction is a unit test
-    /// or the disc-gated `stream_file_real` oracle. Retail's consumers are the
-    /// battle side-band streaming SM (`FUN_801F17F8`) and the player-pack
-    /// loader (`FUN_80052770`); the port loads both through
-    /// [`crate::scene::ProtIndex`] whole-entry reads, which need no cursor, so
-    /// wiring this means giving the battle streaming path a positional reader
-    /// rather than inserting a call.
+    /// REPLACED-BY: `crate::scene::ProtIndex` whole-entry reads, which need
+    /// no cursor at all.
+    ///
+    /// Retail's consumers are the battle side-band streaming SM
+    /// (`FUN_801F17F8`) and the player-pack loader (`FUN_80052770`); the port
+    /// loads both as whole entries, so there is no open handle to position and
+    /// no seek for a caller to make. [`StreamFileHost`] has exactly one
+    /// non-test mention in the workspace - its own `impl` line - and every
+    /// construction is a unit test or the disc-gated `stream_file_real`
+    /// oracle. Giving the battle streaming path a positional reader would be a
+    /// change of representation, not a call insertion.
     pub fn open_raw(&mut self, raw_idx: RawTocIndex) -> Result<u32> {
         self.park_pending_op();
         let extraction = raw_idx
@@ -255,8 +257,8 @@ impl StreamFileHost {
     ///
     /// PORT: FUN_80055A5C
     ///
-    /// NOT WIRED: same prerequisite as [`Self::open_raw`] - no production
-    /// owner of a `StreamFileHost` exists.
+    /// REPLACED-BY: `crate::scene::ProtIndex` whole-entry reads - same
+    /// replacement as [`Self::open_raw`], which has the argument.
     pub fn seek_bytes(&mut self, byte_offset: u32, whence: SeekWhence) -> Result<u32> {
         self.park_pending_op();
         self.seek_sectors(bytes_to_sectors_floor(byte_offset), whence)
@@ -269,9 +271,9 @@ impl StreamFileHost {
     ///
     /// PORT: FUN_8003E964
     ///
-    /// NOT WIRED: same prerequisite as [`Self::open_raw`]. Its only
-    /// in-workspace caller is [`Self::seek_bytes`] above, which is inert for the
-    /// same reason.
+    /// REPLACED-BY: `crate::scene::ProtIndex` whole-entry reads - same
+    /// replacement as [`Self::open_raw`]. Its only in-workspace caller is
+    /// [`Self::seek_bytes`] above, replaced for the same reason.
     pub fn seek_sectors(&mut self, sector_offset: u32, whence: SeekWhence) -> Result<u32> {
         let base = self.opened_base()?;
         if whence == SeekWhence::FromBase {
@@ -300,8 +302,8 @@ impl StreamFileHost {
     ///
     /// PORT: FUN_800559EC
     ///
-    /// NOT WIRED: same prerequisite as [`Self::open_raw`] - no production
-    /// owner of a `StreamFileHost` exists.
+    /// REPLACED-BY: `crate::scene::ProtIndex` whole-entry reads - same
+    /// replacement as [`Self::open_raw`].
     pub fn read(&mut self, dst: &mut [u8]) -> Result<usize> {
         self.park_pending_op();
         self.opened_base()?;
@@ -333,8 +335,8 @@ impl StreamFileHost {
     ///
     /// PORT: FUN_80055AC8
     ///
-    /// NOT WIRED: same prerequisite as [`Self::open_raw`] - no production
-    /// owner of a `StreamFileHost` exists.
+    /// REPLACED-BY: `crate::scene::ProtIndex` whole-entry reads - same
+    /// replacement as [`Self::open_raw`]; there is no handle to close.
     pub fn close(&mut self) {
         self.park_pending_op();
         // Retail-effective branch: nothing else. The dev branch's

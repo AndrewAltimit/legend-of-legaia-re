@@ -27,31 +27,40 @@
 //! All ports are derived from the SCUS disassembly
 //! (`ghidra/scripts/funcs/<addr>.txt`); provenance notes sit on each item.
 //!
-//! NOT WIRED: nothing in the engine speaks retail's row-entry model - but
-//! the three families below are blocked by three *different* things, and a
-//! disclosure that names only the first reads as one gap and is three.
+//! Nothing in the engine speaks retail's row-entry model - but the three
+//! families below are in three *different* positions, and a note that names
+//! only the first reads as one gap and is three. Two of them are
+//! substitutions the port has already made; one is a real wiring gap. Each
+//! item below carries its own class marker.
 //!
-//! 1. [`list_alloc`] and [`LiveWindowSet`] want the live-window /
-//!    list-node model itself. No code path allocates the `gp+0x148` node
-//!    whose header the allocator seeds, and the engine's menu hosts keep
-//!    per-screen window models rather than one sorted window list.
-//! 2. [`row_name_source`] and [`row_description_source`] decode the
-//!    class-tagged `u16` entry word ([`CLASS_BAG`]..[`CLASS_SHOP_ALT`]),
-//!    and nothing produces one. Every pause-menu screen carries a **typed**
-//!    row built straight from world state -
+//! 1. REPLACED-BY: the per-screen window models the engine's menu hosts keep.
+//!    That covers [`list_alloc`], [`LiveWindowSet`] and
+//!    [`record_string_glyph_count`]. No code path allocates the `gp+0x148`
+//!    node whose header the allocator seeds, and no screen measures a record
+//!    string to size a window - the rects are disc-parsed at boot from
+//!    [`legaia_asset::menu_windows`]. Adopting the sorted window list would
+//!    be a change of representation, not a call insertion.
+//! 2. REPLACED-BY: the typed rows every pause-menu screen already carries -
 //!    [`crate::pause_screens::PauseItemRow`],
 //!    [`crate::spell_menu::SpellRowView`],
-//!    [`crate::equip_session::EquipItem`] - and those rows already carry
-//!    the resolved name and description, so a resolver over them would be
-//!    re-deriving what the caller already holds.
-//! 3. The three `FUN_80030628` builders want an **ordered bag-slot array**
-//!    and a per-row ink bit, and the engine has neither. `World::inventory`
-//!    is a `HashMap<u8, u8>` keyed by item id with no slot space at all, so
-//!    the `slot | ink` payload the builders emit has no index to carry;
+//!    [`crate::equip_session::EquipItem`]. That covers [`row_name_source`]
+//!    and [`row_description_source`], which decode the class-tagged `u16`
+//!    entry word ([`CLASS_BAG`]..[`CLASS_SHOP_ALT`]). Nothing produces such a
+//!    word because the typed rows already carry the resolved name and
+//!    description, so a resolver over them would re-derive what the caller
+//!    holds.
+//! 3. NOT WIRED - and this one is a real gap with a visible consequence. The
+//!    three `FUN_80030628` builders want an **ordered bag-slot array** and a
+//!    per-row ink bit, and the engine has neither. `World::inventory` is a
+//!    `HashMap<u8, u8>` keyed by item id with no slot space at all, so the
+//!    `slot | ink` payload the builders emit has no index to carry;
 //!    `crate::field_menu_dispatch::build_pause_items_session` sorts the
 //!    held ids and [`crate::pause_screens::PauseItemRow`] has no ink field,
 //!    so retail's three-buffer order (in place, then equipment, then the
-//!    flag-8 tail) and its dim gates have nowhere to land.
+//!    flag-8 tail) and its dim gates have nowhere to land. Until they do,
+//!    the port lists a player's items in an order retail would not, and dims
+//!    none of them. The owner is `build_pause_items_session`, once the bag is
+//!    slot-indexed.
 //!
 //! Which window each builder fills is not a guess: the menu-overlay
 //! descriptor table ([`legaia_asset::menu_windows`]) carries the content id
@@ -140,6 +149,9 @@ pub enum ListAlloc {
 /// PORT: FUN_80030104 (list-node allocator; `see
 /// ghidra/scripts/funcs/80030104.txt`).
 ///
+/// REPLACED-BY: the per-screen window models the engine's menu hosts keep -
+/// see family 1 in the module heading.
+///
 /// Allocates the `count*2 + 0x2A`-byte list node hung at live-window
 /// `+0x18` and seeds its header from the persisted selection globals,
 /// clamping them **in place** first (the stores at `0x80030204` /
@@ -199,6 +211,9 @@ pub enum RowNameSource {
 /// PORT: FUN_8002FF8C (row-name resolver; `see
 /// ghidra/scripts/funcs/8002ff8c.txt`).
 ///
+/// REPLACED-BY: the typed pause-menu rows, which already carry the resolved
+/// name - see family 2 in the module heading.
+///
 /// Maps a row entry's class nibble to its name source. Payloads are
 /// masked `& 0x3FF`. Classes `0x2000`/`0x5000` read the spell table;
 /// `0x3000`/`0x7000`/`0xA000` read the item table with the payload as
@@ -237,6 +252,9 @@ pub const LIST_MODE_PARKED: i32 = 4;
 
 /// PORT: FUN_80034250 (highlighted-row description dispatcher; `see
 /// ghidra/scripts/funcs/80034250.txt`).
+///
+/// REPLACED-BY: the typed pause-menu rows, which already carry the resolved
+/// description - see family 2 in the module heading.
 ///
 /// `list_mode` is the mode global `0x8007BB94` (`gp+0x87C`) - mode 4
 /// (parked) suppresses the draw entirely. `screen_class` is the selected
@@ -339,6 +357,11 @@ pub struct UseListCtx<'a> {
 /// Items **Use** list row build; `see ghidra/scripts/funcs/80030628.txt`
 /// and `docs/subsystems/field-menu.md#use-list-row-build-content-id-3-fun_80030628`).
 ///
+/// NOT WIRED: the owner is
+/// `crate::field_menu_dispatch::build_pause_items_session`, and it cannot
+/// call this until `World::inventory` is slot-indexed - see family 3 in the
+/// module heading.
+///
 /// Walks the bag slots (`bag_ids[i]` = the item-id byte at
 /// `0x80085958 + (slot_base + i)*2`; retail bounds the walk with the
 /// window's slot range at `gp+0x2D2..gp+0x2D4`) and builds the row words
@@ -413,6 +436,9 @@ pub fn build_use_list_rows(
 /// the Items **Throw Out** list row build; `see
 /// ghidra/scripts/funcs/80030628.txt`).
 ///
+/// NOT WIRED: same owner and same blocker as [`build_use_list_rows`] - see
+/// family 3 in the module heading.
+///
 /// Same three-buffer shape as the Use list with a discardability gate
 /// instead of the usability chain:
 ///
@@ -461,6 +487,9 @@ pub fn build_throw_out_rows(
 
 /// PORT: FUN_80030628 (content-id-2 case, `0x80030694..0x80030824` - the
 /// price-gated bag list; `see ghidra/scripts/funcs/80030628.txt`).
+///
+/// NOT WIRED: the owner is the shop session's sell list; same slot-indexing
+/// blocker as [`build_use_list_rows`] - see family 3 in the module heading.
 ///
 /// The shop-sell shape: rows with a non-zero item price stay white in
 /// place; zero-price rows (unsellable) dim and sort last. No third
@@ -513,6 +542,10 @@ pub struct LiveWindow {
 
 /// PORT: FUN_80032434 (glyph-count scan, `0x800324E8..0x80032528`).
 ///
+/// REPLACED-BY: the disc-parsed window rects
+/// ([`legaia_asset::menu_windows`]), which mean no screen measures a record
+/// string to size a window - see family 1 in the module heading.
+///
 /// A record string is a sequence of `[len: u8][len * 2 bytes]` segments
 /// terminated by a zero length byte; the glyph count is the sum of the
 /// segment lengths. (The `* 2` stride is the two-byte-per-glyph record
@@ -553,8 +586,8 @@ impl LiveWindowSet {
     /// through `FUN_80030628`; content attachment stays caller-side here
     /// (see the row builders above).
     ///
-    /// NOT WIRED: no host consumes the window set yet - the engine's
-    /// menu hosts keep per-screen window models.
+    /// REPLACED-BY: the per-screen window models the engine's menu hosts
+    /// keep - see family 1 in the module heading.
     pub fn upsert(&mut self, window: LiveWindow) -> &mut LiveWindow {
         let pos = self.windows.partition_point(|w| w.id < window.id);
         if pos < self.windows.len() && self.windows[pos].id == window.id {

@@ -749,7 +749,12 @@ def join_anchor_coverage(
         if entered_site is not None:
             if addr in not_live:
                 inert_entered.append((addr, entered_site))
-            if entered_site.get("not_wired_tag"):
+            # `REPLACED-BY:` disclaims at least as hard as `NOT WIRED:` does -
+            # it says no host is owed, not merely that none exists - so an
+            # oracle that runs one is the same finding. Reading only
+            # `not_wired_tag` here would have hidden every replaced anchor from
+            # this bucket the moment the third class landed.
+            if entered_site.get("not_wired_tag") or entered_site.get("replaced_tag"):
                 disclosed_entered.append((addr, entered_site))
             if addr in live:
                 live_entered.add(addr)
@@ -1094,7 +1099,10 @@ def main() -> int:
     w(f"- ported addresses with anchors: **{len(anchors)}**")
     w(f"- statically live: **{len(live)}**, of which entered by a run: **{len(live_entered)}**")
     w(f"- statically not-live: **{len(not_live)}**, of which entered anyway: **{len(inert_entered)}**")
-    w(f"- `NOT WIRED`-disclosed anchors executed: **{len(disclosed_entered)}**")
+    w(
+        "- `NOT WIRED` / `REPLACED-BY`-disclosed anchors executed: "
+        f"**{len(disclosed_entered)}**"
+    )
     w(f"- not observable (const anchors, no executed reference): **{len(not_observable_const)}**")
     w(f"- not observable in any of these binaries (excluded above): **{len(unobservable)}**")
     w("")
@@ -1165,7 +1173,7 @@ def main() -> int:
         "wrong symbol - each row is a finding, not a metric.",
     )
     table(
-        "Disclosed `NOT WIRED` anchors executed",
+        "Disclosed `NOT WIRED` / `REPLACED-BY` anchors executed",
         disclosed_entered,
         "The source disclaims these as unreached, and a **passing** oracle ran "
         "them anyway. Highest-priority rows: an oracle that traverses "

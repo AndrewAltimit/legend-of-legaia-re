@@ -24,10 +24,17 @@ python3 scripts/ci/port-catalog.py --live-audit   # -> target/port-catalog/live-
 | `DISCLOSE` | Genuinely unreached for a structural reason. The row supplies the exact `// NOT WIRED:` text to paste. |
 | `DELETE` | Redundant with an existing symbol that already covers the same retail routine. |
 | `VERIFY` | Inertness could not be settled here, usually because a concurrent lane held the file. The row says what was checked and what is still open. Do not paste a tag on these. No row carries it now. |
+| `REPLACE` | Genuinely unreached, and no host is owed: the engine does the routine's job through a named different mechanism. The row supplies the `// REPLACED-BY:` text. |
 
 A `DISCLOSE` reason must say *why* there is no caller. "No caller" restates the
 audit. The useful form names what must exist first - a host screen, a state
 shape, an id space the engine does not carry.
+
+A `REPLACE` reason must name the **mechanism**, not the absence. It is the
+stronger claim: not "nothing calls this" but "nothing will, because the port
+does this differently". The marker is defined in
+[`port-catalog.md`](port-catalog.md#replaced-by), which also carries the two
+worked near-misses that stayed `DISCLOSE`.
 
 **A verdict here is a hypothesis with evidence attached, not a settled fact.** Several
 have since been overturned by work that held the disassembly: the `minigame_return_warp`
@@ -1591,6 +1598,69 @@ The wire's own limits, stated so the next reader does not re-derive them:
   keyed on the latched art constant of a party slot), so status flows party ->
   monster and never monster -> party, and rows `481..=483` are the party's. Reachable
   and non-trivial is not the same as exercised; both are worth saying.
+
+## The boot / CD / card / menu-infra drain
+
+One sweep over the disclosed-inert rows of `cd_dma`, `stream_file`,
+`overlay_loader`, `card_bu_io`, `card_flow`, `mdec_dma_sync`, `float_tween`,
+`menu_list_rows`, `mode_entry_init`, `scus_core_helpers`, `title_prim`,
+`menu_actor_seed`, `vram_rect_copy`, `panel_backread_loader`, `fade_ramp`,
+`camera_ease`, `mode` and `save_subscreen`. The point of the sweep was the
+class, not the wiring: most of these disclosures were already precise about
+their blocker and wrong only about what *kind* of thing that blocker is.
+
+### The per-file verdict is the trap
+
+Two files carry both classes, and a file-level reading gets each of them
+backwards in one direction:
+
+- `engine-vm::scus_core_helpers` - the actor node pool and `copy_blocks_32` are
+  `REPLACE` (`Vec`-backed generational pool; borrow-in-place chunk walk in
+  `legaia_asset::parse_streaming_with`), but `list_append_u16` is `DISCLOSE`:
+  its retail producer `FUN_8003F3FC` is simply not ported, and porting it is
+  what closes the row.
+- `engine-core::menu_list_rows` - three families, two `REPLACE` and one
+  `DISCLOSE`. The module doc already split them three ways; what it did not do
+  was say that the split is a split of *class*.
+
+### What each file settled on
+
+| File | Class | Mechanism, or the owner that is owed |
+|---|---|---|
+| `cd_dma`, `stream_file` | `REPLACE` | `crate::scene::ProtIndex` reads a whole PROT entry synchronously; no libcd handle, no DMA channel, no completion to poll, no cursor to position |
+| `overlay_loader` | `REPLACE` | on-demand PROT resolution - the port has no RAM windows to page overlays into, so the cache pair has nothing to cache |
+| `card_bu_io`, `card_flow` | `REPLACE` | `legaia_save::emu::CardView` + `legaia_save::card`, driven synchronously by `web-viewer::cards::write_session_into_card` |
+| `mdec_dma_sync` | `REPLACE` | the `legaia_mdec` software decoder; a decoded frame is finished when the call returns |
+| `float_tween`, `title_prim` | `REPLACE` | the `engine-ui` draw-list builders, which rebuild screen state each frame instead of tweening or queueing GPU packets |
+| `menu_actor_seed` | `REPLACE` | `World::open_field_submode_screen`'s side `SubmodeScreen` struct - and both entries are retail-unreachable besides |
+| `mode_entry_init::field_prim_buffer_bytes` | `REPLACE` | `engine-render`'s wgpu draw lists; the backend owns the allocation, so an arena size has no consumer |
+| `fade_ramp` | `DISCLOSE` | the battle-teardown owner: substituting `FadeRamp` for `FadeState` moves the fade's lifetime, which is a behaviour change, not a call |
+| `camera_ease` | `DISCLOSE` | `World`, whose `FieldHost::op4c_n4_sub9_*` hooks keep their no-op defaults, so no zone angle is posted |
+| `vram_rect_copy` | `DISCLOSE` | `engine-render`, which implements no `FieldHost::op43_vram_rect_copy`; the software VRAM it would blit inside already exists |
+| `panel_backread_loader` | `DISCLOSE` | its only retail caller `FUN_80025358` is unported |
+| `mode::mode_init_bare` | `DISCLOSE` | a production owner of `ModeDriver` - `engine-shell`'s `BootSession::tick` handing frame sequencing to the driver |
+| `mode_entry_init::field_bgm_plan` | `DISCLOSE` | the two-part BGM arm has no engine analogue; the slot arithmetic itself is already live in `SceneHost::bgm_seq_bytes` |
+| `mode_entry_init::duel_overlay_init` | `DISCLOSE` | the duel's engine entry is the `baka_fighter` rules engine, which starts from a match state and not an overlay load |
+| `save_subscreen::sub15_*` | `DISCLOSE` | no engine screen offers the per-character list reorder; the backing array is the character record and does permute the Magic screen |
+
+### One disclosure described a defect that is fixed
+
+`card_flow`'s heading said the save-block composer stamps only the two magic
+bytes, leaves the icon-frame descriptor and block count as found, and writes no
+title - so a block "reads wrong on a real card's Load screen". Neither half
+holds: `SaveFile::write_into_retail_sc_block` copies the whole four-byte
+`SAVE_BLOCK_HEADER`, and `legaia_save::card::write_retail_block_identity` -
+called immediately after by `web-viewer::cards::write_session_into_card` -
+writes the title digits and the portrait. `engine-core`'s
+`the_composer_writes_the_whole_magic_and_leaves_identity_to_its_owner` pins the
+division. The stale text is what made the module read as a wiring gap; with it
+corrected the whole file is a substitution.
+
+The general shape, worth carrying: **a disclosure ages against the code it
+describes, and nothing re-reads it.** A tag is checked for existing, never for
+being true, so the sentence that justifies a row can go stale for as long as
+the row stays inert - and the row stays inert precisely because nobody is
+looking at it.
 
 ## See also
 

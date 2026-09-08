@@ -63,22 +63,23 @@
 //! - `FUN_800198E0` decomp: `ghidra/scripts/funcs/800198e0.txt`
 //!   (146 instructions, 584 bytes).
 //!
-//! ## NOT WIRED
+//! ## REPLACED-BY: `legaia_engine_ui`'s `ui_title_save` draw-list builders
 //!
-//! Nothing implements [`PrimHost`], so no `exec_*` entry point in this module
-//! has a caller - including the title tick's own three
-//! (`exec_clear_image` / `exec_move_image` / `exec_sprite_descriptor`) and
-//! the four save/card-screen anchors (`FUN_801E36C4`, `FUN_801E373C`,
-//! `FUN_801E3EE0`).
+//! Nothing implements [`PrimHost`], and nothing is expected to. The engine's
+//! title and save screens are drawn from typed text / sprite draws emitted
+//! straight from screen state, so retail's GPU-packet descriptors are never
+//! materialised and there is no queue for a `PrimHost` to push a
+//! `ClearImage` / `MoveImage` / sprite record onto. That covers every `exec_*`
+//! entry point here - the title tick's own three (`exec_clear_image` /
+//! `exec_move_image` / `exec_sprite_descriptor`) and the save/card-screen
+//! anchors (`FUN_801E36C4`, `FUN_801E373C`, `FUN_801E3EE0`).
 //!
-//! The prerequisite is a **primitive-descriptor replay path**. The engine's
-//! title and save screens are drawn by `legaia_engine_ui`'s `ui_title_save`
-//! draw-list builders, which emit typed text / sprite draws straight from
-//! screen state; they never materialise retail's GPU-packet descriptors, so
-//! there is no queue for a `PrimHost` to push a `ClearImage` / `MoveImage` /
-//! sprite record onto. Standing one up means giving the renderer a
-//! packet-level ingest alongside the draw-list one, not implementing the
-//! trait against the existing screens.
+//! Giving the renderer a packet-level ingest alongside the draw-list one is
+//! the only thing that would put these on a live path, and that is a second
+//! rendering front end rather than a call insertion - the screens themselves
+//! already draw. What the module keeps is the decoded protocol: the
+//! descriptor shape, the tag routing and the alpha-OR pass, each of which the
+//! draw-list builders answer in their own terms.
 //!
 //! No Sony bytes are stored in this module - only call shapes, struct
 //! layouts (numeric offsets), and the dispatch control flow.

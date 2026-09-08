@@ -123,14 +123,23 @@
 //!   spinning; the tick ends as a yield with no facing change, which is the
 //!   correct facing-channel answer for that frame.
 //!
-//!   NOT WIRED: the stepped-over set, by op number, is `0x02`, `0x06`,
-//!   `0x07`, `0x08`, `0x09`, `0x0A`, `0x0B`, `0x0C`, `0x0E`, `0x0F`, `0x10`,
-//!   `0x11`, `0x12`, `0x13`, `0x14`, `0x15` and `0x16` - every remaining
-//!   entry in [`legaia_asset::man_motion::op_width`]'s space. Their widths
-//!   are known (that is what lets the walk stay in sync) and `0x07` / `0x08`
-//!   are separately decoded as the story-flag writers by the static census
-//!   `legaia-engine man-scripts --motion-flag-census`, but no body here
+//!   **Not executed here**: the stepped-over set, by op number, is `0x02`,
+//!   `0x06`, `0x07`, `0x08`, `0x09`, `0x0A`, `0x0B`, `0x0C`, `0x0E`, `0x0F`,
+//!   `0x10`, `0x11`, `0x12`, `0x13`, `0x14`, `0x15` and `0x16` - every
+//!   remaining entry in [`legaia_asset::man_motion::op_width`]'s space. Their
+//!   widths are known (that is what lets the walk stay in sync) and `0x07` /
+//!   `0x08` are separately decoded as the story-flag writers by the static
+//!   census `legaia-engine man-scripts --motion-flag-census`, but no body here
 //!   executes any of them.
+//!
+//!   This sentence used to open with the port-catalog's module-wide
+//!   inert-disclosure marker. It is a statement about retail *opcodes*, not
+//!   about this module's wiring - the module is live, driven per frame from
+//!   `World`'s field actor tick - and as a blanket it declared every anchor
+//!   in the file inert, which is what put four rows in `--live-audit`'s
+//!   stale section. The marker is matched anywhere in a doc block, so it
+//!   cannot appear in prose here. See
+//!   `docs/tooling/stale-not-wired-triage.md`.
 //!
 //! ## The `0x05` wait is interruptible
 //!

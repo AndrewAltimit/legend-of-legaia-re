@@ -807,6 +807,11 @@ pub enum Sub15ListSource {
 /// through [`crate::spell_menu`], each with its own typed row model, so
 /// nothing wants a row *count* keyed by a retail step number.
 ///
+/// The owner is the pause menu's per-character list page - the rows
+/// `crate::field_menu_dispatch::build_spell_session` already builds - which
+/// would gain a reorder mode and, with it, a use for this step-keyed count.
+/// That is a screen the port does not have, not a call it forgot to make.
+///
 /// The module's "nothing constructs a [`SaveScreenMachine`]" is **not** the
 /// blocker here and this family should not cite it: these four are free
 /// functions, no step machine calls them, and giving the module a host

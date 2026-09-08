@@ -203,6 +203,12 @@ fix is to write it at item level:
   the file, so each genuinely inert item needs its own `NOT WIRED:` line in the
   same edit. Doing only half of this converts a granularity row into a
   disclosure gap, which is the worse of the two.
+- Converting a blanket to `//! REPLACED-BY:` has the mirror-image hazard: the
+  new blanket covers only anchors whose own block stays silent about its class,
+  so an item that is still a genuine wiring gap needs its own `NOT WIRED:` line
+  or it silently leaves the worklist. `scus_core_helpers::list_append_u16` is
+  the worked case - its file-mates are replaced, it is not.
+  [`port-catalog.md`](port-catalog.md#replaced-by) has the precedence rules.
 
 A blanket module disclosure is safe while *nothing* in the file has a caller,
 and it can be narrowed the moment one item acquires one: an anchor whose own
@@ -231,6 +237,39 @@ The transferable rule is the same one the anchor-granularity section states from
 the other side: **wiring a caller is not done until every disclosure that named
 it has been re-read.** Grep the file set for the wired symbol's name before
 closing that work, not after the next audit.
+
+**A sentence that opens with the marker while talking about something else.**
+The module blanket is matched on any `//!` line whose text opens with
+`NOT WIRED` (leading `#`, `*` and whitespace allowed), so an indented bullet
+deep in a module doc counts exactly as much as a heading does.
+`engine-vm::ambient_motion` had one: a bullet reading `NOT WIRED: the
+stepped-over set, by op number, is ...`, which is a statement about which
+retail *opcodes* the port declines to execute, not about whether anything calls
+the module. The module is live - it is the idle-turn VM, ticked per frame from
+`World`'s field actor pass - and that one sentence declared every anchor in the
+file inert, putting four rows in the stale section at once. The fix is to
+reword the prose, not to touch the tags; the marker cannot appear in a doc
+block that does not mean it.
+
+The generalisation is worth more than the row: **the disclosure markers are
+matched as text over a whole comment block, so writing about a marker is
+indistinguishable from using one.** That applies to a fix as much as to the
+original - a corrected tag explaining "this used to say `NOT WIRED:` and here
+is why it was wrong" re-discloses the anchor it just wired. Both corrections
+recorded on this page hit that on the first attempt and had to paraphrase the
+marker instead of quoting it.
+
+**A leaf whose only caller is a sibling in the same file, reached from a CLI.**
+`legaia_asset::monster_archive::reaction_map` disclosed "no engine caller ...
+its only consumers are the unit tests and the disc-gated archive oracles". Its
+sibling `light_flinch_window`, twenty lines above it in the same file, calls it
+in non-test code, and `legaia-patcher`'s `monster-block` command calls *that* -
+and a CLI subcommand is a host root, as the verdict vocabulary above says. So
+the port is wired and the tag was wrong twice over. What was still true is a
+narrower claim the tag never made: no `engine-core` / `engine-vm` path queues a
+monster hit reaction from the map. Write the narrow claim as the narrow claim;
+"no engine consumer" and "no consumer" are different sentences and only one of
+them was checkable.
 
 ## What a correct disclosure still does not tell you
 

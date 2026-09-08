@@ -215,15 +215,19 @@ pub trait CdDmaHost {
     ///
     /// PORT: FUN_8003EB98
     ///
-    /// NOT WIRED: the prerequisite is a production implementor of
-    /// [`CdDmaHost`]. [`ProtCdDmaHost`] is the only one in the workspace and
-    /// every construction of it is a `#[cfg(test)]` body or the disc-gated
-    /// `cd_dma_real_prot` oracle; no crate outside `engine-core` names
-    /// `cd_dma` at all. The engine's own asset path reaches `PROT.DAT`
-    /// through [`crate::scene::ProtIndex`] directly, so nothing between a
-    /// host root and this trait exists to call it. Wiring means routing the
-    /// scene / battle / overlay loaders through the trait instead of the
-    /// index, which is a re-hosting decision rather than a call insertion.
+    /// REPLACED-BY: `crate::scene::ProtIndex`, which reads a whole PROT
+    /// entry out of the disc image synchronously.
+    ///
+    /// The port models no CD device: no libcd handle, no DMA channel, no
+    /// async completion to poll, so this trait's whole reason to exist -
+    /// turning a PROT index into a queued sector transfer - is discharged by
+    /// a direct read. [`ProtCdDmaHost`] is the only implementor in the
+    /// workspace and every construction of it is a `#[cfg(test)]` body or the
+    /// disc-gated `cd_dma_real_prot` oracle; no crate outside `engine-core`
+    /// names `cd_dma` at all. Routing the scene / battle / overlay loaders
+    /// through the trait would be a re-hosting decision, not a call
+    /// insertion, and it would add no behaviour the loaders do not already
+    /// have - which is why this is a replacement rather than a wiring gap.
     fn prot_one_shot_load(&mut self, prot_idx: ProtIndex, dst: DestAddr, flags: LoadFlags) -> u32 {
         let count = self.prot_index_size_lookup(prot_idx, flags.issue());
         self.async_lba_load(dst, count, flags);
@@ -533,9 +537,10 @@ impl CdDmaHost for ProtCdDmaHost {
     ///
     /// PORT: FUN_8003E8A8
     ///
-    /// NOT WIRED: same prerequisite as every method in this block - see
-    /// [`CdDmaHost::prot_one_shot_load`]. `ProtCdDmaHost` is constructed only
-    /// under `#[cfg(test)]` and in the disc-gated `cd_dma_real_prot` oracle.
+    /// REPLACED-BY: `crate::scene::ProtIndex` - same replacement as every
+    /// method in this block, see [`CdDmaHost::prot_one_shot_load`].
+    /// `ProtCdDmaHost` is constructed only under `#[cfg(test)]` and in the
+    /// disc-gated `cd_dma_real_prot` oracle.
     fn prot_index_size_lookup(&mut self, prot_idx: ProtIndex, set_msf: bool) -> u32 {
         let count = self.prot.entry_lba_count_retail(prot_idx).unwrap_or(0);
         let start_lba = self.prot.entry_start_lba_retail(prot_idx).unwrap_or(0);
@@ -556,10 +561,10 @@ impl CdDmaHost for ProtCdDmaHost {
     ///
     /// PORT: FUN_8003E800
     ///
-    /// NOT WIRED: same prerequisite as every method in this block - see
-    /// [`CdDmaHost::prot_one_shot_load`]. The retail routine is reached from
-    /// the whole loader surface on the disc; the port's own loaders do not go
-    /// through the trait.
+    /// REPLACED-BY: `crate::scene::ProtIndex` - same replacement as every
+    /// method in this block, see [`CdDmaHost::prot_one_shot_load`]. The retail
+    /// routine is reached from the whole loader surface on the disc; the
+    /// port's own loaders read the entry instead of queueing a transfer.
     fn async_lba_load(&mut self, dst: DestAddr, count: u32, flags: LoadFlags) {
         if self.read_in_progress {
             // Drain any stale read first - retail's FUN_8003e800 calls
@@ -589,9 +594,10 @@ impl CdDmaHost for ProtCdDmaHost {
     ///
     /// PORT: FUN_8003F128
     ///
-    /// NOT WIRED: same prerequisite as every method in this block - see
-    /// [`CdDmaHost::prot_one_shot_load`]. Its only in-workspace caller is
-    /// [`Self::async_lba_load`] above, which is inert for the same reason.
+    /// REPLACED-BY: `crate::scene::ProtIndex` - same replacement as every
+    /// method in this block, see [`CdDmaHost::prot_one_shot_load`]. Its only
+    /// in-workspace caller is [`Self::async_lba_load`] above, which is
+    /// replaced for the same reason.
     fn kick_libcd_read(&mut self) {
         self.read_in_progress = true;
         self.state = PollState::Busy;
@@ -621,11 +627,12 @@ impl CdDmaHost for ProtCdDmaHost {
     ///
     /// PORT: FUN_8003DE7C
     ///
-    /// NOT WIRED: same prerequisite as every method in this block - see
-    /// [`CdDmaHost::prot_one_shot_load`]. This is the widest-reaching of the
-    /// five on the disc - the reference sweep puts `FUN_8003DE7C` at 127 `jal`
-    /// sites across `SCUS_942.54` and eleven overlay images - so the gap is a
-    /// real port that no host reaches, not a port of dead code.
+    /// REPLACED-BY: `crate::scene::ProtIndex` - same replacement as every
+    /// method in this block, see [`CdDmaHost::prot_one_shot_load`]. This is
+    /// the widest-reaching of the five on the disc - the reference sweep puts
+    /// `FUN_8003DE7C` at 127 `jal` sites across `SCUS_942.54` and eleven
+    /// overlay images - so what is replaced is a heavily-used routine, not
+    /// dead code: a synchronous read has nothing left to wait for.
     fn read_wait_poll(&mut self, gated: bool) -> ReadWaitOutcome {
         if !gated {
             self.read_in_progress = false;
@@ -762,14 +769,15 @@ pub trait StreamReadSyncHost {
 /// report is returned: sectors remaining, `0` on completion, or
 /// [`STREAM_SYNC_TIMED_OUT`].
 ///
-/// NOT WIRED: nothing implements [`StreamReadSyncHost`]. The engine reads
-/// PROT entries and named files synchronously out of an in-memory disc image
-/// through `legaia_iso`, so there is no IRQ-driven sector chain to wait on -
-/// no outstanding-sector counter, no per-sector IRQ timestamp, and no vsync
-/// counter to time the two watchdogs against. Every value the trait asks for
-/// would have to be invented. Wiring it needs an asynchronous sector reader
-/// behind the asset loader, which is the same prerequisite the streaming
-/// half of this module is waiting on.
+/// REPLACED-BY: `legaia_iso`'s in-memory disc image, read synchronously
+/// behind `crate::scene::ProtIndex`.
+///
+/// Nothing implements [`StreamReadSyncHost`] and nothing can: there is no
+/// IRQ-driven sector chain to wait on - no outstanding-sector counter, no
+/// per-sector IRQ timestamp, and no vsync counter to time the two watchdogs
+/// against - so every value the trait asks for would have to be invented.
+/// The completion this routine waits for has already happened by the time a
+/// port-side read returns.
 pub fn stream_read_sync(
     host: &mut impl StreamReadSyncHost,
     poll_once: bool,

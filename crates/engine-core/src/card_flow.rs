@@ -52,44 +52,45 @@
 //! `overlay_menu_801e16e0.txt`, `overlay_menu_801e1934.txt`,
 //! `overlay_menu_801e1114.txt`, `overlay_menu_801e373c.txt`.
 //!
-//! # NOT WIRED
+//! # REPLACED-BY: `legaia_save`'s synchronous card writer
 //!
 //! Read this as two claims, because they are not the same claim and an
-//! earlier version of this heading ran them together.
+//! earlier version of this heading ran them together. Both now land on the
+//! same class, and one of them used to describe a defect that is fixed.
 //!
 //! **The state machines.** No host owns a [`CardIoMachine`] to produce the
-//! poll results [`CardWriteMachine`] and [`CardHealth::fold_poll`]
-//! sequence. The one card-image backend - the browser card rack
+//! poll results [`CardWriteMachine`] and [`CardHealth::fold_poll`] sequence,
+//! and none is owed. The one card-image backend - the browser card rack
 //! (`web-viewer::cards`), which does write real `0x2000`-byte blocks -
-//! patches the container bytes synchronously through `legaia_save`, with
-//! no asynchronous BIOS beat to sequence; the native saves are LGSF files.
+//! patches the container bytes synchronously through `legaia_save`, so there
+//! is no asynchronous BIOS beat to sequence; the native saves are LGSF files.
 //! `SaveSelectSession` runs its own `NowChecking` beat straight off
-//! `card_status_poll`, so there is no frame on which to tick
-//! [`CardWriteMachine`]. That is a fact about the **entry point**.
+//! `card_status_poll`. Adding an issue-then-poll machine around a byte edit
+//! that already succeeds would re-host the device layer, not add behaviour -
+//! the same substitution [`crate::card_bu_io`] records.
 //!
-//! **The composer is different, and the distinction matters.**
-//! [`SaveBlockSummary`] is the shape `FUN_801E1934` builds before the
-//! memcpy, and the rule it encodes - what a Legaia save block's header and
-//! title carry - runs on **every card Save the port performs today**,
-//! through `SaveFile::write_into_retail_sc_block` rather than through this
-//! type. So "nothing consumes a [`SaveBlockSummary`]" is true of the type
-//! and false of the rule, and reading the first as the second hides a live
-//! gap:
+//! **The composer.** [`SaveBlockSummary`] is the shape `FUN_801E1934` builds
+//! before the memcpy, and the rule it encodes - what a Legaia save block's
+//! header and title carry - runs on **every card Save the port performs
+//! today**. It runs through `legaia_save`, not through this type:
 //!
-//! * retail stamps [`SAVE_HEADER_MAGIC`] - `"SC"`, the icon-frame
-//!   descriptor `0x11`, block count `1` - at block `+0`. The composer
-//!   stamps only the two-byte `SC`, leaving `+2` / `+3` at whatever the
-//!   block held.
-//! * retail writes the slot's two title digits
-//!   ([`block_title_digits`], biased by [`SAVE_TITLE_DIGIT_BASE`] so the
-//!   BIOS card browser renders full-width numerals). The composer writes
-//!   no title at all.
+//! * `SaveFile::write_into_retail_sc_block` stamps the whole four-byte
+//!   [`SAVE_HEADER_MAGIC`] - `"SC"`, the icon-frame descriptor `0x11`, block
+//!   count `1` - at block `+0`, not just the two magic bytes;
+//! * `legaia_save::card::write_retail_block_identity`, which
+//!   `web-viewer::cards::write_session_into_card` calls immediately after,
+//!   writes the slot's two title digits through
+//!   `legaia_save::card::save_title_digits` (the live twin of
+//!   [`block_title_digits`], biased by [`SAVE_TITLE_DIGIT_BASE`] so the BIOS
+//!   card browser renders full-width numerals) and stamps the portrait.
 //!
-//! A block missing those reads as a valid Legaia save to this engine - the
-//! payload and its checksum are right - and reads wrong on a real card's
-//! Load screen, which is the only place the header and title are shown.
-//! `engine-core/tests/save_block_checksum.rs` pins which regions the
-//! composer owns, so the omission is visible at the point of fix.
+//! An earlier version of this heading said the composer left `+2` / `+3` as
+//! found and wrote no title, so a block read wrong on a real card's Load
+//! screen. That was true before the split between payload and identity landed
+//! and is false now; `engine-core/tests/save_block_checksum.rs`
+//! (`the_composer_writes_the_whole_magic_and_leaves_identity_to_its_owner`)
+//! pins the division. The types here stay as the retail-shaped mirror of a
+//! rule the port applies through `legaia_save`.
 
 /// Result code one card poll publishes, as `FUN_801E16E0` dispatches it.
 ///

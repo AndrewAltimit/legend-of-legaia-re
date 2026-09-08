@@ -667,7 +667,10 @@ pub fn light_flinch_window(entry: &[u8], id: u16) -> Result<Option<JuggleWindow>
 /// 80050e68  addiu v0,zero,0xff   ; not found
 /// ```
 ///
-/// NOT WIRED: no engine caller - see [`reaction_map`].
+/// NOT WIRED: no caller at all - and unlike [`reaction_map`], which the
+/// `legaia-patcher` CLI reaches through [`light_flinch_window`], nothing
+/// outside this module's tests names this tag search. The owner is the battle
+/// action SM's monster-animation resolve, which is not ported here.
 ///
 /// PORT: FUN_80050e2c
 pub fn find_action_by_tag(tags: &[u8], tag: u8) -> Option<u8> {
@@ -739,9 +742,19 @@ pub const REACTION_TAGS: [u8; 5] = [2, 3, 4, 5, 0x0B];
 /// `None` is this port's spelling of retail's zero: "no entry claimed this
 /// slot".
 ///
-/// NOT WIRED: no engine caller. Nothing in `engine-core` / `engine-vm` queues a
-/// monster hit reaction from this map yet; its only consumers are the unit tests
-/// and the disc-gated archive oracles in `crates/asset/tests`.
+/// WIRED: through [`light_flinch_window`] in this module, which
+/// `legaia-patcher monster-stats` calls to print each monster's juggle window
+/// (`commands::cmd_monster_stats` in
+/// `crates/patcher/src/bin/legaia-patcher/commands.rs`, reached from
+/// `Cmd::MonsterStats` in that binary's `main.rs`). A CLI subcommand is a host
+/// root, so the map is reached by non-test code.
+///
+/// The tag used to carry the inert disclosure, claiming no engine caller and
+/// only unit tests plus the disc-gated archive oracles as consumers. Both
+/// halves were wrong: the sibling above it is a caller, and the CLI is a host.
+/// What is still true is the narrower claim - nothing in `engine-core` /
+/// `engine-vm` queues a monster hit reaction from this map, so the *battle*
+/// consumer is the open work, not the map.
 ///
 /// PORT: FUN_80054cb0 (the `+0x1EF..+0x1F3` tag-map half; the stat-block copy
 /// and battle-load stat boost live in `engine-vm::battle_formulas`)

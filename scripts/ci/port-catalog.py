@@ -308,6 +308,56 @@ MODULE_NOT_WIRED_RE = re.compile(r"^\s*//!\s*[#*\s]*NOT\s+WIRED", re.MULTILINE)
 # pattern requires `WIRED` to start. Deliberately caps-only, like the
 # disclosure marker, so prose ("wired: see below") does not count.
 WIRED_ITEM_RE = re.compile(r"^\s*//[/!]?\s*[#*\s]*WIRED\s*:", re.MULTILINE)
+# Third class, beside `live` and inert-with-`NOT WIRED:`. `REPLACED-BY: <what>`
+# says the routine's *job* is performed in the port by a different, named
+# mechanism, so no host will ever call this port and counting it as "not yet
+# wired" states a gap that does not exist. See
+# `docs/tooling/port-catalog.md#replaced-by` for what may carry the tag.
+#
+# Two deliberate strictnesses, both learned from the disclosure markers above:
+#
+#  * it must OPEN a comment line (same anchoring as `WIRED_ITEM_RE`), so prose
+#    that merely says a thing was replaced by another thing is not a class
+#    change - `ambient_motion.rs` had a bullet whose text opened `NOT WIRED:`
+#    while describing retail *opcodes*, and that one sentence blanket-disclosed
+#    a live module;
+#  * the mechanism text is captured and must be NON-EMPTY. A bare
+#    `REPLACED-BY:` claims an exemption while naming nothing, so it does not
+#    count and the anchor stays in whichever class it was already in. The
+#    captured text is what `--live-audit` prints beside the row, which is what
+#    makes the claim auditable at all.
+REPLACED_BY_RE = re.compile(r"^\s*//[/!]?\s*[#*\s]*REPLACED-BY\s*:(.*)", re.MULTILINE)
+MODULE_REPLACED_BY_RE = re.compile(
+    r"^\s*//!\s*[#*\s]*REPLACED-BY\s*:(.*)", re.MULTILINE
+)
+
+
+# Leading `//` / `///` / `//!` plus one optional space, so a continuation line
+# can be reduced to its prose.
+COMMENT_LEAD_RE = re.compile(r"^\s*//[/!]?\s?")
+
+
+def _replaced_by_text(block: str, pattern: re.Pattern = None) -> str:
+    """The mechanism a `REPLACED-BY:` block names, or `""` when it names none.
+
+    Reads the marker line **and its continuation lines** - every comment line
+    up to the first blank one - because the mechanism is a sentence and a
+    sentence wraps. Taking only the marker line put half-clauses in the audit
+    table ("`crate::scene::ProtIndex` - same replacement as every"), which is
+    exactly the row a reader cannot argue with.
+    """
+    m = (pattern or REPLACED_BY_RE).search(block)
+    if not m:
+        return ""
+    parts = [m.group(1).strip()]
+    for line in block[m.start() :].splitlines()[1:]:
+        if not line.lstrip().startswith("//"):
+            break
+        text = COMMENT_LEAD_RE.sub("", line).strip()
+        if not text:
+            break
+        parts.append(text)
+    return " ".join(p for p in parts if p).strip()
 NEXT_ITEM_RE = re.compile(
     r"^\s*(?:pub\s*(?:\([^)]*\)\s*)?)?"
     r"(?:default\s+|const\s+|async\s+|unsafe\s+|extern\s+\"[^\"]*\"\s+)*"
@@ -982,6 +1032,14 @@ def collect_port_anchors(
     opts that one item out of the module blanket. An own-block `NOT WIRED`
     always wins over an own-block `WIRED:` - same-granularity disclosure beats
     same-granularity claim.
+
+    Class (`replaced_tag` / `replaced_by`), per anchor: a `REPLACED-BY: <what>`
+    opening a comment line in the tag's own block says the routine's job is
+    done in the port by the named mechanism, so no host is owed. It wins over
+    both markers above at the same granularity; a `//! REPLACED-BY:` module
+    blanket applies to anchors whose own block says nothing about its class.
+    A replaced anchor is neither live nor a wiring gap, and its mechanism text
+    is carried through to `--live-audit` so the exemption is readable.
     """
     anchors: dict[str, list[dict]] = defaultdict(list)
     for path, src in srcs.items():
@@ -1036,8 +1094,23 @@ def collect_port_anchors(
             # a per-item `NOT WIRED` still discloses regardless of either.
             own_not_wired = bool(NOT_WIRED_RE.search(block))
             own_wired = (not is_module_tag) and bool(WIRED_ITEM_RE.search(block))
-            module_blanket = bool(MODULE_NOT_WIRED_RE.search(_module_doc_block(src)))
-            disclosed = own_not_wired or (module_blanket and not own_wired)
+            module_doc = _module_doc_block(src)
+            module_blanket = bool(MODULE_NOT_WIRED_RE.search(module_doc))
+            # `REPLACED-BY:` is the third class, and it is the most specific
+            # thing an anchor can say about itself: it does not claim a host
+            # exists, it claims none is owed. So an own-block one wins over
+            # every other marker in the block, and a module blanket applies to
+            # every anchor whose own block stays silent about its class. An
+            # empty mechanism is not a claim (see `REPLACED_BY_RE`).
+            own_replaced = _replaced_by_text(block)
+            module_replaced = _replaced_by_text(module_doc, MODULE_REPLACED_BY_RE)
+            replaced_by = own_replaced
+            if not replaced_by and not own_not_wired and not own_wired:
+                replaced_by = module_replaced
+            replaced = bool(replaced_by)
+            disclosed = (own_not_wired or (module_blanket and not own_wired)) and (
+                not replaced
+            )
             for addr in addrs:
                 anchors[addr].append(
                     {
@@ -1050,6 +1123,8 @@ def collect_port_anchors(
                         "type_name": ty,
                         "path": path,
                         "not_wired_tag": disclosed,
+                        "replaced_tag": replaced,
+                        "replaced_by": replaced_by,
                     }
                 )
     return anchors
@@ -1242,11 +1317,18 @@ def compute_live(
                 if strict_on
                 else e["live"]
             )
+        # An address is `replaced` only when EVERY inert anchor of it is
+        # replaced. One anchor claiming an exemption must not carry a sibling
+        # anchor that really is a wiring gap out of the denominator with it -
+        # the normal shape for an address ported twice (one copy re-hosted,
+        # one copy still waiting on a caller).
+        inert = [e for e in entries if not e["live"]]
         out[addr] = {
             "live": any(e["live"] for e in entries),
             "live_strict": any(e["live_strict"] for e in entries),
             "anchors": entries,
             "not_wired_tag": any(e["not_wired_tag"] for e in entries),
+            "replaced_tag": bool(inert) and all(e["replaced_tag"] for e in inert),
         }
     return out
 
@@ -1378,6 +1460,7 @@ def build_rows(
                 "live": bool(lv and lv["live"]),
                 "live_known": lv is not None,
                 "not_wired_tag": bool(lv and lv["not_wired_tag"]),
+                "replaced_tag": bool(lv and lv["replaced_tag"]),
                 "anchors": lv["anchors"] if lv else [],
                 "bucket": bucket,
                 "dumped": is_dumped,
@@ -1413,6 +1496,7 @@ def render_csv(rows: list[dict], out_path: Path) -> None:
                 "ported",
                 "live",
                 "not_wired_tag",
+                "replaced_tag",
                 "ignored",
                 "ignore_category",
                 "ignore_reason",
@@ -1432,6 +1516,7 @@ def render_csv(rows: list[dict], out_path: Path) -> None:
                     int(r["ported"]),
                     int(r["live"]) if r["live_known"] else "",
                     int(r["not_wired_tag"]) if r["live_known"] else "",
+                    int(r["replaced_tag"]) if r["live_known"] else "",
                     int(r["ignored"]),
                     r["ignore_category"],
                     r["ignore_reason"],
@@ -1538,7 +1623,9 @@ def snapshot(rows: list[dict]) -> dict:
         pairs = [a for r in rows if r["ported"] for a in r["anchors"]]
         out["live"] = {
             "disclosure_gap": sum(
-                1 for a in pairs if not a["live"] and not a["not_wired_tag"]
+                1
+                for a in pairs
+                if not a["live"] and not a["not_wired_tag"] and not a["replaced_tag"]
             )
         }
     return out
@@ -1663,28 +1750,39 @@ def summarize(rows: list[dict]) -> str:
         ported_rows = [r for r in rows if r["ported"]]
         n_live = sum(1 for r in ported_rows if r["live"])
         n_inert = len(ported_rows) - n_live
+        n_replaced = sum(1 for r in ported_rows if not r["live"] and r["replaced_tag"])
         pairs = [(r, a) for r in ported_rows for a in r["anchors"]]
         n_a_live = sum(1 for _, a in pairs if a["live"])
+        n_a_replaced = sum(1 for _, a in pairs if not a["live"] and a["replaced_tag"])
         n_a_disclosed = sum(
             1 for _, a in pairs if not a["live"] and a["not_wired_tag"]
         )
         n_a_undisclosed = sum(
-            1 for _, a in pairs if not a["live"] and not a["not_wired_tag"]
+            1
+            for _, a in pairs
+            if not a["live"] and not a["not_wired_tag"] and not a["replaced_tag"]
         )
         # Stale-tag is the one question read off the receiver-gated graph:
         # a spurious edge here manufactures a false accusation against a
         # correct disclosure. See build_rust_graph.
-        n_stale = sum(1 for _, a in pairs if a["live_strict"] and a["not_wired_tag"])
+        n_stale = sum(
+            1
+            for _, a in pairs
+            if a["live_strict"] and (a["not_wired_tag"] or a["replaced_tag"])
+        )
         live_block = [
             "",
             f"ported + live  (reachable from a host root)     : {n_live}",
             f"ported, NOT live (inert)                        : {n_inert}",
+            f"  of which infra-replaced (`REPLACED-BY:`)      : {n_replaced}",
+            f"  wiring worklist (inert, a host is owed)       : {n_inert - n_replaced}",
             "",
             f"PORT tag sites (anchors)                        : {len(pairs)}",
             f"  live                                          : {n_a_live}",
             f"  inert, `NOT WIRED:` tag present               : {n_a_disclosed}",
+            f"  inert, `REPLACED-BY:` (no host is owed)       : {n_a_replaced}",
             f"  inert, no tag  -> disclosure gap              : {n_a_undisclosed}",
-            f"  tagged NOT WIRED but analysed live (audit)    : {n_stale}",
+            f"  tagged NOT WIRED / REPLACED-BY but live       : {n_stale}",
         ]
     return "\n".join(
         [
@@ -1712,12 +1810,15 @@ def render_live_audit(rows: list[dict], out_path: Path | None) -> str:
 
     Three sections, in the order they need acting on:
 
-    1. **Tagged `NOT WIRED` but analysed live** - either the tag is stale or the
-       call graph invented an edge. Each row needs a human decision, so this
-       section comes first.
+    1. **Tagged `NOT WIRED` / `REPLACED-BY` but analysed live** - either the tag
+       is stale or the call graph invented an edge. Each row needs a human
+       decision, so this section comes first.
     2. **Undisclosed inert ports** - not reachable, no tag. The disclosure gap.
-    3. **Disclosed inert ports** - not reachable, tag present. Working as
-       intended; listed so the wiring worklist is complete.
+    3. **Disclosed inert ports** - not reachable, `NOT WIRED:` present. Working
+       as intended; listed so the wiring worklist is complete.
+    4. **Infra-replaced ports** - not reachable, `REPLACED-BY:` present. Not a
+       wiring worklist at all; listed with the mechanism each names so the
+       exemption can be argued with.
     """
     # A `NOT WIRED:` tag is written per *anchor*, so the audit has to compare
     # per anchor. Rolling up to the address first hides the case where an
@@ -1726,24 +1827,51 @@ def render_live_audit(rows: list[dict], out_path: Path | None) -> str:
     pairs = [
         (r, a) for r in rows if r["ported"] and r["live_known"] for a in r["anchors"]
     ]
-    stale = [(r, a) for r, a in pairs if a["live_strict"] and a["not_wired_tag"]]
-    undisclosed = [(r, a) for r, a in pairs if not a["live"] and not a["not_wired_tag"]]
+    stale = [
+        (r, a)
+        for r, a in pairs
+        if a["live_strict"] and (a["not_wired_tag"] or a["replaced_tag"])
+    ]
+    undisclosed = [
+        (r, a)
+        for r, a in pairs
+        if not a["live"] and not a["not_wired_tag"] and not a["replaced_tag"]
+    ]
     disclosed = [(r, a) for r, a in pairs if not a["live"] and a["not_wired_tag"]]
+    replaced = [(r, a) for r, a in pairs if not a["live"] and a["replaced_tag"]]
 
-    def table(title: str, subset: list[tuple[dict, dict]], note: str) -> list[str]:
+    def table(
+        title: str,
+        subset: list[tuple[dict, dict]],
+        note: str,
+        mechanism: bool = False,
+    ) -> list[str]:
         out = [f"## {title} ({len(subset)})", "", note, ""]
         if not subset:
             out += ["None.", ""]
             return out
+        head = ["addr", "crate", "anchor", "symbol", "site"]
+        if mechanism:
+            head.append("replaced by")
         out += [
-            "| addr | crate | anchor | symbol | site |",
-            "|---|---|---|---|---|",
+            "| " + " | ".join(head) + " |",
+            "|" + "---|" * len(head),
         ]
         for r, a in sorted(subset, key=lambda ra: (ra[0]["addr"], ra[1]["file"])):
-            out.append(
+            row = (
                 f"| `{r['addr']}` | {a['crate']} | {a['kind']} | "
                 f"`{a['symbol']}` | `{a['file']}:{a['line']}` |"
             )
+            if mechanism:
+                # The mechanism is prose from the source. Print its first
+                # sentence: that is the claim, and the paragraph that follows
+                # it belongs at the file:line the row already names.
+                text = " ".join(a.get("replaced_by", "").split())
+                cut = text.find(". ")
+                if cut > 0:
+                    text = text[: cut + 1]
+                row += f" {text[:220]} |"
+            out.append(row)
         out.append("")
         return out
 
@@ -1758,7 +1886,7 @@ def render_live_audit(rows: list[dict], out_path: Path | None) -> str:
         "",
     ]
     lines += table(
-        "Tagged `NOT WIRED` but analysed live",
+        "Tagged `NOT WIRED` / `REPLACED-BY` but analysed live",
         stale,
         "Either the tag is stale (the port got wired since) or the call graph "
         "resolved a name-collision edge that does not exist. Check by hand.",
@@ -1773,6 +1901,16 @@ def render_live_audit(rows: list[dict], out_path: Path | None) -> str:
         "Disclosed inert ports",
         disclosed,
         "Not reachable, and the source says so. The declared wiring worklist.",
+    )
+    lines += table(
+        "Infra-replaced ports",
+        replaced,
+        "Not reachable, and no host is owed: the routine's job is done in the "
+        "port by the named mechanism, so these are excluded from the wiring "
+        "denominator rather than counted as gaps. See "
+        "[`port-catalog.md`](../../docs/tooling/port-catalog.md#replaced-by) "
+        "for what may carry the tag.",
+        mechanism=True,
     )
     md = "\n".join(lines) + "\n"
     if out_path:
@@ -2114,6 +2252,35 @@ pub fn both_markers() -> u32 {
 /// PORT: FUN_8001bb50
 /// WIRED: referenced module-qualified from `main`.
 pub const QUAL_CONST: u32 = 6;
+
+/// PORT: FUN_8001bb60
+/// REPLACED-BY:
+pub fn empty_mechanism() -> u32 {
+    7
+}
+""",
+    # The `REPLACED-BY:` class: its precedence over both markers, its
+    # non-empty-mechanism requirement, and the module blanket form.
+    "replaced.rs": """\
+//! Infra module the port replaces wholesale.
+//!
+//! PORT: FUN_8001dd10
+//!
+//! REPLACED-BY: the module blanket's mechanism.
+
+/// PORT: FUN_8001dd20
+/// NOT WIRED: a host is owed - and the line below says otherwise.
+/// REPLACED-BY: a named Rust mechanism.
+pub fn replaced_beats_not_wired() -> u32 {
+    10
+}
+
+/// PORT: FUN_8001dd30
+/// NOT WIRED: this one really is a wiring gap.
+pub fn still_inert() -> u32 {
+    11
+}
+
 """,
 }
 
@@ -2216,6 +2383,39 @@ def run_selftest() -> int:
     check(
         "WIRED_ITEM_RE does not match a NOT WIRED line",
         not WIRED_ITEM_RE.search("/// NOT WIRED: still a disclosure"),
+    )
+
+    a = one("8001dd20")
+    check(
+        "own-block REPLACED-BY beats own-block NOT WIRED",
+        a["replaced_tag"]
+        and not a["not_wired_tag"]
+        and a["replaced_by"] == "a named Rust mechanism.",
+        f"replaced={a['replaced_tag']} not_wired={a['not_wired_tag']} "
+        f"by={a['replaced_by']!r}",
+    )
+    a = one("8001dd30")
+    check(
+        "own-block NOT WIRED under a REPLACED-BY blanket stays a wiring gap",
+        a["not_wired_tag"] and not a["replaced_tag"],
+        f"replaced={a['replaced_tag']} not_wired={a['not_wired_tag']}",
+    )
+    a = one("8001bb60")
+    check(
+        "REPLACED-BY with no mechanism is not a class change",
+        not a["replaced_tag"] and a["replaced_by"] == "" and a["not_wired_tag"],
+        f"replaced={a['replaced_tag']} by={a['replaced_by']!r} "
+        f"not_wired={a['not_wired_tag']}",
+    )
+    a = one("8001dd10")
+    check(
+        "//! REPLACED-BY module blanket carries its own tag",
+        a["kind"] == "module" and a["replaced_tag"],
+        f"got {a['kind']} replaced={a['replaced_tag']}",
+    )
+    check(
+        "REPLACED_BY_RE needs the marker to open the line",
+        not REPLACED_BY_RE.search("/// the node pool is REPLACED-BY: a Vec"),
     )
 
     if failures:

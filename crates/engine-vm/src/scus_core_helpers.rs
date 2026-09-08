@@ -21,26 +21,31 @@
 //!
 //! REF: FUN_80020DE0, FUN_8002519C, FUN_8003F3FC, FUN_8001FE70
 //!
-//! # NOT WIRED
+//! # Wiring status
 //!
-//! [`ActorNodePool`] has no caller in the engine. The port's actor storage
-//! is a `Vec`-backed pool with generational slots, not a retail-shaped
-//! free-stack, so nothing in `engine-core` allocates through this type
-//! today. It is ported because the retail *allocation order* is
+//! The three classes are split per item, because they close differently.
+//!
+//! REPLACED-BY: the engine's `Vec`-backed actor pool with generational slots.
+//! That covers [`ActorNodePool`] and its three link primitives. Nothing in
+//! `engine-core` allocates through a retail-shaped free-stack, and adopting
+//! one would replace the engine's actor storage wholesale rather than add a
+//! call. The type is kept because the retail *allocation order* is
 //! observable: the free-stack hands out the highest node index first and
 //! descends, and a freed node returns to the top of the stack, so a
-//! spawn/despawn sequence reproduces a specific node ordering. That
-//! ordering feeds actor iteration order, which the recomp differential
-//! oracle compares per frame. Wiring it means replacing the engine's actor
-//! pool wholesale - out of scope here.
+//! spawn/despawn sequence reproduces a specific node ordering. That ordering
+//! feeds actor iteration order, which the recomp differential oracle
+//! compares per frame.
 //!
-//! [`list_append_u16`] is likewise uncalled: its retail caller
-//! `FUN_8003F3FC` (the sprite placement/clip routine) is not ported.
+//! NOT WIRED: [`list_append_u16`] is a real wiring gap, and the owner is
+//! named - its retail caller `FUN_8003F3FC` (the sprite placement/clip
+//! routine) is not ported, so the append has no producer to be called from.
+//! It closes when that routine is ported, not by a representation change.
 //!
-//! [`copy_blocks_32`] is inert too, and this section used to leave it out -
-//! the audit attributed it here through the module tag while the prose named
-//! only the other two, which is a disclosure that reads as covering an anchor
-//! it never mentions. It is inert for a reason that does not close: its retail
+//! REPLACED-BY: the borrow-in-place chunk walk in
+//! `legaia_asset::parse_streaming_with`. That covers [`copy_blocks_32`], and
+//! this section used to leave it out - the audit attributed it here through
+//! the module tag while the prose named only the other two, which is a
+//! disclosure that reads as covering an anchor it never mentions. Its retail
 //! caller `FUN_8001FE70` **is** ported and live, as
 //! `legaia_asset::parse_streaming_with`, but the copy itself is retail's way of
 //! moving a chunk body into an aligned buffer and the Rust walker borrows the
@@ -318,6 +323,12 @@ impl ActorNodePool {
 ///
 /// PORT: FUN_8001FA68
 ///
+/// NOT WIRED: the owner is the sprite placement/clip routine `FUN_8003F3FC`,
+/// which is not ported - so the append has no producer to be called from.
+/// This one closes by porting that routine, not by a representation change,
+/// which is why it keeps `NOT WIRED:` where its file-mates carry
+/// `REPLACED-BY:`.
+///
 /// The eight-instruction body is:
 ///
 /// ```text
@@ -363,6 +374,10 @@ pub fn list_append_u16(count: &mut i16, entries: &mut [u16], value: u16) -> Opti
 }
 
 /// PORT: FUN_8003D26C
+///
+/// REPLACED-BY: the borrow-in-place chunk walk in
+/// `legaia_asset::parse_streaming_with` - there is no destination buffer to
+/// copy into, so there is no call site.
 ///
 /// 32-byte-block copy - the unrolled `t0..t7` load/store loop the
 /// battle-scene chunk walker uses to place a TMD body into its aligned
