@@ -97,7 +97,7 @@ Each row: `ctx[7]` value, what runs during that frame, and the next state(s). Al
 | `0x6B` | Capture - end | `FUN_801D5854(0, 9)`; screen rotates; decrements timer. When < 0 → `0x5A` (end-of-action). | `0x5A`. |
 | `0x6E` | **Magic-capture branch** | `FUN_801D5854(actor, 6)`; waits on `func_0x8003DE7C(1)` (CD ready). When ready: calls `func_0x8003EAE4(0, capture_index)` (load capture archive); sets `_DAT_8007BDB0` to capture-monster index. | `0x6F`. |
 | `0x6F` | Magic-capture - fade | If `ctx[+0x287] != 0`: duck the audio level `_DAT_8007B910 -= DAT_1F800393`, clamp to `(_DAT_8008457C * 0x4B) / 100`. Adjusts ctx-buffer X position. Waits on `func_0x8003F2B8(1)`. | `0x70`. |
-| `0x70` | Magic-capture - phase 2 | Same audio duck as `0x6F`. Runs `func_0x801F2160` (the [magic effect-class dispatcher](#battle-helper-functions), keyed on the spell's effect-class byte) - for a capture-class action this is the drive loop of the paged **cast module**: the module tick re-enters every frame and the state advances only on a zero return, with no timer and no bail-out ([cast-module.md](cast-module.md)). When done, calls `func_0x801F0348` (the [target-size camera framing](#battle-helper-functions)). | `0x71`. |
+| `0x70` | Magic-capture - phase 2 | Same audio duck as `0x6F`, behind the same `ctx[+0x287]` gate. Pins `ctx[+0xD] = 1` in the call's delay slot. Runs `func_0x801F2160` (the [magic effect-class dispatcher](#battle-helper-functions), keyed on the spell's effect-class byte) - for a capture-class action this is the drive loop of the paged **cast module**: the module tick re-enters every frame and the state advances only on a zero return, with no timer and no bail-out ([cast-module.md](cast-module.md)). When done, calls `func_0x801F0348` (the [target-size camera framing](#battle-helper-functions)). Ported as `magic::magic_capture_phase2` over `BattleActionHost::capture_stager_tick`. | `0x71`. |
 | `0x71` | Magic-capture - finalize | `FUN_801D5854(actor, 6)`; checks all 8 slots are settled (alive with non-zero `+0x4`, or non-`8` `+0x1D9`). Once stable: clears ctx buffers, writes the 4-byte fade sentinel (`84 10 42 08`), iterates resetting per-actor `+0x21C = 0` and `+0x8 = 0x81000000`. | `0x50`. |
 | `0xFD` | Idle hold (battle paused?) | `FUN_801D5854(actor, 8)`. No state change. | (stays). |
 | `0xFF` | **End of round** (not battle end - see below) | Sets `ctx[+0x6] = 0x14`, increments `ctx[+0x28A]` (round counter), calls `func_0x801F45A4` (the [end-of-action damage/HP-bar settle](#battle-helper-functions)). | round boundary; the next round's actor selection follows. |
@@ -275,11 +275,24 @@ including the draw and both stores.
 `ctx[+0xD]` is not a spare byte. Three sites read it as a four-way switch
 (`0x801D6510`, `0x801D6698`, `0x801D689C`), all three inside the **battle
 camera** `FUN_801D5854` - the only prologue in `0x801D5854..0x801D6A00` is its
-own: variants
-`1` and `3` add `0x800` - a half-turn - to the staged yaw, variant `2` raises
-the staged pitch by `0x80` and stamps roll `0x400`, variant `0` leaves the
-framing alone. So the byte is what makes two runs of the same action frame
-from different sides.
+own. The switch is really two independent bits: bit `0` (variants `1` and `3`)
+adds `0x800` - a half-turn - to the staged yaw, and bit `1` (variants `2` and
+`3`) raises the staged pitch by `0x80` and drops the staged `sp+0x1A` by
+`0x100`. So the byte is what makes two runs of the same action frame from
+different sides, at two heights.
+
+The three sites spell the same rule three ways: `0x801D6510` reaches the
+bit-1 body by **falling out** of the `== 3` arm into the `== 2` arm and stores
+`0x1A` as the literal `0x400` (its seed was `0x500`), `0x801D6698` does the
+same, and `0x801D689C` gives variant `3` its own arm and subtracts `0x100`
+instead - the same value by a different route.
+
+`sp+0x1A` is the **middle component of the translation vector**, not a roll: it
+is the second halfword of the `a1 = sp + 0x18` triple `FUN_801D7130` takes
+alongside `a0 = sp + 0x10` (pitch / yaw) and `a2 = sp + 0x20` (the negated
+focus position), and its neighbour `sp+0x1C` carries the depth `ctx[+0x6D0]`.
+An earlier revision of this page called it "roll `0x400`", which is what the
+constant looks like read on its own.
 
 `ActionSeed` rolls it `rand() % 4` before the category dispatch
 (`jal 0x80056798` / `sb v0,0xd(a0)` at `0x801E2D04..0x801E2D30`), and each
@@ -295,15 +308,34 @@ category arm then narrows it:
 Attack (`3`) and Run (`5`) make no store of their own, so they keep the seed
 roll. (The arm addresses come from the seed's own category jump table at
 `0x801CF144`, six words indexed by `+0x1DE`, guard `sltiu v0,v1,0x6` at
-`0x801E2D68`.) A later band masks the byte to bit 0 (`lbu` / `andi 1` / `sb`
-at `0x801E321C..0x801E322C`).
+`0x801E2D68`.)
 
-**Port.** `BattleActionCtx::camera_variant`. The seed roll, the Item arm's
-draw and its two stores, and the Tactical-Arts / Magic zeroes are carried; the
-Spirit arm's draw at `0x801E2FFC` and the bit-0 mask are not, so the port's
-shared `rand()` cursor still falls one draw behind retail's per Spirit action.
-Nothing in the port reads the variant yet - the battle camera does not fork on
-it - so the value is currently modelled, not consumed.
+Two later bands narrow it again. State `0x14` masks it to bit 0 on its
+**in-range shortcut** into the strike loop (`lbu` / `andi 1` / `sb` at
+`0x801E321C..0x801E322C`) - the outer `switch`'s entry for `0x14` is
+`0x801E305C`, so that block is `0x14`'s own body, and it is the only one of
+the dispatcher's three `ctx[7] = 0x1E` stores that carries the write (the
+`0x18` and `0x19` stores at `0x801E3550` / `0x801E35AC` do not). The capture
+band's `0x70` pins it to `1` outright (`0x801E50CC`).
+
+**Port.** `BattleActionCtx::camera_variant`, and every writer above is
+carried: the seed roll, the Item arm's draw and its two stores, the
+Tactical-Arts / Magic zeroes, the Spirit arm's draw at `0x801E2FFC`
+(`battle_action::dispatch`'s `spirit_seed_band`), state `0x14`'s bit-0 mask
+at `0x801E3224` (`attack_face`'s in-range arm) and the capture band's `= 1` at
+`0x801E50CC` (`magic_capture_phase2`). The consumer is
+`legaia_engine_vm::battle_cam_script` - `action_framing`, `recover_framing`
+and `action_end_framing` each carry the two-bit fork of their own site - and
+both hosts feed it the live byte, so the four variants produce four framings.
+
+One writer stays a stand-in. `FUN_8004E13C` zeroes the byte at the first
+swing-clip commit (`sb zero,0xd(v1)` at `0x8004E2B4`, beside the
+`ctx[+0x6DA]` yaw seed, gated on `ctx[+0x13] < 3`); the engine's animation
+player does not expose the clip-header byte that gates it, so `BattleCamera`
+latches the zero on the edge into the strike loop instead. It is a latch and
+not a write because retail's is a write to the shared context byte, which
+stands until the next action seed - while the host re-supplies the framing
+inputs every frame.
 
 ### Magic in the port: which half of the cast the SM owns
 
@@ -1231,8 +1263,45 @@ element selection does not survive `0x65` being the only assignment.
 **Port.** `legaia_engine_vm::battle_action::done`'s `DONE_LEVELUP_BANNER_FRAMES` /
 `DONE_BANNER_SKIP_BELOW`, over `BattleActionHost::pad_word`. The writer is
 `World::accrue_summon_spell_xp` (`engine-core`), the port of `FUN_801E70BC`.
-The `0x801E61B4` unload is **not** ported: the port's Done band models no part
-of the `< 0xC` UI-element teardown block that store sits in.
+The `0x801E61B4` unload is ported with the rest of its block as
+`done::done_band_ui_teardown`, so the id round-trips: raised with the element,
+carried through the `0x50` seed, unloaded here at the id it was staged with,
+cleared by the next `ActionSeed`. See
+[the `0x51` teardown block](#the-0x51-teardown-block) for the latch that makes
+it once-per-action.
+
+### The `0x51` teardown block
+
+Everything the `0x51` arm does after its exit test is one straight line
+(`0x801E614C..0x801E6214`) behind two gates: the countdown must have fallen
+below `0xC`, and the latch `ctx[+0x17]` must be clear. The latch is bumped at
+the end of the block and cleared by the `0x50` entry (`sb zero,0x6(s5)` at
+`0x801E5F60`), so the block runs exactly once per action however many passes
+the band takes - and it runs on **every** pass, including the ones that store
+a new state, because the exit branch at `0x801E610C` jumps to the head of this
+block rather than to the epilogue.
+
+| step | site | condition |
+|---|---|---|
+| sprite-handle table reset `FUN_801D99BC` | `0x801E6170` | unconditional |
+| unload `ctx[+0x18]`, the action's own element | `0x801E6188` | byte non-zero |
+| unload `0x4E` and `0x4F` | `0x801E61A0` / `0x801E61AC` | `ctx[+0x18] == 6` |
+| unload `ctx[+0x26]`, the level-up banner | `0x801E61C4` | byte non-zero |
+| unload `0x0F` and `0x52` | `0x801E61DC` / `0x801E61E8` | `ctx[+0x19]` non-zero |
+| unload `0x44` | `0x801E6200` | `actor[+0x1DE] != 5` (not Run) |
+
+`ctx[+0x18]` is a **context** byte, written by the seed's Attack arm
+(`li v0,0x7` / `sb v0,0x7(s5)` at `0x801E2F48..0x801E2F50`) - the same arm's
+`sb t2,0xf(s5)` at `0x801E2F44` writes the acting *slot* to `ctx[+0x20]`, not
+an element id to the actor. `ctx[+0x19]` is the Spirit-action latch the seed's
+Spirit arm bumps at `0x801E2FF0`; nothing clears it, so once a battle has seen
+one Spirit action the `0x0F` / `0x52` pair is dropped at the end of every
+later action too.
+
+**Port.** `done::done_band_ui_teardown`, over `BattleActionCtx`'s
+`done_ui_torn_down` / `action_ui_element` / `spirit_action_count` /
+`levelup_banner_element`. `FUN_801D99BC` and the unlatched multi-cast sweep
+that follows at `0x801E6218` are not ported.
 
 ## The `0x19` attack-approach park - a second, distinct softlock class
 
@@ -2615,13 +2684,26 @@ it: the acting slot must be a party one (`sltiu v0,v0,0x3` on `0x2(s5)` =
 `ctx[+0x13]` at `0x801E39BC`), the acting character's record `+0xF4` must carry
 bit `0x2000` (`0x801E39FC..0x801E3A08`) and `0x5(s5)` = `ctx[+0x16]` must still
 read zero (`0x801E3A18`). It then rewinds the strike cursor
-(`sb zero,0x4(s5)` = `ctx[+0x15]`), bumps `ctx[+0x16]`, and rewrites every
-queue slot the builder's side array `0x801F6990` marked to `0x19` - so the
-whole action stream replays once with the newly-learned starters demoted, and
-the learn verdict fires on the first pass only. `ctx[+0x16]` is the counter the
-damage kernel's carry arm reads (`s2 = 0xFF` while it is `< 2`). Port:
-`legaia_engine_vm::battle_action`'s `attack_chain` (`attack_x2_refill`), with
-the counter on `BattleActionCtx::attack_x2_pass`.
+(`sb zero,0x4(s5)` = `ctx[+0x15]`), bumps `ctx[+0x16]`, and rewrites to `0x19`
+every queue slot whose mark in the builder's side array `0x801F6990` reads
+**exactly `1`** - so the whole action stream replays once with the
+newly-learned starters demoted, and the learn verdict fires on the first pass
+only. `ctx[+0x16]` is the counter the damage kernel's carry arm reads
+(`s2 = 0xFF` while it is `< 2`).
+
+The compare is `bne v0,a1,0x801E3A58` with `a1 = 1`, and the exactness is
+load-bearing. The build loop writes `1` at each art it accepts
+(`0x801EF788`); the Super tail-replace `FUN_801EF9E4` writes `4` at each
+`0x1A` it stamps (`0x801EFBA8`), *after* the reorder. So a Super Art's starter
+is the one starter the second pass leaves alone, and the War God Icon's extra
+pass performs the Super again rather than a plain swing. A port that
+reconstructs the marks from the finished queue bytes cannot tell the two apart
+- both starters read `0x1A`.
+
+Port: `legaia_engine_vm::battle_action`'s `attack_chain` (`attack_x2_refill`),
+with the counter on `BattleActionCtx::attack_x2_pass` and the marks carried
+from the builder on `BattleActor::starter_marks`
+(`BUILD_STARTER_MARK` / `SUPER_STARTER_MARK`).
 
 ### 3. Damage is one power byte per animation hit event
 

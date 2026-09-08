@@ -39,6 +39,10 @@ pub(super) fn done_cleanup<H: BattleActionHost + ?Sized>(
     } else {
         DONE_SEED_FRAMES
     };
+    // `sb zero,0x6(s5)` at `0x801E5F60` - the band's UI-teardown latch is
+    // armed here, so the `0x51` tail's unload block runs once for this
+    // action and not again.
+    ctx.done_ui_torn_down = 0;
 
     // Per-category pose: run → screen-shake; attack → pose 8; otherwise idle.
     match category {
@@ -237,6 +241,27 @@ pub const DONE_LEVELUP_BANNER_FRAMES: i16 = 0x96;
 /// can skip it.
 pub const DONE_BANNER_SKIP_BELOW: i16 = 0x5B;
 
+/// `FUN_801D8DE8`'s second argument for the **terminate / unload** half of
+/// the element scheduler (`li a1,0x1` at every teardown call site of the
+/// `0x51` tail). `0` is the spawn / reset half.
+pub const UI_UNLOAD: u8 = 1;
+
+/// The one action element whose teardown drags two more with it
+/// (`li v0,0x6` / `bne v1,v0,0x801E61B4` at `0x801E6194..0x801E6198`).
+pub const DONE_PAIRED_ELEMENT: u8 = 6;
+/// First of the pair (`li a0,0x4e` at `0x801E619C`).
+pub const DONE_PAIRED_ELEMENT_A: u8 = 0x4E;
+/// Second of the pair (`li a0,0x4f` at `0x801E61A8`).
+pub const DONE_PAIRED_ELEMENT_B: u8 = 0x4F;
+/// First of the Spirit pair the `ctx[+0x19]` latch drops (`li a0,0xf` at
+/// `0x801E61D8`).
+pub const DONE_SPIRIT_ELEMENT_A: u8 = 0x0F;
+/// Second of the Spirit pair (`li a0,0x52` at `0x801E61E4`).
+pub const DONE_SPIRIT_ELEMENT_B: u8 = 0x52;
+/// Dropped for every action whose category is not Run (`li a0,0x44` at
+/// `0x801E61FC`).
+pub const DONE_ACTION_ELEMENT: u8 = 0x44;
+
 pub(super) fn done_fade_down<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
@@ -279,18 +304,92 @@ pub(super) fn done_fade_down<H: BattleActionHost + ?Sized>(
     if ctx.frame_timer < DONE_MENU_HOLD_FRAMES && ctx.menu_open != 0 {
         ctx.frame_timer = DONE_MENU_HOLD_FRAMES;
     }
-    if ctx.frame_timer >= 0 || ctx.menu_open != 0 {
-        return stay(ctx);
+    let outcome = if ctx.frame_timer >= 0 || ctx.menu_open != 0 {
+        stay(ctx)
+    } else {
+        // `sb zero,0x288(v1)` at `0x801E6114` - the second counter-attack
+        // trigger flag is cleared on the way out, so a counter armed during
+        // this action cannot leak into the next one.
+        ctx.counter_attack_b = 0;
+        if ctx.multi_cast_gate == 0 {
+            transition(ctx, ActionState::EndOfAction)
+        } else {
+            ctx.frame_timer = DONE_MULTI_CAST_FRAMES;
+            transition(ctx, ActionState::DoneMultiCast)
+        }
+    };
+    // The band's UI teardown runs on the way out of *every* pass, after the
+    // state store and whether or not one happened: retail's exit branch at
+    // `0x801E610C` jumps to `0x801E614C`, the head of the tail below, not to
+    // the epilogue.
+    done_band_ui_teardown(host, ctx);
+    outcome
+}
+
+/// PORT: FUN_801E295C (`0x801E614C..0x801E6214`) - the Done band's **UI
+/// teardown**, the tail every pass of state `0x51` falls into.
+///
+/// Two gates, then a latched straight line:
+///
+/// ```text
+/// 801e614c  lh    v0,0x2(s7)      ; ctx[+0x6D8], the band countdown
+/// 801e6154  slti  v0,v0,0xc
+/// 801e6158  beq   v0,zero,<exit>  ;   >= 0xC -> nothing yet
+/// 801e6160  lbu   v0,0x6(s5)      ; ctx[+0x17], the "already torn down" latch
+/// 801e6168  bne   v0,zero,<exit>
+/// 801e6170  jal   0x801d99bc      ; the sprite-handle table hard reset
+/// 801e6178  lbu   v0,0x7(s5)      ; ctx[+0x18] - the action's own element
+/// 801e6188  jal   FUN_801D8DE8(elem, 1)
+/// 801e6198  bne   v1,0x6,...      ;   element 6 also drops 0x4E and 0x4F
+/// 801e61b4  lbu   v0,0x15(s5)     ; ctx[+0x26] - the level-up banner
+/// 801e61c4  jal   FUN_801D8DE8(elem, 1)
+/// 801e61cc  lbu   v0,0x8(s5)      ; ctx[+0x19] - the Spirit-action latch
+/// 801e61dc  jal   FUN_801D8DE8(0x0F, 1) ; and 0x52
+/// 801e61f0  lbu   v1,0x1de(s3)    ; actor category, `5` = Run
+/// 801e6200  jal   FUN_801D8DE8(0x44, 1) ; every non-Run action
+/// 801e6214  sb    v0,0x6(s5)      ; ctx[+0x17] += 1  - the latch
+/// ```
+///
+/// The latch is what makes it once-per-action: [`done_cleanup`] (state
+/// `0x50`) clears `ctx[+0x17]` at `0x801E5F60`, so the next action arms it
+/// again. Every unload is `FUN_801D8DE8(id, 1)`, mode `1` being the
+/// terminate half of the element scheduler
+/// ([`BattleActionHost::ui_element`]).
+///
+/// This is where the level-up banner's element id round-trips: the banner
+/// path stamps [`BattleActionCtx::levelup_banner_element`], `done_cleanup`
+/// reads it to stretch the countdown to `0x96`, this arm unloads it, and the
+/// next [`ActionState::ActionSeed`] clears the byte (`0x801E2CFC`).
+///
+/// **Not ported:** the sprite-table reset `FUN_801D99BC` at `0x801E6170` (a
+/// whole-table rebuild the engine's HUD does not model as handles) and the
+/// unlatched multi-cast sweep that follows at `0x801E6218`.
+fn done_band_ui_teardown<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &mut BattleActionCtx) {
+    if ctx.frame_timer >= DONE_MENU_HOLD_FRAMES || ctx.done_ui_torn_down != 0 {
+        return;
     }
-    // `sb zero,0x288(v1)` at `0x801E6114` - the second counter-attack trigger
-    // flag is cleared on the way out, so a counter armed during this action
-    // cannot leak into the next one.
-    ctx.counter_attack_b = 0;
-    if ctx.multi_cast_gate == 0 {
-        return transition(ctx, ActionState::EndOfAction);
+    if ctx.action_ui_element != 0 {
+        host.ui_element(ctx.action_ui_element, UI_UNLOAD);
+        if ctx.action_ui_element == DONE_PAIRED_ELEMENT {
+            host.ui_element(DONE_PAIRED_ELEMENT_A, UI_UNLOAD);
+            host.ui_element(DONE_PAIRED_ELEMENT_B, UI_UNLOAD);
+        }
     }
-    ctx.frame_timer = DONE_MULTI_CAST_FRAMES;
-    transition(ctx, ActionState::DoneMultiCast)
+    if ctx.levelup_banner_element != 0 {
+        host.ui_element(ctx.levelup_banner_element, UI_UNLOAD);
+    }
+    if ctx.spirit_action_count != 0 {
+        host.ui_element(DONE_SPIRIT_ELEMENT_A, UI_UNLOAD);
+        host.ui_element(DONE_SPIRIT_ELEMENT_B, UI_UNLOAD);
+    }
+    let category = host
+        .actor(ctx.active_actor)
+        .map(|a| a.action_category)
+        .unwrap_or(0);
+    if category != ActionCategory::Run as u8 {
+        host.ui_element(DONE_ACTION_ELEMENT, UI_UNLOAD);
+    }
+    ctx.done_ui_torn_down = ctx.done_ui_torn_down.wrapping_add(1);
 }
 
 pub(super) fn done_multi_cast<H: BattleActionHost + ?Sized>(

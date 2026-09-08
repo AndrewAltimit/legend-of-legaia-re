@@ -560,6 +560,55 @@ impl World {
         busy
     }
 
+    /// One tick of the **capture band's** resident module - the engine body
+    /// behind `BattleActionHost::capture_stager_tick`, and the twin of
+    /// [`Self::summon_stager_tick`] on the other dispatcher.
+    ///
+    /// Retail's battle phase `0x70` re-enters `FUN_801F2160` every frame
+    /// (`jal` at `0x801E50C8`) and holds while it returns non-zero
+    /// (`bne v0,zero` at `0x801E50D0`); the return is the selected slot-B
+    /// module tick's own return. So this runs the resident module's code half
+    /// ([`Self::run_cast_module_code`]) and reports what it reported.
+    ///
+    /// The one deviation, and it is deliberate: a module whose tick body is
+    /// **not** ported reports "not busy" rather than
+    /// [`CastModuleCodeRun::busy`]'s seeded `true`. Holding on an unported
+    /// row would park the band forever, which is a softlock and not a
+    /// fidelity gain; [`CastModuleCodeRun::tick_ported`] is what distinguishes
+    /// the two.
+    ///
+    /// PORT: FUN_801F2160 (the dispatch seam; the per-module tick bodies are
+    /// [`legaia_engine_vm::cast_module_ticks`])
+    pub fn capture_stager_tick(&mut self) -> bool {
+        let Some(spell_id) = self.capture_cast_spell else {
+            return false;
+        };
+        let arm = self.cast_module_phase;
+        let Some(run) = self.run_cast_module_code(spell_id, arm) else {
+            self.capture_cast_spell = None;
+            return false;
+        };
+        if run.tick_ported && run.busy {
+            return true;
+        }
+        // The band is leaving `0x70`; the module stops being re-entered.
+        self.capture_cast_spell = None;
+        false
+    }
+
+    /// Arm [`Self::capture_stager_tick`] for `spell_id`'s module - the pager
+    /// seam retail runs at its `0x6F` exit, where `sb zero,0x279(v0)`
+    /// (`0x801E5048`) also zeroes the module phase before phase `0x70` starts
+    /// ticking it.
+    pub(in crate::world) fn arm_capture_cast_module(&mut self, spell_id: u8) {
+        if self.cast_module_for(spell_id).is_none() {
+            return;
+        }
+        self.cast_module_phase = 0;
+        self.cast_module_ctx_278 = 0;
+        self.capture_cast_spell = Some(spell_id);
+    }
+
     /// Stage the walk clip (id `1`, the looping approach - the capture's
     /// `+0x1D9 == 1`) and glide the creature one step toward `goal`.
     /// Returns `true` on arrival.
@@ -637,7 +686,16 @@ pub struct CastModuleCodeRun {
     /// Seats an AoE stager swept, with the amount applied to each.
     pub aoe_hits: Vec<vm::cast_module_ticks::AoeHit>,
     /// `true` while the module's phase machine still reports busy.
+    ///
+    /// Seeded `true` for a resident module and only *lowered* by a ported
+    /// tick body, so it is meaningless on its own - read it together with
+    /// [`Self::tick_ported`].
     pub busy: bool,
+    /// Whether a ported tick body actually ran this frame. `false` means the
+    /// entry is resident but its code half is one of the band's unported
+    /// rows, and then [`Self::busy`] carries no information: a caller that
+    /// held on it would hold forever.
+    pub tick_ported: bool,
 }
 
 impl World {
@@ -799,6 +857,7 @@ impl World {
         };
         if let Some(step) = step {
             run.busy = step == ticks::CastTickStep::Busy;
+            run.tick_ported = true;
         }
 
         self.write_cast_actor_state(caster_slot, &caster);
@@ -897,6 +956,7 @@ impl World {
             phase: ctx.phase,
             ctx_278: ctx.ctx_278,
             busy: false,
+            tick_ported: true,
             aoe_hits: hits,
         })
     }
@@ -952,5 +1012,84 @@ impl World {
             rng,
             || (self.next_rng() & 0x7fff) as u16,
         ))
+    }
+}
+
+#[cfg(test)]
+mod capture_hold_tests {
+    use super::*;
+
+    fn band_world() -> World {
+        let mut world = World {
+            party_count: 3,
+            ..World::default()
+        };
+        while world.actors.len() < 8 {
+            world.actors.push(crate::world::Actor::default());
+        }
+        for a in world.actors.iter_mut() {
+            a.active = true;
+            a.battle.hp = 100;
+            a.battle.max_hp = 100;
+            a.battle.liveness = 1;
+        }
+        world.mode = SceneMode::Battle;
+        world
+    }
+
+    /// Nothing paged in: the seam is inert, so a host that never reaches the
+    /// capture band behaves exactly as it did before the hold existed.
+    #[test]
+    fn an_unarmed_band_is_never_busy() {
+        let mut world = band_world();
+        assert!(world.capture_cast_spell.is_none());
+        assert!(!world.capture_stager_tick());
+    }
+
+    /// Arming resets the module phase pair - retail's `sb zero,0x279(v0)` at
+    /// the `0x6F` exit (`0x801E5048`), just before `0x70` starts ticking.
+    #[test]
+    fn arming_resets_the_module_phase_pair() {
+        let mut world = band_world();
+        world.cast_module_phase = 9;
+        world.cast_module_ctx_278 = 7;
+        world.arm_capture_cast_module(0x87);
+        assert_eq!(world.capture_cast_spell, Some(0x87));
+        assert_eq!(world.cast_module_phase, 0);
+        assert_eq!(world.cast_module_ctx_278, 0);
+    }
+
+    /// A spell that names no band entry arms nothing, so no host can be
+    /// parked on a module that is not there.
+    #[test]
+    fn a_spell_with_no_module_arms_nothing() {
+        let mut world = band_world();
+        world.arm_capture_cast_module(0x00);
+        assert!(world.capture_cast_spell.is_none());
+        assert!(!world.capture_stager_tick());
+    }
+
+    /// The no-softlock rule. `CastModuleCodeRun::busy` seeds `true` for any
+    /// resident entry, so a module whose tick body is unported would hold
+    /// phase `0x70` forever; the hold reads `tick_ported` first and lets the
+    /// band through instead, disarming as it goes.
+    #[test]
+    fn an_unported_tick_body_never_holds_the_phase() {
+        let mut world = band_world();
+        // PROT 0909's code half is a *stager*, not a tick body.
+        assert_eq!(world.cast_module_for(0x87), Some(909));
+        let run = world.run_cast_module_code(0x87, 0).unwrap();
+        assert!(run.busy, "the seeded value on its own says 'busy'");
+        assert!(!run.tick_ported, "but no tick body ran");
+
+        world.arm_capture_cast_module(0x87);
+        assert!(
+            !world.capture_stager_tick(),
+            "so the band is not held on it"
+        );
+        assert!(
+            world.capture_cast_spell.is_none(),
+            "and the module stops being re-entered"
+        );
     }
 }

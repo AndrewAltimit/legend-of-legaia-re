@@ -1194,6 +1194,17 @@ melee is therefore filmed from the `0x200` base and a party member's from
 `BattleCamera::observe_action_state` applies the ladder on the action-state
 edges, standing the swing-clip commit in with the edge into `0x1E`.
 
+The style byte itself reaches all three framings live. Both hosts read
+`World::battle_ctx.camera_variant` into `ActionFraming::style` - the native
+window's `battle_action_framing` and the browser page's
+`play_battle_render`'s `BattleCamInputs` builder - where each of them used to
+pass a hard-coded `0`, which pinned every action to variant `0` of four. The
+action SM writes the byte at its seed and narrows it per category arm, per
+[`ctx[+0xD]`](battle-action.md#ctx0xd---the-per-action-camera-angle-variant).
+The commit's own `ctx[+0xD] = 0` is the one part still standing in as a latch
+on `BattleCamera`, because the host re-supplies the framing inputs every frame
+and a local write would not survive the next one.
+
 **The framing-case table.** `FUN_801D5854`'s mode argument indexes a
 ten-entry jump table at `0x801CEA00` (PROT 0898 file `0x1E8`), and modes `4`
 and `5` are the same no-op tail slot:

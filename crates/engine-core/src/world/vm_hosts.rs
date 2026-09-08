@@ -2403,6 +2403,16 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
             })
             .unwrap_or([0, 0, 0]);
         self.world.spawn_cast_module_fx(idx, origin);
+        // ...and arm the per-frame tick phase `0x70` holds on. Retail's
+        // `0x6F` exit zeroes `ctx[+0x279]` (`0x801E5048`) right before it
+        // hands over, which is the same reset this does.
+        self.world.arm_capture_cast_module(idx);
+    }
+    /// The capture band's **per-frame module tick** (`0x70`): retail's
+    /// `jal 0x801f2160` at `0x801E50C8`, whose non-zero return holds the
+    /// phase. See [`World::capture_stager_tick`].
+    fn capture_stager_tick(&mut self) -> bool {
+        self.world.capture_stager_tick()
     }
     /// The party cast trigger the pre-cast wait runs on its timer's expiry.
     ///

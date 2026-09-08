@@ -69,7 +69,7 @@ fn an_empty_ra_seru_slot_leaves_the_miracle_string_unreplaced() {
         !w.miracle_marker_armed_for(0),
         "an empty Ra-Seru slot must not arm the marker"
     );
-    let (queue, _) = w.build_arts_action_queue(0, &vahn_miracle());
+    let (queue, _, _) = w.build_arts_action_queue(0, &vahn_miracle());
     let row = vahn_miracle_queue();
     assert_ne!(
         &queue[..row.len()],
@@ -84,7 +84,7 @@ fn an_occupied_ra_seru_slot_arms_the_marker_and_the_row_lands() {
     equip[3] = 0x40;
     let mut w = arts_world(equip);
     assert!(w.miracle_marker_armed_for(0));
-    let (queue, _) = w.build_arts_action_queue(0, &vahn_miracle());
+    let (queue, _, _) = w.build_arts_action_queue(0, &vahn_miracle());
     let row = vahn_miracle_queue();
     assert_eq!(
         &queue[..row.len()],
@@ -259,7 +259,7 @@ fn a_doubled_art_keeps_the_learn_verdict_on_its_first_performance() {
     );
     let mut input = combo.clone();
     input.extend(combo.clone());
-    let (queue, _) = w.build_arts_action_queue(0, &input);
+    let (queue, _, _) = w.build_arts_action_queue(0, &input);
     let starters: Vec<(usize, u8)> = queue
         .iter()
         .enumerate()

@@ -52,6 +52,11 @@ struct RecHost {
     /// Party slots reported as NOT seated by `slot_seated` (empty = every
     /// slot seated, the trait default).
     unseated: std::collections::HashSet<u8>,
+    /// How many more times `capture_stager_tick` reports busy - the stand-in
+    /// for a resident slot-B module that stages for N frames.
+    capture_busy_frames: RefCell<u32>,
+    /// How many times `capture_stager_tick` was entered.
+    capture_ticks: RefCell<u32>,
 }
 
 impl RecHost {
@@ -127,6 +132,15 @@ impl BattleActionHost for RecHost {
     }
     fn load_capture_archive(&mut self, idx: u8) {
         self.record(Event::LoadCapture(idx));
+    }
+    fn capture_stager_tick(&mut self) -> bool {
+        *self.capture_ticks.borrow_mut() += 1;
+        let mut left = self.capture_busy_frames.borrow_mut();
+        if *left == 0 {
+            return false;
+        }
+        *left -= 1;
+        true
     }
     fn spell_anim_trigger(&mut self, p: u8, s: u8) {
         self.record(Event::SpellAnim(p, s));
@@ -599,6 +613,9 @@ fn action_seed_ordinary_items_stay_on_the_spirit_band() {
 fn action_seed_item_draws_twice_and_magic_once() {
     for (category, expected) in [
         (ActionCategory::Item, 2usize),
+        // The Spirit arm's own draw sits at `0x801E2FFC`, the same
+        // unconditional shape the Item arm's has.
+        (ActionCategory::Spirit, 2),
         (ActionCategory::Magic, 1),
         (ActionCategory::Attack, 1),
         (ActionCategory::TacticalArts, 1),
@@ -2899,5 +2916,298 @@ fn a_monster_slot_never_reads_its_stream_bytes_as_art_constants() {
         staged_art_constant(host.actors[3].queued_anim, None, party),
         None,
         "a monster's clip index is not an art constant"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The capture band's per-frame hold - `0x70` (`0x801E504C..0x801E50E4`)
+// ---------------------------------------------------------------------------
+
+/// Retail re-enters `FUN_801F2160` every frame of phase `0x70` and holds on a
+/// non-zero return (`jal` at `0x801E50C8`, `bne v0,zero` at `0x801E50D0`).
+/// So a module that stages `n` frames keeps the phase for exactly `n` ticks
+/// and leaves on the `n + 1`-th - and the tick is entered on every one of
+/// them, including the frame it finally reports done.
+#[test]
+fn capture_phase2_holds_for_exactly_the_modules_staging_frames() {
+    for n in [0u32, 1, 5, 40] {
+        let (mut ctx, mut host) = fresh(ActionCategory::Magic, 1);
+        ctx.action_state = ActionState::MagicCapturePhase2.as_byte();
+        *host.capture_busy_frames.borrow_mut() = n;
+
+        for frame in 0..n {
+            step(&mut host, &mut ctx);
+            assert_eq!(
+                ctx.action_state,
+                ActionState::MagicCapturePhase2.as_byte(),
+                "n={n} frame={frame}: still staging"
+            );
+        }
+        step(&mut host, &mut ctx);
+        assert_eq!(
+            ctx.action_state,
+            ActionState::MagicCaptureFinalize.as_byte(),
+            "n={n}: the zero return advances to 0x71"
+        );
+        assert_eq!(
+            *host.capture_ticks.borrow(),
+            n + 1,
+            "n={n}: one tick per frame the phase ran"
+        );
+    }
+}
+
+/// `ctx[+0xD] = 1` in the `jal`'s delay slot (`li v0,0x1` at `0x801E50C4`,
+/// `sb v0,0xd(v1)` at `0x801E50CC`): the capture is framed from the mirrored
+/// side whatever the action seed rolled, and the write happens on every pass,
+/// including the ones that hold.
+#[test]
+fn capture_phase2_pins_the_camera_variant() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Magic, 1);
+    ctx.action_state = ActionState::MagicCapturePhase2.as_byte();
+    ctx.camera_variant = 3;
+    *host.capture_busy_frames.borrow_mut() = 2;
+    for _ in 0..3 {
+        step(&mut host, &mut ctx);
+        assert_eq!(ctx.camera_variant, CAPTURE_CAMERA_VARIANT);
+    }
+}
+
+/// The 75% duck is **gated** on `ctx[+0x287]` (`lbu v0,0x287(v0)` /
+/// `beq v0,zero,0x801E50BC` at `0x801E5058`), the same gate state `0x6F`
+/// runs. The port used to duck unconditionally.
+#[test]
+fn capture_phase2_ducks_only_behind_the_counter_flag() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Magic, 1);
+    ctx.action_state = ActionState::MagicCapturePhase2.as_byte();
+    ctx.counter_attack_a = 0;
+    step(&mut host, &mut ctx);
+    assert!(
+        !host
+            .take()
+            .iter()
+            .any(|e| matches!(e, Event::Brightness(_))),
+        "flag clear: no ramp"
+    );
+
+    let (mut ctx, mut host) = fresh(ActionCategory::Magic, 1);
+    ctx.action_state = ActionState::MagicCapturePhase2.as_byte();
+    ctx.counter_attack_a = 1;
+    step(&mut host, &mut ctx);
+    assert!(
+        host.take().contains(&Event::Brightness(75)),
+        "flag set: the 75% ramp"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The Attack x2 refill's mark compare - `0x801E3A44..0x801E3A64`
+// ---------------------------------------------------------------------------
+
+/// `bne v0,a1,0x801E3A58` with `a1 = 1` is an **exact** compare against the
+/// build loop's mark, so the Super tail-replace's `4` is skipped: a Super's
+/// `0x1A` starter survives the War God Icon's second pass while an ordinary
+/// newly-learned art's is demoted to `0x19`.
+#[test]
+fn attack_x2_refill_demotes_build_starters_and_spares_super_starters() {
+    let mut host = RecHost::with_n_actors(ACTOR_SLOTS);
+    for a in &mut host.actors {
+        a.liveness = 1;
+    }
+    host.ability_bits.insert(0, WAR_GOD_ATTACK_X2_BIT);
+    // `[0x0F, 0x1A(art), 0x27, 0x1A(super), 0x2C, 0x00]`: two `0x1A`
+    // starters, one from the build loop and one the Super applier wrote.
+    let a = &mut host.actors[0];
+    a.params[0] = SWING_HIGH;
+    a.params[1] = SPECIAL_STARTER;
+    a.params[2] = 0x27;
+    a.params[3] = SPECIAL_STARTER;
+    a.params[4] = 0x2C;
+    a.params[5] = 0;
+    let mut marks = [0u32; ACTION_QUEUE_CAP];
+    marks[1] = BUILD_STARTER_MARK;
+    marks[3] = SUPER_STARTER_MARK;
+    a.starter_marks = Some(marks);
+    // The refill is reached by staging the stream's last byte and finding the
+    // terminator at the bumped cursor, so park one byte short of it.
+    a.strike_index = 4;
+
+    let mut ctx = BattleActionCtx::new();
+    ctx.active_actor = 0;
+    ctx.action_state = ActionState::AttackChain.as_byte();
+    step(&mut host, &mut ctx);
+
+    assert_eq!(
+        host.actors[0].params[1], REGULAR_STARTER,
+        "the build loop's starter is demoted"
+    );
+    assert_eq!(
+        host.actors[0].params[3], SPECIAL_STARTER,
+        "the Super applier's starter is not"
+    );
+    assert_eq!(ctx.attack_x2_pass, 1);
+    assert_eq!(host.actors[0].strike_index, 0, "the stream replays from 0");
+}
+
+/// A queue no builder produced carries no marks; the refill then reconstructs
+/// the build-loop marks from the bytes, which is the pre-carrier behaviour and
+/// can only ever produce [`BUILD_STARTER_MARK`].
+#[test]
+fn attack_x2_refill_falls_back_to_reconstructed_marks() {
+    let mut host = RecHost::with_n_actors(ACTOR_SLOTS);
+    for a in &mut host.actors {
+        a.liveness = 1;
+    }
+    host.ability_bits.insert(0, WAR_GOD_ATTACK_X2_BIT);
+    let a = &mut host.actors[0];
+    a.params[0] = SPECIAL_STARTER;
+    a.params[1] = 0x27;
+    a.params[2] = 0;
+    a.starter_marks = None;
+    a.strike_index = 1;
+
+    let mut ctx = BattleActionCtx::new();
+    ctx.active_actor = 0;
+    ctx.action_state = ActionState::AttackChain.as_byte();
+    step(&mut host, &mut ctx);
+    assert_eq!(host.actors[0].params[0], REGULAR_STARTER);
+}
+
+// ---------------------------------------------------------------------------
+// The Spirit seed arm - `0x801E2FF0..0x801E3024`
+// ---------------------------------------------------------------------------
+
+/// The Spirit arm bumps `ctx[+0x19]` (in the `jal`'s delay slot) and folds
+/// its draw to `(rand % 2) * 2`, so a Spirit action is framed at variant `0`
+/// or `2` and never from the mirrored side.
+#[test]
+fn spirit_seed_bumps_the_latch_and_folds_its_draw() {
+    for (draw, expect) in [(0u32, 0u8), (1, 2), (4, 0), (7, 2)] {
+        let (mut ctx, mut host) = fresh(ActionCategory::Spirit, 1);
+        ctx.action_state = ActionState::ActionSeed.as_byte();
+        host.rng_seq = vec![3, draw];
+        step(&mut host, &mut ctx);
+        assert_eq!(ctx.action_state, ActionState::SpiritArtsEntry.as_byte());
+        assert_eq!(ctx.camera_variant, expect, "draw {draw}");
+        assert_eq!(ctx.spirit_action_count, 1);
+    }
+}
+
+/// Nothing in the dispatcher clears `ctx[+0x19]`, so it is a per-battle latch
+/// and a second Spirit action counts on top of the first.
+#[test]
+fn spirit_latch_accumulates_across_actions() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Spirit, 1);
+    for n in 1..=3u8 {
+        ctx.action_state = ActionState::ActionSeed.as_byte();
+        step(&mut host, &mut ctx);
+        assert_eq!(ctx.spirit_action_count, n);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The Done band's UI teardown - `0x801E614C..0x801E6214`
+// ---------------------------------------------------------------------------
+
+/// The teardown is latched by `ctx[+0x17]` and gated on the countdown having
+/// fallen below `0xC`, so every element - the level-up banner among them -
+/// is unloaded exactly once per action, however many passes the band takes.
+#[test]
+fn done_band_unloads_the_level_up_banner_exactly_once() {
+    let mut host = RecHost::with_n_actors(ACTOR_SLOTS);
+    for a in &mut host.actors {
+        a.liveness = 1;
+    }
+    host.actors[0].action_category = ActionCategory::Attack.as_byte();
+    let mut ctx = BattleActionCtx::new();
+    ctx.active_actor = 0;
+    ctx.action_state = ActionState::DoneFadeDown.as_byte();
+    ctx.levelup_banner_element = 0x65;
+    ctx.action_ui_element = 7;
+    ctx.frame_timer = 4;
+
+    // Four passes, all of them inside `0x51` (the countdown reaches `0` on
+    // the fourth and only goes negative on the fifth) - so every unload
+    // recorded here is this arm's.
+    for _ in 0..4 {
+        step(&mut host, &mut ctx);
+    }
+    assert_eq!(
+        ctx.action_state,
+        ActionState::DoneFadeDown.as_byte(),
+        "the band is still in 0x51"
+    );
+    let events = host.take();
+    let unloads: Vec<u8> = events
+        .iter()
+        .filter_map(|e| match e {
+            Event::Ui(id, UI_UNLOAD) => Some(*id),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        unloads,
+        vec![7, 0x65, DONE_ACTION_ELEMENT],
+        "the action's element, the banner, then the non-Run element - once"
+    );
+    assert_eq!(ctx.done_ui_torn_down, 1);
+}
+
+/// The banner id round-trips: raised by whatever staged it, consumed by the
+/// teardown at the id it was staged with, and cleared by the next action seed
+/// (`sb zero,0x15(s5)` at `0x801E2CFC`).
+#[test]
+fn level_up_banner_element_round_trips_through_the_done_band() {
+    for element in [0x65u8, 0x12, 0xFF] {
+        let mut host = RecHost::with_n_actors(ACTOR_SLOTS);
+        for a in &mut host.actors {
+            a.liveness = 1;
+        }
+        host.actors[0].action_category = ActionCategory::Attack.as_byte();
+        let mut ctx = BattleActionCtx::new();
+        ctx.active_actor = 0;
+        ctx.action_state = ActionState::DoneFadeDown.as_byte();
+        ctx.levelup_banner_element = element;
+        ctx.frame_timer = 2;
+        step(&mut host, &mut ctx);
+        assert!(
+            host.take().contains(&Event::Ui(element, UI_UNLOAD)),
+            "element {element:#04x} unloads at the id it was staged with"
+        );
+        // ...and the next seed clears the byte.
+        ctx.action_state = ActionState::ActionSeed.as_byte();
+        step(&mut host, &mut ctx);
+        assert_eq!(ctx.levelup_banner_element, 0);
+    }
+}
+
+/// A Run action skips element `0x44` (`lbu v1,0x1de(s3)` / `beq v1,0x5` at
+/// `0x801E61F0..0x801E61F8`), and the Spirit latch adds the `0x0F` / `0x52`
+/// pair (`0x801E61CC..0x801E61E8`).
+#[test]
+fn done_band_teardown_honours_the_category_and_spirit_gates() {
+    let mut host = RecHost::with_n_actors(ACTOR_SLOTS);
+    for a in &mut host.actors {
+        a.liveness = 1;
+    }
+    host.actors[0].action_category = ActionCategory::Run.as_byte();
+    let mut ctx = BattleActionCtx::new();
+    ctx.active_actor = 0;
+    ctx.action_state = ActionState::DoneFadeDown.as_byte();
+    ctx.spirit_action_count = 1;
+    ctx.frame_timer = 2;
+    step(&mut host, &mut ctx);
+    let unloads: Vec<u8> = host
+        .take()
+        .iter()
+        .filter_map(|e| match e {
+            Event::Ui(id, UI_UNLOAD) => Some(*id),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        unloads,
+        vec![DONE_SPIRIT_ELEMENT_A, DONE_SPIRIT_ELEMENT_B],
+        "Run drops 0x44, the Spirit latch adds its pair"
     );
 }

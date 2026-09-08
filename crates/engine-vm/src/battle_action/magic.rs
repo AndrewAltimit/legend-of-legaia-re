@@ -359,6 +359,12 @@ pub(super) fn magic_exit<H: BattleActionHost + ?Sized>(
 
 // --- magic-capture branch ---------------------------------------------------
 
+/// The framing style (`ctx[+0xD]`) the capture band pins for the whole cast:
+/// `li v0,0x1` at `0x801E50C4`, stored in the `jal`'s delay slot at
+/// `0x801E50CC`. Style `1` is the half-turn arm of the shared `ctx[+0xD]`
+/// fork in `FUN_801D5854` (see [`crate::battle_cam_script::ActionFraming`]).
+pub const CAPTURE_CAMERA_VARIANT: u8 = 1;
+
 pub(super) fn magic_capture_branch<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
@@ -386,11 +392,48 @@ pub(super) fn magic_capture_fade<H: BattleActionHost + ?Sized>(
     transition(ctx, ActionState::MagicCapturePhase2)
 }
 
+/// State `0x70` - the capture band's **per-frame module tick**
+/// (`0x801E504C..0x801E50E4`).
+///
+/// Three things happen here, in retail's order:
+///
+/// * the audio duck, gated on `ctx[+0x287]` (`lbu v0,0x287(v0)` /
+///   `beq v0,zero,0x801E50BC` at `0x801E5058..0x801E5060`) - the same 75%
+///   ramp state `0x6F` runs, and the same gate. The port used to duck
+///   unconditionally;
+/// * `ctx[+0xD] = 1` (`li v0,0x1` / `sb v0,0xd(v1)` at
+///   `0x801E50C4..0x801E50CC`, the `jal`'s delay slot): the framing style is
+///   pinned to the half-turn variant for the whole capture, so a capture is
+///   always framed from the mirrored side whatever the action seed rolled;
+/// * the hold. `jal 0x801f2160` at `0x801E50C8` re-enters the resident
+///   slot-B cast module every frame and `bne v0,zero,0x801e6814` at
+///   `0x801E50D0` **stays in `0x70`** while it reports busy. Only a zero
+///   return advances to `0x71`.
+///
+/// The port used to transition on the first frame, which collapsed every
+/// capture-class cast's staging to a single tick. The tick itself is the
+/// host's ([`BattleActionHost::capture_stager_tick`]); a host with none is
+/// never busy and still passes straight through.
+///
+/// **Not ported here:** the depth re-seed `jal 0x801f0348` at `0x801E50DC`,
+/// which runs in the same breath as the `0x71` store - the port re-derives
+/// `ctx[+0x6D0]` at the action seed instead
+/// ([`crate::battle_formulas::camera_height_for_frame`]).
+///
+/// PORT: FUN_801E295C (`0x801E504C..0x801E50E4`)
 pub(super) fn magic_capture_phase2<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
 ) -> StepOutcome {
-    host.duck_audio_level(75);
+    if ctx.counter_attack_a != 0 {
+        host.duck_audio_level(75);
+    }
+    ctx.camera_variant = CAPTURE_CAMERA_VARIANT;
+    // PORT: FUN_801F2160 (call site; the tick body is the host's resident
+    // cast module)
+    if host.capture_stager_tick() {
+        return stay(ctx);
+    }
     transition(ctx, ActionState::MagicCaptureFinalize)
 }
 

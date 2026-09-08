@@ -182,6 +182,19 @@ pub const REGULAR_STARTER: u8 = 0x19;
 /// so only this value is ever observed by it.
 pub const BUILD_STARTER_MARK: u32 = 1;
 
+/// The mark value the **Super tail-replace** writes at each starter it stamps
+/// (`li v1,0x4` / `sw v1,0x0(v0)` at `0x801EFB8C..0x801EFBA8` in
+/// `FUN_801EF9E4`), and only where the byte it just wrote is
+/// [`SPECIAL_STARTER`] (`li v0,0x1a` / `bne v1,v0` at `0x801EFB84`).
+///
+/// It exists to be *unequal* to [`BUILD_STARTER_MARK`]: the Attack x2 refill
+/// (`0x801E3A44..0x801E3A64`) rewrites a queue slot only when its mark reads
+/// exactly `1` (`bne v0,a1` at `0x801E3A4C`, `a1 = 1`), so a Super's starter
+/// is the one starter the second pass leaves at `0x1A`.
+///
+/// REF: FUN_801EF9E4 (`0x801EFB84..0x801EFBA8`)
+pub const SUPER_STARTER_MARK: u32 = 4;
+
 /// The reorder's outer bound: `sltiu v0,v0,0xf` at `0x801EF960` - the sweep
 /// visits indices `0..=14`, one short of the 16-byte scan window, because
 /// index `i` always reads `queue[i + 1]`.
@@ -449,8 +462,8 @@ pub fn apply_super_tail_replace(
                     break;
                 }
                 queue[start + k] = b;
-                if b == 0x1A {
-                    starter_marks[start + k] = 4;
+                if b == SPECIAL_STARTER {
+                    starter_marks[start + k] = SUPER_STARTER_MARK;
                 }
                 written = k + 1;
             }

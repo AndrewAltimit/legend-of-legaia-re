@@ -1854,6 +1854,15 @@ pub struct World {
     /// The resident slot-B module's `ctx+0x278` scratch byte, written by
     /// three of the band's stagers.
     pub cast_module_ctx_278: u8,
+    /// The action id whose **capture-band** module is resident, i.e. the one
+    /// battle phase `0x70` re-enters every frame through `FUN_801F2160`.
+    ///
+    /// Armed at the pager seam (`BattleActionHost::load_capture_archive`,
+    /// retail's `0x6E` arm) and cleared when the band's hold ends. `None`
+    /// means no capture module is paged in and
+    /// [`World::capture_stager_tick`] reports "not busy" - which is what a
+    /// disc-free host, or any cast that is not capture-class, sees.
+    pub capture_cast_spell: Option<u8>,
 
     /// Production battle-FX request for a **non-summon** move: a spell cast or
     /// enemy special whose move-power record carries a spawnable effect list
@@ -2913,6 +2922,7 @@ impl World {
             pending_cast: None,
             cast_module_phase: 0,
             cast_module_ctx_278: 0,
+            capture_cast_spell: None,
             pending_move_fx_spawn: None,
             sin_lut: Vec::new(),
             cos_lut: Vec::new(),

@@ -1208,6 +1208,18 @@ pub struct BattleCamera {
     /// counter's per-action seeds fire on the state **edges** the way
     /// retail's arms store them once on entry.
     last_action_state: u8,
+    /// Latch for the swing-clip commit's `ctx[+0xD] = 0`
+    /// (`sb zero,0xd(v1)` at `0x8004E2B4`, in `FUN_8004E13C`'s party arm
+    /// beside the `ctx[+0x6DA]` seed).
+    ///
+    /// It is a **latch** rather than a write because retail's is a write to
+    /// the shared context byte, which then stands until the next action
+    /// seed re-rolls it - while the host re-supplies
+    /// [`Self::action`] every frame from the live byte. Setting
+    /// `self.action.style = 0` on the edge alone would be overwritten on the
+    /// very next frame; this survives instead, and clears on the edge out of
+    /// the action bands, which is where the next seed happens.
+    strike_style_zeroed: bool,
     /// Live screen shake (`FUN_801D9D30`), held beside the pose.
     shake: ShakeState,
     /// The per-art attack camera's channel: the disc track table, the battle
@@ -1407,6 +1419,7 @@ impl BattleCamera {
             action,
             action_yaw: 0,
             last_action_state: 0,
+            strike_style_zeroed: false,
             shake: ShakeState {
                 seed: SHAKE_SEED,
                 ..Default::default()
@@ -1516,10 +1529,15 @@ impl BattleCamera {
         } else if in_action(state) && !in_action(prev) {
             self.action_yaw = 0x800;
         }
+        if !in_action(state) {
+            // The next action's seed re-rolls `ctx[+0xD]`, so the commit's
+            // zero stops applying once the band is left.
+            self.strike_style_zeroed = false;
+        }
         if state == STRIKE_LOOP_STATE && self.action.party_slot {
             let coin = crate::battle_formulas::psyq_rand_step(&mut self.attack.seed) & 1;
             self.action_yaw = i32::from(coin) * 0x800 + 0x280;
-            self.action.style = 0;
+            self.strike_style_zeroed = true;
         }
     }
 
@@ -1651,10 +1669,16 @@ impl BattleCamera {
         action_framing(self.actor, self.live_action_framing())
     }
 
-    /// [`Self::action`] with the live yaw counter substituted in.
+    /// [`Self::action`] with the live yaw counter substituted in, and the
+    /// swing-clip commit's `ctx[+0xD] = 0` applied while it is latched.
     fn live_action_framing(&self) -> ActionFraming {
         ActionFraming {
             yaw_base: self.action_yaw,
+            style: if self.strike_style_zeroed {
+                0
+            } else {
+                self.action.style
+            },
             ..self.action
         }
     }

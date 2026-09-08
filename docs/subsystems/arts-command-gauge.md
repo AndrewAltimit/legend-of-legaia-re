@@ -353,11 +353,12 @@ The [two-gauge split](#what-an-art-costs-in-ap) is closed on both halves.
 multiplier and `arts_turn_spirit_cost` sums it over the arts a turn performs,
 each at its **visit** ordinal in `battle_arts::spirit_catalog` (the builder's
 walk order, not the arts grid's display index); `World::charge_art_spirit`
-debits `actor[+0x170]` when the turn commits. Two disclosed departures:
-retail accrues into `actor[+0x224]` and spends it once in the battle-action
-cleanup arm rather than at the commit - the same turn and the same total,
-observable only by a mid-action read - and the actor's `0x800` halving flag
-has no engine carrier yet, so the full-price arm is the one that runs.
+debits `actor[+0x170]` when the turn commits, with the halving flag read off
+the caster's record word 1 (see
+[where the flag comes from](#where-the-0x800-halving-flag-comes-from)). One
+disclosed departure: retail accrues into `actor[+0x224]` and spends it once in
+the battle-action cleanup arm rather than at the commit - the same turn and
+the same total, observable only by a mid-action read.
 
 ### Leaving state `0x50`
 
@@ -449,10 +450,46 @@ rows it has already visited for this character (`[sp+0x40]`, zeroed at
 | `1..3` | `0xA` (10) | `li t4,0xa` at `0x801EF32C` |
 | `>= 4` | `6` | `li t4,0x6` at `0x801EF33C` |
 
-halved by `srl t4,t4,0x1` at `0x801EF378` when the actor's `0x800` flag is set.
+halved by `srl t4,t4,0x1` at `0x801EF378` when the caster carries the
+[AP Used Down passive](#where-the-0x800-halving-flag-comes-from).
 The cost is then `t4 x command_count`, twice: `mult t4,s1` / `mflo t7`
 (`0x801EF40C`) produces the number the affordability gate compares against
 Spirit, and `mult t4,v0` / `mflo a2` (`0x801EF474`) produces the number charged.
+
+### Where the `0x800` halving flag comes from
+
+It is **not** on the battle actor. The builder resolves the acting slot's
+roster character id through `DAT_8007BD10` and indexes the live character
+record:
+
+```text
+801ef340  lbu   v0,0x0(t6)      ; t6 = 0x8007BD10 + slot -> character id
+801ef344  addiu t7,t7,0x4140    ;              t7 = 0x80084140
+801ef348  addiu v0,v0,-0x1      ; index = id - 1
+801ef34c..801ef35c              ; * 0x414
+801ef364  lw    v0,0x6c0(v1)    ; 0x80084140 + i*0x414 + 0x6C0
+801ef368  andi  v0,v0,0x800
+801ef370  beq   v0,zero,0x801ef37c
+801ef378  _srl  t4,t4,0x1       ;   half price
+```
+
+`0x80084140 + 0x6C0` is `0x80084800` and the character record base is
+`0x80084708`, so the word is record **`+0xF8`** - word 1 of the four-word
+[accessory-passive](../formats/accessory-passive-table.md) ability bitfield.
+Bit `0x800` of word 1 is passive index `32 + 11 = 0x2B`, **AP Used Down**
+("consume 50% less AP", the Mettle Gem). So the halved price is an *equipment*
+state, live for as long as the accessory is worn - not a per-turn or
+per-charge condition, and nothing to do with the actor's `+0x16E` flag bank.
+
+The menu renderer reads the same word the same way: `lw v0,0x6c0(v0)` /
+`andi v0,v0,0x800` at `0x801D4520..0x801D4528` in `FUN_801D33D8`, over the
+same `0x80084140 + i*0x414` arithmetic. The sibling word 0 (`+0xF4`,
+`lw v0,0x6bc(v0)` at `0x801E39FC`) is the one the Attack x2 refill's War God
+Icon test reads; the two `lw`s are halves of one 64-bit field.
+
+**Port.** `engine-core::ap_gauge::AP_USED_DOWN_BIT` /
+`AP_USED_DOWN_PASSIVE`; `World::charge_art_spirit` reads word 1 off the
+caster's roster record and passes it as the `halved` argument.
 
 ### Where the charge actually lands
 
@@ -478,8 +515,8 @@ The AP the pause menu's arts list shows is the `+2` byte of the static
 [arts-name table](../formats/art-data.md#arts-name-table-dat_80075ec4)
 (`DAT_80075EC4 + n*0x14`), and **exactly one site in the whole image reads it**:
 `lbu a0,0x2(s2)` at `0x801D4524` in the menu overlay's status-panel renderer
-`FUN_801D33D8` (PROT 0899), which applies the same `0x800`-flag halving
-(`sra a0,a0,0x1`) and hands the value to the 3-cell decimal drawer
+`FUN_801D33D8` (PROT 0899), which applies the same record `+0xF8` `0x800`
+halving (`sra a0,a0,0x1`) and hands the value to the 3-cell decimal drawer
 `FUN_80034B78`. Retail keeps that byte consistent with the formula by hand: for
 all 45 arts it equals `t4(rows visited) x command_count` exactly - including
 Noa's, whose display indices skip `2` and `3` while her *visit* order does not,
@@ -515,7 +552,7 @@ art per cell - **an override never moves another character's art**.
 | D end-of-turn refund | `0x801EF988` | `0x94620170` (`lhu v0,0x170(v1)`) | replays `Spirit += +0x224` and clamps it at 100 (retail leaves this unclamped, deferring to the `FUN_801E295C` state-`0x50` cap) |
 
 A configured cost is **flat** - it replaces the product outright, so it does not
-follow retail's `srl t4,t4,0x1` halving under the actor's `0x800` flag. The menu
+follow retail's `srl t4,t4,0x1` halving under the record's `0x800` flag. The menu
 renderer still halves what it *draws* in that state (its own `sra a0,a0,0x1`),
 so an odd configured cost reads one lower there.
 

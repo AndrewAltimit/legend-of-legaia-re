@@ -77,7 +77,9 @@ pub fn resolve_action_queue(
     // marker off, so it runs with the marker **armed** - which is what it
     // did before the gate existed. The live arts path
     // (`World::build_arts_action_queue`) reads the real marker.
-    finish_action_queue(character, command_input, true, &mut bytes);
+    // The marks are dropped here: this structural entry point has no actor to
+    // hang them on, and its callers never run the Attack x2 refill.
+    let _ = finish_action_queue(character, command_input, true, &mut bytes);
 
     // Step 5: decode up to the terminator.
     let mut queue = ActionQueue::new();
@@ -120,13 +122,20 @@ pub fn resolve_action_queue(
 /// [`resolve_action_queue`] is the structural caller (arrows + already-chained
 /// art constants); the engine's arts arming is the byte-exact one.
 ///
+/// Returns the side array as the builder leaves it - the marks the Attack x2
+/// refill reads a whole action later. It is a **return value** rather than a
+/// local because retail's `0x801F6990` outlives the builder, and the two mark
+/// values it distinguishes ([`BUILD_STARTER_MARK`] / [`SUPER_STARTER_MARK`])
+/// cannot be recovered from the finished queue bytes: a Super's starter and a
+/// newly-learned art's starter are both [`SPECIAL_STARTER`].
+///
 /// REF: FUN_801EED1C (the builder whose tail this is)
 pub fn finish_action_queue(
     character: legaia_art::Character,
     command_input: &[legaia_art::Command],
     miracle_armed: bool,
     bytes: &mut [u8; ACTION_QUEUE_CAP],
-) {
+) -> [u32; ACTION_QUEUE_CAP] {
     use legaia_art::MiracleMatcher;
     // The side array `0x801F6990` as the build loop leaves it. Retail writes
     // it incrementally during the build and the Miracle copy does **not**
@@ -144,6 +153,7 @@ pub fn finish_action_queue(
     reorder_marked_starters(bytes, &starter_marks);
     let (find_rows, replace_rows) = super_rows_for(character);
     apply_super_tail_replace(bytes, &mut starter_marks, &find_rows, &replace_rows);
+    starter_marks
 }
 
 /// Dispatch one frame of the battle action state machine.
@@ -618,6 +628,48 @@ fn item_seed_band<H: BattleActionHost + ?Sized>(
     ActionState::MagicCastBegin
 }
 
+/// The HUD element a **party** attack raises at the action seed
+/// (`li a0,0x7` / `jal 0x801d8de8` with `a1 = 0` at
+/// `0x801E2F34..0x801E2F40`) and the Done band tears down again.
+pub const ATTACK_UI_ELEMENT: u8 = 7;
+
+/// The **Spirit** arm's twin of [`item_seed_band`] / [`magic_seed_band`]
+/// (`0x801E2F54..0x801E3028`).
+///
+/// Its tail carries two writes the port used to skip, both in the same
+/// three-instruction window at `0x801E2FF0..0x801E3024`:
+///
+/// ```text
+/// 801e2ff0  lbu   v0,0x8(s5)      ; ctx[+0x19]
+/// 801e2ff8  addiu v0,v0,0x1
+/// 801e2ffc  jal   0x80056798      ; rand()
+/// 801e3000  _sb   v0,0x8(s5)      ;   ctx[+0x19] += 1  (delay slot)
+/// 801e3008..801e3018              ; v0 = rand() % 2 (signed remainder)
+/// 801e3020  sll   v0,v0,0x1       ; * 2
+/// 801e3024  sb    v0,0xd(v1)      ; ctx[+0xD] = 0 or 2
+/// ```
+///
+/// The draw is **unconditional** and never reaches a branch - exactly the
+/// shape the Item arm's `0x801E2E3C` draw has - so the only thing that makes
+/// it observable outside the framing is that it advances the shared `rand()`
+/// cursor. A port that skips it desynchronises the RNG stream from the first
+/// Spirit action of a battle onwards.
+///
+/// The `% 2 * 2` lands on `0` or `2`, i.e. the two
+/// [`BattleActionCtx::camera_variant`] values that keep the default yaw and
+/// differ only in pitch - a Spirit action is never framed from the mirrored
+/// side.
+///
+/// PORT: FUN_801E295C (`0x801E2FF0..0x801E3024`)
+fn spirit_seed_band<H: BattleActionHost + ?Sized>(
+    host: &mut H,
+    ctx: &mut BattleActionCtx,
+) -> ActionState {
+    ctx.spirit_action_count = ctx.spirit_action_count.wrapping_add(1);
+    ctx.camera_variant = ((host.rng() % 2) * 2) as u8;
+    ActionState::SpiritArtsEntry
+}
+
 pub(super) fn action_seed<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
@@ -721,13 +773,17 @@ pub(super) fn action_seed<H: BattleActionHost + ?Sized>(
             ctx.combo_timer = 2;
             if actor_slot < party_count {
                 if let Some(actor) = host.actor_mut(actor_slot) {
-                    actor.ui_element_id = 7;
+                    actor.ui_element_id = ATTACK_UI_ELEMENT;
                 }
-                host.ui_element(7, 0);
+                host.ui_element(ATTACK_UI_ELEMENT, 0);
+                // `li v0,0x7` / `sb v0,0x7(s5)` at `0x801E2F48..0x801E2F50`:
+                // the id is stamped on the **context**, which is where the
+                // Done band's teardown reads it back from.
+                ctx.action_ui_element = ATTACK_UI_ELEMENT;
             }
             ActionState::AttackFace
         }
-        ActionCategory::Spirit => ActionState::SpiritArtsEntry,
+        ActionCategory::Spirit => spirit_seed_band(host, ctx),
         ActionCategory::Run => {
             if actor_slot < party_count {
                 ActionState::RunBegin
