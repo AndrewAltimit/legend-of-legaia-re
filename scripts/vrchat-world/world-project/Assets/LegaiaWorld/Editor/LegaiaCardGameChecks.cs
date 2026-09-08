@@ -688,9 +688,13 @@ namespace LegaiaWorld
                 int akOff = g.PreflopStrength(Card(A, S), Card(K, H));
                 int ragsPre = g.PreflopStrength(Card(R7, S), Card(R2, H));
                 cases += Order("a pair of aces > a pair of deuces", aces, deuces);
-                cases += Order("a pair of deuces > ace-king offsuit", deuces, akOff);
+                cases += Order("a pair of aces > ace-king suited", aces, akSuited);
                 cases += Order("ace-king suited > ace-king offsuit", akSuited, akOff);
                 cases += Order("ace-king offsuit > seven-deuce", akOff, ragsPre);
+                // A pair, even the smallest, beats two unpaired rags.
+                cases += Order("a pair of deuces > seven-deuce", deuces, ragsPre);
+                int qjOff = g.PreflopStrength(Card(Q, S), Card(J, H));
+                cases += Order("a pair of deuces > queen-jack offsuit", deuces, qjOff);
                 if (aces > 99 || ragsPre < 0)
                     Fail("pre-flop strength left the 0..99 band (" + aces + " / " +
                          ragsPre + ")");
@@ -1508,8 +1512,11 @@ namespace LegaiaWorld
                     "seen over " + hands + " hand(s)");
                 return;
             }
-            Debug.Log("[Legaia] CARDS: " + s_handsAtSwitch + " poker hand(s) + " +
-                (hands - s_handsAtSwitch) + " blackjack hand(s); seated villagers " +
+            Debug.Log("[Legaia] CARDS: " +
+                (s_night ? hands + " night-rules poker hand(s)"
+                         : s_handsAtSwitch + " poker hand(s) + " +
+                           (hands - s_handsAtSwitch) + " blackjack hand(s)") +
+                "; seated villagers " +
                 "sampled " + s_seatedSamples + "x at " + s_minSeatY.ToString("0.00") +
                 ".." + s_maxSeatY.ToString("0.00") + " m above the stool floor, " +
                 s_walkedIn + " arrival(s) on foot, " + s_giveUps + " give-up(s); knees ahead on " +

@@ -1176,7 +1176,11 @@ namespace LegaiaWorld
             turnSeat = -1;
             pendingCommunity = false;
             int best = -1;
-            int bestScore = -1;
+            // -2, not -1: a hand that ends BEFORE the flop scores -1 (two
+            // hole cards are not five cards), and a `-1` floor would read
+            // that as "nobody has a hand" and void a pot somebody had
+            // just won by everyone else folding.
+            int bestScore = -2;
             int winners = 0;
             int contenders = 0;
             for (int i = 0; i < seatCount; i++)
@@ -1289,7 +1293,7 @@ namespace LegaiaWorld
             pendingShow = false;
             message = showMessage;
             int best = -1;
-            int bestScore = -1;
+            int bestScore = -2;   // see Showdown: a pre-flop pot scores -1
             for (int i = 0; i < seatCount; i++)
                 if (seatWon[i] > 0 && seatState[i] == H_IN)
                 {
