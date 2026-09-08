@@ -226,7 +226,6 @@
     <thead><tr><th>Thread</th><th>Status</th><th>What would close it</th></tr></thead>
     <tbody>
       <tr><td>What draws VRAM <code>(384, 0)</code> 320x256 (the dome panel still)?</td><td><span class="tag tag-open">open</span> - emit only</td><td>Staged by PROT 0978 and armed by <code>ctx[+0xC] = 1</code> at <code>0x800474CC</code> in the generic battle-end teardown <code>FUN_80047430</code>. Two candidates are excluded: no draw site exists statically (33 sites materialise <code>0x180</code>, none with <code>y = 0</code>), and the <code>INTERVAL</code> intermission is a live <code>koin1</code> render sampling nothing at <code>x = 384</code>. Needs a GPU-FIFO capture at battle teardown.</td></tr>
-      <tr><td>Which image holds the <code>0x801DBC30</code> head and the <code>0x801EA7A8</code> loop bytes?</td><td><span class="tag tag-open">open</span> - narrow</td><td>The only two entries in PROT 0898's dump corpus where the body at the address is a different, already-ported routine. Disassemble each mapped slot-A image at both VAs and match the frame.</td></tr>
     </tbody>
   </table>
   <p>Recently closed here: the card-screen kanji page is sampled by <strong>nothing</strong> - the GPU-FIFO watch at card-screen entry draws no primitive from it, so the USA build ships the Japanese glyph page and never reads it (<a href="re-settled-threads.html">settled threads</a>).</p>
