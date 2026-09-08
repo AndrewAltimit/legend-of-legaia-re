@@ -201,6 +201,12 @@ MIPS_JR_RA = 0x03E00008
 # long body is not demoted by it. A demoted run is not hidden - it stays in
 # `undumped-runs.csv` under its shape, it only leaves the ranked worklist.
 NO_EXIT_MIN_BYTES = 1024
+# `addiu $sp, $sp, -F` - the only way a MIPS I routine opens a stack frame, and
+# therefore the word a function ENTRY is recognised by. Paired with `jr ra`
+# (the only way one ends) it bounds every framed body in the corpus; the
+# frame-matched partition in `ghidra/scripts/dump_static_overlay.py` is built
+# out of exactly these two words. See the `no_boundary` shape.
+_ADDIU_SP_NEG = 0x27BD0000
 # `addiu $t2, $zero, imm` - the register a PSX BIOS-call thunk loads its jump
 # vector into before `jr $t2`.
 _ADDIU_T2_ZERO = 0x240A0000
@@ -283,6 +289,39 @@ def in_data_segment(image, base_va, a, b, floor=None):
     return not _has_ram_page_lui(image, base_va, a, b)
 
 
+def has_no_function_boundary(words):
+    """True when `words` holds neither word a function body is delimited by.
+
+    A MIPS I routine opens with `addiu $sp, $sp, -F` (or is a frameless leaf)
+    and every one of them ends with `jr ra`. A run carrying **neither** word
+    therefore contains no function ENTRY - the only thing a dump can be keyed
+    on - and no EXIT for a dump's `size=` to be measured to. Dumping cannot
+    close such a run, because a dumper is driven from an address list and this
+    run supplies no address.
+
+    This is the length-free form of `no_exit`. That shape needs its
+    `NO_EXIT_MIN_BYTES` floor because it tests one word only: a *short* run
+    with no `jr ra` is routinely the head of a routine whose exit is past the
+    window, and that head is real work. Adding the prologue leg is what
+    removes the need for the floor - a run holding a prologue stays `code` at
+    any length.
+
+    The residual case, stated rather than papered over: the INTERIOR of one
+    long body carries neither word either, so a gap that falls wholly inside
+    an un-dumped routine lands here. That is not a lost worklist row. The
+    routine's own prologue sits in some adjacent run, which keeps its `code`
+    shape and names the entry - and the entry, not its interior, is the
+    address a dump is asked for. A demoted run is also not hidden: it stays in
+    `undumped-runs.csv` under its shape, it only leaves the ranked worklist.
+    """
+    for w in words:
+        if w == MIPS_JR_RA:
+            return False
+        if (w & 0xFFFF0000) == _ADDIU_SP_NEG and (w & 0x8000):
+            return False
+    return True
+
+
 def gap_shape(image, base_va, a, b, floor=None, data_seg=None):
     """Why a code gap is a gap. Six shapes, and only one of them is work.
 
@@ -299,7 +338,8 @@ def gap_shape(image, base_va, a, b, floor=None, data_seg=None):
     | `constant_table` | every word one repeated non-`nop` constant: a data table resident in text (`crt0`'s stack-pointer table at `0x80026CD4`, four words of the 2 MB RAM size). |
     | `mostly_padding` | at least half the words are zero. A word of zeros is a plausible opcode with no pointer density, so the statistical test scores a zero-dominated region as code; a function body is not half `nop`. |
     | `data_segment` | at or above the image's last `jr ra` and holding no `lui $rt, 0x80xx`. See `in_data_segment`: leg one is that no complete body can end there, leg two is what keeps a body the entry boundary cut short out of the shape. |
-    | `no_exit` | 2048 bytes or more with no `jr ra` in them. Every MIPS body ends in one, and known code carries one per ~500-750 bytes, so a run this long with none is a data table the opcode statistic scored as code. |
+    | `no_exit` | `NO_EXIT_MIN_BYTES` or more with no `jr ra` in them. Every MIPS body ends in one, and known code carries one per ~500-750 bytes, so a run this long with none is a data table the opcode statistic scored as code. |
+    | `no_boundary` | neither boundary word: no `addiu $sp, $sp, -F` and no `jr ra`, at any length. See `has_no_function_boundary`. |
     | `code` | genuinely un-dumped instructions. |
 
     The non-`code` shapes are properties of where a function *body* ends or of
@@ -364,6 +404,11 @@ def gap_shape(image, base_va, a, b, floor=None, data_seg=None):
     # long enough that a gap holding one partial body is not caught by it.
     if n * 4 >= NO_EXIT_MIN_BYTES and not any(w == MIPS_JR_RA for w in words):
         return "no_exit"
+    # `no_boundary`: neither delimiter word, at any length - see
+    # `has_no_function_boundary`. Tested last so every shape above keeps its
+    # own, more specific name.
+    if has_no_function_boundary(words):
+        return "no_boundary"
     return "code"
 
 

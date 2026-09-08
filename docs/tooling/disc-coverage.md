@@ -227,6 +227,7 @@ shape is work:
 | `mostly_padding` | at least half the words are zero | no |
 | `data_segment` | at or above the image's last `jr ra`, and holding no `lui $rt, 0x80xx` | no |
 | `no_exit` | 1024 bytes or more with no `jr ra` in them | if the statistic passes it |
+| `no_boundary` | neither delimiter word: no `addiu $sp, $sp, -F` and no `jr ra`, at any length | if the statistic passes it |
 | `return_tail` | a `jr ra` (+ `nop`) the preceding routine's analysed body stops short of | if the statistic passes it |
 | `bios_thunk_slot` | the delay slot of a `jr $t2` PSX BIOS-call thunk | yes (tiny-gap fiat) |
 | `psyq_lib_stamp` | an 8-byte `Ps` + id + word record: the PSY-Q librarian's version stamp between link modules | yes (tiny-gap fiat) |
@@ -296,6 +297,37 @@ The floor for `no_exit` is set above one function's worth of bytes so a gap
 holding the *interior* of one long body is not demoted by it, and a demoted run
 is not hidden: it stays in `undumped-runs.csv` under its shape, and only leaves
 the ranked worklist.
+
+#### `no_boundary`: neither word a body is delimited by
+
+`no_exit` tests one word, which is why it needs a length floor. A MIPS I body is
+bounded by **two**: it opens with `addiu $sp, $sp, -F` (or is a frameless leaf)
+and every one of them closes with `jr ra`. A run holding neither carries no
+function **entry** - the only thing a dump can be keyed on - and no **exit** for
+a dump's `size=` to be measured to, so dumping cannot close it: a dumper is
+driven from an address list and this run supplies no address.
+
+Adding the prologue leg is what removes the need for the floor. A short run with
+no `jr ra` is routinely the head of a routine whose exit is past the window, and
+that head is real work - but it holds a prologue, so it stays `code` at any
+length. The same two words are what
+`ghidra/scripts/dump_static_overlay.py`'s frame-matched partition is built out
+of, so this shape and that partition draw the code/data boundary with the same
+test.
+
+The residual case is stated rather than papered over: the **interior** of one
+long body carries neither word either, so a gap falling wholly inside an
+un-dumped routine lands here. That is not a lost worklist row - the routine's
+own prologue sits in some adjacent run, which keeps its `code` shape and names
+the entry, and the entry rather than its interior is the address a dump is asked
+for. As with `no_exit`, a demoted run stays in `undumped-runs.csv` under its
+shape and only leaves the ranked worklist.
+
+The shape is deliberately confined to the **census and the worklist**: it does
+not enter `classify_gap`, so the code denominator and the ratcheted percentages
+are byte-identical across the change. That is the same seam `no_exit` sits on,
+and for the same reason - the denominator's calibration is controlled and moving
+it is a separate claim about each image's rodata.
 
 #### `data_segment`: the bytes past an image's last `jr ra`
 
@@ -629,7 +661,7 @@ in that image covers. Columns:
 
 | Column | Meaning |
 |---|---|
-| `shape` | `code` is work; `padding` / `return_tail` / `bios_thunk_slot` / `psyq_lib_stamp` / `constant_table` / `data` are structural, and persist however much is dumped |
+| `shape` | `code` is work; `padding` / `return_tail` / `bios_thunk_slot` / `psyq_lib_stamp` / `constant_table` / `data` / `no_exit` / `no_boundary` / `data_segment` / `mostly_padding` are structural, and persist however much is dumped |
 | `ambiguous` | some dump does print at that VA, but the bytes could not place it in this image - a sibling overlay at the same base is the other candidate |
 | `spans_at_start` | how many measured images map the run's start VA |
 
@@ -667,9 +699,9 @@ that way: PROT 0897 `0x801F23B4` / `0x801F2EB4` / `0x801F30D4`, PROT 0980
 `jr ra`. The same is true of every `SCUS_942.54` run above `0x80074000`, which is
 the static-table band ([`item-table.md`](../formats/item-table.md),
 [`spell-table.md`](../formats/spell-table.md) and neighbours). Runs that reach a
-verdict this way and sit past their image's last `jr ra` are now the
-`data_segment` shape and leave the ranked worklist by rule rather than by
-footnote.
+verdict this way and sit past their image's last `jr ra` are the `data_segment`
+shape; the rest are `no_boundary`, and either way they leave the ranked worklist
+by rule rather than by footnote.
 
 Two runs this section previously listed under that verdict do not belong to it,
 and the corrections matter because each was an instruction to skip real work.
@@ -691,12 +723,12 @@ and the corrections matter because each was an instruction to skip real work.
   non-target, but for the ordinary `INTERIOR` reason of
   [`worklist-classification.md`](worklist-classification.md).
 
-### Data the shape rules still do not reach
+### The two regions the shape rules used to miss
 
-Two regions classify as `code` and are not. Both sit *below* their image's data
+Two regions classified as `code` and are not. Both sit *below* their image's data
 floor, so `data_segment` cannot claim them, and both are broken into runs shorter
 than the `no_exit` floor by VA-ambiguous dumps that print at those addresses from
-other programs. They are recorded here so nobody dumps them:
+other programs:
 
 - **PROT 0970 `0x801D0E94`..`0x801D1978`** - the cutscene overlay's MDEC decode
   tables. The region opens with the hardware-port words `0x1F801824` and
@@ -707,6 +739,16 @@ other programs. They are recorded here so nobody dumps them:
 - **PROT 0980 `0x801D43A4` / `0x801D4AA4` / `0x801D4EA4`** - the dance minigame's
   step-chart and choreography records
   ([`minigame-dance.md`](../subsystems/minigame-dance.md)).
+
+Both are now the `no_boundary` shape and leave the ranked worklist by rule
+rather than by footnote: neither holds a prologue or a `jr ra`. They are kept
+here because the *reason* is worth having in prose - the shape rule says only
+that no body is delimited there, while these entries say what the bytes are.
+
+The same rule reaches the largest single class of the same defect, the slot-B
+band's parameter tails: a cast module's spawn records sit above its last
+function and hold neither delimiter word, and they were ranked as work across
+27 of the band's images.
 
 **Do not sum the worklist across images.** Nineteen overlays load at
 `0x801CE818` and thirteen at `0x801F69D8`, so the same VA appears under several
