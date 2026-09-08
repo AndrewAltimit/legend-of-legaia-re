@@ -262,17 +262,37 @@ namespace LegaiaWorld
             // The board: five spots across the middle of the felt.
             CheckArray(proxy, backing, "communityAnchors", 5);
             foreach (string b in new[] { "btnDeal", "btnMode", "btnCall", "btnRaise",
-                                         "btnFold", "btnHit", "btnStand" })
+                                         "btnFold", "btnHit", "btnStand",
+                                         "btnShuffle", "btnGather" })
                 CheckRef(proxy, backing, b);
             foreach (string t in new[] { "modeText", "potText", "msgText",
                                          "communityText", "handText",
                                          "btnCallText", "btnRaiseText", "btnDealText",
-                                         "talk" })
+                                         "btnNpcsText", "talk" })
                 CheckRef(proxy, backing, t);
 
             // The panel's clicks must land on the BACKING behaviour: a
             // persistent listener onto the U# proxy does nothing in-world.
-            int wired = 0;
+            // And they do NOT all land on the same one - the bottom row of
+            // table controls (Shuffle / Gather / the villager toggle) moved
+            // off the felt onto this canvas and still belongs to the deck
+            // and the host, so each listener is matched by target AND by
+            // the event string it carries.
+            var deckType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaCardDeck");
+            var hostType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaCardTableHost");
+            if (deckType == null || hostType == null)
+                Fail("LegaiaCardDeck / LegaiaCardTableHost are not compiled");
+            var deckProxy = table.GetComponentInChildren(deckType, true);
+            var hostProxy = table.GetComponentInChildren(hostType, true);
+            if (deckProxy == null || hostProxy == null)
+                Fail("the card table carries no LegaiaCardDeck / LegaiaCardTableHost");
+            var deckBacking = LegaiaCommonPrefabs.BackingUdon(deckProxy);
+            var hostBacking = LegaiaCommonPrefabs.BackingUdon(hostProxy);
+            if (deckBacking == null || hostBacking == null)
+                Fail("the deck / host has no backing UdonBehaviour");
+
+            int wired = 0, deckWired = 0, hostWired = 0;
+            var events = new List<string>();
             foreach (var btn in game.transform.parent
                          .GetComponentsInChildren<UnityEngine.UI.Button>(true))
             {
@@ -282,18 +302,61 @@ namespace LegaiaWorld
                     var target = btn.onClick.GetPersistentTarget(i);
                     if (target == null)
                         Fail(btn.name + ": persistent listener with no target");
-                    if (target == (Object)proxy)
+                    if (target == (Object)proxy || target == (Object)deckProxy ||
+                        target == (Object)hostProxy)
                         Fail(btn.name + ": listener points at the U# PROXY, not " +
                              "the backing UdonBehaviour - it would be dead in-world");
+                    if (btn.onClick.GetPersistentMethodName(i) != "SendCustomEvent")
+                        Fail(btn.name + ": listener calls " +
+                             btn.onClick.GetPersistentMethodName(i) +
+                             ", not SendCustomEvent");
+                    string ev = ClickEvent(btn, i);
+                    if (string.IsNullOrEmpty(ev))
+                        Fail(btn.name + ": listener carries no event-name argument");
                     if (target == (Object)backing)
+                    {
                         wired++;
+                        events.Add(ev);
+                    }
+                    else if (target == (Object)deckBacking)
+                    {
+                        deckWired++;
+                        if (ev != "Shuffle" && ev != "Gather")
+                            Fail(btn.name + " sends " + ev + " to the deck, expected " +
+                                 "Shuffle or Gather");
+                    }
+                    else if (target == (Object)hostBacking)
+                    {
+                        hostWired++;
+                        if (ev != "ToggleNpcs")
+                            Fail(btn.name + " sends " + ev + " to the table host, " +
+                                 "expected ToggleNpcs");
+                    }
+                    else
+                        Fail(btn.name + ": listener targets " + target.name +
+                             ", none of the game / deck / host behaviours");
                 }
             }
             // Deal / Mode / Check-Call / Bet-Raise / Fold / Hit / Stand. The
             // five hold buttons and Draw went with five-card draw.
+            foreach (string ev in new[] { "UiDeal", "UiMode", "UiCall", "UiRaise",
+                                          "UiFold", "UiHit", "UiStand" })
+                if (!events.Contains(ev))
+                    Fail("no panel button sends " + ev + " to the game");
             if (wired != 7)
                 Fail(wired + " panel button(s) wired into the game behaviour, " +
                      "expected 7");
+            if (deckWired != 2)
+                Fail(deckWired + " panel button(s) wired into the deck, expected 2 " +
+                     "(Shuffle, Gather)");
+            if (hostWired != 1)
+                Fail(hostWired + " panel button(s) wired into the table host, " +
+                     "expected 1 (ToggleNpcs)");
+            // ... and nothing may be left standing on the felt.
+            var strayBtn = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaEventButton");
+            if (strayBtn != null && table.GetComponentsInChildren(strayBtn, true).Length != 0)
+                Fail("a collider LegaiaEventButton is still on the card table - the " +
+                     "three table controls live on the panel now");
 
             var shape = LegaiaWorldBuilder.FindType("VRC.SDK3.Components.VRCUiShape");
             if (shape != null &&
@@ -382,8 +445,24 @@ namespace LegaiaWorld
             CheckRules();
             CheckBlackjack();
             Debug.Log("[Legaia] CARDS: seat panel wired (" + wired +
-                " buttons), evaluator and settlement cases pass.");
+                " buttons to the game, " + deckWired + " to the deck, " + hostWired +
+                " to the table host; no collider buttons left on the felt), " +
+                "evaluator and settlement cases pass.");
             Debug.Log("[Legaia] SELFTEST OK: card game.");
+        }
+
+        /// The string argument of a Button's `i`th persistent onClick call -
+        /// the event name SendCustomEvent will raise. UnityEvent exposes the
+        /// target and the method name but not the argument, so it is read
+        /// off the serialized call list.
+        static string ClickEvent(UnityEngine.UI.Button btn, int i)
+        {
+            var so = new SerializedObject(btn);
+            var calls = so.FindProperty("m_OnClick.m_PersistentCalls.m_Calls");
+            if (calls == null || i >= calls.arraySize)
+                return null;
+            return calls.GetArrayElementAtIndex(i)
+                .FindPropertyRelative("m_Arguments.m_StringArgument").stringValue;
         }
 
         static void CheckRef(Component proxy, Component backing, string name)

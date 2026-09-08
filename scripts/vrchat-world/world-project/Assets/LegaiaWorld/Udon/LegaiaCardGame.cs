@@ -181,6 +181,21 @@ namespace LegaiaWorld
         public Text btnRaiseText;
         public Text btnDealText;
 
+        // The three table controls at the bottom of the panel are NOT the
+        // game's: Shuffle/Gather send into the deck and the villager
+        // toggle into the host (the builder wires those listeners). The
+        // game only owns their *appearance* - it greys the two deck
+        // buttons out while a hand is live, because a restack mid-hand
+        // would leave the synced deck order describing a deck that no
+        // longer exists, and it prints the toggle's label from the host's
+        // synced `npcsAllowed` so the button says what pressing it does.
+        [Tooltip("Panel button that sends Shuffle to the DECK - greyed out while a hand runs.")]
+        public Button btnShuffle;
+        [Tooltip("Panel button that sends Gather to the DECK - greyed out while a hand runs.")]
+        public Button btnGather;
+        [Tooltip("Label on the panel's NPC toggle (the button itself sends ToggleNpcs to the host).")]
+        public Text btnNpcsText;
+
         [Tooltip("Flat silhouette tint drawn in a seat's portrait slot when a PLAYER sits there.")]
         public Color playerTint = new Color(0.45f, 0.55f, 0.75f, 1f);
 
@@ -2639,6 +2654,15 @@ namespace LegaiaWorld
             Enable(btnFold, betting);
             Enable(btnHit, bj);
             Enable(btnStand, bj);
+
+            // The deck's own two buttons: anyone may press them, seated or
+            // not, but never while cards are out on the felt.
+            bool idle = phase == PH_IDLE;
+            Enable(btnShuffle, idle);
+            Enable(btnGather, idle);
+            if (btnNpcsText != null)
+                btnNpcsText.text = host == null || host.npcsAllowed
+                    ? "NPCs: shoo" : "NPCs: sit";
 
             if (btnDealText != null)
                 btnDealText.text = phase == PH_IDLE ? "Deal" : "Playing";

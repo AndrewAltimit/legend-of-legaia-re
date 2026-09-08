@@ -129,7 +129,11 @@ namespace LegaiaWorld
             Expect("LegaiaWorld.LegaiaCardDeck", 1);
             Expect("LegaiaWorld.LegaiaMirror", 1);
             Expect("LegaiaWorld.LegaiaVideoTv", 1);
-            Expect("LegaiaWorld.LegaiaEventButton", 3 + 3 + 3);
+            // Mirror (off / high / low) + TV (play / stop / resync). The
+            // card table had three of its own; they are UI buttons on the
+            // seat panel now, so the felt carries none.
+            Expect("LegaiaWorld.LegaiaEventButton", 3 + 3);
+            Expect("LegaiaWorld.LegaiaEventButton", 0, table);
             Expect("LegaiaWorld.LegaiaNpcStation", 4, table);
             Expect("LegaiaWorld.LegaiaCardTableHost", 1, table);
             if (o.sdkPens && Count("VRC.Udon.UdonBehaviour") < 1)
@@ -403,22 +407,48 @@ namespace LegaiaWorld
                 if (!(kind is int k) || k != 2)
                     Fail(Path(st.transform) + " is not a kind-2 (seat) station");
             }
-            var btn = table.Find("btn_npcs");
-            if (btn == null)
-                Fail("no btn_npcs on the card table");
+            // The villager toggle: a UI button on the seat panel, not a
+            // collider cube on the felt any more. Its click is a
+            // persistent SendCustomEvent("ToggleNpcs") onto the host's
+            // BACKING behaviour - a listener on the U# proxy is inert
+            // in-world, so the target is matched against the backing.
             var btnType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaEventButton");
-            var btnComp = btn.GetComponent(btnType);
-            if (btnComp == null)
-                Fail("btn_npcs carries no LegaiaEventButton");
-            if (!ReferenceEquals(btnType.GetField("target").GetValue(btnComp), host))
-                Fail("btn_npcs does not target the table host");
-            if ((string)btnType.GetField("eventName").GetValue(btnComp) != "ToggleNpcs")
-                Fail("btn_npcs does not send ToggleNpcs");
+            if (btnType != null && table.GetComponentsInChildren(btnType, true).Length != 0)
+                Fail("a collider LegaiaEventButton is still on the card table - " +
+                     "Shuffle / Gather / the NPC toggle live on the seat panel now");
+            var hostBacking = LegaiaCommonPrefabs.BackingUdon(host);
+            if (hostBacking == null)
+                Fail("the table host has no backing UdonBehaviour");
+            int toggles = 0;
+            foreach (var ui in table.GetComponentsInChildren<UnityEngine.UI.Button>(true))
+            {
+                int n = ui.onClick.GetPersistentEventCount();
+                for (int i = 0; i < n; i++)
+                {
+                    if (ui.onClick.GetPersistentTarget(i) != (Object)hostBacking)
+                        continue;
+                    if (ui.onClick.GetPersistentMethodName(i) != "SendCustomEvent")
+                        Fail(ui.name + " calls the host's " +
+                             ui.onClick.GetPersistentMethodName(i) +
+                             ", not SendCustomEvent");
+                    var so = new SerializedObject(ui);
+                    var calls = so.FindProperty("m_OnClick.m_PersistentCalls.m_Calls");
+                    string ev = calls == null || i >= calls.arraySize ? null
+                        : calls.GetArrayElementAtIndex(i)
+                            .FindPropertyRelative("m_Arguments.m_StringArgument").stringValue;
+                    if (ev != "ToggleNpcs")
+                        Fail(ui.name + " sends " + ev + " to the table host, " +
+                             "expected ToggleNpcs");
+                    toggles++;
+                }
+            }
+            if (toggles != 1)
+                Fail(toggles + " panel button(s) send into the table host, expected 1 " +
+                     "(the NPCs: sit / shoo toggle)");
             CheckVar(container, "LegaiaWorld.LegaiaCardTableHost", "seats");
             CheckVar(container, "LegaiaWorld.LegaiaCardTableHost", "seatChairs");
             CheckVar(container, "LegaiaWorld.LegaiaCardTableHost", "deckAnchor");
             CheckVar(container, "LegaiaWorld.LegaiaCardTableHost", "cards");
-            CheckVar(container, "LegaiaWorld.LegaiaEventButton", "target");
 
             // Every U# proxy the three passes created must have a backing
             // behaviour with a program (the "outdated behaviour version"

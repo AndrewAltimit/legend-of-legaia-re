@@ -8,8 +8,8 @@
 // used to withdraw every station the moment a player sat or a card left
 // the deck, on the theory that the table was "in use"; the game wants the
 // opposite - company. So availability now turns on exactly two things:
-// the synced `npcsAllowed` toggle behind the table's "NPCs: sit / shoo"
-// button, and whether a PLAYER is sitting on that particular stool
+// the synced `npcsAllowed` toggle behind the seat panel's "NPCs: sit /
+// shoo" button, and whether a PLAYER is sitting on that particular stool
 // (LegaiaSeat's `occupied`, mirrored on every client by the station
 // callbacks). Cards scattered across the felt shoo nobody any more.
 //
@@ -126,7 +126,9 @@ namespace LegaiaWorld
             Reconcile();
         }
 
-        /// The table button (LegaiaEventButton -> "ToggleNpcs").
+        /// The seat panel's NPC toggle: a UI button whose persistent
+        /// onClick is SendCustomEvent("ToggleNpcs") onto this behaviour's
+        /// backing UdonBehaviour (it was a collider button on the felt).
         public void ToggleNpcs()
         {
             VRCPlayerApi local = Networking.LocalPlayer;

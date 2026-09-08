@@ -826,10 +826,6 @@ namespace LegaiaWorld
                 new Color(0.16f, 0.14f, 0.12f));
             var felt = LegaiaCampProps.EnsureMat(genDir, "table_felt", "Standard",
                 new Color(0.12f, 0.36f, 0.18f));
-            var green = LegaiaCampProps.EnsureMat(genDir, "button_green", "Standard",
-                new Color(0.25f, 0.6f, 0.3f));
-            var blue = LegaiaCampProps.EnsureMat(genDir, "button_blue", "Standard",
-                new Color(0.25f, 0.4f, 0.65f));
 
             var root = new GameObject("card_table");
             root.transform.SetParent(container.transform, false);
@@ -904,13 +900,13 @@ namespace LegaiaWorld
                 LegaiaWorldBuilder.SyncUdonProxy(st);
             }
 
-            var size = new Vector3(0.09f, 0.03f, 0.06f);
-            Button(root.transform, "btn_shuffle", new Vector3(-0.12f, 0.775f, -0.46f),
-                size, green, deck, "Shuffle", "Shuffle deck");
-            Button(root.transform, "btn_gather", new Vector3(0.12f, 0.775f, -0.46f),
-                size, blue, deck, "Gather", "Gather deck");
-            Button(root.transform, "btn_npcs", new Vector3(0.36f, 0.775f, -0.34f),
-                size, wood, host, "ToggleNpcs", "NPCs: sit / shoo");
+            // NO BUTTONS ON THE FELT. Shuffle / Gather / the NPC toggle
+            // used to be three collider cubes standing on the table top,
+            // where they sat inside the reach of a seated player's cards
+            // and looked like furniture rather than controls. They are UI
+            // buttons on the seat panel now (LegaiaCardGameBuilder), which
+            // is also where every other table control already lives -
+            // one surface to read, one surface to press.
 
             LegaiaWorldBuilder.SetUdonField(deck, "cards", ToTypedArray(cards, "LegaiaCard"));
             LegaiaWorldBuilder.SetUdonField(deck, "stackAnchor", anchor.transform);

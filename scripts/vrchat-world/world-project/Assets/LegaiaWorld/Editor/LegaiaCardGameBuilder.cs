@@ -28,6 +28,16 @@
 // of the panel, which read as a chat log rather than as four people at
 // a table.
 //
+// THE TABLE CONTROLS ARE ON THE PANEL TOO. Shuffle, Gather and the
+// villager toggle were three collider cubes standing on the felt, inside
+// the reach of a seated player's own cards; they are the bottom row of
+// the panel now. They are the one place on this canvas whose clicks do
+// NOT go to the game: Shuffle/Gather send into the DECK's backing
+// behaviour and the toggle into the HOST's. The game still holds the two
+// deck buttons, but only to grey them out while a hand is live - a
+// restack mid-hand would deal from a deck the synced order no longer
+// describes.
+//
 // THE PANEL is a world-space UI canvas on a post beside the table, read
 // from OUTSIDE the table - the same construction as the camp settings
 // panel (Canvas + VRCUiShape + GraphicRaycaster + a BoxCollider so the
@@ -123,7 +133,7 @@ namespace LegaiaWorld
             }
             var stack = tableRoot.transform.Find("deck_anchor");
 
-            var panel = BuildPanel(tableRoot, genDir, spawnW, game, seats);
+            var panel = BuildPanel(tableRoot, genDir, spawnW, game, host, deck, seats);
             // (the settings placement is applied after wiring, below)
 
             LegaiaWorldBuilder.SetUdonField(game, "host", host);
@@ -183,8 +193,12 @@ namespace LegaiaWorld
 
         /// Returns the widget references keyed by the LegaiaCardGame field
         /// they belong on, so the caller wires them in one loop.
+        /// `host` / `deck` are the LegaiaCardTableHost / LegaiaCardDeck: the
+        /// three table controls at the bottom of the panel send into THEIR
+        /// backing behaviours, not the game's (see the NOT ALL ONE TARGET
+        /// note in the header).
         static Dictionary<string, object> BuildPanel(GameObject tableRoot, string genDir,
-            Vector3 spawnW, Component game, int seats)
+            Vector3 spawnW, Component game, Component host, Component deck, int seats)
         {
             var w = new Dictionary<string, object>();
             var dark = LegaiaCampProps.EnsureMat(genDir, "camp_dark", "Standard",
@@ -238,6 +252,8 @@ namespace LegaiaWorld
 
             var font = MenuFont();
             var backing = LegaiaCommonPrefabs.BackingUdon(game);
+            var hostBacking = LegaiaCommonPrefabs.BackingUdon(host);
+            var deckBacking = LegaiaCommonPrefabs.BackingUdon(deck);
             Transform c = canvasGo.transform;
 
             Label(c, font, "title", "CARD TABLE", 28, new Vector2(0f, 358f),
@@ -318,36 +334,53 @@ namespace LegaiaWorld
             w["potText"] = Label(c, font, "pot", "Pot 0", 23,
                 new Vector2(0f, -62f), new Vector2(520f, 30f),
                 new Color(0.95f, 0.85f, 0.4f), TextAnchor.MiddleRight);
-            w["msgText"] = Label(c, font, "msg", "", 20, new Vector2(0f, -116f),
+            w["msgText"] = Label(c, font, "msg", "", 20, new Vector2(0f, -112f),
                 new Vector2(530f, 32f), new Color(0.9f, 0.9f, 0.85f),
                 TextAnchor.MiddleCenter);
 
             Text dealLabel, callLabel, raiseLabel;
             w["btnDeal"] = Btn(c, font, backing, "UiDeal", "Deal",
-                new Vector2(-140f, -164f), new Vector2(260f, 52f), out dealLabel);
+                new Vector2(-140f, -158f), new Vector2(260f, 50f), out dealLabel);
             w["btnDealText"] = dealLabel;
             w["btnMode"] = Btn(c, font, backing, "UiMode", "Mode",
-                new Vector2(140f, -164f), new Vector2(260f, 52f), out _);
+                new Vector2(140f, -158f), new Vector2(260f, 50f), out _);
             w["btnCall"] = Btn(c, font, backing, "UiCall", "Check",
-                new Vector2(-186f, -226f), new Vector2(176f, 52f), out callLabel);
+                new Vector2(-186f, -214f), new Vector2(176f, 50f), out callLabel);
             w["btnCallText"] = callLabel;
             w["btnRaise"] = Btn(c, font, backing, "UiRaise", "Bet",
-                new Vector2(0f, -226f), new Vector2(176f, 52f), out raiseLabel);
+                new Vector2(0f, -214f), new Vector2(176f, 50f), out raiseLabel);
             w["btnRaiseText"] = raiseLabel;
             w["btnFold"] = Btn(c, font, backing, "UiFold", "Fold",
-                new Vector2(186f, -226f), new Vector2(176f, 52f), out _);
+                new Vector2(186f, -214f), new Vector2(176f, 50f), out _);
             w["btnHit"] = Btn(c, font, backing, "UiHit", "Hit",
-                new Vector2(-93f, -288f), new Vector2(176f, 52f), out _);
+                new Vector2(-93f, -270f), new Vector2(176f, 50f), out _);
             w["btnStand"] = Btn(c, font, backing, "UiStand", "Stand",
-                new Vector2(93f, -288f), new Vector2(176f, 52f), out _);
+                new Vector2(93f, -270f), new Vector2(176f, 50f), out _);
+
+            // NOT ALL ONE TARGET. The row above is the GAME's; these three
+            // are the table's furniture and belong to the two behaviours
+            // that own it - the deck restacks itself and the host decides
+            // whether villagers may sit. They used to be collider cubes on
+            // the felt; they are here so a reader has one surface. The
+            // game holds the two deck buttons only to grey them out while
+            // a hand is live (see LegaiaCardGame.RefreshButtons) - it
+            // never sends their events.
+            Text npcsLabel;
+            w["btnShuffle"] = Btn(c, font, deckBacking, "Shuffle", "Shuffle",
+                new Vector2(-180f, -322f), new Vector2(172f, 42f), out _, 16);
+            w["btnGather"] = Btn(c, font, deckBacking, "Gather", "Gather",
+                new Vector2(0f, -322f), new Vector2(172f, 42f), out _, 16);
+            Btn(c, font, hostBacking, "ToggleNpcs", "NPCs: shoo",
+                new Vector2(180f, -322f), new Vector2(172f, 42f), out npcsLabel, 16);
+            w["btnNpcsText"] = npcsLabel;
 
             Label(c, font, "hint",
-                "Sit on a stool to play - bets come from your coin purse.", 15,
-                new Vector2(0f, -338f), new Vector2(520f, 26f),
+                "Sit on a stool to play - bets come from your coin purse.", 14,
+                new Vector2(0f, -358f), new Vector2(520f, 22f),
                 new Color(0.65f, 0.63f, 0.58f), TextAnchor.MiddleCenter);
             Label(c, font, "hint2",
-                "By day: hold'em. After dusk: Cara's poker night.", 15,
-                new Vector2(0f, -362f), new Vector2(520f, 26f),
+                "By day: hold'em. After dusk: Cara's poker night.", 14,
+                new Vector2(0f, -380f), new Vector2(520f, 22f),
                 new Color(0.6f, 0.58f, 0.54f), TextAnchor.MiddleCenter);
             return w;
         }
