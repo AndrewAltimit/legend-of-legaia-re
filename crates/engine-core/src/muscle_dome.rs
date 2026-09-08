@@ -1249,6 +1249,67 @@ pub fn restore_hp(hp_cur: u16, hp_max: u16, amount: i32) -> u16 {
     if sum > hp_max { hp_max } else { sum }
 }
 
+/// The [`legaia_save::EquipmentSlots`] indices the arena strips when a
+/// contest opens on a course above Beginner - body armour (record `+0x196`),
+/// head gear (`+0x197`), the weapon byte (`+0x198`) and leg gear (`+0x19A`).
+///
+/// Index `3` is the Seru-lock byte `+0x199` and indices `5..=7` are the three
+/// accessory bytes `+0x19B..+0x19D`; retail writes **none** of those four, so
+/// a stripped fighter keeps its accessories and its summon access. The four
+/// stores are `sb zero` at `0x801D0F24` / `0x801D0F28` / `0x801D0F2C` and the
+/// `jal`'s delay slot `0x801D0F34`.
+///
+/// PORT: FUN_801d0ed8 (the gear-strip arm)
+pub const CONTEST_STRIPPED_EQUIP_SLOTS: [usize; 4] = [0, 1, 2, 4];
+
+/// What opening a contest does to the fighter's record.
+///
+/// Retail's arena entry decodes the course into `DAT_801D1A90` in the delay
+/// slot of its `jal 0x801D0ED8` (`0x801CEBF0`), and the callee's first test
+/// is `bnez` on that byte - so "no equipment" is a **course** rule, not a
+/// round rule, and the Beginner course (`0`) keeps its gear.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ContestStartRestore {
+    /// Zero the four [`CONTEST_STRIPPED_EQUIP_SLOTS`] bytes before the
+    /// refill. Set for every course but Beginner.
+    pub strip_gear: bool,
+}
+
+/// Apply the contest-start restore to one character record.
+///
+/// The body is three `(max, cur)` halfword pairs copied max-to-cur on the
+/// live game-state window at `0x80084140 + 0x6CC / 0x6D0 / 0x6D4`, which is
+/// the **lead** party record's `+0x104` / `+0x108` / `+0x10C` (`0x80084708 -
+/// 0x80084140 = 0x5C8`): HP, MP and SP all come back full. There is no
+/// per-character stride in the instruction stream, so the arena restores
+/// party slot 0 and nobody else.
+///
+/// Retail runs the per-character stat aggregator `FUN_80042558` **between**
+/// the gear strip and the refill, so the maxima the refill copies are the
+/// ones recomputed under the stripped equipment. The port's equivalent
+/// recompute is the caller's; this function copies whatever maxima the
+/// record holds when it is called, which is why the strip happens here too
+/// rather than in the host.
+///
+/// PORT: FUN_801d0ed8
+pub fn apply_contest_start_restore(
+    record: &mut legaia_save::CharacterRecord,
+    restore: ContestStartRestore,
+) {
+    if restore.strip_gear {
+        let mut eq = record.equipment();
+        for &slot in CONTEST_STRIPPED_EQUIP_SLOTS.iter() {
+            eq.slots[slot] = 0;
+        }
+        record.set_equipment(eq);
+    }
+    let mut hms = record.hp_mp_sp();
+    hms.hp_cur = hms.hp_max;
+    hms.mp_cur = hms.mp_max;
+    hms.sp_cur = hms.sp_max;
+    record.set_hp_mp_sp(hms);
+}
+
 /// Credit a settled tally into the casino coin bank, saturating at
 /// [`COIN_BANK_MAX`].
 ///
@@ -1337,6 +1398,12 @@ pub struct DomeContest {
     state: ContestState,
     rows: LegScoreRows,
     hp_restore: i32,
+    /// The one-shot contest-start restore, pending until a host consumes it
+    /// ([`DomeContest::take_start_restore`]). Retail runs it in the arena
+    /// entry's **first-entry** arm only - the `_DAT_8007BAC0 == 0` side of
+    /// the `bnez` at `0x801CEB58` - so a re-entered arena (every later leg)
+    /// never reaches the `jal 0x801D0ED8` at `0x801CEBF0`.
+    start_restore: Option<ContestStartRestore>,
 }
 
 impl DomeContest {
@@ -1350,8 +1417,9 @@ impl DomeContest {
         lengths: [u32; COURSE_COUNT],
         score: [ScoreRow; COURSE_COUNT],
     ) -> Self {
+        let word = contest_entry_word(flags);
         Self {
-            word: contest_entry_word(flags),
+            word,
             lengths,
             score,
             tally: 0,
@@ -1360,7 +1428,23 @@ impl DomeContest {
             state: ContestState::Fight,
             rows: LegScoreRows::default(),
             hp_restore: 0,
+            start_restore: Some(ContestStartRestore {
+                strip_gear: cursor_course(word).min(COURSE_COUNT - 1) != 0,
+            }),
         }
+    }
+
+    /// Consume the one-shot contest-start restore, if it has not run yet.
+    ///
+    /// Retail's arena entry decodes `(course, round)` into `DAT_801D1A90` /
+    /// `DAT_801D1A94` and calls `FUN_801D0ED8` in the same breath, but only
+    /// on the first entry - the re-entry arm at `0x801CEC00` jumps past it.
+    /// So this returns `Some` exactly once per contest, and the caller
+    /// applies it with [`apply_contest_start_restore`].
+    ///
+    /// PORT: FUN_801cea6c (`0x801CEBEC..0x801CEBF4`)
+    pub fn take_start_restore(&mut self) -> Option<ContestStartRestore> {
+        self.start_restore.take()
     }
 
     /// Open a contest straight off a raw PROT 0977 entry, taking both the
@@ -2401,5 +2485,92 @@ mod tests {
         // One-shot: the 0x6CB flag suppresses the re-award.
         let s = settle_contest(100, true, false, 2, 13, 40, true);
         assert!(!s.award_prize);
+    }
+}
+
+#[cfg(test)]
+mod contest_start_restore_tests {
+    use super::*;
+
+    fn score_rows() -> [ScoreRow; COURSE_COUNT] {
+        [[0i32; MAX_ROUNDS_PER_COURSE]; COURSE_COUNT]
+    }
+
+    fn unlocked(courses: [bool; COURSE_COUNT]) -> ContestFlags {
+        ContestFlags {
+            course_unlock: courses,
+            ..ContestFlags::default()
+        }
+    }
+
+    /// The Beginner course keeps its gear; the restore still refills.
+    #[test]
+    fn beginner_course_does_not_strip_gear() {
+        let mut c = DomeContest::enter(&unlocked([true, false, false]), [8, 8, 13], score_rows());
+        assert_eq!(c.course(), 0);
+        let r = c.take_start_restore().expect("the first entry restores");
+        assert!(!r.strip_gear);
+    }
+
+    /// Every course above Beginner strips - the `bnez DAT_801D1A90` arm.
+    #[test]
+    fn higher_courses_strip_gear() {
+        let mut c = DomeContest::enter(&unlocked([true, true, false]), [8, 8, 13], score_rows());
+        assert!(c.course() > 0);
+        assert!(c.take_start_restore().expect("first entry").strip_gear);
+    }
+
+    /// Retail's re-entry arm jumps past the `jal`, so the restore is a
+    /// one-shot: a later leg never refills.
+    #[test]
+    fn restore_is_one_shot() {
+        let mut c = DomeContest::enter(&unlocked([true, false, false]), [8, 8, 13], score_rows());
+        assert!(c.take_start_restore().is_some());
+        assert!(c.take_start_restore().is_none());
+    }
+
+    /// HP / MP / SP all come back full, and only the four gear bytes go -
+    /// the Seru lock `+0x199` and the three accessories `+0x19B..+0x19D`
+    /// survive a stripped entry.
+    #[test]
+    fn refills_all_three_pools_and_strips_only_gear() {
+        let mut rec = legaia_save::CharacterRecord::zeroed();
+        let mut hms = rec.hp_mp_sp();
+        hms.hp_max = 400;
+        hms.hp_cur = 12;
+        hms.mp_max = 90;
+        hms.mp_cur = 0;
+        hms.sp_max = 60;
+        hms.sp_cur = 3;
+        rec.set_hp_mp_sp(hms);
+        rec.set_equipment(legaia_save::EquipmentSlots {
+            slots: [0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88],
+        });
+
+        apply_contest_start_restore(&mut rec, ContestStartRestore { strip_gear: true });
+
+        let out = rec.hp_mp_sp();
+        assert_eq!((out.hp_cur, out.mp_cur, out.sp_cur), (400, 90, 60));
+        assert_eq!(
+            rec.equipment().slots,
+            [0, 0, 0, 0x44, 0, 0x66, 0x77, 0x88],
+            "only armour / head / weapon / leg gear are zeroed"
+        );
+    }
+
+    /// The un-stripped arm leaves every equipment byte alone.
+    #[test]
+    fn beginner_refill_leaves_equipment_untouched() {
+        let mut rec = legaia_save::CharacterRecord::zeroed();
+        let slots = [0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88];
+        rec.set_equipment(legaia_save::EquipmentSlots { slots });
+        let mut hms = rec.hp_mp_sp();
+        hms.hp_max = 250;
+        rec.set_hp_mp_sp(hms);
+
+        apply_contest_start_restore(&mut rec, ContestStartRestore { strip_gear: false });
+
+        assert_eq!(rec.equipment().slots, slots);
+        assert_eq!(rec.hp_mp_sp().hp_cur, 250);
     }
 }

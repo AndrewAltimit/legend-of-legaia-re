@@ -2249,9 +2249,27 @@ impl World {
     /// Enter the Muscle Dome contest on `session`, suspending the current
     /// scene mode (restored by [`World::exit_muscle_dome`]). Same suspend
     /// contract as the other minigames / the pause menu.
+    ///
+    /// A contest that has just been opened also runs its **start restore**
+    /// here: the arena refills the lead fighter's HP / MP / SP to their
+    /// maxima, and on every course above Beginner strips the four gear slots
+    /// first. Retail does this in the arena entry's first-entry arm, so it
+    /// fires once per contest and not at a leg boundary
+    /// ([`crate::muscle_dome::DomeContest::take_start_restore`]).
+    ///
+    /// PORT: FUN_801d0ed8 (the apply site; the body is
+    /// `muscle_dome::apply_contest_start_restore`)
     pub fn enter_muscle_dome(&mut self, session: crate::muscle_dome::MuscleDomeSession) {
         if self.mode != SceneMode::MuscleDome {
             self.muscle_return_mode = self.mode;
+        }
+        if let Some(restore) = self
+            .muscle_contest
+            .as_mut()
+            .and_then(|c| c.take_start_restore())
+            && let Some(rec) = self.roster.members.first_mut()
+        {
+            crate::muscle_dome::apply_contest_start_restore(rec, restore);
         }
         self.muscle_dome = Some(session);
         self.mode = SceneMode::MuscleDome;
