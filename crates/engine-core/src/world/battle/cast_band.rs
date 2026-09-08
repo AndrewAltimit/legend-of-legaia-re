@@ -829,31 +829,67 @@ impl World {
             _ => {}
         }
 
-        // The six tick bodies, by owning entry. `hit` is `None` because the
-        // fold is the band seam's, not the tick's (see the note above).
-        let step = match entry {
-            952 => Some(ticks::astral_slash_tick(&mut ctx, &mut caster, &mut victim)),
-            945 => Some(ticks::water_column_tick(&mut ctx, &mut victim, None, 0)),
-            // PROT 0957 carries two whole tick bodies and its trampoline
-            // `0x801F9BA8` splits them on the caster's queued action id;
-            // any other id falls through and ticks nothing.
-            957 => match spell_id {
-                ticks::SUMMON_EFFECT_TICK_B_ID => {
-                    Some(ticks::summon_effect_tick_b(&mut ctx, &mut victim))
+        // The tick bodies, by owning entry. `hit` is `None` because the fold
+        // is the band seam's, not the tick's (see the note above).
+        //
+        // A capture-class module reaches its body through a **trampoline**
+        // (`ticks::capture_tick_body`), which switches on the caster's queued
+        // action id, so a multi-spell cell picks a different choreography for
+        // each of its ids. Where the module has one, the trampoline decides
+        // whether anything ticks at all: an id it does not name returns zero
+        // and the drive loop proceeds.
+        let body = ticks::capture_tick_body(entry, spell_id);
+        let has_trampoline = ticks::capture_trampoline_for(entry).is_some();
+        let step = if has_trampoline {
+            match body {
+                Some(ticks::BLAZING_SLASH_TICK) => {
+                    Some(ticks::blazing_slash_tick(&mut ctx, &mut victim, None))
                 }
-                ticks::SUMMON_EFFECT_TICK_A_ID => {
-                    Some(ticks::summon_effect_tick_a(&mut ctx, &mut victim, None))
+                Some(ticks::ASTRAL_SLASH_TICK) => {
+                    Some(ticks::astral_slash_tick(&mut ctx, &mut caster, &mut victim))
                 }
+                // The remaining trampoline arms name bodies whose packet
+                // halves are unported; the phase machine is not, so the
+                // module still reports busy through the shared bound.
                 _ => None,
-            },
-            958 => Some(ticks::blazing_slash_tick(&mut ctx, &mut victim, None)),
-            960 => Some(ticks::plasma_strike_tick(
-                &mut ctx,
-                &mut caster,
-                &mut victim,
-                None,
-            )),
-            _ => None,
+            }
+        } else {
+            match entry {
+                945 => Some(ticks::water_column_tick(&mut ctx, &mut victim, None, 0)),
+                // PROT 0957 carries two whole tick bodies and its trampoline
+                // `0x801F9BA8` splits them on the caster's queued action id;
+                // any other id falls through and ticks nothing. That VA is
+                // filed `[worklist_va_aliased]`, so its arms live here as
+                // constants rather than in `CAPTURE_TRAMPOLINES`.
+                957 => match spell_id {
+                    ticks::SUMMON_EFFECT_TICK_B_ID => {
+                        Some(ticks::summon_effect_tick_b(&mut ctx, &mut victim))
+                    }
+                    ticks::SUMMON_EFFECT_TICK_A_ID => {
+                        Some(ticks::summon_effect_tick_a(&mut ctx, &mut victim, None))
+                    }
+                    _ => None,
+                },
+                960 => Some(ticks::plasma_strike_tick(
+                    &mut ctx,
+                    &mut caster,
+                    &mut victim,
+                    None,
+                )),
+                // The summon band's own tick bodies - no trampoline, the
+                // `0x801CF4EC` arm calls them directly.
+                918 => ticks::kemaro_tick(&mut ctx, &mut victim, None),
+                922 => Some(ticks::puera_tick(&mut ctx, &mut victim, None)),
+                924 => Some(ticks::ultimate_rave_tick(
+                    &mut ctx,
+                    &mut caster,
+                    &mut victim,
+                )),
+                925 => Some(ticks::spikefish_tick(&mut ctx, &mut caster)),
+                927 => Some(ticks::juggernaut_tick(&mut ctx, &mut victim, None)),
+                949 => Some(ticks::water_crystals_tick(&mut ctx, &mut victim, None)),
+                _ => None,
+            }
         };
         if let Some(step) = step {
             run.busy = step == ticks::CastTickStep::Busy;

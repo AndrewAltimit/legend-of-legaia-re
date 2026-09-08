@@ -687,14 +687,94 @@ trampoline `0x801F9BA8` picks between them on the caster's queued action id -
 `0x76` to `0x801F798C`, `0x77` to `0x801F6A14`, anything else to the epilogue.
 The port routes on the same two ids.
 
+### The trampolines are their own port, and one cell holds six spells
+
+The capture-class arm shape above is a routine in its own right, and six of
+them are named by nothing else in the corpus. Each is 88 to 204 bytes, opens
+`addiu sp, sp, -0x18`, materialises the battle ctx `*0x8007BD24`, loads the
+caster `actor_table[ctx+0x13]` out of `0x801C9370` and reads its queued action
+byte `caster[+0x1DF]`; an id the routine does not name returns `a0 = 0`, so the
+module ticks nothing and the drive loop proceeds. The port carries the map as
+data (`cast_module_ticks::CAPTURE_TRAMPOLINES` / `capture_tick_body`), and
+`crates/asset/tests/cast_module_data_rows_real.rs` re-derives each row off the
+disc from PROT 0898's `0x801CF56C` arm and the trampoline's own `jal` set.
+
+| Owner | Trampoline | Action id -> tick body |
+|---|---|---|
+| 938 (`cast_chaos_breath`) | `0x801F7A40` | `0x4E` -> `0x801F726C`, `0xB7` -> `0x801F69EC` |
+| 951 (`cast_chaos_flare`) | `0x801F816C` | `0x36` -> `0x801F6A20`, `0x5B` -> `0x801F77E8` |
+| 952 (`cast_bloody_horns`) | `0x801F7B28` | `0x5C` -> `0x801F7118`, `0xB8` -> `0x801F6A0C` |
+| 955 (`cast_white_shield`) | `0x801F92A4` | six ids, [below](#prot-0955-is-a-six-spell-cell) |
+| 958 (`cast_blazing_slash`) | `0x801F8E60` | `0x79` -> `0x801F6DD8` |
+| 965 (`cast_doomsday`) | `0x801F7B1C` | `0xB6` -> `0x801F69D8` |
+
+#### PROT 0955 is a six-spell cell
+
+`0x801F92A4` is the one trampoline in the band that dispatches through a jump
+table rather than a `beq` chain: it bounds `id - 0x60` with `sltiu 0x14` and
+indexes the module's **head table**, twenty words filling file `0x00..0x50`.
+Fourteen of the twenty point at the shared epilogue `0x801F9360` and tick
+nothing; the other six are whole choreographies - `0x60` -> `0x801F8F0C`,
+`0x6E` -> `0x801F86A4`, `0x6F` -> `0x801F7FA4`, `0x70` -> `0x801F767C`,
+`0x72` -> `0x801F7158`, `0x73` -> `0x801F6A28`.
+
+That makes 0955 a **third** owner for a band head table. The rule
+[above](#image-anatomy-recovered-from-the-bytes) resolves a head table as the
+tick's or the stager's by reading the `sltiu` immediate; 0955's belongs to
+neither, and its first function opens at file `+0x50` immediately past the
+table.
+
+### The six tick bodies PROT 0898's tables name and the worklist listed
+
+Both arm tables reach bodies this page's verdict table did not cover, because
+that table was built from the routines the dumps already printed at. Read off
+each owning image's own bytes:
+
+| Tick | Owner | Reached from | Phase arms | Damage |
+|---|---|---|---|---|
+| `0x801F6A00` | 925 (`summon_spikefish`) | `0x801CF4EC` row 22 | `sltiu a0, 0x0A` -> 10, table at file `+0` | none |
+| `0x801F6A18` | 924 (`stager_ultimate_rave`) | row 21 | `sltiu a1, 0x0C` -> 12, table at `0x801F69E8` | none; the finale arm zeroes `+0x14C` outright |
+| `0x801F6A3C` | 922 (`summon_puera`) | row 19 | `sltiu a0, 0x19` -> 25 | `FUN_801DD0AC(0x12, 7)` at `0x801F8E1C`, **shape A** |
+| `0x801F6A84` | 927 (`summon_juggernaut`) | row 24 | `sltiu a1, 0x1D` -> 29 | `FUN_801DD0AC(0x12, 7)` at `0x801F7E0C`, **shape A** |
+| `0x801F6C70` | 918 (`summon_kemaro`) | row 15 | `beq`/`slti` chain, literals `1 ..= 0x14` + `0xFF` | `FUN_801DD0AC` at `0x801F87A4`, **shape A** |
+| `0x801F6A10` | 949 (`cast_water_crystals`) | `0x801CF56C` row 14 | `sltiu v1, 6` -> 6 | `FUN_801DD4B0(0xC0)` at `0x801F7318`, **shape A** |
+
+Three of those refine claims elsewhere on this page.
+
+- **`0xC0` is a baked power the table above does not carry.** PROT 0949's tick
+  bakes it at `0x801F72F8`; the
+  [baked-constant table](#the-baked-power-constants) was read off the routines
+  already on the verdict table and this tick was not one of them.
+- **PROT 0918 does not load its power as its own literal.** The arm gate
+  `addiu v0, zero, 0x12; bne v1, v0` compares the module phase byte against
+  `0x12` and the call then reuses the same register as `a0`
+  (`move a0, v0` at `0x801F8798`), so the phase number and the baked power are
+  one constant. Read `move a0, v0` at face value and the power is lost.
+- **"PROT 0927 never kills" is true of its sweep only.** Its move-VM stager
+  `0x801F85A8` clamps to `HP - 1` ([shape B](#the-two-clamp-shapes)), but its
+  *tick* `0x801F6A84` calls the same wrapper with the same baked `0x12` and
+  then clamps `sltu a0, s1` - shape A, kill-capable, and a negative wrapper
+  return there kills outright. The same `FUN_801DD0AC(0x12, 7)` + shape-A pair
+  is PROT 0922's, so the summon-branch wrapper is not itself a never-kill
+  shape.
+
+PROT 0918's damage arm also credits a kill: past the clamp it increments the
+word at `+0x664` of the caster's per-character record in the
+`0x80084140 + n * 0x414` block (`0x801F87D4..0x801F881C`).
+
 **The rows that leave the worklist without a port.** The **DATA** rows are
 scope rows in `scripts/ci/port-catalog-ignore.toml` under
 `[slot_b_spawn_stagers]`, because the pool above already produces their whole
 output; `crates/asset/tests/cast_module_data_rows_real.rs` re-derives per row,
 off the disc, that the routine frame-matches in its **owning** image, that its
 spawn count is the one this page's table quotes, and that it calls no damage
-wrapper. The seven **SCOPE-IGNORE** rows are in `[slot_b_cast_module]` - six
-null stagers and one routine nothing references.
+wrapper. The **SCOPE-IGNORE** rows are in `[slot_b_cast_module]` - six null
+stagers, one routine nothing references, and PROT 0920's per-frame effect
+updater `0x801F7B88`, the one slot-B routine SCUS calls
+([above](#scus-calls-into-slot-b-at-one-fixed-va---and-only-prot-0920-arms-it)):
+it reads the `0x8007BDC0` budget it never writes, walks the module's own
+particle records and hands them to `FUN_80021B04`, so the pool produces its
+whole output too.
 
 Two band entries carry no record at all and stage nothing: PROT 0926, the
 1-sector null stub, and PROT 0952, whose two spawn sites both load `a2` out of

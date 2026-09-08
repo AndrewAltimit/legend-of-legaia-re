@@ -38,7 +38,7 @@ const WRAPPERS: [u32; 3] = [0x801D_D0AC, 0x801D_D4B0, 0x801D_D6B4];
 ///
 /// The count is `jal` sites, not records: PROT 0915's stager reaches one
 /// shared call from two arms with two different record pointers.
-const DATA_ROWS: [(u32, u32, usize); 47] = [
+const DATA_ROWS: [(u32, u32, usize); 48] = [
     (0x801F_8EAC, 904, 1),
     (0x801F_8078, 905, 2),
     (0x801F_7FA8, 907, 2),
@@ -51,6 +51,7 @@ const DATA_ROWS: [(u32, u32, usize); 47] = [
     (0x801F_7F34, 915, 1),
     (0x801F_88F8, 916, 7),
     (0x801F_82D8, 917, 3),
+    (0x801F_8AB0, 918, 3),
     (0x801F_8578, 919, 4),
     (0x801F_800C, 921, 2),
     (0x801F_7820, 924, 1),
@@ -179,7 +180,7 @@ fn every_data_row_is_a_spawn_stager_the_pool_covers() {
         return;
     };
 
-    assert_eq!(DATA_ROWS.len(), 47, "the doc's DATA verdict count");
+    assert_eq!(DATA_ROWS.len(), 48, "the doc's DATA verdict count");
     let mut pool = CastEffectPool::new();
     let mut total_spawn = 0usize;
 
@@ -237,4 +238,283 @@ fn every_data_row_is_a_spawn_stager_the_pool_covers() {
         DATA_ROWS.len(),
         pool.len()
     );
+}
+
+// ---------------------------------------------------------------------------
+// The tick side: PROT 0898's two arm tables, the capture-class trampolines,
+// and the six tick bodies the port catalog listed.
+// ---------------------------------------------------------------------------
+
+/// PROT 0898's own link base.
+const BATTLE_BASE: u32 = 0x801C_E818;
+/// The summon-band tick table (`id - 0x81`), 32 arms, row `i` = PROT `903 + i`.
+const TICK_TABLE: u32 = 0x801C_F4EC;
+/// The capture-band tick table (spell record `+1`), 32 arms, row `i` = PROT
+/// `935 + i`.
+const CAPTURE_TABLE: u32 = 0x801C_F56C;
+
+/// `(owning PROT entry, the VA PROT 0898's capture arm calls, the arms the
+/// port carries)` - the six trampolines
+/// `legaia_engine_vm::cast_module_ticks::CAPTURE_TRAMPOLINES` names.
+type TrampolineRow = (u32, u32, &'static [(u8, u32)]);
+const TRAMPOLINES: [TrampolineRow; 6] = [
+    (
+        938,
+        0x801F_7A40,
+        &[(0x4E, 0x801F_726C), (0xB7, 0x801F_69EC)],
+    ),
+    (
+        951,
+        0x801F_816C,
+        &[(0x36, 0x801F_6A20), (0x5B, 0x801F_77E8)],
+    ),
+    (
+        952,
+        0x801F_7B28,
+        &[(0x5C, 0x801F_7118), (0xB8, 0x801F_6A0C)],
+    ),
+    (
+        955,
+        0x801F_92A4,
+        &[
+            (0x60, 0x801F_8F0C),
+            (0x6E, 0x801F_86A4),
+            (0x6F, 0x801F_7FA4),
+            (0x70, 0x801F_767C),
+            (0x72, 0x801F_7158),
+            (0x73, 0x801F_6A28),
+        ],
+    ),
+    (958, 0x801F_8E60, &[(0x79, 0x801F_6DD8)]),
+    (965, 0x801F_7B1C, &[(0xB6, 0x801F_69D8)]),
+];
+
+/// `(tick VA, owning PROT entry, summon-band row or `None` for capture band,
+/// phase-arm bound, damage wrapper + baked `a0`)` for the six tick bodies
+/// this wave ported.
+///
+/// A bound of `None` marks PROT 0918, whose head is a `beq`/`slti` chain
+/// rather than a `sltiu` + table.
+type TickRow = (u32, u32, Option<u32>, Option<u32>, Option<(u32, u32)>);
+const TICK_ROWS: [TickRow; 6] = [
+    (0x801F_6A00, 925, Some(925), Some(0x0A), None),
+    (0x801F_6A18, 924, Some(924), Some(0x0C), None),
+    (
+        0x801F_6A3C,
+        922,
+        Some(922),
+        Some(0x19),
+        Some((0x801D_D0AC, 0x12)),
+    ),
+    (
+        0x801F_6A84,
+        927,
+        Some(927),
+        Some(0x1D),
+        Some((0x801D_D0AC, 0x12)),
+    ),
+    (0x801F_6C70, 918, Some(918), None, Some((0x801D_D0AC, 0x12))),
+    (
+        0x801F_6A10,
+        949,
+        None,
+        Some(0x06),
+        Some((0x801D_D4B0, 0xC0)),
+    ),
+];
+
+fn battle_word(img: &[u8], va: u32) -> u32 {
+    word_at(img, (va - BATTLE_BASE) as usize).expect("PROT 0898 VA in range")
+}
+
+/// The `jal` (or `j`) target of the first such instruction at `va` in PROT
+/// 0898 - each arm of the two tick tables is a short thunk whose first jump
+/// leaves for the resident module.
+fn first_call_target(img: &[u8], va: u32) -> Option<u32> {
+    for i in 0..8u32 {
+        let w = battle_word(img, va + i * 4);
+        if w >> 26 == 3 {
+            return Some(((w & 0x03FF_FFFF) << 2) | 0x8000_0000);
+        }
+    }
+    None
+}
+
+#[test]
+fn the_tick_tables_name_the_trampolines_and_the_bodies_the_port_carries() {
+    let Some(dir) = extracted_dir() else {
+        eprintln!("[skip] slot-B tick rows: no LEGAIA_DISC_BIN / extracted/");
+        return;
+    };
+    let battle = read_entry(&dir, 898);
+
+    // 1. Every capture-band arm reaches the trampoline the port names.
+    for (owner, tramp, arms) in TRAMPOLINES {
+        let row = owner - 935;
+        let arm = battle_word(&battle, CAPTURE_TABLE + row * 4);
+        let target = first_call_target(&battle, arm).expect("arm calls something");
+        assert_eq!(
+            target, tramp,
+            "PROT {owner}: 0x801CF56C row {row} calls {target:#010X}, not the \
+             trampoline {tramp:#010X} the port carries"
+        );
+
+        // 2. The trampoline's own `jal` set is exactly the ported bodies.
+        let img = read_entry(&dir, owner);
+        let (start, end, _) = frame_extent(&img, tramp)
+            .unwrap_or_else(|| panic!("{tramp:#010X}: no frame-matched routine in PROT {owner}"));
+        let mut jals = jal_targets(&img, start, end);
+        jals.sort_unstable();
+        jals.dedup();
+        let mut want: Vec<u32> = arms.iter().map(|(_, b)| *b).collect();
+        want.sort_unstable();
+        want.dedup();
+        assert_eq!(
+            jals, want,
+            "PROT {owner} trampoline {tramp:#010X}: the bodies it calls in the \
+             bytes vs the ones the port's arm map names"
+        );
+    }
+
+    // 3. PROT 0955 is a six-spell cell, and its head table is the
+    //    TRAMPOLINE's - 20 words indexed `id - 0x60`, fourteen of them the
+    //    shared epilogue.
+    let white = read_entry(&dir, 955);
+    for (id, body) in TRAMPOLINES[3].2 {
+        let slot = word_at(&white, (u32::from(*id) - 0x60) as usize * 4).expect("head table word");
+        // The table word points at the arm's `jal`, which sits two words
+        // above the target it calls.
+        let called = jal_targets(
+            &white,
+            (slot - LINK_BASE) as usize,
+            (slot - LINK_BASE) as usize + 8,
+        );
+        assert_eq!(
+            called,
+            vec![*body],
+            "PROT 0955 head-table slot for id {id:#04X} does not reach {body:#010X}"
+        );
+    }
+
+    // 4. Each tick body's arm bound and damage shape, off its owning image.
+    for (va, owner, summon_row, bound, damage) in TICK_ROWS {
+        let img = read_entry(&dir, owner);
+        let (start, end, _) = frame_extent(&img, va)
+            .unwrap_or_else(|| panic!("{va:#010X}: no frame-matched routine in PROT {owner}"));
+
+        if let Some(row) = summon_row {
+            let idx = row - 903;
+            let arm = battle_word(&battle, TICK_TABLE + idx * 4);
+            let target = first_call_target(&battle, arm).expect("arm calls something");
+            assert_eq!(
+                target, va,
+                "PROT {owner}: 0x801CF4EC row {idx} calls {target:#010X}, not \
+                 the tick body {va:#010X}"
+            );
+        }
+
+        if let Some(arms) = bound {
+            let found = phase_bound(&img, start, end).unwrap_or_else(|| {
+                panic!("{va:#010X}: no `lbu ctx+0x279` + `sltiu` pair in PROT {owner}")
+            });
+            assert_eq!(
+                found, arms,
+                "{va:#010X} (PROT {owner}): the `sltiu` bound in the bytes vs \
+                 the arm count the port runs"
+            );
+        }
+
+        match damage {
+            None => {
+                for w in WRAPPERS {
+                    assert!(
+                        !jal_targets(&img, start, end).contains(&w),
+                        "{va:#010X} (PROT {owner}) calls {w:#010X}, so the port \
+                         must carry a damage step for it"
+                    );
+                }
+            }
+            Some((wrapper, power)) => {
+                let sites = baked_powers(&img, start, end, wrapper);
+                assert!(
+                    sites.contains(&power),
+                    "{va:#010X} (PROT {owner}): baked powers {sites:?} into \
+                     {wrapper:#010X} do not include the ported {power:#X}"
+                );
+            }
+        }
+    }
+
+    println!(
+        "[ok] slot-B tick rows: {} trampolines ({} arms) + {} tick bodies, \
+         all reached from PROT 0898's own tables",
+        TRAMPOLINES.len(),
+        TRAMPOLINES.iter().map(|t| t.2.len()).sum::<usize>(),
+        TICK_ROWS.len(),
+    );
+}
+
+/// The `sltiu` immediate that bounds a tick's phase dispatch: the first
+/// `sltiu` within eight instructions of an `lbu rX, 0x279(rY)`.
+fn phase_bound(img: &[u8], start: usize, end: usize) -> Option<u32> {
+    let mut off = start;
+    while off + 4 <= end.min(img.len()) {
+        let w = word_at(img, off)?;
+        // `lbu rt, 0x279(rs)`
+        if w >> 26 == 0x24 && (w & 0xFFFF) == 0x279 {
+            for j in 1..9usize {
+                let x = word_at(img, off + j * 4)?;
+                if x >> 26 == 0x0B {
+                    // sltiu
+                    return Some(x & 0xFFFF);
+                }
+            }
+        }
+        off += 4;
+    }
+    None
+}
+
+/// The `a0` immediates set within ten instructions before each `jal wrapper`
+/// in `[start, end)` - `addiu a0, zero, imm`, plus a `move a0, v0` fed by an
+/// `addiu v0, zero, imm` (PROT 0918 reuses its phase-compare constant).
+fn baked_powers(img: &[u8], start: usize, end: usize, wrapper: u32) -> Vec<u32> {
+    let mut out = Vec::new();
+    let mut off = start;
+    while off + 4 <= end.min(img.len()) {
+        let w = word_at(img, off).unwrap_or(0);
+        if w >> 26 == 3 && (((w & 0x03FF_FFFF) << 2) | 0x8000_0000) == wrapper {
+            // Which register `a0` was last copied from, if it was copied.
+            let mut via: Option<u32> = None;
+            for j in 1..=10usize {
+                if off < j * 4 {
+                    break;
+                }
+                let x = word_at(img, off - j * 4).unwrap_or(0);
+                // `move a0, rs` == `addu a0, rs, zero`: special, rt = zero,
+                // rd = a0, funct = 0x21.
+                if x >> 26 == 0
+                    && (x & 0x3F) == 0x21
+                    && ((x >> 16) & 0x1F) == 0
+                    && ((x >> 11) & 0x1F) == 4
+                {
+                    via = Some((x >> 21) & 0x1F);
+                }
+                // `addiu rt, zero, imm`
+                if x >> 26 == 9 && ((x >> 21) & 0x1F) == 0 {
+                    let rt = (x >> 16) & 0x1F;
+                    if rt == 4 {
+                        out.push(x & 0xFFFF);
+                        break;
+                    }
+                    if via == Some(rt) {
+                        out.push(x & 0xFFFF);
+                        break;
+                    }
+                }
+            }
+        }
+        off += 4;
+    }
+    out
 }

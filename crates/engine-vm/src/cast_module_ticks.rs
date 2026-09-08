@@ -975,6 +975,358 @@ pub fn plasma_strike_tick(
     })
 }
 
+// ---------------------------------------------------------------------------
+// The capture-class trampolines (`0x801CF56C` arm -> tick body)
+// ---------------------------------------------------------------------------
+
+/// One capture-class module's trampoline: the routine PROT 0898's
+/// `0x801CF56C` arm `jal`s, and the `(queued action id -> tick body)` map it
+/// dispatches on.
+///
+/// The shape is uniform across the band and is 22 to 51 instructions long:
+/// materialise the battle ctx `*0x8007BD24`, load the caster
+/// `actor_table[ctx+0x13]` out of `0x801C9370`, read its queued action byte
+/// `caster[+0x1DF]`, and either compare it against the module's own spell ids
+/// in a `beq` chain or index a jump table. An id the map does not name falls
+/// straight through to the epilogue with `a0 = 0`, so the module ticks
+/// nothing and the drive loop's "tick returned zero" gate lets the battle
+/// proceed.
+#[derive(Debug, Clone, Copy)]
+pub struct CaptureTrampoline {
+    /// Extraction PROT entry of the owning module.
+    pub prot_entry: u32,
+    /// Retail VA of the trampoline itself - the `0x801CF56C` arm's `jal`
+    /// target.
+    pub trampoline: u32,
+    /// `(action id, tick body VA)`, in `beq`-chain / table order.
+    pub arms: &'static [(u8, u32)],
+}
+
+/// PROT 0955's twenty-word head table, read at file `+0x00..+0x50`: the
+/// trampoline bounds `id - 0x60` with `sltiu 0x14` and jumps through it, so
+/// the table's index space is action ids `0x60..=0x73`. Fourteen of the
+/// twenty words point at the shared epilogue `0x801F9360` and tick nothing;
+/// the six below are the module's real bodies.
+///
+/// This is a **third** owner for a band head table.
+/// `docs/subsystems/cast-module.md` resolves head tables as the tick's or the
+/// stager's by reading the `sltiu` immediate; 0955's belongs to neither - it
+/// is the trampoline's.
+pub const WHITE_SHIELD_TRAMPOLINE_ARMS: [(u8, u32); 6] = [
+    (0x60, 0x801F_8F0C),
+    (0x6E, 0x801F_86A4),
+    (0x6F, 0x801F_7FA4),
+    (0x70, 0x801F_767C),
+    (0x72, 0x801F_7158),
+    (0x73, 0x801F_6A28),
+];
+
+/// Every capture-class trampoline the port catalog lists, read off its
+/// **owning** image's bytes at slot-B base `0x801F69D8`.
+///
+/// PROT 0957's trampoline (`0x801F9BA8`, ids `0x76` / `0x77`) is deliberately
+/// absent: that VA carries distinct code in several band images and is filed
+/// under `[worklist_va_aliased]`, so naming it here would put a `// PORT:`
+/// claim on an address that is not one port site. Its two ids are constants
+/// of their own ([`SUMMON_EFFECT_TICK_B_ID`] / [`SUMMON_EFFECT_TICK_A_ID`]).
+///
+/// The tag is one line on purpose: `port-catalog.py` scrapes a `PORT:` tag's
+/// tail from the line it opens on, so a wrapped continuation drops every
+/// address after the break.
+///
+/// PORT: FUN_801F7A40, FUN_801F7B1C, FUN_801F7B28, FUN_801F816C, FUN_801F8E60, FUN_801F92A4
+pub const CAPTURE_TRAMPOLINES: [CaptureTrampoline; 6] = [
+    // `beq v1, 0x4e -> 0x801F726C` / `beq v1, 0xb7 -> 0x801F69EC`.
+    CaptureTrampoline {
+        prot_entry: 938,
+        trampoline: 0x801F_7A40,
+        arms: &[(0x4E, 0x801F_726C), (0xB7, 0x801F_69EC)],
+    },
+    // Single arm, spelled as `bne v1, 0xb6 -> epilogue`.
+    CaptureTrampoline {
+        prot_entry: 951,
+        trampoline: 0x801F_816C,
+        arms: &[(0x36, 0x801F_6A20), (0x5B, 0x801F_77E8)],
+    },
+    CaptureTrampoline {
+        prot_entry: 952,
+        trampoline: 0x801F_7B28,
+        arms: &[(0x5C, 0x801F_7118), (0xB8, 0x801F_6A0C)],
+    },
+    CaptureTrampoline {
+        prot_entry: 955,
+        trampoline: 0x801F_92A4,
+        arms: &WHITE_SHIELD_TRAMPOLINE_ARMS,
+    },
+    CaptureTrampoline {
+        prot_entry: 958,
+        trampoline: 0x801F_8E60,
+        arms: &[(0x79, 0x801F_6DD8)],
+    },
+    CaptureTrampoline {
+        prot_entry: 965,
+        trampoline: 0x801F_7B1C,
+        arms: &[(0xB6, 0x801F_69D8)],
+    },
+];
+
+/// PROT 0958's tick body, the arm its trampoline reaches for action `0x79`.
+pub const BLAZING_SLASH_TICK: u32 = 0x801F_6DD8;
+/// PROT 0952's tick body, the arm its trampoline reaches for action `0xB8`.
+pub const ASTRAL_SLASH_TICK: u32 = 0x801F_6A0C;
+
+/// The trampoline of the module PROT `prot_entry` pages, if it has one.
+pub fn capture_trampoline_for(prot_entry: u32) -> Option<&'static CaptureTrampoline> {
+    CAPTURE_TRAMPOLINES
+        .iter()
+        .find(|t| t.prot_entry == prot_entry)
+}
+
+/// Resolve one capture-class cast through its module's trampoline: which tick
+/// body VA the caster's queued action id `caster[+0x1DF]` reaches.
+///
+/// `None` is retail's fall-through - the trampoline returns `a0 = 0`, the
+/// module ticks nothing, and the drive loop proceeds. That is why a
+/// "multi-spell cell" is several whole choreographies in one image rather
+/// than one body branching internally: PROT 0955 holds **six**, the widest in
+/// the band.
+pub fn capture_tick_body(prot_entry: u32, action_id: u8) -> Option<u32> {
+    capture_trampoline_for(prot_entry).and_then(|t| {
+        t.arms
+            .iter()
+            .find(|(id, _)| *id == action_id)
+            .map(|(_, body)| *body)
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Six more tick bodies (`0x801CF4EC` / `0x801CF56C` arm, per-module)
+// ---------------------------------------------------------------------------
+
+/// PROT 0925 (Spikefish) tick body.
+///
+/// Ten phase arms behind `sltiu a0, 0xa` (`0x801F6A68`) through the head
+/// table filling file `0x0..0x28`; `$s3 = ctx + 0x279` is materialised in the
+/// same breath at `0x801F6A64`. No damage-wrapper call anywhere in its 1082
+/// instructions - the module's whole simulation footprint is one staged clip
+/// with its restage bump (`0x801F7448`), two `ctx+0x278` writes
+/// (`0x801F6AC4` seeds it, `0x801F7AB0` clears it in the terminal arm), and
+/// two animation-rate stores.
+///
+/// Ported: the bound, the phase walk, the stage/restage pair and the
+/// `ctx+0x278` discipline. Not ported: the packet arms, which are most of the
+/// body.
+///
+/// Wired: `World::run_cast_module_tick`.
+///
+/// PORT: FUN_801F6A00 (phase machine + staging; packet arms unported)
+pub fn spikefish_tick(ctx: &mut CastModuleCtx, caster: &mut CastActorState) -> CastTickStep {
+    run_tick(ctx, 10, |c| {
+        if c.phase == 0 {
+            c.ctx_278 = 0;
+        }
+        if c.phase == SPIKEFISH_STAGE_ARM {
+            stage_clip(caster, caster.staged_anim);
+        }
+        false
+    })
+}
+
+/// The arm PROT 0925 stages its clip from (`sb t0, 0x1da(v0)` at
+/// `0x801F7448`, inside the arm the head table's word 5 reaches).
+pub const SPIKEFISH_STAGE_ARM: u8 = 5;
+
+/// PROT 0924 (Ultimate Rave) tick body.
+///
+/// Twelve phase arms behind `sltiu a1, 0xc` (`0x801F6AA8`) through the table
+/// at `0x801F69E8` - base `+0x10`, i.e. the head table starts four words in,
+/// which is why a reader that assumes file `+0` misses it. Five `+0x1DA`
+/// stages against four restage bumps (the unpaired one is `0x801F7350`,
+/// which writes the staged clip and the animation rate in the same pair of
+/// instructions), ten `+0x21D` animation-rate stores, three `ctx+0x278`
+/// writes and no damage wrapper.
+///
+/// Its one HP write is not a hit: `sh zero, 0x14c(s3)` at `0x801F76A0` zeroes
+/// the victim's HP outright in the finale arm, next to `+0x225` / `+0x21C`
+/// render flags - the seat-0 "declare the victim dead" shape the module docs
+/// name, not a roll through a wrapper.
+///
+/// Ported: the bound, the phase walk, the stage/restage pairs and the finale
+/// HP zero. Not ported: the packet and camera arms.
+///
+/// Wired: `World::run_cast_module_tick`.
+///
+/// PORT: FUN_801F6A18 (phase machine + staging + the finale HP zero; packet
+/// arms unported)
+pub fn ultimate_rave_tick(
+    ctx: &mut CastModuleCtx,
+    caster: &mut CastActorState,
+    victim: &mut CastActorState,
+) -> CastTickStep {
+    run_tick(ctx, 12, |c| {
+        if c.phase == ULTIMATE_RAVE_FINALE_ARM {
+            victim.hp = 0;
+            victim.render_flag = 2;
+            victim.anim_rate = 2;
+            let knockdown = victim.knockdown_anim;
+            stage_clip(victim, knockdown);
+        } else {
+            stage_clip(caster, caster.staged_anim);
+        }
+        false
+    })
+}
+
+/// The arm PROT 0924 zeroes the victim's HP in (`sh zero, 0x14c(s3)` at
+/// `0x801F76A0`).
+pub const ULTIMATE_RAVE_FINALE_ARM: u8 = 9;
+
+/// PROT 0922 (Puera) tick body - 2474 instructions, the band's longest.
+///
+/// Twenty-five phase arms behind `sltiu a0, 0x19` (`0x801F6AB4`) through the
+/// head table at file `+0`. One `FUN_801DD0AC` site at `0x801F8E1C` with the
+/// baked power `0x12` and `a1 = 7` (the shared kernel's summon branch), under
+/// the same two guards the band's AoE stagers use - skip a dead seat
+/// (`+0x14C == 0`) and skip a non-targetable one (`+0x16E & 4`) - followed by
+/// the **shape-A** clamp at `0x801F8E48` (`sltu a0, s1`, unsigned).
+///
+/// That corrects a reading `docs/subsystems/cast-module.md` could be taken to
+/// imply: PROT 0927's *stager* clamps to `HP - 1` and cannot kill, but the
+/// summon-branch wrapper is not itself a never-kill shape - this module calls
+/// it with the kill-capable clamp.
+///
+/// Wired: `World::run_cast_module_tick`.
+///
+/// PORT: FUN_801F6A3C (phase machine + damage/staging; packet arms unported)
+pub fn puera_tick(
+    ctx: &mut CastModuleCtx,
+    victim: &mut CastActorState,
+    hit: Option<i32>,
+) -> CastTickStep {
+    run_tick(ctx, 25, |_| {
+        if let Some(roll) = hit
+            && aoe_seat_is_hittable(victim)
+        {
+            apply_hit_floor_zero(victim, roll);
+        }
+        false
+    })
+}
+
+/// PROT 0927 (Juggernaut) tick body - the sibling of the AoE stager
+/// [`juggernaut_stager`] and a **second, differently clamped** damage site in
+/// the same module.
+///
+/// Twenty-nine phase arms behind `sltiu a1, 0x1d` (`0x801F6B04`) through the
+/// table at `0x801F69E8`. Its `FUN_801DD0AC` site is `0x801F7E0C`, same baked
+/// `0x12` and `a1 = 7` as the stager, but the clamp at `0x801F7E38` is
+/// `sltu a0, s1` - **shape A**, which can kill - where the stager's
+/// `0x801F85C4` clamp is the signed `HP - 1` shape that cannot.
+///
+/// So "PROT 0927 never kills" is true of its move-VM sweep only. The tick's
+/// hit is kill-capable, and a negative wrapper return there kills outright
+/// through the unsigned compare.
+///
+/// Wired: `World::run_cast_module_tick`.
+///
+/// PORT: FUN_801F6A84 (phase machine + damage/staging; packet arms unported)
+pub fn juggernaut_tick(
+    ctx: &mut CastModuleCtx,
+    victim: &mut CastActorState,
+    hit: Option<i32>,
+) -> CastTickStep {
+    run_tick(ctx, 29, |_| {
+        if let Some(roll) = hit
+            && aoe_seat_is_hittable(victim)
+        {
+            apply_hit_floor_zero(victim, roll);
+        }
+        false
+    })
+}
+
+/// PROT 0918 (Kemaro) tick body.
+///
+/// The one body in this set whose head is a `beq`/`slti` chain rather than a
+/// word table (`0x801F6D08` onward); its phase literals run `1 ..= 0x14` plus
+/// the `0xFF` done marker. One `FUN_801DD0AC` site at `0x801F87A4`, and its
+/// power is **not** loaded as its own literal - the arm gate
+/// `addiu v0, zero, 0x12; bne v1, v0` compares the phase byte against `0x12`
+/// and then reuses the same register as `a0` (`move a0, v0` at `0x801F8798`),
+/// so the phase number and the baked power are one constant. A reader that
+/// takes `move a0, v0` at face value loses the power entirely.
+///
+/// Shape-A clamp at `0x801F87C8`, spelled the other way round
+/// (`sltu s1, a1` - damage below HP branches *past* the clamp). The arm that
+/// does clamp also credits a kill: it increments the word at `+0x664` of the
+/// caster's per-character record in the `0x80084140 + n * 0x414` block.
+///
+/// Wired: `World::run_cast_module_tick`.
+///
+/// PORT: FUN_801F6C70 (phase chain + damage/staging + the kill credit; packet
+/// arms unported)
+pub fn kemaro_tick(
+    ctx: &mut CastModuleCtx,
+    victim: &mut CastActorState,
+    hit: Option<i32>,
+) -> Option<CastTickStep> {
+    if ctx.phase == KEMARO_DONE_PHASE {
+        return Some(CastTickStep::Done);
+    }
+    if ctx.phase > KEMARO_LAST_PHASE {
+        return None;
+    }
+    if ctx.phase == KEMARO_DAMAGE_PHASE
+        && let Some(roll) = hit
+    {
+        apply_hit_floor_zero(victim, roll);
+    }
+    advance_phase(ctx);
+    Some(CastTickStep::Busy)
+}
+
+/// PROT 0918's damage arm, and - the same constant - the `a0` its
+/// `FUN_801DD0AC` site bakes.
+pub const KEMARO_DAMAGE_PHASE: u8 = 0x12;
+/// The widest phase literal PROT 0918's `beq`/`slti` chain compares.
+pub const KEMARO_LAST_PHASE: u8 = 0x14;
+/// The band's "choreography done" phase marker.
+pub const KEMARO_DONE_PHASE: u8 = 0xFF;
+
+/// PROT 0949 (Water Crystals) tick body - the sibling of the freeze-ramp
+/// stager [`water_crystals_stager`].
+///
+/// Six phase arms behind `sltiu v1, 6` (`0x801F6AA0`) through the head table
+/// at file `+0`, and the victim is derived the band's way in the prologue
+/// (`caster[+0x1DD]` at `0x801F6A5C`, then `actor_table[that]`). One
+/// `FUN_801DD4B0` site at `0x801F7318` with the baked power `0xC0`
+/// (`0x801F72F8`), then the shape-A clamp at `0x801F733C`, the `+0x10`
+/// accumulate, the HP write, a `+0x1DC = 1` restage store and the victim's
+/// own `+0x1F1` reaction stage.
+///
+/// `0xC0` is a power `docs/subsystems/cast-module.md`'s baked-constant table
+/// does not carry: that table was read off the routines already on the
+/// verdict table, and this tick was not one of them.
+///
+/// Wired: `World::run_cast_module_tick`.
+///
+/// PORT: FUN_801F6A10 (phase machine + damage/staging; packet arms unported)
+pub fn water_crystals_tick(
+    ctx: &mut CastModuleCtx,
+    victim: &mut CastActorState,
+    hit: Option<i32>,
+) -> CastTickStep {
+    run_tick(ctx, 6, |_| {
+        if let Some(roll) = hit {
+            apply_hit_floor_zero(victim, roll);
+            victim.restage = 1;
+            let knockdown = victim.knockdown_anim;
+            victim.staged_anim = knockdown;
+        }
+        false
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
