@@ -49,6 +49,7 @@ import argparse
 import csv
 import os
 import re
+import struct
 import sys
 from collections import Counter, defaultdict
 
@@ -704,6 +705,44 @@ class StaticArbiter:
     # does not end the routine it appears in.
     BODY_CLOSING_MNEMONICS = frozenset(("jr", "j", "b", "jalr"))
 
+    # How far back to look for a branch INTO the candidate VA. A conditional
+    # branch's displacement is 16 signed words, so this is a bound on the
+    # search, not on the instruction.
+    BRANCH_BACK_BYTES = 0x400
+
+    # MIPS primary opcodes that are PC-relative conditional branches:
+    # REGIMM (1), beq (4), bne (5), blez (6), bgtz (7).
+    _BRANCH_OPS = frozenset((1, 4, 5, 6, 7))
+
+    @classmethod
+    def _branched_into(cls, data, off, va):
+        """Does a branch at a LOWER address in this image target this VA?
+
+        A PC-relative branch cannot leave the function it sits in, so a branch
+        into the VA from below is decisive evidence that the VA is INSIDE that
+        function - whatever the words immediately above it look like.
+
+        It is needed because the `jr ra` tell has a false positive with exactly
+        this shape. A frameless routine's early exit is `jr ra; nop`, and the
+        word after that delay slot then reads as "preceded by a return" while
+        being the `beq` target two instructions further up. `FUN_801D32BC` in
+        PROT 0898 is the case: `beq` at `0x801D32BC` targets `0x801D32D4` and
+        `beq` at `0x801D32C4` targets `0x801D338C`, and both targets sit under
+        an internal `jr ra; nop`.
+        """
+        lo = max(0, off - cls.BRANCH_BACK_BYTES)
+        for p in range(lo, off, 4):
+            if p + 4 > len(data):
+                break
+            w = struct.unpack_from("<I", data, p)[0]
+            if (w >> 26) not in cls._BRANCH_OPS:
+                continue
+            imm = w & 0xFFFF
+            imm = imm - 0x10000 if imm & 0x8000 else imm
+            if (p + 4 + imm * 4) - off == 0:
+                return True
+        return False
+
     @classmethod
     def _entry_above(cls, before):
         """True when a routine already opened inside the window.
@@ -775,7 +814,8 @@ class StaticArbiter:
             if self._looks_like_data([t for t in after if t]):
                 continue
             prev2 = before[-2]
-            if prev2 and prev2[0] == "jr" and prev2[1] in ("ra", "ra,"):
+            if (prev2 and prev2[0] == "jr" and prev2[1] in ("ra", "ra,")
+                    and not self._branched_into(data, off, addr_int)):
                 hits.append((label, "preceded by `jr ra`"))
             elif (
                 head[0] in ("addiu", "addi")
@@ -783,7 +823,20 @@ class StaticArbiter:
                 and not self._entry_above(before)
             ):
                 hits.append((label, "opens `%s %s`" % head))
-            elif self._looks_like_data([t for t in before if t]) and all(after):
+            elif (
+                self._looks_like_data([t for t in before if t])
+                and all(after)
+                # ... but not when the word IMMEDIATELY before is a non-leaf
+                # prologue. Then a routine opened four bytes earlier and this VA
+                # is its second instruction, however much data sits above that
+                # prologue - and above an overlay's FIRST routine there is
+                # always a data run, so the tell fires on exactly the address
+                # most likely to be interior. `boot_init_pak` (PROT 0895) is the
+                # case: 0x801CE9C0 opens `addiu sp,sp,-0x230`, so 0x801CE9C4 is
+                # not an entry, and the audit re-raised it as one.
+                and not (before[-1] and before[-1][0] in ("addiu", "addi")
+                         and before[-1][1].startswith("sp,sp,-"))
+            ):
                 hits.append((label, "code opening after a data run"))
         return hits
 
@@ -1283,7 +1336,8 @@ def named_true_va(reason):
     return None
 
 
-def audit_row(addr, reason, by_addr, dup_groups, ported, owners, arb):
+def audit_row(addr, reason, by_addr, dup_groups, ported, owners, arb,
+              category=None):
     """Audit one already-ignored row: `(re_raise_note or None, class, reason)`.
 
     A re-raise has to mean "this ignore row is probably wrong", so the audit
@@ -1318,6 +1372,16 @@ def audit_row(addr, reason, by_addr, dup_groups, ported, owners, arb):
     dumps = by_addr.get(addr, [])
     cls, why = classify(addr, dumps, dup_groups, ported, owners, arb, by_addr)
     if cls in NON_PORTABLE:
+        return (None, cls, why)
+
+    # A row filed under the SHAPE the classifier itself assigns is not
+    # contradicted, whatever the shape's portability status. `VA_ALIASED` is
+    # the case: it is not in `NON_PORTABLE` (the address really does cover
+    # code), yet a `[worklist_va_aliased]` row says exactly what the classifier
+    # says - that the bare VA is several images' routines and therefore not one
+    # port site. Without this the audit re-raises every such row forever, which
+    # trains the reader to ignore the audit.
+    if category and IGNORE_CATEGORY.get(cls) == category:
         return (None, cls, why)
 
     va = int(addr, 16)
@@ -1372,6 +1436,7 @@ def audit_row(addr, reason, by_addr, dup_groups, ported, owners, arb):
 
 
 IGNORE_CATEGORY = {
+    "VA_ALIASED": "worklist_va_aliased",
     "INTERIOR": "worklist_interior",
     "PHANTOM": "worklist_phantom",
     "SHARED_TAIL": "worklist_shared_tail",
@@ -1424,11 +1489,24 @@ def write_ignore(path, results):
                 fh.write('"%s" = "%s: %s"\n' % (addr, cls, reason.replace('"', "'")))
 
 
+# Defaults, so the three paths a run from a checkout would always type are not
+# typed. `--audit-ignored` in particular writes nothing and only reads the two
+# inputs, and demanding `--out` for it made an audit look like it needed a
+# destination to put its verdicts in.
+_HERE = os.path.dirname(os.path.abspath(__file__))
+DEFAULT_REPO = os.path.dirname(os.path.dirname(_HERE))
+DEFAULT_CATALOG = os.path.join(DEFAULT_REPO, "target", "port-catalog", "catalog.csv")
+DEFAULT_OUT = os.path.join(DEFAULT_REPO, "target", "worklist-classification.csv")
+
+
 def main():
     ap = argparse.ArgumentParser(description="classify the port-catalog worklist")
-    ap.add_argument("--repo", required=True, help="checkout with ghidra/scripts/funcs/")
-    ap.add_argument("--catalog", required=True, help="port-catalog catalog.csv")
-    ap.add_argument("--out", required=True, help="classification CSV to write")
+    ap.add_argument("--repo", default=DEFAULT_REPO,
+                    help="checkout with ghidra/scripts/funcs/ (default: this one)")
+    ap.add_argument("--catalog", default=DEFAULT_CATALOG,
+                    help="port-catalog catalog.csv (default: %(default)s)")
+    ap.add_argument("--out", default=DEFAULT_OUT,
+                    help="classification CSV to write (default: %(default)s)")
     ap.add_argument("--ignore-out", help="proposed ignore-list TOML to write")
     ap.add_argument("--explain", help="print full evidence for one address")
     ap.add_argument(
@@ -1583,7 +1661,8 @@ def main():
         bad = 0
         for a in absorbed:
             note, cls, why = audit_row(
-                a, by_reason.get(a, ""), by_addr, dup_groups, ported, owners, arb
+                a, by_reason.get(a, ""), by_addr, dup_groups, ported, owners,
+                arb, by_cat.get(a)
             )
             if note is None:
                 continue

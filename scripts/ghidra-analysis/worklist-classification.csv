@@ -1,2 +1,94 @@
 addr,class,reason
-80050e74,REAL,self-entry body of 24 instructions returning `jr ra`
+80045bb4,SHARED_TAIL,"no `jr ra`; body exits `j 0x80045e54`, inside 80045bb4 - an entry into a multi-entry routine, not a standalone function"
+801ce8a0,REAL,every dump at this VA is of other2_dev(973) (captures: other2_dev_0973); no second dumped body here
+801ce8ec,REAL,self-entry body of 155 instructions returning `jr ra`
+801cef54,REAL,every dump at this VA is of dance(980) (captures: dance_0980); no second dumped body here
+801cf070,REAL,self-entry body of 211 instructions returning `jr ra`
+801d00f8,REAL,self-entry body of 126 instructions returning `jr ra`
+801d0640,REAL,self-entry body of 68 instructions returning `jr ra`
+801d0ed8,REAL,self-entry body of 34 instructions returning `jr ra`
+801d820c,REAL,self-entry body of 19 instructions returning `jr ra`
+801da930,REAL,self-entry body of 72 instructions returning `jr ra`
+801dbb2c,REAL,self-entry body of 24 instructions returning `jr ra`
+801dd4c4,REAL,self-entry body of 176 instructions returning `jr ra`
+801dd784,REAL,self-entry body of 148 instructions returning `jr ra`
+801dda90,REAL,self-entry body of 39 instructions returning `jr ra`
+801de37c,REAL,every dump at this VA is of field(897) (captures: field_0897); no second dumped body here
+801e59b0,REAL,self-entry body of 22 instructions returning `jr ra`
+801f2d54,REAL,self-entry body of 11 instructions returning `jr ra`
+801f463c,REAL,"dump is bounded short (25 instructions, no `jr ra`), but battle_action(898) starts a routine at this VA at its mapped base (preceded by `jr ra`)"
+801f6a00,REAL,self-entry body of 1082 instructions returning `jr ra`
+801f6a0c,REAL,self-entry body of 451 instructions returning `jr ra`
+801f6a10,REAL,self-entry body of 747 instructions returning `jr ra`
+801f6a14,REAL,self-entry body of 990 instructions returning `jr ra`
+801f6a18,REAL,self-entry body of 898 instructions returning `jr ra`
+801f6a3c,REAL,self-entry body of 2474 instructions returning `jr ra`
+801f6a84,REAL,self-entry body of 1737 instructions returning `jr ra`
+801f6c70,REAL,self-entry body of 1936 instructions returning `jr ra`
+801f6dd8,REAL,self-entry body of 2006 instructions returning `jr ra`
+801f6edc,REAL,self-entry body of 518 instructions returning `jr ra`
+801f74e4,REAL,self-entry body of 1109 instructions returning `jr ra`
+801f75bc,REAL,self-entry body of 29 instructions returning `jr ra`
+801f769c,REAL,self-entry body of 53 instructions returning `jr ra`
+801f76c4,REAL,self-entry body of 130 instructions returning `jr ra`
+801f7740,REAL,self-entry body of 169 instructions returning `jr ra`
+801f776c,REAL,self-entry body of 41 instructions returning `jr ra`
+801f7820,REAL,self-entry body of 23 instructions returning `jr ra`
+801f7850,REAL,self-entry body of 99 instructions returning `jr ra`
+801f78a4,REAL,self-entry body of 108 instructions returning `jr ra`
+801f798c,REAL,self-entry body of 2074 instructions returning `jr ra`
+801f7a40,REAL,every dump at this VA is of cast_chaos_breath(938) (captures: cast_chaos_breath_0938); no second dumped body here
+801f7a80,REAL,self-entry body of 74 instructions returning `jr ra`
+801f7ab8,REAL,self-entry body of 68 instructions returning `jr ra`
+801f7ae8,REAL,self-entry body of 149 instructions returning `jr ra`
+801f7af4,REAL,self-entry body of 117 instructions returning `jr ra`
+801f7b1c,REAL,self-entry body of 22 instructions returning `jr ra`
+801f7b28,REAL,self-entry body of 30 instructions returning `jr ra`
+801f7b74,REAL,self-entry body of 46 instructions returning `jr ra`
+801f7b88,REAL,every dump at this VA is of summon_slippery(920) (captures: summon_slippery_0920); no second dumped body here
+801f7bd0,REAL,self-entry body of 63 instructions returning `jr ra`
+801f7db0,REAL,self-entry body of 48 instructions returning `jr ra`
+801f7ea4,REAL,self-entry body of 438 instructions returning `jr ra`
+801f7ec4,REAL,self-entry body of 65 instructions returning `jr ra`
+801f7f2c,REAL,self-entry body of 41 instructions returning `jr ra`
+801f7f34,REAL,self-entry body of 25 instructions returning `jr ra`
+801f7fa8,REAL,"duplicate claim withdrawn: peer 801f4dd0 is a printed address from a mis-based dump, not a body at that VA"
+801f7fe8,REAL,self-entry body of 25 instructions returning `jr ra`
+801f7ff0,REAL,self-entry body of 14 instructions returning `jr ra`
+801f800c,REAL,self-entry body of 69 instructions returning `jr ra`
+801f8078,REAL,"duplicate claim withdrawn: peer 801f16a0 is a printed address from a mis-based dump, not a body at that VA"
+801f8118,REAL,self-entry body of 40 instructions returning `jr ra`
+801f813c,REAL,self-entry body of 43 instructions returning `jr ra`
+801f816c,REAL,self-entry body of 28 instructions returning `jr ra`
+801f81a0,REAL,self-entry body of 166 instructions returning `jr ra`
+801f81dc,VA_ALIASED,"2 overlays hold distinct code at this VA (cast_chaos_flare(951), summon_swordie(910)) - confirmed against the extracted images, not the dump image tags"
+801f8208,REAL,self-entry body of 14 instructions returning `jr ra`
+801f8250,REAL,self-entry body of 361 instructions returning `jr ra`
+801f82d8,REAL,self-entry body of 184 instructions returning `jr ra`
+801f8310,REAL,self-entry body of 133 instructions returning `jr ra`
+801f835c,REAL,self-entry body of 116 instructions returning `jr ra`
+801f84a4,REAL,self-entry body of 14 instructions returning `jr ra`
+801f8504,REAL,self-entry body of 24 instructions returning `jr ra`
+801f8578,REAL,self-entry body of 61 instructions returning `jr ra`
+801f85a8,REAL,self-entry body of 248 instructions returning `jr ra`
+801f864c,REAL,self-entry body of 81 instructions returning `jr ra`
+801f86b0,REAL,self-entry body of 46 instructions returning `jr ra`
+801f8748,REAL,self-entry body of 53 instructions returning `jr ra`
+801f88f8,REAL,self-entry body of 145 instructions returning `jr ra`
+801f89b8,REAL,every dump at this VA is of world_map_render(901) (captures: world_map_render_0901); no second dumped body here
+801f89d4,REAL,self-entry body of 43 instructions returning `jr ra`
+801f8ab0,REAL,every dump at this VA is of summon_kemaro(918) (captures: summon_kemaro_0918); no second dumped body here
+801f8adc,REAL,self-entry body of 35 instructions returning `jr ra`
+801f8b90,REAL,self-entry body of 73 instructions returning `jr ra`
+801f8bf8,REAL,self-entry body of 145 instructions returning `jr ra`
+801f8c30,REAL,self-entry body of 285 instructions returning `jr ra`
+801f8d30,REAL,self-entry body of 76 instructions returning `jr ra`
+801f8d64,REAL,self-entry body of 255 instructions returning `jr ra`
+801f8e60,REAL,self-entry body of 22 instructions returning `jr ra`
+801f8e68,REAL,self-entry body of 232 instructions returning `jr ra`
+801f8eac,REAL,self-entry body of 14 instructions returning `jr ra`
+801f90e4,REAL,self-entry body of 8 instructions returning `jr ra`
+801f92a4,REAL,every dump at this VA is of cast_white_shield(955) (captures: cast_white_shield_0955); no second dumped body here
+801f92ac,REAL,self-entry body of 599 instructions returning `jr ra`
+801f9370,REAL,self-entry body of 25 instructions returning `jr ra`
+801f99f4,REAL,self-entry body of 109 instructions returning `jr ra`
