@@ -683,6 +683,31 @@ The whole chain runs in master mode `0x03` (field RUN) with **zero input**; each
 
 The JT, state-struct field offsets, and observed `state[+0x204] = N` transitions are pinned in [`legaia_engine_vm::title_overlay`](../../crates/engine-vm/src/title_overlay.rs). Four modes are semantically labelled: `Init` (`0x00` - entry init that routes to `Phase02` or `AttractDelay`), `Idle` (`0x01` - body-tail no-op), `AttractIdle` (`0x10` - Press-Start poll), `AttractDelay` (`0x11` - pre-attract delay). The other 21 carry `Phase0xNN` placeholders with traced-transition docstrings; the module's `STATE_204_WRITES` table holds the full graph. Notably, **Phase06 writes `_DAT_8007B83C = 0x02` at `0x801DFC00`** - the title-screen → main-game master-mode transition (exported as `MASTER_GAME_MODE_FIELD_LAUNCH` + `PHASE06_LAUNCH_GAME_PC`).
 
+#### A cold boot always shows sub-mode `0x10`, never `0x02`
+
+`Init` (`0x00`) writes `state[+0x204] = 0x02` and then overwrites it with `0x11`
+when the entry word `_DAT_8007BB00` reads non-zero. On retail that overwrite
+always happens, so the `0x02` two-row menu is unreachable from a cold boot:
+
+- **`_DAT_8007BB00` is raised unconditionally by the boot `init.pak` itself.**
+  `FUN_801CE9C0` does `li s2,0x1` / `sw s2,-0x4500(s0)` at `0x801CEB84` with
+  `s0 = 0x80080000`, in the mode-16 body, before it hands off. The three sites
+  that store zero back (`0x801CEBC0`, `0x801CEBD8`, `0x801CEBF8`) are all behind
+  dev-flag or pad-hold arms (`_DAT_8007B98C`, `_DAT_8007B8C2`, `_DAT_8007B850`).
+- **Capture agrees.** Polling the word and the sub-mode per vsync across a cold
+  boot: `_DAT_8007BB00` goes `0 -> 1` in the same frame the master mode steps
+  `0x10 -> 0x11`, holds `1` through `CARD INIT` (`0x16`) and the title (`0x17`),
+  and the sub-mode is written `0x11` on the frame after the title mode is
+  entered, then `0x10` about 75 vsyncs later - the `AttractDelay` -> `AttractIdle`
+  hand-off. `0x02` is never observed. Coming back to the title from the attract
+  FMV the word reads `2`, so the overwrite holds on the second entry too.
+
+**The sub-mode word is at `0x801F0204`, not `0x801DD920`.** `0x801DD920` is the
+*instruction* address of the `sw v0,0x204(a2)` that writes it, with
+`a2 = 0x801F0000` from the `lui a2,0x801f` four instructions earlier. Reading a
+dump's printed line address as the data address is the mistake; the switch this
+page already documents is over `DAT_801f0204`, which is the same word.
+
 ### The opening scene chain + the `FUN_801D1344` intro skip
 
 The natural (zero-input) opening chains scene to scene by **script execution**: `opdeene`'s timeline record P2[18] ends with a field-VM `0x3F` SceneChange to `opstati`, which chains to `opurud`, then to `map01`, which scene-changes into `town01` at tile `(0x1D, 0x5B)`. Each leg's opening record spawns through one of two mechanisms, both pinned by a live PCSX-Redux exec-breakpoint on the record dispatcher `FUN_8003BDE0` (exactly 5 hits across the opening): **op `0x44` SPAWN_RECORD** in the scene's P1[0] entry script (`opdeene` / `opstati` / `opurud`) or the **walk-on tile trigger** at the arrival tile (`map01` / `town01`; `FUN_801D1EC4` → `FUN_801D5630` → `FUN_8003BDE0`). See [`cutscene.md`](cutscene.md#record-spawn-mechanisms-live-probe-pinned).
@@ -899,7 +924,48 @@ Matching each record's `tpage`/`clut` against the upload table above assigns eve
 
 So PROKION and SCEA are **vertically packed**: the top half and the bottom half of the TIM are drawn side by side, meeting on the stage centre `x = 320`. PROKION's two halves complete a single sun in the middle; SCEA's two 64-row halves read `Sony Computer Entertainment America` beside `Presents`. Contrail draws whole. `FUN_801D0868` emits the SCEA pair and `FUN_801D08F0` the PROKION pair, each taking the level as its only argument and reading the centre offsets out of the records' own `w` byte.
 
-**WARNING is uploaded but never drawn by this overlay.** Descriptor 1 exists and its TIM reaches VRAM, but all five `FUN_801CFBB8` call sites in PROT 0895 pass descriptor ids 0, 2, 3, 4 and 5 - none passes 1 - and no other reference to the descriptor table exists in the image (`find-address-word-refs.py 0x801F369C` finds exactly the two `lui`/`addiu` pairs inside `FUN_801CFBB8` and `FUN_801D0868`). Whatever shows the health warning, it is not this code.
+**WARNING is uploaded and never drawn - by this overlay or by any other.**
+Descriptor 1 exists and its TIM reaches VRAM, but all five `FUN_801CFBB8` call
+sites in PROT 0895 pass descriptor ids 0, 2, 3, 4 and 5 - none passes 1 - and no
+other reference to the descriptor table exists in the image
+(`find-address-word-refs.py 0x801F369C` finds exactly the two `lui`/`addiu`
+pairs inside `FUN_801CFBB8` and `FUN_801D0868`).
+
+A cold-boot capture closes the remaining "some other image draws it" arm. See
+[The health warning is never drawn](#the-health-warning-is-never-drawn).
+
+### The health warning is never drawn
+
+Retail never puts the health-warning screen on the display. Two independent
+observations over one cold boot carried through the logo chain, the title
+screen, the attract FMV and the return to the title
+(`scripts/pcsx-redux/autorun_boot_warning_screen.lua`):
+
+- **The descriptor is never requested.** An exec breakpoint on `FUN_801CFBB8`
+  logs every `(z, cx, cy, desc, level, scale)` the boot issues. Descriptor 1
+  draws zero times; descriptors 0, 2, 3, 4 and 5 all draw, in the order the
+  sequencer prescribes - SCEA (descriptors 2 + 3) first, then Contrail
+  (descriptor 4), then PROKION (descriptors 0 + 5).
+- **No primitive anywhere carries its CLUT.** A textured-primitive sweep of
+  main RAM (the CLUT id lives in the high halfword of packet word 3, so it
+  exists in RAM even though no image spells it out) finds no packet at all
+  bearing descriptor 1's CLUT `0x7E80`. The three logo CLUTs are swept in the
+  same pass as a positive control and every one of them lands on its documented
+  screen rect: SCEA at `(68, 192)` + `(320, 192)` with `tpage 0x2A`, PROKION at
+  `(144, 165)` + `(320, 165)` with `0xBA`, Contrail at `(228, 105)` with
+  `0xBC`. Each logo packet appears in both halves of the double-buffered
+  ordering table; the handful of raw `0x7E80` byte matches decode to
+  five-digit screen coordinates and never land in the packet pool.
+
+Read descriptor 1's own pair from the bytes at PROT 0895 file `+0x24E84`, not
+from the upload table above: it is `tpage 0x000B` / `clut 0x7E80`. `0x9A` /
+`0x7ED4` is PROKION's pair, carried by descriptors 0 and 5.
+
+The screen the WARNING TIM would show is also destroyed later in the same boot:
+the menu overlay's park pass moves the card-screen kanji page from
+`(320, 256)` onto `(704, 0)` on the way into game mode `0x1A`
+([`data-field.md`](../formats/data-field.md)), which is exactly the rect the
+WARNING pixels occupy.
 
 ### The logo sequencer
 

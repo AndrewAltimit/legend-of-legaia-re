@@ -455,6 +455,49 @@ sweep (`scripts/ghidra-analysis/find-address-word-refs.py`) reports no word, no
 in any image, and PROT 0909 holds no jump table that could reach them. Only
 `0x801F7948` is on the worklist, because only it has a dump.
 
+### SCUS calls into slot B at one fixed VA - and only PROT 0920 arms it
+
+`FUN_800480D8`, the per-actor battle draw tick, ends its scene-teardown
+preamble with `jal 0x801F7B88` under `_DAT_8007BDC0 != 0`
+(`lui v0,0x8008` / `lw v0,-0x4240(v0)` / `beq` at `0x8004818C..0x800481A0`,
+`see ghidra/scripts/funcs/800480d8.txt`). The target is in the slot-B band, so
+the `jal` alone names no image - sixty-five of the sixty-eight slot-B rows in
+[`static-overlays.toml`](../../crates/asset/data/static-overlays.toml) are long
+enough to hold a routine at base `+0x11B0`.
+
+**The gate names the image.** `_DAT_8007BDC0` is `gp+0xAA8`, and a sweep for
+every form that reaches it (`find-gp-relative-refs.py --va 0x8007BDC0`, which
+covers the `lui`+load pair the five-form address scan cannot see) finds it in
+exactly two images across `SCUS_942.54` and all 83 mapped overlays: SCUS, which
+only ever stores zero to it (`0x80055BBC`), and **PROT 0920**
+(`summon_slippery`, the Slippery / "Deadly Rain" evolved-Seru module), which
+owns it end to end:
+
+| Site | Instruction | Meaning |
+|---|---|---|
+| `0x801F6FEC` | `addiu v0,zero,0x204` ; `sw v0,-0x4240(v1)` | seeds the word to `0x204` inside the module's 64-iteration spawn loop |
+| `0x801F70CC` | `sw v0,-0x4240(t0)` after `subu v0,v0,a0` | drains it per frame by `2 * byte[s0+0x7F]` |
+| `0x801F7B4C` | `sw zero,-0x4240(v0)` | clears it, in the epilogue of the function that ends at `0x801F7B84` |
+
+So the word is a live **budget**, not a boolean, and the routine SCUS calls
+begins at the very next instruction after the function that clears it -
+`0x801F7B88` is a 1632-byte framed routine at PROT 0920 file `+0x11B0`
+(`addiu sp,sp,-0x60`, 408 instructions, reading the per-frame scalar
+`_DAT_1F800393`). The reading that closes the loop: while Slippery's effect is
+still draining, a battle scene that starts tearing down hands the module one
+more tick before the teardown proceeds. Only the identity is measured; the
+purpose is `inference`.
+
+**Nothing in the save-state corpus has the gate up.** `_DAT_8007BDC0` reads
+zero in all 176 catalogued states - every mednafen and PCSX-Redux backup in
+[`scripts/scenarios.toml`](../../scripts/scenarios.toml), including
+`slippery_summon_mid_cast`, the mid-cast capture of the very module that owns
+the word. In that state PROT 0920 is byte-resident at slot B (8183 of 8192
+bytes) and the sixteen bytes live at `0x801F7B88` are byte-equal to the image's
+`+0x11B0`, so the target is pinned even though the call was not caught firing.
+A live hit needs a battle that ends while a Slippery cast is still animating;
+no state in the library is at that point.
+
 ### A module image ends in another image's bytes
 
 Every one of the 64 images ends in a byte-identical, same-file-offset run of

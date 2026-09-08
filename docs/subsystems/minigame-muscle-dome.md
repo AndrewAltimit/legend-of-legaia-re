@@ -495,6 +495,42 @@ and the battle scene loader `FUN_800542C8` at `0x80054928`, whose rect is
 Read with `disasm-overlay-fn.py extracted/overlays/overlay_field_back_read_0978.bin
 --base 0x801F69D8 --addr 0x801F6B24`.
 
+#### What a live teardown shows
+
+Capture reproduces the arming chain exactly and adds the one figure the static
+read could not supply - **which** entry the `ctx[+0xC] == 2` arm stages. Probe
+`scripts/pcsx-redux/autorun_battle_teardown_hook.lua`, run on an ordinary
+self-resolving fight (`rim_elm_gimard_victory`) and on a Muscle Dome match:
+
+| Observation | Ordinary victory | Dome match (escaped) |
+|---|---|---|
+| `0x800474CC` arm hits | 1, `ra = 0x800252BC` | 1, same `ra` |
+| `gp[+0xA48]` | `0x00` -> `0x80` on the arm frame | already `0x80` from the hub |
+| `ctx[+0xC]` | `1` next frame, `2` two frames later | same shape |
+| loader-B tracker `0x8007BC4C` | `-1` -> **83** four frames after the arm | `-1` -> **83** |
+
+The tracker holds `extraction - 895`, so `83` is **PROT 0978** - the load is
+byte-pinned live, on both battle-end paths, and `ra = 0x800252BC` is the
+actor-list tick iterator the settled `FUN_80047430` caller finding names.
+
+**The draw is still not observed, and three channels are now ruled out.** Over
+the two runs the same probe sweeps main RAM for each shape a `(384, 0)` display
+could take and finds none: no libgpu blit sourcing `(384, 0)` (GP0 `0x80..0x83`
+with the command word's low 24 bits zero and a transferable size - the loose
+form of this test reports a false hit for every `0x80`-prefixed KSEG0 pointer
+that happens to precede the constant `0x180`), no `DISPENV`-shaped rect at
+`(384, 0)` with a screen-sized `w`/`h`, and no frame in which the panel is on
+screen: the victory frame with PROT 0978 already resident is the ordinary
+spoils screen, and the dome's post-match frames are the transition fade.
+
+The tpage channel is **not** conclusive either way. A two-byte tpage needle
+matches ordinary data too often to separate even after a screen-coordinate
+filter, so the standing `(384, 0)` tpage candidates in the capture are not
+evidence of a draw. What would close the thread is a state captured at the
+between-match intermission of a **won** dome ladder, read with
+`mednafen-state display-list`, which walks the frame's real ordering table
+instead of searching RAM for packet-shaped bytes.
+
 ### Object 1 is trimmed by the loader (`_DAT_8007B64B`)
 
 Nothing in the arena's own code touches the backdrop. `_DAT_8007B864` - the

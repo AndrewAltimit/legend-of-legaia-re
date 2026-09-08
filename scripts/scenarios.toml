@@ -2504,3 +2504,24 @@ expected_game_mode = 0x03
 expected_active_scene = "uru"
 description = "Free field run inside Uru Mais (scene uru), player parked at world (4864, 880) = tile (38, 6) - the arrival tile the map03 entrance record writes. The gate-1 walk-on band at tiles (36..39, 5) is four tiles north; it spawns partition-2 record 42, whose 41-byte body ends in the 0x3F named scene change back to MAP03 at entry (0x24, 0x46)."
 topics = ["field", "uru", "Uru Mais", "walk-on trigger", "scene exit", "probe state"]
+
+# ----------------------------------------------------------------------
+# Cold-boot title front end. A NO-SAVE phase marker: the capture starts the
+# emulator with no state at all (`LEGAIA_NO_SSTATE=1`), because the two
+# questions it answers are properties of the boot itself and a save state
+# would replay a RAM image that has already passed them. It carries the pad
+# ladder because the title front end needs one: sub-mode 0x10 is the two-row
+# NEW GAME / CONTINUE menu, row 0 confirms through sub-mode 0x16 into 0x06
+# (init_game -> master mode 2), and row 1 confirms through 0x18 into 0x14,
+# the memory-card screen. Idle instead and the attract countdown underflows
+# into master mode 0x1A (the opening FMV) around 1500 vsyncs after the title
+# appears. Probe: scripts/pcsx-redux/autorun_boot_warning_screen.lua.
+# ----------------------------------------------------------------------
+
+[[scenarios]]
+slot = 255
+label = "cold_boot_title_front_end"
+phase = "boot"
+expected_game_mode = 0x17
+description = "Cold boot with no save state, driven through the title front end by the probe's own pad ladder (LEGAIA_PAD_SCRIPT). Reference timings from the USA disc under PCSX-Redux with FastBoot: master mode 0x10 at ~235 vsyncs, 0x11 at 318, CARD INIT 0x16 at 978, title 0x17 at 1109; title sub-mode 0x11 at 1110 and 0x10 at 1185. Answers what draws the init.pak WARNING screen (nothing does), which title sub-mode a cold boot shows (0x10, because the boot init.pak raises _DAT_8007BB00 at 0x801CEB84), and whether anything samples the card-screen kanji page (nothing does)."
+topics = ["boot", "title", "cold boot", "init.pak", "WARNING screen", "kanji page", "no-save", "probe state"]

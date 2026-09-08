@@ -14,7 +14,7 @@ both confirmed as the menu overlay by function-address identity; decompiled func
 - [Overlay structure](#overlay-structure) · [Key functions](#key-functions) · [Globals used](#globals-used)
 - [Sub-screen function pointer table](#sub-screen-function-pointer-table) - [load/save dispatch](#loadsave-dispatch-fun_801dd35c) · [libcd I/O state machine](#libcd-io-state-machine-fun_801e3294) · [card-operation sequencer](#card-operation-sequencer-fun_801e13b8) · [save-block directory enumeration](#save-block-directory-enumeration-fun_801e1208) · [equip-candidate list handler](#equip-candidate-list-handler-fun_801d9c14-sub-screen-0x14)
 - [Relationship to `legaia_save`](#relationship-to-legaia_save) · [story-flag persistence vs. scratchpad word](#story-flag-persistence-vs-scratchpad-word) · [retail SC block layout](#retail-sc-block-layout)
-- [Sprite asset sources (Continue → Load screen)](#sprite-asset-sources-continue--load-screen) - [9-slice tile rects](#pinned-9-slice-tile-rects-system-ui-tim-clut-row-2) · [how the panel TIM was pinned](#how-the-panel-tim-was-pinned)
+- [Sprite asset sources (Continue → Load screen)](#sprite-asset-sources-continue--load-screen) - [9-slice tile rects](#pinned-9-slice-tile-rects-system-ui-tim-clut-row-2) · [how the panel TIM was pinned](#how-the-panel-tim-was-pinned) · [the kanji page is never sampled](#the-card-screens-kanji-page-is-never-sampled)
 - [Slide-in UI primitive (`FUN_801E1C1C`)](#slide-in-ui-primitive-fun_801e1c1c) · [messagebox panel geometry (`FUN_801E36C4`)](#messagebox-panel-geometry-fun_801e36c4) · [bottom info panel renderer (`FUN_801E08D8`)](#bottom-info-panel-renderer-fun_801e08d8)
 - [Sub-screen `0x15` - the per-character list screen (`FUN_801DA2A0`)](#sub-screen-0x15---the-per-character-list-screen-fun_801da2a0)
 
@@ -979,6 +979,32 @@ The `Load` text glyphs are **PINNED to the dialog font (`legaia_font`)**:
   **falsified** - that atlas has zero glyph indices at all four documented rects
   (`scripts/pcsx-redux/verify_menu_glyph_load_rects.py` confirms; left here as a
   negative finding).
+
+### The card screen's kanji page is never sampled
+
+Mode-22 `CARD INIT` uploads PROT 0892, a JIS X 0208 level-1 kanji font, to VRAM
+`(320..447, 256..511)` ([`data-field.md`](../formats/data-field.md)). Nothing
+draws from it. A sampler would have to carry one of the eight bit-plane CBAs
+`0x76C0 + plane * 0x40` (CLUT rows 475..482), and no image on the disc
+materialises any of them - but a CBA is assembled at runtime, so a byte sweep
+cannot close that on its own.
+
+A cold-boot capture does. Walking the title front end into this screen -
+sub-mode `0x10`'s second row (CONTINUE) fades through `0x18` into `0x14` - and
+sweeping main RAM for a textured primitive carrying each of the eight CBAs
+finds, over ~2000 vsyncs parked on the screen, **no packet for seven of the
+eight planes and none at all in the primitive pool**. The only standing matches
+for plane 1 (`0x7700`) are five fixed addresses at 8-byte spacing carrying
+constant coordinates - a static table, not a draw list - while every real
+primitive in the same sweep lands in one of the two ordering-table buffers.
+The instrument is `scripts/pcsx-redux/autorun_boot_warning_screen.lua`, which
+sweeps the publisher-logo CLUTs in the same pass as a positive control; those
+land on their documented screen rects in the same run.
+
+So the page is **loaded and parked** in the USA build. The screen's own text is
+drawn from the dialog font, not from it - see
+[Load-text glyph decode](#load-text-glyph-decode).
+
 
 ### Live-pinned screen geometry (GP0 draw list)
 
