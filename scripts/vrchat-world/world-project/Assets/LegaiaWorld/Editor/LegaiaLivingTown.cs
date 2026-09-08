@@ -2330,7 +2330,7 @@ namespace LegaiaWorld
         // swing) and cadence (steps over length), which the controller
         // uses to keep the feet on the ground at any walk speed.
 
-        class RigWalk
+        internal class RigWalk
         {
             public string walkClip;       // null = no leg pair swings in any clip
             public float stride;          // metres per step in that clip
@@ -2354,7 +2354,7 @@ namespace LegaiaWorld
             return "rigs: " + string.Join(", ", parts);
         }
 
-        static RigWalk MeasureRig(string glbPath, string pinnedWalk)
+        internal static RigWalk MeasureRig(string glbPath, string pinnedWalk)
         {
             string key = glbPath + "|" + pinnedWalk;
             RigWalk hit;
@@ -2461,10 +2461,22 @@ namespace LegaiaWorld
                     if (fore != null)
                         rw.forearms = new[] { kids[fore[0]].name, kids[fore[1]].name };
                 }
+                // A leg pair the sitting pose can use: a turn about the
+                // rig's lateral axis must be able to carry the knee level
+                // and ahead (the controller's own sweep). A pair that
+                // cannot - a bather's folded legs, a mis-paired rig - is
+                // left out, and the host seats that rig by hip fraction.
                 if (thighs != null)
                 {
-                    rw.legUpper = new[] { kids[thighs[0]].name, kids[thighs[1]].name };
-                    rw.legLower = new[] { kids[feet[0]].name, kids[feet[1]].name };
+                    float reach = SeatReach(instT, kids[thighs[0]], kids[feet[0]],
+                        new Vector3(0f, -Mathf.Sin(5f * Mathf.Deg2Rad), Mathf.Cos(5f * Mathf.Deg2Rad)));
+                    if (reach >= 0.8f)
+                    {
+                        rw.legUpper = new[] { kids[thighs[0]].name, kids[thighs[1]].name };
+                        rw.legLower = new[] { kids[feet[0]].name, kids[feet[1]].name };
+                    }
+                    else
+                        rw.family += " (leg pair cannot sit: knee reach " + reach.ToString("0.00") + ")";
                 }
                 if (feet == null || clips.Count == 0)
                 {
@@ -2473,10 +2485,35 @@ namespace LegaiaWorld
                     return rw;
                 }
 
+                // The sole - the foot mesh's lowest vertex at rest. A walk
+                // lifts it on the forward swing and drags it back on the
+                // ground, so the way it travels while lifted is the way the
+                // clip walks; a clip that steps backward (balden's 0.38 m-hip
+                // family scores a record_60 that does) is not the walk.
+                Transform footT = kids[feet[0]];
+                Vector3 sole = Vector3.zero;
+                var footMf = footT.GetComponent<MeshFilter>();
+                if (footMf != null && footMf.sharedMesh != null)
+                {
+                    float low = float.MaxValue;
+                    foreach (Vector3 v in footMf.sharedMesh.vertices)
+                    {
+                        float y = footT.TransformPoint(v).y;
+                        if (y < low)
+                        {
+                            low = y;
+                            sole = v;
+                        }
+                    }
+                }
+                int backwardClips = 0;
+
                 // Sample every clip for the feet swinging in anti-phase.
                 const int S = 32;
                 var za = new float[S];
                 var zb = new float[S];
+                var sy = new float[S];
+                var sz = new float[S];
                 float bestScore = 0f;
                 AnimationClip pick = null;
                 float pickStride = 0f, pickSteps = 0f;
@@ -2491,6 +2528,9 @@ namespace LegaiaWorld
                         clip.SampleAnimation(inst, clip.length * k / S);
                         za[k] = instT.InverseTransformPoint(kids[feet[0]].position).z;
                         zb[k] = instT.InverseTransformPoint(kids[feet[1]].position).z;
+                        Vector3 sp = instT.InverseTransformPoint(footT.TransformPoint(sole));
+                        sy[k] = sp.y;
+                        sz[k] = sp.z;
                         Vector3 r = instT.InverseTransformPoint(rigRoot.position);
                         rootMin = Vector3.Min(rootMin, r);
                         rootMax = Vector3.Max(rootMax, r);
@@ -2502,6 +2542,18 @@ namespace LegaiaWorld
                     bool walks = score > 1.0f && amp > 0.04f * h && drift < 0.15f * h && crossings >= 2;
                     if (!walks)
                         continue;
+                    // The lifted sole must travel toward the face (+Z of the
+                    // instance frame); a shuffle too small to read passes.
+                    float mid = 0.5f * (sy.Min() + sy.Max());
+                    float lifted = 0f;
+                    for (int k = 0; k < S; k++)
+                        if (sy[k] > mid && sy[(k + 1) % S] > mid)
+                            lifted += sz[(k + 1) % S] - sz[k];
+                    if (lifted < -Mathf.Max(0.02f, 0.25f * amp))
+                    {
+                        backwardClips++;
+                        continue;
+                    }
                     bool pinned = !string.IsNullOrEmpty(pinnedWalk) &&
                                   (clip.name == pinnedWalk || clip.name.EndsWith("_" + pinnedWalk));
                     if (pinned || (!pinnedFound && score > bestScore))
@@ -2524,6 +2576,8 @@ namespace LegaiaWorld
                 }
                 else
                     rw.family += " (legs, but no clip walks)";
+                if (backwardClips > 0)
+                    rw.family += " (" + backwardClips + " clip(s) step backward, dropped)";
                 Count(rw.family);
                 return rw;
             }
@@ -2598,6 +2652,27 @@ namespace LegaiaWorld
                 }
             }
             return c;
+        }
+
+        /// How close a turn about the parent's x can bring `lo`'s rest
+        /// offset from `up` to `target` (a direction in the instance
+        /// frame): the best dot over a sweep, the same one
+        /// LegaiaNpcWander.TurnToward makes at play.
+        static float SeatReach(Transform instT, Transform up, Transform lo, Vector3 target)
+        {
+            Transform par = up.parent;
+            Vector3 off = lo.localPosition - up.localPosition;
+            if (par == null || off.sqrMagnitude < 1e-10f)
+                return 0f;
+            Vector3 o = instT.InverseTransformPoint(par.TransformPoint(up.localPosition));
+            float best = -2f;
+            for (float d = -180f; d <= 180f; d += 2f)
+            {
+                Vector3 v = instT.InverseTransformPoint(par.TransformPoint(up.localPosition +
+                    Quaternion.AngleAxis(d, Vector3.right) * off)) - o;
+                best = Mathf.Max(best, Vector3.Dot(v.normalized, target.normalized));
+            }
+            return best;
         }
 
         static Transform[] FindNodes(Transform npc, string[] names)

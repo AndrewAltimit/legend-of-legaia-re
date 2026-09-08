@@ -72,7 +72,7 @@ your disc ──legaia-extract──▶ extracted/ ──legaia-engine export-gl
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaCommonPrefabs.cs` | The **Common prefabs** foldout: builds the mirror, the TV and the card table from primitives + generated textures + the SDK's own components, spawns the SDK's sample pen system, and drops any prefab assets you list (QvPen, ProTV, a community deck...) near spawn. See "Common prefabs" below. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaSettingsSnapshot.cs` | Menu `Legaia > Snapshot placements to scene settings`: writes the hand-placed Inspector transforms of the common prefabs, the camp settings panel and LegaiaSpawn into `Settings/<scene>.settings.json` (`prefab_transforms` + `spawn_position`), preserving the file's other keys. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaSoak.cs` | The PLAY-MODE soak (`LegaiaBatchChecks.Soak`): enters play mode with ClientSim, pins the day/night clock to night or day, samples every brain at 2 Hz into a per-villager timeline, and asserts the night routine ran (in through the door, door swung, out again at dawn) or reports a day's station visits and conversations. The only check here that actually runs a villager. |
-| `world-project/Assets/LegaiaWorld/Editor/LegaiaBatchChecks.cs` | Headless self-test (`Unity -batchmode -executeMethod LegaiaWorld.LegaiaBatchChecks.CommonPrefabs`): builds the common prefabs against the scene's built root and asserts every SDK component and every UdonSharp field wiring reached the backing behaviour. Never saves the scene. |
+| `world-project/Assets/LegaiaWorld/Editor/LegaiaBatchChecks.cs` | Headless self-tests (`Unity -batchmode -executeMethod LegaiaWorld.LegaiaBatchChecks.CommonPrefabs` builds the common prefabs against the scene's built root and asserts every SDK component and every UdonSharp field wiring reached the backing behaviour; `.LivingTown`, `.Weather`, `.Ambience` likewise; `.RigPose` measures every imported NPC rig and checks the sitting pose's hip turn against the rig's walk clip). Never saves the scene. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaEventButton.cs` | A collider button: Interact sends one named event into a target behaviour. Every common-prefab button uses it (no world-space UI, so no pickup-collider-steals-the-click trap). |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaMirror.cs` | Mirror controller: Off / full / players-only surfaces, local choice, auto-off when the player walks away. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaVideoTv.cs` | Synced video player over the SDK's AVPro (PC) + Unity (Android) players: owner-synced URL + playhead origin, late-joiner seek, 5-second load rate limit honoured, error retry. |
@@ -555,7 +555,10 @@ not a broken one.
   are sorted by height (lowest = feet, highest = upper arms), and every
   clip is sampled for the feet swinging fore and aft in anti-phase - the
   walk signature, which the idle and the gestures fail on amplitude and a
-  body sway fails on phase. town01 has five families: the 11-node
+  body sway fails on phase - and for the sole (the foot mesh's lowest
+  vertex) travelling toward the face while lifted, which a clip that
+  steps backward fails (balden's humanoids score one such `record_60`
+  above their walk). town01 has five families: the 11-node
   humanoid (arms, forearms, upper and lower legs) whose `record_36` is a
   genuine stride in place (legs anti-phase at exactly half a period, arms
   contralateral, head and torso amplitude zero, body centroid fixed); the
@@ -784,8 +787,25 @@ and the SDK's own components - no third-party package, no game data:
   third of a second on top of the idle clip. The hip is the measured
   thigh pivot where the rig has legs (so the thighs lie on the seat),
   else 45% of the rig's height (the one-piece bodies only bring their
-  arms forward). (The first cut sank the whole rig a third of its height
-  into the ground instead.) Undone when it leaves. Villagers **walk** to the stool - the host sits a villager
+  arms forward). The hip turn is not a fixed angle from rest: the
+  controller sweeps the turn about the rig's lateral axis and keeps the
+  one that lands the knee level and ahead ON SCREEN (`sitKnee` is the
+  knee's angle below level, `sitArm` the hand's angle forward of
+  straight down), read through the rendered transform chain against
+  the face as `VisualForward` reads it - so a villager who rests in a
+  crouch (town01's Val) sits like one who rests upright. The builder's
+  handedness mirror on the instance scale makes `transform.forward` and
+  `TransformDirection` disagree with what is on screen, and the first
+  cut, which compared those two, sat every rig with its knees behind
+  it. (The cut before that sank the whole rig a third of its height
+  into the ground.) `LegaiaBatchChecks.RigPose` measures every imported
+  rig and holds the premise against the rig's own walk clip - the
+  lifted foot travels toward the face, the only ground truth for
+  "forward" a rig carries - and fails on a rig that was handed legs no
+  hip turn can seat (the pass itself withholds the leg pair when the
+  knee cannot reach level-and-ahead - a bather's folded legs, a
+  mis-paired rig - and such a villager is seated by hip fraction like a
+  one-piece body). Undone when it leaves. Villagers **walk** to the stool - the host sits a villager
   only once its brain reports it has arrived; the station names its
   villager at claim time, before the walk, and sitting on that alone
   snapped them onto the stools from across the square. The table calls

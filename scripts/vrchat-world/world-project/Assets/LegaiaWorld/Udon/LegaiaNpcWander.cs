@@ -252,11 +252,14 @@ namespace LegaiaWorld
                  "when seated.")]
         public Transform[] legLower;
 
-        [Tooltip("Sitting pose: how far the thighs turn forward at the hip (degrees).")]
-        public float sitThigh = 85f;
+        [Tooltip("Sitting pose: where the knee lands, as the thigh's angle " +
+                 "below level (degrees) - 0 is a level thigh pointing " +
+                 "straight ahead. Measured on screen, whatever pose the rig " +
+                 "rests in.")]
+        public float sitKnee = 5f;
 
-        [Tooltip("Sitting pose: how far the upper arms come forward (degrees) " +
-                 "- hands toward the table.")]
+        [Tooltip("Sitting pose: how far forward of straight down the upper " +
+                 "arms point (degrees) - hands toward the table.")]
         public float sitArm = 35f;
 
         /// Why the last commanded walk reported Blocked() - the probe hit,
@@ -285,14 +288,18 @@ namespace LegaiaWorld
         private float gaitWeight;
         private Vector3[] armRestPos;
         private Quaternion[] armRestRot;
-        private float armSign = 1f;
+        /// The measured seated turns (degrees about the parent's x) and
+        /// the pose's blend weight - read by the play-mode soak.
+        [HideInInspector] public float armTurn = 0f;
         // Sitting pose (SetSeated): leg rests, blend weight, and the
         // measured hip height the host seats the rig by.
         private Vector3[] legRestPos;
         private Quaternion[] legRestRot;
-        private float thighSign = 1f;
-        private float sitWeight;
-        private bool seated;
+        [HideInInspector] public float thighTurn = 0f;
+        [HideInInspector] public float sitWeight;
+        /// True while the card-table host has this rig seated (read by
+        /// the play-mode soak; the pose blends in over a third of a second).
+        [HideInInspector] public bool seated;
         private float hipHeight = -1f;
         // The last thing the straight-ahead probe hit (diagnostics).
         private string lastHit = "";
@@ -468,9 +475,10 @@ namespace LegaiaWorld
 
             // Leg rests and the hip height (the thigh pivot above the feet)
             // for the sitting pose; and which way "forward" is for a thigh
-            // or an arm turned about the nodes' lateral axis - tried both
-            // ways on the rest offset, keeping the sign that carries the
-            // knee (the forearm) toward the model's face.
+            // or an arm turned about the nodes' lateral axis: the turn
+            // that lands the knee (the hand) where the seated pose wants
+            // it is SEARCHED on the rendered transform chain, so a rig
+            // resting in a crouch sits like one resting upright.
             int nl = legUpper != null ? legUpper.Length : 0;
             legRestPos = new Vector3[nl * 2];
             legRestRot = new Quaternion[nl * 2];
@@ -492,11 +500,13 @@ namespace LegaiaWorld
             {
                 hipHeight = legUpper[0].position.y - floorY;
                 if (legLower != null && legLower.Length > 0 && legLower[0] != null)
-                    thighSign = ForwardSign(legUpper[0].parent, legRestPos[nl] - legRestPos[0]);
+                    thighTurn = TurnToward(legUpper[0].parent, legRestPos[0],
+                        legRestPos[nl] - legRestPos[0], SeatDir(sitKnee));
             }
             if (na > 0 && gaitUpperArms[0] != null && gaitForearms != null &&
                 gaitForearms.Length > 0 && gaitForearms[0] != null)
-                armSign = ForwardSign(gaitUpperArms[0].parent, armRestPos[na] - armRestPos[0]);
+                armTurn = TurnToward(gaitUpperArms[0].parent, armRestPos[0],
+                    armRestPos[na] - armRestPos[0], SeatDir(90f - sitArm));
 
             // Servo-sign probe: yaw the instance +10 degrees, see which way
             // the visual forward actually moves (a mirror in the scale chain
@@ -519,19 +529,46 @@ namespace LegaiaWorld
             progressAt = Time.time;
         }
 
-        // +1 when turning `offset` (a child's rest offset from its pivot, in
-        // the pivot's parent frame) by +90 degrees about that frame's x
-        // carries it toward this instance's forward, else -1.
-        float ForwardSign(Transform parent, Vector3 offset)
+        // A seated-pose target direction: the rendered face tilted down
+        // by `fromForward` degrees (0 = straight ahead, 90 = straight down).
+        Vector3 SeatDir(float fromForward)
+        {
+            float a = fromForward * Mathf.Deg2Rad;
+            return VisualForward() * Mathf.Cos(a) - Vector3.up * Mathf.Sin(a);
+        }
+
+        // The turn about `parent`'s x (degrees) that carries `offset` (a
+        // child's rest offset from its pivot, in the parent's frame) closest
+        // to `target` ON SCREEN. Read through the full transform chain
+        // (TransformPoint differences), because the builder's handedness
+        // mirror on the instance scale flips what transform.forward and
+        // TransformDirection say - comparing those two once sat every rig
+        // with its knees behind it. A 5-degree sweep, then refined.
+        float TurnToward(Transform parent, Vector3 pivot, Vector3 offset, Vector3 target)
         {
             if (parent == null || offset.sqrMagnitude < 1e-10f)
-                return 1f;
-            Vector3 plus = parent.TransformDirection(
-                Quaternion.AngleAxis(90f, Vector3.right) * offset);
-            Vector3 minus = parent.TransformDirection(
-                Quaternion.AngleAxis(-90f, Vector3.right) * offset);
-            Vector3 face = transform.forward;
-            return Vector3.Dot(plus, face) >= Vector3.Dot(minus, face) ? 1f : -1f;
+                return 0f;
+            Vector3 o = parent.TransformPoint(pivot);
+            float best = -2f;
+            float bestDeg = 0f;
+            for (int pass = 0; pass < 2; pass++)
+            {
+                float centre = pass == 0 ? 0f : bestDeg;
+                float span = pass == 0 ? 180f : 5f;
+                float step = pass == 0 ? 5f : 0.5f;
+                for (float d = centre - span; d <= centre + span; d += step)
+                {
+                    Vector3 v = parent.TransformPoint(pivot +
+                        Quaternion.AngleAxis(d, Vector3.right) * offset) - o;
+                    float score = Vector3.Dot(v.normalized, target);
+                    if (score > best)
+                    {
+                        best = score;
+                        bestDeg = d;
+                    }
+                }
+            }
+            return bestDeg;
         }
 
         /// The card table host: pose the rig sitting (thighs forward at
@@ -1066,7 +1103,7 @@ namespace LegaiaWorld
             if (haveLegs)
             {
                 int nl = legUpper.Length;
-                Quaternion q = Quaternion.AngleAxis(sitThigh * thighSign, Vector3.right);
+                Quaternion q = Quaternion.AngleAxis(thighTurn, Vector3.right);
                 for (int k = 0; k < nl; k++)
                 {
                     Transform up = legUpper[k];
@@ -1086,7 +1123,7 @@ namespace LegaiaWorld
             if (haveArms)
             {
                 int na = gaitUpperArms.Length;
-                Quaternion q = Quaternion.AngleAxis(sitArm * armSign, Vector3.right);
+                Quaternion q = Quaternion.AngleAxis(armTurn, Vector3.right);
                 for (int k = 0; k < na; k++)
                 {
                     Transform up = gaitUpperArms[k];

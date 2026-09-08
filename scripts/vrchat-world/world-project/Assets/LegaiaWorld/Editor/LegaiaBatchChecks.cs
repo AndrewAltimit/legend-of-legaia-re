@@ -1092,6 +1092,226 @@ namespace LegaiaWorld
         ///   Unity.exe -batchmode -nographics -quit -projectPath <project>
         ///       -executeMethod LegaiaWorld.LegaiaBatchChecks.Ambience
         ///       [-legaiaScene Assets/Scenes/<scene>.unity] -logFile <log>
+        /// Rig-pose check: instantiate every NPC glb of the listed scenes
+        /// the way the builder places one (the handedness mirror on the
+        /// instance scale), measure it (LegaiaLivingTown.MeasureRig), and
+        /// hold the two facts the sitting pose rests on against the rig's
+        /// own walk clip - the one ground truth for "forward" a rig
+        /// carries, since the sole travels toward the face while lifted
+        /// (the swing) and away from it on the ground (the stance):
+        ///  - the rendered face (+Z of the instance through its full
+        ///    matrix, what LegaiaNpcWander.VisualForward reads at rest)
+        ///    is the way the walk clip's lifted sole travels. The foot
+        ///    node's pivot is the knee, whose height peaks at the swing's
+        ///    far end, so the sole - the lowest vertex of the foot mesh at
+        ///    rest - is the point traced. MeasureRig drops a clip that
+        ///    steps backward, so this also guards that pick;
+        ///  - the hip turn LegaiaNpcWander.TurnToward finds (a sweep of the
+        ///    turn about the parent's x, read on screen) really lands the
+        ///    knee level and in front - which a leg pair whose offset lies
+        ///    along that axis, or a mis-paired rig, could not.
+        /// `-legaiaRigDirs` lists the npc folders (comma-separated);
+        /// by default every `Assets/LegaiaImports/<scene>/npcs` - the
+        /// model overrides draw on other scenes' rigs too.
+        public static void RigPose()
+        {
+            string list = Arg("-legaiaRigDirs", "");
+            var dirs = new List<string>();
+            if (list.Length > 0)
+                foreach (string raw in list.Split(','))
+                    dirs.Add(raw.Trim());
+            else if (System.IO.Directory.Exists("Assets/LegaiaImports"))
+                foreach (string d in System.IO.Directory.GetDirectories("Assets/LegaiaImports"))
+                    dirs.Add(d.Replace('\\', '/') + "/npcs");
+            dirs.Sort();
+            int rigs = 0, legged = 0, walked = 0, backward = 0;
+            foreach (string dir in dirs)
+            {
+                if (dir.Length == 0 || !System.IO.Directory.Exists(dir))
+                    continue;
+                var files = System.IO.Directory.GetFiles(dir, "*.glb");
+                System.Array.Sort(files);
+                foreach (string f in files)
+                {
+                    string glb = f.Replace('\\', '/');
+                    var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(glb);
+                    if (prefab == null)
+                        continue;
+                    rigs++;
+                    LegaiaLivingTown.RigWalk rig = LegaiaLivingTown.MeasureRig(glb, null);
+                    if (rig.legUpper == null)
+                    {
+                        if (rig.family.Contains("cannot sit"))
+                            Debug.Log("[Legaia] RIGPOSE " + System.IO.Path.GetFileName(glb) +
+                                      " " + rig.family + " - seated by hip fraction");
+                        continue;
+                    }
+                    legged++;
+                    var inst = Object.Instantiate(prefab);
+                    inst.transform.position = Vector3.zero;
+                    inst.transform.rotation = Quaternion.identity;
+                    inst.transform.localScale = new Vector3(1f, 1f, -1f);
+                    try
+                    {
+                        Transform it = inst.transform;
+                        Vector3 face = (it.TransformPoint(Vector3.forward) - it.position).normalized;
+                        string name = System.IO.Path.GetFileName(glb);
+                        var sb = new System.Text.StringBuilder();
+                        sb.Append("[Legaia] RIGPOSE ").Append(name)
+                          .Append(" ").Append(rig.family)
+                          .Append(" face=").Append(face.ToString("0.00"));
+                        // The controller's defaults: knee 5 deg below level
+                        // ahead, hand 35 deg forward of straight down.
+                        Vector3 kneeDir = face * Mathf.Cos(5f * Mathf.Deg2Rad) - Vector3.up * Mathf.Sin(5f * Mathf.Deg2Rad);
+                        Vector3 handDir = face * Mathf.Sin(35f * Mathf.Deg2Rad) - Vector3.up * Mathf.Cos(35f * Mathf.Deg2Rad);
+                        float kneeDot = KneeDot(sb, inst, "legs", rig.legUpper, rig.legLower, kneeDir);
+                        float handDot = KneeDot(sb, inst, "arms", rig.upperArms, rig.forearms, handDir);
+                        float walkDot = 2f;
+                        if (rig.walkClip != null)
+                        {
+                            AnimationClip clip = null;
+                            foreach (var c in AssetDatabase.LoadAllAssetsAtPath(glb))
+                                if (c is AnimationClip && c.name == rig.walkClip)
+                                    clip = (AnimationClip)c;
+                            Transform foot = Find(inst, rig.legLower[0]);
+                            if (clip != null && foot != null)
+                            {
+                                // The sole: the foot mesh's lowest vertex at rest.
+                                Vector3 sole = Vector3.zero;
+                                var mf = foot.GetComponent<MeshFilter>();
+                                if (mf != null && mf.sharedMesh != null)
+                                {
+                                    float low = float.MaxValue;
+                                    foreach (Vector3 v in mf.sharedMesh.vertices)
+                                    {
+                                        float y = foot.TransformPoint(v).y;
+                                        if (y < low)
+                                        {
+                                            low = y;
+                                            sole = v;
+                                        }
+                                    }
+                                }
+                                const int S = 64;
+                                var pos = new Vector3[S];
+                                for (int k = 0; k < S; k++)
+                                {
+                                    clip.SampleAnimation(inst, clip.length * k / S);
+                                    pos[k] = foot.TransformPoint(sole);
+                                }
+                                float ymin = float.MaxValue, ymax = float.MinValue;
+                                for (int k = 0; k < S; k++)
+                                {
+                                    ymin = Mathf.Min(ymin, pos[k].y);
+                                    ymax = Mathf.Max(ymax, pos[k].y);
+                                }
+                                float mid = 0.5f * (ymin + ymax);
+                                Vector3 travel = Vector3.zero;
+                                for (int k = 0; k < S; k++)
+                                    if (pos[k].y > mid && pos[(k + 1) % S].y > mid)
+                                        travel += pos[(k + 1) % S] - pos[k];
+                                sb.Append(" walk=").Append(rig.walkClip)
+                                  .Append(" soleLift=").Append((ymax - ymin).ToString("0.000"))
+                                  .Append(" liftedTravel=").Append(travel.ToString("0.000"));
+                                // A sole that barely travels while lifted
+                                // says nothing (a shuffle, a hop in place).
+                                if (travel.magnitude > Mathf.Max(0.02f, 0.25f * rig.stride))
+                                {
+                                    walkDot = Vector3.Dot(travel.normalized, face);
+                                    walked++;
+                                    sb.Append(" dotFace=").Append(walkDot.ToString("0.00"));
+                                }
+                            }
+                        }
+                        Debug.Log(sb.ToString());
+                        // A rig whose every stepping clip travels away from
+                        // +Z would walk backward in-world: the export's
+                        // faces-+Z premise fails on it. None in town01;
+                        // reported, not fatal, for the other scenes' rigs
+                        // the model overrides may draw on.
+                        if (walkDot < 2f && walkDot < 0.5f)
+                        {
+                            backward++;
+                            Debug.LogWarning("[Legaia] RIGPOSE " + name +
+                                ": the walk clip's lifted sole travels away from the rendered face (dot " +
+                                walkDot.ToString("0.00") + ") - this rig faces -Z at rest and would walk backward");
+                        }
+                        // A pivot offset sideways of its parent's (a forearm
+                        // hung outboard of the shoulder) caps how close a
+                        // turn about x can come; 0.8 / 0.75 leave that room.
+                        // MeasureRig keeps a leg pair only when the knee
+                        // can reach; a rig that got legs must sit.
+                        if (kneeDot < 0.8f)
+                            Fail(name + ": no hip turn lands the knee level and ahead (best dot " +
+                                 kneeDot.ToString("0.00") + ")");
+                        if (rig.upperArms != null && rig.forearms != null && handDot < 0.75f)
+                            Debug.LogWarning("[Legaia] RIGPOSE " + name +
+                                ": no shoulder turn lands the hand forward of straight down (best dot " +
+                                handDot.ToString("0.00") + ") - the hands stay where they rest");
+                    }
+                    finally
+                    {
+                        Object.DestroyImmediate(inst);
+                    }
+                }
+            }
+            if (legged == 0)
+                Fail("rig pose: no legged rig found under " + list + " - is the export imported?");
+            Debug.Log("[Legaia] RIGPOSE " + rigs + " rig(s), " + legged + " with legs, " +
+                      (walked - backward) + " of " + walked + " walk clip(s) agree with the rendered face" +
+                      (backward > 0 ? " (" + backward + " rig(s) would walk backward - see warnings)" : "") +
+                      "; every hip turn lands the knee level and ahead");
+        }
+
+        static Transform Find(GameObject inst, string name)
+        {
+            foreach (var t in inst.GetComponentsInChildren<Transform>(true))
+                if (t.name == name)
+                    return t;
+            return null;
+        }
+
+        // The best rendered knee (hand) direction a turn about the parent's
+        // x can give the child's rest offset - the sweep
+        // LegaiaNpcWander.TurnToward makes, read through the full transform
+        // chain. Returns its dot with `target`; 2 when the pair is absent.
+        static float KneeDot(System.Text.StringBuilder sb, GameObject inst, string what,
+            string[] upperNames, string[] lowerNames, Vector3 target)
+        {
+            if (upperNames == null || lowerNames == null)
+            {
+                sb.Append(" ").Append(what).Append("=none");
+                return 2f;
+            }
+            Transform up = Find(inst, upperNames[0]);
+            Transform lo = Find(inst, lowerNames[0]);
+            if (up == null || lo == null)
+            {
+                sb.Append(" ").Append(what).Append("=missing");
+                return 2f;
+            }
+            Transform par = up.parent;
+            Vector3 off = lo.localPosition - up.localPosition;
+            Vector3 o = par.TransformPoint(up.localPosition);
+            float best = -2f, bestDeg = 0f;
+            for (float d = -180f; d <= 180f; d += 1f)
+            {
+                Vector3 v = par.TransformPoint(up.localPosition +
+                    Quaternion.AngleAxis(d, Vector3.right) * off) - o;
+                float score = Vector3.Dot(v.normalized, target);
+                if (score > best)
+                {
+                    best = score;
+                    bestDeg = d;
+                }
+            }
+            sb.Append(" ").Append(what).Append(": ").Append(up.name).Append("@y")
+              .Append(up.position.y.ToString("0.000")).Append(" -> ").Append(lo.name)
+              .Append(" turn=").Append(bestDeg.ToString("0")).Append("deg dot=")
+              .Append(best.ToString("0.00"));
+            return best;
+        }
+
         public static void Ambience()
         {
             string scenePath = Arg("-legaiaScene", "Assets/Scenes/VRCDefaultWorldScene.unity");

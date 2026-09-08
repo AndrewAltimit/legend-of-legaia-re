@@ -701,6 +701,14 @@ namespace LegaiaWorld
         static Component[] s_stations;
         static int s_seatedSamples;
         static float s_minSeatY = 99f, s_maxSeatY = -99f;
+        // The built sitting pose, read on the live rig: the knee's
+        // direction from the hip against the villager's rendered face
+        // (+Z of the instance through its full matrix), once the pose has
+        // had a second to blend in. Legged rigs only.
+        static float[] s_seatedSince;
+        static int s_kneeSamples;
+        static float s_minKneeDot = 2f;
+        static System.Type s_wanderType;
         static Transform[] s_prevNpc;
         static Component[] s_prevBrain;
         static float[] s_prevDist;
@@ -784,6 +792,10 @@ namespace LegaiaWorld
             s_prevNpc = new Transform[4];
             s_prevBrain = new Component[4];
             s_prevDist = new float[4];
+            s_seatedSince = new float[4];
+            s_kneeSamples = 0;
+            s_minKneeDot = 2f;
+            s_wanderType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaNpcWander");
             s_giveUps = 0;
             s_giveUpBy.Clear();
             s_prevT = Time.time;
@@ -922,6 +934,20 @@ namespace LegaiaWorld
                 if (d.magnitude > 0.35f)
                     continue;   // still walking up
                 s_seatedSamples++;
+                // The built pose is judged only once the HOST has seated
+                // the rig (a villager within reach of the stool may still
+                // be walking the last step) and the blend has had a second.
+                if (!Seated(npc))
+                    s_seatedSince[i] = Time.time;
+                else if (Time.time - s_seatedSince[i] > 1f)
+                {
+                    string knee = KneeAhead(npc);
+                    if (knee != null)
+                    {
+                        Finish(1, npc.name + " on stool_" + i + ": " + knee);
+                        return;
+                    }
+                }
                 s_minSeatY = Mathf.Min(s_minSeatY, lift);
                 s_maxSeatY = Mathf.Max(s_maxSeatY, lift);
                 if (lift < -0.03f)
@@ -1106,9 +1132,63 @@ namespace LegaiaWorld
                 (hands - s_handsAtSwitch) + " blackjack hand(s); seated villagers " +
                 "sampled " + s_seatedSamples + "x at " + s_minSeatY.ToString("0.00") +
                 ".." + s_maxSeatY.ToString("0.00") + " m above the stool floor, " +
-                s_walkedIn + " arrival(s) on foot, " + s_giveUps + " give-up(s); " +
+                s_walkedIn + " arrival(s) on foot, " + s_giveUps + " give-up(s); knees ahead on " +
+                s_kneeSamples + " seated sample(s) (worst dot " +
+                (s_kneeSamples > 0 ? s_minKneeDot.ToString("0.00") : "n/a") + "); " +
                 s_talkSeen.Count + " distinct table-talk lines.");
             Finish(0, null);
+        }
+
+        static Component Wander(Transform npc)
+        {
+            if (s_wanderType == null)
+                return null;
+            var proxy = npc.GetComponent(s_wanderType) as Component;
+            return LegaiaCommonPrefabs.BackingUdon(proxy);
+        }
+
+        static bool Seated(Transform npc)
+        {
+            return Var(Wander(npc), "seated") is bool b && b;
+        }
+
+        // The seated villager's knee against its face, on the live rig:
+        // null when it sits right (or has no leg pair), else why not.
+        static string KneeAhead(Transform npc)
+        {
+            var w = Wander(npc);
+            if (w == null)
+                return null;
+            var up = Var(w, "legUpper") as Transform[];
+            var lo = Var(w, "legLower") as Transform[];
+            if (up == null || lo == null || up.Length == 0 || lo.Length == 0 ||
+                up[0] == null || lo[0] == null)
+                return null;
+            Vector3 face = npc.TransformPoint(Vector3.forward) - npc.position;
+            face.y = 0f;
+            Vector3 knee = lo[0].position - up[0].position;
+            float drop = -knee.y;
+            knee.y = 0f;
+            if (face.sqrMagnitude < 1e-6f || knee.sqrMagnitude < 1e-6f)
+                return null;
+            float dot = Vector3.Dot(knee.normalized, face.normalized);
+            s_kneeSamples++;
+            s_minKneeDot = Mathf.Min(s_minKneeDot, dot);
+            string why = null;
+            if (dot < 0.5f)
+                why = "seated with the knee " + (dot < -0.5f ? "BEHIND" : "beside") +
+                      " the hip (dot " + dot.ToString("0.00") + ")";
+            else if (drop > 0.12f)
+                why = "seated with the thigh hanging " + drop.ToString("0.00") +
+                      " m below the hip - not turned forward";
+            if (why == null)
+                return null;
+            return why + " [hip " + up[0].name + " at " + up[0].position.ToString("0.00") +
+                   " local rot " + up[0].localRotation.eulerAngles.ToString("0") +
+                   ", knee " + lo[0].name + " at " + lo[0].position.ToString("0.00") +
+                   ", thighTurn " + Var(w, "thighTurn") + ", armTurn " + Var(w, "armTurn") +
+                   ", sitWeight " + Var(w, "sitWeight") + ", seated " + Var(w, "seated") +
+                   ", legs " + up.Length + "/" + lo.Length + "]";
         }
 
         static string NoteGiveUp(int stool, Transform npc, Component brain, float dist)
