@@ -874,12 +874,30 @@ and the SDK's own components - no third-party package, no game data:
   first client re-tries while ownership settles, after half a minute the
   master takes the set and starts it, and a new owner picks it up when
   the old one leaves. A load that never becomes ready (no error, just
-  silence - which is what **AVPro does in the editor**) trips an
-  18-second watchdog that tries the *other* player once, then steps past
-  a playlist entry that will not come up. If the panel reads **"No
-  playlist - rebuild the common prefabs"**, the TV standing in the scene
-  was built before the playlist existed: URLs are serialized into the
-  behaviour at build time, so a TV that predates them has none. Villagers have favourite shows, and one who walks up
+  silence) trips an 18-second watchdog that tries the *other* player
+  once, then steps past a playlist entry that will not come up - and
+  after three give-ups in a row it stops rather than collecting one
+  error per entry for ever. Any button starts it again. If the panel
+  reads **"No playlist - rebuild the common prefabs"**, the TV standing
+  in the scene was built before the playlist existed: URLs are
+  serialized into the behaviour at build time, so a TV that predates
+  them has none.
+
+  **YouTube does not play in the Unity editor, and that is not a fault
+  in the kit.** ClientSim's AVPro is a stub - its `LoadURL` does
+  nothing, `IsReady` is always false, no event is ever raised
+  (`com.vrchat.worlds/Integrations/ClientSim/.../ClientSimAVProVideoStub.cs`).
+  The Unity player is real, but nothing in the editor resolves a
+  `youtu.be` *page* into a stream, so it hands the raw link to Windows
+  Media Foundation and gets `0xc00d36c4`, *the byte stream type of the
+  given URL is unsupported*. Both halves are environmental: in the
+  VRChat client AVPro plays and VRChat's own resolver does the yt-dlp
+  step. **Build & Test** to see the screen light up - or, to check the
+  set without leaving the editor, type a **direct `.mp4` link** into the
+  URL field, which the Unity player plays there quite happily. The
+  arbitration, the villagers' requests, the console and the status line
+  all work in ClientSim regardless; it is only the picture that needs
+  the client. Villagers have favourite shows, and one who walks up
   to the set can put theirs on - but only ever *over the playlist*.
   That is the whole rule, and it is one line
   (`LegaiaVideoTv.ShowRequestAllowed`):

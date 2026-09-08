@@ -40,6 +40,23 @@
 // loops, because a three-part run that restarts forever is a wall, not a
 // visit. The default playlist does loop.
 //
+// IN THE EDITOR THE SET CANNOT PLAY YOUTUBE, and that is not a fault in
+// this file. ClientSim's AVPro is a stub whose LoadURL does nothing and
+// whose IsReady is always false (see
+// com.vrchat.worlds/Integrations/ClientSim/Runtime/Stubs/
+// ClientSimAVProVideoStub.cs) - no video, no error, no event. The Unity
+// player is real, but nothing in the editor resolves a youtu.be PAGE
+// into a stream, so it hands the raw link to Windows Media Foundation
+// and gets 0xc00d36c4, "the byte stream type of the given URL is
+// unsupported". Both halves of that are environmental: in the VRChat
+// client AVPro plays and VRChat's own resolver does the yt-dlp step.
+// So the TV gives up rather than churning: after three failures in a
+// row it stops advancing and says so on the panel, instead of walking
+// the whole playlist to collect one error per entry for ever. Any
+// button clears that. A direct .mp4 link typed into the URL field
+// does play in the editor - that is the way to see the screen light up
+// without a Build & Test.
+//
 // ON BY DEFAULT. The set is meant to be playing when you walk in, so
 // starting the playlist is not a single shot that can be missed: the
 // first client re-tries while ownership settles, a new owner picks it up
@@ -160,6 +177,9 @@ namespace LegaiaWorld
         private int loadTicket;      // one per load attempt
         private int watchdogFor = -1;
         private bool triedOtherPlayer;
+        private BaseVRCVideoPlayer preferred;
+        private int failures;        // loads given up on, in a row
+        private bool playbackBroken; // nothing here can play these links
 
         static string UrlText(VRCUrl u)
         {
@@ -182,6 +202,7 @@ namespace LegaiaWorld
                 player = avproPlayer;
             if (player == null)
                 player = unityPlayer != null ? (BaseVRCVideoPlayer)unityPlayer : avproPlayer;
+            preferred = player;
             ApplyConsole();
             if (player == null)
             {
@@ -466,6 +487,7 @@ namespace LegaiaWorld
             if (string.IsNullOrEmpty(UrlText(url)))
                 return;
             TakeOwnership();
+            ClearFailures();
             source = SRC_GUEST;
             showIndex = -1;
             showItem = 0;
@@ -480,6 +502,7 @@ namespace LegaiaWorld
             if (PlaylistLength() == 0)
                 return;
             TakeOwnership();
+            ClearFailures();
             source = SRC_PLAYLIST;
             showIndex = -1;
             showItem = 0;
@@ -493,6 +516,7 @@ namespace LegaiaWorld
             if (PlaylistLength() == 0)
                 return;
             TakeOwnership();
+            ClearFailures();
             source = SRC_PLAYLIST;
             showIndex = -1;
             showItem = 0;
@@ -564,6 +588,12 @@ namespace LegaiaWorld
                 currentUrl = syncedUrl;
                 videoReady = false;
                 retriesLeft = 3;
+                // Each video starts on the preferred player: a fallback is
+                // for THIS load, so one awkward link never degrades the
+                // set for the rest of the session.
+                triedOtherPlayer = false;
+                if (preferred != null)
+                    player = preferred;
                 if (string.IsNullOrEmpty(UrlText(currentUrl)))
                 {
                     player.Stop();
@@ -685,9 +715,7 @@ namespace LegaiaWorld
                 return;
             }
             SetStatus("That video did not load");
-            if (Networking.IsOwner(gameObject) && source == SRC_PLAYLIST &&
-                PlaylistLength() > 1)
-                Advance();
+            GaveUp();
         }
 
         /// The player this TV is NOT using, when it has one.
@@ -698,9 +726,39 @@ namespace LegaiaWorld
             return unityPlayer;
         }
 
+        /// One load abandoned. A single bad link in the playlist is
+        /// stepped past; three in a row means it is not the link, it is
+        /// the environment - the editor, a client with video off - and
+        /// walking the rest of the playlist would only collect one error
+        /// per entry, for ever. So the set stops and says so, and any
+        /// button starts it again.
+        void GaveUp()
+        {
+            failures++;
+            if (failures >= 3)
+            {
+                playbackBroken = true;
+                SetStatus("No video is playing here - in the Unity editor " +
+                          "that is expected (Build & Test to see video)");
+                return;
+            }
+            if (Networking.IsOwner(gameObject) && source == SRC_PLAYLIST &&
+                PlaylistLength() > 1)
+                SendCustomEventDelayedSeconds(nameof(Advance), 6f);
+        }
+
+        /// A person pressed something: whatever was wrong, try again.
+        void ClearFailures()
+        {
+            failures = 0;
+            playbackBroken = false;
+        }
+
         public override void OnVideoReady()
         {
             videoReady = true;
+            failures = 0;
+            playbackBroken = false;
             ApplySynced();
             if (!driftLoopRunning)
             {
@@ -726,9 +784,7 @@ namespace LegaiaWorld
             // past it. Guest videos and shows stay on the error, which is
             // the honest answer to "why is nothing playing" - somebody
             // asked for that URL.
-            if (Networking.IsOwner(gameObject) && source == SRC_PLAYLIST &&
-                PlaylistLength() > 1)
-                SendCustomEventDelayedSeconds(nameof(Advance), 6f);
+            GaveUp();
         }
 
         static string ErrorName(VideoError e)
@@ -754,6 +810,8 @@ namespace LegaiaWorld
         public void Advance()
         {
             if (!Networking.IsOwner(gameObject))
+                return;
+            if (playbackBroken)
                 return;
             if (source == SRC_SHOW && showIndex >= 0)
             {
