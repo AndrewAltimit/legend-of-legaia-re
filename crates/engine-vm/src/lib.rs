@@ -127,6 +127,7 @@ pub mod battle_trail;
 pub mod battle_value_readout;
 pub mod camera_mover;
 pub mod camera_rel_actor;
+pub mod cast_module_ticks;
 pub mod code_lock_actor;
 pub mod cutscene_trigger;
 pub mod dev_equip_commit;

@@ -1824,6 +1824,16 @@ pub struct World {
     /// strike).
     pub pending_cast: Option<PendingCast>,
 
+    /// The resident slot-B module's **phase byte** (`ctx+0x279`) - the second
+    /// phase space riding under battle phase `0x70`, driven by the module
+    /// code kernels ([`legaia_engine_vm::cast_module_ticks`]) from
+    /// [`World::run_cast_module_code`]. Zeroed when a cast is armed, exactly
+    /// as retail's `0x801E4B1C` does.
+    pub cast_module_phase: u8,
+    /// The resident slot-B module's `ctx+0x278` scratch byte, written by
+    /// three of the band's stagers.
+    pub cast_module_ctx_278: u8,
+
     /// Production battle-FX request for a **non-summon** move: a spell cast or
     /// enemy special whose move-power record carries a spawnable effect list
     /// sets `(move_id, target world pos)` here (see [`World::request_move_fx_spawn`]).
@@ -2868,6 +2878,8 @@ impl World {
             summon_stager: None,
             summon_actor_slot: None,
             pending_cast: None,
+            cast_module_phase: 0,
+            cast_module_ctx_278: 0,
             pending_move_fx_spawn: None,
             sin_lut: Vec::new(),
             cos_lut: Vec::new(),

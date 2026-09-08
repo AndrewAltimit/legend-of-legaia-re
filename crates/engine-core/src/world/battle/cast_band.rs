@@ -87,6 +87,17 @@ const SUMMON_LINGER_FRAMES: u16 = 40;
 /// outcome: fold it after this many frames without a seat.
 const SUMMON_UNSEATED_GRACE: u16 = 60;
 
+/// The arm of PROT 0927's and PROT 0966's nine that carries the sweep - the
+/// `0x801F6A60` / `0x801F6A50` table's working entry. The other eight are
+/// spawn arms the pool already stages.
+pub const AOE_STAGER_WORKING_ARM: u8 = 4;
+
+/// Combat seats in retail's actor table `DAT_801C9370` - three party rows and
+/// five monster rows. The slot-B AoE sweeps' `ctx[+0]` / `ctx[+1]` bounds are
+/// indices into that span, so the engine's own extra seats (the summon
+/// creature at 7 and up, host debug actors) are outside both.
+pub const BATTLE_TABLE_SLOTS: usize = 8;
+
 /// A cast the action SM is carrying whose outcome is still owed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PendingCast {
@@ -266,6 +277,18 @@ impl World {
         let Some(pc) = self.pending_cast.take() else {
             return;
         };
+        // Two casts in the band do not fold through the catalog at all:
+        // PROT 0927 and PROT 0966 apply their damage inside the module's own
+        // `0x801F6734` stager, over a seat range the spell record cannot
+        // express and with a clamp that cannot kill. Where the module owns
+        // the outcome, run the module - and do not also run the generic fold,
+        // which would apply the hit twice.
+        if self
+            .run_cast_module_aoe_for(pc.caster, pc.spell_id)
+            .is_some()
+        {
+            return;
+        }
         let Some(def) = self.spell_catalog.get(pc.spell_id).cloned() else {
             return;
         };
@@ -323,6 +346,10 @@ impl World {
                 )
             })
             .unwrap_or((0, 0, -542));
+        // Retail's cast-start site `0x801E4B1C` zeroes `ctx+0x278` and the
+        // module phase `ctx+0x279` before the first tick.
+        self.cast_module_phase = 0;
+        self.cast_module_ctx_278 = 0;
         self.summon_stager = Some(SummonStager {
             caster,
             spell_id,
@@ -428,21 +455,12 @@ impl World {
     /// band's null stub PROT 0926, and PROT 0952 whose two spawn sites load
     /// their record pointer out of a saved register).
     ///
-    /// NOT WIRED: the module's **code** half. Of the per-address verdicts in
-    /// `docs/subsystems/cast-module.md`'s worklist this stages the **DATA**
-    /// rows and nothing else - every **PORT** row (the six tick bodies
-    /// `0x801F6A0C` / `0x801F6A14` / `0x801F6DD8` / `0x801F6EDC` / `0x801F74E4`
-    /// / `0x801F798C`, and the seven stagers that also touch state:
-    /// `0x801F75BC`, `0x801F7740`, `0x801F7AF4`, `0x801F85A8`, `0x801F8B90`,
-    /// `0x801F8D64`, `0x801F90E4`) stays unported, because each writes
-    /// simulation state a record cannot express: the staged-clip bytes
-    /// `+0x1DA`/`+0x1DC` (the lift), the module phase `ctx+0x279` and
-    /// `ctx+0x278` (the camera / phase machine), the HP write `+0x14C` and the
-    /// status byte `+0x16E` (the damage shape). The engine's own cast damage
-    /// runs through [`World::cast_spell_on_slots_prepaid`] at the band's seam
-    /// instead, so no HP outcome is lost - only retail's per-phase timing of
-    /// it. The **SCOPE-IGNORE** rows are the six null stagers and the one
-    /// unreferenced routine; there is nothing to stage for them either.
+    /// This is the **DATA** half of the band's worklist. The **PORT** half -
+    /// the six tick bodies and the seven state-touching stagers - is
+    /// [`legaia_engine_vm::cast_module_ticks`], driven from
+    /// [`Self::run_cast_module_code`] at this same seam. The **SCOPE-IGNORE**
+    /// rows are the six null stagers and the one unreferenced routine; there
+    /// is nothing to stage for them either.
     ///
     /// REF: FUN_801F1ED4, FUN_801F2160 (the dispatchers that name the module;
     /// their emitter arms are the unported half above)
@@ -481,6 +499,10 @@ impl World {
         let Some(mut st) = self.summon_stager.take() else {
             return false;
         };
+        // Retail re-enters the paged module every frame from this seam; the
+        // band's PORT rows are the code that runs there.
+        let module_arm = self.cast_module_phase;
+        let _ = self.run_cast_module_code(st.spell_id, module_arm);
         let busy = match st.phase {
             SummonPhase::Armed => {
                 // Phase 0: seat the creature (retail: the stager's
@@ -594,6 +616,341 @@ impl World {
             (u32::from(r) << 16) | (u32::from(g) << 8) | u32::from(b),
             f.kind.clamp(0, 3) as u8,
             f.mode[2].max(0) as u32,
+        ))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The band's PORT half: the slot-B module code kernels
+// ---------------------------------------------------------------------------
+
+/// Where a module's code half wrote, so a caller can see the kernel ran
+/// without re-reading every actor.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CastModuleCodeRun {
+    /// The band entry that was resident (`903 + row` / `935 + sub_id`).
+    pub prot_entry: u32,
+    /// The module phase after the tick (`ctx+0x279`).
+    pub phase: u8,
+    /// `ctx+0x278` after the tick.
+    pub ctx_278: u8,
+    /// Seats an AoE stager swept, with the amount applied to each.
+    pub aoe_hits: Vec<vm::cast_module_ticks::AoeHit>,
+    /// `true` while the module's phase machine still reports busy.
+    pub busy: bool,
+}
+
+impl World {
+    /// Lift one actor slot into the state view the slot-B kernels take.
+    ///
+    /// The engine carries every field these routines touch except two: the
+    /// `+0x0C` root-speed word and the `+0x1DC` restage counter, which live
+    /// in the run's own scratch because the engine's `flag_bits` byte at that
+    /// offset is a flag set, not a counter (`docs/subsystems/battle-action.md`
+    /// and `docs/subsystems/cast-module.md` read `+0x1DC` differently, and the
+    /// bytes here only ever increment it).
+    fn cast_actor_state(&self, slot: u8) -> vm::cast_module_ticks::CastActorState {
+        use vm::cast_module_ticks::{ANIM_RATE_NORMAL, CastActorState};
+        let Some(a) = self.actors.get(slot as usize) else {
+            return CastActorState {
+                anim_rate: ANIM_RATE_NORMAL,
+                ..Default::default()
+            };
+        };
+        CastActorState {
+            root_speed: 0,
+            hp_bar_delta: a.battle.hp_bar_pending,
+            hp: a.battle.hp,
+            flags: a.battle.field_flags,
+            playing_anim: a.battle.current_anim,
+            staged_anim: a.battle.queued_anim,
+            restage: 0,
+            target_code: a.battle.active_target,
+            // `+0x1F1` sits inside the per-action parameter stream that starts
+            // at `+0x1DF`.
+            knockdown_anim: a.battle.params.get(0x1F1 - 0x1DF).copied().unwrap_or(0),
+            render_flag: a.battle.render_flag,
+            anim_rate: a.battle.anim_rate.get(),
+        }
+    }
+
+    /// Write a kernel's state view back onto an actor slot.
+    fn write_cast_actor_state(&mut self, slot: u8, st: &vm::cast_module_ticks::CastActorState) {
+        use vm::battle_anim_rate::AnimRate;
+        let Some(a) = self.actors.get_mut(slot as usize) else {
+            return;
+        };
+        a.battle.hp_bar_pending = st.hp_bar_delta;
+        a.battle.hp = st.hp;
+        a.battle.field_flags = st.flags;
+        a.battle.queued_anim = st.staged_anim;
+        a.battle.active_target = st.target_code;
+        a.battle.render_flag = st.render_flag;
+        a.battle.anim_rate = AnimRate(st.anim_rate);
+    }
+
+    /// The context bytes the kernels read (`ctx+0`, `+1`, `+0x13`, `+0x278`,
+    /// `+0x279`).
+    ///
+    /// Both counts are bounded by [`BATTLE_TABLE_SLOTS`]: retail's `ctx[+0]`
+    /// and `ctx[+1]` index `DAT_801C9370`, whose battle span is the eight
+    /// combat seats - the summon seat and any host-side extras above them are
+    /// not part of either sweep's range. The monster count starts at
+    /// `cast_module_ticks::FIRST_MONSTER_SEAT`, the fixed base the Juggernaut
+    /// sweep's `addiu s4, zero, 0xc` encodes.
+    fn cast_module_ctx(&self) -> vm::cast_module_ticks::CastModuleCtx {
+        use vm::cast_module_ticks::FIRST_MONSTER_SEAT;
+        let table = self.actors.len().min(BATTLE_TABLE_SLOTS);
+        vm::cast_module_ticks::CastModuleCtx {
+            actor_count: table as u8,
+            monster_count: (FIRST_MONSTER_SEAT as usize..table)
+                .filter(|&s| self.actors[s].active)
+                .count() as u8,
+            caster_seat: self.battle_ctx.active_actor,
+            ctx_278: self.cast_module_ctx_278,
+            phase: self.cast_module_phase,
+        }
+    }
+
+    /// Run the resident module's **code** half for one frame - the band's
+    /// **PORT** worklist rows, ported in
+    /// [`legaia_engine_vm::cast_module_ticks`].
+    ///
+    /// Retail re-enters the paged module every frame through
+    /// `FUN_801F1ED4` / `FUN_801F2160` and holds battle phase `0x70` while
+    /// the tick reports busy; the engine calls this from
+    /// [`Self::summon_stager_tick`], which the action SM already drives at
+    /// states `0x34` / `0x35` / `0x36` (`crate::world::vm_hosts` ->
+    /// `legaia_engine_vm::battle_action::summon`). So the chain from a host
+    /// root is: `play-window` / the browser play page -> `World::tick` ->
+    /// the action SM's summon band -> here.
+    ///
+    /// What runs is the module's **presentation and phase** half: the
+    /// `ctx+0x279` walk, `ctx+0x278`, the staged-clip and animation-rate
+    /// writes, the summon-seat pose and the `+0x1DD` retarget. The damage
+    /// half is deliberately *not* re-applied here - the engine folds a cast's
+    /// HP outcome once, at [`Self::cast_spell_on_slots_prepaid`], and the
+    /// module's own numbers reach that fold as the baked per-hit power
+    /// ([`vm::cast_module_ticks::baked_power_for`], read by
+    /// `capture_bypass_predamage` / `capture_respect_predamage`) rather than
+    /// as a second application.
+    ///
+    /// Returns `None` when no band entry is resident (a disc-free host, or a
+    /// spell that names no module).
+    pub fn run_cast_module_code(&mut self, spell_id: u8, arm: u8) -> Option<CastModuleCodeRun> {
+        use vm::cast_module_ticks as ticks;
+
+        let entry = self.cast_module_for(spell_id)?;
+        let mut ctx = self.cast_module_ctx();
+        let caster_slot = self.battle_ctx.active_actor;
+        let victim_slot = self
+            .actors
+            .get(caster_slot as usize)
+            .map(|a| a.battle.active_target)
+            .unwrap_or(0);
+        let seat_slot = self.summon_actor_slot.unwrap_or(ticks::SUMMON_SEAT);
+
+        let mut caster = self.cast_actor_state(caster_slot);
+        let mut victim = self.cast_actor_state(victim_slot);
+        let mut seat = self.cast_actor_state(seat_slot);
+        let mut run = CastModuleCodeRun {
+            prot_entry: entry,
+            busy: true,
+            ..Default::default()
+        };
+
+        // The seven state-touching spawn stagers, by owning entry.
+        match entry {
+            906 => ticks::gizam_stager(&mut ctx, &mut seat, arm),
+            909 => {
+                ticks::viguro_stager(&mut ctx, &mut seat, arm);
+            }
+            922 => ticks::puera_stager(&mut ctx, arm),
+            923 => ticks::gilium_stager(&mut ctx, arm),
+            949 => ticks::water_crystals_stager(&mut victim, arm),
+            _ => {}
+        }
+
+        // The six tick bodies, by owning entry. `hit` is `None` because the
+        // fold is the band seam's, not the tick's (see the note above).
+        let step = match entry {
+            952 => Some(ticks::astral_slash_tick(&mut ctx, &mut caster, &mut victim)),
+            945 => Some(ticks::water_column_tick(&mut ctx, &mut victim, None, 0)),
+            // PROT 0957 carries two whole tick bodies and its trampoline
+            // `0x801F9BA8` splits them on the caster's queued action id;
+            // any other id falls through and ticks nothing.
+            957 => match spell_id {
+                ticks::SUMMON_EFFECT_TICK_B_ID => {
+                    Some(ticks::summon_effect_tick_b(&mut ctx, &mut victim))
+                }
+                ticks::SUMMON_EFFECT_TICK_A_ID => {
+                    Some(ticks::summon_effect_tick_a(&mut ctx, &mut victim, None))
+                }
+                _ => None,
+            },
+            958 => Some(ticks::blazing_slash_tick(&mut ctx, &mut victim, None)),
+            960 => Some(ticks::plasma_strike_tick(
+                &mut ctx,
+                &mut caster,
+                &mut victim,
+                None,
+            )),
+            _ => None,
+        };
+        if let Some(step) = step {
+            run.busy = step == ticks::CastTickStep::Busy;
+        }
+
+        self.write_cast_actor_state(caster_slot, &caster);
+        self.write_cast_actor_state(victim_slot, &victim);
+        self.write_cast_actor_state(seat_slot, &seat);
+        self.cast_module_ctx_278 = ctx.ctx_278;
+        self.cast_module_phase = ctx.phase;
+        run.phase = ctx.phase;
+        run.ctx_278 = ctx.ctx_278;
+        Some(run)
+    }
+
+    /// Run the band's two whole-row AoE stagers - PROT 0927 (Juggernaut,
+    /// `FUN_801F85A8`) and PROT 0966 (Evil Seru Magic, `FUN_801F8D64`) -
+    /// which is where those two casts' damage actually lands in retail.
+    ///
+    /// Both sweep a seat range with the module's own guards (skip dead, skip
+    /// `+0x16E & 4`) and both clamp to `HP - 1`, so neither can kill; ESM also
+    /// stages each victim's own `+0x1F1` reaction and drops its animation rate
+    /// to `2`. The roll per seat is the module's **baked** power through the
+    /// module's own wrapper, drawn off this world's RNG cursor so the draw
+    /// order stays retail's.
+    ///
+    /// Returns `None` when the spell names neither module, so the ordinary
+    /// [`Self::fold_pending_cast`] path is unaffected.
+    pub fn run_cast_module_aoe(&mut self, spell_id: u8, arm: u8) -> Option<CastModuleCodeRun> {
+        self.run_cast_module_aoe_as(self.battle_ctx.active_actor, spell_id, arm)
+    }
+
+    /// [`Self::run_cast_module_aoe`] at the cast band's fold seam: the caster
+    /// is the [`PendingCast`]'s, not whoever the context happens to point at,
+    /// and the arm is the working one of the module's nine.
+    fn run_cast_module_aoe_for(&mut self, caster: u8, spell_id: u8) -> Option<CastModuleCodeRun> {
+        self.run_cast_module_aoe_as(caster, spell_id, AOE_STAGER_WORKING_ARM)
+    }
+
+    fn run_cast_module_aoe_as(
+        &mut self,
+        caster: u8,
+        spell_id: u8,
+        arm: u8,
+    ) -> Option<CastModuleCodeRun> {
+        use vm::cast_module_ticks as ticks;
+
+        let entry = self.cast_module_for(spell_id)?;
+        let shape = ticks::damage_shape_for(entry).filter(|s| s.never_kills)?;
+        let ctx = self.cast_module_ctx();
+
+        let mut seats: Vec<ticks::CastActorState> = (0..self.actors.len() as u8)
+            .map(|s| self.cast_actor_state(s))
+            .collect();
+
+        // Pre-roll so the sweep borrows nothing from `self`, but roll only
+        // for the seats the sweep will actually hit and in the order it visits
+        // them: retail's loop calls the wrapper *after* its two skip guards,
+        // so a dead or non-targetable seat draws nothing and the shared RNG
+        // cursor must not advance for it either.
+        let order: Vec<u8> = if entry == 966 {
+            (0..ctx.actor_count).collect()
+        } else {
+            (0..ctx.monster_count)
+                .map(|i| ticks::FIRST_MONSTER_SEAT.saturating_add(i))
+                .collect()
+        };
+        let mut rolls: Vec<(u8, i32)> = Vec::with_capacity(order.len());
+        for seat in order {
+            let hittable = seats
+                .get(seat as usize)
+                .is_some_and(ticks::aoe_seat_is_hittable);
+            if !hittable {
+                continue;
+            }
+            let roll = self
+                .capture_module_roll(shape, caster, seat)
+                .unwrap_or_default();
+            rolls.push((seat, roll));
+        }
+        let take = |seat: u8| {
+            rolls
+                .iter()
+                .find(|(s, _)| *s == seat)
+                .map(|(_, r)| *r)
+                .unwrap_or_default()
+        };
+
+        let hits = if entry == 966 {
+            ticks::evil_seru_magic_stager(&ctx, &mut seats, arm, take)
+        } else {
+            ticks::juggernaut_stager(&ctx, &mut seats, arm, take)
+        };
+        for (slot, st) in seats.iter().enumerate() {
+            self.write_cast_actor_state(slot as u8, st);
+        }
+        Some(CastModuleCodeRun {
+            prot_entry: entry,
+            phase: ctx.phase,
+            ctx_278: ctx.ctx_278,
+            busy: false,
+            aoe_hits: hits,
+        })
+    }
+
+    /// One hit off a module's own damage shape: its baked power, its wrapper,
+    /// this world's RNG cursor. The raw signed wrapper return - the caller
+    /// applies the module's clamp.
+    fn capture_module_roll(
+        &mut self,
+        shape: &vm::cast_module_ticks::CastDamageShape,
+        attacker: u8,
+        target: u8,
+    ) -> Option<i32> {
+        use legaia_engine_vm::battle_damage_wrappers::{WrapperAttacker, WrapperDefender};
+        use vm::cast_module_ticks::roll_module_hit;
+
+        let element_affinity_pct = self.enemy_affinity_pct(attacker, target);
+        let attacker_hp = self.actors.get(attacker as usize)?.battle.hp;
+        let defender = self.summon_roll_defender(target)?;
+        let a = WrapperAttacker {
+            hp: attacker_hp,
+            agl: self
+                .battle_accuracy
+                .get(attacker as usize)
+                .copied()
+                .unwrap_or(0),
+            spell_power: self
+                .battle_attack
+                .get(attacker as usize)
+                .copied()
+                .unwrap_or(0),
+            status: 0,
+        };
+        let d = WrapperDefender {
+            hp: defender.hp,
+            agl: defender.agl,
+            stat_a: defender.stat_a,
+            stat_b: defender.stat_b,
+            status: 0,
+            guard: 0,
+        };
+        let rng = [
+            (self.next_rng() & 0x7fff) as u16,
+            (self.next_rng() & 0x7fff) as u16,
+            (self.next_rng() & 0x7fff) as u16,
+        ];
+        Some(roll_module_hit(
+            shape,
+            0,
+            &a,
+            &d,
+            element_affinity_pct,
+            rng,
+            || (self.next_rng() & 0x7fff) as u16,
         ))
     }
 }

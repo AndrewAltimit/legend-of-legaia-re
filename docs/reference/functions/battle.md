@@ -194,8 +194,9 @@ All 64 entries carry a [`static-overlays.toml`](../../../crates/asset/data/stati
 row, an extracted image and a dump. Three of them (0915 / 0926 / 0935) went
 without a dump for longer than the rest, and the cause was neither the bytes nor
 the map: their images had never been imported into the Ghidra project, because
-the band was imported before those three map rows existed. Frame matching
-partitions them exactly like the other 61.
+the band was imported before those three map rows existed
+([`cast-module.md`](../../subsystems/cast-module.md#the-three-entries-that-nearly-lost-their-base-row)).
+Frame matching partitions them exactly like the other 61.
 Their entry VAs were known either way: those come from PROT 0898, not from the
 image. The portability verdict for each address the port catalog still lists in
 this band is on
