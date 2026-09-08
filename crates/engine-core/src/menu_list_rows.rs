@@ -572,6 +572,12 @@ pub fn shop_buy_row_order(record_count: usize, walk: usize) -> Vec<usize> {
 
 /// PORT: FUN_80030628 (content-id-`0x0B` case, `0x80030D48..0x80030F98` -
 /// the shop **buy** list; `see ghidra/scripts/funcs/80030628.txt`).
+/// NOT WIRED: the engine's shop session ([`crate::shop`] over
+/// [`crate::shop_catalog`]) builds its rows from typed catalog items and runs
+/// only the order kernel [`shop_buy_row_order`] over them; it never asks for
+/// the class-tagged `[class][dim][id]` row word this builder emits, so the
+/// dim bit is recomputed at draw time by `crate::shop` instead. The host that
+/// owes the call is the shop session's row build, once it adopts the row word.
 ///
 /// This, not [`build_price_gated_rows`], is the shop's buy row layout.
 /// Content id `2` is the price-gated *bag* list (the sell side); the buy
