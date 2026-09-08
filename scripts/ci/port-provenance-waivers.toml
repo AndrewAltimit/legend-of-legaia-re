@@ -802,3 +802,22 @@ reason = """
 phase-byte stores in the same caller that the row describes. All three are
 caller-side addresses; the callee's dumps cannot carry them.
 """
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/battle.md:801eeafc:801eeae4+801eeaf8"
+reason = """
+The row says the address is NOT an entry: 0x801EEAE4..0x801EEAF8 are the `beq`
+ladder arms in FUN_801E295C's body (overlay_battle_action_0898.bin, base
+0x801CE818) whose fall-through reaches the two words at 0x801EEAFC. Branch sites
+inside the same body are never operands of a routine, so no dump carries them -
+the same caller/branch-site shape as the five waivers above.
+"""
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/battle.md:801eeb60:801eeb10+801ee9ac+801ee9ec+801eea88+801eeaa0+801ec3dc"
+reason = """
+Same shape: the row names the `j` / `beq` sites that converge on the join label
+0x801EEB60 and the nearest `jr ra` boundary above it (0x801EC3DC), all inside
+the owning body in overlay_battle_action_0898.bin. Branch sites and a boundary
+are cited as evidence the address is interior, not as operands of a routine.
+"""
