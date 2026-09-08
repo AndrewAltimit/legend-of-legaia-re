@@ -64,8 +64,21 @@ namespace LegaiaWorld
         [Tooltip("Peak volume of the night ambience bed.")]
         public float nightAmbienceVolume = 0.2f;
 
+        // --- Published phase (read-only for other behaviours) ------------
+        // The living-town layer (NPC director, ambience mixer, weather)
+        // reads the cycle from here instead of re-deriving it: `dayFactor`
+        // is the same 0..1 the ambient sweep and the ambience crossfade
+        // use (1 = full day, 0 = night), `sunUp` is the signed sine of the
+        // sun's elevation (negative below the horizon), `isNight` is the
+        // lamps-on state, and `phase` is the raw 0..1 position in the
+        // cycle (0 = sunrise, dayShare = sunset).
+        [HideInInspector] public float dayFactor = 1f;
+        [HideInInspector] public float sunUp = 1f;
+        [HideInInspector] public bool isNight;
+        [HideInInspector] public float phase;
+
         // Synced jump applied on top of the server clock, so the menu's
-        // "Day" / "Night" buttons move the cycle for every player at once.
+        // "Day" / "Night" buttons move the cycle for everyone at once.
         [UdonSynced]
         private double timeOffset;
 
@@ -116,7 +129,7 @@ namespace LegaiaWorld
             double wrapped = t % cycle;
             if (wrapped < 0.0)
                 wrapped += cycle;
-            float phase = (float)(wrapped / cycle);
+            phase = (float)(wrapped / cycle);
             // 0..dayShare maps to the 180 degrees above the horizon,
             // the rest to the 180 below - a piecewise-constant-rate sweep.
             float elev = phase < ds
@@ -124,6 +137,7 @@ namespace LegaiaWorld
                 : 180f + (phase - ds) / (1f - ds) * 180f;
             transform.rotation = Quaternion.Euler(elev, azimuth, 0f);
             float up = Mathf.Sin(elev * Mathf.Deg2Rad);
+            sunUp = up;
             sun.intensity = Mathf.Clamp01(up * 4f) * dayIntensity;
             sun.color = Color.Lerp(horizonColor, dayColor, Mathf.Clamp01(up * 2.5f));
 
@@ -131,6 +145,7 @@ namespace LegaiaWorld
             // colour, so distant haze doesn't glow day-bright) down to the
             // moonlit fraction as the sun sets.
             float dayF = Mathf.Clamp01(up * 2.5f);
+            dayFactor = dayF;
             RenderSettings.ambientSkyColor =
                 Color.Lerp(NightOf(daySky), daySky, dayF);
             RenderSettings.ambientEquatorColor =
@@ -143,6 +158,7 @@ namespace LegaiaWorld
             // Building lamps + planted torches: on from just before sunset
             // to just after sunrise. One SetActive per container flips all.
             bool night = up < 0.05f;
+            isNight = night;
             if (night != lightsOn)
             {
                 lightsOn = night;

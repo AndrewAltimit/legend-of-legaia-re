@@ -3,9 +3,24 @@
   "delete_objects": ["room_6_shell", "room_6_light", "prop_53_anim8/object_1"],
   "static_npcs": [26, 27, 45, 46, 29, 12],
   "remove_npcs": [28, 10, 11],
-  "freeze_npcs": [47, 48],
+  "freeze_npcs": [17, 47, 48],
+  "replace_npcs": {"14": {"scene": "kor3", "model": 127}},
+  "add_npcs": [
+    {"scene": "bylon", "model": 103, "position": [-95.5, 0, 59.7], "label": "Maya"},
+    {"scene": "party", "model": 0, "position": [-33.45, 1.5, 21.35], "yaw": 200, "label": "Vahn"},
+    {"scene": "party", "model": 1, "position": [-32.1, 1.5, 22.3], "yaw": 160, "label": "Noa"},
+    {"scene": "party", "model": 2, "position": [-22.7, 0, 15.3], "yaw": 200, "label": "Gala"}
+  ],
+  "mesh_npcs": {"mesh_55": {"scene": "balden", "model": 151}},
   "spawn_position": [-24.85, 1.75, 12.22],
   "set_descriptor_spawn": true,
+  "living_town": {
+    "names": {"npc_14": "Cara"},
+    "home_cap": 4,
+    "chat_spots": 5,
+    "seed": 20260907,
+    "daytime_indoors_share": 0.18
+  },
   "prefab_transforms": {
     "mirror": {
       "position": [14.04, 1.51, 19.77],
@@ -18,6 +33,10 @@
     "card_table": {
       "position": [29.271, 0.984, 37.342],
       "rotation": [0, 175.764, 0]
+    },
+    "card_table_panel": {
+      "position": [-1.65, 0, 0.88],
+      "rotation": [0, 232.747986, 0]
     },
     "menu": {
       "position": [34.978, 0.801, 19.277],

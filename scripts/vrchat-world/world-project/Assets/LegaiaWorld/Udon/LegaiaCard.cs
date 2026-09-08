@@ -91,6 +91,30 @@ namespace LegaiaWorld
             ApplyFace();
         }
 
+        /// Called by the dealer (LegaiaCardGame, which takes ownership
+        /// first): put the card on a hand anchor, frozen, showing the side
+        /// the game wants. Same as Park but the face is a parameter - a
+        /// player's cards are dealt face up, a villager's face down.
+        public void Deal(Vector3 position, Quaternion rotation, bool up)
+        {
+            SetKinematic(true);
+            transform.SetPositionAndRotation(position, rotation);
+            if (sync != null)
+                sync.FlagDiscontinuity();
+            faceUp = up;
+            ApplyFace();
+        }
+
+        /// Showdown: turn this card over where it lies. Continuous sync
+        /// sends `faceUp` on its own from the owner (there is no
+        /// RequestSerialization under Continuous), so the owner-side write
+        /// plus ApplyFace is the whole flip.
+        public void Reveal()
+        {
+            faceUp = true;
+            ApplyFace();
+        }
+
         /// Called by the deck (which owns this card at that moment): drop
         /// the card face-down at a stack position, frozen.
         public void Park(Vector3 position, Quaternion rotation)

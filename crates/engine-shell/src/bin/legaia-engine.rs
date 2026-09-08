@@ -81,6 +81,7 @@ fn main() -> Result<()> {
             no_npcs,
             no_props,
             items,
+            party,
             extracted_root,
             disc,
         } => cmd_export_glb(
@@ -92,6 +93,7 @@ fn main() -> Result<()> {
             no_npcs,
             no_props,
             items,
+            party,
             &extracted_root,
             disc.as_deref(),
         ),
