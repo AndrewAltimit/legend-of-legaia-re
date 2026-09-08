@@ -218,7 +218,7 @@ Contributing? Read [`CONTRIBUTING.md`](CONTRIBUTING.md), then [`CLAUDE.md`](CLAU
 ## Disc-gated tests
 
 ```bash
-LEGAIA_DISC_BIN="/path/to/Legend of Legaia (USA).bin" cargo test --workspace --release
+LEGAIA_DISC_BIN="/path/to/Legend of Legaia (USA).bin" cargo test --workspace --profile release-test
 ```
 
 Many integration tests touch a real disc or extracted directory - the full-pipeline validation suite, the per-scene asset-chain walk, the SEQ+VAB audio chain, the randomizer round-trip oracles, and the memory-card save round-trip. Find them with `grep -rl LEGAIA_DISC_BIN crates/*/tests`; each is named for what it covers.

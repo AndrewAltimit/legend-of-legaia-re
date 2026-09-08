@@ -81,7 +81,7 @@ jobs:
         run: cargo clippy --all-targets --workspace -- -D warnings
 
       - name: Test
-        run: cargo test --workspace --release
+        run: cargo test --workspace --profile release-test
 
   # -- Build, package, publish ------------------------------------------------
   # Deliberately one job rather than a per-target matrix: the three builds

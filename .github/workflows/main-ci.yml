@@ -33,6 +33,21 @@ concurrency:
   group: main-ci-${{ github.sha }}
   cancel-in-progress: false
 
+# Every cargo step builds into one persistent target directory OUTSIDE the
+# checkout. `actions/checkout` with `clean: true` runs `git clean -ffdx`, and
+# `-x` deletes the gitignored `target/`, so each run used to start with a cold
+# cargo fingerprint cache and recompile the whole workspace. sccache cannot
+# absorb that: it hashes the checkout path (cargo's `-C metadata` and
+# `CARGO_MANIFEST_DIR` embed it), so every workspace crate misses across the
+# runner's path and a developer's, and it never caches bins, test harnesses
+# or clippy at all (`crate-type` / `multiple input files` in its stats). Only
+# cargo's own fingerprints, kept across runs, make a run rebuild just what
+# changed. One directory for all jobs on the single self-hosted runner; the
+# concurrency group above already serialises runs per commit, and cargo's
+# build lock serialises the rest.
+env:
+  CARGO_TARGET_DIR: /home/mikunpc/.cache/legaia-ci-target
+
 jobs:
   # -- Repository Gates -------------------------------------------------------
   # The scripts/ci/check-*.py gates used to run ONLY from
@@ -187,8 +202,13 @@ jobs:
       - name: Clippy
         run: cargo clippy --all-targets --workspace -- -D warnings
 
+      # `release-test` is the release opt-level without thin LTO and with
+      # 16 codegen units (Cargo.toml): the test harnesses are uncacheable by
+      # sccache, so the LTO + single-codegen-unit link is paid on every run and
+      # buys a test nothing. `cargo build --release` below still exercises the
+      # shipped profile.
       - name: Test
-        run: cargo test --workspace --release
+        run: cargo test --workspace --profile release-test
 
       - name: Build
         run: cargo build --release --workspace
@@ -236,7 +256,7 @@ jobs:
           echo "Disc image present: $LEGAIA_DISC_BIN"
 
       - name: Run disc-gated test suite
-        run: cargo test --workspace --release
+        run: cargo test --workspace --profile release-test
 
   # -- Deploy GitHub Pages ----------------------------------------------------
   deploy-pages:

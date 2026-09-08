@@ -181,7 +181,7 @@ added signal.
 
 The release stays test-gated regardless: `release.yml`'s `verify` job
 reproduces the same `cargo fmt --check`, `cargo clippy -D warnings` and
-`cargo test --workspace --release` gates that `main-ci.yml` runs, and the
+`cargo test --workspace --profile release-test` gates that `main-ci.yml` runs, and the
 build job `needs` it. Disc-gated tests skip in `verify` exactly as they do in
 CI, because `LEGAIA_DISC_BIN` is not set there.
 
