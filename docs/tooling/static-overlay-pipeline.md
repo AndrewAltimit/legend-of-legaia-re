@@ -354,6 +354,24 @@ anchors are asserted against the disc bytes in
 [`crates/asset/tests/static_overlay_extract.rs`](../../crates/asset/tests/static_overlay_extract.rs)
 and against live RAM in the clean-copy test.
 
+### A map row is not an import
+
+The map is the committed artifact and the Ghidra project is not, so the two go
+out of step silently and in one direction: a row added to
+`static-overlays.toml` after the band was imported has an extracted image, a
+verified base and no Ghidra program. Nothing reports that. `disc-coverage.py`
+reports the *consequence* - the image's floor sits at 0.0% because no dump is
+attributable to it - which reads as "this overlay resists analysis" rather than
+as "this overlay was never opened".
+
+Three slot-B modules sat that way: PROT 0915 (Mushura), 0926 (the id with no
+tick arm) and 0935 (Earthquake), the last three to get map rows. Importing them
+at `0x801F69D8` and running the ordinary frame partition covers 0915 and 0935
+completely and 0926 in eight bytes, which is all the code that module has.
+
+When a row is added to the map, import its image in the same pass. The tell that
+one was missed is a `code_floor` of `0.0%` on a row whose image is on disk.
+
 ### The link-time tables are corroboration, not a discriminator
 
 PROT 0898 carries three tables that name an entry point in every slot-B module

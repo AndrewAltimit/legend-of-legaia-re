@@ -140,7 +140,15 @@ MCLASS = {
     "nop": "SHIFT", "sll": "SHIFT",
     "b": "BR", "beq": "BR", "beqz": "BR", "bnez": "BR", "bne": "BR",
     "bal": "BAL", "bgezal": "BAL",
-    "negu": "SUBU", "subu": "SUBU", "not": "NOR", "nor": "NOR",
+    # `sub` belongs here for the same reason `add` sits with `addu` above, and
+    # its absence was a real false negative rather than a nicety: the word
+    # `sub rd, zero, rt` is what a compiler emits to negate a register, and
+    # capstone renders it through the `neg`/`negu` alias while Ghidra prints
+    # `sub`. `negu` was folded and `sub` was not, so a window carrying one
+    # negation matched nothing - which is how PROT 0900's own head window, at
+    # its own base, out of its own image, read as "no extracted image holds
+    # these bytes at this VA or anywhere".
+    "negu": "SUBU", "subu": "SUBU", "sub": "SUBU", "not": "NOR", "nor": "NOR",
     "neg": "SUBU",
 }
 

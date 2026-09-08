@@ -191,9 +191,12 @@ length. Action id `0x98` (PROT 0926) is the one id with no tick arm: its
 `0x801CF4EC` slot points straight at the dispatcher epilogue.
 
 All 64 entries carry a [`static-overlays.toml`](../../../crates/asset/data/static-overlays.toml)
-row and an extracted image; three (0915 / 0926 / 0935) carry no dump
-([`cast-module.md`](../../subsystems/cast-module.md#the-three-entries-with-no-dump)).
-Their entry VAs are known either way: those come from PROT 0898, not from the
+row, an extracted image and a dump. Three of them (0915 / 0926 / 0935) went
+without a dump for longer than the rest, and the cause was neither the bytes nor
+the map: their images had never been imported into the Ghidra project, because
+the band was imported before those three map rows existed. Frame matching
+partitions them exactly like the other 61.
+Their entry VAs were known either way: those come from PROT 0898, not from the
 image. The portability verdict for each address the port catalog still lists in
 this band is on
 [`cast-module.md`](../../subsystems/cast-module.md#the-band-as-a-port-worklist).
@@ -212,7 +215,7 @@ this band is on
 | 912 | `801F69D8` (6532 B) | `801F835C` (464 B) | Action id `0x8A` (Freed). 3 framed functions. Spawns: `FUN_80021B04` x42. |
 | 913 | `801F69F0` (7260 B) | `801F864C` (324 B, 6 arms) | Action id `0x8B` (Nova). 2 framed functions. Head table (6 words) is the stager's. Spawns: `FUN_80021B04` x26. |
 | 914 | `801F69F0` (4240 B) | `801F7A80` (296 B, 6 arms) | Action id `0x8C` (Gola Gola). 2 framed functions. Head table (6 words) is the stager's. Spawns: `FUN_80021B04` x4. |
-| 915 | `801F69D8` (5468 B) | `801F7F34` (100 B) | Action id `0x8D` (Mushura). 2 framed functions. Spawns: `FUN_80021B04` x5. **Not mapped**: the committed slot-B pointer-resolution check rejects it, so it has no `static-overlays.toml` row and no dump. |
+| 915 | `801F69D8` (5468 B) | `801F7F34` (100 B) | Action id `0x8D` (Mushura). 2 framed functions. Spawns: `FUN_80021B04` x5. |
 | 916 | `801F69F8` (7936 B) | `801F88F8` (580 B, 8 arms) | Action id `0x8E` (Aluru). 2 framed functions. Head table (8 words) is the stager's. Spawns: `FUN_80021B04` x15. |
 | 917 | `801F6A30` (6312 B) | `801F82D8` (736 B, 5 arms) | Action id `0x8F` (Barra). 3 framed functions. Head table (5 words) is the stager's. Spawns: `FUN_80021B04` x19. |
 | 918 | `801F6C70` (7744 B) | `801F8AB0` (216 B) | Action id `0x90` (Kemaro). 3 framed functions. Spawns: `FUN_80021B04` x20. Its tick entry `801F6C70` is 664 bytes past the base - the widest head gap in the band, and the VA the battle-tutorial overlay (0967) aliases. |
@@ -223,7 +226,7 @@ this band is on
 | 923 | `801F69D8` (8632 B) | `801F8B90` (292 B) | Action id `0x95` (Gilium). 2 framed functions. Spawns: `FUN_80021B04` x67. |
 | 924 | `801F6A18` (3592 B) | `801F7820` (92 B) | Action id `0x96` (Lippian). 2 framed functions. Spawns: `FUN_80050ED4` x10. Head ASCII `Ultimate Rave`. |
 | 925 | `801F6A00` (4328 B, 10 arms) | `801F7AE8` (596 B) | Action id `0x97` (Spikefish). 2 framed functions. Head table (10 words) is the tick's. Spawns: `FUN_80050ED4` x10. |
-| 926 | - | `801F69D8` (8 B) | Action id `0x98` ((no record)). 1 framed function. Stager row is a bare `jr ra; nop` stub. **Not mapped**: the committed slot-B pointer-resolution check rejects it, so it has no `static-overlays.toml` row and no dump. |
+| 926 | - | `801F69D8` (8 B) | Action id `0x98` ((no record)). 1 framed function. Stager row is a bare `jr ra; nop` stub. |
 | 927 | `801F6A84` (6948 B) | `801F85A8` (992 B, 9 arms) | Action id `0x99` (Evil Seru Magic). 2 framed functions. Spawns: `FUN_80021B04` x2, `FUN_80050ED4` x44. Head ASCII `Dark Eclipse`. |
 | 928 | `801F69F4` (9332 B) | `801F8E68` (928 B, 7 arms) | Action id `0x9A` (Palma). 2 framed functions. Head table (7 words) is the stager's. Spawns: `FUN_80021B04` x40. |
 | 929 | `801F69FC` (8756 B) | `801F8C30` (1140 B, 9 arms) | Action id `0x9B` (Mule). 2 framed functions. Head table (9 words) is the stager's. Spawns: `FUN_80021B04` x27. |
@@ -232,7 +235,7 @@ this band is on
 | 932 | `801F6A34` (6768 B, 23 arms) | `801F84A4` (56 B) | Action id `0x9E` (Meta). 2 framed functions. Head table (23 words) is the tick's. Spawns: `FUN_80021B04` x7, `FUN_80050ED4` x20. |
 | 933 | `801F6A30` (7448 B, 22 arms) | `801F8748` (212 B) | Action id `0x9F` (Terra). 2 framed functions. Head table (22 words) is the tick's. Spawns: `FUN_80021B04` x13, `FUN_80050ED4` x17. |
 | 934 | `801F6A40` (10348 B, 26 arms) | `801F92AC` (2396 B) | Action id `0xA0` (Ozma). 2 framed functions. Head table (26 words) is the tick's. Spawns: `FUN_80021B04` x9, `FUN_80050ED4` x33. The stager's `a2` records resolve into the image's own data tail `0x801F9C08..0x801FA9D8`. |
-| 935 | `801F69D8` (5656 B) | `801F7FF0` (56 B) | Capture sub-id `0x00`: 0x4A Earthquake. 2 framed functions. Spawns: `FUN_80021B04` x14. **Not mapped**: the committed slot-B pointer-resolution check rejects it, so it has no `static-overlays.toml` row and no dump. |
+| 935 | `801F69D8` (5656 B) | `801F7FF0` (56 B) | Capture sub-id `0x00`: 0x4A Earthquake. 2 framed functions. Spawns: `FUN_80021B04` x14. |
 | 936 | `801F69D8` (4600 B) | `801F7BD0` (252 B) | Capture sub-id `0x01`: 0x4B Hyper Crush. 2 framed functions. Spawns: `FUN_80021B04` x15. |
 | 937 | `801F69D8` (3704 B) | `801F7850` (396 B) | Capture sub-id `0x02`: 0x4C Hyper Lightning. 2 framed functions. Spawns: `FUN_80021B04` x21. |
 | 938 | `801F7A40` (120 B) | `801F7AB8` (272 B) | Capture sub-id `0x03`: 0x4E Chaos Breath; 0xB7 Mystic Circle. 4 framed functions. Spawns: `FUN_80021B04` x4, `FUN_80050ED4` x9. 2 internal `jal`. |

@@ -127,6 +127,19 @@ the two disassemblers do spell the same way. Over a 4372-file corpus it moves
 `overlay_world_map_top_ext_*` leaves, which the byte attribution then places in
 `world_map_render` (PROT 0901) - the image whose span they print inside.
 
+A third divergence in the same family survived both COP2 folds because it is
+not a COP2 instruction at all. `sub $rd, $zero, $rt` is what the compiler emits
+to negate a register, and capstone renders it through the `neg`/`negu` alias
+while Ghidra prints `sub`. `negu` was folded to `SUBU` and `sub` was not, so a
+window carrying one negation matched nothing - and unlike a mis-based dump, that
+failure has no tell. PROT 0900's own head window, dumped out of PROT 0900's own
+image at PROT 0900's own base, read as "no extracted image holds these bytes at
+this VA or anywhere". Folding `sub` alongside `subu` (as `add` already sits with
+`addu`) moves twelve more dumps to a 0-token match, and with them the finding
+that the minigame RAM captures - baka_fighter, dance, debug_menu, fishing,
+slot_machine, muscle_dome - all caught **summon_render (PROT 0900)** resident in
+slot B.
+
 The generalisable point: **a resolver's negative class is where its own bugs
 accumulate**, because a false negative there looks like missing data rather
 than a broken comparison. Validate any change to `canon()` against a dump known
