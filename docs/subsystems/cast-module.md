@@ -762,6 +762,36 @@ PROT 0918's damage arm also credits a kill: past the clamp it increments the
 word at `+0x664` of the caster's per-character record in the
 `0x80084140 + n * 0x414` block (`0x801F87D4..0x801F881C`).
 
+### The ten bodies the trampoline map names and nothing ports
+
+Naming a trampoline's arms names ten more routines, each a whole choreography
+in an image whose *trampoline* is now ported. They are real, un-ported work,
+and these are the facts a port needs, read off each owning image's bytes:
+
+| Body | Owner | Action id | Size | Phase bound | Damage |
+|---|---|---|---|---|---|
+| `0x801F726C` | 938 | `0x4E` Chaos Breath | 2004 B | `beq`/`slti` chain | `FUN_801DD4B0(0x274)` at `0x801F77C0` |
+| `0x801F6A20` | 951 | `0x36` Chaos Flare | 3528 B | `sltiu 0x0C` | `FUN_801DD4B0(0x3A0)` at `0x801F7414` |
+| `0x801F77E8` | 951 | `0x5B` Scythe Wind | 2436 B | `sltiu 6` | `FUN_801DD4B0(0x80)` at `0x801F7F88` |
+| `0x801F7118` | 952 | `0x5C` Bloody Horns | 2576 B | `sltiu 7` | `FUN_801DD6B4(0x1D0)` at `0x801F7948` |
+| `0x801F8F0C` | 955 | `0x60` White Shield | 920 B | `beq`/`slti` chain | none |
+| `0x801F86A4` | 955 | `0x6E` Kiss of Death | 2152 B | `beq`/`slti` chain | none |
+| `0x801F7FA4` | 955 | `0x6F` Melt Spray | 1792 B | `beq`/`slti` chain | none |
+| `0x801F767C` | 955 | `0x70` Terror Scream | 2344 B | `beq`/`slti` chain | none |
+| `0x801F7158` | 955 | `0x72` Power Charge | 1316 B | `beq`/`slti` chain | none |
+| `0x801F6A28` | 955 | `0x73` Void Accessories | 1840 B | `beq`/`slti` chain | none |
+
+Two more bodies the same maps name are not on the port worklist only because
+no dump prints at their VAs: `0x801F69EC` (938, `0xB7` Mystic Circle,
+`FUN_801DD4B0(0x309)`) and `0x801F69D8` (965, `0xB6` Doomsday,
+`FUN_801DD4B0(0x600)` at `0x801F77B4`).
+
+**Read the delay slot when you take a baked power.** PROT 0951's `0x5B` body
+sets `a0` *after* the call word - `jal 0x801DD4B0` at `0x801F7F88` with
+`addiu a0, zero, 0x80` in its delay slot - so a scan that only looks backwards
+from the `jal` reports no constant for it. None of the sites on the tables
+above uses that form, which is exactly why it is easy to miss.
+
 **The rows that leave the worklist without a port.** The **DATA** rows are
 scope rows in `scripts/ci/port-catalog-ignore.toml` under
 `[slot_b_spawn_stagers]`, because the pool above already produces their whole
