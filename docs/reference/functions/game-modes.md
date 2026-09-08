@@ -319,7 +319,10 @@ two branch hits the address scan reports are in PROT 0970 / 0972 - different
 images at the same base, and a PC-relative branch cannot leave its own image.
 
 The sibling case is PROT 0974, whose tail is PROT 0972 - see
-[`minigames-debug.md`](minigames-debug.md).
+[`minigames-debug.md`](minigames-debug.md). Both are the slot-A form of the
+rule the slot-B module band already established: an image's trailing run is
+another image's bytes at the same file offset, ending at the shorter image's
+length ([`re-do-not-re-walk.md`](../re-do-not-re-walk.md#the-slot-b-module-band-shares-a-library-tail)).
 
 ### The GAME OVER banner is spawned out of reach
 

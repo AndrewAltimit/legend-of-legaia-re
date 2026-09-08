@@ -150,7 +150,14 @@ address and an **interior** one: the enclosing body in PROT 0972 starts at
 stores whose `v0` / `v1` are set in the two words above it, and nothing in any
 image references it. The same shape holds for PROT 0979 - see the `801D2784`
 row in [`game-modes.md`](game-modes.md) - so treat a small slot-A overlay's
-trailing run as build-buffer residue until its operands say otherwise.
+trailing run as mastering residue until its operands say otherwise.
+
+This is the **slot-A** case of the rule the slot-B module band already
+established: every module image ends in a byte-identical, same-file-offset run
+of another extracted image, ending exactly at the shorter image's length
+([`re-do-not-re-walk.md`](../re-do-not-re-walk.md#the-slot-b-module-band-shares-a-library-tail)).
+Both overlays here match that description exactly - `0x3104..0x3800` for 0974
+and `0x3C68..0x4000` for 0979, each ending at its own last byte.
 
 ## FIELD BACK READ overlay (PROT 0978)
 
