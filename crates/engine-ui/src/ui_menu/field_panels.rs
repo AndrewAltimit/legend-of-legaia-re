@@ -331,6 +331,11 @@ pub struct FieldMenuPartyView<'a> {
     pub mp_max: u16,
     /// Persistent AP (char record `+0x10E`) for the per-member gauge.
     pub ap: u16,
+    /// The member's packed battle-status halfword (char record `+0x12E`,
+    /// the mirror of battle actor `+0x16E`). Non-zero re-inks the HP
+    /// number gold - see [`menu_hp_ink_with_status`], whose ailment arm
+    /// this field is the input of.
+    pub status: u16,
 }
 
 /// Build [`TextDraw`]s for the top-level pause menu's right party-overview
@@ -375,7 +380,7 @@ pub fn field_menu_info_draws_for(
                 y + 0x0f,
                 m.hp as u64,
                 m.hp_max as u64,
-                menu_hp_ink(m.hp, m.hp_max),
+                menu_hp_ink_with_status(m.hp, m.hp_max, m.status as i16),
             ),
             (
                 y + 0x1c,
@@ -491,6 +496,10 @@ pub struct StatusPanelView<'a> {
     pub ap_max: u8,
     pub stat_rows: &'a [StatusStatRow<'a>],
     pub equip_rows: &'a [(&'a str, &'a str)],
+    /// The character's packed battle-status halfword (char record
+    /// `+0x12E`); non-zero re-inks the HP number gold through
+    /// [`menu_hp_ink_with_status`].
+    pub status: u16,
 }
 
 /// Retail body-text white (menu ink 7): every CLUT-7 staged glyph reads
@@ -557,13 +566,16 @@ pub fn menu_hp_ink(hp: u16, hp_max: u16) -> [f32; 4] {
 /// signed halfword; any non-zero value re-inks). `hp` / `hp_max` are the
 /// **live** pair `+0x106` / `+0x104`, not the record copies.
 ///
-/// The ailment arm has no live input yet: no view struct carries the status
-/// word - neither [`FieldMenuPartyView`] nor [`StatusPanelView`] has a field
-/// for it, and the roster the shell and the browser play page build has no
-/// ailment latch to fill one from. Every caller reaches this function through
-/// [`menu_hp_ink`], which pins `status` at `0`, so the routine is live but
-/// test three can only fire from a test; carrying `+0x12E` onto the roster is
-/// what would change that.
+/// The ailment arm has a live input on both hosts: [`FieldMenuPartyView`]
+/// and [`StatusPanelView`] each carry the `+0x12E` word, filled from
+/// `legaia_engine_core::status_screen::StatusSnapshot::status_flags` -
+/// which `field_menu_dispatch::status_snapshots` reads off the live
+/// `World::status_effects` tracker (`display_flags`, the `+0x16E` mirror
+/// retail's `FUN_80047430` copies into the record). The pause-menu party
+/// panel and the Status page both call this function directly, so test
+/// three fires from a real session whenever a party member carries an
+/// ailment out of a battle. [`menu_hp_ink`] remains the `status == 0`
+/// convenience for surfaces with no roster behind them.
 ///
 /// PORT: FUN_800349EC
 pub fn menu_hp_ink_with_status(hp: u16, hp_max: u16, status: i16) -> [f32; 4] {
@@ -700,7 +712,7 @@ pub fn status_screen_draws_for(
             panel.hp as u64,
             panel.hp_max as u64,
             panel.hp_max as u64,
-            menu_hp_ink(panel.hp, panel.hp_max),
+            menu_hp_ink_with_status(panel.hp, panel.hp_max, panel.status as i16),
         ),
         (
             wy + 0x20,
@@ -1265,6 +1277,79 @@ mod tab_label_tests {
 #[cfg(test)]
 mod health_tier_ink_tests {
     use super::*;
+
+    /// The ailment arm reaches a real draw list, not just the kernel.
+    ///
+    /// Both panels ink their HP number through `FUN_800349EC` with the
+    /// member's `+0x12E` word, so a party member at a healthy HP fraction
+    /// draws **gold** while poisoned and **white** while clean. This is the
+    /// output end of the wire that carries `StatusSnapshot::status_flags`
+    /// onto the two view structs; the kernel's own thresholds are covered
+    /// above.
+    #[test]
+    fn a_non_zero_status_word_re_inks_the_party_panel_hp_number() {
+        let font = legaia_font::Font::placeholder();
+        let member = |status: u16| FieldMenuPartyView {
+            name: "Vahn",
+            level: 5,
+            hp: 180,
+            hp_max: 180,
+            mp: 10,
+            mp_max: 12,
+            ap: 40,
+            status,
+        };
+        let inks = |status: u16| -> Vec<[f32; 4]> {
+            field_menu_info_draws_for(&font, &[member(status)], (0, 0))
+                .into_iter()
+                .map(|d| d.color)
+                .collect()
+        };
+        let clean = inks(0);
+        let ailing = inks(1);
+        assert!(
+            clean.contains(&MENU_TEXT_WHITE),
+            "a full-HP member should ink some glyph white"
+        );
+        assert!(
+            !clean.contains(&MENU_TEXT_GOLD),
+            "nothing on a clean full-HP member should be gold"
+        );
+        assert!(
+            ailing.contains(&MENU_TEXT_GOLD),
+            "a non-zero +0x12E word must re-ink the HP number gold"
+        );
+        assert_eq!(clean.len(), ailing.len(), "only the ink may differ");
+    }
+
+    /// Same arm on the Status page, which inks through the same kernel.
+    #[test]
+    fn a_non_zero_status_word_re_inks_the_status_panel_hp_number() {
+        let font = legaia_font::Font::placeholder();
+        let panel = |status: u16| StatusPanelView {
+            name: "Vahn",
+            level: 5,
+            xp: 100,
+            xp_to_next: 200,
+            hp: 180,
+            hp_max: 180,
+            mp: 10,
+            mp_max: 12,
+            ap: 40,
+            ap_max: 100,
+            stat_rows: &[],
+            equip_rows: &[],
+            status,
+        };
+        let golds = |status: u16| -> usize {
+            status_screen_draws_for(&font, &panel(status), None, (0, 0), true)
+                .into_iter()
+                .filter(|d| d.color == MENU_TEXT_GOLD)
+                .count()
+        };
+        assert_eq!(golds(0), 0, "a clean full-HP character wears no gold ink");
+        assert!(golds(1) > 0, "a non-zero +0x12E word must ink the HP gold");
+    }
 
     /// The retail HP ink thresholds (`FUN_800349EC`): red at 0, orange
     /// at `<= max/4`, gold at `<= max/2`, white above. Boundaries are

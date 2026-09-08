@@ -1758,12 +1758,24 @@ pub fn subdraw_step(image: &[u8], base_va: u32, step: usize) -> Option<SubdrawSt
 ///
 /// Retail's plaque grows its interior by `20 + 5` when the actor has one
 /// (`battle_chrome::name_plaque`), and the eight badge records `0x8B..=0x92`
-/// are the only strip that fits that 20x12 slot. The **selector** is what is
-/// inferred rather than pinned: no dumped caller computes the badge id, so
-/// this reads the monster record's own element (`+0x1D`, the id space
-/// `element_affinity` decodes) and takes badge `element` out of the strip.
-/// A party member gets no badge - the captured plaques that carry one are
-/// the monster frames (`Gimard`), and the party ones (`Vahn`, `Noa`) do not.
+/// are the only strip that fits that 20x12 slot.
+///
+/// **The selector is not code - it is markup in the monster's own name.**
+/// No dumped caller computes a badge id because nothing computes one: the
+/// archive name begins with a caret plus a letter and the plaque draws badge
+/// `letter - 'A'`, drawing nothing at all when the name carries no escape
+/// (`docs/subsystems/battle.md`, the element-badge section). So this reads
+/// [`crate::monster_catalog::MonsterDef::plaque_badge`], which
+/// `legaia_asset::monster_archive` carries straight off the name bytes.
+///
+/// Two things this deliberately does **not** do, both of which the earlier
+/// element-byte selector got wrong: it does not badge every monster (only a
+/// minority of the populated records carry an escape at all, and the rest
+/// wear no badge in retail), and it does not index the strip in `+0x1D`
+/// element order (the caret order is a different permutation -
+/// `element -> caret index` is `[4, 3, 0, 2, 1, 5, 6, 7]`). A party member
+/// gets no badge either way - the captured plaques that carry one are the
+/// monster frames (`Gimard`), and the party ones (`Vahn`, `Noa`) do not.
 pub fn battle_plaque_element_badge(world: &crate::world::World) -> Option<u8> {
     let (slot, _) = battle_active_actor(world)?;
     let pc = (world.party_count.clamp(1, 3) as usize).min(world.actors.len());
@@ -1771,12 +1783,25 @@ pub fn battle_plaque_element_badge(world: &crate::world::World) -> Option<u8> {
         return None;
     }
     let actor = world.actors.get(slot as usize)?;
-    let def = world
-        .monster_catalog
-        .get(actor.battle_monster_id?)
-        .filter(|d| (d.element as usize) < legaia_asset::element_affinity::ELEMENT_COUNT)?;
-    Some(def.element)
+    let def = world.monster_catalog.get(actor.battle_monster_id?)?;
+    def.plaque_badge
+        .filter(|b| usize::from(*b) < BATTLE_PLAQUE_BADGE_COUNT)
 }
+
+/// Records in the element-badge strip (`0x8B..=0x92`) - the bound the
+/// caret letter `A..=H` addresses.
+pub const BATTLE_PLAQUE_BADGE_COUNT: usize = 8;
+
+/// The caret-letter order the badge strip is drawn in, as a map from the
+/// record's `+0x1D` **element id** to that element's strip index.
+///
+/// Retail never performs this mapping - the name escape names the badge
+/// directly - but the two orders differ, so anything that has an element id
+/// and wants the badge art (a doc census, an editor preview) has to go
+/// through it rather than substituting one for the other. The letters are
+/// A=Fire(2), B=Thunder(4), C=Wind(3), D=Water(1), E=Earth(0), F=Light(5),
+/// G=Dark(6), H=Evil/neutral(7); inverting that gives the table below.
+pub const ELEMENT_TO_PLAQUE_BADGE: [u8; BATTLE_PLAQUE_BADGE_COUNT] = [4, 3, 0, 2, 1, 5, 6, 7];
 
 /// Is the port's encounter-transition banner enabled?
 ///

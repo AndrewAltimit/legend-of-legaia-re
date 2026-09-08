@@ -138,6 +138,19 @@ pub struct MonsterDef {
     ///
     /// REF: FUN_801F0348
     pub size_class: u8,
+    /// Element-badge strip index the battle name plaque wears, or `None`
+    /// for a monster that wears no badge.
+    ///
+    /// Carried verbatim from
+    /// [`legaia_asset::monster_archive::MonsterRecord::plaque_badge`]: the
+    /// badge is the caret escape the archive name itself begins with, not a
+    /// function of [`Self::element`]. Most populated records carry no
+    /// escape, and the letter order is a different permutation from the
+    /// element id order, so this must never be filled from `element`.
+    /// `None` for synthetic monsters, which is also what a record with no
+    /// escape yields - the disc-free catalog draws no badge, exactly as
+    /// retail does for the same records.
+    pub plaque_badge: Option<u8>,
 }
 
 impl MonsterDef {
@@ -166,6 +179,7 @@ impl MonsterDef {
             element: 7,
             swing_class: 0,
             size_class: 0,
+            plaque_badge: None,
         }
     }
 
@@ -279,6 +293,7 @@ pub fn monster_def_from_record(rec: &legaia_asset::monster_archive::MonsterRecor
     let bs = rec.battle_stats();
     let mut def = MonsterDef::new(rec.id, rec.name.clone(), rec.hp, bs[1]);
     def.mp = rec.mp;
+    def.plaque_badge = rec.plaque_badge;
     def.udf = bs[2];
     def.ldf = bs[3];
     def.speed = bs[5];
@@ -514,6 +529,7 @@ pub fn vanilla_monster_catalog() -> MonsterCatalog {
             element: 7,
             swing_class: 0,
             size_class: 0,
+            plaque_badge: None,
         };
         cat.insert(def_struct);
     }

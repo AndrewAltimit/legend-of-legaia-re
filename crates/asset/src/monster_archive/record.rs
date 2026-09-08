@@ -48,6 +48,19 @@ impl MonsterSpell {
 pub struct MonsterRecord {
     /// 1-based monster id (the archive slot index + 1).
     pub id: u16,
+    /// Element-badge strip index the battle name plaque wears, or `None`
+    /// for a record whose name carries no badge escape.
+    ///
+    /// This is **markup, not a computation**: the archive name begins with
+    /// a caret plus a letter, and the badge is `letter - 'A'` over the
+    /// eight-record strip `0x8B..=0x92`. The letter order (A=Fire,
+    /// B=Thunder, C=Wind, D=Water, E=Earth, F=Light, G=Dark, H=Evil) is a
+    /// different permutation from the [`Self::element`] id order, so the
+    /// two must not be substituted for each other - the mapping
+    /// `element -> badge` is `[4, 3, 0, 2, 1, 5, 6, 7]`. Most populated
+    /// records carry no escape and wear no badge at all. See
+    /// `docs/subsystems/battle.md` (the element-badge section).
+    pub plaque_badge: Option<u8>,
     /// Display name (control-prefix bytes `< 0x20` stripped; the retail
     /// names carry a leading `0x01` icon/color escape).
     pub name: String,
@@ -265,7 +278,7 @@ pub(super) fn parse_block(id: u16, block: &[u8]) -> Option<MonsterRecord> {
     if name_offset == 0 || name_offset >= block.len() {
         return None;
     }
-    let name = read_cstr(block, name_offset)?;
+    let (name, plaque_badge) = read_name(block, name_offset)?;
     if name.is_empty() {
         return None;
     }
@@ -316,6 +329,7 @@ pub(super) fn parse_block(id: u16, block: &[u8]) -> Option<MonsterRecord> {
         magic_count,
         spells,
         magic_attacks,
+        plaque_badge,
     })
 }
 
@@ -376,12 +390,26 @@ fn resolve_effect_offset(block: &[u8], magic_count: u8, index: Option<u32>) -> O
 }
 
 /// Read a NUL-terminated monster name at `off` and clean it to a display
-/// string. The on-disc names are printable ASCII carrying in-game text
-/// escapes: a leading `^X` caret color-code (e.g. `^A `) and an optional
-/// `$N` variant suffix (e.g. `Gimard $2`). The caret escapes are stripped;
-/// the variant suffix is kept (it distinguishes `Gimard` from `Gimard $2`).
-/// Returns `None` if the bytes aren't a plausible printable name.
-fn read_cstr(block: &[u8], off: usize) -> Option<String> {
+/// string, alongside the **element-badge index** the name's leading caret
+/// escape names (or `None` when it carries none).
+///
+/// The on-disc names are printable ASCII carrying in-game text escapes: a
+/// leading `^X` caret code (e.g. `^A `) and an optional `$N` variant suffix
+/// (e.g. `Gimard $2`). The caret escapes are stripped from the returned
+/// string; the variant suffix is kept (it distinguishes `Gimard` from
+/// `Gimard $2`). Returns `None` if the bytes aren't a plausible printable
+/// name.
+///
+/// The battle plaque's element badge is not computed - it is markup in the
+/// monster's own name. Retail draws badge `letter - 'A'` out of the eight-
+/// record strip `0x8B..=0x92` when the archive name starts with a caret plus
+/// a letter, and draws no badge at all when it does not; the letter order is
+/// A=Fire, B=Thunder, C=Wind, D=Water, E=Earth, F=Light, G=Dark, H=Evil,
+/// which is **not** the `+0x1D` element order ([`MonsterRecord::element`]).
+/// Only a minority of the populated records carry an escape; see
+/// `docs/subsystems/battle.md` (the element-badge section) for the census
+/// and the per-letter bijection onto `+0x1D`.
+fn read_name(block: &[u8], off: usize) -> Option<(String, Option<u8>)> {
     let end = block[off..].iter().position(|&b| b == 0)? + off;
     let raw = &block[off..end];
     if raw.is_empty() || raw.len() > 32 {
@@ -407,7 +435,14 @@ fn read_cstr(block: &[u8], off: usize) -> Option<String> {
     if name.is_empty() {
         return None;
     }
-    Some(name)
+    // The badge is the *leading* escape only, and only over the eight strip
+    // letters A..=H. A caret later in the string is ordinary in-line markup
+    // and selects nothing.
+    let badge = match raw {
+        [b'^', letter, ..] if letter.is_ascii_uppercase() && *letter <= b'H' => Some(letter - b'A'),
+        _ => None,
+    };
+    Some((name, badge))
 }
 
 /// Decode every populated monster slot in the archive. Skips empty / filler
@@ -534,6 +569,7 @@ mod tests {
             magic_count: 0,
             spells: vec![],
             magic_attacks: vec![],
+            plaque_badge: None,
         };
         assert_eq!(rec.battle_stats(), [128, 360, 444, 400, 247, 146]);
         // AGL, HP, MP and SPD are pass-through; the four combat stats are boosted.
@@ -593,13 +629,26 @@ mod tests {
     }
 
     #[test]
-    fn read_cstr_strips_caret_escapes_keeps_variant() {
+    fn read_name_strips_caret_escapes_keeps_variant_and_yields_the_badge() {
         let mut b = vec![0u8; 0x20];
         b[..6].copy_from_slice(b"Hornet");
-        assert_eq!(read_cstr(&b, 0).as_deref(), Some("Hornet"));
-        // Caret color-escape + space prefix stripped; `$N` variant kept.
+        let (name, badge) = read_name(&b, 0).expect("plain name");
+        assert_eq!(name, "Hornet");
+        assert_eq!(badge, None, "no escape means no badge");
+        // Caret escape + space prefix stripped; `$N` variant kept; the
+        // letter becomes the strip index (`A` -> 0).
         let mut g = vec![0u8; 0x20];
         g[..12].copy_from_slice(b"^A Gimard $2");
-        assert_eq!(read_cstr(&g, 0).as_deref(), Some("Gimard $2"));
+        let (name, badge) = read_name(&g, 0).expect("escaped name");
+        assert_eq!(name, "Gimard $2");
+        assert_eq!(badge, Some(0));
+        // A letter past the eight-record strip selects nothing.
+        let mut z = vec![0u8; 0x20];
+        z[..8].copy_from_slice(b"^Z Thing");
+        assert_eq!(read_name(&z, 0).expect("out-of-strip").1, None);
+        // A caret that is not leading is ordinary in-line markup.
+        let mut m = vec![0u8; 0x20];
+        m[..8].copy_from_slice(b"Ab^Cdefg");
+        assert_eq!(read_name(&m, 0).expect("interior caret").1, None);
     }
 }

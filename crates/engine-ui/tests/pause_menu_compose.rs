@@ -213,6 +213,7 @@ fn compose_top_level(ctx: &PauseMenuCtx<'_>) -> PauseMenuDraws {
         mp: 10,
         mp_max: 12,
         ap: 40,
+        status: 0,
     }];
     pause_screen_draws(
         ctx,
@@ -254,6 +255,7 @@ fn compose_status(ctx: &PauseMenuCtx<'_>) -> PauseMenuDraws {
         ap_max: 100,
         stat_rows: &stat_rows,
         equip_rows: &equip_rows,
+        status: 0,
     };
     let names = ["Vahn", "Noa"];
     let satellite = StatusSatelliteView {
