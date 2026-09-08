@@ -569,7 +569,10 @@ not a broken one.
   (steps over length: one cycle of two steps over 2.07 s) go with it,
   and the controller scales the Animator so the feet keep pace with the
   ground - at speed 1 the humanoids slid almost four to one under a
-  0.7 m/s walk. Rigs with no leg pair used to glide on their looping
+  0.7 m/s walk. `strideScale` (1.3) lets the feet cover a little more
+  ground per step than the clip animates, a touch of slide traded for a
+  longer, calmer stride: with the 0.5 m/s walk that is about two steps
+  a second, where 0.7 m/s at the clip's own stride was a quick shuffle. Rigs with no leg pair used to glide on their looping
   spawn clip; they now get a **procedural gait** (`LegaiaNpcWander.gaitBob`
   / `gaitRoll` / `gaitStride` / `gaitArmSwing`): the glb root bobs once
   per step and rocks a few degrees side to side, and where the rig has an
@@ -577,8 +580,8 @@ not a broken one.
   axis with the forearms riding round the shoulder, blended over the idle
   clip's pose by the gait weight (LateUpdate, after the Animator has
   written the frame) and eased in and out so a stop does not snap. The
-  gait is paced by the same 0.19 m stride, so every family steps at the
-  same cadence at the same speed. It moves the glb root and the arm nodes
+  gait is paced by the same 0.19 m stride and the same `strideScale`, so
+  every family steps at the same cadence at the same speed. It moves the glb root and the arm nodes
   under the instance, so the walk, the floor ray and the card table's
   seat pose are untouched.
 
@@ -772,14 +775,17 @@ and the SDK's own components - no third-party package, no game data:
   and holds them there through a hand. The table's third button
   (*NPCs: sit / shoo*) is the override - shoo, and the stools are
   withdrawn and nobody is called. The seated pose is an
-  **approximation** - the exported rigs carry no sit clip, so the host
-  nudges the NPC onto the stool centre and sets it so its hips land on
-  the seat (root height = seat top minus 45% of the rig's own measured
-  height, never below the floor it stood on): a short villager's feet
-  dangle in front of the stool leg, a tall one's rest on the ground,
-  and every head is above the felt. (The first cut sank the whole rig
-  a third of its height into the ground instead.) Undone when it
-  leaves. Villagers **walk** to the stool - the host sits a villager
+  **built pose** - the exported rigs carry no sit clip, so the host
+  nudges the NPC onto the stool centre with its hips on the seat and
+  the locomotion controller poses it sitting (`LegaiaNpcWander.SetSeated`)
+  from the leg and arm pairs the living-town pass measured: thighs
+  turned forward at the hip, shins hanging from the knee, upper arms
+  brought forward so the hands reach the table, blended in over a
+  third of a second on top of the idle clip. The hip is the measured
+  thigh pivot where the rig has legs (so the thighs lie on the seat),
+  else 45% of the rig's height (the one-piece bodies only bring their
+  arms forward). (The first cut sank the whole rig a third of its height
+  into the ground instead.) Undone when it leaves. Villagers **walk** to the stool - the host sits a villager
   only once its brain reports it has arrived; the station names its
   villager at claim time, before the walk, and sitting on that alone
   snapped them onto the stools from across the square. The table calls

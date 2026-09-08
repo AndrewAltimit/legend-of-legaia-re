@@ -127,11 +127,11 @@ namespace LegaiaWorld
         public float radius = 1.5f;
 
         [Tooltip("Walk speed in m/s. Legaia townsfolk amble - keep it low.")]
-        public float speed = 0.4f;
+        public float speed = 0.35f;
 
         [Tooltip("Speed of a COMMANDED walk (GoTo) in m/s - an errand across " +
                  "the village is purposeful, not an amble.")]
-        public float walkSpeed = 0.7f;
+        public float walkSpeed = 0.5f;
 
         [Tooltip("Average pause between strolls (seconds).")]
         public float pauseSeconds = 5f;
@@ -236,6 +236,29 @@ namespace LegaiaWorld
                  "(steps in the clip over its length).")]
         public float walkStepsPerSecond = 0f;
 
+        [Tooltip("Stride multiplier on the measured clip stride and on " +
+                 "gaitStride: above 1 the feet cover more ground per step " +
+                 "than the clip animates - a little slide traded for a " +
+                 "longer, calmer stride. 1.3 under a 0.5 m/s walk is about " +
+                 "two steps a second; 1 at 0.7 m/s was a quick shuffle.")]
+        public float strideScale = 1.3f;
+
+        [Tooltip("Upper-leg nodes (left, right), set by the living-town pass " +
+                 "on rigs with a leg pair: the sitting pose turns them " +
+                 "forward at the hip.")]
+        public Transform[] legUpper;
+
+        [Tooltip("Lower-leg nodes matching legUpper; they hang from the knee " +
+                 "when seated.")]
+        public Transform[] legLower;
+
+        [Tooltip("Sitting pose: how far the thighs turn forward at the hip (degrees).")]
+        public float sitThigh = 85f;
+
+        [Tooltip("Sitting pose: how far the upper arms come forward (degrees) " +
+                 "- hands toward the table.")]
+        public float sitArm = 35f;
+
         /// Why the last commanded walk reported Blocked() - the probe hit,
         /// or the watchdog that fired. Read by the brain's failure record
         /// and the soak harness; empty while a walk is going well.
@@ -262,6 +285,15 @@ namespace LegaiaWorld
         private float gaitWeight;
         private Vector3[] armRestPos;
         private Quaternion[] armRestRot;
+        private float armSign = 1f;
+        // Sitting pose (SetSeated): leg rests, blend weight, and the
+        // measured hip height the host seats the rig by.
+        private Vector3[] legRestPos;
+        private Quaternion[] legRestRot;
+        private float thighSign = 1f;
+        private float sitWeight;
+        private bool seated;
+        private float hipHeight = -1f;
         // The last thing the straight-ahead probe hit (diagnostics).
         private string lastHit = "";
 
@@ -423,14 +455,48 @@ namespace LegaiaWorld
             // 1 m-per-tile export scale these models stand well under 1 m,
             // and a fixed waist ray would pass over their heads.
             Renderer[] rends = GetComponentsInChildren<Renderer>();
+            float floorY = transform.position.y;
             if (rends.Length > 0)
             {
                 Bounds wb = rends[0].bounds;
                 for (int i = 1; i < rends.Length; i++)
                     wb.Encapsulate(rends[i].bounds);
                 npcHeight = Mathf.Clamp(wb.size.y, 0.3f, 2.5f);
+                floorY = wb.min.y;
             }
             rayHeight = 0.5f * npcHeight;
+
+            // Leg rests and the hip height (the thigh pivot above the feet)
+            // for the sitting pose; and which way "forward" is for a thigh
+            // or an arm turned about the nodes' lateral axis - tried both
+            // ways on the rest offset, keeping the sign that carries the
+            // knee (the forearm) toward the model's face.
+            int nl = legUpper != null ? legUpper.Length : 0;
+            legRestPos = new Vector3[nl * 2];
+            legRestRot = new Quaternion[nl * 2];
+            for (int k = 0; k < nl; k++)
+            {
+                if (legUpper[k] != null)
+                {
+                    legRestPos[k] = legUpper[k].localPosition;
+                    legRestRot[k] = legUpper[k].localRotation;
+                }
+                Transform lo = legLower != null && k < legLower.Length ? legLower[k] : null;
+                if (lo != null)
+                {
+                    legRestPos[nl + k] = lo.localPosition;
+                    legRestRot[nl + k] = lo.localRotation;
+                }
+            }
+            if (nl > 0 && legUpper[0] != null)
+            {
+                hipHeight = legUpper[0].position.y - floorY;
+                if (legLower != null && legLower.Length > 0 && legLower[0] != null)
+                    thighSign = ForwardSign(legUpper[0].parent, legRestPos[nl] - legRestPos[0]);
+            }
+            if (na > 0 && gaitUpperArms[0] != null && gaitForearms != null &&
+                gaitForearms.Length > 0 && gaitForearms[0] != null)
+                armSign = ForwardSign(gaitUpperArms[0].parent, armRestPos[na] - armRestPos[0]);
 
             // Servo-sign probe: yaw the instance +10 degrees, see which way
             // the visual forward actually moves (a mirror in the scale chain
@@ -451,6 +517,37 @@ namespace LegaiaWorld
             faceDir = VisualForward();
             progressMark = transform.position;
             progressAt = Time.time;
+        }
+
+        // +1 when turning `offset` (a child's rest offset from its pivot, in
+        // the pivot's parent frame) by +90 degrees about that frame's x
+        // carries it toward this instance's forward, else -1.
+        float ForwardSign(Transform parent, Vector3 offset)
+        {
+            if (parent == null || offset.sqrMagnitude < 1e-10f)
+                return 1f;
+            Vector3 plus = parent.TransformDirection(
+                Quaternion.AngleAxis(90f, Vector3.right) * offset);
+            Vector3 minus = parent.TransformDirection(
+                Quaternion.AngleAxis(-90f, Vector3.right) * offset);
+            Vector3 face = transform.forward;
+            return Vector3.Dot(plus, face) >= Vector3.Dot(minus, face) ? 1f : -1f;
+        }
+
+        /// The card table host: pose the rig sitting (thighs forward at
+        /// the hip, shins hanging from the knee, hands toward the table)
+        /// or let it stand again. Blended over a third of a second.
+        public void SetSeated(bool on)
+        {
+            seated = on;
+        }
+
+        /// Height of the thigh pivot above the feet in the rest pose, or -1
+        /// when this rig has no leg pair - the host seats the rig so that
+        /// point lands on the stool's seat.
+        public float HipHeight()
+        {
+            return hipHeight;
         }
 
         // --- Command API (LegaiaNpcBrain) ---------------------------------
@@ -946,6 +1043,66 @@ namespace LegaiaWorld
         {
             if (locoAnimator == null)
                 Gait();
+            SitPose();
+        }
+
+        // The sitting pose, over whatever the idle clip posed this frame:
+        // thighs turned forward at the hip, shins hanging from the knee
+        // (the lower leg keeps its rest orientation and rides round the
+        // hip with the thigh), upper arms brought forward so the hands
+        // reach the table. Rigs without a leg pair (one-piece bodies)
+        // only bring their arms forward; the host still seats them by hip
+        // fraction.
+        void SitPose()
+        {
+            bool haveLegs = legUpper != null && legUpper.Length > 0;
+            bool haveArms = gaitUpperArms != null && gaitUpperArms.Length > 0 &&
+                            gaitForearms != null && sitArm > 0f;
+            if (!haveLegs && !haveArms)
+                return;
+            sitWeight = Mathf.MoveTowards(sitWeight, seated ? 1f : 0f, Time.deltaTime * 3f);
+            if (sitWeight <= 0f)
+                return;
+            if (haveLegs)
+            {
+                int nl = legUpper.Length;
+                Quaternion q = Quaternion.AngleAxis(sitThigh * thighSign, Vector3.right);
+                for (int k = 0; k < nl; k++)
+                {
+                    Transform up = legUpper[k];
+                    if (up == null)
+                        continue;
+                    up.localRotation = Quaternion.Slerp(up.localRotation,
+                        q * legRestRot[k], sitWeight);
+                    Transform lo = legLower != null && k < legLower.Length ? legLower[k] : null;
+                    if (lo == null)
+                        continue;
+                    Vector3 p = legRestPos[k] + q * (legRestPos[nl + k] - legRestPos[k]);
+                    lo.localPosition = Vector3.Lerp(lo.localPosition, p, sitWeight);
+                    lo.localRotation = Quaternion.Slerp(lo.localRotation,
+                        legRestRot[nl + k], sitWeight);
+                }
+            }
+            if (haveArms)
+            {
+                int na = gaitUpperArms.Length;
+                Quaternion q = Quaternion.AngleAxis(sitArm * armSign, Vector3.right);
+                for (int k = 0; k < na; k++)
+                {
+                    Transform up = gaitUpperArms[k];
+                    if (up == null)
+                        continue;
+                    up.localRotation = Quaternion.Slerp(up.localRotation,
+                        q * armRestRot[k], sitWeight);
+                    Transform fa = k < gaitForearms.Length ? gaitForearms[k] : null;
+                    if (fa == null)
+                        continue;
+                    Vector3 p = armRestPos[k] + q * (armRestPos[na + k] - armRestPos[k]);
+                    fa.localPosition = Vector3.Lerp(fa.localPosition, p, sitWeight);
+                    fa.localRotation = Quaternion.Slerp(fa.localRotation,
+                        q * armRestRot[na + k], sitWeight);
+                }
+            }
         }
 
         // Idle / walk crossfade for the rigs that have a measured walk clip;
@@ -962,8 +1119,9 @@ namespace LegaiaWorld
             if (walkStride > 0f && walkStepsPerSecond > 0f)
             {
                 float v = mode == 1 ? walkSpeed : speed;
+                float stride = walkStride * Mathf.Max(0.5f, strideScale);
                 locoAnimator.speed = walking
-                    ? Mathf.Clamp(v / walkStride / walkStepsPerSecond, 0.5f, 6f)
+                    ? Mathf.Clamp(v / stride / walkStepsPerSecond, 0.5f, 6f)
                     : 1f;
             }
             if (!animStarted)
@@ -1004,7 +1162,7 @@ namespace LegaiaWorld
                 }
                 return;
             }
-            float stride = gaitStride < 0.1f ? 0.1f : gaitStride;
+            float stride = (gaitStride < 0.1f ? 0.1f : gaitStride) * Mathf.Max(0.5f, strideScale);
             if (walking)
                 gaitPhase += dt * ((mode == 1 ? walkSpeed : speed) / stride) * Mathf.PI;
             float s = Mathf.Sin(gaitPhase);

@@ -96,8 +96,9 @@ namespace LegaiaWorld
         public float chatRingRadius = 0.85f;
         [Tooltip("How far in front of a prop the NPC stands (meters).")]
         public float propStandDistance = 0.7f;
-        [Tooltip("Speed of a purposeful walk (m/s); the stroll keeps its own.")]
-        public float walkSpeed = 0.7f;
+        [Tooltip("Speed of a purposeful walk (m/s); the stroll keeps its own. " +
+                 "0.7 read as a quick shuffle once the feet kept pace with the ground.")]
+        public float walkSpeed = 0.5f;
         [Tooltip("Speech bubbles over the talker's head.")]
         public bool speechBubbles = true;
         [Tooltip("Share of villagers who stay indoors by day as well.")]
@@ -1892,6 +1893,7 @@ namespace LegaiaWorld
             s_handFraction = 0f;
             int walked = 0;
             int armSwung = 0;
+            int sitPosed = 0;
             s_rigCache.Clear();
             s_rigFamilies.Clear();
             // The daytime-indoors share is a share of the villagers who
@@ -1936,14 +1938,30 @@ namespace LegaiaWorld
                         walked++;
                         bound = true;
                     }
-                if (!bound && rig.upperArms != null && loco != null)
+                // The measured pairs go to the controller on every rig:
+                // the arms drive the procedural gait where no clip walks
+                // and the hands-forward of the sitting pose everywhere;
+                // the legs the sitting pose (thighs forward at the hip).
+                if (loco != null && (rig.upperArms != null || rig.legUpper != null))
                 {
-                    LegaiaWorldBuilder.SetUdonField(loco, "gaitUpperArms",
-                        FindNodes(npc, rig.upperArms));
-                    LegaiaWorldBuilder.SetUdonField(loco, "gaitForearms",
-                        rig.forearms != null ? FindNodes(npc, rig.forearms) : null);
+                    if (rig.upperArms != null)
+                    {
+                        LegaiaWorldBuilder.SetUdonField(loco, "gaitUpperArms",
+                            FindNodes(npc, rig.upperArms));
+                        LegaiaWorldBuilder.SetUdonField(loco, "gaitForearms",
+                            rig.forearms != null ? FindNodes(npc, rig.forearms) : null);
+                        if (!bound)
+                            armSwung++;
+                    }
+                    if (rig.legUpper != null)
+                    {
+                        LegaiaWorldBuilder.SetUdonField(loco, "legUpper",
+                            FindNodes(npc, rig.legUpper));
+                        LegaiaWorldBuilder.SetUdonField(loco, "legLower",
+                            FindNodes(npc, rig.legLower));
+                        sitPosed++;
+                    }
                     LegaiaWorldBuilder.SyncUdonProxy(loco);
-                    armSwung++;
                 }
 
                 var brain = LegaiaWorldBuilder.TryAttachUdon(
@@ -2001,6 +2019,7 @@ namespace LegaiaWorld
                 Debug.Log("[Legaia] living town: " + RigReport() + "; walk cycle ('" + o.walkClip +
                     "', the entry's own walk_clip, or the measured one) bound on " + walked +
                     " of " + files.Count + ", procedural arm swing on " + armSwung +
+                    ", sitting pose (legs) on " + sitPosed +
                     " villager(s) (the rigs whose family carries one).");
             return brains;
         }
@@ -2318,6 +2337,8 @@ namespace LegaiaWorld
             public float stepsPerSecond;  // at Animator speed 1
             public string[] upperArms;    // node names, left then right
             public string[] forearms;
+            public string[] legUpper;     // thighs, left then right (sitting pose)
+            public string[] legLower;
             public string family;         // "11-node" etc. for the report
         }
 
@@ -2410,36 +2431,40 @@ namespace LegaiaWorld
                         }
                     }
                 var order = Enumerable.Range(0, pairs.Count).OrderBy(k => pairY[k]).ToList();
-                int[] feet = null, upper = null, fore = null;
+                // Legs below, arms above. With three or more pairs the
+                // split is the midpoint of the pairs' own height range
+                // (chibi hips sit at 60% of body height, so no absolute
+                // fraction works); with one or two, half the body height
+                // says whether they are legs or arms at all.
                 int np = order.Count;
+                var legIdx = new List<int>();
+                var armIdx = new List<int>();
                 if (np >= 3)
                 {
-                    feet = pairs[order[0]];
-                    upper = pairs[order[np - 1]];
-                    fore = pairs[order[np - 2]];
+                    float mid = 0.5f * (pairY[order[0]] + pairY[order[np - 1]]);
+                    foreach (int k in order)
+                        (pairY[k] < mid ? legIdx : armIdx).Add(k);
                 }
-                else if (np == 2)
+                else if (np > 0)
                 {
-                    if (pairY[order[1]] < 0.5f * h)
-                        feet = pairs[order[0]];
-                    else
-                    {
-                        upper = pairs[order[1]];
-                        fore = pairs[order[0]];
-                    }
+                    bool low = pairY[order[np - 1]] < 0.5f * h;
+                    foreach (int k in order)
+                        (low ? legIdx : armIdx).Add(k);
                 }
-                else if (np == 1)
-                {
-                    if (pairY[order[0]] < 0.5f * h)
-                        feet = pairs[order[0]];
-                    else
-                        upper = pairs[order[0]];
-                }
+                int[] feet = legIdx.Count > 0 ? pairs[legIdx[0]] : null;
+                int[] thighs = legIdx.Count > 1 ? pairs[legIdx[1]] : null;
+                int[] upper = armIdx.Count > 0 ? pairs[armIdx[armIdx.Count - 1]] : null;
+                int[] fore = armIdx.Count > 1 ? pairs[armIdx[armIdx.Count - 2]] : null;
                 if (upper != null)
                 {
                     rw.upperArms = new[] { kids[upper[0]].name, kids[upper[1]].name };
                     if (fore != null)
                         rw.forearms = new[] { kids[fore[0]].name, kids[fore[1]].name };
+                }
+                if (thighs != null)
+                {
+                    rw.legUpper = new[] { kids[thighs[0]].name, kids[thighs[1]].name };
+                    rw.legLower = new[] { kids[feet[0]].name, kids[feet[1]].name };
                 }
                 if (feet == null || clips.Count == 0)
                 {

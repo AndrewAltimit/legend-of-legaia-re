@@ -22,16 +22,17 @@
 // which re-checks `available` while dwelling, walks it away on its own.
 //
 // Seated pose: the exported rigs have no sit clip (they are rigid-node
-// models playing a looping spawn clip), so sitting is APPROXIMATED - the
-// NPC root is nudged onto the stool centre and set so its HIPS land on
-// the stool's seat: root height = seat top - `hipFraction` of the rig's
-// own measured height, never below the floor it stood on. The first cut
-// dropped the whole rig 35% of its height BELOW the floor instead, on the
-// theory that a lower head reads as sitting; it read as a villager sunk
-// to the waist in the ground, head level with the felt. Hips on the seat
-// puts a short rig's feet dangling in front of the stool leg and a tall
-// one's on the floor, and every head above the table. Restored when the
-// villager leaves. The README says so out loud.
+// models playing a looping spawn clip), so the NPC root is nudged onto
+// the stool centre and set so its HIPS land on the stool's seat, and the
+// locomotion controller POSES the rig sitting (LegaiaNpcWander.SetSeated:
+// thighs forward at the hip, shins hanging from the knee, hands toward
+// the table - built from the leg and arm node pairs the living-town pass
+// measured). The hip is the controller's measured thigh pivot where the
+// rig has legs, else `hipFraction` of the rig's height; never below the
+// stool's own floor. The first cut dropped the whole rig 35% of its
+// height BELOW the floor instead, on the theory that a lower head reads
+// as sitting; it read as a villager sunk to the waist in the ground, head
+// level with the felt. Restored when the villager leaves.
 //
 // Seat bookkeeping is reconciled by polling the stations a few times a
 // second rather than from the arrive / leave events alone: one handler
@@ -186,9 +187,18 @@ namespace LegaiaWorld
             // from the STOOL, not from where the rig is: it walked onto the
             // stool's collider to get here, so its own height is the seat
             // top already, and "never below where it stands" would leave it
-            // standing on the seat.
-            float y = stand.y + Mathf.Max(0f, seatHeight - h * Mathf.Clamp01(hipFraction));
+            // standing on the seat. The hip is the controller's measured
+            // thigh pivot where the rig has legs (the pose turns the thighs
+            // about it, so it belongs ON the seat), else a fraction of the
+            // rig's height.
+            LegaiaNpcWander w = npc.GetComponent<LegaiaNpcWander>();
+            float hip = w != null ? w.HipHeight() : -1f;
+            if (hip < 0f)
+                hip = h * Mathf.Clamp01(hipFraction);
+            float y = stand.y + Mathf.Max(0f, seatHeight - hip);
             npc.position = new Vector3(stand.x, y, stand.z);
+            if (w != null)
+                w.SetSeated(true);
             seated[i] = npc;
             // What StandUp adds back (negative: the rig was lifted).
             drops[i] = p.y - y;
@@ -204,6 +214,9 @@ namespace LegaiaWorld
                 seatHands[i].SetActive(false);
             if (npc == null)
                 return;
+            LegaiaNpcWander w = npc.GetComponent<LegaiaNpcWander>();
+            if (w != null)
+                w.SetSeated(false);
             // Only undo the drop if the NPC is still where we put it - the
             // brain may already have walked it onto its own floor ray.
             Vector3 d = npc.position - seats[i].StandPosition();
