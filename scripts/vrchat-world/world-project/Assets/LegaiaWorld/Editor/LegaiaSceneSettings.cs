@@ -174,6 +174,20 @@ namespace LegaiaWorld
         public Vector3 rotation;
     }
 
+    /// One `posters[]` entry: an image asset hung on a wall. `near` names
+    /// a common-prefab child (e.g. "card_table") the builder finds a wall
+    /// close to; `width` is the print's width in metres (height follows
+    /// the image's aspect). A hand placement lives in
+    /// `prefab_transforms["poster_<name>"]` (container-local, like every
+    /// other common prefab) and wins over the wall search.
+    public class LegaiaPosterRef
+    {
+        public string name;
+        public string image;
+        public string near;
+        public float width = 0.75f;
+    }
+
     /// The slot_machine block: cabinet asset, art folder, placement.
     public class LegaiaSlotPlacement
     {
@@ -264,6 +278,14 @@ namespace LegaiaWorld
         /// `living_town.names`: NPC token -> display name (the card table
         /// and any panel print it; LegaiaLivingTown names the rest).
         public Dictionary<string, string> npcNames = new Dictionary<string, string>();
+        /// `living_town.night_host`: the villager who hosts the card table
+        /// at night (`npc` = NPC token such as "npc_14", `station` = scene
+        /// path of the stool station, e.g.
+        /// "Legaia_common_prefabs/card_table/stool_0"). Null = no host.
+        public string nightHostNpc;
+        public string nightHostStation;
+        /// `posters`: framed images to hang on walls (see LegaiaPosterRef).
+        public List<LegaiaPosterRef> posters = new List<LegaiaPosterRef>();
         /// Asset path the settings were read from; null = no file (every
         /// list empty, defaults only).
         public string path;
@@ -392,6 +414,20 @@ namespace LegaiaWorld
                         if (!string.IsNullOrEmpty(nm))
                             s.npcNames[kv.Key.Trim()] = nm.Trim();
                     }
+                var host = MiniJson.AsObj(MiniJson.Get(lt, "night_host"));
+                if (host != null)
+                {
+                    s.nightHostNpc = MiniJson.AsStr(MiniJson.Get(host, "npc"));
+                    s.nightHostStation = MiniJson.AsStr(MiniJson.Get(host, "station"));
+                    if (string.IsNullOrEmpty(s.nightHostNpc) ||
+                        string.IsNullOrEmpty(s.nightHostStation))
+                    {
+                        Debug.LogWarning("[Legaia] living_town.night_host needs " +
+                            "\"npc\" and \"station\" - ignored.");
+                        s.nightHostNpc = null;
+                        s.nightHostStation = null;
+                    }
+                }
                 foreach (object pair in MiniJson.AsList(MiniJson.Get(lt, "nav_links"))
                          ?? new List<object>())
                 {
@@ -405,6 +441,27 @@ namespace LegaiaWorld
                         continue;
                     s.navLinks.Add(new[] { ReadVec(linkA), ReadVec(linkB) });
                 }
+            }
+            foreach (object e in MiniJson.AsList(MiniJson.Get(m, "posters"))
+                     ?? new List<object>())
+            {
+                var po = MiniJson.AsObj(e);
+                if (po == null)
+                    continue;
+                var poster = new LegaiaPosterRef
+                {
+                    name = MiniJson.AsStr(MiniJson.Get(po, "name")),
+                    image = MiniJson.AsStr(MiniJson.Get(po, "image")),
+                    near = MiniJson.AsStr(MiniJson.Get(po, "near")),
+                    width = (float)MiniJson.AsNum(MiniJson.Get(po, "width"), 0.75),
+                };
+                if (string.IsNullOrEmpty(poster.name) || string.IsNullOrEmpty(poster.image))
+                {
+                    Debug.LogWarning("[Legaia] posters: an entry needs \"name\" and " +
+                        "\"image\" - skipped.");
+                    continue;
+                }
+                s.posters.Add(poster);
             }
             var nh = MiniJson.AsObj(MiniJson.Get(m, "npc_homes"));
             if (nh != null)
