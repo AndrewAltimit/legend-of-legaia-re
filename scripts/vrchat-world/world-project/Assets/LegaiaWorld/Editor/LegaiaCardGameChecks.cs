@@ -795,6 +795,7 @@ namespace LegaiaWorld
             s_seatedSince = new float[4];
             s_kneeSamples = 0;
             s_minKneeDot = 2f;
+            s_geomSeen.Clear();
             s_wanderType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaNpcWander");
             s_giveUps = 0;
             s_giveUpBy.Clear();
@@ -942,6 +943,8 @@ namespace LegaiaWorld
                 else if (Time.time - s_seatedSince[i] > 1f)
                 {
                     string knee = KneeAhead(npc);
+                    if (knee == null)
+                        knee = SeatGeometry(npc, s_stools[i], i);
                     if (knee != null)
                     {
                         Finish(1, npc.name + " on stool_" + i + ": " + knee);
@@ -1189,6 +1192,53 @@ namespace LegaiaWorld
                    ", thighTurn " + Var(w, "thighTurn") + ", armTurn " + Var(w, "armTurn") +
                    ", sitWeight " + Var(w, "sitWeight") + ", seated " + Var(w, "seated") +
                    ", legs " + up.Length + "/" + lo.Length + "]";
+        }
+
+        static readonly HashSet<string> s_geomSeen = new HashSet<string>();
+
+        // Where the seated rig actually is, once per villager and stool:
+        // its origin, hip (thigh pivot), knee (shin pivot) and sole (the
+        // lowest foot vertex now) above the stool's floor, against the
+        // seat top the host aims the hip at. Null when it sits right.
+        static string SeatGeometry(Transform npc, Transform stool, int i)
+        {
+            var w = Wander(npc);
+            var up = Var(w, "legUpper") as Transform[];
+            var lo = Var(w, "legLower") as Transform[];
+            float floor = stool.position.y;
+            float origin = npc.position.y - floor;
+            float seat = s_host != null && Var(s_host, "seatHeight") is float sh ? sh : 0.475f;
+            string key = npc.name + "|" + i;
+            bool first = s_geomSeen.Add(key);
+            if (up == null || lo == null || up.Length == 0 || lo.Length == 0 ||
+                up[0] == null || lo[0] == null)
+            {
+                if (first)
+                    Debug.Log("[Legaia] CARDS: seat geometry " + npc.name + " on stool_" + i +
+                              " (no leg pair): origin " + origin.ToString("0.00") +
+                              " m above the stool floor, seat top " + seat.ToString("0.00"));
+                return null;
+            }
+            float hip = up[0].position.y - floor;
+            float knee = lo[0].position.y - floor;
+            float sole = float.MaxValue;
+            var mf = lo[0].GetComponent<MeshFilter>();
+            if (mf != null && mf.sharedMesh != null)
+                foreach (Vector3 v in mf.sharedMesh.vertices)
+                    sole = Mathf.Min(sole, lo[0].TransformPoint(v).y - floor);
+            if (first)
+                Debug.Log("[Legaia] CARDS: seat geometry " + npc.name + " on stool_" + i +
+                          ": origin " + origin.ToString("0.00") + ", hip " + hip.ToString("0.00") +
+                          ", knee " + knee.ToString("0.00") + ", sole " + sole.ToString("0.00") +
+                          " m above the stool floor; seat top " + seat.ToString("0.00") +
+                          ", hipHeight " + Var(w, "hipHeight"));
+            if (Mathf.Abs(hip - seat) > 0.06f)
+                return "seated with the hip " + hip.ToString("0.00") + " m above the stool floor (seat top " +
+                       seat.ToString("0.00") + ")";
+            if (sole < float.MaxValue && sole > seat - 0.05f)
+                return "seated with the sole " + sole.ToString("0.00") + " m above the stool floor - the feet do not hang below the seat (" +
+                       seat.ToString("0.00") + ")";
+            return null;
         }
 
         static string NoteGiveUp(int stool, Transform npc, Component brain, float dist)

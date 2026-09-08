@@ -259,10 +259,17 @@ namespace LegaiaWorld
             Renderer[] rs = npc.GetComponentsInChildren<Renderer>();
             if (rs.Length == 0)
                 return 1.6f;
-            Bounds b = rs[0].bounds;
+            // Min/max by hand: Bounds.Encapsulate on a local struct is a
+            // no-op under Udon (the extern mutates a copy), which once left
+            // every villager the height of its first renderer - the head.
+            float lo = rs[0].bounds.min.y;
+            float hi = rs[0].bounds.max.y;
             for (int i = 1; i < rs.Length; i++)
-                b.Encapsulate(rs[i].bounds);
-            return Mathf.Clamp(b.size.y, 0.4f, 4f);
+            {
+                lo = Mathf.Min(lo, rs[i].bounds.min.y);
+                hi = Mathf.Max(hi, rs[i].bounds.max.y);
+            }
+            return Mathf.Clamp(hi - lo, 0.4f, 4f);
         }
     }
 }

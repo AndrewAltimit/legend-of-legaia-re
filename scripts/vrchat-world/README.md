@@ -787,7 +787,9 @@ and the SDK's own components - no third-party package, no game data:
   third of a second on top of the idle clip. The hip is the measured
   thigh pivot where the rig has legs (so the thighs lie on the seat),
   else 45% of the rig's height (the one-piece bodies only bring their
-  arms forward). The hip turn is not a fixed angle from rest: the
+  arms forward; both heights fold the renderer bounds by hand - see
+  the struct-mutator trap under Troubleshooting). The hip turn is not a
+  fixed angle from rest: the
   controller sweeps the turn about the rig's lateral axis and keeps the
   one that lands the knee level and ahead ON SCREEN (`sitKnee` is the
   knee's angle below level, `sitArm` the hand's angle forward of
@@ -1426,6 +1428,18 @@ kit itself ships no third-party audio.
 
 ## Troubleshooting
 
+- **Villagers sit with their feet on the seat, or measure a third of
+  their height** (the walk's probe ray at shin height, the hip landing
+  0.3 m above the stool): a mutating struct method in UdonSharp.
+  `Bounds b = rs[0].bounds; b.Encapsulate(rs[i].bounds)` compiles, but
+  under Udon the extern mutates a *copy* and `b` stays the first
+  renderer's bounds - the head - so every villager measured 0.35 m tall
+  with its floor 0.7 m up and a negative hip. The kit folds renderer
+  bounds by hand (min/max of `bounds.min.y` / `bounds.max.y`); never
+  call `Encapsulate`, `Expand`, `SetMinMax` or any other struct mutator
+  on a local or field in U# code. The play-mode soak's "seat geometry"
+  lines (origin, hip, knee and sole above the stool floor) fail on a hip
+  more than 6 cm off the seat top or a sole above it.
 - **Doubled villagers standing inside each other** (town01: the two pairs
   of kids at the north square): a stale export. Retail stages some
   placements on another actor's exact tile and teleports them across town

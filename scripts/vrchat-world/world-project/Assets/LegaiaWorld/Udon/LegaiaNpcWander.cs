@@ -300,7 +300,7 @@ namespace LegaiaWorld
         /// True while the card-table host has this rig seated (read by
         /// the play-mode soak; the pose blends in over a third of a second).
         [HideInInspector] public bool seated;
-        private float hipHeight = -1f;
+        [HideInInspector] public float hipHeight = -1f;
         // The last thing the straight-ahead probe hit (diagnostics).
         private string lastHit = "";
 
@@ -465,11 +465,19 @@ namespace LegaiaWorld
             float floorY = transform.position.y;
             if (rends.Length > 0)
             {
-                Bounds wb = rends[0].bounds;
+                // Min/max by hand: Bounds.Encapsulate on a local struct is
+                // a no-op under Udon (the extern mutates a copy). With it,
+                // every rig measured as its FIRST renderer - the head: a
+                // 0.35 m villager, a floor 0.7 m up, a negative hip.
+                float lo = rends[0].bounds.min.y;
+                float hi = rends[0].bounds.max.y;
                 for (int i = 1; i < rends.Length; i++)
-                    wb.Encapsulate(rends[i].bounds);
-                npcHeight = Mathf.Clamp(wb.size.y, 0.3f, 2.5f);
-                floorY = wb.min.y;
+                {
+                    lo = Mathf.Min(lo, rends[i].bounds.min.y);
+                    hi = Mathf.Max(hi, rends[i].bounds.max.y);
+                }
+                npcHeight = Mathf.Clamp(hi - lo, 0.3f, 2.5f);
+                floorY = lo;
             }
             rayHeight = 0.5f * npcHeight;
 
