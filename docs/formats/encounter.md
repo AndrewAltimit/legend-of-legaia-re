@@ -332,14 +332,17 @@ so the field-VM bytecode drives the fight, not a manual API. (`engage_field_carr
 remains the direct entry point the auto-arm and tests call.)
 
 **The sparring prompt is not a Yes/No box, and its branch is decoded.** It is
-the ordinary MES-embedded **4-option picker** every talk menu in the game uses
+an ordinary MES-embedded **option picker** of the kind the talk menus use
 (`legaia_mes::scan_pickers` / `Picker::jump_target`; the runner is
 [`script-vm.md` § option-choice effects](../subsystems/script-vm.md#the-interaction-cursor-one-record-two-consecutive-scripts)),
-and the fight option is the one whose branch installs a scripted battle - the
-two-byte field-VM prefix `3E FF` followed by the formation row, `3E FF 04`
-here (`garmel`'s Zeto is `3E FF 09`, `rikuroa`'s Caruban `3E FF 11`). So there
-**is** a decline path: picking any of the other three runs that option's talk
-reply and no fight. The engine gates on it rather than on the dialog dismiss -
+four options wide here, and the fight option is the one whose branch installs a
+scripted battle - the two-byte field-VM prefix `3E FF` followed by the formation
+row (`garmel`'s Zeto is `3E FF 09`, `rikuroa`'s Caruban `3E FF 11`). The install
+is disc-visible at a decoded opcode boundary: town01 partition-1 **record 10**
+carries `3E FF 04` at record offset `+0x07F7`, three instructions past the
+`4A 10 00` `WaitFrames 16` at `+0x07EE`, and it is the only `3E FF` in the
+scene's talk records. So there **is** a decline path: picking any of the other
+three runs that option's talk reply and no fight. The engine gates on it rather than on the dialog dismiss -
 `spar_menu_of` scans each option's branch target for the install prefix and
 `World::carrier_menu` engages only when the cursor sits on that option
 (`world/types.rs`, `world/field_carriers.rs`). Keying on the disc op rather
