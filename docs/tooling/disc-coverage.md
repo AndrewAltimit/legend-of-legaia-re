@@ -419,10 +419,36 @@ overlay and the field overlay at different moments. Attributing by address alone
 counts a dump for every image whose span contains it.
 
 Rather than publish a number that quietly double-counts, each overlay row
-carries the share of its extents that could not be placed. Above 50% the *upper
+carries the share of its coverage that could not be placed. Above 50% the *upper
 bound* is replaced by **not meaningful**, and such rows are excluded from the
 `code` ratchet - a figure that moves with attribution rather than with real
 coverage would produce failures nobody can act on.
+
+### The discount has to be in the unit the figure is stated in
+
+That share was counted in **extents** while the figure it discounts is counted
+in **bytes**, and the two answers differ by two orders of magnitude. The corpus
+carries a long tail of 4-to-36-byte dumps - a `halt_baddata` stub Ghidra minted
+over a data word, a function tail the dumper resolved as a body of its own - and
+an extent count weighs each of those exactly as much as a 6 KB module. On the
+slot-B band that read as ~90% ambiguity over ~0.2% of the bytes, and it withheld
+the upper bound from most of the band on that basis.
+
+The byte share is `covered - at least` over `covered`: precisely the span the
+upper bound credits and the floor does not. It is not a looser test - it is the
+same test in the right unit, and it still reads **100%** for the two images
+(`summon_mushura`, `cast_earthquake`) that genuinely have no attributed byte, so
+it separates the real cases from the artefacts rather than passing everything.
+The extent count stays on the table as its own column, because the divergence
+between the two is itself the signal that a row's residue is fragments.
+
+A second defect sat underneath it. An extent that only ONE measured span
+contains needs no attribution - address arithmetic already answers it, which is
+why the attribution sweep writes no row for it - but the floor read "absent from
+the CSV" as "unplaced" and left it out. Every extent past the end of an image's
+VA-alias siblings was therefore counted against the image that unambiguously
+owns it. `battle_action`'s floor was 93.0% for that reason and is 99.7% once
+those extents count.
 
 ### Two bounds, because one of them is defined for every row
 
@@ -459,9 +485,19 @@ reads and applies:
 |---|---|---|
 | `unique` | one image holds those bytes there | credit only that image |
 | `identical` | several hold byte-identical code there | credit each of them |
+| `divergent` | several dumps at one extent, each placed in a different image | credit each of them - see below |
 | `misbased` | the bytes live at another VA entirely | credit nobody |
 | `gapped` / `data` | not a coherent function body at that VA | credit nobody |
 | `short` / `unresolved` / `no_disassembly` | the window cannot sign it | residue: stays ambiguous |
+
+`divergent` used to be residue, and that reading was wrong in a way worth
+naming: the class does not mean "we could not tell", it means *every* named
+image was told, positively, by a dump of its own. Two dumps sharing an
+`(entry, bytes)` key while resolving to different images is two images each
+holding a dumped body at that range, so each is credited exactly as `identical`
+is. Read as residue it withheld `battle_action`'s largest un-credited run,
+`0x801DABA4..0x801DB124`, from that overlay's own floor and kept 1408 bytes it
+has a dump of on the worklist.
 
 The key is `(entry, bytes)` - the **extent**, not the dump filename - so the file
 does not rot when a dump lands, is renamed, or is re-dumped at the same address.
@@ -502,23 +538,27 @@ The middle row is the one with a route forward, and it is the
 [static overlay pipeline](static-overlay-pipeline.md)'s job rather than this
 page's.
 
-There is a fourth shape, and it is a **defect in the comparison, not a fact
-about the corpus**: a dump whose opening window contains GTE (COP2) ops lands in
-that middle row no matter which image it came from. The canonicaliser both sides
-share (`canon` in `check-dump-base-integrity.py`) reads the dump's *printed*
-disassembly on one side and re-decodes the image's bytes with capstone on the
-other, and the two spell COP2 differently: Ghidra prints `mtc2 t7, 0x800`
-(register + control-register number) where capstone prints `mtc2 $t7, $at`, and
-a raw `cop2` op decodes to `.byte` under capstone and to `COP2` under Ghidra. Any
-window carrying one of those cannot match, so the extent is classed `unresolved`
-- "no extracted image holds these bytes at this VA or anywhere" - about bytes
-that demonstrably do. This is the same failure mode the `break 0x1c00`
-division-guard fold already fixes for one op; GTE is the unfolded case, and it
-bites the GPU/GTE emitters hardest, which is exactly where the remaining
-un-dumped runs are. The world-map render image (PROT 0901) is the visible
-casualty: its 6372-byte draw-leaf family is dumped, from that image, at that
-base, and still scores as residue, which drags the row's `code` floor **down**
-when the dump lands.
+There was a fourth shape, and it was a **defect in the comparison, not a fact
+about the corpus**: a dump whose opening window contains GTE (COP2) ops landed
+in that middle row no matter which image it came from. The canonicaliser both
+sides share (`canon` in `check-dump-base-integrity.py`) reads the dump's
+*printed* disassembly on one side and re-decodes the image's bytes with capstone
+on the other, and the two spell COP2 differently. The move/control half of the
+family was folded first; the **load/store** half (`lwc2` / `swc2`) survived that
+fold because its primary opcode is `0x32`/`0x3A` rather than `0x12` and its
+mnemonic is not in the folded set. There Ghidra spells the COP2 data register
+with a GPR ABI name (`lwc2 v0,0x0(s5)`) and capstone prints its number
+(`lwc2 $2, ($s5)`), so one side reads a register where the other reads an
+immediate. Any window carrying one of those could not match, and the extent was
+classed `unresolved` - "no extracted image holds these bytes at this VA or
+anywhere" - about bytes that demonstrably do.
+
+The world-map render image (PROT 0901) was the visible casualty: its draw-leaf
+family is dumped, from that image, at that base, and scored as residue, which
+dragged the row's `code` floor **down** when the dump landed. Folding `rt` out
+of `lwc2`/`swc2` on both sides places all five of those leaves plus one
+`summon_render` body, and the row goes from a withheld upper bound to
+`100.0%`. The remaining residue is the three shapes in the table above.
 
 ### The signature floor guards one question, not both
 

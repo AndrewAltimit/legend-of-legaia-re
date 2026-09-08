@@ -354,6 +354,35 @@ anchors are asserted against the disc bytes in
 [`crates/asset/tests/static_overlay_extract.rs`](../../crates/asset/tests/static_overlay_extract.rs)
 and against live RAM in the clean-copy test.
 
+### The link-time tables are corroboration, not a discriminator
+
+PROT 0898 carries three tables that name an entry point in every slot-B module
+([`cast-module.md`](../subsystems/cast-module.md#the-entry-tables-and-where-the-addresses-live)),
+so a VA in the slot-B window can be checked against a *link-time* claim about
+which module owns it. `attribute-dump-extents.py` decodes all three and emits a
+`resolved_by_table` class, and the shape of that rule is set by what the tables
+turn out to be worth:
+
+- They are applied **only** below the window floor - an extent whose dump
+  carries one or two instructions, where the byte test alone declines to name an
+  image. Above the floor the window is its own evidence.
+- The table's verdict is never taken on its own. A table VA routinely names
+  several modules, because many modules put their entry at the same offset; and
+  a dump printed at a table VA can hold some *other* module's bytes, which is the
+  case at `0x801F69EC` - the entry of PROT 0910, where five RAM-capture dumps
+  hold neither 0910's bytes nor any other extracted image's. The rule therefore
+  fires only when the table names exactly one module **and** that module's own
+  content reproduces the window at that VA.
+- It does **not** override `identical`. Byte-identical content in several
+  sibling modules is genuinely present in each of them, and a coverage figure
+  has to credit each; the table names only the module whose *entry* the VA is.
+
+Measured over the whole corpus the rule signs six extents, 48 bytes, and every
+one of them is an extent the short at-VA byte test already resolves to a single
+image on its own. The tables add provenance, not separation - which is worth
+recording, because the intuition that a link-time table must out-resolve a
+two-instruction window is exactly backwards here.
+
 ## Scope + limits
 
 - **An overlay image is exactly its entry, and older dumps are not.**

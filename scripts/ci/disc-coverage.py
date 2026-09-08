@@ -137,8 +137,13 @@ def read_dump_extents(funcs_dir):
 CREDIT_NOBODY = {"misbased", "data", "gapped"}
 # Classes that name the owning image(s) by bytes. `identical` names several
 # because they hold byte-identical code there, and each of them really does
-# contain those bytes, so each is credited.
-CREDIT_NAMED = {"unique", "identical"}
+# contain those bytes, so each is credited. `divergent` names several for the
+# opposite reason and is credited for the same one: it is several DUMPS at one
+# extent key, each of which the bytes place in a different image, so every named
+# image really does have that byte range dumped - from its own dump. Reading it
+# as residue withheld `battle_action`'s largest un-credited run
+# (`0x801DABA4..0x801DB124`) from its own floor and kept it on the worklist.
+CREDIT_NAMED = {"unique", "identical", "divergent", "resolved_by_table"}
 # Everything else (`short`, `unresolved`, `no_disassembly`) is residue: the
 # bytes could not place the extent, so it stays ambiguous for every image whose
 # span contains it.
@@ -441,13 +446,20 @@ def split_gap(image, base_va, a, b, floor=None):
     return out
 
 
-def cover_image(name, image, base_va, span, extents, attrib=None):
+def cover_image(name, image, base_va, span, extents, attrib=None, unambiguous=()):
     """Coverage of one loaded image. `span` is its byte length.
 
     `attrib` is the byte-attribution map. Where it places an extent in some
     other image - or in none - the extent is dropped from this image rather
     than counted for it. Pass `None` for an image with no VA aliasing
     (`SCUS_942.54`): the filter must not touch a row that is already exact.
+
+    `unambiguous` is the set of extent keys exactly ONE measured span contains.
+    Those need no attribution to belong here - address arithmetic already
+    answers it, which is why the attribution sweep does not write a row for
+    them - so they count toward the floor as well as toward the upper bound.
+    Without that set the floor silently punished an image for every extent
+    only its own span reaches, which is the opposite of what the number means.
     """
     lo, hi = base_va, base_va + span
     # One `jr ra` scan per image, threaded into every gap test below.
@@ -461,10 +473,12 @@ def cover_image(name, image, base_va, span, extents, attrib=None):
             dropped += 1
             continue
         mine.append((a, min(b, hi)))
-        # The floor takes only extents the bytes NAME for this image. An
-        # unambiguous image (`attrib is None`, i.e. SCUS) has nothing to
-        # attribute, so its floor is its numerator.
-        if attrib is None or (owners != "residue" and name in owners):
+        # The floor takes the extents the bytes NAME for this image, plus the
+        # ones no other measured span reaches. An unambiguous image
+        # (`attrib is None`, i.e. SCUS) has nothing to attribute, so its floor
+        # is its numerator.
+        if (attrib is None or (owners != "residue" and name in owners)
+                or (a, b) in unambiguous):
             floor.append((a, min(b, hi)))
     merged = merge(mine)
     covered = sum(b - a for a, b in merged)
@@ -592,6 +606,22 @@ def overlay_reports(extracted, extents, attrib=None):
     rows = tomllib.load(open(OVERLAY_MAP, "rb")).get("overlays", [])
     out = []
     spans = []
+    # The measured spans have to be known BEFORE the first row is covered: an
+    # extent's floor membership depends on how many spans contain it, which is
+    # a property of the whole map rather than of the row being measured.
+    for row in rows:
+        base, label = row.get("base_va"), row.get("label")
+        span = row.get("content_bytes") or row.get("clean_copy_bytes")
+        if not base or not span or not label:
+            continue
+        candidates = sorted(glob.glob(
+            os.path.join(extracted, "overlays", "overlay_%s_*.bin" % label)))
+        if not candidates:
+            continue
+        spans.append((base, base + min(span, os.path.getsize(candidates[0])), label))
+    unambiguous = {k for k in set(extents)
+                   if sum(1 for lo, hi, _ in spans if lo <= k[0] < hi) == 1}
+    spans = []
     for row in rows:
         base = row.get("base_va")
         # `content_bytes` is the overlay's OWN content length - its PROT entry's
@@ -615,7 +645,8 @@ def overlay_reports(extracted, extents, attrib=None):
         image = open(candidates[0], "rb").read()[:span]
         if len(image) < span:
             span = len(image)
-        row = cover_image(label, image, base, span, extents, attrib=attrib)
+        row = cover_image(label, image, base, span, extents, attrib=attrib,
+                          unambiguous=unambiguous)
         row["_image_span"] = (base, base + span)
         out.append(row)
         spans.append((base, base + span, label))
@@ -658,6 +689,23 @@ def overlay_reports(extracted, extents, attrib=None):
         kept = len(mine) - dropped
         row["ambiguous"] = resid
         row["ambiguous_pct"] = (100.0 * resid / kept) if kept else 0.0
+        # The share of this image's CREDITED BYTES that rests on an extent the
+        # attribution could not place - which is the same question the extent
+        # count above asks, in the unit the coverage figure is actually stated
+        # in. The two answers are not close: the corpus is full of 4-to-36-byte
+        # Ghidra fragments (a `halt_baddata` stub over a data word, a tail the
+        # dumper resolved as its own body), and each of those counts once in
+        # `ambiguous_pct` against a 6-KB module that counts once as well. On
+        # the slot-B modules that reads as ~90% ambiguity over ~0.2% of the
+        # bytes. `covered - covered_attributed` is exactly the byte span the
+        # upper bound rests on and the floor does not, so it is the honest
+        # discount on the upper bound, and it still reads 100% for the two
+        # images (`summon_mushura`, `cast_earthquake`) that really have no
+        # attributed byte at all.
+        cov = row["covered"]
+        row["ambiguous_bytes"] = cov - row["covered_attributed"]
+        row["ambiguous_bytes_pct"] = (
+            100.0 * row["ambiguous_bytes"] / cov) if cov else 0.0
     return out, totals
 
 
@@ -877,16 +925,19 @@ def render(scus, overlays, amb_totals, data, rejects, attributed):
         "as data - a zero word decodes to `nop`, so the statistic scores it as "
         "perfect code.")
     add("")
-    add("| image | base | span | dumps | in a dump | code gap | data gap | code denom | covered | at least | VA-ambiguous |")
-    add("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
+    add("| image | base | span | dumps | in a dump | code gap | data gap | code denom | covered | at least | VA-ambiguous | by extent |")
+    add("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
     rows = ([scus] if scus else []) + overlays
     for r in rows:
-        amb = r.get("ambiguous_pct")
-        # An image whose dumps are mostly claimable by a sibling overlay has no
-        # defensible UPPER bound. Say that ON THE ROW - a caveat in prose
-        # underneath does not travel when the table is quoted on its own. The
-        # floor is still reported there, because "no defensible upper bound"
-        # and "unmeasured" are different states and a blank cell conflates them.
+        amb = r.get("ambiguous_bytes_pct")
+        # An image whose credited bytes are mostly claimable by a sibling
+        # overlay has no defensible UPPER bound. Say that ON THE ROW - a caveat
+        # in prose underneath does not travel when the table is quoted on its
+        # own. The floor is still reported there, because "no defensible upper
+        # bound" and "unmeasured" are different states and a blank cell
+        # conflates them.
+        extcell = ("-" if r.get("ambiguous_pct") is None
+                   else "%.1f%%" % r["ambiguous_pct"])
         if amb is None:
             cover, ambcell = "**%.1f%%**" % r["pct"], "-"
         elif amb >= 50.0:
@@ -895,10 +946,10 @@ def render(scus, overlays, amb_totals, data, rejects, attributed):
             cover, ambcell = "<= %.1f%%" % r["pct"], "%.1f%%" % amb
         else:
             cover, ambcell = "**%.1f%%**" % r["pct"], "0%"
-        add("| `%s` | `0x%08X` | %d | %d | %d | %d | %d | %d | %s | %.1f%% | %s |" % (
+        add("| `%s` | `0x%08X` | %d | %d | %d | %d | %d | %d | %s | %.1f%% | %s | %s |" % (
             r["name"], r["base_va"], r["span"], r["dumps"], r["covered"],
             r["code_gap"], r["data_gap"], r["code_denominator"], cover,
-            r["pct_floor"], ambcell))
+            r["pct_floor"], ambcell, extcell))
     add("")
     add("**span** is the overlay's own content length - its PROT entry's sector "
         "extent, `(toc[p+3] - toc[p+2]) * 2048`, which is exactly the slice the "
@@ -915,19 +966,30 @@ def render(scus, overlays, amb_totals, data, rejects, attributed):
         "never hides one overlay's gap behind a sibling's dump.")
     add("")
     if attributed:
-        add("**VA-ambiguous** is the share of an image's extents that the *bytes* "
-            "could not place: extents whose entry address lands in more than one "
-            "mapped overlay span and which byte attribution left unresolved. An "
-            "extent the bytes assign to another image leaves this row entirely - "
-            "it is not this image's, so it is neither ambiguous for it nor "
-            "counted against it.")
+        add("**VA-ambiguous** is the share of an image's *covered bytes* that "
+            "the bytes could not place: the span the upper bound credits and the "
+            "floor does not, i.e. `covered - at least` over `covered`. An extent "
+            "the bytes assign to another image leaves this row entirely - it is "
+            "not this image's, so it is neither ambiguous for it nor counted "
+            "against it.")
     else:
-        add("**VA-ambiguous** is the share of an image's extents whose entry "
-            "address also lands inside another mapped overlay's span.")
+        add("**VA-ambiguous** is the share of an image's covered bytes whose "
+            "extent's entry address also lands inside another mapped overlay's "
+            "span.")
     add("At 50% or more the coverage figure is not reported, because what is "
         "left cannot support one.")
     add("")
-    add("The share counts **distinct extents**, not dump files: one extent can "
+    add("**by extent** is the same question counted in whole extents rather "
+        "than bytes, and it is kept beside the byte share because the two "
+        "diverge by two orders of magnitude on the slot-B modules. The corpus "
+        "carries many 4-to-36-byte dumps - a `halt_baddata` stub Ghidra made "
+        "out of a data word, a function tail the dumper resolved as its own "
+        "body - and an extent count weighs each of those the same as a 6 KB "
+        "module. Reading the extent share as the discount on a *byte* coverage "
+        "figure withheld an upper bound from most of the slot-B band over "
+        "fractions of a percent of its bytes.")
+    add("")
+    add("Both shares count **distinct extents**, not dump files: one extent can "
         "back many dumps, and weighting by how often the same bytes were dumped "
         "would measure the corpus rather than the image. It is the same "
         "denominator `dump-extent-attribution.csv` is keyed on, so the two can "
@@ -1102,10 +1164,13 @@ def snapshot(scus, overlays, data):
     out = {"code": {}, "code_floor": {}, "data": {}}
     for r in ([scus] if scus else []) + overlays:
         # `code` only ratchets figures that mean something as an UPPER bound. A
-        # row most of whose extents are claimable by a sibling overlay moves
-        # with dump attribution rather than with real coverage, so baselining
-        # its upper bound would produce failures nobody can act on.
-        if r.get("ambiguous_pct", 0.0) < 50.0:
+        # row most of whose covered BYTES are claimable by a sibling overlay
+        # moves with dump attribution rather than with real coverage, so
+        # baselining its upper bound would produce failures nobody can act on.
+        # The gate reads the byte share rather than the extent count for the
+        # reason the report gives: an extent count weighs a 4-byte Ghidra stub
+        # the same as a 6 KB module.
+        if r.get("ambiguous_bytes_pct", 0.0) < 50.0:
             out["code"][r["name"]] = round(r["pct"], 2)
         # `code_floor` ratchets every image, including the ones with no
         # defensible upper bound. The floor counts only extents the bytes NAME
@@ -1182,10 +1247,10 @@ def main():
             print("[disc-coverage] SCUS_942.54 code: %.1f%% (%d/%d bytes)" % (
                 scus["pct"], scus["covered"], scus["code_denominator"]))
         for r in overlays:
-            amb = r.get("ambiguous_pct", 0.0)
+            amb = r.get("ambiguous_bytes_pct", 0.0)
             if amb >= 50.0:
                 print("[disc-coverage] overlay %-22s >= %5.1f%%, no upper bound "
-                      "(%.1f%% of its extents are VA-ambiguous)"
+                      "(%.1f%% of its covered bytes are VA-ambiguous)"
                       % (r["name"], r["pct_floor"], amb))
             else:
                 print("[disc-coverage] overlay %-22s %5.1f%%%s" % (
