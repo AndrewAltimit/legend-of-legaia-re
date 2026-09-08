@@ -329,7 +329,7 @@ image:
 
 | VA | In the arena-init overlay | In PROT 0898 (battle) |
 |---|---|---|
-| `0x801D0ED8` | The dome contest-start restore **entry** `FUN_801D0ED8` - one-shot per contest (`jal 0x801CEBF0` only while `_DAT_8007BAC0 == 0`), restoring slot-0 HP / MP / SP from `+0x104` / `+0x108` / `+0x10C` ([`minigames-debug.md`](functions/minigames-debug.md#801d0ed8)). | The **call site** `jal 0x801DA780` in the battle-flow SM, which [`battle-formulas.md`](../subsystems/battle-formulas.md#initiative-key-seeding-fun_801da780) cites for initiative-key seeding. |
+| `0x801D0ED8` | The dome contest-start restore **entry** `FUN_801D0ED8` - refills party slot 0's HP / MP / SP to their maxima, called once per contest from `0x801CEBF0` ([`minigames-debug.md`](functions/minigames-debug.md#801d0ed8)). | The **call site** `jal 0x801DA780` in the battle-flow SM, which [`battle-formulas.md`](../subsystems/battle-formulas.md#initiative-key-seeding-fun_801da780) cites for initiative-key seeding. |
 
 When two pages cite the same address for different work, check the image before
 assuming one of them is wrong.
