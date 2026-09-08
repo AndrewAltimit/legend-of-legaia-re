@@ -92,6 +92,7 @@ your disc ──legaia-extract──▶ extracted/ ──legaia-engine export-gl
 | `world-project/Assets/LegaiaWorld/Shaders/SlotReelFace.shader` | Reel-face cutout + retail's depth-cued shade per pixel (`clamp(0xB4 - (z+0x200)*0x21C>>9)`, blend `texel*shade/128`): bright at the payline, black past ~48 degrees - the fade that caps the reel window. `Cull Off` (the composition is x-mirrored). |
 | `world-project/Assets/LegaiaWorld/Shaders/SlotCutout.shader` | Unlit cutout for everything else on the slot screen: `Cull Off` for the mirrored composition (the legacy back-culled cutout would render nothing) plus a `_Color` tint for the black reel backdrop. |
 | `sync-to-project.ps1` | Copies the kit's `Udon/` + `Editor/` + `Shaders/` + `Settings/` into a Unity project, refusing when a project-side file is newer (an in-Unity edit that must be ported back first). The kit is the source of truth; never edit the project copies. |
+| `headless-check.ps1` | Runs one of the kit's headless checks against a **project copy** (`-Project C:\lgw-qa -Method LegaiaWorld.LegaiaBatchChecks.CommonPrefabs [-Sync] [-PlayMode] [-Extra @(...)]`): optional kit sync + reimport touch, the editor launched detached with the log inside the copy, the orphaned licensing client killed, `[UdonSharp]` / `error CS` lines surfaced first. Its header carries the robocopy recipe and why `Bee` / `ilpp.pid` must be excluded. |
 | `fix-glb-uvsets.py` | Repairs a glb whose materials sample UV set 2/3 (Blender bakes against a late UV layer): glTFast only supports sets 0/1 and fails the whole import with `UVMulti` errors, while web viewers show the file fine. Losslessly rewires each primitive's sampled set onto `TEXCOORD_0`; refuses when a material mixes sets. |
 
 ## Step 1 - export a scene
@@ -702,7 +703,9 @@ Unity.exe -batchmode -nographics -projectPath <copy>
 
 No `-quit`: the run drives itself from `EditorApplication.update` and
 exits the editor itself (0 pass, 1 an assertion failed, 3 play mode never
-started, 4 the wall-clock watchdog). `night` forces night for the first
+started, 4 the wall-clock watchdog). `headless-check.ps1 -PlayMode` gets
+the `-quit` / no-`-quit` distinction right for you and puts the log where
+the editor can actually open it. `night` forces night for the first
 65% of the budget then dawn, and fails on a villager that never got
 inside, never came back out, whose door never swung, or that gave up on
 the trip. `day` forces day for the whole budget and REPORTS instead -
