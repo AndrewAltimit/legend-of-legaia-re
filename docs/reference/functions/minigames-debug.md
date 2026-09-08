@@ -77,7 +77,8 @@ Ports: `legaia_engine_ui::other_game_hud` (the two quad emitters + the decimal r
 | `801CF074` (true VA; the `801c085c` dump is mis-based, `+0xE818`) | **Contest score-tally screen** - the six-row label + number readout, and the count-up that fills it. [details](#the-contest-score-tally-screen-fun_801cf074). Correctly based dump `overlay_arena_init_0977_801cf074.txt` (2044 B, taken from the static PROT 0977 image at `0x801CE818`); the older `see ghidra/scripts/funcs/overlay_0977_other_game_801c085c.txt` prints the same bytes at the wrong VA. |
 | `801CEA6C` | **Contest entry** - re-entered after every leg. Advances the mode-24 sub-id word `_DAT_8007BAC0` by one when it is already non-zero (`0x801CEC00`), decodes `(course, round)` out of its low byte into `DAT_801D1A90` / `DAT_801D1A94`, picks the opening course from story flags `0x536`/`0x537`/`0x538`, clamps the Master course's length against `0x378`/`0x382`/`0x471`, and routes the hub on `DAT_8007BD60 & 0x80` (the party-standing bit). [details](../../subsystems/minigame-muscle-dome.md#two-state-machines-not-one). |
 | `801D1184` | **Leg score rows** - the four count-up lanes a cleared leg is worth: `round*2`, `min(turns_taken, 8)` and `DAT_801D1A5C[min(outcome,3)]` (`= [8,12,4,2]`), each `× max_hp / 100` through the `0x51EB851F` reciprocal, plus the raw `(course, round)` score cell. The first three drain into the HP-restore accumulator `DAT_801D1AC8`, not into the tally. [details](../../subsystems/minigame-muscle-dome.md#what-a-cleared-leg-is-worth). |
-| `801D0ED8` | **Contest-start restore** - refills the fighter's HP/MP/SP to their maxima on the `0x80084140` window, and, only when `DAT_801D1A90 != 0` (`bnez` at `0x801D0EE8`), first zeroes the four equipment bytes `+0x75E`/`+0x75F`/`+0x760`/`+0x762`. So "no equipment" is an Expert/Master rule; the Beginner course keeps its gear. |
+| `801D0ED8` | **Contest-start restore** - refills the fighter's HP/MP/SP to their maxima on the `0x80084140` window, and, only when `DAT_801D1A90 != 0` (`bnez` at `0x801D0EE8`), first zeroes the four equipment bytes `+0x75E`/`+0x75F`/`+0x760`/`+0x762`. So "no equipment" is an Expert/Master rule; the Beginner course keeps its gear. It runs **once per contest**, not once per leg ([details](#801d0ed8)). Port `legaia_engine_core::muscle_dome::apply_contest_start_restore`. |
+| `801D00F8` | **Arena backdrop**, `(brightness)` clamped into `0..=0xFF`. On `*(0x801D1AE0) == 0` it sets the OT depth `*(0x801D1AA8) = 0x3E8` and lays a 3x2 grid of record-2 quads through `FUN_801D08EC` at `(i<<7, j<<7)`, then the full-screen `POLY_G4` gradient `FUN_801D1610(0, 0, 0x140, 0xF0)`; otherwise it hand-writes two `POLY_GT4` packets into the scratchpad draw context. Packet-only, so the port draws it from `engine-ui`'s own list - filed `[prim_builder]` in `scripts/ci/port-catalog-ignore.toml`. `overlay_0977_slotA_801d00f8.txt`. |
 | `801CF870` | **Contest hub** (and the intro / title / interval screens it draws) - dispatches the hub state `DAT_801D1A78` through the 51-entry jump table at `0x801CE990`; states `0`, `1`..`6`, `0x0A`..`0x0C`, `0x14`..`0x16` and `0x32` are real, the other 37 route to its default arm. State `0x0C` is the between-leg HP restore (`0x801CFE7C`), `0x32` settles. Every state but `0x32` tails through the `(course, round)` re-pack at `0x801D00B8`. Draws the "Welcome" strip (record 3) centred on `(160, 120)`, the course-title art (record 4) at `(160, 64)` under a shrinking scale ramp with a variant-2 shadow at `(168, 72)`, and the INTERVAL heading (record 16) at `(160, 32)`; tails into `FUN_801CF074` with its own fade counter. |
 | `801D02F0` | **ROUND banner** - record 0 centred on `(120, 120)` in both variants, then `DAT_801D1A94 + 1` as one digit at `x=240` or two at `x=240`/`x=264`, each in both variants. |
 | `801D15C8` | **ROUND digit glyph** - sets record **1**'s `u0` to `digit * 24` and delegates to `FUN_801D050C` with the index forced to 1. Not the decimal readout's record 9. |
@@ -104,10 +105,14 @@ so the byte census stops re-proposing it:
 
 | Extent | What it is part of |
 |---|---|
-| `0x801CEAC4` | the contest entry `801CEA6C` - its audio (`FUN_80062004`) + actor-spawn (`FUN_80020DE0`) arm |
-| `0x801CEF6C` | the bring-up ahead of the tally screen `801CF074`: three `FUN_8005FB84` audio arms, two `FUN_800266E0` / `FUN_80026520` pairs, one `FUN_8001FC00` stream |
-| `0x801CFF44` | the contest hub `801CF870` - the arm that `j`s to the `(course, round)` re-pack at `0x801D0098` and calls `0x801D00F8` |
-| `0x801D0344` | the ROUND banner family - five `jal 0x801D15C8` digit draws bounded by `DAT_801D1A94` |
+| `0x801CEAC4` | the contest entry `801CEA6C` - its audio (`FUN_80062004`) + actor-spawn (`FUN_80020DE0`) arm. The word above it is `j 0x801CEAD4`, jumping over it: it is the second arm of a two-way select, and its own second instruction reads `0x576(v1)` with `v1` set before the join |
+| `0x801CEF6C` | the bring-up ahead of the tally screen `801CF074`: three `FUN_8005FB84` audio arms, two `FUN_800266E0` / `FUN_80026520` pairs, one `FUN_8001FC00` stream. It loads `a1` for the `jal 0x8001E54C` at `0x801CEF70` whose `a0` was loaded at `0x801CEF68` - mid-argument-setup |
+| `0x801CFF44` | the contest hub `801CF870` - the arm that `j`s to the `(course, round)` re-pack at `0x801D0098` and calls `0x801D00F8`. Its two words are that `j` plus the delay-slot store of the counter incremented at `0x801CFF40` |
+| `0x801D0344` | the ROUND banner family - five `jal 0x801D15C8` digit draws bounded by `DAT_801D1A94`. The enclosing body is `FUN_801D02F0`, the ROUND banner itself; the word above `0x801D0344` is the delay slot of a `jal 0x801D050C` |
+
+No `jr ra` sits between the image head and either `0x801CEAC4` or `0x801CEF6C`, and
+the first one in the image is at `0x801CF06C` - so both are interior to the same
+body, the contest entry `FUN_801CEA6C`.
 
 ## Dev modules OTHER2 / OTHER3 (PROT 0973 / 0974)
 
@@ -126,6 +131,26 @@ image before; both partition cleanly at their own base.
 | `801CE85C` | **OTHER3 bring-up** (PROT 0974, base + `0x44`, 1292 B) - the largest routine in the image: three dev prints, four `FUN_8001FC00` asset streams, three `FUN_8001E54C` SEQ arms, six `FUN_8005FB84` audio calls and five `FUN_8003DE7C` actor stages. `overlay_other3_dev_0974_801ce85c.txt`. |
 | `801CED68` | **OTHER3 primitive emitter** (280 B). Takes the scratchpad draw context `0x1F800314`, bumps its `+0x8C` packet cursor by `0x18` per primitive, writes a GP0 command word built from `0x28800080`, and links through `FUN_8003D2C4`. `overlay_other3_dev_0974_801ced68.txt`. |
 | `801CEE80` | **OTHER3 init** (164 B) - the sub-id-2 entry, same shape as OTHER2's: `FUN_8001DAF8(0x140)`, `FUN_8001DCF8(0xB)`, one `FUN_80020DE0` spawn from `0x801CEF24`, then the CD/streaming arms `FUN_800654D8(4)` / `FUN_800655AC`. `overlay_other3_dev_0974_801cee80.txt`. |
+
+
+### PROT 0974's tail is not PROT 0974's code
+
+The last `0x6FC` bytes of the OTHER3 image (`0x3104..0x3800`, VA
+`0x801D191C..0x801D2018`) are **byte-identical to the same file offsets of the
+fishing overlay PROT 0972**, and they are fishing code, not dev-module code.
+The operands settle it rather than the byte match: the run materialises
+`0x801D9158` and calls `0x801D63B0`, both of which lie past OTHER3's own
+`0x3800` of content (`0x801CE818 + 0x3800 = 0x801D2018`) and inside PROT 0972's
+`0xB000`. A routine cannot call an address its image does not contain.
+
+The one worklist address in that run, `0x801D1978`, is therefore a fishing
+address and an **interior** one: the enclosing body in PROT 0972 starts at
+`0x801D1870` (frame `0x40`, matching the `addiu sp,sp,0x40` epilogue at
+`0x801D1A8C`), the address itself lands mid-way through a run of `sh` packet-field
+stores whose `v0` / `v1` are set in the two words above it, and nothing in any
+image references it. The same shape holds for PROT 0979 - see the `801D2784`
+row in [`game-modes.md`](game-modes.md) - so treat a small slot-A overlay's
+trailing run as build-buffer residue until its operands say otherwise.
 
 ## FIELD BACK READ overlay (PROT 0978)
 
@@ -217,6 +242,31 @@ at draw time. Two consequences: `0` renders as a single `0`, and a **negative
 value renders nothing at all**. The pen advances 8 px per slot including the
 skipped ones, and the digit record's CLUT is offset by the palette argument
 for the call and restored to `0x7D86` on return.
+
+### `801D0ED8`
+
+The restore is **first-entry only**. `FUN_801CEA6C` tests the mode-24 sub-id
+word `_DAT_8007BAC0` at `0x801CEB58` and, when it is already non-zero, jumps
+straight to the re-entry arm at `0x801CEC00` - past the `jal 0x801D0ED8` at
+`0x801CEBF0`. So a contest refills the fighter once, when it opens, and a leg
+boundary never does. The course byte the callee gates on is written in that
+`jal`'s own delay slot (`sw v1, 0x1A90(v0)`), which is why "no equipment" keys
+on the course and not on the round.
+
+The three restored pairs are `(max, cur)` halfwords on the live game-state
+window - `0x6CC/0x6CE`, `0x6D0/0x6D2`, `0x6D4/0x6D6` - i.e. the **lead** party
+record's `+0x104/+0x106` HP, `+0x108/+0x10A` MP and `+0x10C/+0x10E` SP
+([`save-record.md`](../../formats/save-record.md); `0x80084708 - 0x80084140 =
+`0x5C8`). There is no per-character stride in the instruction stream, so party
+slot 0 is the only record touched.
+
+The four bytes the stripped arm zeroes are `+0x75E` / `+0x75F` / `+0x760` /
+`+0x762` = record `+0x196` armour, `+0x197` head gear, `+0x198` weapon and
+`+0x19A` leg gear. It writes **neither** the Seru-lock byte `+0x199` nor the
+three accessory bytes `+0x19B..+0x19D`, so a stripped fighter keeps its
+accessories and its summon access. Retail then runs the per-character stat
+aggregator `FUN_80042558` **before** the copy, so the maxima the refill hands
+over are the ones recomputed under the stripped equipment.
 
 ### `801CFE20` / `801CFE5C`
 

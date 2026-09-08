@@ -269,6 +269,17 @@ contest start, and - only when `course != 0`, behind a `bnez` at `0x801D0EE8`
 So "no equipment" is an **Expert/Master** rule; the Beginner course keeps its
 gear. Settlement (`0x801D0FDC`) restores the whole saved SC block.
 
+Two details separate it from the between-leg restore above. It is a **one-shot**:
+the arena entry reaches its `jal` at `0x801CEBF0` only on the `_DAT_8007BAC0 == 0`
+side of the `bnez` at `0x801CEB58`, and a re-entered arena jumps to `0x801CEC00`
+instead - so a leg boundary never refills. And the four bytes it zeroes are the
+*gear* slots only (record `+0x196` armour, `+0x197` head, `+0x198` weapon,
+`+0x19A` leg gear): the Seru-lock byte `+0x199` and the three accessory bytes
+`+0x19B..+0x19D` are untouched, so a stripped fighter keeps its accessories and
+its summon access. Port `engine-core::muscle_dome::apply_contest_start_restore`,
+handed to the host by `DomeContest::take_start_restore` and applied in
+`World::enter_muscle_dome`.
+
 ## Contest settlement + the one-shot prize
 
 The `0977` door/init slot carries the **contest settlement** routine
