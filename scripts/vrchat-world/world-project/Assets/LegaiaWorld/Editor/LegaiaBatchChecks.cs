@@ -611,6 +611,14 @@ namespace LegaiaWorld
                 Fail("LegaiaNpcHandItem / LegaiaVisitSpot are not compiled - read " +
                      "the [UdonSharp] lines above: one U# compile error fails every wire");
             var openStands = new List<Transform>();
+            // KEEP-OUT: nobody may be parked in a doorway. The zones are the
+            // ones the pass itself built (the manifest's teleport trigger
+            // boxes plus every home's door / tile / landing / exit / emerge
+            // marker); a stand point inside one is a villager standing in a
+            // tile a player walks through, which is what this asserts away.
+            var keepOut = LegaiaLivingTown.LastKeepOutZones();
+            float indoorCap = LegaiaLivingTown.LastIndoorKeepOut;
+            var inZone = new List<string>();
             foreach (var st in container.GetComponentsInChildren(stationType, true))
             {
                 int kind = (int)stationType.GetField("kind").GetValue(st);
@@ -618,6 +626,9 @@ namespace LegaiaWorld
                 if (standPoint == null)
                     Fail(Path(st.transform) + " has no standPoint");
                 Vector3 p = standPoint.position;
+                if (!LegaiaLivingTown.KeepOutOk(keepOut, p,
+                        (bool)stationType.GetField("indoors").GetValue(st), indoorCap))
+                    inZone.Add(Path(st.transform));
                 if (kind == 0)
                 {
                     propStations++;
@@ -742,6 +753,20 @@ namespace LegaiaWorld
             if (openStands.Count < 4)
                 Fail("only " + openStands.Count + " outdoor stand spot(s): the " +
                      "daytime villagers have nowhere to walk to");
+            if (keepOut.Count < 1)
+                Fail("no keep-out zones were built - the manifest has doorway " +
+                     "teleports, so nothing is stopping a villager standing in one");
+            if (inZone.Count > 0)
+                Fail(inZone.Count + " station stand point(s) sit inside a " +
+                     "doorway/teleport keep-out zone:\n  " +
+                     string.Join("\n  ", inZone));
+            Debug.Log("[Legaia] living town: " + keepOut.Count +
+                " keep-out zone(s) from " + LegaiaLivingTown.LastKeepOutTeleports +
+                " teleport trigger box(es) + " + LegaiaLivingTown.LastKeepOutHomes +
+                " home marker(s); " + LegaiaLivingTown.LastSpotsMoved +
+                " stand spot(s) relocated clear of one, " +
+                LegaiaLivingTown.LastSpotsDropped + " dropped; every station " +
+                "stand point is outside every zone.");
 
             // --- Brains ---------------------------------------------------------
             var brainType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaNpcBrain");
@@ -1041,6 +1066,36 @@ namespace LegaiaWorld
                 Debug.LogWarning("[Legaia] selftest: " + (outside - homed) +
                     " villager(s) have no home - " + homes + " door(s) x cap " +
                     cap + " cannot seat " + outside);
+            }
+
+            // --- the night host --------------------------------------------
+            // `living_town.night_host` names a villager and a station path;
+            // the villager's brain must carry that path (it resolves the
+            // station by name at Start - the card table is another pass's
+            // object and may not be built in this scene at all).
+            if (!string.IsNullOrEmpty(settings.nightHostNpc))
+            {
+                int hosts = 0;
+                foreach (Transform child in npcRoot)
+                {
+                    var b = child.GetComponent(brainType);
+                    if (b == null)
+                        continue;
+                    string path = ReadVar(b, "nightHostStationPath") as string;
+                    if (string.IsNullOrEmpty(path))
+                        continue;
+                    hosts++;
+                    if (path != settings.nightHostStation)
+                        Fail(child.name + " hosts '" + path + "' but the settings " +
+                             "say '" + settings.nightHostStation + "'");
+                }
+                if (hosts != 1)
+                    Fail(hosts + " night host(s) wired for living_town.night_host '" +
+                         settings.nightHostNpc + "', expected exactly 1 - the token " +
+                         "must name an eligible (placed, not static, not removed) " +
+                         "villager");
+                Debug.Log("[Legaia] living town: night host wired to " +
+                    settings.nightHostStation + ".");
             }
 
             Debug.Log("[Legaia] SELFTEST OK: living town wired - " + wired +

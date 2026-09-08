@@ -97,6 +97,23 @@
 // that, rest-yaw-0 rigs reduce exactly to the previously verified
 // behaviour and the rotated family lands on its true axis.
 //
+// KEEP-OUT ZONES: `keepOut` is a flat list of world spheres (xyz + radius)
+// the living-town pass fills from the manifest's doorway-teleport trigger
+// boxes and every home's door tile / landing / exit / emerge marker. The
+// autonomous stroll never aims a target into one, so a villager left to
+// itself cannot end up loitering in the tile a player walks through. The
+// radius is clamped by `keepOutCap`, which the brain pulls in while the
+// villager is indoors - an interior room is barely wider than the
+// village-sized zone around its own way out. The night door trip is not
+// filtered here at all: it is a COMMANDED walk, and stepping onto the
+// threshold is the one legitimate visit to a doorway.
+//
+// GESTURES: `Nod(seconds)` pitches the facing anchor (the torso) about the
+// world lateral axis for a moment - the attention beat a villager gives
+// when it takes its turn in a conversation. Like the gait and the sitting
+// pose it is written in LateUpdate, over whatever the Animator posed this
+// frame, so it adds no Animator state and never fights a clip.
+//
 // WALK ANIMATION: with `locoAnimator` wired to an idle/walk controller
 // (the living-town pass generates one when a rig family has a clip that
 // measures as a walk cycle), the controller crossfades between the two
@@ -262,6 +279,24 @@ namespace LegaiaWorld
                  "arms point (degrees) - hands toward the table.")]
         public float sitArm = 35f;
 
+        [Tooltip("KEEP-OUT zones the autonomous stroll never aims into: " +
+                 "xyz = a world centre, w = its radius (metres). The living-" +
+                 "town pass fills these from the manifest's doorway-teleport " +
+                 "trigger boxes and every home's door tile / landing / exit / " +
+                 "emerge marker, so a villager left to its own devices never " +
+                 "ambles onto the tile a player walks through. Empty = no rule.")]
+        public Vector4[] keepOut;
+
+        [Tooltip("Every keep-out radius is clamped to this. The brain drops it " +
+                 "while the villager is INDOORS: an interior room is barely " +
+                 "wider than the village-sized zone around its own way out, " +
+                 "and the full radius would leave the room with nowhere to " +
+                 "stand at all. Outdoors it is left wide open.")]
+        [HideInInspector] public float keepOutCap = 1e9f;
+
+        [Tooltip("Gesture: how far the torso pitches at the peak of a nod (degrees).")]
+        public float nodDegrees = 7f;
+
         /// Why the last commanded walk reported Blocked() - the probe hit,
         /// or the watchdog that fired. Read by the brain's failure record
         /// and the soak harness; empty while a walk is going well.
@@ -303,6 +338,20 @@ namespace LegaiaWorld
         [HideInInspector] public float hipHeight = -1f;
         // The last thing the straight-ahead probe hit (diagnostics).
         private string lastHit = "";
+
+        // Gesture (Nod): a short pitch of the facing ANCHOR about the world
+        // lateral axis, composed over whatever the Animator posed this
+        // frame - the same LateUpdate trick the gait and the sitting pose
+        // use, so no Animator state is added for it. The anchor is the
+        // torso, which every clip rewrites every frame; the delta we wrote
+        // is undone first on the rig whose anchor nothing else animates,
+        // so a nod can never accumulate into a permanent lean.
+        private float nodStart;
+        private float nodSeconds;
+        private float nodAmp;
+        private bool nodApplied;
+        private Quaternion nodDelta = Quaternion.identity;
+        private Quaternion nodWrote = Quaternion.identity;
 
         // --- Command state ------------------------------------------------
         // mode 0 = autonomous stroll (the default), 1 = commanded walk to
@@ -1088,7 +1137,89 @@ namespace LegaiaWorld
         {
             if (locoAnimator == null)
                 Gait();
+            NodPose();
             SitPose();
+        }
+
+        /// A short nod / lean, for a villager taking its turn in a
+        /// conversation or greeting somebody: `seconds` long, at
+        /// `nodDegrees` at the peak. Cosmetic and local - no state, no
+        /// Animator, no sync. Calling it again restarts the gesture.
+        public void Nod(float seconds)
+        {
+            nodSeconds = seconds < 0.2f ? 0.2f : seconds;
+            nodStart = Time.time;
+            nodAmp = 1f;
+        }
+
+        /// True while a nod is playing (the brain does not stack them).
+        public bool Nodding()
+        {
+            return nodAmp > 0f && Time.time < nodStart + nodSeconds;
+        }
+
+        // The gesture itself. Two beats of pitch about the world lateral
+        // axis (perpendicular to the direction the mesh visibly faces), on
+        // an envelope that is zero at both ends - so it eases in and out
+        // and never leaves the torso tipped. Written on the anchor AFTER
+        // the Animator, like the gait and the sitting pose.
+        void NodPose()
+        {
+            if (anchor == null)
+                return;
+            // Undo last frame's delta first, but only on a rig whose anchor
+            // nothing else rewrote: with an Animator running (every rig the
+            // builder wires) the pose is fresh and there is nothing to undo.
+            if (nodApplied)
+            {
+                if (Quaternion.Angle(anchor.rotation, nodWrote) < 0.01f)
+                    anchor.rotation = Quaternion.Inverse(nodDelta) * anchor.rotation;
+                nodApplied = false;
+            }
+            if (nodAmp <= 0f)
+                return;
+            float k = (Time.time - nodStart) / (nodSeconds < 0.2f ? 0.2f : nodSeconds);
+            if (k >= 1f)
+            {
+                nodAmp = 0f;
+                return;
+            }
+            Vector3 lateral = Vector3.Cross(Vector3.up, lastForward);
+            if (lateral.sqrMagnitude < 1e-6f)
+                return;
+            // sin(2 pi k) gives the two beats, sin(pi k) the fade at both
+            // ends: the product starts and finishes at exactly zero.
+            float ang = nodDegrees * nodAmp *
+                Mathf.Sin(k * Mathf.PI * 2f) * Mathf.Sin(k * Mathf.PI);
+            nodDelta = Quaternion.AngleAxis(ang, lateral.normalized);
+            anchor.rotation = nodDelta * anchor.rotation;
+            nodWrote = anchor.rotation;
+            nodApplied = true;
+        }
+
+        // --- Keep-out zones ---------------------------------------------------
+
+        /// True when `p` is outside every keep-out zone (or there are none).
+        /// Horizontal distance, with a height band: a doorway on a hut up
+        /// the hill must not fence off the path underneath it.
+        public bool KeepOutClear(Vector3 p)
+        {
+            if (keepOut == null)
+                return true;
+            for (int i = 0; i < keepOut.Length; i++)
+            {
+                Vector4 z = keepOut[i];
+                float r = z.w < keepOutCap ? z.w : keepOutCap;
+                if (r <= 0f)
+                    continue;
+                float dy = p.y - z.y;
+                if (dy < -2f || dy > 2f)
+                    continue;
+                float dx = p.x - z.x, dz = p.z - z.z;
+                if (dx * dx + dz * dz < r * r)
+                    return false;
+            }
+            return true;
         }
 
         // The sitting pose, over whatever the idle clip posed this frame:
@@ -1608,6 +1739,14 @@ namespace LegaiaWorld
                     return;
                 }
                 cand = onMesh.position;
+            }
+            // ...and never into a doorway or onto a teleport landing: an
+            // ambling villager standing in the tile a player walks through
+            // is the one place in the village nobody should ever be.
+            if (!KeepOutClear(cand))
+            {
+                target = transform.position;
+                return;
             }
             Vector3 d = cand - transform.position;
             d.y = 0;

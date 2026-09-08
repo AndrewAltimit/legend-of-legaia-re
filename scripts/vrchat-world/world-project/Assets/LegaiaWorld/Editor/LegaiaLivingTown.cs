@@ -44,6 +44,29 @@
 // capped per door, so every client agrees on who lives where with no synced
 // state at all.
 //
+// KEEP-OUT ZONES. Nobody is parked in a doorway. The pass lifts a world
+// sphere from every one of the manifest's doorway-teleport trigger boxes
+// (both directions: a cave mouth is as much a thing a player walks into as
+// a front door) and from every home's door stand spot, doorway tile,
+// landing, way out and village-side landing, and MakeStation - which every
+// stand point in the town goes through - pushes a spot out of a zone it
+// landed in, or drops it. The zones are wired onto the director (ad-hoc
+// conversations) and onto every locomotion controller (the autonomous
+// stroll), so the rule holds at run time as well as at build time. Indoors
+// the radius is clamped to `indoorKeepOut`: retail's interior rooms are a
+// landing and its way out a metre apart, and at the village radius a room
+// would have nowhere to stand at all. The NIGHT DOOR TRIP is exempt by
+// construction - it is a scripted sequence, not a station, and stepping
+// onto the tile is the one legitimate visit to a doorway in the town.
+//
+// THE NIGHT HOST. `living_town.night_host` in the scene settings pins one
+// villager to one station for the whole night (town01: Cara at the card
+// table's stool 0). The wiring here is a single string field on that
+// villager's brain - the scene PATH of the station - because the station
+// belongs to another pass's object, which may not even be built when this
+// pass runs; the brain resolves it by name at Start and the director runs
+// the shift. See LegaiaTownDirector / LegaiaNpcBrain.
+//
 // MIRRORS. Every position here is computed in the manifest frame (which is
 // the built root's LOCAL frame, one G2U flip from the manifest) and every
 // direction that must survive into world space is taken as a difference of
@@ -78,9 +101,29 @@ namespace LegaiaWorld
         [Tooltip("Stand spots along the village paths, further out than the " +
                  "viewpoint ring and spread over the whole walkable area.")]
         public int landmarkStands = 10;
-        [Tooltip("A stand spot beside each house door, so a villager can call " +
-                 "on a neighbour (it stands a step to the side and knocks).")]
+        [Tooltip("A stand spot on each house's DOORSTEP, so a villager can " +
+                 "call on a neighbour - well back from the door, never beside it.")]
         public bool doorwayStands = true;
+        [Tooltip("How far from the doorway tile a doorstep stand spot sits " +
+                 "(meters). It must clear the doorway's keep-out zone: a " +
+                 "villager sweeping a step one pace from a teleport tile is " +
+                 "a villager standing in a door a player walks through.")]
+        public float doorstepStandDistance = 2.6f;
+        [Tooltip("KEEP-OUT: how far clear of a doorway-teleport trigger BOX " +
+                 "a stand spot must be (meters).")]
+        public float keepOutMargin = 1.5f;
+        [Tooltip("KEEP-OUT: the radius of the zone around a home's door " +
+                 "stand spot, landing, way out and village-side landing " +
+                 "(meters). These are markers, not boxes.")]
+        public float keepOutHomeRadius = 1.2f;
+        [Tooltip("KEEP-OUT: every zone radius is clamped to this INDOORS - " +
+                 "an interior room is barely wider than the village-sized " +
+                 "zone around its own way out. Wired onto every brain and " +
+                 "the director as well, so build time and run time agree.")]
+        public float indoorKeepOut = 0.75f;
+        [Tooltip("KEEP-OUT: how far a stand spot inside a zone may be pushed " +
+                 "out to save it (meters). Past this it is dropped instead.")]
+        public float keepOutPush = 1.6f;
         [Tooltip("A stand spot in front of each of the village's fixed " +
                  "residents, so walking villagers go and see them.")]
         public bool visitSpots = true;
@@ -224,6 +267,10 @@ namespace LegaiaWorld
                 homesRoot.transform.SetParent(container.transform, false);
                 for (int i = 0; i < homes.Count; i++)
                     MakeHomeMarkers(root.transform, homesRoot.transform, homes[i], i);
+                // The keep-out zones come next, before a single station is
+                // planted: every builder below funnels through MakeStation,
+                // which refuses (or relocates) a spot inside one.
+                BuildKeepOut(root, manifest, homes, o);
 
                 var stationsRoot = new GameObject("stations");
                 stationsRoot.transform.SetParent(container.transform, false);
@@ -282,6 +329,9 @@ namespace LegaiaWorld
             foreach (var h in homes)
                 if (h.doorProp != null)
                     doorProps++;
+            Debug.Log("[Legaia] living town: keep-out rule moved " + s_spotsMoved +
+                " stand spot(s) clear of a doorway and dropped " + s_spotsDropped +
+                " that could not be moved.");
             Debug.Log("[Legaia] living town: " + brains.Count + " villager(s), " +
                 homes.Count + " home(s) (cap " + o.homeCap + ", " + doorProps +
                 " with a door prop to swing), " +
@@ -778,12 +828,214 @@ namespace LegaiaWorld
             return false;
         }
 
+        // --- Keep-out zones ---------------------------------------------------------
+        // Where a villager may never be PARKED: the manifest's doorway
+        // teleport trigger boxes (both directions - a cave mouth is as much
+        // a thing a player walks into as a front door) and every home's
+        // door stand spot, doorway tile, landing, way out and village-side
+        // landing.
+        //
+        // The night door trip is deliberately NOT filtered by this: walking
+        // to the stand spot, opening the leaf and stepping onto the tile is
+        // the one legitimate visit to a doorway in the whole town, and it is
+        // a scripted sequence rather than a station.
+        //
+        // A zone is a world SPHERE (centre + radius) rather than the box it
+        // came from: the trigger's horizontal circumradius through the built
+        // root, plus `keepOutMargin`. Measured as a difference of
+        // TransformPoints, so the root's mirror is applied exactly once and
+        // the radius is in world metres whatever the export scale is.
+        //
+        // INDOORS the radius is clamped to `indoorKeepOut`, and the same cap
+        // is wired onto every brain and the director. Retail's interior
+        // rooms are a landing and its way out a metre apart in a corner of
+        // the map; at the village radius a room has nowhere to stand at all,
+        // and what the rule is really about is the tile, not the room.
+        static List<Vector4> s_keepOut;
+        static int s_keepOutTeleports, s_keepOutHomes;
+        static int s_spotsMoved, s_spotsDropped;
+        static float s_indoorKeepOut = 0.75f;
+        static float s_keepOutPush = 1.6f;
+
+        /// The zones the last Apply built (the batch check re-reads them to
+        /// assert no station stand point sits inside one).
+        public static List<Vector4> LastKeepOutZones()
+        {
+            return s_keepOut != null ? new List<Vector4>(s_keepOut) : new List<Vector4>();
+        }
+
+        /// Teleport zones / home zones / spots relocated / spots dropped, from
+        /// the last Apply - what the pass and the check both report.
+        public static int LastKeepOutTeleports { get { return s_keepOutTeleports; } }
+        public static int LastKeepOutHomes { get { return s_keepOutHomes; } }
+        public static int LastSpotsMoved { get { return s_spotsMoved; } }
+        public static int LastSpotsDropped { get { return s_spotsDropped; } }
+
+        /// The indoor radius cap of the last Apply (the check needs the same
+        /// number to judge an indoor stand spot).
+        public static float LastIndoorKeepOut { get { return s_indoorKeepOut; } }
+
+        static void BuildKeepOut(GameObject root, object manifest,
+            List<Home> homes, LegaiaLivingTownOptions o)
+        {
+            s_keepOut = new List<Vector4>();
+            s_keepOutTeleports = 0;
+            s_keepOutHomes = 0;
+            s_spotsMoved = 0;
+            s_spotsDropped = 0;
+            s_indoorKeepOut = Mathf.Max(0f, o.indoorKeepOut);
+            s_keepOutPush = Mathf.Max(0f, o.keepOutPush);
+            float margin = Mathf.Max(0f, o.keepOutMargin);
+            Transform t = root.transform;
+            foreach (object tp in MiniJson.AsList(MiniJson.Get(manifest, "teleports"))
+                     ?? new List<object>())
+            {
+                object trig = MiniJson.Get(tp, "trigger");
+                if (trig == null)
+                    continue;
+                Vector3 local = LegaiaWorldBuilder.G2U(
+                    MiniJson.GetVec3(trig, "position"));
+                Vector3 half = LegaiaWorldBuilder.PlayerSizedHalf(
+                    MiniJson.GetVec3(trig, "half_extents"));
+                Vector3 centre = t.TransformPoint(local);
+                Vector3 corner = t.TransformPoint(
+                    local + new Vector3(half.x, 0f, half.z)) - centre;
+                corner.y = 0f;
+                s_keepOut.Add(new Vector4(centre.x, centre.y, centre.z,
+                    corner.magnitude + margin));
+                s_keepOutTeleports++;
+            }
+            float hr = Mathf.Max(0f, o.keepOutHomeRadius);
+            for (int i = 0; i < homes.Count; i++)
+            {
+                AddHomeZone(homes[i].doorT, hr);
+                AddHomeZone(homes[i].thresholdT, hr);
+                AddHomeZone(homes[i].landingT, hr);
+                AddHomeZone(homes[i].exitT, hr);
+                AddHomeZone(homes[i].emergeT, hr);
+            }
+            Debug.Log("[Legaia] living town: " + s_keepOut.Count +
+                " keep-out zone(s) - " + s_keepOutTeleports +
+                " doorway-teleport trigger box(es) + " + s_keepOutHomes +
+                " home marker(s); margin " + margin.ToString("0.0") +
+                " m, indoor cap " + s_indoorKeepOut.ToString("0.00") + " m.");
+        }
+
+        static void AddHomeZone(Transform marker, float radius)
+        {
+            if (marker == null || radius <= 0f)
+                return;
+            Vector3 p = marker.position;
+            s_keepOut.Add(new Vector4(p.x, p.y, p.z, radius));
+            s_keepOutHomes++;
+        }
+
+        /// Is `p` clear of every keep-out zone? Mirrors the runtime test in
+        /// LegaiaNpcWander / LegaiaTownDirector exactly - horizontal
+        /// distance, a two-metre height band, and the indoor radius cap.
+        public static bool KeepOutOk(List<Vector4> zones, Vector3 p, bool indoors,
+            float indoorCap)
+        {
+            if (zones == null)
+                return true;
+            for (int i = 0; i < zones.Count; i++)
+            {
+                Vector4 z = zones[i];
+                float r = indoors && z.w > indoorCap ? indoorCap : z.w;
+                if (r <= 0f)
+                    continue;
+                float dy = p.y - z.y;
+                if (dy < -2f || dy > 2f)
+                    continue;
+                float dx = p.x - z.x, dz = p.z - z.z;
+                if (dx * dx + dz * dz < r * r)
+                    return false;
+            }
+            return true;
+        }
+
+        static bool KeepOutOk(Vector3 p, bool indoors)
+        {
+            return KeepOutOk(s_keepOut, p, indoors, s_indoorKeepOut);
+        }
+
+        /// Push a stand spot OUT of the zone it landed in, along the line
+        /// away from that zone's centre, keeping it on real floor with room
+        /// for a body and still reachable. False when no push under
+        /// `keepOutPush` metres works - the caller drops the spot.
+        static bool KeepOutRelocate(ref Vector3 p, bool indoors)
+        {
+            if (KeepOutOk(p, indoors))
+                return true;
+            // The DEEPEST zone decides the direction: pushing out of a
+            // shallow one first can leave the spot inside a bigger
+            // neighbour, and doorways come in pairs.
+            Vector3 away = Vector3.zero;
+            float worst = -1f;
+            for (int i = 0; i < s_keepOut.Count; i++)
+            {
+                Vector4 z = s_keepOut[i];
+                float r = indoors && z.w > s_indoorKeepOut ? s_indoorKeepOut : z.w;
+                if (r <= 0f)
+                    continue;
+                float dy = p.y - z.y;
+                if (dy < -2f || dy > 2f)
+                    continue;
+                Vector3 d = new Vector3(p.x - z.x, 0f, p.z - z.z);
+                float depth = r - d.magnitude;
+                if (depth <= 0f || depth <= worst)
+                    continue;
+                worst = depth;
+                away = d.sqrMagnitude < 1e-6f ? Vector3.forward : d.normalized;
+            }
+            if (worst < 0f)
+                return true;
+            for (int step = 1; step <= 6; step++)
+            {
+                float d = worst + 0.15f + step * (s_keepOutPush / 6f);
+                if (d > worst + s_keepOutPush + 0.2f)
+                    break;
+                for (int k = 0; k < 5; k++)
+                {
+                    float ang = (k + 1) / 2 * 30f * ((k % 2) == 0 ? 1f : -1f);
+                    Vector3 dir = Quaternion.AngleAxis(ang, Vector3.up) * away;
+                    Vector3 cand = p + dir * d;
+                    Vector3 floor;
+                    if (!HasFloorNear(cand, out floor) && !HasFloor(cand, out floor))
+                        continue;
+                    if (!StandingRoom(floor) || !KeepOutOk(floor, indoors))
+                        continue;
+                    if (!indoors && !Reachable(floor))
+                        continue;
+                    p = floor;
+                    return true;
+                }
+            }
+            return false;
+        }
+
         // --- Stations -------------------------------------------------------------
 
         static Component MakeStation(Transform parent, string name, int kind,
             Vector3 standWorld, Vector3 faceWorld, bool indoors, float dwell,
             Component handler)
         {
+            // Every stand point in the town funnels through here, which is
+            // where the keep-out rule is enforced: a spot inside a doorway
+            // teleport's trigger box (or on a home's landing) is pushed out
+            // if it can be, and DROPPED - null, which the caller counts - if
+            // it cannot. Nothing else in the pass has to know about the rule.
+            if (s_keepOut != null && !KeepOutOk(standWorld, indoors))
+            {
+                Vector3 moved = standWorld;
+                if (!KeepOutRelocate(ref moved, indoors))
+                {
+                    s_spotsDropped++;
+                    return null;
+                }
+                s_spotsMoved++;
+                standWorld = moved;
+            }
             var go = new GameObject(name);
             go.transform.SetParent(parent, false);
             go.transform.position = standWorld;
@@ -855,8 +1107,9 @@ namespace LegaiaWorld
                     Vector3 stand, face;
                     if (!StandSpotFor(prop, o.propStandDistance, out stand, out face))
                         continue;
-                    MakeStation(parent, "station_prop_" + idx, 0, stand, face,
-                        IsInterior(local, spawn, o), 11f, handler);
+                    if (MakeStation(parent, "station_prop_" + idx, 0, stand, face,
+                            IsInterior(local, spawn, o), 11f, handler) == null)
+                        continue;   // inside a doorway's keep-out zone
                     made++;
                 }
             }
@@ -1008,8 +1261,9 @@ namespace LegaiaWorld
                     Vector3 cand = centreFloor + dir * o.chatRingRadius;
                     if (!HasFloor(cand, out floor) || !StandingRoom(floor))
                         continue;
-                    MakeStation(parent, "station_chat_" + spot + "_" + k, 3,
-                        floor, centreFloor - floor, inside, 20f, null);
+                    if (MakeStation(parent, "station_chat_" + spot + "_" + k, 3,
+                            floor, centreFloor - floor, inside, 20f, null) == null)
+                        continue;
                     ringMade++;
                 }
                 if (ringMade >= 2)
@@ -1074,8 +1328,9 @@ namespace LegaiaWorld
                         if (!HasFloor(cand, out floor) || !StandingRoom(floor)
                             || !Reachable(floor))
                             continue;
-                        MakeStation(parent, "station_chat_square_" + i, 3, floor,
-                            centreFloor - floor, false, 20f, null);
+                        if (MakeStation(parent, "station_chat_square_" + i, 3, floor,
+                                centreFloor - floor, false, 20f, null) == null)
+                            continue;
                         made++;
                     }
                     if (made >= 2)
@@ -1131,8 +1386,10 @@ namespace LegaiaWorld
                         continue;
                     var st = MakeStation(parent, "station_view_out_" + made, 4, floor,
                         floor - centre, false, 14f, null);
+                    if (st == null)
+                        continue;
                     Tag(st, -1, "view", true);
-                    taken.Add(floor);
+                    taken.Add(st.transform.position);
                     made++;
                 }
             }
@@ -1162,6 +1419,8 @@ namespace LegaiaWorld
                         continue;
                     var st = MakeStation(parent, "station_view_" + i + "_" + here, 4,
                         floor, landing.position - floor, true, 18f, null);
+                    if (st == null)
+                        continue;
                     Tag(st, -1, "room", true);
                     here++;
                     made++;
@@ -1216,15 +1475,21 @@ namespace LegaiaWorld
             return handler;
         }
 
-        /// A stand spot beside each house door, facing the doorway: the
-        /// "call on a neighbour" stop. It stands a step to the SIDE of the
-        /// night routine's own door stand spot rather than on it, so a
-        /// villager sweeping a doorstep at dusk is never parked in the way
-        /// of the villager trying to get through that door.
+        /// A stand spot on each house's DOORSTEP - the "call on a neighbour"
+        /// stop. It used to sit 0.7 m to the SIDE of the night routine's own
+        /// door stand spot, which put a villager sweeping a step within arm's
+        /// reach of a teleport tile all day: the one place in the village
+        /// nobody may be parked, because it is a door a player walks through.
+        /// The spot now sits `doorstepStandDistance` metres OUT from the tile
+        /// (2.6 m by default, comfortably outside the doorway's keep-out
+        /// zone), swept over a fan of bearings around the way in so it still
+        /// reads as this house's doorstep, and it is dropped rather than
+        /// nudged inward when no bearing works.
         static int BuildDoorwayStands(GameObject root, Transform parent,
             List<Home> homes, LegaiaLivingTownOptions o)
         {
             int made = 0;
+            float back = Mathf.Max(1.5f, o.doorstepStandDistance);
             for (int i = 0; i < homes.Count; i++)
             {
                 Transform door = homes[i].doorT;
@@ -1236,17 +1501,22 @@ namespace LegaiaWorld
                 if (toTile.sqrMagnitude < 1e-4f)
                     continue;
                 toTile = toTile.normalized;
-                Vector3 side = Vector3.Cross(Vector3.up, toTile);
+                // Out along the line the villager comes in on, then swept
+                // either side of it: a porch is rarely square to its door.
                 bool placed = false;
-                for (int k = 0; k < 2 && !placed; k++)
+                for (int k = 0; k < 9 && !placed; k++)
                 {
-                    Vector3 cand = door.position + side * (k == 0 ? 0.7f : -0.7f);
+                    float ang = (k + 1) / 2 * 25f * ((k % 2) == 0 ? 1f : -1f);
+                    Vector3 dir = Quaternion.AngleAxis(ang, Vector3.up) * -toTile;
+                    Vector3 cand = tile.position + dir * back;
                     Vector3 floor;
-                    if (!HasFloorNear(cand, out floor) || !StandingRoom(floor))
+                    if (!HasFloorNear(cand, out floor) && !HasFloor(cand, out floor))
                         continue;
-                    if (Mathf.Abs(floor.y - door.position.y) > 0.35f)
+                    if (!StandingRoom(floor))
                         continue;
-                    if (!Reachable(floor))
+                    if (Mathf.Abs(floor.y - door.position.y) > 0.6f)
+                        continue;
+                    if (!Reachable(floor) || !KeepOutOk(floor, false))
                         continue;
                     // Half sweep the step (a broom changes hands, so those
                     // are kind 5 with a handler), half simply call at it - a
@@ -1255,6 +1525,8 @@ namespace LegaiaWorld
                     bool sweep = o.carryItems && (i % 2) == 0;
                     var st = MakeStation(parent, "station_door_" + i, 4, floor,
                         tile.position - floor, false, sweep ? 14f : 9f, null);
+                    if (st == null)
+                        continue;
                     if (sweep)
                     {
                         MakeCarryHandler(st, 1, false, false, 1);
@@ -1333,6 +1605,8 @@ namespace LegaiaWorld
                     host.position - stand,
                     IsInterior(root.transform.InverseTransformPoint(stand), spawn, o),
                     16f, null);
+                if (st == null)
+                    continue;   // the only clear spot was in a keep-out zone
                 var handler = LegaiaWorldBuilder.TryAttachUdon(
                     st.gameObject, "LegaiaVisitSpot");
                 if (handler != null)
@@ -1401,9 +1675,11 @@ namespace LegaiaWorld
                         (low ? "station_shore_" : "station_path_") + made, 4, floor,
                         low ? floor - centre : centre - floor, false,
                         low ? 16f : 11f, null);
+                    if (st == null)
+                        continue;
                     Tag(st, low ? LegaiaBubbleArt.FISH : LegaiaBubbleArt.SUN,
                         low ? "shore" : "path", true);
-                    taken.Add(floor);
+                    taken.Add(st.transform.position);
                     made++;
                 }
             }
@@ -1452,8 +1728,9 @@ namespace LegaiaWorld
                     if (!HasFloorNear(centreFloor + dir * o.chatRingRadius, out floor)
                         || !StandingRoom(floor))
                         continue;
-                    MakeStation(parent, "station_chat_in" + spot + "_" + k, 3,
-                        floor, centreFloor - floor, true, 20f, null);
+                    if (MakeStation(parent, "station_chat_in" + spot + "_" + k, 3,
+                            floor, centreFloor - floor, true, 20f, null) == null)
+                        continue;
                     here++;
                 }
                 if (here >= 2)
@@ -1894,6 +2171,8 @@ namespace LegaiaWorld
             int walked = 0;
             int armSwung = 0;
             int sitPosed = 0;
+            string hostToken = settings != null ? settings.nightHostNpc : null;
+            string hostWired = null;
             s_rigCache.Clear();
             s_rigFamilies.Clear();
             // The daytime-indoors share is a share of the villagers who
@@ -1984,6 +2263,19 @@ namespace LegaiaWorld
                     LegaiaWorldBuilder.SetUdonField(brain, "carry", held);
                 LegaiaWorldBuilder.SetUdonField(brain, "seed", seed);
                 LegaiaWorldBuilder.SetUdonField(brain, "label", labels[i]);
+                LegaiaWorldBuilder.SetUdonField(brain, "indoorKeepOut", o.indoorKeepOut);
+                // The NIGHT HOST: the one villager the settings file pins to
+                // a station for the whole night. The link is a scene PATH
+                // rather than a reference - the station belongs to another
+                // pass's object (the card table sits in the kit's top-level
+                // prefab container, which may not even be built yet), and
+                // the brain resolves it by name at Start.
+                if (NightHostIs(hostToken, files[i]))
+                {
+                    LegaiaWorldBuilder.SetUdonField(brain, "nightHostStationPath",
+                        settings.nightHostStation);
+                    hostWired = objs[i].name;
+                }
                 LegaiaWorldBuilder.SetUdonField(brain, "daytimeIndoors",
                     dayIn || insideAlready[i]);
                 LegaiaWorldBuilder.SetUdonField(brain, "startIndoors", insideAlready[i]);
@@ -2002,6 +2294,14 @@ namespace LegaiaWorld
                 LegaiaWorldBuilder.SyncUdonProxy(brain);
                 brains.Add(brain);
             }
+            if (!string.IsNullOrEmpty(hostToken))
+                Debug.Log(hostWired != null
+                    ? "[Legaia] living town: night host " + hostWired + " (" +
+                      hostToken + ") keeps " + settings.nightHostStation +
+                      " all night instead of going home."
+                    : "[Legaia] living town: living_town.night_host names '" +
+                      hostToken + "', which is not an eligible villager in this " +
+                      "scene - no night host wired.");
             int hopHomes = 0;
             for (int i = 0; i < hoppedHome.Length; i++)
                 if (hoppedHome[i] && homeOf[i] >= 0)
@@ -2022,6 +2322,20 @@ namespace LegaiaWorld
                     ", sitting pose (legs) on " + sitPosed +
                     " villager(s) (the rigs whose family carries one).");
             return brains;
+        }
+
+        /// Does `file` name the villager `living_town.night_host.npc` pins?
+        /// The settings file's own key rule for an NPC token, minus its
+        /// substring fallback: a manifest stem carries the retail dialogue
+        /// line after the index ("npc_14_talk_oh-its-you"), so an exact
+        /// match alone finds nobody, and a bare `Contains` would let
+        /// "npc_1" claim npc_14's seat.
+        static bool NightHostIs(string token, string file)
+        {
+            if (string.IsNullOrEmpty(token) || string.IsNullOrEmpty(file))
+                return false;
+            string stem = Path.GetFileNameWithoutExtension(file);
+            return stem == token || stem.StartsWith(token + "_");
         }
 
         /// A villager standing in one of the detached interior rooms: nearer
@@ -2065,6 +2379,11 @@ namespace LegaiaWorld
             // as walk -> hop -> walk over one of these.
             LegaiaWorldBuilder.SetUdonField(loco, "linkFrom", linkFrom);
             LegaiaWorldBuilder.SetUdonField(loco, "linkTo", linkTo);
+            // The keep-out zones: the stand spots are filtered at build time
+            // (MakeStation), but the AUTONOMOUS stroll picks its own targets
+            // at run time and would happily amble into a doorway tile.
+            if (s_keepOut != null)
+                LegaiaWorldBuilder.SetUdonField(loco, "keepOut", s_keepOut.ToArray());
             LegaiaWorldBuilder.SyncUdonProxy(loco);
             return loco;
         }
@@ -2166,6 +2485,9 @@ namespace LegaiaWorld
             LegaiaWorldBuilder.SetUdonField(udon, "extraStationRoots",
                 extraRoots.ToArray());
             LegaiaWorldBuilder.SetUdonField(udon, "seed", o.seed);
+            if (s_keepOut != null)
+                LegaiaWorldBuilder.SetUdonField(udon, "keepOut", s_keepOut.ToArray());
+            LegaiaWorldBuilder.SetUdonField(udon, "keepOutIndoorCap", o.indoorKeepOut);
             // The director groups a ring by proximity; the threshold must
             // clear the ring's own chord (r * sqrt(3)) without swallowing a
             // neighbouring spot.
