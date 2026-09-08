@@ -1237,10 +1237,41 @@ and the acting actor's anim state.
 Case `8` is the same shape aimed at the target alone: an extra `-0x100` on the
 yaw base, `focus.y` forced to the stage floor, a `-0x600` unwrap, and a focus
 fork that falls back to the acting actor when `actor[+0x1DD] >= 8` or the
-target's node is dead (`0x801D6870`). Its long per-liveness tail from
-`0x801D69A8` - the death-clip re-frame, the counter-attack flags, the
-`ctx[+0x270]` ramp - is decoded but not ported; every branch reads a channel
-the engine's battle actor does not carry.
+target's node is dead (`0x801D6870`).
+
+#### The death re-frame and its `ctx[+0x270]` ramp
+
+Case 8's tail from `0x801D69A8` forks on the framed target's live-HP halfword
+`+0x14C`. The **dead** arm (`0x801D6A20`) is the death re-frame, and it is
+ported: `battle_cam_script::apply_death_reframe`, applied by
+`BattleCamera::action_end_pose` whenever the post-action target reads dead.
+
+Three literals land unconditionally at `0x801D6AF8` - `TR.y = 0x300`,
+`pitch = 0x140`, `TR.z = ctx[+0x6D0]` - and the per-action yaw ladder is zeroed
+beside them (`sh zero,0x4(t0)`, `t0 = ctx + 0x6D6`, so the store is
+`ctx[+0x6DA]`), which is why a death shot does not inherit the swing's orbit.
+Then the fork on the target's own anchor height `+0x36` (`lh v0,0x36(v0)` at
+`0x801D6B38`), the Y of the same world triple case 7 takes its focus midpoint
+from:
+
+| target `+0x36` | pose | `ctx[+0x270]` |
+|---|---|---|
+| `0` (body on the stage floor) | the three literals above, unchanged | re-zeroed (`sb zero,0x270(a0)`, `0x801D6B4C`) |
+| non-zero (still falling) | `TR.z = ctx[+0x6D0] - 4r`, `TR.y = 0x300 - r`, `pitch = 0x180 - (3r >> 1)` | left to ramp |
+
+`r` is `ctx[+0x270]`, the second byte ramp `FUN_801D5854`'s own prologue
+advances beside `ctx[+0x26E]` on every call - same `8 x frame_step` increment,
+same `0xC8` ceiling (`0x801D5960..0x801D59B8`), and no per-action reset, so a
+fight's second death reads a ramp already at the cap. At the cap the re-frame
+is `TR.z - 0x320`, `TR.y = 0x238`, `pitch = 0x54`: the camera drops, levels off
+and pushes in on the falling body, then snaps to the flat pose the frame the
+body lands. Engine side the ramp lives on
+`battle_attack_camera::AttackCamCtx::death_ramp`.
+
+What stays out of the port is the counter-attack fork above it (`ctx[+0x287]` /
+`ctx[+0x288]` / `_DAT_8007BD0D` at `0x801D6AC8`) and the live-target arm's own
+re-aim at `0x801D6BFC` - those read channels the engine's battle actor does not
+carry.
 
 Which states arm them is `FUN_801E295C`'s own fork, not an inference. The
 attack chain's recovery-wait and return (`0x1F`, `0x20`) share one arm at
@@ -4518,7 +4549,7 @@ stated by the concrete writes.
 |---|---|
 | `FUN_80055B6C` | Battle scene initializer: clears the actor/effect pools, resolves the party-slot composition (dedup + fill from `DAT_8007BD0C..`), sizes the LZS scratch, allocates the `0x7A34`-word monster-object arena at `_DAT_801C9370`, and programs the disp/draw environment. |
 | `FUN_80055B20` | Seeds the fallback party-slot id table `DAT_8007BD10 = {1, 2, 3}` (Vahn/Noa/Gala); `FUN_80055B6C` overwrites it from the live party. Slot bytes index character records as `(id-1)*0x414`. |
-| `FUN_80054A6C` | Battle party-file loader: builds the `data\battle\` filename (`s_data_battle_800153B8`), then streams each live party member's player battle file keyed on the party-id table `DAT_8007BD0C` at file stride `(id-1)*0x14000`. Dual-mode on `_DAT_8007B8C2`: retail ISO9660 (`FUN_800608F0`/`FUN_80060920`/`FUN_80060944` async CD reads) vs dev PROT-TOC (`FUN_8003E8A8`/`FUN_8003E964`/`FUN_8003E800`, entry `0x365`); bumps the loaded-count `DAT_8007B649`. CD/loader I/O infra - documented, not ported. |
+| `FUN_80054A6C` | Battle party-file loader: builds the `data\battle\` filename (`s_data_battle_800153B8`), then streams each live party member's player battle file keyed on the party-id table `DAT_8007BD0C` at file stride `(id-1)*0x14000`. Dual-mode on `_DAT_8007B8C2`: retail ISO9660 (`FUN_800608F0`/`FUN_80060920`/`FUN_80060944` async CD reads) vs dev PROT-TOC (`FUN_8003E8A8`/`FUN_8003E964`/`FUN_8003E800`, entry `0x365`); bumps the loaded-count `DAT_8007B649`. CD/loader I/O infra: scope row in `asset_load_plumbing` - the port streams the same four files through `SceneAssets`, from the disc image, with no drive command sequence. |
 | `FUN_800480D8` | Per-actor battle tick / teardown: on the scene-clear byte `gp[0xA0C]+0x272` (guarded by `DAT_8007BD71 == -1`) runs the four overlay shutdowns and voids the effect-node table `DAT_801C90F0`, else forwards to the tint pass `FUN_8004A908` and the death / `0x808080` greyscale path. |
 | `FUN_8004A908` | Battle-actor tint: writes the colour word `+0x74` and blink halfword `+0x78` from the actor's transformed depth vs the monster-object depth threshold, with hard overrides for the `+0x16E` status bits (`0x01`→red, `0x02`→red-violet, `0x380`→magenta) and a greyscale-invert path gated on `DAT_8007BDA8`. The two arithmetic cores are ported (with tests): the per-channel depth-brightness ramp as `scus_battle_helpers::depth_cue_scale_channel` (min-4 dim floor, clamp-to-base), the negative-colour recolour as `scus_battle_helpers::invert_bgr24`. The GTE transform (`FUN_8003D344`) and colour-word packing stay render-track. |
 | `FUN_80046A20` | **Not a small helper** - this is the battle-scene per-frame tick (2576 bytes, 644 instructions), listed here only because the rows below are the routines it drives. It calls the scene loader `FUN_800520F0`, the seat stager `FUN_800513F0`, the party-file loader `FUN_80054A6C`, the main dispatcher `FUN_801D0748`, the action SM `FUN_801E295C`, the separation driver `FUN_80051078` and the actor-presentation tick `FUN_80050120`. Its one self-contained kernel is the HP/MP gauge-fill colour selector keyed on `+0x172`/`+0x174` vs `+0x14E>>1`/`>>2` and the status word `+0x16E`, ported as `battle_gauge::gauge_colors`. Full row in [`functions/battle.md`](../reference/functions/battle.md). |
@@ -4530,7 +4561,7 @@ stated by the concrete writes.
 | `FUN_80050F30` | 3×10-bit packed approach-to-target step: eases each 10-bit channel of a packed `u32` toward an 8-bit target (widened `<<2`) by at most `step_scale * DAT_1f800393 * 8` per call, clamping on the target without overshoot; only differing channels are rewritten (the byte-exact masking is why the top two bits survive an unchanged Z channel). A pure closed-form kernel with no table/hardware dependency; **ported** (with tests) as `battle_formulas::packed3_approach_target` / `approach_channel_clamped`. |
 | `FUN_80050BB8` | Pairwise battle-actor separation (push-apart): reads two actors' body radii `+0x22C→+0x58` and positions `+0x3C`/`+0x40`, projects the between-actor distance onto the angle from `FUN_80019B28` via the sin/cos LUTs `_DAT_8007B81C`/`DAT_8007B7F8`, and if the projected gap is below `(r1+r2)/6` nudges both actors' **live** position pairs `+0x34`/`+0x38` apart by `sin/cos >> 10` (the `+0x3C`/`+0x40` pair it measures is the seat). Ported as a faithful fixed-point mirror in `engine-vm::battle_separation::push_apart` (trig samples lifted to caller parameters, no Sony table bytes); driven every live battle frame by `World::tick_battle_separation`, on the line after the action-SM step - retail's `FUN_80046A20` call order. |
 | `FUN_80051078` | Separation driver: the 7×7 double loop over the actor table that calls `FUN_80050BB8(i, j)` for every ordered pair of living actors (`i != j`, both `+4 != 0`), so every actor is pushed off every other once per pass. Its caller is `FUN_80046A20`, which runs it **every battle frame** immediately after the action SM (`jal 0x801E295C` then `jal 0x80051078`), gated only on "battle live and not tearing down". Not a movement-only pass. |
-| `FUN_8005133C` | Per-actor status-marker + display-list primitive spawn: allocates a primitive on the ordered list `_DAT_1F8003A0` (type tag `0x1E1 + slot`, size `0xF0`, priority 1), fills it from `gp[0xA0C] + slot*0x1E0 + 0x894` via `FUN_800583C8`, then sets the four actor status-marker bytes `+0x220..+0x223 = 1` (the lingering-status visual flags near the `+0x21F` marker). Render + status write - documented, not ported. |
+| `FUN_8005133C` | Per-actor status-marker + display-list primitive spawn: allocates a primitive on the ordered list `_DAT_1F8003A0` (type tag `0x1E1 + slot`, size `0xF0`, priority 1), fills it from `gp[0xA0C] + slot*0x1E0 + 0x894` via `FUN_800583C8`, then sets the four actor status-marker bytes `+0x220..+0x223 = 1` (the lingering-status visual flags near the `+0x21F` marker). Render + status write: scope row in `render_pipeline` - the primitive is a wgpu draw in the port, and the four status-marker bytes it sets ride the actor's status flags. |
 
 The animation pair `FUN_800495C8` / `FUN_80049858` (pose→vertex blend) is
 documented in [`monster-animation.md`](../formats/monster-animation.md#vertex-blend-variants-fun_800495c8--fun_80049858).

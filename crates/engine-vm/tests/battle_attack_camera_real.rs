@@ -91,6 +91,7 @@ fn every_arm_frames_on_the_real_table() {
                         ramp: 24,
                         accum: 240,
                         latch: 0,
+                        death_ramp: 0,
                     };
                     let mut a = actor(c, art);
                     a.anim_frame = anim;
@@ -136,6 +137,7 @@ fn the_real_arms_all_reframe_away_from_the_case_six_pose() {
                 ramp: 24,
                 accum: 240,
                 latch: 0,
+                death_ramp: 0,
             };
             let mut a = actor(c, art);
             a.anim_frame = 0x50;
@@ -170,6 +172,7 @@ fn the_two_real_columns_frame_differently() {
                     ramp: 24,
                     accum: 240,
                     latch: 0,
+                    death_ramp: 0,
                 };
                 let mut a = actor(c, art);
                 a.anim_frame = 0x50;
