@@ -439,6 +439,10 @@ impl World {
     /// sub-screen `0` and ends the session - so a closed kind-`0x0D` menu is
     /// a player who answered "ready". Resuming the parked script there is
     /// what the prompt reads as. Hosts call this from their menu-close path.
+    ///
+    /// PORT: FUN_8003540C (the SCUS menu-teardown leaf: `sw zero,0x148(gp)`
+    /// / `sw zero,0x138(gp)` / `jr ra` - the live-window list head and the
+    /// entry-context word cleared together, which is what releases the park).
     pub fn release_menu_entry_context_park(&mut self) -> bool {
         let Some(sub_op) = self.submode_screen.park_sub_op else {
             return false;

@@ -654,3 +654,37 @@ matching the row's 244 bytes. The body was re-read at the same time and the
 row corrected: the sub-state switch on `+0x5A` is two switches, not one.
 """
 
+
+[[waiver]]
+key = "module-orphan:crates/engine-vm/src/cast_module_ticks.rs:801f7740"
+reason = """
+PROT 0906 (summon_gizam)'s move-VM spawn stager, 0x801F6734 row: `sltiu a1,7`
+arm bound, three FUN_80021B04 spawn calls, writes actor +0x0C and the phase
+byte ctx+0x279 (cast-module.md verdict table, PORT). Slot-B modules are
+separate images loaded at one base with NO internal jal, so a stager shares no
+callee with any sibling by construction, and its distinctive data words are its
+own module-resident spawn records - the corroboration test cannot apply inside
+this band.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-vm/src/cast_module_ticks.rs:801f8b90"
+reason = """
+PROT 0923 (summon_gilium)'s move-VM spawn stager, 0x801F6734 row: three spawn
+calls and a write to ctx+0x278 (cast-module.md verdict table, PORT). Same
+band-structural reason as the 801f7740 waiver above: separate image, no
+internal jal, module-private record pointers.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-core/src/scene/host/scene_entry.rs:801d1ec4"
+reason = """
+The finding appeared when overlay_cutscene_str_0970_801cea3c.txt was dumped: the
+sibling tag 801cea3c now has a corroborating dump from PROT 0970 (cutscene_str),
+a different image at the same 0x801CE818 base, so the sibling set spans two
+images. FUN_801D1EC4's identity is the field image's kind-0 intra-scene
+teleport arm (0x801D21C0..0x801D2268): it reads 0x8007BDC8..0x8007BDD4 and
+0x8007B5FC and calls the spawn evaluator FUN_8003BDE0 plus 0x801D5630 /
+0x801D58F0 / 0x801DDF48. The checker corroborates by module, not by image;
+the image-keyed form is the open checker gap.
+"""

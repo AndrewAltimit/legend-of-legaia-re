@@ -282,9 +282,7 @@
 # these encode is replaced rather than line-ported. (Each is documented in
 # `docs/reference/functions.md`.)
 [render_pipeline]
-"8005112c" = "per-actor element-marker draw dispatching into FUN_80048310 GPU emit (port-battle skip)"
 "8001763c" = "double-buffer swap + clear-color setup (gp+0x434 flip, GPU env)"
-"80019d50" = "CLUT hue-rotate color-cycle builder into GPU prim buffer _DAT_1f8003a0"
 "8001a374" = "debug glyph -> GPU SPRT primitive emitter into _DAT_1f8003a0"
 "8001c394" = "floor/grid GPU poly emitter (0x9000000 prim) + OT insert"
 "8001c93c" = "HUD text/number draw dispatcher over record list (draw-string/draw-number)"
