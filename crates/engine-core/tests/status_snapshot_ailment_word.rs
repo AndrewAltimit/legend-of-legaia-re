@@ -22,8 +22,10 @@ use legaia_engine_vm::status_effects::StatusKind;
 /// A world with one roster member carrying live HP, so `status_snapshots`
 /// emits a row for it (rows with `hp_max == 0` are filtered out).
 fn world_with_one_member() -> World {
-    let mut w = World::default();
-    w.party_count = 1;
+    let mut w = World {
+        party_count: 1,
+        ..Default::default()
+    };
     // `World::default()` starts with an empty roster; seed one claimed slot.
     w.roster
         .members
