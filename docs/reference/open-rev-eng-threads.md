@@ -406,7 +406,6 @@ PCSX-Redux `.sstate` via `pcsxr-state`, dispatched on file extension).
 | Thread | Status | What would close it |
 |---|---|---|
 | What draws VRAM `(384, 0)` 320x256 (the dome panel still)? | open (emit only - arming and staging both resolved) | The still is staged by PROT 0978 and armed by `ctx[+0xC] = 1` at `0x800474CC` in the generic battle-end teardown `FUN_80047430` ([settled](re-settled-threads.md#the-dome-panel-still-arming)); what remains is the **emit**. Two candidate consumers are now excluded: no draw site exists statically (33 sites disc-wide materialise `0x180`, none paired with `y = 0`), and the `INTERVAL` intermission is a live `koin1` render whose ordering table samples nothing at `x = 384` ([falsified](re-do-not-re-walk.md#containers--placeholder-slots)). Needs a GPU-FIFO capture at battle teardown (`ctx[+0xC]` `1 -> 2`). |
-| Which image holds the `0x801DBC30` head and the `0x801EA7A8` loop bytes? | open (narrow) | These are the only two entries in PROT 0898's dump corpus where the body at the address is a *different*, already-ported routine - so either the print is aliased or 0898 shares those bytes with a neighbour. Closes by disassembling each mapped slot-A image at both VAs and matching the frame, the same way the slot-B extents were recovered. |
 
 ## Measurement + tooling
 
