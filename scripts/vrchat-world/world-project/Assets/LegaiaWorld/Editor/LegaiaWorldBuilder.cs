@@ -1658,6 +1658,11 @@ namespace LegaiaWorld
 
             var udon = TryAttachUdon(trigger, "LegaiaDoor");
             SetUdonField(udon, "doorAnimator", animator);
+            // The behaviour walks the clip's normalized time itself (a
+            // negative Animator speed is refused at runtime), so it needs
+            // to know how long the swing is meant to take. Retail's own
+            // clip length, kept inside sane bounds for a stray one.
+            SetUdonField(udon, "swingSeconds", Mathf.Clamp(once.length, 0.25f, 3f));
             SyncUdonProxy(udon);
         }
 
