@@ -254,8 +254,27 @@ HOSTS = {
 # than from a single-line pattern.
 DRAW_RECORDS = "TextDraw|SpriteDraw|HudDraw|HudQuad|DigitCell|BarFrame|ComparePanelField"
 
+# One more return shape, and it is a shape rather than a named record: a
+# builder whose projection stops at a **screen rect**. Two live in engine-ui -
+# `painter_rect` (descriptor -> `PainterRect`) and `guarded_box_rect`
+# (`FUN_801E4140`'s bottom-clip guard, `-> Option<(i32, i32, i32, i32)>`) -
+# and neither was watched: the record-name rule never matches a bare tuple,
+# and `PainterRect` was not on the list, so the gate would not count them as
+# screens and would not accept a waiver for them either. That is the worst of
+# the three outcomes - not "wired", not "waived", but *silent*: a rect builder
+# could lose its only host caller with no line of output changing, which is
+# the exact failure the orphan naming above was added to stop.
+#
+# Kept out of [`DRAW_RECORDS`] on purpose. That constant also feeds
+# [`TRANSFORM_PARAM_RE`], whose job is "this fn consumes what screens
+# produce", and a rect is the commonest *model* a real screen takes - the
+# module docstring says so ("every real screen takes a model (a session, a row
+# list, a rect, a font layout)"). Folding rects into the transform test would
+# reclassify most of the pause-menu painter chain as plumbing.
+RECT_RETURNS = r"PainterRect|\(\s*i32\s*,\s*i32\s*,\s*i32\s*,\s*i32\s*\)"
+
 BUILDER_RE = re.compile(r"^pub fn (?P<name>[a-z0-9_]+)\s*[<(]", re.MULTILINE)
-DRAW_RET_RE = re.compile(rf"->[^;{{]*(?:{DRAW_RECORDS})")
+DRAW_RET_RE = re.compile(rf"->[^;{{]*(?:{DRAW_RECORDS}|{RECT_RETURNS})")
 
 # Every `fn` engine-ui defines, at any indentation: free functions, `impl`
 # methods and private helpers alike. These are the nodes of the internal call
@@ -1237,6 +1256,15 @@ SELFTEST_SCREENS: list[tuple[str, str]] = [
     ("equip_compare_panel_fields",
      "pub fn equip_compare_panel_fields(view: &EquipComparePanelView<'_>, "
      "pen: (i32, i32)) -> Vec<ComparePanelField>"),
+    # Rect returns are screens: the projection stops one step earlier than a
+    # quad, at the rect a caller then paints into. Both shapes are here
+    # because the record-name rule matches neither, which is how the two below
+    # went unwatched - not counted, and not waivable either.
+    ("painter_rect",
+     "pub fn painter_rect(descriptor: &MenuWindowDescriptor) -> PainterRect"),
+    ("guarded_box_rect",
+     "pub fn guarded_box_rect(x: i32, y: i32, w: i32, h: i32) "
+     "-> Option<(i32, i32, i32, i32)>"),
 ]
 
 SELFTEST_TRANSFORMS: list[tuple[str, str]] = [
@@ -1254,6 +1282,11 @@ SELFTEST_TRANSFORMS: list[tuple[str, str]] = [
     ("scale_stage_text_draws",
      "pub fn scale_stage_text_draws(draws: &mut [TextDraw], stage_origin: (i32, i32), "
      "stage_scale: u32)"),
+    # A rect in the PARAMETER list is a model, not a transform input: rects
+    # are deliberately kept out of `TRANSFORM_PARAM_RE`, so this stays a
+    # screen-shaped signature that simply returns no geometry.
+    ("enemy_target_menu_rows_y",
+     "pub fn enemy_target_menu_rows_y(host_box: Option<(i32, i32, i32, i32)>) -> i32"),
     # The intermediate-record renderer: HudDraw list in, TextDraw list out.
     # A projection of a screen it did not build - the screens are
     # `persistent_hud_draws` / `catch_hud_draws` above.
