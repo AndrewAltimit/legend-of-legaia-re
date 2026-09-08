@@ -62,6 +62,16 @@
 //!   and a *negative* roll heals. PROT 0927 (Juggernaut) and PROT 0966 (Evil
 //!   Seru Magic) - the two band-wide AoE stagers.
 //!
+//! Shape B is a property of those two **stagers**, not of their images. Both
+//! images also hold a tick body whose own damage site takes shape A: PROT
+//! 0927's at `0x801F7E0C` / clamp `0x801F7E38` (same baked `0x12`), and PROT
+//! 0966's at `0x801F8610` / clamp `0x801F863C` with a **different** baked
+//! power, `0x327` rather than the stager's `0x100`. The band has exactly two
+//! shape-B sites - `0x801F8758` (0927) and `0x801F8F08` (0966) - and every
+//! other damage-wrapper call in PROT 0903..0966 clamps with `sltu`. So an
+//! entry-keyed lookup ([`damage_shape_for`]) answers for the module's
+//! **stager**; a tick's magnitude and kill-capability must come from the tick.
+//!
 //! The unsigned comparison in the first shape is load-bearing: the wrappers
 //! return `attacker_roll - defender_roll` as a signed word, and a negative
 //! result reads as a huge unsigned value, so `sltu` fires and the clamp
@@ -851,11 +861,24 @@ pub fn summon_effect_tick_a(
 
 /// PROT 0957 tick body B - the long one (8296 B, 2074 instructions).
 ///
-/// No damage-wrapper call: its two shape-A clamp sites at `0x801F9734` /
-/// `0x801F9780` cap a value computed in line (`subu v1, a0, v0; sltu v0, v1,
-/// a3`) rather than a wrapper return, so the HP writes here are a drain, not
-/// a roll. Seven phase stores through `$fp = ctx+0x279`, seven `+0x1DA`
-/// stages, five restage bumps.
+/// No damage-wrapper call: every HP write here is computed in line, and there
+/// are **four** shape-A clamp sites, not two, in three kinds - which is the
+/// module's head string table `['Dies','Puera','Both','Damage','Recover']`
+/// spelled out over the two seats:
+///
+/// * **Dies** - `sh zero, 0x14c(...)` at `0x801F92DC` (seat `s2`) and
+///   `0x801F9364` (seat `s0`), each accumulating the whole bar into `+0x10`.
+/// * **Damage** - a quarter of current HP (`(hp + 3) >> 2`) clamped against
+///   the bar itself at `0x801F93D0` (`s2`) and `0x801F957C` (`s0`), then
+///   `+0x10 += d`, `+0x14C -= d`.
+/// * **Recover** - a quarter of **max** HP (`+0x14E`) clamped against the
+///   missing HP (`subu v1, a0, v0; sltu v0, v1, a3`) at `0x801F9740` (`s0`)
+///   and `0x801F978C` (`s2`), then `+0x10 -= d`, `+0x14C += d`. The HP goes
+///   **up** here: this pair is a heal, not the drain an earlier reading of the
+///   same two instructions took it for.
+///
+/// Seven phase stores through `$fp = ctx+0x279`, seven `+0x1DA` stages, five
+/// restage bumps.
 ///
 /// Ported: the phase walk and the staging discipline. Not ported: the drain's
 /// per-arm rate, which is a frame-gated packet arm.

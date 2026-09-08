@@ -1478,7 +1478,7 @@ A survey of the high-reference `0x801F` VA band the field overlay shares with th
 | `0x801D30B8` | INTERIOR | No prologue; reads `s1..s8` + a caller stack slot it never writes - a tail fragment reaching the parent's epilogue. | `overlay_0897_801d30b8.txt` |
 | `0x801D84C0` | REAL, aliased | ≤6-slot name/label assembler: walks `&DAT_801F29F0` at stride `0xE`, skipping `0x7C` (`\|`) separators + a skip-char, into the `+0x2AF8` draw buffer. The field body (212 insn) VA-aliases a distinct 259-insn `battle_action(898)` body - confirm the image before porting. | `overlay_0897_801d84c0.txt` |
 | `0x801D32BC` | REAL (small) | Field opcode-arm helper: `if ((v0 >> 16) == 0x100) func_0x800430AC(*(u8*)(s6+1)); return pc + 3`. Aliases a 98-insn `battle_action(898)` body. | `overlay_0897_801d32bc.txt` |
-| `0x801DBC30` / `0x801DBB8C` | REAL (C-only) | Text-cell table init pair - see [§ below](#text-cell-table-init). Field bodies alias 53-/41-insn battle bodies. | dumps as named |
+| `0x801DBC30` / `0x801DBB8C` | WRONG IMAGE | Real entries, but in PROT 0898 (the party-panel pair). The `overlay_0897_*` dumps at these VAs list PROT 0897's `0x801EA448` / `0x801EA3A4` (the `0xE818` re-key) and then a PROT 0898 loop. See [§ below](#the-overlay_0897_801dbc30-dump-is-a-chimera-of-two-prot-entries). | dumps as named |
 | `0x801D0D38` | REAL, render-track | Party-roster panel renderer (op-`0x49` submode family) - see [§ below](#party-roster-panel-renderers). Its direct `overlay_0897_801d0d38` dump is a truncated alias; the full body is in the cutscene-dialogue / mapview field captures. | `overlay_cutscene_dialogue_801d0d38.txt` |
 | `0x801D095C` | REAL, render-track | Passive-ability indicator HUD above the player - **not** a roster panel; see [§ below](#the-passive-ability-indicator-hud-fun_801d095c). Ported: `legaia_engine_vm::field_passive_hud`. | `overlay_cutscene_dialogue_801d095c.txt` |
 | `0x801E4470` | REAL, render-track | Attached-sprite projection tick - documented in [`actor-vm.md`](actor-vm.md). Ported: `legaia_engine_vm::field_actor_billboard`. | `overlay_cutscene_dialogue_801e4470.txt` |
@@ -1619,53 +1619,74 @@ number-draw arms. The classifier marks all three UNCERTAIN because the dumped
 window ends at the `jal` with no `jr ra` - the window is truncated, not the
 function. `see ghidra/scripts/funcs/overlay_0897_801da0f0.txt`.
 
-### Text-cell table init
+### The `overlay_0897_801dbc30` dump is a chimera of two PROT entries
 
-`801DBC30` seeds a 46-record table in PSX scratchpad at `0x1F800314` (stride
-`0x18`): each record takes the colour word `param_1` at `+4`/`+0xC`, `param_3` at
-`+0xA`, and a per-record depth counter (decremented from `DAT_1F8003E9`, chained
-through each record's `+0x22`) at `+2`. It then sets `_DAT_80077024 = 0xE` /
-`_DAT_80077022 = 0x44`, calls `FUN_801D99BC` / `FUN_801D8DE8(0x1A,1)` /
-`FUN_801D32BC(1)`, and finds the narration-crawl roller
-(`func_0x8003CF04(_DAT_8007C34C, 0x80037174)`) to adjust its flag word by the mode
-in `s6` (2 → clear `0x80000`; 3 → clear the parked caller's `0x400` and set bit
-`8`). `801DBB8C` is an alternate entry into the same routine, entering with the
-counter (`v0`) and table base (`v1`) already in registers - it skips the
-`DAT_1F8003E9` setup. Both are referenced by the actor-band command loops
-`801F5748` / `801F747C`.
+`0x801DBC30` and `0x801DBB8C` are real entries - in **PROT 0898**, where they
+are the party-name panel's cross-out blit and its open half, ported as
+`engine-vm::battle_party_panel` ([`functions/battle.md`](../reference/functions/battle.md)).
+What is not real is the *routine the `overlay_0897_*` dumps print at those
+addresses*. Resolved from the bytes, that listing is stitched out of two
+different PROT entries and neither piece is a field-VM entry:
 
-**The store order is verified, and the field attribution is not.** The seeding
-loop's own instructions are `0x801EA7A8..0x801EA7C8` in
-`overlay_0897_801dbc30.txt`'s disassembly section, and they run in this order
-per record:
+| Printed VA | Where those bytes live | What is there |
+|---|---|---|
+| `801DBB8C` | PROT 0897 `0x801EA3A4` (file `0x1BB8C`) | `nop` / `addiu v0,v0,-1` / `j 0x801EA7AC` / `sb v0,0xd4(v1)` - an interior fragment, no prologue |
+| `801DBC30` | PROT 0897 `0x801EA448` (file `0x1BC30`) | `lui v1,0x1f80` / `ori v1,v1,0x314` / `lbu v0,0xd5(v1)` / `addiu v0,v0,-1` / `j 0x801EA7AC` / `sb v0,0xd5(v1)` |
+| `801EA7A8..801EA7C8` | PROT 0898 `0x801D3FC0..0x801D3FE0` | the seeding loop below |
+
+`0x801EA448 - 0x801DBC30 = 0xE818` is exactly the re-key delta
+[`phantom-print-index.md`](../tooling/phantom-print-index.md) records for the
+`overlay_0897_*` dump program, so the two heads are that program's own offsets.
+The **loop** is a second, independent failure of the same dump. A `j` target is
+encoded absolutely in the bytes, so `0x801EA7AC` is resolved correctly - but in
+a program based at `0x801C0000` that address lands at file `0x2A7AC`, past PROT
+0897's own `0x25000` of content and therefore inside its over-read of PROT 0898.
+Everything the dump lists after the jump is **0898's** code at 0898's own
+`0x801D3FC0`. In PROT 0897 itself `0x801EA7AC` is a shared continuation label a
+dozen arms of the enclosing routine branch to, and the two fragments above do
+nothing but step a scratchpad byte before jumping to it: `0x1F8003E8` /
+`0x1F8003E9`, two cells of the camera's visible-tile window (op `0x46` above),
+not a table pointer.
+
+#### The seeding loop, and what it really seeds
+
+The loop is real and its store order was transcribed correctly; only its owner
+and its destination were wrong. It belongs to PROT 0898's `FUN_801D3894`
+(prologue `addiu sp,sp,-0x38`), which carries thirteen loops of this family -
+one per HUD layout it installs - of which `0x801D3FC0` is the one the dump
+picked up:
 
 ```text
-lhu v0,0xa(v1)     ; the record's PREVIOUS +0xA, read before it is overwritten
-sh  a0,0x4(v1)     ; colour word
-sh  a0,0xc(v1)     ; colour word again
-sh  a2,0xa(v1)     ; param_3 -> +0xA
-sh  v0,0x2(v1)     ; the value captured above -> +2
-sltiu v0,a1,0x2e   ; 46 records
-bne v0,zero,...    ; delay slot: addiu v1,v1,0x18
+0x801D3FAC  addiu a0,zero,0xaa
+0x801D3FB0  addiu a2,zero,0x148
+0x801D3FB4  lui   v0,0x8007
+0x801D3FB8  addiu v0,v0,0x6c10
+0x801D3FBC  addiu v1,v0,0x408      ; 0x408 / 0x18 = record 43
+0x801D3FC0  lhu   v0,0xa(v1)       ; the record's PREVIOUS +0xA, before it is overwritten
+0x801D3FC4  addiu a1,a1,0x1
+0x801D3FC8  sh    a0,0x4(v1)
+0x801D3FCC  sh    a0,0xc(v1)
+0x801D3FD0  sh    a2,0xa(v1)
+0x801D3FD4  sh    v0,0x2(v1)
+0x801D3FD8  sltiu v0,a1,0x2e
+0x801D3FDC  bne   v0,zero,0x801D3FC0
+0x801D3FE0  _addiu v1,v1,0x18      ; delay slot: next record
 ```
 
-So `+2` receives each record's *own* prior `+0xA`, captured before the `+0xA`
-store lands - which is the same value as the previous record's `+0x22`, the
-stride being `0x18`. `801DBC30`'s seven-instruction head decrements the
-scratchpad depth byte `DAT_1F8003E9` and jumps to `0x801EA7AC`, i.e. **into**
-the loop past that first `lhu`, so record 0's `+2` is the decremented byte and
-every later record chains off its neighbour.
+The destination is **not** PSX scratchpad. The base is `0x80076C10` - the
+battle placement / window-descriptor table
+[`battle-action.md`](battle-action.md#what-each-halfword-is-read-off-the-draw-site)
+documents, `0x18` stride - entered at record `43`, and `a1` is seeded `0x2B`
+(43) by the `beq` delay slot at `0x801D3F38`. So `sltiu 0x2e` is the table's
+index bound (46) and each pass walks records **43, 44 and 45** - three records,
+not forty-six.
 
-What is *not* settled is which image those printed VAs belong to.
-`locate-entry-image.py 801dbc30 801dbb8c` puts both entries in PROT **0898**
-with clean frames and in no other statically-based image, and the 0898 bodies
-(53 / 41 instructions) are a one-packet HUD blit ported as
-`engine-vm::battle_party_panel` - not this loop. The field image at
-`0x801DBC30` is an interior address (`sw s1,0x14(sp)`, no prologue) and the
-loop's bytes are at neither VA in any of the 83 based images, so the dump is
-capture-derived and its base is unresolved. Read the loop as *behaviour whose
-address is open*, not as a field-VM entry.
-`see ghidra/scripts/funcs/overlay_0897_801dbc30.txt`.
+Read against that table's own field map the loop is a slide-in, not an
+initialiser: `+0x04` / `+0x0C` take the seat pair's y (`0xAA`), `+0x0A` re-parks
+seat B at x `0x148` (328, off the right edge), and `+0x02` - seat A's x -
+receives whatever seat B's x was on the previous frame. The twelve sibling loops
+differ only in which of those halfwords they write, and one variant biases the
+captured value by `-0x140` instead of re-parking.
 
 ### Party-roster panel renderers
 

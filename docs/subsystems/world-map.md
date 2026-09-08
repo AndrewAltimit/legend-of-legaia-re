@@ -2650,7 +2650,15 @@ function-pointer tables based on `_DAT_1F800394 & 1`:
 
 The overlay path skips the alpha offset (`_DAT_1F800028` is not added
 on the overlay branch), so only the first row of the overlay table is
-meaningful. Slots 8..11 of row 0 share the same low-mode dispatchers
+meaningful. `0x801F8968` is the base the dispatcher materialises
+(`lui s4,0x8020` / `addiu s4,s4,-0x7698` at `0x800435F4..F8`), **not** the
+first populated word: slots `0..7` are eight zero words and the twelve live
+entries begin at `0x801F8988`. The SCUS table is the same shape - `0x8007657C`
+also opens with eight zero words and puts the same four low-mode dispatchers at
+slots `8..11` - so the leading gap is the index space, not padding, and the
+index is the prim group's flag halfword `>> 1` (`srl s5,s7,0x11` at
+`0x800435A4`, `sll s5,s5,2` at `0x800435C4`).
+Slots 8..11 of row 0 share the same low-mode dispatchers
 as SCUS (`0x8004409C, 0x8004423C, 0x80044434, 0x800445B0`); slots
 12..19 carry the eight overlay-resident high-mode renderers. The slot is the
 group header's `flags >> 1` (`0x80043614`; `legaia_tmd::descriptor` decodes

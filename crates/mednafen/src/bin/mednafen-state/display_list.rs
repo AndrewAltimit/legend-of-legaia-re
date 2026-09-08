@@ -68,7 +68,10 @@ fn report_coincident(chained: &[prim_pool::ChainedPrim], top: usize, min_area: i
     for (i, c) in chained.iter().enumerate() {
         // Sprites are point-like and coincide constantly (glyph cells at one
         // seat); they are not what this question is about.
-        if matches!(c.prim, Prim::Sprt8 { .. } | Prim::Sprt16 { .. }) {
+        if matches!(
+            c.prim,
+            Prim::Sprt8 { .. } | Prim::Sprt16 { .. } | Prim::Sprt { .. }
+        ) {
             continue;
         }
         // Distant geometry projects to 1-3 pixel slivers, and slivers coincide

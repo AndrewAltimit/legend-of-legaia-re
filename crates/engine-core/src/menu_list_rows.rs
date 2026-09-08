@@ -525,8 +525,10 @@ pub fn build_price_gated_rows(
 
 /// Lowest item id the shop **buy** list will build a row for.
 ///
-/// `slti v0,s0,0x1a` gates both of the builder's passes
-/// (`0x80030E28` shrinks the allocation, `0x80030EA0` skips the emit). Every
+/// The same `0x1A` bound gates both of the builder's passes - `sltiu
+/// v0,v0,0x1a` at `0x80030E28` shrinks the allocation and `slti v0,s0,0x1a`
+/// at `0x80030EA0` skips the emit; both operands are `lbu`-loaded ids, so the
+/// signed / unsigned split is inert over the id space. Every
 /// item id below `0x1A` carries price `0` in the static item table, so this
 /// id-range test and the port's price-`> 0` sellable mask agree over the
 /// whole retail id space; a price-`0` id **at or above** `0x1A` (`0x1B`,

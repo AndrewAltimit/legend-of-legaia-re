@@ -714,9 +714,12 @@ always happens, so the `0x02` two-row menu is unreachable from a cold boot:
 
 - **`_DAT_8007BB00` is raised unconditionally by the boot `init.pak` itself.**
   `FUN_801CE9C0` does `li s2,0x1` / `sw s2,-0x4500(s0)` at `0x801CEB84` with
-  `s0 = 0x80080000`, in the mode-16 body, before it hands off. The three sites
-  that store zero back (`0x801CEBC0`, `0x801CEBD8`, `0x801CEBF8`) are all behind
-  dev-flag or pad-hold arms (`_DAT_8007B98C`, `_DAT_8007B8C2`, `_DAT_8007B850`).
+  `s0 = 0x80080000`, in the mode-16 body, before it hands off - no branch
+  between the function head and that store, so nothing can skip it. Two later
+  sites store zero back (`0x801CEBC0` behind `_DAT_8007B98C != 0` **and**
+  `_DAT_8007B8C2 == 0`; `0x801CEBF8` behind the dev/dual-mode word
+  `_DAT_8007B868 != 0`), and one re-raises it (`0x801CEBD8` stores `s2`, i.e.
+  `1`, when `_DAT_8007B850 & 1`) - all dev-flag or pad-hold arms.
 - **Capture agrees.** Polling the word and the sub-mode per vsync across a cold
   boot: `_DAT_8007BB00` goes `0 -> 1` in the same frame the master mode steps
   `0x10 -> 0x11`, holds `1` through `CARD INIT` (`0x16`) and the title (`0x17`),

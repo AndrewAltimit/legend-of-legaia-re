@@ -293,7 +293,15 @@ Read off the `a0` set at each `jal` into `0x801DD0AC` / `0x801DD4B0` /
 | 957 tick A `0x801F6A14` | `FUN_801DD4B0` | `0x100` |
 | 958 (Blazing Slash) | `FUN_801DD6B4` | `0x30, 0x38, 0x38, 0x38, 0x40, 0x30` |
 | 960 (Plasma Strike) | `FUN_801DD6B4` | `0x1C0` |
-| 966 (Evil Seru Magic) | `FUN_801DD4B0` | `0x100` |
+| 966 (Evil Seru Magic) stager `0x801F8D64` | `FUN_801DD4B0` | `0x100` |
+| 966 tick body (the image's other function) | `FUN_801DD4B0` | `0x327` |
+
+The 966 rows are two different routines in one image, and the split matters:
+the module's stager bakes `0x100` and clamps shape B, while its tick body bakes
+`0x327` at `0x801F8610` and clamps shape A at `0x801F863C`. PROT 0927 is the
+same arrangement with the same constant on both sides (`0x12` at the stager's
+`0x801F8758` and the tick's `0x801F7E0C`), so only the clamp differs there.
+Ask a module's **entry number** what it hits for and you get its stager.
 
 This page previously gave 958's run as "`0x30, 0x38, 0x38, 0x38, 0x40, ..`".
 The sixth site (`0x801F88D8`) is `0x30`, so the escalation does not continue -
@@ -324,8 +332,10 @@ compares above any HP, the clamp rewrites it to the victim's whole bar, and
 the victim dies. A negative roll on these modules kills outright rather than
 healing.
 
-**Shape B - clamp to `HP - 1`, floor 1.** PROT 0927 and 0966, the band's two
-AoE sweeps:
+**Shape B - clamp to `HP - 1`, floor 1.** The band's two AoE sweeps - and only
+those two sites, `0x801F8758` in PROT 0927 and `0x801F8F08` in PROT 0966. Both
+are the module's **stager**; both images' tick bodies clamp shape A, so "0927 /
+0966 never kill" is true of the sweep and false of the tick:
 
 ```text
 v0 = victim[+0x14C]
