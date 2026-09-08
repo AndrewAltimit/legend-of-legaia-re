@@ -261,7 +261,12 @@ namespace LegaiaWorld
                 for (int i = 0; i < brains.Length; i++)
                 {
                     LegaiaNpcBrain b = brains[i];
-                    if (b == null || !b.Available() || b.Indoors() != s.indoors)
+                    // A villager that just gave up on this very station
+                    // is skipped for a while: nearest-first would otherwise
+                    // pick it again every time and walk it into the same
+                    // dead end for ever.
+                    if (b == null || !b.Available() || b.Indoors() != s.indoors ||
+                        b.RecentlyFailed(s))
                         continue;
                     float d = (b.transform.position - to).sqrMagnitude;
                     if (d < d0)

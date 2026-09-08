@@ -531,10 +531,35 @@ namespace LegaiaWorld
             // below then runs against the second build, so a leaked brain or
             // a second director shows up as a failure rather than as a
             // slowly growing scene.
-            LegaiaLivingTown.Apply(
-                root, manifest, sceneName, new LegaiaLivingTownOptions(), settings);
-            var container = LegaiaLivingTown.Apply(
-                root, manifest, sceneName, new LegaiaLivingTownOptions(), settings);
+            //
+            // `-legaiaViaRealism` runs the WHOLE enhancement pass instead
+            // (LegaiaRealism.Apply with default options, then the per-scene
+            // deletions) - the editor's "Apply enhancements" button and the
+            // build's own flow, where the living town comes last after the
+            // lighting, interiors, foliage, weather and props passes. The
+            // direct call below is the fast path; the two have disagreed
+            // (an editor build homing nobody while this check homed seven),
+            // and only the button's flow can show why.
+            bool viaRealism = System.Array.IndexOf(
+                System.Environment.GetCommandLineArgs(), "-legaiaViaRealism") >= 0;
+            GameObject container;
+            if (viaRealism)
+            {
+                Debug.Log("[Legaia] living town: -legaiaViaRealism - applying the whole " +
+                    "enhancement pass (LegaiaRealism.Apply, default options) the way " +
+                    "the editor button does.");
+                LegaiaRealism.Apply(root, manifest, sceneName, new LegaiaRealismOptions());
+                settings.ApplyDeletions(root);
+                var ct = rootT.Find(LegaiaLivingTown.CONTAINER);
+                container = ct != null ? ct.gameObject : null;
+            }
+            else
+            {
+                LegaiaLivingTown.Apply(
+                    root, manifest, sceneName, new LegaiaLivingTownOptions(), settings);
+                container = LegaiaLivingTown.Apply(
+                    root, manifest, sceneName, new LegaiaLivingTownOptions(), settings);
+            }
             if (container == null)
                 Fail("living town built nothing");
             int containers = 0;

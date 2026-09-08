@@ -702,7 +702,10 @@ namespace LegaiaWorld
         static int s_seatedSamples;
         static float s_minSeatY = 99f, s_maxSeatY = -99f;
         static Transform[] s_prevNpc;
+        static Component[] s_prevBrain;
         static float[] s_prevDist;
+        static int s_giveUps;
+        static readonly Dictionary<string, int> s_giveUpBy = new Dictionary<string, int>();
         static float s_prevT;
         static int s_walkedIn;
         static readonly HashSet<string> s_talkSeen = new HashSet<string>();
@@ -779,7 +782,10 @@ namespace LegaiaWorld
             s_minSeatY = 99f;
             s_maxSeatY = -99f;
             s_prevNpc = new Transform[4];
+            s_prevBrain = new Component[4];
             s_prevDist = new float[4];
+            s_giveUps = 0;
+            s_giveUpBy.Clear();
             s_prevT = Time.time;
             s_walkedIn = 0;
             s_talkSeen.Clear();
@@ -868,11 +874,28 @@ namespace LegaiaWorld
                 if (s_stools[i] == null || s_stations[i] == null)
                     continue;
                 var npc = Var(s_stations[i], "currentNpc") as Transform;
+                // A claim that ends before the villager got within arm's
+                // reach of the stool is a give-up: log the brain's own
+                // reason, and fail on the loop shape (the same villager
+                // giving up on the same stool again and again - what
+                // nearest-first summoning did to Vahn beside the table).
+                if (s_prevNpc[i] != null && npc != s_prevNpc[i] && s_prevDist[i] > 0.35f)
+                {
+                    string loop = NoteGiveUp(i, s_prevNpc[i], s_prevBrain[i], s_prevDist[i]);
+                    if (loop != null)
+                    {
+                        Finish(1, loop);
+                        return;
+                    }
+                }
                 if (npc == null)
                 {
                     s_prevNpc[i] = null;
+                    s_prevBrain[i] = null;
                     continue;
                 }
+                if (s_prevNpc[i] != npc)
+                    s_prevBrain[i] = Var(s_stations[i], "currentBrain") as Component;
                 Vector3 d = npc.position - s_stools[i].position;
                 float lift = d.y;
                 d.y = 0f;
@@ -1083,9 +1106,27 @@ namespace LegaiaWorld
                 (hands - s_handsAtSwitch) + " blackjack hand(s); seated villagers " +
                 "sampled " + s_seatedSamples + "x at " + s_minSeatY.ToString("0.00") +
                 ".." + s_maxSeatY.ToString("0.00") + " m above the stool floor, " +
-                s_walkedIn + " arrival(s) on foot; " +
+                s_walkedIn + " arrival(s) on foot, " + s_giveUps + " give-up(s); " +
                 s_talkSeen.Count + " distinct table-talk lines.");
             Finish(0, null);
+        }
+
+        static string NoteGiveUp(int stool, Transform npc, Component brain, float dist)
+        {
+            s_giveUps++;
+            string why = brain != null ? Var(brain, "lastFailure") as string : null;
+            string key = npc.name + "|" + stool;
+            int n;
+            s_giveUpBy.TryGetValue(key, out n);
+            s_giveUpBy[key] = ++n;
+            Debug.LogWarning("[Legaia] CARDS: " + npc.name + " gave up " +
+                dist.ToString("0.0") + " m short of stool_" + stool + " (" + n +
+                "x): " + (string.IsNullOrEmpty(why) ? "no reason recorded" : why));
+            if (n >= 3)
+                return "walk loop: " + npc.name + " gave up on stool_" + stool + " " +
+                       n + " times - " +
+                       (string.IsNullOrEmpty(why) ? "no reason recorded" : why);
+            return null;
         }
 
         static MethodInfo s_setVar;

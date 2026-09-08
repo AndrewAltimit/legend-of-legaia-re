@@ -8,7 +8,8 @@
   "add_npcs": [
     {"scene": "bylon", "model": 103, "position": [-95.5, 0, 59.7], "label": "Maya"},
     {"scene": "party", "model": 0, "position": [-33.45, 1.5, 21.35], "yaw": 200, "label": "Vahn"},
-    {"scene": "party", "model": 1, "position": [-32.1, 1.5, 22.3], "yaw": 160, "label": "Noa"}
+    {"scene": "party", "model": 1, "position": [-32.1, 1.5, 22.3], "yaw": 160, "label": "Noa"},
+    {"scene": "party", "model": 2, "position": [-22.7, 0, 15.3], "yaw": 200, "label": "Gala"}
   ],
   "mesh_npcs": {"mesh_55": {"scene": "balden", "model": 151}},
   "spawn_position": [-24.85, 1.75, 12.22],

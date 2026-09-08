@@ -1801,19 +1801,28 @@ namespace LegaiaWorld
                     continue;
                 string why;
                 Home hm = homes[c];
+                // Only the way IN decides: a villager that cannot walk from
+                // the door stand spot onto the doorway tile stands at the
+                // door all night. The way OUT (landing to exit) is checked
+                // for the report only - the dawn routine emerges through
+                // the door on its own when that leg is blocked, and a house
+                // whose interior floor the bake missed is still a house.
                 if (hm.doorT != null && hm.thresholdT != null &&
                     !LegaiaNavMesh.Reachable(hm.doorT.position, hm.thresholdT.position,
                         1.2f, out why))
+                {
                     homeUsable[c] = false;
+                    Debug.LogWarning("[Legaia] living town: home_" + c + " (teleport " +
+                        hm.teleport + ") is not handed out - the door stand spot " +
+                        "to the doorway tile has no navmesh path: " + why);
+                }
                 else if (hm.landingT != null && hm.exitT != null &&
                          !LegaiaNavMesh.Reachable(hm.landingT.position, hm.exitT.position,
                              1.2f, out why))
-                    homeUsable[c] = false;
-                else
-                    continue;
-                Debug.LogWarning("[Legaia] living town: home_" + c + " (teleport " +
-                    hm.teleport + ") is not handed out - its night route has no " +
-                    "complete navmesh path: " + why);
+                    Debug.Log("[Legaia] living town: home_" + c + " (teleport " +
+                        hm.teleport + ") has no navmesh path from its landing " +
+                        "to the way out (" + why + ") - villagers still live " +
+                        "there and step out through the door at dawn.");
             }
 
             // Round-robin the shuffled villagers over the houses, capped.

@@ -166,6 +166,17 @@ namespace LegaiaWorld
         [Tooltip("Give up on a walk that takes longer than this (seconds).")]
         public float walkTimeout = 45f;
 
+        [Tooltip("After giving up on the way to a station, this villager is " +
+                 "not sent to that SAME station again for this long (seconds) " +
+                 "- the director tries the next villager instead. Without it " +
+                 "the nearest villager is re-summoned onto the same failing " +
+                 "approach for ever: the walk loop.")]
+        public float failRetrySeconds = 120f;
+
+        /// The last station walk that failed and why ("blocked -> stool_2:
+        /// no lane past ...", "timed out -> ..."). Diagnostics.
+        [HideInInspector] public string lastFailure = "";
+
         [Tooltip("How close to the door stand spot counts as arrived (meters). " +
                  "Wider than a plain walk's: the spot sits a step out from a " +
                  "doorway, between the hut wall and the door leaf, and the " +
@@ -228,6 +239,8 @@ namespace LegaiaWorld
         private Renderer[] bodyRenderers;
         private float giveUpAt;
         private float busyUntil;
+        private LegaiaNpcStation failedStation;
+        private float failedAt = -1e9f;
         private Vector3 outdoorHome;
         private Vector3 chatCentre;
         private LegaiaNpcStation station;
@@ -1071,9 +1084,28 @@ namespace LegaiaWorld
             }
             if (loco.Blocked() || Time.time > giveUpAt)
             {
+                NoteFailure(loco.Blocked() ? "blocked" : "timed out");
                 ReleaseStation();
                 BackToStroll(4f + NextFloat() * 8f);
             }
+        }
+
+        /// Remember a station this villager could not reach, so the
+        /// director hands it to somebody else for a while (RecentlyFailed).
+        void NoteFailure(string what)
+        {
+            failedStation = station;
+            failedAt = Time.time;
+            lastFailure = what + " -> " + (station != null ? station.name : "?") +
+                          (loco != null && loco.Blocked() ? ": " + loco.blockReason : "");
+        }
+
+        /// True while this villager's last failed station walk was to `s`
+        /// and less than `failRetrySeconds` ago.
+        public bool RecentlyFailed(LegaiaNpcStation s)
+        {
+            return s != null && failedStation == s &&
+                   Time.time - failedAt < failRetrySeconds;
         }
 
         void TickAtStation()

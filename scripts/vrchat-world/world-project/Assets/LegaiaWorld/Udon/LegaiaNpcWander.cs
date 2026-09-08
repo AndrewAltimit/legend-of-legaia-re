@@ -198,6 +198,24 @@ namespace LegaiaWorld
                  "measured visual forward - for hand-tuning one NPC.")]
         public float facingYawOffset = 0f;
 
+        [Tooltip("Rigs with no measured walk clip (a one-piece body, no leg " +
+                 "pair) get a procedural gait while walking: this much " +
+                 "vertical bob as a fraction of the model's height. 0 = off.")]
+        public float gaitBob = 0.035f;
+
+        [Tooltip("...and this much side-to-side roll in degrees, alternating " +
+                 "each step. 0 = off.")]
+        public float gaitRoll = 4f;
+
+        [Tooltip("Stride the gait is paced by (metres): steps per second = " +
+                 "walk speed / stride.")]
+        public float gaitStride = 0.4f;
+
+        /// Why the last commanded walk reported Blocked() - the probe hit,
+        /// or the watchdog that fired. Read by the brain's failure record
+        /// and the soak harness; empty while a walk is going well.
+        [HideInInspector] public string blockReason = "";
+
         private Vector3 home;
         private Vector3 target;
         private float pauseUntil;
@@ -210,6 +228,15 @@ namespace LegaiaWorld
         // floor rays stay proportioned to the model at any export scale.
         private float npcHeight = 1.6f;
         private float rayHeight = 0.8f;
+
+        // Procedural gait for a rig with no walk clip (see Gait()).
+        private Transform gaitNode;
+        private Vector3 gaitRestPos;
+        private Quaternion gaitRestRot;
+        private float gaitPhase;
+        private float gaitWeight;
+        // The last thing the straight-ahead probe hit (diagnostics).
+        private string lastHit = "";
 
         // --- Command state ------------------------------------------------
         // mode 0 = autonomous stroll (the default), 1 = commanded walk to
@@ -327,6 +354,23 @@ namespace LegaiaWorld
                     * (transform.rotation * Vector3.forward);
             lastForward = transform.forward;
 
+            // The node the procedural gait moves: this instance's child
+            // that carries the anchor (the glb's own scene root). Moving it
+            // leaves the Animator's nodes and this instance's placement -
+            // what the walk, the floor ray and the host's seat pose write -
+            // untouched.
+            Transform g = anchor != null ? anchor : anyAnchor;
+            while (g != null && g != transform && g.parent != transform)
+                g = g.parent;
+            if (g == transform)
+                g = null;
+            gaitNode = g;
+            if (gaitNode != null)
+            {
+                gaitRestPos = gaitNode.localPosition;
+                gaitRestRot = gaitNode.localRotation;
+            }
+
             // Model height from the rendered rest bounds: the ray heights
             // must track the villager, not an assumed human - at the
             // 1 m-per-tile export scale these models stand well under 1 m,
@@ -384,6 +428,7 @@ namespace LegaiaWorld
             mode = 1;
             arrived = false;
             blocked = false;
+            blockReason = "";
             steerUntil = 0f;
             replanned = false;
             progressMark = transform.position;
@@ -825,6 +870,9 @@ namespace LegaiaWorld
                 dir, out hit, dist, ~0, QueryTriggerInteraction.Ignore);
             probeHitNpc = probeBlocked &&
                 hit.collider.GetType() == typeof(CapsuleCollider);
+            if (probeBlocked)
+                lastHit = hit.collider.name + " at " +
+                          hit.distance.ToString("0.00") + " m";
         }
 
         void Update()
@@ -844,11 +892,15 @@ namespace LegaiaWorld
             DriveAnimator();
         }
 
-        // Idle / walk crossfade for the rigs that have a measured walk clip.
+        // Idle / walk crossfade for the rigs that have a measured walk clip;
+        // a procedural gait for the rest.
         void DriveAnimator()
         {
             if (locoAnimator == null)
+            {
+                Gait();
                 return;
+            }
             if (!animStarted)
             {
                 animStarted = true;
@@ -861,6 +913,41 @@ namespace LegaiaWorld
             animWalking = walking;
             locoAnimator.CrossFade(walking ? walkState : idleState,
                 animCrossfade, 0);
+        }
+
+        // A rig whose family has no walk cycle (one body mesh, or no leg
+        // pair - Cara's family in town01) used to slide along on its looping
+        // spawn clip. This bobs and rocks the glb root while the walk is on:
+        // one bob per step, the roll alternating sides, paced by the walk
+        // speed over `gaitStride`, eased in and out so a stop does not snap.
+        void Gait()
+        {
+            if (gaitNode == null || (gaitBob <= 0f && gaitRoll <= 0f))
+                return;
+            float dt = Time.deltaTime;
+            gaitWeight = Mathf.MoveTowards(gaitWeight, walking ? 1f : 0f, dt * 4f);
+            if (gaitWeight <= 0f)
+            {
+                if (gaitNode.localPosition != gaitRestPos)
+                {
+                    gaitNode.localPosition = gaitRestPos;
+                    gaitNode.localRotation = gaitRestRot;
+                }
+                return;
+            }
+            float stride = gaitStride < 0.1f ? 0.1f : gaitStride;
+            if (walking)
+                gaitPhase += dt * (walkSpeed / stride) * Mathf.PI;
+            float s = Mathf.Sin(gaitPhase);
+            float bob = gaitBob * npcHeight * Mathf.Abs(s) * gaitWeight;
+            float roll = gaitRoll * s * gaitWeight;
+            // localPosition / localRotation are in THIS instance's frame,
+            // which stands upright and faces the way the model faces at
+            // rest - so `up` is the world's up and the roll is about the
+            // model's own forward axis.
+            gaitNode.localPosition = gaitRestPos + Vector3.up * bob;
+            gaitNode.localRotation =
+                Quaternion.AngleAxis(roll, Vector3.forward) * gaitRestRot;
         }
 
         // --- Commanded walk -------------------------------------------------
@@ -939,6 +1026,8 @@ namespace LegaiaWorld
                         if (Replan())
                             return;
                         blocked = true;
+                        blockReason = "no lane past " + lastHit +
+                            (havePath ? " (on a route)" : " (no route)");
                         walking = false;
                         return;
                     }
@@ -970,6 +1059,10 @@ namespace LegaiaWorld
                     if (!Replan())
                     {
                         blocked = true;
+                        blockReason = "stalled " + dist.ToString("0.0") +
+                            " m from the target, facing error " +
+                            abs.ToString("0") + " deg, last hit " + lastHit +
+                            (havePath ? " (on a route)" : " (no route)");
                         walking = false;
                     }
                 }
@@ -1007,6 +1100,10 @@ namespace LegaiaWorld
                 if (!Replan())
                 {
                     blocked = true;
+                    blockReason = "no progress toward corner " + cornerIndex +
+                        " (" + legDist.ToString("0.0") + " m off, target " +
+                        dist.ToString("0.0") + " m), last hit " + lastHit +
+                        (havePath ? " (on a route)" : " (no route)");
                     walking = false;
                 }
             }

@@ -322,7 +322,9 @@ All keys optional (`town01.settings.json` is the worked example):
   to `Assets/LegaiaImports/party/` and add `{"scene": "party", "model":
   0}` (Vahn), `1` (Noa) or `2` (Gala) - the export names them, so
   `label` is optional. They walk, chat, go home and sit at the card
-  table like anyone else, and the table knows who they are.
+  table like anyone else, and the table knows who they are. town01's
+  settings place all three: Vahn and Noa by the spawn, Gala beside
+  Tetsu's (npc_07's) spot.
 - **`living_town.names`** - `{"npc_07": "Tetsu"}` pins a villager's
   display name. Without a pin the living town names everyone itself:
   the speaker prefix of the actor's retail line when it has one ("Val:
@@ -558,7 +560,14 @@ not a broken one.
   four rig families have no leg pair at all (one body mesh, or a purely
   axial chain), so nothing in their clip set can be a walk and they keep
   looping their spawn clip - **Walk cycle clip** turns the binding off
-  entirely.
+  entirely. Those rigs used to glide: the body slid along at a constant
+  height in its idle pose. They now get a **procedural gait** instead
+  (`LegaiaNpcWander.gaitBob` / `gaitRoll` / `gaitStride`): while the walk
+  is on, the glb's root bobs once per step (3.5% of the rig's height) and
+  rocks a few degrees side to side, alternating each step, paced by the
+  walk speed over a 0.4 m stride and eased in and out so a stop does not
+  snap. It moves the glb root under the instance, so the Animator's
+  nodes, the floor ray and the card table's seat pose are untouched.
 
 `LegaiaNpcWander` is the locomotion controller under all of this: it keeps
 its autonomous stroll and its measured-facing recipe unchanged, and adds a
@@ -640,7 +649,16 @@ settings"). Headless check:
 which also registers the bake and asserts a *complete* navmesh route from
 every homed villager's spawn to its door stand spot, from there onto the
 doorway tile, and from the landing to the way out, so a door nobody can
-walk to fails the build instead of clipping in-world. It asserts the
+walk to fails the build instead of clipping in-world. The pass itself is
+stricter about only one of those legs: a house whose door stand spot has
+no navmesh path onto its doorway tile is **not handed out** (the villager
+would stand at the door all night - town01's sixth house), while a
+landing with no path to the way out is only logged, because the dawn
+routine steps out through the door on its own when that leg is blocked.
+Add `-legaiaViaRealism` to run the whole enhancement pass first
+(`LegaiaRealism.Apply` with default options, then the per-scene
+deletions) - the editor button's flow - instead of the living town alone;
+the two have disagreed, and only that flow shows why. It asserts the
 daytime layer the same way: every stand spot on real floor with room for
 a body, every outdoor one reachable from the spawn or from some villager,
 every carry endpoint carrying a `LegaiaNpcHandItem` whose wiring reached
@@ -752,7 +770,16 @@ and the SDK's own components - no third-party package, no game data:
   only once its brain reports it has arrived; the station names its
   villager at claim time, before the walk, and sitting on that alone
   snapped them onto the stools from across the square. The table calls
-  villagers from within 28 m, which is what a 45 s walk covers.
+  villagers from within 28 m, which is what a 45 s walk covers. A
+  villager that **gives up** on the way (blocked, or out of time) is not
+  sent to that same stool again for two minutes
+  (`LegaiaNpcBrain.failRetrySeconds`): the director summons nearest-first,
+  so without that memory the villager standing beside the table was
+  re-summoned onto the same failing approach every few seconds - a walk
+  loop, with the brain's reason in its `lastFailure` field and the
+  controller's in `blockReason` (what the probe hit, or which watchdog
+  fired). The card soak logs every give-up with that reason and fails on
+  the loop shape (one villager giving up on one stool three times).
 
   **The game** (`LegaiaCardGame`, on the table's `game` child) plays
   **five-card draw poker** (default) and **blackjack** with those 52
