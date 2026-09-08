@@ -76,6 +76,24 @@ end
 local FRAMES     = probe.getenv_num("LEGAIA_FRAMES", 1800)
 local SCAN_EVERY = probe.getenv_num("LEGAIA_SCAN_EVERY", 30)
 local FB_EVERY   = probe.getenv_num("LEGAIA_FB_EVERY", 120)
+-- Game modes in which the (384, 0) sweeps run EVERY vsync instead of every
+-- SCAN_EVERY. A one-shot blit that moves the panel still onto the display
+-- lives for a frame or two, which a 20-vsync sampler misses entirely - and a
+-- miss reads exactly like "nothing draws it". Comma-separated hex, e.g.
+-- LEGAIA_SCAN_MODES=0x18,0x19 for the dome's interval screens.
+local SCAN_MODES = {}
+for m in string.gmatch(probe.getenv("LEGAIA_SCAN_MODES", ""), "[^,]+") do
+    local v = tonumber(m)
+    if v ~= nil then SCAN_MODES[v] = true end
+end
+-- Dump the whole 1 MiB VRAM the first time each listed mode is entered, so the
+-- rect at (384, 0) can be compared against the frame the player sees.
+local VRAM_MODES = {}
+for m in string.gmatch(probe.getenv("LEGAIA_VRAM_MODES", ""), "[^,]+") do
+    local v = tonumber(m)
+    if v ~= nil then VRAM_MODES[v] = true end
+end
+local vram_done = {}
 
 local hook_csv  = probe.csv_open(probe.out_path("hook_hits.csv"),
     "tick,site,pc,ra,loader_b_id,extraction,bdc0,ctx,ctx_0c,target_w0,target_w1")
@@ -95,6 +113,19 @@ local function u32(a) return probe.read_u32(a) or 0 end
 local function u8(a)  return probe.read_u8(a) or 0 end
 
 local function ctx_ptr() return u32(CTX_PTR) end
+
+local function grab_vram(tag)
+    local ok = pcall(function()
+        local v = nil
+        if PCSX.getVRAM ~= nil then v = PCSX.getVRAM()
+        elseif PCSX.GPU and PCSX.GPU.getVRAM then v = PCSX.GPU.getVRAM() end
+        if v == nil then error("no getVRAM API") end
+        local h = io.open(probe.out_path(string.format("vram_%s.bin", tag)), "wb")
+        if h == nil then error("open failed") end
+        h:write(tostring(v)); h:close()
+    end)
+    return ok
+end
 
 local function grab_fb(tag)
     local ok, ss = pcall(function() return PCSX.GPU.takeScreenShot() end)
@@ -204,6 +235,46 @@ probe.run({
                 probe.pad_force(probe.BTN[key])
             elseif phase == 6 then
                 probe.pad_release(probe.BTN[key])
+            end
+        end
+
+        local mode_now = probe.read_u16(GAME_MODE) or 0
+        if VRAM_MODES[mode_now] and not vram_done[mode_now] then
+            vram_done[mode_now] = true
+            if grab_vram(string.format("mode%02X_%05d", mode_now, elapsed)) then
+                grab_fb(string.format("%05d_vram", elapsed))
+                PCSX.log(string.format("[teardown] VRAM dumped on mode 0x%X entry at tick %d",
+                    mode_now, elapsed))
+            end
+        end
+
+        local fast_scan = SCAN_MODES[mode_now] == true
+        if fast_scan and (elapsed % SCAN_EVERY) ~= 0 then
+            -- Cheap pass: the blit + display-rect sweeps only, every vsync.
+            local ram2 = scan.snapshot()
+            if ram2 ~= nil then
+                local h2, t2 = scan.find_at_xy(ram2, 384, 0, scan.MOVE_IMAGE_CODES, 4)
+                for _, h in ipairs(h2) do
+                    still_csv:row("%d,xy_384_0_fast,packet=0x%08X code=0x%02X dst=(%d;%d) size=%dx%d total=%d",
+                        elapsed, h.packet_va, h.code,
+                        h.dst_x or -1, h.dst_y or -1, h.size_w or -1, h.size_h or -1, t2)
+                    if still_seen["xy_fast"] == nil then
+                        still_seen["xy_fast"] = elapsed
+                        PCSX.log(string.format(
+                            "[teardown] (384,0) BLIT at tick %d: 0x%08X -> (%d,%d) %dx%d",
+                            elapsed, h.packet_va, h.dst_x or -1, h.dst_y or -1,
+                            h.size_w or -1, h.size_h or -1))
+                    end
+                end
+                for _, h in ipairs(scan.find_disp_rect(ram2, 384, 0, 4)) do
+                    still_csv:row("%d,disp_rect_fast,va=0x%08X w=%d h=%d", elapsed, h.va, h.w, h.h)
+                    if still_seen["disp_fast"] == nil then
+                        still_seen["disp_fast"] = elapsed
+                        PCSX.log(string.format(
+                            "[teardown] (384,0) display RECT at tick %d: 0x%08X %dx%d",
+                            elapsed, h.va, h.w, h.h))
+                    end
+                end
             end
         end
 

@@ -441,9 +441,12 @@ is a deliberate top pad rather than dev filler.
 Both stills are finished pre-rendered scenes of characters at the ring's
 rope-and-mesh fence, and the `int2` variant differs by their reaction, which is
 consistent with the HP test that selects it. **Confirmed** (disassembly) for
-the loader, the index arithmetic, the variant selector and the upload geometry;
-what the panel is used for on screen is **Inferred** - no draw of the
-`(384, 0)` rect has been traced.
+the loader, the index arithmetic, the variant selector and the upload geometry.
+What the panel is used for on screen is still **Inferred**, and capture has
+now ruled out the obvious candidate: the between-match `INTERVAL` / `ROUND`
+screens show a ringside scene that looks exactly like the stills, but they are
+a **live `koin1` render**, not the rect - see
+[what a live teardown shows](#what-a-live-teardown-shows).
 
 #### What arms the load
 
@@ -513,23 +516,44 @@ The tracker holds `extraction - 895`, so `83` is **PROT 0978** - the load is
 byte-pinned live, on both battle-end paths, and `ra = 0x800252BC` is the
 actor-list tick iterator the settled `FUN_80047430` caller finding names.
 
-**The draw is still not observed, and three channels are now ruled out.** Over
-the two runs the same probe sweeps main RAM for each shape a `(384, 0)` display
-could take and finds none: no libgpu blit sourcing `(384, 0)` (GP0 `0x80..0x83`
-with the command word's low 24 bits zero and a transferable size - the loose
-form of this test reports a false hit for every `0x80`-prefixed KSEG0 pointer
-that happens to precede the constant `0x180`), no `DISPENV`-shaped rect at
-`(384, 0)` with a screen-sized `w`/`h`, and no frame in which the panel is on
-screen: the victory frame with PROT 0978 already resident is the ordinary
-spoils screen, and the dome's post-match frames are the transition fade.
+#### The `INTERVAL` screen is a live render, not the still
 
-The tpage channel is **not** conclusive either way. A two-byte tpage needle
-matches ordinary data too often to separate even after a screen-coordinate
-filter, so the standing `(384, 0)` tpage candidates in the capture are not
-evidence of a draw. What would close the thread is a state captured at the
-between-match intermission of a **won** dome ladder, read with
-`mednafen-state display-list`, which walks the frame's real ordering table
-instead of searching RAM for packet-shaped bytes.
+The `INTERVAL` scoreboard and the `ROUND 2` card sit over a ringside scene that
+matches the stills' decoded content closely enough to look like the answer. It
+is not. Walking the frame's **real ordering table** - `mednafen-state
+display-list` over the main-RAM dump each checkpoint of
+`autorun_muscle_hud_capture.lua` writes - decodes 1822 packets of live `koin1`
+geometry (971 `POLY_GT4`, 406 `POLY_GT3`) across 22 texture families, and none
+of them sits on a page whose x origin is `384`.
+
+The same sweep does find the `(384, 0)` page being sampled, but **only before
+the first match**: every checkpoint from the dome hub through the first battle
+carries one family with `tpage 0x0006` / `clut 0x7702` - 27 packets covering
+screen `x[25,151] y[91,101]`, a ~127x11 label strip, not a 320x256 backdrop.
+From the first battle-end onwards - the point at which PROT 0978 streams the
+still over that page - no checkpoint's ordering table carries a family there at
+all.
+
+**What is still open is the emit**, and three channels are now ruled out over
+roughly 14,000 vsyncs spanning an ordinary battle end, two dome matches and
+their intervals: no `DISPENV`-shaped rect at `(384, 0)` with a screen-sized
+`w`/`h`; no libgpu blit sourcing `(384, 0)` (GP0 `0x80..0x83` with the command
+word's low 24 bits zero and a transferable size - the loose form of that test
+reports a false hit for every `0x80`-prefixed KSEG0 pointer that happens to
+precede the constant `0x180`, which is why the filter lives in the scanner);
+and no ordering-table family on the page after the still lands.
+
+Two method notes the negatives depend on. A **periodic RAM sweep cannot see a
+one-shot** - a blit that runs on the frame a screen opens is gone before the
+next sample, and a miss reads exactly like an absence, which is why the probe
+takes `LEGAIA_SCAN_MODES` to sweep every vsync inside named modes. And a
+**two-byte tpage needle is not separable from data** even after a
+screen-coordinate filter, so RAM-scanned `(384, 0)` tpage candidates are not
+evidence of a draw; the ordering-table walk is what carries weight here.
+
+Where to look next is in the entry's own strings: PROT 0978 opens with
+`f_read %d size %d KB` and **`FIELD BACK READ NOW`**, which reads as a
+background-read cover rather than an arena screen.
 
 ### Object 1 is trimmed by the loader (`_DAT_8007B64B`)
 

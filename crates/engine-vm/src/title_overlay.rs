@@ -64,12 +64,27 @@
 //! the dump (62 such writes across the function body):
 //!
 //! - `0x00` `Init` - entry pass. Zeroes ~12 state fields, sets the
-//!   countdown to `0x5DC`, then writes `state[+0x204] = 0x02`
-//!   (line 374, `0x801DD920`). A conditional branch (line 397,
-//!   `0x801DD97C`) routes to `state[+0x204] = 0x11` instead when the
-//!   entry-context word at `_DAT_8007BB00` reads `1` - the "skip intro
-//!   / direct to attract" hand-off, and the same word retail's four
-//!   `game_mode = 0x16` sites raise (see `engine-core::game_over`).
+//!   countdown to `0x5DC`, then writes `state[+0x204] = 0x02`. A
+//!   conditional branch routes to `state[+0x204] = 0x11` instead when
+//!   the entry-context word at `_DAT_8007BB00` is non-zero - the "skip
+//!   intro / direct to attract" hand-off, and the same word retail's
+//!   four `game_mode = 0x16` sites raise (see
+//!   `engine-core::game_over`).
+//!
+//!   **The `0x02` arm is dead on retail.** The boot `init.pak`
+//!   (`FUN_801CE9C0`) raises `_DAT_8007BB00` to `1` unconditionally at
+//!   `0x801CEB84` (`li s2,0x1` / `sw s2,-0x4500(s0)`, `s0 = 0x80080000`)
+//!   before it hands off, so `Init` always takes the `0x11` arm. A cold
+//!   boot capture (`scripts/pcsx-redux/autorun_boot_warning_screen.lua`)
+//!   sees the write at that PC, then `AttractDelay` on the frame after
+//!   the title mode is entered and `AttractIdle` ~75 vsyncs later;
+//!   sub-mode `0x02` never appears.
+//!
+//!   **Address note.** The two stores are at *instruction* addresses
+//!   `0x801DD920` / `0x801DD97C`; the *data* word they write is
+//!   `state[+0x204]` = `0x801F0204` (`lui a2,0x801f` four instructions
+//!   ahead of the first store). Earlier prose quoted the instruction
+//!   address as if it were the state word's address.
 //! - `0x01` `Idle` - handler PC is the post-dispatch body tail. No
 //!   per-mode work; the function just exits.
 //! - `0x10` `AttractIdle` - the "Press Start" wait state. Polls for
