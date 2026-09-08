@@ -10,6 +10,7 @@ entry,bytes,image,class,reason
 801ce9c0,784,boot_init_pak(895),unique,own content of boot_init_pak(895) reproduces the 24-instruction window at this VA (content_bytes cut)
 801ce9c4,324,-,unresolved,no extracted image holds these bytes at this VA or anywhere - RAM-capture-derived or an un-extracted overlay
 801cea3c,1520,cutscene_str(970),unique,own content of cutscene_str(970) reproduces the 24-instruction window at this VA (content_bytes cut)
+801cea3c,1628,cutscene_str(970),unique,own content of cutscene_str(970) reproduces the 24-instruction window at this VA (content_bytes cut)
 801ceac4,68,arena_init(977),unique,own content of arena_init(977) reproduces the 17-instruction window at this VA (content_bytes cut)
 801ceaf8,620,-,misbased,no image holds these bytes at this VA; they live at field(897) 0x801dd310 (delta +0xe818)
 801ceb50,244,gameover(902),unique,own content of gameover(902) reproduces the 24-instruction window at this VA (content_bytes cut)
@@ -28,7 +29,6 @@ entry,bytes,image,class,reason
 801cefd4,1388,boot_init_pak(895),unique,own content of boot_init_pak(895) reproduces the 24-instruction window at this VA (content_bytes cut)
 801cf00c,8,-,short,"2 instructions, below the 3-instruction at-VA floor for naming an image"
 801cf00c,892,baka_fighter(976),unique,own content of baka_fighter(976) reproduces the 24-instruction window at this VA (content_bytes cut)
-801cf02c,80,-,gapped,"printed addresses are non-contiguous, so the window matches no image as a contiguous run"
 801cf070,152,-,misbased,no image holds these bytes at this VA; they live at field(897) 0x801d4888 (delta +0x5818)
 801cf070,844,fishing(972),unique,own content of fishing(972) reproduces the 24-instruction window at this VA (content_bytes cut)
 801cf074,408,arena_init(977),unique,own content of arena_init(977) reproduces the 24-instruction window at this VA (content_bytes cut)
