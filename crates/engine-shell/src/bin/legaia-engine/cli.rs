@@ -8,10 +8,10 @@ use std::path::PathBuf;
 #[command(
     name = "legaia-engine",
     version,
-    about = "Clean-room engine for Legend of Legaia. Bring your own disc: every \
+    about = "From-scratch engine port of Legend of Legaia. Bring your own disc: every \
              subcommand reads a Legend of Legaia (USA) .bin via --disc, or an \
              extracted/ tree produced by legaia-extract.",
-    long_about = "Clean-room engine for Legend of Legaia.\n\n\
+    long_about = "From-scratch engine port of Legend of Legaia.\n\n\
         Bring your own disc: every subcommand reads a Legend of Legaia (USA) \
         `.bin` disc image via `--disc <PATH>`, or an `extracted/` tree produced \
         by `legaia-extract` (the `--extracted-root` default `extracted` resolves \
