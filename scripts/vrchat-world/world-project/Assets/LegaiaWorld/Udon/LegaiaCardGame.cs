@@ -176,8 +176,8 @@ namespace LegaiaWorld
         [Tooltip("Virtual chips a villager sits down with (refilled every time it takes a stool).")]
         public int npcStartChips = 60;
 
-        [Tooltip("How far the director may reach for a villager to fill a stool, metres.")]
-        public float summonRadius = 60f;
+        [Tooltip("How far the director may reach for a villager to fill a stool, metres - kept under what the brain's walk timeout (45 s at 0.7 m/s) can cover, or a far villager gives up half way.")]
+        public float summonRadius = 28f;
 
         [Tooltip("Seconds between summon attempts.")]
         public float summonInterval = 1.5f;

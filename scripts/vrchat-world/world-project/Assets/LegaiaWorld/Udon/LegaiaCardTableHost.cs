@@ -36,7 +36,11 @@
 // Seat bookkeeping is reconciled by polling the stations a few times a
 // second rather than from the arrive / leave events alone: one handler
 // serves four stations and the events carry no station argument, so the
-// events only force an immediate reconcile.
+// events only force an immediate reconcile. The poll reads the station's
+// `currentNpc` for WHO, and the brain's `Seated()` for WHETHER it is here
+// yet: the station names its villager when the director claims it, before
+// the walk, and sitting on that alone teleported villagers onto the
+// stools from across the square.
 //
 // Requires UdonSharp (bundled with the VRChat worlds SDK).
 
@@ -153,10 +157,21 @@ namespace LegaiaWorld
                                  seatChairs[i] != null && seatChairs[i].occupied;
                 s.available = allow && !seatTaken;
 
+                // `currentNpc` is set at CLAIM time - before the walk - so
+                // it alone would sit the villager the moment the table
+                // chose it, snapping it onto the stool from across the
+                // square (which is exactly what it did). Sit only once the
+                // brain reports it has arrived at this seat.
                 Transform npc = s.currentNpc;
-                if (npc != null && seated[i] == null)
+                bool arrived = false;
+                if (npc != null && s.currentBrain != null)
+                {
+                    LegaiaNpcBrain b = s.currentBrain.GetComponent<LegaiaNpcBrain>();
+                    arrived = b != null && b.Seated();
+                }
+                if (npc != null && arrived && seated[i] == null)
                     SitDown(i, npc);
-                else if (npc == null && seated[i] != null)
+                else if ((npc == null || !arrived) && seated[i] != null)
                     StandUp(i);
             }
         }

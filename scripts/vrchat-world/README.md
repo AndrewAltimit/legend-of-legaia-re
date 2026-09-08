@@ -748,7 +748,11 @@ and the SDK's own components - no third-party package, no game data:
   dangle in front of the stool leg, a tall one's rest on the ground,
   and every head is above the felt. (The first cut sank the whole rig
   a third of its height into the ground instead.) Undone when it
-  leaves.
+  leaves. Villagers **walk** to the stool - the host sits a villager
+  only once its brain reports it has arrived; the station names its
+  villager at claim time, before the walk, and sitting on that alone
+  snapped them onto the stools from across the square. The table calls
+  villagers from within 28 m, which is what a 45 s walk covers.
 
   **The game** (`LegaiaCardGame`, on the table's `game` child) plays
   **five-card draw poker** (default) and **blackjack** with those 52

@@ -1981,8 +1981,8 @@ pub fn items_manifest(e: &ItemsExport) -> Value {
 // ---------------------------------------------------------------------------
 
 /// One party member's **field form** exported as an animated `.glb`: the PROT
-/// 0874 §0 mesh (retail's 10-live-group cap applied, the equipment-swap
-/// template folded in) in the §2 field texture pages, with the character's
+/// 0874 §0 mesh (retail's 10-live-group cap applied, no equipment swap -
+/// see the body) in the §2 field texture pages, with the character's
 /// own 7-clip locomotion bank baked as named takes - `Idle` first (frame 0 =
 /// the standing rest pose a non-autoplaying consumer shows), then `Walk`,
 /// then the unpinned rest of the bank as `Locomotion N`. The same assembly
@@ -2042,11 +2042,15 @@ pub fn export_party_field_glbs(
             notes.push(format!("{character}: pack has no slot {slot}"));
             continue;
         };
-        // The cold new-game record carries a zero equip byte, so the
-        // group-11 template is the look the town first meets; then cap the
-        // live groups at 10 the way FUN_8001E890 does, so the two template
-        // groups are never drawn as geometry.
-        let mut tmd_bytes = cp::equipment_swap::apply(&cslot.tmd_bytes, patch, 0);
+        // The disc-form mesh, live groups capped at 10 the way FUN_8001E890
+        // does so the two equipment templates (groups 10/11) are never drawn
+        // as geometry. The equipment swap itself is NOT applied: for Noa and
+        // Gala the raw group already equals the template-zero variant (the
+        // cold new-game look), and for Vahn the port's patch index (0) names
+        // his HEAD - applying it exported him headless. Which group retail
+        // really patches for Vahn is an open RE question
+        // (docs/formats/character-mesh.md); the raw mesh is right either way.
+        let mut tmd_bytes = cslot.tmd_bytes.clone();
         if tmd_bytes.len() >= 0x0C {
             tmd_bytes[0x08..0x0C].copy_from_slice(&10u32.to_le_bytes());
         }

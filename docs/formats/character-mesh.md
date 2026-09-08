@@ -155,6 +155,17 @@ group is on / off") and item identity is conveyed by the character's
 equivalent: given a slot's disc-form TMD bytes, a [`PatchSlot`], and the
 character's equipment toggle byte, it returns the patched TMD buffer.
 
+**Caveat on Vahn's row.** Applied literally, patched group `0` is Vahn's
+largest group (77 vertices / 132 primitives - the head), and both templates
+are 12- and 16-vertex parts the size of his groups 3/4 and 10; the result
+renders him headless. Noa's and Gala's raw groups already equal their
+template-zero variant, so the cold new-game look is the disc-form mesh for
+all three - which is what the `export-glb --party` field-form export ships
+and why it applies no swap. Whether retail's patched index for Vahn is
+really `0` (the table above reads it off the shared `{0, 3, 5}` stack
+table) is open; re-verify against a live capture before applying the swap
+to slot 0 anywhere.
+
 ## Textures (field form)
 
 The field-form character textures live in **PROT 0874 section 2** - the third

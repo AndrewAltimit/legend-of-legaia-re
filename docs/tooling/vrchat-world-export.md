@@ -124,8 +124,8 @@ downloads they share a kernel with.
 
 `--party` exports Vahn, Noa and Gala **as they walk the towns**: the
 PROT 0874 §0 field mesh of each active-party slot (retail's 10-live-group
-cap applied and the equipment-swap template folded in at the cold
-new-game equip byte - [`character-mesh.md`](../formats/character-mesh.md)),
+cap applied, no equipment swap - the disc-form groups already are the cold
+new-game look, and the swap would cost Vahn his head - [`character-mesh.md`](../formats/character-mesh.md)),
 textured from the §2 field pages, with the character's own 7-clip
 locomotion bank ([`anm.md`](../formats/anm.md)) baked as named takes:
 `Idle` first (frame 0 = the rest pose), `Walk` second, the unpinned rest

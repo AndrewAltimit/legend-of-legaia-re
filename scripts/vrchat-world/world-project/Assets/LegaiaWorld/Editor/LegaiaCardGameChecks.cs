@@ -701,6 +701,10 @@ namespace LegaiaWorld
         static Component[] s_stations;
         static int s_seatedSamples;
         static float s_minSeatY = 99f, s_maxSeatY = -99f;
+        static Transform[] s_prevNpc;
+        static float[] s_prevDist;
+        static float s_prevT;
+        static int s_walkedIn;
         static readonly HashSet<string> s_talkSeen = new HashSet<string>();
         static bool[] s_sawNpc;
         static int s_lastSettle = -1;
@@ -774,6 +778,10 @@ namespace LegaiaWorld
             s_seatedSamples = 0;
             s_minSeatY = 99f;
             s_maxSeatY = -99f;
+            s_prevNpc = new Transform[4];
+            s_prevDist = new float[4];
+            s_prevT = Time.time;
+            s_walkedIn = 0;
             s_talkSeen.Clear();
 
             ForceDay();
@@ -853,16 +861,41 @@ namespace LegaiaWorld
             // Seated villagers sit ON the stool: never below the floor the
             // stool stands on (the first cut sank them to the waist), never
             // standing on top of it either.
+            float dt = Time.time - s_prevT;
+            s_prevT = Time.time;
             for (int i = 0; i < 4; i++)
             {
                 if (s_stools[i] == null || s_stations[i] == null)
                     continue;
                 var npc = Var(s_stations[i], "currentNpc") as Transform;
                 if (npc == null)
+                {
+                    s_prevNpc[i] = null;
                     continue;
+                }
                 Vector3 d = npc.position - s_stools[i].position;
                 float lift = d.y;
                 d.y = 0f;
+                // The villager WALKS in: between two samples it may close
+                // on the stool no faster than a hop (3 m/s) plus slack. A
+                // claimed villager that appears on the stool from metres
+                // away was teleported by the host (the first cut sat it
+                // the moment the station named it, before the walk).
+                if (s_prevNpc[i] == npc)
+                {
+                    float closed = s_prevDist[i] - d.magnitude;
+                    if (closed > 3f * Mathf.Max(dt, 0.02f) + 0.4f)
+                    {
+                        Finish(1, npc.name + " jumped " + closed.ToString("0.0") +
+                            " m toward stool_" + i + " in " + dt.ToString("0.00") +
+                            " s - teleported, not walked");
+                        return;
+                    }
+                    if (s_prevDist[i] > 0.35f && d.magnitude <= 0.35f)
+                        s_walkedIn++;   // watched one arrive on foot
+                }
+                s_prevNpc[i] = npc;
+                s_prevDist[i] = d.magnitude;
                 if (d.magnitude > 0.35f)
                     continue;   // still walking up
                 s_seatedSamples++;
@@ -1024,6 +1057,12 @@ namespace LegaiaWorld
                 Finish(1, "no villager was ever sampled sitting on a stool");
                 return;
             }
+            if (s_walkedIn == 0)
+            {
+                Finish(1, "no villager was ever watched walking onto a stool - " +
+                    "they all appeared there");
+                return;
+            }
             foreach (string line in s_talkSeen)
             {
                 bool named = line.IndexOf(": ") > 0 && line.IndexOf(": ") <= 22;
@@ -1043,7 +1082,8 @@ namespace LegaiaWorld
             Debug.Log("[Legaia] CARDS: " + s_handsAtSwitch + " poker hand(s) + " +
                 (hands - s_handsAtSwitch) + " blackjack hand(s); seated villagers " +
                 "sampled " + s_seatedSamples + "x at " + s_minSeatY.ToString("0.00") +
-                ".." + s_maxSeatY.ToString("0.00") + " m above the stool floor; " +
+                ".." + s_maxSeatY.ToString("0.00") + " m above the stool floor, " +
+                s_walkedIn + " arrival(s) on foot; " +
                 s_talkSeen.Count + " distinct table-talk lines.");
             Finish(0, null);
         }
