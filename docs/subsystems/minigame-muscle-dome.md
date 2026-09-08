@@ -802,7 +802,7 @@ form is the bar itself filling with pennants.
 | Diamond ends | 5 | `(192,24)` / `(204,24)` 9x18 | body -9 / +24, `y+4` |
 | D-pad glyph | 7 | `(0,112)` 16x16 | FT4 `(220,62)`-`(235,77)` |
 | Input bar | 6 | left end `(240,0)` 16x18, body tile `(224,0)` 16x18, arrow end `(192,44)` 18x18 | y=188, x `0..128` at a 100-AP pool |
-| Command pennant | 5 | caps `(192,24)` / `(216,24)` 9x18 + the label strip between | slot `n` at x = 7 + spent-AP-before (pitch 30 at cost 30) |
+| Command pennant | 5 | caps `(192,24)` / `(216,24)` 9x18 + the label strip between | slot `n` at x = 16 + spent-AP-before, width `cost - 6`, y 192 - see [the cost law](#the-pennant-geometry-is-linear-in-the-commands-ap-cost) |
 | AP plate | 4 | the pinned label/trough/end/cap pieces | `(208,172)`; fill = two 3-px **gouraud strips** x `235..285`, y `177..183`, RGB `(128,32,16)` dark <-> `(192,160,64)` orange (dark-orange-dark sheen) |
 | Triangle caption | own TIM | green Triangle circle: the 64x32 button-glyph gap TIM at `PROT.DAT 0x7B00` (uploads `(928,352)`, own CLUT `(304,511)`), local rect `(48,0)` 16x16 | glyph `(162,154)` open / `(12,170)` closed; caption text (white font) "Button: View Next page" / "Button: View Hyper Arts list" at glyph `+ (16, 2)` |
 
@@ -824,11 +824,82 @@ cost (menu-atlas 8x12 digits, right-aligned ending x=152) through the
 the SCUS arts-name table's own columns
 ([`art-data.md`](../formats/art-data.md#arts-name-table-dat_80075ec4)).
 
-Still unpinned here: the pennant geometry for non-30-cost commands (only the
-favored-class pitch is captured), the exact pennant spawn anchor (it spawns at
-the fighter and glides in via `FUN_801d9bbc`), and the review / Begin-Reselect
-screens' piece decomposition (screenshot-read only). The **Auto arm** is pinned
-below.
+Still unpinned here: the review / Begin-Reselect screens' piece decomposition
+(screenshot-read only). The pennant's cost law and spawn anchor are pinned
+[below](#the-pennant-geometry-is-linear-in-the-commands-ap-cost); so is the
+**Auto arm**.
+
+### The pennant geometry is linear in the command's AP cost
+
+`30` is not a threshold and not a table index - it is the zero point of one
+subtraction, and it appears exactly twice in `FUN_801D388C` (`0x801D3B6C` and
+`0x801D3B98`). The pennant itself has no cost special-case at all. Case `0xB`,
+the per-press arm (called from `FUN_801D0748` at `0x801D1F90`), copies the
+pressed direction chip's record into the pennant's:
+
+```
+0x801D3D00/0x801D3D08   pennant width = chip width          (= cost - 6)
+0x801D3D0C/0x801D3D18   landing x     = ctx[+0x6D8]
+0x801D3D10/0x801D3D14   landing y     = 0xC0                (immediate)
+0x801D3D1C..0x801D3D38  style         = chip style + 6
+```
+
+The cursor `ctx[+0x6D8]` is seeded to `16` on the gauge build (`0x801D3A3C` /
+`0x801D3A44`) and advanced by the command's **own** `+0x74` cost, not by 30
+(`0x801D3D68..0x801D3D74`); the `cost - 6` width is set in case `9` at
+`0x801D3B44`. So pennant `n` sits at `x = 16 + sum(cost of 0..n-1)`, is
+`cost(n) - 6` wide, and lands on `y = 192`. The captured `x = 7` is the left
+diamond cap, drawn at `anchor - cap_width` = `16 - 9`. The same algebra
+reproduces the bar: record `0x0F` is anchored at `16` and `pool - 6` wide, so a
+100-AP pool spans `0..128` end-to-end, which is the captured figure.
+
+Where the cost geometry *does* branch is the **direction chip** the pennant is
+copied from. Case `9`'s four-iteration loop pulls each chip's seat x from the
+12-byte-stride array at `0x80076BBC` (immediately before the placement table;
+SCUS file `0x673BC`, values `176 / 216 / 216 / 256` - the captured chip
+anchors) and then subtracts `(cost - 30) * K[slot] / 2`, with
+`DAT_8007B650 = [2, 1, 1, 0]` (SCUS file `0x6BE50`, immediately followed by the
+`Auto` / `Command` strings, which is what fixes the file/VA pairing):
+
+| slot | command | anchor x | `K` | how it widens |
+|---|---|---|---|---|
+| 0 | `0x0C` arm (Vahn / Gala) | 176 | 2 | right edge pinned at 200, grows left |
+| 1 | `0x0F` High | 216 | 1 | centred on 228 |
+| 2 | `0x0E` Low | 216 | 1 | centred on 228 |
+| 3 | `0x0D` arm (Noa) / Right | 256 | 0 | left edge pinned at 256, grows right |
+
+i.e. `K` makes the arm chip grow *away* from the D-pad glyph between them.
+
+**The spawn anchor is the pressed chip, not the fighter.** `0x801D3CE8` /
+`0x801D3CF0` and `0x801D3CF4` / `0x801D3CFC` copy the chip record's seat-B
+`(x, y)` verbatim into the pennant record's seat A, then `0x801D3D40` clears the
+seat-mode byte and `0x801D3D48` sets a 24-frame glide before
+`FUN_801D8DE8(0x20 + n, 0)` spawns it. Nothing on that path reads an actor
+screen position. `FUN_801D9BBC` is the per-frame stepper; the registration is
+`FUN_801D8DE8` -> `FUN_801DB7B0`, which takes the glide's *start* from the
+just-created node (`0x801DB7FC` / `0x801DB810`) and its target from the
+record's other seat.
+
+**There are exactly nine pennant seats**, placement records `0x20..0x28` (ids
+`05 05` .. `0d 0d`, `h = 0x0C`, seat-B `y = 0xC2`, kind `0`, no string), and the
+bar-clear loop frees exactly the handles with id `5..13`
+(`0x801D3C50..0x801D3C88`). Nine is the floor of the `0x120` AP clamp over the
+30-AP minimum. A mod that lowers a cost below 30 lets `ctx[+0x19]` run past 8
+and `0x801D3CF0` writes into record `0x29` - the opponent-name chip.
+
+The pennant carries **no text**: indices `0x20..0x28` land on
+`FUN_801D8DE8`'s default arm, so `+0x14` stays the record's static `0` and
+`FUN_8003541C` skips its measure loop. The label between the caps is a sprite
+strip selected by the style byte (`chip icon + 6`), the chip icons being
+`DAT_801F4B94 = [0D 10 11 0C]`.
+
+One pixel-level constant is still inferred rather than measured: the bar's
+record is anchored at seat-B `y = 194` and the pennant's landing `y` is the
+immediate `192`, so the pennant should draw two pixels above the bar row - the
+captured `BAR_Y = 188` predicts a pennant top edge of 186. Confirming that (and
+the off-class widths) wants a placement-table read on
+`arts_bar_offclass_gala_nail` / `arts_bar_astral_sword_vahn` diffed against
+`arts_bar_ideal_gala_club`.
 
 ### The Auto arm picks nothing - it replays a saved string
 
@@ -1424,7 +1495,7 @@ to the emitter it names).
 ## Open
 
 - The exact phase ordering and meaning of every `ctx+6` value - partially confirmed. The **input chain is now capture-pinned**: `0x1e` menu idle -> `0x28` command cluster -> `0x78` Auto|Command -> `0x50` direction entry -> `0x5a` queue review -> `0x6e` Begin|Reselect -> `0xfe/0xff` playback -> `0x1e` (recomp phase-byte watch across a driven round); the deal/interval arms outside that chain remain to be walked.
-- ~~The Auto arm's command picker~~ **resolved**: there is no picker. Auto commits the 16-byte string `FUN_801DA34C` had already reloaded out of the character record (`+0x1A7` / `+0x1B7`, chosen by the `actor+0x156 < actor+0x154` AP-band test) and `FUN_801DA59C` saves back on the review confirm - see [The Auto arm picks nothing](#the-auto-arm-picks-nothing---it-replays-a-saved-string). Still open on the same screen: the pennant/bar geometry for off-class (non-30) costs - see [Arts command input](#arts-command-input-packet-pinned).
+- ~~The Auto arm's command picker~~ **resolved**: there is no picker. Auto commits the 16-byte string `FUN_801DA34C` had already reloaded out of the character record (`+0x1A7` / `+0x1B7`, chosen by the `actor+0x156 < actor+0x154` AP-band test) and `FUN_801DA59C` saves back on the review confirm - see [The Auto arm picks nothing](#the-auto-arm-picks-nothing---it-replays-a-saved-string). ~~Still open on the same screen: the pennant/bar geometry for off-class (non-30) costs~~ **resolved** - the pennant is `cost - 6` wide at `x = 16 + spent-AP-before` and the chip recentres by `(cost - 30) * K[slot] / 2`, see [the cost law](#the-pennant-geometry-is-linear-in-the-commands-ap-cost).
 - ~~The per-arm assignment of the three UI cue ids~~ **resolved**: `0x21` = accept/confirm, `0x22` = highlight moved, `0x23` = refused-or-back, over **37** call sites (not 34) - see [Which blip is which](#which-blip-is-which-0x21--0x22--0x23) for the per-arm table and the two shared tails.
 - A live `_DAT_8007B864` byte-match during a dome contest, to upgrade the arena-backdrop residency (extraction 1225) from Inferred to capture-Confirmed.
 - ~~What arms the panel-still load~~ **resolved**: `ctx[+0xC] = 1` is written only by the per-frame battle anim-node tick `FUN_80047430` (`0x800474C4`) for an enemy seat under `gp[+0xA48] & 0x80`, and `ctx[+0x7] == 0x67` is the escape path's entry into the same shared teardown, not a condition of its own - see [What arms the load](#what-arms-the-load). Still open on the same page: no draw site for the VRAM rect the stills land in, and no image outside the loaders names `(384, 0)` at all.
