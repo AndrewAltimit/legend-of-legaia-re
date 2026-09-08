@@ -108,11 +108,28 @@
 // filtered here at all: it is a COMMANDED walk, and stepping onto the
 // threshold is the one legitimate visit to a doorway.
 //
-// GESTURES: `Nod(seconds)` pitches the facing anchor (the torso) about the
-// world lateral axis for a moment - the attention beat a villager gives
-// when it takes its turn in a conversation. Like the gait and the sitting
-// pose it is written in LateUpdate, over whatever the Animator posed this
-// frame, so it adds no Animator state and never fights a clip.
+// GESTURES: `Nod(seconds)` dips the villager for a moment - the attention
+// beat it gives when it takes its turn in a conversation. Like the gait
+// and the sitting pose it is written in LateUpdate, so it adds no
+// Animator state and never fights a clip.
+//
+// IT PITCHES THE GAIT NODE, NOT THE ANCHOR, and that is the whole point.
+// The nod used to pitch the "facing anchor", described as the torso -
+// but the anchor is chosen as the biggest mesh node that rests upright,
+// and measuring all 174 town rigs says that node sits at 0.80-0.86 of
+// body height on most of them: it is the HEAD. Worse, the gesture undid
+// itself only when the anchor's WORLD rotation still matched what it had
+// written, and a villager that turned even slightly between frames fails
+// that test - so on any rig whose idle pose does not rewrite that node,
+// every nod left its pitch behind and the next one added to it. A
+// villager who talks a lot ended up looking at the sky.
+//
+// The gait node - the glb's own scene root under this instance - is
+// animated by nothing: it is the node the procedural gait already owns,
+// which is why the gait could always write it absolutely. So the bob,
+// the roll and the nod now compose into ONE absolute write per frame
+// from the captured rest transform (WriteBodyPose). Nothing accumulates,
+// because nothing is ever read back.
 //
 // WALK ANIMATION: with `locoAnimator` wired to an idle/walk controller
 // (the living-town pass generates one when a rig family has a clip that
@@ -339,7 +356,7 @@ namespace LegaiaWorld
         // The last thing the straight-ahead probe hit (diagnostics).
         private string lastHit = "";
 
-        // Gesture (Nod): a short pitch of the facing ANCHOR about the world
+        // Gesture (Nod): a short pitch of the GAIT NODE about the model's
         // lateral axis, composed over whatever the Animator posed this
         // frame - the same LateUpdate trick the gait and the sitting pose
         // use, so no Animator state is added for it. The anchor is the
@@ -349,9 +366,13 @@ namespace LegaiaWorld
         private float nodStart;
         private float nodSeconds;
         private float nodAmp;
-        private bool nodApplied;
-        private Quaternion nodDelta = Quaternion.identity;
-        private Quaternion nodWrote = Quaternion.identity;
+
+        // This frame's body pose, composed from the gait and the nod and
+        // written once, absolutely, from the rest transform.
+        private float bodyBob;
+        private float bodyRoll;
+        private float bodyNod;
+        private bool bodyPosed;
 
         // --- Command state ------------------------------------------------
         // mode 0 = autonomous stroll (the default), 1 = commanded walk to
@@ -1135,9 +1156,15 @@ namespace LegaiaWorld
         // of the spawn clip instead of being overwritten by it.
         void LateUpdate()
         {
+            bodyBob = 0f;
+            bodyRoll = 0f;
+            // The gait only runs on a rig with no walk controller; the nod
+            // runs on every rig, so the body write below is what both of
+            // them go through.
             if (locoAnimator == null)
                 Gait();
-            NodPose();
+            bodyNod = NodAngle();
+            WriteBodyPose();
             SitPose();
         }
 
@@ -1163,38 +1190,51 @@ namespace LegaiaWorld
         // an envelope that is zero at both ends - so it eases in and out
         // and never leaves the torso tipped. Written on the anchor AFTER
         // the Animator, like the gait and the sitting pose.
-        void NodPose()
+        /// This frame's nod angle in degrees, 0 when no nod is playing.
+        /// sin(2 pi k) gives the two beats and sin(pi k) the fade at both
+        /// ends: the product starts and finishes at exactly zero, so the
+        /// gesture cannot leave anything behind even if it is interrupted.
+        float NodAngle()
         {
-            if (anchor == null)
-                return;
-            // Undo last frame's delta first, but only on a rig whose anchor
-            // nothing else rewrote: with an Animator running (every rig the
-            // builder wires) the pose is fresh and there is nothing to undo.
-            if (nodApplied)
-            {
-                if (Quaternion.Angle(anchor.rotation, nodWrote) < 0.01f)
-                    anchor.rotation = Quaternion.Inverse(nodDelta) * anchor.rotation;
-                nodApplied = false;
-            }
             if (nodAmp <= 0f)
-                return;
+                return 0f;
             float k = (Time.time - nodStart) / (nodSeconds < 0.2f ? 0.2f : nodSeconds);
             if (k >= 1f)
             {
                 nodAmp = 0f;
+                return 0f;
+            }
+            return nodDegrees * nodAmp *
+                Mathf.Sin(k * Mathf.PI * 2f) * Mathf.Sin(k * Mathf.PI);
+        }
+
+        /// The one place the body pose is written: bob, roll and nod
+        /// composed onto the captured rest transform of the gait node.
+        /// ABSOLUTE, every frame - the pose is never read back and never
+        /// undone, so no gesture can accumulate into a permanent lean.
+        /// localPosition / localRotation here are in the instance's frame,
+        /// which stands upright and faces the way the model faces at rest:
+        /// up is the world's up, forward is the model's own forward (the
+        /// roll axis) and right is its lateral one (the nod axis).
+        void WriteBodyPose()
+        {
+            if (gaitNode == null)
+                return;
+            if (bodyBob == 0f && bodyRoll == 0f && bodyNod == 0f)
+            {
+                if (bodyPosed)
+                {
+                    gaitNode.localPosition = gaitRestPos;
+                    gaitNode.localRotation = gaitRestRot;
+                    bodyPosed = false;
+                }
                 return;
             }
-            Vector3 lateral = Vector3.Cross(Vector3.up, lastForward);
-            if (lateral.sqrMagnitude < 1e-6f)
-                return;
-            // sin(2 pi k) gives the two beats, sin(pi k) the fade at both
-            // ends: the product starts and finishes at exactly zero.
-            float ang = nodDegrees * nodAmp *
-                Mathf.Sin(k * Mathf.PI * 2f) * Mathf.Sin(k * Mathf.PI);
-            nodDelta = Quaternion.AngleAxis(ang, lateral.normalized);
-            anchor.rotation = nodDelta * anchor.rotation;
-            nodWrote = anchor.rotation;
-            nodApplied = true;
+            gaitNode.localPosition = gaitRestPos + Vector3.up * bodyBob;
+            gaitNode.localRotation = Quaternion.AngleAxis(bodyRoll, Vector3.forward)
+                                     * Quaternion.AngleAxis(bodyNod, Vector3.right)
+                                     * gaitRestRot;
+            bodyPosed = true;
         }
 
         // --- Keep-out zones ---------------------------------------------------
@@ -1328,31 +1368,20 @@ namespace LegaiaWorld
             float dt = Time.deltaTime;
             gaitWeight = Mathf.MoveTowards(gaitWeight, walking ? 1f : 0f, dt * 4f);
             if (gaitWeight <= 0f)
-            {
-                // Rest: the body back where it was; the arms are the
-                // Animator's again (it rewrites them every frame).
-                if (body && gaitNode.localPosition != gaitRestPos)
-                {
-                    gaitNode.localPosition = gaitRestPos;
-                    gaitNode.localRotation = gaitRestRot;
-                }
+                // Rest: bodyBob / bodyRoll stay at zero and WriteBodyPose
+                // puts the node back. The arms are the Animator's again
+                // (it rewrites them every frame).
                 return;
-            }
             float stride = (gaitStride < 0.1f ? 0.1f : gaitStride) * Mathf.Max(0.5f, strideScale);
             if (walking)
                 gaitPhase += dt * ((mode == 1 ? walkSpeed : speed) / stride) * Mathf.PI;
             float s = Mathf.Sin(gaitPhase);
             if (body)
             {
-                float bob = gaitBob * npcHeight * Mathf.Abs(s) * gaitWeight;
-                float roll = gaitRoll * s * gaitWeight;
-                // localPosition / localRotation are in THIS instance's
-                // frame, which stands upright and faces the way the model
-                // faces at rest - so `up` is the world's up and the roll is
-                // about the model's own forward axis.
-                gaitNode.localPosition = gaitRestPos + Vector3.up * bob;
-                gaitNode.localRotation =
-                    Quaternion.AngleAxis(roll, Vector3.forward) * gaitRestRot;
+                // Handed to WriteBodyPose, which composes them with the
+                // nod and writes the node once (see its note).
+                bodyBob = gaitBob * npcHeight * Mathf.Abs(s) * gaitWeight;
+                bodyRoll = gaitRoll * s * gaitWeight;
             }
             if (!arms)
                 return;

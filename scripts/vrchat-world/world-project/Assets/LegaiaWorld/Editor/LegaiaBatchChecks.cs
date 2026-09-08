@@ -1497,6 +1497,21 @@ namespace LegaiaWorld
                         // ahead, hand 35 deg forward of straight down.
                         Vector3 kneeDir = face * Mathf.Cos(5f * Mathf.Deg2Rad) - Vector3.up * Mathf.Sin(5f * Mathf.Deg2Rad);
                         Vector3 handDir = face * Mathf.Sin(35f * Mathf.Deg2Rad) - Vector3.up * Mathf.Cos(35f * Mathf.Deg2Rad);
+                        // THE FACING ANCHOR, picked here exactly the way
+                        // LegaiaNpcWander.Start picks it at runtime: the
+                        // biggest mesh node whose RENDERED up is within
+                        // ~25 degrees of world up. It matters far more
+                        // than its name suggests - the nod gesture
+                        // pitches this node, so a rig that picks its head
+                        // instead of its torso nods its HEAD at the sky,
+                        // and the facing maths reads off it too. Reported
+                        // as a fraction of body height (a torso lands
+                        // near the middle; anything above ~0.7 is a head)
+                        // together with whether the walk clip animates
+                        // it, which is what decides whether the nod's
+                        // undo is skipped and the pitch accumulates.
+                        AnchorReport(sb, inst, glb, rig.walkClip);
+
                         float kneeDot = KneeDot(sb, inst, "legs", rig.legUpper, rig.legLower, kneeDir);
                         float handDot = KneeDot(sb, inst, "arms", rig.upperArms, rig.forearms, handDir);
                         float walkDot = 2f;
@@ -1608,6 +1623,85 @@ namespace LegaiaWorld
         // x can give the child's rest offset - the sweep
         // LegaiaNpcWander.TurnToward makes, read through the full transform
         // chain. Returns its dot with `target`; 2 when the pair is absent.
+
+        /// Replicate LegaiaNpcWander's anchor pick over an instantiated rig
+        /// and append what it chose. See the call site for why it matters.
+        static void AnchorReport(System.Text.StringBuilder sb, GameObject inst,
+            string glb, string walkClip)
+        {
+            Transform anchor = null, any = null;
+            float bestUpright = -1f, bestAny = -1f;
+            float top = float.MinValue, bottom = float.MaxValue;
+            Vector3 anchorCentre = Vector3.zero;
+            foreach (var mf in inst.GetComponentsInChildren<MeshFilter>())
+            {
+                var mesh = mf.sharedMesh;
+                if (mesh == null)
+                    continue;
+                Vector3 size = mesh.bounds.size;
+                float score = size.x * size.y * size.z + mesh.vertexCount * 1e-6f;
+                Transform t = mf.transform;
+                Vector3 up = (t.TransformPoint(Vector3.up)
+                              - t.TransformPoint(Vector3.zero)).normalized;
+                Vector3 centre = t.TransformPoint(mesh.bounds.center);
+                float lo = centre.y - 0.5f * size.y * Mathf.Abs(t.lossyScale.y);
+                float hi = centre.y + 0.5f * size.y * Mathf.Abs(t.lossyScale.y);
+                if (hi > top) top = hi;
+                if (lo < bottom) bottom = lo;
+                if (score > bestAny)
+                {
+                    bestAny = score;
+                    any = t;
+                }
+                if (up.y > 0.9f && score > bestUpright)
+                {
+                    bestUpright = score;
+                    anchor = t;
+                    anchorCentre = centre;
+                }
+            }
+            if (anchor == null)
+            {
+                anchor = any;
+                if (any != null)
+                {
+                    var m = any.GetComponent<MeshFilter>().sharedMesh;
+                    anchorCentre = any.TransformPoint(m.bounds.center);
+                }
+            }
+            if (anchor == null)
+            {
+                sb.Append(" anchor=none");
+                return;
+            }
+            float h = top - bottom;
+            float frac = h > 1e-4f ? (anchorCentre.y - bottom) / h : 0f;
+            sb.Append(" anchor=").Append(anchor.name)
+              .Append("@").Append(frac.ToString("0.00"))
+              .Append(bestUpright < 0f ? "(not upright)" : "");
+
+            // Does the walk clip write this node? If it does, the nod's
+            // "undo last frame" test fails every frame and the gesture
+            // rides on top of the clip instead of being taken back off.
+            if (string.IsNullOrEmpty(walkClip))
+                return;
+            AnimationClip clip = null;
+            foreach (var c in AssetDatabase.LoadAllAssetsAtPath(glb))
+                if (c is AnimationClip && c.name == walkClip)
+                    clip = (AnimationClip)c;
+            if (clip == null)
+                return;
+            string path = AnimationUtility.CalculateTransformPath(anchor, inst.transform);
+            bool animated = false;
+            foreach (var b in AnimationUtility.GetCurveBindings(clip))
+                if (b.path == path)
+                {
+                    animated = true;
+                    break;
+                }
+            sb.Append(animated ? " anchorAnimated=yes" : " anchorAnimated=no");
+        }
+
         static float KneeDot(System.Text.StringBuilder sb, GameObject inst, string what,
             string[] upperNames, string[] lowerNames, Vector3 target)
         {

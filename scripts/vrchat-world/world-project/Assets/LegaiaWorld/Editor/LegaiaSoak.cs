@@ -238,6 +238,17 @@ namespace LegaiaWorld
             public int chats;            // 3 -> 4
             public int blockedEdges;
             public int doorOpens, doorCloses;
+
+            // The worst tilt this villager's rendered body reached, in
+            // degrees FROM ITS OWN REST - not from world up. Most of these
+            // rig families rest with their node axes flipped (RigPose
+            // reports almost none of them as upright), so measuring
+            // against world up says 180 for a villager standing perfectly
+            // still. The gait and the nod tilt a few degrees on purpose;
+            // a large drift means a gesture stopped taking itself back
+            // off, which is how a villager ends up looking at the sky.
+            public Vector3 restUp = Vector3.zero;
+            public float maxTilt;
             public bool sawGoDoor, sawSwingWait, sawThreshold, wentIndoors, cameOut;
             public float inAt = -1f, outAt = -1f;
             public float doorDwell;      // simulated seconds spent in state 5
@@ -437,6 +448,42 @@ namespace LegaiaWorld
             }
             w.lastIndoors = indoors;
 
+            // Body tilt, measured on the RENDERED up of the villager's own
+            // mesh (TransformPoint difference, so the builder's mirrors are
+            // included) rather than on transform.up, which they invert.
+            if (w.tr != null)
+            {
+                // The glb's own root under the instance - the node the
+                // kit's body pose owns (bob, roll, nod all compose into
+                // one absolute write there). Deliberately NOT the first
+                // mesh node found: on several rig families that is a limb,
+                // and the sitting pose swings a thigh through 85 degrees
+                // quite legitimately, which reads as a flipped villager.
+                Transform bt = null;
+                foreach (Transform c in w.tr)
+                {
+                    if (c.name == "speech_bubble" || c.name == "carry")
+                        continue;
+                    if (c.GetComponentInChildren<MeshFilter>() == null)
+                        continue;
+                    bt = c;
+                    break;
+                }
+                if (bt != null)
+                {
+                    Vector3 up = (bt.TransformPoint(Vector3.up)
+                                  - bt.TransformPoint(Vector3.zero)).normalized;
+                    if (w.restUp == Vector3.zero)
+                        w.restUp = up;   // the first sample IS the rest pose
+                    else
+                    {
+                        float tilt = Vector3.Angle(up, w.restUp);
+                        if (tilt > w.maxTilt)
+                            w.maxTilt = tilt;
+                    }
+                }
+            }
+
             string door = "-";
             if (w.doorUdon != null)
             {
@@ -499,9 +546,18 @@ namespace LegaiaWorld
                     " hops=" + w.hops + " brainRetries=" + w.brainRetries +
                     " gaveUp=" + w.nightIdle +
                     " atDoor=" + w.doorDwell.ToString("0.0") + "s" +
+                    " maxTilt=" + w.maxTilt.ToString("0.0") + "deg" +
                     " ticks/s=" + rate.ToString("0.0");
                 Line(row);
                 Debug.Log("[Legaia] soak: " + row);
+                // The gait rolls a few degrees and the nod dips a few more.
+                // A villager tilted past 25 degrees is not gesturing, it is
+                // accumulating one - the failure that had a villager
+                // looking at the sky after enough conversations.
+                if (w.maxTilt > 25f)
+                    problems.Add(w.name + " tilted " + w.maxTilt.ToString("0") +
+                        " degrees off upright - a gesture is not taking itself " +
+                        "back off");
                 if (w.nightHost && s_mode == "night")
                 {
                     // The night host is NOT part of the exodus: it keeps its

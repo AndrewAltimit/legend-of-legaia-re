@@ -729,9 +729,25 @@ talking (with a small delay, so it reads as noticing rather than
 snapping), one listener answers the topic with a reaction bubble a beat
 later (a laugh after the fish story, "..." after the storm, a heart after
 food - two answers per topic so the same topic twice does not draw the
-same face), and the speaker nods - a short LateUpdate pitch of the torso
-over whatever the Animator posed, the same composition the gait and the
-sitting pose use, so no rig needs a clip for it. Two villagers walking an
+same face), and the speaker nods - a short LateUpdate dip of the body
+over whatever the Animator posed, the same composition the gait uses, so
+no rig needs a clip for it.
+
+The nod pitches the **gait node** - the glb's own root under the
+instance, the node the kit already owns and writes absolutely - and not
+the "facing anchor". The anchor is chosen as the biggest mesh node that
+rests upright, and measuring all 174 town rigs says that node sits at
+0.80-0.86 of body height on most of them: it is the head. The gesture
+also used to undo itself only when the anchor's WORLD rotation still
+matched what it had written, which a villager that turned between frames
+fails - so on any rig whose idle pose does not rewrite that node, every
+nod left its pitch behind and the next one added to it, until the
+villager was looking at the sky. Bob, roll and nod now compose into one
+absolute write per frame from the captured rest transform, so nothing is
+read back and nothing can accumulate. `LegaiaBatchChecks.RigPose` reports
+each rig's chosen anchor and its height fraction, and the night soak
+reports every villager's worst tilt from its own rest (5-7 degrees is
+the gesture; it fails past 25). Two villagers walking an
 errand together swap a bubble every eight seconds or so. And a villager
 idling within two metres of the local player turns to look, and waves
 once every forty seconds at most - local only, nothing synced. None of
