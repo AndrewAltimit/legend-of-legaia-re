@@ -79,6 +79,7 @@ namespace LegaiaWorld
             var video = CheckConfig();
             var tv = BuildAndFindTv();
             CheckRule(tv, video);
+            CheckFileDetection(tv);
             CheckMatching(tv, video);
             CheckWiring(tv, video);
             CheckProps(tv, video);
@@ -261,6 +262,49 @@ namespace LegaiaWorld
             f.SetValue(tv, before);
             Debug.Log("[Legaia] video rule: " + n + " show(s) x 3 source states + " +
                       "3 out-of-range cases - the playlist is the only interruptible one");
+        }
+
+        /// The other half of "why is nothing playing": which URLs are worth
+        /// handing to the Unity player at all. A page link is not - it goes
+        /// to Windows Media Foundation as a byte stream and comes back
+        /// 0xc00d36c4 - and getting this wrong is invisible except as a
+        /// wall of errors in somebody's console.
+        static void CheckFileDetection(Component tv)
+        {
+            var mi = tv.GetType().GetMethod("DirectFile", BindingFlags.Static |
+                BindingFlags.NonPublic | BindingFlags.Public);
+            if (mi == null)
+                Fail("LegaiaVideoTv has no DirectFile(string) - the player " +
+                     "fallback cannot be tested");
+            bool Direct(string u)
+            {
+                return (bool)mi.Invoke(null, new object[] { u });
+            }
+            string[] files =
+            {
+                "https://example.com/clip.mp4",
+                "https://example.com/clip.MP4?token=1",
+                "https://example.com/a/b.webm",
+                "https://example.com/live/index.m3u8",
+            };
+            string[] pages =
+            {
+                "https://youtu.be/EnkLIHM_Tzo",
+                "https://www.youtube.com/watch?v=EnkLIHM_Tzo",
+                "https://www.twitch.tv/someone",
+                "https://vimeo.com/12345",
+                "",
+            };
+            foreach (string u in files)
+                if (!Direct(u))
+                    Fail("'" + u + "' is a media file but was not recognised as one - " +
+                         "the Unity player would never be tried for it");
+            foreach (string u in pages)
+                if (Direct(u))
+                    Fail("'" + u + "' is a page, not a file - handing it to the Unity " +
+                         "player only produces a Media Foundation error");
+            Debug.Log("[Legaia] video fallback: " + files.Length + " file URL(s) and " +
+                      pages.Length + " page URL(s) classified correctly");
         }
 
         // --- Owner matching --------------------------------------------------

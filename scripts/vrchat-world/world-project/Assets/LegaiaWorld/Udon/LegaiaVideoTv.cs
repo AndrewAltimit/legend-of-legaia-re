@@ -50,12 +50,18 @@
 // and gets 0xc00d36c4, "the byte stream type of the given URL is
 // unsupported". Both halves of that are environmental: in the VRChat
 // client AVPro plays and VRChat's own resolver does the yt-dlp step.
-// So the TV gives up rather than churning: after three failures in a
-// row it stops advancing and says so on the panel, instead of walking
-// the whole playlist to collect one error per entry for ever. Any
-// button clears that. A direct .mp4 link typed into the URL field
-// does play in the editor - that is the way to see the screen light up
-// without a Build & Test.
+// So the TV does not thrash at it. The two players are not
+// interchangeable: AVPro plays site links and streams, the Unity player
+// plays FILES. Handing a youtu.be page to the Unity player cannot
+// work - it goes to Windows Media Foundation as a byte stream and comes
+// back 0xc00d36c4 - so the watchdog only falls back to the Unity player
+// for a URL that looks like a direct media file, and falls back to
+// AVPro from anything. And after three give-ups in a row the set stops
+// advancing and says so on the panel, instead of walking the whole
+// playlist to collect one error per entry for ever. Any button clears
+// that. A direct .mp4 link typed into the URL field does play in the
+// editor - that is the way to see the screen light up without a
+// Build & Test.
 //
 // ON BY DEFAULT. The set is meant to be playing when you walk in, so
 // starting the playlist is not a single shot that can be missed: the
@@ -704,7 +710,7 @@ namespace LegaiaWorld
             if (videoReady || string.IsNullOrEmpty(UrlText(currentUrl)))
                 return;
             BaseVRCVideoPlayer other = OtherPlayer();
-            if (!triedOtherPlayer && other != null)
+            if (!triedOtherPlayer && other != null && FallbackCanHelp(other))
             {
                 triedOtherPlayer = true;
                 if (player != null)
@@ -714,7 +720,9 @@ namespace LegaiaWorld
                 LoadNow();
                 return;
             }
-            SetStatus("That video did not load");
+            SetStatus(DirectFile(UrlText(currentUrl))
+                ? "That video did not load"
+                : "This link needs the VRChat client to resolve it");
             GaveUp();
         }
 
@@ -724,6 +732,33 @@ namespace LegaiaWorld
             if (player == (BaseVRCVideoPlayer)unityPlayer)
                 return avproPlayer;
             return unityPlayer;
+        }
+
+        /// Is it worth handing this URL to the other player? AVPro always
+        /// is - it is the one that plays site links and streams. The Unity
+        /// player only plays a FILE, so giving it a youtu.be page is not a
+        /// fallback, it is a second way to fail (and a Media Foundation
+        /// error in the log to go with it). Nothing in the editor resolves
+        /// a page into a stream, which is exactly where that used to bite.
+        bool FallbackCanHelp(BaseVRCVideoPlayer other)
+        {
+            if (other == (BaseVRCVideoPlayer)avproPlayer)
+                return true;
+            return DirectFile(UrlText(currentUrl));
+        }
+
+        /// A URL that names a media file rather than a page to be
+        /// resolved. Deliberately generous - a query string after the
+        /// extension is normal - because the cost of being wrong is one
+        /// extra load attempt, not a wrong answer.
+        static bool DirectFile(string url)
+        {
+            if (string.IsNullOrEmpty(url))
+                return false;
+            string u = url.ToLower();
+            return u.Contains(".mp4") || u.Contains(".webm") || u.Contains(".mov") ||
+                   u.Contains(".m4v") || u.Contains(".mkv") || u.Contains(".ogv") ||
+                   u.Contains(".avi") || u.Contains(".m3u8") || u.Contains(".mpd");
         }
 
         /// One load abandoned. A single bad link in the playlist is
