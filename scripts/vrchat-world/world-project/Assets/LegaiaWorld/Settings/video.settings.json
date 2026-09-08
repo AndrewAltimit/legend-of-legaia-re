@@ -1,0 +1,74 @@
+{
+  "note": "Shared TV config - NOT scene specific. The default playlist plays on world entry and loops; a villager who owns a show can put it on ONLY while the default playlist is what is playing. A scene settings file may carry a 'video' block to override this one (default_playlist replaces, shows append unless shows_replace is true).",
+
+  "default_playlist": [
+    {
+      "title": "Rim Elm Reimagined (Audio Remake) | Legend of Legaia Music",
+      "url": "https://youtu.be/EnkLIHM_Tzo"
+    },
+    {
+      "title": "MOSIK - Forest Temple Remix",
+      "url": "https://youtu.be/ormYAMHCuAU"
+    },
+    {
+      "title": "Zeldawave II",
+      "url": "https://youtu.be/kQXsiJ1lLss"
+    },
+    {
+      "title": "An Ode To Earth - Baba Yetu: HD",
+      "url": "https://youtu.be/r6qi393Z7L8"
+    },
+    {
+      "title": "The True Scale of Whiterun: Skyrim in UNREAL ENGINE 5!",
+      "url": "https://youtu.be/DrnMACWp18M"
+    },
+    {
+      "title": "Lohse Song | Divinity: Original Sin 2",
+      "url": "https://youtu.be/MVFbz9ZSilU"
+    }
+  ],
+
+  "shows": [
+    {
+      "who": "Cara",
+      "npc": 14,
+      "title": "Wireless World - Official Microsoft Xbox 360 2005 Promotional Video",
+      "urls": ["https://youtu.be/Ks08VKocI_M"]
+    },
+    {
+      "who": "Noa",
+      "npc": 102,
+      "title": "SatAm Intro",
+      "urls": ["https://youtu.be/7R2vFDIBToI"]
+    },
+    {
+      "who": "Noa",
+      "npc": 102,
+      "title": "Spyro",
+      "console": true,
+      "urls": [
+        "https://youtu.be/htZMEvOe5Vc",
+        "https://youtu.be/LVd6pWf6aHw",
+        "https://youtu.be/OufF5OH4A-k"
+      ]
+    },
+    {
+      "who": "Vahn",
+      "npc": 101,
+      "title": "Frutiger Dillon - Windows 98",
+      "urls": ["https://youtu.be/oEKTT7NBvOg"]
+    },
+    {
+      "who": "Gala",
+      "npc": 103,
+      "title": "Interpreters and Compilers (Bits and Bytes, Episode 6)",
+      "urls": ["https://youtu.be/_C5AHaS1mOA"]
+    },
+    {
+      "who": "Tetsu",
+      "npc": 7,
+      "title": "The Yard - Title Theme (Extended)",
+      "urls": ["https://youtu.be/H_3lFyEK_vo"]
+    }
+  ]
+}

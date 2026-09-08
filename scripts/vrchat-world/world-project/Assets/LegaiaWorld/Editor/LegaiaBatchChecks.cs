@@ -129,10 +129,15 @@ namespace LegaiaWorld
             Expect("LegaiaWorld.LegaiaCardDeck", 1);
             Expect("LegaiaWorld.LegaiaMirror", 1);
             Expect("LegaiaWorld.LegaiaVideoTv", 1);
-            // Mirror (off / high / low) + TV (play / stop / resync). The
-            // card table had three of its own; they are UI buttons on the
-            // seat panel now, so the felt carries none.
-            Expect("LegaiaWorld.LegaiaEventButton", 3 + 3);
+            // Mirror (off / high / low) + TV (playlist / play / next /
+            // stop / resync). The card table had three of its own; they
+            // are UI buttons on the seat panel now, so the felt carries
+            // none.
+            Expect("LegaiaWorld.LegaiaEventButton", 3 + 5);
+            // The TV's watch spot is a station like any other, so the
+            // director finds it in its container sweep - and the count
+            // says the TV did not quietly grow a second one.
+            Expect("LegaiaWorld.LegaiaTvWatchSpot", 1);
             Expect("LegaiaWorld.LegaiaEventButton", 0, table);
             Expect("LegaiaWorld.LegaiaNpcStation", 4, table);
             Expect("LegaiaWorld.LegaiaCardTableHost", 1, table);
@@ -766,6 +771,24 @@ namespace LegaiaWorld
             Debug.Log("[Legaia] living town: " + overridden + " model override(s) in place.");
             var o = new LegaiaLivingTownOptions();
             settings.ApplyLivingTown(o);
+
+            // Rebuild the kit's prefab container FIRST, because the
+            // director's station list is BUILT, not discovered at runtime:
+            // the card table's stools and the TV's watch spot only reach it
+            // if they stand before the living town pass sweeps. The real
+            // builder runs the passes in this order for the same reason,
+            // and without this the check would be measuring whatever
+            // container the scene was last saved with - a stool that moved
+            // or a station that was added since would be invisible here.
+            var prefabOpts = new LegaiaCommonPrefabOptions
+            {
+                sdkPens = AssetDatabase.LoadAssetAtPath<GameObject>(
+                    LegaiaCommonPrefabs.SDK_PEN_PREFAB) != null,
+            };
+            LegaiaCommonPrefabs.Build("Assets/LegaiaGenerated/" + sceneName,
+                spawn.transform.position, prefabOpts, settings.prefabTransforms,
+                settings.slotMachine);
+
             // Apply TWICE: the pass must refresh, not stack. Every assert
             // below then runs against the second build, so a leaked brain or
             // a second director shows up as a failure rather than as a

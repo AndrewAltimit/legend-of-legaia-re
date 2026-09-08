@@ -224,6 +224,9 @@ namespace LegaiaWorld
             return Path.GetFileName(genDir.Replace("\\", "/").TrimEnd('/'));
         }
 
+        internal const string CONSOLE_NAME = "console";
+        internal const string WATCH_NAME = "watch_spot";
+
         const string PENS_NAME = "sdk_pens";
         internal const string SLOT_NAME = "slot_machine";
         const string SLOT_RIG = "LegaiaSlotGame";
@@ -635,20 +638,152 @@ namespace LegaiaWorld
             Text status;
             var urlField = BuildUrlPanel(root.transform, backing, out status);
 
-            var size = new Vector3(0.14f, 0.06f, 0.09f);
-            Button(root.transform, "btn_play", new Vector3(-0.3f, 0.83f, -0.12f),
+            // Five controls, because the playlist needs a way back: a guest
+            // video or a villager show can be handed back to the house
+            // playlist without waiting for it to end, and Stop leaves the
+            // set off until someone asks for something (a villager may not
+            // switch it back on - see LegaiaVideoTv's arbitration note).
+            var size = new Vector3(0.13f, 0.06f, 0.09f);
+            Button(root.transform, "btn_playlist", new Vector3(-0.44f, 0.83f, -0.12f),
+                size, blue, tv, "PlayPlaylist", "House playlist");
+            Button(root.transform, "btn_play", new Vector3(-0.22f, 0.83f, -0.12f),
                 size, green, tv, "TogglePlay", "Play / Pause");
-            Button(root.transform, "btn_stop", new Vector3(0f, 0.83f, -0.12f),
+            Button(root.transform, "btn_next", new Vector3(0f, 0.83f, -0.12f),
+                size, green, tv, "NextInPlaylist", "Next in the playlist");
+            Button(root.transform, "btn_stop", new Vector3(0.22f, 0.83f, -0.12f),
                 size, red, tv, "StopVideo", "Stop");
-            Button(root.transform, "btn_resync", new Vector3(0.3f, 0.83f, -0.12f),
+            Button(root.transform, "btn_resync", new Vector3(0.44f, 0.83f, -0.12f),
                 size, blue, tv, "Resync", "Resync");
 
             LegaiaWorldBuilder.SetUdonField(tv, "unityPlayer", unity);
             LegaiaWorldBuilder.SetUdonField(tv, "avproPlayer", avpro);
             LegaiaWorldBuilder.SetUdonField(tv, "urlField", urlField);
             LegaiaWorldBuilder.SetUdonField(tv, "statusText", status);
+
+            // The playlist, the villagers' shows, the floor console and the
+            // watch spot they use: all from Settings/video.settings.json,
+            // which is shared by every scene the kit builds.
+            var video = LegaiaVideoSettings.Load(SceneNameOf(genDir));
+            var console = video.AnyConsole()
+                ? BuildConsole(root.transform, genDir, dark) : null;
+            WireVideoConfig(tv, video, console);
+            BuildWatchSpot(root.transform, tv);
+
             LegaiaWorldBuilder.SyncUdonProxy(tv);
+            Debug.Log("[Legaia] TV: " + video.defaultPlaylist.Count +
+                      " playlist item(s), " + video.shows.Count + " villager show(s)" +
+                      (console != null ? " + the floor console" : "") + ".");
             return root;
+        }
+
+        /// Push the shared video config onto the TV behaviour. VRCUrl has
+        /// to be built by reflection like every other SDK type here (this
+        /// file carries no compile-time SDK reference), and a VRCUrl can
+        /// only be MADE in the editor: Udon cannot construct one at
+        /// runtime, which is exactly why the playlist is serialized into
+        /// the behaviour instead of parsed from a string at Start.
+        static void WireVideoConfig(Component tv, LegaiaVideoSettings video,
+            GameObject console)
+        {
+            var playlist = new List<string>();
+            var titles = new List<string>();
+            foreach (var e in video.defaultPlaylist)
+            {
+                playlist.Add(e.url);
+                titles.Add(e.title);
+            }
+            LegaiaWorldBuilder.SetUdonField(tv, "playlistUrls", UrlArray(playlist));
+            LegaiaWorldBuilder.SetUdonField(tv, "playlistTitles", titles.ToArray());
+            LegaiaWorldBuilder.SetUdonField(tv, "showUrls", UrlArray(video.FlatShowUrls()));
+            LegaiaWorldBuilder.SetUdonField(tv, "showStart", video.ShowStarts());
+            LegaiaWorldBuilder.SetUdonField(tv, "showCount", video.ShowCounts());
+            LegaiaWorldBuilder.SetUdonField(tv, "showTitles", video.ShowField(TitleOf));
+            LegaiaWorldBuilder.SetUdonField(tv, "showOwners", video.ShowField(WhoOf));
+            LegaiaWorldBuilder.SetUdonField(tv, "showTokens", video.ShowField(TokenOf));
+            LegaiaWorldBuilder.SetUdonField(tv, "showConsole", video.ShowConsoles());
+            LegaiaWorldBuilder.SetUdonField(tv, "consoleProp", console);
+        }
+
+        static string TitleOf(LegaiaVideoShow s) { return s.title; }
+        static string WhoOf(LegaiaVideoShow s) { return s.who; }
+        static string TokenOf(LegaiaVideoShow s) { return s.token; }
+
+        /// A VRCUrl[] the U# field can take, or null when the SDK is absent
+        /// (the kit builds inert without it, like every other SDK part).
+        static object UrlArray(List<string> urls)
+        {
+            var t = LegaiaWorldBuilder.FindType("VRC.SDKBase.VRCUrl");
+            if (t == null)
+                return null;
+            var arr = System.Array.CreateInstance(t, urls.Count);
+            for (int i = 0; i < urls.Count; i++)
+                arr.SetValue(System.Activator.CreateInstance(t, new object[] { urls[i] }), i);
+            return arr;
+        }
+
+        /// The floor console: a generic grey box with a round lid and a
+        /// lead running toward the set. Built INACTIVE - the TV switches it
+        /// on off its synced state while a console show plays. It is the
+        /// kit's own primitive shape and carries no branding: nothing here
+        /// is anyone's product, it is furniture that reads as "a console is
+        /// plugged in".
+        static GameObject BuildConsole(Transform root, string genDir, Material dark)
+        {
+            var grey = LegaiaCampProps.EnsureMat(genDir, "console_grey", "Standard",
+                new Color(0.74f, 0.73f, 0.70f));
+            var go = new GameObject(CONSOLE_NAME);
+            go.transform.SetParent(root, false);
+            go.transform.localPosition = new Vector3(0.55f, 0f, -0.78f);
+            go.transform.localRotation = Quaternion.Euler(0f, 18f, 0f);
+
+            Prim(PrimitiveType.Cube, "body", go.transform,
+                new Vector3(0f, 0.026f, 0f), new Vector3(0.27f, 0.052f, 0.2f), grey);
+            Prim(PrimitiveType.Cylinder, "lid", go.transform,
+                new Vector3(0f, 0.056f, 0.008f), new Vector3(0.14f, 0.006f, 0.14f), grey);
+            Prim(PrimitiveType.Cube, "slots", go.transform,
+                new Vector3(0f, 0.02f, -0.101f), new Vector3(0.14f, 0.018f, 0.004f), dark);
+            Prim(PrimitiveType.Cube, "button", go.transform,
+                new Vector3(-0.105f, 0.055f, 0.045f), new Vector3(0.02f, 0.006f, 0.012f), dark);
+            // The lead to the set: one thin box, angled back at the TV.
+            var lead = Prim(PrimitiveType.Cube, "lead", go.transform,
+                new Vector3(-0.16f, 0.008f, 0.3f), new Vector3(0.012f, 0.008f, 0.62f), dark);
+            lead.transform.localRotation = Quaternion.Euler(0f, -28f, 0f);
+
+            go.SetActive(false);
+            return go;
+        }
+
+        /// Where a villager stands to watch: an ordinary kind-0 station
+        /// whose handler is the TV's watch spot. The director finds it in
+        /// its sweep of the container like any other station, so nothing in
+        /// the living town has to know the TV exists.
+        static void BuildWatchSpot(Transform root, Component tv)
+        {
+            var go = new GameObject(WATCH_NAME);
+            go.transform.SetParent(root, false);
+            go.transform.localPosition = new Vector3(0.55f, 0f, -1.12f);
+            // Face the set: the stand point's +Z is where the villager
+            // looks, and the screen is at the root's origin.
+            var toTv = -go.transform.localPosition;
+            toTv.y = 0f;
+            go.transform.localRotation = Quaternion.LookRotation(toTv.normalized);
+
+            var spot = LegaiaWorldBuilder.TryAttachUdon(go, "LegaiaTvWatchSpot");
+            var station = LegaiaWorldBuilder.TryAttachUdon(go, "LegaiaNpcStation");
+            LegaiaWorldBuilder.SetUdonField(station, "kind", 0); // use-prop
+            LegaiaWorldBuilder.SetUdonField(station, "standPoint", go.transform);
+            LegaiaWorldBuilder.SetUdonField(station, "handler", spot);
+            LegaiaWorldBuilder.SetUdonField(station, "role", "tv");
+            LegaiaWorldBuilder.SetUdonField(station, "glance", false);
+            LegaiaWorldBuilder.SetUdonField(station, "dwellSeconds", 150f);
+            LegaiaWorldBuilder.SetUdonField(station, "indoors", false);
+            LegaiaWorldBuilder.SyncUdonProxy(station);
+
+            LegaiaWorldBuilder.SetUdonField(spot, "station", station);
+            LegaiaWorldBuilder.SetUdonField(spot, "tv", tv);
+            LegaiaWorldBuilder.SetUdonField(spot, "controllerItem",
+                LegaiaCarryArt.ITEM_CONTROLLER);
+            LegaiaWorldBuilder.SyncUdonProxy(spot);
         }
 
         static Material EnsureScreenMaterial(string genDir)

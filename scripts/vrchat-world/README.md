@@ -60,7 +60,7 @@ your disc ──legaia-extract──▶ extracted/ ──legaia-engine export-gl
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaLivingTown.cs` | The **Living town** pass: bakes the villager navmesh, builds the keep-out zones every stand point is filtered against, wires the scene settings' night host, builds the director, per-villager brains + bubbles + carried-item rigs, use-prop stations in front of every one-shot prop (cupboards, drawer, shop door), chat rings indoors and out, path / shoreline / doorstep / visit stand spots, carry endpoints and the seeded home assignment from the manifest's doorway pairs - each home with its doorway tile, a stand spot in front of it and the door prop to swing. Idempotent. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaNavMesh.cs` | The navmesh bake: collects every non-trigger collider under the built root and the kit's prefab containers (NPC capsules and rigidbodies excluded), bakes a villager-sized `NavMeshData` with Unity's runtime builder, saves it under `LegaiaGenerated/<scene>/livingtown/` and wires the loader. Also finds the **ledge links** that let a villager hop between islands the bake leaves unconnected, and the editor-side route check (walks and hops) the batch test uses. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaBubbleArt.cs` | Procedural speech-bubble art: the fourteen pictogram textures drawn from scratch, one material each, and the bubble quad. |
-| `world-project/Assets/LegaiaWorld/Editor/LegaiaCarryArt.cs` | The things villagers carry - bucket, broom, firewood bundle, basket - built from Unity primitives with generated flat materials, sized as fractions of each villager's own measured height. |
+| `world-project/Assets/LegaiaWorld/Editor/LegaiaCarryArt.cs` | The things villagers carry - bucket, broom, firewood bundle, basket, game controller - built from Unity primitives with generated flat materials, sized as fractions of each villager's own measured height. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaWeatherBuilder.cs` | The **Weather** pass: builds `<root>/weather` and wires `LegaiaWeather` to the day/night cycle, the grass material, the ambience mixer and the settings panel. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaLivingProps.cs` | The **Living props** pass: finds standable shoreline points from the world mesh alone (water sheet vs land cells, floor ray, clear standing capsule) and plants the fishing stations in `<root>/living_props`. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaDayNight.cs` | Optional UdonSharp day/night cycle: sweeps the realism sun on a fixed cycle, synced across players via server time; night dims the trilight ambient + fog to a moonlit fraction, enables the night-lamp container, and crossfades the day/night ambience beds. `JumpToDay`/`JumpToNight` apply a synced offset (the settings panel's buttons). |
@@ -75,7 +75,11 @@ your disc ──legaia-extract──▶ extracted/ ──legaia-engine export-gl
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaBatchChecks.cs` | Headless self-tests (`Unity -batchmode -executeMethod LegaiaWorld.LegaiaBatchChecks.CommonPrefabs` builds the common prefabs against the scene's built root and asserts every SDK component and every UdonSharp field wiring reached the backing behaviour; `.LivingTown`, `.Weather`, `.Ambience` likewise; `.RigPose` measures every imported NPC rig and checks the sitting pose's hip turn against the rig's walk clip). Never saves the scene. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaEventButton.cs` | A collider button: Interact sends one named event into a target behaviour. Every common-prefab button uses it (no world-space UI, so no pickup-collider-steals-the-click trap). |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaMirror.cs` | Mirror controller: Off / full / players-only surfaces, local choice, auto-off when the player walks away. |
-| `world-project/Assets/LegaiaWorld/Udon/LegaiaVideoTv.cs` | Synced video player over the SDK's AVPro (PC) + Unity (Android) players: owner-synced URL + playhead origin, late-joiner seek, 5-second load rate limit honoured, error retry. |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaVideoTv.cs` | Synced video player over the SDK's AVPro (PC) + Unity (Android) players: owner-synced URL + playhead origin, late-joiner seek, 5-second load rate limit honoured, error retry. Also the house playlist, the villagers' favourite shows and the one rule that arbitrates them (`source`: only the playlist may be interrupted). See "What the TV plays" below. |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaTvWatchSpot.cs` | The NPC station handler in front of the TV: asks the set for the arriving villager's show, hands it back when they leave, and puts the controller in their hands during a console show. |
+| `world-project/Assets/LegaiaWorld/Editor/LegaiaVideoSettings.cs` | Parser for `Settings/video.settings.json` - the SHARED (not per-scene) playlist + shows config, with a scene's optional `video` block merged over it. |
+| `world-project/Assets/LegaiaWorld/Editor/LegaiaVideoChecks.cs` | Headless `LegaiaVideoChecks.Run`: validates the config, drives the arbitration rule against every source state, asserts the flattened show windows and every URL reached the BACKING behaviour, and checks the watch spot faces the set and the console starts off. |
+| `world-project/Assets/LegaiaWorld/Settings/video.settings.json` | The shared video config itself: the default playlist and one entry per villager show. Not scene specific - the same file serves every world the kit builds. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaSeat.cs` | Interact sits the local player in this object's VRC station (the SDK chair wire); mirrors who sits there for the card game. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaCard.cs` | One playing card: pickup, hold + Use flips it (synced), spawn-kinematic until first drop, re-parked (dealt, revealed) by the deck and the game. The face flip and the dealt-card slide animate the `visual` child only - the root is always at the pose the caller passed, on that frame. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaCardDeck.cs` | Deck controller: Shuffle (seeded Fisher-Yates) / Gather restack every card face-down at the anchor by taking ownership of each card. |
@@ -331,6 +335,18 @@ All keys optional (`town01.settings.json` is the worked example):
   table like anyone else, and the table knows who they are. town01's
   settings place all three: Vahn and Noa by the spawn, Gala beside
   Tetsu's (npc_07's) spot.
+- **`video`** (optional, per scene) - overrides the shared video config
+  in `Settings/video.settings.json`. `default_playlist` REPLACES the
+  house playlist; `shows` are APPENDED to the shared cast unless
+  `"shows_replace": true`. The shared file is the default for every
+  world the kit builds, which is why the cast is keyed by WHO rather
+  than by object path: `{"who": "Noa", "npc": 102, "title": "Spyro",
+  "console": true, "urls": [...]}`. `who` is matched against the
+  villager's display name (`living_town.names`, an `add_npcs` label, or
+  whatever the living town named them) and `npc` against the NPC object
+  name as a prefix - either one is enough, so a show follows the
+  character into any world that has them. A show whose owner is in no
+  scene is not an error; `LegaiaVideoChecks.Run` says so as a warning.
 - **`living_town.names`** - `{"npc_07": "Tetsu"}` pins a villager's
   display name. Without a pin the living town names everyone itself:
   the speaker prefix of the actor's retail line when it has one ("Val:
@@ -833,8 +849,8 @@ and the SDK's own components - no third-party package, no game data:
   every VRChat performance guide says "off by default, toggle nearby".
   The surface material is the SDK's own `MirrorReflection.mat`.
 - **TV (video player)** (default on) - a cabinet with a 16:9 screen,
-  a URL field + status line on the front, and *Play / Pause*, *Stop*,
-  *Resync* buttons on top. Both SDK players sit on it: **AVPro** is used
+  a URL field + status line on the front, and *House playlist*, *Play /
+  Pause*, *Next*, *Stop*, *Resync* buttons on top. Both SDK players sit on it: **AVPro** is used
   on PC (the only one that plays YouTube's current formats after
   VRChat's yt-dlp resolve), the **Unity** player on Android / Quest, and
   the Unity player everywhere when `preferUnityPlayer` is ticked on the
@@ -850,6 +866,65 @@ and the SDK's own components - no third-party package, no game data:
   VRChat's allow-list need each viewer's **Allow Untrusted URLs**
   setting on - the status line says *access denied* when that is the
   cause. Audio is one spatial speaker under the screen.
+
+  **What the TV plays.** It is never dark for long: on entering the
+  world it starts the **house playlist** from
+  `Settings/video.settings.json` and loops it, printing what is on in
+  the status line. Villagers have favourite shows, and one who walks up
+  to the set can put theirs on - but only ever *over the playlist*.
+  That is the whole rule, and it is one line
+  (`LegaiaVideoTv.ShowRequestAllowed`):
+
+  | What is playing | A villager may take it over |
+  |---|---|
+  | The house playlist | yes |
+  | Another villager's show | no |
+  | A video a player typed in | no |
+  | Stopped | no |
+
+  A **player** always wins: the URL field and the five buttons work
+  from any state. *House playlist* hands the set back to the loop -
+  the way out of a guest video, a show you would rather not sit
+  through, or Stop, which leaves the TV off until a person asks for
+  something (a villager cannot switch it back on, because the playlist
+  is not what is playing). Everything else only ever falls *back* to
+  the playlist: a show that ends, a show whose owner walks away, a
+  guest video that plays out. Nothing but the playlist is
+  interruptible, so there is never a question of who was first.
+
+  A show is one or more videos played **in order, once** - shows never
+  loop, only the playlist does. A villager with more than one show gets
+  a different one each visit. Only the instance owner's copy of a
+  villager may drive the set (every client walks its own town, so nine
+  clients would otherwise fire nine requests at once), while what is on
+  screen, the console and the controller all follow the synced state -
+  so everyone sees the same show whatever their local villagers are up
+  to.
+
+  **The console show.** A show flagged `"console": true` brings the
+  floor console out: a grey box with a round lid and a lead running to
+  the set appears in front of the screen, and its owner stands there
+  with a controller in their hands (carry item 4, the same rig that
+  hands out buckets and brooms). Both are the kit's own primitives with
+  no branding on them. town01 ships one: Noa's three-part Spyro run.
+  The console is built inactive and switched on off the synced show, so
+  it is never furniture standing in an empty room.
+
+  **Villagers reach the set** through an ordinary NPC station - a
+  `watch_spot` child of the TV, kind 0, whose handler is
+  `LegaiaTvWatchSpot`. The town director finds it in its sweep of the
+  prefab container like any other station, so nothing in the living
+  town knows that television exists. That sweep is a BUILD-time list:
+  rebuild the common prefabs *before* the living town pass runs, or the
+  spot is not on the director (the builder's own pass order does this,
+  and so does the LivingTown check).
+
+  **Editing the playlist** means editing
+  `Assets/LegaiaWorld/Settings/video.settings.json` and rebuilding the
+  common prefabs - a `VRCUrl` cannot be constructed at runtime in Udon,
+  so the URLs are serialized into the behaviour at build time and there
+  is no way to load them from text in-world. See "Video config" under
+  the settings section for the shape.
 - **Card table** (default on) - a round table with felt, N stools
   (**Stools**, default 4) that are VRC stations (look at one, *Sit*),
   and a 52-card deck stacked face-down in the middle. Cards are
@@ -1329,7 +1404,10 @@ Headless checks: `LegaiaWorld.LegaiaEconomyChecks.Run` (edit mode),
 through the hitbox's debug hook, sees the coin land and the villager
 come back); `LegaiaWorld.LegaiaCardGameChecks.Run` and `.Soak` (play
 mode, no `-quit`, `-legaiaCardSeconds N -legaiaCardScale S`: villagers
-play hands among themselves, pot conservation asserted, both modes).
+play hands among themselves, pot conservation asserted, both modes);
+`LegaiaWorld.LegaiaVideoChecks.Run` (edit mode: the video config, the
+TV's arbitration rule against every source state, the serialized
+playlist and show windows, the watch spot and the console).
 
 ## Optional realism enhancements
 
