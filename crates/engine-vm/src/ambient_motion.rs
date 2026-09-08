@@ -365,17 +365,20 @@ impl RampScheduler {
         }
     }
 
-    // NOT WIRED, and a call site would be provably unobservable. The pool is
-    // per-channel ([`AmbientMotion::ramps`]) and every channel is rebuilt from
-    // scratch on scene entry (`World::seed_field_npc_ambient` clears the map
-    // and constructs a fresh `AmbientMotion` per placement), so no pool ever
-    // crosses a scene boundary. [`RampScheduler::new`] and this reset leave
-    // **byte-identical** state - `slots = [None; RAMP_SLOTS]`, `overflow = 0` -
-    // so adding a scene-entry call would change nothing at all: the definition
-    // of a fake wire. It exists so a host that does keep a long-lived pool
-    // re-arms the header slot the way retail does instead of clearing all 64
-    // and handing out slot 0. What would make it load-bearing is a host that
-    // recycles schedulers across scenes, not a caller.
+    // REPLACED-BY: per-scene reconstruction in `World::seed_field_npc_ambient`,
+    // which clears the ambient map and constructs a fresh `AmbientMotion` -
+    // and so a fresh [`RampScheduler`] - per placement on every scene entry.
+    // The pool is per-channel ([`AmbientMotion::ramps`]) and never crosses a
+    // scene boundary, so retail's arena reset has no boundary left to sit on:
+    // the engine drops the arena instead of clearing it.
+    //
+    // No host is owed rather than none has got round to it. [`RampScheduler::new`]
+    // and this reset leave **byte-identical** state - `slots = [None; RAMP_SLOTS]`,
+    // `overflow = 0` - so a scene-entry call site would change nothing a player
+    // or a test could see: the definition of a fake wire. The body stays because
+    // it is the byte-exact record of retail's asymmetric last store (see below),
+    // and a host that ever does recycle schedulers across scenes needs exactly
+    // it - that would be a representation change, not a call insertion.
     /// PORT: FUN_8003CDA8 - the scene-entry pool reset.
     ///
     /// Retail zeroes the busy word `+0x1E` of all **64** raw slots, clears

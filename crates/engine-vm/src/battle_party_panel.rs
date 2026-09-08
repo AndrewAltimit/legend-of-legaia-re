@@ -155,12 +155,14 @@ pub struct LabelState {
 impl LabelState {
     /// The block as `FUN_801DBB8C` leaves it, given the register call's result.
     ///
-    /// NOT WIRED: there is no object to open. `FUN_801DBB8C` registers a
-    /// **retained-mode** SCUS text actor and stashes its handle; `engine-ui`
-    /// rebuilds every battle `TextDraw` from the live model each frame, so
-    /// nothing holds a handle and nothing tears one down. See the module's
-    /// "No engine analogue" note - this is a documented record of the retail
-    /// lifecycle, not a port waiting on a caller.
+    /// REPLACED-BY: `legaia_engine_ui::battle_hud_draws_for`'s immediate-mode
+    /// rebuild. `FUN_801DBB8C` registers a **retained-mode** SCUS text actor
+    /// and stashes its handle at `0x801F4E0C`; the port's battle HUD builds
+    /// every `TextDraw` afresh from the live model on each frame, on both
+    /// hosts, so there is no handle to hold and nothing to tear down. There
+    /// is no object to open, and no host is owed one - the retained widget
+    /// list is a representation the port replaced, not a call it has not
+    /// made. This block stays as the record of the retail lifecycle.
     ///
     /// What that actor **is** was mis-read once: it is not the party readout.
     /// The routine's one caller is the menu SM's `0x28 -> 0x50` arm

@@ -1662,6 +1662,130 @@ being true, so the sentence that justifies a row can go stale for as long as
 the row stays inert - and the row stays inert precisely because nobody is
 looking at it.
 
+## The battle / field prim-and-helper drain
+
+A pass over the `engine-vm` battle and field leaves, the `engine-core` leaf
+kernels and the `engine-ui` GTE / window painters. Three things came out of it
+that are worth keeping separately from the per-row verdicts: a claim about the
+audit that does not hold, two reasons that had gone stale against their own
+code, and five rows whose covering mechanism is named and live, so they are
+`REPLACE`, not `DISCLOSE`.
+
+### A module tag with no disclosure marker is not a stale tag
+
+`ambient_motion.rs`'s module line is `//! PORT: FUN_80038158, FUN_80036d80,
+FUN_8003c5f0`, and it carries neither `NOT WIRED` nor `REPLACED-BY`. Reading
+that as "three stale disclosures" gets the direction backwards: the audit's
+"tagged `NOT WIRED` / `REPLACED-BY` but analysed live" section is **empty**,
+none of the three appears in any inert section, and all three are reachable -
+`World::tick_field_npc_ambient` from `frame_tick`, `World::seed_field_npc_ambient`
+from `field_carriers`, and `zone_ramp_tick` from `register_ramp`. The file's one
+inert anchor is `reset_pool`, whose `//` item block is the only disclosure text
+in it. The general point: a module tag with no marker is a *live* module tag,
+and the only thing that can be stale is a marker that exists.
+
+### Five rows where the mechanism is named and live
+
+| Anchor | Verdict | `REPLACED-BY:` mechanism |
+|---|---|---|
+| `scus_leaf_kernels::text_line_count` (`8003CBA8`) | `REPLACE` | `str::lines()` over the decoded prompt - `battle_tutorial::TutorialPrompts` folds `0x7C` to `'\n'` at decode and `engine-ui::battle_tutorial_box` counts with it, live on both hosts. The one divergence, the `0xC0..=0xCF` escape lead, appears in no PROT 0967 prompt. |
+| `ambient_motion::reset_pool` (`8003CDA8`) | `REPLACE` | per-scene reconstruction in `World::seed_field_npc_ambient`, which drops and rebuilds each `AmbientMotion` on scene entry. `RampScheduler::new` and the reset leave byte-identical state, so a scene-entry call site would certify itself and measure nothing. |
+| `scus_battle_helpers::copy_nested_records` (`80055854`) | `REPLACE` | `legaia_asset::battle_char_palette`, the port of the one retail caller `FUN_80052FA0`, which parses to typed records; no engine type holds the `&mut [u32]` staging buffer this advances. |
+| `scus_battle_helpers::scale_rgb24` (`80046978`) | `REPLACE` | `engine-ui::battle_intro::wash_prim` and its two arm constants, the same ABR-2 full-screen quad, live on both hosts. The scale input is the adaptive frame-skip cadence `0x1F800393`; every host ticks at 1, where the function is the identity. |
+| `battle_party_panel::LabelState::opened` (`801DBB8C`) | `REPLACE` | `engine-ui::battle_hud_draws_for`'s immediate-mode rebuild - every battle `TextDraw` is built afresh per frame, so no handle exists to open or tear down. |
+
+Two neighbours were checked against the same bar and stay `DISCLOSE`.
+`depth_cue_scale_channel` (`8004A908`) has live siblings - `engine-render::psx_light::depth_cue`
+and the `psx_depth_cue` WGSL helper - but they compute a *different* formula
+(a lerp toward a far colour, against retail's `raw*num/den` with a floor of 4),
+and a difference in observable output is a gap, not a substitution.
+`equip_compare_panel_fields` (`801D1290`) likewise: the live
+`equip_screen_draws_for` prints a fixed ATK/UDF/LDF triple where retail selects
+the fields by category, so the player sees the wrong rows today.
+
+### Two disclosures had gone stale against their own code
+
+- `scus_leaf_kernels::seed_boot_offset_table` (`800265E8`) said "the engine's
+  audio host asks `spu_base_for_slot` directly". It does not - that helper's
+  only references outside its own module are in the guard test
+  `infra_boot_offset_table.rs`, and nothing in `engine-audio`, `engine-shell`
+  or `web-viewer` consults a per-slot SPU base at all. The verdict survives
+  (the mixer owns one flat `SpuRam` and places a bank at the transfer address
+  it is handed), but the blocker is a representation the port does not have,
+  not a helper that beat the seeder to the job.
+- `gte/math.rs`'s `rot_x` / `rot_z` / `camera_view_rotation` (`800461A4`,
+  `8004638C`, `8001CF50`) named two live hosts composing `Rx * Ry * Rz` in
+  `glam`. Only one is live: `engine_render::window::cutscene_camera_mvp` has no
+  production caller left, and `docs/subsystems/cutscene.md` already records it
+  as a unit-tested reference. The play window's `psx_camera_mvp` is the whole
+  host set.
+
+### Rows settled by a reference sweep rather than by reading source
+
+- `queue_applier::miracle_command_position` (`801E91E8`) is **not
+  dead-in-retail**. A five-form sweep finds exactly one reference corpus-wide:
+  a single `jal` from battle overlay 0898 at `0x801EE2C0`, inside the arms
+  resolver `FUN_801EC3E4`; zero data words, so it is in no dispatch table. The
+  per-slot Miracle marker it reads is a guard *inside* the routine, not a
+  precondition for entering it, which is why "the marker has no input
+  recognizer" does not make it unreachable. The applicability decision it
+  gates is live in the port (`World::miracle_marker_armed_for` and the
+  whole-string match in `finish_action_queue`); what is unconsumed is its
+  **return value**, a 1-based command position its caller stages into
+  `ctx[+0x269]`, which no engine type models. So: replaced for the decision,
+  inert for the value - and a row that would have been mis-filed as dead.
+- `move_vm/spawn.rs::spawn_move_actor` (`80021B04`) is not a move-VM leaf but a
+  move-VM *producer*: its own tail is `jal FUN_80023070`, the dispatcher. The
+  sweep finds 815 `jal` sites, all in the summon / cast band and the script-VM
+  and world-map spawn paths. Calling it from inside an opcode arm would invert
+  the retail relationship, so "no opcode arm calls it" is the correct state,
+  not the gap. The gap is that `SummonRuntime::seed_part` seats parts directly
+  into its own `Vec` and no host constructs a `SummonRuntime` at all.
+
+### `pool_ops`: two of four are duplicates of a live picker, two are not
+
+The live target picker is `TargetPickerSession::step_within_row` over
+`is_valid` / `first_valid_in`, and the live turn advance is
+`World::next_living_combatant`; the ailment half of retail's `+0x16E & 0xF84`
+predicate is answered separately and typed by `World::actor_blocked_from_acting`.
+So `first_selectable_target` (`801DBA04`) and `next_selectable_actor`
+(`801DB81C`) have both halves of their predicate already live, in two places.
+They stay `DISCLOSE` rather than `REPLACE` on one point: retail's AI-companion
+arm (`DAT_8007BD10[i] != 4`, a fifth roster seat) has no engine analogue, and a
+disclosure may not claim a substitution for behaviour that is still missing.
+`normalize_formation_span` (`801DB318`) and `clear_pool_flag_words`
+(`801DB9C4`) are not duplicated at all: the first is a flow-SM case body with a
+camera-focus side effect the engine's per-action camera snap has no slot for,
+and the second needs the pool `+0x8` flag word, which `BattleActor` does not
+carry (it has `+0x1DC` `flag_bits` and `+0x16E` `field_flags`, neither of them
+this).
+
+### The field rows are chained, and one is unwireable on purpose
+
+`spawn_arc_helper` (`801D5780`) has **zero** references in retail - no `jal`,
+no `j`, no address word - and one in-tree production caller,
+`spawn_arc_with_emitter`. It therefore goes live transitively the moment that
+row is wired and must never be given a direct call site of its own. Its parent
+`spawn_arc_with_emitter` (`801D25EC`) has a live call chain to a host
+(field VM op `0x43` -> `FieldHost::field_halt_acquire_apply`) but that hook is
+a no-op default that `engine-core`'s `FieldHostImpl` does not override, and the
+operand decode is unsettled: `field_ledge_hop_arc` reads two tile bytes plus
+apex and frames where `op_43` reads two `i16` coordinates and forwards neither
+apex nor frames. Those are incompatible readings of the same bytes and whoever
+wires this settles that first. `attached_sprite_tick` (`801E4470`) is chained
+behind it - its only retail filler is that same routine.
+
+`passive_hud_icons` / `hud_anchor_offsets` (`801D095C`) is the one field row
+with a host that could take it today, and only on one host. `engine-shell`'s
+`Window::field_party_hud_draws` is live and `Window::field_hud_projected_player_y`
+already projects the player head; what it hard-codes is the `-128.0` lift that
+`hud_anchor_offsets` supplies, and the bit source `World::party_has_ability` is
+the live port of retail's own `FUN_800431D0`. The browser has no projector at
+this seam at all - `play_field_hud.rs` reads a `NO_PROJECTION_STAND_IN`
+literal - so wiring the native side alone would create exactly the host drift
+`host-drift.md` exists to catch. The prerequisite is the browser's projector,
+not the icons.
+
 ## See also
 
 - [`port-catalog.md`](port-catalog.md) - the catalog, the `live` axis and the

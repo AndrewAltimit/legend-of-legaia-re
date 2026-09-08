@@ -254,10 +254,16 @@ impl World {
     /// against a [`vm::battle_action::LOW_SWING_TARGET_CLASS`] target. The
     /// engine's Attack command is exactly that situation - it resolves a
     /// target with no direction input - so it is the retail kernel that
-    /// applies, and the alternative (the player's own recorded chain, retail
-    /// `FUN_801DA34C` /
-    /// [`vm::battle_action::preseed_action_queue`]) still has no engine-side
-    /// carrier to read from.
+    /// applies. The alternative - the player's own recorded chain, retail
+    /// `FUN_801DA34C` / [`vm::battle_action::preseed_action_queue`] - is
+    /// closer than this note used to say: the chains themselves *are* carried
+    /// live, as `World::saved_chains` (LGSF v2, edited by
+    /// `tactical_arts_editor`, read by the battle arts path). What is missing
+    /// is the **record projection** retail preseeds from: the pair of 16-byte
+    /// slots at record-relative `+0x1A7` / `+0x1B7` that its
+    /// `u16[+0x156] < u16[+0x154]` preference predicate chooses between, and
+    /// `legaia_save::CharacterRecord` declares no accessor at either offset.
+    /// So the arm has a source and no addressing, not no source.
     ///
     /// **Disclosed stand-in.** Retail picks between the two shapes on the
     /// target monster record's `+0x1E` byte, which

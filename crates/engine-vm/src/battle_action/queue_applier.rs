@@ -675,12 +675,23 @@ pub fn check_and_learn_art(
 /// a dump's printed addresses are a property of its load base, so counting
 /// caller *sites* across differently-based dumps of one image inflates them.
 ///
+/// A five-form reference sweep over SCUS plus every based overlay image
+/// reproduces that independently: `jal = 1`, `word = 0`, `j = 0`, `branch = 0`,
+/// `lui = 0`. Zero data-word references means the address sits in **no**
+/// dispatch or handler table, and the one `jal` is the site above.
+///
+/// So this is neither replaced nor dead in retail, and both readings have been
+/// offered. It is reached once per resolved strike; the per-slot Miracle marker
+/// it consults is a guard *inside* the body, not a precondition for entering
+/// it, which is why "the marker has no input recognizer" does not make the
+/// routine unreachable.
+///
 /// The engine's Miracle gate is now both halves of retail's: the per-slot
 /// marker `ctx[+0x25F + slot]` ([`miracle_marker_armed`]) and the whole-string
 /// match in [`finish_action_queue`](super::finish_action_queue). What still
 /// has no consumer is `ctx[+0x269]` - the reward byte this lookup's single
 /// caller stages a zero-position token into - so the per-token position itself
-/// remains unconsumed.
+/// remains unconsumed, and that byte is the host this row is owed.
 ///
 /// PORT: FUN_801E91E8 - Miracle-command token position lookup.
 ///
