@@ -493,10 +493,12 @@ namespace LegaiaWorld
         // --- Night bed -------------------------------------------------------
 
         /// 100 s night bed: a cool low breeze under a cricket chorus whose
-        /// DENSITY drifts on a 0.015 Hz noise envelope (6 to 22 chirps a
+        /// DENSITY drifts on a 0.015 Hz noise envelope (4 to 12 chirps a
         /// second) instead of two fixed voices repeating, plus occasional
         /// frogs and a rare distant owl. Every chirp jitters its carrier,
         /// pulse count and rhythm, so the chorus never lands in step.
+        /// The chorus is deliberately thin and low in the mix: the breeze
+        /// is the bed, the crickets are what is happening in it.
         internal static float[] NightBed()
         {
             int sr = BED_SR;
@@ -533,8 +535,8 @@ namespace LegaiaWorld
             while (pos < n)
             {
                 float dens = densN[pos];
-                float rate = 6f + 16f * dens * dens;  // chirps per second
-                Mix(bed, pos, Cricket(cr, sr), 1.5f);
+                float rate = 4f + 8f * dens * dens;   // chirps per second
+                Mix(bed, pos, Cricket(cr, sr), 0.75f);
                 pos += Mathf.Max(1, Mathf.RoundToInt(
                     sr * (0.4f + 1.2f * Rand(cr)) / rate));
             }
@@ -944,8 +946,8 @@ namespace LegaiaWorld
             int pos = cr.Next(n);
             while (pos < n)
             {
-                float rate = 1.2f + 3.6f * densN[pos];
-                Mix(bed, pos, Cricket(cr, sr), 1.2f);
+                float rate = 1.0f + 2.6f * densN[pos];
+                Mix(bed, pos, Cricket(cr, sr), 0.6f);
                 pos += Mathf.Max(1, Mathf.RoundToInt(
                     sr * (0.4f + 1.2f * Rand(cr)) / rate));
             }
@@ -959,16 +961,27 @@ namespace LegaiaWorld
         }
 
         /// One cricket chirp: 3-5 AM pulses of a jittered carrier.
+        ///
+        /// Tuned DOWN and SOFT on purpose. The first version sat at
+        /// 3.5-4.9 kHz with a second harmonic a quarter as loud, which
+        /// puts its energy - and a sizzling octave above it - straight
+        /// through the ear's most sensitive band; over a whole night that
+        /// reads as harsh rather than as summer. It now sings around
+        /// 2.3-3.2 kHz (the low end of a real field cricket), the
+        /// harmonic is a hint rather than a layer, the per-pulse envelope
+        /// is squared rather than cubed so each pulse swells instead of
+        /// snapping, and the level is roughly half. Quiet enough to be
+        /// atmosphere; a night should be something you can talk over.
         static float[] Cricket(System.Random r, int sr)
         {
             int pulses = 3 + r.Next(3);
-            float f = Rand(r, 3500f, 4900f);
-            float pl = Rand(r, 0.030f, 0.055f);
-            float gap = pl + Rand(r, 0.008f, 0.022f);
+            float f = Rand(r, 2300f, 3200f);
+            float pl = Rand(r, 0.034f, 0.060f);
+            float gap = pl + Rand(r, 0.010f, 0.026f);
             int lenP = Mathf.RoundToInt(sr * pl);
             int stepP = Mathf.RoundToInt(sr * gap);
             var e = new float[stepP * (pulses - 1) + lenP + 4];
-            float level = Rand(r, 0.10f, 0.30f);
+            float level = Rand(r, 0.05f, 0.15f);
             for (int k = 0; k < pulses; k++)
             {
                 float fk = f * Rand(r, 0.985f, 1.015f);
@@ -978,8 +991,8 @@ namespace LegaiaWorld
                     float t = (float)i / lenP;
                     ph += 2f * Mathf.PI * fk / sr;
                     float env = Mathf.Sin(Mathf.PI * t);
-                    env *= env * env;
-                    e[k * stepP + i] += (Mathf.Sin(ph) + 0.25f * Mathf.Sin(ph * 2f))
+                    env *= env;
+                    e[k * stepP + i] += (Mathf.Sin(ph) + 0.07f * Mathf.Sin(ph * 2f))
                                         * env * level;
                 }
             }

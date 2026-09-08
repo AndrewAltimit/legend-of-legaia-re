@@ -1669,7 +1669,7 @@ Four flat 2D beds, all synthesized into
 |---|---|---|
 | `bed_base` | 75 s | Wind over distant surf. Always audible. |
 | `bed_day` | 100 s | Breeze, leaf rustle, distant birds. Faded in with the sun. |
-| `bed_night` | 100 s | Cricket chorus whose density drifts, plus frogs and a far owl. |
+| `bed_night` | 100 s | A cool breeze under a thin cricket chorus whose density drifts, plus frogs and a far owl. See "The night is quiet" below. |
 | `bed_wind_gust` | 32 s | Strong gusts with two resonant howls. Silent until asked for. |
 
 Spatial emitters, placed from the scene's own geometry:
@@ -1679,6 +1679,26 @@ Spatial emitters, placed from the scene's own geometry:
 | `waves_*` | 90 s | Three to five along the water edge nearest the village, nudged onto the land side. Water sheets are recognised the way the collider pass recognises them: a large, flat, semi-transparent submesh is the sea, any other semi-transparent shape is a window light shaft. Far 42 m. |
 | `birds_*` | 52 s | Up to six tree canopies (the night-torch pass's canopy clusters), 3.5 m up the trunk. Day only. Far 25 m. |
 | `wildlife_*` | 64 s | Owls, frogs and crickets by the further trees and at the water. Night only. Far 28 m. |
+
+**The night is quiet.** The first cricket sang at 3.5-4.9 kHz with a
+second harmonic a quarter as loud - straight through the ear's most
+sensitive band, with a sizzling octave above it - and a whole night of it
+was harsh rather than atmospheric. It now sings at 2.3-3.2 kHz (the low
+end of a real field cricket), the harmonic is a hint, each pulse swells
+instead of snapping (a squared envelope, not a cubed one), the chorus is
+thinner (4-12 chirps a second, not 6-22) and it sits about 8 dB lower in
+both mixes. Measured over the generated clips: energy above 3 kHz falls
+from 29% to 0.6% in the night bed and from 79% to 1.0% in the wildlife
+emitters, with the spectral centroid dropping 1744 to 1287 Hz and 2398 to
+1016 Hz. The bed's own level is unchanged (the writer normalizes every
+clip to a target RMS, so what moved is the balance inside it, not the
+loudness of the file) and the emitters are turned down at the mixer as
+well. **Both night clips carry their tuning version in the file name**
+(`amb_night_v2.wav`, `amb_night_wildlife_v2.wav`) and the old names are
+deleted on build: a generated clip is only ever synthesized when its
+asset is missing, so re-tuning one without renaming it leaves every
+project that already built the world on the old sound for ever - the same
+rule the card atlas lives under.
 | `windmill_*` | 12 s | Each free-running animated prop over 3 m tall: a whoosh per blade pass on a 4 s rotation, plus one timber creak per turn. Far 26 m. |
 
 **Why they are long, and why they do not tick.** The first generation of
