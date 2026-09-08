@@ -1236,7 +1236,7 @@ sits, with the asset path, art folder and uniform scale alongside:
 ```json
 "slot_machine": { "cabinet": "Assets/Prefabs/legaia slot machine.glb",
                   "art": "Assets/LegaiaImports/slot-art",
-                  "position": [37, 0.979, 36.416], "rotation": [0, -71.178, 0], "scale": 0.012 }
+                  "position": [37, 0.979, 36.416], "rotation": [0, -71.178, 0], "scale": 0.008 }
 ```
 
 The snapshot

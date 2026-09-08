@@ -150,7 +150,7 @@
 //
 //   "slot_machine": {"cabinet": "Assets/Prefabs/legaia slot machine.glb",
 //                    "art": "Assets/LegaiaImports/slot-art",
-//                    "position": [x, y, z], "rotation": [0, yaw, 0], "scale": 0.012}
+//                    "position": [x, y, z], "rotation": [0, yaw, 0], "scale": 0.008}
 //       The casino cabinet: which model asset to instantiate (falls back
 //       to a project-wide search by file name when the path moved), the
 //       `asset slot-art` folder to build the minigame from, and the

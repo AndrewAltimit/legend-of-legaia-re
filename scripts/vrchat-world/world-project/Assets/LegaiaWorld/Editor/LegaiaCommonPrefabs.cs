@@ -72,12 +72,13 @@ namespace LegaiaWorld
         // keeps under Assets/Prefabs/), the `asset slot-art` folder, and
         // where it stands when the scene settings carry no slot_machine
         // block. Scale: the shipped cabinet is authored in centimetre-ish
-        // units, 0.012 lands it at a real cabinet's height.
+        // units, and 0.008 is the kit's default for every scene - it
+        // stands beside a Rim Elm villager rather than over them.
         public bool slotMachine = true;
         public string slotCabinetPath = "Assets/Prefabs/legaia slot machine.glb";
         public string slotArtDir = "Assets/LegaiaImports/slot-art";
         public Vector3 slotOffset = new Vector3(-3.4f, 0f, 3.6f);
-        public float slotScale = 0.012f;
+        public float slotScale = 0.008f;
         public List<LegaiaExtraPrefab> extras = new List<LegaiaExtraPrefab>();
 
         public bool AnyEnabled => mirror || tv || cardTable || sdkPens || slotMachine ||
