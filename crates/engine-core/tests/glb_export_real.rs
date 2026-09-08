@@ -342,3 +342,84 @@ fn equipment_item_export_bakes_named_animated_glbs() {
         }
     }
 }
+
+#[test]
+fn party_field_export_bakes_vahn_noa_gala_with_idle_and_walk() {
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing");
+        return;
+    };
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    }
+    let index = ProtIndex::open_extracted(&extracted).expect("open ProtIndex");
+    let opts = GlbExportOptions {
+        scale: 1.0 / 128.0,
+        include_sky: false,
+    };
+    let export =
+        legaia_engine_core::glb_export::export_party_field_glbs(&index, &opts).expect("party");
+    let names: Vec<&str> = export
+        .members
+        .iter()
+        .map(|m| m.character.as_str())
+        .collect();
+    assert_eq!(
+        names,
+        ["Vahn", "Noa", "Gala"],
+        "all three active party slots export"
+    );
+    for m in &export.members {
+        // Idle leads (the rest pose a non-autoplaying consumer shows),
+        // Walk second: the two records the retail player actor alternates.
+        assert_eq!(
+            &m.clips[..2],
+            ["Idle", "Walk"],
+            "{}: clip order",
+            m.character
+        );
+        let j = glb_json(&m.glb);
+        let anims = j["animations"].as_array().expect("animations");
+        assert_eq!(
+            anims.len(),
+            m.clips.len(),
+            "{}: one take per clip",
+            m.character
+        );
+        assert_eq!(anims[0]["name"], "Idle");
+        assert_eq!(anims[1]["name"], "Walk");
+        assert!(
+            j["meshes"].as_array().is_some_and(|a| !a.is_empty()),
+            "{}: mesh",
+            m.character
+        );
+        assert!(
+            j["images"].as_array().is_some_and(|a| !a.is_empty()),
+            "{}: the field texture atlas is baked in",
+            m.character
+        );
+        // Every retail field rig drives exactly the 10 live groups.
+        assert_eq!(m.bone_count, 10, "{}: live bones", m.character);
+        // The export scale sits on the scene root, like the villager glbs.
+        let root = j["scenes"][0]["nodes"][0].as_u64().expect("root node") as usize;
+        let sc = j["nodes"][root]["scale"][0].as_f64().expect("root scale");
+        assert!(
+            (sc - 1.0 / 128.0).abs() < 1e-6,
+            "{}: root scale {sc}",
+            m.character
+        );
+    }
+    let manifest = legaia_engine_core::glb_export::party_manifest(&export, &opts);
+    let npcs = manifest["npcs"].as_array().expect("npcs");
+    assert_eq!(npcs.len(), 3);
+    for (n, m) in npcs.iter().zip(&export.members) {
+        assert_eq!(n["model_index"], m.slot);
+        assert_eq!(n["walk_clip"], "Walk");
+        assert_eq!(n["clips"][0], "Idle");
+        assert_eq!(n["file"], format!("npcs/{}.glb", m.file_stem));
+    }
+    for note in &export.notes {
+        eprintln!("[party note] {note}");
+    }
+}

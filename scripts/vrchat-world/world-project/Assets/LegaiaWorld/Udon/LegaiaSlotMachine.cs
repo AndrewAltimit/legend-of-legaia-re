@@ -27,9 +27,19 @@
 //   "no casino coin bank" situation a VRChat world is in).
 //
 // VRChat adaptations: the BIOS-rand feature stream is a plain LCG (as in the
-// engine port), balance is per-cabinet and refills to 70 when it runs dry
-// (free play - there is no casino bank to cash out to), the cash-out submenu
-// is dropped, and a payout left unclaimed auto-collects (`autoCollect`).
+// engine port), the cash-out submenu is dropped, and a payout left unclaimed
+// auto-collects (`autoCollect`).
+//
+// THE BANK. With a `wallet` wired (LegaiaWallet, the world's persistent coin
+// purse) the cabinet has no balance of its own: a spin SPENDS the seated
+// player's purse and a collect PAYS it, and `syncBalance` is a mirror of the
+// OWNER's coins that everybody watching reads off the HUD - so the number on
+// the glass is whose money is on the line, not a per-cabinet float. Only the
+// owner's client ever writes a purse, which is exactly the client whose own
+// coins they are. Without a wallet the machine keeps the old stopgap: a
+// per-cabinet balance seeded at the 70-coin retail entry and refilled when it
+// runs dry (`freePlayRefill`), which is also what the rules fixture replays
+// against, so the arithmetic under test is untouched either way.
 //
 // Sync: outcomes (stop rows, wins, balance, phase) are owner-authoritative
 // and synced; reel animation runs locally on every client from the same
@@ -129,7 +139,10 @@ namespace LegaiaWorld
         public int punchSymbol = 9;
         public int punchRounds = 3;
 
-        [Tooltip("Refill the balance to 70 when a spin can't be paid for (free play - no casino bank in VRChat).")]
+        [Tooltip("The world's coin purse. Wired: spins and payouts move the seated player's own coins and the HUD mirrors them. Null: the old per-cabinet balance below.")]
+        public LegaiaWallet wallet;
+
+        [Tooltip("Refill the balance to 70 when a spin can't be paid for (free play - no casino bank in VRChat). IGNORED once a wallet is wired.")]
         public bool freePlayRefill = true;
 
         [Tooltip("Collect an unclaimed payout automatically after the hold (VRChat convenience; retail waits for input).")]
@@ -262,6 +275,7 @@ namespace LegaiaWorld
         int shownLegendMsg = -1;
         int shownStateHash = -1;
         int gatePoll;
+        int walletPoll;
         bool visualsActive = true;
 
         void Start()
@@ -283,8 +297,34 @@ namespace LegaiaWorld
             }
             if (legendQuad != null)
                 legendMaterial = legendQuad.material; // instance for UV scroll
+            if (wallet == null)
+            {
+                // The prefabs pass may have run after this one - the purse
+                // is at a known path either way.
+                GameObject g = GameObject.Find("Legaia_common_prefabs/wallet");
+                if (g != null)
+                    wallet = g.GetComponent<LegaiaWallet>();
+            }
+            PullWallet();
             ApplySyncedStops();
             ForceRedraw();
+            UpdateHud();
+        }
+
+        /// Keep the displayed balance equal to the OWNER's purse. Runs on
+        /// the owner only (nobody else may read their own coins onto the
+        /// shared HUD), and serializes only on a real change - the purse
+        /// also moves while the machine sits idle, because coins are earned
+        /// off the shore and off the ground too.
+        void PullWallet()
+        {
+            if (wallet == null || !isLocalOwner)
+                return;
+            int c = wallet.Coins();
+            if (c == syncBalance)
+                return;
+            syncBalance = c;
+            Serialize();
             UpdateHud();
         }
 
@@ -350,6 +390,7 @@ namespace LegaiaWorld
                     return;
                 Networking.SetOwner(Networking.LocalPlayer, gameObject);
                 isLocalOwner = true;
+                PullWallet();
             }
 
             if (syncPhase == PHASE_IDLE)
@@ -372,6 +413,9 @@ namespace LegaiaWorld
         public override void OnOwnershipTransferred(VRCPlayerApi player)
         {
             isLocalOwner = player != null && player.isLocal;
+            // The seat changed hands: the glass now shows the NEW owner's
+            // coins, read from their own client.
+            PullWallet();
         }
 
         // --- RNG (FUN_801d30cc + the engine's BiosRand stand-in) -------------
@@ -456,14 +500,30 @@ namespace LegaiaWorld
 
         void TrySpin()
         {
-            if (syncBalance < MIN_SPIN_BALANCE)
-            {
-                if (!freePlayRefill)
-                    return;
-                syncBalance = ENTRY_BALANCE;
-            }
             bool featureSpin = syncFeatureMode >= 4 && syncFeatureMode <= 6;
-            syncBalance -= featureSpin ? SPIN_COST_FEATURE : SPIN_COST_NORMAL;
+            int cost = featureSpin ? SPIN_COST_FEATURE : SPIN_COST_NORMAL;
+            if (wallet != null)
+            {
+                // The bank is the seated player's purse. A refusal costs
+                // nothing: no roll is drawn, so the RNG stream sits exactly
+                // where the next affordable spin will find it.
+                if (!wallet.Spend(cost))
+                {
+                    UpdateHud();
+                    return;
+                }
+                syncBalance = wallet.Coins();
+            }
+            else
+            {
+                if (syncBalance < MIN_SPIN_BALANCE)
+                {
+                    if (!freePlayRefill)
+                        return;
+                    syncBalance = ENTRY_BALANCE;
+                }
+                syncBalance -= cost;
+            }
             syncNetTake += featureSpin ? NET_TAKE_FEATURE : NET_TAKE_NORMAL;
             FeatureRoll();
 
@@ -687,9 +747,18 @@ namespace LegaiaWorld
         void Collect()
         {
             int credit = syncPayout;
-            syncBalance += credit;
-            if (syncBalance > BALANCE_CAP)
-                syncBalance = BALANCE_CAP;
+            if (wallet != null)
+            {
+                if (credit > 0)
+                    wallet.Add(credit);
+                syncBalance = wallet.Coins();
+            }
+            else
+            {
+                syncBalance += credit;
+                if (syncBalance > BALANCE_CAP)
+                    syncBalance = BALANCE_CAP;
+            }
             syncPhase = PHASE_IDLE;
             Serialize();
         }
@@ -746,6 +815,16 @@ namespace LegaiaWorld
             // Per-frame visual updates are per-client cost: pause them
             // (locally) when this player is nowhere near the machine. The
             // renderers stay up showing the last-drawn frame.
+            // The purse moves outside this machine too (a catch on the
+            // shore, a coin off the ground) - poll it twice a second so the
+            // glass never shows a stale number.
+            walletPoll++;
+            if (walletPoll >= 30)
+            {
+                walletPoll = 0;
+                PullWallet();
+            }
+
             gatePoll++;
             if (gatePoll >= 30)
             {
@@ -1055,7 +1134,8 @@ namespace LegaiaWorld
             {
                 if (syncFeatureMode == FEATURE_MODE_BONUS)
                     statusText.text = "BONUS GAME - PRESS TO SPIN (" + syncBonusSpins + " LEFT)";
-                else if (syncBalance < MIN_SPIN_BALANCE && !freePlayRefill)
+                else if (syncBalance < MIN_SPIN_BALANCE &&
+                         (wallet != null || !freePlayRefill))
                     statusText.text = "OUT OF COINS";
                 else
                     statusText.text = "INSERT 3 COINS - PRESS ANY BUTTON";

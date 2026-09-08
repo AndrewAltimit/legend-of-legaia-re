@@ -460,7 +460,7 @@ namespace LegaiaWorld
 
             var charRow = new Dictionary<string, int>();
             var charCursor = new Dictionary<string, float>();
-            int placed = 0, missing = 0;
+            int placed = 0, missing = 0, weapons = 0;
             foreach (object it in items)
             {
                 string label = MiniJson.AsStr(MiniJson.Get(it, "section_label")) ?? "";
@@ -566,7 +566,16 @@ namespace LegaiaWorld
                         go.AddComponent(pickupType);
                         if (syncType != null)
                             go.AddComponent(syncType);
-                        SyncUdonProxy(TryAttachUdon(go, "LegaiaPickupProp"));
+                        // The manifest's section label is what separates a
+                        // sword from a shield, and only a weapon counts as
+                        // a strike on a villager (the bounty layer's
+                        // LegaiaNpcHitbox reads this flag).
+                        bool isWeapon = label.Contains("Weapon");
+                        var propUdon = TryAttachUdon(go, "LegaiaPickupProp");
+                        SetUdonField(propUdon, "weapon", isWeapon);
+                        SyncUdonProxy(propUdon);
+                        if (isWeapon)
+                            weapons++;
                     }
                 }
                 placed++;
@@ -577,7 +586,8 @@ namespace LegaiaWorld
                     "(with its character subfolders) next to the items " +
                     "manifest and let Unity import first.");
             Debug.Log("[Legaia] placed " + placed + " equipment prop(s) on " +
-                      "the rack near LegaiaSpawn.");
+                      "the rack near LegaiaSpawn (" + weapons +
+                      " of them weapons a villager can be struck with).");
         }
 
         /// One combined mesh of the geometry as it actually RENDERS right
@@ -792,6 +802,72 @@ namespace LegaiaWorld
                         "the trim survives rebuilds"),
                     realism.wanderFacingOverrides);
             }
+            realism.livingTown.livingTown = EditorGUILayout.Toggle(
+                new GUIContent("Living town",
+                    "Villagers meet and talk in twos and threes, walk to " +
+                    "props and open them, and go indoors at night through " +
+                    "the doorway pairs (needs the VRChat SDK)"),
+                realism.livingTown.livingTown);
+            using (new EditorGUI.DisabledScope(!realism.livingTown.livingTown))
+            {
+                realism.livingTown.homeCap = EditorGUILayout.IntSlider(
+                    "  Villagers per house", realism.livingTown.homeCap, 1, 10);
+                realism.livingTown.maxChatSpots = EditorGUILayout.IntSlider(
+                    "  Conversation spots", realism.livingTown.maxChatSpots, 1, 12);
+                realism.livingTown.speechBubbles = EditorGUILayout.Toggle(
+                    "  Speech bubbles", realism.livingTown.speechBubbles);
+                realism.livingTown.walkAnimator = EditorGUILayout.Toggle(
+                    new GUIContent("  Walk cycle clip",
+                        "Bind the measured walk cycle as an idle/walk " +
+                        "Animator on the rig family that carries one"),
+                    realism.livingTown.walkAnimator);
+                realism.livingTown.navMesh = EditorGUILayout.Toggle(
+                    new GUIContent("  Navmesh routes",
+                        "Bake a navmesh from the world's colliders so every " +
+                        "commanded walk (stations, conversations, the front " +
+                        "door at night) follows a walkable route instead of " +
+                        "a straight line through the hillside"),
+                    realism.livingTown.navMesh);
+                using (new EditorGUI.DisabledScope(!realism.livingTown.navMesh))
+                {
+                    realism.livingTown.navStepHeight = EditorGUILayout.Slider(
+                        new GUIContent("    Step height (m)",
+                            "Highest step a villager climbs without a ramp"),
+                        realism.livingTown.navStepHeight, 0.05f, 0.6f);
+                    realism.livingTown.navMaxSlope = EditorGUILayout.Slider(
+                        new GUIContent("    Max slope (deg)",
+                            "Steepest ground a villager walks up"),
+                        realism.livingTown.navMaxSlope, 10f, 60f);
+                    realism.livingTown.navJumpHeight = EditorGUILayout.Slider(
+                        new GUIContent("    Jump height (m)",
+                            "Tallest ledge a villager will HOP up or drop " +
+                            "off where no walk connects the two sides (the " +
+                            "shore below a village bank). 0 leaves the " +
+                            "islands unconnected"),
+                        realism.livingTown.navJumpHeight, 0f, 3f);
+                    realism.livingTown.navJumpDistance = EditorGUILayout.Slider(
+                        new GUIContent("    Jump distance (m)",
+                            "Widest gap a villager will hop across"),
+                        realism.livingTown.navJumpDistance, 0.3f, 3f);
+                }
+            }
+            realism.weather = EditorGUILayout.Toggle(
+                new GUIContent("Weather",
+                    "Clock-synced spells of clear / overcast / windy " +
+                    "weather: greyed ambient and fog, grass gusts, and the " +
+                    "wind feed into the ambience mixer (needs the VRChat SDK)"),
+                realism.weather);
+            using (new EditorGUI.DisabledScope(!realism.weather))
+            {
+                realism.weatherSpellMinutes = EditorGUILayout.Slider(
+                    "  Typical spell (minutes)", realism.weatherSpellMinutes, 1f, 20f);
+            }
+            realism.fishingSpots = EditorGUILayout.IntSlider(
+                new GUIContent("Fishing spots",
+                    "Shoreline stations where villagers fish (0 = none); " +
+                    "found on the world mesh where standable ground meets " +
+                    "the water sheet"),
+                realism.fishingSpots, 0, 8);
 
             GUILayout.Space(4);
             using (new EditorGUI.DisabledScope(
@@ -820,12 +896,15 @@ namespace LegaiaWorld
             }
             if (realism.NeedsUdon)
                 EnsureUdonProgramAssets();
+            var settings = LegaiaSceneSettings.Load(sceneName);
+            string dir = Path.GetDirectoryName(manifestPath).Replace('\\', '/');
+            settings.ApplyNpcOverrides(m, dir, root);
+            ReconcileNpcs(m, dir, root, sceneName, settings);
             LegaiaRealism.Apply(root, m, sceneName, realism);
             // The passes above regenerate what per-scene deletions target
             // (interior shells, lamps) - re-apply them, and refresh the
             // descriptor spawn (a VRCWorld prefab added after the build
             // picks up LegaiaSpawn here without a full rebuild).
-            var settings = LegaiaSceneSettings.Load(sceneName);
             settings.ApplyDeletions(root);
             var spawnT = root.transform.Find("LegaiaSpawn");
             if (settings.setDescriptorSpawn && spawnT != null)
@@ -955,6 +1034,12 @@ namespace LegaiaWorld
             }
 
             // --- NPCs ---
+            // Per-scene model overrides (another scene's model on a
+            // villager, added villagers, a static mesh turned villager)
+            // become ordinary manifest entries first, so every pass below
+            // sees them - the world is in, which is where a mesh footprint
+            // is measured.
+            settings.ApplyNpcOverrides(m, dir, root);
             var npcRoot = new GameObject("npcs");
             npcRoot.transform.SetParent(root.transform, false);
             int npcCount = 0;
@@ -966,27 +1051,9 @@ namespace LegaiaWorld
                 string file = MiniJson.AsStr(MiniJson.Get(n, "file"));
                 if (settings.NpcIsRemoved(file))
                     continue;
-                var go = InstantiateGlb(dir + "/" + file, npcRoot.transform);
-                if (go == null) continue;
-                // Negative Z: the handedness mirror (see header note);
-                // instScale covers legacy raw-PSX-unit exports.
-                go.transform.localScale =
-                    new Vector3(instScale, instScale, PROP_NPC_SCALE_Z * instScale);
-                go.transform.localPosition = G2U(MiniJson.GetVec3(n, "position"));
-                string label = MiniJson.AsStr(MiniJson.Get(n, "label"));
-                if (!string.IsNullOrEmpty(label))
-                    go.name += " (" + label + ")";
-                var clips = MiniJson.AsList(MiniJson.Get(n, "clips"));
-                // A frozen NPC (per-scene settings) holds its rest pose:
-                // prop-kind actors can carry a generic locomotion record
-                // in their bundle slot, and looping it walks the prop.
-                if (loopNpcClips && clips != null && clips.Count > 0
-                    && !settings.NpcIsFrozen(file))
-                    AttachLoopingClip(go, dir + "/" + file,
-                        MiniJson.AsStr(clips[0]), dir, sceneName);
-                if (addNpcCapsules)
-                    AddCapsule(go);
-                npcCount++;
+                if (PlaceNpc(n, dir, npcRoot.transform, settings, sceneName,
+                        instScale, loopNpcClips, addNpcCapsules) != null)
+                    npcCount++;
             }
 
             // --- Animated props ---
@@ -1367,6 +1434,108 @@ namespace LegaiaWorld
 
         /// Instantiate the glTFast-imported prefab at `assetPath` (null when
         /// the asset is missing or not yet imported).
+        /// Place one manifest NPC entry under `npcRoot`: the glb the entry
+        /// renders with (its own, or a model override's), the handedness
+        /// mirror, the manifest position, an optional Inspector yaw, the
+        /// looping idle clip and the capsule. Shared by the full build
+        /// and the apply-to-built-root path.
+        internal static GameObject PlaceNpc(object n, string dir, Transform npcRoot,
+            LegaiaSceneSettings settings, string sceneName, float instScale,
+            bool loopClips, bool capsules)
+        {
+            string file = MiniJson.AsStr(MiniJson.Get(n, "file"));
+            string glb = LegaiaSceneSettings.NpcGlb(n, dir);
+            var go = InstantiateGlb(glb, npcRoot);
+            if (go == null)
+            {
+                if (glb != dir + "/" + file)
+                    Debug.LogWarning("[Legaia] NPC model override: " + glb +
+                        " did not load as a model - is the export imported?");
+                return null;
+            }
+            // Negative Z: the handedness mirror (see header note);
+            // instScale covers legacy raw-PSX-unit exports.
+            go.transform.localScale =
+                new Vector3(instScale, instScale, PROP_NPC_SCALE_Z * instScale);
+            go.transform.localPosition = G2U(MiniJson.GetVec3(n, "position"));
+            if (MiniJson.Get(n, "yaw") is double yaw)
+                go.transform.localRotation = Quaternion.Euler(0f, (float)yaw, 0f);
+            // An overridden entry keeps its own identity in the name (the
+            // stem every rule and log keys on) and carries the model tag.
+            string modelScene = MiniJson.AsStr(MiniJson.Get(n, "model_scene"));
+            if (!string.IsNullOrEmpty(modelScene))
+                go.name = Path.GetFileNameWithoutExtension(file) +
+                    LegaiaSceneSettings.ModelTag(modelScene,
+                        (int)MiniJson.AsNum(MiniJson.Get(n, "model_index"), -1));
+            string label = MiniJson.AsStr(MiniJson.Get(n, "label"));
+            if (!string.IsNullOrEmpty(label))
+                go.name += " (" + label + ")";
+            var clips = MiniJson.AsList(MiniJson.Get(n, "clips"));
+            // A frozen NPC (per-scene settings) holds its rest pose:
+            // prop-kind actors can carry a generic locomotion record
+            // in their bundle slot, and looping it walks the prop.
+            if (loopClips && clips != null && clips.Count > 0
+                && !settings.NpcIsFrozen(file))
+                AttachLoopingClip(go, glb, MiniJson.AsStr(clips[0]), dir, sceneName);
+            if (capsules)
+                AddCapsule(go);
+            return go;
+        }
+
+        /// Bring an already-built root's npcs/ container in line with the
+        /// manifest's model overrides: an entry whose model was swapped,
+        /// or which the settings added, is placed (the original standing
+        /// at that spot removed) unless an object carrying that model tag
+        /// is already there. Returns how many were placed.
+        public static int ReconcileNpcs(object manifest, string dir, GameObject root,
+            string sceneName, LegaiaSceneSettings settings)
+        {
+            var npcRoot = root != null ? root.transform.Find("npcs") : null;
+            if (npcRoot == null)
+                return 0;
+            bool capsules = false, loops = false;
+            foreach (Transform c in npcRoot)
+            {
+                if (c.GetComponent<CapsuleCollider>() != null) capsules = true;
+                if (c.GetComponent<Animator>() != null) loops = true;
+            }
+            float scale = MiniJson.GetNum(manifest, "scale", 1f);
+            bool scaledAssets = MiniJson.AsStr(MiniJson.Get(
+                MiniJson.Get(manifest, "conventions"), "npc_prop_units")) == "scaled";
+            float instScale = scaledAssets ? 1f : scale;
+            int placed = 0;
+            foreach (object n in MiniJson.AsList(MiniJson.Get(manifest, "npcs")) ?? new List<object>())
+            {
+                if (string.IsNullOrEmpty(MiniJson.AsStr(MiniJson.Get(n, "model_glb"))))
+                    continue;
+                string file = MiniJson.AsStr(MiniJson.Get(n, "file"));
+                if (settings.NpcIsRemoved(file))
+                    continue;
+                Vector3 local = G2U(MiniJson.GetVec3(n, "position"));
+                string tag = LegaiaSceneSettings.ModelTag(
+                    MiniJson.AsStr(MiniJson.Get(n, "model_scene")),
+                    (int)MiniJson.AsNum(MiniJson.Get(n, "model_index"), -1));
+                Transform existing = null;
+                foreach (Transform c in npcRoot)
+                    if ((c.localPosition - local).sqrMagnitude < 1e-3f
+                        && !c.name.EndsWith("_approach"))
+                    {
+                        existing = c;
+                        break;
+                    }
+                if (existing != null && existing.name.Contains(tag))
+                    continue;
+                if (existing != null)
+                    Undo.DestroyObjectImmediate(existing.gameObject);
+                if (PlaceNpc(n, dir, npcRoot, settings, sceneName, instScale, loops, capsules) != null)
+                    placed++;
+            }
+            if (placed > 0)
+                Debug.Log("[Legaia] model overrides: " + placed +
+                    " villager(s) placed on the built root.");
+            return placed;
+        }
+
         static GameObject InstantiateGlb(string assetPath, Transform parent)
         {
             var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(assetPath);
@@ -1546,16 +1715,13 @@ namespace LegaiaWorld
             var getPa = utilType.GetMethod(
                 "GetUdonSharpProgramAsset", new[] { typeof(System.Type) });
             bool created = false;
-            foreach (string name in new[]
-                     { "LegaiaDoorway", "LegaiaDoor", "LegaiaNpcWander",
-                       "LegaiaDayNight", "LegaiaPickupProp", "LegaiaTorch",
-                       "LegaiaWorldMenu", "LegaiaFlicker",
-                       "LegaiaSlotMachine", "LegaiaSlotButton",
-                       "LegaiaEventButton", "LegaiaMirror", "LegaiaSeat",
-                       "LegaiaCard", "LegaiaCardDeck", "LegaiaVideoTv" })
+            // Every UdonSharpBehaviour the kit ships, found by reflection
+            // rather than kept as a list here: a script added to Udon/
+            // without a matching entry used to be attachable in the editor
+            // and silently program-less in the build.
+            foreach (var t in KitUdonTypes())
             {
-                var t = FindType("LegaiaWorld." + name);
-                if (t == null) continue;
+                string name = t.Name;
                 if (getPa != null && getPa.Invoke(null, new object[] { t }) != null)
                     continue; // already has one
                 MonoScript script = null;
@@ -1605,10 +1771,55 @@ namespace LegaiaWorld
             utilType.GetMethod("ResetCaches",
                 System.Reflection.BindingFlags.NonPublic |
                 System.Reflection.BindingFlags.Static)?.Invoke(null, null);
+            // The COMPILER has its own cache: CompileSync enumerates
+            // UdonSharpProgramAsset.GetAllUdonSharpPrograms(), a static
+            // array filled once per domain reload. A program asset created
+            // in this same session is not in it, so the compile below would
+            // skip it, its CompiledVersion would stay Unknown, and every
+            // CopyProxyToUdon on that behaviour would refuse with "outdated
+            // behaviour version" until the NEXT build - the first build
+            // after adding a kit script wired nothing for it. Clear that
+            // cache first so the new assets compile now.
+            ClearUdonProgramAssetCache(paType);
             var compile = FindType("UdonSharp.Compiler.UdonSharpCompilerV1")
                 ?.GetMethod("CompileSync");
             if (compile != null)
                 compile.Invoke(null, new object[] { null });
+        }
+
+        /// The kit's U# classes: every concrete UdonSharpBehaviour subclass
+        /// in the LegaiaWorld namespace, in name order.
+        internal static List<System.Type> KitUdonTypes()
+        {
+            var usb = FindType("UdonSharp.UdonSharpBehaviour");
+            var list = new List<System.Type>();
+            if (usb == null)
+                return list;
+            foreach (var asm in System.AppDomain.CurrentDomain.GetAssemblies())
+            {
+                System.Type[] types;
+                try { types = asm.GetTypes(); }
+                catch (System.Reflection.ReflectionTypeLoadException e)
+                { types = e.Types; }
+                catch { continue; }
+                foreach (var t in types)
+                    if (t != null && !t.IsAbstract && t.Namespace == "LegaiaWorld"
+                        && usb.IsAssignableFrom(t))
+                        list.Add(t);
+            }
+            list.Sort((a, b) => string.CompareOrdinal(a.Name, b.Name));
+            return list;
+        }
+
+        /// UdonSharpProgramAsset.ClearProgramAssetCache() (internal) - the
+        /// compiler's program list, refreshed so assets created this session
+        /// are compiled by the next CompileSync.
+        static void ClearUdonProgramAssetCache(System.Type paType)
+        {
+            paType?.GetMethod("ClearProgramAssetCache",
+                System.Reflection.BindingFlags.NonPublic |
+                System.Reflection.BindingFlags.Public |
+                System.Reflection.BindingFlags.Static)?.Invoke(null, null);
         }
 
         internal static Component TryAttachUdon(GameObject go, string typeName)
@@ -1751,6 +1962,9 @@ namespace LegaiaWorld
                 "UdonSharp compile before syncing proxies...");
             try
             {
+                // A stale stamp on an asset the compiler's cached list does
+                // not know about would survive the compile - refresh first.
+                ClearUdonProgramAssetCache(FindType("UdonSharp.UdonSharpProgramAsset"));
                 // Optional-parameter defaults (null options) via reflection.
                 mi.Invoke(null, new object[mi.GetParameters().Length]);
                 return true;

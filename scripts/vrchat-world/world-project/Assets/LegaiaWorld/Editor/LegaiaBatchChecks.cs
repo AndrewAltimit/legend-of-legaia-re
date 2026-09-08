@@ -4,6 +4,18 @@
 //       -executeMethod LegaiaWorld.LegaiaBatchChecks.CommonPrefabs
 //       [-legaiaScene Assets/Scenes/<scene>.unity] -logFile <log>
 //
+// Weather does the same for the weather rig, the shoreline fishing
+// stations and the card table's NPC seating: it applies those passes to
+// the already-built root, rebuilds the common prefabs, and asserts the
+// wiring reached the backing behaviours.
+//
+// LivingTown opens the same scene, runs the living-town pass over the
+// built root and asserts the village is wired: a director with a non-empty
+// typed station array on its BACKING behaviour, a brain on every eligible
+// villager pointing back at that director, use-prop stations standing on
+// real floor with room to stand, and a home for every villager within the
+// per-door cap.
+//
 // CommonPrefabs opens the scene, finds the built root's LegaiaSpawn,
 // builds every common prefab next to it with the SDK types the project
 // has, and asserts the result is fully wired: the expected components
@@ -117,7 +129,9 @@ namespace LegaiaWorld
             Expect("LegaiaWorld.LegaiaCardDeck", 1);
             Expect("LegaiaWorld.LegaiaMirror", 1);
             Expect("LegaiaWorld.LegaiaVideoTv", 1);
-            Expect("LegaiaWorld.LegaiaEventButton", 3 + 3 + 2);
+            Expect("LegaiaWorld.LegaiaEventButton", 3 + 3 + 3);
+            Expect("LegaiaWorld.LegaiaNpcStation", 4, table);
+            Expect("LegaiaWorld.LegaiaCardTableHost", 1, table);
             if (o.sdkPens && Count("VRC.Udon.UdonBehaviour") < 1)
                 Fail("SDK pen prefab spawned without any UdonBehaviour");
 
@@ -248,6 +262,10 @@ namespace LegaiaWorld
             CheckVar(container, "LegaiaWorld.LegaiaCardDeck", "cards");
             CheckVar(container, "LegaiaWorld.LegaiaCardDeck", "stackAnchor");
             CheckVar(container, "LegaiaWorld.LegaiaSeat", "station");
+            CheckVar(container, "LegaiaWorld.LegaiaCardTableHost", "seats");
+            CheckVar(container, "LegaiaWorld.LegaiaCardTableHost", "seatChairs");
+            CheckVar(container, "LegaiaWorld.LegaiaCardTableHost", "cards");
+            CheckVar(container, "LegaiaWorld.LegaiaNpcStation", "handler");
             CheckVar(container, "LegaiaWorld.LegaiaEventButton", "target");
 
             // The URL field must call the TV's backing behaviour on end-edit.
@@ -266,6 +284,1184 @@ namespace LegaiaWorld
 
             Debug.Log("[Legaia] SELFTEST OK: " + proxies + " U# proxies wired under " +
                       container.name + " (scene " + sceneName + ", not saved).");
+        }
+
+        /// Weather + living props + card-table NPC seating, applied to the
+        /// already-built root, then the common prefabs rebuilt on top.
+        public static void Weather()
+        {
+            string scenePath = Arg("-legaiaScene", "Assets/Scenes/VRCDefaultWorldScene.unity");
+            EditorSceneManager.OpenScene(scenePath, OpenSceneMode.Single);
+
+            GameObject spawn = null;
+            foreach (var t in Object.FindObjectsOfType<Transform>())
+                if (t.name == "LegaiaSpawn")
+                {
+                    spawn = t.gameObject;
+                    break;
+                }
+            if (spawn == null)
+                Fail("no LegaiaSpawn in " + scenePath + " - build the scene first");
+            var root = spawn.transform.parent != null
+                ? spawn.transform.parent.gameObject : null;
+            if (root == null || !root.name.StartsWith("Legaia_"))
+                Fail("LegaiaSpawn is not under a built Legaia_<scene> root");
+            string sceneName = root.name.Substring("Legaia_".Length);
+
+            LegaiaWorldBuilder.EnsureUdonProgramAssets();
+            var o = new LegaiaRealismOptions();
+
+            // --- Weather -------------------------------------------------
+            var weather = LegaiaWeatherBuilder.Apply(root, sceneName, o);
+            if (weather == null)
+                Fail("weather pass built nothing");
+            // The grass shader's gust hook must exist, or wind does nothing.
+            var grass = Shader.Find("Legaia/Grass Wind");
+            if (grass == null)
+                Fail("Legaia/Grass Wind shader missing");
+            if (grass.FindPropertyIndex("_WindGust") < 0)
+                Fail("Legaia/Grass Wind has no _WindGust property - the " +
+                     "weather behaviour's only wind hook (Shader.SetGlobalFloat " +
+                     "is not exposed to Udon)");
+            if (AssetDatabase.LoadAssetAtPath<Material>(
+                    "Assets/LegaiaGenerated/" + sceneName + "/realism/grass.mat") != null)
+                CheckVar(weather, "LegaiaWorld.LegaiaWeather", "grassMaterial");
+
+            // --- Living props: shoreline fishing stations ----------------
+            var living = LegaiaLivingProps.Apply(root, sceneName, o);
+            if (living == null)
+                Fail("living props built nothing - no standable shoreline found");
+            var stationType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaNpcStation");
+            if (stationType == null)
+                Fail("LegaiaNpcStation is not compiled");
+            var spots = living.GetComponentsInChildren(stationType, true);
+            if (spots.Length < 3 || spots.Length > 4)
+                Fail("expected 3-4 fishing stations, found " + spots.Length);
+            var spotType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaFishingSpot");
+            if (spotType == null || living.GetComponentsInChildren(spotType, true).Length
+                    != spots.Length)
+                Fail("every fishing station needs its own LegaiaFishingSpot handler");
+            for (int i = 0; i < spots.Length; i++)
+            {
+                var t = spots[i].transform;
+                // On the floor: the collider must be right under it.
+                if (!Physics.Raycast(t.position + Vector3.up * 2f, Vector3.down,
+                        out RaycastHit hit, 4f, -1, QueryTriggerInteraction.Ignore))
+                    Fail(Path(t) + " does not stand on the world collider");
+                if (Mathf.Abs(hit.point.y - t.position.y) > 0.6f)
+                    Fail(Path(t) + " floats " + (t.position.y - hit.point.y) +
+                         " m over the floor");
+                Vector3 d = t.position - spawn.transform.position;
+                d.y = 0f;
+                if (d.magnitude > o.interiorRoomDistance)
+                    Fail(Path(t) + " is " + d.magnitude + " m from the spawn");
+                for (int j = i + 1; j < spots.Length; j++)
+                {
+                    Vector3 e = t.position - spots[j].transform.position;
+                    e.y = 0f;
+                    if (e.magnitude < 2f)
+                        Fail("fishing spots " + i + " and " + j + " are " +
+                             e.magnitude + " m apart");
+                }
+            }
+            CheckVar(living, "LegaiaWorld.LegaiaNpcStation", "handler");
+            CheckVar(living, "LegaiaWorld.LegaiaNpcStation", "standPoint");
+            CheckVar(living, "LegaiaWorld.LegaiaFishingSpot", "station");
+            CheckVar(living, "LegaiaWorld.LegaiaFishingSpot", "gear");
+            CheckVar(living, "LegaiaWorld.LegaiaFishingSpot", "bobber");
+            CheckVar(living, "LegaiaWorld.LegaiaFishingSpot", "line");
+            CheckVar(living, "LegaiaWorld.LegaiaFishingSpot", "rodTip");
+
+            // --- Card table: four seat stations on one host ---------------
+            var opts = new LegaiaCommonPrefabOptions
+            {
+                mirror = false, tv = false, cardTable = true, seats = 4,
+                sdkPens = false, slotMachine = false,
+            };
+            var settings = LegaiaSceneSettings.Load(sceneName);
+            var container = LegaiaCommonPrefabs.Build(
+                "Assets/LegaiaGenerated/" + sceneName, spawn.transform.position, opts,
+                settings.prefabTransforms, null);
+            var table = container.transform.Find("card_table");
+            if (table == null)
+                Fail("no card_table under " + container.name);
+            var seatStations = table.GetComponentsInChildren(stationType, true);
+            if (seatStations.Length != 4)
+                Fail("expected 4 seat stations, found " + seatStations.Length);
+            var hostType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaCardTableHost");
+            if (hostType == null)
+                Fail("LegaiaCardTableHost is not compiled");
+            var host = table.GetComponentInChildren(hostType, true);
+            if (host == null)
+                Fail("no LegaiaCardTableHost on the card table");
+            foreach (var st in seatStations)
+            {
+                var handler = st.GetType().GetField("handler")?.GetValue(st);
+                if (!ReferenceEquals(handler, host))
+                    Fail(Path(st.transform) + "'s handler is not the table host");
+                var kind = st.GetType().GetField("kind")?.GetValue(st);
+                if (!(kind is int k) || k != 2)
+                    Fail(Path(st.transform) + " is not a kind-2 (seat) station");
+            }
+            var btn = table.Find("btn_npcs");
+            if (btn == null)
+                Fail("no btn_npcs on the card table");
+            var btnType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaEventButton");
+            var btnComp = btn.GetComponent(btnType);
+            if (btnComp == null)
+                Fail("btn_npcs carries no LegaiaEventButton");
+            if (!ReferenceEquals(btnType.GetField("target").GetValue(btnComp), host))
+                Fail("btn_npcs does not target the table host");
+            if ((string)btnType.GetField("eventName").GetValue(btnComp) != "ToggleNpcs")
+                Fail("btn_npcs does not send ToggleNpcs");
+            CheckVar(container, "LegaiaWorld.LegaiaCardTableHost", "seats");
+            CheckVar(container, "LegaiaWorld.LegaiaCardTableHost", "seatChairs");
+            CheckVar(container, "LegaiaWorld.LegaiaCardTableHost", "seatHands");
+            CheckVar(container, "LegaiaWorld.LegaiaCardTableHost", "deckAnchor");
+            CheckVar(container, "LegaiaWorld.LegaiaCardTableHost", "cards");
+            CheckVar(container, "LegaiaWorld.LegaiaEventButton", "target");
+
+            // Every U# proxy the three passes created must have a backing
+            // behaviour with a program (the "outdated behaviour version"
+            // symptom shows up here first).
+            var usbType = LegaiaWorldBuilder.FindType("UdonSharp.UdonSharpBehaviour");
+            if (usbType == null)
+                Fail("UdonSharp not present - the checks above cannot mean anything");
+            int proxies = 0;
+            foreach (var scope in new[] { weather, living, container })
+                foreach (var proxy in scope.GetComponentsInChildren(usbType, true))
+                {
+                    proxies++;
+                    var backing = LegaiaCommonPrefabs.BackingUdon(proxy);
+                    if (backing == null)
+                        Fail(proxy.GetType().Name + " on " + proxy.name +
+                             " has no backing UdonBehaviour");
+                    var bt = backing.GetType();
+                    object prog = bt.GetField("programSource")?.GetValue(backing)
+                                  ?? bt.GetProperty("programSource")?.GetValue(backing);
+                    if (prog == null)
+                        Fail(proxy.GetType().Name + " on " + proxy.name +
+                             " has no program source");
+                }
+
+            Debug.Log("[Legaia] SELFTEST OK: weather rig + " + spots.Length +
+                      " fishing station(s) + 4 seat stations, " + proxies +
+                      " U# proxies wired (scene " + sceneName + ", not saved).");
+        }
+
+        // --- Living town ---------------------------------------------------
+
+        /// The PLAY-MODE soak (LegaiaSoak): enters play mode with ClientSim,
+        /// forces the clock, and watches the villagers actually run. Unlike
+        /// every other method here it must be invoked WITHOUT `-quit` - it
+        /// exits the editor itself once the run is over. Args:
+        /// `-legaiaSoakMode night|day`, `-legaiaSoakSeconds N`,
+        /// `-legaiaSoakScale S`, `-legaiaSoakLog <path>`. Recipe in
+        /// Editor/LegaiaSoak.cs's header.
+        public static void Soak()
+        {
+            LegaiaSoak.Run();
+        }
+
+        public static void LivingTown()
+        {
+            string scenePath = Arg("-legaiaScene", "Assets/Scenes/VRCDefaultWorldScene.unity");
+            EditorSceneManager.OpenScene(scenePath, OpenSceneMode.Single);
+
+            GameObject spawn = null;
+            foreach (var t in Object.FindObjectsOfType<Transform>())
+                if (t.name == "LegaiaSpawn")
+                {
+                    spawn = t.gameObject;
+                    break;
+                }
+            if (spawn == null)
+                Fail("no LegaiaSpawn in " + scenePath + " - build the scene first");
+            var rootT = spawn.transform.parent;
+            if (rootT == null || !rootT.name.StartsWith("Legaia_"))
+                Fail("LegaiaSpawn is not under a Legaia_<scene> root");
+            GameObject root = rootT.gameObject;
+            string sceneName = rootT.name.Substring("Legaia_".Length);
+
+            string manifestPath = "Assets/LegaiaImports/" + sceneName + "/manifest.json";
+            if (!System.IO.File.Exists(manifestPath))
+                Fail("no manifest at " + manifestPath +
+                     " - copy the exported scene folder into the project first");
+            object manifest = MiniJson.Parse(System.IO.File.ReadAllText(manifestPath));
+
+            LegaiaWorldBuilder.EnsureUdonProgramAssets();
+            var settings = LegaiaSceneSettings.Load(sceneName);
+            // Model overrides fold into the manifest and onto the built
+            // root exactly as the builder's apply path does them.
+            string manifestDir = "Assets/LegaiaImports/" + sceneName;
+            settings.ApplyNpcOverrides(manifest, manifestDir, root);
+            LegaiaWorldBuilder.ReconcileNpcs(manifest, manifestDir, root, sceneName, settings);
+            int overridden = 0;
+            foreach (object n in MiniJson.AsList(MiniJson.Get(manifest, "npcs")) ?? new List<object>())
+            {
+                if (string.IsNullOrEmpty(MiniJson.AsStr(MiniJson.Get(n, "model_glb"))))
+                    continue;
+                overridden++;
+                string tag = LegaiaSceneSettings.ModelTag(
+                    MiniJson.AsStr(MiniJson.Get(n, "model_scene")),
+                    (int)MiniJson.AsNum(MiniJson.Get(n, "model_index"), -1));
+                Vector3 at = LegaiaWorldBuilder.G2U(MiniJson.GetVec3(n, "position"));
+                bool found = false;
+                var npcsT = rootT.Find("npcs");
+                if (npcsT != null)
+                    foreach (Transform c in npcsT)
+                        if ((c.localPosition - at).sqrMagnitude < 1e-3f && c.name.Contains(tag))
+                        {
+                            found = true;
+                            if (c.GetComponentInChildren<MeshRenderer>(true) == null
+                                && c.GetComponentInChildren<SkinnedMeshRenderer>(true) == null)
+                                Fail(c.name + " has no renderer - the override glb is empty");
+                        }
+                if (!found)
+                    Fail("model override " + MiniJson.AsStr(MiniJson.Get(n, "file")) +
+                         " is not standing on the built root at " + at);
+            }
+            if (settings.ModelOverrideCount > 0 && overridden < settings.ModelOverrideCount)
+                Fail("only " + overridden + " of " + settings.ModelOverrideCount +
+                     " model override(s) resolved - see the warnings above");
+            Debug.Log("[Legaia] living town: " + overridden + " model override(s) in place.");
+            var o = new LegaiaLivingTownOptions();
+            settings.ApplyLivingTown(o);
+            // Apply TWICE: the pass must refresh, not stack. Every assert
+            // below then runs against the second build, so a leaked brain or
+            // a second director shows up as a failure rather than as a
+            // slowly growing scene.
+            //
+            // `-legaiaViaRealism` runs the WHOLE enhancement pass instead
+            // (LegaiaRealism.Apply with default options, then the per-scene
+            // deletions) - the editor's "Apply enhancements" button and the
+            // build's own flow, where the living town comes last after the
+            // lighting, interiors, foliage, weather and props passes. The
+            // direct call below is the fast path; the two have disagreed
+            // (an editor build homing nobody while this check homed seven),
+            // and only the button's flow can show why.
+            bool viaRealism = System.Array.IndexOf(
+                System.Environment.GetCommandLineArgs(), "-legaiaViaRealism") >= 0;
+            GameObject container;
+            if (viaRealism)
+            {
+                Debug.Log("[Legaia] living town: -legaiaViaRealism - applying the whole " +
+                    "enhancement pass (LegaiaRealism.Apply, default options) the way " +
+                    "the editor button does.");
+                LegaiaRealism.Apply(root, manifest, sceneName, new LegaiaRealismOptions());
+                settings.ApplyDeletions(root);
+                var ct = rootT.Find(LegaiaLivingTown.CONTAINER);
+                container = ct != null ? ct.gameObject : null;
+            }
+            else
+            {
+                LegaiaLivingTown.Apply(
+                    root, manifest, sceneName, new LegaiaLivingTownOptions(), settings);
+                container = LegaiaLivingTown.Apply(
+                    root, manifest, sceneName, new LegaiaLivingTownOptions(), settings);
+            }
+            if (container == null)
+                Fail("living town built nothing");
+            int containers = 0;
+            foreach (Transform child in rootT)
+                if (child.name == LegaiaLivingTown.CONTAINER)
+                    containers++;
+            if (containers != 1)
+                Fail(containers + " living_town containers under the root - " +
+                     "re-applying stacked instead of refreshing");
+
+            // --- The director ------------------------------------------------
+            var dirType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaTownDirector");
+            if (dirType == null)
+                Fail("LegaiaTownDirector is not compiled - read the [UdonSharp] " +
+                     "lines above: one U# compile error fails every wire");
+            var directors = container.GetComponentsInChildren(dirType, true);
+            if (directors.Length != 1)
+                Fail("expected exactly 1 town director, found " + directors.Length);
+            var director = directors[0];
+            if (LegaiaCommonPrefabs.BackingUdon(director) == null)
+                Fail("the town director has no backing UdonBehaviour");
+            CheckVar(container, "LegaiaWorld.LegaiaTownDirector", "stations");
+            CheckVar(container, "LegaiaWorld.LegaiaTownDirector", "brains");
+
+            // The PROXY field must be a typed array (an object[] never
+            // deserializes onto the backing variable); U# then stores the
+            // BACKING UdonBehaviours, so the runtime array's element type is
+            // Component - what matters there is that every slot is filled.
+            var stationsField = dirType.GetField("stations");
+            if (stationsField == null ||
+                stationsField.FieldType.GetElementType().Name != "LegaiaNpcStation")
+                Fail("LegaiaTownDirector.stations is not a LegaiaNpcStation[]");
+            var stationArr = ReadVar(director, "stations") as System.Array;
+            if (stationArr == null || stationArr.Length == 0)
+                Fail("director.stations did not deserialize as an array");
+            for (int i = 0; i < stationArr.Length; i++)
+                if (stationArr.GetValue(i) == null)
+                    Fail("director.stations[" + i + "] is null on the backing " +
+                         "behaviour - the array did not survive serialization");
+            var brainArr = ReadVar(director, "brains") as System.Array;
+
+            // --- Stations ------------------------------------------------------
+            var stationType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaNpcStation");
+            var npcRoot = rootT.Find("npcs");
+            int propStations = 0, chatStations = 0, otherStations = 0;
+            int carryStations = 0, visitStations = 0, indoorChat = 0;
+            var handItemType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaNpcHandItem");
+            var visitType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaVisitSpot");
+            if (handItemType == null || visitType == null)
+                Fail("LegaiaNpcHandItem / LegaiaVisitSpot are not compiled - read " +
+                     "the [UdonSharp] lines above: one U# compile error fails every wire");
+            var openStands = new List<Transform>();
+            foreach (var st in container.GetComponentsInChildren(stationType, true))
+            {
+                int kind = (int)stationType.GetField("kind").GetValue(st);
+                var standPoint = stationType.GetField("standPoint").GetValue(st) as Transform;
+                if (standPoint == null)
+                    Fail(Path(st.transform) + " has no standPoint");
+                Vector3 p = standPoint.position;
+                if (kind == 0)
+                {
+                    propStations++;
+                    RaycastHit hit;
+                    if (!Physics.Raycast(p + Vector3.up * 1.5f, Vector3.down,
+                            out hit, 4f, ~0, QueryTriggerInteraction.Ignore))
+                        Fail(Path(st.transform) + " floats: no floor under " + p);
+                    if (Mathf.Abs(hit.point.y - p.y) > 0.35f)
+                        Fail(Path(st.transform) + " stands " +
+                             (p.y - hit.point.y).ToString("0.00") + " m off its floor");
+                    if (hit.normal.y < 0.7f)
+                        Fail(Path(st.transform) + " stands on a wall (normal " +
+                             hit.normal + ")");
+                    foreach (var c in Physics.OverlapSphere(p + Vector3.up * 0.55f,
+                                 0.26f, ~0, QueryTriggerInteraction.Ignore))
+                        if (npcRoot == null || !c.transform.IsChildOf(npcRoot))
+                            Fail(Path(st.transform) + " has no standing room: " +
+                                 c.name + " is in the way");
+                    if (stationType.GetField("handler").GetValue(st) == null)
+                        Debug.LogWarning("[Legaia] selftest: " + Path(st.transform) +
+                            " has no handler (its prop carries no LegaiaDoor)");
+                }
+                else if (kind == 3)
+                {
+                    chatStations++;
+                    if ((bool)stationType.GetField("indoors").GetValue(st))
+                        indoorChat++;
+                }
+                else
+                {
+                    otherStations++;
+                    // Every stand spot the daytime pass builds is a place a
+                    // villager is asked to STAND: floor under it, room for a
+                    // body in it, and level with what it stands on. The
+                    // use-prop block above says the same of kind 0; these
+                    // are the ones this pass adds.
+                    bool indoors = (bool)stationType.GetField("indoors").GetValue(st);
+                    // A LOW ray, the same one the builders place against
+                    // (LegaiaLivingTown.SnapFloorNear): a doorstep stand
+                    // spot legitimately sits under the hut's eave, and a
+                    // ray started at chest height finds the eave, not the
+                    // floor - which reads as "stands 1.4 m off its floor".
+                    RaycastHit sh;
+                    if (!Physics.Raycast(p + Vector3.up * 0.6f, Vector3.down,
+                            out sh, 2.6f, ~0, QueryTriggerInteraction.Ignore))
+                        Fail(Path(st.transform) + " floats: no floor under " + p);
+                    if (Mathf.Abs(sh.point.y - p.y) > 0.35f)
+                        Fail(Path(st.transform) + " stands " +
+                             (p.y - sh.point.y).ToString("0.00") + " m off its floor");
+                    if (sh.normal.y < 0.7f)
+                        Fail(Path(st.transform) + " stands on a wall (normal " +
+                             sh.normal + ")");
+                    foreach (var c in Physics.OverlapSphere(p + Vector3.up * 0.55f,
+                                 0.26f, ~0, QueryTriggerInteraction.Ignore))
+                        if (npcRoot == null || !c.transform.IsChildOf(npcRoot))
+                            Fail(Path(st.transform) + " has no standing room: " +
+                                 c.name + " is in the way");
+                    if (!indoors)
+                        openStands.Add(st.transform);
+
+                    if (kind == 5)
+                    {
+                        carryStations++;
+                        // The handler contract: a kind-5 station's item work
+                        // is done by a LegaiaNpcHandItem whose `station`
+                        // field reached its BACKING behaviour (a proxy-only
+                        // edit runs nothing in-world), and which the station
+                        // actually names as its handler.
+                        var h = st.GetComponent(handItemType);
+                        if (h == null)
+                            Fail(Path(st.transform) + " is a kind-5 carry station " +
+                                 "with no LegaiaNpcHandItem handler");
+                        if (LegaiaCommonPrefabs.BackingUdon(h) == null)
+                            Fail(Path(st.transform) + "'s hand-item handler has no " +
+                                 "backing UdonBehaviour");
+                        if (ReadVar(h, "station") == null)
+                            Fail(Path(st.transform) + "'s hand-item handler does not " +
+                                 "reference its station on the backing behaviour");
+                        var named = stationType.GetField("handler").GetValue(st) as Object;
+                        if (named != (Object)h)
+                            Fail(Path(st.transform) + " does not name its " +
+                                 "LegaiaNpcHandItem as the station handler");
+                        int ik = (int)handItemType.GetField("itemKind").GetValue(h);
+                        bool drop = (bool)handItemType.GetField("dropItem").GetValue(h);
+                        if (ik < 0 && !drop)
+                            Fail(Path(st.transform) + " neither hands over an item " +
+                                 "nor takes one back - it is a plain stand spot");
+                        if (ik >= LegaiaCarryArt.ITEMS)
+                            Fail(Path(st.transform) + " hands over item " + ik +
+                                 ", only " + LegaiaCarryArt.ITEMS + " exist");
+                    }
+                    else if (kind == 6)
+                    {
+                        visitStations++;
+                        var h = st.GetComponent(visitType);
+                        if (h == null)
+                            Fail(Path(st.transform) + " is a kind-6 visit station " +
+                                 "with no LegaiaVisitSpot handler");
+                        if (LegaiaCommonPrefabs.BackingUdon(h) == null)
+                            Fail(Path(st.transform) + "'s visit handler has no " +
+                                 "backing UdonBehaviour");
+                        if (ReadVar(h, "station") == null)
+                            Fail(Path(st.transform) + "'s visit handler does not " +
+                                 "reference its station on the backing behaviour");
+                        if (ReadVar(h, "hostBubble") == null)
+                            Fail(Path(st.transform) + " has no host bubble - the " +
+                                 "fixed resident it calls on cannot answer");
+                    }
+                }
+            }
+            if (propStations < 1)
+                Fail("no use-prop stations built - every one-shot prop was skipped");
+            if (chatStations < 3)
+                Fail("only " + chatStations + " chat stand point(s): a group of " +
+                     "three needs at least one full ring");
+            if (carryStations < 1)
+                Fail("no carry/errand endpoints built - the day has nothing to " +
+                     "fetch and nothing to put down");
+            if (chatStations - indoorChat < 2)
+                Fail("every conversation ring is indoors - the villagers who " +
+                     "walk the village have nowhere to be matchmade to");
+            if (openStands.Count < 4)
+                Fail("only " + openStands.Count + " outdoor stand spot(s): the " +
+                     "daytime villagers have nowhere to walk to");
+
+            // --- Brains ---------------------------------------------------------
+            var brainType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaNpcBrain");
+            var carryType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaNpcCarry");
+            if (carryType == null)
+                Fail("LegaiaNpcCarry is not compiled");
+            int eligible = 0, wired = 0, homed = 0, insideAlready = 0, unroutable = 0;
+            var unroutableNpcs = new List<Transform>();
+            var perDoor = new Dictionary<Object, int>();
+            foreach (object n in MiniJson.AsList(MiniJson.Get(manifest, "npcs"))
+                     ?? new List<object>())
+            {
+                if (MiniJson.AsStr(MiniJson.Get(n, "kind")) != "talk")
+                    continue;
+                string file = MiniJson.AsStr(MiniJson.Get(n, "file")) ?? "";
+                if (settings.NpcIsRemoved(file) || settings.NpcIsStatic(file) ||
+                    settings.NpcIsFrozen(file))
+                    continue;
+                Vector3 local = LegaiaWorldBuilder.G2U(MiniJson.GetVec3(n, "position"));
+                Transform placed = null;
+                foreach (Transform child in npcRoot)
+                    if ((child.localPosition - local).sqrMagnitude <= 1e-3f)
+                    {
+                        placed = child;
+                        break;
+                    }
+                if (placed == null)
+                    continue; // not placed in this build (conditional villagers)
+                eligible++;
+                var brains = placed.GetComponents(brainType);
+                if (brains.Length != 1)
+                    Fail(placed.name + " carries " + brains.Length +
+                         " brain(s), expected exactly 1");
+                var brain = brains[0];
+                var bubbles = placed.GetComponentsInChildren(
+                    LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaSpeechBubble"), true);
+                if (bubbles.Length != 1)
+                    Fail(placed.name + " carries " + bubbles.Length +
+                         " speech bubble(s), expected exactly 1");
+                else
+                {
+                    // Pictograms only: one quad per icon, and no text
+                    // component anywhere under the bubble.
+                    var quads = ReadVar(bubbles[0], "icons") as GameObject[];
+                    if (quads == null || quads.Length != LegaiaBubbleArt.ICONS)
+                        Fail(placed.name + "'s bubble carries " +
+                             (quads == null ? 0 : quads.Length) +
+                             " icon quad(s), expected " + LegaiaBubbleArt.ICONS);
+                    if (bubbles[0].GetComponentsInChildren<TMPro.TMP_Text>(true).Length != 0)
+                        Fail(placed.name + "'s bubble carries a text label - " +
+                             "bubbles speak in pictograms only");
+                }
+                if (LegaiaCommonPrefabs.BackingUdon(brain) == null)
+                    Fail(placed.name + "'s brain has no backing UdonBehaviour");
+                if (ReadVar(brain, "director") == null)
+                    Fail(placed.name + "'s brain does not reference the director " +
+                         "on its backing behaviour");
+                if (ReadVar(brain, "loco") == null)
+                    Fail(placed.name + "'s brain has no locomotion controller");
+
+                // --- the carried-item rig --------------------------------
+                // Everything a villager can hold is a CHILD of that
+                // villager (so it follows without a line of per-frame code)
+                // and every one of them is off at build time - a bucket
+                // visible on a villager who is not on a fetch errand is the
+                // failure this asserts away.
+                var carries = placed.GetComponents(carryType);
+                if (carries.Length != 1)
+                    Fail(placed.name + " carries " + carries.Length +
+                         " LegaiaNpcCarry rig(s), expected exactly 1");
+                var carry = carries[0];
+                if (LegaiaCommonPrefabs.BackingUdon(carry) == null)
+                    Fail(placed.name + "'s carry rig has no backing UdonBehaviour");
+                if (ReadVar(brain, "carry") == null)
+                    Fail(placed.name + "'s brain does not reference its carry rig " +
+                         "on the backing behaviour");
+                var hand = ReadVar(carry, "hand") as Transform;
+                if (hand == null)
+                    Fail(placed.name + "'s carry rig has no hand node");
+                if (!hand.IsChildOf(placed))
+                    Fail(placed.name + "'s hand node is not parented under the NPC");
+                var heldArr = ReadVar(carry, "items") as System.Array;
+                if (heldArr == null || heldArr.Length != LegaiaCarryArt.ITEMS)
+                    Fail(placed.name + "'s carry rig holds " +
+                         (heldArr == null ? -1 : heldArr.Length) + " item(s), expected " +
+                         LegaiaCarryArt.ITEMS);
+                for (int k = 0; k < heldArr.Length; k++)
+                {
+                    var item = heldArr.GetValue(k) as GameObject;
+                    if (item == null)
+                        Fail(placed.name + "'s carry item " + k +
+                             " is null on the backing behaviour");
+                    if (!item.transform.IsChildOf(placed))
+                        Fail(Path(item.transform) + " is not parented under " + placed.name);
+                    if (item.activeSelf)
+                        Fail(Path(item.transform) + " is visible at build - every " +
+                             "carried item must start hidden");
+                    if (item.GetComponentsInChildren<Collider>(true).Length > 0)
+                        Fail(Path(item.transform) + " has a collider - a carried prop " +
+                             "would shove the villager holding it");
+                }
+                // The hand must be ON the villager: measured against its
+                // own rendered body, not against an assumed human.
+                var bodyRends = placed.GetComponentsInChildren<Renderer>();
+                if (bodyRends.Length > 0)
+                {
+                    Bounds body = bodyRends[0].bounds;
+                    for (int k = 1; k < bodyRends.Length; k++)
+                        body.Encapsulate(bodyRends[k].bounds);
+                    float bh = body.size.y;
+                    float dy = hand.position.y - body.min.y;
+                    if (dy < bh * 0.10f || dy > bh * 0.85f)
+                        Fail(placed.name + "'s hand sits at " +
+                             (dy / bh).ToString("0.00") + " of its height - not an arm");
+                    Vector2 off = new Vector2(hand.position.x - placed.position.x,
+                        hand.position.z - placed.position.z);
+                    if (off.magnitude > bh * 0.5f)
+                        Fail(placed.name + "'s hand is " + off.magnitude.ToString("0.00") +
+                             " m out from the body (height " + bh.ToString("0.00") + ")");
+                }
+                wired++;
+                if (ReadVar(brain, "startIndoors") is bool inside && inside)
+                {
+                    // Placed inside a house by retail: home already.
+                    if (ReadVar(brain, "homeDoor") != null)
+                        Fail(placed.name + " starts indoors yet was given a front door");
+                    insideAlready++;
+                    continue;
+                }
+                if (ReadVar(brain, "noRoute") is bool cut && cut)
+                {
+                    if (ReadVar(brain, "homeDoor") != null)
+                        Fail(placed.name + " is flagged noRoute yet was given a front door");
+                    unroutable++;
+                    unroutableNpcs.Add(placed);
+                    continue;
+                }
+                var door = ReadVar(brain, "homeDoor") as Object;
+                if (door != null)
+                {
+                    homed++;
+                    int c;
+                    perDoor.TryGetValue(door, out c);
+                    perDoor[door] = c + 1;
+                }
+            }
+            if (wired != eligible)
+                Fail(wired + " brains for " + eligible + " eligible villagers");
+            if (brainArr == null || brainArr.Length != wired)
+                Fail("director.brains holds " +
+                     (brainArr == null ? -1 : brainArr.Length) + " of " + wired +
+                     " villagers");
+
+            var homesRoot = container.transform.Find("homes");
+            int homes = homesRoot != null ? homesRoot.childCount : 0;
+            int cap = o.homeCap;
+
+            // --- Navmesh + the door trip --------------------------------------
+            // The bake must exist, be wired to its loader, and carry a
+            // COMPLETE route from every villager's spawn to its door stand
+            // spot, from the stand spot onto the doorway tile, and (where
+            // the home has a way out) from the landing to the exit - the
+            // walks the night routine makes. A partial route is exactly the
+            // clipping-through-the-hillside walk this replaces.
+            var navGo = rootT.Find(LegaiaNavMesh.CONTAINER);
+            if (navGo == null)
+                Fail("no " + LegaiaNavMesh.CONTAINER + " container under the root - " +
+                     "the navmesh bake built nothing (no colliders?)");
+            CheckVar(navGo.gameObject, "LegaiaWorld.LegaiaNavMeshLoader", "data");
+            var navData = LegaiaNavMesh.LoadData(sceneName);
+            if (navData == null)
+                Fail("the navmesh asset was not saved under LegaiaGenerated/" + sceneName);
+            var navInstance = LegaiaNavMesh.Register(navData);
+            var navLinks = LegaiaNavMesh.LinksOf(root);
+            int routes = 0, doorProps = 0, thresholds = 0, hopHomes = 0;
+            var routeFailures = new List<string>();
+            try
+            {
+                // Every OUTDOOR stand spot must be walkable-to by somebody:
+                // the spawn, or one of the villagers themselves (town01's
+                // beach sits on its own island of navmesh, and a spot only
+                // the two beach villagers can use is a good spot, not a
+                // broken one). A spot nobody can reach reads in-world as a
+                // villager walking into a bank until its walk times out.
+                var anchors = new List<Vector3> { spawn.transform.position };
+                foreach (Transform child in npcRoot)
+                    if (child.GetComponent(brainType) != null)
+                        anchors.Add(child.position);
+                var stranded = new List<string>();
+                foreach (var stand in openStands)
+                {
+                    bool reach = false;
+                    string reason;
+                    for (int i = 0; i < anchors.Count && !reach; i++)
+                        reach = LegaiaNavMesh.Reachable(anchors[i], stand.position,
+                            1.2f, out reason);
+                    if (!reach)
+                        stranded.Add(Path(stand));
+                }
+                if (stranded.Count > 0)
+                    Fail(stranded.Count + " outdoor stand spot(s) nobody can walk to: " +
+                         string.Join(", ", stranded));
+
+                foreach (object n in MiniJson.AsList(MiniJson.Get(manifest, "npcs"))
+                         ?? new List<object>())
+                {
+                    if (MiniJson.AsStr(MiniJson.Get(n, "kind")) != "talk")
+                        continue;
+                    string file = MiniJson.AsStr(MiniJson.Get(n, "file")) ?? "";
+                    if (settings.NpcIsRemoved(file) || settings.NpcIsStatic(file) ||
+                        settings.NpcIsFrozen(file))
+                        continue;
+                    Vector3 local = LegaiaWorldBuilder.G2U(MiniJson.GetVec3(n, "position"));
+                    Transform placed = null;
+                    foreach (Transform child in npcRoot)
+                        if ((child.localPosition - local).sqrMagnitude <= 1e-3f)
+                        {
+                            placed = child;
+                            break;
+                        }
+                    if (placed == null)
+                        continue;
+                    var brain = placed.GetComponent(brainType);
+                    var door = ReadVar(brain, "homeDoor") as Transform;
+                    if (door == null)
+                        continue;
+                    var threshold = ReadVar(brain, "homeThreshold") as Transform;
+                    if (threshold == null)
+                        Fail(placed.name + " has a home door but no doorway tile (homeThreshold)");
+                    thresholds++;
+                    if (ReadVar(brain, "homeDoorProp") != null)
+                        doorProps++;
+                    string why;
+                    bool hopped;
+                    // A COMPLETE route may include one ledge hop: that is
+                    // how the shore villagers below the village bank get
+                    // home at all, and the locomotion controller composes
+                    // exactly the same walk -> hop -> walk at runtime.
+                    if (!LegaiaNavMesh.ReachableWithLinks(placed.position, door.position,
+                            1.2f, navLinks, out hopped, out why))
+                        routeFailures.Add(placed.name + " -> " + door.parent.name + "/door: " + why);
+                    else
+                    {
+                        routes++;
+                        if (hopped)
+                            hopHomes++;
+                    }
+                    if (!LegaiaNavMesh.Reachable(door.position, threshold.position, 1.2f, out why))
+                        routeFailures.Add(door.parent.name + " door -> threshold: " + why);
+                    var landing = ReadVar(brain, "homeLanding") as Transform;
+                    var exit = ReadVar(brain, "homeExit") as Transform;
+                    if (landing != null && exit != null &&
+                        !LegaiaNavMesh.Reachable(landing.position, exit.position, 1.2f, out why))
+                        routeFailures.Add(door.parent.name + " landing -> exit: " + why);
+                }
+            }
+            finally
+            {
+                try
+                {
+                    // A noRoute flag must be TRUE: re-derive it, so the flag
+                    // can never hide a villager the bake simply lost.
+                    foreach (var npc in unroutableNpcs)
+                        foreach (Transform home in homesRoot)
+                        {
+                            var d = home.Find("door");
+                            string why;
+                            bool hopped;
+                            if (d != null && LegaiaNavMesh.ReachableWithLinks(npc.position,
+                                    d.position, 1.2f, navLinks, out hopped, out why))
+                                Fail(npc.name + " is flagged noRoute but " + home.name +
+                                     "/door is reachable from its spawn" +
+                                     (hopped ? " over a ledge link" : ""));
+                        }
+                }
+                finally
+                {
+                    UnityEngine.AI.NavMesh.RemoveNavMeshData(navInstance);
+                }
+            }
+            if (routeFailures.Count > 0)
+                Fail(routeFailures.Count + " night-routine route(s) have no complete " +
+                     "navmesh path:\n  " + string.Join("\n  ", routeFailures));
+            if (thresholds != homed)
+                Fail(thresholds + " doorway tiles for " + homed + " homed villagers");
+            foreach (var kv in perDoor)
+                if (kv.Value > cap)
+                    Fail("home door " + kv.Key.name + " holds " + kv.Value +
+                         " villagers, cap is " + cap);
+            int outside = wired - insideAlready - unroutable;
+            if (homed < outside)
+            {
+                // Short of capacity is allowed; a free slot left over is not.
+                if (homes * cap > homed)
+                    Fail(homed + " of " + outside + " village-side villagers have a " +
+                         "home while " + (homes * cap - homed) + " slot(s) sit free");
+                Debug.LogWarning("[Legaia] selftest: " + (outside - homed) +
+                    " villager(s) have no home - " + homes + " door(s) x cap " +
+                    cap + " cannot seat " + outside);
+            }
+
+            Debug.Log("[Legaia] SELFTEST OK: living town wired - " + wired +
+                " villager(s), " + homed + " homed across " + homes +
+                " door(s) (cap " + cap + ", " + doorProps + " with a door prop), " +
+                insideAlready + " living indoors already, " + unroutable +
+                " cut off from every door, " + navLinks.Count + " ledge link(s) (" +
+                hopHomes + " villager(s) get home over one), " +
+                routes + " navmesh route(s) home complete, " + stationArr.Length +
+                " station(s) on the director (" + propStations + " use-prop, " +
+                chatStations + " chat of which " + indoorChat + " indoors, " +
+                carryStations + " carry/errand, " + visitStations + " visit, " +
+                (otherStations - carryStations - visitStations) + " stand spot), " +
+                openStands.Count + " of them outdoors and all reachable, scene " +
+                sceneName + " (not saved).");
+        }
+
+        /// The value of `varName` on a U# proxy's BACKING UdonBehaviour -
+        /// CheckVar's reader without the assertion, for checks that need the
+        /// value itself.
+        static object ReadVar(Component proxy, string varName)
+        {
+            var backing = LegaiaCommonPrefabs.BackingUdon(proxy);
+            if (backing == null)
+                return null;
+            const System.Reflection.BindingFlags ANY =
+                System.Reflection.BindingFlags.Public |
+                System.Reflection.BindingFlags.NonPublic |
+                System.Reflection.BindingFlags.Instance;
+            var bt = backing.GetType();
+            object pv = bt.GetField("publicVariables", ANY)?.GetValue(backing)
+                        ?? bt.GetProperty("publicVariables", ANY)?.GetValue(backing);
+            if (pv == null)
+                return null;
+            foreach (var mi in pv.GetType().GetMethods())
+                if (mi.Name == "TryGetVariableValue" && !mi.IsGenericMethod &&
+                    mi.GetParameters().Length == 2)
+                {
+                    var args = new object[] { varName, null };
+                    return (bool)mi.Invoke(pv, args) ? args[1] : null;
+                }
+            return null;
+        }
+
+        /// Ambience layer: rebuild it over the already-built root and assert
+        /// the clips, the emitters and the mixer wiring all landed.
+        ///
+        ///   Unity.exe -batchmode -nographics -quit -projectPath <project>
+        ///       -executeMethod LegaiaWorld.LegaiaBatchChecks.Ambience
+        ///       [-legaiaScene Assets/Scenes/<scene>.unity] -logFile <log>
+        /// Rig-pose check: instantiate every NPC glb of the listed scenes
+        /// the way the builder places one (the handedness mirror on the
+        /// instance scale), measure it (LegaiaLivingTown.MeasureRig), and
+        /// hold the two facts the sitting pose rests on against the rig's
+        /// own walk clip - the one ground truth for "forward" a rig
+        /// carries, since the sole travels toward the face while lifted
+        /// (the swing) and away from it on the ground (the stance):
+        ///  - the rendered face (+Z of the instance through its full
+        ///    matrix, what LegaiaNpcWander.VisualForward reads at rest)
+        ///    is the way the walk clip's lifted sole travels. The foot
+        ///    node's pivot is the knee, whose height peaks at the swing's
+        ///    far end, so the sole - the lowest vertex of the foot mesh at
+        ///    rest - is the point traced. MeasureRig drops a clip that
+        ///    steps backward, so this also guards that pick;
+        ///  - the hip turn LegaiaNpcWander.TurnToward finds (a sweep of the
+        ///    turn about the parent's x, read on screen) really lands the
+        ///    knee level and in front - which a leg pair whose offset lies
+        ///    along that axis, or a mis-paired rig, could not.
+        /// `-legaiaRigDirs` lists the npc folders (comma-separated);
+        /// by default every `Assets/LegaiaImports/<scene>/npcs` - the
+        /// model overrides draw on other scenes' rigs too.
+        public static void RigPose()
+        {
+            string list = Arg("-legaiaRigDirs", "");
+            var dirs = new List<string>();
+            if (list.Length > 0)
+                foreach (string raw in list.Split(','))
+                    dirs.Add(raw.Trim());
+            else if (System.IO.Directory.Exists("Assets/LegaiaImports"))
+                foreach (string d in System.IO.Directory.GetDirectories("Assets/LegaiaImports"))
+                    dirs.Add(d.Replace('\\', '/') + "/npcs");
+            dirs.Sort();
+            int rigs = 0, legged = 0, walked = 0, backward = 0;
+            foreach (string dir in dirs)
+            {
+                if (dir.Length == 0 || !System.IO.Directory.Exists(dir))
+                    continue;
+                var files = System.IO.Directory.GetFiles(dir, "*.glb");
+                System.Array.Sort(files);
+                foreach (string f in files)
+                {
+                    string glb = f.Replace('\\', '/');
+                    var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(glb);
+                    if (prefab == null)
+                        continue;
+                    rigs++;
+                    LegaiaLivingTown.RigWalk rig = LegaiaLivingTown.MeasureRig(glb, null);
+                    if (rig.legUpper == null)
+                    {
+                        if (rig.family.Contains("cannot sit"))
+                            Debug.Log("[Legaia] RIGPOSE " + System.IO.Path.GetFileName(glb) +
+                                      " " + rig.family + " - seated by hip fraction");
+                        continue;
+                    }
+                    legged++;
+                    var inst = Object.Instantiate(prefab);
+                    inst.transform.position = Vector3.zero;
+                    inst.transform.rotation = Quaternion.identity;
+                    inst.transform.localScale = new Vector3(1f, 1f, -1f);
+                    try
+                    {
+                        Transform it = inst.transform;
+                        Vector3 face = (it.TransformPoint(Vector3.forward) - it.position).normalized;
+                        string name = System.IO.Path.GetFileName(glb);
+                        var sb = new System.Text.StringBuilder();
+                        sb.Append("[Legaia] RIGPOSE ").Append(name)
+                          .Append(" ").Append(rig.family)
+                          .Append(" face=").Append(face.ToString("0.00"));
+                        // The controller's defaults: knee 5 deg below level
+                        // ahead, hand 35 deg forward of straight down.
+                        Vector3 kneeDir = face * Mathf.Cos(5f * Mathf.Deg2Rad) - Vector3.up * Mathf.Sin(5f * Mathf.Deg2Rad);
+                        Vector3 handDir = face * Mathf.Sin(35f * Mathf.Deg2Rad) - Vector3.up * Mathf.Cos(35f * Mathf.Deg2Rad);
+                        float kneeDot = KneeDot(sb, inst, "legs", rig.legUpper, rig.legLower, kneeDir);
+                        float handDot = KneeDot(sb, inst, "arms", rig.upperArms, rig.forearms, handDir);
+                        float walkDot = 2f;
+                        if (rig.walkClip != null)
+                        {
+                            AnimationClip clip = null;
+                            foreach (var c in AssetDatabase.LoadAllAssetsAtPath(glb))
+                                if (c is AnimationClip && c.name == rig.walkClip)
+                                    clip = (AnimationClip)c;
+                            Transform foot = Find(inst, rig.legLower[0]);
+                            if (clip != null && foot != null)
+                            {
+                                // The sole: the foot mesh's lowest vertex at rest.
+                                Vector3 sole = Vector3.zero;
+                                var mf = foot.GetComponent<MeshFilter>();
+                                if (mf != null && mf.sharedMesh != null)
+                                {
+                                    float low = float.MaxValue;
+                                    foreach (Vector3 v in mf.sharedMesh.vertices)
+                                    {
+                                        float y = foot.TransformPoint(v).y;
+                                        if (y < low)
+                                        {
+                                            low = y;
+                                            sole = v;
+                                        }
+                                    }
+                                }
+                                const int S = 64;
+                                var pos = new Vector3[S];
+                                for (int k = 0; k < S; k++)
+                                {
+                                    clip.SampleAnimation(inst, clip.length * k / S);
+                                    pos[k] = foot.TransformPoint(sole);
+                                }
+                                float ymin = float.MaxValue, ymax = float.MinValue;
+                                for (int k = 0; k < S; k++)
+                                {
+                                    ymin = Mathf.Min(ymin, pos[k].y);
+                                    ymax = Mathf.Max(ymax, pos[k].y);
+                                }
+                                float mid = 0.5f * (ymin + ymax);
+                                Vector3 travel = Vector3.zero;
+                                for (int k = 0; k < S; k++)
+                                    if (pos[k].y > mid && pos[(k + 1) % S].y > mid)
+                                        travel += pos[(k + 1) % S] - pos[k];
+                                sb.Append(" walk=").Append(rig.walkClip)
+                                  .Append(" soleLift=").Append((ymax - ymin).ToString("0.000"))
+                                  .Append(" liftedTravel=").Append(travel.ToString("0.000"));
+                                // A sole that barely travels while lifted
+                                // says nothing (a shuffle, a hop in place).
+                                if (travel.magnitude > Mathf.Max(0.02f, 0.25f * rig.stride))
+                                {
+                                    walkDot = Vector3.Dot(travel.normalized, face);
+                                    walked++;
+                                    sb.Append(" dotFace=").Append(walkDot.ToString("0.00"));
+                                }
+                            }
+                        }
+                        Debug.Log(sb.ToString());
+                        // A rig whose every stepping clip travels away from
+                        // +Z would walk backward in-world: the export's
+                        // faces-+Z premise fails on it. None in town01;
+                        // reported, not fatal, for the other scenes' rigs
+                        // the model overrides may draw on.
+                        if (walkDot < 2f && walkDot < 0.5f)
+                        {
+                            backward++;
+                            Debug.LogWarning("[Legaia] RIGPOSE " + name +
+                                ": the walk clip's lifted sole travels away from the rendered face (dot " +
+                                walkDot.ToString("0.00") + ") - this rig faces -Z at rest and would walk backward");
+                        }
+                        // A pivot offset sideways of its parent's (a forearm
+                        // hung outboard of the shoulder) caps how close a
+                        // turn about x can come; 0.8 / 0.75 leave that room.
+                        // MeasureRig keeps a leg pair only when the knee
+                        // can reach; a rig that got legs must sit.
+                        if (kneeDot < 0.8f)
+                            Fail(name + ": no hip turn lands the knee level and ahead (best dot " +
+                                 kneeDot.ToString("0.00") + ")");
+                        if (rig.upperArms != null && rig.forearms != null && handDot < 0.75f)
+                            Debug.LogWarning("[Legaia] RIGPOSE " + name +
+                                ": no shoulder turn lands the hand forward of straight down (best dot " +
+                                handDot.ToString("0.00") + ") - the hands stay where they rest");
+                    }
+                    finally
+                    {
+                        Object.DestroyImmediate(inst);
+                    }
+                }
+            }
+            if (legged == 0)
+                Fail("rig pose: no legged rig found under " + list + " - is the export imported?");
+            Debug.Log("[Legaia] RIGPOSE " + rigs + " rig(s), " + legged + " with legs, " +
+                      (walked - backward) + " of " + walked + " walk clip(s) agree with the rendered face" +
+                      (backward > 0 ? " (" + backward + " rig(s) would walk backward - see warnings)" : "") +
+                      "; every hip turn lands the knee level and ahead");
+        }
+
+        static Transform Find(GameObject inst, string name)
+        {
+            foreach (var t in inst.GetComponentsInChildren<Transform>(true))
+                if (t.name == name)
+                    return t;
+            return null;
+        }
+
+        // The best rendered knee (hand) direction a turn about the parent's
+        // x can give the child's rest offset - the sweep
+        // LegaiaNpcWander.TurnToward makes, read through the full transform
+        // chain. Returns its dot with `target`; 2 when the pair is absent.
+        static float KneeDot(System.Text.StringBuilder sb, GameObject inst, string what,
+            string[] upperNames, string[] lowerNames, Vector3 target)
+        {
+            if (upperNames == null || lowerNames == null)
+            {
+                sb.Append(" ").Append(what).Append("=none");
+                return 2f;
+            }
+            Transform up = Find(inst, upperNames[0]);
+            Transform lo = Find(inst, lowerNames[0]);
+            if (up == null || lo == null)
+            {
+                sb.Append(" ").Append(what).Append("=missing");
+                return 2f;
+            }
+            Transform par = up.parent;
+            Vector3 off = lo.localPosition - up.localPosition;
+            Vector3 o = par.TransformPoint(up.localPosition);
+            float best = -2f, bestDeg = 0f;
+            for (float d = -180f; d <= 180f; d += 1f)
+            {
+                Vector3 v = par.TransformPoint(up.localPosition +
+                    Quaternion.AngleAxis(d, Vector3.right) * off) - o;
+                float score = Vector3.Dot(v.normalized, target);
+                if (score > best)
+                {
+                    best = score;
+                    bestDeg = d;
+                }
+            }
+            sb.Append(" ").Append(what).Append(": ").Append(up.name).Append("@y")
+              .Append(up.position.y.ToString("0.000")).Append(" -> ").Append(lo.name)
+              .Append(" turn=").Append(bestDeg.ToString("0")).Append("deg dot=")
+              .Append(best.ToString("0.00"));
+            return best;
+        }
+
+        public static void Ambience()
+        {
+            string scenePath = Arg("-legaiaScene", "Assets/Scenes/VRCDefaultWorldScene.unity");
+            EditorSceneManager.OpenScene(scenePath, OpenSceneMode.Single);
+
+            GameObject spawn = null;
+            foreach (var t in Object.FindObjectsOfType<Transform>())
+                if (t.name == "LegaiaSpawn")
+                {
+                    spawn = t.gameObject;
+                    break;
+                }
+            if (spawn == null)
+                Fail("no LegaiaSpawn in " + scenePath + " - build the scene first");
+            var root = spawn.transform.parent != null
+                ? spawn.transform.parent.gameObject : null;
+            if (root == null || !root.name.StartsWith("Legaia_"))
+                Fail("LegaiaSpawn is not under a built Legaia_<scene> root");
+            string sceneName = root.name.Substring("Legaia_".Length);
+
+            LegaiaWorldBuilder.EnsureUdonProgramAssets();
+            var o = new LegaiaRealismOptions();
+            LegaiaRealism.ApplyAmbienceOnly(root, sceneName, o);
+
+            var ambT = root.transform.Find(LegaiaRealism.AMBIENCE);
+            if (ambT == null)
+                Fail("no \"" + LegaiaRealism.AMBIENCE + "\" container under " + root.name);
+            var amb = ambT.gameObject;
+
+            // --- The five 2D beds, each with its generated clip ----------
+            // Durations come from LegaiaAudioGen's own constants, so a clip
+            // that failed to import (or imported as the stale 16 s bed) is
+            // caught here rather than in-world.
+            AudioSource Bed(string name, int seconds)
+            {
+                var t = ambT.Find(name);
+                if (t == null)
+                    Fail("no " + name + " under the ambience container");
+                var src = t.GetComponent<AudioSource>();
+                if (src == null)
+                    Fail(name + " has no AudioSource");
+                if (src.clip == null)
+                    Fail(name + " has no clip - generation or import failed");
+                if (Mathf.Abs(src.clip.length - seconds) > 0.25f)
+                    Fail(name + " is " + src.clip.length.ToString("F2") +
+                         " s, expected " + seconds + " s");
+                if (!src.loop || !src.playOnAwake)
+                    Fail(name + " must loop and play on awake");
+                if (src.spatialBlend != 0f)
+                    Fail(name + " is a 2D bed but has spatialBlend " + src.spatialBlend);
+                return src;
+            }
+            Bed(LegaiaRealism.BED_BASE, LegaiaAudioGen.BASE_SECONDS);
+            Bed(LegaiaRealism.BED_DAY, LegaiaAudioGen.DAY_SECONDS);
+            Bed(LegaiaRealism.BED_NIGHT, LegaiaAudioGen.NIGHT_SECONDS);
+            Bed(LegaiaRealism.BED_WIND, LegaiaAudioGen.GUST_SECONDS);
+
+            // --- Spatial emitter groups ----------------------------------
+            int waves = 0, birds = 0, wildlife = 0, mills = 0, spatial = 0, beds = 0;
+            foreach (var src in amb.GetComponentsInChildren<AudioSource>(true))
+            {
+                string n = src.name;
+                if (n.StartsWith("bed_"))
+                {
+                    beds++;
+                    continue;
+                }
+                spatial++;
+                if (src.clip == null)
+                    Fail(n + " has no clip");
+                if (src.spatialBlend < 0.99f)
+                    Fail(n + " is an emitter but its spatialBlend is " + src.spatialBlend);
+                if (!src.loop || !src.playOnAwake)
+                    Fail(n + " must loop and play on awake");
+                if (src.maxDistance <= src.minDistance)
+                    Fail(n + " has Far " + src.maxDistance + " <= Near " + src.minDistance);
+                if (n.StartsWith("waves_")) waves++;
+                else if (n.StartsWith("birds_")) birds++;
+                else if (n.StartsWith("wildlife_")) wildlife++;
+                else if (n.StartsWith("windmill_")) mills++;
+                else Fail("unexpected source " + n + " under the ambience container");
+            }
+            if (waves < 1)
+                Fail("no shore wave emitters - no water sheet found near spawn");
+            if (birds < 1)
+                Fail("no tree bird emitters - no canopy cluster found");
+            if (wildlife < 1)
+                Fail("no night wildlife emitters");
+
+            // --- VRC spatial compliance on EVERY source ------------------
+            // The SDK deprecates a bare AudioSource: 2D beds carry the
+            // component disabled (the SDK Auto Fix shape), emitters carry it
+            // enabled and configured.
+            var spatialType =
+                LegaiaWorldBuilder.FindType("VRC.SDK3.Components.VRCSpatialAudioSource")
+                ?? LegaiaWorldBuilder.FindType("VRC.SDKBase.VRC_SpatialAudioSource");
+            if (spatialType == null)
+                Fail("VRCSpatialAudioSource type not found - the SDK is missing");
+            foreach (var src in amb.GetComponentsInChildren<AudioSource>(true))
+            {
+                var comp = src.GetComponent(spatialType);
+                if (comp == null)
+                    Fail(Path(src.transform) + " has no VRC spatial audio component");
+                var beh = comp as Behaviour;
+                bool wantEnabled = !src.name.StartsWith("bed_");
+                if (beh != null && beh.enabled != wantEnabled)
+                    Fail(src.name + "'s VRC spatial component is " +
+                         (beh.enabled ? "enabled" : "disabled") + ", expected the opposite");
+            }
+
+            // --- The mixer owns every volume -----------------------------
+            var mixerType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaAmbienceMixer");
+            if (mixerType == null)
+                Fail("LegaiaAmbienceMixer is not compiled");
+            if (amb.GetComponent(mixerType) == null)
+                Fail("no LegaiaAmbienceMixer on the ambience container");
+            foreach (string f in new[]
+                     { "baseBed", "dayBed", "nightBed", "windBed",
+                       "daySources", "nightSources", "anySources",
+                       "dayGroupVolume", "nightGroupVolume", "anyGroupVolume" })
+                CheckVar(amb, "LegaiaWorld.LegaiaAmbienceMixer", f);
+
+            // The day/night behaviour must hand the mixer the cycle, and
+            // must NOT keep driving the two beds itself (one writer each).
+            var sunT = root.transform.Find("LegaiaSun");
+            var dnType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaDayNight");
+            if (sunT != null && dnType != null && sunT.GetComponent(dnType) != null)
+            {
+                CheckVar(amb, "LegaiaWorld.LegaiaAmbienceMixer", "dayNight");
+                var dn = sunT.GetComponent(dnType);
+                var dnDay = dnType.GetField("dayAmbience")?.GetValue(dn);
+                var dnNight = dnType.GetField("nightAmbience")?.GetValue(dn);
+                if (dnDay as Object != null || dnNight as Object != null)
+                    Fail("LegaiaDayNight still holds bed references while the " +
+                         "mixer is present - two writers on one AudioSource");
+            }
+            else
+            {
+                Debug.Log("[Legaia] selftest: no LegaiaDayNight on this root " +
+                          "(day/night off) - the mixer stays on permanent day.");
+            }
+
+            if (beds != 4)
+                Fail(beds + " 2D beds under the ambience container, expected 4 " +
+                     "(base, day, night, wind gust)");
+            Debug.Log("[Legaia] SELFTEST OK: ambience = " + beds + " bed(s) + " + spatial +
+                      " spatial emitter(s) (" + waves + " shore, " + birds +
+                      " bird, " + wildlife + " wildlife, " + mills +
+                      " windmill) under " + Path(ambT) + " (scene " + sceneName +
+                      ", not saved).");
         }
 
         /// Read `varName` off the backing UdonBehaviour of the first proxy

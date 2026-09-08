@@ -7,7 +7,8 @@
 use super::*;
 use legaia_engine_core::glb_export::{
     FloorSampler, GlbExportOptions, export_animated_prop_glbs, export_equipment_item_glbs,
-    export_npc_glbs, export_scene_traversal, export_world_glb, items_manifest, world_manifest,
+    export_npc_glbs, export_party_field_glbs, export_scene_traversal, export_world_glb,
+    items_manifest, party_manifest, world_manifest,
 };
 use legaia_engine_core::npc_catalog::catalog_scene_npcs;
 use legaia_engine_core::scene_assembly::assemble_field_scene;
@@ -22,21 +23,25 @@ pub(crate) fn cmd_export_glb(
     no_npcs: bool,
     no_props: bool,
     items: bool,
+    party: bool,
     extracted_root: &Path,
     disc: Option<&Path>,
 ) -> Result<()> {
-    if scenes.is_empty() && !all_scenes && !items {
-        anyhow::bail!("pass --scene <name> (repeatable), --all-scenes, or --items");
+    if scenes.is_empty() && !all_scenes && !items && !party {
+        anyhow::bail!("pass --scene <name> (repeatable), --all-scenes, --items, or --party");
     }
     let index = open_index_from_args(extracted_root, disc)?;
     if items {
         export_items(&index, out, extracted_root, disc)?;
-        if scenes.is_empty() && !all_scenes {
-            println!(
-                "note: the output contains Sony-derived game data - keep it local, never redistribute it"
-            );
-            return Ok(());
-        }
+    }
+    if party {
+        export_party(&index, out, scale)?;
+    }
+    if (items || party) && scenes.is_empty() && !all_scenes {
+        println!(
+            "note: the output contains Sony-derived game data - keep it local, never redistribute it"
+        );
+        return Ok(());
     }
     let names: Vec<String> = if all_scenes {
         index
@@ -311,6 +316,44 @@ fn export_items(
         "export-glb --items: {} item record(s), {written} glb file(s) -> {}",
         export.items.len(),
         items_dir.display()
+    );
+    Ok(())
+}
+
+/// `--party`: Vahn, Noa and Gala's field forms under `<out>/party/`.
+fn export_party(index: &ProtIndex, out: &Path, scale: f32) -> Result<()> {
+    let opts = GlbExportOptions {
+        scale,
+        include_sky: false,
+    };
+    let export = export_party_field_glbs(index, &opts)
+        .map_err(|e| anyhow::anyhow!("party field-form export: {e}"))?;
+    let dir = out.join("party");
+    std::fs::create_dir_all(dir.join("npcs"))?;
+    for m in &export.members {
+        std::fs::write(
+            dir.join("npcs").join(format!("{}.glb", m.file_stem)),
+            &m.glb,
+        )?;
+        println!(
+            "  [party] {} -> npcs/{}.glb ({} bones, clips: {})",
+            m.character,
+            m.file_stem,
+            m.bone_count,
+            m.clips.join(", ")
+        );
+    }
+    std::fs::write(
+        dir.join("manifest.json"),
+        serde_json::to_string_pretty(&party_manifest(&export, &opts))?,
+    )?;
+    for n in &export.notes {
+        eprintln!("  [party] {n}");
+    }
+    println!(
+        "export-glb --party: {} member(s) -> {}",
+        export.members.len(),
+        dir.display()
     );
     Ok(())
 }

@@ -686,6 +686,14 @@ pub(crate) enum Cmd {
         /// weapon swings. Works on its own, without `--scene`.
         #[arg(long, action = clap::ArgAction::SetTrue)]
         items: bool,
+        /// Also export the party's FIELD forms - Vahn, Noa and Gala as they
+        /// walk the towns (PROT 0874: mesh, field textures, idle + walk +
+        /// the rest of each locomotion bank) - as animated `.glb`s under
+        /// `<out>/party/npcs/` with a `party/manifest.json` shaped like a
+        /// scene's, so a world builder places them like villagers. Works
+        /// on its own, without `--scene`.
+        #[arg(long, action = clap::ArgAction::SetTrue)]
+        party: bool,
         /// Extracted-root directory containing `PROT.DAT` + `CDNAME.TXT`.
         #[arg(long, default_value = "extracted")]
         extracted_root: PathBuf,

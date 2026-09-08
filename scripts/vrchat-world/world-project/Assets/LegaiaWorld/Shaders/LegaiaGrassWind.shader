@@ -4,11 +4,19 @@
 // sampled from the terrain, alpha carries the sway weight (0 at the root,
 // 1 at the tip) so only tips move. World-position phase keeps neighbouring
 // tufts out of sync without any per-instance data.
+//
+// Gusts: LegaiaWeather drives _WindGust on this material every frame, so
+// a squall bends the whole meadow harder and faster. It is a material
+// property rather than a global because Shader.SetGlobalFloat is NOT
+// exposed to Udon (Material.SetFloat is) - and a material property has
+// the better failure mode anyway: it defaults to 1, so a world built
+// without the weather pass sways exactly as it always did.
 Shader "Legaia/Grass Wind"
 {
     Properties
     {
         _WindStrength ("Wind strength (m)", Range(0, 0.3)) = 0.06
+        _WindGust ("Wind gust (weather)", Range(0, 3)) = 1
         _WindSpeed ("Wind speed", Range(0, 8)) = 1.6
         _Glossiness ("Smoothness", Range(0,1)) = 0.05
     }
@@ -25,6 +33,8 @@ Shader "Legaia/Grass Wind"
         half _WindStrength;
         half _WindSpeed;
         half _Glossiness;
+        // Driven by LegaiaWeather; 1 = the calm the kit always had.
+        half _WindGust;
 
         struct Input
         {
@@ -34,8 +44,9 @@ Shader "Legaia/Grass Wind"
         void vert (inout appdata_full v)
         {
             float3 wp = mul(unity_ObjectToWorld, v.vertex).xyz;
-            float w = v.color.a * _WindStrength;
-            float t = _Time.y * _WindSpeed;
+            float gust = max(_WindGust, 0.0001);
+            float w = v.color.a * _WindStrength * gust;
+            float t = _Time.y * _WindSpeed * lerp(1.0, 1.5, saturate(gust - 0.5));
             float s = sin(t + wp.x * 0.7 + wp.z * 0.5)
                     + 0.4 * sin(t * 2.3 + wp.z * 1.3);
             v.vertex.x += s * w;

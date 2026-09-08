@@ -502,14 +502,20 @@ namespace LegaiaWorld
                 new Vector2(380f, 44f), new Color(1f, 0.9f, 0.7f));
             Text musicLabel = MakeButton(canvasGo.transform, font, "Music: On",
                 new Vector2(0f, 55f), backing, "ToggleMusic");
+            // Two columns: the day/night jumps on the left, the weather
+            // jump on the right. Both are inert until the realism passes
+            // wire `dayNight` / `weather` on the menu behaviour.
             MakeButton(canvasGo.transform, font, "Daytime",
-                new Vector2(0f, -35f), backing, "SetDay");
+                new Vector2(-88f, -35f), backing, "SetDay", 164f);
             MakeButton(canvasGo.transform, font, "Nighttime",
-                new Vector2(0f, -125f), backing, "SetNight");
+                new Vector2(-88f, -125f), backing, "SetNight", 164f);
+            MakeButton(canvasGo.transform, font, "Clear sky",
+                new Vector2(88f, -35f), backing, "SetClear", 164f);
 
             LegaiaWorldBuilder.SetUdonField(menu, "music", music);
             LegaiaWorldBuilder.SetUdonField(menu, "musicLabel", musicLabel);
-            // dayNight is wired by the realism pass when it builds the cycle.
+            // dayNight is wired by the realism pass when it builds the cycle;
+            // weather by the weather pass (LegaiaWeatherBuilder).
             LegaiaWorldBuilder.SyncUdonProxy(menu);
         }
 
@@ -566,13 +572,13 @@ namespace LegaiaWorld
         /// UdonBehaviour (the standard VRChat UI-to-Udon wire, recorded as a
         /// persistent listener so it survives into the client build).
         static Text MakeButton(Transform parent, Font font, string label,
-            Vector2 pos, Component backing, string eventName)
+            Vector2 pos, Component backing, string eventName, float width = 340f)
         {
             var go = new GameObject("btn_" + eventName);
             go.transform.SetParent(parent, false);
             var rt = go.AddComponent<RectTransform>();
             rt.anchoredPosition = pos;
-            rt.sizeDelta = new Vector2(340f, 72f);
+            rt.sizeDelta = new Vector2(width, 72f);
             var img = go.AddComponent<Image>();
             img.color = new Color(0.28f, 0.25f, 0.2f, 0.95f);
             var btn = go.AddComponent<Button>();
@@ -580,8 +586,9 @@ namespace LegaiaWorld
             colors.highlightedColor = new Color(0.45f, 0.4f, 0.3f);
             colors.pressedColor = new Color(0.6f, 0.5f, 0.32f);
             btn.colors = colors;
-            var text = MakeText(go.transform, font, label, 26, Vector2.zero,
-                new Vector2(330f, 64f), new Color(0.95f, 0.92f, 0.85f));
+            var text = MakeText(go.transform, font, label, width < 300f ? 22 : 26,
+                Vector2.zero, new Vector2(width - 10f, 64f),
+                new Color(0.95f, 0.92f, 0.85f));
             if (backing != null)
             {
                 var action = (UnityEngine.Events.UnityAction<string>)
