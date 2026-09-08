@@ -266,6 +266,15 @@ namespace LegaiaWorld
                 o.cardTableOffset = EditorGUILayout.Vector3Field("  Offset from spawn", o.cardTableOffset);
                 o.seats = EditorGUILayout.IntSlider("  Stools", o.seats, 0, 8);
             }
+            using (new EditorGUI.DisabledScope(!o.cardTable || !o.tv))
+                o.miniTv = EditorGUILayout.Toggle(
+                    new GUIContent("  Mini CRT on the table",
+                        "A coaster-sized television on the felt showing and " +
+                        "playing exactly what the big set is showing. It is a " +
+                        "second OUTPUT of the TV's players, not a second player, " +
+                        "so it costs no extra decode - which is also why it needs " +
+                        "both the TV and the table"),
+                    o.miniTv && o.cardTable && o.tv);
             bool havePens = AssetDatabase.LoadAssetAtPath<GameObject>(
                 LegaiaCommonPrefabs.SDK_PEN_PREFAB) != null;
             using (new EditorGUI.DisabledScope(!havePens))

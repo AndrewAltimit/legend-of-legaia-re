@@ -10,7 +10,8 @@
 // (mirror / tv / card_table / pens / poster_<name> / <prefab name>) and
 // the camp props (torch_N / campfire_N / the settings panel as "menu") -
 // and the card table's panel, which is a child of the table rather than
-// of a container and so needs its own line (card_table_panel).
+// of a container and so needs its own line (card_table_panel,
+// card_table_mini_tv).
 // Positions are the objects' Inspector values - those containers sit at
 // the origin, so local == world - and rotations are Inspector-style
 // Euler degrees in (-180, 180]. Other keys in the file are preserved.
@@ -132,14 +133,16 @@ namespace LegaiaWorld
                     transforms[LegaiaCommonPrefabs.SettingsKey(t.gameObject)] = Entry(t);
                     captured++;
                 }
-                // The seat panel hangs off the table, not the container,
-                // so the loop above never reaches it - and its entry is
-                // the panel's LOCAL transform under the table, which is
-                // exactly what Entry() reads.
-                var panel = common.transform.Find("card_table/panel");
-                if (panel != null)
+                // These hang off the TABLE, not off the container, so
+                // the loop above never reaches them - and each entry is
+                // the child's LOCAL transform under the table, which is
+                // exactly what Entry() reads and what the builder applies.
+                foreach (var child in new[] { "panel", "mini_tv" })
                 {
-                    transforms["card_table_panel"] = Entry(panel);
+                    var t = common.transform.Find("card_table/" + child);
+                    if (t == null)
+                        continue;
+                    transforms["card_table_" + child] = Entry(t);
                     captured++;
                 }
             }

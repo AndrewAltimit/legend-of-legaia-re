@@ -118,8 +118,12 @@ namespace LegaiaWorld
             Expect("VRC.SDK3.Components.VRCMirrorReflection", 2);
             Expect("VRC.SDK3.Video.Components.VRCUnityVideoPlayer", 1);
             Expect("VRC.SDK3.Video.Components.AVPro.VRCAVProVideoPlayer", 1);
-            Expect("VRC.SDK3.Video.Components.AVPro.VRCAVProVideoScreen", 1);
-            Expect("VRC.SDK3.Video.Components.AVPro.VRCAVProVideoSpeaker", 1);
+            // TWO of each: the mini CRT on the card table is a second
+            // output of the same AVPro player, not a second player (see
+            // LegaiaMiniTv). One of these dropping back to 1 is the mini
+            // set going silent or dark with nothing else to show for it.
+            Expect("VRC.SDK3.Video.Components.AVPro.VRCAVProVideoScreen", 2);
+            Expect("VRC.SDK3.Video.Components.AVPro.VRCAVProVideoSpeaker", 2);
             Expect("VRC.SDK3.Components.VRCUrlInputField", 1);
             Expect("VRC.SDK3.Components.VRCStation", 4, table);
             Expect("VRC.SDK3.Components.VRCPickup", 52, table);
@@ -138,6 +142,7 @@ namespace LegaiaWorld
             // director finds it in its container sweep - and the count
             // says the TV did not quietly grow a second one.
             Expect("LegaiaWorld.LegaiaTvWatchSpot", 1);
+            Expect("LegaiaWorld.LegaiaMiniTv", 1, table);
             Expect("LegaiaWorld.LegaiaEventButton", 0, table);
             Expect("LegaiaWorld.LegaiaNpcStation", 4, table);
             Expect("LegaiaWorld.LegaiaCardTableHost", 1, table);

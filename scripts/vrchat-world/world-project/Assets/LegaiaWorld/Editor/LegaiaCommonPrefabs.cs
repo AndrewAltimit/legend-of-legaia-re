@@ -11,6 +11,10 @@
 //   screen, a URL field + status line, Play/Pause - Stop - Resync
 //   buttons, owner-synced playhead (LegaiaVideoTv). YouTube links work
 //   through VRChat's own resolver in the client.
+// - Mini CRT: a coaster-sized television standing on the card table's
+//   felt, showing and playing exactly what the big set is showing. It
+//   carries NO video player of its own - it is a second output of the
+//   TV's players (LegaiaMiniTv's header has the whole argument).
 // - Card table: a round table, N stools that are VRC stations (sit on
 //   Interact, LegaiaSeat) and a 52-card deck of pickups with generated
 //   faces (LegaiaCard) plus Shuffle / Gather buttons (LegaiaCardDeck).
@@ -66,6 +70,10 @@ namespace LegaiaWorld
         public bool cardTable = true;
         public Vector3 cardTableOffset = new Vector3(0.4f, 0f, -5.4f);
         public int seats = 4;
+        // The mini CRT on the felt. Needs BOTH the TV and the table -
+        // it is an output of the one standing on the other - so it is
+        // silently skipped when either is off.
+        public bool miniTv = true;
         public bool sdkPens = false;
         public Vector3 pensOffset = new Vector3(-3.2f, 0f, 3.4f);
         // The casino cabinet + minigame: the model asset (a glb the user
@@ -153,6 +161,10 @@ namespace LegaiaWorld
                     Mathf.Clamp(o.seats, 0, 8), placements), "card_table");
                 built.Add("card table");
             }
+            // After both, because it wires one into the other.
+            if (o.miniTv && o.tv && o.cardTable &&
+                BuildMiniTv(container, genDir, placements) != null)
+                built.Add("mini CRT");
             if (o.sdkPens)
             {
                 var pens = AssetDatabase.LoadAssetAtPath<GameObject>(SDK_PEN_PREFAB);
@@ -241,6 +253,25 @@ namespace LegaiaWorld
 
         internal const string CONSOLE_NAME = "console";
         internal const string WATCH_NAME = "watch_spot";
+        internal const string MINI_TV_NAME = "mini_tv";
+
+        /// The mini set's own field, in metres. Small on purpose: the big
+        /// TV already reaches the table (48 m of linear rolloff), so this
+        /// speaker is there to make the little screen feel like a sound
+        /// source of its own at the table, not to carry the room. Beyond
+        /// MINI_AUDIO_FAR only the big set is heard, which is the right
+        /// way round.
+        internal const float MINI_AUDIO_NEAR = 0.5f;
+        internal const float MINI_AUDIO_FAR = 8f;
+
+        /// Where the mini set stands on the felt when the scene settings
+        /// carry no `card_table_mini_tv` entry: local to the table, on the
+        /// felt surface, clear of the deck (centre), the blackjack dealer
+        /// row (z +0.22), the hold'em board (z -0.06) and every seat's
+        /// hand anchor (radius 0.5 on the diagonals). Yawed 180 so its
+        /// screen - which is on the root's -Z, like the big set's - looks
+        /// back across the table.
+        internal static readonly Vector3 MINI_TV_AT = new Vector3(0f, 0.765f, -0.40f);
 
         const string PENS_NAME = "sdk_pens";
         internal const string SLOT_NAME = "slot_machine";
@@ -970,6 +1001,161 @@ namespace LegaiaWorld
             var c = GameObject.Find(CONTAINER + "/" + WALLET_NAME);
             var t = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaWallet");
             return c != null && t != null ? c.GetComponent(t) : null;
+        }
+
+        // --- Mini CRT -----------------------------------------------------------
+
+        /// A coaster-sized television on the card table's felt, fed by the
+        /// big set's players. Built AFTER both of them, from the container
+        /// they are already in, so nothing in BuildTv or BuildCardTable has
+        /// to know it exists.
+        ///
+        /// The three wires that make it "the same television", not another
+        /// one (LegaiaMiniTv's header carries the reasoning):
+        ///
+        ///   - a second VRCAVProVideoScreen on the small quad, pointed at
+        ///     the TV's AVPro player: that is the SDK's own way to put one
+        ///     stream on several surfaces, and it costs nothing;
+        ///   - a second VRCAVProVideoSpeaker, and the small AudioSource
+        ///     appended to the Unity player's targetAudioSources array, so
+        ///     both backends reach both speakers;
+        ///   - LegaiaMiniTv, which copies the picture across for the Unity
+        ///     player - the one backend whose single targetMaterialRenderer
+        ///     cannot be doubled.
+        ///
+        /// Both screens share the `tv_screen` material ASSET, so both keep
+        /// the video shader through the lit conversion (which skips
+        /// "Video/" shaders) and both start on the same black idle frame.
+        /// At runtime each renderer gets its own instance, which is what
+        /// lets the two be written independently.
+        static GameObject BuildMiniTv(GameObject container, string genDir,
+            Dictionary<string, LegaiaPrefabTransform> placements)
+        {
+            var tvT = container.transform.Find("tv");
+            var tableT = container.transform.Find("card_table");
+            if (tvT == null || tableT == null)
+                return null;
+            var bigScreen = tvT.Find("screen");
+            var bigSpeaker = tvT.Find("speaker");
+            if (bigScreen == null || bigSpeaker == null)
+            {
+                Debug.LogWarning("[Legaia] mini CRT: the TV has no screen / speaker " +
+                    "to share - skipped.");
+                return null;
+            }
+
+            var dark = LegaiaCampProps.EnsureMat(genDir, "camp_dark", "Standard",
+                new Color(0.16f, 0.14f, 0.12f));
+            var wood = LegaiaCampProps.EnsureMat(genDir, "camp_wood", "Standard",
+                new Color(0.36f, 0.24f, 0.13f));
+            var screenMat = EnsureScreenMaterial(genDir);
+
+            var root = new GameObject(MINI_TV_NAME);
+            root.transform.SetParent(tableT, false);
+            root.transform.localPosition = MINI_TV_AT;
+            root.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
+            if (LegaiaSceneSettings.ApplyPlacement(placements, "card_table_mini_tv",
+                    root.transform))
+                Debug.Log("[Legaia] mini CRT placed from settings at local " +
+                    root.transform.localPosition + ".");
+
+            // Cabinet. One collider on the ROOT rather than one per part:
+            // it is a solid little object cards should rest against, and a
+            // single box is cheaper than five and cannot trap a pickup
+            // between two of its own pieces.
+            Prim(PrimitiveType.Cube, "base", root.transform,
+                new Vector3(0f, 0.008f, 0f), new Vector3(0.215f, 0.016f, 0.175f), dark);
+            Prim(PrimitiveType.Cube, "cabinet", root.transform,
+                new Vector3(0f, 0.085f, 0.015f), new Vector3(0.2f, 0.14f, 0.15f), wood);
+
+            // The face is tilted UP. A set this size stands well below a
+            // seated player's eye, so a screen square to the felt is read
+            // at a glancing angle from every stool; 12 degrees is what a
+            // portable television's own stand gives it.
+            var face = new GameObject("face");
+            face.transform.SetParent(root.transform, false);
+            face.transform.localPosition = new Vector3(-0.018f, 0.088f, -0.062f);
+            face.transform.localRotation = Quaternion.Euler(12f, 0f, 0f);
+            Prim(PrimitiveType.Cube, "bezel", face.transform,
+                Vector3.zero, new Vector3(0.155f, 0.125f, 0.014f), dark);
+            var screen = Prim(PrimitiveType.Quad, "screen", face.transform,
+                new Vector3(0f, 0f, -0.009f), new Vector3(0.122f, 0.092f, 1f), screenMat);
+            var screenR = screen.GetComponent<Renderer>();
+
+            // The control strip down the right of the cabinet, and an
+            // aerial: the two things that say "television" at this size.
+            var dial1 = Prim(PrimitiveType.Cylinder, "dial_1", root.transform,
+                new Vector3(0.072f, 0.115f, -0.068f),
+                new Vector3(0.022f, 0.004f, 0.022f), dark);
+            dial1.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+            var dial2 = Prim(PrimitiveType.Cylinder, "dial_2", root.transform,
+                new Vector3(0.072f, 0.072f, -0.068f),
+                new Vector3(0.022f, 0.004f, 0.022f), dark);
+            dial2.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+            var aerial = Prim(PrimitiveType.Cylinder, "aerial", root.transform,
+                new Vector3(0.075f, 0.2f, 0.05f),
+                new Vector3(0.004f, 0.06f, 0.004f), dark);
+            aerial.transform.localRotation = Quaternion.Euler(30f, 0f, 18f);
+
+            var box = root.AddComponent<BoxCollider>();
+            box.center = new Vector3(0f, 0.085f, -0.01f);
+            box.size = new Vector3(0.22f, 0.17f, 0.2f);
+
+            // Speaker: quiet, short-range, fully 3D, linear like the big
+            // one so the two fields scale the same way.
+            var spk = new GameObject("speaker");
+            spk.transform.SetParent(root.transform, false);
+            spk.transform.localPosition = new Vector3(0f, 0.09f, -0.02f);
+            var src = spk.AddComponent<AudioSource>();
+            src.playOnAwake = false;
+            src.spatialBlend = 1f;
+            src.volume = 0.35f;
+            src.minDistance = MINI_AUDIO_NEAR;
+            src.maxDistance = MINI_AUDIO_FAR;
+            src.rolloffMode = AudioRolloffMode.Linear;
+            LegaiaAudioGen.AddVrcSpatial(spk, true, 10f, MINI_AUDIO_NEAR, MINI_AUDIO_FAR);
+
+            // --- the wires ---------------------------------------------------
+            var unityType = LegaiaWorldBuilder.FindType(
+                "VRC.SDK3.Video.Components.VRCUnityVideoPlayer");
+            var avproType = LegaiaWorldBuilder.FindType(
+                "VRC.SDK3.Video.Components.AVPro.VRCAVProVideoPlayer");
+            var unity = unityType != null ? tvT.GetComponent(unityType) : null;
+            var avpro = avproType != null ? tvT.GetComponent(avproType) : null;
+
+            if (unity != null)
+                // The array the SDK already gives us: the TV's speaker and
+                // this one, from one decode. Rewritten whole because the
+                // property is a list, not a slot.
+                SetProp(unity, "targetAudioSources", new Object[]
+                {
+                    bigSpeaker.GetComponent<AudioSource>(), src,
+                });
+            if (avpro != null)
+            {
+                var avScreen = AddSdk(screen, "VRC.SDK3.Video.Components." +
+                    "AVPro.VRCAVProVideoScreen");
+                SetProp(avScreen, "videoPlayer", avpro);
+                SetProp(avScreen, "materialIndex", 0);
+                SetProp(avScreen, "textureProperty", "_MainTex");
+                SetProp(avScreen, "useSharedMaterial", false);
+                var avSpk = AddSdk(spk, "VRC.SDK3.Video.Components." +
+                    "AVPro.VRCAVProVideoSpeaker");
+                SetProp(avSpk, "videoPlayer", avpro);
+                SetProp(avSpk, "mode", 0); // StereoMix
+            }
+
+            var mini = LegaiaWorldBuilder.TryAttachUdon(root, "LegaiaMiniTv");
+            LegaiaWorldBuilder.SetUdonField(mini, "sourceScreen",
+                bigScreen.GetComponent<Renderer>());
+            LegaiaWorldBuilder.SetUdonField(mini, "screen", screenR);
+            LegaiaWorldBuilder.SyncUdonProxy(mini);
+
+            Debug.Log("[Legaia] mini CRT on the felt: " +
+                      (avpro != null ? "AVPro screen + speaker, " : "") +
+                      (unity != null ? "Unity player audio shared, " : "") +
+                      "picture mirrored from the big set.");
+            return root;
         }
 
         // --- Card table ---------------------------------------------------------

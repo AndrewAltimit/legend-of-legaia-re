@@ -76,9 +76,10 @@ your disc ──legaia-extract──▶ extracted/ ──legaia-engine export-gl
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaEventButton.cs` | A collider button: Interact sends one named event into a target behaviour. Every common-prefab button uses it (no world-space UI, so no pickup-collider-steals-the-click trap). |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaMirror.cs` | Mirror controller: Off / full / players-only surfaces, local choice, auto-off when the player walks away. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaVideoTv.cs` | Synced video player over the SDK's AVPro (PC) + Unity (Android) players: owner-synced URL + playhead origin, late-joiner seek, 5-second load rate limit honoured, error retry. Also the house playlist, the villagers' favourite shows and the one rule that arbitrates them (`source`: only the playlist may be interrupted). See "What the TV plays" below. |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaMiniTv.cs` | The mini CRT on the card table. Carries no video player: it copies the big screen's texture onto the small one for the Unity backend (the one whose single `targetMaterialRenderer` cannot be doubled), reading both places Unity may have left it. See "The set on the table" below. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaTvWatchSpot.cs` | The NPC station handler in front of the TV: asks the set for the arriving villager's show, hands it back when they leave, and puts the controller in their hands during a console show. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaVideoSettings.cs` | Parser for `Settings/video.settings.json` - the SHARED (not per-scene) playlist + shows config, with a scene's optional `video` block merged over it. |
-| `world-project/Assets/LegaiaWorld/Editor/LegaiaVideoChecks.cs` | Headless `LegaiaVideoChecks.Run`: validates the config, drives the arbitration rule against every source state, asserts the flattened show windows and every URL reached the BACKING behaviour, and checks the watch spot faces the set and the console starts off. |
+| `world-project/Assets/LegaiaWorld/Editor/LegaiaVideoChecks.cs` | Headless `LegaiaVideoChecks.Run`: validates the config, drives the arbitration rule against every source state, asserts the flattened show windows and every URL reached the BACKING behaviour, and checks the watch spot faces the set, the console starts off, and the mini CRT stands clear on the felt with no player of its own. |
 | `world-project/Assets/LegaiaWorld/Settings/video.settings.json` | The shared video config itself: the default playlist and one entry per villager show. Not scene specific - the same file serves every world the kit builds. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaSeat.cs` | Interact sits the local player in this object's VRC station (the SDK chair wire); mirrors who sits there for the card game. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaCard.cs` | One playing card: pickup, hold + Use flips it (synced), spawn-kinematic until first drop, re-parked (dealt, revealed) by the deck and the game. The face flip and the dealt-card slide animate the `visual` child only - the root is always at the pose the caller passed, on that frame. |
@@ -967,6 +968,49 @@ and the SDK's own components - no third-party package, no game data:
   The console is built inactive and switched on off the synced show, so
   it is never furniture standing in an empty room.
 
+  **The set on the table.** A coaster-sized CRT stands on the card
+  table's felt showing and playing exactly what the big set is showing.
+  It has **no video player of its own** - a second player is a second
+  decode, a second fetch and a second clock, and two of those pointed at
+  one URL drift apart within seconds for a screen the size of a beer
+  mat. It is a second *output* of the TV's players instead, through
+  three wires:
+
+  - the small quad carries its own `VRCAVProVideoScreen` pointed at the
+    same AVPro player. That is the SDK's own way to put one stream on
+    several surfaces and it costs nothing;
+  - the small speaker carries its own `VRCAVProVideoSpeaker`, and its
+    `AudioSource` is appended to the Unity player's `targetAudioSources`
+    (that field is an array - the SDK expects several). Same decode, so
+    the two speakers are sample-synchronised rather than merely close;
+  - `LegaiaMiniTv` copies the picture across for the **Unity** backend,
+    the one that has a single `targetMaterialRenderer` and no way to add
+    a second. It polls a few times a second rather than running in
+    `Update`: the texture *object* changes only when a video loads, the
+    frames arrive inside a texture that keeps its identity, and an Udon
+    `Update` on a prop is a cost every player in the instance pays. It
+    reads both places Unity's `MaterialOverride` may have left the
+    texture - a per-renderer `MaterialPropertyBlock` and an instantiated
+    material - because which one it uses is native behaviour the SDK
+    does not document. It never writes a null: while AVPro owns the
+    small screen the property block is empty, and blanking on that
+    account would undo the AVPro screen's own work every poll.
+
+  Both screens share the `tv_screen` material asset, so both keep the
+  video shader through the lit conversion (which skips `Video/`
+  shaders) and both start on the same black idle frame; at runtime each
+  renderer gets its own instance, which is what lets the two be written
+  independently. Its speaker is deliberately small (0.5 - 8 m against
+  the big set's 4.5 - 48 m): the room's television already reaches the
+  table, and this one is there to make the little screen a sound source
+  at the table rather than a second television heard across the square.
+  Default place is `(0, 0.765, -0.40)` local to the table, yawed 180 so
+  its screen looks back across the felt - clear of the deck, the
+  blackjack dealer row, the hold'em board and every seat's hand anchor.
+  Move it and snapshot: the settings key is `card_table_mini_tv`. One
+  collider, on the root, so a card pickup cannot wedge between two
+  pieces of the same prop.
+
   **Villagers reach the set** through an ordinary NPC station - a
   `watch_spot` child of the TV, kind 0, whose handler is
   `LegaiaTvWatchSpot`. The town director finds it in its sweep of the
@@ -1236,8 +1280,9 @@ seat panel and LegaiaSpawn into the scene's settings file:
 
 (keys `mirror`, `tv`, `card_table`, `pens`, `poster_<name>` and an extra
 slot's prefab name from the common container; `torch_N`, `campfire_N` and
-`menu` from the camp container; `card_table_panel` for the seat panel,
-whose numbers are local to the table rather than to a container. Values
+`menu` from the camp container; `card_table_panel` for the seat panel
+and `card_table_mini_tv` for the CRT on the felt, whose numbers are
+local to the table rather than to a container. Values
 are otherwise exactly the Inspector numbers, world == local under the
 origin containers; `rotation` is optional.) The block **merges**: a key
 whose object is not in the scene at snapshot time - a feature switched
@@ -1477,7 +1522,8 @@ mode, no `-quit`, `-legaiaCardSeconds N -legaiaCardScale S`: villagers
 play hands among themselves, pot conservation asserted, both modes);
 `LegaiaWorld.LegaiaVideoChecks.Run` (edit mode: the video config, the
 TV's arbitration rule against every source state, the serialized
-playlist and show windows, the watch spot and the console).
+playlist and show windows, the watch spot, the console, and the mini
+CRT on the card table - which it builds the table for).
 
 ## Optional realism enhancements
 

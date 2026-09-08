@@ -31,6 +31,12 @@
 // windows (showStart / showCount over showUrls) are checked to cover the
 // array exactly: an off-by-one there plays the wrong villager's video.
 //
+// THE MINI CRT is checked here too, because what it is depends entirely
+// on the TV: it must carry no video player of its own (one decode, two
+// outputs - see LegaiaMiniTv), it must share the big screen's material,
+// and its three audio / picture wires are each silent when missing. So
+// this check builds the card table as well as the set.
+//
 // Owners that match no NPC in the scene are a WARNING, not a failure -
 // the config is shared across worlds by design, so a town without Tetsu
 // is not a broken config, it is a town without Tetsu.
@@ -83,6 +89,7 @@ namespace LegaiaWorld
             CheckMatching(tv, video);
             CheckWiring(tv, video);
             CheckProps(tv, video);
+            CheckMiniTv(tv);
             Debug.Log("[Legaia] VIDEO OK: " + video.defaultPlaylist.Count +
                       " playlist item(s), " + video.shows.Count + " show(s) across " +
                       OwnerCount(video) + " villager(s), " + s_warnings + " warning(s).");
@@ -199,7 +206,9 @@ namespace LegaiaWorld
 
             var o = new LegaiaCommonPrefabOptions
             {
-                mirror = false, tv = true, cardTable = false, seats = 0,
+                // The table comes too: the mini CRT stands on it, and
+                // CheckMiniTv below is the only thing that measures it.
+                mirror = false, tv = true, cardTable = true, seats = 4,
                 sdkPens = false, slotMachine = false,
             };
             var settings = LegaiaSceneSettings.Load(s_sceneName);
@@ -652,6 +661,182 @@ namespace LegaiaWorld
             {
                 Warn("a console prop exists but no show asks for one");
             }
+        }
+
+        // --- The mini CRT ---------------------------------------------------
+
+        /// The set on the card table. What can go wrong here is invisible
+        /// in the scene view in both directions: a mini set that LOOKS
+        /// right but carries a video player of its own (a second decode
+        /// drifting against the first), and one that looks right and is
+        /// wired to nothing (a black coaster that never lights up).
+        static void CheckMiniTv(Component tv)
+        {
+            var tvT = tv.transform;
+            var tableT = tvT.parent != null
+                ? tvT.parent.Find("card_table") : null;
+            if (tableT == null)
+                Fail("no card table beside the TV - this check builds both");
+            var miniT = tableT.Find(LegaiaCommonPrefabs.MINI_TV_NAME);
+            if (miniT == null)
+                Fail("no " + LegaiaCommonPrefabs.MINI_TV_NAME + " on the card table");
+
+            // NO PLAYER OF ITS OWN. The whole design is one decode with
+            // two outputs; a player here would compile, build and look
+            // finished while playing a second copy of the video a second
+            // or two out of step with the big set.
+            foreach (string t in new[]
+                     {
+                         "VRC.SDK3.Video.Components.VRCUnityVideoPlayer",
+                         "VRC.SDK3.Video.Components.AVPro.VRCAVProVideoPlayer",
+                     })
+            {
+                var type = LegaiaWorldBuilder.FindType(t);
+                if (type != null && miniT.GetComponentInChildren(type, true) != null)
+                    Fail("the mini CRT carries its own " + type.Name +
+                         " - it is meant to be a second OUTPUT of the TV's players, " +
+                         "not a second player");
+            }
+
+            // On the felt, and off everything the game deals onto it.
+            float felt = tableT.Find("felt") != null
+                ? tableT.Find("felt").localPosition.y + 0.002f : 0.764f;
+            float dy = miniT.localPosition.y - felt;
+            if (dy < -0.01f || dy > 0.02f)
+                Fail("the mini CRT sits " + dy.ToString("0.000") +
+                     " m off the felt surface - it should stand on it");
+            float r = new Vector2(miniT.localPosition.x, miniT.localPosition.z).magnitude;
+            if (r > 0.45f)
+                Fail("the mini CRT stands " + r.ToString("0.00") +
+                     " m from the table centre; past 0.45 its cabinet hangs " +
+                     "over the felt edge");
+            foreach (string a in new[]
+                     { "deck_anchor", "dealer_anchor", "community_anchor_0",
+                       "community_anchor_2", "community_anchor_4" })
+            {
+                var at = tableT.Find(a);
+                if (at == null)
+                    continue;
+                float d = Vector3.Distance(
+                    new Vector3(at.localPosition.x, 0f, at.localPosition.z),
+                    new Vector3(miniT.localPosition.x, 0f, miniT.localPosition.z));
+                if (d < 0.2f)
+                    Fail("the mini CRT stands " + d.ToString("0.00") + " m from " + a +
+                         " - a dealt card would land inside it");
+            }
+            for (int i = 0; i < 8; i++)
+            {
+                var at = tableT.Find("hand_anchor_" + i);
+                if (at == null)
+                    continue;
+                float d = Vector3.Distance(
+                    new Vector3(at.localPosition.x, 0f, at.localPosition.z),
+                    new Vector3(miniT.localPosition.x, 0f, miniT.localPosition.z));
+                if (d < 0.2f)
+                    Fail("the mini CRT stands " + d.ToString("0.00") +
+                         " m from hand_anchor_" + i + " - it would sit in a " +
+                         "seated player's cards");
+            }
+
+            // One collider, on the root: five part-colliders can wedge a
+            // card pickup between two pieces of the same prop.
+            var cols = miniT.GetComponentsInChildren<Collider>(true);
+            if (cols.Length != 1 || cols[0].transform != miniT)
+                Fail("the mini CRT carries " + cols.Length + " collider(s) " +
+                     "(the kit builds exactly one, on the root)");
+
+            // The screen: same material asset as the big one, so both keep
+            // the video shader through the lit conversion and both start
+            // on the same idle frame.
+            var miniScreen = miniT.Find("face/screen");
+            var bigScreen = tvT.Find("screen");
+            if (miniScreen == null)
+                Fail("the mini CRT has no face/screen");
+            var mr = miniScreen.GetComponent<Renderer>();
+            var br = bigScreen != null ? bigScreen.GetComponent<Renderer>() : null;
+            if (mr == null || br == null)
+                Fail("a screen with no renderer");
+            if (mr.sharedMaterial != br.sharedMaterial)
+                Fail("the two screens are on different materials (" +
+                     (mr.sharedMaterial != null ? mr.sharedMaterial.name : "null") +
+                     " vs " + (br.sharedMaterial != null ? br.sharedMaterial.name : "null") +
+                     ") - the small one would not survive the lit conversion");
+            if (mr.sharedMaterial != null && mr.sharedMaterial.shader != null &&
+                !mr.sharedMaterial.shader.name.StartsWith("Video/") &&
+                !mr.sharedMaterial.shader.name.StartsWith("Unlit/"))
+                Fail("the mini screen is on " + mr.sharedMaterial.shader.name +
+                     " - a lit shader would shade the picture");
+
+            // The picture mirror, asserted on the BACKING behaviour.
+            var miniType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaMiniTv");
+            var mini = miniType != null ? miniT.GetComponent(miniType) : null;
+            if (mini == null)
+                Fail("the mini CRT carries no LegaiaMiniTv");
+            var mb = LegaiaCommonPrefabs.BackingUdon(mini);
+            if (!ReferenceEquals(EditVar(mb, "sourceScreen"), br))
+                Fail("LegaiaMiniTv does not read the big set's screen - the small " +
+                     "one would stay on its idle frame for the Unity player");
+            if (!ReferenceEquals(EditVar(mb, "screen"), mr))
+                Fail("LegaiaMiniTv does not write its own screen");
+
+            // Audio: its own AudioSource, in the Unity player's array, and
+            // an AVPro speaker of its own. Three wires, each silent when
+            // missing - the set just plays no sound at the table.
+            var spk = miniT.Find("speaker");
+            var au = spk != null ? spk.GetComponent<AudioSource>() : null;
+            if (au == null)
+                Fail("the mini CRT has no speaker");
+            if (Mathf.Abs(au.minDistance - LegaiaCommonPrefabs.MINI_AUDIO_NEAR) > 0.01f ||
+                Mathf.Abs(au.maxDistance - LegaiaCommonPrefabs.MINI_AUDIO_FAR) > 0.01f)
+                Fail("the mini speaker carries " + au.minDistance + " / " +
+                     au.maxDistance + " m, the kit says " +
+                     LegaiaCommonPrefabs.MINI_AUDIO_NEAR + " / " +
+                     LegaiaCommonPrefabs.MINI_AUDIO_FAR);
+            if (au.maxDistance >= LegaiaCommonPrefabs.TV_AUDIO_FAR)
+                Fail("the mini speaker reaches as far as the big set - it is meant " +
+                     "to be a sound at the table, not a second television heard " +
+                     "across the square");
+            if (au.spatialBlend < 0.99f || au.rolloffMode != AudioRolloffMode.Linear)
+                Fail("the mini speaker is not 3D / linear like the big one");
+
+            var unityType = LegaiaWorldBuilder.FindType(
+                "VRC.SDK3.Video.Components.VRCUnityVideoPlayer");
+            var unity = unityType != null ? tvT.GetComponent(unityType) : null;
+            if (unity != null)
+            {
+                var so = new SerializedObject(unity);
+                var p = so.FindProperty("targetAudioSources");
+                bool found = false;
+                for (int i = 0; p != null && i < p.arraySize; i++)
+                    if (ReferenceEquals(p.GetArrayElementAtIndex(i).objectReferenceValue,
+                                        au))
+                        found = true;
+                if (!found)
+                    Fail("the mini speaker is not in the Unity player's " +
+                         "targetAudioSources - it would be silent for every direct " +
+                         "video file");
+            }
+            var avproType = LegaiaWorldBuilder.FindType(
+                "VRC.SDK3.Video.Components.AVPro.VRCAVProVideoPlayer");
+            var avpro = avproType != null ? tvT.GetComponent(avproType) : null;
+            if (avpro != null)
+            {
+                var scrType = LegaiaWorldBuilder.FindType(
+                    "VRC.SDK3.Video.Components.AVPro.VRCAVProVideoScreen");
+                var spkType = LegaiaWorldBuilder.FindType(
+                    "VRC.SDK3.Video.Components.AVPro.VRCAVProVideoSpeaker");
+                if (scrType != null && miniScreen.GetComponent(scrType) == null)
+                    Fail("the mini screen has no VRCAVProVideoScreen - it would stay " +
+                         "dark for every streamed link, which is nearly all of them");
+                if (spkType != null && spk.GetComponent(spkType) == null)
+                    Fail("the mini speaker has no VRCAVProVideoSpeaker");
+            }
+
+            Debug.Log("[Legaia] mini CRT: on the felt at " +
+                      r.ToString("0.00") + " m from centre, one collider, " +
+                      "screen shared with the big set, speaker " +
+                      LegaiaCommonPrefabs.MINI_AUDIO_NEAR + " - " +
+                      LegaiaCommonPrefabs.MINI_AUDIO_FAR + " m, no player of its own.");
         }
     }
 }
