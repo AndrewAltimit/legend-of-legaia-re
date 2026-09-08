@@ -229,8 +229,24 @@ impl SceneHost {
         ) {
             session.install_damage_model(model);
         }
+        // The fighter's normal-art catalog, so the turn resolves the retail
+        // action queue rather than four bare swings: the dome's Attack runs
+        // the same tokenizer the battle's Arts command does, and a matched
+        // art then indexes its own move-power row.
+        let catalog = self.dome_art_catalog();
+        if !catalog.is_empty() {
+            session.install_art_catalog(0, catalog);
+        }
         self.world.enter_muscle_dome(session);
         true
+    }
+
+    /// The dome fighter's normal-art rows in grid order, through the shared
+    /// filter. Empty when the world carries no art records, which resolves as
+    /// plain swings - retail's own answer for a character with no arts.
+    fn dome_art_catalog(&self) -> Vec<(legaia_art::ActionConstant, Vec<legaia_art::Command>)> {
+        let character = self.world.caster_character(0);
+        crate::muscle_dome::art_catalog_for(&self.world.art_records, character)
     }
 
     /// PROT 0980's baked step chart -> a live [`crate::dance::DanceGame`].

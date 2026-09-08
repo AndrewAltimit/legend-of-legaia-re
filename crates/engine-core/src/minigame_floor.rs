@@ -404,6 +404,14 @@ pub struct FloorTileSpawn {
 // `width x height` byte cell array), a different grid with a different cell
 // encoding. Wiring needs a floor-tile draw pass that consumes
 // [`FloorTileSpawn`] records.
+//
+// The host that owes that pass is the play window's minigame draw path
+// (`window/minigames.rs` builds the fishing / dance / dome frames and already
+// reads the venue floor for [`ground_height`]) together with the browser
+// minigames page's venue bakers, which bake the same venue into one static
+// mesh and so have no per-cell actor list at all. Until one of them grows a
+// tile-actor pool this pass has nowhere to put its output;
+// [`marker_template`] is blocked on exactly the same sink.
 pub fn floor_tile_spawns(
     grid: FloorGrid<'_>,
     ramp: &[i16],

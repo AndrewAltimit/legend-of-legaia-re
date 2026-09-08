@@ -528,15 +528,18 @@ impl PlayWindowApp {
     /// boundary is `ctx[6] = 0x14` inside the battle SM, with the arena hub not
     /// running ([`MusclePhase::ends_turn`]).
     ///
-    /// Retail runs these screens on the hub controllers' own fade / hold
-    /// counters (`DAT_801D1A80` and siblings), which are unported; the host
-    /// holds each screen for a fixed frame count at full brightness instead.
+    /// Each screen runs retail's own fade / hold envelope
+    /// ([`legaia_engine_core::muscle_dome::HubScreen`]) rather than a frame
+    /// count this host picked: fade in at the arm's rate, hold at the
+    /// measured literal, fade out - and the two card holds end early on a
+    /// pad press, the way `FUN_801CF870`'s `& 0xF4` test lets them.
     ///
     /// [`MusclePhase::ends_turn`]: legaia_engine_core::muscle_dome::MusclePhase::ends_turn
     pub(super) fn tick_muscle_hub(&mut self) {
-        const INTRO_FRAMES: i32 = 90;
-        const ROUND_BANNER_FRAMES: i32 = 120;
-        const INTERVAL_FRAMES: i32 = 240;
+        use legaia_engine_core::muscle_dome::HubScreen;
+        // The pad edges the skippable holds read (retail's `DAT_801D1A9C`
+        // snapshot of `_DAT_8007B874 | _DAT_8007B938`).
+        let pad = self.session.host.world.input.retail_pad().pressed as u16;
         let world = &self.session.host.world;
         let leg_open = world.muscle_dome.is_some();
         let contest_open = world.muscle_contest.is_some();
@@ -545,11 +548,11 @@ impl PlayWindowApp {
                 .muscle_contest
                 .as_ref()
                 .map_or(1, |c| c.round() as i32 + 1);
-            self.muscle_round_banner = Some((round, ROUND_BANNER_FRAMES));
+            self.muscle_round_banner = Some((round, HubScreen::round_banner()));
             if contest_open && !self.muscle_prev_contest_open {
-                self.muscle_intro_timer = INTRO_FRAMES;
+                self.muscle_intro_card = Some(HubScreen::intro_card());
             }
-            self.muscle_interval_timer = 0;
+            self.muscle_interval = None;
         }
         if !leg_open && self.muscle_prev_leg_open && self.muscle_prev_contest_open {
             // The leg boundary the arena hub sees. Whether it shows the tally
@@ -557,20 +560,36 @@ impl PlayWindowApp {
             let raises = legaia_engine_core::muscle_dome::leg_boundary_raises_interval(
                 world.muscle_contest.as_ref().map(|c| c.state()),
             );
-            self.muscle_interval_timer = if raises { INTERVAL_FRAMES } else { 0 };
-            self.muscle_intro_timer = 0;
+            // The tally roll is data-dependent; its four lanes step one row
+            // per tick after the shared lead-in, and the last cue lands on
+            // the staggered vsync countdown, so the roll cannot be shorter
+            // than that stagger.
+            let roll = legaia_engine_core::muscle_dome::HUB_TALLY_ROLL_LEAD_TICKS
+                + *legaia_engine_core::muscle_dome::HUB_TALLY_CUE_STAGGER
+                    .last()
+                    .unwrap_or(&0) as i32;
+            self.muscle_interval = raises.then(|| HubScreen::interval(roll));
+            self.muscle_intro_card = None;
             self.muscle_round_banner = None;
         }
-        if self.muscle_intro_timer > 0 {
-            self.muscle_intro_timer -= 1;
-        } else if let Some((_, t)) = self.muscle_round_banner.as_mut() {
-            *t -= 1;
-            if *t <= 0 {
+        // Retail runs one screen at a time: the intro strip's cross-fade is
+        // its own arm, and the ROUND banner's arm only follows it.
+        if let Some(card) = self.muscle_intro_card.as_mut() {
+            card.tick(1, pad);
+            if card.done() {
+                self.muscle_intro_card = None;
+            }
+        } else if let Some((_, banner)) = self.muscle_round_banner.as_mut() {
+            banner.tick(1, pad);
+            if banner.done() {
                 self.muscle_round_banner = None;
             }
         }
-        if self.muscle_interval_timer > 0 {
-            self.muscle_interval_timer -= 1;
+        if let Some(interval) = self.muscle_interval.as_mut() {
+            interval.tick(1, pad);
+            if interval.done() {
+                self.muscle_interval = None;
+            }
         }
         self.muscle_prev_leg_open = leg_open;
         self.muscle_prev_contest_open = contest_open;
@@ -729,26 +748,32 @@ impl PlayWindowApp {
         // The retail emitters mutate the shared table (variant write-back),
         // so run them over a per-frame copy of the pristine parse.
         let mut table = assets.table.clone();
-        // Full record brightness: retail ramps these screens on the hub
-        // controllers' unported fade counters; the host holds each screen at
-        // full brightness for a fixed frame count instead (`tick_muscle_hub`).
-        const FULL: i32 = 0x100;
+        // The brightness argument is the screen's own fade counter, which
+        // clamps at `HUB_FADE_FULL` (0x80) - the emitter's neutral, since it
+        // scales each stored channel by `c * brightness / 256`. The host used
+        // to pass 0x100, which drew every hub screen at twice retail's
+        // brightness.
         let mut quads: Vec<hud::HudQuad> = Vec::new();
         if in_dome {
-            if self.muscle_intro_timer > 0 {
-                quads.extend(hud::hub_screen_quads(&mut table, hud::HUB_INTRO_CARD, FULL));
-            } else if let Some((round, _)) = self.muscle_round_banner {
+            if let Some(card) = self.muscle_intro_card {
+                quads.extend(hud::hub_screen_quads(
+                    &mut table,
+                    hud::HUB_INTRO_CARD,
+                    card.brightness(),
+                ));
+            } else if let Some((round, banner)) = self.muscle_round_banner {
                 quads.extend(hud::hub_screen_quads(
                     &mut table,
                     &hud::round_banner_draws(round),
-                    FULL,
+                    banner.brightness(),
                 ));
             }
-        } else if self.muscle_interval_timer > 0 {
+        } else if let Some(interval) = self.muscle_interval {
+            let bright = interval.brightness();
             quads.extend(hud::hub_screen_quads(
                 &mut table,
                 hud::HUB_INTERVAL_HEADING,
-                FULL,
+                bright,
             ));
             // With the contest already settled the rows read zero and the
             // tally screen shows the coin bank alone - the browser page's
@@ -767,7 +792,7 @@ impl PlayWindowApp {
                     tally,
                     world.casino_coins as i32,
                 ],
-                [FULL; hud::SCORE_TALLY_ROWS],
+                [bright; hud::SCORE_TALLY_ROWS],
             ));
         }
         if quads.is_empty() {
@@ -1234,6 +1259,19 @@ impl PlayWindowApp {
                 "muscle: PROT 0898 move-power table did not decode - the contest will \
                  resolve without damage"
             ),
+        }
+        // The lead's normal-art catalog, so a recognised art in the queue
+        // resolves as an art rather than as the swings it consumed. The
+        // shared filter is the same one the arena-door warp uses, and the
+        // lead is the roster slot whose swing costs were read above.
+        {
+            let catalog = legaia_engine_core::muscle_dome::art_catalog_for(
+                &self.session.host.world.art_records,
+                legaia_art::Character::Vahn,
+            );
+            if !catalog.is_empty() {
+                session.install_art_catalog(0, catalog);
+            }
         }
         match opponent_round {
             Some((n, r)) => log::info!(

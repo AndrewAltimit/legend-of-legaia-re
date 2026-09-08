@@ -75,10 +75,38 @@ pub const BAR_REFERENCE_POOL: u16 = 100;
 /// Shortest bar drawn, so a tiny pool still reads as a bar.
 pub const BAR_W_MIN: i32 = 48;
 
-/// Stage `x` of pennant slot 0. Later slots sit at
-/// `PENNANT_X0 + sum(AP spent before them)` - the captured seat law
-/// (pitch 30 at the favored 30-AP command cost).
-pub const PENNANT_X0: i32 = 7;
+/// Stage `x` the **pennant anchor** of slot 0 sits at - the cursor
+/// `ctx[+0x6D8]`, seeded to 16 on the gauge build (`0x801D3A3C` /
+/// `0x801D3A44`) and advanced by each committed command's own `+0x74` cost
+/// (`0x801D3D68..0x801D3D74`), not by a fixed pitch.
+pub const PENNANT_ANCHOR_X0: i32 = 16;
+
+/// Stage `x` of pennant slot 0's drawn left edge. The pennant record is
+/// anchored at [`PENNANT_ANCHOR_X0`] and its left cap is drawn one cap width
+/// to the left (`16 - 9`), which is the captured `7`.
+pub const PENNANT_X0: i32 = PENNANT_ANCHOR_X0 - 9;
+
+/// The AP cost every width in this screen is measured against: retail
+/// subtracts it once, in `FUN_801D388C` case `9`, at `0x801D3B6C` and
+/// `0x801D3B98`. `30` is that subtraction's zero point - not a threshold and
+/// not a table index.
+pub const CHIP_COST_ZERO_POINT: i32 = 30;
+
+/// A record's drawn width is its command's cost minus this bias
+/// (`addiu v0,v0,-0x6` then `sh v0,0x6(a1)` at `0x801D3B44`). At the favored
+/// 30-AP cost that is the captured 24-wide chip body and label strip.
+pub const COST_WIDTH_BIAS: i32 = 6;
+
+/// Per-seat widening coefficient `DAT_8007B650` (SCUS file `0x6BE50`,
+/// immediately followed by the `Auto` / `Command` strings, which is what
+/// fixes the file/VA pairing). Seat order is the 12-byte-stride seat array's
+/// at `0x80076BBC`: Left, High, Low, Right.
+///
+/// A chip's seat `x` is `seat_x - (cost - 30) * K / 2`, so `K` makes the arm
+/// chips grow *away* from the D-pad glyph between them: the Left chip's right
+/// edge stays pinned at 200, the two centre chips stay centred on 228, and
+/// the Right chip's left edge stays pinned at 256.
+pub const CHIP_WIDEN_K: [i32; 4] = [2, 1, 1, 0];
 
 /// Stage top-left of the AP plate.
 pub const AP_PLATE_SEAT: (i32, i32) = (208, 172);
@@ -130,7 +158,35 @@ impl ChipDirection {
         }
     }
 
-    /// Stage body anchor of this chip.
+    /// This chip's index into the retail 12-byte-stride seat array at
+    /// `0x80076BBC` and into [`CHIP_WIDEN_K`]: the case-`9` loop walks
+    /// `0x0C` (Left), `0x0F` (High), `0x0E` (Low), `0x0D` (Right), whose
+    /// seat `x` values `176 / 216 / 216 / 256` are exactly the four
+    /// `CHIP_ANCHOR_*` abscissas below.
+    pub fn seat_slot(self) -> usize {
+        match self {
+            Self::Left => 0,
+            Self::High => 1,
+            Self::Low => 2,
+            Self::Right => 3,
+        }
+    }
+
+    /// This chip's index in **Command-byte order** (`Left, Right, Down, Up`
+    /// = action slots `0x0C..=0x0F`) - the order the disc's per-character
+    /// swing-cost row is keyed by, so a host passes its cost row verbatim.
+    /// Not the same as [`Self::seat_slot`], which is the screen's.
+    pub fn command_index(self) -> usize {
+        match self {
+            Self::Left => 0,
+            Self::Right => 1,
+            Self::Low => 2,
+            Self::High => 3,
+        }
+    }
+
+    /// Stage body anchor of this chip at the favored 30-AP cost. Use
+    /// [`ArtsInputFrame::chip_anchor`] for the cost-shifted seat.
     pub fn anchor(self) -> (i32, i32) {
         match self {
             Self::High => CHIP_ANCHOR_HIGH,
@@ -238,8 +294,19 @@ pub struct ArtsInputFrame<'a> {
     /// Entered command bytes in order (Left 1, Right 2, Down 3, Up 4).
     pub buffer: &'a [u8],
     /// AP paid per entered command, parallel to `buffer` - the pennant
-    /// seat law is `PENNANT_X0 + sum(spent[..n])`.
+    /// anchor law is `PENNANT_ANCHOR_X0 + sum(spent[..n])`, and pennant `n`
+    /// is `spent[n] - COST_WIDTH_BIAS` wide.
     pub spent: &'a [u16],
+    /// This caster's AP cost for each of the four direction commands, in
+    /// [`ChipDirection::command_index`] order (Left, Right, Down, Up = the
+    /// action slots `0x0C..=0x0F`) - the per-(character, weapon)
+    /// `DAT_801C9360[char][cmd] + 0x74` byte, which is exactly the row
+    /// `ArtsInputView::costs` already carries. It sizes and re-seats the
+    /// chips: an off-class command costs more than 30 and its chip is
+    /// correspondingly wider, growing away from the D-pad.
+    /// [`ArtsInputFrame::FAVORED_CHIP_COSTS`] is the all-30 case a host with
+    /// no cost table can pass.
+    pub chip_costs: [u16; 4],
     /// Remaining AP (unused by the bar, which sizes off `pool_max`).
     pub pool: u16,
     /// Seeded AP pool - the bar's length.
@@ -267,10 +334,52 @@ impl ArtsInputFrame<'_> {
         scaled.max(BAR_W_MIN)
     }
 
-    /// Stage `x` of committed pennant `slot`.
+    /// Stage `x` of committed pennant `slot`'s **drawn left edge** - the
+    /// anchor cursor less one cap width.
     pub fn pennant_x(&self, slot: usize) -> i32 {
-        PENNANT_X0 + self.spent.iter().take(slot).map(|&c| c as i32).sum::<i32>()
+        self.pennant_anchor_x(slot) - 9
     }
+
+    /// Stage `x` of committed pennant `slot`'s anchor: the cursor
+    /// `ctx[+0x6D8]` after the preceding commands advanced it by their own
+    /// costs.
+    pub fn pennant_anchor_x(&self, slot: usize) -> i32 {
+        PENNANT_ANCHOR_X0 + self.spent.iter().take(slot).map(|&c| c as i32).sum::<i32>()
+    }
+
+    /// Drawn width of committed pennant `slot` - its command's own cost less
+    /// [`COST_WIDTH_BIAS`], copied from the pressed chip's record
+    /// (`0x801D3D00` / `0x801D3D08`). The pennant itself has no cost
+    /// special-case at all.
+    pub fn pennant_w(&self, slot: usize) -> i32 {
+        let cost = self.spent.get(slot).copied().unwrap_or(0) as i32;
+        (cost - COST_WIDTH_BIAS).max(1)
+    }
+
+    /// This caster's cost for `dir`.
+    pub fn chip_cost(&self, dir: ChipDirection) -> i32 {
+        self.chip_costs[dir.command_index()] as i32
+    }
+
+    /// Drawn width of `dir`'s chip body - the same `cost - 6` law.
+    pub fn chip_w(&self, dir: ChipDirection) -> i32 {
+        (self.chip_cost(dir) - COST_WIDTH_BIAS).max(1)
+    }
+
+    /// Stage body anchor of `dir`'s chip at this caster's costs: the seat
+    /// array's `x` re-seated by `(cost - 30) * K[slot] / 2`
+    /// (`0x801D3B64..0x801D3B8C`; the `srl 31` / `addu` / `sra 1` triple is
+    /// the signed divide-by-two, so the halving truncates toward zero).
+    pub fn chip_anchor(&self, dir: ChipDirection) -> (i32, i32) {
+        let (x, y) = dir.anchor();
+        let shift =
+            (self.chip_cost(dir) - CHIP_COST_ZERO_POINT) * CHIP_WIDEN_K[dir.seat_slot()] / 2;
+        (x - shift, y)
+    }
+
+    /// The all-30 cost row - a favored-weapon caster, and the shape every
+    /// captured screen was read at.
+    pub const FAVORED_CHIP_COSTS: [u16; 4] = [30; 4];
 }
 
 // --------------------------------------------------------------- builders
@@ -342,6 +451,10 @@ pub fn arts_input_chrome_draws(
         };
         let px = frame.pennant_x(slot);
         let cap_w = rects.pennant_cap_l.2 as i32;
+        // The strip between the caps is the record's own width, `cost - 6` -
+        // so an off-class command stamps a wider pennant, and the next one
+        // starts that much further along the bar.
+        let strip_w = frame.pennant_w(slot);
         push(
             rects.pennant_cap_l,
             px,
@@ -350,10 +463,10 @@ pub fn arts_input_chrome_draws(
             rects.pennant_cap_l.3,
         );
         let label = rects.label(dir);
-        push(label, px + cap_w, BAR_Y, label.2, label.3);
+        push(label, px + cap_w, BAR_Y, strip_w as u32, label.3);
         push(
             rects.pennant_cap_r,
-            px + cap_w + label.2 as i32,
+            px + cap_w + strip_w,
             BAR_Y,
             rects.pennant_cap_r.2,
             rects.pennant_cap_r.3,
@@ -368,8 +481,10 @@ pub fn arts_input_chrome_draws(
             ChipDirection::Right,
             ChipDirection::Low,
         ] {
-            let (bx, by) = dir.anchor();
-            let body_w = rects.chip_body.2 as i32;
+            // Cost-shifted seat and cost-sized body: the one place the cost
+            // geometry branches per direction.
+            let (bx, by) = frame.chip_anchor(dir);
+            let body_w = frame.chip_w(dir);
             let cap_l_w = rects.chip_cap_l.2 as i32;
             push(
                 rects.chip_cap_l,
@@ -378,13 +493,7 @@ pub fn arts_input_chrome_draws(
                 rects.chip_cap_l.2,
                 rects.chip_cap_l.3,
             );
-            push(
-                rects.chip_body,
-                bx,
-                by,
-                rects.chip_body.2,
-                rects.chip_body.3,
-            );
+            push(rects.chip_body, bx, by, body_w as u32, rects.chip_body.3);
             push(
                 rects.chip_cap_r,
                 bx + body_w,
@@ -393,7 +502,7 @@ pub fn arts_input_chrome_draws(
                 rects.chip_cap_r.3,
             );
             let label = rects.label(dir);
-            push(label, bx, by + 4, label.2, label.3);
+            push(label, bx, by + 4, body_w as u32, label.3);
             push(
                 rects.diamond_l,
                 bx - rects.diamond_l.2 as i32,
@@ -566,12 +675,19 @@ mod tests {
         ArtsInputFrame {
             buffer,
             spent,
+            chip_costs: ArtsInputFrame::FAVORED_CHIP_COSTS,
             pool: 40,
             pool_max: 100,
             plate_value: 68,
             list_page: None,
             phase: ArtsInputScreen::Entering,
         }
+    }
+
+    fn frame_costs<'a>(buffer: &'a [u8], spent: &'a [u16], costs: [u16; 4]) -> ArtsInputFrame<'a> {
+        let mut f = frame(buffer, spent);
+        f.chip_costs = costs;
+        f
     }
 
     #[test]
@@ -585,6 +701,85 @@ mod tests {
         let g = frame(&[1, 4], &[42, 30]);
         assert_eq!(g.pennant_x(0), 7);
         assert_eq!(g.pennant_x(1), 49);
+    }
+
+    #[test]
+    fn pennant_width_is_the_commands_own_cost_less_six() {
+        // Favored 30 -> the captured 24-wide strip.
+        let f = frame(&[4], &[30]);
+        assert_eq!(f.pennant_w(0), 24);
+        // Off-class costs widen the same record linearly; the pennant has no
+        // cost special-case of its own.
+        let g = frame(&[1, 4], &[42, 36]);
+        assert_eq!(g.pennant_w(0), 36);
+        assert_eq!(g.pennant_w(1), 30);
+        // ... and the next anchor advances by the previous cost, not by 30.
+        assert_eq!(g.pennant_anchor_x(0), PENNANT_ANCHOR_X0);
+        assert_eq!(g.pennant_anchor_x(1), PENNANT_ANCHOR_X0 + 42);
+    }
+
+    #[test]
+    fn chip_seats_recentre_by_the_cost_delta_times_k_over_two() {
+        // At the favored cost every chip sits on its captured anchor.
+        let f = frame(&[], &[]);
+        for dir in [
+            ChipDirection::Left,
+            ChipDirection::High,
+            ChipDirection::Low,
+            ChipDirection::Right,
+        ] {
+            assert_eq!(f.chip_anchor(dir), dir.anchor(), "{dir:?} at cost 30");
+            assert_eq!(f.chip_w(dir), 24);
+        }
+
+        // Slot 0 (`K = 2`): the Left arm chip's RIGHT edge stays pinned at
+        // 200 whatever the cost, growing leftward.
+        for cost in [30u16, 36, 42, 48] {
+            let g = frame_costs(&[], &[], [cost, 30, 30, 30]);
+            let (x, _) = g.chip_anchor(ChipDirection::Left);
+            assert_eq!(
+                x + g.chip_w(ChipDirection::Left),
+                200,
+                "left chip right edge, cost {cost}"
+            );
+        }
+
+        // Slots 1 and 2 (`K = 1`): High and Low stay centred on 228.
+        for dir in [ChipDirection::High, ChipDirection::Low] {
+            for cost in [30u16, 36, 42, 48] {
+                let mut costs = ArtsInputFrame::FAVORED_CHIP_COSTS;
+                costs[dir.command_index()] = cost;
+                let g = frame_costs(&[], &[], costs);
+                let (x, _) = g.chip_anchor(dir);
+                assert_eq!(
+                    x * 2 + g.chip_w(dir),
+                    228 * 2,
+                    "{dir:?} centre, cost {cost}"
+                );
+            }
+        }
+
+        // Slot 3 (`K = 0`): the Right chip's LEFT edge stays pinned at 256.
+        for cost in [30u16, 36, 42, 48] {
+            let g = frame_costs(&[], &[], [30, cost, 30, 30]);
+            assert_eq!(g.chip_anchor(ChipDirection::Right).0, 256);
+        }
+    }
+
+    #[test]
+    fn the_seat_slot_order_is_the_retail_seat_arrays() {
+        // `0x80076BBC`'s four rows read 176 / 216 / 216 / 256 at `+2`, and
+        // that is exactly the four captured chip abscissas in this order.
+        let seats = [176, 216, 216, 256];
+        for dir in [
+            ChipDirection::Left,
+            ChipDirection::High,
+            ChipDirection::Low,
+            ChipDirection::Right,
+        ] {
+            assert_eq!(dir.anchor().0, seats[dir.seat_slot()], "{dir:?}");
+        }
+        assert_eq!(CHIP_WIDEN_K, [2, 1, 1, 0]);
     }
 
     #[test]

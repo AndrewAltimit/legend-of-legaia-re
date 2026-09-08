@@ -690,9 +690,15 @@ battle form (`muscle_fighter_*`), the chrome drawn from the disc sources
 below (`muscle_hud_json` / `muscle_hud_sheet_rgba`), and the queue -> art
 resolution done against the SCUS arts-name table's combo strings
 (`muscle_round_arts_json`, kind labels joined from the curated gamedata
-arts table). Two disclosed gaps: the ported rules resolve each queued
-command as a basic strike (no art-record damage expansion), and the
-Ra-Seru chip renders disabled (the port has no cast path).
+arts table). One disclosed gap remains: the **Ra-Seru (magic) chip renders
+disabled on both hosts**, and retail's does not - only *Item* is crossed out,
+which is the whole point of the Master course's item ban. Wiring it needs a
+cast path in `MuscleDomeSession`, which today models direction commands only:
+a magic command class, a spell pick against the caster's learned Seru, an MP
+debit and a spawn into the capture-class cast pool
+(`legaia_asset::cast_effect_pool` + `engine-vm::cast_module_ticks`). The
+sibling gap - "the ported rules resolve each queued command as a basic
+strike" - is closed: see [the queue the dome resolves](#the-queue-the-dome-resolves-is-the-tokenizers).
 
 ## HUD chrome texture sources (capture-pinned)
 
@@ -829,6 +835,53 @@ Still unpinned here: the review / Begin-Reselect screens' piece decomposition
 [below](#the-pennant-geometry-is-linear-in-the-commands-ap-cost); so is the
 **Auto arm**.
 
+### The `dd0ac` chain is not a direction swing's
+
+`FUN_801E09F8` has exactly one `jal 0x801dd0ac` (`0x801E188C`), and its `a0`
+is not the queued byte - it is `map[queued byte]`, read from the byte table at
+`0x801F4E63` (`lui`+`addiu 0x4e64`, then `lbu a0,-0x1(v1)` at
+`0x801E1874..0x801E1888`). `FUN_801DD0AC` in turn uses `a0` as a **26-byte
+stride index** into the move-power table at `0x801F4F5C`
+(`0x801DD1A4..0x801DD1BC`) and takes the row's `+0` halfword arithmetic-shifted
+right by two as its power. So `0x801F4E63` is the move-id → power-index map
+([`move-power.md`](../formats/move-power.md)), and the whole chain is
+"queue byte → power row".
+
+That map's four **direction** entries are zero: `map[0x0C..=0x0F] = 0`, and the
+disc ships move-power row 0 as 26 zero bytes. A bare swing therefore resolves
+at power **zero** through this route, which is what says the route is not where
+a swing's damage comes from - it is the arts / magic / summon route (the map's
+44 non-zero entries include every art constant: `0x1B` → 12, `0x1F` → 15,
+`0x25..0x28` → 16..19, and so on). A swing's tier is the melee kernel's own
+per-command scalar `0x801F64EC[(id - 0x0C) % 5]` = `12 / 18 / 20 / 22 / 28` -
+the same five-value scale an art record's power byte decodes to. *(Evidence:
+the map and table bytes plus the two `a0` derivations are `disassembly`; that
+the swing's damage is therefore `FUN_801EC3E4`'s is `inference`.)*
+
+Port: `DomeDamageModel::damage` falls back to
+`battle_formulas::command_power_scalar` for a byte with no move-power row,
+instead of resolving it at zero.
+
+### The queue the dome resolves is the tokenizer's
+
+Selection appends **raw direction ids** to `actor+0x1DF`, but what plays out is
+the retail action queue: the same tokenizer pass the battle's Arts command
+runs, so a matched art's constant replaces the swings it consumed and indexes
+its own move-power row. The dome is a restricted normal battle sharing that
+machinery, so the port runs the same pass -
+`MuscleDomeSession::install_art_catalog` + `tokenized_queue`, over
+`legaia_art::tokenize`. Without a catalog the string stays four swings, which
+is retail's own answer for a character with no arts.
+
+The catalog is built through one shared filter, `muscle_dome::art_catalog_for`
+(this character's rows, real arts only, two arrows or more, grid order), and
+installed on the arena-door warp path and at the native window's own dome
+entry. The **minigames page's** standalone dome panel still installs none: its
+only art source is the SCUS arts-*name* table, which carries a display index
+rather than an action constant, so it owes the per-character art-record decode
+(PROT `0x05C4`) before it can build the same rows. Its arts banner is
+unaffected - that runs off the name table's combo strings.
+
 ### The pennant geometry is linear in the command's AP cost
 
 `30` is not a threshold and not a table index - it is the zero point of one
@@ -869,6 +922,23 @@ anchors) and then subtracts `(cost - 30) * K[slot] / 2`, with
 | 3 | `0x0D` arm (Noa) / Right | 256 | 0 | left edge pinned at 256, grows right |
 
 i.e. `K` makes the arm chip grow *away* from the D-pad glyph between them.
+
+The shift lands on **both** of the record's `x` seats, not just the resting
+one. The 12-byte array's `+0` halfword goes to the record's seat A `x`
+(`sh v0,0x2(a1)` at `0x801D3B54`) and its `+2` halfword to seat B `x`
+(`sh v0,0xa(a1)` at `0x801D3B60`), and the same `(cost - 30) * K / 2` product
+is subtracted from each - `0x801D3B64..0x801D3B8C` for seat A and
+`0x801D3B90..0x801D3BC4` for seat B. The disc rows read
+`(352, 176) / (392, 216) / (392, 216) / (424, 256)`: seat A is the off-screen
+glide start and seat B the resting anchor, which is why the four "anchor x"
+values in the table above are the `+2` field. In each case the halving is the
+compiler's signed divide-by-two (`srl 31` / `addu` / `sra 1`), so it truncates
+toward zero rather than flooring.
+
+Port: `engine-ui::arts_input` carries the law
+(`ArtsInputFrame::chip_anchor` / `chip_w` / `pennant_w`, `CHIP_WIDEN_K`,
+`COST_WIDTH_BIAS`), fed the per-(character, weapon) cost row both hosts
+already resolve.
 
 **The spawn anchor is the pressed chip, not the fighter.** `0x801D3CE8` /
 `0x801D3CF0` and `0x801D3CF4` / `0x801D3CFC` copy the chip record's seat-B
@@ -1025,10 +1095,61 @@ the INTERVAL heading + six-row score tally between legs, the tally fed the
 same `DomeContest` rows / tally / coin-bank model on both hosts. *Between
 legs* is the whole of it - see [The intermission is per fight, not per
 turn](#the-intermission-is-per-fight-not-per-turn) for why a turn boundary
-draws no hub screen and where the shared verdict lives. The retail hub
-controllers' fade / hold counters (`DAT_801D1A80` and siblings) are unported;
-the native host holds each screen at full brightness for a fixed frame count,
-and the browser page drives its own page-side timings.
+draws no hub screen and where the shared verdict lives. Both hosts run each
+screen on the hub controllers' own counters - see
+[the hub screen envelopes](#the-hub-screens-are-envelopes-not-frame-counts).
+
+### The hub screens are envelopes, not frame counts
+
+A hub screen is not "up for N frames at full brightness". Each is a **fade-in
+at its own rate, a hold, and a fade-out**, and two of the four holds end early
+on a pad press - so a single per-screen frame count cannot describe any of
+them. `FUN_801CF870` dispatches its phase byte `DAT_801D1A78` through the
+51-entry jump table at `0x801CE990`; the counter family
+`DAT_801D1A70 / 1A7C / 1A80 / 1A84 / 1A88 / 1A8C` lives entirely inside the
+PROT 0977 image (no other image references any of them) and every step is
+scaled by the adaptive frame-skip factor `_DAT_1F800393`, so the figures below
+are ticks, and frames at the normal cadence.
+
+`DAT_801D1A80` is a **brightness level**, not a tick count: the emitter
+`FUN_801D050C` scales each stored channel by `c * a3 / 256` (`mult` then
+`sra 8`), and the counter clamps at `0x80` - a PSX textured primitive's
+neutral modulation. A host that draws a hub screen at `0x100` therefore draws
+it at *twice* retail's brightness.
+
+| Screen | Phases | Fade in | Hold | Skippable | Fade out |
+|---|---|---|---|---|---|
+| "Welcome to the Muscle Dome!" strip | `0` / `1` / `2` | `+dt*4`, 32 ticks | `0x7B` = 123 ticks (`slti 0x7b`, `0x801CF9A0`) | no | `-dt*4` |
+| Course-title art | `3` | scale ramp `0x1640` -> `0x1000` at `dt<<7`, 13 ticks | - | - | - |
+| ROUND banner | `4` / `5` / `6` | `+dt*2`, 64 ticks | `0xB4` = 180 ticks (seed `li v1,0xb4`, `0x801CFB68`) | yes | `-dt*4` |
+| Opponent / ROUND-n card | `0x15` / `0x16` | `+dt*2`, 64 ticks | `0x3D` = 61 ticks (`slti 0x3d`, `0x801CFFB8`) | yes | `-dt*2` |
+| INTERVAL + score tally | `0x0A` / `0x0B` / `0x0C` | `+dt*4`, 32 ticks | the tally roll (data-dependent) | no | `-dt*2` to the `0x40` floor (`slti 0x40`, `0x801CFDAC`), then `-dt*4` |
+
+A skippable hold reads the arm's pad-edge snapshot `DAT_801D1A9C`
+(`_DAT_8007B874 | _DAT_8007B938`, stored at `0x801CF8C4`) and leaves on any
+bit of `& 0xF4` (`0x801CFBE0`, `0x801CFFE4`).
+
+The tally roll has its own literals: the four lanes' tick counters
+`DAT_801D1AB8 / 1ABC / 1AC0 / 1AC4` each test `slti 0x11` (a 17-tick lead-in)
+and reseed to `0x10`, and the arm writes the cue ring
+`DAT_8007B6D8 = [0x202, 0x202, 0x202, 0x203]` alongside the parallel vsync
+countdown `DAT_8007C338 = [0, 0x1E, 0x3C, 0x5A]` - the four "ka-ching" cues
+staggered 0 / 30 / 60 / 90 frames (`0x801CFCAC..0x801CFCEC`).
+
+Port: `engine-core::muscle_dome::HubScreen` carries the envelope, the native
+window ticks it in `tick_muscle_hub`, and the browser page samples the same
+kernel through `muscle_hub_screen_json` - so neither host picks a count or a
+brightness of its own.
+
+Two instrument notes fall out of pinning this. `find-address-word-refs.py`
+reports **no reference at all** for `0x801D1A80`: it scans the address
+*materialisation* forms (`lui`+`addiu`/`ori`) and not `lui rX,hi` +
+`lw/sw rY,lo(rX)`, which is how MIPS touches a global - for a data address,
+reach for `find-gp-relative-refs.py` instead. And the committed dump
+`overlay_0977_slotA_801cf870.txt` stops at `0x801D0094` while the function
+runs to the `jr ra` at `0x801D00F0`, so arm `0x0B`'s body, the HP restore and
+the shared draw tail every arm jumps to are absent from it; the figures above
+come from disassembling the image.
 
 ## Sound
 
@@ -1319,7 +1440,11 @@ record[3+2k], record[4+2k] = (element id, mode) pairs fed to FUN_801d8de8 for ea
 Each sub-draw calls the HUD/element renderer `FUN_801d8de8(id, mode)` (see below). When the global `_DAT_800846c8` is set, the returned sprite handles are also stashed into `ctx+0x1114[]` and some are flagged `+0x1d = 2` (the four directional selection sprites), tying the drawn sprites back to the input slots.
 
 The **resolution of the queued command string** happens when the match controller advances into the commit phases (`0x3c`/`0x46`/`0x50` in `FUN_801d0748`): it walks the actor's `+0x1df` action queue, sets the actor's `+0x1dd`/`+0x1de` (action / action-state), and lets the shared battle-action path play each queued action and apply its effect to the opponent actor record (HP at actor `+0x14c`, max-HP at `+0x14e`). The `+0x1df` queue is re-zeroed at the start of each round (`FUN_801d388c` case `3` clears `+0x1e7`/`+0x1de`; case `0xb` re-seeds the budget and re-walks the queue).
-**(Confirmed: queue lives at actor+0x1df, budget gating.) (Confirmed: per-command damage uses the shared `battle_formulas` *unmodified* - there is no dome-local scaling.** The match controller `FUN_801d0748` is byte-identical to the main battle round driver, and a direction id `0xC..0xF` reaches damage exactly as an ordinary battle action does: `actor+0x1df` → `FUN_801e09f8` → the shared damage kernel `FUN_801dd0ac`, with no dome-specific arithmetic on the way.)**
+**(Confirmed: queue lives at actor+0x1df, budget gating.) (Confirmed: per-command damage uses the shared `battle_formulas` *unmodified* - there is no dome-local scaling.** The match controller `FUN_801d0748` is byte-identical to the main battle round driver, and a queued action reaches damage exactly as an ordinary battle action does, with no dome-specific arithmetic on the way.)**
+
+That chain is `actor+0x1df` → `FUN_801e09f8` → `FUN_801dd0ac`, and it carries
+**arts and magic, not bare direction swings** - see
+[what the swing chain is not](#the-dd0ac-chain-is-not-a-direction-swings).
 
 The `func_0x80035f04` calls throughout are the shared screen-projection helper (project a world position to screen), used to anchor the command and label sprites over the 3D fighters.
 
@@ -1511,7 +1636,7 @@ to the emitter it names).
 - The per-step script table `&PTR_DAT_801f4d34` (battle-overlay rodata at file offset `0x2651c`) is fully decoded: the record shape is `[u8 count][u8 anim_sel][u8 panel_id/bind_count]` + `count`×`(elem_id, mode)` (see [Round resolution](#round-resolution)), and the individual sub-draw `elem_id`s are labelled by the `FUN_801d8de8` census in [HUD elements](#hud-elements-fun_801d8de8) (Spirit / move-name panels, the four hand-card portraits, the HP-bar values, and the victory reward banner).
 - ~~Which arm of `FUN_801D0CD4` / `FUN_801D0068` decides that a leg was *survived*~~ **resolved**: neither - it is the single byte test `DAT_8007BD60 & 0x80` at `0x801CEDD8`, cleared by the battle's own `0x5A` party-wipe scan and re-raised by the shared minigame-exit routine. `continuing` (`DAT_801D1ADC`) is therefore derived, not prompted: its one raising writer sits behind *course exhausted **and** survived*. See [Which arm decides a leg was survived](#which-arm-decides-a-leg-was-survived).
 - ~~The retail *dome* leg-end condition~~ **resolved**: a knockout, and nothing else. The arena hands the round to an ordinary battle (`FUN_801D1510` sets game mode `0x14`) and the only writers of the battle-end signal are the `0x5A` KO scans; the turn counter never reaches them. See [What ends a leg](#what-ends-a-leg-a-knockout-and-nothing-else).
-- ~~Whether card resolution applies any dome-specific damage scaling~~ **resolved**: it uses the shared `battle_formulas` unmodified - `FUN_801d0748` is byte-identical to the main battle round driver and a card resolves through `actor+0x1df` → `FUN_801e09f8` → the shared `FUN_801dd0ac` kernel with no dome-local scaling (see [Round resolution](#round-resolution)).
+- ~~Whether card resolution applies any dome-specific damage scaling~~ **resolved**: it uses the shared `battle_formulas` unmodified - `FUN_801d0748` is byte-identical to the main battle round driver and a card resolves with no dome-local scaling (see [Round resolution](#round-resolution)). The `FUN_801e09f8` → `FUN_801dd0ac` half of that chain carries the arts / magic ids only; a bare direction swing's tier comes from the melee kernel instead ([why](#the-dd0ac-chain-is-not-a-direction-swings)).
 
 ## See also
 

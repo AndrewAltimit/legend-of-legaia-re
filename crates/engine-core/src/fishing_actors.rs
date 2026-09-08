@@ -490,7 +490,8 @@ pub const WATER_TILE_CLASSES: [(u32, i32, i32); 3] =
 /// and the fish weight at their defaults (`0` and `10`).
 ///
 /// PORT: FUN_801d26cc (water-tile class)
-// NOT WIRED: its input is the `_DAT_8007B8F4` class word that retail reads
+// NOT WIRED - the same LURE-POINT gap as [`walk_grid_overhead`], and owed by
+// the same two hosts. Its input is the `_DAT_8007B8F4` class word that retail reads
 // *after* the walk-grid probe reports the `0x4000` water bit, and the engine's
 // session carries no per-scene grid to probe (the same gap
 // [`walk_grid_overhead`] names). Its sibling kernels on the same address are on
@@ -861,12 +862,18 @@ pub const WALK_GRID_ROWS: usize = 0x80;
 /// **z**; the sub-cell bit is `1 << ((x_cell & 1) + 2 * (z_cell & 1))`.
 ///
 /// PORT: FUN_801d7030
-// NOT WIRED: the grid now exists at the play window's fishing host (the venue
-// `.MAP` bytes it settles the wander actor on), but the retail *probe site*
-// does not: `FUN_801D26CC` probes the tile under the **lure** during the bite
-// tick, and the engine's bite path ([`crate::fishing::BandCheck::tick`])
-// models the cast as a scalar metric with no lure position to probe under.
-// Wiring needs a lure point on the bite path, not another grid decode.
+// NOT WIRED - the LURE-POINT gap. The host that owes it is whichever fishing
+// host first produces a lure position: the play window's
+// `window/minigames.rs::tick_fishing_actors`, which already owns the wander
+// actor and the venue `.MAP` bytes this grid comes from, or the browser
+// minigames page's fishing arm over `LegaiaMinigames`, which owns the same
+// two. Neither can call this today because the thing being probed does not
+// exist: `FUN_801D26CC` probes the tile under the **lure** during the bite
+// tick, and [`crate::fishing::BandCheck::tick`] models the cast as a scalar
+// metric with no point in the world. One gap, four rows - it also blocks
+// [`water_tile_class`], [`bite_pad_nudge`]'s companion read and
+// [`crate::minigame_floor::polar_offset`]. Wiring needs a lure point on the
+// bite path, not another grid decode.
 pub fn walk_grid_overhead(grid: &[u8], x: i32, z: i32) -> bool {
     let zc = (if z < 0 { z + 0x3F } else { z } >> 6) + 2;
     let xc = ((x + 0x3F) >> 6) - 1;

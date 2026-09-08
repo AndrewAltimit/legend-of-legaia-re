@@ -1777,51 +1777,73 @@ pub fn dance_face_rig(mode: DanceMode, dancer: usize) -> Option<usize> {
     (rig < 5).then_some(rig)
 }
 
-/// The scene name the dance hall stages when the minigame starts or tears
-/// down (`s_other1_801D518C`) - the same `other1` bundle the fishing venue
-/// uses, which is why both minigames live in the slot-A overlay band.
-pub const DANCE_SCENE_NAME: &str = "other1";
+/// The dance venue's own PROT block base, the raw-TOC index the overlay's
+/// init writes into `_DAT_80084540` (`0x801CF100`). It is the block the dance
+/// scene lives in - see [`legaia_asset::dance_cast`], whose
+/// `DANCE_SCENE_NAME` (`other7`) is the venue's real scene name.
+///
+/// There is no dance-side scene-name literal. `0x801D518C` - once read here
+/// as holding `other1` - is **BSS** in the static PROT 0980 image (all zeros
+/// at file `0x6974`); it is where the overlay's init `FUN_801CEF54` *saves*
+/// the caller's scene name (`0x801CF0B0`) so the teardown can put it back.
+/// The only image in the corpus carrying the literal `other1` is the
+/// **fishing** overlay, whose venue that scene is.
+pub const DANCE_SCENE_BLOCK_BASE: u16 = 0x4CC;
 
-/// What the dance scene stager writes, in the order retail stores it.
+/// What the dance scene teardown writes, in the order retail stores it. It is
+/// a **restore**, not a stage: the overlay's init `FUN_801CEF54` saved each of
+/// these on the way in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DanceSceneStage {
-    /// Scene name copied into the scene-name buffer at `0x80084548`.
-    pub scene: &'static str,
+    /// The scene-name buffer at `0x80084548` is refilled from the overlay's
+    /// save slot `0x801D518C` (`0x801D416C`) - the field scene the player
+    /// walked in from, whatever it was. Not a literal.
+    pub restores_caller_scene: bool,
     /// `_DAT_8007B880` is zeroed - the pad latch the field subsystem reads,
     /// so the frame the dance enters or leaves on cannot carry a stale press
     /// into the next mode.
     pub clear_pad_latch: bool,
-    /// The word copied from the overlay's `DAT_801D5180` into
-    /// `_DAT_80084540`, the scene-name buffer's preceding word (the scene
-    /// **kind** the loader dispatches on).
-    pub scene_kind_from_overlay: bool,
-    /// `_DAT_8007BA9C` is armed to `-1` after the scene-setup helper returns.
-    pub arm_value: i32,
+    /// `_DAT_80084540` is restored from the overlay's `DAT_801D5180`
+    /// (`0x801D4184`). That word is the scene's **PROT block base index**
+    /// (the entry wrote [`DANCE_SCENE_BLOCK_BASE`] into it), which is what
+    /// the SCUS BGM resolver indexes as `*(0x80084540) + 6 + bgm_id` at
+    /// `0x8002443C` - not a "scene kind" the loader dispatches on.
+    pub restores_scene_block_base: bool,
+    /// `_DAT_8007BA9C = -1` after the scene-setup helper returns
+    /// (`0x801D4198`). This is the **BGM swap's force-reload latch**, not a
+    /// dance-local arm: `FUN_800243F0` loads it at `0x8002457C`, compares it
+    /// against `_DAT_8007BAB8` and skips the whole seven-stage swap machine
+    /// when the two are equal, so writing an impossible value is the standard
+    /// "reload the track" idiom. The consumer runs on the *next* image in
+    /// slot A.
+    pub bgm_force_reload: i32,
 }
 
 // PARTIALLY WIRED: `World::enter_dance` / `World::exit_dance` apply the record's
 // `clear_pad_latch` through `InputState::clear_edges`, which is the half of the
-// stager the port has an equivalent for. The other three fields still have no
+// teardown the port has an equivalent for. The other three fields still have no
 // consumer: the port enters the dance by suspending the current scene mode
-// rather than staging the `other1` bundle, so there is no scene-name buffer to
-// write, no scene-kind word to dispatch on and no `_DAT_8007BA9C` to arm.
+// rather than loading the venue's own bundle, so there is no scene-name buffer
+// to restore, no block base to put back and no BGM force-reload latch to write.
 // Those wait on the dance becoming a real scene load.
-/// PORT: FUN_801d414c - the dance scene-name stager / teardown.
+/// PORT: FUN_801d414c - the dance teardown, the inverse of the overlay's own
+/// init `FUN_801CEF54`.
 ///
-/// Copies [`DANCE_SCENE_NAME`] into the scene-name buffer at `0x80084548`
-/// through the string copy `FUN_80056758`, clears the pad latch
-/// `_DAT_8007B880`, stores the overlay word `DAT_801D5180` into
-/// `_DAT_80084540`, calls the scene-setup helper `FUN_80026018`, and only
-/// **then** arms `_DAT_8007BA9C = -1`. The ordering matters: the arm is after
-/// the setup call, so a setup that re-enters cannot see the armed value.
+/// Copies the **saved caller scene name** back out of the overlay's slot
+/// `0x801D518C` into the scene-name buffer at `0x80084548` through the string
+/// copy `FUN_80056758` (`0x801D416C`), clears the pad latch `_DAT_8007B880`
+/// (`0x801D417C`), restores `_DAT_80084540` from `DAT_801D5180`
+/// (`0x801D4184`), calls the scene-setup helper `FUN_80026018`, and only
+/// **then** writes `_DAT_8007BA9C = -1` (`0x801D4198`). The ordering matters:
+/// the write is after the setup call, so a setup that re-enters cannot see it.
 ///
 /// Called once from the dance tick `FUN_801CF470`.
 pub const fn dance_scene_stage() -> DanceSceneStage {
     DanceSceneStage {
-        scene: DANCE_SCENE_NAME,
+        restores_caller_scene: true,
         clear_pad_latch: true,
-        scene_kind_from_overlay: true,
-        arm_value: -1,
+        restores_scene_block_base: true,
+        bgm_force_reload: -1,
     }
 }
 
@@ -2827,11 +2849,23 @@ mod tests {
     }
 
     #[test]
-    fn scene_stage_arms_after_the_setup_call() {
+    fn scene_teardown_restores_the_caller_and_forces_a_bgm_reload() {
         let s = dance_scene_stage();
-        assert_eq!(s.scene, "other1");
+        // The teardown restores what the init saved - it does not write a
+        // dance-side scene literal. `0x801D518C` is BSS in the static PROT
+        // 0980 image, and the only overlay carrying `other1` is the fishing
+        // one; the dance's own venue is `other7` at block base 0x4CC.
+        assert!(s.restores_caller_scene);
+        assert!(s.restores_scene_block_base);
+        assert_eq!(DANCE_SCENE_BLOCK_BASE, 0x4CC);
+        assert_eq!(
+            legaia_asset::dance_cast::DANCE_SCENE_NAME,
+            "other7",
+            "the dance venue's scene name lives in the asset crate"
+        );
         assert!(s.clear_pad_latch);
-        assert_eq!(s.arm_value, -1);
+        // The impossible-value write is the BGM swap's force-reload idiom.
+        assert_eq!(s.bgm_force_reload, -1);
     }
 
     #[test]

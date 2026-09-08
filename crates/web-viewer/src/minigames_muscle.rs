@@ -713,6 +713,19 @@ impl LegaiaMinigames {
             hp,
             WEB_CAPTION_SERU,
         );
+        // NOT WIRED (this host only): no art catalog is installed, so this
+        // panel's turn resolves the raw direction string rather than the
+        // tokenizer's action queue. `MuscleDomeSession::install_art_catalog`
+        // wants `(ActionConstant, commands)` rows and this page's only art
+        // source is the SCUS arts-**name** table (`muscle_art_catalog`),
+        // which carries a display index, not the action constant - the
+        // constants live in the per-character art records (PROT `0x05C4`)
+        // this page does not decode. The arena-door warp path
+        // (`engine-core::scene::host::minigame_warp`) and the native window's
+        // own dome entry both install one through
+        // `muscle_dome::art_catalog_for`; this panel owes the art-record
+        // decode, not another filter.
+        //
         // Damage resolves through the shared retail kernel - the same
         // `DomeDamageModel` the native play-window host installs, so neither
         // host carries a damage rule of its own.
@@ -876,6 +889,52 @@ impl LegaiaMinigames {
         legaia_engine_core::muscle_dome::leg_boundary_raises_interval(
             self.muscle_run.as_ref().map(|r| r.state()),
         )
+    }
+
+    /// One hub screen's retail fade / hold envelope, sampled at `tick`
+    /// ticks in with `pad` as the arm's edge word - the browser twin of the
+    /// native window's `tick_muscle_hub`, over the same
+    /// [`legaia_engine_core::muscle_dome::HubScreen`] kernel, so neither host
+    /// can pick a frame count of its own.
+    ///
+    /// `screen`: 0 = intro card, 1 = ROUND banner, 2 = opponent / ROUND-n
+    /// card, 3 = the between-legs INTERVAL + tally. Returns
+    /// `{brightness, stage, done, total}` - `brightness` is exactly the
+    /// argument [`Self::muscle_hub_quads_json`] wants (`0 ..= 0x80`; `0x80`
+    /// is the emitter's neutral, **not** `0x100`), `stage` is
+    /// `0` fade-in / `1` hold / `2` fade-out / `3` done, and `total` is the
+    /// screen's unskipped length in ticks.
+    pub fn muscle_hub_screen_json(&self, screen: u32, tick: i32, pad: u32) -> String {
+        use legaia_engine_core::muscle_dome as md;
+        let mut env = match screen {
+            0 => md::HubScreen::intro_card(),
+            1 => md::HubScreen::round_banner(),
+            2 => md::HubScreen::opponent_card(),
+            _ => md::HubScreen::interval(
+                md::HUB_TALLY_ROLL_LEAD_TICKS
+                    + *md::HUB_TALLY_CUE_STAGGER.last().unwrap_or(&0) as i32,
+            ),
+        };
+        let total = env.total_ticks();
+        // The envelope is monotone and terminates, so a tick past its total
+        // answers the same as the total - clamp rather than replay a page's
+        // unbounded counter.
+        for _ in 0..tick.clamp(0, total) {
+            env.tick(1, pad as u16);
+        }
+        let stage = match env.stage() {
+            md::HubScreenStage::FadeIn => 0,
+            md::HubScreenStage::Hold => 1,
+            md::HubScreenStage::FadeOut => 2,
+            md::HubScreenStage::Done => 3,
+        };
+        serde_json::json!({
+            "brightness": env.brightness(),
+            "stage": stage,
+            "done": env.done(),
+            "total": total,
+        })
+        .to_string()
     }
 
     /// Settle the open contest if it has run out: pay the tally into the

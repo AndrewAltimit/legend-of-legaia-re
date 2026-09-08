@@ -1259,6 +1259,7 @@ impl PlayWindowApp {
                     &ai::ArtsInputFrame {
                         buffer: view.buffer,
                         spent: view.spent,
+                        chip_costs: view.costs,
                         pool: view.pool,
                         pool_max: view.pool_max,
                         plate_value: view.plate_value,
@@ -1826,6 +1827,7 @@ impl PlayWindowApp {
         let frame = ai::ArtsInputFrame {
             buffer: view.buffer,
             spent: view.spent,
+            chip_costs: view.costs,
             pool: view.pool,
             pool_max: view.pool_max,
             plate_value: view.plate_value,

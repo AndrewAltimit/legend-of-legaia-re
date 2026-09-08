@@ -134,7 +134,15 @@ pub struct DanceKind {
     pub idle: DanceClip,
     /// In-play dance-groove loop (`desc+0x18`).
     pub dance: DanceClip,
-    /// Third header clip slot (`desc+0x20`; consumer untraced).
+    /// Third header clip slot (`desc+0x20`). **No reader** - the field is
+    /// decoded for completeness, not because anything selects it. A
+    /// materialised-base + runtime-index taint scan of the descriptor table
+    /// over `SCUS_942.54` and all 83 mapped overlays touches only `+0x0C`,
+    /// `+0x10` and `+0x14`; a pointer scan over every `lw rX, 0x48(rY)` sees
+    /// `0x00 / 0x04 / 0x10 / 0x14 / 0x18 / 0x1C` and nothing at `0x20`, and
+    /// the sole consumer `FUN_801D1358` derives `desc + 0x28` and floors both
+    /// of its indexed reads at or above that. Do not model an outro or
+    /// results pose on it. See `docs/subsystems/minigame-dance.md`.
     pub alt: DanceClip,
     /// The judge-triggered move clips (`desc+0x28`, [`MOVE_PAIRS`] pairs) -
     /// see the module docs for the pair-index semantics.

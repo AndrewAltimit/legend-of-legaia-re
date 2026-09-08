@@ -1889,14 +1889,6 @@ RENDER_KERNEL_RULES: list[dict[str, object]] = [
         "diff and any single screenshot taken from the lucky angle",
         "trigger": r"\bresolve_(?:placed_)?env_draws\b",
         "requires": [r"\bdraw_plane_summaries\b", r"\bcoplanar_draw_offsets\b"],
-        "blocked_on": {
-            "crates/web-viewer/src/minigames_dance.rs":
-                "the dance-hall venue baker resolves the same two EnvDraw "
-                "layers and instances them itself; it needs the lift map "
-                "threaded through DanceEnv::append_draw",
-            "crates/web-viewer/src/minigames_fishing_scene.rs":
-                "same shape in FishingEnv::append_draw",
-        },
     },
     {
         "kernel": "walk-ground heightfield sink",
@@ -1910,11 +1902,6 @@ RENDER_KERNEL_RULES: list[dict[str, object]] = [
         # triggered on the type name reported four files that only pass it on.
         "trigger": r"for\s+\w+\s+in\s+&(?:mut\s+)?hf\.positions\b|\bhf\.positions\.clone\(\)",
         "requires": [r"\bGROUND_SINK\b"],
-        "blocked_on": {
-            "crates/web-viewer/src/minigames_fishing_scene.rs":
-                "the fishing venue splices the heightfield into the same "
-                "vertex buffer as the env meshes, at its authored height",
-        },
     },
     {
         "kernel": "packet-colour stream fill",
@@ -1926,14 +1913,6 @@ RENDER_KERNEL_RULES: list[dict[str, object]] = [
         "constant (`packet_color::NEUTRAL` / `MODULATION_NEUTRAL` = 0x80)",
         "trigger": r"\bflat_rgba\b|\bpacket_color\b",
         "forbids": r"\bflat\b[\s\S]{0,140}?\[\s*(?:255u8|255|0x[fF][fF]u8|0x[fF][fF])\s*[;,]",
-        "blocked_on": {
-            "crates/web-viewer/src/minigames_dance.rs":
-                "the dance hall fills both its no-colour-word streams (the "
-                "pure-textured env fallback and the ground heightfield) with "
-                "white; both want NEUTRAL",
-            "crates/web-viewer/src/minigames_fishing_scene.rs":
-                "same two streams in the fishing venue baker",
-        },
     },
     {
         "kernel": "placement tilt composition (Rx*Ry*Rz)",

@@ -181,6 +181,7 @@ window.MgMuscle = (function () {
     let confirmSel = 0;        /* confirm menu cursor: 0 Begin, 1 Reselect */
     let pennantFx = [];        /* committed-pennant glides {cmd,slot,x,y,t,life} */
     let introT = 0;            /* ticks into the intro card */
+    let intervalT = 0;         /* ticks into the INTERVAL + tally screen */
     let tick = 0;
     let banner = null;         /* {text, sub, t, life, cls} */
     let popups = [];           /* {text, x, y, t, life, color} */
@@ -432,6 +433,34 @@ window.MgMuscle = (function () {
      * 4 score tally. Returns the number of quads drawn (0 = unavailable,
      * so the caller can fall back to its procedural text). */
     const hubQuadCache = new Map();
+    /* Retail's own fade / hold envelope for a hub screen, out of the shared
+     * `muscle_dome::HubScreen` kernel the native window ticks - so this page
+     * cannot pick a frame count or a brightness of its own. `screen`:
+     * 0 intro card, 1 ROUND banner, 2 opponent card, 3 INTERVAL.
+     * Returns {brightness, stage, done, total}; `brightness` is the emitter
+     * argument (0..0x80, where 0x80 is neutral - 0x100 draws at double). */
+    const hubEnvCache = new Map();
+    const hubEnvTotals = {};
+    function hubEnv(screen, t) {
+      const fallback = { brightness: 0x80, stage: 1, done: false, total: 0 };
+      if (!api || !api.muscle_hub_screen_json) return fallback;
+      /* The envelope is monotone and finishes, so past its total every tick
+       * answers the same - clamp so a screen the player leaves up does not
+       * grow the cache or the replay. */
+      const tot = hubEnvTotals[screen] || 0;
+      const tc = tot > 0 ? Math.min(t | 0, tot) : (t | 0);
+      const key = screen + ':' + tc;
+      let v = hubEnvCache.get(key);
+      if (v === undefined) {
+        try {
+          v = JSON.parse(api.muscle_hub_screen_json(screen, tc, 0));
+          if (!hubEnvTotals[screen] && v.total) hubEnvTotals[screen] = v.total;
+        } catch (e) { v = fallback; }
+        hubEnvCache.set(key, v);
+      }
+      return v;
+    }
+
     function hubQuads(screen, arg, brightness) {
       if (!api || !api.muscle_hub_quads_json) return 0;
       const key = screen + ':' + (arg | 0) + ':' + (brightness | 0);
@@ -964,6 +993,7 @@ window.MgMuscle = (function () {
        * then straight into round 1's command menu. Skippable. */
       mode = 'intro';
       introT = 0;
+      intervalT = 0;
       selectSub = 'menu';
       artsPage = -1;
       artsRows = null;      /* re-read: the fighter may have changed */
@@ -980,7 +1010,10 @@ window.MgMuscle = (function () {
       mode = 'select';
       selectSub = 'menu';
       const n = contest ? contest.round + 1 : 1;
-      setBanner('ROUND ' + n, null, 70);
+      /* The ROUND banner's life is retail's own envelope length (fade-in +
+       * hold + fade-out off `HubScreen::round_banner`), not a page constant;
+       * its brightness comes from the same envelope below. */
+      setBanner('ROUND ' + n, null, hubEnv(1, 0).total || 70);
     }
 
     function commit(slot) {
@@ -1252,6 +1285,7 @@ window.MgMuscle = (function () {
              * count-up rows. The victory caption is the BATTLE's, so it plays
              * as a short beat over the KO and expires into the hub screen. */
             mode = 'interval';
+            intervalT = 0;
             banner = null;
             legCaption = sub;
             playCue('confirm', 0.5);
@@ -1403,12 +1437,15 @@ window.MgMuscle = (function () {
     function drawIntro() {
       g.fillStyle = '#000';
       g.fillRect(0, 0, hudCanvas.width, hudCanvas.height);
-      const a = Math.min(1, introT / 25);
+      const env = hubEnv(0, introT);
       g.save();
-      g.globalAlpha = a;
-      if (hudOk() && hubQuads(0, 0, 0x100)) {
+      /* The strip's own fade counter drives the emitter; the canvas alpha
+       * stays 1 so the two hosts modulate the same way. */
+      g.globalAlpha = 1;
+      if (hudOk() && hubQuads(0, 0, env.brightness)) {
         /* drawn - retail seats the strip centred on (160, 120) */
       } else {
+        g.globalAlpha = env.brightness / 0x80;
         g.font = 'italic ' + (15 * 2) + 'px "Brush Script MT", "Segoe Script", "Comic Sans MS", cursive';
         g.textAlign = 'center';
         g.textBaseline = 'middle';
@@ -1420,7 +1457,9 @@ window.MgMuscle = (function () {
         g.fillText('Welcome to the Muscle Dome!', HUD_W, HUD_H - 14);
       }
       g.restore();
-      if (introT > 90) {
+      /* The prompt appears once the strip has reached its hold - retail's
+       * arm-1 boundary, not a frame count this page chose. */
+      if (env.stage >= 1) {
         text('SPACE', 306, 230, 6, 'rgba(174,182,196,0.7)', 'right', '');
       }
     }
@@ -1978,8 +2017,9 @@ window.MgMuscle = (function () {
      * running tally and the coin bank they drain into. The native window draws
      * this screen through the same two builders. */
     function drawInterval(state) {
-      const heading = hudOk() && hubQuads(2, 0, 0x100);
-      const rows = hudOk() && hubQuads(4, 0, 0x100);
+      const env = hubEnv(3, intervalT);
+      const heading = hudOk() && hubQuads(2, 0, env.brightness);
+      const rows = hudOk() && hubQuads(4, 0, env.brightness);
       if (heading && rows) {
         if (legCaption) text(legCaption, 160, 200, 7, '#e8ecf2', 'center', '');
         text('SPACE: next round', 160, 214, 8, '#2dcca7', 'center');
@@ -2029,7 +2069,11 @@ window.MgMuscle = (function () {
        * record 1, not the decimal readout's record 9, and its column is
        * digit*24 (FUN_801D15C8). */
       const round = /^ROUND (\d+)$/.exec(banner.text);
-      if (round && hudOk() && hubQuads(3, parseInt(round[1], 10), 0x100)) {
+      const roundEnv = hubEnv(1, banner.t);
+      /* The retail art carries the fade in its own emitter brightness, so the
+       * canvas alpha steps out of the way for it - two ramps would compound. */
+      if (round) g.globalAlpha = 1;
+      if (round && hudOk() && hubQuads(3, parseInt(round[1], 10), roundEnv.brightness)) {
         /* drawn */
       } else {
         const col = banner.cls === 'good' ? '#2dcca7'
@@ -2083,6 +2127,7 @@ window.MgMuscle = (function () {
         drawIntro();
         return;
       }
+      if (mode === 'interval') intervalT++;
       const state = st();
 
       /* Playback: land one event every 34 ticks (attacker swing, then the
