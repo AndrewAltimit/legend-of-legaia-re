@@ -870,7 +870,16 @@ and the SDK's own components - no third-party package, no game data:
   **What the TV plays.** It is never dark for long: on entering the
   world it starts the **house playlist** from
   `Settings/video.settings.json` and loops it, printing what is on in
-  the status line. Villagers have favourite shows, and one who walks up
+  the status line. Starting it is not one shot that can be missed - the
+  first client re-tries while ownership settles, after half a minute the
+  master takes the set and starts it, and a new owner picks it up when
+  the old one leaves. A load that never becomes ready (no error, just
+  silence - which is what **AVPro does in the editor**) trips an
+  18-second watchdog that tries the *other* player once, then steps past
+  a playlist entry that will not come up. If the panel reads **"No
+  playlist - rebuild the common prefabs"**, the TV standing in the scene
+  was built before the playlist existed: URLs are serialized into the
+  behaviour at build time, so a TV that predates them has none. Villagers have favourite shows, and one who walks up
   to the set can put theirs on - but only ever *over the playlist*.
   That is the whole rule, and it is one line
   (`LegaiaVideoTv.ShowRequestAllowed`):

@@ -40,6 +40,17 @@
 // loops, because a three-part run that restarts forever is a wall, not a
 // visit. The default playlist does loop.
 //
+// ON BY DEFAULT. The set is meant to be playing when you walk in, so
+// starting the playlist is not a single shot that can be missed: the
+// first client re-tries while ownership settles, a new owner picks it up
+// when the old one leaves, and a load that never becomes ready is not
+// allowed to leave the screen dark for ever - a watchdog falls back to
+// the OTHER video player once (which is also what makes the set play in
+// the editor, where AVPro does nothing at all) and then steps past a
+// playlist entry that will not load. If the playlist is empty the panel
+// says so in those words, because an unwired TV and a switched-off one
+// look exactly alike.
+//
 // Villagers ask through LegaiaTvWatchSpot (the NPC station in front of
 // the set). Only the network OWNER's request is acted on: every client
 // simulates its own villagers, so nine clients would otherwise fire nine
@@ -122,6 +133,9 @@ namespace LegaiaWorld
         [Tooltip("Seconds to wait after joining before the owner starts the playlist.")]
         public float autoStartDelay = 4f;
 
+        [Tooltip("Seconds a load may take to become ready before the TV gives up on it.")]
+        public float loadWatchdogSeconds = 18f;
+
         [UdonSynced] private VRCUrl syncedUrl = VRCUrl.Empty;
         [UdonSynced] private int loadSerial;
         [UdonSynced] private bool syncedPlaying;
@@ -142,6 +156,10 @@ namespace LegaiaWorld
         private bool driftLoopRunning;
         private int pickCursor;   // round-robin over one villager's shows
         private bool consoleShown;
+        private int startAttempts;
+        private int loadTicket;      // one per load attempt
+        private int watchdogFor = -1;
+        private bool triedOtherPlayer;
 
         static string UrlText(VRCUrl u)
         {
@@ -170,7 +188,9 @@ namespace LegaiaWorld
                 SetStatus("No video player");
                 return;
             }
-            SetStatus(PlaylistLength() > 0 ? "Starting the playlist..." : "Enter a URL");
+            SetStatus(PlaylistLength() > 0
+                ? "Starting the playlist..."
+                : "No playlist - rebuild the common prefabs");
             // Late joiners get the running state through OnDeserialization;
             // the first client in the instance is the one that has to start
             // it, after a beat for ownership and the video player to settle.
@@ -202,13 +222,49 @@ namespace LegaiaWorld
         /// The first client in an empty instance starts the playlist. A
         /// TV that already carries a URL (someone got here first, or a
         /// late joiner deserialized before this fired) is left alone.
+        ///
+        /// Re-armed rather than fired once: ownership settles a moment
+        /// after a join, and "the set is on when you walk in" should not
+        /// depend on winning that race. After half a minute of an empty
+        /// set the MASTER takes the TV and starts it - one nominated
+        /// client, so a full instance cannot stampede the ownership.
         public void AutoStart()
         {
-            if (!Networking.IsOwner(gameObject))
-                return;
-            if (!string.IsNullOrEmpty(UrlText(syncedUrl)))
-                return;
             if (PlaylistLength() == 0)
+            {
+                SetStatus("No playlist - rebuild the common prefabs");
+                return;
+            }
+            if (!string.IsNullOrEmpty(UrlText(syncedUrl)))
+                return; // something is already on
+            if (Networking.IsOwner(gameObject))
+            {
+                PlayPlaylistAt(listIndex);
+                return;
+            }
+            startAttempts++;
+            if (startAttempts >= 6)
+            {
+                VRCPlayerApi me = Networking.LocalPlayer;
+                if (me != null && me.isMaster)
+                {
+                    TakeOwnership();
+                    PlayPlaylistAt(listIndex);
+                }
+                return;
+            }
+            SendCustomEventDelayedSeconds(nameof(AutoStart), 5f);
+        }
+
+        /// The owner left. Whoever inherits the set keeps it running - an
+        /// instance whose first player walks out should not go dark.
+        public override void OnOwnershipTransferred(VRCPlayerApi newOwner)
+        {
+            // NB `player` is this behaviour's video player; the new owner
+            // is the argument, so it does not get that name.
+            if (newOwner == null || !newOwner.isLocal)
+                return;
+            if (PlaylistLength() == 0 || !string.IsNullOrEmpty(UrlText(syncedUrl)))
                 return;
             PlayPlaylistAt(listIndex);
         }
@@ -598,7 +654,48 @@ namespace LegaiaWorld
             lastLoadAt = Time.time;
             videoReady = false;
             SetStatus("Loading...");
+            loadTicket++;
+            watchdogFor = loadTicket;
+            SendCustomEventDelayedSeconds(nameof(LoadWatchdog), loadWatchdogSeconds);
             player.LoadURL(currentUrl);
+        }
+
+        /// A load that never answers. OnVideoError covers the failures the
+        /// player reports; this covers the ones it does not - AVPro in the
+        /// editor, where nothing happens at all and no error is ever
+        /// raised, and a resolve that hangs. The other player gets one try
+        /// (both are wired to the same screen material and the same
+        /// speaker, so either can drive the set), and after that a
+        /// playlist entry that will not come up is stepped past.
+        public void LoadWatchdog()
+        {
+            if (watchdogFor != loadTicket)
+                return; // a newer load owns the watch now
+            if (videoReady || string.IsNullOrEmpty(UrlText(currentUrl)))
+                return;
+            BaseVRCVideoPlayer other = OtherPlayer();
+            if (!triedOtherPlayer && other != null)
+            {
+                triedOtherPlayer = true;
+                if (player != null)
+                    player.Stop();
+                player = other;
+                SetStatus("Switching video player...");
+                LoadNow();
+                return;
+            }
+            SetStatus("That video did not load");
+            if (Networking.IsOwner(gameObject) && source == SRC_PLAYLIST &&
+                PlaylistLength() > 1)
+                Advance();
+        }
+
+        /// The player this TV is NOT using, when it has one.
+        BaseVRCVideoPlayer OtherPlayer()
+        {
+            if (player == (BaseVRCVideoPlayer)unityPlayer)
+                return avproPlayer;
+            return unityPlayer;
         }
 
         public override void OnVideoReady()
