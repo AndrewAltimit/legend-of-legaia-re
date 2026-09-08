@@ -200,6 +200,63 @@ entry are the segments the dump corpus is not about.
   the healthy case. The reverse - `accounted` far above `structural` - means most of what was found
   was found by guessing at magics, and the container's layout is still unwalked.
 
+## Ranked residue across the whole TOC
+
+One entry at a time is the right shape for a hunt and the wrong shape for a worklist: the entries
+whose residue is worth walking are not the ones anybody thought to run `asset account` on.
+`scripts/asset-investigation/byte-account-sweep.py` runs every PROT entry and rolls the result up by
+entry class and by residue shape, so what lands at the top is a property of the disc rather than of
+what somebody sampled.
+
+```bash
+scripts/asset-investigation/byte-account-sweep.py            # sweep + rollup
+scripts/asset-investigation/byte-account-sweep.py --top 25
+```
+
+It writes a CSV of numbers only - the per-run `head` hex that `--json` prints is disc bytes and is
+dropped - under `target/byte-account/` (gitignored). Nothing about that file is meant to be
+committed: the numbers move with every parser that lands, so what belongs on this page is the
+*shape* of the residue, which does not.
+
+### What the rollup says
+
+Read the classes in three groups; only the first is work.
+
+| Class | What its unclaimed bytes are | Verdict |
+|---|---|---|
+| `lzs_container` | The whole entry, `high_entropy`, in one run: no walker binds to the class, so every one of these entries accounts to zero. The decoder exists (`legaia_lzs`) - what is missing is the binding, not the format. | Instrument gap, and the largest non-slack residue on the disc. |
+| `overlay_data_blob` | Almost all `zero_pad`. What is left is the `other5` / `other6` pair, `0x28000` bytes each of raw `bgr555`, and entry `0896`, whose whole extent reads `plausible_mips`. | Two raw 16bpp pages with no walker; `0896` is code with no recovered link base. |
+| `overlay_ptr_table`, `mips_overlay` | `low_entropy` runs with a `plausible_mips` minority - the tables beside code the dump corpus has not reached. | Dump worklist; agrees with [`disc-coverage.md`](disc-coverage.md)'s gap list. |
+| `init_pak` (`0895`) | `ascii_text`: a string pool no walker claims. | Small, and a string pool is not a format. |
+| `efect_pack` (`0873`) | One sector-sized entry, `low_entropy`, walker `generic`. | The [effect bundle](../formats/effect.md) has a parser; the account walker does not select it. |
+| `scene_*`, `data_field_streaming`, `battle_data_pack`, `pack` | Short `mixed` / `low_entropy` runs at the tail of records the walker did reach, plus one `high_entropy` minority in `scene_asset_table`. | Walker tails, not unwalked format. |
+| `pochi_filler`, `all_zeros`, `scene_v12_table`, `summon_readef` | `ascii_text` and `zero_pad` fill. | The disc's own slack. Not work. |
+| `field_map` | Nothing: all 101 entries account fully. | Closed. |
+
+### Two ways the headline number lies, both visible in the sweep
+
+**A low percentage that is finished.** Every `scene_v12_table` entry accounts in the single digits,
+and every unclaimed byte across all of them is `zero_pad`. The [walk-on trigger
+sidecar](../formats/scene-v12-table.md) is one `0x800` sector whose records occupy a small head and
+whose rest is padding the format declares. Nothing is owed there, and ranking a worklist by
+accounted share alone would put all 97 of them near the top. Rank by *non-slack* residue instead,
+which is what the rollup's own ordering does.
+
+**A high percentage that walked nothing.** Entry `0891` (`vab_multi_bank`) accounts for almost all
+of its bytes and structurally for none of them: every claim came from the magic sweep over the
+residue. The `scan` tier exists so that reads as a warning rather than as a result, and this is its
+largest instance on the disc - the bank's own layout is unwalked, and the figure beside it is
+evidence that VAG bodies are *there*, nothing more. `0895` carries a smaller version of the same
+split. Quote `structural`, or carry `scan_bytes` beside the accounted share.
+
+### The pochi corroboration
+
+`pochi_filler` is 266 entries and every one is exactly one 2048-byte sector, which is what
+[`pochi.md`](../formats/pochi.md) establishes from the other direction. The sweep adds a shape:
+the fill classifies as `ascii_text`, and `repeated_fill` is tested *first*, so the sector is not a
+pattern of period 1, 2, 4, 8 or 16 - it is text-shaped. That is a second, independent reason none of
+these slots carries a parseable asset.
+
 ## Tests
 
 `crates/asset/tests/byte_account_entries.rs` accounts a fixed set of entries off `extracted/PROT`

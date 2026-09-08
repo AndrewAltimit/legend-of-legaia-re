@@ -282,6 +282,64 @@ finding key, each with a `reason` that says what was read and what it showed.
 "Probably fine" is not a reason - it would be equally true of a real defect, and
 an unreviewed row belongs in the report where it can still be seen.
 
+## A caller-site citation is checkable from the bytes
+
+`absent-citation` and `doc-citation` ask whether a row cites an address its
+routine does not touch, and they ask the dump corpus. The corpus can only ever
+answer half of that, because a dump holds the **callee's** bytes. A row saying
+"called from the `jal` at `0x801E4B1C`" is citing evidence that by construction
+lives in somebody else's body, and it read as unsupported every time. Nineteen
+such rows carried a waiver each, and the reasons were the same paragraph in
+different words: *this is a caller site, so of course no dump of the callee
+carries it*.
+
+A waiver is the wrong instrument for a claim the disc can settle. The word at
+`0x801E4B1C` either is `jal 0x801F1ED4` or it is not, and the extracted images
+plus [`static-overlays.toml`](../../crates/asset/data/static-overlays.toml)'s
+bases are enough to decode it. So the checker reads the images (`site_relation`)
+and accepts four byte-derived relations between a cited address `c` and the
+row's subject `s`:
+
+| relation | what the bytes show | the citation it rescues |
+|---|---|---|
+| reaches | the word at `c` is a `jal` / `j` / conditional branch whose target is `s`, or a `lui`+`addiu`/`ori` pair at `c` forms `s` | "called from the `jal` at ...", "four `beq`s target this join label" |
+| adjacent-body | `c` and `s` fall in the same, or in two touching, `jr ra`-delimited bodies (the boundary words included) | "the ladder arms above it", "the nearest `jr ra` boundary above it" |
+| co-sited | `c` shares a body with another address the same row cites that *does* reach `s` | "the `sb rt,0x289(rs)` stores in the same caller" |
+| jump-table | the words at `c` hold `s`, or a co-cited address that reaches `s` | "arm 6 of the switch, jump table `0x80010AE4`" |
+
+A body is delimited by `jr ra` and its delay slot, inclusive on both ends -
+which is what makes "this address is interior to that body" and "this is the
+nearest boundary above it" checkable claims rather than prose, and what makes
+two consecutive bodies overlap by exactly the boundary they share. The walk is
+capped, because nothing stops a `jr ra` being absent for the length of a
+`.rodata` block and an unbounded walk would call every address in the image
+adjacent to every other.
+
+Three properties are worth stating plainly, because each is a limit:
+
+- **It reads bytes, not dump headers.** A relation therefore holds where the
+  printed VAs do not ([`dump-corpus-integrity.md`](dump-corpus-integrity.md)).
+- **VA aliasing is not resolved.** Several overlays link over one base, so a
+  relation found in *an* image covering the address is reported with that
+  image's name and is not by itself proof the row meant that image.
+- **Without `extracted/` the test is silent**, and the run says so in its
+  header rather than printing a clean count - those rows come back as
+  unsupported, which is the honest degradation and not a pass.
+
+Do not re-add a waiver of this shape. If the citation really is a caller site
+the test says so and names the image; if it does not, the citation is worth
+looking at.
+
+### A waiver that matches nothing is a claim nobody can check
+
+Retiring nineteen waivers exposed the sibling problem: a waiver whose finding no
+longer fires is invisible, and it stays in the file forever excusing something
+that does not exist. Every run now lists the waiver keys that match no current
+finding. Delete them - or, if the finding stopped firing for a reason nobody
+intended, find out why. A key can also drift without anything being fixed: the
+key carries the citation list, so rescuing two of a row's three citations
+renames the finding and orphans its waiver.
+
 ## Known-good shapes, excluded by construction
 
 - **One routine linked into two overlays.** `FUN_801D14B0` and `FUN_801D6710`

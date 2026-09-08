@@ -100,6 +100,11 @@ CODE_PTR_MAX = 0.03
 # Gaps shorter than this are inter-function alignment padding, not a finding.
 TINY_GAP_WORDS = 8
 
+# How many unattributed extents the lag report names before it
+# summarises. The list is a worklist for one CSV re-run, not a
+# census, and the pre-commit hook prints it with --quiet.
+LAG_EXTENTS_SHOWN = 20
+
 # PROT classes that are placeholders or absence rather than an unparsed format.
 # `pochi_filler` is a DOCUMENTED class (docs/formats/pochi.md), so it counts as
 # explained; it is broken out separately because calling reserved dev filler
@@ -465,6 +470,11 @@ def cover_image(name, image, base_va, span, extents, attrib=None, unambiguous=()
     # One `jr ra` scan per image, threaded into every gap test below.
     seg_floor = data_floor(image, base_va)
     mine, floor, dropped = [], [], 0
+    # Extents this image counts toward its UPPER bound but not toward its
+    # floor, because the byte-attribution CSV has no row for them. They are the
+    # difference between the two numbers, and when the CSV lags the corpus they
+    # are also the whole of an apparent floor regression - see `--check`.
+    unattributed = []
     for a, b in extents:
         if not lo <= a < hi:
             continue
@@ -480,6 +490,8 @@ def cover_image(name, image, base_va, span, extents, attrib=None, unambiguous=()
         if (attrib is None or (owners != "residue" and name in owners)
                 or (a, b) in unambiguous):
             floor.append((a, min(b, hi)))
+        else:
+            unattributed.append((a, b))
     merged = merge(mine)
     covered = sum(b - a for a, b in merged)
 
@@ -582,6 +594,7 @@ def cover_image(name, image, base_va, span, extents, attrib=None, unambiguous=()
         "pct_floor": (100.0 * floor_cov / denom) if denom else 0.0,
         "gap_shapes": shapes,
         "runs": runs,
+        "unattributed": sorted(set(unattributed)),
         "top_code_gaps": sorted(code_gaps, key=lambda g: g[0] - g[1])[:8],
     }
 
@@ -648,6 +661,9 @@ def overlay_reports(extracted, extents, attrib=None):
         row = cover_image(label, image, base, span, extents, attrib=attrib,
                           unambiguous=unambiguous)
         row["_image_span"] = (base, base + span)
+        # Kept so `--check` can re-measure the row against the corpus the
+        # attribution CSV knows about, without re-reading every overlay.
+        row["_image"] = image
         out.append(row)
         spans.append((base, base + span, label))
 
@@ -675,7 +691,7 @@ def overlay_reports(extracted, extents, attrib=None):
     # defensible number at all, and the table says so ON the row rather than in
     # prose underneath it.
     for row in out:
-        lo, hi = row.pop("_image_span")
+        lo, hi = row["_image_span"]
         mine = [k for k in distinct if lo <= k[0] < hi]
         resid = dropped = 0
         for k in mine:
@@ -706,7 +722,7 @@ def overlay_reports(extracted, extents, attrib=None):
         row["ambiguous_bytes"] = cov - row["covered_attributed"]
         row["ambiguous_bytes_pct"] = (
             100.0 * row["ambiguous_bytes"] / cov) if cov else 0.0
-    return out, totals
+    return out, totals, unambiguous
 
 
 def data_report(extracted):
@@ -1160,6 +1176,57 @@ def render(scus, overlays, amb_totals, data, rejects, attributed):
     return "\n".join(L) + "\n"
 
 
+def dump_names_by_extent(funcs_dir):
+    """`{(entry_va, end_va): [dump stem, ...]}` over the corpus.
+
+    Built only when the ratchet has something to explain: the point of the
+    report is to hand back file names a reader can open, and an extent key on
+    its own is not that.
+    """
+    out = {}
+    for path in sorted(glob.glob(os.path.join(funcs_dir, "*.txt"))):
+        dump, _ = dump_header.parse_file(path)
+        if dump is not None:
+            out.setdefault(dump.extent, []).append(
+                os.path.basename(path)[:-4])
+    return out
+
+
+def attribution_lag(row, extents, attrib, unambiguous, was, tolerance):
+    """Is this image's floor drop an attribution lag rather than lost coverage?
+
+    A `code_floor` figure is `floor_bytes / (covered_bytes + code_gap_bytes)`.
+    A dump that lands with no row in `dump-extent-attribution.csv` is residue:
+    it joins the image's UPPER bound - and so the denominator - while the floor,
+    which only counts extents the bytes name for this image, does not move. The
+    ratio therefore falls, and the ratchet reads a *new dump* as lost coverage.
+    That is backwards, and it is not a worktree artifact: the committed CSV lags
+    the local corpus in the main checkout too, because the corpus is gitignored
+    and the CSV is not regenerated per dump.
+
+    So the test is direct rather than inferred: re-measure the image over the
+    corpus **the CSV knows about** - every extent minus this image's
+    unattributed ones - and see whether the floor clears its baseline there. If
+    it does, the drop is entirely the lag, and what the reader needs is the list
+    of dumps to attribute, not a coverage failure. Returns `None` when the drop
+    survives that removal, i.e. when it is a real regression.
+    """
+    missing = set(row.get("unattributed") or ())
+    if not missing:
+        return None
+    kept = [k for k in extents if k not in missing]
+    base_va, end_va = row["_image_span"]
+    alt = cover_image(row["name"], row["_image"], base_va, end_va - base_va,
+                      kept, attrib=attrib, unambiguous=unambiguous)
+    if alt["pct_floor"] < was - tolerance:
+        return None
+    return {
+        "extents": sorted(missing),
+        "bytes": sum(b - a for a, b in missing),
+        "pct_floor_without": alt["pct_floor"],
+    }
+
+
 def snapshot(scus, overlays, data):
     out = {"code": {}, "code_floor": {}, "data": {}}
     for r in ([scus] if scus else []) + overlays:
@@ -1222,7 +1289,8 @@ def main():
     attrib = read_attribution(args.attribution)
 
     scus = scus_report(args.extracted, extents)
-    overlays, amb_totals = overlay_reports(args.extracted, extents, attrib)
+    overlays, amb_totals, unambiguous = overlay_reports(
+        args.extracted, extents, attrib)
     data = data_report(args.extracted)
 
     if scus is None and not overlays:
@@ -1284,6 +1352,8 @@ def main():
         base = json.load(open(BASELINE))
         bad = []
         absent = []
+        lagged = []
+        by_name = {r["name"]: r for r in overlays}
         for section in ("code", "code_floor", "data"):
             for key, was in base.get(section, {}).items():
                 now = current.get(section, {}).get(key)
@@ -1295,11 +1365,48 @@ def main():
                     absent.append("%s/%s (baselined at %.2f%%)"
                                   % (section, key, was))
                     continue
-                if now < was - args.tolerance:
+                if now >= was - args.tolerance:
+                    continue
+                # A floor drop is the one figure a *new dump* can cause, so it
+                # is triaged before it is failed: if the drop disappears once
+                # the image's unattributed extents are removed, the corpus grew
+                # and the attribution CSV did not.
+                lag = (attribution_lag(by_name[key], extents, attrib,
+                                       unambiguous, was, args.tolerance)
+                       if section == "code_floor" and key in by_name else None)
+                if lag:
+                    lagged.append((key, was, now, lag))
+                else:
                     bad.append("%s/%s: %.2f%% -> %.2f%%" % (section, key, was, now))
         for a in absent:
             print("[disc-coverage] NOT MEASURED THIS RUN: %s - the image is "
                   "absent from this tree, so the ratchet skipped it" % a)
+        if lagged:
+            names = dump_names_by_extent(args.funcs)
+            todo = sorted({k for _, _, _, l in lagged for k in l["extents"]},
+                          key=lambda k: k[0] - k[1])
+            print("[disc-coverage] ATTRIBUTION LAG - not a coverage loss. %d "
+                  "distinct dumped extent(s) have no row in %s, so they raise "
+                  "an image's denominator without raising its floor:"
+                  % (len(todo), os.path.relpath(args.attribution, REPO)))
+            for key, was, now, lag in lagged:
+                print("   %-22s floor %.2f%% -> %.2f%%, but %.2f%% over the "
+                      "corpus the CSV knows (%d extent(s), %d B)"
+                      % (key, was, now, lag["pct_floor_without"],
+                         len(lag["extents"]), lag["bytes"]))
+            print("[disc-coverage] extents to attribute, largest first "
+                  "(VA-aliased ones count once here and land in several "
+                  "images' spans above):")
+            for a, b in todo[:LAG_EXTENTS_SHOWN]:
+                stems = names.get((a, b)) or ["(no dump name)"]
+                tail = (" +%d more" % (len(stems) - 3)) if len(stems) > 3 else ""
+                print("   0x%08x..0x%08x %6d B  %s"
+                      % (a, b, b - a, ", ".join(stems[:3]) + tail))
+            if len(todo) > LAG_EXTENTS_SHOWN:
+                print("   ... and %d more" % (len(todo) - LAG_EXTENTS_SHOWN))
+            print("[disc-coverage] re-run "
+                  "scripts/ghidra-analysis/attribute-dump-extents.py and commit "
+                  "the CSV; the baseline needs no change.")
         if bad:
             print("[disc-coverage] REGRESSION:")
             for b in bad:
@@ -1311,8 +1418,10 @@ def main():
         total_keys = sum(len(base.get(s, {}))
                          for s in ("code", "code_floor", "data"))
         print("[disc-coverage] OK - %d/%d baselined figure(s) compared, none "
-              "regressed beyond %.2f pp."
-              % (total_keys - len(absent), total_keys, args.tolerance))
+              "regressed beyond %.2f pp.%s"
+              % (total_keys - len(absent), total_keys, args.tolerance,
+                 " %d floor figure(s) moved only with the attribution lag "
+                 "above." % len(lagged) if lagged else ""))
     return 0
 
 

@@ -760,3 +760,82 @@ A useful side effect: the run emits a dump worklist for **every** measured image
 (see [the per-overlay dump worklist](#the-per-overlay-dump-worklist)), derived
 from the bytes rather than from what anyone happened to cite - the one worklist
 the citation graph structurally cannot produce.
+
+### A new dump can look exactly like lost coverage
+
+`code_floor` is `floor_bytes / (covered_bytes + code_gap_bytes)`. The floor
+counts only the extents the byte attribution **names** for this image, while the
+denominator counts everything the image's span credits. A dump that lands with
+no row in `dump-extent-attribution.csv` is *residue*: it joins the upper bound,
+and so the denominator, while the floor does not move. The ratio falls, and a
+ratchet reading the ratio alone reports a **new dump** as lost coverage.
+
+That is not a worktree artifact and it is not rare. Both files are committed and
+the corpus is not, so the CSV lags the corpus in the main checkout too - nobody
+regenerates the attribution per dump - and any tree whose dumps have moved ahead
+of its CSV shows the same thing across every image the new dumps' VAs land in.
+A slot-A dump lands in nineteen spans at once, so one dump can push nine rows
+below their baselines together.
+
+So `--check` triages a floor drop before it fails it. For each regressed
+`code_floor` key it re-measures that image over the corpus the CSV *does* know
+about - every extent minus this image's unattributed ones - and if the floor
+clears its baseline there, the drop is entirely the lag. The run then prints an
+**ATTRIBUTION LAG** section naming the unattributed extents and the dumps that
+carry them, and passes:
+
+```
+[disc-coverage] ATTRIBUTION LAG - not a coverage loss. N distinct dumped
+extent(s) have no row in scripts/ghidra-analysis/dump-extent-attribution.csv ...
+   gameover               floor 98.13% -> 83.63%, but 99.52% over the corpus
+                          the CSV knows (4 extent(s), 1984 B)
+```
+
+The fix it names is one command - re-run
+`scripts/ghidra-analysis/attribute-dump-extents.py` and commit the CSV - and the
+baseline needs no change, which is the point: the coverage did not move.
+
+What still fails, unchanged: a `code` (upper-bound) regression, a `data`
+regression, and a floor drop that **survives** the removal. The last one is the
+discriminating case - an image whose floor is still short after every
+unattributed extent is taken out has lost attributed coverage, and no amount of
+CSV lag explains it.
+
+## Refreshing the landing-page tiles
+
+The site's homepage tiles are rendered from `scripts/ci/progress-metrics.json`,
+which is a committed **build input** rather than a measurement. The site builds
+where the disc is not: `extracted/` and the dump corpus are both gitignored, so
+`site/_gen.py` cannot compute a byte-denominated figure at deploy time and
+renders whatever was last committed.
+
+That makes a stale file invisible. It is well-formed JSON with plausible
+numbers, every gate passes, and the tiles keep rendering - the observed failure
+was a homepage showing `840 ported / 0 on the worklist` while
+`scripts/ci/port-catalog-baseline.json`, committed beside it, said `847` and
+`93`.
+
+The refresh rule:
+
+- **Refresh on a machine with the disc**, with `python3
+  scripts/ci/update-progress-metrics.py`, and commit the JSON. It reads the
+  disc-denominated figures straight out of this script's own report and the
+  corpus-denominated ones out of `port-catalog.py --live-audit`.
+- **Refresh whenever a wave lands ports**, not only when the site changes. The
+  tiles move with `crates/`, and nothing in a site diff reveals that.
+- **Never let a hook rewrite it.** The number goes on a public page, so it is
+  committed deliberately; a hook that regenerated it would publish an unreviewed
+  figure from whatever local corpus happened to be present.
+
+`scripts/ci/check-progress-metrics-freshness.py` is the warning. It compares the
+tiles' own rendered strings against `port-catalog-baseline.json` - two committed
+files, so it needs no disc, no corpus and no catalog pass, and runs everywhere in
+milliseconds. The pre-commit hook runs it **warn-only**: a contributor without
+the disc cannot clear a failure, so failing them would only teach the bypass.
+`--live` adds the expensive comparison against a real `port-catalog.py` pass for
+a closeout run, and `--strict` turns any mismatch into exit 1.
+
+Read a warning as "the published number is behind this tree", never as "the
+number is wrong": the tiles were correct when they were written, and the drift
+is the interval since.
+

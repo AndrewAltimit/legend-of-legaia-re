@@ -604,6 +604,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("tooling/translation.html",   "Translation / language packs",  "tooling/translation",        "tooling/translation.html"),
     ("tooling/port-catalog.html",  "Port catalog",                  "tooling/port-catalog",       "tooling/port-catalog.html"),
     ("tooling/disc-coverage.html","Disc coverage",                 "tooling/disc-coverage",      "tooling/disc-coverage.html"),
+    ("tooling/byte-accounting.html","Byte accounting",              "tooling/byte-accounting",    "tooling/byte-accounting.html"),
     ("tooling/address-reference-scan.html","Address-reference scan","tooling/address-reference-scan","tooling/address-reference-scan.html"),
     ("tooling/rom-patcher.html",   "ROM patcher (in browser)",      "tooling/rom-patcher",        "tooling/rom-patcher.html"),
     ("reference/index.html",       "Reference",                     "reference/index",            "reference/index.html"),
