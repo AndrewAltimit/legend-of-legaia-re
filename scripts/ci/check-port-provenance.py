@@ -103,6 +103,7 @@ import hashlib
 import re
 import sys
 from collections import defaultdict
+from functools import lru_cache
 from pathlib import Path
 
 try:  # py311+
@@ -1091,6 +1092,10 @@ def _pair_forms(img: Image, at: int, target: int) -> bool:
     return False
 
 
+# Memoised because a row cites several addresses in one body and the
+# subject is walked once per citation: without it the same 16 KB window
+# is re-scanned for every address on the row, in every aliased image.
+@lru_cache(maxsize=None)
 def _body(img: Image, va: int) -> tuple[int, int] | None:
     """The `jr ra`-delimited span `va` sits in, both boundary words included.
 
