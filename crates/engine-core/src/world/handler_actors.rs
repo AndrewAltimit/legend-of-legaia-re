@@ -74,7 +74,7 @@ impl World {
     ///
     /// Live: [`Self::man_load_actor_reset`], and the field VM's `4C 9F` /
     /// `4C 87` ladder-oscillator retire ops through
-    /// [`Self::cancel_scripted_fades`].
+    /// [`Self::retire_floor_ladder_oscillators`].
     pub fn retire_actors_by_handler(&mut self, handler: ActorHandler) -> usize {
         let mut n = 0;
         for a in self.actors.iter_mut() {
@@ -98,11 +98,11 @@ impl World {
     /// [`legaia_engine_vm::field_actor_timers::FloorTierBob`]. The engine keeps
     /// those records off the pool, so the callers that mean the retire
     /// (`4C 9F`, [`Self::man_load_actor_reset`]) clear
-    /// [`crate::world::World::floor_tier_bobs`] alongside this sweep. The name
-    /// is kept for its callers' sake; nothing is *registered* anywhere -
-    /// `FUN_8003CF40` has no return value and writes only the flag word.
-    pub fn cancel_scripted_fades(&mut self) -> usize {
-        self.retire_actors_by_handler(ActorHandler::FadeFamily)
+    /// [`crate::world::World::floor_tier_bobs`] alongside this sweep. Nothing
+    /// is *registered* anywhere and no fade is cancelled - `FUN_8003CF40` has
+    /// no return value and writes only the flag word.
+    pub fn retire_floor_ladder_oscillators(&mut self) -> usize {
+        self.retire_actors_by_handler(ActorHandler::FloorLadder)
     }
 
     /// Seat a pool actor carrying `handler`, returning its slot.
@@ -433,18 +433,18 @@ mod tests {
     #[test]
     fn the_retire_sweep_marks_every_match_and_only_matches() {
         let mut w = world_with(&[
-            ActorHandler::FadeFamily,
+            ActorHandler::FloorLadder,
             ActorHandler::ColourTween,
-            ActorHandler::FadeFamily,
+            ActorHandler::FloorLadder,
         ]);
-        assert_eq!(w.cancel_scripted_fades(), 2);
+        assert_eq!(w.retire_floor_ladder_oscillators(), 2);
         assert_ne!(w.actors[0].physics.status_flags & ACTOR_FLAG_YIELD, 0);
         assert_eq!(w.actors[1].physics.status_flags & ACTOR_FLAG_YIELD, 0);
         assert_ne!(w.actors[2].physics.status_flags & ACTOR_FLAG_YIELD, 0);
         // Inert when nothing is live on the handler - the property the
         // `4C 9F` "register callback" reading got wrong.
         let mut empty = World::default();
-        assert_eq!(empty.cancel_scripted_fades(), 0);
+        assert_eq!(empty.retire_floor_ladder_oscillators(), 0);
     }
 
     #[test]

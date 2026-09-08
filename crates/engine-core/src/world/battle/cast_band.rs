@@ -911,7 +911,11 @@ impl World {
     /// which is where those two casts' damage actually lands in retail.
     ///
     /// Both sweep a seat range with the module's own guards (skip dead, skip
-    /// `+0x16E & 4`) and both clamp to `HP - 1`, so neither can kill; ESM also
+    /// `+0x16E & 4`) and both clamp to `HP - 1`, so neither **sweep** can
+    /// kill. That is a property of these two stagers only - PROT 0927's own
+    /// tick (`0x801F6A84`) uses the unsigned `sltu` clamp instead and is
+    /// kill-capable (`legaia_engine_vm::cast_module_ticks`,
+    /// `docs/subsystems/cast-module.md`). ESM also
     /// stages each victim's own `+0x1F1` reaction and drops its animation rate
     /// to `2`. The roll per seat is the module's **baked** power through the
     /// module's own wrapper, drawn off this world's RNG cursor so the draw

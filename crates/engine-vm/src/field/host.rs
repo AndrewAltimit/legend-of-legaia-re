@@ -1560,7 +1560,7 @@ pub trait FieldHost {
     /// past the 2-byte op instead of parking (used by the opening-chain
     /// scripts, whose registered completion fires within a frame in retail).
     /// Default `false` keeps the faithful halt-until-callback park.
-    fn op4c_n9_sub_f_register_callback(&mut self) -> bool {
+    fn op4c_n9_sub_f_retire_ladder_oscillators(&mut self) -> bool {
         false
     }
 

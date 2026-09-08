@@ -274,7 +274,7 @@ pub const CINEMATIC_BAR_OT: u32 = 8;
 /// REF: FUN_801DD784 (`0x801DD8F8..0x801DD9B4`) - two `POLY_F4` (`GP0 0x28`)
 /// packets whose colour bytes are zeroed after the immediate is stored, so
 /// the fill is black; the envelope that feeds `bar` is
-/// [`legaia_engine_vm::field_actor_timers::LetterboxBars`].
+/// [`legaia_engine_vm::field_actor_timers::ShutterBars`].
 ///
 /// **Both hosts call this.** The bars are the one draw a cinematic beat is
 /// made of, so a host that hand-rolls the two rects is how one of them ends
@@ -288,7 +288,7 @@ pub fn cinematic_bar_prims(bar: i16, screen_h: i16) -> Vec<ScreenPrim> {
     if bar <= 0 {
         return Vec::new();
     }
-    legaia_engine_vm::field_actor_timers::letterbox_bar_rects(bar, screen_h)
+    legaia_engine_vm::field_actor_timers::shutter_bar_rects(bar, screen_h)
         .into_iter()
         .map(|r| {
             ScreenPrim::Flat(FlatQuad {

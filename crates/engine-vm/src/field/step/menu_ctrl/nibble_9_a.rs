@@ -2,10 +2,11 @@
 
 use super::*;
 
-// Outer nibble 9 - fade family + table copy + callback.
-// Sub-0/1/2 (fade dispatch, 9-byte) and sub-0xE (16-word
-// table copy, 34-byte) ported. Sub-0xF (callback registration
-// via LAB_801da930) remains `Pending`. Sub-3..=0xD have no
+// Outer nibble 9 - the scene floor-height ladder: rung oscillator +
+// whole-ladder install + retire sweep. Sub-0/1/2 (set one rung
+// oscillating, 9-byte) and sub-0xE (install all sixteen rungs at
+// 0x1F80035C, 34-byte) ported. Sub-0xF (the retire sweep over
+// LAB_801da930) remains `Pending`. Sub-3..=0xD have no
 // `case` arm in the original (line 6694–6696 of the dump
 // returns `param_2` when `2 < uVar27 < 0xE`) - halt at PC.
 pub(super) fn op_4c_n9<H: FieldHost>(
@@ -62,7 +63,7 @@ pub(super) fn op_4c_n9<H: FieldHost>(
             // fires; a host that models the callback as already
             // satisfied advances past the 2-byte op instead.
             0xF => {
-                if host.op4c_n9_sub_f_register_callback() {
+                if host.op4c_n9_sub_f_retire_ladder_oscillators() {
                     StepResult::Advance {
                         next_pc: pc + header_size + 1,
                     }

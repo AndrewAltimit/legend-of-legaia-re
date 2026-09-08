@@ -36,7 +36,7 @@ fn op_43_0c_runs_the_camera_shutter_wipe_to_full_and_back() {
     let peak = *heights.iter().max().unwrap();
     assert_eq!(
         peak,
-        legaia_engine_vm::field_actor_timers::LETTERBOX_FULL_BAR,
+        legaia_engine_vm::field_actor_timers::SHUTTER_FULL_BAR,
         "the envelope must reach the full 0x73: {heights:?}"
     );
     assert_eq!(
@@ -53,7 +53,7 @@ fn op_43_0c_runs_the_camera_shutter_wipe_to_full_and_back() {
 #[test]
 fn the_full_envelope_blacks_out_the_whole_screen() {
     use legaia_engine_vm::field_actor_timers as t;
-    let [top, bottom] = t::letterbox_bar_rects(t::LETTERBOX_FULL_BAR, t::LETTERBOX_RETAIL_SCREEN_H);
+    let [top, bottom] = t::shutter_bar_rects(t::SHUTTER_FULL_BAR, t::SHUTTER_RETAIL_SCREEN_H);
     assert!(bottom.y0 <= top.y1, "{top:?} / {bottom:?} leave a gap");
 }
 

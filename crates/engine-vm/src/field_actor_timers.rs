@@ -9,7 +9,7 @@
 //!
 //! | Template | Tick | Spawner | Output |
 //! |---|---|---|---|
-//! | `0x801F2858` | `FUN_801DD784` | `FUN_801DE754` | two black screen-space quads (the cinematic bars) |
+//! | `0x801F2858` | `FUN_801DD784` | `FUN_801DE754` | two black screen-space quads (the shutter blackout) |
 //! | `0x801F2840` | `FUN_801DD4C4` | `FUN_801DE698` | a **second** actor's position triple |
 //! | `0x801F27EC` | `FUN_801DA930` | `FUN_801DDE34` | one halfword of the scene floor-height ladder |
 //!
@@ -80,36 +80,40 @@ pub const FRAME_DELTA_SCRATCH_VA: u32 = 0x1F80_0393;
 pub const ACTOR_FLAG_RETIRE: u32 = 0x8;
 
 // ---------------------------------------------------------------------------
-// 0x801F2858 / FUN_801DD784 - the cinematic bar emitter
+// 0x801F2858 / FUN_801DD784 - the shutter-blackout bar emitter
 // ---------------------------------------------------------------------------
 
-/// Spawn-descriptor VA of the bar-emitter template.
-pub const LETTERBOX_TEMPLATE_VA: u32 = 0x801F_2858;
+/// Spawn-descriptor VA of the shutter-blackout bar-emitter template.
+pub const SHUTTER_TEMPLATE_VA: u32 = 0x801F_2858;
 
 /// Full envelope height in scanlines (retail literal `0x73`). Both bars reach
 /// it together, which covers a 224-line screen twice over - see the module
 /// note.
-pub const LETTERBOX_FULL_BAR: i16 = 0x73;
+pub const SHUTTER_FULL_BAR: i16 = 0x73;
 
 /// Right edge of both quads (retail literal `0x140`).
-pub const LETTERBOX_SCREEN_W: i16 = 0x140;
+pub const SHUTTER_SCREEN_W: i16 = 0x140;
 
 /// Bottom edge retail hardcodes (`0xE0` = 224). The engine's screen-overlay
 /// stage is 240 lines, so the prim builder takes the stage height as a
 /// parameter and this constant is what a parity check compares against.
-pub const LETTERBOX_RETAIL_SCREEN_H: i16 = 0xE0;
+pub const SHUTTER_RETAIL_SCREEN_H: i16 = 0xE0;
 
 /// The top bar's Y bias (retail writes `-4` into both of its top vertices, so
 /// the bar starts four lines above the screen and its visible height is
 /// `bar - 4`).
-pub const LETTERBOX_TOP_BIAS: i16 = -4;
+pub const SHUTTER_TOP_BIAS: i16 = -4;
 
-/// The four-phase envelope behind the cinematic bars.
+/// The four-phase envelope behind the shutter blackout.
+///
+/// The type and its constants were called `Letterbox*` while the beat was read
+/// as a 2.35:1 crop; at full envelope the two bars overlap, so it is a wipe to
+/// black. See the module note above.
 ///
 /// `durations[phase]` is the tick budget of each phase, exactly as the
 /// spawner lays them out: `[close, hold, open, unused]`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct LetterboxBars {
+pub struct ShutterBars {
     /// `+0x54` - phase index.
     pub phase: i16,
     /// `+0x9E` - phase clock, reset at every phase boundary.
@@ -120,7 +124,7 @@ pub struct LetterboxBars {
     pub retired: bool,
 }
 
-impl LetterboxBars {
+impl ShutterBars {
     /// Retail's spawn (`FUN_801DE754`): allocate from `0x801F2858`, clear the
     /// phase and clock, and write the three operand bytes into
     /// `+0xB8 / +0xBA / +0xBC`.
@@ -134,7 +138,7 @@ impl LetterboxBars {
     /// `docs/tooling/phantom-print-index.md` records for the
     /// `overlay_0897_xxx_dat` dump program - one routine printed at two VAs.
     pub fn spawn(close: i16, hold: i16, open: i16) -> Self {
-        LetterboxBars {
+        ShutterBars {
             phase: 0,
             clock: 0,
             durations: [close, hold, open, 0],
@@ -158,7 +162,7 @@ impl LetterboxBars {
     ///
     /// PORT: FUN_801DD784 (`0x801DD784..0x801DD8F8` - the envelope; the tail
     /// from `0x801DD8F8` is the two-quad emit, which is
-    /// [`crate::field_actor_timers::letterbox_bar_rects`] plus the host's OT
+    /// [`crate::field_actor_timers::shutter_bar_rects`] plus the host's OT
     /// link)
     ///
     /// The order is retail's and it matters: the clock is advanced *first*,
@@ -180,8 +184,8 @@ impl LetterboxBars {
         }
         match self.phase {
             0 => ramp(self.clock, self.durations[0]),
-            1 => LETTERBOX_FULL_BAR,
-            2 => LETTERBOX_FULL_BAR - ramp(self.clock, self.durations[2]),
+            1 => SHUTTER_FULL_BAR,
+            2 => SHUTTER_FULL_BAR - ramp(self.clock, self.durations[2]),
             3 => {
                 self.retired = true;
                 0
@@ -197,7 +201,7 @@ fn ramp(t: u16, d: i16) -> i16 {
     if d <= 0 {
         return 0;
     }
-    ((i32::from(t) * i32::from(LETTERBOX_FULL_BAR)) / i32::from(d)) as i16
+    ((i32::from(t) * i32::from(SHUTTER_FULL_BAR)) / i32::from(d)) as i16
 }
 
 /// One bar as retail lays its four vertices out: `[x0, y0, x1, y1]` with the
@@ -218,21 +222,21 @@ pub struct BarRect {
 /// not the mid-grey the immediate suggests.
 ///
 /// `screen_h` is the stage bottom the second bar is flush with. Retail's
-/// literal is [`LETTERBOX_RETAIL_SCREEN_H`]; the engine's screen-overlay
+/// literal is [`SHUTTER_RETAIL_SCREEN_H`]; the engine's screen-overlay
 /// stage is 240 lines, so the host passes its own display height and the bar
 /// stays flush instead of floating 16 lines up.
-pub fn letterbox_bar_rects(bar: i16, screen_h: i16) -> [BarRect; 2] {
+pub fn shutter_bar_rects(bar: i16, screen_h: i16) -> [BarRect; 2] {
     [
         BarRect {
             x0: 0,
-            y0: LETTERBOX_TOP_BIAS,
-            x1: LETTERBOX_SCREEN_W,
-            y1: bar + LETTERBOX_TOP_BIAS,
+            y0: SHUTTER_TOP_BIAS,
+            x1: SHUTTER_SCREEN_W,
+            y1: bar + SHUTTER_TOP_BIAS,
         },
         BarRect {
             x0: 0,
             y0: screen_h - bar,
-            x1: LETTERBOX_SCREEN_W,
+            x1: SHUTTER_SCREEN_W,
             y1: screen_h,
         },
     ]
@@ -498,7 +502,7 @@ mod tests {
         // The property the disassembly states: phase 0 ramps 0 -> 0x73 over
         // its own duration, phase 1 sits at 0x73, phase 2 ramps back to 0,
         // phase 3 latches the retire bit.
-        let mut lb = LetterboxBars::spawn(8, 4, 8);
+        let mut lb = ShutterBars::spawn(8, 4, 8);
         let mut heights = Vec::new();
         for _ in 0..24 {
             heights.push(lb.step(1));
@@ -506,18 +510,15 @@ mod tests {
                 break;
             }
         }
-        assert_eq!(heights[0], LETTERBOX_FULL_BAR / 8);
+        assert_eq!(heights[0], SHUTTER_FULL_BAR / 8);
         assert!(
-            heights.contains(&LETTERBOX_FULL_BAR),
+            heights.contains(&SHUTTER_FULL_BAR),
             "the envelope must reach full height: {heights:?}"
         );
         assert_eq!(*heights.last().unwrap(), 0, "and return: {heights:?}");
         assert!(lb.retired, "phase 3 latches +0x10 & 8");
         // Monotone up then monotone down - no third excursion.
-        let peak = heights
-            .iter()
-            .position(|&h| h == LETTERBOX_FULL_BAR)
-            .unwrap();
+        let peak = heights.iter().position(|&h| h == SHUTTER_FULL_BAR).unwrap();
         assert!(heights[..=peak].windows(2).all(|w| w[0] <= w[1]));
         assert!(heights[peak..].windows(2).all(|w| w[0] >= w[1]));
     }
@@ -527,7 +528,7 @@ mod tests {
         // 115 * 2 > 224: the peak is a blackout, not a crop. This is the
         // assertion that keeps the "cinematic letterbox" reading from
         // creeping back.
-        let [top, bottom] = letterbox_bar_rects(LETTERBOX_FULL_BAR, LETTERBOX_RETAIL_SCREEN_H);
+        let [top, bottom] = shutter_bar_rects(SHUTTER_FULL_BAR, SHUTTER_RETAIL_SCREEN_H);
         assert!(top.y0 <= 0, "top bar starts at or above the screen top");
         assert!(
             bottom.y0 <= top.y1,
@@ -535,13 +536,13 @@ mod tests {
             top.y1,
             bottom.y0
         );
-        assert_eq!(bottom.y1, LETTERBOX_RETAIL_SCREEN_H);
-        assert_eq!(top.x1, LETTERBOX_SCREEN_W);
+        assert_eq!(bottom.y1, SHUTTER_RETAIL_SCREEN_H);
+        assert_eq!(top.x1, SHUTTER_SCREEN_W);
     }
 
     #[test]
     fn a_zero_duration_phase_does_not_divide_by_zero() {
-        let mut lb = LetterboxBars::spawn(0, 0, 0);
+        let mut lb = ShutterBars::spawn(0, 0, 0);
         for _ in 0..8 {
             lb.step(1);
         }
@@ -552,8 +553,8 @@ mod tests {
     fn the_frame_delta_scales_the_envelope() {
         // Cadence invariance: the same wall-clock envelope at delta 2 in half
         // the frames.
-        let mut one = LetterboxBars::spawn(8, 2, 8);
-        let mut two = LetterboxBars::spawn(8, 2, 8);
+        let mut one = ShutterBars::spawn(8, 2, 8);
+        let mut two = ShutterBars::spawn(8, 2, 8);
         for _ in 0..4 {
             one.step(1);
             one.step(1);

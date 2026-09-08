@@ -595,7 +595,7 @@ impl FieldHost for TestHost {
     fn op4c_n9_sub_e_table_copy(&mut self, words: [i16; 16]) {
         self.n9_table_copies.push(words);
     }
-    fn op4c_n9_sub_f_register_callback(&mut self) -> bool {
+    fn op4c_n9_sub_f_retire_ladder_oscillators(&mut self) -> bool {
         self.n9_callback_regs += 1;
         false
     }

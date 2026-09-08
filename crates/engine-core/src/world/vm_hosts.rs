@@ -1335,14 +1335,14 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             });
     }
 
-    fn op4c_n9_sub_f_register_callback(&mut self) -> bool {
+    fn op4c_n9_sub_f_retire_ladder_oscillators(&mut self) -> bool {
         // `4C 9F` is `FUN_8003CF40(_DAT_8007C34C, LAB_801DA930)`, a **retire
         // sweep** over the `0x801F27EC` handler - so it cancels every live
         // floor-height-ladder oscillator this scene spawned (sub-`0..2`),
         // and registers nothing. Retiring the engine's records is the whole
         // of that half.
         self.world.floor_tier_bobs.clear();
-        self.world.cancel_scripted_fades();
+        self.world.retire_floor_ladder_oscillators();
         // During the New-Game opening chain the sweep's script effect (the
         // park at PC) resolves within a frame in retail - the whole opening
         // auto-advances with zero input - so model it as already satisfied
@@ -1367,12 +1367,11 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     /// would then both emit; the engine keeps one, because a second envelope
     /// over the first is a script defect rather than an effect.
     fn op43_alloc_scripted_actor(&mut self, b1: u8, b2: u8, b3: u8) {
-        self.world.cinematic_bars =
-            Some(legaia_engine_vm::field_actor_timers::LetterboxBars::spawn(
-                i16::from(b1),
-                i16::from(b2),
-                i16::from(b3),
-            ));
+        self.world.cinematic_bars = Some(legaia_engine_vm::field_actor_timers::ShutterBars::spawn(
+            i16::from(b1),
+            i16::from(b2),
+            i16::from(b3),
+        ));
         self.world.cinematic_bar = 0;
     }
 

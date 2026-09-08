@@ -477,8 +477,10 @@ pub const SUBMODE_TABLE: [SubModeRow; SUBMODE_JT_ENTRY_COUNT] = [
 /// to [`SUBMODE_TICK_FN_ENTRY_PC`].
 pub const STATE_BASE_ADDR: u32 = 0x801F_0000;
 
-/// `state[-0xeb4]` (= `0x801EF14C`): horizontal slider X position,
-/// clamped `[0, 0x2C]`.
+/// `state[-0xeb4]` (= `0x801EF14C`): horizontal slider X position. Both
+/// epilogue arms clamp at the **same** value, so it converges on `0x2C` from
+/// either side (`slti 0x2c` floor at `0x801DFC88`, `slti 0x2d` ceiling at
+/// `0x801DFCB4`) - it is not clamped to a `[0, 0x2C]` range.
 pub const STATE_HORIZ_SLIDER_X_ADDR: u32 = 0x801E_F14C;
 
 /// `state[-0xea0]` (= `0x801EF160`): fade / sweep accumulator,
