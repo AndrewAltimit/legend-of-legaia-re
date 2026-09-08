@@ -2576,6 +2576,14 @@ if (_DAT_801F351C != 0) {
 (`docs/reference/memory-map.md`), indexed `(angle & 0xFFF)` - the same
 pointer the [move VM](move-vm.md) and [effect VM](effect-vm.md) index.
 
+Which of the pair is which is settled by the table bytes, not by a caller's
+variable names. `FUN_80026BE0` stores `&DAT_80070A2C` into `_DAT_8007B81C` and
+that address `+0x800` (`&DAT_8007122C`) into `_DAT_8007B7F8`; entry `0` of the
+first is `0` and entry `1024` is `4096`, entry `0` of the second is `4096` and
+entry `1024` is `0`. So `_DAT_8007B81C` is the **sine** view and
+`_DAT_8007B7F8` the **cosine** view of one `4096 * sin` table - `0x800` bytes
+is 1024 halfwords, a quarter turn of the 4096-entry revolution.
+
 #### Per-iteration packets
 
 Each of the 224 iterations emits a **one-pixel-tall horizontal band** at
@@ -2875,7 +2883,7 @@ overlay's `FUN_801D7EA0` and the 0897 field overlay's
 | `_DAT_80083808` | World-map entity activation gate. |
 | `_DAT_8007BC3C` | World-map submode register. `FUN_80016444` gates its `jal 0x801D7EA0` on this being `2`. Six SCUS writers (`FUN_80016230` / `FUN_80025980` / `FUN_80025DA0` / `FUN_8001D424`). |
 | `_DAT_801F351C` | One-shot gate flag for the POLY_FT4 batch emitter. `FUN_801D8258` sets it to `1`; `FUN_801D7EA0` (and the 0897 sibling `FUN_801C9688`) clear it after one emission. Lives in the persistent `0x801F0000+` region and survives overlay swaps. |
-| `_DAT_801F3518` | Running camera angle. Advanced by `DAT_1F800393 * _DAT_801F3524` per `FUN_801D7EA0` call; masked to 4096 entries when indexing the cos LUT at `0x8007B81C`. |
+| `_DAT_801F3518` | Running camera angle. Advanced by `DAT_1F800393 * _DAT_801F3524` per `FUN_801D7EA0` call; masked to 4096 entries when indexing the **sine** LUT at `0x8007B81C`. |
 | `_DAT_801F3520` | Render scale / range. Sourced from `_DAT_8007BCD4` via `FUN_801D8258`'s `param_2`. The emitter uses it both as `local_3c` and `local_3c / 5`. |
 | `_DAT_801F3524` | Angle step per frame tick. Sourced from `_DAT_8007BCD8` via `FUN_801D8258`'s `param_3`. |
 | `_DAT_801F3528` | OT layer / draw priority. Sourced from `_DAT_8007BCDC` via `FUN_801D8258`'s `param_4`. |

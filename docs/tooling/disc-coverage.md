@@ -730,12 +730,17 @@ floor, so `data_segment` cannot claim them, and both are broken into runs shorte
 than the `no_exit` floor by VA-ambiguous dumps that print at those addresses from
 other programs:
 
-- **PROT 0970 `0x801D0E94`..`0x801D1978`** - the cutscene overlay's MDEC decode
+- **PROT 0970 `0x801D0E94`..`0x801D199C`** - the cutscene overlay's MDEC decode
   tables. The region opens with the hardware-port words `0x1F801824` and
-  `0x1F8010F0`, and the rest is 16-bit `(bucket, value)` pairs whose high
-  halfword walks `0x14`, `0x18`, `0x1C`, `0x20`, `0x2C` - bit-length buckets, not
-  opcodes. It scores as code because those high halfwords decode to `bne`,
-  `blez`, `bgtz` and `sltiu`.
+  `0x1F8010F0`, and the rest is 640 words of 16-bit `(bucket, value)` pairs
+  whose high byte walks `0x10`, `0x14`, `0x18`, `0x1C`, `0x20`, `0x24`, `0x2C`,
+  `0x34`, `0x38` - bit-length buckets, not opcodes. It scores as code because
+  those high halfwords decode to `bne`, `blez`, `bgtz` and `sltiu`. (The end
+  used to be quoted as `0x801D1978`. The bytes run one bucket further: the last
+  non-zero word of the region is at `0x801D1998` and the zero fill starts at
+  `0x801D199C`. `0x801D1978` is also a VA whose *dumps* are fishing-image
+  (PROT 0972) bytes, so it is the wrong address to end a 0970 range on -
+  see [`phantom-print-index.md`](phantom-print-index.md).)
 - **PROT 0980 `0x801D43A4` / `0x801D4AA4` / `0x801D4EA4`** - the dance minigame's
   step-chart and choreography records
   ([`minigame-dance.md`](../subsystems/minigame-dance.md)).

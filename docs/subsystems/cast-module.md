@@ -625,7 +625,8 @@ repo:
   137 `ambiguous = no` runs of 64 bytes or more this band still carries, 103
   are the module's own data tail, 24 are byte-identical residue of a sibling
   module's real function, 4 are the PROT 0899 tail above, and 6 are interior
-  to the tick body of an image that carries no dump at all (PROT 0915, 0935).
+  to a tick body (PROT 0915, 0935 - the two images whose Ghidra import landed
+  last, which is why the runs read as un-dumped rather than as interiors).
   Not one is an un-dumped function of the image it is filed under.
 
 ## What the port runs

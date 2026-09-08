@@ -705,16 +705,16 @@ slot = 255
 label = "battle_gimard_tail_fire_a"
 backup_fingerprint = "c8038c2d86f84e42c0c2148fbf499eb795b645689e7260e88f7065b5c6a7c935"
 phase = "battle"
-description = "Rim Elm (town01) Gimard Tail Fire summon mid-cast, flame-animation frame A. Pair with battle_gimard_tail_fire_b for the flame-flicker thread (the PROT 905 summon overlay's per-frame animation). The effect-CLUT band (rows 473..481) is byte-identical between A and B, indicating the flicker is prim CBA-column cycling, not CLUT-data re-upload."
-topics = ["battle", "effect", "summon", "Tail Fire", "Gimard", "CLUT cycling", "PROT 905"]
+description = "Gimard Tail Fire mid-cast in scene town0b, flame-animation frame A. Tail Fire is spell 0x27 (SCUS spell-name table DAT_800754D0), the ENEMY-Gimard move - not the player Seru cast 0x81, which the same table names Gimard and summon.dat titles Burning Attack. The state agrees: its scene word reads town0b (not town01) and the loader-B tracker 0x8007BC4C reads 0x05, i.e. extraction 900 co-resident, so no summon stager is paged in. Pair with battle_gimard_tail_fire_b for the flame-flicker thread. The effect-CLUT band (rows 473..481) is byte-identical between A and B, indicating the flicker is prim CBA-column cycling, not CLUT-data re-upload."
+topics = ["battle", "effect", "enemy cast", "Tail Fire", "Gimard", "CLUT cycling", "spell 0x27"]
 
 [[scenarios]]
 slot = 255
 label = "battle_gimard_tail_fire_b"
 backup_fingerprint = "def8234c3edec96f769a3a6e3cde0e5b93f7b68296f236ea01aba56a0f0637b1"
 phase = "battle"
-description = "Rim Elm (town01) Gimard Tail Fire summon mid-cast, flame-animation frame B. Pair with battle_gimard_tail_fire_a (see its note) for the flame-flicker thread."
-topics = ["battle", "effect", "summon", "Tail Fire", "Gimard", "CLUT cycling", "PROT 905"]
+description = "Gimard Tail Fire mid-cast in scene town0b, flame-animation frame B. Pair with battle_gimard_tail_fire_a (see its note - the cast is the enemy move, spell 0x27, not the player summon 0x81) for the flame-flicker thread."
+topics = ["battle", "effect", "enemy cast", "Tail Fire", "Gimard", "CLUT cycling", "spell 0x27"]
 
 # ----------------------------------------------------------------------
 # Single-level-up capture set: a 3-party (Vahn/Noa/Gala) battle in which

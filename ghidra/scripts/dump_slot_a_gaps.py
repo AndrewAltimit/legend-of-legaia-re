@@ -79,8 +79,8 @@ RANGES = {
 # being forced (prologue / `jr ra` / RAM-page `lui` / in-range `jal` scan) -
 # forcing data produces convincing garbage. The runs the same scan showed to be
 # DATA are deliberately absent, and named in `docs/tooling/disc-coverage.md`:
-# the cutscene overlay's MDEC decode tables (0x801D0E94..0x801D1978, opening
-# with the `0x1F801820` / `0x1F8010F0` hardware-port words) and the dance
+# the cutscene overlay's MDEC decode tables (0x801D0E94..0x801D199C, opening
+# with the `0x1F801824` / `0x1F8010F0` hardware-port words) and the dance
 # overlay's step-chart records (0x801D43A4, 0x801D4AA4, 0x801D4EA4).
 FORCE_RANGES = {
     # One 1272-byte frameless routine between FUN_80045988's end and

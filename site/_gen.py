@@ -1259,7 +1259,7 @@ def build_progress_meter() -> str:
         "decompilation": ("{pct:.1f}<small>%</small>", "of the executable's code traced in Ghidra"),
         "formats": ("{pct:.1f}<small>%</small>", "of disc bytes resolve to a documented format"),
         "port": ("{count}", "retail functions reimplemented in Rust"),
-        "wiring": ("{pct:.1f}<small>%</small>", "of ported code wired into the live engine"),
+        "wiring": ("{pct:.1f}<small>%</small>", "of ported code a host is owed for, wired"),
     }
     rows = []
     for t in tracks:

@@ -1465,7 +1465,19 @@ The field offsets they touch are the same ones tabulated in [Player actor fields
 | `FUN_801d4908` | Copy transform (`+0x14`/`+0x16`/`+0x18`/`+0x26`) from another actor and mirror facing into `+0x8e`; player case repositions the follow camera. |
 | `FUN_801d1314` | Actor-in-tile-rectangle test: compares the actor's current tile pair against the operand rect (`op[0..3]`); inside advances the script `+7`, outside arms actor action `0x2c` (state `+0x54 = 0`). |
 | `FUN_801d701c` | Spawn a positioned sub-actor (template `0x801f2978`): inits `+0x54 = 0`, `+0x50`, `+0x14`, `+0x16`, `+0x9c` from operands. |
-| `FUN_801cff3c` | Spawn a sub-actor (template `0x801f2858`): inits `+0x54`/`+0x9e = 0` and writes operands into `+0xb8`/`+0xba`/`+0xbc`. |
+
+**`FUN_801cff3c` is not one of these handlers, and there is no such routine.**
+The row that used to sit at the end of the table above described a spawn from
+template `0x801f2858` - that is `FUN_801DE754`, the `43 0C` shutter-blackout
+spawner ([`script-vm.md`](script-vm.md#0x43-sub-23-6789cdef---actor--sound--face--position-cluster)),
+which lives at **file offset `0xFF3C`** of `extracted/overlays/overlay_field_0897.bin`.
+A dump program that printed file offsets as virtual addresses turned that
+offset into a `0x801CFF3C` heading; `0x801DE754 - 0x801CFF3C` is exactly the
+image base `0xE818` ([`phantom-print-index.md`](../tooling/phantom-print-index.md)).
+The bytes that really live at `0x801CFF3C` are interior to `FUN_801cfe4c`
+(`0x801CFE4C..0x801D01AC`), the per-axis collision routine documented above -
+they sample the walkability grid at `*(_DAT_1F8003EC) + 0x4000`. Read either
+with `scripts/ghidra-analysis/disasm-overlay-fn.py --base 0x801CE818`.
 
 `FUN_801d4a60` is the largest of the group, and it is not a locomotion handler at all - it is the **scripted-scene actor**, four voice-over cutscene programs sharing one 38-state jump table. It has [its own section below](#the-scripted-scene-actor---fun_801d4a60).
 

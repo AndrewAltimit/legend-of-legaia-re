@@ -818,7 +818,7 @@ Base `0x801F0000` (the `a0` arg). Sibling region at `0x801EF014..0x801EF200` rea
 
 | Address | Off | Use |
 |---|---|---|
-| `0x801EF14C` | `-0xeb4` | Horizontal slider X, clamped `[0, 0x2c]`. Direction in `state[+0x1e0]` (`1`=left, `2`=right, else idle). Step per frame = `frame_scalar * 8`. |
+| `0x801EF14C` | `-0xeb4` | Horizontal slider X. Direction in `state[+0x1e0]` (`1`=left, `2`=right, else idle); step per frame = `frame_scalar * 8`. Both arms clamp at `0x2c` - the decreasing arm floors there (`slti 0x2c`, `0x801DFC88`) and the increasing arm ceils there (`slti 0x2d`, `0x801DFCB4`) - so the value converges on `0x2c` from either side rather than sweeping a `[0, 0x2c]` range. |
 | `0x801EF160` | `-0xea0` | Fade/sweep accumulator (clamped `[0, 0x1000]`). |
 | `0x801EF16C` | `-0xe94` | Attract countdown (u32, init `0x8000`). |
 | `0x801EF170` | `-0xe90` | Tick counter (unconditional increment). |
