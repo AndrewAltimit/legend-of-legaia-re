@@ -564,6 +564,18 @@ namespace LegaiaWorld
             return homeDoor != null && homeLanding != null;
         }
 
+        /// Outside, has a home, and is not already dealing with it. The
+        /// director's dusk exodus tests THIS rather than calling GoHome and
+        /// spending a move: GoHome is a no-op for a villager already on the
+        /// trip, and spending the per-tick move budget on no-ops let the
+        /// first two names in the array eat every move for the length of
+        /// their own walk home while everybody behind them waited.
+        public bool NeedsSendingHome()
+        {
+            return started && !indoors && HasHome() && !InChat()
+                   && !OnDoorTrip() && state != 9 && state != 40;
+        }
+
         /// In a conversation ring and standing in place (the director waits
         /// for every member before the turn-taking starts).
         public bool AtChat()

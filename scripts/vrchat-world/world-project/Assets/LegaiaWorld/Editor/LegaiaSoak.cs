@@ -228,7 +228,7 @@ namespace LegaiaWorld
             public Component doorUdon;   // the home's LegaiaDoor, backing
             public Animator doorAnim;
             public Transform homeDoor, homeThreshold, homeLanding, homeEmerge;
-            public bool startIndoors, noRoute, hasHome;
+            public bool startIndoors, noRoute, hasHome, daytimeIndoors;
 
             public int lastState = -99;
             public bool lastIndoors, lastBlocked, lastDoorOpen;
@@ -475,7 +475,7 @@ namespace LegaiaWorld
         static void Report()
         {
             int homed = 0, wentIn = 0, cameOut = 0, swung = 0, stuck = 0, hops = 0;
-            int hosts = 0;
+            int hosts = 0, dayIn = 0;
             float hostSeated = 0f;
             var problems = new List<string>();
             Line("");
@@ -486,7 +486,8 @@ namespace LegaiaWorld
                 float rate = w.ticks0 >= 0 && s_seconds > 0f
                     ? (w.ticksN - w.ticks0) / s_seconds : -1f;
                 string row = w.name + ": home=" + (w.hasHome ? "yes" : "no") +
-                    " startIndoors=" + w.startIndoors + " noRoute=" + w.noRoute +
+                    " startIndoors=" + w.startIndoors + " dayIn=" + w.daytimeIndoors +
+                    " noRoute=" + w.noRoute +
                     " maxState=" + w.maxState + " goDoor=" + w.sawGoDoor +
                     " swingWait=" + w.sawSwingWait + " threshold=" + w.sawThreshold +
                     " in=" + w.wentIndoors + "@" + w.inAt.ToString("0.0") +
@@ -501,7 +502,7 @@ namespace LegaiaWorld
                     " ticks/s=" + rate.ToString("0.0");
                 Line(row);
                 Debug.Log("[Legaia] soak: " + row);
-                if (w.nightHost)
+                if (w.nightHost && s_mode == "night")
                 {
                     // The night host is NOT part of the exodus: it keeps its
                     // station all night by design, so counting it as a homed
@@ -540,8 +541,16 @@ namespace LegaiaWorld
                         " blocked, " + w.doorDwell.ToString("0") + " s at the door)");
                 if (w.cameOut)
                     cameOut++;
-                else if (w.wentIndoors)
+                else if (w.wentIndoors && !w.daytimeIndoors)
                     problems.Add(w.name + " never came back out at dawn");
+                else if (w.wentIndoors)
+                    // `daytimeIndoors` is the share the pass deliberately
+                    // keeps in by day (a shopkeeper, somebody's
+                    // grandmother), and the builder always picks it from
+                    // the HOMED villagers - so a night soak that asserted
+                    // "everybody who went in came out" was asserting
+                    // against the pass's own design.
+                    dayIn++;
                 if (w.doorUdon != null)
                 {
                     if (w.doorOpens > 0 && w.doorCloses > 0)
@@ -580,7 +589,8 @@ namespace LegaiaWorld
                   " homed villager(s) went in, " + cameOut + "/" + homed +
                   " came back out at dawn, " + swung +
                   " door prop(s) swung open and shut, " + hops +
-                  " ledge hop(s), " + stuck + " stuck at a door, " + hosts +
+                  " ledge hop(s) (" + dayIn + " stayed in by day, as built), " +
+                  stuck + " stuck at a door, " + hosts +
                   " night host(s) keeping a station (" +
                   hostSeated.ToString("0") + " s seated of a " +
                   s_nightEnd.ToString("0") + " s night).";
@@ -652,6 +662,7 @@ namespace LegaiaWorld
                 w.homeLanding = Field(proxy, "homeLanding") as Transform;
                 w.homeEmerge = Field(proxy, "homeEmerge") as Transform;
                 w.startIndoors = Field(proxy, "startIndoors") is bool si && si;
+                w.daytimeIndoors = Field(proxy, "daytimeIndoors") is bool di && di;
                 w.noRoute = Field(proxy, "noRoute") is bool nr && nr;
                 w.hasHome = w.homeDoor != null && w.homeLanding != null;
                 var loco = Field(proxy, "loco") as Component;

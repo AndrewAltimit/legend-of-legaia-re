@@ -541,33 +541,36 @@ namespace LegaiaWorld
         {
             if (brains == null)
                 return;
+            // The NIGHT HOST first, and OUTSIDE the move budget below. There
+            // is at most one of it, its whole shift is one claim and a hold
+            // renewed every tick - and the budget is spent every single tick
+            // by the exodus and by settling the villagers with nowhere to
+            // go, so a host at the back of the array waited out most of the
+            // night for a move that never came, and the hold that keeps her
+            // on the stool lapsed whenever it did.
+            for (int i = 0; i < brains.Length; i++)
+            {
+                LegaiaNpcBrain h = brains[i];
+                if (h == null || !h.IsNightHost())
+                    continue;
+                if (shelter)
+                    RunNightHost(h);
+                else if (h.NightHostBusy())
+                    h.EndNightHost();
+            }
             int budget = movesPerTick < 1 ? 1 : movesPerTick;
             for (int i = 0; i < brains.Length && budget > 0; i++)
             {
                 LegaiaNpcBrain b = brains[i];
-                if (b == null)
+                if (b == null || b.IsNightHost())
                     continue;
-                // The NIGHT HOST does not go home: it keeps a station all
-                // night (town01: Cara at the card table) and is let go at
-                // dawn. Handled before everything else so no other arm of
-                // this loop can send it to a door.
-                if (b.IsNightHost())
-                {
-                    if (shelter)
-                    {
-                        if (RunNightHost(b))
-                            budget--;
-                    }
-                    else if (b.NightHostBusy())
-                    {
-                        b.EndNightHost();
-                        budget--;
-                    }
-                    continue;
-                }
                 if (shelter)
                 {
-                    if (!b.Indoors() && b.HasHome() && !b.InChat())
+                    // NeedsSendingHome, not "outside with a home": GoHome is
+                    // a no-op for somebody already on the trip, and spending
+                    // a move on that no-op is what starved the back of the
+                    // array.
+                    if (b.NeedsSendingHome())
                     {
                         b.GoHome();
                         budget--;
