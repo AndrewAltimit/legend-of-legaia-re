@@ -69,7 +69,7 @@ your disc ──legaia-extract──▶ extracted/ ──legaia-engine export-gl
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaTorch.cs` | Torch/campfire pickup: hold + Use toggles the flame container (fire + smoke particles, a Perlin-flickered point light - no glow orb) and a spatial crackle loop; `lit` is synced so a fire someone lights burns for everyone. Spawn-kinematic like the rack pickups. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaFlicker.cs` | Firelight flicker for the always-burning night torches: no sync, no interaction - just the two-octave Perlin intensity wobble on the flame's point light. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaPickupProp.cs` | UdonSharp equipment-rack pickup: the prop spawns kinematic (frozen on the rack) and only becomes a free physics object the first time a player drops it - so a rack of dozens of bodies can't tunnel through the thin ground during world-load hitches. Weapon rows carry `weapon` and measure their own swing speed while held. |
-| `world-project/Assets/LegaiaWorld/Editor/LegaiaCommonPrefabs.cs` | The **Common prefabs** foldout: builds the mirror, the TV and the card table from primitives + generated textures + the SDK's own components, spawns the SDK's sample pen system, and drops any prefab assets you list (QvPen, ProTV, a community deck...) near spawn. See "Common prefabs" below. |
+| `world-project/Assets/LegaiaWorld/Editor/LegaiaCommonPrefabs.cs` | The **Common prefabs** foldout: builds the mirror, the TV and the card table from primitives + generated textures + the SDK's own components (the 52 card faces are drawn into one versioned atlas, `cards_atlas_v2.png`, in the standard pip arrangement), spawns the SDK's sample pen system, and drops any prefab assets you list (QvPen, ProTV, a community deck...) near spawn. See "Common prefabs" below. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaSettingsSnapshot.cs` | Menu `Legaia > Snapshot placements to scene settings`: writes the hand-placed Inspector transforms of the common prefabs, the camp settings panel and LegaiaSpawn into `Settings/<scene>.settings.json` (`prefab_transforms` + `spawn_position`), preserving the file's other keys. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaSoak.cs` | The PLAY-MODE soak (`LegaiaBatchChecks.Soak`): enters play mode with ClientSim, pins the day/night clock to night or day, samples every brain at 2 Hz into a per-villager timeline, and asserts the night routine ran (in through the door, door swung, out again at dawn) or reports a day's station visits and conversations. The only check here that actually runs a villager. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaBatchChecks.cs` | Headless self-tests (`Unity -batchmode -executeMethod LegaiaWorld.LegaiaBatchChecks.CommonPrefabs` builds the common prefabs against the scene's built root and asserts every SDK component and every UdonSharp field wiring reached the backing behaviour; `.LivingTown`, `.Weather`, `.Ambience` likewise; `.RigPose` measures every imported NPC rig and checks the sitting pose's hip turn against the rig's walk clip). Never saves the scene. |
@@ -848,9 +848,27 @@ and the SDK's own components - no third-party package, no game data:
   and a 52-card deck stacked face-down in the middle. Cards are
   pickups: hold one and press **Use** to flip it (the flip is synced,
   so a card you turn shows the same side to everyone), drop it on the
-  felt to play it. Faces are generated - rank glyphs in the corners, a
-  suit pip in the middle, framed letters for the court cards, a teal
-  lattice back - into one atlas, one 63 x 88 mm box mesh per card.
+  felt to play it. Faces are generated into one atlas (13 rank
+  columns x 4 suit rows + a row for the teal lattice back and the
+  edge), one 63 x 88 mm box mesh per card, and they read like real
+  cards: a rank glyph with its suit pip under it in the top-left and
+  bottom-right corners, and the standard pip arrangement in the body -
+  2 and 3 down the centre column, 4 and 5 on the corners, 6 to 8 two
+  columns of three with centre pips between the rows, 9 and 10 two
+  columns of four - with every pip below the middle rotated 180
+  degrees. The ace keeps one large pip and the court cards a framed
+  letter. The atlas is only drawn when its file is missing, so its
+  **name carries the layout version**: change the faces and bump
+  `CARD_ATLAS` (adding the old name to `CARD_ATLAS_OBSOLETE`), or every
+  project that already built the deck keeps the old faces for ever.
+  Two importer settings are load-bearing and set explicitly:
+  `npotScale = None` (the default silently resampled the 13 x 5 grid
+  toward a power of two, so the first atlas never reached the GPU at
+  the density it was drawn) and `maxTextureSize = 4096`. The
+  CommonPrefabs self-test reads the PNG back, masks the corner indices
+  and counts the connected ink blobs in every cell - the count must be
+  the rank - and re-checks the imported asset's dimensions so a
+  returning importer default fails the build instead of the felt.
   *Shuffle* and *Gather* are buttons on the seat panel, not on the
   felt: *Shuffle* restacks every card face-down in a seeded random
   order, *Gather* in new-deck order; both take ownership of each card,
