@@ -259,7 +259,7 @@ Helper scripts that run on the host (not in the Ghidra container), mapped in [`s
 cargo build --release                                    # all binaries → target/release/
 cargo fmt --all -- --check                               # CI gate
 cargo clippy --all-targets --workspace -- -D warnings    # CI gate (warnings = failure)
-cargo test --workspace --release                         # CI runs --release
+cargo test --workspace --profile release-test           # CI's test profile: release opt-level, no LTO
 cargo test -p legaia-asset                               # single-crate
 cargo test --workspace test_name                         # single test by name
 ```

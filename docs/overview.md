@@ -67,7 +67,7 @@ The repo is a Cargo workspace. Crate naming: package `legaia-foo`, lib `legaia_f
 
 **Track 2 - engine.** `engine-core` (world + scene host), `engine-vm` (the ported VMs and battle SM), `engine-render` (winit + wgpu), `engine-audio` (SPU + sequencer), `engine-ui` (renderer-agnostic draw lists), `engine-shell` (the `legaia-engine` binary), plus `asset-viewer` and the `web-viewer` WASM target.
 
-Run `cargo build --release` for all binaries, `cargo test --workspace --release` for all tests. Disc-gated tests skip when `LEGAIA_DISC_BIN` is unset - see [`tooling/extraction.md`](tooling/extraction.md).
+Run `cargo build --release` for all binaries, `cargo test --workspace --profile release-test` for all tests (release opt-level without LTO, the profile CI tests under; `--release` also works). Disc-gated tests skip when `LEGAIA_DISC_BIN` is unset - see [`tooling/extraction.md`](tooling/extraction.md).
 
 ## Public docs vs operational state
 
