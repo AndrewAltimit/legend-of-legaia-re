@@ -1804,7 +1804,21 @@ The summon overlay carries **no embedded TMD geometry** (no `0x80000002` magic).
 - Three staging functions drive the spawn: **`FUN_801F16A0`** (phase 0 = a `do { FUN_80021B04(...) } while(< 8)` loop spawning **8** flame parts, each with `rand()`-seeded actor params - `actor[+0x84]`, `actor[+0xb4] = rng%15 + 16`, `actor[+0xb6] = rng%255 + 512`, `actor[+0x28]`; phase 1 = 1 more part), **`FUN_801F36A0`**, **`FUN_801F4DD0`**. The per-frame motion is the standard actor-tick consuming those RNG-seeded fields.
 - **Part records ARE in-file and move-VM bytecode (corrected link base).** Under the correct link base `0x801F69D8` (not `0x801F0000`), each `FUN_80021B04` call's record pointer resolves to PROT 905 **file `0x180C..0x1E00`** - a contiguous table of `[i16 model_sel][u16 flags][move-VM bytecode @+4]` records, recovered by `legaia_asset::summon_overlay` (disc-gated `summon_overlay_real`). This **supersedes** the two earlier wrong-link-base "FALSIFIED" readings - "the records are beyond the `0x5800` file / `0x180C` is only coincidentally record-shaped / parser reverted" and "there is no move VM here." The records *are* move-VM bytecode;
   the reason PROT 905 has zero `jal 0x80023070` *inside the overlay* is simply that the `jal` lives in the SCUS stager `FUN_80021B04` (which seats `actor[+0x70] = 2` PC → bytecode at `record+4`, then ticks `FUN_80023070`), not in the overlay image.
-- **But the move-VM scene-graph is NOT how retail renders the player summon (live trace).** A PCSX-Redux trace of a player Gimard *Burning Attack* cast shows `FUN_801F7088` = **0×**, the move VM `FUN_80023070` = **2-3×** (noise), and the **battle per-actor draw `FUN_80048A08` = 35-64×/frame** → the per-object rigid-TRS keyframe decoder `FUN_8004998C` → cluster-A `FUN_80043390`. So the **player** summon is drawn as an ordinary battle actor (per-object TRS keyframes), the faithful path being `engine-vm/anim_vm.rs` (`FUN_80048A08` / `FUN_8004998C`). The move-VM stager records still exist (and the engine drives them in `summon::SummonScene` as a stand-in), but they aren't the player summon's per-frame render path. SCOPE: the trace covers the **player** "Burning Attack" only;
+- **But the move-VM scene-graph is NOT how retail renders the player summon
+  (live trace).** A PCSX-Redux trace of a player Gimard *Burning Attack* cast
+  shows `FUN_801F7088` = **0×**, the move VM `FUN_80023070` = **2-3×** (noise),
+  and the **battle per-actor draw `FUN_80048A08`** in exact lockstep with the
+  per-object rigid-TRS keyframe decoder `FUN_8004998C` → cluster-A
+  `FUN_80043390`. Re-measured on `gimard_burning_attack` (400 vsyncs,
+  `scripts/pcsx-redux/autorun_enemy_move_render_path.lua`): 213 hits each, never
+  more than one per live actor per rendered frame - the "35-64×/frame" magnitude
+  an earlier revision quoted does not reproduce. So the **player** summon is
+  drawn as an ordinary battle actor (per-object TRS keyframes), the faithful
+  path being `engine-vm/anim_vm.rs` (`FUN_80048A08` / `FUN_8004998C`). The
+  move-VM stager records still exist (and the engine drives them in
+  `summon::SummonScene` as a stand-in), but they aren't the player summon's
+  per-frame render path. SCOPE: the trace covers the **player** "Burning Attack"
+  only;
   the **enemy** Gimard *Fire Tail* boss move is a distinct path - see the Fire-Tail note below.
 
 The flame renders as Gouraud-textured (`POLY_GT3`/`POLY_GT4`) prims sampling the resident `etim` page (832,256) 4bpp; `cba`/`tsb` are applied at render.
@@ -1815,6 +1829,13 @@ The flame renders as Gouraud-textured (`POLY_GT3`/`POLY_GT4`) prims sampling the
 - **Residual:** the part records are now recovered (`legaia_asset::summon_overlay`) and driven as a stand-in; what's open is the faithful **player** render - the battle TRS-keyframe path (`FUN_80048A08` / `FUN_8004998C`, ported) needs the summon's per-object keyframe source wired in place of the move-VM stand-in. See [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).
 
 ##### Enemy "Fire Tail" - move-VM part, not the widget path
+
+**The retail string is `Tail Fire`.** Spell id `0x27` in the static SCUS spell
+table reads `Tail Fire` (`asset spell-names`), and the monster archive names the
+same move that way in the enemy Gimard's spell list; "Fire Tail" is this
+section's own long-standing nickname, kept here only because other pages link
+its anchor. Do not confuse it with the *player* summon `0x81` (`Gimard`), whose
+attack is `Burning Attack` - a different move on a different path.
 
 The **enemy** Gimard *Fire Tail* boss move is the distinct path the player-summon
 trace did not cover, and it is now characterized from the two catalogued
@@ -3528,7 +3549,7 @@ three fields, which is what makes the record a *pair*:
 |---|---|---|
 | element id | `+0x00` (`lbu a0, 0(rec)`) | `+0x01` (`lbu a0, 1(rec)`) |
 | x / y | `+0x02` / `+0x04` | `+0x0A` / `+0x0C` |
-| widget kind | `+0x0E` (`0x801D9288`) | `+0x0F` (`0x801D92A8`) when `mode & 3 == 1`, else `+0x0E` |
+| frame style | `+0x0E` (`0x801D9288`) | `+0x0F` (`0x801D92A8`) when `mode & 3 == 1`, else `+0x0E` |
 
 Everything else is shared, and both arms read it the same way:
 
@@ -3536,8 +3557,42 @@ Everything else is shared, and both arms read it the same way:
 |---|---|---|
 | `+0x06` | content width | `lh v0, 6(rec)` at `0x801D92FC` / `0x801D9370` |
 | `+0x08` | box height | `lh v0, 8(rec)` at `0x801D9308` / `0x801D937C` |
+| `+0x10` | **widget kind** | `lbu s4, 0x10(rec)` at `0x801D8E8C`, once per call before the seat branch (so both seats share it) - see below |
 | `+0x14` | content **string** pointer | `lw a2, 0x14(rec)` at `0x801D9314` / `0x801D9388`; the guard at `0x801D92C4` nulls the field when its first byte is `0` |
-| `+0x10` / `+0x12` | neither arm loads them | - |
+| `+0x11` / `+0x12` | no image loads them | - |
+
+#### `+0x0E`/`+0x0F` is the frame style, and `+0x10` is the kind
+
+Both of those follow from the spawner's argument order rather than from the
+record. `FUN_8003541C(key, kind, str, x, y, w, h, style)` stores `a1` as the
+node's kind byte (`sb s6,0x1c` at `0x80035594`) and the eighth argument as the
+node's `+0x1D` (`sb v0,0x1d` at `0x800355C0`) - and the walker passes the
+record's `+0x0E`/`+0x0F` byte as that **eighth** argument (`sw a2,0x1c(sp)` at
+`0x801D930C` / `0x801D9380`, `a2` having been loaded from `+0x0E`/`+0x0F`),
+while `a1` comes from `$s4`, loaded once from `+0x10` at `0x801D8E8C`.
+
+What `+0x1D` then selects is the window **frame style**, not a draw order: the
+per-frame walker's shared tail writes it into `gp+0x14C` (`0x800323E0`) and the
+frame emitter `FUN_8002C69C` opens by comparing that cell against `0x31`, `0x33`,
+`0x34` and `0x35`, each arm calling a different chrome builder
+(`0x8002C6E4..0x8002C768`), with every other value falling through to the plain
+frame. So a record whose style byte is outside that set draws the ordinary
+gold-framed box - which is why the battle tutorial box's `0x44 - waits` (`0x44`
+or `0x43`, neither in the set) wears the reading box's own chrome either way.
+
+The initialised table agrees with both readings: `+0x0E`/`+0x0F` spread over
+`1..0x44`, while `+0x10` takes only two values across all 103 records, `0` (85
+records) and `13` (18), the two kinds the per-frame draw dispatcher
+`FUN_80031D00` has arms for at `0x80010DC0`. `+0x11` and `+0x12`/`+0x13` are zero
+in every record and no image reads them - a taint scan for a materialised
+`0x80076C10` plus a runtime index, over `SCUS_942.54` and all 83 mapped overlay
+images, finds accesses at `+0x00`/`+0x01`/`+0x02`/`+0x04`/`+0x06`/`+0x08`/`+0x0A`/
+`+0x0C`/`+0x0E`/`+0x0F`/`+0x10`/`+0x14` and none at `+0x11`/`+0x12`/`+0x13`.
+Some jump-table arms of `FUN_801D8DE8` override the loaded kind before the seat
+branch (`addiu s4, s2, -0x13` at `0x801D8FAC`; the literal `6` / `7` / `9` /
+`0x1E` stores at `0x801D9504`..`0x801D95F8`), so `+0x10` is the record's
+**default** kind, not an unconditional one. `minigame-muscle-dome.md` already
+called `+0x10` a kind byte; this section's "Unknown" was the stale side.
 
 Both arms subtract 2 from the seat's y before passing it (`0x801D92F4` /
 `0x801D9368`), which is retail's documented `pen = (x, y - 2)`. Each arm then
@@ -3634,10 +3689,14 @@ seats are mirror images (41 is `328` at A and `200` at B, 42 is `200` at A and
 
 Evidence grade: **Confirmed** for every field above, for the three movers and
 for the call sites - disassembled from PROT entry 0898 at base `0x801CE818` and
-cross-read against the table's own initialised bytes in `SCUS_942.54`. One field
-stays **Unknown**: `+0x10`, which the disc sets to `13` on the framed-window and
-roster-panel rows (kinds `0x03` / `0x07` / `0x44`) and `0` on the plate run, and
-which neither spawn arm loads. `+0x12` is zero in all 103 records.
+cross-read against the table's own initialised bytes in `SCUS_942.54`. No field
+is Unknown any more: `+0x10` - the byte the disc sets to `13` on the
+framed-window and roster-panel rows and `0` on the plate run - is the **widget
+kind**, loaded once per call at `0x801D8E8C` and handed to `FUN_8003541C` as its
+`a1` (see [the field decode above](#0x0e0x0f-is-the-frame-style-and-0x10-is-the-kind)).
+The `0x03` / `0x07` / `0x44` values quoted against those rows are their
+`+0x0E`/`+0x0F` **frame style**, not their kind. `+0x11` and `+0x12` are zero in
+all 103 records and no image reads them.
 
 ## Overlay-local PRNG `FUN_801D0290`
 

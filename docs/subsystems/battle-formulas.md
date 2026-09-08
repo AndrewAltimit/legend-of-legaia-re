@@ -336,7 +336,7 @@ straight from the PROT `0898` bytes at their link addresses.
 | `+ Current HP / 256` | **Confirmed** | `lhu v0,0x14c(attacker)`, `srl v0,v0,0x8` at `0x801ECEF8..0x801ECF04`. |
 | Juggle starts at 1, grows per quick hit, resets after a pause; applied `/ 64` | **Confirmed** | `ctx[+0x0A]` set at `0x801ECA20..0x801ECA80` (increment while `+0x1F7 != 0`, else `1`); `(juggle*atk) >> 6` at `0x801ECEC4..0x801ECF0C`. |
 | "Juggleability" is the defender's damage animation, not a hidden number | **Confirmed** (disassembly + live write-watch) | `+0x1F7`'s only writers are `0x80047E50` / `0x80047E54` in the anim tick: `frame < flinch_entry[+0x10]`, per monster two bytes of its flinch entry (beat, rate). Three states, two monsters + Vahn, in the [juggle window](#the-juggle-window---what-makes-a-monster-juggleable). |
-| Attack angle `/ 65536`, 0 in front, 2048 from behind | **Confirmed shape; magnitude unverified** | `(ctx[+0x6D2] * atk) >> 16` at `0x801ECED8..0x801ECF18`. The writer (`0x801E3068..0x801E30C8`) stores the folded facing difference **minus** `0x800`, so face-on is `0`; what the kernel does with a from-behind strike's negative halfword has not been captured. |
+| Attack angle `/ 65536`, 0 in front, 2048 from behind | **Confirmed, magnitude included** | `(ctx[+0x6D2] * atk) >> 16` at `0x801ECED8..0x801ECF18`. `ctx[+0x6D2]` is never negative, so the term is `0 .. atk/32` - see [the angle term](#the-angle-term-is-bounded-at-atk--32). |
 | Arts modifier 1.3, 1.4 with War Soul | **Confirmed** | `x13/10` at `0x801ED118..0x801ED138`; the `x14/10` arm keys on record `+0xF8` bit `0x1000` (`0x801ED0F8..0x801ED104`) = passive `0x2C` Arts Power. |
 | Element 1.04 fire-vs-water, applied twice on Arts | **Confirmed** | Matrix `0x801F53E8` (opposed pairs `0x68` = 104); the Art arm's pass at `0x801ED13C..0x801ED174` precedes the unconditional pass at `0x801ED178..0x801ED1B4`. |
 | Defense = `DEF * Rnd + DEF * distance / 1024`, UDF or LDF | **Confirmed** | `0x801ED1B0..0x801ED220`; UDF/LDF pick at `0x801ECE14..0x801ECE74`. |
@@ -350,6 +350,31 @@ attack from the **menu** aggregate (base plus every equipped item's full ATK)
 and fed that to the kernel, over-stating Vahn's first hit above from 237 to 472
 before the roll. The port now seeds the base and folds the halved slot per
 command (`World::battle_equip_atk`, `arms_weapon_atk_fold`).
+
+### The angle term is bounded at `atk / 32`
+
+The residual this row used to carry - "what the kernel does with a from-behind
+strike's **negative** halfword" - rested on a false premise. `ctx[+0x6D2]`
+cannot go negative, because the writer folds before it biases:
+
+```
+0x801E3078  bearing = FUN_80019B28(fp.z, fp.x, s3.z, s3.x)
+0x801E3080  s3[+0x46] = (bearing + 0x800) & 0xFFF     ; face the other actor
+0x801E3094  d = (s3[+0x46] - fp[+0x46]) & 0xFFF       ; 0 .. 0xFFF
+0x801E309C  if d >= 0x800 -> store d                  ; branch at 0x801E30A0
+0x801E30AC  else            store 0x1000 - d
+0x801E30C4  ctx[+0x6D2] -= 0x800                      ; unconditional
+```
+
+Both arms store into `[0x800, 0x1000]`, so the bias lands the field in
+`[0, 0x800]`: `0` when the two facings are opposed (a head-on strike) and
+`0x800` when they agree (a strike into the target's back). The kernel reads it
+signed (`lh v0,0x6d2(a0)` at `0x801ECED8`) and shifts the product logically
+(`srl v0,t0,0x10` at `0x801ECF14`) - a pairing that would explode on a negative
+value, and never sees one. So the magnitude is `angle * atk / 65536`, i.e. **0
+for a face-on hit and `atk / 32` (about +3%) for a strike from directly behind**,
+with the term reset to zero after the first hit of an action (`sh zero,0x6d2` at
+`0x801EC888`, the sibling of the distance reset one instruction later).
 
 ### Physical attack damage - `overlay_battle_action_801ec3e4`
 

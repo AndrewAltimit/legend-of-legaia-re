@@ -294,8 +294,11 @@ FUN_8003541C(1 + waits, 0xD, str, x, y, width, lines*14 - 4, 0x44 - waits)
 ```
 
 `FUN_8003541C` links the node into a list sorted on its `+0x08` key and stores
-the rect at `+0x0A..+0x10`, the kind byte at `+0x1C` and the priority at
-`+0x1D`, then draws it (`FUN_80030628`). So the box's *size* is measured, and
+the rect at `+0x0A..+0x10`, the kind byte at `+0x1C` and the frame style at
+`+0x1D`, then calls `FUN_80030628` - a per-kind **content** builder, not the
+draw: its table at `0x80010D38` sends kind `0x0D` straight to the epilogue
+`0x80031978`, because a measured text box needs no build step. The drawing is
+the per-frame list walk `FUN_80031D00`. So the box's *size* is measured, and
 only its *corner* comes from the style table.
 
 **Box placement.** The style index `0..=9` selects a jump table at
@@ -323,8 +326,28 @@ therefore frames the prompt with the reading box's own chrome builder at
 [`engine-ui::battle_tutorial_box`](../../crates/engine-ui/src/battle_tutorial_box.rs),
 drawn by both hosts through the 320x240 stage transform (the rect is in retail
 framebuffer pixels, not surface pixels). The confirm hand on a waiting box is
-a port affordance borrowed from the dialog pager: what retail's slot-`2` actor
-draws to signal the wait is not decoded.
+a port affordance borrowed from the dialog pager - **retail draws nothing extra
+for the wait**, see below.
+
+**The waiting box and the self-dismissing one are the same drawing.** `s4` only
+reaches two of the registrar's arguments, and neither is visual. The emitter's
+tail passes `a1 = 0xD` unconditionally (`li a1,0xd` at `0x801F75F0`), so both
+boxes register under the same widget kind, and `FUN_80031D00` - the per-frame
+walker that actually draws a registered node - dispatches on that kind byte
+alone (`lbu v0,0x1c(s4)` at `0x80032170`, jump table `0x80010DC0`), never on the
+node's `+0x08` sort key. The two arguments `s4` does move are the key itself
+(`1 + waits`, list position only: `FUN_8003541C` compares it at `0x80035520` to
+decide whether to reuse an existing node, and `FUN_800319A8` unregisters by it)
+and the `0x44 - waits` byte at node `+0x1D`, which the draw tail hands to
+`gp+0x14C` as the frame-style selector - and `FUN_8002C69C` only branches on
+`0x31` / `0x33` / `0x34` / `0x35` (`0x8002C6E4..0x8002C768`), so `0x43` and
+`0x44` both take the same default chrome. Two further consequences fall out of
+the same read: kind `0x0D` is one of the three kinds `FUN_800319A8` refuses to
+free `+0x18` for (`0x80031A30..0x80031A44`, alongside kinds `< 2` and `0x11`),
+because the string is the overlay's own, not heap; and kind `0x0D`'s slot in the
+*registration*-time table at `0x80010D38` points at `0x80031978`, which is
+`FUN_80030628`'s epilogue - so registering a prompt draws nothing that frame,
+and the box first appears on the next walk.
 
 Engine port: [`engine-core::battle_tutorial`](../../crates/engine-core/src/battle_tutorial.rs).
 The prompt **text is Sony data living in the overlay**, so the port commits only
@@ -1884,9 +1907,12 @@ in the fixed order `^A`=Fire, `^B`=Thunder, `^C`=Wind, `^D`=Water, `^E`=Earth,
 `^F`=Light, `^G`=Dark, `^H`=Evil (the icon-glyph row `0x1D..0x24` in the same
 order - **not** the element-id order of the [`+0x1D` element byte](#monster-record-source-layout)).
 Across the roster every carrying monster's caret letter agrees with its
-element byte, with one deliberate exception: `^H Cort` (the final boss) wears
-the Evil icon over element byte `7` - the no-affinity id whose matrix row and
-column are all-100. Boss-tier `$2`/`$3` name suffixes are literal ASCII, not
+element byte, with **no** exceptions - `^H` maps to element byte `7` (the
+no-affinity id whose matrix row and column are all-100) exactly as the other
+seven letters map to theirs; only 64 of the 186 populated records carry an
+escape at all. The
+[per-letter census](#the-element-badges-and-their-per-badge-palette) has the
+counts. Boss-tier `$2`/`$3` name suffixes are literal ASCII, not
 markup.
 
 The mesh's primitives are textured: they reference a CLUT + a 4bpp texture page
@@ -3682,13 +3708,41 @@ Each of the four CLUT rows `498..501` is a whole sibling TIM of its own -
 (`save_menu_atlas::add_element_badge_sprites`); the winged four on row 500
 are already baked as the status screen's ATR icons, which is the same art.
 
-**Port + what is inferred.** The plaque wears badge `element` for a monster
-whose record `+0x1D` names one (`battle_hud::battle_plaque_element_badge`),
-and the plaque widens by `20 + 5` exactly as `name_plaque` lays out. The
-geometry, the palette decode and the plaque law are all disc-read; **the
-selector is not** - no dumped caller computes the badge id, so "badge index
-= element id" is an inference from the two eights lining up, and whether a
-neutral (id 7) actor draws a badge at all is unverified.
+**The selector is not code - it is markup in the monster's own name.** No
+dumped caller computes a badge id because nothing computes one: the badge is
+the `^`-plus-letter escape the archive name carries
+([above](#monster-record-source-layout)), so the plaque draws whatever badge its
+string names and nothing at all when the string has none. A census of the
+decoded blocks (`asset monster-archive --dump-block`, all 186 populated slots)
+settles both halves:
+
+- **64 of 186** names begin with `5E` (`^`) plus a letter; the other **122** do
+  not, and those actors wear no badge.
+- The caret letter is a **bijection** onto the record's element byte `+0x1D`
+  with **zero** exceptions - `^A`→2 (Fire, n=9), `^B`→4 (Thunder, 9), `^C`→3
+  (Wind, 9), `^D`→1 (Water, 9), `^E`→0 (Earth, 9), `^F`→5 (Light, 12), `^G`→6
+  (Dark, 6), `^H`→7 (Neutral, 1). So the earlier "`^H` over element byte `7` is
+  a deliberate exception" reading is wrong: element `7` *is* the letter's
+  element, exactly like the other seven.
+- **A neutral (id 7) actor does draw a badge - if its name says so.** Thirteen
+  records carry element `7`; exactly one of them carries `^H`, and the other
+  twelve carry no escape and draw nothing.
+
+Two escape encodings coexist and are easy to confuse. The **archive name's**
+badge prefix is plain ASCII `^` (`5E`) plus a letter, verbatim in the decoded
+block and copied verbatim into the actor's display-name buffer `+0x1BC`. The
+`0xCE`-lead form is the *runtime-composed* HUD label string (actor `+0x29`, an
+icon index then the text) - a different producer, not this one.
+
+**Port + what is still off.** The plaque widens by `20 + 5` exactly as
+`name_plaque` lays out, and the geometry and palette decode are disc-read. The
+port's selector (`battle_hud::battle_plaque_element_badge`) is **not** retail:
+it returns the record's element byte for every monster with a valid element, so
+it (a) badges all 186 instead of the 64 whose name carries the escape, and (b)
+indexes the strip in element order where the escape orders it `A..H`, a
+different permutation (`element -> caret index` is `4, 3, 0, 2, 1, 5, 6, 7`).
+Retail's rule is one line: badge only when the name starts `^X`, at strip index
+`X - 'A'`.
 
 ### Four ids are not on this sheet at all - they are the save-slot portraits
 
