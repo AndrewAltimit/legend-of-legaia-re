@@ -11,9 +11,17 @@
 //   screen, a URL field + status line, Play/Pause - Stop - Resync
 //   buttons, owner-synced playhead (LegaiaVideoTv). YouTube links work
 //   through VRChat's own resolver in the client.
+// - Mini CRT: a coaster-sized television standing on the card table's
+//   felt, showing and playing exactly what the big set is showing. It
+//   carries NO video player of its own - it is a second output of the
+//   TV's players (LegaiaMiniTv's header has the whole argument).
 // - Card table: a round table, N stools that are VRC stations (sit on
 //   Interact, LegaiaSeat) and a 52-card deck of pickups with generated
 //   faces (LegaiaCard) plus Shuffle / Gather buttons (LegaiaCardDeck).
+//   The faces are drawn into one atlas at build time in the standard
+//   playing-card arrangement - a ten carries ten pips, the lower half
+//   of them upside down - so a card reads as itself across the felt;
+//   LegaiaBatchChecks.CommonPrefabs counts the ink to prove it.
 //
 // The rest are spawned FROM PREFABS: the SDK's own sample pen system
 // when the package ships it, and any prefab assets the user lists in
@@ -62,18 +70,23 @@ namespace LegaiaWorld
         public bool cardTable = true;
         public Vector3 cardTableOffset = new Vector3(0.4f, 0f, -5.4f);
         public int seats = 4;
+        // The mini CRT on the felt. Needs BOTH the TV and the table -
+        // it is an output of the one standing on the other - so it is
+        // silently skipped when either is off.
+        public bool miniTv = true;
         public bool sdkPens = false;
         public Vector3 pensOffset = new Vector3(-3.2f, 0f, 3.4f);
         // The casino cabinet + minigame: the model asset (a glb the user
         // keeps under Assets/Prefabs/), the `asset slot-art` folder, and
         // where it stands when the scene settings carry no slot_machine
         // block. Scale: the shipped cabinet is authored in centimetre-ish
-        // units, 0.012 lands it at a real cabinet's height.
+        // units, and 0.008 is the kit's default for every scene - it
+        // stands beside a Rim Elm villager rather than over them.
         public bool slotMachine = true;
         public string slotCabinetPath = "Assets/Prefabs/legaia slot machine.glb";
         public string slotArtDir = "Assets/LegaiaImports/slot-art";
         public Vector3 slotOffset = new Vector3(-3.4f, 0f, 3.6f);
-        public float slotScale = 0.012f;
+        public float slotScale = 0.008f;
         public List<LegaiaExtraPrefab> extras = new List<LegaiaExtraPrefab>();
 
         public bool AnyEnabled => mirror || tv || cardTable || sdkPens || slotMachine ||
@@ -104,7 +117,7 @@ namespace LegaiaWorld
         /// spawn-relative offset per item with an absolute world position.
         internal static GameObject Build(string genDir, Vector3 spawnW,
             LegaiaCommonPrefabOptions o, Dictionary<string, LegaiaPrefabTransform> placements,
-            LegaiaSlotPlacement slot = null)
+            LegaiaSlotPlacement slot = null, List<LegaiaPosterRef> posters = null)
         {
             Remove();
             var container = new GameObject(CONTAINER);
@@ -148,6 +161,10 @@ namespace LegaiaWorld
                     Mathf.Clamp(o.seats, 0, 8), placements), "card_table");
                 built.Add("card table");
             }
+            // After both, because it wires one into the other.
+            if (o.miniTv && o.tv && o.cardTable &&
+                BuildMiniTv(container, genDir, placements) != null)
+                built.Add("mini CRT");
             if (o.sdkPens)
             {
                 var pens = AssetDatabase.LoadAssetAtPath<GameObject>(SDK_PEN_PREFAB);
@@ -190,16 +207,71 @@ namespace LegaiaWorld
                     built.Add("slot machine");
             }
 
+            // Posters LAST of the kit-built things: the wall search needs
+            // the object each poster hangs near (the card table) to stand
+            // already, and the print materials must exist before the lit
+            // conversion sweeps the container. `posters` is optional so
+            // every existing caller keeps its signature - when it is null
+            // the list is read from the same scene settings file the
+            // caller loaded, keyed by the scene name genDir ends with.
+            int hung = LegaiaPosters.Build(container, genDir, placements,
+                posters ?? LegaiaSceneSettings.Load(SceneNameOf(genDir)).posters);
+            if (hung > 0)
+                built.Add(hung + " poster(s)");
+
             // Spawned prefabs (the SDK pens, a QvPen, a ProTV) keep their
             // authored materials - only the kit-built furniture converts.
             LegaiaRealism.ConvertPropToLit(container, genDir,
                 r => !PrefabUtility.IsPartOfPrefabInstance(r.gameObject));
             RewireMirrorMaterials(container);
 
+            // Every panel built above, off keyboard navigation: otherwise
+            // walking around hands the TV's URL field the keyboard and it
+            // eats the lot. See LegaiaWorldBuilder.DisableUiNavigation.
+            int offNav = LegaiaWorldBuilder.DisableUiNavigation(container);
+            if (offNav > 0)
+                Debug.Log("[Legaia] common prefabs: " + offNav +
+                          " UI control(s) taken off keyboard navigation.");
+
             Debug.Log("[Legaia] common prefabs: " + string.Join(", ", built) +
                       " placed near spawn.");
             return container;
         }
+
+        /// Every caller builds `genDir` as "Assets/LegaiaGenerated/<scene>",
+        /// so its last segment is the scene the settings file is named for.
+        static string SceneNameOf(string genDir)
+        {
+            return Path.GetFileName(genDir.Replace("\\", "/").TrimEnd('/'));
+        }
+
+        /// The TV speaker's field, in metres: full volume inside NEAR,
+        /// silent past FAR. Asserted by LegaiaVideoChecks so a stray edit
+        /// to one of the four places these numbers land cannot pass.
+        internal const float TV_AUDIO_NEAR = 4.5f;
+        internal const float TV_AUDIO_FAR = 48f;
+
+        internal const string CONSOLE_NAME = "console";
+        internal const string WATCH_NAME = "watch_spot";
+        internal const string MINI_TV_NAME = "mini_tv";
+
+        /// The mini set's own field, in metres. Small on purpose: the big
+        /// TV already reaches the table (48 m of linear rolloff), so this
+        /// speaker is there to make the little screen feel like a sound
+        /// source of its own at the table, not to carry the room. Beyond
+        /// MINI_AUDIO_FAR only the big set is heard, which is the right
+        /// way round.
+        internal const float MINI_AUDIO_NEAR = 0.5f;
+        internal const float MINI_AUDIO_FAR = 8f;
+
+        /// Where the mini set stands on the felt when the scene settings
+        /// carry no `card_table_mini_tv` entry: local to the table, on the
+        /// felt surface, clear of the deck (centre), the blackjack dealer
+        /// row (z +0.22), the hold'em board (z -0.06) and every seat's
+        /// hand anchor (radius 0.5 on the diagonals). Yawed 180 so its
+        /// screen - which is on the root's -Z, like the big set's - looks
+        /// back across the table.
+        internal static readonly Vector3 MINI_TV_AT = new Vector3(0f, 0.765f, -0.40f);
 
         const string PENS_NAME = "sdk_pens";
         internal const string SLOT_NAME = "slot_machine";
@@ -565,6 +637,11 @@ namespace LegaiaWorld
             var screenR = screen.GetComponent<Renderer>();
 
             // Speaker: one spatial AudioSource shared by both players.
+            // The radii are three times the kit's original set: a TV is
+            // something a room listens to together, and at 16 m the sound
+            // died about where the card table starts. Linear rolloff, so
+            // the audible field scales straight off maxDistance and the
+            // VRC spatial component's near / far follow the same numbers.
             var spk = new GameObject("speaker");
             spk.transform.SetParent(root.transform, false);
             spk.transform.localPosition = new Vector3(0f, 0.75f, -0.15f);
@@ -572,10 +649,10 @@ namespace LegaiaWorld
             src.playOnAwake = false;
             src.spatialBlend = 1f;
             src.volume = 0.8f;
-            src.minDistance = 1.5f;
-            src.maxDistance = 16f;
+            src.minDistance = TV_AUDIO_NEAR;
+            src.maxDistance = TV_AUDIO_FAR;
             src.rolloffMode = AudioRolloffMode.Linear;
-            LegaiaAudioGen.AddVrcSpatial(spk, true, 10f, 1.5f, 16f);
+            LegaiaAudioGen.AddVrcSpatial(spk, true, 10f, TV_AUDIO_NEAR, TV_AUDIO_FAR);
 
             var unity = AddSdk(root, "VRC.SDK3.Video.Components.VRCUnityVideoPlayer");
             SetProp(unity, "renderMode", 1); // MaterialOverride
@@ -612,20 +689,152 @@ namespace LegaiaWorld
             Text status;
             var urlField = BuildUrlPanel(root.transform, backing, out status);
 
-            var size = new Vector3(0.14f, 0.06f, 0.09f);
-            Button(root.transform, "btn_play", new Vector3(-0.3f, 0.83f, -0.12f),
+            // Five controls, because the playlist needs a way back: a guest
+            // video or a villager show can be handed back to the house
+            // playlist without waiting for it to end, and Stop leaves the
+            // set off until someone asks for something (a villager may not
+            // switch it back on - see LegaiaVideoTv's arbitration note).
+            var size = new Vector3(0.13f, 0.06f, 0.09f);
+            Button(root.transform, "btn_playlist", new Vector3(-0.44f, 0.83f, -0.12f),
+                size, blue, tv, "PlayPlaylist", "House playlist");
+            Button(root.transform, "btn_play", new Vector3(-0.22f, 0.83f, -0.12f),
                 size, green, tv, "TogglePlay", "Play / Pause");
-            Button(root.transform, "btn_stop", new Vector3(0f, 0.83f, -0.12f),
+            Button(root.transform, "btn_next", new Vector3(0f, 0.83f, -0.12f),
+                size, green, tv, "NextInPlaylist", "Next in the playlist");
+            Button(root.transform, "btn_stop", new Vector3(0.22f, 0.83f, -0.12f),
                 size, red, tv, "StopVideo", "Stop");
-            Button(root.transform, "btn_resync", new Vector3(0.3f, 0.83f, -0.12f),
+            Button(root.transform, "btn_resync", new Vector3(0.44f, 0.83f, -0.12f),
                 size, blue, tv, "Resync", "Resync");
 
             LegaiaWorldBuilder.SetUdonField(tv, "unityPlayer", unity);
             LegaiaWorldBuilder.SetUdonField(tv, "avproPlayer", avpro);
             LegaiaWorldBuilder.SetUdonField(tv, "urlField", urlField);
             LegaiaWorldBuilder.SetUdonField(tv, "statusText", status);
+
+            // The playlist, the villagers' shows, the floor console and the
+            // watch spot they use: all from Settings/video.settings.json,
+            // which is shared by every scene the kit builds.
+            var video = LegaiaVideoSettings.Load(SceneNameOf(genDir));
+            var console = video.AnyConsole()
+                ? BuildConsole(root.transform, genDir, dark) : null;
+            WireVideoConfig(tv, video, console);
+            BuildWatchSpot(root.transform, tv);
+
             LegaiaWorldBuilder.SyncUdonProxy(tv);
+            Debug.Log("[Legaia] TV: " + video.defaultPlaylist.Count +
+                      " playlist item(s), " + video.shows.Count + " villager show(s)" +
+                      (console != null ? " + the floor console" : "") + ".");
             return root;
+        }
+
+        /// Push the shared video config onto the TV behaviour. VRCUrl has
+        /// to be built by reflection like every other SDK type here (this
+        /// file carries no compile-time SDK reference), and a VRCUrl can
+        /// only be MADE in the editor: Udon cannot construct one at
+        /// runtime, which is exactly why the playlist is serialized into
+        /// the behaviour instead of parsed from a string at Start.
+        static void WireVideoConfig(Component tv, LegaiaVideoSettings video,
+            GameObject console)
+        {
+            var playlist = new List<string>();
+            var titles = new List<string>();
+            foreach (var e in video.defaultPlaylist)
+            {
+                playlist.Add(e.url);
+                titles.Add(e.title);
+            }
+            LegaiaWorldBuilder.SetUdonField(tv, "playlistUrls", UrlArray(playlist));
+            LegaiaWorldBuilder.SetUdonField(tv, "playlistTitles", titles.ToArray());
+            LegaiaWorldBuilder.SetUdonField(tv, "showUrls", UrlArray(video.FlatShowUrls()));
+            LegaiaWorldBuilder.SetUdonField(tv, "showStart", video.ShowStarts());
+            LegaiaWorldBuilder.SetUdonField(tv, "showCount", video.ShowCounts());
+            LegaiaWorldBuilder.SetUdonField(tv, "showTitles", video.ShowField(TitleOf));
+            LegaiaWorldBuilder.SetUdonField(tv, "showOwners", video.ShowField(WhoOf));
+            LegaiaWorldBuilder.SetUdonField(tv, "showTokens", video.ShowField(TokenOf));
+            LegaiaWorldBuilder.SetUdonField(tv, "showConsole", video.ShowConsoles());
+            LegaiaWorldBuilder.SetUdonField(tv, "consoleProp", console);
+        }
+
+        static string TitleOf(LegaiaVideoShow s) { return s.title; }
+        static string WhoOf(LegaiaVideoShow s) { return s.who; }
+        static string TokenOf(LegaiaVideoShow s) { return s.token; }
+
+        /// A VRCUrl[] the U# field can take, or null when the SDK is absent
+        /// (the kit builds inert without it, like every other SDK part).
+        static object UrlArray(List<string> urls)
+        {
+            var t = LegaiaWorldBuilder.FindType("VRC.SDKBase.VRCUrl");
+            if (t == null)
+                return null;
+            var arr = System.Array.CreateInstance(t, urls.Count);
+            for (int i = 0; i < urls.Count; i++)
+                arr.SetValue(System.Activator.CreateInstance(t, new object[] { urls[i] }), i);
+            return arr;
+        }
+
+        /// The floor console: a generic grey box with a round lid and a
+        /// lead running toward the set. Built INACTIVE - the TV switches it
+        /// on off its synced state while a console show plays. It is the
+        /// kit's own primitive shape and carries no branding: nothing here
+        /// is anyone's product, it is furniture that reads as "a console is
+        /// plugged in".
+        static GameObject BuildConsole(Transform root, string genDir, Material dark)
+        {
+            var grey = LegaiaCampProps.EnsureMat(genDir, "console_grey", "Standard",
+                new Color(0.74f, 0.73f, 0.70f));
+            var go = new GameObject(CONSOLE_NAME);
+            go.transform.SetParent(root, false);
+            go.transform.localPosition = new Vector3(0.55f, 0f, -0.78f);
+            go.transform.localRotation = Quaternion.Euler(0f, 18f, 0f);
+
+            Prim(PrimitiveType.Cube, "body", go.transform,
+                new Vector3(0f, 0.026f, 0f), new Vector3(0.27f, 0.052f, 0.2f), grey);
+            Prim(PrimitiveType.Cylinder, "lid", go.transform,
+                new Vector3(0f, 0.056f, 0.008f), new Vector3(0.14f, 0.006f, 0.14f), grey);
+            Prim(PrimitiveType.Cube, "slots", go.transform,
+                new Vector3(0f, 0.02f, -0.101f), new Vector3(0.14f, 0.018f, 0.004f), dark);
+            Prim(PrimitiveType.Cube, "button", go.transform,
+                new Vector3(-0.105f, 0.055f, 0.045f), new Vector3(0.02f, 0.006f, 0.012f), dark);
+            // The lead to the set: one thin box, angled back at the TV.
+            var lead = Prim(PrimitiveType.Cube, "lead", go.transform,
+                new Vector3(-0.16f, 0.008f, 0.3f), new Vector3(0.012f, 0.008f, 0.62f), dark);
+            lead.transform.localRotation = Quaternion.Euler(0f, -28f, 0f);
+
+            go.SetActive(false);
+            return go;
+        }
+
+        /// Where a villager stands to watch: an ordinary kind-0 station
+        /// whose handler is the TV's watch spot. The director finds it in
+        /// its sweep of the container like any other station, so nothing in
+        /// the living town has to know the TV exists.
+        static void BuildWatchSpot(Transform root, Component tv)
+        {
+            var go = new GameObject(WATCH_NAME);
+            go.transform.SetParent(root, false);
+            go.transform.localPosition = new Vector3(0.55f, 0f, -1.12f);
+            // Face the set: the stand point's +Z is where the villager
+            // looks, and the screen is at the root's origin.
+            var toTv = -go.transform.localPosition;
+            toTv.y = 0f;
+            go.transform.localRotation = Quaternion.LookRotation(toTv.normalized);
+
+            var spot = LegaiaWorldBuilder.TryAttachUdon(go, "LegaiaTvWatchSpot");
+            var station = LegaiaWorldBuilder.TryAttachUdon(go, "LegaiaNpcStation");
+            LegaiaWorldBuilder.SetUdonField(station, "kind", 0); // use-prop
+            LegaiaWorldBuilder.SetUdonField(station, "standPoint", go.transform);
+            LegaiaWorldBuilder.SetUdonField(station, "handler", spot);
+            LegaiaWorldBuilder.SetUdonField(station, "role", "tv");
+            LegaiaWorldBuilder.SetUdonField(station, "glance", false);
+            LegaiaWorldBuilder.SetUdonField(station, "dwellSeconds", 150f);
+            LegaiaWorldBuilder.SetUdonField(station, "indoors", false);
+            LegaiaWorldBuilder.SyncUdonProxy(station);
+
+            LegaiaWorldBuilder.SetUdonField(spot, "station", station);
+            LegaiaWorldBuilder.SetUdonField(spot, "tv", tv);
+            LegaiaWorldBuilder.SetUdonField(spot, "controllerItem",
+                LegaiaCarryArt.ITEM_CONTROLLER);
+            LegaiaWorldBuilder.SyncUdonProxy(spot);
         }
 
         static Material EnsureScreenMaterial(string genDir)
@@ -794,6 +1003,161 @@ namespace LegaiaWorld
             return c != null && t != null ? c.GetComponent(t) : null;
         }
 
+        // --- Mini CRT -----------------------------------------------------------
+
+        /// A coaster-sized television on the card table's felt, fed by the
+        /// big set's players. Built AFTER both of them, from the container
+        /// they are already in, so nothing in BuildTv or BuildCardTable has
+        /// to know it exists.
+        ///
+        /// The three wires that make it "the same television", not another
+        /// one (LegaiaMiniTv's header carries the reasoning):
+        ///
+        ///   - a second VRCAVProVideoScreen on the small quad, pointed at
+        ///     the TV's AVPro player: that is the SDK's own way to put one
+        ///     stream on several surfaces, and it costs nothing;
+        ///   - a second VRCAVProVideoSpeaker, and the small AudioSource
+        ///     appended to the Unity player's targetAudioSources array, so
+        ///     both backends reach both speakers;
+        ///   - LegaiaMiniTv, which copies the picture across for the Unity
+        ///     player - the one backend whose single targetMaterialRenderer
+        ///     cannot be doubled.
+        ///
+        /// Both screens share the `tv_screen` material ASSET, so both keep
+        /// the video shader through the lit conversion (which skips
+        /// "Video/" shaders) and both start on the same black idle frame.
+        /// At runtime each renderer gets its own instance, which is what
+        /// lets the two be written independently.
+        static GameObject BuildMiniTv(GameObject container, string genDir,
+            Dictionary<string, LegaiaPrefabTransform> placements)
+        {
+            var tvT = container.transform.Find("tv");
+            var tableT = container.transform.Find("card_table");
+            if (tvT == null || tableT == null)
+                return null;
+            var bigScreen = tvT.Find("screen");
+            var bigSpeaker = tvT.Find("speaker");
+            if (bigScreen == null || bigSpeaker == null)
+            {
+                Debug.LogWarning("[Legaia] mini CRT: the TV has no screen / speaker " +
+                    "to share - skipped.");
+                return null;
+            }
+
+            var dark = LegaiaCampProps.EnsureMat(genDir, "camp_dark", "Standard",
+                new Color(0.16f, 0.14f, 0.12f));
+            var wood = LegaiaCampProps.EnsureMat(genDir, "camp_wood", "Standard",
+                new Color(0.36f, 0.24f, 0.13f));
+            var screenMat = EnsureScreenMaterial(genDir);
+
+            var root = new GameObject(MINI_TV_NAME);
+            root.transform.SetParent(tableT, false);
+            root.transform.localPosition = MINI_TV_AT;
+            root.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
+            if (LegaiaSceneSettings.ApplyPlacement(placements, "card_table_mini_tv",
+                    root.transform))
+                Debug.Log("[Legaia] mini CRT placed from settings at local " +
+                    root.transform.localPosition + ".");
+
+            // Cabinet. One collider on the ROOT rather than one per part:
+            // it is a solid little object cards should rest against, and a
+            // single box is cheaper than five and cannot trap a pickup
+            // between two of its own pieces.
+            Prim(PrimitiveType.Cube, "base", root.transform,
+                new Vector3(0f, 0.008f, 0f), new Vector3(0.215f, 0.016f, 0.175f), dark);
+            Prim(PrimitiveType.Cube, "cabinet", root.transform,
+                new Vector3(0f, 0.085f, 0.015f), new Vector3(0.2f, 0.14f, 0.15f), wood);
+
+            // The face is tilted UP. A set this size stands well below a
+            // seated player's eye, so a screen square to the felt is read
+            // at a glancing angle from every stool; 12 degrees is what a
+            // portable television's own stand gives it.
+            var face = new GameObject("face");
+            face.transform.SetParent(root.transform, false);
+            face.transform.localPosition = new Vector3(-0.018f, 0.088f, -0.062f);
+            face.transform.localRotation = Quaternion.Euler(12f, 0f, 0f);
+            Prim(PrimitiveType.Cube, "bezel", face.transform,
+                Vector3.zero, new Vector3(0.155f, 0.125f, 0.014f), dark);
+            var screen = Prim(PrimitiveType.Quad, "screen", face.transform,
+                new Vector3(0f, 0f, -0.009f), new Vector3(0.122f, 0.092f, 1f), screenMat);
+            var screenR = screen.GetComponent<Renderer>();
+
+            // The control strip down the right of the cabinet, and an
+            // aerial: the two things that say "television" at this size.
+            var dial1 = Prim(PrimitiveType.Cylinder, "dial_1", root.transform,
+                new Vector3(0.072f, 0.115f, -0.068f),
+                new Vector3(0.022f, 0.004f, 0.022f), dark);
+            dial1.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+            var dial2 = Prim(PrimitiveType.Cylinder, "dial_2", root.transform,
+                new Vector3(0.072f, 0.072f, -0.068f),
+                new Vector3(0.022f, 0.004f, 0.022f), dark);
+            dial2.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+            var aerial = Prim(PrimitiveType.Cylinder, "aerial", root.transform,
+                new Vector3(0.075f, 0.2f, 0.05f),
+                new Vector3(0.004f, 0.06f, 0.004f), dark);
+            aerial.transform.localRotation = Quaternion.Euler(30f, 0f, 18f);
+
+            var box = root.AddComponent<BoxCollider>();
+            box.center = new Vector3(0f, 0.085f, -0.01f);
+            box.size = new Vector3(0.22f, 0.17f, 0.2f);
+
+            // Speaker: quiet, short-range, fully 3D, linear like the big
+            // one so the two fields scale the same way.
+            var spk = new GameObject("speaker");
+            spk.transform.SetParent(root.transform, false);
+            spk.transform.localPosition = new Vector3(0f, 0.09f, -0.02f);
+            var src = spk.AddComponent<AudioSource>();
+            src.playOnAwake = false;
+            src.spatialBlend = 1f;
+            src.volume = 0.35f;
+            src.minDistance = MINI_AUDIO_NEAR;
+            src.maxDistance = MINI_AUDIO_FAR;
+            src.rolloffMode = AudioRolloffMode.Linear;
+            LegaiaAudioGen.AddVrcSpatial(spk, true, 10f, MINI_AUDIO_NEAR, MINI_AUDIO_FAR);
+
+            // --- the wires ---------------------------------------------------
+            var unityType = LegaiaWorldBuilder.FindType(
+                "VRC.SDK3.Video.Components.VRCUnityVideoPlayer");
+            var avproType = LegaiaWorldBuilder.FindType(
+                "VRC.SDK3.Video.Components.AVPro.VRCAVProVideoPlayer");
+            var unity = unityType != null ? tvT.GetComponent(unityType) : null;
+            var avpro = avproType != null ? tvT.GetComponent(avproType) : null;
+
+            if (unity != null)
+                // The array the SDK already gives us: the TV's speaker and
+                // this one, from one decode. Rewritten whole because the
+                // property is a list, not a slot.
+                SetProp(unity, "targetAudioSources", new Object[]
+                {
+                    bigSpeaker.GetComponent<AudioSource>(), src,
+                });
+            if (avpro != null)
+            {
+                var avScreen = AddSdk(screen, "VRC.SDK3.Video.Components." +
+                    "AVPro.VRCAVProVideoScreen");
+                SetProp(avScreen, "videoPlayer", avpro);
+                SetProp(avScreen, "materialIndex", 0);
+                SetProp(avScreen, "textureProperty", "_MainTex");
+                SetProp(avScreen, "useSharedMaterial", false);
+                var avSpk = AddSdk(spk, "VRC.SDK3.Video.Components." +
+                    "AVPro.VRCAVProVideoSpeaker");
+                SetProp(avSpk, "videoPlayer", avpro);
+                SetProp(avSpk, "mode", 0); // StereoMix
+            }
+
+            var mini = LegaiaWorldBuilder.TryAttachUdon(root, "LegaiaMiniTv");
+            LegaiaWorldBuilder.SetUdonField(mini, "sourceScreen",
+                bigScreen.GetComponent<Renderer>());
+            LegaiaWorldBuilder.SetUdonField(mini, "screen", screenR);
+            LegaiaWorldBuilder.SyncUdonProxy(mini);
+
+            Debug.Log("[Legaia] mini CRT on the felt: " +
+                      (avpro != null ? "AVPro screen + speaker, " : "") +
+                      (unity != null ? "Unity player audio shared, " : "") +
+                      "picture mirrored from the big set.");
+            return root;
+        }
+
         // --- Card table ---------------------------------------------------------
 
         const float CARD_W = 0.063f, CARD_L = 0.088f, CARD_T = 0.0005f;
@@ -807,10 +1171,6 @@ namespace LegaiaWorld
                 new Color(0.16f, 0.14f, 0.12f));
             var felt = LegaiaCampProps.EnsureMat(genDir, "table_felt", "Standard",
                 new Color(0.12f, 0.36f, 0.18f));
-            var green = LegaiaCampProps.EnsureMat(genDir, "button_green", "Standard",
-                new Color(0.25f, 0.6f, 0.3f));
-            var blue = LegaiaCampProps.EnsureMat(genDir, "button_blue", "Standard",
-                new Color(0.25f, 0.4f, 0.65f));
 
             var root = new GameObject("card_table");
             root.transform.SetParent(container.transform, false);
@@ -842,10 +1202,9 @@ namespace LegaiaWorld
             // nobody is playing - the host below arbitrates between them.
             var seatStations = new List<Component>();
             var seatChairs = new List<Component>();
-            var seatHands = new List<GameObject>();
             for (int i = 0; i < seats; i++)
-                BuildStool(root.transform, i, seats, wood, dark, cardMat, meshes,
-                    seatStations, seatChairs, seatHands);
+                BuildStool(root.transform, i, seats, wood, dark,
+                    seatStations, seatChairs);
 
             // Deck: 52 pickups stacked face-down at the anchor.
             var anchor = new GameObject("deck_anchor");
@@ -877,7 +1236,6 @@ namespace LegaiaWorld
                 ToTypedArray(seatStations, "LegaiaNpcStation"));
             LegaiaWorldBuilder.SetUdonField(host, "seatChairs",
                 ToTypedArray(seatChairs, "LegaiaSeat"));
-            LegaiaWorldBuilder.SetUdonField(host, "seatHands", seatHands.ToArray());
             LegaiaWorldBuilder.SetUdonField(host, "deckAnchor", anchor.transform);
             LegaiaWorldBuilder.SetUdonField(host, "cards", cardTransforms.ToArray());
             LegaiaWorldBuilder.SyncUdonProxy(host);
@@ -887,13 +1245,13 @@ namespace LegaiaWorld
                 LegaiaWorldBuilder.SyncUdonProxy(st);
             }
 
-            var size = new Vector3(0.09f, 0.03f, 0.06f);
-            Button(root.transform, "btn_shuffle", new Vector3(-0.12f, 0.775f, -0.46f),
-                size, green, deck, "Shuffle", "Shuffle deck");
-            Button(root.transform, "btn_gather", new Vector3(0.12f, 0.775f, -0.46f),
-                size, blue, deck, "Gather", "Gather deck");
-            Button(root.transform, "btn_npcs", new Vector3(0.36f, 0.775f, -0.34f),
-                size, wood, host, "ToggleNpcs", "NPCs: sit / shoo");
+            // NO BUTTONS ON THE FELT. Shuffle / Gather / the NPC toggle
+            // used to be three collider cubes standing on the table top,
+            // where they sat inside the reach of a seated player's cards
+            // and looked like furniture rather than controls. They are UI
+            // buttons on the seat panel now (LegaiaCardGameBuilder), which
+            // is also where every other table control already lives -
+            // one surface to read, one surface to press.
 
             LegaiaWorldBuilder.SetUdonField(deck, "cards", ToTypedArray(cards, "LegaiaCard"));
             LegaiaWorldBuilder.SetUdonField(deck, "stackAnchor", anchor.transform);
@@ -921,8 +1279,7 @@ namespace LegaiaWorld
         }
 
         static void BuildStool(Transform root, int i, int n, Material wood, Material dark,
-            Material cardMat, Mesh[] cardMeshes, List<Component> seatStations,
-            List<Component> seatChairs, List<GameObject> seatHands)
+            List<Component> seatStations, List<Component> seatChairs)
         {
             float a = (i + 0.5f) / n * Mathf.PI * 2f;
             Vector3 local = new Vector3(Mathf.Sin(a) * 0.98f, 0f, Mathf.Cos(a) * 0.98f);
@@ -969,30 +1326,14 @@ namespace LegaiaWorld
             LegaiaWorldBuilder.SetUdonField(npcSeat, "indoors", false);
             LegaiaWorldBuilder.SyncUdonProxy(npcSeat);
 
-            // Cosmetic hand: two card backs fanned in front of a seated
-            // villager (the rigs have no hand bone, so the fan hangs off
-            // the stool - see LegaiaCardTableHost's pose note).
-            var hand = new GameObject("npc_hand");
-            hand.transform.SetParent(stool.transform, false);
-            hand.transform.localPosition = new Vector3(0f, 0.95f, 0.16f);
-            for (int c = 0; c < 2; c++)
-            {
-                var q = new GameObject("held_" + c);
-                q.transform.SetParent(hand.transform, false);
-                q.transform.localPosition = new Vector3((c - 0.5f) * 0.035f, 0f, 0f);
-                q.transform.localRotation =
-                    Quaternion.Euler(70f, 0f, (c - 0.5f) * 26f);
-                q.AddComponent<MeshFilter>().sharedMesh =
-                    cardMeshes[(i * 7 + c) % cardMeshes.Length];
-                var mr = q.AddComponent<MeshRenderer>();
-                mr.sharedMaterial = cardMat;
-                mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            }
-            hand.SetActive(false);
+            // No cosmetic card fan on the stool: the rigs have no hand
+            // bone, so a fan hung off the stool at hand height landed on the
+            // FOREHEAD of a seated villager (they are about a metre tall).
+            // The villager's real hand is the LegaiaCardGame deal onto the
+            // felt in front of it.
 
             seatStations.Add(npcSeat);
             seatChairs.Add(seat);
-            seatHands.Add(hand);
         }
 
         static Component BuildCard(Transform parent, int index, Mesh mesh, Material mat,
@@ -1045,11 +1386,44 @@ namespace LegaiaWorld
         static string CardName(int i) => RANKS[i % 13] + "_" + SUITS[i / 13];
 
         // Atlas: 13 rank columns x (4 suit rows + 1 row for back / edge).
-        const int CW = 96, CH = 136, COLS = 13, ROWS = 5;
+        //
+        // Cell size is exactly 2x the kit's first pass (96x136). A ten has
+        // to carry four pip rows per column plus two interstitial centre
+        // pips AND a corner index at each end; at 96x136 a pip small
+        // enough to fit ten of them was three pixels of ink, which is why
+        // the first pass drew one big centre pip and left the count to the
+        // digits. 192x272 is ~30 px per centimetre of a 6.3 x 8.8 cm card,
+        // which still reads through the mip chain at the half-metre to
+        // metre a seated player looks from.
+        //
+        // That makes the atlas 2496x1360, past the importer's 2048 default
+        // cap - EnsureCardMaterial raises maxTextureSize to 4096 and, more
+        // importantly, turns npotScale OFF: the default ToNearest was
+        // resampling even the OLD 1248x680 atlas down to 1024x512, so the
+        // first pass never reached the GPU at the density it drew. 13x5
+        // cells can never tile a power-of-two texture, so None is the only
+        // setting that keeps the grid.
+        //
+        // COLS/ROWS must NOT change: Cell() turns them into the UVs baked
+        // into cards_meshes.asset. CW/CH appear nowhere in that asset, so
+        // a cell-size change alone leaves the cached meshes valid.
+        const int CW = 192, CH = 272, COLS = 13, ROWS = 5;
+
+        // EnsureCardMaterial only draws when the PNG is missing, so a
+        // project that already built the old faces would keep them for
+        // ever. The file name carries the layout version instead; bump it
+        // (and add the old name to the obsolete list) on every face change.
+        const string CARD_ATLAS = "cards_atlas_v2.png";
+        static readonly string[] CARD_ATLAS_OBSOLETE = { "cards_atlas.png" };
+
+        internal static string CardAtlasPath(string genDir) => genDir + "/" + CARD_ATLAS;
 
         static Material EnsureCardMaterial(string genDir)
         {
-            string texPath = genDir + "/cards_atlas.png";
+            string texPath = CardAtlasPath(genDir);
+            foreach (string stale in CARD_ATLAS_OBSOLETE)
+                if (AssetDatabase.LoadAssetAtPath<Texture2D>(genDir + "/" + stale) != null)
+                    AssetDatabase.DeleteAsset(genDir + "/" + stale);
             if (AssetDatabase.LoadAssetAtPath<Texture2D>(texPath) == null)
             {
                 var tex = new Texture2D(CW * COLS, CH * ROWS, TextureFormat.RGBA32, false);
@@ -1069,6 +1443,17 @@ namespace LegaiaWorld
                     imp.alphaIsTransparency = true;
                     imp.wrapMode = TextureWrapMode.Clamp;
                     imp.mipmapEnabled = true;
+                    // Cutout shader: without coverage-preserving mips the
+                    // pips and the card silhouette dissolve with distance.
+                    imp.mipMapsPreserveCoverage = true;
+                    imp.alphaTestReferenceValue = 0.5f;
+                    // A card on the felt is read at a grazing angle, which
+                    // is exactly where bilinear-only sampling smears the
+                    // corner index into paper.
+                    imp.filterMode = FilterMode.Trilinear;
+                    imp.anisoLevel = 8;
+                    imp.npotScale = TextureImporterNPOTScale.None;
+                    imp.maxTextureSize = 4096;
                     imp.SaveAndReimport();
                 }
             }
@@ -1090,6 +1475,20 @@ namespace LegaiaWorld
             px[ay * w + ax] = col;
         }
 
+        /// Ink over whatever is already there, with `a` coverage. Blending
+        /// is what lets the analytic pip tests be supersampled instead of
+        /// stair-stepped; a pixel outside the card body stays transparent.
+        static void Blend(Color[] px, int w, int h, int c, int r, int x, int y,
+            Color col, float a)
+        {
+            if (x < 0 || y < 0 || x >= CW || y >= CH || a <= 0f) return;
+            int ax = c * CW + x;
+            int ay = h - 1 - (r * CH + y);
+            var dst = px[ay * w + ax];
+            if (dst.a <= 0f) return;
+            px[ay * w + ax] = Color.Lerp(dst, col, Mathf.Clamp01(a));
+        }
+
         static bool InRoundedRect(int x, int y, int w, int h, int rad)
         {
             int cx = x < rad ? rad : (x >= w - rad ? w - 1 - rad : x);
@@ -1097,6 +1496,84 @@ namespace LegaiaWorld
             int dx = x - cx, dy = y - cy;
             return dx * dx + dy * dy <= rad * rad;
         }
+
+        // --- Face layout ------------------------------------------------
+        //
+        // Every coordinate below is a fraction of CW / CH, so the whole
+        // face survives another cell-size change; the batch check reads
+        // the same helpers, so "the pips are where the counter looks" is
+        // one definition, not two.
+
+        const float PIP_TOP = 0.16f, PIP_BOT = 0.84f; // pip field, top / bottom row
+        const float PIP_COL = 0.315f;                 // side pip columns from each edge
+
+        static int Rad() => Mathf.Max(3, Mathf.RoundToInt(CH * 0.059f));
+        static int IndexX() => Mathf.RoundToInt(CW * 0.115f);  // corner column centre
+        static int IndexY() => Mathf.RoundToInt(CH * 0.045f);  // rank glyph top
+        static int IndexPipY() => Mathf.RoundToInt(CH * 0.22f);
+        static int IndexPipS() => Mathf.Max(3, Mathf.RoundToInt(CH * 0.032f));
+        static int BodyPipS() => Mathf.Max(4, Mathf.RoundToInt(CH * 0.058f));
+        static int AcePipS() => Mathf.Max(8, Mathf.RoundToInt(CH * 0.16f));
+        static int ColLeft() => Mathf.RoundToInt(CW * PIP_COL);
+        static int ColRight() => CW - Mathf.RoundToInt(CW * PIP_COL);
+
+        /// Index glyph scale. "10" is the only two-glyph rank and it drops
+        /// a step so the corner column stays as narrow as the single-digit
+        /// ranks - the same thing a real deck does with a condensed 1.
+        static int IndexScale(string rank) =>
+            Mathf.Max(2, Mathf.RoundToInt(CW * (rank.Length > 1 ? 0.023f : 0.026f)));
+
+        /// The corner-index block, top-left; the bottom-right one is its
+        /// 180-degree mirror. Nothing else on the face may enter it - the
+        /// pip counter excludes exactly these two rectangles, so anything
+        /// that leaks out of one counts as a pip.
+        internal static RectInt CardIndexRegion() =>
+            new RectInt(0, 0, Mathf.RoundToInt(CW * 0.22f), Mathf.RoundToInt(CH * 0.28f));
+
+        /// The court cards' frame, and the width of its border stroke.
+        internal static RectInt CardCourtFrame() =>
+            new RectInt(Mathf.RoundToInt(CW * 0.24f), Mathf.RoundToInt(CH * 0.21f),
+                Mathf.RoundToInt(CW * 0.52f), Mathf.RoundToInt(CH * 0.58f));
+
+        internal static int CardCourtStroke() => Mathf.Max(2, Mathf.RoundToInt(CW * 0.021f));
+
+        internal static void CardAtlasLayout(out int cw, out int ch, out int cols, out int rows)
+        {
+            cw = CW; ch = CH; cols = COLS; rows = ROWS;
+        }
+
+        /// Cell-local (x, y), y down from the cell's top - the same
+        /// mapping Px() writes with, so a check can read what was drawn.
+        internal static Color CardPixel(Color[] px, int w, int h, int c, int r, int x, int y)
+            => px[(h - 1 - (r * CH + y)) * w + c * CW + x];
+
+        /// Ink vs paper. Paper is near-white, both inks are dark or deep
+        /// red; the midpoint leaves the supersampled pip edges on the ink
+        /// side down to about a third coverage.
+        internal static bool CardIsInk(Color c)
+            => c.a > 0.5f && (c.r + c.g + c.b) / 3f < 0.7f;
+
+        /// Standard pip layouts for 2..10, as (column, row) pairs: column
+        /// -1 / 0 / +1 = left / centre / right, row 0..1 spanning the pip
+        /// field. The four-row columns of 9 and 10 sit at thirds, 6-8 use
+        /// halves, and the centre pips of 7, 8 and 10 sit BETWEEN two
+        /// column rows - that interstitial placement is what makes a real
+        /// ten read as 4 + 4 + 2 instead of as a grid.
+        static readonly float[][] PIP_LAYOUT =
+        {
+            new[] { 0f, 0f, 0f, 1f },                                                    // 2
+            new[] { 0f, 0f, 0f, 0.5f, 0f, 1f },                                          // 3
+            new[] { -1f, 0f, 1f, 0f, -1f, 1f, 1f, 1f },                                  // 4
+            new[] { -1f, 0f, 1f, 0f, 0f, 0.5f, -1f, 1f, 1f, 1f },                        // 5
+            new[] { -1f, 0f, 1f, 0f, -1f, 0.5f, 1f, 0.5f, -1f, 1f, 1f, 1f },             // 6
+            new[] { -1f, 0f, 1f, 0f, 0f, 0.25f, -1f, 0.5f, 1f, 0.5f, -1f, 1f, 1f, 1f },  // 7
+            new[] { -1f, 0f, 1f, 0f, 0f, 0.25f, -1f, 0.5f, 1f, 0.5f, 0f, 0.75f,          // 8
+                    -1f, 1f, 1f, 1f },
+            new[] { -1f, 0f, 1f, 0f, -1f, 1f / 3f, 1f, 1f / 3f, 0f, 0.5f,                // 9
+                    -1f, 2f / 3f, 1f, 2f / 3f, -1f, 1f, 1f, 1f },
+            new[] { -1f, 0f, 1f, 0f, 0f, 1f / 6f, -1f, 1f / 3f, 1f, 1f / 3f,             // 10
+                    -1f, 2f / 3f, 1f, 2f / 3f, 0f, 5f / 6f, -1f, 1f, 1f, 1f },
+        };
 
         static void DrawCardFace(Color[] px, int w, int h, int col, int row)
         {
@@ -1106,29 +1583,57 @@ namespace LegaiaWorld
             for (int y = 0; y < CH; y++)
                 for (int x = 0; x < CW; x++)
                     Px(px, w, h, col, row, x, y,
-                        InRoundedRect(x, y, CW, CH, 8) ? paper : Color.clear);
+                        InRoundedRect(x, y, CW, CH, Rad()) ? paper : Color.clear);
             string rank = RANKS[col];
-            // Corner indices: rank glyph + small pip, top-left and (rotated)
-            // bottom-right.
-            DrawRank(px, w, h, col, row, rank, 7, 7, 2, ink, false);
-            DrawPip(px, w, h, col, row, row, 13 + (rank == "10" ? 6 : 0), 32, 5, ink, false);
-            DrawRank(px, w, h, col, row, rank, CW - 8, CH - 8, 2, ink, true);
-            DrawPip(px, w, h, col, row, row, CW - 14 - (rank == "10" ? 6 : 0), CH - 33, 5, ink, true);
-            // Centre: one big pip; court cards get a framed big letter.
+
+            // Corner index: the rank glyph with its suit pip directly under
+            // it on ONE column, top-left, and the same column rotated 180
+            // at the bottom-right - what a player reads off a fanned hand.
+            int k = IndexScale(rank);
+            int gw = GlyphWidth(rank, k);
+            DrawRank(px, w, h, col, row, rank, IndexX() - gw / 2, IndexY(), k, ink, false);
+            DrawPip(px, w, h, col, row, row, IndexX(), IndexPipY(), IndexPipS(), ink, false);
+            DrawRank(px, w, h, col, row, rank, CW - 1 - IndexX() + gw / 2,
+                CH - 1 - IndexY(), k, ink, true);
+            DrawPip(px, w, h, col, row, row, CW - 1 - IndexX(), CH - 1 - IndexPipY(),
+                IndexPipS(), ink, true);
+
             if (col >= 10)
             {
-                for (int y = 30; y < CH - 30; y++)
-                    for (int x = 20; x < CW - 20; x++)
-                    {
-                        bool edge = y < 32 || y >= CH - 32 || x < 22 || x >= CW - 22;
-                        if (edge)
+                // Court: a framed big letter with one pip under it.
+                var f = CardCourtFrame();
+                int t = CardCourtStroke();
+                for (int y = f.yMin; y < f.yMax; y++)
+                    for (int x = f.xMin; x < f.xMax; x++)
+                        if (y < f.yMin + t || y >= f.yMax - t ||
+                            x < f.xMin + t || x >= f.xMax - t)
                             Px(px, w, h, col, row, x, y, ink);
-                    }
-                DrawRank(px, w, h, col, row, rank, CW / 2 - 12, CH / 2 - 20, 5, ink, false);
-                DrawPip(px, w, h, col, row, row, CW / 2, CH / 2 + 30, 7, ink, false);
+                int lk = Mathf.Max(3, Mathf.RoundToInt(CW * 0.052f));
+                DrawRank(px, w, h, col, row, rank, CW / 2 - GlyphWidth(rank, lk) / 2,
+                    f.yMin + Mathf.RoundToInt(f.height * 0.12f), lk, ink, false);
+                DrawPip(px, w, h, col, row, row, CW / 2,
+                    f.yMax - Mathf.RoundToInt(f.height * 0.22f), BodyPipS(), ink, false);
+            }
+            else if (col == 0)
+            {
+                // Ace: one large pip, centred.
+                DrawPip(px, w, h, col, row, row, CW / 2, CH / 2, AcePipS(), ink, false);
             }
             else
-                DrawPip(px, w, h, col, row, row, CW / 2, CH / 2, 22, ink, false);
+            {
+                // 2..10: the standard arrangement, lower half upside down.
+                float[] layout = PIP_LAYOUT[col - 1];
+                int yTop = Mathf.RoundToInt(CH * PIP_TOP);
+                int yBot = Mathf.RoundToInt(CH * PIP_BOT);
+                for (int i = 0; i + 1 < layout.Length; i += 2)
+                {
+                    int cx = layout[i] < -0.5f ? ColLeft()
+                        : layout[i] > 0.5f ? ColRight() : CW / 2;
+                    float ty = layout[i + 1];
+                    int cy = Mathf.RoundToInt(yTop + ty * (yBot - yTop));
+                    DrawPip(px, w, h, col, row, row, cx, cy, BodyPipS(), ink, ty > 0.5f);
+                }
+            }
         }
 
         static void DrawCardBack(Color[] px, int w, int h, int col, int row)
@@ -1136,16 +1641,19 @@ namespace LegaiaWorld
             Color teal = new Color(0.10f, 0.40f, 0.44f);
             Color light = new Color(0.55f, 0.78f, 0.80f);
             Color border = new Color(0.94f, 0.93f, 0.88f);
+            int rim0 = Mathf.Max(2, Mathf.RoundToInt(CW * 0.052f));
+            int step = Mathf.Max(6, Mathf.RoundToInt(CW * 0.125f));
+            int bar = Mathf.Max(2, step / 6);
             for (int y = 0; y < CH; y++)
                 for (int x = 0; x < CW; x++)
                 {
-                    if (!InRoundedRect(x, y, CW, CH, 8))
+                    if (!InRoundedRect(x, y, CW, CH, Rad()))
                     {
                         Px(px, w, h, col, row, x, y, Color.clear);
                         continue;
                     }
-                    bool rim = x < 5 || y < 5 || x >= CW - 5 || y >= CH - 5;
-                    bool lattice = (x + y) % 12 < 2 || (x - y + 1000) % 12 < 2;
+                    bool rim = x < rim0 || y < rim0 || x >= CW - rim0 || y >= CH - rim0;
+                    bool lattice = (x + y) % step < bar || (x - y + 10000) % step < bar;
                     Px(px, w, h, col, row, x, y, rim ? border : (lattice ? light : teal));
                 }
         }
@@ -1162,12 +1670,26 @@ namespace LegaiaWorld
         static void DrawPip(Color[] px, int w, int h, int col, int row, int suit,
             int cx, int cy, int s, Color ink, bool flip)
         {
-            for (int y = -s - s / 2 - 2; y <= s + s / 2 + 2; y++)
-                for (int x = -s - 2; x <= s + 2; x++)
+            // 3x3 supersample: the suit tests are analytic, so the only
+            // thing between a clean curve and a staircase is coverage -
+            // and at ten pips a card the staircase is what you notice.
+            const int SS = 3;
+            int ry = s + s / 2 + 2, rx = s + 2;
+            for (int y = -ry; y <= ry; y++)
+                for (int x = -rx; x <= rx; x++)
                 {
-                    float fx = x / (float)s, fy = (flip ? -y : y) / (float)s;
-                    if (PipTest(suit, fx, fy))
-                        Px(px, w, h, col, row, cx + x, cy + y, ink);
+                    int hits = 0;
+                    for (int sy = 0; sy < SS; sy++)
+                        for (int sx = 0; sx < SS; sx++)
+                        {
+                            float fx = (x + (sx + 0.5f) / SS - 0.5f) / s;
+                            float fy = (y + (sy + 0.5f) / SS - 0.5f) / s;
+                            if (PipTest(suit, fx, flip ? -fy : fy))
+                                hits++;
+                        }
+                    if (hits > 0)
+                        Blend(px, w, h, col, row, cx + x, cy + y, ink,
+                            hits / (float)(SS * SS));
                 }
         }
 
@@ -1231,6 +1753,40 @@ namespace LegaiaWorld
             { 'K', new[] { "10001", "10010", "10100", "11000", "10100", "10010", "10001" } },
         };
 
+        /// Inked column range of a glyph. Advancing by the glyph's OWN
+        /// width instead of a fixed 5 is what keeps "10" as narrow as a
+        /// single digit: the '1' bitmap only uses three columns.
+        static void GlyphBounds(string[] g, out int lo, out int hi)
+        {
+            lo = 5; hi = -1;
+            for (int gy = 0; gy < 7; gy++)
+                for (int gx = 0; gx < 5; gx++)
+                    if (g[gy][gx] == '1')
+                    {
+                        if (gx < lo) lo = gx;
+                        if (gx > hi) hi = gx;
+                    }
+            if (hi < lo) { lo = 0; hi = 0; }
+        }
+
+        /// Width in pixels of `rank` at scale `k` - one blank column of
+        /// gap between glyphs, none after the last. Callers need it to
+        /// CENTRE the index on its column instead of carrying a per-rank
+        /// offset, which is what the old "10" special case was.
+        static int GlyphWidth(string rank, int k)
+        {
+            int cursor = 0;
+            foreach (char ch in rank)
+            {
+                string[] g;
+                if (!GLYPHS.TryGetValue(ch, out g))
+                    continue;
+                GlyphBounds(g, out int lo, out int hi);
+                cursor += (hi - lo + 2) * k;
+            }
+            return cursor <= 0 ? 0 : cursor - k;
+        }
+
         /// Draw `rank` at (x0, y0) top-left with pixel scale `k`; `flip`
         /// draws it rotated 180 degrees with (x0, y0) as the bottom-right.
         static void DrawRank(Color[] px, int w, int h, int col, int row, string rank,
@@ -1242,22 +1798,23 @@ namespace LegaiaWorld
                 string[] g;
                 if (!GLYPHS.TryGetValue(ch, out g))
                     continue;
+                GlyphBounds(g, out int lo, out int hi);
                 for (int gy = 0; gy < 7; gy++)
-                    for (int gx = 0; gx < 5; gx++)
+                    for (int gx = lo; gx <= hi; gx++)
                     {
                         if (g[gy][gx] != '1')
                             continue;
                         for (int sy = 0; sy < k; sy++)
                             for (int sx = 0; sx < k; sx++)
                             {
-                                int dx = cursor + gx * k + sx, dy = gy * k + sy;
+                                int dx = cursor + (gx - lo) * k + sx, dy = gy * k + sy;
                                 if (flip)
                                     Px(px, w, h, col, row, x0 - dx, y0 - dy, ink);
                                 else
                                     Px(px, w, h, col, row, x0 + dx, y0 + dy, ink);
                             }
                     }
-                cursor += 6 * k;
+                cursor += (hi - lo + 2) * k;
             }
         }
 

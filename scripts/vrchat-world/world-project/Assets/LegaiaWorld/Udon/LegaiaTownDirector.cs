@@ -29,6 +29,22 @@
 //   - COMPANIONS: now and then the villager given an errand is given
 //     somebody to walk it with, who keeps to its side and talks to it at
 //     the end;
+//   - the NIGHT HOST: one villager per scene may be pinned to a station
+//     for the whole night (town01: Cara at the card table's stool 0). It
+//     is claimed onto its seat at nightfall instead of being sent home,
+//     held there by a renewed HoldStation, parked beside the table while
+//     a player has the seat, and released at dawn. Every other picker
+//     here leaves it alone for free, because the brain's Available() is
+//     false for the length of the shift;
+//   - KEEP-OUT ZONES: `keepOut` is a flat list of world spheres (the
+//     manifest's doorway-teleport trigger boxes and every home's door
+//     tile / landing / exit / emerge marker) that no ad-hoc conversation
+//     is ever struck up inside. The stand points the builder plants are
+//     filtered at BUILD time and the stroll in the locomotion
+//     controller; between the three, nobody is ever parked in a tile a
+//     player walks through. The night door trip is deliberately exempt -
+//     it is the one legitimate visit to a doorway, and it is not
+//     scheduled here at all;
 //   - the day/night routine: at nightfall (LegaiaDayNight.isNight)
 //     villagers walk to their assigned home door and go inside through
 //     the manifest's own doorway pair, the way a player does, and come
@@ -149,6 +165,47 @@ namespace LegaiaWorld
 
         [Tooltip("Navmesh route checks per decision, at most (each is one CalculatePath).")]
         public int routeChecksPerTick = 6;
+
+        // --- Keep-out zones -------------------------------------------------
+
+        [Tooltip("Places nobody may be parked: xyz = a world centre, w = its " +
+                 "radius (metres). The living-town pass fills these from the " +
+                 "manifest's doorway-teleport trigger boxes and every home's " +
+                 "door tile / landing / exit / emerge marker. An ad-hoc " +
+                 "conversation is never struck up inside one - the whole " +
+                 "point of a teleport tile is that a player walks through it. " +
+                 "The night door trip is exempt: it is the one legitimate " +
+                 "visit to a doorway, and it is not scheduled here.")]
+        public Vector4[] keepOut;
+
+        [Tooltip("Every keep-out radius is clamped to this INDOORS. An " +
+                 "interior room is barely wider than the village-sized zone " +
+                 "around its own way out, so the full radius would leave a " +
+                 "room with nowhere to meet in at all. Mirrors " +
+                 "LegaiaNpcBrain.indoorKeepOut, which caps the same zones " +
+                 "for the stroll.")]
+        public float keepOutIndoorCap = 0.75f;
+
+        // --- Conversation detail ---------------------------------------------
+
+        [Tooltip("Seconds before the rest of a group turns to face whoever " +
+                 "just started talking. A little delay is what makes it read " +
+                 "as attention rather than as a rack of heads snapping round.")]
+        public float attendDelay = 0.35f;
+
+        [Tooltip("Chance a listener answers the speaker with a reaction bubble.")]
+        public float reactChance = 0.55f;
+
+        [Tooltip("Shortest / longest beat before that reaction (seconds).")]
+        public float reactDelayMin = 0.3f;
+        public float reactDelayMax = 0.8f;
+
+        // --- The night host ----------------------------------------------------
+
+        [Tooltip("Seconds of dwell the night host's seat is held for, renewed " +
+                 "every decision: the station's own dwell timer must never " +
+                 "walk her off the stool in the middle of the night.")]
+        public float nightHostHold = 8f;
 
         [Tooltip("How far off the navmesh a route check may snap either end (meters).")]
         public float routeSnap = 1.5f;
@@ -293,6 +350,32 @@ namespace LegaiaWorld
                 return best;
             }
             return null;
+        }
+
+        /// True when `p` is outside every keep-out zone (or there are none).
+        /// Horizontal distance with a height band, so a doorway on a hut up
+        /// the hill does not fence off the path underneath it. The
+        /// locomotion controller carries the same test for its stroll.
+        public bool KeepOutClear(Vector3 p, bool indoors)
+        {
+            if (keepOut == null)
+                return true;
+            for (int i = 0; i < keepOut.Length; i++)
+            {
+                Vector4 z = keepOut[i];
+                float r = z.w;
+                if (indoors && r > keepOutIndoorCap)
+                    r = keepOutIndoorCap;
+                if (r <= 0f)
+                    continue;
+                float dy = p.y - z.y;
+                if (dy < -2f || dy > 2f)
+                    continue;
+                float dx = p.x - z.x, dz = p.z - z.z;
+                if (dx * dx + dz * dz < r * r)
+                    return false;
+            }
+            return true;
         }
 
         int NextInt(int n)
@@ -458,15 +541,36 @@ namespace LegaiaWorld
         {
             if (brains == null)
                 return;
+            // The NIGHT HOST first, and OUTSIDE the move budget below. There
+            // is at most one of it, its whole shift is one claim and a hold
+            // renewed every tick - and the budget is spent every single tick
+            // by the exodus and by settling the villagers with nowhere to
+            // go, so a host at the back of the array waited out most of the
+            // night for a move that never came, and the hold that keeps her
+            // on the stool lapsed whenever it did.
+            for (int i = 0; i < brains.Length; i++)
+            {
+                LegaiaNpcBrain h = brains[i];
+                if (h == null || !h.IsNightHost())
+                    continue;
+                if (shelter)
+                    RunNightHost(h);
+                else if (h.NightHostBusy())
+                    h.EndNightHost();
+            }
             int budget = movesPerTick < 1 ? 1 : movesPerTick;
             for (int i = 0; i < brains.Length && budget > 0; i++)
             {
                 LegaiaNpcBrain b = brains[i];
-                if (b == null)
+                if (b == null || b.IsNightHost())
                     continue;
                 if (shelter)
                 {
-                    if (!b.Indoors() && b.HasHome() && !b.InChat())
+                    // NeedsSendingHome, not "outside with a home": GoHome is
+                    // a no-op for somebody already on the trip, and spending
+                    // a move on that no-op is what starved the back of the
+                    // array.
+                    if (b.NeedsSendingHome())
                     {
                         b.GoHome();
                         budget--;
@@ -486,6 +590,97 @@ namespace LegaiaWorld
                     budget--;
                 }
             }
+        }
+
+        // --- The night host -------------------------------------------------------
+        // One villager per scene may be pinned to a station for the whole
+        // night. It is claimed onto its seat at nightfall, held there by a
+        // renewed HoldStation (the station's own dwell timer would walk it
+        // off in the middle of the night), parked a couple of metres away
+        // while a PLAYER has the seat, and let go at dawn. Everything else
+        // in the director already leaves it alone, because
+        // LegaiaNpcBrain.Available() is false for the length of the shift.
+
+        /// One decision's worth of the host's shift. True when it spent a
+        /// move (the same budget the exodus is staggered by).
+        bool RunNightHost(LegaiaNpcBrain b)
+        {
+            LegaiaNpcStation s = b.NightStation();
+            if (s == null || b.Dead())
+                return false;      // dead villagers take the seat on respawn
+            if (b.NightHostSeated())
+            {
+                b.HoldStation(nightHostHold);
+                return false;
+            }
+            if (b.NightHostWalking())
+                return false;      // on the way; let the walk finish
+            // A seat a PLAYER is sitting on (`available` false, the card
+            // table's own doing) or one this villager just failed to reach:
+            // wait beside the table rather than re-walking a dead end every
+            // second, which is the walk loop the summon path fixed.
+            if (!s.IsFree() || b.RecentlyFailed(s))
+            {
+                if (b.NightHostWaiting())
+                    return false;
+                NightHostLog(b, !s.IsFree()
+                    ? "the seat is taken - waiting beside it"
+                    : "the last walk to the seat failed (" + b.lastFailure +
+                      ") - waiting beside it");
+                SendHostToWait(b, s);
+                return true;
+            }
+            routeBudget = 1;
+            if (!Routable(b, b.transform.position, s.StandPosition()))
+            {
+                b.NoteNightHostFailure();
+                NightHostLog(b, "no navmesh route to " + s.name);
+                if (!b.NightHostWaiting())
+                    SendHostToWait(b, s);
+                return true;
+            }
+            if (!s.Claim(b.transform, b))
+            {
+                b.NoteNightHostFailure();
+                NightHostLog(b, "the seat was claimed by somebody else");
+                if (!b.NightHostWaiting())
+                    SendHostToWait(b, s);
+                return true;
+            }
+            b.SendToStation(s);
+            return true;
+        }
+
+        /// Park the host where it can see the table: the first bearing
+        /// BEHIND the stand point (the table is in front of it) that is not
+        /// inside a keep-out zone, a couple of metres off.
+        void SendHostToWait(LegaiaNpcBrain b, LegaiaNpcStation s)
+        {
+            Vector3 at = s.StandPosition();
+            Vector3 f = s.StandForward();
+            float r = b.nightHostWaitRadius < 1f ? 1f : b.nightHostWaitRadius;
+            for (int k = 0; k < 8; k++)
+            {
+                Vector3 d = Quaternion.AngleAxis(k * 45f, Vector3.up) * (-f);
+                Vector3 spot = at + d * r;
+                if (!KeepOutClear(spot, s.indoors))
+                    continue;
+                b.NightHostWait(spot, at);
+                return;
+            }
+            b.NightHostWait(at - f * r, at);
+        }
+
+        // Diagnostics, throttled: the host's shift is one villager, and a
+        // seat it cannot take would otherwise print once a second all night.
+        float nextHostLog;
+
+        void NightHostLog(LegaiaNpcBrain b, string why)
+        {
+            if (Time.time < nextHostLog)
+                return;
+            nextHostLog = Time.time + 15f;
+            Debug.Log("[Legaia] night host " + b.gameObject.name + ": " + why + ".");
         }
 
         // --- Conversations ------------------------------------------------------
@@ -548,9 +743,38 @@ namespace LegaiaWorld
                 if (NextFloat() < 0.25f)
                     turn++;
                 convTurn[g] = (turn + 1) % size;
-                LegaiaNpcBrain speaker = convBrains[g * GROUP_SIZE + (turn % size)];
+                int speakerSlot = turn % size;
+                LegaiaNpcBrain speaker = convBrains[g * GROUP_SIZE + speakerSlot];
                 float dur = turnSeconds * (0.7f + NextFloat() * 0.4f);
-                speaker.Speak(PickIcon(g), dur);
+                int icon = PickIcon(g);
+                speaker.Speak(icon, dur);
+                // Everybody else turns to face WHOEVER IS TALKING, each
+                // after its own short beat - the ring's centre is only the
+                // fallback for a group nobody has spoken in yet. This is
+                // the one thing that separates a conversation from three
+                // people standing in a circle popping pictures.
+                Vector3 at = speaker.transform.position;
+                for (int i = 0; i < size; i++)
+                {
+                    LegaiaNpcBrain b = convBrains[g * GROUP_SIZE + i];
+                    if (b == null || i == speakerSlot)
+                        continue;
+                    b.LookAt(at, attendDelay * (0.6f + NextFloat() * 0.8f));
+                }
+                // ...and, now and then, one of them answers. The reaction
+                // is picked from the TOPIC by the listener itself
+                // (LegaiaNpcBrain.ReplyIcon), so a laugh follows the fish
+                // and a long silence follows the storm.
+                if (size > 1 && NextFloat() < reactChance)
+                {
+                    int pick = NextInt(size - 1);
+                    if (pick >= speakerSlot)
+                        pick++;
+                    LegaiaNpcBrain r = convBrains[g * GROUP_SIZE + pick];
+                    if (r != null)
+                        r.ReactTo(icon, reactDelayMin +
+                            NextFloat() * (reactDelayMax - reactDelayMin), 1.8f);
+                }
                 convNextTurn[g] = Time.time + dur + 0.3f + NextFloat() * 0.6f;
             }
         }
@@ -845,6 +1069,11 @@ namespace LegaiaWorld
                 if (size < 2)
                     continue;
                 centre /= size;
+                // Never on a doorway tile or a teleport landing: three
+                // villagers standing in a front door is exactly the thing
+                // a player cannot walk through.
+                if (!KeepOutClear(centre, insideNow[i]))
+                    continue;
 
                 // Everybody takes a step onto the ring around that centre,
                 // keeping the bearing they already had - so the group
@@ -859,7 +1088,12 @@ namespace LegaiaWorld
                                * Vector3.forward;
                     else
                         out3 = out3.normalized;
-                    b.JoinMeet(centre + out3 * meetRingRadius, centre);
+                    Vector3 stand = centre + out3 * meetRingRadius;
+                    // A member whose place on the ring lands in a zone
+                    // stands on the far side of the centre instead.
+                    if (!KeepOutClear(stand, insideNow[i]))
+                        stand = centre - out3 * meetRingRadius;
+                    b.JoinMeet(stand, centre);
                     convBrains[free * GROUP_SIZE + k] = b;
                     freeNow[pickIndex[k]] = false;
                 }

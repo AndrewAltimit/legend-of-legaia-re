@@ -97,6 +97,40 @@
 // that, rest-yaw-0 rigs reduce exactly to the previously verified
 // behaviour and the rotated family lands on its true axis.
 //
+// KEEP-OUT ZONES: `keepOut` is a flat list of world spheres (xyz + radius)
+// the living-town pass fills from the manifest's doorway-teleport trigger
+// boxes and every home's door tile / landing / exit / emerge marker. The
+// autonomous stroll never aims a target into one, so a villager left to
+// itself cannot end up loitering in the tile a player walks through. The
+// radius is clamped by `keepOutCap`, which the brain pulls in while the
+// villager is indoors - an interior room is barely wider than the
+// village-sized zone around its own way out. The night door trip is not
+// filtered here at all: it is a COMMANDED walk, and stepping onto the
+// threshold is the one legitimate visit to a doorway.
+//
+// GESTURES: `Nod(seconds)` dips the villager for a moment - the attention
+// beat it gives when it takes its turn in a conversation. Like the gait
+// and the sitting pose it is written in LateUpdate, so it adds no
+// Animator state and never fights a clip.
+//
+// IT PITCHES THE GAIT NODE, NOT THE ANCHOR, and that is the whole point.
+// The nod used to pitch the "facing anchor", described as the torso -
+// but the anchor is chosen as the biggest mesh node that rests upright,
+// and measuring all 174 town rigs says that node sits at 0.80-0.86 of
+// body height on most of them: it is the HEAD. Worse, the gesture undid
+// itself only when the anchor's WORLD rotation still matched what it had
+// written, and a villager that turned even slightly between frames fails
+// that test - so on any rig whose idle pose does not rewrite that node,
+// every nod left its pitch behind and the next one added to it. A
+// villager who talks a lot ended up looking at the sky.
+//
+// The gait node - the glb's own scene root under this instance - is
+// animated by nothing: it is the node the procedural gait already owns,
+// which is why the gait could always write it absolutely. So the bob,
+// the roll and the nod now compose into ONE absolute write per frame
+// from the captured rest transform (WriteBodyPose). Nothing accumulates,
+// because nothing is ever read back.
+//
 // WALK ANIMATION: with `locoAnimator` wired to an idle/walk controller
 // (the living-town pass generates one when a rig family has a clip that
 // measures as a walk cycle), the controller crossfades between the two
@@ -262,6 +296,24 @@ namespace LegaiaWorld
                  "arms point (degrees) - hands toward the table.")]
         public float sitArm = 35f;
 
+        [Tooltip("KEEP-OUT zones the autonomous stroll never aims into: " +
+                 "xyz = a world centre, w = its radius (metres). The living-" +
+                 "town pass fills these from the manifest's doorway-teleport " +
+                 "trigger boxes and every home's door tile / landing / exit / " +
+                 "emerge marker, so a villager left to its own devices never " +
+                 "ambles onto the tile a player walks through. Empty = no rule.")]
+        public Vector4[] keepOut;
+
+        [Tooltip("Every keep-out radius is clamped to this. The brain drops it " +
+                 "while the villager is INDOORS: an interior room is barely " +
+                 "wider than the village-sized zone around its own way out, " +
+                 "and the full radius would leave the room with nowhere to " +
+                 "stand at all. Outdoors it is left wide open.")]
+        [HideInInspector] public float keepOutCap = 1e9f;
+
+        [Tooltip("Gesture: how far the torso pitches at the peak of a nod (degrees).")]
+        public float nodDegrees = 7f;
+
         /// Why the last commanded walk reported Blocked() - the probe hit,
         /// or the watchdog that fired. Read by the brain's failure record
         /// and the soak harness; empty while a walk is going well.
@@ -303,6 +355,24 @@ namespace LegaiaWorld
         [HideInInspector] public float hipHeight = -1f;
         // The last thing the straight-ahead probe hit (diagnostics).
         private string lastHit = "";
+
+        // Gesture (Nod): a short pitch of the GAIT NODE about the model's
+        // lateral axis, composed over whatever the Animator posed this
+        // frame - the same LateUpdate trick the gait and the sitting pose
+        // use, so no Animator state is added for it. The anchor is the
+        // torso, which every clip rewrites every frame; the delta we wrote
+        // is undone first on the rig whose anchor nothing else animates,
+        // so a nod can never accumulate into a permanent lean.
+        private float nodStart;
+        private float nodSeconds;
+        private float nodAmp;
+
+        // This frame's body pose, composed from the gait and the nod and
+        // written once, absolutely, from the rest transform.
+        private float bodyBob;
+        private float bodyRoll;
+        private float bodyNod;
+        private bool bodyPosed;
 
         // --- Command state ------------------------------------------------
         // mode 0 = autonomous stroll (the default), 1 = commanded walk to
@@ -1086,9 +1156,110 @@ namespace LegaiaWorld
         // of the spawn clip instead of being overwritten by it.
         void LateUpdate()
         {
+            bodyBob = 0f;
+            bodyRoll = 0f;
+            // The gait only runs on a rig with no walk controller; the nod
+            // runs on every rig, so the body write below is what both of
+            // them go through.
             if (locoAnimator == null)
                 Gait();
+            bodyNod = NodAngle();
+            WriteBodyPose();
             SitPose();
+        }
+
+        /// A short nod / lean, for a villager taking its turn in a
+        /// conversation or greeting somebody: `seconds` long, at
+        /// `nodDegrees` at the peak. Cosmetic and local - no state, no
+        /// Animator, no sync. Calling it again restarts the gesture.
+        public void Nod(float seconds)
+        {
+            nodSeconds = seconds < 0.2f ? 0.2f : seconds;
+            nodStart = Time.time;
+            nodAmp = 1f;
+        }
+
+        /// True while a nod is playing (the brain does not stack them).
+        public bool Nodding()
+        {
+            return nodAmp > 0f && Time.time < nodStart + nodSeconds;
+        }
+
+        // The gesture itself. Two beats of pitch about the world lateral
+        // axis (perpendicular to the direction the mesh visibly faces), on
+        // an envelope that is zero at both ends - so it eases in and out
+        // and never leaves the torso tipped. Written on the anchor AFTER
+        // the Animator, like the gait and the sitting pose.
+        /// This frame's nod angle in degrees, 0 when no nod is playing.
+        /// sin(2 pi k) gives the two beats and sin(pi k) the fade at both
+        /// ends: the product starts and finishes at exactly zero, so the
+        /// gesture cannot leave anything behind even if it is interrupted.
+        float NodAngle()
+        {
+            if (nodAmp <= 0f)
+                return 0f;
+            float k = (Time.time - nodStart) / (nodSeconds < 0.2f ? 0.2f : nodSeconds);
+            if (k >= 1f)
+            {
+                nodAmp = 0f;
+                return 0f;
+            }
+            return nodDegrees * nodAmp *
+                Mathf.Sin(k * Mathf.PI * 2f) * Mathf.Sin(k * Mathf.PI);
+        }
+
+        /// The one place the body pose is written: bob, roll and nod
+        /// composed onto the captured rest transform of the gait node.
+        /// ABSOLUTE, every frame - the pose is never read back and never
+        /// undone, so no gesture can accumulate into a permanent lean.
+        /// localPosition / localRotation here are in the instance's frame,
+        /// which stands upright and faces the way the model faces at rest:
+        /// up is the world's up, forward is the model's own forward (the
+        /// roll axis) and right is its lateral one (the nod axis).
+        void WriteBodyPose()
+        {
+            if (gaitNode == null)
+                return;
+            if (bodyBob == 0f && bodyRoll == 0f && bodyNod == 0f)
+            {
+                if (bodyPosed)
+                {
+                    gaitNode.localPosition = gaitRestPos;
+                    gaitNode.localRotation = gaitRestRot;
+                    bodyPosed = false;
+                }
+                return;
+            }
+            gaitNode.localPosition = gaitRestPos + Vector3.up * bodyBob;
+            gaitNode.localRotation = Quaternion.AngleAxis(bodyRoll, Vector3.forward)
+                                     * Quaternion.AngleAxis(bodyNod, Vector3.right)
+                                     * gaitRestRot;
+            bodyPosed = true;
+        }
+
+        // --- Keep-out zones ---------------------------------------------------
+
+        /// True when `p` is outside every keep-out zone (or there are none).
+        /// Horizontal distance, with a height band: a doorway on a hut up
+        /// the hill must not fence off the path underneath it.
+        public bool KeepOutClear(Vector3 p)
+        {
+            if (keepOut == null)
+                return true;
+            for (int i = 0; i < keepOut.Length; i++)
+            {
+                Vector4 z = keepOut[i];
+                float r = z.w < keepOutCap ? z.w : keepOutCap;
+                if (r <= 0f)
+                    continue;
+                float dy = p.y - z.y;
+                if (dy < -2f || dy > 2f)
+                    continue;
+                float dx = p.x - z.x, dz = p.z - z.z;
+                if (dx * dx + dz * dz < r * r)
+                    return false;
+            }
+            return true;
         }
 
         // The sitting pose, over whatever the idle clip posed this frame:
@@ -1197,31 +1368,20 @@ namespace LegaiaWorld
             float dt = Time.deltaTime;
             gaitWeight = Mathf.MoveTowards(gaitWeight, walking ? 1f : 0f, dt * 4f);
             if (gaitWeight <= 0f)
-            {
-                // Rest: the body back where it was; the arms are the
-                // Animator's again (it rewrites them every frame).
-                if (body && gaitNode.localPosition != gaitRestPos)
-                {
-                    gaitNode.localPosition = gaitRestPos;
-                    gaitNode.localRotation = gaitRestRot;
-                }
+                // Rest: bodyBob / bodyRoll stay at zero and WriteBodyPose
+                // puts the node back. The arms are the Animator's again
+                // (it rewrites them every frame).
                 return;
-            }
             float stride = (gaitStride < 0.1f ? 0.1f : gaitStride) * Mathf.Max(0.5f, strideScale);
             if (walking)
                 gaitPhase += dt * ((mode == 1 ? walkSpeed : speed) / stride) * Mathf.PI;
             float s = Mathf.Sin(gaitPhase);
             if (body)
             {
-                float bob = gaitBob * npcHeight * Mathf.Abs(s) * gaitWeight;
-                float roll = gaitRoll * s * gaitWeight;
-                // localPosition / localRotation are in THIS instance's
-                // frame, which stands upright and faces the way the model
-                // faces at rest - so `up` is the world's up and the roll is
-                // about the model's own forward axis.
-                gaitNode.localPosition = gaitRestPos + Vector3.up * bob;
-                gaitNode.localRotation =
-                    Quaternion.AngleAxis(roll, Vector3.forward) * gaitRestRot;
+                // Handed to WriteBodyPose, which composes them with the
+                // nod and writes the node once (see its note).
+                bodyBob = gaitBob * npcHeight * Mathf.Abs(s) * gaitWeight;
+                bodyRoll = gaitRoll * s * gaitWeight;
             }
             if (!arms)
                 return;
@@ -1608,6 +1768,14 @@ namespace LegaiaWorld
                     return;
                 }
                 cand = onMesh.position;
+            }
+            // ...and never into a doorway or onto a teleport landing: an
+            // ambling villager standing in the tile a player walks through
+            // is the one place in the village nobody should ever be.
+            if (!KeepOutClear(cand))
+            {
+                target = transform.position;
+                return;
             }
             Vector3 d = cand - transform.position;
             d.y = 0;

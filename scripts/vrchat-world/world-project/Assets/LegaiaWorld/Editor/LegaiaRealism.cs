@@ -1684,14 +1684,19 @@ namespace LegaiaWorld
             const float EVT = LegaiaAudioGen.EVENT_RMS_DBFS;
             var baseClip = Clip("base", "amb_base.wav", LegaiaAudioGen.BaseBed, BED);
             var dayClip = Clip("day", "amb_day.wav", LegaiaAudioGen.DayBed, BED);
-            var nightClip = Clip("night", "amb_night.wav", LegaiaAudioGen.NightBed, BED);
+            // The night clips carry their tuning VERSION in the file name.
+            // EnsureClip only synthesizes a clip whose asset is missing, so
+            // without a new name every project that already built the world
+            // would keep the first, harsher cricket chorus for ever - the
+            // same rule the card atlas lives under.
+            var nightClip = Clip("night", "amb_night_v2.wav", LegaiaAudioGen.NightBed, BED);
             var gustClip = Clip("wind_gust", "amb_wind_gust.wav",
                 LegaiaAudioGen.WindGust, BED);
             var waveClip = Clip("waves", "amb_shore_waves.wav",
                 LegaiaAudioGen.ShoreWaves, EVT);
             var birdClip = Clip("tree_birds", "amb_tree_birds.wav",
                 LegaiaAudioGen.TreeBirds, EVT);
-            var wildClip = Clip("night_wildlife", "amb_night_wildlife.wav",
+            var wildClip = Clip("night_wildlife", "amb_night_wildlife_v2.wav",
                 LegaiaAudioGen.NightWildlife, EVT);
             var millClip = Clip("windmill", "amb_windmill.wav",
                 LegaiaAudioGen.WindmillLoop, EVT);
@@ -1704,7 +1709,9 @@ namespace LegaiaWorld
                 Object.DestroyImmediate(stale.gameObject);
             foreach (string legacy in new[]
                      { "ambience_loop.wav", "ambience_day.wav",
-                       "ambience_night.wav", "amb_rain.wav" })
+                       "ambience_night.wav", "amb_rain.wav",
+                       // The first cricket tuning, in both its homes.
+                       "amb_night.wav", "amb_night_wildlife.wav" })
                 if (AssetDatabase.LoadAssetAtPath<AudioClip>(genDir + "/" + legacy) != null)
                     AssetDatabase.DeleteAsset(genDir + "/" + legacy);
 
@@ -1756,7 +1763,7 @@ namespace LegaiaWorld
             var wildlife = new List<AudioSource>();
             for (int i = 0; i < wildPts.Count; i++)
                 wildlife.Add(Emitter(go.transform, "wildlife_" + i, wildClip,
-                    v * 2.2f, 5f, 28f, wildPts[i]));
+                    v * 1.3f, 5f, 28f, wildPts[i]));
 
             var mixer = LegaiaWorldBuilder.TryAttachUdon(go, "LegaiaAmbienceMixer");
             if (mixer != null)
@@ -1767,13 +1774,13 @@ namespace LegaiaWorld
                 LegaiaWorldBuilder.SetUdonField(mixer, "windBed", windSrc);
                 LegaiaWorldBuilder.SetUdonField(mixer, "baseVolume", v * 0.95f);
                 LegaiaWorldBuilder.SetUdonField(mixer, "dayVolume", v * 1.1f);
-                LegaiaWorldBuilder.SetUdonField(mixer, "nightVolume", v * 1.25f);
+                LegaiaWorldBuilder.SetUdonField(mixer, "nightVolume", v * 1.0f);
                 LegaiaWorldBuilder.SetUdonField(mixer, "windVolume", v * 1.35f);
                 LegaiaWorldBuilder.SetUdonField(mixer, "daySources", birds.ToArray());
                 LegaiaWorldBuilder.SetUdonField(mixer, "dayGroupVolume", v * 2.5f);
                 LegaiaWorldBuilder.SetUdonField(mixer, "nightSources",
                     wildlife.ToArray());
-                LegaiaWorldBuilder.SetUdonField(mixer, "nightGroupVolume", v * 2.2f);
+                LegaiaWorldBuilder.SetUdonField(mixer, "nightGroupVolume", v * 1.3f);
                 LegaiaWorldBuilder.SetUdonField(mixer, "anySources", any.ToArray());
                 LegaiaWorldBuilder.SetUdonField(mixer, "anyGroupVolume", v * 3.4f);
 

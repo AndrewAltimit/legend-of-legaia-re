@@ -118,8 +118,12 @@ namespace LegaiaWorld
             Expect("VRC.SDK3.Components.VRCMirrorReflection", 2);
             Expect("VRC.SDK3.Video.Components.VRCUnityVideoPlayer", 1);
             Expect("VRC.SDK3.Video.Components.AVPro.VRCAVProVideoPlayer", 1);
-            Expect("VRC.SDK3.Video.Components.AVPro.VRCAVProVideoScreen", 1);
-            Expect("VRC.SDK3.Video.Components.AVPro.VRCAVProVideoSpeaker", 1);
+            // TWO of each: the mini CRT on the card table is a second
+            // output of the same AVPro player, not a second player (see
+            // LegaiaMiniTv). One of these dropping back to 1 is the mini
+            // set going silent or dark with nothing else to show for it.
+            Expect("VRC.SDK3.Video.Components.AVPro.VRCAVProVideoScreen", 2);
+            Expect("VRC.SDK3.Video.Components.AVPro.VRCAVProVideoSpeaker", 2);
             Expect("VRC.SDK3.Components.VRCUrlInputField", 1);
             Expect("VRC.SDK3.Components.VRCStation", 4, table);
             Expect("VRC.SDK3.Components.VRCPickup", 52, table);
@@ -129,7 +133,17 @@ namespace LegaiaWorld
             Expect("LegaiaWorld.LegaiaCardDeck", 1);
             Expect("LegaiaWorld.LegaiaMirror", 1);
             Expect("LegaiaWorld.LegaiaVideoTv", 1);
-            Expect("LegaiaWorld.LegaiaEventButton", 3 + 3 + 3);
+            // Mirror (off / high / low) + TV (playlist / play / next /
+            // stop / resync). The card table had three of its own; they
+            // are UI buttons on the seat panel now, so the felt carries
+            // none.
+            Expect("LegaiaWorld.LegaiaEventButton", 3 + 5);
+            // The TV's watch spot is a station like any other, so the
+            // director finds it in its container sweep - and the count
+            // says the TV did not quietly grow a second one.
+            Expect("LegaiaWorld.LegaiaTvWatchSpot", 1);
+            Expect("LegaiaWorld.LegaiaMiniTv", 1, table);
+            Expect("LegaiaWorld.LegaiaEventButton", 0, table);
             Expect("LegaiaWorld.LegaiaNpcStation", 4, table);
             Expect("LegaiaWorld.LegaiaCardTableHost", 1, table);
             if (o.sdkPens && Count("VRC.Udon.UdonBehaviour") < 1)
@@ -183,6 +197,22 @@ namespace LegaiaWorld
                         Fail(r.name + " still shades with " + sh);
                 }
             }
+            // No UI control anywhere in the container may be reachable by
+            // keyboard navigation: Unity's Automatic default lets the
+            // input module select one from movement keys, and a selected
+            // input field swallows everything the player types after
+            // that. Covers the card table's panel as well as the TV's.
+            int navigable = 0;
+            foreach (var sel in container.GetComponentsInChildren<UnityEngine.UI.Selectable>(true))
+                if (sel.navigation.mode != UnityEngine.UI.Navigation.Mode.None)
+                {
+                    navigable++;
+                    Debug.LogError("[Legaia] " + Path(sel.transform) + " is on " +
+                        sel.navigation.mode + " navigation");
+                }
+            if (navigable > 0)
+                Fail(navigable + " UI control(s) can be selected by the keyboard");
+
             // The mirror's runtime material swap must reference converted
             // (lit) materials, not the Standard originals.
             CheckVar(container, "LegaiaWorld.LegaiaMirror", "idleMaterial");
@@ -215,13 +245,37 @@ namespace LegaiaWorld
             }
 
             // Placements from the scene settings file must win over the
-            // computed offsets (position AND rotation).
-            var placements = LegaiaSceneSettings.Load(sceneName).prefabTransforms;
+            // computed offsets (position AND rotation) - for the camp
+            // props (torches, campfires, the settings panel) as well, so
+            // the camp container is rebuilt here from the same settings
+            // the world builder hands it. The scene is never saved, so
+            // rebuilding it costs nothing outside this check.
+            LegaiaCampProps.Build("Assets/LegaiaGenerated/" + sceneName, sceneName,
+                spawn.transform.position, null, settings.prefabTransforms);
+            var camp = GameObject.Find(LegaiaCampProps.CONTAINER);
+            var placements = settings.prefabTransforms;
+            var unmatched = new List<string>();
+            int pinned = 0;
             foreach (var kv in placements)
             {
+                // Three homes for a pinned object: a container child, the
+                // card table's own panel, or a camp prop.
                 var child = container.transform.Find(kv.Key == "pens" ? "sdk_pens" : kv.Key);
+                if (child == null && kv.Key == "card_table_panel")
+                    child = container.transform.Find("card_table/panel");
+                if (child == null && camp != null)
+                    child = camp.transform.Find(kv.Key == "menu" ? "LegaiaMenu" : kv.Key);
                 if (child == null)
-                    continue; // e.g. "menu" lives under the camp container
+                {
+                    // A key for something this build did not make (a
+                    // feature toggled off, a retired prop). The snapshot
+                    // keeps such keys deliberately, so this is a notice,
+                    // not a failure - but it must be visible, or a typo
+                    // in a hand-edited key looks exactly like success.
+                    unmatched.Add(kv.Key);
+                    continue;
+                }
+                pinned++;
                 if ((child.localPosition - kv.Value.position).magnitude > 0.001f)
                     Fail(kv.Key + " placed at " + child.localPosition + ", settings say " +
                          kv.Value.position);
@@ -230,6 +284,11 @@ namespace LegaiaWorld
                     Fail(kv.Key + " rotated " + child.localEulerAngles + ", settings say " +
                          kv.Value.rotation);
             }
+            Debug.Log("[Legaia] selftest: " + pinned + " settings placement(s) honoured" +
+                      (unmatched.Count > 0
+                          ? ", " + unmatched.Count + " key(s) match no built object: " +
+                            string.Join(", ", unmatched.ToArray())
+                          : ""));
 
             // Every U# proxy must have a backing UdonBehaviour with a
             // program, and the wired references must have reached it.
@@ -282,8 +341,189 @@ namespace LegaiaWorld
                 call.FindPropertyRelative("m_Target").objectReferenceValue == null)
                 Fail("URL field listener is not SendCustomEvent(OnURLChanged) on a target");
 
+            CheckCardAtlas("Assets/LegaiaGenerated/" + sceneName, table);
+
             Debug.Log("[Legaia] SELFTEST OK: " + proxies + " U# proxies wired under " +
                       container.name + " (scene " + sceneName + ", not saved).");
+        }
+
+        /// The card faces are DRAWN, not authored, so nothing short of
+        /// counting ink proves a ten of hearts carries ten hearts. For
+        /// every numbered cell this counts the connected ink blobs in the
+        /// cell interior (the two corner-index blocks excluded) and
+        /// asserts the count is the rank; the ace must have exactly one
+        /// and each court card its frame plus letter plus pip.
+        ///
+        /// It reads the PNG off disk with ImageConversion rather than
+        /// GetPixels on the imported asset: that needs no isReadable, and
+        /// it sees the pixels that were written instead of a compressed,
+        /// possibly rescaled import of them. The import IS checked - the
+        /// asset's own width/height must still be the full grid, which is
+        /// what catches the importer silently resampling to a power of two.
+        static void CheckCardAtlas(string genDir, GameObject table)
+        {
+            string path = LegaiaCommonPrefabs.CardAtlasPath(genDir);
+            LegaiaCommonPrefabs.CardAtlasLayout(out int cw, out int ch, out int cols, out int rows);
+
+            string projectRoot = System.IO.Path.GetFullPath(
+                System.IO.Path.Combine(Application.dataPath, ".."));
+            string name = path.Substring(path.LastIndexOf('/') + 1);
+            foreach (string stale in System.IO.Directory.GetFiles(
+                         System.IO.Path.Combine(projectRoot, genDir), "cards_atlas*.png"))
+            {
+                string p = stale.Replace('\\', '/');
+                if (!p.EndsWith(name))
+                    Fail("stale card atlas left behind: " + p);
+            }
+
+            var asset = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+            if (asset == null)
+                Fail("no card atlas at " + path);
+            if (asset.width != cw * cols || asset.height != ch * rows)
+                Fail("imported card atlas is " + asset.width + "x" + asset.height +
+                     ", drawn as " + (cw * cols) + "x" + (ch * rows) +
+                     " (importer npotScale / maxTextureSize resampled it)");
+
+            // Every card renderer must sample THIS atlas: the faces are
+            // only redrawn when the file is missing, so a project holding
+            // an older atlas would keep it under a different name.
+            int faces = 0;
+            foreach (var mr in table.GetComponentsInChildren<MeshRenderer>(true))
+                foreach (var m in mr.sharedMaterials)
+                {
+                    var tex = m != null ? m.mainTexture : null;
+                    string tp = tex != null ? AssetDatabase.GetAssetPath(tex) : "";
+                    if (tp.Contains("cards_atlas") && tp != path)
+                        Fail(Path(mr.transform) + " samples " + tp + ", not " + path);
+                    if (tp == path)
+                        faces++;
+                }
+            if (faces < 52)
+                Fail("only " + faces + " card renderer(s) sample " + path + ", expected 52");
+
+            var probe = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+            byte[] bytes = System.IO.File.ReadAllBytes(
+                System.IO.Path.Combine(projectRoot, path));
+            if (!ImageConversion.LoadImage(probe, bytes, false))
+                Fail("could not decode " + path);
+            if (probe.width != cw * cols || probe.height != ch * rows)
+                Fail("card atlas PNG is " + probe.width + "x" + probe.height +
+                     ", expected " + (cw * cols) + "x" + (ch * rows));
+            var px = probe.GetPixels();
+
+            var idx = LegaiaCommonPrefabs.CardIndexRegion();
+            string[] suits = { "spades", "hearts", "diamonds", "clubs" };
+            string[] ranks = { "A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K" };
+            for (int r = 0; r < 4; r++)
+            {
+                var line = new System.Text.StringBuilder();
+                for (int c = 0; c < cols; c++)
+                {
+                    int blobs = InkBlobs(px, probe.width, probe.height, c, r, cw, ch, idx);
+                    int want = c == 0 ? 1 : c <= 9 ? c + 1 : 3;
+                    line.Append(c > 0 ? " " : "").Append(ranks[c]).Append(':').Append(blobs);
+                    if (blobs != want)
+                        Fail(ranks[c] + " of " + suits[r] + " draws " + blobs +
+                             " pip blob(s) in the card body, expected " + want +
+                             (c >= 10 ? " (frame + letter + pip)" : ""));
+                    // Both corner indices must carry ink, or the face reads
+                    // as blank from a fanned hand.
+                    for (int corner = 0; corner < 2; corner++)
+                    {
+                        int ink = 0;
+                        for (int y = 0; y < idx.height; y++)
+                            for (int x = 0; x < idx.width; x++)
+                            {
+                                int cx = corner == 0 ? x : cw - 1 - x;
+                                int cy = corner == 0 ? y : ch - 1 - y;
+                                if (LegaiaCommonPrefabs.CardIsInk(LegaiaCommonPrefabs.CardPixel(
+                                        px, probe.width, probe.height, c, r, cx, cy)))
+                                    ink++;
+                            }
+                        if (ink < 100)
+                            Fail(ranks[c] + " of " + suits[r] + " corner index " + corner +
+                                 " has " + ink + " ink pixels");
+                    }
+                    if (c >= 10)
+                        CheckCourtFrame(px, probe.width, probe.height, c, r,
+                            ranks[c] + " of " + suits[r]);
+                }
+                Debug.Log("[Legaia] cards " + suits[r] + " pip blobs: " + line);
+            }
+            int pw = probe.width, phh = probe.height;
+            Object.DestroyImmediate(probe);
+            Debug.Log("[Legaia] card atlas " + path + " " + pw + "x" + phh +
+                      " (" + cw + "x" + ch + " cells, " + cols + "x" + rows + " grid), " +
+                      faces + " renderers sampling it");
+        }
+
+        /// The court frame is a closed rectangle: every pixel of its four
+        /// border strokes must be ink.
+        static void CheckCourtFrame(Color[] px, int w, int h, int c, int r, string what)
+        {
+            var f = LegaiaCommonPrefabs.CardCourtFrame();
+            int t = LegaiaCommonPrefabs.CardCourtStroke();
+            bool Ink(int x, int y) => LegaiaCommonPrefabs.CardIsInk(
+                LegaiaCommonPrefabs.CardPixel(px, w, h, c, r, x, y));
+            for (int x = f.xMin; x < f.xMax; x++)
+                if (!Ink(x, f.yMin + t / 2) || !Ink(x, f.yMax - 1 - t / 2))
+                    Fail(what + " frame is open along the top/bottom at x=" + x);
+            for (int y = f.yMin; y < f.yMax; y++)
+                if (!Ink(f.xMin + t / 2, y) || !Ink(f.xMax - 1 - t / 2, y))
+                    Fail(what + " frame is open along the sides at y=" + y);
+        }
+
+        /// Connected ink blobs (8-connected) inside one atlas cell, with
+        /// the two corner-index rectangles masked out. Specks below a few
+        /// pixels are ignored so an anti-aliased edge cannot invent a pip.
+        static int InkBlobs(Color[] px, int w, int h, int c, int r, int cw, int ch,
+            RectInt idx)
+        {
+            var ink = new bool[cw * ch];
+            for (int y = 0; y < ch; y++)
+                for (int x = 0; x < cw; x++)
+                {
+                    bool corner = (x < idx.width && y < idx.height) ||
+                                  (x >= cw - idx.width && y >= ch - idx.height);
+                    if (corner)
+                        continue;
+                    if (LegaiaCommonPrefabs.CardIsInk(
+                            LegaiaCommonPrefabs.CardPixel(px, w, h, c, r, x, y)))
+                        ink[y * cw + x] = true;
+                }
+            var seen = new bool[cw * ch];
+            var stack = new Stack<int>();
+            int blobs = 0;
+            for (int i = 0; i < ink.Length; i++)
+            {
+                if (!ink[i] || seen[i])
+                    continue;
+                int size = 0;
+                stack.Push(i);
+                seen[i] = true;
+                while (stack.Count > 0)
+                {
+                    int p = stack.Pop();
+                    size++;
+                    int x0 = p % cw, y0 = p / cw;
+                    for (int dy = -1; dy <= 1; dy++)
+                        for (int dx = -1; dx <= 1; dx++)
+                        {
+                            int nx = x0 + dx, ny = y0 + dy;
+                            if (nx < 0 || ny < 0 || nx >= cw || ny >= ch)
+                                continue;
+                            int q = ny * cw + nx;
+                            if (ink[q] && !seen[q])
+                            {
+                                seen[q] = true;
+                                stack.Push(q);
+                            }
+                        }
+                }
+                if (size >= 20)
+                    blobs++;
+            }
+            return blobs;
         }
 
         /// Weather + living props + card-table NPC seating, applied to the
@@ -403,23 +643,48 @@ namespace LegaiaWorld
                 if (!(kind is int k) || k != 2)
                     Fail(Path(st.transform) + " is not a kind-2 (seat) station");
             }
-            var btn = table.Find("btn_npcs");
-            if (btn == null)
-                Fail("no btn_npcs on the card table");
+            // The villager toggle: a UI button on the seat panel, not a
+            // collider cube on the felt any more. Its click is a
+            // persistent SendCustomEvent("ToggleNpcs") onto the host's
+            // BACKING behaviour - a listener on the U# proxy is inert
+            // in-world, so the target is matched against the backing.
             var btnType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaEventButton");
-            var btnComp = btn.GetComponent(btnType);
-            if (btnComp == null)
-                Fail("btn_npcs carries no LegaiaEventButton");
-            if (!ReferenceEquals(btnType.GetField("target").GetValue(btnComp), host))
-                Fail("btn_npcs does not target the table host");
-            if ((string)btnType.GetField("eventName").GetValue(btnComp) != "ToggleNpcs")
-                Fail("btn_npcs does not send ToggleNpcs");
+            if (btnType != null && table.GetComponentsInChildren(btnType, true).Length != 0)
+                Fail("a collider LegaiaEventButton is still on the card table - " +
+                     "Shuffle / Gather / the NPC toggle live on the seat panel now");
+            var hostBacking = LegaiaCommonPrefabs.BackingUdon(host);
+            if (hostBacking == null)
+                Fail("the table host has no backing UdonBehaviour");
+            int toggles = 0;
+            foreach (var ui in table.GetComponentsInChildren<UnityEngine.UI.Button>(true))
+            {
+                int n = ui.onClick.GetPersistentEventCount();
+                for (int i = 0; i < n; i++)
+                {
+                    if (ui.onClick.GetPersistentTarget(i) != (Object)hostBacking)
+                        continue;
+                    if (ui.onClick.GetPersistentMethodName(i) != "SendCustomEvent")
+                        Fail(ui.name + " calls the host's " +
+                             ui.onClick.GetPersistentMethodName(i) +
+                             ", not SendCustomEvent");
+                    var so = new SerializedObject(ui);
+                    var calls = so.FindProperty("m_OnClick.m_PersistentCalls.m_Calls");
+                    string ev = calls == null || i >= calls.arraySize ? null
+                        : calls.GetArrayElementAtIndex(i)
+                            .FindPropertyRelative("m_Arguments.m_StringArgument").stringValue;
+                    if (ev != "ToggleNpcs")
+                        Fail(ui.name + " sends " + ev + " to the table host, " +
+                             "expected ToggleNpcs");
+                    toggles++;
+                }
+            }
+            if (toggles != 1)
+                Fail(toggles + " panel button(s) send into the table host, expected 1 " +
+                     "(the NPCs: sit / shoo toggle)");
             CheckVar(container, "LegaiaWorld.LegaiaCardTableHost", "seats");
             CheckVar(container, "LegaiaWorld.LegaiaCardTableHost", "seatChairs");
-            CheckVar(container, "LegaiaWorld.LegaiaCardTableHost", "seatHands");
             CheckVar(container, "LegaiaWorld.LegaiaCardTableHost", "deckAnchor");
             CheckVar(container, "LegaiaWorld.LegaiaCardTableHost", "cards");
-            CheckVar(container, "LegaiaWorld.LegaiaEventButton", "target");
 
             // Every U# proxy the three passes created must have a backing
             // behaviour with a program (the "outdated behaviour version"
@@ -527,6 +792,24 @@ namespace LegaiaWorld
             Debug.Log("[Legaia] living town: " + overridden + " model override(s) in place.");
             var o = new LegaiaLivingTownOptions();
             settings.ApplyLivingTown(o);
+
+            // Rebuild the kit's prefab container FIRST, because the
+            // director's station list is BUILT, not discovered at runtime:
+            // the card table's stools and the TV's watch spot only reach it
+            // if they stand before the living town pass sweeps. The real
+            // builder runs the passes in this order for the same reason,
+            // and without this the check would be measuring whatever
+            // container the scene was last saved with - a stool that moved
+            // or a station that was added since would be invisible here.
+            var prefabOpts = new LegaiaCommonPrefabOptions
+            {
+                sdkPens = AssetDatabase.LoadAssetAtPath<GameObject>(
+                    LegaiaCommonPrefabs.SDK_PEN_PREFAB) != null,
+            };
+            LegaiaCommonPrefabs.Build("Assets/LegaiaGenerated/" + sceneName,
+                spawn.transform.position, prefabOpts, settings.prefabTransforms,
+                settings.slotMachine);
+
             // Apply TWICE: the pass must refresh, not stack. Every assert
             // below then runs against the second build, so a leaked brain or
             // a second director shows up as a failure rather than as a
@@ -612,6 +895,14 @@ namespace LegaiaWorld
                 Fail("LegaiaNpcHandItem / LegaiaVisitSpot are not compiled - read " +
                      "the [UdonSharp] lines above: one U# compile error fails every wire");
             var openStands = new List<Transform>();
+            // KEEP-OUT: nobody may be parked in a doorway. The zones are the
+            // ones the pass itself built (the manifest's teleport trigger
+            // boxes plus every home's door / tile / landing / exit / emerge
+            // marker); a stand point inside one is a villager standing in a
+            // tile a player walks through, which is what this asserts away.
+            var keepOut = LegaiaLivingTown.LastKeepOutZones();
+            float indoorCap = LegaiaLivingTown.LastIndoorKeepOut;
+            var inZone = new List<string>();
             foreach (var st in container.GetComponentsInChildren(stationType, true))
             {
                 int kind = (int)stationType.GetField("kind").GetValue(st);
@@ -619,6 +910,9 @@ namespace LegaiaWorld
                 if (standPoint == null)
                     Fail(Path(st.transform) + " has no standPoint");
                 Vector3 p = standPoint.position;
+                if (!LegaiaLivingTown.KeepOutOk(keepOut, p,
+                        (bool)stationType.GetField("indoors").GetValue(st), indoorCap))
+                    inZone.Add(Path(st.transform));
                 if (kind == 0)
                 {
                     propStations++;
@@ -743,6 +1037,20 @@ namespace LegaiaWorld
             if (openStands.Count < 4)
                 Fail("only " + openStands.Count + " outdoor stand spot(s): the " +
                      "daytime villagers have nowhere to walk to");
+            if (keepOut.Count < 1)
+                Fail("no keep-out zones were built - the manifest has doorway " +
+                     "teleports, so nothing is stopping a villager standing in one");
+            if (inZone.Count > 0)
+                Fail(inZone.Count + " station stand point(s) sit inside a " +
+                     "doorway/teleport keep-out zone:\n  " +
+                     string.Join("\n  ", inZone));
+            Debug.Log("[Legaia] living town: " + keepOut.Count +
+                " keep-out zone(s) from " + LegaiaLivingTown.LastKeepOutTeleports +
+                " teleport trigger box(es) + " + LegaiaLivingTown.LastKeepOutHomes +
+                " home marker(s); " + LegaiaLivingTown.LastSpotsMoved +
+                " stand spot(s) relocated clear of one, " +
+                LegaiaLivingTown.LastSpotsDropped + " dropped; every station " +
+                "stand point is outside every zone.");
 
             // --- Brains ---------------------------------------------------------
             var brainType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaNpcBrain");
@@ -1044,6 +1352,36 @@ namespace LegaiaWorld
                     cap + " cannot seat " + outside);
             }
 
+            // --- the night host --------------------------------------------
+            // `living_town.night_host` names a villager and a station path;
+            // the villager's brain must carry that path (it resolves the
+            // station by name at Start - the card table is another pass's
+            // object and may not be built in this scene at all).
+            if (!string.IsNullOrEmpty(settings.nightHostNpc))
+            {
+                int hosts = 0;
+                foreach (Transform child in npcRoot)
+                {
+                    var b = child.GetComponent(brainType);
+                    if (b == null)
+                        continue;
+                    string path = ReadVar(b, "nightHostStationPath") as string;
+                    if (string.IsNullOrEmpty(path))
+                        continue;
+                    hosts++;
+                    if (path != settings.nightHostStation)
+                        Fail(child.name + " hosts '" + path + "' but the settings " +
+                             "say '" + settings.nightHostStation + "'");
+                }
+                if (hosts != 1)
+                    Fail(hosts + " night host(s) wired for living_town.night_host '" +
+                         settings.nightHostNpc + "', expected exactly 1 - the token " +
+                         "must name an eligible (placed, not static, not removed) " +
+                         "villager");
+                Debug.Log("[Legaia] living town: night host wired to " +
+                    settings.nightHostStation + ".");
+            }
+
             Debug.Log("[Legaia] SELFTEST OK: living town wired - " + wired +
                 " villager(s), " + homed + " homed across " + homes +
                 " door(s) (cap " + cap + ", " + doorProps + " with a door prop), " +
@@ -1164,6 +1502,21 @@ namespace LegaiaWorld
                         // ahead, hand 35 deg forward of straight down.
                         Vector3 kneeDir = face * Mathf.Cos(5f * Mathf.Deg2Rad) - Vector3.up * Mathf.Sin(5f * Mathf.Deg2Rad);
                         Vector3 handDir = face * Mathf.Sin(35f * Mathf.Deg2Rad) - Vector3.up * Mathf.Cos(35f * Mathf.Deg2Rad);
+                        // THE FACING ANCHOR, picked here exactly the way
+                        // LegaiaNpcWander.Start picks it at runtime: the
+                        // biggest mesh node whose RENDERED up is within
+                        // ~25 degrees of world up. It matters far more
+                        // than its name suggests - the nod gesture
+                        // pitches this node, so a rig that picks its head
+                        // instead of its torso nods its HEAD at the sky,
+                        // and the facing maths reads off it too. Reported
+                        // as a fraction of body height (a torso lands
+                        // near the middle; anything above ~0.7 is a head)
+                        // together with whether the walk clip animates
+                        // it, which is what decides whether the nod's
+                        // undo is skipped and the pitch accumulates.
+                        AnchorReport(sb, inst, glb, rig.walkClip);
+
                         float kneeDot = KneeDot(sb, inst, "legs", rig.legUpper, rig.legLower, kneeDir);
                         float handDot = KneeDot(sb, inst, "arms", rig.upperArms, rig.forearms, handDir);
                         float walkDot = 2f;
@@ -1275,6 +1628,85 @@ namespace LegaiaWorld
         // x can give the child's rest offset - the sweep
         // LegaiaNpcWander.TurnToward makes, read through the full transform
         // chain. Returns its dot with `target`; 2 when the pair is absent.
+
+        /// Replicate LegaiaNpcWander's anchor pick over an instantiated rig
+        /// and append what it chose. See the call site for why it matters.
+        static void AnchorReport(System.Text.StringBuilder sb, GameObject inst,
+            string glb, string walkClip)
+        {
+            Transform anchor = null, any = null;
+            float bestUpright = -1f, bestAny = -1f;
+            float top = float.MinValue, bottom = float.MaxValue;
+            Vector3 anchorCentre = Vector3.zero;
+            foreach (var mf in inst.GetComponentsInChildren<MeshFilter>())
+            {
+                var mesh = mf.sharedMesh;
+                if (mesh == null)
+                    continue;
+                Vector3 size = mesh.bounds.size;
+                float score = size.x * size.y * size.z + mesh.vertexCount * 1e-6f;
+                Transform t = mf.transform;
+                Vector3 up = (t.TransformPoint(Vector3.up)
+                              - t.TransformPoint(Vector3.zero)).normalized;
+                Vector3 centre = t.TransformPoint(mesh.bounds.center);
+                float lo = centre.y - 0.5f * size.y * Mathf.Abs(t.lossyScale.y);
+                float hi = centre.y + 0.5f * size.y * Mathf.Abs(t.lossyScale.y);
+                if (hi > top) top = hi;
+                if (lo < bottom) bottom = lo;
+                if (score > bestAny)
+                {
+                    bestAny = score;
+                    any = t;
+                }
+                if (up.y > 0.9f && score > bestUpright)
+                {
+                    bestUpright = score;
+                    anchor = t;
+                    anchorCentre = centre;
+                }
+            }
+            if (anchor == null)
+            {
+                anchor = any;
+                if (any != null)
+                {
+                    var m = any.GetComponent<MeshFilter>().sharedMesh;
+                    anchorCentre = any.TransformPoint(m.bounds.center);
+                }
+            }
+            if (anchor == null)
+            {
+                sb.Append(" anchor=none");
+                return;
+            }
+            float h = top - bottom;
+            float frac = h > 1e-4f ? (anchorCentre.y - bottom) / h : 0f;
+            sb.Append(" anchor=").Append(anchor.name)
+              .Append("@").Append(frac.ToString("0.00"))
+              .Append(bestUpright < 0f ? "(not upright)" : "");
+
+            // Does the walk clip write this node? If it does, the nod's
+            // "undo last frame" test fails every frame and the gesture
+            // rides on top of the clip instead of being taken back off.
+            if (string.IsNullOrEmpty(walkClip))
+                return;
+            AnimationClip clip = null;
+            foreach (var c in AssetDatabase.LoadAllAssetsAtPath(glb))
+                if (c is AnimationClip && c.name == walkClip)
+                    clip = (AnimationClip)c;
+            if (clip == null)
+                return;
+            string path = AnimationUtility.CalculateTransformPath(anchor, inst.transform);
+            bool animated = false;
+            foreach (var b in AnimationUtility.GetCurveBindings(clip))
+                if (b.path == path)
+                {
+                    animated = true;
+                    break;
+                }
+            sb.Append(animated ? " anchorAnimated=yes" : " anchorAnimated=no");
+        }
+
         static float KneeDot(System.Text.StringBuilder sb, GameObject inst, string what,
             string[] upperNames, string[] lowerNames, Vector3 target)
         {

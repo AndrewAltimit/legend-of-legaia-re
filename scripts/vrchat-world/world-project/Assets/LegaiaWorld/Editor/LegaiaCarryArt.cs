@@ -1,5 +1,6 @@
-// The things villagers carry: a bucket, a broom, a bundle of firewood and
-// a basket, built out of Unity primitives with generated flat materials -
+// The things villagers carry: a bucket, a broom, a bundle of firewood, a
+// basket and a game controller, built out of Unity primitives with
+// generated flat materials -
 // the same recipe the camp props use, so nothing here is game data and the
 // items ship with the kit.
 //
@@ -28,10 +29,14 @@ namespace LegaiaWorld
 {
     internal static class LegaiaCarryArt
     {
-        internal const int ITEMS = 4;
+        internal const int ITEMS = 5;
 
         internal static readonly string[] ITEM_NAMES =
-            { "bucket", "broom", "firewood", "basket" };
+            { "bucket", "broom", "firewood", "basket", "controller" };
+
+        /// The controller's index in ITEM_NAMES - what the TV's watch spot
+        /// puts in a villager's hands during a console show.
+        internal const int ITEM_CONTROLLER = 4;
 
         /// Build one villager's set of items under `hand`, sized against a
         /// body height of `h` in that villager's LOCAL units. Returns the
@@ -43,12 +48,14 @@ namespace LegaiaWorld
             Material metal = Mat(genDir, "carry_metal", new Color(0.55f, 0.57f, 0.60f));
             Material straw = Mat(genDir, "carry_straw", new Color(0.76f, 0.64f, 0.36f));
             Material water = Mat(genDir, "carry_water", new Color(0.29f, 0.47f, 0.56f));
+            Material plastic = Mat(genDir, "carry_plastic", new Color(0.78f, 0.77f, 0.74f));
 
             var items = new GameObject[ITEMS];
             items[0] = Bucket(hand, h, metal, water);
             items[1] = Broom(hand, h, wood, straw);
             items[2] = Firewood(hand, h, wood);
             items[3] = Basket(hand, h, straw);
+            items[4] = Controller(hand, h, plastic, wood);
             for (int i = 0; i < ITEMS; i++)
                 items[i].SetActive(false);
             return items;
@@ -140,6 +147,30 @@ namespace LegaiaWorld
             Prim(PrimitiveType.Cylinder, "rim", go.transform,
                 new Vector3(0f, -h * 0.006f, 0f),
                 new Vector3(r * 2.15f, h * 0.008f, r * 1.62f), straw);
+            return go;
+        }
+
+        // A game controller held in both hands: a slab body with two grips
+        // angled down off it and a dark pad either side of the middle. Grey
+        // plastic, no branding of any kind - the console it belongs to is
+        // the kit's own generic box (LegaiaCommonPrefabs.BuildConsole).
+        static GameObject Controller(Transform hand, float h, Material plastic, Material dark)
+        {
+            var go = Root(hand, "item_controller");
+            float w = h * 0.13f;
+            Prim(PrimitiveType.Cube, "body", go.transform,
+                new Vector3(0f, -h * 0.02f, 0f),
+                new Vector3(w, h * 0.022f, h * 0.045f), plastic);
+            for (int i = 0; i < 2; i++)
+            {
+                float sx = i == 0 ? -1f : 1f;
+                Prim(PrimitiveType.Cube, "grip_" + i, go.transform,
+                    new Vector3(sx * w * 0.42f, -h * 0.045f, h * 0.012f),
+                    new Vector3(w * 0.2f, h * 0.05f, h * 0.03f), plastic);
+                Prim(PrimitiveType.Cube, "pad_" + i, go.transform,
+                    new Vector3(sx * w * 0.26f, -h * 0.007f, -h * 0.004f),
+                    new Vector3(w * 0.16f, h * 0.006f, h * 0.016f), dark);
+            }
             return go;
         }
 

@@ -82,6 +82,7 @@ namespace LegaiaWorld
         bool playWorldMorphClip = true;
         bool addMusic = true;
         float musicVolume = 0.5f;
+        bool musicStartsMuted = true;
         bool campProps = true;
 
         // Common prefabs (LegaiaCommonPrefabs.cs): mirror, TV, card table,
@@ -189,7 +190,18 @@ namespace LegaiaWorld
                     "scene root as a 2D AudioSource"),
                 addMusic);
             using (new EditorGUI.DisabledScope(!addMusic))
+            {
                 musicVolume = EditorGUILayout.Slider("  Music volume", musicVolume, 0f, 1f);
+                musicStartsMuted = EditorGUILayout.Toggle(
+                    new GUIContent("  Start muted",
+                        "Build the BGM muted, so a visitor arrives to the " +
+                        "town's own sound (and the TV) rather than to the " +
+                        "theme. The settings panel's Music button turns it " +
+                        "on, per player - the clip runs either way, so " +
+                        "switching it on joins the loop where everyone " +
+                        "else is"),
+                    musicStartsMuted);
+            }
             campProps = EditorGUILayout.Toggle(
                 new GUIContent("Camp props (menu, torches, fires)",
                     "A pickup settings panel near spawn (local music mute, " +
@@ -254,6 +266,15 @@ namespace LegaiaWorld
                 o.cardTableOffset = EditorGUILayout.Vector3Field("  Offset from spawn", o.cardTableOffset);
                 o.seats = EditorGUILayout.IntSlider("  Stools", o.seats, 0, 8);
             }
+            using (new EditorGUI.DisabledScope(!o.cardTable || !o.tv))
+                o.miniTv = EditorGUILayout.Toggle(
+                    new GUIContent("  Mini CRT on the table",
+                        "A coaster-sized television on the felt showing and " +
+                        "playing exactly what the big set is showing. It is a " +
+                        "second OUTPUT of the TV's players, not a second player, " +
+                        "so it costs no extra decode - which is also why it needs " +
+                        "both the TV and the table"),
+                    o.miniTv && o.cardTable && o.tv);
             bool havePens = AssetDatabase.LoadAssetAtPath<GameObject>(
                 LegaiaCommonPrefabs.SDK_PEN_PREFAB) != null;
             using (new EditorGUI.DisabledScope(!havePens))
@@ -1018,7 +1039,13 @@ namespace LegaiaWorld
                     var src = root.AddComponent<AudioSource>();
                     src.clip = clip;
                     src.loop = true;
+                    // playOnAwake stays ON while muted: the loop runs
+                    // silently, so a player who switches the music on lands
+                    // where the town is rather than at bar one, and
+                    // LegaiaWorldMenu.ToggleMusic (which only flips `mute`)
+                    // works with no changes.
                     src.playOnAwake = true;
+                    src.mute = musicStartsMuted;
                     src.spatialBlend = 0f; // the town theme plays everywhere
                     src.volume = musicVolume;
                     // SDK compliance: a flat 2D source still wants a
@@ -1658,6 +1685,11 @@ namespace LegaiaWorld
 
             var udon = TryAttachUdon(trigger, "LegaiaDoor");
             SetUdonField(udon, "doorAnimator", animator);
+            // The behaviour walks the clip's normalized time itself (a
+            // negative Animator speed is refused at runtime), so it needs
+            // to know how long the swing is meant to take. Retail's own
+            // clip length, kept inside sane bounds for a stray one.
+            SetUdonField(udon, "swingSeconds", Mathf.Clamp(once.length, 0.25f, 3f));
             SyncUdonProxy(udon);
         }
 
@@ -1862,6 +1894,38 @@ namespace LegaiaWorld
                 typeName + " to " + go.name + " without the U# attach path - " +
                 "verify a backing UdonBehaviour exists on it.");
             return go.AddComponent(t);
+        }
+
+        /// Take every UI control under `root` OFF keyboard navigation.
+        ///
+        /// Unity's default is Navigation.Mode.Automatic, and the input
+        /// module reads movement keys as navigation axes: with nothing
+        /// selected, walking around picks the first selectable in the
+        /// scene and gives it the keyboard. On a world with a URL field
+        /// that means the field silently eats every keystroke - the
+        /// player never clicked it and has no idea why typing vanished,
+        /// or why W is now a letter in a URL. None of the kit's panels
+        /// wants arrow-key navigation in the first place: they are
+        /// pointed at, in world space, with a hand or a cursor.
+        ///
+        /// Call it on a container AFTER its panels are built - it walks
+        /// inactive children too, so a panel that starts hidden is
+        /// covered.
+        internal static int DisableUiNavigation(GameObject root)
+        {
+            if (root == null)
+                return 0;
+            int n = 0;
+            var none = new UnityEngine.UI.Navigation { mode = UnityEngine.UI.Navigation.Mode.None };
+            foreach (var sel in root.GetComponentsInChildren<UnityEngine.UI.Selectable>(true))
+            {
+                if (sel.navigation.mode == UnityEngine.UI.Navigation.Mode.None)
+                    continue;
+                sel.navigation = none;
+                EditorUtility.SetDirty(sel);
+                n++;
+            }
+            return n;
         }
 
         /// Set a public field on an attached Udon behaviour via reflection

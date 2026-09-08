@@ -3,7 +3,11 @@
 // buttons SendCustomEvent into this behaviour:
 //
 // - ToggleMusic  - mutes/unmutes the scene BGM for THIS player only
-//   (a personal preference, not a world vote).
+//   (a personal preference, not a world vote). The builder can start
+//   the town theme muted - the clip still runs, so switching it on
+//   joins the loop where the rest of the world is - and the button's
+//   label is read off the source at Start rather than assumed, so it
+//   never opens saying "Music: On" over silence.
 // - SetDay / SetNight - jumps the shared day/night cycle to noon /
 //   midnight for EVERYONE (the cycle itself is derived from the server
 //   clock, so the jump is a synced offset on LegaiaDayNight).
@@ -33,6 +37,12 @@ namespace LegaiaWorld
 
         [Tooltip("Label on the music button - updated to show the current on/off state.")]
         public Text musicLabel;
+
+        void Start()
+        {
+            if (music != null && musicLabel != null)
+                musicLabel.text = music.mute ? "Music: Off" : "Music: On";
+        }
 
         public void ToggleMusic()
         {

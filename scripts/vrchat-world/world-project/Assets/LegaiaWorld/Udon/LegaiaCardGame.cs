@@ -1,6 +1,39 @@
-// The card table's dealer: five-card draw poker and blackjack, played at
-// the four stools by players AND by the town's villagers, for the coins
-// the wallet holds.
+// The card table's dealer: community-card poker, Cara's five-card night
+// game and blackjack, played at the four stools by players AND by the
+// town's villagers, for the coins the wallet holds.
+//
+// THREE GAMES, TWO SWITCHES. `mode` picks poker (0) or blackjack (1) and
+// is the panel's Mode button. `rules` picks WHICH poker: 0 hold'em (two
+// hole cards a seat, five community cards in the middle of the felt,
+// betting between each reveal) and 1 the five-card night game (five
+// cards a seat, one betting round, best hand wins). Nobody presses the
+// second switch: `rules` follows the town clock - by day hold'em, and
+// from dusk it is Cara's poker night, the game the rule poster by the
+// table describes. The clock is polled on the 0.25 s tick through
+// `director.dayNight.isNight` (the director pushes itself in at its own
+// Start, so a null director simply means day), and a change only lands
+// BETWEEN hands: a hand in progress always finishes under the rules it
+// was dealt under. `rulesOverride` is the editor checks' way in and is
+// -1 in a built world.
+//
+// THE COMMUNITY CARDS are five real pickups laid face down across the
+// middle of the felt at build time (`community_anchor_0..4`) and turned
+// over in stages - three for the flop, one for the turn, one for the
+// river - with a betting round after each. The stagger is the master
+// scheduling itself with SendCustomEventDelayedSeconds, and what the
+// other clients render from is the synced `communityUp` count, so a late
+// joiner sees exactly as many faces as everyone else. Each delayed step
+// is guarded by a `pending` flag plus its own deadline, and MasterTick
+// carries a watchdog that steps the sequence on if the delayed event
+// never arrives (a scaled-time editor soak can outrun it) - the guard is
+// what stops the watchdog and a late event from both revealing.
+//
+// SHOWDOWN IS PACED. Losing seats turn over first, the winner last, a
+// beat apart, and only then does the message name the pot. When
+// everyone but one seat folds there is no showdown at all: the last seat
+// takes the pot without showing a card ("wins uncontested"), which is
+// both the etiquette and the reason a fold returns BOTH hole cards to
+// the stack at once.
 //
 // WHO IS THE DEALER. This behaviour's OWNER is the master: it holds the
 // deck order, decides whose turn it is, runs the AI, and writes every
@@ -57,13 +90,18 @@
 // The RNG is an int LCG seeded and synced by the master, so a client that
 // takes over mid-hand rebuilds exactly the same undealt remainder.
 //
-// TABLE TALK. The panel's bottom block prints what the seated villagers
-// say - composed by LegaiaTableTalk on the master at the moments that
-// matter (sitting down, the deal, a raise, a fold, the pot going one
-// way, a player joining, between hands) and synced as plain text, so
+// TABLE TALK IS PER SEAT. Every line belongs to the seat that said it
+// and is printed on THAT seat's row, beside the name - a synced
+// `seatTalk[]` slot holding the newest line, cleared after `talkHold`.
+// (It used to be one italic block at the bottom of the panel holding the
+// last two lines from anybody, which read as a chat log rather than as
+// people talking.) The lines themselves are composed by LegaiaTableTalk
+// on the master at the moments that matter - sitting down, the deal, a
+// raise, a fold, each community reveal, a bad beat, the pot going one
+// way, a player joining, between hands - and synced as plain text, so
 // every client reads the same words. The names in front of the lines
 // are the villagers' names (LegaiaLivingTown), never their retail
-// dialogue; see the talk file for why, and for Vahn and Noa.
+// dialogue; see the talk file for why, and for Vahn, Noa and Cara.
 //
 // Requires UdonSharp (bundled with the VRChat worlds SDK).
 
@@ -111,6 +149,9 @@ namespace LegaiaWorld
         [Tooltip("Where the table's own (blackjack dealer) cards are laid.")]
         public Transform dealerAnchor;
 
+        [Tooltip("The five community-card spots across the middle of the felt (hold'em).")]
+        public Transform[] communityAnchors;
+
         [Tooltip("The deck's stack anchor - discards and undealt cards go back here.")]
         public Transform stackAnchor;
 
@@ -119,24 +160,41 @@ namespace LegaiaWorld
         public Text modeText;
         public Text potText;
         public Text msgText;
-        public Text talkText;
+        [Tooltip("The board: the community cards turned over so far (hold'em).")]
+        public Text communityText;
+        [Tooltip("The local seat's best hand right now, named.")]
+        public Text handText;
         public RawImage[] rowPortrait;
         public Text[] rowName;
         public Text[] rowCoins;
         public Text[] rowStatus;
+        [Tooltip("Per-seat speech line, printed on that seat's own row.")]
+        public Text[] rowTalk;
         public Button btnDeal;
         public Button btnMode;
         public Button btnCall;
         public Button btnRaise;
         public Button btnFold;
-        public Button btnDraw;
         public Button btnHit;
         public Button btnStand;
-        public Button[] btnHold;
         public Text btnCallText;
         public Text btnRaiseText;
         public Text btnDealText;
-        public Text[] btnHoldText;
+
+        // The three table controls at the bottom of the panel are NOT the
+        // game's: Shuffle/Gather send into the deck and the villager
+        // toggle into the host (the builder wires those listeners). The
+        // game only owns their *appearance* - it greys the two deck
+        // buttons out while a hand is live, because a restack mid-hand
+        // would leave the synced deck order describing a deck that no
+        // longer exists, and it prints the toggle's label from the host's
+        // synced `npcsAllowed` so the button says what pressing it does.
+        [Tooltip("Panel button that sends Shuffle to the DECK - greyed out while a hand runs.")]
+        public Button btnShuffle;
+        [Tooltip("Panel button that sends Gather to the DECK - greyed out while a hand runs.")]
+        public Button btnGather;
+        [Tooltip("Label on the panel's NPC toggle (the button itself sends ToggleNpcs to the host).")]
+        public Text btnNpcsText;
 
         [Tooltip("Flat silhouette tint drawn in a seat's portrait slot when a PLAYER sits there.")]
         public Color playerTint = new Color(0.45f, 0.55f, 0.75f, 1f);
@@ -160,6 +218,15 @@ namespace LegaiaWorld
 
         [Tooltip("How long the showdown stays up before the table clears.")]
         public float showSeconds = 6f;
+
+        [Tooltip("Beat between two community cards turning over (the flop's three).")]
+        public float communityGap = 0.7f;
+
+        [Tooltip("Beat between two seats turning their cards over at the showdown.")]
+        public float showdownGap = 0.6f;
+
+        [Tooltip("Editor checks only: 0 forces hold'em, 1 forces the night game, -1 (the built world) follows the town clock.")]
+        public int rulesOverride = -1;
 
         [Tooltip("Gap between hands while the villagers play among themselves.")]
         public float selfPlayGap = 8f;
@@ -188,6 +255,8 @@ namespace LegaiaWorld
         // --- synced state -----------------------------------------------------
 
         [UdonSynced] public int mode;            // 0 poker, 1 blackjack
+        [UdonSynced] public int rules;           // 0 hold'em, 1 five-card night
+        [UdonSynced] public int street;          // hold'em: 0 pre-flop, 1 flop, 2 turn, 3 river
         [UdonSynced] public int phase;           // see PH_*
         [UdonSynced] public int pot;
         [UdonSynced] public int turnSeat = -1;
@@ -198,9 +267,12 @@ namespace LegaiaWorld
         [UdonSynced] public int settleSerial;
         [UdonSynced] public int handsCompleted;
         [UdonSynced] public int dealerUpCount;   // dealer cards revealed so far
+        [UdonSynced] public int communityUp;     // community cards turned over so far
+        [UdonSynced] public int shownMask;       // bit i: seat i's cards are face up
         [UdonSynced] public string message = "";
-        [UdonSynced] public string talkLine = "";   // newest line first, at most two
 
+        [UdonSynced] public int[] community;     // 5 board card indices, -1 empty
+        [UdonSynced] public string[] seatTalk;   // newest line per seat, "" when quiet
         [UdonSynced] public int[] seatKind;      // 0 empty, 1 player, 2 npc
         [UdonSynced] public int[] seatPlayerId;
         [UdonSynced] public int[] seatChips;     // villagers' virtual chips
@@ -209,18 +281,20 @@ namespace LegaiaWorld
         [UdonSynced] public int[] seatPaid;      // committed this hand
         [UdonSynced] public int[] seatWon;       // taken from the pot this hand
         [UdonSynced] public int[] seatResult;    // net coin delta, applied on settleSerial
-        [UdonSynced] public int[] seatHold;      // draw-phase hold bitmask
         [UdonSynced] public int[] seatCards;     // seat*5 + slot -> card index, -1 empty
         [UdonSynced] public int[] dealerCards;   // blackjack, -1 empty
 
         // --- phases / seat states / actions ------------------------------------
 
         const int MODE_POKER = 0, MODE_BJ = 1;
-        const int PH_IDLE = 0, PH_BET1 = 2, PH_DRAW = 3, PH_BET2 = 4, PH_SHOW = 5;
+        const int RULES_HOLDEM = 0, RULES_NIGHT = 1;
+        // PH_BET keeps the value the old PH_BET1 had (the blackjack
+        // hit/stand phase is the same number), so a soak log reads the same.
+        const int PH_IDLE = 0, PH_BET = 2, PH_SHOW = 5, PH_REVEAL = 6;
         const int K_EMPTY = 0, K_PLAYER = 1, K_NPC = 2;
         const int H_OUT = 0, H_IN = 1, H_FOLD = 2, H_SITOUT = 3, H_STAND = 4, H_BUST = 5;
-        const int A_CALL = 0, A_RAISE = 1, A_FOLD = 2, A_DRAW = 3, A_HIT = 4,
-                  A_STAND = 5, A_DEAL = 6, A_MODE = 7, A_HOLD0 = 10;
+        const int A_CALL = 0, A_RAISE = 1, A_FOLD = 2, A_HIT = 4,
+                  A_STAND = 5, A_DEAL = 6, A_MODE = 7;
 
         // Poker hand categories, low to high.
         const int CAT_HIGH = 0, CAT_PAIR = 1, CAT_TWOPAIR = 2, CAT_TRIPS = 3,
@@ -230,7 +304,8 @@ namespace LegaiaWorld
         // Table-talk kinds (mirror LegaiaTableTalk.T_*).
         const int T_SIT = 0, T_DEAL = 1, T_RAISE = 2, T_CALL = 3, T_FOLD = 4,
                   T_WIN = 5, T_LOSE = 6, T_BUST = 7, T_NATURAL = 8, T_IDLE = 9,
-                  T_PLAYER = 10, T_LEAVE = 11;
+                  T_PLAYER = 10, T_LEAVE = 11, T_FLOP = 12, T_TURN = 13,
+                  T_RIVER = 14, T_BADBEAT = 15, T_NIGHT = 16;
 
         // --- local (never synced) ----------------------------------------------
 
@@ -248,10 +323,22 @@ namespace LegaiaWorld
         private bool handHadPlayer;
         private LegaiaNpcBrain[] brainAt;
         private string[] seatLabel;     // last villager name seen per seat
-        private float talkClearAt;
+        private float[] seatTalkAt;     // master: when each seat's line expires
         private float nextIdleTalk;
         private int talkSalt;
-        private string talkFirst = "";
+
+        // The two staggered reveals. Each is a delayed self-event plus a
+        // deadline, and the `pending` flag is what makes a watchdog step
+        // and a late delayed event collapse into one (see the header).
+        private bool pendingCommunity;
+        private float communityNext;
+        private int communityTarget;
+        private bool pendingShow;
+        private float showNext;
+        private int[] showOrder;        // seats in reveal order, losers first
+        private int showCount;
+        private int showIdx;
+        private string showMessage = "";
 
         void Start()
         {
@@ -260,6 +347,8 @@ namespace LegaiaWorld
             EnsureArrays();
             brainAt = new LegaiaNpcBrain[seatCount < 1 ? 1 : seatCount];
             seatLabel = new string[seatCount < 1 ? 1 : seatCount];
+            seatTalkAt = new float[seatCount < 1 ? 1 : seatCount];
+            showOrder = new int[seatCount < 1 ? 1 : seatCount];
             nextIdleTalk = Time.time + 6f;
             deckOrder = new int[52];
             for (int i = 0; i < 52; i++)
@@ -287,18 +376,33 @@ namespace LegaiaWorld
                 seatPaid = new int[n];
                 seatWon = new int[n];
                 seatResult = new int[n];
-                seatHold = new int[n];
                 seatCards = new int[n * 5];
+                seatTalk = new string[n];
                 for (int i = 0; i < seatCards.Length; i++)
                     seatCards[i] = -1;
                 for (int i = 0; i < n; i++)
+                {
                     seatPlayerId[i] = -1;
+                    seatTalk[i] = "";
+                }
+            }
+            if (seatTalk == null || seatTalk.Length != n)
+            {
+                seatTalk = new string[n];
+                for (int i = 0; i < n; i++)
+                    seatTalk[i] = "";
             }
             if (dealerCards == null || dealerCards.Length != 6)
             {
                 dealerCards = new int[6];
                 for (int i = 0; i < 6; i++)
                     dealerCards[i] = -1;
+            }
+            if (community == null || community.Length != 5)
+            {
+                community = new int[5];
+                for (int i = 0; i < 5; i++)
+                    community[i] = -1;
             }
         }
 
@@ -329,7 +433,38 @@ namespace LegaiaWorld
         {
             EnsureArrays();
             ApplySettlement();
+            RenderRevealed();
             RefreshPanel();
+        }
+
+        /// Every client draws the faces from the SYNCED counts, never from
+        /// its own idea of how far the hand has got: `communityUp` board
+        /// cards and every seat in `shownMask` are face up. Purely local -
+        /// the card's own Object Sync carries the owner's authoritative
+        /// `faceUp`, and this is what a late joiner (whose card sync has
+        /// not caught up) sees in the meantime. It never turns a card back
+        /// over, so it cannot fight the owner.
+        void RenderRevealed()
+        {
+            if (cards == null)
+                return;
+            for (int i = 0; i < communityUp && community != null &&
+                 i < community.Length; i++)
+                RevealLocal(community[i]);
+            for (int i = 0; i < seatCount; i++)
+            {
+                if ((shownMask & (1 << i)) == 0)
+                    continue;
+                for (int c = 0; c < 5; c++)
+                    RevealLocal(seatCards[i * 5 + c]);
+            }
+        }
+
+        void RevealLocal(int idx)
+        {
+            if (cards == null || idx < 0 || idx >= cards.Length || cards[idx] == null)
+                return;
+            cards[idx].Reveal();
         }
 
         // --- main loop ----------------------------------------------------------
@@ -434,11 +569,27 @@ namespace LegaiaWorld
             TalkTick();
             if (phase == PH_IDLE)
             {
+                PollRules();
                 MaybeAutoDeal();
+                return;
+            }
+            if (phase == PH_REVEAL)
+            {
+                // Watchdog: the delayed self-event should have stepped the
+                // board on by now (see the header - a scaled-time editor
+                // soak can outrun SendCustomEventDelayedSeconds).
+                if (pendingCommunity && Time.time >= communityNext + 1.5f)
+                    CommunityStep();
                 return;
             }
             if (phase == PH_SHOW)
             {
+                if (pendingShow)
+                {
+                    if (Time.time >= showNext + 1.5f)
+                        ShowdownStep();
+                    return;
+                }
                 if (Time.time >= showUntil)
                     EndHand();
                 return;
@@ -567,6 +718,25 @@ namespace LegaiaWorld
 
         // --- starting a hand ----------------------------------------------------
 
+        /// Which poker the table is playing. Called only between hands, so
+        /// dusk never changes the rules under a hand that is already out.
+        /// `rulesOverride` is the editor checks' way in; a built world
+        /// leaves it at -1 and follows the town clock. A null director (no
+        /// living town) or a null cycle is day.
+        public void PollRules()
+        {
+            int want = rulesOverride >= 0 ? rulesOverride
+                : (director != null && director.dayNight != null &&
+                   director.dayNight.isNight ? RULES_NIGHT : RULES_HOLDEM);
+            if (want == rules)
+                return;
+            rules = want;
+            if (mode == MODE_POKER)
+                message = rules == RULES_NIGHT
+                    ? "Cara's poker night" : "Hold'em - deal when you're ready";
+            Sync();
+        }
+
         void MaybeAutoDeal()
         {
             if (AnyPlayerSeated())
@@ -596,19 +766,27 @@ namespace LegaiaWorld
             raises = 0;
             betActed = 0;
             dealerUpCount = 0;
+            communityUp = 0;
+            shownMask = 0;
+            street = 0;
+            pendingCommunity = false;
+            pendingShow = false;
+            showCount = 0;
+            showIdx = 0;
             for (int i = 0; i < seatCount; i++)
             {
                 seatBet[i] = 0;
                 seatPaid[i] = 0;
                 seatWon[i] = 0;
                 seatResult[i] = 0;
-                seatHold[i] = 0;
                 for (int c = 0; c < 5; c++)
                     seatCards[i * 5 + c] = -1;
                 seatState[i] = seatKind[i] == K_EMPTY ? H_OUT : H_IN;
             }
             for (int i = 0; i < 6; i++)
                 dealerCards[i] = -1;
+            for (int i = 0; i < 5; i++)
+                community[i] = -1;
 
             // Ante. A seat that cannot cover it sits the hand out.
             for (int i = 0; i < seatCount; i++)
@@ -632,9 +810,20 @@ namespace LegaiaWorld
 
             if (mode == MODE_BJ)
                 DealBlackjack();
+            else if (rules == RULES_NIGHT)
+                DealNightPoker();
             else
-                DealPoker();
+                DealHoldem();
             Sync();
+        }
+
+        /// How many cards a seat holds under the rules in play - what the
+        /// fan on the felt is centred on, and how far the readers look.
+        int HandSlots()
+        {
+            if (mode == MODE_BJ)
+                return 5;
+            return rules == RULES_NIGHT ? 5 : 2;
         }
 
         void VoidHand(string why)
@@ -654,12 +843,43 @@ namespace LegaiaWorld
             phase = PH_IDLE;
             turnSeat = -1;
             message = why;
+            communityUp = 0;
+            shownMask = 0;
+            pendingCommunity = false;
+            pendingShow = false;
             nextDeal = Time.time + selfPlayGap;
             ReturnAllCards();
             Sync();
         }
 
-        void DealPoker()
+        /// Hold'em: two hole cards a seat (a player's face up, a
+        /// villager's face down), then the five board cards laid face down
+        /// across the middle of the felt. Nothing on the board turns over
+        /// until the pre-flop betting is done.
+        void DealHoldem()
+        {
+            for (int c = 0; c < 2; c++)
+                for (int i = 0; i < seatCount; i++)
+                {
+                    if (seatState[i] != H_IN)
+                        continue;
+                    int card = DrawCard();
+                    seatCards[i * 5 + c] = card;
+                    PlaceCard(i, c, card, seatKind[i] == K_PLAYER);
+                }
+            for (int c = 0; c < 5; c++)
+            {
+                community[c] = DrawCard();
+                PlaceCommunityCard(c, community[c], false);
+            }
+            message = "Pre-flop betting";
+            SayAny(T_DEAL);
+            BeginBetRound();
+        }
+
+        /// Cara's poker night: five cards a seat, one betting round, best
+        /// hand wins. No board, no draw - the rule poster by the table.
+        void DealNightPoker()
         {
             for (int c = 0; c < 5; c++)
                 for (int i = 0; i < seatCount; i++)
@@ -670,9 +890,10 @@ namespace LegaiaWorld
                     seatCards[i * 5 + c] = card;
                     PlaceCard(i, c, card, seatKind[i] == K_PLAYER);
                 }
-            message = "Betting";
-            SayAny(T_DEAL);
-            BeginBetRound(PH_BET1);
+            message = "Betting - best hand wins";
+            if (!SayCara(T_NIGHT))
+                SayAny(T_DEAL);
+            BeginBetRound();
         }
 
         void DealBlackjack()
@@ -705,7 +926,7 @@ namespace LegaiaWorld
                 }
             if (!spoke)
                 SayAny(T_DEAL);
-            phase = PH_BET1;
+            phase = PH_BET;
             message = "Hit or stand";
             turnSeat = FirstActor(-1);
             ArmTurn();
@@ -715,9 +936,9 @@ namespace LegaiaWorld
 
         // --- betting ------------------------------------------------------------
 
-        void BeginBetRound(int ph)
+        void BeginBetRound()
         {
-            phase = ph;
+            phase = PH_BET;
             currentBet = 0;
             raises = 0;
             betActed = 0;
@@ -843,7 +1064,7 @@ namespace LegaiaWorld
                 Showdown();
                 return;
             }
-            if (phase == PH_BET1 || phase == PH_BET2)
+            if (phase == PH_BET)
             {
                 if (mode == MODE_BJ)
                 {
@@ -869,32 +1090,7 @@ namespace LegaiaWorld
                     return;
                 }
                 ArmTurn();
-                return;
             }
-            if (phase == PH_DRAW)
-            {
-                turnSeat = NextUndrawn(turnSeat);
-                if (turnSeat < 0)
-                {
-                    NextPhase();
-                    return;
-                }
-                seatHold[turnSeat] = AiHoldMask(turnSeat);
-                ArmTurn();
-            }
-        }
-
-        // Each seat draws exactly once: `betActed` is reused as the
-        // "has drawn" set (the betting round that set it is over).
-        int NextUndrawn(int after)
-        {
-            for (int k = 1; k <= seatCount; k++)
-            {
-                int i = ((after < 0 ? seatCount - 1 : after) + k) % seatCount;
-                if (seatState[i] == H_IN && (betActed & (1 << i)) == 0)
-                    return i;
-            }
-            return -1;
         }
 
         int NextUnacted(int after)
@@ -910,6 +1106,9 @@ namespace LegaiaWorld
             return -1;
         }
 
+        /// A betting round is over. The night game has exactly one, so it
+        /// goes straight to the showdown; hold'em turns the next stage of
+        /// the board over and bets again, until the river is behind it.
         void NextPhase()
         {
             if (mode == MODE_BJ)
@@ -917,64 +1116,93 @@ namespace LegaiaWorld
                 DealerPlay();
                 return;
             }
-            if (phase == PH_BET1)
+            if (rules == RULES_NIGHT || street >= 3)
             {
-                phase = PH_DRAW;
-                message = "Draw";
-                betActed = 0;   // reused below as the "has drawn" set
-                turnSeat = NextUndrawn(-1);
-                if (turnSeat < 0)
-                {
-                    Showdown();
-                    return;
-                }
-                seatHold[turnSeat] = AiHoldMask(turnSeat);
-                ArmTurn();
+                Showdown();
                 return;
             }
-            if (phase == PH_DRAW)
-            {
-                message = "Betting";
-                BeginBetRound(PH_BET2);
-                return;
-            }
-            Showdown();
+            BeginCommunity(street + 1);
         }
 
-        // --- draw ---------------------------------------------------------------
+        // --- the board ----------------------------------------------------------
 
-        void ResolveDraw(int seat)
+        /// Start turning `st`'s cards over: the flop (three), the turn or
+        /// the river (one each). The first flip is scheduled like the rest
+        /// so that the pause after the last bet reads as the dealer
+        /// reaching for the deck.
+        void BeginCommunity(int st)
         {
-            int mask = seatHold[seat];
-            for (int c = 0; c < 5; c++)
+            street = st;
+            phase = PH_REVEAL;
+            turnSeat = -1;
+            communityTarget = st == 1 ? 3 : (st == 2 ? 4 : 5);
+            message = st == 1 ? "The flop" : (st == 2 ? "The turn" : "The river");
+            ScheduleCommunity(communityGap * 0.6f);
+            Sync();
+        }
+
+        void ScheduleCommunity(float delay)
+        {
+            pendingCommunity = true;
+            communityNext = Time.time + delay;
+            SendCustomEventDelayedSeconds("CommunityStep", delay);
+        }
+
+        /// One board card over. Public because it is the master's own
+        /// delayed event; the `pending` + deadline guard is what makes a
+        /// duplicate (the MasterTick watchdog and a late delayed event)
+        /// a no-op instead of a double reveal.
+        public void CommunityStep()
+        {
+            if (!isLocalOwner || phase != PH_REVEAL)
+                return;
+            if (!pendingCommunity || Time.time < communityNext - 0.05f)
+                return;
+            pendingCommunity = false;
+            if (communityUp < communityTarget && communityUp < 5)
             {
-                if ((mask & (1 << c)) != 0)
-                    continue;
-                if (deckPos >= 52)
-                    break;
-                ReturnCard(seatCards[seat * 5 + c]);
-                int card = DrawCard();
-                seatCards[seat * 5 + c] = card;
-                PlaceCard(seat, c, card, seatKind[seat] == K_PLAYER);
+                RevealCommunity(communityUp);
+                communityUp++;
             }
-            betActed = betActed | (1 << seat);
-            AdvanceTurn();
+            if (communityUp < communityTarget)
+            {
+                ScheduleCommunity(communityGap);
+                Sync();
+                return;
+            }
+            SayAny(street == 1 ? T_FLOP : (street == 2 ? T_TURN : T_RIVER));
+            message = "Betting";
+            BeginBetRound();
+            Sync();
         }
 
         // --- showdown / settlement ----------------------------------------------
 
+        /// The pot is decided here, but nothing is SHOWN yet: the losers
+        /// turn over first and the winner last, a beat apart
+        /// (`ShowdownStep`), and the message that names the pot waits for
+        /// the last card. When everyone but one seat has folded there is
+        /// no showdown at all - the last seat takes it without showing,
+        /// which is both the etiquette and what makes folding mean
+        /// something at a table of face-up pickups.
         void Showdown()
         {
             phase = PH_SHOW;
             turnSeat = -1;
+            pendingCommunity = false;
             int best = -1;
-            int bestScore = -1;
+            // -2, not -1: a hand that ends BEFORE the flop scores -1 (two
+            // hole cards are not five cards), and a `-1` floor would read
+            // that as "nobody has a hand" and void a pot somebody had
+            // just won by everyone else folding.
+            int bestScore = -2;
             int winners = 0;
+            int contenders = 0;
             for (int i = 0; i < seatCount; i++)
             {
                 if (seatState[i] != H_IN)
                     continue;
-                RevealSeat(i);
+                contenders++;
                 int sc = ScoreSeat(i);
                 if (sc > bestScore)
                 {
@@ -1006,17 +1234,100 @@ namespace LegaiaWorld
                 if (seatKind[i] == K_NPC)
                     seatChips[i] += take;
             }
-            message = winners > 1
+
+            // Everyone else folded: no cards are shown at all.
+            if (contenders <= 1)
+            {
+                showMessage = SeatName(best) + " wins " + given + " uncontested";
+                if (seatKind[best] == K_NPC)
+                    Say(T_WIN, best);
+                FinishShowdown();
+                return;
+            }
+
+            showMessage = winners > 1
                 ? "Split pot - " + CategoryName(bestScore / 759375)
                 : SeatName(best) + " wins " + given + " (" +
                   CategoryName(bestScore / 759375) + ")";
-            if (seatKind[best] == K_NPC)
+            // Losers first, the winner (and any seat splitting with it)
+            // last, so the table watches the hand that takes it turn over.
+            showCount = 0;
+            showIdx = 0;
+            for (int pass = 0; pass < 2; pass++)
+                for (int i = 0; i < seatCount && showCount < showOrder.Length; i++)
+                {
+                    if (seatState[i] != H_IN)
+                        continue;
+                    bool winner = ScoreSeat(i) == bestScore;
+                    if ((pass == 0) == winner)
+                        continue;
+                    showOrder[showCount] = i;
+                    showCount++;
+                }
+            message = "Showdown";
+            ScheduleShowdown(showdownGap * 0.5f);
+            Sync();
+        }
+
+        void ScheduleShowdown(float delay)
+        {
+            pendingShow = true;
+            showNext = Time.time + delay;
+            SendCustomEventDelayedSeconds("ShowdownStep", delay);
+        }
+
+        /// One seat's cards over. Public because it is the master's own
+        /// delayed event - same guard as CommunityStep.
+        public void ShowdownStep()
+        {
+            if (!isLocalOwner || phase != PH_SHOW || !pendingShow)
+                return;
+            if (Time.time < showNext - 0.05f)
+                return;
+            pendingShow = false;
+            if (showIdx < showCount)
+            {
+                int seat = showOrder[showIdx];
+                RevealSeat(seat);
+                shownMask = shownMask | (1 << seat);
+                showIdx++;
+            }
+            if (showIdx < showCount)
+            {
+                ScheduleShowdown(showdownGap);
+                Sync();
+                return;
+            }
+            FinishShowdown();
+        }
+
+        /// The last card is over: name the pot, pay it, and start the
+        /// clock that clears the table.
+        void FinishShowdown()
+        {
+            pendingShow = false;
+            message = showMessage;
+            int best = -1;
+            int bestScore = -2;   // see Showdown: a pre-flop pot scores -1
+            for (int i = 0; i < seatCount; i++)
+                if (seatWon[i] > 0 && seatState[i] == H_IN)
+                {
+                    int sc = ScoreSeat(i);
+                    if (sc > bestScore)
+                    {
+                        bestScore = sc;
+                        best = i;
+                    }
+                }
+            if (best >= 0 && seatKind[best] == K_NPC && shownMask != 0)
                 Say(T_WIN, best);
+            // A villager who turned over a made hand and still lost says
+            // so - a bad beat is the one line the table remembers.
             for (int i = 0; i < seatCount; i++)
                 if (i != best && seatState[i] == H_IN && seatKind[i] == K_NPC &&
-                    ScoreSeat(i) != bestScore)
+                    seatWon[i] == 0)
                 {
-                    Say(T_LOSE, i);
+                    Say(ScoreSeat(i) / 759375 >= CAT_TRIPS ? T_BADBEAT : T_LOSE, i);
                     break;
                 }
             Settle();
@@ -1029,6 +1340,7 @@ namespace LegaiaWorld
         {
             phase = PH_SHOW;
             turnSeat = -1;
+            pendingShow = false;   // blackjack has no paced showdown
             // The hole card turns over, then the table draws to 17 and
             // stands on soft 17.
             dealerUpCount = 2;
@@ -1054,6 +1366,7 @@ namespace LegaiaWorld
                     seatState[i] != H_BUST)
                     continue;
                 RevealSeat(i);
+                shownMask = shownMask | (1 << i);
                 int stake = seatPaid[i];
                 int pv = HandValue(i);
                 bool natural = SeatCardCount(i) == 2 && pv == 21;
@@ -1148,6 +1461,11 @@ namespace LegaiaWorld
             pot = 0;
             phase = PH_IDLE;
             turnSeat = -1;
+            communityUp = 0;
+            shownMask = 0;
+            street = 0;
+            pendingCommunity = false;
+            pendingShow = false;
             for (int i = 0; i < seatCount; i++)
             {
                 seatBet[i] = 0;
@@ -1192,10 +1510,12 @@ namespace LegaiaWorld
             }
             if (action == A_MODE)
             {
+                // Poker / blackjack only: WHICH poker is the town clock's
+                // call, never a button (see PollRules).
                 if (phase != PH_IDLE)
                     return;
                 mode = mode == MODE_POKER ? MODE_BJ : MODE_POKER;
-                message = mode == MODE_POKER ? "Five-card draw" : "Blackjack";
+                message = mode == MODE_BJ ? "Blackjack" : RulesName();
                 Sync();
                 return;
             }
@@ -1214,20 +1534,7 @@ namespace LegaiaWorld
                 return;
             }
 
-            if (phase == PH_DRAW)
-            {
-                if (action >= A_HOLD0 && action < A_HOLD0 + 5)
-                {
-                    seatHold[seat] = seatHold[seat] ^ (1 << (action - A_HOLD0));
-                    Sync();
-                }
-                else if (action == A_DRAW)
-                {
-                    ResolveDraw(seat);
-                }
-                return;
-            }
-            if (phase != PH_BET1 && phase != PH_BET2)
+            if (phase != PH_BET)
                 return;
             if (action == A_CALL)
             {
@@ -1287,11 +1594,6 @@ namespace LegaiaWorld
                 AdvanceTurn();
                 return;
             }
-            if (phase == PH_DRAW)
-            {
-                ResolveDraw(seat);
-                return;
-            }
             if (currentBet - seatBet[seat] <= 0)
                 DoCall(seat);
             else
@@ -1314,32 +1616,26 @@ namespace LegaiaWorld
                 }
                 return;
             }
-            if (phase == PH_DRAW)
-            {
-                seatHold[seat] = AiHoldMask(seat);
-                ResolveDraw(seat);
-                return;
-            }
-            int cat = ScoreSeat(seat) / 759375;
             int owed = currentBet - seatBet[seat];
             int nerve = Personality(seat);          // 0..99, higher = bolder
             bool canRaise = raises < maxRaises && CanCover(seat, owed + betStep);
+            int strength = HandStrength(seat);      // 0..99
 
-            if (cat >= CAT_TRIPS)
+            if (strength >= 74)
             {
                 if (canRaise)
                     NpcRaise(seat);
                 else
                     NpcCall(seat);
             }
-            else if (cat == CAT_TWOPAIR)
+            else if (strength >= 56)
             {
                 if (canRaise && nerve > 60)
                     NpcRaise(seat);
                 else
                     NpcCall(seat);
             }
-            else if (cat == CAT_PAIR)
+            else if (strength >= 36)
             {
                 if (owed <= betStep || nerve > 70)
                     NpcCall(seat);
@@ -1362,6 +1658,75 @@ namespace LegaiaWorld
                     Fold(seat);
             }
             AdvanceTurn();
+        }
+
+        /// How good a villager thinks its hand is, 0..99. Pre-flop that is
+        /// the two hole cards alone (a pair, two pictures, suited,
+        /// connected); once there is a board it is the made-hand category
+        /// of the best five out of what it can see - discounted when the
+        /// board alone makes that hand, because a villager playing the
+        /// board is not beating anybody with it.
+        public int HandStrength(int seat)
+        {
+            if (mode == MODE_POKER && rules == RULES_HOLDEM && communityUp < 3)
+                return PreflopStrength(seatCards[seat * 5], seatCards[seat * 5 + 1]);
+            int cat = ScoreSeat(seat) / 759375;
+            int s = CategoryStrength(cat);
+            if (rules == RULES_HOLDEM && communityUp >= 5 && cat == BoardCategory())
+                s = s / 2 + 8;   // playing the board
+            return s > 99 ? 99 : s;
+        }
+
+        int CategoryStrength(int cat)
+        {
+            if (cat >= CAT_QUADS) return 99;
+            if (cat == CAT_FULL) return 95;
+            if (cat == CAT_FLUSH) return 88;
+            if (cat == CAT_STRAIGHT) return 84;
+            if (cat == CAT_TRIPS) return 78;
+            if (cat == CAT_TWOPAIR) return 62;
+            if (cat == CAT_PAIR) return 44;
+            return 20;
+        }
+
+        /// The category the five board cards make on their own.
+        int BoardCategory()
+        {
+            if (community == null || communityUp < 5)
+                return -1;
+            int sc = Eval5(community[0], community[1], community[2],
+                community[3], community[4]);
+            return sc < 0 ? -1 : sc / 759375;
+        }
+
+        /// Two hole cards, 0..99: a pair is worth its rank, two pictures
+        /// beat two rags, and suited or connected is worth a few points on
+        /// top - the shape of every starting-hand chart, without the chart.
+        public int PreflopStrength(int a, int b)
+        {
+            if (a < 0 || b < 0)
+                return 0;
+            int va = RankValue(a), vb = RankValue(b);
+            int hi = va > vb ? va : vb;
+            int lo = va > vb ? vb : va;
+            bool suited = a / 13 == b / 13;
+            int gap = hi - lo;
+            int s;
+            if (va == vb)
+                s = 52 + (hi - 2) * 4;              // 52 (deuces) .. 100 (aces)
+            else
+            {
+                s = 8 + (hi - 2) * 2 + (lo - 2);    // high card carries it
+                if (hi >= 13 && lo >= 10)
+                    s += 12;                        // two pictures
+                if (gap <= 2)
+                    s += 6;                         // connected
+                if (suited)
+                    s += 8;
+            }
+            if (s < 0)
+                s = 0;
+            return s > 99 ? 99 : s;
         }
 
         void NpcRaise(int seat)
@@ -1415,98 +1780,6 @@ namespace LegaiaWorld
             return false;
         }
 
-        /// Which of a seat's five cards the AI keeps: made hands stand,
-        /// then a four-flush or an open-ended four-straight, then the high
-        /// cards.
-        public int AiHoldMask(int seat)
-        {
-            int a = seatCards[seat * 5];
-            int b = seatCards[seat * 5 + 1];
-            int c = seatCards[seat * 5 + 2];
-            int d = seatCards[seat * 5 + 3];
-            int e = seatCards[seat * 5 + 4];
-            if (a < 0 || b < 0 || c < 0 || d < 0 || e < 0)
-                return 31;
-            int score = Eval5(a, b, c, d, e);
-            int cat = score / 759375;
-            if (cat >= CAT_STRAIGHT)
-                return 31;               // stand pat
-
-            int[] v = new int[5];
-            int[] s = new int[5];
-            v[0] = RankValue(a); v[1] = RankValue(b); v[2] = RankValue(c);
-            v[3] = RankValue(d); v[4] = RankValue(e);
-            s[0] = a / 13; s[1] = b / 13; s[2] = c / 13; s[3] = d / 13; s[4] = e / 13;
-
-            if (cat == CAT_TRIPS || cat == CAT_TWOPAIR || cat == CAT_PAIR)
-            {
-                int mask = 0;
-                for (int i = 0; i < 5; i++)
-                {
-                    int n = 0;
-                    for (int k = 0; k < 5; k++)
-                        if (v[k] == v[i])
-                            n++;
-                    if (n >= 2)
-                        mask = mask | (1 << i);
-                }
-                return mask;
-            }
-
-            // Four of one suit: throw the odd card away.
-            for (int suit = 0; suit < 4; suit++)
-            {
-                int n = 0;
-                int mask = 0;
-                for (int i = 0; i < 5; i++)
-                    if (s[i] == suit)
-                    {
-                        n++;
-                        mask = mask | (1 << i);
-                    }
-                if (n == 4)
-                    return mask;
-            }
-
-            // Four to an open-ended straight (four consecutive ranks, both
-            // ends live - so not A-2-3-4 and not J-Q-K-A).
-            for (int lo = 3; lo <= 10; lo++)
-            {
-                int mask = 0;
-                int n = 0;
-                for (int r = lo; r < lo + 4; r++)
-                    for (int i = 0; i < 5; i++)
-                        if (v[i] == r && (mask & (1 << i)) == 0)
-                        {
-                            mask = mask | (1 << i);
-                            n++;
-                            break;
-                        }
-                if (n == 4)
-                    return mask;
-            }
-
-            // Nothing: keep the picture cards, or the single highest.
-            int hi = 0;
-            int held = 0;
-            int highest = -1;
-            int highestAt = 0;
-            for (int i = 0; i < 5; i++)
-            {
-                if (v[i] > highest)
-                {
-                    highest = v[i];
-                    highestAt = i;
-                }
-                if (v[i] >= 13 && held < 2)
-                {
-                    hi = hi | (1 << i);
-                    held++;
-                }
-            }
-            return hi != 0 ? hi : (1 << highestAt);
-        }
-
         // --- hand evaluation ------------------------------------------------------
 
         /// Ace high (14), king 13 ... deuce 2. Card index = rank + 13*suit,
@@ -1527,11 +1800,59 @@ namespace LegaiaWorld
             return r >= 9 ? 10 : r + 1;
         }
 
-        int ScoreSeat(int seat)
+        /// A seat's hand under the rules in play: the five it holds in the
+        /// night game, or the best five of its two plus whatever of the
+        /// board is face up in hold'em (so an AI reading the flop is
+        /// scoring the same seven a player can see, never the buried
+        /// cards). -1 while a seat holds too few cards to make a hand.
+        public int ScoreSeat(int seat)
         {
+            if (mode == MODE_POKER && rules == RULES_HOLDEM)
+                return BestOfSeven(seatCards[seat * 5], seatCards[seat * 5 + 1],
+                    BoardAt(0), BoardAt(1), BoardAt(2), BoardAt(3), BoardAt(4));
             return Eval5(seatCards[seat * 5], seatCards[seat * 5 + 1],
                 seatCards[seat * 5 + 2], seatCards[seat * 5 + 3],
                 seatCards[seat * 5 + 4]);
+        }
+
+        /// Board card `i`, or -1 while it is still face down.
+        int BoardAt(int i)
+        {
+            if (community == null || i < 0 || i >= community.Length || i >= communityUp)
+                return -1;
+            return community[i];
+        }
+
+        /// The best five-card score out of up to seven cards (-1 marks a
+        /// card that is not there). Fewer than five is no hand at all;
+        /// exactly five is Eval5, which stays the exact evaluator every
+        /// other reader and the checks pin.
+        public int BestOfSeven(int a, int b, int c, int d, int e, int f, int g)
+        {
+            int[] pool = new int[7];
+            int n = 0;
+            if (a >= 0) { pool[n] = a; n++; }
+            if (b >= 0) { pool[n] = b; n++; }
+            if (c >= 0) { pool[n] = c; n++; }
+            if (d >= 0) { pool[n] = d; n++; }
+            if (e >= 0) { pool[n] = e; n++; }
+            if (f >= 0) { pool[n] = f; n++; }
+            if (g >= 0) { pool[n] = g; n++; }
+            if (n < 5)
+                return -1;
+            int best = -1;
+            for (int i0 = 0; i0 <= n - 5; i0++)
+                for (int i1 = i0 + 1; i1 <= n - 4; i1++)
+                    for (int i2 = i1 + 1; i2 <= n - 3; i2++)
+                        for (int i3 = i2 + 1; i3 <= n - 2; i3++)
+                            for (int i4 = i3 + 1; i4 <= n - 1; i4++)
+                            {
+                                int sc = Eval5(pool[i0], pool[i1], pool[i2],
+                                    pool[i3], pool[i4]);
+                                if (sc > best)
+                                    best = sc;
+                            }
+            return best;
         }
 
         /// One comparable number for a five-card hand: category in base
@@ -1862,9 +2183,41 @@ namespace LegaiaWorld
                 return;
             TakeCard(card);
             Transform a = handAnchors[seat];
-            Vector3 p = a.position + a.right * ((slot - 2) * 0.075f);
-            Quaternion r = a.rotation * Quaternion.Euler(0f, (slot - 2) * 5f, 0f);
+            // The fan is centred on however many cards THESE rules deal:
+            // two hole cards sit in front of the seat, not off to its left.
+            float off = slot - (HandSlots() - 1) * 0.5f;
+            Vector3 p = a.position + a.right * (off * 0.075f);
+            Quaternion r = a.rotation * Quaternion.Euler(0f, off * 5f, 0f);
             card.Deal(p, r, faceUp);
+        }
+
+        void PlaceCommunityCard(int slot, int cardIndex, bool faceUp)
+        {
+            if (cards == null || cardIndex < 0 || cardIndex >= cards.Length)
+                return;
+            if (communityAnchors == null || slot < 0 ||
+                slot >= communityAnchors.Length || communityAnchors[slot] == null)
+                return;
+            LegaiaCard card = cards[cardIndex];
+            if (card == null)
+                return;
+            TakeCard(card);
+            Transform a = communityAnchors[slot];
+            card.Deal(a.position, a.rotation, faceUp);
+        }
+
+        /// Turn board card `slot` over where it lies - the master's half of
+        /// a staged reveal (the count is what every other client renders).
+        void RevealCommunity(int slot)
+        {
+            if (cards == null || community == null || slot < 0 ||
+                slot >= community.Length)
+                return;
+            int idx = community[slot];
+            if (idx < 0 || idx >= cards.Length || cards[idx] == null)
+                return;
+            TakeCard(cards[idx]);
+            cards[idx].Reveal();
         }
 
         void PlaceDealerCard(int slot, int cardIndex, bool faceUp)
@@ -1923,6 +2276,10 @@ namespace LegaiaWorld
                 stackAnchor.rotation, false);
         }
 
+        /// A fold takes the seat's WHOLE hand off the felt in one go - both
+        /// hole cards in hold'em, all five in the night game - so a folded
+        /// seat is read as folded from across the table and not just on the
+        /// panel.
         void ReturnSeatCards(int seat)
         {
             for (int c = 0; c < 5; c++)
@@ -1930,6 +2287,7 @@ namespace LegaiaWorld
                 ReturnCard(seatCards[seat * 5 + c]);
                 seatCards[seat * 5 + c] = -1;
             }
+            shownMask = shownMask & ~(1 << seat);
         }
 
         /// Re-stack everything the table dealt. Only the dealt cards move:
@@ -1948,6 +2306,13 @@ namespace LegaiaWorld
                 ReturnCard(dealerCards[c]);
                 dealerCards[c] = -1;
             }
+            if (community == null)
+                return;
+            for (int c = 0; c < community.Length; c++)
+            {
+                ReturnCard(community[c]);
+                community[c] = -1;
+            }
         }
 
         // --- the seat panel --------------------------------------------------------
@@ -1959,14 +2324,8 @@ namespace LegaiaWorld
         public void UiCall() { SendAct(A_CALL); }
         public void UiRaise() { SendAct(A_RAISE); }
         public void UiFold() { SendAct(A_FOLD); }
-        public void UiDraw() { SendAct(A_DRAW); }
         public void UiHit() { SendAct(A_HIT); }
         public void UiStand() { SendAct(A_STAND); }
-        public void UiHold0() { SendAct(A_HOLD0); }
-        public void UiHold1() { SendAct(A_HOLD0 + 1); }
-        public void UiHold2() { SendAct(A_HOLD0 + 2); }
-        public void UiHold3() { SendAct(A_HOLD0 + 3); }
-        public void UiHold4() { SendAct(A_HOLD0 + 4); }
 
         void SendAct(int action)
         {
@@ -1981,14 +2340,22 @@ namespace LegaiaWorld
             SendCustomNetworkEvent(NetworkEventTarget.Owner, "Act", seat, action);
         }
 
+        /// The poker in play, named for the panel's mode line.
+        public string RulesName()
+        {
+            return rules == RULES_NIGHT
+                ? "Cara's poker night - best hand wins"
+                : "Texas hold'em";
+        }
+
         void RefreshPanel()
         {
             if (seatKind == null)
                 return;
             if (modeText != null)
-                modeText.text = mode == MODE_POKER
-                    ? "Five-card draw  -  ante " + ante
-                    : "Blackjack  -  stake " + ante;
+                modeText.text = mode == MODE_BJ
+                    ? "Blackjack  -  stake " + ante
+                    : RulesName() + "  -  ante " + ante;
             if (potText != null)
                 potText.text = mode == MODE_BJ
                     ? "Dealer " + (dealerUpCount >= 2 ? "" + DealerTotal()
@@ -1996,12 +2363,63 @@ namespace LegaiaWorld
                     : "Pot " + pot;
             if (msgText != null)
                 msgText.text = message;
-            if (talkText != null)
-                talkText.text = talkLine == null ? "" : talkLine;
+            RefreshBoard();
 
             for (int i = 0; i < seatCount; i++)
                 RefreshRow(i);
             RefreshButtons();
+        }
+
+        /// The board block: the community cards turned over so far (red
+        /// suits tinted through rich text - one Text, several colours) and
+        /// the local seat's best hand named. Blackjack and the night game
+        /// have no board, so the line says what the seat is holding
+        /// instead of pretending there is one.
+        void RefreshBoard()
+        {
+            if (communityText != null)
+            {
+                string s = "";
+                if (mode == MODE_POKER && rules == RULES_HOLDEM)
+                {
+                    for (int i = 0; i < 5; i++)
+                    {
+                        int idx = i < communityUp ? BoardAt(i) : -1;
+                        s += (s.Length > 0 ? "   " : "") +
+                             (idx < 0 ? "<color=#5a5650>--</color>" : TintedLabel(idx));
+                    }
+                }
+                communityText.text = s;
+            }
+            if (handText == null)
+                return;
+            int seat = LocalSeat();
+            if (seat < 0 || seatState == null || seat >= seatCount ||
+                seatCards[seat * 5] < 0)
+            {
+                handText.text = "";
+                return;
+            }
+            if (mode == MODE_BJ)
+            {
+                handText.text = "You hold " + HandValue(seat);
+                return;
+            }
+            int score = ScoreSeat(seat);
+            handText.text = score < 0
+                ? "Your hand: " + TintedLabel(seatCards[seat * 5]) + " " +
+                  TintedLabel(seatCards[seat * 5 + 1])
+                : "Your hand: " + CategoryName(score / 759375);
+        }
+
+        /// A card label with the red suits tinted (Unity UI rich text).
+        string TintedLabel(int card)
+        {
+            if (card < 0)
+                return "--";
+            return IsRedSuit(card)
+                ? "<color=#f28a7a>" + CardLabel(card) + "</color>"
+                : CardLabel(card);
         }
 
         // --- table talk ---------------------------------------------------------
@@ -2020,9 +2438,32 @@ namespace LegaiaWorld
             string line = talk.Compose(kind, name, OthersAt(seat), talkSalt ^ shuffleSeed);
             if (line == null || line.Length == 0)
                 return;
-            talkLine = talkFirst.Length > 0 ? line + "\n" + talkFirst : line;
-            talkFirst = line;
-            talkClearAt = Time.time + talkHold;
+            seatTalk[seat] = line;
+            if (seatTalkAt != null && seat < seatTalkAt.Length)
+                seatTalkAt[seat] = Time.time + talkHold;
+        }
+
+        /// The seat Cara is sitting in, or -1. Her poker night is hers to
+        /// open, so the night deal looks for her by name before it falls
+        /// back to whoever is at the table.
+        int CaraSeat()
+        {
+            if (seatLabel == null)
+                return -1;
+            for (int i = 0; i < seatCount; i++)
+                if (seatKind[i] == K_NPC && seatLabel[i] != null &&
+                    seatLabel[i].ToLower() == "cara")
+                    return i;
+            return -1;
+        }
+
+        bool SayCara(int kind)
+        {
+            int seat = CaraSeat();
+            if (seat < 0)
+                return false;
+            Say(kind, seat);
+            return true;
         }
 
         /// One of the seated villagers speaks - a different one each time.
@@ -2080,15 +2521,24 @@ namespace LegaiaWorld
             return false;
         }
 
-        /// Master: fade the last lines, and let the table mutter between hands.
+        /// Master: fade each seat's line once it has had its time, and let
+        /// the table mutter between hands.
         void TalkTick()
         {
-            if (talkLine != null && talkLine.Length > 0 && Time.time >= talkClearAt)
+            bool cleared = false;
+            for (int i = 0; i < seatCount && seatTalk != null &&
+                 i < seatTalk.Length; i++)
             {
-                talkLine = "";
-                talkFirst = "";
-                Sync();
+                if (seatTalk[i] == null || seatTalk[i].Length == 0)
+                    continue;
+                if (seatTalkAt != null && i < seatTalkAt.Length &&
+                    Time.time < seatTalkAt[i])
+                    continue;
+                seatTalk[i] = "";
+                cleared = true;
             }
+            if (cleared)
+                Sync();
             if (phase == PH_IDLE && Time.time >= nextIdleTalk)
             {
                 nextIdleTalk = Time.time + idleTalkGap + (talkSalt % 5) * 2f;
@@ -2121,8 +2571,29 @@ namespace LegaiaWorld
                 if (b != null)
                     portrait = b.portrait;
             }
+            else if (seatTalk != null && i < seatTalk.Length &&
+                     seatTalk[i] != null && seatTalk[i].Length > 0 &&
+                     seatLabel != null && seatLabel[i] != null &&
+                     seatLabel[i].Length > 0)
+            {
+                // A villager who just stood up still gets its parting line
+                // printed under the name it had.
+                name = seatLabel[i];
+            }
             if (rowName != null && i < rowName.Length && rowName[i] != null)
                 rowName[i].text = name;
+            if (rowTalk != null && i < rowTalk.Length && rowTalk[i] != null)
+            {
+                // The row already prints the name, so the quote drops the
+                // "Name: " the composer puts in front (Vahn's stage
+                // directions have none and pass through whole).
+                string said = seatTalk != null && i < seatTalk.Length &&
+                              seatTalk[i] != null ? seatTalk[i] : "";
+                string tag = name + ": ";
+                if (said.Length > tag.Length && said.StartsWith(tag))
+                    said = said.Substring(tag.Length);
+                rowTalk[i].text = said.Length > 0 ? "\"" + said + "\"" : "";
+            }
             if (rowCoins != null && i < rowCoins.Length && rowCoins[i] != null)
                 rowCoins[i].text = coins;
             if (rowStatus != null && i < rowStatus.Length && rowStatus[i] != null)
@@ -2173,19 +2644,25 @@ namespace LegaiaWorld
             int ls = LocalSeat();
             bool seated = ls >= 0;
             bool myTurn = seated && turnSeat == ls && seatState[ls] == H_IN;
-            bool betting = myTurn && mode == MODE_POKER &&
-                           (phase == PH_BET1 || phase == PH_BET2);
-            bool drawing = myTurn && mode == MODE_POKER && phase == PH_DRAW;
-            bool bj = myTurn && mode == MODE_BJ && phase == PH_BET1;
+            bool betting = myTurn && mode == MODE_POKER && phase == PH_BET;
+            bool bj = myTurn && mode == MODE_BJ && phase == PH_BET;
 
             Enable(btnDeal, seated && phase == PH_IDLE);
             Enable(btnMode, seated && phase == PH_IDLE);
             Enable(btnCall, betting);
             Enable(btnRaise, betting && raises < maxRaises);
             Enable(btnFold, betting);
-            Enable(btnDraw, drawing);
             Enable(btnHit, bj);
             Enable(btnStand, bj);
+
+            // The deck's own two buttons: anyone may press them, seated or
+            // not, but never while cards are out on the felt.
+            bool idle = phase == PH_IDLE;
+            Enable(btnShuffle, idle);
+            Enable(btnGather, idle);
+            if (btnNpcsText != null)
+                btnNpcsText.text = host == null || host.npcsAllowed
+                    ? "NPCs: shoo" : "NPCs: sit";
 
             if (btnDealText != null)
                 btnDealText.text = phase == PH_IDLE ? "Deal" : "Playing";
@@ -2195,23 +2672,6 @@ namespace LegaiaWorld
             if (btnRaiseText != null)
                 btnRaiseText.text = currentBet > 0
                     ? "Raise +" + betStep : "Bet " + betStep;
-
-            if (btnHold == null)
-                return;
-            for (int c = 0; c < btnHold.Length && c < 5; c++)
-            {
-                Enable(btnHold[c], drawing);
-                if (btnHoldText == null || c >= btnHoldText.Length ||
-                    btnHoldText[c] == null)
-                    continue;
-                int card = seated ? seatCards[ls * 5 + c] : -1;
-                bool held = seated && (seatHold[ls] & (1 << c)) != 0;
-                btnHoldText[c].text = card < 0 ? "-"
-                    : CardLabel(card) + (held ? "\n[hold]" : "\n");
-                btnHoldText[c].color = card >= 0 && IsRedSuit(card)
-                    ? new Color(0.95f, 0.5f, 0.45f)
-                    : new Color(0.95f, 0.92f, 0.85f);
-            }
         }
 
         void Enable(Button b, bool on)

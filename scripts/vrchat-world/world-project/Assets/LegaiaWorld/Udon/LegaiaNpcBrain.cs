@@ -22,10 +22,16 @@
 //                  behind unless a player opened it
 //   6 GO_EXIT    - the reverse, at dawn: walk to the interior-side
 //                  doorway, teleport out, the door swings behind
-//   9 NIGHT_IDLE - the door trip failed `homeRetryLimit` times: stand
-//                  where it got to, facing its door, until dawn, instead
-//                  of retrying for ever (which reads as aimless wandering
-//                  around the house)
+//   9 NIGHT_IDLE - the door trip failed `homeRetryLimit` times: step BACK
+//                  from the doorway and wait out the night there, facing
+//                  home, instead of retrying for ever (which reads as
+//                  aimless wandering around the house). The step back is
+//                  the keep-out rule: the doorway tile is a teleport a
+//                  player walks through, and nobody may spend a night in it
+//  30 NIGHT_HOST_WAIT - the villager pinned to a station for the night
+//                  (town01: Cara at card-table stool 0) is waiting a
+//                  couple of metres off it because a PLAYER has the seat.
+//                  The director sends it over the moment the seat frees
 //
 //  40 DEAD       - struck down by a player's weapon (LegaiaNpcHitbox ->
 //                   Slay, broadcast as SlainAt to every client): the
@@ -44,6 +50,33 @@
 // mid-hand. `Seated()` / `AtStation()` / `Dead()` are the matching
 // queries; `label` and `portrait` are what a panel shows for this
 // villager (the manifest label and a build-time head render).
+//
+// THE NIGHT HOST. One villager per scene may be pinned to a station for
+// the whole night (`nightHostStationPath`, resolved by NAME at Start
+// because the station belongs to another pass's object). It is an
+// ordinary villager by day; at nightfall the director claims the station
+// and sends it there instead of home, renews the hold every tick, and
+// releases it at dawn. `Available()` is false for the whole shift, which
+// is what keeps every other picker - Summon, errands, chat rings, ad-hoc
+// meetings, passing greetings - away from it in one test. The seat is an
+// ordinary kind-2 station, so the card table's own handler sits her down
+// through the existing OnNpcArrive event: this file knows nothing about
+// card tables.
+//
+// KEEP-OUT ZONES belong to the locomotion controller (LegaiaNpcWander's
+// `keepOut`), but the cap on them is set from here: it is pulled in while
+// the villager is indoors, because an interior room is barely wider than
+// the village-sized zone around its own way out.
+//
+// SOCIAL DETAIL. Three things make a conversation read as people rather
+// than as bubbles on a timer, and all three are cosmetic - no state, no
+// sync, no Animator: the group turns to face the CURRENT speaker after a
+// beat (`LookAt`), a listener answers the topic with a reaction a
+// half-second later (`ReactTo` / `SpeakAfter`, table in `ReplyIcon`), and
+// the speaker nods (`LegaiaNpcWander.Nod`, a LateUpdate pose blend). Two
+// companions walking an errand together swap the same pair of bubbles
+// every few seconds, and a villager the LOCAL player walks up to glances
+// at them - and, once in a while, waves.
 //
 // THE DOOR TRIP IS REUSABLE. `DoorTrip(door, threshold, prop, landing)`
 // runs stand spot -> swing -> tile -> teleport for ANY doorway pair, and
@@ -89,6 +122,7 @@
 
 using UdonSharp;
 using UnityEngine;
+using VRC.SDKBase;
 using VRC.SDK3.UdonNetworkCalling;
 using VRC.Udon.Common.Interfaces;
 
@@ -189,8 +223,14 @@ namespace LegaiaWorld
         public float thresholdStepSeconds = 0.9f;
 
         [Tooltip("How many times a failed door trip is retried before the villager " +
-                 "gives up for the night and stands at its door (state 9).")]
+                 "gives up for the night and waits it out near its door (state 9).")]
         public int homeRetryLimit = 3;
+
+        [Tooltip("How far BACK from the doorway a villager who gave up on the " +
+                 "door trip waits out the night (metres). It must be clear of " +
+                 "the doorway's keep-out zone: the tile is a teleport a player " +
+                 "walks through.")]
+        public float nightIdleBackOff = 3f;
 
         // Published for the play-mode soak harness (Editor/LegaiaSoak.cs):
         // decisions taken, so a soak can check that Udon's delayed-event
@@ -224,6 +264,48 @@ namespace LegaiaWorld
 
         [Tooltip("Seconds between a companion's re-aims at the leader's side.")]
         public float followInterval = 0.55f;
+
+        [Tooltip("Seconds between two companions swapping a bubble as they walk.")]
+        public float followTalkSeconds = 8f;
+
+        // --- Noticing the local player -----------------------------------------
+
+        [Tooltip("How near the LOCAL player a strolling villager notices them (metres).")]
+        public float noticeDistance = 2f;
+
+        [Tooltip("How long the villager holds the glance at the player (seconds).")]
+        public float noticeSeconds = 2.4f;
+
+        [Tooltip("At most one wave at the player per villager per this long (seconds). " +
+                 "The glance itself is more frequent - a wave every time would " +
+                 "read as a shop greeter, not a village.")]
+        public float wavePlayerCooldown = 40f;
+
+        // --- The night host (Cara at the card table) ----------------------------
+
+        [Tooltip("Scene path of a station this villager HOSTS at night " +
+                 "(`Legaia_common_prefabs/card_table/stool_0`). Resolved by " +
+                 "name in Start, because the station belongs to another " +
+                 "pass's object. Empty = an ordinary villager, which is all " +
+                 "but one of them.")]
+        public string nightHostStationPath = "";
+
+        [Tooltip("How far from its night station the host waits when a PLAYER " +
+                 "has the seat (metres).")]
+        public float nightHostWaitRadius = 2.2f;
+
+        [Tooltip("Keep-out radius cap while INDOORS: an interior room is " +
+                 "barely wider than the village-sized zone around its own " +
+                 "way out, so the full radius would leave the room with " +
+                 "nowhere to stand. See LegaiaNpcWander.keepOutCap.")]
+        public float indoorKeepOut = 0.75f;
+
+        /// The night host is Seated() at its own station right now - read by
+        /// the play-mode soak, which asserts it held the seat all night.
+        [HideInInspector] public bool nightHostSeated;
+        /// Times the night host could not take its seat (claim refused, or
+        /// the walk gave up) - diagnostics, same shape as homeRetries.
+        [HideInInspector] public int nightHostRetries;
 
         private int state;
         private bool indoors;
@@ -272,7 +354,33 @@ namespace LegaiaWorld
         private LegaiaNpcBrain leader;
         private float followSide;
         private float followNext;
+        private float followTalkAt;
         private Vector3 lastLeaderPos;
+
+        // --- Social detail ------------------------------------------------------
+        // A REPLY the director scheduled: a listener's reaction, a beat
+        // after the speaker's bubble. Fired from BrainTick rather than from
+        // a delayed event so the icon is dropped for free when the villager
+        // walks off mid-conversation.
+        private int pendingIcon = -1;
+        private float pendingAt;
+        private float pendingSeconds;
+        // Whom to look at in a conversation, and when the head turns: the
+        // CURRENT speaker, after a short beat, so the group reads as
+        // attention rather than as a rack of heads snapping round.
+        private bool attending;
+        private Vector3 attendAim;
+        private float attendAt;
+        // Noticing the local player (cosmetic, local-only, never synced).
+        private float noticeUntil;
+        private float waveFreeAt;
+
+        // --- Night host ----------------------------------------------------------
+        private LegaiaNpcStation nightStation;
+        private Vector3 hostWaitLook;
+        // Night idle (state 9): where it waits and whether it got there.
+        private Vector3 nightIdleLook;
+        private bool nightIdleParked;
 
         void Start()
         {
@@ -293,6 +401,21 @@ namespace LegaiaWorld
                 // Already in a room: stroll the room's radius from the start.
                 if (startIndoors)
                     loco.radius = indoorRadius;
+                loco.keepOutCap = startIndoors ? indoorKeepOut : 1e9f;
+            }
+            // The night station belongs to ANOTHER pass's object (the card
+            // table lives in the kit's top-level prefab container), so the
+            // link is loose - by name, at Start, exactly like the
+            // director's back-reference into the card game. Nothing
+            // happens when the table is not built.
+            if (nightHostStationPath != null && nightHostStationPath.Length > 0)
+            {
+                GameObject g = GameObject.Find(nightHostStationPath);
+                if (g != null)
+                    nightStation = g.GetComponent<LegaiaNpcStation>();
+                if (nightStation == null)
+                    Debug.Log("[Legaia] " + gameObject.name + ": no station at '" +
+                        nightHostStationPath + "' - it hosts nothing tonight.");
             }
             started = true;
             // Stagger the first tick across the town so 30 brains never land
@@ -320,10 +443,113 @@ namespace LegaiaWorld
         // --- Director queries ----------------------------------------------
 
         /// Free to be given something to do (strolling, nothing claimed).
+        /// A villager ON NIGHT DUTY is never free: the card table's host is
+        /// not summoned to a stool by the game, matchmade onto a chat ring,
+        /// pulled into an ad-hoc meeting or given an errand while she is
+        /// keeping the table. One test covers every picker in the director,
+        /// because they all ask this.
         public bool Available()
         {
             return started && state == 0 && station == null
-                   && Time.time >= busyUntil;
+                   && Time.time >= busyUntil && !NightHostOnDuty();
+        }
+
+        // --- The night host --------------------------------------------------
+        // One villager per scene may be pinned to a station for the whole
+        // night (town01: Cara at card-table stool 0). It is an ordinary
+        // villager by day; at nightfall the director claims its station and
+        // sends it, holds it there, and lets it go at dawn. The seat is a
+        // kind-2 station, so the card table's own handler sits her down
+        // through the existing OnNpcArrive event - this file knows nothing
+        // about card tables.
+
+        /// This villager hosts a station at night (the link resolved).
+        public bool IsNightHost()
+        {
+            return nightStation != null;
+        }
+
+        /// The station it hosts (null when it is an ordinary villager).
+        public LegaiaNpcStation NightStation()
+        {
+            return nightStation;
+        }
+
+        /// On duty right now: a night host, and the town is sheltering.
+        public bool NightHostOnDuty()
+        {
+            return nightStation != null && director != null
+                   && director.Sheltering() && state != 40;
+        }
+
+        /// Sitting at its own night station.
+        public bool NightHostSeated()
+        {
+            return station != null && station == nightStation && state == 2;
+        }
+
+        /// Walking to its night station right now.
+        public bool NightHostWalking()
+        {
+            return state == 1 && station != null && station == nightStation;
+        }
+
+        /// Waiting beside it for a player to get up.
+        public bool NightHostWaiting()
+        {
+            return state == 30;
+        }
+
+        /// Anywhere in the shift: walking to the seat, sitting on it, or
+        /// waiting beside it.
+        public bool NightHostBusy()
+        {
+            return NightHostWaiting() || NightHostWalking() || NightHostSeated();
+        }
+
+        /// Wait a couple of metres off the station, facing it, until it is
+        /// free again (a PLAYER is sitting on the stool). State 30 - the
+        /// host's own; it is not a chat, an errand or a station visit, so
+        /// none of those pickers can see it.
+        public void NightHostWait(Vector3 spot, Vector3 lookAt)
+        {
+            if (loco == null || nightStation == null)
+                return;
+            if (state == 30)
+                return;
+            ReleaseStation();
+            DropDaytime();
+            hostWaitLook = lookAt;
+            state = 30;
+            giveUpAt = Time.time + walkTimeout;
+            loco.GoTo(spot);
+        }
+
+        void TickNightHostWait()
+        {
+            // Arrived, blocked or out of time: stand and watch the table.
+            // There is nowhere else to be - the director re-checks the
+            // stool every tick and sends her over the moment it frees.
+            if (loco.Arrived() || loco.Blocked() || Time.time > giveUpAt)
+                loco.FaceToward(hostWaitLook);
+        }
+
+        /// Dawn: off the stool, back to the village.
+        public void EndNightHost()
+        {
+            if (!IsNightHost())
+                return;
+            if (state != 30 && !(station != null && station == nightStation))
+                return;
+            ReleaseStation();
+            BackToStroll(1f + NextFloat() * 3f);
+        }
+
+        /// A failed attempt at the seat (the director counts them so a
+        /// station nobody can reach reads as a number, not as a mystery).
+        public void NoteNightHostFailure()
+        {
+            nightHostRetries++;
         }
 
         /// Inside a house (reached through a doorway teleport).
@@ -336,6 +562,18 @@ namespace LegaiaWorld
         public bool HasHome()
         {
             return homeDoor != null && homeLanding != null;
+        }
+
+        /// Outside, has a home, and is not already dealing with it. The
+        /// director's dusk exodus tests THIS rather than calling GoHome and
+        /// spending a move: GoHome is a no-op for a villager already on the
+        /// trip, and spending the per-tick move budget on no-ops let the
+        /// first two names in the array eat every move for the length of
+        /// their own walk home while everybody behind them waited.
+        public bool NeedsSendingHome()
+        {
+            return started && !indoors && HasHome() && !InChat()
+                   && !OnDoorTrip() && state != 9 && state != 40;
         }
 
         /// In a conversation ring and standing in place (the director waits
@@ -518,6 +756,7 @@ namespace LegaiaWorld
             {
                 loco.enabled = true;
                 loco.radius = startIndoors ? indoorRadius : outdoorRadius;
+                loco.keepOutCap = startIndoors ? indoorKeepOut : 1e9f;
                 loco.Teleport(spawnPos, spawnFacing);
                 loco.SetHome(spawnPos);
             }
@@ -532,7 +771,8 @@ namespace LegaiaWorld
         /// so the two of them would greet each other on a timer forever.
         public bool Greetable()
         {
-            return started && state == 10 && Time.time >= greetFreeAt;
+            return started && state == 10 && Time.time >= greetFreeAt
+                   && !NightHostOnDuty();
         }
 
         // --- Director commands ----------------------------------------------
@@ -555,20 +795,104 @@ namespace LegaiaWorld
                 return;
             station = slot;
             chatCentre = centre;
+            attending = false;
             state = 3;
             giveUpAt = Time.time + walkTimeout;
             loco.GoTo(slot.StandPosition());
         }
 
         // LegaiaBubbleArt.ICON_NAMES indices (Udon cannot reach the editor class).
+        private const int ICON_DOTS = 0;
+        private const int ICON_EXCLAIM = 1;
+        private const int ICON_QUERY = 2;
+        private const int ICON_HEART = 3;
+        private const int ICON_MUSIC = 4;
+        private const int ICON_LAUGH = 5;
+        private const int ICON_WAVE = 6;
+        private const int ICON_TOPIC_FIRST = 8;
+        private const int ICON_TOPIC_COUNT = 6;
         private const int ICON_HOUSE = 9;
         private const int ICON_SLEEP = 11;
 
-        /// Take a turn in the conversation: a pictogram over the head.
+        /// Take a turn in the conversation: a pictogram over the head, and
+        /// - if the villager is standing still - the small nod that makes a
+        /// turn read as somebody speaking rather than as a sign appearing.
+        /// The gesture is a LateUpdate pose blend in the locomotion
+        /// controller, not an Animator state.
         public void Speak(int icon, float seconds)
         {
             if (bubble != null)
                 bubble.Show(icon, seconds);
+            if (loco == null || loco.Walking())
+                return;
+            float nod = seconds;
+            if (nod < 1.2f)
+                nod = 1.2f;
+            else if (nod > 2.2f)
+                nod = 2.2f;
+            loco.Nod(nod);
+        }
+
+        /// A bubble a beat from now (a listener's reaction to what was just
+        /// said). Fired from BrainTick rather than from a delayed event, so
+        /// a villager who walks off mid-conversation simply never says it.
+        public void SpeakAfter(int icon, float seconds, float delay)
+        {
+            if (icon < 0)
+                return;
+            pendingIcon = icon;
+            pendingSeconds = seconds;
+            pendingAt = Time.time + delay;
+        }
+
+        /// React to what somebody else just said. The reaction TABLE lives
+        /// here rather than in the director so the ring conversation, the
+        /// ad-hoc meeting and two companions walking together all answer
+        /// out of the same vocabulary.
+        public void ReactTo(int topic, float delay, float seconds)
+        {
+            SpeakAfter(ReplyIcon(topic), seconds, delay);
+        }
+
+        // Which reaction a topic draws. Two plausible answers each, so the
+        // same topic twice running does not draw the same face: a laugh or
+        // an "!" at the fish, a "..." or a "?" at somebody's house, music
+        // or a heart at the sun, a heart at food, and the storm gets the
+        // long silence it deserves.
+        int ReplyIcon(int topic)
+        {
+            bool flip = NextInt(2) == 0;
+            if (topic == ICON_TOPIC_FIRST)                 // fish
+                return flip ? ICON_LAUGH : ICON_EXCLAIM;
+            if (topic == ICON_HOUSE)
+                return flip ? ICON_DOTS : ICON_QUERY;
+            if (topic == ICON_TOPIC_FIRST + 2)             // sun
+                return flip ? ICON_MUSIC : ICON_HEART;
+            if (topic == ICON_SLEEP)
+                return flip ? ICON_DOTS : ICON_LAUGH;
+            if (topic == ICON_TOPIC_FIRST + 4)             // food
+                return flip ? ICON_HEART : ICON_EXCLAIM;
+            if (topic == ICON_TOPIC_FIRST + 5)             // storm
+                return flip ? ICON_DOTS : ICON_QUERY;
+            int r = NextInt(3);
+            return r == 0 ? ICON_DOTS : (r == 1 ? ICON_EXCLAIM : ICON_QUERY);
+        }
+
+        /// Turn to whoever is talking, after `delay` seconds. Held until
+        /// the next call or the end of the conversation; a member with no
+        /// aim keeps facing the group's centre, which is what it did
+        /// before there was a speaker to look at.
+        public void LookAt(Vector3 pos, float delay)
+        {
+            attending = true;
+            attendAim = pos;
+            attendAt = Time.time + delay;
+        }
+
+        // Where a member of a conversation points its face this frame.
+        Vector3 AttentionAim(Vector3 fallback)
+        {
+            return attending && Time.time >= attendAt ? attendAim : fallback;
         }
 
         // --- Itineraries ------------------------------------------------------
@@ -707,6 +1031,7 @@ namespace LegaiaWorld
             state = 13;
             lastLeaderPos = lead.transform.position;
             followNext = 0f;
+            followTalkAt = Time.time + followTalkSeconds * 0.5f;
             giveUpAt = Time.time + walkTimeout * 3f;
         }
 
@@ -721,6 +1046,19 @@ namespace LegaiaWorld
             if (Time.time < followNext)
                 return;
             followNext = Time.time + (followInterval < 0.2f ? 0.2f : followInterval);
+
+            // Walking together is talking together: every few seconds one of
+            // them says something and the other answers a beat later, so a
+            // pair crossing the village reads as two people rather than as
+            // one villager with a shadow.
+            if (Time.time >= followTalkAt)
+            {
+                float gap = followTalkSeconds < 2f ? 2f : followTalkSeconds;
+                followTalkAt = Time.time + gap * (0.75f + NextFloat() * 0.5f);
+                int topic = ICON_TOPIC_FIRST + NextInt(ICON_TOPIC_COUNT);
+                Speak(topic, 2.2f);
+                leader.ReactTo(topic, 0.4f + NextFloat() * 0.5f, 1.8f);
+            }
 
             Vector3 lp = leader.transform.position;
             // The leader's heading, measured from where it WAS: there is no
@@ -766,6 +1104,7 @@ namespace LegaiaWorld
             planCount = 0;
             leader = null;
             chatCentre = centre;
+            attending = false;
             state = 20;
             giveUpAt = Time.time + 20f;
             loco.GoTo(stand);
@@ -784,7 +1123,7 @@ namespace LegaiaWorld
 
         void TickMeet()
         {
-            loco.FaceToward(chatCentre);
+            loco.FaceToward(AttentionAim(chatCentre));
         }
 
         /// End a conversation of either shape (the director ends every
@@ -935,7 +1274,17 @@ namespace LegaiaWorld
             tickCount++;
             if (loco == null)
                 return;
-            if (state == 1)
+            // A reaction the director (or a walking companion) scheduled.
+            if (pendingIcon >= 0 && Time.time >= pendingAt)
+            {
+                int icon = pendingIcon;
+                pendingIcon = -1;
+                Speak(icon, pendingSeconds);
+            }
+            nightHostSeated = NightHostSeated();
+            if (state == 0)
+                TickStroll();
+            else if (state == 1)
                 TickGoStation();
             else if (state == 2)
                 TickAtStation();
@@ -965,21 +1314,75 @@ namespace LegaiaWorld
                 TickGoMeet();
             else if (state == 21)
                 TickMeet();
+            else if (state == 30)
+                TickNightHostWait();
             else if (state == 40)
                 TickDead();
         }
 
-        // Gave up on the door for tonight: stand where it got to, facing
-        // the doorway, until the town stops sheltering. Standing still by
-        // its own front door reads as "waiting"; the alternative - being
-        // sent back at an unreachable door every few seconds - is the
-        // aimless wandering this replaces.
+        // --- Strolling, and noticing the player -------------------------------
+
+        /// The amble itself is the locomotion controller's; the only thing
+        /// decided here is whether the villager has noticed the LOCAL
+        /// player standing next to it. Purely cosmetic and purely local -
+        /// each client's copy glances at its own player, nothing is synced,
+        /// and the glance is bounded by `busyUntil` so the director never
+        /// hands this villager an errand in the middle of it.
+        void TickStroll()
+        {
+            if (noticeUntil > 0f)
+            {
+                if (Time.time < noticeUntil)
+                    return;
+                noticeUntil = 0f;
+                loco.Stop();       // back to the amble
+                return;
+            }
+            if (Time.time < busyUntil || NightHostOnDuty())
+                return;
+            VRCPlayerApi p = Networking.LocalPlayer;
+            if (p == null)
+                return;
+            Vector3 pp = p.GetPosition();
+            Vector3 d = pp - transform.position;
+            d.y = 0f;
+            float nd = noticeDistance < 0.5f ? 0.5f : noticeDistance;
+            if (d.sqrMagnitude > nd * nd)
+                return;
+            noticeUntil = Time.time + noticeSeconds;
+            busyUntil = noticeUntil;
+            loco.FaceToward(pp);
+            // A wave is rationed per villager: one every time somebody walks
+            // past would read as a shop greeter rather than as a village.
+            if (Time.time < waveFreeAt)
+                return;
+            waveFreeAt = Time.time + wavePlayerCooldown;
+            Speak(ICON_WAVE, noticeSeconds * 0.8f);
+        }
+
+        // Gave up on the door for tonight: step BACK from the doorway and
+        // wait there until the town stops sheltering, facing home. It used
+        // to stand where it got to, which is a metre from its own front
+        // door - the one place in the village a villager must never spend
+        // the night, because it is the tile a player walks through. The
+        // alternative to waiting at all - being sent back at an
+        // unreachable door every few seconds - is the aimless wandering
+        // this replaces.
         void TickNightIdle()
         {
             if (director != null && !director.Sheltering())
             {
                 homeRetries = 0;
+                nightIdleParked = false;
                 BackToStroll(1f);
+                return;
+            }
+            if (nightIdleParked)
+                return;
+            if (loco.Arrived() || loco.Blocked() || Time.time > giveUpAt)
+            {
+                nightIdleParked = true;
+                loco.FaceToward(nightIdleLook);
             }
         }
 
@@ -989,10 +1392,23 @@ namespace LegaiaWorld
             // Nowhere to go tonight: a yawn, then quiet.
             Speak(ICON_SLEEP, 4f);
             Transform look = homeThreshold != null ? homeThreshold : homeDoor;
-            if (look != null)
-                loco.FaceToward(look.position);
-            else
+            nightIdleParked = false;
+            if (look == null)
+            {
                 loco.SetIdle(true);
+                nightIdleParked = true;
+                return;
+            }
+            nightIdleLook = look.position;
+            // A few metres back along the line it came in on. The direction
+            // is measured from where the villager already stands, so the
+            // step back is into the village rather than through the hut.
+            Vector3 away = transform.position - nightIdleLook;
+            away.y = 0f;
+            away = away.sqrMagnitude < 1e-4f ? Vector3.forward : away.normalized;
+            giveUpAt = Time.time + walkTimeout;
+            loco.GoTo(nightIdleLook + away * (nightIdleBackOff < 1.5f
+                ? 1.5f : nightIdleBackOff));
         }
 
         /// A door trip that did not work out: count it, and stop trying
@@ -1139,8 +1555,10 @@ namespace LegaiaWorld
 
         void TickChat()
         {
-            // Hold the ring pose; the director drives the turns and ends it.
-            loco.FaceToward(chatCentre);
+            // Hold the ring pose, but face whoever is TALKING when the
+            // director has named one - the ring's centre is only the
+            // fallback for a group nobody has spoken in yet.
+            loco.FaceToward(AttentionAim(chatCentre));
         }
 
         void TickGoDoor()
@@ -1214,6 +1632,7 @@ namespace LegaiaWorld
             indoors = true;
             homeRetries = 0;
             loco.radius = indoorRadius;
+            loco.keepOutCap = indoorKeepOut;
             loco.SetHome(tripLanding.position);
             if (tripProp != null)
                 SendCustomEventDelayedSeconds("CloseHomeDoor", 0.7f);
@@ -1256,6 +1675,7 @@ namespace LegaiaWorld
             loco.Teleport(pos, facing);
             indoors = false;
             loco.radius = outdoorRadius;
+            loco.keepOutCap = 1e9f;
             loco.SetHome(pos);
             outdoorHome = pos;
             BackToStroll(1f);
@@ -1264,6 +1684,9 @@ namespace LegaiaWorld
         void BackToStroll(float cooldown)
         {
             state = 0;
+            attending = false;
+            pendingIcon = -1;
+            noticeUntil = 0f;
             busyUntil = Time.time + cooldown;
             if (bubble != null)
                 bubble.Hide();

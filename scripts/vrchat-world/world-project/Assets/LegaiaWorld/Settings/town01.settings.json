@@ -16,6 +16,7 @@
   "set_descriptor_spawn": true,
   "living_town": {
     "names": {"npc_14": "Cara"},
+    "night_host": {"npc": "npc_14", "station": "Legaia_common_prefabs/card_table/stool_0"},
     "home_cap": 4,
     "chat_spots": 5,
     "seed": 20260907,
@@ -38,16 +39,35 @@
       "position": [-1.65, 0, 0.88],
       "rotation": [0, 232.747986, 0]
     },
+    "torch_1": {
+      "position": [15.41, 1.75, 21.14],
+      "rotation": [0, 0, 0]
+    },
+    "torch_2": {
+      "position": [25.615, 1.464, 18.908],
+      "rotation": [0, 0, 0]
+    },
+    "campfire_1": {
+      "position": [40.248, 0.13, 13.823],
+      "rotation": [0, 0, 0]
+    },
+    "campfire_2": {
+      "position": [20.74, 0.084, 16.38],
+      "rotation": [0, 0, 0]
+    },
     "menu": {
       "position": [34.978, 0.801, 19.277],
       "rotation": [0, -0.422, 0]
     }
   },
+  "posters": [
+    {"name": "cara_poker_night", "image": "Assets/LegaiaPosters/cara_poker_night.jpg", "near": "card_table", "width": 0.75}
+  ],
   "slot_machine": {
     "cabinet": "Assets/Prefabs/legaia slot machine.glb",
     "art": "Assets/LegaiaImports/slot-art",
     "position": [37, 0.979, 36.416],
     "rotation": [0, -71.178, 0],
-    "scale": 0.012
+    "scale": 0.008
   }
 }

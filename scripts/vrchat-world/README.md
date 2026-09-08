@@ -26,7 +26,7 @@ your disc ──legaia-extract──▶ extracted/ ──legaia-engine export-gl
 | File | Role |
 |---|---|
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaWorldBuilder.cs` | Editor menu `Legaia > Build Scene From Manifest...`: instantiates the world, adds colliders, places NPCs + animated props, builds doorway-teleport triggers, wires proximity doors + the shoreline morph clip + the BGM loop, drops a spawn marker; also the **Equipment props** rack (the `--items` export placed as grabbable pickups near the spawn) and the camp props (below). |
-| `world-project/Assets/LegaiaWorld/Editor/LegaiaCampProps.cs` | The **Camp props** pass: a carry-able settings panel (world-space buttons - local music mute, synced day/night jumps; grab collider confined to a bottom handle so it can't shadow the UI) plus two carry-able torches and two campfires near spawn, all primitives + generated materials, in a top-level container outside the mirrored root (mirrored UI text would render backwards). |
+| `world-project/Assets/LegaiaWorld/Editor/LegaiaCampProps.cs` | The **Camp props** pass: a carry-able settings panel (world-space buttons - local music mute, synced day/night jumps; grab collider confined to a bottom handle so it can't shadow the UI) plus two carry-able torches and two campfires near spawn, all primitives + generated materials, in a top-level container outside the mirrored root (mirrored UI text would render backwards). Each prop takes its place from `prefab_transforms` under its own name (`torch_1`, `campfire_2`, `menu`) when the settings file pins one, and from a spawn-relative offset snapped to the ground otherwise. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaAudioGen.cs` | Synthesized ambience: the long day / night / base / wind-gust beds, the shore-wave, tree-bird, night-wildlife and windmill emitter clips, and the camp fire crackle - seeded Poisson events under multi-octave value-noise envelopes, seam-crossfaded, no disc audio. Also the `VRC_SpatialAudioSource` compliance helper (the SDK deprecates bare AudioSources; 2D beds get the disabled component its Auto Fix adds, spatial sources a configured one). |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaRealism.cs` | The builder's "Realism enhancements" foldout: lit materials + generated normals + sun, day/night wiring + night doorway lamps, sky + fog, procedural grass, interior room shells, texture smoothing, synthesized ambience, wander wiring. Every pass defaults on; untick for the faithful look. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaSceneSettings.cs` | Per-scene refinements from `Settings/<scene>.settings.json` (see "Per-scene settings" below): delete named objects after the build, keep listed NPCs static (idle clip, no wandering), drop listed NPCs entirely, override the spawn point in Unity world space, and point the VRC Scene Descriptor's `Spawns[0]` at LegaiaSpawn automatically. |
@@ -39,28 +39,28 @@ your disc ──legaia-extract──▶ extracted/ ──legaia-engine export-gl
 | `world-project/Assets/LegaiaWorld/Shaders/LegaiaInteriorShell.shader` | Unlit black, front faces only: the interior-room dome, wound inward so it reads as black space from inside and is invisible (backface-culled) from outside. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaDoorway.cs` | UdonSharp doorway teleport: walking into the trigger repositions the local player at the landing marker with the authored arrival facing - the retail intra-scene door mechanism. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaDoor.cs` | UdonSharp proximity door: first approach by a player plays the door's swing clip once and holds it open; `NpcOpen` / `NpcClose` (the `OnNpcArrive` / `OnNpcLeave` station events) let a villager open a cupboard while it stands there and close it again on leaving, refcounted so two villagers at one cupboard close it once. |
-| `world-project/Assets/LegaiaWorld/Udon/LegaiaNpcWander.cs` | The NPC locomotion controller: the autonomous small-radius stroll (collision-aware, floor-following, forward-only) plus the command API the living-town brain drives (`GoTo` / `GoToWithin` / `SlideTo` / `FaceToward` / `Arrived` / `Blocked` / `Stop` / `Teleport` / `Facing`). A commanded walk follows a route over the baked navmesh corner by corner, hopping the bake's ledge links where no walk connects; the probe-ray steering fan only detours around another villager while on a route, and two watchdogs (no displacement, no progress toward the current corner) end a walk that cannot get through. Facing is measured off the rendered torso, never derived. |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaNpcWander.cs` | The NPC locomotion controller (plus the keep-out zones the stroll never aims into, and `Nod` - a short LateUpdate pitch of the torso over whatever the Animator posed, for a villager taking its turn): the autonomous small-radius stroll (collision-aware, floor-following, forward-only) plus the command API the living-town brain drives (`GoTo` / `GoToWithin` / `SlideTo` / `FaceToward` / `Arrived` / `Blocked` / `Stop` / `Teleport` / `Facing`). A commanded walk follows a route over the baked navmesh corner by corner, hopping the bake's ledge links where no walk connects; the probe-ray steering fan only detours around another villager while on a route, and two watchdogs (no displacement, no progress toward the current corner) end a walk that cannot get through. Facing is measured off the rendered torso, never derived. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaNavMeshLoader.cs` | Registers the baked villager navmesh (`NavMeshData` asset) with the runtime `NavMesh` at load - the one-liner that stands in for the AI Navigation package's surface component. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaNpcStation.cs` | The station contract of the living town: a place an NPC can go and do something (`kind` 0 use-prop / 1 fishing / 2 seat / 3 chat / 4 viewpoint / 5 carry endpoint / 6 visit), a stand point + facing, an optional handler that receives `OnNpcArrive` / `OnNpcLeave`, visitor-side fields (`arriveIcon`, `glance`, `carryFlow`) and `Claim` / `Release` bookkeeping. Any pass can plant one; the director finds them all. |
-| `world-project/Assets/LegaiaWorld/Udon/LegaiaTownDirector.cs` | The town's scheduler (one per scene): builds multi-stop errand itineraries, matchmakes conversations onto chat rings *and* on the spot where villagers meet, runs the bubble turn-taking, pairs passing villagers for a greeting or an errand walked side by side, and sends the town indoors at night (and back out at dawn). Asks the navmesh before sending anyone anywhere. |
-| `world-project/Assets/LegaiaWorld/Udon/LegaiaNpcBrain.cs` | One villager's state machine (stroll / go to station / at station / go chat / chat / go home / door opening / onto the threshold / come out / stand out for the night, plus the daytime states: errand leg, errand stop, greeting, walking beside a companion, ad-hoc meeting), executing the director's decisions through the locomotion controller and the station contract; a build-time personality seed keeps every client's choices aligned. The door trip is a reusable action (`DoorTrip` / `LeaveThrough`) any layer can aim at any doorway pair. |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaTownDirector.cs` | The town's scheduler (one per scene; also turns a group to face the current speaker, has a listener answer the topic, and runs the night host's shift): builds multi-stop errand itineraries, matchmakes conversations onto chat rings *and* on the spot where villagers meet, runs the bubble turn-taking, pairs passing villagers for a greeting or an errand walked side by side, and sends the town indoors at night (and back out at dawn). Asks the navmesh before sending anyone anywhere. |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaNpcBrain.cs` | One villager's state machine (stroll / go to station / at station / go chat / chat / go home / door opening / onto the threshold / come out / stand out for the night, plus the daytime states: errand leg, errand stop, greeting, walking beside a companion, ad-hoc meeting, and the night host's shift), the conversation attention / reaction vocabulary and the glance at a player who walks up, executing the director's decisions through the locomotion controller and the station contract; a build-time personality seed keeps every client's choices aligned. The door trip is a reusable action (`DoorTrip` / `LeaveThrough`) any layer can aim at any doorway pair. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaSpeechBubble.cs` | The billboarded pictogram bubble over a talking villager: six reactions ("...", "!", "?", heart, music note, laugh), the wave and the work drops, and six conversation topics (fish, house, sun, sleep, food, storm). Pictures only, never dialog text; icons swap by enabling one of fourteen child quads, never by material writes. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaNpcCarry.cs` | What a villager is holding: the per-villager item rig at a measured hand point, one child per item, `Show` / `Hide` by `SetActive`, a work sway, and a hard drop deadline so an errand cut short never leaves a bucket welded to somebody's arm. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaNpcHandItem.cs` | The handler behind a kind-5 carry station: hands the arriving villager an item, or takes back the one it is carrying. `keepOnLeave` is what makes a fetch read as one errand instead of two visits. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaVisitSpot.cs` | The handler behind a kind-6 visit station: the fixed resident being called on answers with its own speech bubble, on a beat after the caller's hello, and keeps answering while the caller stands there. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaWeather.cs` | Clock-synced weather schedule (clear / overcast / windy spells): ambient + fog greying multiplied over the day/night cycle, grass gust strength, and the `windLevel` feed into the ambience mixer. `JumpToClear` is the settings panel's button. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaFishingSpot.cs` | Fishing-station handler: while a villager stands on a shoreline station it holds a generated rod over the water, a line to a bobbing float with ripples, and an occasional catch; steps aside when a player stands on the spot. Players fish here too (Interact on the stake): bite, window, catch, coins into the purse. See "Coins" below. |
-| `world-project/Assets/LegaiaWorld/Udon/LegaiaCardTableHost.cs` | Card-table seat handler: villagers sit at free stools (seated pose approximated by lowering the rig) holding a fanned pair of card backs; a seated player is an invitation, not a shoo, and the synced *NPCs: sit / shoo* button is the override. |
-| `world-project/Assets/LegaiaWorld/Udon/LegaiaCardGame.cs` | The card table's dealer: five-card draw poker and blackjack with the 52 real card pickups, villagers summoned to the free stools and held through a hand, AI opponents, betting from the coin purse, a seat panel. The object's owner is the master; presses travel as network events. See "Common prefabs" below. |
-| `world-project/Assets/LegaiaWorld/Udon/LegaiaTableTalk.cs` | What the villagers say at the card table: new lines written for the world (the Mist, the wall, the Genesis Tree, hunters), a stage-direction voice for Vahn (who never speaks in retail) and a wolf-raised voice for Noa, plus what the villagers say ABOUT the two when they sit down. Composed by the master, synced as text. |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaCardTableHost.cs` | Card-table seat handler: the four stools' single NPC-station handler - availability, the seated pose and facing (toward the felt), and the arrival gate that keeps a villager off a stool it has not walked to. A seated player is an invitation, not a shoo; the synced *NPCs: sit / shoo* button is the override. |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaCardGame.cs` | The card table's dealer: community-card hold'em by day, Cara's five-card night game after dusk, and blackjack, with the 52 real card pickups, villagers summoned to the free stools and held through a hand, AI opponents, betting from the coin purse, a seat panel with a speech line per seat. The object's owner is the master; presses travel as network events. See "Common prefabs" below. |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaTableTalk.cs` | What the villagers say at the card table: new lines written for the world (the Mist, the wall, the Genesis Tree, hunters), the flop / turn / river beats and the bad beats, a stage-direction voice for Vahn (who never speaks in retail), a wolf-raised voice for Noa and a hunter's voice for Cara (whose poker night it is), plus what the villagers say ABOUT the three when they sit down. Composed by the master, synced per seat. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaWallet.cs` | The per-player coin purse: the local player's balance persisted through VRChat PlayerData (`legaia.coins`), read for any player through `CoinsOf`, written only by its own client. Every minigame pays into and out of it. See "Coins" below. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaNpcHitbox.cs` | The trigger capsule on each villager: a rack weapon held by the local player and swung fast enough strikes the villager down through the brain's `Slay`, which broadcasts the fall and the coin drop to every client. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaCoinDrops.cs` | The pooled coin drops under `living_town/coins`: the brain hands it a spot and a value on every client, it floor-snaps a free coin there and expires it after 90 s. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaCoinDrop.cs` | One coin on the ground: spins, bobs, Interact takes it - one server-ordered network event, so only the first taker is paid and every client agrees which. |
-| `world-project/Assets/LegaiaWorld/Editor/LegaiaLivingTown.cs` | The **Living town** pass: bakes the villager navmesh, builds the director, per-villager brains + bubbles + carried-item rigs, use-prop stations in front of every one-shot prop (cupboards, drawer, shop door), chat rings indoors and out, path / shoreline / doorstep / visit stand spots, carry endpoints and the seeded home assignment from the manifest's doorway pairs - each home with its doorway tile, a stand spot in front of it and the door prop to swing. Idempotent. |
+| `world-project/Assets/LegaiaWorld/Editor/LegaiaLivingTown.cs` | The **Living town** pass: bakes the villager navmesh, builds the keep-out zones every stand point is filtered against, wires the scene settings' night host, builds the director, per-villager brains + bubbles + carried-item rigs, use-prop stations in front of every one-shot prop (cupboards, drawer, shop door), chat rings indoors and out, path / shoreline / doorstep / visit stand spots, carry endpoints and the seeded home assignment from the manifest's doorway pairs - each home with its doorway tile, a stand spot in front of it and the door prop to swing. Idempotent. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaNavMesh.cs` | The navmesh bake: collects every non-trigger collider under the built root and the kit's prefab containers (NPC capsules and rigidbodies excluded), bakes a villager-sized `NavMeshData` with Unity's runtime builder, saves it under `LegaiaGenerated/<scene>/livingtown/` and wires the loader. Also finds the **ledge links** that let a villager hop between islands the bake leaves unconnected, and the editor-side route check (walks and hops) the batch test uses. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaBubbleArt.cs` | Procedural speech-bubble art: the fourteen pictogram textures drawn from scratch, one material each, and the bubble quad. |
-| `world-project/Assets/LegaiaWorld/Editor/LegaiaCarryArt.cs` | The things villagers carry - bucket, broom, firewood bundle, basket - built from Unity primitives with generated flat materials, sized as fractions of each villager's own measured height. |
+| `world-project/Assets/LegaiaWorld/Editor/LegaiaCarryArt.cs` | The things villagers carry - bucket, broom, firewood bundle, basket, game controller - built from Unity primitives with generated flat materials, sized as fractions of each villager's own measured height. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaWeatherBuilder.cs` | The **Weather** pass: builds `<root>/weather` and wires `LegaiaWeather` to the day/night cycle, the grass material, the ambience mixer and the settings panel. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaLivingProps.cs` | The **Living props** pass: finds standable shoreline points from the world mesh alone (water sheet vs land cells, floor ray, clear standing capsule) and plants the fishing stations in `<root>/living_props`. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaDayNight.cs` | Optional UdonSharp day/night cycle: sweeps the realism sun on a fixed cycle, synced across players via server time; night dims the trilight ambient + fog to a moonlit fraction, enables the night-lamp container, and crossfades the day/night ambience beds. `JumpToDay`/`JumpToNight` apply a synced offset (the settings panel's buttons). |
@@ -69,19 +69,25 @@ your disc ──legaia-extract──▶ extracted/ ──legaia-engine export-gl
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaTorch.cs` | Torch/campfire pickup: hold + Use toggles the flame container (fire + smoke particles, a Perlin-flickered point light - no glow orb) and a spatial crackle loop; `lit` is synced so a fire someone lights burns for everyone. Spawn-kinematic like the rack pickups. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaFlicker.cs` | Firelight flicker for the always-burning night torches: no sync, no interaction - just the two-octave Perlin intensity wobble on the flame's point light. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaPickupProp.cs` | UdonSharp equipment-rack pickup: the prop spawns kinematic (frozen on the rack) and only becomes a free physics object the first time a player drops it - so a rack of dozens of bodies can't tunnel through the thin ground during world-load hitches. Weapon rows carry `weapon` and measure their own swing speed while held. |
-| `world-project/Assets/LegaiaWorld/Editor/LegaiaCommonPrefabs.cs` | The **Common prefabs** foldout: builds the mirror, the TV and the card table from primitives + generated textures + the SDK's own components, spawns the SDK's sample pen system, and drops any prefab assets you list (QvPen, ProTV, a community deck...) near spawn. See "Common prefabs" below. |
-| `world-project/Assets/LegaiaWorld/Editor/LegaiaSettingsSnapshot.cs` | Menu `Legaia > Snapshot placements to scene settings`: writes the hand-placed Inspector transforms of the common prefabs, the camp settings panel and LegaiaSpawn into `Settings/<scene>.settings.json` (`prefab_transforms` + `spawn_position`), preserving the file's other keys. |
+| `world-project/Assets/LegaiaWorld/Editor/LegaiaCommonPrefabs.cs` | The **Common prefabs** foldout: builds the mirror, the TV and the card table from primitives + generated textures + the SDK's own components (the 52 card faces are drawn into one versioned atlas, `cards_atlas_v2.png`, in the standard pip arrangement), spawns the SDK's sample pen system, and drops any prefab assets you list (QvPen, ProTV, a community deck...) near spawn. See "Common prefabs" below. |
+| `world-project/Assets/LegaiaWorld/Editor/LegaiaSettingsSnapshot.cs` | Menu `Legaia > Snapshot placements to scene settings`: writes the hand-placed Inspector transforms of both top-level containers' children (common prefabs; camp panel, torches and campfires), the card table's seat panel and LegaiaSpawn into `Settings/<scene>.settings.json` (`prefab_transforms` + `spawn_position`). Other keys in the file are preserved, and `prefab_transforms` merges over what is already there rather than replacing it. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaSoak.cs` | The PLAY-MODE soak (`LegaiaBatchChecks.Soak`): enters play mode with ClientSim, pins the day/night clock to night or day, samples every brain at 2 Hz into a per-villager timeline, and asserts the night routine ran (in through the door, door swung, out again at dawn) or reports a day's station visits and conversations. The only check here that actually runs a villager. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaBatchChecks.cs` | Headless self-tests (`Unity -batchmode -executeMethod LegaiaWorld.LegaiaBatchChecks.CommonPrefabs` builds the common prefabs against the scene's built root and asserts every SDK component and every UdonSharp field wiring reached the backing behaviour; `.LivingTown`, `.Weather`, `.Ambience` likewise; `.RigPose` measures every imported NPC rig and checks the sitting pose's hip turn against the rig's walk clip). Never saves the scene. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaEventButton.cs` | A collider button: Interact sends one named event into a target behaviour. Every common-prefab button uses it (no world-space UI, so no pickup-collider-steals-the-click trap). |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaMirror.cs` | Mirror controller: Off / full / players-only surfaces, local choice, auto-off when the player walks away. |
-| `world-project/Assets/LegaiaWorld/Udon/LegaiaVideoTv.cs` | Synced video player over the SDK's AVPro (PC) + Unity (Android) players: owner-synced URL + playhead origin, late-joiner seek, 5-second load rate limit honoured, error retry. |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaVideoTv.cs` | Synced video player over the SDK's AVPro (PC) + Unity (Android) players: owner-synced URL + playhead origin, late-joiner seek, 5-second load rate limit honoured, error retry. Also the house playlist, the villagers' favourite shows and the one rule that arbitrates them (`source`: only the playlist may be interrupted). See "What the TV plays" below. |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaMiniTv.cs` | The mini CRT on the card table. Carries no video player: it copies the big screen's texture onto the small one for the Unity backend (the one whose single `targetMaterialRenderer` cannot be doubled), reading both places Unity may have left it. See "The set on the table" below. |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaTvWatchSpot.cs` | The NPC station handler in front of the TV: asks the set for the arriving villager's show, hands it back when they leave, and puts the controller in their hands during a console show. |
+| `world-project/Assets/LegaiaWorld/Editor/LegaiaVideoSettings.cs` | Parser for `Settings/video.settings.json` - the SHARED (not per-scene) playlist + shows config, with a scene's optional `video` block merged over it. |
+| `world-project/Assets/LegaiaWorld/Editor/LegaiaVideoChecks.cs` | Headless `LegaiaVideoChecks.Run`: validates the config, drives the arbitration rule against every source state, asserts the flattened show windows and every URL reached the BACKING behaviour, and checks the watch spot faces the set, the console starts off, and the mini CRT stands clear on the felt with no player of its own. |
+| `world-project/Assets/LegaiaWorld/Settings/video.settings.json` | The shared video config itself: the default playlist and one entry per villager show. Not scene specific - the same file serves every world the kit builds. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaSeat.cs` | Interact sits the local player in this object's VRC station (the SDK chair wire); mirrors who sits there for the card game. |
-| `world-project/Assets/LegaiaWorld/Udon/LegaiaCard.cs` | One playing card: pickup, hold + Use flips it (synced), spawn-kinematic until first drop, re-parked (dealt, revealed) by the deck and the game. |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaCard.cs` | One playing card: pickup, hold + Use flips it (synced), spawn-kinematic until first drop, re-parked (dealt, revealed) by the deck and the game. The face flip and the dealt-card slide animate the `visual` child only - the root is always at the pose the caller passed, on that frame. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaCardDeck.cs` | Deck controller: Shuffle (seeded Fisher-Yates) / Gather restack every card face-down at the anchor by taking ownership of each card. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaSlotMachineBuilder.cs` | Editor menu `Legaia > Build Slot Machine...`: assembles the playable casino slot minigame directly onto a cabinet mesh's screen face from the `asset slot-art` export - retail reel drums, glass furniture, dot-matrix marquee, HUD, buttons. See "The casino slot machine" below. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaSlotMachine.cs` | UdonSharp port of the engine's slot-machine rules kernel (`engine-core::slot_machine`): the retail LCG + reel strips, feature rolls, stop plans, five-payline evaluation, bonus rounds, and the retail per-frame reel-drum face derivation. Owner-synced with synced RNG streams; reels animate locally on every client from the same deterministic strips. Spins and payouts move the seated player's purse. |
-| `world-project/Assets/LegaiaWorld/Editor/LegaiaCardGameBuilder.cs` | Builds the card table's `game` child, the per-stool hand anchors and the seat panel (world-space canvas on a post beside the table). |
+| `world-project/Assets/LegaiaWorld/Editor/LegaiaCardGameBuilder.cs` | Builds the card table's `game` child, the per-stool hand anchors, the five community-card spots across the felt centre, and the seat panel (world-space canvas on a post beside the table). |
+| `world-project/Assets/LegaiaWorld/Editor/LegaiaPosters.cs` | Hangs the scene's `posters` on the world's own walls: a hand placement first, else a 24-ray wall search from the object each poster names. Owns the `LegaiaWorld.LegaiaPosters.Check` headless gate. See "Wall posters". |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaPortraits.cs` | Villager portraits for the seat panel: one orthographic head render per villager from its measured visible front, saved under `LegaiaGenerated/<scene>/portraits/`; a drawn silhouette when there is no graphics device. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaBounty.cs` | The bounty layer of the living town: the weapon hitbox on every villager, the coin-drop pool, the brain links; per-scene `bounty` / `respawn_seconds` / `coin_drop` keys. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaCardGameChecks.cs` | Headless `LegaiaCardGameChecks.Run` (wiring, panel facing, portraits, the poker evaluator and blackjack settlement against fixed cases) and `.Soak` (play mode: villagers play hands among themselves, pot conservation asserted). |
@@ -92,6 +98,7 @@ your disc ──legaia-extract──▶ extracted/ ──legaia-engine export-gl
 | `world-project/Assets/LegaiaWorld/Shaders/SlotReelFace.shader` | Reel-face cutout + retail's depth-cued shade per pixel (`clamp(0xB4 - (z+0x200)*0x21C>>9)`, blend `texel*shade/128`): bright at the payline, black past ~48 degrees - the fade that caps the reel window. `Cull Off` (the composition is x-mirrored). |
 | `world-project/Assets/LegaiaWorld/Shaders/SlotCutout.shader` | Unlit cutout for everything else on the slot screen: `Cull Off` for the mirrored composition (the legacy back-culled cutout would render nothing) plus a `_Color` tint for the black reel backdrop. |
 | `sync-to-project.ps1` | Copies the kit's `Udon/` + `Editor/` + `Shaders/` + `Settings/` into a Unity project, refusing when a project-side file is newer (an in-Unity edit that must be ported back first). The kit is the source of truth; never edit the project copies. |
+| `headless-check.ps1` | Runs one of the kit's headless checks against a **project copy** (`-Project C:\lgw-qa -Method LegaiaWorld.LegaiaBatchChecks.CommonPrefabs [-Sync] [-PlayMode] [-Extra @(...)]`): optional kit sync + reimport touch, the editor launched detached with the log inside the copy, the orphaned licensing client killed, `[UdonSharp]` / `error CS` lines surfaced first. Its header carries the robocopy recipe and why `Bee` / `ilpp.pid` must be excluded. |
 | `fix-glb-uvsets.py` | Repairs a glb whose materials sample UV set 2/3 (Blender bakes against a late UV layer): glTFast only supports sets 0/1 and fails the whole import with `UVMulti` errors, while web viewers show the file fine. Losslessly rewires each primitive's sampled set onto `TEXCOORD_0`; refuses when a material mixes sets. |
 
 ## Step 1 - export a scene
@@ -223,7 +230,15 @@ the VCC setup in more detail if this is your first worlds project.
    click then reads as the held pickup's use/drop, with the button still
    animating - the panel looks alive but is dead). Click the buttons
    while the board stands; a held pickup's own UI is not clickable in
-   desktop mode. **Music On/Off** mutes the BGM for you alone,
+   desktop mode. The town theme is built **muted** by default (untick
+   *Start muted* under **Scene music** to have it playing on arrival):
+   a visitor lands in the town's own sound - the shore, the birds, the
+   TV - rather than in the theme, and anyone who wants it presses one
+   button. The clip runs either way, so switching it on joins the loop
+   where everyone else is rather than starting at bar one, and the
+   button's label is read off the source at Start, so it never opens
+   saying *Music: On* over silence. **Music On/Off** mutes the BGM for
+   you alone,
    **Daytime**/**Nighttime** jump the shared day/night cycle for
    everyone (they do nothing until the realism pass builds the cycle),
    and **Clear sky** jumps the shared weather schedule the same way
@@ -233,7 +248,11 @@ the VCC setup in more detail if this is your first worlds project.
    to light or snuff it: fire particles, a faint rising smoke plume, a
    warm point light with a Perlin fire flicker (no glow-orb mesh), and a
    spatial synthesized crackle loop; the lit state is synced, so a
-   campfire someone lights burns for the whole instance. Every
+   campfire someone lights burns for the whole instance. Drag a torch
+   or a fire where the town wants it and **Snapshot placements** pins it
+   the way the TV and the mirror are pinned - the rebuild puts it back
+   at those exact Inspector numbers instead of the spawn-relative
+   default. Every
    AudioSource the kit creates also carries the `VRC_SpatialAudioSource`
    component the SDK now expects (disabled on the flat 2D music/ambience
    beds, exactly what the SDK's Auto Fix does - the "2D audio source
@@ -325,6 +344,18 @@ All keys optional (`town01.settings.json` is the worked example):
   table like anyone else, and the table knows who they are. town01's
   settings place all three: Vahn and Noa by the spawn, Gala beside
   Tetsu's (npc_07's) spot.
+- **`video`** (optional, per scene) - overrides the shared video config
+  in `Settings/video.settings.json`. `default_playlist` REPLACES the
+  house playlist; `shows` are APPENDED to the shared cast unless
+  `"shows_replace": true`. The shared file is the default for every
+  world the kit builds, which is why the cast is keyed by WHO rather
+  than by object path: `{"who": "Noa", "npc": 102, "title": "Spyro",
+  "console": true, "urls": [...]}`. `who` is matched against the
+  villager's display name (`living_town.names`, an `add_npcs` label, or
+  whatever the living town named them) and `npc` against the NPC object
+  name as a prefix - either one is enough, so a show follows the
+  character into any world that has them. A show whose owner is in no
+  scene is not an error; `LegaiaVideoChecks.Run` says so as a warning.
 - **`living_town.names`** - `{"npc_07": "Tetsu"}` pins a villager's
   display name. Without a pin the living town names everyone itself:
   the speaker prefix of the actor's retail line when it has one ("Val:
@@ -345,9 +376,12 @@ All keys optional (`town01.settings.json` is the worked example):
   Inspector position here, and the rebuild reproduces it digit for
   digit. (Not world space: the root is X-mirrored, so a world value
   would come back with its X sign flipped in the Inspector.)
-- **`prefab_transforms`** - hand placements for the common prefabs and
-  the camp settings panel (`menu`), position + optional rotation in
-  Inspector numbers; written by the snapshot menu. See "Common prefabs".
+- **`prefab_transforms`** - hand placements for the common prefabs, the
+  camp props (`torch_N`, `campfire_N`, the settings panel as `menu`) and
+  the card table's seat panel (`card_table_panel`, table-local), position
+  + optional rotation in Inspector numbers; written by the snapshot menu.
+  A pinned camp prop also skips the ground snap, so a torch left standing
+  on a crate stays on it. See "Common prefabs".
 - **`slot_machine`** - the casino cabinet: model asset, `asset slot-art`
   folder, placement + scale. The common-prefabs pass places the cabinet
   and builds the minigame on it. See "Common prefabs".
@@ -366,6 +400,21 @@ All keys optional (`town01.settings.json` is the worked example):
   links to add by hand where the bake's own search misses one), and the
   bounty layer's `bounty` / `respawn_seconds` / `coin_drop` (see
   "Coins").
+- **`living_town.night_host`** - `{"npc": "npc_14", "station":
+  "Legaia_common_prefabs/card_table/stool_0"}` pins one villager to one
+  station for the whole night instead of sending it home; town01 seats
+  Cara at the card table. See "Somebody keeps the card table at night".
+- **`posters`** - a list of `{name, image, near, width}`. `name` names
+  the object (`poster_<name>` under `Legaia_common_prefabs`) and its
+  generated material; `image` is a project asset path (the image is
+  never part of the kit - drop it under your project's `Assets/`);
+  `near` is the object the wall search starts from, looked up first as
+  a common-prefab child (`card_table`) and then anywhere in the scene;
+  `width` is the print's width in metres, its height following the
+  image's aspect. A `prefab_transforms["poster_<name>"]` entry overrides
+  the search completely. A poster whose image is missing, whose `near`
+  object is absent, or that finds no wall inside 12 m logs a warning and
+  is skipped - never hung in mid-air. See "Wall posters".
 - **`npc_homes`** - pin a villager to a house door by index into the
   homes the pass keeps (`living_town/homes/home_N`). Note the indices
   shift when a teleport is rejected as not-a-house.
@@ -638,6 +687,94 @@ rather than as milling about outside:
   being sent back at an unreachable door every few seconds.
 - **The shore is reachable.** See ledge links below.
 
+#### Nobody stands in a doorway
+
+A doorway tile is a teleport a player walks through, so it is the one
+place in the village nobody may be parked - and the town had four ways
+of arranging it: a "call on a neighbour" stand spot 0.7 m beside every
+house door, viewpoints and path stands sampled with no regard for the
+teleports, conversations struck up wherever people happened to be, and a
+villager that gave up on its own front door standing in it until dawn.
+
+The pass now lifts a world sphere from every one of the manifest's
+doorway-teleport trigger boxes - both directions, since a cave mouth is
+as much a thing a player walks into as a front door - and from every
+home's door stand spot, doorway tile, landing, way out and village-side
+landing. `MakeStation`, which every stand point in the town goes
+through, pushes a spot out of a zone it landed in or drops it; the same
+zones go onto the director (ad-hoc conversations) and onto every
+locomotion controller (the autonomous stroll), so the rule holds at run
+time as well as at build time. The doorstep stand sits 2.6 m out from
+the tile, swept over a fan of bearings around the way in, and a villager
+who gave up on the door steps a few metres back before waiting out the
+night.
+
+Indoors the radius is **capped**: retail's interior rooms put a landing
+and its way out a metre apart, and at the village radius a room would
+have nowhere to stand at all - so indoors the rule is "not on the tile",
+not "1.5 m clear of it". The night door trip is exempt by construction;
+it is a scripted sequence rather than a station, and stepping onto the
+tile is the one legitimate visit to a doorway in the town.
+
+The LivingTown check asserts no station stand point sits inside a zone
+and reports how many were relocated and dropped; town01 builds 48 zones
+(18 trigger boxes + 30 home markers), relocates 13 spots and drops 2.
+The knobs are code defaults on `LegaiaLivingTownOptions`
+(`doorstepStandDistance` 2.6, `keepOutMargin` 1.5, `keepOutHomeRadius`
+1.2, `indoorKeepOut` 0.75, `keepOutPush` 1.6).
+
+#### Villagers reading as people
+
+Conversations got attention: every non-speaker turns to face whoever is
+talking (with a small delay, so it reads as noticing rather than
+snapping), one listener answers the topic with a reaction bubble a beat
+later (a laugh after the fish story, "..." after the storm, a heart after
+food - two answers per topic so the same topic twice does not draw the
+same face), and the speaker nods - a short LateUpdate dip of the body
+over whatever the Animator posed, the same composition the gait uses, so
+no rig needs a clip for it.
+
+The nod pitches the **gait node** - the glb's own root under the
+instance, the node the kit already owns and writes absolutely - and not
+the "facing anchor". The anchor is chosen as the biggest mesh node that
+rests upright, and measuring all 174 town rigs says that node sits at
+0.80-0.86 of body height on most of them: it is the head. The gesture
+also used to undo itself only when the anchor's WORLD rotation still
+matched what it had written, which a villager that turned between frames
+fails - so on any rig whose idle pose does not rewrite that node, every
+nod left its pitch behind and the next one added to it, until the
+villager was looking at the sky. Bob, roll and nod now compose into one
+absolute write per frame from the captured rest transform, so nothing is
+read back and nothing can accumulate. `LegaiaBatchChecks.RigPose` reports
+each rig's chosen anchor and its height fraction, and the night soak
+reports every villager's worst tilt from its own rest (5-7 degrees is
+the gesture; it fails past 25). Two villagers walking an
+errand together swap a bubble every eight seconds or so. And a villager
+idling within two metres of the local player turns to look, and waves
+once every forty seconds at most - local only, nothing synced. None of
+this is a brain state; it rides on the states the town already had.
+
+#### Somebody keeps the card table at night
+
+`living_town.night_host` pins one villager to one station for the whole
+night - town01 seats Cara at the card table's `stool_0`. She is an
+ordinary villager by day; at nightfall the director claims the station
+and sends her there instead of home, renews the hold every tick (the
+station's own dwell timer would otherwise walk her off in the middle of
+the night), parks her a couple of metres off facing the table while a
+**player** has the seat, and lets her go at dawn. The seat is an
+ordinary kind-2 station, so the card table's own handler sits her down
+through the existing arrive event - the living town knows nothing about
+card tables, and the link is a scene path the brain resolves by name at
+Start, because the table belongs to another pass's container.
+
+Every other picker leaves her alone for free: her brain reports itself
+unavailable for the length of the shift. The night soak asserts she
+reached the station, held it for most of the night, and never went home
+through a door - and excludes her from the exodus count, which she would
+fail by design. The card game's night rules are hers too; see "Common
+prefabs".
+
 ### Ledge links (villagers jump)
 
 A drop the agent cannot climb leaves the bake as two islands with no route
@@ -702,7 +839,9 @@ Unity.exe -batchmode -nographics -projectPath <copy>
 
 No `-quit`: the run drives itself from `EditorApplication.update` and
 exits the editor itself (0 pass, 1 an assertion failed, 3 play mode never
-started, 4 the wall-clock watchdog). `night` forces night for the first
+started, 4 the wall-clock watchdog). `headless-check.ps1 -PlayMode` gets
+the `-quit` / no-`-quit` distinction right for you and puts the log where
+the editor can actually open it. `night` forces night for the first
 65% of the budget then dawn, and fails on a villager that never got
 inside, never came back out, whose door never swung, or that gave up on
 the trip. `day` forces day for the whole budget and REPORTS instead -
@@ -735,8 +874,8 @@ and the SDK's own components - no third-party package, no game data:
   every VRChat performance guide says "off by default, toggle nearby".
   The surface material is the SDK's own `MirrorReflection.mat`.
 - **TV (video player)** (default on) - a cabinet with a 16:9 screen,
-  a URL field + status line on the front, and *Play / Pause*, *Stop*,
-  *Resync* buttons on top. Both SDK players sit on it: **AVPro** is used
+  a URL field + status line on the front, and *House playlist*, *Play /
+  Pause*, *Next*, *Stop*, *Resync* buttons on top. Both SDK players sit on it: **AVPro** is used
   on PC (the only one that plays YouTube's current formats after
   VRChat's yt-dlp resolve), the **Unity** player on Android / Quest, and
   the Unity player everywhere when `preferUnityPlayer` is ticked on the
@@ -751,18 +890,188 @@ and the SDK's own components - no third-party package, no game data:
   `RateLimited` / player errors retry three times. Hosts outside
   VRChat's allow-list need each viewer's **Allow Untrusted URLs**
   setting on - the status line says *access denied* when that is the
-  cause. Audio is one spatial speaker under the screen.
+  cause. Audio is one spatial speaker under the screen, full volume
+  within 4.5 m and silent past 48 m on a linear rolloff - a TV is
+  something a room listens to together, and the kit's original 16 m died
+  about where the card table starts. Both AudioSource radii and the VRC
+  spatial component's near / far carry those numbers, and
+  `LegaiaVideoChecks.Run` asserts all of them (three of the four are
+  silent when wrong: the sound just stops sooner than anyone expects).
+
+  **What the TV plays.** It is never dark for long: on entering the
+  world it starts the **house playlist** from
+  `Settings/video.settings.json` and loops it, printing what is on in
+  the status line. Starting it is not one shot that can be missed - the
+  first client re-tries while ownership settles, after half a minute the
+  master takes the set and starts it, and a new owner picks it up when
+  the old one leaves. A load that never becomes ready (no error, just
+  silence) trips an 18-second watchdog that tries the *other* player
+  once, then steps past a playlist entry that will not come up - and
+  after three give-ups in a row it stops rather than collecting one
+  error per entry for ever. Any button starts it again. If the panel
+  reads **"No playlist - rebuild the common prefabs"**, the TV standing
+  in the scene was built before the playlist existed: URLs are
+  serialized into the behaviour at build time, so a TV that predates
+  them has none.
+
+  **YouTube does not play in the Unity editor, and that is not a fault
+  in the kit.** ClientSim's AVPro is a stub - its `LoadURL` does
+  nothing, `IsReady` is always false, no event is ever raised
+  (`com.vrchat.worlds/Integrations/ClientSim/.../ClientSimAVProVideoStub.cs`).
+  The Unity player is real, but nothing in the editor resolves a
+  `youtu.be` *page* into a stream, so it hands the raw link to Windows
+  Media Foundation and gets `0xc00d36c4`, *the byte stream type of the
+  given URL is unsupported*. Both halves are environmental: in the
+  VRChat client AVPro plays and VRChat's own resolver does the yt-dlp
+  step. **Build & Test** to see the screen light up - or, to check the
+  set without leaving the editor, type a **direct `.mp4` link** into the
+  URL field, which the Unity player plays there quite happily. The
+  arbitration, the villagers' requests, the console and the status line
+  all work in ClientSim regardless; it is only the picture that needs
+  the client. Villagers have favourite shows, and one who walks up
+  to the set can put theirs on - but only ever *over the playlist*.
+  That is the whole rule, and it is one line
+  (`LegaiaVideoTv.ShowRequestAllowed`):
+
+  | What is playing | A villager may take it over |
+  |---|---|
+  | The house playlist | yes |
+  | Another villager's show | no |
+  | A video a player typed in | no |
+  | Stopped | no |
+
+  A **player** always wins: the URL field and the five buttons work
+  from any state. *House playlist* hands the set back to the loop -
+  the way out of a guest video, a show you would rather not sit
+  through, or Stop, which leaves the TV off until a person asks for
+  something (a villager cannot switch it back on, because the playlist
+  is not what is playing). Everything else only ever falls *back* to
+  the playlist: a show that ends, a show whose owner walks away, a
+  guest video that plays out. Nothing but the playlist is
+  interruptible, so there is never a question of who was first.
+
+  A show is one or more videos played **in order, once** - shows never
+  loop, only the playlist does. A villager with more than one show gets
+  a different one each visit. Only the instance owner's copy of a
+  villager may drive the set (every client walks its own town, so nine
+  clients would otherwise fire nine requests at once), while what is on
+  screen, the console and the controller all follow the synced state -
+  so everyone sees the same show whatever their local villagers are up
+  to.
+
+  **The console show.** A show flagged `"console": true` brings the
+  floor console out: a grey box with a round lid and a lead running to
+  the set appears in front of the screen, and its owner stands there
+  with a controller in their hands (carry item 4, the same rig that
+  hands out buckets and brooms). Both are the kit's own primitives with
+  no branding on them. town01 ships one: Noa's three-part Spyro run.
+  The console is built inactive and switched on off the synced show, so
+  it is never furniture standing in an empty room.
+
+  **The set on the table.** A coaster-sized CRT stands on the card
+  table's felt showing and playing exactly what the big set is showing.
+  It has **no video player of its own** - a second player is a second
+  decode, a second fetch and a second clock, and two of those pointed at
+  one URL drift apart within seconds for a screen the size of a beer
+  mat. It is a second *output* of the TV's players instead, through
+  three wires:
+
+  - the small quad carries its own `VRCAVProVideoScreen` pointed at the
+    same AVPro player. That is the SDK's own way to put one stream on
+    several surfaces and it costs nothing;
+  - the small speaker carries its own `VRCAVProVideoSpeaker`, and its
+    `AudioSource` is appended to the Unity player's `targetAudioSources`
+    (that field is an array - the SDK expects several). Same decode, so
+    the two speakers are sample-synchronised rather than merely close;
+  - `LegaiaMiniTv` copies the picture across for the **Unity** backend,
+    the one that has a single `targetMaterialRenderer` and no way to add
+    a second. It polls a few times a second rather than running in
+    `Update`: the texture *object* changes only when a video loads, the
+    frames arrive inside a texture that keeps its identity, and an Udon
+    `Update` on a prop is a cost every player in the instance pays. It
+    reads both places Unity's `MaterialOverride` may have left the
+    texture - a per-renderer `MaterialPropertyBlock` and an instantiated
+    material - because which one it uses is native behaviour the SDK
+    does not document. It never writes a null: while AVPro owns the
+    small screen the property block is empty, and blanking on that
+    account would undo the AVPro screen's own work every poll.
+
+  Both screens share the `tv_screen` material asset, so both keep the
+  video shader through the lit conversion (which skips `Video/`
+  shaders) and both start on the same black idle frame; at runtime each
+  renderer gets its own instance, which is what lets the two be written
+  independently. Its speaker is deliberately small (0.5 - 8 m against
+  the big set's 4.5 - 48 m): the room's television already reaches the
+  table, and this one is there to make the little screen a sound source
+  at the table rather than a second television heard across the square.
+  Default place is `(0, 0.765, -0.40)` local to the table, yawed 180 so
+  its screen looks back across the felt - clear of the deck, the
+  blackjack dealer row, the hold'em board and every seat's hand anchor.
+  Move it and snapshot: the settings key is `card_table_mini_tv`. One
+  collider, on the root, so a card pickup cannot wedge between two
+  pieces of the same prop.
+
+  **Villagers reach the set** through an ordinary NPC station - a
+  `watch_spot` child of the TV, kind 0, whose handler is
+  `LegaiaTvWatchSpot`. The town director finds it in its sweep of the
+  prefab container like any other station, so nothing in the living
+  town knows that television exists. That sweep is a BUILD-time list:
+  rebuild the common prefabs *before* the living town pass runs, or the
+  spot is not on the director (the builder's own pass order does this,
+  and so does the LivingTown check).
+
+  **The URL field does not take your keyboard.** Every UI control the
+  kit builds is switched to `Navigation.Mode.None`
+  (`LegaiaWorldBuilder.DisableUiNavigation`, run over both top-level
+  containers after their panels are built). Unity's default is
+  `Automatic`, and the input module reads movement keys as navigation
+  axes - so with nothing selected, walking around hands the first
+  selectable in the scene the keyboard, and on this world that is the
+  TV's URL field. Every keystroke after that goes into a text box the
+  player never clicked, which reads as "the TV ate my input" and is
+  invisible in the scene. The TV also drops the text cursor when the URL
+  is submitted and when the player walks more than 3 m from the panel,
+  and both checks fail on any control left navigable.
+
+  **Editing the playlist** means editing
+  `Assets/LegaiaWorld/Settings/video.settings.json` and rebuilding the
+  common prefabs - a `VRCUrl` cannot be constructed at runtime in Udon,
+  so the URLs are serialized into the behaviour at build time and there
+  is no way to load them from text in-world. See "Video config" under
+  the settings section for the shape.
 - **Card table** (default on) - a round table with felt, N stools
   (**Stools**, default 4) that are VRC stations (look at one, *Sit*),
   and a 52-card deck stacked face-down in the middle. Cards are
   pickups: hold one and press **Use** to flip it (the flip is synced,
   so a card you turn shows the same side to everyone), drop it on the
-  felt to play it. Faces are generated - rank glyphs in the corners, a
-  suit pip in the middle, framed letters for the court cards, a teal
-  lattice back - into one atlas, one 63 x 88 mm box mesh per card.
-  *Shuffle* restacks every card face-down in a seeded random order,
-  *Gather* in new-deck order; both take ownership of each card, so the
-  cards' own Object Sync carries the result. Like the equipment rack,
+  felt to play it. Faces are generated into one atlas (13 rank
+  columns x 4 suit rows + a row for the teal lattice back and the
+  edge), one 63 x 88 mm box mesh per card, and they read like real
+  cards: a rank glyph with its suit pip under it in the top-left and
+  bottom-right corners, and the standard pip arrangement in the body -
+  2 and 3 down the centre column, 4 and 5 on the corners, 6 to 8 two
+  columns of three with centre pips between the rows, 9 and 10 two
+  columns of four - with every pip below the middle rotated 180
+  degrees. The ace keeps one large pip and the court cards a framed
+  letter. The atlas is only drawn when its file is missing, so its
+  **name carries the layout version**: change the faces and bump
+  `CARD_ATLAS` (adding the old name to `CARD_ATLAS_OBSOLETE`), or every
+  project that already built the deck keeps the old faces for ever.
+  Two importer settings are load-bearing and set explicitly:
+  `npotScale = None` (the default silently resampled the 13 x 5 grid
+  toward a power of two, so the first atlas never reached the GPU at
+  the density it was drawn) and `maxTextureSize = 4096`. The
+  CommonPrefabs self-test reads the PNG back, masks the corner indices
+  and counts the connected ink blobs in every cell - the count must be
+  the rank - and re-checks the imported asset's dimensions so a
+  returning importer default fails the build instead of the felt.
+  *Shuffle* and *Gather* are buttons on the seat panel, not on the
+  felt: *Shuffle* restacks every card face-down in a seeded random
+  order, *Gather* in new-deck order; both take ownership of each card,
+  so the cards' own Object Sync carries the result, and both grey out
+  while a hand is running - a restack mid-hand would leave the synced
+  deck order describing a deck that no longer exists. Like the
+  equipment rack,
   a card starts kinematic and only goes physical the first time it is
   dropped (52 bodies waking during a world-load hitch is the
   tunnel-through-the-floor hazard). The card behaviour syncs
@@ -771,13 +1080,18 @@ and the SDK's own components - no third-party package, no game data:
   and the headless self-test asserts the pairing so a build never
   trips on it again.
   Each stool is also a `LegaiaNpcStation` (kind 2) on one
-  `LegaiaCardTableHost`, so villagers sit down and hold a fanned pair
-  of card backs. Sitting down yourself is an **invitation**: while
+  `LegaiaCardTableHost`, so villagers sit down and are dealt in.
+  Sitting down yourself is an **invitation**: while
   anyone is at the table the free stools stay open and the game calls
   the nearest idle villagers over to play (`LegaiaTownDirector.Summon`),
-  and holds them there through a hand. The table's third button
-  (*NPCs: sit / shoo*) is the override - shoo, and the stools are
-  withdrawn and nobody is called. The seated pose is an
+  and holds them there through a hand. The panel's *NPCs: sit / shoo*
+  button is the override - shoo, and the stools are withdrawn and
+  nobody is called; its label follows the host's synced `npcsAllowed`,
+  so it always says what pressing it does. The panel is the table's
+  only control surface: seven buttons send into the game, two into the
+  deck (*Shuffle* / *Gather*) and one into the host, nothing stands on
+  the felt, and the headless check matches every listener by target
+  *and* by the event string it carries. The seated pose is an
   **built pose** - the exported rigs carry no sit clip, so the host
   nudges the NPC onto the stool centre with its hips on the seat and
   the locomotion controller poses it sitting (`LegaiaNpcWander.SetSeated`)
@@ -823,20 +1137,31 @@ and the SDK's own components - no third-party package, no game data:
   the loop shape (one villager giving up on one stool three times).
 
   **The game** (`LegaiaCardGame`, on the table's `game` child) plays
-  **five-card draw poker** (default) and **blackjack** with those 52
-  pickups, for the coins in your purse (see "Coins" below). A panel on a
-  post beside the table shows the mode, each seat (a villager's rendered
-  **face**, name and chips; a player's silhouette, VRChat name and real
-  coins), the pot and a message line, and carries the buttons:
-  - **Deal** starts a hand, **Mode** switches games between hands; both
-    need you seated.
-  - Poker: ante 2, five cards each, a betting round (Check/Call,
-    Bet/Raise +2 with at most three raises, Fold), then pick the cards
-    to keep with the five card buttons and **Draw**, a second betting
-    round, showdown. Best hand takes the pot, ties split it. Villagers
-    play by hand strength with a nerve of their own (from their
-    personality seed): the bold ones bluff, the timid ones fold to a
-    raise.
+  **poker** and **blackjack** with those 52 pickups, for the coins in
+  your purse (see "Coins" below). A panel on a post beside the table
+  shows the mode, each seat (a villager's rendered **face**, name, chips
+  and *what that villager just said*; a player's silhouette, VRChat name
+  and real coins), the board, the pot and a message line, and carries
+  seven buttons: Deal, Mode, Check/Call, Bet/Raise, Fold, Hit, Stand.
+  - **Deal** starts a hand, **Mode** switches poker and blackjack
+    between hands; both need you seated.
+  - **Which poker is the clock's call, not a button.** By day it is
+    **hold'em**: ante 2, two hole cards a seat, then five community
+    cards face down across the middle of the felt, turned over in
+    stages - three for the flop, one for the turn, one for the river,
+    about 0.7 s apart - with a betting round (Check/Call, Bet/Raise +2,
+    at most three raises, Fold) before each and after the river. Best
+    five of your seven takes the pot; ties split it.
+  - **After dusk it is Cara's poker night** - the game on the rule
+    poster by the table: five cards each, one betting round, best hand
+    wins. No board, no draw. The switch only lands between hands, so a
+    hand dealt in daylight finishes in daylight's rules, and the panel's
+    mode line says which game is on.
+  - **Showdown is paced.** The losing hands turn over first and the
+    winner last, about 0.6 s apart, and only then is the pot named. Fold
+    and *both* your cards leave the felt at once. When everyone but one
+    seat folds, that seat takes the pot **without showing** - "wins
+    uncontested".
   - Blackjack: stake 2, the table deals itself two cards (one up) and
     draws to 17 standing on soft 17; **Hit** / **Stand**; 1:1, a natural
     pays 3:2 rounded down, a push returns the stake.
@@ -849,6 +1174,11 @@ and the SDK's own components - no third-party package, no game data:
     the dealer never writes anyone's coins. Stand up mid-hand and the
     hand is voided, nobody charged. Villagers play with virtual chips
     (60 when they sit) and never touch a player's coins.
+  - Villagers play by hand strength with a nerve of their own (from
+    their personality seed): pre-flop they read their two cards the way
+    any starting-hand chart does, and after the flop they read the made
+    hand on the visible board - discounted when the board alone makes
+    it, because playing the board beats nobody.
   - With nobody at the table the villagers keep playing among
     themselves, a hand every few seconds, so the table looks alive from
     across the square (`npcSelfPlay` on the game turns it off).
@@ -871,23 +1201,44 @@ and the SDK's own components - no third-party package, no game data:
   the table reads from outside (the default) and forward away from it
   reads from the stools.
 
-  **Table talk.** The bottom of the panel prints what the seated
-  villagers say - at sitting down, the deal, a raise, a fold, the pot
-  going one way, a real player joining, and now and then between hands.
+  **Table talk.** Each seat's row on the panel prints what that
+  villager just said, under the name, fading after a while - at sitting
+  down, the deal, each street of the board, a raise, a fold, a bad beat,
+  the pot going one way, a real player joining, and now and then
+  between hands.
   The lines are new, written for the world rather than lifted from it:
   retail Rim Elm has no card table, and each actor's manifest line is a
   cutscene fragment. So the talk is light and generic with the town's
   references (the Mist and the wall, the Genesis Tree, Hunter's Spring,
-  Biron up the road, Val's leg, Mei's sewing). Two voices are their
+  Biron up the road, Val's leg, Mei's sewing). Three voices are their
   own: **Vahn** never speaks a word in retail, so his lines are stage
   directions (*Vahn nods to the table and sits.*); **Noa** was raised
-  by a wolf in Snowdrift Cave and talks like it. When either sits down
-  the other villagers talk *about* them (Val's boy, the wolf girl) every
-  other line. Which pool applies is decided by the seat's name - so an
+  by a wolf in Snowdrift Cave and talks like it; **Cara** is Rim Elm's
+  hunter girl, dry and sure of herself, and opens the night game with
+  her four rules. When any of them sits down the other villagers talk
+  *about* them (Val's boy, the wolf girl) every other line. Which pool applies is decided by the seat's name - so an
   `add_npcs` entry labelled `Vahn` or `Noa` (the party export names
   them) gets the voice, and a joke villager named Noa would too. Text
   is composed by the table's master and synced, so everyone reads the
   same words (`LegaiaTableTalk`).
+
+- **Wall posters** (`LegaiaPosters`, from the settings file's `posters`
+  list) - an image hung on a wall of the imported town. The kit has no
+  authored wall list, so the pass finds one: 24 horizontal rays at eye
+  height from the object the poster names (`near`), keeping surfaces
+  that are vertical, face back toward that object, and continue upward,
+  then taking the nearest whose plane covers the whole print at its
+  hanging height - 1.55 m above the floor under *that* wall, which is
+  not the floor the anchor stands on. The print is 1 cm off the wall in
+  a dark frame, on the kit's lit shader with the light wrap raised so a
+  photograph does not get a shading terminator across it. The search is
+  a fallback: drag the poster where you want it and run **Legaia >
+  Snapshot placements** - it is an ordinary named child of
+  `Legaia_common_prefabs`, so it lands in `prefab_transforms` as
+  `poster_<name>` and the next build reproduces the placement instead
+  of searching. town01 is the case that shows why you might: its card
+  table stands in an open yard and the nearest wall that fits the print
+  is 8.7 m away, which the build says in the log.
 
 The rest are spawned **from prefabs already in your project**:
 
@@ -916,8 +1267,9 @@ collider) and turns to face the spawn. To pin the placement you settle
 on by hand, drag things where you want them, then **Snapshot placements
 to scene settings** (the button under the foldout, or the
 `Legaia > Snapshot placements to scene settings` menu). It writes the
-current Inspector position + rotation of every common prefab, the camp
-settings panel and LegaiaSpawn into the scene's settings file:
+current Inspector position + rotation of every common prefab, every camp
+prop (the settings panel, the torches, the campfires), the card table's
+seat panel and LegaiaSpawn into the scene's settings file:
 
 ```json
 "prefab_transforms": {
@@ -926,16 +1278,26 @@ settings panel and LegaiaSpawn into the scene's settings file:
 }
 ```
 
-(keys `mirror`, `tv`, `card_table`, `pens`, `menu`, and an extra slot's
-prefab name; values are exactly the Inspector numbers, world == local
-under the origin containers; `rotation` is optional). The slot cabinet
+(keys `mirror`, `tv`, `card_table`, `pens`, `poster_<name>` and an extra
+slot's prefab name from the common container; `torch_N`, `campfire_N` and
+`menu` from the camp container; `card_table_panel` for the seat panel
+and `card_table_mini_tv` for the CRT on the felt, whose numbers are
+local to the table rather than to a container. Values
+are otherwise exactly the Inspector numbers, world == local under the
+origin containers; `rotation` is optional.) The block **merges**: a key
+whose object is not in the scene at snapshot time - a feature switched
+off in the foldout, a poster not built yet - keeps the value the file
+already holds instead of being dropped, so snapshotting a half-built
+scene cannot quietly lose hand tuning. The trade is that a key for
+something you retired on purpose has to be deleted by hand; the
+CommonPrefabs check names every key that matches no built object. The slot cabinet
 gets its own block, found through its `LegaiaSlotGame` rig wherever it
 sits, with the asset path, art folder and uniform scale alongside:
 
 ```json
 "slot_machine": { "cabinet": "Assets/Prefabs/legaia slot machine.glb",
                   "art": "Assets/LegaiaImports/slot-art",
-                  "position": [37, 0.979, 36.416], "rotation": [0, -71.178, 0], "scale": 0.012 }
+                  "position": [37, 0.979, 36.416], "rotation": [0, -71.178, 0], "scale": 0.008 }
 ```
 
 The snapshot
@@ -1157,7 +1519,11 @@ Headless checks: `LegaiaWorld.LegaiaEconomyChecks.Run` (edit mode),
 through the hitbox's debug hook, sees the coin land and the villager
 come back); `LegaiaWorld.LegaiaCardGameChecks.Run` and `.Soak` (play
 mode, no `-quit`, `-legaiaCardSeconds N -legaiaCardScale S`: villagers
-play hands among themselves, pot conservation asserted, both modes).
+play hands among themselves, pot conservation asserted, both modes);
+`LegaiaWorld.LegaiaVideoChecks.Run` (edit mode: the video config, the
+TV's arbitration rule against every source state, the serialized
+playlist and show windows, the watch spot, the console, and the mini
+CRT on the card table - which it builds the table for).
 
 ## Optional realism enhancements
 
@@ -1365,7 +1731,7 @@ Four flat 2D beds, all synthesized into
 |---|---|---|
 | `bed_base` | 75 s | Wind over distant surf. Always audible. |
 | `bed_day` | 100 s | Breeze, leaf rustle, distant birds. Faded in with the sun. |
-| `bed_night` | 100 s | Cricket chorus whose density drifts, plus frogs and a far owl. |
+| `bed_night` | 100 s | A cool breeze under a thin cricket chorus whose density drifts, plus frogs and a far owl. See "The night is quiet" below. |
 | `bed_wind_gust` | 32 s | Strong gusts with two resonant howls. Silent until asked for. |
 
 Spatial emitters, placed from the scene's own geometry:
@@ -1375,6 +1741,26 @@ Spatial emitters, placed from the scene's own geometry:
 | `waves_*` | 90 s | Three to five along the water edge nearest the village, nudged onto the land side. Water sheets are recognised the way the collider pass recognises them: a large, flat, semi-transparent submesh is the sea, any other semi-transparent shape is a window light shaft. Far 42 m. |
 | `birds_*` | 52 s | Up to six tree canopies (the night-torch pass's canopy clusters), 3.5 m up the trunk. Day only. Far 25 m. |
 | `wildlife_*` | 64 s | Owls, frogs and crickets by the further trees and at the water. Night only. Far 28 m. |
+
+**The night is quiet.** The first cricket sang at 3.5-4.9 kHz with a
+second harmonic a quarter as loud - straight through the ear's most
+sensitive band, with a sizzling octave above it - and a whole night of it
+was harsh rather than atmospheric. It now sings at 2.3-3.2 kHz (the low
+end of a real field cricket), the harmonic is a hint, each pulse swells
+instead of snapping (a squared envelope, not a cubed one), the chorus is
+thinner (4-12 chirps a second, not 6-22) and it sits about 8 dB lower in
+both mixes. Measured over the generated clips: energy above 3 kHz falls
+from 29% to 0.6% in the night bed and from 79% to 1.0% in the wildlife
+emitters, with the spectral centroid dropping 1744 to 1287 Hz and 2398 to
+1016 Hz. The bed's own level is unchanged (the writer normalizes every
+clip to a target RMS, so what moved is the balance inside it, not the
+loudness of the file) and the emitters are turned down at the mixer as
+well. **Both night clips carry their tuning version in the file name**
+(`amb_night_v2.wav`, `amb_night_wildlife_v2.wav`) and the old names are
+deleted on build: a generated clip is only ever synthesized when its
+asset is missing, so re-tuning one without renaming it leaves every
+project that already built the world on the old sound for ever - the same
+rule the card atlas lives under.
 | `windmill_*` | 12 s | Each free-running animated prop over 3 m tall: a whoosh per blade pass on a 4 s rotation, plus one timber creak per turn. Far 26 m. |
 
 **Why they are long, and why they do not tick.** The first generation of
