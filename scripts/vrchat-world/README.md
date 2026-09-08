@@ -851,9 +851,13 @@ and the SDK's own components - no third-party package, no game data:
   felt to play it. Faces are generated - rank glyphs in the corners, a
   suit pip in the middle, framed letters for the court cards, a teal
   lattice back - into one atlas, one 63 x 88 mm box mesh per card.
-  *Shuffle* restacks every card face-down in a seeded random order,
-  *Gather* in new-deck order; both take ownership of each card, so the
-  cards' own Object Sync carries the result. Like the equipment rack,
+  *Shuffle* and *Gather* are buttons on the seat panel, not on the
+  felt: *Shuffle* restacks every card face-down in a seeded random
+  order, *Gather* in new-deck order; both take ownership of each card,
+  so the cards' own Object Sync carries the result, and both grey out
+  while a hand is running - a restack mid-hand would leave the synced
+  deck order describing a deck that no longer exists. Like the
+  equipment rack,
   a card starts kinematic and only goes physical the first time it is
   dropped (52 bodies waking during a world-load hitch is the
   tunnel-through-the-floor hazard). The card behaviour syncs
@@ -862,13 +866,18 @@ and the SDK's own components - no third-party package, no game data:
   and the headless self-test asserts the pairing so a build never
   trips on it again.
   Each stool is also a `LegaiaNpcStation` (kind 2) on one
-  `LegaiaCardTableHost`, so villagers sit down and hold a fanned pair
-  of card backs. Sitting down yourself is an **invitation**: while
+  `LegaiaCardTableHost`, so villagers sit down and are dealt in.
+  Sitting down yourself is an **invitation**: while
   anyone is at the table the free stools stay open and the game calls
   the nearest idle villagers over to play (`LegaiaTownDirector.Summon`),
-  and holds them there through a hand. The table's third button
-  (*NPCs: sit / shoo*) is the override - shoo, and the stools are
-  withdrawn and nobody is called. The seated pose is an
+  and holds them there through a hand. The panel's *NPCs: sit / shoo*
+  button is the override - shoo, and the stools are withdrawn and
+  nobody is called; its label follows the host's synced `npcsAllowed`,
+  so it always says what pressing it does. The panel is the table's
+  only control surface: seven buttons send into the game, two into the
+  deck (*Shuffle* / *Gather*) and one into the host, nothing stands on
+  the felt, and the headless check matches every listener by target
+  *and* by the event string it carries. The seated pose is an
   **built pose** - the exported rigs carry no sit clip, so the host
   nudges the NPC onto the stool centre with its hips on the seat and
   the locomotion controller poses it sitting (`LegaiaNpcWander.SetSeated`)
