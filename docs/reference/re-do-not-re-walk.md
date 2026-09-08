@@ -88,6 +88,13 @@ prim-dispatch family at all. See
 | Screen-element kinds named by what sits at their seat (`0x32`/`0x33` = "the roster panels") | falsified (naming by seat named the wrong record) | [details ↓](#a-kind-named-by-its-seat-can-name-the-wrong-record) |
 | The battle message banner is "a gold border over a blue interior" | falsified (border only - no fill primitive under it) | [details ↓](#the-battle-message-banner-has-no-interior-fill) |
 | `FUN_801E2524` / `FUN_801E2650` are a full-screen flash / fade ramp | falsified (they are the **Arts announcement banner**) | [details ↓](#the-flash-ramp-is-the-arts-announcement-banner) |
+| The battle per-actor draw `FUN_80048A08` runs **35-64x per frame** during a summon | falsified (once per live actor per rendered frame) | [details ↓](#the-summon-draw-runs-35-64-times-a-frame) |
+| The slot-B cast band applies damage with **one** shape, seat-0 hardcoded | falsified (true of PROT 0958 / 0959 / 0960 only) | The seat-0 write is real, and reading it as the band's law is the natural generalisation from the three Delilas modules where it is the whole damage path. But the band splits: the capture-class ticks read the caster's own `+0x1DF` through the `0x801CF56C` trampoline and clamp per victim, and two images apply damage to a **row** of seats rather than one. The rule to carry is per-module, not per-band - [cast-module.md](../subsystems/cast-module.md#the-seat-0-hardcode-and-where-it-does-not-hold). |
+| PROT 0927 can never kill, so it needs no death path | falsified (it is a stager; its tick is the killer) | 0927's own image is a multi-seat **stager** - it seats the enemy row from `ctx[+1]` and stages clips, and nothing in it subtracts HP, which is what the reading measured. The damage lands in the tick it stages: `0x801F6A84` clamps the subtraction with `sltu`, exactly like every other capture-class tick. Reading a stager's image as the whole spell is the recurring slot-B trap - [cast-module.md](../subsystems/cast-module.md#the-two-aoe-sweeps). |
+| `ctx[+0xD]` variant `2` stamps a `0x400` camera **roll** | falsified (it is the translation `TR.y`, not a rotation) | Plausible because variant `1` is a `0x800` yaw and a per-action camera that yaws would naturally also roll. The byte is two independent bits, not an enum: bit 0 adds `0x800` of yaw and bit 1 adds `0x80` of pitch **and** drops `TR.y` by `0x100`. Nothing in the arm writes a Z angle. See [`battle-action.md`](../subsystems/battle-action.md#the-three-movers). |
+| The Spirit **halving** flag is a battle-actor `+0x16E` bit | falsified (it is the character record's `+0xF8` bit `0x800`) | `+0x16E` is where every other per-battle affliction bit lives, so a "Spirit is halved" bit reads as belonging there. It does not: the halving is passive `0x2B` (*AP Used Down*), an accessory bit in the persistent per-character ability bitfield at record `+0xF8`, tested at `0x801EF364` in the queue builder and again by the status panel at `0x801D4520`. A per-battle bit could not survive the save, and this one does. |
+| A dome direction swing takes its damage from `FUN_801E09F8` -> `FUN_801DD0AC` | falsified (that chain carries a move-power **index**, and the dome's rows are zero) | The chain is real and it is the monster-special damage path, so a dome swing entering it looks like the answer. What travels is an index into the move-power table, and the dome's four direction commands map `0x0C..0x0F` to row `0`, whose power bytes are zero - the chain would deal nothing. The dome resolves its own exchange; see [`minigame-muscle-dome.md`](../subsystems/minigame-muscle-dome.md#the-dd0ac-chain-is-not-a-direction-swings). |
+| `^H` is an exception to the element-badge caret bijection (Cort has no badge letter) | falsified (the map is a zero-exception bijection) | The census that produced the exception was over shipped monster **names**, and no shipped name happens to carry `^H`; absence from the corpus read as absence from the encoding. The escape decoder has no special case: badge index = `letter - 'A'` for the whole `0x8B..=0x92` strip, and element -> caret is the fixed permutation `[4, 3, 0, 2, 1, 5, 6, 7]`. Parser `MonsterRecord::plaque_badge`. |
 | `battle_gimard_tail_fire_a/_b` are frames of a **party** Seru summon | falsified (the enemy Gimard's Tail Fire) | The acting-actor plaque top-left reads `Gimard`, the pill readout is Vahn at 154/180 after `DAMAGE 16`, and the states' loader-B id is `5` (PROT 0900, the move-FX module), not a stager. A party summon draws no label (and no readout while its seats are hidden); its frames are the `*_summon_mid_cast` states. Reading these two as the player-summon reference put the enemy's chrome on the player's cast. |
 | `FUN_801DBF9C` (the `0x29` party trigger) applies the spell's outcome | falsified (it stages the anim stream and the summon sub-route) | No store in it reaches HP, MP or a target; it writes `+0x1E0..+0x1E2` (`9`, `0x12`, `0xFF`) for any id `>= 0x25` and copies an overlay anim-pair list below that. The outcome is the streamed module's - the summon stager's strike for a Seru id. [details](re-settled-threads.md#the-party-cast-trigger-is-a-params-stager) |
 | `FUN_801DC0A0(actor, id)` stages the cast clip | falsified (it is the cast-effect driver) | The summon band calls it with `0x12` every frame of `0x33` / `0x34` while the caster's `+0x1D9` reads `9` (`gimard_summon_start`); the clip stage is the SM's own `+0x1DA` store at `0x29` / `0x2A`. |
@@ -686,6 +693,28 @@ prologues against `jr ra` words - a frameless leaf, an early `jr ra`, or a
 `jr ra` word in a data tail breaks the count. See
 [`cast-module.md`](../subsystems/cast-module.md).
 
+### The summon draw runs 35-64 times a frame
+
+*Falsified by capture; the original was a capture too.*
+
+The reading: during a player Seru-magic summon the battle per-actor draw
+`FUN_80048A08` fires 35-64 times per frame, which made it read as a per-part
+driver walking the summon's mesh groups.
+
+Why it looked right: the figure came from a real exec-breakpoint run, and a
+summon *does* have many mesh groups, so a per-group call rate is exactly what a
+part-driven draw would look like. It is also the number that retired the
+move-VM / `FUN_801F7088` hypothesis, and that conclusion still stands.
+
+Re-measured on the same catalogued state
+(`scripts/pcsx-redux/autorun_enemy_move_render_path.lua`,
+`gimard_burning_attack`, 400 vsyncs) the draw never exceeds **2** per rendered
+frame - Vahn solo against one monster. The same probe reads 6 in a 3-vs-3 and 2
+in a 1-vs-1: one call per **live actor**, not per part. The group walk is
+inside the call. Any budget or scheduling argument built on the larger figure
+is off by more than an order of magnitude; see
+[`effect-vm.md`](../subsystems/effect-vm.md).
+
 ## Audio / sound driver
 
 | Thread | Verdict | Why |
@@ -790,6 +819,74 @@ family - is wrong the same way: it is the retail branch, and `0x37A` is
 [`re-settled-threads.md`](re-settled-threads.md#audio).
 
 ## Title / boot / overlays
+### The title sub-mode word lives at `0x801DD920`, and `0x02` is a screen a player can see
+
+*Falsified by disassembly, with a cold-boot capture agreeing.*
+
+The reading: `FUN_801DD35C`'s init writes sub-mode `0x02`, so `0x02` is the
+cold-boot screen and the word it writes is at `0x801DD920`, the address the
+dump prints on that line.
+
+Why it looked right: `0x02` really is a complete two-row menu (rows at y 107
+and 120, confirm mask `0x44`, advancing to `0x14`), so it is not dead code in
+the "never assembled" sense; and reading a printed line address as a data
+address is exactly what a dump invites.
+
+Both halves are wrong. `0x801DD920` is the **instruction** address of the
+`sw v0,0x204(a2)` that performs the store, with `a2 = 0x801F0000` from a `lui`
+four instructions earlier - the word is `0x801F0204`, which is the same word
+the page's own sub-mode switch is over. And the `0x02` store is overwritten
+with `0x11` whenever the entry word `_DAT_8007BB00` is non-zero, which the boot
+`init.pak` raises unconditionally at `0x801CEB84`; a per-vsync cold-boot poll
+never observes `0x02`. See
+[`re-settled-threads.md`](re-settled-threads.md#a-cold-boot-always-shows-title-sub-mode-0x10).
+
+### The attract sequence can be armed from any title sub-mode
+
+*Falsified by disassembly.*
+
+The attract countdown at `0x801EF16C` is a state-struct field like any other,
+and several arms of the tick touch state-struct words, so "any idle sub-mode
+lets the attract fire" is the natural reading of a global timer.
+
+The arming code is in one arm only. The countdown is decremented and its
+underflow writes `_DAT_8007B83C = 0x1A` inside the extent
+`0x801DDB0C..0x801DDD94`, which is sub-mode `0x10` `AttractIdle` and nothing
+else; every other arm reaches the shared epilogue without touching it. The
+preceding sub-mode `0x11` spends a *different* accumulator
+(`_DAT_8007BAB4`) and hands to `0x10`, which is what makes the two look like
+one timer from a capture.
+
+### There is exactly one master-mode-`2` writer, at `0x801DFC00`
+
+*Falsified by disassembly.*
+
+`0x801DFC00` is in `LaunchGame` (`0x06`), the NEW GAME exit, and a single
+"leave the title into the field" writer is the shape the mode graph suggests.
+
+There are two. `LaunchFade` (`0x16`) writes the same master mode at
+`0x801DFAFC` on the **load** route (`state[-0xEA8] == 1`), and both arms clear
+`_DAT_8007BB00` as they go. A sweep that found the new-game store and stopped
+missed the CONTINUE path entirely - which is the half a save-file boot takes.
+
+### The title slider `state[-0xEB4]` is clamped to `[0, 0x2C]`
+
+*Falsified by disassembly.*
+
+`0x2C` appears as a bound in both of the slider's arms, and a value bounded
+above by `0x2C` with a natural floor of `0` reads as a range.
+
+Neither arm implements that range. The decreasing arm subtracts
+`frame_scalar << 3` and then does `slti v0,v0,0x2c` / `beqz`: if the result is
+**below** `0x2C` it is forced back **up** to `0x2C`
+(`0x801DFC78..0x801DFC98`). The increasing arm adds the same step and forces
+anything at or above `0x2D` back **down** to `0x2C`
+(`0x801DFCA4..0x801DFCC4`). Both arms converge on the single value `0x2C`
+from their own side; there is no `0` floor anywhere, and the seeds the graph
+writes are `0x100` (`0x801DD88C`, `0x801DE094`) and `-0x16` (`0x801DECB8`) -
+both outside the supposed range. The cell is a settling animation parameter,
+not a bounded slider position.
+
 
 ### The title screen is loaded before the mode table is consulted
 
@@ -880,6 +977,7 @@ four `TestEvent` calls and its own `jr ra` at `0x801D0730`. Same cause as the
 | PROT 0968 is a 4 KB module (pointer-table head, 10/11 self-pointers, 2+8 spawn calls) | falsified (its own content is 2600 bytes; the rest is stale buffer) | The entry really is 2 sectors, but only file `0x00..0xA28` is 0968's. The trailing 1496 bytes are 0967's bytes at the *same* file offsets, cut mid-string at the sector boundary, and **nothing in 0968's own window references them** - no `jal`, no `j`, no materialisation. Every structural figure ever quoted for the entry was measured across both modules at once, which is why they never cohered. Full accounting on [`re-settled-threads.md`](re-settled-threads.md#prot-0968---the-cort-battle-stage-overlay). |
 | The literal `0x801F69D8` in `SCUS_942.54` is a cross-image reference naming 0968's loader callsite | falsified (it is the slot-B base constant) | The only literal-word hit outside the shared-base band, and therefore the only one an aliasing argument could not dismiss - which made it read as the last live lead. It is the SCUS global `0x80010390` holding the **slot-B overlay load address**, twin of `0x8001038C` for slot A, read by `FUN_8003EC70` and never written. A reference to a shared load base names the *slot*, not a tenant. Meanwhile the real callsite was never findable that way: the stage-overlay parameter is **computed** (`stage_id + 0x47`), so the constant `0x49` occurs nowhere. |
 | Battle `DAT_8007BD0C == 0xB5` at `0x801E6D04` is a test on the Lapis Wave **spell** id | falsified (it is the **formation monster** id - Cort) | Two id spaces collide on `0xB5`: spell `0xB5` is Lapis Wave, formation `0xB5` is monster-archive 181, Cort. The byte the branch reads is `*(u8 *)0x8007BD0C`, which is the formation id array, and its guard is an HP-reached-zero test on the first enemy actor - a form-transition trigger, not a cast. The wrong reading was self-consistent because Cort is also the caster of Lapis Wave. |
+| The Muscle Dome `INTERVAL` screen is the `(384, 0)` 320x256 still | falsified (it is a live render; nothing at `x = 384` is on screen) | The still is a real 320x256 VRAM page loaded for the dome, and an intermission that shows a fixed picture is the obvious consumer - which is why the `(384, 0)` draw hunt was framed as "find the blit". Reading the live ordering table during an intermission settles it: the frame is `koin1`'s own scene drawn normally, and no primitive in the OT samples a texture page at `x = 384`. The still's consumer is still open, but the intermission is not it. See [`minigame-muscle-dome.md`](../subsystems/minigame-muscle-dome.md#the-interval-screen-is-a-live-render-not-the-still). |
 
 ### Assets named by the entry the over-read window started in
 
@@ -1153,6 +1251,15 @@ gp-relative blind spot. They are the dome's `int.tim` / `int2.tim` stills.
 | Extraction-0874 §2 F-variant pixels are written by a pause-menu-path uploader (and then: are a parked wrap-scroll phase) | falsified twice | Plausible: 6/6 pause captures held the variant; then the 3 words equal row 273's content, reading as a +2-row scroll park. But the whole pause walk issues **zero** image transfers (DMA2 chain-walk + GP0 PIO hook) and plain field saves carry the variant - session-history correlation; and the strip is not shift-invariant while the wrap-scroll installer ops never fire across the s2→s3 flip window - the row-273 equality is frame-content coincidence. The real writer is the town01 opening record's one-shot `4C 60` face-frame stamp (settled - [details](re-settled-threads.md#field--locomotion)). |
 | Field-VM op `0x43` sub-3..6 is a **sound** register ramp: four target values, a `ticks` duration and a `curve` | falsified on all four counts (it is a camera-register *zone* ramp) | [details below](#op-0x43-sub-36-as-a-timed-sound-register-ramp) |
 | Prologue gold grade = per-node `+0x74`/`+0x78` depth-cue crush | falsified (grade is a palette-space collapse; the nodes carry no `IR0`) | Plausible because `FUN_8002735C` really does load per-node DPCS far colour + `IR0`, and the motion/move VMs carry op `0x0C` writers of those fields - but the opening never uses them: a live recomp capture reads node `+0x78` (`IR0`) = **0 on every node at every beat**, and the `opdeene` MAN motion section has no op `0x0C`. The real mechanism is a load-time CLUT/TMD palette collapse `L=max(r,g,b) -> (L, max(L-1,0), L>>1)` ([cutscene.md](../subsystems/cutscene.md#full-scene-sepia-grade-the-gold-prologue-look)); the far-field crush is that law seen through dark authored gouraud. |
+| `FUN_801DD784` is a cinematic **letterbox** | falsified (it is the scene **shutter blackout**) | The tick eases two full-width bars in from the top and bottom of the screen, which is what a letterbox looks like for its first few frames. It does not stop: the bars meet in the middle and hold, and the template it ticks is `0x801F2858`, the same one the field VM installs for a scene-change blackout. A letterbox reading gives the bars a target height they do not have and leaves the middle of the screen drawn. |
+| `0x801F27EC` is the fade family | falsified (it is one rung of the scene floor-height ladder) | The address ticks a small monotone value toward a target, which is the shape of every fade in this overlay, and it sits in the band the fade actors are allocated from. Its destination settles it: the tick writes `0x1F800314 + 0x48 + actor[+0x50] * 2` = `0x1F80035C + rung * 2`, the scene's 16-entry elevation LUT, so what oscillates is a floor height and not a brightness. Installed by field-VM op `0x4C` nibble-9 subs `0..2` via `FUN_801DDE34`; see [`script-vm-menuctrl.md`](../subsystems/script-vm-menuctrl.md#nibble-9-is-the-floor-height-ladder-not-a-fade). |
+| `FUN_801CFF3C` is a second spawner for the bar template `0x801F2858` | falsified (it is `FUN_801DE754` printed `0xE818` low) | Two spawners for one template is a plausible shape - one for the script op, one for a scene-entry default - and the dump really does write `+0x54`/`+0x9E` and the operand triple exactly as the known spawner does. It *is* the known spawner: `0x801DE754 - 0x801CFF3C = 0xE818`, the field overlay's base-offset re-key, and the two dumps match instruction for instruction. The bar template has exactly one spawn site, field-VM op `43 0C`. |
+| `0x801D44CC` is a per-dancer facing script | falsified (it is the step-marker mesh flipbook) | It is called once per dancer per frame and reads the dancer record, so a facing update is the obvious fit. What it actually indexes is the **marker** actor's `+0x50` - the `clip - 6` value the floor pass stamps when it spawns a step marker - and it selects a mesh row from that, i.e. it flips the marker's picture. Dancers are posed elsewhere. See [`minigame-dance.md`](../subsystems/minigame-dance.md#the-sprite-part-emit-dispatch). |
+| `FUN_801D414C` runs on both dance edges and stages `other1` | falsified (one edge, and it stages nothing) | The routine sits between the hall's enter and leave paths and touches the same globals both do, so a shared enter/leave stager reads naturally. It runs on the **exit** edge only, and it is a *restore* - it puts back what entering the hall displaced rather than staging an asset. Nothing in it names `other1`. |
+| `_DAT_8007B880` is the dance pad latch | falsified | The word changes every frame while a player is dancing, which is what a latched pad word does. The judge reads its input from the ordinary per-frame pad edge words; `0x8007B880` is written by the hall's own animation clock and read by nothing that resolves a note. Gating a note on it accepts and rejects the wrong beats. |
+| `0x801D518C` holds the literal `other1`, so the dance hall is `other1` | falsified (it is a BSS **saved-caller** name slot; the venue is `other7`) | The cell really does hold an `otherN` string at the moment the dance overlay is resident, and reading a live cell is usually stronger evidence than a table. But the slot is where the entry path parks *whichever* venue name last passed through it, so it reads `other1` in a state that entered from elsewhere. The dance venue is `other7`, block base `0x4CC`. Lesson: a saved-caller cell is not a constant. |
+| `FUN_80019D50` is a BGR555 cell-grid emitter | falsified (it is the **CLUT-cell HSV cycler**) | It walks a rectangular region of halfwords and rewrites each one, which is exactly a cell-grid emitter's inner loop, and the halfwords really are BGR555. They are palette entries, not pixels: the routine rotates hue/saturation/value over one CLUT cell block and pushes the result with a single `LoadImage` at `0x8001A030`. That one upload is the tell - a grid emitter would emit primitives, not upload a palette. Port `engine-core::clut_cell_fx`; see [`field-ambient-fx.md`](../subsystems/field-ambient-fx.md#the-clut-cell-hsv-cycler-the-pulsating-flesh). |
+| The world-map controller calls `FUN_801D362C` (the move-VM `0x2F` extension dispatcher) directly | falsified (one reference disc-wide, and it is the move VM's own arm) | The world map animates through the same overlay-resident helpers the extension sub-ops wrap, so a direct call from the controller is a short and plausible path. There is exactly one reference to the address on the whole disc - SCUS `0x80023AE0`, inside the move VM's op-`0x2F` arm. Everything the world map gets from that dispatcher, it gets by running a move-VM script. See [`move-vm-overlay-ext.md`](../subsystems/move-vm-overlay-ext.md#one-caller-and-it-is-ported). |
 
 ### Op-0x43 sub-3..6 as a timed sound-register ramp
 
@@ -1471,6 +1578,13 @@ image at its mapped base, and only from there.
 |---|---|---|
 | Retail's op-`0x49` arm spawns a driver actor that **opens the pause menu itself** for the kind-`0x0D` entry context | falsified (row `0x0D` of the dispatch table is `-1`; nothing opens) | The reading explained why the port could not reach `ContextNotice` / `ContextReady` and pointed at a pending-request channel as the fix. But the submode dispatcher indexes a **signed** 14-byte table at `0x801F33A4` with the parked operand's first byte and returns on `-1` (`0x801F1468..0x801F1470`) *before* it writes the driver's state or clears `_DAT_8007B450`. So a `0x0D` park simply stands, and the player's own Start is what enters the menu it gates. The port's own close-tick fallback for that row was the defect: it retired within a few frames and took the context with it. |
 | Actor VM = "the title screen's sprite-walk interpreter", with an ANM-trigger opcode | falsified (it is the menu overlay's window-widget script interpreter) | Two readings fell together. `FUN_801D6628` is resident in PROT 0899 (the menu overlay), and its base materialisation `lui 0x801e / addiu 0x4738` indexes the **window descriptor table** - instruction byte 1 is a window id, not a sprite-actor slot. And no arm of the 13-way dispatch hands off an ANM id (`see ghidra/scripts/funcs/overlay_menu_801d6628.txt`); "trigger animation" was a guess from the sprite-VM framing. Programs are overlay-resident data ([window-script.md](../formats/window-script.md)), so "find the per-scene carrier" was never answerable. |
+| Op `0x36`'s request/acknowledge gate covers subs `0` / `2` / `3` | falsified (sub `3` is ungated, and sub `1` has a *different* gate) | The three subs are one protocol, so one gate over all of them is the tidy reading, and the C renders the arms in a shape that supports it. The instructions disagree per arm: sub `0` and sub `2` halt at PC unless `_DAT_8007BABC == _DAT_8007BAA0` (`0x801E0340`, `0x801E03A8`); sub `1` stores only when the pair is equal **or** the acknowledge cell reads the idle sentinel `-1` (`0x801E0374..0x801E037C`); sub `3` - the teardown `FUN_801D8450` - is ungated and yields the frame rather than falling through. A script that waits on the wrong arm deadlocks. See [`script-vm.md`](../subsystems/script-vm.md#overlay-0897-command--submenu-support-functions). |
+| `_DAT_8007B868` only *skips* the bit-15-set arm of op `0x36` | falsified (it points the two halves in opposite directions) | Reading it as a single "disable" flag matches the first arm you meet: non-zero skips the whole bit-15-set sub-switch and advances the op (`bnez v0,0x801DF898` at `0x801E031C`). On the bit-15-**clear** arm the same word *bypasses* the equality test instead of adding one (`0x801E03E8..0x801E0410`), so it opens a path it closes elsewhere. Retail boots the word `0`, which is why the asymmetry never shows in a capture. |
+| The shop buy-row layout is untraced, and `build_price_gated_rows` is the port of it | falsified (the layout is pinned, and the port was a different routine) | The engine had a row builder that dimmed unaffordable rows, which is a real retail rule, so it read as the port of the buy list. Retail's builder (case `0x0B`) does more: it splits the walked rows at `record_count - 3`, stages the rows **below** the split into `0x801C6220` tagged `0x3000`, writes the last three straight out tagged `0xA000` (ink 5), and appends the staged group afterwards - so the on-screen order is not the record order and the top strip is highlighted. The dim rule is `purse < price` **or** `held >= 99`. See [`shop.md`](../subsystems/shop.md#the-last-rows-come-first). |
+| Menu sub-screen `0x02` is the save entry | falsified (`0x02` is the dev character editor; save is `0x19`) | The entry-context byte was read by position rather than by key, and `0x02` is what the sentinel row produces. The byte is keyed on the **record kind**: `0x00` shop -> `0x1A`, `0x01` save -> `0x19`, `0x07` casino -> `0x20`, `0x0D` -> `0x04`, and the sentinel `1` -> `0x02`, the debug character-parameter editor. See [`save-screen.md`](../subsystems/save-screen.md#debug-character-parameter-editor-fun_801d6e18). |
+| The inline `0x1F` dialogue segment carries a geometry header | falsified (the `0x1F` is a MES line-start marker and nothing follows it but glyphs) | The port rendered only a segment's first line and the box geometry was unexplained, so an unparsed header in front of the text is the obvious missing piece. There is no header: the box's rect, pens and advance hand belong to the pager (`FUN_801D84D0`, row capacity `_DAT_801F2740 = 3`), and consecutive `0x1F` lines pack into one window. See [`field-menu.md`](../subsystems/field-menu.md#dialog-reading-box-fun_801d84d0). |
+| PROT 0898 never calls `FUN_8002C69C`, so the post-battle report windows are not the nine-slice | falsified (the caller is in SCUS, one hop away) | A `jal` sweep of the battle overlay finds nothing, which is a real absence - the overlay does not call it. It does not have to: `FUN_80031D00` (SCUS) drives the window emitter with `jal 0x800323E4` off the **retained widget list**, every frame a battle is up, so the report chrome is the same nine-slice as every other window. A sweep scoped to one image cannot answer a question about a shared driver. See [`level-up.md`](../subsystems/level-up.md#fun_8002c69c-does-run-in-battle---the-jal-sweep-was-blind-to-its-caller). |
+| The sparring prompt is an undecoded Yes/No box | falsified (it is the ordinary 4-option picker) | The prompt reads as binary on screen, so a dedicated two-way confirm is the natural guess and a bespoke undecoded widget the natural excuse. The script emits `3E FF <row>` - the standard option-picker sequence the rest of the field VM uses - so there is nothing new to decode, only the row indices to read. Its install coordinate is on [`encounter.md`](../formats/encounter.md). |
 
 ### The save screen's block grid has a sixteenth Return cell
 
@@ -1546,6 +1660,13 @@ correct count with a wrong story attached, and the story is what directed effort
 |---|---|---|
 | `arena_init` (PROT 0977) own content is about `0x4800` bytes | The file the old entry size produced was that long and disassembled cleanly to the end | The entry is `0x3800`; the extra `0x1000` is PROT 0978's two sectors, read through the superseded over-reading entry size |
 | The battle overlay (PROT 0898) is `0x28800` of `0x29800` bytes, with a diverging `0x1000` `.bss` tail | A RAM capture matched the first `0x28800` and the tail differed, which is what `.bss` does | The entry is `0x28800`; the diverging tail is PROT 0899's first two sectors |
+| `0x801D2784` is PROT 0979's battle-intro transition tail | falsified (the bytes are PROT 0976, Baka Fighter) | The dump is labelled 0979 and 0979 is the battle-intro overlay, so the tail reads as its own. PROT 0979 and 0976 are byte-identical from file `0x3C68` to the end of the smaller image, so no attribution sweep can separate them - the **operands** can: the routine reads `0x801DBED8..0x801DBEF0` and calls `0x801D6710`, all past 0979's own `0x4000` and inside 0976's `0xE000`, bracketed by 0976's documented emitters `801D6480` / `801D6770`. Slot-A residue rule: a byte range shared by two images belongs to the one whose addresses it names. |
+| `0x801DDA90` and `0x801DDB44` are two slices of one loop, neither a function entry | falsified for the first of the two | Both look like fragments - no prologue, and each ends in a `j` to a shared tail - so "one loop, printed twice" is the economical reading, and it is right about `801DDB44` (it is `0x24` into slot 4's arm, at the `j 0x801DDBC8` and its delay slot). `801DDA90` is slot **0** of the eight-entry `jr` table at `0x801CEC40` that `FUN_801DD9D4` dispatches through, and that table word is its only reference on the disc - which is what makes it an entry. A frameless routine reached only through a table is still a routine. |
+| `FUN_801E59B0` gives its two trig tables two different angle indices | falsified (one index, both tables; the components are swapped) | The C renders two subscripted loads with different-looking expressions, and a rotate that samples sin at `angle` and cos at `angle + 0x400` is the textbook shape - so `vec[0] * t1[angle] + vec[1] * t2[(angle + 0x400) & 0xFFF]` reads as correct. The instruction stream computes `i = (angle + 0x400) & 0xFFF` once at `0x801E59B0..0x801E59BC` and reuses it at `0x801E59C8` and `0x801E59E4`: the body is `(vec[1] * t_a[i] + vec[0] * t_b[i]) >> 12`, with the components the other way round. `0x8007B81C` and `0x8007B7F8` are table **pointers** the routine `lw`s, not the tables. |
+| The PROT 0898 entry tables resolve the slot-B attribution residue | falsified (they close 6 extents / 48 bytes, and name the wrong module for 10 of 15) | The three link-time tables are the right instrument for *reachability*, and having just used them to map the whole band it is natural to expect them to close the byte residue too. Measured, they do not: the residue is a **byte**-denominated ambiguity between images that share bytes, and a table that names an entry says nothing about which image the bytes at that entry belong to. Ten of fifteen table-derived attributions named a different module than the bytes do. |
+| A `disc-coverage --check` floor regression means coverage was lost | falsified (it is attribution lag) | A ratcheted floor going down is the definition of a regression for every other gate in the tree, so the reading transfers by habit. This gate's denominator is the **disc**, and its numerator is what the attributed dump corpus claims: adding a new, not-yet-attributed dump raises the denominator before it raises the numerator, so the percentage falls while the corpus strictly grew. Re-attribute, then re-read the floor. It is not a worktree artifact and re-running in the main checkout does not clear it. |
+| `801D84C0` is wired because `panel_anchors` is called | falsified (the bucket is a property of the anchor, not of the address) | The address appears in a tag on a module whose exported function is called from a live host, so "reachable" reads as settled. The `// PORT:` tag that carries `801D84C0` sits on `panel_labels`, a different item, and the live-audit walks from the **tagged item**. Reading "is this address live" off a neighbouring symbol's reachability is how an inert port keeps a green audit. |
+| The world-map overlay's per-prim handler table is based at `0x801F8988` | falsified (`FUN_80043390` loads `0x801F8968`) | The first non-zero word of the table is at `0x801F8988`, and naming a table by its first entry is the natural instinct when the eight words before it are zero. The dispatcher's own pair says otherwise: `lui s4,0x8020` / `addiu s4,s4,-0x7698` at `0x800435F4..0x800435F8` materialises `0x801F8968`, and it adds the same `(flags >> 1) * 4` index it would add to the SCUS table `0x8007657C` - which has the identical shape, words `0..7` zero and `8..19` populated. Re-basing by the zero prefix shifts every kind by eight. |
 
 Both notes lived in `crates/asset/data/static-overlays.toml`, whose rows predate
 the entry-size correction. The general law is on

@@ -298,6 +298,42 @@ printed `0x801FD4C0` re-keys to 0898 VA `0x801E6CD8`, interior of that body.
 The field image's `FUN_801E6B34`, the other occupant of the aliased VA, is
 not what the dump holds.
 
+### `overlay_dance_*` above `0x801D6818` is the fishing overlay
+
+Both minigame overlays base at slot A `0x801CE818`, and PROT 0980's own
+content is `0x8000` bytes - so the dance image ends at `0x801D6818` and every
+printed address above it is over-read into whatever PROT 0972 (`0xB000`, the
+fishing overlay) has at the same file offset. Five prints are affected:
+
+| Printed under `overlay_dance_*` | File offset | Bytes are |
+|---|---:|---|
+| `0x801D73B8` | `0x8BA0` | `overlay_fishing_0972.bin` - byte-checked instruction for instruction |
+| `0x801D7D44` | `0x952C` | 0972 |
+| `0x801D7DD8` | `0x95C0` | 0972 |
+| `DAT_801D8610` | `0x9DF8` | 0972 |
+| `DAT_801D8778` | `0x9F60` | 0972 |
+
+The over-read is not visible in the dump: the dance overlay is small enough
+that the previously-resident fishing overlay is still live above it in RAM, so
+a capture-derived dump reads as one continuous image.
+
+### One VA, two real routines: `0x801DDA90` and `0x801D0ED8`
+
+Not every alias is a phantom. Two addresses host **real, referenced** entries in
+two different slot-A images at once, and both readings are right about their own
+image:
+
+| VA | In PROT 0897 (field) | In PROT 0899 (menu / title) |
+|---|---|---|
+| `0x801DDA90` | Slot 0 of the eight-entry screen-frame corner-writer table at `0x801CEC40`; writes four `POLY_F4` corner pairs at `a1[+0x08..+0x16]` and `j`s `0x801DDBC8`. | Slot `0x11` of the title tick's jump table at `0x801CF244` - the `AttractDelay` arm, which drains `_DAT_8007BAB4` and hands to sub-mode `0x10`. |
+
+| VA | In the arena-init overlay | In PROT 0898 (battle) |
+|---|---|---|
+| `0x801D0ED8` | The dome contest-start restore **entry** `FUN_801D0ED8` - one-shot per contest (`jal 0x801CEBF0` only while `_DAT_8007BAC0 == 0`), restoring slot-0 HP / MP / SP from `+0x104` / `+0x108` / `+0x10C` ([`minigames-debug.md`](functions/minigames-debug.md#801d0ed8)). | The **call site** `jal 0x801DA780` in the battle-flow SM, which [`battle-formulas.md`](../subsystems/battle-formulas.md#initiative-key-seeding-fun_801da780) cites for initiative-key seeding. |
+
+When two pages cite the same address for different work, check the image before
+assuming one of them is wrong.
+
 ## See also
 
 - [`tooling/dump-corpus-integrity.md`](../tooling/dump-corpus-integrity.md) - the

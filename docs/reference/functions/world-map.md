@@ -39,14 +39,31 @@ The render chain that gets the POLY_FT4 batch from the per-frame SCUS dispatch i
 | `FUN_801D1344` (**world_map overlay**, 1332 bytes) | Gate-arm caller. Function-pointer-only entry (Ghidra `incoming=0`); reads three globals at `_DAT_8007BCD0/_D4/_D8` and forwards them to `FUN_801D8258` at PC `0x801D1470: jal 0x801D8258`. **Distinct from `FUN_801D1344` in the dialog overlay** (the actor frame handler with sub-helpers at `FUN_801CF754` / `FUN_801D0B90` / `FUN_801D1BA0` / `FUN_801D9D30` / `FUN_801DB510` / `FUN_801DE234`, see [Dialog-overlay actor-frame helpers](renderer.md#dialog-overlay-actor-frame-helpers)) - same RAM address, different code per overlay. |
 | `0x801C2B2C` (phantom VA) | **Not a second copy of anything.** `FUN_801D1344` printed `0xE818` low: all 296 instructions of `overlay_0897_xxx_dat_801c2b2c.txt` match by VA `+0xE818` against the base-correct `overlay_cutscene_dialogue_801d1344.txt` / `overlay_world_map_801d1344.txt`, and its `jal 0x801D8258` at printed PC `0x801C2C58` is the same call `FUN_801D1344` makes at `0x801D1470`. There is no "relocation copy" - PSX overlays are not relocated. |
 | `0x801C9688` (phantom VA) | **Not a field-mode copy of the horizon emitter.** `FUN_801D7EA0` printed `0xE818` low: all 208 instructions match by VA `+0xE818` against `overlay_world_map_801d7ea0.txt`, operands included. "Same 224-band loop, same four packets per band, same trig-warped extents" is what one function looks like when it is compared with itself. See [`overlay-va-aliases.md`](../overlay-va-aliases.md) and `FUN_801D7EA0` above. |
-| `801F7644`..`801F8690` (PROT 0901) | **World-map per-prim draw leaves**, eight of them - the band `0x801F7644..0x801F8968`, split leaf by leaf below. Frameless, no `jr ra`; each tail-jumps into the SCUS emitter `0x80043580`. Selected through the twelve-word table at `0x801F8988`. |
+| `801F7644`..`801F8690` (PROT 0901) | **World-map per-prim draw leaves**, eight of them - the band `0x801F7644..0x801F8968`, split leaf by leaf below. Frameless, no `jr ra`; each tail-jumps into the SCUS emitter `0x80043580`. Selected through the overlay-mode handler table **based at `0x801F8968`** (slots `12..19`). |
 | `801F89B8` (PROT 0901, 1284 bytes) | The band's ninth routine, and a different shape: same frameless style, four local `j`s to its own tail at `0x801F8E54`, returning through the `jr ra` at `0x801F8EB4`. `overlay_world_map_render_0901_801f89b8.txt`. |
-| `0x801F8988` (PROT 0901) | **Overlay-mode dispatch table** for the leaves: four SCUS emitters (`0x8004409C`, `0x8004423C`, `0x80044434`, `0x800445B0`) then the eight leaf VAs in the order `7644`, `7838`, `7F78`, `8198`, `7AA4`, `7CCC`, `8454`, `8690`. Eight zero words pad it from `0x801F8968`. |
+| `0x801F8968` (PROT 0901) | **Overlay-mode handler table**, twenty words indexed by the same per-prim kind the SCUS table uses - [details ↓](#the-overlay-mode-handler-table-is-based-at-0x801f8968). Slots `0..7` are zero, `8..11` are the SCUS emitters `0x8004409C` / `0x8004423C` / `0x80044434` / `0x800445B0`, and `12..19` are the eight leaves in the order `7644`, `7838`, `7F78`, `8198`, `7AA4`, `7CCC`, `8454`, `8690`. |
 | `80044798` (SCUS) | **Cluster-A primitive off-screen reject test.** Shared helper `jal`'d by the per-prim handlers in the `0x80043390` dispatcher band after RTPT projection. Reads the three projected screen-XY GTE FIFO regs `SXY0/SXY1/SXY2` (cop2 `0x6000/0x6800/0x7000`, sign-extended `>>16`) plus a fourth coord pre-loaded in `s3`; returns `0` in `s3` only when all four X/Y lie inside the PSX `[0,0xF0)` / `[0,0x140)` (240x320) framebuffer window, else `1`. Callers (`FUN_800445B0`, `FUN_80044C14`, …) skip the GP0 emit when it returns nonzero. (Ghidra's decompiled C drops the `s3` return - read the disassembly.) `see ghidra/scripts/funcs/80044798.txt`. |
 | `80044C14` (SCUS) | **Cluster-A kind-16 `POLY_G4` (gouraud quad) handler** (bank-1/2 variant; `0x80043390` band, cmd stride `0x14`, GP0 stride `0x20` = 7-word packet). Per command word reads two packed vertex indices (low `& 0x7FF8`, high `>>0x10`) into the `param_3` vertex pool, runs RTPT (cop2 `0x280030`), backface-tests SZ vs `in_t2-0x2D8`, derives a fog/depth value, `jal`s `FUN_80044798` for the off-screen reject, then emits the GP0 packet at the pool cursor and advances it `0x20`; the tail dispatches the next command through the shared `0x80043614` handler table. See [`formats/world-map-overlay.md`](../../formats/world-map-overlay.md) kind-16 row. `see ghidra/scripts/funcs/80044c14.txt`. |
 | `80045BB4` (SCUS) | **Cluster-A kind-19 quad handler, subtractive bank (bank 3)** - the last arm of the per-prim dispatch table and the only one that had never been dumped. Frameless, 1272 bytes: it opens by materialising four packed `(u, v)` texture-page words into the `t2`-relative scratch window at `-0x2B4..-0x2A8`, runs the same RTPT / backface / `jal FUN_80044798` reject as its sibling banks, and ends in `j 0x80045E54` rather than `jr ra` - which is why the gap census reads its middle as two interior runs. Its address is the twelfth and last word of the **bank-3 handler table at `0x8007668C`** (kinds 8..19), whose other eleven slots are `0x8004409C`..`0x800453BC`; that table is what makes it reachable, since no `jal` names it. `see ghidra/scripts/funcs/80045bb4.txt`. |
 
 ## Function details
+
+### The overlay-mode handler table is based at `0x801F8968`
+
+`FUN_80043390` forms the table pointer with `lui s4,0x8020` /
+`addiu s4,s4,-0x7698` at `0x800435F4..0x800435F8` - that is `0x801F8968`, and it
+adds the *same* index it would have added to the SCUS table: `s5 = (s7 >> 0x11)
+<< 2`, i.e. the group header's `flags >> 1` word index times four. The SCUS row
+`0x8007657C` has the identical shape - words `0..7` zero, `8..11` the four
+shared emitters, `12..19` the per-bank leaves - so a kind-12 prim reads word 12
+of whichever base is selected and both tables answer.
+
+Naming the first **non-zero** word (`0x801F8988`) as "the table" therefore
+re-bases the index by eight and contradicts the instruction that loads it. The
+only real difference between the two paths is the alpha-bank offset: the SCUS
+arm adds `s2` (`lw s2,-0x2EC(t2)`) to the base at `0x800435E4` and the overlay
+arm does not, which is why the overlay variant decodes as one row of twenty and
+the SCUS variant as twenty slots per alpha bank.
 
 ### The PROT 0901 draw-leaf band, split
 
