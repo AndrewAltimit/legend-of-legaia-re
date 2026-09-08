@@ -1369,7 +1369,20 @@ is regression-tested at the `World` level
 
 ## What's left
 
-The byte-level layouts of `.MAP / .PCH / .spk / .dpk / .pac` are still TBD. The dispatch chain *into* them is fully traced; the next move is to read the body of `FUN_8001FA88` for the `.dpk` byte layout (specifically the field accesses on `_DAT_8007B8D0` after the path-based opener returns - `_DAT_8007B8D0 + 2` is read as a `ushort` and used as a divisor, almost certainly a record count).
+The byte-level layouts of `.MAP / .PCH / .spk / .dpk / .pac` are still TBD, and
+the dispatch chain *into* them is fully traced
+([`sound-driver.md`](../formats/sound-driver.md)).
+
+What is **no longer** open is the `FUN_8001FA88` read this section used to name
+as the next move. The body is decoded, and its buffer `_DAT_8007B8D0` does not
+hold a `.dpk` at all - it holds `bse.dat`, the battle SFX descriptor bank
+([`bse-dat.md`](../formats/bse-dat.md)). The `u16` at `+2` is not a divisor and
+not a record count: the tail rounds it toward zero to an even value and adds it
+to the base as a **byte offset**, `gp[0x678] = base + 2 * (n / 2)`
+(`0x8001FB9C..0x8001FBC0`; the `sll 16` / `sra 16` pair makes `n` signed, and
+the `srl 31` / `addu` / `sra 1` / `sll 1` run is the truncating `n/2*2` idiom,
+which is *not* the same as `n & ~1` for a negative `n`). `see
+ghidra/scripts/funcs/8001fa88.txt`.
 
 Eventual home: a `crates/sound` companion to `crates/vab`.
 

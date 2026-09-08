@@ -329,10 +329,22 @@ field-interact dialogue-accept: a field-interact op (`0x3E`, `op0 < 100`) on the
 sparring carrier's placement opens its inline dialogue and arms the engage, and
 accepting the prompt (the dialog-advance dismiss, `0x4C` n5 sub-4) engages it -
 so the field-VM bytecode drives the fight, not a manual API. (`engage_field_carrier`
-remains the direct entry point the auto-arm and tests call.) Because the
-sparring dialogue's Yes/No box-selection logic is still undecoded, the engine
-treats the accept as the dialog dismiss; the tutorial fight is forced, so there
-is no decline path to gate. The formation *index* (`4`) is still a pinned
+remains the direct entry point the auto-arm and tests call.)
+
+**The sparring prompt is not a Yes/No box, and its branch is decoded.** It is
+the ordinary MES-embedded **4-option picker** every talk menu in the game uses
+(`legaia_mes::scan_pickers` / `Picker::jump_target`; the runner is
+[`script-vm.md` § option-choice effects](../subsystems/script-vm.md#the-interaction-cursor-one-record-two-consecutive-scripts)),
+and the fight option is the one whose branch installs a scripted battle - the
+two-byte field-VM prefix `3E FF` followed by the formation row, `3E FF 04`
+here (`garmel`'s Zeto is `3E FF 09`, `rikuroa`'s Caruban `3E FF 11`). So there
+**is** a decline path: picking any of the other three runs that option's talk
+reply and no fight. The engine gates on it rather than on the dialog dismiss -
+`spar_menu_of` scans each option's branch target for the install prefix and
+`World::carrier_menu` engages only when the cursor sits on that option
+(`world/types.rs`, `world/field_carriers.rs`). Keying on the disc op rather
+than an English label is what makes it hold under the PAL discs and translation
+packs. The formation *index* (`4`) is still a pinned
 constant - the interaction record selects its formation by index, not via an
 inline `[count][ids]` literal - but which actor is the carrier, and where it
 stands, now come from the scene data.
