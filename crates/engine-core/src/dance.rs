@@ -417,6 +417,15 @@ pub struct DanceGame {
     /// is a separate actor family - the dancer is a 3D body the clip driver
     /// animates, the part is a 2D sprite in the `<< 3` screen space.
     parts: crate::minigame_actor::MinigameActorPool,
+    /// The overlay's step-marker flipbook script (`0x801D44CC`), when the run
+    /// was started from a real overlay image.
+    marker_script: legaia_engine_vm::dance_marker::MarkerScript,
+    /// One flipbook cursor per marker class (clip `6..=9`). Retail runs one
+    /// actor per drawn marker **cell**; every cell of a class reads the same
+    /// row from the same cursor, so the engine keeps the four cursors rather
+    /// than one per cell and a marker draw asks its class.
+    markers: [legaia_engine_vm::dance_marker::MarkerActor;
+        legaia_engine_vm::dance_marker::MARKER_SCRIPT_ROWS],
 }
 
 impl DanceGame {
@@ -457,6 +466,8 @@ impl DanceGame {
             kinds: Vec::new(),
             actors: crate::minigame_actor::MinigameActorPool::new(),
             parts: crate::minigame_actor::MinigameActorPool::new(),
+            marker_script: Default::default(),
+            markers: Default::default(),
         };
         // A chart-only run still spawns its floor - the actors just stand at
         // the origin and bind no clip, because both of those come off the
@@ -525,6 +536,14 @@ impl DanceGame {
         game.mode = mode;
         game.widgets = dance_widgets_with_abr(overlay);
         game.kinds = cast.map(|c| c.kinds).unwrap_or_default();
+        game.marker_script = legaia_engine_vm::dance_marker::MarkerScript::from_overlay(
+            overlay,
+            legaia_asset::dance_chart::DANCE_OVERLAY_BASE_VA,
+        )
+        .unwrap_or_default();
+        for (class, m) in game.markers.iter_mut().enumerate() {
+            m.class = class as u16;
+        }
         game.spawn_dancer_actors(&spawns);
         Some(game)
     }
@@ -549,6 +568,45 @@ impl DanceGame {
         }
         self.parts.clear();
         self.sync_dancer_actors();
+    }
+
+    /// Advance the four step-marker flipbooks one frame.
+    ///
+    /// Retail runs one `0x801D0640` actor per **drawn marker cell** on the
+    /// floor, all of a class reading the same script row; the engine keeps
+    /// one cursor per class because every cell of a class is on the same
+    /// step at the same time - the marker's class is its only per-actor
+    /// state (`+0x50`) and the pass that spawns it stamps nothing else the
+    /// tick reads.
+    ///
+    /// The clip-selector gate (`+0x5C > 0` or `+0x10 & 0x1000`) is reported
+    /// by the kernel and left alone here: no host draws the floor's marker
+    /// meshes yet, so there is no clip player to hand the actor to.
+    ///
+    /// REF: FUN_801D0640 (kernel `legaia_engine_vm::dance_marker::step_marker`),
+    /// FUN_801D2A10 (the floor pass that spawns the actors)
+    fn advance_step_markers(&mut self, frame_delta: u32) {
+        let delta = frame_delta.min(u32::from(u8::MAX)) as u8;
+        let bias = legaia_asset::field_objects::FIELD_ACTOR_PACK_BIAS as i16;
+        for m in self.markers.iter_mut() {
+            legaia_engine_vm::dance_marker::step_marker(m, &self.marker_script, delta, bias, 0, 0);
+        }
+    }
+
+    /// The scene-pool mesh index marker class `class` (clip `6 + class`) is
+    /// showing this frame, once its flipbook has run once.
+    ///
+    /// This is what a floor renderer draws: the value is already biased by
+    /// the field actor pack base (`_DAT_8007B6F8`), so it indexes the scene
+    /// mesh pool directly.
+    pub fn step_marker_mesh(&self, class: usize) -> Option<i16> {
+        self.markers.get(class).and_then(|m| m.mesh)
+    }
+
+    /// How many flipbook steps marker class `class` carries, `0` for a run
+    /// started without an overlay image.
+    pub fn step_marker_steps(&self, class: usize) -> usize {
+        self.marker_script.steps(class)
     }
 
     /// Spawn one sprite part, the shape `FUN_801d3fd0` builds: the spec's
@@ -1027,6 +1085,7 @@ impl DanceGame {
     // PORT: FUN_801cf470 (beat clock + song-end test, states 10..12)
     // PORT: FUN_801d1358 (per-dancer handler: latch decay, spin, chart auto-feed)
     pub fn advance(&mut self, frame_delta: u32) {
+        self.advance_step_markers(frame_delta);
         let step = frame_delta * PHASE_PER_DELTA;
         self.phase = (self.phase + step) % BEAT_PHASE_WRAP;
         // The song timer saturates at the length limit (the retail clock keeps

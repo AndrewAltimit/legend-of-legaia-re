@@ -215,6 +215,18 @@ Per cell, both passes: read the cell word, take its tile record, require the rec
 
 `FUN_801d2a10`'s two extras are the ramp and the marker template. Before the walk it writes the 16-entry ramp `ramp[i] = i * 0x20` into scratchpad at `0x1f80035c` - the *same* table `FUN_801d6028` and both floor passes later index by the terrain nibble, so the "per-column Y-offset table" reading of it was wrong: it is the terrain height ladder. Per cell it then calls `FUN_801d3ec0` for a step marker and turns its `rec[2] + 1` into a template choice: clip indices `6 ..= 9` take the marker template with `clip - 6` stamped into the spawned actor's `+0x50`, anything else non-zero takes the plain floor template, and `0` skips the cell.
 
+Each spawned **marker** actor then runs its own per-frame tick,
+`FUN_801d0640`, which is a mesh flipbook rather than a step read: it counts
+`+0x54` down by the frame delta and, on expiry, stages the next `[mesh,
+duration]` pair from `0x801D44CC + class * 0x80` through the set-model
+primitive `FUN_80024E08` (biased by the field actor pack base
+`_DAT_8007B6F8`). Four `0x80`-byte rows, 25 pairs each, `[-1, -1]`-terminated,
+and the four rows are the same loop at four phase offsets - so the four marker
+clips flip out of step with each other. Port
+`legaia_engine_vm::dance_marker::step_marker`, driven by `DanceGame::advance`;
+the full read is in
+[`minigames-debug.md`](../reference/functions/minigames-debug.md#801d0640-is-a-mesh-flipbook-on-the-marker-tiles).
+
 The step marker is **not a marker-specific record**. The call is
 `FUN_801d3ec0(1, x, z)`, so the sub-table it reads is kind **1** of the `.MAP`
 region block - the same 4-byte `[tile_x, tile_z, record, gate]` tile-trigger

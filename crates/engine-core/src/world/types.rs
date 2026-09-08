@@ -106,6 +106,35 @@ impl FieldLedgeHop {
     }
 }
 
+/// One live eased-move record - the engine's seat for a retail
+/// `0x801F2840` pool actor, which is a clock plus a back-link to the actor
+/// it drives.
+///
+/// The kernel is [`legaia_engine_vm::field_actor_timers::EasedMove`]
+/// (`FUN_801DD4C4`); what the engine adds is retail's `+0x90` back-link,
+/// resolved at spawn to whichever of the two things the field host can
+/// address: the player's pool slot, or an NPC placement in
+/// `World::field_npc_positions`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FieldEasedMove {
+    /// The `+0x90` target.
+    pub target: EasedMoveTarget,
+    /// `+0x10` of that target, as read at spawn - only the
+    /// `0x2000_0000` inverted-Y bit is consulted.
+    pub target_flags: u32,
+    /// The clock + endpoint triples.
+    pub ease: legaia_engine_vm::field_actor_timers::EasedMove,
+}
+
+/// Which actor an eased move writes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EasedMoveTarget {
+    /// The party leader's pool slot (`World::player_actor_slot`).
+    Player,
+    /// A scene NPC placement, keyed the way `World::field_npc_positions` is.
+    Placement(u8),
+}
+
 /// Render-agnostic snapshot of one live effect-pool master slot, produced by
 /// [`World::active_effect_markers`] - one entry per effect (effect origin +
 /// age). [`World::active_effect_sprites`] is the richer per-child billboard

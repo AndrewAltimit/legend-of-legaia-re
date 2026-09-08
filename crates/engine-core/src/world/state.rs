@@ -1274,6 +1274,27 @@ pub struct World {
     /// [`crate::camera::Camera::tick`].
     pub camera_registers: crate::register_ramp::CameraRegisterFile,
 
+    /// The live cinematic bar emitter (field-VM op `0x43` sub-`0xC`, retail
+    /// template `0x801F2858` / tick `FUN_801DD784`). One at a time, because
+    /// its spawner is the one op that allocates it and its envelope retires
+    /// itself; [`World::tick_field_timer_actors`] steps it and
+    /// [`Self::cinematic_bar`] is what the two hosts draw from.
+    pub cinematic_bars: Option<legaia_engine_vm::field_actor_timers::LetterboxBars>,
+
+    /// This frame's bar height in scanlines, republished every tick so a
+    /// renderer reads a value rather than re-stepping the envelope.
+    pub cinematic_bar: i16,
+
+    /// Live eased-move records (field-VM op `0x43` sub-9 with a non-zero
+    /// tick count, retail template `0x801F2840` / tick `FUN_801DD4C4`), each
+    /// paired with the actor whose position triple it writes.
+    pub eased_moves: Vec<crate::world::FieldEasedMove>,
+
+    /// Live floor-height-ladder oscillators (field-VM op `0x4C` nibble-9
+    /// sub-`0..2`, retail template `0x801F27EC` / tick `FUN_801DA930`). Each
+    /// drives one rung of [`Self::field_floor_height_lut`].
+    pub floor_tier_bobs: Vec<legaia_engine_vm::field_actor_timers::FloorTierBob>,
+
     /// Noa dance (rhythm) minigame state. `Some` while `mode ==
     /// SceneMode::Dance`; the beat clock + hit judge run each tick. See
     /// [`crate::dance::DanceGame`] and [`World::enter_dance`].
@@ -2989,6 +3010,10 @@ impl World {
             screen_fx: Default::default(),
             screen_fx_frame: Default::default(),
             register_ramps: Vec::new(),
+            cinematic_bars: None,
+            cinematic_bar: 0,
+            eased_moves: Vec::new(),
+            floor_tier_bobs: Vec::new(),
             camera_registers: Default::default(),
             dance: None,
             dance_return_mode: SceneMode::Field,
@@ -3351,6 +3376,14 @@ impl World {
         // by `FUN_801DBE9C`. Both happen on scene entry.
         self.register_ramps.clear();
         self.camera_registers = Default::default();
+        // The three frame-delta timer templates are scene content too: the
+        // MAN loader's retire sweep drops every pool actor, and a bar
+        // envelope or a floor-rung bob left running across a scene change
+        // would keep writing into the new scene's ladder.
+        self.cinematic_bars = None;
+        self.cinematic_bar = 0;
+        self.eased_moves.clear();
+        self.floor_tier_bobs.clear();
         self.prologue_naming_pending = false;
         self.prologue_naming_armed = false;
         self.entering_town01_opening = false;

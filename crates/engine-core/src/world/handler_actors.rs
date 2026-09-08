@@ -73,7 +73,8 @@ impl World {
     /// entirely inert. Returns how many slots it marked.
     ///
     /// Live: [`Self::man_load_actor_reset`], and the field VM's `4C 9F` /
-    /// `4C 87` fade-cancel ops through [`Self::cancel_scripted_fades`].
+    /// `4C 87` ladder-oscillator retire ops through
+    /// [`Self::cancel_scripted_fades`].
     pub fn retire_actors_by_handler(&mut self, handler: ActorHandler) -> usize {
         let mut n = 0;
         for a in self.actors.iter_mut() {
@@ -85,16 +86,21 @@ impl World {
         n
     }
 
-    /// Cancel every running scripted fade - the field VM's `4C 9F` / `4C 87`
-    /// ops, and the first of the MAN loader's two inlined sweeps.
+    /// Retire every pool actor running `LAB_801DA930` - the field VM's
+    /// `4C 9F` / `4C 87` ops, and the first of the MAN loader's two inlined
+    /// sweeps.
     ///
     /// REF: FUN_8003CF40 against `LAB_801DA930`
     ///
-    /// Named for what it does rather than for what those ops were called:
-    /// `LAB_801DA930` is the handler on spawn descriptor `0x801F27EC`, the one
-    /// the fade spawner `FUN_801DDE34` allocates from, so retiring it kills the
-    /// fade. Nothing is *registered* anywhere - `FUN_8003CF40` has no return
-    /// value and writes only the flag word.
+    /// `LAB_801DA930` is the handler on spawn descriptor `0x801F27EC`, and
+    /// what that tick drives is **one rung of the scene floor-height ladder**
+    /// at `0x1F80035C`, not a fade - see
+    /// [`legaia_engine_vm::field_actor_timers::FloorTierBob`]. The engine keeps
+    /// those records off the pool, so the callers that mean the retire
+    /// (`4C 9F`, [`Self::man_load_actor_reset`]) clear
+    /// [`crate::world::World::floor_tier_bobs`] alongside this sweep. The name
+    /// is kept for its callers' sake; nothing is *registered* anywhere -
+    /// `FUN_8003CF40` has no return value and writes only the flag word.
     pub fn cancel_scripted_fades(&mut self) -> usize {
         self.retire_actors_by_handler(ActorHandler::FadeFamily)
     }
@@ -282,6 +288,17 @@ impl World {
         for handler in MAN_LOAD_RETIRED_HANDLERS {
             self.retire_actors_by_handler(handler);
         }
+        // The first of those two sweeps is `FUN_8003CF40(_DAT_8007C34C,
+        // LAB_801DA930)` - the **floor-height-ladder** oscillator's handler.
+        // The engine keeps those records off the pool (see
+        // `World::floor_tier_bobs`), so the sweep has to reach them here or a
+        // rung left oscillating would keep writing into the next scene's
+        // ladder. Its two siblings on the same list go with it: a bar
+        // envelope and an eased move are both scene content.
+        self.floor_tier_bobs.clear();
+        self.cinematic_bars = None;
+        self.cinematic_bar = 0;
+        self.eased_moves.clear();
         let present = self
             .find_actor_by_handler(ActorHandler::SubmodeDriver)
             .is_some();

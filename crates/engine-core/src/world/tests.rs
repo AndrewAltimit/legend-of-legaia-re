@@ -264,6 +264,7 @@ mod field_grid;
 mod field_interaction;
 mod field_npc_motion;
 mod field_records;
+mod field_timer_actors;
 mod flash_limiter;
 mod game_over_hold;
 mod inline_dialogue;

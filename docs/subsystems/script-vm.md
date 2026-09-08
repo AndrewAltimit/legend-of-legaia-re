@@ -647,8 +647,8 @@ invocation's entry PC (`s4`) instead of advancing.
 | 3..6 | 10 bytes (`[43, sub, x_lo, z_lo, x_hi, z_hi, start:i16, end:i16]`) | **Camera-register zone ramp** into `_DAT_8007B610` (sub-6) / `B614` (sub-4) / `B60C` (sub-5) / `B618` (sub-3) - see below. |
 | 7 | 17 bytes | Face / body rotation setup. Writes a 12-byte struct at `&DAT_80087E68 + face_id * 12`, schedules a `func_0x8003C5F0` ramp. |
 | 8 | 2 bytes | Face / rotation reset: clears `+0x6D` and `+0x7A`. |
-| 9 | 10 bytes (`[43, 9, x, y, z, ticks]`) | Explicit position with optional collision tween via `FUN_801DE698`. When `ticks == 0`, immediate writes (skipping `0xFFFF` sentinel). |
-| 0xC | 5 bytes | Allocate scripted actor via `FUN_801DE754` → `FUN_80020DE0(&DAT_801F2858, _DAT_8007C34C)`. |
+| 9 | 10 bytes (`[43, 9, x, y, z, ticks]`) | Explicit position. `ticks == 0` writes immediately (skipping the `0xFFFF` sentinel); otherwise `FUN_801DE698` spawns a `0x801F2840` actor whose tick `FUN_801DD4C4` eases the target from its **live** position by `t^2/d^2`. Port `legaia_engine_vm::field_actor_timers::EasedMove`. |
+| 0xC | 5 bytes `[43, 0C, close, hold, open]` | **Shutter blackout.** `FUN_801DE754` → `FUN_80020DE0(&DAT_801F2858, _DAT_8007C34C)`, whose tick `FUN_801DD784` emits two black quads whose height envelope closes / holds / opens over the three operands. At full envelope the two bars cover the whole 320x224 screen, so the beat is a shutter blackout rather than a letterbox crop. 31 sites land at real opcode boundaries disc-wide, in two flavours - see [`runtime-libs.md`](../reference/functions/runtime-libs.md#fun_801dd784---the-shutter-blackout). Port `legaia_engine_vm::field_actor_timers::LetterboxBars`. |
 | 0xD / 0xF | 6 bytes | Allocate actor via `FUN_801DE7BC` with mode (3 for 0xD, 0 for 0xF). |
 | 0xE | 2 bytes | Mark currently-iterating actor with flag bit 0x8 (`*(int *)(actor + 0x10) \|= 0x8`). |
 | 0x16+ | - | No `case` arm in the original `case 0x43` inner switch; falls through with `iVar45 = param_2` (the dispatcher-default initialiser at line 4511 of the dump) - halts at PC. |
@@ -1206,12 +1206,16 @@ whole vocabulary, and they differ only in their tail:
 
 That matters for the ops long labelled "register callback" - `4C 9F` and
 `4C 87`, both `func_0x8003CF40(_DAT_8007C34C, LAB_801DA930)`. `LAB_801DA930`
-is the handler on spawn descriptor `0x801F27EC`, the one the fade spawner
-`FUN_801DDE34` allocates from, so those ops **cancel a running fade**. Nothing
-is registered and nothing waits: with no fade live the sweep is entirely
-inert, which is exactly what a live opening-chain probe measured (zero hits on
-the "callback"). The scene MAN loader `FUN_8003AEB0` inlines the same sweep
-twice at `0x8003B3C8` and `0x8003B414`, against `LAB_801DA930` and
+is the handler on spawn descriptor `0x801F27EC`, the one `FUN_801DDE34`
+allocates from, so those ops **retire every live floor-height-ladder
+oscillator** - see
+[`runtime-libs.md`](../reference/functions/runtime-libs.md#three-timer-driven-templates-0x801f27ec--0x801f2840--0x801f2858)
+for what that tick drives (it is not a fade: it animates one rung of the
+scene's 16-entry elevation LUT at `0x1F80035C`, the array `4C 9E` installs).
+Nothing is registered and nothing waits: with no rung running the sweep is
+entirely inert, which is exactly what a live opening-chain probe measured
+(zero hits on the "callback"). The scene MAN loader `FUN_8003AEB0` inlines the
+same sweep twice at `0x8003B3C8` and `0x8003B414`, against `LAB_801DA930` and
 `FUN_80037018`, immediately before it opens the submode - so a driver actor
 either sweep marked is invisible to the open's find.
 

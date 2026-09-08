@@ -112,6 +112,120 @@ impl World {
         }
     }
 
+    /// Run every live **frame-delta timer actor** for one frame: the
+    /// cinematic bar envelope, the eased moves, and the floor-height-ladder
+    /// oscillators.
+    ///
+    /// These are the three plain templates in the field overlay's own table
+    /// (`0x801F2858` / `0x801F2840` / `0x801F27EC`), and they are one method
+    /// because retail runs all three off the same actor list on the same
+    /// frame delta - the engine holds each family on its own `World` field
+    /// instead of a shared pool, but the cadence has to stay identical or a
+    /// wipe and a move spawned by the same script beat would drift apart.
+    ///
+    /// `frame_delta` is retail's `DAT_1F800393`, the same scalar the physics
+    /// and colour-tween passes carry.
+    ///
+    /// REF: FUN_801DD784, FUN_801DD4C4, FUN_801DA930 (the kernels live in
+    /// [`legaia_engine_vm::field_actor_timers`])
+    pub fn tick_field_timer_actors(&mut self, frame_delta: u8) {
+        // The bar envelope. It retires itself at phase 3, and the published
+        // height is what both hosts' screen-prim pass reads.
+        if let Some(bars) = self.cinematic_bars.as_mut() {
+            self.cinematic_bar = bars.step(frame_delta);
+            if bars.retired {
+                self.cinematic_bars = None;
+                self.cinematic_bar = 0;
+            }
+        } else {
+            self.cinematic_bar = 0;
+        }
+
+        // The eased moves. Retail writes the target's `+0x14/+0x16/+0x18`
+        // straight through the back-link; the engine writes the same triple
+        // wherever that target lives.
+        if !self.eased_moves.is_empty() {
+            let mut records = std::mem::take(&mut self.eased_moves);
+            for rec in records.iter_mut() {
+                let frame = rec.ease.step(frame_delta, rec.target_flags);
+                self.apply_eased_move(rec.target, &frame);
+            }
+            records.retain(|r| !r.ease.retired);
+            // A spawn that landed during this pass appended to the (empty)
+            // live list, so splice rather than overwrite.
+            records.append(&mut self.eased_moves);
+            self.eased_moves = records;
+        }
+
+        // The floor-height ladder. Each record owns one rung; a rung index
+        // past the LUT is retail writing off the end of a 16-entry array,
+        // which the port declines to do.
+        if !self.floor_tier_bobs.is_empty() {
+            let mut bobs = std::mem::take(&mut self.floor_tier_bobs);
+            for bob in bobs.iter_mut() {
+                if let Some(height) = bob.step(frame_delta)
+                    && let Some(rung) = self.field_floor_height_lut.get_mut(bob.slot as usize)
+                {
+                    *rung = height;
+                }
+            }
+            bobs.append(&mut self.floor_tier_bobs);
+            self.floor_tier_bobs = bobs;
+        }
+    }
+
+    /// Write one eased-move frame through its `+0x90` back-link.
+    ///
+    /// The engine's two addressable targets are the player's pool slot and a
+    /// scene NPC placement, which is exactly the pair the neighbouring
+    /// `move_to` host resolves - see [`crate::world::EasedMoveTarget`]. The
+    /// `+0x8E` inverted-Y mirror has no engine consumer yet, so it is
+    /// dropped rather than written somewhere it would not be read.
+    fn apply_eased_move(
+        &mut self,
+        target: crate::world::EasedMoveTarget,
+        frame: &legaia_engine_vm::field_actor_timers::EasedMoveFrame,
+    ) {
+        match target {
+            crate::world::EasedMoveTarget::Player => {
+                let Some(slot) = self.player_actor_slot else {
+                    return;
+                };
+                let Some(actor) = self.actors.get_mut(slot as usize) else {
+                    return;
+                };
+                if let Some(x) = frame.axis[0] {
+                    actor.move_state.world_x = x;
+                    actor.physics.world_x = x;
+                }
+                if let Some(y) = frame.axis[1] {
+                    actor.physics.world_y = y;
+                }
+                if let Some(z) = frame.axis[2] {
+                    actor.move_state.world_z = z;
+                    actor.physics.world_z = z;
+                }
+                if let Some(x) = frame.axis[0] {
+                    self.field_ctx.world_x = x as u16;
+                }
+                if let Some(z) = frame.axis[2] {
+                    self.field_ctx.world_z = z as u16;
+                }
+            }
+            crate::world::EasedMoveTarget::Placement(slot) => {
+                let cur = self.field_npc_positions.get(&slot).copied();
+                let (mut x, mut z) = cur.unwrap_or((0, 0));
+                if let Some(nx) = frame.axis[0] {
+                    x = nx;
+                }
+                if let Some(nz) = frame.axis[2] {
+                    z = nz;
+                }
+                self.field_npc_positions.insert(slot, (x, z));
+            }
+        }
+    }
+
     /// Latch a mid-talk "switch character" request for the active
     /// three-actor talk. Engine input standing in for retail's pad-derived
     /// word `_DAT_8007B874` bit `0x80` - the request route of the talk
@@ -1075,6 +1189,14 @@ impl World {
         // walk the lists at all.
         if runs_master_driver {
             self.tick_register_ramps();
+        }
+        // The three frame-delta timer templates (`0x801F2858` bars,
+        // `0x801F2840` eased moves, `0x801F27EC` floor-ladder rungs) ride the
+        // same gate for the same reason: all three are `+0x0C` handlers on
+        // that one effect-actor list.
+        if runs_master_driver {
+            let delta = self.field_frame_step.min(u16::from(u8::MAX)) as u8;
+            self.tick_field_timer_actors(delta);
         }
         // The three-actor-talk controller's per-frame flag poll: when the
         // scene script drops the talk lock (system flag 0xD), the controller

@@ -22,7 +22,7 @@ Each minigame's per-frame controller, with the full per-overlay function tables 
 | `801D6BBC` | **Scene floor pass** - the shared-band sibling of `801D3A2C`: same cell walk, same tile-actor spawn, different overlay-local globals, and it opens with a bounds debug print. Not the field-VM tile board. `overlay_fishing_801d6bbc.txt`. |
 | `801CEF54` | **Dance init entry** (PROT 0980, 1308 B) - **arm 6** of the mode-24 OTHER-game init switch `FUN_80025980` (`jal 0x801cef54` at SCUS `0x80025AE0`, jump table `0x80010AE4`, 7 arms; see [`boot.md`](../../subsystems/boot.md)). The seven arms are the seven minigame overlays' init entries, which is what pins each overlay's identity from SCUS rather than from a label. Sets the display environment (`FUN_8001DAF8` / `FUN_8001DCF8`), calls the field-file loader `FUN_8001F7C0` with index `0x4CC` and a name string at `0x801CEDE4` (file `+0x5CC`), spawns actors (`FUN_80020118` / `FUN_80020224`), arms audio (`FUN_8005FB84`, `FUN_80062004`, `FUN_80058104`), and calls the mode helper `FUN_801D03C4` five times before the beat SM `FUN_801CF470` takes over. `overlay_dance_0980_801cef54.txt`. |
 | `801D03C4` | **Dance** dancer face stamp (PROT 0980, 500 B). Bounds its rig id with `sltiu s0, 5` at `0x801D0444` over four rigged arms, each doing two `FUN_80058490` (`MoveImage`) blits - an eye cell and a mouth cell - inside that dancer's VRAM strip. Nine in-image callers, five of them from the bring-up above. Per-rig strips, frame tables and cell sizes are tabulated in [`minigame-dance.md`](../../subsystems/minigame-dance.md#the-dancer-face-stamp-fun_801d03c4). `overlay_dance_0980_801d03c4.txt`. |
-| `801D0640` | **Dance** floor-actor choreography tick (PROT 0980, 272 B). `(actor)`. Counts `actor+0x54` down by the frame delta `DAT_1F800393`; on expiry it reads a `[facing, duration]` halfword pair from the script table at `0x801D44CC` - 128-byte rows selected by `actor+0x50`, cursor `actor+0x9C` - sets the facing through `FUN_80024E08(actor, facing + _DAT_8007B6F8)`, latches the duration into `+0x54`, and steps the cursor by 2 halfwords, resetting it to 0 when the next entry's first halfword reads negative. Then advances the move buffer with `FUN_800204F8` when `+0x5C > 0` or `actor+0x10` carries flag `0x1000`. So `0x801D44CC` is a per-dancer facing script, not a step chart. `overlay_dance_0980_801d0640.txt`. |
+| `801D0640` | **Dance** step-marker **mesh flipbook** (PROT 0980, 272 B). `(actor)`. Counts `actor+0x54` down by the frame delta `DAT_1F800393`; on expiry it reads a `[mesh, duration]` halfword pair from the table at `0x801D44CC` - 128-byte rows selected by `actor+0x50`, cursor `actor+0x9C` - stages the mesh through `FUN_80024E08(actor, mesh + _DAT_8007B6F8)`, latches the duration into `+0x54`, steps the cursor by 2 halfwords, and wraps to 0 when the next entry's first halfword reads negative. Then advances the move buffer with `FUN_800204F8` when `+0x5C > 0` or `actor+0x10` carries flag `0x1000`. Port `legaia_engine_vm::dance_marker::step_marker`. See [the flipbook detail below](#801d0640-is-a-mesh-flipbook-on-the-marker-tiles). `overlay_dance_0980_801d0640.txt`. |
 | `801D32F8` | **Dance** groove-gauge routine (PROT 0980, 1412 B): reads the gauge word `DAT_801D544C`, scales it through the `0x10624DD3` reciprocal, and draws via the shared sprite emitter `FUN_801D2F38`. Four in-image callers including the beat SM `FUN_801CF470`. **VA-aliases** the move-VM overlay-extension sub-handler `0x801D32F8` in PROT 0897 - different bytes, different routine. `overlay_dance_0980_801d32f8.txt`. |
 | `801D0750` | **Dance** setumei (how-to) tutorial script: the Disco King actor's per-frame state machine over `actor+0x9C`, a 19-slot jump table. See [`minigame-dance.md`](../../subsystems/minigame-dance.md#the-setumei-how-to-tutorial-script-fun_801d0750). `overlay_dance_801d0750.txt`. |
 | `801D0748` | The **battle-action overlay's round driver**, which is also the Muscle Dome's per-frame match controller - pad read, phase dispatch on the sub-state byte `_DAT_8007BD24[6]`, direction pick / commit / resolve. **Not a distinct overlay**: the `overlay_muscle_dome` / `overlay_magic_capture` / `overlay_magic_level_up` / `overlay_battle_action` / `overlay_0898` dumps are byte-identical across all 2781 instructions, and it owns no score loop (that is the arena hub's). See [`minigame-muscle-dome.md`](../../subsystems/minigame-muscle-dome.md) and [`battle.md`](../../subsystems/battle.md#battle-main-dispatcher-fun_801d0748). |
@@ -172,6 +172,33 @@ routine. `0x801F7624` onward is the image's data tail, not an un-dumped run.
 ## Function details
 
 Full write-ups for the rows above whose detail outgrew a table cell. Linked from each section table by **[details ↓]**.
+
+### `801D0640` is a mesh flipbook on the marker tiles
+
+Two facts about the halfword the tick reads settle what it is, and neither is
+about the number's magnitude. `FUN_80024E08` is the **set-model** primitive -
+it writes `actor+0x64`, clears the clip cursor `+0x5C` and re-stages the actor
+through `FUN_80020F88` - and `_DAT_8007B6F8` is the field actor **pack bias**
+(`legaia_asset::field_objects::FIELD_ACTOR_PACK_BIAS`). So the table value is a
+scene-pool **mesh index**, and the tick swaps the marker's mesh every
+`duration` ticks. Nothing rotates: a yaw would not be biased by a pack base.
+
+Which actors run it is equally pinned. The dance overlay holds exactly one
+spawn descriptor whose `+0x08` handler word is `0x801D0640` - the record at
+`0x801D4314` (file `0x5AFC`) - and exactly one site materialises it,
+`0x801D2C24` inside the step-marker floor pass `FUN_801D2A10`. That arm takes
+a cell whose step record resolves to clip `6..=9` and stamps `clip - 6` into
+the new actor's `+0x50`. So `+0x50` is the marker **class** `0..=3`, not a
+dancer index, and the earlier "per-dancer facing script" reading was wrong on
+both halves.
+
+The table's shape comes from the bytes: four `0x80`-byte rows at
+`0x801D44CC..0x801D46CC` (file `0x5CB4` of `overlay_dance_0980.bin`), each 25
+`[mesh, duration]` pairs closed by a `[-1, -1]` sentinel and zero-padded.
+Durations are `12` and `6` ticks; the four rows are the same 25-step loop at
+four different phase offsets, so the marker classes flip out of step with each
+other. Row `0x200` onward is unrelated data, which is what bounds the table at
+four rows.
 
 ### The contest score-tally screen (`FUN_801CF074`)
 

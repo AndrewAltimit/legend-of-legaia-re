@@ -263,6 +263,46 @@ pub fn fade_prim(rgb: u32, abr_mode: u8, ot_index: u32) -> ScreenPrim {
     )
 }
 
+/// OT bucket the cinematic bar emitter links its two quads at - retail's
+/// literal `*(0x1F8003F4) + 8`, i.e. eight buckets in front of the scene's
+/// own base, which is what puts the bars over everything.
+pub const CINEMATIC_BAR_OT: u32 = 8;
+
+/// The two black bars of the field overlay's cinematic wipe, as screen
+/// primitives.
+///
+/// REF: FUN_801DD784 (`0x801DD8F8..0x801DD9B4`) - two `POLY_F4` (`GP0 0x28`)
+/// packets whose colour bytes are zeroed after the immediate is stored, so
+/// the fill is black; the envelope that feeds `bar` is
+/// [`legaia_engine_vm::field_actor_timers::LetterboxBars`].
+///
+/// **Both hosts call this.** The bars are the one draw a cinematic beat is
+/// made of, so a host that hand-rolls the two rects is how one of them ends
+/// up wiping to black while the other plays the beat in the clear.
+///
+/// `bar` of `0` (or less) draws nothing, which is what an idle envelope and a
+/// retired one both report. `screen_h` is the stage bottom the lower bar sits
+/// flush with; retail's literal is `0xE0` and the engine's overlay stage is
+/// [`PSX_DISPLAY_H`].
+pub fn cinematic_bar_prims(bar: i16, screen_h: i16) -> Vec<ScreenPrim> {
+    if bar <= 0 {
+        return Vec::new();
+    }
+    legaia_engine_vm::field_actor_timers::letterbox_bar_rects(bar, screen_h)
+        .into_iter()
+        .map(|r| {
+            ScreenPrim::Flat(FlatQuad {
+                xy: [(r.x0, r.y0), (r.x1, r.y0), (r.x0, r.y1), (r.x1, r.y1)],
+                color: [0, 0, 0, 0xFF],
+                gouraud: None,
+                semi_transparent: false,
+                abr_mode: 0,
+                ot_index: CINEMATIC_BAR_OT,
+            })
+        })
+        .collect()
+}
+
 /// The full-screen quad the **fade actor** draws for a live screen fade -
 /// `FUN_80025000`'s per-frame `FUN_80024EE4(layer, kind, rgb)` call, the
 /// same emitter the intro styles go through ([`fade_prim`]). The template's

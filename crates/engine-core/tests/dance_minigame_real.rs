@@ -523,3 +523,51 @@ fn real_dance_cast_populates_the_dancer_actor_records() {
     );
     assert!(frames > 1, "and not on the very next frame");
 }
+
+/// The step-marker flipbook (`FUN_801D0640`) parsed off the real overlay and
+/// advanced by the live `DanceGame::advance`.
+///
+/// Structural facts only: the four class rows exist, every class stages a
+/// mesh once its first step fires, and a class's mesh actually changes over a
+/// run - i.e. the table is a flipbook and the cursor walks it.
+#[test]
+fn real_step_marker_flipbook_cycles_every_class() {
+    let Some(overlay) = dance_overlay() else {
+        eprintln!("[skip] dance overlay unavailable (disc-gated)");
+        return;
+    };
+    let mut game = DanceGame::from_overlay(&overlay, false).expect("real chart loads");
+    for class in 0..4 {
+        assert!(
+            game.step_marker_steps(class) > 1,
+            "class {class} must carry a multi-step row"
+        );
+        assert!(
+            game.step_marker_mesh(class).is_none(),
+            "nothing is staged before the first advance"
+        );
+    }
+    let mut seen: Vec<std::collections::BTreeSet<i16>> = vec![Default::default(); 4];
+    for _ in 0..240 {
+        game.advance(1);
+        for (class, set) in seen.iter_mut().enumerate() {
+            if let Some(m) = game.step_marker_mesh(class) {
+                set.insert(m);
+            }
+        }
+    }
+    for (class, set) in seen.iter().enumerate() {
+        assert!(
+            set.len() > 1,
+            "class {class} must swap mesh over a run, saw {} distinct",
+            set.len()
+        );
+    }
+    // The four classes are the same loop at different phase offsets, so at
+    // least two of them are on different steps at the same instant.
+    let now: Vec<Option<i16>> = (0..4).map(|c| game.step_marker_mesh(c)).collect();
+    assert!(
+        now.iter().collect::<std::collections::BTreeSet<_>>().len() > 1,
+        "the four classes must not be in lockstep: {now:?}"
+    );
+}

@@ -1336,13 +1336,139 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     }
 
     fn op4c_n9_sub_f_register_callback(&mut self) -> bool {
-        // During the New-Game opening chain the registered completion
-        // callback (`LAB_801DA930`) fires within a frame in retail - the
-        // whole opening auto-advances with zero input - so model it as
-        // already satisfied and let the entry script proceed to its op-0x44
-        // record spawn. Outside the opening the faithful halt-until-callback
-        // park is kept (returning `false`).
+        // `4C 9F` is `FUN_8003CF40(_DAT_8007C34C, LAB_801DA930)`, a **retire
+        // sweep** over the `0x801F27EC` handler - so it cancels every live
+        // floor-height-ladder oscillator this scene spawned (sub-`0..2`),
+        // and registers nothing. Retiring the engine's records is the whole
+        // of that half.
+        self.world.floor_tier_bobs.clear();
+        self.world.cancel_scripted_fades();
+        // During the New-Game opening chain the sweep's script effect (the
+        // park at PC) resolves within a frame in retail - the whole opening
+        // auto-advances with zero input - so model it as already satisfied
+        // and let the entry script proceed to its op-0x44 record spawn.
+        // Outside the opening the faithful halt-until-callback park is kept
+        // (returning `false`).
         self.world.opening_chain_active
+    }
+
+    // -- the three frame-delta timer templates ---------------------------
+    //
+    // Each spawner allocates one pool actor from a plain template and fills
+    // in its clock; the engine keeps the record on `World` instead and steps
+    // it in `World::tick_field_timer_actors`. Kernels live in
+    // `legaia_engine_vm::field_actor_timers`.
+
+    /// Op `0x43` sub-`0xC` - the cinematic bar emitter (`FUN_801DE754`
+    /// allocating `0x801F2858`, tick `FUN_801DD784`).
+    ///
+    /// The three operand bytes are the phase durations in ticks: bars close,
+    /// hold, bars open. Retail allocates a fresh actor per call and the two
+    /// would then both emit; the engine keeps one, because a second envelope
+    /// over the first is a script defect rather than an effect.
+    fn op43_alloc_scripted_actor(&mut self, b1: u8, b2: u8, b3: u8) {
+        self.world.cinematic_bars =
+            Some(legaia_engine_vm::field_actor_timers::LetterboxBars::spawn(
+                i16::from(b1),
+                i16::from(b2),
+                i16::from(b3),
+            ));
+        self.world.cinematic_bar = 0;
+    }
+
+    /// Op `0x43` sub-9 with a non-zero tick count - the three-axis eased
+    /// move (`FUN_801DE698` allocating `0x801F2840`, tick `FUN_801DD4C4`).
+    ///
+    /// Retail passes `&target[+0x14]` as the start block, so the ease begins
+    /// at the target's **live** position; the engine reads the same triple
+    /// off whichever seat it resolves the ctx to.
+    fn op43_sub9_tween(&mut self, ctx: &mut FieldCtx, x: u16, y: u16, z: u16, ticks: u16) {
+        use crate::world::{EasedMoveTarget, FieldEasedMove};
+        let is_player = ctx.flags & 0x0100_0000 != 0;
+        let (target, start) = if is_player {
+            let slot = self.world.player_actor_slot;
+            let seat = slot
+                .and_then(|s| self.world.actors.get(s as usize))
+                .map(|a| {
+                    [
+                        a.move_state.world_x,
+                        a.physics.world_y,
+                        a.move_state.world_z,
+                    ]
+                })
+                .unwrap_or([ctx.world_x as i16, ctx.world_y as i16, ctx.world_z as i16]);
+            (EasedMoveTarget::Player, seat)
+        } else if let Some(placement) = self.world.executing_channel {
+            let seat = self
+                .world
+                .field_npc_positions
+                .get(&placement)
+                .copied()
+                .unwrap_or((ctx.world_x as i16, ctx.world_z as i16));
+            (
+                EasedMoveTarget::Placement(placement),
+                [seat.0, ctx.world_y as i16, seat.1],
+            )
+        } else {
+            // No addressable seat: retail would still allocate the actor and
+            // write through a back-link the engine does not have. Dropping
+            // the record is the honest outcome - a silent write to the wrong
+            // actor would be worse than none.
+            return;
+        };
+        self.world.eased_moves.push(FieldEasedMove {
+            target,
+            target_flags: ctx.flags,
+            ease: legaia_engine_vm::field_actor_timers::EasedMove::spawn(
+                start,
+                [x as i16, y as i16, z as i16],
+                ticks as i16,
+            ),
+        });
+    }
+
+    /// Op `0x4C` nibble-9 sub-`0xE` - install all sixteen rungs of the scene
+    /// floor-height ladder at once.
+    ///
+    /// The paired install of the animator below, and the op that identifies
+    /// the whole nibble-9 family: retail writes `-words[i]` into
+    /// `0x1F800314 + 0x48 + i*2` (and `words[i]` into the MAN-header mirror
+    /// at `_DAT_8007B898 + 2`), which is the same array
+    /// [`crate::scene::SceneHost`] seeds from the MAN header's sixteen
+    /// **negated** shorts on scene entry. `jou`'s entry script installs the
+    /// linear ramp `i * 0x20` here and then sets rungs `4..` oscillating -
+    /// the undulating organic floor.
+    fn op4c_n9_sub_e_table_copy(&mut self, words: [i16; 16]) {
+        for (rung, w) in self.world.field_floor_height_lut.iter_mut().zip(words) {
+            *rung = w.wrapping_neg();
+        }
+    }
+
+    /// Op `0x4C` nibble-9 sub-`0..2` - one rung of the scene floor-height
+    /// ladder starts oscillating (`FUN_801DDE34` allocating `0x801F27EC`,
+    /// tick `FUN_801DA930`).
+    ///
+    /// `b1` is the rung (`0..16`, the low nibble of a collision byte);
+    /// `words` are the half-period, the amplitude and the burst-arm word.
+    /// Retail seeds both the position and the rest height from the rung's
+    /// current value, which is `World::field_floor_height_lut` here.
+    fn op4c_n9_sub0_2_dde34(&mut self, sub: u8, b1: u8, words: [i16; 3]) {
+        let seed = self
+            .world
+            .field_floor_height_lut
+            .get(b1 as usize)
+            .copied()
+            .unwrap_or(0);
+        self.world
+            .floor_tier_bobs
+            .push(legaia_engine_vm::field_actor_timers::FloorTierBob::spawn(
+                u16::from(b1),
+                sub,
+                words[0],
+                words[1],
+                words[2],
+                seed,
+            ));
     }
 
     fn op44_spawn_scene_record(&mut self, global_index: u8) {

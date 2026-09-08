@@ -473,24 +473,51 @@ an allocator call against the actor pool `_DAT_8007C34C`. So all three run.
 All three are per-frame timers driven by the frame delta `_DAT_1F800393`, and
 each spends its timer on something different:
 
-| Template | Tick | Spawn site | What the tick drives |
-|---|---|---|---|
-| `0x801F27EC` | `FUN_801DA930` | `0x801DDE58` | A ping-pong value into a scratchpad draw-context slot |
-| `0x801F2840` | `FUN_801DD4C4` | `0x801DE6BC` | A three-axis eased move of **another** actor |
-| `0x801F2858` | `FUN_801DD784` | `0x801DE770` | The cinematic letterbox bars |
+| Template | Tick | Spawner | Field-VM op | What the tick drives |
+|---|---|---|---|---|
+| `0x801F27EC` | `FUN_801DA930` | `FUN_801DDE34` | `4C 90` (9 bytes) | One rung of the scene floor-height ladder at `0x1F80035C` |
+| `0x801F2840` | `FUN_801DD4C4` | `FUN_801DE698` | `43 09` with ticks (10 bytes) | A three-axis eased move of **another** actor |
+| `0x801F2858` | `FUN_801DD784` | `FUN_801DE754` | `43 0C` (5 bytes) | Two black screen quads - a shutter blackout |
 
-All three are decoded but not ported.
+All three are ported in
+[`legaia_engine_vm::field_actor_timers`](../../../crates/engine-vm/README.md),
+spawned from the field host and stepped by
+`World::tick_field_timer_actors`.
 
-#### `FUN_801DA930` - scratchpad-slot oscillator
+`FUN_801CFF3C` is **not** a fourth entry point. Its dump is byte-for-byte
+`FUN_801DE754` - the same 26 instructions with the same `addiu a0, a0,
+0x2858` - and `0x801DE754 - 0x801CFF3C = 0xE818` is exactly the re-key delta
+[`phantom-print-index.md`](../../tooling/phantom-print-index.md) records for
+the `overlay_0897_xxx_dat` dump program.
 
-Runs while the arm bit `actor[+0x9E] & 0x8000` is set, and only in phase
-`actor[+0x54] == 1` (phase `0` seeds the phase from `actor[+0x6C]`, anything
-else idles). Per frame-delta iteration it adds the step `actor[+0x88]` into
-`actor[+0x84]` in whichever direction keeps `actor[+0x80]` on the near side of
-the bound `actor[+0x8C]`, adds that to `actor[+0x80]`, and stores the high
-halfword into the scratchpad draw context at
-`0x1F800314 + 0x48 + actor[+0x50] * 2`. The sign flip against the bound is
-what makes it a ping-pong rather than a ramp; `actor[+0x50]` is the slot index.
+#### `FUN_801DA930` - floor-height-ladder oscillator
+
+The destination settles what this is. The tick stores its high halfword into
+`0x1F800314 + 0x48 + actor[+0x50] * 2` = `0x1F80035C + rung * 2`, and that
+array is the scene's **16-entry `i16` floor-elevation ladder**: `FUN_8003AEB0`
+fills it from the MAN header at scene entry, `FUN_80019278` bilinearly
+interpolates it for ground height, `FUN_8003A55C` adds `LUT[cell & 0xF]` to
+every placed object's Y, and the field VM's own `4C 9E` writes all sixteen
+entries at once. So this tick **animates one elevation rung**, and every tile
+whose collision nibble selects that rung rises and falls with it. See
+[`field-locomotion.md`](../../subsystems/field-locomotion.md#where-the-collision-grid-comes-from)
+for the ladder's other consumers.
+
+The motion: per frame-delta iteration it adds `actor[+0x88]` into the velocity
+`actor[+0x84]` in whichever direction points at the rest height `actor[+0x8C]`,
+adds that to `actor[+0x80]`, and publishes `+0x80 >> 16`. There is no damping
+term and the rest height is never rewritten, so the rung overshoots and swings
+back - the ping-pong. `actor[+0x9E]` with bit `0x8000` set is a **burst**: run
+`+0x9E & 0x7FFF` single-tick iterations now and clear the word, which is how a
+script phase-offsets one rung against its neighbours.
+
+Only phase `actor[+0x54] == 1` runs; phase `0` seeds the phase from
+`actor[+0x6C] + 1`. The spawner writes the field VM's sub-op there, so
+sub-`0` gives phase 1 and sub-`1`/`2` give phases 2 and 3 - and those two
+**never decrement the tick's outer counter** (`0x801DAA3C` is inside the
+phase-1 arm), so the loop at `0x801DAA40` has no exit. That arm is
+unreachable in shipped content: `4C 91` and `4C 92` do not occur as a byte
+pair anywhere in any of the 101 extractable scene MANs.
 
 #### `FUN_801DD4C4` - three-axis eased move
 
@@ -500,26 +527,48 @@ advances by the frame delta toward the duration `actor[+0x9E]`, latching flag
 `0x8` into `actor[+0x10]` on arrival. Each axis then eases from its start
 (`actor[+0x14 + axis*2]`) to its end (`actor[+0x24 + axis*2]`) by `t^2 / d^2` -
 two successive `mult`/`div` pairs, not one - so the motion is quadratic rather
-than linear. An end value of `-1` disables that axis. The Y axis has a rider:
-when the target's `+0x10` carries bit `0x2000`, the negated Y also lands in
-`target[+0x8E]`.
+than linear, and it is an ease-**in**: it accelerates the whole way and arrives
+at full speed. An end value of `-1` disables that axis. The Y axis has a rider:
+when the target's `+0x10` carries bit `0x2000_0000` (`lui at, 0x2000` at
+`0x801DD6A8` - a full word, not `0x2000`), the negated Y also lands in
+`target[+0x8E]`; that is the same bit op `4C 42` tests for the inverted-Y
+mirror.
 
-#### `FUN_801DD784` - the cinematic letterbox
+The spawner's one field-VM caller is op `43 09`'s non-zero-`ticks` branch at
+`0x801DF874`, and it passes `&target[+0x14]` as the start block - so the ease
+begins at the target's **live** position, never a scripted one.
+
+#### `FUN_801DD784` - the shutter blackout
 
 The output is not a stored number at all: the tick emits **two flat quads**
 (GP0 `0x28`, tag `0x05000000`, colour bytes zeroed to black) into the
 scratchpad prim cursor `0x1F8003A0`, linked into the OT at
 `*(0x1F8003F4) + 8`. The
 top bar spans `x 0..0x140`, `y -4 .. bar-4`; the bottom spans
-`y 0xE0-bar .. 0xE0`. So `bar` is the bar height in a 320x224 screen and the
-routine is the cinematic letterbox.
+`y 0xE0-bar .. 0xE0`.
 
 `bar` comes from a four-phase envelope: `actor[+0x9E]` steps by the frame delta
 against a per-phase duration at `actor[+0xB8 + phase*2]`, bumping the phase
-`actor[+0x54]` and resetting the timer at each overflow. Phase 0 opens
-(`bar = 115 * t / duration`), phase 1 holds at the constant `0x73` = 115, and
-phases 2 and 3 close against their own duration words, the last of them
-setting flag `0x8` in `actor[+0x10]` when it lands.
+`actor[+0x54]` and resetting the timer at each overflow. Phase 0 **closes**
+(`bar = 115 * t / duration[0]`), phase 1 holds at the constant `0x73` = 115,
+phase 2 **opens** (`bar = 115 - 115 * t / duration[2]`), and phase 3 ramps
+nothing at all - it sets flag `0x8` in `actor[+0x10]` and draws a zero-height
+bar. `duration[1]` is read only by the phase-1 boundary test, which is why the
+spawner's three operands are `[close, hold, open]`.
+
+**The peak is a blackout, not a letterbox.** Two bars of `0x73` = 115 lines in
+a 224-line screen cover it twice over (they overlap by two scanlines), so the
+beat is a shutter that closes to full black, holds, and opens - the
+intermediate frames are what read as a cinematic crop.
+
+The on-disc sites say the same thing, and they come in exactly two flavours.
+Across the 101 extractable scene MANs, 31 `43 0C` instructions land at real
+opcode boundaries (39 raw byte pairs; the other 8 are dialogue text):
+
+| Operand triple | Sites | Where |
+|---|---|---|
+| `10 08 10` -> close 16, hold 8, open 16 | 29 | `balden` P1[4/5/6/38/49/56/61] (11), `balden2` (11), `town0c` P1[24] (7) - each in a photographer's dialogue beat, i.e. the camera shutter |
+| `18 08 A0` -> close 24, hold 8, open 160 | 2 | `deroa` P2[9], `station3` P2[0] - cutscene-timeline records, a blackout with a slow reveal |
 
 ### `801D5780` is shipped dead code
 

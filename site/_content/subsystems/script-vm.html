@@ -177,7 +177,7 @@
       <tr><td><code>6</code></td><td>Emitter setup, halt-acquire</td></tr>
       <tr><td><code>7</code></td><td>Rectangular wall paint into the walkability grid - story-conditional collision (<a href="field-locomotion.html">locomotion</a>)</td></tr>
       <tr><td><code>8</code></td><td>Party full heal, guard-slot jump, actor model + anim set, actor-search jumps</td></tr>
-      <tr><td><code>9</code></td><td>Fade family, 16-word table copy, fade cancel</td></tr>
+      <tr><td><code>9</code></td><td>Floor-height ladder: sub-<code>0xE</code> installs all sixteen elevation rungs at <code>0x1F80035C</code>, sub-<code>0..2</code> sets one rung oscillating, sub-<code>0xF</code> retires the oscillators. Not a fade family &mdash; the tick's destination is the scene elevation LUT.</td></tr>
       <tr><td><code>A</code></td><td>Conditional jump on a ctx / local / global flag bit</td></tr>
       <tr><td><code>B</code></td><td>Undefined - the default arm halts</td></tr>
       <tr><td><code>C</code></td><td>Slot table writes (<code>CA CB CC</code>), sound trigger, control-word toggle</td></tr>

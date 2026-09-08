@@ -57,8 +57,8 @@ pub use legaia_engine_ui::screen_prim::{
     BlendClass, DrawRun, FLAG_TEXTURED, FlatQuad, OverlayGeometry, PSX_DISPLAY_H, PSX_DISPLAY_W,
     SCREEN_VERTEX_OFF_CBA_TSB, SCREEN_VERTEX_OFF_COLOR, SCREEN_VERTEX_OFF_FLAGS,
     SCREEN_VERTEX_OFF_POS, SCREEN_VERTEX_OFF_UV, SCREEN_VERTEX_STRIDE, ScreenPrim, ScreenQuad,
-    ScreenVertex, build_geometry, display_rect_flat_quad, fade_prim, order_primitives,
-    screen_fade_prim,
+    ScreenVertex, build_geometry, cinematic_bar_prims, display_rect_flat_quad, fade_prim,
+    order_primitives, screen_fade_prim,
 };
 
 /// The display rect the shared model authors in is the same rect this crate
