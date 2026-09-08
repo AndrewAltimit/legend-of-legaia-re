@@ -278,7 +278,9 @@ everything is generated from scratch on top of the export, documented in
 The same builder also spawns the furniture most VRChat worlds end up
 with - a mirror (off by default, local, auto-off), a synced video TV
 over the SDK's AVPro + Unity players, a card table with sittable stools
-and a 52-card pickup deck - all built from primitives, generated
+and a 52-card pickup deck (hold'em by day, a five-card "poker night" run
+by a villager after dusk, blackjack), posters hung on the town's own
+walls from a settings list - all built from primitives, generated
 textures and SDK components, plus a slot list for any prefab asset
 already installed in the project (the SDK's pen system, QvPen, ProTV,
 a community deck). Guide + the community-prefab survey with licences:
