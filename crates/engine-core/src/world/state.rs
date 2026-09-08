@@ -2022,6 +2022,18 @@ pub struct World {
     /// The enqueue's round-robin write cursor (`gp+0x158`), wrapping at
     /// [`crate::scus_leaf_kernels::SFX_CUE_SLOTS`].
     pub sfx_cue_cursor: i16,
+    /// The side-band sound-bank request / acknowledge pair
+    /// `_DAT_8007BABC` / `_DAT_8007BAA0`, which op `0x36`'s bit-15 subs
+    /// `1` and `2` drive and whose settled state gates sub `0` and the
+    /// whole bit-15-clear XA arm.
+    ///
+    /// REF: FUN_800243F0
+    pub sound_stream: crate::scus_leaf_kernels::SoundStreamRequest,
+    /// `_DAT_8007B868` - the dev/dual-mode gate. Retail boots it `0` and no
+    /// static writer ever sets it non-zero, so the engine keeps it `0`; the
+    /// field applies it as retail does (it *skips* op `0x36`'s whole
+    /// bit-15-set arm and *bypasses* the bit-15-clear arm's stream barrier).
+    pub dual_mode_gate: i32,
     /// The scene control block `_DAT_801C6EA4` (`0x64` bytes), re-allocated
     /// and reset on every scene load.
     ///
@@ -3098,6 +3110,13 @@ impl World {
             ),
             sfx_parked_slot: 0,
             sfx_cue_cursor: 0,
+            // Retail's field init writes `(8, -1)` (`0x801D6880`) and
+            // `FUN_800243F0` latches it settled on the next frame. The
+            // engine's bank loads are synchronous - there is no in-flight
+            // window - so the pair is born settled instead, the same way the
+            // BGM barrier is satisfied on arrival.
+            sound_stream: crate::scus_leaf_kernels::SoundStreamRequest::IDLE_PAIR,
+            dual_mode_gate: 0,
             scene_control_block: crate::scus_leaf_kernels::SCENE_CONTROL_BLOCK_RESET,
             battle_intro: None,
             battle_intro_effects: Vec::new(),

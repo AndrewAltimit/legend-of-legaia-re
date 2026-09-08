@@ -1588,12 +1588,42 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // * sub-`4` - `FUN_80035BAC(arg)` stores `arg` as the parked slot's
         //   delay, i.e. schedules the cue instead of firing it.
         //
+        // Two gates ride on top of the sub-switch, both read off
+        // `0x801E030C..0x801E0444` and both keyed on the side-band
+        // request/acknowledge pair `_DAT_8007BABC` / `_DAT_8007BAA0`
+        // (`World::sound_stream`) plus the dev/dual-mode word
+        // `_DAT_8007B868` (`World::dual_mode_gate`, `0` in retail):
+        //
+        // * bit-15 **set**: `_DAT_8007B868 != 0` skips the whole sub-switch
+        //   (`bnez v0,0x801DF898` at `0x801E031C`). Subs `0`, `1` and `2`
+        //   then consult the pair; subs `3` and `4` do not.
+        // * bit-15 **clear**: the pair is a *precondition* on the XA arm
+        //   (`bne a0,v0,0x801DEE4C` at `0x801E040C`) which
+        //   `_DAT_8007B868 != 0` bypasses (`bnez v0,0x801E0414`).
+        //
+        // The doc this port was written from said the gate covered subs
+        // `0`/`2`/`3` and stopped at the bit-15-set arm; the bytes say subs
+        // `0`/`1`/`2` and the bit-15-clear arm, with sub `3` ungated.
+        //
         // PORT: FUN_80035BAC (live wiring; the table itself is
         // `crate::scus_leaf_kernels::SfxCueDelays`)
         // REF: FUN_80035B50
+        // REF: FUN_800243F0 (the driver that settles the pair)
+        let dev_gate = self.world.dual_mode_gate != 0;
         if op0_word & 0x8000 != 0 {
+            if dev_gate {
+                // Retail never reaches this: the arm is skipped whole and
+                // the op advances.
+                self.world
+                    .pending_field_events
+                    .push(FieldEvent::SceneFade { op0_word, op1_word });
+                return SceneFadeResult::Done;
+            }
             match op0_word & 0x7FFF {
                 0 => {
+                    if !self.world.sound_stream.is_settled() {
+                        return SceneFadeResult::Busy;
+                    }
                     // The enqueue writes the slot the cursor names, parks it,
                     // then advances the cursor - so the parked slot stays the
                     // written one until the next enqueue.
@@ -1601,12 +1631,30 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
                     self.world.sfx_cue_cursor = self.world.sfx_cue_delays.park(slot);
                     self.world.sfx_parked_slot = slot;
                 }
+                1 => {
+                    if !self.world.sound_stream.request(i32::from(op1_word as i16)) {
+                        return SceneFadeResult::Busy;
+                    }
+                    // Synchronous host: the driver's latch lands in the same
+                    // call, so a following sub-`2` barrier is satisfied on
+                    // arrival.
+                    self.world.sound_stream.settle();
+                }
+                2 => {
+                    if !self.world.sound_stream.is_settled() {
+                        return SceneFadeResult::Busy;
+                    }
+                }
                 4 => {
                     let parked = self.world.sfx_parked_slot;
                     self.world.sfx_cue_delays.set_delay(parked, op1_word as i16);
                 }
+                // Sub `3` (`FUN_801D8450`) and every sub `>= 5` advance
+                // unconditionally.
                 _ => {}
             }
+        } else if !dev_gate && !self.world.sound_stream.is_settled() {
+            return SceneFadeResult::Busy;
         }
         self.world
             .pending_field_events

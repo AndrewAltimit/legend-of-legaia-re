@@ -12,7 +12,7 @@ both confirmed as the menu overlay by function-address identity; decompiled func
 ## Contents
 
 - [Overlay structure](#overlay-structure) · [Key functions](#key-functions) · [Globals used](#globals-used)
-- [Sub-screen function pointer table](#sub-screen-function-pointer-table) - [load/save dispatch](#loadsave-dispatch-fun_801dd35c) · [libcd I/O state machine](#libcd-io-state-machine-fun_801e3294) · [card-operation sequencer](#card-operation-sequencer-fun_801e13b8) · [save-block directory enumeration](#save-block-directory-enumeration-fun_801e1208) · [equip-candidate list handler](#equip-candidate-list-handler-fun_801d9c14-sub-screen-0x14)
+- [Sub-screen function pointer table](#sub-screen-function-pointer-table) - [entry-context decode](#the-entry-context-decode-picks-the-screen-family) · [load/save dispatch](#loadsave-dispatch-fun_801dd35c) · [libcd I/O state machine](#libcd-io-state-machine-fun_801e3294) · [card-operation sequencer](#card-operation-sequencer-fun_801e13b8) · [save-block directory enumeration](#save-block-directory-enumeration-fun_801e1208) · [equip-candidate list handler](#equip-candidate-list-handler-fun_801d9c14-sub-screen-0x14)
 - [Relationship to `legaia_save`](#relationship-to-legaia_save) · [story-flag persistence vs. scratchpad word](#story-flag-persistence-vs-scratchpad-word) · [retail SC block layout](#retail-sc-block-layout)
 - [Sprite asset sources (Continue → Load screen)](#sprite-asset-sources-continue--load-screen) - [9-slice tile rects](#pinned-9-slice-tile-rects-system-ui-tim-clut-row-2) · [how the panel TIM was pinned](#how-the-panel-tim-was-pinned) · [the kanji page is never sampled](#the-card-screens-kanji-page-is-never-sampled)
 - [Slide-in UI primitive (`FUN_801E1C1C`)](#slide-in-ui-primitive-fun_801e1c1c) · [messagebox panel geometry (`FUN_801E36C4`)](#messagebox-panel-geometry-fun_801e36c4) · [bottom info panel renderer (`FUN_801E08D8`)](#bottom-info-panel-renderer-fun_801e08d8)
@@ -174,7 +174,7 @@ read from `overlay_menu.bin` offset `0x24F40` (table base `0x801C0000`):
 |---|---|---|
 | `0x00` | `FUN_801DD12C` | 2-state final-exit screen: state 0 invokes actor `&DAT_801E4A78` (terminal display); state 1 waits `_DAT_8007BB80 == 0`, then sets `DAT_801E46A0 = 0xF2` and exit code `_DAT_8007B43C = 3` |
 | `0x01` | `FUN_801D6B20` | **Root command picker** - the menu overlay's own top level, not a slot selector. 7 rows through `FUN_801D688C(&DAT_801E46BC, 7, 1)`, routing to `[5, 0x0E, 0x12, 0x15, 0x17, 0x18, 0x19]` - see [below](#root-command-picker-fun_801d6b20) |
-| `0x02` | `FUN_801D6E18` | save entry (from menu entry-context `(char*)1`) |
+| `0x02` | `FUN_801D6E18` | the **developer character-parameter editor**, not a save entry - the sentinel entry-context value `1` opens it. Twelve cursor rows store straight into the live character record; see [below](#debug-character-parameter-editor-fun_801d6e18) |
 | `0x03` | `FUN_801D6D38` | 2-state Yes/No confirm with default cursor `1`: actor `&DAT_801E4BD4`, picker `FUN_801D688C(&DAT_801E46D0, 2, 1)`; cursor `1` returns to current sub-screen (`0x01`), cursor `0` advances to `0x00` (exit), cancel returns to `0x01` |
 | `0x04` | `FUN_801DD1B8` | post-save "press any button" return: state 0 invokes actor `&DAT_801E4BE0`; state 1 waits `_DAT_8007BB80 == 0` AND a button **held** (`_DAT_8007B874 & (_DAT_800846D0 \| _DAT_800846D4) != 0`), plays sfx `0x20` and returns to `0x01`. Mirror of `0x08`, which waits for the same mask to read **zero** |
 | `0x05` | `FUN_801D7C00` | pause-menu **Items command window** SM (Use / Throw Out / Arrange) - see [field-menu.md](field-menu.md#items-screen); port `engine-core::pause_screens` |
@@ -206,8 +206,9 @@ read from `overlay_menu.bin` offset `0x24F40` (table base `0x801C0000`):
 | `0x1F` | `FUN_801DBD94` | D-pad quantity-input screen (state 0 init + actor invoke; state 1 ±1/±10 on the dpad clamped to `[1, DAT_801E46B8]`, on confirm applies money delta `_DAT_8008459C += (price * qty) >> 1` and walks live inventory at `0x80084140 + 0x1818` for a non-empty slot; state 2 returns to `0x1A` after a brief delay). NOT the save-card writer - actual libcd I/O lives in `FUN_801E3294` (see "Libcd I/O state machine" section below), and the block staging copy is `FUN_8001A8B0` against the live game-state window `0x80084140` (`0x1A18` bytes, a different block buffer per direction - see [the checksum section](#which-buffer-the-sum-runs-over)) |
 | `0x20` | `FUN_801DC1CC` | **casino prize-exchange session** (entry-context `*ptr == '\x07'`; `ptr+1` = prize block). 4-state SM: build visible rows from the `0x801E4518` table (walk stops at the first zero id; a non-zero gate flag already set hides the one-shot row), browse (`FUN_801D688C`; confirm gated on coin bank `0x800845A4 >= price` and held `< 0x63`, buzz `0x23`), Yes/No with **No default** (`DAT_801E46D0 = 1`), commit (SFX `0x25`, grant 1, debit coins, `FUN_8003CE08(gate)`, rebuild). Port `engine-core::prize_exchange`. The earlier "auto-save path" label is falsified - nothing here touches the card |
 
-The table ends at `0x1F`; entries past `0x20` are the start of the MES bytecode
-section (`0x85826B82` etc.) and are not function pointers.
+The table ends at `0x20`; slot `0x21` reads `0` and everything past it is the
+start of the Shift-JIS string section (`0x85826B82` etc.), not function
+pointers.
 
 ### Root command picker (`FUN_801D6B20`)
 
@@ -312,12 +313,54 @@ Two shapes recur across the sub-screens and the port keeps them explicit:
   on the default row, so the exit is the fallthrough rather than the
   choice.
 
-`SaveSubScreen` covers the whole id space, with `Unpinned(id)` for table
-slots whose behaviour is not yet traced, so a transition into one is
-expressible and round-trips. Ticking an unpinned screen parks rather than
-guessing. The card drivers `0x18` / `0x19` share one implementation
-parameterised by `CardOp`, which is what the decompile shows: identical
-four-step machines differing only in the op selector.
+`SaveSubScreen` covers the whole id space, with `Unpinned(id)` for slots this
+module carries no step machine for, so a transition into one is expressible
+and round-trips. Ticking an unpinned screen parks rather than guessing. The
+card drivers `0x18` / `0x19` share one implementation parameterised by
+`CardOp`, which is what the decompile shows: identical four-step machines
+differing only in the op selector. Every slot's **handler** is pinned
+regardless - see
+[the pointer table](#sub-screen-function-pointer-table).
+
+### The entry-context decode picks the screen family
+
+State `0` of `FUN_801DC6B4` reads the entry-context pointer `_DAT_8007B450`
+and picks a starting sub-screen from it (`0x801DC85C..0x801DC8EC`). Five
+tests, in order:
+
+| Condition | Start screen |
+|---|---|
+| `_DAT_8007B450 == 1` (the sentinel, never dereferenced; the pointer is then zeroed) | `0x02` |
+| pointer null | `0x01` (the root command picker) |
+| `ptr[0] == 0x00` | `0x1A` - the shop's mode select |
+| `ptr[0] == 0x01` | `0x19` - the card **save** driver |
+| `ptr[0] == 0x07` | `0x20` - the casino prize-exchange confirm |
+| `ptr[0] == 0x0D` | `0x04` - the notice panel |
+
+`ptr[0]` is the record's **kind** byte, so the decode is "which screen family
+does this record belong to", not a save mode: a shop record opens the shop, a
+casino record opens the prize counter, and only kind `0x01` (a field script's
+save point) reaches a card driver. The sentinel is the odd one out - it opens
+the developer parameter editor. Port
+`SaveEntryContext::{DebugParamEditor, ScriptSave, CasinoPrizeCounter, PostSave,
+ShopEntry}`.
+
+### Which ids the port still leaves `Unpinned`
+
+The port names fourteen of the 33 ids and leaves nineteen as `Unpinned`
+(`0x05`, `0x06`, `0x07`, `0x09`, `0x0A`, `0x0C`, `0x0D`, `0x0E`, `0x0F`,
+`0x10`, `0x11`, `0x13`, `0x14`, `0x15`, `0x16`, `0x1B`, `0x1C`, `0x1D`,
+`0x1F`). That is a statement about the **step machine**, not about the
+screen: [the pointer table above](#sub-screen-function-pointer-table)
+describes every one of them, and most already have a port of their own
+elsewhere (`pause_screens`, `spell_menu`, `equip_session`, `shop`) reached
+from a host rather than from `SaveScreenMachine`. What `Unpinned` means here
+is only that this module carries no step machine for the id, so ticking it
+parks.
+
+The table's extent is exact: 33 word entries, ids `0x00..=0x20`. Slot `0x21`
+reads `0` and Shift-JIS string data starts immediately after it, so nothing
+past `0x20` is a function pointer.
 
 The module is control flow only. Screen *content* is
 [`save_select`](#relationship-to-legaia_save)'s `SaveSelectSession`,
@@ -1448,6 +1491,27 @@ reuses the same `DAT_801E46AC` phase word and `DAT_801E46C4` character
 cursor as the save UI (dump `overlay_save_ui_801d6e18.txt`). It is not part
 of the retail save flow; its free per-field increment and unconditional
 stat-clamp mark it as a debug tool.
+
+It is **sub-screen `0x02`** of the dispatcher's own table, which is the id
+the sentinel entry-context value `1` opens. Twelve cursor rows are walked
+with Up (`0x1000`) / Down (`0x4000`) on the held pad word `_DAT_8007BB84`,
+wrapping at `0..=0xB` through the cursor cell `_DAT_8007BB88`; Left / Right
+(mask `0xA000`) edit the selected field. The fields it stores are the live
+character record's, at `0x80084140 + id*0x414 + X`:
+
+| store | record offset | field |
+|---|---|---|
+| `0x801D7238` | `+0x000` | cumulative XP |
+| `0x801D705C` | `+0x11C` | HP max (record copy) |
+| `0x801D7098` | `+0x11E` | MP max (record copy) |
+| `0x801D7200` | `+0x122` | AGL |
+| `0x801D70D4` | `+0x124` | ATK |
+| `0x801D7110` | `+0x126` | UDF |
+| `0x801D714C` | `+0x128` | LDF |
+| `0x801D7188` | `+0x12A` | SPD |
+| `0x801D71C4` | `+0x12C` | INT |
+| `0x801D7020` | `+0x130` | magic rank |
+| `0x801D72A4` / `0x801D72D8` | `+0x185` / `+0x186` | skill roster count + first id |
 
 `FUN_801DA2A0` shares those two globals and was previously read as this
 editor's page-navigation half. That pairing is **falsified** - see

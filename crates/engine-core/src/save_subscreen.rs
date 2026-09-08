@@ -13,6 +13,12 @@
 //! script to go idle, then either advances its own step or writes a new
 //! sub-screen id - which is how control moves through the graph.
 //!
+//! The id space is **not** save-specific: `0x801E4F40` is the menu overlay's
+//! whole screen table (33 entries, `0x00..=0x20`), so the same dispatcher
+//! runs the Items, Magic, Equip, shop and casino screens. What makes this
+//! module the *save* graph is the subset it carries step machines for, plus
+//! the entry-context decode that names which family a record opens.
+//!
 //! Two globals carry all of it: the sub-screen id and the step counter.
 //! A sub-screen never returns a value; it *is* the transition, by writing
 //! the id global. That makes the graph a plain state machine once lifted
@@ -60,8 +66,14 @@ pub enum SaveSubScreen {
     FinalExit,
     /// `0x01` - the slot selector.
     SlotSelect,
-    /// `0x02` - save entry, reached from the pause menu.
-    SaveEntry,
+    /// `0x02` - the developer **character-parameter editor**
+    /// (`FUN_801D6E18`), not a save screen. Its twelve cursor rows write
+    /// the live character record directly: XP `+0x000`, HP / MP max
+    /// `+0x11C` / `+0x11E`, the six record stats `+0x122..+0x12C`, the
+    /// magic rank `+0x130` and the skill roster `+0x185` / `+0x186`. The
+    /// name this variant used to carry ("save entry, reached from the
+    /// pause menu") is contradicted by those stores.
+    CharParamEditor,
     /// `0x03` - Yes/No confirm, cursor defaulting to `No`.
     ConfirmYesNo,
     /// `0x04` - post-save "press any button" return.
@@ -89,22 +101,29 @@ pub enum SaveSubScreen {
     /// erases it before writing (`FUN_801E37CC`, ported as
     /// [`crate::card_bu_io::erase_file`]).
     CardSave,
-    /// `0x1A` - save-slot confirm.
+    /// `0x1A` - the shop's **Buy / Sell / Quit mode select**
+    /// (`FUN_801DAFD4`), not a save-slot confirm.
     ///
-    /// **Suspect name, deliberately left alone.** `save-screen.md`'s table
-    /// reads `FUN_801DAFD4` as the shop's Buy / Sell / Quit mode select and
-    /// calls the save-confirm reading superseded. That is very likely right
-    /// (`0x1B`..`0x1F` around it are all shop screens), but renaming this
-    /// variant also moves the [`SaveEntryContext::Cancel`] fallback below,
-    /// which deliberately lands here so a cancel compares equal to a screen
-    /// this module has a step machine for. Settle the two together.
-    SaveConfirm,
+    /// The two halves that kept the old name alive are settled together.
+    /// `save-screen.md` reads the screen's row-`1` validation as a walk of
+    /// the item bag at `0x80085958` ("own anything to sell"), not a
+    /// save-block existence table - and `0x1B`..`0x1F` around it are all
+    /// shop screens. The entry-context decode agrees from the other side:
+    /// context byte `0x00` routes here (`0x801DC89C..0x801DC8A0`), and
+    /// that byte is the shop's own record kind, which is why the fallback
+    /// below is now [`SaveEntryContext::ShopEntry`].
+    ShopModeSelect,
     /// `0x1E` - inventory spinner ahead of the quantity screen. In context
     /// (`save-screen.md`) this is the shop **sell list**; the staged
     /// "inventory bytes" are the bag slot the sell-quantity screen consumes.
     QuantitySpinner,
-    /// `0x20` - auto-save path.
-    AutoSave,
+    /// `0x20` - the casino **prize-exchange** confirm (`FUN_801DC1CC`),
+    /// not an auto-save. It reads the block byte from the entry-context
+    /// record `_DAT_8007B450[1]` and indexes the prize table at
+    /// `0x801E4518 + block*0x60`, which is the casino table and nothing
+    /// else. `docs/subsystems/field-menu.md` pins the same id to window
+    /// 46 from the widget-script sweep, independently.
+    CasinoPrizeConfirm,
     /// A table slot whose screen is not yet pinned. Carries its id so a
     /// transition into one round-trips.
     Unpinned(u8),
@@ -116,7 +135,7 @@ impl SaveSubScreen {
         match self {
             Self::FinalExit => 0x00,
             Self::SlotSelect => 0x01,
-            Self::SaveEntry => 0x02,
+            Self::CharParamEditor => 0x02,
             Self::ConfirmYesNo => 0x03,
             Self::PostSaveReturn => 0x04,
             Self::PadReleaseWait => 0x08,
@@ -125,9 +144,9 @@ impl SaveSubScreen {
             Self::GenericPicker => 0x17,
             Self::CardLoad => 0x18,
             Self::CardSave => 0x19,
-            Self::SaveConfirm => 0x1A,
+            Self::ShopModeSelect => 0x1A,
             Self::QuantitySpinner => 0x1E,
-            Self::AutoSave => 0x20,
+            Self::CasinoPrizeConfirm => 0x20,
             Self::Unpinned(id) => id,
         }
     }
@@ -137,7 +156,7 @@ impl SaveSubScreen {
         match id {
             0x00 => Self::FinalExit,
             0x01 => Self::SlotSelect,
-            0x02 => Self::SaveEntry,
+            0x02 => Self::CharParamEditor,
             0x03 => Self::ConfirmYesNo,
             0x04 => Self::PostSaveReturn,
             0x08 => Self::PadReleaseWait,
@@ -146,9 +165,9 @@ impl SaveSubScreen {
             0x17 => Self::GenericPicker,
             0x18 => Self::CardLoad,
             0x19 => Self::CardSave,
-            0x1A => Self::SaveConfirm,
+            0x1A => Self::ShopModeSelect,
             0x1E => Self::QuantitySpinner,
-            0x20 => Self::AutoSave,
+            0x20 => Self::CasinoPrizeConfirm,
             other => Self::Unpinned(other),
         }
     }
@@ -166,36 +185,41 @@ impl SaveSubScreen {
 /// REF: FUN_801DC6B4 (state 0's entry-context decode).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SaveEntryContext {
-    /// The sentinel pointer - opened from the pause menu to save.
-    MenuSave,
+    /// The sentinel pointer value `1`, which retail tests for and never
+    /// dereferences (`bne v0,s1` at `0x801DC868`, then
+    /// `_DAT_8007B450 = 0`). It opens sub-screen `0x02` - the developer
+    /// character-parameter editor, not the save flow. None of the four
+    /// context bytes below reaches a save screen either - the card
+    /// drivers are entered from the root picker's own rows.
+    DebugParamEditor,
     /// Context byte `0x01` - a field script's save point: retail opens
     /// straight on the save-card driver `0x19`
     /// (`0x801DC8AC..0x801DC8B4`), skipping the root picker entirely.
     ScriptSave,
-    /// Context byte `0x07` - auto-save.
-    AutoSave,
+    /// Context byte `0x07` - the casino ticket counter, which opens the
+    /// prize-exchange confirm [`SaveSubScreen::CasinoPrizeConfirm`]
+    /// (`0x801DC8C8`). Read as "auto-save" before the screen it opens was
+    /// traced.
+    CasinoPrizeCounter,
     /// Context byte `0x0D` - returning after a save completed. The same
     /// kind byte hides the root picker's Load row and arms its
     /// leave-confirm ([`crate::pause_screens::ROOT_MENU_CONTEXT_LOCKED`]).
     PostSave,
-    /// Context byte `0x00` - cancelled / backing out.
-    Cancel,
+    /// Context byte `0x00` - a **town shop**. The byte is the op-`0x49`
+    /// record's own kind, and it opens the shop's mode select
+    /// [`SaveSubScreen::ShopModeSelect`] (`0x801DC89C`).
+    ShopEntry,
 }
 
 impl SaveEntryContext {
     /// The sub-screen this context opens on.
     pub fn start_screen(self) -> SaveSubScreen {
         match self {
-            Self::MenuSave => SaveSubScreen::SaveEntry,
+            Self::DebugParamEditor => SaveSubScreen::CharParamEditor,
             Self::ScriptSave => SaveSubScreen::CardSave,
-            Self::AutoSave => SaveSubScreen::AutoSave,
+            Self::CasinoPrizeCounter => SaveSubScreen::CasinoPrizeConfirm,
             Self::PostSave => SaveSubScreen::PostSaveReturn,
-            // `0x1A` is the save-confirm screen, which this module does
-            // carry a step machine for. Naming it `Unpinned(0x1A)` here
-            // would round-trip the id but compare unequal to
-            // `SaveSubScreen::SaveConfirm`, so the dispatcher would park
-            // instead of running the machine.
-            Self::Cancel => SaveSubScreen::SaveConfirm,
+            Self::ShopEntry => SaveSubScreen::ShopModeSelect,
         }
     }
 }
@@ -269,9 +293,11 @@ pub struct SubScreenInput {
     pub cursor: u16,
     /// The card driver finished this frame.
     pub card_done: bool,
-    /// At least one save block in the scanned range is both present and
-    /// valid. The save-confirm screen refuses to proceed without one.
-    pub save_blocks_available: bool,
+    /// The bag holds at least one sellable entry in the scanned window
+    /// (`0x80085958`, stride 2). The shop's mode select refuses to open the
+    /// Sell list without one. Named for the superseded "save block
+    /// existence table" reading of the same walk.
+    pub sellable_items_available: bool,
     /// The spinner's outcome selector: `2` commits to the quantity
     /// screen, `3` re-runs the spinner's second display script.
     pub spinner_result: u8,
@@ -434,7 +460,7 @@ impl SaveScreenMachine {
             SaveSubScreen::PartyPicker => self.tick_party_picker(input),
             SaveSubScreen::CardSave => self.tick_card_driver(input, CardOp::Save),
             SaveSubScreen::CardLoad => self.tick_card_driver(input, CardOp::Load),
-            SaveSubScreen::SaveConfirm => self.tick_save_confirm(input),
+            SaveSubScreen::ShopModeSelect => self.tick_shop_mode_select(input),
             SaveSubScreen::QuantitySpinner => self.tick_quantity_spinner(input),
             // Screens with no step machine here park rather than
             // transitioning; a host drives them through `goto`.
@@ -640,14 +666,15 @@ impl SaveScreenMachine {
         }
     }
 
-    /// Sub-screen `0x1A`: the save-slot confirm, a three-row list.
+    /// Sub-screen `0x1A`: the shop's Buy / Sell / Quit mode select, a
+    /// three-row list.
     ///
     /// The rows do not share an exit. Row `2` and the cancel button both
-    /// leave for the terminal screen; row `0` leaves for the card-full
-    /// error screen; row `1` is the only one that can *proceed*, and only
-    /// after a scan finds a save block that is both present and valid.
-    /// Failing that scan plays an error cue and leaves the screen where
-    /// it is - retail does not fall through to a transition.
+    /// leave for the terminal screen; row `0` (Buy) leaves for the buy list
+    /// `0x1B`; row `1` (Sell) is the only one that can *proceed*, and only
+    /// after a walk of the item bag finds something to sell. Failing that
+    /// walk buzzes and leaves the screen where it is - retail does not fall
+    /// through to a transition.
     ///
     /// The row-`2` exit fires *two* audio calls in retail - the same cue
     /// entry point the other screens use, with id `0`, plus a second
@@ -656,7 +683,7 @@ impl SaveScreenMachine {
     /// points.
     ///
     /// PORT: FUN_801DAFD4
-    fn tick_save_confirm(&mut self, input: SubScreenInput) -> Vec<SubScreenEffect> {
+    fn tick_shop_mode_select(&mut self, input: SubScreenInput) -> Vec<SubScreenEffect> {
         match self.step {
             0 => {
                 self.step = 1;
@@ -668,7 +695,7 @@ impl SaveScreenMachine {
                     vec![SubScreenEffect::ClearStaging]
                 }
                 (1, 1) => {
-                    if input.save_blocks_available {
+                    if input.sellable_items_available {
                         self.step = 2;
                         vec![SubScreenEffect::RunScript]
                     } else {
@@ -712,7 +739,7 @@ impl SaveScreenMachine {
             2 => {}
             3 => {
                 if !input.script_busy {
-                    self.goto(SaveSubScreen::SaveConfirm);
+                    self.goto(SaveSubScreen::ShopModeSelect);
                 }
                 return Vec::new();
             }
@@ -978,16 +1005,16 @@ mod tests {
     #[test]
     fn entry_context_picks_the_start_screen() {
         assert_eq!(
-            SaveEntryContext::MenuSave.start_screen(),
-            SaveSubScreen::SaveEntry
+            SaveEntryContext::DebugParamEditor.start_screen(),
+            SaveSubScreen::CharParamEditor
         );
         assert_eq!(
             SaveEntryContext::ScriptSave.start_screen(),
             SaveSubScreen::CardSave
         );
         assert_eq!(
-            SaveEntryContext::AutoSave.start_screen(),
-            SaveSubScreen::AutoSave
+            SaveEntryContext::CasinoPrizeCounter.start_screen(),
+            SaveSubScreen::CasinoPrizeConfirm
         );
         assert_eq!(
             SaveEntryContext::PostSave.start_screen(),
@@ -999,7 +1026,7 @@ mod tests {
     /// must not dispatch pad reads.
     #[test]
     fn fade_gates_input_then_dispatch_starts() {
-        let mut m = SaveScreenMachine::new(SaveEntryContext::MenuSave);
+        let mut m = SaveScreenMachine::new(SaveEntryContext::DebugParamEditor);
         m.tick(idle(), 0x10); // Init
         assert_eq!(m.phase(), SavePhase::FadeIn);
         assert!(!m.input_active());
@@ -1023,7 +1050,7 @@ mod tests {
     /// flow with the normal exit code and a re-opaqued fade.
     #[test]
     fn final_exit_runs_script_then_exits() {
-        let mut m = dispatching(SaveEntryContext::MenuSave);
+        let mut m = dispatching(SaveEntryContext::DebugParamEditor);
         m.goto(SaveSubScreen::FinalExit);
 
         let fx = m.tick(idle(), 0);
@@ -1059,7 +1086,7 @@ mod tests {
             (1u16, SaveSubScreen::SlotSelect),
             (0, SaveSubScreen::FinalExit),
         ] {
-            let mut m = dispatching(SaveEntryContext::MenuSave);
+            let mut m = dispatching(SaveEntryContext::DebugParamEditor);
             m.goto(SaveSubScreen::ConfirmYesNo);
             m.tick(idle(), 0);
             let fx = m.tick(
@@ -1079,7 +1106,7 @@ mod tests {
     /// the default row goes.
     #[test]
     fn confirm_yes_no_cancel_returns_to_the_selector() {
-        let mut m = dispatching(SaveEntryContext::MenuSave);
+        let mut m = dispatching(SaveEntryContext::DebugParamEditor);
         m.goto(SaveSubScreen::ConfirmYesNo);
         m.tick(idle(), 0);
         m.tick(SubScreenInput { nav: 2, ..idle() }, 0);
@@ -1104,7 +1131,7 @@ mod tests {
         );
         assert_eq!(press.screen(), SaveSubScreen::SlotSelect);
 
-        let mut release = dispatching(SaveEntryContext::MenuSave);
+        let mut release = dispatching(SaveEntryContext::DebugParamEditor);
         release.goto(SaveSubScreen::PadReleaseWait);
         release.tick(idle(), 0);
         // Button held: the release-wait screen stays put.
@@ -1125,7 +1152,7 @@ mod tests {
     /// settles.
     #[test]
     fn confirm_exit_yes_branch_runs_a_second_script() {
-        let mut m = dispatching(SaveEntryContext::MenuSave);
+        let mut m = dispatching(SaveEntryContext::DebugParamEditor);
         m.goto(SaveSubScreen::ConfirmExit);
         m.tick(idle(), 0);
 
@@ -1151,7 +1178,7 @@ mod tests {
     #[test]
     fn confirm_exit_no_and_cancel_leave() {
         for nav in [1u8, 2] {
-            let mut m = dispatching(SaveEntryContext::MenuSave);
+            let mut m = dispatching(SaveEntryContext::DebugParamEditor);
             m.goto(SaveSubScreen::ConfirmExit);
             m.tick(idle(), 0);
             m.tick(
@@ -1175,7 +1202,7 @@ mod tests {
             (SaveSubScreen::CardSave, CardOp::Save),
             (SaveSubScreen::CardLoad, CardOp::Load),
         ] {
-            let mut m = dispatching(SaveEntryContext::MenuSave);
+            let mut m = dispatching(SaveEntryContext::DebugParamEditor);
             m.goto(screen);
 
             let fx = m.tick(idle(), 0);
@@ -1231,17 +1258,18 @@ mod tests {
         assert_eq!(ROOT_MENU_ROUTES[6], SaveSubScreen::CardSave.id());
     }
 
-    /// The save-confirm's three rows do not share an exit: only row 1
-    /// can proceed, row 0 goes to the error screen, row 2 leaves.
+    /// The shop mode select's three rows do not share an exit: only row 1
+    /// (Sell) can proceed, row 0 (Buy) opens the buy list `0x1B`, row 2
+    /// (Quit) leaves.
     #[test]
-    fn save_confirm_rows_have_distinct_exits() {
+    fn shop_mode_select_rows_have_distinct_exits() {
         let cases = [
             (0u16, SaveSubScreen::Unpinned(0x1B)),
             (2, SaveSubScreen::FinalExit),
         ];
         for (cursor, expected) in cases {
-            let mut m = dispatching(SaveEntryContext::MenuSave);
-            m.goto(SaveSubScreen::SaveConfirm);
+            let mut m = dispatching(SaveEntryContext::DebugParamEditor);
+            m.goto(SaveSubScreen::ShopModeSelect);
             m.tick(idle(), 0);
             m.tick(
                 SubScreenInput {
@@ -1259,31 +1287,31 @@ mod tests {
     /// without one it plays the error cue and stays put rather than
     /// falling through to a transition.
     #[test]
-    fn save_confirm_row_one_needs_an_available_block() {
-        let mut blocked = dispatching(SaveEntryContext::MenuSave);
-        blocked.goto(SaveSubScreen::SaveConfirm);
+    fn shop_mode_select_row_one_needs_a_sellable_bag() {
+        let mut blocked = dispatching(SaveEntryContext::DebugParamEditor);
+        blocked.goto(SaveSubScreen::ShopModeSelect);
         blocked.tick(idle(), 0);
         let fx = blocked.tick(
             SubScreenInput {
                 nav: 1,
                 cursor: 1,
-                save_blocks_available: false,
+                sellable_items_available: false,
                 ..idle()
             },
             0,
         );
         assert_eq!(fx, vec![SubScreenEffect::Sfx(0x23)]);
-        assert_eq!(blocked.screen(), SaveSubScreen::SaveConfirm);
+        assert_eq!(blocked.screen(), SaveSubScreen::ShopModeSelect);
         assert_eq!(blocked.step(), 1);
 
-        let mut ok = dispatching(SaveEntryContext::MenuSave);
-        ok.goto(SaveSubScreen::SaveConfirm);
+        let mut ok = dispatching(SaveEntryContext::DebugParamEditor);
+        ok.goto(SaveSubScreen::ShopModeSelect);
         ok.tick(idle(), 0);
         ok.tick(
             SubScreenInput {
                 nav: 1,
                 cursor: 1,
-                save_blocks_available: true,
+                sellable_items_available: true,
                 ..idle()
             },
             0,
@@ -1297,7 +1325,7 @@ mod tests {
     /// its result selector picks between committing and re-running.
     #[test]
     fn quantity_spinner_commits_on_result_two() {
-        let mut m = dispatching(SaveEntryContext::MenuSave);
+        let mut m = dispatching(SaveEntryContext::DebugParamEditor);
         m.goto(SaveSubScreen::QuantitySpinner);
         m.tick(idle(), 0);
 
@@ -1316,7 +1344,7 @@ mod tests {
     /// wait step rather than leaving the screen.
     #[test]
     fn quantity_spinner_rerun_parks_on_the_wait_step() {
-        let mut m = dispatching(SaveEntryContext::MenuSave);
+        let mut m = dispatching(SaveEntryContext::DebugParamEditor);
         m.goto(SaveSubScreen::QuantitySpinner);
         m.tick(idle(), 0);
 
@@ -1332,7 +1360,7 @@ mod tests {
         assert_eq!(m.screen(), SaveSubScreen::QuantitySpinner);
 
         m.tick(idle(), 0);
-        assert_eq!(m.screen(), SaveSubScreen::SaveConfirm);
+        assert_eq!(m.screen(), SaveSubScreen::ShopModeSelect);
     }
 
     /// A full script-save flow: the card driver runs, lands on the
@@ -1360,7 +1388,7 @@ mod tests {
     /// code alone does not mean the UI is gone.
     #[test]
     fn exit_code_still_waits_for_the_fade_out() {
-        let mut m = dispatching(SaveEntryContext::MenuSave);
+        let mut m = dispatching(SaveEntryContext::DebugParamEditor);
         m.goto(SaveSubScreen::FinalExit);
         m.tick(idle(), 0);
         m.tick(idle(), 0);
@@ -1376,22 +1404,22 @@ mod tests {
         assert_eq!(m.fade(), FADE_OPAQUE);
     }
 
-    /// Backing out of the save UI opens on the save-confirm screen, and
-    /// that screen must be the *dispatchable* variant. Naming it as an
+    /// A shop entry context opens on the shop's mode select, and that
+    /// screen must be the *dispatchable* variant. Naming it as an
     /// unpinned id would round-trip the number while comparing unequal
-    /// to `SaveConfirm`, so the dispatcher would park on a screen this
+    /// to `ShopModeSelect`, so the dispatcher would park on a screen this
     /// module implements.
     #[test]
-    fn cancel_context_opens_a_dispatchable_save_confirm() {
-        let start = SaveEntryContext::Cancel.start_screen();
-        assert_eq!(start, SaveSubScreen::SaveConfirm);
+    fn shop_context_opens_a_dispatchable_mode_select() {
+        let start = SaveEntryContext::ShopEntry.start_screen();
+        assert_eq!(start, SaveSubScreen::ShopModeSelect);
         assert_eq!(start.id(), 0x1A);
         assert_eq!(start, SaveSubScreen::from_id(0x1A));
         assert!(start.is_pinned());
 
         // It really dispatches: step 0 stages and runs the display
         // script rather than returning nothing.
-        let mut m = dispatching(SaveEntryContext::Cancel);
+        let mut m = dispatching(SaveEntryContext::ShopEntry);
         let effects = m.tick(idle(), 0);
         assert!(effects.contains(&SubScreenEffect::RunScript), "{effects:?}");
     }
@@ -1405,7 +1433,7 @@ mod tests {
         assert_eq!(FADE_INPUT_THRESHOLD, 0x7A);
         assert_eq!(FADE_DISPATCH_THRESHOLD, 0x79);
 
-        let mut m = SaveScreenMachine::new(SaveEntryContext::MenuSave);
+        let mut m = SaveScreenMachine::new(SaveEntryContext::DebugParamEditor);
         m.tick(idle(), 0); // Init
         // Land exactly on 0x79: input is already live, dispatch is not.
         while m.fade() > 0x79 {
@@ -1423,7 +1451,7 @@ mod tests {
     /// overshoots nor completes on a transparent screen.
     #[test]
     fn fade_out_ramps_up_to_opaque_and_clamps() {
-        let mut m = dispatching(SaveEntryContext::MenuSave);
+        let mut m = dispatching(SaveEntryContext::DebugParamEditor);
         m.goto(SaveSubScreen::FinalExit);
         m.tick(idle(), 0);
         m.tick(idle(), 0);

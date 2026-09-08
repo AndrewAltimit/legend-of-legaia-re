@@ -464,14 +464,50 @@ at PC). Otherwise bit 15 of `sel` picks the arm:
 | bit 15 clear, `sel & 0x7FFF != 0` | `func_0x8003D53C(arg >> 3, arg & 7, sel)` - start a CD-XA voice clip `(clip, channel)` out of the `0x801C6ED8` clip table. |
 | bit 15 clear, `sel & 0x7FFF == 0` | `func_0x80019794(arg >> 3)` - the clip-idle query; a non-zero answer halts at PC. |
 | bit 15 set, sub `0` | `func_0x80035B50(arg)` - enqueue SFX cue `arg` into the four-slot pending ring, parking its slot at `gp+0x15A`. |
-| bit 15 set, sub `1` | `_DAT_8007BABC = arg`. |
+| bit 15 set, sub `1` | `_DAT_8007BABC = arg` - **guarded**, see below. |
 | bit 15 set, sub `2` | Gate only: halt unless `_DAT_8007BABC == _DAT_8007BAA0`. |
-| bit 15 set, sub `3` | `FUN_801D8450()`. |
-| bit 15 set, sub `4` | `func_0x80035BAC(arg)` - store `arg` as the parked slot's delay, scheduling the cue instead of firing it. Port: `engine-core::scus_leaf_kernels::SfxCueDelays`. |
+| bit 15 set, sub `3` | `FUN_801D8450()` - the side-band stream **teardown**: `FUN_800653C8(0x17)` then `(0x16)`, `FUN_8001FF58(6)` (release SEQ slot 6), then `_DAT_8007BA88 = 0` and `_DAT_8007BAFC = 0`. Ungated, and it *yields the frame* rather than falling through. |
+| bit 15 set, sub `4` | `func_0x80035BAC(arg)` - store `arg` as the parked slot's delay, scheduling the cue instead of firing it. Ungated. Port: `engine-core::scus_leaf_kernels::SfxCueDelays`. |
 
-Two gates the port does not model: the whole bit-15-set arm is skipped when the dual-mode
-global `_DAT_8007B868` is non-zero, and subs `0`/`2`/`3` additionally halt at PC unless
-`_DAT_8007BABC == _DAT_8007BAA0`.
+#### The stream gates on op 0x36
+
+Two globals ride on top of that sub-switch, and both arms consult them - which is
+what an earlier reading of this section got wrong on both halves. It said the gate
+covered subs `0`/`2`/`3` and that `_DAT_8007B868` only skipped the bit-15-**set**
+arm. The disassembly at `0x801E030C..0x801E0444` says subs `0`/`1`/`2`, with sub
+`3` ungated, and puts the same gate on the bit-15-**clear** arm.
+
+`_DAT_8007BABC` / `_DAT_8007BAA0` are a **request / acknowledge pair** for the
+variable `vab_01` side-band bank ([audio.md](audio.md#vab-slots---one-installer-twelve-records)
+slot `3`, installed by `FUN_800243F0`, which is also the routine that latches the
+acknowledge cell from the request at `0x8002448C` / `0x800244F0`). `-1` on the
+acknowledge cell is the *idle* sentinel: the field overlay seeds the pair `(8, -1)`
+at `0x801D6880..0x801D688C` and tears it down to `(-1, -1)` at
+`0x801D74AC..0x801D74B8`, and a busy-wait around a direct `FUN_800243F0` call at
+`0x801D72E4..0x801D7300` spins on the same equality. Sub `3`'s teardown clears
+`_DAT_8007BA88` - the cell `FUN_800243F0` reads at `0x800244C0` to force the
+latch - so the three subs are one small protocol: request, wait, tear down.
+
+| Arm | Gate |
+|---|---|
+| bit 15 set, `_DAT_8007B868 != 0` | The whole sub-switch is skipped and the op advances (`bnez v0,0x801DF898` at `0x801E031C`). |
+| bit 15 set, sub `0` | Halt at PC unless `_DAT_8007BABC == _DAT_8007BAA0` (`0x801E0340`). |
+| bit 15 set, sub `1` | Store only when the pair is equal **or** `_DAT_8007BAA0 == -1`; otherwise halt at PC (`0x801E0374..0x801E037C`). |
+| bit 15 set, sub `2` | Halt at PC unless the pair is equal (`0x801E03A8`). |
+| bit 15 clear | Halt at PC unless the pair is equal - **unless** `_DAT_8007B868 != 0`, which bypasses the test (`0x801E03E8..0x801E0410`). |
+
+So `_DAT_8007B868` points the two halves in opposite directions: it removes the
+bit-15-set arm and it opens the bit-15-clear one. Retail boots that word `0` and no
+static writer ever sets it non-zero (it is the dev/dual-mode flag - see the op-`0x35`
+sub-op `0xA` note above), so in play the sub-switch always runs and the XA arm always
+waits on the bank.
+
+The port models the pair as `engine-core::scus_leaf_kernels::SoundStreamRequest` on
+`World::sound_stream`, with `World::dual_mode_gate` pinned at `0`; the arms live in
+the field host's op-`0x36` handler and the gates are covered by
+`engine-core::world::tests::sound_stream_gates`. Because the engine's bank loads are
+synchronous the pair is born settled and a sub-`1` settles in the same call, so no
+script parks - the same "satisfied on arrival" shape the BGM barrier has.
 
 ### 0x37-0x42 (yield, sound, RPG state, dialog, jump)
 

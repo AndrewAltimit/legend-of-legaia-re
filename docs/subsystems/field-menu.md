@@ -518,15 +518,44 @@ Y+0x11)` with current/max 4-digit fields at `WX+0x38`/`WX+0x60` and the
 slash at `WX+0x58` on row `Y+0xf`; MP likewise (ICO `0x40`) on rows
 `Y+0x1e`/`Y+0x1c`; and the kind-`0x31` AP gauge widget at `(WX+0x28,
 Y+0x29)` fed from the persistent AP `+0x10E`. HP / MP value ink comes
-from per-member health-tier color fns (`FUN_800349EC` /
-`FUN_80035EA8`); the full-health tier is the plain CLUT-7 white.
+from per-member health-tier colour fns (`FUN_800349EC` /
+`FUN_80035EA8`); the full-health tier is the plain CLUT-7 white. The
+tiers themselves are [below](#health-tier-ink-fun_800349ec--fun_80035ea8).
 
 Engine port: `engine-ui::field_menu_draws_for` +
 `field_menu_info_draws_for` (text) and `field_menu_icon_sprites_for`
 (hand cursor, money/time pictograms, LV/HP/MP labels, per-member AP
 gauges via the shared `ap_gauge_sprites` widget). The engine shows the
-coin row only when the casino bank is nonzero; the health-tier ink
-thresholds stay untraced.
+coin row only when the casino bank is nonzero.
+
+#### Health-tier ink (`FUN_800349EC` / `FUN_80035EA8`)
+
+Both take a character index, resolve the record at
+`0x80084140 + id*0x414`, and return a staging ink id. Both compare against
+the **live** HP / MP pairs, not the record copies, and both thresholds are
+integer shifts of the max (`srl 2` and `srl 1`) tested with a strict
+`max_frac < current`, so an exact quarter or half falls into the lower tier.
+
+`FUN_800349EC` (HP, record `+0x104` max / `+0x106` current) runs five tests
+in this order, and the ailment arm sits **between** the two HP thresholds
+rather than ahead of them - so a character below a quarter HP stays orange
+even while poisoned:
+
+| Test | Ink |
+|---|---|
+| `hp == 0` | `2` (red) |
+| `hp <= max/4` | `9` (orange) |
+| `+0x12E != 0` (the battle-status halfword) | `6` (gold) |
+| `hp <= max/2` | `6` (gold) |
+| otherwise | `7` (white) |
+
+`FUN_80035EA8` (MP, record `+0x108` max / `+0x10A` current) is the same
+shape with the zero case and the ailment arm removed: `mp <= max/4` -> `9`,
+`mp <= max/2` -> `6`, else `7`. So an empty MP bar inks orange, not red.
+
+Port: `engine-ui::{menu_hp_ink, menu_hp_ink_with_status, menu_mp_ink}`. The
+ailment arm has no live caller - no view struct carries `+0x12E` yet - so the
+panels go through the `status == 0` wrapper.
 
 ### Which scenes the menu opens in
 
@@ -1867,11 +1896,25 @@ Start enters the menu it gates. The port models that with
 `field_submode_screen::OP49_PARK_PRESERVING_SUB_OPS`; opening a screen for the
 row instead - which the engine used to do, falling back to the close tick -
 retires within a few frames and takes the context with it, which is why these
-two screens had no live trigger. What clears a standing `-1` park in retail is
-outside the dispatcher and not decoded; the port releases it from the
-menu-close path (`World::release_menu_entry_context_park`), the one exit the
-gate structurally has, since under it the root picker's cancel opens the ready
-check rather than closing.
+two screens had no live trigger.
+
+What clears a standing `-1` park is outside the dispatcher, but it is not
+undecoded: `_DAT_8007B450` has exactly **eleven** writers across the whole
+disc corpus and seven of them store zero
+(`find-gp-relative-refs.py --va 0x8007b450`, 72 references over 84 images).
+Two are SCUS leaves that sit next to each other -
+`FUN_800353E0` (`gp+0x148 = 0`, `gp+0x138 = 0`, `FUN_8003C110(0xC)`,
+`gp+0x13C = 7`) and its four-instruction sibling `FUN_8003540C`, which zeroes
+the same pair and returns. `gp+0x148` is the **live-window list head**, so
+both are menu teardowns: closing the menu drops the window list and the entry
+context together. The port's release on the menu-close path
+(`World::release_menu_entry_context_park`) is therefore the mechanism retail
+uses, not a stand-in for it. The rest of the clearers are the per-scene
+control-block reset `FUN_8003A024` (`0x8003A104`), the field VM's own op-`0x49`
+sentinel arm at `0x801E08D8` (`if (_DAT_8007B450 == 1) _DAT_8007B450 = 0`), two
+sites inside the submode dispatcher band (`0x801F1420` / `0x801F1F20`), one in
+the world-map controller (`0x801ED694`), and the save/menu dispatcher's own
+sentinel path at `0x801DC878`.
 
 The painters for windows 24 and 46 stay unreached by a **screen** rather than
 by a mechanism; each one's remaining blocker is recorded per builder in

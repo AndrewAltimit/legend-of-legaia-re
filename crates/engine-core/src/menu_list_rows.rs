@@ -18,6 +18,8 @@
 //! - [`build_throw_out_rows`] - content id `0x22`, the Items **Throw Out**
 //!   list;
 //! - [`build_price_gated_rows`] - content id 2, the price-gated bag list;
+//! - [`build_shop_buy_rows`] + [`shop_buy_row_order`] - content id `0x0B`,
+//!   the shop **buy** list (the one family here that is live);
 //! - [`row_name_source`] - the per-class row-name resolver `FUN_8002FF8C`;
 //! - [`row_description_source`] - the highlighted-row description
 //!   dispatcher `FUN_80034250`;
@@ -27,7 +29,12 @@
 //! All ports are derived from the SCUS disassembly
 //! (`ghidra/scripts/funcs/<addr>.txt`); provenance notes sit on each item.
 //!
-//! Nothing in the engine speaks retail's row-entry model - but the three
+//! The shop buy-list pair is the exception to everything below: its rows are
+//! keyed by **item id**, not by a bag slot, and its order kernel is live -
+//! `crate::shop_catalog::scene_shops` runs [`shop_buy_row_order`] over every
+//! decoded stock list, so all three hosts draw the retail row order.
+//!
+//! Nothing else in the engine speaks retail's row-entry model - but the three
 //! families below are in three *different* positions, and a note that names
 //! only the first reads as one gap and is three. Two of them are
 //! substitutions the port has already made; one is a real wiring gap. Each
@@ -516,6 +523,137 @@ pub fn build_price_gated_rows(
     in_place
 }
 
+/// Lowest item id the shop **buy** list will build a row for.
+///
+/// `slti v0,s0,0x1a` gates both of the builder's passes
+/// (`0x80030E28` shrinks the allocation, `0x80030EA0` skips the emit). Every
+/// item id below `0x1A` carries price `0` in the static item table, so this
+/// id-range test and the port's price-`> 0` sellable mask agree over the
+/// whole retail id space; a price-`0` id **at or above** `0x1A` (`0x1B`,
+/// `0x1F`, `0x21`, ...) would build a row in retail and be dropped by the
+/// price mask, which no shipped shop record exercises.
+pub const SHOP_ROW_MIN_ITEM_ID: u8 = 0x1A;
+
+/// Held count at which a shop buy row dims (`sltiu v0,v0,0x63` at
+/// `0x80030F0C` - the row stays white while the held count is `< 99`).
+pub const SHOP_ROW_HELD_CAP: u8 = 99;
+
+/// Rows the builder splits off the **tail** of the stock record and emits
+/// ahead of the rest (`_DAT_8007B450[2] - 3` is the split index, and the
+/// same `3` is what the no-room arm subtracts).
+pub const SHOP_TAIL_ROWS: usize = 3;
+
+/// PORT: FUN_80030628 (case `0x0B` row order, `0x80030F1C..0x80030F90`).
+///
+/// The on-screen order of a shop buy list is **not** the record order.
+/// Retail splits the walked rows at `record_count - 3`: rows below the split
+/// stage into a scratch array at `0x801C6220`, rows at or above it are
+/// written straight into the row buffer, and the staged group is appended
+/// afterwards - so the record's last entries come out **first**.
+///
+/// `record_count` is the record's own `[+2]` id count (padding included);
+/// `walk` is how many entries the emit loop covers, i.e. the count minus the
+/// sub-[`SHOP_ROW_MIN_ITEM_ID`] template ids. The hoisted band is therefore
+/// `walk - (record_count - 3)` rows wide - exactly `3 - padding_len`, which
+/// is why a record always reserves three tail slots and pads the unused ones
+/// with `Ra-Seru Meta $N`.
+///
+/// The hoisted rows are tagged [`CLASS_SHOP_ALT`], which the kind-4 list
+/// kernel stages with ink 5 - the "new in this town" highlight the
+/// walkthrough tables mark with `*`.
+///
+/// Returns a permutation of `0..walk`.
+pub fn shop_buy_row_order(record_count: usize, walk: usize) -> Vec<usize> {
+    let split = record_count as isize - SHOP_TAIL_ROWS as isize;
+    let mut order: Vec<usize> = (0..walk).filter(|&i| (i as isize) >= split).collect();
+    order.extend((0..walk).filter(|&i| (i as isize) < split));
+    order
+}
+
+/// PORT: FUN_80030628 (content-id-`0x0B` case, `0x80030D48..0x80030F98` -
+/// the shop **buy** list; `see ghidra/scripts/funcs/80030628.txt`).
+///
+/// This, not [`build_price_gated_rows`], is the shop's buy row layout.
+/// Content id `2` is the price-gated *bag* list (the sell side); the buy
+/// list is its own case and reads a different source - the field-VM
+/// entry-context record `_DAT_8007B450` directly, `[+2]` = id count and
+/// `[+3 + i]` = the item ids, i.e. exactly the op-`0x49` sub-`0` stock
+/// record [`legaia_asset::shop_stock`] scans.
+///
+/// Three shapes the disassembly fixes:
+///
+/// * **The `< 0x1A` filter runs twice.** The first pass shrinks the
+///   allocation by every low id among the first `n` entries
+///   (`0x80030E10..0x80030E44`); the emit loop then walks only that shrunk
+///   count (`slt v0,s1,s4` at `0x80030F5C`). So the builder *depends* on the
+///   unsellable template ids being a trailing run - walking `n - low_count`
+///   entries covers the sellable prefix exactly, and an interleaved record
+///   would silently truncate. That is the same partition
+///   `docs/subsystems/shop.md` measured disc-wide from the other side.
+/// * **The last three entries emit first.** Rows below the split index go
+///   to a staging array at `0x801C6220` tagged [`CLASS_ITEM`]; rows at or
+///   above it are written straight into the row buffer tagged
+///   [`CLASS_SHOP_ALT`], and the staged group is appended after
+///   (`0x80030F68..0x80030F90`). The hoisted group is `3 - padding_len`
+///   rows wide - empty on a record padded with three template ids, two or
+///   three rows on the disc's shorter-padded records - and it is the
+///   walkthrough tables' "new in this town" band.
+/// * **The tail is conditional.** `tail_rows_allowed` is retail's
+///   `s4 ∈ {0, 3}` probe pair at `0x80030D54..0x80030DE8`: the bag-slot
+///   scan `FUN_80042F4C(0xFF)` and an eight-byte `0xFF` sweep of every
+///   party member's equipment block (`char + 0x196..+0x19D`). Neither
+///   probe touches the stock; both only decide whether the last three
+///   entries are walked at all.
+///
+/// `price_of` / `held_of` are the two live reads the dim bit needs: the
+/// item record's `+2` price halfword and the bag count for that id
+/// (`0x80085959 + slot*2`, `0` when the id is not held).
+pub fn build_shop_buy_rows(
+    stock_ids: &[u8],
+    tail_rows_allowed: bool,
+    purse: u32,
+    price_of: impl Fn(u8) -> u16,
+    held_of: impl Fn(u8) -> u8,
+) -> Vec<u16> {
+    let count = stock_ids.len();
+    let n = if tail_rows_allowed {
+        count
+    } else {
+        count.saturating_sub(SHOP_TAIL_ROWS)
+    };
+    // Pass 1 (`0x80030E10..0x80030E44`): the allocation shrinks by every
+    // low id, and that shrunk figure is what the emit loop walks.
+    let low = stock_ids[..n]
+        .iter()
+        .filter(|&&id| id < SHOP_ROW_MIN_ITEM_ID)
+        .count();
+    let walk = n - low;
+    // The split index re-reads the record's own count byte, not the
+    // possibly-shrunk `n` (`lbu v0,2(v0); addiu v0,v0,-3` at `0x80030F24`).
+    let split = count as isize - SHOP_TAIL_ROWS as isize;
+
+    shop_buy_row_order(count, walk)
+        .into_iter()
+        .filter_map(|i| {
+            let id = stock_ids[i];
+            if id < SHOP_ROW_MIN_ITEM_ID {
+                return None;
+            }
+            let mut word = u16::from(id);
+            if purse < u32::from(price_of(id)) || held_of(id) >= SHOP_ROW_HELD_CAP {
+                word |= ROW_DISABLED;
+            }
+            Some(
+                word | if (i as isize) < split {
+                    CLASS_ITEM
+                } else {
+                    CLASS_SHOP_ALT
+                },
+            )
+        })
+        .collect()
+}
+
 /// One live menu window of the SCUS window list (retail: a 0x34-byte
 /// node in the sentinel-circular list at `gp+0x148` = `0x8007B460`,
 /// sorted ascending by the window id at `+0x8`).
@@ -873,5 +1011,90 @@ mod tests {
         let ids: Vec<u16> = set.iter().map(|w| w.id).collect();
         assert_eq!(ids, vec![3, 9, 15]);
         assert_eq!(set.get(9).unwrap().x, 40);
+    }
+}
+
+#[cfg(test)]
+mod shop_buy_row_tests {
+    use super::*;
+
+    /// The order kernel reproduces the three record shapes the disc carries:
+    /// a three-id template tail (no hoist), a one-id tail (two hoisted) and
+    /// no tail at all (three hoisted).
+    #[test]
+    fn buy_row_order_hoists_three_minus_padding() {
+        // 10 declared ids, 3 of them template padding -> walk 7, split 7.
+        assert_eq!(shop_buy_row_order(10, 7), vec![0, 1, 2, 3, 4, 5, 6]);
+        // 15 declared ids, 1 template id -> walk 14, split 12.
+        assert_eq!(
+            shop_buy_row_order(15, 14),
+            vec![12, 13, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+        );
+        // 10 declared ids, no padding -> walk 10, split 7.
+        assert_eq!(
+            shop_buy_row_order(10, 10),
+            vec![7, 8, 9, 0, 1, 2, 3, 4, 5, 6]
+        );
+    }
+
+    /// Rim Elm's Variety Shop: ten ids, no template padding. Retail hoists
+    /// the last three (Hunter Clothes / Scarlet Jewel / Azure Jewel) to the
+    /// top tagged [`CLASS_SHOP_ALT`], which is exactly the order and the
+    /// "new in this town" marking the curated walkthrough table carries.
+    #[test]
+    fn buy_rows_hoist_the_featured_band() {
+        let ids = [0x22, 0x34, 0x59, 0xD6, 0x77, 0x7E, 0x88, 0x43, 0xC7, 0xC8];
+        let rows = build_shop_buy_rows(&ids, true, 1_000_000, |_| 100, |_| 0);
+        let payload: Vec<u8> = rows.iter().map(|w| (w & 0xFF) as u8).collect();
+        assert_eq!(
+            payload,
+            vec![0x43, 0xC7, 0xC8, 0x22, 0x34, 0x59, 0xD6, 0x77, 0x7E, 0x88]
+        );
+        // The hoisted band is the alt class; the rest is the plain item class.
+        let classes: Vec<u16> = rows.iter().map(|w| w & ROW_CLASS_MASK).collect();
+        assert_eq!(&classes[..3], &[CLASS_SHOP_ALT; 3]);
+        assert!(classes[3..].iter().all(|&c| c == CLASS_ITEM));
+        assert!(rows.iter().all(|w| w & ROW_DISABLED == 0));
+    }
+
+    /// A three-id template tail keeps record order and drops the padding:
+    /// the sub-`0x1A` ids shrink the walk, so the emit loop never reaches
+    /// the split.
+    #[test]
+    fn buy_rows_drop_the_template_tail_and_keep_order() {
+        let ids = [0xD3, 0xD4, 0x77, 0x78, 0x7C, 0x7F, 0x88, 0x01, 0x02, 0x03];
+        let rows = build_shop_buy_rows(&ids, true, 1_000_000, |_| 100, |_| 0);
+        let payload: Vec<u8> = rows.iter().map(|w| (w & 0xFF) as u8).collect();
+        assert_eq!(payload, vec![0xD3, 0xD4, 0x77, 0x78, 0x7C, 0x7F, 0x88]);
+        assert!(rows.iter().all(|w| w & ROW_CLASS_MASK == CLASS_ITEM));
+    }
+
+    /// The dim bit is an OR of the two gates: purse below price, or a bag
+    /// already holding the cap. Nothing else sets it - there is no alt-ink
+    /// tier on this list.
+    #[test]
+    fn buy_rows_dim_on_purse_or_full_stack() {
+        let ids = [0x22, 0x34, 0x59];
+        let rows = build_shop_buy_rows(
+            &ids,
+            true,
+            250,
+            |id| if id == 0x22 { 180 } else { 400 },
+            |id| if id == 0x59 { SHOP_ROW_HELD_CAP } else { 0 },
+        );
+        // Order: split = 0, so all three are the hoisted class in record
+        // order; only the affordable, non-full row stays white.
+        let dim: Vec<bool> = rows.iter().map(|w| w & ROW_DISABLED != 0).collect();
+        assert_eq!(dim, vec![false, true, true]);
+        assert!(rows.iter().all(|w| w & ROW_ALT_INK == 0));
+    }
+
+    /// The no-room probe drops the three reserved tail slots outright.
+    #[test]
+    fn buy_rows_without_room_lose_the_reserved_tail() {
+        let ids = [0x22, 0x34, 0x59, 0xD6, 0x77, 0x7E, 0x88, 0x43, 0xC7, 0xC8];
+        let rows = build_shop_buy_rows(&ids, false, 1_000_000, |_| 100, |_| 0);
+        let payload: Vec<u8> = rows.iter().map(|w| (w & 0xFF) as u8).collect();
+        assert_eq!(payload, vec![0x22, 0x34, 0x59, 0xD6, 0x77, 0x7E, 0x88]);
     }
 }

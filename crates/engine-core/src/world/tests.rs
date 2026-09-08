@@ -279,6 +279,7 @@ mod save_state;
 mod script_teleport;
 mod shiny;
 mod slide;
+mod sound_stream_gates;
 mod summon_final_heal;
 mod take_item;
 mod tile_board;

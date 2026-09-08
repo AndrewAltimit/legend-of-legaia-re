@@ -608,6 +608,17 @@ one battle:
   gold frame band - so the geometry is a capture citation, not an engine
   invention, even though the code that produced it is untraced.
 
+  What the bytes do settle is where it is **not**. A `jal`-target sweep over
+  all 84 extracted overlay images finds five callers of the SCUS window
+  emitter `FUN_8002C69C` - the field overlay, the menu overlay and three
+  minigame overlays - and the battle-action overlay 0898 is not one of them.
+  0898 also calls the SCUS text kernel `FUN_80036888` exactly once and the
+  hand-cursor sprite `FUN_8002B994` not at all. So these windows are not the
+  menu's 9-slice skin drawn from battle code: whatever emits them builds its
+  own primitives. The capture that would close it is a breakpoint on the GPU
+  packet path across the results frame of a battle that levels a character,
+  with the emitting return address recorded - not another framebuffer.
+
 One thing the pair still gets wrong:
 
 - **Only the last level-up's banner is ever seen.** `World::apply_battle_xp`

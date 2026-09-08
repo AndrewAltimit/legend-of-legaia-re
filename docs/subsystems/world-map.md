@@ -1169,9 +1169,20 @@ first such segment directly (the field-VM walk can't be trusted inside text - it
 desyncs on glyph bytes that look like opcodes). `OwnedDialogPanel::from_inline_dialog`
 skips to that `0x1F` lead and decodes the segment through the standard MES
 interpreter; `SceneHost::open_pending_dialog` prefers this inline path and falls
-back to a `text_id` -> scene-MES lookup for the message-table dialogue paths. The
-geometry-header layout and multi-segment (full menu) rendering are not yet pinned
-- the first segment renders today.
+back to a `text_id` -> scene-MES lookup for the message-table dialogue paths.
+
+There is **no geometry header** on the `0x1F` lead to pin: the byte is the
+line-start marker of a MES glyph run and nothing follows it but glyphs
+([mes.md](../formats/mes.md#dialog-window-pager---fun_801d84d0)). The box's geometry belongs to
+the pager, not to the text - the reading box's rect, pens and advance hand are
+pinned in [field-menu.md](field-menu.md#dialog-reading-box-fun_801d84d0), and
+the row capacity is the pager's own `_DAT_801F2740 = 3`. Multi-segment
+rendering is likewise **not** a gap: consecutive `0x1F` lines pack into one
+window and the port does it - `legaia_mes::pack_box` groups up to three rows,
+`OwnedDialogPanel::seed_box_at_lead` types them as one box and
+`advance_page` pages the chain (pinned by `field_dialog_boxpack_disc`). What
+picks *which* segment a talk lands on is the record's own field-VM prologue,
+also not a header.
 
 > **Not the `0x3F` op - and not any opcode.** Earlier notes attributed this
 > inline text to a `0x3F` "Dialog" opcode; `0x3F` is actually the **named

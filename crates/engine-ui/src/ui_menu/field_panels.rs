@@ -530,18 +530,48 @@ pub const MENU_TEXT_RED: [f32; 4] = [0.905_882_4, 0.129_411_8, 0.0, 1.0];
 /// - `hp <= max/2` -> staging 6 (gold, [`MENU_TEXT_GOLD`])
 /// - else -> staging 7 (white, [`MENU_TEXT_WHITE`])
 ///
-/// (Retail also forces the gold tier at any HP when the char-record
-/// `+0x12E` status halfword is non-zero - an ailment latch the engine
-/// roster doesn't model yet.)
+/// Retail also forces the gold tier when the char-record `+0x12E` status
+/// halfword is non-zero - see [`menu_hp_ink_with_status`], which this
+/// function is the `status == 0` case of.
 ///
 /// PORT: FUN_800349EC - menu HP ink tier (record `+0x104`/`+0x106`
 /// thresholds at max/4 and max/2).
 pub fn menu_hp_ink(hp: u16, hp_max: u16) -> [f32; 4] {
+    menu_hp_ink_with_status(hp, hp_max, 0)
+}
+
+/// The whole of `FUN_800349EC`, ailment arm included.
+///
+/// Retail's five tests run in this order (`0x800349EC..0x80034A68`), and
+/// the ailment arm sits **between** the two HP thresholds rather than
+/// ahead of them - so a character below a quarter HP stays orange even
+/// while poisoned, and only the `max/4 < hp` band can be re-inked gold:
+///
+/// 1. `hp == 0` -> staging 2 (red, [`MENU_TEXT_RED`]);
+/// 2. `hp <= max/4` -> staging 9 (orange, [`MENU_TEXT_ORANGE`]);
+/// 3. `status != 0` -> staging 6 (gold, [`MENU_TEXT_GOLD`]);
+/// 4. `hp <= max/2` -> staging 6 (gold);
+/// 5. else -> staging 7 (white, [`MENU_TEXT_WHITE`]).
+///
+/// `status` is the char-record `+0x12E` battle-status halfword (read as a
+/// signed halfword; any non-zero value re-inks). `hp` / `hp_max` are the
+/// **live** pair `+0x106` / `+0x104`, not the record copies.
+///
+/// The ailment arm has no live input yet: no view struct carries the status
+/// word - neither [`FieldMenuPartyView`] nor [`StatusPanelView`] has a field
+/// for it, and the roster the shell and the browser play page build has no
+/// ailment latch to fill one from. Every caller reaches this function through
+/// [`menu_hp_ink`], which pins `status` at `0`, so the routine is live but
+/// test three can only fire from a test; carrying `+0x12E` onto the roster is
+/// what would change that.
+///
+/// PORT: FUN_800349EC
+pub fn menu_hp_ink_with_status(hp: u16, hp_max: u16, status: i16) -> [f32; 4] {
     if hp == 0 {
         MENU_TEXT_RED
     } else if hp <= hp_max / 4 {
         MENU_TEXT_ORANGE
-    } else if hp <= hp_max / 2 {
+    } else if status != 0 || hp <= hp_max / 2 {
         MENU_TEXT_GOLD
     } else {
         MENU_TEXT_WHITE
@@ -1262,5 +1292,24 @@ mod health_tier_ink_tests {
         assert_eq!(menu_mp_ink(10, max), MENU_TEXT_GOLD); // == max/2
         assert_eq!(menu_mp_ink(11, max), MENU_TEXT_WHITE);
         assert_eq!(menu_mp_ink(20, max), MENU_TEXT_WHITE);
+    }
+
+    /// The ailment arm sits between the two HP thresholds, so it re-inks
+    /// only the band above `max/4` - a dying character stays orange and a
+    /// downed one stays red.
+    #[test]
+    fn hp_ink_ailment_arm_only_reaches_the_upper_band() {
+        let max = 40u16;
+        assert_eq!(menu_hp_ink_with_status(0, max, 1), MENU_TEXT_RED);
+        assert_eq!(menu_hp_ink_with_status(10, max, 1), MENU_TEXT_ORANGE);
+        assert_eq!(menu_hp_ink_with_status(11, max, 1), MENU_TEXT_GOLD);
+        assert_eq!(menu_hp_ink_with_status(40, max, 1), MENU_TEXT_GOLD);
+        // Healthy and clear stays white; the arm is the only difference.
+        assert_eq!(menu_hp_ink_with_status(40, max, 0), MENU_TEXT_WHITE);
+        assert_eq!(menu_hp_ink_with_status(40, max, -1), MENU_TEXT_GOLD);
+        // `menu_hp_ink` is exactly the `status == 0` case.
+        for hp in [0u16, 1, 10, 11, 20, 21, 40] {
+            assert_eq!(menu_hp_ink(hp, max), menu_hp_ink_with_status(hp, max, 0));
+        }
     }
 }

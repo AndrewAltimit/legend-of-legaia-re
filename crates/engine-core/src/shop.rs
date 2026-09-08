@@ -928,10 +928,15 @@ pub fn shop_root_command_rows(
 /// The engine reuses the kernel for shop stock rows because the *shape* matches
 /// (held-cap gate, marker re-ink, affordability gate) and both callers pass the
 /// party purse in `gold` with `marker` fixed at `0`, so only the two outer tests
-/// can fire. That reuse is unverified against the shop's own retail builder -
-/// `FUN_80030628` case `0x0B`, which reads `_DAT_8008459C` against the item
-/// table's price and is currently disclosed inert. Confirm the two agree before
-/// treating this as the shop's traced behaviour.
+/// can fire. That reuse is now **checked** against the shop's own builder,
+/// `FUN_80030628` case `0x0B` (`0x80030D48..0x80030F98`, ported at
+/// [`crate::menu_list_rows::build_shop_buy_rows`]): the builder's dim bit is an
+/// OR of exactly those two tests - `_DAT_8008459C < price` (item record `+2`,
+/// `0x80030EC4`) or a held count that has stopped being `< 0x63`
+/// (`0x80030F0C`) - and it has no marker tier and no `0x400` alt-ink at all. So
+/// with `marker` pinned at `0` the two agree row for row. What the builder
+/// *does* add is an order the ink kernel says nothing about; see
+/// `shop_buy_row_order`.
 ///
 /// `held` is the held count of the row's item (retail's bag scan
 /// `FUN_80042F4C`), `marker` the record's `+2` halfword, `gold` the currency the

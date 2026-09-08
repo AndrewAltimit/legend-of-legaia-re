@@ -16,6 +16,12 @@ use std::path::PathBuf;
 /// Rim Elm Variety Store stock (order-independent), pinned from a live capture.
 const VARIETY_STORE_ITEMS: &[u8] = &[0x22, 0x34, 0x59, 0xd6, 0x77, 0x7e, 0x88, 0x43, 0xc7, 0xc8];
 
+/// The same ten ids in the order the buy list draws them: the record's last
+/// three entries lead (Hunter Clothes / Scarlet Jewel / Azure Jewel), which is
+/// the order the curated walkthrough table carries and the order
+/// `menu_list_rows::shop_buy_row_order` produces.
+const VARIETY_STORE_ROWS: &[u8] = &[0x43, 0xc7, 0xc8, 0x22, 0x34, 0x59, 0xd6, 0x77, 0x7e, 0x88];
+
 fn disc_path() -> Option<PathBuf> {
     let p = PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);
     p.is_file().then_some(p)
@@ -88,6 +94,16 @@ fn gold_shops_decode_from_disc_with_real_prices() {
     let mut want = VARIETY_STORE_ITEMS.to_vec();
     want.sort_unstable();
     assert_eq!(got, want, "Variety Store sells its known 10 items");
+
+    // ...and in retail's own ROW order, which is not the record order: this
+    // record carries no template padding, so `FUN_80030628` case `0x0B` hoists
+    // the three entries at or past `count - 3` to the top of the list (the
+    // "new in this town" band the walkthrough tables mark with `*`).
+    let row_ids: Vec<u8> = variety.inventory.items.iter().map(|i| i.item_id).collect();
+    assert_eq!(
+        row_ids, VARIETY_STORE_ROWS,
+        "the buy list draws the hoisted featured band first"
+    );
 
     // Live wiring: entering the scene that holds the shop populates
     // World::scene_shops with the same priced inventory.

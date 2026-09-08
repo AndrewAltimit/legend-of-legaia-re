@@ -147,6 +147,97 @@ impl SfxCueDelays {
     }
 }
 
+/// The side-band sound-bank request / acknowledge pair
+/// `_DAT_8007BABC` / `_DAT_8007BAA0`.
+///
+/// `_DAT_8007BABC` is the **requested** bank id for the variable `vab_01`
+/// side-band slot (audio slot `3`, installed by `FUN_800243F0` - see
+/// `docs/subsystems/audio.md`); `_DAT_8007BAA0` is the id that driver has
+/// **acknowledged**, which it latches from the request inside `FUN_800243F0`
+/// (`0x8002448C` on the dev shortcut, `0x800244F0` on the retail arm). The
+/// sentinel `-1` on the acknowledge cell means *idle*: the field overlay
+/// seeds the pair `(8, -1)` at init (`0x801D6880..0x801D688C`) and tears it
+/// down to `(-1, -1)` (`0x801D74AC..0x801D74B8`).
+///
+/// Three field-side consumers share one protocol, all read off the
+/// disassembly:
+///
+/// * **request** - store the new id only while the previous one is settled
+///   or the driver is idle, else halt at PC (`0x801E0360..0x801E0388`, the
+///   field VM's op-`0x36` sub-`1`; the identical guard is inlined at
+///   `0x801D4B58..0x801D4B90`).
+/// * **barrier** - halt at PC until `request == acked` (op-`0x36` sub-`2`,
+///   `0x801E0394..0x801E03B4`; a synchronous busy-wait around a
+///   `FUN_800243F0` call at `0x801D72E4..0x801D7300`).
+/// * **precondition** - the SFX enqueue (sub-`0`) and the whole bit-15-clear
+///   XA arm refuse to run while the pair is unsettled.
+///
+/// The engine's bank loads are synchronous, so [`Self::settle`] is applied in
+/// the same host call that takes a request; the guard shapes still matter
+/// because a script that re-requests without a settle is what retail parks
+/// on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SoundStreamRequest {
+    /// `_DAT_8007BABC` - the requested side-band bank id.
+    pub requested: i32,
+    /// `_DAT_8007BAA0` - the id the driver acknowledged; [`Self::IDLE`]
+    /// while nothing is in flight.
+    pub acked: i32,
+}
+
+impl Default for SoundStreamRequest {
+    fn default() -> Self {
+        Self::IDLE_PAIR
+    }
+}
+
+impl SoundStreamRequest {
+    /// The `-1` sentinel both cells carry when no bank is in flight.
+    pub const IDLE: i32 = -1;
+
+    /// The teardown state `(-1, -1)` retail writes at `0x801D74AC`.
+    pub const IDLE_PAIR: Self = Self {
+        requested: Self::IDLE,
+        acked: Self::IDLE,
+    };
+
+    /// The field overlay's init state `(8, -1)` (`0x801D6880`).
+    pub const FIELD_INIT: Self = Self {
+        requested: 8,
+        acked: Self::IDLE,
+    };
+
+    /// `request == acked` - the barrier op-`0x36` sub-`2` waits on.
+    pub fn is_settled(self) -> bool {
+        self.requested == self.acked
+    }
+
+    /// Whether a new request may be stored: settled, or the driver idle.
+    ///
+    /// Retail tests `acked == -1` as the escape, **not** `requested == -1`
+    /// (`beq v1,a0` then `bne a0,-1` at `0x801E0374..0x801E037C`), so a
+    /// pending request cannot be replaced just because it was itself the
+    /// sentinel.
+    pub fn accepts_request(self) -> bool {
+        self.is_settled() || self.acked == Self::IDLE
+    }
+
+    /// Store a new request. Returns `false` (and changes nothing) when the
+    /// previous one is still in flight - retail halts the script at PC there.
+    pub fn request(&mut self, id: i32) -> bool {
+        if !self.accepts_request() {
+            return false;
+        }
+        self.requested = id;
+        true
+    }
+
+    /// The driver's latch `acked = requested` (`FUN_800243F0`).
+    pub fn settle(&mut self) {
+        self.acked = self.requested;
+    }
+}
+
 /// The staged-character selector pair (`FUN_80035C00`, file offset `0x26400`,
 /// four instructions).
 ///

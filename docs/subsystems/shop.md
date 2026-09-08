@@ -244,11 +244,14 @@ entry-context pointer `_DAT_8007B450[1]`, and gates affordability on
 appears nowhere in its 72 instructions. It is window 44's `renderer_va` in the
 prize-exchange window set (43 tab / 44 list / 45 coin counter / 46 confirm).
 
-The shop's own buy list appears to have no dedicated renderer: it is a
-content-builder list window, `FUN_80030628` case `0x0B`, which reads
-`_DAT_8008459C` against the item table's price. That builder is ported and
-currently disclosed inert, so the shop's real row layout is **untraced** - the
-strides below should not be assumed to carry over.
+The shop's own buy list has no dedicated renderer: it is a content-builder
+list window, `FUN_80030628` case `0x0B`, drawn by the shared kind-4 list
+kernel from row words the builder emits. Its geometry is therefore the
+kernel's, not the prize list's - the strides below do not carry over. See
+[the buy-list builder](#the-buy-list-builder-fun_80030628-case-0x0b) for the
+row words themselves and
+[field-menu.md](field-menu.md#the-kind-4-list-kernel-scus-fun_80032a44) for
+the pens the kernel draws them at.
 
 The prize list iterates up to 8 visible rows (scroll managed by
 `_DAT_8007bb98` / `_DAT_8007bb90`), each row rendered at a fixed vertical
@@ -264,6 +267,69 @@ The row count is the byte at `DAT_801EF0D0` and each row indexes the prize
 table through the row-order byte array at `DAT_801EF0E0`; the window renderer
 draws **no currency footer** - the counter is its own window (45), and
 `FUN_801D5DE0` reads the coin bank `_DAT_800845A4` only to decide a row's ink.
+
+### The buy-list builder (`FUN_80030628` case `0x0B`)
+
+The buy list is built once, at window create / content refresh, by the SCUS
+content builder's case `0x0B` (`0x80030D48..0x80030F98`; jump table
+`0x80010D38`, index `content_id - 2`). Its source is the field-VM
+entry-context record `_DAT_8007B450` **directly** - `[+2]` the id count,
+`[+3 + i]` the item ids - i.e. the same op-`0x49` sub-`0` stock record
+[`legaia_asset::shop_stock`] scans off the scene MAN. Port:
+`engine-core::menu_list_rows::{build_shop_buy_rows, shop_buy_row_order}`.
+
+Each row word is `[class nibble][0x800 = dim][item id]`, and the dim bit is a
+plain OR of two tests - `_DAT_8008459C < price` (item record `+2`) or a held
+count that has stopped being `< 0x63`. There is no third tier and no
+`0x400` alt-ink on this list, which is what makes the casino renderer's
+`shop_stock_row_ink` a valid stand-in for it: the shop reuse pins that
+routine's `marker` argument at `0`, and with the marker arm dead the
+remaining two tests are exactly these two.
+
+#### The last rows come first
+
+The on-screen order is **not** the record order. The builder splits the walked
+rows at `record_count - 3`: rows below the split stage into a scratch array at
+`0x801C6220` tagged `0x3000`, rows at or above it are written straight into
+the row buffer tagged `0xA000`, and the staged group is appended afterwards
+(`0x80030F1C..0x80030F90`). The kind-4 kernel stages `0xA000` with **ink 5**,
+so the hoisted band is a highlighted "new in this town" strip at the top of
+the list.
+
+The band's width is `3 - padding_len`, because a second filter decides how far
+the emit loop walks. Ids below `0x1A` are skipped, and the same test first
+*shrinks* the row count (`0x80030E10..0x80030E44`) - so the loop covers
+`count - low_ids` entries. Every item id below `0x1A` carries price `0` in the
+static item table, which is why retail's id-range filter and this page's
+price-`> 0` sellable mask agree over the whole id space; it also means the
+builder **depends** on the unsellable ids being a trailing run, since it walks
+a prefix rather than filtering in place.
+
+That closes the loop on the "template padding" the record `count`
+over-counts: the record always reserves three tail slots for the featured
+band and pads the unused ones with `Ra-Seru Meta $N`. On the retail disc the
+padding is 3, 1 or 0 ids, so the highlighted band is 0, 2 or 3 rows wide - and
+the widths line up one-for-one with the `*` "new in this town" markers the
+curated walkthrough tables carry ([gamedata.md](../reference/gamedata.md)).
+Rim Elm's Variety Shop is the worked example: its record decodes ten ids with
+no padding, and hoisting the last three reproduces the walkthrough's order
+(Hunter Clothes / Scarlet Jewel / Azure Jewel first, then Survival Knife
+onward) exactly. `engine-core::shop_catalog::scene_shops` applies the order
+when it builds the priced [`ShopInventory`], so every host draws and indexes
+the retail order without a change of its own.
+
+#### The three-row tail is conditional
+
+Whether those last three record entries are walked at all is decided before
+any of it, by two probes at `0x80030D54..0x80030DE8`: the bag scan
+`FUN_80042F4C(0xFF)` (the held-count lookup for the empty-slot marker id) and
+an eight-byte `0xFF` sweep of every party member's equipment block
+(`char + 0x196..+0x19D` - armour, head gear, weapon, the Seru lock byte, leg
+gear and the three accessory slots). Either probe answering non-empty allows
+the tail; both empty subtracts `3` from the walk, dropping the featured band.
+Neither probe touches the stock, and both are all but always satisfied in
+play - the port models the gate as `build_shop_buy_rows`'s
+`tail_rows_allowed` and passes it `true`.
 
 ### Row ink is last-rule-wins, not first-match
 
